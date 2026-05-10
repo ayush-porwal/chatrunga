@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="White bishop chess piece">
+  <path fill="#f6f0e4" stroke="#171717" stroke-width="2.5" stroke-linejoin="round" d="M21 53h22l-3-9H24l-3 9Z"/>
+  <path fill="#f6f0e4" stroke="#171717" stroke-width="2.5" stroke-linejoin="round" d="M23 44c-3-10 1-20 9-27 8 7 12 17 9 27H23Z"/>
+  <circle cx="32" cy="12" r="5" fill="#f6f0e4" stroke="#171717" stroke-width="2.5"/>
+  <path fill="none" stroke="#171717" stroke-width="2.5" stroke-linecap="round" d="M36 23 28 35"/>
+  <path fill="none" stroke="#8f8270" stroke-width="2" stroke-linecap="round" d="M25 48h14"/>
+</svg>

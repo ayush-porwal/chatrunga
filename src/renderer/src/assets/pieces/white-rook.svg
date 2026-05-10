@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="White rook chess piece">
+  <path fill="#f6f0e4" stroke="#171717" stroke-width="2.5" stroke-linejoin="round" d="M18 53h28l-2-9H20l-2 9Z"/>
+  <path fill="#f6f0e4" stroke="#171717" stroke-width="2.5" stroke-linejoin="round" d="M23 44h18V24H23v20Z"/>
+  <path fill="#f6f0e4" stroke="#171717" stroke-width="2.5" stroke-linejoin="round" d="M17 24V12h8v6h5v-6h4v6h5v-6h8v12H17Z"/>
+  <path fill="none" stroke="#8f8270" stroke-width="2" stroke-linecap="round" d="M22 48h20M23 29h18"/>
+</svg>

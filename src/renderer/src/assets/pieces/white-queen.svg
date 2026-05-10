@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="White queen chess piece">
+  <path fill="#f6f0e4" stroke="#171717" stroke-width="2.5" stroke-linejoin="round" d="M20 53h24l-3-9H23l-3 9Z"/>
+  <path fill="#f6f0e4" stroke="#171717" stroke-width="2.5" stroke-linejoin="round" d="M22 44h20l4-25-9 15-5-20-5 20-9-15 4 25Z"/>
+  <circle cx="12" cy="17" r="4" fill="#f6f0e4" stroke="#171717" stroke-width="2.5"/>
+  <circle cx="23" cy="12" r="4" fill="#f6f0e4" stroke="#171717" stroke-width="2.5"/>
+  <circle cx="32" cy="9" r="4" fill="#f6f0e4" stroke="#171717" stroke-width="2.5"/>
+  <circle cx="41" cy="12" r="4" fill="#f6f0e4" stroke="#171717" stroke-width="2.5"/>
+  <circle cx="52" cy="17" r="4" fill="#f6f0e4" stroke="#171717" stroke-width="2.5"/>
+  <path fill="none" stroke="#8f8270" stroke-width="2" stroke-linecap="round" d="M24 48h16M23 41h18"/>
+</svg>

@@ -1,0 +1,9 @@
+node_modules
+dist
+out
+*.sqlite
+*.sqlite-*
+.DS_Store
+coverage
+playwright-report
+test-results
