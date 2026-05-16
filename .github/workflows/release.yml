@@ -1,0 +1,49 @@
+name: Alpha macOS Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "alpha-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: alpha-macos-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-alpha-macos:
+    name: Package alpha macOS DMG
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.0.9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build unsigned alpha DMG
+        run: pnpm --filter @chaturanga/desktop dist:mac:alpha
+
+      - name: Upload alpha DMG
+        uses: actions/upload-artifact@v7
+        with:
+          name: chaturanga-alpha-macos-${{ github.sha }}
+          path: |
+            apps/desktop/dist/*.dmg
+            apps/desktop/dist/*.blockmap
+          if-no-files-found: error

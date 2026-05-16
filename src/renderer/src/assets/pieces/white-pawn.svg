@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="White pawn chess piece">
-  <path fill="#f6f0e4" stroke="#171717" stroke-width="2.5" stroke-linejoin="round" d="M22 53h20l-3-9H25l-3 9Z"/>
-  <path fill="#f6f0e4" stroke="#171717" stroke-width="2.5" stroke-linejoin="round" d="M23 44c2-8 6-11 9-14 3 3 7 6 9 14H23Z"/>
-  <circle cx="32" cy="21" r="9" fill="#f6f0e4" stroke="#171717" stroke-width="2.5"/>
-  <path fill="none" stroke="#8f8270" stroke-width="2" stroke-linecap="round" d="M26 48h12"/>
-</svg>

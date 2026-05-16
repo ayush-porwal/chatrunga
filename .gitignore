@@ -1,6 +1,11 @@
 node_modules
+.pnpm-store
 dist
 out
+**/out
+apps/desktop/dist
+apps/marketing/dist
+stockfish
 *.sqlite
 *.sqlite-*
 .DS_Store

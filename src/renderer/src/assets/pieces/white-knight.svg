@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="White knight chess piece">
-  <path fill="#f6f0e4" stroke="#171717" stroke-width="2.5" stroke-linejoin="round" d="M18 53h29c-1-14-6-24-18-31l2-11-9 5-4-3-1 11-6 8c5 0 8 1 11 4-4 4-5 10-4 17Z"/>
-  <path fill="#f6f0e4" stroke="#171717" stroke-width="2.5" stroke-linejoin="round" d="M29 22c7 3 12 8 15 17"/>
-  <circle cx="22" cy="25" r="1.8" fill="#171717"/>
-  <path fill="none" stroke="#8f8270" stroke-width="2" stroke-linecap="round" d="M21 48h20"/>
-</svg>
