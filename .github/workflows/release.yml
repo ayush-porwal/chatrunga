@@ -2,12 +2,16 @@ name: Alpha macOS Release
 
 on:
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag to create. Defaults to alpha-v<package-version>-build.<run-number>."
+        required: false
   push:
     tags:
       - "alpha-v*"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: alpha-macos-release-${{ github.ref }}
@@ -36,10 +40,29 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Resolve release tag
+        id: release-tag
+        env:
+          MANUAL_TAG_NAME: ${{ github.event.inputs.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            release_tag="${GITHUB_REF_NAME}"
+          elif [[ -n "${MANUAL_TAG_NAME}" ]]; then
+            release_tag="${MANUAL_TAG_NAME}"
+          else
+            version="$(node -p "require('./apps/desktop/package.json').version")"
+            release_tag="alpha-v${version}-build.${GITHUB_RUN_NUMBER}"
+          fi
+
+          echo "tag=${release_tag}" >> "${GITHUB_OUTPUT}"
+
       - name: Build unsigned alpha DMG
         run: pnpm --filter @chaturanga/desktop dist:mac:alpha
 
-      - name: Upload alpha DMG
+      - name: Upload alpha workflow artifact
         uses: actions/upload-artifact@v7
         with:
           name: chaturanga-alpha-macos-${{ github.sha }}
@@ -47,3 +70,30 @@ jobs:
             apps/desktop/dist/*.dmg
             apps/desktop/dist/*.blockmap
           if-no-files-found: error
+
+      - name: Create GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release-tag.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          assets=(apps/desktop/dist/*.dmg apps/desktop/dist/*.blockmap)
+          if [[ "${#assets[@]}" -eq 0 ]]; then
+            echo "No DMG assets found in apps/desktop/dist" >&2
+            exit 1
+          fi
+
+          release_notes="Unsigned macOS alpha build. macOS Gatekeeper may require right-clicking the app and choosing Open."
+
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" "${assets[@]}" --clobber
+          else
+            gh release create "${RELEASE_TAG}" "${assets[@]}" \
+              --target "${GITHUB_SHA}" \
+              --title "Chaturanga Alpha ${RELEASE_TAG}" \
+              --notes "${release_notes}" \
+              --prerelease
+          fi
