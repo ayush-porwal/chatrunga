@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
-import { DOWNLOAD_URL } from "./src/shared/assets";
+import { DOWNLOAD_URL, PLATFORMS } from "./src/shared/assets";
 
 const publicDir = fileURLToPath(new URL("./public", import.meta.url));
 
@@ -38,8 +38,18 @@ function withSiteUrl(html: string, site: string | null): string {
   return html.replace(/\s*<meta\b[^>]*(?:og:image|twitter:image)[^>]*\/>/g, "");
 }
 
+/** %DOWNLOAD_URL_MAC% / %DOWNLOAD_URL_WINDOWS% / %DOWNLOAD_URL_LINUX%, then %DOWNLOAD_URL%. */
+function withDownloadUrls(html: string): string {
+  const perPlatform = PLATFORMS.reduce(
+    (out, p) => out.replaceAll(`%DOWNLOAD_URL_${p.id.toUpperCase()}%`, p.href),
+    html
+  );
+  return perPlatform.replaceAll("%DOWNLOAD_URL%", DOWNLOAD_URL);
+}
+
 /**
- * - Replaces %DOWNLOAD_URL% and %SITE_URL% (absolute Open Graph URLs; see withSiteUrl).
+ * Runs on every page (index.html and b/index.html):
+ * - Replaces the download placeholders and %SITE_URL% (absolute Open Graph URLs; see withSiteUrl).
  * - Adds width/height to every <img src="/shots/*.jpg"> from the file itself, so re-captured
  *   screenshots never cause layout shift.
  */
@@ -47,9 +57,7 @@ function landingHtml(): Plugin {
   return {
     name: "chaturanga-landing-html",
     transformIndexHtml(html) {
-      return withSiteUrl(html, siteUrl())
-        .replaceAll("%DOWNLOAD_URL%", DOWNLOAD_URL)
-        .replace(
+      return withDownloadUrls(withSiteUrl(html, siteUrl())).replace(
           /<img\b([^>]*?)\bsrc="(\/shots\/[^"]+\.jpg)"([^>]*)>/g,
           (tag, before: string, src: string, after: string) => {
             if (/\bwidth=/.test(tag)) return tag;
