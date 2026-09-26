@@ -74,7 +74,12 @@ export function useEngineSetup(): EngineSetup {
     if (readyCount) refresh();
   }, [readyCount, refresh]);
 
-  const recommended = useMemo(() => recommendedDownloads(status), [status]);
+  const engineReady = Boolean(evaluationEngine(engines.data));
+  // With an evaluation engine already working (e.g. the user's own), Stockfish adds nothing.
+  const recommended = useMemo(
+    () => recommendedDownloads(status).filter((asset) => !(engineReady && asset.id === "stockfish")),
+    [engineReady, status]
+  );
   const rows = useMemo(() => {
     if (queued.length) return setupRows(queued, progress);
     if (recommended.length) return setupRows(recommended, {});
@@ -98,7 +103,6 @@ export function useEngineSetup(): EngineSetup {
     return setupRows(installed, done);
   }, [progress, queued, recommended, status]);
 
-  const engineReady = Boolean(evaluationEngine(engines.data));
   const stockfishRow = rows.find((row) => row.key === "stockfish");
   const stockfishBusy =
     stockfishRow &&
