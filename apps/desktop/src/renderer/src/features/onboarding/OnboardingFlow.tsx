@@ -501,8 +501,11 @@ function EnginesStep({
     }
   }, [setup.offer]);
   const nothingToShow = setup.statusLoaded && !setup.rows.length;
+  // Nothing to download or list, but the user's own engine already runs Game review.
+  const ownEngineOnly = nothingToShow && setup.status !== null && setup.engineReady;
   const allInstalled =
-    !setup.offer && setup.rows.length > 0 && setup.rows.every((row) => row.status === "ready");
+    ownEngineOnly ||
+    (!setup.offer && setup.rows.length > 0 && setup.rows.every((row) => row.status === "ready"));
   return (
     <>
       <StepHeader
@@ -515,7 +518,7 @@ function EnginesStep({
       >
         <p>
           {allInstalled
-            ? "Stockfish and Maia are installed. Game review can start straight away."
+            ? "Everything Game review needs is installed. It can start straight away."
             : "Chess engines do the analysis. These two free ones cover everything Game review needs."}
         </p>
       </StepHeader>
@@ -533,9 +536,15 @@ function EnginesStep({
             </li>
           ))}
         </ul>
+      ) : ownEngineOnly ? (
+        <Notice tone="info">
+          Game review will use the engine you added. You can add more in Settings.
+        </Notice>
       ) : nothingToShow ? (
         <Notice tone="info">
-          Engine downloads need the desktop app. You can add your own engine in Settings.
+          {setup.status
+            ? "No engine downloads are available for this computer. You can add your own engine in Settings."
+            : "Engine downloads need the desktop app. You can add your own engine in Settings."}
         </Notice>
       ) : (
         <div className="grid gap-3">

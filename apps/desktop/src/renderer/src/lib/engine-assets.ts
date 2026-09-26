@@ -145,7 +145,9 @@ export function setupRows(assets: readonly EngineAssetStatus[], progress: AssetP
   for (const row of rows) {
     if (row.key !== "maia") continue;
     const ratings = row.ids.filter((id) => id.startsWith("maia-")).map((id) => id.replace("maia-", ""));
-    row.label = ratings.length > 1 ? `Maia ${ratings[0]}–${ratings[ratings.length - 1]}` : `Maia ${ratings[0]}`;
+    const maia = ratings.length > 1 ? `Maia ${ratings[0]}–${ratings[ratings.length - 1]}` : `Maia ${ratings[0]}`;
+    // Name Lc0 too, so a failed Lc0 download isn't reported as a Maia one.
+    row.label = row.ids.includes("lc0") ? `${maia} + Lc0` : maia;
   }
   return rows;
 }

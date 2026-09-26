@@ -123,7 +123,7 @@ describe("first-run setup", () => {
 
   it("counts Lc0 in the Maia row it is downloaded for", () => {
     const rows = setupRows([status("lc0", { downloadSizeBytes: 30_000_000 }), status("maia-1100", { downloadSizeBytes: 1_000_000 }), status("maia-1900", { downloadSizeBytes: 1_000_000 })], {});
-    expect(rows.map((row) => [row.key, row.label, row.ids])).toEqual([["maia", "Maia 1100–1900", ["lc0", "maia-1100", "maia-1900"]]]);
+    expect(rows.map((row) => [row.key, row.label, row.ids])).toEqual([["maia", "Maia 1100–1900 + Lc0", ["lc0", "maia-1100", "maia-1900"]]]);
     expect(rows[0].bytesTotal).toBe(32_000_000);
     expect(setupRows([status("lc0")], {}).map((row) => [row.key, row.label])).toEqual([["lc0", "Lc0"]]);
   });
