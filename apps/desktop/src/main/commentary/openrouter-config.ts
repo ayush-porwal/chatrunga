@@ -38,11 +38,20 @@ export class OpenRouterConfigStore {
     private readonly secureStorage: SecureStorageLike = safeStorage
   ) {}
 
+  /**
+   * The model and whether a key is saved. `hasApiKey` comes from the presence of the encrypted
+   * blob, NOT from decrypting it: on macOS every safeStorage call (even `isEncryptionAvailable`)
+   * reads the "Chaturanga Safe Storage" keychain item and can raise the system keychain prompt,
+   * which must not happen just because Settings or Game review opened. The keychain is touched
+   * only when a key is saved (`set`) or used for a request (`getApiKey`). A blob that no longer
+   * decrypts (e.g. a profile copied from another computer) still reads as saved; the commentary
+   * request then reports it (see UNREADABLE_API_KEY_ERROR).
+   */
   async get(): Promise<OpenRouterConfigSummary> {
     const config = await this.read();
     return {
       model: normalizeModel(config.model),
-      hasApiKey: Boolean(await this.decrypt(config.encryptedApiKey))
+      hasApiKey: Boolean(config.encryptedApiKey)
     };
   }
 

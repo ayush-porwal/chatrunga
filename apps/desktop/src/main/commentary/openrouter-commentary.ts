@@ -30,6 +30,9 @@ export type OpenRouterCommentaryResult = {
 };
 
 export const NO_API_KEY_ERROR = "Add an OpenRouter API key in Settings → Commentary to get commentary.";
+/** A key is saved but can't be decrypted on this computer (keychain access denied, copied profile). */
+export const UNREADABLE_API_KEY_ERROR =
+  "Your saved OpenRouter key couldn't be read on this computer. Add it again in Settings → Commentary.";
 const UNREACHABLE_ERROR = "OpenRouter couldn't be reached. Check your connection and try again.";
 const TIMEOUT_ERROR = "OpenRouter took too long to answer. Try again in a moment.";
 const EMPTY_ANSWER_ERROR = "The model returned an empty answer. Try again, or pick another model.";

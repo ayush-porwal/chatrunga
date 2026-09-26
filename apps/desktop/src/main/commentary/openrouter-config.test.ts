@@ -85,4 +85,62 @@ describe("OpenRouterConfigStore", () => {
     await expect(store.set({ apiKey: "should-not-be-written" })).rejects.toThrow("Secure key storage");
     expect(await store.get()).toEqual({ model: "anthropic/claude-sonnet-4.6", hasApiKey: false });
   });
+
+  it("reports a saved key without touching secure storage (no macOS keychain prompt)", async () => {
+    const path = await storePath();
+    const writer = new OpenRouterConfigStore(path, {
+      isEncryptionAvailable: () => true,
+      encryptString: (value) => Buffer.from(`cipher:${value}`),
+      decryptString: (value) => value.toString().replace(/^cipher:/, "")
+    });
+    await writer.set({ apiKey: "keychain-test-secret" });
+
+    // A fresh store, as after a restart: reading the summary must not decrypt or even ask.
+    const secureStorage = {
+      isEncryptionAvailable: vi.fn(() => true),
+      encryptString: vi.fn((value: string) => Buffer.from(`cipher:${value}`)),
+      decryptString: vi.fn((value: Buffer) => value.toString().replace(/^cipher:/, ""))
+    };
+    const reader = new OpenRouterConfigStore(path, secureStorage);
+    expect(await reader.get()).toMatchObject({ hasApiKey: true });
+    expect(await reader.set({ model: "model/changed" })).toMatchObject({ hasApiKey: true, model: "model/changed" });
+    expect(secureStorage.isEncryptionAvailable).not.toHaveBeenCalled();
+    expect(secureStorage.decryptString).not.toHaveBeenCalled();
+    expect(secureStorage.encryptString).not.toHaveBeenCalled();
+
+    // Only an actual use of the key reads it.
+    expect(await reader.getApiKey()).toBe("keychain-test-secret");
+    expect(secureStorage.decryptString).toHaveBeenCalledTimes(1);
+  });
+
+  it("never touches secure storage when no key is saved", async () => {
+    const secureStorage = {
+      isEncryptionAvailable: vi.fn(() => true),
+      encryptString: vi.fn((value: string) => Buffer.from(value)),
+      decryptString: vi.fn((value: Buffer) => value.toString())
+    };
+    const store = new OpenRouterConfigStore(await storePath(), secureStorage);
+    expect(await store.get()).toMatchObject({ hasApiKey: false });
+    expect(await store.getApiKey()).toBeNull();
+    expect(secureStorage.isEncryptionAvailable).not.toHaveBeenCalled();
+    expect(secureStorage.decryptString).not.toHaveBeenCalled();
+  });
+
+  it("reads a key that no longer decrypts as saved, and as null when used", async () => {
+    const path = await storePath();
+    await new OpenRouterConfigStore(path, {
+      isEncryptionAvailable: () => true,
+      encryptString: (value) => Buffer.from(value),
+      decryptString: (value) => value.toString()
+    }).set({ apiKey: "from-another-computer" });
+    const store = new OpenRouterConfigStore(path, {
+      isEncryptionAvailable: () => true,
+      encryptString: (value) => Buffer.from(value),
+      decryptString: () => {
+        throw new Error("keychain access denied");
+      }
+    });
+    expect(await store.get()).toMatchObject({ hasApiKey: true });
+    expect(await store.getApiKey()).toBeNull();
+  });
 });
