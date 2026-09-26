@@ -29,7 +29,7 @@ export function useGameAutosave(): void {
         {
           id: session.id,
           source: session.source,
-          headers: { ...session.headers, result: game.gameOutcome?.result ?? statusForFen(session.currentFen).result },
+          headers: { ...session.headers, result: savedResult(game.gameOutcome?.result, statusForFen(session.currentFen).result, session.headers.result) },
           rootFen: session.rootFen,
           currentFen: session.currentFen,
           currentNodeId: session.currentNodeId,
@@ -67,4 +67,15 @@ export function useGameAutosave(): void {
       unsubscribers.forEach((unsubscribe) => unsubscribe());
     };
   }, [saveGame]);
+}
+
+/**
+ * The result to save: a finished game on the board (outcome or a terminal position) wins; on a
+ * position mid-game the game's own recorded result stands, so stepping back through an imported,
+ * decided game (e.g. reviewing it from move 16) doesn't turn it into a game "in progress".
+ */
+export function savedResult(outcome: string | undefined, positionResult: string, headerResult: string | null | undefined): string {
+  if (outcome) return outcome;
+  if (positionResult !== "*") return positionResult;
+  return headerResult || "*";
 }
