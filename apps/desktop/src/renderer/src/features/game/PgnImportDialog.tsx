@@ -3,7 +3,9 @@ import { Upload } from "lucide-react";
 import { useGameStore } from "../../stores/game-store";
 import { useReviewStore } from "../../stores/review-store";
 import { Button } from "@/components/ui/button";
-import { dialogActions, error as errorClass, modalBackdrop, modalPanel, sectionHeader, textarea } from "@/lib/ui";
+import { Dialog } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/input";
+import { Notice } from "@/components/ui/notice";
 
 export function PgnImportDialog({ onClose }: { onClose: () => void }) {
   const [pgn, setPgn] = useState("");
@@ -37,29 +39,30 @@ export function PgnImportDialog({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className={modalBackdrop}>
-      <div className={modalPanel}>
-        <div className={sectionHeader}>
-          <h2 className="text-[15px] font-semibold text-[#f4f1ea]">Import PGN</h2>
-          <Button type="button" variant="outline" size="sm" onClick={onClose}>Close</Button>
-        </div>
-        <textarea
-          className={textarea}
-          value={pgn}
-          onChange={(event) => setPgn(event.target.value)}
-          placeholder="[Event &quot;Example&quot;]&#10;&#10;1. e4 e5 2. Nf3 *"
-        />
-        {error ? <p className={errorClass}>{error}</p> : null}
-        <div className={dialogActions}>
-          <Button type="button" variant="outline" onClick={openFile}>
-            <Upload size={17} />
+    <Dialog
+      title="Import PGN"
+      onClose={onClose}
+      footer={
+        <>
+          <Button type="button" variant="outline" size="sm" onClick={() => void openFile()}>
+            <Upload />
             Open file
           </Button>
-          <Button type="button" variant="secondary" onClick={() => importPgn(pgn)} disabled={!pgn.trim()}>
+          <Button type="button" variant="primary" size="sm" onClick={() => void importPgn(pgn)} disabled={!pgn.trim()}>
             Import
           </Button>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+      bodyClassName="grid gap-3"
+    >
+      <Textarea
+        aria-label="PGN text"
+        autoFocus
+        value={pgn}
+        onChange={(event) => setPgn(event.target.value)}
+        placeholder={'[Event "Example"]\n\n1. e4 e5 2. Nf3 *'}
+      />
+      {error ? <Notice tone="danger">{error}</Notice> : null}
+    </Dialog>
   );
 }

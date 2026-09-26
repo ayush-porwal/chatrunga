@@ -1,40 +1,421 @@
 @import "tailwindcss";
 
-/* Dark color scheme so WebKit/Electron uses dark native scrollbars on this UI. */
+/*
+ * `glass:` — applies while the window is translucent (macOS vibrancy; `html.glass`, set from
+ * lib/window-glass.ts). Off everywhere else (setting off, Reduce transparency, other platforms,
+ * web preview), so the plain utilities stay the opaque look. The media query is a second guard:
+ * main already drops vibrancy when the system reduces transparency; if the two ever disagree the
+ * page simply stays opaque.
+ */
+@custom-variant glass {
+  @media (prefers-reduced-transparency: no-preference) {
+    &:where(html.glass, html.glass *) {
+      @slot;
+    }
+  }
+}
+
+/*
+ * Design tokens (dark theme only). Every colour used by the renderer should come from
+ * this block: `bg-canvas`, `bg-surface`, `border-line`, `text-fg-muted`, `text-accent`, ...
+ * Opacity modifiers work on all of them (`bg-accent/15`, `border-danger/30`).
+ * See the UI style guide for when to use which token.
+ */
+@theme {
+  /* Surfaces — darkest to lightest. */
+  --color-chrome: #1b1c1f; /* window chrome: the titlebar and the sidebar share it */
+  /* Glass window chrome: the same colour as a smoke tint over the macOS sidebar material. */
+  --color-chrome-glass: rgb(27 28 31 / 0.55);
+  --color-canvas: #111315; /* the inset content panel every view sits in (page background) */
+  --color-surface-sunken: #141619; /* inputs, wells, code blocks, scroll lists inside a card */
+  --color-surface: #181a1d; /* cards, panels, list rows */
+  --color-surface-raised: #1e2125; /* modals, popovers, menus, tooltips */
+  --color-control: #25282d; /* neutral filled control (default button, selected-neutral) */
+  --color-control-hover: #2d3238; /* hover state of neutral filled controls */
+
+  /* Lines. */
+  --color-line-subtle: #23262a; /* dividers inside a card, table rows */
+  --color-line: #2d3238; /* default border for cards, inputs, buttons */
+  --color-line-strong: #3a3f45; /* emphasised border, variation rails, dashed empties */
+
+  /* Text. */
+  --color-fg: #f4f1ea; /* primary text, headings, values */
+  --color-fg-secondary: #d8dbe0; /* body text inside panels, list-row titles */
+  --color-fg-muted: #a9adb4; /* descriptions, secondary metadata */
+  --color-fg-subtle: #727982; /* captions, eyebrows, placeholders, disabled */
+
+  /* Brand accent (green). */
+  --color-accent: #8fb66f; /* focus rings, selected borders, chart lines, accent icons/text */
+  --color-accent-strong: #5a7d42; /* solid accent fill (selected move) */
+  --color-accent-soft: #263527; /* tinted accent background (primary button, selected tile) */
+  --color-accent-fg: #d7e8c5; /* text/icons placed on accent-soft */
+
+  /* Status. */
+  --color-info: #60a5fa;
+  --color-info-soft: #1f2731;
+  --color-warn: #d8ad5a;
+  --color-warn-soft: #2b2418;
+  --color-caution: #f0a868; /* review "mistake" — between warn and danger */
+  --color-danger: #ff9a8d;
+  --color-danger-soft: #3a201d;
+
+  /* Chess piece swatches (side-to-move dots, player badges). */
+  --color-piece-white: #efe7d2;
+  --color-piece-black: #2b3036;
+
+  /* 11px caption size — the only addition to Tailwind's type scale. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+
+  /* Elevation: only overlays (modals, popovers, menus) get a shadow. */
+  --shadow-overlay: 0 24px 64px rgb(0 0 0 / 0.45);
+  --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.4);
+  /* Glass only: lifts the opaque content panel off the translucent chrome (dark hairline + soft falloff). */
+  --shadow-panel-glass: 0 0 0 0.5px rgb(0 0 0 / 0.55), 0 12px 32px -12px rgb(0 0 0 / 0.55);
+}
+
+/*
+ * Motion tokens — the only durations and curves the renderer uses (see `motion` in lib/ui.ts).
+ * Three durations: micro (hover, press, exits, tooltips), standard (popovers, toggles, indicators),
+ * emphasis (dialogs, the sidebar, view changes). Enter with `ease-enter` (fast start, long settle),
+ * leave with `ease-exit` (quick, accelerating away), move indicators with `ease-spring` (a small
+ * overshoot), change colours/state with `ease-standard`.
+ * Utilities: `duration-micro|standard|emphasis`, `ease-enter|exit|standard|spring`, `animate-*` below.
+ * Only transform and opacity animate. Reduced motion: transitions become instant and every keyframe
+ * below collapses to a plain fade (the translate/scale amounts are the --motion-* vars).
+ */
+@theme static {
+  --transition-duration-micro: 120ms;
+  --transition-duration-standard: 180ms;
+  --transition-duration-emphasis: 240ms;
+
+  --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-exit: cubic-bezier(0.55, 0, 1, 0.45);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-spring: cubic-bezier(0.3, 1.3, 0.5, 1);
+
+  /* Every bare `transition` / `transition-colors` utility picks these up. */
+  --default-transition-duration: 120ms;
+  --default-transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+
+  --animate-fade-in: ui-fade-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-fade-out: ui-fade-out 120ms cubic-bezier(0.55, 0, 1, 0.45) both;
+  /* Popovers, menus, tooltips: scale from their origin (set `origin-*` to the trigger side). */
+  --animate-pop-in: ui-pop-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-pop-out: ui-pop-out 120ms cubic-bezier(0.55, 0, 1, 0.45) both;
+  /* Content that appears in place (notices, badges, fallbacks): a short rise. */
+  --animate-rise-in: ui-rise-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-dialog-in: ui-dialog-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-dialog-out: ui-dialog-out 120ms cubic-bezier(0.55, 0, 1, 0.45) both;
+  /* Keeps a Radix Presence node mounted while its children run their exit animation. */
+  --animate-hold: ui-hold 120ms linear both;
+  --animate-indeterminate: ui-indeterminate 1.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+
+  @keyframes ui-fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes ui-fade-out {
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes ui-pop-in {
+    from {
+      opacity: 0;
+      transform: scale(var(--motion-pop-scale));
+    }
+  }
+  @keyframes ui-pop-out {
+    to {
+      opacity: 0;
+      transform: scale(var(--motion-pop-scale));
+    }
+  }
+  @keyframes ui-rise-in {
+    from {
+      opacity: 0;
+      transform: translateY(var(--motion-rise));
+    }
+  }
+  @keyframes ui-dialog-in {
+    from {
+      opacity: 0;
+      transform: translateY(calc(var(--motion-rise) * 2)) scale(var(--motion-dialog-scale));
+    }
+  }
+  @keyframes ui-dialog-out {
+    to {
+      opacity: 0;
+      transform: scale(var(--motion-dialog-exit-scale));
+    }
+  }
+  @keyframes ui-hold {
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes ui-indeterminate {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(290%);
+    }
+  }
+}
+
+:root {
+  --motion-rise: 4px;
+  --motion-pop-scale: 0.96;
+  --motion-dialog-scale: 0.97;
+  --motion-dialog-exit-scale: 0.98;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-rise: 0px;
+    --motion-pop-scale: 1;
+    --motion-dialog-scale: 1;
+    --motion-dialog-exit-scale: 1;
+  }
+
+  /* State changes (hover, press, toggles, indicators, the sidebar) snap; keyframed fades stay. */
+  *,
+  ::before,
+  ::after {
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Dark color scheme so WebKit/Electron uses dark native controls/scrollbars. */
 html {
   color-scheme: dark;
 }
 
-/*
- * Sidebar game panels (#151719): align scrollbar chrome across Move List + Recent Games.
- * Native tracks on some Electron/Chromium builds read as an extra bordered “lane” beside content.
- */
-@layer components {
-  .game-panel-scroll {
-    scrollbar-width: thin;
-    scrollbar-color: rgb(255 255 255 / 0.18) transparent;
+body {
+  background-color: var(--color-chrome);
+  color: var(--color-fg);
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-reduced-transparency: no-preference) {
+  /* Glass: the page is transparent so the window's vibrancy shows through; the app frame paints the tint. */
+  html.glass,
+  html.glass body,
+  html.glass #root {
+    background-color: transparent;
   }
 
-  .game-panel-scroll::-webkit-scrollbar {
+  /*
+   * Glass chrome regions (titlebar, sidebar — `data-chrome`): neutral fills and lines become
+   * translucent white so hover/selected states read as "lit glass" instead of grey slabs, and the
+   * quieter text steps brighten a little to hold contrast over a blurred, possibly bright desktop.
+   * Tokens only: every component inside picks these up without glass-specific classes.
+   */
+  html.glass [data-chrome] {
+    --color-control: rgb(255 255 255 / 0.09);
+    --color-control-hover: rgb(255 255 255 / 0.13);
+    --color-line-subtle: rgb(255 255 255 / 0.07);
+    --color-line: rgb(255 255 255 / 0.1);
+    --color-line-strong: rgb(255 255 255 / 0.16);
+    --color-danger-soft: rgb(255 154 141 / 0.14);
+    --color-fg-muted: #bcc0c7;
+    --color-fg-subtle: #8f959e;
+  }
+}
+
+::selection {
+  background-color: rgb(143 182 111 / 0.35);
+}
+
+@layer components {
+  /* One scrollbar style for every scroll region. */
+  .scroll-area {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(255 255 255 / 0.16) transparent;
+  }
+
+  .scroll-area::-webkit-scrollbar {
     width: 8px;
     height: 8px;
   }
 
-  .game-panel-scroll::-webkit-scrollbar-track {
+  .scroll-area::-webkit-scrollbar-track {
     background: transparent;
   }
 
-  .game-panel-scroll::-webkit-scrollbar-thumb {
+  .scroll-area::-webkit-scrollbar-thumb {
     background-color: rgb(255 255 255 / 0.15);
     border-radius: 9999px;
     border: 2px solid transparent;
     background-clip: padding-box;
   }
 
-  .game-panel-scroll::-webkit-scrollbar-thumb:hover {
+  .scroll-area::-webkit-scrollbar-thumb:hover {
     background-color: rgb(255 255 255 / 0.24);
-    border-radius: 9999px;
-    border: 2px solid transparent;
-    background-clip: padding-box;
   }
+}
+
+@layer components {
+  /*
+   * Scroll regions contain their own overscroll (a trackpad fling at the end of a list does not drag
+   * the page behind it) and keep the native momentum; no scripted smooth scrolling.
+   */
+  .scroll-area {
+    overscroll-behavior: contain;
+  }
+
+  /*
+   * `scroll-fade`: soft top/bottom edges on a long scroll region, driven by its own scroll position
+   * (scroll-driven animation — no JS, no work while idle). The top edge fades in once the content has
+   * scrolled, the bottom edge fades out at the end; a region that does not scroll shows no fade.
+   */
+  .scroll-fade {
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--scroll-fade-top),
+      #000 calc(100% - var(--scroll-fade-bottom)),
+      transparent 100%
+    );
+  }
+
+  @supports (animation-timeline: scroll()) {
+    .scroll-fade {
+      animation: ui-scroll-fade linear both;
+      animation-timeline: scroll(self);
+    }
+  }
+
+  /*
+   * Frosted popover backdrop (glass only). A STABLE sibling layer under the popover's animated content:
+   * backdrop-filter never sits inside an element whose opacity/transform animates (an animating
+   * ancestor becomes the backdrop root — the blur would sample nothing and repaint stale). The layer
+   * itself only fades; the tinted surface on top keeps text on an opaque-enough fill.
+   * Markup: <span class="ui-frost rounded-lg" aria-hidden /> as the first child of a `relative` box.
+   */
+  .ui-frost {
+    display: none;
+  }
+
+  /*
+   * Loading placeholder (components/ui/skeleton.tsx). Held back for a beat so a fast load never
+   * flashes grey bars, then fades in and breathes slowly. Reduced motion: the fade stays, the pulse
+   * stops (a still bar).
+   */
+  .ui-skeleton {
+    animation:
+      ui-fade-in 180ms cubic-bezier(0.22, 1, 0.36, 1) 120ms both,
+      ui-skeleton-pulse 1.6s ease-in-out 300ms infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-skeleton {
+      animation: ui-fade-in 180ms cubic-bezier(0.22, 1, 0.36, 1) 120ms both;
+    }
+  }
+}
+
+@keyframes ui-skeleton-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@property --scroll-fade-top {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --scroll-fade-bottom {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes ui-scroll-fade {
+  0% {
+    --scroll-fade-top: 0px;
+    --scroll-fade-bottom: 20px;
+  }
+  8%,
+  92% {
+    --scroll-fade-top: 20px;
+    --scroll-fade-bottom: 20px;
+  }
+  100% {
+    --scroll-fade-top: 20px;
+    --scroll-fade-bottom: 0px;
+  }
+}
+
+@media (prefers-reduced-transparency: no-preference) {
+  html.glass .ui-frost {
+    display: block;
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    -webkit-backdrop-filter: blur(20px) saturate(1.5);
+    backdrop-filter: blur(20px) saturate(1.5);
+  }
+}
+
+/*
+ * View changes (lib/use-view-transition.ts): only the content panel and the titlebar title animate.
+ * The rest of the window (sidebar, chrome) swaps instantly underneath. `lift` (a page is involved):
+ * the new view dissolves in over the old one with a 4px rise. `fade` (board ↔ board): a plain
+ * cross-fade, so the board never slides. Reduced motion: the rise is 0 — cross-fade only.
+ */
+::view-transition-old(root) {
+  display: none;
+}
+
+::view-transition-new(root) {
+  animation: none;
+}
+
+::view-transition-group(app-content),
+::view-transition-group(app-title) {
+  animation-duration: 240ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The panel is opaque: the old view stays put and the new one dissolves in over it (no dip to the
+   translucent chrome behind). The title is bare text: it swaps with a quick fade out / fade in. */
+::view-transition-old(app-content) {
+  animation: none;
+}
+
+::view-transition-old(app-title) {
+  animation: ui-fade-out 120ms cubic-bezier(0.55, 0, 1, 0.45) both;
+}
+
+::view-transition-new(app-content) {
+  animation: ui-rise-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+::view-transition-new(app-title) {
+  animation: ui-fade-in 180ms cubic-bezier(0.22, 1, 0.36, 1) 40ms both;
+}
+
+html[data-view-transition="fade"]::view-transition-new(app-content) {
+  animation: ui-fade-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* The snapshots cross-fade on their own; no plus-lighter blend over the translucent window. */
+::view-transition-image-pair(app-content),
+::view-transition-image-pair(app-title) {
+  isolation: auto;
+}
+
+::view-transition-old(app-content),
+::view-transition-new(app-content),
+::view-transition-old(app-title),
+::view-transition-new(app-title) {
+  mix-blend-mode: normal;
 }

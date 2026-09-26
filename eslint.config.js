@@ -6,7 +6,8 @@ import prettier from "eslint-config-prettier";
 
 export default tseslint.config(
   {
-    ignores: ["dist", "out", "node_modules", "drizzle", "**/dist/**", "**/out/**"]
+    // Build output, coverage reports and the gitignored upstream Stockfish checkout.
+    ignores: ["**/node_modules/**", "**/dist/**", "**/out/**", "**/coverage/**", "stockfish/**"]
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -35,9 +36,18 @@ export default tseslint.config(
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "module",
-      globals: {
-        ...globals.node
-      }
+      globals: globals.node
+    }
+  },
+  {
+    files: ["**/*.cjs"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "commonjs",
+      globals: globals.node
+    },
+    rules: {
+      "@typescript-eslint/no-require-imports": "off"
     }
   },
   prettier

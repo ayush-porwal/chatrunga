@@ -7,7 +7,7 @@ function withoutWeightsCliArgs(args: string[]): string[] {
 
 /**
  * Spawn working directory used for UCI engines.
- * Matches common desktop GUIs (e.g. bundled engines with files next to the binary): cwd is the
+ * Matches common desktop GUIs (e.g. engines that keep NN / support files next to the binary): cwd is the
  * executable's directory unless `working_directory` was set manually (advanced / legacy installs).
  */
 export function engineProcessCwd(config: EngineConfig): string {

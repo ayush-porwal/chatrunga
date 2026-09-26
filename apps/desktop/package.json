@@ -7,14 +7,15 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node ../../scripts/ensure-electron.cjs && electron-vite dev",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "tsc --noEmit -p tsconfig.json && electron-vite build",
     "preview": "electron-vite preview",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "dist:mac": "pnpm build && electron-builder --mac --publish never",
-    "dist:mac:alpha": "pnpm build && electron-builder --mac dmg --publish never -c.appId=com.chaturanga.desktop.alpha -c.productName='Chaturanga Alpha' -c.artifactName='Chaturanga-Alpha-${version}-${os}-${arch}.${ext}' -c.mac.identity=null -c.dmg.title='Chaturanga Alpha ${version}'"
+    "dist:win": "pnpm build && electron-builder --win --publish never",
+    "dist:linux": "pnpm build && electron-builder --linux --publish never"
   },
   "build": {
     "appId": "com.chaturanga.desktop",
@@ -35,28 +36,75 @@
           "app-icon.icns",
           "app-icon.png"
         ]
-      },
-      {
-        "from": "src/main/assets/engines",
-        "to": "engines",
-        "filter": [
-          "**/*"
-        ]
       }
     ],
     "mac": {
       "icon": "src/main/assets/app-icon.icns",
       "category": "public.app-category.board-games",
       "target": [
-        "dmg"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
-      "identity": null
+      "identity": "-"
     },
     "dmg": {
       "title": "Chaturanga ${version}"
+    },
+    "artifactName": "Chaturanga-${version}-${os}-${arch}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ayush-porwal",
+        "repo": "chatrunga",
+        "releaseType": "release"
+      }
+    ],
+    "win": {
+      "icon": "src/main/assets/app-icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Chaturanga",
+      "artifactName": "Chaturanga-${version}-win-${arch}-setup.${ext}"
+    },
+    "linux": {
+      "icon": "src/main/assets/app-icon.png",
+      "category": "Game",
+      "synopsis": "Chess game review with engine analysis and an AI coach",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
     }
   },
-  "dependencies": {
+  "devDependencies": {
     "@chaturanga/shared": "workspace:*",
     "@lichess-org/chessground": "^10.1.1",
     "@radix-ui/react-separator": "^1.1.8",
@@ -64,33 +112,31 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tailwindcss/vite": "^4.3.0",
     "@tanstack/react-query": "^5.100.9",
+    "@types/node": "^25.6.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
     "chessops": "^0.15.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "drizzle-orm": "^0.45.2",
+    "electron": "^42.0.1",
+    "electron-builder": "^26.8.1",
+    "electron-updater": "^6.8.9",
+    "electron-vite": "^5.0.0",
     "fzstd": "^0.1.1",
     "lucide-react": "^1.14.0",
     "nanoid": "^5.1.11",
     "react": "^19.2.6",
     "react-colorful": "^5.7.0",
     "react-dom": "^19.2.6",
+    "react-router-dom": "^7.1.0",
     "recharts": "^3.8.1",
-    "stockfish": "18.0.7",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.0",
-    "zustand": "^5.0.13"
-  },
-  "devDependencies": {
-    "@types/node": "^25.6.2",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
-    "drizzle-kit": "^0.31.10",
-    "electron": "^42.0.1",
-    "electron-builder": "^26.8.1",
-    "electron-vite": "^5.0.0",
     "typescript": "^6.0.3",
     "vite": "^8.0.11",
-    "vitest": "^4.1.5"
-  }
+    "vitest": "^4.1.5",
+    "zustand": "^5.0.13"
+  },
+  "homepage": "https://github.com/ayush-porwal/chatrunga"
 }

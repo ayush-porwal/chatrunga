@@ -1,14 +1,38 @@
-import { contextBridge, ipcRenderer } from "electron";
-import type { ChaturangaApi } from "@chaturanga/shared/ipc/chaturanga-api";
+import { contextBridge, ipcRenderer, webFrame, type IpcRendererEvent } from "electron";
+import type { ChaturangaApi, Unsubscribe, WindowGlassState } from "@chaturanga/shared/ipc/chaturanga-api";
 
-const probeEvalChannel = "engines:probeEval";
+// Runs sandboxed: only `electron`'s renderer modules are available here, no Node APIs.
+
+/** Subscribes to a main → renderer event channel; returns the unsubscribe function. */
+function subscribe<T>(channel: string) {
+  return (callback: (payload: T) => void): Unsubscribe => {
+    const listener = (_event: IpcRendererEvent, payload: T) => callback(payload);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.off(channel, listener);
+  };
+}
+
+type EventPayload<K extends keyof ChaturangaApi["events"]> = Parameters<Parameters<ChaturangaApi["events"][K]>[0]>[0];
+
+// Read once, synchronously, so the renderer's first frame matches the native window (vibrancy or
+// opaque); kept current by the change events below.
+let glassState = ipcRenderer.sendSync("appearance:getGlassSync") as WindowGlassState;
+const onGlassChanged = subscribe<WindowGlassState>("appearance:glassChanged");
+onGlassChanged((state) => {
+  glassState = state;
+});
 
 const api: ChaturangaApi = {
   environment: {
     isElectron: true,
     platform: process.platform
   },
-  enginesProbeEval: (input) => ipcRenderer.invoke(probeEvalChannel, input),
+  appearance: {
+    getGlass: () => glassState,
+    getZoomFactor: () => webFrame.getZoomFactor(),
+    onGlassChanged,
+    rendererReady: () => ipcRenderer.send("appearance:rendererReady")
+  },
   engines: {
     list: () => ipcRenderer.invoke("engines:list"),
     create: (input) => ipcRenderer.invoke("engines:create", input),
@@ -17,7 +41,7 @@ const api: ChaturangaApi = {
     test: (idOrInput) => ipcRenderer.invoke("engines:test", idOrInput),
     startGame: (input) => ipcRenderer.invoke("engines:startGame", input),
     startAnalysis: (input) => ipcRenderer.invoke("engines:startAnalysis", input),
-    probeEval: (input) => ipcRenderer.invoke(probeEvalChannel, input),
+    probeEval: (input) => ipcRenderer.invoke("engines:probeEval", input),
     reviewGame: (input) => ipcRenderer.invoke("engines:reviewGame", input),
     cancelReview: (reviewId) => ipcRenderer.invoke("engines:cancelReview", reviewId),
     stop: () => ipcRenderer.invoke("engines:stop")
@@ -27,8 +51,7 @@ const api: ChaturangaApi = {
     get: (id) => ipcRenderer.invoke("games:get", id),
     save: (input) => ipcRenderer.invoke("games:save", input),
     remove: (id) => ipcRenderer.invoke("games:remove", id),
-    importPgn: (input) => ipcRenderer.invoke("games:importPgn", input),
-    exportPgn: (gameId) => ipcRenderer.invoke("games:exportPgn", gameId)
+    importPgn: (input) => ipcRenderer.invoke("games:importPgn", input)
   },
   databases: {
     list: () => ipcRenderer.invoke("databases:list"),
@@ -38,8 +61,7 @@ const api: ChaturangaApi = {
   },
   files: {
     openPgnFile: () => ipcRenderer.invoke("files:openPgnFile"),
-    savePgnFile: (defaultName, contents) =>
-      ipcRenderer.invoke("files:savePgnFile", defaultName, contents),
+    savePgnFile: (defaultName, contents) => ipcRenderer.invoke("files:savePgnFile", defaultName, contents),
     selectExecutable: () => ipcRenderer.invoke("files:selectExecutable"),
     selectOpenFile: (filters) => ipcRenderer.invoke("files:selectOpenFile", filters)
   },
@@ -47,53 +69,42 @@ const api: ChaturangaApi = {
     getAll: () => ipcRenderer.invoke("settings:getAll"),
     set: (key, value) => ipcRenderer.invoke("settings:set", key, value)
   },
+  commentary: {
+    getOpenRouterConfig: () => ipcRenderer.invoke("commentary:getOpenRouterConfig"),
+    setOpenRouterConfig: (input) => ipcRenderer.invoke("commentary:setOpenRouterConfig", input),
+    generate: (input) => ipcRenderer.invoke("commentary:generate", input)
+  },
   events: {
-    onEngineInfo: (callback) => {
-      const listener = (_event: Electron.IpcRendererEvent, info: unknown) => callback(info as never);
-      ipcRenderer.on("engine:info", listener);
-      return () => ipcRenderer.off("engine:info", listener);
-    },
-    onEngineBestMove: (callback) => {
-      const listener = (_event: Electron.IpcRendererEvent, move: unknown) => callback(move as never);
-      ipcRenderer.on("engine:bestmove", listener);
-      return () => ipcRenderer.off("engine:bestmove", listener);
-    },
-    onEngineError: (callback) => {
-      const listener = (_event: Electron.IpcRendererEvent, error: unknown) => callback(error as never);
-      ipcRenderer.on("engine:error", listener);
-      return () => ipcRenderer.off("engine:error", listener);
-    },
-    onReviewProgress: (callback) => {
-      const listener = (_event: Electron.IpcRendererEvent, progress: unknown) =>
-        callback(progress as never);
-      ipcRenderer.on("review:progress", listener);
-      return () => ipcRenderer.off("review:progress", listener);
-    },
-    onReviewMoveCompleted: (callback) => {
-      const listener = (_event: Electron.IpcRendererEvent, payload: unknown) =>
-        callback(payload as never);
-      ipcRenderer.on("review:moveCompleted", listener);
-      return () => ipcRenderer.off("review:moveCompleted", listener);
-    },
-    onReviewCompleted: (callback) => {
-      const listener = (_event: Electron.IpcRendererEvent, payload: unknown) =>
-        callback(payload as never);
-      ipcRenderer.on("review:completed", listener);
-      return () => ipcRenderer.off("review:completed", listener);
-    },
-    onReviewFailed: (callback) => {
-      const listener = (_event: Electron.IpcRendererEvent, payload: unknown) =>
-        callback(payload as never);
-      ipcRenderer.on("review:failed", listener);
-      return () => ipcRenderer.off("review:failed", listener);
-    },
-    onDatabaseDownloadProgress: (callback) => {
-      const listener = (_event: Electron.IpcRendererEvent, payload: unknown) =>
-        callback(payload as never);
-      ipcRenderer.on("database:downloadProgress", listener);
-      return () => ipcRenderer.off("database:downloadProgress", listener);
-    }
-  }
+    onEngineInfo: subscribe<EventPayload<"onEngineInfo">>("engine:info"),
+    onEngineBestMove: subscribe<EventPayload<"onEngineBestMove">>("engine:bestmove"),
+    onEngineError: subscribe<EventPayload<"onEngineError">>("engine:error"),
+    onReviewProgress: subscribe<EventPayload<"onReviewProgress">>("review:progress"),
+    onReviewMoveCompleted: subscribe<EventPayload<"onReviewMoveCompleted">>("review:moveCompleted"),
+    onReviewCompleted: subscribe<EventPayload<"onReviewCompleted">>("review:completed"),
+    onReviewFailed: subscribe<EventPayload<"onReviewFailed">>("review:failed"),
+    onDatabaseDownloadProgress: subscribe<EventPayload<"onDatabaseDownloadProgress">>("database:downloadProgress"),
+    onUpdateState: subscribe<EventPayload<"onUpdateState">>("updates:state")
+  },
+  updates: {
+    getState: () => ipcRenderer.invoke("updates:getState"),
+    check: () => ipcRenderer.invoke("updates:check"),
+    download: () => ipcRenderer.invoke("updates:download"),
+    install: () => ipcRenderer.invoke("updates:install"),
+    openDownload: () => ipcRenderer.invoke("updates:openDownload")
+  },
+  // Engine + Maia weight downloads (main/engine/asset-manager.ts).
+  assets: {
+    download: (assetId) => ipcRenderer.invoke("assets:download", assetId),
+    downloadAll: () => ipcRenderer.invoke("assets:downloadAll"),
+    remove: (assetId) => ipcRenderer.invoke("assets:remove", assetId),
+    setCustomPath: (assetId, customPath) => ipcRenderer.invoke("assets:setCustomPath", assetId, customPath),
+    status: (options) => ipcRenderer.invoke("assets:status", options),
+    checkForUpdates: () => ipcRenderer.invoke("assets:checkForUpdates"),
+    update: (assetId) => ipcRenderer.invoke("assets:update", assetId)
+  },
+  onAssetProgress: subscribe("assets:progress"),
+  onAssetStatusChanged: subscribe<void>("assets:statusChanged"),
+  onEnginesChanged: subscribe<void>("engines:changed")
 };
 
 contextBridge.exposeInMainWorld("chaturanga", api);

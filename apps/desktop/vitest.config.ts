@@ -12,16 +12,31 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "json-summary"],
-      include: [
-        "src/main/engine/bundled-engines.ts",
-        "src/main/engine/review-search.ts",
-        "src/main/engine/uci.ts",
-        "src/renderer/src/features/analysis/engine-game-helpers.ts",
-        "src/renderer/src/ipc/**/*.ts",
-        "src/renderer/src/lib/**/*.ts",
-        "src/renderer/src/stores/**/*.ts"
+      // Pure logic in main and the renderer. Excluded: Electron / SQLite / process glue and
+      // React hooks + class-name tables, which are exercised by running the app, not unit tests.
+      include: ["src/main/**/*.ts", "src/renderer/src/**/*.ts"],
+      exclude: [
+        "**/*.test.ts",
+        "**/__fixtures__/**",
+        "src/main/index.ts",
+        "src/main/updater.ts",
+        "src/main/db/**",
+        "src/main/ipc/register.ts",
+        "src/main/ipc/review-handler.ts",
+        "src/main/databases/external-databases.ts",
+        "src/main/engine/engine-config.ts",
+        "src/main/engine/engine-manager.ts",
+        "src/main/engine/engine-registry-sync.ts",
+        "src/main/engine/probe-eval.ts",
+        "src/renderer/src/**/use*.ts",
+        "src/renderer/src/**/use-*.ts",
+        "src/renderer/src/queries/**",
+        "src/renderer/src/sounds/**",
+        "src/renderer/src/lib/ui.ts",
+        "src/renderer/src/lib/utils.ts",
+        "src/renderer/src/lib/settings-listbox.ts",
+        "src/renderer/src/vite-env.d.ts"
       ],
-      exclude: ["**/*.test.ts", "**/*.test.tsx"],
       thresholds: {
         lines: 80,
         functions: 80,

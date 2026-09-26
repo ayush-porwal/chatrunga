@@ -1,39 +1,63 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
-import type {
-  AnalysisLine,
-  EngineConfig,
-  EngineInfo,
-  EngineScore,
-  GameReview,
-  GameReviewSummary,
-  MoveReview,
-  ReviewGameInput,
-  ReviewMoveInputItem,
-  ReviewProgressPhase
+import {
+  GAME_REVIEW_SCHEMA_VERSION,
+  type AnalysisLine,
+  type EngineConfig,
+  type EngineInfo,
+  type GameReview,
+  type GameReviewSummary,
+  type MaiaRating,
+  type MoveClassification,
+  type MoveReview,
+  type RatingPrediction,
+  type ReviewGameInput,
+  type ReviewMoveInputItem,
+  type ReviewProgressPhase,
+  type TerminalState,
+  type Wdl
 } from "@chaturanga/shared/types/engine";
-import { fenAfterUci, moveFromUci, positionFromFen, statusForFen } from "@chaturanga/shared/chess/position";
+import { statusForFen } from "@chaturanga/shared/chess/position";
 import {
   classifyMove,
   scoreFromWhitePerspective,
-  scoreToCentipawns
+  standardCastlingUci,
+  terminalStateForFen
 } from "@chaturanga/shared/chess/review";
-import { spawnArgsForEngine, engineProcessCwd } from "@chaturanga/shared/engine/spawn-args";
+import { parseInfoLine, parseLc0MoveStat, type Lc0MoveStat } from "@chaturanga/shared/engine/uci";
+import { logger } from "../logger";
 import {
   resolveReviewSearchParams,
   reviewAnalysisTimeoutMs,
   type ResolvedReviewSearch
 } from "./review-search";
-import { parseBestMove, parseInfoLine } from "./uci";
+import {
+  buildRatingPrediction,
+  computeEvalLoss,
+  linesFromInfoStream,
+  nearestRatingBucket,
+  parseClock,
+  parseTimeControl,
+  tacticalMotifsForBestMove,
+  terminalScore,
+  terminalWdl,
+  timeSpentForMove
+} from "./review-analysis";
+import { createLineSplitter, LOG_UCI, spawnUciProcess, stopUciProcess, writeUci } from "./uci-process";
 
 type LineEvents = {
   line: [string];
-  error: [Error];
+  // Not "error": EventEmitter throws on an "error" nobody listens to, and an
+  // engine can die between searches.
+  failure: [Error];
 };
 
-type ReviewMoveInput = ReviewMoveInputItem;
-
 export type ReviewProgressSink = {
+  /**
+   * Fires once when a phase of a move starts ("before" = position before the
+   * move, "after" = position after it). `lines` holds the before-lines when
+   * they are already known (reused from the previous move), else empty.
+   */
   onPhaseProgress?: (input: {
     moveIndex: number;
     nodeId: string;
@@ -47,195 +71,452 @@ export type ReviewProgressSink = {
     depth: number;
     lines: AnalysisLine[];
   }) => void;
+  /** Fires once per move, after the evaluation engine and every Maia level have reported. */
   onMoveCompleted?: (input: { moveIndex: number; move: MoveReview }) => void;
   shouldCancel?: () => boolean;
+};
+
+export type ReviewEngineOptions = {
+  /** UCI Threads for the evaluation engine. */
+  threads?: number;
+  /** UCI Hash (MB) for the evaluation engine. */
+  hashMb?: number;
+  /** Player rating; picks the Maia bucket behind the `human_error` classification. */
+  playerRating?: number | null;
+};
+
+type MaiaSlot = {
+  config: EngineConfig & { maiaRating: MaiaRating };
+  session: UciReviewSession;
+  alive: boolean;
 };
 
 export async function reviewGameWithEngine(
   config: EngineConfig,
   input: ReviewGameInput,
-  sink: ReviewProgressSink = {}
+  sink: ReviewProgressSink = {},
+  maiaConfigs: readonly (EngineConfig & { maiaRating: MaiaRating })[] = [],
+  options: ReviewEngineOptions = {}
 ): Promise<GameReview> {
-  const session = new UciReviewSession(config);
-  const multipv = Math.max(1, Math.min(input.multipv ?? 3, 5));
+  const multipv = Math.max(1, Math.min(Math.round(input.multipv ?? 3), 5));
   const search = resolveReviewSearchParams(input);
+  const timeControl = parseTimeControl(input.timeControl);
+  const session = new UciReviewSession(config);
+  let maiaSlots: MaiaSlot[] = maiaConfigs.map((cfg) => ({
+    config: cfg,
+    session: new UciReviewSession(cfg),
+    alive: true
+  }));
 
   try {
-    await session.start(multipv);
+    // Maia (lc0) weight loads take seconds each: start everything in parallel.
+    // A broken Maia degrades the review (that level is dropped); a broken
+    // evaluation engine fails it.
+    const [mainStart, ...maiaStarts] = await Promise.allSettled([
+      session.start({ multipv, threads: options.threads, hashMb: options.hashMb }),
+      ...maiaSlots.map((slot) => slot.session.start({ policyOnly: true }))
+    ]);
+    if (mainStart.status === "rejected") throw mainStart.reason;
+    maiaSlots = maiaSlots.filter((slot, index) => {
+      const result = maiaStarts[index];
+      if (result.status === "fulfilled") return true;
+      logger.warn("review", `Maia ${slot.config.maiaRating} failed to start; continuing without it:`, result.reason);
+      slot.session.stop();
+      return false;
+    });
+    const maiaEngines = maiaSlots.map((slot) => ({
+      rating: slot.config.maiaRating,
+      engineId: slot.config.id,
+      name: slot.config.name
+    }));
+
     const moves: MoveReview[] = [];
+    let previousReplyLines: AnalysisLine[] | null = null;
     for (let index = 0; index < input.moves.length; index += 1) {
       if (sink.shouldCancel?.()) throw new Error("Review cancelled");
       const move = input.moves[index];
       const mover = statusForFen(move.fenBefore).turn;
-      const beforeLines = await session.analyze({
-        fen: move.fenBefore,
-        multipv,
-        search,
-        shouldCancel: sink.shouldCancel,
-        onProgress: (lines, latestDepth) =>
-          sink.onPhaseProgress?.({
-            moveIndex: index,
-            nodeId: move.nodeId,
-            san: move.san,
-            ply: move.ply,
-            fenBefore: move.fenBefore,
-            fenAfter: move.fenAfter,
-            phase: "before",
-            fen: move.fenBefore,
-            mover,
-            depth: latestDepth,
-            lines
-          })
-      });
+      const playedUci = standardCastlingUci(move.fenBefore, move.uci);
+      const emitPhase = (phase: ReviewProgressPhase, lines: AnalysisLine[]) =>
+        sink.onPhaseProgress?.({
+          moveIndex: index,
+          nodeId: move.nodeId,
+          san: move.san,
+          ply: move.ply,
+          fenBefore: move.fenBefore,
+          fenAfter: move.fenAfter,
+          phase,
+          fen: phase === "before" ? move.fenBefore : move.fenAfter,
+          mover,
+          depth: lines[0]?.depth ?? 0,
+          lines
+        });
+
+      // The previous move's reply lines are this move's top lines (same
+      // position, same search settings): one full search per ply.
+      emitPhase("before", previousReplyLines ?? []);
+      const topLinesPromise: Promise<AnalysisLine[]> = previousReplyLines
+        ? Promise.resolve(previousReplyLines)
+        : session.analyze({ fen: move.fenBefore, multipv, search, shouldCancel: sink.shouldCancel });
+      const activeMaia = maiaSlots.filter((slot) => slot.alive);
+      const maiaPromise = Promise.allSettled(
+        activeMaia.map(async (slot) => ({ slot, policy: await slot.session.analyzePolicy(move.fenBefore, sink.shouldCancel) }))
+      );
+
+      const topLines = await topLinesPromise;
       if (sink.shouldCancel?.()) throw new Error("Review cancelled");
-      const afterLines = await session.analyze({
-        fen: move.fenAfter,
-        multipv: 1,
-        search,
-        shouldCancel: sink.shouldCancel,
-        onProgress: (lines, latestDepth) =>
-          sink.onPhaseProgress?.({
-            moveIndex: index,
-            nodeId: move.nodeId,
-            san: move.san,
-            ply: move.ply,
-            fenBefore: move.fenBefore,
-            fenAfter: move.fenAfter,
-            phase: "after",
-            fen: move.fenAfter,
-            mover,
-            depth: latestDepth,
-            lines
-          })
+
+      const terminal = terminalStateForFen(move.fenAfter);
+      let replyLines: AnalysisLine[] = [];
+      if (!terminal) {
+        emitPhase("after", []);
+        replyLines = await session.analyze({ fen: move.fenAfter, multipv, search, shouldCancel: sink.shouldCancel });
+      }
+      previousReplyLines = terminal ? null : replyLines;
+
+      const bestMove = topLines[0]?.pv[0] ?? null;
+      const humanPredictions: RatingPrediction[] = [];
+      for (const [slotIndex, result] of (await maiaPromise).entries()) {
+        if (result.status === "rejected") {
+          const slot = activeMaia[slotIndex];
+          if (slot) {
+            // Stop retrying a Maia that errored or timed out; the rest carry on.
+            logger.warn("review", `Maia ${slot.config.maiaRating} failed; dropping it:`, result.reason);
+            slot.alive = false;
+            slot.session.stop();
+          }
+          continue;
+        }
+        const { slot, policy } = result.value;
+        const prediction = buildRatingPrediction({
+          rating: slot.config.maiaRating,
+          engineId: slot.config.id,
+          fen: move.fenBefore,
+          stats: policy.stats,
+          wdl: policy.wdl,
+          playedUci,
+          bestUci: bestMove
+        });
+        if (prediction) humanPredictions.push(prediction);
+      }
+      if (sink.shouldCancel?.()) throw new Error("Review cancelled");
+
+      const moveReview = buildMoveReview({
+        move,
+        playedUci,
+        topLines,
+        replyLines,
+        terminal,
+        humanPredictions,
+        playerRating: options.playerRating ?? null,
+        previousMove: input.moves[index - 1]?.uci ?? null
       });
-      const moveReview = buildMoveReview(move, beforeLines, afterLines);
+      const currentClock = parseClock(move.clockAfter);
+      if (currentClock !== null) moveReview.clockRemainingMs = currentClock;
+      const spent = timeSpentForMove(input.moves, index, timeControl);
+      if (spent !== undefined) moveReview.timeSpentMs = spent;
       moves.push(moveReview);
       sink.onMoveCompleted?.({ moveIndex: index, move: moveReview });
     }
 
     return {
+      schemaVersion: GAME_REVIEW_SCHEMA_VERSION,
       engineId: config.id,
+      engineName: session.engineName ?? config.name,
+      engineSettings: {
+        multipv,
+        moveTimeMs: search.recordMoveTimeMs,
+        depth: search.recordDepth,
+        ...(session.appliedThreads !== null ? { threads: session.appliedThreads } : {}),
+        ...(session.appliedHashMb !== null ? { hashMb: session.appliedHashMb } : {})
+      },
+      maiaEngines,
+      predictionEngineIds: maiaEngines.map((engine) => engine.engineId),
       depth: search.recordDepth,
       moveTimeMs: search.recordMoveTimeMs,
+      multipv,
       createdAt: Date.now(),
       summary: summarize(moves),
       moves
     };
   } finally {
     session.stop();
+    for (const slot of maiaSlots) slot.session.stop();
   }
 }
+
+function buildMoveReview(input: {
+  move: ReviewMoveInputItem;
+  playedUci: string;
+  topLines: AnalysisLine[];
+  replyLines: AnalysisLine[];
+  terminal: TerminalState | null;
+  humanPredictions: RatingPrediction[];
+  playerRating: number | null;
+  previousMove: string | null;
+}): MoveReview {
+  const { move, playedUci, topLines, replyLines, terminal, humanPredictions } = input;
+  const best = topLines[0] ?? null;
+  const moverAfter = statusForFen(move.fenAfter).turn;
+  // Side-to-move score of fenAfter (opponent's perspective), synthesized when the game ended.
+  const afterScore = terminal ? terminalScore(terminal) : replyLines[0]?.score ?? null;
+  // White-perspective, except a checkmate stays `mate 0` (= side to move is mated; see `terminal`).
+  const evalAfter = terminal === "checkmate"
+    ? { type: "mate" as const, value: 0 }
+    : afterScore
+      ? scoreFromWhitePerspective(afterScore, moverAfter)
+      : null;
+  const playedLine = topLines.find((line) => line.pv[0] === playedUci) ?? null;
+  const playedRank = playedLine?.multipv ?? null;
+  const evalLoss = computeEvalLoss({ topLines, playedRank, afterScore, terminal });
+  const bestMove = best?.pv[0] ?? null;
+
+  // `human_error`: the top move of the Maia bucket nearest the player's rating.
+  const bucket = nearestRatingBucket(input.playerRating, humanPredictions.map((p) => p.rating));
+  const humanPrediction = humanPredictions.find((p) => p.rating === bucket)?.topMoves[0]?.uci ?? null;
+  const motifs = tacticalMotifsForBestMove(move.fenBefore, bestMove, best?.score ?? null, input.previousMove);
+  const hasMissedTactic = Boolean(bestMove && bestMove !== playedUci) && motifs.length > 0 && (evalLoss ?? 0) >= 150;
+  const classification = terminal === "checkmate"
+    ? "best"
+    : classifyMove({ playedMove: playedUci, bestMove, evalLoss, hasMissedTactic, humanPrediction });
+
+  return {
+    nodeId: move.nodeId,
+    ply: move.ply,
+    san: move.san,
+    playedMove: playedUci,
+    fenBefore: move.fenBefore,
+    fenAfter: move.fenAfter,
+    evalBefore: best?.scoreWhite ?? null,
+    evalAfter,
+    // Eval after the engine's choice = its best line from the same search.
+    bestEvalAfter: best?.scoreWhite ?? null,
+    evalLoss,
+    classification,
+    bestMove,
+    bestLine: best?.pv ?? [],
+    topLines,
+    replyLines,
+    playedRank,
+    playedLineScore: playedLine?.score ?? null,
+    wdlBefore: best?.wdl ?? null,
+    wdlAfter: terminal ? terminalWdl(terminal) : replyLines[0]?.wdl ?? null,
+    terminal,
+    humanPredictions: humanPredictions.length > 0 ? humanPredictions : undefined,
+    motifs
+  };
+}
+
+type PolicyResult = { stats: Lc0MoveStat[]; wdl?: Wdl };
 
 class UciReviewSession {
   private process: ChildProcessWithoutNullStreams | null = null;
   private events = new EventEmitter<LineEvents>();
-  private lineBuffer = "";
+  private supportedOptions = new Set<string>();
+  /** Rolling tails for timeout diagnostics. */
+  private recentLines: string[] = [];
+  private recentStderr: string[] = [];
+  private recentCommands: string[] = [];
+  private currentMultipv = 1;
+  /** Set once the process died; later waits reject immediately instead of timing out. */
+  private failure: Error | null = null;
+  engineName: string | null = null;
+  appliedThreads: number | null = null;
+  appliedHashMb: number | null = null;
 
   constructor(private config: EngineConfig) { }
 
-  async start(multipv: number): Promise<void> {
-    this.process = spawn(this.config.executablePath, spawnArgsForEngine(this.config), {
-      cwd: engineProcessCwd(this.config),
-      stdio: "pipe"
-    });
+  async start(options: { multipv?: number; threads?: number; hashMb?: number; policyOnly?: boolean }): Promise<void> {
+    const tag = `uci:${this.config.name}`;
+    if (LOG_UCI) logger.info(tag, "spawn", this.config.executablePath, this.config.args);
+    this.process = spawnUciProcess(this.config);
 
-    this.process.stdout.on("data", (chunk: Buffer) => this.handleStdout(chunk));
-    /** Lc0 and others print banners / progress to stderr; that is normal and must not fail the IPC handler. */
+    this.process.stdout.on("data", createLineSplitter((line) => this.handleLine(line)));
+    // Lc0 prints banners / progress to stderr; not a failure. Captured for diagnostics.
     this.process.stderr.on("data", (chunk: Buffer) => {
-      const message = chunk.toString("utf8").trim();
-      if (message) console.warn("[uci engine review stderr]", message);
-    });
-    this.process.on("error", (error) => this.events.emit("error", error));
-    this.process.on("exit", (code) => {
-      if (code !== 0 && this.process) {
-        this.events.emit("error", new Error(`Engine exited with code ${code ?? "unknown"}`));
+      for (const line of chunk.toString("utf8").split(/\r?\n/)) {
+        if (!line.trim()) continue;
+        if (LOG_UCI) logger.info(tag, "[stderr]", line);
+        pushTail(this.recentStderr, line);
       }
+    });
+    this.process.on("error", (error) => this.fail(error));
+    this.process.on("exit", (code) => {
+      if (this.process) this.fail(new Error(`${this.config.name} exited unexpectedly (code ${code ?? "unknown"})`));
     });
 
     const uciReady = this.waitFor(
-      (line) => line === "uciok",
+      (line) => {
+        const option = line.match(/^option name (.+?) type /);
+        if (option) this.supportedOptions.add(option[1]);
+        const name = line.match(/^id name (.+)$/);
+        if (name) this.engineName = name[1].trim();
+        return line === "uciok";
+      },
       120_000,
       "Timed out waiting for uciok (large NN weights can take a while; check --weights for lc0)"
     );
     this.write("uci");
     await uciReady;
-    this.write(`setoption name MultiPV value ${multipv}`);
-    const engineReady = this.waitFor(
-      (line) => line === "readyok",
-      25_000,
-      "Timed out waiting for readyok"
-    );
-    this.write("isready");
-    await engineReady;
+
+    if (options.policyOnly) {
+      // Maia: `go nodes 1` + VerboseMoveStats prints the raw policy prior of
+      // every legal move and the root value head. PolicyTemperature 1 gives the
+      // network's true distribution (lc0 defaults to 1.359, which flattens it).
+      this.setOption("VerboseMoveStats", "true");
+      this.setOption("PolicyTemperature", "1.0");
+      this.setOption("MinibatchSize", "1");
+      this.setOption("MaxPrefetch", "0");
+      this.setOption("UCI_ShowWDL", "true");
+      this.setOption("MultiPV", "1");
+    } else {
+      if (options.threads && this.setOption("Threads", String(options.threads))) this.appliedThreads = options.threads;
+      if (options.hashMb && this.setOption("Hash", String(options.hashMb))) this.appliedHashMb = options.hashMb;
+      this.setOption("UCI_ShowWDL", "true");
+      this.currentMultipv = options.multipv ?? 1;
+      this.setOption("MultiPV", String(this.currentMultipv));
+    }
+    await this.ready();
     this.write("ucinewgame");
   }
 
+  /** MultiPV search of `fen`; resolves with the final lines when the engine prints bestmove. */
   async analyze(input: {
     fen: string;
     multipv: number;
     search: ResolvedReviewSearch;
-    onProgress?: (lines: AnalysisLine[], depth: number) => void;
     shouldCancel?: () => boolean;
   }): Promise<AnalysisLine[]> {
-    const waitBudgetMs = reviewAnalysisTimeoutMs({
-      moveTimeMs: input.search.moveTimeMs,
-      depth: input.search.depth,
-      multipv: input.multipv
+    if (input.multipv !== this.currentMultipv) {
+      this.currentMultipv = input.multipv;
+      this.setOption("MultiPV", String(input.multipv));
+    }
+    const go = input.search.nodes !== null && input.search.nodes > 0
+      ? `go nodes ${input.search.nodes}`
+      : input.search.moveTimeMs
+        ? `go movetime ${input.search.moveTimeMs}`
+        : `go depth ${input.search.depth}`;
+    const infos: EngineInfo[] = [];
+    await this.search({
+      fen: input.fen,
+      go,
+      timeoutMs: reviewAnalysisTimeoutMs({
+        moveTimeMs: input.search.moveTimeMs,
+        depth: input.search.depth,
+        multipv: input.multipv,
+        nodes: input.search.nodes
+      }),
+      shouldCancel: input.shouldCancel,
+      onLine: (line) => {
+        const info = parseInfoLine(this.config.id, line);
+        if (info?.score && info.pv?.length) infos.push(info);
+      }
     });
+    return linesFromInfoStream(input.fen, infos);
+  }
 
-    this.write(`setoption name MultiPV value ${input.multipv}`);
-    const engineReady = this.waitFor(
-      (line) => line === "readyok",
-      25_000,
-      "Timed out waiting for readyok"
-    );
+  /** Maia policy for `fen` (requires `start({ policyOnly: true })`). */
+  async analyzePolicy(fen: string, shouldCancel?: () => boolean): Promise<PolicyResult> {
+    const stats: Lc0MoveStat[] = [];
+    let wdl: Wdl | undefined;
+    await this.search({
+      fen,
+      go: "go nodes 1",
+      timeoutMs: reviewAnalysisTimeoutMs({ moveTimeMs: null, depth: 1, multipv: 1, nodes: 1 }),
+      shouldCancel,
+      onLine: (line) => {
+        const stat = parseLc0MoveStat(line);
+        if (stat) {
+          stats.push(stat);
+          return;
+        }
+        const info = parseInfoLine(this.config.id, line);
+        if (info?.wdl && (info.multipv ?? 1) === 1) wdl = info.wdl;
+      }
+    });
+    return { stats, wdl };
+  }
+
+  stop(): void {
+    const proc = this.process;
+    this.process = null;
+    stopUciProcess(proc);
+  }
+
+  private fail(error: Error): void {
+    this.failure ??= error;
+    this.events.emit("failure", error);
+  }
+
+  /** Sends `setoption` only for options the engine advertised. Returns whether it was sent. */
+  private setOption(name: string, value: string): boolean {
+    if (!this.supportedOptions.has(name)) return false;
+    this.write(`setoption name ${name} value ${value}`);
+    return true;
+  }
+
+  private async ready(): Promise<void> {
+    const engineReady = this.waitFor((line) => line === "readyok", 25_000, "Timed out waiting for readyok");
     this.write("isready");
     await engineReady;
-    this.write(`position fen ${input.fen}`);
+  }
 
-    const latestByPv = new Map<number, EngineInfo>();
-    let lastEmittedAt = 0;
-    let latestDepth = 0;
+  private async search(input: {
+    fen: string;
+    go: string;
+    timeoutMs: number;
+    shouldCancel?: () => boolean;
+    onLine: (line: string) => void;
+  }): Promise<void> {
+    await this.ready();
+    this.write(`position fen ${input.fen}`);
+    let received = 0;
+    const startedAt = Date.now();
     return new Promise((resolve, reject) => {
       const cleanup = () => {
         clearTimeout(timeout);
         clearInterval(cancelInterval);
         this.events.off("line", onLine);
-        this.events.off("error", onError);
-      };
-      const finish = () => {
-        cleanup();
-        const finalLines = linesFromInfos(input.fen, latestByPv);
-        input.onProgress?.(finalLines, latestDepth);
-        resolve(finalLines);
+        this.events.off("failure", onError);
       };
       const onError = (error: Error) => {
         cleanup();
         reject(error);
       };
-      const emitProgress = () => {
-        if (!input.onProgress) return;
-        const now = Date.now();
-        if (now - lastEmittedAt < 120) return;
-        lastEmittedAt = now;
-        input.onProgress(linesFromInfos(input.fen, latestByPv), latestDepth);
-      };
       const onLine = (line: string) => {
-        const info = parseInfoLine(this.config.id, line);
-        if (info?.score && info.pv?.length) {
-          latestByPv.set(info.multipv ?? 1, info);
-          if (info.depth && info.depth > latestDepth) latestDepth = info.depth;
-          emitProgress();
-        }
-        if (parseBestMove(this.config.id, line)) finish();
-      };
-      const timeout = setTimeout(
-        () => {
+        if (line.startsWith("bestmove")) {
           cleanup();
-          reject(new Error("Timed out waiting for analysis result"));
-        },
-        waitBudgetMs
-      );
+          resolve();
+          return;
+        }
+        received += 1;
+        input.onLine(line);
+      };
+      const timeout = setTimeout(() => {
+        cleanup();
+        const snapshot = this.debugSnapshot();
+        const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
+        const diagnostics = [
+          ``,
+          `╔══ ENGINE TIMEOUT ══════════════════════════════════════════════════════`,
+          `║ engine:     ${this.config.name}`,
+          `║ executable: ${this.config.executablePath}`,
+          `║ weights:    ${this.config.weightsPath ?? "(none)"}`,
+          `║ command:    ${input.go}`,
+          `║ fen:        ${input.fen}`,
+          `║ elapsed:    ${elapsedSeconds}s of ${Math.round(input.timeoutMs / 1000)}s budget`,
+          `║ lines:      ${received} received before timeout`,
+          `╠── last 10 commands sent ───────────────────────────────────────────────`,
+          ...snapshot.commands.slice(-10).map((c) => `║   → ${c}`),
+          `╠── last 10 stdout lines ────────────────────────────────────────────────`,
+          ...snapshot.lines.slice(-10).map((l) => `║   ← ${l}`),
+          `╠── last 10 stderr lines ────────────────────────────────────────────────`,
+          ...(snapshot.stderr.length > 0 ? snapshot.stderr.slice(-10).map((l) => `║   ⚠ ${l}`) : [`║   (none)`]),
+          `╚════════════════════════════════════════════════════════════════════════`
+        ].join("\n");
+        logger.error("review", `engine timeout${diagnostics}`);
+        reject(new Error(`${this.config.name} did not answer "${input.go}" within ${elapsedSeconds}s.`));
+      }, input.timeoutMs);
       let stopSent = false;
       const cancelInterval = setInterval(() => {
         if (stopSent) return;
@@ -246,21 +527,23 @@ class UciReviewSession {
       }, 100);
 
       this.events.on("line", onLine);
-      this.events.on("error", onError);
-      if (input.search.moveTimeMs) this.write(`go movetime ${input.search.moveTimeMs}`);
-      else this.write(`go depth ${input.search.depth}`);
+      this.events.on("failure", onError);
+      this.write(input.go);
     });
   }
 
-  stop(): void {
-    if (!this.process) return;
-    this.write("quit");
-    this.process.kill();
-    this.process = null;
+  private write(command: string): void {
+    if (LOG_UCI) logger.info(`uci:${this.config.name}`, "→", command);
+    pushTail(this.recentCommands, command);
+    writeUci(this.process, command);
   }
 
-  private write(command: string): void {
-    this.process?.stdin.write(`${command}\n`);
+  private debugSnapshot(): { commands: string[]; lines: string[]; stderr: string[] } {
+    return {
+      commands: [...this.recentCommands],
+      lines: [...this.recentLines],
+      stderr: [...this.recentStderr]
+    };
   }
 
   private waitFor(
@@ -268,11 +551,12 @@ class UciReviewSession {
     timeoutMs: number,
     timeoutMessage: string
   ): Promise<string> {
+    if (this.failure) return Promise.reject(this.failure);
     return new Promise((resolve, reject) => {
       const cleanup = () => {
         clearTimeout(timeout);
         this.events.off("line", onLine);
-        this.events.off("error", onError);
+        this.events.off("failure", onError);
       };
       const onLine = (line: string) => {
         if (!predicate(line)) return;
@@ -288,138 +572,47 @@ class UciReviewSession {
         reject(new Error(timeoutMessage));
       }, timeoutMs);
       this.events.on("line", onLine);
-      this.events.on("error", onError);
+      this.events.on("failure", onError);
     });
   }
 
-  private handleStdout(chunk: Buffer): void {
-    this.lineBuffer += chunk.toString("utf8");
-    const lines = this.lineBuffer.split(/\r?\n/);
-    this.lineBuffer = lines.pop() ?? "";
-    for (const line of lines.map((item) => item.trim()).filter(Boolean)) {
-      this.events.emit("line", line);
-    }
+  private handleLine(line: string): void {
+    if (LOG_UCI) logger.info(`uci:${this.config.name}`, "←", line);
+    pushTail(this.recentLines, line);
+    this.events.emit("line", line);
   }
 }
 
-function linesFromInfos(fen: string, infos: Map<number, EngineInfo>): AnalysisLine[] {
-  const turn = statusForFen(fen).turn;
-  return [...infos.entries()]
-    .sort(([left], [right]) => left - right)
-    .map(([multipv, info]) => ({
-      multipv,
-      depth: info.depth ?? 0,
-      score: info.score as EngineScore,
-      scoreWhite: scoreFromWhitePerspective(info.score as EngineScore, turn),
-      pv: info.pv ?? []
-    }));
+function pushTail(buffer: string[], line: string): void {
+  buffer.push(line);
+  if (buffer.length > 50) buffer.shift();
 }
 
-function buildMoveReview(
-  move: ReviewMoveInput,
-  beforeLines: AnalysisLine[],
-  afterLines: AnalysisLine[]
-): MoveReview {
-  const before = beforeLines[0] ?? null;
-  const after = afterLines[0] ?? null;
-  const mover = statusForFen(move.fenBefore).turn;
-  const evalBefore = before?.scoreWhite ?? null;
-  const evalAfter = after?.scoreWhite ?? null;
-  const beforeMoverCp = evalBefore ? scoreToCentipawns(evalBefore) * (mover === "white" ? 1 : -1) : null;
-  const afterMoverCp = evalAfter ? scoreToCentipawns(evalAfter) * (mover === "white" ? 1 : -1) : null;
-  const evalLoss =
-    beforeMoverCp === null || afterMoverCp === null
-      ? null
-      : Math.max(0, Math.min(1000, beforeMoverCp - afterMoverCp));
-  const bestMove = before?.pv[0] ?? null;
-  const motifs = bestMove ? motifsForBestMove(move.fenBefore, bestMove, before?.scoreWhite ?? null) : [];
-  const hasMissedTactic =
-    Boolean(bestMove && bestMove !== move.uci) &&
-    motifs.length > 0 &&
-    (evalLoss ?? 0) >= 150;
-  const classification = classifyMove({
-    playedMove: move.uci,
-    bestMove,
-    evalLoss,
-    hasMissedTactic
-  });
-
-  return {
-    nodeId: move.nodeId,
-    ply: move.ply,
-    san: move.san,
-    playedMove: move.uci,
-    fenBefore: move.fenBefore,
-    fenAfter: move.fenAfter,
-    evalBefore,
-    evalAfter,
-    evalLoss,
-    classification,
-    bestMove,
-    bestLine: before?.pv ?? [],
-    topLines: beforeLines,
-    motifs,
-  };
-}
-
-function motifsForBestMove(fen: string, bestMove: string, scoreWhite: EngineScore | null): string[] {
-  const motifs: string[] = [];
-  const afterFen = fenAfterUci(fen, bestMove);
-  if (!afterFen) return motifs;
-  const status = statusForFen(afterFen);
-  const parsed = moveFromUci(bestMove);
-  if (scoreWhite?.type === "mate") motifs.push("forced mate");
-  if (status.isCheck) motifs.push(status.isCheckmate ? "checkmate" : "checking move");
-  if (parsed && isCapture(fen, bestMove)) motifs.push("capture");
-  if (bestMove.length === 5) motifs.push("promotion");
-  if (scoreWhite && Math.abs(scoreToCentipawns(scoreWhite)) >= 300) motifs.push("large advantage");
-  return [...new Set(motifs)];
-}
-
-function isCapture(fen: string, uci: string): boolean {
-  const pos = positionFromFen(fen);
-  const move = moveFromUci(uci);
-  if (!move || !("from" in move) || !("to" in move)) return false;
-  if (pos.board.get(move.to)) return true;
-  const piece = pos.board.get(move.from);
-  return Boolean(piece?.role === "pawn" && pos.epSquare === move.to);
-}
+const SUMMARY_FIELD: Record<MoveClassification, Exclude<keyof GameReviewSummary, "totalMoves" | "averageCentipawnLoss">> = {
+  best: "best",
+  excellent: "excellent",
+  good: "good",
+  inaccuracy: "inaccuracies",
+  mistake: "mistakes",
+  blunder: "blunders",
+  missed_tactic: "missedTactics",
+  human_error: "humanErrors"
+};
 
 function summarize(moves: MoveReview[]): GameReviewSummary {
-  let best = 0;
-  let excellent = 0;
-  let good = 0;
-  let inaccuracies = 0;
-  let mistakes = 0;
-  let blunders = 0;
-  let missedTactics = 0;
+  const counts = { best: 0, excellent: 0, good: 0, inaccuracies: 0, mistakes: 0, blunders: 0, missedTactics: 0, humanErrors: 0 };
   let evalLossSum = 0;
   let evalLossCount = 0;
-
   for (const move of moves) {
-    if (move.classification === "best") best += 1;
-    else if (move.classification === "excellent") excellent += 1;
-    else if (move.classification === "good") good += 1;
-    else if (move.classification === "inaccuracy") inaccuracies += 1;
-    else if (move.classification === "mistake") mistakes += 1;
-    else if (move.classification === "blunder") blunders += 1;
-    else if (move.classification === "missed_tactic") missedTactics += 1;
-
+    counts[SUMMARY_FIELD[move.classification]] += 1;
     if (move.evalLoss !== null) {
       evalLossSum += move.evalLoss;
       evalLossCount += 1;
     }
   }
-
   return {
     totalMoves: moves.length,
-    best,
-    excellent,
-    good,
-    inaccuracies,
-    mistakes,
-    blunders,
-    missedTactics,
+    ...counts,
     averageCentipawnLoss: evalLossCount ? Math.round(evalLossSum / evalLossCount) : null
   };
 }

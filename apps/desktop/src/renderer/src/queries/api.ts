@@ -1,16 +1,17 @@
+import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SAVE_SUPPRESSED_AFTER_DELETE } from "@chaturanga/shared/ipc/game-handling";
 import type { SaveGameInput } from "@chaturanga/shared/types/chess";
 import type { CreateEngineInput, UpdateEngineInput } from "@chaturanga/shared/types/engine";
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
-import { stockfishWasmEngine } from "@chaturanga/shared/engine/bundled";
 
-export const queryKeys = {
+const queryKeys = {
   databases: ["databases"] as const,
   engines: ["engines"] as const,
   games: ["games"] as const,
-  settings: ["settings"] as const
+  settings: ["settings"] as const,
+  openRouter: ["openrouter"] as const
 };
 
 function api() {
@@ -22,10 +23,19 @@ function requireApi() {
   return window.chaturanga;
 }
 
+/** Keeps the cached engine list in step with the main process's registry. Mount once. */
+export function useEngineRegistrySubscription() {
+  const queryClient = useQueryClient();
+  useEffect(
+    () => api()?.onEnginesChanged?.(() => void queryClient.invalidateQueries({ queryKey: queryKeys.engines })),
+    [queryClient]
+  );
+}
+
 export function useEnginesQuery() {
   return useQuery({
     queryKey: queryKeys.engines,
-    queryFn: () => api()?.engines.list() ?? [stockfishWasmEngine()]
+    queryFn: () => api()?.engines.list() ?? []
   });
 }
 
@@ -65,8 +75,8 @@ export function useSaveGameMutation() {
     retry: false,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.games }),
     onError: (error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === SAVE_SUPPRESSED_AFTER_DELETE) return;
+      // Saving a game that was just deleted is refused on purpose; anything else is worth a trace.
+      if (error instanceof Error && error.message === SAVE_SUPPRESSED_AFTER_DELETE) return;
       console.warn("games.save failed", error);
     }
   });
@@ -132,5 +142,12 @@ export function useUpdateSettingMutation() {
       if (context?.previous) queryClient.setQueryData(queryKeys.settings, context.previous);
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.settings })
+  });
+}
+
+export function useOpenRouterConfigQuery() {
+  return useQuery({
+    queryKey: queryKeys.openRouter,
+    queryFn: () => api()?.commentary.getOpenRouterConfig() ?? { model: "", hasApiKey: false }
   });
 }

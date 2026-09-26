@@ -6,7 +6,7 @@ import {
   fenAfterUci,
   isPromotionMove,
   legalDestsForFen,
-  moveFromUci,
+  promotionSuffix,
   statusForFen
 } from "./position";
 
@@ -40,20 +40,21 @@ describe("position helpers", () => {
       isEnd: false,
       result: "*"
     });
-    expect(statusForFen("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3"))
-      .toMatchObject({
-        isCheck: true,
-        isCheckmate: true,
-        result: "0-1"
-      });
+    expect(
+      statusForFen("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3")
+    ).toMatchObject({
+      isCheck: true,
+      isCheckmate: true,
+      result: "0-1"
+    });
     expect(statusForFen("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1")).toMatchObject({
       isStalemate: true,
       result: "1/2-1/2"
     });
   });
 
-  it("parses UCI moves", () => {
-    expect(moveFromUci("e2e4")).toBeDefined();
-    expect(moveFromUci("bad")).toBeUndefined();
+  it("maps promotion pieces to UCI letters", () => {
+    expect(promotionSuffix("knight")).toBe("n");
+    expect(promotionSuffix(undefined)).toBe("");
   });
 });

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { importPgnText } from "@chaturanga/shared/chess/pgn";
 import { buildEngineGoClock, useGameStore } from "./game-store";
 
 describe("game store", () => {
@@ -19,6 +20,49 @@ describe("game store", () => {
     expect(state.currentNodeId).toBe("root");
     expect(state.moveTree.some((node) => node.id === e4NodeId || node.id === e5NodeId)).toBe(false);
     expect(state.moveTree.find((node) => node.id === "root")?.children).toEqual([]);
+  });
+
+  it("keeps the committed node and FEN invariant while creating variations", () => {
+    useGameStore.getState().makeMove({ from: "e2", to: "e4" });
+    const e4NodeId = useGameStore.getState().currentNodeId;
+    useGameStore.getState().makeMove({ from: "e7", to: "e5" });
+    useGameStore.getState().undo();
+
+    expect(useGameStore.getState().currentNodeId).toBe(e4NodeId);
+    expect(useGameStore.getState().makeMove({ from: "c7", to: "c5" })).toBe(true);
+    const state = useGameStore.getState();
+    const currentNode = state.moveTree.find((node) => node.id === state.currentNodeId);
+    expect(currentNode?.san).toBe("c5");
+    expect(state.currentFen).toBe(currentNode?.fenAfter);
+    expect(state.moveTree.find((node) => node.id === e4NodeId)?.children).toHaveLength(2);
+  });
+
+  it("does not move the cursor when deleting a different branch", () => {
+    useGameStore.getState().makeMove({ from: "e2", to: "e4" });
+    useGameStore.getState().makeMove({ from: "e7", to: "e5" });
+    useGameStore.getState().undo();
+    useGameStore.getState().undo();
+    useGameStore.getState().makeMove({ from: "d2", to: "d4" });
+    const currentNodeId = useGameStore.getState().currentNodeId;
+    const currentFen = useGameStore.getState().currentFen;
+    const e4NodeId = useGameStore.getState().moveTree.find((node) => node.san === "e4")?.id;
+    expect(e4NodeId).toBeDefined();
+    expect(useGameStore.getState().deleteLineFromNode(e4NodeId!)).toBe(true);
+    expect(useGameStore.getState().currentNodeId).toBe(currentNodeId);
+    expect(useGameStore.getState().currentFen).toBe(currentFen);
+  });
+
+  it("normalizes a mismatched loaded cursor to the requested node FEN", () => {
+    useGameStore.getState().makeMove({ from: "e2", to: "e4" });
+    const e4NodeId = useGameStore.getState().currentNodeId;
+    useGameStore.getState().makeMove({ from: "e7", to: "e5" });
+    const e5Fen = useGameStore.getState().currentFen;
+    const session = useGameStore.getState().toSession();
+    useGameStore.getState().loadGame({ ...session, currentNodeId: e4NodeId, currentFen: e5Fen });
+    const state = useGameStore.getState();
+    expect(state.currentNodeId).toBe(e4NodeId);
+    expect(state.currentFen).not.toBe(e5Fen);
+    expect(state.currentFen).toBe(state.moveTree.find((node) => node.id === e4NodeId)?.fenAfter);
   });
 
   it("does not delete the root position", () => {
@@ -102,6 +146,64 @@ describe("game store", () => {
       sideToMove: "black"
     });
     vi.restoreAllMocks();
+  });
+
+  describe("goToLine", () => {
+    const pgn = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Nd4 4. Nxe5 Qg5 *";
+    const mainlineNode = (ply: number) => {
+      const state = useGameStore.getState();
+      let node = state.moveTree.find((item) => item.id === "root");
+      for (let index = 0; index < ply; index += 1) node = state.moveTree.find((item) => item.id === node?.children[0]);
+      if (!node) throw new Error(`no mainline node at ply ${ply}`);
+      return node;
+    };
+
+    it("walks existing main-line moves without adding nodes", () => {
+      useGameStore.getState().loadGame(importPgnText(pgn).game);
+      const size = useGameStore.getState().moveTree.length;
+      expect(useGameStore.getState().goToLine("root", ["e4", "e5", "Nf3"])).toBe(true);
+      const state = useGameStore.getState();
+      expect(state.moveTree).toHaveLength(size);
+      expect(state.currentNodeId).toBe(mainlineNode(3).id);
+      expect(state.currentFen).toBe(mainlineNode(3).fenAfter);
+    });
+
+    it("appends a new variation, selects its last node and reuses it next time", () => {
+      useGameStore.getState().loadGame(importPgnText(pgn).game);
+      useGameStore.getState().setMode("analysis");
+      const parent = mainlineNode(6);
+      expect(useGameStore.getState().goToLine(parent.id, ["Nxd4", "exd4", "O-O"])).toBe(true);
+      const state = useGameStore.getState();
+      const current = state.moveTree.find((node) => node.id === state.currentNodeId);
+      expect(current?.san).toBe("O-O");
+      expect(state.currentFen).toBe(current?.fenAfter);
+      expect(state.moveTree.find((node) => node.id === parent.id)?.children).toHaveLength(2);
+      expect(state.mode).toBe("analysis");
+      const size = state.moveTree.length;
+      expect(useGameStore.getState().goToLine(parent.id, ["Nxd4", "exd4"])).toBe(true);
+      expect(useGameStore.getState().moveTree).toHaveLength(size);
+      expect(useGameStore.getState().currentNodeId).toBe(current?.parentId);
+    });
+
+    it("accepts UCI moves and rejects illegal lines without changing anything", () => {
+      useGameStore.getState().loadGame(importPgnText(pgn).game);
+      const before = useGameStore.getState();
+      expect(useGameStore.getState().goToLine("root", ["e2e4", "e5", "Qh5"])).toBe(true);
+      expect(useGameStore.getState().currentFen).toContain("4p2Q/4P3");
+      const afterValid = useGameStore.getState().moveTree.length;
+      expect(useGameStore.getState().goToLine("root", ["e4", "Ke3"])).toBe(false);
+      expect(useGameStore.getState().goToLine("missing", ["e4"])).toBe(false);
+      expect(useGameStore.getState().moveTree).toHaveLength(afterValid);
+      expect(afterValid).toBe(before.moveTree.length + 1);
+    });
+
+    it("does not branch a live engine match", () => {
+      useGameStore.getState().makeMove({ from: "e2", to: "e4" });
+      useGameStore.getState().setMode("engine");
+      useGameStore.getState().setEngineSide("black");
+      expect(useGameStore.getState().goToLine("root", ["d4"])).toBe(false);
+      expect(useGameStore.getState().goToLine("root", ["e4"])).toBe(true);
+    });
   });
 
   it("buildEngineGoClock clamps elapsed time and increments", () => {

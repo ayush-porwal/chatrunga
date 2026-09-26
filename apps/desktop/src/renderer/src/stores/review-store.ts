@@ -1,8 +1,10 @@
 import { create } from "zustand";
-import type {
-  GameReview,
-  MoveReview,
-  ReviewProgress
+import {
+  savedReviewCommentary,
+  type GameReview,
+  type MoveReview,
+  type ReviewCommentary,
+  type ReviewProgress
 } from "@chaturanga/shared/types/engine";
 
 type ReviewStatus = "idle" | "running" | "ready" | "error" | "cancelled";
@@ -10,72 +12,74 @@ type ReviewStatus = "idle" | "running" | "ready" | "error" | "cancelled";
 type ReviewStore = {
   status: ReviewStatus;
   review: GameReview | null;
-  selectedNodeId: string | null;
   error: string | null;
   reviewId: string | null;
   progress: ReviewProgress | null;
   partialMoves: MoveReview[];
   startReview: (reviewId: string) => void;
   setReview: (review: GameReview) => void;
-  setSelectedNode: (nodeId: string | null) => void;
   setError: (error: string) => void;
   reset: () => void;
-  setProgress: (progress: ReviewProgress) => void;
-  appendPartialMove: (move: MoveReview) => void;
+  /** Apply a throttled batch of engine events in one update (one render per batch). */
+  applyReviewEvents: (batch: { progress: ReviewProgress | null; moves: readonly MoveReview[] }) => void;
   markCancelled: () => void;
   loadReview: (review: GameReview | null) => void;
+  addCommentary: (commentary: ReviewCommentary) => void;
 };
 
 export const useReviewStore = create<ReviewStore>((set) => ({
   status: "idle",
   review: null,
-  selectedNodeId: null,
   error: null,
   reviewId: null,
   progress: null,
   partialMoves: [],
   startReview: (reviewId) =>
-    set({
+    set((state) => ({
       status: "running",
       error: null,
       reviewId,
       progress: null,
       partialMoves: [],
-      review: null
-    }),
+      review: state.review
+    })),
   setReview: (review) =>
     set({
       status: "ready",
-      review,
-      selectedNodeId:
-        review.moves.find((move) => move.classification === "missed_tactic")?.nodeId ??
-        review.moves[0]?.nodeId ??
-        null,
+      review: { ...review, commentary: [] },
       error: null,
       progress: null,
       partialMoves: []
     }),
-  setSelectedNode: (selectedNodeId) => set({ selectedNodeId }),
+  addCommentary: (commentary) =>
+    set((state) => {
+      if (!state.review) return state;
+      const existing = new Map((state.review.commentary ?? []).map((item) => [item.ply, item]));
+      existing.set(commentary.ply, commentary);
+      return {
+        review: {
+          ...state.review,
+          commentary: [...existing.values()].sort((a, b) => a.ply - b.ply)
+        }
+      };
+    }),
   setError: (error) => set({ status: "error", error, progress: null }),
   reset: () =>
     set({
       status: "idle",
       review: null,
-      selectedNodeId: null,
       error: null,
       reviewId: null,
       progress: null,
       partialMoves: []
     }),
-  setProgress: (progress) => set({ progress }),
-  appendPartialMove: (move) =>
-    set((state) => ({
-      partialMoves: state.partialMoves.some((existing) => existing.nodeId === move.nodeId)
-        ? state.partialMoves.map((existing) =>
-          existing.nodeId === move.nodeId ? move : existing
-        )
-        : [...state.partialMoves, move]
-    })),
+  applyReviewEvents: ({ progress, moves }) =>
+    set((state) => {
+      const next: Partial<ReviewStore> = {};
+      if (progress && !sameProgressStep(state.progress, progress)) next.progress = progress;
+      if (moves.length) next.partialMoves = mergePartialMoves(state.partialMoves, moves);
+      return Object.keys(next).length ? next : state;
+    }),
   markCancelled: () =>
     set({
       status: "cancelled",
@@ -84,8 +88,9 @@ export const useReviewStore = create<ReviewStore>((set) => ({
   loadReview: (review) =>
     set({
       status: review ? "ready" : "idle",
-      review,
-      selectedNodeId: review ? review.moves[0]?.nodeId ?? null : null,
+      // Saved reviews may hold explanations from the retired offline template; drop them so
+      // the AI is asked when those moves are viewed.
+      review: review?.commentary ? { ...review, commentary: savedReviewCommentary(review.commentary) } : review,
       error: null,
       reviewId: null,
       progress: null,
@@ -93,14 +98,37 @@ export const useReviewStore = create<ReviewStore>((set) => ({
     })
 }));
 
-export function reviewByNode(review: GameReview | null): Map<string, MoveReview> {
-  const map = new Map<string, MoveReview>();
-  for (const move of review?.moves ?? []) map.set(move.nodeId, move);
-  return map;
+/**
+ * The UI shows only "move n of N"; depth updates and before/after phases of the same move carry
+ * no visible change, so they must not produce a store update (and a re-render).
+ */
+function sameProgressStep(current: ReviewProgress | null, next: ReviewProgress): boolean {
+  return Boolean(
+    current &&
+    current.reviewId === next.reviewId &&
+    current.moveIndex === next.moveIndex &&
+    current.totalMoves === next.totalMoves
+  );
 }
 
-export function partialReviewByNode(moves: MoveReview[]): Map<string, MoveReview> {
-  const map = new Map<string, MoveReview>();
-  for (const move of moves) map.set(move.nodeId, move);
-  return map;
+function mergePartialMoves(current: MoveReview[], incoming: readonly MoveReview[]): MoveReview[] {
+  let next = current;
+  for (const move of incoming) {
+    const index = next.findIndex((existing) => existing.nodeId === move.nodeId);
+    next = index >= 0 ? next.map((existing, i) => (i === index ? move : existing)) : [...next, move];
+  }
+  return next;
+}
+
+/**
+ * The reviewed moves to display: the live results while a pass runs, otherwise the finished
+ * review (or whatever a stopped pass produced). Returns store-owned arrays, so it is a stable
+ * zustand selector.
+ */
+export function selectDisplayedMoves(state: Pick<ReviewStore, "status" | "review" | "partialMoves">): MoveReview[] {
+  return state.status === "running" ? state.partialMoves : state.review?.moves ?? state.partialMoves;
+}
+
+export function reviewsByNode(moves: readonly MoveReview[]): Map<string, MoveReview> {
+  return new Map(moves.map((move) => [move.nodeId, move]));
 }

@@ -36,7 +36,9 @@ export function createGameFromFen(input: {
     currentFen: input.fen,
     currentNodeId: ROOT_ID,
     moveTree: [root],
-    pgn: headersToPgn({ result: "*", ...input.headers }).concat(["", "*"]).join("\n")
+    pgn: headersToPgn({ result: "*", ...input.headers })
+      .concat(["", "*"])
+      .join("\n")
   };
 }
 
@@ -63,9 +65,7 @@ export function importPgnText(pgn: string): ImportedGame {
       if (!parent) break;
       const applied = applySan(parent.fenAfter, child.data.san);
       if (!applied) break;
-      const node = moveTree.find(
-        (item) => item.parentId === cursor && item.uci === applied.uci
-      );
+      const node = moveTree.find((item) => item.parentId === cursor && item.uci === applied.uci);
       if (!node) break;
       cursor = node.id;
     }
@@ -128,9 +128,11 @@ export function addMoveNode(
   };
 
   return {
-    moveTree: moveTree.map((item) =>
-      item.id === parentId ? { ...item, children: [...item.children, node.id] } : item
-    ).concat(node),
+    moveTree: moveTree
+      .map((item) =>
+        item.id === parentId ? { ...item, children: [...item.children, node.id] } : item
+      )
+      .concat(node),
     node
   };
 }
@@ -315,7 +317,10 @@ function createRootNode(fen: string): MoveNode {
 }
 
 /** Latest remaining times on the path from root to `nodeId`, from `[%clk]` on each move. */
-export function clocksOnPathToNode(moveTree: MoveNode[], nodeId: string): {
+export function clocksOnPathToNode(
+  moveTree: MoveNode[],
+  nodeId: string
+): {
   white: string | null;
   black: string | null;
 } {

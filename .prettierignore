@@ -1,0 +1,4 @@
+pnpm-lock.yaml
+stockfish
+scripts/piece-svg-sources
+apps/desktop/src/renderer/src/styles/generated-piece-themes.css

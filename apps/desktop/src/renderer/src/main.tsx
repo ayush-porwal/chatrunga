@@ -6,14 +6,21 @@ import "@lichess-org/chessground/assets/chessground.brown.css";
 import "@lichess-org/chessground/assets/chessground.cburnett.css";
 import "./styles/generated-piece-themes.css";
 import "./styles/app.css";
-import { App } from "./app/App";
+import { TooltipProvider } from "./components/ui/tooltip";
+import { Router } from "./app/Router";
+import { initWindowGlass, initWindowZoom } from "./lib/window-glass";
+
+initWindowGlass();
+initWindowZoom();
 
 const queryClient = new QueryClient();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <TooltipProvider>
+        <Router />
+      </TooltipProvider>
     </QueryClientProvider>
   </React.StrictMode>
 );

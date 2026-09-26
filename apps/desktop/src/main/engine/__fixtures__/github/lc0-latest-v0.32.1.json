@@ -1,0 +1,236 @@
+{
+  "url": "https://api.github.com/repos/LeelaChessZero/lc0/releases/264642409",
+  "assets_url": "https://api.github.com/repos/LeelaChessZero/lc0/releases/264642409/assets",
+  "upload_url": "https://uploads.github.com/repos/LeelaChessZero/lc0/releases/264642409/assets{?name,label}",
+  "html_url": "https://github.com/LeelaChessZero/lc0/releases/tag/v0.32.1",
+  "id": 264642409,
+  "author": {
+    "login": "borg323",
+    "type": "User"
+  },
+  "node_id": "RE_kwDOCBNonM4Pxh9p",
+  "tag_name": "v0.32.1",
+  "target_commitish": "release/0.32",
+  "name": "v0.32.1",
+  "draft": false,
+  "immutable": false,
+  "prerelease": false,
+  "created_at": "2025-11-23T20:00:03Z",
+  "updated_at": "2025-11-23T22:46:09Z",
+  "published_at": "2025-11-23T20:27:48Z",
+  "assets": [
+    {
+      "url": "https://api.github.com/repos/LeelaChessZero/lc0/releases/assets/320011726",
+      "id": 320011726,
+      "node_id": "RA_kwDOCBNonM4TEv3O",
+      "name": "lc0-v0.32.1-android.apk",
+      "label": "",
+      "uploader": {
+        "login": "borg323",
+        "type": "User"
+      },
+      "content_type": "application/vnd.android.package-archive",
+      "state": "uploaded",
+      "size": 39648110,
+      "digest": "sha256:1ceb6ac5dd454fd41417debebc1ecd40172f0a83d451b67a9fd1fa1e30470a34",
+      "download_count": 10844,
+      "created_at": "2025-11-23T22:26:31Z",
+      "updated_at": "2025-11-23T22:26:33Z",
+      "browser_download_url": "https://github.com/LeelaChessZero/lc0/releases/download/v0.32.1/lc0-v0.32.1-android.apk"
+    },
+    {
+      "url": "https://api.github.com/repos/LeelaChessZero/lc0/releases/assets/319999551",
+      "id": 319999551,
+      "node_id": "RA_kwDOCBNonM4TEs4_",
+      "name": "lc0-v0.32.1-windows-cpu-dnnl.zip",
+      "label": "",
+      "uploader": {
+        "login": "borg323",
+        "type": "User"
+      },
+      "content_type": "application/octet-stream",
+      "state": "uploaded",
+      "size": 24001097,
+      "digest": "sha256:b9cfcfbd3dabffbfd452f6e8e087c22273721bef48eba19640b6d92006c142f5",
+      "download_count": 8564,
+      "created_at": "2025-11-23T21:26:14Z",
+      "updated_at": "2025-11-23T21:26:16Z",
+      "browser_download_url": "https://github.com/LeelaChessZero/lc0/releases/download/v0.32.1/lc0-v0.32.1-windows-cpu-dnnl.zip"
+    },
+    {
+      "url": "https://api.github.com/repos/LeelaChessZero/lc0/releases/assets/320001915",
+      "id": 320001915,
+      "node_id": "RA_kwDOCBNonM4TEtd7",
+      "name": "lc0-v0.32.1-windows-cpu-openblas.zip",
+      "label": "",
+      "uploader": {
+        "login": "borg323",
+        "type": "User"
+      },
+      "content_type": "application/octet-stream",
+      "state": "uploaded",
+      "size": 23818982,
+      "digest": "sha256:b2caa8443f0e0cb15cf76c335c53985f2973cd6438e77d3e2366cd21d2effa38",
+      "download_count": 2683,
+      "created_at": "2025-11-23T21:39:30Z",
+      "updated_at": "2025-11-23T21:39:32Z",
+      "browser_download_url": "https://github.com/LeelaChessZero/lc0/releases/download/v0.32.1/lc0-v0.32.1-windows-cpu-openblas.zip"
+    },
+    {
+      "url": "https://api.github.com/repos/LeelaChessZero/lc0/releases/assets/320017351",
+      "id": 320017351,
+      "node_id": "RA_kwDOCBNonM4TExPH",
+      "name": "lc0-v0.32.1-windows-gpu-nvidia-cuda11-nodll.zip",
+      "label": "",
+      "uploader": {
+        "login": "borg323",
+        "type": "User"
+      },
+      "content_type": "application/octet-stream",
+      "state": "uploaded",
+      "size": 25922865,
+      "digest": "sha256:be5d8c3e02f4822f317ecb3aed8f0f5660b60177f77dea28f867f09b2309f07d",
+      "download_count": 326,
+      "created_at": "2025-11-23T22:45:50Z",
+      "updated_at": "2025-11-23T22:45:52Z",
+      "browser_download_url": "https://github.com/LeelaChessZero/lc0/releases/download/v0.32.1/lc0-v0.32.1-windows-gpu-nvidia-cuda11-nodll.zip"
+    },
+    {
+      "url": "https://api.github.com/repos/LeelaChessZero/lc0/releases/assets/320017359",
+      "id": 320017359,
+      "node_id": "RA_kwDOCBNonM4TExPP",
+      "name": "lc0-v0.32.1-windows-gpu-nvidia-cuda11.zip",
+      "label": "",
+      "uploader": {
+        "login": "borg323",
+        "type": "User"
+      },
+      "content_type": "application/octet-stream",
+      "state": "uploaded",
+      "size": 250527605,
+      "digest": "sha256:ad0b54f416653f8e080d7999df14efe8344750dbea3217292a9ba2bbef782d83",
+      "download_count": 575,
+      "created_at": "2025-11-23T22:45:53Z",
+      "updated_at": "2025-11-23T22:46:09Z",
+      "browser_download_url": "https://github.com/LeelaChessZero/lc0/releases/download/v0.32.1/lc0-v0.32.1-windows-gpu-nvidia-cuda11.zip"
+    },
+    {
+      "url": "https://api.github.com/repos/LeelaChessZero/lc0/releases/assets/319996718",
+      "id": 319996718,
+      "node_id": "RA_kwDOCBNonM4TEsMu",
+      "name": "lc0-v0.32.1-windows-gpu-nvidia-cuda12-nodll.zip",
+      "label": "",
+      "uploader": {
+        "login": "borg323",
+        "type": "User"
+      },
+      "content_type": "application/octet-stream",
+      "state": "uploaded",
+      "size": 32959266,
+      "digest": "sha256:4e88d897e4c415ed1ceede29ff971255d1932fd6642553fc12e32353aed562c4",
+      "download_count": 408,
+      "created_at": "2025-11-23T21:11:59Z",
+      "updated_at": "2025-11-23T21:12:01Z",
+      "browser_download_url": "https://github.com/LeelaChessZero/lc0/releases/download/v0.32.1/lc0-v0.32.1-windows-gpu-nvidia-cuda12-nodll.zip"
+    },
+    {
+      "url": "https://api.github.com/repos/LeelaChessZero/lc0/releases/assets/319996737",
+      "id": 319996737,
+      "node_id": "RA_kwDOCBNonM4TEsNB",
+      "name": "lc0-v0.32.1-windows-gpu-nvidia-cuda12.zip",
+      "label": "",
+      "uploader": {
+        "login": "borg323",
+        "type": "User"
+      },
+      "content_type": "application/octet-stream",
+      "state": "uploaded",
+      "size": 581970338,
+      "digest": "sha256:8d0ce17676eb15e303bea9e790742d31c94ce5d24107f6187adc58e820f6d2f7",
+      "download_count": 12536,
+      "created_at": "2025-11-23T21:12:02Z",
+      "updated_at": "2025-11-23T21:12:36Z",
+      "browser_download_url": "https://github.com/LeelaChessZero/lc0/releases/download/v0.32.1/lc0-v0.32.1-windows-gpu-nvidia-cuda12.zip"
+    },
+    {
+      "url": "https://api.github.com/repos/LeelaChessZero/lc0/releases/assets/319991976",
+      "id": 319991976,
+      "node_id": "RA_kwDOCBNonM4TErCo",
+      "name": "lc0-v0.32.1-windows-gpu-nvidia-cudnn-nodll.zip",
+      "label": "",
+      "uploader": {
+        "login": "borg323",
+        "type": "User"
+      },
+      "content_type": "application/octet-stream",
+      "state": "uploaded",
+      "size": 24313921,
+      "digest": "sha256:7748dbb934af8503585dce8b8706ecead8c3428a04149fad48ff6e6086b50758",
+      "download_count": 360,
+      "created_at": "2025-11-23T20:45:36Z",
+      "updated_at": "2025-11-23T20:45:38Z",
+      "browser_download_url": "https://github.com/LeelaChessZero/lc0/releases/download/v0.32.1/lc0-v0.32.1-windows-gpu-nvidia-cudnn-nodll.zip"
+    },
+    {
+      "url": "https://api.github.com/repos/LeelaChessZero/lc0/releases/assets/319991980",
+      "id": 319991980,
+      "node_id": "RA_kwDOCBNonM4TErCs",
+      "name": "lc0-v0.32.1-windows-gpu-nvidia-cudnn.zip",
+      "label": "",
+      "uploader": {
+        "login": "borg323",
+        "type": "User"
+      },
+      "content_type": "application/octet-stream",
+      "state": "uploaded",
+      "size": 326653261,
+      "digest": "sha256:e209b75e6de75bd034ed6b561a021055d0224cfd49e202d353c73fcf318bf197",
+      "download_count": 3646,
+      "created_at": "2025-11-23T20:45:38Z",
+      "updated_at": "2025-11-23T20:45:59Z",
+      "browser_download_url": "https://github.com/LeelaChessZero/lc0/releases/download/v0.32.1/lc0-v0.32.1-windows-gpu-nvidia-cudnn.zip"
+    },
+    {
+      "url": "https://api.github.com/repos/LeelaChessZero/lc0/releases/assets/320004997",
+      "id": 320004997,
+      "node_id": "RA_kwDOCBNonM4TEuOF",
+      "name": "lc0-v0.32.1-windows-onnx-dml.zip",
+      "label": "",
+      "uploader": {
+        "login": "borg323",
+        "type": "User"
+      },
+      "content_type": "application/octet-stream",
+      "state": "uploaded",
+      "size": 25410041,
+      "digest": "sha256:86aac242b3a1c6986d02acc33b8cc64175b11a21b6941c62443c07fa18ac7539",
+      "download_count": 6456,
+      "created_at": "2025-11-23T22:01:05Z",
+      "updated_at": "2025-11-23T22:01:07Z",
+      "browser_download_url": "https://github.com/LeelaChessZero/lc0/releases/download/v0.32.1/lc0-v0.32.1-windows-onnx-dml.zip"
+    },
+    {
+      "url": "https://api.github.com/repos/LeelaChessZero/lc0/releases/assets/320005011",
+      "id": 320005011,
+      "node_id": "RA_kwDOCBNonM4TEuOT",
+      "name": "lc0-v0.32.1-windows-onnx-trt.zip",
+      "label": "",
+      "uploader": {
+        "login": "borg323",
+        "type": "User"
+      },
+      "content_type": "application/octet-stream",
+      "state": "uploaded",
+      "size": 224612597,
+      "digest": "sha256:ac91559d9ca9cfcc5d0e26544cd5aa7ace29013444611a48b195dfb475750fe3",
+      "download_count": 469,
+      "created_at": "2025-11-23T22:01:08Z",
+      "updated_at": "2025-11-23T22:01:19Z",
+      "browser_download_url": "https://github.com/LeelaChessZero/lc0/releases/download/v0.32.1/lc0-v0.32.1-windows-onnx-trt.zip"
+    }
+  ],
+  "tarball_url": "https://api.github.com/repos/LeelaChessZero/lc0/tarball/v0.32.1",
+  "zipball_url": "https://api.github.com/repos/LeelaChessZero/lc0/zipball/v0.32.1",
+  "body": "In this version:\r",
+  "discussion_url": "https://github.com/orgs/LeelaChessZero/discussions/2354"
+}

@@ -6,10 +6,14 @@ import {
   type PieceStyle
 } from "@chaturanga/shared/types/settings";
 import { cn } from "@/lib/utils";
-import { gamePanelScrollBody, label } from "@/lib/ui";
+import { useDismiss } from "@/lib/use-dismiss";
+import { fieldLabel, frost } from "@/lib/ui";
+import { usePresence } from "@/components/ui/use-presence";
 import {
   settingsListboxOptionActiveClass,
   settingsListboxOptionClass,
+  settingsListboxPositionClass,
+  settingsListboxSurfaceClass,
   settingsListboxTriggerClass,
   settingsListboxTriggerOpenRing
 } from "@/lib/settings-listbox";
@@ -20,15 +24,13 @@ type PieceStyleListboxProps = {
   value: PieceStyle;
   piecePresentation: PiecePresentation;
   onChange: (next: PieceStyle) => void;
-  describedBy?: string;
 };
 
 export function PieceStyleListbox({
   id,
   value,
   piecePresentation,
-  onChange,
-  describedBy
+  onChange
 }: PieceStyleListboxProps) {
   const listboxDomId = `${id}-listbox`;
   const [open, setOpen] = useState(false);
@@ -38,20 +40,15 @@ export function PieceStyleListbox({
       pieceStyleOptions.findIndex((o) => o.id === value)
     )
   );
+  const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const listRef = useRef<HTMLDivElement>(null); // scroll container ref (optional future use)
 
   const selectedMeta = pieceStyleOptions.find((o) => o.id === value) ?? pieceStyleOptions[0];
 
+  // Opening the list (or a new value) highlights the selected option.
   useEffect(() => {
     const idx = pieceStyleOptions.findIndex((o) => o.id === value);
     setHighlightedIndex(idx >= 0 ? idx : 0);
-  }, [value]);
-
-  useEffect(() => {
-    if (!open) return;
-    const selectedIdx = pieceStyleOptions.findIndex((o) => o.id === value);
-    setHighlightedIndex(selectedIdx >= 0 ? selectedIdx : 0);
   }, [open, value]);
 
   useEffect(() => {
@@ -59,17 +56,9 @@ export function PieceStyleListbox({
     document.getElementById(`${id}-opt-${highlightedIndex}`)?.scrollIntoView({ block: "nearest" });
   }, [open, highlightedIndex, id]);
 
-  useEffect(() => {
-    if (!open) return;
-    function onPointerDown(event: MouseEvent) {
-      const t = event.target as Node;
-      if (triggerRef.current?.contains(t)) return;
-      if (listRef.current?.contains(t)) return;
-      setOpen(false);
-    }
-    document.addEventListener("mousedown", onPointerDown);
-    return () => document.removeEventListener("mousedown", onPointerDown);
-  }, [open]);
+  const close = useCallback(() => setOpen(false), []);
+  const { present, state } = usePresence(open);
+  useDismiss(rootRef, open, close);
 
   const commitIndex = useCallback(
     (index: number) => {
@@ -140,11 +129,11 @@ export function PieceStyleListbox({
   }
 
   return (
-    <div className={cn(label, "min-w-0 max-w-full")}>
-      <label id={`${id}-label`} htmlFor={id}>
+    <div className="grid min-w-0 max-w-full gap-1.5">
+      <label id={`${id}-label`} htmlFor={id} className={fieldLabel}>
         Piece set
       </label>
-      <div className="relative w-full min-w-0">
+      <div ref={rootRef} className="relative w-full min-w-0">
         <button
           ref={triggerRef}
           id={id}
@@ -155,33 +144,28 @@ export function PieceStyleListbox({
           aria-controls={listboxDomId}
           aria-labelledby={`${id}-label`}
           aria-activedescendant={open ? `${id}-opt-${highlightedIndex}` : undefined}
-          aria-describedby={describedBy}
           onClick={() => setOpen((o) => !o)}
           onKeyDown={onTriggerKeyDown}
         >
           <span className="flex min-w-0 flex-1 items-center gap-2.5">
             <PieceStylePreviewStrip pieceStyle={value} piecePresentation={piecePresentation} density="default" />
-            <span className="grid min-w-0 gap-0.5 text-left">
-              <strong className="truncate text-sm">{selectedMeta.label}</strong>
-              <span className="truncate text-[11px] text-[#727982]">Chess piece theme</span>
-            </span>
+            <span className="min-w-0 truncate text-left text-sm font-medium">{selectedMeta.label}</span>
           </span>
           <ChevronDown
-            size={16}
-            className={cn("shrink-0 text-[#a9adb4] transition-transform", open && "rotate-180")}
+            className={cn("size-4 shrink-0 text-fg-subtle transition-transform duration-standard ease-standard", open && "rotate-180")}
             aria-hidden
           />
         </button>
-        {open ? (
+        {present ? (
+          <div className={cn(settingsListboxPositionClass, "right-0", state === "closed" && "pointer-events-none")}>
+          {/* Stable frosted layer under the animated list (glass only). */}
+          <span aria-hidden="true" data-state={state} className={cn(frost, "rounded-lg animate-fade-in data-[state=closed]:animate-fade-out")} />
           <div
-            ref={listRef}
             id={listboxDomId}
             role="listbox"
             aria-labelledby={`${id}-label`}
-            className={cn(
-              gamePanelScrollBody,
-              "absolute left-0 right-0 top-[calc(100%+10px)] z-50 mt-0 flex-none grid max-h-72 min-h-0 gap-1 shadow-[0_18px_48px_rgb(0_0_0/0.42)]"
-            )}
+            data-state={state}
+            className={settingsListboxSurfaceClass}
           >
             {pieceStyleOptions.map((opt, index) => {
               const active = opt.id === value;
@@ -197,7 +181,7 @@ export function PieceStyleListbox({
                   className={cn(
                     settingsListboxOptionClass,
                     active && settingsListboxOptionActiveClass,
-                    highlighted && !active && "bg-white/[0.04]"
+                    highlighted && !active && "bg-control"
                   )}
                   onMouseEnter={() => setHighlightedIndex(index)}
                   onClick={() => commitIndex(index)}
@@ -210,10 +194,11 @@ export function PieceStyleListbox({
                     />
                     <strong className="min-w-0 truncate font-medium">{opt.label}</strong>
                   </span>
-                  {active ? <Check size={15} className="shrink-0 text-[#d7e8c5]" aria-hidden /> : null}
+                  {active ? <Check className="size-4 shrink-0 text-accent-fg" aria-hidden /> : null}
                 </button>
               );
             })}
+          </div>
           </div>
         ) : null}
       </div>

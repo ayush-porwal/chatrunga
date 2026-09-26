@@ -18,6 +18,7 @@ import type {
   ReviewCompleted,
   ReviewFailed,
   ReviewGameInput,
+  ReviewCommentary,
   ReviewMoveCompleted,
   ReviewProgress,
   StartLiveAnalysisInput,
@@ -25,6 +26,8 @@ import type {
   UpdateEngineInput
 } from "../types/engine";
 import type { AppSettings } from "../types/settings";
+import type { UpdateState } from "../types/updates";
+import type { ReviewInsightPayload } from "../schemas/review-insight";
 import type {
   DatabaseDownloadProgress,
   InstalledDatabase,
@@ -37,16 +40,57 @@ export type Unsubscribe = () => void;
 /** Electron `dialog.showOpenDialog` filter shape */
 export type DialogFileFilter = { name: string; extensions: string[] };
 
+export type OpenRouterConfigSummary = {
+  model: string;
+  /** The renderer can display configuration state, but never receives the key. */
+  hasApiKey: boolean;
+};
+
+export type SetOpenRouterConfigInput = {
+  model?: string;
+  /** `undefined` keeps the current key; `null` removes it. */
+  apiKey?: string | null;
+};
+
+export type GenerateCommentaryInput = {
+  payloads: ReviewInsightPayload[];
+};
+
+export type GenerateCommentaryResult = {
+  commentary: ReviewCommentary[];
+  error: string | null;
+};
+
+/**
+ * Window translucency ("glass"): macOS vibrancy behind the sidebar and titlebar. The renderer
+ * mirrors `active` as the `glass` class on <html>, which makes the chrome surfaces translucent.
+ */
+export type WindowGlassState = {
+  /** The platform can show it (macOS). */
+  supported: boolean;
+  /** The user's `glassEffect` setting. */
+  enabled: boolean;
+  /** macOS System Settings → Accessibility → Display → Reduce transparency is on. */
+  reducedTransparency: boolean;
+  /** Vibrancy is on right now: supported, enabled and not reduced. */
+  active: boolean;
+};
+
 export type ChaturangaApi = {
   environment: {
     isElectron: true;
     platform: NodeJS.Platform;
   };
-  /**
-   * Root-level IPC for draw-offer probing (same handler as `engines.probeEval`).
-   * Prefer this at runtime: older dev sessions occasionally expose a stale `engines` object without nested methods.
-   */
-  enginesProbeEval(input: ProbeEvalInput): Promise<EngineScore | null>;
+  appearance: {
+    /** Current glass state (synchronous: read before the first render so the first frame is right). */
+    getGlass(): WindowGlassState;
+    /** Page zoom factor (Cmd +/−; persisted per origin by Chromium). 1 = 100%. */
+    getZoomFactor(): number;
+    /** Fired when the setting or the system Reduce transparency preference changes. */
+    onGlassChanged(callback: (state: WindowGlassState) => void): Unsubscribe;
+    /** The first frame with real content has been committed: the main process may show the window. */
+    rendererReady(): void;
+  };
   engines: {
     list(): Promise<EngineConfig[]>;
     create(input: CreateEngineInput): Promise<EngineConfig>;
@@ -66,7 +110,6 @@ export type ChaturangaApi = {
     save(input: SaveGameInput): Promise<SavedGame>;
     remove(id: string): Promise<void>;
     importPgn(input: ImportPgnInput): Promise<ImportedGame>;
-    exportPgn(gameId: string): Promise<string>;
   };
   databases: {
     list(): Promise<InstalledDatabase[]>;
@@ -84,6 +127,11 @@ export type ChaturangaApi = {
     getAll(): Promise<AppSettings>;
     set(key: keyof AppSettings, value: unknown): Promise<void>;
   };
+  commentary: {
+    getOpenRouterConfig(): Promise<OpenRouterConfigSummary>;
+    setOpenRouterConfig(input: SetOpenRouterConfigInput): Promise<OpenRouterConfigSummary>;
+    generate(input: GenerateCommentaryInput): Promise<GenerateCommentaryResult>;
+  };
   events: {
     onEngineInfo(callback: (info: EngineInfo) => void): Unsubscribe;
     onEngineBestMove(callback: (move: EngineBestMove) => void): Unsubscribe;
@@ -93,8 +141,103 @@ export type ChaturangaApi = {
     onReviewCompleted(callback: (event: ReviewCompleted) => void): Unsubscribe;
     onReviewFailed(callback: (event: ReviewFailed) => void): Unsubscribe;
     onDatabaseDownloadProgress(callback: (progress: DatabaseDownloadProgress) => void): Unsubscribe;
+    /** Every change of the in-app update state (checks, progress, errors, settings). */
+    onUpdateState(callback: (state: UpdateState) => void): Unsubscribe;
   };
+
+  /** In-app updates of Chaturanga itself (main/updater.ts). */
+  updates: {
+    getState(): Promise<UpdateState>;
+    /** Checks now (no-op while a check or download runs, or an update waits for a restart). */
+    check(): Promise<UpdateState>;
+    /** Downloads the available update (automatic-update builds with background downloads off). */
+    download(): Promise<UpdateState>;
+    /** Restarts into the downloaded update. False when none is ready. */
+    install(): Promise<boolean>;
+    /** Manual-download builds: opens the installer (or release page) in the browser. */
+    openDownload(): Promise<boolean>;
+  };
+
+  /** Asset manager bridge — engine + Maia weight downloads (main/engine/asset-manager.ts). */
+  assets: {
+    /** Installs the latest release of one asset. */
+    download(assetId: EngineAssetId): Promise<EngineAssetActionResult>;
+    /** Installs every asset that is missing and downloadable on this platform. */
+    downloadAll(): Promise<EngineAssetDownloadSummary>;
+    remove(assetId: EngineAssetId): Promise<void>;
+    setCustomPath(assetId: EngineAssetId, customPath: string): Promise<void>;
+    /**
+     * Installed state plus the latest upstream version and download size per asset. Makes no
+     * network request unless `refresh` is set (then GitHub is asked, at most once a minute).
+     */
+    status(options?: { refresh?: boolean }): Promise<EngineAssetStatusMap>;
+    /** Explicit "Check for updates": refreshes the latest GitHub releases and returns the status. */
+    checkForUpdates(): Promise<EngineAssetStatusMap>;
+    /** Replaces an installed asset with the latest release (user-triggered; never automatic). */
+    update(assetId: EngineAssetId): Promise<EngineAssetActionResult>;
+  };
+
+  /** Per-asset download / verify / install / ready / error steps of a running install. */
+  onAssetProgress(callback: (event: AssetProgressEvent) => void): Unsubscribe;
+  /**
+   * Fired when asset status may have changed without a progress event: the background release
+   * check at startup finished, a check for updates ran, or an asset was installed/removed.
+   * Re-read `assets.status()`.
+   */
+  onAssetStatusChanged(callback: () => void): Unsubscribe;
+  /**
+   * The engine list changed in the main process (assets installed/removed, startup registry
+   * sync). Re-fetch `engines.list()`.
+   */
+  onEnginesChanged(callback: () => void): Unsubscribe;
 };
+
+export type EngineAssetId = "stockfish" | "lc0" | "maia-1100" | "maia-1300" | "maia-1500" | "maia-1700" | "maia-1900";
+
+export type EngineAssetActionResult = { ok: true } | { ok: false; error: string };
+
+export type EngineAssetDownloadSummary = {
+  succeeded: EngineAssetId[];
+  failed: { id: EngineAssetId; reason: string }[];
+};
+
+/** One entry of `assets.status()`. */
+export type EngineAssetStatus = {
+  id: EngineAssetId;
+  /** "custom": the user pointed the asset at their own file. */
+  state: "missing" | "installed" | "custom";
+  installedPath: string | null;
+  customPath: string | null;
+  /** Bytes on disk (0 when missing). */
+  sizeBytes: number;
+  installedAt: string | null;
+  /** Installed version: release tag (`sf_19`, `v0.32.1`) or `v1.0` for Maia; older installs may show a bare version (`17.1`). */
+  installedVersion: string | null;
+  /** Newest known version (release tag); null when this platform needs a manual install. */
+  latestVersion: string | null;
+  /** A managed install whose version differs from the latest GitHub release. */
+  updateAvailable: boolean;
+  /** Size of what a download/update would fetch, from the GitHub release (or fallback list). */
+  downloadSizeBytes: number | null;
+  /** "github": live/cached release lookup; "fallback": bundled last known-good; "fixed": Maia weights. */
+  latestSource: "github" | "fallback" | "fixed" | null;
+  /** False when the platform has no download (Lc0 on macOS / Linux): show `installInstructions`. */
+  autoDownload: boolean;
+  installInstructions: string | null;
+  /** When the release was last fetched from GitHub (ISO). */
+  checkedAt: string | null;
+  /** Why the latest lookup failed (e.g. rate limited) while a cached or fallback answer is shown. */
+  checkError: string | null;
+};
+
+export type EngineAssetStatusMap = Record<EngineAssetId, EngineAssetStatus>;
+
+export type AssetProgressEvent =
+  | { type: "download"; assetId: EngineAssetId; bytesReceived: number; bytesTotal: number }
+  | { type: "verify"; assetId: EngineAssetId }
+  | { type: "install"; assetId: EngineAssetId }
+  | { type: "ready"; assetId: EngineAssetId }
+  | { type: "error"; assetId: EngineAssetId; message: string };
 
 declare global {
   interface Window {

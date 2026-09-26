@@ -1,0 +1,65 @@
+import { describe, expect, it } from "vitest";
+import type { EngineInfo } from "@chaturanga/shared/types/engine";
+import { createEngineInfoBuffer } from "./useEngineDriver";
+
+function info(multipv: number): EngineInfo {
+  return { engineId: "e", multipv, score: { type: "cp", value: multipv }, pv: [], raw: "", receivedAt: 0 };
+}
+
+function fakeTimers() {
+  let now = 0;
+  const pending: Array<{ at: number; callback: () => void; id: number }> = [];
+  let nextId = 1;
+  return {
+    timers: {
+      now: () => now,
+      set: (callback: () => void, ms: number) => {
+        const id = nextId++;
+        pending.push({ at: now + ms, callback, id });
+        return id;
+      },
+      clear: (handle: unknown) => {
+        const index = pending.findIndex((item) => item.id === handle);
+        if (index >= 0) pending.splice(index, 1);
+      }
+    },
+    advance(ms: number) {
+      now += ms;
+      for (const item of pending.filter((entry) => entry.at <= now)) {
+        pending.splice(pending.indexOf(item), 1);
+        item.callback();
+      }
+    }
+  };
+}
+
+describe("createEngineInfoBuffer", () => {
+  it("shows the first info at once, then batches the burst into one trailing flush", () => {
+    const clock = fakeTimers();
+    const flushed: number[][] = [];
+    const buffer = createEngineInfoBuffer((infos) => flushed.push(infos.map((item) => item.multipv ?? 1)), 150, clock.timers);
+    buffer.push(info(1));
+    expect(flushed).toEqual([[1]]);
+    clock.advance(20);
+    buffer.push(info(2));
+    buffer.push(info(3));
+    clock.advance(20);
+    buffer.push(info(1));
+    expect(flushed).toHaveLength(1);
+    clock.advance(110);
+    expect(flushed).toEqual([[1], [2, 3, 1]]);
+  });
+
+  it("flushes on demand and drops pending infos on discard", () => {
+    const clock = fakeTimers();
+    const flushed: number[][] = [];
+    const buffer = createEngineInfoBuffer((infos) => flushed.push(infos.map((item) => item.multipv ?? 1)), 150, clock.timers);
+    buffer.push(info(1));
+    buffer.push(info(2));
+    buffer.flushNow();
+    buffer.push(info(3));
+    buffer.discard();
+    clock.advance(500);
+    expect(flushed).toEqual([[1], [2]]);
+  });
+});

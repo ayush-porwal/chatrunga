@@ -1,0 +1,463 @@
+{
+  "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/209204810",
+  "assets_url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/209204810/assets",
+  "upload_url": "https://uploads.github.com/repos/official-stockfish/Stockfish/releases/209204810/assets{?name,label}",
+  "html_url": "https://github.com/official-stockfish/Stockfish/releases/tag/sf_17.1",
+  "id": 209204810,
+  "author": {
+    "login": "Disservin",
+    "type": "User"
+  },
+  "node_id": "RE_kwDOAUASCs4MeDZK",
+  "tag_name": "sf_17.1",
+  "target_commitish": "master",
+  "name": "Stockfish 17.1",
+  "draft": false,
+  "immutable": false,
+  "prerelease": false,
+  "created_at": "2025-03-30T11:44:15Z",
+  "updated_at": "2025-03-30T12:34:45Z",
+  "published_at": "2025-03-30T12:13:16Z",
+  "assets": [
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242038992",
+      "id": 242038992,
+      "node_id": "RA_kwDOAUASCs4ObTjQ",
+      "name": "stockfish-android-armv7-neon.tar",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/x-tar",
+      "state": "uploaded",
+      "size": 80773120,
+      "digest": null,
+      "download_count": 4960,
+      "created_at": "2025-03-30T12:26:03Z",
+      "updated_at": "2025-03-30T12:26:06Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-android-armv7-neon.tar"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039171",
+      "id": 242039171,
+      "node_id": "RA_kwDOAUASCs4ObTmD",
+      "name": "stockfish-android-armv7.tar",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/x-tar",
+      "state": "uploaded",
+      "size": 80721920,
+      "digest": null,
+      "download_count": 9391,
+      "created_at": "2025-03-30T12:28:17Z",
+      "updated_at": "2025-03-30T12:28:20Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-android-armv7.tar"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242038954",
+      "id": 242038954,
+      "node_id": "RA_kwDOAUASCs4ObTiq",
+      "name": "stockfish-android-armv8-dotprod.tar",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/x-tar",
+      "state": "uploaded",
+      "size": 81295360,
+      "digest": null,
+      "download_count": 15292,
+      "created_at": "2025-03-30T12:25:43Z",
+      "updated_at": "2025-03-30T12:25:47Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-android-armv8-dotprod.tar"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039085",
+      "id": 242039085,
+      "node_id": "RA_kwDOAUASCs4ObTkt",
+      "name": "stockfish-android-armv8.tar",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/x-tar",
+      "state": "uploaded",
+      "size": 81305600,
+      "digest": null,
+      "download_count": 168405,
+      "created_at": "2025-03-30T12:26:52Z",
+      "updated_at": "2025-03-30T12:26:54Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-android-armv8.tar"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039612",
+      "id": 242039612,
+      "node_id": "RA_kwDOAUASCs4ObTs8",
+      "name": "stockfish-macos-m1-apple-silicon.tar",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/x-tar",
+      "state": "uploaded",
+      "size": 80753152,
+      "digest": null,
+      "download_count": 42205,
+      "created_at": "2025-03-30T12:33:58Z",
+      "updated_at": "2025-03-30T12:34:02Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-macos-m1-apple-silicon.tar"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039616",
+      "id": 242039616,
+      "node_id": "RA_kwDOAUASCs4ObTtA",
+      "name": "stockfish-macos-x86-64-avx2.tar",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/x-tar",
+      "state": "uploaded",
+      "size": 80191488,
+      "digest": null,
+      "download_count": 2201,
+      "created_at": "2025-03-30T12:34:01Z",
+      "updated_at": "2025-03-30T12:34:05Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-macos-x86-64-avx2.tar"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039620",
+      "id": 242039620,
+      "node_id": "RA_kwDOAUASCs4ObTtE",
+      "name": "stockfish-macos-x86-64-bmi2.tar",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/x-tar",
+      "state": "uploaded",
+      "size": 80191488,
+      "digest": null,
+      "download_count": 3969,
+      "created_at": "2025-03-30T12:34:05Z",
+      "updated_at": "2025-03-30T12:34:09Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-macos-x86-64-bmi2.tar"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039618",
+      "id": 242039618,
+      "node_id": "RA_kwDOAUASCs4ObTtC",
+      "name": "stockfish-macos-x86-64-sse41-popcnt.tar",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/x-tar",
+      "state": "uploaded",
+      "size": 80207872,
+      "digest": null,
+      "download_count": 6006,
+      "created_at": "2025-03-30T12:34:03Z",
+      "updated_at": "2025-03-30T12:34:06Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-macos-x86-64-sse41-popcnt.tar"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039617",
+      "id": 242039617,
+      "node_id": "RA_kwDOAUASCs4ObTtB",
+      "name": "stockfish-macos-x86-64.tar",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/x-tar",
+      "state": "uploaded",
+      "size": 80207872,
+      "digest": null,
+      "download_count": 2725,
+      "created_at": "2025-03-30T12:34:02Z",
+      "updated_at": "2025-03-30T12:34:06Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-macos-x86-64.tar"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039611",
+      "id": 242039611,
+      "node_id": "RA_kwDOAUASCs4ObTs7",
+      "name": "stockfish-ubuntu-x86-64-avx2.tar",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/x-tar",
+      "state": "uploaded",
+      "size": 80087040,
+      "digest": null,
+      "download_count": 103476,
+      "created_at": "2025-03-30T12:33:57Z",
+      "updated_at": "2025-03-30T12:34:01Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-ubuntu-x86-64-avx2.tar"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039608",
+      "id": 242039608,
+      "node_id": "RA_kwDOAUASCs4ObTs4",
+      "name": "stockfish-ubuntu-x86-64-avx512.tar",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/x-tar",
+      "state": "uploaded",
+      "size": 80076800,
+      "digest": null,
+      "download_count": 3196,
+      "created_at": "2025-03-30T12:33:57Z",
+      "updated_at": "2025-03-30T12:34:00Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-ubuntu-x86-64-avx512.tar"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039610",
+      "id": 242039610,
+      "node_id": "RA_kwDOAUASCs4ObTs6",
+      "name": "stockfish-ubuntu-x86-64-bmi2.tar",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/x-tar",
+      "state": "uploaded",
+      "size": 80076800,
+      "digest": null,
+      "download_count": 4877,
+      "created_at": "2025-03-30T12:33:57Z",
+      "updated_at": "2025-03-30T12:34:00Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-ubuntu-x86-64-bmi2.tar"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039609",
+      "id": 242039609,
+      "node_id": "RA_kwDOAUASCs4ObTs5",
+      "name": "stockfish-ubuntu-x86-64-sse41-popcnt.tar",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/x-tar",
+      "state": "uploaded",
+      "size": 80087040,
+      "digest": null,
+      "download_count": 7724,
+      "created_at": "2025-03-30T12:33:57Z",
+      "updated_at": "2025-03-30T12:34:00Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-ubuntu-x86-64-sse41-popcnt.tar"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039624",
+      "id": 242039624,
+      "node_id": "RA_kwDOAUASCs4ObTtI",
+      "name": "stockfish-ubuntu-x86-64-vnni256.tar",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/x-tar",
+      "state": "uploaded",
+      "size": 80076800,
+      "digest": null,
+      "download_count": 1962,
+      "created_at": "2025-03-30T12:34:08Z",
+      "updated_at": "2025-03-30T12:34:11Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-ubuntu-x86-64-vnni256.tar"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039602",
+      "id": 242039602,
+      "node_id": "RA_kwDOAUASCs4ObTsy",
+      "name": "stockfish-ubuntu-x86-64-vnni512.tar",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/x-tar",
+      "state": "uploaded",
+      "size": 80076800,
+      "digest": null,
+      "download_count": 2318,
+      "created_at": "2025-03-30T12:33:52Z",
+      "updated_at": "2025-03-30T12:33:54Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-ubuntu-x86-64-vnni512.tar"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039603",
+      "id": 242039603,
+      "node_id": "RA_kwDOAUASCs4ObTsz",
+      "name": "stockfish-ubuntu-x86-64.tar",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/x-tar",
+      "state": "uploaded",
+      "size": 80076800,
+      "digest": null,
+      "download_count": 23080,
+      "created_at": "2025-03-30T12:33:52Z",
+      "updated_at": "2025-03-30T12:33:54Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-ubuntu-x86-64.tar"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039649",
+      "id": 242039649,
+      "node_id": "RA_kwDOAUASCs4ObTth",
+      "name": "stockfish-windows-x86-64-avx2.zip",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/zip",
+      "state": "uploaded",
+      "size": 65443094,
+      "digest": null,
+      "download_count": 348199,
+      "created_at": "2025-03-30T12:34:35Z",
+      "updated_at": "2025-03-30T12:34:36Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-windows-x86-64-avx2.zip"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039653",
+      "id": 242039653,
+      "node_id": "RA_kwDOAUASCs4ObTtl",
+      "name": "stockfish-windows-x86-64-avx512.zip",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/zip",
+      "state": "uploaded",
+      "size": 65442396,
+      "digest": null,
+      "download_count": 5431,
+      "created_at": "2025-03-30T12:34:37Z",
+      "updated_at": "2025-03-30T12:34:39Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-windows-x86-64-avx512.zip"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039655",
+      "id": 242039655,
+      "node_id": "RA_kwDOAUASCs4ObTtn",
+      "name": "stockfish-windows-x86-64-bmi2.zip",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/zip",
+      "state": "uploaded",
+      "size": 65440505,
+      "digest": null,
+      "download_count": 7786,
+      "created_at": "2025-03-30T12:34:38Z",
+      "updated_at": "2025-03-30T12:34:40Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-windows-x86-64-bmi2.zip"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039660",
+      "id": 242039660,
+      "node_id": "RA_kwDOAUASCs4ObTts",
+      "name": "stockfish-windows-x86-64-sse41-popcnt.zip",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/zip",
+      "state": "uploaded",
+      "size": 65448116,
+      "digest": null,
+      "download_count": 12768,
+      "created_at": "2025-03-30T12:34:43Z",
+      "updated_at": "2025-03-30T12:34:45Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-windows-x86-64-sse41-popcnt.zip"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039654",
+      "id": 242039654,
+      "node_id": "RA_kwDOAUASCs4ObTtm",
+      "name": "stockfish-windows-x86-64-vnni256.zip",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/zip",
+      "state": "uploaded",
+      "size": 65437035,
+      "digest": null,
+      "download_count": 2709,
+      "created_at": "2025-03-30T12:34:37Z",
+      "updated_at": "2025-03-30T12:34:39Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-windows-x86-64-vnni256.zip"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039657",
+      "id": 242039657,
+      "node_id": "RA_kwDOAUASCs4ObTtp",
+      "name": "stockfish-windows-x86-64-vnni512.zip",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/zip",
+      "state": "uploaded",
+      "size": 65440669,
+      "digest": null,
+      "download_count": 3509,
+      "created_at": "2025-03-30T12:34:39Z",
+      "updated_at": "2025-03-30T12:34:41Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-windows-x86-64-vnni512.zip"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/242039656",
+      "id": 242039656,
+      "node_id": "RA_kwDOAUASCs4ObTto",
+      "name": "stockfish-windows-x86-64.zip",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/zip",
+      "state": "uploaded",
+      "size": 65440867,
+      "digest": null,
+      "download_count": 12532,
+      "created_at": "2025-03-30T12:34:38Z",
+      "updated_at": "2025-03-30T12:34:40Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-windows-x86-64.zip"
+    }
+  ],
+  "tarball_url": "https://api.github.com/repos/official-stockfish/Stockfish/tarball/sf_17.1",
+  "zipball_url": "https://api.github.com/repos/official-stockfish/Stockfish/zipball/sf_17.1",
+  "body": "Today, we have the pleasure to announce Stockfish 17.1. As always, you can **freely** download it at [stockfishchess.org/download][1] and use it in the [GUI of your choice][2].\r"
+}

@@ -1,22 +1,538 @@
 <!doctype html>
 <html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#111315" />
+    <title>Chaturanga: chess game review with a coach beside the board</title>
+    <meta
+      name="description"
+      content="A desktop chess app for Mac. Review every move with Stockfish and Maia, read plain-language explanations, analyse positions, play engines and train on Lichess puzzles. Your games stay on your computer."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Chaturanga" />
+    <meta
+      property="og:title"
+      content="Chaturanga: chess game review with a coach beside the board"
+    />
+    <meta
+      property="og:description"
+      content="Review every move with Stockfish and Maia, read plain-language explanations, and study on your Mac."
+    />
+    <meta property="og:image" content="%SITE_URL%/shots/og-image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Chaturanga reviewing Morphy's Opera game, with the coach's explanation beside the board."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400&display=swap"
+    />
+    <link
+      rel="preload"
+      as="image"
+      href="/shots/hero-review.jpg"
+      imagesrcset="/shots/hero-review-1200.jpg 1200w, /shots/hero-review.jpg 2200w"
+      imagesizes="(min-width: 1080px) calc(100vw - 360px), calc(100vw - 32px)"
+      fetchpriority="high"
+    />
+    <script type="module" src="/src/main.ts"></script>
+  </head>
 
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" type="image/svg+xml" href="/knight-white.svg" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet"
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap" />
-  <title>Chaturanga — A chess studio for your desktop</title>
-  <meta name="description"
-    content="Chaturanga is a calm, beautiful chess studio for macOS. Play the Stockfish engine, review your games move-by-move, and study at your own pace." />
-</head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
 
-<body>
-  <div id="root"></div>
-  <script type="module" src="/src/main.tsx"></script>
-</body>
+    <div class="shell">
+      <aside class="rail" aria-label="Site">
+        <a class="brand" href="#top">
+          <img src="/favicon.png" alt="" width="28" height="28" />
+          <span>Chaturanga</span>
+        </a>
 
+        <nav class="rail-nav" aria-label="Sections">
+          <a href="#top" data-spy="top">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" />
+              <path
+                d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+              />
+            </svg>
+            Overview
+          </a>
+          <a href="#review" data-spy="review">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 3v16a2 2 0 0 0 2 2h16" />
+              <path d="M18 17V9" />
+              <path d="M13 17V5" />
+              <path d="M8 17v-3" />
+            </svg>
+            Game review
+          </a>
+          <a href="#coach" data-spy="coach">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"
+              />
+              <path d="M9 18h6" />
+              <path d="M10 22h4" />
+            </svg>
+            Coach
+          </a>
+          <a href="#analysis" data-spy="analysis">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"
+              />
+              <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+              <circle cx="11.5" cy="14.5" r="2.5" />
+              <path d="M13.3 16.3 15 18" />
+            </svg>
+            Analysis
+          </a>
+          <a href="#engine-game" data-spy="engine-game">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5" />
+              <line x1="13" x2="19" y1="19" y2="13" />
+              <line x1="16" x2="20" y1="16" y2="20" />
+              <line x1="19" x2="21" y1="21" y2="19" />
+              <polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5" />
+              <line x1="5" x2="9" y1="14" y2="18" />
+              <line x1="7" x2="4" y1="17" y2="20" />
+              <line x1="3" x2="5" y1="19" y2="21" />
+            </svg>
+            Engine game
+          </a>
+          <a href="#puzzles" data-spy="puzzles">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z"
+              />
+            </svg>
+            Puzzles
+          </a>
+          <a href="#engines" data-spy="engines">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 20v2" />
+              <path d="M12 2v2" />
+              <path d="M17 20v2" />
+              <path d="M17 2v2" />
+              <path d="M2 12h2" />
+              <path d="M2 17h2" />
+              <path d="M2 7h2" />
+              <path d="M20 12h2" />
+              <path d="M20 17h2" />
+              <path d="M20 7h2" />
+              <path d="M7 20v2" />
+              <path d="M7 2v2" />
+              <rect x="4" y="4" width="16" height="16" rx="2" />
+              <rect x="8" y="8" width="8" height="8" rx="1" />
+            </svg>
+            Engines
+          </a>
+          <a href="#board" data-spy="board">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"
+              />
+              <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
+              <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
+              <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
+              <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
+            </svg>
+            Your board
+          </a>
+          <a href="#privacy" data-spy="privacy">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
+              />
+              <path d="m9 12 2 2 4-4" />
+            </svg>
+            Privacy
+          </a>
+        </nav>
+
+        <div class="rail-foot">
+          <a class="button" href="%DOWNLOAD_URL%">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 15V3" />
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <path d="m7 10 5 5 5-5" />
+            </svg>
+            Download for Mac
+          </a>
+          <p>Early alpha for Apple silicon</p>
+        </div>
+      </aside>
+
+      <main id="main">
+        <section class="hero" id="top" aria-labelledby="hero-title">
+          <div class="hero-copy">
+            <h1 id="hero-title">Understand the moves you play</h1>
+            <p class="lede">
+              Chaturanga is a desktop app for studying your own chess games. It checks every move
+              with Stockfish, estimates how players at your rating would have played with Maia, and
+              explains the moments that mattered in plain language.
+            </p>
+            <div class="hero-actions">
+              <a class="button button-large" href="%DOWNLOAD_URL%">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 15V3" />
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <path d="m7 10 5 5 5-5" />
+                </svg>
+                Download for Mac
+              </a>
+              <p>Early alpha for Macs with Apple silicon</p>
+            </div>
+          </div>
+          <figure class="shot shot-window">
+            <img
+              src="/shots/hero-review.jpg"
+              srcset="/shots/hero-review-1200.jpg 1200w, /shots/hero-review.jpg 2200w"
+              sizes="(min-width: 1080px) calc(100vw - 360px), calc(100vw - 32px)"
+              alt="Chaturanga's game review: the board after 16.Qb8+ in the Opera game, and a panel with accuracy, the coach's explanation, the move facts and an evaluation graph."
+              fetchpriority="high"
+              decoding="async"
+            />
+            <figcaption>
+              Game review of Morphy's Opera game (Paris, 1858), seen from Black's side. The coach
+              explains 16.Qb8+, the queen sacrifice that forces mate.
+            </figcaption>
+          </figure>
+        </section>
+
+        <section class="section" id="review" aria-labelledby="review-title">
+          <header class="section-head">
+            <h2 id="review-title">A review of every move</h2>
+            <p>
+              Open a PGN or a saved game and start the review. Stockfish checks each position and
+              grades every move, from best to blunder. The summary shows your accuracy, your average
+              loss and how many inaccuracies, mistakes and blunders you made, and the evaluation
+              graph shows where the game turned.
+            </p>
+          </header>
+          <div class="panels" role="list">
+            <figure class="shot shot-panel" role="listitem">
+              <img
+                src="/shots/review-moves.jpg"
+                alt="The Moves tab: every move with a grade badge and an evaluation, with the Qb4+ variation kept in the tree."
+                loading="lazy"
+                decoding="async"
+              />
+              <figcaption>
+                Moves, with grades and evaluations. Lines you explore stay in the tree as
+                variations.
+              </figcaption>
+            </figure>
+            <figure class="shot shot-panel" role="listitem">
+              <img
+                src="/shots/review-engine.jpg"
+                alt="The Engine tab for 10...cxb5: best line, best reply, alternatives and Maia's human prediction bars from 1100 to 1900."
+                loading="lazy"
+                decoding="async"
+              />
+              <figcaption>
+                The best line, the best reply and the alternatives. Maia networks from 1100 to 1900
+                estimate how often players at each rating would choose the move.
+              </figcaption>
+            </figure>
+            <figure class="shot shot-panel" role="listitem">
+              <img
+                src="/shots/review-settings.jpg"
+                alt="Review settings: evaluation engine, search time, number of engine lines, Maia rating levels and commentary detail."
+                loading="lazy"
+                decoding="async"
+              />
+              <figcaption>
+                Pick the engine, search time, number of lines, which Maia levels to run and how
+                detailed the commentary is.
+              </figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section class="section" id="coach" aria-labelledby="coach-title">
+          <header class="section-head">
+            <h2 id="coach-title">A coach beside the board</h2>
+            <p>
+              Open a move and Chaturanga explains it: what the move was trying to do, why it works
+              or fails, and what the stronger move achieves.
+            </p>
+          </header>
+
+          <div class="coach">
+            <article class="note" aria-label="Example coach explanation for 10...cxb5">
+              <p class="note-move">10…cxb5</p>
+              <h3>The recapture comes with check</h3>
+              <p>
+                Taking the knight on b5 is the move nearly everyone plays here: it is the top human
+                choice at every level from 1100 to 1900. The cost is what comes next.
+                <span class="san">Bxb5+</span> recaptures with check and uncovers the queen on b3
+                against f7, while your knight on b8 and bishop on f8 are still at home.
+                <span class="san">Qb4+</span> was the calmer answer: it checks the king, hits the
+                knight on b5 and offers a queen trade that takes the sting out of White's attack.
+              </p>
+            </article>
+
+            <div class="coach-copy">
+              <p>
+                The coach writes from what the engines found and from facts read off the board, such
+                as loose pieces, checks and material, so it talks about squares and plans rather
+                than numbers. It adjusts to the rating you review at.
+              </p>
+              <p>
+                Every move in the text is a link. Click one and the line plays out on the board as a
+                variation, with the move tree and engine lines following along.
+              </p>
+            </div>
+
+            <figure class="shot coach-shot">
+              <img
+                src="/shots/coach-variation.jpg"
+                alt="After clicking Qb4+ in the explanation, the board shows the queen on b4 and the panel notes that you are exploring a variation from 10...cxb5, with a Back to game link."
+                loading="lazy"
+                decoding="async"
+              />
+              <figcaption>
+                Clicking Qb4+ in the explanation plays it on the board. Back to game returns to the
+                move under review.
+              </figcaption>
+            </figure>
+          </div>
+
+          <div class="split split-tight">
+            <div class="split-copy">
+              <h3>Where the words come from</h3>
+              <p>
+                AI commentary uses your own OpenRouter key and the model you choose. The key is
+                encrypted with your system keychain and is only ever sent to OpenRouter. A request
+                is made only when you open a move.
+              </p>
+              <p>
+                The explanations need a key. Without one, the review still grades every move and
+                shows the engine lines, but no commentary is written.
+              </p>
+            </div>
+            <figure class="shot">
+              <img
+                src="/shots/settings-commentary.jpg"
+                alt="Commentary settings: an OpenRouter model field and an API key field."
+                loading="lazy"
+                decoding="async"
+              />
+              <figcaption>Commentary settings.</figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section class="section" id="analysis" aria-labelledby="analysis-title">
+          <div class="split">
+            <div class="split-copy">
+              <h2 id="analysis-title">Analyse any position</h2>
+              <p>
+                The analysis board keeps the engine running and shows several candidate lines with
+                their depth and score. Play moves on the board to branch off; the move tree keeps
+                every variation.
+              </p>
+              <p>
+                Games come in and go out as PGN, and the games you import are kept in your library.
+              </p>
+            </div>
+            <figure class="shot">
+              <img
+                src="/shots/analysis-engine.jpg"
+                alt="The analysis board with Stockfish thinking: depth, score, best move and three candidate lines."
+                loading="lazy"
+                decoding="async"
+              />
+              <figcaption>Live analysis before 12.O-O-O in the Opera game.</figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section class="section" id="engine-game" aria-labelledby="engine-game-title">
+          <div class="split">
+            <div class="split-copy">
+              <h2 id="engine-game-title">Play against an engine</h2>
+              <p>
+                Choose any installed engine, pick a side and a time control, from bullet to rapid or
+                one of your own, or play without a clock. Offer a draw or resign when you have seen
+                enough.
+              </p>
+            </div>
+            <figure class="shot">
+              <img
+                src="/shots/engine-game.jpg"
+                alt="An engine game against Stockfish with both clocks and the move list."
+                loading="lazy"
+                decoding="async"
+              />
+              <figcaption>A 5+3 game against Stockfish.</figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section class="section" id="puzzles" aria-labelledby="puzzles-title">
+          <header class="section-head">
+            <h2 id="puzzles-title">Puzzles from the Lichess database</h2>
+            <p>
+              Download the Lichess puzzle database once (almost six million puzzles, free to use
+              under CC0) and train offline. Filter by rating, popularity, theme, solution length,
+              opening and side to move.
+            </p>
+          </header>
+          <div class="pair">
+            <figure class="shot">
+              <img
+                src="/shots/puzzle-filters.jpg"
+                alt="Puzzle set filters: database, rating range, popularity, side to move, themes, solution length and openings."
+                loading="lazy"
+                decoding="async"
+              />
+              <figcaption>Filters for a puzzle set.</figcaption>
+            </figure>
+            <figure class="shot">
+              <img
+                src="/shots/puzzle-board.jpg"
+                alt="A puzzle in progress after 16.Qb8+ Nxb8, with the prompt to find the next move."
+                loading="lazy"
+                decoding="async"
+              />
+              <figcaption>
+                A puzzle in progress. This demo uses the finish of the Opera game: 16.Qb8+ Nxb8
+                17.Rd8#.
+              </figcaption>
+            </figure>
+          </div>
+          <div class="split split-tight">
+            <div class="split-copy">
+              <h3>Databases</h3>
+              <p>
+                The Databases page also offers a set of analysed positions with best moves and
+                difficulty. Datasets download only when you ask and are stored on your Mac.
+              </p>
+            </div>
+            <figure class="shot">
+              <img
+                src="/shots/databases.jpg"
+                alt="The Databases page: the Lichess Puzzle Database, downloaded, and Chess Position Analysis Results, ready to download."
+                loading="lazy"
+                decoding="async"
+              />
+              <figcaption>The Databases page.</figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section class="section" id="engines" aria-labelledby="engines-title">
+          <div class="split">
+            <div class="split-copy">
+              <h2 id="engines-title">Engines, managed or your own</h2>
+              <p>
+                Chaturanga can download Stockfish, Lc0 and the five Maia networks for you, or you
+                can point it at any UCI engine you already have. It tells you when a newer engine
+                release is out and updates only when you ask. You also choose how many CPU threads
+                and how much memory the evaluation engine may use.
+              </p>
+            </div>
+            <figure class="shot">
+              <img
+                src="/shots/settings-engines.jpg"
+                alt="Engine settings: threads and hash size, and the engine downloads list with Stockfish, Lc0 and Maia 1100 to 1900."
+                loading="lazy"
+                decoding="async"
+              />
+              <figcaption>Performance settings and engine downloads.</figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section class="section" id="board" aria-labelledby="board-title">
+          <div class="split">
+            <div class="split-copy">
+              <h2 id="board-title">Your board, your way</h2>
+              <p>
+                Ten board themes or your own square colours, nine piece sets in four looks, and move
+                sounds with a volume control. Focus board puts the move and engine panels away when
+                you just want to look at the position.
+              </p>
+            </div>
+            <figure class="shot">
+              <img
+                src="/shots/settings-board.jpg"
+                alt="Board settings: ten theme swatches, piece set and piece look, and the custom colour pickers for light and dark squares."
+                loading="lazy"
+                decoding="async"
+              />
+              <figcaption>Board themes and custom colours.</figcaption>
+            </figure>
+          </div>
+          <figure class="shot shot-window">
+            <img
+              src="/shots/focus-mode.jpg"
+              alt="Focus board: the analysis board with the move and engine panels hidden."
+              loading="lazy"
+              decoding="async"
+            />
+            <figcaption>Focus board, with the panels put away.</figcaption>
+          </figure>
+        </section>
+
+        <section class="section" id="privacy" aria-labelledby="privacy-title">
+          <div class="privacy">
+            <h2 id="privacy-title">Your games stay on your Mac</h2>
+            <p>
+              Games, reviews, puzzles and engines live on your computer, and there is no account to
+              create. Chaturanga goes online only for:
+            </p>
+            <ul>
+              <li>Engine and database downloads, when you start them.</li>
+              <li>
+                Checking GitHub for new Stockfish and Lc0 releases. Updates install only when you
+                ask.
+              </li>
+              <li>
+                AI commentary, if you add an OpenRouter key. Each request carries the facts for one
+                move: the position, what the engines found and the game details.
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="download" id="download" aria-labelledby="download-title">
+          <img src="/apple-touch-icon.png" alt="" width="72" height="72" loading="lazy" />
+          <h2 id="download-title">Download Chaturanga</h2>
+          <p>
+            Early alpha for Macs with Apple silicon. The build is not notarized yet, so macOS blocks
+            the first launch until you allow it in System Settings, under Privacy &amp; Security.
+          </p>
+          <a class="button button-large" href="%DOWNLOAD_URL%">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 15V3" />
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <path d="m7 10 5 5 5-5" />
+            </svg>
+            Download from GitHub
+          </a>
+        </section>
+
+        <footer class="footer">
+          <p>
+            Stockfish is licensed under GPL-3.0. Maia networks are by CSSLab (CC BY). Puzzles come
+            from the Lichess puzzle database (CC0). The Opera game was played by Paul Morphy in
+            Paris in 1858.
+          </p>
+        </footer>
+      </main>
+    </div>
+  </body>
 </html>

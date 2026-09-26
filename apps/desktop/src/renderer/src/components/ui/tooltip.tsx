@@ -1,22 +1,42 @@
 import * as React from "react";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { cn } from "@/lib/utils";
+import { frost } from "@/lib/ui";
 
+/** Set while an app-level provider is mounted, so a Tooltip need not bring its own. */
+const SharedProvider = React.createContext(false);
+
+/**
+ * One provider for the whole app (main.tsx): tooltips share the open delay, and moving from one
+ * trigger to its neighbour opens the next tooltip at once (`instant-open`) instead of waiting again.
+ */
 function TooltipProvider({
   delayDuration = 120,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
-  return <TooltipPrimitive.Provider data-slot="tooltip-provider" delayDuration={delayDuration} {...props} />;
+  return (
+    <SharedProvider.Provider value={true}>
+      <TooltipPrimitive.Provider data-slot="tooltip-provider" delayDuration={delayDuration} {...props} />
+    </SharedProvider.Provider>
+  );
 }
 
+/** Uses the app's shared provider; outside one (tests, isolated renders) it brings its own. */
 function Tooltip(props: React.ComponentProps<typeof TooltipPrimitive.Root>) {
-  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />;
+  const root = <TooltipPrimitive.Root data-slot="tooltip" {...props} />;
+  return React.useContext(SharedProvider) ? root : <TooltipProvider>{root}</TooltipProvider>;
 }
 
 function TooltipTrigger(props: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
   return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;
 }
 
+/**
+ * Motion: pops from the trigger side (Radix's transform origin) on a delayed open, fades on an
+ * instant open (moving between neighbouring triggers), fades out on close. The Content node itself
+ * only carries `animate-hold` while closing so Radix keeps it mounted for the exit; the visible
+ * surface animates inside it, above a still frosted layer on glass (see `.ui-frost`).
+ */
 function TooltipContent({
   className,
   sideOffset = 6,
@@ -28,14 +48,21 @@ function TooltipContent({
       <TooltipPrimitive.Content
         data-slot="tooltip-content"
         sideOffset={sideOffset}
-        className={cn(
-          "z-50 overflow-hidden rounded-md border border-white/10 bg-[#1b1d20] px-2.5 py-1.5 text-xs text-[#f4f1ea] shadow-xl animate-in fade-in-0 zoom-in-95",
-          className
-        )}
+        className={cn("group/tooltip relative z-[90] data-[state=closed]:animate-hold", className)}
         {...props}
       >
-        {children}
-        <TooltipPrimitive.Arrow className="fill-[#1b1d20]" />
+        <span
+          aria-hidden="true"
+          className={cn(frost, "rounded-md animate-fade-in group-data-[state=closed]/tooltip:animate-fade-out")}
+        />
+        <div
+          className={cn(
+            "relative overflow-hidden rounded-md border border-line bg-surface-raised px-2 py-1 text-xs text-fg shadow-popover glass:bg-surface-raised/85",
+            "origin-(--radix-tooltip-content-transform-origin) animate-pop-in group-data-[state=instant-open]/tooltip:animate-fade-in group-data-[state=closed]/tooltip:animate-fade-out"
+          )}
+        >
+          {children}
+        </div>
       </TooltipPrimitive.Content>
     </TooltipPrimitive.Portal>
   );

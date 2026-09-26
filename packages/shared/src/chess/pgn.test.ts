@@ -12,7 +12,9 @@ import { applyUserMove, START_FEN } from "./position";
 
 describe("PGN import/export", () => {
   it("imports a simple PGN and builds a move tree", () => {
-    const imported = importPgnText('[Event "Demo"]\n[White "A"]\n[Black "B"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 *');
+    const imported = importPgnText(
+      '[Event "Demo"]\n[White "A"]\n[Black "B"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 *'
+    );
     expect(imported.game.headers.event).toBe("Demo");
     expect(imported.game.moveTree.filter((node) => node.uci).map((node) => node.uci)).toEqual([
       "e2e4",
@@ -22,7 +24,7 @@ describe("PGN import/export", () => {
   });
 
   it("round trips PGN arrows", () => {
-    const imported = importPgnText('1. e4 { [%cal Gg1f3] [%csl Ye4] } *');
+    const imported = importPgnText("1. e4 { [%cal Gg1f3] [%csl Ye4] } *");
     const node = imported.game.moveTree.find((item) => item.uci === "e2e4");
     expect(node?.arrows).toEqual([{ color: "green", orig: "g1", dest: "f3" }]);
     expect(node?.highlights).toEqual([{ color: "yellow", square: "e4" }]);
@@ -56,7 +58,7 @@ describe("PGN import/export", () => {
   });
 
   it("parses clk in comment with no space after opening brace", () => {
-    const imported = importPgnText('1. e4 {[%clk 0:10:00]} e5 { [%clk 0:09:00] } *');
+    const imported = importPgnText("1. e4 {[%clk 0:10:00]} e5 { [%clk 0:09:00] } *");
     expect(imported.game.moveTree.find((n) => n.uci === "e2e4")?.clockAfter).toBe("0:10:00");
     expect(imported.game.moveTree.find((n) => n.uci === "e7e5")?.clockAfter).toBe("0:09:00");
   });
@@ -100,12 +102,13 @@ describe("PGN import/export", () => {
       currentFen: START_FEN,
       pgn: "*"
     });
-    expect(createGameFromFen({ fen: START_FEN, source: "analysis", headers: { white: "Alice" } }))
-      .toMatchObject({
-        source: "analysis",
-        currentFen: START_FEN,
-        headers: { white: "Alice", result: "*" }
-      });
+    expect(
+      createGameFromFen({ fen: START_FEN, source: "analysis", headers: { white: "Alice" } })
+    ).toMatchObject({
+      source: "analysis",
+      currentFen: START_FEN,
+      headers: { white: "Alice", result: "*" }
+    });
   });
 
   it("adds moves, reuses duplicate lines, and resolves board FEN nodes", () => {

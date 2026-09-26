@@ -82,10 +82,14 @@ export function serializeAnnotationComment(
   const parts: string[] = [];
   if (text?.trim()) parts.push(text.trim());
   if (arrows.length) {
-    parts.push(`[%cal ${arrows.map((arrow) => `${colorToTag[arrow.color]}${arrow.orig}${arrow.dest}`).join(",")}]`);
+    parts.push(
+      `[%cal ${arrows.map((arrow) => `${colorToTag[arrow.color]}${arrow.orig}${arrow.dest}`).join(",")}]`
+    );
   }
   if (highlights.length) {
-    parts.push(`[%csl ${highlights.map((highlight) => `${colorToTag[highlight.color]}${highlight.square}`).join(",")}]`);
+    parts.push(
+      `[%csl ${highlights.map((highlight) => `${colorToTag[highlight.color]}${highlight.square}`).join(",")}]`
+    );
   }
   if (clock?.trim()) parts.push(`[%clk ${clock.trim()}]`);
   return parts.length ? parts.join(" ") : null;

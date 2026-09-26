@@ -1,5 +1,4 @@
-import { BrowserWindow } from "electron";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 import type {
   EngineBestMove,
@@ -14,11 +13,12 @@ import type {
   StartLiveAnalysisInput,
   StartEngineGameInput
 } from "@chaturanga/shared/types/engine";
-import { spawnArgsForEngine, engineProcessCwd } from "@chaturanga/shared/engine/spawn-args";
-import { engineConfigForId } from "./engine-config";
-import { parseBestMove, parseInfoLine } from "./uci";
+import { parseBestMove, parseInfoLine } from "@chaturanga/shared/engine/uci";
+import { logger, errorMessage } from "../logger";
+import { engineConfigForId, engineResourceOptions } from "./engine-config";
+import { createLineSplitter, LOG_UCI, spawnUciProcess, stopUciProcess, writeUci } from "./uci-process";
 
-type EngineEvents = {
+export type EngineEvents = {
   info: [EngineInfo];
   bestmove: [EngineBestMove];
   error: [EngineError];
@@ -28,25 +28,40 @@ type EngineEvents = {
   reviewFailed: [ReviewFailed];
 };
 
-type LineWaitQueueEntry = {
+type LineWaiter = {
   predicate: (line: string) => boolean;
-  timeoutHandle: ReturnType<typeof setTimeout>;
-  resolvePending: () => void;
-  rejectPending: (error: Error) => void;
+  resolve: () => void;
+  reject: (error: Error) => void;
 };
 
 /** LC0 waits for NN weights load before emitting `uciok`; Stockfish resolves almost immediately. */
 const ENGINE_TEST_UCIOK_MS = 60_000;
 const ENGINE_PLAY_UCIOK_MS = 120_000;
 const ENGINE_PLAY_READY_MS = 30_000;
+const UCIOK_TIMEOUT_MESSAGE =
+  "Timed out waiting for uciok. Leela Chess Zero must load NN weights — set the weights file or add `--weights=/path/to/weights.pb.gz`.";
 
+/** Throws when `config` can't be spawned as a native UCI process. */
+export function assertSpawnable(config: EngineConfig | null): asserts config is EngineConfig {
+  if (!config) throw new Error("Engine not found");
+  if (!config.isAvailable) throw new Error("Engine binary is not available.");
+}
+
+function positionCommand(fen: string, moves: readonly string[]): string {
+  return `position fen ${fen}${moves.length ? ` moves ${moves.join(" ")}` : ""}`;
+}
+
+/**
+ * Owns the single interactive engine (engine games and live analysis) and
+ * relays its output as typed events. Game review and draw probes run their
+ * own short-lived processes.
+ */
 export class EngineManager extends EventEmitter<EngineEvents> {
   private process: ChildProcessWithoutNullStreams | null = null;
   private activeEngine: EngineConfig | null = null;
-  private lineBuffer = "";
-  private cancelledReviewIds = new Set<string>();
   private handshakeComplete = false;
-  private lineWaitQueue: LineWaitQueueEntry[] = [];
+  private lineWaiter: LineWaiter | null = null;
+  private cancelledReviewIds = new Set<string>();
 
   cancelReview(reviewId: string): void {
     this.cancelledReviewIds.add(reviewId);
@@ -60,318 +75,207 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     this.cancelledReviewIds.delete(reviewId);
   }
 
+  /** Spawns the engine, waits for `uciok` and reports its id. */
   async testEngine(idOrConfig: string | EngineConfig): Promise<EngineTestResult> {
     const config = typeof idOrConfig === "string" ? engineConfigForId(idOrConfig) : idOrConfig;
-    if (!config) return { ok: false, error: "Engine not found" };
-    if (config.runtime === "wasm") return { ok: false, error: "Browser WASM engines run in the renderer." };
-    if (!config.isAvailable) return { ok: false, error: "Bundled engine binary is not available for this platform build." };
+    try {
+      assertSpawnable(config);
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) };
+    }
 
     return new Promise((resolve) => {
-      let resolved = false;
-      const proc = spawn(config.executablePath, spawnArgsForEngine(config), {
-        cwd: engineProcessCwd(config),
-        stdio: "pipe"
-      });
+      const proc = spawnUciProcess(config);
       let name: string | undefined;
       let author: string | undefined;
-      const timeout = setTimeout(() => {
-        if (resolved) return;
-        resolved = true;
-        proc.kill();
-        resolve({ ok: false, error: "Timed out waiting for uciok (NN engines such as lc0 may need --weights)" });
-      }, ENGINE_TEST_UCIOK_MS);
-
-      proc.stdout.on("data", (chunk: Buffer) => {
-        const text = chunk.toString("utf8");
-        const lines = text.split(/\r?\n/);
-        for (let line of lines) {
-          line = line.trim();
-          if (!line) continue;
-          if (line.startsWith("id name ")) name = line.slice(8).trim();
-          if (line.startsWith("id author ")) author = line.slice(10).trim();
-          if (line === "uciok" && !resolved) {
-            resolved = true;
-            clearTimeout(timeout);
-            proc.stdin.write("quit\n");
-            resolve({ ok: true, name, author });
-            return;
-          }
-        }
-      });
-
-      proc.on("exit", (code, signal) => {
+      let settled = false;
+      const finish = (result: EngineTestResult) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timeout);
-        if (resolved) return;
-        resolved = true;
-        resolve({
+        stopUciProcess(proc);
+        resolve(result);
+      };
+      const timeout = setTimeout(
+        () => finish({ ok: false, error: "Timed out waiting for uciok (NN engines such as lc0 may need --weights)" }),
+        ENGINE_TEST_UCIOK_MS
+      );
+
+      proc.stdout.on(
+        "data",
+        createLineSplitter((line) => {
+          if (line.startsWith("id name ")) name = line.slice(8).trim();
+          else if (line.startsWith("id author ")) author = line.slice(10).trim();
+          else if (line === "uciok") {
+            const isHumanPrediction = Boolean(
+              name?.toLowerCase().includes("maia") || author?.toLowerCase().includes("maia")
+            );
+            finish({ ok: true, name, author, isHumanPrediction });
+          }
+        })
+      );
+      proc.on("exit", (code, signal) =>
+        finish({
           ok: false,
           error: signal
             ? "Engine exited during handshake (terminated)."
             : `Engine exited during handshake (code ${code ?? 0}). Check args and weights path.`
-        });
-      });
-
-      proc.on("error", (error) => {
-        if (resolved) return;
-        resolved = true;
-        clearTimeout(timeout);
-        resolve({ ok: false, error: error.message });
-      });
-
-      proc.stdin.write("uci\n");
+        })
+      );
+      proc.on("error", (error) => finish({ ok: false, error: error.message }));
+      writeUci(proc, "uci");
     });
   }
 
+  /** Starts an engine game move search from the given position. */
   async start(input: StartEngineGameInput): Promise<void> {
-    this.stop();
-    const config = engineConfigForId(input.engineId);
-    if (!config) throw new Error("Engine not found");
-    if (config.runtime === "wasm") throw new Error("Browser WASM engines run in the renderer.");
-    if (!config.isAvailable) throw new Error("Bundled engine binary is not available for this platform build.");
-    this.activeEngine = config;
-    this.handshakeComplete = false;
-
-    const proc = spawn(config.executablePath, spawnArgsForEngine(config), {
-      cwd: engineProcessCwd(config),
-      stdio: "pipe"
-    });
-    this.process = proc;
-    this.lineBuffer = "";
-
-    proc.stdout.on("data", (chunk: Buffer) => this.handleStdout(chunk));
-    proc.stderr.on("data", (chunk: Buffer) => {
-      const message = chunk.toString("utf8").trim();
-      if (message)
-        console.warn(`[uci engine stderr id=${config.id}]`, message);
-    });
-    proc.on("error", (error) =>
-      this.emit("error", { engineId: config.id, message: error.message })
-    );
-    proc.on("exit", (code) => {
-      if (this.process !== proc) return;
-      this.process = null;
-      if (!this.handshakeComplete) {
-        this.cancelLineWaits(
-          `Engine exited before UCI handshake completed${code !== null ? ` (exit ${code})` : ""}. For lc0 set the weights file in settings or add --weights=/path/to/net.pb.gz in args.`
-        );
+    await this.launch(input.engineId, {
+      begin: () => {
+        this.write("ucinewgame");
+        this.write(positionCommand(input.fen, input.moves));
+        if (input.clock) {
+          const { wtime, btime, winc, binc } = input.clock;
+          this.write(
+            `go wtime ${Math.max(1, Math.round(wtime))} btime ${Math.max(1, Math.round(btime))} ` +
+              `winc ${Math.max(0, Math.round(winc))} binc ${Math.max(0, Math.round(binc))}`
+          );
+        } else if (input.depth) this.write(`go depth ${input.depth}`);
+        else this.write(`go movetime ${input.moveTimeMs ?? 1000}`);
       }
-      if (this.activeEngine?.id === config.id) this.activeEngine = null;
     });
-
-    try {
-      this.lineWaitQueue = [];
-      const uciOk = this.enqueueLineWait(
-        (line) => line === "uciok",
-        ENGINE_PLAY_UCIOK_MS,
-        "Timed out waiting for uciok. Leela Chess Zero must load NN weights — add launcher args such as `--weights=/path/to/weights.pb.gz`."
-      );
-      this.write("uci");
-      await uciOk;
-
-      const readyOk = this.enqueueLineWait(
-        (line) => line === "readyok",
-        ENGINE_PLAY_READY_MS,
-        "Timed out waiting for readyok after isready."
-      );
-      this.write("isready");
-      await readyOk;
-
-      this.handshakeComplete = true;
-
-      this.write("ucinewgame");
-      this.write(`position fen ${input.fen}${input.moves.length ? ` moves ${input.moves.join(" ")}` : ""}`);
-      if (input.clock) {
-        const c = input.clock;
-        const wt = Math.max(1, Math.round(c.wtime));
-        const bt = Math.max(1, Math.round(c.btime));
-        const wi = Math.max(0, Math.round(c.winc));
-        const bi = Math.max(0, Math.round(c.binc));
-        this.write(`go wtime ${wt} btime ${bt} winc ${wi} binc ${bi}`);
-      } else if (input.depth) this.write(`go depth ${input.depth}`);
-      else this.write(`go movetime ${input.moveTimeMs ?? 1000}`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.emit("error", { engineId: config.id, message });
-      this.teardownRunningProcess(proc);
-      this.activeEngine = null;
-      throw error;
-    }
   }
 
+  /** Starts an infinite MultiPV search for the live analysis panel. */
   async startAnalysis(input: StartLiveAnalysisInput): Promise<void> {
-    this.stop();
-    const config = engineConfigForId(input.engineId);
-    if (!config) throw new Error("Engine not found");
-    if (config.runtime === "wasm") throw new Error("Browser WASM engines run in the renderer.");
-    if (!config.isAvailable) throw new Error("Bundled engine binary is not available for this platform build.");
-    this.activeEngine = config;
-    this.handshakeComplete = false;
-
-    const proc = spawn(config.executablePath, spawnArgsForEngine(config), {
-      cwd: engineProcessCwd(config),
-      stdio: "pipe"
-    });
-    this.process = proc;
-    this.lineBuffer = "";
-
-    proc.stdout.on("data", (chunk: Buffer) => this.handleStdout(chunk));
-    proc.stderr.on("data", (chunk: Buffer) => {
-      const message = chunk.toString("utf8").trim();
-      if (message) console.warn(`[uci analysis stderr id=${config.id}]`, message);
-    });
-    proc.on("error", (error) =>
-      this.emit("error", { engineId: config.id, message: error.message })
-    );
-    proc.on("exit", (code) => {
-      if (this.process !== proc) return;
-      this.process = null;
-      if (!this.handshakeComplete) {
-        this.cancelLineWaits(
-          `Engine exited before UCI handshake completed${code !== null ? ` (exit ${code})` : ""}.`
-        );
+    const multipv = Math.max(1, Math.min(Math.round(input.multipv ?? 3), 5));
+    await this.launch(input.engineId, {
+      configure: (supportedOptions) => {
+        // Same Threads/Hash settings as Game Review; only for engines that advertise them.
+        const resources = engineResourceOptions();
+        if (supportedOptions.has("Threads")) this.write(`setoption name Threads value ${resources.threads}`);
+        if (supportedOptions.has("Hash")) this.write(`setoption name Hash value ${resources.hashMb}`);
+        this.write(`setoption name MultiPV value ${multipv}`);
+      },
+      begin: () => {
+        this.write(positionCommand(input.fen, input.moves));
+        this.write("go infinite");
       }
-      if (this.activeEngine?.id === config.id) this.activeEngine = null;
     });
-
-    try {
-      this.lineWaitQueue = [];
-      const multipv = Math.max(1, Math.min(Math.round(input.multipv ?? 3), 5));
-      const uciOk = this.enqueueLineWait(
-        (line) => line === "uciok",
-        ENGINE_PLAY_UCIOK_MS,
-        "Timed out waiting for uciok. Leela Chess Zero must load NN weights — add launcher args such as `--weights=/path/to/weights.pb.gz`."
-      );
-      this.write("uci");
-      await uciOk;
-      this.write(`setoption name MultiPV value ${multipv}`);
-
-      const readyOk = this.enqueueLineWait(
-        (line) => line === "readyok",
-        ENGINE_PLAY_READY_MS,
-        "Timed out waiting for readyok after isready."
-      );
-      this.write("isready");
-      await readyOk;
-
-      this.handshakeComplete = true;
-      this.write(`position fen ${input.fen}${input.moves.length ? ` moves ${input.moves.join(" ")}` : ""}`);
-      this.write("go infinite");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.emit("error", { engineId: config.id, message });
-      this.teardownRunningProcess(proc);
-      this.activeEngine = null;
-      throw error;
-    }
   }
 
   stop(): void {
-    this.cancelLineWaits("Engine stopped");
+    this.rejectLineWaiter("Engine stopped");
     if (!this.process) return;
     this.write("stop");
-    this.write("quit");
-    this.process.kill();
+    stopUciProcess(this.process);
     this.process = null;
     this.activeEngine = null;
     this.handshakeComplete = false;
   }
 
-  bindWindow(window: BrowserWindow): void {
-    this.on("info", (info) => window.webContents.send("engine:info", info));
-    this.on("bestmove", (move) => window.webContents.send("engine:bestmove", move));
-    this.on("error", (error) => window.webContents.send("engine:error", error));
-    this.on("reviewProgress", (event) => window.webContents.send("review:progress", event));
-    this.on("reviewMoveCompleted", (event) =>
-      window.webContents.send("review:moveCompleted", event)
-    );
-    this.on("reviewCompleted", (event) => window.webContents.send("review:completed", event));
-    this.on("reviewFailed", (event) => window.webContents.send("review:failed", event));
+  /**
+   * Replaces the running engine: spawn, `uci` handshake (collecting advertised
+   * options), optional `setoption`s, `isready`, then `begin()` sends the search.
+   */
+  private async launch(
+    engineId: string,
+    steps: { configure?: (supportedOptions: Set<string>) => void; begin: () => void }
+  ): Promise<void> {
+    this.stop();
+    const config = engineConfigForId(engineId);
+    assertSpawnable(config);
+
+    const proc = spawnUciProcess(config);
+    this.process = proc;
+    this.activeEngine = config;
+    this.handshakeComplete = false;
+
+    proc.stdout.on("data", createLineSplitter((line) => this.handleLine(proc, line)));
+    proc.stderr.on("data", (chunk: Buffer) => {
+      if (LOG_UCI) logger.info(`uci:${config.name}`, "[stderr]", chunk.toString("utf8").trim());
+    });
+    proc.on("error", (error) => this.emit("error", { engineId: config.id, message: error.message }));
+    proc.on("exit", (code) => {
+      if (this.process !== proc) return;
+      this.process = null;
+      this.activeEngine = null;
+      if (!this.handshakeComplete) {
+        this.rejectLineWaiter(
+          `Engine exited before UCI handshake completed${code !== null ? ` (exit ${code})` : ""}. For lc0 set the weights file in settings or add --weights=/path/to/net.pb.gz in args.`
+        );
+      }
+    });
+
+    try {
+      const supportedOptions = new Set<string>();
+      const uciOk = this.waitForLine((line) => {
+        const option = line.match(/^option name (.+?) type /);
+        if (option) supportedOptions.add(option[1]);
+        return line === "uciok";
+      }, ENGINE_PLAY_UCIOK_MS, UCIOK_TIMEOUT_MESSAGE);
+      this.write("uci");
+      await uciOk;
+      steps.configure?.(supportedOptions);
+
+      const readyOk = this.waitForLine(
+        (line) => line === "readyok",
+        ENGINE_PLAY_READY_MS,
+        "Timed out waiting for readyok after isready."
+      );
+      this.write("isready");
+      await readyOk;
+
+      this.handshakeComplete = true;
+      steps.begin();
+    } catch (error) {
+      this.emit("error", { engineId: config.id, message: errorMessage(error) });
+      if (this.process === proc) {
+        stopUciProcess(proc);
+        this.process = null;
+        this.activeEngine = null;
+      }
+      throw error;
+    }
   }
 
   private write(command: string): void {
-    this.process?.stdin.write(`${command}\n`);
+    if (LOG_UCI && this.activeEngine) logger.info(`uci:${this.activeEngine.name}`, "→", command);
+    writeUci(this.process, command);
   }
 
-  private enqueueLineWait(
-    predicate: (line: string) => boolean,
-    timeoutMs: number,
-    timeoutMessage: string
-  ): Promise<void> {
+  private waitForLine(predicate: (line: string) => boolean, timeoutMs: number, timeoutMessage: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const entry: LineWaitQueueEntry = {
-        predicate,
-        timeoutHandle: 0 as unknown as ReturnType<typeof setTimeout>,
-        resolvePending: () => {
-          clearTimeout(entry.timeoutHandle);
-          this.removeLineWaiter(entry);
-          resolve();
-        },
-        rejectPending: (error: Error) => {
-          clearTimeout(entry.timeoutHandle);
-          this.removeLineWaiter(entry);
-          reject(error);
-        }
+      const timeout = setTimeout(() => settle(new Error(timeoutMessage)), timeoutMs);
+      const settle = (error?: Error) => {
+        clearTimeout(timeout);
+        if (this.lineWaiter === waiter) this.lineWaiter = null;
+        if (error) reject(error);
+        else resolve();
       };
-      entry.timeoutHandle = setTimeout(
-        () => entry.rejectPending(new Error(timeoutMessage)),
-        timeoutMs
-      );
-      this.lineWaitQueue.push(entry);
+      const waiter: LineWaiter = { predicate, resolve: () => settle(), reject: settle };
+      this.lineWaiter = waiter;
     });
   }
 
-  private removeLineWaiter(entry: LineWaitQueueEntry): void {
-    const index = this.lineWaitQueue.indexOf(entry);
-    if (index >= 0) this.lineWaitQueue.splice(index, 1);
+  private rejectLineWaiter(reason: string): void {
+    this.lineWaiter?.reject(new Error(reason));
   }
 
-  private tryConsumeLineWaiter(line: string): boolean {
-    const entry = this.lineWaitQueue[0];
-    if (!entry || !entry.predicate(line)) return false;
-    entry.resolvePending();
-    return true;
-  }
+  private handleLine(proc: ChildProcessWithoutNullStreams, line: string): void {
+    const engine = this.activeEngine;
+    if (this.process !== proc || !engine) return;
+    if (LOG_UCI) logger.info(`uci:${engine.name}`, "←", line);
 
-  private cancelLineWaits(reason: string): void {
-    const error = new Error(reason);
-    for (const entry of [...this.lineWaitQueue]) {
-      entry.rejectPending(error);
+    if (!this.handshakeComplete) {
+      if (this.lineWaiter?.predicate(line)) this.lineWaiter.resolve();
+      return;
     }
-  }
-
-  private teardownRunningProcess(proc: ChildProcessWithoutNullStreams): void {
-    if (this.process !== proc) return;
-    try {
-      proc.kill();
-    } catch {
-      /* ignore */
+    const bestMove = parseBestMove(engine.id, line);
+    if (bestMove) {
+      this.emit("bestmove", bestMove);
+      return;
     }
-    this.process = null;
-    this.handshakeComplete = false;
-  }
-
-  private handleStdout(chunk: Buffer): void {
-    if (!this.activeEngine) return;
-    this.lineBuffer += chunk.toString("utf8");
-    const lines = this.lineBuffer.split(/\r?\n/);
-    this.lineBuffer = lines.pop() ?? "";
-
-    for (const line of lines.map((item) => item.trim()).filter(Boolean)) {
-      if (!this.handshakeComplete) {
-        if (this.tryConsumeLineWaiter(line)) continue;
-        continue;
-      }
-
-      const bestMove = parseBestMove(this.activeEngine.id, line);
-      if (bestMove) {
-        this.emit("bestmove", bestMove);
-        continue;
-      }
-
-      const info = parseInfoLine(this.activeEngine.id, line);
-      if (info) {
-        this.emit("info", info);
-      }
-    }
+    const info = parseInfoLine(engine.id, line);
+    if (info) this.emit("info", info);
   }
 }

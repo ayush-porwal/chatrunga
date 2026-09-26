@@ -3,28 +3,45 @@ import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
+/**
+ * Variants:
+ * - `primary`   the one main action of a region (accent tint).
+ * - `default`   neutral filled button.
+ * - `outline`   neutral bordered button for secondary actions.
+ * - `ghost`     borderless; toolbars, icon buttons, nav items.
+ * - `link`      inline text action ("Done", "Retry", "Show solution").
+ * - `ghost-destructive` for delete/resign.
+ * Sizes: xs (h-7) · sm (h-8) · default (h-9) · icon-xs (7) · icon-sm (8) · icon (9).
+ * Icons inside a Button are sized automatically (16px; 14px for xs/sm/icon-xs) — don't pass `size`.
+ * Feedback: colours ease over `duration-micro`, a press scales to 0.98 (icon sizes 0.94, links none),
+ * keyboard focus gets the crisp 2px accent ring.
+ */
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium outline-none transition-[background-color,border-color,color,box-shadow] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:border-[#8fb66f] focus-visible:ring-[3px] focus-visible:ring-[#8fb66f]/35",
+  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium outline-none transition-[background-color,border-color,color,box-shadow,scale,opacity] duration-micro ease-standard active:scale-[0.98] motion-reduce:active:scale-100 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:ring-2 focus-visible:ring-accent/70",
   {
     variants: {
       variant: {
-        default:
-          "border border-white/10 bg-[#25282d] text-[#f4f1ea] shadow-sm hover:bg-[#2d3238]",
-        destructive:
-          "border border-red-400/25 bg-red-950/35 text-red-100 hover:bg-red-950/55",
-        ghost: "border border-transparent bg-transparent text-[#d8dbe0] hover:bg-white/7",
-        outline:
-          "border border-white/10 bg-transparent text-[#f4f1ea] hover:bg-white/7",
-        secondary:
-          "border border-[#8fb66f]/35 bg-[#8fb66f]/18 text-[#f6ffe9] hover:bg-[#8fb66f]/24"
+        default: "border border-line bg-control text-fg hover:bg-control-hover",
+        primary: "border border-accent/35 bg-accent-soft text-accent-fg hover:border-accent/50 hover:bg-accent/25 hover:text-fg",
+        outline: "border border-line bg-transparent text-fg-secondary hover:bg-control hover:text-fg",
+        ghost: "border border-transparent bg-transparent text-fg-muted hover:bg-control hover:text-fg",
+        link: "h-auto border-0 bg-transparent p-0 text-fg-muted underline-offset-4 hover:text-fg hover:underline focus-visible:ring-0 focus-visible:underline",
+        "ghost-destructive": "border border-transparent bg-transparent text-danger/80 hover:bg-danger-soft hover:text-danger"
       },
       size: {
-        default: "h-9 px-3 py-2",
-        sm: "h-8 rounded-md px-2.5 text-xs",
-        lg: "h-10 rounded-md px-4",
-        icon: "size-9"
+        default: "h-9 px-3",
+        xs: "h-7 gap-1.5 rounded-md px-2 text-xs [&_svg]:size-3.5",
+        sm: "h-8 gap-1.5 px-2.5 text-xs [&_svg]:size-3.5",
+        icon: "size-9",
+        "icon-sm": "size-8",
+        "icon-xs": "size-7 rounded-md [&_svg]:size-3.5"
       }
     },
+    compoundVariants: [
+      { variant: "link", className: "h-auto px-0 active:scale-100" },
+      // Small square targets need a deeper press to read.
+      { size: ["icon", "icon-sm", "icon-xs"], className: "active:scale-[0.94]" }
+    ],
     defaultVariants: {
       variant: "default",
       size: "default"
@@ -32,16 +49,12 @@ const buttonVariants = cva(
   }
 );
 
-function Button({
-  className,
-  variant,
-  size,
-  asChild = false,
-  ...props
-}: React.ComponentProps<"button"> &
+type ButtonProps = React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean;
-  }) {
+  };
+
+function Button({ className, variant, size, asChild = false, ...props }: ButtonProps) {
   const Comp = asChild ? Slot : "button";
 
   return (
@@ -53,4 +66,4 @@ function Button({
   );
 }
 
-export { Button, buttonVariants };
+export { Button, type ButtonProps };
