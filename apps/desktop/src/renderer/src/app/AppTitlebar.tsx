@@ -1,8 +1,9 @@
-import { useMemo, type ReactNode } from "react";
-import { statusForFen } from "@chaturanga/shared/chess/position";
+import { memo, type ReactNode } from "react";
+import { useShallow } from "zustand/react/shallow";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { positionStatus } from "@/lib/position-status";
 import { cn } from "@/lib/utils";
 import { PlayersTitle, WorkspaceTitlebar } from "../features/board/BoardWorkspace";
 import { EngineMatchActions } from "../features/analysis/EngineMatchActions";
@@ -45,11 +46,12 @@ export function AppTitlebar({
       aria-label="Titlebar"
       data-chrome
     >
-      <div className={cn("flex h-full shrink-0 items-center", windowControlsInset ? "pl-[90px]" : "pl-3")}>
+      <div className={cn("flex h-full shrink-0 items-center", windowControlsInset ? "pl-[calc(90px/var(--window-zoom,1))]" : "pl-3")}>
         <SidebarToggle expanded={sidebarExpanded} onClick={onToggleSidebar} />
       </div>
       <span aria-hidden="true" className="mx-3 h-4 w-px shrink-0 bg-line" />
-      <div className="flex min-w-0 flex-1 items-center gap-2">{children}</div>
+      {/* Named for the view transition: the title cross-fades when the view changes (app.css). */}
+      <div className="flex min-w-0 flex-1 items-center gap-2 [view-transition-name:app-title]">{children}</div>
     </header>
   );
 }
@@ -60,7 +62,7 @@ export function PageTitle({ children }: { children: ReactNode }) {
 }
 
 /** Titlebar for the game view: mode · players · result · transient status … Analyze/Stop · match actions · Flip. */
-export function GameTitlebar({
+export const GameTitlebar = memo(function GameTitlebar({
   engines,
   showAnalysisError,
   canAnalyze,
@@ -74,11 +76,26 @@ export function GameTitlebar({
   onAnalyze: () => void;
   onStopAnalysis: (() => void) | null;
 }) {
-  const game = useGameStore();
+  // Only what the title shows: stepping through moves must not re-render the titlebar.
+  const game = useGameStore(
+    useShallow((state) => {
+      const position = positionStatus(state.currentFen);
+      return {
+        mode: state.mode,
+        source: state.source,
+        headers: state.headers,
+        engineSide: state.engineSide,
+        lastError: state.lastError,
+        matchFeedback: state.matchFeedback,
+        outcomeResult: state.gameOutcome?.result ?? null,
+        positionResult: position.isEnd ? position.result : null,
+        flip: state.flip
+      };
+    })
+  );
   const analysisError = useAnalysisStore((state) => state.error);
   const activeEngineId = useAnalysisStore((state) => state.activeEngineId);
   const activePuzzle = usePuzzleStore((state) => state.activePuzzle);
-  const status = useMemo(() => statusForFen(game.currentFen), [game.currentFen]);
   const engineName = engines?.find((engine) => engine.id === activeEngineId)?.name ?? null;
 
   const error = game.lastError || (showAnalysisError ? analysisError : null);
@@ -94,7 +111,7 @@ export function GameTitlebar({
     <WorkspaceTitlebar
       mode={gameModeLabel(game)}
       title={title}
-      result={game.gameOutcome?.result ?? (status.isEnd ? status.result : decidedResult(game.headers.result))}
+      result={game.outcomeResult ?? game.positionResult ?? decidedResult(game.headers.result)}
       status={game.matchFeedback || error || null}
       statusIsError={!game.matchFeedback && Boolean(error)}
       onFlip={game.flip}
@@ -114,10 +131,10 @@ export function GameTitlebar({
       }
     />
   );
-}
+});
 
 /** Titlebar for Game review: players · result … Analyze / Stop / Analyze again · Flip. */
-export function ReviewTitlebar({
+export const ReviewTitlebar = memo(function ReviewTitlebar({
   gameLoading,
   hasMoves,
   onAnalyze,
@@ -167,4 +184,4 @@ export function ReviewTitlebar({
       }
     />
   );
-}
+});

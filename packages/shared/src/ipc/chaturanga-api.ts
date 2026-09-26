@@ -83,6 +83,8 @@ export type ChaturangaApi = {
   appearance: {
     /** Current glass state (synchronous: read before the first render so the first frame is right). */
     getGlass(): WindowGlassState;
+    /** Page zoom factor (Cmd +/−; persisted per origin by Chromium). 1 = 100%. */
+    getZoomFactor(): number;
     /** Fired when the setting or the system Reduce transparency preference changes. */
     onGlassChanged(callback: (state: WindowGlassState) => void): Unsubscribe;
     /** The first frame with real content has been committed: the main process may show the window. */

@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import { contextBridge, ipcRenderer, webFrame, type IpcRendererEvent } from "electron";
 import type { ChaturangaApi, Unsubscribe, WindowGlassState } from "@chaturanga/shared/ipc/chaturanga-api";
 
 // Runs sandboxed: only `electron`'s renderer modules are available here, no Node APIs.
@@ -29,6 +29,7 @@ const api: ChaturangaApi = {
   },
   appearance: {
     getGlass: () => glassState,
+    getZoomFactor: () => webFrame.getZoomFactor(),
     onGlassChanged,
     rendererReady: () => ipcRenderer.send("appearance:rendererReady")
   },

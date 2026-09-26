@@ -29,6 +29,25 @@ export function initWindowGlass(): void {
   api.onGlassChanged(setGlassState);
 }
 
+/**
+ * Mirrors the page zoom factor (Cmd +/−, persisted per origin by Chromium) as `--window-zoom`.
+ * The native traffic lights sit at fixed window points, so the titlebar height and the
+ * traffic-light inset divide by it to stay aligned at any zoom. Zooming changes
+ * devicePixelRatio, so a resolution media query tells us when to re-read it.
+ */
+export function initWindowZoom(): void {
+  const api = appearanceApi();
+  if (!api?.getZoomFactor) return;
+  const root = document.documentElement;
+  const update = () => {
+    root.style.setProperty("--window-zoom", String(api.getZoomFactor()));
+    window
+      .matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+      .addEventListener("change", update, { once: true });
+  };
+  update();
+}
+
 /** Tells the main process the first real frame is on screen, so it can show the (hidden) window. */
 export function signalWindowReady(): void {
   // Two frames: the first rAF runs before React's commit is painted, the second after.
