@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMatch, useNavigate } from "react-router-dom";
 import { useShallow } from "zustand/react/shallow";
 import { statusForFen } from "@chaturanga/shared/chess/position";
@@ -63,6 +63,11 @@ export function App() {
   const [reviewTab, setReviewTab] = useState<ReviewTab>("commentary");
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId | null>(null);
   const [focusMode, setFocusMode] = useState(false);
+  /**
+   * Bumped by every game open and every view change. A saved game that finishes loading after
+   * a newer selection (or after the user went elsewhere) is dropped instead of taking over.
+   */
+  const latestNavigation = useRef(0);
   const [actionRailOpen, setActionRailOpen] = useState(true);
   const [activePuzzleConfig, setActivePuzzleConfig] = useState<PuzzleSessionConfig | null>(null);
   const [puzzleHistoryIds, setPuzzleHistoryIds] = useState<string[]>([]);
@@ -131,6 +136,7 @@ export function App() {
 
   /** Switches the view, leaving the review route when going anywhere else. */
   function showView(view: AppView) {
+    latestNavigation.current += 1;
     // The route change belongs to the same view transition, so the old snapshot is the real old view.
     setAppView(view, onReviewRoute && view !== "game-review" ? () => navigate("/") : undefined);
   }
@@ -213,11 +219,13 @@ export function App() {
   }
 
   async function openSelectedGameReview(gameId: string) {
+    const request = ++latestNavigation.current;
     if (gameId !== "current" && gameId !== currentGame().gameId) {
       // Load the other game first and swap board + review together. Clearing the current
       // review before the new game arrives would let autosave write the current game without
       // its review, and the review route would show the wrong board meanwhile.
       const saved = await window.chaturanga?.games.get(gameId).catch(() => null);
+      if (request !== latestNavigation.current) return;
       if (!saved) {
         useGameStore.setState({ lastError: "Couldn't open that game." });
         return;
@@ -240,9 +248,11 @@ export function App() {
 
   /** Home → Resume / a recent game: the board with that saved game (the loaded game is kept as is). */
   async function openSavedGameById(gameId: string) {
+    const request = ++latestNavigation.current;
     if (gameId !== currentGame().gameId) {
       if (!window.chaturanga) return;
       const saved = await window.chaturanga.games.get(gameId);
+      if (request !== latestNavigation.current) return;
       stopEngineWork();
       clearPuzzleSession();
       openSavedGame(saved);

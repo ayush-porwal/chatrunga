@@ -172,6 +172,9 @@ export function ReviewSettingsPanel({
           <Input id="review-rating" type="number" min={400} max={3500} step={10} value={settings.reviewPlayerRating} onChange={(event) => set("reviewPlayerRating", Math.round(Math.max(400, Math.min(3500, Number(event.target.value) || 1500))))} />
         </Field>
         <Disclosure
+          // defaultOpen is read on mount only: remount once the config has loaded so a missing
+          // key opens the form (isSuccess stays true across refetches, so saving a key won't re-collapse it).
+          key={openRouter.isSuccess ? "config-loaded" : "config-loading"}
           title="OpenRouter"
           summary={openRouter.isLoading ? undefined : hasApiKey ? "Key saved" : "No key"}
           defaultOpen={openRouter.isSuccess && !hasApiKey}
