@@ -14,15 +14,12 @@ export const AUTOSAVE_DELAY_MS = 600;
  */
 export function useGameAutosave(): void {
   const saveGame = useSaveGameMutation().mutate;
-  const currentNodeId = useGameStore((state) => state.currentNodeId);
-  const moveTree = useGameStore((state) => state.moveTree);
-  const mode = useGameStore((state) => state.mode);
-  const gameOutcome = useGameStore((state) => state.gameOutcome);
-  const activePuzzle = usePuzzleStore((state) => state.activePuzzle);
-  const review = useReviewStore((state) => state.review);
 
+  // Subscribes to the stores directly (no React state), so a move or a review update does not
+  // re-render the app shell that mounts this hook.
   useEffect(() => {
-    const timeout = window.setTimeout(() => {
+    let timeout = 0;
+    const save = () => {
       const game = useGameStore.getState();
       // Puzzle practice is ephemeral: never persist it as a "saved game" / recent entry.
       if (game.mode === "puzzle" && usePuzzleStore.getState().activePuzzle) return;
@@ -42,7 +39,32 @@ export function useGameAutosave(): void {
         },
         { onSuccess: (saved) => useGameStore.getState().setGameId(saved.id) }
       );
-    }, AUTOSAVE_DELAY_MS);
-    return () => window.clearTimeout(timeout);
-  }, [activePuzzle, currentNodeId, gameOutcome, mode, moveTree, review, saveGame]);
+    };
+    const schedule = () => {
+      window.clearTimeout(timeout);
+      timeout = window.setTimeout(save, AUTOSAVE_DELAY_MS);
+    };
+    const unsubscribers = [
+      useGameStore.subscribe((state, previous) => {
+        if (
+          state.currentNodeId !== previous.currentNodeId ||
+          state.moveTree !== previous.moveTree ||
+          state.mode !== previous.mode ||
+          state.gameOutcome !== previous.gameOutcome
+        ) {
+          schedule();
+        }
+      }),
+      usePuzzleStore.subscribe((state, previous) => {
+        if (state.activePuzzle !== previous.activePuzzle) schedule();
+      }),
+      useReviewStore.subscribe((state, previous) => {
+        if (state.review !== previous.review) schedule();
+      })
+    ];
+    return () => {
+      window.clearTimeout(timeout);
+      unsubscribers.forEach((unsubscribe) => unsubscribe());
+    };
+  }, [saveGame]);
 }

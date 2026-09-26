@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { Bot, Check, ChevronDown, Play, Settings } from "lucide-react";
 import { isManagedEngine } from "@chaturanga/shared/engine/managed";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
@@ -68,7 +68,7 @@ type EngineGameSetupProps = {
 };
 
 /** The "Engine game" page: pick an opponent, a side and a clock, then Start. */
-export function EngineGamePage(props: EngineGameSetupProps) {
+export const EngineGamePage = memo(function EngineGamePage(props: EngineGameSetupProps) {
   const setup = useEngineGameSetup(props);
   return (
     <Page>
@@ -83,13 +83,15 @@ export function EngineGamePage(props: EngineGameSetupProps) {
       </section>
     </Page>
   );
-}
+});
 
 type EngineGameSetupState = ReturnType<typeof useEngineGameSetup>;
 
 function useEngineGameSetup({ onOpenSettings, onStart }: EngineGameSetupProps) {
   const engines = useEnginesQuery();
-  const game = useGameStore();
+  // Actions and initial values only; `matchRunning` is the one live value the page renders.
+  const game = useGameStore.getState();
+  const matchRunning = useGameStore((state) => state.mode === "engine" && Boolean(state.engineSide) && !state.gameOutcome);
   const defaultEngine = useMemo(
     () => engines.data?.find((engine) => engine.isDefault) ?? engines.data?.[0],
     [engines.data]
@@ -138,7 +140,10 @@ function useEngineGameSetup({ onOpenSettings, onStart }: EngineGameSetupProps) {
       event: "Casual game",
       site: "?",
       result: "*",
-      timeControl: tcTag
+      timeControl: tcTag,
+      // Named sides: the titlebar, board labels and saved game keep the engine's name after the game ends.
+      white: engineColor === "white" ? selectedEngine.name : "You",
+      black: engineColor === "black" ? selectedEngine.name : "You"
     });
     game.setMode("engine");
     game.setEngineSide(engineColor);
@@ -171,7 +176,7 @@ function useEngineGameSetup({ onOpenSettings, onStart }: EngineGameSetupProps) {
     engineId: engineId || defaultEngine?.id || "",
     setEngineId,
     canStart: Boolean(selectedEngine?.isAvailable),
-    matchRunning: game.mode === "engine" && Boolean(game.engineSide) && !game.gameOutcome,
+    matchRunning,
     humanColor,
     setHumanColor,
     moveTimeMs,

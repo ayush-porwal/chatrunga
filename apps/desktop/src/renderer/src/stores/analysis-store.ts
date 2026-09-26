@@ -11,10 +11,22 @@ type AnalysisStore = {
   setActiveEngine: (engineId: string | null) => void;
   setStatus: (status: EngineStatus) => void;
   setInfo: (info: EngineInfo) => void;
+  /** Apply a throttled batch of engine infos in one update (one render per batch). */
+  setInfos: (infos: readonly EngineInfo[]) => void;
   setBestMove: (bestMove: string | null) => void;
   setError: (error: string | null) => void;
   reset: () => void;
 };
+
+function mergeInfos(
+  topLines: readonly EngineInfo[],
+  infos: readonly EngineInfo[]
+): Pick<AnalysisStore, "latestInfo" | "topLines" | "status"> {
+  const byLine = new Map(topLines.map((line) => [line.multipv ?? 1, line]));
+  for (const info of infos) byLine.set(info.multipv ?? 1, info);
+  const next = [...byLine.values()].sort((left, right) => (left.multipv ?? 1) - (right.multipv ?? 1));
+  return { latestInfo: infos[infos.length - 1] ?? null, topLines: next, status: "thinking" };
+}
 
 export const useAnalysisStore = create<AnalysisStore>((set) => ({
   activeEngineId: null,
@@ -25,15 +37,10 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
   error: null,
   setActiveEngine: (activeEngineId) => set({ activeEngineId }),
   setStatus: (status) => set({ status }),
-  setInfo: (latestInfo) =>
-    set((state) => {
-      const multipv = latestInfo.multipv ?? 1;
-      const next = state.topLines
-        .filter((line) => (line.multipv ?? 1) !== multipv)
-        .concat(latestInfo)
-        .sort((left, right) => (left.multipv ?? 1) - (right.multipv ?? 1));
-      return { latestInfo, topLines: next, status: "thinking" };
-    }),
+  setInfo: (latestInfo) => set((state) => mergeInfos(state.topLines, [latestInfo])),
+  setInfos: (infos) => {
+    if (infos.length) set((state) => mergeInfos(state.topLines, infos));
+  },
   setBestMove: (bestMove) => set({ bestMove, status: "ready" }),
   setError: (error) => set({ error, status: "error" }),
   reset: () =>

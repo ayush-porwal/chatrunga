@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Check, CircleDashed, Trash2 } from "lucide-react";
 import { reviewLabel } from "@chaturanga/shared/chess/review";
 import { formatMoveEval } from "../game-review/review-score";
@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import { QualityBadge } from "@/components/ui/quality-badge";
+import { isRapidNavigation, usePrefersReducedMotion } from "../board/board-motion";
 
 const ROOT_ID = "root";
 /** Deeper variations stop indenting (the depth is still in the row's title). */
@@ -43,14 +44,27 @@ export function TreeView({
 }: TreeViewProps) {
   const model = useMemo(() => buildTreeModel(nodes, ROOT_ID), [nodes]);
   const listRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const reducedMotion = usePrefersReducedMotion();
 
+  // Keep the current move in view inside the list only (never scrolls the page or the panel),
+  // clear of the sticky header; glides for single steps, jumps while scrubbing.
   useEffect(() => {
-    if (!selectedNodeId || !listRef.current) return;
-    const active = [...listRef.current.querySelectorAll<HTMLElement>("[data-tree-node-id]")].find(
-      (element) => element.dataset.treeNodeId === selectedNodeId
-    );
-    active?.scrollIntoView({ block: "nearest" });
-  }, [selectedNodeId, model]);
+    const list = listRef.current;
+    if (!selectedNodeId || !list) return;
+    const active = list.querySelector<HTMLElement>(`[data-tree-node-id="${CSS.escape(selectedNodeId)}"]`);
+    if (!active) return;
+    const listBox = list.getBoundingClientRect();
+    const box = active.getBoundingClientRect();
+    const top = listBox.top + (headerRef.current?.offsetHeight ?? 0) + SCROLL_MARGIN;
+    const bottom = listBox.bottom - SCROLL_MARGIN;
+    let delta = 0;
+    if (box.top < top) delta = box.top - top;
+    else if (box.bottom > bottom) delta = box.bottom - bottom;
+    if (!delta) return;
+    const smooth = !reducedMotion && !isRapidNavigation() && Math.abs(delta) < list.clientHeight * 2;
+    list.scrollTo({ top: list.scrollTop + delta, behavior: smooth ? "smooth" : "auto" });
+  }, [selectedNodeId, model, reducedMotion]);
 
   const hasMoves = model.mainline.length > 0 || model.rootVariations.some((block) => block.rows.length);
   if (!hasMoves) {
@@ -63,9 +77,9 @@ export function TreeView({
         <VariationRow
           key={`${row.node.id}-${blockIndex}-${rowIndex}`}
           row={row}
-          selectedNodeId={selectedNodeId}
-          reviews={reviews}
-          commentaryByNodeId={commentaryByNodeId}
+          selected={selectedNodeId === row.node.id}
+          review={reviews?.get(row.node.id)}
+          commentary={commentaryByNodeId?.get(row.node.id)}
           showScores={showScores}
           showCommentaryState={showCommentaryState}
           onSelectNode={onSelectNode}
@@ -74,9 +88,28 @@ export function TreeView({
       ))
     );
 
+  const cell = (node: MoveNode | undefined) =>
+    node ? (
+      <TreeNodeButton
+        node={node}
+        selected={selectedNodeId === node.id}
+        review={reviews?.get(node.id)}
+        commentary={commentaryByNodeId?.get(node.id)}
+        showScores={showScores}
+        showCommentaryState={showCommentaryState}
+        onSelectNode={onSelectNode}
+        onDeleteLine={onDeleteLine}
+      />
+    ) : (
+      <span aria-hidden="true" />
+    );
+
   return (
     <div ref={listRef} className={cn("scroll-area min-h-0 overflow-y-auto", className)} role="tree" aria-label={ariaLabel}>
-      <div className="sticky top-0 z-10 mb-1 grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)] gap-1 border-b border-line-subtle bg-surface py-1.5 text-xs text-fg-muted">
+      <div
+        ref={headerRef}
+        className="sticky top-0 z-10 mb-1 grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)] gap-1 border-b border-line-subtle bg-surface py-1.5 text-xs text-fg-muted"
+      >
         <span className="text-center">#</span>
         <span className="px-2">White</span>
         <span className="px-2">Black</span>
@@ -103,27 +136,9 @@ export function TreeView({
           return (
             <Fragment key={`main-${row.number}-${whiteId ?? "empty"}-${blackId ?? "empty"}`}>
               <div className="grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)] items-stretch gap-1" role="row" aria-level={1}>
-                <span className="flex items-center justify-center font-mono text-2xs text-fg-subtle">{row.number}.</span>
-                <TreeNodeCell
-                  node={row.white}
-                  selectedNodeId={selectedNodeId}
-                  reviews={reviews}
-                  commentaryByNodeId={commentaryByNodeId}
-                  showScores={showScores}
-                  showCommentaryState={showCommentaryState}
-                  onSelectNode={onSelectNode}
-                  onDeleteLine={onDeleteLine}
-                />
-                <TreeNodeCell
-                  node={row.black}
-                  selectedNodeId={selectedNodeId}
-                  reviews={reviews}
-                  commentaryByNodeId={commentaryByNodeId}
-                  showScores={showScores}
-                  showCommentaryState={showCommentaryState}
-                  onSelectNode={onSelectNode}
-                  onDeleteLine={onDeleteLine}
-                />
+                <span className="flex items-center justify-center font-mono text-2xs text-fg-subtle tabular-nums">{row.number}.</span>
+                {cell(row.white)}
+                {cell(row.black)}
               </div>
               {renderVariationBlocks(whiteId ? model.variationsByParent.get(whiteId) : undefined)}
               {renderVariationBlocks(blackId ? model.variationsByParent.get(blackId) : undefined)}
@@ -135,61 +150,26 @@ export function TreeView({
   );
 }
 
-type NodeCellProps = {
-  node: MoveNode | undefined;
-  selectedNodeId: string | null;
-  reviews?: ReadonlyMap<string, MoveReview>;
-  commentaryByNodeId?: ReadonlyMap<string, ReviewCommentary>;
+/** Room kept between the current move and the list's edges when scrolling it into view. */
+const SCROLL_MARGIN = 8;
+
+type NodeButtonProps = {
+  node: MoveNode;
+  selected: boolean;
+  review?: MoveReview;
+  commentary?: ReviewCommentary;
   showScores: boolean;
   showCommentaryState: boolean;
+  variation?: boolean;
   onSelectNode: (nodeId: string) => void;
   onDeleteLine?: (nodeId: string) => void;
 };
 
-function TreeNodeCell({
-  node,
-  selectedNodeId,
-  reviews,
-  commentaryByNodeId,
-  showScores,
-  showCommentaryState,
-  onSelectNode,
-  onDeleteLine
-}: NodeCellProps) {
-  if (!node) return <span aria-hidden="true" />;
-  return (
-    <TreeNodeButton
-      node={node}
-      selected={selectedNodeId === node.id}
-      review={reviews?.get(node.id)}
-      commentary={commentaryByNodeId?.get(node.id)}
-      showScores={showScores}
-      showCommentaryState={showCommentaryState}
-      onSelect={() => onSelectNode(node.id)}
-      onDelete={onDeleteLine ? () => onDeleteLine(node.id) : undefined}
-    />
-  );
-}
-
-function VariationRow({
+/** Memoised: stepping through a game re-renders only the two rows whose selection changed. */
+const VariationRow = memo(function VariationRow({
   row,
-  selectedNodeId,
-  reviews,
-  commentaryByNodeId,
-  showScores,
-  showCommentaryState,
-  onSelectNode,
-  onDeleteLine
-}: {
-  row: TreeVariationRow;
-  selectedNodeId: string | null;
-  reviews?: ReadonlyMap<string, MoveReview>;
-  commentaryByNodeId?: ReadonlyMap<string, ReviewCommentary>;
-  showScores: boolean;
-  showCommentaryState: boolean;
-  onSelectNode: (nodeId: string) => void;
-  onDeleteLine?: (nodeId: string) => void;
-}) {
+  ...button
+}: Omit<NodeButtonProps, "node" | "variation"> & { row: TreeVariationRow }) {
   const visualDepth = Math.min(row.depth, MAX_VISUAL_DEPTH);
   const hiddenDepth = Math.max(0, row.depth - MAX_VISUAL_DEPTH);
   return (
@@ -202,25 +182,15 @@ function VariationRow({
       aria-level={row.depth + 1}
       title={hiddenDepth ? `Variation depth ${row.depth}` : undefined}
     >
-      <span className="flex items-center justify-center font-mono text-2xs text-fg-subtle">{movePrefix(row.node)}</span>
+      <span className="flex items-center justify-center font-mono text-2xs text-fg-subtle tabular-nums">{movePrefix(row.node)}</span>
       <div className="col-span-2 min-w-0">
-        <TreeNodeButton
-          node={row.node}
-          selected={selectedNodeId === row.node.id}
-          review={reviews?.get(row.node.id)}
-          commentary={commentaryByNodeId?.get(row.node.id)}
-          showScores={showScores}
-          showCommentaryState={showCommentaryState}
-          variation
-          onSelect={() => onSelectNode(row.node.id)}
-          onDelete={onDeleteLine ? () => onDeleteLine(row.node.id) : undefined}
-        />
+        <TreeNodeButton node={row.node} variation {...button} />
       </div>
     </div>
   );
-}
+});
 
-function TreeNodeButton({
+const TreeNodeButton = memo(function TreeNodeButton({
   node,
   selected,
   review,
@@ -228,26 +198,16 @@ function TreeNodeButton({
   showScores,
   showCommentaryState,
   variation = false,
-  onSelect,
-  onDelete
-}: {
-  node: MoveNode;
-  selected: boolean;
-  review?: MoveReview;
-  commentary?: ReviewCommentary;
-  showScores: boolean;
-  showCommentaryState: boolean;
-  variation?: boolean;
-  onSelect: () => void;
-  onDelete?: () => void;
-}) {
+  onSelectNode,
+  onDeleteLine
+}: NodeButtonProps) {
   const title = review
     ? `${reviewLabel(review.classification)} · ${formatMoveEval(review)}`
     : variation
       ? `Variation: ${node.san ?? "move"}`
       : node.san ?? "Move";
 
-  const showDelete = selected && Boolean(onDelete);
+  const showDelete = selected && Boolean(onDeleteLine);
 
   return (
     <div className="group relative min-w-0">
@@ -257,23 +217,24 @@ function TreeNodeButton({
         aria-current={selected ? "step" : undefined}
         aria-selected={selected}
         className={cn(
-          "flex h-8 w-full min-w-0 items-center gap-1.5 rounded-md px-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent/50",
+          "flex h-8 w-full min-w-0 items-center gap-1.5 rounded-md px-2 text-left outline-none",
+          "transition-[background-color,color,box-shadow] duration-micro ease-standard focus-visible:ring-2 focus-visible:ring-accent/50",
           selected
-            ? "bg-accent-strong text-fg"
+            ? "bg-accent-strong text-fg shadow-[inset_0_0_0_1px_rgb(255_255_255/0.06)]"
             : variation
               ? "text-fg-muted hover:bg-control hover:text-fg"
               : "text-fg-secondary hover:bg-control hover:text-fg",
           showDelete && "pr-8"
         )}
         title={title}
-        onClick={onSelect}
+        onClick={() => onSelectNode(node.id)}
       >
         <span className={cn("truncate font-mono text-sm", selected && "font-semibold")}>{node.san ?? "–"}</span>
         {variation ? <span className="shrink-0 text-fg-subtle">↳</span> : null}
         {review ? <QualityBadge variant="glyph" classification={review.classification} selected={selected} /> : null}
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           {showScores && review ? (
-            <span className={cn("font-mono text-2xs", selected ? "text-fg/80" : "text-fg-subtle")}>
+            <span className={cn("font-mono text-2xs tabular-nums", selected ? "text-fg/80" : "text-fg-subtle")}>
               {formatMoveEval(review)}
             </span>
           ) : null}
@@ -296,10 +257,10 @@ function TreeNodeButton({
           className="absolute right-0.5 top-1/2 -translate-y-1/2 opacity-0 hover:bg-danger-soft group-hover:opacity-100 focus-visible:opacity-100"
           onClick={(event) => {
             event.stopPropagation();
-            onDelete?.();
+            onDeleteLine?.(node.id);
           }}
         />
       ) : null}
     </div>
   );
-}
+});

@@ -33,8 +33,10 @@ function nodeColor(node: MoveNode): "white" | "black" {
   }
 }
 
+/** The FEN's fullmove number, so a game from a set-up position (a puzzle at move 30) counts from there. */
 function moveNumber(node: MoveNode): number {
-  return Math.floor(Math.max(0, node.ply - 1) / 2) + 1;
+  const fullmove = Number(node.fenBefore.split(" ")[5]);
+  return Number.isInteger(fullmove) && fullmove > 0 ? fullmove : Math.floor(Math.max(0, node.ply - 1) / 2) + 1;
 }
 
 function movePrefix(node: MoveNode): string {

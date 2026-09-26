@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import { mainlineReviewInput } from "../features/game-review/review-utils";
@@ -36,10 +36,9 @@ export function useReviewRunner({
   /** No usable evaluation engine: the user has to pick one in Review settings. */
   onEngineMissing: () => void;
 }): { startReview: () => Promise<void>; hasMoves: boolean } {
-  const moveTree = useGameStore((state) => state.moveTree);
-  const rootFen = useGameStore((state) => state.rootFen);
-  const timeControl = useGameStore((state) => state.headers.timeControl ?? null);
-  const reviewInput = useMemo(() => mainlineReviewInput(moveTree), [moveTree]);
+  // Only "is there a main line?" is rendered; the game itself is read when a review starts, so the
+  // app shell does not re-render on every move.
+  const hasMoves = useGameStore((state) => hasMainlineMove(state.moveTree));
   const { defaultEngineId, reviewUseMaia, reviewSearchTimeMs } = settings;
 
   const startReview = useCallback(async () => {
@@ -48,6 +47,8 @@ export function useReviewRunner({
       review.setError("Game Review needs the desktop app to run the engine.");
       return;
     }
+    const { moveTree, rootFen, headers } = useGameStore.getState();
+    const reviewInput = mainlineReviewInput(moveTree);
     // Nothing to review: the UI offers import / new game instead of Analyze.
     if (!reviewInput.length) return;
     if (gameLoading) {
@@ -74,13 +75,19 @@ export function useReviewRunner({
         rootFen,
         moves: reviewInput,
         moveTimeMs: reviewSearchTimeMs,
-        timeControl
+        timeControl: headers.timeControl ?? null
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message !== REVIEW_CANCELLED) useReviewStore.getState().setError(message);
     }
-  }, [defaultEngineId, engines, gameLoading, onEngineMissing, reviewInput, reviewSearchTimeMs, reviewUseMaia, rootFen, timeControl]);
+  }, [defaultEngineId, engines, gameLoading, onEngineMissing, reviewSearchTimeMs, reviewUseMaia]);
 
-  return { startReview, hasMoves: reviewInput.length > 0 };
+  return { startReview, hasMoves };
+}
+
+/** Whether the game has at least one main-line move (the root has a child). */
+function hasMainlineMove(moveTree: readonly { parentId: string | null; children: string[] }[]): boolean {
+  const root = moveTree.find((node) => node.parentId === null);
+  return Boolean(root?.children.length);
 }

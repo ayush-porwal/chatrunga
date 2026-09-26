@@ -15,6 +15,9 @@ import { divider } from "@/lib/ui";
 import { QualityBadge } from "@/components/ui/quality-badge";
 import { replyLineUcis } from "./commentary-moves";
 import { MoveLine, VariationAnchorNote, type GoToLine } from "./MoveLinks";
+import { cn } from "@/lib/utils";
+import { isRapidNavigation } from "../board/board-motion";
+import "./review.css";
 
 /** Engine evidence for the selected move: evals, best line, alternatives, Maia curve, derived facts. */
 export function ReviewEnginePanel({
@@ -74,7 +77,10 @@ export function ReviewEnginePanel({
   const alternatives = showTopLines ? move.topLines.slice(0, 5) : [];
 
   return (
-    <div className="scroll-area -mr-3 grid h-full min-h-0 content-start gap-4 overflow-y-auto pr-3">
+    <div
+      key={move.nodeId}
+      className={cn("scroll-area -mr-3 grid h-full min-h-0 content-start gap-4 overflow-y-auto pr-3", !isRapidNavigation() && "review-swap")}
+    >
       <header className="flex min-h-8 items-center gap-2">
         <h2 className="font-mono text-base font-semibold text-fg">{moveLabel(move)}</h2>
         <QualityBadge classification={move.classification} />
@@ -115,11 +121,11 @@ export function ReviewEnginePanel({
               {alternatives.map((line, index) => (
                 <li key={line.multipv} className="grid grid-cols-[1rem_3rem_minmax(0,1fr)_auto] items-center gap-2 py-1.5 font-mono text-xs">
                   <span className="text-fg-subtle">{index + 1}</span>
-                  <span className="text-fg-secondary">{formatScore(line.scoreWhite)}</span>
+                  <span className="text-fg-secondary tabular-nums">{formatScore(line.scoreWhite)}</span>
                   <span className="truncate text-fg-muted">
                     <MoveLine startNodeId={parentNodeId} sans={uciLineToSan(move.fenBefore, line.pv.slice(0, 5))} onGoToLine={onGoToLine} empty="" linkClassName="text-current hover:text-accent" />
                   </span>
-                  <span className="text-fg-subtle">{lineDelta(line, move.topLines[0])}</span>
+                  <span className="text-fg-subtle tabular-nums">{lineDelta(line, move.topLines[0])}</span>
                 </li>
               ))}
             </ol>

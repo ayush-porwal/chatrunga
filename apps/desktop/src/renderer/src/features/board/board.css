@@ -1,0 +1,293 @@
+/*
+ * Chessground finishing for every board (game board, review board, graph tooltip board).
+ * Loaded after chessground's own CSS (unlayered, like it), so equal-specificity rules here win.
+ * Square colours come from the board theme as --cg-sq-light / --cg-sq-dark (set on .cg-wrap by
+ * useCgBoardBackground), so highlights and coordinates stay legible on every theme.
+ */
+
+.cg-wrap {
+  --cg-sq-light: #f0d9b5;
+  --cg-sq-dark: #b58863;
+}
+
+/* The app's boards (not every Chessground wrapper, e.g. settings previews): coordinates size
+   with the board through container units. */
+.cg-wrap.board-surface {
+  container-type: inline-size;
+}
+
+/* ---------------------------------------------------------------- squares */
+
+cg-board square.last-move {
+  background-color: rgb(205 210 106 / 0.5);
+}
+
+cg-board square.selected {
+  background-color: rgb(143 182 111 / 0.55);
+}
+
+/* Legal-move dots: a small soft dot on empty squares, a ring on occupied ones. */
+cg-board square.move-dest {
+  background: radial-gradient(rgb(22 26 20 / 0.26) 19%, rgb(22 26 20 / 0) calc(19% + 1px));
+}
+
+cg-board square.oc.move-dest {
+  background: radial-gradient(transparent 0%, transparent 77%, rgb(22 26 20 / 0.26) calc(77% + 1px));
+}
+
+cg-board square.move-dest:hover,
+cg-board square.move-dest.hover {
+  background: rgb(143 182 111 / 0.38);
+}
+
+/* Premoves read as "queued": the info blue, quieter than a real move. */
+cg-board square.premove-dest {
+  background: radial-gradient(rgb(44 78 128 / 0.34) 19%, rgb(44 78 128 / 0) calc(19% + 1px));
+}
+
+cg-board square.oc.premove-dest {
+  background: radial-gradient(transparent 0%, transparent 77%, rgb(44 78 128 / 0.34) calc(77% + 1px));
+}
+
+cg-board square.premove-dest:hover,
+cg-board square.premove-dest.hover {
+  background: rgb(96 165 250 / 0.28);
+}
+
+cg-board square.current-premove {
+  background-color: rgb(96 165 250 / 0.38);
+}
+
+cg-board square.check {
+  background: radial-gradient(
+    ellipse at center,
+    rgb(255 64 48 / 0.95) 0%,
+    rgb(230 40 30 / 0.75) 28%,
+    rgb(170 0 0 / 0) 84%
+  );
+}
+
+/* ---------------------------------------------------------------- pieces */
+
+/* Picked-up piece: lifts a little and casts a soft shadow (scale is independent of the transform
+   Chessground uses to position it). */
+cg-board piece.dragging {
+  scale: 1.08;
+  filter: drop-shadow(0 6px 8px rgb(0 0 0 / 0.35));
+  transition: scale var(--transition-duration-micro) var(--ease-enter);
+}
+
+.cg-wrap piece.ghost {
+  opacity: 0.25;
+}
+
+.cg-wrap.manipulable cg-board {
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------- coordinates */
+
+/* Ranks down the a-file (top-left of each square), files along the first rank (bottom-right),
+   sized with the board and coloured with the opposite square colour. */
+.cg-wrap coords {
+  font-family: inherit;
+  font-size: clamp(9px, 1.75cqi, 13px);
+  font-weight: 600;
+  line-height: 1;
+  opacity: 1;
+  text-transform: none;
+}
+
+.cg-wrap coords.ranks,
+.cg-wrap coords.ranks.left {
+  top: 0;
+  left: 0;
+  width: 12.5%;
+  height: 100%;
+  align-items: flex-start;
+}
+
+.cg-wrap coords.ranks coord {
+  transform: none;
+  padding: 0.3em 0 0 0.32em;
+}
+
+.cg-wrap coords.files {
+  text-transform: none;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  align-items: flex-end;
+}
+
+.cg-wrap coords.files coord {
+  flex: 1 1 0;
+  text-align: right;
+  padding: 0 0.32em 0.28em 0;
+}
+
+.cg-wrap.cg-wrap coords coord.coord-light {
+  color: var(--cg-sq-dark);
+}
+
+.cg-wrap.cg-wrap coords coord.coord-dark {
+  color: var(--cg-sq-light);
+}
+
+/* ---------------------------------------------------------------- feedback flashes */
+
+/* Puzzle feedback: the squares of a right / wrong move flash once and fade. */
+cg-board square.cg-flash-correct {
+  animation: cg-flash-correct 900ms var(--ease-enter) both;
+}
+
+cg-board square.cg-flash-wrong {
+  animation: cg-flash-wrong 900ms var(--ease-enter) both;
+}
+
+@keyframes cg-flash-correct {
+  0% {
+    background-color: rgb(118 190 92 / 0);
+  }
+  18% {
+    background-color: rgb(118 190 92 / 0.62);
+  }
+  100% {
+    background-color: rgb(118 190 92 / 0);
+  }
+}
+
+@keyframes cg-flash-wrong {
+  0% {
+    background-color: rgb(236 80 64 / 0);
+  }
+  18% {
+    background-color: rgb(236 80 64 / 0.6);
+  }
+  100% {
+    background-color: rgb(236 80 64 / 0);
+  }
+}
+
+/* Game over: the winner's king glows (twice); a draw marks both kings once. */
+cg-board square.cg-finale-win {
+  background: radial-gradient(circle at center, rgb(240 206 110 / 0.7) 0%, rgb(240 206 110 / 0.28) 46%, rgb(240 206 110 / 0) 72%);
+  animation: cg-finale-glow 1100ms var(--ease-enter) 2 both;
+}
+
+cg-board square.cg-finale-draw {
+  background: radial-gradient(circle at center, rgb(216 219 224 / 0.5) 0%, rgb(216 219 224 / 0) 70%);
+  animation: cg-finale-glow 1100ms var(--ease-enter) both;
+}
+
+@keyframes cg-finale-glow {
+  0% {
+    opacity: 0;
+    scale: 0.6;
+  }
+  45% {
+    opacity: 1;
+    scale: 1.25;
+  }
+  100% {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+/* ---------------------------------------------------------------- finale overlay (BoardView) */
+
+.board-finale-ring {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 2px rgb(240 206 110 / 0.85), inset 0 0 48px rgb(240 206 110 / 0.28);
+  animation: board-finale-ring 1600ms var(--ease-enter) both;
+}
+
+.board-finale-ring[data-tone="loss"] {
+  box-shadow: inset 0 0 0 2px rgb(169 173 180 / 0.5), inset 0 0 40px rgb(0 0 0 / 0.35);
+}
+
+.board-finale-ring[data-tone="draw"] {
+  box-shadow: inset 0 0 0 2px rgb(216 219 224 / 0.6), inset 0 0 40px rgb(216 219 224 / 0.14);
+}
+
+@keyframes board-finale-ring {
+  0% {
+    opacity: 0;
+  }
+  22% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.board-finale-chip {
+  animation: board-finale-chip 2800ms var(--ease-enter) both;
+}
+
+@keyframes board-finale-chip {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  10% {
+    opacity: 1;
+    transform: none;
+  }
+  82% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+
+/* ---------------------------------------------------------------- clocks */
+
+.board-clock-low[data-running="true"] {
+  animation: board-clock-low 1s ease-in-out infinite;
+}
+
+@keyframes board-clock-low {
+  50% {
+    background-color: rgb(255 154 141 / 0.2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  cg-board piece.dragging {
+    scale: 1;
+  }
+
+  cg-board square.cg-finale-win,
+  cg-board square.cg-finale-draw {
+    animation: none;
+  }
+
+  .board-finale-chip {
+    animation-name: board-finale-chip-reduced;
+  }
+
+  .board-clock-low[data-running="true"] {
+    animation: none;
+  }
+}
+
+@keyframes board-finale-chip-reduced {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  10%,
+  82% {
+    opacity: 1;
+  }
+}

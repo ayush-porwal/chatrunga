@@ -32,6 +32,23 @@ describe("analysis store", () => {
     ]);
   });
 
+  it("applies a batch of infos as one update, last info per line winning", () => {
+    let updates = 0;
+    const unsubscribe = useAnalysisStore.subscribe(() => (updates += 1));
+    useAnalysisStore.getState().setInfos([info(1, 10), info(2, 20), info(1, 15), info(3, 5)]);
+    unsubscribe();
+    const state = useAnalysisStore.getState();
+    expect(updates).toBe(1);
+    expect(state.latestInfo?.multipv).toBe(3);
+    expect(state.topLines.map((line) => [line.multipv, line.score?.value])).toEqual([
+      [1, 15],
+      [2, 20],
+      [3, 5]
+    ]);
+    useAnalysisStore.getState().setInfos([]);
+    expect(useAnalysisStore.getState()).toBe(state);
+  });
+
   it("tracks best moves, errors, and active engines", () => {
     useAnalysisStore.getState().setActiveEngine("engine-1");
     useAnalysisStore.getState().setBestMove("e2e4");

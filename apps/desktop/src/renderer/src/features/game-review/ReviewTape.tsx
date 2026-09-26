@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import {
   CartesianGrid,
   Line,
@@ -19,6 +19,7 @@ import { Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { SectionHeader } from "@/components/ui/page";
 import { Tooltip as UiTooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 type ChartPoint = {
   ply: number;
@@ -47,9 +48,26 @@ function resolveDataIndex(value: unknown, data: readonly ChartPoint[]): number |
   return null;
 }
 
+/*
+ * Fixed chart geometry, so the selection marker can be positioned without asking recharts for its
+ * scales: the plot spans [PLOT_LEFT, width - PLOT_RIGHT] × [PLOT_TOP, PLOT_TOP + PLOT_HEIGHT].
+ */
+const CHART_HEIGHT = 112;
+const MARGIN = { top: 6, right: 8, bottom: 0, left: 0 };
+const Y_AXIS_WIDTH = 32;
+const X_AXIS_HEIGHT = 22;
+const PLOT_LEFT = MARGIN.left + Y_AXIS_WIDTH;
+const PLOT_RIGHT = MARGIN.right;
+const PLOT_TOP = MARGIN.top;
+const PLOT_HEIGHT = CHART_HEIGHT - MARGIN.top - MARGIN.bottom - X_AXIS_HEIGHT;
+const TICK_STYLE = { fill: "var(--color-fg-subtle)", fontSize: 11 };
+const TOOLTIP_CURSOR = { stroke: "var(--color-line-strong)" };
+const ACTIVE_DOT = { r: 4.5, fill: "var(--color-accent)", stroke: "var(--color-accent-fg)", strokeWidth: 1.5 };
+
 /**
- * Memoised: during a review pass the parent re-renders on progress ticks, but the graph only
- * needs to redraw when a move is added or the selection changes (pass stable callbacks).
+ * The review's evaluation graph. The chart itself is memoised on the data and only redraws when a
+ * move is added; the selected move is a separate marker that glides between points (a CSS
+ * transform transition), so stepping through the game never re-renders the chart's dots or axes.
  */
 export const ReviewTape = memo(function ReviewTape({
   moves,
@@ -89,20 +107,17 @@ export const ReviewTape = memo(function ReviewTape({
     ];
   }, [moves]);
 
-  const selectedPoint = data.find((point) => point.move?.nodeId === selectedNodeId) ?? null;
-  const chartDomain = useMemo<[number, number]>(() => {
+  const yDomain = useMemo<[number, number]>(() => {
     let maxAbs = 50;
     for (const point of data) maxAbs = Math.max(maxAbs, Math.abs(point.score));
     const bound = Math.min(CHART_SCORE_LIMIT, Math.ceil((maxAbs * 1.2) / 50) * 50);
     return [-bound, bound];
   }, [data]);
-
   const lastPly = data[data.length - 1]?.ply ?? 0;
-  const xDomain: [number, number] | [string, string] = totalPlies ? [0, Math.max(totalPlies, lastPly)] : ["dataMin", "dataMax"];
+  const xMax = totalPlies ? Math.max(totalPlies, lastPly) : lastPly;
+  const xDomain = useMemo<[number, number]>(() => [0, xMax], [xMax]);
 
-  const selectPoint = (point: ChartPoint | undefined) => {
-    if (point?.move) onSelectNode(point.move.nodeId);
-  };
+  const selectedPoint = variationSelected ? null : data.find((point) => point.move?.nodeId === selectedNodeId) ?? null;
 
   return (
     <section className="min-w-0" aria-label="Game evaluation graph">
@@ -112,114 +127,204 @@ export const ReviewTape = memo(function ReviewTape({
         className="min-h-6"
         actions={
           <>
-            {variationSelected ? <Badge tone="warn">Variation</Badge> : null}
-            <UiTooltip>
-              <TooltipTrigger asChild>
-                <span tabIndex={0} aria-label="About the graph" className="grid size-6 place-items-center rounded-md text-fg-subtle outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/50">
-                  <Info className="size-3.5" />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-60">
-                White&apos;s perspective: above zero means White is better. Click a point to jump to that move.
-              </TooltipContent>
-            </UiTooltip>
+            {variationSelected ? <Badge tone="warn" className="animate-fade-in">Variation</Badge> : null}
+            <GraphHelp />
           </>
         }
       />
-      <div className="h-28 min-w-0 w-full">
-        <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 112 }}>
-          <LineChart
-            data={data}
-            margin={{ top: 6, right: 8, bottom: 0, left: 0 }}
-            onClick={(state) => {
-              const index = resolveDataIndex(state?.activeTooltipIndex, data);
-              if (index !== null) selectPoint(data[index]);
-            }}
-          >
-            <CartesianGrid stroke="var(--color-line-subtle)" vertical={false} />
-            <XAxis
-              dataKey="ply"
-              type="number"
-              domain={xDomain}
-              tick={{ fill: "var(--color-fg-subtle)", fontSize: 11 }}
-              stroke="var(--color-line)"
-              tickFormatter={(value) => String(value)}
-              interval="preserveStartEnd"
-            />
-            <YAxis
-              domain={chartDomain}
-              ticks={[-chartDomain[1], 0, chartDomain[1]]}
-              tickFormatter={(value) => (value === 0 ? "0" : `${value > 0 ? "+" : ""}${(value / 100).toFixed(0)}`)}
-              tick={{ fill: "var(--color-fg-subtle)", fontSize: 11 }}
-              stroke="var(--color-line)"
-              width={32}
-            />
-            <ReferenceLine y={0} stroke="var(--color-line-strong)" />
-            {selectedPoint ? <ReferenceLine x={selectedPoint.ply} stroke="var(--color-accent)" strokeDasharray="4 4" /> : null}
-            <Tooltip
-              cursor={{ stroke: "var(--color-line-strong)" }}
-              content={({ active, payload }) => {
-                const point = payload?.[0]?.payload as ChartPoint | undefined;
-                if (!active || !point) return null;
-                if (!point.move) {
-                  return <div className="pointer-events-none rounded-lg border border-line bg-surface-raised px-2 py-1 text-xs text-fg shadow-popover">Starting position</div>;
-                }
-                const move = point.move;
-                return (
-                  <div className="pointer-events-none flex gap-3 rounded-lg border border-line bg-surface-raised p-2 text-xs shadow-popover">
-                    <ReviewBoard fen={move.fenAfter} orientation={orientation} className="size-24 shrink-0" />
-                    <div className="grid min-w-0 content-start gap-1 py-0.5">
-                      <p className="font-mono font-semibold text-fg">{moveLabel(move)}</p>
-                      <QualityBadge classification={move.classification} className="justify-self-start" />
-                      <p className="font-mono text-fg-muted">{formatMoveEval(move)} · {move.evalLoss ?? "—"}cp</p>
-                    </div>
-                  </div>
-                );
-              }}
-            />
-            <Line
-              type="monotone"
-              dataKey="score"
-              stroke="var(--color-info)"
-              strokeWidth={1.5}
-              isAnimationActive={false}
-              dot={(props) => {
-                const point = props.payload as ChartPoint | undefined;
-                const selected = point?.move?.nodeId === selectedNodeId;
-                const interactive = Boolean(point?.move);
-                const label = point?.move
-                  ? `${moveLabel(point.move)}, after ${formatMoveEval(point.move)}`
-                  : "Starting position";
-                return (
-                  <circle
-                    key={`dot-${point?.ply ?? props.index}`}
-                    cx={props.cx}
-                    cy={props.cy}
-                    r={selected ? 4.5 : 2.5}
-                    className="cursor-pointer outline-none"
-                    fill={selected ? "var(--color-accent)" : point?.move ? "var(--color-info)" : "var(--color-fg-subtle)"}
-                    stroke={selected ? "var(--color-accent-fg)" : "var(--color-surface)"}
-                    strokeWidth={selected ? 1.5 : 1}
-                    tabIndex={interactive ? 0 : -1}
-                    role={interactive ? "button" : undefined}
-                    aria-label={label}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      selectPoint(point);
-                    }}
-                    onKeyDown={(event) => {
-                      if (!interactive || (event.key !== "Enter" && event.key !== " ")) return;
-                      event.preventDefault();
-                      selectPoint(point);
-                    }}
-                  />
-                );
-              }}
-              activeDot={{ r: 4.5, fill: "var(--color-accent)", stroke: "var(--color-accent-fg)", strokeWidth: 1.5 }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
+      <div className="relative min-w-0 w-full" style={{ height: CHART_HEIGHT }}>
+        <EvalChart data={data} xDomain={xDomain} yDomain={yDomain} orientation={orientation} onSelectNode={onSelectNode} />
+        <SelectionMarker point={selectedPoint} xDomain={xDomain} yDomain={yDomain} />
       </div>
     </section>
   );
 });
+
+/** The graph's help tooltip; memoised so selecting moves does not re-render its tooltip tree. */
+const GraphHelp = memo(function GraphHelp() {
+  return (
+    <UiTooltip>
+      <TooltipTrigger asChild>
+        <span tabIndex={0} aria-label="About the graph" className="grid size-6 place-items-center rounded-md text-fg-subtle outline-none transition-colors duration-micro ease-standard hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/50">
+          <Info className="size-3.5" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-60">
+        White&apos;s perspective: above zero means White is better. Click a point to jump to that move.
+      </TooltipContent>
+    </UiTooltip>
+  );
+});
+
+/** The glide-between-moves cursor: a dashed rule and a dot over the selected point. */
+function SelectionMarker({
+  point,
+  xDomain,
+  yDomain
+}: {
+  point: ChartPoint | null;
+  xDomain: [number, number];
+  yDomain: [number, number];
+}) {
+  const xSpan = xDomain[1] - xDomain[0];
+  const ySpan = yDomain[1] - yDomain[0];
+  const next = point
+    ? { x: xSpan > 0 ? (point.ply - xDomain[0]) / xSpan : 0, y: ySpan > 0 ? 1 - (point.score - yDomain[0]) / ySpan : 0.5 }
+    : null;
+  // Keep the last position while hidden so the marker fades out in place instead of jumping.
+  const [last, setLast] = useState({ x: 0, y: 0.5 });
+  if (next && (next.x !== last.x || next.y !== last.y)) setLast(next);
+  const { x, y } = next ?? last;
+  const left = `calc(${PLOT_LEFT}px + (100cqw - ${PLOT_LEFT + PLOT_RIGHT}px) * ${x.toFixed(4)})`;
+  const top = `calc(${PLOT_TOP}px + ${PLOT_HEIGHT}px * ${y.toFixed(4)})`;
+  const glide = "transition-[translate,opacity] duration-standard ease-enter";
+  return (
+    <div className={cn("pointer-events-none absolute inset-0 [container-type:size]", glide, point ? "opacity-100" : "opacity-0")} aria-hidden>
+      <span
+        className={cn("absolute left-0 w-0 border-l border-dashed border-accent/80", glide)}
+        style={{ top: PLOT_TOP, height: PLOT_HEIGHT, translate: `${left} 0` }}
+      />
+      <span
+        className={cn(
+          "absolute left-0 top-0 -ml-[4.5px] -mt-[4.5px] size-[9px] rounded-full border-[1.5px] border-accent-fg bg-accent shadow-[0_0_0_3px_rgb(143_182_111/0.22)]",
+          glide
+        )}
+        style={{ translate: `${left} ${top}` }}
+      />
+    </div>
+  );
+}
+
+/** The recharts line chart: re-renders only when the data or the axes change. */
+const EvalChart = memo(function EvalChart({
+  data,
+  xDomain,
+  yDomain,
+  orientation,
+  onSelectNode
+}: {
+  data: ChartPoint[];
+  xDomain: [number, number];
+  yDomain: [number, number];
+  orientation: Color;
+  onSelectNode: (nodeId: string) => void;
+}) {
+  const selectPoint = useCallback(
+    (point: ChartPoint | undefined) => {
+      if (point?.move) onSelectNode(point.move.nodeId);
+    },
+    [onSelectNode]
+  );
+  const yTicks = useMemo(() => [-yDomain[1], 0, yDomain[1]], [yDomain]);
+  const renderDot = useCallback(
+    (props: { cx?: number; cy?: number; index?: number; payload?: unknown }) => {
+      const point = props.payload as ChartPoint | undefined;
+      const interactive = Boolean(point?.move);
+      const label = point?.move ? `${moveLabel(point.move)}, after ${formatMoveEval(point.move)}` : "Starting position";
+      return (
+        <circle
+          key={`dot-${point?.ply ?? props.index}`}
+          cx={props.cx}
+          cy={props.cy}
+          r={2.5}
+          className="cursor-pointer outline-none focus-visible:[stroke:var(--color-accent)] focus-visible:[stroke-width:2]"
+          fill={point?.move ? "var(--color-info)" : "var(--color-fg-subtle)"}
+          stroke="var(--color-surface)"
+          strokeWidth={1}
+          tabIndex={interactive ? 0 : -1}
+          role={interactive ? "button" : undefined}
+          aria-label={label}
+          onClick={(event) => {
+            event.stopPropagation();
+            selectPoint(point);
+          }}
+          onKeyDown={(event) => {
+            if (!interactive || (event.key !== "Enter" && event.key !== " ")) return;
+            event.preventDefault();
+            selectPoint(point);
+          }}
+        />
+      );
+    },
+    [selectPoint]
+  );
+  const renderTooltip = useCallback(
+    ({ active, payload }: { active?: boolean; payload?: ReadonlyArray<{ payload?: unknown }> }) => {
+      const point = payload?.[0]?.payload as ChartPoint | undefined;
+      if (!active || !point) return null;
+      if (!point.move) {
+        return <div className="pointer-events-none rounded-lg border border-line bg-surface-raised px-2 py-1 text-xs text-fg shadow-popover">Starting position</div>;
+      }
+      const move = point.move;
+      return (
+        <div className="pointer-events-none flex gap-3 rounded-lg border border-line bg-surface-raised p-2 text-xs shadow-popover">
+          <ReviewBoard fen={move.fenAfter} orientation={orientation} className="size-24 shrink-0" />
+          <div className="grid min-w-0 content-start gap-1 py-0.5">
+            <p className="font-mono font-semibold text-fg">{moveLabel(move)}</p>
+            <QualityBadge classification={move.classification} className="justify-self-start" />
+            <p className="font-mono text-fg-muted tabular-nums">{formatMoveEval(move)} · {move.evalLoss ?? "—"}cp</p>
+          </div>
+        </div>
+      );
+    },
+    [orientation]
+  );
+
+  return (
+    <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: CHART_HEIGHT }}>
+      <LineChart
+        data={data}
+        margin={MARGIN}
+        onClick={(state) => {
+          const index = resolveDataIndex(state?.activeTooltipIndex, data);
+          if (index !== null) selectPoint(data[index]);
+        }}
+      >
+        <CartesianGrid stroke="var(--color-line-subtle)" vertical={false} />
+        <XAxis
+          dataKey="ply"
+          type="number"
+          domain={xDomain}
+          height={X_AXIS_HEIGHT}
+          tick={TICK_STYLE}
+          stroke="var(--color-line)"
+          tickFormatter={formatPlyTick}
+          interval="preserveStartEnd"
+        />
+        <YAxis
+          domain={yDomain}
+          ticks={yTicks}
+          tickFormatter={formatScoreTick}
+          tick={TICK_STYLE}
+          stroke="var(--color-line)"
+          width={Y_AXIS_WIDTH}
+        />
+        <ReferenceLine y={0} stroke="var(--color-line-strong)" />
+        <Tooltip
+          cursor={TOOLTIP_CURSOR}
+          isAnimationActive
+          animationDuration={160}
+          animationEasing="ease-out"
+          content={renderTooltip}
+        />
+        <Line
+          type="monotone"
+          dataKey="score"
+          stroke="var(--color-info)"
+          strokeWidth={1.5}
+          isAnimationActive={false}
+          dot={renderDot}
+          activeDot={ACTIVE_DOT}
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+});
+
+function formatPlyTick(value: number): string {
+  return String(value);
+}
+
+function formatScoreTick(value: number): string {
+  return value === 0 ? "0" : `${value > 0 ? "+" : ""}${(value / 100).toFixed(0)}`;
+}

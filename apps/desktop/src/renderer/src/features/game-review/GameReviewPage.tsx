@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
@@ -55,13 +55,13 @@ type GameReviewPageProps = {
   onNewGame: () => void;
 };
 
-export function GameReviewPage(props: GameReviewPageProps) {
+export const GameReviewPage = memo(function GameReviewPage(props: GameReviewPageProps) {
   return (
     <ErrorBoundary title="Game review hit an error" scope="game-review">
       <GameReviewPageInner {...props} />
     </ErrorBoundary>
   );
-}
+});
 
 function GameReviewPageInner({
   activeTab,
@@ -95,10 +95,14 @@ function GameReviewPageInner({
   // On an unreviewed variation, commentary and engine evidence stay on the nearest reviewed ancestor.
   // The move whose commentary / engine line a link was clicked from keeps the anchor on its lines.
   const [linkOriginNodeId, setLinkOriginNodeId] = useState<string | null>(null);
-  const anchor = useMemo(
+  const currentAnchor = useMemo(
     () => reviewAnchorFor(moveTree, selectedNodeId, reviewByNodeId, linkOriginNodeId),
     [linkOriginNodeId, moveTree, reviewByNodeId, selectedNodeId]
   );
+  // The board, graph and move list follow the selection at once; the text panels (commentary with
+  // its move links, engine evidence) follow as an interruptible low-priority render, so scrubbing
+  // through moves never waits for them.
+  const anchor = useDeferredValue(currentAnchor);
   const panelMove = anchor?.move ?? null;
   const panelParentId = useMemo(
     () => (panelMove ? moveTree.find((node) => node.id === panelMove.nodeId)?.parentId ?? null : null),
@@ -178,6 +182,18 @@ function GameReviewPageInner({
   /** No main-line moves (and no saved review): nothing to analyse or explain. */
   const emptyGame = reviewInput.length === 0 && !hasMoves;
 
+  // Memoised: stepping through moves leaves the review stats (and their Stat tree) alone.
+  const summary = useMemo(
+    () => (
+      <StatGroup className="w-full">
+        <Stat label="Accuracy" value={hasStats && accuracy !== null ? accuracy : "—"} />
+        <Stat label="Avg loss" value={hasStats && average !== null ? `${average}cp` : "—"} mono />
+        <Stat label="Errors" value={hasStats ? <ErrorCounts counts={counts} /> : "—"} />
+      </StatGroup>
+    ),
+    [accuracy, average, counts, hasStats]
+  );
+
   return (
     <BoardWorkspace
       panelLabel="Review"
@@ -200,13 +216,7 @@ function GameReviewPageInner({
           options={reviewTabOptions}
         />
       }
-      summary={
-        <StatGroup className="w-full">
-          <Stat label="Accuracy" value={hasStats && accuracy !== null ? accuracy : "—"} />
-          <Stat label="Avg loss" value={hasStats && average !== null ? `${average}cp` : "—"} mono />
-          <Stat label="Errors" value={hasStats ? <ErrorCounts counts={counts} /> : "—"} />
-        </StatGroup>
-      }
+      summary={summary}
       notices={
         loadError || reviewError ? (
           <>

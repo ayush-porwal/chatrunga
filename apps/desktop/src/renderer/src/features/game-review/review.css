@@ -1,0 +1,47 @@
+/*
+ * Game review panel motion. Content swaps (another move selected, the AI text replacing the local
+ * one) settle in with a short, partial fade — never from blank, so scrubbing moves does not blink.
+ */
+.review-swap {
+  animation: review-swap var(--transition-duration-standard) var(--ease-enter) both;
+}
+
+@keyframes review-swap {
+  from {
+    opacity: 0.35;
+  }
+}
+
+/* "Writing AI commentary…": a soft light sweep across the label while the text is prepared. */
+.review-shimmer {
+  background-image: linear-gradient(
+    100deg,
+    var(--color-fg-subtle) 0%,
+    var(--color-fg-subtle) 40%,
+    var(--color-fg-secondary) 50%,
+    var(--color-fg-subtle) 60%,
+    var(--color-fg-subtle) 100%
+  );
+  background-size: 250% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: review-shimmer 1.6s linear infinite;
+}
+
+@keyframes review-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .review-shimmer {
+    animation: none;
+    color: var(--color-fg-subtle);
+    background-image: none;
+  }
+}

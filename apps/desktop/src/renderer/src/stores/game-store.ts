@@ -25,6 +25,8 @@ export type EngineClockLive = {
   blackMs: number;
   turnStartedAt: number;
   sideToMove: Color;
+  /** Set when the game ends (mate, resignation, draw, flag): the clocks freeze at this moment. */
+  stoppedAt?: number;
 };
 
 type GameOutcome = {
@@ -97,6 +99,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     set((state) => ({
       gameOutcome: { result, termination },
       headers: { ...state.headers, result, termination },
+      engineClockLive: stopClock(state.engineClockLive),
       lastError: null,
       pendingPromotion: null
     }));
@@ -190,6 +193,10 @@ export const useGameStore = create<GameStore>((set, get) => {
       );
       set({ moveTree, currentFen: node.fenAfter, currentNodeId: node.id, lastError: null });
       advanceClockAfterMove(mover);
+      // Mate / stalemate / draw by rule ends a timed game on the board: freeze both clocks.
+      if (get().engineClockLive && statusForFen(node.fenAfter).isEnd) {
+        set((current) => ({ engineClockLive: stopClock(current.engineClockLive) }));
+      }
       return true;
     },
 
@@ -399,6 +406,17 @@ export function buildEngineGoClock(
     winc: Math.max(0, Math.floor(cfg.incrementMs)),
     binc: Math.max(0, Math.floor(cfg.incrementMs))
   };
+}
+
+function stopClock(live: EngineClockLive | null): EngineClockLive | null {
+  return live && live.stoppedAt === undefined ? { ...live, stoppedAt: Date.now() } : live;
+}
+
+/** Time left on `side`'s clock at `now` (the running side's clock counts down; a stopped game is frozen). */
+export function remainingClockMs(live: EngineClockLive, side: Color, now: number): number {
+  const at = live.stoppedAt === undefined ? now : Math.min(now, live.stoppedAt);
+  const elapsed = live.sideToMove === side ? Math.max(0, at - live.turnStartedAt) : 0;
+  return Math.max(0, (side === "white" ? live.whiteMs : live.blackMs) - elapsed);
 }
 
 function applyLineMove(fen: string, move: string): { fen: string; san: string; uci: string } | null {

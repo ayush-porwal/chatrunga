@@ -1,4 +1,4 @@
-import { Bot, CircleDashed, Lightbulb, LoaderCircle, RefreshCw, Sparkles } from "lucide-react";
+import { Bot, CircleDashed, Lightbulb, RefreshCw, Sparkles } from "lucide-react";
 import type { MoveReview, ReviewCommentary } from "@chaturanga/shared/types/engine";
 import type { CoachParts } from "@chaturanga/shared/llm/commentary";
 import { buildRatingCurveForMove, hasUsableMaiaData, moveLabel, uciToSan } from "./review-utils";
@@ -13,6 +13,8 @@ import { cn } from "@/lib/utils";
 import { QualityBadge } from "@/components/ui/quality-badge";
 import type { CommentaryMoveContext } from "./commentary-moves";
 import { CommentaryProse, MoveLink, VariationAnchorNote, type GoToLine } from "./MoveLinks";
+import { isRapidNavigation } from "../board/board-motion";
+import "./review.css";
 
 /**
  * The selected move's coaching view: the coach's headline, prose and "next time" tip, the
@@ -101,23 +103,25 @@ export function ReviewCommentaryPanel({
     san && parentId && onGoToLine ? () => onGoToLine({ startNodeId: parentId, moves: [san] }) : null;
   const goToPlayed = linkTo(played);
   const goToBest = linkTo(best);
+  // A new move settles in with a short partial fade — except while scrubbing through moves.
+  const swap = isRapidNavigation() ? undefined : "review-swap";
 
   return (
-    <div className="scroll-area -mr-3 grid h-full min-h-0 content-start gap-4 overflow-y-auto pr-3">
+    <div key={move.nodeId} className={cn("scroll-area -mr-3 grid h-full min-h-0 content-start gap-4 overflow-y-auto pr-3", swap)}>
       <header className="flex min-h-8 flex-wrap items-center gap-2">
         <h2 className="font-mono text-base font-semibold text-fg">{moveLabel(move)}</h2>
         <QualityBadge classification={move.classification} />
         <span className="ml-auto inline-flex items-center gap-1 text-2xs text-fg-subtle" aria-live="polite">
           {pending ? (
             <>
-              <LoaderCircle className="size-3.5 animate-spin" />
-              Writing AI commentary…
+              <Sparkles className="size-3.5 text-fg-subtle" aria-hidden />
+              <span className="review-shimmer">Writing AI commentary…</span>
             </>
           ) : commentary ? (
-            <>
+            <span key="ai" className="review-swap inline-flex items-center gap-1">
               <Bot className="size-3.5" />
               {commentarySourceLabel(commentary)}
-            </>
+            </span>
           ) : (
             <>
               <CircleDashed className="size-3.5" />
@@ -131,7 +135,14 @@ export function ReviewCommentaryPanel({
 
       {error ? <Notice tone="warn">{error}</Notice> : null}
 
-      <div className={cn("grid gap-3 transition-opacity", pending && !commentary && "opacity-80")}>
+      <div
+        key={commentary ? "ai" : "local"}
+        className={cn(
+          "grid gap-3 transition-opacity duration-standard ease-standard",
+          commentary && "review-swap",
+          pending && !commentary && "opacity-70"
+        )}
+      >
         {headline ? (
           <h3 className="font-serif text-lg font-semibold leading-7 text-fg">
             <CommentaryProse prose={headline} context={moveContext} onGoToLine={onGoToLine} />

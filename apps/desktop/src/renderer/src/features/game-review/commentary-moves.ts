@@ -332,10 +332,22 @@ function resolveRun(
  * are matched as consecutive moves of one line when possible ("Qb3 Bc5 Bxf7+"): clicking the third
  * lands after the whole prefix. Unresolvable tokens are absent from the map (render as text).
  */
+/** Search passes per context: a panel resolves its headline, prose and tip against the same lines. */
+const searchPassCache = new WeakMap<CommentaryMoveContext, SearchPass[]>();
+
+function searchPassesFor(ctx: CommentaryMoveContext): SearchPass[] {
+  let passes = searchPassCache.get(ctx);
+  if (!passes) {
+    passes = buildSearchPasses(ctx);
+    searchPassCache.set(ctx, passes);
+  }
+  return passes;
+}
+
 export function resolveCommentaryMoves(
   segments: readonly CommentarySegment[],
   ctx: CommentaryMoveContext,
-  passes: readonly SearchPass[] = buildSearchPasses(ctx)
+  passes: readonly SearchPass[] = searchPassesFor(ctx)
 ): Map<number, ResolvedCommentaryMove> {
   const out = new Map<number, ResolvedCommentaryMove>();
   let run: CommentaryMoveToken[] = [];

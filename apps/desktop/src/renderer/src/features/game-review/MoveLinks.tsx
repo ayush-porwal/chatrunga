@@ -5,10 +5,35 @@ import {
   resolveCommentaryMoves,
   tokenizeCommentary,
   type CommentaryMoveContext,
+  type CommentarySegment,
   type MoveNavigationTarget
 } from "./commentary-moves";
 
+const NO_LINKS: ReturnType<typeof resolveCommentaryMoves> = new Map();
+
 export type GoToLine = (target: MoveNavigationTarget) => void;
+
+type ResolvedMoves = ReturnType<typeof resolveCommentaryMoves>;
+
+/**
+ * Resolved links per (context, prose): revisiting a move — or the panel remounting for it — reuses
+ * the result instead of replaying every candidate line again.
+ */
+const resolvedCache = new WeakMap<CommentaryMoveContext, Map<string, ResolvedMoves>>();
+
+function resolveCached(prose: string, segments: readonly CommentarySegment[], context: CommentaryMoveContext): ResolvedMoves {
+  let byProse = resolvedCache.get(context);
+  if (!byProse) {
+    byProse = new Map();
+    resolvedCache.set(context, byProse);
+  }
+  let resolved = byProse.get(prose);
+  if (!resolved) {
+    resolved = resolveCommentaryMoves(segments, context);
+    byProse.set(prose, resolved);
+  }
+  return resolved;
+}
 
 /** An inline move that jumps the board, move tree and graph to its position. */
 export function MoveLink({
@@ -29,7 +54,11 @@ export function MoveLink({
       title={`Go to ${san}`}
       onClick={onActivate}
       className={cn(
-        "cursor-pointer rounded-sm text-accent underline-offset-[3px] outline-none transition-colors hover:underline focus-visible:underline focus-visible:ring-2 focus-visible:ring-accent/40",
+        // The tint and underline fade in; the padding is paid back by the negative margin so the
+        // prose never shifts on hover.
+        "-mx-[2px] cursor-pointer rounded-[3px] px-[2px] text-accent underline decoration-transparent decoration-1 underline-offset-[3px] outline-none",
+        "transition-[background-color,text-decoration-color,color] duration-micro ease-standard",
+        "hover:bg-accent/12 hover:decoration-current focus-visible:bg-accent/12 focus-visible:decoration-current focus-visible:ring-2 focus-visible:ring-accent/50",
         className
       )}
     >
@@ -50,8 +79,8 @@ export function CommentaryProse({
 }) {
   const segments = useMemo(() => tokenizeCommentary(prose), [prose]);
   const resolved = useMemo(
-    () => (context && onGoToLine ? resolveCommentaryMoves(segments, context) : new Map()),
-    [context, onGoToLine, segments]
+    () => (context && onGoToLine ? resolveCached(prose, segments, context) : NO_LINKS),
+    [context, onGoToLine, prose, segments]
   );
   return (
     <>
@@ -109,7 +138,7 @@ export function VariationAnchorNote({ label, onBack }: { label: string; onBack: 
       <button
         type="button"
         onClick={onBack}
-        className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-accent underline-offset-[3px] outline-none hover:underline focus-visible:underline focus-visible:ring-2 focus-visible:ring-accent/40"
+        className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-accent underline decoration-transparent underline-offset-[3px] outline-none transition-[text-decoration-color] duration-micro ease-standard hover:decoration-current focus-visible:decoration-current focus-visible:ring-2 focus-visible:ring-accent/50"
       >
         <CornerUpLeft className="size-3" aria-hidden />
         Back to game
