@@ -1,99 +1,200 @@
-name: Alpha macOS Release
+name: release
 
+# Manual release: Actions → release → Run workflow.
+# Builds the latest commit on main for macOS, Windows and Linux, then publishes a
+# GitHub release (tag vX.Y.Z) with generated notes and all installers attached.
 on:
   workflow_dispatch:
     inputs:
-      tag_name:
-        description: "Release tag to create. Defaults to alpha-v<package-version>-build.<run-number>."
+      bump:
+        description: Version bump from the latest vX.Y.Z tag (ignored when "version" is set)
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      version:
+        description: Exact version instead of a bump, e.g. 0.2.0 or 0.2.0-beta.1 (optional)
+        type: string
         required: false
-  push:
-    tags:
-      - "alpha-v*"
+      draft:
+        description: Create the release as a draft (review before publishing)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 concurrency:
-  group: alpha-macos-release-${{ github.ref }}
-  cancel-in-progress: true
+  group: release
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: 24.15.0
+  PNPM_VERSION: 11.0.9
 
 jobs:
-  package-alpha-macos:
-    name: Package alpha macOS DMG
-    runs-on: macos-14
-    timeout-minutes: 45
-
+  plan:
+    name: Plan version and changelog
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      previous_tag: ${{ steps.plan.outputs.previous_tag }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
     steps:
-      - name: Checkout
+      - name: Checkout main (with tags)
         uses: actions/checkout@v6
-
-      - uses: pnpm/action-setup@v6
         with:
-          version: 11.0.9
+          ref: main
+          fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24.15.0
-          cache: pnpm
+      - name: Pin the commit being released
+        id: sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Resolve release tag
-        id: release-tag
+      - name: Compute version and release notes
+        id: plan
         env:
-          MANUAL_TAG_NAME: ${{ github.event.inputs.tag_name }}
-        shell: bash
+          BUMP: ${{ inputs.bump }}
+          VERSION: ${{ inputs.version }}
         run: |
-          set -euo pipefail
+          node scripts/release-plan.mjs \
+            --bump "$BUMP" \
+            --version "$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --notes release-notes.md >> "$GITHUB_OUTPUT"
+          cat release-notes.md >> "$GITHUB_STEP_SUMMARY"
 
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            release_tag="${GITHUB_REF_NAME}"
-          elif [[ -n "${MANUAL_TAG_NAME}" ]]; then
-            release_tag="${MANUAL_TAG_NAME}"
-          else
-            version="$(node -p "require('./apps/desktop/package.json').version")"
-            release_tag="alpha-v${version}-build.${GITHUB_RUN_NUMBER}"
-          fi
-
-          echo "tag=${release_tag}" >> "${GITHUB_OUTPUT}"
-
-      - name: Build unsigned alpha DMG
-        run: pnpm --filter @chaturanga/desktop dist:mac:alpha
-
-      - name: Upload alpha workflow artifact
+      - name: Upload release notes
         uses: actions/upload-artifact@v7
         with:
-          name: chaturanga-alpha-macos-${{ github.sha }}
-          path: |
-            apps/desktop/dist/*.dmg
-            apps/desktop/dist/*.blockmap
+          name: release-notes
+          path: release-notes.md
           if-no-files-found: error
 
-      - name: Create GitHub prerelease
+  verify:
+    name: Lint, typecheck, test
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm -r --if-present typecheck
+      - run: pnpm -r --if-present test
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: [plan, verify]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: macOS (arm64 + x64)
+            os: macos-14
+            target: --mac
+          - name: Windows (x64)
+            os: windows-latest
+            target: --win
+          - name: Linux (x64)
+            os: ubuntu-latest
+            target: --linux
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build app
+        run: pnpm --filter @chaturanga/desktop build
+
+      - name: Package installers
+        working-directory: apps/desktop
+        shell: bash
+        env:
+          # Unsigned builds until signing certificates are added as secrets.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pnpm exec electron-builder ${{ matrix.target }} \
+            --publish never \
+            -c.extraMetadata.version="${{ needs.plan.outputs.version }}"
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v7
+        with:
+          name: installers-${{ runner.os }}
+          path: |
+            apps/desktop/dist/*.dmg
+            apps/desktop/dist/*.zip
+            apps/desktop/dist/*.exe
+            apps/desktop/dist/*.AppImage
+            apps/desktop/dist/*.blockmap
+            apps/desktop/dist/latest*.yml
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download installers and notes
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Collect assets and checksums
+        run: |
+          mkdir -p release
+          find artifacts -path artifacts/release-notes -prune -o -type f -print0 | xargs -0 -I{} cp {} release/
+          cd release
+          sha256sum -- * > SHA256SUMS.txt
+          ls -la
+
+      - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.release-tag.outputs.tag }}
-        shell: bash
+          TAG: ${{ needs.plan.outputs.tag }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          SHA: ${{ needs.plan.outputs.sha }}
+          PRERELEASE: ${{ needs.plan.outputs.prerelease }}
+          DRAFT: ${{ inputs.draft }}
         run: |
-          set -euo pipefail
-          shopt -s nullglob
-
-          assets=(apps/desktop/dist/*.dmg apps/desktop/dist/*.blockmap)
-          if [[ "${#assets[@]}" -eq 0 ]]; then
-            echo "No DMG assets found in apps/desktop/dist" >&2
-            exit 1
-          fi
-
-          release_notes="Unsigned macOS alpha build. macOS Gatekeeper may require right-clicking the app and choosing Open."
-
-          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
-            gh release upload "${RELEASE_TAG}" "${assets[@]}" --clobber
-          else
-            gh release create "${RELEASE_TAG}" "${assets[@]}" \
-              --target "${GITHUB_SHA}" \
-              --title "Chaturanga Alpha ${RELEASE_TAG}" \
-              --notes "${release_notes}" \
-              --prerelease
-          fi
+          flags=()
+          [[ "$PRERELEASE" == "true" ]] && flags+=(--prerelease) || flags+=(--latest)
+          [[ "$DRAFT" == "true" ]] && flags+=(--draft)
+          {
+            cat artifacts/release-notes/release-notes.md
+            printf '\n### Install\n\n'
+            printf -- '- **macOS:** `.dmg` (Apple silicon: arm64, Intel: x64). Builds are not notarized yet: right-click the app → Open on first launch.\n'
+            printf -- '- **Windows:** `-setup.exe` installer (x64). SmartScreen may warn about an unsigned app: More info → Run anyway.\n'
+            printf -- '- **Linux:** `.AppImage` (x64): `chmod +x` it and run.\n'
+            printf -- '- Verify downloads with `SHA256SUMS.txt`.\n'
+          } > notes.md
+          gh release create "$TAG" release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SHA" \
+            --title "Chaturanga v$VERSION" \
+            --notes-file notes.md \
+            "${flags[@]}"

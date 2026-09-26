@@ -79,10 +79,26 @@ only for the move being viewed and are cached with the saved game. The default m
 
 ## Releases
 
+Releases are cut by the manual **release** workflow (`.github/workflows/release.yml`): GitHub →
+Actions → release → Run workflow. It:
+
+1. takes the latest commit on `main` and computes the next version from the latest `vX.Y.Z` tag
+   (`patch`/`minor`/`major` bump, or an exact version such as `0.2.0-beta.1`, which is published
+   as a prerelease) — `scripts/release-plan.mjs`;
+2. writes release notes from the commit subjects since that tag, grouped by Conventional Commit
+   type (`feat`, `fix`, `perf`, …);
+3. runs lint, typecheck and tests, then builds in parallel: macOS `.dmg` + `.zip` (arm64 and x64,
+   ad-hoc signed), Windows NSIS `-setup.exe` (x64) and Linux `.AppImage` (x64), plus the
+   `latest*.yml` / `.blockmap` update metadata;
+4. publishes the GitHub release `vX.Y.Z` with every file and a `SHA256SUMS.txt` (optionally as a
+   draft).
+
+The version lives in the git tag; `apps/desktop/package.json` is stamped at build time. Builds
+are not notarized/code-signed yet — add Apple and Windows signing certificates as repository
+secrets when available. Local packaging:
+
 ```bash
-pnpm dist:mac               # typecheck, build and package the macOS DMG into apps/desktop/dist
+pnpm --filter @chaturanga/desktop dist:mac     # or dist:win / dist:linux, into apps/desktop/dist
 ```
 
-Alpha builds are produced by `.github/workflows/release.yml` (push an `alpha-v*` tag or run it
-manually): it runs `dist:mac:alpha` and attaches the unsigned DMG to a GitHub prerelease.
 CI (`.github/workflows/ci.yml`) runs lint, typecheck, tests and build on every push.

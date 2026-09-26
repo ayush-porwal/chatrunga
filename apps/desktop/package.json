@@ -14,7 +14,8 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "dist:mac": "pnpm build && electron-builder --mac --publish never",
-    "dist:mac:alpha": "pnpm build && electron-builder --mac dmg --publish never -c.appId=com.chaturanga.desktop.alpha -c.productName='Chaturanga Alpha' -c.artifactName='Chaturanga-Alpha-${version}-${os}-${arch}.${ext}' -c.mac.identity=null -c.dmg.title='Chaturanga Alpha ${version}'"
+    "dist:win": "pnpm build && electron-builder --win --publish never",
+    "dist:linux": "pnpm build && electron-builder --linux --publish never"
   },
   "build": {
     "appId": "com.chaturanga.desktop",
@@ -41,12 +42,66 @@
       "icon": "src/main/assets/app-icon.icns",
       "category": "public.app-category.board-games",
       "target": [
-        "dmg"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
-      "identity": null
+      "identity": "-"
     },
     "dmg": {
       "title": "Chaturanga ${version}"
+    },
+    "artifactName": "Chaturanga-${version}-${os}-${arch}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ayush-porwal",
+        "repo": "chatrunga",
+        "releaseType": "release"
+      }
+    ],
+    "win": {
+      "icon": "src/main/assets/app-icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Chaturanga",
+      "artifactName": "Chaturanga-${version}-win-${arch}-setup.${ext}"
+    },
+    "linux": {
+      "icon": "src/main/assets/app-icon.png",
+      "category": "Game",
+      "synopsis": "Chess game review with engine analysis and an AI coach",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
     }
   },
   "devDependencies": {
@@ -81,5 +136,6 @@
     "vite": "^8.0.11",
     "vitest": "^4.1.5",
     "zustand": "^5.0.13"
-  }
+  },
+  "homepage": "https://github.com/ayush-porwal/chatrunga"
 }
