@@ -17,6 +17,7 @@ import { replyLineUcis } from "./commentary-moves";
 import { MoveLine, VariationAnchorNote, type GoToLine } from "./MoveLinks";
 import { cn } from "@/lib/utils";
 import { isRapidNavigation } from "../board/board-motion";
+import { Coachmark, useOnboardingHint } from "../onboarding/Coachmark";
 import "./review.css";
 
 /** Engine evidence for the selected move: evals, best line, alternatives, Maia curve, derived facts. */
@@ -52,6 +53,7 @@ export function ReviewEnginePanel({
   const facts = useMemo(() => (move ? buildTacticalFacts(move) : []), [move]);
   const signals = useMemo(() => (move ? buildEngineSignals(move) : []), [move]);
   const bestLine = useMemo(() => (move ? uciLineToSan(move.fenBefore, move.bestLine) : []), [move]);
+  const maiaHint = useOnboardingHint("maia-curve", Boolean(move && !running && hasUsableMaiaData(move)));
   const replyLine = useMemo(
     () => (move && !move.terminal ? uciLineToSan(move.fenAfter, replyLineUcis(move, moves)).slice(0, 8) : []),
     [move, moves]
@@ -136,6 +138,12 @@ export function ReviewEnginePanel({
       {hasUsableMaiaData(move) ? (
         <>
           <div className={divider} />
+          {maiaHint.visible ? (
+            <Coachmark onDismiss={maiaHint.dismiss}>
+              Maia is trained on human games. These bars show how often players at each rating would play the move
+              played and the best move here; yours is highlighted.
+            </Coachmark>
+          ) : null}
           <RatingCurve curve={buildRatingCurveForMove(move, userRating)} />
         </>
       ) : null}

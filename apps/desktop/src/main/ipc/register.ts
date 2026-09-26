@@ -22,7 +22,11 @@ import { probeEvalScore } from "../engine/probe-eval";
 import { ALL_ASSET_IDS, getAssetManager, isAssetId, type AssetId } from "../engine/asset-manager";
 import { syncAssetsToEngineRegistry } from "../engine/engine-registry-sync";
 import { getOpenRouterConfigStore } from "../commentary/openrouter-config";
-import { generateOpenRouterCommentary, parseCommentaryPayloads } from "../commentary/openrouter-commentary";
+import {
+  UNREADABLE_API_KEY_ERROR,
+  generateOpenRouterCommentary,
+  parseCommentaryPayloads
+} from "../commentary/openrouter-commentary";
 import { errorMessage, logger } from "../logger";
 import { updateService } from "../updater";
 import { refreshWindowGlass } from "../window-glass";
@@ -299,6 +303,7 @@ function registerCommentaryIpc(): void {
     const payloads = parseCommentaryPayloads((input as { payloads?: unknown } | undefined)?.payloads);
     const store = getOpenRouterConfigStore();
     const [config, apiKey] = await Promise.all([store.get(), store.getApiKey()]);
+    if (config.hasApiKey && !apiKey) return { commentary: [], error: UNREADABLE_API_KEY_ERROR };
     return generateOpenRouterCommentary(payloads, { apiKey, model: config.model });
   });
 }

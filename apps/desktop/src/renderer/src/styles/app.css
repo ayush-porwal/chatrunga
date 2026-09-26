@@ -196,6 +196,50 @@ html {
   color-scheme: dark;
 }
 
+/*
+ * Responsive layout — one set of rules for every window size, from the 980×680 minimum to
+ * ultra-wide monitors. Everything below is fluid between a floor and a ceiling (no one-off
+ * breakpoints in components); components read the variables through lib/ui.ts and BoardWorkspace.
+ *
+ * - Type: the rem is 16px up to ~1920 wide, then steps up once per tier (17px on a 1920×1080-class
+ *   window, 18px on 2560×1440 and larger) so text, controls, cards and dialogs grow together on big
+ *   monitors instead of staying laptop-sized in a sea of space. Window chrome that must stay put
+ *   (titlebar height, traffic-light inset) is in px. The first-run welcome draws itself on a fixed
+ *   px frame and zooms that frame to the window (see `.onb-frame`), so it keeps the base rem.
+ * - Pages (`pageContainer`): one gutter and one content width for every page, both fluid —
+ *   the column grows from 64rem on laptop windows to 88rem on wide monitors, and the gutter from
+ *   24px to 56px, so every page shares the same left and right edges at any size.
+ * - Board workspace (BoardWorkspace): the board is as large as the window height allows (no fixed
+ *   cap), the panel grows with the window (320px → ~34rem), padding and gap scale together, and the
+ *   board + panel are centred as one group, so a wide window never strands the board far away from
+ *   its panel.
+ */
+@media (min-width: 1920px) and (min-height: 900px) {
+  html {
+    font-size: 106.25%;
+  }
+}
+
+@media (min-width: 2560px) and (min-height: 1200px) {
+  html {
+    font-size: 112.5%;
+  }
+}
+
+html:has(.onb-root) {
+  font-size: 100%;
+}
+
+:root {
+  --page-gutter: clamp(1.5rem, 2.5vw, 3.5rem);
+  --page-gutter-y: clamp(1.25rem, 2vw, 3rem);
+  --page-content: clamp(64rem, 20rem + 42vw, 88rem);
+  --workspace-pad: clamp(0.75rem, 1.25vw, 2rem);
+  --workspace-panel: clamp(20rem, 10.5rem + 14.5vw, 34rem);
+  /* Board edge from the workspace height: the two 2rem player rows and their 0.5rem gaps are 5rem. */
+  --workspace-board: min(100cqh - 2 * var(--workspace-pad) - 5rem, 100rem);
+}
+
 body {
   background-color: var(--color-chrome);
   color: var(--color-fg);
@@ -418,4 +462,70 @@ html[data-view-transition="fade"]::view-transition-new(app-content) {
 ::view-transition-old(app-title),
 ::view-transition-new(app-title) {
   mix-blend-mode: normal;
+}
+
+/*
+ * The first-run welcome (features/onboarding/OnboardingFlow.tsx) is drawn on ONE fixed design
+ * frame, 960×592 CSS px at scale 1 (board column 424 + gap 72 + content column 464), and the frame
+ * is zoomed to fit the window: ~0.9 on a 1024×700 window, ~1.15 at 1440×900, ~1.6 at 1920×1200,
+ * capped at 1.75 on bigger windows. `zoom` re-lays text out at the larger size (crisp, unlike a
+ * transform), and because everything scales together the board, the note card, the stepper and
+ * the footer keep their exact alignment at every size. The scale is a registered <number> so it
+ * is computed once on the root (viewport units unaffected by the zoom) and inherited as a number;
+ * `.onb-bar` uses it to give the titlebar row the frame's zoomed width.
+ */
+@property --onb-scale {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
+
+@layer components {
+  .onb-root {
+    --onb-scale: clamp(
+      0.9,
+      min(100vw * 0.8 / 960px, (100vh - 2 * var(--titlebar-height)) * 0.86 / 592px),
+      1.75
+    );
+  }
+
+  .onb-frame {
+    zoom: var(--onb-scale);
+    width: 960px;
+    height: 592px;
+  }
+
+  .onb-bar {
+    width: calc(960px * var(--onb-scale));
+  }
+
+  /* Step content arrives from the side it was navigated towards (`--onb-dir`: 1 forward, -1 back). */
+  .onb-step-in {
+    animation: onb-step-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* The next board position and coach note fade in over the previous ones. */
+  .onb-board-in {
+    animation: ui-fade-in 240ms cubic-bezier(0.2, 0, 0, 1) both;
+  }
+
+  .onb-note-in {
+    animation: ui-fade-in 180ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both;
+  }
+
+  /* Reduced motion: step changes are instant. */
+  @media (prefers-reduced-motion: reduce) {
+    .onb-step-in,
+    .onb-board-in,
+    .onb-note-in {
+      animation: none;
+    }
+  }
+}
+
+@keyframes onb-step-in {
+  from {
+    opacity: 0;
+    transform: translateX(calc(var(--onb-dir, 1) * 12px));
+  }
 }

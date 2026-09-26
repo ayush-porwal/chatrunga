@@ -25,6 +25,8 @@ import { openSavedGame } from "../features/game/saved-game";
 import { PuzzlePage, type PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import { usePuzzleAutoReply } from "../features/puzzles/puzzle-session";
 import { SettingsPage, type SettingsSectionId } from "../features/settings/SettingsPage";
+import { OnboardingFlow } from "../features/onboarding/OnboardingFlow";
+import { useOnboarding } from "../features/onboarding/useOnboarding";
 import { useEnginesQuery, useSamplePuzzleMutation, useSettingsQuery } from "../queries/api";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { useGameStore } from "../stores/game-store";
@@ -70,6 +72,7 @@ export function App() {
   const latestNavigation = useRef(0);
   const [actionRailOpen, setActionRailOpen] = useState(true);
   const [activePuzzleConfig, setActivePuzzleConfig] = useState<PuzzleSessionConfig | null>(null);
+  const onboarding = useOnboarding();
   const [puzzleHistoryIds, setPuzzleHistoryIds] = useState<string[]>([]);
 
   // The Game Review workspace lives at /games/:id/review; every other view is at "/".
@@ -396,6 +399,10 @@ export function App() {
       setSettingsSection("commentary");
       showView("settings");
     }),
+    engineSettings: useEventCallback(() => {
+      setSettingsSection("engines");
+      showView("settings");
+    }),
     newGame: useEventCallback(startNewGame),
     liveAnalysis: useEventCallback(startLiveAnalysis),
     stopLiveAnalysis: useEventCallback(stopLiveAnalysis),
@@ -467,12 +474,15 @@ export function App() {
     <BoardFocusContext.Provider value={focused}>
       {/* The app frame: one titlebar row over the sidebar and the inset content panel. */}
       <div
+        // Under the welcome the app is out of reach (focus, clicks, assistive tech).
+        inert={onboarding.open}
         className={cn(
           appFrame,
           "grid-cols-[var(--sidebar-width)_minmax(0,1fr)] grid-rows-[var(--titlebar-height)_minmax(0,1fr)] [--titlebar-height:calc(54px/var(--window-zoom,1))]",
           // The sidebar column eases open/closed; the content panel follows it frame by frame.
           "transition-[grid-template-columns] duration-emphasis ease-standard",
-          sidebarExpanded ? "[--sidebar-width:clamp(224px,18vw,272px)]" : "[--sidebar-width:52px]"
+          // rem: the sidebar grows with the type step on big monitors (app.css), like the rest of the UI.
+          sidebarExpanded ? "[--sidebar-width:clamp(12.5rem,17vw,17rem)]" : "[--sidebar-width:3.25rem]"
         )}
       >
         <AppTitlebar
@@ -521,7 +531,7 @@ export function App() {
 
         <main className={cn(contentPanel, "col-start-2 row-start-2 [view-transition-name:app-content]")}>
           {!desktopApiAvailable ? (
-            <Notice tone="warn" title="Web preview mode" className="mx-8 mt-6 w-auto shrink-0">
+            <Notice tone="warn" title="Web preview mode" className="mx-(--page-gutter) mt-(--page-gutter-y) w-auto shrink-0">
               Engines, file dialogs, saved games, downloads and local databases need the desktop app.
             </Notice>
           ) : null}
@@ -537,6 +547,7 @@ export function App() {
                 onPuzzles={on.puzzles}
                 onReview={on.openReviewPicker}
                 onReviewGame={on.reviewGame}
+                onOpenEngineSettings={on.engineSettings}
               />
             ) : appView === "settings" ? (
               <SettingsPage initialSection={settingsSection} />
@@ -573,6 +584,12 @@ export function App() {
       </div>
 
       <PromotionDialog />
+      {onboarding.open ? (
+        <OnboardingFlow
+          onFinish={onboarding.finish}
+          onGoHome={on.home}
+        />
+      ) : null}
       {importOpen ? <PgnImportDialog onClose={on.closeImportDialog} /> : null}
       {gameReviewPickerOpen ? (
         <GameReviewPicker

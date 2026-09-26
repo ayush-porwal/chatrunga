@@ -25,6 +25,7 @@ import { PlayerRow } from "../board/PlayerIdentity";
 import { BoardStage, BoardWorkspace, workspaceTabsClass } from "../board/BoardWorkspace";
 import { MoveNavigation } from "../board/MoveNavigation";
 import { useGameReviewCommentary } from "./useGameReviewCommentary";
+import { useStoreHintsOnLeave } from "../onboarding/Coachmark";
 import { useUpdateSettingMutation } from "../../queries/api";
 import { openSavedGame } from "../game/saved-game";
 import { reviewAnchorFor, type CommentaryMoveContext, type MoveNavigationTarget } from "./commentary-moves";
@@ -77,6 +78,7 @@ function GameReviewPageInner({
   onOpenCommentarySettings
 }: GameReviewPageProps) {
   const location = useLocation();
+  useStoreHintsOnLeave();
   const id = reviewIdFromPath(location.pathname);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Narrow selectors: this page must not re-render for unrelated game-store changes.

@@ -12,15 +12,17 @@ import {
   type MenuItemConstructorOptions,
   type WebContents
 } from "electron";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { normalizeCommentaryProvider } from "@chaturanga/shared/types/settings";
 import { closeDb, getDb } from "./db";
-import { settingsRepository } from "./db/repositories";
+import { engineRepository, gameRepository, settingsRepository } from "./db/repositories";
 import { EngineManager } from "./engine/engine-manager";
 import { killAllEngineProcesses } from "./engine/uci-process";
 import { registerIpc } from "./ipc/register";
 import { logger } from "./logger";
+import { migrateOnboarding } from "./onboarding-migration";
 import { updateService } from "./updater";
 import {
   isAppUrl,
@@ -86,6 +88,11 @@ async function startup(): Promise<void> {
     migrateCommentaryProvider();
   } catch (error) {
     logger.error("settings", "commentary provider migration failed:", error);
+  }
+  try {
+    classifyInstallForOnboarding();
+  } catch (error) {
+    logger.error("settings", "onboarding migration failed:", error);
   }
   session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) =>
     callback(isPermissionAllowed(permission))
@@ -247,4 +254,24 @@ function migrateCommentaryProvider(): void {
   const stored = settingsRepository.getStored("reviewCommentaryProvider");
   if (stored === undefined || stored === "openrouter") return;
   settingsRepository.set("reviewCommentaryProvider", normalizeCommentaryProvider(stored));
+}
+
+/**
+ * First launch of a build with the welcome: installs with earlier use skip it, new ones see it
+ * (see onboarding-migration.ts). Runs before the window loads, so the renderer reads the result.
+ */
+function classifyInstallForOnboarding(): void {
+  const userData = app.getPath("userData");
+  const result = migrateOnboarding({
+    getStored: () => settingsRepository.getStored("onboardingCompletedAt"),
+    set: (value) => settingsRepository.set("onboardingCompletedAt", value),
+    traces: () => ({
+      settingKeys: settingsRepository.storedKeys(),
+      games: gameRepository.list().length,
+      engines: engineRepository.list().length,
+      engineAssetState: existsSync(join(userData, "engine-assets.json")),
+      openRouterConfig: existsSync(join(userData, "openrouter-config.json"))
+    })
+  });
+  if (result !== "unchanged") logger.info("settings", `onboarding: ${result} install`);
 }

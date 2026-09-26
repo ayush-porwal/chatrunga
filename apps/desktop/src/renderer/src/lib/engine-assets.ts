@@ -81,3 +81,67 @@ export function applyAssetProgress(progress: AssetProgressMap, event: AssetProgr
 export function progressPercent(progress: AssetProgress | undefined): number {
   return progress?.bytesTotal ? Math.round((progress.bytesReceived / progress.bytesTotal) * 100) : 0;
 }
+
+/* ------------------------------------------------------------------ first-run setup */
+
+/**
+ * What the welcome recommends: Stockfish (scores every move) and the Maia networks (what players
+ * of each rating would play), where they are missing and downloadable here. Lc0 is optional and
+ * left to Settings.
+ */
+export function recommendedDownloads(status: EngineAssetStatusMap | null): EngineAssetStatus[] {
+  return missingDownloads(status).filter((asset) => asset.id !== "lc0");
+}
+
+/** One line of the setup list: Stockfish on its own, the Maia networks together. */
+export type SetupRow = {
+  key: "stockfish" | "lc0" | "maia";
+  label: string;
+  ids: EngineAssetId[];
+  bytesReceived: number;
+  bytesTotal: number;
+  status: AssetStatus;
+};
+
+const ROW_STATUS_ORDER: readonly AssetStatus[] = ["error", "downloading", "verifying", "installing", "pending", "ready"];
+
+/**
+ * Groups queued assets into setup rows with combined progress. A row's status is its most
+ * pressing member's: any failure, then any work in progress, then waiting; ready only when all are.
+ * Verifying / installing / ready members count as fully downloaded.
+ */
+export function setupRows(assets: readonly EngineAssetStatus[], progress: AssetProgressMap): SetupRow[] {
+  const rows: SetupRow[] = [];
+  const byKey = new Map<SetupRow["key"], SetupRow>();
+  for (const asset of assets) {
+    const key: SetupRow["key"] = asset.id.startsWith("maia-") ? "maia" : (asset.id as "stockfish" | "lc0");
+    let row = byKey.get(key);
+    if (!row) {
+      row = { key, label: key === "maia" ? "Maia" : asset.id === "lc0" ? "Lc0" : "Stockfish", ids: [], bytesReceived: 0, bytesTotal: 0, status: "ready" };
+      byKey.set(key, row);
+      rows.push(row);
+    }
+    const entry = progress[asset.id];
+    const total = entry?.bytesTotal || asset.downloadSizeBytes || 0;
+    const status = entry?.status ?? "pending";
+    const done = status === "verifying" || status === "installing" || status === "ready";
+    row.ids.push(asset.id);
+    row.bytesTotal += total;
+    row.bytesReceived += done ? total : status === "error" ? 0 : (entry?.bytesReceived ?? 0);
+    if (ROW_STATUS_ORDER.indexOf(status) < ROW_STATUS_ORDER.indexOf(row.status)) row.status = status;
+  }
+  for (const row of rows) {
+    if (row.key === "maia" && row.ids.length > 1) {
+      const ratings = row.ids.map((id) => id.replace("maia-", ""));
+      row.label = `Maia ${ratings[0]}–${ratings[ratings.length - 1]}`;
+    } else if (row.key === "maia") {
+      row.label = `Maia ${row.ids[0].replace("maia-", "")}`;
+    }
+  }
+  return rows;
+}
+
+/** Whole-number percentage of a setup row (0 before sizes are known). */
+export function setupRowPercent(row: Pick<SetupRow, "bytesReceived" | "bytesTotal">): number {
+  return row.bytesTotal ? Math.min(100, Math.round((row.bytesReceived / row.bytesTotal) * 100)) : 0;
+}

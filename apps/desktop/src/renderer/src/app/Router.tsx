@@ -1,7 +1,5 @@
 import { HashRouter } from "react-router-dom";
 import { ErrorBoundary } from "@/components/error-boundary";
-import { WelcomeModal } from "../features/onboarding/WelcomeModal";
-import { useFirstLaunch } from "../features/onboarding/useFirstLaunch";
 import { App } from "./App";
 import { useEngineRegistrySubscription } from "../queries/api";
 import { useReviewEventSubscription } from "./useReviewEventSubscription";
@@ -17,8 +15,8 @@ import { useReviewEventSubscription } from "./useReviewEventSubscription";
  *   /                         Home / Game / Settings / Engine game / Puzzles / Databases.
  *   /games/:id/review         Game Review workspace.
  *
- * <WelcomeModal> mounts here so it's visible regardless of which route the user lands on.
- * It auto-shows on first launch when no engines are installed and the user hasn't dismissed it.
+ * The first-run welcome (features/onboarding) mounts inside <App>, which owns the actions it ends
+ * with (review the sample game, import, new game, Settings).
  */
 export function Router() {
   return (
@@ -31,16 +29,8 @@ export function Router() {
 }
 
 function RouterShell() {
-  const firstLaunch = useFirstLaunch();
   // Mounted above the views so review events keep flowing across every navigation.
   useReviewEventSubscription();
   useEngineRegistrySubscription();
-  return (
-    <>
-      <App />
-      {firstLaunch.showWelcome ? (
-        <WelcomeModal onMaybeLater={firstLaunch.dismissPermanently} onDismiss={firstLaunch.dismiss} />
-      ) : null}
-    </>
-  );
+  return <App />;
 }
