@@ -157,8 +157,12 @@ function registerAssetIpc(): void {
   };
   // Keep the engines table in step with what the asset manager installed, so
   // review / play can spawn it. Failures are logged; the asset state stands.
+  // After every sync the renderer re-fetches its cached engine list (e.g. engines installed
+  // from the welcome dialog become usable for review/analysis right away).
   const syncEngines = () =>
-    syncAssetsToEngineRegistry().catch((error) => logger.error("asset-manager", "engine registry sync failed:", error));
+    syncAssetsToEngineRegistry()
+      .then(() => broadcast("engines:changed", undefined))
+      .catch((error) => logger.error("asset-manager", "engine registry sync failed:", error));
 
   assetManager.on("progress", (event) => broadcast("assets:progress", event));
   assetManager.on("statusChanged", () => broadcast("assets:statusChanged", undefined));

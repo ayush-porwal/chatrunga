@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SAVE_SUPPRESSED_AFTER_DELETE } from "@chaturanga/shared/ipc/game-handling";
 import type { SaveGameInput } from "@chaturanga/shared/types/chess";
@@ -20,6 +21,15 @@ function api() {
 function requireApi() {
   if (!window.chaturanga) throw new Error("Desktop API is unavailable in this environment.");
   return window.chaturanga;
+}
+
+/** Keeps the cached engine list in step with the main process's registry. Mount once. */
+export function useEngineRegistrySubscription() {
+  const queryClient = useQueryClient();
+  useEffect(
+    () => api()?.onEnginesChanged?.(() => void queryClient.invalidateQueries({ queryKey: queryKeys.engines })),
+    [queryClient]
+  );
 }
 
 export function useEnginesQuery() {

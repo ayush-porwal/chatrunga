@@ -191,6 +191,9 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
   private cpuFeatures: () => Promise<ReadonlySet<CpuFeature> | null>;
   private releases: ReleaseCache;
   private inflight = new Map<AssetId, Promise<void>>();
+  /** Tail of the serialized state-file writes (see saveState). */
+  private stateWrites: Promise<void> = Promise.resolve();
+  private stateWriteSeq = 0;
 
   constructor(opts: AssetManagerOptions) {
     super();
@@ -605,19 +608,45 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     try {
       const raw = await readFile(this.statePath, "utf-8");
       const parsed = JSON.parse(raw) as { records?: AssetRecord[] };
+      let changed = false;
       for (const record of parsed.records ?? []) {
-        if (isAssetId(record?.id)) this.state.set(record.id, record);
+        if (!isAssetId(record?.id)) continue;
+        const restored = this.withExistingFiles(record);
+        changed ||= restored !== record;
+        this.state.set(record.id, restored);
       }
+      if (changed) await this.saveState();
     } catch {
       // Corrupt state file — start fresh. Engines will re-download on demand.
     }
   }
 
-  private async saveState(): Promise<void> {
-    const payload = { records: [...this.state.values()] };
-    const tmp = `${this.statePath}.tmp`;
-    await writeFile(tmp, JSON.stringify(payload, null, 2), "utf-8");
-    await rename(tmp, this.statePath);
+  /**
+   * A binary/weight deleted or moved outside the app must not be restored as installed:
+   * startup registry sync would advertise an engine that can't spawn and onboarding would
+   * stay suppressed. Missing files turn the record back into `missing`.
+   */
+  private withExistingFiles(record: AssetRecord): AssetRecord {
+    if (record.state === "missing") return record;
+    const file = record.state === "custom" ? record.customPath : record.installedPath;
+    return file && existsSync(file) ? record : this.emptyRecord(record.id);
+  }
+
+  /**
+   * Concurrent installs (downloadAll runs several) each persist on completion. Writes are
+   * queued so they never interleave, each snapshots the latest state when it runs, and each
+   * uses its own temp file so a rename can never pick up another write's file.
+   */
+  private saveState(): Promise<void> {
+    const write = async () => {
+      const payload = { records: [...this.state.values()] };
+      const tmp = `${this.statePath}.${process.pid}.${++this.stateWriteSeq}.tmp`;
+      await writeFile(tmp, JSON.stringify(payload, null, 2), "utf-8");
+      await rename(tmp, this.statePath);
+    };
+    const next = this.stateWrites.then(write, write);
+    this.stateWrites = next.catch(() => {});
+    return next;
   }
 
   private async fetchMaiaLicense(url: string): Promise<void> {

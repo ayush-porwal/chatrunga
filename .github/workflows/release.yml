@@ -93,6 +93,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm -r --if-present typecheck
       - run: pnpm -r --if-present test
+      - run: node --test scripts/*.test.mjs
 
   build:
     name: Build ${{ matrix.name }}

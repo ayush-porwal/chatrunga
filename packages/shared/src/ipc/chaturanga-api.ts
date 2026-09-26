@@ -169,6 +169,11 @@ export type ChaturangaApi = {
    * Re-read `assets.status()`.
    */
   onAssetStatusChanged(callback: () => void): Unsubscribe;
+  /**
+   * The engine list changed in the main process (assets installed/removed, startup registry
+   * sync). Re-fetch `engines.list()`.
+   */
+  onEnginesChanged(callback: () => void): Unsubscribe;
 };
 
 export type EngineAssetId = "stockfish" | "lc0" | "maia-1100" | "maia-1300" | "maia-1500" | "maia-1700" | "maia-1900";

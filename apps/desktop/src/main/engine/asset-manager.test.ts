@@ -234,7 +234,9 @@ describe("AssetManager", () => {
   });
 
   it("does not flag an update when the installed bare version equals the latest tag", async () => {
-    const legacy = { id: "stockfish", state: "installed", installedPath: "/x/stockfish", customPath: null, sha256: null, manifestVersion: "19", sizeBytes: 1, installedAt: null };
+    const installedPath = path.join(workDir, "stockfish");
+    writeFileSync(installedPath, "stockfish 19");
+    const legacy = { id: "stockfish", state: "installed", installedPath, customPath: null, sha256: null, manifestVersion: "19", sizeBytes: 1, installedAt: null };
     writeFileSync(path.join(userDataDir, "engine-assets.json"), JSON.stringify({ records: [legacy] }));
     routes[SF_API] = () => json(sf19);
     const manager = makeManager();
@@ -271,6 +273,52 @@ describe("AssetManager", () => {
     await manager.removeAsset("lc0");
     expect(existsSync(own)).toBe(true);
     expect(manager.getInstalled().lc0.state).toBe("missing");
+  });
+
+  it("restores records whose files were deleted or moved as missing", async () => {
+    const kept = path.join(workDir, "maia-1300.pb.gz");
+    writeFileSync(kept, "weights");
+    const record = (id: string, state: string, file: string) => ({
+      id,
+      state,
+      installedPath: file,
+      customPath: state === "custom" ? file : null,
+      sha256: null,
+      manifestVersion: "v1.0",
+      sizeBytes: 7,
+      installedAt: null
+    });
+    writeFileSync(
+      path.join(userDataDir, "engine-assets.json"),
+      JSON.stringify({
+        records: [
+          record("maia-1100", "installed", path.join(workDir, "deleted.pb.gz")),
+          record("maia-1300", "installed", kept),
+          record("lc0", "custom", path.join(workDir, "moved-lc0"))
+        ]
+      })
+    );
+    const manager = makeManager();
+    await manager.init();
+    const installed = manager.getInstalled();
+    expect(installed["maia-1100"]).toMatchObject({ state: "missing", installedPath: null });
+    expect(installed["maia-1300"]).toMatchObject({ state: "installed", installedPath: kept });
+    expect(installed.lc0).toMatchObject({ state: "missing", customPath: null });
+    // The corrected state is persisted.
+    const saved = JSON.parse(readFileSync(path.join(userDataDir, "engine-assets.json"), "utf-8"));
+    expect(saved.records.find((r: { id: string }) => r.id === "maia-1100").state).toBe("missing");
+  });
+
+  it("serializes concurrent state writes without temp-file collisions", async () => {
+    const own = path.join(workDir, "lc0");
+    writeFileSync(own, "user's lc0");
+    const manager = makeManager();
+    await manager.init();
+    // Several completions persisting at once must all succeed and leave one consistent file.
+    await Promise.all([manager.setCustomPath("lc0", own), manager.removeAsset("maia-1100"), manager.removeAsset("maia-1300")]);
+    const saved = JSON.parse(readFileSync(path.join(userDataDir, "engine-assets.json"), "utf-8"));
+    expect(saved.records.find((r: { id: string }) => r.id === "lc0")).toMatchObject({ state: "custom", customPath: own });
+    expect(readdirSync(userDataDir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 
   it("explains the manual Lc0 install on macOS", async () => {

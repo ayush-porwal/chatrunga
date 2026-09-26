@@ -95,7 +95,8 @@ const api: ChaturangaApi = {
     update: (assetId) => ipcRenderer.invoke("assets:update", assetId)
   },
   onAssetProgress: subscribe("assets:progress"),
-  onAssetStatusChanged: subscribe<void>("assets:statusChanged")
+  onAssetStatusChanged: subscribe<void>("assets:statusChanged"),
+  onEnginesChanged: subscribe<void>("engines:changed")
 };
 
 contextBridge.exposeInMainWorld("chaturanga", api);

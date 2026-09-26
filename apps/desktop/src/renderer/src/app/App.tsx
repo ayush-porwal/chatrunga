@@ -212,10 +212,23 @@ export function App() {
     }
   }
 
-  function openSelectedGameReview(gameId: string) {
-    stopEngineWork();
-    clearPuzzleSession();
-    if (gameId !== "current" && gameId !== currentGame().gameId) useReviewStore.getState().reset();
+  async function openSelectedGameReview(gameId: string) {
+    if (gameId !== "current" && gameId !== currentGame().gameId) {
+      // Load the other game first and swap board + review together. Clearing the current
+      // review before the new game arrives would let autosave write the current game without
+      // its review, and the review route would show the wrong board meanwhile.
+      const saved = await window.chaturanga?.games.get(gameId).catch(() => null);
+      if (!saved) {
+        useGameStore.setState({ lastError: "Couldn't open that game." });
+        return;
+      }
+      stopEngineWork();
+      clearPuzzleSession();
+      openSavedGame(saved);
+    } else {
+      stopEngineWork();
+      clearPuzzleSession();
+    }
     currentGame().setMode("freeplay");
     currentGame().setEngineSide(null);
     currentGame().clearEngineMatchExtras();

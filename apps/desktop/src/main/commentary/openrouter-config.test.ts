@@ -61,6 +61,19 @@ describe("OpenRouterConfigStore", () => {
     expect(await store.getApiKey()).toBeNull();
   });
 
+  it("keeps both fields when a model change and a key change overlap", async () => {
+    const path = await storePath();
+    const store = new OpenRouterConfigStore(path, {
+      isEncryptionAvailable: () => true,
+      encryptString: (value) => Buffer.from(`cipher:${value}`),
+      decryptString: (value) => value.toString().replace(/^cipher:/, "")
+    });
+
+    await Promise.all([store.set({ model: "anthropic/test-model" }), store.set({ apiKey: "overlapping-secret" })]);
+    expect(await store.get()).toEqual({ model: "anthropic/test-model", hasApiKey: true });
+    expect(await store.getApiKey()).toBe("overlapping-secret");
+  });
+
   it("does not write a plaintext key when secure storage is unavailable", async () => {
     const path = await storePath();
     const store = new OpenRouterConfigStore(path, {

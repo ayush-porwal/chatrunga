@@ -3,6 +3,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { WelcomeModal } from "../features/onboarding/WelcomeModal";
 import { useFirstLaunch } from "../features/onboarding/useFirstLaunch";
 import { App } from "./App";
+import { useEngineRegistrySubscription } from "../queries/api";
 import { useReviewEventSubscription } from "./useReviewEventSubscription";
 
 /**
@@ -33,6 +34,7 @@ function RouterShell() {
   const firstLaunch = useFirstLaunch();
   // Mounted above the views so review events keep flowing across every navigation.
   useReviewEventSubscription();
+  useEngineRegistrySubscription();
   return (
     <>
       <App />

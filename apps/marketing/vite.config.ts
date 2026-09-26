@@ -20,8 +20,26 @@ function jpegSize(file: string): { width: number; height: number } {
   throw new Error(`No SOF marker in ${file}`);
 }
 
+/** Absolute site origin from env SITE_URL (e.g. https://chaturanga.app), or null when unset. */
+function siteUrl(): string | null {
+  const raw = process.env.SITE_URL?.trim();
+  if (!raw) return null;
+  if (!/^https?:\/\/[^/]+/.test(raw)) throw new Error(`SITE_URL must be an absolute http(s) URL, got "${raw}"`);
+  return raw.replace(/\/$/, "");
+}
+
 /**
- * - Replaces %DOWNLOAD_URL% and %SITE_URL% (env SITE_URL, for absolute Open Graph URLs).
+ * Link previews need an absolute image URL. Without SITE_URL the Open Graph / Twitter image
+ * tags are dropped (a relative URL would just break previews) and the build warns.
+ */
+function withSiteUrl(html: string, site: string | null): string {
+  if (site) return html.replaceAll("%SITE_URL%", site);
+  console.warn("[marketing] SITE_URL is not set: omitting og:image/twitter:image (set SITE_URL for link previews).");
+  return html.replace(/\s*<meta\b[^>]*(?:og:image|twitter:image)[^>]*\/>/g, "");
+}
+
+/**
+ * - Replaces %DOWNLOAD_URL% and %SITE_URL% (absolute Open Graph URLs; see withSiteUrl).
  * - Adds width/height to every <img src="/shots/*.jpg"> from the file itself, so re-captured
  *   screenshots never cause layout shift.
  */
@@ -29,10 +47,8 @@ function landingHtml(): Plugin {
   return {
     name: "chaturanga-landing-html",
     transformIndexHtml(html) {
-      const site = (process.env.SITE_URL ?? "").replace(/\/$/, "");
-      return html
+      return withSiteUrl(html, siteUrl())
         .replaceAll("%DOWNLOAD_URL%", DOWNLOAD_URL)
-        .replaceAll("%SITE_URL%", site)
         .replace(
           /<img\b([^>]*?)\bsrc="(\/shots\/[^"]+\.jpg)"([^>]*)>/g,
           (tag, before: string, src: string, after: string) => {

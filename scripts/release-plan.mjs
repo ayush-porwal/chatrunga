@@ -42,12 +42,15 @@ function compare(a, b) {
   return a.pre.localeCompare(b.pre, undefined, { numeric: true });
 }
 
+/**
+ * npm-style bump. A prerelease is "finished" only when the requested level matches it:
+ * 0.9.0-beta.1 → patch/minor 0.9.0, major 1.0.0; 1.2.3-rc.1 → patch 1.2.3, minor 1.3.0.
+ */
 export function bumpVersion(current, bump) {
   const v = parse(current);
-  if (v.pre) return `${v.major}.${v.minor}.${v.patch}`; // finishing a prerelease
-  if (bump === "major") return `${v.major + 1}.0.0`;
-  if (bump === "minor") return `${v.major}.${v.minor + 1}.0`;
-  return `${v.major}.${v.minor}.${v.patch + 1}`;
+  if (bump === "major") return v.pre && v.minor === 0 && v.patch === 0 ? `${v.major}.0.0` : `${v.major + 1}.0.0`;
+  if (bump === "minor") return v.pre && v.patch === 0 ? `${v.major}.${v.minor}.0` : `${v.major}.${v.minor + 1}.0`;
+  return v.pre ? `${v.major}.${v.minor}.${v.patch}` : `${v.major}.${v.minor}.${v.patch + 1}`;
 }
 
 function latestVersionTag() {

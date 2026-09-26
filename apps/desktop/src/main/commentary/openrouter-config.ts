@@ -64,7 +64,22 @@ export class OpenRouterConfigStore {
     }
   }
 
-  async set(input: SetOpenRouterConfigInput): Promise<OpenRouterConfigSummary> {
+  /** Tail of the serialized saves: each read-modify-write runs after the previous one. */
+  private saves: Promise<unknown> = Promise.resolve();
+  private writeSeq = 0;
+
+  /**
+   * Saves are serialized so overlapping calls (e.g. a model change and a key change) can't
+   * read the same old config and overwrite each other's field.
+   */
+  set(input: SetOpenRouterConfigInput): Promise<OpenRouterConfigSummary> {
+    const run = () => this.apply(input);
+    const next = this.saves.then(run, run);
+    this.saves = next.catch(() => undefined);
+    return next;
+  }
+
+  private async apply(input: SetOpenRouterConfigInput): Promise<OpenRouterConfigSummary> {
     const current = await this.read();
     const model = input.model === undefined ? normalizeModel(current.model) : normalizeModel(input.model);
     let encryptedApiKey = current.encryptedApiKey;
@@ -100,7 +115,7 @@ export class OpenRouterConfigStore {
 
   private async write(config: StoredConfig): Promise<void> {
     await mkdir(dirname(this.filePath), { recursive: true, mode: 0o700 });
-    const temporaryPath = `${this.filePath}.${process.pid}.tmp`;
+    const temporaryPath = `${this.filePath}.${process.pid}.${++this.writeSeq}.tmp`;
     try {
       await writeFile(temporaryPath, JSON.stringify(config), { encoding: "utf8", mode: 0o600 });
       await chmod(temporaryPath, 0o600);
