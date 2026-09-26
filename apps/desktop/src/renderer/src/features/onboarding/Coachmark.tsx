@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Lightbulb, X } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { AppSettings, OnboardingHintId } from "@chaturanga/shared/types/settings";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
@@ -48,32 +48,44 @@ export function useOnboardingHint(
   };
 }
 
-/** Mount in the review page: stores the tips it showed as seen when the review is left. */
-export function useStoreHintsOnLeave(): void {
+/**
+ * Mount in the review page: stores the tips it showed as seen when the review is left — the page
+ * unmounts, or it switches to another game's review (the page stays mounted then, so `reviewKey`,
+ * e.g. the game id, marks the change).
+ */
+export function useStoreHintsOnLeave(reviewKey: string | null): void {
   const queryClient = useQueryClient();
   const mounted = useRef(false);
+  const lastKey = useRef(reviewKey);
+
+  useEffect(() => {
+    if (lastKey.current === reviewKey) return;
+    lastKey.current = reviewKey;
+    storeShownHints(queryClient);
+  }, [queryClient, reviewKey]);
+
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
       // Deferred: StrictMode's simulated unmount remounts at once, which is not leaving the review.
       window.setTimeout(() => {
-        if (mounted.current || !shownThisReview.size) return;
-        // Straight through the API: the page's own mutation observers are gone by now.
-        const current = queryClient.getQueryData<AppSettings>(["settings"]);
-        const value = [...new Set([...(current?.onboardingHintsSeen ?? []), ...shownThisReview])];
-        shownThisReview.clear();
-        if (current)
-          queryClient.setQueryData<AppSettings>(["settings"], {
-            ...current,
-            onboardingHintsSeen: value
-          });
-        void window.chaturanga?.settings
-          .set("onboardingHintsSeen", value)
-          .finally(() => queryClient.invalidateQueries({ queryKey: ["settings"] }));
+        if (!mounted.current) storeShownHints(queryClient);
       }, 0);
     };
   }, [queryClient]);
+}
+
+/** Persists the tips shown in the review being left (straight through the API: the page's own mutation observers may be gone). */
+function storeShownHints(queryClient: QueryClient): void {
+  if (!shownThisReview.size) return;
+  const current = queryClient.getQueryData<AppSettings>(["settings"]);
+  const value = [...new Set([...(current?.onboardingHintsSeen ?? []), ...shownThisReview])];
+  shownThisReview.clear();
+  if (current) queryClient.setQueryData<AppSettings>(["settings"], { ...current, onboardingHintsSeen: value });
+  void window.chaturanga?.settings
+    .set("onboardingHintsSeen", value)
+    .finally(() => queryClient.invalidateQueries({ queryKey: ["settings"] }));
 }
 
 /** A small, dismissible inline tip. Not a popover: it sits in the flow next to what it explains. */

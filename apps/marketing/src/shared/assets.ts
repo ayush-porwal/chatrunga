@@ -1,9 +1,11 @@
 // Release builds are published on GitHub Releases by .github/workflows/release.yml.
 // File names carry the version (Chaturanga-<version>-mac-arm64.dmg, -win-x64-setup.exe,
-// -linux-x86_64.AppImage), so every platform links to the latest release page. index.html files
-// reference these as %DOWNLOAD_URL% and %DOWNLOAD_URL_<PLATFORM>% (substituted in vite.config.ts).
+// -linux-x86_64.AppImage), so every platform links to the releases page. That page lists
+// prereleases too (unlike /releases/latest, which skips them and is empty until a stable release
+// exists). index.html references these as %DOWNLOAD_URL% and %DOWNLOAD_URL_<PLATFORM>%
+// (substituted in vite.config.ts).
 export const RELEASES_URL = "https://github.com/ayush-porwal/chatrunga/releases";
-export const DOWNLOAD_URL = `${RELEASES_URL}/latest`;
+export const DOWNLOAD_URL = RELEASES_URL;
 
 export type PlatformId = "mac" | "windows" | "linux";
 

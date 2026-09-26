@@ -1,19 +1,50 @@
 import { describe, expect, it } from "vitest";
-import { savedResult } from "./useGameAutosave";
+import type { MoveNode } from "@chaturanga/shared/types/chess";
+import { mainlineEnd, savedResult } from "./useGameAutosave";
+
+const node = (id: string, parentId: string | null, children: string[]): MoveNode => ({
+  id,
+  parentId,
+  san: parentId ? id : null,
+  uci: null,
+  fenBefore: "",
+  fenAfter: id,
+  ply: 0,
+  nags: [],
+  comment: null,
+  arrows: [],
+  highlights: [],
+  children
+});
 
 describe("savedResult", () => {
-  it("prefers the outcome of a finished game, then a terminal position", () => {
-    expect(savedResult("0-1", "*", "1-0")).toBe("0-1");
-    expect(savedResult(undefined, "1-0", "*")).toBe("1-0");
+  it("prefers the outcome of a finished game, then a terminal end of the main line", () => {
+    expect(savedResult("0-1", "*", "1-0", true)).toBe("0-1");
+    expect(savedResult(undefined, "1-0", "*", false)).toBe("1-0");
   });
 
-  it("keeps a decided game's recorded result while the board shows a position mid-game", () => {
-    expect(savedResult(undefined, "*", "1-0")).toBe("1-0");
+  it("keeps a decided game's recorded result while its main line is unchanged", () => {
+    expect(savedResult(undefined, "*", "1-0", true)).toBe("1-0");
+  });
+
+  it("drops the recorded result once the main line's final moves are edited", () => {
+    expect(savedResult(undefined, "*", "1-0", false)).toBe("*");
   });
 
   it("reads an undecided game as in progress", () => {
-    expect(savedResult(undefined, "*", "*")).toBe("*");
-    expect(savedResult(undefined, "*", null)).toBe("*");
-    expect(savedResult(undefined, "*", undefined)).toBe("*");
+    expect(savedResult(undefined, "*", "*", true)).toBe("*");
+    expect(savedResult(undefined, "*", null, true)).toBe("*");
+    expect(savedResult(undefined, "*", undefined, true)).toBe("*");
+  });
+});
+
+describe("mainlineEnd", () => {
+  it("follows the first child from the root, ignoring side variations", () => {
+    const tree = [node("root", null, ["e4", "d4"]), node("e4", "root", ["e5"]), node("d4", "root", []), node("e5", "e4", [])];
+    expect(mainlineEnd(tree)?.id).toBe("e5");
+  });
+
+  it("is the root for an empty game", () => {
+    expect(mainlineEnd([node("root", null, [])])?.id).toBe("root");
   });
 });

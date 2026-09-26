@@ -78,11 +78,11 @@ function GameReviewPageInner({
   onOpenCommentarySettings
 }: GameReviewPageProps) {
   const location = useLocation();
-  useStoreHintsOnLeave();
   const id = reviewIdFromPath(location.pathname);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Narrow selectors: this page must not re-render for unrelated game-store changes.
   const gameId = useGameStore((state) => state.gameId);
+  useStoreHintsOnLeave(gameId);
   const moveTree = useGameStore((state) => state.moveTree);
   const selectedNodeId = useGameStore((state) => state.currentNodeId);
   const boardFen = useGameStore((state) => state.currentFen);
