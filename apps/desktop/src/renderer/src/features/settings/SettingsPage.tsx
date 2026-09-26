@@ -8,6 +8,7 @@ import { Notice } from "@/components/ui/notice";
 import { Page, PageHeader, SectionHeader } from "@/components/ui/page";
 import { Switch } from "@/components/ui/switch";
 import { hasDesktopApi } from "@/lib/environment";
+import { useWindowGlass } from "@/lib/window-glass";
 import { cardPadded } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { BoardSection } from "./BoardSettings";
@@ -20,13 +21,19 @@ export function SettingsPage() {
   const settings = useSettingsQuery();
   const desktopApiAvailable = hasDesktopApi();
   const appearance = hydratePieceSettings({ ...defaultSettings, ...(settings.data ?? {}) });
+  const glass = useWindowGlass();
+  const showWindowSection = Boolean(glass?.supported);
 
   return (
     <Page>
-      <PageHeader title="Settings" description="Board, sound, engines and commentary." />
+      <PageHeader
+        title="Settings"
+        description={showWindowSection ? "Window, board, sound, engines and commentary." : "Board, sound, engines and commentary."}
+      />
       {!desktopApiAvailable ? (
         <Notice tone="warn">Engines, files and saved settings need the desktop app. This preview uses defaults.</Notice>
       ) : null}
+      {showWindowSection ? <WindowSection appearance={appearance} reducedTransparency={Boolean(glass?.reducedTransparency)} /> : null}
       <BoardSection appearance={appearance} />
       <SoundSection appearance={appearance} />
       <EnginesSection appearance={appearance} />
@@ -36,6 +43,33 @@ export function SettingsPage() {
         <OpenRouterSettingsCard />
       </section>
     </Page>
+  );
+}
+
+/** macOS only: the translucent (vibrancy) window chrome. */
+function WindowSection({ appearance, reducedTransparency }: { appearance: AppSettings; reducedTransparency: boolean }) {
+  const setSetting = useSetSetting();
+  return (
+    <section className={cn(cardPadded, "grid gap-1")}>
+      <SectionHeader title="Window" />
+      <SettingRow
+        label="Translucent window"
+        htmlFor="setting-glass"
+        description={
+          reducedTransparency
+            ? "Off while Reduce transparency is on in System Settings → Accessibility → Display."
+            : "The sidebar and titlebar show a blurred view of your desktop."
+        }
+        control={
+          <Switch
+            id="setting-glass"
+            checked={appearance.glassEffect && !reducedTransparency}
+            disabled={reducedTransparency}
+            onCheckedChange={(v) => setSetting("glassEffect", v)}
+          />
+        }
+      />
+    </section>
   );
 }
 

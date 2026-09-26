@@ -75,6 +75,7 @@ export function AppSidebar({
     <nav
       className="scroll-area col-start-1 row-start-2 flex min-h-0 w-[var(--sidebar-width)] flex-col justify-between gap-3 overflow-y-auto overflow-x-hidden px-2 pb-2"
       aria-label="Application actions"
+      data-chrome
     >
       <div className="grid min-w-0 content-start gap-0.5">
         {item(Home, "Home", onHome, active.home)}

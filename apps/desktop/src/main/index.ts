@@ -1,8 +1,10 @@
 import {
   app,
   BrowserWindow,
+  ipcMain,
   Menu,
   nativeImage,
+  nativeTheme,
   net,
   protocol,
   session,
@@ -31,6 +33,7 @@ import {
   localImagePathFromUrl,
   PRODUCTION_CSP
 } from "./security";
+import { installWindowGlass, windowGlassConstructorOptions } from "./window-glass";
 
 const PRODUCT_NAME = "Chaturanga";
 const IMAGE_SCHEME = "chaturanga-image";
@@ -90,6 +93,10 @@ async function startup(): Promise<void> {
     callback(isPermissionAllowed(permission))
   );
   installLocalImageProtocol();
+  // The UI is dark-only: native surfaces (window vibrancy material, menus, dialogs) follow it.
+  nativeTheme.themeSource = "dark";
+  installWindowGlass();
+  installWindowReveal();
   registerIpc(engineManager);
   installApplicationMenu();
   const icon = createAppIcon();
@@ -136,7 +143,10 @@ function createWindow(): void {
     titleBarStyle: isMac ? "hiddenInset" : "default",
     trafficLightPosition: isMac ? { x: 18, y: 20 } : undefined,
     icon: createAppIcon(),
-    backgroundColor: "#161616",
+    // Hidden until the renderer has committed its first real frame (see installWindowReveal):
+    // no blank or bare-frosted window at launch.
+    show: false,
+    ...windowGlassConstructorOptions(),
     webPreferences: {
       // CommonJS build: sandboxed preloads cannot be ES modules.
       preload: join(currentDir, "../preload/index.cjs"),
@@ -147,6 +157,8 @@ function createWindow(): void {
     }
   });
   mainWindow = window;
+  // Fallback reveal if the renderer never reports ready (a crash before React mounts).
+  window.once("ready-to-show", () => setTimeout(() => revealWindow(window), REVEAL_FALLBACK_MS));
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;
     // The interactive engine belongs to the window (macOS keeps the app alive).
@@ -161,6 +173,23 @@ function createWindow(): void {
     });
     void window.loadFile(rendererIndex);
   }
+}
+
+const REVEAL_FALLBACK_MS = 1500;
+const revealedWindows = new WeakSet<BrowserWindow>();
+
+/** Shows a window the first time only (a dev reload re-sends "ready" and must not un-minimise it). */
+function revealWindow(window: BrowserWindow): void {
+  if (window.isDestroyed() || revealedWindows.has(window)) return;
+  revealedWindows.add(window);
+  window.show();
+}
+
+function installWindowReveal(): void {
+  ipcMain.on("appearance:rendererReady", (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window) revealWindow(window);
+  });
 }
 
 /** Serves engine pictures from disk; see `localImagePathFromUrl` for what is allowed. */

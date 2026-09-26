@@ -27,12 +27,17 @@ export const divider = "h-px w-full bg-line-subtle";
 /**
  * The app frame: titlebar + sidebar are window chrome (`bg-chrome`); every view (pages and board
  * workspaces) sits in ONE inset content panel below the titlebar, right of the sidebar.
+ * Glass (macOS vibrancy): the chrome becomes a translucent tint over the blurred desktop; mark the
+ * chrome regions with `data-chrome` so their fills/lines switch to the glass tokens (app.css).
  */
-export const appFrame = "grid h-screen overflow-hidden bg-chrome text-fg";
+export const appFrame = "grid h-screen overflow-hidden bg-chrome text-fg glass:bg-chrome-glass";
 
-/** The inset content panel: darker canvas, hairline border, rounded corners, a small gap to the window edge. */
+/**
+ * The inset content panel: darker canvas, hairline border, rounded corners, a small gap to the window
+ * edge. Always opaque — on glass it floats on the chrome with a light inner hairline and a soft shadow.
+ */
 export const contentPanel =
-  "relative mb-2 mr-2 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-line bg-canvas";
+  "relative mb-2 mr-2 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-line bg-canvas glass:border-white/[0.08] glass:shadow-panel-glass";
 
 /**
  * Every icon-only toolbar button in the titlebar (sidebar toggle, Flip board): one 28px hit area,

@@ -60,10 +60,33 @@ export type GenerateCommentaryResult = {
   error: string | null;
 };
 
+/**
+ * Window translucency ("glass"): macOS vibrancy behind the sidebar and titlebar. The renderer
+ * mirrors `active` as the `glass` class on <html>, which makes the chrome surfaces translucent.
+ */
+export type WindowGlassState = {
+  /** The platform can show it (macOS). */
+  supported: boolean;
+  /** The user's `glassEffect` setting. */
+  enabled: boolean;
+  /** macOS System Settings → Accessibility → Display → Reduce transparency is on. */
+  reducedTransparency: boolean;
+  /** Vibrancy is on right now: supported, enabled and not reduced. */
+  active: boolean;
+};
+
 export type ChaturangaApi = {
   environment: {
     isElectron: true;
     platform: NodeJS.Platform;
+  };
+  appearance: {
+    /** Current glass state (synchronous: read before the first render so the first frame is right). */
+    getGlass(): WindowGlassState;
+    /** Fired when the setting or the system Reduce transparency preference changes. */
+    onGlassChanged(callback: (state: WindowGlassState) => void): Unsubscribe;
+    /** The first frame with real content has been committed: the main process may show the window. */
+    rendererReady(): void;
   };
   engines: {
     list(): Promise<EngineConfig[]>;

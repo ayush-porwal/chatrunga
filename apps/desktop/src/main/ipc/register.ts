@@ -24,6 +24,7 @@ import { syncAssetsToEngineRegistry } from "../engine/engine-registry-sync";
 import { getOpenRouterConfigStore } from "../commentary/openrouter-config";
 import { generateOpenRouterCommentary, parseCommentaryPayloads } from "../commentary/openrouter-commentary";
 import { errorMessage, logger } from "../logger";
+import { refreshWindowGlass } from "../window-glass";
 import { runGameReview } from "./review-handler";
 import {
   asAbsolutePath,
@@ -266,9 +267,11 @@ function registerLibraryIpc(): void {
   });
 
   ipcMain.handle("settings:getAll", () => settingsRepository.getAll());
-  ipcMain.handle("settings:set", (_event, key: unknown, value: unknown) =>
-    settingsRepository.set(parseSettingKey(key), value)
-  );
+  ipcMain.handle("settings:set", (_event, key: unknown, value: unknown) => {
+    const settingKey = parseSettingKey(key);
+    settingsRepository.set(settingKey, value);
+    if (settingKey === "glassEffect") refreshWindowGlass();
+  });
 }
 
 /**

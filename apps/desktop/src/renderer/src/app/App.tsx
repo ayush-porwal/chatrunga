@@ -7,6 +7,7 @@ import { defaultSettings } from "@chaturanga/shared/types/settings";
 import { Notice } from "@/components/ui/notice";
 import { hasDesktopApi, isElectronMac } from "@/lib/environment";
 import { appFrame, contentPanel } from "@/lib/ui";
+import { signalWindowReady } from "@/lib/window-glass";
 import { cn } from "@/lib/utils";
 import { EngineGamePage } from "../features/analysis/EngineGamePage";
 import { PromotionDialog } from "../features/board/PromotionDialog";
@@ -56,6 +57,8 @@ export function App() {
   const gameReviewMatch = useMatch("/games/:id/review");
   const navigate = useNavigate();
   const onReviewRoute = Boolean(gameReviewMatch);
+  // The window stays hidden until the shell's first frame is painted.
+  useEffect(signalWindowReady, []);
   useEffect(() => {
     setAppView((view) => (onReviewRoute ? "game-review" : view === "game-review" ? "game" : view));
   }, [onReviewRoute]);

@@ -186,6 +186,11 @@ export type AppSettings = {
   showCoordinates: boolean;
   showLegalMoves: boolean;
   boardAnimation: boolean;
+  /**
+   * macOS: let the desktop show through the sidebar and titlebar (window vibrancy). Ignored on
+   * other platforms and while the system "Reduce transparency" accessibility setting is on.
+   */
+  glassEffect: boolean;
   soundEnabled: boolean;
   soundVolume: number;
   defaultEngineId: string | null;
@@ -254,6 +259,7 @@ export const defaultSettings: AppSettings = {
   showCoordinates: true,
   showLegalMoves: true,
   boardAnimation: true,
+  glassEffect: true,
   soundEnabled: true,
   soundVolume: 0.7,
   defaultEngineId: null,
@@ -305,6 +311,15 @@ export function hydratePieceSettings(settings: AppSettings): AppSettings {
     ...settings,
     pieceStyle: normalizePieceStyle(settings.pieceStyle),
     piecePresentation: presentation
+  };
+}
+
+/** Validates the window appearance settings, falling back to defaults for bad values. Idempotent. */
+export function normalizeAppearanceSettings(settings: AppSettings): AppSettings {
+  return {
+    ...settings,
+    glassEffect:
+      typeof settings.glassEffect === "boolean" ? settings.glassEffect : defaultSettings.glassEffect
   };
 }
 

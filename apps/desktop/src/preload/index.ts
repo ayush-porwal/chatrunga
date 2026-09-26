@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
-import type { ChaturangaApi, Unsubscribe } from "@chaturanga/shared/ipc/chaturanga-api";
+import type { ChaturangaApi, Unsubscribe, WindowGlassState } from "@chaturanga/shared/ipc/chaturanga-api";
 
 // Runs sandboxed: only `electron`'s renderer modules are available here, no Node APIs.
 
@@ -14,10 +14,23 @@ function subscribe<T>(channel: string) {
 
 type EventPayload<K extends keyof ChaturangaApi["events"]> = Parameters<Parameters<ChaturangaApi["events"][K]>[0]>[0];
 
+// Read once, synchronously, so the renderer's first frame matches the native window (vibrancy or
+// opaque); kept current by the change events below.
+let glassState = ipcRenderer.sendSync("appearance:getGlassSync") as WindowGlassState;
+const onGlassChanged = subscribe<WindowGlassState>("appearance:glassChanged");
+onGlassChanged((state) => {
+  glassState = state;
+});
+
 const api: ChaturangaApi = {
   environment: {
     isElectron: true,
     platform: process.platform
+  },
+  appearance: {
+    getGlass: () => glassState,
+    onGlassChanged,
+    rendererReady: () => ipcRenderer.send("appearance:rendererReady")
   },
   engines: {
     list: () => ipcRenderer.invoke("engines:list"),

@@ -4,6 +4,7 @@ import { getDb } from "./index";
 import {
   defaultSettings,
   hydratePieceSettings,
+  normalizeAppearanceSettings,
   normalizeReviewEngineSettings,
   type AppSettings
 } from "@chaturanga/shared/types/settings";
@@ -418,7 +419,7 @@ export const settingsRepository = {
       }
     }
     const merged = { ...defaultSettings, ...values } as AppSettings;
-    return normalizeReviewEngineSettings(hydratePieceSettings(merged));
+    return normalizeAppearanceSettings(normalizeReviewEngineSettings(hydratePieceSettings(merged)));
   },
 
   /** The raw persisted value (before defaults/normalization), or undefined when never set. */

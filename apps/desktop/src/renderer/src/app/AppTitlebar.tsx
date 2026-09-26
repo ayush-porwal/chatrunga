@@ -43,6 +43,7 @@ export function AppTitlebar({
     <header
       className="col-[1/-1] row-start-1 flex h-[var(--titlebar-height)] min-w-0 items-center pr-3 text-sm text-fg-muted [-webkit-app-region:drag]"
       aria-label="Titlebar"
+      data-chrome
     >
       <div className={cn("flex h-full shrink-0 items-center", windowControlsInset ? "pl-[90px]" : "pl-3")}>
         <SidebarToggle expanded={sidebarExpanded} onClick={onToggleSidebar} />

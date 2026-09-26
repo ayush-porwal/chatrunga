@@ -7,6 +7,9 @@ import "@lichess-org/chessground/assets/chessground.cburnett.css";
 import "./styles/generated-piece-themes.css";
 import "./styles/app.css";
 import { Router } from "./app/Router";
+import { initWindowGlass } from "./lib/window-glass";
+
+initWindowGlass();
 
 const queryClient = new QueryClient();
 

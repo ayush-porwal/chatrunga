@@ -3,6 +3,7 @@ import {
   type AppSettings,
   defaultSettings,
   hydratePieceSettings,
+  normalizeAppearanceSettings,
   normalizeCommentaryProvider,
   normalizeDefaultEngineId,
   normalizeBoardSquareHex,
@@ -171,5 +172,20 @@ describe("normalizeCommentaryProvider", () => {
     expect(normalizeReviewEngineSettings(defaultSettings).reviewCommentaryProvider).toBe(
       "openrouter"
     );
+  });
+});
+
+describe("normalizeAppearanceSettings", () => {
+  it("defaults the translucent window to on", () => {
+    expect(defaultSettings.glassEffect).toBe(true);
+    expect(normalizeAppearanceSettings(defaultSettings).glassEffect).toBe(true);
+  });
+
+  it("keeps a saved boolean and replaces anything else with the default", () => {
+    expect(normalizeAppearanceSettings({ ...defaultSettings, glassEffect: false }).glassEffect).toBe(false);
+    for (const bad of ["false", 0, null, undefined]) {
+      const stored = { ...defaultSettings, glassEffect: bad } as unknown as AppSettings;
+      expect(normalizeAppearanceSettings(stored).glassEffect).toBe(true);
+    }
   });
 });

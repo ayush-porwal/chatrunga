@@ -1,6 +1,21 @@
 @import "tailwindcss";
 
 /*
+ * `glass:` — applies while the window is translucent (macOS vibrancy; `html.glass`, set from
+ * lib/window-glass.ts). Off everywhere else (setting off, Reduce transparency, other platforms,
+ * web preview), so the plain utilities stay the opaque look. The media query is a second guard:
+ * main already drops vibrancy when the system reduces transparency; if the two ever disagree the
+ * page simply stays opaque.
+ */
+@custom-variant glass {
+  @media (prefers-reduced-transparency: no-preference) {
+    &:where(html.glass, html.glass *) {
+      @slot;
+    }
+  }
+}
+
+/*
  * Design tokens (dark theme only). Every colour used by the renderer should come from
  * this block: `bg-canvas`, `bg-surface`, `border-line`, `text-fg-muted`, `text-accent`, ...
  * Opacity modifiers work on all of them (`bg-accent/15`, `border-danger/30`).
@@ -9,6 +24,8 @@
 @theme {
   /* Surfaces — darkest to lightest. */
   --color-chrome: #1b1c1f; /* window chrome: the titlebar and the sidebar share it */
+  /* Glass window chrome: the same colour as a smoke tint over the macOS sidebar material. */
+  --color-chrome-glass: rgb(27 28 31 / 0.55);
   --color-canvas: #111315; /* the inset content panel every view sits in (page background) */
   --color-surface-sunken: #141619; /* inputs, wells, code blocks, scroll lists inside a card */
   --color-surface: #181a1d; /* cards, panels, list rows */
@@ -53,6 +70,8 @@
   /* Elevation: only overlays (modals, popovers, menus) get a shadow. */
   --shadow-overlay: 0 24px 64px rgb(0 0 0 / 0.45);
   --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.4);
+  /* Glass only: lifts the opaque content panel off the translucent chrome (dark hairline + soft falloff). */
+  --shadow-panel-glass: 0 0 0 0.5px rgb(0 0 0 / 0.55), 0 12px 32px -12px rgb(0 0 0 / 0.55);
 }
 
 /* Dark color scheme so WebKit/Electron uses dark native controls/scrollbars. */
@@ -64,6 +83,32 @@ body {
   background-color: var(--color-chrome);
   color: var(--color-fg);
   -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-reduced-transparency: no-preference) {
+  /* Glass: the page is transparent so the window's vibrancy shows through; the app frame paints the tint. */
+  html.glass,
+  html.glass body,
+  html.glass #root {
+    background-color: transparent;
+  }
+
+  /*
+   * Glass chrome regions (titlebar, sidebar — `data-chrome`): neutral fills and lines become
+   * translucent white so hover/selected states read as "lit glass" instead of grey slabs, and the
+   * quieter text steps brighten a little to hold contrast over a blurred, possibly bright desktop.
+   * Tokens only: every component inside picks these up without glass-specific classes.
+   */
+  html.glass [data-chrome] {
+    --color-control: rgb(255 255 255 / 0.09);
+    --color-control-hover: rgb(255 255 255 / 0.13);
+    --color-line-subtle: rgb(255 255 255 / 0.07);
+    --color-line: rgb(255 255 255 / 0.1);
+    --color-line-strong: rgb(255 255 255 / 0.16);
+    --color-danger-soft: rgb(255 154 141 / 0.14);
+    --color-fg-muted: #bcc0c7;
+    --color-fg-subtle: #8f959e;
+  }
 }
 
 ::selection {
