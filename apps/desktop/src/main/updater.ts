@@ -199,7 +199,7 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
     updater.on("checking-for-update", () => this.dispatch({ type: "checking" }));
     updater.on("update-not-available", () => this.dispatch({ type: "not-available" }, { checked: true }));
     updater.on("update-available", (info: UpdateInfo) => {
-      const manualUrl = this.state.mode === "manual" && this.feed ? manualDownloadUrl(this.feed, info, downloadTarget()) : null;
+      const manualUrl = this.state.mode === "manual" && this.feed ? manualDownloadUrl(this.feed, info, downloadTarget(), this.feedOverride) : null;
       logger.info("updater", `update available: ${info.version}${manualUrl ? ` (manual: ${manualUrl})` : ""}`);
       this.dispatch({ type: "available", info, manualUrl }, { checked: true });
       if (!manualUrl && updater.autoDownload) this.dispatch({ type: "download-started" });

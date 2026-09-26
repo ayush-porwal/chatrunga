@@ -145,14 +145,24 @@ describe("manualDownloadUrl", () => {
     expect(manualDownloadUrl(github, linux, { platform: "linux", arch: "x64" })).toMatch(/linux-x86_64\.AppImage$/);
   });
 
-  it("resolves files against a generic feed and keeps absolute URLs", () => {
+  it("resolves files against a generic (test override) feed", () => {
     const feed: UpdateFeedConfig = { provider: "generic", url: "http://127.0.0.1:8123/feed" };
-    expect(manualDownloadUrl(feed, update, { platform: "darwin", arch: "arm64" })).toBe(
+    expect(manualDownloadUrl(feed, update, { platform: "darwin", arch: "arm64" }, feed.url)).toBe(
       "http://127.0.0.1:8123/feed/Chaturanga-0.2.0-mac-arm64.dmg"
     );
-    const absolute = { version: "0.2.0", files: [{ url: "https://cdn.example.com/Chaturanga-arm64.dmg" }] };
-    expect(manualDownloadUrl(github, absolute, { platform: "darwin", arch: "arm64" })).toBe("https://cdn.example.com/Chaturanga-arm64.dmg");
     expect(releasePageUrl(feed, "0.2.0")).toBe("http://127.0.0.1:8123/feed");
+  });
+
+  it("never offers a link openDownload() would refuse: installers on other hosts fall back to the release page", () => {
+    const elsewhere = { version: "0.2.0", files: [{ url: "https://cdn.example.com/Chaturanga-arm64.dmg" }] };
+    const url = manualDownloadUrl(github, elsewhere, { platform: "darwin", arch: "arm64" });
+    expect(url).toBe("https://github.com/ayush-porwal/chatrunga/releases/tag/v0.2.0");
+    expect(isAllowedDownloadUrl(url, null)).toBe(true);
+    // Same for a generic-feed file on a different origin than the override.
+    const feed: UpdateFeedConfig = { provider: "generic", url: "http://127.0.0.1:8123/feed" };
+    const offOrigin = manualDownloadUrl(feed, elsewhere, { platform: "darwin", arch: "arm64" }, feed.url);
+    expect(offOrigin).toBe(feed.url);
+    expect(isAllowedDownloadUrl(offOrigin, feed.url)).toBe(true);
   });
 });
 

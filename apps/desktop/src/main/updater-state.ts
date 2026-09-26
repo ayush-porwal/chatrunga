@@ -86,20 +86,24 @@ export type UpdateFile = { url: string; size?: number };
 
 /**
  * The installer a person should download by hand for this platform and CPU: the DMG (else ZIP) for
- * macOS, the AppImage for Linux, matched to the architecture by file name. Falls back to the release
- * page when the feed lists none.
+ * macOS, the AppImage for Linux, matched to the architecture by file name. Only links that
+ * `openDownload()` will actually open (isAllowedDownloadUrl) are offered; otherwise — no matching
+ * file, or an installer hosted elsewhere — it falls back to the release page, which is always allowed.
  */
 export function manualDownloadUrl(
   feed: UpdateFeedConfig,
   update: { version: string; files: UpdateFile[] },
-  target: { platform: NodeJS.Platform; arch: string }
+  target: { platform: NodeJS.Platform; arch: string },
+  feedOverride: string | null = null
 ): string {
   const extensions = target.platform === "darwin" ? [".dmg", ".zip"] : target.platform === "linux" ? [".AppImage"] : [".exe"];
   const arm = target.arch === "arm64";
   const forArch = (name: string) => (arm ? /arm64|aarch64/i.test(name) : !/arm64|aarch64/i.test(name));
   for (const extension of extensions) {
     const file = update.files.find((candidate) => candidate.url.endsWith(extension) && forArch(candidate.url));
-    if (file) return resolveFileUrl(feed, update.version, file.url);
+    if (!file) continue;
+    const url = resolveFileUrl(feed, update.version, file.url);
+    if (isAllowedDownloadUrl(url, feedOverride)) return url;
   }
   return releasePageUrl(feed, update.version);
 }
