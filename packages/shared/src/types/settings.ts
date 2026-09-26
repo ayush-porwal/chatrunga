@@ -1,3 +1,5 @@
+import type { MaiaRating } from "./engine";
+
 export type BoardTheme =
   | "brown"
   | "green"
@@ -74,26 +76,19 @@ const ALL_PIECE_STYLES: PieceStyle[] = ["cburnett", ...VENDORED_PIECE_SETS];
 
 const ALL_PIECE_PRESENTATIONS: PiecePresentation[] = ["default", "sharp", "soft", "contrast"];
 
-/** Which sprite pack is painted for a persisted {@link PieceStyle}. */
-export function pieceSpritePack(style: PieceStyle): "cburnett" | VendoredPieceSet {
-  return style === "cburnett" ? "cburnett" : style;
-}
-
 /**
  * Class applied on the Chessground mount node (`cg-wrap`) so scoped rules in `generated-piece-themes.css`
  * override default cburnett sprites. Undefined when the built-in cburnett sheet alone should apply.
  */
 export function cgWrapPieceSetClass(style: PieceStyle): string | undefined {
-  const pack = pieceSpritePack(style);
-  return pack === "cburnett" ? undefined : `piece-set-${pack}`;
+  return style === "cburnett" ? undefined : `piece-set-${style}`;
 }
 
 const presentationTailwindClass: Record<PiecePresentation, string> = {
   default: "",
   sharp:
     "[&_piece]:contrast-125 [&_piece]:drop-shadow-[0_2px_1px_rgb(0_0_0/0.42)] [&_piece.black]:brightness-90 [&_piece.white]:brightness-105",
-  soft:
-    "[&_piece]:contrast-90 [&_piece]:opacity-95 [&_piece]:drop-shadow-[0_1px_1px_rgb(0_0_0/0.28)] [&_piece.black]:brightness-95",
+  soft: "[&_piece]:contrast-90 [&_piece]:opacity-95 [&_piece]:drop-shadow-[0_1px_1px_rgb(0_0_0/0.28)] [&_piece.black]:brightness-95",
   contrast:
     "[&_piece]:contrast-150 [&_piece]:drop-shadow-[0_2px_2px_rgb(0_0_0/0.55)] [&_piece.black]:brightness-75 [&_piece.white]:brightness-110"
 };
@@ -117,7 +112,8 @@ export const pieceStyleOptions: Array<{
   {
     id: "merida",
     label: "Merida",
-    description: "Classic Merida-style set from Lichess (`public/piece/merida`), inlined for offline use."
+    description:
+      "Classic Merida-style set from Lichess (`public/piece/merida`), inlined for offline use."
   },
   {
     id: "alpha",
@@ -195,10 +191,45 @@ export type AppSettings = {
   defaultEngineId: string | null;
   lastEngineMoveTimeMs: number;
   lastEngineDepth: number | null;
+  /**
+   * Review engine controls. `movetime` per reviewed position (ms). Default 1s: shorter searches
+   * give run-to-run noisy Stockfish evals. Settings rows are only written when the user picks a
+   * value, so a stored choice survives default changes.
+   */
+  reviewSearchTimeMs: number;
+  reviewUseMaia: boolean;
+  reviewCommentaryEnabled: boolean;
+  /** OpenRouter with the user's own key (default), or the offline deterministic explanation. */
+  reviewCommentaryProvider: ReviewCommentaryProvider;
+  reviewCommentaryDetail: "concise" | "balanced" | "detailed";
+  reviewPlayerRating: number;
+  reviewPlayerColor: "white" | "black";
+  reviewShowTopLines: boolean;
+  /** MultiPV lines per reviewed position (1-5). */
+  reviewMultiPv: number;
+  /** Maia levels to run during review; null = every installed level. */
+  reviewMaiaLevels: ReviewMaiaLevel[] | null;
+  /** UCI `Threads` for the evaluation engine; null = auto (cpus - 1, capped at 8). */
+  engineThreads: number | null;
+  /** UCI `Hash` (MB) for the evaluation engine. */
+  engineHashMb: number;
   recentFilePaths: string[];
   theme: "light" | "dark";
   lastOpenedGameId: string | null;
 };
+
+export type ReviewCommentaryProvider = "openrouter" | "local";
+export const REVIEW_COMMENTARY_PROVIDERS: readonly ReviewCommentaryProvider[] = [
+  "openrouter",
+  "local"
+] as const;
+
+export type ReviewMaiaLevel = MaiaRating;
+export const REVIEW_MAIA_LEVELS: readonly ReviewMaiaLevel[] = [
+  1100, 1300, 1500, 1700, 1900
+] as const;
+export const MAX_ENGINE_THREADS = 8;
+export const ENGINE_HASH_MB_RANGE = { min: 16, max: 4096 } as const;
 
 export const boardThemeSquareColors: Record<BoardTheme, { light: string; dark: string }> = {
   brown: { light: "#f0d9b5", dark: "#b58863" },
@@ -228,6 +259,18 @@ export const defaultSettings: AppSettings = {
   defaultEngineId: null,
   lastEngineMoveTimeMs: 1000,
   lastEngineDepth: null,
+  reviewSearchTimeMs: 1000,
+  reviewUseMaia: true,
+  reviewCommentaryEnabled: true,
+  reviewCommentaryProvider: "openrouter",
+  reviewCommentaryDetail: "balanced",
+  reviewPlayerRating: 1500,
+  reviewPlayerColor: "white",
+  reviewShowTopLines: true,
+  reviewMultiPv: 3,
+  reviewMaiaLevels: null,
+  engineThreads: null,
+  engineHashMb: 128,
   recentFilePaths: [],
   theme: "dark",
   lastOpenedGameId: null
@@ -237,7 +280,9 @@ export const defaultSettings: AppSettings = {
 export function normalizePieceStyle(value: unknown): PieceStyle {
   if (typeof value !== "string") return defaultSettings.pieceStyle;
   if (legacyPieceStyleMap[value]) return legacyPieceStyleMap[value]!;
-  return ALL_PIECE_STYLES.includes(value as PieceStyle) ? (value as PieceStyle) : defaultSettings.pieceStyle;
+  return ALL_PIECE_STYLES.includes(value as PieceStyle)
+    ? (value as PieceStyle)
+    : defaultSettings.pieceStyle;
 }
 
 export function normalizePiecePresentation(value: unknown): PiecePresentation {
@@ -268,4 +313,82 @@ export function normalizeBoardSquareHex(input: string | null | undefined): strin
   if (input == null) return null;
   const m = input.trim().match(/^#?([0-9a-fA-F]{6})$/);
   return m ? `#${m[1].toLowerCase()}` : null;
+}
+
+function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+  const n =
+    typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(n)));
+}
+
+/** Default evaluation-engine thread count: leave one core for the UI, cap at {@link MAX_ENGINE_THREADS}. */
+export function defaultEngineThreads(cpuCount: number): number {
+  return Math.max(1, Math.min(MAX_ENGINE_THREADS, Math.floor(cpuCount) - 1));
+}
+
+/** Resolves `engineThreads` (null = auto) to a concrete UCI `Threads` value. */
+export function resolveEngineThreads(setting: number | null | undefined, cpuCount: number): number {
+  if (setting === null || setting === undefined) return defaultEngineThreads(cpuCount);
+  return clampInt(setting, 1, Math.max(1, Math.floor(cpuCount)), defaultEngineThreads(cpuCount));
+}
+
+/**
+ * Maps a stored commentary provider onto a supported one. Builds before the client-side
+ * rewrite offered a hosted coach (`"server"`); it maps to OpenRouter when the user already
+ * has a key saved, otherwise to the offline explanation so nothing silently needs a key.
+ */
+export function normalizeCommentaryProvider(
+  value: unknown,
+  hasOpenRouterKey: boolean
+): ReviewCommentaryProvider {
+  if (REVIEW_COMMENTARY_PROVIDERS.includes(value as ReviewCommentaryProvider))
+    return value as ReviewCommentaryProvider;
+  return hasOpenRouterKey ? "openrouter" : "local";
+}
+
+/**
+ * Ids of the engines older builds listed from inside the app bundle ("bundled-stockfish",
+ * "bundled-maia…"). The app no longer ships engine binaries, so these ids can never resolve.
+ */
+const LEGACY_BUNDLED_ENGINE_ID = /^bundled-(stockfish|maia)/;
+
+/**
+ * A saved default engine id, or null (the app then picks the default engine) when unset or it
+ * points at a retired bundled engine.
+ */
+export function normalizeDefaultEngineId(value: unknown): string | null {
+  if (typeof value !== "string" || !value || LEGACY_BUNDLED_ENGINE_ID.test(value)) return null;
+  return value;
+}
+
+/** Validates the review/engine resource settings, falling back to defaults for bad values. Idempotent. */
+export function normalizeReviewEngineSettings(settings: AppSettings): AppSettings {
+  const levels = settings.reviewMaiaLevels;
+  return {
+    ...settings,
+    defaultEngineId: normalizeDefaultEngineId(settings.defaultEngineId),
+    reviewMultiPv: clampInt(settings.reviewMultiPv, 1, 5, defaultSettings.reviewMultiPv),
+    reviewMaiaLevels: Array.isArray(levels)
+      ? REVIEW_MAIA_LEVELS.filter((level) => levels.map(Number).includes(level))
+      : null,
+    engineThreads:
+      settings.engineThreads === null || settings.engineThreads === undefined
+        ? null
+        : clampInt(settings.engineThreads, 1, 256, 1),
+    engineHashMb: clampInt(
+      settings.engineHashMb,
+      ENGINE_HASH_MB_RANGE.min,
+      ENGINE_HASH_MB_RANGE.max,
+      defaultSettings.engineHashMb
+    ),
+    reviewPlayerRating: clampInt(
+      settings.reviewPlayerRating,
+      100,
+      3500,
+      defaultSettings.reviewPlayerRating
+    ),
+    // A legacy value not yet migrated at startup (see main/index.ts) reads as offline.
+    reviewCommentaryProvider: normalizeCommentaryProvider(settings.reviewCommentaryProvider, false)
+  };
 }

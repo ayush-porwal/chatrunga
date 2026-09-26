@@ -1,7 +1,8 @@
 import type { GameReview } from "./engine";
 
 export type Color = "white" | "black";
-export type Square = `${"a" | "b" | "c" | "d" | "e" | "f" | "g" | "h"}${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8}`;
+export type Square =
+  `${"a" | "b" | "c" | "d" | "e" | "f" | "g" | "h"}${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8}`;
 export type AnnotationColor = "green" | "red" | "yellow" | "blue";
 export type GameSource = "new" | "pgn-import" | "engine-game" | "analysis" | "puzzle";
 export type GameMode = "freeplay" | "engine" | "analysis" | "puzzle";
@@ -89,6 +90,8 @@ export type GameSummary = {
 };
 
 export type SavedGame = GameSummary & {
+  /** Canonical node cursor; legacy rows may omit it and fall back to currentFen. */
+  currentNodeId?: string | null;
   site: string | null;
   round: string | null;
   initialFen: string | null;
@@ -103,6 +106,7 @@ export type SaveGameInput = {
   headers: GameHeaders;
   rootFen: string;
   currentFen: string;
+  currentNodeId?: string | null;
   pgn: string;
   moveTree: MoveNode[];
   review?: GameReview | null;

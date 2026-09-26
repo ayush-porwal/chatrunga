@@ -3,12 +3,19 @@ import {
   type AppSettings,
   defaultSettings,
   hydratePieceSettings,
+  normalizeCommentaryProvider,
+  normalizeDefaultEngineId,
   normalizeBoardSquareHex,
   normalizePiecePresentation,
-  normalizePieceStyle
+  normalizePieceStyle,
+  normalizeReviewEngineSettings,
+  resolveEngineThreads
 } from "./settings";
 
-function legacyPieceStyleSettings(pieceStyle: string, overrides: Partial<AppSettings> = {}): AppSettings {
+function legacyPieceStyleSettings(
+  pieceStyle: string,
+  overrides: Partial<AppSettings> = {}
+): AppSettings {
   return { ...defaultSettings, ...overrides, pieceStyle } as AppSettings;
 }
 
@@ -54,11 +61,16 @@ describe("normalizePiecePresentation", () => {
 
 describe("hydratePieceSettings", () => {
   it("derives presentation from legacy combined piece style ids", () => {
-    expect(hydratePieceSettings(legacyPieceStyleSettings("cburnettCrisp")).piecePresentation).toBe("sharp");
-    expect(hydratePieceSettings(legacyPieceStyleSettings("stauntonSoft")).piecePresentation).toBe("soft");
+    expect(hydratePieceSettings(legacyPieceStyleSettings("cburnettCrisp")).piecePresentation).toBe(
+      "sharp"
+    );
+    expect(hydratePieceSettings(legacyPieceStyleSettings("stauntonSoft")).piecePresentation).toBe(
+      "soft"
+    );
     expect(
-      hydratePieceSettings(legacyPieceStyleSettings("cburnettContrast", { piecePresentation: "default" }))
-        .piecePresentation
+      hydratePieceSettings(
+        legacyPieceStyleSettings("cburnettContrast", { piecePresentation: "default" })
+      ).piecePresentation
     ).toBe("contrast");
   });
 
@@ -94,5 +106,70 @@ describe("normalizeBoardSquareHex", () => {
     expect(normalizeBoardSquareHex(null)).toBe(null);
     expect(normalizeBoardSquareHex("#fff")).toBe(null);
     expect(normalizeBoardSquareHex("#gggggg")).toBe(null);
+  });
+});
+
+describe("review engine settings", () => {
+  it("has sensible defaults", () => {
+    expect(defaultSettings.reviewMultiPv).toBe(3);
+    expect(defaultSettings.engineHashMb).toBe(128);
+    expect(defaultSettings.engineThreads).toBeNull();
+    expect(defaultSettings.reviewMaiaLevels).toBeNull();
+  });
+
+  it("clamps and filters invalid persisted values", () => {
+    const normalized = normalizeReviewEngineSettings({
+      ...defaultSettings,
+      reviewMultiPv: 9,
+      engineHashMb: "abc" as unknown as number,
+      engineThreads: 0,
+      reviewMaiaLevels: [1900, 1234, 1100] as never
+    });
+    expect(normalized.reviewMultiPv).toBe(5);
+    expect(normalized.engineHashMb).toBe(128);
+    expect(normalized.engineThreads).toBe(1);
+    expect(normalized.reviewMaiaLevels).toEqual([1100, 1900]);
+  });
+
+  it("drops a saved default engine id that points at a retired bundled engine", () => {
+    expect(normalizeDefaultEngineId("bundled-stockfish")).toBeNull();
+    expect(normalizeDefaultEngineId("bundled-maia")).toBeNull();
+    expect(normalizeDefaultEngineId("bundled-maia-1500")).toBeNull();
+    expect(normalizeDefaultEngineId("")).toBeNull();
+    expect(normalizeDefaultEngineId(42)).toBeNull();
+    expect(normalizeDefaultEngineId("V1StGXR8_Z5jdHi6B-myT")).toBe("V1StGXR8_Z5jdHi6B-myT");
+    expect(normalizeReviewEngineSettings({ ...defaultSettings, defaultEngineId: "bundled-stockfish" }).defaultEngineId).toBeNull();
+    expect(normalizeReviewEngineSettings({ ...defaultSettings, defaultEngineId: "abc123" }).defaultEngineId).toBe("abc123");
+  });
+
+  it("resolves auto threads to cpus - 1 capped at 8", () => {
+    expect(resolveEngineThreads(null, 14)).toBe(8);
+    expect(resolveEngineThreads(null, 4)).toBe(3);
+    expect(resolveEngineThreads(null, 1)).toBe(1);
+    expect(resolveEngineThreads(32, 4)).toBe(4);
+  });
+});
+
+describe("normalizeCommentaryProvider", () => {
+  it("keeps supported providers", () => {
+    expect(normalizeCommentaryProvider("openrouter", false)).toBe("openrouter");
+    expect(normalizeCommentaryProvider("local", true)).toBe("local");
+  });
+
+  it("maps the retired hosted provider to OpenRouter only when a key is saved", () => {
+    expect(normalizeCommentaryProvider("server", true)).toBe("openrouter");
+    expect(normalizeCommentaryProvider("server", false)).toBe("local");
+    expect(normalizeCommentaryProvider(undefined, false)).toBe("local");
+  });
+
+  it("reads an unmigrated legacy value as offline during normalization", () => {
+    const normalized = normalizeReviewEngineSettings({
+      ...defaultSettings,
+      reviewCommentaryProvider: "server" as never
+    });
+    expect(normalized.reviewCommentaryProvider).toBe("local");
+    expect(normalizeReviewEngineSettings(defaultSettings).reviewCommentaryProvider).toBe(
+      "openrouter"
+    );
   });
 });

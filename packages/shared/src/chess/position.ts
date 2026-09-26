@@ -3,7 +3,7 @@ import { chessgroundDests } from "chessops/compat";
 import { makeFen, parseFen } from "chessops/fen";
 import { makeSanAndPlay, parseSan } from "chessops/san";
 import { makeUci, parseSquare, parseUci } from "chessops/util";
-import type { Move, SquareName } from "chessops/types";
+import type { SquareName } from "chessops/types";
 import type { Color, UserMove } from "../types/chess";
 
 export const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -21,7 +21,10 @@ export function fenAfterUci(fen: string, uci: string): string | null {
   return makeFen(pos.toSetup());
 }
 
-export function applyUserMove(fen: string, input: UserMove): { fen: string; san: string; uci: string } | null {
+export function applyUserMove(
+  fen: string,
+  input: UserMove
+): { fen: string; san: string; uci: string } | null {
   const pos = positionFromFen(fen);
   const uci = `${input.from}${input.to}${promotionSuffix(input.promotion)}`;
   const move = parseUci(uci);
@@ -30,7 +33,10 @@ export function applyUserMove(fen: string, input: UserMove): { fen: string; san:
   return { fen: makeFen(pos.toSetup()), san, uci: makeUci(move) };
 }
 
-export function applySan(fen: string, san: string): { fen: string; san: string; uci: string } | null {
+export function applySan(
+  fen: string,
+  san: string
+): { fen: string; san: string; uci: string } | null {
   const pos = positionFromFen(fen);
   const move = parseSan(pos, san);
   if (!move || !pos.isLegal(move)) return null;
@@ -78,11 +84,8 @@ export function statusForFen(fen: string): {
   };
 }
 
-export function moveFromUci(uci: string): Move | undefined {
-  return parseUci(uci);
-}
-
-function promotionSuffix(promotion: UserMove["promotion"]): string {
+/** UCI promotion letter for a promotion piece (`queen` → `q`); empty for a non-promotion. */
+export function promotionSuffix(promotion: UserMove["promotion"]): string {
   switch (promotion) {
     case "queen":
       return "q";

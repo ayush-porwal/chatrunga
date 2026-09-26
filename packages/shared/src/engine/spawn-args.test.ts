@@ -14,7 +14,6 @@ function base(): EngineConfig {
     args: [],
     protocol: "uci",
     runtime: "custom-uci",
-    isBundled: false,
     isAvailable: true,
     isDefault: false,
     createdAt: 0,
