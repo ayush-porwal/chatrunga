@@ -33,14 +33,12 @@ const sideTabOptions: readonly SegmentedOption<SideTab>[] = [
 export const GameWorkspace = memo(function GameWorkspace({
   sideTab,
   onSideTabChange,
-  showPanel,
   puzzlePanel,
   onStartAnalysis,
   onOpenSettings
 }: {
   sideTab: SideTab;
   onSideTabChange: (tab: SideTab) => void;
-  showPanel: boolean;
   puzzlePanel: ReactNode;
   onStartAnalysis?: () => void;
   onOpenSettings?: () => void;
@@ -49,7 +47,6 @@ export const GameWorkspace = memo(function GameWorkspace({
   // game re-renders them and not the whole workspace (tabs, panel, puzzle card).
   return (
     <BoardWorkspace
-      showPanel={showPanel}
       panelLabel="Game"
       board={boardView}
       tabs={

@@ -21,12 +21,17 @@ import { decidedResult, gameModeLabel, gamePlayerNames } from "./game-title";
  *
  * - macOS: the native traffic lights sit at x 18–78, y 20–34 (trafficLightPosition + Tahoe-size
  *   buttons). The 54px row centres its controls on them (y 27) and the toggle starts at 90px —
- *   the same breathing room the macOS reference apps use.
- *   Elsewhere (web preview, Windows/Linux frames) the toggle sits right over the sidebar's icons.
- * - Both sidebar states: toggle │ title stay grouped right after the traffic lights (the macOS
- *   toolbar pattern), so the title never jumps when the sidebar is toggled.
- * - The title is the section name for every view: the page name for page views, the workspace
- *   title (mode · players · result) for board views. Pages do not repeat it as a big heading.
+ *   the same breathing room the macOS reference apps use. Both are divided by the page zoom so they
+ *   stay on the (unzoomed) traffic lights. Elsewhere (web preview, Windows/Linux frames) the toggle
+ *   sits right over the sidebar's icons.
+ * - Sidebar expanded: the title starts exactly at the content panel's left edge (the lead is as
+ *   wide as the sidebar column), so title and panel line up; the divider is not needed there.
+ *   Collapsed: toggle │ title stay grouped right after the traffic lights (the macOS toolbar
+ *   pattern). The lead's width eases with the sidebar column (same duration and curve), so the
+ *   title glides between the two positions and never passes the panel edge.
+ * - The title is the section name for page views and the game title (players · result) for board
+ *   views — never the mode name, which the sidebar's active item already shows. Pages do not
+ *   repeat it as a big heading.
  */
 export function AppTitlebar({
   windowControlsInset,
@@ -46,12 +51,29 @@ export function AppTitlebar({
       aria-label="Titlebar"
       data-chrome
     >
-      <div className={cn("flex h-full shrink-0 items-center", windowControlsInset ? "pl-[calc(90px/var(--window-zoom,1))]" : "pl-3")}>
+      {/* Lead = inset + 28px toggle + 25px divider (12px · 1px · 12px), or the sidebar width if wider.
+          `--sidebar-width` comes from the app frame and switches with the sidebar state. */}
+      <div
+        className={cn(
+          "flex h-full shrink-0 items-center transition-[width] duration-emphasis ease-standard",
+          windowControlsInset
+            ? "w-[max(calc(90px/var(--window-zoom,1)_+_53px),var(--sidebar-width))] pl-[calc(90px/var(--window-zoom,1))]"
+            : "w-[max(65px,var(--sidebar-width))] pl-3"
+        )}
+      >
         <SidebarToggle expanded={sidebarExpanded} onClick={onToggleSidebar} />
+        <span
+          aria-hidden="true"
+          className={cn(
+            "mx-3 h-4 w-px shrink-0 bg-line transition-opacity duration-micro ease-standard",
+            sidebarExpanded ? "opacity-0" : "opacity-100"
+          )}
+        />
       </div>
-      <span aria-hidden="true" className="mx-3 h-4 w-px shrink-0 bg-line" />
       {/* Named for the view transition: the title cross-fades when the view changes (app.css). */}
-      <div className="flex min-w-0 flex-1 items-center gap-2 [view-transition-name:app-title]">{children}</div>
+      <div className="flex min-w-0 flex-1 items-center gap-2 [view-transition-name:app-title]" data-titlebar-title>
+        {children}
+      </div>
     </header>
   );
 }
@@ -61,7 +83,10 @@ export function PageTitle({ children }: { children: ReactNode }) {
   return <span className="truncate font-medium text-fg">{children}</span>;
 }
 
-/** Titlebar for the game view: mode · players · result · transient status … Analyze/Stop · match actions · Flip. */
+/**
+ * Titlebar for the game view: players (or the puzzle, or the mode name while both sides are
+ * unnamed) · result · transient status … Analyze/Stop · match actions (Offer draw, Resign).
+ */
 export const GameTitlebar = memo(function GameTitlebar({
   engines,
   showAnalysisError,
@@ -88,8 +113,7 @@ export const GameTitlebar = memo(function GameTitlebar({
         lastError: state.lastError,
         matchFeedback: state.matchFeedback,
         outcomeResult: state.gameOutcome?.result ?? null,
-        positionResult: position.isEnd ? position.result : null,
-        flip: state.flip
+        positionResult: position.isEnd ? position.result : null
       };
     })
   );
@@ -105,16 +129,17 @@ export const GameTitlebar = memo(function GameTitlebar({
       <span className="truncate font-medium text-fg">Puzzle #{activePuzzle.id}</span>
     ) : players ? (
       <PlayersTitle white={players.white} black={players.black} />
-    ) : null;
+    ) : (
+      // Nothing more specific to show (a fresh board): the mode name keeps the titlebar from going blank.
+      <span className="truncate font-medium text-fg">{gameModeLabel(game)}</span>
+    );
 
   return (
     <WorkspaceTitlebar
-      mode={gameModeLabel(game)}
       title={title}
       result={game.outcomeResult ?? game.positionResult ?? decidedResult(game.headers.result)}
       status={game.matchFeedback || error || null}
       statusIsError={!game.matchFeedback && Boolean(error)}
-      onFlip={game.flip}
       actions={
         <>
           {onStopAnalysis ? (
@@ -133,7 +158,7 @@ export const GameTitlebar = memo(function GameTitlebar({
   );
 });
 
-/** Titlebar for Game review: players · result … Analyze / Stop / Analyze again · Flip. */
+/** Titlebar for Game review: players · result … Analyze / Stop / Analyze again. */
 export const ReviewTitlebar = memo(function ReviewTitlebar({
   gameLoading,
   hasMoves,
@@ -147,16 +172,13 @@ export const ReviewTitlebar = memo(function ReviewTitlebar({
   onStop: () => void;
 }) {
   const headers = useGameStore((state) => state.headers);
-  const flip = useGameStore((state) => state.flip);
   const running = useReviewStore((state) => state.status === "running");
   const hasReview = useReviewStore((state) => Boolean(state.review));
 
   return (
     <WorkspaceTitlebar
-      mode="Game review"
       title={<PlayersTitle white={headers.white || "White"} black={headers.black || "Black"} />}
       result={decidedResult(headers.result)}
-      onFlip={flip}
       actions={
         running || hasMoves ? (
           <Button

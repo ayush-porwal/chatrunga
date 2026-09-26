@@ -14,6 +14,7 @@ import { useEventCallback } from "@/lib/use-event-callback";
 import { signalWindowReady } from "@/lib/window-glass";
 import { cn } from "@/lib/utils";
 import { EngineGamePage } from "../features/analysis/EngineGamePage";
+import { BoardFocusContext } from "../features/board/board-focus";
 import { PromotionDialog } from "../features/board/PromotionDialog";
 import { DatabasePage } from "../features/database/DatabasePage";
 import { GameReviewPage } from "../features/game-review/GameReviewPage";
@@ -23,7 +24,7 @@ import { PgnImportDialog } from "../features/game/PgnImportDialog";
 import { openSavedGame } from "../features/game/saved-game";
 import { PuzzlePage, type PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import { usePuzzleAutoReply } from "../features/puzzles/puzzle-session";
-import { SettingsPage } from "../features/settings/SettingsPage";
+import { SettingsPage, type SettingsSectionId } from "../features/settings/SettingsPage";
 import { useEnginesQuery, useSamplePuzzleMutation, useSettingsQuery } from "../queries/api";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { useGameStore } from "../stores/game-store";
@@ -34,6 +35,7 @@ import { AppTitlebar, GameTitlebar, PageTitle, ReviewTitlebar } from "./AppTitle
 import { GameWorkspace, type SideTab } from "./GameWorkspace";
 import { HomePage } from "./HomePage";
 import { PuzzleInfoPanel } from "./PuzzleInfoPanel";
+import { useBoardShortcuts } from "./useBoardShortcuts";
 import { useEngineDriver } from "./useEngineDriver";
 import { useGameAutosave } from "./useGameAutosave";
 import { useMoveKeyboardShortcuts } from "./useMoveKeyboardShortcuts";
@@ -59,6 +61,7 @@ export function App() {
   const [gameReviewPickerOpen, setGameReviewPickerOpen] = useState(false);
   const [sideTab, setSideTab] = useState<SideTab>("notation");
   const [reviewTab, setReviewTab] = useState<ReviewTab>("commentary");
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId | null>(null);
   const [focusMode, setFocusMode] = useState(false);
   const [actionRailOpen, setActionRailOpen] = useState(true);
   const [activePuzzleConfig, setActivePuzzleConfig] = useState<PuzzleSessionConfig | null>(null);
@@ -73,6 +76,15 @@ export function App() {
   useEffect(() => {
     setAppView((view) => (onReviewRoute ? "game-review" : view === "game-review" ? "game" : view));
   }, [onReviewRoute, setAppView]);
+
+  // Focus mode only exists on a board view; leaving one ends it (the stored flag resets below).
+  const onBoardView = boardViews.has(appView);
+  const focused = focusMode && onBoardView;
+  // Focus mode collapses the sidebar to its rail without forgetting the user's own choice.
+  const sidebarExpanded = actionRailOpen && !focused;
+  useEffect(() => {
+    if (!onBoardView) setFocusMode(false);
+  }, [onBoardView]);
 
   const desktopApiAvailable = hasDesktopApi();
   const windowControlsVisible = isElectronMac();
@@ -345,9 +357,22 @@ export function App() {
 
   // Stable handler identities, so the memoised sidebar / titlebar / pages skip unrelated renders.
   const on = {
-    toggleSidebar: useEventCallback(() => setActionRailOpen((open) => !open)),
+    // "Show sidebar" while focused brings the whole frame back (sidebar and panel).
+    toggleSidebar: useEventCallback(() => {
+      if (focused) {
+        setFocusMode(false);
+        setActionRailOpen(true);
+      } else setActionRailOpen((open) => !open);
+    }),
     home: useEventCallback(() => showView("home")),
-    settings: useEventCallback(() => showView("settings")),
+    settings: useEventCallback(() => {
+      setSettingsSection(null);
+      showView("settings");
+    }),
+    commentarySettings: useEventCallback(() => {
+      setSettingsSection("commentary");
+      showView("settings");
+    }),
     newGame: useEventCallback(startNewGame),
     liveAnalysis: useEventCallback(startLiveAnalysis),
     stopLiveAnalysis: useEventCallback(stopLiveAnalysis),
@@ -363,6 +388,8 @@ export function App() {
     importPgn: useEventCallback(() => void importPgnFile()),
     exportPgn: useEventCallback(() => void exportPgn()),
     toggleFocus: useEventCallback(() => setFocusMode((value) => !value)),
+    exitFocus: useEventCallback(() => setFocusMode(false)),
+    flipBoard: useEventCallback(() => currentGame().flip()),
     openGame: useEventCallback((id: string) => void openSavedGameById(id)),
     startReview: useEventCallback(() => void startReview()),
     stopReview: useEventCallback(() => void cancelActiveReview()),
@@ -371,6 +398,14 @@ export function App() {
     nextPuzzle: useEventCallback(loadNextPuzzle),
     playEngineFromPuzzle: useEventCallback(playEngineFromCurrentPuzzlePosition)
   };
+  useBoardShortcuts({
+    enabled: onBoardView,
+    focused,
+    onToggleFocus: on.toggleFocus,
+    onExitFocus: on.exitFocus,
+    onFlip: on.flipBoard
+  });
+
   const sidebarActive = useMemo(
     () => ({
       home: appView === "home",
@@ -406,7 +441,7 @@ export function App() {
   };
 
   return (
-    <>
+    <BoardFocusContext.Provider value={focused}>
       {/* The app frame: one titlebar row over the sidebar and the inset content panel. */}
       <div
         className={cn(
@@ -414,12 +449,12 @@ export function App() {
           "grid-cols-[var(--sidebar-width)_minmax(0,1fr)] grid-rows-[var(--titlebar-height)_minmax(0,1fr)] [--titlebar-height:calc(54px/var(--window-zoom,1))]",
           // The sidebar column eases open/closed; the content panel follows it frame by frame.
           "transition-[grid-template-columns] duration-emphasis ease-standard",
-          actionRailOpen ? "[--sidebar-width:clamp(224px,18vw,272px)]" : "[--sidebar-width:52px]"
+          sidebarExpanded ? "[--sidebar-width:clamp(224px,18vw,272px)]" : "[--sidebar-width:52px]"
         )}
       >
         <AppTitlebar
           windowControlsInset={windowControlsVisible}
-          sidebarExpanded={actionRailOpen}
+          sidebarExpanded={sidebarExpanded}
           onToggleSidebar={on.toggleSidebar}
         >
           {appView === "game-review" ? (
@@ -432,7 +467,7 @@ export function App() {
           ) : appView === "game" ? (
             <GameTitlebar
               engines={engines.data}
-              showAnalysisError={sideTab !== "engine" || focusMode}
+              showAnalysisError={sideTab !== "engine" || focused}
               canAnalyze={canAnalyzeGame}
               onAnalyze={on.analyzePosition}
               onStopAnalysis={gameMode === "analysis" && desktopApiAvailable ? on.stopLiveAnalysis : null}
@@ -443,9 +478,10 @@ export function App() {
         </AppTitlebar>
 
         <AppSidebar
-          expanded={actionRailOpen}
+          expanded={sidebarExpanded}
           active={sidebarActive}
-          focusMode={focusMode}
+          boardView={onBoardView}
+          focusMode={focused}
           onHome={on.home}
           onNewGame={on.newGame}
           onAnalyze={on.liveAnalysis}
@@ -456,6 +492,7 @@ export function App() {
           onImport={on.importPgn}
           onExport={on.exportPgn}
           onFocusToggle={on.toggleFocus}
+          onFlip={on.flipBoard}
           onSettings={on.settings}
         />
 
@@ -479,7 +516,7 @@ export function App() {
                 onReviewGame={on.reviewGame}
               />
             ) : appView === "settings" ? (
-              <SettingsPage />
+              <SettingsPage initialSection={settingsSection} />
             ) : appView === "engine-game" ? (
               <EngineGamePage onOpenSettings={on.settings} onStart={on.showGame} />
             ) : appView === "puzzles" ? (
@@ -495,12 +532,12 @@ export function App() {
                 onAnalyze={reviewRouteLoading ? undefined : on.startReview}
                 onImportPgn={on.importPgn}
                 onNewGame={on.newGame}
+                onOpenCommentarySettings={on.commentarySettings}
               />
             ) : (
               <GameWorkspace
                 sideTab={sideTab}
                 onSideTabChange={setSideTab}
-                showPanel={!focusMode}
                 onStartAnalysis={
                   desktopApiAvailable && gameMode === "freeplay" && !positionIsEnd ? on.analyzePosition : undefined
                 }
@@ -521,7 +558,7 @@ export function App() {
           onImport={on.openImportDialog}
         />
       ) : null}
-    </>
+    </BoardFocusContext.Provider>
   );
 }
 

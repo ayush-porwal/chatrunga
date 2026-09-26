@@ -8,6 +8,7 @@ import {
   Minimize2,
   PanelLeft,
   Puzzle,
+  Repeat2,
   RotateCcw,
   Settings,
   Swords,
@@ -22,12 +23,16 @@ import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { titlebarIconButton } from "@/lib/ui";
 import { cn } from "@/lib/utils";
+import { BOARD_SHORTCUTS } from "./useBoardShortcuts";
 
 /**
  * Left navigation, below the titlebar on the window chrome (no border — the inset content panel
  * next to it provides the edge). Expanded: labelled items. Collapsed: an icon rail with tooltips.
  * Both states use the same 36px rows and the same icon x-position (18px), so toggling never moves
  * an icon; every command stays one click away in both states.
+ *
+ * Board commands (Focus board, Flip board) sit in the bottom group, above Settings, and only on
+ * views with a board; their keys (F, X) show as a hint in the row and in the rail's tooltip.
  *
  * Motion: the app frame eases the sidebar column's width (App.tsx); the nav fills that column and
  * clips, so labels are never re-wrapped — they fade out quickly on collapse and fade in just behind
@@ -37,6 +42,7 @@ import { cn } from "@/lib/utils";
 export const AppSidebar = memo(function AppSidebar({
   expanded,
   active,
+  boardView,
   focusMode,
   onHome,
   onNewGame,
@@ -48,6 +54,7 @@ export const AppSidebar = memo(function AppSidebar({
   onImport,
   onExport,
   onFocusToggle,
+  onFlip,
   onSettings
 }: {
   expanded: boolean;
@@ -60,6 +67,8 @@ export const AppSidebar = memo(function AppSidebar({
     databases: boolean;
     settings: boolean;
   };
+  /** The current view has a board: offer Focus board (it has nothing to focus elsewhere). */
+  boardView: boolean;
   focusMode: boolean;
   onHome: () => void;
   onNewGame: () => void;
@@ -71,10 +80,11 @@ export const AppSidebar = memo(function AppSidebar({
   onImport: () => void;
   onExport: () => void;
   onFocusToggle: () => void;
+  onFlip: () => void;
   onSettings: () => void;
 }) {
-  const item = (icon: LucideIcon, label: string, onClick: () => void, isActive = false) => (
-    <SidebarCommand expanded={expanded} icon={icon} label={label} active={isActive} onClick={onClick} />
+  const item = (icon: LucideIcon, label: string, onClick: () => void, isActive = false, shortcut?: string) => (
+    <SidebarCommand expanded={expanded} icon={icon} label={label} active={isActive} shortcut={shortcut} onClick={onClick} />
   );
 
   return (
@@ -110,7 +120,18 @@ export const AppSidebar = memo(function AppSidebar({
       </div>
 
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-0.5">
-        {item(focusMode ? Minimize2 : Maximize2, focusMode ? "Show panels" : "Focus board", onFocusToggle, focusMode)}
+        {boardView ? (
+          <>
+            {item(
+              focusMode ? Minimize2 : Maximize2,
+              focusMode ? "Exit focus" : "Focus board",
+              onFocusToggle,
+              focusMode,
+              BOARD_SHORTCUTS.focus
+            )}
+            {item(Repeat2, "Flip board", onFlip, false, BOARD_SHORTCUTS.flip)}
+          </>
+        ) : null}
         {item(Settings, "Settings", onSettings, active.settings)}
       </div>
     </nav>
@@ -136,12 +157,15 @@ const SidebarCommand = memo(function SidebarCommand({
   expanded,
   icon: Icon,
   label,
+  shortcut,
   onClick
 }: {
   active?: boolean;
   expanded: boolean;
   icon: LucideIcon;
   label: string;
+  /** Single-key shortcut: a quiet hint at the row's end (expanded) and in the tooltip (collapsed). */
+  shortcut?: string;
   onClick: () => void;
 }) {
   // One element in both states: 36px tall, full column width (36px when collapsed), icon at 9px +
@@ -156,17 +180,45 @@ const SidebarCommand = memo(function SidebarCommand({
           onClick={onClick}
           aria-label={label}
           aria-pressed={active || undefined}
+          aria-keyshortcuts={shortcut}
         >
           <Icon />
           <span className={cn("min-w-0 whitespace-nowrap", expanded && "truncate", labelFade(expanded))} aria-hidden="true">
             {label}
           </span>
+          {shortcut ? <ShortcutHint className={cn("ml-auto", labelFade(expanded))}>{shortcut}</ShortcutHint> : null}
         </Button>
       </TooltipTrigger>
-      {expanded ? null : <TooltipContent side="right">{label}</TooltipContent>}
+      {expanded ? null : (
+        <TooltipContent side="right">
+          {shortcut ? (
+            <span className="flex items-center gap-2">
+              {label}
+              <ShortcutHint>{shortcut}</ShortcutHint>
+            </span>
+          ) : (
+            label
+          )}
+        </TooltipContent>
+      )}
     </Tooltip>
   );
 });
+
+/** A key cap for a single-key shortcut (quiet: it must not compete with the label). */
+function ShortcutHint({ className, children }: { className?: string; children: string }) {
+  return (
+    <kbd
+      aria-hidden="true"
+      className={cn(
+        "grid h-5 min-w-5 shrink-0 place-items-center rounded border border-line px-1 font-sans text-2xs font-medium leading-none text-fg-subtle",
+        className
+      )}
+    >
+      {children}
+    </kbd>
+  );
+}
 
 /**
  * Titlebar button that shows/hides the sidebar: one static sidebar glyph (like SF Symbols

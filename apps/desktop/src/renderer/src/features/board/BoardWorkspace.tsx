@@ -1,9 +1,8 @@
 import type { ReactNode } from "react";
-import { Repeat2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { IconButton } from "@/components/ui/icon-button";
-import { card, titlebarIconButton } from "@/lib/ui";
+import { card } from "@/lib/ui";
 import { cn } from "@/lib/utils";
+import { useBoardFocused } from "./board-focus";
 
 /*
  * The board workspace: ONE layout for every board screen (New game, Analysis, Game review,
@@ -18,7 +17,12 @@ import { cn } from "@/lib/utils";
  *   └──────────────────────────────────────┴────────────────────────────┘
  *
  * The titlebar above it (App's drag region) uses <WorkspaceTitlebar> for the same anatomy in
- * every mode: mode · game title · result … mode actions · Flip.
+ * every mode: game title · result … mode actions. Board commands (Focus board, Flip board) live in
+ * the sidebar, shown only on board views.
+ *
+ * Focus mode (board-focus.ts): the panel column eases to 0 and the panel slides out with it —
+ * it keeps its own width while the column clips it, so its text never re-wraps mid-animation.
+ * The board cell grows into the space frame by frame (the board is sized from the cell).
  */
 
 export function BoardWorkspace({
@@ -29,7 +33,7 @@ export function BoardWorkspace({
   footer,
   children,
   panelLabel,
-  showPanel = true
+  showPanel
 }: {
   /** The board column content — always a <BoardStage>. */
   board: ReactNode;
@@ -44,22 +48,33 @@ export function BoardWorkspace({
   /** Panel body for the active tab. Children should fill it (`h-full`) and scroll themselves. */
   children?: ReactNode;
   panelLabel?: string;
-  /** Focus mode hides the panel; the board cell keeps the same sizing rule. */
+  /** Overrides focus mode (hidden while the app is in focus mode); the board keeps the same sizing rule. */
   showPanel?: boolean;
 }) {
+  const focused = useBoardFocused();
+  const panelVisible = showPanel ?? !focused;
   return (
     <div
       className={cn(
-        "grid h-full min-h-0 min-w-0 gap-3 p-3",
-        showPanel ? "grid-cols-[minmax(0,1fr)_clamp(320px,26vw,420px)]" : "grid-cols-[minmax(0,1fr)]"
+        "grid h-full min-h-0 min-w-0 p-3",
+        // Same track count in both states, so the column (and the gap) can ease — like the sidebar.
+        "transition-[grid-template-columns,column-gap] duration-emphasis ease-standard",
+        panelVisible ? "grid-cols-[minmax(0,1fr)_clamp(320px,26vw,420px)] gap-3" : "grid-cols-[minmax(0,1fr)_0px] gap-0"
       )}
     >
       <section className="grid min-h-0 min-w-0 place-items-center p-3 [container-type:size]" aria-label="Board">
         {board}
       </section>
-      {showPanel ? (
+      {/* The cell clips; the panel keeps its full width and slides out with the column's left edge. */}
+      <div className="flex min-h-0 min-w-0 overflow-hidden" inert={!panelVisible} aria-hidden={!panelVisible || undefined}>
         <aside
-          className={cn(card, "@container/panel flex min-h-0 flex-col overflow-hidden")}
+          className={cn(
+            card,
+            "@container/panel flex min-h-0 w-[clamp(320px,26vw,420px)] shrink-0 flex-col overflow-hidden",
+            panelVisible
+              ? "opacity-100 transition-opacity duration-emphasis ease-enter"
+              : "opacity-0 transition-opacity duration-standard ease-exit"
+          )}
           aria-label={panelLabel}
         >
           {tabs ? <div className="shrink-0 px-3 pt-3">{tabs}</div> : null}
@@ -70,7 +85,7 @@ export function BoardWorkspace({
           </div>
           {footer ? <div className="shrink-0 border-t border-line-subtle">{footer}</div> : null}
         </aside>
-      ) : null}
+      </div>
     </div>
   );
 }
@@ -109,36 +124,27 @@ export function PlayersTitle({ white, black }: { white: string; black: string })
 }
 
 /**
- * Titlebar content for every board mode: quiet mode name, game title, result badge and transient
- * status on the left; mode actions (primary first, all size="sm") then Flip on the right.
+ * Titlebar content for every board mode: game title, result badge and transient status on the
+ * left; the mode's own actions (primary first, all size="sm") on the right. No mode name — the
+ * sidebar's active item already says where you are — and no board commands (sidebar).
  */
 export function WorkspaceTitlebar({
-  mode,
   title,
   result,
   status,
   statusIsError = false,
-  actions,
-  onFlip
+  actions
 }: {
-  mode: string;
   title?: ReactNode;
   result?: string | null;
   status?: ReactNode;
   statusIsError?: boolean;
   actions?: ReactNode;
-  onFlip: () => void;
 }) {
   return (
     <>
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
-        <span className="shrink-0 text-fg-muted">{mode}</span>
-        {title ? (
-          <>
-            <span aria-hidden="true" className="h-4 w-px shrink-0 bg-line" />
-            {title}
-          </>
-        ) : null}
+        {title}
         {result ? <Badge className="shrink-0 font-mono">{result}</Badge> : null}
         <span
           className={cn("ml-2 min-w-0 truncate", statusIsError ? "text-danger" : "text-fg-muted")}
@@ -147,10 +153,7 @@ export function WorkspaceTitlebar({
           {status}
         </span>
       </div>
-      <div className="flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
-        {actions}
-        <IconButton label="Flip board" icon={<Repeat2 />} className={titlebarIconButton} onClick={onFlip} />
-      </div>
+      {actions ? <div className="flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">{actions}</div> : null}
     </>
   );
 }
