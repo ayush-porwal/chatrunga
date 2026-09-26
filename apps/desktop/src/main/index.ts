@@ -17,7 +17,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { normalizeCommentaryProvider } from "@chaturanga/shared/types/settings";
 import { closeDb, getDb } from "./db";
-import { engineRepository, gameRepository, settingsRepository } from "./db/repositories";
+import { engineRepository, externalDatabaseRepository, gameRepository, settingsRepository } from "./db/repositories";
 import { EngineManager } from "./engine/engine-manager";
 import { killAllEngineProcesses } from "./engine/uci-process";
 import { registerIpc } from "./ipc/register";
@@ -269,6 +269,7 @@ function classifyInstallForOnboarding(): void {
       settingKeys: settingsRepository.storedKeys(),
       games: gameRepository.list().length,
       engines: engineRepository.list().length,
+      databases: externalDatabaseRepository.list().length,
       engineAssetState: existsSync(join(userData, "engine-assets.json")),
       openRouterConfig: existsSync(join(userData, "openrouter-config.json"))
     })

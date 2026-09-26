@@ -28,7 +28,10 @@ export type EngineSetup = {
   engineReady: boolean;
   /** Stockfish's download percentage while it is being fetched, else null. */
   stockfishPercent: number | null;
-  /** Lc0: missing here, and whether it can be downloaded automatically on this platform. */
+  /**
+   * Lc0: missing here and not part of the setup list (it joins the Maia row when Maia needs it),
+   * and whether it can be downloaded automatically on this platform (Maia is skipped when not).
+   */
   lc0: { missing: boolean; autoDownload: boolean };
   start: () => void;
   retry: (row: SetupRow) => void;
@@ -118,7 +121,7 @@ export function useEngineSetup(): EngineSetup {
     engineReady,
     stockfishPercent: stockfishBusy && stockfishRow ? setupRowPercent(stockfishRow) : null,
     lc0: {
-      missing: status?.lc0.state === "missing",
+      missing: status?.lc0.state === "missing" && !rows.some((row) => row.ids.includes("lc0")),
       autoDownload: Boolean(status?.lc0.autoDownload)
     },
     start: () => void startDownloads(recommended),

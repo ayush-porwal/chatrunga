@@ -17,6 +17,8 @@ export type InstallTraces = {
   games: number;
   /** Engines in the engines table (added by hand or synced from downloads). */
   engines: number;
+  /** Downloaded puzzle / analysis databases. */
+  databases: number;
   /** The engine download manager has state on disk (`engine-assets.json`). */
   engineAssetState: boolean;
   /** An OpenRouter config file exists (a key or model was saved). */
@@ -31,6 +33,7 @@ export function isExistingInstall(traces: InstallTraces): boolean {
     traces.settingKeys.some((key) => !ONBOARDING_KEYS.has(key)) ||
     traces.games > 0 ||
     traces.engines > 0 ||
+    traces.databases > 0 ||
     traces.engineAssetState ||
     traces.openRouterConfig
   );

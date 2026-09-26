@@ -5,6 +5,7 @@ const fresh: InstallTraces = {
   settingKeys: [],
   games: 0,
   engines: 0,
+  databases: 0,
   engineAssetState: false,
   openRouterConfig: false
 };
@@ -24,6 +25,7 @@ describe("isExistingInstall", () => {
     expect(isExistingInstall({ ...fresh, settingKeys: ["boardTheme"] })).toBe(true);
     expect(isExistingInstall({ ...fresh, games: 1 })).toBe(true);
     expect(isExistingInstall({ ...fresh, engines: 2 })).toBe(true);
+    expect(isExistingInstall({ ...fresh, databases: 1 })).toBe(true);
     expect(isExistingInstall({ ...fresh, engineAssetState: true })).toBe(true);
     expect(isExistingInstall({ ...fresh, openRouterConfig: true })).toBe(true);
   });

@@ -58,9 +58,15 @@ export function EngineSetupLine({ onOpenEngineSettings }: { onOpenEngineSettings
     // Stockfish (or another engine) works; offer whatever recommended is still missing (Maia).
     if (!setup.offer) return null;
     const labels = setup.rows.map((row) => row.label).join(" and ");
+    // Only Lc0 missing: the Maia networks are installed but have nothing to run in.
+    const lc0Only = setup.rows.every((row) => row.key === "lc0");
     return (
       <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs leading-5 text-fg-muted animate-rise-in">
-        <span>{labels} not installed yet: they show how players at your rating would play.</span>
+        <span>
+          {lc0Only
+            ? "Lc0 not installed yet: Maia runs in it to show how players at your rating would play."
+            : `${labels} not installed yet: they show how players at your rating would play.`}
+        </span>
         <Button variant="outline" size="xs" onClick={setup.start}>
           <Download />
           {size ? `Download (${size})` : "Download"}

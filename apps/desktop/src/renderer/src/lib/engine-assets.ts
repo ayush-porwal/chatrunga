@@ -86,14 +86,24 @@ export function progressPercent(progress: AssetProgress | undefined): number {
 
 /**
  * What the welcome recommends: Stockfish (scores every move) and the Maia networks (what players
- * of each rating would play), where they are missing and downloadable here. Lc0 is optional and
- * left to Settings.
+ * of each rating would play), where they are missing and downloadable here. Maia networks only run
+ * inside Lc0, so a missing Lc0 comes along with them; where Lc0 has no download, Maia is left out
+ * (its networks would sit unused). Lc0 on its own is optional and left to Settings.
  */
 export function recommendedDownloads(status: EngineAssetStatusMap | null): EngineAssetStatus[] {
-  return missingDownloads(status).filter((asset) => asset.id !== "lc0");
+  if (!status) return [];
+  const missing = missingDownloads(status);
+  const maiaInstalled = ENGINE_ASSETS.some((asset) => asset.id.startsWith("maia-") && isAssetInstalled(status[asset.id]));
+  const maiaMissing = missing.some((asset) => asset.id.startsWith("maia-"));
+  const lc0Runs = isAssetInstalled(status.lc0);
+  const lc0Download = missing.find((asset) => asset.id === "lc0");
+  const withMaia = lc0Runs || Boolean(lc0Download);
+  return missing.filter((asset) =>
+    asset.id === "lc0" ? maiaMissing || maiaInstalled : asset.id.startsWith("maia-") ? withMaia : true
+  );
 }
 
-/** One line of the setup list: Stockfish on its own, the Maia networks together. */
+/** One line of the setup list: Stockfish on its own, the Maia networks (and the Lc0 they run in) together. */
 export type SetupRow = {
   key: "stockfish" | "lc0" | "maia";
   label: string;
@@ -113,8 +123,10 @@ const ROW_STATUS_ORDER: readonly AssetStatus[] = ["error", "downloading", "verif
 export function setupRows(assets: readonly EngineAssetStatus[], progress: AssetProgressMap): SetupRow[] {
   const rows: SetupRow[] = [];
   const byKey = new Map<SetupRow["key"], SetupRow>();
+  const hasMaia = assets.some((asset) => asset.id.startsWith("maia-"));
   for (const asset of assets) {
-    const key: SetupRow["key"] = asset.id.startsWith("maia-") ? "maia" : (asset.id as "stockfish" | "lc0");
+    const key: SetupRow["key"] =
+      asset.id.startsWith("maia-") || (asset.id === "lc0" && hasMaia) ? "maia" : (asset.id as "stockfish" | "lc0");
     let row = byKey.get(key);
     if (!row) {
       row = { key, label: key === "maia" ? "Maia" : asset.id === "lc0" ? "Lc0" : "Stockfish", ids: [], bytesReceived: 0, bytesTotal: 0, status: "ready" };
@@ -131,12 +143,9 @@ export function setupRows(assets: readonly EngineAssetStatus[], progress: AssetP
     if (ROW_STATUS_ORDER.indexOf(status) < ROW_STATUS_ORDER.indexOf(row.status)) row.status = status;
   }
   for (const row of rows) {
-    if (row.key === "maia" && row.ids.length > 1) {
-      const ratings = row.ids.map((id) => id.replace("maia-", ""));
-      row.label = `Maia ${ratings[0]}–${ratings[ratings.length - 1]}`;
-    } else if (row.key === "maia") {
-      row.label = `Maia ${row.ids[0].replace("maia-", "")}`;
-    }
+    if (row.key !== "maia") continue;
+    const ratings = row.ids.filter((id) => id.startsWith("maia-")).map((id) => id.replace("maia-", ""));
+    row.label = ratings.length > 1 ? `Maia ${ratings[0]}–${ratings[ratings.length - 1]}` : `Maia ${ratings[0]}`;
   }
   return rows;
 }
