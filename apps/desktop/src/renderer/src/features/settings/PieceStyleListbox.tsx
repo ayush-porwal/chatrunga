@@ -7,11 +7,13 @@ import {
 } from "@chaturanga/shared/types/settings";
 import { cn } from "@/lib/utils";
 import { useDismiss } from "@/lib/use-dismiss";
-import { fieldLabel } from "@/lib/ui";
+import { fieldLabel, frost } from "@/lib/ui";
+import { usePresence } from "@/components/ui/use-presence";
 import {
   settingsListboxOptionActiveClass,
   settingsListboxOptionClass,
-  settingsListboxPopoverClass,
+  settingsListboxPositionClass,
+  settingsListboxSurfaceClass,
   settingsListboxTriggerClass,
   settingsListboxTriggerOpenRing
 } from "@/lib/settings-listbox";
@@ -55,6 +57,7 @@ export function PieceStyleListbox({
   }, [open, highlightedIndex, id]);
 
   const close = useCallback(() => setOpen(false), []);
+  const { present, state } = usePresence(open);
   useDismiss(rootRef, open, close);
 
   const commitIndex = useCallback(
@@ -149,16 +152,20 @@ export function PieceStyleListbox({
             <span className="min-w-0 truncate text-left text-sm font-medium">{selectedMeta.label}</span>
           </span>
           <ChevronDown
-            className={cn("size-4 shrink-0 text-fg-subtle transition-transform", open && "rotate-180")}
+            className={cn("size-4 shrink-0 text-fg-subtle transition-transform duration-standard ease-standard", open && "rotate-180")}
             aria-hidden
           />
         </button>
-        {open ? (
+        {present ? (
+          <div className={cn(settingsListboxPositionClass, "right-0", state === "closed" && "pointer-events-none")}>
+          {/* Stable frosted layer under the animated list (glass only). */}
+          <span aria-hidden="true" data-state={state} className={cn(frost, "rounded-lg animate-fade-in data-[state=closed]:animate-fade-out")} />
           <div
             id={listboxDomId}
             role="listbox"
             aria-labelledby={`${id}-label`}
-            className={cn(settingsListboxPopoverClass, "right-0")}
+            data-state={state}
+            className={settingsListboxSurfaceClass}
           >
             {pieceStyleOptions.map((opt, index) => {
               const active = opt.id === value;
@@ -191,6 +198,7 @@ export function PieceStyleListbox({
                 </button>
               );
             })}
+          </div>
           </div>
         ) : null}
       </div>

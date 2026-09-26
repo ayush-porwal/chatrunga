@@ -7,6 +7,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu } from "@/components/ui/menu";
 import { Notice } from "@/components/ui/notice";
 import { SectionHeader } from "@/components/ui/page";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   ENGINE_ASSETS,
   applyAssetProgress,
@@ -169,9 +170,15 @@ export function EngineAssetsPanel() {
           )}
         </div>
       ) : (
-        <p className={cn(fieldHint, "flex items-center gap-1.5")}>
-          <Loader2 className="size-3 animate-spin" /> Reading installed engines…
-        </p>
+        <div className="grid gap-1.5" aria-busy="true" aria-label="Reading installed engines">
+          {ENGINE_ASSETS.map((asset) => (
+            <div key={asset.id} className={cn(listRow, "gap-3")}>
+              <Skeleton as="span" className="h-3 w-24 rounded" />
+              <Skeleton as="span" className="ml-auto h-5 w-16 rounded-full" />
+              <span className="size-8 shrink-0" />
+            </div>
+          ))}
+        </div>
       )}
 
       {error ? <Notice tone="danger">{error}</Notice> : null}
@@ -206,19 +213,28 @@ function AssetRow(props: {
   const { status } = props;
   const installed = isAssetInstalled(status);
   const size = formatSize(installed ? status.sizeBytes : status.downloadSizeBytes);
+  const downloading = props.busy && props.percent > 0 && props.percent < 100;
   return (
-    <div className={listRow}>
-      <span className="min-w-0 flex-1 truncate text-fg">
-        {props.label}
+    <div className={cn(listRow, "relative overflow-hidden transition-colors duration-standard", props.busy && "border-line-strong")}>
+      <span className="flex min-w-0 flex-1 items-baseline gap-2">
+        <span className="truncate text-fg" title={props.label}>
+          {props.label}
+        </span>
         {installed && status.installedVersion ? (
-          <span className="ml-2 font-mono text-xs text-fg-subtle">{status.installedVersion}</span>
+          <span className="truncate font-mono text-xs text-fg-subtle" title={status.installedVersion}>
+            {status.installedVersion}
+          </span>
         ) : null}
       </span>
-      {size ? <span className="shrink-0 font-mono text-xs text-fg-subtle tabular-nums">{size}</span> : null}
+      {size ? <span className="shrink-0 text-xs tabular-nums text-fg-subtle">{size}</span> : null}
       {props.busy ? (
-        <Badge tone="warn">{props.percent > 0 && props.percent < 100 ? `Downloading ${props.percent}%` : "Working…"}</Badge>
+        <Badge tone="warn" className="tabular-nums">
+          {downloading ? `Downloading ${props.percent}%` : "Working…"}
+        </Badge>
       ) : status.updateAvailable ? (
-        <Badge tone="warn">Update available · {status.latestVersion}</Badge>
+        <Badge tone="warn" title={`Latest release ${status.latestVersion ?? ""}`}>
+          Update · {status.latestVersion}
+        </Badge>
       ) : (
         <StatusBadge state={status.state} />
       )}
@@ -240,6 +256,22 @@ function AssetRow(props: {
           )}
         </>
       )}
+      {props.busy ? (
+        /* Row-wide progress along the bottom edge; scaleX so only a transform animates. */
+        <span
+          aria-hidden="true"
+          className="absolute inset-x-0 bottom-0 h-0.5 animate-fade-in overflow-hidden bg-accent/10"
+        >
+          {downloading ? (
+            <span
+              className="block h-full origin-left bg-accent transition-transform duration-standard ease-standard"
+              style={{ transform: `scaleX(${props.percent / 100})` }}
+            />
+          ) : (
+            <span className="block h-full w-1/3 animate-indeterminate bg-accent/70" />
+          )}
+        </span>
+      ) : null}
     </div>
   );
 }

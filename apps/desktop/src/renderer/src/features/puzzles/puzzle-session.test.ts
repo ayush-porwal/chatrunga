@@ -35,6 +35,15 @@ describe("submitPuzzleMove", () => {
     expect(usePuzzleStore.getState()).toMatchObject({ solutionIndex: 0, feedbackKind: "wrong", lastExpectedMove: "e2e4" });
   });
 
+  it("names the wrong move in SAN, and still accepts the right move afterwards", () => {
+    const fen = "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1";
+    usePuzzleStore.getState().setActivePuzzle({ ...puzzle, initialFen: fen, solutionMoves: ["a1a8"] });
+    expect(submitPuzzleMove("a1a5", () => true, fen)).toBe(false);
+    expect(usePuzzleStore.getState().feedback).toBe("Not quite. Ra5 is not the tactic.");
+    expect(submitPuzzleMove("a1a8", () => true, fen)).toBe(true);
+    expect(usePuzzleStore.getState().feedbackKind).toBe("complete");
+  });
+
   it("does not advance when the move cannot be played", () => {
     expect(submitPuzzleMove("e2e4", () => false)).toBe(false);
     expect(usePuzzleStore.getState().solutionIndex).toBe(0);

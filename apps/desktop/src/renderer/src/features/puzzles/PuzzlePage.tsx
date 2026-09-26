@@ -1,10 +1,9 @@
-import { useId, useMemo, useState, type ReactNode } from "react";
-import { Database, Play } from "lucide-react";
-import type { PuzzleSample } from "@chaturanga/shared/types/database";
+import { memo, useId, useMemo, useState, type ReactNode } from "react";
+import { Database, Loader2, Play, Puzzle, RotateCcw } from "lucide-react";
+import { externalDatabaseSources, type PuzzleSample } from "@chaturanga/shared/types/database";
 import { Badge, ChipButton } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Disclosure } from "@/components/ui/disclosure";
-import { EmptyState } from "@/components/ui/empty-state";
 import { Field } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input, Select } from "@/components/ui/input";
@@ -12,7 +11,8 @@ import { Notice } from "@/components/ui/notice";
 import { Page, PageHeader } from "@/components/ui/page";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SideDot } from "@/components/ui/side-dot";
-import { card, cardPadded, divider, fieldLabel } from "@/lib/ui";
+import { Skeleton } from "@/components/ui/skeleton";
+import { card, cardPadded, divider, fieldLabel, sectionTitle, well } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useDatabasesQuery, useSamplePuzzleMutation } from "../../queries/api";
 
@@ -103,7 +103,7 @@ export type PuzzleSessionConfig = {
   };
 };
 
-export function PuzzlePage({
+export const PuzzlePage = memo(function PuzzlePage({
   onDatabases,
   onStart
 }: {
@@ -164,100 +164,245 @@ export function PuzzlePage({
     );
   }
 
+  const filtersChanged = isLichess
+    ? themes.length || lengths.length || openings.length || side !== "any" || ratingMin !== 600 || ratingMax !== 2800 || popularityMin !== 0
+    : difficultyMin !== 1 || difficultyMax !== 4 || positionTags.join() !== "initiative,development";
+
+  function resetFilters() {
+    setThemes([]);
+    setLengths([]);
+    setOpenings([]);
+    setSide("any");
+    setRatingMin(600);
+    setRatingMax(2800);
+    setPopularityMin(0);
+    setDifficultyMin(1);
+    setDifficultyMax(4);
+    setPositionTags(["initiative", "development"]);
+  }
+
+  const summary = isLichess
+    ? [
+        `Rated ${ratingMin}–${ratingMax}`,
+        side === "any" ? "Either side to move" : `${side === "white" ? "White" : "Black"} to move`,
+        ...(popularityMin !== 0 ? [`Popularity ${popularityMin}+`] : []),
+        ...(themes.length ? themes.map(formatTag) : ["Any theme"]),
+        ...lengths.map(formatTag),
+        ...openings.map(formatTag)
+      ]
+    : [`Difficulty ${difficultyMin}–${difficultyMax}`, ...(positionTags.length ? positionTags.map(formatTag) : ["Any tag"])];
+
+  const startError = samplePuzzle.error
+    ? samplePuzzle.error instanceof Error
+      ? samplePuzzle.error.message
+      : String(samplePuzzle.error)
+    : null;
+
   return (
     <Page>
-      <PageHeader
-        title="Puzzles"
-        description="Train on puzzles and positions from your downloaded databases."
-        actions={
-          selectedDatabase ? (
-            <Button type="button" variant="primary" disabled={samplePuzzle.isPending} onClick={start}>
-              <Play />
-              {samplePuzzle.isPending ? "Finding puzzle…" : "Start puzzle set"}
-            </Button>
-          ) : null
-        }
-      />
+      <PageHeader title="Puzzles" description="Train on puzzles and positions from your downloaded databases." />
 
-      {samplePuzzle.error ? (
-        <Notice tone="danger">
-          {samplePuzzle.error instanceof Error ? samplePuzzle.error.message : String(samplePuzzle.error)}
-        </Notice>
-      ) : null}
+      {databases.isPending && window.chaturanga ? (
+        <PuzzleSetupSkeleton />
+      ) : selectedDatabase ? (
+        <div className="@container">
+          <div className="grid items-start gap-6 @3xl:grid-cols-[minmax(0,1fr)_16rem]">
+            <section className={cn(cardPadded, "grid gap-5")} aria-label="Filters">
+              <div className="flex items-end gap-2">
+                <Field
+                  label="Database"
+                  hint={
+                    selectedDatabase.recordCount
+                      ? `${selectedDatabase.recordCount.toLocaleString()} ${selectedDatabase.kind === "puzzle" ? "puzzles" : "positions"}`
+                      : `${selectedDatabase.provider}, ${selectedDatabase.format}`
+                  }
+                  htmlFor={databaseFieldId}
+                  className="flex-1"
+                >
+                  <Select
+                    id={databaseFieldId}
+                    value={selectedDatabase.id}
+                    onChange={(event) => setDatabaseId(event.target.value)}
+                  >
+                    {puzzleDatabases.map((database) => (
+                      <option key={database.id} value={database.id}>
+                        {database.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <IconButton label="Manage databases" icon={<Database />} variant="outline" size="icon" onClick={onDatabases} />
+              </div>
+              <div className={divider} />
+              {isLichess ? (
+                <LichessPuzzleFilters
+                  lengths={lengths}
+                  openings={openings}
+                  popularityMin={popularityMin}
+                  ratingMax={ratingMax}
+                  ratingMin={ratingMin}
+                  side={side}
+                  themes={themes}
+                  onLengthsChange={setLengths}
+                  onOpeningsChange={setOpenings}
+                  onPopularityMinChange={setPopularityMin}
+                  onRatingMaxChange={setRatingMax}
+                  onRatingMinChange={setRatingMin}
+                  onSideChange={setSide}
+                  onThemesChange={setThemes}
+                />
+              ) : (
+                <PositionTrainingFilters
+                  difficultyMax={difficultyMax}
+                  difficultyMin={difficultyMin}
+                  tags={positionTags}
+                  onDifficultyMaxChange={setDifficultyMax}
+                  onDifficultyMinChange={setDifficultyMin}
+                  onTagsChange={setPositionTags}
+                />
+              )}
+            </section>
 
-      {selectedDatabase ? (
-        <section className={cn(cardPadded, "grid gap-4")}>
-          <div className="flex items-end gap-2">
-            <Field
-              label="Database"
-              hint={`${selectedDatabase.provider} · ${selectedDatabase.format}`}
-              htmlFor={databaseFieldId}
-              className="flex-1"
+            {/* The set as it will be drawn, and the one action — first on narrow panels, sticky beside the filters on wide ones. */}
+            <aside
+              className={cn(cardPadded, "order-first grid gap-4 @3xl:sticky @3xl:top-0 @3xl:order-none")}
+              aria-labelledby="puzzle-set-title"
             >
-              <Select
-                id={databaseFieldId}
-                value={selectedDatabase.id}
-                onChange={(event) => setDatabaseId(event.target.value)}
-              >
-                {puzzleDatabases.map((database) => (
-                  <option key={database.id} value={database.id}>
-                    {database.name}
-                  </option>
+              <div className="grid gap-1">
+                <h2 id="puzzle-set-title" className={sectionTitle}>
+                  {isLichess ? "Puzzle set" : "Position set"}
+                </h2>
+                <p className="truncate text-xs text-fg-muted" title={selectedDatabase.name}>
+                  {selectedDatabase.name}
+                </p>
+              </div>
+              <ul className="flex flex-wrap gap-1.5" aria-label="Active filters">
+                {summary.map((item) => (
+                  <li key={item} className="max-w-full">
+                    <Badge size="md" className="max-w-full animate-fade-in">
+                      <span className="truncate">{item}</span>
+                    </Badge>
+                  </li>
                 ))}
-              </Select>
-            </Field>
-            <IconButton label="Manage databases" icon={<Database />} variant="outline" size="icon" onClick={onDatabases} />
-          </div>
-          <div className={divider} />
-          {isLichess ? (
-            <LichessPuzzleFilters
-              lengths={lengths}
-              openings={openings}
-              popularityMin={popularityMin}
-              ratingMax={ratingMax}
-              ratingMin={ratingMin}
-              side={side}
-              themes={themes}
-              onLengthsChange={setLengths}
-              onOpeningsChange={setOpenings}
-              onPopularityMinChange={setPopularityMin}
-              onRatingMaxChange={setRatingMax}
-              onRatingMinChange={setRatingMin}
-              onSideChange={setSide}
-              onThemesChange={setThemes}
-            />
-          ) : (
-            <PositionTrainingFilters
-              difficultyMax={difficultyMax}
-              difficultyMin={difficultyMin}
-              tags={positionTags}
-              onDifficultyMaxChange={setDifficultyMax}
-              onDifficultyMinChange={setDifficultyMin}
-              onTagsChange={setPositionTags}
-            />
-          )}
-        </section>
-      ) : (
-        <section className={card}>
-          <EmptyState
-            icon={<Database />}
-            title={databases.isLoading ? "Loading databases…" : "No puzzle database"}
-            description={
-              databases.isLoading ? undefined : "Download a puzzle or positions database to start training."
-            }
-            action={
-              databases.isLoading ? undefined : (
-                <Button type="button" variant="primary" onClick={onDatabases}>
-                  <Database />
-                  Open databases
+              </ul>
+              {startError ? (
+                <Notice tone="danger" className="animate-rise-in">
+                  {startError}
+                </Notice>
+              ) : null}
+              <div className="grid gap-2">
+                <Button type="button" variant="primary" className="h-10" disabled={samplePuzzle.isPending} onClick={start}>
+                  {samplePuzzle.isPending ? <Loader2 className="animate-spin" /> : <Play />}
+                  {samplePuzzle.isPending ? "Finding a puzzle…" : "Start puzzle set"}
                 </Button>
-              )
-            }
-          />
-        </section>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className={cn("transition-opacity duration-standard", !filtersChanged && "pointer-events-none opacity-0")}
+                  tabIndex={filtersChanged ? undefined : -1}
+                  aria-hidden={filtersChanged ? undefined : true}
+                  onClick={resetFilters}
+                >
+                  <RotateCcw />
+                  Reset filters
+                </Button>
+              </div>
+            </aside>
+          </div>
+        </div>
+      ) : (
+        <NoPuzzleDatabase onDatabases={onDatabases} />
       )}
     </Page>
   );
+});
+
+/** Same footprint as the filters card + set summary, so the page doesn't jump when databases load. */
+function PuzzleSetupSkeleton() {
+  return (
+    <div className="@container" aria-busy="true" aria-label="Loading databases">
+      <div className="grid items-start gap-6 @3xl:grid-cols-[minmax(0,1fr)_16rem]">
+        <div className={cn(cardPadded, "grid gap-5")}>
+          <div className="grid gap-2">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-9" />
+          </div>
+          <div className={divider} />
+          <div className="grid gap-4 sm:grid-cols-3">
+            {[0, 1, 2].map((index) => (
+              <div key={index} className="grid gap-2">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-9" />
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {[64, 48, 72, 56, 40, 68, 52].map((width, index) => (
+              <Skeleton key={index} className="h-7 rounded-full" style={{ width }} />
+            ))}
+          </div>
+        </div>
+        <div className={cn(cardPadded, "order-first grid gap-4 @3xl:order-none")}>
+          <Skeleton className="h-3.5 w-24" />
+          <div className="flex flex-wrap gap-1.5">
+            <Skeleton className="h-6 w-24 rounded-full" />
+            <Skeleton className="h-6 w-28 rounded-full" />
+          </div>
+          <Skeleton className="h-10 rounded-lg" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** No puzzle or position database yet: what each one offers, and the way to get it. */
+function NoPuzzleDatabase({ onDatabases }: { onDatabases: () => void }) {
+  const sources = externalDatabaseSources.filter((source) => source.kind === "puzzle" || source.kind === "position");
+  return (
+    <section className={cn(card, "grid animate-fade-in gap-6 px-6 py-8 sm:px-8")} aria-labelledby="no-puzzle-db-title">
+      <div className="grid max-w-lg gap-2">
+        <span className="mb-1 grid size-10 place-items-center rounded-xl bg-accent-soft text-accent-fg [&_svg]:size-5">
+          <Puzzle aria-hidden="true" />
+        </span>
+        <h2 id="no-puzzle-db-title" className="text-base font-semibold text-fg">
+          Download a database to start training
+        </h2>
+        <p className="text-sm leading-6 text-fg-muted">
+          Puzzles come from free datasets stored on this computer. Pick one on the Databases page; it only needs to be
+          downloaded once.
+        </p>
+      </div>
+      <ul className="grid gap-2 sm:grid-cols-2">
+        {sources.map((source) => (
+          <li key={source.id} className={cn(well, "grid content-start gap-1 px-4 py-3")}>
+            <span className="flex min-w-0 items-baseline justify-between gap-3">
+              <span className="truncate text-sm font-medium text-fg-secondary" title={source.name}>
+                {source.name}
+              </span>
+              {source.expectedRecords ? (
+                <span className="shrink-0 text-xs tabular-nums text-fg-subtle">
+                  {compactCount(source.expectedRecords)} {source.kind === "puzzle" ? "puzzles" : "positions"}
+                </span>
+              ) : null}
+            </span>
+            <span className="line-clamp-2 text-xs leading-5 text-fg-muted">{source.description}</span>
+          </li>
+        ))}
+      </ul>
+      <div>
+        <Button type="button" variant="primary" onClick={onDatabases}>
+          <Database />
+          Open databases
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+/** 5939980 → "5.9M", 12431 → "12K". */
+function compactCount(value: number): string {
+  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
 const sideOptions = [

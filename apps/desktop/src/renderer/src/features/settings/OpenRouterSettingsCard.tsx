@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { useOpenRouterConfigQuery, useSettingsQuery, useUpdateSettingMutation } from "../../queries/api";
+import { Check } from "lucide-react";
+import { useOpenRouterConfigQuery, useSettingsQuery } from "../../queries/api";
+import { useSetSetting } from "./use-set-setting";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
 import { DEFAULT_COMMENTARY_MODEL, isLightweightCommentaryModel } from "@chaturanga/shared/llm/models";
 import { Button } from "@/components/ui/button";
@@ -7,6 +9,7 @@ import { Field } from "@/components/ui/field";
 import { Input, Select } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { fieldHint } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 
 /**
  * Shared BYOK commentary form (Settings → Commentary, and embedded in Review settings).
@@ -19,7 +22,7 @@ import { fieldHint } from "@/lib/ui";
 export function OpenRouterSettingsCard() {
   const openRouter = useOpenRouterConfigQuery();
   const settingsQuery = useSettingsQuery();
-  const updateSetting = useUpdateSettingMutation();
+  const setSetting = useSetSetting();
   const settings: AppSettings = { ...defaultSettings, ...(settingsQuery.data ?? {}) };
   const [model, setModel] = useState("");
   const [apiKeyInput, setApiKeyInput] = useState("");
@@ -82,10 +85,7 @@ export function OpenRouterSettingsCard() {
           id="review-provider"
           value={settings.reviewCommentaryProvider}
           onChange={(event) =>
-            updateSetting.mutate({
-              key: "reviewCommentaryProvider",
-              value: event.target.value as AppSettings["reviewCommentaryProvider"]
-            })
+            setSetting("reviewCommentaryProvider", event.target.value as AppSettings["reviewCommentaryProvider"])
           }
         >
           <option value="openrouter">OpenRouter · your key</option>
@@ -142,8 +142,16 @@ export function OpenRouterSettingsCard() {
             Remove saved key
           </Button>
         ) : null}
-        <span className="text-xs text-fg-subtle" role="status">
-          {status}
+        <span
+          key={saveState.kind === "saved" ? `saved-${status}` : "status"}
+          className={cn(
+            "flex min-w-0 items-center gap-1.5 text-xs",
+            saveState.kind === "saved" ? "animate-rise-in text-accent" : "text-fg-subtle"
+          )}
+          role="status"
+        >
+          {saveState.kind === "saved" ? <Check className="size-3.5 shrink-0" aria-hidden="true" /> : null}
+          <span className="truncate">{status}</span>
         </span>
       </div>
     </div>

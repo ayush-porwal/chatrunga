@@ -19,6 +19,7 @@ import { OverflowMenu } from "@/components/ui/menu";
 import { Notice } from "@/components/ui/notice";
 import { SectionHeader } from "@/components/ui/page";
 import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
 import { hasDesktopApi } from "@/lib/environment";
 import { localImageSrc } from "@/lib/local-image";
 import { cardPadded, divider, listRow, well } from "@/lib/ui";
@@ -174,6 +175,7 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
     <section className={cn(cardPadded, "grid gap-3")}>
       <SectionHeader
         title="Engines"
+        description="UCI engines for analysis, review and engine games. The default one is used when you don’t pick."
         actions={
           <Button
             type="button"
@@ -190,7 +192,7 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
       />
 
       {adding ? (
-        <div className={cn(well, "grid gap-3 p-3")}>
+        <div className={cn(well, "grid animate-rise-in gap-3 p-3")}>
           <p className="text-sm font-medium text-fg">New UCI engine</p>
           <EngineForm idPrefix="new-engine" draft={draft} onChange={(patch) => setDraft((value) => ({ ...value, ...patch }))} />
           <div className="flex flex-wrap justify-end gap-2">
@@ -211,6 +213,20 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
               Add engine
             </Button>
           </div>
+        </div>
+      ) : null}
+
+      {engines.isPending && hasDesktopApi() ? (
+        <div className="grid gap-1.5" aria-busy="true" aria-label="Loading engines">
+          {[0, 1, 2].map((index) => (
+            <div key={index} className={listRow}>
+              <Skeleton as="span" className="size-8 shrink-0 rounded-lg" />
+              <span className="grid flex-1 gap-1.5">
+                <Skeleton as="span" className="h-3 w-28 rounded" />
+                <Skeleton as="span" className="h-2.5 w-56 max-w-full rounded bg-control/70" />
+              </span>
+            </div>
+          ))}
         </div>
       ) : null}
 
@@ -235,6 +251,8 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
 
       {testResult ? (
         <Notice
+          key={testResult.message}
+          className="animate-rise-in"
           tone={testResult.ok ? "success" : "danger"}
           action={
             <Button type="button" variant="link" size="xs" onClick={() => setTestResult(null)}>
@@ -346,7 +364,7 @@ function SavedEngineRow({
         />
       </div>
       {editing ? (
-        <div className={cn(well, "grid gap-3 p-3")}>
+        <div className={cn(well, "grid animate-rise-in gap-3 p-3")}>
           <EngineForm idPrefix={`engine-${engine.id}`} draft={draft} onChange={(patch) => setDraft((value) => ({ ...value, ...patch }))} />
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" size="sm" onClick={cancel}>

@@ -1,19 +1,14 @@
-import { useState, type CSSProperties } from "react";
+import { useState } from "react";
 import { HexColorPicker } from "react-colorful";
-import { RotateCcw } from "lucide-react";
-import { parseSquare } from "chessops/util";
-import type { SquareName } from "chessops/types";
-import { positionFromFen, START_FEN } from "@chaturanga/shared/chess/position";
+import { Check, RotateCcw } from "lucide-react";
 import {
   boardThemeSquareColors,
-  cgWrapPieceSetClass,
   normalizeBoardSquareHex,
+  pieceStyleOptions,
   piecePresentationOptions,
-  piecePresentationTailwindClass,
   type AppSettings,
   type BoardTheme,
-  type PiecePresentation,
-  type PieceStyle
+  type PiecePresentation
 } from "@chaturanga/shared/types/settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,11 +18,10 @@ import { Input } from "@/components/ui/input";
 import { SectionHeader } from "@/components/ui/page";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cardPadded, fieldLabel, well } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { boardSquareGradient } from "../board/useBoardAppearance";
-import { CgPieceGlyph, type PreviewPieceRole } from "./piece-style-preview";
+import { BoardThumbnail } from "./board-thumbnail";
 import { PieceStyleListbox } from "./PieceStyleListbox";
 import { useSetSetting } from "./use-set-setting";
 
@@ -44,26 +38,9 @@ const boardThemes: Array<{ id: BoardTheme; label: string }> = [
   { id: "slate", label: "Slate" }
 ];
 
-type PreviewCell = { color: "white" | "black"; role: PreviewPieceRole } | null;
-
-/** Rank 8 → 1 (Chessground `orientation-white` preview: Black at top). From {@link START_FEN}. */
-const previewBoardPieces: PreviewCell[][] = (() => {
-  const board = positionFromFen(START_FEN).board;
-  const ranks: PreviewCell[][] = [];
-  for (let rank = 8; rank >= 1; rank--) {
-    const row: PreviewCell[] = [];
-    for (let file = 0; file < 8; file++) {
-      const name = (`${"abcdefgh"[file]}${rank}`) as SquareName;
-      const square = parseSquare(name);
-      const piece = square ? board.get(square) : undefined;
-      row.push(
-        piece ? { color: piece.color, role: piece.role as PreviewPieceRole } : null
-      );
-    }
-    ranks.push(row);
-  }
-  return ranks;
-})();
+/** Italian Game after 4…Bc5: pieces on both sides, a last move to show the highlight. */
+const PREVIEW_FEN = "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 6 5";
+const PREVIEW_LAST_MOVE = "f8c5";
 
 function hslToHex(hue: number, saturation: number, lightness: number): string {
   const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
@@ -98,6 +75,7 @@ function boardColorsForHue(hue: number): { light: string; dark: string } {
 export function BoardSection({ appearance }: { appearance: AppSettings }) {
   const setSetting = useSetSetting();
   const [liveBoardColors, setLiveBoardColors] = useState<{ light?: string; dark?: string }>({});
+  const [hoverTheme, setHoverTheme] = useState<BoardTheme | null>(null);
   const presetBoardColors = boardThemeSquareColors[appearance.boardTheme];
   const previewBoardLight = liveBoardColors.light ?? appearance.boardSquareLight ?? presetBoardColors.light;
   const previewBoardDark = liveBoardColors.dark ?? appearance.boardSquareDark ?? presetBoardColors.dark;
@@ -136,57 +114,100 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
     setSetting("boardSquareDark", null);
   }
 
-  return (
-    <section className={cn(cardPadded, "grid gap-4")}>
-      <SectionHeader title="Board" />
+  const pieceStyleLabel = pieceStyleOptions.find((option) => option.id === selectedPieceStyle)?.label ?? selectedPieceStyle;
+  const hoverColors = hoverTheme ? boardThemeSquareColors[hoverTheme] : null;
 
-      <Field label="Board theme" hint={selectedThemeLabel}>
-        <div role="radiogroup" aria-label="Board theme" className="flex flex-wrap gap-2">
-          {boardThemes.map((theme) => {
-            const selected = !customBoardSelected && appearance.boardTheme === theme.id;
-            return (
-              <Tooltip key={theme.id}>
-                <TooltipTrigger asChild>
+  return (
+    <section className={cn(cardPadded, "@container grid gap-5")}>
+      <SectionHeader title="Board" description="How the board and pieces look in every game, review and puzzle." />
+
+      <div className="grid items-start gap-x-8 gap-y-6 @2xl:grid-cols-[minmax(0,1fr)_minmax(11rem,14rem)]">
+        <div className="grid min-w-0 gap-5">
+          <Field label="Board theme" hint={selectedThemeLabel}>
+            <div
+              role="radiogroup"
+              aria-label="Board theme"
+              className="grid grid-cols-[repeat(auto-fill,minmax(3.25rem,1fr))] gap-x-2.5 gap-y-3"
+              onMouseLeave={() => setHoverTheme(null)}
+            >
+              {boardThemes.map((theme) => {
+                const selected = !customBoardSelected && appearance.boardTheme === theme.id;
+                const colors = boardThemeSquareColors[theme.id];
+                return (
                   <button
+                    key={theme.id}
                     type="button"
                     role="radio"
                     aria-checked={selected}
-                    aria-label={theme.label}
                     onClick={() => applyBoardTheme(theme.id)}
-                    className={cn(
-                      "size-9 rounded-lg border border-line bg-[length:50%_50%] outline-none transition-shadow hover:border-line-strong focus-visible:ring-2 focus-visible:ring-accent/50",
-                      selected && "border-accent ring-2 ring-accent/70 ring-offset-2 ring-offset-surface"
-                    )}
-                    style={{
-                      backgroundImage: boardSquareGradient(boardThemeSquareColors[theme.id].light, boardThemeSquareColors[theme.id].dark)
-                    }}
-                  />
-                </TooltipTrigger>
-                <TooltipContent side="bottom">{theme.label}</TooltipContent>
-              </Tooltip>
-            );
-          })}
-        </div>
-      </Field>
+                    onMouseEnter={() => setHoverTheme(theme.id)}
+                    onFocus={() => setHoverTheme(theme.id)}
+                    onBlur={() => setHoverTheme(null)}
+                    className="group grid min-w-0 justify-items-center gap-1.5 rounded-lg outline-none"
+                  >
+                    <span
+                      className={cn(
+                        "relative block aspect-square w-full rounded-md bg-[length:50%_50%] shadow-[inset_0_0_0_1px_rgb(0_0_0/0.2)] transition-[box-shadow,transform] duration-standard ease-standard group-hover:-translate-y-px group-focus-visible:ring-2 group-focus-visible:ring-accent/60 group-focus-visible:ring-offset-2 group-focus-visible:ring-offset-surface",
+                        selected && "ring-2 ring-accent ring-offset-2 ring-offset-surface"
+                      )}
+                      style={{ backgroundImage: boardSquareGradient(colors.light, colors.dark) }}
+                    >
+                      {selected ? (
+                        <span className="absolute -right-1.5 -top-1.5 grid size-4 animate-pop-in place-items-center rounded-full bg-accent text-canvas">
+                          <Check className="size-2.5" strokeWidth={3.5} aria-hidden="true" />
+                        </span>
+                      ) : null}
+                    </span>
+                    <span
+                      className={cn(
+                        "max-w-full truncate text-2xs transition-colors duration-micro",
+                        selected ? "font-medium text-fg" : "text-fg-subtle group-hover:text-fg-secondary"
+                      )}
+                    >
+                      {theme.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
 
-      <div className="grid items-start gap-4 xl:grid-cols-2">
-        <PieceStyleListbox
-          id="piece-style-select"
-          value={selectedPieceStyle}
-          piecePresentation={appearance.piecePresentation}
-          onChange={(next) => setSetting("pieceStyle", next)}
-        />
-        <Field label="Piece look" hint={presentationDescription}>
-          <SegmentedControl
-            ariaLabel="Piece look"
-            fullWidth
-            size="sm"
-            className="h-11 [&>button]:h-9"
-            value={appearance.piecePresentation}
-            onChange={(next: PiecePresentation) => setSetting("piecePresentation", next)}
-            options={piecePresentationOptions.map((opt) => ({ value: opt.id, label: opt.label }))}
+          <PieceStyleListbox
+            id="piece-style-select"
+            value={selectedPieceStyle}
+            piecePresentation={appearance.piecePresentation}
+            onChange={(next) => setSetting("pieceStyle", next)}
           />
-        </Field>
+          <Field label="Piece look" hint={presentationDescription}>
+            <SegmentedControl
+              ariaLabel="Piece look"
+              fullWidth
+              size="sm"
+              value={appearance.piecePresentation}
+              onChange={(next: PiecePresentation) => setSetting("piecePresentation", next)}
+              options={piecePresentationOptions.map((opt) => ({ value: opt.id, label: opt.label }))}
+            />
+          </Field>
+        </div>
+
+        {/* Live preview: follows the hovered theme, the custom colors and the piece set as they change. */}
+        <figure className="grid w-full max-w-60 gap-2 justify-self-center @2xl:sticky @2xl:top-4 @2xl:max-w-none">
+          <BoardThumbnail
+            fen={PREVIEW_FEN}
+            lastMove={PREVIEW_LAST_MOVE}
+            light={hoverColors?.light ?? previewBoardLight}
+            dark={hoverColors?.dark ?? previewBoardDark}
+            pieceStyle={selectedPieceStyle}
+            piecePresentation={appearance.piecePresentation}
+            label="Preview of the board with your theme and pieces"
+          />
+          <figcaption className="flex min-w-0 items-baseline justify-between gap-2 text-2xs text-fg-subtle">
+            <span className="truncate">
+              {hoverTheme ? boardThemes.find((theme) => theme.id === hoverTheme)?.label : selectedThemeLabel}
+            </span>
+            <span className="truncate">{pieceStyleLabel}</span>
+          </figcaption>
+        </figure>
       </div>
 
       <Disclosure title="Custom colors" summary={customBoardSelected ? "In use" : undefined}>
@@ -198,29 +219,21 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
               Reset to theme
             </Button>
           </div>
-          <div className="grid gap-3 lg:grid-cols-[13rem_minmax(0,1fr)]">
-            <CustomBoardPreview
-              light={previewBoardLight}
-              dark={previewBoardDark}
-              pieceStyle={selectedPieceStyle}
-              piecePresentation={appearance.piecePresentation}
+          <div className="grid content-start gap-3 sm:grid-cols-2">
+            <BoardSquareColorPicker
+              label="Light squares"
+              color={previewBoardLight}
+              custom={Boolean(liveBoardColors.light ?? appearance.boardSquareLight)}
+              fallback={presetBoardColors.light}
+              onChange={(value) => setBoardSquareColor("boardSquareLight", value)}
             />
-            <div className="grid content-start gap-3 sm:grid-cols-2">
-              <BoardSquareColorPicker
-                label="Light squares"
-                color={previewBoardLight}
-                custom={Boolean(liveBoardColors.light ?? appearance.boardSquareLight)}
-                fallback={presetBoardColors.light}
-                onChange={(value) => setBoardSquareColor("boardSquareLight", value)}
-              />
-              <BoardSquareColorPicker
-                label="Dark squares"
-                color={previewBoardDark}
-                custom={Boolean(liveBoardColors.dark ?? appearance.boardSquareDark)}
-                fallback={presetBoardColors.dark}
-                onChange={(value) => setBoardSquareColor("boardSquareDark", value)}
-              />
-            </div>
+            <BoardSquareColorPicker
+              label="Dark squares"
+              color={previewBoardDark}
+              custom={Boolean(liveBoardColors.dark ?? appearance.boardSquareDark)}
+              fallback={presetBoardColors.dark}
+              onChange={(value) => setBoardSquareColor("boardSquareDark", value)}
+            />
           </div>
         </div>
       </Disclosure>
@@ -229,75 +242,23 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
         <SettingRow
           label="Coordinates"
           htmlFor="setting-coordinates"
+          description="File letters and rank numbers along the board edge."
           control={<Switch id="setting-coordinates" checked={appearance.showCoordinates} onCheckedChange={(v) => setSetting("showCoordinates", v)} />}
         />
         <SettingRow
           label="Legal move dots"
           htmlFor="setting-legal-moves"
+          description="Dots on the squares a picked-up piece can move to."
           control={<Switch id="setting-legal-moves" checked={appearance.showLegalMoves} onCheckedChange={(v) => setSetting("showLegalMoves", v)} />}
         />
         <SettingRow
           label="Move animation"
           htmlFor="setting-animation"
+          description="Pieces slide to their new square."
           control={<Switch id="setting-animation" checked={appearance.boardAnimation} onCheckedChange={(v) => setSetting("boardAnimation", v)} />}
         />
       </div>
     </section>
-  );
-}
-
-function CustomBoardPreview({
-  light,
-  dark,
-  pieceStyle,
-  piecePresentation
-}: {
-  light: string;
-  dark: string;
-  pieceStyle: PieceStyle;
-  piecePresentation: PiecePresentation;
-}) {
-  return (
-    <div
-      className={cn(
-        /**
-         * `.cg-wrap` (chessground.base.css) forces `display: block`, so it lives on this outer
-         * wrapper — piece-set rules are descendant selectors — and the flex board sits inside.
-         * chessground also sets `.cg-wrap piece { width/height: 12.5% }` for full-board geometry;
-         * override so each glyph fills its preview square.
-         */
-        "cg-wrap relative isolate box-border w-full min-w-0 max-w-52 shrink-0",
-        "[&_piece]:pointer-events-none [&_piece]:!absolute [&_piece]:!inset-0 [&_piece]:!box-border [&_piece]:z-[2] [&_piece]:!size-full [&_piece]:bg-cover",
-        cgWrapPieceSetClass(pieceStyle),
-        piecePresentationTailwindClass(piecePresentation)
-      )}
-    >
-      <div
-        /**
-         * Flex ranks/files so each square gets real flex size. Pure CSS Grid cells with only
-         * absolutely-positioned `<piece>` children often collapse → invisible glyphs.
-         */
-        className="isolate flex aspect-square w-full min-h-0 flex-col overflow-hidden rounded-lg border border-line bg-[conic-gradient(var(--preview-dark)_25%,var(--preview-light)_0_50%,var(--preview-dark)_0_75%,var(--preview-light)_0)] bg-[length:25%_25%]"
-        style={
-          {
-            "--preview-light": light,
-            "--preview-dark": dark
-          } as CSSProperties
-        }
-        role="img"
-        aria-label="Board color and piece preview"
-      >
-        {previewBoardPieces.map((row, rowIndex) => (
-          <div key={rowIndex} className="flex min-h-0 min-w-0 flex-1 flex-row" aria-hidden="true">
-            {row.map((cell, fileIndex) => (
-              <span key={fileIndex} className="relative isolate block min-h-0 min-w-0 flex-1 overflow-hidden bg-transparent">
-                {cell ? <CgPieceGlyph color={cell.color} role={cell.role} /> : null}
-              </span>
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 

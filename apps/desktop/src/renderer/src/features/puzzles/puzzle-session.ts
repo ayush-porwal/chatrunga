@@ -1,4 +1,6 @@
 import { useEffect } from "react";
+import { applyUserMove } from "@chaturanga/shared/chess/position";
+import { userMoveFromUci } from "@/lib/uci";
 import { useGameStore } from "../../stores/game-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
 
@@ -16,19 +18,28 @@ function advancePuzzle(feedback: string): void {
 /**
  * Checks the user's move (UCI) against the active puzzle's next solution move. The expected move
  * is played through `play` and the puzzle advances; anything else is marked wrong and not played.
- * Returns whether the move was played (callers restore the board otherwise).
+ * Returns whether the move was played (callers restore the board otherwise). `fenBefore` (default:
+ * the board's position) names the wrong move in SAN in the feedback.
  */
-export function submitPuzzleMove(uci: string, play: () => boolean): boolean {
+export function submitPuzzleMove(uci: string, play: () => boolean, fenBefore = useGameStore.getState().currentFen): boolean {
   const { activePuzzle, solutionIndex, markWrongMove } = usePuzzleStore.getState();
   const expected = activePuzzle?.solutionMoves[solutionIndex];
   if (!expected) return false;
   if (uci !== expected) {
-    markWrongMove({ played: uci, expected });
+    markWrongMove({ played: sanOf(fenBefore, uci), expected });
     return false;
   }
   if (!play()) return false;
   advancePuzzle("Correct. Continue the line.");
   return true;
+}
+
+function sanOf(fen: string, uci: string): string {
+  try {
+    return applyUserMove(fen, userMoveFromUci(uci))?.san ?? uci;
+  } catch {
+    return uci;
+  }
 }
 
 /**

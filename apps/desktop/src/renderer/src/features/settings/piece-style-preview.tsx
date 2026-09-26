@@ -58,6 +58,9 @@ export function PieceStylePreviewStrip({
         cgWrapPieceSetClass(pieceStyle),
         piecePresentationTailwindClass(piecePresentation)
       )}
+      // Unlayered `.cg-wrap` rules (chessground display:block, board.css inline-size containment) beat
+      // utilities and would collapse this shrink-to-fit strip to zero width; inline style wins.
+      style={{ display: "inline-flex", containerType: "normal" }}
       aria-hidden
     >
       {STRIP_PIECES.map(({ color, role }) => (
