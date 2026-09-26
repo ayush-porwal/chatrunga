@@ -16,7 +16,16 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");
 
-const THEMES = ["merida", "alpha", "california", "cardinal", "chessnut", "kosal", "maestro", "pirouetti"];
+const THEMES = [
+  "merida",
+  "alpha",
+  "california",
+  "cardinal",
+  "chessnut",
+  "kosal",
+  "maestro",
+  "pirouetti"
+];
 
 const FILES = [
   ["pawn", "white", "wP"],
@@ -63,10 +72,7 @@ const header = `/**
 `;
 
 const body = THEMES.map((t) => buildThemeCss(t)).join("\n\n");
-const outPath = join(
-  repoRoot,
-  "apps/desktop/src/renderer/src/styles/generated-piece-themes.css"
-);
+const outPath = join(repoRoot, "apps/desktop/src/renderer/src/styles/generated-piece-themes.css");
 mkdirSync(dirname(outPath), { recursive: true });
 writeFileSync(outPath, `${header}${body}\n`, "utf8");
 console.log(`Wrote ${outPath}`);

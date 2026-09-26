@@ -4,14 +4,33 @@
     {
       "name": "marketing",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev:marketing"],
+      "runtimeArgs": [
+        "dev:marketing"
+      ],
       "port": 5180
     },
     {
       "name": "desktop-renderer",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev:desktop"],
+      "runtimeArgs": [
+        "dev:desktop"
+      ],
       "port": 5173
+    },
+    {
+      "name": "renderer-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@chaturanga/desktop",
+        "exec",
+        "vite",
+        "src/renderer",
+        "--port",
+        "5199",
+        "--strictPort"
+      ],
+      "port": 5199
     }
   ]
 }

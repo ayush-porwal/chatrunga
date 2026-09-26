@@ -20,17 +20,12 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "dist:mac": "pnpm --filter @chaturanga/desktop dist:mac",
-    "db:generate": "pnpm --filter @chaturanga/desktop db:generate",
     "generate:piece-css": "node scripts/generate-piece-theme-css.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.59.1",
     "@types/node": "^25.6.2",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
     "@vitest/coverage-v8": "^4.1.5",
-    "electron": "^42.0.1",
     "eslint": "^10.3.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",
@@ -38,10 +33,5 @@
     "prettier": "^3.8.3",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.2"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "stockfish"
-    ]
   }
 }

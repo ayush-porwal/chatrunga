@@ -2,13 +2,14 @@ node_modules
 .pnpm-store
 dist
 out
-**/out
-apps/desktop/dist
-apps/marketing/dist
+coverage
 stockfish
 *.sqlite
 *.sqlite-*
 .DS_Store
-coverage
-playwright-report
-test-results
+.gstack/
+
+# env files — never commit secrets.
+.env
+.env.local
+.env.*.local
