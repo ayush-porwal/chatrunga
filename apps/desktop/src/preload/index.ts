@@ -82,7 +82,15 @@ const api: ChaturangaApi = {
     onReviewMoveCompleted: subscribe<EventPayload<"onReviewMoveCompleted">>("review:moveCompleted"),
     onReviewCompleted: subscribe<EventPayload<"onReviewCompleted">>("review:completed"),
     onReviewFailed: subscribe<EventPayload<"onReviewFailed">>("review:failed"),
-    onDatabaseDownloadProgress: subscribe<EventPayload<"onDatabaseDownloadProgress">>("database:downloadProgress")
+    onDatabaseDownloadProgress: subscribe<EventPayload<"onDatabaseDownloadProgress">>("database:downloadProgress"),
+    onUpdateState: subscribe<EventPayload<"onUpdateState">>("updates:state")
+  },
+  updates: {
+    getState: () => ipcRenderer.invoke("updates:getState"),
+    check: () => ipcRenderer.invoke("updates:check"),
+    download: () => ipcRenderer.invoke("updates:download"),
+    install: () => ipcRenderer.invoke("updates:install"),
+    openDownload: () => ipcRenderer.invoke("updates:openDownload")
   },
   // Engine + Maia weight downloads (main/engine/asset-manager.ts).
   assets: {

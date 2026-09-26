@@ -16,10 +16,11 @@ import { BoardSection } from "./BoardSettings";
 import { EngineAssetsPanel } from "./EngineAssetsPanel";
 import { EnginesSection } from "./EngineSettings";
 import { OpenRouterSettingsCard } from "./OpenRouterSettingsCard";
+import { UpdatesSection } from "../updates/UpdatesSection";
 import { useSettingsSaveState } from "./settings-save-state";
 import { useSetSetting } from "./use-set-setting";
 
-export type SettingsSectionId = "window" | "board" | "sound" | "engines" | "downloads" | "commentary";
+export type SettingsSectionId = "window" | "board" | "sound" | "engines" | "downloads" | "commentary" | "updates";
 type SectionId = SettingsSectionId;
 
 const sectionLabels: Record<SectionId, string> = {
@@ -28,7 +29,8 @@ const sectionLabels: Record<SectionId, string> = {
   sound: "Sound",
   engines: "Engines",
   downloads: "Engine downloads",
-  commentary: "Commentary"
+  commentary: "Commentary",
+  updates: "Updates"
 };
 
 const sectionDomId = (id: SectionId) => `settings-${id}`;
@@ -50,7 +52,8 @@ export const SettingsPage = memo(function SettingsPage({
     "sound",
     "engines",
     ...(desktopApiAvailable ? (["downloads"] as const) : []),
-    "commentary"
+    "commentary",
+    ...(desktopApiAvailable ? (["updates"] as const) : [])
   ];
   const navRef = useRef<HTMLElement>(null);
   const active = useScrollSpy(navRef, sections);
@@ -135,6 +138,11 @@ export const SettingsPage = memo(function SettingsPage({
                 <OpenRouterSettingsCard />
               </section>
             </SectionAnchor>
+            {desktopApiAvailable ? (
+              <SectionAnchor id="updates">
+                <UpdatesSection appearance={appearance} />
+              </SectionAnchor>
+            ) : null}
           </div>
         </div>
       </div>

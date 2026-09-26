@@ -19,6 +19,7 @@ export default defineConfig({
         "**/*.test.ts",
         "**/__fixtures__/**",
         "src/main/index.ts",
+        "src/main/updater.ts",
         "src/main/db/**",
         "src/main/ipc/register.ts",
         "src/main/ipc/review-handler.ts",

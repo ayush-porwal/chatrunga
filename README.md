@@ -17,6 +17,10 @@ language.
 Get the latest build from [Releases](https://github.com/ayush-porwal/chatrunga/releases)
 (macOS, Windows, Linux).
 
+The app checks for new versions itself (the button next to Settings). Windows and the Linux
+AppImage download and install them on restart; macOS builds aren't Developer ID-signed yet, so there
+the update opens the new `.dmg` to download.
+
 ## Development
 
 Requires Node 24 and pnpm 11.
@@ -28,4 +32,7 @@ pnpm test    # run tests
 pnpm lint    # lint
 ```
 
-Releases are built by the manual **release** workflow in GitHub Actions.
+Releases are built by the manual **release** workflow in GitHub Actions. In-app updates read the
+public GitHub releases of the repo in `build.publish` (`apps/desktop/package.json`). To try the
+update flow locally, run a packaged build with `CHATURANGA_UPDATE_FEED_URL` pointing at a folder
+served over HTTP that holds a `latest-mac.yml` / `latest.yml` / `latest-linux.yml`.

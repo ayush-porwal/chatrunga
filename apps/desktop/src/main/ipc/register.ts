@@ -24,6 +24,7 @@ import { syncAssetsToEngineRegistry } from "../engine/engine-registry-sync";
 import { getOpenRouterConfigStore } from "../commentary/openrouter-config";
 import { generateOpenRouterCommentary, parseCommentaryPayloads } from "../commentary/openrouter-commentary";
 import { errorMessage, logger } from "../logger";
+import { updateService } from "../updater";
 import { refreshWindowGlass } from "../window-glass";
 import { runGameReview } from "./review-handler";
 import {
@@ -118,6 +119,7 @@ export function registerIpc(engineManager: EngineManager): void {
   registerAssetIpc();
   registerLibraryIpc();
   registerCommentaryIpc();
+  registerUpdateIpc();
 }
 
 function registerEngineIpc(engineManager: EngineManager): void {
@@ -275,6 +277,7 @@ function registerLibraryIpc(): void {
     const settingKey = parseSettingKey(key);
     settingsRepository.set(settingKey, value);
     if (settingKey === "glassEffect") refreshWindowGlass();
+    if (settingKey === "updatesAutoDownload" || settingKey === "updatesIncludeBeta") updateService.applySettings();
   });
 }
 
@@ -298,4 +301,14 @@ function registerCommentaryIpc(): void {
     const [config, apiKey] = await Promise.all([store.get(), store.getApiKey()]);
     return generateOpenRouterCommentary(payloads, { apiKey, model: config.model });
   });
+}
+
+/** In-app updates (main/updater.ts). No inputs: every action applies to the current update. */
+function registerUpdateIpc(): void {
+  updateService.on("state", (state) => broadcast("updates:state", state));
+  ipcMain.handle("updates:getState", () => updateService.getState());
+  ipcMain.handle("updates:check", () => updateService.check());
+  ipcMain.handle("updates:download", () => updateService.download());
+  ipcMain.handle("updates:install", () => updateService.install());
+  ipcMain.handle("updates:openDownload", () => updateService.openDownload());
 }

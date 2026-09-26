@@ -21,6 +21,7 @@ import { EngineManager } from "./engine/engine-manager";
 import { killAllEngineProcesses } from "./engine/uci-process";
 import { registerIpc } from "./ipc/register";
 import { logger } from "./logger";
+import { updateService } from "./updater";
 import {
   isAppUrl,
   isExternalHttpUrl,
@@ -99,8 +100,11 @@ async function startup(): Promise<void> {
   const icon = createAppIcon();
   if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);
   createWindow();
+  // Quitting into an installer runs the same cleanup as a normal quit, first.
+  void updateService.start({ prepareForInstall: shutdown });
 }
 
+/** Stops engines and closes the database. Idempotent: an update install runs it before `will-quit` does. */
 function shutdown(): void {
   engineManager.stop();
   killAllEngineProcesses();

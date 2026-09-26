@@ -10,6 +10,7 @@ import {
   normalizePiecePresentation,
   normalizePieceStyle,
   normalizeReviewEngineSettings,
+  normalizeUpdateSettings,
   resolveEngineThreads
 } from "./settings";
 
@@ -173,6 +174,35 @@ describe("normalizeCommentaryProvider", () => {
     expect(normalizeReviewEngineSettings(defaultSettings).reviewCommentaryProvider).toBe(
       "openrouter"
     );
+  });
+});
+
+describe("normalizeUpdateSettings", () => {
+  it("defaults to background downloads on and beta releases off", () => {
+    const normalized = normalizeUpdateSettings(defaultSettings);
+    expect(normalized.updatesAutoDownload).toBe(true);
+    expect(normalized.updatesIncludeBeta).toBe(false);
+  });
+
+  it("keeps saved booleans", () => {
+    const normalized = normalizeUpdateSettings({ ...defaultSettings, updatesAutoDownload: false, updatesIncludeBeta: true });
+    expect(normalized.updatesAutoDownload).toBe(false);
+    expect(normalized.updatesIncludeBeta).toBe(true);
+  });
+
+  it("replaces anything else with the defaults", () => {
+    for (const bad of ["true", 1, null, undefined, {}]) {
+      const stored = { ...defaultSettings, updatesAutoDownload: bad, updatesIncludeBeta: bad } as unknown as AppSettings;
+      const normalized = normalizeUpdateSettings(stored);
+      expect(normalized.updatesAutoDownload).toBe(true);
+      expect(normalized.updatesIncludeBeta).toBe(false);
+    }
+  });
+
+  it("is idempotent and leaves other settings alone", () => {
+    const once = normalizeUpdateSettings({ ...defaultSettings, soundVolume: 0.3 });
+    expect(normalizeUpdateSettings(once)).toEqual(once);
+    expect(once.soundVolume).toBe(0.3);
   });
 });
 

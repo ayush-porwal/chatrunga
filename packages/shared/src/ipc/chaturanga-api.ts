@@ -26,6 +26,7 @@ import type {
   UpdateEngineInput
 } from "../types/engine";
 import type { AppSettings } from "../types/settings";
+import type { UpdateState } from "../types/updates";
 import type { ReviewInsightPayload } from "../schemas/review-insight";
 import type {
   DatabaseDownloadProgress,
@@ -140,6 +141,21 @@ export type ChaturangaApi = {
     onReviewCompleted(callback: (event: ReviewCompleted) => void): Unsubscribe;
     onReviewFailed(callback: (event: ReviewFailed) => void): Unsubscribe;
     onDatabaseDownloadProgress(callback: (progress: DatabaseDownloadProgress) => void): Unsubscribe;
+    /** Every change of the in-app update state (checks, progress, errors, settings). */
+    onUpdateState(callback: (state: UpdateState) => void): Unsubscribe;
+  };
+
+  /** In-app updates of Chaturanga itself (main/updater.ts). */
+  updates: {
+    getState(): Promise<UpdateState>;
+    /** Checks now (no-op while a check or download runs, or an update waits for a restart). */
+    check(): Promise<UpdateState>;
+    /** Downloads the available update (automatic-update builds with background downloads off). */
+    download(): Promise<UpdateState>;
+    /** Restarts into the downloaded update. False when none is ready. */
+    install(): Promise<boolean>;
+    /** Manual-download builds: opens the installer (or release page) in the browser. */
+    openDownload(): Promise<boolean>;
   };
 
   /** Asset manager bridge — engine + Maia weight downloads (main/engine/asset-manager.ts). */

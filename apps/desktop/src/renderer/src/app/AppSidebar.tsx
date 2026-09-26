@@ -23,6 +23,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { titlebarIconButton } from "@/lib/ui";
 import { cn } from "@/lib/utils";
+import { UpdateButton } from "../features/updates/UpdateButton";
 import { BOARD_SHORTCUTS } from "./useBoardShortcuts";
 
 /**
@@ -33,6 +34,8 @@ import { BOARD_SHORTCUTS } from "./useBoardShortcuts";
  *
  * Board commands (Focus board, Flip board) sit in the bottom group, above Settings, and only on
  * views with a board; their keys (F, X) show as a hint in the row and in the rail's tooltip.
+ * The update button shares the Settings row: click checks for updates; once one exists it turns
+ * accent and its hover card shows the changelog (features/updates/UpdateButton.tsx).
  *
  * Motion: the app frame eases the sidebar column's width (App.tsx); the nav fills that column and
  * clips, so labels are never re-wrapped — they fade out quickly on collapse and fade in just behind
@@ -132,7 +135,14 @@ export const AppSidebar = memo(function AppSidebar({
             {item(Repeat2, "Flip board", onFlip, false, BOARD_SHORTCUTS.flip)}
           </>
         ) : null}
-        {item(Settings, "Settings", onSettings, active.settings)}
+        {/* Settings with the update button on its row (expanded) or directly above it (rail), so
+            Settings itself never moves. */}
+        <div className={cn("grid min-w-0 gap-0.5", expanded ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-[minmax(0,1fr)]")}>
+          <div className={cn("min-w-0", expanded ? "col-start-1 row-start-1" : "row-start-2")}>
+            {item(Settings, "Settings", onSettings, active.settings)}
+          </div>
+          <UpdateButton tooltipSide={expanded ? "top" : "right"} className={expanded ? "col-start-2 row-start-1" : "row-start-1"} />
+        </div>
       </div>
     </nav>
   );

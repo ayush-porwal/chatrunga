@@ -222,6 +222,10 @@ export type AppSettings = {
   /** UCI `Hash` (MB) for the evaluation engine. */
   engineHashMb: number;
   recentFilePaths: string[];
+  /** In-app updates: download new versions in the background (Windows, Linux AppImage, signed macOS). */
+  updatesAutoDownload: boolean;
+  /** In-app updates: also offer prerelease (beta) versions. Always on while running a prerelease. */
+  updatesIncludeBeta: boolean;
   theme: "light" | "dark";
   lastOpenedGameId: string | null;
 };
@@ -277,6 +281,8 @@ export const defaultSettings: AppSettings = {
   engineThreads: null,
   engineHashMb: 128,
   recentFilePaths: [],
+  updatesAutoDownload: true,
+  updatesIncludeBeta: false,
   theme: "dark",
   lastOpenedGameId: null
 };
@@ -319,6 +325,21 @@ export function normalizeAppearanceSettings(settings: AppSettings): AppSettings 
     ...settings,
     glassEffect:
       typeof settings.glassEffect === "boolean" ? settings.glassEffect : defaultSettings.glassEffect
+  };
+}
+
+/** Validates the in-app update settings, falling back to defaults for bad values. Idempotent. */
+export function normalizeUpdateSettings(settings: AppSettings): AppSettings {
+  return {
+    ...settings,
+    updatesAutoDownload:
+      typeof settings.updatesAutoDownload === "boolean"
+        ? settings.updatesAutoDownload
+        : defaultSettings.updatesAutoDownload,
+    updatesIncludeBeta:
+      typeof settings.updatesIncludeBeta === "boolean"
+        ? settings.updatesIncludeBeta
+        : defaultSettings.updatesIncludeBeta
   };
 }
 
