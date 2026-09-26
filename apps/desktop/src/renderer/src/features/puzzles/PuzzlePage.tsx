@@ -1,11 +1,20 @@
-import { useMemo, useState } from "react";
-import { Database, Play, Puzzle, X } from "lucide-react";
+import { useId, useMemo, useState, type ReactNode } from "react";
+import { Database, Play } from "lucide-react";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
+import { Badge, ChipButton } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Disclosure } from "@/components/ui/disclosure";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Field } from "@/components/ui/field";
+import { IconButton } from "@/components/ui/icon-button";
+import { Input, Select } from "@/components/ui/input";
+import { Notice } from "@/components/ui/notice";
+import { Page, PageHeader } from "@/components/ui/page";
+import { SegmentedControl } from "@/components/ui/segmented-control";
+import { SideDot } from "@/components/ui/side-dot";
+import { card, cardPadded, divider, fieldLabel } from "@/lib/ui";
 import { cn } from "@/lib/utils";
-import { useDatabasesQuery } from "../../queries/api";
-import { useSamplePuzzleMutation } from "../../queries/api";
-import { input, muted } from "@/lib/ui";
+import { useDatabasesQuery, useSamplePuzzleMutation } from "../../queries/api";
 
 const lichessThemes = [
   "mate",
@@ -77,8 +86,7 @@ const strategicTags = [
 
 export type PuzzleSessionConfig = {
   databaseId: string | null;
-  sourceId: string | null;
-  mode: "lichess-puzzle" | "position-training" | "manual";
+  mode: "lichess-puzzle" | "position-training";
   lichess: {
     ratingMin: number;
     ratingMax: number;
@@ -122,12 +130,13 @@ export function PuzzlePage({
   const [difficultyMin, setDifficultyMin] = useState(1);
   const [difficultyMax, setDifficultyMax] = useState(4);
   const [positionTags, setPositionTags] = useState<string[]>(["initiative", "development"]);
+  const databaseFieldId = useId();
 
   function start() {
+    if (!selectedDatabase) return;
     const config = {
-      databaseId: selectedDatabase?.id ?? null,
-      sourceId: selectedDatabase?.sourceId ?? null,
-      mode: isLichess ? "lichess-puzzle" : selectedDatabase ? "position-training" : "manual",
+      databaseId: selectedDatabase.id,
+      mode: isLichess ? "lichess-puzzle" : "position-training",
       lichess: {
         ratingMin,
         ratingMax,
@@ -143,7 +152,6 @@ export function PuzzlePage({
         tags: positionTags
       }
     } satisfies PuzzleSessionConfig;
-    if (!selectedDatabase) return;
     samplePuzzle.mutate(
       {
         databaseId: selectedDatabase.id,
@@ -157,119 +165,106 @@ export function PuzzlePage({
   }
 
   return (
-    <div className="mx-auto grid h-full w-full max-w-5xl content-start gap-5 overflow-auto px-8 py-8">
-      <div className="grid gap-2">
-        <h1 className="text-[26px] font-semibold tracking-[-0.01em] text-[#f4f1ea]">Puzzles</h1>
-        <p className="max-w-3xl text-sm leading-6 text-[#a9adb4]">
-          Build a focused training set from downloaded puzzle and position databases.
-        </p>
-      </div>
+    <Page>
+      <PageHeader
+        title="Puzzles"
+        description="Train on puzzles and positions from your downloaded databases."
+        actions={
+          selectedDatabase ? (
+            <Button type="button" variant="primary" disabled={samplePuzzle.isPending} onClick={start}>
+              <Play />
+              {samplePuzzle.isPending ? "Finding puzzle…" : "Start puzzle set"}
+            </Button>
+          ) : null
+        }
+      />
 
-      <section className="grid gap-3 rounded-[12px] border border-white/10 bg-[#181a1d]/95 bg-gradient-to-b from-white/[0.05] to-transparent p-4 shadow-[0_16px_44px_rgb(0_0_0/0.24)]">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className="flex size-10 items-center justify-center rounded-[9px] border border-white/10 bg-[#263527] text-[#cce6b2]">
-              <Database size={19} />
-            </span>
-            <div className="grid gap-0.5">
-              <h2 className="text-[16px] font-semibold text-[#f4f1ea]">Training database</h2>
-              <span className={muted}>
-                {selectedDatabase
-                  ? `${selectedDatabase.provider} · ${selectedDatabase.format}`
-                  : "No puzzle database downloaded"}
-              </span>
-            </div>
+      {samplePuzzle.error ? (
+        <Notice tone="danger">
+          {samplePuzzle.error instanceof Error ? samplePuzzle.error.message : String(samplePuzzle.error)}
+        </Notice>
+      ) : null}
+
+      {selectedDatabase ? (
+        <section className={cn(cardPadded, "grid gap-4")}>
+          <div className="flex items-end gap-2">
+            <Field
+              label="Database"
+              hint={`${selectedDatabase.provider} · ${selectedDatabase.format}`}
+              htmlFor={databaseFieldId}
+              className="flex-1"
+            >
+              <Select
+                id={databaseFieldId}
+                value={selectedDatabase.id}
+                onChange={(event) => setDatabaseId(event.target.value)}
+              >
+                {puzzleDatabases.map((database) => (
+                  <option key={database.id} value={database.id}>
+                    {database.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <IconButton label="Manage databases" icon={<Database />} variant="outline" size="icon" onClick={onDatabases} />
           </div>
-          <Button type="button" variant="outline" onClick={onDatabases}>
-            <Database size={16} />
-            Manage databases
-          </Button>
-        </div>
-
-        {puzzleDatabases.length ? (
-          <select
-            className={input}
-            value={selectedDatabase?.id ?? ""}
-            onChange={(event) => setDatabaseId(event.target.value)}
-          >
-            {puzzleDatabases.map((database) => (
-              <option key={database.id} value={database.id}>
-                {database.name} ({database.kind})
-              </option>
-            ))}
-          </select>
-        ) : (
-          <div className="rounded-lg border border-[#3a3030] bg-[#231b1b] px-3 py-2 text-[13px] text-[#ffb5a8]">
-            Download the Lichess puzzle database or a supported positions CSV before starting a dataset-backed puzzle set.
-          </div>
-        )}
-      </section>
-
-      {selectedDatabase && isLichess ? (
-        <LichessPuzzleFilters
-          lengths={lengths}
-          openings={openings}
-          popularityMin={popularityMin}
-          ratingMax={ratingMax}
-          ratingMin={ratingMin}
-          side={side}
-          themes={themes}
-          onLengthsChange={setLengths}
-          onOpeningsChange={setOpenings}
-          onPopularityMinChange={setPopularityMin}
-          onRatingMaxChange={setRatingMax}
-          onRatingMinChange={setRatingMin}
-          onSideChange={setSide}
-          onThemesChange={setThemes}
-        />
-      ) : selectedDatabase ? (
-        <PositionTrainingFilters
-          difficultyMax={difficultyMax}
-          difficultyMin={difficultyMin}
-          tags={positionTags}
-          onDifficultyMaxChange={setDifficultyMax}
-          onDifficultyMinChange={setDifficultyMin}
-          onTagsChange={setPositionTags}
-        />
+          <div className={divider} />
+          {isLichess ? (
+            <LichessPuzzleFilters
+              lengths={lengths}
+              openings={openings}
+              popularityMin={popularityMin}
+              ratingMax={ratingMax}
+              ratingMin={ratingMin}
+              side={side}
+              themes={themes}
+              onLengthsChange={setLengths}
+              onOpeningsChange={setOpenings}
+              onPopularityMinChange={setPopularityMin}
+              onRatingMaxChange={setRatingMax}
+              onRatingMinChange={setRatingMin}
+              onSideChange={setSide}
+              onThemesChange={setThemes}
+            />
+          ) : (
+            <PositionTrainingFilters
+              difficultyMax={difficultyMax}
+              difficultyMin={difficultyMin}
+              tags={positionTags}
+              onDifficultyMaxChange={setDifficultyMax}
+              onDifficultyMinChange={setDifficultyMin}
+              onTagsChange={setPositionTags}
+            />
+          )}
+        </section>
       ) : (
-        <section className="grid gap-3 rounded-[12px] border border-white/10 bg-[#181a1d]/95 p-4">
-          <h2 className="text-[16px] font-semibold text-[#f4f1ea]">No dataset selected</h2>
-          <p className="text-sm leading-6 text-[#a9adb4]">
-            Download a puzzle database to unlock theme, opening, rating, and difficulty filters.
-          </p>
-          <Button type="button" variant="secondary" className="justify-self-start" onClick={onDatabases}>
-            <Database size={16} />
-            Open databases
-          </Button>
+        <section className={card}>
+          <EmptyState
+            icon={<Database />}
+            title={databases.isLoading ? "Loading databases…" : "No puzzle database"}
+            description={
+              databases.isLoading ? undefined : "Download a puzzle or positions database to start training."
+            }
+            action={
+              databases.isLoading ? undefined : (
+                <Button type="button" variant="primary" onClick={onDatabases}>
+                  <Database />
+                  Open databases
+                </Button>
+              )
+            }
+          />
         </section>
       )}
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant="secondary"
-          disabled={!selectedDatabase || samplePuzzle.isPending}
-          onClick={start}
-        >
-          <Play size={16} />
-          {samplePuzzle.isPending ? "Finding puzzle..." : "Start puzzle set"}
-        </Button>
-        {samplePuzzle.error ? (
-          <span className="text-[12px] text-[#ffb5a8]">
-            {samplePuzzle.error instanceof Error ? samplePuzzle.error.message : String(samplePuzzle.error)}
-          </span>
-        ) : null}
-        <span className="text-[12px] text-[#a9adb4]">
-          {isLichess
-            ? `${themes.length || "Any"} themes · ${lengths.length || "Any"} lengths · ${ratingMin}-${ratingMax}`
-            : selectedDatabase
-              ? `${positionTags.length || "Any"} tags · difficulty ${difficultyMin}-${difficultyMax}`
-              : "Manual puzzle board"}
-        </span>
-      </div>
-    </div>
+    </Page>
   );
 }
+
+const sideOptions = [
+  { value: "any", label: "Any" },
+  { value: "white", label: "White", icon: <SideDot color="white" /> },
+  { value: "black", label: "Black", icon: <SideDot color="black" /> }
+] as const;
 
 function LichessPuzzleFilters({
   lengths,
@@ -302,57 +297,53 @@ function LichessPuzzleFilters({
   onSideChange: (value: "any" | "white" | "black") => void;
   onThemesChange: (value: string[]) => void;
 }) {
+  const popularityId = useId();
   return (
-    <section className="grid gap-4 rounded-[12px] border border-white/10 bg-[#181a1d]/95 p-4">
-      <div className="flex items-center gap-2">
-        <Puzzle size={18} className="text-[#cce6b2]" />
-        <h2 className="text-[16px] font-semibold text-[#f4f1ea]">Lichess puzzle filters</h2>
-      </div>
-      <div className="grid gap-3 lg:grid-cols-3">
-        <NumberField label="Rating min" value={ratingMin} min={0} max={3500} onChange={onRatingMinChange} />
-        <NumberField label="Rating max" value={ratingMax} min={0} max={3500} onChange={onRatingMaxChange} />
-        <NumberField label="Popularity min" value={popularityMin} min={-100} max={100} onChange={onPopularityMinChange} />
-      </div>
-      <div className="grid gap-2">
-        <span className="text-sm font-semibold text-[#f4f1ea]">Themes</span>
-        <ChipAutocomplete
-          items={lichessThemes}
-          placeholder="Search themes..."
-          selected={themes}
-          onChange={onThemesChange}
+    <div className="grid gap-4">
+      <div className="grid gap-4 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto]">
+        <RangeField
+          label="Rating"
+          min={0}
+          max={3500}
+          valueMin={ratingMin}
+          valueMax={ratingMax}
+          onMinChange={onRatingMinChange}
+          onMaxChange={onRatingMaxChange}
         />
+        <Field label="Min popularity" hint="−100 to 100" htmlFor={popularityId}>
+          <Input
+            id={popularityId}
+            type="number"
+            min={-100}
+            max={100}
+            value={popularityMin}
+            onChange={(event) => onPopularityMinChange(Number(event.target.value))}
+          />
+        </Field>
+        <FilterGroup label="Side to move">
+          <SegmentedControl
+            ariaLabel="Side to move"
+            options={sideOptions}
+            value={side}
+            onChange={onSideChange}
+          />
+        </FilterGroup>
       </div>
-      <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
-        <div className="grid gap-2">
-          <span className="text-sm font-semibold text-[#f4f1ea]">Solution length</span>
-          <TagGrid items={["oneMove", "short", "long", "veryLong"]} selected={lengths} onChange={onLengthsChange} />
-        </div>
-        <div className="grid gap-2">
-          <span className="text-sm font-semibold text-[#f4f1ea]">Side to move</span>
-          <div className="grid grid-cols-3 gap-2">
-            {(["any", "white", "black"] as const).map((value) => (
-              <Button
-                key={value}
-                type="button"
-                variant={side === value ? "secondary" : "outline"}
-                onClick={() => onSideChange(value)}
-              >
-                {value}
-              </Button>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className="grid gap-2">
-        <span className="text-sm font-semibold text-[#f4f1ea]">Opening tags</span>
+      <FilterGroup label="Themes">
+        <ChipAutocomplete items={lichessThemes} placeholder="Search themes" selected={themes} onChange={onThemesChange} />
+      </FilterGroup>
+      <FilterGroup label="Solution length">
+        <ChipToggleGroup items={["oneMove", "short", "long", "veryLong"]} selected={lengths} onChange={onLengthsChange} />
+      </FilterGroup>
+      <Disclosure title="Openings" summary={selectionSummary(openings)}>
         <ChipAutocomplete
           items={lichessOpeningTags}
-          placeholder="Search openings..."
+          placeholder="Search openings"
           selected={openings}
           onChange={onOpeningsChange}
         />
-      </div>
-    </section>
+      </Disclosure>
+    </div>
   );
 }
 
@@ -372,45 +363,104 @@ function PositionTrainingFilters({
   onTagsChange: (value: string[]) => void;
 }) {
   return (
-    <section className="grid gap-4 rounded-[12px] border border-white/10 bg-[#181a1d]/95 p-4">
-      <h2 className="text-[16px] font-semibold text-[#f4f1ea]">Position database filters</h2>
-      <div className="grid gap-3 lg:grid-cols-2">
-        <NumberField label="Difficulty min" value={difficultyMin} min={1} max={10} onChange={onDifficultyMinChange} />
-        <NumberField label="Difficulty max" value={difficultyMax} min={1} max={10} onChange={onDifficultyMaxChange} />
-      </div>
-      <div className="grid gap-2">
-        <span className="text-sm font-semibold text-[#f4f1ea]">Strategic tags</span>
-        <TagGrid items={strategicTags} selected={tags} onChange={onTagsChange} />
-      </div>
-    </section>
+    <div className="grid gap-4">
+      <RangeField
+        label="Difficulty"
+        hint="1–10"
+        className="max-w-sm"
+        min={1}
+        max={10}
+        valueMin={difficultyMin}
+        valueMax={difficultyMax}
+        onMinChange={onDifficultyMinChange}
+        onMaxChange={onDifficultyMaxChange}
+      />
+      <FilterGroup label="Strategic tags">
+        <ChipToggleGroup items={strategicTags} selected={tags} onChange={onTagsChange} />
+      </FilterGroup>
+    </div>
   );
 }
 
-function NumberField({
+/** "Any" / the single selected label / "3 selected" — Disclosure summary for a multi-select. */
+function selectionSummary(selected: string[]): string {
+  if (!selected.length) return "Any";
+  if (selected.length === 1) return formatTag(selected[0]);
+  return `${selected.length} selected`;
+}
+
+/** Display label for a Lichess/strategic tag value: "Caro-Kann_Defense" → "Caro-Kann Defense", "mateIn2" → "mate in 2". */
+function formatTag(value: string): string {
+  if (value.includes("_")) return value.replace(/_/g, " ");
+  return value
+    .replace(/([a-z])([A-Z0-9])/g, "$1 $2")
+    .toLowerCase();
+}
+
+/**
+ * Labelled group for controls that aren't a single input (chips, segmented picker).
+ * Same label style as <Field>, exposed as role="group" for screen readers.
+ */
+function FilterGroup({ label, children }: { label: string; children: ReactNode }) {
+  const labelId = useId();
+  return (
+    <div role="group" aria-labelledby={labelId} className="grid min-w-0 content-start gap-1.5">
+      <span id={labelId} className={fieldLabel}>
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+/** Min–max number pair under one label ("Rating 600 – 2800"). */
+function RangeField({
   label,
-  max,
+  hint,
   min,
-  value,
-  onChange
+  max,
+  valueMin,
+  valueMax,
+  onMinChange,
+  onMaxChange,
+  className
 }: {
   label: string;
-  max: number;
+  hint?: string;
   min: number;
-  value: number;
-  onChange: (value: number) => void;
+  max: number;
+  valueMin: number;
+  valueMax: number;
+  onMinChange: (value: number) => void;
+  onMaxChange: (value: number) => void;
+  className?: string;
 }) {
+  const id = useId();
   return (
-    <label className="grid gap-1.5 text-sm text-[#d8d8d8]">
-      {label}
-      <input
-        className={input}
-        max={max}
-        min={min}
-        type="number"
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-      />
-    </label>
+    <Field label={label} hint={hint} htmlFor={id} className={className}>
+      <div className="flex items-center gap-2">
+        <Input
+          id={id}
+          aria-label={`Minimum ${label.toLowerCase()}`}
+          type="number"
+          min={min}
+          max={max}
+          value={valueMin}
+          onChange={(event) => onMinChange(Number(event.target.value))}
+        />
+        <span aria-hidden="true" className="text-fg-subtle">
+          –
+        </span>
+        <Input
+          aria-label={`Maximum ${label.toLowerCase()}`}
+          type="number"
+          min={min}
+          max={max}
+          value={valueMax}
+          onChange={(event) => onMaxChange(Number(event.target.value))}
+        />
+      </div>
+    </Field>
   );
 }
 
@@ -430,7 +480,7 @@ function ChipAutocomplete({
     const q = query.trim().toLowerCase();
     return items
       .filter((item) => !selected.includes(item))
-      .filter((item) => (q ? item.toLowerCase().includes(q) : true))
+      .filter((item) => (q ? item.toLowerCase().includes(q) || formatTag(item).toLowerCase().includes(q) : true))
       .slice(0, 8);
   }, [items, query, selected]);
 
@@ -446,27 +496,17 @@ function ChipAutocomplete({
 
   return (
     <div className="grid gap-2">
-      <div className="flex min-h-[42px] flex-wrap items-center gap-1.5 rounded-[9px] border border-[#30343a] bg-[#141619] px-2 py-1.5 focus-within:border-[#8fb66f]/60">
+      <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-line bg-surface-sunken px-2 py-1 transition-[border-color,box-shadow] focus-within:border-accent/60 focus-within:ring-[3px] focus-within:ring-accent/15">
         {selected.map((item) => (
-          <span
-            key={item}
-            className="inline-flex min-h-7 items-center gap-1.5 rounded-full border border-[#8fb66f]/35 bg-[#8fb66f]/18 px-2.5 py-1 text-[12px] font-semibold text-[#f6ffe9]"
-          >
-            {item}
-            <button
-              type="button"
-              className="rounded-full text-[#d7e8c5] hover:text-white"
-              onClick={() => remove(item)}
-              aria-label={`Remove ${item}`}
-            >
-              <X size={13} />
-            </button>
-          </span>
+          <Badge key={item} tone="accent" size="md" onRemove={() => remove(item)} removeLabel={`Remove ${formatTag(item)}`}>
+            {formatTag(item)}
+          </Badge>
         ))}
         <input
-          className="min-h-7 min-w-[180px] flex-1 border-0 bg-transparent px-1 text-sm text-[#f4f1ea] outline-none placeholder:text-[#727982]"
+          className="h-7 min-w-40 flex-1 border-0 bg-transparent px-1 text-sm text-fg outline-none placeholder:text-fg-subtle"
           value={query}
-          placeholder={selected.length ? placeholder : `${placeholder} Select one or more`}
+          placeholder={placeholder}
+          aria-label={placeholder}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Backspace" && !query && selected.length) {
@@ -479,26 +519,19 @@ function ChipAutocomplete({
           }}
         />
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-1.5">
         {available.map((item) => (
-          <button
-            key={item}
-            type="button"
-            className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[12px] font-semibold text-[#a9adb4] transition-colors hover:bg-white/[0.07] hover:text-[#f4f1ea]"
-            onClick={() => add(item)}
-          >
-            {item}
-          </button>
+          <ChipButton key={item} onClick={() => add(item)}>
+            {formatTag(item)}
+          </ChipButton>
         ))}
-        {!available.length ? (
-          <span className="text-[12px] text-[#727982]">No matches</span>
-        ) : null}
+        {!available.length ? <span className="text-xs text-fg-subtle">No matches</span> : null}
       </div>
     </div>
   );
 }
 
-function TagGrid({
+function ChipToggleGroup({
   items,
   selected,
   onChange
@@ -508,25 +541,17 @@ function TagGrid({
   onChange: (value: string[]) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-1.5">
       {items.map((item) => {
         const active = selected.includes(item);
         return (
-          <button
+          <ChipButton
             key={item}
-            type="button"
-            className={cn(
-              "rounded-full border px-2.5 py-1.5 text-[12px] font-semibold transition-colors",
-              active
-                ? "border-[#8fb66f]/45 bg-[#8fb66f]/18 text-[#f6ffe9]"
-                : "border-white/10 bg-white/[0.03] text-[#a9adb4] hover:bg-white/[0.07] hover:text-[#f4f1ea]"
-            )}
-            onClick={() =>
-              onChange(active ? selected.filter((value) => value !== item) : [...selected, item])
-            }
+            selected={active}
+            onClick={() => onChange(active ? selected.filter((value) => value !== item) : [...selected, item])}
           >
-            {item}
-          </button>
+            {formatTag(item)}
+          </ChipButton>
         );
       })}
     </div>

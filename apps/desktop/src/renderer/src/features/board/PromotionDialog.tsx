@@ -1,7 +1,10 @@
+import type { Square, UserMove } from "@chaturanga/shared/types/chess";
 import { useGameStore } from "../../stores/game-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
+import { submitPuzzleMove } from "../puzzles/puzzle-session";
 import { Button } from "@/components/ui/button";
-import { modalBackdrop, modalPanelCompact } from "@/lib/ui";
+import { Dialog } from "@/components/ui/dialog";
+import { uciFromUserMove } from "@/lib/uci";
 
 const pieces = [
   ["queen", "Queen"],
@@ -16,61 +19,31 @@ export function PromotionDialog() {
   const mode = useGameStore((state) => state.mode);
   const setPendingPromotion = useGameStore((state) => state.setPendingPromotion);
   const activePuzzle = usePuzzleStore((state) => state.activePuzzle);
-  const solutionIndex = usePuzzleStore((state) => state.solutionIndex);
   if (!pending) return null;
 
-  function choosePromotion(value: (typeof pieces)[number][0]) {
-    const played = `${pending?.from}${pending?.to}${promotionSuffix(value)}`;
-    const expected = activePuzzle?.solutionMoves[solutionIndex];
-    if (mode === "puzzle" && activePuzzle && expected && played !== expected) {
-      usePuzzleStore.getState().markWrongMove({ played, expected });
-      setPendingPromotion(null);
-      return;
-    }
-    const moved = makeMove({
-      from: pending!.from as never,
-      to: pending!.to as never,
-      promotion: value
-    });
+  function choosePromotion(promotion: NonNullable<UserMove["promotion"]>) {
+    if (!pending) return;
+    const move: UserMove = { from: pending.from as Square, to: pending.to as Square, promotion };
     setPendingPromotion(null);
-    if (!moved || mode !== "puzzle" || !activePuzzle) return;
-    const nextIndex = solutionIndex + 1;
-    if (nextIndex >= activePuzzle.solutionMoves.length) {
-      usePuzzleStore.getState().markComplete();
-    } else {
-      usePuzzleStore.getState().advanceSolution(1, "Correct. Continue the line.");
-    }
+    if (mode === "puzzle" && activePuzzle) submitPuzzleMove(uciFromUserMove(move), () => makeMove(move));
+    else makeMove(move);
   }
 
   return (
-    <div className={modalBackdrop}>
-      <div className={modalPanelCompact}>
-        <h2 className="text-[15px] font-semibold text-[#f4f1ea]">Promote pawn</h2>
-        <div className="mt-3.5 grid grid-cols-2 gap-2.5">
-          {pieces.map(([value, label]) => (
-            <Button
-              type="button"
-              key={value}
-              onClick={() => choosePromotion(value)}
-            >
-              {label}
-            </Button>
-          ))}
-        </div>
+    <Dialog title="Promote pawn" size="sm">
+      <div className="grid grid-cols-2 gap-2">
+        {pieces.map(([value, label]) => (
+          <Button
+            type="button"
+            key={value}
+            variant={value === "queen" ? "primary" : "outline"}
+            autoFocus={value === "queen"}
+            onClick={() => choosePromotion(value)}
+          >
+            {label}
+          </Button>
+        ))}
       </div>
-    </div>
+    </Dialog>
   );
-}
-
-function promotionSuffix(promotion: (typeof pieces)[number][0]): string {
-  switch (promotion) {
-    case "queen":
-      return "q";
-    case "rook":
-      return "r";
-    case "bishop":
-      return "b";
-    case "knight":
-      return "n";
-  }
 }

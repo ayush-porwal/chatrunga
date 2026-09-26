@@ -17,33 +17,25 @@ export type SoundKind = keyof typeof sources;
 
 let preloaded = false;
 
+/** Warms the browser cache so the first move sound plays without a delay. */
 function preload(): void {
   if (preloaded) return;
   preloaded = true;
-  for (const src of Object.values(sources)) {
+  for (const src of new Set(Object.values(sources))) {
     const audio = new Audio(src);
     audio.preload = "auto";
     audio.load();
   }
 }
 
+/** Plays a sound at `volume` (0–1). Best-effort: a sound that cannot play is skipped silently. */
 export function playSound(kind: SoundKind, volume: number): void {
   preload();
-  const normalizedVolume = Math.max(0, Math.min(1, volume));
   try {
     const audio = new Audio(sources[kind]);
-    audio.volume = normalizedVolume;
-    audio.addEventListener(
-      "error",
-      () => {
-        console.warn(`[sounds] failed to load ${sources[kind]}`, audio.error);
-      },
-      { once: true }
-    );
-    void audio.play().catch((err) => {
-      console.warn(`[sounds] play() rejected for ${kind}:`, err);
-    });
-  } catch (err) {
-    console.warn(`[sounds] threw for ${kind}:`, err);
+    audio.volume = Math.max(0, Math.min(1, volume));
+    audio.play().catch(() => undefined);
+  } catch {
+    // Audio unavailable (e.g. no output device); sounds are optional.
   }
 }

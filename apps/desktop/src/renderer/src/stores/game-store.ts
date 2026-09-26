@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { addMoveNode, createEmptyGame, exportGameToPgn } from "@chaturanga/shared/chess/pgn";
-import { applyUserMove, fenAfterUci, statusForFen } from "@chaturanga/shared/chess/position";
+import { applySan, applyUserMove, fenAfterUci, statusForFen } from "@chaturanga/shared/chess/position";
 import type { EngineGoClock } from "@chaturanga/shared/types/engine";
 import type {
   Color,
@@ -11,13 +11,11 @@ import type {
   MoveNode,
   UserMove
 } from "@chaturanga/shared/types/chess";
+import { isUciMove, userMoveFromUci } from "@/lib/uci";
 
-type PendingPromotion = {
-  from: string;
-  to: string;
-} | null;
+type PendingPromotion = { from: string; to: string } | null;
 
-export type EngineClockConfig = {
+type EngineClockConfig = {
   initialMs: number;
   incrementMs: number;
 };
@@ -29,7 +27,7 @@ export type EngineClockLive = {
   sideToMove: Color;
 };
 
-export type GameOutcome = {
+type GameOutcome = {
   result: string;
   termination: string;
 };
@@ -57,6 +55,13 @@ type GameStore = {
   makeMove: (move: UserMove) => boolean;
   makeUciMove: (uci: string) => boolean;
   goToNode: (nodeId: string) => void;
+  /**
+   * Play `moves` (SAN or UCI) from `startNodeId`, reusing existing children (main line or an
+   * existing variation) and appending the rest as a new variation, then select the final node.
+   * Pure navigation: never changes mode or starts an engine. Returns false (and changes nothing)
+   * if the start node is unknown or a move is illegal.
+   */
+  goToLine: (startNodeId: string, moves: readonly string[]) => boolean;
   deleteLineFromNode: (nodeId: string) => boolean;
   undo: () => void;
   redo: () => void;
@@ -82,7 +87,6 @@ type GameStore = {
   resolveTimeout: (sideThatLostOnTime: Color) => void;
   setMatchFeedback: (message: string | null) => void;
   getClockForEngineGo: () => EngineGoClock | null;
-  isInteractiveTerminal: () => boolean;
   toSession: () => GameSession;
 };
 
@@ -143,28 +147,35 @@ export const useGameStore = create<GameStore>((set, get) => {
     engineClockLive: null,
     gameOutcome: null,
 
-    loadGame: (game) =>
+    loadGame: (game) => {
+      const requestedNode = game.moveTree.find((node) => node.id === game.currentNodeId);
+      const fallbackNode = game.moveTree.find((node) => node.fenAfter === game.currentFen);
+      const rootNode = game.moveTree.find((node) => node.parentId === null) ?? game.moveTree[0];
+      const currentNode = requestedNode ?? fallbackNode ?? rootNode;
       set(() => ({
         gameId: game.id,
         source: game.source,
         headers: game.headers,
         rootFen: game.rootFen,
-        currentFen: game.currentFen,
+        currentFen: currentNode?.fenAfter ?? game.currentFen,
         moveTree: game.moveTree,
-        currentNodeId: game.currentNodeId,
+        currentNodeId: currentNode?.id ?? game.currentNodeId,
         orientation: game.headers.orientationHint ?? get().orientation,
         lastError: null,
         matchFeedback: null,
         engineClock: null,
         engineClockLive: null,
         gameOutcome: null
-      })),
+      }));
+    },
 
     makeMove: (move) => {
       const state = get();
       if (state.gameOutcome) return false;
-      const mover = statusForFen(state.currentFen).turn;
-      const applied = applyUserMove(state.currentFen, move);
+      const parent = state.moveTree.find((node) => node.id === state.currentNodeId);
+      const fenBefore = parent?.fenAfter ?? state.currentFen;
+      const mover = statusForFen(fenBefore).turn;
+      const applied = applyUserMove(fenBefore, move);
       if (!applied) {
         set({ lastError: "Illegal move" });
         return false;
@@ -174,7 +185,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         state.currentNodeId,
         applied.san,
         applied.uci,
-        state.currentFen,
+        fenBefore,
         applied.fen
       );
       set({ moveTree, currentFen: node.fenAfter, currentNodeId: node.id, lastError: null });
@@ -185,27 +196,45 @@ export const useGameStore = create<GameStore>((set, get) => {
     makeUciMove: (uci) => {
       const state = get();
       if (state.gameOutcome) return false;
-      const [from, to, promotionChar] = [uci.slice(0, 2), uci.slice(2, 4), uci.slice(4, 5)];
-      const promotion =
-        promotionChar === "q"
-          ? "queen"
-          : promotionChar === "r"
-            ? "rook"
-            : promotionChar === "b"
-              ? "bishop"
-              : promotionChar === "n"
-                ? "knight"
-                : undefined;
-      if (!fenAfterUci(state.currentFen, uci)) {
+      const parent = state.moveTree.find((node) => node.id === state.currentNodeId);
+      const fenBefore = parent?.fenAfter ?? state.currentFen;
+      if (!fenAfterUci(fenBefore, uci)) {
         set({ lastError: `Engine returned illegal move: ${uci}` });
         return false;
       }
-      return get().makeMove({ from: from as never, to: to as never, promotion });
+      return get().makeMove(userMoveFromUci(uci));
     },
 
     goToNode: (nodeId) => {
       const node = get().moveTree.find((item) => item.id === nodeId);
       if (node) set({ currentNodeId: node.id, currentFen: node.fenAfter });
+    },
+
+    goToLine: (startNodeId, moves) => {
+      const state = get();
+      let moveTree = state.moveTree;
+      let node = moveTree.find((item) => item.id === startNodeId);
+      if (!node) return false;
+      // During a live engine match, only walk existing moves: a new branch would make the engine move.
+      const liveMatch = state.mode === "engine" && Boolean(state.engineSide) && !state.gameOutcome;
+      for (const move of moves) {
+        const applied = applyLineMove(node.fenAfter, move);
+        if (!applied) return false;
+        const parent: MoveNode = node;
+        const existing = parent.children
+          .map((childId) => moveTree.find((item) => item.id === childId))
+          .find((child) => child && (child.fenAfter === applied.fen || child.uci === applied.uci));
+        if (existing) {
+          node = existing;
+          continue;
+        }
+        if (liveMatch) return false;
+        const added = addMoveNode(moveTree, parent.id, applied.san, applied.uci, parent.fenAfter, applied.fen);
+        moveTree = added.moveTree;
+        node = added.node;
+      }
+      set({ moveTree, currentNodeId: node.id, currentFen: node.fenAfter, lastError: null });
+      return true;
     },
 
     deleteLineFromNode: (nodeId) => {
@@ -224,10 +253,12 @@ export const useGameStore = create<GameStore>((set, get) => {
         );
       const parent = nextTree.find((item) => item.id === node.parentId);
       if (!parent) return false;
+      const currentWasDeleted = idsToDelete.has(state.currentNodeId);
+      const survivingCurrent = currentWasDeleted ? parent : nextTree.find((item) => item.id === state.currentNodeId);
       set({
         moveTree: nextTree,
-        currentNodeId: parent.id,
-        currentFen: parent.fenAfter,
+        currentNodeId: survivingCurrent?.id ?? parent.id,
+        currentFen: survivingCurrent?.fenAfter ?? parent.fenAfter,
         lastError: null
       });
       return true;
@@ -336,12 +367,6 @@ export const useGameStore = create<GameStore>((set, get) => {
       return buildEngineGoClock(state.engineClockLive, state.engineClock, Date.now());
     },
 
-    isInteractiveTerminal: () => {
-      const state = get();
-      if (state.gameOutcome) return true;
-      return statusForFen(state.currentFen).isEnd;
-    },
-
     toSession: () => {
       const state = get();
       return {
@@ -374,6 +399,14 @@ export function buildEngineGoClock(
     winc: Math.max(0, Math.floor(cfg.incrementMs)),
     binc: Math.max(0, Math.floor(cfg.incrementMs))
   };
+}
+
+function applyLineMove(fen: string, move: string): { fen: string; san: string; uci: string } | null {
+  try {
+    return isUciMove(move) ? applyUserMove(fen, userMoveFromUci(move)) : applySan(fen, move);
+  } catch {
+    return null;
+  }
 }
 
 function collectSubtreeIds(moveTree: MoveNode[], rootId: string): Set<string> {

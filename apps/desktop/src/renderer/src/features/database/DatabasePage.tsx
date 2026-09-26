@@ -1,16 +1,30 @@
-import { useEffect, useState } from "react";
-import { Database, Download, ExternalLink, Trash2 } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Download, ExternalLink, Trash2 } from "lucide-react";
 import { externalDatabaseSources } from "@chaturanga/shared/types/database";
-import type { DatabaseDownloadProgress, InstalledDatabase } from "@chaturanga/shared/types/database";
+import type {
+  DatabaseDownloadProgress,
+  ExternalDatabaseSource,
+  InstalledDatabase
+} from "@chaturanga/shared/types/database";
 import {
   useDatabasesQuery,
   useDeleteDatabaseMutation,
   useDownloadDatabaseMutation
 } from "../../queries/api";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Disclosure } from "@/components/ui/disclosure";
+import { OverflowMenu } from "@/components/ui/menu";
+import { Notice } from "@/components/ui/notice";
+import { Page, PageHeader } from "@/components/ui/page";
+import { Progress } from "@/components/ui/progress";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { hasDesktopApi } from "@/lib/environment";
+import { cardPadded, sectionTitle } from "@/lib/ui";
 import { cn } from "@/lib/utils";
-import { empty } from "@/lib/ui";
+
+/** How long a finished download keeps showing "Download complete". */
+const COMPLETED_PROGRESS_MS = 1800;
 
 export function DatabasePage() {
   const databases = useDatabasesQuery();
@@ -21,19 +35,27 @@ export function DatabasePage() {
   const installedBySource = new Map(databases.data?.map((item) => [item.sourceId, item]) ?? []);
 
   useEffect(() => {
-    if (!window.chaturanga?.events) return;
-    return window.chaturanga.events.onDatabaseDownloadProgress((progress) => {
+    const events = window.chaturanga?.events;
+    if (!events) return;
+    const clearTimers = new Set<number>();
+    const unsubscribe = events.onDatabaseDownloadProgress((progress) => {
       setDownloadProgress((state) => ({ ...state, [progress.sourceId]: progress }));
-      if (progress.state === "completed") {
-        window.setTimeout(() => {
-          setDownloadProgress((state) => {
-            const next = { ...state };
-            delete next[progress.sourceId];
-            return next;
-          });
-        }, 1800);
-      }
+      if (progress.state !== "completed") return;
+      // Keep "Download complete" visible briefly, then drop the progress row.
+      const timer = window.setTimeout(() => {
+        clearTimers.delete(timer);
+        setDownloadProgress((state) => {
+          const next = { ...state };
+          delete next[progress.sourceId];
+          return next;
+        });
+      }, COMPLETED_PROGRESS_MS);
+      clearTimers.add(timer);
     });
+    return () => {
+      unsubscribe();
+      clearTimers.forEach((timer) => window.clearTimeout(timer));
+    };
   }, []);
 
   async function removeDatabase(database: InstalledDatabase) {
@@ -45,188 +67,187 @@ export function DatabasePage() {
   }
 
   return (
-    <div className="mx-auto grid h-full w-full max-w-6xl content-start gap-7 overflow-auto px-8 py-8">
-      <div className="grid gap-2">
-        <h1 className="text-[26px] font-semibold tracking-[-0.01em] text-[#f4f1ea]">
-          Databases
-        </h1>
-        <p className="max-w-3xl text-sm leading-6 text-[#a9adb4]">
-          Download optional datasets for puzzles, positions, and future game-library tools.
-          Databases are stored locally and can be removed at any time.
-        </p>
-      </div>
+    <Page>
+      <PageHeader
+        title="Databases"
+        description="Optional datasets for puzzle training, stored on this computer."
+      />
       {!desktopApiAvailable ? (
-        <div className="rounded-lg border border-[#d8ad5a]/25 bg-[#2b2418] px-3 py-2 text-sm leading-5 text-[#f1d7a6]">
-          Database downloads and local file management require the desktop app.
-        </div>
+        <Notice tone="warn">Database downloads and local file management require the desktop app.</Notice>
       ) : null}
 
-      <section className="grid gap-3">
-        <h2 className="text-[15px] font-semibold text-[#f4f1ea]">Available downloads</h2>
-        <div className="grid gap-3 lg:grid-cols-2">
-          {externalDatabaseSources.map((source) => {
-            const installed = installedBySource.get(source.id);
-            const progress = downloadProgress[source.id];
-            const isDownloading =
-              progress?.state === "downloading" ||
-              (downloadDatabase.isPending && downloadDatabase.variables === source.id);
-            return (
-              <article
-                key={source.id}
-                className={cn(
-                  "grid gap-4 rounded-[12px] border border-white/10 bg-[#181a1d]/95 bg-gradient-to-b from-white/[0.05] to-transparent p-4 shadow-[0_16px_44px_rgb(0_0_0/0.24)]",
-                  installed && "border-[#8fb66f]/35"
-                )}
-              >
-                <div className="flex items-start gap-3">
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-[9px] border border-white/10 bg-[#263527] text-[#cce6b2]">
-                    <Database size={19} />
-                  </span>
-                  <div className="grid min-w-0 gap-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <strong className="text-[16px] text-[#f4f1ea]">{source.name}</strong>
-                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.04em] text-[#a9adb4]">
-                        {source.kind}
-                      </span>
-                    </div>
-                    <p className="text-[13px] leading-5 text-[#a9adb4]">{source.description}</p>
-                  </div>
-                </div>
-                <dl className="grid grid-cols-2 gap-2 text-[12px] text-[#a9adb4] sm:grid-cols-4">
-                  <Meta label="Provider" value={source.provider} />
-                  <Meta label="Format" value={source.format} />
-                  <Meta
-                    label="Records"
-                    value={source.expectedRecords ? source.expectedRecords.toLocaleString() : "Unknown"}
-                  />
-                  <Meta label="Updated" value={source.updatedLabel ?? "Repository"} />
-                </dl>
-                <div className="grid gap-2 rounded-lg border border-white/10 bg-[#151719] p-3">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[#727982]">
-                    Supported filters
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {source.supportedFilters.map((field) => (
-                      <span
-                        key={field}
-                        className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] text-[#d8dbe0]"
-                      >
-                        {field}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                {installed ? (
-                  <div className="rounded-lg border border-[#8fb66f]/25 bg-[#263527]/45 px-3 py-2 text-[12px] text-[#d7e8c5]">
-                    Downloaded · {formatBytes(installed.fileSizeBytes)}
-                  </div>
-                ) : null}
-                {progress ? <DownloadProgress progress={progress} /> : null}
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    variant={installed ? "outline" : "secondary"}
-                    disabled={!desktopApiAvailable || downloadDatabase.isPending}
-                    onClick={() => downloadDatabase.mutate(source.id)}
-                  >
-                    <Download size={16} />
-                    {isDownloading ? "Downloading..." : installed ? "Download again" : "Download database"}
-                  </Button>
-                  <Button type="button" variant="outline" asChild>
-                    <a href={source.pageUrl} target="_blank" rel="noreferrer">
-                      <ExternalLink size={16} />
-                      Source
-                    </a>
-                  </Button>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="grid gap-3">
-        <h2 className="text-[15px] font-semibold text-[#f4f1ea]">Downloaded databases</h2>
-        {databases.data?.length ? (
-          <div className="grid gap-2">
-            {databases.data.map((database) => (
-              <div
-                key={database.id}
-                className="grid gap-3 rounded-[10px] border border-white/10 bg-[#181a1d]/95 p-3 sm:grid-cols-[minmax(0,1fr)_auto]"
-              >
-                <div className="grid min-w-0 gap-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <strong className="text-[#f4f1ea]">{database.name}</strong>
-                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] text-[#a9adb4]">
-                      {database.kind} · {database.format}
-                    </span>
-                  </div>
-                  <span className="truncate text-[12px] text-[#a9adb4]">{database.filePath}</span>
-                  <span className="text-[12px] text-[#a9adb4]">
-                    {formatBytes(database.fileSizeBytes)}
-                    {database.recordCount ? ` · ${database.recordCount.toLocaleString()} records` : ""}
-                  </span>
-                </div>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  disabled={!desktopApiAvailable || deleteDatabase.isPending}
-                  onClick={() => void removeDatabase(database)}
-                >
-                  <Trash2 size={16} />
-                  Delete
-                </Button>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className={empty}>Downloaded databases will appear here.</p>
-        )}
-      </section>
-    </div>
+      <div className="grid items-start gap-4 xl:grid-cols-2">
+        {externalDatabaseSources.map((source) => {
+          const progress = downloadProgress[source.id];
+          const isDownloading =
+            progress?.state === "downloading" ||
+            (downloadDatabase.isPending && downloadDatabase.variables === source.id);
+          return (
+            <DatabaseCard
+              key={source.id}
+              source={source}
+              installed={installedBySource.get(source.id)}
+              progress={progress}
+              isDownloading={isDownloading}
+              downloadDisabled={!desktopApiAvailable || downloadDatabase.isPending}
+              deleteDisabled={!desktopApiAvailable || deleteDatabase.isPending}
+              onDownload={() => downloadDatabase.mutate(source.id)}
+              onDelete={(database) => void removeDatabase(database)}
+            />
+          );
+        })}
+      </div>
+    </Page>
   );
 }
 
-function Meta({ label, value }: { label: string; value: string }) {
+function DatabaseCard({
+  source,
+  installed,
+  progress,
+  isDownloading,
+  downloadDisabled,
+  deleteDisabled,
+  onDownload,
+  onDelete
+}: {
+  source: ExternalDatabaseSource;
+  installed: InstalledDatabase | undefined;
+  progress: DatabaseDownloadProgress | undefined;
+  isDownloading: boolean;
+  downloadDisabled: boolean;
+  deleteDisabled: boolean;
+  onDownload: () => void;
+  onDelete: (database: InstalledDatabase) => void;
+}) {
+  const records = installed?.recordCount ?? source.expectedRecords;
+  const meta = [
+    source.provider,
+    source.format,
+    records ? `${records.toLocaleString()} records` : null,
+    source.updatedLabel ?? null,
+    installed ? formatBytes(installed.fileSizeBytes) : null
+  ].filter(Boolean);
+
   return (
-    <div className="grid gap-0.5 rounded-lg border border-white/10 bg-[#151719] px-2.5 py-2">
-      <dt className="text-[10px] font-semibold uppercase tracking-[0.04em] text-[#727982]">
-        {label}
-      </dt>
-      <dd className="truncate text-[#f4f1ea]">{value}</dd>
-    </div>
+    <article className={cn(cardPadded, "grid gap-3")}>
+      <div className="grid gap-1">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h2 className={sectionTitle}>{source.name}</h2>
+            <Badge className="capitalize">{source.kind}</Badge>
+          </div>
+          <div className="flex shrink-0 items-center gap-0.5">
+            {installed ? (
+              <Badge tone="accent" className="mr-1.5">
+                Downloaded
+              </Badge>
+            ) : null}
+            <IconLink label="Source page" href={source.pageUrl} icon={<ExternalLink />} />
+            {installed ? (
+              <OverflowMenu
+                label={`${source.name} actions`}
+                items={[
+                  {
+                    label: isDownloading ? "Downloading…" : "Download again",
+                    icon: <Download />,
+                    onSelect: onDownload,
+                    disabled: downloadDisabled
+                  },
+                  {
+                    label: "Delete",
+                    icon: <Trash2 />,
+                    onSelect: () => onDelete(installed),
+                    disabled: deleteDisabled,
+                    destructive: true
+                  }
+                ]}
+              />
+            ) : null}
+          </div>
+        </div>
+        <p className="text-xs text-fg-subtle">{meta.join(" · ")}</p>
+      </div>
+
+      <p className="text-sm leading-6 text-fg-muted">{source.description}</p>
+
+      {installed ? (
+        <p className="truncate font-mono text-2xs text-fg-subtle" title={installed.filePath}>
+          {installed.filePath}
+        </p>
+      ) : null}
+
+      <Disclosure title="Supported filters" summary={`${source.supportedFilters.length}`}>
+        <div className="flex flex-wrap gap-1.5">
+          {source.supportedFilters.map((field) => (
+            <Badge key={field}>{field}</Badge>
+          ))}
+        </div>
+      </Disclosure>
+
+      {progress ? <DownloadProgress progress={progress} /> : null}
+
+      {!installed ? (
+        <Button
+          type="button"
+          variant="primary"
+          className="justify-self-start"
+          disabled={downloadDisabled}
+          onClick={onDownload}
+        >
+          <Download />
+          {isDownloading ? "Downloading…" : "Download"}
+        </Button>
+      ) : null}
+    </article>
+  );
+}
+
+/**
+ * Icon-only external link styled like <IconButton> (ghost, tooltip + aria-label).
+ * Local because IconButton renders a <button>; candidate for components/ui.
+ */
+function IconLink({ label, href, icon }: { label: string; href: string; icon: ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button asChild variant="ghost" size="icon-sm">
+          <a href={href} target="_blank" rel="noreferrer" aria-label={label}>
+            {icon}
+          </a>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
   );
 }
 
 function DownloadProgress({ progress }: { progress: DatabaseDownloadProgress }) {
-  const percent = progress.percent ?? 0;
+  const bytes = progress.totalBytes
+    ? `${formatBytes(progress.downloadedBytes)} / ${formatBytes(progress.totalBytes)}`
+    : formatBytes(progress.downloadedBytes);
+
+  if (progress.state === "failed") {
+    return (
+      <Notice tone="danger" title="Download failed">
+        {progress.message ?? bytes}
+      </Notice>
+    );
+  }
+
+  const status = progress.state === "completed" ? "Download complete" : "Downloading";
   return (
-    <div className="grid gap-2 rounded-lg border border-[#8fb66f]/25 bg-[#151d17] p-3">
-      <div className="flex items-center justify-between gap-3 text-[12px]">
-        <strong className="text-[#f4f1ea]">
-          {progress.state === "completed"
-            ? "Download complete"
-            : progress.state === "failed"
-              ? "Download failed"
-              : "Downloading"}
-        </strong>
-        <span className="text-[#a9adb4]">
-          {progress.totalBytes
-            ? `${formatBytes(progress.downloadedBytes)} / ${formatBytes(progress.totalBytes)}`
-            : formatBytes(progress.downloadedBytes)}
+    <div className="grid gap-1.5">
+      <Progress
+        value={progress.state === "completed" ? 100 : progress.percent}
+        aria-label={`${status}: ${bytes}`}
+      />
+      <div className="flex items-center justify-between gap-3 text-xs text-fg-muted">
+        <span className="truncate">{progress.message ?? status}</span>
+        <span className="shrink-0 tabular-nums">
+          {bytes}
+          {progress.percent === null ? "" : ` · ${progress.percent}%`}
         </span>
-      </div>
-      <div className="h-2 overflow-hidden rounded-full bg-[#2a3035]">
-        <div
-          className="h-full rounded-full bg-[#8fb66f] transition-[width]"
-          style={{ width: progress.percent === null ? "35%" : `${percent}%` }}
-        />
-      </div>
-      <div className="flex items-center justify-between gap-3 text-[11px] text-[#a9adb4]">
-        <span>{progress.message ?? "Large downloads can take a while."}</span>
-        <strong className="text-[#d7e8c5]">
-          {progress.percent === null ? "Size unknown" : `${progress.percent}%`}
-        </strong>
       </div>
     </div>
   );

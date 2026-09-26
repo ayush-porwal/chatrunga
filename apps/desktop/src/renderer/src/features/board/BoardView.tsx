@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
-import { Cpu, UserRound } from "lucide-react";
 import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
 import type { DrawShape } from "@lichess-org/chessground/draw";
@@ -8,25 +6,19 @@ import type { Key, MoveMetadata } from "@lichess-org/chessground/types";
 import { formatClockForDisplay, formatMillisecondsClock } from "@chaturanga/shared/chess/clock-display";
 import { clocksOnPathToNode, nodeIdForBoardFen } from "@chaturanga/shared/chess/pgn";
 import { legalDestsForFen, isPromotionMove, statusForFen } from "@chaturanga/shared/chess/position";
-import type { AnnotationColor, BoardArrow, BoardHighlight, Color } from "@chaturanga/shared/types/chess";
+import type { AnnotationColor, BoardArrow, BoardHighlight, Color, Square, UserMove } from "@chaturanga/shared/types/chess";
 import type { EngineClockLive } from "../../stores/game-store";
-import { useBoardStore } from "../../stores/board-store";
 import { useGameStore } from "../../stores/game-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
-import { useReviewStore } from "../../stores/review-store";
+import { selectDisplayedMoves, useReviewStore } from "../../stores/review-store";
 import { useAnalysisStore } from "../../stores/analysis-store";
-import { useEnginesQuery, useSettingsQuery } from "../../queries/api";
-import {
-  boardThemeSquareColors,
-  cgWrapPieceSetClass,
-  defaultSettings,
-  hydratePieceSettings,
-  piecePresentationTailwindClass
-} from "@chaturanga/shared/types/settings";
-import type { BoardTheme } from "@chaturanga/shared/types/settings";
+import { useEnginesQuery } from "../../queries/api";
 import { cn } from "@/lib/utils";
-import { localImageSrc } from "@/lib/local-image";
-import { muted } from "@/lib/ui";
+import { uciFromUserMove } from "@/lib/uci";
+import { submitPuzzleMove } from "../puzzles/puzzle-session";
+import { PlayerRow } from "./PlayerIdentity";
+import { BoardStage } from "./BoardWorkspace";
+import { useBoardAppearance, useCgBoardBackground } from "./useBoardAppearance";
 
 const brushToColor: Record<string, AnnotationColor> = {
   green: "green",
@@ -35,23 +27,7 @@ const brushToColor: Record<string, AnnotationColor> = {
   blue: "blue"
 };
 
-const LINE_BRUSHES = ["paleGreen", "paleBlue", "yellow", "red", "purple"];
-
-const boardThemeClass: Record<BoardTheme, string> = {
-  brown: "[&_cg-board]:bg-[conic-gradient(#b58863_25%,#f0d9b5_0_50%,#b58863_0_75%,#f0d9b5_0)] [&_cg-board]:bg-[length:25%_25%]",
-  green: "[&_cg-board]:bg-[conic-gradient(#769656_25%,#eeeed2_0_50%,#769656_0_75%,#eeeed2_0)] [&_cg-board]:bg-[length:25%_25%]",
-  blue: "[&_cg-board]:bg-[conic-gradient(#5f8fbf_25%,#d7e8f7_0_50%,#5f8fbf_0_75%,#d7e8f7_0)] [&_cg-board]:bg-[length:25%_25%]",
-  purple: "[&_cg-board]:bg-[conic-gradient(#8364a2_25%,#e8ddf5_0_50%,#8364a2_0_75%,#e8ddf5_0)] [&_cg-board]:bg-[length:25%_25%]",
-  gray: "[&_cg-board]:bg-[conic-gradient(#8f8f8f_25%,#d9d9d9_0_50%,#8f8f8f_0_75%,#d9d9d9_0)] [&_cg-board]:bg-[length:25%_25%]",
-  rose: "[&_cg-board]:bg-[conic-gradient(#b17278_25%,#eaded0_0_50%,#b17278_0_75%,#eaded0_0)] [&_cg-board]:bg-[length:25%_25%]",
-  newspaper: "[&_cg-board]:bg-[conic-gradient(#9b927d_25%,#f6f0df_0_50%,#9b927d_0_75%,#f6f0df_0)] [&_cg-board]:bg-[length:25%_25%]",
-  wood: "[&_cg-board]:bg-[conic-gradient(#9c6235_25%,#e4bf83_0_50%,#9c6235_0_75%,#e4bf83_0)] [&_cg-board]:bg-[length:25%_25%]",
-  walnut: "[&_cg-board]:bg-[conic-gradient(#6f452c_25%,#d0a56f_0_50%,#6f452c_0_75%,#d0a56f_0)] [&_cg-board]:bg-[length:25%_25%]",
-  slate: "[&_cg-board]:bg-[conic-gradient(#59636f_25%,#c9d1d9_0_50%,#59636f_0_75%,#c9d1d9_0)] [&_cg-board]:bg-[length:25%_25%]"
-};
-
-const customBoardThemeClass =
-  "[&_cg-board]:bg-[conic-gradient(var(--board-square-dark)_25%,var(--board-square-light)_0_50%,var(--board-square-dark)_0_75%,var(--board-square-light)_0)] [&_cg-board]:bg-[length:25%_25%]";
+const LOSING_CLASSIFICATIONS = new Set(["blunder", "mistake", "missed_tactic", "human_error"]);
 
 function remainingClockMs(live: EngineClockLive, side: Color, now: number): number {
   const elapsed = live.sideToMove === side ? now - live.turnStartedAt : 0;
@@ -65,7 +41,6 @@ export function BoardView() {
   const orientation = useGameStore((state) => state.orientation);
   const currentNodeId = useGameStore((state) => state.currentNodeId);
   const headers = useGameStore((state) => state.headers);
-  const gameSource = useGameStore((state) => state.source);
   const mode = useGameStore((state) => state.mode);
   const engineSide = useGameStore((state) => state.engineSide);
   const engineClock = useGameStore((state) => state.engineClock);
@@ -76,16 +51,10 @@ export function BoardView() {
   const setPendingPromotion = useGameStore((state) => state.setPendingPromotion);
   const setNodeAnnotations = useGameStore((state) => state.setNodeAnnotations);
   const activePuzzle = usePuzzleStore((state) => state.activePuzzle);
-  const solutionIndex = usePuzzleStore((state) => state.solutionIndex);
-  const setAnnotations = useBoardStore((state) => state.setAnnotations);
-  const reviewStatus = useReviewStore((state) => state.status);
-  const reviewProgress = useReviewStore((state) => state.progress);
-  const review = useReviewStore((state) => state.review);
-  const partialMoves = useReviewStore((state) => state.partialMoves);
-  const settings = useSettingsQuery();
+  const reviewMoves = useReviewStore(selectDisplayedMoves);
   const engines = useEnginesQuery();
   const activeEngineId = useAnalysisStore((state) => state.activeEngineId);
-  const appearance = hydratePieceSettings({ ...defaultSettings, ...(settings.data ?? {}) });
+  const { appearance, squareBackground, pieceClassName } = useBoardAppearance();
   const activeEngine = engines.data?.find((engine) => engine.id === activeEngineId) ?? null;
   const currentNode = moveTree.find((node) => node.id === currentNodeId);
   const status = useMemo(() => statusForFen(currentFen), [currentFen]);
@@ -132,8 +101,9 @@ export function BoardView() {
     const tc = headers.timeControl?.trim() || null;
 
     const topIsBlack = orientation === "white";
-    const emptyClock = gameSource === "pgn-import" ? "—" : "";
-    const fmt = (v: string | null) => (v ? formatClockForDisplay(v) : emptyClock);
+    // No clock box at all when the game has no clock data (e.g. PGN imports without %clk).
+    const fmt = (v: string | null) => (v ? formatClockForDisplay(v) : "");
+    const liveClock = mode === "engine" && Boolean(engineClock);
     let topClockOut = fmt(topIsBlack ? bClock : wClock);
     let bottomClockOut = fmt(topIsBlack ? wClock : bClock);
     if (mode === "engine" && engineClock && engineClockLive && !gameOutcome) {
@@ -151,7 +121,8 @@ export function BoardView() {
       bottomElo: topIsBlack ? wElo : bElo,
       bottomClock: bottomClockOut,
       bottomColor: (topIsBlack ? "white" : "black") as Color,
-      showTcHint: Boolean(tc && !hasMoveClocks)
+      // The live engine clock already shows the time control; only hint it for imported games.
+      showTcHint: Boolean(tc && tc !== "-" && !hasMoveClocks && !liveClock)
     };
   }, [
     moveTree,
@@ -159,7 +130,6 @@ export function BoardView() {
     currentFen,
     headers,
     orientation,
-    gameSource,
     mode,
     engineClock,
     engineClockLive,
@@ -168,66 +138,22 @@ export function BoardView() {
   ]);
 
   const autoShapes = useMemo<DrawShape[]>(() => {
-    if (reviewStatus === "running" && reviewProgress && reviewProgress.fen === currentFen) {
-      return reviewProgress.lines.slice(0, 3).map((line, index) => {
-        const uci = line.pv?.[0];
-        if (!uci) return null;
-        return {
-          orig: uci.slice(0, 2) as Key,
-          dest: uci.slice(2, 4) as Key,
-          brush: LINE_BRUSHES[index] ?? "paleGreen"
-        } satisfies DrawShape;
-      }).filter(Boolean) as DrawShape[];
-    }
-    const moves = review?.moves ?? partialMoves;
-    const reviewMove = moves.find((item) => item.nodeId === currentNodeId);
+    // Only completed moves draw arrows (never the live lines of the move being searched, which
+    // change several times a second and made the board flicker).
+    const reviewMove = reviewMoves.find((item) => item.nodeId === currentNodeId);
     if (!reviewMove?.bestMove) return [];
-    const arrows: DrawShape[] = [];
-    arrows.push({
-      orig: reviewMove.bestMove.slice(0, 2) as Key,
-      dest: reviewMove.bestMove.slice(2, 4) as Key,
-      brush: "paleGreen"
-    });
+    const arrows: DrawShape[] = [
+      { orig: reviewMove.bestMove.slice(0, 2) as Key, dest: reviewMove.bestMove.slice(2, 4) as Key, brush: "paleGreen" }
+    ];
     if (reviewMove.playedMove && reviewMove.playedMove !== reviewMove.bestMove) {
-      const losing =
-        reviewMove.classification === "blunder" ||
-        reviewMove.classification === "mistake" ||
-        reviewMove.classification === "missed_tactic";
       arrows.push({
         orig: reviewMove.playedMove.slice(0, 2) as Key,
         dest: reviewMove.playedMove.slice(2, 4) as Key,
-        brush: losing ? "paleRed" : "paleBlue"
+        brush: LOSING_CLASSIFICATIONS.has(reviewMove.classification) ? "paleRed" : "paleBlue"
       });
     }
     return arrows;
-  }, [reviewStatus, reviewProgress, review, partialMoves, currentNodeId, currentFen]);
-
-  const hasCustomBoardColors = Boolean(appearance.boardSquareLight || appearance.boardSquareDark);
-  const presetBoardColors = boardThemeSquareColors[appearance.boardTheme];
-  const boardSquareLight = appearance.boardSquareLight ?? presetBoardColors.light;
-  const boardSquareDark = appearance.boardSquareDark ?? presetBoardColors.dark;
-  const boardSkinClass = hasCustomBoardColors
-    ? customBoardThemeClass
-    : boardThemeClass[appearance.boardTheme] ?? boardThemeClass.brown;
-  const selectedPieceStyle = appearance.pieceStyle;
-  const pieceSkinClass = piecePresentationTailwindClass(appearance.piecePresentation);
-  const pieceSetCgWrapClass = cgWrapPieceSetClass(selectedPieceStyle);
-  const boardColorStyle = hasCustomBoardColors
-    ? ({
-        "--board-square-light": boardSquareLight,
-        "--board-square-dark": boardSquareDark
-      } as CSSProperties)
-    : undefined;
-  const boardBackgroundImage = useMemo(
-    () =>
-      `conic-gradient(${boardSquareDark} 25%, ${boardSquareLight} 0 50%, ${boardSquareDark} 0 75%, ${boardSquareLight} 0)`,
-    [boardSquareDark, boardSquareLight]
-  );
-
-  useEffect(() => {
-    if (!currentNode) return;
-    setAnnotations(currentNode.arrows, currentNode.highlights);
-  }, [currentNode, setAnnotations]);
+  }, [reviewMoves, currentNodeId]);
 
   useEffect(() => {
     if (!elementRef.current) return;
@@ -260,34 +186,7 @@ export function BoardView() {
     };
   }, []);
 
-  useEffect(() => {
-    const element = elementRef.current;
-    if (!element) return;
-    const applyBoardBackground = () => {
-      const board = element.querySelector<HTMLElement>("cg-board");
-      if (!board) return;
-      if (
-        board.dataset.chaturangaBoardBackground === boardBackgroundImage &&
-        board.style.backgroundImage.includes("conic-gradient")
-      ) {
-        return;
-      }
-      board.style.backgroundImage = boardBackgroundImage;
-      board.style.backgroundSize = "25% 25%";
-      board.dataset.chaturangaBoardBackground = boardBackgroundImage;
-    };
-    applyBoardBackground();
-    const frames = [
-      window.requestAnimationFrame(applyBoardBackground),
-      window.requestAnimationFrame(() => window.requestAnimationFrame(applyBoardBackground))
-    ];
-    const observer = new MutationObserver(applyBoardBackground);
-    observer.observe(element, { childList: true, subtree: true });
-    return () => {
-      frames.forEach((frame) => window.cancelAnimationFrame(frame));
-      observer.disconnect();
-    };
-  }, [boardBackgroundImage]);
+  useCgBoardBackground(elementRef, squareBackground);
 
   const restoreGroundToCurrentPosition = useCallback(() => {
     const ground = groundRef.current;
@@ -322,40 +221,19 @@ export function BoardView() {
   ]);
 
   const handleBoardMove = useCallback(
-    (orig: Key, dest: Key, promotion?: "queen" | "rook" | "bishop" | "knight") => {
-      const move = { from: orig as never, to: dest as never, promotion };
+    (orig: Key, dest: Key, promotion?: UserMove["promotion"]) => {
+      const move: UserMove = { from: orig as Square, to: dest as Square, promotion };
       if (mode !== "puzzle" || !activePuzzle) {
         makeMove(move);
         return;
       }
-
-      const played = `${orig}${dest}${promotionSuffix(promotion)}`;
-      const expected = activePuzzle.solutionMoves[solutionIndex];
-      if (!expected) {
-        restoreGroundToCurrentPosition();
-        return;
-      }
-      if (played !== expected) {
-        usePuzzleStore.getState().markWrongMove({ played, expected });
+      if (!submitPuzzleMove(uciFromUserMove(move), () => makeMove(move))) {
+        // Chessground already moved the piece; put it back once it has finished its own update.
         queueMicrotask(restoreGroundToCurrentPosition);
         window.requestAnimationFrame(restoreGroundToCurrentPosition);
-        return;
-      }
-
-      if (!makeMove(move)) {
-        queueMicrotask(restoreGroundToCurrentPosition);
-        window.requestAnimationFrame(restoreGroundToCurrentPosition);
-        return;
-      }
-
-      const nextIndex = solutionIndex + 1;
-      if (nextIndex >= activePuzzle.solutionMoves.length) {
-        usePuzzleStore.getState().markComplete();
-      } else {
-        usePuzzleStore.getState().advanceSolution(1, "Correct. Continue the line.");
       }
     },
-    [activePuzzle, makeMove, mode, restoreGroundToCurrentPosition, solutionIndex]
+    [activePuzzle, makeMove, mode, restoreGroundToCurrentPosition]
   );
 
   useEffect(() => {
@@ -403,11 +281,7 @@ export function BoardView() {
         defaultSnapToValidMove: true,
         shapes,
         autoShapes,
-        onChange: (newShapes) => {
-          const { arrows, highlights } = annotationsFromShapes(newShapes);
-          setAnnotations(arrows, highlights);
-          setNodeAnnotations(currentNodeId, { arrows, highlights });
-        }
+        onChange: (newShapes) => setNodeAnnotations(currentNodeId, annotationsFromShapes(newShapes))
       }
     });
   }, [
@@ -418,14 +292,11 @@ export function BoardView() {
     currentFen,
     currentNode,
     currentNodeId,
-    activePuzzle,
     handleBoardMove,
     orientation,
-    setAnnotations,
     setNodeAnnotations,
     setPendingPromotion,
     movablePieceColor,
-    solutionIndex,
     status.isCheck,
     status.isEnd,
     status.turn
@@ -439,162 +310,53 @@ export function BoardView() {
     queueMicrotask(() => ground.playPremove());
   }, [currentFen, engineSide, mode, status.isEnd, status.turn]);
 
-  const showTopPlayerRow = Boolean(
-    mode === "engine" ||
-    topClock ||
-      topElo ||
-      topName !== (topColor === "white" ? "White" : "Black")
-  );
-  const showBottomPlayerRow = Boolean(
-    mode === "engine" ||
-    bottomClock ||
-      bottomElo ||
-      bottomName !== (bottomColor === "white" ? "White" : "Black")
-  );
-  const displayedTopName =
-    mode === "engine" && engineSide === topColor && activeEngine ? activeEngine.name : topName;
-  const displayedBottomName =
-    mode === "engine" && engineSide === bottomColor && activeEngine ? activeEngine.name : bottomName;
+  // Player rows always render (fixed height) so the board never jumps between modes.
+  const nameFor = (color: Color, name: string) => {
+    if (mode !== "engine" || !engineSide) return name;
+    if (engineSide === color) return activeEngine?.name ?? name;
+    return name === (color === "white" ? "White" : "Black") ? "You" : name;
+  };
 
   return (
-    <div
-      className="grid min-h-0 w-full place-items-center content-center"
+    <BoardStage
+      top={
+        <PlayerRow
+          color={topColor}
+          name={nameFor(topColor, topName)}
+          elo={topElo}
+          clock={topClock}
+          clockActive={status.turn === topColor && !status.isEnd}
+          engine={mode === "engine" && engineSide === topColor ? activeEngine : null}
+          hint={showTcHint ? `Time control ${headers.timeControl}` : null}
+        />
+      }
+      bottom={
+        <PlayerRow
+          color={bottomColor}
+          name={nameFor(bottomColor, bottomName)}
+          elo={bottomElo}
+          clock={bottomClock}
+          clockActive={status.turn === bottomColor && !status.isEnd}
+          engine={mode === "engine" && engineSide === bottomColor ? activeEngine : null}
+        />
+      }
     >
-      <div className="flex flex-col items-center gap-1.5 bg-transparent">
-        {showTopPlayerRow ? (
-          <div
-            className="flex min-h-[30px] w-[var(--board-size)] min-w-80 items-center justify-between gap-3.5 px-0.5 py-0 text-[13px]"
-          >
-            <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2 text-[#f4f1ea]">
-                <PlayerBadge
-                  color={topColor}
-                  engine={mode === "engine" && engineSide === topColor ? activeEngine : null}
-                />
-                <span className="truncate">{displayedTopName}</span>
-                {topElo ? (
-                  <em className="shrink-0 rounded-[5px] border border-white/10 px-1 py-0.5 text-[11px] not-italic text-[#a9adb4]">
-                    {topElo}
-                  </em>
-                ) : null}
-              </div>
-              {showTcHint ? (
-                <div className={cn(muted, "mt-0.5 text-xs")}>Time control: {headers.timeControl}</div>
-              ) : null}
-            </div>
-            {topClock ? (
-              <div
-                className={cn(
-                  "min-w-[7ch] rounded-md bg-[#101214] px-2 py-1 text-right text-base font-bold tabular-nums text-[#f8f6ef] shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08)]",
-                  status.turn === topColor && !status.isEnd &&
-                    "text-[#fbfff2] shadow-[inset_0_0_0_1px_rgb(183_214_132/0.38),0_0_22px_rgb(143_182_111/0.14)]"
-                )}
-              >
-                {topClock}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-        <div
-          className={cn(
-            "h-[var(--board-size)] min-h-80 w-[var(--board-size)] min-w-80 overflow-hidden rounded-lg border border-[#343941] shadow-[0_18px_50px_rgb(0_0_0/0.38)]",
-            boardSkinClass,
-            pieceSkinClass
-          )}
-          style={boardColorStyle}
-        >
-          {/*
-            Chessground mutates the mount node’s classList (cg-wrap, orientation-*, manipulable).
-            Keeping those classes in React-controlled className prevents reconciliation from stripping them,
-            which would break piece sprites that target `.cg-wrap piece.*` in chessground.cburnett.css.
-            Non-default sets also apply `piece-set-*` here so scoped rules in generated-piece-themes.css override those sprites.
-          */}
-          <div
-            ref={elementRef}
-            className={cn(
-              "cg-wrap manipulable h-full w-full",
-              pieceSetCgWrapClass,
-              orientation === "white" ? "orientation-white" : "orientation-black"
-            )}
-          />
-        </div>
-        {showBottomPlayerRow ? (
-          <div
-            className="flex min-h-[30px] w-[var(--board-size)] min-w-80 items-center justify-between gap-3.5 px-0.5 py-0 text-[13px]"
-          >
-            <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2 text-[#f4f1ea]">
-                <PlayerBadge
-                  color={bottomColor}
-                  engine={mode === "engine" && engineSide === bottomColor ? activeEngine : null}
-                />
-                <span className="truncate">{displayedBottomName}</span>
-                {bottomElo ? (
-                  <em className="shrink-0 rounded-[5px] border border-white/10 px-1 py-0.5 text-[11px] not-italic text-[#a9adb4]">
-                    {bottomElo}
-                  </em>
-                ) : null}
-              </div>
-            </div>
-            {bottomClock ? (
-              <div
-                className={cn(
-                  "min-w-[7ch] rounded-md bg-[#101214] px-2 py-1 text-right text-base font-bold tabular-nums text-[#f8f6ef] shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08)]",
-                  status.turn === bottomColor && !status.isEnd &&
-                    "text-[#fbfff2] shadow-[inset_0_0_0_1px_rgb(183_214_132/0.38),0_0_22px_rgb(143_182_111/0.14)]"
-                )}
-              >
-                {bottomClock}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-    </div>
+      {/*
+        Chessground mutates the mount node’s classList (cg-wrap, orientation-*, manipulable).
+        Keeping those classes in React-controlled className prevents reconciliation from stripping them,
+        which would break piece sprites that target `.cg-wrap piece.*` in chessground.cburnett.css.
+        Non-default sets also apply `piece-set-*` here so scoped rules in generated-piece-themes.css override those sprites.
+      */}
+      <div
+        ref={elementRef}
+        className={cn(
+          "cg-wrap manipulable h-full w-full",
+          pieceClassName,
+          orientation === "white" ? "orientation-white" : "orientation-black"
+        )}
+      />
+    </BoardStage>
   );
-}
-
-function PlayerBadge({
-  color,
-  engine
-}: {
-  color: Color;
-  engine: { imagePath: string | null } | null;
-}) {
-  const src = localImageSrc(engine?.imagePath);
-  const className = cn(
-    "flex size-[18px] shrink-0 items-center justify-center overflow-hidden rounded-full shadow-[0_0_0_1px_rgb(0_0_0/0.40)]",
-    color === "white"
-      ? "bg-[#efe7d2] text-[#22262b]"
-      : "bg-[#2b3036] text-[#f4f1ea] shadow-[0_0_0_1px_rgb(255_255_255/0.22),inset_0_1px_1px_rgb(255_255_255/0.10)]"
-  );
-  if (src) {
-    return (
-      <span className={className}>
-        <img className="h-full w-full object-cover" src={src} alt="" />
-      </span>
-    );
-  }
-  return (
-    <span className={className}>
-      {engine ? <Cpu size={11} /> : <UserRound size={11} />}
-    </span>
-  );
-}
-
-function promotionSuffix(promotion?: "queen" | "rook" | "bishop" | "knight"): string {
-  switch (promotion) {
-    case "queen":
-      return "q";
-    case "rook":
-      return "r";
-    case "bishop":
-      return "b";
-    case "knight":
-      return "n";
-    default:
-      return "";
-  }
 }
 
 function shapesFromAnnotations(arrows: BoardArrow[], highlights: BoardHighlight[]): DrawShape[] {
@@ -616,8 +378,8 @@ function annotationsFromShapes(shapes: DrawShape[]): {
   const highlights: BoardHighlight[] = [];
   for (const shape of shapes) {
     const color = brushToColor[shape.brush ?? "green"] ?? "green";
-    if (shape.dest) arrows.push({ orig: shape.orig as never, dest: shape.dest as never, color });
-    else highlights.push({ square: shape.orig as never, color });
+    if (shape.dest) arrows.push({ orig: shape.orig as Square, dest: shape.dest as Square, color });
+    else highlights.push({ square: shape.orig as Square, color });
   }
   return { arrows, highlights };
 }

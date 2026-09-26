@@ -1,50 +1,105 @@
+import { Cpu, Play } from "lucide-react";
+import { formatScore } from "../game-review/review-score";
+import type { EngineStatus } from "@chaturanga/shared/types/engine";
 import { useAnalysisStore } from "../../stores/analysis-store";
-import { panel } from "@/lib/ui";
+import { useEnginesQuery } from "../../queries/api";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Notice } from "@/components/ui/notice";
+import { Eyebrow } from "@/components/ui/page";
+import { Stat, StatGroup } from "@/components/ui/stat";
 
-export function EngineStatusPanel() {
-  const { status, latestInfo, topLines, bestMove, error } = useAnalysisStore();
-  const score = latestInfo?.score
-    ? latestInfo.score.type === "cp"
-      ? `${(latestInfo.score.value / 100).toFixed(2)}`
-      : `M${latestInfo.score.value}`
-    : "—";
+const statusLabel: Record<EngineStatus, string> = {
+  idle: "Idle",
+  starting: "Starting",
+  ready: "Ready",
+  thinking: "Thinking",
+  error: "Error"
+};
+
+const statusTone: Record<EngineStatus, "neutral" | "accent" | "danger"> = {
+  idle: "neutral",
+  starting: "neutral",
+  ready: "neutral",
+  thinking: "accent",
+  error: "danger"
+};
+
+/** Workspace "Engine" tab: live search stats and principal variations (flat — the panel is the card). */
+export function EngineStatusPanel({
+  onStartAnalysis
+}: {
+  /** Shown as the idle empty-state action ("Start analysis"). Omit to hide the action. */
+  onStartAnalysis?: () => void;
+}) {
+  const { status, latestInfo, topLines, bestMove, error, activeEngineId } = useAnalysisStore();
+  const engines = useEnginesQuery();
+  const engineName = engines.data?.find((engine) => engine.id === activeEngineId)?.name ?? null;
+  // With MultiPV the latest info can be line 2/3 — read depth/score/best from the principal line.
+  const primary = topLines.find((line) => (line.multipv ?? 1) === 1) ?? latestInfo;
+  const best = bestMove ?? primary?.pv?.[0] ?? null;
+  const hasData = Boolean(latestInfo || topLines.length || best);
+  const idle = status === "idle" || status === "error";
 
   return (
-    <div className={`${panel} p-[13px]`}>
-      <h2 className="text-[15px] font-semibold text-[#f4f1ea]">Engine</h2>
-      <div className="mt-3 grid w-full min-w-0 grid-cols-[82px_minmax(0,1fr)] gap-x-3.5 gap-y-2 rounded-lg border border-white/[0.07] bg-[#151719] p-2.5">
-        <span className="text-sm text-[#9d9d9d]">Status</span>
-        <strong className="min-w-0 truncate text-[#f4f1ea]">{status}</strong>
-        <span className="text-sm text-[#9d9d9d]">Depth</span>
-        <strong className="min-w-0 truncate text-[#f4f1ea]">{latestInfo?.depth ?? "—"}</strong>
-        <span className="text-sm text-[#9d9d9d]">Score</span>
-        <strong className="min-w-0 truncate text-[#f4f1ea]">{score}</strong>
-        <span className="text-sm text-[#9d9d9d]">Best</span>
-        <strong className="min-w-0 truncate text-[#f4f1ea]">{bestMove ?? latestInfo?.pv?.[0] ?? "—"}</strong>
-      </div>
-      {topLines.length ? (
-        <div className="mt-3 grid gap-1.5">
-          {topLines.slice(0, 5).map((line) => (
-            <div
-              key={line.multipv ?? 1}
-              className="grid grid-cols-[22px_56px_minmax(0,1fr)] items-baseline gap-2 rounded-lg border border-white/[0.07] bg-[#151719] p-2.5 font-mono text-xs text-[#c9c9c9]"
-            >
-              <span className="flex size-[22px] items-center justify-center rounded-full bg-[#263527] text-[11px] font-bold text-[#d7e8c5]">
-                {line.multipv ?? 1}
-              </span>
-              <strong className="text-[#f4f1ea]">
-                {line.score
-                  ? line.score.type === "cp"
-                    ? `${(line.score.value / 100).toFixed(2)}`
-                    : `M${line.score.value}`
-                  : "—"}
-              </strong>
-              <span className="min-w-0 truncate">{line.pv?.slice(0, 10).join(" ") || "—"}</span>
-            </div>
-          ))}
+    <section className="grid content-start gap-4">
+      {hasData || !idle ? (
+        // The tab above already says "Engine": the header names the running engine and its state.
+        <div className="flex min-h-6 min-w-0 items-center justify-between gap-2">
+          <span className="truncate text-xs text-fg-muted">{engineName}</span>
+          <Badge tone={statusTone[status]}>{statusLabel[status]}</Badge>
         </div>
       ) : null}
-      {error ? <p className="mt-3 text-[13px] text-[#ff9a8d]">{error}</p> : null}
-    </div>
+      {hasData ? (
+        <>
+          <StatGroup>
+            <Stat label="Depth" value={primary?.depth ?? "–"} mono />
+            <Stat label="Score" value={primary?.score ? formatScore(primary.score, 2) : "–"} mono />
+            <Stat label="Best" value={best ?? "–"} mono />
+          </StatGroup>
+          {topLines.length ? (
+            <div className="grid gap-1">
+              <Eyebrow>Lines</Eyebrow>
+              <ol className="divide-y divide-line-subtle">
+                {topLines.slice(0, 5).map((line) => (
+                  <li
+                    key={line.multipv ?? 1}
+                    className="grid grid-cols-[1rem_3.5rem_minmax(0,1fr)] items-baseline gap-2 py-1.5 font-mono text-xs"
+                  >
+                    <span className="text-2xs text-fg-subtle">{line.multipv ?? 1}</span>
+                    <span className="font-medium text-fg">{line.score ? formatScore(line.score, 2) : "–"}</span>
+                    <span className="min-w-0 truncate text-fg-muted" title={line.pv?.join(" ")}>
+                      {line.pv?.slice(0, 10).join(" ") || "–"}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
+        </>
+      ) : idle ? (
+        <EmptyState
+          icon={<Cpu />}
+          title="Engine is idle"
+          description={onStartAnalysis ? "Analyze the current position." : undefined}
+          action={
+            onStartAnalysis ? (
+              <Button type="button" variant="primary" size="sm" onClick={onStartAnalysis}>
+                <Play />
+                Start analysis
+              </Button>
+            ) : undefined
+          }
+          className="py-6"
+        />
+      ) : (
+        <EmptyState
+          compact
+          title={status === "starting" ? "Starting engine…" : status === "thinking" ? "Thinking…" : "No analysis yet."}
+        />
+      )}
+      {error ? <Notice tone="danger">{error}</Notice> : null}
+    </section>
   );
 }

@@ -1,40 +1,99 @@
 @import "tailwindcss";
 
-/* Dark color scheme so WebKit/Electron uses dark native scrollbars on this UI. */
+/*
+ * Design tokens (dark theme only). Every colour used by the renderer should come from
+ * this block: `bg-canvas`, `bg-surface`, `border-line`, `text-fg-muted`, `text-accent`, ...
+ * Opacity modifiers work on all of them (`bg-accent/15`, `border-danger/30`).
+ * See the UI style guide for when to use which token.
+ */
+@theme {
+  /* Surfaces — darkest to lightest. */
+  --color-chrome: #1b1c1f; /* window chrome: the titlebar and the sidebar share it */
+  --color-canvas: #111315; /* the inset content panel every view sits in (page background) */
+  --color-surface-sunken: #141619; /* inputs, wells, code blocks, scroll lists inside a card */
+  --color-surface: #181a1d; /* cards, panels, list rows */
+  --color-surface-raised: #1e2125; /* modals, popovers, menus, tooltips */
+  --color-control: #25282d; /* neutral filled control (default button, selected-neutral) */
+  --color-control-hover: #2d3238; /* hover state of neutral filled controls */
+
+  /* Lines. */
+  --color-line-subtle: #23262a; /* dividers inside a card, table rows */
+  --color-line: #2d3238; /* default border for cards, inputs, buttons */
+  --color-line-strong: #3a3f45; /* emphasised border, variation rails, dashed empties */
+
+  /* Text. */
+  --color-fg: #f4f1ea; /* primary text, headings, values */
+  --color-fg-secondary: #d8dbe0; /* body text inside panels, list-row titles */
+  --color-fg-muted: #a9adb4; /* descriptions, secondary metadata */
+  --color-fg-subtle: #727982; /* captions, eyebrows, placeholders, disabled */
+
+  /* Brand accent (green). */
+  --color-accent: #8fb66f; /* focus rings, selected borders, chart lines, accent icons/text */
+  --color-accent-strong: #5a7d42; /* solid accent fill (selected move) */
+  --color-accent-soft: #263527; /* tinted accent background (primary button, selected tile) */
+  --color-accent-fg: #d7e8c5; /* text/icons placed on accent-soft */
+
+  /* Status. */
+  --color-info: #60a5fa;
+  --color-info-soft: #1f2731;
+  --color-warn: #d8ad5a;
+  --color-warn-soft: #2b2418;
+  --color-caution: #f0a868; /* review "mistake" — between warn and danger */
+  --color-danger: #ff9a8d;
+  --color-danger-soft: #3a201d;
+
+  /* Chess piece swatches (side-to-move dots, player badges). */
+  --color-piece-white: #efe7d2;
+  --color-piece-black: #2b3036;
+
+  /* 11px caption size — the only addition to Tailwind's type scale. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+
+  /* Elevation: only overlays (modals, popovers, menus) get a shadow. */
+  --shadow-overlay: 0 24px 64px rgb(0 0 0 / 0.45);
+  --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.4);
+}
+
+/* Dark color scheme so WebKit/Electron uses dark native controls/scrollbars. */
 html {
   color-scheme: dark;
 }
 
-/*
- * Sidebar game panels (#151719): align scrollbar chrome across Move List + Recent Games.
- * Native tracks on some Electron/Chromium builds read as an extra bordered “lane” beside content.
- */
+body {
+  background-color: var(--color-chrome);
+  color: var(--color-fg);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background-color: rgb(143 182 111 / 0.35);
+}
+
 @layer components {
-  .game-panel-scroll {
+  /* One scrollbar style for every scroll region. */
+  .scroll-area {
     scrollbar-width: thin;
-    scrollbar-color: rgb(255 255 255 / 0.18) transparent;
+    scrollbar-color: rgb(255 255 255 / 0.16) transparent;
   }
 
-  .game-panel-scroll::-webkit-scrollbar {
+  .scroll-area::-webkit-scrollbar {
     width: 8px;
     height: 8px;
   }
 
-  .game-panel-scroll::-webkit-scrollbar-track {
+  .scroll-area::-webkit-scrollbar-track {
     background: transparent;
   }
 
-  .game-panel-scroll::-webkit-scrollbar-thumb {
+  .scroll-area::-webkit-scrollbar-thumb {
     background-color: rgb(255 255 255 / 0.15);
     border-radius: 9999px;
     border: 2px solid transparent;
     background-clip: padding-box;
   }
 
-  .game-panel-scroll::-webkit-scrollbar-thumb:hover {
+  .scroll-area::-webkit-scrollbar-thumb:hover {
     background-color: rgb(255 255 255 / 0.24);
-    border-radius: 9999px;
-    border: 2px solid transparent;
-    background-clip: padding-box;
   }
 }

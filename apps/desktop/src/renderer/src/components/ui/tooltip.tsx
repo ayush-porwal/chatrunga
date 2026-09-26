@@ -9,8 +9,13 @@ function TooltipProvider({
   return <TooltipPrimitive.Provider data-slot="tooltip-provider" delayDuration={delayDuration} {...props} />;
 }
 
+/** Self-contained: brings its own provider, so it works anywhere (no ancestor provider needed). */
 function Tooltip(props: React.ComponentProps<typeof TooltipPrimitive.Root>) {
-  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />;
+  return (
+    <TooltipProvider>
+      <TooltipPrimitive.Root data-slot="tooltip" {...props} />
+    </TooltipProvider>
+  );
 }
 
 function TooltipTrigger(props: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
@@ -29,16 +34,15 @@ function TooltipContent({
         data-slot="tooltip-content"
         sideOffset={sideOffset}
         className={cn(
-          "z-50 overflow-hidden rounded-md border border-white/10 bg-[#1b1d20] px-2.5 py-1.5 text-xs text-[#f4f1ea] shadow-xl animate-in fade-in-0 zoom-in-95",
+          "z-[90] overflow-hidden rounded-md border border-line bg-surface-raised px-2 py-1 text-xs text-fg shadow-popover",
           className
         )}
         {...props}
       >
         {children}
-        <TooltipPrimitive.Arrow className="fill-[#1b1d20]" />
       </TooltipPrimitive.Content>
     </TooltipPrimitive.Portal>
   );
 }
 
-export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger };
+export { Tooltip, TooltipContent, TooltipTrigger };

@@ -1,0 +1,128 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReviewCommentary } from "@chaturanga/shared/types/engine";
+import {
+  COMMENTARY_DEBOUNCE_MS,
+  CommentaryScheduler,
+  commentarySettingsKey,
+  decideCommentary,
+  isCurrentAiCommentary
+} from "./commentary-scheduler";
+
+const key = commentarySettingsKey({ provider: "openrouter", model: "m", detail: "balanced", userRating: 1500, playerColor: "white" });
+
+function ai(overrides: Partial<ReviewCommentary> = {}): ReviewCommentary {
+  return { ply: 1, prose: "AI", generatedAt: 1, providerModel: "m", fallback: false, source: "openrouter", ...overrides };
+}
+
+const base = {
+  active: true,
+  enabled: true,
+  provider: "openrouter" as const,
+  providerLoading: false,
+  providerReady: true,
+  hasPayload: true,
+  cached: undefined,
+  settingsKey: key,
+  failed: false
+};
+
+describe("decideCommentary", () => {
+  it("requests only for an active, uncached move with a ready provider", () => {
+    expect(decideCommentary(base)).toBe("request");
+    expect(decideCommentary({ ...base, active: false })).toBe("idle");
+    expect(decideCommentary({ ...base, providerLoading: true })).toBe("waiting");
+    expect(decideCommentary({ ...base, providerReady: false })).toBe("unavailable");
+    expect(decideCommentary({ ...base, hasPayload: false })).toBe("no-payload");
+    expect(decideCommentary({ ...base, failed: true })).toBe("failed");
+  });
+
+  it("never requests for the local provider or when commentary is off", () => {
+    expect(decideCommentary({ ...base, provider: "local" })).toBe("local-only");
+    expect(decideCommentary({ ...base, enabled: false })).toBe("local-only");
+  });
+
+  it("uses cached AI commentary, including older saved entries without a settings key", () => {
+    expect(decideCommentary({ ...base, cached: ai({ settingsKey: key }) })).toBe("cached");
+    expect(decideCommentary({ ...base, cached: ai() })).toBe("cached");
+  });
+
+  it("re-requests when the cached entry was made with other settings or is only a local fallback", () => {
+    expect(decideCommentary({ ...base, cached: ai({ settingsKey: "other" }) })).toBe("request");
+    expect(decideCommentary({ ...base, cached: ai({ fallback: true, source: "local-fallback" }) })).toBe("request");
+  });
+
+  it("fingerprints every setting that changes the prose", () => {
+    const other = commentarySettingsKey({ provider: "openrouter", model: "m", detail: "detailed", userRating: 1500, playerColor: "white" });
+    expect(other).not.toBe(key);
+    expect(isCurrentAiCommentary(ai({ settingsKey: key }), other)).toBe(false);
+  });
+});
+
+describe("CommentaryScheduler", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const job = (id: string, calls: string[], wait?: Promise<void>) => ({
+    key: id,
+    run: async () => {
+      calls.push(id);
+      await wait;
+    }
+  });
+
+  it("debounces scrubbing so only the move the user settles on is requested", async () => {
+    const calls: string[] = [];
+    const scheduler = new CommentaryScheduler();
+    for (const id of ["p1", "p2", "p3", "p4", "p5"]) {
+      scheduler.schedule(job(id, calls));
+      await vi.advanceTimersByTimeAsync(80);
+    }
+    expect(calls).toEqual([]);
+    await vi.advanceTimersByTimeAsync(COMMENTARY_DEBOUNCE_MS);
+    expect(calls).toEqual(["p5"]);
+  });
+
+  it("does not restart the debounce when the same move re-renders", async () => {
+    const calls: string[] = [];
+    const scheduler = new CommentaryScheduler();
+    scheduler.schedule(job("p1", calls));
+    await vi.advanceTimersByTimeAsync(COMMENTARY_DEBOUNCE_MS - 100);
+    scheduler.schedule(job("p1", calls));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(calls).toEqual(["p1"]);
+  });
+
+  it("cancels a pending request when the move leaves view", async () => {
+    const calls: string[] = [];
+    const scheduler = new CommentaryScheduler();
+    scheduler.schedule(job("p1", calls));
+    scheduler.schedule(null);
+    await vi.advanceTimersByTimeAsync(COMMENTARY_DEBOUNCE_MS * 2);
+    expect(calls).toEqual([]);
+  });
+
+  it("never runs the same request twice at once", async () => {
+    const calls: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const scheduler = new CommentaryScheduler();
+    scheduler.runNow(job("p1", calls, gate));
+    scheduler.schedule(job("p1", calls, gate));
+    scheduler.runNow(job("p1", calls, gate));
+    await vi.advanceTimersByTimeAsync(COMMENTARY_DEBOUNCE_MS * 2);
+    expect(calls).toEqual(["p1"]);
+    expect(scheduler.isBusy("p1")).toBe(true);
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(scheduler.isBusy("p1")).toBe(false);
+  });
+
+  it("stops pending work on dispose", async () => {
+    const calls: string[] = [];
+    const scheduler = new CommentaryScheduler();
+    scheduler.schedule(job("p1", calls));
+    scheduler.dispose();
+    await vi.advanceTimersByTimeAsync(COMMENTARY_DEBOUNCE_MS * 2);
+    expect(calls).toEqual([]);
+  });
+});

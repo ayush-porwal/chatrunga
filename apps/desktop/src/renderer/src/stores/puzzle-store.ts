@@ -26,7 +26,7 @@ export const usePuzzleStore = create<PuzzleStore>((set) => ({
     set({
       activePuzzle,
       solutionIndex: 0,
-      feedbackKind: activePuzzle ? "idle" : "idle",
+      feedbackKind: "idle",
       feedback: activePuzzle ? "Find the best move." : null,
       lastExpectedMove: null
     }),

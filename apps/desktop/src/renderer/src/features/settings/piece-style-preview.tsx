@@ -1,4 +1,4 @@
-import { createElement } from "react";
+import { useLayoutEffect, useRef } from "react";
 import {
   cgWrapPieceSetClass,
   piecePresentationTailwindClass,
@@ -13,19 +13,31 @@ export type PreviewPieceRole = "pawn" | "rook" | "knight" | "bishop" | "queen" |
 const previewCellPieceClass =
   "pointer-events-none absolute inset-0 !left-0 !top-0 !box-border !h-full !w-full max-h-none max-w-none bg-cover";
 
-export function CgPieceGlyph({
-  color,
-  role,
-  className
-}: {
-  color: "white" | "black";
-  role: PreviewPieceRole;
-  className?: string;
-}) {
-  return createElement("piece", {
-    className: cn(color, role, previewCellPieceClass, className)
-  });
+/**
+ * One piece sprite, drawn by the same CSS that skins the board (`.cg-wrap piece.white.king`, per
+ * piece set). Those rules match the `<piece>` element Chessground uses, which React cannot render
+ * without an "unrecognized tag" warning, so the element is created directly inside a
+ * `display: contents` span. Must sit inside a `.cg-wrap` with the piece-set class.
+ */
+export function CgPieceGlyph({ color, role }: { color: "white" | "black"; role: PreviewPieceRole }) {
+  const hostRef = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const piece = document.createElement("piece");
+    piece.className = cn(color, role, previewCellPieceClass);
+    host.replaceChildren(piece);
+    return () => piece.remove();
+  }, [color, role]);
+  return <span ref={hostRef} className="contents" aria-hidden="true" />;
 }
+
+const STRIP_PIECES = [
+  { color: "white", role: "king" },
+  { color: "white", role: "queen" },
+  { color: "white", role: "knight" },
+  { color: "black", role: "king" }
+] as const;
 
 /** Inline preview for a piece set (compact row for settings / listbox options). */
 export function PieceStylePreviewStrip({
@@ -41,30 +53,24 @@ export function PieceStylePreviewStrip({
   return (
     <div
       className={cn(
-        "cg-wrap inline-flex shrink-0 items-center gap-0.5 rounded-md border border-[#303030] bg-[#141619] px-1.5",
+        "cg-wrap inline-flex shrink-0 items-center gap-0.5 rounded-md border border-line bg-surface-sunken px-1.5",
         isCompact ? "h-8" : "h-9",
         cgWrapPieceSetClass(pieceStyle),
         piecePresentationTailwindClass(piecePresentation)
       )}
       aria-hidden
     >
-      <span className={cn("relative inline-block shrink-0 overflow-hidden", isCompact ? "size-6" : "size-7")}>
-        <CgPieceGlyph color="white" role="king" />
-      </span>
-      <span className={cn("relative inline-block shrink-0 overflow-hidden", isCompact ? "size-6" : "size-7")}>
-        <CgPieceGlyph color="white" role="queen" />
-      </span>
-      <span className={cn("relative inline-block shrink-0 overflow-hidden", isCompact ? "size-6" : "size-7")}>
-        <CgPieceGlyph color="white" role="knight" />
-      </span>
-      <span
-        className={cn(
-          "relative inline-block shrink-0 overflow-hidden",
-          isCompact ? "size-[22px]" : "size-[26px]"
-        )}
-      >
-        <CgPieceGlyph color="black" role="king" />
-      </span>
+      {STRIP_PIECES.map(({ color, role }) => (
+        <span
+          key={`${color}-${role}`}
+          className={cn(
+            "relative inline-block shrink-0 overflow-hidden",
+            color === "black" ? (isCompact ? "size-5.5" : "size-6.5") : isCompact ? "size-6" : "size-7"
+          )}
+        >
+          <CgPieceGlyph color={color} role={role} />
+        </span>
+      ))}
     </div>
   );
 }

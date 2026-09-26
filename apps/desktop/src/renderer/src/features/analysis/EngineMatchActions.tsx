@@ -4,7 +4,6 @@ import { engineAcceptsHumanDrawOffer } from "@chaturanga/shared/engine/draw-offe
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { useGameStore } from "../../stores/game-store";
-import { invokeEnginesProbeEval } from "../../ipc/engines-probe-eval";
 import { currentLineUcis } from "./engine-game-helpers";
 import { Button } from "@/components/ui/button";
 
@@ -34,19 +33,15 @@ export function EngineMatchActions() {
       await window.chaturanga.engines.stop();
       useAnalysisStore.getState().setStatus("ready");
       const moves = currentLineUcis(moveTree, currentNodeId);
-      const score = await invokeEnginesProbeEval({
+      const score = await window.chaturanga.engines.probeEval({
         engineId: activeEngineId,
         fen: rootFen,
         moves,
         movetimeMs: 450
       });
       const { accepted, message } = engineAcceptsHumanDrawOffer(score);
-      if (accepted) {
-        useGameStore.getState().agreeDraw();
-        useGameStore.getState().setMatchFeedback(message);
-      } else {
-        useGameStore.getState().setMatchFeedback(message);
-      }
+      if (accepted) useGameStore.getState().agreeDraw();
+      useGameStore.getState().setMatchFeedback(message);
     } catch (error) {
       useGameStore.getState().setMatchFeedback(
         error instanceof Error ? error.message : "Draw offer failed."
@@ -66,24 +61,22 @@ export function EngineMatchActions() {
     <div className="flex flex-wrap items-center gap-2 [-webkit-app-region:no-drag]">
       <Button
         type="button"
-        variant="outline"
+        variant="ghost"
         size="sm"
-        className="[-webkit-app-region:no-drag]"
         disabled={!humansTurn || analysisStatus === "thinking" || drawBusy}
         onClick={() => void offerDraw()}
       >
-        <Handshake size={15} />
+        <Handshake />
         Offer draw
       </Button>
       <Button
         type="button"
-        variant="destructive"
+        variant="ghost-destructive"
         size="sm"
-        className="[-webkit-app-region:no-drag]"
         disabled={!humansTurn || analysisStatus === "thinking"}
         onClick={resign}
       >
-        <Flag size={15} />
+        <Flag />
         Resign
       </Button>
     </div>

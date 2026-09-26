@@ -1,6 +1,26 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { partialReviewByNode, reviewByNode, useReviewStore } from "./review-store";
-import type { GameReview, MoveReview } from "@chaturanga/shared/types/engine";
+import { reviewsByNode, selectDisplayedMoves, useReviewStore } from "./review-store";
+import type { GameReview, MoveReview, ReviewProgress } from "@chaturanga/shared/types/engine";
+
+function progress(moveIndex: number, overrides: Partial<ReviewProgress> = {}): ReviewProgress {
+  return {
+    reviewId: "r1",
+    moveIndex,
+    totalMoves: 10,
+    nodeId: `n${moveIndex}`,
+    ply: moveIndex + 1,
+    san: "e4",
+    playedUci: "e2e4",
+    fenBefore: "before",
+    fenAfter: "after",
+    phase: "before",
+    fen: "before",
+    mover: "white",
+    depth: 1,
+    lines: [],
+    ...overrides
+  };
+}
 
 function move(nodeId: string, classification: MoveReview["classification"]): MoveReview {
   return {
@@ -47,7 +67,22 @@ describe("review store", () => {
     useReviewStore.getState().reset();
   });
 
-  it("selects the first missed tactic when review completes", () => {
+  it("ignores depth/phase churn within the same move (no store update)", () => {
+    useReviewStore.getState().startReview("r1");
+    useReviewStore.getState().applyReviewEvents({ progress: progress(0), moves: [] });
+    let updates = 0;
+    const unsubscribe = useReviewStore.subscribe(() => { updates += 1; });
+    useReviewStore.getState().applyReviewEvents({ progress: progress(0, { depth: 12, phase: "after" }), moves: [] });
+    useReviewStore.getState().applyReviewEvents({ progress: progress(0, { depth: 18 }), moves: [] });
+    expect(updates).toBe(0);
+    useReviewStore.getState().applyReviewEvents({ progress: progress(1), moves: [move("a", "good"), move("b", "best")] });
+    unsubscribe();
+    expect(updates).toBe(1);
+    expect(useReviewStore.getState().progress?.moveIndex).toBe(1);
+    expect(useReviewStore.getState().partialMoves.map((item) => item.nodeId)).toEqual(["a", "b"]);
+  });
+
+  it("stores a completed review and clears partial progress", () => {
     const done = review([move("a", "good"), move("b", "missed_tactic")]);
 
     useReviewStore.getState().startReview("r1");
@@ -55,27 +90,36 @@ describe("review store", () => {
 
     expect(useReviewStore.getState()).toMatchObject({
       status: "ready",
-      selectedNodeId: "b",
       reviewId: "r1",
       progress: null,
       partialMoves: []
     });
+    expect(useReviewStore.getState().review?.moves).toHaveLength(2);
   });
 
   it("replaces partial moves for the same node", () => {
-    useReviewStore.getState().appendPartialMove(move("a", "good"));
-    useReviewStore.getState().appendPartialMove(move("a", "blunder"));
+    useReviewStore.getState().startReview("r1");
+    useReviewStore.getState().applyReviewEvents({ progress: null, moves: [move("a", "good")] });
+    useReviewStore.getState().applyReviewEvents({ progress: null, moves: [move("a", "blunder")] });
 
     expect(useReviewStore.getState().partialMoves).toHaveLength(1);
     expect(useReviewStore.getState().partialMoves[0]?.classification).toBe("blunder");
   });
 
-  it("indexes full and partial reviews by node", () => {
+  it("indexes reviewed moves by node", () => {
     const first = move("a", "best");
     const second = move("b", "mistake");
 
-    expect(reviewByNode(review([first, second])).get("b")).toBe(second);
-    expect(partialReviewByNode([first]).get("a")).toBe(first);
+    expect(reviewsByNode([first, second]).get("b")).toBe(second);
+  });
+
+  it("displays live moves while running and the finished review otherwise", () => {
+    const partial = [move("a", "good")];
+    const done = review([move("a", "best"), move("b", "good")]);
+
+    expect(selectDisplayedMoves({ status: "running", review: done, partialMoves: partial })).toBe(partial);
+    expect(selectDisplayedMoves({ status: "ready", review: done, partialMoves: [] })).toBe(done.moves);
+    expect(selectDisplayedMoves({ status: "cancelled", review: null, partialMoves: partial })).toBe(partial);
   });
 
   it("handles cancellation, errors, and loaded reviews", () => {
@@ -88,6 +132,6 @@ describe("review store", () => {
     expect(useReviewStore.getState().status).toBe("cancelled");
 
     useReviewStore.getState().loadReview(loaded);
-    expect(useReviewStore.getState()).toMatchObject({ status: "ready", selectedNodeId: "loaded" });
+    expect(useReviewStore.getState()).toMatchObject({ status: "ready", review: loaded });
   });
 });
