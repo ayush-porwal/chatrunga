@@ -3,7 +3,7 @@ import { applySan, statusForFen } from "@chaturanga/shared/chess/position";
 import { reviewInsightPayloadSchema } from "@chaturanga/shared/schemas";
 import { validateProse } from "@chaturanga/shared/llm/commentary";
 import type { AnalysisLine, EngineScore, MoveClassification, MoveReview } from "@chaturanga/shared/types/engine";
-import { buildInsightPayload, localCoachCommentary, mainlineReviewInput, reviewIdFromPath } from "./review-utils";
+import { buildInsightPayload, mainlineReviewInput, reviewIdFromPath } from "./review-utils";
 
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const cp = (value: number): EngineScore => ({ type: "cp", value });
@@ -263,16 +263,6 @@ describe("game review utilities", () => {
     expect(validateProse(`Nxe5 ${text}`.slice(0, 700), payload).ok).toBe(true);
   });
 
-  it("writes an offline coach explanation with a headline and takeaway", () => {
-    const moves = trapGame();
-    const parts = localCoachCommentary(moves[6]!, "balanced", { userRating: 1500, playerColor: "white", context: { moves } });
-    expect(parts.headline).toBeTruthy();
-    expect(parts.takeaway).toBeTruthy();
-    expect(parts.body).toContain("Qg5");
-    expect(parts.body).toContain("Nxd4");
-    expect(parts.body.toLowerCase()).not.toContain("engine");
-  });
-
   it("produces a payload for a mating move instead of dropping it", () => {
     const mate = move({
       ply: 41,
@@ -294,12 +284,9 @@ describe("game review utilities", () => {
     expect(payload!.game).toMatchObject({ terminal: "checkmate", givesCheck: true, phase: "endgame" });
     expect(payload!.engines.stockfish).toMatchObject({ evalAfter: "M0", evalLossCp: 0, assessment: { before: "white_has_forced_mate", after: "white_won" } });
     expect(payload!.context?.result).toBe("1-0");
-    const text = localCoachCommentary(mate, "balanced").body;
-    expect(text).toContain("checkmate");
-    expect(text).not.toContain("—");
   });
 
-  it("describes a stalemate that threw away a win", () => {
+  it("marks a stalemate that threw away a win", () => {
     const stalemate = move({
       ply: 61,
       san: "Qb6",
@@ -316,20 +303,7 @@ describe("game review utilities", () => {
     });
     const payload = buildInsightPayload(stalemate, 1500);
     expect(payload?.game.terminal).toBe("stalemate");
-    expect(payload?.engines.stockfish).toMatchObject({ evalAfter: "0.00", evalLossCp: 1000, assessment: { after: "draw", afterBest: "white_has_forced_mate" } });
-    const text = localCoachCommentary(stalemate, "balanced").body;
-    expect(text).toContain("stalemate");
-    expect(text).toContain("Kg2");
-  });
-
-  it("never prints a dash when an evaluation is missing", () => {
-    const text = localCoachCommentary(move({ classification: "mistake", evalAfter: null, evalLoss: null, bestMove: "d2d4" }), "detailed").body;
-    expect(text).not.toContain("—");
-    expect(text).toContain("d4");
-  });
-
-  it("creates a local explanation for every move", () => {
-    expect(localCoachCommentary(move({ classification: "blunder", evalLoss: 320 }), "balanced").body).toContain("e4");
+    expect(payload?.engines.stockfish).toMatchObject({ evalAfter: "0.00", evalLossCp: 1000, assessment: { after: "draw", afterBest: "white_has_forced_mate" }, bestMoveSan: "Kg2" });
   });
 
   it("extracts the first-child review line", () => {

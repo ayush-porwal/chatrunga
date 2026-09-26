@@ -5,21 +5,20 @@ import {
   CommentaryScheduler,
   commentarySettingsKey,
   decideCommentary,
-  isCurrentAiCommentary
+  isCurrentCommentary
 } from "./commentary-scheduler";
 
-const key = commentarySettingsKey({ provider: "openrouter", model: "m", detail: "balanced", userRating: 1500, playerColor: "white" });
+const key = commentarySettingsKey({ model: "m", detail: "balanced", userRating: 1500, playerColor: "white" });
 
 function ai(overrides: Partial<ReviewCommentary> = {}): ReviewCommentary {
-  return { ply: 1, prose: "AI", generatedAt: 1, providerModel: "m", fallback: false, source: "openrouter", ...overrides };
+  return { ply: 1, prose: "AI", generatedAt: 1, providerModel: "m", ...overrides };
 }
 
 const base = {
   active: true,
   enabled: true,
-  provider: "openrouter" as const,
-  providerLoading: false,
-  providerReady: true,
+  configLoading: false,
+  hasApiKey: true,
   hasPayload: true,
   cached: undefined,
   settingsKey: key,
@@ -27,34 +26,35 @@ const base = {
 };
 
 describe("decideCommentary", () => {
-  it("requests only for an active, uncached move with a ready provider", () => {
+  it("requests only for an active, uncached move with a saved key", () => {
     expect(decideCommentary(base)).toBe("request");
     expect(decideCommentary({ ...base, active: false })).toBe("idle");
-    expect(decideCommentary({ ...base, providerLoading: true })).toBe("waiting");
-    expect(decideCommentary({ ...base, providerReady: false })).toBe("unavailable");
+    expect(decideCommentary({ ...base, configLoading: true })).toBe("waiting");
+    expect(decideCommentary({ ...base, hasApiKey: false })).toBe("no-key");
     expect(decideCommentary({ ...base, hasPayload: false })).toBe("no-payload");
     expect(decideCommentary({ ...base, failed: true })).toBe("failed");
   });
 
-  it("never requests for the local provider or when commentary is off", () => {
-    expect(decideCommentary({ ...base, provider: "local" })).toBe("local-only");
-    expect(decideCommentary({ ...base, enabled: false })).toBe("local-only");
+  it("never requests when commentary is off", () => {
+    expect(decideCommentary({ ...base, enabled: false })).toBe("off");
   });
 
   it("uses cached AI commentary, including older saved entries without a settings key", () => {
     expect(decideCommentary({ ...base, cached: ai({ settingsKey: key }) })).toBe("cached");
     expect(decideCommentary({ ...base, cached: ai() })).toBe("cached");
+    // A cached explanation still shows after the key is removed.
+    expect(decideCommentary({ ...base, hasApiKey: false, cached: ai() })).toBe("cached");
   });
 
-  it("re-requests when the cached entry was made with other settings or is only a local fallback", () => {
+  it("re-requests when the cached entry was made with other settings", () => {
     expect(decideCommentary({ ...base, cached: ai({ settingsKey: "other" }) })).toBe("request");
-    expect(decideCommentary({ ...base, cached: ai({ fallback: true, source: "local-fallback" }) })).toBe("request");
   });
 
-  it("fingerprints every setting that changes the prose", () => {
-    const other = commentarySettingsKey({ provider: "openrouter", model: "m", detail: "detailed", userRating: 1500, playerColor: "white" });
+  it("fingerprints every setting that changes the prose, compatible with keys saved by older builds", () => {
+    expect(key).toBe("openrouter|m|balanced|1500|white");
+    const other = commentarySettingsKey({ model: "m", detail: "detailed", userRating: 1500, playerColor: "white" });
     expect(other).not.toBe(key);
-    expect(isCurrentAiCommentary(ai({ settingsKey: key }), other)).toBe(false);
+    expect(isCurrentCommentary(ai({ settingsKey: key }), other)).toBe(false);
   });
 });
 

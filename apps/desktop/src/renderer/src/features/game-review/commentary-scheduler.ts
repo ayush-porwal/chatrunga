@@ -1,5 +1,4 @@
 import type { ReviewCommentary } from "@chaturanga/shared/types/engine";
-import type { ReviewCommentaryProvider } from "@chaturanga/shared/types/settings";
 
 /**
  * On-demand AI commentary policy. Nothing is requested while the engine pass runs or when it
@@ -8,44 +7,40 @@ import type { ReviewCommentaryProvider } from "@chaturanga/shared/types/settings
  * Results are cached per ply in the review (and persisted with it), so revisiting is free.
  */
 
-export type CommentaryProvider = ReviewCommentaryProvider;
-
 /** Time the user must settle on a move before its commentary is requested. */
 export const COMMENTARY_DEBOUNCE_MS = 500;
 
+/**
+ * Fingerprint of the settings that change the prose. The leading "openrouter" segment is the
+ * retired provider choice, kept so explanations saved by older builds still match.
+ */
 export function commentarySettingsKey(input: {
-  provider: CommentaryProvider;
   model: string;
   detail: string;
   userRating: number;
   playerColor: "white" | "black";
 }): string {
-  return [input.provider, input.model || "default", input.detail, input.userRating, input.playerColor].join("|");
-}
-
-/** Provider-written (not the deterministic local template) explanation. */
-export function isAiCommentary(item: ReviewCommentary | undefined): item is ReviewCommentary {
-  return Boolean(item && !item.fallback && item.source !== "local-fallback");
+  return ["openrouter", input.model || "default", input.detail, input.userRating, input.playerColor].join("|");
 }
 
 /**
- * A cached AI explanation still matches the current settings. Explanations saved before
- * settings were fingerprinted count as current, so older saved reviews never re-query.
+ * A cached explanation still matches the current settings. Explanations saved before settings
+ * were fingerprinted count as current, so older saved reviews never re-query.
  */
-export function isCurrentAiCommentary(item: ReviewCommentary | undefined, settingsKey: string): boolean {
-  return isAiCommentary(item) && (!item.settingsKey || item.settingsKey === settingsKey);
+export function isCurrentCommentary(item: ReviewCommentary | undefined, settingsKey: string): item is ReviewCommentary {
+  return Boolean(item && (!item.settingsKey || item.settingsKey === settingsKey));
 }
 
 export type CommentaryDecision =
   /** Review not ready / panel not visible / no move: do nothing. */
   | "idle"
-  /** Commentary disabled or the Local provider: local explanation only. */
-  | "local-only"
-  /** OpenRouter selected but no API key is saved. */
-  | "unavailable"
-  /** Provider configuration still loading. */
+  /** AI commentary is switched off in Review settings. */
+  | "off"
+  /** No OpenRouter API key is saved. */
+  | "no-key"
+  /** Saved settings or the OpenRouter configuration are still loading. */
   | "waiting"
-  /** The engine data for this move is too thin to brief a model; local explanation only. */
+  /** The engine data for this move is too thin to brief a model. */
   | "no-payload"
   /** Up-to-date AI commentary is cached for this move. */
   | "cached"
@@ -57,19 +52,18 @@ export function decideCommentary(input: {
   /** Review finished (not running) and the Commentary tab shows a reviewed move. */
   active: boolean;
   enabled: boolean;
-  provider: CommentaryProvider;
-  providerLoading: boolean;
-  providerReady: boolean;
+  configLoading: boolean;
+  hasApiKey: boolean;
   hasPayload: boolean;
   cached: ReviewCommentary | undefined;
   settingsKey: string;
   failed: boolean;
 }): CommentaryDecision {
   if (!input.active) return "idle";
-  if (!input.enabled || input.provider === "local") return "local-only";
-  if (isCurrentAiCommentary(input.cached, input.settingsKey)) return "cached";
-  if (input.providerLoading) return "waiting";
-  if (!input.providerReady) return "unavailable";
+  if (!input.enabled) return "off";
+  if (isCurrentCommentary(input.cached, input.settingsKey)) return "cached";
+  if (input.configLoading) return "waiting";
+  if (!input.hasApiKey) return "no-key";
   if (!input.hasPayload) return "no-payload";
   if (input.failed) return "failed";
   return "request";

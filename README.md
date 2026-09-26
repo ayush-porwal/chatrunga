@@ -9,8 +9,8 @@ language.
 - **Game review:** accuracy, move grades, eval graph, and a coach that explains each move
 - **Analysis:** live engine lines and a move tree with variations
 - **Play:** games against an engine with clocks, plus puzzles from the Lichess database
-- **Local-first:** games and engines stay on your machine; AI commentary uses your own
-  OpenRouter key or works offline
+- **Local-first:** games and engines stay on your machine; AI commentary runs through your own
+  OpenRouter key
 
 ## Download
 

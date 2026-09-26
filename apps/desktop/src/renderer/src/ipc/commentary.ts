@@ -11,5 +11,5 @@ export async function requestRendererCommentary(
 /** Keep provider/IPC details out of the UI; error text must never echo secrets. */
 export function rendererCommentaryError(error: unknown): string {
   void error;
-  return "OpenRouter commentary was unavailable; local fallback is shown.";
+  return "Commentary couldn't be requested. Try again in a moment.";
 }

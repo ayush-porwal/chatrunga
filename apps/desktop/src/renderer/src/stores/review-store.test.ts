@@ -134,4 +134,18 @@ describe("review store", () => {
     useReviewStore.getState().loadReview(loaded);
     expect(useReviewStore.getState()).toMatchObject({ status: "ready", review: loaded });
   });
+
+  it("drops saved offline-template commentary and legacy fields when loading a review", () => {
+    const ai = { ply: 1, prose: "AI", headline: "Idea", generatedAt: 1, providerModel: "m", settingsKey: "k" };
+    const saved = {
+      ...review([move("loaded", "excellent")]),
+      commentary: [
+        { ...ai, takeaway: "Old tip", fallback: false, source: "openrouter" },
+        { ply: 2, prose: "Template", generatedAt: 1, providerModel: "local-template", fallback: true, source: "local-fallback" }
+      ]
+    } as unknown as GameReview;
+
+    useReviewStore.getState().loadReview(saved);
+    expect(useReviewStore.getState().review?.commentary).toEqual([ai]);
+  });
 });

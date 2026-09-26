@@ -1,6 +1,6 @@
 /*
- * Game review panel motion. Content swaps (another move selected, the AI text replacing the local
- * one) settle in with a short, partial fade — never from blank, so scrubbing moves does not blink.
+ * Game review panel motion. Content swaps (another move selected) settle in with a short, partial
+ * fade — never from blank, so scrubbing moves does not blink.
  */
 .review-swap {
   animation: review-swap var(--transition-duration-standard) var(--ease-enter) both;
@@ -12,36 +12,95 @@
   }
 }
 
-/* "Writing AI commentary…": a soft light sweep across the label while the text is prepared. */
-.review-shimmer {
-  background-image: linear-gradient(
-    100deg,
-    var(--color-fg-subtle) 0%,
-    var(--color-fg-subtle) 40%,
-    var(--color-fg-secondary) 50%,
-    var(--color-fg-subtle) 60%,
-    var(--color-fg-subtle) 100%
-  );
-  background-size: 250% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-  animation: review-shimmer 1.6s linear infinite;
+/*
+ * While loading and once loaded, the commentary area keeps at least the height of its loading
+ * placeholder (status row, gap, headline line and `--review-commentary-lines` body lines of the
+ * serif text's 1.75rem line box), so the facts row below stays put when the text arrives. The two
+ * share one grid cell (`stack`), so the text cross-fades in over the placeholder.
+ */
+.review-commentary {
+  /* status row 2.375rem + gap + headline line + body lines */
+  min-height: calc(2.375rem + 0.75rem + 1.75rem + var(--review-commentary-lines, 4) * 1.75rem);
 }
 
-@keyframes review-shimmer {
-  from {
-    background-position: 100% 0;
+/*
+ * Loading placeholder for the commentary: one soft band of light sweeps across every bar at once,
+ * then rests. The bars all start at the container's left edge, so sizing and moving the gradient in
+ * container units (cqw) lines the band up across bars of different widths. Keeps the Skeleton's
+ * held-back fade-in; reduced motion: still bars.
+ */
+.review-skeleton {
+  container-type: inline-size;
+}
+
+.review-skeleton .ui-skeleton {
+  background-color: var(--color-control);
+  background-image: linear-gradient(
+    100deg,
+    transparent 38%,
+    color-mix(in oklab, var(--color-control-hover), white 5%) 50%,
+    transparent 62%
+  );
+  background-size: 200cqw 100%;
+  background-repeat: no-repeat;
+  background-position: -140cqw 0;
+  animation:
+    ui-fade-in var(--transition-duration-standard) var(--ease-enter) 120ms both,
+    review-sweep 2.4s var(--ease-standard) 300ms infinite;
+}
+
+@keyframes review-sweep {
+  0% {
+    background-position: -140cqw 0;
   }
-  to {
-    background-position: -150% 0;
+  65%,
+  100% {
+    background-position: 40cqw 0;
+  }
+}
+
+/* The AI coach is at work: the sparkle badge breathes, the ellipsis types. */
+.review-glyph {
+  animation: review-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes review-breathe {
+  50% {
+    transform: scale(1.08);
+    opacity: 0.75;
+  }
+}
+
+.review-ellipsis > span {
+  animation: review-type 1.2s ease-in-out infinite both;
+}
+
+.review-ellipsis > span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.review-ellipsis > span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes review-type {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  40% {
+    opacity: 1;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .review-shimmer {
-    animation: none;
-    color: var(--color-fg-subtle);
+  .review-skeleton .ui-skeleton {
     background-image: none;
+    animation: ui-fade-in var(--transition-duration-standard) var(--ease-enter) 120ms both;
+  }
+
+  .review-glyph,
+  .review-ellipsis > span {
+    animation: none;
   }
 }

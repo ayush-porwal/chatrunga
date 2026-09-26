@@ -5,14 +5,12 @@ import {
   COMMENTARY_LIMITS,
   buildRetryMessage,
   buildUserMessage,
-  coachFallback,
   groundedSanTokens,
   maxTokensForDetail,
   parseCoachResponse,
   validateCommentary,
   validateProse
 } from "./commentary";
-import { buildIdeaFacts } from "../chess/move-ideas";
 import { isLightweightCommentaryModel } from "./models";
 
 /** Mid-game mistake (4.Nxe5? in the Blackburne Shilling trap) with full context. */
@@ -206,7 +204,8 @@ describe("coach prompt", () => {
     expect(COACH_SYSTEM_PROMPT).toContain("The facts are the only source of truth");
     expect(COACH_SYSTEM_PROMPT).toContain("Never invent a tactic");
     expect(COACH_SYSTEM_PROMPT).toContain('NEVER write "the engine recommends');
-    expect(COACH_SYSTEM_PROMPT).toContain('{"headline": "...", "body": "...", "takeaway": "..."}');
+    expect(COACH_SYSTEM_PROMPT).toContain('{"headline": "...", "body": "..."}');
+    expect(COACH_SYSTEM_PROMPT).not.toContain("takeaway");
     expect(COACH_SYSTEM_PROMPT).toContain(
       `detailed = ${COMMENTARY_LIMITS.detailed.targetSentences} sentences`
     );
@@ -215,7 +214,11 @@ describe("coach prompt", () => {
       (line) => line.startsWith('{"headline"') && !line.includes('"..."')
     );
     expect(examples).toHaveLength(3);
-    for (const example of examples) expect(parseCoachResponse(example).takeaway).toBeTruthy();
+    for (const example of examples) {
+      const parts = parseCoachResponse(example);
+      expect(parts.headline).toBeTruthy();
+      expect(Object.keys(parts).sort()).toEqual(["body", "headline"]);
+    }
   });
 
   it("scales the provider token budget with the requested detail", () => {
@@ -229,7 +232,8 @@ describe("coach prompt", () => {
     expect(message).toContain('"replyLineSan"');
     expect(message).toContain("4. Nxe5");
     expect(message).toContain("detailed, 5-7 sentences");
-    expect(message).toContain('"takeaway"');
+    expect(message).toContain('{"headline": "...", "body": "..."}');
+    expect(message).not.toContain("takeaway");
   });
 
   it("builds a retry turn that names the exact problem", () => {
@@ -239,6 +243,7 @@ describe("coach prompt", () => {
     const retry = buildRetryMessage(failure, payload());
     expect(retry).toContain("You wrote the move Bxf7+");
     expect(retry).not.toContain("STRICTER");
+    expect(retry).not.toContain("takeaway");
   });
 
   it("flags lightweight model families", () => {
@@ -250,13 +255,12 @@ describe("coach prompt", () => {
 
 describe("parseCoachResponse", () => {
   const json =
-    '{"headline": "Knight grab walks into Qg5", "body": "Nxe5 looks like a free pawn.", "takeaway": "Check what the opponent threatens first."}';
+    '{"headline": "Knight grab walks into Qg5", "body": "Nxe5 looks like a free pawn."}';
 
   it("parses the JSON object, fenced or surrounded by stray text", () => {
     expect(parseCoachResponse(json)).toEqual({
       headline: "Knight grab walks into Qg5",
-      body: "Nxe5 looks like a free pawn.",
-      takeaway: "Check what the opponent threatens first."
+      body: "Nxe5 looks like a free pawn."
     });
     expect(parseCoachResponse("```json\n" + json + "\n```").headline).toBe(
       "Knight grab walks into Qg5"
@@ -264,6 +268,11 @@ describe("parseCoachResponse", () => {
     expect(parseCoachResponse("Here you go:\n" + json + "\nHope it helps").body).toBe(
       "Nxe5 looks like a free pawn."
     );
+  });
+
+  it("ignores a takeaway from models that still send one", () => {
+    const withTakeaway = JSON.stringify({ headline: "A free pawn", body: "Nxe5 wins it.", takeaway: "Look first." });
+    expect(parseCoachResponse(withTakeaway)).toEqual({ headline: "A free pawn", body: "Nxe5 wins it." });
   });
 
   it("falls back to plain text as the body", () => {
@@ -282,18 +291,16 @@ describe("validateProse with context", () => {
     expect(validateProse(prose, payload())).toEqual({ ok: true, prose });
   });
 
-  it("returns headline and takeaway from a JSON answer", () => {
+  it("returns the headline from a JSON answer", () => {
     const answer = JSON.stringify({
       headline: "The e5 pawn was poisoned",
-      body: "Nxe5 grabs a pawn, but Qg5 hits your knight and g2 at the same time. Nxd4 first kept White slightly better.",
-      takeaway: "Before taking a pawn, ask what your opponent's reply attacks."
+      body: "Nxe5 grabs a pawn, but Qg5 hits your knight and g2 at the same time. Nxd4 first kept White slightly better."
     });
     expect(validateProse(answer, payload())).toEqual({
       ok: true,
       headline: "The e5 pawn was poisoned",
       prose:
-        "Nxe5 grabs a pawn, but Qg5 hits your knight and g2 at the same time. Nxd4 first kept White slightly better.",
-      takeaway: "Before taking a pawn, ask what your opponent's reply attacks."
+        "Nxe5 grabs a pawn, but Qg5 hits your knight and g2 at the same time. Nxd4 first kept White slightly better."
     });
   });
 
@@ -371,7 +378,7 @@ describe("validateProse with context", () => {
     expect(validateProse("Nxe5 was a good try but Nxd4 was stronger.", payload()).ok).toBe(true);
   });
 
-  it("validates headline and takeaway shape", () => {
+  it("validates the headline shape", () => {
     const base = { body: "Nxe5 walks into Qg5." };
     expect(
       validateCommentary(
@@ -381,12 +388,6 @@ describe("validateProse with context", () => {
     ).toMatchObject({
       ok: false,
       reason: "BAD_HEADLINE"
-    });
-    expect(
-      validateCommentary({ ...base, takeaway: "First sentence. Second sentence." }, payload())
-    ).toMatchObject({
-      ok: false,
-      reason: "BAD_TAKEAWAY"
     });
     expect(validateCommentary({ ...base, headline: "Qxh7 was the idea" }, payload())).toMatchObject(
       {
@@ -424,51 +425,5 @@ describe("validateProse with context", () => {
   it("does not count move numbers as sentence breaks", () => {
     const prose = "After 3... Nd4, 4. Nxe5 allowed Qg5. Nxd4 was stronger. It kept the balance.";
     expect(validateProse(prose, withDetail("concise")).ok).toBe(true);
-  });
-});
-
-describe("coachFallback", () => {
-  const ideas = buildIdeaFacts({
-    fenBefore: payload().game.fenBefore,
-    playedUci: "f3e5",
-    bestUci: "f3d4",
-    bestLine: ["f3d4", "e5d4", "c2c3"],
-    replyLine: ["d8g5", "e5f7", "g5g2", "h1f1", "g2e4", "c4e2", "d4f3"],
-    early: true
-  })!;
-
-  it("explains the idea behind a mistake without engine narration, and passes validation", () => {
-    for (const detail of ["concise", "balanced", "detailed"] as const) {
-      const input = payload({ ideas, commentaryDetail: detail });
-      const parts = coachFallback(input);
-      expect(parts.headline).toBeTruthy();
-      expect(parts.takeaway).toBeTruthy();
-      expect(parts.body).toContain("Qg5");
-      expect(parts.body).toContain("Nxd4");
-      expect(parts.body.toLowerCase()).not.toContain("engine");
-      expect(validateCommentary(parts, input)).toMatchObject({ ok: true });
-    }
-  });
-
-  it("still produces grounded text without idea facts", () => {
-    const parts = coachFallback(payload());
-    expect(parts.body).toContain("4.Nxe5");
-    expect(parts.body).toContain("Nxd4");
-    expect(validateCommentary(parts, withDetail("detailed")).ok).toBe(true);
-  });
-
-  it("describes checkmate and stalemate instead of a continuation", () => {
-    const base = payload();
-    const mate = coachFallback({
-      ...base,
-      game: { ...base.game, san: "Rd8#", terminal: "checkmate" }
-    });
-    expect(mate.body).toBe("4.Rd8# delivered checkmate, and White won the game.");
-    const stalemate = coachFallback({
-      ...base,
-      game: { ...base.game, san: "Qb6", terminal: "stalemate" }
-    }).body;
-    expect(stalemate).toContain("draw by stalemate");
-    expect(stalemate).toContain("Nxd4");
   });
 });

@@ -1,12 +1,11 @@
-import type { EvalAssessment, ReviewInsightPayload } from "../schemas/review-insight";
+import type { ReviewInsightPayload } from "../schemas/review-insight";
 
 /**
  * Provider-neutral coach contract: the prompt, the response parser and the
- * grounding validator used by the desktop main process for OpenRouter calls,
- * plus the deterministic fallback the renderer shows when no AI is available.
+ * grounding validator used by the desktop main process for OpenRouter calls.
  *
  * v2: the coach explains IDEAS (board-derived facts in `payload.ideas`) in a
- * coach's voice and answers with structured JSON {headline, body, takeaway}.
+ * coach's voice and answers with structured JSON {headline, body}.
  * Grounding still holds: every move, square, tactic and evaluation must come
  * from the facts, and the validator enforces it.
  */
@@ -16,8 +15,8 @@ type CommentaryDetailLevel = NonNullable<ReviewInsightPayload["commentaryDetail"
  * Per-detail budget for the BODY. `targetSentences` / `targetChars` are what
  * the prompt asks for; `maxSentences` / `maxChars` are the validator's hard
  * caps (looser, so a model that follows the prompt is never rejected on a
- * boundary); `maxTokens` covers the whole JSON answer (headline + body +
- * takeaway) with headroom so it is never truncated mid-object.
+ * boundary); `maxTokens` covers the whole JSON answer (headline + body)
+ * with headroom so it is never truncated mid-object.
  */
 export const COMMENTARY_LIMITS: Record<
   CommentaryDetailLevel,
@@ -34,27 +33,26 @@ export const COMMENTARY_LIMITS: Record<
     targetChars: 330,
     maxSentences: 4,
     maxChars: 440,
-    maxTokens: 400
+    maxTokens: 350
   },
   balanced: {
     targetSentences: "3-5",
     targetChars: 620,
     maxSentences: 6,
     maxChars: 800,
-    maxTokens: 600
+    maxTokens: 550
   },
   detailed: {
     targetSentences: "5-7",
     targetChars: 950,
     maxSentences: 8,
     maxChars: 1200,
-    maxTokens: 850
+    maxTokens: 800
   }
 };
 
 const HEADLINE_MAX_WORDS = 8;
 const HEADLINE_MAX_CHARS = 80;
-const TAKEAWAY_MAX_CHARS = 220;
 
 function commentaryLimits(detail: ReviewInsightPayload["commentaryDetail"]) {
   return COMMENTARY_LIMITS[detail ?? "balanced"];
@@ -72,7 +70,6 @@ WHAT A GOOD EXPLANATION DOES
 1. Shows what the mover was probably trying to do: the visible purpose of the move (what it attacks, develops, defends or prepares, from ideas.played.facts). engines.maia tells you how natural the move looks to humans at the player's rating.
 2. Gives the concrete chess reason it works or fails: the piece left loose, the defensive duty dropped, the line that opened, what the opponent's best reply exploits (ideas.reply.facts), how material, king safety or pawn structure changed (ideas.position).
 3. Shows what the better move achieves in chess terms (ideas.best.facts): what it attacks, protects, threatens or improves. Present it as a move a strong player would choose for that reason.
-4. Ends with ONE transferable habit the player can use in future games (the takeaway), e.g. "Before moving a defender, check what it was guarding."
 
 VOICE
 - Talk to the player. Their own moves are "you"/"your" (player.color is the player; game.mover played this move). For an opponent move, say "your opponent" and explain what it means for the player.
@@ -101,21 +98,20 @@ GROUNDING RULES (these override everything else)
 
 OUTPUT FORMAT
 Return ONLY a JSON object, with no markdown fences and no text before or after it:
-{"headline": "...", "body": "...", "takeaway": "..."}
+{"headline": "...", "body": "..."}
 - headline: at most ${HEADLINE_MAX_WORDS} words naming the idea, no move number, no final period.
 - body: plain prose, no markdown, no lists. Length per commentaryDetail: concise = ${COMMENTARY_LIMITS.concise.targetSentences} sentences (under ${COMMENTARY_LIMITS.concise.targetChars} characters), balanced = ${COMMENTARY_LIMITS.balanced.targetSentences} sentences (under ${COMMENTARY_LIMITS.balanced.targetChars} characters), detailed = ${COMMENTARY_LIMITS.detailed.targetSentences} sentences (under ${COMMENTARY_LIMITS.detailed.targetChars} characters); default balanced.
-- takeaway: one sentence of advice to the player, a thinking habit for future games.
 
 EXAMPLES (facts abbreviated; your answer must use the real facts you are given)
 
 Example 1 - blunder. Facts: player 1400 White; game 20. Qb3 by White, classification blunder; assessment white_winning -> black_winning. ideas.played.facts: "attacks the pawn on b7 (undefended)", "stops protecting the rook on f1 (the queen used to guard it; attacked by the knight on e3, undefended)". ideas.reply: Nxf1, "takes the rook on f1, which Qb3 stopped defending", "reply line: over 2 plies Black wins a rook for nothing". ideas.best: Rf2, "moves the rook out of danger from the knight on e3". maia playedAtPlayerLevel: common.
-{"headline": "Grabbing b7 left the f1 rook behind", "body": "The idea behind Qb3 is easy to see: the pawn on b7 was undefended and your queen went after it. The trouble is what the queen was doing on d1, where it was the only guard of the rook on f1 while the knight on e3 was already hitting that rook. After Qb3, Nxf1 simply wins a whole rook and your winning position becomes a losing one. Rf2 first takes the rook out of the knight's reach and keeps you firmly on top.", "takeaway": "Before you move a piece, ask what it is currently defending."}
+{"headline": "Grabbing b7 left the f1 rook behind", "body": "The idea behind Qb3 is easy to see: the pawn on b7 was undefended and your queen went after it. The trouble is what the queen was doing on d1, where it was the only guard of the rook on f1 while the knight on e3 was already hitting that rook. After Qb3, Nxf1 simply wins a whole rook and your winning position becomes a losing one. Rf2 first takes the rook out of the knight's reach and keeps you firmly on top."}
 
 Example 2 - positional inaccuracy. Facts: player 1700 White; game 14. h3 by White, classification inaccuracy; assessment equal -> black_slightly_better. ideas.played.facts: none. ideas.best: d4, "attacks the knight on e5 (defended once)". ideas.position.changes: none; center control after d4 would rise.
-{"headline": "A quiet move lets the e5 knight settle", "body": "h3 is a calm, useful-looking move, but it leaves the knight on e5 undisturbed in the middle of the board. d4 was the principled reaction: the pawn hits the knight at once and claims central space, so Black has to spend a move relocating it. After h3 Black keeps the knight where it is and the balance tips slightly toward Black.", "takeaway": "When an enemy piece settles on a strong central square, look first for a pawn move that challenges it."}
+{"headline": "A quiet move lets the e5 knight settle", "body": "h3 is a calm, useful-looking move, but it leaves the knight on e5 undisturbed in the middle of the board. d4 was the principled reaction: the pawn hits the knight at once and claims central space, so Black has to spend a move relocating it. After h3 Black keeps the knight where it is and the balance tips slightly toward Black."}
 
 Example 3 - good move. Facts: player 1100 Black; game 9... Nxe5 by Black, classification best. ideas.played.facts: "captures the pawn on e5 (it was undefended)", "attacks the pawn on f3 (defended once)".
-{"headline": "Collecting a free pawn", "body": "Well spotted: the pawn on e5 had no defenders, so Nxe5 simply wins it, and your knight now also eyes the pawn on f3.", "takeaway": "Every move, check whether any enemy piece or pawn has been left undefended."}
+{"headline": "Collecting a free pawn", "body": "Well spotted: the pawn on e5 had no defenders, so Nxe5 simply wins it, and your knight now also eyes the pawn on f3."}
 `.trim();
 
 export function buildUserMessage(payload: ReviewInsightPayload): string {
@@ -128,7 +124,7 @@ export function buildUserMessage(payload: ReviewInsightPayload): string {
     JSON.stringify(payload, null, 1),
     "",
     `Write the coach commentary for ${label} now. Body: ${detail}, ${limits.targetSentences} sentences, under ${limits.targetChars} characters.`,
-    'Return only the JSON object {"headline": "...", "body": "...", "takeaway": "..."}.'
+    'Return only the JSON object {"headline": "...", "body": "..."}.'
   ].join("\n");
 }
 
@@ -158,7 +154,7 @@ const RAW_EVAL_PATTERNS: RegExp[] = [
   /\bcentipawns?\b/i
 ];
 
-export type CoachParts = { headline?: string; body: string; takeaway?: string };
+export type CoachParts = { headline?: string; body: string };
 
 export type CommentaryValidationReason =
   | "EMPTY"
@@ -168,19 +164,18 @@ export type CommentaryValidationReason =
   | "TOO_MANY_SENTENCES"
   | "BANNED_PHRASE"
   | "RAW_EVAL"
-  | "BAD_HEADLINE"
-  | "BAD_TAKEAWAY";
+  | "BAD_HEADLINE";
 
 export type CommentaryValidationFailure = {
   ok: false;
   reason: CommentaryValidationReason;
   details?: string;
   /** Which part of the structured answer failed. */
-  part?: "headline" | "body" | "takeaway";
+  part?: "headline" | "body";
 };
 
 export type CommentaryValidationResult =
-  | { ok: true; prose: string; headline?: string; takeaway?: string }
+  | { ok: true; prose: string; headline?: string }
   | CommentaryValidationFailure;
 
 function stripPunctuation(value: string): string {
@@ -325,7 +320,7 @@ function sentenceCount(text: string): number {
 
 function checkText(
   text: string,
-  part: "headline" | "body" | "takeaway",
+  part: "headline" | "body",
   ground: Grounding
 ): CommentaryValidationFailure | null {
   for (const pattern of BANNED_PATTERNS) {
@@ -377,8 +372,7 @@ export function parseCoachResponse(raw: string): CoachParts {
       const body = cleanText(parsed.body ?? parsed.prose ?? parsed.commentary ?? parsed.text);
       if (!body) continue;
       const headline = cleanText(parsed.headline ?? parsed.title)?.replace(/[.!]+$/, "");
-      const takeaway = cleanText(parsed.takeaway ?? parsed.lesson);
-      return { body, ...(headline ? { headline } : {}), ...(takeaway ? { takeaway } : {}) };
+      return { body, ...(headline ? { headline } : {}) };
     } catch {
       // Not JSON; fall through to plain text.
     }
@@ -414,40 +408,23 @@ export function validateCommentary(
       return { ok: false, reason: "BAD_HEADLINE", details: `words=${words}`, part: "headline" };
     }
   }
-  const takeaway = parts.takeaway?.trim();
-  if (takeaway !== undefined) {
-    if (!takeaway || takeaway.length > TAKEAWAY_MAX_CHARS || sentenceCount(takeaway) > 1) {
-      return {
-        ok: false,
-        reason: "BAD_TAKEAWAY",
-        details: `len=${takeaway.length}`,
-        part: "takeaway"
-      };
-    }
-  }
 
   const ground = grounding(payload);
-  const checks: Array<[string | undefined, "headline" | "body" | "takeaway"]> = [
+  const checks: Array<[string | undefined, "headline" | "body"]> = [
     [headline, "headline"],
-    [body, "body"],
-    [takeaway, "takeaway"]
+    [body, "body"]
   ];
   for (const [text, part] of checks) {
     if (!text) continue;
     const failure = checkText(text, part, ground);
     if (failure) return failure;
   }
-  return {
-    ok: true,
-    prose: body,
-    ...(headline ? { headline } : {}),
-    ...(takeaway ? { takeaway } : {})
-  };
+  return { ok: true, prose: body, ...(headline ? { headline } : {}) };
 }
 
 /**
  * Parse + validate a raw provider answer (JSON or plain text). `prose` is the
- * body; `headline` / `takeaway` are present when the model returned them.
+ * body; `headline` is present when the model returned one.
  */
 export function validateProse(
   raw: string,
@@ -479,8 +456,6 @@ function describeValidationFailure(
       return `You quoted a numeric evaluation ("${failure.details}")${where}. Describe the position in words instead.`;
     case "BAD_HEADLINE":
       return `The headline must be at most ${HEADLINE_MAX_WORDS} words and a single phrase.`;
-    case "BAD_TAKEAWAY":
-      return `The takeaway must be one sentence under ${TAKEAWAY_MAX_CHARS} characters.`;
     case "EMPTY":
       return "The answer had no body text.";
   }
@@ -491,257 +466,5 @@ export function buildRetryMessage(
   failure: CommentaryValidationFailure,
   payload?: ReviewInsightPayload
 ): string {
-  return `PREVIOUS RESPONSE WAS INVALID. Fix the problem described below and answer again with only the JSON object.\nProblem: ${describeValidationFailure(failure, payload)}\nRewrite the whole answer with that fixed, keeping the same facts, and return only the JSON object {"headline": "...", "body": "...", "takeaway": "..."}.`;
-}
-
-// ---------------------------------------------------------------------------
-// Deterministic fallback in the same coach voice
-// ---------------------------------------------------------------------------
-
-const ASSESSMENT_TEXT: Record<EvalAssessment, string> = {
-  equal: "roughly equal",
-  white_slightly_better: "slightly better for White",
-  white_clearly_better: "clearly better for White",
-  white_winning: "winning for White",
-  white_has_forced_mate: "a forced mate for White",
-  white_won: "won for White",
-  black_slightly_better: "slightly better for Black",
-  black_clearly_better: "clearly better for Black",
-  black_winning: "winning for Black",
-  black_has_forced_mate: "a forced mate for Black",
-  black_won: "won for Black",
-  draw: "a draw"
-};
-
-const MISTAKES = new Set<ReviewInsightPayload["classification"]>([
-  "inaccuracy",
-  "mistake",
-  "blunder",
-  "missed_tactic",
-  "human_error"
-]);
-
-function capitalize(text: string): string {
-  return text ? `${text[0]?.toUpperCase()}${text.slice(1)}` : text;
-}
-
-function sentence(text: string): string {
-  const trimmed = text.trim();
-  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
-}
-
-/** Keep fallback prose readable: only the first clause of a long parenthetical. */
-function tidy(fact: string): string {
-  return fact.replace(/\(([^()]*)\)/g, (_, inner: string) => `(${inner.split(";")[0]?.trim()})`);
-}
-
-function isLineFact(fact: string): boolean {
-  return /^(?:best|reply|main) line:/.test(fact);
-}
-
-/** Prefer facts that explain what went wrong (dropped defence, loose pieces). */
-function rankPlayedFacts(facts: readonly string[], mistake: boolean): string[] {
-  const score = (fact: string) => {
-    if (isLineFact(fact)) return 9;
-    if (!mistake) {
-      if (/^sets up .*#/.test(fact)) return -1;
-      return /^(captures|forks|gives check|develops|castles|attacks|creates a threat)/.test(fact)
-        ? 0
-        : 1;
-    }
-    if (
-      /^stops protecting|^puts the .* where it can be won|^leaves the|^does nothing for/.test(fact)
-    )
-      return 0;
-    if (/^opens a line for the opponent/.test(fact)) return 1;
-    return 2;
-  };
-  return [...facts].sort((a, b) => score(a) - score(b));
-}
-
-function pickTakeaway(
-  payload: ReviewInsightPayload,
-  played: string[],
-  reply: string[],
-  best: string[]
-): string {
-  const mistake = MISTAKES.has(payload.classification);
-  const all = (facts: string[], pattern: RegExp) => facts.some((fact) => pattern.test(fact));
-  if (mistake) {
-    if (all(played, /^stops protecting/) || all(reply, /stopped defending/)) {
-      return "Before you move a piece, ask what it is currently defending.";
-    }
-    if (all(played, /^does nothing for/))
-      return "When one of your pieces is loose or pinned, deal with it before anything else.";
-    if (all(played, /where it can be won|^leaves the/)) {
-      return "Before every move, check that the piece you move and the pieces you leave behind are safe.";
-    }
-    if (all(reply, /^forks/))
-      return "Look for squares where an enemy knight or queen could attack two things at once.";
-    if (all(reply, /^gives check/))
-      return "Always ask which checks your opponent will have after your move.";
-    if (all(best, /^captures|^forks|^creates a threat|^sets up/)) {
-      return "Scan for checks, captures and threats for both sides before settling on a quiet move.";
-    }
-    return "When no tactic is on the board, look for the move that improves your least active piece.";
-  }
-  if (all(played, /^sets up .*#/))
-    return "When the enemy king is boxed in, look at every check, even ones that give up material.";
-  if (all(played, /^captures the .*undefended/))
-    return "Every move, check whether any enemy piece or pawn has been left undefended.";
-  if (all(played, /^develops|^castles/))
-    return "In the opening, bring a new piece into play or castle with each move before starting an attack.";
-  if (all(played, /^forks|^creates a threat|^attacks/))
-    return "Moves that create a threat keep the initiative, so look for them first.";
-  return "Keep asking what your opponent wants to do next before choosing your move.";
-}
-
-function pickHeadline(payload: ReviewInsightPayload, reply: string[], played: string[]): string {
-  const { game, classification } = payload;
-  const lost = reply
-    .map((fact) => /^(?:takes|captures) the (\w+)(?: on ([a-h][1-8]))?/.exec(fact))
-    .find(Boolean);
-  if (MISTAKES.has(classification) && lost?.[1]) {
-    return lost[2]
-      ? `${game.san} drops the ${lost[1]} on ${lost[2]}`
-      : `${game.san} drops the ${lost[1]}`;
-  }
-  if (MISTAKES.has(classification) && reply.some((fact) => fact.startsWith("forks"))) {
-    return `${game.san} walks into a fork`;
-  }
-  switch (classification) {
-    case "blunder":
-      return "A costly oversight";
-    case "mistake":
-    case "human_error":
-      return "A natural move with a hidden flaw";
-    case "missed_tactic":
-      return "A tactic slipped by";
-    case "inaccuracy":
-      return "A slightly imprecise choice";
-    default: {
-      if (
-        played.some((fact) => /where it can be won/.test(fact)) &&
-        played.some((fact) => /^sets up|^forks/.test(fact))
-      ) {
-        return `${game.san}: a sacrifice that works`;
-      }
-      const captured = played.map((fact) => /^captures the (\w+)/.exec(fact)).find(Boolean);
-      if (captured?.[1]) return `${game.san} collects the ${captured[1]}`;
-      if (played.some((fact) => fact.startsWith("forks"))) return `${game.san} forks two pieces`;
-      if (played.some((fact) => fact.startsWith("develops"))) return "Developing with purpose";
-      return classification === "good" ? "A sensible, solid move" : "An accurate move";
-    }
-  }
-}
-
-/**
- * Deterministic, grounded coach commentary used whenever a provider is
- * unavailable. Built from the idea facts, so it names concrete pieces and
- * reasons instead of engine preferences. Always passes `validateCommentary`.
- */
-export function coachFallback(payload: ReviewInsightPayload): CoachParts {
-  const { game, engines, classification } = payload;
-  const stockfish = engines.stockfish;
-  const label = `${game.moveNumberSan}${game.san}`;
-  const winner = game.mover === "black" ? "Black" : "White";
-  const limits = commentaryLimits(payload.commentaryDetail);
-
-  if (game.terminal === "checkmate") {
-    return {
-      headline: "Checkmate ends the game",
-      body: `${label} delivered checkmate, and ${game.mover ? winner : "the mover"} won the game.`,
-      takeaway: "When the enemy king is short of squares, look at every check first."
-    };
-  }
-  if (game.terminal) {
-    const how = game.terminal === "stalemate" ? "stalemate" : "insufficient material";
-    const missed =
-      stockfish.evalLossCp >= 150 && stockfish.bestMoveSan !== game.san
-        ? ` ${stockfish.bestMoveSan} instead would have kept the winning chances alive.`
-        : "";
-    return {
-      headline: game.terminal === "stalemate" ? "Stalemate ends the game" : "A dead-drawn finish",
-      body: `${label} ended the game in a draw by ${how}.${missed}`,
-      takeaway:
-        game.terminal === "stalemate"
-          ? "When you are winning, always check that your opponent still has a legal move."
-          : "Keep enough material to mate when you are playing for a win."
-    };
-  }
-
-  const mistake = MISTAKES.has(classification);
-  const playedFacts = rankPlayedFacts(payload.ideas?.played.facts ?? [], mistake)
-    .filter((fact) => !isLineFact(fact))
-    .map(tidy);
-  const replyFacts = (payload.ideas?.reply?.facts ?? []).map(tidy);
-  const bestFacts = (payload.ideas?.best?.facts ?? []).map(tidy);
-  const sentences: string[] = [];
-  const after = stockfish.assessment ? ASSESSMENT_TEXT[stockfish.assessment.after] : undefined;
-  const before = stockfish.assessment ? ASSESSMENT_TEXT[stockfish.assessment.before] : undefined;
-
-  if (mistake) {
-    sentences.push(
-      playedFacts[0]
-        ? sentence(`${label} ${playedFacts[0]}`)
-        : sentence(`${label} let the position slip`)
-    );
-    const reply = payload.ideas?.reply;
-    const replyFact = replyFacts.find((fact) => !isLineFact(fact));
-    if (reply && replyFact) {
-      const swing =
-        before && after && before !== after
-          ? `, and the position goes from ${before} to ${after}`
-          : "";
-      sentences.push(sentence(`${reply.san} ${replyFact}${swing}`));
-    } else if (after) {
-      sentences.push(sentence(`Afterwards the position is ${after}`));
-    }
-    if (stockfish.bestMoveSan !== game.san) {
-      const bestFact = bestFacts.find((fact) => !isLineFact(fact));
-      sentences.push(
-        sentence(
-          bestFact
-            ? `Stronger was ${stockfish.bestMoveSan}, which ${bestFact}`
-            : `Stronger was ${stockfish.bestMoveSan}`
-        )
-      );
-    }
-  } else {
-    sentences.push(
-      playedFacts[0]
-        ? sentence(`${label} ${playedFacts[0]}`)
-        : sentence(`${label} keeps the position under control`)
-    );
-    if (playedFacts[1]) sentences.push(sentence(`It also ${playedFacts[1]}`));
-    if (after) sentences.push(sentence(`The position stays ${after}`));
-  }
-  const likelihood = engines.maia?.playedAtPlayerLevel;
-  if (likelihood && payload.commentaryDetail !== "concise") {
-    const phrase =
-      likelihood === "most_likely" || likelihood === "common"
-        ? "It is a very natural move for players at your level"
-        : likelihood === "plausible"
-          ? "Players at your level find this move fairly often"
-          : "Few players at your level would choose this move";
-    sentences.push(sentence(phrase));
-  }
-
-  // Respect the body budget: add sentences while they fit.
-  const kept: string[] = [];
-  for (const item of sentences) {
-    const next = [...kept, item].join(" ");
-    if (kept.length && (next.length > limits.maxChars || kept.length >= limits.maxSentences)) break;
-    kept.push(item);
-  }
-  let body = kept.join(" ");
-  if (body.length > limits.maxChars)
-    body = sentence(
-      `${label} ${mistake ? "let the position slip" : "keeps the position under control"}`
-    );
-  return {
-    headline: pickHeadline(payload, replyFacts, playedFacts),
-    body: capitalize(body),
-    takeaway: pickTakeaway(payload, playedFacts, replyFacts, bestFacts)
-  };
+  return `PREVIOUS RESPONSE WAS INVALID. Fix the problem described below and answer again with only the JSON object.\nProblem: ${describeValidationFailure(failure, payload)}\nRewrite the whole answer with that fixed, keeping the same facts, and return only the JSON object {"headline": "...", "body": "..."}.`;
 }

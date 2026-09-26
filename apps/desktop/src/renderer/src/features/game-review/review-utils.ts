@@ -3,7 +3,6 @@ import { parseUci } from "chessops/util";
 import { fenAfterUci, positionFromFen, statusForFen } from "@chaturanga/shared/chess/position";
 import { analyzeTacticsForPosition } from "@chaturanga/shared/chess/tactics";
 import { buildIdeaFacts } from "@chaturanga/shared/chess/move-ideas";
-import { coachFallback, type CoachParts } from "@chaturanga/shared/llm/commentary";
 import { buildRatingCurve, quantizeToBucket } from "@chaturanga/shared/chess/rating-curve";
 import { formatEngineScore, scoreFromWhitePerspective, scoreToCentipawns } from "@chaturanga/shared/chess/review";
 import type {
@@ -667,44 +666,6 @@ export function buildInsightPayload(
 }
 
 export type CommentaryDetail = "concise" | "balanced" | "detailed";
-
-const VERDICT: Record<MoveClassification, string> = {
-  best: "the best move",
-  excellent: "an excellent move",
-  good: "a good move",
-  inaccuracy: "an inaccuracy",
-  mistake: "a mistake",
-  blunder: "a blunder",
-  missed_tactic: "a missed tactic",
-  human_error: "a natural-looking error"
-};
-
-type LocalCommentaryOptions = {
-  userRating?: number;
-  playerColor?: Side;
-  context?: InsightPayloadContext;
-};
-
-/**
- * Offline coach commentary (headline, body, takeaway) built from the same
- * grounded payload and idea facts the AI coach receives.
- */
-export function localCoachCommentary(
-  move: MoveReview,
-  detail: CommentaryDetail,
-  options: LocalCommentaryOptions = {}
-): CoachParts {
-  const payload = buildInsightPayload(move, options.userRating ?? 1500, detail, options.playerColor ?? "white", options.context);
-  if (payload) return coachFallback(payload);
-  // No usable engine data for this move: say what little is certain.
-  const played = uciToSan(move.fenBefore, move.playedMove) ?? move.san ?? move.playedMove;
-  const best = uciToSan(move.fenBefore, move.bestMove);
-  const better = best && best !== played ? ` Stronger was ${best}.` : "";
-  return {
-    body: `${played} was ${VERDICT[move.classification]}.${better}`,
-    takeaway: "Check what your move allows before you play it."
-  };
-}
 
 export function hasUsableMaiaData(move: MoveReview): boolean {
   const ratings = new Set((move.humanPredictions ?? []).map((prediction) => prediction.rating));

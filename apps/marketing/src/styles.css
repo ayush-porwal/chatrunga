@@ -531,19 +531,6 @@ main {
   text-decoration-color: color-mix(in srgb, var(--paper-move) 45%, transparent);
 }
 
-.note-next {
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid color-mix(in srgb, var(--paper-ink) 18%, transparent);
-  font-family: var(--sans);
-  font-size: 0.9375rem;
-  line-height: 1.55;
-}
-
-.note-next strong {
-  font-weight: 650;
-}
-
 /* ---- Privacy + download ---------------------------------------------------------------- */
 
 .privacy {

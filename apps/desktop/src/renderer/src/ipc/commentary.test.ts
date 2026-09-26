@@ -19,9 +19,9 @@ describe("renderer commentary bridge", () => {
     expect(generate).toHaveBeenCalledWith({ payloads: [] });
   });
 
-  it("turns a renderer/IPC failure into a safe fallback message", () => {
+  it("turns a renderer/IPC failure into a safe message", () => {
     const message = rendererCommentaryError(new Error("request failed with unit-test-secret"));
-    expect(message).toBe("OpenRouter commentary was unavailable; local fallback is shown.");
+    expect(message).toBe("Commentary couldn't be requested. Try again in a moment.");
     expect(message).not.toContain("unit-test-secret");
   });
 

@@ -1,5 +1,5 @@
 import { REVIEW_MAIA_LEVELS, type AppSettings, type ReviewMaiaLevel } from "@chaturanga/shared/types/settings";
-import { useEnginesQuery, useUpdateSettingMutation } from "../../queries/api";
+import { useEnginesQuery, useOpenRouterConfigQuery, useUpdateSettingMutation } from "../../queries/api";
 import { pickDefaultEngine, pickMaiaEngines } from "./review-engine-picker";
 import { OpenRouterSettingsCard } from "../settings/OpenRouterSettingsCard";
 import { Badge, ChipButton } from "@/components/ui/badge";
@@ -29,11 +29,6 @@ function estimateReviewTime(searchTimeMs: number): string {
   return seconds < 90 ? `~${Math.round(seconds)}s` : `~${Math.round(seconds / 60)} min`;
 }
 
-const providerLabel: Record<AppSettings["reviewCommentaryProvider"], string> = {
-  openrouter: "OpenRouter",
-  local: "Local"
-};
-
 export function ReviewSettingsPanel({
   settings,
   onClose
@@ -42,6 +37,8 @@ export function ReviewSettingsPanel({
   onClose: () => void;
 }) {
   const engines = useEnginesQuery();
+  const openRouter = useOpenRouterConfigQuery();
+  const hasApiKey = Boolean(openRouter.data?.hasApiKey);
   const update = useUpdateSettingMutation();
   const availableEngines = engines.data ?? [];
   const automaticEngine = pickDefaultEngine(availableEngines);
@@ -174,7 +171,11 @@ export function ReviewSettingsPanel({
         <Field label="Your rating" hint="400–3500" htmlFor="review-rating">
           <Input id="review-rating" type="number" min={400} max={3500} step={10} value={settings.reviewPlayerRating} onChange={(event) => set("reviewPlayerRating", Math.round(Math.max(400, Math.min(3500, Number(event.target.value) || 1500))))} />
         </Field>
-        <Disclosure title="Commentary source" summary={providerLabel[settings.reviewCommentaryProvider]}>
+        <Disclosure
+          title="OpenRouter"
+          summary={openRouter.isLoading ? undefined : hasApiKey ? "Key saved" : "No key"}
+          defaultOpen={openRouter.isSuccess && !hasApiKey}
+        >
           <OpenRouterSettingsCard />
         </Disclosure>
       </section>

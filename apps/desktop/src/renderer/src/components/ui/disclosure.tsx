@@ -18,14 +18,17 @@ import { usePresence } from "@/components/ui/use-presence";
 function Disclosure({
   title,
   summary,
+  defaultOpen = false,
   children
 }: {
   title: React.ReactNode;
   /** Short current-value summary shown on the right while collapsed. */
   summary?: React.ReactNode;
+  /** Start expanded (read on mount only), e.g. when the section needs the user's attention. */
+  defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
-  const [isOpen, setIsOpen] = React.useState(false);
+  const [isOpen, setIsOpen] = React.useState(defaultOpen);
   const contentId = React.useId();
   const { present } = usePresence(isOpen, motion.ms.standard);
   // The body mounts collapsed and expands on the next frame, so the grid rows have a start value.

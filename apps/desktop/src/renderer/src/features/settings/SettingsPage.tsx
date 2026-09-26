@@ -19,7 +19,8 @@ import { OpenRouterSettingsCard } from "./OpenRouterSettingsCard";
 import { useSettingsSaveState } from "./settings-save-state";
 import { useSetSetting } from "./use-set-setting";
 
-type SectionId = "window" | "board" | "sound" | "engines" | "downloads" | "commentary";
+export type SettingsSectionId = "window" | "board" | "sound" | "engines" | "downloads" | "commentary";
+type SectionId = SettingsSectionId;
 
 const sectionLabels: Record<SectionId, string> = {
   window: "Window",
@@ -32,7 +33,12 @@ const sectionLabels: Record<SectionId, string> = {
 
 const sectionDomId = (id: SectionId) => `settings-${id}`;
 
-export const SettingsPage = memo(function SettingsPage() {
+export const SettingsPage = memo(function SettingsPage({
+  initialSection = null
+}: {
+  /** Section to show when the page opens (e.g. Commentary from Game review's "Add API key"). */
+  initialSection?: SettingsSectionId | null;
+}) {
   const settings = useSettingsQuery();
   const desktopApiAvailable = hasDesktopApi();
   const appearance = hydratePieceSettings({ ...defaultSettings, ...(settings.data ?? {}) });
@@ -48,6 +54,15 @@ export const SettingsPage = memo(function SettingsPage() {
   ];
   const navRef = useRef<HTMLElement>(null);
   const active = useScrollSpy(navRef, sections);
+
+  useEffect(() => {
+    // Jump (no smooth scroll) once the page has laid out, so it opens at the requested section.
+    if (!initialSection) return;
+    const frame = window.requestAnimationFrame(() =>
+      document.getElementById(sectionDomId(initialSection))?.scrollIntoView({ block: "start" })
+    );
+    return () => window.cancelAnimationFrame(frame);
+  }, [initialSection]);
 
   return (
     <Page>
@@ -116,7 +131,7 @@ export const SettingsPage = memo(function SettingsPage() {
             ) : null}
             <SectionAnchor id="commentary">
               <section className={cn(cardPadded, "grid gap-4")}>
-                <SectionHeader title="Commentary" description="Who writes the move-by-move explanations in Game review." />
+                <SectionHeader title="Commentary" description="Game review explains each move with an AI model, through your own OpenRouter account." />
                 <OpenRouterSettingsCard />
               </section>
             </SectionAnchor>

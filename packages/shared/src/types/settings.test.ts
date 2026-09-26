@@ -152,23 +152,24 @@ describe("review engine settings", () => {
 });
 
 describe("normalizeCommentaryProvider", () => {
-  it("keeps supported providers", () => {
-    expect(normalizeCommentaryProvider("openrouter", false)).toBe("openrouter");
-    expect(normalizeCommentaryProvider("local", true)).toBe("local");
+  it("keeps OpenRouter", () => {
+    expect(normalizeCommentaryProvider("openrouter")).toBe("openrouter");
   });
 
-  it("maps the retired hosted provider to OpenRouter only when a key is saved", () => {
-    expect(normalizeCommentaryProvider("server", true)).toBe("openrouter");
-    expect(normalizeCommentaryProvider("server", false)).toBe("local");
-    expect(normalizeCommentaryProvider(undefined, false)).toBe("local");
+  it("maps the retired offline and hosted providers to OpenRouter", () => {
+    expect(normalizeCommentaryProvider("local")).toBe("openrouter");
+    expect(normalizeCommentaryProvider("server")).toBe("openrouter");
+    expect(normalizeCommentaryProvider(undefined)).toBe("openrouter");
   });
 
-  it("reads an unmigrated legacy value as offline during normalization", () => {
-    const normalized = normalizeReviewEngineSettings({
-      ...defaultSettings,
-      reviewCommentaryProvider: "server" as never
-    });
-    expect(normalized.reviewCommentaryProvider).toBe("local");
+  it("reads an unmigrated legacy value as OpenRouter during normalization", () => {
+    for (const legacy of ["local", "server"]) {
+      const normalized = normalizeReviewEngineSettings({
+        ...defaultSettings,
+        reviewCommentaryProvider: legacy as never
+      });
+      expect(normalized.reviewCommentaryProvider).toBe("openrouter");
+    }
     expect(normalizeReviewEngineSettings(defaultSettings).reviewCommentaryProvider).toBe(
       "openrouter"
     );

@@ -6,7 +6,7 @@ import { uciToSan } from "./review-utils";
 /**
  * Clickable moves in review prose.
  *
- * Commentary (AI or the local fallback) only names SAN tokens that come from grounded data: the
+ * AI commentary only names SAN tokens that come from grounded data: the
  * played move, the engine's best line and alternatives (from `fenBefore`), the reply line after the
  * played move (from `fenAfter`) and the game's recent history. This module splits
  * prose into text and SAN tokens, then maps each token back to one of those lines so a click can

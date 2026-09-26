@@ -25,6 +25,7 @@ import { PlayerRow } from "../board/PlayerIdentity";
 import { BoardStage, BoardWorkspace, workspaceTabsClass } from "../board/BoardWorkspace";
 import { MoveNavigation } from "../board/MoveNavigation";
 import { useGameReviewCommentary } from "./useGameReviewCommentary";
+import { useUpdateSettingMutation } from "../../queries/api";
 import { openSavedGame } from "../game/saved-game";
 import { reviewAnchorFor, type CommentaryMoveContext, type MoveNavigationTarget } from "./commentary-moves";
 import { qualityTone } from "@/lib/ui";
@@ -53,6 +54,8 @@ type GameReviewPageProps = {
   /** Offered when the game has no moves to review. */
   onImportPgn: () => void;
   onNewGame: () => void;
+  /** Opens Settings → Commentary (offered when no OpenRouter key is saved). */
+  onOpenCommentarySettings?: () => void;
 };
 
 export const GameReviewPage = memo(function GameReviewPage(props: GameReviewPageProps) {
@@ -70,7 +73,8 @@ function GameReviewPageInner({
   settingsReady = true,
   onAnalyze,
   onImportPgn,
-  onNewGame
+  onNewGame,
+  onOpenCommentarySettings
 }: GameReviewPageProps) {
   const location = useLocation();
   const id = reviewIdFromPath(location.pathname);
@@ -138,9 +142,14 @@ function GameReviewPageInner({
   const counts = useMemo(() => countByClassification(statMoves), [statMoves]);
   const accuracy = useMemo(() => reviewAccuracy(statMoves), [statMoves]);
   const average = useMemo(() => averageLoss(statMoves), [statMoves]);
+  const { mutate: updateSetting } = useUpdateSettingMutation();
+  const turnOnCommentary = useCallback(
+    () => updateSetting({ key: "reviewCommentaryEnabled", value: true }),
+    [updateSetting]
+  );
+  const openReviewSettings = useCallback(() => onTabChange("settings"), [onTabChange]);
   const selected = useGameReviewCommentary({
     enabled: settings.reviewCommentaryEnabled,
-    provider: settings.reviewCommentaryProvider,
     detail: settings.reviewCommentaryDetail,
     userRating: settings.reviewPlayerRating,
     playerColor: settings.reviewPlayerColor,
@@ -268,14 +277,17 @@ function GameReviewPageInner({
           move={panelMove}
           hasReview={hasMoves}
           running={isRunning}
+          status={selected.status}
           commentary={selected.commentary}
-          local={selected.local}
-          pending={selected.pending}
+          model={selected.model}
           error={selected.error}
-          canRetry={selected.canRetry}
+          detail={settings.reviewCommentaryDetail}
           userRating={settings.reviewPlayerRating}
           onRetry={selected.retry}
           onAnalyze={onAnalyze}
+          onOpenCommentarySettings={onOpenCommentarySettings}
+          onOpenReviewSettings={openReviewSettings}
+          onTurnOnCommentary={turnOnCommentary}
           moveContext={moveContext}
           onGoToLine={goToLine}
           variationAnchor={variationAnchor}

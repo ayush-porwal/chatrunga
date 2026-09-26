@@ -1,18 +1,17 @@
 import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
-import { useOpenRouterConfigQuery, useSettingsQuery } from "../../queries/api";
-import { useSetSetting } from "./use-set-setting";
-import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
+import { useOpenRouterConfigQuery } from "../../queries/api";
 import { DEFAULT_COMMENTARY_MODEL, isLightweightCommentaryModel } from "@chaturanga/shared/llm/models";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { fieldHint } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 
 /**
- * Shared BYOK commentary form (Settings → Commentary, and embedded in Review settings).
+ * Shared BYOK commentary form (Settings → Commentary, and embedded in Review settings): the
+ * OpenRouter model and API key that Game review's AI commentary uses.
  * Renders only the fields — no card chrome or heading — so the host decides the frame
  * (a card with a SectionHeader on Settings, a Disclosure in the review panel).
  *
@@ -21,9 +20,6 @@ import { cn } from "@/lib/utils";
  */
 export function OpenRouterSettingsCard() {
   const openRouter = useOpenRouterConfigQuery();
-  const settingsQuery = useSettingsQuery();
-  const setSetting = useSetSetting();
-  const settings: AppSettings = { ...defaultSettings, ...(settingsQuery.data ?? {}) };
   const [model, setModel] = useState("");
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [saveState, setSaveState] = useState<{ kind: "idle" | "saving" | "saved" | "error"; message?: string }>({ kind: "idle" });
@@ -61,7 +57,7 @@ export function OpenRouterSettingsCard() {
     try {
       await window.chaturanga.commentary.setOpenRouterConfig({ apiKey: null, model });
       setApiKeyInput("");
-      setSaveState({ kind: "saved", message: "Key removed. Local commentary is used." });
+      setSaveState({ kind: "saved", message: "Key removed." });
       await openRouter.refetch();
     } catch (error) {
       setSaveState({
@@ -76,22 +72,10 @@ export function OpenRouterSettingsCard() {
       ? saveState.message
       : hasApiKey
         ? "A key is saved."
-        : "No key saved — local commentary is used.";
+        : "No key saved. Commentary needs one.";
 
   return (
     <div className="grid max-w-xl min-w-0 gap-3">
-      <Field label="Source" htmlFor="review-provider">
-        <Select
-          id="review-provider"
-          value={settings.reviewCommentaryProvider}
-          onChange={(event) =>
-            setSetting("reviewCommentaryProvider", event.target.value as AppSettings["reviewCommentaryProvider"])
-          }
-        >
-          <option value="openrouter">OpenRouter · your key</option>
-          <option value="local">Local (offline)</option>
-        </Select>
-      </Field>
       <Field label="OpenRouter model" htmlFor="openrouter-model">
         <Input
           id="openrouter-model"
@@ -124,7 +108,9 @@ export function OpenRouterSettingsCard() {
           autoComplete="new-password"
           spellCheck={false}
         />
-        <p className={fieldHint}>Encrypted with your system keychain and sent only to OpenRouter. Never shown again.</p>
+        <p className={fieldHint}>
+          Create one at openrouter.ai/keys. Encrypted with your system keychain and sent only to OpenRouter. Never shown again.
+        </p>
       </Field>
       {saveState.kind === "error" ? <Notice tone="danger">{saveState.message}</Notice> : null}
       <div className="flex flex-wrap items-center gap-2">

@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useMemo, useRef, type ReactNode } from "react";
-import { Check, CircleDashed, Trash2 } from "lucide-react";
+import { Check, Trash2 } from "lucide-react";
 import { reviewLabel } from "@chaturanga/shared/chess/review";
 import { formatMoveEval } from "../game-review/review-score";
 import type { MoveReview, ReviewCommentary } from "@chaturanga/shared/types/engine";
@@ -239,11 +239,7 @@ const TreeNodeButton = memo(function TreeNodeButton({
             </span>
           ) : null}
           {showCommentaryState && commentary ? (
-            commentary.fallback ? (
-              <CircleDashed aria-label="Fallback commentary" className={cn("size-3", selected ? "text-fg" : "text-warn")} />
-            ) : (
-              <Check aria-label="Commentary ready" className={cn("size-3", selected ? "text-fg" : "text-accent")} />
-            )
+            <Check aria-label="Commentary ready" className={cn("size-3", selected ? "text-fg" : "text-accent")} />
           ) : null}
         </span>
       </button>

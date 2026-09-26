@@ -204,7 +204,10 @@ export type AppSettings = {
   reviewSearchTimeMs: number;
   reviewUseMaia: boolean;
   reviewCommentaryEnabled: boolean;
-  /** OpenRouter with the user's own key (default), or the offline deterministic explanation. */
+  /**
+   * Commentary is written by OpenRouter with the user's own key; the only provider. Kept as a
+   * setting so rows stored by older builds ("local", "server") read and migrate cleanly.
+   */
   reviewCommentaryProvider: ReviewCommentaryProvider;
   reviewCommentaryDetail: "concise" | "balanced" | "detailed";
   reviewPlayerRating: number;
@@ -223,11 +226,7 @@ export type AppSettings = {
   lastOpenedGameId: string | null;
 };
 
-export type ReviewCommentaryProvider = "openrouter" | "local";
-export const REVIEW_COMMENTARY_PROVIDERS: readonly ReviewCommentaryProvider[] = [
-  "openrouter",
-  "local"
-] as const;
+export type ReviewCommentaryProvider = "openrouter";
 
 export type ReviewMaiaLevel = MaiaRating;
 export const REVIEW_MAIA_LEVELS: readonly ReviewMaiaLevel[] = [
@@ -349,17 +348,13 @@ export function resolveEngineThreads(setting: number | null | undefined, cpuCoun
 }
 
 /**
- * Maps a stored commentary provider onto a supported one. Builds before the client-side
- * rewrite offered a hosted coach (`"server"`); it maps to OpenRouter when the user already
- * has a key saved, otherwise to the offline explanation so nothing silently needs a key.
+ * Maps a stored commentary provider onto the supported one. Older builds offered a hosted
+ * coach (`"server"`) and an offline template (`"local"`); both are retired, so every value
+ * reads as OpenRouter.
  */
-export function normalizeCommentaryProvider(
-  value: unknown,
-  hasOpenRouterKey: boolean
-): ReviewCommentaryProvider {
-  if (REVIEW_COMMENTARY_PROVIDERS.includes(value as ReviewCommentaryProvider))
-    return value as ReviewCommentaryProvider;
-  return hasOpenRouterKey ? "openrouter" : "local";
+export function normalizeCommentaryProvider(value: unknown): ReviewCommentaryProvider {
+  void value;
+  return "openrouter";
 }
 
 /**
@@ -403,7 +398,7 @@ export function normalizeReviewEngineSettings(settings: AppSettings): AppSetting
       3500,
       defaultSettings.reviewPlayerRating
     ),
-    // A legacy value not yet migrated at startup (see main/index.ts) reads as offline.
-    reviewCommentaryProvider: normalizeCommentaryProvider(settings.reviewCommentaryProvider, false)
+    // A legacy value not yet migrated at startup (see main/index.ts) reads as OpenRouter.
+    reviewCommentaryProvider: normalizeCommentaryProvider(settings.reviewCommentaryProvider)
   };
 }

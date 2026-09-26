@@ -5,35 +5,42 @@ import { useGameStore } from "../../stores/game-store";
 import { useReviewStore } from "../../stores/review-store";
 import { useOpenRouterConfigQuery } from "../../queries/api";
 import { rendererCommentaryError, requestRendererCommentary } from "../../ipc/commentary";
-import type { CoachParts } from "@chaturanga/shared/llm/commentary";
-import { buildInsightPayload, localCoachCommentary, type CommentaryDetail } from "./review-utils";
+import { DEFAULT_COMMENTARY_MODEL } from "@chaturanga/shared/llm/models";
+import { buildInsightPayload, type CommentaryDetail } from "./review-utils";
 import {
   CommentaryScheduler,
   commentarySettingsKey,
   decideCommentary,
-  isAiCommentary,
-  type CommentaryJob,
-  type CommentaryProvider
+  isCurrentCommentary,
+  type CommentaryDecision,
+  type CommentaryJob
 } from "./commentary-scheduler";
 
-const PROVIDER_FAILED = "AI commentary was unavailable for this move; the local explanation is shown.";
+const PROVIDER_FAILED = "OpenRouter didn't return commentary for this move.";
+
+/**
+ * What the Commentary panel shows for the selected move:
+ * - `loading`: waiting for the debounce, the configuration or the provider;
+ * - `ready`: `commentary` holds the AI explanation;
+ * - `error`: the request failed (`error` says why); `retry` asks again for this move only;
+ * - `no-key`: no OpenRouter key is saved; `off`: AI commentary is switched off;
+ * - `no-payload`: the engine data for this move is too thin to explain;
+ * - `idle`: nothing to show (review running, no move, tab hidden).
+ */
+export type CommentaryStatus = "idle" | "loading" | "ready" | "error" | "no-key" | "off" | "no-payload";
 
 /** Commentary for the move currently in view. */
 export type SelectedMoveCommentary = {
-  /** Provider-written explanation to show (may belong to older settings while a refresh loads). */
+  status: CommentaryStatus;
   commentary: ReviewCommentary | undefined;
-  /** Deterministic explanation (headline, body, takeaway), shown immediately and whenever no AI explanation exists. */
-  local: CoachParts | null;
-  /** An AI explanation for this move is being prepared. */
-  pending: boolean;
+  /** The OpenRouter model writing the commentary (shown while loading). */
+  model: string;
   error: string | null;
-  canRetry: boolean;
   retry: () => void;
 };
 
 type Options = {
   enabled: boolean;
-  provider: CommentaryProvider;
   detail: CommentaryDetail;
   userRating: number;
   playerColor: "white" | "black";
@@ -53,7 +60,6 @@ type Options = {
  */
 export function useGameReviewCommentary({
   enabled,
-  provider,
   detail,
   userRating,
   playerColor,
@@ -65,8 +71,8 @@ export function useGameReviewCommentary({
   const reviewStatus = useReviewStore((state) => state.status);
   const headers = useGameStore((state) => state.headers);
   const openRouterConfig = useOpenRouterConfigQuery();
-  const model = provider === "openrouter" ? openRouterConfig.data?.model ?? "" : "";
-  const settingsKey = commentarySettingsKey({ provider, model, detail, userRating, playerColor });
+  const model = openRouterConfig.data?.model ?? "";
+  const settingsKey = commentarySettingsKey({ model, detail, userRating, playerColor });
   const [failures, setFailures] = useState<Record<string, string>>({});
   const [scheduler] = useState(() => new CommentaryScheduler());
   const settingsKeyRef = useRef(settingsKey);
@@ -106,13 +112,11 @@ export function useGameReviewCommentary({
   }, [active, detail, payloadContext, playerColor, reviewedMove, userRating]);
   const cached = reviewedMove ? review?.commentary?.find((item) => item.ply === reviewedMove.ply) : undefined;
   const jobKey = review && reviewedMove ? `${review.createdAt}:${reviewedMove.ply}:${settingsKey}` : "";
-  const providerReady = provider === "openrouter" && Boolean(openRouterConfig.data?.hasApiKey);
   const decision = decideCommentary({
     active,
     enabled,
-    provider,
-    providerLoading: !settingsReady || (provider === "openrouter" && openRouterConfig.isLoading),
-    providerReady,
+    configLoading: !settingsReady || openRouterConfig.isLoading,
+    hasApiKey: Boolean(openRouterConfig.data?.hasApiKey),
     hasPayload: Boolean(payload),
     cached,
     settingsKey,
@@ -132,7 +136,7 @@ export function useGameReviewCommentary({
     };
     const store = (item: ReviewCommentary | undefined, error: string | null) => {
       if (stale()) return;
-      if (item && isAiCommentary(item)) {
+      if (item) {
         useReviewStore.getState().addCommentary({ ...item, settingsKey: input.settingsKey });
         return;
       }
@@ -159,30 +163,42 @@ export function useGameReviewCommentary({
     scheduler.schedule(decision === "request" ? job : null);
   }, [decision, job, scheduler]);
 
-  const local = useMemo(
-    () => (reviewedMove ? localCoachCommentary(reviewedMove, detail, { userRating, playerColor, context: payloadContext }) : null),
-    [detail, payloadContext, playerColor, reviewedMove, userRating]
-  );
-  const unavailable = decision === "unavailable"
-    ? "Add an OpenRouter API key in Review settings for AI commentary. The local explanation is shown."
-    : null;
+  const retry = useCallback(() => {
+    if (!job) return;
+    setFailures((current) => {
+      const next = { ...current };
+      delete next[job.key];
+      return next;
+    });
+    scheduler.runNow(job);
+  }, [job, scheduler]);
 
   return {
-    commentary: isAiCommentary(cached) ? cached : undefined,
-    local,
-    pending: decision === "request" || decision === "waiting",
-    error: (jobKey && failures[jobKey]) || unavailable,
-    canRetry: decision === "failed",
-    retry: () => {
-      if (!job) return;
-      setFailures((current) => {
-        const next = { ...current };
-        delete next[job.key];
-        return next;
-      });
-      scheduler.runNow(job);
-    }
+    status: statusFor(decision, isCurrentCommentary(cached, settingsKey)),
+    commentary: cached,
+    model: model || DEFAULT_COMMENTARY_MODEL,
+    error: decision === "failed" ? failures[jobKey] ?? PROVIDER_FAILED : null,
+    retry
   };
+}
+
+function statusFor(decision: CommentaryDecision, hasCurrent: boolean): CommentaryStatus {
+  switch (decision) {
+    case "idle":
+      return "idle";
+    case "request":
+    case "waiting":
+      return "loading";
+    case "cached":
+      return "ready";
+    case "failed":
+      return "error";
+    // Commentary saved earlier still shows when it is switched off or the key was removed.
+    case "off":
+    case "no-key":
+    case "no-payload":
+      return hasCurrent ? "ready" : decision;
+  }
 }
 
 function isCurrentReview(target: GameReview): boolean {

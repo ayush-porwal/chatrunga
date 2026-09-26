@@ -14,17 +14,12 @@ import {
 } from "electron";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import {
-  normalizeCommentaryProvider,
-  REVIEW_COMMENTARY_PROVIDERS,
-  type ReviewCommentaryProvider
-} from "@chaturanga/shared/types/settings";
+import { normalizeCommentaryProvider } from "@chaturanga/shared/types/settings";
 import { closeDb, getDb } from "./db";
 import { settingsRepository } from "./db/repositories";
 import { EngineManager } from "./engine/engine-manager";
 import { killAllEngineProcesses } from "./engine/uci-process";
 import { registerIpc } from "./ipc/register";
-import { getOpenRouterConfigStore } from "./commentary/openrouter-config";
 import { logger } from "./logger";
 import {
   isAppUrl,
@@ -86,9 +81,11 @@ if (!app.requestSingleInstanceLock()) {
 
 async function startup(): Promise<void> {
   getDb();
-  await migrateCommentaryProvider().catch((error) =>
-    logger.error("settings", "commentary provider migration failed:", error)
-  );
+  try {
+    migrateCommentaryProvider();
+  } catch (error) {
+    logger.error("settings", "commentary provider migration failed:", error);
+  }
   session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) =>
     callback(isPermissionAllowed(permission))
   );
@@ -239,12 +236,11 @@ function createAppIcon() {
 }
 
 /**
- * One-time settings migration: the hosted commentary provider ("server") was removed.
- * Users who already saved an OpenRouter key move to OpenRouter; everyone else to offline.
+ * One-time settings migration: the hosted ("server") and offline ("local") commentary providers
+ * were removed. Any stored value other than OpenRouter is rewritten to it.
  */
-async function migrateCommentaryProvider(): Promise<void> {
+function migrateCommentaryProvider(): void {
   const stored = settingsRepository.getStored("reviewCommentaryProvider");
-  if (stored === undefined || REVIEW_COMMENTARY_PROVIDERS.includes(stored as ReviewCommentaryProvider)) return;
-  const { hasApiKey } = await getOpenRouterConfigStore().get();
-  settingsRepository.set("reviewCommentaryProvider", normalizeCommentaryProvider(stored, hasApiKey));
+  if (stored === undefined || stored === "openrouter") return;
+  settingsRepository.set("reviewCommentaryProvider", normalizeCommentaryProvider(stored));
 }

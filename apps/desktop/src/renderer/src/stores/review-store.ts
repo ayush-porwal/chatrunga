@@ -1,9 +1,10 @@
 import { create } from "zustand";
-import type {
-  GameReview,
-  MoveReview,
-  ReviewCommentary,
-  ReviewProgress
+import {
+  savedReviewCommentary,
+  type GameReview,
+  type MoveReview,
+  type ReviewCommentary,
+  type ReviewProgress
 } from "@chaturanga/shared/types/engine";
 
 type ReviewStatus = "idle" | "running" | "ready" | "error" | "cancelled";
@@ -87,7 +88,9 @@ export const useReviewStore = create<ReviewStore>((set) => ({
   loadReview: (review) =>
     set({
       status: review ? "ready" : "idle",
-      review,
+      // Saved reviews may hold explanations from the retired offline template; drop them so
+      // the AI is asked when those moves are viewed.
+      review: review?.commentary ? { ...review, commentary: savedReviewCommentary(review.commentary) } : review,
       error: null,
       reviewId: null,
       progress: null,

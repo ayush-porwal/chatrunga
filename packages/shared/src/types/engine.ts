@@ -240,29 +240,52 @@ export type GameReviewSummary = {
   averageCentipawnLoss: number | null;
 };
 
-/** `"server"` marks explanations from the retired hosted coach; only older saved reviews carry it. */
-export type CommentarySource = "openrouter" | "local-fallback" | "server";
-
+/** AI commentary for one reviewed move, written by the user's OpenRouter model. */
 export type ReviewCommentary = {
   ply: number;
   /** The coach's explanation (the structured answer's body). */
   prose: string;
   /** Short title naming the idea (at most 8 words). Absent on older saved reviews. */
   headline?: string;
-  /** One transferable thinking habit. Absent on older saved reviews. */
-  takeaway?: string;
   generatedAt: number;
   providerModel: string;
-  fallback: boolean;
-  /** Explicit provenance for the UI. Optional for older saved reviews. */
-  source?: CommentarySource;
   /**
-   * Fingerprint of the commentary settings (provider, model, detail, rating, side) this
-   * explanation was generated with. A settings change makes it stale for future on-demand
-   * requests. Absent on older saved reviews, which are treated as current.
+   * Fingerprint of the commentary settings (model, detail, rating, side) this explanation was
+   * generated with. A settings change makes it stale for future on-demand requests. Absent on
+   * older saved reviews, which are treated as current.
    */
   settingsKey?: string;
 };
+
+/**
+ * Fields older builds wrote into saved reviews: a "Next time" `takeaway`, and `fallback` /
+ * `source` marking explanations from the retired offline template ("local-fallback") or hosted
+ * coach ("server"). Only read by {@link savedReviewCommentary}.
+ */
+type LegacyReviewCommentary = ReviewCommentary & {
+  takeaway?: unknown;
+  fallback?: unknown;
+  source?: unknown;
+};
+
+/**
+ * Commentary from a saved review, keeping only real AI explanations: entries from the retired
+ * offline template are dropped (so the AI is asked when that move is viewed) and legacy-only
+ * fields are stripped.
+ */
+export function savedReviewCommentary(
+  items: readonly ReviewCommentary[] | undefined
+): ReviewCommentary[] | undefined {
+  if (!items) return items;
+  return (items as readonly LegacyReviewCommentary[]).flatMap((item) => {
+    if (item.fallback === true || item.source === "local-fallback") return [];
+    const { takeaway, fallback, source, ...current } = item;
+    void takeaway;
+    void fallback;
+    void source;
+    return [current];
+  });
+}
 
 /** Current `GameReview.schemaVersion`. Reviews below 2 carry fake (uniform) Maia probabilities. */
 export const GAME_REVIEW_SCHEMA_VERSION = 2;
@@ -287,7 +310,7 @@ export type GameReview = {
   createdAt: number;
   summary: GameReviewSummary;
   moves: MoveReview[];
-  /** AI or deterministic fallback commentary, keyed by ply. */
+  /** AI commentary, keyed by ply; requested on demand as moves are viewed. */
   commentary?: ReviewCommentary[];
 };
 
