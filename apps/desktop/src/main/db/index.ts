@@ -16,6 +16,8 @@ const ddl = [
     protocol TEXT NOT NULL,
     is_default INTEGER NOT NULL,
     is_enabled INTEGER NOT NULL,
+    is_human_prediction INTEGER,
+    maia_rating INTEGER,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`,
@@ -32,6 +34,7 @@ const ddl = [
     initial_fen TEXT,
     pgn TEXT NOT NULL,
     current_fen TEXT NOT NULL,
+    current_node_id TEXT,
     move_tree_json TEXT NOT NULL,
     review_json TEXT,
     created_at INTEGER NOT NULL,
@@ -78,12 +81,21 @@ function runMigrations(database: DatabaseSync): void {
   if (!gamesColumns.some((column) => column.name === "review_json")) {
     database.exec("ALTER TABLE games ADD COLUMN review_json TEXT");
   }
+  if (!gamesColumns.some((column) => column.name === "current_node_id")) {
+    database.exec("ALTER TABLE games ADD COLUMN current_node_id TEXT");
+  }
   const enginesColumns = database.prepare("PRAGMA table_info(engines)").all() as { name: string }[];
   if (!enginesColumns.some((column) => column.name === "weights_path")) {
     database.exec("ALTER TABLE engines ADD COLUMN weights_path TEXT");
   }
   if (!enginesColumns.some((column) => column.name === "image_path")) {
     database.exec("ALTER TABLE engines ADD COLUMN image_path TEXT");
+  }
+  if (!enginesColumns.some((column) => column.name === "is_human_prediction")) {
+    database.exec("ALTER TABLE engines ADD COLUMN is_human_prediction INTEGER DEFAULT 0");
+  }
+  if (!enginesColumns.some((column) => column.name === "maia_rating")) {
+    database.exec("ALTER TABLE engines ADD COLUMN maia_rating INTEGER");
   }
   database.exec(`CREATE UNIQUE INDEX IF NOT EXISTS external_databases_source_idx
     ON external_databases(source_id)`);

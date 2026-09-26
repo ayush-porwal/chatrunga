@@ -1,0 +1,178 @@
+{
+  "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/383180572",
+  "assets_url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/383180572/assets",
+  "upload_url": "https://uploads.github.com/repos/official-stockfish/Stockfish/releases/383180572/assets{?name,label}",
+  "html_url": "https://github.com/official-stockfish/Stockfish/releases/tag/sf_19",
+  "id": 383180572,
+  "author": {
+    "login": "github-actions[bot]",
+    "type": "Bot"
+  },
+  "node_id": "RE_kwDOAUASCs4W1t8c",
+  "tag_name": "sf_19",
+  "target_commitish": "master",
+  "name": "Stockfish 19",
+  "draft": false,
+  "immutable": true,
+  "prerelease": false,
+  "created_at": "2026-09-05T08:02:59Z",
+  "updated_at": "2026-09-05T08:33:17Z",
+  "published_at": "2026-09-05T08:33:17Z",
+  "assets": [
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/545567324",
+      "id": 545567324,
+      "node_id": "RA_kwDOAUASCs4ghLJc",
+      "name": "stockfish-android-arm64-universal.tar.gz",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/gzip",
+      "state": "uploaded",
+      "size": 80233187,
+      "digest": "sha256:ebb24051aa4a222b4daaf049b882ecf1163d370c128fe02316602643f4d5e426",
+      "download_count": 13481,
+      "created_at": "2026-09-05T08:19:48Z",
+      "updated_at": "2026-09-05T08:19:50Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-android-arm64-universal.tar.gz"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/545567327",
+      "id": 545567327,
+      "node_id": "RA_kwDOAUASCs4ghLJf",
+      "name": "stockfish-android-armv7-neon.tar.gz",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/gzip",
+      "state": "uploaded",
+      "size": 80008700,
+      "digest": "sha256:47c34963f1cdf4a6af34c1b5294f7a4e2679b3eb52698c324855af2c6486024b",
+      "download_count": 2871,
+      "created_at": "2026-09-05T08:19:48Z",
+      "updated_at": "2026-09-05T08:19:50Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-android-armv7-neon.tar.gz"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/545574906",
+      "id": 545574906,
+      "node_id": "RA_kwDOAUASCs4ghM_6",
+      "name": "stockfish-linux-arm64-universal.tar.gz",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/gzip",
+      "state": "uploaded",
+      "size": 80181250,
+      "digest": "sha256:fe26cfd1d9db4c8af3d21e24d9ff34cacb31c1f940085a7583da11796f2bac01",
+      "download_count": 944,
+      "created_at": "2026-09-05T08:26:54Z",
+      "updated_at": "2026-09-05T08:26:57Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-linux-arm64-universal.tar.gz"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/545574935",
+      "id": 545574935,
+      "node_id": "RA_kwDOAUASCs4ghNAX",
+      "name": "stockfish-linux-riscv64-universal.tar.gz",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/gzip",
+      "state": "uploaded",
+      "size": 80241608,
+      "digest": "sha256:d4b4d118c003bc669a939d9fb208e3ef6b367730fd79a70dbc278b18475df3d1",
+      "download_count": 320,
+      "created_at": "2026-09-05T08:26:55Z",
+      "updated_at": "2026-09-05T08:26:58Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-linux-riscv64-universal.tar.gz"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/545574859",
+      "id": 545574859,
+      "node_id": "RA_kwDOAUASCs4ghM_L",
+      "name": "stockfish-linux-x86-64-universal.tar.gz",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/gzip",
+      "state": "uploaded",
+      "size": 81388977,
+      "digest": "sha256:9defc0d4e55d49c65a6d042f3e571a39fcea499ade6dbe741b53b8c65e03611f",
+      "download_count": 22968,
+      "created_at": "2026-09-05T08:26:51Z",
+      "updated_at": "2026-09-05T08:26:53Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-linux-x86-64-universal.tar.gz"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/545574939",
+      "id": 545574939,
+      "node_id": "RA_kwDOAUASCs4ghNAb",
+      "name": "stockfish-macos-universal.tar.gz",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/gzip",
+      "state": "uploaded",
+      "size": 82323876,
+      "digest": "sha256:a1f0e3bcc5a6927a11fe6fc8e54a779754645f3c2bae2cf13420fd1957adaa77",
+      "download_count": 6013,
+      "created_at": "2026-09-05T08:26:55Z",
+      "updated_at": "2026-09-05T08:26:59Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-macos-universal.tar.gz"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/545574838",
+      "id": 545574838,
+      "node_id": "RA_kwDOAUASCs4ghM-2",
+      "name": "stockfish-windows-arm64-universal.zip",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/zip",
+      "state": "uploaded",
+      "size": 80190536,
+      "digest": "sha256:8372ad3f0d7276deb2c70f801f541ec7db463219fc6d9c7592864e542aa4f401",
+      "download_count": 1647,
+      "created_at": "2026-09-05T08:26:50Z",
+      "updated_at": "2026-09-05T08:26:52Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-windows-arm64-universal.zip"
+    },
+    {
+      "url": "https://api.github.com/repos/official-stockfish/Stockfish/releases/assets/545574910",
+      "id": 545574910,
+      "node_id": "RA_kwDOAUASCs4ghM_-",
+      "name": "stockfish-windows-x86-64-universal.zip",
+      "label": "",
+      "uploader": {
+        "login": "github-actions[bot]",
+        "type": "Bot"
+      },
+      "content_type": "application/zip",
+      "state": "uploaded",
+      "size": 81431614,
+      "digest": "sha256:3c8bf1f9ea66a09350a40df4f632288285ac206d99f33ab5842c408fc30b48a7",
+      "download_count": 38385,
+      "created_at": "2026-09-05T08:26:54Z",
+      "updated_at": "2026-09-05T08:26:57Z",
+      "browser_download_url": "https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-windows-x86-64-universal.zip"
+    }
+  ],
+  "tarball_url": "https://api.github.com/repos/official-stockfish/Stockfish/tarball/sf_19",
+  "zipball_url": "https://api.github.com/repos/official-stockfish/Stockfish/zipball/sf_19",
+  "body": "Today, we have the pleasure of announcing **Stockfish 19**, a new major release. As always, you can freely download it at [stockfishchess.org/download][1] and use it as a drop-in replacement in the [GUI of your choice][2] to benefit from stronger play and more accurate analysis.\r"
+}

@@ -1,11 +1,17 @@
 import { nanoid } from "nanoid";
 import type { SQLInputValue } from "node:sqlite";
 import { getDb } from "./index";
-import { defaultSettings, hydratePieceSettings, type AppSettings } from "@chaturanga/shared/types/settings";
+import {
+  defaultSettings,
+  hydratePieceSettings,
+  normalizeReviewEngineSettings,
+  type AppSettings
+} from "@chaturanga/shared/types/settings";
 import type {
   CreateEngineInput,
   EngineConfig,
   GameReview,
+  MaiaRating,
   UpdateEngineInput
 } from "@chaturanga/shared/types/engine";
 import type {
@@ -20,6 +26,7 @@ import type {
   ExternalDatabaseSource,
   InstalledDatabase
 } from "@chaturanga/shared/types/database";
+import { MAIA_RATINGS, maiaRatingFromText } from "../engine/review-analysis";
 
 type EngineRow = {
   id: string;
@@ -31,7 +38,8 @@ type EngineRow = {
   args: string | null;
   protocol: string;
   is_default: number;
-  is_enabled: number;
+  is_human_prediction: number | null;
+  maia_rating: number | null;
   created_at: number;
   updated_at: number;
 };
@@ -49,11 +57,17 @@ type GameRow = {
   initial_fen: string | null;
   pgn: string;
   current_fen: string;
+  current_node_id: string | null;
   move_tree_json: string;
   review_json: string | null;
   created_at: number;
   updated_at: number;
 };
+
+type GameSummaryRow = Pick<
+  GameRow,
+  "id" | "source" | "white" | "black" | "event" | "result" | "date" | "current_fen" | "updated_at"
+>;
 
 type SettingRow = {
   key: string;
@@ -101,6 +115,12 @@ function run(sql: string, ...params: SQLInputValue[]): void {
   getDb().prepare(sql).run(...params);
 }
 
+/** Explicit rating column, else a `maia-1500`-style engine name / weights file. */
+function inferMaiaRating(row: EngineRow): MaiaRating | undefined {
+  if (MAIA_RATINGS.includes(row.maia_rating as MaiaRating)) return row.maia_rating as MaiaRating;
+  return maiaRatingFromText(`${row.name} ${row.weights_path ?? ""}`);
+}
+
 function toEngine(row: EngineRow): EngineConfig {
   return {
     id: row.id,
@@ -112,15 +132,16 @@ function toEngine(row: EngineRow): EngineConfig {
     args: parseArgs(row.args),
     protocol: "uci",
     runtime: "custom-uci",
-    isBundled: false,
     isAvailable: true,
     isDefault: Boolean(row.is_default),
+    isHumanPrediction: Boolean(row.is_human_prediction),
+    maiaRating: inferMaiaRating(row),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
 }
 
-function toGameSummary(row: GameRow): GameSummary {
+function toGameSummary(row: GameSummaryRow): GameSummary {
   return {
     id: row.id,
     source: row.source as GameSummary["source"],
@@ -146,7 +167,9 @@ function toSavedGame(row: GameRow): SavedGame {
   if (row.review_json) {
     try {
       const parsed = JSON.parse(row.review_json) as GameReview;
-      if (parsed && Array.isArray(parsed.moves)) review = parsed;
+      // Reviews saved before real Maia policy was parsed have no schemaVersion;
+      // mark them v1 so consumers ignore their (uniform) Maia probabilities.
+      if (parsed && Array.isArray(parsed.moves)) review = { ...parsed, schemaVersion: parsed.schemaVersion ?? 1 };
     } catch {
       review = null;
     }
@@ -154,6 +177,7 @@ function toSavedGame(row: GameRow): SavedGame {
 
   return {
     ...toGameSummary(row),
+    currentNodeId: row.current_node_id,
     site: row.site,
     round: row.round,
     initialFen: row.initial_fen,
@@ -204,6 +228,8 @@ export const engineRepository = {
       args: JSON.stringify(input.args ?? []),
       protocol: "uci",
       isDefault: input.isDefault ?? this.list().length === 0,
+      isHumanPrediction: input.isHumanPrediction ?? false,
+      maiaRating: input.maiaRating ?? null,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -212,8 +238,8 @@ export const engineRepository = {
     run(
       `INSERT INTO engines (
         id, name, executable_path, working_directory, weights_path, image_path, args, protocol,
-        is_default, is_enabled, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        is_default, is_enabled, is_human_prediction, maia_rating, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       row.id,
       row.name,
       row.executablePath,
@@ -223,7 +249,9 @@ export const engineRepository = {
       row.args,
       row.protocol,
       row.isDefault ? 1 : 0,
-      1,
+      1, // is_enabled: unused legacy NOT NULL column
+      row.isHumanPrediction ? 1 : 0,
+      row.maiaRating,
       row.createdAt,
       row.updatedAt
     );
@@ -244,6 +272,8 @@ export const engineRepository = {
         image_path = ?,
         args = ?,
         is_default = ?,
+        is_human_prediction = ?,
+        maia_rating = ?,
         updated_at = ?
       WHERE id = ?`,
       patch.name === undefined ? existing.name : patch.name,
@@ -261,6 +291,12 @@ export const engineRepository = {
           : null,
       patch.args === undefined ? JSON.stringify(existing.args) : JSON.stringify(patch.args),
       (patch.isDefault === undefined ? existing.isDefault : patch.isDefault) ? 1 : 0,
+      (patch.isHumanPrediction === undefined
+        ? existing.isHumanPrediction
+        : patch.isHumanPrediction)
+        ? 1
+        : 0,
+      patch.maiaRating === undefined ? existing.maiaRating ?? null : patch.maiaRating,
       now(),
       id
     );
@@ -281,9 +317,11 @@ export const engineRepository = {
 
 export const gameRepository = {
   list(): GameSummary[] {
-    return all<GameRow>("SELECT * FROM games ORDER BY updated_at DESC")
-      .filter((row) => row.source !== "puzzle")
-      .map(toGameSummary);
+    // Puzzle sessions are never library games (see the cleanup in db/index.ts).
+    return all<GameSummaryRow>(
+      `SELECT id, source, white, black, event, result, date, current_fen, updated_at
+      FROM games WHERE source != 'puzzle' ORDER BY updated_at DESC`
+    ).map(toGameSummary);
   },
 
   get(id: string): SavedGame | null {
@@ -306,11 +344,18 @@ export const gameRepository = {
           ? null
           : JSON.stringify(input.review);
 
+    const requestedNode = input.moveTree.find((node) => node.id === input.currentNodeId);
+    const currentNodeId =
+      requestedNode?.id ??
+      input.moveTree.find((node) => node.fenAfter === input.currentFen)?.id ??
+      input.moveTree.find((node) => node.parentId === null)?.id ??
+      "root";
+
     run(
       `INSERT INTO games (
         id, source, white, black, event, site, round, result, date,
-        initial_fen, pgn, current_fen, move_tree_json, review_json, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        initial_fen, pgn, current_fen, current_node_id, move_tree_json, review_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         source = excluded.source,
         white = excluded.white,
@@ -323,6 +368,7 @@ export const gameRepository = {
         initial_fen = excluded.initial_fen,
         pgn = excluded.pgn,
         current_fen = excluded.current_fen,
+        current_node_id = excluded.current_node_id,
         move_tree_json = excluded.move_tree_json,
         review_json = excluded.review_json,
         updated_at = excluded.updated_at`,
@@ -338,6 +384,7 @@ export const gameRepository = {
       input.rootFen,
       input.pgn,
       input.currentFen,
+      currentNodeId,
       JSON.stringify(input.moveTree),
       reviewJson,
       createdAt,
@@ -371,7 +418,18 @@ export const settingsRepository = {
       }
     }
     const merged = { ...defaultSettings, ...values } as AppSettings;
-    return hydratePieceSettings(merged);
+    return normalizeReviewEngineSettings(hydratePieceSettings(merged));
+  },
+
+  /** The raw persisted value (before defaults/normalization), or undefined when never set. */
+  getStored(key: keyof AppSettings): unknown {
+    const row = get<SettingRow>("SELECT key, value FROM settings WHERE key = ?", key);
+    if (!row) return undefined;
+    try {
+      return JSON.parse(row.value);
+    } catch {
+      return row.value;
+    }
   },
 
   set(key: keyof AppSettings, value: unknown): void {

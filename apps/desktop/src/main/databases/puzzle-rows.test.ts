@@ -1,0 +1,70 @@
+import { describe, expect, it } from "vitest";
+import type { InstalledDatabase, PuzzleSampleInput } from "@chaturanga/shared/types/database";
+import { parseCsvLine, sampleFromLichessRow, sampleFromPositionRow } from "./puzzle-rows";
+
+const database = { id: "db1", sourceId: "lichess-puzzles", name: "Lichess puzzles" } as InstalledDatabase;
+// Real row shape from the Lichess puzzle CSV (FEN is before the opponent's move).
+const LICHESS_ROW =
+  '00sHx,q3k1nr/1pp1nQpp/3p4/1P2p3/4P3/B1PP1b2/B5PP/5K2 b k - 0 17,e8d7 a2e6 d7d8 f7f8,1760,80,83,72,mate mateIn2 middlegame short,https://lichess.org/yyznGmXs/black#34,Italian_Game Italian_Game_Classical_Variation';
+const lichessFilters = (overrides: Partial<NonNullable<PuzzleSampleInput["lichess"]>> = {}): PuzzleSampleInput => ({
+  databaseId: "db1",
+  lichess: { ratingMin: 1000, ratingMax: 2000, popularityMin: 50, lengths: [], themes: [], openings: [], side: "any", ...overrides }
+});
+
+describe("parseCsvLine", () => {
+  it("splits quoted fields and unescapes doubled quotes", () => {
+    expect(parseCsvLine('a,"b,c","say ""hi""",')).toEqual(["a", "b,c", 'say "hi"', ""]);
+  });
+});
+
+describe("sampleFromLichessRow", () => {
+  it("starts the puzzle after the opponent's move", () => {
+    const sample = sampleFromLichessRow(database, parseCsvLine(LICHESS_ROW), lichessFilters());
+    expect(sample).toMatchObject({
+      id: "00sHx",
+      opponentMove: "e8d7",
+      solutionMoves: ["a2e6", "d7d8", "f7f8"],
+      rating: 1760,
+      sideToMove: "white",
+      themes: ["mate", "mateIn2", "middlegame", "short"],
+      openingTags: ["Italian_Game", "Italian_Game_Classical_Variation"]
+    });
+  });
+
+  it("applies rating, theme, opening, length and side filters", () => {
+    const row = parseCsvLine(LICHESS_ROW);
+    expect(sampleFromLichessRow(database, row, lichessFilters({ ratingMax: 1500 }))).toBeNull();
+    expect(sampleFromLichessRow(database, row, lichessFilters({ popularityMin: 90 }))).toBeNull();
+    expect(sampleFromLichessRow(database, row, lichessFilters({ themes: ["fork"] }))).toBeNull();
+    expect(sampleFromLichessRow(database, row, lichessFilters({ openings: ["Sicilian_Defense"] }))).toBeNull();
+    expect(sampleFromLichessRow(database, row, lichessFilters({ lengths: ["long"] }))).toBeNull();
+    expect(sampleFromLichessRow(database, row, lichessFilters({ side: "black" }))).toBeNull();
+    expect(sampleFromLichessRow(database, row, lichessFilters({ themes: ["mateIn2"], side: "white" }))).not.toBeNull();
+  });
+
+  it("skips incomplete rows", () => {
+    expect(sampleFromLichessRow(database, ["id", "fen"], lichessFilters())).toBeNull();
+  });
+});
+
+describe("sampleFromPositionRow", () => {
+  const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  const row = ["p1", "", "", "https://lichess.org/abc", fen, "e2e4", "3", "0", "1", "0", "0", "0", "0", "0", "0", "0", "0", "0", "1"];
+
+  it("reads the tag flags and difficulty", () => {
+    expect(sampleFromPositionRow(database, row, { databaseId: "db1" })).toMatchObject({
+      id: "p1",
+      solutionMoves: ["e2e4"],
+      themes: ["development", "centreControl"],
+      difficulty: 3,
+      sideToMove: "white"
+    });
+  });
+
+  it("filters by difficulty and tags", () => {
+    const position = (difficultyMax: number, tags: string[]) => ({ databaseId: "db1", position: { difficultyMin: 0, difficultyMax, tags } });
+    expect(sampleFromPositionRow(database, row, position(2, []))).toBeNull();
+    expect(sampleFromPositionRow(database, row, position(5, ["endgame"]))).toBeNull();
+    expect(sampleFromPositionRow(database, row, position(5, ["development"]))).not.toBeNull();
+  });
+});

@@ -1,15 +1,23 @@
 import type { ReviewGameInput } from "@chaturanga/shared/types/engine";
 
-/** Used when neither depth nor movetime is set — time-bounded search works for Stockfish, lc0, Maia, etc. */
-export const DEFAULT_REVIEW_MOVETIME_MS = 5_000;
+/** Used when no search bound is set — time-bounded search works for Stockfish, lc0, Maia, etc. */
+export const DEFAULT_REVIEW_MOVETIME_MS = 250;
 
 /** Legacy default when callers request depth-only mode. */
 export const DEFAULT_REVIEW_DEPTH = 14;
 
+/**
+ * Precedence: nodes > moveTimeMs > depth > default movetime.
+ *
+ * This drives the evaluation engine. Maia sessions always run `go nodes 1`
+ * with VerboseMoveStats (see `UciReviewSession.analyzePolicy`).
+ */
 export type ResolvedReviewSearch = {
-  /** For `go movetime` when non-null; otherwise `go depth` uses `depth`. */
+  /** When non-null, sent as `go nodes N`. Wins over moveTimeMs and depth. */
+  nodes: number | null;
+  /** For `go movetime` when non-null and `nodes` is null. */
   moveTimeMs: number | null;
-  /** Passed to `go depth` when `moveTimeMs` is null. */
+  /** Passed to `go depth` when `nodes` and `moveTimeMs` are both null. */
   depth: number;
   /** Stored on `GameReview` — reflects what actually bounded the search. */
   recordMoveTimeMs: number | null;
@@ -17,21 +25,31 @@ export type ResolvedReviewSearch = {
 };
 
 /**
- * Resolves how to drive `go …` for any UCI engine:
- * - explicit positive `moveTimeMs` → movetime (works well for NN engines)
- * - else explicit positive `depth` → depth (typical for classical engines)
- * - else default movetime (universal fallback)
+ * Resolves how to drive `go …` for any UCI engine.
+ * Precedence: nodes > moveTimeMs > depth > default movetime.
  */
 export function resolveReviewSearchParams(
-  input: Pick<ReviewGameInput, "depth" | "moveTimeMs">
+  input: Pick<ReviewGameInput, "depth" | "moveTimeMs" | "nodes">
 ): ResolvedReviewSearch {
+  const n = input.nodes;
   const mt = input.moveTimeMs;
   const d = input.depth;
+  const hasNodes = typeof n === "number" && Number.isFinite(n) && n > 0;
   const hasMoveTime = typeof mt === "number" && Number.isFinite(mt) && mt > 0;
   const hasDepth = typeof d === "number" && Number.isFinite(d) && d > 0;
 
+  if (hasNodes) {
+    return {
+      nodes: n,
+      moveTimeMs: null,
+      depth: hasDepth ? d : DEFAULT_REVIEW_DEPTH,
+      recordMoveTimeMs: null,
+      recordDepth: null
+    };
+  }
   if (hasMoveTime) {
     return {
+      nodes: null,
       moveTimeMs: mt,
       depth: hasDepth ? d : DEFAULT_REVIEW_DEPTH,
       recordMoveTimeMs: mt,
@@ -40,6 +58,7 @@ export function resolveReviewSearchParams(
   }
   if (hasDepth) {
     return {
+      nodes: null,
       moveTimeMs: null,
       depth: d,
       recordMoveTimeMs: null,
@@ -47,6 +66,7 @@ export function resolveReviewSearchParams(
     };
   }
   return {
+    nodes: null,
     moveTimeMs: DEFAULT_REVIEW_MOVETIME_MS,
     depth: DEFAULT_REVIEW_DEPTH,
     recordMoveTimeMs: DEFAULT_REVIEW_MOVETIME_MS,
@@ -59,8 +79,14 @@ export function reviewAnalysisTimeoutMs(params: {
   moveTimeMs: number | null;
   depth: number;
   multipv: number;
+  nodes?: number | null;
 }): number {
   const mp = Math.max(1, Math.min(params.multipv, 5));
+  // `nodes` mode (typically nodes=1 for Maia policy) returns near-instantly per move;
+  // even multi-Maia parallelism finishes well under a second per position.
+  if (typeof params.nodes === "number" && params.nodes > 0) {
+    return Math.max(10_000, params.nodes * 1_000 * mp + 5_000);
+  }
   if (params.moveTimeMs !== null && params.moveTimeMs > 0) {
     return Math.max(90_000, params.moveTimeMs * (5 + mp * 2) + 35_000);
   }
