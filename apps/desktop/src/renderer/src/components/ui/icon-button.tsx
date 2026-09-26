@@ -16,8 +16,11 @@ type IconButtonProps = Omit<ButtonProps, "size" | "children" | "aria-label"> & {
  * Icon-only button with tooltip. Default: ghost, 32px (`icon-sm`).
  *
  *   <IconButton label="Flip board" icon={<Repeat2 />} onClick={flip} />
+ *
+ * Memoised: with a hoisted icon element and a stable onClick it skips its parent's re-renders
+ * (each one is a Radix tooltip tree of ~17 components).
  */
-function IconButton({
+const IconButton = React.memo(function IconButton({
   label,
   icon,
   size = "icon-sm",
@@ -38,6 +41,6 @@ function IconButton({
       <TooltipContent side={tooltipSide}>{label}</TooltipContent>
     </Tooltip>
   );
-}
+});
 
 export { IconButton };

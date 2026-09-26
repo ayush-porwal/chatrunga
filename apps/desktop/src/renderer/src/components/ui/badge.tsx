@@ -32,16 +32,18 @@ type BadgeProps = React.ComponentProps<"span"> &
     /** Renders a remove (×) button — for selected filter chips. */
     onRemove?: () => void;
     removeLabel?: string;
+    /** Fade/rise in on mount — for badges that appear in response to something (a new result, a status). */
+    appear?: boolean;
   };
 
-function Badge({ className, tone, size, onRemove, removeLabel, children, ...props }: BadgeProps) {
+function Badge({ className, tone, size, onRemove, removeLabel, appear = false, children, ...props }: BadgeProps) {
   return (
-    <span className={cn(badgeVariants({ tone, size }), onRemove && "pr-1", className)} {...props}>
+    <span className={cn(badgeVariants({ tone, size }), onRemove && "pr-1", appear && "animate-rise-in", className)} {...props}>
       {children}
       {onRemove ? (
         <button
           type="button"
-          className="grid size-4 place-items-center rounded-full opacity-70 hover:bg-white/10 hover:opacity-100"
+          className="grid size-4 place-items-center rounded-full opacity-70 outline-none transition-[opacity,background-color] hover:bg-white/10 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-accent/70"
           onClick={onRemove}
           aria-label={removeLabel ?? "Remove"}
         >
@@ -67,7 +69,7 @@ function ChipButton({
       type="button"
       aria-pressed={selected}
       className={cn(
-        "inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent/50 disabled:opacity-50 [&_svg]:size-3.5",
+        "inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 text-xs font-medium outline-none transition-[color,background-color,border-color,box-shadow,scale] duration-micro ease-standard focus-visible:ring-2 focus-visible:ring-accent/70 active:scale-[0.96] disabled:opacity-50 motion-reduce:active:scale-100 [&_svg]:size-3.5",
         selected
           ? "border-accent/45 bg-accent-soft text-accent-fg"
           : "border-line text-fg-muted hover:bg-control hover:text-fg",

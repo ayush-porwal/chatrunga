@@ -47,10 +47,11 @@ export class ErrorBoundary extends Component<Props, State> {
         }
       />
     );
+    // The fallback rises in, so a crash reads as a deliberate state change rather than a flash.
     return fullWindow ? (
-      <main className="grid min-h-screen place-items-center bg-canvas p-8 text-fg">{fallback}</main>
+      <main className="grid min-h-screen animate-rise-in place-items-center bg-canvas p-8 text-fg">{fallback}</main>
     ) : (
-      <div className="grid h-full place-items-center p-8">{fallback}</div>
+      <div className="grid h-full animate-rise-in place-items-center p-8">{fallback}</div>
     );
   }
 }

@@ -21,12 +21,16 @@ const toneIcon = {
  * "download a database first"). One line preferred; `title` optional.
  *
  *   <Notice tone="danger">{error}</Notice>
+ *
+ * Notices usually appear in response to something (an error, a finished task), so they rise in
+ * (4px + fade, 180ms) when they mount.
  */
 function Notice({
   tone = "info",
   title,
   icon,
   action,
+  appear = true,
   className,
   children,
   ...props
@@ -36,6 +40,8 @@ function Notice({
   /** Pass `null` to hide the icon. */
   icon?: React.ReactNode | null;
   action?: React.ReactNode;
+  /** Rise in on mount (default). Set false for notices that are part of a page's first paint. */
+  appear?: boolean;
 }) {
   const Icon = toneIcon[tone];
   return (
@@ -43,6 +49,7 @@ function Notice({
       role={tone === "danger" ? "alert" : "status"}
       className={cn(
         "flex items-start gap-2.5 rounded-lg border px-3 py-2 text-xs leading-5 [&>svg]:mt-0.5 [&>svg]:size-4 [&>svg]:shrink-0",
+        appear && "animate-rise-in",
         toneClass[tone],
         className
       )}

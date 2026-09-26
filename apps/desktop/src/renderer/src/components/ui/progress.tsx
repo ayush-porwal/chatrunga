@@ -1,7 +1,8 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Thin progress bar. `value` 0–100; `null` = indeterminate (partial bar).
+ * Thin progress bar. `value` 0–100; `null` = indeterminate (a partial bar sweeping across; a pulse
+ * under reduced motion). Value changes glide (transform, emphasis duration).
  *
  *   <Progress value={pct} aria-label="Downloading Stockfish" />
  */
@@ -24,13 +25,16 @@ function Progress({
       aria-valuenow={clamped ?? undefined}
       className="h-1.5 w-full overflow-hidden rounded-full bg-control"
     >
+      {/* A full-width bar slid left by the remainder: transform-only, so updates never trigger layout. */}
       <div
         className={cn(
-          "h-full rounded-full transition-[width]",
+          "h-full w-full rounded-full",
           tone === "danger" ? "bg-danger" : "bg-accent",
-          clamped === null && "animate-pulse"
+          clamped === null
+            ? "w-[35%] animate-indeterminate motion-reduce:animate-pulse"
+            : "transition-transform duration-emphasis ease-standard"
         )}
-        style={{ width: clamped === null ? "35%" : `${clamped}%` }}
+        style={clamped === null ? undefined : { transform: `translateX(${clamped - 100}%)` }}
       />
     </div>
   );

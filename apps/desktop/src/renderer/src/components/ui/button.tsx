@@ -13,9 +13,11 @@ import { cn } from "@/lib/utils";
  * - `ghost-destructive` for delete/resign.
  * Sizes: xs (h-7) · sm (h-8) · default (h-9) · icon-xs (7) · icon-sm (8) · icon (9).
  * Icons inside a Button are sized automatically (16px; 14px for xs/sm/icon-xs) — don't pass `size`.
+ * Feedback: colours ease over `duration-micro`, a press scales to 0.98 (icon sizes 0.94, links none),
+ * keyboard focus gets the crisp 2px accent ring.
  */
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium outline-none transition-[background-color,border-color,color,box-shadow] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:ring-[3px] focus-visible:ring-accent/40",
+  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium outline-none transition-[background-color,border-color,color,box-shadow,scale,opacity] duration-micro ease-standard active:scale-[0.98] motion-reduce:active:scale-100 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:ring-2 focus-visible:ring-accent/70",
   {
     variants: {
       variant: {
@@ -35,7 +37,11 @@ const buttonVariants = cva(
         "icon-xs": "size-7 rounded-md [&_svg]:size-3.5"
       }
     },
-    compoundVariants: [{ variant: "link", className: "h-auto px-0" }],
+    compoundVariants: [
+      { variant: "link", className: "h-auto px-0 active:scale-100" },
+      // Small square targets need a deeper press to read.
+      { size: ["icon", "icon-sm", "icon-xs"], className: "active:scale-[0.94]" }
+    ],
     defaultVariants: {
       variant: "default",
       size: "default"

@@ -8,6 +8,53 @@ import type { MoveClassification } from "@chaturanga/shared/types/engine";
  * one-off layouts. See the UI style guide for the full contract.
  */
 
+/* ------------------------------------------------------------------ motion */
+
+/**
+ * Motion tokens (styles/app.css `@theme static`). One small vocabulary for every animation:
+ *
+ *   duration   micro 120ms     hover/press colour, exits, tooltips
+ *              standard 180ms  popovers, menus, toggles, sliding indicators, disclosures
+ *              emphasis 240ms  dialogs, the sidebar, view changes
+ *   easing     ease-enter      things arriving (out-quint: fast start, long settle)
+ *              ease-exit       things leaving (in-cubic: quick, accelerating away)
+ *              ease-standard   state changes in place (colours, widths, the sidebar)
+ *              ease-spring     indicators that travel (segmented pill, switch thumb) — small overshoot
+ *   keyframes  animate-fade-in/out, animate-pop-in/out (popovers; set `origin-*` to the trigger side),
+ *              animate-rise-in (content appearing in place), animate-dialog-in/out, animate-indeterminate
+ *
+ * Rules: animate only `transform` and `opacity` (the sidebar grid column is the one deliberate
+ * exception); exits are shorter than enters; no `will-change` unless measured. Reduced motion:
+ * transitions are instant and the keyframes collapse to plain fades (app.css), so components need no
+ * extra handling beyond not depending on `transitionend` — use a timeout of `motion.ms.*` instead.
+ */
+export const motion = {
+  /** Durations in ms, for timers that wait for an exit animation (never for styling). */
+  ms: { micro: 120, standard: 180, emphasis: 240 },
+  /** Colour/background/border/shadow state changes (hover, selected, focus ring). */
+  colors: "transition-[color,background-color,border-color,box-shadow,opacity] duration-micro ease-standard",
+  /** Pressable surface: colour changes plus a 0.98 press (Button, chips, rows). */
+  press:
+    "transition-[color,background-color,border-color,box-shadow,opacity,scale] duration-micro ease-standard active:scale-[0.98] motion-reduce:active:scale-100",
+  /** Popover / menu surface enter and exit (pair with `data-state="open|closed"` and an `origin-*`). */
+  popover: "animate-pop-in data-[state=closed]:animate-pop-out",
+  /** Something appearing in place (a notice, an error, a status line). */
+  appear: "animate-rise-in"
+} as const;
+
+/** The crisp keyboard focus ring for every control (2px accent, no blur). */
+export const focusRing = "outline-none focus-visible:ring-2 focus-visible:ring-accent/70";
+
+/**
+ * Frosted backdrop for floating surfaces on the glass window: the STABLE layer that carries the
+ * `backdrop-filter` (see `.ui-frost` in app.css). Render as the first child of the popover's positioned
+ * box, then put the animated, tinted surface after it. A no-op off glass.
+ */
+export const frost = "ui-frost";
+
+/** Floating surface fill that lets the frost show through on glass (still ~85% opaque for contrast). */
+export const floatingSurface = "bg-surface-raised glass:bg-surface-raised/85";
+
 /* ------------------------------------------------------------------ surfaces */
 
 /** A card / panel on the page. Pair with a padding utility (`p-4`) or use `cardPadded`. */
@@ -50,7 +97,7 @@ export const titlebarIconButton =
 /* ------------------------------------------------------------------ page layout */
 
 /** Outer scroll container for a full page (fills the content area). */
-export const pageShell = "scroll-area h-full min-h-0 w-full overflow-y-auto";
+export const pageShell = "scroll-area scroll-fade h-full min-h-0 w-full overflow-y-auto [scrollbar-gutter:stable]";
 
 /** Centered content column: one max width + one padding for every page. */
 export const pageContainer = "mx-auto grid w-full max-w-5xl content-start gap-6 px-8 py-7";
@@ -79,17 +126,21 @@ export const fieldHint = "text-2xs leading-4 text-fg-subtle";
 
 /* ------------------------------------------------------------------ modals */
 
-export const modalBackdrop = "fixed inset-0 z-50 grid place-items-center bg-black/60 p-5";
+export const modalBackdrop = "fixed inset-0 z-50 grid place-items-center bg-black/60 p-5 animate-fade-in";
 
 export const modalPanel =
-  "scroll-area max-h-[calc(100vh-48px)] w-[min(720px,calc(100vw-40px))] overflow-auto rounded-xl border border-line bg-surface-raised p-5 shadow-overlay";
+  "scroll-area max-h-[calc(100vh-48px)] w-[min(720px,calc(100vw-40px))] overflow-auto rounded-xl border border-line bg-surface-raised p-5 shadow-overlay animate-dialog-in";
 
 export const modalPanelCompact =
-  "scroll-area max-h-[calc(100vh-48px)] w-[min(460px,calc(100vw-40px))] overflow-auto rounded-xl border border-line bg-surface-raised p-5 shadow-overlay";
+  "scroll-area max-h-[calc(100vh-48px)] w-[min(460px,calc(100vw-40px))] overflow-auto rounded-xl border border-line bg-surface-raised p-5 shadow-overlay animate-dialog-in";
 
-/** Floating popover / dropdown list. */
+/**
+ * Floating popover / dropdown list surface: enters with a pop from its origin (add `origin-top-left`
+ * etc. for the trigger side). On glass, render `<span className={cn(frost, "rounded-lg")} />` as a
+ * sibling under it for the frosted backdrop (see OverflowMenu).
+ */
 export const popover =
-  "z-50 rounded-lg border border-line bg-surface-raised p-1 shadow-popover";
+  "z-50 rounded-lg border border-line bg-surface-raised p-1 shadow-popover glass:bg-surface-raised/85 animate-pop-in data-[state=closed]:animate-pop-out";
 
 /* ------------------------------------------------------------------ rows, tiles, chips */
 
@@ -98,7 +149,7 @@ export const listRow =
   "flex min-h-11 w-full min-w-0 items-center gap-3 rounded-lg border border-line bg-surface px-3 py-2 text-left text-sm text-fg-secondary";
 
 /** Clickable list row. Add `listRowSelected` when active. */
-export const listRowInteractive = `${listRow} transition-colors hover:border-line-strong hover:bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50`;
+export const listRowInteractive = `${listRow} transition-[color,background-color,border-color,box-shadow,scale] duration-micro ease-standard hover:border-line-strong hover:bg-control active:scale-[0.995] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 motion-reduce:active:scale-100`;
 
 export const listRowSelected = "border-accent/50 bg-accent-soft text-fg";
 
