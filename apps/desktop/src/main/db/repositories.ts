@@ -5,6 +5,7 @@ import {
   defaultSettings,
   hydratePieceSettings,
   normalizeAppearanceSettings,
+  normalizeOnboardingSettings,
   normalizeReviewEngineSettings,
   normalizeUpdateSettings,
   type AppSettings
@@ -420,7 +421,14 @@ export const settingsRepository = {
       }
     }
     const merged = { ...defaultSettings, ...values } as AppSettings;
-    return normalizeUpdateSettings(normalizeAppearanceSettings(normalizeReviewEngineSettings(hydratePieceSettings(merged))));
+    return normalizeOnboardingSettings(
+      normalizeUpdateSettings(normalizeAppearanceSettings(normalizeReviewEngineSettings(hydratePieceSettings(merged))))
+    );
+  },
+
+  /** Keys that have a stored row (whatever their value). */
+  storedKeys(): string[] {
+    return all<Pick<SettingRow, "key">>("SELECT key FROM settings").map((row) => row.key);
   },
 
   /** The raw persisted value (before defaults/normalization), or undefined when never set. */

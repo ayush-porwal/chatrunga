@@ -99,8 +99,13 @@ export const titlebarIconButton =
 /** Outer scroll container for a full page (fills the content area). */
 export const pageShell = "scroll-area scroll-fade h-full min-h-0 w-full overflow-y-auto [scrollbar-gutter:stable]";
 
-/** Centered content column: one max width + one padding for every page. */
-export const pageContainer = "mx-auto grid w-full max-w-5xl content-start gap-6 px-8 py-7";
+/**
+ * Centered content column: one max width + one gutter for every page, both fluid (the
+ * `--page-*` variables in app.css): 64rem of content on laptop windows up to 88rem on wide
+ * monitors, 24–56px gutters. The width includes the gutters, so every page shares the same edges.
+ */
+export const pageContainer =
+  "mx-auto grid w-full max-w-[calc(var(--page-content)+2*var(--page-gutter))] content-start gap-6 px-(--page-gutter) py-(--page-gutter-y)";
 
 export const pageDescription = "max-w-2xl text-sm leading-6 text-fg-muted";
 
@@ -129,10 +134,10 @@ export const fieldHint = "text-2xs leading-4 text-fg-subtle";
 export const modalBackdrop = "fixed inset-0 z-50 grid place-items-center bg-black/60 p-5 animate-fade-in";
 
 export const modalPanel =
-  "scroll-area max-h-[calc(100vh-48px)] w-[min(720px,calc(100vw-40px))] overflow-auto rounded-xl border border-line bg-surface-raised p-5 shadow-overlay animate-dialog-in";
+  "scroll-area max-h-[calc(100vh-48px)] w-[min(45rem,calc(100vw-40px))] overflow-auto rounded-xl border border-line bg-surface-raised p-5 shadow-overlay animate-dialog-in";
 
 export const modalPanelCompact =
-  "scroll-area max-h-[calc(100vh-48px)] w-[min(460px,calc(100vw-40px))] overflow-auto rounded-xl border border-line bg-surface-raised p-5 shadow-overlay animate-dialog-in";
+  "scroll-area max-h-[calc(100vh-48px)] w-[min(28.75rem,calc(100vw-40px))] overflow-auto rounded-xl border border-line bg-surface-raised p-5 shadow-overlay animate-dialog-in";
 
 /**
  * Floating popover / dropdown list surface: enters with a pop from its origin (add `origin-top-left`

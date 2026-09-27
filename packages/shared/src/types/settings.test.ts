@@ -10,6 +10,7 @@ import {
   normalizePiecePresentation,
   normalizePieceStyle,
   normalizeReviewEngineSettings,
+  normalizeOnboardingSettings,
   normalizeUpdateSettings,
   resolveEngineThreads
 } from "./settings";
@@ -218,5 +219,40 @@ describe("normalizeAppearanceSettings", () => {
       const stored = { ...defaultSettings, glassEffect: bad } as unknown as AppSettings;
       expect(normalizeAppearanceSettings(stored).glassEffect).toBe(true);
     }
+  });
+});
+
+describe("normalizeOnboardingSettings", () => {
+  it("defaults to a welcome that has not been completed and no tips seen", () => {
+    const normalized = normalizeOnboardingSettings(defaultSettings);
+    expect(normalized.onboardingCompletedAt).toBeNull();
+    expect(normalized.onboardingHintsSeen).toEqual([]);
+  });
+
+  it("keeps a completion time, including 0 for installs that predate the welcome", () => {
+    expect(normalizeOnboardingSettings({ ...defaultSettings, onboardingCompletedAt: 1_700_000_000_123 }).onboardingCompletedAt).toBe(1_700_000_000_123);
+    expect(normalizeOnboardingSettings({ ...defaultSettings, onboardingCompletedAt: 0 }).onboardingCompletedAt).toBe(0);
+  });
+
+  it("reads anything that is not a finite, non-negative number as not completed", () => {
+    for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY, "1700000000000", true, {}, undefined]) {
+      const stored = { ...defaultSettings, onboardingCompletedAt: bad } as unknown as AppSettings;
+      expect(normalizeOnboardingSettings(stored).onboardingCompletedAt).toBeNull();
+    }
+  });
+
+  it("keeps known tip ids once each and drops the rest", () => {
+    const stored = {
+      ...defaultSettings,
+      onboardingHintsSeen: ["maia-curve", "unknown", "maia-curve", 3, "commentary-links"]
+    } as unknown as AppSettings;
+    expect(normalizeOnboardingSettings(stored).onboardingHintsSeen).toEqual(["commentary-links", "maia-curve"]);
+    const notAList = { ...defaultSettings, onboardingHintsSeen: "maia-curve" } as unknown as AppSettings;
+    expect(normalizeOnboardingSettings(notAList).onboardingHintsSeen).toEqual([]);
+  });
+
+  it("is idempotent", () => {
+    const once = normalizeOnboardingSettings({ ...defaultSettings, onboardingCompletedAt: 5.7, onboardingHintsSeen: ["maia-curve"] });
+    expect(normalizeOnboardingSettings(once)).toEqual(once);
   });
 });

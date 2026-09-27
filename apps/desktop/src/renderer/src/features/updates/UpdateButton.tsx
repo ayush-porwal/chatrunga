@@ -220,7 +220,7 @@ export const UpdateButton = memo(function UpdateButton({
               onPointerEnter={hoverIn}
               onPointerLeave={hoverOut}
               onBlur={onBlur}
-              className={cn("fixed z-[80] w-[min(340px,calc(100vw-80px))] outline-none", presence === "closed" && "pointer-events-none")}
+              className={cn("fixed z-[80] w-[min(21.25rem,calc(100vw-80px))] outline-none", presence === "closed" && "pointer-events-none")}
               style={{ left: anchor.left, bottom: anchor.bottom }}
             >
               <span aria-hidden="true" data-state={presence} className={cn(frost, "rounded-xl animate-fade-in data-[state=closed]:animate-fade-out")} />

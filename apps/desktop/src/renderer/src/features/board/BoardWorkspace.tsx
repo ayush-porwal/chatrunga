@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
-import { card } from "@/lib/ui";
+import { card, motion } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useBoardFocused } from "./board-focus";
 
@@ -23,6 +23,13 @@ import { useBoardFocused } from "./board-focus";
  * Focus mode (board-focus.ts): the panel column eases to 0 and the panel slides out with it —
  * it keeps its own width while the column clips it, so its text never re-wraps mid-animation.
  * The board cell grows into the space frame by frame (the board is sized from the cell).
+ *
+ * Sizing (the `--workspace-*` variables in app.css, fluid from the 980px minimum to ultra-wide):
+ * the panel grows with the window (320px → 34rem); padding and gap scale together; the board is
+ * as large as the height allows (`--workspace-board`). The grid is capped at exactly board + gap +
+ * panel and centred, so on a wide window the spare width goes to both outer margins and the board
+ * stays next to its panel. On a narrow window the cap is not reached and the board takes the
+ * width left beside the panel.
  */
 
 export function BoardWorkspace({
@@ -53,50 +60,78 @@ export function BoardWorkspace({
 }) {
   const focused = useBoardFocused();
   const panelVisible = showPanel ?? !focused;
+  const easing = useToggleEasing(panelVisible);
   return (
-    <div
-      className={cn(
-        "grid h-full min-h-0 min-w-0 p-3",
-        // Same track count in both states, so the column (and the gap) can ease — like the sidebar.
-        "transition-[grid-template-columns,column-gap] duration-emphasis ease-standard",
-        panelVisible ? "grid-cols-[minmax(0,1fr)_clamp(320px,26vw,420px)] gap-3" : "grid-cols-[minmax(0,1fr)_0px] gap-0"
-      )}
-    >
-      <section className="grid min-h-0 min-w-0 place-items-center p-3 [container-type:size]" aria-label="Board">
-        {board}
-      </section>
-      {/* The cell clips; the panel keeps its full width and slides out with the column's left edge. */}
-      <div className="flex min-h-0 min-w-0 overflow-hidden" inert={!panelVisible} aria-hidden={!panelVisible || undefined}>
-        <aside
-          className={cn(
-            card,
-            "@container/panel flex min-h-0 w-[clamp(320px,26vw,420px)] shrink-0 flex-col overflow-hidden",
-            panelVisible
-              ? "opacity-100 transition-opacity duration-emphasis ease-enter"
-              : "opacity-0 transition-opacity duration-standard ease-exit"
-          )}
-          aria-label={panelLabel}
-        >
-          {tabs ? <div className="shrink-0 px-3 pt-3">{tabs}</div> : null}
-          <div className="flex h-14 shrink-0 items-center border-b border-line-subtle px-3">{summary}</div>
-          <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
-            {notices}
-            <div className="min-h-0 flex-1">{children}</div>
-          </div>
-          {footer ? <div className="shrink-0 border-t border-line-subtle">{footer}</div> : null}
-        </aside>
+    // Size container: the grid's width cap is computed from this box's height (cqh).
+    <div className="h-full min-h-0 min-w-0 [container-type:size]">
+      <div
+        className={cn(
+          "mx-auto grid h-full min-h-0 w-full min-w-0 p-(--workspace-pad)",
+          // Same track count in both states, so the column, the gap and the cap ease together — like the
+          // sidebar. Only while the panel is toggling: these sizes follow the window, and a transition
+          // left on would make the board trail a live window resize.
+          easing && "transition-[grid-template-columns,column-gap,max-width] duration-emphasis ease-standard",
+          panelVisible
+            ? "max-w-[calc(var(--workspace-board)+3*var(--workspace-pad)+var(--workspace-panel))] grid-cols-[minmax(0,1fr)_var(--workspace-panel)] gap-(--workspace-pad)"
+            : "max-w-[calc(var(--workspace-board)+2*var(--workspace-pad))] grid-cols-[minmax(0,1fr)_0px] gap-0"
+        )}
+      >
+        <section className="grid min-h-0 min-w-0 place-items-center [container-type:size]" aria-label="Board">
+          {board}
+        </section>
+        {/* The cell clips; the panel keeps its full width and slides out with the column's left edge. */}
+        <div className="flex min-h-0 min-w-0 overflow-hidden" inert={!panelVisible} aria-hidden={!panelVisible || undefined}>
+          <aside
+            className={cn(
+              card,
+              "@container/panel flex min-h-0 w-(--workspace-panel) shrink-0 flex-col overflow-hidden",
+              panelVisible
+                ? "opacity-100 transition-opacity duration-emphasis ease-enter"
+                : "opacity-0 transition-opacity duration-standard ease-exit"
+            )}
+            aria-label={panelLabel}
+          >
+            {tabs ? <div className="shrink-0 px-3 pt-3">{tabs}</div> : null}
+            <div className="flex h-14 shrink-0 items-center border-b border-line-subtle px-3">{summary}</div>
+            <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
+              {notices}
+              <div className="min-h-0 flex-1">{children}</div>
+            </div>
+            {footer ? <div className="shrink-0 border-t border-line-subtle">{footer}</div> : null}
+          </aside>
+        </div>
       </div>
     </div>
   );
 }
 
 /**
+ * True for one emphasis duration after `visible` changes: the window in which the workspace
+ * geometry eases (focus mode in/out). Outside it, size changes (window resize) apply at once.
+ */
+function useToggleEasing(visible: boolean): boolean {
+  const [last, setLast] = useState(visible);
+  const [easing, setEasing] = useState(false);
+  if (last !== visible) {
+    setLast(visible);
+    setEasing(true);
+  }
+  useEffect(() => {
+    if (!easing) return;
+    const timer = window.setTimeout(() => setEasing(false), motion.ms.emphasis + 60);
+    return () => window.clearTimeout(timer);
+  }, [easing, visible]);
+  return easing;
+}
+
+/**
  * Board + the two player rows as one unit. The square is computed once from the board cell
- * (a size container): as large as fits after the two 2rem rows and gaps, capped at 1120px.
+ * (a size container): as large as fits after the two 2rem rows and gaps (the same 5rem that
+ * `--workspace-board` subtracts), with a 100rem ceiling.
  */
 export function BoardStage({ top, bottom, children }: { top: ReactNode; bottom: ReactNode; children: ReactNode }) {
   return (
-    <div className="grid w-[min(100cqw,calc(100cqh_-_5rem),1120px)] min-w-0 gap-2">
+    <div className="grid w-[min(100cqw,calc(100cqh_-_5rem),100rem)] min-w-0 gap-2">
       {top}
       {/* The one board frame: hairline border + radius, no shadow, no card around it. */}
       <div className="aspect-square w-full overflow-hidden rounded-lg border border-line">{children}</div>

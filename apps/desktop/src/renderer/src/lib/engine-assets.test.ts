@@ -7,7 +7,10 @@ import {
   initialAssetProgress,
   isAssetInstalled,
   missingDownloads,
-  progressPercent
+  progressPercent,
+  recommendedDownloads,
+  setupRowPercent,
+  setupRows
 } from "./engine-assets";
 
 function status(id: EngineAssetId, patch: Partial<EngineAssetStatus> = {}): EngineAssetStatus {
@@ -81,5 +84,70 @@ describe("engine assets", () => {
 
     progress = applyAssetProgress(progress, { type: "error", assetId: "lc0", message: "offline" });
     expect(progress.lc0).toMatchObject({ status: "error", errorMessage: "offline" });
+  });
+});
+
+describe("first-run setup", () => {
+  it("recommends missing Stockfish and Maia, with the Lc0 that Maia runs in", () => {
+    const map = statusMap({ "maia-1900": { state: "installed" }, lc0: { autoDownload: true } });
+    expect(recommendedDownloads(map).map((asset) => asset.id)).toEqual(["stockfish", "lc0", "maia-1100", "maia-1300", "maia-1500", "maia-1700"]);
+    expect(recommendedDownloads(null)).toEqual([]);
+  });
+
+  it("leaves Lc0 out when it is installed or nothing needs it", () => {
+    const installed = statusMap({ lc0: { state: "installed" } });
+    expect(recommendedDownloads(installed).map((asset) => asset.id)).toEqual(["stockfish", "maia-1100", "maia-1300", "maia-1500", "maia-1700", "maia-1900"]);
+    const noMaia = statusMap({
+      "maia-1100": { autoDownload: false },
+      "maia-1300": { autoDownload: false },
+      "maia-1500": { autoDownload: false },
+      "maia-1700": { autoDownload: false },
+      "maia-1900": { autoDownload: false }
+    });
+    expect(recommendedDownloads(noMaia).map((asset) => asset.id)).toEqual(["stockfish"]);
+  });
+
+  it("skips Maia where Lc0 has no download, and fetches Lc0 alone for installed networks", () => {
+    const noLc0 = statusMap({ lc0: { autoDownload: false } });
+    expect(recommendedDownloads(noLc0).map((asset) => asset.id)).toEqual(["stockfish"]);
+    const networksOnly = statusMap({
+      stockfish: { state: "installed" },
+      "maia-1100": { state: "installed" },
+      "maia-1300": { state: "installed" },
+      "maia-1500": { state: "installed" },
+      "maia-1700": { state: "installed" },
+      "maia-1900": { state: "installed" }
+    });
+    expect(recommendedDownloads(networksOnly).map((asset) => asset.id)).toEqual(["lc0"]);
+  });
+
+  it("counts Lc0 in the Maia row it is downloaded for", () => {
+    const rows = setupRows([status("lc0", { downloadSizeBytes: 30_000_000 }), status("maia-1100", { downloadSizeBytes: 1_000_000 }), status("maia-1900", { downloadSizeBytes: 1_000_000 })], {});
+    expect(rows.map((row) => [row.key, row.label, row.ids])).toEqual([["maia", "Maia 1100–1900 + Lc0", ["lc0", "maia-1100", "maia-1900"]]]);
+    expect(rows[0].bytesTotal).toBe(32_000_000);
+    expect(setupRows([status("lc0")], {}).map((row) => [row.key, row.label])).toEqual([["lc0", "Lc0"]]);
+  });
+
+  it("groups Maia networks into one row with combined progress", () => {
+    const queued = [status("stockfish", { downloadSizeBytes: 80_000_000 }), status("maia-1100", { downloadSizeBytes: 1_000_000 }), status("maia-1900", { downloadSizeBytes: 1_000_000 })];
+    const rows = setupRows(queued, {
+      stockfish: { bytesReceived: 20_000_000, bytesTotal: 80_000_000, status: "downloading" },
+      "maia-1100": { bytesReceived: 400_000, bytesTotal: 1_000_000, status: "installing" }
+    });
+    expect(rows.map((row) => [row.key, row.label, row.status])).toEqual([
+      ["stockfish", "Stockfish", "downloading"],
+      ["maia", "Maia 1100–1900", "installing"]
+    ]);
+    expect(setupRowPercent(rows[0])).toBe(25);
+    // The installing network counts as downloaded; the other hasn't started.
+    expect(rows[1].bytesReceived).toBe(1_000_000);
+    expect(setupRowPercent(rows[1])).toBe(50);
+  });
+
+  it("shows a failure over progress, and ready only when every member is ready", () => {
+    const queued = [status("maia-1100"), status("maia-1300")];
+    expect(setupRows(queued, { "maia-1100": { bytesReceived: 5, bytesTotal: 5, status: "ready" }, "maia-1300": { bytesReceived: 0, bytesTotal: 5, status: "error", errorMessage: "x" } })[0].status).toBe("error");
+    expect(setupRows(queued, { "maia-1100": { bytesReceived: 5, bytesTotal: 5, status: "ready" } })[0].status).toBe("pending");
+    expect(setupRows(queued, { "maia-1100": { bytesReceived: 5, bytesTotal: 5, status: "ready" }, "maia-1300": { bytesReceived: 5, bytesTotal: 5, status: "ready" } })[0].status).toBe("ready");
   });
 });

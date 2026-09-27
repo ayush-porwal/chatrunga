@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
-import { useOpenRouterConfigQuery } from "../../queries/api";
 import { DEFAULT_COMMENTARY_MODEL, isLightweightCommentaryModel } from "@chaturanga/shared/llm/models";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -8,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { fieldHint } from "@/lib/ui";
 import { cn } from "@/lib/utils";
+import { OPENROUTER_KEYS_URL, useOpenRouterSave } from "./use-openrouter-save";
 
 /**
  * Shared BYOK commentary form (Settings → Commentary, and embedded in Review settings): the
@@ -19,52 +19,20 @@ import { cn } from "@/lib/utils";
  * component state; it is never read back.
  */
 export function OpenRouterSettingsCard() {
-  const openRouter = useOpenRouterConfigQuery();
+  const { config: openRouter, hasApiKey, saveState, save, clearKey } = useOpenRouterSave();
   const [model, setModel] = useState("");
   const [apiKeyInput, setApiKeyInput] = useState("");
-  const [saveState, setSaveState] = useState<{ kind: "idle" | "saving" | "saved" | "error"; message?: string }>({ kind: "idle" });
-  const hasApiKey = Boolean(openRouter.data?.hasApiKey);
 
   useEffect(() => {
     if (openRouter.data?.model) setModel(openRouter.data.model);
   }, [openRouter.data?.model]);
 
   async function saveOpenRouter() {
-    if (!window.chaturanga) {
-      setSaveState({ kind: "error", message: "OpenRouter settings are available in the desktop app." });
-      return;
-    }
-    setSaveState({ kind: "saving" });
-    try {
-      await window.chaturanga.commentary.setOpenRouterConfig({
-        model,
-        ...(apiKeyInput.trim() ? { apiKey: apiKeyInput.trim() } : {})
-      });
-      setApiKeyInput("");
-      setSaveState({ kind: "saved", message: "Saved." });
-      await openRouter.refetch();
-    } catch (error) {
-      setSaveState({
-        kind: "error",
-        message: error instanceof Error ? error.message : "Could not save OpenRouter settings."
-      });
-    }
+    if (await save({ model, apiKey: apiKeyInput })) setApiKeyInput("");
   }
 
   async function clearOpenRouterKey() {
-    if (!window.chaturanga) return;
-    setSaveState({ kind: "saving" });
-    try {
-      await window.chaturanga.commentary.setOpenRouterConfig({ apiKey: null, model });
-      setApiKeyInput("");
-      setSaveState({ kind: "saved", message: "Key removed." });
-      await openRouter.refetch();
-    } catch (error) {
-      setSaveState({
-        kind: "error",
-        message: error instanceof Error ? error.message : "Could not remove the saved key."
-      });
-    }
+    if (await clearKey(model)) setApiKeyInput("");
   }
 
   const status =
@@ -109,7 +77,11 @@ export function OpenRouterSettingsCard() {
           spellCheck={false}
         />
         <p className={fieldHint}>
-          Create one at openrouter.ai/keys. Encrypted with your system keychain and sent only to OpenRouter. Never shown again.
+          Create one at{" "}
+          <a href={OPENROUTER_KEYS_URL} target="_blank" rel="noreferrer" className="text-fg-muted underline underline-offset-2 hover:text-fg">
+            openrouter.ai/keys
+          </a>
+          . Encrypted with your system keychain and sent only to OpenRouter. Never shown again.
         </p>
       </Field>
       {saveState.kind === "error" ? <Notice tone="danger">{saveState.message}</Notice> : null}

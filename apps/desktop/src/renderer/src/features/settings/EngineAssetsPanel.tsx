@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 /**
  * Settings → Engine downloads: which engines + Maia networks are installed (and at which
  * version), downloads, user-triggered updates to the latest GitHub release, and removal.
- * The first-launch WelcomeModal handles the initial bulk download.
+ * The first-run welcome (features/onboarding) handles the initial download.
  */
 export function EngineAssetsPanel() {
   const [status, setStatus] = useState<EngineAssetStatusMap | null>(null);

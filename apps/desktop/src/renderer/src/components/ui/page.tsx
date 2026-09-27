@@ -3,7 +3,8 @@ import { cn } from "@/lib/utils";
 import { pageContainer, pageDescription, pageShell, sectionDescription, sectionTitle, eyebrow } from "@/lib/ui";
 
 /**
- * Full-page wrapper: scrolls, centers content at max-w-5xl with px-8 py-8.
+ * Full-page wrapper: scrolls, centers content in the fluid page column (`pageContainer`: the
+ * `--page-content` width and `--page-gutter` gutters from app.css, the same edges on every page).
  * Use for Home, Engine game, Puzzles, Databases, Settings.
  *
  *   <Page>

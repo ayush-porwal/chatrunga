@@ -51,14 +51,16 @@ export function AppTitlebar({
       aria-label="Titlebar"
       data-chrome
     >
-      {/* Lead = inset + 28px toggle + 25px divider (12px · 1px · 12px), or the sidebar width if wider.
-          `--sidebar-width` comes from the app frame and switches with the sidebar state. */}
+      {/* Lead = inset + toggle (1.75rem) + divider (0.75rem · 1px · 0.75rem), or the sidebar width if
+          wider. In rem like the toggle, so it still fits when the type steps up on big monitors
+          (53px at the base size). `--sidebar-width` comes from the app frame and switches with the
+          sidebar state. */}
       <div
         className={cn(
           "flex h-full shrink-0 items-center transition-[width] duration-emphasis ease-standard",
           windowControlsInset
-            ? "w-[max(calc(90px/var(--window-zoom,1)_+_53px),var(--sidebar-width))] pl-[calc(90px/var(--window-zoom,1))]"
-            : "w-[max(65px,var(--sidebar-width))] pl-3"
+            ? "w-[max(calc(90px/var(--window-zoom,1)_+_3.25rem_+_1px),var(--sidebar-width))] pl-[calc(90px/var(--window-zoom,1))]"
+            : "w-[max(calc(4rem_+_1px),var(--sidebar-width))] pl-3"
         )}
       >
         <SidebarToggle expanded={sidebarExpanded} onClick={onToggleSidebar} />

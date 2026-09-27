@@ -1,8 +1,9 @@
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, CircleAlert, Loader2, Volume2 } from "lucide-react";
+import { Check, CircleAlert, Loader2, Sparkles, Volume2 } from "lucide-react";
 import { defaultSettings, hydratePieceSettings, type AppSettings } from "@chaturanga/shared/types/settings";
 import { useSettingsQuery } from "../../queries/api";
 import { playSound } from "../../sounds/sounds";
+import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { SettingRow } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
@@ -17,10 +18,11 @@ import { EngineAssetsPanel } from "./EngineAssetsPanel";
 import { EnginesSection } from "./EngineSettings";
 import { OpenRouterSettingsCard } from "./OpenRouterSettingsCard";
 import { UpdatesSection } from "../updates/UpdatesSection";
+import { useOnboardingSession } from "../onboarding/useOnboarding";
 import { useSettingsSaveState } from "./settings-save-state";
 import { useSetSetting } from "./use-set-setting";
 
-export type SettingsSectionId = "window" | "board" | "sound" | "engines" | "downloads" | "commentary" | "updates";
+export type SettingsSectionId = "window" | "board" | "sound" | "engines" | "downloads" | "commentary" | "updates" | "welcome";
 type SectionId = SettingsSectionId;
 
 const sectionLabels: Record<SectionId, string> = {
@@ -30,7 +32,8 @@ const sectionLabels: Record<SectionId, string> = {
   engines: "Engines",
   downloads: "Engine downloads",
   commentary: "Commentary",
-  updates: "Updates"
+  updates: "Updates",
+  welcome: "Getting started"
 };
 
 const sectionDomId = (id: SectionId) => `settings-${id}`;
@@ -53,7 +56,7 @@ export const SettingsPage = memo(function SettingsPage({
     "engines",
     ...(desktopApiAvailable ? (["downloads"] as const) : []),
     "commentary",
-    ...(desktopApiAvailable ? (["updates"] as const) : [])
+    ...(desktopApiAvailable ? (["updates", "welcome"] as const) : [])
   ];
   const navRef = useRef<HTMLElement>(null);
   const active = useScrollSpy(navRef, sections);
@@ -80,7 +83,7 @@ export const SettingsPage = memo(function SettingsPage({
           <nav
             ref={navRef}
             aria-label="Settings sections"
-            className="sticky top-7 hidden self-start pt-0.5 @4xl:grid @4xl:gap-6"
+            className="sticky top-(--page-gutter-y) hidden self-start pt-0.5 @4xl:grid @4xl:gap-6"
           >
             <ul className="grid gap-0.5">
               {sections.map((id) => (
@@ -141,6 +144,11 @@ export const SettingsPage = memo(function SettingsPage({
             {desktopApiAvailable ? (
               <SectionAnchor id="updates">
                 <UpdatesSection appearance={appearance} />
+              </SectionAnchor>
+            ) : null}
+            {desktopApiAvailable ? (
+              <SectionAnchor id="welcome">
+                <WelcomeSection />
               </SectionAnchor>
             ) : null}
           </div>
@@ -320,6 +328,26 @@ function SoundSection({ appearance }: { appearance: AppSettings }) {
           }
         />
       </div>
+    </section>
+  );
+}
+
+/** Reopens the first-run welcome (engines, level, AI coach). */
+function WelcomeSection() {
+  const reopen = useOnboardingSession((state) => state.reopen);
+  return (
+    <section className={cn(cardPadded, "grid gap-2")}>
+      <SectionHeader title="Getting started" />
+      <SettingRow
+        label="Welcome"
+        description="Go through setup again: engines, your level and the AI coach."
+        control={
+          <Button variant="outline" size="sm" onClick={reopen}>
+            <Sparkles />
+            Show welcome again
+          </Button>
+        }
+      />
     </section>
   );
 }

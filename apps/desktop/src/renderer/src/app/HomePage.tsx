@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { sectionTitle } from "@/lib/ui";
 import { BoardThumbnail } from "../features/settings/board-thumbnail";
+import { EngineSetupLine } from "../features/onboarding/EngineSetupStatus";
 import { useGamesQuery } from "../queries/api";
 import { decidedResult } from "./game-title";
 
@@ -33,7 +34,8 @@ export const HomePage = memo(function HomePage({
   onOpenGame,
   onPuzzles,
   onReview,
-  onReviewGame
+  onReviewGame,
+  onOpenEngineSettings
 }: {
   desktopApiAvailable: boolean;
   onAnalyze: () => void;
@@ -47,6 +49,8 @@ export const HomePage = memo(function HomePage({
   onReview: () => void;
   /** Opens Game review for a saved game. */
   onReviewGame: (id: string) => void;
+  /** Settings → Engines (no engine yet: add your own). */
+  onOpenEngineSettings: () => void;
 }) {
   const games = useGamesQuery();
   const list = games.data ?? [];
@@ -71,8 +75,13 @@ export const HomePage = memo(function HomePage({
         <HomeSkeleton />
       ) : latest ? (
         <div className={cn("grid gap-8", reveal)}>
-          <ContinueGame summary={latest} onOpen={onOpenGame} onReview={onReviewGame} />
-          <div className="grid items-start gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1fr)_17rem]">
+          <ContinueGame
+            summary={latest}
+            onOpen={onOpenGame}
+            onReview={onReviewGame}
+            footer={desktopApiAvailable ? <EngineSetupLine onOpenEngineSettings={onOpenEngineSettings} /> : null}
+          />
+          <div className="grid items-start gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1fr)_clamp(17rem,16vw,22rem)]">
             <RecentGames
               games={recent}
               total={list.length}
@@ -94,6 +103,7 @@ export const HomePage = memo(function HomePage({
           desktopApiAvailable={desktopApiAvailable}
           onNewGame={onNewGame}
           onImportPgn={onImportPgn}
+          onOpenEngineSettings={onOpenEngineSettings}
         />
       )}
     </Page>
@@ -115,11 +125,14 @@ function useSavedGame(id: string) {
 function ContinueGame({
   summary,
   onOpen,
-  onReview
+  onReview,
+  footer
 }: {
   summary: GameSummary;
   onOpen: (id: string) => void;
   onReview: (id: string) => void;
+  /** Under the actions (engine setup status when reviews can't run yet). */
+  footer?: ReactNode;
 }) {
   const detail = useSavedGame(summary.id);
   const saved = detail.data ?? null;
@@ -133,12 +146,12 @@ function ContinueGame({
   return (
     <section
       aria-labelledby="home-continue-title"
-      className="grid items-center gap-x-10 gap-y-6 sm:grid-cols-[minmax(12rem,17.5rem)_minmax(0,1fr)]"
+      className="grid items-center gap-x-10 gap-y-6 sm:grid-cols-[minmax(12rem,clamp(17.5rem,20vw,24rem))_minmax(0,1fr)]"
     >
       <button
         type="button"
         onClick={() => onOpen(summary.id)}
-        className="group relative w-full max-w-[17.5rem] rounded-xl outline-none focus-visible:ring-[3px] focus-visible:ring-accent/50"
+        className="group relative w-full max-w-[clamp(17.5rem,20vw,24rem)] rounded-xl outline-none focus-visible:ring-[3px] focus-visible:ring-accent/50"
         aria-label={`Open ${playersTitle(summary)} on the board`}
       >
         <BoardThumbnail
@@ -195,6 +208,7 @@ function ContinueGame({
             </>
           )}
         </div>
+        {footer}
       </div>
     </section>
   );
@@ -416,24 +430,29 @@ function FirstRun({
   actions,
   desktopApiAvailable,
   onNewGame,
-  onImportPgn
+  onImportPgn,
+  onOpenEngineSettings
 }: {
   className?: string;
   actions: QuickAction[];
   desktopApiAvailable: boolean;
   onNewGame: () => void;
   onImportPgn: () => void;
+  onOpenEngineSettings: () => void;
 }) {
   const secondary = actions.filter((action) => action.id !== "import");
   return (
     <section
       aria-labelledby="home-first-run-title"
       className={cn(
-        "grid min-h-[calc(100vh-11rem)] content-center items-center gap-x-12 gap-y-8 pb-10 sm:grid-cols-[minmax(12rem,20rem)_minmax(0,1fr)]",
+        // Fills the page height (titlebar, panel margin + border and the page gutters taken off) and
+        // centres board + text as one group, so the welcome sits in the middle of the panel at every
+        // window size; pb-10 lifts it slightly above centre. The text column is capped at its max-w-md.
+        "grid min-h-[calc(100vh-var(--titlebar-height)-0.5rem-2px-2*var(--page-gutter-y))] content-center items-center justify-center gap-x-12 gap-y-8 pb-10 sm:grid-cols-[minmax(12rem,clamp(20rem,24vw,30rem))_minmax(0,28rem)]",
         className
       )}
     >
-      <BoardThumbnail fen={START_FEN} rounded="xl" className="max-w-80" label="Starting position in your board theme" />
+      <BoardThumbnail fen={START_FEN} rounded="xl" className="max-w-[clamp(20rem,24vw,30rem)]" label="Starting position in your board theme" />
       <div className="grid max-w-md content-center gap-6">
         <div className="grid gap-2">
           <h2 id="home-first-run-title" className="text-2xl font-semibold tracking-tight text-fg">
@@ -444,15 +463,18 @@ function FirstRun({
             or review it move by move.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="primary" className="h-10 px-4" onClick={onNewGame}>
-            <RotateCcw />
-            New game
-          </Button>
-          <Button type="button" variant="ghost" className="h-10" disabled={!desktopApiAvailable} onClick={onImportPgn}>
-            <Upload />
-            Import PGN
-          </Button>
+        <div className="grid gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="primary" className="h-10 px-4" onClick={onNewGame}>
+              <RotateCcw />
+              New game
+            </Button>
+            <Button type="button" variant="ghost" className="h-10" disabled={!desktopApiAvailable} onClick={onImportPgn}>
+              <Upload />
+              Import PGN
+            </Button>
+          </div>
+          {desktopApiAvailable ? <EngineSetupLine onOpenEngineSettings={onOpenEngineSettings} /> : null}
         </div>
         <ul className="grid gap-0.5 border-t border-line-subtle pt-4">
           {secondary.map((action) => (
@@ -472,8 +494,8 @@ function FirstRun({
 function HomeSkeleton() {
   return (
     <div aria-busy="true" aria-label="Loading games" className="grid gap-8">
-      <div className="grid items-center gap-x-10 gap-y-6 sm:grid-cols-[minmax(12rem,17.5rem)_minmax(0,1fr)]">
-        <Skeleton className="aspect-square w-full max-w-[17.5rem] rounded-xl" />
+      <div className="grid items-center gap-x-10 gap-y-6 sm:grid-cols-[minmax(12rem,clamp(17.5rem,20vw,24rem))_minmax(0,1fr)]">
+        <Skeleton className="aspect-square w-full max-w-[clamp(17.5rem,20vw,24rem)] rounded-xl" />
         <div className="grid content-center gap-5">
           <div className="grid gap-2.5">
             <Skeleton className="h-3 w-40" />
@@ -491,7 +513,7 @@ function HomeSkeleton() {
           </div>
         </div>
       </div>
-      <div className="grid gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1fr)_17rem]">
+      <div className="grid gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1fr)_clamp(17rem,16vw,22rem)]">
         <div className="grid gap-2">
           {Array.from({ length: 4 }, (_, index) => (
             <Skeleton key={index} className="h-15 rounded-lg" />

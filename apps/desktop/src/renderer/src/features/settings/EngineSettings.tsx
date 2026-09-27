@@ -471,7 +471,8 @@ function EngineImagePreview({ imagePath, name, size = "sm" }: { imagePath: strin
   return (
     <span
       className={cn(
-        "flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-surface-sunken text-fg-subtle",
+        // `relative`: contains the sr-only label (absolute), which otherwise stretches the page scroll height.
+        "relative flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-surface-sunken text-fg-subtle",
         size === "md" ? "size-9" : "size-8"
       )}
     >

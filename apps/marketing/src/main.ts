@@ -1,43 +1,40 @@
 import "./styles.css";
+import "./pieces.css";
+import { applyPlatform } from "./shared/platform";
+import { initCoach } from "./coach";
+import { initTour } from "./tour";
 
-// Highlight the rail link for the section being read (the rail is only shown on wide screens).
-const links = [...document.querySelectorAll<HTMLAnchorElement>(".rail-nav a[data-spy]")];
-const sections = links
-  .map((link) => document.getElementById(link.dataset.spy ?? ""))
-  .filter((section): section is HTMLElement => section !== null);
+applyPlatform();
+initCoach();
+initTour();
 
-let current = "";
-function update() {
-  // The last section whose top has passed the reading line (a third of the way down the viewport).
-  const line = window.innerHeight / 3;
-  let id = sections[0]?.id ?? "";
-  for (const section of sections) {
-    if (section.getBoundingClientRect().top <= line) id = section.id;
-  }
-  // At the very bottom the last sections may never reach the line; mark the last one.
-  if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2) {
-    id = sections[sections.length - 1]?.id ?? id;
-  }
-  if (id === current) return;
-  current = id;
-  for (const link of links) {
-    if (link.dataset.spy === id) link.setAttribute("aria-current", "true");
-    else link.removeAttribute("aria-current");
-  }
-}
+/**
+ * Hero depth: the backdrop and the floating panels drift at slightly different rates while the hero
+ * is on screen. Uses the `translate` property so it never fights the entrance animation's
+ * `transform`. Off for reduced motion and on narrow screens, where the panels simply stack.
+ */
+function initDepth(): void {
+  const motion = window.matchMedia("(prefers-reduced-motion: no-preference) and (min-width: 768px)");
+  const hero = document.querySelector<HTMLElement>(".hero");
+  const layers = [...document.querySelectorAll<HTMLElement>(".hero [data-depth]")];
+  if (!hero || layers.length === 0) return;
 
-let queued = false;
-window.addEventListener(
-  "scroll",
-  () => {
+  let queued = false;
+  function update(): void {
+    queued = false;
+    const y = Math.min(window.scrollY, hero!.offsetHeight);
+    for (const layer of layers) {
+      layer.style.translate = motion.matches ? `0 ${(y * Number(layer.dataset.depth)).toFixed(1)}px` : "";
+    }
+  }
+  function queue(): void {
     if (queued) return;
     queued = true;
-    requestAnimationFrame(() => {
-      queued = false;
-      update();
-    });
-  },
-  { passive: true }
-);
-window.addEventListener("resize", update);
-update();
+    requestAnimationFrame(update);
+  }
+  window.addEventListener("scroll", queue, { passive: true });
+  motion.addEventListener("change", queue);
+  update();
+}
+
+initDepth();

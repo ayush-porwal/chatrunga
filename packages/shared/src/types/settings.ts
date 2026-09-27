@@ -228,7 +228,19 @@ export type AppSettings = {
   updatesIncludeBeta: boolean;
   theme: "light" | "dark";
   lastOpenedGameId: string | null;
+  /**
+   * When the first-run welcome was finished or skipped (epoch ms). `null`: not yet (the welcome
+   * shows). `0`: an install that predates the welcome (set once at startup, see
+   * main/onboarding-migration.ts), which never shows it on its own.
+   */
+  onboardingCompletedAt: number | null;
+  /** One-time tips already shown (see {@link ONBOARDING_HINTS}); each appears in one review only. */
+  onboardingHintsSeen: OnboardingHintId[];
 };
+
+/** The one-time Game review tips. */
+export const ONBOARDING_HINTS = ["commentary-links", "maia-curve"] as const;
+export type OnboardingHintId = (typeof ONBOARDING_HINTS)[number];
 
 export type ReviewCommentaryProvider = "openrouter";
 
@@ -284,7 +296,9 @@ export const defaultSettings: AppSettings = {
   updatesAutoDownload: true,
   updatesIncludeBeta: false,
   theme: "dark",
-  lastOpenedGameId: null
+  lastOpenedGameId: null,
+  onboardingCompletedAt: null,
+  onboardingHintsSeen: []
 };
 
 /** Maps persisted settings from older builds onto current {@link PieceStyle} ids. */
@@ -340,6 +354,25 @@ export function normalizeUpdateSettings(settings: AppSettings): AppSettings {
       typeof settings.updatesIncludeBeta === "boolean"
         ? settings.updatesIncludeBeta
         : defaultSettings.updatesIncludeBeta
+  };
+}
+
+/**
+ * Validates the first-run settings. A completion time must be a finite, non-negative number
+ * (anything else reads as "not completed"); unknown or repeated tip ids are dropped. Idempotent.
+ */
+export function normalizeOnboardingSettings(settings: AppSettings): AppSettings {
+  const completedAt = settings.onboardingCompletedAt;
+  const seen: unknown = settings.onboardingHintsSeen;
+  return {
+    ...settings,
+    onboardingCompletedAt:
+      typeof completedAt === "number" && Number.isFinite(completedAt) && completedAt >= 0
+        ? Math.floor(completedAt)
+        : null,
+    onboardingHintsSeen: Array.isArray(seen)
+      ? ONBOARDING_HINTS.filter((id) => seen.includes(id))
+      : []
   };
 }
 
