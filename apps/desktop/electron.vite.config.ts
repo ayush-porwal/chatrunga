@@ -33,6 +33,11 @@ export default defineConfig({
   renderer: {
     root: resolve(rootDir, "src/renderer"),
     plugins: [react(), tailwindcss()],
+    build: {
+      // Sounds stay files: Vite would inline the small ones as data: URLs, which the packaged app's
+      // CSP (media-src 'self') blocks, silencing them.
+      assetsInlineLimit: (filePath) => (/\.(mp3|wav|ogg)$/i.test(filePath) ? false : undefined)
+    },
     server: {
       host: "127.0.0.1"
     },
