@@ -88,8 +88,10 @@ export class MacBundleUpdater {
     if (await this.readSwapResult()) return;
     const pid = Number((await readFile(join(this.stagingRoot, "swap.pid"), "utf8").catch(() => "")).trim());
     if (!Number.isInteger(pid) || pid <= 0) return;
-    // The script gives up after 60s of waiting for the app, so this can't hang for long.
-    for (let waited = 0; waited < 70_000 && isRunning(pid); waited += 200) {
+    // Only while that pid is still our swap script: a pid reused by another process (after a reboot
+    // cut the script short) is not waited for. The script itself gives up after 60s.
+    const script = join(this.stagingRoot, "swap.sh");
+    for (let waited = 0; waited < 70_000 && (await isSwapScript(pid, script)); waited += 200) {
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
   }
@@ -171,13 +173,10 @@ export class MacBundleUpdater {
   }
 }
 
-function isRunning(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
+/** Whether `pid` is running `script` (its command line, from `ps`); false once it has exited. */
+async function isSwapScript(pid: number, script: string): Promise<boolean> {
+  const command = await run("/bin/ps", ["-p", String(pid), "-o", "command="]).catch(() => "");
+  return command.includes(script);
 }
 
 function run(file: string, args: string[]): Promise<string> {
