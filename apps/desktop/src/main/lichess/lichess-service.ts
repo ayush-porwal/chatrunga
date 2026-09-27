@@ -114,7 +114,7 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
     this.client = new LichessClient({
       fetch: options.fetch,
       getToken: () => this.getToken(),
-      onTokenRejected: () => void this.handleTokenRejected()
+      onTokenRejected: (token) => void this.handleTokenRejected(token)
     });
   }
 
@@ -146,8 +146,11 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
       if (controller.signal.aborted) throw new OAuthCancelledError("cancelled");
       const account = normalizeAccount(accountJson, Date.now());
       const previous = (await this.options.store.status()).account;
-      // Another account's games, seek and challenges must not carry over.
-      if (previous && previous.id !== account.id) this.stopPlay();
+      // Another account's games, seek, challenges and import must not carry over.
+      if (previous && previous.id !== account.id) {
+        this.stopPlay();
+        this.syncController?.abort();
+      }
       this.stopEventStream();
       await this.options.store.save(account, token);
       this.token = token;
@@ -207,6 +210,7 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
     if (tokenRejected) throw new Error(TOKEN_REJECTED_ERROR);
     const controller = new AbortController();
     this.syncController = controller;
+    const accountId = account.id;
     let imported = 0;
     this.emitEvent({ type: "sync", running: true, imported, error: null });
     try {
@@ -222,6 +226,8 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
           this.emitEvent({ type: "sync", running: true, imported, error: null });
         }
       });
+      // The cursor belongs to the account that ran the import (another may have connected since).
+      if ((await this.options.store.status()).account?.id !== accountId) throw new Error("The account changed.");
       await this.options.store.recordSync(Date.now(), result.nextSince ?? previousSince);
       this.emitEvent({ type: "sync", running: false, imported: result.imported, error: null });
       this.emitStatus();
@@ -380,9 +386,10 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
     try {
       await this.client.send(`/api/challenge/${challengeId}/cancel`);
     } finally {
+      // Even if the cancel request failed: without its keep-alive stream the challenge lapses.
       stream?.abort();
+      this.emitEvent({ type: "challengeGone", challengeId, reason: "canceled" });
     }
-    this.emitEvent({ type: "challengeGone", challengeId, reason: "canceled" });
   }
 
   async challenges(): Promise<LichessChallenge[]> {
@@ -582,7 +589,12 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
     return account.id;
   }
 
-  private async handleTokenRejected(): Promise<void> {
+  /**
+   * `refused`: the token Lichess answered 401 to. A reply to an older token (the account changed
+   * since the request went out) says nothing about the current one and is ignored.
+   */
+  private async handleTokenRejected(refused?: string): Promise<void> {
+    if (refused && this.token && refused !== this.token) return;
     this.token = null;
     this.stopPlay();
     const { account, tokenRejected } = await this.options.store.status();

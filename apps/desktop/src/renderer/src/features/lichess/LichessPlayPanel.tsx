@@ -356,9 +356,10 @@ function AiChallenge({ disabled }: { disabled: boolean }) {
     if (!api) return;
     setBusy(true);
     setError(null);
-    // The game opens through its gameStart event, like any other.
+    // Opened by its id (its gameStart event, if it arrives too, is the same game).
     api
       .challengeAi({ level, minutes: preset.minutes, incrementSec: preset.incrementSec, color })
+      .then(({ gameId }) => useLichessStore.getState().resumeGame(gameId))
       .catch((reason: unknown) => setError(lichessErrorMessage(reason, "Couldn’t start a game against the Lichess AI.")))
       .finally(() => setBusy(false));
   }

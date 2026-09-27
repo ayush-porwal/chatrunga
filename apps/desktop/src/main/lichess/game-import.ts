@@ -49,6 +49,8 @@ export async function importLichessGames(input: {
     finished: "true"
   });
   const result: ImportResult = { imported: 0, skipped: 0, nextSince: null };
+  // The earliest game that failed to import: the cursor stays at or before it, so it's tried again.
+  let firstFailure: number | null = null;
   let lastProgressAt = 0;
   await input.client.stream(
     `/api/games/user/${encodeURIComponent(input.username)}?${params.toString()}`,
@@ -60,6 +62,7 @@ export async function importLichessGames(input: {
         variant?: unknown;
         lastMoveAt?: unknown;
         createdAt?: unknown;
+        moves?: unknown;
       };
       if (typeof game.id !== "string" || !game.id) return;
       const playedAt =
@@ -69,9 +72,15 @@ export async function importLichessGames(input: {
             ? game.createdAt
             : null;
       if (playedAt !== null) result.nextSince = Math.max(result.nextSince ?? 0, playedAt + 1);
-      if (importGame(input.repository, game.id, game.pgn, game.variant, playedAt ?? Date.now()))
-        result.imported += 1;
+      // The export lists the moves too: a game with moves whose PGN yields none didn't parse.
+      const hasMoves = typeof game.moves === "string" && game.moves.trim().length > 0;
+      const outcome = importGame(input.repository, game.id, game.pgn, game.variant, hasMoves, playedAt ?? Date.now());
+      if (outcome === "imported") result.imported += 1;
       else result.skipped += 1;
+      if (outcome === "failed") {
+        const startedAt = typeof game.createdAt === "number" ? game.createdAt : playedAt;
+        if (startedAt !== null) firstFailure = Math.min(firstFailure ?? startedAt, startedAt);
+      }
       const now = Date.now();
       if (now - lastProgressAt >= PROGRESS_INTERVAL_MS) {
         lastProgressAt = now;
@@ -79,6 +88,7 @@ export async function importLichessGames(input: {
       }
     }
   );
+  if (firstFailure !== null && result.nextSince !== null) result.nextSince = Math.min(result.nextSince, firstFailure);
   return result;
 }
 
@@ -87,16 +97,18 @@ function importGame(
   gameId: string,
   pgn: unknown,
   variant: unknown,
+  hasMoves: boolean,
   playedAt: number
-): boolean {
+): "imported" | "skipped" | "failed" {
   const site = lichessGameUrl(gameId);
-  if (typeof pgn !== "string" || (typeof variant === "string" && !IMPORTABLE_VARIANTS.has(variant)))
-    return false;
-  if (repository.findIdBySite(site)) return false;
+  // Skipped for good: other variants, games already in the library, games without a move.
+  if (typeof variant === "string" && !IMPORTABLE_VARIANTS.has(variant)) return "skipped";
+  if (repository.findIdBySite(site)) return "skipped";
+  if (typeof pgn !== "string") return "failed";
   try {
     const { game } = importPgnText(pgn);
-    // Aborted before a move (or unreadable): nothing to review.
-    if (game.moveTree.length < 2) return false;
+    // Aborted before a move: nothing to review. Moves Lichess listed but the PGN lacks: unreadable.
+    if (game.moveTree.length < 2) return hasMoves ? "failed" : "skipped";
     const headers = { ...game.headers, site };
     repository.saveImported(
       {
@@ -108,9 +120,9 @@ function importGame(
       },
       playedAt
     );
-    return true;
+    return "imported";
   } catch (error) {
-    logger.warn("lichess", `skipped game ${gameId}:`, error);
-    return false;
+    logger.warn("lichess", `couldn't import game ${gameId}:`, error);
+    return "failed";
   }
 }

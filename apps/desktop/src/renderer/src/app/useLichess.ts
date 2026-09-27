@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { createGameFromFen } from "@chaturanga/shared/chess/pgn";
 import type { ChaturangaApi } from "@chaturanga/shared/ipc/chaturanga-api";
-import type { LichessEvent, LichessGameFull, LichessGameState } from "@chaturanga/shared/types/lichess";
+import type { LichessEvent, LichessGameFull, LichessGameState, LichessStatus } from "@chaturanga/shared/types/lichess";
 import { useEventCallback } from "@/lib/use-event-callback";
 import { isGameOver, lichessErrorMessage, lichessHeaders, lichessOutcome, sideToMoveAfter, yourColor } from "../features/lichess/lichess-game";
 import { useRefreshGames } from "../queries/api";
@@ -57,10 +57,20 @@ export function startLichessSync({
     );
   }
 
+  /** Signed out (or the token was refused): the game's stream is gone, so the board stops following it. */
+  function applyStatus(status: LichessStatus): void {
+    lichess().setStatus(status);
+    const live = lichess().live;
+    if ((!status.account || status.tokenRejected) && live && !live.over) {
+      lichess().patchLive({ over: true, connected: false });
+      game().setMatchFeedback("Signed out of Lichess. The game goes on at lichess.org.");
+    }
+  }
+
   void api.status().then(
     (status) => {
       if (disposed) return;
-      lichess().setStatus(status);
+      applyStatus(status);
       if (status.account && !status.tokenRejected) {
         refreshAccountLists();
         // New games played elsewhere come in at every launch.
@@ -72,9 +82,9 @@ export function startLichessSync({
 
   function startGame(gameId: string): void {
     const live = lichess().live;
-    if (live?.id === gameId) return;
-    // One game on the board at a time: another game in progress waits to be resumed.
-    if (live && !live.over) {
+    if (live?.id === gameId || pendingGameId === gameId) return;
+    // One game on the board at a time: another game in progress (or one still loading) waits to be resumed.
+    if ((live && !live.over) || pendingGameId) {
       lichess().setOngoingGameIds([...new Set([...lichess().ongoingGameIds, gameId])]);
       return;
     }
@@ -139,7 +149,7 @@ export function startLichessSync({
   function handle(event: LichessEvent): void {
     switch (event.type) {
       case "status":
-        lichess().setStatus(event.status);
+        applyStatus(event.status);
         if (event.status.account && !event.status.tokenRejected) refreshAccountLists();
         return;
       case "seek":

@@ -62,6 +62,18 @@ describe("sinceForSync", () => {
 });
 
 describe("importLichessGames", () => {
+  it("keeps the cursor before a game that failed to import, so the next import retries it", async () => {
+    const { client } = gamesExport([
+      { id: "good0001", variant: "standard", createdAt: 100, lastMoveAt: 5000, moves: "e4 e5 Nf3", pgn: pgn("good0001") },
+      { id: "broken02", variant: "standard", createdAt: 300, lastMoveAt: 4000, moves: "e4 e5", pgn: "not a pgn at all" },
+      { id: "missing1", variant: "standard", createdAt: 400, lastMoveAt: 4500, moves: "d4" }
+    ]);
+    const { repository, saved } = memoryRepository();
+    const result = await importLichessGames({ client, repository, username: "Kenneth", since: 50 });
+    expect(saved).toHaveLength(1);
+    expect(result).toEqual({ imported: 1, skipped: 2, nextSince: 300 });
+  });
+
   it("imports new games as Lichess games dated by their last move, and skips ones already there", async () => {
     const { client, requests } = gamesExport([
       {

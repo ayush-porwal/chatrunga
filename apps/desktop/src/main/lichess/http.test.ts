@@ -70,6 +70,8 @@ describe("LichessClient", () => {
     expect(error).toBeInstanceOf(LichessHttpError);
     expect((error as LichessHttpError).status).toBe(401);
     expect(onTokenRejected).toHaveBeenCalledTimes(1);
+    // Names the token it refused, so a reply to an older token can be told apart.
+    expect(onTokenRejected).toHaveBeenCalledWith("saved");
   });
 
   it("turns network failures into a readable error", async () => {

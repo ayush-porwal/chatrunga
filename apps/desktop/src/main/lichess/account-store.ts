@@ -134,8 +134,13 @@ export class LichessAccountStore {
     });
   }
 
+  /** Forgets the account. Only a file that's already gone is fine: a credential left on disk must fail loudly. */
   clear(): Promise<void> {
-    return this.serialize(() => unlink(this.filePath).catch(() => undefined));
+    return this.serialize(() =>
+      unlink(this.filePath).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+      })
+    );
   }
 
   private async read(): Promise<StoredAccount> {

@@ -153,4 +153,20 @@ describe("startLichessSync", () => {
     expect(bridge.api.watchGame).toHaveBeenCalledTimes(1);
     expect(useLichessStore.getState().ongoingGameIds).toEqual(["game2"]);
   });
+
+  it("lets go of the board when you're signed out mid-game", async () => {
+    await startGame();
+    bridge.emit({ type: "status", status: { account: null, connecting: false, tokenRejected: false } });
+    expect(useLichessStore.getState().live).toMatchObject({ over: true, connected: false });
+    expect(useGameStore.getState().matchFeedback).toMatch(/Signed out/);
+  });
+
+  it("keeps a game that starts while another is still loading for later", () => {
+    bridge.emit({ type: "gameStart", gameId: "game1" });
+    bridge.emit({ type: "gameStart", gameId: "game2" });
+    expect(bridge.api.watchGame).toHaveBeenCalledTimes(1);
+    expect(useLichessStore.getState().ongoingGameIds).toEqual(["game2"]);
+    bridge.emit({ type: "gameFull", game: full() });
+    expect(useLichessStore.getState().live?.id).toBe("game1");
+  });
 });

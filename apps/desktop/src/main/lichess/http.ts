@@ -77,8 +77,8 @@ export type LichessClientOptions = {
   fetch?: FetchLike;
   /** The saved access token; null when not connected. */
   getToken: () => Promise<string | null>;
-  /** Lichess answered 401 to the saved token (revoked or expired). */
-  onTokenRejected?: () => void;
+  /** Lichess answered 401 to the saved token (revoked or expired); `token` is the one it refused. */
+  onTokenRejected?: (token: string) => void;
 };
 
 export function formBody(form: Record<string, FormValue>): URLSearchParams {
@@ -101,10 +101,11 @@ export class LichessClient {
   async request(path: string, request: LichessRequest = {}): Promise<Response> {
     const headers: Record<string, string> = { Accept: request.accept ?? "application/json" };
     const usesSavedToken = request.auth !== false && request.token === undefined;
+    let sentToken: string | null = null;
     if (request.auth !== false) {
-      const token = request.token ?? (await this.options.getToken());
-      if (!token) throw new LichessHttpError(NOT_CONNECTED_ERROR, 401);
-      headers.Authorization = `Bearer ${token}`;
+      sentToken = request.token ?? (await this.options.getToken());
+      if (!sentToken) throw new LichessHttpError(NOT_CONNECTED_ERROR, 401);
+      headers.Authorization = `Bearer ${sentToken}`;
     }
     let body: URLSearchParams | undefined;
     if (request.form) {
@@ -125,7 +126,7 @@ export class LichessClient {
     }
     if (response.ok) return response;
     const text = await response.text().catch(() => "");
-    if (response.status === 401 && usesSavedToken) this.options.onTokenRejected?.();
+    if (response.status === 401 && usesSavedToken && sentToken) this.options.onTokenRejected?.(sentToken);
     throw new LichessHttpError(lichessErrorMessage(response.status, text), response.status);
   }
 

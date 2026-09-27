@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -110,5 +110,15 @@ describe("LichessAccountStore", () => {
     });
     await expect(unavailable.save(ACCOUNT, "plain")).rejects.toThrow(/Secure key storage/);
     expect(await unavailable.status()).toEqual({ account: null, tokenRejected: false });
+  });
+
+  it("fails when the credential can't be removed, but not when it's already gone", async () => {
+    const path = await storePath();
+    const store = new LichessAccountStore(path, secureStorage());
+    await expect(store.clear()).resolves.toBeUndefined();
+    // A directory in the file's place can't be unlinked like a file.
+    const directoryPath = `${path}.dir`;
+    await mkdir(directoryPath);
+    await expect(new LichessAccountStore(directoryPath, secureStorage()).clear()).rejects.toThrow();
   });
 });

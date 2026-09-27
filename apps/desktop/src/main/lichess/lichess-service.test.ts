@@ -400,6 +400,14 @@ describe("LichessService", () => {
     );
   });
 
+  it("reports a challenge gone even when cancelling it fails", async () => {
+    const { service, events } = await setup({
+      "POST /api/challenge/chal1234/cancel": () => json({ error: "Server error" }, 500)
+    });
+    await expect(service.cancelChallenge("chal1234")).rejects.toThrow();
+    expect(events).toContainEqual({ type: "challengeGone", challengeId: "chal1234", reason: "canceled" });
+  });
+
   it("signs in through the browser and saves the account", async () => {
     const { service, store, events } = await setup(
       {
