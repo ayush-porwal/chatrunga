@@ -1,15 +1,20 @@
 import { app, safeStorage } from "electron";
-import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import type {
   OpenRouterConfigSummary,
   SetOpenRouterConfigInput
 } from "@chaturanga/shared/ipc/chaturanga-api";
 import { DEFAULT_COMMENTARY_MODEL as DEFAULT_OPENROUTER_MODEL } from "@chaturanga/shared/llm/models";
+import {
+  createSerialQueue,
+  decryptSecret,
+  encryptSecret,
+  readJsonObject,
+  writePrivateJsonFile,
+  type SecureStorageLike
+} from "../secure-json-file";
 
 const MAX_MODEL_LENGTH = 160;
-
-type SecureStorageLike = Pick<typeof safeStorage, "isEncryptionAvailable" | "encryptString" | "decryptString">;
 
 type StoredConfig = {
   model: string;
@@ -58,34 +63,17 @@ export class OpenRouterConfigStore {
   /** Read the secret for a provider call. Never expose this through IPC. */
   async getApiKey(): Promise<string | null> {
     const config = await this.read();
-    return this.decrypt(config.encryptedApiKey);
+    return decryptSecret(this.secureStorage, config.encryptedApiKey);
   }
 
-  private async decrypt(encryptedApiKey: string | null): Promise<string | null> {
-    if (!encryptedApiKey || !this.secureStorage.isEncryptionAvailable()) return null;
-    try {
-      const decrypted = this.secureStorage.decryptString(
-        Buffer.from(encryptedApiKey, "base64")
-      );
-      return decrypted.trim() || null;
-    } catch {
-      return null;
-    }
-  }
-
-  /** Tail of the serialized saves: each read-modify-write runs after the previous one. */
-  private saves: Promise<unknown> = Promise.resolve();
-  private writeSeq = 0;
+  private readonly serialize = createSerialQueue();
 
   /**
    * Saves are serialized so overlapping calls (e.g. a model change and a key change) can't
    * read the same old config and overwrite each other's field.
    */
   set(input: SetOpenRouterConfigInput): Promise<OpenRouterConfigSummary> {
-    const run = () => this.apply(input);
-    const next = this.saves.then(run, run);
-    this.saves = next.catch(() => undefined);
-    return next;
+    return this.serialize(() => this.apply(input));
   }
 
   private async apply(input: SetOpenRouterConfigInput): Promise<OpenRouterConfigSummary> {
@@ -96,10 +84,7 @@ export class OpenRouterConfigStore {
     if (input.apiKey === null) {
       encryptedApiKey = null;
     } else if (typeof input.apiKey === "string" && input.apiKey.trim()) {
-      if (!this.secureStorage.isEncryptionAvailable()) {
-        throw new Error("Secure key storage is unavailable on this system.");
-      }
-      encryptedApiKey = this.secureStorage.encryptString(input.apiKey.trim()).toString("base64");
+      encryptedApiKey = encryptSecret(this.secureStorage, input.apiKey.trim());
     }
 
     await this.write({ model, encryptedApiKey });
@@ -107,33 +92,18 @@ export class OpenRouterConfigStore {
   }
 
   private async read(): Promise<StoredConfig> {
-    try {
-      const raw = await readFile(this.filePath, "utf8");
-      const parsed = JSON.parse(raw) as Partial<StoredConfig>;
-      return {
-        model: normalizeModel(parsed.model),
-        encryptedApiKey:
-          typeof parsed.encryptedApiKey === "string" && parsed.encryptedApiKey.length > 0
-            ? parsed.encryptedApiKey
-            : null
-      };
-    } catch {
-      return { model: DEFAULT_OPENROUTER_MODEL, encryptedApiKey: null };
-    }
+    const parsed = await readJsonObject(this.filePath);
+    return {
+      model: normalizeModel(parsed?.model),
+      encryptedApiKey:
+        typeof parsed?.encryptedApiKey === "string" && parsed.encryptedApiKey.length > 0
+          ? parsed.encryptedApiKey
+          : null
+    };
   }
 
-  private async write(config: StoredConfig): Promise<void> {
-    await mkdir(dirname(this.filePath), { recursive: true, mode: 0o700 });
-    const temporaryPath = `${this.filePath}.${process.pid}.${++this.writeSeq}.tmp`;
-    try {
-      await writeFile(temporaryPath, JSON.stringify(config), { encoding: "utf8", mode: 0o600 });
-      await chmod(temporaryPath, 0o600);
-      await rename(temporaryPath, this.filePath);
-      await chmod(this.filePath, 0o600);
-    } catch (error) {
-      await unlink(temporaryPath).catch(() => undefined);
-      throw error;
-    }
+  private write(config: StoredConfig): Promise<void> {
+    return writePrivateJsonFile(this.filePath, config);
   }
 }
 

@@ -1,5 +1,5 @@
 import { memo, useMemo } from "react";
-import { Cpu, Play, Settings } from "lucide-react";
+import { Cpu, Lock, Play, Settings } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { formatScore } from "../game-review/review-score";
 import { MoveLine, type GoToLine } from "../game-review/MoveLinks";
@@ -7,6 +7,7 @@ import { uciLineToSan } from "../game-review/review-utils";
 import { useGameStore } from "../../stores/game-store";
 import type { EngineInfo, EngineStatus } from "@chaturanga/shared/types/engine";
 import { useAnalysisStore } from "../../stores/analysis-store";
+import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
 import { useEnginesQuery } from "../../queries/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -75,8 +76,24 @@ const statusTone: Record<EngineStatus, "neutral" | "accent" | "danger"> = {
   error: "danger"
 };
 
-/** Workspace "Engine" tab: live search stats and principal variations (flat — the panel is the card). */
-export function EngineStatusPanel({
+/**
+ * Workspace "Engine" tab: live search stats and principal variations (flat — the panel is the card).
+ * Locked while a Lichess game is being played: outside help is against Lichess's fair-play rules.
+ */
+export function EngineStatusPanel(props: { onStartAnalysis?: () => void; onOpenSettings?: () => void }) {
+  const onlineGame = useLichessStore(selectLiveGameInProgress);
+  if (onlineGame) {
+    return (
+      <Notice tone="info" icon={<Lock />} title="Engine off during your Lichess game">
+        Lichess doesn’t allow outside help while a game is on. The engine, Maia and the coach are back for the review
+        once it ends.
+      </Notice>
+    );
+  }
+  return <EngineStatusPanelContent {...props} />;
+}
+
+function EngineStatusPanelContent({
   onStartAnalysis,
   onOpenSettings
 }: {

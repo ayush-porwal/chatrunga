@@ -21,6 +21,7 @@ import { engineRepository, externalDatabaseRepository, gameRepository, settingsR
 import { EngineManager } from "./engine/engine-manager";
 import { killAllEngineProcesses } from "./engine/uci-process";
 import { registerIpc } from "./ipc/register";
+import { shutdownLichess } from "./lichess";
 import { logger } from "./logger";
 import { migrateOnboarding } from "./onboarding-migration";
 import { updateService } from "./updater";
@@ -44,11 +45,13 @@ process.on("uncaughtException", (error) => logger.error("main", "uncaught except
 process.on("unhandledRejection", (reason) => logger.error("main", "unhandled rejection:", reason));
 
 app.setName(PRODUCT_NAME);
-// Dev/test hook: CHATURANGA_USER_DATA_DIR points the app at a throwaway profile
-// (UI automation, clean-install checks). Unset in normal use. Set before the
-// single-instance lock, which is scoped to the user-data directory.
+// The profile, set before the single-instance lock (which is scoped to it). Development builds
+// (`pnpm dev`) keep their own: sharing the installed app's would share its lock too, and with the
+// installed app open `pnpm dev` would quit and bring that (older) app forward instead of opening.
+// Dev/test hook: CHATURANGA_USER_DATA_DIR points the app at a throwaway profile (UI automation,
+// clean-install checks). Unset in normal use.
 const userDataOverride = process.env.CHATURANGA_USER_DATA_DIR;
-app.setPath("userData", userDataOverride ?? join(app.getPath("appData"), "chaturanga"));
+app.setPath("userData", userDataOverride ?? join(app.getPath("appData"), app.isPackaged ? "chaturanga" : "chaturanga-dev"));
 if (userDataOverride) app.setAppLogsPath(join(userDataOverride, "logs"));
 protocol.registerSchemesAsPrivileged([
   { scheme: IMAGE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }
@@ -111,8 +114,12 @@ async function startup(): Promise<void> {
   void updateService.start({ prepareForInstall: shutdown });
 }
 
-/** Stops engines and closes the database. Idempotent: an update install runs it before `will-quit` does. */
+/**
+ * Stops engines, closes Lichess connections (streams, seek, sign-in server) and the database.
+ * Idempotent: an update install runs it before `will-quit` does.
+ */
 function shutdown(): void {
+  shutdownLichess();
   engineManager.stop();
   killAllEngineProcesses();
   closeDb();

@@ -44,6 +44,7 @@ type GameStore = {
   currentNodeId: string;
   orientation: Color;
   mode: GameMode;
+  /** The side the app plays for the opponent: the engine in an engine game, the Lichess opponent online. */
   engineSide: Color | null;
   moveTimeMs: number;
   depth: number | null;
@@ -87,6 +88,16 @@ type GameStore = {
   resign: () => void;
   agreeDraw: () => void;
   resolveTimeout: (sideThatLostOnTime: Color) => void;
+  /** Ends a match with a result decided elsewhere (the Lichess server). */
+  endMatch: (result: string, termination: string) => void;
+  /**
+   * Makes the main line equal `ucis` (an online game's moves as the server knows them): appends
+   * what's new, or rebuilds the line when it differs (a move the server refused). The cursor follows
+   * the new moves when it was on the last one. Returns false if a move is illegal.
+   */
+  syncMainline: (ucis: readonly string[]) => boolean;
+  /** Sets both clocks from the server; the side to move's clock runs from now unless `running` is false. */
+  setMatchClock: (clock: { whiteMs: number; blackMs: number; sideToMove: Color; running: boolean }) => void;
   setMatchFeedback: (message: string | null) => void;
   getClockForEngineGo: () => EngineGoClock | null;
   toSession: () => GameSession;
@@ -175,6 +186,11 @@ export const useGameStore = create<GameStore>((set, get) => {
     makeMove: (move) => {
       const state = get();
       if (state.gameOutcome) return false;
+      // Online, a move is only ever played at the end of the game (never as a variation).
+      if (state.mode === "online" && state.currentNodeId !== mainlineEndId(state.moveTree)) {
+        set({ lastError: "Go to the latest move to play." });
+        return false;
+      }
       const parent = state.moveTree.find((node) => node.id === state.currentNodeId);
       const fenBefore = parent?.fenAfter ?? state.currentFen;
       const mover = statusForFen(fenBefore).turn;
@@ -222,8 +238,8 @@ export const useGameStore = create<GameStore>((set, get) => {
       let moveTree = state.moveTree;
       let node = moveTree.find((item) => item.id === startNodeId);
       if (!node) return false;
-      // During a live engine match, only walk existing moves: a new branch would make the engine move.
-      const liveMatch = state.mode === "engine" && Boolean(state.engineSide) && !state.gameOutcome;
+      // During a live match, only walk existing moves: a new branch would make the engine (or the opponent's) move.
+      const liveMatch = isMatchMode(state.mode) && Boolean(state.engineSide) && !state.gameOutcome;
       for (const move of moves) {
         const applied = applyLineMove(node.fenAfter, move);
         if (!applied) return false;
@@ -366,6 +382,48 @@ export const useGameStore = create<GameStore>((set, get) => {
       finishGame(result, "Time forfeit");
     },
 
+    endMatch: (result, termination) => {
+      if (!get().gameOutcome) finishGame(result, termination);
+    },
+
+    syncMainline: (ucis) => {
+      const state = get();
+      const line = mainlineNodes(state.moveTree);
+      const followEnd = state.currentNodeId === (line[line.length - 1]?.id ?? "root");
+      let shared = 0;
+      while (shared < line.length - 1 && shared < ucis.length && line[shared + 1].uci === ucis[shared]) shared += 1;
+      if (shared === line.length - 1 && shared === ucis.length) return true;
+      // Keep the moves both agree on; drop the rest of our line (and anything hanging off it).
+      let moveTree = state.moveTree;
+      const keep = line[shared];
+      const stale = keep.children.find((childId) => line.some((node) => node.id === childId));
+      if (stale) {
+        const removed = collectSubtreeIds(moveTree, stale);
+        moveTree = moveTree
+          .filter((node) => !removed.has(node.id))
+          .map((node) => (node.id === keep.id ? { ...node, children: node.children.filter((id) => id !== stale) } : node));
+      }
+      let node = moveTree.find((item) => item.id === keep.id) ?? keep;
+      for (const uci of ucis.slice(shared)) {
+        const applied = applyLineMove(node.fenAfter, uci);
+        if (!applied) return false;
+        const added = addMoveNode(moveTree, node.id, applied.san, applied.uci, node.fenAfter, applied.fen);
+        moveTree = added.moveTree;
+        node = added.node;
+      }
+      const cursorGone = !moveTree.some((item) => item.id === state.currentNodeId);
+      const cursor = followEnd || cursorGone ? node : (moveTree.find((item) => item.id === state.currentNodeId) ?? node);
+      set({ moveTree, currentNodeId: cursor.id, currentFen: cursor.fenAfter, lastError: null });
+      return true;
+    },
+
+    setMatchClock: ({ whiteMs, blackMs, sideToMove, running }) => {
+      const at = Date.now();
+      set({
+        engineClockLive: { whiteMs, blackMs, sideToMove, turnStartedAt: at, ...(running ? {} : { stoppedAt: at }) }
+      });
+    },
+
     setMatchFeedback: (message) => set({ matchFeedback: message }),
 
     getClockForEngineGo: () => {
@@ -406,6 +464,36 @@ export function buildEngineGoClock(
     winc: Math.max(0, Math.floor(cfg.incrementMs)),
     binc: Math.max(0, Math.floor(cfg.incrementMs))
   };
+}
+
+/** Engine games and online games: the user against an opponent the app moves for. */
+export function isMatchMode(mode: GameMode): boolean {
+  return mode === "engine" || mode === "online";
+}
+
+/** Root, then the main line (first child at every step). */
+function mainlineNodes(moveTree: MoveNode[]): MoveNode[] {
+  const byId = new Map(moveTree.map((node) => [node.id, node]));
+  const root = moveTree.find((node) => node.parentId === null) ?? moveTree[0];
+  const line: MoveNode[] = root ? [root] : [];
+  let next = root?.children[0];
+  while (next) {
+    const node = byId.get(next);
+    if (!node) break;
+    line.push(node);
+    next = node.children[0];
+  }
+  return line;
+}
+
+/** The main line's moves in UCI (an online game's moves as this board has them). */
+export function mainlineUcis(moveTree: MoveNode[]): string[] {
+  return mainlineNodes(moveTree).flatMap((node) => (node.uci ? [node.uci] : []));
+}
+
+function mainlineEndId(moveTree: MoveNode[]): string {
+  const line = mainlineNodes(moveTree);
+  return line[line.length - 1]?.id ?? "root";
 }
 
 function stopClock(live: EngineClockLive | null): EngineClockLive | null {

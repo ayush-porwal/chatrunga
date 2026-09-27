@@ -561,7 +561,8 @@ const sourceLabels: Record<GameSummary["source"], string> = {
   "pgn-import": "Imported game",
   "engine-game": "Engine game",
   analysis: "Analysis",
-  puzzle: "Puzzle"
+  puzzle: "Puzzle",
+  lichess: "Lichess game"
 };
 
 function sourceLabel(source: GameSummary["source"]): string {

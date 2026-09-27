@@ -115,7 +115,7 @@ export const AppSidebar = memo(function AppSidebar({
         {item(RotateCcw, "New game", onNewGame)}
         {item(FileSearch, "Analyze", onAnalyze, active.analyze)}
         {item(BarChart3, "Game review", onReview, active.review)}
-        {item(Swords, "Engine game", onEngineGame, active.engineGame)}
+        {item(Swords, "Play", onEngineGame, active.engineGame)}
         {item(Puzzle, "Puzzles", onPuzzles, active.puzzles)}
         {item(Database, "Databases", onDatabases, active.databases)}
         {item(Upload, "Import PGN", onImport)}

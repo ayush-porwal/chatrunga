@@ -32,14 +32,16 @@ import { useAnalysisStore } from "../stores/analysis-store";
 import { useGameStore } from "../stores/game-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
 import { useReviewStore } from "../stores/review-store";
+import { selectLiveGameInProgress, useLichessStore } from "../stores/lichess-store";
 import { AppSidebar } from "./AppSidebar";
-import { AppTitlebar, GameTitlebar, PageTitle, ReviewTitlebar } from "./AppTitlebar";
+import { AppTitlebar, GameTitlebar, LiveGameButton, PageTitle, ReviewTitlebar } from "./AppTitlebar";
 import { GameWorkspace, type SideTab } from "./GameWorkspace";
 import { HomePage } from "./HomePage";
 import { PuzzleInfoPanel } from "./PuzzleInfoPanel";
 import { useBoardShortcuts } from "./useBoardShortcuts";
 import { useEngineDriver } from "./useEngineDriver";
 import { useGameAutosave } from "./useGameAutosave";
+import { useLichess } from "./useLichess";
 import { useMoveKeyboardShortcuts } from "./useMoveKeyboardShortcuts";
 import { useMoveSounds } from "./useMoveSounds";
 import { cancelActiveReview, useReviewRunner } from "./useReviewRunner";
@@ -107,6 +109,8 @@ export function App() {
     }))
   );
   const positionIsEnd = useGameStore((state) => positionStatus(state.currentFen).isEnd);
+  // A Lichess game on the board: nothing may replace it and the engine stays off until it ends.
+  const onlineGameLive = useLichessStore(selectLiveGameInProgress);
   const engines = useEnginesQuery();
   const nextPuzzle = useSamplePuzzleMutation();
   const settingsQuery = useSettingsQuery();
@@ -122,8 +126,9 @@ export function App() {
     !positionIsEnd &&
     gameSource !== "new" &&
     gameSource !== "puzzle" &&
-    (gameMode === "freeplay" || (gameMode === "engine" && gameDecided));
+    (gameMode === "freeplay" || ((gameMode === "engine" || gameMode === "online") && gameDecided));
 
+  useLichess({ onGameStart: () => startOnlineGame() });
   useMoveKeyboardShortcuts();
   useEngineDriver(defaultEngineId);
   useGameAutosave();
@@ -178,6 +183,25 @@ export function App() {
     currentGame().loadGame(imported.game);
     currentGame().setMode("freeplay");
     showGame();
+  }
+
+  /** A Lichess game of yours began: clear the board's other activity and show it (useLichess loads it). */
+  function startOnlineGame() {
+    stopEngineWork();
+    useReviewStore.getState().reset();
+    clearPuzzleSession();
+    setFocusMode(false);
+    showGame();
+  }
+
+  /**
+   * While a Lichess game is on, actions that would replace the board bring you back to it instead
+   * (the game keeps running on Lichess either way).
+   */
+  function unlessOnlineGame(action: () => void) {
+    if (!useLichessStore.getState().live || useLichessStore.getState().live?.over) return action();
+    showGame();
+    currentGame().setMatchFeedback("Finish your Lichess game first.");
   }
 
   function startNewGame() {
@@ -403,30 +427,36 @@ export function App() {
       setSettingsSection("engines");
       showView("settings");
     }),
-    newGame: useEventCallback(startNewGame),
-    liveAnalysis: useEventCallback(startLiveAnalysis),
+    newGame: useEventCallback(() => unlessOnlineGame(startNewGame)),
+    liveAnalysis: useEventCallback(() => unlessOnlineGame(startLiveAnalysis)),
     stopLiveAnalysis: useEventCallback(stopLiveAnalysis),
     analyzePosition: useEventCallback(analyzeCurrentPosition),
-    openReviewPicker: useEventCallback(() => setGameReviewPickerOpen(true)),
+    openReviewPicker: useEventCallback(() => unlessOnlineGame(() => setGameReviewPickerOpen(true))),
     closeReviewPicker: useEventCallback(() => setGameReviewPickerOpen(false)),
     openImportDialog: useEventCallback(() => setImportOpen(true)),
     closeImportDialog: useEventCallback(() => setImportOpen(false)),
-    reviewGame: useEventCallback(openSelectedGameReview),
+    reviewGame: useEventCallback((id: string) => unlessOnlineGame(() => void openSelectedGameReview(id))),
     engineGame: useEventCallback(openEngineGamePage),
-    puzzles: useEventCallback(openPuzzlesPage),
+    // After a Lichess game: Play, on its Lichess tab.
+    playLichess: useEventCallback(() => {
+      useLichessStore.getState().setPlayOpponent("lichess");
+      openEngineGamePage();
+    }),
+    puzzles: useEventCallback(() => unlessOnlineGame(openPuzzlesPage)),
     databases: useEventCallback(openDatabasesPage),
-    importPgn: useEventCallback(() => void importPgnFile()),
+    importPgn: useEventCallback(() => unlessOnlineGame(() => void importPgnFile())),
     exportPgn: useEventCallback(() => void exportPgn()),
     toggleFocus: useEventCallback(() => setFocusMode((value) => !value)),
     exitFocus: useEventCallback(() => setFocusMode(false)),
     flipBoard: useEventCallback(() => currentGame().flip()),
-    openGame: useEventCallback((id: string) => void openSavedGameById(id)),
+    openGame: useEventCallback((id: string) => unlessOnlineGame(() => void openSavedGameById(id))),
     startReview: useEventCallback(() => void startReview()),
     stopReview: useEventCallback(() => void cancelActiveReview()),
     showGame: useEventCallback(() => showGame()),
     startPuzzle: useEventCallback((config: PuzzleSessionConfig, puzzle: PuzzleSample) => startPuzzle(puzzle, config)),
     nextPuzzle: useEventCallback(loadNextPuzzle),
-    playEngineFromPuzzle: useEventCallback(playEngineFromCurrentPuzzlePosition)
+    playEngineFromPuzzle: useEventCallback(playEngineFromCurrentPuzzlePosition),
+    reviewCurrentGame: useEventCallback(() => void openSelectedGameReview("current"))
   };
   useBoardShortcuts({
     enabled: onBoardView,
@@ -465,7 +495,7 @@ export function App() {
   const pageTitles: Partial<Record<AppView, string>> = {
     home: "Home",
     settings: "Settings",
-    "engine-game": "Engine game",
+    "engine-game": "Play",
     puzzles: "Puzzles",
     databases: "Databases"
   };
@@ -504,9 +534,14 @@ export function App() {
               canAnalyze={canAnalyzeGame}
               onAnalyze={on.analyzePosition}
               onStopAnalysis={gameMode === "analysis" && desktopApiAvailable ? on.stopLiveAnalysis : null}
+              onReviewGame={on.reviewCurrentGame}
+              onPlayAgain={on.playLichess}
             />
           ) : (
-            <PageTitle>{pageTitles[appView]}</PageTitle>
+            <>
+              <PageTitle>{pageTitles[appView]}</PageTitle>
+              {onlineGameLive ? <LiveGameButton onClick={on.showGame} /> : null}
+            </>
           )}
         </AppTitlebar>
 
@@ -552,7 +587,7 @@ export function App() {
             ) : appView === "settings" ? (
               <SettingsPage initialSection={settingsSection} />
             ) : appView === "engine-game" ? (
-              <EngineGamePage onOpenSettings={on.settings} onStart={on.showGame} />
+              <EngineGamePage onOpenSettings={on.settings} onStart={on.showGame} onOpenLichessGame={on.showGame} />
             ) : appView === "puzzles" ? (
               <PuzzlePage onDatabases={on.databases} onStart={on.startPuzzle} />
             ) : appView === "databases" ? (

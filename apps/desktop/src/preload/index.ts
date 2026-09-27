@@ -83,7 +83,32 @@ const api: ChaturangaApi = {
     onReviewCompleted: subscribe<EventPayload<"onReviewCompleted">>("review:completed"),
     onReviewFailed: subscribe<EventPayload<"onReviewFailed">>("review:failed"),
     onDatabaseDownloadProgress: subscribe<EventPayload<"onDatabaseDownloadProgress">>("database:downloadProgress"),
-    onUpdateState: subscribe<EventPayload<"onUpdateState">>("updates:state")
+    onUpdateState: subscribe<EventPayload<"onUpdateState">>("updates:state"),
+    onLichessEvent: subscribe<EventPayload<"onLichessEvent">>("lichess:event")
+  },
+  // Lichess account, play and import (main/lichess).
+  lichess: {
+    status: () => ipcRenderer.invoke("lichess:status"),
+    connect: () => ipcRenderer.invoke("lichess:connect"),
+    cancelConnect: () => ipcRenderer.invoke("lichess:cancelConnect"),
+    disconnect: (options) => ipcRenderer.invoke("lichess:disconnect", options),
+    syncGames: () => ipcRenderer.invoke("lichess:syncGames"),
+    seek: (input) => ipcRenderer.invoke("lichess:seek", input),
+    cancelSeek: () => ipcRenderer.invoke("lichess:cancelSeek"),
+    challenge: (input) => ipcRenderer.invoke("lichess:challenge", input),
+    challengeAi: (input) => ipcRenderer.invoke("lichess:challengeAi", input),
+    acceptChallenge: (challengeId) => ipcRenderer.invoke("lichess:acceptChallenge", challengeId),
+    declineChallenge: (challengeId) => ipcRenderer.invoke("lichess:declineChallenge", challengeId),
+    cancelChallenge: (challengeId) => ipcRenderer.invoke("lichess:cancelChallenge", challengeId),
+    challenges: () => ipcRenderer.invoke("lichess:challenges"),
+    ongoingGames: () => ipcRenderer.invoke("lichess:ongoingGames"),
+    watchGame: (gameId) => ipcRenderer.invoke("lichess:watchGame", gameId),
+    unwatchGame: (gameId) => ipcRenderer.invoke("lichess:unwatchGame", gameId),
+    move: (gameId, uci) => ipcRenderer.invoke("lichess:move", gameId, uci),
+    resign: (gameId) => ipcRenderer.invoke("lichess:resign", gameId),
+    abort: (gameId) => ipcRenderer.invoke("lichess:abort", gameId),
+    offerDraw: (gameId) => ipcRenderer.invoke("lichess:offerDraw", gameId),
+    declineDraw: (gameId) => ipcRenderer.invoke("lichess:declineDraw", gameId)
   },
   updates: {
     getState: () => ipcRenderer.invoke("updates:getState"),

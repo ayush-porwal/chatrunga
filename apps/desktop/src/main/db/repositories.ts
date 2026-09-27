@@ -18,6 +18,7 @@ import type {
   UpdateEngineInput
 } from "@chaturanga/shared/types/engine";
 import type {
+  GameSource,
   GameSummary,
   MoveNode,
   SavedGame,
@@ -318,6 +319,72 @@ export const engineRepository = {
   }
 };
 
+function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
+  const id = input.id || nanoid();
+  const existing = get<{ created_at: number; review_json: string | null }>(
+    "SELECT created_at, review_json FROM games WHERE id = ?",
+    id
+  );
+  const createdAt = existing?.created_at ?? timestamp;
+  const reviewJson =
+    input.review === undefined
+      ? (existing?.review_json ?? null)
+      : input.review === null
+        ? null
+        : JSON.stringify(input.review);
+
+  const requestedNode = input.moveTree.find((node) => node.id === input.currentNodeId);
+  const currentNodeId =
+    requestedNode?.id ??
+    input.moveTree.find((node) => node.fenAfter === input.currentFen)?.id ??
+    input.moveTree.find((node) => node.parentId === null)?.id ??
+    "root";
+
+  run(
+    `INSERT INTO games (
+      id, source, white, black, event, site, round, result, date,
+      initial_fen, pgn, current_fen, current_node_id, move_tree_json, review_json, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      source = excluded.source,
+      white = excluded.white,
+      black = excluded.black,
+      event = excluded.event,
+      site = excluded.site,
+      round = excluded.round,
+      result = excluded.result,
+      date = excluded.date,
+      initial_fen = excluded.initial_fen,
+      pgn = excluded.pgn,
+      current_fen = excluded.current_fen,
+      current_node_id = excluded.current_node_id,
+      move_tree_json = excluded.move_tree_json,
+      review_json = excluded.review_json,
+      updated_at = excluded.updated_at`,
+    id,
+    input.source,
+    input.headers.white ?? null,
+    input.headers.black ?? null,
+    input.headers.event ?? null,
+    input.headers.site ?? null,
+    input.headers.round ?? null,
+    input.headers.result ?? "*",
+    input.headers.date ?? null,
+    input.rootFen,
+    input.pgn,
+    input.currentFen,
+    currentNodeId,
+    JSON.stringify(input.moveTree),
+    reviewJson,
+    createdAt,
+    timestamp
+  );
+
+  const saved = gameRepository.get(id);
+  if (!saved) throw new Error("Failed to save game");
+  return saved;
+}
+
 export const gameRepository = {
   list(): GameSummary[] {
     // Puzzle sessions are never library games (see the cleanup in db/index.ts).
@@ -333,70 +400,25 @@ export const gameRepository = {
   },
 
   save(input: SaveGameInput): SavedGame {
-    const timestamp = now();
-    const id = input.id || nanoid();
-    const existing = get<{ created_at: number; review_json: string | null }>(
-      "SELECT created_at, review_json FROM games WHERE id = ?",
-      id
-    );
-    const createdAt = existing?.created_at ?? timestamp;
-    const reviewJson =
-      input.review === undefined
-        ? (existing?.review_json ?? null)
-        : input.review === null
-          ? null
-          : JSON.stringify(input.review);
+    return upsertGame(input, now());
+  },
 
-    const requestedNode = input.moveTree.find((node) => node.id === input.currentNodeId);
-    const currentNodeId =
-      requestedNode?.id ??
-      input.moveTree.find((node) => node.fenAfter === input.currentFen)?.id ??
-      input.moveTree.find((node) => node.parentId === null)?.id ??
-      "root";
+  /**
+   * An imported game (Lichess), dated when it was played rather than now, so the library (sorted
+   * by `updated_at`) lists imports by play date.
+   */
+  saveImported(input: SaveGameInput, playedAt: number): SavedGame {
+    return upsertGame(input, playedAt);
+  },
 
-    run(
-      `INSERT INTO games (
-        id, source, white, black, event, site, round, result, date,
-        initial_fen, pgn, current_fen, current_node_id, move_tree_json, review_json, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        source = excluded.source,
-        white = excluded.white,
-        black = excluded.black,
-        event = excluded.event,
-        site = excluded.site,
-        round = excluded.round,
-        result = excluded.result,
-        date = excluded.date,
-        initial_fen = excluded.initial_fen,
-        pgn = excluded.pgn,
-        current_fen = excluded.current_fen,
-        current_node_id = excluded.current_node_id,
-        move_tree_json = excluded.move_tree_json,
-        review_json = excluded.review_json,
-        updated_at = excluded.updated_at`,
-      id,
-      input.source,
-      input.headers.white ?? null,
-      input.headers.black ?? null,
-      input.headers.event ?? null,
-      input.headers.site ?? null,
-      input.headers.round ?? null,
-      input.headers.result ?? "*",
-      input.headers.date ?? null,
-      input.rootFen,
-      input.pgn,
-      input.currentFen,
-      currentNodeId,
-      JSON.stringify(input.moveTree),
-      reviewJson,
-      createdAt,
-      timestamp
-    );
+  /** The game imported from `site` (e.g. a Lichess game URL), if any. */
+  findIdBySite(site: string): string | null {
+    return get<{ id: string }>("SELECT id FROM games WHERE site = ? LIMIT 1", site)?.id ?? null;
+  },
 
-    const saved = this.get(id);
-    if (!saved) throw new Error("Failed to save game");
-    return saved;
+  /** Deletes every game from one source (e.g. Lichess imports on disconnect); returns the count. */
+  removeBySource(source: GameSource): number {
+    return Number(getDb().prepare("DELETE FROM games WHERE source = ?").run(source).changes);
   },
 
   /**

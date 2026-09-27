@@ -3,11 +3,17 @@ import {
   asAbsolutePath,
   asFen,
   asId,
+  asLichessId,
+  asLichessUci,
   asUciMoves,
   parseDefaultFileName,
   parseDialogFilters,
   parseEngineInput,
   parseEnginePatch,
+  parseLichessAiChallengeInput,
+  parseLichessChallengeInput,
+  parseLichessDisconnectInput,
+  parseLichessSeekInput,
   parsePgnText,
   parseProbeEvalInput,
   parsePuzzleSampleInput,
@@ -140,6 +146,7 @@ describe("library inputs", () => {
   it("shape-checks saved games", () => {
     expect(parseSaveGameInput({ ...game, id: null })).toMatchObject({ id: null, source: "pgn-import" });
     expect(() => parseSaveGameInput({ ...game, source: "hosted" })).toThrow(/source/);
+    expect(parseSaveGameInput({ ...game, source: "lichess" })).toMatchObject({ source: "lichess" });
     expect(() => parseSaveGameInput({ ...game, moveTree: {} })).toThrow(/moveTree/);
     expect(() => parseSaveGameInput({ ...game, pgn: 1 })).toThrow(/PGN/);
     expect(() => parseSaveGameInput({ ...game, review: "x" })).toThrow(/review/);
@@ -169,5 +176,59 @@ describe("library inputs", () => {
     expect(parsed.lichess?.side).toBe("any");
     expect(parsed.position?.difficultyMax).toBe(5);
     expect(() => parsePuzzleSampleInput({ databaseId: "db", lichess: { ratingMin: "low" } })).toThrow();
+  });
+});
+
+describe("Lichess inputs", () => {
+  it("accepts Lichess ids and UCI moves only (they become URL path segments)", () => {
+    expect(asLichessId("abcd1234")).toBe("abcd1234");
+    expect(asLichessId("abcd1234WXYZ")).toBe("abcd1234WXYZ");
+    expect(() => asLichessId("abc")).toThrow(/Lichess id/);
+    expect(() => asLichessId("abcd1234/../account")).toThrow();
+    expect(() => asLichessId("abcd 234")).toThrow();
+    expect(asLichessUci("e7e8q")).toBe("e7e8q");
+    expect(() => asLichessUci("e4")).toThrow(/UCI/);
+    expect(() => asLichessUci("e2e4/")).toThrow();
+  });
+
+  it("parses seeks", () => {
+    expect(parseLichessSeekInput({ minutes: 10, incrementSec: 5, rated: true, ratingRange: [1400, 1800] })).toEqual({
+      minutes: 10,
+      incrementSec: 5,
+      rated: true,
+      ratingRange: [1400, 1800]
+    });
+    expect(parseLichessSeekInput({ minutes: 1.5, incrementSec: 0, rated: false, ratingRange: null }).ratingRange).toBeNull();
+    expect(() => parseLichessSeekInput({ minutes: 200, incrementSec: 0, rated: true })).toThrow(/minutes/);
+    expect(() => parseLichessSeekInput({ minutes: 10, incrementSec: 2.5, rated: true })).toThrow(/whole/);
+    expect(() => parseLichessSeekInput({ minutes: 10, incrementSec: 0, rated: "yes" })).toThrow(/rated/);
+    expect(() =>
+      parseLichessSeekInput({ minutes: 10, incrementSec: 0, rated: true, ratingRange: [1800, 1400] })
+    ).toThrow(/rating range/);
+    expect(() => parseLichessSeekInput({ minutes: 10, incrementSec: 0, rated: true, ratingRange: [1] })).toThrow();
+  });
+
+  it("parses challenges", () => {
+    expect(
+      parseLichessChallengeInput({ username: " Georges_1 ", minutes: 15, incrementSec: 10, rated: false, color: "black" })
+    ).toEqual({ username: "Georges_1", minutes: 15, incrementSec: 10, rated: false, color: "black" });
+    const valid = { username: "Salma", minutes: 10, incrementSec: 0, rated: true, color: "random" };
+    expect(() => parseLichessChallengeInput({ ...valid, username: "a/b" })).toThrow(/username/);
+    expect(() => parseLichessChallengeInput({ ...valid, username: "x" })).toThrow(/username/);
+    expect(() => parseLichessChallengeInput({ ...valid, color: "green" })).toThrow(/color/);
+    expect(() => parseLichessChallengeInput({ ...valid, incrementSec: 90 })).toThrow(/increment/);
+    expect(() => parseLichessChallengeInput({ ...valid, minutes: 10.01 })).toThrow(/whole seconds/);
+  });
+
+  it("parses AI challenges and disconnect options", () => {
+    expect(parseLichessAiChallengeInput({ level: 3, minutes: 10, incrementSec: 0, color: "white" })).toEqual({
+      level: 3,
+      minutes: 10,
+      incrementSec: 0,
+      color: "white"
+    });
+    expect(() => parseLichessAiChallengeInput({ level: 9, minutes: 10, incrementSec: 0, color: "white" })).toThrow(/level/);
+    expect(parseLichessDisconnectInput({ removeGames: true })).toEqual({ removeGames: true });
+    expect(() => parseLichessDisconnectInput({})).toThrow(/removeGames/);
   });
 });

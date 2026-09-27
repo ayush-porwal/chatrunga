@@ -27,6 +27,15 @@ import type {
 } from "../types/engine";
 import type { AppSettings } from "../types/settings";
 import type { UpdateState } from "../types/updates";
+import type {
+  LichessAiChallengeInput,
+  LichessChallenge,
+  LichessChallengeInput,
+  LichessEvent,
+  LichessSeekInput,
+  LichessStatus,
+  LichessSyncResult
+} from "../types/lichess";
 import type { ReviewInsightPayload } from "../schemas/review-insight";
 import type {
   DatabaseDownloadProgress,
@@ -143,6 +152,44 @@ export type ChaturangaApi = {
     onDatabaseDownloadProgress(callback: (progress: DatabaseDownloadProgress) => void): Unsubscribe;
     /** Every change of the in-app update state (checks, progress, errors, settings). */
     onUpdateState(callback: (state: UpdateState) => void): Unsubscribe;
+    /** Lichess account, seek, challenge, game and import events (main/lichess). */
+    onLichessEvent(callback: (event: LichessEvent) => void): Unsubscribe;
+  };
+
+  /**
+   * Lichess account, play and game import (main/lichess). The token never crosses IPC. Actions
+   * reject with a readable message when Lichess refuses them (rate limit, not your turn, …).
+   */
+  lichess: {
+    status(): Promise<LichessStatus>;
+    /** Opens lichess.org in the browser to sign in; resolves once approved, cancelled or timed out. */
+    connect(): Promise<LichessStatus>;
+    cancelConnect(): Promise<void>;
+    /** Revokes the token on lichess.org and forgets it; optionally deletes the imported games. */
+    disconnect(options: { removeGames: boolean }): Promise<LichessStatus>;
+    /** Imports new finished games (the last year on the first import); progress arrives as `sync` events. */
+    syncGames(): Promise<LichessSyncResult>;
+    /** Starts a lobby seek; pairing arrives as a `gameStart` event. Replaces a running seek. */
+    seek(input: LichessSeekInput): Promise<void>;
+    cancelSeek(): Promise<void>;
+    challenge(input: LichessChallengeInput): Promise<LichessChallenge>;
+    challengeAi(input: LichessAiChallengeInput): Promise<{ gameId: string }>;
+    acceptChallenge(challengeId: string): Promise<void>;
+    declineChallenge(challengeId: string): Promise<void>;
+    cancelChallenge(challengeId: string): Promise<void>;
+    /** Challenges waiting for an answer (incoming and your own), e.g. after a restart. */
+    challenges(): Promise<LichessChallenge[]>;
+    /** Ids of your games in progress (to resume one after a restart). */
+    ongoingGames(): Promise<string[]>;
+    /** Streams a game (`gameFull`, then `gameState` events) until it ends or `unwatchGame`. */
+    watchGame(gameId: string): Promise<void>;
+    unwatchGame(gameId: string): Promise<void>;
+    move(gameId: string, uci: string): Promise<void>;
+    resign(gameId: string): Promise<void>;
+    abort(gameId: string): Promise<void>;
+    /** Offers a draw, or accepts the opponent's offer. */
+    offerDraw(gameId: string): Promise<void>;
+    declineDraw(gameId: string): Promise<void>;
   };
 
   /** In-app updates of Chaturanga itself (main/updater.ts). */

@@ -27,6 +27,7 @@ import {
   generateOpenRouterCommentary,
   parseCommentaryPayloads
 } from "../commentary/openrouter-commentary";
+import { getLichessService } from "../lichess";
 import { errorMessage, logger } from "../logger";
 import { updateService } from "../updater";
 import { refreshWindowGlass } from "../window-glass";
@@ -34,12 +35,18 @@ import { runGameReview } from "./review-handler";
 import {
   asAbsolutePath,
   asId,
+  asLichessId,
+  asLichessUci,
   asObject,
   asString,
   parseDefaultFileName,
   parseDialogFilters,
   parseEngineInput,
   parseEnginePatch,
+  parseLichessAiChallengeInput,
+  parseLichessChallengeInput,
+  parseLichessDisconnectInput,
+  parseLichessSeekInput,
   parsePgnText,
   parseProbeEvalInput,
   parsePuzzleSampleInput,
@@ -124,6 +131,7 @@ export function registerIpc(engineManager: EngineManager): void {
   registerLibraryIpc();
   registerCommentaryIpc();
   registerUpdateIpc();
+  registerLichessIpc();
 }
 
 function registerEngineIpc(engineManager: EngineManager): void {
@@ -316,4 +324,39 @@ function registerUpdateIpc(): void {
   ipcMain.handle("updates:download", () => updateService.download());
   ipcMain.handle("updates:install", () => updateService.install());
   ipcMain.handle("updates:openDownload", () => updateService.openDownload());
+}
+
+/** Lichess account, play and import (main/lichess). The OAuth token never leaves the main process. */
+function registerLichessIpc(): void {
+  const lichess = getLichessService();
+  lichess.on("event", (event) => broadcast("lichess:event", event));
+  const gameId = (value: unknown) => asLichessId(value, "game id");
+  const challengeId = (value: unknown) => asLichessId(value, "challenge id");
+  ipcMain.handle("lichess:status", () => lichess.status());
+  ipcMain.handle("lichess:connect", () => lichess.connect());
+  ipcMain.handle("lichess:cancelConnect", () => lichess.cancelConnect());
+  ipcMain.handle("lichess:disconnect", (_event, options: unknown) =>
+    lichess.disconnect(parseLichessDisconnectInput(options))
+  );
+  ipcMain.handle("lichess:syncGames", () => lichess.syncGames());
+  ipcMain.handle("lichess:seek", (_event, input: unknown) => lichess.seek(parseLichessSeekInput(input)));
+  ipcMain.handle("lichess:cancelSeek", () => lichess.cancelSeek());
+  ipcMain.handle("lichess:challenge", (_event, input: unknown) =>
+    lichess.challenge(parseLichessChallengeInput(input))
+  );
+  ipcMain.handle("lichess:challengeAi", (_event, input: unknown) =>
+    lichess.challengeAi(parseLichessAiChallengeInput(input))
+  );
+  ipcMain.handle("lichess:acceptChallenge", (_event, id: unknown) => lichess.acceptChallenge(challengeId(id)));
+  ipcMain.handle("lichess:declineChallenge", (_event, id: unknown) => lichess.declineChallenge(challengeId(id)));
+  ipcMain.handle("lichess:cancelChallenge", (_event, id: unknown) => lichess.cancelChallenge(challengeId(id)));
+  ipcMain.handle("lichess:challenges", () => lichess.challenges());
+  ipcMain.handle("lichess:ongoingGames", () => lichess.ongoingGames());
+  ipcMain.handle("lichess:watchGame", (_event, id: unknown) => lichess.watchGame(gameId(id)));
+  ipcMain.handle("lichess:unwatchGame", (_event, id: unknown) => lichess.unwatchGame(gameId(id)));
+  ipcMain.handle("lichess:move", (_event, id: unknown, uci: unknown) => lichess.move(gameId(id), asLichessUci(uci)));
+  ipcMain.handle("lichess:resign", (_event, id: unknown) => lichess.resign(gameId(id)));
+  ipcMain.handle("lichess:abort", (_event, id: unknown) => lichess.abort(gameId(id)));
+  ipcMain.handle("lichess:offerDraw", (_event, id: unknown) => lichess.offerDraw(gameId(id)));
+  ipcMain.handle("lichess:declineDraw", (_event, id: unknown) => lichess.declineDraw(gameId(id)));
 }
