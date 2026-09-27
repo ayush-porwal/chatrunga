@@ -7,7 +7,7 @@ describe("game title helpers", () => {
     expect(gameModeLabel({ mode: "freeplay", source: "puzzle" })).toBe("Puzzle");
     expect(gameModeLabel({ mode: "analysis", source: "pgn-import" })).toBe("Analysis");
     expect(gameModeLabel({ mode: "freeplay", source: "pgn-import" })).toBe("Imported game");
-    expect(gameModeLabel({ mode: "freeplay", source: "new" })).toBe("New game");
+    expect(gameModeLabel({ mode: "freeplay", source: "new" })).toBe("Free board");
   });
 
   it("names players, using the engine name and 'You' in an engine game", () => {

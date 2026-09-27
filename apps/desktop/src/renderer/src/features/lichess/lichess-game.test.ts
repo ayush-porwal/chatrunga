@@ -1,14 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LichessGameFull } from "@chaturanga/shared/types/lichess";
-import {
-  isRapidOrSlower,
-  lichessHeaders,
-  lichessOutcome,
-  sideToMoveAfter,
-  speedForClock,
-  timeControlLabel,
-  yourColor
-} from "./lichess-game";
+import { lichessHeaders, lichessOutcome, sideToMoveAfter, speedForClock, yourColor } from "./lichess-game";
 
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -64,10 +56,7 @@ describe("lichess game helpers", () => {
     expect(speedForClock(5, 3)).toBe("blitz");
     expect(speedForClock(10, 0)).toBe("rapid");
     expect(speedForClock(30, 0)).toBe("classical");
-    expect(isRapidOrSlower(5, 3)).toBe(false);
-    expect(isRapidOrSlower(8, 0)).toBe(true);
-    expect(isRapidOrSlower(5, 5)).toBe(true);
-    expect(timeControlLabel(game.clock)).toBe("10+5");
-    expect(timeControlLabel(null)).toBe("Correspondence");
+    // 5+5 is estimated at 8:20: rapid, so the lobby takes it.
+    expect(speedForClock(5, 5)).toBe("rapid");
   });
 });

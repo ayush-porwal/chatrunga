@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { useBoardFocused } from "./board-focus";
 
 /*
- * The board workspace: ONE layout for every board screen (New game, Analysis, Game review,
+ * The board workspace: ONE layout for every board screen (free board, Analysis, Game review,
  * Engine game, Puzzle). The board column and the panel have fixed geometry; modes only change
  * what goes into the slots, so the board never moves or resizes when switching modes.
  *

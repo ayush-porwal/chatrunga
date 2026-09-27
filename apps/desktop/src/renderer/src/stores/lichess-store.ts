@@ -2,6 +2,8 @@ import { create } from "zustand";
 import type { Color } from "@chaturanga/shared/types/chess";
 import type { LichessChallenge, LichessGameFull, LichessSeekInput, LichessStatus } from "@chaturanga/shared/types/lichess";
 
+export type PlayOpponent = "lichess" | "engine" | "board";
+
 /** The Lichess game on the board: what the board and titlebar need beyond the moves and clocks. */
 export type LiveLichessGame = {
   id: string;
@@ -28,9 +30,9 @@ type LichessStore = {
   sync: { running: boolean; imported: number; error: string | null };
   /** Opens a game of yours in progress on the board (set by the Lichess sync while it runs). */
   resumeGame: (gameId: string) => void;
-  /** The Play page's opponent tab, kept for the session. */
-  playOpponent: "engine" | "lichess";
-  setPlayOpponent: (opponent: "engine" | "lichess") => void;
+  /** Play's opponent tab, kept for the session; null until chosen (Lichess when connected, else the engine). */
+  playOpponent: PlayOpponent | null;
+  setPlayOpponent: (opponent: PlayOpponent) => void;
   setStatus: (status: LichessStatus) => void;
   setSeek: (seek: LichessStore["seek"], error?: string | null) => void;
   setChallenges: (challenges: LichessChallenge[]) => void;
@@ -52,7 +54,7 @@ export const useLichessStore = create<LichessStore>((set) => ({
   live: null,
   sync: { running: false, imported: 0, error: null },
   resumeGame: () => undefined,
-  playOpponent: "engine",
+  playOpponent: null,
   setPlayOpponent: (playOpponent) => set({ playOpponent }),
   setStatus: (status) =>
     set(() => ({

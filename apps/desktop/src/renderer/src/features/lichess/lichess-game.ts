@@ -66,12 +66,6 @@ export function speedLabel(speed: LichessSpeed): string {
   return SPEED_LABELS[speed];
 }
 
-export function timeControlLabel(clock: { initialMs: number; incrementMs: number } | null): string {
-  if (!clock) return "Correspondence";
-  const minutes = clock.initialMs / 60_000;
-  return `${Number.isInteger(minutes) ? minutes : minutes.toFixed(1)}+${Math.round(clock.incrementMs / 1000)}`;
-}
-
 /** PGN headers for a live Lichess game (the saved game carries them; `site` identifies it on import). */
 export function lichessHeaders(game: LichessGameFull): GameHeaders {
   const date = new Date(game.createdAt);
@@ -89,19 +83,11 @@ export function lichessHeaders(game: LichessGameFull): GameHeaders {
 }
 
 /**
- * Lichess sorts a clock into a speed by its estimated game length: minutes × 60 + 40 × increment
- * seconds. Apps may only seek Rapid (≥ 8 minutes estimated) or slower; blitz needs a challenge.
+ * The speed Lichess puts a clock in, by its estimated game length: minutes × 60 + 40 × increment
+ * seconds. (Apps may only seek Rapid or slower; blitz needs a challenge.)
  */
-export function estimatedSeconds(minutes: number, incrementSec: number): number {
-  return minutes * 60 + 40 * incrementSec;
-}
-
-export function isRapidOrSlower(minutes: number, incrementSec: number): boolean {
-  return estimatedSeconds(minutes, incrementSec) >= 480;
-}
-
 export function speedForClock(minutes: number, incrementSec: number): LichessSpeed {
-  const seconds = estimatedSeconds(minutes, incrementSec);
+  const seconds = minutes * 60 + 40 * incrementSec;
   if (seconds < 30) return "ultraBullet";
   if (seconds < 180) return "bullet";
   if (seconds < 480) return "blitz";

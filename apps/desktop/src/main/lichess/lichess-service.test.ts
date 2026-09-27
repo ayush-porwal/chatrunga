@@ -131,13 +131,11 @@ describe("LichessService", () => {
     });
     await flush();
     await service.status();
-    await flush();
-    expect(events.opened).toHaveLength(1);
+    await vi.waitFor(() => expect(events.opened).toHaveLength(1));
     expect(requests[0]!.headers.authorization).toBe("Bearer lip_saved-token");
     events.opened[0]!.push({ type: "gameStart", game: { gameId: "abcd1234" } });
     events.opened[0]!.push({ type: "gameFinish", game: { gameId: "abcd1234" } });
-    await flush();
-    expect(emitted).toEqual([{ type: "gameStart", gameId: "abcd1234" }]);
+    await vi.waitFor(() => expect(emitted).toEqual([{ type: "gameStart", gameId: "abcd1234" }]));
   });
 
   it("reconnects the event stream with backoff after a drop", async () => {
@@ -199,12 +197,13 @@ describe("LichessService", () => {
     expect(events).toContainEqual({ type: "seek", searching: true, error: null });
 
     service.cancelSeek();
-    await flush();
+    await vi.waitFor(() =>
+      expect(events.filter((event) => event.type === "seek")).toEqual([
+        { type: "seek", searching: true, error: null },
+        { type: "seek", searching: false, error: null }
+      ])
+    );
     expect(seekRequest.signal!.aborted).toBe(true);
-    expect(events.filter((event) => event.type === "seek")).toEqual([
-      { type: "seek", searching: true, error: null },
-      { type: "seek", searching: false, error: null }
-    ]);
   });
 
   it("reports a seek Lichess ends (paired or expired)", async () => {
@@ -215,8 +214,7 @@ describe("LichessService", () => {
     });
     await service.seek({ minutes: 15, incrementSec: 10, rated: true, ratingRange: null });
     seeks.opened[0]!.close();
-    await flush();
-    expect(events.at(-1)).toEqual({ type: "seek", searching: false, error: null });
+    await vi.waitFor(() => expect(events.at(-1)).toEqual({ type: "seek", searching: false, error: null }));
   });
 
   it("streams a game once for every watcher and reconnects with a fresh gameFull", async () => {
@@ -368,7 +366,7 @@ describe("LichessService", () => {
       rated: true,
       color: "white"
     });
-    await flush();
+    await vi.waitFor(() => expect(challenges.opened).toHaveLength(1));
     challenges.opened[0]!.push({
       id: "chal1234",
       challenger: { id: "kenneth", name: "Kenneth" },
@@ -395,10 +393,11 @@ describe("LichessService", () => {
     });
     challenges.opened[0]!.push({ done: "declined" });
     challenges.opened[0]!.close();
-    await flush();
-    expect(events.filter((event) => event.type === "challengeGone")).toEqual([
-      { type: "challengeGone", challengeId: "chal1234", reason: "declined" }
-    ]);
+    await vi.waitFor(() =>
+      expect(events.filter((event) => event.type === "challengeGone")).toEqual([
+        { type: "challengeGone", challengeId: "chal1234", reason: "declined" }
+      ])
+    );
   });
 
   it("signs in through the browser and saves the account", async () => {
@@ -487,7 +486,7 @@ describe("LichessService", () => {
     const first = service.syncGames();
     const second = service.syncGames();
     expect(second).toBe(first);
-    await flush();
+    await vi.waitFor(() => expect(exports.opened).toHaveLength(1));
     expect(requests).toHaveLength(1);
     exports.opened[0]!.push({ id: "g1", variant: "standard", lastMoveAt: 7000, pgn: "1. e4 e5 *" });
     exports.opened[0]!.close();

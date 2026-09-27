@@ -26,7 +26,7 @@ const sideTabOptions: readonly SegmentedOption<SideTab>[] = [
 ];
 
 /**
- * The game view (New game, Analysis, Engine game, Puzzle) rendered through the shared board
+ * The game view (free board, Analysis, engine and Lichess games, Puzzle) rendered through the shared board
  * workspace — same geometry as Game review. Tabs: Moves · Engine · Library (the puzzle card sits
  * atop Moves). Footer: eval graph when the game has been reviewed, then move navigation.
  */

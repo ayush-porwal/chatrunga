@@ -101,7 +101,7 @@ export function useLichessSeekSetup() {
   };
 }
 
-export type LichessSeekSetup = ReturnType<typeof useLichessSeekSetup>;
+type LichessSeekSetup = ReturnType<typeof useLichessSeekSetup>;
 
 /** Page header action: Play <clock> (or Cancel while seeking); nothing until an account is connected. */
 export function LichessPlayActions({ setup }: { setup: LichessSeekSetup }) {

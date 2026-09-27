@@ -30,7 +30,7 @@ import { useUpdateSettingMutation } from "../../queries/api";
 import { openSavedGame } from "../game/saved-game";
 import { reviewAnchorFor, type CommentaryMoveContext, type MoveNavigationTarget } from "./commentary-moves";
 import { qualityTone } from "@/lib/ui";
-import { RotateCcw, Sparkles, Upload } from "lucide-react";
+import { Sparkles, Swords, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Notice } from "@/components/ui/notice";
@@ -54,7 +54,7 @@ type GameReviewPageProps = {
   onAnalyze?: () => void;
   /** Offered when the game has no moves to review. */
   onImportPgn: () => void;
-  onNewGame: () => void;
+  onPlay: () => void;
   /** Opens Settings → Commentary (offered when no OpenRouter key is saved). */
   onOpenCommentarySettings?: () => void;
 };
@@ -74,7 +74,7 @@ function GameReviewPageInner({
   settingsReady = true,
   onAnalyze,
   onImportPgn,
-  onNewGame,
+  onPlay,
   onOpenCommentarySettings
 }: GameReviewPageProps) {
   const location = useLocation();
@@ -266,9 +266,9 @@ function GameReviewPageInner({
                   <Upload />
                   Import PGN
                 </Button>
-                <Button variant="outline" size="sm" onClick={onNewGame}>
-                  <RotateCcw />
-                  New game
+                <Button variant="outline" size="sm" onClick={onPlay}>
+                  <Swords />
+                  Play
                 </Button>
               </div>
             }

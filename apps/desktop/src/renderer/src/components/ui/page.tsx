@@ -5,7 +5,7 @@ import { pageContainer, pageDescription, pageShell, sectionDescription, sectionT
 /**
  * Full-page wrapper: scrolls, centers content in the fluid page column (`pageContainer`: the
  * `--page-content` width and `--page-gutter` gutters from app.css, the same edges on every page).
- * Use for Home, Engine game, Puzzles, Databases, Settings.
+ * Use for Home, Play, Puzzles, Databases, Settings.
  *
  *   <Page>
  *     <PageHeader title="Puzzles" actions={<Button variant="primary">Start</Button>} />

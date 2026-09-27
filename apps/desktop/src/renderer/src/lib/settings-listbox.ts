@@ -1,6 +1,6 @@
 import { floatingSurface, motion } from "@/lib/ui";
 
-/** Rich listbox visuals shared by {@link PieceStyleListbox} and EngineDropdown in `EngineGamePage.tsx`. */
+/** Rich listbox visuals shared by {@link PieceStyleListbox} and EngineDropdown in `PlayPage.tsx`. */
 export const settingsListboxTriggerClass =
   "flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border border-line bg-surface-sunken px-3 py-1.5 text-left text-fg transition-colors duration-micro ease-standard hover:bg-control";
 

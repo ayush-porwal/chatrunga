@@ -1,11 +1,11 @@
 import { memo, useCallback, useMemo, useRef, useState } from "react";
-import { Bot, Check, ChevronDown, Globe, Play, Settings } from "lucide-react";
+import { Bot, Check, ChevronDown, Globe, Play, Settings, SquareDashed } from "lucide-react";
 import { isManagedEngine } from "@chaturanga/shared/engine/managed";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import { useEnginesQuery } from "../../queries/api";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { useGameStore } from "../../stores/game-store";
-import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
+import { selectLiveGameInProgress, useLichessStore, type PlayOpponent } from "../../stores/lichess-store";
 import { LichessPlayActions, LichessPlayPanel, useLichessSeekSetup } from "../lichess/LichessPlayPanel";
 import type { Color } from "@chaturanga/shared/types/chess";
 import { ChipButton } from "@/components/ui/badge";
@@ -70,35 +70,58 @@ type EngineGameSetupProps = {
 };
 
 const opponentOptions = [
+  { value: "lichess", label: "Lichess", icon: <Globe /> },
   { value: "engine", label: "Engine", icon: <Bot /> },
-  { value: "lichess", label: "Lichess", icon: <Globe /> }
+  { value: "board", label: "Free board", icon: <SquareDashed /> }
 ] as const;
 
+const opponentDescriptions: Record<PlayOpponent, string> = {
+  lichess: "Rated and casual games on lichess.org.",
+  engine: "Play against any installed UCI engine.",
+  board: "An empty board: play both sides, try ideas, no clock."
+};
+
 /**
- * The Play page: an engine on this computer (pick it, a side and a clock, then Start) or a game on
- * Lichess (quick pairing or a challenge).
+ * Play: every way to start a game. On Lichess (quick pairing or a challenge), against an engine on
+ * this computer (pick it, a side and a clock), or a free board.
  */
-export const EngineGamePage = memo(function EngineGamePage(props: EngineGameSetupProps & { onOpenLichessGame: () => void }) {
+export const PlayPage = memo(function PlayPage(
+  props: EngineGameSetupProps & { onOpenLichessGame: () => void; onFreeBoard: () => void }
+) {
   const setup = useEngineGameSetup(props);
   const lichess = useLichessSeekSetup();
-  const opponent = useLichessStore((state) => state.playOpponent);
+  const chosen = useLichessStore((state) => state.playOpponent);
+  const connected = useLichessStore((state) => Boolean(state.status.account));
   const setOpponent = useLichessStore((state) => state.setPlayOpponent);
+  const opponent = chosen ?? (connected ? "lichess" : "engine");
+  const onlineGameLive = useLichessStore(selectLiveGameInProgress);
   return (
     <Page>
       {/* Start sits in the header like every page's primary action (Puzzles, Home). */}
       <PageHeader
         title="Play"
-        description={opponent === "engine" ? "Play against any installed UCI engine." : "Rated and casual games on lichess.org."}
-        actions={opponent === "lichess" ? <LichessPlayActions setup={lichess} /> : setup.hasEngines ? <SetupActions setup={setup} /> : undefined}
+        description={opponentDescriptions[opponent]}
+        actions={
+          opponent === "lichess" ? (
+            <LichessPlayActions setup={lichess} />
+          ) : opponent === "board" ? (
+            <Button type="button" variant="primary" disabled={onlineGameLive} onClick={props.onFreeBoard}>
+              <Play />
+              Open board
+            </Button>
+          ) : setup.hasEngines ? (
+            <SetupActions setup={setup} />
+          ) : undefined
+        }
       />
       <SegmentedControl ariaLabel="Opponent" value={opponent} onChange={setOpponent} options={opponentOptions} className="w-fit" />
       {opponent === "lichess" ? (
         <LichessPlayPanel setup={lichess} onOpenGame={props.onOpenLichessGame} />
-      ) : (
+      ) : opponent === "engine" ? (
         <section className={cardPadded}>
           <EngineGameSetupBody setup={setup} onOpenSettings={props.onOpenSettings} />
         </section>
-      )}
+      ) : null}
     </Page>
   );
 });

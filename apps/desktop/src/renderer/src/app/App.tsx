@@ -13,7 +13,7 @@ import { useViewTransitionState, type ViewTransitionKind } from "@/lib/use-view-
 import { useEventCallback } from "@/lib/use-event-callback";
 import { signalWindowReady } from "@/lib/window-glass";
 import { cn } from "@/lib/utils";
-import { EngineGamePage } from "../features/analysis/EngineGamePage";
+import { PlayPage } from "../features/game/PlayPage";
 import { BoardFocusContext } from "../features/board/board-focus";
 import { PromotionDialog } from "../features/board/PromotionDialog";
 import { DatabasePage } from "../features/database/DatabasePage";
@@ -46,7 +46,7 @@ import { useMoveKeyboardShortcuts } from "./useMoveKeyboardShortcuts";
 import { useMoveSounds } from "./useMoveSounds";
 import { cancelActiveReview, useReviewRunner } from "./useReviewRunner";
 
-type AppView = "home" | "game" | "settings" | "engine-game" | "puzzles" | "databases" | "game-review";
+type AppView = "home" | "game" | "settings" | "play" | "puzzles" | "databases" | "game-review";
 
 const boardViews: ReadonlySet<AppView> = new Set(["game", "game-review"]);
 /** Board ↔ board cross-fades in place (the board must not slide); anything with a page rises in. */
@@ -204,7 +204,8 @@ export function App() {
     currentGame().setMatchFeedback("Finish your Lichess game first.");
   }
 
-  function startNewGame() {
+  /** Play → Free board: an empty board to play both sides. */
+  function startFreeBoard() {
     stopEngineWork();
     useReviewStore.getState().reset();
     clearPuzzleSession();
@@ -291,12 +292,17 @@ export function App() {
     showGame();
   }
 
-  function openEngineGamePage() {
-    if (!desktopApiAvailable) return;
-    stopEngineWork();
+  /** Play: the page with every way to start a game (Lichess, an engine, a free board). */
+  function openPlayPage() {
+    if (!desktopApiAvailable) {
+      startFreeBoard();
+      return;
+    }
+    // The engine keeps searching for a game still being played vs the engine; the page can end it.
+    if (useGameStore.getState().mode !== "engine") stopEngineWork();
     clearPuzzleSession();
     setFocusMode(false);
-    showView("engine-game");
+    showView("play");
   }
 
   function openPuzzlesPage() {
@@ -427,7 +433,8 @@ export function App() {
       setSettingsSection("engines");
       showView("settings");
     }),
-    newGame: useEventCallback(() => unlessOnlineGame(startNewGame)),
+    play: useEventCallback(openPlayPage),
+    freeBoard: useEventCallback(() => unlessOnlineGame(startFreeBoard)),
     liveAnalysis: useEventCallback(() => unlessOnlineGame(startLiveAnalysis)),
     stopLiveAnalysis: useEventCallback(stopLiveAnalysis),
     analyzePosition: useEventCallback(analyzeCurrentPosition),
@@ -436,11 +443,10 @@ export function App() {
     openImportDialog: useEventCallback(() => setImportOpen(true)),
     closeImportDialog: useEventCallback(() => setImportOpen(false)),
     reviewGame: useEventCallback((id: string) => unlessOnlineGame(() => void openSelectedGameReview(id))),
-    engineGame: useEventCallback(openEngineGamePage),
     // After a Lichess game: Play, on its Lichess tab.
     playLichess: useEventCallback(() => {
       useLichessStore.getState().setPlayOpponent("lichess");
-      openEngineGamePage();
+      openPlayPage();
     }),
     puzzles: useEventCallback(() => unlessOnlineGame(openPuzzlesPage)),
     databases: useEventCallback(openDatabasesPage),
@@ -471,7 +477,7 @@ export function App() {
       home: appView === "home",
       analyze: appView === "game" && gameMode === "analysis",
       review: appView === "game-review" || gameReviewPickerOpen,
-      engineGame: appView === "engine-game",
+      play: appView === "play",
       puzzles: appView === "puzzles",
       databases: appView === "databases",
       settings: appView === "settings"
@@ -495,7 +501,7 @@ export function App() {
   const pageTitles: Partial<Record<AppView, string>> = {
     home: "Home",
     settings: "Settings",
-    "engine-game": "Play",
+    play: "Play",
     puzzles: "Puzzles",
     databases: "Databases"
   };
@@ -551,10 +557,9 @@ export function App() {
           boardView={onBoardView}
           focusMode={focused}
           onHome={on.home}
-          onNewGame={on.newGame}
+          onPlay={on.play}
           onAnalyze={on.liveAnalysis}
           onReview={on.openReviewPicker}
-          onEngineGame={on.engineGame}
           onPuzzles={on.puzzles}
           onDatabases={on.databases}
           onImport={on.importPgn}
@@ -575,9 +580,8 @@ export function App() {
               <HomePage
                 desktopApiAvailable={desktopApiAvailable}
                 onAnalyze={on.liveAnalysis}
-                onEngineGame={on.engineGame}
                 onImportPgn={on.importPgn}
-                onNewGame={on.newGame}
+                onPlay={on.play}
                 onOpenGame={on.openGame}
                 onPuzzles={on.puzzles}
                 onReview={on.openReviewPicker}
@@ -586,8 +590,8 @@ export function App() {
               />
             ) : appView === "settings" ? (
               <SettingsPage initialSection={settingsSection} />
-            ) : appView === "engine-game" ? (
-              <EngineGamePage onOpenSettings={on.settings} onStart={on.showGame} onOpenLichessGame={on.showGame} />
+            ) : appView === "play" ? (
+              <PlayPage onOpenSettings={on.settings} onStart={on.showGame} onOpenLichessGame={on.showGame} onFreeBoard={on.freeBoard} />
             ) : appView === "puzzles" ? (
               <PuzzlePage onDatabases={on.databases} onStart={on.startPuzzle} />
             ) : appView === "databases" ? (
@@ -600,7 +604,7 @@ export function App() {
                 settingsReady={settingsQuery.isSuccess}
                 onAnalyze={reviewRouteLoading ? undefined : on.startReview}
                 onImportPgn={on.importPgn}
-                onNewGame={on.newGame}
+                onPlay={on.play}
                 onOpenCommentarySettings={on.commentarySettings}
               />
             ) : (

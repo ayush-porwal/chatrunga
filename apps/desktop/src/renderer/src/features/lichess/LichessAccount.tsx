@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { lichessErrorMessage, speedLabel } from "./lichess-game";
 
 /** Sign in with Lichess (in the browser), with the error of the last attempt. */
-export function useLichessConnect() {
+function useLichessConnect() {
   const connecting = useLichessStore((state) => state.status.connecting);
   const [error, setError] = useState<string | null>(null);
   const api = window.chaturanga?.lichess;
