@@ -1,17 +1,22 @@
 import { memo, type ReactNode } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { positionStatus } from "@/lib/position-status";
+import { titlebarIconButton } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { PlayersTitle, WorkspaceTitlebar } from "../features/board/BoardWorkspace";
 import { MatchActions } from "../features/analysis/MatchActions";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { useGameStore } from "../stores/game-store";
+import { selectCanGoBack, selectCanGoForward, useHistoryStore } from "../stores/history-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
 import { useReviewStore } from "../stores/review-store";
 import { SidebarToggle } from "./AppSidebar";
+import { historyShortcutLabels } from "./useHistoryShortcuts";
 import { decidedResult, gameModeLabel, gamePlayerNames } from "./game-title";
 
 /**
@@ -37,12 +42,16 @@ export function AppTitlebar({
   windowControlsInset,
   sidebarExpanded,
   onToggleSidebar,
+  onBack,
+  onForward,
   children
 }: {
   /** Reserve room for the macOS traffic lights. */
   windowControlsInset: boolean;
   sidebarExpanded: boolean;
   onToggleSidebar: () => void;
+  onBack: () => void;
+  onForward: () => void;
   children: ReactNode;
 }) {
   return (
@@ -59,11 +68,12 @@ export function AppTitlebar({
         className={cn(
           "flex h-full shrink-0 items-center transition-[width] duration-emphasis ease-standard",
           windowControlsInset
-            ? "w-[max(calc(90px/var(--window-zoom,1)_+_3.25rem_+_1px),var(--sidebar-width))] pl-[calc(90px/var(--window-zoom,1))]"
-            : "w-[max(calc(4rem_+_1px),var(--sidebar-width))] pl-3"
+            ? "w-[max(calc(90px/var(--window-zoom,1)_+_7rem_+_1px),var(--sidebar-width))] pl-[calc(90px/var(--window-zoom,1))]"
+            : "w-[max(calc(7.75rem_+_1px),var(--sidebar-width))] pl-3"
         )}
       >
         <SidebarToggle expanded={sidebarExpanded} onClick={onToggleSidebar} />
+        <HistoryButtons onBack={onBack} onForward={onForward} />
         <span
           aria-hidden="true"
           className={cn(
@@ -89,6 +99,31 @@ export function LiveGameButton({ onClick }: { onClick: () => void }) {
     </Button>
   );
 }
+
+/** Back / Forward between screens (like a browser's), right of the sidebar toggle. */
+const HistoryButtons = memo(function HistoryButtons({ onBack, onForward }: { onBack: () => void; onForward: () => void }) {
+  const canGoBack = useHistoryStore(selectCanGoBack);
+  const canGoForward = useHistoryStore(selectCanGoForward);
+  const keys = historyShortcutLabels();
+  return (
+    <div className="ml-2 flex items-center gap-0.5">
+      <IconButton
+        label={`Back (${keys.back})`}
+        icon={<ChevronLeft />}
+        className={titlebarIconButton}
+        disabled={!canGoBack}
+        onClick={onBack}
+      />
+      <IconButton
+        label={`Forward (${keys.forward})`}
+        icon={<ChevronRight />}
+        className={titlebarIconButton}
+        disabled={!canGoForward}
+        onClick={onForward}
+      />
+    </div>
+  );
+});
 
 /** Titlebar title for page views (Home, Settings, …). */
 export function PageTitle({ children }: { children: ReactNode }) {

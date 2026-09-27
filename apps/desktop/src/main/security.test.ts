@@ -61,6 +61,8 @@ describe("localImagePathFromUrl", () => {
 describe("PRODUCTION_CSP", () => {
   it("blocks remote scripts, plugins and framing", () => {
     expect(PRODUCTION_CSP).toContain("script-src 'self'");
+    // Sounds load as bundled files, never data: URLs.
+    expect(PRODUCTION_CSP).toContain("media-src 'self'");
     expect(PRODUCTION_CSP).toContain("object-src 'none'");
     expect(PRODUCTION_CSP).toContain("frame-ancestors 'none'");
     expect(PRODUCTION_CSP).not.toContain("unsafe-eval");

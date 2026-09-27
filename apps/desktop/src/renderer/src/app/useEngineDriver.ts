@@ -192,7 +192,7 @@ export function useEngineDriver(defaultEngineId: string | null): void {
       // Live analysis of the current position (restarted only when the position changes — not
       // when an arrow is drawn or a header edited).
       if (engines && game.mode === "analysis" && !status.isEnd && !game.gameOutcome) {
-        const key = `${game.rootFen}|${game.currentNodeId}|${game.currentFen}|${defaultEngineId ?? ""}`;
+        const key = `${game.rootFen}|${game.currentNodeId}|${game.currentFen}|${defaultEngineId ?? ""}|${useAnalysisStore.getState().searchEpoch}`;
         if (key === analysisKey || key === missingEngineKey) return;
         const analysis = useAnalysisStore.getState();
         const engineId = analysis.activeEngineId ?? defaultEngineId;
@@ -208,7 +208,7 @@ export function useEngineDriver(defaultEngineId: string | null): void {
         missingEngineKey = null;
         analysis.setActiveEngine(engineId);
         analysis.setError(null);
-        analysis.setStatus("thinking");
+        analysis.startSearch();
         engines
           .startAnalysis({ engineId, fen: game.rootFen, moves: currentLineUcis(game.moveTree, game.currentNodeId), multipv: ANALYSIS_MULTIPV })
           .catch(reportEngineError);
@@ -219,15 +219,21 @@ export function useEngineDriver(defaultEngineId: string | null): void {
     };
 
     // Store updates that belong together (a move, then its clock update) are handled once.
-    const unsubscribe = useGameStore.subscribe(() => {
+    const schedule = () => {
       if (scheduled) return;
       scheduled = true;
       queueMicrotask(sync);
+    };
+    const unsubscribe = useGameStore.subscribe(schedule);
+    // A requested restart (restartSearch) re-runs the analysis for the same position.
+    const unsubscribeRestart = useAnalysisStore.subscribe((state, previous) => {
+      if (state.searchEpoch !== previous.searchEpoch) schedule();
     });
     sync();
     return () => {
       disposed = true;
       unsubscribe();
+      unsubscribeRestart();
       if (clockTimer !== null) clearInterval(clockTimer);
       stopAnalysis();
     };

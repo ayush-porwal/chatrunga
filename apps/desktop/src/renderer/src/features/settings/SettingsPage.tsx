@@ -41,10 +41,13 @@ const sectionLabels: Record<SectionId, string> = {
 const sectionDomId = (id: SectionId) => `settings-${id}`;
 
 export const SettingsPage = memo(function SettingsPage({
-  initialSection = null
+  initialSection = null,
+  onSectionChange
 }: {
   /** Section to show when the page opens (e.g. Commentary from Game review's "Add API key"). */
   initialSection?: SettingsSectionId | null;
+  /** The section being read changed (the scroll position): Back returns to it. */
+  onSectionChange?: (section: SettingsSectionId) => void;
 }) {
   const settings = useSettingsQuery();
   const desktopApiAvailable = hasDesktopApi();
@@ -62,6 +65,9 @@ export const SettingsPage = memo(function SettingsPage({
   ];
   const navRef = useRef<HTMLElement>(null);
   const active = useScrollSpy(navRef, sections);
+  useEffect(() => {
+    onSectionChange?.(active);
+  }, [active, onSectionChange]);
 
   useEffect(() => {
     // Jump (no smooth scroll) once the page has laid out, so it opens at the requested section.

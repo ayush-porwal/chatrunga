@@ -31,12 +31,15 @@ const sideTabOptions: readonly SegmentedOption<SideTab>[] = [
  * atop Moves). Footer: eval graph when the game has been reviewed, then move navigation.
  */
 export const GameWorkspace = memo(function GameWorkspace({
+  onOpenGame,
   sideTab,
   onSideTabChange,
   puzzlePanel,
   onStartAnalysis,
   onOpenSettings
 }: {
+  /** Library tab: open a saved game on the board. */
+  onOpenGame: (id: string) => void;
   sideTab: SideTab;
   onSideTabChange: (tab: SideTab) => void;
   puzzlePanel: ReactNode;
@@ -76,7 +79,7 @@ export const GameWorkspace = memo(function GameWorkspace({
           <EngineStatusPanel onStartAnalysis={onStartAnalysis} onOpenSettings={onOpenSettings} />
         </div>
       ) : null}
-      {sideTab === "library" ? <RecentGames /> : null}
+      {sideTab === "library" ? <RecentGames onOpenGame={onOpenGame} /> : null}
     </BoardWorkspace>
   );
 });

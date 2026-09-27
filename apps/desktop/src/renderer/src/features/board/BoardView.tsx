@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { uciFromUserMove } from "@/lib/uci";
 import { submitPuzzleMove } from "../puzzles/puzzle-session";
 import { PlayerRow } from "./PlayerIdentity";
+import { EvalBar } from "./EvalBar";
 import { BoardStage } from "./BoardWorkspace";
 import { EngineClock } from "./EngineClock";
 import { useBoardAppearance, useCgBoardBackground } from "./useBoardAppearance";
@@ -362,6 +363,7 @@ export function BoardView() {
 
   return (
     <BoardStage
+      evalBar={<EvalBar orientation={orientation} />}
       top={
         <PlayerRow
           color={topColor}

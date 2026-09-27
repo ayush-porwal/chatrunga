@@ -238,6 +238,8 @@ html:has(.onb-root) {
   --workspace-panel: clamp(20rem, 10.5rem + 14.5vw, 34rem);
   /* Board edge from the workspace height: the two 2rem player rows and their 0.5rem gaps are 5rem. */
   --workspace-board: min(100cqh - 2 * var(--workspace-pad) - 5rem, 100rem);
+  /* The eval bar's column left of the board (bar + gap), reserved on every board screen. */
+  --workspace-eval: 1.125rem;
 }
 
 body {

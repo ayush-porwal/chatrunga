@@ -72,8 +72,8 @@ export function BoardWorkspace({
           // left on would make the board trail a live window resize.
           easing && "transition-[grid-template-columns,column-gap,max-width] duration-emphasis ease-standard",
           panelVisible
-            ? "max-w-[calc(var(--workspace-board)+3*var(--workspace-pad)+var(--workspace-panel))] grid-cols-[minmax(0,1fr)_var(--workspace-panel)] gap-(--workspace-pad)"
-            : "max-w-[calc(var(--workspace-board)+2*var(--workspace-pad))] grid-cols-[minmax(0,1fr)_0px] gap-0"
+            ? "max-w-[calc(var(--workspace-board)+var(--workspace-eval)+3*var(--workspace-pad)+var(--workspace-panel))] grid-cols-[minmax(0,1fr)_var(--workspace-panel)] gap-(--workspace-pad)"
+            : "max-w-[calc(var(--workspace-board)+var(--workspace-eval)+2*var(--workspace-pad))] grid-cols-[minmax(0,1fr)_0px] gap-0"
         )}
       >
         <section className="grid min-h-0 min-w-0 place-items-center [container-type:size]" aria-label="Board">
@@ -125,17 +125,30 @@ function useToggleEasing(visible: boolean): boolean {
 }
 
 /**
- * Board + the two player rows as one unit. The square is computed once from the board cell
- * (a size container): as large as fits after the two 2rem rows and gaps (the same 5rem that
- * `--workspace-board` subtracts), with a 100rem ceiling.
+ * Board + the two player rows as one unit, with the eval bar's column on the left. The square is
+ * computed once from the board cell (a size container): as large as fits after the two 2rem rows
+ * and gaps (the same 5rem that `--workspace-board` subtracts) and the eval column, with a 100rem
+ * ceiling. The column is always reserved, so the board never moves when the bar comes and goes.
  */
-export function BoardStage({ top, bottom, children }: { top: ReactNode; bottom: ReactNode; children: ReactNode }) {
+export function BoardStage({
+  top,
+  bottom,
+  evalBar,
+  children
+}: {
+  top: ReactNode;
+  bottom: ReactNode;
+  /** The eval bar (renders nothing while there is no evaluation). */
+  evalBar?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <div className="grid w-[min(100cqw,calc(100cqh_-_5rem),100rem)] min-w-0 gap-2">
-      {top}
+    <div className="grid w-[min(100cqw,calc(100cqh_-_5rem_+_var(--workspace-eval)),calc(100rem_+_var(--workspace-eval)))] min-w-0 grid-cols-[var(--workspace-eval)_minmax(0,1fr)] gap-y-2">
+      <div className="col-start-2 min-w-0">{top}</div>
+      <div className="col-start-1 row-start-2 pr-1.5">{evalBar}</div>
       {/* The one board frame: hairline border + radius, no shadow, no card around it. */}
-      <div className="aspect-square w-full overflow-hidden rounded-lg border border-line">{children}</div>
-      {bottom}
+      <div className="col-start-2 row-start-2 aspect-square w-full overflow-hidden rounded-lg border border-line">{children}</div>
+      <div className="col-start-2 min-w-0">{bottom}</div>
     </div>
   );
 }

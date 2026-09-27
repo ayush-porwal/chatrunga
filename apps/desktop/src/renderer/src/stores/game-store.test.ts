@@ -278,4 +278,51 @@ describe("game store", () => {
       expect(state.engineClockLive?.stoppedAt).toBeTypeOf("number");
     });
   });
+
+  describe("restoreView", () => {
+    it("brings back a finished engine game with its result", () => {
+      useGameStore.getState().makeMove({ from: "e2", to: "e4" });
+      const node = useGameStore.getState().currentNodeId;
+      useGameStore.getState().undo();
+      useGameStore.getState().restoreView({
+        currentNodeId: node,
+        mode: "engine",
+        source: "engine-game",
+        engineSide: "black",
+        orientation: "white",
+        gameOutcome: { result: "1-0", termination: "Player resign" }
+      });
+      const state = useGameStore.getState();
+      expect(state).toMatchObject({ mode: "engine", engineSide: "black", currentNodeId: node });
+      expect(state.gameOutcome?.result).toBe("1-0");
+    });
+
+    it("keeps an engine game that ended on the board (mate) as an engine game", () => {
+      for (const [from, to] of [["f2", "f3"], ["e7", "e5"], ["g2", "g4"], ["d8", "h4"]] as const) {
+        useGameStore.getState().makeMove({ from, to });
+      }
+      const mate = useGameStore.getState().currentNodeId;
+      useGameStore.getState().restoreView({ currentNodeId: mate, mode: "engine", source: "engine-game", engineSide: "black", orientation: "white", gameOutcome: null });
+      expect(useGameStore.getState()).toMatchObject({ mode: "engine", engineSide: "black" });
+      // Recorded as over: stepping back to an earlier move must not let the engine play on.
+      expect(useGameStore.getState().gameOutcome).toEqual({ result: "0-1", termination: "checkmate" });
+      // Deleting the mating move: the game isn't finished any more.
+      useGameStore.getState().deleteLineFromNode(mate);
+      expect(useGameStore.getState().gameOutcome).toBeNull();
+    });
+
+    it("turns a match still being played (or a live online game) into a free board", () => {
+      for (const mode of ["engine", "online"] as const) {
+        useGameStore.getState().restoreView({ currentNodeId: "root", mode, source: "new", engineSide: "black", orientation: "white", gameOutcome: null });
+        expect(useGameStore.getState()).toMatchObject({ mode: "freeplay", engineSide: null, engineClockLive: null });
+      }
+    });
+
+    it("keeps the cursor where it is when the saved node no longer exists", () => {
+      useGameStore.getState().makeMove({ from: "e2", to: "e4" });
+      const node = useGameStore.getState().currentNodeId;
+      useGameStore.getState().restoreView({ currentNodeId: "gone", mode: "analysis", source: "analysis", engineSide: null, orientation: "black", gameOutcome: null });
+      expect(useGameStore.getState()).toMatchObject({ currentNodeId: node, mode: "analysis", orientation: "black" });
+    });
+  });
 });

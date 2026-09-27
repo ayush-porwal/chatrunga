@@ -43,6 +43,7 @@ export const PRODUCTION_CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: chaturanga-image:",
   "font-src 'self' data:",
+  "media-src 'self'",
   "connect-src 'self'",
   "object-src 'none'",
   "base-uri 'none'",

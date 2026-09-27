@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { statusForFen } from "@chaturanga/shared/chess/position";
+import { exportGameToPgn } from "@chaturanga/shared/chess/pgn";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
 import { useSaveGameMutation } from "../queries/api";
 import { useGameStore } from "../stores/game-store";
@@ -52,13 +53,47 @@ export function useGameAutosave(): void {
     };
     const schedule = () => {
       window.clearTimeout(timeout);
-      timeout = window.setTimeout(save, AUTOSAVE_DELAY_MS);
+      timeout = window.setTimeout(() => {
+        timeout = 0;
+        save();
+      }, AUTOSAVE_DELAY_MS);
+    };
+    type GameState = ReturnType<typeof useGameStore.getState>;
+    /**
+     * The board is being replaced (another game, a new board) while a save of a saved game is still
+     * waiting: write the game being left now, as it was, or its last changes would be lost (the
+     * pending save would read the new board). Its stored review is left as it is.
+     */
+    const flushLeaving = (previous: GameState) => {
+      if (!timeout || !previous.gameId) return;
+      window.clearTimeout(timeout);
+      timeout = 0;
+      // The result as a normal save would work it out (resultAnchor still belongs to this game).
+      const end = mainlineEnd(previous.moveTree);
+      const result = savedResult(
+        previous.gameOutcome?.result,
+        statusForFen(end?.fenAfter ?? previous.currentFen).result,
+        previous.headers.result,
+        end?.id === resultAnchor
+      );
+      const headers = { ...previous.headers, result };
+      saveGame({
+        id: previous.gameId,
+        source: previous.source,
+        headers,
+        rootFen: previous.rootFen,
+        currentFen: previous.currentFen,
+        currentNodeId: previous.currentNodeId,
+        pgn: exportGameToPgn({ headers, moveTree: previous.moveTree }),
+        moveTree: previous.moveTree
+      });
     };
     const unsubscribers = [
       useGameStore.subscribe((state, previous) => {
         // Loading a game or resetting the board replaces headers and move tree together (moves
         // change only the tree, outcomes/header edits only the headers): new recorded result.
         if (state.headers !== previous.headers && state.moveTree !== previous.moveTree) {
+          flushLeaving(previous);
           resultAnchor = mainlineEnd(state.moveTree)?.id ?? null;
         }
         if (
