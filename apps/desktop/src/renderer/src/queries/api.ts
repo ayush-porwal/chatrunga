@@ -68,6 +68,12 @@ export function useGamesQuery() {
   return useQuery({ queryKey: queryKeys.games, queryFn: () => api()?.games.list() ?? [] });
 }
 
+/** Re-reads the saved games list (after games were added outside the renderer, e.g. a Lichess import). */
+export function useRefreshGames(): () => void {
+  const queryClient = useQueryClient();
+  return () => void queryClient.invalidateQueries({ queryKey: queryKeys.games });
+}
+
 export function useSaveGameMutation() {
   const queryClient = useQueryClient();
   return useMutation({

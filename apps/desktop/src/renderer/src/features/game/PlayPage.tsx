@@ -1,10 +1,12 @@
 import { memo, useCallback, useMemo, useRef, useState } from "react";
-import { Bot, Check, ChevronDown, Play, Settings } from "lucide-react";
+import { Bot, Check, ChevronDown, Globe, Play, Settings, SquareDashed } from "lucide-react";
 import { isManagedEngine } from "@chaturanga/shared/engine/managed";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import { useEnginesQuery } from "../../queries/api";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { useGameStore } from "../../stores/game-store";
+import { selectLiveGameInProgress, useLichessStore, type PlayOpponent } from "../../stores/lichess-store";
+import { LichessPlayActions, LichessPlayPanel, useLichessSeekSetup } from "../lichess/LichessPlayPanel";
 import type { Color } from "@chaturanga/shared/types/chess";
 import { ChipButton } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -67,20 +69,59 @@ type EngineGameSetupProps = {
   onStart: () => void;
 };
 
-/** The "Engine game" page: pick an opponent, a side and a clock, then Start. */
-export const EngineGamePage = memo(function EngineGamePage(props: EngineGameSetupProps) {
+const opponentOptions = [
+  { value: "lichess", label: "Lichess", icon: <Globe /> },
+  { value: "engine", label: "Engine", icon: <Bot /> },
+  { value: "board", label: "Free board", icon: <SquareDashed /> }
+] as const;
+
+const opponentDescriptions: Record<PlayOpponent, string> = {
+  lichess: "Rated and casual games on lichess.org.",
+  engine: "Play against any installed UCI engine.",
+  board: "An empty board: play both sides, try ideas, no clock."
+};
+
+/**
+ * Play: every way to start a game. On Lichess (quick pairing or a challenge), against an engine on
+ * this computer (pick it, a side and a clock), or a free board.
+ */
+export const PlayPage = memo(function PlayPage(
+  props: EngineGameSetupProps & { onOpenLichessGame: () => void; onFreeBoard: () => void }
+) {
   const setup = useEngineGameSetup(props);
+  const lichess = useLichessSeekSetup();
+  const chosen = useLichessStore((state) => state.playOpponent);
+  const connected = useLichessStore((state) => Boolean(state.status.account) && !state.status.tokenRejected);
+  const setOpponent = useLichessStore((state) => state.setPlayOpponent);
+  const opponent = chosen ?? (connected ? "lichess" : "engine");
+  const onlineGameLive = useLichessStore(selectLiveGameInProgress);
   return (
     <Page>
       {/* Start sits in the header like every page's primary action (Puzzles, Home). */}
       <PageHeader
-        title="Engine game"
-        description="Play against any installed UCI engine."
-        actions={setup.hasEngines ? <SetupActions setup={setup} /> : undefined}
+        title="Play"
+        description={opponentDescriptions[opponent]}
+        actions={
+          opponent === "lichess" ? (
+            <LichessPlayActions setup={lichess} />
+          ) : opponent === "board" ? (
+            <Button type="button" variant="primary" disabled={onlineGameLive} onClick={props.onFreeBoard}>
+              <Play />
+              Open board
+            </Button>
+          ) : setup.hasEngines ? (
+            <SetupActions setup={setup} />
+          ) : undefined
+        }
       />
-      <section className={cardPadded}>
-        <EngineGameSetupBody setup={setup} onOpenSettings={props.onOpenSettings} />
-      </section>
+      <SegmentedControl ariaLabel="Opponent" value={opponent} onChange={setOpponent} options={opponentOptions} className="w-fit" />
+      {opponent === "lichess" ? (
+        <LichessPlayPanel setup={lichess} onOpenGame={props.onOpenLichessGame} />
+      ) : opponent === "engine" ? (
+        <section className={cardPadded}>
+          <EngineGameSetupBody setup={setup} onOpenSettings={props.onOpenSettings} />
+        </section>
+      ) : null}
     </Page>
   );
 });
@@ -92,6 +133,8 @@ function useEngineGameSetup({ onOpenSettings, onStart }: EngineGameSetupProps) {
   // Actions and initial values only; `matchRunning` is the one live value the page renders.
   const game = useGameStore.getState();
   const matchRunning = useGameStore((state) => state.mode === "engine" && Boolean(state.engineSide) && !state.gameOutcome);
+  // A Lichess game owns the board until it ends.
+  const onlineGameLive = useLichessStore(selectLiveGameInProgress);
   const defaultEngine = useMemo(
     () => engines.data?.find((engine) => engine.isDefault) ?? engines.data?.[0],
     [engines.data]
@@ -175,7 +218,7 @@ function useEngineGameSetup({ onOpenSettings, onStart }: EngineGameSetupProps) {
     hasEngines: Boolean(engines.data?.length),
     engineId: engineId || defaultEngine?.id || "",
     setEngineId,
-    canStart: Boolean(selectedEngine?.isAvailable),
+    canStart: Boolean(selectedEngine?.isAvailable) && !onlineGameLive,
     matchRunning,
     humanColor,
     setHumanColor,

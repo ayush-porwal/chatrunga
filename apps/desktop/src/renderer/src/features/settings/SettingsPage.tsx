@@ -17,12 +17,13 @@ import { BoardSection } from "./BoardSettings";
 import { EngineAssetsPanel } from "./EngineAssetsPanel";
 import { EnginesSection } from "./EngineSettings";
 import { OpenRouterSettingsCard } from "./OpenRouterSettingsCard";
+import { LichessAccountSection } from "../lichess/LichessAccount";
 import { UpdatesSection } from "../updates/UpdatesSection";
 import { useOnboardingSession } from "../onboarding/useOnboarding";
 import { useSettingsSaveState } from "./settings-save-state";
 import { useSetSetting } from "./use-set-setting";
 
-export type SettingsSectionId = "window" | "board" | "sound" | "engines" | "downloads" | "commentary" | "updates" | "welcome";
+export type SettingsSectionId = "window" | "board" | "sound" | "engines" | "downloads" | "commentary" | "lichess" | "updates" | "welcome";
 type SectionId = SettingsSectionId;
 
 const sectionLabels: Record<SectionId, string> = {
@@ -32,6 +33,7 @@ const sectionLabels: Record<SectionId, string> = {
   engines: "Engines",
   downloads: "Engine downloads",
   commentary: "Commentary",
+  lichess: "Lichess",
   updates: "Updates",
   welcome: "Getting started"
 };
@@ -56,7 +58,7 @@ export const SettingsPage = memo(function SettingsPage({
     "engines",
     ...(desktopApiAvailable ? (["downloads"] as const) : []),
     "commentary",
-    ...(desktopApiAvailable ? (["updates", "welcome"] as const) : [])
+    ...(desktopApiAvailable ? (["lichess", "updates", "welcome"] as const) : [])
   ];
   const navRef = useRef<HTMLElement>(null);
   const active = useScrollSpy(navRef, sections);
@@ -141,6 +143,11 @@ export const SettingsPage = memo(function SettingsPage({
                 <OpenRouterSettingsCard />
               </section>
             </SectionAnchor>
+            {desktopApiAvailable ? (
+              <SectionAnchor id="lichess">
+                <LichessAccountSection />
+              </SectionAnchor>
+            ) : null}
             {desktopApiAvailable ? (
               <SectionAnchor id="updates">
                 <UpdatesSection appearance={appearance} />

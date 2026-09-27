@@ -6,8 +6,8 @@ import type { Key, MoveMetadata } from "@lichess-org/chessground/types";
 import { formatClockForDisplay } from "@chaturanga/shared/chess/clock-display";
 import { clocksOnPathToNode, nodeIdForBoardFen } from "@chaturanga/shared/chess/pgn";
 import { legalDestsForFen, isPromotionMove, statusForFen } from "@chaturanga/shared/chess/position";
-import type { AnnotationColor, BoardArrow, BoardHighlight, Color, MoveNode, Square, UserMove } from "@chaturanga/shared/types/chess";
-import { useGameStore } from "../../stores/game-store";
+import type { AnnotationColor, BoardArrow, BoardHighlight, Color, GameMode, MoveNode, Square, UserMove } from "@chaturanga/shared/types/chess";
+import { isMatchMode, useGameStore } from "../../stores/game-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
 import { selectDisplayedMoves, useReviewStore } from "../../stores/review-store";
 import { useAnalysisStore } from "../../stores/analysis-store";
@@ -76,7 +76,7 @@ export function BoardView() {
   /** Chessground premove requires movable.color to stay on the human's pieces while waiting (e.g. vs engine). */
   const movablePieceColor = useMemo<"white" | "black" | undefined>(() => {
     if (gameOutcome || status.isEnd) return undefined;
-    if (mode === "engine" && engineSide) return engineSide === "white" ? "black" : "white";
+    if (isMatchMode(mode) && engineSide) return engineSide === "white" ? "black" : "white";
     return status.turn;
   }, [engineSide, gameOutcome, mode, status.isEnd, status.turn]);
 
@@ -95,7 +95,7 @@ export function BoardView() {
     const topIsBlack = orientation === "white";
     // No clock box at all when the game has no clock data (e.g. PGN imports without %clk).
     const fmt = (v: string | null) => (v ? formatClockForDisplay(v) : "");
-    const liveClock = mode === "engine" && hasLiveClock;
+    const liveClock = isMatchMode(mode) && hasLiveClock;
     return {
       topName: topIsBlack ? black : white,
       topElo: topIsBlack ? bElo : wElo,
@@ -313,7 +313,7 @@ export function BoardView() {
 
   useEffect(() => {
     const ground = groundRef.current;
-    if (!ground || mode !== "engine" || !engineSide || status.isEnd) return;
+    if (!ground || !isMatchMode(mode) || !engineSide || status.isEnd) return;
     const humanColor = engineSide === "white" ? "black" : "white";
     if (status.turn !== humanColor) return;
     queueMicrotask(() => ground.playPremove());
@@ -358,7 +358,7 @@ export function BoardView() {
     if (engineSide === color) return activeEngine?.name ?? name;
     return name === (color === "white" ? "White" : "Black") ? "You" : name;
   };
-  const liveClocks = mode === "engine" && hasLiveClock;
+  const liveClocks = isMatchMode(mode) && hasLiveClock;
 
   return (
     <BoardStage
@@ -448,11 +448,14 @@ function describeFinale({
           : null;
   const drawHow = status.isStalemate ? "Stalemate" : termination ?? "Draw";
   const score = result.replace("1/2", "½");
+  // An aborted online game has no result.
+  if (result === "*") return { tone: "draw", title: termination ?? "Game over", detail: null };
   if (!winner) return { tone: "draw", title: "Draw", detail: `${drawHow} · ${score}` };
-  const user: Color = mode === "engine" && engineSide ? (engineSide === "white" ? "black" : "white") : orientation;
-  const title = mode === "engine" && engineSide ? (winner === user ? "You won" : "You lost") : `${winner === "white" ? "White" : "Black"} wins`;
+  const versus = isMatchMode(mode as GameMode) && Boolean(engineSide);
+  const user: Color = versus && engineSide ? (engineSide === "white" ? "black" : "white") : orientation;
+  const title = versus ? (winner === user ? "You won" : "You lost") : `${winner === "white" ? "White" : "Black"} wins`;
   return {
-    tone: mode === "engine" && engineSide && winner !== user ? "loss" : "win",
+    tone: versus && winner !== user ? "loss" : "win",
     title,
     detail: [how ? capitalize(how) : null, score].filter(Boolean).join(" · ")
   };

@@ -12,7 +12,7 @@ import { useReviewEventSubscription } from "./useReviewEventSubscription";
  * identically across dev (vite) and packaged DMG builds.
  *
  * Routes (both render the App shell; Game review is a view inside it):
- *   /                         Home / Game / Settings / Engine game / Puzzles / Databases.
+ *   /                         Home / Game / Settings / Play / Puzzles / Databases.
  *   /games/:id/review         Game Review workspace.
  *
  * The first-run welcome (features/onboarding) mounts inside <App>, which owns the actions it ends

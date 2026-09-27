@@ -6,7 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { positionStatus } from "@/lib/position-status";
 import { cn } from "@/lib/utils";
 import { PlayersTitle, WorkspaceTitlebar } from "../features/board/BoardWorkspace";
-import { EngineMatchActions } from "../features/analysis/EngineMatchActions";
+import { MatchActions } from "../features/analysis/MatchActions";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { useGameStore } from "../stores/game-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
@@ -80,6 +80,16 @@ export function AppTitlebar({
   );
 }
 
+/** On a page while a Lichess game is on: the way back to the board (the clock keeps running there). */
+export function LiveGameButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Button type="button" variant="outline" size="xs" className="ml-auto [-webkit-app-region:no-drag]" onClick={onClick}>
+      <span className="size-1.5 rounded-full bg-danger motion-safe:animate-pulse" aria-hidden="true" />
+      Lichess game in progress
+    </Button>
+  );
+}
+
 /** Titlebar title for page views (Home, Settings, …). */
 export function PageTitle({ children }: { children: ReactNode }) {
   return <span className="truncate font-medium text-fg">{children}</span>;
@@ -94,7 +104,9 @@ export const GameTitlebar = memo(function GameTitlebar({
   showAnalysisError,
   canAnalyze,
   onAnalyze,
-  onStopAnalysis
+  onStopAnalysis,
+  onReviewGame,
+  onPlayAgain
 }: {
   engines: readonly EngineConfig[] | undefined;
   /** Engine errors show here unless the Engine tab (which shows them itself) is visible. */
@@ -102,6 +114,9 @@ export const GameTitlebar = memo(function GameTitlebar({
   canAnalyze: boolean;
   onAnalyze: () => void;
   onStopAnalysis: (() => void) | null;
+  /** A finished online game: open it in Game review / find another game. */
+  onReviewGame: () => void;
+  onPlayAgain: () => void;
 }) {
   // Only what the title shows: stepping through moves must not re-render the titlebar.
   const game = useGameStore(
@@ -153,7 +168,7 @@ export const GameTitlebar = memo(function GameTitlebar({
               Analyze
             </Button>
           ) : null}
-          <EngineMatchActions />
+          <MatchActions onReview={onReviewGame} onPlayAgain={onPlayAgain} />
         </>
       }
     />

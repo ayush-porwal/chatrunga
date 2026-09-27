@@ -20,6 +20,11 @@ import type {
 } from "@chaturanga/shared/types/engine";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
 import type { DialogFileFilter } from "@chaturanga/shared/ipc/chaturanga-api";
+import type {
+  LichessAiChallengeInput,
+  LichessChallengeInput,
+  LichessSeekInput
+} from "@chaturanga/shared/types/lichess";
 
 const MAX_ID = 200;
 const MAX_PATH = 4096;
@@ -28,7 +33,14 @@ const MAX_ARGS = 64;
 const MAX_MOVES = 2000;
 const MAX_PGN_BYTES = 20 * 1024 * 1024;
 const MAIA_RATINGS: readonly MaiaRating[] = [1100, 1300, 1500, 1700, 1900];
-const GAME_SOURCES: readonly GameSource[] = ["new", "pgn-import", "engine-game", "analysis", "puzzle"];
+const GAME_SOURCES: readonly GameSource[] = [
+  "new",
+  "pgn-import",
+  "engine-game",
+  "analysis",
+  "puzzle",
+  "lichess"
+];
 /** UCI long algebraic move (castling may be king-takes-rook in Chess960 form). */
 const UCI_MOVE = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
 // eslint-disable-next-line no-control-regex
@@ -336,4 +348,93 @@ export function parsePuzzleSampleInput(value: unknown): PuzzleSampleInput {
     };
   }
   return result;
+}
+
+/** Lichess game and challenge ids: 8 characters (12 for a player's full game id). */
+const LICHESS_ID = /^[A-Za-z0-9]{8,12}$/;
+/** Lichess usernames: 2–30 letters, digits, `_` or `-` (older accounts may start or end with `_`). */
+const LICHESS_USERNAME = /^[A-Za-z0-9_-]{2,30}$/;
+
+function asNumberInRange(value: unknown, label: string, min: number, max: number): number {
+  const number = asFiniteNumber(value, label);
+  if (number < min || number > max) fail(label, `must be between ${min} and ${max}`);
+  return number;
+}
+
+function asIntegerInRange(value: unknown, label: string, min: number, max: number): number {
+  const number = asNumberInRange(value, label, min, max);
+  if (!Number.isInteger(number)) fail(label, "expected a whole number");
+  return number;
+}
+
+function asChallengeColor(value: unknown): "white" | "black" | "random" {
+  if (value !== "white" && value !== "black" && value !== "random") fail("color", "expected white, black or random");
+  return value;
+}
+
+/** Path segments of Lichess URLs: ids are checked strictly, never passed through. */
+export function asLichessId(value: unknown, label = "Lichess id"): string {
+  const id = asString(value, label, 12);
+  if (!LICHESS_ID.test(id)) fail(label, "not a Lichess id");
+  return id;
+}
+
+export function asLichessUci(value: unknown): string {
+  const uci = asString(value, "move", 5);
+  if (!UCI_MOVE.test(uci)) fail("move", `"${uci}" is not a UCI move`);
+  return uci;
+}
+
+export function parseLichessSeekInput(value: unknown): LichessSeekInput {
+  const input = asObject(value, "seek");
+  let ratingRange: [number, number] | null = null;
+  if (input.ratingRange !== undefined && input.ratingRange !== null) {
+    if (!Array.isArray(input.ratingRange) || input.ratingRange.length !== 2) {
+      fail("rating range", "expected [min, max]");
+    }
+    const min = asIntegerInRange(input.ratingRange[0], "rating range min", 0, 4000);
+    const max = asIntegerInRange(input.ratingRange[1], "rating range max", 0, 4000);
+    if (min > max) fail("rating range", "min is above max");
+    ratingRange = [min, max];
+  }
+  return {
+    // Lichess seeks take fractional minutes (e.g. 1.5) up to 3 hours.
+    minutes: asNumberInRange(input.minutes, "minutes", 0, 180),
+    incrementSec: asIntegerInRange(input.incrementSec, "increment", 0, 180),
+    rated: asBoolean(input.rated, "rated"),
+    ratingRange
+  };
+}
+
+/** Challenge clocks are whole seconds: up to 3 hours, increment up to 60 s. */
+function parseChallengeClock(input: Fields): { minutes: number; incrementSec: number } {
+  const minutes = asNumberInRange(input.minutes, "minutes", 0, 180);
+  if (!Number.isInteger(minutes * 60)) fail("minutes", "must be whole seconds");
+  return { minutes, incrementSec: asIntegerInRange(input.incrementSec, "increment", 0, 60) };
+}
+
+export function parseLichessChallengeInput(value: unknown): LichessChallengeInput {
+  const input = asObject(value, "challenge");
+  const username = asString(input.username, "username", 30).trim();
+  if (!LICHESS_USERNAME.test(username)) fail("username", "not a Lichess username");
+  return {
+    username,
+    ...parseChallengeClock(input),
+    rated: asBoolean(input.rated, "rated"),
+    color: asChallengeColor(input.color)
+  };
+}
+
+export function parseLichessAiChallengeInput(value: unknown): LichessAiChallengeInput {
+  const input = asObject(value, "AI challenge");
+  return {
+    level: asIntegerInRange(input.level, "AI level", 1, 8),
+    ...parseChallengeClock(input),
+    color: asChallengeColor(input.color)
+  };
+}
+
+export function parseLichessDisconnectInput(value: unknown): { removeGames: boolean } {
+  const input = asObject(value, "disconnect options");
+  return { removeGames: asBoolean(input.removeGames, "removeGames") };
 }

@@ -28,6 +28,7 @@ export default defineConfig({
         "src/main/engine/engine-manager.ts",
         "src/main/engine/engine-registry-sync.ts",
         "src/main/engine/probe-eval.ts",
+        "src/main/lichess/index.ts",
         "src/renderer/src/**/use*.ts",
         "src/renderer/src/**/use-*.ts",
         "src/renderer/src/queries/**",

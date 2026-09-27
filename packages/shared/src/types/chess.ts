@@ -4,8 +4,9 @@ export type Color = "white" | "black";
 export type Square =
   `${"a" | "b" | "c" | "d" | "e" | "f" | "g" | "h"}${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8}`;
 export type AnnotationColor = "green" | "red" | "yellow" | "blue";
-export type GameSource = "new" | "pgn-import" | "engine-game" | "analysis" | "puzzle";
-export type GameMode = "freeplay" | "engine" | "analysis" | "puzzle";
+export type GameSource = "new" | "pgn-import" | "engine-game" | "analysis" | "puzzle" | "lichess";
+/** `online`: a live Lichess game (the opponent's side is `engineSide` in the game store). */
+export type GameMode = "freeplay" | "engine" | "analysis" | "puzzle" | "online";
 
 export type BoardArrow = {
   orig: Square;

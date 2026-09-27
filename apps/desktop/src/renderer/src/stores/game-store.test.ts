@@ -215,4 +215,67 @@ describe("game store", () => {
       )
     ).toEqual({ wtime: 1, btime: 20, winc: 0, binc: 0 });
   });
+
+  describe("online games", () => {
+    const mainline = () => {
+      const { moveTree } = useGameStore.getState();
+      const sans: string[] = [];
+      let node = moveTree.find((item) => item.parentId === null);
+      while (node?.children[0]) {
+        node = moveTree.find((item) => item.id === node?.children[0]);
+        if (node?.san) sans.push(node.san);
+      }
+      return sans;
+    };
+
+    beforeEach(() => {
+      useGameStore.getState().setMode("online");
+      useGameStore.getState().setEngineSide("black");
+    });
+
+    it("appends the server's new moves and follows them when on the last move", () => {
+      expect(useGameStore.getState().syncMainline(["e2e4", "e7e5"])).toBe(true);
+      expect(mainline()).toEqual(["e4", "e5"]);
+      expect(useGameStore.getState().syncMainline(["e2e4", "e7e5", "g1f3"])).toBe(true);
+      expect(mainline()).toEqual(["e4", "e5", "Nf3"]);
+      const state = useGameStore.getState();
+      expect(state.moveTree.find((node) => node.id === state.currentNodeId)?.san).toBe("Nf3");
+    });
+
+    it("keeps the cursor where the user is browsing", () => {
+      useGameStore.getState().syncMainline(["e2e4", "e7e5"]);
+      useGameStore.getState().undo();
+      const browsing = useGameStore.getState().currentNodeId;
+      useGameStore.getState().syncMainline(["e2e4", "e7e5", "g1f3"]);
+      expect(useGameStore.getState().currentNodeId).toBe(browsing);
+    });
+
+    it("replaces a move the server doesn't have", () => {
+      useGameStore.getState().syncMainline(["e2e4", "e7e5"]);
+      expect(useGameStore.getState().makeMove({ from: "g1", to: "f3" })).toBe(true);
+      expect(useGameStore.getState().syncMainline(["e2e4", "e7e5"])).toBe(true);
+      expect(mainline()).toEqual(["e4", "e5"]);
+      expect(useGameStore.getState().moveTree).toHaveLength(3);
+    });
+
+    it("only plays at the end of the game", () => {
+      useGameStore.getState().syncMainline(["e2e4", "e7e5"]);
+      useGameStore.getState().undo();
+      expect(useGameStore.getState().makeMove({ from: "d7", to: "d5" })).toBe(false);
+      expect(mainline()).toEqual(["e4", "e5"]);
+    });
+
+    it("rejects an illegal server move", () => {
+      expect(useGameStore.getState().syncMainline(["e2e5"])).toBe(false);
+    });
+
+    it("ends the match once, with the server's result, and freezes the clocks", () => {
+      useGameStore.getState().setMatchClock({ whiteMs: 60_000, blackMs: 55_000, sideToMove: "white", running: true });
+      useGameStore.getState().endMatch("0-1", "Resignation");
+      useGameStore.getState().endMatch("1-0", "Time forfeit");
+      const state = useGameStore.getState();
+      expect(state.gameOutcome).toEqual({ result: "0-1", termination: "Resignation" });
+      expect(state.engineClockLive?.stoppedAt).toBeTypeOf("number");
+    });
+  });
 });

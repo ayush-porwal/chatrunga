@@ -11,12 +11,21 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { Eyebrow } from "@/components/ui/page";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 
 type GameReviewPickerProps = {
   onClose: () => void;
   onSelect: (gameId: string) => void;
   onImport: () => void;
 };
+
+type SourceFilter = "all" | "lichess" | "other";
+
+const sourceFilterOptions = [
+  { value: "all", label: "All" },
+  { value: "lichess", label: "Lichess" },
+  { value: "other", label: "Other" }
+] as const;
 
 type CurrentGame = {
   id: string | null;
@@ -52,17 +61,23 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
     moveCount: currentMoveCount
   };
   const [query, setQuery] = useState("");
+  const [source, setSource] = useState<SourceFilter>("all");
+  const hasLichessGames = (games.data ?? []).some((game) => game.source === "lichess");
 
   const filteredGames = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const savedGames = (games.data ?? []).filter((game) => game.id !== currentGameId);
+    const savedGames = (games.data ?? []).filter(
+      (game) =>
+        game.id !== currentGameId &&
+        (!hasLichessGames || source === "all" || (source === "lichess") === (game.source === "lichess"))
+    );
     if (!needle) return savedGames;
     return savedGames.filter((game) =>
       [game.white, game.black, game.event, game.date, game.result]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(needle))
     );
-  }, [currentGameId, games.data, query]);
+  }, [currentGameId, games.data, hasLichessGames, query, source]);
 
   const currentCanReview = currentGame.moveCount > 0;
   const currentLabel = currentGame.white || currentGame.black ? titleFor(currentGame) : "Current game";
@@ -84,6 +99,16 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
         </Button>
       }
     >
+      {hasLichessGames ? (
+        <SegmentedControl
+          ariaLabel="Game source"
+          size="sm"
+          value={source}
+          onChange={setSource}
+          options={sourceFilterOptions}
+          className="w-fit shrink-0"
+        />
+      ) : null}
       {hasSavedGames || query ? (
         <div className="relative shrink-0">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-subtle" />
@@ -121,7 +146,7 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
           ) : games.isLoading ? null : (
             <EmptyState
               compact
-              title={query ? "No saved games match this search." : currentCanReview ? "No other saved games." : "No saved games yet — import a PGN or play a game first."}
+              title={query || source !== "all" ? "No saved games match this search." : currentCanReview ? "No other saved games." : "No saved games yet — import a PGN or play a game first."}
             />
           )}
         </section>

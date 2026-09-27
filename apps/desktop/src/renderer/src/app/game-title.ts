@@ -9,11 +9,12 @@ export function decidedResult(result: string | null | undefined): string | null 
 }
 
 export function gameModeLabel(game: Pick<GameState, "mode" | "source">): string {
+  if (game.mode === "online" || game.source === "lichess") return "Lichess game";
   if (game.mode === "engine" || game.source === "engine-game") return "Engine game";
   if (game.mode === "puzzle" || game.source === "puzzle") return "Puzzle";
   if (game.mode === "analysis" || game.source === "analysis") return "Analysis";
   if (game.source === "pgn-import") return "Imported game";
-  return "New game";
+  return "Free board";
 }
 
 /**

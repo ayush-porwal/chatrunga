@@ -9,7 +9,6 @@ import {
   PanelLeft,
   Puzzle,
   Repeat2,
-  RotateCcw,
   Settings,
   Swords,
   Upload
@@ -48,10 +47,9 @@ export const AppSidebar = memo(function AppSidebar({
   boardView,
   focusMode,
   onHome,
-  onNewGame,
+  onPlay,
   onAnalyze,
   onReview,
-  onEngineGame,
   onPuzzles,
   onDatabases,
   onImport,
@@ -64,8 +62,8 @@ export const AppSidebar = memo(function AppSidebar({
   active: {
     home: boolean;
     analyze: boolean;
+    play: boolean;
     review: boolean;
-    engineGame: boolean;
     puzzles: boolean;
     databases: boolean;
     settings: boolean;
@@ -74,10 +72,9 @@ export const AppSidebar = memo(function AppSidebar({
   boardView: boolean;
   focusMode: boolean;
   onHome: () => void;
-  onNewGame: () => void;
+  onPlay: () => void;
   onAnalyze: () => void;
   onReview: () => void;
-  onEngineGame: () => void;
   onPuzzles: () => void;
   onDatabases: () => void;
   onImport: () => void;
@@ -112,10 +109,9 @@ export const AppSidebar = memo(function AppSidebar({
             )}
           />
         </div>
-        {item(RotateCcw, "New game", onNewGame)}
+        {item(Swords, "Play", onPlay, active.play)}
         {item(FileSearch, "Analyze", onAnalyze, active.analyze)}
         {item(BarChart3, "Game review", onReview, active.review)}
-        {item(Swords, "Engine game", onEngineGame, active.engineGame)}
         {item(Puzzle, "Puzzles", onPuzzles, active.puzzles)}
         {item(Database, "Databases", onDatabases, active.databases)}
         {item(Upload, "Import PGN", onImport)}

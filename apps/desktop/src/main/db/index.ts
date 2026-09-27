@@ -99,6 +99,8 @@ function runMigrations(database: DatabaseSync): void {
   }
   database.exec(`CREATE UNIQUE INDEX IF NOT EXISTS external_databases_source_idx
     ON external_databases(source_id)`);
+  // Lichess imports are deduplicated by their game URL (Site header).
+  database.exec("CREATE INDEX IF NOT EXISTS games_site_idx ON games(site)");
   // Puzzle sessions were previously autosaved; they are not "games" in the library sense.
   database.exec("DELETE FROM games WHERE source = 'puzzle'");
 }

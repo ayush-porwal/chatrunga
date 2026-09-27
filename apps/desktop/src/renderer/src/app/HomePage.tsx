@@ -1,6 +1,6 @@
 import { memo, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, ChevronRight, FileSearch, Play, Puzzle, RotateCcw, Swords, Upload } from "lucide-react";
+import { BarChart3, ChevronRight, FileSearch, Play, Puzzle, Swords, Upload } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { START_FEN, statusForFen } from "@chaturanga/shared/chess/position";
 import type { Color, GameSummary, MoveNode, SavedGame } from "@chaturanga/shared/types/chess";
@@ -28,9 +28,8 @@ const RECENT_LIMIT = 6;
 export const HomePage = memo(function HomePage({
   desktopApiAvailable,
   onAnalyze,
-  onEngineGame,
   onImportPgn,
-  onNewGame,
+  onPlay,
   onOpenGame,
   onPuzzles,
   onReview,
@@ -39,9 +38,8 @@ export const HomePage = memo(function HomePage({
 }: {
   desktopApiAvailable: boolean;
   onAnalyze: () => void;
-  onEngineGame: () => void;
   onImportPgn: () => void;
-  onNewGame: () => void;
+  onPlay: () => void;
   /** Loads a saved game onto the board. */
   onOpenGame: (id: string) => void;
   onPuzzles: () => void;
@@ -63,7 +61,6 @@ export const HomePage = memo(function HomePage({
 
   const actions: QuickAction[] = [
     { id: "analyze", icon: FileSearch, title: "Analyze a position", hint: "Live engine lines", onClick: onAnalyze, desktopOnly: true },
-    { id: "engine", icon: Swords, title: "Play the engine", hint: "Pick a side and a clock", onClick: onEngineGame, desktopOnly: true },
     { id: "puzzles", icon: Puzzle, title: "Solve puzzles", hint: "From your databases", onClick: onPuzzles, desktopOnly: true },
     { id: "import", icon: Upload, title: "Import PGN", hint: "Open a .pgn file", onClick: onImportPgn, desktopOnly: true }
   ];
@@ -92,7 +89,7 @@ export const HomePage = memo(function HomePage({
             <QuickActions
               actions={actions}
               desktopApiAvailable={desktopApiAvailable}
-              onNewGame={onNewGame}
+              onPlay={onPlay}
             />
           </div>
         </div>
@@ -101,7 +98,7 @@ export const HomePage = memo(function HomePage({
           className={reveal}
           actions={actions}
           desktopApiAvailable={desktopApiAvailable}
-          onNewGame={onNewGame}
+          onPlay={onPlay}
           onImportPgn={onImportPgn}
           onOpenEngineSettings={onOpenEngineSettings}
         />
@@ -371,11 +368,11 @@ type QuickAction = {
 function QuickActions({
   actions,
   desktopApiAvailable,
-  onNewGame
+  onPlay
 }: {
   actions: QuickAction[];
   desktopApiAvailable: boolean;
-  onNewGame: () => void;
+  onPlay: () => void;
 }) {
   return (
     <section aria-labelledby="home-start-title" className="grid content-start gap-2">
@@ -384,15 +381,15 @@ function QuickActions({
       </h2>
       <button
         type="button"
-        onClick={onNewGame}
+        onClick={onPlay}
         className="group flex items-center gap-3 rounded-xl border border-accent/30 bg-accent-soft px-3 py-3 text-left outline-none transition-colors duration-micro hover:border-accent/50 hover:bg-accent/20 focus-visible:ring-[3px] focus-visible:ring-accent/40"
       >
         <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-accent/15 text-accent-fg [&_svg]:size-4">
-          <RotateCcw />
+          <Swords />
         </span>
         <span className="grid min-w-0 flex-1 gap-0.5">
-          <span className="text-sm font-medium text-fg">New game</span>
-          <span className="truncate text-xs text-accent-fg/70">Fresh board, free play</span>
+          <span className="text-sm font-medium text-fg">Play</span>
+          <span className="truncate text-xs text-accent-fg/70">On Lichess, against an engine, or a free board</span>
         </span>
         <ChevronRight className="size-4 shrink-0 text-accent-fg/60 transition-transform duration-micro group-hover:translate-x-0.5" />
       </button>
@@ -429,14 +426,14 @@ function FirstRun({
   className,
   actions,
   desktopApiAvailable,
-  onNewGame,
+  onPlay,
   onImportPgn,
   onOpenEngineSettings
 }: {
   className?: string;
   actions: QuickAction[];
   desktopApiAvailable: boolean;
-  onNewGame: () => void;
+  onPlay: () => void;
   onImportPgn: () => void;
   onOpenEngineSettings: () => void;
 }) {
@@ -465,9 +462,9 @@ function FirstRun({
         </div>
         <div className="grid gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="primary" className="h-10 px-4" onClick={onNewGame}>
-              <RotateCcw />
-              New game
+            <Button type="button" variant="primary" className="h-10 px-4" onClick={onPlay}>
+              <Swords />
+              Play
             </Button>
             <Button type="button" variant="ghost" className="h-10" disabled={!desktopApiAvailable} onClick={onImportPgn}>
               <Upload />
@@ -561,7 +558,8 @@ const sourceLabels: Record<GameSummary["source"], string> = {
   "pgn-import": "Imported game",
   "engine-game": "Engine game",
   analysis: "Analysis",
-  puzzle: "Puzzle"
+  puzzle: "Puzzle",
+  lichess: "Lichess game"
 };
 
 function sourceLabel(source: GameSummary["source"]): string {
