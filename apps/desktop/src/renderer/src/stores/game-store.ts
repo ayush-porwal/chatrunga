@@ -442,8 +442,12 @@ export const useGameStore = create<GameStore>((set, get) => {
         const node = state.moveTree.find((item) => item.id === view.currentNodeId);
         // Finished by a result (resignation, flag, agreement) or on the board (mate, stalemate, a draw by rule).
         const endFen = state.moveTree.find((item) => item.id === mainlineEndId(state.moveTree))?.fenAfter ?? state.currentFen;
-        const decidedEngineGame =
-          view.mode === "engine" && Boolean(view.engineSide) && (Boolean(view.gameOutcome) || statusForFen(endFen).isEnd);
+        const end = statusForFen(endFen);
+        const decidedEngineGame = view.mode === "engine" && Boolean(view.engineSide) && (Boolean(view.gameOutcome) || end.isEnd);
+        // Ended on the board: record it as the outcome, so the engine doesn't play on from an earlier move.
+        const outcome =
+          view.gameOutcome ??
+          (end.isEnd ? { result: end.result, termination: end.isCheckmate ? "checkmate" : end.isStalemate ? "stalemate" : "draw" } : null);
         const mode: GameMode =
           view.mode === "online" || view.mode === "puzzle" || (view.mode === "engine" && !decidedEngineGame) ? "freeplay" : view.mode;
         return {
@@ -451,7 +455,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           source: view.source,
           orientation: view.orientation,
           engineSide: decidedEngineGame ? view.engineSide : null,
-          gameOutcome: decidedEngineGame ? view.gameOutcome : null,
+          gameOutcome: decidedEngineGame ? outcome : null,
           engineClock: null,
           engineClockLive: null,
           matchFeedback: null,

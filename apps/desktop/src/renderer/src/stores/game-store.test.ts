@@ -304,6 +304,8 @@ describe("game store", () => {
       const mate = useGameStore.getState().currentNodeId;
       useGameStore.getState().restoreView({ currentNodeId: mate, mode: "engine", source: "engine-game", engineSide: "black", orientation: "white", gameOutcome: null });
       expect(useGameStore.getState()).toMatchObject({ mode: "engine", engineSide: "black" });
+      // Recorded as over: stepping back to an earlier move must not let the engine play on.
+      expect(useGameStore.getState().gameOutcome).toEqual({ result: "0-1", termination: "checkmate" });
     });
 
     it("turns a match still being played (or a live online game) into a free board", () => {

@@ -442,6 +442,7 @@ export function App() {
 
   /** Titlebar "Stop analysis": leave live analysis but keep the position and moves (not a step of its own). */
   function stopLiveAnalysis() {
+    latestNavigation.current += 1;
     currentGame().setMode("freeplay");
     useAnalysisStore.getState().setStatus("idle");
     record("replace", historyEntry("game"));
@@ -455,6 +456,8 @@ export function App() {
   function analyzeCurrentPosition() {
     if (!desktopApiAvailable) return;
     commitCurrent();
+    // A board still loading (Back / Forward, a saved game) must not replace this one afterwards.
+    latestNavigation.current += 1;
     currentGame().setEngineSide(null);
     currentGame().clearEngineMatchExtras();
     currentGame().setMode("analysis");

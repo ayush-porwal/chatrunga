@@ -68,14 +68,23 @@ export function useGameAutosave(): void {
       if (!timeout || !previous.gameId) return;
       window.clearTimeout(timeout);
       timeout = 0;
+      // The result as a normal save would work it out (resultAnchor still belongs to this game).
+      const end = mainlineEnd(previous.moveTree);
+      const result = savedResult(
+        previous.gameOutcome?.result,
+        statusForFen(end?.fenAfter ?? previous.currentFen).result,
+        previous.headers.result,
+        end?.id === resultAnchor
+      );
+      const headers = { ...previous.headers, result };
       saveGame({
         id: previous.gameId,
         source: previous.source,
-        headers: previous.headers,
+        headers,
         rootFen: previous.rootFen,
         currentFen: previous.currentFen,
         currentNodeId: previous.currentNodeId,
-        pgn: exportGameToPgn({ headers: previous.headers, moveTree: previous.moveTree }),
+        pgn: exportGameToPgn({ headers, moveTree: previous.moveTree }),
         moveTree: previous.moveTree
       });
     };
