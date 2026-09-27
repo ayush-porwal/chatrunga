@@ -54,6 +54,7 @@ describe("normalizeGameFull", () => {
   it("maps players, clock, the start position and the state", () => {
     expect(normalizeGameFull(GAME_FULL)).toEqual({
       id: "xcoxhDvh",
+      variant: "standard",
       rated: false,
       speed: "rapid",
       clock: { initialMs: 600000, incrementMs: 5000 },

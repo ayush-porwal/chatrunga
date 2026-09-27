@@ -20,6 +20,7 @@ function state(moves: string[], patch: Partial<LichessGameState> = {}): LichessG
 function full(moves: string[] = []): LichessGameFull {
   return {
     id: "game1",
+    variant: "standard",
     rated: true,
     speed: "rapid",
     clock: { initialMs: 600_000, incrementMs: 0 },
@@ -168,5 +169,21 @@ describe("startLichessSync", () => {
     expect(useLichessStore.getState().ongoingGameIds).toEqual(["game2"]);
     bridge.emit({ type: "gameFull", game: full() });
     expect(useLichessStore.getState().live?.id).toBe("game1");
+  });
+
+  it("lets go of the board when another account connects mid-game", async () => {
+    await startGame();
+    const other = { ...status, account: { ...status.account!, id: "someone", username: "Someone" } };
+    bridge.emit({ type: "status", status: other });
+    expect(useLichessStore.getState().live?.over).toBe(true);
+  });
+
+  it("leaves chess variants on lichess.org", () => {
+    bridge.emit({ type: "gameStart", gameId: "game1" });
+    bridge.emit({ type: "gameFull", game: { ...full(), variant: "atomic" } });
+    expect(useLichessStore.getState().live).toBeNull();
+    expect(bridge.api.unwatchGame).toHaveBeenCalledWith("game1");
+    expect(useLichessStore.getState().seekError).toMatch(/variant/);
+    expect(openGame).not.toHaveBeenCalled();
   });
 });

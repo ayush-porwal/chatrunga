@@ -46,7 +46,6 @@ describe("PKCE", () => {
 /** Stands in for the browser: follows the redirect the user would have approved. */
 async function callback(authorize: string, params: Record<string, string>): Promise<Response> {
   const redirect = new URL(new URL(authorize).searchParams.get("redirect_uri")!);
-  redirect.hostname = "127.0.0.1";
   for (const [key, value] of Object.entries(params)) redirect.searchParams.set(key, value);
   return fetch(redirect);
 }

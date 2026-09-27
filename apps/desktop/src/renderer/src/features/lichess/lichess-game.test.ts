@@ -6,6 +6,7 @@ const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 const game: LichessGameFull = {
   id: "abcd1234",
+  variant: "standard",
   rated: true,
   speed: "rapid",
   clock: { initialMs: 600_000, incrementMs: 5_000 },

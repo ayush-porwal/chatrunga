@@ -60,6 +60,8 @@ export type LichessGameState = {
 
 export type LichessGameFull = {
   id: string;
+  /** Lichess variant key: `standard`, `fromPosition`, `chess960`, `atomic`, … (Chaturanga plays the first two). */
+  variant: string;
   rated: boolean;
   speed: LichessSpeed;
   /** Null for correspondence / unlimited games. */

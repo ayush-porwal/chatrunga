@@ -119,6 +119,7 @@ export function normalizeGameFull(value: unknown): LichessGameFull {
   const initialFen = text(json.initialFen);
   return {
     id,
+    variant: text(asJson(json.variant).key) ?? "standard",
     rated: json.rated === true,
     speed: speed(json.speed, "correspondence"),
     clock: initialMs === null ? null : { initialMs, incrementMs: int(clock.increment) ?? 0 },

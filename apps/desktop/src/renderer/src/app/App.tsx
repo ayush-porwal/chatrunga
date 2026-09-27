@@ -174,9 +174,12 @@ export function App() {
 
   async function importPgnFile() {
     if (!window.chaturanga) return;
+    const request = ++latestNavigation.current;
     const file = await window.chaturanga.files.openPgnFile();
-    if (!file) return;
+    if (!file || request !== latestNavigation.current) return;
     const imported = await window.chaturanga.games.importPgn({ pgn: file.contents });
+    // A Lichess game (or another navigation) started meanwhile: it keeps the board.
+    if (request !== latestNavigation.current) return;
     stopEngineWork();
     useReviewStore.getState().reset();
     clearPuzzleSession();
@@ -187,6 +190,10 @@ export function App() {
 
   /** A Lichess game of yours began: clear the board's other activity and show it (useLichess loads it). */
   function startOnlineGame() {
+    // Close anything that could still load another game onto the board (showGame below also
+    // invalidates board loads in flight: an import or a saved game resolving after this point).
+    setImportOpen(false);
+    setGameReviewPickerOpen(false);
     stopEngineWork();
     useReviewStore.getState().reset();
     clearPuzzleSession();

@@ -25,6 +25,8 @@ export function useLichess({ onGameStart }: { onGameStart: () => void }): void {
   }, [openGame, refreshGames]);
 }
 
+const PLAYABLE_VARIANTS = new Set(["standard", "fromPosition"]);
+
 /** useLichess without React (testable): wires the bridge to the stores; returns the teardown. */
 export function startLichessSync({
   api,
@@ -57,11 +59,16 @@ export function startLichessSync({
     );
   }
 
-  /** Signed out (or the token was refused): the game's stream is gone, so the board stops following it. */
+  /**
+   * Signed out, the token refused, or another account connected: the main process closed the game's
+   * stream, so the board stops following it.
+   */
   function applyStatus(status: LichessStatus): void {
+    const previousAccountId = lichess().status.account?.id ?? null;
     lichess().setStatus(status);
     const live = lichess().live;
-    if ((!status.account || status.tokenRejected) && live && !live.over) {
+    const accountGone = !status.account || status.tokenRejected || (previousAccountId !== null && status.account.id !== previousAccountId);
+    if (accountGone && live && !live.over) {
       lichess().patchLive({ over: true, connected: false });
       game().setMatchFeedback("Signed out of Lichess. The game goes on at lichess.org.");
     }
@@ -99,6 +106,13 @@ export function startLichessSync({
   }
 
   function loadGame(full: LichessGameFull): void {
+    // The board plays standard chess (and games from a position); variants stay on lichess.org.
+    if (!PLAYABLE_VARIANTS.has(full.variant)) {
+      pendingGameId = null;
+      void api.unwatchGame(full.id);
+      lichess().setSeek(null, "That game is a chess variant: play it on lichess.org.");
+      return;
+    }
     const account = lichess().status.account;
     const color = (account && yourColor(full, account.id)) ?? "white";
     pendingGameId = null;

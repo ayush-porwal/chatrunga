@@ -108,7 +108,8 @@ export async function authorizeInBrowser(options: AuthorizeOptions): Promise<str
 
   try {
     const port = await listen(server);
-    const redirectUri = `http://localhost:${port}/callback`;
+    // The address the server listens on: `localhost` may resolve to IPv6 first and miss it.
+    const redirectUri = `http://127.0.0.1:${port}/callback`;
     if (!options.signal?.aborted) {
       await options.openExternal(
         authorizeUrl({ redirectUri, codeChallenge: codeChallengeFor(verifier), state })

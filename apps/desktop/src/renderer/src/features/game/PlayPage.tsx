@@ -91,7 +91,7 @@ export const PlayPage = memo(function PlayPage(
   const setup = useEngineGameSetup(props);
   const lichess = useLichessSeekSetup();
   const chosen = useLichessStore((state) => state.playOpponent);
-  const connected = useLichessStore((state) => Boolean(state.status.account));
+  const connected = useLichessStore((state) => Boolean(state.status.account) && !state.status.tokenRejected);
   const setOpponent = useLichessStore((state) => state.setPlayOpponent);
   const opponent = chosen ?? (connected ? "lichess" : "engine");
   const onlineGameLive = useLichessStore(selectLiveGameInProgress);

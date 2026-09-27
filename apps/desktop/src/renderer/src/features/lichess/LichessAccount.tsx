@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Globe, Loader2, LogOut, RefreshCw } from "lucide-react";
 import type { LichessAccount, LichessSpeed } from "@chaturanga/shared/types/lichess";
 import { useRefreshGames } from "../../queries/api";
+import { useGameStore } from "../../stores/game-store";
+import { useReviewStore } from "../../stores/review-store";
 import { useLichessStore } from "../../stores/lichess-store";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -166,7 +168,14 @@ function DisconnectDialog({ username, onClose }: { username: string; onClose: ()
     api.disconnect({ removeGames }).then(
       (status) => {
         useLichessStore.getState().setStatus(status);
-        if (removeGames) refreshGames();
+        if (removeGames) {
+          // A removed game still on the board would be saved back by autosave: clear the board.
+          if (useGameStore.getState().source === "lichess") {
+            useGameStore.getState().reset();
+            useReviewStore.getState().reset();
+          }
+          refreshGames();
+        }
         onClose();
       },
       (reason: unknown) => {
