@@ -13,25 +13,47 @@ export type UpdateEnvironment = {
   appImage: string | undefined;
   /** macOS: the running bundle has a Developer ID signature (Squirrel.Mac refuses anything else). */
   macSigned: boolean;
+  /**
+   * macOS: the running bundle can be replaced in place (a writable folder such as /Applications,
+   * not a mounted DMG or an App Translocation copy). Lets unsigned builds update themselves.
+   */
+  macBundleReplaceable?: boolean;
 };
 
 export const DEV_BUILD_MESSAGE = "Updates are available in installed builds.";
 
-/** How this build can update itself, and why when it can't do so automatically. */
-export function resolveUpdateMode(env: UpdateEnvironment): { mode: UpdateMode; reason: string | null } {
-  if (!env.isPackaged) return { mode: "disabled", reason: DEV_BUILD_MESSAGE };
-  if (env.platform === "win32") return { mode: "auto", reason: null };
+export const MAC_NOT_REPLACEABLE_MESSAGE =
+  "Move Chaturanga to your Applications folder and open it from there to update it in place.";
+
+/**
+ * How this build can update itself, and why when it can't do so automatically. `bundleSwap`: macOS
+ * without a Developer ID, where the app replaces its own bundle (mac-bundle-updater.ts) because
+ * Squirrel.Mac only installs updates signed by the same Developer ID.
+ */
+export function resolveUpdateMode(env: UpdateEnvironment): { mode: UpdateMode; reason: string | null; bundleSwap: boolean } {
+  if (!env.isPackaged) return { mode: "disabled", reason: DEV_BUILD_MESSAGE, bundleSwap: false };
+  if (env.platform === "win32") return { mode: "auto", reason: null, bundleSwap: false };
   if (env.platform === "darwin") {
-    return env.macSigned
-      ? { mode: "auto", reason: null }
-      : { mode: "manual", reason: "This build isn’t signed with an Apple Developer ID, so new versions are downloaded from the release page." };
+    if (env.macSigned) return { mode: "auto", reason: null, bundleSwap: false };
+    return env.macBundleReplaceable
+      ? { mode: "auto", reason: null, bundleSwap: true }
+      : { mode: "manual", reason: MAC_NOT_REPLACEABLE_MESSAGE, bundleSwap: false };
   }
   if (env.platform === "linux") {
     return env.appImage
-      ? { mode: "auto", reason: null }
-      : { mode: "manual", reason: "Automatic updates need the AppImage; new versions are downloaded from the release page." };
+      ? { mode: "auto", reason: null, bundleSwap: false }
+      : { mode: "manual", reason: "Automatic updates need the AppImage; new versions are downloaded from the release page.", bundleSwap: false };
   }
-  return { mode: "manual", reason: "New versions are downloaded from the release page." };
+  return { mode: "manual", reason: "New versions are downloaded from the release page.", bundleSwap: false };
+}
+
+/**
+ * Whether a macOS bundle path can be swapped in place: a `.app`, and not an App Translocation copy
+ * (macOS runs quarantined apps opened from Downloads from a random read-only path). Writability is
+ * checked separately, on disk.
+ */
+export function isSwappableBundlePath(bundlePath: string): boolean {
+  return bundlePath.endsWith(".app") && !bundlePath.includes("/AppTranslocation/");
 }
 
 /**
@@ -82,7 +104,7 @@ export function releasePageUrl(feed: UpdateFeedConfig, version: string): string 
   return `https://github.com/${feed.owner}/${feed.repo}/releases/tag/v${version}`;
 }
 
-export type UpdateFile = { url: string; size?: number };
+export type UpdateFile = { url: string; size?: number; sha512?: string };
 
 /**
  * The installer a person should download by hand for this platform and CPU: the DMG (else ZIP) for
@@ -97,15 +119,84 @@ export function manualDownloadUrl(
   feedOverride: string | null = null
 ): string {
   const extensions = target.platform === "darwin" ? [".dmg", ".zip"] : target.platform === "linux" ? [".AppImage"] : [".exe"];
-  const arm = target.arch === "arm64";
-  const forArch = (name: string) => (arm ? /arm64|aarch64/i.test(name) : !/arm64|aarch64/i.test(name));
   for (const extension of extensions) {
-    const file = update.files.find((candidate) => candidate.url.endsWith(extension) && forArch(candidate.url));
+    const file = update.files.find((candidate) => candidate.url.endsWith(extension) && isForArch(candidate.url, target.arch));
     if (!file) continue;
     const url = resolveFileUrl(feed, update.version, file.url);
     if (isAllowedDownloadUrl(url, feedOverride)) return url;
   }
   return releasePageUrl(feed, update.version);
+}
+
+/**
+ * The release ZIP the in-place macOS updater installs for this CPU, with the checksum it must match;
+ * null when the feed has none (or it is hosted somewhere `isAllowedDownloadUrl` rejects).
+ */
+export function macUpdateZip(
+  feed: UpdateFeedConfig,
+  update: { version: string; files: UpdateFile[] },
+  arch: string,
+  feedOverride: string | null = null
+): { url: string; sha512: string; size: number | null } | null {
+  const file = update.files.find((candidate) => candidate.url.endsWith(".zip") && isForArch(candidate.url, arch));
+  if (!file?.sha512) return null;
+  const url = resolveFileUrl(feed, update.version, file.url);
+  return isAllowedDownloadUrl(url, feedOverride) ? { url, sha512: file.sha512, size: file.size ?? null } : null;
+}
+
+/**
+ * Swaps the downloaded bundle in once the app has quit (run detached by mac-bundle-updater.ts).
+ * Arguments: pid, target bundle, staged bundle, relaunch (1/0). Waits up to 60s for the pid to exit,
+ * then first moves the new bundle next to the app (a rename on the same volume, a copy across
+ * volumes: a failure here leaves the app untouched), so the swap itself is two renames within one
+ * folder. If the second rename fails the previous version is put back. Every run uses its own
+ * temporary names, so leftovers from an earlier run can't be moved into. The last line of output is
+ * the result: `installed` or `failed: <why>`. Paths arrive as arguments, never interpolated.
+ */
+export const BUNDLE_SWAP_SCRIPT = `#!/bin/sh
+pid="$1"; target="$2"; staged="$3"; relaunch="$4"
+incoming="$target.incoming-$$"
+backup="$target.previous-$$"
+finish() {
+  echo "$1"
+  if [ "$relaunch" = "1" ] && [ -d "$target" ]; then open "$target"; fi
+  exit 0
+}
+i=0
+while kill -0 "$pid" 2>/dev/null; do
+  i=$((i + 1))
+  if [ "$i" -gt 600 ]; then finish "failed: the app did not quit"; fi
+  sleep 0.1
+done
+if ! mv "$staged" "$incoming"; then
+  rm -rf "$incoming"
+  finish "failed: could not copy the new version next to the app"
+fi
+if ! mv "$target" "$backup"; then
+  rm -rf "$incoming"
+  finish "failed: could not move the current version aside"
+fi
+if mv "$incoming" "$target"; then
+  rm -rf "$backup" 2>/dev/null
+  finish "installed"
+fi
+rm -rf "$incoming"
+if mv "$backup" "$target"; then finish "failed: the previous version was restored"; fi
+finish "failed: the previous version is at $backup"
+`;
+
+/** The result line `BUNDLE_SWAP_SCRIPT` logged last (`installed` / `failed: …`); null when none. */
+export function swapResult(log: string): { installed: boolean; detail: string } | null {
+  const last = log.trim().split("\n").pop()?.trim() ?? "";
+  if (last === "installed") return { installed: true, detail: last };
+  if (last.startsWith("failed:")) return { installed: false, detail: last.slice("failed:".length).trim() };
+  return null;
+}
+
+/** Our artifact names carry the CPU: `arm64` builds say so, anything else is x64. */
+function isForArch(fileName: string, arch: string): boolean {
+  const armFile = /arm64|aarch64/i.test(fileName);
+  return arch === "arm64" ? armFile : !armFile;
 }
 
 function resolveFileUrl(feed: UpdateFeedConfig, version: string, fileUrl: string): string {

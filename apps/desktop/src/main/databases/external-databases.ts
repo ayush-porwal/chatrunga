@@ -1,6 +1,6 @@
 import { app } from "electron";
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, stat, unlink } from "node:fs/promises";
+import { mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -41,20 +41,80 @@ export async function listInstalledDatabases(): Promise<InstalledDatabase[]> {
   return available;
 }
 
-/** Streams a catalogued source into `userData/databases`, reporting progress. */
-export async function downloadDatabase(sourceId: string, onProgress: ProgressSink): Promise<InstalledDatabase> {
+async function fileSize(path: string): Promise<number> {
+  try {
+    return (await stat(path)).size;
+  } catch (error) {
+    if (isMissingFile(error)) return 0;
+    throw error;
+  }
+}
+
+/** Downloads in flight, per source: a second request for the same database joins the first. */
+const inFlight = new Map<string, Promise<InstalledDatabase>>();
+
+/**
+ * Streams a catalogued source into `userData/databases`, reporting progress. The data goes to a
+ * `.part` file that is renamed into place only once complete, and a download cut short (the app
+ * quit, e.g. to install an update, or the network dropped) resumes from where it stopped — but only
+ * a partial whose server version (ETag / Last-Modified) was recorded, so two versions never mix.
+ */
+export function downloadDatabase(sourceId: string, onProgress: ProgressSink): Promise<InstalledDatabase> {
+  const running = inFlight.get(sourceId);
+  if (running) return running;
+  const download = runDownload(sourceId, onProgress).finally(() => inFlight.delete(sourceId));
+  inFlight.set(sourceId, download);
+  return download;
+}
+
+/** Byte offsets must address the file as stored, so no transfer encoding (gzip) may apply. */
+const IDENTITY = { "Accept-Encoding": "identity" };
+
+async function runDownload(sourceId: string, onProgress: ProgressSink): Promise<InstalledDatabase> {
   const source = externalDatabaseSources.find((item) => item.id === sourceId);
   if (!source) throw new Error("Database source not found");
   const dir = join(app.getPath("userData"), "databases");
   await mkdir(dir, { recursive: true });
   const filePath = join(dir, `${source.id}-${basename(new URL(source.url).pathname)}`);
+  const partPath = `${filePath}.part`;
+  // The server's ETag / Last-Modified for the `.part` file: a resume only continues the same file.
+  const validatorPath = `${partPath}.validator`;
 
-  const response = await fetch(source.url);
+  const validator = (await readFile(validatorPath, "utf8").catch(() => "")).trim();
+  if (!validator) {
+    // A partial with no recorded version can't be continued safely: start over.
+    await unlink(partPath).catch(() => undefined);
+  }
+  const offset = validator ? await fileSize(partPath) : 0;
+  // If-Range: the server sends the rest only if the file is unchanged, otherwise all of it (200).
+  const response = await fetch(
+    source.url,
+    offset ? { headers: { ...IDENTITY, Range: `bytes=${offset}-`, "If-Range": validator } } : { headers: IDENTITY }
+  );
+  if (response.status === 416 && offset) {
+    await response.body?.cancel();
+    // Same version, nothing past `offset`: complete only if it is exactly the file's length.
+    if (rangeTotal(response.headers.get("content-range")) === offset) {
+      return finishDownload(source, partPath, filePath, onProgress, null);
+    }
+    await unlink(partPath).catch(() => undefined);
+    await unlink(validatorPath).catch(() => undefined);
+    return runDownload(sourceId, onProgress);
+  }
   if (!response.ok || !response.body) {
     throw new Error(`Download failed (${response.status} ${response.statusText})`);
   }
-  const totalBytes = parseContentLength(response.headers.get("content-length"));
-  let downloadedBytes = 0;
+  // 206: the server continues after `offset`; 200: a new version, or no range asked: start over.
+  const resumed = response.status === 206;
+  const startBytes = resumed ? offset : 0;
+  if (!resumed) {
+    const nextValidator = response.headers.get("etag") ?? response.headers.get("last-modified");
+    if (nextValidator) await writeFile(validatorPath, nextValidator);
+    else await unlink(validatorPath).catch(() => undefined);
+  }
+  const remainingBytes = parseContentLength(response.headers.get("content-length"));
+  const totalBytes = remainingBytes === null ? null : startBytes + remainingBytes;
+  let downloadedBytes = startBytes;
   let lastEmitAt = 0;
   const meter = new Transform({
     transform(chunk: Buffer, _encoding, callback) {
@@ -75,9 +135,9 @@ export async function downloadDatabase(sourceId: string, onProgress: ProgressSin
   });
 
   try {
-    await pipeline(Readable.fromWeb(response.body as never), meter, createWriteStream(filePath));
+    await pipeline(Readable.fromWeb(response.body as never), meter, createWriteStream(partPath, { flags: resumed ? "a" : "w" }));
   } catch (error) {
-    await unlink(filePath).catch(() => undefined);
+    // The `.part` file stays, so the next attempt resumes instead of starting over.
     onProgress({
       sourceId: source.id,
       downloadedBytes: 0,
@@ -88,7 +148,18 @@ export async function downloadDatabase(sourceId: string, onProgress: ProgressSin
     });
     throw error;
   }
+  return finishDownload(source, partPath, filePath, onProgress, totalBytes);
+}
 
+async function finishDownload(
+  source: (typeof externalDatabaseSources)[number],
+  partPath: string,
+  filePath: string,
+  onProgress: ProgressSink,
+  totalBytes: number | null
+): Promise<InstalledDatabase> {
+  await rename(partPath, filePath);
+  await unlink(`${partPath}.validator`).catch(() => undefined);
   const file = await stat(filePath);
   onProgress({
     sourceId: source.id,
@@ -146,6 +217,12 @@ export async function samplePuzzle(input: PuzzleSampleInput): Promise<PuzzleSamp
 
   if (!selected) throw new Error("No puzzle matched those filters. Try fewer themes or a wider rating range.");
   return selected;
+}
+
+/** The full length a 416 reports (`Content-Range: bytes` + `*` + `/N`); null when absent or malformed. */
+function rangeTotal(value: string | null): number | null {
+  const match = /^bytes \*\/(\d+)$/.exec(value?.trim() ?? "");
+  return match ? Number(match[1]) : null;
 }
 
 function parseContentLength(value: string | null): number | null {

@@ -300,7 +300,7 @@ function SolutionProgress({ done, total, wrong }: { done: number; total: number;
         ))}
       </div>
       <span className="shrink-0 text-2xs tabular-nums text-fg-muted">
-        {done}/{total}
+        {done} of {total} {total === 1 ? "move" : "moves"} found
       </span>
     </div>
   );

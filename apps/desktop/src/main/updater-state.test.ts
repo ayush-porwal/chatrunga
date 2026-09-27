@@ -1,12 +1,20 @@
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { UpdateStatus } from "@chaturanga/shared/types/updates";
 import {
+  BUNDLE_SWAP_SCRIPT,
   CHECK_FAILED_MESSAGE,
   DEV_BUILD_MESSAGE,
   isAllowedDownloadUrl,
   isCheckBlocked,
   isDeveloperIdSigned,
   isPrereleaseVersion,
+  isSwappableBundlePath,
+  MAC_NOT_REPLACEABLE_MESSAGE,
+  macUpdateZip,
   manualDownloadUrl,
   parseAppUpdateConfig,
   readableUpdateError,
@@ -15,6 +23,7 @@ import {
   releasePageUrl,
   resolveUpdateMode,
   shouldAllowPrerelease,
+  swapResult,
   type UpdateEnvironment,
   type UpdateFeedConfig
 } from "./updater-state";
@@ -42,7 +51,8 @@ describe("resolveUpdateMode", () => {
     for (const platform of ["win32", "darwin", "linux"] as const) {
       expect(resolveUpdateMode(env({ isPackaged: false, platform, macSigned: true, appImage: "/a" }))).toEqual({
         mode: "disabled",
-        reason: DEV_BUILD_MESSAGE
+        reason: DEV_BUILD_MESSAGE,
+        bundleSwap: false
       });
     }
   });
@@ -51,11 +61,24 @@ describe("resolveUpdateMode", () => {
     expect(resolveUpdateMode(env({ platform: "win32" })).mode).toBe("auto");
   });
 
-  it("updates macOS automatically only with a Developer ID signature", () => {
-    expect(resolveUpdateMode(env({ platform: "darwin", macSigned: true }))).toEqual({ mode: "auto", reason: null });
-    const unsigned = resolveUpdateMode(env({ platform: "darwin", macSigned: false }));
-    expect(unsigned.mode).toBe("manual");
-    expect(unsigned.reason).toMatch(/Developer ID/);
+  it("updates signed macOS builds through electron-updater", () => {
+    expect(resolveUpdateMode(env({ platform: "darwin", macSigned: true }))).toEqual({ mode: "auto", reason: null, bundleSwap: false });
+  });
+
+  it("updates unsigned macOS builds in place by swapping the bundle", () => {
+    expect(resolveUpdateMode(env({ platform: "darwin", macSigned: false, macBundleReplaceable: true }))).toEqual({
+      mode: "auto",
+      reason: null,
+      bundleSwap: true
+    });
+  });
+
+  it("asks unsigned macOS builds that can't be replaced to move to Applications", () => {
+    expect(resolveUpdateMode(env({ platform: "darwin", macSigned: false, macBundleReplaceable: false }))).toEqual({
+      mode: "manual",
+      reason: MAC_NOT_REPLACEABLE_MESSAGE,
+      bundleSwap: false
+    });
   });
 
   it("updates Linux automatically only inside an AppImage", () => {
@@ -304,5 +327,104 @@ describe("reduceUpdateStatus", () => {
     expect(isCheckBlocked({ kind: "disabled", message: "" })).toBe(true);
     expect(isCheckBlocked({ kind: "up-to-date" })).toBe(false);
     expect(isCheckBlocked({ kind: "error", message: "" })).toBe(false);
+  });
+});
+
+describe("isSwappableBundlePath", () => {
+  it("accepts an installed bundle and rejects translocated or non-bundle paths", () => {
+    expect(isSwappableBundlePath("/Applications/Chaturanga.app")).toBe(true);
+    expect(isSwappableBundlePath("/Users/me/Applications/Chaturanga.app")).toBe(true);
+    expect(isSwappableBundlePath("/private/var/folders/x/AppTranslocation/ABC/d/Chaturanga.app")).toBe(false);
+    expect(isSwappableBundlePath("/usr/local/bin")).toBe(false);
+  });
+});
+
+describe("macUpdateZip", () => {
+  const files = macFiles.map((file) => ({ ...file, sha512: `sha-${file.url}` }));
+  const update = { version: "0.2.0", files };
+
+  it("picks the release ZIP for this CPU with its checksum", () => {
+    expect(macUpdateZip(github, update, "arm64")).toEqual({
+      url: "https://github.com/ayush-porwal/chatrunga/releases/download/v0.2.0/Chaturanga-0.2.0-mac-arm64.zip",
+      sha512: "sha-Chaturanga-0.2.0-mac-arm64.zip",
+      size: 110
+    });
+    expect(macUpdateZip(github, update, "x64")?.url).toMatch(/mac-x64\.zip$/);
+  });
+
+  it("returns null without a checksummed ZIP or for a host outside the allow-list", () => {
+    expect(macUpdateZip(github, { version: "0.2.0", files: macFiles }, "arm64")).toBeNull();
+    expect(macUpdateZip(github, { version: "0.2.0", files: [{ url: "https://evil.example/a-arm64.zip", sha512: "x" }] }, "arm64")).toBeNull();
+  });
+
+  it("resolves ZIPs against a test feed", () => {
+    const feed: UpdateFeedConfig = { provider: "generic", url: "http://127.0.0.1:8123/feed" };
+    expect(macUpdateZip(feed, update, "arm64", "http://127.0.0.1:8123/feed")?.url).toBe("http://127.0.0.1:8123/feed/Chaturanga-0.2.0-mac-arm64.zip");
+  });
+});
+
+describe("BUNDLE_SWAP_SCRIPT", () => {
+  /** A fake installed bundle and a staged replacement, marked by their contents. */
+  function fixture() {
+    const root = mkdtempSync(join(tmpdir(), "chaturanga-swap-"));
+    const target = join(root, "Applications", "Chaturanga.app");
+    const staged = join(root, "pending-update", "Chaturanga.app");
+    for (const [bundle, version] of [[target, "old"], [staged, "new"]] as const) {
+      mkdirSync(join(bundle, "Contents"), { recursive: true });
+      writeFileSync(join(bundle, "Contents", "version"), version);
+    }
+    const script = join(root, "swap.sh");
+    writeFileSync(script, BUNDLE_SWAP_SCRIPT);
+    return { root, target, staged, script };
+  }
+
+  // A pid that has already exited: the script shouldn't wait for it.
+  const deadPid = () => String(spawnSync("/usr/bin/true").pid);
+
+  it("replaces the bundle once the app has exited and removes the backup", () => {
+    const { target, staged, script } = fixture();
+    const result = spawnSync("/bin/sh", [script, deadPid(), target, staged, "0"], { encoding: "utf8" });
+    expect(result.stdout.trim()).toBe("installed");
+    expect(readFileSync(join(target, "Contents", "version"), "utf8")).toBe("new");
+    expect(existsSync(staged)).toBe(false);
+    expect(readdirSync(join(target, ".."))).toEqual(["Chaturanga.app"]);
+  });
+
+  it("leaves the app untouched when the new version can't be staged next to it", () => {
+    const { root, target, script } = fixture();
+    const result = spawnSync("/bin/sh", [script, deadPid(), target, join(root, "missing.app"), "0"], { encoding: "utf8" });
+    expect(result.stdout.trim()).toBe("failed: could not copy the new version next to the app");
+    expect(readFileSync(join(target, "Contents", "version"), "utf8")).toBe("old");
+    expect(readdirSync(join(target, ".."))).toEqual(["Chaturanga.app"]);
+  });
+
+  it("isn't confused by leftovers from an earlier run", () => {
+    const { target, staged, script } = fixture();
+    mkdirSync(`${target}.previous-version`, { recursive: true });
+    mkdirSync(`${target}.incoming-1`, { recursive: true });
+    const result = spawnSync("/bin/sh", [script, deadPid(), target, staged, "0"], { encoding: "utf8" });
+    expect(result.stdout.trim()).toBe("installed");
+    expect(readFileSync(join(target, "Contents", "version"), "utf8")).toBe("new");
+  });
+
+  it("handles paths with spaces and quotes", () => {
+    const { root, target, staged, script } = fixture();
+    const odd = join(root, "My \"Apps\" & more", "Chaturanga.app");
+    mkdirSync(join(odd, ".."), { recursive: true });
+    spawnSync("/bin/mv", [target, odd]);
+    const result = spawnSync("/bin/sh", [script, deadPid(), odd, staged, "0"], { encoding: "utf8" });
+    expect(result.stdout.trim()).toBe("installed");
+    expect(readFileSync(join(odd, "Contents", "version"), "utf8")).toBe("new");
+  });
+});
+
+describe("swapResult", () => {
+  it("reads the result line the swap script ends with", () => {
+    expect(swapResult("installed\n")).toEqual({ installed: true, detail: "installed" });
+    expect(swapResult("noise\nfailed: could not move the current version aside\n")).toEqual({
+      installed: false,
+      detail: "could not move the current version aside"
+    });
+    expect(swapResult("")).toBeNull();
   });
 });

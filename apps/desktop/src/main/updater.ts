@@ -5,8 +5,10 @@
  * Per platform (decided in `resolveUpdateMode`):
  * - Windows (NSIS), Linux AppImage, Developer-ID-signed macOS: check → download in the background
  *   (the `updatesAutoDownload` setting) → "Restart to update" (`install()`).
- * - Unsigned macOS (ad-hoc builds; Squirrel.Mac refuses them) and Linux outside an AppImage: check
- *   only; `openDownload()` opens the installer for this CPU (or the release page) in the browser.
+ * - Unsigned macOS (ad-hoc builds; Squirrel.Mac refuses them): the same flow, but electron-updater
+ *   only checks; MacBundleUpdater downloads the release ZIP and swaps the bundle on restart or quit.
+ *   Where the bundle can't be replaced (run from the DMG or from Downloads) and Linux outside an
+ *   AppImage: check only; `openDownload()` opens the installer for this CPU in the browser.
  * - Development (`!app.isPackaged`): disabled.
  *
  * Checks run shortly after startup and every 6 hours. Failures never throw out of here: they become
@@ -19,15 +21,17 @@ import { app, shell } from "electron";
 import { execFile } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import type { AppUpdater, ProgressInfo, UpdateInfo } from "electron-updater";
 import type { UpdateState, UpdateStatus } from "@chaturanga/shared/types/updates";
 import { settingsRepository } from "./db/repositories";
 import { errorMessage, logger } from "./logger";
+import { canReplaceBundle, MacBundleUpdater, runningBundlePath } from "./mac-bundle-updater";
 import {
   isAllowedDownloadUrl,
   isCheckBlocked,
   isDeveloperIdSigned,
+  macUpdateZip,
   manualDownloadUrl,
   parseAppUpdateConfig,
   readableUpdateError,
@@ -35,7 +39,8 @@ import {
   resolveUpdateMode,
   shouldAllowPrerelease,
   type UpdateEvent,
-  type UpdateFeedConfig
+  type UpdateFeedConfig,
+  type UpdateInfoLike
 } from "./updater-state";
 
 const FIRST_CHECK_DELAY_MS = 10_000;
@@ -55,6 +60,10 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
     modeReason: null
   };
   private updater: AppUpdater | null = null;
+  /** Unsigned macOS with a replaceable bundle: downloads and installs go through this instead. */
+  private bundleUpdater: MacBundleUpdater | null = null;
+  /** The update `available` describes, for the bundle updater's download. */
+  private availableInfo: UpdateInfoLike | null = null;
   private feed: UpdateFeedConfig | null = null;
   private feedOverride: string | null = null;
   private prepareForInstall: () => void = () => {};
@@ -95,8 +104,24 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
     const updater = this.updater;
     if (!updater || this.state.mode !== "auto" || this.state.status.kind !== "available") return this.state;
     this.dispatch({ type: "download-started" });
-    updater.downloadUpdate().catch((error) => logger.warn("updater", "download failed:", errorMessage(error)));
+    if (this.bundleUpdater) void this.downloadBundle(this.bundleUpdater);
+    else updater.downloadUpdate().catch((error) => logger.warn("updater", "download failed:", errorMessage(error)));
     return this.state;
+  }
+
+  private async downloadBundle(bundleUpdater: MacBundleUpdater): Promise<void> {
+    const info = this.availableInfo;
+    const zip = info && this.feed ? macUpdateZip(this.feed, { version: info.version, files: info.files ?? [] }, downloadTarget().arch, this.feedOverride) : null;
+    try {
+      if (!info || !zip) throw new Error("no update package for this Mac in the release");
+      await bundleUpdater.download({ ...zip, version: info.version }, (transferred, total) =>
+        this.dispatch({ type: "progress", percent: total ? (transferred / total) * 100 : 0, transferred, total })
+      );
+      this.dispatch({ type: "downloaded", info });
+    } catch (error) {
+      logger.warn("updater", "download failed:", errorMessage(error));
+      this.dispatch({ type: "error", error });
+    }
   }
 
   /** "Restart to update": stops engines and closes the database, then quits into the installer. */
@@ -109,6 +134,18 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
       logger.error("updater", "cleanup before install failed:", error);
     }
     logger.info("updater", `installing ${this.state.status.version}`);
+    const bundleUpdater = this.bundleUpdater;
+    if (bundleUpdater) {
+      try {
+        bundleUpdater.startSwap({ relaunch: true });
+      } catch (error) {
+        logger.error("updater", "starting the bundle swap failed:", error);
+        this.setStatus({ kind: "error", message: readableUpdateError(error, "install") });
+        return false;
+      }
+      setImmediate(() => app.quit());
+      return true;
+    }
     // Silent: the assisted NSIS installer would otherwise show its wizard again; relaunch afterwards.
     setImmediate(() => {
       try {
@@ -144,12 +181,15 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
   }
 
   private async init(): Promise<void> {
-    const macSigned = process.platform === "darwin" && app.isPackaged ? await isRunningAppDeveloperIdSigned() : false;
-    const { mode, reason } = resolveUpdateMode({
+    const mac = process.platform === "darwin" && app.isPackaged;
+    const bundlePath = runningBundlePath(process.execPath);
+    const macSigned = mac ? await isRunningAppDeveloperIdSigned(bundlePath) : false;
+    const { mode, reason, bundleSwap } = resolveUpdateMode({
       isPackaged: app.isPackaged,
       platform: process.platform,
       appImage: process.env.APPIMAGE,
-      macSigned
+      macSigned,
+      macBundleReplaceable: mac && !macSigned ? await canReplaceBundle(bundlePath) : false
     });
     this.state = { ...this.state, mode, modeReason: reason };
     logger.info("updater", `mode ${mode} (version ${this.state.currentVersion}, ${process.platform}-${process.arch})`);
@@ -176,7 +216,27 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
       updater.setFeedURL({ provider: "generic", url: this.feedOverride });
     }
     updater.allowDowngrade = false;
-    updater.autoInstallOnAppQuit = mode === "auto";
+    updater.autoInstallOnAppQuit = mode === "auto" && !bundleSwap;
+    if (bundleSwap) {
+      const bundleUpdater = new MacBundleUpdater(bundlePath, join(app.getPath("userData"), "pending-update"));
+      const lastSwap = await bundleUpdater.lastSwapResult();
+      if (lastSwap?.installed) logger.info("updater", `last update installed (now ${this.state.currentVersion})`);
+      else if (lastSwap) {
+        logger.warn("updater", `last update failed to install: ${lastSwap.detail}`);
+        this.setStatus({ kind: "error", message: "The last update couldn’t be installed. It will download again." });
+      }
+      await bundleUpdater.clearStaging();
+      this.bundleUpdater = bundleUpdater;
+      // A downloaded update installs on a normal quit too, without reopening the app.
+      app.on("will-quit", () => {
+        if (this.state.status.kind !== "ready") return;
+        try {
+          bundleUpdater.startSwap({ relaunch: false });
+        } catch (error) {
+          logger.error("updater", "starting the bundle swap on quit failed:", error);
+        }
+      });
+    }
     this.configure(updater);
     this.subscribe(updater);
     this.updater = updater;
@@ -189,7 +249,8 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
     const settings = settingsRepository.getAll();
     const autoDownload = this.state.mode === "auto" && settings.updatesAutoDownload;
     const allowPrerelease = shouldAllowPrerelease(this.state.currentVersion, settings.updatesIncludeBeta);
-    updater.autoDownload = autoDownload;
+    // The bundle updater downloads by itself; electron-updater (Squirrel.Mac) must not try.
+    updater.autoDownload = autoDownload && !this.bundleUpdater;
     updater.allowPrerelease = allowPrerelease;
     this.state = { ...this.state, autoDownload, allowPrerelease };
     this.emit("state", this.state);
@@ -201,8 +262,11 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
     updater.on("update-available", (info: UpdateInfo) => {
       const manualUrl = this.state.mode === "manual" && this.feed ? manualDownloadUrl(this.feed, info, downloadTarget(), this.feedOverride) : null;
       logger.info("updater", `update available: ${info.version}${manualUrl ? ` (manual: ${manualUrl})` : ""}`);
+      this.availableInfo = info;
       this.dispatch({ type: "available", info, manualUrl }, { checked: true });
-      if (!manualUrl && updater.autoDownload) this.dispatch({ type: "download-started" });
+      if (this.bundleUpdater) {
+        if (this.state.autoDownload && this.state.status.kind === "available") void this.download();
+      } else if (!manualUrl && updater.autoDownload) this.dispatch({ type: "download-started" });
     });
     updater.on("download-progress", (progress: ProgressInfo) =>
       this.dispatch({ type: "progress", percent: progress.percent, transferred: progress.transferred, total: progress.total })
@@ -255,8 +319,7 @@ function parseFeedOverride(value: string | undefined): string | null {
 }
 
 /** Whether the running .app carries a Developer ID signature (`codesign -dv` names a team). */
-function isRunningAppDeveloperIdSigned(): Promise<boolean> {
-  const bundle = resolve(process.execPath, "../../..");
+function isRunningAppDeveloperIdSigned(bundle: string): Promise<boolean> {
   return new Promise((done) => {
     execFile("/usr/bin/codesign", ["-dv", "--verbose=2", bundle], { timeout: 5000 }, (error, stdout, stderr) => {
       if (error) {

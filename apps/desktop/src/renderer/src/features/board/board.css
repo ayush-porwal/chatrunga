@@ -69,14 +69,6 @@ cg-board square.check {
 
 /* ---------------------------------------------------------------- pieces */
 
-/* Picked-up piece: lifts a little and casts a soft shadow (scale is independent of the transform
-   Chessground uses to position it). */
-cg-board piece.dragging {
-  scale: 1.08;
-  filter: drop-shadow(0 6px 8px rgb(0 0 0 / 0.35));
-  transition: scale var(--transition-duration-micro) var(--ease-enter);
-}
-
 .cg-wrap piece.ghost {
   opacity: 0.25;
 }
@@ -263,10 +255,6 @@ cg-board square.cg-finale-draw {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  cg-board piece.dragging {
-    scale: 1;
-  }
-
   cg-board square.cg-finale-win,
   cg-board square.cg-finale-draw {
     animation: none;

@@ -22,7 +22,6 @@ import { useBoardAppearance, useCgBoardBackground } from "./useBoardAppearance";
 import { useBoardPolish } from "./useBoardPolish";
 import { restoreBoardConfig } from "./board-config";
 import {
-  DOTS_IN,
   PIECE_MOVE_MS,
   RAPID_STEP_MS,
   fadeInSquares,
@@ -142,12 +141,7 @@ export function BoardView() {
       draggable: { enabled: true, showGhost: true, distance: 3 },
       drawable: { enabled: true, visible: true, defaultSnapToValidMove: true },
       movable: { free: false, rookCastle: true },
-      premovable: { enabled: true, showDests: true, castle: true },
-      events: {
-        // Legal-move dots grow in when a piece is picked up.
-        select: () =>
-          window.requestAnimationFrame(() => fadeInSquares(elementRef.current, "square.move-dest, square.premove-dest", 120, DOTS_IN))
-      }
+      premovable: { enabled: true, showDests: true, castle: true }
     });
     groundRef.current = ground;
     return () => {
