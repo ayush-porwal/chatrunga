@@ -306,6 +306,9 @@ describe("game store", () => {
       expect(useGameStore.getState()).toMatchObject({ mode: "engine", engineSide: "black" });
       // Recorded as over: stepping back to an earlier move must not let the engine play on.
       expect(useGameStore.getState().gameOutcome).toEqual({ result: "0-1", termination: "checkmate" });
+      // Deleting the mating move: the game isn't finished any more.
+      useGameStore.getState().deleteLineFromNode(mate);
+      expect(useGameStore.getState().gameOutcome).toBeNull();
     });
 
     it("turns a match still being played (or a live online game) into a free board", () => {

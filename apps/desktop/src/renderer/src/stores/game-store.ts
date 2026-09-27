@@ -291,11 +291,16 @@ export const useGameStore = create<GameStore>((set, get) => {
       if (!parent) return false;
       const currentWasDeleted = idsToDelete.has(state.currentNodeId);
       const survivingCurrent = currentWasDeleted ? parent : nextTree.find((item) => item.id === state.currentNodeId);
+      // An outcome the final position decided (mate, stalemate, a draw by rule) goes with it once the
+      // main line no longer ends there; a resignation, flag or agreement stays.
+      const endFen = nextTree.find((item) => item.id === mainlineEndId(nextTree))?.fenAfter ?? state.rootFen;
+      const boardOutcome = state.gameOutcome && BOARD_TERMINATIONS.has(state.gameOutcome.termination);
       set({
         moveTree: nextTree,
         currentNodeId: survivingCurrent?.id ?? parent.id,
         currentFen: survivingCurrent?.fenAfter ?? parent.fenAfter,
-        lastError: null
+        lastError: null,
+        ...(boardOutcome && !statusForFen(endFen).isEnd ? { gameOutcome: null } : {})
       });
       return true;
     },
@@ -506,6 +511,9 @@ export function buildEngineGoClock(
     binc: Math.max(0, Math.floor(cfg.incrementMs))
   };
 }
+
+/** Terminations that come from the final position (restoreView records them for board-ended games). */
+const BOARD_TERMINATIONS = new Set(["checkmate", "stalemate", "draw"]);
 
 /** Engine games and online games: the user against an opponent the app moves for. */
 export function isMatchMode(mode: GameMode): boolean {
