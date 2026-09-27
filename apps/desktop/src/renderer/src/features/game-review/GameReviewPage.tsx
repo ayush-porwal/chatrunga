@@ -23,6 +23,7 @@ import { ReviewTape } from "./ReviewTape";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { PlayerRow } from "../board/PlayerIdentity";
 import { BoardStage, BoardWorkspace, workspaceTabsClass } from "../board/BoardWorkspace";
+import { EvalBar } from "../board/EvalBar";
 import { MoveNavigation } from "../board/MoveNavigation";
 import { useGameReviewCommentary } from "./useGameReviewCommentary";
 import { useStoreHintsOnLeave } from "../onboarding/Coachmark";
@@ -210,6 +211,7 @@ function GameReviewPageInner({
       panelLabel="Review"
       board={
         <BoardStage
+          evalBar={<EvalBar orientation={orientation} />}
           top={<PlayerRow name={boardTop.name} elo={boardTop.elo} color={boardTop.color} />}
           bottom={<PlayerRow name={boardBottom.name} elo={boardBottom.elo} color={boardBottom.color} />}
         >

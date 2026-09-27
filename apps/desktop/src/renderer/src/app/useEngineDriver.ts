@@ -208,7 +208,7 @@ export function useEngineDriver(defaultEngineId: string | null): void {
         missingEngineKey = null;
         analysis.setActiveEngine(engineId);
         analysis.setError(null);
-        analysis.setStatus("thinking");
+        analysis.startSearch();
         engines
           .startAnalysis({ engineId, fen: game.rootFen, moves: currentLineUcis(game.moveTree, game.currentNodeId), multipv: ANALYSIS_MULTIPV })
           .catch(reportEngineError);

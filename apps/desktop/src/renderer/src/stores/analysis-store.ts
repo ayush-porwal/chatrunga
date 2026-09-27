@@ -10,6 +10,8 @@ type AnalysisStore = {
   error: string | null;
   setActiveEngine: (engineId: string | null) => void;
   setStatus: (status: EngineStatus) => void;
+  /** A search of a new position begins: the previous position's lines no longer apply. */
+  startSearch: () => void;
   setInfo: (info: EngineInfo) => void;
   /** Apply a throttled batch of engine infos in one update (one render per batch). */
   setInfos: (infos: readonly EngineInfo[]) => void;
@@ -37,6 +39,7 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
   error: null,
   setActiveEngine: (activeEngineId) => set({ activeEngineId }),
   setStatus: (status) => set({ status }),
+  startSearch: () => set({ status: "thinking", latestInfo: null, topLines: [], bestMove: null }),
   setInfo: (latestInfo) => set((state) => mergeInfos(state.topLines, [latestInfo])),
   setInfos: (infos) => {
     if (infos.length) set((state) => mergeInfos(state.topLines, infos));
