@@ -219,6 +219,12 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
     updater.autoInstallOnAppQuit = mode === "auto" && !bundleSwap;
     if (bundleSwap) {
       const bundleUpdater = new MacBundleUpdater(bundlePath, join(app.getPath("userData"), "pending-update"));
+      const lastSwap = await bundleUpdater.lastSwapResult();
+      if (lastSwap?.installed) logger.info("updater", `last update installed (now ${this.state.currentVersion})`);
+      else if (lastSwap) {
+        logger.warn("updater", `last update failed to install: ${lastSwap.detail}`);
+        this.setStatus({ kind: "error", message: "The last update couldn’t be installed. It will download again." });
+      }
       await bundleUpdater.clearStaging();
       this.bundleUpdater = bundleUpdater;
       // A downloaded update installs on a normal quit too, without reopening the app.

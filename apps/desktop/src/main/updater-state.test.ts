@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -23,6 +23,7 @@ import {
   releasePageUrl,
   resolveUpdateMode,
   shouldAllowPrerelease,
+  swapResult,
   type UpdateEnvironment,
   type UpdateFeedConfig
 } from "./updater-state";
@@ -386,14 +387,24 @@ describe("BUNDLE_SWAP_SCRIPT", () => {
     expect(result.stdout.trim()).toBe("installed");
     expect(readFileSync(join(target, "Contents", "version"), "utf8")).toBe("new");
     expect(existsSync(staged)).toBe(false);
-    expect(existsSync(`${target}.previous-version`)).toBe(false);
+    expect(readdirSync(join(target, ".."))).toEqual(["Chaturanga.app"]);
   });
 
-  it("restores the previous version when the new bundle can't be moved in", () => {
+  it("leaves the app untouched when the new version can't be staged next to it", () => {
     const { root, target, script } = fixture();
     const result = spawnSync("/bin/sh", [script, deadPid(), target, join(root, "missing.app"), "0"], { encoding: "utf8" });
-    expect(result.stdout).toMatch(/previous version restored/);
+    expect(result.stdout.trim()).toBe("failed: could not copy the new version next to the app");
     expect(readFileSync(join(target, "Contents", "version"), "utf8")).toBe("old");
+    expect(readdirSync(join(target, ".."))).toEqual(["Chaturanga.app"]);
+  });
+
+  it("isn't confused by leftovers from an earlier run", () => {
+    const { target, staged, script } = fixture();
+    mkdirSync(`${target}.previous-version`, { recursive: true });
+    mkdirSync(`${target}.incoming-1`, { recursive: true });
+    const result = spawnSync("/bin/sh", [script, deadPid(), target, staged, "0"], { encoding: "utf8" });
+    expect(result.stdout.trim()).toBe("installed");
+    expect(readFileSync(join(target, "Contents", "version"), "utf8")).toBe("new");
   });
 
   it("handles paths with spaces and quotes", () => {
@@ -404,5 +415,16 @@ describe("BUNDLE_SWAP_SCRIPT", () => {
     const result = spawnSync("/bin/sh", [script, deadPid(), odd, staged, "0"], { encoding: "utf8" });
     expect(result.stdout.trim()).toBe("installed");
     expect(readFileSync(join(odd, "Contents", "version"), "utf8")).toBe("new");
+  });
+});
+
+describe("swapResult", () => {
+  it("reads the result line the swap script ends with", () => {
+    expect(swapResult("installed\n")).toEqual({ installed: true, detail: "installed" });
+    expect(swapResult("noise\nfailed: could not move the current version aside\n")).toEqual({
+      installed: false,
+      detail: "could not move the current version aside"
+    });
+    expect(swapResult("")).toBeNull();
   });
 });

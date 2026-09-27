@@ -147,32 +147,51 @@ export function macUpdateZip(
 /**
  * Swaps the downloaded bundle in once the app has quit (run detached by mac-bundle-updater.ts).
  * Arguments: pid, target bundle, staged bundle, relaunch (1/0). Waits up to 60s for the pid to exit,
- * renames the old bundle aside, moves the new one in, and puts the old one back if that fails.
- * Paths arrive as arguments, never interpolated into the script.
+ * then first moves the new bundle next to the app (a rename on the same volume, a copy across
+ * volumes: a failure here leaves the app untouched), so the swap itself is two renames within one
+ * folder. If the second rename fails the previous version is put back. Every run uses its own
+ * temporary names, so leftovers from an earlier run can't be moved into. The last line of output is
+ * the result: `installed` or `failed: <why>`. Paths arrive as arguments, never interpolated.
  */
 export const BUNDLE_SWAP_SCRIPT = `#!/bin/sh
 pid="$1"; target="$2"; staged="$3"; relaunch="$4"
-backup="$target.previous-version"
+incoming="$target.incoming-$$"
+backup="$target.previous-$$"
+finish() {
+  echo "$1"
+  if [ "$relaunch" = "1" ] && [ -d "$target" ]; then open "$target"; fi
+  exit 0
+}
 i=0
 while kill -0 "$pid" 2>/dev/null; do
   i=$((i + 1))
-  if [ "$i" -gt 600 ]; then echo "app did not quit"; exit 1; fi
+  if [ "$i" -gt 600 ]; then finish "failed: the app did not quit"; fi
   sleep 0.1
 done
-rm -rf "$backup"
-if mv "$target" "$backup"; then
-  if mv "$staged" "$target"; then
-    rm -rf "$backup"
-    echo "installed"
-  else
-    mv "$backup" "$target"
-    echo "install failed, previous version restored"
-  fi
-else
-  echo "could not move the current version aside"
+if ! mv "$staged" "$incoming"; then
+  rm -rf "$incoming"
+  finish "failed: could not copy the new version next to the app"
 fi
-if [ "$relaunch" = "1" ]; then open "$target"; fi
+if ! mv "$target" "$backup"; then
+  rm -rf "$incoming"
+  finish "failed: could not move the current version aside"
+fi
+if mv "$incoming" "$target"; then
+  rm -rf "$backup" 2>/dev/null
+  finish "installed"
+fi
+rm -rf "$incoming"
+if mv "$backup" "$target"; then finish "failed: the previous version was restored"; fi
+finish "failed: the previous version is at $backup"
 `;
+
+/** The result line `BUNDLE_SWAP_SCRIPT` logged last (`installed` / `failed: …`); null when none. */
+export function swapResult(log: string): { installed: boolean; detail: string } | null {
+  const last = log.trim().split("\n").pop()?.trim() ?? "";
+  if (last === "installed") return { installed: true, detail: last };
+  if (last.startsWith("failed:")) return { installed: false, detail: last.slice("failed:".length).trim() };
+  return null;
+}
 
 /** Our artifact names carry the CPU: `arm64` builds say so, anything else is x64. */
 function isForArch(fileName: string, arch: string): boolean {

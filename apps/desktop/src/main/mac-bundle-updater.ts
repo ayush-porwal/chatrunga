@@ -17,25 +17,27 @@ import { net } from "electron";
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createWriteStream, writeFileSync } from "node:fs";
-import { access, constants, mkdir, readdir, rm } from "node:fs/promises";
+import { access, constants, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { errorMessage, logger } from "./logger";
-import { BUNDLE_SWAP_SCRIPT, isSwappableBundlePath } from "./updater-state";
+import { BUNDLE_SWAP_SCRIPT, isSwappableBundlePath, swapResult } from "./updater-state";
 
 /** The .app that contains the running executable (`…/Chaturanga.app/Contents/MacOS/Chaturanga`). */
 export function runningBundlePath(execPath: string): string {
   return dirname(dirname(dirname(execPath)));
 }
 
-/** Whether this bundle can be replaced in place: a real, writable location (not a DMG or translocated copy). */
+/**
+ * Whether this bundle can be replaced in place: not a DMG or translocated copy, in a folder we can
+ * write (the swap renames the bundle's entry there; nothing inside the bundle is written).
+ */
 export async function canReplaceBundle(bundlePath: string): Promise<boolean> {
   if (!isSwappableBundlePath(bundlePath)) return false;
   try {
     await access(dirname(bundlePath), constants.W_OK);
-    await access(bundlePath, constants.W_OK);
     return true;
   } catch {
     return false;
@@ -58,9 +60,38 @@ export class MacBundleUpdater {
     return this.staged?.version ?? null;
   }
 
-  /** Clears a previous session's leftovers (a download interrupted by quitting). */
+  /**
+   * Clears a previous session's leftovers (a download interrupted by quitting). If that session's
+   * swap script is still waiting to move the staged bundle (the app was reopened right after
+   * quitting), it waits for the script first, so the update isn't deleted from under it.
+   */
   async clearStaging(): Promise<void> {
+    await this.waitForPendingSwap();
     await rm(this.stagingRoot, { recursive: true, force: true });
+  }
+
+  /**
+   * The outcome of the last session's swap (the script's log), read before staging is cleared so a
+   * failed install is reported rather than silently lost. Null when no swap ran.
+   */
+  async lastSwapResult(): Promise<{ installed: boolean; detail: string } | null> {
+    await this.waitForPendingSwap();
+    return this.readSwapResult();
+  }
+
+  private async readSwapResult(): Promise<{ installed: boolean; detail: string } | null> {
+    return swapResult(await readFile(join(this.stagingRoot, "swap.log"), "utf8").catch(() => ""));
+  }
+
+  private async waitForPendingSwap(): Promise<void> {
+    // A logged result means the script is done (and a pid from before a reboot may belong to anything).
+    if (await this.readSwapResult()) return;
+    const pid = Number((await readFile(join(this.stagingRoot, "swap.pid"), "utf8").catch(() => "")).trim());
+    if (!Number.isInteger(pid) || pid <= 0) return;
+    // The script gives up after 60s of waiting for the app, so this can't hang for long.
+    for (let waited = 0; waited < 70_000 && isRunning(pid); waited += 200) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
   }
 
   /** Downloads, verifies and unpacks `update`. Rejects with a readable-enough error on any failure. */
@@ -134,8 +165,18 @@ export class MacBundleUpdater {
       { detached: true, stdio: "ignore", env: { PATH: "/usr/bin:/bin:/usr/sbin:/sbin", LOG: log } }
     );
     child.unref();
+    if (child.pid) writeFileSync(join(this.stagingRoot, "swap.pid"), String(child.pid));
     logger.info("updater", `swapping in ${this.staged.version} after quit (relaunch: ${options.relaunch})`);
     return true;
+  }
+}
+
+function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
   }
 }
 

@@ -50,12 +50,27 @@ async function fileSize(path: string): Promise<number> {
   }
 }
 
+/** Downloads in flight, per source: a second request for the same database joins the first. */
+const inFlight = new Map<string, Promise<InstalledDatabase>>();
+
 /**
  * Streams a catalogued source into `userData/databases`, reporting progress. The data goes to a
  * `.part` file that is renamed into place only once complete, and a download cut short (the app
- * quit, e.g. to install an update, or the network dropped) resumes from where it stopped.
+ * quit, e.g. to install an update, or the network dropped) resumes from where it stopped — but only
+ * a partial whose server version (ETag / Last-Modified) was recorded, so two versions never mix.
  */
-export async function downloadDatabase(sourceId: string, onProgress: ProgressSink): Promise<InstalledDatabase> {
+export function downloadDatabase(sourceId: string, onProgress: ProgressSink): Promise<InstalledDatabase> {
+  const running = inFlight.get(sourceId);
+  if (running) return running;
+  const download = runDownload(sourceId, onProgress).finally(() => inFlight.delete(sourceId));
+  inFlight.set(sourceId, download);
+  return download;
+}
+
+/** Byte offsets must address the file as stored, so no transfer encoding (gzip) may apply. */
+const IDENTITY = { "Accept-Encoding": "identity" };
+
+async function runDownload(sourceId: string, onProgress: ProgressSink): Promise<InstalledDatabase> {
   const source = externalDatabaseSources.find((item) => item.id === sourceId);
   if (!source) throw new Error("Database source not found");
   const dir = join(app.getPath("userData"), "databases");
@@ -65,39 +80,31 @@ export async function downloadDatabase(sourceId: string, onProgress: ProgressSin
   // The server's ETag / Last-Modified for the `.part` file: a resume only continues the same file.
   const validatorPath = `${partPath}.validator`;
 
-  if (externalDatabaseRepository.getBySource(source.id)) {
-    // A fresh copy of an installed database: start over.
+  const validator = (await readFile(validatorPath, "utf8").catch(() => "")).trim();
+  if (!validator) {
+    // A partial with no recorded version can't be continued safely: start over.
     await unlink(partPath).catch(() => undefined);
-    await unlink(validatorPath).catch(() => undefined);
-  } else {
-    // Older builds wrote straight to the final name, so an interrupted download left a partial file
-    // there with no row: resume it (a complete one is simply confirmed by the server's 416).
-    await rename(filePath, partPath).catch((error: unknown) => {
-      if (!isMissingFile(error)) throw error;
-    });
   }
-
-  const offset = await fileSize(partPath);
-  const validator = offset ? (await readFile(validatorPath, "utf8").catch(() => "")).trim() : "";
+  const offset = validator ? await fileSize(partPath) : 0;
   // If-Range: the server sends the rest only if the file is unchanged, otherwise all of it (200).
-  let response = await fetch(
+  const response = await fetch(
     source.url,
-    offset ? { headers: { Range: `bytes=${offset}-`, ...(validator ? { "If-Range": validator } : {}) } } : undefined
+    offset ? { headers: { ...IDENTITY, Range: `bytes=${offset}-`, "If-Range": validator } } : { headers: IDENTITY }
   );
   if (response.status === 416 && offset) {
-    // Nothing left to fetch: the partial file is already the whole database.
     await response.body?.cancel();
-    return finishDownload(source, partPath, filePath, onProgress, null);
-  }
-  if (response.status === 206 && !validator) {
-    // A partial file with no record of which version it came from can't be continued safely.
-    await response.body?.cancel();
-    response = await fetch(source.url);
+    // Same version, nothing past `offset`: complete only if it is exactly the file's length.
+    if (rangeTotal(response.headers.get("content-range")) === offset) {
+      return finishDownload(source, partPath, filePath, onProgress, null);
+    }
+    await unlink(partPath).catch(() => undefined);
+    await unlink(validatorPath).catch(() => undefined);
+    return runDownload(sourceId, onProgress);
   }
   if (!response.ok || !response.body) {
     throw new Error(`Download failed (${response.status} ${response.statusText})`);
   }
-  // 206: the server continues after `offset`; 200: it ignored the range, so start over.
+  // 206: the server continues after `offset`; 200: a new version, or no range asked: start over.
   const resumed = response.status === 206;
   const startBytes = resumed ? offset : 0;
   if (!resumed) {
@@ -210,6 +217,12 @@ export async function samplePuzzle(input: PuzzleSampleInput): Promise<PuzzleSamp
 
   if (!selected) throw new Error("No puzzle matched those filters. Try fewer themes or a wider rating range.");
   return selected;
+}
+
+/** The full length a 416 reports (`Content-Range: bytes` + `*` + `/N`); null when absent or malformed. */
+function rangeTotal(value: string | null): number | null {
+  const match = /^bytes \*\/(\d+)$/.exec(value?.trim() ?? "");
+  return match ? Number(match[1]) : null;
 }
 
 function parseContentLength(value: string | null): number | null {

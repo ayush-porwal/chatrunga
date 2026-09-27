@@ -29,11 +29,14 @@ const finalPath = join(dir, "lichess-puzzles-lichess_db_puzzle.csv.zst");
 function fakeServer(content: Buffer, etag: string, options: { failAfter?: number } = {}) {
   const requests: Array<Record<string, string>> = [];
   const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
-    const headers = (init?.headers ?? {}) as Record<string, string>;
+    const { "Accept-Encoding": encoding, ...headers } = (init?.headers ?? {}) as Record<string, string>;
+    expect(encoding).toBe("identity");
     requests.push(headers);
     const range = /^bytes=(\d+)-$/.exec(headers.Range ?? "");
     const rangeApplies = range && (!headers["If-Range"] || headers["If-Range"] === etag);
-    if (range && rangeApplies && Number(range[1]) >= content.length) return new Response(null, { status: 416 });
+    if (range && rangeApplies && Number(range[1]) >= content.length) {
+      return new Response(null, { status: 416, headers: { "content-range": `bytes */${content.length}` } });
+    }
     const start = range && rangeApplies ? Number(range[1]) : 0;
     const body = content.subarray(start);
     const failAfter = options.failAfter;
@@ -99,24 +102,55 @@ describe("downloadDatabase", () => {
     expect(await readFile(finalPath)).toEqual(updated);
   });
 
-  it("adopts a complete file an older build left without a row", async () => {
+  it("finishes a partial the server confirms is already complete", async () => {
     await mkdir(dir, { recursive: true });
-    await writeFile(finalPath, content);
+    await writeFile(`${finalPath}.part`, content);
+    await writeFile(`${finalPath}.part.validator`, '"v1"');
     const server = fakeServer(content, '"v1"');
     vi.stubGlobal("fetch", server.fetchMock);
     await downloadDatabase(SOURCE, () => undefined);
-    expect(server.requests).toEqual([{ Range: `bytes=${content.length}-` }]);
+    expect(server.requests).toEqual([{ Range: `bytes=${content.length}-`, "If-Range": '"v1"' }]);
     expect(await readFile(finalPath)).toEqual(content);
-    expect(rows.has(SOURCE)).toBe(true);
+    expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst"]);
   });
 
-  it("restarts a partial file an older build left, since its version is unknown", async () => {
+  it("starts over when a partial is longer than the server's file", async () => {
     await mkdir(dir, { recursive: true });
-    await writeFile(finalPath, content.subarray(0, 1000));
+    await writeFile(`${finalPath}.part`, Buffer.concat([content, Buffer.from("stale tail")]));
+    await writeFile(`${finalPath}.part.validator`, '"v1"');
     const server = fakeServer(content, '"v1"');
     vi.stubGlobal("fetch", server.fetchMock);
     await downloadDatabase(SOURCE, () => undefined);
-    expect(server.requests).toEqual([{ Range: "bytes=1000-" }, {}]);
+    expect(server.requests).toEqual([{ Range: `bytes=${content.length + 10}-`, "If-Range": '"v1"' }, {}]);
+    expect(await readFile(finalPath)).toEqual(content);
+  });
+
+  it("never continues a partial whose version wasn't recorded", async () => {
+    await mkdir(dir, { recursive: true });
+    await writeFile(`${finalPath}.part`, content.subarray(0, 1000));
+    const server = fakeServer(content, '"v1"');
+    vi.stubGlobal("fetch", server.fetchMock);
+    await downloadDatabase(SOURCE, () => undefined);
+    expect(server.requests).toEqual([{}]);
+    expect(await readFile(finalPath)).toEqual(content);
+  });
+
+  it("resumes a refresh of an installed database too", async () => {
+    rows.set(SOURCE, { id: SOURCE, sourceId: SOURCE, filePath: finalPath });
+    const server = fakeServer(content, '"v1"', { failAfter: 2000 });
+    vi.stubGlobal("fetch", server.fetchMock);
+    await expect(downloadDatabase(SOURCE, () => undefined)).rejects.toThrow();
+    await downloadDatabase(SOURCE, () => undefined);
+    expect(server.requests[1]).toEqual({ Range: "bytes=2000-", "If-Range": '"v1"' });
+    expect(await readFile(finalPath)).toEqual(content);
+  });
+
+  it("joins a second request for a database that is already downloading", async () => {
+    const server = fakeServer(content, '"v1"');
+    vi.stubGlobal("fetch", server.fetchMock);
+    const [first, second] = await Promise.all([downloadDatabase(SOURCE, () => undefined), downloadDatabase(SOURCE, () => undefined)]);
+    expect(first).toBe(second);
+    expect(server.requests).toHaveLength(1);
     expect(await readFile(finalPath)).toEqual(content);
   });
 });
