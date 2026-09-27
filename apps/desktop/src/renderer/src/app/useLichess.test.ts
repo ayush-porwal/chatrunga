@@ -58,7 +58,7 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 describe("startLichessSync", () => {
   let bridge: ReturnType<typeof fakeBridge>;
   let stop: () => void;
-  const openGame = vi.fn();
+  const openGame = vi.fn((load: () => void) => load());
 
   beforeEach(async () => {
     useGameStore.getState().reset();

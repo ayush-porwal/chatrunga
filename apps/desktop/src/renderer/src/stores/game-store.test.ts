@@ -278,4 +278,37 @@ describe("game store", () => {
       expect(state.engineClockLive?.stoppedAt).toBeTypeOf("number");
     });
   });
+
+  describe("restoreView", () => {
+    it("brings back a finished engine game with its result", () => {
+      useGameStore.getState().makeMove({ from: "e2", to: "e4" });
+      const node = useGameStore.getState().currentNodeId;
+      useGameStore.getState().undo();
+      useGameStore.getState().restoreView({
+        currentNodeId: node,
+        mode: "engine",
+        source: "engine-game",
+        engineSide: "black",
+        orientation: "white",
+        gameOutcome: { result: "1-0", termination: "Player resign" }
+      });
+      const state = useGameStore.getState();
+      expect(state).toMatchObject({ mode: "engine", engineSide: "black", currentNodeId: node });
+      expect(state.gameOutcome?.result).toBe("1-0");
+    });
+
+    it("turns a match still being played (or a live online game) into a free board", () => {
+      for (const mode of ["engine", "online"] as const) {
+        useGameStore.getState().restoreView({ currentNodeId: "root", mode, source: "new", engineSide: "black", orientation: "white", gameOutcome: null });
+        expect(useGameStore.getState()).toMatchObject({ mode: "freeplay", engineSide: null, engineClockLive: null });
+      }
+    });
+
+    it("keeps the cursor where it is when the saved node no longer exists", () => {
+      useGameStore.getState().makeMove({ from: "e2", to: "e4" });
+      const node = useGameStore.getState().currentNodeId;
+      useGameStore.getState().restoreView({ currentNodeId: "gone", mode: "analysis", source: "analysis", engineSide: null, orientation: "black", gameOutcome: null });
+      expect(useGameStore.getState()).toMatchObject({ currentNodeId: node, mode: "analysis", orientation: "black" });
+    });
+  });
 });

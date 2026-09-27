@@ -1,17 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Upload } from "lucide-react";
-import { useGameStore } from "../../stores/game-store";
+import type { GameSession } from "@chaturanga/shared/types/chess";
 import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
-import { useReviewStore } from "../../stores/review-store";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 
-export function PgnImportDialog({ onClose }: { onClose: () => void }) {
+/** Paste or open a PGN; the game goes to App (`onImported`), which puts it on the board. */
+export function PgnImportDialog({ onClose, onImported }: { onClose: () => void; onImported: (game: GameSession) => void }) {
   const [pgn, setPgn] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const loadGame = useGameStore((state) => state.loadGame);
   // Closed while an import was loading (a Lichess game started and took the board): drop it, even
   // if that game has already ended. A game on right now also keeps the board before the dialog closes.
   const open = useRef(true);
@@ -30,8 +29,7 @@ export function PgnImportDialog({ onClose }: { onClose: () => void }) {
     try {
       const imported = await window.chaturanga.games.importPgn({ pgn: text });
       if (!open.current || selectLiveGameInProgress(useLichessStore.getState())) return;
-      useReviewStore.getState().reset();
-      loadGame(imported.game);
+      onImported(imported.game);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to import PGN");

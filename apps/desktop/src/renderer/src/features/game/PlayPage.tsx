@@ -66,6 +66,8 @@ const clockGroups: Array<(typeof clockPresets)[number]["group"]> = [
 
 type EngineGameSetupProps = {
   onOpenSettings: () => void;
+  /** Right before the engine game replaces the board (history keeps the board being left). */
+  onBeforeStart: () => void;
   onStart: () => void;
 };
 
@@ -128,7 +130,7 @@ export const PlayPage = memo(function PlayPage(
 
 type EngineGameSetupState = ReturnType<typeof useEngineGameSetup>;
 
-function useEngineGameSetup({ onOpenSettings, onStart }: EngineGameSetupProps) {
+function useEngineGameSetup({ onOpenSettings, onBeforeStart, onStart }: EngineGameSetupProps) {
   const engines = useEnginesQuery();
   // Actions and initial values only; `matchRunning` is the one live value the page renders.
   const game = useGameStore.getState();
@@ -172,6 +174,7 @@ function useEngineGameSetup({ onOpenSettings, onStart }: EngineGameSetupProps) {
     if (!selectedEngine?.isAvailable) return;
     const engineColor: Color = humanColor === "white" ? "black" : "white";
     const clock = resolveClockMs();
+    onBeforeStart();
     game.reset();
     game.setOrientation(humanColor);
     game.setGameSource("engine-game");

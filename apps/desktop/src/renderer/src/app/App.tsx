@@ -4,6 +4,7 @@ import { useShallow } from "zustand/react/shallow";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import { createGameFromFen } from "@chaturanga/shared/chess/pgn";
 import type { PuzzleSample, PuzzleSampleInput } from "@chaturanga/shared/types/database";
+import type { GameSession } from "@chaturanga/shared/types/chess";
 import { defaultSettings } from "@chaturanga/shared/types/settings";
 import { Notice } from "@/components/ui/notice";
 import { hasDesktopApi, isElectronMac } from "@/lib/environment";
@@ -33,6 +34,7 @@ import { useGameStore } from "../stores/game-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
 import { useReviewStore } from "../stores/review-store";
 import { selectLiveGameInProgress, useLichessStore } from "../stores/lichess-store";
+import { useHistoryStore, type BoardSnapshot, type HistoryEntry } from "../stores/history-store";
 import { AppSidebar } from "./AppSidebar";
 import { AppTitlebar, GameTitlebar, LiveGameButton, PageTitle, ReviewTitlebar } from "./AppTitlebar";
 import { GameWorkspace, type SideTab } from "./GameWorkspace";
@@ -42,9 +44,13 @@ import { useBoardShortcuts } from "./useBoardShortcuts";
 import { useEngineDriver } from "./useEngineDriver";
 import { useGameAutosave } from "./useGameAutosave";
 import { useLichess } from "./useLichess";
+import { useHistoryShortcuts } from "./useHistoryShortcuts";
 import { useMoveKeyboardShortcuts } from "./useMoveKeyboardShortcuts";
 import { useMoveSounds } from "./useMoveSounds";
 import { cancelActiveReview, useReviewRunner } from "./useReviewRunner";
+
+/** How a navigation enters Back / Forward (see showView). */
+type HistoryMode = "push" | "replace" | "none";
 
 type AppView = "home" | "game" | "settings" | "play" | "puzzles" | "databases" | "game-review";
 
@@ -128,7 +134,7 @@ export function App() {
     gameSource !== "puzzle" &&
     (gameMode === "freeplay" || ((gameMode === "engine" || gameMode === "online") && gameDecided));
 
-  useLichess({ onGameStart: () => startOnlineGame() });
+  useLichess({ onGameStart: (load) => startOnlineGame(load) });
   useMoveKeyboardShortcuts();
   useEngineDriver(defaultEngineId);
   useGameAutosave();
@@ -142,11 +148,149 @@ export function App() {
     onEngineMissing: openReviewSettings
   });
 
-  /** Switches the view, leaving the review route when going anywhere else. */
-  function showView(view: AppView) {
+  /**
+   * Switches the view, leaving the review route when going anywhere else. `history`: "push" adds
+   * the new screen to Back / Forward (after the caller committed the one being left), "replace"
+   * swaps the current entry, "none" (Back / Forward themselves) records nothing.
+   */
+  function showView(view: AppView, history: HistoryMode = "push", tab: SideTab = sideTab) {
     latestNavigation.current += 1;
     // The route change belongs to the same view transition, so the old snapshot is the real old view.
-    setAppView(view, onReviewRoute && view !== "game-review" ? () => navigate("/") : undefined);
+    setAppView(view, onReviewRoute && view !== "game-review" ? () => navigate("/", { replace: true }) : undefined);
+    record(history, historyEntry(view, tab));
+  }
+
+  // ---- Back / Forward -------------------------------------------------------------------------
+
+  /** The board as it is now, for a history entry. */
+  function boardSnapshot(tab: SideTab): BoardSnapshot {
+    const game = currentGame();
+    const puzzle = game.mode === "puzzle" ? usePuzzleStore.getState().activePuzzle : null;
+    return {
+      gameId: game.gameId,
+      // Nothing to reload an unsaved game from: keep it whole.
+      session: game.gameId ? null : game.toSession(),
+      currentNodeId: game.currentNodeId,
+      mode: game.mode,
+      source: game.source,
+      engineSide: game.engineSide,
+      orientation: game.orientation,
+      gameOutcome: game.gameOutcome,
+      tab,
+      puzzle: puzzle ? { sample: puzzle, config: activePuzzleConfig } : null,
+      lichessGameId: game.mode === "online" ? (useLichessStore.getState().live?.id ?? null) : null
+    };
+  }
+
+  function historyEntry(view: AppView, tab: SideTab = sideTab): HistoryEntry {
+    switch (view) {
+      case "settings":
+        return { view, section: settingsSection };
+      case "play":
+        return { view, opponent: useLichessStore.getState().playOpponent };
+      case "game":
+        return { view, board: boardSnapshot(tab) };
+      case "game-review":
+        return { view, board: boardSnapshot("notation"), tab: reviewTab };
+      default:
+        return { view };
+    }
+  }
+
+  function record(mode: HistoryMode, entry: HistoryEntry) {
+    if (mode === "push") useHistoryStore.getState().push(entry);
+    else if (mode === "replace") useHistoryStore.getState().replaceCurrent(entry);
+  }
+
+  /** Saves the screen being left as it is now (so Back returns to it as it was left). */
+  function commitCurrent() {
+    useHistoryStore.getState().commitCurrent(historyEntry(appView));
+  }
+
+  /** Back (-1) / Forward (+1). A Lichess game being played keeps the board. */
+  function goHistory(delta: -1 | 1) {
+    const history = useHistoryStore.getState();
+    const target = history.entries[history.index + delta];
+    if (!target) return;
+    const live = useLichessStore.getState().live;
+    if (live && !live.over && replacesLiveBoard(target, live.id)) {
+      showGame("notation", "none");
+      currentGame().setMatchFeedback("Finish your Lichess game first.");
+      return;
+    }
+    commitCurrent();
+    history.moveTo(history.index + delta);
+    void restoreEntry(target);
+  }
+
+  async function restoreEntry(entry: HistoryEntry) {
+    switch (entry.view) {
+      case "home":
+        showView("home", "none");
+        return;
+      case "settings":
+        setSettingsSection(entry.section as SettingsSectionId | null);
+        showView("settings", "none");
+        return;
+      case "play":
+        if (entry.opponent) useLichessStore.getState().setPlayOpponent(entry.opponent);
+        openPlayPage("none");
+        return;
+      case "puzzles":
+        openPuzzlesPage("none");
+        return;
+      case "databases":
+        openDatabasesPage("none");
+        return;
+      case "game":
+        if (await restoreBoard(entry.board)) showGame(entry.board.tab, "none");
+        return;
+      case "game-review": {
+        if (!(await restoreBoard(entry.board))) return;
+        currentGame().setMode("freeplay");
+        setReviewTab(entry.tab as ReviewTab);
+        const id = entry.board.gameId ?? "current";
+        latestNavigation.current += 1;
+        setAppView("game-review", () => navigate(`/games/${id}/review`, { replace: true }));
+      }
+    }
+  }
+
+  /** Puts a history entry's board back. False when it can't be (the game was deleted, a newer navigation won). */
+  async function restoreBoard(snapshot: BoardSnapshot): Promise<boolean> {
+    const request = ++latestNavigation.current;
+    // A live Lichess game can only be the one on the board now (goHistory checked that).
+    if (snapshot.lichessGameId && snapshot.lichessGameId === useLichessStore.getState().live?.id) return true;
+    // A puzzle starts again (never restored mid-solution).
+    if (snapshot.puzzle) {
+      startPuzzle(snapshot.puzzle.sample, snapshot.puzzle.config as PuzzleSessionConfig, "none");
+      return false;
+    }
+    if (snapshot.gameId && snapshot.gameId !== currentGame().gameId) {
+      const saved = await window.chaturanga?.games.get(snapshot.gameId).catch(() => null);
+      if (request !== latestNavigation.current) return false;
+      if (!saved) {
+        currentGame().setMatchFeedback("That game was deleted.");
+        return false;
+      }
+      stopEngineWork();
+      clearPuzzleSession();
+      openSavedGame(saved);
+    } else if (!snapshot.gameId && snapshot.session) {
+      stopEngineWork();
+      useReviewStore.getState().reset();
+      clearPuzzleSession();
+      currentGame().loadGame(snapshot.session);
+    } else {
+      stopEngineWork({ stopSearch: snapshot.mode !== "analysis" });
+      clearPuzzleSession();
+    }
+    currentGame().restoreView(snapshot);
+    if (snapshot.mode === "analysis" && defaultEngineId && !useAnalysisStore.getState().activeEngineId) {
+      useAnalysisStore.getState().setActiveEngine(defaultEngineId);
+    }
+    setFocusMode(false);
+    return true;
   }
 
   function clearPuzzleSession() {
@@ -162,9 +306,9 @@ export function App() {
     useAnalysisStore.getState().reset();
   }
 
-  function showGame(tab: SideTab = "notation") {
+  function showGame(tab: SideTab = "notation", history: HistoryMode = "push") {
     setSideTab(tab);
-    showView("game");
+    showView("game", history, tab);
   }
 
   async function exportPgn() {
@@ -180,16 +324,23 @@ export function App() {
     const imported = await window.chaturanga.games.importPgn({ pgn: file.contents });
     // A Lichess game (or another navigation) started meanwhile: it keeps the board.
     if (request !== latestNavigation.current) return;
+    loadImportedGame(imported.game);
+  }
+
+  /** An imported PGN (file or the paste dialog) onto the board. */
+  function loadImportedGame(game: GameSession) {
+    commitCurrent();
     stopEngineWork();
     useReviewStore.getState().reset();
     clearPuzzleSession();
-    currentGame().loadGame(imported.game);
+    currentGame().loadGame(game);
     currentGame().setMode("freeplay");
     showGame();
   }
 
-  /** A Lichess game of yours began: clear the board's other activity and show it (useLichess loads it). */
-  function startOnlineGame() {
+  /** A Lichess game of yours began: clear the board's other activity, load it (`load`) and show it. */
+  function startOnlineGame(load: () => void) {
+    commitCurrent();
     // Close anything that could still load another game onto the board (showGame below also
     // invalidates board loads in flight: an import or a saved game resolving after this point).
     setImportOpen(false);
@@ -198,6 +349,7 @@ export function App() {
     useReviewStore.getState().reset();
     clearPuzzleSession();
     setFocusMode(false);
+    load();
     showGame();
   }
 
@@ -213,6 +365,7 @@ export function App() {
 
   /** Play → Free board: an empty board to play both sides. */
   function startFreeBoard() {
+    commitCurrent();
     stopEngineWork();
     useReviewStore.getState().reset();
     clearPuzzleSession();
@@ -224,6 +377,7 @@ export function App() {
 
   function startLiveAnalysis() {
     if (!desktopApiAvailable) return;
+    commitCurrent();
     // No stop: the analysis effect restarts the search for the new mode (and keeps a running one).
     stopEngineWork({ stopSearch: false });
     useReviewStore.getState().reset();
@@ -237,23 +391,32 @@ export function App() {
     showGame("engine");
   }
 
-  /** Titlebar "Stop analysis": leave live analysis but keep the position and moves. */
+  /** Titlebar "Stop analysis": leave live analysis but keep the position and moves (not a step of its own). */
   function stopLiveAnalysis() {
     currentGame().setMode("freeplay");
     useAnalysisStore.getState().setStatus("idle");
+    record("replace", historyEntry("game"));
   }
 
-  /** "Analyze" in the titlebar / Engine tab: analyse the loaded game in place (keeps moves and review). */
+  /**
+   * "Analyze" in the titlebar / Engine tab: analyse the loaded game in place (keeps moves and
+   * review). A finished match's result and clocks are cleared (the headers keep the result): with
+   * them the board refuses moves and the engine won't search. Back returns to the game as it was.
+   */
   function analyzeCurrentPosition() {
     if (!desktopApiAvailable) return;
+    commitCurrent();
     currentGame().setEngineSide(null);
+    currentGame().clearEngineMatchExtras();
     currentGame().setMode("analysis");
     if (defaultEngineId && !useAnalysisStore.getState().activeEngineId) {
       useAnalysisStore.getState().setActiveEngine(defaultEngineId);
     }
+    record("push", historyEntry("game"));
   }
 
   async function openSelectedGameReview(gameId: string) {
+    commitCurrent();
     const request = ++latestNavigation.current;
     if (gameId !== "current" && gameId !== currentGame().gameId) {
       // Load the other game first and swap board + review together. Clearing the current
@@ -278,11 +441,13 @@ export function App() {
     setFocusMode(false);
     setReviewTab("commentary");
     setGameReviewPickerOpen(false);
-    setAppView("game-review", () => navigate(`/games/${gameId}/review`));
+    setAppView("game-review", () => navigate(`/games/${gameId}/review`, { replace: true }));
+    record("push", historyEntry("game-review"));
   }
 
   /** Home → Resume / a recent game: the board with that saved game (the loaded game is kept as is). */
   async function openSavedGameById(gameId: string) {
+    commitCurrent();
     const request = ++latestNavigation.current;
     if (gameId !== currentGame().gameId) {
       if (!window.chaturanga) return;
@@ -300,32 +465,43 @@ export function App() {
   }
 
   /** Play: the page with every way to start a game (Lichess, an engine, a free board). */
-  function openPlayPage() {
+  function openPlayPage(history: HistoryMode = "push") {
     if (!desktopApiAvailable) {
       startFreeBoard();
       return;
     }
+    if (history === "push") commitCurrent();
     // The engine keeps searching for a game still being played vs the engine; the page can end it.
     if (useGameStore.getState().mode !== "engine") stopEngineWork();
     clearPuzzleSession();
     setFocusMode(false);
-    showView("play");
+    showView("play", history);
   }
 
-  function openPuzzlesPage() {
+  function openPuzzlesPage(history: HistoryMode = "push") {
     if (!desktopApiAvailable) return;
+    if (history === "push") commitCurrent();
     stopEngineWork();
     currentGame().setMode("puzzle");
     currentGame().setGameSource("puzzle");
     setFocusMode(false);
-    showView("puzzles");
+    showView("puzzles", history);
   }
 
-  function openDatabasesPage() {
+  function openSettings(section: SettingsSectionId | null) {
+    commitCurrent();
+    setSettingsSection(section);
+    record("push", { view: "settings", section });
+    latestNavigation.current += 1;
+    setAppView("settings", onReviewRoute ? () => navigate("/", { replace: true }) : undefined);
+  }
+
+  function openDatabasesPage(history: HistoryMode = "push") {
     if (!desktopApiAvailable) return;
+    if (history === "push") commitCurrent();
     stopEngineWork();
     setFocusMode(false);
-    showView("databases");
+    showView("databases", history);
   }
 
   function playEngineFromCurrentPuzzlePosition() {
@@ -333,6 +509,7 @@ export function App() {
     const engine = engines.data?.find((item) => item.id === defaultEngineId) ?? engines.data?.[0];
     if (!engine) {
       void cancelActiveReview();
+      commitCurrent();
       showView("settings");
       return;
     }
@@ -344,6 +521,7 @@ export function App() {
     }
     const engineSide = position.turn;
     const humanSide = engineSide === "white" ? "black" : "white";
+    commitCurrent();
     stopEngineWork();
     useReviewStore.getState().reset();
     clearPuzzleSession();
@@ -375,8 +553,12 @@ export function App() {
     showGame();
   }
 
-  /** Loads a puzzle onto the board. `config` starts a new puzzle set; without it the set continues. */
-  function startPuzzle(puzzle: PuzzleSample, config?: PuzzleSessionConfig) {
+  /**
+   * Loads a puzzle onto the board. `config` starts a new puzzle set (a history step); without it the
+   * set continues (the next puzzle takes the current entry's place).
+   */
+  function startPuzzle(puzzle: PuzzleSample, config?: PuzzleSessionConfig, history: HistoryMode = config ? "push" : "replace") {
+    if (history === "push") commitCurrent();
     stopEngineWork();
     useReviewStore.getState().reset();
     usePuzzleStore.getState().setActivePuzzle(puzzle);
@@ -401,12 +583,13 @@ export function App() {
     currentGame().setMode("puzzle");
     currentGame().setGameSource("puzzle");
     currentGame().setOrientation(puzzle.sideToMove);
-    showGame();
+    showGame("notation", history);
   }
 
   function loadNextPuzzle() {
     void cancelActiveReview();
     if (!activePuzzleConfig?.databaseId) {
+      commitCurrent();
       showView("puzzles");
       return;
     }
@@ -427,20 +610,18 @@ export function App() {
         setActionRailOpen(true);
       } else setActionRailOpen((open) => !open);
     }),
-    home: useEventCallback(() => showView("home")),
-    settings: useEventCallback(() => {
-      setSettingsSection(null);
-      showView("settings");
+    home: useEventCallback(() => {
+      commitCurrent();
+      showView("home");
     }),
-    commentarySettings: useEventCallback(() => {
-      setSettingsSection("commentary");
-      showView("settings");
-    }),
-    engineSettings: useEventCallback(() => {
-      setSettingsSection("engines");
-      showView("settings");
-    }),
-    play: useEventCallback(openPlayPage),
+    settings: useEventCallback(() => openSettings(null)),
+    commentarySettings: useEventCallback(() => openSettings("commentary")),
+    engineSettings: useEventCallback(() => openSettings("engines")),
+    back: useEventCallback(() => goHistory(-1)),
+    forward: useEventCallback(() => goHistory(1)),
+    importedGame: useEventCallback((game: GameSession) => unlessOnlineGame(() => loadImportedGame(game))),
+    beforePlayStart: useEventCallback(commitCurrent),
+    play: useEventCallback(() => openPlayPage()),
     freeBoard: useEventCallback(() => unlessOnlineGame(startFreeBoard)),
     liveAnalysis: useEventCallback(() => unlessOnlineGame(startLiveAnalysis)),
     stopLiveAnalysis: useEventCallback(stopLiveAnalysis),
@@ -455,8 +636,8 @@ export function App() {
       useLichessStore.getState().setPlayOpponent("lichess");
       openPlayPage();
     }),
-    puzzles: useEventCallback(() => unlessOnlineGame(openPuzzlesPage)),
-    databases: useEventCallback(openDatabasesPage),
+    puzzles: useEventCallback(() => unlessOnlineGame(() => openPuzzlesPage())),
+    databases: useEventCallback(() => openDatabasesPage()),
     importPgn: useEventCallback(() => unlessOnlineGame(() => void importPgnFile())),
     exportPgn: useEventCallback(() => void exportPgn()),
     toggleFocus: useEventCallback(() => setFocusMode((value) => !value)),
@@ -467,10 +648,12 @@ export function App() {
     stopReview: useEventCallback(() => void cancelActiveReview()),
     showGame: useEventCallback(() => showGame()),
     startPuzzle: useEventCallback((config: PuzzleSessionConfig, puzzle: PuzzleSample) => startPuzzle(puzzle, config)),
+    openGameFromLibrary: useEventCallback((id: string) => unlessOnlineGame(() => void openSavedGameById(id))),
     nextPuzzle: useEventCallback(loadNextPuzzle),
     playEngineFromPuzzle: useEventCallback(playEngineFromCurrentPuzzlePosition),
     reviewCurrentGame: useEventCallback(() => void openSelectedGameReview("current"))
   };
+  useHistoryShortcuts({ onBack: on.back, onForward: on.forward });
   useBoardShortcuts({
     enabled: onBoardView,
     focused,
@@ -532,6 +715,8 @@ export function App() {
           windowControlsInset={windowControlsVisible}
           sidebarExpanded={sidebarExpanded}
           onToggleSidebar={on.toggleSidebar}
+          onBack={on.back}
+          onForward={on.forward}
         >
           {appView === "game-review" ? (
             <ReviewTitlebar
@@ -598,7 +783,7 @@ export function App() {
             ) : appView === "settings" ? (
               <SettingsPage initialSection={settingsSection} />
             ) : appView === "play" ? (
-              <PlayPage onOpenSettings={on.settings} onStart={on.showGame} onOpenLichessGame={on.showGame} onFreeBoard={on.freeBoard} />
+              <PlayPage onOpenSettings={on.settings} onBeforeStart={on.beforePlayStart} onStart={on.showGame} onOpenLichessGame={on.showGame} onFreeBoard={on.freeBoard} />
             ) : appView === "puzzles" ? (
               <PuzzlePage onDatabases={on.databases} onStart={on.startPuzzle} />
             ) : appView === "databases" ? (
@@ -616,6 +801,7 @@ export function App() {
               />
             ) : (
               <GameWorkspace
+                onOpenGame={on.openGameFromLibrary}
                 sideTab={sideTab}
                 onSideTabChange={setSideTab}
                 onStartAnalysis={
@@ -636,7 +822,7 @@ export function App() {
           onGoHome={on.home}
         />
       ) : null}
-      {importOpen ? <PgnImportDialog onClose={on.closeImportDialog} /> : null}
+      {importOpen ? <PgnImportDialog onClose={on.closeImportDialog} onImported={on.importedGame} /> : null}
       {gameReviewPickerOpen ? (
         <GameReviewPicker
           onClose={on.closeReviewPicker}
@@ -649,6 +835,13 @@ export function App() {
 }
 
 const currentGame = () => useGameStore.getState();
+
+/** Going to `entry` would take the board from the Lichess game being played. */
+function replacesLiveBoard(entry: HistoryEntry, liveGameId: string): boolean {
+  if (entry.view === "puzzles") return true; // opening Puzzles puts the board in puzzle mode
+  if (entry.view === "game" || entry.view === "game-review") return entry.board.lichessGameId !== liveGameId;
+  return false;
+}
 
 function puzzleInputFromConfig(config: PuzzleSessionConfig, databaseId: string, excludeIds: string[]): PuzzleSampleInput {
   return { databaseId, excludeIds, lichess: config.lichess, position: config.position };

@@ -3,21 +3,16 @@ import { Trash2 } from "lucide-react";
 import { useDeleteGameMutation, useGamesQuery } from "../../queries/api";
 import { useGameStore } from "../../stores/game-store";
 import { useReviewStore } from "../../stores/review-store";
-import { openSavedGame } from "./saved-game";
 import { cn } from "@/lib/utils";
 import { listRow } from "@/lib/ui";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconButton } from "@/components/ui/icon-button";
 
-export function RecentGames() {
+/** The workspace's Library tab. Opening a game goes through App (`onOpenGame`: history, engine teardown). */
+export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }) {
   const games = useGamesQuery();
   const removeGame = useDeleteGameMutation();
   const resetBoard = useGameStore((state) => state.reset);
-
-  async function openGame(id: string) {
-    if (!window.chaturanga) return;
-    openSavedGame(await window.chaturanga.games.get(id));
-  }
 
   async function deleteGame(id: string, event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -51,7 +46,7 @@ export function RecentGames() {
               <button
                 type="button"
                 className="grid min-w-0 flex-1 gap-0.5 rounded-md px-3 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
-                onClick={() => void openGame(game.id)}
+                onClick={() => onOpenGame(game.id)}
               >
                 <span className="truncate font-medium text-fg-secondary">
                   {game.white || "White"} vs {game.black || "Black"}

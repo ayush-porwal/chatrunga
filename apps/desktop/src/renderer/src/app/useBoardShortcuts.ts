@@ -5,10 +5,10 @@ import { useEventCallback } from "@/lib/use-event-callback";
 export const BOARD_SHORTCUTS = { focus: "F", flip: "X" } as const;
 
 /** An open dialog or menu owns Escape (it closes itself); focus mode must not also react to it. */
-const OVERLAY_SELECTOR = '[role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="menu"], [role="listbox"]';
+export const OVERLAY_SELECTOR = '[role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="menu"], [role="listbox"]';
 
 /** Text entry keeps its letters and its Escape (inputs, text areas, selects, editable text, comboboxes). */
-function isTyping(target: EventTarget | null): boolean {
+export function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) {
     return true;

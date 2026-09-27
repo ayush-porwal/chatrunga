@@ -98,6 +98,19 @@ type GameStore = {
   syncMainline: (ucis: readonly string[]) => boolean;
   /** Sets both clocks from the server; the side to move's clock runs from now unless `running` is false. */
   setMatchClock: (clock: { whiteMs: number; blackMs: number; sideToMove: Color; running: boolean }) => void;
+  /**
+   * Back / Forward: shows the loaded game the way it was (node, mode, sides). A match that was
+   * still being played comes back as a free board (the engine must not resume by itself, clocks
+   * would be stale); a finished engine game keeps its result.
+   */
+  restoreView: (view: {
+    currentNodeId: string;
+    mode: GameMode;
+    source: GameSource;
+    engineSide: Color | null;
+    orientation: Color;
+    gameOutcome: GameOutcome | null;
+  }) => void;
   setMatchFeedback: (message: string | null) => void;
   getClockForEngineGo: () => EngineGoClock | null;
   toSession: () => GameSession;
@@ -423,6 +436,27 @@ export const useGameStore = create<GameStore>((set, get) => {
         engineClockLive: { whiteMs, blackMs, sideToMove, turnStartedAt: at, ...(running ? {} : { stoppedAt: at }) }
       });
     },
+
+    restoreView: (view) =>
+      set((state) => {
+        const node = state.moveTree.find((item) => item.id === view.currentNodeId);
+        const decidedEngineGame = view.mode === "engine" && Boolean(view.gameOutcome && view.engineSide);
+        const mode: GameMode =
+          view.mode === "online" || view.mode === "puzzle" || (view.mode === "engine" && !decidedEngineGame) ? "freeplay" : view.mode;
+        return {
+          mode,
+          source: view.source,
+          orientation: view.orientation,
+          engineSide: decidedEngineGame ? view.engineSide : null,
+          gameOutcome: decidedEngineGame ? view.gameOutcome : null,
+          engineClock: null,
+          engineClockLive: null,
+          matchFeedback: null,
+          pendingPromotion: null,
+          lastError: null,
+          ...(node ? { currentNodeId: node.id, currentFen: node.fenAfter } : {})
+        };
+      }),
 
     setMatchFeedback: (message) => set({ matchFeedback: message }),
 

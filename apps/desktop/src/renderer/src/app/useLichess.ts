@@ -14,7 +14,7 @@ import { useLichessStore } from "../stores/lichess-store";
  * the result) and your moves are sent back. `onGameStart` switches the app to the board when a game
  * of yours begins (seek paired, challenge accepted, AI game, resume).
  */
-export function useLichess({ onGameStart }: { onGameStart: () => void }): void {
+export function useLichess({ onGameStart }: { onGameStart: (load: () => void) => void }): void {
   const openGame = useEventCallback(onGameStart);
   const refreshGames = useEventCallback(useRefreshGames());
 
@@ -36,7 +36,8 @@ export function startLichessSync({
 }: {
   api: ChaturangaApi["lichess"];
   events: Pick<ChaturangaApi["events"], "onLichessEvent">;
-  openGame: () => void;
+  /** Opens the board for a starting game: the app runs `load` between leaving its screen and showing the board. */
+  openGame: (load: () => void) => void;
   refreshGames: () => void;
 }): () => void {
   const lichess = useLichessStore.getState;
@@ -123,17 +124,18 @@ export function startLichessSync({
     pendingGameId = null;
     serverMoves = [];
     sending = null;
-    openGame();
-    const board = game();
-    board.loadGame(createGameFromFen({ fen: full.initialFen, source: "lichess", headers: lichessHeaders(full) }));
-    board.setOrientation(color);
-    board.setGameSource("lichess");
-    board.setMode("online");
-    board.setEngineSide(color === "white" ? "black" : "white");
-    board.setEngineMatchClock(full.clock);
-    board.setMatchFeedback(null);
-    lichess().setLive({ id: full.id, yourColor: color, full, drawOffer: null, connected: true, over: false });
-    applyState(full, full.state);
+    openGame(() => {
+      const board = game();
+      board.loadGame(createGameFromFen({ fen: full.initialFen, source: "lichess", headers: lichessHeaders(full) }));
+      board.setOrientation(color);
+      board.setGameSource("lichess");
+      board.setMode("online");
+      board.setEngineSide(color === "white" ? "black" : "white");
+      board.setEngineMatchClock(full.clock);
+      board.setMatchFeedback(null);
+      lichess().setLive({ id: full.id, yourColor: color, full, drawOffer: null, connected: true, over: false });
+      applyState(full, full.state);
+    });
   }
 
   function applyState(full: LichessGameFull, state: LichessGameState): void {
