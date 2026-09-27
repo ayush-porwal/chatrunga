@@ -42,4 +42,14 @@ describe("history store", () => {
     expect(history().entries).toHaveLength(HISTORY_LIMIT);
     expect(history().index).toBe(HISTORY_LIMIT - 1);
   });
+
+  it("drops an entry that can't be shown, keeping the current screen current", () => {
+    history().push({ view: "play", opponent: "engine" });
+    history().push({ view: "databases" });
+    history().removeAt(1);
+    expect(history().entries.map((entry) => entry.view)).toEqual(["home", "databases"]);
+    expect(history().index).toBe(1);
+    history().removeAt(1);
+    expect(history().entries).toHaveLength(2);
+  });
 });

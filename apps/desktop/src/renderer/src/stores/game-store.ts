@@ -440,7 +440,10 @@ export const useGameStore = create<GameStore>((set, get) => {
     restoreView: (view) =>
       set((state) => {
         const node = state.moveTree.find((item) => item.id === view.currentNodeId);
-        const decidedEngineGame = view.mode === "engine" && Boolean(view.gameOutcome && view.engineSide);
+        // Finished by a result (resignation, flag, agreement) or on the board (mate, stalemate, a draw by rule).
+        const endFen = state.moveTree.find((item) => item.id === mainlineEndId(state.moveTree))?.fenAfter ?? state.currentFen;
+        const decidedEngineGame =
+          view.mode === "engine" && Boolean(view.engineSide) && (Boolean(view.gameOutcome) || statusForFen(endFen).isEnd);
         const mode: GameMode =
           view.mode === "online" || view.mode === "puzzle" || (view.mode === "engine" && !decidedEngineGame) ? "freeplay" : view.mode;
         return {

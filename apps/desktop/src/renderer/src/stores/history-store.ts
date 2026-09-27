@@ -51,6 +51,8 @@ type HistoryStore = {
   /** Swaps the current entry (a change that isn't a step of its own, e.g. the next puzzle). */
   replaceCurrent: (entry: HistoryEntry) => void;
   moveTo: (index: number) => void;
+  /** Drops an entry that can't be shown any more (a deleted game), keeping the current one current. */
+  removeAt: (index: number) => void;
 };
 
 export const useHistoryStore = create<HistoryStore>((set) => ({
@@ -74,7 +76,13 @@ export const useHistoryStore = create<HistoryStore>((set) => ({
       entries[state.index] = entry;
       return { entries };
     }),
-  moveTo: (index) => set((state) => (index >= 0 && index < state.entries.length ? { index } : {}))
+  moveTo: (index) => set((state) => (index >= 0 && index < state.entries.length ? { index } : {})),
+  removeAt: (index) =>
+    set((state) => {
+      if (index < 0 || index >= state.entries.length || index === state.index) return {};
+      const entries = state.entries.filter((_, position) => position !== index);
+      return { entries, index: index < state.index ? state.index - 1 : state.index };
+    })
 }));
 
 /** Same screen in the same state (a repeated click on where you already are adds nothing). */

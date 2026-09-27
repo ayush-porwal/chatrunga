@@ -297,6 +297,15 @@ describe("game store", () => {
       expect(state.gameOutcome?.result).toBe("1-0");
     });
 
+    it("keeps an engine game that ended on the board (mate) as an engine game", () => {
+      for (const [from, to] of [["f2", "f3"], ["e7", "e5"], ["g2", "g4"], ["d8", "h4"]] as const) {
+        useGameStore.getState().makeMove({ from, to });
+      }
+      const mate = useGameStore.getState().currentNodeId;
+      useGameStore.getState().restoreView({ currentNodeId: mate, mode: "engine", source: "engine-game", engineSide: "black", orientation: "white", gameOutcome: null });
+      expect(useGameStore.getState()).toMatchObject({ mode: "engine", engineSide: "black" });
+    });
+
     it("turns a match still being played (or a live online game) into a free board", () => {
       for (const mode of ["engine", "online"] as const) {
         useGameStore.getState().restoreView({ currentNodeId: "root", mode, source: "new", engineSide: "black", orientation: "white", gameOutcome: null });

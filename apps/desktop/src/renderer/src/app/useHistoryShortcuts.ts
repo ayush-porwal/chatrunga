@@ -29,9 +29,14 @@ export function historyShortcut(
   return null;
 }
 
+/** Typing, or a dialog / menu open: history input would change the screen underneath it. */
+function historyInputBlocked(target: EventTarget | null): boolean {
+  return isTyping(target) || isTyping(document.activeElement) || Boolean(document.querySelector(OVERLAY_SELECTOR));
+}
+
 export function useHistoryShortcuts({ onBack, onForward }: { onBack: () => void; onForward: () => void }): void {
   const handleKeyDown = useEventCallback((event: KeyboardEvent) => {
-    if (isTyping(event.target) || isTyping(document.activeElement) || document.querySelector(OVERLAY_SELECTOR)) return;
+    if (historyInputBlocked(event.target)) return;
     const action = historyShortcut(event, isElectronMac());
     if (!action) return;
     event.preventDefault();
@@ -42,6 +47,7 @@ export function useHistoryShortcuts({ onBack, onForward }: { onBack: () => void;
   const handleMouseUp = useEventCallback((event: MouseEvent) => {
     if (event.button !== 3 && event.button !== 4) return;
     event.preventDefault();
+    if (historyInputBlocked(event.target)) return;
     if (event.button === 3) onBack();
     else onForward();
   });

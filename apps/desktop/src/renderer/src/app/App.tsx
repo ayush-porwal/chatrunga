@@ -72,6 +72,8 @@ export function App() {
   const [sideTab, setSideTab] = useState<SideTab>("notation");
   const [reviewTab, setReviewTab] = useState<ReviewTab>("commentary");
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId | null>(null);
+  /** The Settings section being read (scroll-spy), which history records; the state above is only where Settings opens. */
+  const viewedSettingsSection = useRef<SettingsSectionId | null>(null);
   const [focusMode, setFocusMode] = useState(false);
   /**
    * Bumped by every game open and every view change. A saved game that finishes loading after
@@ -185,9 +187,13 @@ export function App() {
   function historyEntry(view: AppView, tab: SideTab = sideTab): HistoryEntry {
     switch (view) {
       case "settings":
-        return { view, section: settingsSection };
-      case "play":
-        return { view, opponent: useLichessStore.getState().playOpponent };
+        return { view, section: viewedSettingsSection.current ?? settingsSection };
+      case "play": {
+        // The tab actually shown (an unchosen tab follows the account, which may change later).
+        const lichess = useLichessStore.getState();
+        const connected = Boolean(lichess.status.account) && !lichess.status.tokenRejected;
+        return { view, opponent: lichess.playOpponent ?? (connected ? "lichess" : "engine") };
+      }
       case "game":
         return { view, board: boardSnapshot(tab) };
       case "game-review":
@@ -207,71 +213,105 @@ export function App() {
     useHistoryStore.getState().commitCurrent(historyEntry(appView));
   }
 
+  /** A Back / Forward still loading its screen: further presses wait for it (the index moves once it's shown). */
+  const historyBusy = useRef(false);
+
   /** Back (-1) / Forward (+1). A Lichess game being played keeps the board. */
-  function goHistory(delta: -1 | 1) {
+  async function goHistory(delta: -1 | 1) {
+    if (historyBusy.current) return;
     const history = useHistoryStore.getState();
-    const target = history.entries[history.index + delta];
+    const targetIndex = history.index + delta;
+    const target = history.entries[targetIndex];
     if (!target) return;
     const live = useLichessStore.getState().live;
     if (live && !live.over && replacesLiveBoard(target, live.id)) {
-      showGame("notation", "none");
+      showGame(sideTab, "none");
       currentGame().setMatchFeedback("Finish your Lichess game first.");
       return;
     }
     commitCurrent();
-    history.moveTo(history.index + delta);
-    void restoreEntry(target);
+    historyBusy.current = true;
+    try {
+      const outcome = await restoreEntry(target);
+      // Only once the screen is shown: the index always names what's on screen.
+      if (outcome === "shown") useHistoryStore.getState().moveTo(targetIndex);
+      // A game deleted since: forget its entry (the next press goes past it).
+      else if (outcome === "gone") useHistoryStore.getState().removeAt(targetIndex);
+    } finally {
+      historyBusy.current = false;
+    }
   }
 
-  async function restoreEntry(entry: HistoryEntry) {
+  /** Shows a history entry: "shown", "gone" (its game was deleted) or "dropped" (a newer navigation won). */
+  async function restoreEntry(entry: HistoryEntry): Promise<"shown" | "gone" | "dropped"> {
     switch (entry.view) {
       case "home":
         showView("home", "none");
-        return;
+        return "shown";
       case "settings":
+        viewedSettingsSection.current = entry.section as SettingsSectionId | null;
         setSettingsSection(entry.section as SettingsSectionId | null);
         showView("settings", "none");
-        return;
+        return "shown";
       case "play":
         if (entry.opponent) useLichessStore.getState().setPlayOpponent(entry.opponent);
         openPlayPage("none");
-        return;
+        return "shown";
       case "puzzles":
         openPuzzlesPage("none");
-        return;
+        return "shown";
       case "databases":
         openDatabasesPage("none");
-        return;
-      case "game":
-        if (await restoreBoard(entry.board)) showGame(entry.board.tab, "none");
-        return;
+        return "shown";
+      case "game": {
+        const outcome = await restoreBoard(entry.board);
+        if (outcome === "restored") showGame(entry.board.tab, "none");
+        return outcome === "restored" || outcome === "shown" ? "shown" : outcome;
+      }
       case "game-review": {
-        if (!(await restoreBoard(entry.board))) return;
+        const outcome = await restoreBoard(entry.board);
+        if (outcome !== "restored") return outcome === "shown" ? "shown" : outcome;
+        const request = latestNavigation.current;
+        // The review may have been cleared while away (e.g. Analyze resets it): bring the saved one back.
+        if (entry.board.gameId && !useReviewStore.getState().review) {
+          const saved = await window.chaturanga?.games.get(entry.board.gameId).catch(() => null);
+          if (request !== latestNavigation.current) return "dropped";
+          if (saved?.review) useReviewStore.getState().loadReview(saved.review);
+        }
         currentGame().setMode("freeplay");
         setReviewTab(entry.tab as ReviewTab);
         const id = entry.board.gameId ?? "current";
         latestNavigation.current += 1;
         setAppView("game-review", () => navigate(`/games/${id}/review`, { replace: true }));
+        return "shown";
       }
     }
   }
 
-  /** Puts a history entry's board back. False when it can't be (the game was deleted, a newer navigation won). */
-  async function restoreBoard(snapshot: BoardSnapshot): Promise<boolean> {
+  /**
+   * Puts a history entry's board back: "restored" (the caller shows it), "shown" (already on
+   * screen: the live Lichess game, or a restarted puzzle), "gone" (the game was deleted) or
+   * "dropped" (a newer navigation won).
+   */
+  async function restoreBoard(snapshot: BoardSnapshot): Promise<"restored" | "shown" | "gone" | "dropped"> {
     const request = ++latestNavigation.current;
-    // A live Lichess game can only be the one on the board now (goHistory checked that).
-    if (snapshot.lichessGameId && snapshot.lichessGameId === useLichessStore.getState().live?.id) return true;
+    // A Lichess game still being played can only be the one on the board now (goHistory checked that).
+    const live = useLichessStore.getState().live;
+    if (snapshot.lichessGameId && live && !live.over && snapshot.lichessGameId === live.id) {
+      showGame(snapshot.tab, "none");
+      return "shown";
+    }
     // A puzzle starts again (never restored mid-solution).
     if (snapshot.puzzle) {
       startPuzzle(snapshot.puzzle.sample, snapshot.puzzle.config as PuzzleSessionConfig, "none");
-      return false;
+      return "shown";
     }
     if (snapshot.gameId && snapshot.gameId !== currentGame().gameId) {
       const saved = await window.chaturanga?.games.get(snapshot.gameId).catch(() => null);
-      if (request !== latestNavigation.current) return false;
+      if (request !== latestNavigation.current) return "dropped";
       if (!saved) {
         currentGame().setMatchFeedback("That game was deleted.");
-        return false;
+        return "gone";
       }
       stopEngineWork();
       clearPuzzleSession();
@@ -286,11 +326,13 @@ export function App() {
       clearPuzzleSession();
     }
     currentGame().restoreView(snapshot);
-    if (snapshot.mode === "analysis" && defaultEngineId && !useAnalysisStore.getState().activeEngineId) {
-      useAnalysisStore.getState().setActiveEngine(defaultEngineId);
+    if (snapshot.mode === "analysis") {
+      if (defaultEngineId && !useAnalysisStore.getState().activeEngineId) useAnalysisStore.getState().setActiveEngine(defaultEngineId);
+      // The search was stopped while away; the position may be the same, so ask for it again.
+      useAnalysisStore.getState().restartSearch();
     }
     setFocusMode(false);
-    return true;
+    return "restored";
   }
 
   function clearPuzzleSession() {
@@ -359,7 +401,12 @@ export function App() {
    */
   function unlessOnlineGame(action: () => void) {
     if (!useLichessStore.getState().live || useLichessStore.getState().live?.over) return action();
-    showGame();
+    // Already on the board: nothing changes screen, so nothing is recorded.
+    if (appView === "game") showGame(sideTab, "none");
+    else {
+      commitCurrent();
+      showGame();
+    }
     currentGame().setMatchFeedback("Finish your Lichess game first.");
   }
 
@@ -387,6 +434,8 @@ export function App() {
     currentGame().setEngineSide(null);
     currentGame().clearEngineMatchExtras();
     if (defaultEngineId) useAnalysisStore.getState().setActiveEngine(defaultEngineId);
+    // Search even if this very position was analysed before and the search stopped since.
+    useAnalysisStore.getState().restartSearch();
     setFocusMode(false);
     showGame("engine");
   }
@@ -412,6 +461,7 @@ export function App() {
     if (defaultEngineId && !useAnalysisStore.getState().activeEngineId) {
       useAnalysisStore.getState().setActiveEngine(defaultEngineId);
     }
+    useAnalysisStore.getState().restartSearch();
     record("push", historyEntry("game"));
   }
 
@@ -490,6 +540,7 @@ export function App() {
 
   function openSettings(section: SettingsSectionId | null) {
     commitCurrent();
+    viewedSettingsSection.current = section;
     setSettingsSection(section);
     record("push", { view: "settings", section });
     latestNavigation.current += 1;
@@ -617,8 +668,11 @@ export function App() {
     settings: useEventCallback(() => openSettings(null)),
     commentarySettings: useEventCallback(() => openSettings("commentary")),
     engineSettings: useEventCallback(() => openSettings("engines")),
-    back: useEventCallback(() => goHistory(-1)),
-    forward: useEventCallback(() => goHistory(1)),
+    back: useEventCallback(() => void goHistory(-1)),
+    forward: useEventCallback(() => void goHistory(1)),
+    settingsSectionViewed: useEventCallback((section: SettingsSectionId) => {
+      viewedSettingsSection.current = section;
+    }),
     importedGame: useEventCallback((game: GameSession) => unlessOnlineGame(() => loadImportedGame(game))),
     beforePlayStart: useEventCallback(commitCurrent),
     play: useEventCallback(() => openPlayPage()),
@@ -781,7 +835,7 @@ export function App() {
                 onOpenEngineSettings={on.engineSettings}
               />
             ) : appView === "settings" ? (
-              <SettingsPage initialSection={settingsSection} />
+              <SettingsPage initialSection={settingsSection} onSectionChange={on.settingsSectionViewed} />
             ) : appView === "play" ? (
               <PlayPage onOpenSettings={on.settings} onBeforeStart={on.beforePlayStart} onStart={on.showGame} onOpenLichessGame={on.showGame} onFreeBoard={on.freeBoard} />
             ) : appView === "puzzles" ? (

@@ -161,10 +161,13 @@ describe("LichessService", () => {
     });
     await expect(service.ongoingGames()).rejects.toThrow(/Reconnect/);
     await vi.waitFor(async () => expect(await store.status()).toEqual({ account: ACCOUNT, tokenRejected: true }));
-    expect(events).toContainEqual({
-      type: "status",
-      status: { account: ACCOUNT, connecting: false, tokenRejected: true }
-    });
+    // The status event follows its own read of the store: wait for it too.
+    await vi.waitFor(() =>
+      expect(events).toContainEqual({
+        type: "status",
+        status: { account: ACCOUNT, connecting: false, tokenRejected: true }
+      })
+    );
   });
 
   it("rejects a blitz seek without asking Lichess", async () => {

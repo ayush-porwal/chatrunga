@@ -47,6 +47,12 @@ export function useBoardEval(): BoardEval | null {
   if (game.matchOn || onlineGameLive) return null;
 
   if (game.mode === "analysis") {
+    // The game is over on the board: the result, not a score left over from the previous position.
+    const status = statusForFen(game.fen);
+    if (status.isEnd) {
+      const whiteShare = status.result === "1-0" ? 100 : status.result === "0-1" ? 0 : 50;
+      return { whiteShare, label: status.isCheckmate ? `${status.result} #` : "½-½" };
+    }
     if (!liveScore) return null;
     const white = scoreFromWhitePerspective(liveScore, statusForFen(game.fen).turn);
     return { whiteShare: evalShare(white), label: formatScore(white) };
