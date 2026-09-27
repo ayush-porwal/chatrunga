@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Upload } from "lucide-react";
 import { useGameStore } from "../../stores/game-store";
-import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
 import { useReviewStore } from "../../stores/review-store";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -12,6 +11,14 @@ export function PgnImportDialog({ onClose }: { onClose: () => void }) {
   const [pgn, setPgn] = useState("");
   const [error, setError] = useState<string | null>(null);
   const loadGame = useGameStore((state) => state.loadGame);
+  // Closed while an import was loading (e.g. a Lichess game started and took the board): drop it.
+  const open = useRef(true);
+  useEffect(() => {
+    open.current = true;
+    return () => {
+      open.current = false;
+    };
+  }, []);
 
   async function importPgn(text: string) {
     if (!window.chaturanga) {
@@ -20,8 +27,7 @@ export function PgnImportDialog({ onClose }: { onClose: () => void }) {
     }
     try {
       const imported = await window.chaturanga.games.importPgn({ pgn: text });
-      // A Lichess game that started meanwhile keeps the board (the dialog closed with it).
-      if (selectLiveGameInProgress(useLichessStore.getState())) return;
+      if (!open.current) return;
       useReviewStore.getState().reset();
       loadGame(imported.game);
       onClose();

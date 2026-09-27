@@ -186,4 +186,13 @@ describe("startLichessSync", () => {
     expect(useLichessStore.getState().seekError).toMatch(/variant/);
     expect(openGame).not.toHaveBeenCalled();
   });
+
+  it("drops a game still loading when you're signed out", () => {
+    bridge.emit({ type: "gameStart", gameId: "game1" });
+    bridge.emit({ type: "status", status: { account: null, connecting: false, tokenRejected: false } });
+    expect(bridge.api.unwatchGame).toHaveBeenCalledWith("game1");
+    bridge.emit({ type: "gameFull", game: full() });
+    expect(useLichessStore.getState().live).toBeNull();
+    expect(openGame).not.toHaveBeenCalled();
+  });
 });

@@ -335,9 +335,20 @@ function registerLichessIpc(): void {
   ipcMain.handle("lichess:status", () => lichess.status());
   ipcMain.handle("lichess:connect", () => lichess.connect());
   ipcMain.handle("lichess:cancelConnect", () => lichess.cancelConnect());
-  ipcMain.handle("lichess:disconnect", (_event, options: unknown) =>
-    lichess.disconnect(parseLichessDisconnectInput(options))
-  );
+  ipcMain.handle("lichess:disconnect", async (_event, options: unknown) => {
+    const input = parseLichessDisconnectInput(options);
+    // Removed games must stay removed: a save already on its way (autosave) is refused like after
+    // a single delete. Marked first, so no save can slip in between the delete and the marking.
+    const removed = input.removeGames ? gameRepository.list().filter((game) => game.source === "lichess").map((game) => game.id) : [];
+    const deletedAt = Date.now();
+    for (const id of removed) recentlyDeletedGames.set(id, deletedAt);
+    try {
+      return await lichess.disconnect(input);
+    } catch (error) {
+      for (const id of removed) recentlyDeletedGames.delete(id);
+      throw error;
+    }
+  });
   ipcMain.handle("lichess:syncGames", () => lichess.syncGames());
   ipcMain.handle("lichess:seek", (_event, input: unknown) => lichess.seek(parseLichessSeekInput(input)));
   ipcMain.handle("lichess:cancelSeek", () => lichess.cancelSeek());

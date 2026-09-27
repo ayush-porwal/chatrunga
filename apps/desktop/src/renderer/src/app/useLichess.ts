@@ -68,6 +68,11 @@ export function startLichessSync({
     lichess().setStatus(status);
     const live = lichess().live;
     const accountGone = !status.account || status.tokenRejected || (previousAccountId !== null && status.account.id !== previousAccountId);
+    if (accountGone && pendingGameId) {
+      // A game still loading belongs to the account that's gone.
+      void api.unwatchGame(pendingGameId);
+      pendingGameId = null;
+    }
     if (accountGone && live && !live.over) {
       lichess().patchLive({ over: true, connected: false });
       game().setMatchFeedback("Signed out of Lichess. The game goes on at lichess.org.");
