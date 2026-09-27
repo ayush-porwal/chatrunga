@@ -165,15 +165,17 @@ function DisconnectDialog({ username, onClose }: { username: string; onClose: ()
     const api = window.chaturanga?.lichess;
     if (!api) return;
     setBusy(true);
-    // A Lichess game on the board would be saved back by autosave: clear it before its row goes.
-    if (removeGames && useGameStore.getState().source === "lichess") {
-      useGameStore.getState().reset();
-      useReviewStore.getState().reset();
-    }
     api.disconnect({ removeGames }).then(
       (status) => {
         useLichessStore.getState().setStatus(status);
-        if (removeGames) refreshGames();
+        if (removeGames) {
+          // Its row is gone (and saves of it are refused): take the removed game off the board.
+          if (useGameStore.getState().source === "lichess") {
+            useGameStore.getState().reset();
+            useReviewStore.getState().reset();
+          }
+          refreshGames();
+        }
         onClose();
       },
       (reason: unknown) => {
