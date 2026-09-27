@@ -160,8 +160,7 @@ describe("LichessService", () => {
       "GET /api/account/playing": () => json({ error: "No such token" }, 401)
     });
     await expect(service.ongoingGames()).rejects.toThrow(/Reconnect/);
-    await flush(10);
-    expect(await store.status()).toEqual({ account: ACCOUNT, tokenRejected: true });
+    await vi.waitFor(async () => expect(await store.status()).toEqual({ account: ACCOUNT, tokenRejected: true }));
     expect(events).toContainEqual({
       type: "status",
       status: { account: ACCOUNT, connecting: false, tokenRejected: true }
