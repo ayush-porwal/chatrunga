@@ -82,11 +82,7 @@ export function fadeInSquares(
 }
 
 const FADE_IN: Keyframe[] = [{ opacity: 0 }, { opacity: 1 }];
-/** Legal-move dots: grow in from the square's centre (`scale` leaves Chessground's transform alone). */
-export const DOTS_IN: Keyframe[] = [
-  { opacity: 0, scale: "0.55" },
-  { opacity: 1, scale: "1" }
-];
+
 
 function expandBoard(fen: string): string {
   return (fen.split(" ")[0] ?? "").replace(/\d/g, (digits) => ".".repeat(Number(digits)));
