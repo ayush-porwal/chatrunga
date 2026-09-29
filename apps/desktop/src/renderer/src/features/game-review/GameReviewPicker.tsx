@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { Eyebrow } from "@/components/ui/page";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { useShownCount } from "@/lib/use-shown-count";
 
 type GameReviewPickerProps = {
   onClose: () => void;
@@ -63,6 +64,7 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
   const [query, setQuery] = useState("");
   const [source, setSource] = useState<SourceFilter>("all");
   const hasLichessGames = (games.data ?? []).some((game) => game.source === "lichess");
+  const shown = useShownCount(`${query}|${source}`);
 
   const filteredGames = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -139,9 +141,14 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
           {games.isError ? <Notice tone="warn">Saved games could not be loaded. Try opening Game review again.</Notice> : null}
           {filteredGames.length ? (
             <div className="grid gap-1.5">
-              {filteredGames.map((game) => (
+              {filteredGames.slice(0, shown.count).map((game) => (
                 <GameRow key={game.id} title={titleFor(game)} meta={subtitleFor(game)} onClick={() => onSelect(game.id)} />
               ))}
+              {filteredGames.length > shown.count ? (
+                <Button type="button" variant="ghost" size="sm" className="justify-self-center" onClick={shown.showMore}>
+                  Show more ({filteredGames.length - shown.count} left)
+                </Button>
+              ) : null}
             </div>
           ) : games.isLoading ? null : (
             <EmptyState

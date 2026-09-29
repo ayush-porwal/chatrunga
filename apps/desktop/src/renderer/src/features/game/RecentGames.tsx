@@ -7,12 +7,15 @@ import { cn } from "@/lib/utils";
 import { listRow } from "@/lib/ui";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconButton } from "@/components/ui/icon-button";
+import { useShownCount } from "@/lib/use-shown-count";
+import { Button } from "@/components/ui/button";
 
 /** The workspace's Library tab. Opening a game goes through App (`onOpenGame`: history, engine teardown). */
 export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }) {
   const games = useGamesQuery();
   const removeGame = useDeleteGameMutation();
   const resetBoard = useGameStore((state) => state.reset);
+  const shown = useShownCount("library");
 
   async function deleteGame(id: string, event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -35,7 +38,7 @@ export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }
     <section className="flex h-full min-h-0 w-full min-w-0 flex-col gap-2" aria-label="Library">
       {games.data?.length ? (
         <ul className="scroll-area -mr-1 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-1" aria-label="Saved games">
-          {games.data.map((game) => (
+          {games.data.slice(0, shown.count).map((game) => (
             <li
               key={game.id}
               className={cn(
@@ -66,6 +69,13 @@ export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }
               />
             </li>
           ))}
+          {games.data.length > shown.count ? (
+            <li className="flex justify-center">
+              <Button type="button" variant="ghost" size="sm" onClick={shown.showMore}>
+                Show more ({games.data.length - shown.count} left)
+              </Button>
+            </li>
+          ) : null}
         </ul>
       ) : (
         <EmptyState compact title="Saved games will appear here." />
