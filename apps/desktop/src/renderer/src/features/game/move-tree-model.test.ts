@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
+import { importPgnText } from "@chaturanga/shared/chess/pgn";
 import { buildTreeModel } from "./move-tree-model";
 
 function node(
@@ -62,5 +63,18 @@ describe("buildTreeModel", () => {
 
     expect(rows).toHaveLength(depth + 1);
     expect(Math.max(...rows.map((row) => row.depth))).toBe(0);
+  });
+
+  it("pairs rows by move number when the game starts with Black", () => {
+    const { game } = importPgnText('[SetUp "1"]\n[FEN "4k3/8/8/8/8/8/8/4K3 b - - 0 42"]\n\n42... Kf7 43. Ke2 Ke6 *');
+    const rows = buildTreeModel(game.moveTree).mainline.map((row) => ({
+      number: row.number,
+      white: row.white?.san,
+      black: row.black?.san
+    }));
+    expect(rows).toEqual([
+      { number: 42, white: undefined, black: "Kf7" },
+      { number: 43, white: "Ke2", black: "Ke6" }
+    ]);
   });
 });

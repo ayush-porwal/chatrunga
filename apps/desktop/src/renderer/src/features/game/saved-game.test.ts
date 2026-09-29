@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createEmptyGame } from "@chaturanga/shared/chess/pgn";
 import type { SavedGame } from "@chaturanga/shared/types/chess";
-import { sessionFromSavedGame } from "./saved-game";
+import type { GameReview } from "@chaturanga/shared/types/engine";
+import { reviewWithRealPlies, sessionFromSavedGame } from "./saved-game";
 
 function saved(overrides: Partial<SavedGame> = {}): SavedGame {
   const game = createEmptyGame();
@@ -38,5 +39,20 @@ describe("sessionFromSavedGame", () => {
 
   it("finds the cursor from the board position for rows without one", () => {
     expect(sessionFromSavedGame(saved({ currentNodeId: null })).currentNodeId).toBe("root");
+  });
+});
+
+describe("reviewWithRealPlies", () => {
+  it("renumbers a review saved with an older tree, commentary included", () => {
+    const review = { moves: [{ ply: 1 }, { ply: 2 }], commentary: [{ ply: 2 }] } as unknown as GameReview;
+    const shifted = reviewWithRealPlies(review, 83);
+    expect(shifted?.moves.map((move) => move.ply)).toEqual([84, 85]);
+    expect(shifted?.commentary?.map((item) => item.ply)).toEqual([85]);
+  });
+
+  it("leaves current reviews alone", () => {
+    const review = { moves: [{ ply: 1 }] } as unknown as GameReview;
+    expect(reviewWithRealPlies(review, 0)).toBe(review);
+    expect(reviewWithRealPlies(null, 5)).toBeNull();
   });
 });
