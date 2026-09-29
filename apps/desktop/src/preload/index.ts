@@ -22,6 +22,15 @@ onGlassChanged((state) => {
   glassState = state;
 });
 
+// Closing the window asks for pending saves first; with no flush registered, it's done at once.
+let flushHandler: (() => Promise<void>) | null = null;
+ipcRenderer.on("games:flush", (_event, token: string) => {
+  const handler = flushHandler;
+  void (handler ? handler().catch(() => undefined) : Promise.resolve()).then(() =>
+    ipcRenderer.send("games:flushed", token)
+  );
+});
+
 const api: ChaturangaApi = {
   environment: {
     isElectron: true,
@@ -51,7 +60,13 @@ const api: ChaturangaApi = {
     get: (id) => ipcRenderer.invoke("games:get", id),
     save: (input) => ipcRenderer.invoke("games:save", input),
     remove: (id) => ipcRenderer.invoke("games:remove", id),
-    importPgn: (input) => ipcRenderer.invoke("games:importPgn", input)
+    importPgn: (input) => ipcRenderer.invoke("games:importPgn", input),
+    onFlushRequest: (handler) => {
+      flushHandler = handler;
+      return () => {
+        if (flushHandler === handler) flushHandler = null;
+      };
+    }
   },
   databases: {
     list: () => ipcRenderer.invoke("databases:list"),

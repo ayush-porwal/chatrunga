@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
 import type { SQLInputValue } from "node:sqlite";
+import { importPgnText } from "@chaturanga/shared/chess/pgn";
 import { getDb } from "./index";
 import {
   defaultSettings,
@@ -18,6 +19,7 @@ import type {
   UpdateEngineInput
 } from "@chaturanga/shared/types/engine";
 import type {
+  GameHeaders,
   GameSource,
   GameSummary,
   MoveNode,
@@ -62,6 +64,7 @@ type GameRow = {
   pgn: string;
   current_fen: string;
   current_node_id: string | null;
+  headers_json: string | null;
   move_tree_json: string;
   review_json: string | null;
   created_at: number;
@@ -159,13 +162,33 @@ function toGameSummary(row: GameSummaryRow): GameSummary {
   };
 }
 
-function toSavedGame(row: GameRow): SavedGame {
-  let moveTree: MoveNode[];
+/**
+ * The stored move tree. A damaged one is rebuilt from the row's PGN; if that fails too, opening
+ * the game fails, rather than showing an empty board that autosave would then write over the
+ * stored PGN (the only copy left of the moves).
+ */
+function parseMoveTree(row: GameRow): MoveNode[] {
   try {
-    moveTree = JSON.parse(row.move_tree_json) as MoveNode[];
+    const parsed: unknown = JSON.parse(row.move_tree_json);
+    if (Array.isArray(parsed) && parsed.length && parsed.every(isMoveNodeLike)) return parsed as MoveNode[];
   } catch {
-    moveTree = [];
+    // Fall through to the PGN.
   }
+  try {
+    return importPgnText(row.pgn).game.moveTree;
+  } catch {
+    throw new Error("This saved game is damaged and can't be opened.");
+  }
+}
+
+function isMoveNodeLike(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const node = value as Partial<MoveNode>;
+  return typeof node.id === "string" && typeof node.fenAfter === "string" && Array.isArray(node.children);
+}
+
+function toSavedGame(row: GameRow): SavedGame {
+  const moveTree = parseMoveTree(row);
 
   let review: GameReview | null = null;
   if (row.review_json) {
@@ -179,9 +202,20 @@ function toSavedGame(row: GameRow): SavedGame {
     }
   }
 
+  let headers: GameHeaders | null = null;
+  if (row.headers_json) {
+    try {
+      const parsed: unknown = JSON.parse(row.headers_json);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) headers = parsed as GameHeaders;
+    } catch {
+      headers = null;
+    }
+  }
+
   return {
     ...toGameSummary(row),
     currentNodeId: row.current_node_id,
+    headers,
     site: row.site,
     round: row.round,
     initialFen: row.initial_fen,
@@ -343,8 +377,9 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
   run(
     `INSERT INTO games (
       id, source, white, black, event, site, round, result, date,
-      initial_fen, pgn, current_fen, current_node_id, move_tree_json, review_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      initial_fen, pgn, current_fen, current_node_id, headers_json, move_tree_json, review_json,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       source = excluded.source,
       white = excluded.white,
@@ -358,6 +393,7 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
       pgn = excluded.pgn,
       current_fen = excluded.current_fen,
       current_node_id = excluded.current_node_id,
+      headers_json = excluded.headers_json,
       move_tree_json = excluded.move_tree_json,
       review_json = excluded.review_json,
       updated_at = excluded.updated_at`,
@@ -374,6 +410,7 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
     input.pgn,
     input.currentFen,
     currentNodeId,
+    JSON.stringify(input.headers),
     JSON.stringify(input.moveTree),
     reviewJson,
     createdAt,

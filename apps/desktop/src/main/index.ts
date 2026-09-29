@@ -33,6 +33,7 @@ import {
   PRODUCTION_CSP
 } from "./security";
 import { installWindowGlass, windowGlassConstructorOptions } from "./window-glass";
+import { requestRendererFlush } from "./renderer-flush";
 
 const PRODUCT_NAME = "Chaturanga";
 const IMAGE_SCHEME = "chaturanga-image";
@@ -59,6 +60,10 @@ protocol.registerSchemesAsPrivileged([
 
 const engineManager = new EngineManager();
 let mainWindow: BrowserWindow | null = null;
+/** A quit is under way: once a window's pending save is written, the quit continues. */
+let quitRequested = false;
+/** Cleanup ran (quit, or an update install): windows close without asking the renderer. */
+let shutDown = false;
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -77,6 +82,9 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.on("activate", () => {
     if (app.isReady() && BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+  app.on("before-quit", () => {
+    quitRequested = true;
   });
   app.on("will-quit", shutdown);
   app.whenReady().then(startup, (error) => {
@@ -119,6 +127,7 @@ async function startup(): Promise<void> {
  * Idempotent: an update install runs it before `will-quit` does.
  */
 function shutdown(): void {
+  shutDown = true;
   shutdownLichess();
   engineManager.stop();
   killAllEngineProcesses();
@@ -172,6 +181,7 @@ function createWindow(): void {
     }
   });
   mainWindow = window;
+  flushSavesBeforeClose(window);
   // Fallback reveal if the renderer never reports ready (a crash before React mounts).
   window.once("ready-to-show", () => setTimeout(() => revealWindow(window), REVEAL_FALLBACK_MS));
   window.on("closed", () => {
@@ -188,6 +198,24 @@ function createWindow(): void {
     });
     void window.loadFile(rendererIndex);
   }
+}
+
+/**
+ * The first close (the close button, or a quit) waits for the renderer to write its pending
+ * autosave, then closes for real — continuing the quit if one was under way (preventing a close
+ * during a quit cancels the quit).
+ */
+function flushSavesBeforeClose(window: BrowserWindow): void {
+  let flushed = false;
+  window.on("close", (event) => {
+    if (flushed || shutDown || window.webContents.isDestroyed()) return;
+    event.preventDefault();
+    flushed = true;
+    void requestRendererFlush(window.webContents).finally(() => {
+      if (quitRequested) app.quit();
+      else if (!window.isDestroyed()) window.close();
+    });
+  });
 }
 
 const REVEAL_FALLBACK_MS = 1500;

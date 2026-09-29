@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
-import { mainlineEnd, savedResult } from "./useGameAutosave";
+import { mainlineEnd, sameDocument, savedResult } from "./useGameAutosave";
 
 const node = (id: string, parentId: string | null, children: string[]): MoveNode => ({
   id,
@@ -46,5 +46,23 @@ describe("mainlineEnd", () => {
 
   it("is the root for an empty game", () => {
     expect(mainlineEnd([node("root", null, [])])?.id).toBe("root");
+  });
+});
+
+describe("sameDocument", () => {
+  const tree = [node("root", null, [])];
+  const headers = { result: "*" };
+  const doc = { gameId: "g", moveTree: tree, headers, currentNodeId: "root", gameOutcome: null, review: null };
+
+  it("matches the document the library already holds", () => {
+    expect(sameDocument(doc, { ...doc })).toBe(true);
+  });
+
+  it("differs once anything that is saved changes", () => {
+    expect(sameDocument(null, doc)).toBe(false);
+    expect(sameDocument(doc, { ...doc, currentNodeId: "e4" })).toBe(false);
+    expect(sameDocument(doc, { ...doc, moveTree: [...tree] })).toBe(false);
+    expect(sameDocument(doc, { ...doc, headers: { result: "1-0" } })).toBe(false);
+    expect(sameDocument(doc, { ...doc, gameOutcome: { result: "1-0", termination: "Resignation" } })).toBe(false);
   });
 });

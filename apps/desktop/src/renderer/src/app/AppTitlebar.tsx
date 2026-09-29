@@ -15,6 +15,7 @@ import { useGameStore } from "../stores/game-store";
 import { selectCanGoBack, selectCanGoForward, useHistoryStore } from "../stores/history-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
 import { useReviewStore } from "../stores/review-store";
+import { useSaveStatusStore } from "../stores/save-status-store";
 import { SidebarToggle } from "./AppSidebar";
 import { historyShortcutLabels } from "./useHistoryShortcuts";
 import { decidedResult, gameModeLabel, gamePlayerNames } from "./game-title";
@@ -86,6 +87,7 @@ export function AppTitlebar({
       <div className="flex min-w-0 flex-1 items-center gap-2 [view-transition-name:app-title]" data-titlebar-title>
         {children}
       </div>
+      <SaveFailedButton />
     </header>
   );
 }
@@ -99,6 +101,29 @@ export function LiveGameButton({ onClick }: { onClick: () => void }) {
     </Button>
   );
 }
+
+/** The loaded game's last save failed: says so on every screen until a save succeeds; click to retry. */
+const SaveFailedButton = memo(function SaveFailedButton() {
+  const error = useSaveStatusStore((state) => state.error);
+  const retry = useSaveStatusStore((state) => state.retry);
+  if (!error) return null;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          className="ml-2 shrink-0 text-danger [-webkit-app-region:no-drag]"
+          onClick={() => retry?.()}
+        >
+          Not saved · Retry
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{error}</TooltipContent>
+    </Tooltip>
+  );
+});
 
 /** Back / Forward between screens (like a browser's), right of the sidebar toggle. */
 const HistoryButtons = memo(function HistoryButtons({ onBack, onForward }: { onBack: () => void; onForward: () => void }) {

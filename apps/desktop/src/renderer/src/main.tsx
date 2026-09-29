@@ -13,7 +13,16 @@ import { initWindowGlass, initWindowZoom } from "./lib/window-glass";
 initWindowGlass();
 initWindowZoom();
 
-const queryClient = new QueryClient();
+// Everything here is local (SQLite, files, engines over IPC), so queries and saves must run while
+// the OS reports no network — TanStack's default "online" mode would pause them. Remote work
+// (downloads, Lichess) happens in the main process, which reports its own network errors.
+// A local failure is deterministic: one retry is enough.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { networkMode: "always", retry: 1 },
+    mutations: { networkMode: "always" }
+  }
+});
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

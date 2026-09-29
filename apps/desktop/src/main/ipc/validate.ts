@@ -5,7 +5,7 @@
  */
 import { isAbsolute } from "node:path";
 import { positionFromFen } from "@chaturanga/shared/chess/position";
-import type { GameSource, SaveGameInput } from "@chaturanga/shared/types/chess";
+import type { GameHeaders, GameSource, SaveGameInput } from "@chaturanga/shared/types/chess";
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
 import type {
   CreateEngineInput,
@@ -29,6 +29,8 @@ import type {
 const MAX_ID = 200;
 const MAX_PATH = 4096;
 const MAX_NAME = 200;
+/** PGN tag values (a long Event or Opening name) — generous, but bounded. */
+const MAX_HEADER = 2_000;
 const MAX_ARGS = 64;
 const MAX_MOVES = 2000;
 const MAX_PGN_BYTES = 20 * 1024 * 1024;
@@ -278,7 +280,7 @@ export function parseSaveGameInput(value: unknown): SaveGameInput {
   const input = asObject(value, "game");
   if (!GAME_SOURCES.includes(input.source as GameSource)) fail("game", "unknown source");
   if (!Array.isArray(input.moveTree)) fail("game", "moveTree must be an array");
-  const headers = asObject(input.headers ?? {}, "game headers");
+  const headers = parseGameHeaders(input.headers ?? {});
   if (input.review !== undefined && input.review !== null) asObject(input.review, "game review");
   asString(input.pgn, "PGN", MAX_PGN_BYTES);
   asString(input.rootFen, "root FEN", 128);
@@ -286,9 +288,41 @@ export function parseSaveGameInput(value: unknown): SaveGameInput {
   return {
     ...(input as SaveGameInput),
     id: nullable(input.id, (id) => asId(id, "game id")),
-    headers: headers as SaveGameInput["headers"],
+    headers,
     currentNodeId: nullable(input.currentNodeId, (id) => asId(id, "node id"))
   };
+}
+
+const HEADER_KEYS = [
+  "event",
+  "site",
+  "date",
+  "round",
+  "white",
+  "black",
+  "whiteElo",
+  "blackElo",
+  "timeControl",
+  "eco",
+  "opening",
+  "utcDate",
+  "utcTime",
+  "termination",
+  "result"
+] as const satisfies readonly (keyof GameHeaders)[];
+
+/** Only the known headers, each a short string or null (they are stored as JSON). */
+function parseGameHeaders(value: unknown): GameHeaders {
+  const input = asObject(value, "game headers");
+  const headers: GameHeaders = {};
+  for (const key of HEADER_KEYS) {
+    const parsed = nullable(input[key], (item) => asString(item, `${key} header`, MAX_HEADER));
+    if (parsed !== undefined) headers[key] = parsed;
+  }
+  const orientation = input.orientationHint;
+  if (orientation === "white" || orientation === "black" || orientation === null) headers.orientationHint = orientation;
+  else if (orientation !== undefined) fail("orientation header", "expected white or black");
+  return headers;
 }
 
 export function parsePgnText(value: unknown): string {
