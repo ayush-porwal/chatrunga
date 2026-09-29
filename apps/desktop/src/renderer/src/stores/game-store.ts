@@ -570,26 +570,32 @@ function stopClock(live: EngineClockLive | null): EngineClockLive | null {
   return live && live.stoppedAt === undefined ? { ...live, stoppedAt: clockNow() } : live;
 }
 
-/** A wall-clock step this much larger than the monotonic one is time the computer spent asleep. */
-const SLEEP_GAP_MS = 2_000;
-let lastMonotonic = performance.now();
-let lastWall = Date.now();
 let asleepMs = 0;
+let suspendedAt: { monotonic: number; wall: number } | null = null;
 
 /**
- * The time base for match clocks. Monotonic, so setting the system clock back (or an NTP nudge)
- * never adds thinking time — but `performance.now()` stops while the computer sleeps, so time
- * asleep is added back: a laptop closed mid-game keeps running the side to move's clock, as a
- * wall clock would. Only differences between two readings mean anything.
+ * The time base for match clocks: monotonic, so changing the system clock (or an NTP correction)
+ * never adds or removes thinking time. Only differences between two readings mean anything.
+ * `performance.now()` may stop while the computer sleeps; `notePowerState` adds that time back,
+ * so closing the laptop mid-game doesn't hand out free thinking time.
  */
 export function clockNow(): number {
-  const monotonic = performance.now();
-  const wall = Date.now();
-  const gap = wall - lastWall - (monotonic - lastMonotonic);
-  if (gap > SLEEP_GAP_MS) asleepMs += gap;
-  lastMonotonic = monotonic;
-  lastWall = wall;
-  return monotonic + asleepMs;
+  return performance.now() + asleepMs;
+}
+
+/**
+ * The OS is suspending / has resumed. Whatever part of the time asleep the monotonic clock missed
+ * (the wall clock's step past the monotonic one, between these two events only) is added to it.
+ */
+export function notePowerState(state: "suspend" | "resume"): void {
+  if (state === "suspend") {
+    suspendedAt = { monotonic: performance.now(), wall: Date.now() };
+    return;
+  }
+  if (!suspendedAt) return;
+  const missed = Date.now() - suspendedAt.wall - (performance.now() - suspendedAt.monotonic);
+  if (missed > 0) asleepMs += missed;
+  suspendedAt = null;
 }
 
 /** Time left on `side`'s clock at `now` (the running side's clock counts down; a stopped game is frozen). */
