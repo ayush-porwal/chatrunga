@@ -1,4 +1,4 @@
-import { memo, useId, useMemo, type ReactNode } from "react";
+import { lazy, memo, Suspense, useId, useMemo, type ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { QualityBadge } from "@/components/ui/quality-badge";
 import { SegmentedControl, tabPanelProps, type SegmentedOption } from "@/components/ui/segmented-control";
@@ -11,11 +11,13 @@ import { MoveNavigation } from "../features/board/MoveNavigation";
 import { EngineStatusPanel } from "../features/analysis/EngineStatusPanel";
 import { MoveList } from "../features/game/MoveList";
 import { RecentGames } from "../features/game/RecentGames";
-import { ReviewTape } from "../features/game-review/ReviewTape";
 import { mainlineReviewInput } from "../features/game-review/review-utils";
 import { formatMoveEval } from "../features/game-review/review-score";
 import { useGameStore } from "../stores/game-store";
 import { selectDisplayedMoves, useReviewStore } from "../stores/review-store";
+
+// The eval chart (recharts) loads only once a reviewed game needs it.
+const ReviewTape = lazy(() => import("../features/game-review/ReviewTape").then((module) => ({ default: module.ReviewTape })));
 
 export type SideTab = "notation" | "engine" | "library";
 
@@ -165,14 +167,17 @@ function GameFooter() {
     <>
       {hasReview ? (
         <div className="border-b border-line-subtle px-3 pb-1 pt-2">
-          <ReviewTape
-            moves={reviewMoves}
-            variationSelected={!onReviewedLine}
-            selectedNodeId={currentNodeId}
-            onSelectNode={goToNode}
-            orientation={orientation}
-            totalPlies={reviewRunning ? mainlinePlies : undefined}
-          />
+          {/* Reserves the chart's height while its code loads (the first review only). */}
+          <Suspense fallback={<div className="h-36" aria-hidden="true" />}>
+            <ReviewTape
+              moves={reviewMoves}
+              variationSelected={!onReviewedLine}
+              selectedNodeId={currentNodeId}
+              onSelectNode={goToNode}
+              orientation={orientation}
+              totalPlies={reviewRunning ? mainlinePlies : undefined}
+            />
+          </Suspense>
         </div>
       ) : null}
       <MoveNavigation />

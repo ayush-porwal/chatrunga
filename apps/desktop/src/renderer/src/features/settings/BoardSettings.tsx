@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils";
 import { boardSquareGradient } from "../board/useBoardAppearance";
 import { BoardThumbnail } from "./board-thumbnail";
 import { PieceStyleListbox } from "./PieceStyleListbox";
-import { useSetSetting } from "./use-set-setting";
+import { useSettingsWriter } from "./use-set-setting";
 
 const boardThemes: Array<{ id: BoardTheme; label: string }> = [
   { id: "brown", label: "Brown" },
@@ -73,7 +73,7 @@ function boardColorsForHue(hue: number): { light: string; dark: string } {
 }
 
 export function BoardSection({ appearance }: { appearance: AppSettings }) {
-  const setSetting = useSetSetting();
+  const { set: setSetting, setMany: setSettings } = useSettingsWriter();
   const [liveBoardColors, setLiveBoardColors] = useState<{ light?: string; dark?: string }>({});
   const [hoverTheme, setHoverTheme] = useState<BoardTheme | null>(null);
   const presetBoardColors = boardThemeSquareColors[appearance.boardTheme];
@@ -88,30 +88,28 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
     : boardThemes.find((theme) => theme.id === appearance.boardTheme)?.label;
   const presentationDescription = piecePresentationOptions.find((o) => o.id === appearance.piecePresentation)?.description;
 
+  // A theme and its square colors are one write (never half-applied); dragging a color or the hue
+  // shows at once and is written when it pauses.
   function applyBoardTheme(theme: BoardTheme) {
     setLiveBoardColors({});
-    setSetting("boardTheme", theme);
-    setSetting("boardSquareLight", null);
-    setSetting("boardSquareDark", null);
+    setSettings({ boardTheme: theme, boardSquareLight: null, boardSquareDark: null });
   }
 
   function setBoardSquareColor(key: "boardSquareLight" | "boardSquareDark", value: string | null) {
     const normalized = normalizeBoardSquareHex(value);
     const liveKey = key === "boardSquareLight" ? "light" : "dark";
     setLiveBoardColors((colors) => ({ ...colors, [liveKey]: normalized ?? undefined }));
-    setSetting(key, normalized);
+    setSetting(key, normalized, { batch: true });
   }
 
   function setBoardSquareColors(colors: { light: string; dark: string }) {
     setLiveBoardColors(colors);
-    setSetting("boardSquareLight", colors.light);
-    setSetting("boardSquareDark", colors.dark);
+    setSettings({ boardSquareLight: colors.light, boardSquareDark: colors.dark }, { batch: true });
   }
 
   function resetBoardSquareColors() {
     setLiveBoardColors({});
-    setSetting("boardSquareLight", null);
-    setSetting("boardSquareDark", null);
+    setSettings({ boardSquareLight: null, boardSquareDark: null });
   }
 
   const pieceStyleLabel = pieceStyleOptions.find((option) => option.id === selectedPieceStyle)?.label ?? selectedPieceStyle;

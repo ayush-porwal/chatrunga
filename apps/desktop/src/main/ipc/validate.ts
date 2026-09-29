@@ -336,6 +336,16 @@ export function parseSettingKey(value: unknown): keyof AppSettings {
   return value as keyof AppSettings;
 }
 
+/** Several settings at once (known keys only; at least one). */
+export function parseSettingsPatch(value: unknown): Partial<Record<keyof AppSettings, unknown>> {
+  const input = asObject(value, "settings");
+  const keys = Object.keys(input);
+  if (!keys.length || keys.length > SETTING_KEYS.size) fail("settings", "expected a few settings");
+  const patch: Partial<Record<keyof AppSettings, unknown>> = {};
+  for (const key of keys) patch[parseSettingKey(key)] = input[key];
+  return patch;
+}
+
 export function parseDialogFilters(value: unknown): DialogFileFilter[] {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value) || value.length > 16) fail("file filters", "expected a short array");

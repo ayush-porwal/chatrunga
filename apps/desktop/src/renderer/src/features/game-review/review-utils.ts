@@ -34,9 +34,11 @@ export function reviewIdFromPath(pathname: string): string {
 
 export function mainlineReviewInput(moveTree: MoveNode[]): ReviewMoveInput[] {
   const moves: ReviewMoveInput[] = [];
-  let node = moveTree.find((item) => item.id === "root");
+  // One index for the walk (a find per step would be quadratic on long games).
+  const byId = new Map(moveTree.map((item) => [item.id, item]));
+  let node = byId.get("root");
   while (node?.children[0]) {
-    const next = moveTree.find((item) => item.id === node?.children[0]);
+    const next = byId.get(node.children[0]);
     if (!next?.uci || !next.san) break;
     moves.push({
       nodeId: next.id,

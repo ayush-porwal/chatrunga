@@ -288,6 +288,9 @@ export function BoardView() {
   }, [animationEnabled, currentFen, currentNode, currentNodeId, orientation, status.isCheck, status.turn]);
 
   // Interaction: who may move, legal destinations, premoves and the move handler.
+  // Legal moves depend on the position only: computed once per FEN, not again whenever the move
+  // handler or an appearance option changes.
+  const legalDests = useMemo(() => legalDestsForFen(currentFen), [currentFen]);
   useEffect(() => {
     groundRef.current?.set({
       premovable: {
@@ -297,7 +300,7 @@ export function BoardView() {
       },
       movable: {
         color: movablePieceColor,
-        dests: legalDestsForFen(currentFen),
+        dests: legalDests,
         showDests: appearance.showLegalMoves,
         free: false,
         rookCastle: true,
@@ -317,7 +320,7 @@ export function BoardView() {
         }
       }
     });
-  }, [appearance.showLegalMoves, currentFen, handleBoardMove, movablePieceColor, setPendingPromotion]);
+  }, [appearance.showLegalMoves, handleBoardMove, legalDests, movablePieceColor, setPendingPromotion]);
 
   // Drawn annotations (per node) and review arrows.
   useEffect(() => {
