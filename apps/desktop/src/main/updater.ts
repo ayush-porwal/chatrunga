@@ -142,10 +142,10 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
         return false;
       }
     } catch (error) {
-      // Not knowing whether the latest changes were saved: don't quit into the installer.
+      // Not knowing whether the latest changes were saved: don't quit into the installer. The
+      // update stays ready, so Restart to update can be tried again.
       logger.error("updater", "cleanup before install failed:", error);
       this.installing = false;
-      this.setStatus({ kind: "error", message: readableUpdateError(error, "install") });
       return false;
     }
     logger.info("updater", `installing ${status.version}`);
