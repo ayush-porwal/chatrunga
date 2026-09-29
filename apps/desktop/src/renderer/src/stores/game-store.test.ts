@@ -175,7 +175,8 @@ describe("game store", () => {
     const state = useGameStore.getState();
     expect(state.gameOutcome).toEqual({ result: "0-1", termination: "Time forfeit" });
     expect(state.moveTree).toHaveLength(1);
-    expect(state.engineClockLive?.stoppedAt! - state.engineClockLive!.turnStartedAt).toBe(1_100);
+    const live = state.engineClockLive;
+    expect(live && live.stoppedAt !== undefined ? live.stoppedAt - live.turnStartedAt : null).toBe(1_100);
     expect(state.rejectedMoves).toBe(1);
   });
 
