@@ -45,6 +45,7 @@ import {
 } from "./review-analysis";
 import { createLineSplitter, LOG_UCI, spawnUciProcess, stopUciProcess, writeUci } from "./uci-process";
 import { fileStamp, moveKey, ReviewCache, type CachedMove } from "./review-cache";
+import { createUciIdentity, readHandshakeLine, UCIOK_TIMEOUT_MESSAGE, UCIOK_TIMEOUT_MS } from "./uci-handshake";
 
 type LineEvents = {
   line: [string];
@@ -427,19 +428,12 @@ class UciReviewSession {
       if (this.process) this.fail(new Error(`${this.config.name} exited unexpectedly (code ${code ?? "unknown"})`));
     });
 
-    const uciReady = this.waitFor(
-      (line) => {
-        const option = line.match(/^option name (.+?) type /);
-        if (option) this.supportedOptions.add(option[1]);
-        const name = line.match(/^id name (.+)$/);
-        if (name) this.engineName = name[1].trim();
-        return line === "uciok";
-      },
-      120_000,
-      "Timed out waiting for uciok (large NN weights can take a while; check --weights for lc0)"
-    );
+    const identity = createUciIdentity();
+    identity.options = this.supportedOptions;
+    const uciReady = this.waitFor((line) => readHandshakeLine(identity, line), UCIOK_TIMEOUT_MS, UCIOK_TIMEOUT_MESSAGE);
     this.write("uci");
     await uciReady;
+    this.engineName = identity.name ?? null;
 
     if (options.policyOnly) {
       // Maia: `go nodes 1` + VerboseMoveStats prints the raw policy prior of
