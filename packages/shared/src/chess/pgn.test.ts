@@ -6,7 +6,8 @@ import {
   createGameFromFen,
   exportGameToPgn,
   importPgnText,
-  nodeIdForBoardFen
+  nodeIdForBoardFen,
+  withRealPlies
 } from "./pgn";
 import { applyUserMove, START_FEN } from "./position";
 
@@ -138,5 +139,63 @@ describe("PGN import/export", () => {
   it("warns when importing multiple PGNs and rejects empty input", () => {
     expect(importPgnText("1. e4 *\n\n1. d4 *").warning).toBe("Imported the first PGN game only.");
     expect(() => importPgnText("")).toThrow("No PGN game found");
+  });
+});
+
+describe("PGN from a set-up position", () => {
+  const fen = "4k3/8/8/8/8/8/8/4K3 b - - 0 42";
+
+  it("numbers moves from the FEN and exports SetUp/FEN so the game reimports", () => {
+    const imported = importPgnText(`[SetUp "1"]\n[FEN "${fen}"]\n\n42... Kf7 43. Ke2 *`).game;
+    expect(imported.moveTree.map((node) => node.ply)).toEqual([83, 84, 85]);
+
+    const pgn = exportGameToPgn(imported);
+    expect(pgn).toContain('[SetUp "1"]');
+    expect(pgn).toContain(`[FEN "${fen}"]`);
+    expect(pgn.split("\n").pop()).toBe("42... Kf7 43. Ke2 *");
+
+    const again = importPgnText(pgn).game;
+    expect(again.rootFen).toBe(fen);
+    expect(again.moveTree.filter((node) => node.san).map((node) => node.san)).toEqual(["Kf7", "Ke2"]);
+  });
+
+  it("attributes clocks to the side that moved", () => {
+    const imported = importPgnText(
+      `[SetUp "1"]\n[FEN "${fen}"]\n\n42... Kf7 { [%clk 0:01:00] } 43. Ke2 { [%clk 0:02:00] } *`
+    ).game;
+    expect(clocksOnPathToNode(imported.moveTree, imported.currentNodeId)).toEqual({
+      white: "0:02:00",
+      black: "0:01:00"
+    });
+  });
+
+  it("keeps the standard start free of SetUp/FEN", () => {
+    expect(exportGameToPgn(createEmptyGame())).not.toContain("[FEN");
+  });
+
+  it("writes FEN for games created from a position", () => {
+    expect(createGameFromFen({ fen }).pgn).toContain(`[FEN "${fen}"]`);
+    expect(createGameFromFen({ fen }).moveTree[0]?.ply).toBe(83);
+  });
+
+  it("renumbers trees saved with a ply-0 root", () => {
+    const legacy = importPgnText(`[SetUp "1"]\n[FEN "${fen}"]\n\n42... Kf7 *`).game.moveTree.map((node) => ({
+      ...node,
+      ply: node.ply - 83
+    }));
+    expect(withRealPlies(legacy).map((node) => node.ply)).toEqual([83, 84]);
+    const standard = createEmptyGame().moveTree;
+    expect(withRealPlies(standard)).toBe(standard);
+  });
+});
+
+describe("PGN variations", () => {
+  it.each([
+    "1. e4 e5 (1... c5 2. Nf3) 2. Nf3 Nc6 *",
+    "1. e4 (1. d4 d5) 1... e5 2. Nf3 *",
+    "1. e4 e5 2. Nf3 (2. Bc4 Nf6 (2... Bc5)) 2... Nc6 *"
+  ])("places each variation after the move it replaces: %s", (movetext) => {
+    const exported = exportGameToPgn(importPgnText(movetext).game).split("\n").pop();
+    expect(exported).toBe(movetext);
   });
 });

@@ -1,4 +1,4 @@
-import { nodeIdForBoardFen } from "@chaturanga/shared/chess/pgn";
+import { nodeIdForBoardFen, withRealPlies } from "@chaturanga/shared/chess/pgn";
 import type { GameSession, SavedGame } from "@chaturanga/shared/types/chess";
 import { useGameStore } from "../../stores/game-store";
 import { useReviewStore } from "../../stores/review-store";
@@ -21,7 +21,7 @@ export function sessionFromSavedGame(saved: SavedGame): GameSession {
     currentFen: saved.currentFen,
     // Older rows have no node cursor; find the node for the saved board position.
     currentNodeId: saved.currentNodeId ?? nodeIdForBoardFen(saved.moveTree, saved.currentFen, "root"),
-    moveTree: saved.moveTree,
+    moveTree: withRealPlies(saved.moveTree),
     pgn: saved.pgn
   };
 }
