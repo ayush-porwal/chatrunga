@@ -22,7 +22,7 @@ import { GameReviewPage } from "../features/game-review/GameReviewPage";
 import { GameReviewPicker } from "../features/game-review/GameReviewPicker";
 import type { ReviewTab } from "../features/game-review/review-utils";
 import { PgnImportDialog } from "../features/game/PgnImportDialog";
-import { openSavedGame } from "../features/game/saved-game";
+import { openSavedGame, savedReview } from "../features/game/saved-game";
 import { PuzzlePage, type PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import { usePuzzleAutoReply } from "../features/puzzles/puzzle-session";
 import { SettingsPage, type SettingsSectionId } from "../features/settings/SettingsPage";
@@ -276,7 +276,7 @@ export function App() {
         if (entry.board.gameId && !useReviewStore.getState().review) {
           const saved = await window.chaturanga?.games.get(entry.board.gameId).catch(() => null);
           if (request !== latestNavigation.current) return "dropped";
-          if (saved?.review) useReviewStore.getState().loadReview(saved.review);
+          if (saved?.review) useReviewStore.getState().loadReview(savedReview(saved));
         }
         currentGame().setMode("freeplay");
         setReviewTab(entry.tab as ReviewTab);

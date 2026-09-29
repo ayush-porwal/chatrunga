@@ -315,10 +315,14 @@ export function rootPly(fen: string): number {
  * position is, say, Black to move at move 42. Shift such a tree so numbering and movers are right.
  */
 export function withRealPlies(moveTree: MoveNode[]): MoveNode[] {
-  const root = moveTree.find((node) => node.id === ROOT_ID);
-  if (!root) return moveTree;
-  const shift = rootPly(root.fenBefore) - root.ply;
+  const shift = legacyPlyShift(moveTree);
   return shift ? moveTree.map((node) => ({ ...node, ply: node.ply + shift })) : moveTree;
+}
+
+/** How far `withRealPlies` moves this tree's plies (0 for trees that already count from the real start). */
+export function legacyPlyShift(moveTree: readonly MoveNode[]): number {
+  const root = moveTree.find((node) => node.id === ROOT_ID);
+  return root ? rootPly(root.fenBefore) - root.ply : 0;
 }
 
 function createRootNode(fen: string): MoveNode {
