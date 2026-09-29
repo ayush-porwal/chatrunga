@@ -133,16 +133,22 @@ export function registerIpc(engineManager: EngineManager): void {
   registerUpdateIpc();
   registerLichessIpc();
   // Match clocks run on the renderer's monotonic clock, which may stop while the computer sleeps.
-  // Measured here (the renderer may be frozen when the suspend notice arrives) and sent on wake.
+  // Main keeps the total it missed; the renderer reads it synchronously whenever it checks a clock,
+  // so a move handled right after waking already sees it (an event could arrive too late).
+  let timeAsleepMs = 0;
   let suspendedAt: { monotonic: number; wall: number } | null = null;
+  const missedSince = (at: { monotonic: number; wall: number }) =>
+    Math.max(0, Date.now() - at.wall - (performance.now() - at.monotonic));
   powerMonitor.on("suspend", () => {
     suspendedAt = { monotonic: performance.now(), wall: Date.now() };
   });
   powerMonitor.on("resume", () => {
-    if (!suspendedAt) return;
-    const missedMs = Date.now() - suspendedAt.wall - (performance.now() - suspendedAt.monotonic);
+    if (suspendedAt) timeAsleepMs += missedSince(suspendedAt);
     suspendedAt = null;
-    if (missedMs > 0) broadcast("system:resumed", { missedMs });
+  });
+  // Also counts a wake main hasn't handled yet (its resume event can come after the renderer's input).
+  ipcMain.on("system:timeAsleepMs", (event) => {
+    event.returnValue = timeAsleepMs + (suspendedAt ? missedSince(suspendedAt) : 0);
   });
 }
 

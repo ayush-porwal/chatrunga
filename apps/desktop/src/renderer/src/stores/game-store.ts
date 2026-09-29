@@ -570,21 +570,23 @@ function stopClock(live: EngineClockLive | null): EngineClockLive | null {
   return live && live.stoppedAt === undefined ? { ...live, stoppedAt: clockNow() } : live;
 }
 
-let asleepMs = 0;
+/** Where the time asleep comes from (the main process; tests swap it). */
+let readTimeAsleep: () => number = () =>
+  typeof window === "undefined" ? 0 : (window.chaturanga?.system?.timeAsleepMs?.() ?? 0);
 
 /**
  * The time base for match clocks: monotonic, so changing the system clock (or an NTP correction)
  * never adds or removes thinking time. Only differences between two readings mean anything.
- * `performance.now()` may stop while the computer sleeps; `addTimeAsleep` adds that time back,
- * so closing the laptop mid-game doesn't hand out free thinking time.
+ * `performance.now()` may stop while the computer sleeps; the time it missed (kept by the main
+ * process, read on every call) is added back, so closing the laptop mid-game doesn't hand out
+ * free thinking time.
  */
 export function clockNow(): number {
-  return performance.now() + asleepMs;
+  return performance.now() + readTimeAsleep();
 }
 
-/** Time asleep the monotonic clock missed (measured by the main process from suspend to resume). */
-export function addTimeAsleep(missedMs: number): void {
-  if (Number.isFinite(missedMs) && missedMs > 0) asleepMs += missedMs;
+export function setTimeAsleepSource(source: () => number): void {
+  readTimeAsleep = source;
 }
 
 /** Time left on `side`'s clock at `now` (the running side's clock counts down; a stopped game is frozen). */
