@@ -99,18 +99,14 @@ export function buildTreeModel(nodes: readonly MoveNode[], rootId = DEFAULT_ROOT
     cursor = child;
   }
 
+  // One row per move number: a White move starts a row, Black's reply fills it. A line that starts
+  // with Black (a position set up with Black to move) opens with a row that has no White move.
   const mainline: TreeMainlineRow[] = [];
-  for (let index = 0; index < mainlineNodes.length; index += 2) {
-    const first = mainlineNodes[index];
-    const second = mainlineNodes[index + 1];
-    const cells = [first, second].filter((node): node is MoveNode => Boolean(node));
-    const white = cells.find((node) => nodeColor(node) === "white");
-    const black = cells.find((node) => nodeColor(node) === "black");
-    mainline.push({
-      number: moveNumber(first),
-      white: white ?? (first && nodeColor(first) === "white" ? first : undefined),
-      black: black ?? (second && nodeColor(second) === "black" ? second : undefined)
-    });
+  for (const node of mainlineNodes) {
+    const row = mainline[mainline.length - 1];
+    if (nodeColor(node) === "white") mainline.push({ number: moveNumber(node), white: node });
+    else if (row && !row.black && row.number === moveNumber(node)) row.black = node;
+    else mainline.push({ number: moveNumber(node), black: node });
   }
 
   const variationsByParent = new Map<string, TreeVariationBlock[]>();
