@@ -106,6 +106,7 @@
   },
   "devDependencies": {
     "@chaturanga/shared": "workspace:*",
+    "@electron/asar": "3.4.1",
     "@lichess-org/chessground": "^10.1.1",
     "@radix-ui/react-separator": "^1.1.8",
     "@radix-ui/react-slot": "^1.2.4",

@@ -36,8 +36,9 @@ jobs:
       - name: Typecheck
         run: pnpm -r --if-present typecheck
 
-      - name: Test
-        run: pnpm -r --if-present test
+      # Coverage runs the whole suite and enforces the thresholds in each vitest.config.ts.
+      - name: Test (with coverage)
+        run: pnpm test:coverage
 
       - name: Test repo scripts
         run: node --test scripts/*.test.mjs

@@ -8,7 +8,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "json-summary"],
-      include: ["src/chess/**/*.ts", "src/engine/**/*.ts"],
+      include: ["src/chess/**/*.ts", "src/engine/**/*.ts", "src/llm/**/*.ts", "src/ipc/**/*.ts"],
       exclude: ["**/*.test.ts"],
       thresholds: {
         lines: 80,
