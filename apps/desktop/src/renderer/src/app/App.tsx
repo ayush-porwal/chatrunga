@@ -1,7 +1,6 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMatch, useNavigate } from "react-router-dom";
 import { useShallow } from "zustand/react/shallow";
-import { Loader2 } from "lucide-react";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import { createGameFromFen } from "@chaturanga/shared/chess/pgn";
 import type { PuzzleSample, PuzzleSampleInput } from "@chaturanga/shared/types/database";
@@ -33,8 +32,8 @@ import { selectLiveGameInProgress, useLichessStore } from "../stores/lichess-sto
 import { useHistoryStore, type BoardSnapshot, type HistoryEntry } from "../stores/history-store";
 import { AppSidebar } from "./AppSidebar";
 import { AppTitlebar, GameTitlebar, LiveGameButton, PageTitle, ReviewTitlebar } from "./AppTitlebar";
-import { GameWorkspace, type SideTab } from "./GameWorkspace";
-import { HomePage } from "./HomePage";
+import type { SideTab } from "./GameWorkspace";
+import { AppPages, GameReviewPicker, OnboardingFlow, type AppView } from "./AppPages";
 import { PuzzleInfoPanel } from "./PuzzleInfoPanel";
 import { useBoardShortcuts } from "./useBoardShortcuts";
 import { useEngineDriver } from "./useEngineDriver";
@@ -51,30 +50,8 @@ import { Button } from "@/components/ui/button";
 import { useDatabaseDownloads } from "./useDatabaseDownloads";
 import { usePuzzleDraftStore } from "../stores/puzzle-draft-store";
 
-// Pages and panels load when first opened, so starting the app (Home, the board) doesn't parse the
-// review charts, settings, puzzles, databases or the welcome.
-const PlayPage = lazy(() => import("../features/game/PlayPage").then((module) => ({ default: module.PlayPage })));
-const DatabasePage = lazy(() =>
-  import("../features/database/DatabasePage").then((module) => ({ default: module.DatabasePage }))
-);
-const GameReviewPage = lazy(() =>
-  import("../features/game-review/GameReviewPage").then((module) => ({ default: module.GameReviewPage }))
-);
-const GameReviewPicker = lazy(() =>
-  import("../features/game-review/GameReviewPicker").then((module) => ({ default: module.GameReviewPicker }))
-);
-const PuzzlePage = lazy(() => import("../features/puzzles/PuzzlePage").then((module) => ({ default: module.PuzzlePage })));
-const SettingsPage = lazy(() =>
-  import("../features/settings/SettingsPage").then((module) => ({ default: module.SettingsPage }))
-);
-const OnboardingFlow = lazy(() =>
-  import("../features/onboarding/OnboardingFlow").then((module) => ({ default: module.OnboardingFlow }))
-);
-
-/** How a navigation enters Back / Forward (see showView). */
 type HistoryMode = "push" | "replace" | "none";
 
-type AppView = "home" | "game" | "settings" | "play" | "puzzles" | "databases" | "game-review";
 
 const boardViews: ReadonlySet<AppView> = new Set(["game", "game-review"]);
 /** Board ↔ board cross-fades in place (the board must not slide); anything with a page rises in. */
@@ -902,51 +879,21 @@ export function App() {
             {/* A render error in one page shows a recoverable panel there, not a blank window; the
                 key resets it when you go elsewhere. */}
             <ErrorBoundary key={appView} title="This page hit an unexpected error" scope={appView} layout="panel">
-            <Suspense fallback={<PageLoading />}>
-            {appView === "home" ? (
-              <HomePage
-                desktopApiAvailable={desktopApiAvailable}
-                onAnalyze={on.liveAnalysis}
-                onImportPgn={on.importPgn}
-                onPlay={on.play}
-                onOpenGame={on.openGame}
-                onPuzzles={on.puzzles}
-                onReview={on.openReviewPicker}
-                onReviewGame={on.reviewGame}
-                onOpenEngineSettings={on.engineSettings}
-              />
-            ) : appView === "settings" ? (
-              <SettingsPage initialSection={settingsSection} onSectionChange={on.settingsSectionViewed} />
-            ) : appView === "play" ? (
-              <PlayPage onOpenSettings={on.engineSettings} onBeforeStart={on.beforePlayStart} onStart={on.showGame} onOpenLichessGame={on.showGame} onFreeBoard={on.freeBoard} />
-            ) : appView === "puzzles" ? (
-              <PuzzlePage onDatabases={on.databases} onStart={on.startPuzzle} />
-            ) : appView === "databases" ? (
-              <DatabasePage onTrain={on.trainWithDatabase} />
-            ) : appView === "game-review" ? (
-              <GameReviewPage
-                activeTab={reviewTab}
-                onTabChange={setReviewTab}
-                settings={settings}
-                settingsReady={settingsQuery.isSuccess}
-                onAnalyze={reviewRouteLoading ? undefined : on.startReview}
-                onImportPgn={on.importPgn}
-                onPlay={on.play}
-                onOpenCommentarySettings={on.commentarySettings}
-              />
-            ) : (
-              <GameWorkspace
-                onOpenGame={on.openGameFromLibrary}
-                sideTab={sideTab}
-                onSideTabChange={setSideTab}
-                onStartAnalysis={
-                  desktopApiAvailable && gameMode === "freeplay" && !positionIsEnd ? on.analyzePosition : undefined
-                }
-                puzzlePanel={puzzlePanel}
-                onOpenSettings={on.engineSettings}
-              />
-            )}
-            </Suspense>
+            <AppPages
+              view={appView}
+              desktopApiAvailable={desktopApiAvailable}
+              settingsSection={settingsSection}
+              settings={settings}
+              settingsReady={settingsQuery.isSuccess}
+              reviewTab={reviewTab}
+              onReviewTabChange={setReviewTab}
+              reviewLoading={reviewRouteLoading}
+              sideTab={sideTab}
+              onSideTabChange={setSideTab}
+              canStartAnalysis={desktopApiAvailable && gameMode === "freeplay" && !positionIsEnd}
+              puzzlePanel={puzzlePanel}
+              on={on}
+            />
             </ErrorBoundary>
           </div>
         </main>
@@ -984,13 +931,4 @@ function replacesLiveBoard(entry: HistoryEntry, liveGameId: string): boolean {
 
 function puzzleInputFromConfig(config: PuzzleSessionConfig, databaseId: string, excludeIds: string[]): PuzzleSampleInput {
   return { databaseId, excludeIds, lichess: config.lichess, position: config.position };
-}
-
-/** While a page's code loads (the first time it opens): a quiet, centred spinner. */
-function PageLoading() {
-  return (
-    <div className="grid place-items-center" role="status" aria-label="Loading">
-      <Loader2 className="size-5 animate-spin text-fg-subtle" />
-    </div>
-  );
 }
