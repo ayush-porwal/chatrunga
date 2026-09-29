@@ -6,7 +6,7 @@
 import { parseSettingValue } from "./settings-values";
 import { isAbsolute } from "node:path";
 import { positionFromFen } from "@chaturanga/shared/chess/position";
-import type { GameHeaders, GameSource, SaveGameInput } from "@chaturanga/shared/types/chess";
+import type { Color, GameHeaders, GameSource, SaveGameInput } from "@chaturanga/shared/types/chess";
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
 import type {
   CreateEngineInput,
@@ -93,11 +93,32 @@ function asFiniteNumber(value: unknown, label: string): number {
   return value;
 }
 
-/** A positive number, or null/undefined when absent (search bounds such as depth or movetime). */
-function asOptionalPositive(value: unknown, label: string): number | null {
+/**
+ * A search bound (depth, movetime, nodes, MultiPV): null when absent, else a number from 0 up to
+ * `max` (a whole number when `integer`). Keeps a request from asking an engine to search forever.
+ */
+function asOptionalPositive(value: unknown, label: string, max: number = SEARCH_LIMITS.moveTimeMs, integer = false): number | null {
   if (value === undefined || value === null) return null;
   const number = asFiniteNumber(value, label);
   if (number < 0) fail(label, "must not be negative");
+  if (number > max) fail(label, `must be at most ${max}`);
+  if (integer && !Number.isInteger(number)) fail(label, "must be a whole number");
+  return number;
+}
+
+/** Upper bounds for engine search requests. */
+const SEARCH_LIMITS = { moveTimeMs: 3_600_000, depth: 200, multipv: 5, nodes: 1e12 } as const;
+
+function asWholeNumber(value: unknown, label: string): number {
+  const number = asFiniteNumber(value, label);
+  if (!Number.isInteger(number) || number < 0) fail(label, "must be a whole number");
+  return number;
+}
+
+/** A rating / popularity / difficulty filter bound. */
+function asFilterNumber(value: unknown, label: string): number {
+  const number = asFiniteNumber(value, label);
+  if (number < -10_000 || number > 10_000) fail(label, "is out of range");
   return number;
 }
 
@@ -203,7 +224,8 @@ function parseClock(value: unknown): EngineGoClock | null {
 
 export function parseStartGameInput(value: unknown): StartEngineGameInput {
   const input = asObject(value, "engine game");
-  const side = input.side === "black" ? "black" : "white";
+  if (input.side !== "white" && input.side !== "black") fail("engine side", "expected white or black");
+  const side: Color = input.side;
   return {
     engineId: asId(input.engineId, "engine id"),
     searchId: asId(input.searchId, "search id"),
@@ -212,7 +234,7 @@ export function parseStartGameInput(value: unknown): StartEngineGameInput {
     fen: asFen(input.fen),
     moves: asUciMoves(input.moves ?? []),
     moveTimeMs: asOptionalPositive(input.moveTimeMs, "moveTimeMs"),
-    depth: asOptionalPositive(input.depth, "depth"),
+    depth: asOptionalPositive(input.depth, "depth", SEARCH_LIMITS.depth, true),
     clock: parseClock(input.clock)
   };
 }
@@ -224,7 +246,7 @@ export function parseStartAnalysisInput(value: unknown): StartLiveAnalysisInput 
     searchId: asId(input.searchId, "search id"),
     fen: asFen(input.fen),
     moves: asUciMoves(input.moves ?? []),
-    multipv: asOptionalPositive(input.multipv, "multipv")
+    multipv: asOptionalPositive(input.multipv, "multipv", SEARCH_LIMITS.multipv, true)
   };
 }
 
@@ -234,7 +256,8 @@ export function parseProbeEvalInput(value: unknown): ProbeEvalInput {
     engineId: asId(input.engineId, "engine id"),
     fen: asFen(input.fen),
     moves: asUciMoves(input.moves ?? []),
-    movetimeMs: Math.min(asOptionalPositive(input.movetimeMs, "movetimeMs") || 400, 60_000)
+    // Clamped rather than refused: a probe never needs more than a minute.
+    movetimeMs: Math.min(asOptionalPositive(input.movetimeMs, "movetimeMs", Number.MAX_VALUE) || 400, 60_000)
   };
 }
 
@@ -245,7 +268,7 @@ function parseReviewMove(value: unknown, index: number): ReviewMoveInputItem {
   if (!UCI_MOVE.test(uci)) fail(label, `"${uci}" is not a UCI move`);
   return {
     nodeId: asId(move.nodeId, `${label} node id`),
-    ply: asFiniteNumber(move.ply, `${label} ply`),
+    ply: asWholeNumber(move.ply, `${label} ply`),
     san: asString(move.san, `${label} san`, 16),
     uci,
     fenBefore: asFen(move.fenBefore, `${label} fenBefore`),
@@ -268,10 +291,10 @@ export function parseReviewGameInput(value: unknown): ReviewGameInput {
     timeControl: nullable(input.timeControl, (tc) => asString(tc, "time control", 64)),
     rootFen: asFen(input.rootFen, "root FEN"),
     moves: input.moves.map(parseReviewMove),
-    nodes: asOptionalPositive(input.nodes, "nodes"),
+    nodes: asOptionalPositive(input.nodes, "nodes", SEARCH_LIMITS.nodes, true),
     moveTimeMs: asOptionalPositive(input.moveTimeMs, "moveTimeMs"),
-    depth: asOptionalPositive(input.depth, "depth"),
-    multipv: asOptionalPositive(input.multipv, "multipv")
+    depth: asOptionalPositive(input.depth, "depth", SEARCH_LIMITS.depth, true),
+    multipv: asOptionalPositive(input.multipv, "multipv", SEARCH_LIMITS.multipv, true)
   };
 }
 
@@ -381,9 +404,9 @@ export function parsePuzzleSampleInput(value: unknown): PuzzleSampleInput {
     const lichess = asObject(input.lichess, "lichess filters");
     const side = lichess.side === "white" || lichess.side === "black" ? lichess.side : "any";
     result.lichess = {
-      ratingMin: asFiniteNumber(lichess.ratingMin, "ratingMin"),
-      ratingMax: asFiniteNumber(lichess.ratingMax, "ratingMax"),
-      popularityMin: asFiniteNumber(lichess.popularityMin, "popularityMin"),
+      ratingMin: asFilterNumber(lichess.ratingMin, "ratingMin"),
+      ratingMax: asFilterNumber(lichess.ratingMax, "ratingMax"),
+      popularityMin: asFilterNumber(lichess.popularityMin, "popularityMin"),
       lengths: asStringArray(lichess.lengths ?? [], "lengths", 64),
       themes: asStringArray(lichess.themes ?? [], "themes", 256),
       openings: asStringArray(lichess.openings ?? [], "openings", 1024),
@@ -393,8 +416,8 @@ export function parsePuzzleSampleInput(value: unknown): PuzzleSampleInput {
   if (input.position !== undefined && input.position !== null) {
     const position = asObject(input.position, "position filters");
     result.position = {
-      difficultyMin: asFiniteNumber(position.difficultyMin, "difficultyMin"),
-      difficultyMax: asFiniteNumber(position.difficultyMax, "difficultyMax"),
+      difficultyMin: asFilterNumber(position.difficultyMin, "difficultyMin"),
+      difficultyMax: asFilterNumber(position.difficultyMax, "difficultyMax"),
       tags: asStringArray(position.tags ?? [], "tags", 64)
     };
   }
