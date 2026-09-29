@@ -99,6 +99,8 @@ export type ChaturangaApi = {
      * clocks add it, see clockNow).
      */
     timeAsleepMs(): number;
+    /** The computer woke up (the time asleep changed). */
+    onResumed(callback: () => void): Unsubscribe;
   };
   appearance: {
     /** Current glass state (synchronous: read before the first render so the first frame is right). */

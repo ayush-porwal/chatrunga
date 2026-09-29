@@ -145,6 +145,8 @@ export function registerIpc(engineManager: EngineManager): void {
   powerMonitor.on("resume", () => {
     if (suspendedAt) timeAsleepMs += missedSince(suspendedAt);
     suspendedAt = null;
+    // Even a short sleep (the renderer's drift check may not notice it): read the total again.
+    broadcast("system:resumed", undefined);
   });
   // Also counts a wake main hasn't handled yet (its resume event can come after the renderer's input).
   ipcMain.on("system:timeAsleepMs", (event) => {

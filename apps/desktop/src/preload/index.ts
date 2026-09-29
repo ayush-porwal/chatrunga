@@ -28,7 +28,8 @@ const api: ChaturangaApi = {
     platform: process.platform
   },
   system: {
-    timeAsleepMs: () => Number(ipcRenderer.sendSync("system:timeAsleepMs")) || 0
+    timeAsleepMs: () => Number(ipcRenderer.sendSync("system:timeAsleepMs")) || 0,
+    onResumed: subscribe<void>("system:resumed")
   },
   appearance: {
     getGlass: () => glassState,
