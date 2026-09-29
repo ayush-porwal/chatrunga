@@ -3,7 +3,7 @@ import { statusForFen } from "@chaturanga/shared/chess/position";
 import type { EngineInfo } from "@chaturanga/shared/types/engine";
 import { currentLineUcis } from "../features/analysis/engine-game-helpers";
 import { useAnalysisStore } from "../stores/analysis-store";
-import { clockNow, notePowerState, remainingClockMs, useGameStore } from "../stores/game-store";
+import { clockNow, addTimeAsleep, remainingClockMs, useGameStore } from "../stores/game-store";
 
 /** Live analysis always asks for the top three lines. */
 const ANALYSIS_MULTIPV = 3;
@@ -92,7 +92,7 @@ export function useEngineDriver(defaultEngineId: string | null): void {
       if (state.currentNodeId !== previous.currentNodeId || state.mode !== previous.mode) infos.discard();
     });
     const unsubscribers = [
-      events.onPowerState?.((state) => notePowerState(state)) ?? (() => {}),
+      events.onSystemResumed?.((event) => addTimeAsleep(event.missedMs)) ?? (() => {}),
       events.onEngineInfo((info) => infos.push(info)),
       events.onEngineBestMove((bestMove) => {
         infos.flushNow();

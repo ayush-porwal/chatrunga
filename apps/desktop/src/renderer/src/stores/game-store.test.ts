@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
-import { buildEngineGoClock, clockNow, notePowerState, useGameStore } from "./game-store";
+import { buildEngineGoClock, clockNow, addTimeAsleep, useGameStore } from "./game-store";
 
 /** Moves both time sources together (the clock treats a wall-only jump as time asleep). */
 function mockTime() {
@@ -205,13 +205,12 @@ describe("game store", () => {
     wall.mockReturnValue(1_700_000_000_000 + 11_000 + 3_600_000);
     expect(clockNow() - start).toBe(1_000);
 
-    // Ten minutes asleep, which the monotonic clock missed: added back at resume.
+    // Ten minutes asleep that the monotonic clock missed (reported by main on wake): added back.
     at(12_000);
-    notePowerState("suspend");
-    vi.spyOn(performance, "now").mockReturnValue(12_050);
-    wall.mockReturnValue(1_700_000_000_000 + 12_000 + 600_000);
-    notePowerState("resume");
-    expect(clockNow() - start).toBe(2_050 + 600_000 - 50);
+    addTimeAsleep(600_000);
+    expect(clockNow() - start).toBe(2_000 + 600_000);
+    addTimeAsleep(-5);
+    expect(clockNow() - start).toBe(2_000 + 600_000);
   });
 
   describe("goToLine", () => {

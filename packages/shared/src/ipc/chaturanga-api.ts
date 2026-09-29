@@ -157,8 +157,11 @@ export type ChaturangaApi = {
     onUpdateState(callback: (state: UpdateState) => void): Unsubscribe;
     /** Lichess account, seek, challenge, game and import events (main/lichess). */
     onLichessEvent(callback: (event: LichessEvent) => void): Unsubscribe;
-    /** The computer is going to sleep (`suspend`) or woke up (`resume`); match clocks count the time asleep. */
-    onPowerState(callback: (state: "suspend" | "resume") => void): Unsubscribe;
+    /**
+     * The computer woke up. `missedMs`: the part of the time asleep a monotonic clock didn't count
+     * (measured in main, from suspend to resume); match clocks add it.
+     */
+    onSystemResumed(callback: (event: { missedMs: number }) => void): Unsubscribe;
   };
 
   /**

@@ -571,31 +571,20 @@ function stopClock(live: EngineClockLive | null): EngineClockLive | null {
 }
 
 let asleepMs = 0;
-let suspendedAt: { monotonic: number; wall: number } | null = null;
 
 /**
  * The time base for match clocks: monotonic, so changing the system clock (or an NTP correction)
  * never adds or removes thinking time. Only differences between two readings mean anything.
- * `performance.now()` may stop while the computer sleeps; `notePowerState` adds that time back,
+ * `performance.now()` may stop while the computer sleeps; `addTimeAsleep` adds that time back,
  * so closing the laptop mid-game doesn't hand out free thinking time.
  */
 export function clockNow(): number {
   return performance.now() + asleepMs;
 }
 
-/**
- * The OS is suspending / has resumed. Whatever part of the time asleep the monotonic clock missed
- * (the wall clock's step past the monotonic one, between these two events only) is added to it.
- */
-export function notePowerState(state: "suspend" | "resume"): void {
-  if (state === "suspend") {
-    suspendedAt = { monotonic: performance.now(), wall: Date.now() };
-    return;
-  }
-  if (!suspendedAt) return;
-  const missed = Date.now() - suspendedAt.wall - (performance.now() - suspendedAt.monotonic);
-  if (missed > 0) asleepMs += missed;
-  suspendedAt = null;
+/** Time asleep the monotonic clock missed (measured by the main process from suspend to resume). */
+export function addTimeAsleep(missedMs: number): void {
+  if (Number.isFinite(missedMs) && missedMs > 0) asleepMs += missedMs;
 }
 
 /** Time left on `side`'s clock at `now` (the running side's clock counts down; a stopped game is frozen). */
