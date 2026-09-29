@@ -20,6 +20,7 @@ import {
   parseReviewGameInput,
   parseSaveGameInput,
   parseSettingKey,
+  parseSettingsPatch,
   parseStartAnalysisInput,
   parseStartGameInput
 } from "./validate";
@@ -230,5 +231,13 @@ describe("Lichess inputs", () => {
     expect(() => parseLichessAiChallengeInput({ level: 9, minutes: 10, incrementSec: 0, color: "white" })).toThrow(/level/);
     expect(parseLichessDisconnectInput({ removeGames: true })).toEqual({ removeGames: true });
     expect(() => parseLichessDisconnectInput({})).toThrow(/removeGames/);
+  });
+});
+
+describe("parseSettingsPatch", () => {
+  it("keeps known keys and refuses unknown or empty patches", () => {
+    expect(parseSettingsPatch({ boardTheme: "green", boardSquareLight: null })).toEqual({ boardTheme: "green", boardSquareLight: null });
+    expect(() => parseSettingsPatch({ nope: 1 })).toThrow();
+    expect(() => parseSettingsPatch({})).toThrow();
   });
 });

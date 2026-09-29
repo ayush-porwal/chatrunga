@@ -328,7 +328,7 @@ function SoundSection({ appearance }: { appearance: AppSettings }) {
                 step={0.05}
                 value={appearance.soundVolume}
                 disabled={!appearance.soundEnabled}
-                onChange={(event) => setSetting("soundVolume", Number(event.target.value))}
+                onChange={(event) => setSetting("soundVolume", Number(event.target.value), { batch: true })}
               />
               <span className="w-10 text-right text-xs tabular-nums text-fg-muted">{Math.round(appearance.soundVolume * 100)}%</span>
               <IconButton

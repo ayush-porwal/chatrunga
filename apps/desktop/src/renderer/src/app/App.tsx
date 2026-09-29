@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMatch, useNavigate } from "react-router-dom";
 import { useShallow } from "zustand/react/shallow";
+import { Loader2 } from "lucide-react";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import { createGameFromFen } from "@chaturanga/shared/chess/pgn";
 import type { PuzzleSample, PuzzleSampleInput } from "@chaturanga/shared/types/database";
@@ -14,19 +15,14 @@ import { useViewTransitionState, type ViewTransitionKind } from "@/lib/use-view-
 import { useEventCallback } from "@/lib/use-event-callback";
 import { signalWindowReady } from "@/lib/window-glass";
 import { cn } from "@/lib/utils";
-import { PlayPage } from "../features/game/PlayPage";
 import { BoardFocusContext } from "../features/board/board-focus";
 import { PromotionDialog } from "../features/board/PromotionDialog";
-import { DatabasePage } from "../features/database/DatabasePage";
-import { GameReviewPage } from "../features/game-review/GameReviewPage";
-import { GameReviewPicker } from "../features/game-review/GameReviewPicker";
 import type { ReviewTab } from "../features/game-review/review-utils";
 import { PgnImportDialog } from "../features/game/PgnImportDialog";
 import { openSavedGame } from "../features/game/saved-game";
-import { PuzzlePage, type PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
+import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import { usePuzzleAutoReply } from "../features/puzzles/puzzle-session";
-import { SettingsPage, type SettingsSectionId } from "../features/settings/SettingsPage";
-import { OnboardingFlow } from "../features/onboarding/OnboardingFlow";
+import type { SettingsSectionId } from "../features/settings/SettingsPage";
 import { useOnboarding } from "../features/onboarding/useOnboarding";
 import { useEnginesQuery, useSamplePuzzleMutation, useSettingsQuery } from "../queries/api";
 import { useAnalysisStore } from "../stores/analysis-store";
@@ -48,6 +44,26 @@ import { useHistoryShortcuts } from "./useHistoryShortcuts";
 import { useMoveKeyboardShortcuts } from "./useMoveKeyboardShortcuts";
 import { useMoveSounds } from "./useMoveSounds";
 import { cancelActiveReview, useReviewRunner } from "./useReviewRunner";
+
+// Pages and panels load when first opened, so starting the app (Home, the board) doesn't parse the
+// review charts, settings, puzzles, databases or the welcome.
+const PlayPage = lazy(() => import("../features/game/PlayPage").then((module) => ({ default: module.PlayPage })));
+const DatabasePage = lazy(() =>
+  import("../features/database/DatabasePage").then((module) => ({ default: module.DatabasePage }))
+);
+const GameReviewPage = lazy(() =>
+  import("../features/game-review/GameReviewPage").then((module) => ({ default: module.GameReviewPage }))
+);
+const GameReviewPicker = lazy(() =>
+  import("../features/game-review/GameReviewPicker").then((module) => ({ default: module.GameReviewPicker }))
+);
+const PuzzlePage = lazy(() => import("../features/puzzles/PuzzlePage").then((module) => ({ default: module.PuzzlePage })));
+const SettingsPage = lazy(() =>
+  import("../features/settings/SettingsPage").then((module) => ({ default: module.SettingsPage }))
+);
+const OnboardingFlow = lazy(() =>
+  import("../features/onboarding/OnboardingFlow").then((module) => ({ default: module.OnboardingFlow }))
+);
 
 /** How a navigation enters Back / Forward (see showView). */
 type HistoryMode = "push" | "replace" | "none";
@@ -825,6 +841,7 @@ export function App() {
             </Notice>
           ) : null}
           <div className="grid min-h-0 flex-1">
+            <Suspense fallback={<PageLoading />}>
             {appView === "home" ? (
               <HomePage
                 desktopApiAvailable={desktopApiAvailable}
@@ -868,11 +885,13 @@ export function App() {
                 onOpenSettings={on.settings}
               />
             )}
+            </Suspense>
           </div>
         </main>
       </div>
 
       <PromotionDialog />
+      <Suspense fallback={null}>
       {onboarding.open ? (
         <OnboardingFlow
           onFinish={onboarding.finish}
@@ -887,6 +906,7 @@ export function App() {
           onImport={on.openImportDialog}
         />
       ) : null}
+      </Suspense>
     </BoardFocusContext.Provider>
   );
 }
@@ -902,4 +922,13 @@ function replacesLiveBoard(entry: HistoryEntry, liveGameId: string): boolean {
 
 function puzzleInputFromConfig(config: PuzzleSessionConfig, databaseId: string, excludeIds: string[]): PuzzleSampleInput {
   return { databaseId, excludeIds, lichess: config.lichess, position: config.position };
+}
+
+/** While a page's code loads (the first time it opens): a quiet, centred spinner. */
+function PageLoading() {
+  return (
+    <div className="grid place-items-center" role="status" aria-label="Loading">
+      <Loader2 className="size-5 animate-spin text-fg-subtle" />
+    </div>
+  );
 }
