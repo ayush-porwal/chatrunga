@@ -215,6 +215,26 @@ describe("download reliability", () => {
   });
 });
 
+describe("resume without Content-Length", () => {
+  it("uses the size in Content-Range, so a short transfer isn't installed", async () => {
+    await mkdir(dir, { recursive: true });
+    await writeFile(`${finalPath}.part`, content.subarray(0, 1000));
+    await writeFile(`${finalPath}.part.validator`, '"v1"');
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        // Claims the rest of the file but sends only part of it, with no Content-Length.
+        new Response(content.subarray(1000, 2000), {
+          status: 206,
+          headers: { "content-range": `bytes 1000-${content.length - 1}/${content.length}` }
+        })
+      )
+    );
+    await expect(downloadDatabase(SOURCE, () => undefined)).rejects.toThrow(/ended early/);
+    expect(rows.has(SOURCE)).toBe(false);
+  });
+});
+
 describe("removeDatabase", () => {
   it("deletes the file and any partial download, then the entry", async () => {
     await mkdir(dir, { recursive: true });
@@ -261,6 +281,24 @@ describe("samplePuzzle", () => {
       seen.add(Number(sample.id.slice(1)));
       expect([...seen].some((index) => index >= 500)).toBe(true);
     }, { timeout: 5_000, interval: 1 });
+  });
+
+  it("serves a small match set again to a new session instead of reporting no match", async () => {
+    await install([row("a", 2500), row("b", 2500)]);
+    const filters = input({ ratingMin: 2000 });
+    const first = await samplePuzzle(filters);
+    await new Promise((resolve) => setTimeout(resolve, 200)); // the full scan fills the pool
+    const second = await samplePuzzle({ ...filters, excludeIds: [first.id] });
+    expect(second.id).not.toBe(first.id);
+    await expect(samplePuzzle({ ...filters, excludeIds: ["a", "b"] })).rejects.toThrow(/No puzzle matched/);
+    // A new session (nothing excluded) still gets puzzles.
+    expect(["a", "b"]).toContain((await samplePuzzle(filters)).id);
+  });
+
+  it("skips a malformed row instead of reporting no match", async () => {
+    const broken = "bad,not-a-fen,e2e4 e7e5,1500,80,90,100,short,,";
+    await install([broken, broken, broken, row("good", 1500)]);
+    expect((await samplePuzzle(input())).id).toBe("good");
   });
 
   it("applies the filters and the excluded ids", async () => {

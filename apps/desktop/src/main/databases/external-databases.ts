@@ -24,6 +24,8 @@ const PROGRESS_INTERVAL_MS = 120;
 const STALL_TIMEOUT_MS = 60_000;
 /** The quick answer for new filters: a random pick among the first matches in the file. */
 const QUICK_MATCHES = 500;
+/** Rows the quick scan keeps, so it can skip a malformed one. */
+const QUICK_CANDIDATES = 16;
 /** Puzzles kept per filter set from a scan of the whole file; refilled in the background. */
 const POOL_SIZE = 64;
 const POOL_REFILL_BELOW = 8;
@@ -149,6 +151,8 @@ async function runDownload(sourceId: string, onProgress: ProgressSink, signal: A
     stallTimer = setTimeout(stalled, STALL_TIMEOUT_MS);
   };
   const aborted = AbortSignal.any([signal, stall.signal]);
+  // Shown (with Cancel) right away, before the connection is even made.
+  onProgress({ sourceId: source.id, downloadedBytes: 0, totalBytes: null, percent: null, state: "downloading", message: "Connecting…" });
 
   try {
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -214,7 +218,13 @@ async function runDownload(sourceId: string, onProgress: ProgressSink, signal: A
       else await unlink(validatorPath).catch(() => undefined);
     }
     const remainingBytes = parseContentLength(response.headers.get("content-length"));
-    const totalBytes = remainingBytes === null ? null : startBytes + remainingBytes;
+    // Without a Content-Length, a resumed response's Content-Range still gives the full size.
+    const totalBytes =
+      remainingBytes !== null
+        ? startBytes + remainingBytes
+        : resumed
+          ? rangeSize(response.headers.get("content-range"))
+          : null;
     let downloadedBytes = startBytes;
     let lastEmitAt = 0;
     const meter = new Transform({
@@ -285,7 +295,14 @@ async function finishDownload(
 export async function removeDatabase(id: string): Promise<void> {
   const database = externalDatabaseRepository.get(id);
   if (!database) return;
-  for (const path of [database.filePath, `${database.filePath}.part`, `${database.filePath}.part.validator`]) {
+  // A download of it (Download again) stops first: it would write to files being deleted.
+  const running = inFlight.get(database.sourceId);
+  if (running) {
+    running.controller.abort(new DownloadCancelledError());
+    await running.promise.catch(() => undefined);
+  }
+  // The partial files first: if one can't go, the dataset itself (and its entry) are still intact.
+  for (const path of [`${database.filePath}.part.validator`, `${database.filePath}.part`, database.filePath]) {
     await unlink(path).catch((error: unknown) => {
       if (!isMissingFile(error)) throw error;
     });
@@ -295,22 +312,33 @@ export async function removeDatabase(id: string): Promise<void> {
 }
 
 type SamplePool = {
-  /** Candidate rows, a uniform sample of every match in the file. */
+  /** Candidate rows still to serve, a uniform sample of every match in the file. */
   rows: string[][];
-  /** The scan found no more matches than it kept: `rows` is every match. */
-  complete: boolean;
+  /**
+   * When the file has no more matches than a pool holds: every one of them. Serving takes rows
+   * out of `rows`; this set refills it (a new session may exclude fewer puzzles than the last).
+   */
+  all: string[][] | null;
   filling: Promise<void> | null;
+  /** Stops the running full-file scan (the pool was dropped). */
+  cancel: (() => void) | null;
 };
 
 /** Per database + filters. A small pool, filled from one scan of the whole file, serves many puzzles. */
 const pools = new Map<string, SamplePool>();
 
-function poolKey(input: PuzzleSampleInput): string {
-  return JSON.stringify([input.databaseId, input.lichess ?? null, input.position ?? null]);
+/** Per database, file version (a replaced file is a new pool) and filters. */
+function poolKey(input: PuzzleSampleInput, fileVersion: string): string {
+  return JSON.stringify([input.databaseId, fileVersion, input.lichess ?? null, input.position ?? null]);
+}
+
+function dropPool(key: string): void {
+  pools.get(key)?.cancel?.();
+  pools.delete(key);
 }
 
 function dropPools(databaseId: string): void {
-  for (const key of pools.keys()) if (JSON.parse(key)[0] === databaseId) pools.delete(key);
+  for (const key of [...pools.keys()]) if (JSON.parse(key)[0] === databaseId) dropPool(key);
 }
 
 /**
@@ -330,15 +358,16 @@ export async function samplePuzzle(input: PuzzleSampleInput): Promise<PuzzleSamp
 
   const kind: PuzzleRowKind = database.sourceId === "lichess-puzzles" ? "lichess" : "position";
   const excluded = new Set(input.excludeIds ?? []);
-  const key = poolKey(input);
+  const file = await stat(database.filePath);
+  const key = poolKey(input, `${file.size}:${file.mtimeMs}`);
   let pool = pools.get(key);
   if (!pool) {
-    pool = { rows: [], complete: false, filling: null };
+    pool = { rows: [], all: null, filling: null, cancel: null };
     pools.set(key, pool);
-    // Oldest filter sets go first.
-    for (const oldKey of pools.keys()) {
+    // Oldest filter sets go first (their scans stop).
+    for (const oldKey of [...pools.keys()]) {
       if (pools.size <= MAX_POOLS) break;
-      pools.delete(oldKey);
+      dropPool(oldKey);
     }
   }
   const job: ScanJob = {
@@ -359,26 +388,31 @@ export async function samplePuzzle(input: PuzzleSampleInput): Promise<PuzzleSamp
   };
 
   let sample = takeFromPool(pool, build);
-  if (!sample && pool.complete) {
-    // Every match is known; wait for a refill only if one is running (it may find unseen ones).
-    if (pool.filling) await pool.filling;
+  if (!sample && pool.all) {
+    // Every match is known: serve them again (the excluded ones are skipped).
+    pool.rows = [...pool.all];
     sample = takeFromPool(pool, build);
   }
-  if (!sample && !pool.complete) {
-    const quick = await reservoirScan({ ...job, size: 1, maxMatches: QUICK_MATCHES });
+  if (!sample && !pool.all) {
+    // A few candidates, so a malformed row (checked only now) doesn't hide the valid ones.
+    const quick = await reservoirScan({ ...job, size: QUICK_CANDIDATES, maxMatches: QUICK_MATCHES });
     sample = quick.rows.map(build).find(Boolean) ?? null;
   }
-  if (pool.rows.length < POOL_REFILL_BELOW && !pool.filling && !(pool.complete && !pool.rows.length)) {
+  if (pool.rows.length < POOL_REFILL_BELOW && !pool.filling && !pool.all) {
     const target = pool;
-    target.filling = scanInWorker(job)
+    // Exclusions are applied when serving, so the pool fits any session with these filters.
+    const scan = scanInWorker({ ...job, excludeIds: [] });
+    target.cancel = scan.cancel;
+    target.filling = scan.result
       .then((result) => {
         if (pools.get(key) !== target) return;
         target.rows = result.rows;
-        target.complete = result.complete && result.matches <= POOL_SIZE;
+        if (result.complete && result.matches <= POOL_SIZE) target.all = [...result.rows];
       })
       .catch(() => undefined)
       .finally(() => {
         target.filling = null;
+        target.cancel = null;
       });
   }
   if (!sample) throw new Error("No puzzle matched those filters. Try fewer themes or a wider rating range.");
@@ -399,10 +433,13 @@ function takeFromPool(pool: SamplePool, build: (row: string[]) => PuzzleSample |
 /** The worker bundled next to the main entry; tests (and a missing file) scan in this thread. */
 const SCAN_WORKER = join(dirname(fileURLToPath(import.meta.url)), "puzzle-scan-worker.js");
 
-function scanInWorker(job: ScanJob): Promise<ScanResult> {
-  if (!existsSync(SCAN_WORKER)) return reservoirScan(job);
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(SCAN_WORKER, { workerData: job });
+function scanInWorker(job: ScanJob): { result: Promise<ScanResult>; cancel: () => void } {
+  if (!existsSync(SCAN_WORKER)) {
+    let cancelled = false;
+    return { result: reservoirScan(job, () => cancelled), cancel: () => (cancelled = true) };
+  }
+  const worker = new Worker(SCAN_WORKER, { workerData: job });
+  const result = new Promise<ScanResult>((resolve, reject) => {
     worker.once("message", (message: { ok: true; result: ScanResult } | { ok: false; message: string }) => {
       if (message.ok) resolve(message.result);
       else reject(new Error(message.message));
@@ -413,11 +450,18 @@ function scanInWorker(job: ScanJob): Promise<ScanResult> {
       if (code !== 0) reject(new Error(`Puzzle scan stopped (exit ${code}).`));
     });
   });
+  return { result, cancel: () => void worker.terminate() };
 }
 
 /** The full length a 416 reports (`Content-Range: bytes` + `*` + `/N`); null when absent or malformed. */
 function rangeTotal(value: string | null): number | null {
   const match = /^bytes \*\/(\d+)$/.exec(value?.trim() ?? "");
+  return match ? Number(match[1]) : null;
+}
+
+/** The full size a 206 reports (`Content-Range: bytes START-END/TOTAL`); null when absent or `*`. */
+function rangeSize(value: string | null): number | null {
+  const match = /^bytes \d+-\d+\/(\d+)$/.exec(value?.trim() ?? "");
   return match ? Number(match[1]) : null;
 }
 
