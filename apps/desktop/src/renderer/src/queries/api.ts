@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SAVE_SUPPRESSED_AFTER_DELETE } from "@chaturanga/shared/ipc/game-handling";
 import type { SaveGameInput } from "@chaturanga/shared/types/chess";
@@ -6,6 +6,7 @@ import type { CreateEngineInput, UpdateEngineInput } from "@chaturanga/shared/ty
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
 import { ipcErrorMessage } from "@/lib/ipc-error";
+import { withPendingSettings } from "./settings-pending";
 
 const queryKeys = {
   databases: ["databases"] as const,
@@ -131,30 +132,84 @@ export function useDeleteDatabaseMutation() {
 export function useSettingsQuery() {
   return useQuery({
     queryKey: queryKeys.settings,
-    queryFn: () => api()?.settings.getAll() ?? defaultSettings
+    queryFn: () => api()?.settings.getAll() ?? defaultSettings,
+    // A drag not written yet stays on screen through reads caused by other writes.
+    select: withPendingSettings
   });
 }
 
-export function useUpdateSettingMutation() {
+type SettingsPatch = Partial<AppSettings>;
+type SettingsWrite = {
+  patch: SettingsPatch;
+  /** The values before this write (when the cache already shows it, e.g. a batched slider drag). */
+  previous?: SettingsPatch;
+};
+
+const SETTINGS_MUTATION_KEY = ["settings", "write"] as const;
+
+/**
+ * Writes settings (optimistic: the cache shows them at once). A failed write puts back only its
+ * own keys, and only those still showing its value — a newer edit to the same key, or an edit to
+ * another key, is never reverted. The settings are read again once no write is left running.
+ */
+export function useUpdateSettingsMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ key, value }: { key: keyof AppSettings; value: unknown }) =>
-      requireApi().settings.set(key, value),
-    onMutate: async ({ key, value }) => {
+    mutationKey: SETTINGS_MUTATION_KEY,
+    mutationFn: ({ patch }: SettingsWrite) => requireApi().settings.patch(patch),
+    onMutate: async ({ patch, previous }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.settings });
-      const previous = queryClient.getQueryData<AppSettings>(queryKeys.settings);
-      queryClient.setQueryData<AppSettings>(queryKeys.settings, {
-        ...defaultSettings,
-        ...previous,
-        [key]: value
-      });
-      return { previous };
+      const current = { ...defaultSettings, ...queryClient.getQueryData<AppSettings>(queryKeys.settings) };
+      const before: SettingsPatch = previous ?? pickSettings(current, patch);
+      queryClient.setQueryData<AppSettings>(queryKeys.settings, { ...current, ...patch });
+      return { before };
     },
-    onError: (_error, _variables, context) => {
-      if (context?.previous) queryClient.setQueryData(queryKeys.settings, context.previous);
+    onError: (_error, { patch }, context) => {
+      if (!context) return;
+      queryClient.setQueryData<AppSettings>(queryKeys.settings, (current) =>
+        current ? revertFailedWrite(current, patch, context.before) : current
+      );
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.settings })
+    onSettled: () => {
+      // This write still counts as running here: read back once the last one settles.
+      if (queryClient.isMutating({ mutationKey: SETTINGS_MUTATION_KEY }) <= 1) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.settings });
+      }
+    }
   });
+}
+
+/** After a failed write: its keys go back to `before`, unless a newer value replaced them meanwhile. */
+export function revertFailedWrite(current: AppSettings, patch: SettingsPatch, before: SettingsPatch): AppSettings {
+  const next = { ...current };
+  for (const key of Object.keys(patch) as (keyof AppSettings)[]) {
+    if (Object.is(current[key], patch[key])) Object.assign(next, { [key]: before[key] });
+  }
+  return next;
+}
+
+function pickSettings(settings: AppSettings, patch: SettingsPatch): SettingsPatch {
+  const picked: SettingsPatch = {};
+  for (const key of Object.keys(patch) as (keyof AppSettings)[]) Object.assign(picked, { [key]: settings[key] });
+  return picked;
+}
+
+/** One setting (see useUpdateSettingsMutation). `mutate` / `mutateAsync` keep their identity. */
+export function useUpdateSettingMutation() {
+  const update = useUpdateSettingsMutation();
+  const { mutate: mutatePatch, mutateAsync: mutatePatchAsync } = update;
+  // Per-call options (onSuccess, onError…) are passed on; their variables are the patch written.
+  const mutate = useCallback(
+    ({ key, value }: { key: keyof AppSettings; value: unknown }, options?: Parameters<typeof mutatePatch>[1]) =>
+      mutatePatch({ patch: { [key]: value } as SettingsPatch }, options),
+    [mutatePatch]
+  );
+  const mutateAsync = useCallback(
+    ({ key, value }: { key: keyof AppSettings; value: unknown }, options?: Parameters<typeof mutatePatchAsync>[1]) =>
+      mutatePatchAsync({ patch: { [key]: value } as SettingsPatch }, options),
+    [mutatePatchAsync]
+  );
+  return { ...update, mutate, mutateAsync };
 }
 
 export function useOpenRouterConfigQuery() {

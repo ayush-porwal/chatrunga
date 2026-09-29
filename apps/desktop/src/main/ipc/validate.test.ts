@@ -20,6 +20,7 @@ import {
   parseReviewGameInput,
   parseSaveGameInput,
   parseSettingKey,
+  parseSettingsPatch,
   parseStartAnalysisInput,
   parseStartGameInput
 } from "./validate";
@@ -255,5 +256,14 @@ describe("parseSaveGameInput headers", () => {
   it("rejects headers that aren't text", () => {
     expect(() => parseSaveGameInput({ ...base, headers: { white: 42 } })).toThrow();
     expect(() => parseSaveGameInput({ ...base, headers: { orientationHint: "up" } })).toThrow();
+  });
+});
+
+describe("parseSettingsPatch", () => {
+  it("keeps known keys and refuses unknown or empty patches", () => {
+    expect(parseSettingsPatch({ boardTheme: "green", boardSquareLight: null })).toEqual({ boardTheme: "green", boardSquareLight: null });
+    expect(() => parseSettingsPatch({ nope: 1 })).toThrow();
+    expect(() => parseSettingsPatch({})).toThrow();
+    expect(() => parseSettingsPatch({ soundVolume: 9 })).toThrow(/soundVolume/);
   });
 });

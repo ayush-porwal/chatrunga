@@ -88,7 +88,8 @@ const api: ChaturangaApi = {
   },
   settings: {
     getAll: () => ipcRenderer.invoke("settings:getAll"),
-    set: (key, value) => ipcRenderer.invoke("settings:set", key, value)
+    set: (key, value) => ipcRenderer.invoke("settings:set", key, value),
+    patch: (patch) => ipcRenderer.invoke("settings:patch", patch)
   },
   commentary: {
     getOpenRouterConfig: () => ipcRenderer.invoke("commentary:getOpenRouterConfig"),
