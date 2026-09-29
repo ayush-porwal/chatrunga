@@ -205,10 +205,16 @@ describe("game store", () => {
     wall.mockReturnValue(1_700_000_000_000 + 11_000 + 3_600_000);
     expect(clockNow() - start).toBe(1_000);
 
-    // Ten minutes asleep that the monotonic clock missed (main's running total): added back.
+    // Ten minutes asleep: the wall clock jumps past the monotonic one, so main's total is read.
+    const reads = vi.fn(() => 600_000);
+    setTimeAsleepSource(reads);
     at(12_000);
-    setTimeAsleepSource(() => 600_000);
-    expect(clockNow() - start).toBe(2_000 + 600_000);
+    clockNow();
+    expect(reads).not.toHaveBeenCalled(); // the clocks agree: nothing to ask main
+    vi.spyOn(performance, "now").mockReturnValue(12_050);
+    wall.mockReturnValue(1_700_000_000_000 + 12_000 + 600_000);
+    expect(clockNow() - start).toBe(2_050 + 600_000);
+    expect(reads).toHaveBeenCalledTimes(1);
     setTimeAsleepSource(() => 0);
   });
 
