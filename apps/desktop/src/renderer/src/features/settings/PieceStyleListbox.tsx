@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import {
   pieceStyleOptions,
@@ -18,6 +18,7 @@ import {
   settingsListboxTriggerOpenRing
 } from "@/lib/settings-listbox";
 import { PieceStylePreviewStrip } from "./piece-style-preview";
+import { useListboxKeyboard } from "@/lib/use-listbox-keyboard";
 
 type PieceStyleListboxProps = {
   id: string;
@@ -34,99 +35,25 @@ export function PieceStyleListbox({
 }: PieceStyleListboxProps) {
   const listboxDomId = `${id}-listbox`;
   const [open, setOpen] = useState(false);
-  const [highlightedIndex, setHighlightedIndex] = useState(() =>
-    Math.max(
-      0,
-      pieceStyleOptions.findIndex((o) => o.id === value)
-    )
-  );
   const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const selectedMeta = pieceStyleOptions.find((o) => o.id === value) ?? pieceStyleOptions[0];
-
-  // Opening the list (or a new value) highlights the selected option.
-  useEffect(() => {
-    const idx = pieceStyleOptions.findIndex((o) => o.id === value);
-    setHighlightedIndex(idx >= 0 ? idx : 0);
-  }, [open, value]);
-
-  useEffect(() => {
-    if (!open) return;
-    document.getElementById(`${id}-opt-${highlightedIndex}`)?.scrollIntoView({ block: "nearest" });
-  }, [open, highlightedIndex, id]);
 
   const close = useCallback(() => setOpen(false), []);
   const { present, state } = usePresence(open);
   useDismiss(rootRef, open, close);
 
-  const commitIndex = useCallback(
-    (index: number) => {
+  const { triggerRef, highlightedIndex, setHighlightedIndex, optionId, commit, onTriggerKeyDown } = useListboxKeyboard({
+    id,
+    count: pieceStyleOptions.length,
+    selectedIndex: pieceStyleOptions.findIndex((o) => o.id === value),
+    open,
+    setOpen,
+    onCommit: (index) => {
       const opt = pieceStyleOptions[index];
       if (opt) onChange(opt.id);
-      setOpen(false);
-      triggerRef.current?.focus();
-    },
-    [onChange]
-  );
-
-  function moveHighlight(delta: number) {
-    setHighlightedIndex((prev) => {
-      const len = pieceStyleOptions.length;
-      if (!len) return 0;
-      let next = (prev + delta) % len;
-      if (next < 0) next += len;
-      return next;
-    });
-  }
-
-  function onTriggerKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
-    if (!open) {
-      if (
-        event.key === "ArrowDown" ||
-        event.key === "ArrowUp" ||
-        event.key === "Enter" ||
-        event.key === " "
-      ) {
-        event.preventDefault();
-        setOpen(true);
-      }
-      return;
     }
-
-    switch (event.key) {
-      case "ArrowDown":
-        event.preventDefault();
-        moveHighlight(1);
-        break;
-      case "ArrowUp":
-        event.preventDefault();
-        moveHighlight(-1);
-        break;
-      case "Home":
-        event.preventDefault();
-        setHighlightedIndex(0);
-        break;
-      case "End":
-        event.preventDefault();
-        setHighlightedIndex(pieceStyleOptions.length - 1);
-        break;
-      case "Enter":
-      case " ":
-        event.preventDefault();
-        commitIndex(highlightedIndex);
-        break;
-      case "Escape":
-        event.preventDefault();
-        setOpen(false);
-        break;
-      case "Tab":
-        setOpen(false);
-        break;
-      default:
-        break;
-    }
-  }
+  });
 
   return (
     <div className="grid min-w-0 max-w-full gap-1.5">
@@ -143,7 +70,7 @@ export function PieceStyleListbox({
           aria-haspopup="listbox"
           aria-controls={listboxDomId}
           aria-labelledby={`${id}-label`}
-          aria-activedescendant={open ? `${id}-opt-${highlightedIndex}` : undefined}
+          aria-activedescendant={open ? optionId(highlightedIndex) : undefined}
           onClick={() => setOpen((o) => !o)}
           onKeyDown={onTriggerKeyDown}
         >
@@ -173,7 +100,7 @@ export function PieceStyleListbox({
               return (
                 <button
                   key={opt.id}
-                  id={`${id}-opt-${index}`}
+                  id={optionId(index)}
                   type="button"
                   role="option"
                   aria-selected={active}
@@ -184,7 +111,7 @@ export function PieceStyleListbox({
                     highlighted && !active && "bg-control"
                   )}
                   onMouseEnter={() => setHighlightedIndex(index)}
-                  onClick={() => commitIndex(index)}
+                  onClick={() => commit(index)}
                 >
                   <span className="flex min-w-0 flex-1 items-center gap-2.5">
                     <PieceStylePreviewStrip
