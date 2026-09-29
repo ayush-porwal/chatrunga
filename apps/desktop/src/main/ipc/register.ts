@@ -150,7 +150,7 @@ function registerEngineIpc(engineManager: EngineManager): void {
     const input = parseProbeEvalInput(value);
     const config = engineConfigForId(input.engineId);
     if (!config) throw new Error("Engine not found");
-    engineManager.stop();
+    void engineManager.stop();
     return probeEvalScore(config, input.fen, input.moves, input.movetimeMs);
   });
   ipcMain.handle("engines:reviewGame", (_event, input: unknown) =>

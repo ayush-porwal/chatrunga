@@ -102,9 +102,10 @@ describe("engine inputs", () => {
 describe("engine session inputs", () => {
   it("parses engine games", () => {
     expect(
-      parseStartGameInput({ engineId: "sf", side: "black", fen: START, moves: ["e2e4"], clock: { wtime: 1, btime: 2, winc: 0, binc: 0 } })
+      parseStartGameInput({ engineId: "sf", searchId: "s1", side: "black", fen: START, moves: ["e2e4"], clock: { wtime: 1, btime: 2, winc: 0, binc: 0 } })
     ).toEqual({
       engineId: "sf",
+      searchId: "s1",
       side: "black",
       fen: START,
       moves: ["e2e4"],
@@ -112,12 +113,16 @@ describe("engine session inputs", () => {
       depth: null,
       clock: { wtime: 1, btime: 2, winc: 0, binc: 0 }
     });
-    expect(() => parseStartGameInput({ engineId: "sf", fen: START, moves: [], depth: -1 })).toThrow(/negative/);
-    expect(() => parseStartGameInput({ engineId: "sf", fen: START, clock: { wtime: "1" } })).toThrow(/clock/);
+    expect(() => parseStartGameInput({ engineId: "sf", searchId: "s1", fen: START, moves: [], depth: -1 })).toThrow(/negative/);
+    expect(() => parseStartGameInput({ engineId: "sf", searchId: "s1", fen: START, clock: { wtime: "1" } })).toThrow(/clock/);
+    expect(() => parseStartGameInput({ engineId: "sf", fen: START, moves: [] })).toThrow(/search id/);
   });
 
   it("parses analysis and probe requests", () => {
-    expect(parseStartAnalysisInput({ engineId: "sf", fen: START, moves: [], multipv: 3 })).toMatchObject({ multipv: 3 });
+    expect(parseStartAnalysisInput({ engineId: "sf", searchId: "s2", fen: START, moves: [], multipv: 3 })).toMatchObject({
+      multipv: 3,
+      searchId: "s2"
+    });
     expect(parseProbeEvalInput({ engineId: "sf", fen: START, moves: [] }).movetimeMs).toBe(400);
     expect(parseProbeEvalInput({ engineId: "sf", fen: START, moves: [], movetimeMs: 1e9 }).movetimeMs).toBe(60_000);
   });

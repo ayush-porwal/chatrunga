@@ -5,6 +5,7 @@ import { mainlineReviewInput } from "../features/game-review/review-utils";
 import { pickDefaultEngine } from "../features/game-review/review-engine-picker";
 import { useGameStore } from "../stores/game-store";
 import { useReviewStore } from "../stores/review-store";
+import { ipcErrorMessage } from "@/lib/ipc-error";
 
 const REVIEW_CANCELLED = "Review cancelled";
 
@@ -78,8 +79,12 @@ export function useReviewRunner({
         timeControl: headers.timeControl ?? null
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message !== REVIEW_CANCELLED) useReviewStore.getState().setError(message);
+      // The invoke error wraps main's message; a cancelled review (or one replaced by another
+      // game's) is not an error to show.
+      const message = ipcErrorMessage(error) || String(error);
+      if (message !== REVIEW_CANCELLED && useReviewStore.getState().reviewId === reviewId) {
+        useReviewStore.getState().setError(message);
+      }
     }
   }, [defaultEngineId, engines, gameLoading, onEngineMissing, reviewSearchTimeMs, reviewUseMaia]);
 

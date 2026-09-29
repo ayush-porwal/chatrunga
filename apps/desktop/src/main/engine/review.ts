@@ -101,10 +101,10 @@ export async function reviewGameWithEngine(
   const multipv = Math.max(1, Math.min(Math.round(input.multipv ?? 3), 5));
   const search = resolveReviewSearchParams(input);
   const timeControl = parseTimeControl(input.timeControl);
-  const session = new UciReviewSession(config);
+  const session = new UciReviewSession(config, sink.shouldCancel);
   let maiaSlots: MaiaSlot[] = maiaConfigs.map((cfg) => ({
     config: cfg,
-    session: new UciReviewSession(cfg),
+    session: new UciReviewSession(cfg, sink.shouldCancel),
     alive: true
   }));
 
@@ -324,7 +324,11 @@ class UciReviewSession {
   appliedThreads: number | null = null;
   appliedHashMb: number | null = null;
 
-  constructor(private config: EngineConfig) { }
+  /** `shouldCancel` is polled while waiting for the engine (startup included), not only mid-search. */
+  constructor(
+    private config: EngineConfig,
+    private shouldCancel?: () => boolean
+  ) {}
 
   async start(options: { multipv?: number; threads?: number; hashMb?: number; policyOnly?: boolean }): Promise<void> {
     const tag = `uci:${this.config.name}`;
@@ -552,8 +556,17 @@ class UciReviewSession {
     timeoutMessage: string
   ): Promise<string> {
     if (this.failure) return Promise.reject(this.failure);
+    if (this.shouldCancel?.()) return Promise.reject(new Error("Review cancelled"));
     return new Promise((resolve, reject) => {
+      const cancelPoll = this.shouldCancel
+        ? setInterval(() => {
+            if (!this.shouldCancel?.()) return;
+            cleanup();
+            reject(new Error("Review cancelled"));
+          }, CANCEL_POLL_MS)
+        : null;
       const cleanup = () => {
+        if (cancelPoll) clearInterval(cancelPoll);
         clearTimeout(timeout);
         this.events.off("line", onLine);
         this.events.off("failure", onError);
@@ -582,6 +595,9 @@ class UciReviewSession {
     this.events.emit("line", line);
   }
 }
+
+/** How often a wait for the engine checks whether the review was cancelled. */
+const CANCEL_POLL_MS = 100;
 
 function pushTail(buffer: string[], line: string): void {
   buffer.push(line);

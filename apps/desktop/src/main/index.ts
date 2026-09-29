@@ -120,7 +120,8 @@ async function startup(): Promise<void> {
  */
 function shutdown(): void {
   shutdownLichess();
-  engineManager.stop();
+  engineManager.cancelAllReviews();
+  engineManager.dispose();
   killAllEngineProcesses();
   closeDb();
 }
@@ -176,8 +177,10 @@ function createWindow(): void {
   window.once("ready-to-show", () => setTimeout(() => revealWindow(window), REVEAL_FALLBACK_MS));
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;
-    // The interactive engine belongs to the window (macOS keeps the app alive).
-    engineManager.stop();
+    // The engine work belongs to the window (macOS keeps the app alive): the interactive engine
+    // shuts down and running reviews are cancelled.
+    engineManager.dispose();
+    engineManager.cancelAllReviews();
   });
 
   if (process.env.ELECTRON_RENDERER_URL) {
