@@ -22,6 +22,10 @@ export default defineConfig({
         "src/main/updater.ts",
         "src/main/db/**",
         "src/main/ipc/register.ts",
+        // Electron / worker glue: exercised by running the app (the logic they wrap is tested).
+        "src/main/ipc-guard.ts",
+        "src/main/renderer-flush.ts",
+        "src/main/databases/puzzle-scan-worker.ts",
         "src/main/ipc/review-handler.ts",
         "src/main/databases/external-databases.ts",
         "src/main/engine/engine-config.ts",
