@@ -142,7 +142,7 @@ function SegmentedControl<T extends string>({
             data-segment=""
             role={itemRole}
             id={role === "tablist" && panelId ? tabId(panelId, option.value) : undefined}
-            aria-controls={role === "tablist" && panelId && selected ? panelId : undefined}
+            aria-controls={role === "tablist" && panelId ? panelId : undefined}
             aria-selected={role === "tablist" ? selected : undefined}
             aria-checked={role === "radiogroup" ? selected : undefined}
             tabIndex={selected || (!hasSelection && index === 0) ? 0 : -1}

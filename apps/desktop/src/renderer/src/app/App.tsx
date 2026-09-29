@@ -50,6 +50,8 @@ import { useMoveSounds } from "./useMoveSounds";
 import { cancelActiveReview, useReviewRunner } from "./useReviewRunner";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { useAppNoticeStore } from "../stores/app-notice-store";
+import { Button } from "@/components/ui/button";
 
 /** How a navigation enters Back / Forward (see showView). */
 type HistoryMode = "push" | "replace" | "none";
@@ -99,6 +101,8 @@ export function App() {
 
   // Focus mode only exists on a board view; leaving one ends it (the stored flag resets below).
   const onBoardView = boardViews.has(appView);
+  const appNotice = useAppNoticeStore((state) => state.message);
+  const dismissAppNotice = useAppNoticeStore((state) => state.dismiss);
   const focused = focusMode && onBoardView;
   // Focus mode collapses the sidebar to its rail without forgetting the user's own choice.
   const sidebarExpanded = actionRailOpen && !focused;
@@ -368,7 +372,7 @@ export function App() {
     try {
       await window.chaturanga.files.savePgnFile("chaturanga-game.pgn", currentGame().toSession().pgn);
     } catch (error) {
-      useGameStore.setState({ lastError: `Couldn't export the PGN: ${ipcErrorMessage(error) || "unknown error"}` });
+      useAppNoticeStore.getState().show(`Couldn't export the PGN: ${ipcErrorMessage(error) || "unknown error"}`);
     }
   }
 
@@ -383,9 +387,10 @@ export function App() {
       if (request !== latestNavigation.current) return;
       loadImportedGame(imported);
     } catch (error) {
-      if (request !== latestNavigation.current) return;
-      useGameStore.setState({ lastError: `Couldn't import that file: ${ipcErrorMessage(error) || "unknown error"}` });
-      showGame();
+      // Shown where you are (no navigation: the board didn't change).
+      if (request === latestNavigation.current) {
+        useAppNoticeStore.getState().show(`Couldn't import that file: ${ipcErrorMessage(error) || "unknown error"}`);
+      }
     }
   }
 
@@ -832,6 +837,19 @@ export function App() {
         />
 
         <main className={cn(contentPanel, "col-start-2 row-start-2 [view-transition-name:app-content]")}>
+          {appNotice ? (
+            <Notice
+              tone="danger"
+              className="mx-(--page-gutter) mt-(--page-gutter-y) w-auto shrink-0"
+              action={
+                <Button type="button" variant="link" size="xs" onClick={dismissAppNotice}>
+                  Dismiss
+                </Button>
+              }
+            >
+              {appNotice}
+            </Notice>
+          ) : null}
           {!desktopApiAvailable ? (
             <Notice tone="warn" title="Web preview mode" className="mx-(--page-gutter) mt-(--page-gutter-y) w-auto shrink-0">
               Engines, file dialogs, saved games, downloads and local databases need the desktop app.

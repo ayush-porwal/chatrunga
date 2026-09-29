@@ -145,9 +145,9 @@ function useEngineGameSetup({ onOpenSettings, onBeforeStart, onStart }: EngineGa
   // Kept outside the page (play-draft-store): Engine settings and Back return to the same choices.
   const draft = usePlayDraftStore((state) => state.draft);
   const updateDraft = usePlayDraftStore((state) => state.update);
-  const engineId = draft.engineId || defaultEngine?.id || "";
-  const selectedEngine =
-    engines.data?.find((engine) => engine.id === (engineId || defaultEngine?.id)) ?? defaultEngine;
+  // A chosen engine that was deleted since falls back to the default — and so does the id used.
+  const selectedEngine = engines.data?.find((engine) => engine.id === draft.engineId) ?? defaultEngine;
+  const engineId = selectedEngine?.id ?? "";
   const humanColor: Color = draft.humanColor ?? game.orientation;
   const moveTimeMs = draft.moveTimeMs ?? game.moveTimeMs;
   const depth = draft.depth === undefined ? game.depth : draft.depth;
