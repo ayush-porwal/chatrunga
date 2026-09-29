@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import type { EngineInfo } from "@chaturanga/shared/types/engine";
 import { currentLineUcis } from "../features/analysis/engine-game-helpers";
+import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { clockNow, noteSystemResumed, remainingClockMs, useGameStore } from "../stores/game-store";
 
@@ -14,7 +15,24 @@ export const ENGINE_INFO_FLUSH_MS = 150;
 function reportEngineError(error: unknown): void {
   const analysis = useAnalysisStore.getState();
   analysis.setStatus("error");
-  analysis.setError(error instanceof Error ? error.message : String(error));
+  analysis.setError(ipcErrorMessage(error) || String(error));
+}
+
+/**
+ * The searches whose output is wanted: the engine's move in an engine game, and the live analysis.
+ * Engine events carry the id of the search they belong to; output of any other (older) search is
+ * dropped, so a best move computed for another position can never be played on this one.
+ */
+export const engineSearches = {
+  move: null as string | null,
+  analysis: null as string | null,
+  isCurrent(searchId: string | undefined): boolean {
+    return searchId !== undefined && (searchId === this.move || searchId === this.analysis);
+  }
+};
+
+function newSearchId(): string {
+  return crypto.randomUUID();
 }
 
 function playEngineMove(move: string): void {
@@ -93,17 +111,24 @@ export function useEngineDriver(defaultEngineId: string | null): void {
     });
     const unsubscribers = [
       window.chaturanga?.system?.onResumed?.(noteSystemResumed) ?? (() => {}),
-      events.onEngineInfo((info) => infos.push(info)),
+      events.onEngineInfo((info) => {
+        if (engineSearches.isCurrent(info.searchId)) infos.push(info);
+      }),
       events.onEngineBestMove((bestMove) => {
+        if (!engineSearches.isCurrent(bestMove.searchId)) return;
         infos.flushNow();
         const game = useGameStore.getState();
-        if (game.mode !== "engine" || game.gameOutcome) {
+        if (bestMove.searchId !== engineSearches.move || game.mode !== "engine" || game.gameOutcome) {
           useAnalysisStore.getState().setBestMove(bestMove.move);
           return;
         }
+        engineSearches.move = null;
         playEngineMove(bestMove.move);
       }),
-      events.onEngineError((error) => useAnalysisStore.getState().setError(error.message))
+      events.onEngineError((error) => {
+        if (error.searchId && !engineSearches.isCurrent(error.searchId)) return;
+        useAnalysisStore.getState().setError(error.message);
+      })
     ];
     return () => {
       infos.discard();
@@ -135,8 +160,23 @@ export function useEngineDriver(defaultEngineId: string | null): void {
     const stopAnalysis = () => {
       if (analysisKey === null) return;
       analysisKey = null;
+      engineSearches.analysis = null;
       void engines?.stop();
     };
+    /**
+     * The engine was thinking about a position that is no longer the one on the board (the user
+     * stepped back). Its search stops, and so does its clock until it's asked to move again.
+     */
+    const abandonEngineMove = () => {
+      engineMoveKey = null;
+      if (engineSearches.move === null) return;
+      engineSearches.move = null;
+      void engines?.stop();
+      const game = useGameStore.getState();
+      if (game.engineClockLive?.sideToMove === game.engineSide) game.pauseEngineClock();
+    };
+    /** Identifies the match, so the engine resets for a new one even from the same position. */
+    let gameKey = newSearchId();
 
     const sync = () => {
       scheduled = false;
@@ -147,6 +187,8 @@ export function useEngineDriver(defaultEngineId: string | null): void {
       // A decided game (mate, resignation, draw, flag) stops any search.
       if (game.gameOutcome && game.gameOutcome !== lastOutcome) {
         analysisKey = null;
+        engineSearches.move = null;
+        engineSearches.analysis = null;
         void engines?.stop();
         useAnalysisStore.getState().reset();
       }
@@ -172,11 +214,16 @@ export function useEngineDriver(defaultEngineId: string | null): void {
         const engineId = useAnalysisStore.getState().activeEngineId;
         if (key !== engineMoveKey && engineId) {
           engineMoveKey = key;
-          const clock = game.getClockForEngineGo();
+          const searchId = newSearchId();
+          engineSearches.move = searchId;
+          game.resumeEngineClock();
+          const clock = useGameStore.getState().getClockForEngineGo();
           useAnalysisStore.getState().setStatus("thinking");
           engines
             .startGame({
               engineId,
+              searchId,
+              gameKey,
               side: game.engineSide,
               fen: game.rootFen,
               moves: currentLineUcis(game.moveTree, game.currentNodeId),
@@ -184,10 +231,14 @@ export function useEngineDriver(defaultEngineId: string | null): void {
               depth: clock ? null : game.depth,
               clock
             })
-            .catch(reportEngineError);
+            .catch((error: unknown) => {
+              if (engineSearches.move === searchId) reportEngineError(error);
+            });
         }
       } else {
-        engineMoveKey = null;
+        // Not the engine's turn here (its move was played, or the user stepped to another move):
+        // a search still running is for a position the engine no longer moves in.
+        abandonEngineMove();
       }
 
       // Live analysis of the current position (restarted only when the position changes — not
@@ -204,15 +255,25 @@ export function useEngineDriver(defaultEngineId: string | null): void {
           analysis.setError("Configure an engine to start live analysis.");
           return;
         }
-        if (analysisKey !== null) void engines.stop();
+        // The main process stops the previous search before it starts this one.
         analysisKey = key;
         missingEngineKey = null;
+        const searchId = newSearchId();
+        engineSearches.analysis = searchId;
         analysis.setActiveEngine(engineId);
         analysis.setError(null);
         analysis.startSearch();
         engines
-          .startAnalysis({ engineId, fen: game.rootFen, moves: currentLineUcis(game.moveTree, game.currentNodeId), multipv: ANALYSIS_MULTIPV })
-          .catch(reportEngineError);
+          .startAnalysis({
+            engineId,
+            searchId,
+            fen: game.rootFen,
+            moves: currentLineUcis(game.moveTree, game.currentNodeId),
+            multipv: ANALYSIS_MULTIPV
+          })
+          .catch((error: unknown) => {
+            if (engineSearches.analysis === searchId) reportEngineError(error);
+          });
       } else {
         missingEngineKey = null;
         stopAnalysis();
@@ -225,7 +286,11 @@ export function useEngineDriver(defaultEngineId: string | null): void {
       scheduled = true;
       queueMicrotask(sync);
     };
-    const unsubscribe = useGameStore.subscribe(schedule);
+    const unsubscribe = useGameStore.subscribe((state, previous) => {
+      // A new board (reset / load replaces headers and tree together) is a new match.
+      if (state.headers !== previous.headers && state.moveTree !== previous.moveTree) gameKey = newSearchId();
+      schedule();
+    });
     // A requested restart (restartSearch) re-runs the analysis for the same position.
     const unsubscribeRestart = useAnalysisStore.subscribe((state, previous) => {
       if (state.searchEpoch !== previous.searchEpoch) schedule();
@@ -237,6 +302,7 @@ export function useEngineDriver(defaultEngineId: string | null): void {
       unsubscribeRestart();
       if (clockTimer !== null) clearInterval(clockTimer);
       stopAnalysis();
+      abandonEngineMove();
     };
   }, [defaultEngineId]);
 }

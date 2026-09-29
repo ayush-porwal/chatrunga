@@ -27,6 +27,8 @@ export type EngineClockLive = {
   sideToMove: Color;
   /** Set when the game ends (mate, resignation, draw, flag): the clocks freeze at this moment. */
   stoppedAt?: number;
+  /** With `stoppedAt`: frozen only for now (the engine's search was set aside), not ended. */
+  paused?: boolean;
 };
 
 type GameOutcome = {
@@ -89,6 +91,12 @@ type GameStore = {
   patchHeaders: (patch: Partial<GameHeaders>) => void;
   setEngineMatchClock: (config: EngineClockConfig | null) => void;
   initEngineClockLive: () => void;
+  /**
+   * Freezes the running clock without ending the game (the user stepped back while the engine was
+   * thinking: no search runs, so its time must not run out). `resumeEngineClock` continues it.
+   */
+  pauseEngineClock: () => void;
+  resumeEngineClock: () => void;
   clearEngineMatchExtras: () => void;
   resign: () => void;
   agreeDraw: () => void;
@@ -233,6 +241,20 @@ export const useGameStore = create<GameStore>((set, get) => {
       }
       const applied = applyUserMove(fenBefore, move);
       if (!applied) return reject({ lastError: "Illegal move" });
+      // A move made while the clock is paused (the user stepped back while the engine thought, and
+      // plays on from there): the clock runs again for the side that moved, from the pause, so the
+      // time spent there counts against them.
+      const paused = get().engineClockLive;
+      if (paused?.paused && paused.stoppedAt !== undefined && !state.gameOutcome) {
+        set({
+          engineClockLive: {
+            whiteMs: paused.whiteMs,
+            blackMs: paused.blackMs,
+            sideToMove: mover,
+            turnStartedAt: paused.stoppedAt
+          }
+        });
+      }
       const { moveTree, node } = addMoveNode(
         state.moveTree,
         state.currentNodeId,
@@ -393,6 +415,26 @@ export const useGameStore = create<GameStore>((set, get) => {
         }
       });
     },
+
+    pauseEngineClock: () =>
+      set((state) => {
+        const live = state.engineClockLive;
+        if (!live || live.stoppedAt !== undefined) return {};
+        return { engineClockLive: { ...live, stoppedAt: clockNow(), paused: true } };
+      }),
+
+    resumeEngineClock: () =>
+      set((state) => {
+        const live = state.engineClockLive;
+        if (!live?.paused || live.stoppedAt === undefined || state.gameOutcome) return {};
+        const running: EngineClockLive = {
+          whiteMs: live.whiteMs,
+          blackMs: live.blackMs,
+          sideToMove: live.sideToMove,
+          turnStartedAt: live.turnStartedAt + (clockNow() - live.stoppedAt)
+        };
+        return { engineClockLive: running };
+      }),
 
     clearEngineMatchExtras: () =>
       set({
@@ -570,7 +612,10 @@ function mainlineEndId(moveTree: MoveNode[]): string {
 }
 
 function stopClock(live: EngineClockLive | null): EngineClockLive | null {
-  return live && live.stoppedAt === undefined ? { ...live, stoppedAt: clockNow() } : live;
+  if (!live) return live;
+  // A paused clock ends frozen where it was paused.
+  if (live.paused) return { ...live, paused: false };
+  return live.stoppedAt === undefined ? { ...live, stoppedAt: clockNow() } : live;
 }
 
 /** Where the time asleep comes from (the main process; tests swap it). */

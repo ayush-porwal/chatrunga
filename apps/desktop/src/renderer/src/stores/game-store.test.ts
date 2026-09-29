@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
-import { buildEngineGoClock, clockNow, noteSystemResumed, setTimeAsleepSource, useGameStore } from "./game-store";
+import { buildEngineGoClock, clockNow, noteSystemResumed, remainingClockMs, setTimeAsleepSource, useGameStore } from "./game-store";
 
 /** Moves both time sources together (the clock treats a wall-only jump as time asleep). */
 function mockTime() {
@@ -398,5 +398,53 @@ describe("game store", () => {
       useGameStore.getState().restoreView({ currentNodeId: "gone", mode: "analysis", source: "analysis", engineSide: null, orientation: "black", gameOutcome: null });
       expect(useGameStore.getState()).toMatchObject({ currentNodeId: node, mode: "analysis", orientation: "black" });
     });
+  });
+});
+
+describe("engine clock pause", () => {
+  it("freezes the running clock and resumes it without charging the pause", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    const game = useGameStore.getState();
+    game.reset();
+    game.setMode("engine");
+    game.setEngineSide("white");
+    game.setEngineMatchClock({ initialMs: 10_000, incrementMs: 0 });
+    game.initEngineClockLive();
+
+    now.mockReturnValue(2_000);
+    useGameStore.getState().pauseEngineClock();
+    expect(useGameStore.getState().engineClockLive).toMatchObject({ stoppedAt: 2_000, paused: true });
+
+    now.mockReturnValue(60_000);
+    useGameStore.getState().resumeEngineClock();
+    const live = useGameStore.getState().engineClockLive!;
+    expect(live.stoppedAt).toBeUndefined();
+    expect(remainingClockMs(live, "white", 61_000)).toBe(7_000);
+    vi.restoreAllMocks();
+  });
+
+  it("a move made while paused charges the side that moved, from the pause", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    const game = useGameStore.getState();
+    game.reset();
+    game.setMode("engine");
+    game.setEngineSide("black");
+    game.setEngineMatchClock({ initialMs: 10_000, incrementMs: 0 });
+    game.initEngineClockLive();
+    now.mockReturnValue(1_000);
+    expect(useGameStore.getState().makeMove({ from: "e2", to: "e4" })).toBe(true); // White: 9 s left
+    now.mockReturnValue(1_500);
+    useGameStore.getState().pauseEngineClock(); // stepped back while Black (the engine) thought
+    useGameStore.getState().goToNode("root");
+    // An illegal attempt leaves the clock paused.
+    expect(useGameStore.getState().makeMove({ from: "d2", to: "d5" })).toBe(false);
+    expect(useGameStore.getState().engineClockLive?.paused).toBe(true);
+    now.mockReturnValue(4_500);
+    expect(useGameStore.getState().makeMove({ from: "d2", to: "d4" })).toBe(true);
+    const live = useGameStore.getState().engineClockLive!;
+    // White is charged the 3 s since the pause, Black keeps its time, and it's Black's turn.
+    expect(live).toMatchObject({ whiteMs: 6_000, blackMs: 10_000, sideToMove: "black" });
+    expect(live.paused).toBeUndefined();
+    vi.restoreAllMocks();
   });
 });

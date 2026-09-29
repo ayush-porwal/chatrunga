@@ -44,6 +44,7 @@ import {
   timeSpentForMove
 } from "./review-analysis";
 import { createLineSplitter, LOG_UCI, spawnUciProcess, stopUciProcess, writeUci } from "./uci-process";
+import { createUciIdentity, readHandshakeLine, UCIOK_TIMEOUT_MESSAGE, UCIOK_TIMEOUT_MS } from "./uci-handshake";
 
 type LineEvents = {
   line: [string];
@@ -101,10 +102,10 @@ export async function reviewGameWithEngine(
   const multipv = Math.max(1, Math.min(Math.round(input.multipv ?? 3), 5));
   const search = resolveReviewSearchParams(input);
   const timeControl = parseTimeControl(input.timeControl);
-  const session = new UciReviewSession(config);
+  const session = new UciReviewSession(config, sink.shouldCancel);
   let maiaSlots: MaiaSlot[] = maiaConfigs.map((cfg) => ({
     config: cfg,
-    session: new UciReviewSession(cfg),
+    session: new UciReviewSession(cfg, sink.shouldCancel),
     alive: true
   }));
 
@@ -324,7 +325,11 @@ class UciReviewSession {
   appliedThreads: number | null = null;
   appliedHashMb: number | null = null;
 
-  constructor(private config: EngineConfig) { }
+  /** `shouldCancel` is polled while waiting for the engine (startup included), not only mid-search. */
+  constructor(
+    private config: EngineConfig,
+    private shouldCancel?: () => boolean
+  ) {}
 
   async start(options: { multipv?: number; threads?: number; hashMb?: number; policyOnly?: boolean }): Promise<void> {
     const tag = `uci:${this.config.name}`;
@@ -345,19 +350,12 @@ class UciReviewSession {
       if (this.process) this.fail(new Error(`${this.config.name} exited unexpectedly (code ${code ?? "unknown"})`));
     });
 
-    const uciReady = this.waitFor(
-      (line) => {
-        const option = line.match(/^option name (.+?) type /);
-        if (option) this.supportedOptions.add(option[1]);
-        const name = line.match(/^id name (.+)$/);
-        if (name) this.engineName = name[1].trim();
-        return line === "uciok";
-      },
-      120_000,
-      "Timed out waiting for uciok (large NN weights can take a while; check --weights for lc0)"
-    );
+    const identity = createUciIdentity();
+    identity.options = this.supportedOptions;
+    const uciReady = this.waitFor((line) => readHandshakeLine(identity, line), UCIOK_TIMEOUT_MS, UCIOK_TIMEOUT_MESSAGE);
     this.write("uci");
     await uciReady;
+    this.engineName = identity.name ?? null;
 
     if (options.policyOnly) {
       // Maia: `go nodes 1` + VerboseMoveStats prints the raw policy prior of
@@ -552,8 +550,17 @@ class UciReviewSession {
     timeoutMessage: string
   ): Promise<string> {
     if (this.failure) return Promise.reject(this.failure);
+    if (this.shouldCancel?.()) return Promise.reject(new Error("Review cancelled"));
     return new Promise((resolve, reject) => {
+      const cancelPoll = this.shouldCancel
+        ? setInterval(() => {
+            if (!this.shouldCancel?.()) return;
+            cleanup();
+            reject(new Error("Review cancelled"));
+          }, CANCEL_POLL_MS)
+        : null;
       const cleanup = () => {
+        if (cancelPoll) clearInterval(cancelPoll);
         clearTimeout(timeout);
         this.events.off("line", onLine);
         this.events.off("failure", onError);
@@ -582,6 +589,9 @@ class UciReviewSession {
     this.events.emit("line", line);
   }
 }
+
+/** How often a wait for the engine checks whether the review was cancelled. */
+const CANCEL_POLL_MS = 100;
 
 function pushTail(buffer: string[], line: string): void {
   buffer.push(line);
