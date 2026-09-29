@@ -74,8 +74,11 @@ const SETTING_CHECKS: { [K in keyof AppSettings]-?: Check } = {
   onboardingHintsSeen: list(oneOf(...ONBOARDING_HINTS), ONBOARDING_HINTS.length)
 };
 
-/** `value` if it fits `key`, else an error (nothing is stored). */
+/** `value` if it fits `key` (square colors stored as `#rrggbb`), else an error (nothing is stored). */
 export function parseSettingValue<K extends keyof AppSettings>(key: K, value: unknown): AppSettings[K] {
   if (!SETTING_CHECKS[key](value)) throw new Error(`Invalid value for setting ${key}`);
+  if ((key === "boardSquareLight" || key === "boardSquareDark") && typeof value === "string") {
+    return normalizeBoardSquareHex(value) as AppSettings[K];
+  }
   return value as AppSettings[K];
 }
