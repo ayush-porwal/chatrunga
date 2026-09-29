@@ -129,13 +129,13 @@ export const useGameStore = create<GameStore>((set, get) => {
     }));
   }
 
-  function advanceClockAfterMove(movedSide: Color): void {
+  function advanceClockAfterMove(movedSide: Color, now: number): void {
     const state = get();
     if (!state.engineClock || !state.engineClockLive) return;
     const cfg = state.engineClock;
     const live = state.engineClockLive;
-    if (live.sideToMove !== movedSide) return;
-    const elapsed = Date.now() - live.turnStartedAt;
+    if (live.sideToMove !== movedSide || live.stoppedAt !== undefined) return;
+    const elapsed = now - live.turnStartedAt;
     let whiteMs = live.whiteMs;
     let blackMs = live.blackMs;
     if (movedSide === "white") {
@@ -148,7 +148,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       engineClockLive: {
         whiteMs,
         blackMs,
-        turnStartedAt: Date.now(),
+        turnStartedAt: now,
         sideToMove: nextTurn
       }
     });
@@ -207,6 +207,20 @@ export const useGameStore = create<GameStore>((set, get) => {
       const parent = state.moveTree.find((node) => node.id === state.currentNodeId);
       const fenBefore = parent?.fenAfter ?? state.currentFen;
       const mover = statusForFen(fenBefore).turn;
+      // The clock decides, not the poll: a move made after the flag fell loses on time, and the
+      // increment can't bring an expired clock back.
+      const now = clockNow();
+      const live = state.engineClockLive;
+      if (
+        state.mode === "engine" &&
+        live &&
+        live.stoppedAt === undefined &&
+        live.sideToMove === mover &&
+        remainingClockMs(live, mover, now) <= 0
+      ) {
+        get().resolveTimeout(mover);
+        return false;
+      }
       const applied = applyUserMove(fenBefore, move);
       if (!applied) {
         set({ lastError: "Illegal move" });
@@ -221,7 +235,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         applied.fen
       );
       set({ moveTree, currentFen: node.fenAfter, currentNodeId: node.id, lastError: null });
-      advanceClockAfterMove(mover);
+      advanceClockAfterMove(mover, now);
       // Mate / stalemate / draw by rule ends a timed game on the board: freeze both clocks.
       if (get().engineClockLive && statusForFen(node.fenAfter).isEnd) {
         set((current) => ({ engineClockLive: stopClock(current.engineClockLive) }));
@@ -365,7 +379,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         engineClockLive: {
           whiteMs: cfg.initialMs,
           blackMs: cfg.initialMs,
-          turnStartedAt: Date.now(),
+          turnStartedAt: clockNow(),
           sideToMove: turn
         }
       });
@@ -436,7 +450,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     },
 
     setMatchClock: ({ whiteMs, blackMs, sideToMove, running }) => {
-      const at = Date.now();
+      const at = clockNow();
       set({
         engineClockLive: { whiteMs, blackMs, sideToMove, turnStartedAt: at, ...(running ? {} : { stoppedAt: at }) }
       });
@@ -475,7 +489,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     getClockForEngineGo: () => {
       const state = get();
       if (!state.engineClock || !state.engineClockLive) return null;
-      return buildEngineGoClock(state.engineClockLive, state.engineClock, Date.now());
+      return buildEngineGoClock(state.engineClockLive, state.engineClock, clockNow());
     },
 
     toSession: () => {
@@ -546,7 +560,15 @@ function mainlineEndId(moveTree: MoveNode[]): string {
 }
 
 function stopClock(live: EngineClockLive | null): EngineClockLive | null {
-  return live && live.stoppedAt === undefined ? { ...live, stoppedAt: Date.now() } : live;
+  return live && live.stoppedAt === undefined ? { ...live, stoppedAt: clockNow() } : live;
+}
+
+/**
+ * The time base for match clocks: monotonic, so changing the system clock (or an NTP correction)
+ * never adds or removes thinking time. Only differences between two readings mean anything.
+ */
+export function clockNow(): number {
+  return performance.now();
 }
 
 /** Time left on `side`'s clock at `now` (the running side's clock counts down; a stopped game is frozen). */

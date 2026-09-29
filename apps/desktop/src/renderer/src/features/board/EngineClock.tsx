@@ -1,7 +1,7 @@
 import { memo, useEffect, useState } from "react";
 import type { Color } from "@chaturanga/shared/types/chess";
 import { formatMillisecondsClock } from "@chaturanga/shared/chess/clock-display";
-import { remainingClockMs, useGameStore } from "../../stores/game-store";
+import { clockNow, remainingClockMs, useGameStore } from "../../stores/game-store";
 import { ClockFace } from "./PlayerIdentity";
 
 /** Under this much time the clock turns red, shows tenths and pulses while it runs. */
@@ -29,14 +29,14 @@ export function msUntilNextChange(ms: number): number {
  */
 export const EngineClock = memo(function EngineClock({ color }: { color: Color }) {
   const live = useGameStore((state) => state.engineClockLive);
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => clockNow());
   const running = Boolean(live && live.sideToMove === color && live.stoppedAt === undefined);
 
   useEffect(() => {
     if (!running || !live) return;
     let timer = 0;
     const tick = () => {
-      const at = Date.now();
+      const at = clockNow();
       setNow(at);
       timer = window.setTimeout(tick, msUntilNextChange(remainingClockMs(live, color, at)) + 4);
     };
