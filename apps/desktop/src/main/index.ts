@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
   nativeImage,
@@ -119,7 +120,13 @@ async function startup(): Promise<void> {
   if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);
   createWindow();
   // Quitting into an installer runs the same cleanup as a normal quit, first.
-  void updateService.start({ prepareForInstall: shutdown });
+  void updateService.start({
+    prepareForInstall: async () => {
+      // The installer quits without the usual close path: write pending saves first.
+      await Promise.all(BrowserWindow.getAllWindows().map((window) => requestRendererFlush(window.webContents)));
+      shutdown();
+    }
+  });
 }
 
 /**
@@ -211,11 +218,30 @@ function flushSavesBeforeClose(window: BrowserWindow): void {
     if (flushed || shutDown || window.webContents.isDestroyed()) return;
     event.preventDefault();
     flushed = true;
-    void requestRendererFlush(window.webContents).finally(() => {
+    void requestRendererFlush(window.webContents).then((saved) => {
+      if (!saved && !window.isDestroyed() && !confirmCloseUnsaved(window)) {
+        // Stay open so the titlebar's Retry can save it.
+        flushed = false;
+        quitRequested = false;
+        return;
+      }
       if (quitRequested) app.quit();
       else if (!window.isDestroyed()) window.close();
     });
   });
+}
+
+/** The last save failed: close anyway (losing the latest changes), or stay to retry? */
+function confirmCloseUnsaved(window: BrowserWindow): boolean {
+  const choice = dialog.showMessageBoxSync(window, {
+    type: "warning",
+    buttons: ["Close Anyway", "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+    message: "Your latest changes to this game couldn't be saved.",
+    detail: "Close anyway and lose them, or cancel and use Retry in the titlebar."
+  });
+  return choice === 0;
 }
 
 const REVEAL_FALLBACK_MS = 1500;

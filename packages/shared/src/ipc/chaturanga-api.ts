@@ -122,8 +122,9 @@ export type ChaturangaApi = {
     /**
      * Registers the renderer's pending-save flush. The window runs it before it closes (quit, or
      * the close button) and waits for it — a bounded time — so the last edits reach the library.
+     * It resolves with whether everything is saved (false: closing asks first).
      */
-    onFlushRequest(handler: () => Promise<void>): Unsubscribe;
+    onFlushRequest(handler: () => Promise<boolean>): Unsubscribe;
   };
   databases: {
     list(): Promise<InstalledDatabase[]>;

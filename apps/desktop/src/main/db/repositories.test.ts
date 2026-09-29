@@ -62,6 +62,13 @@ describe("gameRepository (SQLite)", () => {
     expect(reopened?.moveTree.filter((node) => node.san).map((node) => node.san)).toEqual(["e4", "e5", "Nf3"]);
   });
 
+  it("rebuilds a tree whose links point at missing moves", () => {
+    const saved = saveImported();
+    const broken = saved.moveTree.slice(0, -1);
+    getDb().prepare("UPDATE games SET move_tree_json = ? WHERE id = ?").run(JSON.stringify(broken), saved.id);
+    expect(gameRepository.get(saved.id)?.moveTree).toHaveLength(saved.moveTree.length);
+  });
+
   it("refuses to open a game whose tree and PGN are both damaged", () => {
     const saved = saveImported();
     getDb().prepare("UPDATE games SET move_tree_json = '[]', pgn = '' WHERE id = ?").run(saved.id);

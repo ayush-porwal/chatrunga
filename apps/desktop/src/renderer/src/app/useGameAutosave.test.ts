@@ -52,7 +52,7 @@ describe("mainlineEnd", () => {
 describe("sameDocument", () => {
   const tree = [node("root", null, [])];
   const headers = { result: "*" };
-  const doc = { gameId: "g", moveTree: tree, headers, currentNodeId: "root", gameOutcome: null, review: null };
+  const doc = { gameId: "g", source: "pgn-import" as const, moveTree: tree, headers, currentNodeId: "root", gameOutcome: null, review: null };
 
   it("matches the document the library already holds", () => {
     expect(sameDocument(doc, { ...doc })).toBe(true);
@@ -61,6 +61,7 @@ describe("sameDocument", () => {
   it("differs once anything that is saved changes", () => {
     expect(sameDocument(null, doc)).toBe(false);
     expect(sameDocument(doc, { ...doc, currentNodeId: "e4" })).toBe(false);
+    expect(sameDocument(doc, { ...doc, source: "analysis" })).toBe(false);
     expect(sameDocument(doc, { ...doc, moveTree: [...tree] })).toBe(false);
     expect(sameDocument(doc, { ...doc, headers: { result: "1-0" } })).toBe(false);
     expect(sameDocument(doc, { ...doc, gameOutcome: { result: "1-0", termination: "Resignation" } })).toBe(false);

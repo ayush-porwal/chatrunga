@@ -551,8 +551,8 @@ export function App() {
     if (!desktopApiAvailable) return;
     if (history === "push") commitCurrent();
     stopEngineWork();
-    currentGame().setMode("puzzle");
-    currentGame().setGameSource("puzzle");
+    // The loaded game stays as it is until a puzzle replaces it (marking it a puzzle would save it
+    // as one, which hides it from the library).
     setFocusMode(false);
     showView("puzzles", history);
   }
