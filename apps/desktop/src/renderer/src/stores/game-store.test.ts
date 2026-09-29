@@ -348,4 +348,26 @@ describe("engine clock pause", () => {
     expect(remainingClockMs(live, "white", 61_000)).toBe(7_000);
     vi.restoreAllMocks();
   });
+
+  it("a move made while paused charges the side that moved, from the pause", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    const game = useGameStore.getState();
+    game.reset();
+    game.setMode("engine");
+    game.setEngineSide("black");
+    game.setEngineMatchClock({ initialMs: 10_000, incrementMs: 0 });
+    game.initEngineClockLive();
+    now.mockReturnValue(1_000);
+    expect(useGameStore.getState().makeMove({ from: "e2", to: "e4" })).toBe(true); // White: 9 s left
+    now.mockReturnValue(1_500);
+    useGameStore.getState().pauseEngineClock(); // stepped back while Black (the engine) thought
+    useGameStore.getState().goToNode("root");
+    now.mockReturnValue(4_500);
+    expect(useGameStore.getState().makeMove({ from: "d2", to: "d4" })).toBe(true);
+    const live = useGameStore.getState().engineClockLive!;
+    // White is charged the 3 s since the pause, Black keeps its time, and it's Black's turn.
+    expect(live).toMatchObject({ whiteMs: 6_000, blackMs: 10_000, sideToMove: "black" });
+    expect(live.paused).toBeUndefined();
+    vi.restoreAllMocks();
+  });
 });
