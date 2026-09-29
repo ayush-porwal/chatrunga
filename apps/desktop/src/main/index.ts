@@ -12,6 +12,7 @@ import {
   type MenuItemConstructorOptions,
   type WebContents
 } from "electron";
+import { cancelAllDownloads } from "./databases/external-databases";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -129,6 +130,8 @@ async function startup(): Promise<void> {
  */
 function shutdown(): void {
   shutdownLichess();
+  // Before the database closes: a download finishing now couldn't register its dataset.
+  cancelAllDownloads();
   engineManager.stop();
   killAllEngineProcesses();
   closeDb();

@@ -89,6 +89,11 @@ export function cancelDownload(sourceId: string): void {
   inFlight.get(sourceId)?.controller.abort(new DownloadCancelledError());
 }
 
+/** Quitting: running downloads stop (their partial files stay, so the next attempt resumes). */
+export function cancelAllDownloads(): void {
+  for (const sourceId of inFlight.keys()) cancelDownload(sourceId);
+}
+
 class DownloadCancelledError extends Error {
   constructor() {
     super("Download cancelled.");
