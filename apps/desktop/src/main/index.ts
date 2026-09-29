@@ -15,6 +15,7 @@ import {
 } from "electron";
 import { canonicalImagePath, isServableImage } from "./image-access";
 import { guardIpcSenders } from "./ipc-guard";
+import { cancelAllDownloads } from "./databases/external-databases";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -160,6 +161,8 @@ function shutdown(): void {
     ["lichess", shutdownLichess],
     ["reviews", () => engineManager.cancelAllReviews()],
     ["engines", () => void engineManager.dispose()],
+    // Before the database closes: a download finishing now couldn't register its dataset.
+    ["downloads", cancelAllDownloads],
     ["engine processes", killAllEngineProcesses],
     ["database", closeDb]
   ];
