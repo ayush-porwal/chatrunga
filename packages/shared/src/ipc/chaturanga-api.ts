@@ -90,6 +90,13 @@ export type ChaturangaApi = {
     isElectron: true;
     platform: NodeJS.Platform;
   };
+  system: {
+    /**
+     * Total time the computer slept that a monotonic clock didn't count (synchronous; match
+     * clocks add it, see clockNow).
+     */
+    timeAsleepMs(): number;
+  };
   appearance: {
     /** Current glass state (synchronous: read before the first render so the first frame is right). */
     getGlass(): WindowGlassState;
@@ -154,11 +161,6 @@ export type ChaturangaApi = {
     onUpdateState(callback: (state: UpdateState) => void): Unsubscribe;
     /** Lichess account, seek, challenge, game and import events (main/lichess). */
     onLichessEvent(callback: (event: LichessEvent) => void): Unsubscribe;
-    /**
-     * The computer woke up. `missedMs`: the part of the time asleep a monotonic clock didn't count
-     * (measured in main, from suspend to resume); match clocks add it.
-     */
-    onSystemResumed(callback: (event: { missedMs: number }) => void): Unsubscribe;
   };
 
   /**
