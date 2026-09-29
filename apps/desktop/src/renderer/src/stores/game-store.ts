@@ -194,6 +194,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         moveTree: game.moveTree,
         currentNodeId: currentNode?.id ?? game.currentNodeId,
         orientation: game.headers.orientationHint ?? get().orientation,
+        pendingPromotion: null,
         lastError: null,
         matchFeedback: null,
         engineClock: null,
@@ -263,7 +264,8 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     goToNode: (nodeId) => {
       const node = get().moveTree.find((item) => item.id === nodeId);
-      if (node) set({ currentNodeId: node.id, currentFen: node.fenAfter });
+      // A promotion being chosen belongs to the position it started from.
+      if (node) set({ currentNodeId: node.id, currentFen: node.fenAfter, pendingPromotion: null });
     },
 
     goToLine: (startNodeId, moves) => {
@@ -289,7 +291,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         moveTree = added.moveTree;
         node = added.node;
       }
-      set({ moveTree, currentNodeId: node.id, currentFen: node.fenAfter, lastError: null });
+      set({ moveTree, currentNodeId: node.id, currentFen: node.fenAfter, pendingPromotion: null, lastError: null });
       return true;
     },
 
@@ -347,6 +349,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         currentNodeId: next.currentNodeId,
         mode: "freeplay",
         engineSide: null,
+        pendingPromotion: null,
         lastError: null,
         matchFeedback: null,
         engineClock: null,
@@ -393,6 +396,7 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     clearEngineMatchExtras: () =>
       set({
+        pendingPromotion: null,
         engineClock: null,
         engineClockLive: null,
         gameOutcome: null,

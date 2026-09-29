@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
   nativeImage,
@@ -33,6 +34,7 @@ import {
   PRODUCTION_CSP
 } from "./security";
 import { installWindowGlass, windowGlassConstructorOptions } from "./window-glass";
+import { requestRendererFlush } from "./renderer-flush";
 
 const PRODUCT_NAME = "Chaturanga";
 const IMAGE_SCHEME = "chaturanga-image";
@@ -59,6 +61,10 @@ protocol.registerSchemesAsPrivileged([
 
 const engineManager = new EngineManager();
 let mainWindow: BrowserWindow | null = null;
+/** A quit is under way: once a window's pending save is written, the quit continues. */
+let quitRequested = false;
+/** Cleanup ran (quit, or an update install): windows close without asking the renderer. */
+let shutDown = false;
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -77,6 +83,9 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.on("activate", () => {
     if (app.isReady() && BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+  app.on("before-quit", () => {
+    quitRequested = true;
   });
   app.on("will-quit", shutdown);
   app.whenReady().then(startup, (error) => {
@@ -111,7 +120,18 @@ async function startup(): Promise<void> {
   if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);
   createWindow();
   // Quitting into an installer runs the same cleanup as a normal quit, first.
-  void updateService.start({ prepareForInstall: shutdown });
+  void updateService.start({
+    prepareForInstall: async () => {
+      // The installer quits without the usual close path: write pending saves first, and if one
+      // failed, ask before losing it (Cancel keeps the app open to retry; no install then).
+      for (const window of BrowserWindow.getAllWindows()) {
+        const saved = await requestRendererFlush(window.webContents);
+        if (!saved && !window.isDestroyed() && !confirmCloseUnsaved(window)) return false;
+      }
+      shutdown();
+      return true;
+    }
+  });
 }
 
 /**
@@ -119,6 +139,7 @@ async function startup(): Promise<void> {
  * Idempotent: an update install runs it before `will-quit` does.
  */
 function shutdown(): void {
+  shutDown = true;
   shutdownLichess();
   engineManager.stop();
   killAllEngineProcesses();
@@ -172,6 +193,7 @@ function createWindow(): void {
     }
   });
   mainWindow = window;
+  flushSavesBeforeClose(window);
   // Fallback reveal if the renderer never reports ready (a crash before React mounts).
   window.once("ready-to-show", () => setTimeout(() => revealWindow(window), REVEAL_FALLBACK_MS));
   window.on("closed", () => {
@@ -188,6 +210,43 @@ function createWindow(): void {
     });
     void window.loadFile(rendererIndex);
   }
+}
+
+/**
+ * The first close (the close button, or a quit) waits for the renderer to write its pending
+ * autosave, then closes for real — continuing the quit if one was under way (preventing a close
+ * during a quit cancels the quit).
+ */
+function flushSavesBeforeClose(window: BrowserWindow): void {
+  let flushed = false;
+  window.on("close", (event) => {
+    if (flushed || shutDown || window.webContents.isDestroyed()) return;
+    event.preventDefault();
+    flushed = true;
+    void requestRendererFlush(window.webContents).then((saved) => {
+      if (!saved && !window.isDestroyed() && !confirmCloseUnsaved(window)) {
+        // Stay open so the titlebar's Retry can save it.
+        flushed = false;
+        quitRequested = false;
+        return;
+      }
+      if (quitRequested) app.quit();
+      else if (!window.isDestroyed()) window.close();
+    });
+  });
+}
+
+/** The last save failed: close anyway (losing the latest changes), or stay to retry? */
+function confirmCloseUnsaved(window: BrowserWindow): boolean {
+  const choice = dialog.showMessageBoxSync(window, {
+    type: "warning",
+    buttons: ["Close Anyway", "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+    message: "Your latest changes to this game couldn't be saved.",
+    detail: "Close anyway and lose them, or cancel and use Retry in the titlebar."
+  });
+  return choice === 0;
 }
 
 const REVEAL_FALLBACK_MS = 1500;

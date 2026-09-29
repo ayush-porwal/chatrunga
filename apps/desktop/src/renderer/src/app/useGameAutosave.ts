@@ -1,21 +1,62 @@
 import { useEffect } from "react";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import { exportGameToPgn } from "@chaturanga/shared/chess/pgn";
-import type { MoveNode } from "@chaturanga/shared/types/chess";
-import { useSaveGameMutation } from "../queries/api";
+import type { MoveNode, SaveGameInput } from "@chaturanga/shared/types/chess";
+import { ipcErrorMessage } from "@/lib/ipc-error";
+import { isSaveSuppressed, useSaveGameMutation } from "../queries/api";
 import { useGameStore } from "../stores/game-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
 import { useReviewStore } from "../stores/review-store";
+import { useSaveStatusStore } from "../stores/save-status-store";
 
 /** Quiet period after the last change before the game is written to the library. */
 export const AUTOSAVE_DELAY_MS = 600;
 
+type GameState = ReturnType<typeof useGameStore.getState>;
+type ReviewState = ReturnType<typeof useReviewStore.getState>;
+
+/** What a save writes. Two equal documents (same references) need no second write. */
+type SavedDocument = Pick<GameState, "gameId" | "source" | "moveTree" | "headers" | "currentNodeId" | "gameOutcome"> & {
+  review: ReviewState["review"];
+};
+
+function documentOf(game: GameState, review: ReviewState["review"]): SavedDocument {
+  return {
+    gameId: game.gameId,
+    source: game.source,
+    moveTree: game.moveTree,
+    headers: game.headers,
+    currentNodeId: game.currentNodeId,
+    gameOutcome: game.gameOutcome,
+    review
+  };
+}
+
+export function sameDocument(a: SavedDocument | null, b: SavedDocument): boolean {
+  return (
+    a !== null &&
+    a.gameId === b.gameId &&
+    a.source === b.source &&
+    a.moveTree === b.moveTree &&
+    a.headers === b.headers &&
+    a.currentNodeId === b.currentNodeId &&
+    a.gameOutcome === b.gameOutcome &&
+    a.review === b.review
+  );
+}
+
+/** A new game's library id, chosen before its first write (see `save`). */
+function newGameId(): string {
+  return crypto.randomUUID();
+}
+
 /**
  * Saves the loaded game (moves, cursor, result and review) to the library shortly after it
- * changes. New empty boards and puzzle practice are never saved.
+ * changes. New empty boards and puzzle practice are never saved; opening a saved game doesn't
+ * rewrite it; and a pending save is written before the board is replaced or the window closes.
  */
 export function useGameAutosave(): void {
-  const saveGame = useSaveGameMutation().mutate;
+  const saveGame = useSaveGameMutation().mutateAsync;
 
   // Subscribes to the stores directly (no React state), so a move or a review update does not
   // re-render the app shell that mounts this hook.
@@ -23,71 +64,73 @@ export function useGameAutosave(): void {
     let timeout = 0;
     // The mainline end the loaded game's recorded result belongs to (see savedResult).
     let resultAnchor = mainlineEnd(useGameStore.getState().moveTree)?.id ?? null;
-    const save = () => {
+    // What the library already holds for the loaded game (null: unknown, so the next save writes).
+    let stored: SavedDocument | null = null;
+    // The last write, so a flush can wait for it.
+    let lastWrite: Promise<unknown> = Promise.resolve();
+
+    const write = (input: SaveGameInput, document: SavedDocument | null): Promise<unknown> => {
+      const status = useSaveStatusStore.getState();
+      lastWrite = saveGame(input).then(
+        () => {
+          if (useSaveStatusStore.getState().error) status.clear();
+        },
+        (error: unknown) => {
+          if (isSaveSuppressed(error)) return;
+          // Not in the library as it is now: the next change (or Retry) writes it again.
+          if (document && stored === document) stored = null;
+          // Retry writes what failed (it may be a game already left), then anything newer here.
+          useSaveStatusStore.getState().setFailed(ipcErrorMessage(error) || "The game couldn't be saved.", () => {
+            void write(input, null).then(() => {
+              if (useGameStore.getState().gameId === input.id) void save();
+            });
+          });
+        }
+      );
+      return lastWrite;
+    };
+
+    const save = (): Promise<unknown> => {
       const game = useGameStore.getState();
       // Puzzle practice is ephemeral: never persist it as a "saved game" / recent entry.
-      if (game.mode === "puzzle" && usePuzzleStore.getState().activePuzzle) return;
-      const session = game.toSession();
-      if (session.moveTree.length <= 1 && !session.id) return;
-      const end = mainlineEnd(session.moveTree);
-      const result = savedResult(
-        game.gameOutcome?.result,
-        statusForFen(end?.fenAfter ?? session.currentFen).result,
-        session.headers.result,
-        end?.id === resultAnchor
-      );
-      saveGame(
-        {
-          id: session.id,
-          source: session.source,
-          headers: { ...session.headers, result },
-          rootFen: session.rootFen,
-          currentFen: session.currentFen,
-          currentNodeId: session.currentNodeId,
-          pgn: session.pgn,
-          moveTree: session.moveTree,
-          review: useReviewStore.getState().review
-        },
-        { onSuccess: (saved) => useGameStore.getState().setGameId(saved.id) }
-      );
+      if (game.mode === "puzzle" && usePuzzleStore.getState().activePuzzle) return lastWrite;
+      if (game.moveTree.length <= 1 && !game.gameId) return lastWrite;
+      const review = useReviewStore.getState().review;
+      if (sameDocument(stored, documentOf(game, review))) return lastWrite;
+      // A new game gets its id now, before the write: later saves update the same row, and a reply
+      // that arrives after the board was replaced can't hand this id to another game.
+      if (!game.gameId) useGameStore.getState().setGameId(newGameId());
+      const current = useGameStore.getState();
+      const document = documentOf(current, review);
+      stored = document;
+      return write(saveInput(current, resultAnchor, review), document);
     };
+
     const schedule = () => {
       window.clearTimeout(timeout);
       timeout = window.setTimeout(() => {
         timeout = 0;
-        save();
+        void save();
       }, AUTOSAVE_DELAY_MS);
     };
-    type GameState = ReturnType<typeof useGameStore.getState>;
+
     /**
-     * The board is being replaced (another game, a new board) while a save of a saved game is still
-     * waiting: write the game being left now, as it was, or its last changes would be lost (the
-     * pending save would read the new board). Its stored review is left as it is.
+     * The board is being replaced (another game, a new board) while a save is still waiting: write
+     * the game being left now, as it was, or its last changes would be lost (the pending save would
+     * read the new board). Its stored review is left as it is.
      */
     const flushLeaving = (previous: GameState) => {
-      if (!timeout || !previous.gameId) return;
+      if (!timeout) return;
       window.clearTimeout(timeout);
       timeout = 0;
-      // The result as a normal save would work it out (resultAnchor still belongs to this game).
-      const end = mainlineEnd(previous.moveTree);
-      const result = savedResult(
-        previous.gameOutcome?.result,
-        statusForFen(end?.fenAfter ?? previous.currentFen).result,
-        previous.headers.result,
-        end?.id === resultAnchor
-      );
-      const headers = { ...previous.headers, result };
-      saveGame({
-        id: previous.gameId,
-        source: previous.source,
-        headers,
-        rootFen: previous.rootFen,
-        currentFen: previous.currentFen,
-        currentNodeId: previous.currentNodeId,
-        pgn: exportGameToPgn({ headers, moveTree: previous.moveTree }),
-        moveTree: previous.moveTree
-      });
+      // Puzzle practice is never saved (its board has no library id).
+      if ((previous.mode === "puzzle" || previous.source === "puzzle") && !previous.gameId) return;
+      if (previous.moveTree.length <= 1 && !previous.gameId) return;
+      if (stored && sameDocument(stored, documentOf(previous, stored.review))) return;
+      const gameId = previous.gameId ?? newGameId();
+      void write(saveInput({ ...previous, gameId }, resultAnchor, undefined), null);
     };
+
     const unsubscribers = [
       useGameStore.subscribe((state, previous) => {
         // Loading a game or resetting the board replaces headers and move tree together (moves
@@ -95,6 +138,17 @@ export function useGameAutosave(): void {
         if (state.headers !== previous.headers && state.moveTree !== previous.moveTree) {
           flushLeaving(previous);
           resultAnchor = mainlineEnd(state.moveTree)?.id ?? null;
+          stored = null;
+          if (state.gameId) {
+            // A game opened from the library is saved exactly as it loaded (later changes in the
+            // same task, like a restored cursor, are edits to save). Its review is loaded right
+            // after the game, so that part of the snapshot is filled in once it's in.
+            const loaded = documentOf(state, useReviewStore.getState().review);
+            stored = loaded;
+            queueMicrotask(() => {
+              if (stored === loaded) stored = { ...loaded, review: useReviewStore.getState().review };
+            });
+          }
         }
         if (
           state.currentNodeId !== previous.currentNodeId ||
@@ -110,13 +164,54 @@ export function useGameAutosave(): void {
       }),
       useReviewStore.subscribe((state, previous) => {
         if (state.review !== previous.review) schedule();
-      })
+      }),
+      // Closing the window (or quitting): write what's pending before the renderer goes away.
+      window.chaturanga?.games.onFlushRequest?.(async () => {
+        if (timeout) {
+          window.clearTimeout(timeout);
+          timeout = 0;
+          await save();
+        }
+        await lastWrite;
+        return useSaveStatusStore.getState().error === null;
+      }) ?? (() => {})
     ];
     return () => {
       window.clearTimeout(timeout);
       unsubscribers.forEach((unsubscribe) => unsubscribe());
     };
   }, [saveGame]);
+}
+
+/**
+ * The library row for `game`. The result belongs to the game, not the cursor (see savedResult),
+ * and the PGN is written with that same result, so the two never disagree. `review: undefined`
+ * keeps the stored review.
+ */
+function saveInput(
+  game: GameState,
+  resultAnchor: string | null,
+  review: ReviewState["review"] | undefined
+): SaveGameInput {
+  const end = mainlineEnd(game.moveTree);
+  const result = savedResult(
+    game.gameOutcome?.result,
+    statusForFen(end?.fenAfter ?? game.currentFen).result,
+    game.headers.result,
+    end?.id === resultAnchor
+  );
+  const headers = { ...game.headers, result };
+  return {
+    id: game.gameId,
+    source: game.source,
+    headers,
+    rootFen: game.rootFen,
+    currentFen: game.currentFen,
+    currentNodeId: game.currentNodeId,
+    pgn: exportGameToPgn({ headers, moveTree: game.moveTree }),
+    moveTree: game.moveTree,
+    ...(review === undefined ? {} : { review })
+  };
 }
 
 /** Last node of the main line (first child at every step from the root). */
