@@ -547,5 +547,10 @@ export const externalDatabaseRepository = {
 
   remove(id: string): void {
     run("DELETE FROM external_databases WHERE id = ?", id);
+  },
+
+  /** The file moved (see dataset-location.ts). */
+  updateFilePath(id: string, filePath: string): void {
+    run("UPDATE external_databases SET file_path = ? WHERE id = ?", filePath, id);
   }
 };

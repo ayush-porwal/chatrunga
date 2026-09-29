@@ -22,7 +22,7 @@ vi.mock("../db/repositories", () => ({
 import { downloadDatabase } from "./external-databases";
 
 const SOURCE = "lichess-puzzles";
-const dir = join(userData, "databases");
+const dir = join(userData, "puzzle-databases");
 const finalPath = join(dir, "lichess-puzzles-lichess_db_puzzle.csv.zst");
 
 /** A server for one file with ETag, Range and If-Range, like database.lichess.org. */

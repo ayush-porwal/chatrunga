@@ -14,6 +14,7 @@ import {
 } from "@chaturanga/shared/types/database";
 import { externalDatabaseRepository } from "../db/repositories";
 import { errorMessage } from "../logger";
+import { datasetDir, relocatedDatasetPath } from "./dataset-location";
 import { parseCsvLine, sampleFromLichessRow, sampleFromPositionRow } from "./puzzle-rows";
 
 const PROGRESS_INTERVAL_MS = 120;
@@ -26,17 +27,32 @@ function isMissingFile(error: unknown): boolean {
   return (error as NodeJS.ErrnoException)?.code === "ENOENT";
 }
 
+/**
+ * The database with its file on disk: a file registered in the old folder that was moved (see
+ * dataset-location.ts) gets its new path. Null when the file is gone (the entry is dropped).
+ */
+async function onDisk(database: InstalledDatabase): Promise<InstalledDatabase | null> {
+  try {
+    await stat(database.filePath);
+    return database;
+  } catch (error) {
+    if (!isMissingFile(error)) throw error;
+  }
+  const moved = relocatedDatasetPath(database.filePath, app.getPath("userData"));
+  if (moved && (await fileSize(moved)) > 0) {
+    externalDatabaseRepository.updateFilePath(database.id, moved);
+    return { ...database, filePath: moved };
+  }
+  externalDatabaseRepository.remove(database.id);
+  return null;
+}
+
 /** Installed databases whose file is still on disk; rows for deleted files are dropped. */
 export async function listInstalledDatabases(): Promise<InstalledDatabase[]> {
   const available: InstalledDatabase[] = [];
   for (const database of externalDatabaseRepository.list()) {
-    try {
-      await stat(database.filePath);
-      available.push(database);
-    } catch (error) {
-      if (!isMissingFile(error)) throw error;
-      externalDatabaseRepository.remove(database.id);
-    }
+    const present = await onDisk(database);
+    if (present) available.push(present);
   }
   return available;
 }
@@ -73,7 +89,7 @@ const IDENTITY = { "Accept-Encoding": "identity" };
 async function runDownload(sourceId: string, onProgress: ProgressSink): Promise<InstalledDatabase> {
   const source = externalDatabaseSources.find((item) => item.id === sourceId);
   if (!source) throw new Error("Database source not found");
-  const dir = join(app.getPath("userData"), "databases");
+  const dir = datasetDir(app.getPath("userData"));
   await mkdir(dir, { recursive: true });
   const filePath = join(dir, `${source.id}-${basename(new URL(source.url).pathname)}`);
   const partPath = `${filePath}.part`;
@@ -187,15 +203,10 @@ export async function removeDatabase(id: string): Promise<void> {
 
 /** A uniformly random puzzle among the first matches of the filters. */
 export async function samplePuzzle(input: PuzzleSampleInput): Promise<PuzzleSample> {
-  const database = externalDatabaseRepository.get(input.databaseId);
-  if (!database) throw new Error("Puzzle database not found. Download a database first.");
-  try {
-    await stat(database.filePath);
-  } catch (error) {
-    if (!isMissingFile(error)) throw error;
-    externalDatabaseRepository.remove(database.id);
-    throw new Error(`${database.name} is missing from disk. Download the database again.`, { cause: error });
-  }
+  const registered = externalDatabaseRepository.get(input.databaseId);
+  if (!registered) throw new Error("Puzzle database not found. Download a database first.");
+  const database = await onDisk(registered);
+  if (!database) throw new Error(`${registered.name} is missing from disk. Download the database again.`);
 
   const sampleRow = database.sourceId === "lichess-puzzles" ? sampleFromLichessRow : sampleFromPositionRow;
   const excludedIds = new Set(input.excludeIds ?? []);
