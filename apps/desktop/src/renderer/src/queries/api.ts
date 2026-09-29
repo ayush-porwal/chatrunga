@@ -5,6 +5,7 @@ import type { SaveGameInput } from "@chaturanga/shared/types/chess";
 import type { CreateEngineInput, UpdateEngineInput } from "@chaturanga/shared/types/engine";
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
+import { ipcErrorMessage } from "@/lib/ipc-error";
 
 const queryKeys = {
   databases: ["databases"] as const,
@@ -82,10 +83,15 @@ export function useSaveGameMutation() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.games }),
     onError: (error) => {
       // Saving a game that was just deleted is refused on purpose; anything else is worth a trace.
-      if (error instanceof Error && error.message === SAVE_SUPPRESSED_AFTER_DELETE) return;
+      if (isSaveSuppressed(error)) return;
       console.warn("games.save failed", error);
     }
   });
+}
+
+/** The save was refused on purpose: the game was just deleted (not a failure to report). */
+export function isSaveSuppressed(error: unknown): boolean {
+  return ipcErrorMessage(error) === SAVE_SUPPRESSED_AFTER_DELETE;
 }
 
 export function useDeleteGameMutation() {

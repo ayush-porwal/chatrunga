@@ -232,3 +232,20 @@ describe("Lichess inputs", () => {
     expect(() => parseLichessDisconnectInput({})).toThrow(/removeGames/);
   });
 });
+
+describe("parseSaveGameInput headers", () => {
+  const base = { source: "pgn-import", moveTree: [], pgn: "*", rootFen: START, currentFen: START };
+
+  it("keeps known headers and drops unknown ones", () => {
+    const input = parseSaveGameInput({
+      ...base,
+      headers: { white: "A", whiteElo: "2000", termination: null, orientationHint: "black", injected: "x" }
+    });
+    expect(input.headers).toEqual({ white: "A", whiteElo: "2000", termination: null, orientationHint: "black" });
+  });
+
+  it("rejects headers that aren't text", () => {
+    expect(() => parseSaveGameInput({ ...base, headers: { white: 42 } })).toThrow();
+    expect(() => parseSaveGameInput({ ...base, headers: { orientationHint: "up" } })).toThrow();
+  });
+});

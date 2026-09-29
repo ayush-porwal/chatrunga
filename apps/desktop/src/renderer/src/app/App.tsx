@@ -362,6 +362,18 @@ export function App() {
     useAnalysisStore.getState().reset();
   }
 
+  /**
+   * Play → Start: a new engine game replaces the board. The previous game's search and review end
+   * here — a late best move or a finished review must not land in (or be saved with) the new game.
+   */
+  function beforeEngineGame() {
+    commitCurrent();
+    ++latestNavigation.current;
+    stopEngineWork();
+    useReviewStore.getState().reset();
+    clearPuzzleSession();
+  }
+
   function showGame(tab: SideTab = "notation", history: HistoryMode = "push") {
     setSideTab(tab);
     showView("game", history, tab);
@@ -524,8 +536,12 @@ export function App() {
     const request = ++latestNavigation.current;
     if (gameId !== currentGame().gameId) {
       if (!window.chaturanga) return;
-      const saved = await window.chaturanga.games.get(gameId);
+      const saved = await window.chaturanga.games.get(gameId).catch(() => null);
       if (request !== latestNavigation.current) return;
+      if (!saved) {
+        useGameStore.setState({ lastError: "Couldn't open that game." });
+        return;
+      }
       stopEngineWork();
       clearPuzzleSession();
       openSavedGame(saved);
@@ -695,7 +711,7 @@ export function App() {
       viewedSettingsSection.current = section;
     }),
     importedGame: useEventCallback((imported: ImportedGame) => unlessOnlineGame(() => loadImportedGame(imported))),
-    beforePlayStart: useEventCallback(commitCurrent),
+    beforePlayStart: useEventCallback(beforeEngineGame),
     play: useEventCallback(() => openPlayPage()),
     freeBoard: useEventCallback(() => unlessOnlineGame(startFreeBoard)),
     liveAnalysis: useEventCallback(() => unlessOnlineGame(startLiveAnalysis)),

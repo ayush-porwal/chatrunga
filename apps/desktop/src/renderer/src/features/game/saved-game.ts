@@ -1,6 +1,6 @@
-import { legacyPlyShift, nodeIdForBoardFen, withRealPlies } from "@chaturanga/shared/chess/pgn";
+import { importPgnText, legacyPlyShift, nodeIdForBoardFen, withRealPlies } from "@chaturanga/shared/chess/pgn";
 import type { GameReview } from "@chaturanga/shared/types/engine";
-import type { GameSession, SavedGame } from "@chaturanga/shared/types/chess";
+import type { GameHeaders, GameSession, SavedGame } from "@chaturanga/shared/types/chess";
 import { useGameStore } from "../../stores/game-store";
 import { useReviewStore } from "../../stores/review-store";
 
@@ -9,15 +9,7 @@ export function sessionFromSavedGame(saved: SavedGame): GameSession {
   return {
     id: saved.id,
     source: saved.source,
-    headers: {
-      event: saved.event,
-      site: saved.site,
-      date: saved.date,
-      round: saved.round,
-      white: saved.white,
-      black: saved.black,
-      result: saved.result
-    },
+    headers: savedHeaders(saved),
     rootFen: saved.initialFen ?? saved.moveTree[0]?.fenAfter,
     currentFen: saved.currentFen,
     // Older rows have no node cursor; find the node for the saved board position.
@@ -25,6 +17,28 @@ export function sessionFromSavedGame(saved: SavedGame): GameSession {
     moveTree: withRealPlies(saved.moveTree),
     pgn: saved.pgn
   };
+}
+
+/**
+ * Every header of a saved game: the stored set, or for rows saved before headers were stored, the
+ * ones in its PGN (Elo, time control, opening, termination…), so reopening doesn't drop them.
+ */
+function savedHeaders(saved: SavedGame): GameHeaders {
+  const columns: GameHeaders = {
+    event: saved.event,
+    site: saved.site,
+    date: saved.date,
+    round: saved.round,
+    white: saved.white,
+    black: saved.black,
+    result: saved.result
+  };
+  if (saved.headers) return { ...saved.headers, result: saved.result };
+  try {
+    return { ...importPgnText(saved.pgn).game.headers, ...columns };
+  } catch {
+    return columns;
+  }
 }
 
 /** Loads a saved game and its stored review into the stores. */

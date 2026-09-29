@@ -122,6 +122,11 @@ export type ChaturangaApi = {
     save(input: SaveGameInput): Promise<SavedGame>;
     remove(id: string): Promise<void>;
     importPgn(input: ImportPgnInput): Promise<ImportedGame>;
+    /**
+     * Registers the renderer's pending-save flush. The window runs it before it closes (quit, or
+     * the close button) and waits for it — a bounded time — so the last edits reach the library.
+     */
+    onFlushRequest(handler: () => Promise<void>): Unsubscribe;
   };
   databases: {
     list(): Promise<InstalledDatabase[]>;

@@ -93,6 +93,8 @@ export type GameSummary = {
 export type SavedGame = GameSummary & {
   /** Canonical node cursor; legacy rows may omit it and fall back to currentFen. */
   currentNodeId?: string | null;
+  /** Every header as last saved; older rows have none (their PGN still carries them). */
+  headers?: GameHeaders | null;
   site: string | null;
   round: string | null;
   initialFen: string | null;
