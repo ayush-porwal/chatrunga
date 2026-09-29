@@ -227,6 +227,18 @@ export function BoardView() {
     [activePuzzle, flashSquares, makeMove, mode, restoreGroundToCurrentPosition]
   );
 
+  // A refused move (flag fell, game over, not at the latest move online, a refused promotion): the
+  // piece Chessground already moved goes back, since the stored position — and so the effect
+  // below — didn't change.
+  const rejectedMoves = useGameStore((state) => state.rejectedMoves);
+  const seenRejections = useRef(rejectedMoves);
+  useEffect(() => {
+    if (rejectedMoves === seenRejections.current) return;
+    seenRejections.current = rejectedMoves;
+    queueMicrotask(restoreGroundToCurrentPosition);
+    window.requestAnimationFrame(restoreGroundToCurrentPosition);
+  }, [rejectedMoves, restoreGroundToCurrentPosition]);
+
   // A promotion chosen (or dropped) without the position changing — a wrong puzzle promotion, or a
   // move refused — leaves the pawn Chessground moved on the last rank: put the board back.
   const pendingPromotion = useGameStore((state) => state.pendingPromotion);

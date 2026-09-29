@@ -54,6 +54,11 @@ type GameStore = {
   engineClock: EngineClockConfig | null;
   engineClockLive: EngineClockLive | null;
   gameOutcome: GameOutcome | null;
+  /**
+   * Counts moves `makeMove` refused. The board has already drawn the piece on its new square;
+   * it puts the position back when this changes (the stored position didn't change).
+   */
+  rejectedMoves: number;
   loadGame: (game: GameSession) => void;
   makeMove: (move: UserMove) => boolean;
   makeUciMove: (uci: string) => boolean;
@@ -173,6 +178,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     engineClock: null,
     engineClockLive: null,
     gameOutcome: null,
+    rejectedMoves: 0,
 
     loadGame: (game) => {
       const requestedNode = game.moveTree.find((node) => node.id === game.currentNodeId);
@@ -198,11 +204,14 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     makeMove: (move) => {
       const state = get();
-      if (state.gameOutcome) return false;
+      const reject = (patch: Partial<GameStore> = {}): false => {
+        set((current) => ({ ...patch, rejectedMoves: current.rejectedMoves + 1 }));
+        return false;
+      };
+      if (state.gameOutcome) return reject();
       // Online, a move is only ever played at the end of the game (never as a variation).
       if (state.mode === "online" && state.currentNodeId !== mainlineEndId(state.moveTree)) {
-        set({ lastError: "Go to the latest move to play." });
-        return false;
+        return reject({ lastError: "Go to the latest move to play." });
       }
       const parent = state.moveTree.find((node) => node.id === state.currentNodeId);
       const fenBefore = parent?.fenAfter ?? state.currentFen;
@@ -219,13 +228,10 @@ export const useGameStore = create<GameStore>((set, get) => {
         remainingClockMs(live, mover, now) <= 0
       ) {
         get().resolveTimeout(mover);
-        return false;
+        return reject();
       }
       const applied = applyUserMove(fenBefore, move);
-      if (!applied) {
-        set({ lastError: "Illegal move" });
-        return false;
-      }
+      if (!applied) return reject({ lastError: "Illegal move" });
       const { moveTree, node } = addMoveNode(
         state.moveTree,
         state.currentNodeId,
@@ -564,12 +570,26 @@ function stopClock(live: EngineClockLive | null): EngineClockLive | null {
   return live && live.stoppedAt === undefined ? { ...live, stoppedAt: clockNow() } : live;
 }
 
+/** A wall-clock step this much larger than the monotonic one is time the computer spent asleep. */
+const SLEEP_GAP_MS = 2_000;
+let lastMonotonic = performance.now();
+let lastWall = Date.now();
+let asleepMs = 0;
+
 /**
- * The time base for match clocks: monotonic, so changing the system clock (or an NTP correction)
- * never adds or removes thinking time. Only differences between two readings mean anything.
+ * The time base for match clocks. Monotonic, so setting the system clock back (or an NTP nudge)
+ * never adds thinking time — but `performance.now()` stops while the computer sleeps, so time
+ * asleep is added back: a laptop closed mid-game keeps running the side to move's clock, as a
+ * wall clock would. Only differences between two readings mean anything.
  */
 export function clockNow(): number {
-  return performance.now();
+  const monotonic = performance.now();
+  const wall = Date.now();
+  const gap = wall - lastWall - (monotonic - lastMonotonic);
+  if (gap > SLEEP_GAP_MS) asleepMs += gap;
+  lastMonotonic = monotonic;
+  lastWall = wall;
+  return monotonic + asleepMs;
 }
 
 /** Time left on `side`'s clock at `now` (the running side's clock counts down; a stopped game is frozen). */

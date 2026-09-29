@@ -1,10 +1,26 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
-import { buildEngineGoClock, useGameStore } from "./game-store";
+import { buildEngineGoClock, clockNow, useGameStore } from "./game-store";
+
+/** Moves both time sources together (the clock treats a wall-only jump as time asleep). */
+function mockTime() {
+  const monotonic = vi.spyOn(performance, "now");
+  const wall = vi.spyOn(Date, "now");
+  const at = (ms: number) => {
+    monotonic.mockReturnValue(ms);
+    wall.mockReturnValue(1_700_000_000_000 + ms);
+  };
+  return at;
+}
 
 describe("game store", () => {
   beforeEach(() => {
     useGameStore.getState().reset();
+  });
+
+  // Clock tests mock the time sources; a failed assertion must not leave them mocked.
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("deletes a selected move and its descendants", () => {
@@ -126,10 +142,11 @@ describe("game store", () => {
   });
 
   it("builds UCI clock snapshots and advances live clocks after moves", () => {
-    vi.spyOn(performance, "now").mockReturnValueOnce(1_000).mockReturnValue(2_500);
-
+    const at = mockTime();
+    at(1_000);
     useGameStore.getState().setEngineMatchClock({ initialMs: 10_000, incrementMs: 500 });
     useGameStore.getState().initEngineClockLive();
+    at(2_500);
     expect(useGameStore.getState().engineClockLive).toMatchObject({
       whiteMs: 10_000,
       blackMs: 10_000,
@@ -146,32 +163,49 @@ describe("game store", () => {
   });
 
   it("a move after the flag fell loses on time, and the increment can't revive the clock", () => {
-    const now = vi.spyOn(performance, "now").mockReturnValue(0);
+    const at = mockTime();
+    at(0);
     useGameStore.getState().setMode("engine");
     useGameStore.getState().setEngineSide("black");
     useGameStore.getState().setEngineMatchClock({ initialMs: 1_000, incrementMs: 1_000 });
     useGameStore.getState().initEngineClockLive();
 
-    now.mockReturnValue(1_100);
+    at(1_100);
     expect(useGameStore.getState().makeMove({ from: "e2", to: "e4" })).toBe(false);
     const state = useGameStore.getState();
     expect(state.gameOutcome).toEqual({ result: "0-1", termination: "Time forfeit" });
     expect(state.moveTree).toHaveLength(1);
-    expect(state.engineClockLive?.stoppedAt).toBe(1_100);
-    vi.restoreAllMocks();
+    expect(state.engineClockLive?.stoppedAt! - state.engineClockLive!.turnStartedAt).toBe(1_100);
+    expect(state.rejectedMoves).toBe(1);
   });
 
   it("a move just in time keeps the clock and adds the increment", () => {
-    const now = vi.spyOn(performance, "now").mockReturnValue(0);
+    const at = mockTime();
+    at(0);
     useGameStore.getState().setMode("engine");
     useGameStore.getState().setEngineSide("black");
     useGameStore.getState().setEngineMatchClock({ initialMs: 1_000, incrementMs: 1_000 });
     useGameStore.getState().initEngineClockLive();
 
-    now.mockReturnValue(900);
+    at(900);
     expect(useGameStore.getState().makeMove({ from: "e2", to: "e4" })).toBe(true);
     expect(useGameStore.getState().engineClockLive).toMatchObject({ whiteMs: 1_100, sideToMove: "black" });
-    vi.restoreAllMocks();
+  });
+
+  it("the match clock ignores wall-clock changes but counts time asleep", () => {
+    const monotonic = vi.spyOn(performance, "now").mockReturnValue(10_000);
+    const wall = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+    const start = clockNow();
+
+    // The system clock is set back an hour: no time is added or removed.
+    monotonic.mockReturnValue(11_000);
+    wall.mockReturnValue(1_000_000 - 3_600_000);
+    expect(clockNow() - start).toBe(1_000);
+
+    // Ten minutes asleep: the monotonic clock barely moves, the wall clock does.
+    monotonic.mockReturnValue(11_050);
+    wall.mockReturnValue(1_000_000 - 3_600_000 + 600_000);
+    expect(clockNow() - start).toBe(1_050 + 600_000 - 50);
   });
 
   describe("goToLine", () => {
