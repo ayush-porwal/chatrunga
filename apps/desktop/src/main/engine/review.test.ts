@@ -85,3 +85,28 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
     expect(last.classification).toBe("best");
   }, 30_000);
 });
+
+describe("review reuse", () => {
+  it("a second review with the same settings reuses every finished move; new settings review again", async () => {
+    const run = async (moveTimeMs: number) => {
+      const phases: string[] = [];
+      const review = await reviewGameWithEngine(
+        fakeEngine("sf-cache", "sf"),
+        { reviewId: "c", engineId: "sf-cache", rootFen: START, moves: foolsMate(), multipv: 2, moveTimeMs },
+        { onPhaseProgress: (p) => phases.push(`${p.moveIndex}:${p.phase}`) }
+      );
+      return { review, phases };
+    };
+    const first = await run(77);
+    expect(first.phases.length).toBeGreaterThan(0);
+
+    const again = await run(77);
+    expect(again.phases).toEqual([]);
+    expect(again.review.moves.map((move) => [move.nodeId, move.classification])).toEqual(
+      first.review.moves.map((move) => [move.nodeId, move.classification])
+    );
+
+    const otherBudget = await run(78);
+    expect(otherBudget.phases.length).toBe(first.phases.length);
+  });
+});
