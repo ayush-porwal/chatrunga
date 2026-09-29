@@ -126,10 +126,7 @@ describe("game store", () => {
   });
 
   it("builds UCI clock snapshots and advances live clocks after moves", () => {
-    vi.spyOn(Date, "now")
-      .mockReturnValueOnce(1_000)
-      .mockReturnValueOnce(2_500)
-      .mockReturnValueOnce(2_500);
+    vi.spyOn(performance, "now").mockReturnValueOnce(1_000).mockReturnValue(2_500);
 
     useGameStore.getState().setEngineMatchClock({ initialMs: 10_000, incrementMs: 500 });
     useGameStore.getState().initEngineClockLive();
@@ -145,6 +142,35 @@ describe("game store", () => {
       blackMs: 10_000,
       sideToMove: "black"
     });
+    vi.restoreAllMocks();
+  });
+
+  it("a move after the flag fell loses on time, and the increment can't revive the clock", () => {
+    const now = vi.spyOn(performance, "now").mockReturnValue(0);
+    useGameStore.getState().setMode("engine");
+    useGameStore.getState().setEngineSide("black");
+    useGameStore.getState().setEngineMatchClock({ initialMs: 1_000, incrementMs: 1_000 });
+    useGameStore.getState().initEngineClockLive();
+
+    now.mockReturnValue(1_100);
+    expect(useGameStore.getState().makeMove({ from: "e2", to: "e4" })).toBe(false);
+    const state = useGameStore.getState();
+    expect(state.gameOutcome).toEqual({ result: "0-1", termination: "Time forfeit" });
+    expect(state.moveTree).toHaveLength(1);
+    expect(state.engineClockLive?.stoppedAt).toBe(1_100);
+    vi.restoreAllMocks();
+  });
+
+  it("a move just in time keeps the clock and adds the increment", () => {
+    const now = vi.spyOn(performance, "now").mockReturnValue(0);
+    useGameStore.getState().setMode("engine");
+    useGameStore.getState().setEngineSide("black");
+    useGameStore.getState().setEngineMatchClock({ initialMs: 1_000, incrementMs: 1_000 });
+    useGameStore.getState().initEngineClockLive();
+
+    now.mockReturnValue(900);
+    expect(useGameStore.getState().makeMove({ from: "e2", to: "e4" })).toBe(true);
+    expect(useGameStore.getState().engineClockLive).toMatchObject({ whiteMs: 1_100, sideToMove: "black" });
     vi.restoreAllMocks();
   });
 
