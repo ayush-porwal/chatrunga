@@ -1,4 +1,6 @@
 import { BrowserWindow, dialog, ipcMain, powerMonitor, type IpcMainInvokeEvent } from "electron";
+import { allowChosenFile } from "../image-access";
+import { parseSettingValue } from "./settings-values";
 import type { EventEmitter } from "node:events";
 import { readFile, writeFile } from "node:fs/promises";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
@@ -296,7 +298,10 @@ function registerLibraryIpc(): void {
   });
   const selectFile = async (event: IpcMainInvokeEvent, filters: Electron.FileFilter[]) => {
     const result = await showOpenDialog(event, { properties: ["openFile"], filters });
-    return result.canceled ? null : (result.filePaths[0] ?? null);
+    const path = result.canceled ? null : (result.filePaths[0] ?? null);
+    // A picture picked for an engine can be previewed before it's saved (see image-access.ts).
+    allowChosenFile(path);
+    return path;
   };
   ipcMain.handle("files:selectExecutable", (event) => selectFile(event, [{ name: "All files", extensions: ["*"] }]));
   ipcMain.handle("files:selectOpenFile", (event, filters: unknown) => {
@@ -307,7 +312,7 @@ function registerLibraryIpc(): void {
   ipcMain.handle("settings:getAll", () => settingsRepository.getAll());
   ipcMain.handle("settings:set", (_event, key: unknown, value: unknown) => {
     const settingKey = parseSettingKey(key);
-    settingsRepository.set(settingKey, value);
+    settingsRepository.set(settingKey, parseSettingValue(settingKey, value));
     if (settingKey === "glassEffect") refreshWindowGlass();
     if (settingKey === "updatesAutoDownload" || settingKey === "updatesIncludeBeta") updateService.applySettings();
   });
@@ -359,7 +364,7 @@ function registerLichessIpc(): void {
     const input = parseLichessDisconnectInput(options);
     // Removed games must stay removed: a save already on its way (autosave) is refused like after
     // a single delete. Marked first, so no save can slip in between the delete and the marking.
-    const removed = input.removeGames ? gameRepository.list().filter((game) => game.source === "lichess").map((game) => game.id) : [];
+    const removed = input.removeGames ? gameRepository.idsBySource("lichess") : [];
     const deletedAt = Date.now();
     for (const id of removed) recentlyDeletedGames.set(id, deletedAt);
     try {

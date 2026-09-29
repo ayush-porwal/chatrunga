@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAppUrl, isExternalHttpUrl, isPermissionAllowed, localImagePathFromUrl, PRODUCTION_CSP } from "./security";
+import { isAppUrl, isExternalHttpUrl, isPermissionAllowed, localImagePathFromUrl, PRODUCTION_CSP, isTrustedSenderUrl } from "./security";
 
 describe("isExternalHttpUrl", () => {
   it("accepts only http(s) links", () => {
@@ -66,5 +66,16 @@ describe("PRODUCTION_CSP", () => {
     expect(PRODUCTION_CSP).toContain("object-src 'none'");
     expect(PRODUCTION_CSP).toContain("frame-ancestors 'none'");
     expect(PRODUCTION_CSP).not.toContain("unsafe-eval");
+  });
+});
+
+describe("isTrustedSenderUrl", () => {
+  it("trusts only the app's own page", () => {
+    const packaged = "file:///Applications/Chaturanga.app/Contents/Resources/app.asar/out/renderer/index.html";
+    expect(isTrustedSenderUrl(`${packaged}#/games/1/review`, packaged)).toBe(true);
+    expect(isTrustedSenderUrl("file:///tmp/evil.html", packaged)).toBe(false);
+    expect(isTrustedSenderUrl("http://127.0.0.1:5173/#/", "http://127.0.0.1:5173")).toBe(true);
+    expect(isTrustedSenderUrl("https://example.com/", "http://127.0.0.1:5173")).toBe(false);
+    expect(isTrustedSenderUrl(undefined, packaged)).toBe(false);
   });
 });
