@@ -256,5 +256,6 @@ describe("parseSettingsPatch", () => {
     expect(parseSettingsPatch({ boardTheme: "green", boardSquareLight: null })).toEqual({ boardTheme: "green", boardSquareLight: null });
     expect(() => parseSettingsPatch({ nope: 1 })).toThrow();
     expect(() => parseSettingsPatch({})).toThrow();
+    expect(() => parseSettingsPatch({ soundVolume: 9 })).toThrow(/soundVolume/);
   });
 });
