@@ -8,8 +8,8 @@
   "private": true,
   "scripts": {
     "dev": "node ../../scripts/ensure-electron.cjs && electron-vite dev",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "build": "tsc --noEmit -p tsconfig.json && electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.main.json",
+    "build": "pnpm run typecheck && electron-vite build",
     "preview": "electron-vite preview",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",

@@ -5,8 +5,10 @@
 import { createRequire } from "node:module";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const desktop = new URL("../apps/desktop/", import.meta.url).pathname;
+// fileURLToPath, not URL.pathname: on Windows that is "/C:/…", not a usable path.
+const desktop = fileURLToPath(new URL("../apps/desktop/", import.meta.url));
 const require = createRequire(join(desktop, "package.json"));
 const asar = require("@electron/asar");
 

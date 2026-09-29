@@ -1,0 +1,11 @@
+{
+  // Main and preload run in Node/Electron: Node types, no DOM (a `window` or `document` there
+  // fails the typecheck).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": ["node"]
+  },
+  "include": ["src/main", "src/preload"],
+  "exclude": ["src/main/**/*.test.ts", "src/main/**/__fixtures__/**"]
+}

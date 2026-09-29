@@ -85,10 +85,13 @@ export type WindowGlassState = {
   active: boolean;
 };
 
+/** `process.platform`, spelled out so the renderer (which has no Node types) can use it. */
+export type Platform = "aix" | "android" | "darwin" | "freebsd" | "haiku" | "linux" | "openbsd" | "sunos" | "win32" | "cygwin" | "netbsd";
+
 export type ChaturangaApi = {
   environment: {
     isElectron: true;
-    platform: NodeJS.Platform;
+    platform: Platform;
   };
   appearance: {
     /** Current glass state (synchronous: read before the first render so the first frame is right). */

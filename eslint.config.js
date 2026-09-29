@@ -14,13 +14,11 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     files: ["**/*.{ts,tsx}"],
+    // No globals here: flat config merges globals across matching entries, so each process gets
+    // only its own (below).
     languageOptions: {
       ecmaVersion: 2022,
-      sourceType: "module",
-      globals: {
-        ...globals.browser,
-        ...globals.node
-      }
+      sourceType: "module"
     },
     plugins: {
       "react-hooks": reactHooks
@@ -32,8 +30,9 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "off"
     }
   },
-  // Each process gets its own globals and may not reach into another's code: the renderer runs in
-  // a sandboxed page (no Node, no Electron main APIs — only the preload bridge), main has no DOM.
+  // Each process may not reach into another's code: the renderer runs in a sandboxed page (no Node,
+  // no Electron main APIs — only the preload bridge), main has no DOM. (Undefined globals are the
+  // type checker's job: tsconfig.renderer.json has no Node types, tsconfig.main.json no DOM.)
   {
     files: ["apps/desktop/src/renderer/src/**/*.{ts,tsx}", "apps/marketing/src/**/*.ts"],
     // Tests run in Node (vitest) and may use it.
@@ -61,6 +60,21 @@ export default tseslint.config(
         { patterns: [{ group: ["**/renderer/**", "@/*"], message: "Main/preload code can't import renderer code." }] }
       ]
     }
+  },
+  // Code shared by both sides, build configs and tests (vitest runs in Node, some with DOM types).
+  {
+    files: ["**/*.{ts,tsx}"],
+    ignores: [
+      "apps/desktop/src/renderer/src/**",
+      "apps/marketing/src/**",
+      "apps/desktop/src/main/**",
+      "apps/desktop/src/preload/**"
+    ],
+    languageOptions: { globals: { ...globals.browser, ...globals.node } }
+  },
+  {
+    files: ["**/*.test.{ts,tsx}"],
+    languageOptions: { globals: { ...globals.browser, ...globals.node } }
   },
   // TanStack Query: query keys list every variable the query reads, and query options are stable.
   ...pluginQuery.configs["flat/recommended"],
