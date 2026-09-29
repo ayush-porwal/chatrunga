@@ -90,6 +90,15 @@ export type ChaturangaApi = {
     isElectron: true;
     platform: NodeJS.Platform;
   };
+  system: {
+    /**
+     * Total time the computer slept that a monotonic clock didn't count (synchronous; match
+     * clocks add it, see clockNow).
+     */
+    timeAsleepMs(): number;
+    /** The computer woke up (the time asleep changed). */
+    onResumed(callback: () => void): Unsubscribe;
+  };
   appearance: {
     /** Current glass state (synchronous: read before the first render so the first frame is right). */
     getGlass(): WindowGlassState;

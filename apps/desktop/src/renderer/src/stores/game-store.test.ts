@@ -1,10 +1,26 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
-import { buildEngineGoClock, useGameStore } from "./game-store";
+import { buildEngineGoClock, clockNow, noteSystemResumed, setTimeAsleepSource, useGameStore } from "./game-store";
+
+/** Moves both time sources together (the clock treats a wall-only jump as time asleep). */
+function mockTime() {
+  const monotonic = vi.spyOn(performance, "now");
+  const wall = vi.spyOn(Date, "now");
+  const at = (ms: number) => {
+    monotonic.mockReturnValue(ms);
+    wall.mockReturnValue(1_700_000_000_000 + ms);
+  };
+  return at;
+}
 
 describe("game store", () => {
   beforeEach(() => {
     useGameStore.getState().reset();
+  });
+
+  // Clock tests mock the time sources; a failed assertion must not leave them mocked.
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("deletes a selected move and its descendants", () => {
@@ -126,13 +142,11 @@ describe("game store", () => {
   });
 
   it("builds UCI clock snapshots and advances live clocks after moves", () => {
-    vi.spyOn(Date, "now")
-      .mockReturnValueOnce(1_000)
-      .mockReturnValueOnce(2_500)
-      .mockReturnValueOnce(2_500);
-
+    const at = mockTime();
+    at(1_000);
     useGameStore.getState().setEngineMatchClock({ initialMs: 10_000, incrementMs: 500 });
     useGameStore.getState().initEngineClockLive();
+    at(2_500);
     expect(useGameStore.getState().engineClockLive).toMatchObject({
       whiteMs: 10_000,
       blackMs: 10_000,
@@ -146,6 +160,66 @@ describe("game store", () => {
       sideToMove: "black"
     });
     vi.restoreAllMocks();
+  });
+
+  it("a move after the flag fell loses on time, and the increment can't revive the clock", () => {
+    const at = mockTime();
+    at(0);
+    useGameStore.getState().setMode("engine");
+    useGameStore.getState().setEngineSide("black");
+    useGameStore.getState().setEngineMatchClock({ initialMs: 1_000, incrementMs: 1_000 });
+    useGameStore.getState().initEngineClockLive();
+
+    at(1_100);
+    const rejectedBefore = useGameStore.getState().rejectedMoves;
+    expect(useGameStore.getState().makeMove({ from: "e2", to: "e4" })).toBe(false);
+    const state = useGameStore.getState();
+    expect(state.gameOutcome).toEqual({ result: "0-1", termination: "Time forfeit" });
+    expect(state.moveTree).toHaveLength(1);
+    const live = state.engineClockLive;
+    expect(live && live.stoppedAt !== undefined ? live.stoppedAt - live.turnStartedAt : null).toBe(1_100);
+    expect(state.rejectedMoves).toBe(rejectedBefore + 1);
+  });
+
+  it("a move just in time keeps the clock and adds the increment", () => {
+    const at = mockTime();
+    at(0);
+    useGameStore.getState().setMode("engine");
+    useGameStore.getState().setEngineSide("black");
+    useGameStore.getState().setEngineMatchClock({ initialMs: 1_000, incrementMs: 1_000 });
+    useGameStore.getState().initEngineClockLive();
+
+    at(900);
+    expect(useGameStore.getState().makeMove({ from: "e2", to: "e4" })).toBe(true);
+    expect(useGameStore.getState().engineClockLive).toMatchObject({ whiteMs: 1_100, sideToMove: "black" });
+  });
+
+  it("the match clock ignores wall-clock changes but counts time asleep", () => {
+    const at = mockTime();
+    const wall = vi.spyOn(Date, "now");
+    at(10_000);
+    const start = clockNow();
+
+    // The system clock jumps (either way): no time is added or removed.
+    at(11_000);
+    wall.mockReturnValue(1_700_000_000_000 + 11_000 + 3_600_000);
+    expect(clockNow() - start).toBe(1_000);
+
+    // Ten minutes asleep: the wall clock jumps past the monotonic one, so main's total is read.
+    const reads = vi.fn(() => 600_000);
+    setTimeAsleepSource(reads);
+    at(12_000);
+    clockNow();
+    expect(reads).not.toHaveBeenCalled(); // the clocks agree: nothing to ask main
+    vi.spyOn(performance, "now").mockReturnValue(12_050);
+    wall.mockReturnValue(1_700_000_000_000 + 12_000 + 600_000);
+    expect(clockNow() - start).toBe(2_050 + 600_000);
+    expect(reads).toHaveBeenCalledTimes(1);
+    // A short sleep the drift check can't see: the wake notice makes the next check read it.
+    reads.mockReturnValue(600_400);
+    noteSystemResumed();
+    expect(clockNow() - start).toBe(2_050 + 600_400);
+    setTimeAsleepSource(() => 0);
   });
 
   describe("goToLine", () => {

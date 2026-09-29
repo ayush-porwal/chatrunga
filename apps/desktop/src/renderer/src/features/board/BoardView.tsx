@@ -226,6 +226,18 @@ export function BoardView() {
     [activePuzzle, flashSquares, makeMove, mode, restoreGroundToCurrentPosition]
   );
 
+  // A refused move (flag fell, game over, not at the latest move online, a refused promotion): the
+  // piece Chessground already moved goes back, since the stored position — and so the effect
+  // below — didn't change.
+  const rejectedMoves = useGameStore((state) => state.rejectedMoves);
+  const seenRejections = useRef(rejectedMoves);
+  useEffect(() => {
+    if (rejectedMoves === seenRejections.current) return;
+    seenRejections.current = rejectedMoves;
+    queueMicrotask(restoreGroundToCurrentPosition);
+    window.requestAnimationFrame(restoreGroundToCurrentPosition);
+  }, [rejectedMoves, restoreGroundToCurrentPosition]);
+
   // Position: slide pieces only for a single step taken at a calm pace; snap for jumps (Home/End,
   // clicking a distant move) and while scrubbing with a held key, so the board never lags behind.
   const lastPositionRef = useRef<{ nodeId: string | null; fen: string; at: number }>({ nodeId: null, fen: "", at: 0 });
