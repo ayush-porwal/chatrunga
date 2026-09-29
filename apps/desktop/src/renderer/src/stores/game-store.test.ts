@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
-import { buildEngineGoClock, clockNow, setTimeAsleepSource, useGameStore } from "./game-store";
+import { buildEngineGoClock, clockNow, noteSystemResumed, setTimeAsleepSource, useGameStore } from "./game-store";
 
 /** Moves both time sources together (the clock treats a wall-only jump as time asleep). */
 function mockTime() {
@@ -215,6 +215,10 @@ describe("game store", () => {
     wall.mockReturnValue(1_700_000_000_000 + 12_000 + 600_000);
     expect(clockNow() - start).toBe(2_050 + 600_000);
     expect(reads).toHaveBeenCalledTimes(1);
+    // A short sleep the drift check can't see: the wake notice makes the next check read it.
+    reads.mockReturnValue(600_400);
+    noteSystemResumed();
+    expect(clockNow() - start).toBe(2_050 + 600_400);
     setTimeAsleepSource(() => 0);
   });
 

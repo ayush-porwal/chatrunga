@@ -578,6 +578,8 @@ const SUSPECT_SLEEP_MS = 1_000;
 let lastMonotonic = performance.now();
 let lastWall = Date.now();
 let timeAsleep = 0;
+/** The main process said the computer woke up: read the total at the next clock check. */
+let resumedSinceRead = false;
 
 /**
  * The time base for match clocks: monotonic, so changing the system clock (or an NTP correction)
@@ -590,10 +592,18 @@ let timeAsleep = 0;
 export function clockNow(): number {
   const monotonic = performance.now();
   const wall = Date.now();
-  if (wall - lastWall - (monotonic - lastMonotonic) > SUSPECT_SLEEP_MS) timeAsleep = readTimeAsleep();
+  if (resumedSinceRead || wall - lastWall - (monotonic - lastMonotonic) > SUSPECT_SLEEP_MS) {
+    timeAsleep = readTimeAsleep();
+    resumedSinceRead = false;
+  }
   lastMonotonic = monotonic;
   lastWall = wall;
   return monotonic + timeAsleep;
+}
+
+/** The computer woke up (main's notice): the next clock check reads the time asleep. */
+export function noteSystemResumed(): void {
+  resumedSinceRead = true;
 }
 
 export function setTimeAsleepSource(source: () => number): void {
