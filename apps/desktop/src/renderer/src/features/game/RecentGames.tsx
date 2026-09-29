@@ -12,6 +12,7 @@ import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { cancelActiveReview } from "../../app/useReviewRunner";
+import { useShownCount } from "@/lib/use-shown-count";
 
 /** The workspace's Library tab. Opening a game goes through App (`onOpenGame`: history, engine teardown). */
 export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }) {
@@ -19,6 +20,7 @@ export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }
   const removeGame = useDeleteGameMutation();
   const resetBoard = useGameStore((state) => state.reset);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const shown = useShownCount("library");
 
   async function deleteGame(id: string, event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -71,7 +73,7 @@ export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }
         </Notice>
       ) : games.data?.length ? (
         <ul className="scroll-area -mr-1 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-1" aria-label="Saved games">
-          {games.data.map((game) => (
+          {games.data.slice(0, shown.count).map((game) => (
             <li
               key={game.id}
               className={cn(
@@ -102,6 +104,13 @@ export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }
               />
             </li>
           ))}
+          {games.data.length > shown.count ? (
+            <li className="flex justify-center">
+              <Button type="button" variant="ghost" size="sm" onClick={shown.showMore}>
+                Show more ({games.data.length - shown.count} left)
+              </Button>
+            </li>
+          ) : null}
         </ul>
       ) : (
         <EmptyState compact title="Saved games will appear here." />
