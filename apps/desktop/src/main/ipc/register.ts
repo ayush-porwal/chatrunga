@@ -133,8 +133,17 @@ export function registerIpc(engineManager: EngineManager): void {
   registerUpdateIpc();
   registerLichessIpc();
   // Match clocks run on the renderer's monotonic clock, which may stop while the computer sleeps.
-  powerMonitor.on("suspend", () => broadcast("system:power", "suspend"));
-  powerMonitor.on("resume", () => broadcast("system:power", "resume"));
+  // Measured here (the renderer may be frozen when the suspend notice arrives) and sent on wake.
+  let suspendedAt: { monotonic: number; wall: number } | null = null;
+  powerMonitor.on("suspend", () => {
+    suspendedAt = { monotonic: performance.now(), wall: Date.now() };
+  });
+  powerMonitor.on("resume", () => {
+    if (!suspendedAt) return;
+    const missedMs = Date.now() - suspendedAt.wall - (performance.now() - suspendedAt.monotonic);
+    suspendedAt = null;
+    if (missedMs > 0) broadcast("system:resumed", { missedMs });
+  });
 }
 
 function registerEngineIpc(engineManager: EngineManager): void {
