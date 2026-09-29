@@ -9,4 +9,9 @@ describe("isServableImage", () => {
     allowChosenFile("/Users/me/Pictures/maia.png");
     expect(isServableImage("/Users/me/Pictures/maia.png", registered)).toBe(true);
   });
+
+  it("matches pictures stored as file URLs", () => {
+    expect(isServableImage("/tmp/logo.png", () => ["file:///tmp/logo.png"])).toBe(true);
+    expect(isServableImage("/tmp/other.png", () => ["file:///tmp/logo.png"])).toBe(false);
+  });
 });

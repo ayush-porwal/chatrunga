@@ -404,8 +404,9 @@ function EngineGameSetupBody({
                 id="engine-game-movetime"
                 type="number"
                 min={100}
+                max={ENGINE_LIMITS.moveTimeMs}
                 value={setup.moveTimeMs}
-                onChange={(event) => setup.setMoveTimeMs(Number(event.target.value))}
+                onChange={(event) => setup.setMoveTimeMs(clampLimit(Number(event.target.value), 100, ENGINE_LIMITS.moveTimeMs))}
               />
             </Field>
             <Field label="Depth" hint="optional" htmlFor="engine-game-depth">
@@ -413,9 +414,12 @@ function EngineGameSetupBody({
                 id="engine-game-depth"
                 type="number"
                 min={1}
+                max={ENGINE_LIMITS.depth}
                 value={setup.depth ?? ""}
                 placeholder="No cap"
-                onChange={(event) => setup.setDepth(event.target.value ? Number(event.target.value) : null)}
+                onChange={(event) =>
+                  setup.setDepth(event.target.value ? Math.round(clampLimit(Number(event.target.value), 1, ENGINE_LIMITS.depth)) : null)
+                }
               />
             </Field>
           </div>
@@ -423,6 +427,13 @@ function EngineGameSetupBody({
       )}
     </div>
   );
+}
+
+/** The search limits the main process accepts (validate.ts SEARCH_LIMITS). */
+const ENGINE_LIMITS = { moveTimeMs: 3_600_000, depth: 200 } as const;
+
+function clampLimit(value: number, min: number, max: number): number {
+  return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : min;
 }
 
 function EngineDropdown({
