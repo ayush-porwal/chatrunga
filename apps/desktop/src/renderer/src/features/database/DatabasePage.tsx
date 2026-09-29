@@ -1,5 +1,5 @@
-import { memo, useEffect, useState, type ReactNode } from "react";
-import { Check, Download, ExternalLink, Loader2, RotateCcw, Trash2 } from "lucide-react";
+import { memo, useState, type ReactNode } from "react";
+import { Check, Download, ExternalLink, Loader2, Play, RotateCcw, Trash2, X } from "lucide-react";
 import { externalDatabaseSources } from "@chaturanga/shared/types/database";
 import type {
   DatabaseDownloadProgress,
@@ -23,48 +23,30 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { hasDesktopApi } from "@/lib/environment";
 import { cardPadded, sectionTitle } from "@/lib/ui";
 import { cn } from "@/lib/utils";
+import { ipcErrorMessage } from "@/lib/ipc-error";
+import { useDownloadStore } from "../../stores/download-store";
 
-/** How long a finished download keeps showing "Download complete". */
-const COMPLETED_PROGRESS_MS = 1800;
-
-export const DatabasePage = memo(function DatabasePage() {
+export const DatabasePage = memo(function DatabasePage({ onTrain }: { onTrain: (databaseId: string) => void }) {
   const databases = useDatabasesQuery();
   const downloadDatabase = useDownloadDatabaseMutation();
   const deleteDatabase = useDeleteDatabaseMutation();
   const desktopApiAvailable = hasDesktopApi();
-  const [downloadProgress, setDownloadProgress] = useState<Record<string, DatabaseDownloadProgress>>({});
+  // Kept for the whole app (useDatabaseDownloads): a download started earlier still shows here.
+  const downloadProgress = useDownloadStore((state) => state.progress);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const installedBySource = new Map(databases.data?.map((item) => [item.sourceId, item]) ?? []);
-
-  useEffect(() => {
-    const events = window.chaturanga?.events;
-    if (!events) return;
-    const clearTimers = new Set<number>();
-    const unsubscribe = events.onDatabaseDownloadProgress((progress) => {
-      setDownloadProgress((state) => ({ ...state, [progress.sourceId]: progress }));
-      if (progress.state !== "completed") return;
-      // Keep "Download complete" visible briefly, then drop the progress row.
-      const timer = window.setTimeout(() => {
-        clearTimers.delete(timer);
-        setDownloadProgress((state) => {
-          const next = { ...state };
-          delete next[progress.sourceId];
-          return next;
-        });
-      }, COMPLETED_PROGRESS_MS);
-      clearTimers.add(timer);
-    });
-    return () => {
-      unsubscribe();
-      clearTimers.forEach((timer) => window.clearTimeout(timer));
-    };
-  }, []);
 
   async function removeDatabase(database: InstalledDatabase) {
     if (!desktopApiAvailable) return;
     if (!window.confirm(`Delete ${database.name}? The downloaded file will be removed from disk.`)) {
       return;
     }
-    await deleteDatabase.mutateAsync(database.id);
+    setDeleteError(null);
+    try {
+      await deleteDatabase.mutateAsync(database.id);
+    } catch (error) {
+      setDeleteError(`Couldn't delete ${database.name}: ${ipcErrorMessage(error) || "unknown error"}`);
+    }
   }
 
   return (
@@ -76,6 +58,21 @@ export const DatabasePage = memo(function DatabasePage() {
       {!desktopApiAvailable ? (
         <Notice tone="warn">Database downloads and local file management require the desktop app.</Notice>
       ) : null}
+      {databases.isError ? (
+        <Notice
+          tone="danger"
+          title="Couldn't read your databases"
+          action={
+            <Button type="button" variant="outline" size="xs" onClick={() => void databases.refetch()}>
+              <RotateCcw />
+              Try again
+            </Button>
+          }
+        >
+          {ipcErrorMessage(databases.error) || "The list of installed databases couldn't be loaded."}
+        </Notice>
+      ) : null}
+      {deleteError ? <Notice tone="danger">{deleteError}</Notice> : null}
 
       <div className="grid items-start gap-4 xl:grid-cols-2">
         {databases.isPending && desktopApiAvailable
@@ -95,7 +92,9 @@ export const DatabasePage = memo(function DatabasePage() {
               downloadDisabled={!desktopApiAvailable || downloadDatabase.isPending}
               deleteDisabled={!desktopApiAvailable || deleteDatabase.isPending}
               onDownload={() => downloadDatabase.mutate(source.id)}
+              onCancel={() => void window.chaturanga?.databases.cancelDownload(source.id)}
               onDelete={(database) => void removeDatabase(database)}
+              onTrain={onTrain}
             />
           );
             })}
@@ -112,7 +111,9 @@ function DatabaseCard({
   downloadDisabled,
   deleteDisabled,
   onDownload,
-  onDelete
+  onCancel,
+  onDelete,
+  onTrain
 }: {
   source: ExternalDatabaseSource;
   installed: InstalledDatabase | undefined;
@@ -121,7 +122,9 @@ function DatabaseCard({
   downloadDisabled: boolean;
   deleteDisabled: boolean;
   onDownload: () => void;
+  onCancel: () => void;
   onDelete: (database: InstalledDatabase) => void;
+  onTrain: (databaseId: string) => void;
 }) {
   const records = installed?.recordCount ?? source.expectedRecords;
   const unit = source.kind === "puzzle" ? "puzzles" : source.kind === "position" ? "positions" : "records";
@@ -211,7 +214,16 @@ function DatabaseCard({
         </div>
       </Disclosure>
 
-      {progress ? <DownloadProgress progress={progress} onRetry={downloadDisabled ? undefined : onDownload} /> : null}
+      {progress ? (
+        <DownloadProgress progress={progress} onRetry={downloadDisabled ? undefined : onDownload} onCancel={onCancel} />
+      ) : null}
+
+      {installed && (source.kind === "puzzle" || source.kind === "position") && progress?.state !== "downloading" ? (
+        <Button type="button" variant="primary" className="justify-self-start" onClick={() => onTrain(installed.id)}>
+          <Play />
+          Train with this dataset
+        </Button>
+      ) : null}
 
       {!installed && progress?.state !== "downloading" && progress?.state !== "failed" ? (
         <Button
@@ -272,7 +284,15 @@ function IconLink({ label, href, icon }: { label: string; href: string; icon: Re
   );
 }
 
-function DownloadProgress({ progress, onRetry }: { progress: DatabaseDownloadProgress; onRetry?: () => void }) {
+function DownloadProgress({
+  progress,
+  onRetry,
+  onCancel
+}: {
+  progress: DatabaseDownloadProgress;
+  onRetry?: () => void;
+  onCancel: () => void;
+}) {
   const bytes = progress.totalBytes
     ? `${formatBytes(progress.downloadedBytes)} of ${formatBytes(progress.totalBytes)}`
     : formatBytes(progress.downloadedBytes);
@@ -310,9 +330,13 @@ function DownloadProgress({ progress, onRetry }: { progress: DatabaseDownloadPro
       <Progress value={progress.percent} aria-label={`Downloading: ${bytes}`} />
       <div className="flex items-center justify-between gap-3 text-xs text-fg-muted">
         <span className="truncate">{progress.message ?? "Downloading…"}</span>
-        <span className="shrink-0 tabular-nums">
+        <span className="flex shrink-0 items-center gap-2 tabular-nums">
           {bytes}
           {progress.percent === null ? "" : `, ${progress.percent}%`}
+          <Button type="button" variant="ghost" size="xs" onClick={onCancel}>
+            <X />
+            Cancel
+          </Button>
         </span>
       </div>
     </div>

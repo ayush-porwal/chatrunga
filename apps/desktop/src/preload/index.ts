@@ -57,7 +57,9 @@ const api: ChaturangaApi = {
     list: () => ipcRenderer.invoke("databases:list"),
     download: (sourceId) => ipcRenderer.invoke("databases:download", sourceId),
     samplePuzzle: (input) => ipcRenderer.invoke("databases:samplePuzzle", input),
-    remove: (id) => ipcRenderer.invoke("databases:remove", id)
+    remove: (id) => ipcRenderer.invoke("databases:remove", id),
+    cancelDownload: (sourceId) => ipcRenderer.invoke("databases:cancelDownload", sourceId),
+    activeDownloads: () => ipcRenderer.invoke("databases:activeDownloads")
   },
   files: {
     openPgnFile: () => ipcRenderer.invoke("files:openPgnFile"),
