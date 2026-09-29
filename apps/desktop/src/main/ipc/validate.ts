@@ -1,4 +1,5 @@
 /**
+import { parseSettingValue } from "./settings-values";
  * Input validation for IPC handlers. The renderer is treated as untrusted:
  * every payload that reaches the file system, the database or an engine
  * process is checked here and rebuilt from known fields only.
@@ -308,7 +309,10 @@ export function parseSettingsPatch(value: unknown): Partial<Record<keyof AppSett
   const keys = Object.keys(input);
   if (!keys.length || keys.length > SETTING_KEYS.size) fail("settings", "expected a few settings");
   const patch: Partial<Record<keyof AppSettings, unknown>> = {};
-  for (const key of keys) patch[parseSettingKey(key)] = input[key];
+  for (const key of keys) {
+    const settingKey = parseSettingKey(key);
+    patch[settingKey] = parseSettingValue(settingKey, input[key]);
+  }
   return patch;
 }
 
