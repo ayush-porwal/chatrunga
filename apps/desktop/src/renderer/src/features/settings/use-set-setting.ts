@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
 import { useUpdateSettingsMutation } from "../../queries/api";
+import { addPendingSettings, settlePendingSettings } from "../../queries/settings-pending";
 import { trackSettingsSave } from "./settings-save-state";
 
 /** A drag (slider, color picker) is written once it pauses this long. */
@@ -23,6 +24,8 @@ export class SettingsBatch {
   private previous: Partial<AppSettings> = {};
   private timer: ReturnType<typeof setTimeout> | null = null;
   private write: Write | null = null;
+  /** Settles when this batch's write does: the Saved indicator shows Saving… meanwhile. */
+  private done: { promise: Promise<unknown>; settle: (result: Promise<unknown>) => void } | null = null;
 
   constructor(private readonly delayMs = SETTINGS_WRITE_DELAY_MS) {}
 
@@ -36,6 +39,15 @@ export class SettingsBatch {
       if (!(key in this.previous)) Object.assign(this.previous, { [key]: current[key] });
     }
     Object.assign(this.patch, patch);
+    addPendingSettings(patch);
+    if (!this.done) {
+      let settle: (result: Promise<unknown>) => void = () => {};
+      const promise = new Promise<unknown>((resolve, reject) => {
+        settle = (result) => result.then(resolve, reject);
+      });
+      this.done = { promise, settle };
+      trackSettingsSave(promise);
+    }
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => this.flush(), this.delayMs);
   }
@@ -45,9 +57,13 @@ export class SettingsBatch {
     this.timer = null;
     if (!Object.keys(this.patch).length || !this.write) return;
     const write = { patch: this.patch, previous: this.previous };
+    const done = this.done;
     this.patch = {};
     this.previous = {};
-    trackSettingsSave(this.write(write));
+    this.done = null;
+    const result = this.write(write).finally(() => settlePendingSettings(write.patch));
+    if (done) done.settle(result);
+    else trackSettingsSave(result);
   }
 }
 
@@ -71,6 +87,8 @@ export function useSettingsWriter() {
 
   function setMany(patch: Partial<AppSettings>, options: Options = {}) {
     if (options.batch) {
+      // Pending first: showing the value re-reads the settings at once (with the pending overlay).
+      addPendingSettings(patch);
       batch.add(patch, showSettings(queryClient, patch));
       return;
     }
@@ -86,7 +104,8 @@ export function useSettingsWriter() {
   return { set, setMany };
 }
 
-/** Setter for one saved setting (see useSettingsWriter). */
+/** Setter for one saved setting, with `.many` for related keys together (see useSettingsWriter). */
 export function useSetSetting() {
-  return useSettingsWriter().set;
+  const { set, setMany } = useSettingsWriter();
+  return Object.assign(set, { many: setMany });
 }
