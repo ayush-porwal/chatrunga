@@ -4,7 +4,7 @@ import { useShallow } from "zustand/react/shallow";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import { createGameFromFen } from "@chaturanga/shared/chess/pgn";
 import type { PuzzleSample, PuzzleSampleInput } from "@chaturanga/shared/types/database";
-import type { GameSession } from "@chaturanga/shared/types/chess";
+import type { ImportedGame } from "@chaturanga/shared/types/chess";
 import { defaultSettings } from "@chaturanga/shared/types/settings";
 import { Notice } from "@/components/ui/notice";
 import { hasDesktopApi, isElectronMac } from "@/lib/environment";
@@ -48,6 +48,10 @@ import { useHistoryShortcuts } from "./useHistoryShortcuts";
 import { useMoveKeyboardShortcuts } from "./useMoveKeyboardShortcuts";
 import { useMoveSounds } from "./useMoveSounds";
 import { cancelActiveReview, useReviewRunner } from "./useReviewRunner";
+import { ipcErrorMessage } from "@/lib/ipc-error";
+import { ErrorBoundary } from "@/components/error-boundary";
+import { useAppNoticeStore } from "../stores/app-notice-store";
+import { Button } from "@/components/ui/button";
 
 /** How a navigation enters Back / Forward (see showView). */
 type HistoryMode = "push" | "replace" | "none";
@@ -97,6 +101,8 @@ export function App() {
 
   // Focus mode only exists on a board view; leaving one ends it (the stored flag resets below).
   const onBoardView = boardViews.has(appView);
+  const appNotice = useAppNoticeStore((state) => state.message);
+  const dismissAppNotice = useAppNoticeStore((state) => state.dismiss);
   const focused = focusMode && onBoardView;
   // Focus mode collapses the sidebar to its rail without forgetting the user's own choice.
   const sidebarExpanded = actionRailOpen && !focused;
@@ -137,7 +143,7 @@ export function App() {
     (gameMode === "freeplay" || ((gameMode === "engine" || gameMode === "online") && gameDecided));
 
   useLichess({ onGameStart: (load) => startOnlineGame(load) });
-  useMoveKeyboardShortcuts();
+  useMoveKeyboardShortcuts({ enabled: onBoardView });
   useEngineDriver(defaultEngineId);
   useGameAutosave();
   useMoveSounds({ enabled: settings.soundEnabled, volume: settings.soundVolume });
@@ -317,9 +323,7 @@ export function App() {
       clearPuzzleSession();
       openSavedGame(saved);
     } else if (!snapshot.gameId && snapshot.session) {
-      stopEngineWork();
-      useReviewStore.getState().reset();
-      clearPuzzleSession();
+      endBoardActivity();
       currentGame().loadGame(snapshot.session);
     } else {
       stopEngineWork({ stopSearch: snapshot.mode !== "analysis" });
@@ -341,6 +345,16 @@ export function App() {
     setPuzzleHistoryIds([]);
   }
 
+  /**
+   * Before a different board replaces this one: the engine's search and review end, the review
+   * and any puzzle set are cleared.
+   */
+  function endBoardActivity() {
+    stopEngineWork();
+    useReviewStore.getState().reset();
+    clearPuzzleSession();
+  }
+
   /** Ends what the engine is doing (search, review) before switching to another activity. */
   function stopEngineWork({ stopSearch = true }: { stopSearch?: boolean } = {}) {
     if (stopSearch) void window.chaturanga?.engines.stop();
@@ -355,28 +369,38 @@ export function App() {
 
   async function exportPgn() {
     if (!window.chaturanga) return;
-    await window.chaturanga.files.savePgnFile("chaturanga-currentGame().pgn", currentGame().toSession().pgn);
+    try {
+      await window.chaturanga.files.savePgnFile("chaturanga-game.pgn", currentGame().toSession().pgn);
+    } catch (error) {
+      useAppNoticeStore.getState().show(`Couldn't export the PGN: ${ipcErrorMessage(error) || "unknown error"}`);
+    }
   }
 
   async function importPgnFile() {
     if (!window.chaturanga) return;
     const request = ++latestNavigation.current;
-    const file = await window.chaturanga.files.openPgnFile();
-    if (!file || request !== latestNavigation.current) return;
-    const imported = await window.chaturanga.games.importPgn({ pgn: file.contents });
-    // A Lichess game (or another navigation) started meanwhile: it keeps the board.
-    if (request !== latestNavigation.current) return;
-    loadImportedGame(imported.game);
+    try {
+      const file = await window.chaturanga.files.openPgnFile();
+      if (!file || request !== latestNavigation.current) return;
+      const imported = await window.chaturanga.games.importPgn({ pgn: file.contents });
+      // A Lichess game (or another navigation) started meanwhile: it keeps the board.
+      if (request !== latestNavigation.current) return;
+      loadImportedGame(imported);
+    } catch (error) {
+      // Shown where you are (no navigation: the board didn't change).
+      if (request === latestNavigation.current) {
+        useAppNoticeStore.getState().show(`Couldn't import that file: ${ipcErrorMessage(error) || "unknown error"}`);
+      }
+    }
   }
 
-  /** An imported PGN (file or the paste dialog) onto the board. */
-  function loadImportedGame(game: GameSession) {
+  /** An imported PGN (file or the paste dialog) onto the board; a warning (only the first of several games) shows on it. */
+  function loadImportedGame(imported: ImportedGame) {
     commitCurrent();
-    stopEngineWork();
-    useReviewStore.getState().reset();
-    clearPuzzleSession();
-    currentGame().loadGame(game);
+    endBoardActivity();
+    currentGame().loadGame(imported.game);
     currentGame().setMode("freeplay");
+    if (imported.warning) currentGame().setMatchFeedback(imported.warning);
     showGame();
   }
 
@@ -387,9 +411,7 @@ export function App() {
     // invalidates board loads in flight: an import or a saved game resolving after this point).
     setImportOpen(false);
     setGameReviewPickerOpen(false);
-    stopEngineWork();
-    useReviewStore.getState().reset();
-    clearPuzzleSession();
+    endBoardActivity();
     setFocusMode(false);
     load();
     showGame();
@@ -413,9 +435,7 @@ export function App() {
   /** Play → Free board: an empty board to play both sides. */
   function startFreeBoard() {
     commitCurrent();
-    stopEngineWork();
-    useReviewStore.getState().reset();
-    clearPuzzleSession();
+    endBoardActivity();
     currentGame().reset();
     currentGame().setOrientation("white");
     setFocusMode(false);
@@ -576,9 +596,7 @@ export function App() {
     const engineSide = position.turn;
     const humanSide = engineSide === "white" ? "black" : "white";
     commitCurrent();
-    stopEngineWork();
-    useReviewStore.getState().reset();
-    clearPuzzleSession();
+    endBoardActivity();
     currentGame().loadGame(
       createGameFromFen({
         fen,
@@ -676,7 +694,7 @@ export function App() {
     settingsSectionViewed: useEventCallback((section: SettingsSectionId) => {
       viewedSettingsSection.current = section;
     }),
-    importedGame: useEventCallback((game: GameSession) => unlessOnlineGame(() => loadImportedGame(game))),
+    importedGame: useEventCallback((imported: ImportedGame) => unlessOnlineGame(() => loadImportedGame(imported))),
     beforePlayStart: useEventCallback(commitCurrent),
     play: useEventCallback(() => openPlayPage()),
     freeBoard: useEventCallback(() => unlessOnlineGame(startFreeBoard)),
@@ -819,12 +837,28 @@ export function App() {
         />
 
         <main className={cn(contentPanel, "col-start-2 row-start-2 [view-transition-name:app-content]")}>
+          {appNotice ? (
+            <Notice
+              tone="danger"
+              className="mx-(--page-gutter) mt-(--page-gutter-y) w-auto shrink-0"
+              action={
+                <Button type="button" variant="link" size="xs" onClick={dismissAppNotice}>
+                  Dismiss
+                </Button>
+              }
+            >
+              {appNotice}
+            </Notice>
+          ) : null}
           {!desktopApiAvailable ? (
             <Notice tone="warn" title="Web preview mode" className="mx-(--page-gutter) mt-(--page-gutter-y) w-auto shrink-0">
               Engines, file dialogs, saved games, downloads and local databases need the desktop app.
             </Notice>
           ) : null}
           <div className="grid min-h-0 flex-1">
+            {/* A render error in one page shows a recoverable panel there, not a blank window; the
+                key resets it when you go elsewhere. */}
+            <ErrorBoundary key={appView} title="This page hit an unexpected error" scope={appView} layout="panel">
             {appView === "home" ? (
               <HomePage
                 desktopApiAvailable={desktopApiAvailable}
@@ -840,7 +874,7 @@ export function App() {
             ) : appView === "settings" ? (
               <SettingsPage initialSection={settingsSection} onSectionChange={on.settingsSectionViewed} />
             ) : appView === "play" ? (
-              <PlayPage onOpenSettings={on.settings} onBeforeStart={on.beforePlayStart} onStart={on.showGame} onOpenLichessGame={on.showGame} onFreeBoard={on.freeBoard} />
+              <PlayPage onOpenSettings={on.engineSettings} onBeforeStart={on.beforePlayStart} onStart={on.showGame} onOpenLichessGame={on.showGame} onFreeBoard={on.freeBoard} />
             ) : appView === "puzzles" ? (
               <PuzzlePage onDatabases={on.databases} onStart={on.startPuzzle} />
             ) : appView === "databases" ? (
@@ -865,9 +899,10 @@ export function App() {
                   desktopApiAvailable && gameMode === "freeplay" && !positionIsEnd ? on.analyzePosition : undefined
                 }
                 puzzlePanel={puzzlePanel}
-                onOpenSettings={on.settings}
+                onOpenSettings={on.engineSettings}
               />
             )}
+            </ErrorBoundary>
           </div>
         </main>
       </div>

@@ -26,6 +26,7 @@ import { cardPadded, divider, listRow, well } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useSetSetting } from "./use-set-setting";
 import { splitEngineArgs } from "@/lib/engine-args";
+import { ipcErrorMessage } from "@/lib/ipc-error";
 
 const nnWeightsDialogFilters: DialogFileFilter[] = [
   { name: "Network weights / models", extensions: ["pb", "gz", "onnx", "zip"] },
@@ -158,17 +159,25 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
 
   async function addEngine() {
     if (!desktopApiAvailable) return;
-    const engine = await createEngine.mutateAsync(draftToInput(draft));
-    setDraft(emptyEngineDraft);
-    setAdding(false);
-    setTestResult({ ok: true, message: `Added ${engine.name}.` });
+    try {
+      const engine = await createEngine.mutateAsync(draftToInput(draft));
+      setDraft(emptyEngineDraft);
+      setAdding(false);
+      setTestResult({ ok: true, message: `Added ${engine.name}.` });
+    } catch (error) {
+      setTestResult({ ok: false, message: `Couldn't add the engine: ${ipcErrorMessage(error) || "unknown error"}` });
+    }
   }
 
   async function testDraft() {
     if (!window.chaturanga) return;
-    const result = await window.chaturanga.engines.test(draftToInput(draft));
-    if (result.ok && result.isHumanPrediction) setDraft((value) => ({ ...value, isHumanPrediction: true }));
-    setTestResult(formatTestResult(result, "UCI engine"));
+    try {
+      const result = await window.chaturanga.engines.test(draftToInput(draft));
+      if (result.ok && result.isHumanPrediction) setDraft((value) => ({ ...value, isHumanPrediction: true }));
+      setTestResult(formatTestResult(result, "UCI engine"));
+    } catch (error) {
+      setTestResult({ ok: false, message: ipcErrorMessage(error) || "The engine test failed." });
+    }
   }
 
   return (
@@ -228,6 +237,19 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
             </div>
           ))}
         </div>
+      ) : null}
+
+      {engines.isError ? (
+        <Notice
+          tone="danger"
+          action={
+            <Button type="button" variant="outline" size="xs" onClick={() => void engines.refetch()}>
+              Try again
+            </Button>
+          }
+        >
+          {`Couldn't load your engines: ${ipcErrorMessage(engines.error) || "unknown error"}`}
+        </Notice>
       ) : null}
 
       {noEngines && !adding ? (

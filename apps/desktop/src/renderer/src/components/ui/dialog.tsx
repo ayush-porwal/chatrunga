@@ -5,6 +5,9 @@ import { modalBackdrop, modalPanel, modalPanelCompact } from "@/lib/ui";
 import { IconButton } from "@/components/ui/icon-button";
 import { useExitGhost } from "@/components/ui/use-presence";
 
+/** Dialogs open right now, oldest first (for Escape). */
+const openDialogs: object[] = [];
+
 const FOCUSABLE =
   'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
@@ -47,14 +50,28 @@ function Dialog({
 
   useExitGhost(backdropRef);
 
+  // Escape closes the topmost dialog only (a dialog opened over another, or a control inside
+  // that already handled Escape, leaves the rest open).
+  const onCloseRef = React.useRef(onClose);
   React.useEffect(() => {
-    if (!onClose) return;
+    onCloseRef.current = onClose;
+  });
+  React.useEffect(() => {
+    const entry = {};
+    openDialogs.push(entry);
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      const close = onCloseRef.current;
+      if (event.key !== "Escape" || event.defaultPrevented || !close) return;
+      if (openDialogs[openDialogs.length - 1] !== entry) return;
+      event.preventDefault();
+      close();
     };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      openDialogs.splice(openDialogs.indexOf(entry), 1);
+    };
+  }, []);
 
   // Initial focus + restore on close.
   React.useEffect(() => {

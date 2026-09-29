@@ -11,7 +11,7 @@ import type {
   MoveNode,
   UserMove
 } from "@chaturanga/shared/types/chess";
-import { isUciMove, userMoveFromUci } from "@/lib/uci";
+import { userMoveFromUci } from "@/lib/uci";
 
 type PendingPromotion = { from: string; to: string } | null;
 
@@ -238,7 +238,8 @@ export const useGameStore = create<GameStore>((set, get) => {
         set({ lastError: `Engine returned illegal move: ${uci}` });
         return false;
       }
-      return get().makeMove(userMoveFromUci(uci));
+      const move = userMoveFromUci(uci);
+      return move ? get().makeMove(move) : false;
     },
 
     goToNode: (nodeId) => {
@@ -558,7 +559,8 @@ export function remainingClockMs(live: EngineClockLive, side: Color, now: number
 
 function applyLineMove(fen: string, move: string): { fen: string; san: string; uci: string } | null {
   try {
-    return isUciMove(move) ? applyUserMove(fen, userMoveFromUci(move)) : applySan(fen, move);
+    const userMove = userMoveFromUci(move);
+    return userMove ? applyUserMove(fen, userMove) : applySan(fen, move);
   } catch {
     return null;
   }

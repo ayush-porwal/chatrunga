@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { card, cardPadded, divider, fieldLabel, sectionTitle, well } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useDatabasesQuery, useSamplePuzzleMutation } from "../../queries/api";
+import { ipcErrorMessage } from "@/lib/ipc-error";
 
 const lichessThemes = [
   "mate",
@@ -204,6 +205,20 @@ export const PuzzlePage = memo(function PuzzlePage({
 
       {databases.isPending && window.chaturanga ? (
         <PuzzleSetupSkeleton />
+      ) : databases.isError ? (
+        // A failed read isn't "no database": don't send the user off to download one again.
+        <Notice
+          tone="danger"
+          title="Couldn't read your databases"
+          action={
+            <Button type="button" variant="outline" size="xs" onClick={() => void databases.refetch()}>
+              <RotateCcw />
+              Try again
+            </Button>
+          }
+        >
+          {ipcErrorMessage(databases.error) || "The list of installed databases couldn't be loaded."}
+        </Notice>
       ) : selectedDatabase ? (
         <div className="@container">
           <div className="grid items-start gap-6 @3xl:grid-cols-[minmax(0,1fr)_16rem]">

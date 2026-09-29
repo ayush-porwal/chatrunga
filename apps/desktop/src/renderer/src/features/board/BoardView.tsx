@@ -6,14 +6,14 @@ import type { Key, MoveMetadata } from "@lichess-org/chessground/types";
 import { formatClockForDisplay } from "@chaturanga/shared/chess/clock-display";
 import { clocksOnPathToNode, nodeIdForBoardFen } from "@chaturanga/shared/chess/pgn";
 import { legalDestsForFen, isPromotionMove, statusForFen } from "@chaturanga/shared/chess/position";
-import type { AnnotationColor, BoardArrow, BoardHighlight, Color, GameMode, MoveNode, Square, UserMove } from "@chaturanga/shared/types/chess";
+import type { AnnotationColor, BoardArrow, BoardHighlight, Color, GameMode, MoveNode, UserMove } from "@chaturanga/shared/types/chess";
 import { isMatchMode, useGameStore } from "../../stores/game-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
 import { selectDisplayedMoves, useReviewStore } from "../../stores/review-store";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { useEnginesQuery } from "../../queries/api";
 import { cn } from "@/lib/utils";
-import { uciFromUserMove } from "@/lib/uci";
+import { asSquare, uciFromUserMove, userMoveBetween } from "@/lib/uci";
 import { submitPuzzleMove } from "../puzzles/puzzle-session";
 import { PlayerRow } from "./PlayerIdentity";
 import { EvalBar } from "./EvalBar";
@@ -209,7 +209,8 @@ export function BoardView() {
 
   const handleBoardMove = useCallback(
     (orig: Key, dest: Key, promotion?: UserMove["promotion"]) => {
-      const move: UserMove = { from: orig as Square, to: dest as Square, promotion };
+      const move = userMoveBetween(orig, dest, promotion);
+      if (!move) return;
       if (mode !== "puzzle" || !activePuzzle) {
         makeMove(move);
         return;
@@ -225,6 +226,22 @@ export function BoardView() {
     },
     [activePuzzle, flashSquares, makeMove, mode, restoreGroundToCurrentPosition]
   );
+
+  // A promotion chosen (or dropped) without the position changing — a wrong puzzle promotion, or a
+  // move refused — leaves the pawn Chessground moved on the last rank: put the board back.
+  const pendingPromotion = useGameStore((state) => state.pendingPromotion);
+  const promotionStart = useRef<string | null>(null);
+  useEffect(() => {
+    if (pendingPromotion) {
+      promotionStart.current = useGameStore.getState().currentFen;
+      return;
+    }
+    const startFen = promotionStart.current;
+    promotionStart.current = null;
+    if (startFen === null || useGameStore.getState().currentFen !== startFen) return;
+    queueMicrotask(restoreGroundToCurrentPosition);
+    window.requestAnimationFrame(restoreGroundToCurrentPosition);
+  }, [pendingPromotion, restoreGroundToCurrentPosition]);
 
   // Position: slide pieces only for a single step taken at a calm pace; snap for jumps (Home/End,
   // clicking a distant move) and while scrubbing with a held key, so the board never lags behind.
@@ -523,8 +540,11 @@ function annotationsFromShapes(shapes: DrawShape[]): {
   const highlights: BoardHighlight[] = [];
   for (const shape of shapes) {
     const color = brushToColor[shape.brush ?? "green"] ?? "green";
-    if (shape.dest) arrows.push({ orig: shape.orig as Square, dest: shape.dest as Square, color });
-    else highlights.push({ square: shape.orig as Square, color });
+    const orig = asSquare(shape.orig);
+    if (!orig) continue;
+    const dest = shape.dest ? asSquare(shape.dest) : null;
+    if (dest) arrows.push({ orig, dest, color });
+    else if (!shape.dest) highlights.push({ square: orig, color });
   }
   return { arrows, highlights };
 }
