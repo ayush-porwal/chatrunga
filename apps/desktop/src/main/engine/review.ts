@@ -166,8 +166,11 @@ export async function reviewGameWithEngine(
       const cacheKey = moveKey(move.fenBefore, move.uci, input.moves[index - 1]?.uci ?? null);
       const done = cached.get(cacheKey);
       if (done) {
-        // Already reviewed with this configuration: reuse it (only the game's own clock facts differ).
-        const moveReview: MoveReview = { ...done.review, nodeId: move.nodeId, ply: move.ply };
+        // Most recently used goes last (eviction takes the oldest).
+        ReviewCache.put(cached, cacheKey, done, reviewCache.maxMoves);
+        // Already reviewed with this configuration: reuse it (only this game's notation and clock
+        // facts differ).
+        const moveReview: MoveReview = { ...done.review, nodeId: move.nodeId, ply: move.ply, san: move.san };
         delete moveReview.clockRemainingMs;
         delete moveReview.timeSpentMs;
         const reusedClock = parseClock(move.clockAfter);
@@ -258,7 +261,11 @@ export async function reviewGameWithEngine(
       const spent = timeSpentForMove(input.moves, index, timeControl);
       if (spent !== undefined) moveReview.timeSpentMs = spent;
       moves.push(moveReview);
-      ReviewCache.put(cached, cacheKey, { review: moveReview, replyLines }, reviewCache.maxMoves);
+      // Only complete results are kept: after a Maia level failed, this review's moves lack its
+      // prediction, and a later review (with Maia working again) must search them afresh.
+      if (maiaSlots.every((slot) => slot.alive)) {
+        ReviewCache.put(cached, cacheKey, { review: moveReview, replyLines }, reviewCache.maxMoves);
+      }
       sink.onMoveCompleted?.({ moveIndex: index, move: moveReview });
     }
 
