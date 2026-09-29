@@ -5,6 +5,7 @@ import type { SaveGameInput } from "@chaturanga/shared/types/chess";
 import type { CreateEngineInput, UpdateEngineInput } from "@chaturanga/shared/types/engine";
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
+import { withPendingSettings } from "./settings-pending";
 
 const queryKeys = {
   databases: ["databases"] as const,
@@ -125,7 +126,9 @@ export function useDeleteDatabaseMutation() {
 export function useSettingsQuery() {
   return useQuery({
     queryKey: queryKeys.settings,
-    queryFn: () => api()?.settings.getAll() ?? defaultSettings
+    queryFn: () => api()?.settings.getAll() ?? defaultSettings,
+    // A drag not written yet stays on screen through reads caused by other writes.
+    select: withPendingSettings
   });
 }
 
@@ -189,12 +192,15 @@ function pickSettings(settings: AppSettings, patch: SettingsPatch): SettingsPatc
 export function useUpdateSettingMutation() {
   const update = useUpdateSettingsMutation();
   const { mutate: mutatePatch, mutateAsync: mutatePatchAsync } = update;
+  // Per-call options (onSuccess, onError…) are passed on; their variables are the patch written.
   const mutate = useCallback(
-    ({ key, value }: { key: keyof AppSettings; value: unknown }) => mutatePatch({ patch: { [key]: value } as SettingsPatch }),
+    ({ key, value }: { key: keyof AppSettings; value: unknown }, options?: Parameters<typeof mutatePatch>[1]) =>
+      mutatePatch({ patch: { [key]: value } as SettingsPatch }, options),
     [mutatePatch]
   );
   const mutateAsync = useCallback(
-    ({ key, value }: { key: keyof AppSettings; value: unknown }) => mutatePatchAsync({ patch: { [key]: value } as SettingsPatch }),
+    ({ key, value }: { key: keyof AppSettings; value: unknown }, options?: Parameters<typeof mutatePatchAsync>[1]) =>
+      mutatePatchAsync({ patch: { [key]: value } as SettingsPatch }, options),
     [mutatePatchAsync]
   );
   return { ...update, mutate, mutateAsync };

@@ -48,3 +48,21 @@ describe("SettingsBatch", () => {
     });
   });
 });
+
+describe("settings not written yet", () => {
+  it("stay on top of a read until their batch settles", async () => {
+    const { pendingSettings, withPendingSettings } = await import("./settings-pending");
+    let finish: () => void = () => {};
+    const write = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
+    const batch = new SettingsBatch(250);
+    batch.setWriter(write);
+    batch.add({ soundVolume: 0.2 }, defaultSettings);
+    // A read after some other write still shows the dragged value.
+    expect(withPendingSettings({ ...defaultSettings, soundVolume: 0.7 }).soundVolume).toBe(0.2);
+    batch.flush();
+    expect(pendingSettings()).toEqual({ soundVolume: 0.2 });
+    finish();
+    await vi.waitFor(() => expect(pendingSettings()).toEqual({}));
+    expect(withPendingSettings({ ...defaultSettings, soundVolume: 0.7 }).soundVolume).toBe(0.7);
+  });
+});

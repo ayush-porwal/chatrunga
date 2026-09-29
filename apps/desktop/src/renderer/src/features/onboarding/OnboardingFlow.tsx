@@ -876,10 +876,9 @@ function LevelStep({
   );
 }
 
+/** A theme and its (reset) square colors are one write, never half-applied. */
 function pickTheme(setSetting: ReturnType<typeof useSetSetting>, theme: BoardTheme) {
-  setSetting("boardTheme", theme);
-  setSetting("boardSquareLight", null);
-  setSetting("boardSquareDark", null);
+  setSetting.many({ boardTheme: theme, boardSquareLight: null, boardSquareDark: null });
 }
 
 /** Arrow keys move the selection inside a custom radiogroup (and focus follows it). */
