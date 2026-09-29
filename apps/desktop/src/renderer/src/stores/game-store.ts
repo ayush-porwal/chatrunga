@@ -573,15 +573,27 @@ function stopClock(live: EngineClockLive | null): EngineClockLive | null {
 let readTimeAsleep: () => number = () =>
   typeof window === "undefined" ? 0 : (window.chaturanga?.system?.timeAsleepMs?.() ?? 0);
 
+/** A wall-clock step this far past the monotonic one means the computer may have slept. */
+const SUSPECT_SLEEP_MS = 1_000;
+let lastMonotonic = performance.now();
+let lastWall = Date.now();
+let timeAsleep = 0;
+
 /**
  * The time base for match clocks: monotonic, so changing the system clock (or an NTP correction)
  * never adds or removes thinking time. Only differences between two readings mean anything.
- * `performance.now()` may stop while the computer sleeps; the time it missed (kept by the main
- * process, read on every call) is added back, so closing the laptop mid-game doesn't hand out
- * free thinking time.
+ * `performance.now()` may stop while the computer sleeps, so the time it missed is added back —
+ * as the main process measured it (from suspend to resume, not from wall-clock jumps). That is
+ * read synchronously only when the two clocks drift apart since the last reading, which a sleep
+ * always causes: a clock check never waits on the main process otherwise.
  */
 export function clockNow(): number {
-  return performance.now() + readTimeAsleep();
+  const monotonic = performance.now();
+  const wall = Date.now();
+  if (wall - lastWall - (monotonic - lastMonotonic) > SUSPECT_SLEEP_MS) timeAsleep = readTimeAsleep();
+  lastMonotonic = monotonic;
+  lastWall = wall;
+  return monotonic + timeAsleep;
 }
 
 export function setTimeAsleepSource(source: () => number): void {
