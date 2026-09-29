@@ -142,7 +142,11 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
         return false;
       }
     } catch (error) {
+      // Not knowing whether the latest changes were saved: don't quit into the installer.
       logger.error("updater", "cleanup before install failed:", error);
+      this.installing = false;
+      this.setStatus({ kind: "error", message: readableUpdateError(error, "install") });
+      return false;
     }
     logger.info("updater", `installing ${status.version}`);
     const bundleUpdater = this.bundleUpdater;
