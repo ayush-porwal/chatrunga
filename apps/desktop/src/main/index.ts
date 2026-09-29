@@ -37,6 +37,7 @@ import {
 } from "./security";
 import { installWindowGlass, windowGlassConstructorOptions } from "./window-glass";
 import { requestRendererFlush } from "./renderer-flush";
+import { rescueLegacyDatasets } from "./databases/dataset-location";
 
 const PRODUCT_NAME = "Chaturanga";
 const IMAGE_SCHEME = "chaturanga-image";
@@ -71,6 +72,14 @@ let shutDown = false;
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
+  // Only the instance that owns the profile, and before Chromium starts: Chromium deletes
+  // `<userData>/databases`, where datasets used to be kept.
+  try {
+    const moved = rescueLegacyDatasets(app.getPath("userData"));
+    if (moved.length) logger.info("databases", `moved ${moved.length} dataset file(s) out of Chromium's folder`);
+  } catch (error) {
+    logger.error("databases", "moving datasets out of Chromium's folder failed:", error);
+  }
   app.on("second-instance", () => {
     if (!mainWindow) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
