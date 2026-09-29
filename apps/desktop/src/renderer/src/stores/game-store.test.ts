@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
-import { buildEngineGoClock, useGameStore } from "./game-store";
+import { buildEngineGoClock, remainingClockMs, useGameStore } from "./game-store";
 
 describe("game store", () => {
   beforeEach(() => {
@@ -324,5 +324,28 @@ describe("game store", () => {
       useGameStore.getState().restoreView({ currentNodeId: "gone", mode: "analysis", source: "analysis", engineSide: null, orientation: "black", gameOutcome: null });
       expect(useGameStore.getState()).toMatchObject({ currentNodeId: node, mode: "analysis", orientation: "black" });
     });
+  });
+});
+
+describe("engine clock pause", () => {
+  it("freezes the running clock and resumes it without charging the pause", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    const game = useGameStore.getState();
+    game.reset();
+    game.setMode("engine");
+    game.setEngineSide("white");
+    game.setEngineMatchClock({ initialMs: 10_000, incrementMs: 0 });
+    game.initEngineClockLive();
+
+    now.mockReturnValue(2_000);
+    useGameStore.getState().pauseEngineClock();
+    expect(useGameStore.getState().engineClockLive).toMatchObject({ stoppedAt: 2_000, paused: true });
+
+    now.mockReturnValue(60_000);
+    useGameStore.getState().resumeEngineClock();
+    const live = useGameStore.getState().engineClockLive!;
+    expect(live.stoppedAt).toBeUndefined();
+    expect(remainingClockMs(live, "white", 61_000)).toBe(7_000);
+    vi.restoreAllMocks();
   });
 });

@@ -204,6 +204,7 @@ export function parseStartGameInput(value: unknown): StartEngineGameInput {
   return {
     engineId: asId(input.engineId, "engine id"),
     searchId: asId(input.searchId, "search id"),
+    gameKey: optional(input.gameKey, (key) => asId(key, "game key")),
     side,
     fen: asFen(input.fen),
     moves: asUciMoves(input.moves ?? []),

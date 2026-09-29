@@ -53,6 +53,8 @@ export type StartEngineGameInput = {
   engineId: string;
   /** Chosen by the renderer; the search's events carry it, so late output of an older search is ignored. */
   searchId: string;
+  /** The match this move belongs to: a new one resets the engine (`ucinewgame`), even from the same position. */
+  gameKey?: string;
   side: Color;
   fen: string;
   moves: string[];

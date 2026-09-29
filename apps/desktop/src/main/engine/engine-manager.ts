@@ -70,9 +70,15 @@ type EngineSession = {
   /** The search whose output is being relayed, or null between searches. */
   searchId: string | null;
   /** The last engine-game position searched: a continuation of it isn't a new game. */
-  lastGame: { fen: string; moves: readonly string[] } | null;
+  lastGame: GamePosition | null;
   multipv: number | null;
+  /** The UCI handshake (`uci` … `uciok`, then Threads/Hash); searches wait for it. */
+  ready: Promise<void>;
+  /** The search this process was started for (its handshake errors belong to it). */
+  owner: string;
 };
+
+type GamePosition = { gameKey?: string; fen: string; moves: readonly string[] };
 
 class SupersededError extends Error {
   constructor() {
@@ -80,12 +86,10 @@ class SupersededError extends Error {
   }
 }
 
-/** True when `next` continues `previous` (same start, earlier moves unchanged). */
-export function continuesGame(
-  previous: { fen: string; moves: readonly string[] } | null,
-  next: { fen: string; moves: readonly string[] }
-): boolean {
-  if (!previous || previous.fen !== next.fen || previous.moves.length > next.moves.length) return false;
+/** True when `next` continues `previous`: the same game, same start, earlier moves unchanged. */
+export function continuesGame(previous: GamePosition | null, next: GamePosition): boolean {
+  if (!previous || previous.gameKey !== next.gameKey) return false;
+  if (previous.fen !== next.fen || previous.moves.length > next.moves.length) return false;
   return previous.moves.every((move, index) => next.moves[index] === move);
 }
 
@@ -108,6 +112,8 @@ export class EngineManager extends EventEmitter<EngineEvents> {
   private infoTimer: ReturnType<typeof setTimeout> | null = null;
   private cancelledReviewIds = new Set<string>();
   private activeReviewIds = new Set<string>();
+  /** Waits of the running search that a newer request (or a stop) interrupts. */
+  private supersedeListeners = new Set<() => void>();
 
   cancelReview(reviewId: string): void {
     this.cancelledReviewIds.add(reviewId);
@@ -188,7 +194,7 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     return this.search("game", input.engineId, input.searchId, (session) => {
       // A new game (or a position that doesn't continue the last one) resets the engine's state.
       if (!continuesGame(session.lastGame, input)) this.write("ucinewgame");
-      session.lastGame = { fen: input.fen, moves: [...input.moves] };
+      session.lastGame = { gameKey: input.gameKey, fen: input.fen, moves: [...input.moves] };
       return () => {
         this.write(positionCommand(input.fen, input.moves));
         if (input.clock) {
@@ -221,6 +227,7 @@ export class EngineManager extends EventEmitter<EngineEvents> {
   /** Ends the running search (the process stays warm for the next one). */
   stop(): Promise<void> {
     this.latestSearchId = null;
+    this.supersede();
     this.discardInfos();
     const job = this.queue.then(() => this.stopSearch());
     this.queue = job.catch(() => undefined);
@@ -230,7 +237,22 @@ export class EngineManager extends EventEmitter<EngineEvents> {
   /** Ends any search and shuts the engine process down (window closed, quit). */
   dispose(): void {
     this.latestSearchId = null;
+    this.supersede();
     this.killSession();
+  }
+
+  /** The running search is no longer wanted: its waits (startup, isready) end now. */
+  private supersede(): void {
+    for (const listener of [...this.supersedeListeners]) listener();
+  }
+
+  /** `work`, unless a newer request arrives first (then SupersededError; `work` carries on). */
+  private untilSuperseded<T>(work: Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const onSuperseded = () => reject(new SupersededError());
+      this.supersedeListeners.add(onSuperseded);
+      work.then(resolve, reject).finally(() => this.supersedeListeners.delete(onSuperseded));
+    });
   }
 
   /** Shuts the process down; a queued search still starts a fresh one. */
@@ -253,6 +275,7 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     prepare: (session: EngineSession) => () => void
   ): Promise<void> {
     this.latestSearchId = searchId;
+    this.supersede();
     this.clearIdleTimer();
     const job = this.queue.then(() => this.runSearch(kind, engineId, searchId, prepare));
     this.queue = job.catch(() => undefined);
@@ -274,10 +297,13 @@ export class EngineManager extends EventEmitter<EngineEvents> {
       assertSpawnable(config);
       await this.stopSearch();
       current();
-      const session = await this.ensureSession(config, kind);
+      const session = this.ensureSession(config, kind, searchId);
+      // A slow startup (lc0 loading its network) doesn't hold up a newer request: it keeps
+      // going in the background, and a newer search of the same engine picks it up.
+      await this.untilSuperseded(session.ready);
       current();
       const begin = prepare(session);
-      await this.waitForReady();
+      await this.untilSuperseded(this.waitForReady());
       current();
       this.discardInfos();
       session.searchId = searchId;
@@ -291,8 +317,8 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     }
   }
 
-  /** The warm process if it fits `config` and `kind`, else a fresh one after the UCI handshake. */
-  private async ensureSession(config: EngineConfig, kind: SearchKind): Promise<EngineSession> {
+  /** The warm process if it fits `config` and `kind`, else a fresh one (its handshake in `ready`). */
+  private ensureSession(config: EngineConfig, kind: SearchKind, searchId: string): EngineSession {
     const resources = kind === "analysis" ? engineResourceOptions() : null;
     const key = JSON.stringify([
       config.id,
@@ -315,7 +341,9 @@ export class EngineManager extends EventEmitter<EngineEvents> {
       supportedOptions: new Set(),
       searchId: null,
       lastGame: null,
-      multipv: null
+      multipv: null,
+      ready: Promise.resolve(),
+      owner: searchId
     };
     this.session = session;
     proc.stdout.on("data", createLineSplitter((line) => this.handleLine(session, line)));
@@ -324,7 +352,8 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     });
     proc.on("error", (error) => {
       if (this.session !== session) return;
-      this.emit("error", { engineId: config.id, searchId: session.searchId ?? undefined, message: error.message });
+      // Tagged with the search it hurts: the running one, else the one this process was started for.
+      this.emit("error", { engineId: config.id, searchId: session.searchId ?? session.owner, message: error.message });
     });
     proc.on("exit", (code) => {
       if (this.session !== session) return;
@@ -334,22 +363,28 @@ export class EngineManager extends EventEmitter<EngineEvents> {
       );
     });
 
-    const uciOk = this.waitForLine(
-      (line) => {
-        const option = line.match(/^option name (.+?) type /);
-        if (option) session.supportedOptions.add(option[1]);
-        return line === "uciok";
-      },
-      ENGINE_PLAY_UCIOK_MS,
-      UCIOK_TIMEOUT_MESSAGE
-    );
-    this.write("uci");
-    await uciOk;
-    if (resources) {
-      // Same Threads/Hash settings as Game Review; only for engines that advertise them.
-      if (session.supportedOptions.has("Threads")) this.write(`setoption name Threads value ${resources.threads}`);
-      if (session.supportedOptions.has("Hash")) this.write(`setoption name Hash value ${resources.hashMb}`);
-    }
+    session.ready = (async () => {
+      const uciOk = this.waitForLine(
+        (line) => {
+          const option = line.match(/^option name (.+?) type /);
+          if (option) session.supportedOptions.add(option[1]);
+          return line === "uciok";
+        },
+        ENGINE_PLAY_UCIOK_MS,
+        UCIOK_TIMEOUT_MESSAGE
+      );
+      this.write("uci");
+      await uciOk;
+      if (resources) {
+        // Same Threads/Hash settings as Game Review; only for engines that advertise them.
+        if (session.supportedOptions.has("Threads")) this.write(`setoption name Threads value ${resources.threads}`);
+        if (session.supportedOptions.has("Hash")) this.write(`setoption name Hash value ${resources.hashMb}`);
+      }
+    })();
+    // A failed startup nobody waits for any more (superseded) still ends that process.
+    session.ready.catch(() => {
+      if (this.session === session) this.killSession();
+    });
     return session;
   }
 
