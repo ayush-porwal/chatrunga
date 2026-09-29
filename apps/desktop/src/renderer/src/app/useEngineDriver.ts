@@ -162,13 +162,20 @@ export function useEngineDriver(defaultEngineId: string | null): void {
       engineSearches.analysis = null;
       void engines?.stop();
     };
-    /** The engine was thinking about a position that is no longer the one to move in. */
+    /**
+     * The engine was thinking about a position that is no longer the one on the board (the user
+     * stepped back). Its search stops, and so does its clock until it's asked to move again.
+     */
     const abandonEngineMove = () => {
       engineMoveKey = null;
       if (engineSearches.move === null) return;
       engineSearches.move = null;
       void engines?.stop();
+      const game = useGameStore.getState();
+      if (game.engineClockLive?.sideToMove === game.engineSide) game.pauseEngineClock();
     };
+    /** Identifies the match, so the engine resets for a new one even from the same position. */
+    let gameKey = newSearchId();
 
     const sync = () => {
       scheduled = false;
@@ -208,12 +215,14 @@ export function useEngineDriver(defaultEngineId: string | null): void {
           engineMoveKey = key;
           const searchId = newSearchId();
           engineSearches.move = searchId;
-          const clock = game.getClockForEngineGo();
+          game.resumeEngineClock();
+          const clock = useGameStore.getState().getClockForEngineGo();
           useAnalysisStore.getState().setStatus("thinking");
           engines
             .startGame({
               engineId,
               searchId,
+              gameKey,
               side: game.engineSide,
               fen: game.rootFen,
               moves: currentLineUcis(game.moveTree, game.currentNodeId),
@@ -276,7 +285,11 @@ export function useEngineDriver(defaultEngineId: string | null): void {
       scheduled = true;
       queueMicrotask(sync);
     };
-    const unsubscribe = useGameStore.subscribe(schedule);
+    const unsubscribe = useGameStore.subscribe((state, previous) => {
+      // A new board (reset / load replaces headers and tree together) is a new match.
+      if (state.headers !== previous.headers && state.moveTree !== previous.moveTree) gameKey = newSearchId();
+      schedule();
+    });
     // A requested restart (restartSearch) re-runs the analysis for the same position.
     const unsubscribeRestart = useAnalysisStore.subscribe((state, previous) => {
       if (state.searchEpoch !== previous.searchEpoch) schedule();

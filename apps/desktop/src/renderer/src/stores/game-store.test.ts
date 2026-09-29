@@ -1,17 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
-import { buildEngineGoClock, clockNow, noteSystemResumed, setTimeAsleepSource, useGameStore } from "./game-store";
-
-/** Moves both time sources together (the clock treats a wall-only jump as time asleep). */
-function mockTime() {
-  const monotonic = vi.spyOn(performance, "now");
-  const wall = vi.spyOn(Date, "now");
-  const at = (ms: number) => {
-    monotonic.mockReturnValue(ms);
-    wall.mockReturnValue(1_700_000_000_000 + ms);
-  };
-  return at;
-}
+import { buildEngineGoClock, remainingClockMs, useGameStore } from "./game-store";
 
 describe("game store", () => {
   beforeEach(() => {
@@ -412,25 +401,25 @@ describe("game store", () => {
   });
 });
 
-describe("clockNow after a renderer reload", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
-    vi.resetModules();
-  });
+describe("engine clock pause", () => {
+  it("freezes the running clock and resumes it without charging the pause", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    const game = useGameStore.getState();
+    game.reset();
+    game.setMode("engine");
+    game.setEngineSide("white");
+    game.setEngineMatchClock({ initialMs: 10_000, incrementMs: 0 });
+    game.initEngineClockLive();
 
-  it("starts from main's current total, so earlier sleeps never jump a new clock", async () => {
-    let total = 3_600_000; // an hour asleep before this renderer (re)loaded
-    vi.stubGlobal("window", { chaturanga: { system: { timeAsleepMs: () => total } } });
-    vi.resetModules();
-    const store = await import("./game-store");
-    const monotonic = vi.spyOn(performance, "now").mockReturnValue(1_000);
-    const wall = vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
-    const start = store.clockNow();
-    // Asleep another 500 ms: only that is added.
-    total += 500;
-    monotonic.mockReturnValue(2_000);
-    wall.mockReturnValue(1_700_000_000_000 + 1_000 + 500);
-    expect(store.clockNow() - start).toBe(1_500);
+    now.mockReturnValue(2_000);
+    useGameStore.getState().pauseEngineClock();
+    expect(useGameStore.getState().engineClockLive).toMatchObject({ stoppedAt: 2_000, paused: true });
+
+    now.mockReturnValue(60_000);
+    useGameStore.getState().resumeEngineClock();
+    const live = useGameStore.getState().engineClockLive!;
+    expect(live.stoppedAt).toBeUndefined();
+    expect(remainingClockMs(live, "white", 61_000)).toBe(7_000);
+    vi.restoreAllMocks();
   });
 });

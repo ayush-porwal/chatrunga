@@ -125,6 +125,29 @@ describe("EngineManager", () => {
     expect(spawns()).toBe(2);
   });
 
+  it("a new game resets the engine even when it starts from the same position", async () => {
+    const events = collect(manager);
+    await manager.start({ engineId: "sf", searchId: "a", gameKey: "g1", side: "white", fen: START, moves: [], moveTimeMs: 10 });
+    await until(() => events.bestMoves.length === 1);
+    await manager.start({ engineId: "sf", searchId: "b", gameKey: "g2", side: "white", fen: START, moves: [], moveTimeMs: 10 });
+    await until(() => events.bestMoves.length === 2);
+    expect(sent().filter((line) => line === "ucinewgame")).toHaveLength(2);
+  });
+
+  it("a slow startup doesn't hold up a newer search or a stop", async () => {
+    fakeEngine("slow", ["slow-start"]);
+    const events = collect(manager);
+    const started = Date.now();
+    const slow = manager.startAnalysis({ engineId: "slow", searchId: "slow", fen: START, moves: [], multipv: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await manager.stop();
+    await slow;
+    await manager.startAnalysis({ engineId: "sf", searchId: "fast", fen: START, moves: [], multipv: 1 });
+    await until(() => events.infos.some((info) => info.searchId === "fast"));
+    expect(Date.now() - started).toBeLessThan(3_000);
+    expect(events.errors).toEqual([]);
+  });
+
   it("coalesces info lines per MultiPV slot", async () => {
     const events = collect(manager);
     await manager.startAnalysis({ engineId: "sf", searchId: "p", fen: START, moves: [], multipv: 1 });

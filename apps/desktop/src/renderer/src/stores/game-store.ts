@@ -27,6 +27,8 @@ export type EngineClockLive = {
   sideToMove: Color;
   /** Set when the game ends (mate, resignation, draw, flag): the clocks freeze at this moment. */
   stoppedAt?: number;
+  /** With `stoppedAt`: frozen only for now (the engine's search was set aside), not ended. */
+  paused?: boolean;
 };
 
 type GameOutcome = {
@@ -89,6 +91,12 @@ type GameStore = {
   patchHeaders: (patch: Partial<GameHeaders>) => void;
   setEngineMatchClock: (config: EngineClockConfig | null) => void;
   initEngineClockLive: () => void;
+  /**
+   * Freezes the running clock without ending the game (the user stepped back while the engine was
+   * thinking: no search runs, so its time must not run out). `resumeEngineClock` continues it.
+   */
+  pauseEngineClock: () => void;
+  resumeEngineClock: () => void;
   clearEngineMatchExtras: () => void;
   resign: () => void;
   agreeDraw: () => void;
@@ -395,6 +403,26 @@ export const useGameStore = create<GameStore>((set, get) => {
       });
     },
 
+    pauseEngineClock: () =>
+      set((state) => {
+        const live = state.engineClockLive;
+        if (!live || live.stoppedAt !== undefined) return {};
+        return { engineClockLive: { ...live, stoppedAt: Date.now(), paused: true } };
+      }),
+
+    resumeEngineClock: () =>
+      set((state) => {
+        const live = state.engineClockLive;
+        if (!live?.paused || live.stoppedAt === undefined || state.gameOutcome) return {};
+        const running: EngineClockLive = {
+          whiteMs: live.whiteMs,
+          blackMs: live.blackMs,
+          sideToMove: live.sideToMove,
+          turnStartedAt: live.turnStartedAt + (Date.now() - live.stoppedAt)
+        };
+        return { engineClockLive: running };
+      }),
+
     clearEngineMatchExtras: () =>
       set({
         pendingPromotion: null,
@@ -571,57 +599,10 @@ function mainlineEndId(moveTree: MoveNode[]): string {
 }
 
 function stopClock(live: EngineClockLive | null): EngineClockLive | null {
-  return live && live.stoppedAt === undefined ? { ...live, stoppedAt: clockNow() } : live;
-}
-
-/** Where the time asleep comes from (the main process; tests swap it). */
-let readTimeAsleep: () => number = () =>
-  typeof window === "undefined" ? 0 : (window.chaturanga?.system?.timeAsleepMs?.() ?? 0);
-
-/**
- * A wall-clock step this far past the monotonic one means the computer may have slept. Small, so
- * even a sub-second suspend is read before a move is timed (not left to the wake notice, which can
- * arrive after it), yet above the millisecond jitter between the two clocks, so a normal check
- * never asks the main process.
- */
-const SUSPECT_SLEEP_MS = 25;
-let lastMonotonic = performance.now();
-let lastWall = Date.now();
-/**
- * Main's total since the app started, read once now: a renderer reloaded later would otherwise
- * start from 0 and add every earlier sleep at its first check, jumping a running clock forward.
- */
-let timeAsleep = readTimeAsleep();
-/** The main process said the computer woke up: read the total at the next clock check. */
-let resumedSinceRead = false;
-
-/**
- * The time base for match clocks: monotonic, so changing the system clock (or an NTP correction)
- * never adds or removes thinking time. Only differences between two readings mean anything.
- * `performance.now()` may stop while the computer sleeps, so the time it missed is added back —
- * as the main process measured it (from suspend to resume, not from wall-clock jumps). That is
- * read synchronously only when the two clocks drift apart since the last reading, which a sleep
- * always causes: a clock check never waits on the main process otherwise.
- */
-export function clockNow(): number {
-  const monotonic = performance.now();
-  const wall = Date.now();
-  if (resumedSinceRead || wall - lastWall - (monotonic - lastMonotonic) > SUSPECT_SLEEP_MS) {
-    timeAsleep = readTimeAsleep();
-    resumedSinceRead = false;
-  }
-  lastMonotonic = monotonic;
-  lastWall = wall;
-  return monotonic + timeAsleep;
-}
-
-/** The computer woke up (main's notice): the next clock check reads the time asleep. */
-export function noteSystemResumed(): void {
-  resumedSinceRead = true;
-}
-
-export function setTimeAsleepSource(source: () => number): void {
-  readTimeAsleep = source;
+  if (!live) return live;
+  // A paused clock ends frozen where it was paused.
+  if (live.paused) return { ...live, paused: false };
+  return live.stoppedAt === undefined ? { ...live, stoppedAt: Date.now() } : live;
 }
 
 /** Time left on `side`'s clock at `now` (the running side's clock counts down; a stopped game is frozen). */
