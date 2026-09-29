@@ -40,7 +40,8 @@ export function BoardWorkspace({
   footer,
   children,
   panelLabel,
-  showPanel
+  showPanel,
+  tabPanel
 }: {
   /** The board column content — always a <BoardStage>. */
   board: ReactNode;
@@ -57,6 +58,8 @@ export function BoardWorkspace({
   panelLabel?: string;
   /** Overrides focus mode (hidden while the app is in focus mode); the board keeps the same sizing rule. */
   showPanel?: boolean;
+  /** Tab panel props for the body (`tabPanelProps`), linking it to the tabs that switch it. */
+  tabPanel?: { id: string; role: "tabpanel"; "aria-labelledby": string };
 }) {
   const focused = useBoardFocused();
   const panelVisible = showPanel ?? !focused;
@@ -95,7 +98,9 @@ export function BoardWorkspace({
             <div className="flex h-14 shrink-0 items-center border-b border-line-subtle px-3">{summary}</div>
             <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
               {notices}
-              <div className="min-h-0 flex-1">{children}</div>
+              <div className="min-h-0 flex-1" {...tabPanel}>
+                {children}
+              </div>
             </div>
             {footer ? <div className="shrink-0 border-t border-line-subtle">{footer}</div> : null}
           </aside>

@@ -329,7 +329,8 @@ function solutionLine(puzzle: PuzzleSample): SolutionMove[] {
 
 function safeApply(fen: string, uci: string): ReturnType<typeof applyUserMove> {
   try {
-    return applyUserMove(fen, userMoveFromUci(uci));
+    const move = userMoveFromUci(uci);
+    return move ? applyUserMove(fen, move) : null;
   } catch {
     return null;
   }

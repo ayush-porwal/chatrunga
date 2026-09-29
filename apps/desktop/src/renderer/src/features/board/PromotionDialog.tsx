@@ -1,10 +1,10 @@
-import type { Square, UserMove } from "@chaturanga/shared/types/chess";
+import type { UserMove } from "@chaturanga/shared/types/chess";
 import { useGameStore } from "../../stores/game-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
 import { submitPuzzleMove } from "../puzzles/puzzle-session";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { uciFromUserMove } from "@/lib/uci";
+import { uciFromUserMove, userMoveBetween } from "@/lib/uci";
 
 const pieces = [
   ["queen", "Queen"],
@@ -23,8 +23,9 @@ export function PromotionDialog() {
 
   function choosePromotion(promotion: NonNullable<UserMove["promotion"]>) {
     if (!pending) return;
-    const move: UserMove = { from: pending.from as Square, to: pending.to as Square, promotion };
+    const move = userMoveBetween(pending.from, pending.to, promotion);
     setPendingPromotion(null);
+    if (!move) return;
     if (mode === "puzzle" && activePuzzle) submitPuzzleMove(uciFromUserMove(move), () => makeMove(move));
     else makeMove(move);
   }

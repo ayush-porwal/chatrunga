@@ -1,10 +1,12 @@
 import { memo, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, ChevronRight, FileSearch, Play, Puzzle, Swords, Upload } from "lucide-react";
+import { BarChart3, ChevronRight, Play, Swords, Upload } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { DESTINATION_ICONS } from "./destination-icons";
 import { START_FEN, statusForFen } from "@chaturanga/shared/chess/position";
 import type { Color, GameSummary, MoveNode, SavedGame } from "@chaturanga/shared/types/chess";
 import { Button } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 import { IconButton } from "@/components/ui/icon-button";
 import { Page, PageHeader } from "@/components/ui/page";
 import { SideDot } from "@/components/ui/side-dot";
@@ -15,6 +17,7 @@ import { BoardThumbnail } from "../features/settings/board-thumbnail";
 import { EngineSetupLine } from "../features/onboarding/EngineSetupStatus";
 import { useGamesQuery } from "../queries/api";
 import { decidedResult } from "./game-title";
+import { ipcErrorMessage } from "@/lib/ipc-error";
 
 /** How many saved games the Recent list shows under the Continue card. */
 const RECENT_LIMIT = 6;
@@ -60,9 +63,9 @@ export const HomePage = memo(function HomePage({
   const reveal = mountedWhileLoading ? "animate-fade-in" : undefined;
 
   const actions: QuickAction[] = [
-    { id: "analyze", icon: FileSearch, title: "Analyze a position", hint: "Live engine lines", onClick: onAnalyze, desktopOnly: true },
-    { id: "puzzles", icon: Puzzle, title: "Solve puzzles", hint: "From your databases", onClick: onPuzzles, desktopOnly: true },
-    { id: "import", icon: Upload, title: "Import PGN", hint: "Open a .pgn file", onClick: onImportPgn, desktopOnly: true }
+    { id: "analyze", icon: DESTINATION_ICONS.analyze, title: "Analyze a position", hint: "Live engine lines", onClick: onAnalyze, desktopOnly: true },
+    { id: "puzzles", icon: DESTINATION_ICONS.puzzles, title: "Solve puzzles", hint: "From your databases", onClick: onPuzzles, desktopOnly: true },
+    { id: "import", icon: DESTINATION_ICONS.importPgn, title: "Import PGN", hint: "Open a .pgn file", onClick: onImportPgn, desktopOnly: true }
   ];
 
   return (
@@ -70,6 +73,19 @@ export const HomePage = memo(function HomePage({
       <PageHeader title="Home" />
       {loading ? (
         <HomeSkeleton />
+      ) : games.isError ? (
+        // A failed read is not a first run.
+        <Notice
+          tone="danger"
+          title="Couldn't load your games"
+          action={
+            <Button type="button" variant="outline" size="xs" onClick={() => void games.refetch()}>
+              Try again
+            </Button>
+          }
+        >
+          {ipcErrorMessage(games.error) || "The library couldn't be read."}
+        </Notice>
       ) : latest ? (
         <div className={cn("grid gap-8", reveal)}>
           <ContinueGame

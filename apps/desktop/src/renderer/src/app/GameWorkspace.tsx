@@ -1,7 +1,7 @@
-import { memo, useMemo, type ReactNode } from "react";
+import { memo, useId, useMemo, type ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { QualityBadge } from "@/components/ui/quality-badge";
-import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
+import { SegmentedControl, tabPanelProps, type SegmentedOption } from "@/components/ui/segmented-control";
 import { SideDot } from "@/components/ui/side-dot";
 import { Stat, StatGroup } from "@/components/ui/stat";
 import { positionStatus } from "@/lib/position-status";
@@ -48,14 +48,17 @@ export const GameWorkspace = memo(function GameWorkspace({
 }) {
   // The per-move parts (board, summary, footer) subscribe on their own, so stepping through the
   // game re-renders them and not the whole workspace (tabs, panel, puzzle card).
+  const panelId = useId();
   return (
     <BoardWorkspace
+      tabPanel={tabPanelProps(panelId, sideTab)}
       panelLabel="Game"
       board={boardView}
       tabs={
         <SegmentedControl
           ariaLabel="Workspace panels"
           role="tablist"
+          panelId={panelId}
           fullWidth
           className={workspaceTabsClass}
           value={sideTab}

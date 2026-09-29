@@ -1,4 +1,4 @@
-import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useId, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
@@ -35,7 +35,7 @@ import { Sparkles, Swords, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Notice } from "@/components/ui/notice";
-import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
+import { SegmentedControl, tabPanelProps, type SegmentedOption } from "@/components/ui/segmented-control";
 import { Stat, StatGroup } from "@/components/ui/stat";
 
 const reviewTabOptions: readonly SegmentedOption<ReviewTab>[] = [
@@ -206,8 +206,10 @@ function GameReviewPageInner({
     [accuracy, average, counts, hasStats]
   );
 
+  const panelId = useId();
   return (
     <BoardWorkspace
+      tabPanel={tabPanelProps(panelId, activeTab)}
       panelLabel="Review"
       board={
         <BoardStage
@@ -222,6 +224,7 @@ function GameReviewPageInner({
         <SegmentedControl
           ariaLabel="Game review sections"
           role="tablist"
+          panelId={panelId}
           fullWidth
           className={workspaceTabsClass}
           value={activeTab}

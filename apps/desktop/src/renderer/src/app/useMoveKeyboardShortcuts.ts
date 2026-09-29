@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { markRapidNavigation } from "../features/board/board-motion";
 import { useGameStore } from "../stores/game-store";
+import { OVERLAY_SELECTOR } from "./useBoardShortcuts";
 
 /** Elements whose own keyboard handling must not also step through the game. */
 const KEYBOARD_WIDGET_SELECTOR =
@@ -8,6 +9,8 @@ const KEYBOARD_WIDGET_SELECTOR =
 
 function ownsKeyboard(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
+  // A menu or listbox trigger opens with the arrow keys.
+  if (target.closest("[aria-haspopup]")) return true;
   if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) {
     return true;
   }
@@ -50,9 +53,14 @@ export function createStepScheduler(apply: (delta: number) => void, frames: Fram
   };
 }
 
-/** ← → step through the current line, Home jumps to the start, End to the end of the line. */
-export function useMoveKeyboardShortcuts(): void {
+/**
+ * ← → step through the current line, Home jumps to the start, End to the end of the line. Only
+ * while a board is on screen (`enabled`) and no dialog or menu is open — elsewhere those keys
+ * scroll the page or belong to the open control.
+ */
+export function useMoveKeyboardShortcuts({ enabled }: { enabled: boolean }): void {
   useEffect(() => {
+    if (!enabled) return;
     const steps = createStepScheduler((delta) => {
       const game = useGameStore.getState();
       const target = nodeAfterSteps(game.moveTree, game.currentNodeId, delta);
@@ -60,8 +68,9 @@ export function useMoveKeyboardShortcuts(): void {
     });
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
       if (ownsKeyboard(event.target) || ownsKeyboard(document.activeElement)) return;
+      if (document.querySelector(OVERLAY_SELECTOR)) return;
 
       const game = useGameStore.getState();
       switch (event.key) {
@@ -91,7 +100,7 @@ export function useMoveKeyboardShortcuts(): void {
       steps.cancel();
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, []);
+  }, [enabled]);
 }
 
 type LineNode = { id: string; parentId?: string | null; children: string[] };
