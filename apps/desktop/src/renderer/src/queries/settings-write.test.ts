@@ -66,3 +66,15 @@ describe("settings not written yet", () => {
     expect(withPendingSettings({ ...defaultSettings, soundVolume: 0.7 }).soundVolume).toBe(0.7);
   });
 });
+
+describe("an explicit write after a drag", () => {
+  it("replaces the drag's pending value for the same keys", async () => {
+    const { addPendingSettings, dropPendingSettings, withPendingSettings } = await import("./settings-pending");
+    addPendingSettings({ boardSquareLight: "#123456", soundVolume: 0.4 });
+    dropPendingSettings(["boardSquareLight"]);
+    const shown = withPendingSettings({ ...defaultSettings, boardSquareLight: null, soundVolume: 0.7 });
+    expect(shown.boardSquareLight).toBeNull();
+    expect(shown.soundVolume).toBe(0.4);
+    dropPendingSettings(["soundVolume"]);
+  });
+});

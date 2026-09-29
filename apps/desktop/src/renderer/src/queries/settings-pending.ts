@@ -24,6 +24,14 @@ export function settlePendingSettings(patch: Partial<AppSettings>): void {
   pending = next;
 }
 
+/** An explicit write of these keys replaces whatever a drag left pending for them. */
+export function dropPendingSettings(keys: readonly (keyof AppSettings)[]): void {
+  if (!keys.some((key) => key in pending)) return;
+  const next = { ...pending };
+  for (const key of keys) delete next[key];
+  pending = next;
+}
+
 /** `settings` with the not-yet-written values on top. */
 export function withPendingSettings(settings: AppSettings): AppSettings {
   return Object.keys(pending).length ? { ...settings, ...pending } : settings;
