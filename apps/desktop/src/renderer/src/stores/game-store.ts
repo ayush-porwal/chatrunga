@@ -225,10 +225,15 @@ export const useGameStore = create<GameStore>((set, get) => {
       const parent = state.moveTree.find((node) => node.id === state.currentNodeId);
       const fenBefore = parent?.fenAfter ?? state.currentFen;
       const mover = statusForFen(fenBefore).turn;
+      const applied = applyUserMove(fenBefore, move);
+      if (!applied) {
+        set({ lastError: "Illegal move" });
+        return false;
+      }
       // A move made while the clock is paused (the user stepped back while the engine thought, and
       // plays on from there): the clock runs again for the side that moved, from the pause, so the
       // time spent there counts against them.
-      const paused = state.engineClockLive;
+      const paused = get().engineClockLive;
       if (paused?.paused && paused.stoppedAt !== undefined && !state.gameOutcome) {
         set({
           engineClockLive: {
@@ -239,13 +244,6 @@ export const useGameStore = create<GameStore>((set, get) => {
           }
         });
       }
-      const applied = applyUserMove(fenBefore, move);
-      if (!applied) {
-        set({ lastError: "Illegal move" });
-        return false;
-      }
-      const applied = applyUserMove(fenBefore, move);
-      if (!applied) return reject({ lastError: "Illegal move" });
       const { moveTree, node } = addMoveNode(
         state.moveTree,
         state.currentNodeId,

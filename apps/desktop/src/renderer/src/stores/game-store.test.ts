@@ -436,6 +436,9 @@ describe("engine clock pause", () => {
     now.mockReturnValue(1_500);
     useGameStore.getState().pauseEngineClock(); // stepped back while Black (the engine) thought
     useGameStore.getState().goToNode("root");
+    // An illegal attempt leaves the clock paused.
+    expect(useGameStore.getState().makeMove({ from: "d2", to: "d5" })).toBe(false);
+    expect(useGameStore.getState().engineClockLive?.paused).toBe(true);
     now.mockReturnValue(4_500);
     expect(useGameStore.getState().makeMove({ from: "d2", to: "d4" })).toBe(true);
     const live = useGameStore.getState().engineClockLive!;
