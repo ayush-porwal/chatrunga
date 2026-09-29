@@ -17,6 +17,15 @@ import { parseBestMove, parseInfoLine } from "@chaturanga/shared/engine/uci";
 import { logger, errorMessage } from "../logger";
 import { engineConfigForId, engineResourceOptions } from "./engine-config";
 import { createLineSplitter, LOG_UCI, spawnUciProcess, stopUciProcess, writeUci } from "./uci-process";
+import {
+  createUciIdentity,
+  isHumanPredictionEngine,
+  readHandshakeLine,
+  READYOK_TIMEOUT_MS,
+  TEST_UCIOK_TIMEOUT_MS,
+  UCIOK_TIMEOUT_MESSAGE,
+  UCIOK_TIMEOUT_MS
+} from "./uci-handshake";
 
 export type EngineEvents = {
   info: [EngineInfo];
@@ -34,12 +43,6 @@ type LineWaiter = {
   reject: (error: Error) => void;
 };
 
-/** LC0 waits for NN weights load before emitting `uciok`; Stockfish resolves almost immediately. */
-const ENGINE_TEST_UCIOK_MS = 60_000;
-const ENGINE_PLAY_UCIOK_MS = 120_000;
-const ENGINE_PLAY_READY_MS = 30_000;
-const UCIOK_TIMEOUT_MESSAGE =
-  "Timed out waiting for uciok. Leela Chess Zero must load NN weights — set the weights file or add `--weights=/path/to/weights.pb.gz`.";
 
 /** Throws when `config` can't be spawned as a native UCI process. */
 export function assertSpawnable(config: EngineConfig | null): asserts config is EngineConfig {
@@ -148,8 +151,7 @@ export class EngineManager extends EventEmitter<EngineEvents> {
 
     return new Promise((resolve) => {
       const proc = spawnUciProcess(config);
-      let name: string | undefined;
-      let author: string | undefined;
+      const identity = createUciIdentity();
       let settled = false;
       const finish = (result: EngineTestResult) => {
         if (settled) return;
@@ -160,20 +162,19 @@ export class EngineManager extends EventEmitter<EngineEvents> {
       };
       const timeout = setTimeout(
         () => finish({ ok: false, error: "Timed out waiting for uciok (NN engines such as lc0 may need --weights)" }),
-        ENGINE_TEST_UCIOK_MS
+        TEST_UCIOK_TIMEOUT_MS
       );
 
       proc.stdout.on(
         "data",
         createLineSplitter((line) => {
-          if (line.startsWith("id name ")) name = line.slice(8).trim();
-          else if (line.startsWith("id author ")) author = line.slice(10).trim();
-          else if (line === "uciok") {
-            const isHumanPrediction = Boolean(
-              name?.toLowerCase().includes("maia") || author?.toLowerCase().includes("maia")
-            );
-            finish({ ok: true, name, author, isHumanPrediction });
-          }
+          if (!readHandshakeLine(identity, line)) return;
+          finish({
+            ok: true,
+            name: identity.name,
+            author: identity.author,
+            isHumanPrediction: isHumanPredictionEngine(identity)
+          });
         })
       );
       proc.on("exit", (code, signal) =>
@@ -364,15 +365,9 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     });
 
     session.ready = (async () => {
-      const uciOk = this.waitForLine(
-        (line) => {
-          const option = line.match(/^option name (.+?) type /);
-          if (option) session.supportedOptions.add(option[1]);
-          return line === "uciok";
-        },
-        ENGINE_PLAY_UCIOK_MS,
-        UCIOK_TIMEOUT_MESSAGE
-      );
+      const identity = createUciIdentity();
+      identity.options = session.supportedOptions;
+      const uciOk = this.waitForLine((line) => readHandshakeLine(identity, line), UCIOK_TIMEOUT_MS, UCIOK_TIMEOUT_MESSAGE);
       this.write("uci");
       await uciOk;
       if (resources) {
@@ -408,7 +403,7 @@ export class EngineManager extends EventEmitter<EngineEvents> {
   }
 
   private async waitForReady(): Promise<void> {
-    const readyOk = this.waitForLine((line) => line === "readyok", ENGINE_PLAY_READY_MS, "Timed out waiting for readyok after isready.");
+    const readyOk = this.waitForLine((line) => line === "readyok", READYOK_TIMEOUT_MS, "Timed out waiting for readyok after isready.");
     this.write("isready");
     await readyOk;
   }

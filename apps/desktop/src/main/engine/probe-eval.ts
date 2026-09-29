@@ -1,6 +1,7 @@
 import type { EngineConfig, EngineScore } from "@chaturanga/shared/types/engine";
 import { parseInfoLine } from "@chaturanga/shared/engine/uci";
 import { createLineSplitter, spawnUciProcess, stopUciProcess, writeUci } from "./uci-process";
+import { createUciIdentity, readHandshakeLine } from "./uci-handshake";
 
 /** Covers slow NN weight loads (lc0) plus the search itself. */
 const TOTAL_MS = 180_000;
@@ -19,6 +20,7 @@ export function probeEvalScore(
     const proc = spawnUciProcess(config);
     let phase: "uci" | "ready" | "search" = "uci";
     let lastScore: EngineScore | null = null;
+    const identity = createUciIdentity();
     let settled = false;
 
     const finish = (error?: Error) => {
@@ -35,7 +37,7 @@ export function probeEvalScore(
       "data",
       createLineSplitter((line) => {
         if (phase === "uci") {
-          if (line === "uciok") {
+          if (readHandshakeLine(identity, line)) {
             phase = "ready";
             writeUci(proc, "isready");
           }
