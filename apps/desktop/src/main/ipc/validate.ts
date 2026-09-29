@@ -1,9 +1,9 @@
 /**
-import { parseSettingValue } from "./settings-values";
  * Input validation for IPC handlers. The renderer is treated as untrusted:
  * every payload that reaches the file system, the database or an engine
  * process is checked here and rebuilt from known fields only.
  */
+import { parseSettingValue } from "./settings-values";
 import { isAbsolute } from "node:path";
 import { positionFromFen } from "@chaturanga/shared/chess/position";
 import type { GameHeaders, GameSource, SaveGameInput } from "@chaturanga/shared/types/chess";
