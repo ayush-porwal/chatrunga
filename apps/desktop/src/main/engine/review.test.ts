@@ -155,3 +155,20 @@ describe("review reuse", () => {
   });
 });
 
+describe("review cancellation", () => {
+  it("is honoured while the engine is still starting up", async () => {
+    const started = Date.now();
+    let cancelled = false;
+    setTimeout(() => {
+      cancelled = true;
+    }, 100);
+    await expect(
+      reviewGameWithEngine(
+        fakeEngine("slow", "sf", { args: [FAKE, "sf", "slow-start"] }),
+        { reviewId: "r", engineId: "slow", rootFen: START, moves: foolsMate() },
+        { shouldCancel: () => cancelled }
+      )
+    ).rejects.toThrow("Review cancelled");
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+});

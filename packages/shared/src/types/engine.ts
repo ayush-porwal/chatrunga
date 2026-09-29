@@ -51,6 +51,8 @@ export type EngineTestResult = {
 
 export type StartEngineGameInput = {
   engineId: string;
+  /** Chosen by the renderer; the search's events carry it, so late output of an older search is ignored. */
+  searchId: string;
   side: Color;
   fen: string;
   moves: string[];
@@ -65,6 +67,8 @@ export type StartEngineGameInput = {
 
 export type StartLiveAnalysisInput = {
   engineId: string;
+  /** See `StartEngineGameInput.searchId`. */
+  searchId: string;
   fen: string;
   moves: string[];
   multipv?: number | null;
@@ -96,6 +100,8 @@ export type Wdl = { win: number; draw: number; loss: number };
 
 export type EngineInfo = {
   engineId: string;
+  /** The search this line belongs to (live engine only; review and probes don't set it). */
+  searchId?: string;
   depth?: number;
   seldepth?: number;
   multipv?: number;
@@ -111,12 +117,14 @@ export type EngineInfo = {
 
 export type EngineBestMove = {
   engineId: string;
+  searchId?: string;
   move: string;
   ponder?: string;
 };
 
 export type EngineError = {
   engineId?: string;
+  searchId?: string;
   message: string;
 };
 
