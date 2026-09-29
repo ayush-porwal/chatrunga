@@ -74,4 +74,14 @@ describe("gameRepository (SQLite)", () => {
     getDb().prepare("UPDATE games SET move_tree_json = '[]', pgn = '' WHERE id = ?").run(saved.id);
     expect(() => gameRepository.get(saved.id)).toThrow(/damaged/);
   });
+
+  it("lists summaries through the recent-games index and counts without reading rows", () => {
+    saveImported();
+    const plan = getDb()
+      .prepare("EXPLAIN QUERY PLAN SELECT id FROM games WHERE source != 'puzzle' ORDER BY updated_at DESC, id")
+      .all() as { detail: string }[];
+    expect(plan.map((row) => row.detail).join(" ")).toContain("games_recent_idx");
+    expect(gameRepository.count()).toBe(1);
+    expect(gameRepository.idsBySource("pgn-import")).toHaveLength(1);
+  });
 });
