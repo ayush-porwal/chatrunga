@@ -4,6 +4,14 @@ import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 import prettier from "eslint-config-prettier";
 import pluginQuery from "@tanstack/eslint-plugin-query";
+import { builtinModules } from "node:module";
+
+/**
+ * Node's built-in modules, by bare name ("fs": exact matches, so "chessops/util" isn't caught) —
+ * the "node:*" form is a pattern below. None load in a sandboxed page.
+ */
+const nodeBuiltinPaths = (message) =>
+  builtinModules.filter((name) => !name.startsWith("_") && !name.startsWith("node:")).map((name) => ({ name, message }));
 
 export default tseslint.config(
   {
@@ -42,7 +50,10 @@ export default tseslint.config(
       "no-restricted-imports": [
         "error",
         {
-          paths: [{ name: "electron", message: "The renderer reaches Electron only through window.chaturanga (preload)." }],
+          paths: [
+            { name: "electron", message: "The renderer reaches Electron only through window.chaturanga (preload)." },
+            ...nodeBuiltinPaths("Node APIs aren't available in the sandboxed renderer.")
+          ],
           patterns: [
             { group: ["node:*"], message: "Node APIs aren't available in the sandboxed renderer." },
             { group: ["**/main/**", "**/preload/**"], message: "Renderer code can't import main/preload code." }
@@ -52,12 +63,30 @@ export default tseslint.config(
     }
   },
   {
-    files: ["apps/desktop/src/main/**/*.ts", "apps/desktop/src/preload/**/*.ts"],
+    files: ["apps/desktop/src/main/**/*.ts"],
     languageOptions: { globals: { ...globals.node } },
     rules: {
       "no-restricted-imports": [
         "error",
-        { patterns: [{ group: ["**/renderer/**", "@/*"], message: "Main/preload code can't import renderer code." }] }
+        { patterns: [{ group: ["**/renderer/**", "@/*"], message: "Main code can't import renderer code." }] }
+      ]
+    }
+  },
+  // The preload runs sandboxed (BrowserWindow sandbox: true): only Electron's renderer modules
+  // load there — a Node built-in would break the whole window.chaturanga bridge.
+  {
+    files: ["apps/desktop/src/preload/**/*.ts"],
+    languageOptions: { globals: { ...globals.node } },
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: nodeBuiltinPaths("The sandboxed preload can't load Node built-ins."),
+          patterns: [
+            { group: ["node:*"], message: "The sandboxed preload can't load Node built-ins." },
+            { group: ["**/renderer/**", "@/*", "**/main/**"], message: "Preload code can't import main or renderer code." }
+          ]
+        }
       ]
     }
   },
