@@ -48,6 +48,8 @@ import { useHistoryShortcuts } from "./useHistoryShortcuts";
 import { useMoveKeyboardShortcuts } from "./useMoveKeyboardShortcuts";
 import { useMoveSounds } from "./useMoveSounds";
 import { cancelActiveReview, useReviewRunner } from "./useReviewRunner";
+import { useDatabaseDownloads } from "./useDatabaseDownloads";
+import { usePuzzleDraftStore } from "../stores/puzzle-draft-store";
 
 /** How a navigation enters Back / Forward (see showView). */
 type HistoryMode = "push" | "replace" | "none";
@@ -138,6 +140,7 @@ export function App() {
 
   useLichess({ onGameStart: (load) => startOnlineGame(load) });
   useMoveKeyboardShortcuts();
+  useDatabaseDownloads();
   useEngineDriver(defaultEngineId);
   useGameAutosave();
   useMoveSounds({ enabled: settings.soundEnabled, volume: settings.soundVolume });
@@ -711,6 +714,14 @@ export function App() {
     }),
     puzzles: useEventCallback(() => unlessOnlineGame(() => openPuzzlesPage())),
     databases: useEventCallback(() => openDatabasesPage()),
+    // Databases → "Train with this dataset": Puzzles with that dataset chosen (other filters kept).
+    trainWithDatabase: useEventCallback((databaseId: string) =>
+      // A Lichess game on the board keeps it (like the Puzzles item).
+      unlessOnlineGame(() => {
+        usePuzzleDraftStore.getState().update({ databaseId });
+        openPuzzlesPage();
+      })
+    ),
     importPgn: useEventCallback(() => unlessOnlineGame(() => void importPgnFile())),
     exportPgn: useEventCallback(() => void exportPgn()),
     toggleFocus: useEventCallback(() => setFocusMode((value) => !value)),
@@ -860,7 +871,7 @@ export function App() {
             ) : appView === "puzzles" ? (
               <PuzzlePage onDatabases={on.databases} onStart={on.startPuzzle} />
             ) : appView === "databases" ? (
-              <DatabasePage />
+              <DatabasePage onTrain={on.trainWithDatabase} />
             ) : appView === "game-review" ? (
               <GameReviewPage
                 activeTab={reviewTab}

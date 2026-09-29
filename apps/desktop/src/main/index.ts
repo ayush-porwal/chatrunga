@@ -15,6 +15,7 @@ import {
 } from "electron";
 import { isServableImage } from "./image-access";
 import { guardIpcSenders } from "./ipc-guard";
+import { cancelAllDownloads } from "./databases/external-databases";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -154,6 +155,8 @@ async function startup(): Promise<void> {
 function shutdown(): void {
   shutDown = true;
   shutdownLichess();
+  // Before the database closes: a download finishing now couldn't register its dataset.
+  cancelAllDownloads();
   engineManager.cancelAllReviews();
   engineManager.dispose();
   killAllEngineProcesses();

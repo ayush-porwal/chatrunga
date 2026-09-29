@@ -13,6 +13,8 @@ import type {
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
 import { engineRepository, gameRepository, settingsRepository } from "../db/repositories";
 import {
+  activeDownloads,
+  cancelDownload,
   downloadDatabase,
   listInstalledDatabases,
   removeDatabase,
@@ -280,6 +282,8 @@ function registerLibraryIpc(): void {
     downloadDatabase(asId(sourceId, "database source"), (progress) => broadcast("database:downloadProgress", progress))
   );
   ipcMain.handle("databases:remove", (_event, id: unknown) => removeDatabase(asId(id, "database id")));
+  ipcMain.handle("databases:cancelDownload", (_event, sourceId: unknown) => cancelDownload(asId(sourceId, "database source")));
+  ipcMain.handle("databases:activeDownloads", () => activeDownloads());
   ipcMain.handle("databases:samplePuzzle", (_event, input: unknown) => samplePuzzle(parsePuzzleSampleInput(input)));
 
   const pgnFilters = [{ name: "PGN files", extensions: ["pgn"] }];

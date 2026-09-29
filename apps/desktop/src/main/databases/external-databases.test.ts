@@ -7,19 +7,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const userData = mkdtempSync(join(tmpdir(), "chaturanga-databases-"));
 vi.mock("electron", () => ({ app: { getPath: () => userData } }));
 
-const rows = new Map<string, { id: string; sourceId: string; filePath: string; name?: string }>();
+type Row = { id: string; sourceId: string; filePath: string; name?: string; format?: string };
+const rows = new Map<string, Row>();
+const repository = vi.hoisted(() => ({ failSave: false }));
 vi.mock("../db/repositories", () => ({
   externalDatabaseRepository: {
     list: () => [...rows.values()],
-    get: (id: string) => [...rows.values()].find((row) => row.id === id) ?? null,
-    remove: (id: string) => {
-      for (const [key, row] of rows) if (row.id === id) rows.delete(key);
-    },
     updateFilePath: (id: string, filePath: string) => {
       for (const row of rows.values()) if (row.id === id) row.filePath = filePath;
     },
+    get: (id: string) => [...rows.values()].find((row) => row.id === id) ?? null,
     getBySource: (sourceId: string) => rows.get(sourceId) ?? null,
+    remove: (id: string) => {
+      for (const [key, row] of rows) if (row.id === id) rows.delete(key);
+    },
     saveDownloaded: (input: { source: { id: string }; filePath: string }) => {
+      if (repository.failSave) throw new Error("disk full");
       const row = { id: input.source.id, sourceId: input.source.id, filePath: input.filePath };
       rows.set(input.source.id, row);
       return row;
@@ -27,7 +30,9 @@ vi.mock("../db/repositories", () => ({
   }
 }));
 
-import { downloadDatabase, listInstalledDatabases, samplePuzzle } from "./external-databases";
+import { zstdCompressSync } from "node:zlib";
+import type { DatabaseDownloadProgress, PuzzleSampleInput } from "@chaturanga/shared/types/database";
+import { cancelDownload, downloadDatabase, listInstalledDatabases, removeDatabase, samplePuzzle } from "./external-databases";
 
 const SOURCE = "lichess-puzzles";
 const dir = join(userData, "puzzle-databases");
@@ -65,7 +70,11 @@ function fakeServer(content: Buffer, etag: string, options: { failAfter?: number
     });
     return new Response(stream, {
       status: start ? 206 : 200,
-      headers: { "content-length": String(body.length), etag }
+      headers: {
+        "content-length": String(body.length),
+        etag,
+        ...(start ? { "content-range": `bytes ${start}-${content.length - 1}/${content.length}` } : {})
+      }
     });
   });
   return { fetchMock, requests };
@@ -75,6 +84,7 @@ const content = Buffer.from("PuzzleId,FEN,Moves\n".repeat(500));
 
 beforeEach(async () => {
   rows.clear();
+  repository.failSave = false;
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -163,6 +173,147 @@ describe("downloadDatabase", () => {
   });
 });
 
+describe("download reliability", () => {
+  it("announces completion only after the database is registered", async () => {
+    repository.failSave = true;
+    vi.stubGlobal("fetch", fakeServer(content, '"v1"').fetchMock);
+    const events: DatabaseDownloadProgress[] = [];
+    await expect(downloadDatabase(SOURCE, (progress) => events.push(progress))).rejects.toThrow("disk full");
+    expect(events.map((event) => event.state)).not.toContain("completed");
+    expect(events.at(-1)?.state).toBe("failed");
+  });
+
+  it("can be cancelled, keeping the partial file for a resume", async () => {
+    vi.stubGlobal("fetch", fakeServer(content, '"v1"', { failAfter: 3000 }).fetchMock);
+    const events: DatabaseDownloadProgress[] = [];
+    const download = downloadDatabase(SOURCE, (progress) => events.push(progress));
+    setTimeout(() => cancelDownload(SOURCE), 5);
+    await expect(download).rejects.toThrow("Download cancelled.");
+    expect(events.at(-1)?.state).toBe("cancelled");
+    expect(await readdir(dir)).toContain("lichess-puzzles-lichess_db_puzzle.csv.zst.part");
+  });
+
+  it("starts over when a resumed response doesn't continue where the partial ends", async () => {
+    await mkdir(dir, { recursive: true });
+    await writeFile(`${finalPath}.part`, content.subarray(0, 1000));
+    await writeFile(`${finalPath}.part.validator`, '"v1"');
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        calls += 1;
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        if (headers.Range) {
+          // Claims to resume, but from the wrong byte.
+          return new Response(content.subarray(500), {
+            status: 206,
+            headers: { "content-length": String(content.length - 500), "content-range": `bytes 500-${content.length - 1}/${content.length}` }
+          });
+        }
+        return new Response(content, { status: 200, headers: { "content-length": String(content.length), etag: '"v1"' } });
+      })
+    );
+    await downloadDatabase(SOURCE, () => undefined);
+    expect(calls).toBe(2);
+    expect(await readFile(finalPath)).toEqual(content);
+  });
+});
+
+describe("resume without Content-Length", () => {
+  it("uses the size in Content-Range, so a short transfer isn't installed", async () => {
+    await mkdir(dir, { recursive: true });
+    await writeFile(`${finalPath}.part`, content.subarray(0, 1000));
+    await writeFile(`${finalPath}.part.validator`, '"v1"');
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        // Claims the rest of the file but sends only part of it, with no Content-Length.
+        new Response(content.subarray(1000, 2000), {
+          status: 206,
+          headers: { "content-range": `bytes 1000-${content.length - 1}/${content.length}` }
+        })
+      )
+    );
+    await expect(downloadDatabase(SOURCE, () => undefined)).rejects.toThrow(/ended early/);
+    expect(rows.has(SOURCE)).toBe(false);
+  });
+});
+
+describe("removeDatabase", () => {
+  it("deletes the file and any partial download, then the entry", async () => {
+    await mkdir(dir, { recursive: true });
+    await writeFile(finalPath, content);
+    await writeFile(`${finalPath}.part`, "x");
+    rows.set(SOURCE, { id: "db", sourceId: SOURCE, filePath: finalPath });
+    await removeDatabase("db");
+    expect(await readdir(dir)).toEqual([]);
+    expect(rows.size).toBe(0);
+  });
+
+  it("keeps the entry when the file can't be deleted", async () => {
+    // A directory where the file should be: unlink fails with EISDIR/EPERM, not ENOENT.
+    await mkdir(finalPath, { recursive: true });
+    rows.set(SOURCE, { id: "db", sourceId: SOURCE, filePath: finalPath });
+    await expect(removeDatabase("db")).rejects.toThrow();
+    expect(rows.size).toBe(1);
+  });
+});
+
+describe("samplePuzzle", () => {
+  const header = "PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags";
+  // White to move before the opponent's (White's) e2e4; Black solves with e7e5.
+  const row = (id: string, rating: number) =>
+    `${id},rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1,e2e4 e7e5,${rating},80,90,100,short opening,,`;
+  const input = (overrides: Partial<NonNullable<PuzzleSampleInput["lichess"]>> = {}): PuzzleSampleInput => ({
+    databaseId: "puzzles",
+    lichess: { ratingMin: 0, ratingMax: 3000, popularityMin: 0, lengths: [], themes: [], openings: [], side: "any", ...overrides }
+  });
+
+  async function install(lines: string[]) {
+    await mkdir(dir, { recursive: true });
+    const file = join(dir, "puzzles.csv.zst");
+    await writeFile(file, zstdCompressSync(Buffer.from([header, ...lines].join("\n"))));
+    rows.set(SOURCE, { id: "puzzles", sourceId: SOURCE, filePath: file, name: "Puzzles", format: "csv.zst" });
+  }
+
+  it("reaches puzzles past the file's first matches once the whole-file pool is filled", async () => {
+    await install(Array.from({ length: 3000 }, (_, index) => row(`p${index}`, 1500)));
+    await samplePuzzle(input());
+    const seen = new Set<number>();
+    await vi.waitFor(async () => {
+      const sample = await samplePuzzle(input());
+      seen.add(Number(sample.id.slice(1)));
+      expect([...seen].some((index) => index >= 500)).toBe(true);
+    }, { timeout: 5_000, interval: 1 });
+  });
+
+  it("serves a small match set again to a new session instead of reporting no match", async () => {
+    await install([row("a", 2500), row("b", 2500)]);
+    const filters = input({ ratingMin: 2000 });
+    const first = await samplePuzzle(filters);
+    await new Promise((resolve) => setTimeout(resolve, 200)); // the full scan fills the pool
+    const second = await samplePuzzle({ ...filters, excludeIds: [first.id] });
+    expect(second.id).not.toBe(first.id);
+    await expect(samplePuzzle({ ...filters, excludeIds: ["a", "b"] })).rejects.toThrow(/No puzzle matched/);
+    // A new session (nothing excluded) still gets puzzles.
+    expect(["a", "b"]).toContain((await samplePuzzle(filters)).id);
+  });
+
+  it("skips a malformed row instead of reporting no match", async () => {
+    const broken = "bad,not-a-fen,e2e4 e7e5,1500,80,90,100,short,,";
+    await install([broken, broken, broken, row("good", 1500)]);
+    expect((await samplePuzzle(input())).id).toBe("good");
+  });
+
+  it("applies the filters and the excluded ids", async () => {
+    await install([row("low", 800), row("high", 2500), row("done", 2500)]);
+    const sample = await samplePuzzle({ ...input({ ratingMin: 2000 }), excludeIds: ["done"] });
+    expect(sample.id).toBe("high");
+    expect(sample.sideToMove).toBe("black");
+    await expect(samplePuzzle({ ...input({ ratingMin: 2000 }), excludeIds: ["done", "high"] })).rejects.toThrow(/No puzzle matched/);
+  });
+});
+
 describe("entries registered in the old folder", () => {
   const legacyPath = join(userData, "databases", "lichess-puzzles-lichess_db_puzzle.csv.zst");
 
@@ -192,7 +343,7 @@ describe("entries registered in the old folder", () => {
       name: "Puzzles",
       filePath: join(userData, "databases", "lichess-puzzles-lichess_db_puzzle.csv"),
       format: "csv"
-    } as never);
+    });
     expect((await samplePuzzle({ databaseId: "db" })).id).toBe("p1");
     expect(rows.get(SOURCE)?.filePath).toBe(join(dir, "lichess-puzzles-lichess_db_puzzle.csv"));
   });

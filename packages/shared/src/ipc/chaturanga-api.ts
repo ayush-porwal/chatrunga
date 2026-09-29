@@ -140,6 +140,10 @@ export type ChaturangaApi = {
     download(sourceId: string): Promise<InstalledDatabase>;
     samplePuzzle(input: PuzzleSampleInput): Promise<PuzzleSample>;
     remove(id: string): Promise<void>;
+    /** Stops a running download (its partial file stays, so downloading again resumes). */
+    cancelDownload(sourceId: string): Promise<void>;
+    /** The latest progress of every running download. */
+    activeDownloads(): Promise<DatabaseDownloadProgress[]>;
   };
   files: {
     openPgnFile(): Promise<{ path: string; contents: string } | null>;
