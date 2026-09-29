@@ -1,0 +1,11 @@
+{
+  // The renderer runs in a sandboxed page: DOM, no Node types (it reaches the system only through
+  // window.chaturanga). Checked on its own so a Node API used there fails the typecheck.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["src/renderer/src"],
+  "exclude": ["src/renderer/src/**/*.test.ts", "src/renderer/src/**/*.test.tsx"]
+}
