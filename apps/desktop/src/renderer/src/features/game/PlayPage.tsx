@@ -193,7 +193,8 @@ function useEngineGameSetup({ onOpenSettings, onBeforeStart, onStart }: EngineGa
     });
     game.setMode("engine");
     game.setEngineSide(engineColor);
-    game.setEngineLimits(moveTimeMs, depth);
+    // A value still being typed (the field not left yet) is held to the accepted range here too.
+    game.setEngineLimits(clampLimit(moveTimeMs, 100, ENGINE_LIMITS.moveTimeMs), clampDepth(depth));
     game.setMatchFeedback(null);
     if (clock) {
       game.setEngineMatchClock(clock);
@@ -359,7 +360,9 @@ function EngineGameSetupBody({
                 min={100}
                 max={ENGINE_LIMITS.moveTimeMs}
                 value={setup.moveTimeMs}
-                onChange={(event) => setup.setMoveTimeMs(clampLimit(Number(event.target.value), 100, ENGINE_LIMITS.moveTimeMs))}
+                // Typed freely; held to the accepted range when the field is left (and at Start).
+                onChange={(event) => setup.setMoveTimeMs(Number(event.target.value))}
+                onBlur={() => setup.setMoveTimeMs(clampLimit(setup.moveTimeMs, 100, ENGINE_LIMITS.moveTimeMs))}
               />
             </Field>
             <Field label="Depth" hint="optional" htmlFor="engine-game-depth">
@@ -370,9 +373,8 @@ function EngineGameSetupBody({
                 max={ENGINE_LIMITS.depth}
                 value={setup.depth ?? ""}
                 placeholder="No cap"
-                onChange={(event) =>
-                  setup.setDepth(event.target.value ? Math.round(clampLimit(Number(event.target.value), 1, ENGINE_LIMITS.depth)) : null)
-                }
+                onChange={(event) => setup.setDepth(event.target.value ? Number(event.target.value) : null)}
+                onBlur={() => setup.setDepth(clampDepth(setup.depth))}
               />
             </Field>
           </div>
@@ -387,6 +389,10 @@ const ENGINE_LIMITS = { moveTimeMs: 3_600_000, depth: 200 } as const;
 
 function clampLimit(value: number, min: number, max: number): number {
   return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : min;
+}
+
+function clampDepth(depth: number | null): number | null {
+  return depth === null ? null : Math.round(clampLimit(depth, 1, ENGINE_LIMITS.depth));
 }
 
 function EngineDropdown({
