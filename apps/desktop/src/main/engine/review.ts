@@ -45,6 +45,7 @@ import {
 } from "./review-analysis";
 import { createLineSplitter, LOG_UCI, spawnUciProcess, stopUciProcess, writeUci } from "./uci-process";
 import { createUciIdentity, readHandshakeLine, UCIOK_TIMEOUT_MESSAGE, UCIOK_TIMEOUT_MS } from "./uci-handshake";
+import { moveKey, ReviewCache } from "./review-cache";
 
 type LineEvents = {
   line: [string];
@@ -85,6 +86,30 @@ export type ReviewEngineOptions = {
   /** Player rating; picks the Maia bucket behind the `human_error` classification. */
   playerRating?: number | null;
 };
+
+/** Finished moves of earlier reviews (see ReviewCache). */
+const reviewCache = new ReviewCache();
+
+/** Everything a move's review depends on besides the move itself. */
+function reviewJobKey(
+  config: EngineConfig,
+  maiaConfigs: readonly (EngineConfig & { maiaRating: MaiaRating })[],
+  multipv: number,
+  search: ResolvedReviewSearch,
+  options: ReviewEngineOptions
+): string {
+  const engine = (item: EngineConfig) => [item.id, item.executablePath, item.args, item.weightsPath, item.updatedAt];
+  return JSON.stringify([
+    GAME_REVIEW_SCHEMA_VERSION,
+    engine(config),
+    maiaConfigs.map((item) => [...engine(item), item.maiaRating]),
+    multipv,
+    search,
+    options.threads ?? null,
+    options.hashMb ?? null,
+    options.playerRating ?? null
+  ]);
+}
 
 type MaiaSlot = {
   config: EngineConfig & { maiaRating: MaiaRating };
@@ -133,11 +158,31 @@ export async function reviewGameWithEngine(
 
     const moves: MoveReview[] = [];
     let previousReplyLines: AnalysisLine[] | null = null;
+    const cached = reviewCache.job(reviewJobKey(config, maiaSlots.map((slot) => slot.config), multipv, search, options));
     for (let index = 0; index < input.moves.length; index += 1) {
       if (sink.shouldCancel?.()) throw new Error("Review cancelled");
       const move = input.moves[index];
       const mover = statusForFen(move.fenBefore).turn;
       const playedUci = standardCastlingUci(move.fenBefore, move.uci);
+      const cacheKey = moveKey(move.fenBefore, move.uci, input.moves[index - 1]?.uci ?? null);
+      const done = cached.get(cacheKey);
+      if (done) {
+        // Most recently used goes last (eviction takes the oldest).
+        ReviewCache.put(cached, cacheKey, done, reviewCache.maxMoves);
+        // Already reviewed with this configuration: reuse it (only this game's notation and clock
+        // facts differ).
+        const moveReview: MoveReview = { ...done.review, nodeId: move.nodeId, ply: move.ply, san: move.san };
+        delete moveReview.clockRemainingMs;
+        delete moveReview.timeSpentMs;
+        const reusedClock = parseClock(move.clockAfter);
+        if (reusedClock !== null) moveReview.clockRemainingMs = reusedClock;
+        const reusedSpent = timeSpentForMove(input.moves, index, timeControl);
+        if (reusedSpent !== undefined) moveReview.timeSpentMs = reusedSpent;
+        previousReplyLines = terminalStateForFen(move.fenAfter) ? null : done.replyLines;
+        moves.push(moveReview);
+        sink.onMoveCompleted?.({ moveIndex: index, move: moveReview });
+        continue;
+      }
       const emitPhase = (phase: ReviewProgressPhase, lines: AnalysisLine[]) =>
         sink.onPhaseProgress?.({
           moveIndex: index,
@@ -217,6 +262,11 @@ export async function reviewGameWithEngine(
       const spent = timeSpentForMove(input.moves, index, timeControl);
       if (spent !== undefined) moveReview.timeSpentMs = spent;
       moves.push(moveReview);
+      // Only complete results are kept: after a Maia level failed, this review's moves lack its
+      // prediction, and a later review (with Maia working again) must search them afresh.
+      if (maiaSlots.every((slot) => slot.alive)) {
+        ReviewCache.put(cached, cacheKey, { review: moveReview, replyLines }, reviewCache.maxMoves);
+      }
       sink.onMoveCompleted?.({ moveIndex: index, move: moveReview });
     }
 
