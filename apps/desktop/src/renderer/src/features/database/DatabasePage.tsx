@@ -90,7 +90,7 @@ export const DatabasePage = memo(function DatabasePage({ onTrain }: { onTrain: (
               progress={progress}
               isDownloading={isDownloading}
               downloadDisabled={!desktopApiAvailable || downloadDatabase.isPending}
-              deleteDisabled={!desktopApiAvailable || deleteDatabase.isPending}
+              deleteDisabled={!desktopApiAvailable || deleteDatabase.isPending || isDownloading}
               onDownload={() => downloadDatabase.mutate(source.id)}
               onCancel={() => void window.chaturanga?.databases.cancelDownload(source.id)}
               onDelete={(database) => void removeDatabase(database)}

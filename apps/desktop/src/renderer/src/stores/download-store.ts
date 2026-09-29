@@ -8,6 +8,8 @@ type DownloadStore = {
   /** Per database source: its running download, or its outcome (completed / failed). */
   progress: Record<string, DatabaseDownloadProgress>;
   apply: (progress: DatabaseDownloadProgress) => void;
+  /** A snapshot taken earlier: only for sources no event has reported since (events are newer). */
+  applySnapshot: (running: readonly DatabaseDownloadProgress[]) => void;
   clear: (sourceId: string) => void;
 };
 
@@ -23,6 +25,12 @@ export const useDownloadStore = create<DownloadStore>((set) => ({
       // A cancelled download just goes back to its Download button.
       if (progress.state === "cancelled") delete next[progress.sourceId];
       else next[progress.sourceId] = progress;
+      return { progress: next };
+    }),
+  applySnapshot: (running) =>
+    set((state) => {
+      const next = { ...state.progress };
+      for (const progress of running) if (!(progress.sourceId in next)) next[progress.sourceId] = progress;
       return { progress: next };
     }),
   clear: (sourceId) =>

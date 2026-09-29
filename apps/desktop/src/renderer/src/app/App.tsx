@@ -699,10 +699,13 @@ export function App() {
     puzzles: useEventCallback(() => unlessOnlineGame(() => openPuzzlesPage())),
     databases: useEventCallback(() => openDatabasesPage()),
     // Databases → "Train with this dataset": Puzzles with that dataset chosen (other filters kept).
-    trainWithDatabase: useEventCallback((databaseId: string) => {
-      usePuzzleDraftStore.getState().update({ databaseId });
-      openPuzzlesPage();
-    }),
+    trainWithDatabase: useEventCallback((databaseId: string) =>
+      // A Lichess game on the board keeps it (like the Puzzles item).
+      unlessOnlineGame(() => {
+        usePuzzleDraftStore.getState().update({ databaseId });
+        openPuzzlesPage();
+      })
+    ),
     importPgn: useEventCallback(() => unlessOnlineGame(() => void importPgnFile())),
     exportPgn: useEventCallback(() => void exportPgn()),
     toggleFocus: useEventCallback(() => setFocusMode((value) => !value)),

@@ -24,7 +24,7 @@ export function useDatabaseDownloads(): void {
     });
     void api.databases
       .activeDownloads?.()
-      .then((running) => running.forEach((progress) => store.apply(progress)))
+      .then((running) => store.applySnapshot(running))
       .catch(() => undefined);
     return () => {
       unsubscribe();
