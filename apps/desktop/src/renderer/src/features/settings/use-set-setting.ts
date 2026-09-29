@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
 import { useUpdateSettingsMutation } from "../../queries/api";
-import { addPendingSettings, settlePendingSettings } from "../../queries/settings-pending";
+import { addPendingSettings, dropPendingSettings, settlePendingSettings } from "../../queries/settings-pending";
 import { trackSettingsSave } from "./settings-save-state";
 
 /** A drag (slider, color picker) is written once it pauses this long. */
@@ -93,6 +93,8 @@ export function useSettingsWriter() {
       return;
     }
     batch.flush();
+    // This value supersedes a drag's pending one for the same keys (Reset right after a drag).
+    dropPendingSettings(Object.keys(patch) as (keyof AppSettings)[]);
     // mutateAsync: every write settles its own promise (mutate() callbacks only fire for the latest call).
     trackSettingsSave(mutateAsync({ patch }));
   }
