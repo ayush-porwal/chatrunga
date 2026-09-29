@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
-import { buildEngineGoClock, clockNow, useGameStore } from "./game-store";
+import { buildEngineGoClock, clockNow, notePowerState, useGameStore } from "./game-store";
 
 /** Moves both time sources together (the clock treats a wall-only jump as time asleep). */
 function mockTime() {
@@ -171,13 +171,14 @@ describe("game store", () => {
     useGameStore.getState().initEngineClockLive();
 
     at(1_100);
+    const rejectedBefore = useGameStore.getState().rejectedMoves;
     expect(useGameStore.getState().makeMove({ from: "e2", to: "e4" })).toBe(false);
     const state = useGameStore.getState();
     expect(state.gameOutcome).toEqual({ result: "0-1", termination: "Time forfeit" });
     expect(state.moveTree).toHaveLength(1);
     const live = state.engineClockLive;
     expect(live && live.stoppedAt !== undefined ? live.stoppedAt - live.turnStartedAt : null).toBe(1_100);
-    expect(state.rejectedMoves).toBe(1);
+    expect(state.rejectedMoves).toBe(rejectedBefore + 1);
   });
 
   it("a move just in time keeps the clock and adds the increment", () => {
@@ -194,19 +195,23 @@ describe("game store", () => {
   });
 
   it("the match clock ignores wall-clock changes but counts time asleep", () => {
-    const monotonic = vi.spyOn(performance, "now").mockReturnValue(10_000);
-    const wall = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+    const at = mockTime();
+    const wall = vi.spyOn(Date, "now");
+    at(10_000);
     const start = clockNow();
 
-    // The system clock is set back an hour: no time is added or removed.
-    monotonic.mockReturnValue(11_000);
-    wall.mockReturnValue(1_000_000 - 3_600_000);
+    // The system clock jumps (either way): no time is added or removed.
+    at(11_000);
+    wall.mockReturnValue(1_700_000_000_000 + 11_000 + 3_600_000);
     expect(clockNow() - start).toBe(1_000);
 
-    // Ten minutes asleep: the monotonic clock barely moves, the wall clock does.
-    monotonic.mockReturnValue(11_050);
-    wall.mockReturnValue(1_000_000 - 3_600_000 + 600_000);
-    expect(clockNow() - start).toBe(1_050 + 600_000 - 50);
+    // Ten minutes asleep, which the monotonic clock missed: added back at resume.
+    at(12_000);
+    notePowerState("suspend");
+    vi.spyOn(performance, "now").mockReturnValue(12_050);
+    wall.mockReturnValue(1_700_000_000_000 + 12_000 + 600_000);
+    notePowerState("resume");
+    expect(clockNow() - start).toBe(2_050 + 600_000 - 50);
   });
 
   describe("goToLine", () => {

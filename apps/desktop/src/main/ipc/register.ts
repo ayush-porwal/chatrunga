@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
+import { BrowserWindow, dialog, ipcMain, powerMonitor, type IpcMainInvokeEvent } from "electron";
 import type { EventEmitter } from "node:events";
 import { readFile, writeFile } from "node:fs/promises";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
@@ -132,6 +132,9 @@ export function registerIpc(engineManager: EngineManager): void {
   registerCommentaryIpc();
   registerUpdateIpc();
   registerLichessIpc();
+  // Match clocks run on the renderer's monotonic clock, which may stop while the computer sleeps.
+  powerMonitor.on("suspend", () => broadcast("system:power", "suspend"));
+  powerMonitor.on("resume", () => broadcast("system:power", "resume"));
 }
 
 function registerEngineIpc(engineManager: EngineManager): void {
