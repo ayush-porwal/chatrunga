@@ -122,9 +122,14 @@ async function startup(): Promise<void> {
   // Quitting into an installer runs the same cleanup as a normal quit, first.
   void updateService.start({
     prepareForInstall: async () => {
-      // The installer quits without the usual close path: write pending saves first.
-      await Promise.all(BrowserWindow.getAllWindows().map((window) => requestRendererFlush(window.webContents)));
+      // The installer quits without the usual close path: write pending saves first, and if one
+      // failed, ask before losing it (Cancel keeps the app open to retry; no install then).
+      for (const window of BrowserWindow.getAllWindows()) {
+        const saved = await requestRendererFlush(window.webContents);
+        if (!saved && !window.isDestroyed() && !confirmCloseUnsaved(window)) return false;
+      }
       shutdown();
+      return true;
     }
   });
 }

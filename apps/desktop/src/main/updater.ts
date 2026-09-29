@@ -66,11 +66,14 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
   private availableInfo: UpdateInfoLike | null = null;
   private feed: UpdateFeedConfig | null = null;
   private feedOverride: string | null = null;
-  private prepareForInstall: () => void | Promise<void> = () => {};
+  /** Resolves false to call the install off (the user kept the app open to save their game). */
+  private prepareForInstall: () => void | boolean | Promise<void | boolean> = () => {};
+  /** An install is being prepared (pending saves are being written): a second click waits. */
+  private installing = false;
   private started: Promise<void> | null = null;
 
   /** Resolves the mode, configures electron-updater and schedules checks. Safe to call once. */
-  start(options: { prepareForInstall: () => void | Promise<void> }): Promise<void> {
+  start(options: { prepareForInstall: () => void | boolean | Promise<void | boolean> }): Promise<void> {
     this.prepareForInstall = options.prepareForInstall;
     this.started ??= this.init().catch((error) => {
       logger.error("updater", "init failed:", error);
@@ -130,19 +133,25 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
    */
   async install(): Promise<boolean> {
     const updater = this.updater;
-    if (!updater || this.state.status.kind !== "ready") return false;
+    const status = this.state.status;
+    if (!updater || status.kind !== "ready" || this.installing) return false;
+    this.installing = true;
     try {
-      await this.prepareForInstall();
+      if ((await this.prepareForInstall()) === false) {
+        this.installing = false;
+        return false;
+      }
     } catch (error) {
       logger.error("updater", "cleanup before install failed:", error);
     }
-    logger.info("updater", `installing ${this.state.status.version}`);
+    logger.info("updater", `installing ${status.version}`);
     const bundleUpdater = this.bundleUpdater;
     if (bundleUpdater) {
       try {
         bundleUpdater.startSwap({ relaunch: true });
       } catch (error) {
         logger.error("updater", "starting the bundle swap failed:", error);
+        this.installing = false;
         this.setStatus({ kind: "error", message: readableUpdateError(error, "install") });
         return false;
       }
@@ -155,6 +164,7 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
         updater.quitAndInstall(true, true);
       } catch (error) {
         logger.error("updater", "quitAndInstall failed:", error);
+        this.installing = false;
         this.setStatus({ kind: "error", message: readableUpdateError(error, "install") });
       }
     });
