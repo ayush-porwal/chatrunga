@@ -70,7 +70,7 @@ async function fileSize(path: string): Promise<number> {
 const inFlight = new Map<string, Promise<InstalledDatabase>>();
 
 /**
- * Streams a catalogued source into `userData/databases`, reporting progress. The data goes to a
+ * Streams a catalogued source into `userData/puzzle-databases` (see dataset-location.ts), reporting progress. The data goes to a
  * `.part` file that is renamed into place only once complete, and a download cut short (the app
  * quit, e.g. to install an update, or the network dropped) resumes from where it stopped — but only
  * a partial whose server version (ETag / Last-Modified) was recorded, so two versions never mix.

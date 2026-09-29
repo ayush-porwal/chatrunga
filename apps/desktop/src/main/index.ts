@@ -54,13 +54,6 @@ app.setName(PRODUCT_NAME);
 const userDataOverride = process.env.CHATURANGA_USER_DATA_DIR;
 app.setPath("userData", userDataOverride ?? join(app.getPath("appData"), app.isPackaged ? "chaturanga" : "chaturanga-dev"));
 if (userDataOverride) app.setAppLogsPath(join(userDataOverride, "logs"));
-// Before Chromium starts: it deletes `<userData>/databases`, where datasets used to be kept.
-try {
-  const moved = rescueLegacyDatasets(app.getPath("userData"));
-  if (moved.length) logger.info("databases", `moved ${moved.length} dataset file(s) out of Chromium's folder`);
-} catch (error) {
-  logger.error("databases", "moving datasets out of Chromium's folder failed:", error);
-}
 protocol.registerSchemesAsPrivileged([
   { scheme: IMAGE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }
 ]);
@@ -71,6 +64,14 @@ let mainWindow: BrowserWindow | null = null;
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
+  // Only the instance that owns the profile, and before Chromium starts: Chromium deletes
+  // `<userData>/databases`, where datasets used to be kept.
+  try {
+    const moved = rescueLegacyDatasets(app.getPath("userData"));
+    if (moved.length) logger.info("databases", `moved ${moved.length} dataset file(s) out of Chromium's folder`);
+  } catch (error) {
+    logger.error("databases", "moving datasets out of Chromium's folder failed:", error);
+  }
   app.on("second-instance", () => {
     if (!mainWindow) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
