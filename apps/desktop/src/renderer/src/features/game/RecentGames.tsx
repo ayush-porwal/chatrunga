@@ -1,5 +1,5 @@
-import { type MouseEvent } from "react";
-import { Trash2 } from "lucide-react";
+import { useState, type MouseEvent } from "react";
+import { RotateCcw, Trash2 } from "lucide-react";
 import { useDeleteGameMutation, useGamesQuery } from "../../queries/api";
 import { useGameStore } from "../../stores/game-store";
 import { useReviewStore } from "../../stores/review-store";
@@ -7,12 +7,18 @@ import { cn } from "@/lib/utils";
 import { listRow } from "@/lib/ui";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconButton } from "@/components/ui/icon-button";
+import { Button } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ipcErrorMessage } from "@/lib/ipc-error";
+import { cancelActiveReview } from "../../app/useReviewRunner";
 
 /** The workspace's Library tab. Opening a game goes through App (`onOpenGame`: history, engine teardown). */
 export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }) {
   const games = useGamesQuery();
   const removeGame = useDeleteGameMutation();
   const resetBoard = useGameStore((state) => state.reset);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   async function deleteGame(id: string, event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -24,16 +30,46 @@ export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }
       )
     )
       return;
+    setDeleteError(null);
+    try {
+      await removeGame.mutateAsync(id);
+    } catch (error) {
+      // Still saved: the board keeps it.
+      setDeleteError(`Couldn't delete that game: ${ipcErrorMessage(error) || "unknown error"}`);
+      return;
+    }
+    // Deleted while open: the board (and its review) go with it.
     if (useGameStore.getState().gameId === id) {
+      void cancelActiveReview();
       resetBoard();
       useReviewStore.getState().reset();
     }
-    await removeGame.mutateAsync(id);
   }
 
   return (
     <section className="flex h-full min-h-0 w-full min-w-0 flex-col gap-2" aria-label="Library">
-      {games.data?.length ? (
+      {deleteError ? <Notice tone="danger">{deleteError}</Notice> : null}
+      {games.isPending ? (
+        <div className="grid gap-1.5" aria-hidden="true">
+          {[0, 1, 2].map((index) => (
+            <Skeleton key={index} className="h-12 rounded-lg" />
+          ))}
+        </div>
+      ) : games.isError ? (
+        // A failed read is not an empty library.
+        <Notice
+          tone="danger"
+          title="Couldn't load your games"
+          action={
+            <Button type="button" variant="outline" size="xs" onClick={() => void games.refetch()}>
+              <RotateCcw />
+              Try again
+            </Button>
+          }
+        >
+          {ipcErrorMessage(games.error) || "The library couldn't be read."}
+        </Notice>
+      ) : games.data?.length ? (
         <ul className="scroll-area -mr-1 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-1" aria-label="Saved games">
           {games.data.map((game) => (
             <li

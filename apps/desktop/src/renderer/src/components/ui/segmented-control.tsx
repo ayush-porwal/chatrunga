@@ -19,8 +19,23 @@ type SegmentedControlProps<T extends string> = {
   size?: "sm" | "md";
   /** Stretch segments to fill the container width. */
   fullWidth?: boolean;
+  /**
+   * With `role="tablist"`: the id of the panel the tabs switch. Each tab then controls it
+   * (`aria-controls`), and the panel should spread `tabPanelProps(panelId, value)`.
+   */
+  panelId?: string;
   className?: string;
 };
+
+/** The tab element's id for `value` in the tablist that controls `panelId`. */
+function tabId(panelId: string, value: string): string {
+  return `${panelId}-tab-${value}`;
+}
+
+/** Props for the panel a tablist switches: its role, id, and the selected tab that labels it. */
+export function tabPanelProps(panelId: string, value: string) {
+  return { id: panelId, role: "tabpanel" as const, "aria-labelledby": tabId(panelId, value) };
+}
 
 /**
  * The single tabs / segmented picker pattern.
@@ -41,6 +56,7 @@ function SegmentedControl<T extends string>({
   role = "radiogroup",
   size = "md",
   fullWidth = false,
+  panelId,
   className
 }: SegmentedControlProps<T>) {
   const itemRole = role === "tablist" ? "tab" : "radio";
@@ -125,6 +141,8 @@ function SegmentedControl<T extends string>({
             type="button"
             data-segment=""
             role={itemRole}
+            id={role === "tablist" && panelId ? tabId(panelId, option.value) : undefined}
+            aria-controls={role === "tablist" && panelId && selected ? panelId : undefined}
             aria-selected={role === "tablist" ? selected : undefined}
             aria-checked={role === "radiogroup" ? selected : undefined}
             tabIndex={selected || (!hasSelection && index === 0) ? 0 : -1}

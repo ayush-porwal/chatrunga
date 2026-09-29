@@ -29,6 +29,7 @@ import {
 } from "@/lib/settings-listbox";
 import { cardPadded, fieldLabel } from "@/lib/ui";
 import { useDismiss } from "@/lib/use-dismiss";
+import { usePlayDraftStore } from "../../stores/play-draft-store";
 
 type ClockPresetId =
   | "infinite"
@@ -141,15 +142,24 @@ function useEngineGameSetup({ onOpenSettings, onBeforeStart, onStart }: EngineGa
     () => engines.data?.find((engine) => engine.isDefault) ?? engines.data?.[0],
     [engines.data]
   );
-  const [engineId, setEngineId] = useState(defaultEngine?.id ?? "");
+  // Kept outside the page (play-draft-store): Engine settings and Back return to the same choices.
+  const draft = usePlayDraftStore((state) => state.draft);
+  const updateDraft = usePlayDraftStore((state) => state.update);
+  const engineId = draft.engineId || defaultEngine?.id || "";
   const selectedEngine =
     engines.data?.find((engine) => engine.id === (engineId || defaultEngine?.id)) ?? defaultEngine;
-  const [humanColor, setHumanColor] = useState<Color>(game.orientation);
-  const [moveTimeMs, setMoveTimeMs] = useState(game.moveTimeMs);
-  const [depth, setDepth] = useState<number | null>(game.depth);
-  const [clockPreset, setClockPreset] = useState<ClockPresetId>("infinite");
-  const [customMinutes, setCustomMinutes] = useState(10);
-  const [customIncrementSec, setCustomIncrementSec] = useState(5);
+  const humanColor: Color = draft.humanColor ?? game.orientation;
+  const moveTimeMs = draft.moveTimeMs ?? game.moveTimeMs;
+  const depth = draft.depth === undefined ? game.depth : draft.depth;
+  const clockPreset = draft.clockPreset as ClockPresetId;
+  const { customMinutes, customIncrementSec } = draft;
+  const setEngineId = (value: string) => updateDraft({ engineId: value });
+  const setHumanColor = (value: Color) => updateDraft({ humanColor: value });
+  const setMoveTimeMs = (value: number) => updateDraft({ moveTimeMs: value });
+  const setDepth = (value: number | null) => updateDraft({ depth: value });
+  const setClockPreset = (value: ClockPresetId) => updateDraft({ clockPreset: value });
+  const setCustomMinutes = (value: number) => updateDraft({ customMinutes: value });
+  const setCustomIncrementSec = (value: number) => updateDraft({ customIncrementSec: value });
 
   function resolveClockMs(): { initialMs: number; incrementMs: number } | null {
     const preset = clockPresets.find((item) => item.id === clockPreset);

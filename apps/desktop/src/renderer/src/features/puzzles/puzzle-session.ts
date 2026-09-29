@@ -36,7 +36,8 @@ export function submitPuzzleMove(uci: string, play: () => boolean, fenBefore = u
 
 function sanOf(fen: string, uci: string): string {
   try {
-    return applyUserMove(fen, userMoveFromUci(uci))?.san ?? uci;
+    const move = userMoveFromUci(uci);
+    return (move && applyUserMove(fen, move)?.san) || uci;
   } catch {
     return uci;
   }

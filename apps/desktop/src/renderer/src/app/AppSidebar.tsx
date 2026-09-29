@@ -1,19 +1,6 @@
-import {
-  BarChart3,
-  Database,
-  Download,
-  FileSearch,
-  Home,
-  Maximize2,
-  Minimize2,
-  PanelLeft,
-  Puzzle,
-  Repeat2,
-  Settings,
-  Swords,
-  Upload
-} from "lucide-react";
+import { Maximize2, Minimize2, PanelLeft, Repeat2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { DESTINATION_ICONS as icons } from "./destination-icons";
 import { memo } from "react";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -96,7 +83,7 @@ export const AppSidebar = memo(function AppSidebar({
       {/* minmax(0,1fr): the track never grows past the rail — a wider item (the "Game" label) would
           make the collapsed nav scrollable and a click would scroll every icon 8px left. */}
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-0.5">
-        {item(Home, "Home", onHome, active.home)}
+        {item(icons.home, "Home", onHome, active.home)}
         {/* Same height in both states: the "Game" label expanded, a hairline collapsed. */}
         <div className="relative flex h-8 min-w-0 items-center overflow-hidden px-2.5">
           <Eyebrow className={cn("whitespace-nowrap", labelFade(expanded))} aria-hidden={!expanded || undefined}>
@@ -109,13 +96,13 @@ export const AppSidebar = memo(function AppSidebar({
             )}
           />
         </div>
-        {item(Swords, "Play", onPlay, active.play)}
-        {item(FileSearch, "Analyze", onAnalyze, active.analyze)}
-        {item(BarChart3, "Game review", onReview, active.review)}
-        {item(Puzzle, "Puzzles", onPuzzles, active.puzzles)}
-        {item(Database, "Databases", onDatabases, active.databases)}
-        {item(Upload, "Import PGN", onImport)}
-        {item(Download, "Export PGN", onExport)}
+        {item(icons.play, "Play", onPlay, active.play)}
+        {item(icons.analyze, "Analyze", onAnalyze, active.analyze)}
+        {item(icons.review, "Game review", onReview, active.review)}
+        {item(icons.puzzles, "Puzzles", onPuzzles, active.puzzles)}
+        {item(icons.databases, "Databases", onDatabases, active.databases)}
+        {item(icons.importPgn, "Import PGN", onImport)}
+        {item(icons.exportPgn, "Export PGN", onExport)}
       </div>
 
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-0.5">
@@ -135,7 +122,7 @@ export const AppSidebar = memo(function AppSidebar({
             Settings itself never moves. */}
         <div className={cn("grid min-w-0 gap-0.5", expanded ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-[minmax(0,1fr)]")}>
           <div className={cn("min-w-0", expanded ? "col-start-1 row-start-1" : "row-start-2")}>
-            {item(Settings, "Settings", onSettings, active.settings)}
+            {item(icons.settings, "Settings", onSettings, active.settings)}
           </div>
           <UpdateButton tooltipSide={expanded ? "top" : "right"} className={expanded ? "col-start-2 row-start-1" : "row-start-1"} />
         </div>
