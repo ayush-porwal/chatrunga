@@ -16,13 +16,14 @@ type GameState = ReturnType<typeof useGameStore.getState>;
 type ReviewState = ReturnType<typeof useReviewStore.getState>;
 
 /** What a save writes. Two equal documents (same references) need no second write. */
-type SavedDocument = Pick<GameState, "gameId" | "moveTree" | "headers" | "currentNodeId" | "gameOutcome"> & {
+type SavedDocument = Pick<GameState, "gameId" | "source" | "moveTree" | "headers" | "currentNodeId" | "gameOutcome"> & {
   review: ReviewState["review"];
 };
 
 function documentOf(game: GameState, review: ReviewState["review"]): SavedDocument {
   return {
     gameId: game.gameId,
+    source: game.source,
     moveTree: game.moveTree,
     headers: game.headers,
     currentNodeId: game.currentNodeId,
@@ -35,6 +36,7 @@ export function sameDocument(a: SavedDocument | null, b: SavedDocument): boolean
   return (
     a !== null &&
     a.gameId === b.gameId &&
+    a.source === b.source &&
     a.moveTree === b.moveTree &&
     a.headers === b.headers &&
     a.currentNodeId === b.currentNodeId &&
@@ -77,10 +79,11 @@ export function useGameAutosave(): void {
           if (isSaveSuppressed(error)) return;
           // Not in the library as it is now: the next change (or Retry) writes it again.
           if (document && stored === document) stored = null;
+          // Retry writes what failed (it may be a game already left), then anything newer here.
           useSaveStatusStore.getState().setFailed(ipcErrorMessage(error) || "The game couldn't be saved.", () => {
-            window.clearTimeout(timeout);
-            timeout = 0;
-            void save();
+            void write(input, null).then(() => {
+              if (useGameStore.getState().gameId === input.id) void save();
+            });
           });
         }
       );
@@ -120,7 +123,8 @@ export function useGameAutosave(): void {
       if (!timeout) return;
       window.clearTimeout(timeout);
       timeout = 0;
-      if (previous.mode === "puzzle") return;
+      // Puzzle practice is never saved (its board has no library id).
+      if ((previous.mode === "puzzle" || previous.source === "puzzle") && !previous.gameId) return;
       if (previous.moveTree.length <= 1 && !previous.gameId) return;
       if (stored && sameDocument(stored, documentOf(previous, stored.review))) return;
       const gameId = previous.gameId ?? newGameId();
@@ -136,12 +140,13 @@ export function useGameAutosave(): void {
           resultAnchor = mainlineEnd(state.moveTree)?.id ?? null;
           stored = null;
           if (state.gameId) {
-            // A game opened from the library is already saved as it is. Its review is loaded right
-            // after the game (same task), so take the snapshot once both are in.
-            const gameId = state.gameId;
+            // A game opened from the library is saved exactly as it loaded (later changes in the
+            // same task, like a restored cursor, are edits to save). Its review is loaded right
+            // after the game, so that part of the snapshot is filled in once it's in.
+            const loaded = documentOf(state, useReviewStore.getState().review);
+            stored = loaded;
             queueMicrotask(() => {
-              const game = useGameStore.getState();
-              if (game.gameId === gameId) stored = documentOf(game, useReviewStore.getState().review);
+              if (stored === loaded) stored = { ...loaded, review: useReviewStore.getState().review };
             });
           }
         }
@@ -168,6 +173,7 @@ export function useGameAutosave(): void {
           await save();
         }
         await lastWrite;
+        return useSaveStatusStore.getState().error === null;
       }) ?? (() => {})
     ];
     return () => {

@@ -23,11 +23,11 @@ onGlassChanged((state) => {
 });
 
 // Closing the window asks for pending saves first; with no flush registered, it's done at once.
-let flushHandler: (() => Promise<void>) | null = null;
+let flushHandler: (() => Promise<boolean>) | null = null;
 ipcRenderer.on("games:flush", (_event, token: string) => {
   const handler = flushHandler;
-  void (handler ? handler().catch(() => undefined) : Promise.resolve()).then(() =>
-    ipcRenderer.send("games:flushed", token)
+  void (handler ? handler().catch(() => false) : Promise.resolve(true)).then((saved) =>
+    ipcRenderer.send("games:flushed", token, saved)
   );
 });
 

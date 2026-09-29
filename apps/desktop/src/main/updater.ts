@@ -66,11 +66,11 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
   private availableInfo: UpdateInfoLike | null = null;
   private feed: UpdateFeedConfig | null = null;
   private feedOverride: string | null = null;
-  private prepareForInstall: () => void = () => {};
+  private prepareForInstall: () => void | Promise<void> = () => {};
   private started: Promise<void> | null = null;
 
   /** Resolves the mode, configures electron-updater and schedules checks. Safe to call once. */
-  start(options: { prepareForInstall: () => void }): Promise<void> {
+  start(options: { prepareForInstall: () => void | Promise<void> }): Promise<void> {
     this.prepareForInstall = options.prepareForInstall;
     this.started ??= this.init().catch((error) => {
       logger.error("updater", "init failed:", error);
@@ -124,12 +124,15 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
     }
   }
 
-  /** "Restart to update": stops engines and closes the database, then quits into the installer. */
-  install(): boolean {
+  /**
+   * "Restart to update": writes pending saves, stops engines and closes the database, then quits
+   * into the installer.
+   */
+  async install(): Promise<boolean> {
     const updater = this.updater;
     if (!updater || this.state.status.kind !== "ready") return false;
     try {
-      this.prepareForInstall();
+      await this.prepareForInstall();
     } catch (error) {
       logger.error("updater", "cleanup before install failed:", error);
     }

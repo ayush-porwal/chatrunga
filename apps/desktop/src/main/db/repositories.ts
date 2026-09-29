@@ -170,7 +170,7 @@ function toGameSummary(row: GameSummaryRow): GameSummary {
 function parseMoveTree(row: GameRow): MoveNode[] {
   try {
     const parsed: unknown = JSON.parse(row.move_tree_json);
-    if (Array.isArray(parsed) && parsed.length && parsed.every(isMoveNodeLike)) return parsed as MoveNode[];
+    if (Array.isArray(parsed) && isConsistentTree(parsed)) return parsed;
   } catch {
     // Fall through to the PGN.
   }
@@ -181,10 +181,29 @@ function parseMoveTree(row: GameRow): MoveNode[] {
   }
 }
 
-function isMoveNodeLike(value: unknown): boolean {
+function isMoveNodeLike(value: unknown): value is MoveNode {
   if (!value || typeof value !== "object") return false;
   const node = value as Partial<MoveNode>;
-  return typeof node.id === "string" && typeof node.fenAfter === "string" && Array.isArray(node.children);
+  return (
+    typeof node.id === "string" &&
+    typeof node.fenAfter === "string" &&
+    Array.isArray(node.children) &&
+    (node.parentId === null || typeof node.parentId === "string")
+  );
+}
+
+/** One root, and every parent and child link points at a node of the tree (and back). */
+export function isConsistentTree(nodes: readonly unknown[]): nodes is MoveNode[] {
+  if (!nodes.length || !nodes.every(isMoveNodeLike)) return false;
+  const tree = nodes as MoveNode[];
+  const byId = new Map(tree.map((node) => [node.id, node]));
+  if (byId.size !== tree.length) return false;
+  if (tree.filter((node) => node.parentId === null).length !== 1) return false;
+  return tree.every(
+    (node) =>
+      (node.parentId === null || byId.get(node.parentId)?.children.includes(node.id)) &&
+      node.children.every((childId) => byId.get(childId)?.parentId === node.id)
+  );
 }
 
 function toSavedGame(row: GameRow): SavedGame {

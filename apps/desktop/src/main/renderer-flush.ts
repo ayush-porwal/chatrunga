@@ -5,25 +5,26 @@ import { ipcMain, type IpcMainEvent, type WebContents } from "electron";
 export const FLUSH_TIMEOUT_MS = 2_000;
 
 /**
- * Asks the renderer to write its pending autosave and resolves when it has — or after
- * `timeoutMs`, so a hung renderer can never keep the window from closing.
+ * Asks the renderer to write its pending autosave. Resolves with false when the game couldn't be
+ * saved, and with true once it is — or after `timeoutMs`, so a hung renderer can never keep the
+ * window from closing.
  */
-export function requestRendererFlush(contents: WebContents, timeoutMs = FLUSH_TIMEOUT_MS): Promise<void> {
+export function requestRendererFlush(contents: WebContents, timeoutMs = FLUSH_TIMEOUT_MS): Promise<boolean> {
   return new Promise((resolve) => {
     if (contents.isDestroyed()) {
-      resolve();
+      resolve(true);
       return;
     }
     const token = randomUUID();
-    const finish = () => {
+    const finish = (saved: boolean) => {
       clearTimeout(timer);
       ipcMain.off("games:flushed", onFlushed);
-      resolve();
+      resolve(saved);
     };
-    const onFlushed = (event: IpcMainEvent, reply: unknown) => {
-      if (event.sender === contents && reply === token) finish();
+    const onFlushed = (event: IpcMainEvent, reply: unknown, saved: unknown) => {
+      if (event.sender === contents && reply === token) finish(saved !== false);
     };
-    const timer = setTimeout(finish, timeoutMs);
+    const timer = setTimeout(() => finish(true), timeoutMs);
     ipcMain.on("games:flushed", onFlushed);
     contents.send("games:flush", token);
   });
