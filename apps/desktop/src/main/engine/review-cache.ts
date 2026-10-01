@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import type { AnalysisLine, MoveReview } from "@chaturanga/shared/types/engine";
 
 /** One reviewed move, as the next move of the same line needs it. */
@@ -49,4 +50,18 @@ export class ReviewCache {
  */
 export function moveKey(fenBefore: string, uci: string, previousUci: string | null): string {
   return `${fenBefore}|${uci}|${previousUci ?? ""}`;
+}
+
+/**
+ * The size and modification time of an engine's binary or weights file, so a file replaced at the
+ * same path (an engine update installs in place) is a different configuration; null when missing.
+ */
+export function fileStamp(path: string | null): string | null {
+  if (!path) return null;
+  try {
+    const file = statSync(path);
+    return `${file.size}:${file.mtimeMs}`;
+  } catch {
+    return null;
+  }
 }

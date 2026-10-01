@@ -1,3 +1,5 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { EngineConfig, MaiaRating, ReviewMoveInputItem } from "@chaturanga/shared/types/engine";
@@ -108,5 +110,28 @@ describe("review reuse", () => {
 
     const otherBudget = await run(78);
     expect(otherBudget.phases.length).toBe(first.phases.length);
+  });
+
+  // A shell wrapper stands in for the engine binary, so it can be replaced at the same path.
+  it.skipIf(process.platform === "win32")("an engine binary replaced at the same path reviews again", async () => {
+    const executablePath = join(mkdtempSync(join(tmpdir(), "review-cache-")), "engine");
+    const install = (version: string) =>
+      writeFileSync(executablePath, `#!/bin/sh\n# ${version}\nexec "${process.execPath}" "${FAKE}" sf\n`, { mode: 0o755 });
+    install("v1");
+    const run = async () => {
+      const phases: string[] = [];
+      await reviewGameWithEngine(
+        fakeEngine("sf-binary", "sf", { executablePath, args: [] }),
+        { reviewId: "b", engineId: "sf-binary", rootFen: START, moves: foolsMate(), multipv: 2, moveTimeMs: 50 },
+        { onPhaseProgress: (p) => phases.push(`${p.moveIndex}:${p.phase}`) }
+      );
+      return phases;
+    };
+    const first = await run();
+    expect(first.length).toBeGreaterThan(0);
+    expect(await run()).toEqual([]);
+
+    install("v2 (updated)");
+    expect((await run()).length).toBe(first.length);
   });
 });

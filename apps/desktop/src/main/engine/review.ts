@@ -44,7 +44,7 @@ import {
   timeSpentForMove
 } from "./review-analysis";
 import { createLineSplitter, LOG_UCI, spawnUciProcess, stopUciProcess, writeUci } from "./uci-process";
-import { moveKey, ReviewCache } from "./review-cache";
+import { fileStamp, moveKey, ReviewCache } from "./review-cache";
 
 type LineEvents = {
   line: [string];
@@ -97,7 +97,15 @@ function reviewJobKey(
   search: ResolvedReviewSearch,
   options: ReviewEngineOptions
 ): string {
-  const engine = (item: EngineConfig) => [item.id, item.executablePath, item.args, item.weightsPath, item.updatedAt];
+  const engine = (item: EngineConfig) => [
+    item.id,
+    item.executablePath,
+    fileStamp(item.executablePath),
+    item.args,
+    item.weightsPath,
+    fileStamp(item.weightsPath),
+    item.updatedAt
+  ];
   return JSON.stringify([
     GAME_REVIEW_SCHEMA_VERSION,
     engine(config),
