@@ -44,7 +44,7 @@ import {
   timeSpentForMove
 } from "./review-analysis";
 import { createLineSplitter, LOG_UCI, spawnUciProcess, stopUciProcess, writeUci } from "./uci-process";
-import { fileStamp, moveKey, ReviewCache } from "./review-cache";
+import { fileStamp, moveKey, ReviewCache, type CachedMove } from "./review-cache";
 
 type LineEvents = {
   line: [string];
@@ -118,6 +118,11 @@ function reviewJobKey(
   ]);
 }
 
+/** The binary and weights stamps of every engine of a review (see fileStamp). */
+function engineFileStamps(configs: readonly EngineConfig[]): string {
+  return JSON.stringify(configs.map((item) => [fileStamp(item.executablePath), fileStamp(item.weightsPath)]));
+}
+
 type MaiaSlot = {
   config: EngineConfig & { maiaRating: MaiaRating };
   session: UciReviewSession;
@@ -141,6 +146,8 @@ export async function reviewGameWithEngine(
     alive: true
   }));
 
+  // Taken before the engines start: a file replaced while they load may not be what they loaded.
+  const stampsBeforeStart = engineFileStamps([config, ...maiaConfigs]);
   try {
     // Maia (lc0) weight loads take seconds each: start everything in parallel.
     // A broken Maia degrades the review (that level is dropped); a broken
@@ -165,7 +172,11 @@ export async function reviewGameWithEngine(
 
     const moves: MoveReview[] = [];
     let previousReplyLines: AnalysisLine[] | null = null;
-    const cached = reviewCache.job(reviewJobKey(config, maiaSlots.map((slot) => slot.config), multipv, search, options));
+    // An engine file replaced during startup: this review's results are not cached under either version.
+    const cached =
+      engineFileStamps([config, ...maiaConfigs]) === stampsBeforeStart
+        ? reviewCache.job(reviewJobKey(config, maiaSlots.map((slot) => slot.config), multipv, search, options))
+        : new Map<string, CachedMove>();
     for (let index = 0; index < input.moves.length; index += 1) {
       if (sink.shouldCancel?.()) throw new Error("Review cancelled");
       const move = input.moves[index];

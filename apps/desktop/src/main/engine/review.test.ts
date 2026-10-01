@@ -134,4 +134,24 @@ describe("review reuse", () => {
     install("v2 (updated)");
     expect((await run()).length).toBe(first.length);
   });
+
+  it.skipIf(process.platform === "win32")("a binary replaced while the engine starts is not cached", async () => {
+    const executablePath = join(mkdtempSync(join(tmpdir(), "review-cache-")), "engine");
+    // Every start replaces the file it was launched from, as an update landing mid-startup would.
+    writeFileSync(executablePath, `#!/bin/sh\necho "# replaced" >> "$0"\nexec "${process.execPath}" "${FAKE}" sf\n`, {
+      mode: 0o755
+    });
+    const run = async () => {
+      const phases: string[] = [];
+      await reviewGameWithEngine(
+        fakeEngine("sf-racing", "sf", { executablePath, args: [] }),
+        { reviewId: "r", engineId: "sf-racing", rootFen: START, moves: foolsMate(), multipv: 2, moveTimeMs: 50 },
+        { onPhaseProgress: (p) => phases.push(`${p.moveIndex}:${p.phase}`) }
+      );
+      return phases;
+    };
+    const first = await run();
+    expect((await run()).length).toBe(first.length);
+  });
 });
+
