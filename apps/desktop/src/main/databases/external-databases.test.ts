@@ -30,9 +30,31 @@ vi.mock("../db/repositories", () => ({
   }
 }));
 
+/** Counts the scans of the whole file (no match limit), and can make them fail like a corrupt file. */
+const fullScans = vi.hoisted(() => ({ count: 0, fail: false }));
+vi.mock("./puzzle-scan", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./puzzle-scan")>();
+  return {
+    ...actual,
+    reservoirScan: (job: import("./puzzle-scan").ScanJob, isCancelled?: () => boolean) => {
+      if (job.maxMatches !== undefined) return actual.reservoirScan(job, isCancelled);
+      fullScans.count += 1;
+      return fullScans.fail ? Promise.reject(new Error("corrupt block")) : actual.reservoirScan(job, isCancelled);
+    }
+  };
+});
+
 import { zstdCompressSync } from "node:zlib";
 import type { DatabaseDownloadProgress, PuzzleSampleInput } from "@chaturanga/shared/types/database";
-import { cancelDownload, downloadDatabase, listInstalledDatabases, removeDatabase, samplePuzzle } from "./external-databases";
+import { logger } from "../logger";
+import {
+  cancelAllDownloads,
+  cancelDownload,
+  downloadDatabase,
+  listInstalledDatabases,
+  removeDatabase,
+  samplePuzzle
+} from "./external-databases";
 
 const SOURCE = "lichess-puzzles";
 const dir = join(userData, "puzzle-databases");
@@ -85,10 +107,15 @@ const content = Buffer.from("PuzzleId,FEN,Moves\n".repeat(500));
 beforeEach(async () => {
   rows.clear();
   repository.failSave = false;
+  fullScans.count = 0;
+  fullScans.fail = false;
   await rm(dir, { recursive: true, force: true });
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 describe("downloadDatabase", () => {
   it("downloads to a .part file and renames it into place when complete", async () => {
@@ -191,6 +218,23 @@ describe("download reliability", () => {
     await expect(download).rejects.toThrow("Download cancelled.");
     expect(events.at(-1)?.state).toBe("cancelled");
     expect(await readdir(dir)).toContain("lichess-puzzles-lichess_db_puzzle.csv.zst.part");
+  });
+
+  it("quitting waits for a cancelled download to settle", async () => {
+    // Sends the first part of the file, then nothing more until cancelled.
+    const stream = new ReadableStream<Uint8Array>({
+      start: (controller) => controller.enqueue(new Uint8Array(content.subarray(0, 3000))),
+      pull: () => new Promise(() => undefined)
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(stream, { headers: { "content-length": String(content.length), etag: '"v1"' } })));
+    const events: DatabaseDownloadProgress[] = [];
+    const download = downloadDatabase(SOURCE, (progress) => events.push(progress)).catch(() => undefined);
+    await vi.waitFor(() => expect(events.some((event) => event.downloadedBytes > 0)).toBe(true), { interval: 1 });
+    await cancelAllDownloads();
+    // Settled before the database closes: nothing is registered or reported after this.
+    expect(events.at(-1)?.state).toBe("cancelled");
+    expect(rows.has(SOURCE)).toBe(false);
+    await download;
   });
 
   it("starts over when a resumed response doesn't continue where the partial ends", async () => {
@@ -297,6 +341,32 @@ describe("samplePuzzle", () => {
     await expect(samplePuzzle({ ...filters, excludeIds: ["a", "b"] })).rejects.toThrow(/No puzzle matched/);
     // A new session (nothing excluded) still gets puzzles.
     expect(["a", "b"]).toContain((await samplePuzzle(filters)).id);
+  });
+
+  it("reuses a quick scan that read the whole file instead of scanning it again", async () => {
+    await install([row("a", 2500), row("b", 2500), row("low", 800)]);
+    const filters = input({ ratingMin: 2000 });
+    const first = await samplePuzzle(filters);
+    expect(["a", "b"]).toContain((await samplePuzzle({ ...filters, excludeIds: [first.id] })).id);
+    // No match at all: answered from the first scan from then on.
+    await expect(samplePuzzle(input({ ratingMin: 2900 }))).rejects.toThrow(/No puzzle matched/);
+    await expect(samplePuzzle(input({ ratingMin: 2900 }))).rejects.toThrow(/No puzzle matched/);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(fullScans.count).toBe(0);
+  });
+
+  it("logs a failed whole-file scan once and keeps serving from the quick scan", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    fullScans.fail = true;
+    await install(Array.from({ length: 1000 }, (_, index) => row(`p${index}`, 1500)));
+    await samplePuzzle(input());
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledTimes(1));
+    expect(String(warn.mock.calls[0])).toMatch(/corrupt block/);
+    await samplePuzzle(input());
+    await samplePuzzle(input());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(fullScans.count).toBe(1);
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 
   it("skips a malformed row instead of reporting no match", async () => {
