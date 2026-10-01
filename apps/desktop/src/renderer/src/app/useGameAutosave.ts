@@ -68,6 +68,11 @@ export function useGameAutosave(): void {
     let stored: SavedDocument | null = null;
     // The last write, so a flush can wait for it.
     let lastWrite: Promise<unknown> = Promise.resolve();
+    // Boards loaded so far, and the latest review that belongs to the board now loaded (set while
+    // it was). A review cleared just before the board is replaced (Play → Start clears it first)
+    // is still the leaving game's: if it wasn't written yet, it is written with that game.
+    let board = 0;
+    let boardReview: { board: number; review: NonNullable<ReviewState["review"]> } | null = null;
 
     const write = (input: SaveGameInput, document: SavedDocument | null): Promise<unknown> => {
       const gameId = input.id ?? null;
@@ -99,6 +104,7 @@ export function useGameAutosave(): void {
       if (game.mode === "puzzle" && usePuzzleStore.getState().activePuzzle) return lastWrite;
       if (game.moveTree.length <= 1 && !game.gameId) return lastWrite;
       const review = useReviewStore.getState().review;
+      boardReview = review ? { board, review } : null;
       if (sameDocument(stored, documentOf(game, review))) return lastWrite;
       // A new game gets its id now, before the write: later saves update the same row, and a reply
       // that arrives after the board was replaced can't hand this id to another game.
@@ -120,7 +126,8 @@ export function useGameAutosave(): void {
     /**
      * The board is being replaced (another game, a new board) while a save is still waiting: write
      * the game being left now, as it was, or its last changes would be lost (the pending save would
-     * read the new board). Its stored review is left as it is.
+     * read the new board). With the review that belongs to it, if any; else its stored review is
+     * left as it is.
      */
     const flushLeaving = (previous: GameState) => {
       if (!timeout) return;
@@ -129,9 +136,10 @@ export function useGameAutosave(): void {
       // Puzzle practice is never saved (its board has no library id).
       if ((previous.mode === "puzzle" || previous.source === "puzzle") && !previous.gameId) return;
       if (previous.moveTree.length <= 1 && !previous.gameId) return;
-      if (stored && sameDocument(stored, documentOf(previous, stored.review))) return;
+      const review = boardReview?.board === board ? boardReview.review : undefined;
+      if (stored && sameDocument(stored, documentOf(previous, review ?? stored.review))) return;
       const gameId = previous.gameId ?? newGameId();
-      void write(saveInput({ ...previous, gameId }, resultAnchor, undefined), null);
+      void write(saveInput({ ...previous, gameId }, resultAnchor, review), null);
     };
 
     const unsubscribers = [
@@ -140,6 +148,7 @@ export function useGameAutosave(): void {
         // change only the tree, outcomes/header edits only the headers): new recorded result.
         if (state.headers !== previous.headers && state.moveTree !== previous.moveTree) {
           flushLeaving(previous);
+          board += 1;
           resultAnchor = mainlineEnd(state.moveTree)?.id ?? null;
           stored = null;
           if (state.gameId) {
@@ -166,7 +175,9 @@ export function useGameAutosave(): void {
         if (state.activePuzzle !== previous.activePuzzle) schedule();
       }),
       useReviewStore.subscribe((state, previous) => {
-        if (state.review !== previous.review) schedule();
+        if (state.review === previous.review) return;
+        if (state.review) boardReview = { board, review: state.review };
+        schedule();
       }),
       // Closing the window (or quitting): write what's pending before the renderer goes away.
       window.chaturanga?.games.onFlushRequest?.(async () => {
