@@ -13,7 +13,7 @@ import {
   type MenuItemConstructorOptions,
   type WebContents
 } from "electron";
-import { isServableImage } from "./image-access";
+import { canonicalImagePath, isServableImage } from "./image-access";
 import { guardIpcSenders } from "./ipc-guard";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -301,7 +301,9 @@ function installWindowReveal(): void {
 /** Serves engine pictures from disk; see `localImagePathFromUrl` for what is allowed. */
 function installLocalImageProtocol(): void {
   protocol.handle(IMAGE_SCHEME, (request) => {
-    const imagePath = localImagePathFromUrl(request.url);
+    const requested = localImagePathFromUrl(request.url);
+    // Fetch the canonical spelling: on Windows the request can arrive as `/C:/x.png`.
+    const imagePath = requested && canonicalImagePath(requested);
     if (!imagePath || !isServableImage(imagePath, () => engineRepository.list().map((engine) => engine.imagePath))) {
       return new Response(null, { status: 404 });
     }
