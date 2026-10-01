@@ -50,6 +50,20 @@ export function assertSpawnable(config: EngineConfig | null): asserts config is 
   if (!config.isAvailable) throw new Error("Engine binary is not available.");
 }
 
+/** How long a shutdown waits for the process to exit. */
+const EXIT_WAIT_MS = 2_000;
+
+function processExited(proc: ChildProcessWithoutNullStreams): Promise<void> {
+  if (proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, EXIT_WAIT_MS);
+    proc.once("exit", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
 function positionCommand(fen: string, moves: readonly string[]): string {
   return `position fen ${fen}${moves.length ? ` moves ${moves.join(" ")}` : ""}`;
 }
@@ -235,11 +249,14 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     return job;
   }
 
-  /** Ends any search and shuts the engine process down (window closed, quit). */
-  dispose(): void {
+  /**
+   * Ends any search and shuts the engine process down (window closed, quit, or before another
+   * process of an engine runs: lc0 can't hold its network in memory twice). Resolves once it exited.
+   */
+  dispose(): Promise<void> {
     this.latestSearchId = null;
     this.supersede();
-    this.killSession();
+    return this.killSession();
   }
 
   /** The running search is no longer wanted: its waits (startup, isready) end now. */
@@ -256,17 +273,18 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     });
   }
 
-  /** Shuts the process down; a queued search still starts a fresh one. */
-  private killSession(): void {
+  /** Shuts the process down (resolves once it exited); a queued search still starts a fresh one. */
+  private killSession(): Promise<void> {
     this.discardInfos();
     this.clearIdleTimer();
     this.rejectLineWaiter("Engine stopped");
     const session = this.session;
     this.session = null;
-    if (session) {
-      writeUci(session.proc, "stop");
-      stopUciProcess(session.proc);
-    }
+    if (!session) return Promise.resolve();
+    const exited = processExited(session.proc);
+    writeUci(session.proc, "stop");
+    stopUciProcess(session.proc);
+    return exited;
   }
 
   private search(

@@ -166,11 +166,12 @@ function registerEngineIpc(engineManager: EngineManager): void {
   ipcMain.handle("engines:startAnalysis", (_event, input: unknown) =>
     engineManager.startAnalysis(parseStartAnalysisInput(input))
   );
-  ipcMain.handle("engines:probeEval", (_event, value: unknown) => {
+  ipcMain.handle("engines:probeEval", async (_event, value: unknown) => {
     const input = parseProbeEvalInput(value);
     const config = engineConfigForId(input.engineId);
     if (!config) throw new Error("Engine not found");
-    void engineManager.stop();
+    // Not just stopped: a warm process (lc0's network) and the probe's must not be loaded at once.
+    await engineManager.dispose();
     return probeEvalScore(config, input.fen, input.moves, input.movetimeMs);
   });
   ipcMain.handle("engines:reviewGame", (_event, input: unknown) =>

@@ -79,6 +79,14 @@ describe("EngineManager", () => {
     expect(events.errors).toEqual([]);
   });
 
+  it("dispose resolves once the warm process has exited (a draw probe then runs alone)", async () => {
+    const events = collect(manager);
+    await manager.startAnalysis({ engineId: "sf", searchId: "a", fen: START, moves: [], multipv: 1 });
+    await until(() => events.infos.length > 0);
+    await manager.dispose();
+    expect(sent()).toContain("exit");
+  });
+
   it("starts a new game when the position doesn't continue the last one", async () => {
     const events = collect(manager);
     await manager.start({ engineId: "sf", searchId: "a", side: "black", fen: START, moves: ["e2e4"], moveTimeMs: 10 });

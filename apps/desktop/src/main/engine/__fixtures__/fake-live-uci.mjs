@@ -1,5 +1,5 @@
 // Scripted UCI engine for EngineManager tests. argv[2] = a log file: one line per process start
-// ("spawn") and per command received, so tests can count spawns and check what was sent.
+// ("spawn"), per command received and per exit ("exit"), so tests can count spawns and check what was sent.
 // `go infinite` streams info lines until `stop`; any other `go` answers after 30 ms.
 // argv[3] = "slow-start": `uciok` only after 10 s (a large network loading).
 import { appendFileSync } from "node:fs";
@@ -10,6 +10,9 @@ const out = (line) => process.stdout.write(`${line}\n`);
 let timer = null;
 let depth = 0;
 log("spawn");
+// "exit" is logged as the process goes (quit or kill), so tests can tell it has ended.
+process.on("exit", () => log("exit"));
+process.on("SIGTERM", () => process.exit(0));
 
 createInterface({ input: process.stdin }).on("line", (raw) => {
   const line = raw.trim();
