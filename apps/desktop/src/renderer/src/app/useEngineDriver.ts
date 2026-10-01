@@ -35,6 +35,15 @@ function newSearchId(): string {
   return crypto.randomUUID();
 }
 
+/**
+ * Applies a flushed batch of engine lines. The search is rechecked here, not only on arrival: a
+ * search replaced on the same position (restartSearch) leaves its lines in the buffer, and they
+ * must not refill the cleared analysis.
+ */
+export function applyEngineInfos(batch: readonly EngineInfo[]): void {
+  useAnalysisStore.getState().setInfos(batch.filter((info) => engineSearches.isCurrent(info.searchId)));
+}
+
 function playEngineMove(move: string): void {
   useAnalysisStore.getState().setBestMove(move);
   if (!useGameStore.getState().makeUciMove(move)) useAnalysisStore.getState().setError(`Illegal engine move: ${move}`);
@@ -104,7 +113,7 @@ export function useEngineDriver(defaultEngineId: string | null): void {
   useEffect(() => {
     const events = window.chaturanga?.events;
     if (!events) return;
-    const infos = createEngineInfoBuffer((batch) => useAnalysisStore.getState().setInfos(batch));
+    const infos = createEngineInfoBuffer(applyEngineInfos);
     // A new position discards lines still buffered for the previous one.
     const unsubscribePosition = useGameStore.subscribe((state, previous) => {
       if (state.currentNodeId !== previous.currentNodeId || state.mode !== previous.mode) infos.discard();
