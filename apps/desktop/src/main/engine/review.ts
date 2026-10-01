@@ -89,10 +89,14 @@ export type ReviewEngineOptions = {
 /** Finished moves of earlier reviews (see ReviewCache). */
 const reviewCache = new ReviewCache();
 
-/** Everything a move's review depends on besides the move itself. */
+/**
+ * Everything a move's review depends on besides the move itself. `stamps` are the engines' file
+ * stamps as they were loaded (see engineFileStamps), not read again here.
+ */
 function reviewJobKey(
   config: EngineConfig,
   maiaConfigs: readonly (EngineConfig & { maiaRating: MaiaRating })[],
+  stamps: ReadonlyMap<EngineConfig, readonly (string | null)[]>,
   multipv: number,
   search: ResolvedReviewSearch,
   options: ReviewEngineOptions
@@ -100,10 +104,9 @@ function reviewJobKey(
   const engine = (item: EngineConfig) => [
     item.id,
     item.executablePath,
-    fileStamp(item.executablePath),
     item.args,
     item.weightsPath,
-    fileStamp(item.weightsPath),
+    stamps.get(item) ?? null,
     item.updatedAt
   ];
   return JSON.stringify([
@@ -119,8 +122,12 @@ function reviewJobKey(
 }
 
 /** The binary and weights stamps of every engine of a review (see fileStamp). */
-function engineFileStamps(configs: readonly EngineConfig[]): string {
-  return JSON.stringify(configs.map((item) => [fileStamp(item.executablePath), fileStamp(item.weightsPath)]));
+function engineFileStamps(configs: readonly EngineConfig[]): Map<EngineConfig, (string | null)[]> {
+  return new Map(configs.map((item) => [item, [fileStamp(item.executablePath), fileStamp(item.weightsPath)]]));
+}
+
+function sameStamps(a: ReadonlyMap<EngineConfig, readonly (string | null)[]>, b: typeof a): boolean {
+  return [...a].every(([item, stamps]) => JSON.stringify(stamps) === JSON.stringify(b.get(item)));
 }
 
 type MaiaSlot = {
@@ -172,11 +179,13 @@ export async function reviewGameWithEngine(
 
     const moves: MoveReview[] = [];
     let previousReplyLines: AnalysisLine[] | null = null;
-    // An engine file replaced during startup: this review's results are not cached under either version.
-    const cached =
-      engineFileStamps([config, ...maiaConfigs]) === stampsBeforeStart
-        ? reviewCache.job(reviewJobKey(config, maiaSlots.map((slot) => slot.config), multipv, search, options))
-        : new Map<string, CachedMove>();
+    // An engine file replaced during startup: this review's results are not cached under either
+    // version. Otherwise they are keyed by the stamps taken before the start (what was loaded).
+    const cached = sameStamps(stampsBeforeStart, engineFileStamps([config, ...maiaConfigs]))
+      ? reviewCache.job(
+          reviewJobKey(config, maiaSlots.map((slot) => slot.config), stampsBeforeStart, multipv, search, options)
+        )
+      : new Map<string, CachedMove>();
     for (let index = 0; index < input.moves.length; index += 1) {
       if (sink.shouldCancel?.()) throw new Error("Review cancelled");
       const move = input.moves[index];
