@@ -227,18 +227,22 @@ function createWindow(): void {
  * during a quit cancels the quit).
  */
 function flushSavesBeforeClose(window: BrowserWindow): void {
-  let flushed = false;
+  // "flushing": the save is being written, so another close (a second click, or a quit) waits
+  // for it too. "closing": written, so the close that follows goes through.
+  let phase: "open" | "flushing" | "closing" = "open";
   window.on("close", (event) => {
-    if (flushed || shutDown || window.webContents.isDestroyed()) return;
+    if (phase === "closing" || shutDown || window.webContents.isDestroyed()) return;
     event.preventDefault();
-    flushed = true;
+    if (phase === "flushing") return;
+    phase = "flushing";
     void requestRendererFlush(window.webContents).then((saved) => {
       if (!saved && !window.isDestroyed() && !confirmCloseUnsaved(window)) {
         // Stay open so the titlebar's Retry can save it.
-        flushed = false;
+        phase = "open";
         quitRequested = false;
         return;
       }
+      phase = "closing";
       if (quitRequested) app.quit();
       else if (!window.isDestroyed()) window.close();
     });
