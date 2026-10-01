@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultSettings } from "@chaturanga/shared/types/settings";
-import { revertFailedWrite } from "./api";
-import { SettingsBatch } from "../features/settings/use-set-setting";
+import { MutationObserver, QueryClient, QueryObserver } from "@tanstack/react-query";
+import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
+import { revertFailedWrite, settingsWriteOptions } from "./api";
+import { addPendingSettings, pendingSettings, withPendingSettings } from "./settings-pending";
+import { flushSettingsBatches, SettingsBatch } from "../features/settings/use-set-setting";
 
 describe("revertFailedWrite", () => {
   it("reverts only the failed write's keys still showing its value", () => {
@@ -76,5 +78,65 @@ describe("an explicit write after a drag", () => {
     expect(shown.boardSquareLight).toBeNull();
     expect(shown.soundVolume).toBe(0.4);
     dropPendingSettings(["soundVolume"]);
+  });
+});
+
+describe("flushSettingsBatches (the window closing)", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("writes every drag still waiting for its pause, through the writer given", async () => {
+    vi.useFakeTimers();
+    const own = vi.fn(async () => undefined);
+    const now = vi.fn(async () => undefined);
+    const volume = new SettingsBatch(250);
+    const colors = new SettingsBatch(250);
+    volume.setWriter(own);
+    colors.setWriter(own);
+    volume.add({ soundVolume: 0.3 }, defaultSettings);
+    colors.add({ boardSquareLight: "#ffffff" }, defaultSettings);
+    flushSettingsBatches(now);
+    expect(now).toHaveBeenCalledTimes(2);
+    expect(now).toHaveBeenCalledWith(expect.objectContaining({ patch: { soundVolume: 0.3 } }));
+    expect(now).toHaveBeenCalledWith(expect.objectContaining({ patch: { boardSquareLight: "#ffffff" } }));
+    // Written once: the pause that follows and a second flush have nothing left.
+    vi.advanceTimersByTime(250);
+    flushSettingsBatches(now);
+    expect(own).not.toHaveBeenCalled();
+    expect(now).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(pendingSettings()).toEqual({}));
+  });
+});
+
+describe("a failed drag write", () => {
+  it("shows the saved value again, even when the read back is unchanged", async () => {
+    const client = new QueryClient();
+    const disk: AppSettings = { ...defaultSettings, soundVolume: 0.7 };
+    const settings = new QueryObserver(client, {
+      queryKey: ["settings"],
+      queryFn: async () => ({ ...disk }),
+      select: withPendingSettings
+    });
+    const unsubscribe = settings.subscribe(() => {});
+    await vi.waitFor(() => expect(settings.getCurrentResult().data?.soundVolume).toBe(0.7));
+
+    // No desktop API in tests: the write fails.
+    const mutation = new MutationObserver(client, settingsWriteOptions(client));
+    const batch = new SettingsBatch(250);
+    batch.setWriter((write) => mutation.mutate(write));
+    // As useSettingsWriter shows a drag: pending overlay, then the cache.
+    addPendingSettings({ soundVolume: 0.2 });
+    client.setQueryData<AppSettings>(["settings"], { ...disk, soundVolume: 0.2 });
+    batch.add({ soundVolume: 0.2 }, disk);
+    expect(settings.getCurrentResult().data?.soundVolume).toBe(0.2);
+
+    batch.flush();
+    await vi.waitFor(() => {
+      expect(client.isMutating()).toBe(0);
+      expect(client.isFetching()).toBe(0);
+      expect(pendingSettings()).toEqual({});
+    });
+    expect(settings.getCurrentResult().data?.soundVolume).toBe(0.7);
+    unsubscribe();
+    client.clear();
   });
 });

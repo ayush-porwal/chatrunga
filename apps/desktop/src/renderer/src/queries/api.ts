@@ -1,12 +1,12 @@
 import { useCallback, useEffect } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { mutationOptions, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { SAVE_SUPPRESSED_AFTER_DELETE } from "@chaturanga/shared/ipc/game-handling";
 import type { SaveGameInput } from "@chaturanga/shared/types/chess";
 import type { CreateEngineInput, UpdateEngineInput } from "@chaturanga/shared/types/engine";
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
 import { ipcErrorMessage } from "@/lib/ipc-error";
-import { withPendingSettings } from "./settings-pending";
+import { settlePendingSettings, withPendingSettings } from "./settings-pending";
 
 const queryKeys = {
   databases: ["databases"] as const,
@@ -154,7 +154,12 @@ const SETTINGS_MUTATION_KEY = ["settings", "write"] as const;
  */
 export function useUpdateSettingsMutation() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useMutation(settingsWriteOptions(queryClient));
+}
+
+/** The options of useUpdateSettingsMutation (outside the hook for tests). */
+export function settingsWriteOptions(queryClient: QueryClient) {
+  return mutationOptions({
     mutationKey: SETTINGS_MUTATION_KEY,
     mutationFn: ({ patch }: SettingsWrite) => requireApi().settings.patch(patch),
     onMutate: async ({ patch, previous }) => {
@@ -165,6 +170,8 @@ export function useUpdateSettingsMutation() {
       return { before };
     },
     onError: (_error, { patch }, context) => {
+      // Before the rollback, which re-runs `select`: else the failed drag value stays on screen.
+      settlePendingSettings(patch);
       if (!context) return;
       queryClient.setQueryData<AppSettings>(queryKeys.settings, (current) =>
         current ? revertFailedWrite(current, patch, context.before) : current

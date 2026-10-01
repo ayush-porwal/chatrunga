@@ -18,6 +18,29 @@ type Options = {
 
 type Write = (write: { patch: Partial<AppSettings>; previous?: Partial<AppSettings> }) => Promise<unknown>;
 
+/** Batches holding changes not written yet. */
+const unwritten = new Set<SettingsBatch>();
+
+/** Writes every batch's changes now, through `write` when given (instead of each batch's own writer). */
+export function flushSettingsBatches(write?: Write): void {
+  for (const batch of [...unwritten]) batch.flush(write);
+}
+
+let flushesOnPageHide = false;
+
+/**
+ * Closing (or reloading) the window doesn't unmount React, so a drag still waiting for its pause
+ * is written as the page goes. Straight to IPC: the call is sent before the renderer is torn down,
+ * while a mutation would only reach IPC after its async onMutate.
+ */
+function flushOnPageHide(): void {
+  if (flushesOnPageHide || typeof window === "undefined") return;
+  flushesOnPageHide = true;
+  window.addEventListener("pagehide", () =>
+    flushSettingsBatches(({ patch }) => window.chaturanga?.settings.patch(patch) ?? Promise.resolve())
+  );
+}
+
 /** The changes of one drag, written together once it pauses. */
 export class SettingsBatch {
   private patch: Partial<AppSettings> = {};
@@ -40,6 +63,8 @@ export class SettingsBatch {
     }
     Object.assign(this.patch, patch);
     addPendingSettings(patch);
+    unwritten.add(this);
+    flushOnPageHide();
     if (!this.done) {
       let settle: (result: Promise<unknown>) => void = () => {};
       const promise = new Promise<unknown>((resolve, reject) => {
@@ -52,16 +77,17 @@ export class SettingsBatch {
     this.timer = setTimeout(() => this.flush(), this.delayMs);
   }
 
-  flush(): void {
+  flush(writer = this.write): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
-    if (!Object.keys(this.patch).length || !this.write) return;
+    if (!Object.keys(this.patch).length || !writer) return;
+    unwritten.delete(this);
     const write = { patch: this.patch, previous: this.previous };
     const done = this.done;
     this.patch = {};
     this.previous = {};
     this.done = null;
-    const result = this.write(write).finally(() => settlePendingSettings(write.patch));
+    const result = writer(write).finally(() => settlePendingSettings(write.patch));
     if (done) done.settle(result);
     else trackSettingsSave(result);
   }
