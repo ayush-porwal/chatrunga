@@ -70,21 +70,24 @@ export function useGameAutosave(): void {
     let lastWrite: Promise<unknown> = Promise.resolve();
 
     const write = (input: SaveGameInput, document: SavedDocument | null): Promise<unknown> => {
-      const status = useSaveStatusStore.getState();
+      const gameId = input.id ?? null;
       lastWrite = saveGame(input).then(
-        () => {
-          if (useSaveStatusStore.getState().error) status.clear();
-        },
+        // Clears only this game's failure: a game left with a failed save keeps its Retry.
+        () => useSaveStatusStore.getState().saved(gameId),
         (error: unknown) => {
           if (isSaveSuppressed(error)) return;
           // Not in the library as it is now: the next change (or Retry) writes it again.
           if (document && stored === document) stored = null;
           // Retry writes what failed (it may be a game already left), then anything newer here.
-          useSaveStatusStore.getState().setFailed(ipcErrorMessage(error) || "The game couldn't be saved.", () => {
-            void write(input, null).then(() => {
-              if (useGameStore.getState().gameId === input.id) void save();
-            });
-          });
+          useSaveStatusStore.getState().setFailed(
+            ipcErrorMessage(error) || "The game couldn't be saved.",
+            () => {
+              void write(input, null).then(() => {
+                if (useGameStore.getState().gameId === input.id) void save();
+              });
+            },
+            gameId
+          );
         }
       );
       return lastWrite;

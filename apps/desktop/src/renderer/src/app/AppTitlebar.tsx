@@ -102,7 +102,7 @@ export function LiveGameButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-/** The loaded game's last save failed: says so on every screen until a save succeeds; click to retry. */
+/** A game's last save failed: says so on every screen until that game saves; click to retry. */
 const SaveFailedButton = memo(function SaveFailedButton() {
   const error = useSaveStatusStore((state) => state.error);
   const retry = useSaveStatusStore((state) => state.retry);
