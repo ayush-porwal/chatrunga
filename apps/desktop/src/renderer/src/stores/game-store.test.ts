@@ -447,4 +447,26 @@ describe("engine clock pause", () => {
     expect(live.paused).toBeUndefined();
     vi.restoreAllMocks();
   });
+
+  it("a replacement move earns its increment once, not on top of the replaced move's", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    const game = useGameStore.getState();
+    game.reset();
+    game.setMode("engine");
+    game.setEngineSide("black");
+    game.setEngineMatchClock({ initialMs: 10_000, incrementMs: 2_000 });
+    game.initEngineClockLive();
+    now.mockReturnValue(1_000);
+    useGameStore.getState().makeMove({ from: "e2", to: "e4" }); // White: 10 - 1 + 2 = 11 s
+    expect(useGameStore.getState().engineClockLive?.whiteMs).toBe(11_000);
+    for (const [from, to] of [["d2", "d4"], ["c2", "c4"], ["g1", "f3"]] as const) {
+      useGameStore.getState().pauseEngineClock();
+      useGameStore.getState().goToNode("root");
+      useGameStore.getState().makeMove({ from, to }); // replaced at once: no time spent
+    }
+    // Still 11 s: replacing the move again and again doesn't add time.
+    expect(useGameStore.getState().engineClockLive).toMatchObject({ whiteMs: 11_000, sideToMove: "black" });
+    vi.restoreAllMocks();
+  });
 });
+

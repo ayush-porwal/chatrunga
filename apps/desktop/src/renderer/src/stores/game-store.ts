@@ -232,13 +232,15 @@ export const useGameStore = create<GameStore>((set, get) => {
       }
       // A move made while the clock is paused (the user stepped back while the engine thought, and
       // plays on from there): the clock runs again for the side that moved, from the pause, so the
-      // time spent there counts against them.
+      // time spent there counts against them. If it replaces their own move, that move's increment
+      // is taken back first: the replacement earns it again, not a second one.
       const paused = get().engineClockLive;
       if (paused?.paused && paused.stoppedAt !== undefined && !state.gameOutcome) {
+        const takeBack = paused.sideToMove !== mover ? (state.engineClock?.incrementMs ?? 0) : 0;
         set({
           engineClockLive: {
-            whiteMs: paused.whiteMs,
-            blackMs: paused.blackMs,
+            whiteMs: mover === "white" ? Math.max(0, paused.whiteMs - takeBack) : paused.whiteMs,
+            blackMs: mover === "black" ? Math.max(0, paused.blackMs - takeBack) : paused.blackMs,
             sideToMove: mover,
             turnStartedAt: paused.stoppedAt
           }
