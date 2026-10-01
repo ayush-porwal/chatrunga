@@ -175,7 +175,8 @@ function parseMoveTree(row: GameRow): MoveNode[] {
     // Fall through to the PGN.
   }
   try {
-    return importPgnText(row.pgn).game.moveTree;
+    // Strict: a PGN with a move that can't be played would rebuild only part of the game.
+    return importPgnText(row.pgn, { strict: true }).game.moveTree;
   } catch {
     throw new Error("This saved game is damaged and can't be opened.");
   }

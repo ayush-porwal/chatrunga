@@ -69,6 +69,14 @@ describe("gameRepository (SQLite)", () => {
     expect(gameRepository.get(saved.id)?.moveTree).toHaveLength(saved.moveTree.length);
   });
 
+  it("refuses to open a game whose PGN would rebuild only part of the tree", () => {
+    const saved = saveImported();
+    getDb()
+      .prepare("UPDATE games SET move_tree_json = '[]', pgn = ? WHERE id = ?")
+      .run("1. e4 e5 2. Ke3 Nc6 *", saved.id);
+    expect(() => gameRepository.get(saved.id)).toThrow(/damaged/);
+  });
+
   it("refuses to open a game whose tree and PGN are both damaged", () => {
     const saved = saveImported();
     getDb().prepare("UPDATE games SET move_tree_json = '[]', pgn = '' WHERE id = ?").run(saved.id);

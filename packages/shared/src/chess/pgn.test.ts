@@ -140,6 +140,13 @@ describe("PGN import/export", () => {
     expect(importPgnText("1. e4 *\n\n1. d4 *").warning).toBe("Imported the first PGN game only.");
     expect(() => importPgnText("")).toThrow("No PGN game found");
   });
+
+  it("drops an unplayable move and what follows, unless strict", () => {
+    const pgn = "1. e4 e5 2. Ke3 Nc6 *";
+    expect(importPgnText(pgn).game.moveTree.map((node) => node.san).filter(Boolean)).toEqual(["e4", "e5"]);
+    expect(() => importPgnText(pgn, { strict: true })).toThrow(/Illegal move/);
+    expect(importPgnText("1. e4 (1. d4 d5) e5 *", { strict: true }).game.moveTree).toHaveLength(5);
+  });
 });
 
 describe("PGN from a set-up position", () => {
