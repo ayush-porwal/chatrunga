@@ -150,6 +150,36 @@ jobs:
       - name: Check packaged app contents
         run: node scripts/check-packaged-app.mjs
 
+      # The Electron smoke journeys (apps/desktop/e2e) against the unpacked app just packaged for
+      # this runner's OS and CPU: a build that installs but can't start, import, save or scan
+      # puzzles stops here. Throwaway profiles, no network, no analytics or update checks.
+      # Windows isn't verified on a runner yet: its result is reported but doesn't block.
+      - name: Smoke-test the packaged app
+        id: smoke
+        continue-on-error: ${{ runner.os == 'Windows' }}
+        timeout-minutes: 15
+        working-directory: apps/desktop
+        shell: bash
+        env:
+          CI: "true"
+          CHATURANGA_E2E_PACKAGED: "1"
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            # Ubuntu 24.04 blocks the user namespaces Chromium's sandbox needs; no display either.
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+            xvfb-run -a pnpm test:e2e:run
+          else
+            pnpm test:e2e:run
+          fi
+
+      - name: Upload smoke-test results
+        if: always() && steps.smoke.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-results-${{ runner.os }}
+          path: apps/desktop/test-results/
+          if-no-files-found: ignore
+
       # latest*.yml, the .blockmap files and the macOS .zip are what in-app updates (electron-updater)
       # read from the release; keep them in the upload.
       - name: Upload installers
