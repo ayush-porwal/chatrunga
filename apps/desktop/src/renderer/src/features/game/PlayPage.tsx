@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useId, useMemo, useRef, useState } from "react";
 import { Bot, Check, ChevronDown, Globe, Play, Settings, SquareDashed } from "lucide-react";
 import { isManagedEngine } from "@chaturanga/shared/engine/managed";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
@@ -30,6 +30,11 @@ import {
 import { cardPadded, fieldLabel } from "@/lib/ui";
 import { useDismiss } from "@/lib/use-dismiss";
 import { usePlayDraftStore } from "../../stores/play-draft-store";
+import { useListboxKeyboard } from "@/lib/use-listbox-keyboard";
+import { positionStatus } from "@/lib/position-status";
+import { START_FEN } from "@chaturanga/shared/chess/position";
+import { createGameFromFen } from "@chaturanga/shared/chess/pgn";
+import { useShallow } from "zustand/react/shallow";
 
 type ClockPresetId =
   | "infinite"
@@ -160,6 +165,17 @@ function useEngineGameSetup({ onOpenSettings, onBeforeStart, onStart }: EngineGa
   const setClockPreset = (value: ClockPresetId) => updateDraft({ clockPreset: value });
   const setCustomMinutes = (value: number) => updateDraft({ customMinutes: value });
   const setCustomIncrementSec = (value: number) => updateDraft({ customIncrementSec: value });
+  // The position on the board, if a game can start from it (not the start position, not over).
+  const boardPosition = useGameStore(
+    useShallow((state) => {
+      const status = positionStatus(state.currentFen);
+      return state.currentFen !== START_FEN && !status.isEnd
+        ? { fen: state.currentFen, turn: status.turn, moveNumber: Number(state.currentFen.split(" ")[5]) || 1 }
+        : null;
+    })
+  );
+  const [startFrom, setStartFrom] = useState<"new" | "position">("new");
+  const fromPosition = startFrom === "position" && boardPosition ? boardPosition : null;
 
   function resolveClockMs(): { initialMs: number; incrementMs: number } | null {
     const preset = clockPresets.find((item) => item.id === clockPreset);
@@ -185,7 +201,9 @@ function useEngineGameSetup({ onOpenSettings, onBeforeStart, onStart }: EngineGa
     const engineColor: Color = humanColor === "white" ? "black" : "white";
     const clock = resolveClockMs();
     onBeforeStart();
-    game.reset();
+    // Play from here: the game begins at the board's position (a PGN with its FEN), not move 1.
+    if (fromPosition) game.loadGame(createGameFromFen({ fen: fromPosition.fen, source: "engine-game" }));
+    else game.reset();
     game.setOrientation(humanColor);
     game.setGameSource("engine-game");
     const tcTag =
@@ -245,6 +263,9 @@ function useEngineGameSetup({ onOpenSettings, onBeforeStart, onStart }: EngineGa
     setCustomMinutes,
     customIncrementSec,
     setCustomIncrementSec,
+    boardPosition,
+    startFrom: fromPosition ? "position" : "new",
+    setStartFrom,
     startGame,
     stop
   };
@@ -277,6 +298,22 @@ function EngineGameSetupBody({
 
   return (
     <div className="grid gap-5">
+      {setup.boardPosition ? (
+        <Field label="Start from">
+          <SegmentedControl
+            ariaLabel="Start from"
+            value={setup.startFrom}
+            onChange={(value) => setup.setStartFrom(value as "new" | "position")}
+            options={[
+              { value: "new", label: "New game" },
+              {
+                value: "position",
+                label: `This position (move ${setup.boardPosition.moveNumber}, ${setup.boardPosition.turn === "white" ? "White" : "Black"} to move)`
+              }
+            ]}
+          />
+        </Field>
+      ) : null}
       <Field label="Opponent" htmlFor="engine-game-opponent" className="max-w-xl">
         <div className="flex items-center gap-2">
           <div className="min-w-0 flex-1">
@@ -402,6 +439,20 @@ function EngineDropdown({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const selected = engines.find((engine) => engine.id === value) ?? engines[0];
+  const fallbackId = useId();
+  const listId = id ?? fallbackId;
+  const { triggerRef, highlightedIndex, setHighlightedIndex, optionId, commit, onTriggerKeyDown } = useListboxKeyboard({
+    id: listId,
+    count: engines.length,
+    selectedIndex: engines.findIndex((engine) => engine.id === selected?.id),
+    isDisabled: (index) => !engines[index]?.isAvailable,
+    open,
+    setOpen,
+    onCommit: (index) => {
+      const engine = engines[index];
+      if (engine) onChange(engine.id);
+    }
+  });
 
   const close = useCallback(() => setOpen(false), []);
   useDismiss(rootRef, open, close);
@@ -409,12 +460,16 @@ function EngineDropdown({
   return (
     <div ref={rootRef} className="relative">
       <button
+        ref={triggerRef}
         id={id}
         type="button"
         className={cn(settingsListboxTriggerClass, open && settingsListboxTriggerOpenRing)}
         aria-expanded={open}
         aria-haspopup="listbox"
+        aria-controls={open ? `${listId}-listbox` : undefined}
+        aria-activedescendant={open ? optionId(highlightedIndex) : undefined}
         onClick={() => setOpen((value) => !value)}
+        onKeyDown={onTriggerKeyDown}
       >
         <span className="flex min-w-0 items-center gap-2.5">
           <EngineLogo engine={selected} />
@@ -426,25 +481,28 @@ function EngineDropdown({
         <ChevronDown className={cn("size-4 shrink-0 text-fg-muted transition-transform", open && "rotate-180")} />
       </button>
       {open ? (
-        <div className={cn(settingsListboxPopoverClass, "left-0 right-0")} role="listbox">
-          {engines.map((engine) => {
+        <div id={`${listId}-listbox`} className={cn(settingsListboxPopoverClass, "left-0 right-0")} role="listbox">
+          {engines.map((engine, index) => {
             const active = engine.id === selected?.id;
+            const highlighted = index === highlightedIndex;
             return (
               <button
                 key={engine.id}
+                id={optionId(index)}
                 type="button"
                 role="option"
                 aria-selected={active}
+                aria-disabled={!engine.isAvailable || undefined}
+                tabIndex={-1}
                 disabled={!engine.isAvailable}
                 className={cn(
                   settingsListboxOptionClass,
                   active && settingsListboxOptionActiveClass,
+                  highlighted && !active && "bg-control",
                   !engine.isAvailable && "cursor-not-allowed opacity-50 hover:bg-transparent"
                 )}
-                onClick={() => {
-                  onChange(engine.id);
-                  setOpen(false);
-                }}
+                onMouseEnter={() => setHighlightedIndex(index)}
+                onClick={() => commit(index)}
               >
                 <span className="flex min-w-0 items-center gap-2.5">
                   <EngineLogo engine={engine} />
