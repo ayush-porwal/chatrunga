@@ -58,6 +58,9 @@ function newGameId(): string {
  * changes. New empty boards and puzzle practice are never saved; opening a saved game doesn't
  * rewrite it; and a pending save is written before the board is replaced or the window closes.
  */
+/** Shown when an import waits for the board's pending save and it fails. */
+export const IMPORT_NEEDS_SAVE = "Couldn't save the current game first, so nothing was imported. Try again.";
+
 /** The mounted autosave's flush (null when none is mounted). */
 let pendingFlush: (() => Promise<boolean>) | null = null;
 

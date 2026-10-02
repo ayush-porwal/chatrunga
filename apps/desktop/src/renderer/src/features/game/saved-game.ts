@@ -41,14 +41,16 @@ function savedHeaders(saved: SavedGame): GameHeaders {
   }
 }
 
+/** Bumped by each switch (and each game opened), so only the latest one lands. */
+let analysisRequest = 0;
+
 /** Loads a saved game and its newest analysis (with the list of all of them) into the stores. */
 export function openSavedGame(saved: SavedGame): void {
+  // A switch still loading belongs to the board being replaced (even if it's this same game).
+  analysisRequest += 1;
   useGameStore.getState().loadGame(sessionFromSavedGame(saved));
   useReviewStore.getState().loadReview(savedReview(saved), saved.reviews ?? []);
 }
-
-/** Bumped by each switch, so only the latest one lands. */
-let analysisRequest = 0;
 
 /**
  * Shows another saved analysis of the loaded game (and its AI commentary) instead of the one
