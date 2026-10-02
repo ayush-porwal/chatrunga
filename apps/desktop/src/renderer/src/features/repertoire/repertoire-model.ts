@@ -1,9 +1,12 @@
 import {
   collectDecisions,
+  computeScopeStates,
   effectivePreferredUci,
   nodeMetaOf,
-  type ChapterLookup
+  type ChapterLookup,
+  type ScopeState
 } from "@chaturanga/shared/chess/repertoire-index";
+import { applyUserMove } from "@chaturanga/shared/chess/position";
 import { playerToMove } from "@chaturanga/shared/chess/repertoire-position";
 import type { BoardArrow, BoardHighlight, Square } from "@chaturanga/shared/types/chess";
 import type {
@@ -13,7 +16,8 @@ import type {
   RepertoireChapter,
   RepertoireColor,
   RepertoireDecision,
-  RepertoireNodeMeta
+  RepertoireNodeMeta,
+  RepertoireOccurrence
 } from "@chaturanga/shared/types/repertoire";
 
 /*
@@ -25,7 +29,7 @@ import type {
 /* ------------------------------------------------------------------ choices panel */
 
 /** How one continuation counts, as the choices panel names it (text, never colour alone). */
-export type ChoiceState = "preferred" | "accepted" | "reference" | "covered";
+export type ChoiceState = "preferred" | "accepted" | "reference" | "covered" | "untrained";
 
 export type ChoiceRow = {
   nodeId: string;
@@ -33,6 +37,8 @@ export type ChoiceRow = {
   san: string;
   state: ChoiceState;
   disabled: boolean;
+  /** The move's own edge kind (what the edge toggles change), whatever its training scope. */
+  edge: RepertoireNodeMeta["edge"];
 };
 
 export type ChoicesView = {
@@ -45,7 +51,8 @@ export const CHOICE_LABELS: Record<ChoiceState, string> = {
   preferred: "Preferred",
   accepted: "Accepted",
   reference: "Reference only",
-  covered: "Covered"
+  covered: "Covered",
+  untrained: "Not trained here"
 };
 
 /**
@@ -53,13 +60,18 @@ export const CHOICE_LABELS: Record<ChoiceState, string> = {
  * edge is accepted and the effective preference (stored, else the first accepted move, as
  * reconciliation would choose) is preferred; anything else is reference only. At an
  * opponent-to-move position an `included`/`covered` edge is covered.
+ *
+ * Moves outside training scope (a reference or disabled chapter, before a start marker, after a
+ * stop, under a reference or disabled branch) are "untrained": accepting or preferring them can't
+ * make a decision, so the panel offers neither.
  */
 export function deriveChoices(
-  chapter: Pick<RepertoireChapter, "nodeMeta">,
+  chapter: Pick<RepertoireChapter, "kind" | "enabled" | "tree" | "nodeMeta">,
   lookup: ChapterLookup,
   nodeId: string,
   color: RepertoireColor,
-  decision: Pick<RepertoireDecision, "acceptedUcis" | "preferredUci"> | null
+  decision: Pick<RepertoireDecision, "acceptedUcis" | "preferredUci"> | null,
+  scopes: ReadonlyMap<string, ScopeState> = computeScopeStates(chapter, lookup)
 ): ChoicesView {
   const node = lookup.nodesById.get(nodeId);
   if (!node) return { side: "player", rows: [] };
@@ -68,22 +80,37 @@ export function deriveChoices(
     .map((id) => lookup.nodesById.get(id)!)
     .filter((child) => child.uci);
   const metaOf = (id: string) => nodeMetaOf(chapter.nodeMeta, id);
+  // Both the position and the move must be in scope (collectDecisions); a move whose own edge is
+  // reference under an active position is still a plain reference choice (Accept makes it train).
+  const parentActive = scopes.get(nodeId) === "active";
+  const trained = (id: string) => {
+    const state = scopes.get(id);
+    return parentActive && (state === "active" || state === "reference");
+  };
+  const base = (child: (typeof children)[number]) => ({
+    nodeId: child.id,
+    uci: child.uci!,
+    san: child.san ?? child.uci!,
+    disabled: Boolean(metaOf(child.id).disabled),
+    edge: metaOf(child.id).edge
+  });
 
   if (side === "opponent") {
     return {
       side,
       rows: children.map((child) => ({
-        nodeId: child.id,
-        uci: child.uci!,
-        san: child.san ?? child.uci!,
-        state: metaOf(child.id).edge === "reference" ? "reference" : "covered",
-        disabled: Boolean(metaOf(child.id).disabled)
+        ...base(child),
+        state: !trained(child.id)
+          ? "untrained"
+          : metaOf(child.id).edge === "reference"
+            ? "reference"
+            : "covered"
       }))
     };
   }
 
   const included = children
-    .filter((child) => metaOf(child.id).edge === "included")
+    .filter((child) => trained(child.id) && metaOf(child.id).edge === "included")
     .map((child) => child.uci!);
   const supported = new Set(included);
   const stored = decision?.preferredUci ?? null;
@@ -92,8 +119,8 @@ export function deriveChoices(
   // instead of naming a local move that hints don't point at.
   const preferredElsewhere = Boolean(
     stored &&
-      decision!.acceptedUcis.includes(stored) &&
-      !children.some((child) => child.uci === stored)
+    decision!.acceptedUcis.includes(stored) &&
+    !children.some((child) => child.uci === stored)
   );
   const preferred = preferredElsewhere
     ? null
@@ -103,11 +130,14 @@ export function deriveChoices(
     rows: children.map((child) => {
       const accepted = supported.has(child.uci!);
       return {
-        nodeId: child.id,
-        uci: child.uci!,
-        san: child.san ?? child.uci!,
-        state: !accepted ? "reference" : child.uci === preferred ? "preferred" : "accepted",
-        disabled: Boolean(metaOf(child.id).disabled)
+        ...base(child),
+        state: !trained(child.id)
+          ? "untrained"
+          : !accepted
+            ? "reference"
+            : child.uci === preferred
+              ? "preferred"
+              : "accepted"
       };
     })
   };
@@ -163,6 +193,23 @@ export function transpositionsOf(lookup: ChapterLookup, nodeId: string): string[
   return lookup.order.filter((id) => id !== nodeId && lookup.positionKeys.get(id) === key);
 }
 
+/**
+ * Stored occurrences of a position outside the open chapter (its own ones come from the draft,
+ * which may be ahead of what is saved), in chapter then ply order, one per chapter node.
+ */
+export function occurrencesInOtherChapters(
+  occurrences: readonly RepertoireOccurrence[],
+  chapterId: string
+): RepertoireOccurrence[] {
+  const seen = new Set<string>();
+  return occurrences.filter((occurrence) => {
+    const key = `${occurrence.chapterId}:${occurrence.nodeId}`;
+    if (occurrence.chapterId === chapterId || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /** Fullmove number and side to move of a FEN (defaults: move 1, White). */
 function moveNumberOf(fen: string): { fullmove: number; white: boolean } {
   const fields = fen.trim().split(/\s+/);
@@ -210,6 +257,11 @@ export function shouldAdoptSaveResult(
 /** The main process refused a save because the repertoire moved on (a stale draft). */
 export function isStaleRevisionError(message: string): boolean {
   return /expectedRevision|repertoire changed/i.test(message);
+}
+
+/** The main process can't find the repertoire (deleted): the draft has nowhere to go. */
+export function isMissingTargetError(message: string): boolean {
+  return /not found|no longer exists/i.test(message);
 }
 
 export type AutosaveSaveState =
@@ -315,4 +367,88 @@ export function firstMissedTarget(
 export function nodeIdForPathLabel(lookup: ChapterLookup, label: string): string | null {
   if (!label.trim()) return null;
   return lookup.order.find((id) => id !== "root" && pathLabel(lookup, id) === label) ?? null;
+}
+
+/* ------------------------------------------------------------------ practice text */
+
+const PIECE_NAMES: Record<string, string> = {
+  p: "pawn",
+  n: "knight",
+  b: "bishop",
+  r: "rook",
+  q: "queen",
+  k: "king"
+};
+
+/** The piece standing on `square` in `fen` ("knight"), or null. */
+export function pieceNameAt(fen: string, square: string): string | null {
+  const file = square.charCodeAt(0) - 97;
+  const rank = Number(square[1]);
+  if (file < 0 || file > 7 || !(rank >= 1 && rank <= 8)) return null;
+  const row = fen.trim().split(/\s+/)[0]?.split("/")[8 - rank];
+  if (!row) return null;
+  let column = 0;
+  for (const char of row) {
+    if (/\d/.test(char)) column += Number(char);
+    else {
+      if (column === file) return PIECE_NAMES[char.toLowerCase()] ?? null;
+      column += 1;
+    }
+    if (column > file) return null;
+  }
+  return null;
+}
+
+/** SAN of `uci` in `fen`, or the UCI itself when it isn't legal there. */
+export function sanOf(fen: string, uci: string): string {
+  try {
+    const moved = applyUserMove(fen, {
+      from: uci.slice(0, 2) as Square,
+      to: uci.slice(2, 4) as Square,
+      ...(uci[4] ? { promotion: PROMOTIONS[uci[4]] } : {})
+    });
+    return moved?.san ?? uci;
+  } catch {
+    return uci;
+  }
+}
+
+const PROMOTIONS: Record<string, "queen" | "rook" | "bishop" | "knight"> = {
+  q: "queen",
+  r: "rook",
+  b: "bishop",
+  n: "knight"
+};
+
+/** Words for a reveal (the live region): "Preferred: Nf3 · also accepted: Bc4". */
+export function revealText(
+  fen: string,
+  ucis: readonly string[],
+  preferredUci: string | null
+): string {
+  if (!ucis.length) return "No accepted move was found for this position.";
+  const preferred = preferredUci && ucis.includes(preferredUci) ? preferredUci : ucis[0];
+  const others = ucis.filter((uci) => uci !== preferred).map((uci) => sanOf(fen, uci));
+  return `Preferred: ${sanOf(fen, preferred)}${others.length ? ` · also accepted: ${others.join(", ")}` : ""}`;
+}
+
+/** Words for a board hint: stage 2 "Move the knight", stage 3 "g1 to f3"; null otherwise. */
+export function hintStageText(fen: string, stage: number, uci: string | null): string | null {
+  if (!uci || uci.length < 4 || stage < 2) return null;
+  const from = uci.slice(0, 2);
+  if (stage === 2) {
+    const piece = pieceNameAt(fen, from);
+    return piece ? `Move the ${piece}` : `Move the piece on ${from}`;
+  }
+  return `${from} to ${uci.slice(2, 4)}`;
+}
+
+/**
+ * The hint line for a card whose hints were taken before this screen (a resumed session): what
+ * the card records, since the hint text and move aren't sent again.
+ */
+export function resumedHintText(card: Pick<PracticeCard, "hintStage" | "prompt">): string | null {
+  if (!card.hintStage) return null;
+  const stages = ["", "the written hint", "the piece to move", "the move"][card.hintStage];
+  return `${card.prompt ? `${card.prompt} · ` : ""}Hints used earlier: ${stages}.`;
 }

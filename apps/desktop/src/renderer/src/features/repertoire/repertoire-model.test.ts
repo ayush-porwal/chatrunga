@@ -18,7 +18,14 @@ import {
   shouldAdoptSaveResult,
   totalsOf,
   trainableDecisionCount,
-  transpositionsOf
+  transpositionsOf,
+  hintStageText,
+  isMissingTargetError,
+  occurrencesInOtherChapters,
+  pieceNameAt,
+  resumedHintText,
+  revealText,
+  sanOf
 } from "./repertoire-model";
 
 /** 1. e4 e5 2. Nf3, with 1. d4 and 1... c5 as alternatives. */
@@ -76,14 +83,44 @@ describe("deriveChoices", () => {
   it("names covered and reference replies at an opponent-to-move position", () => {
     const chapter = chapterOf(sampleChapter(), {
       w1: { edge: "covered" },
-      s0: { edge: "reference", disabled: true }
+      s0: { edge: "reference" }
     });
     const lookup = buildChapterLookup(chapter);
     const view = deriveChoices(chapter, lookup, "w0", "white", null);
     expect(view.side).toBe("opponent");
     expect(view.rows.map((row) => [row.san, row.state, row.disabled])).toEqual([
       ["e5", "covered", false],
-      ["c5", "reference", true]
+      ["c5", "reference", false]
+    ]);
+  });
+
+  it("marks moves outside training scope as not trained here", () => {
+    const tree = sampleChapter();
+    const states = (chapter: ReturnType<typeof chapterOf>, nodeId: string) =>
+      deriveChoices(chapter, buildChapterLookup(chapter), nodeId, "white", {
+        acceptedUcis: ["e2e4"],
+        preferredUci: "e2e4"
+      }).rows.map((row) => [row.san, row.state, row.edge]);
+
+    // A reference or disabled chapter trains nothing.
+    expect(states(chapterOf(tree, {}, { kind: "reference" }), "root")).toEqual([
+      ["e4", "untrained", "included"],
+      ["d4", "untrained", "included"]
+    ]);
+    expect(states(chapterOf(tree, {}, { enabled: false }), "root")[0][1]).toBe("untrained");
+    // Before a start marker further down the line.
+    expect(
+      states(chapterOf(tree, { w2: { edge: "included", trainingStart: true } }), "root")[0][1]
+    ).toBe("untrained");
+    // After a stop: the stop node's position is no card.
+    expect(states(chapterOf(tree, { w1: { edge: "covered", trainingStop: true } }), "w1")).toEqual([
+      ["Nf3", "untrained", "included"]
+    ]);
+    // Under a reference branch, and a disabled move.
+    expect(states(chapterOf(tree, { w0: { edge: "reference" } }), "w1")[0][1]).toBe("untrained");
+    expect(states(chapterOf(tree, { d0: { edge: "included", disabled: true } }), "root")).toEqual([
+      ["e4", "preferred", "included"],
+      ["d4", "untrained", "included"]
     ]);
   });
 
@@ -216,5 +253,72 @@ describe("practice helpers", () => {
       { orig: "e2", dest: "e4", color: "blue" },
       { orig: "d2", dest: "d4", color: "green" }
     ]);
+  });
+});
+
+describe("cross-chapter occurrences", () => {
+  it("keeps other chapters' occurrences once each", () => {
+    const occurrence = (chapterId: string, nodeId: string) => ({
+      chapterId,
+      chapterTitle: chapterId,
+      nodeId,
+      path: "1. e4",
+      ply: 1
+    });
+    expect(
+      occurrencesInOtherChapters(
+        [
+          occurrence("c1", "n1"),
+          occurrence("c2", "n4"),
+          occurrence("c2", "n4"),
+          occurrence("c3", "n2")
+        ],
+        "c1"
+      ).map((item) => `${item.chapterId}:${item.nodeId}`)
+    ).toEqual(["c2:n4", "c3:n2"]);
+  });
+
+  it("treats a deleted repertoire's refusal as a draft to drop", () => {
+    expect(isMissingTargetError("Repertoire not found: r1")).toBe(true);
+    expect(isMissingTargetError("Invalid expectedRevision: repertoire changed")).toBe(false);
+  });
+});
+
+describe("practice text", () => {
+  const start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  const promotion = "8/4P3/8/8/8/8/k7/4K3 w - - 0 1";
+
+  it("names pieces and moves", () => {
+    expect(pieceNameAt(start, "g1")).toBe("knight");
+    expect(pieceNameAt(start, "e8")).toBe("king");
+    expect(pieceNameAt(start, "e4")).toBeNull();
+    expect(pieceNameAt(start, "z9")).toBeNull();
+    expect(sanOf(start, "g1f3")).toBe("Nf3");
+    expect(sanOf(start, "e2e5")).toBe("e2e5");
+    expect(sanOf(promotion, "e7e8n")).toBe("e8=N");
+  });
+
+  it("describes a reveal in words", () => {
+    expect(revealText(start, ["e2e4", "g1f3", "c2c4"], "g1f3")).toBe(
+      "Preferred: Nf3 · also accepted: e4, c4"
+    );
+    expect(revealText(start, ["e2e4"], null)).toBe("Preferred: e4");
+    expect(revealText(start, [], null)).toMatch(/No accepted move/);
+  });
+
+  it("describes board hints in words", () => {
+    expect(hintStageText(start, 1, "g1f3")).toBeNull();
+    expect(hintStageText(start, 2, "g1f3")).toBe("Move the knight");
+    expect(hintStageText(start, 2, "e4e5")).toBe("Move the piece on e4");
+    expect(hintStageText(start, 3, "g1f3")).toBe("g1 to f3");
+    expect(hintStageText(start, 3, null)).toBeNull();
+  });
+
+  it("says which hints a resumed card already used", () => {
+    expect(resumedHintText({ hintStage: 0, prompt: null })).toBeNull();
+    expect(resumedHintText({ hintStage: 3, prompt: null })).toBe("Hints used earlier: the move.");
+    expect(resumedHintText({ hintStage: 2, prompt: "Develop" })).toBe(
+      "Develop · Hints used earlier: the piece to move."
+    );
   });
 });

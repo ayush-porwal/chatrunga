@@ -38,6 +38,7 @@ import {
   type RepertoireDueSummary,
   type RepertoireListFilters,
   type RepertoireNodeMeta,
+  type RepertoireOccurrence,
   type RepertoireSummary,
   type SaveChapterInput,
   type SaveWorkspaceInput,
@@ -70,6 +71,7 @@ import {
 } from "@chaturanga/shared/chess/repertoire-scheduler";
 import {
   exportRepertoirePgn,
+  formatPath,
   parseRepertoirePgn,
   type ParsedRepertoireGame
 } from "@chaturanga/shared/chess/repertoire-pgn";
@@ -326,6 +328,30 @@ export function getDecision(input: {
   requireRepertoire(input.repertoireId);
   const stored = decisionRepository.get(input.repertoireId, input.positionKey);
   return stored ? stripFingerprint(stored) : null;
+}
+
+/**
+ * Every occurrence of a position in the repertoire (any scope state: this is for study
+ * navigation, not training), with its chapter title and SAN path. Each involved chapter's tree is
+ * read once per call.
+ */
+export function getOccurrences(input: {
+  repertoireId: string;
+  positionKey: string;
+}): RepertoireOccurrence[] {
+  requireRepertoire(input.repertoireId);
+  const rows = positionIndexRepository.occurrences(input.repertoireId, input.positionKey);
+  const lookups = new Map<string, ChapterLookup>();
+  return rows.map((row) => {
+    let lookup = lookups.get(row.chapterId);
+    if (!lookup) {
+      lookup = buildChapterLookup(chapterRepository.get(row.chapterId)!);
+      lookups.set(row.chapterId, lookup);
+    }
+    const ids = lookup.parentPath.get(row.nodeId) ?? [];
+    const moves = ids.slice(1).map((id) => lookup!.nodesById.get(id)!);
+    return { ...row, path: formatPath(moves) };
+  });
 }
 
 /** Due decisions across active repertoires, and the most recent study place (Home card). */

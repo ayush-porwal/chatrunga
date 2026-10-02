@@ -7,7 +7,11 @@ import type {
   PracticeSessionSnapshot,
   PracticeSummary
 } from "@chaturanga/shared/types/repertoire";
-import { nextUnansweredIndex, totalsOf } from "../features/repertoire/repertoire-model";
+import {
+  nextUnansweredIndex,
+  resumedHintText,
+  totalsOf
+} from "../features/repertoire/repertoire-model";
 
 /**
  * A repertoire practice session as shown: the main process's snapshot (it grades and persists),
@@ -90,6 +94,8 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
     const card = currentCard(session);
     set({
       ...freshCardUi,
+      // Hints taken before (a resumed session) show as what the card records.
+      hint: card ? resumedHintText(card) : null,
       session: { ...session, totals: totalsOf(session.cards) },
       summary: null,
       orientation: card?.orientation ?? get().orientation
@@ -168,7 +174,11 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
     if (!session) return false;
     const index = nextUnansweredIndex(session.cards, session.cursor);
     if (index < 0) return false;
-    set({ ...freshCardUi, session: { ...session, cursor: index } });
+    set({
+      ...freshCardUi,
+      hint: resumedHintText(session.cards[index]),
+      session: { ...session, cursor: index }
+    });
     return true;
   },
 

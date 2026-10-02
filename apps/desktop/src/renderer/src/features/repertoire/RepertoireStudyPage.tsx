@@ -18,6 +18,7 @@ import { useEventCallback } from "@/lib/use-event-callback";
 import {
   useRepertoireChapterQuery,
   useRepertoireDecisionQuery,
+  useRepertoireOccurrencesQuery,
   useRepertoireQuery
 } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
@@ -25,7 +26,13 @@ import { BoardStage, BoardWorkspace, workspaceTabsClass } from "../board/BoardWo
 import { ControlledBoard } from "../board/ControlledBoard";
 import { TreeView } from "../game/TreeView";
 import { COLOR_LABELS, nextSortOrder, sortedChapters } from "./repertoire-chapters";
-import { deriveChoices, lastMoveOf, pathLabel, trainableDecisionCount } from "./repertoire-model";
+import {
+  deriveChoices,
+  occurrencesInOtherChapters,
+  lastMoveOf,
+  pathLabel,
+  trainableDecisionCount
+} from "./repertoire-model";
 import { RepertoireMoveNavigation, useTreeKeyboardNavigation } from "./RepertoireMoveNavigation";
 import { StudyChaptersPanel } from "./StudyChaptersPanel";
 import { StudyChoicesPanel } from "./StudyChoicesPanel";
@@ -67,7 +74,8 @@ export function RepertoireStudyPage({
   initialOrientation: Color | null;
   tab: StudyTab;
   onTabChange: (tab: StudyTab) => void;
-  onOpenChapter: (chapterId: string) => void;
+  /** Opens a chapter (at a node: a transposition elsewhere); the open draft is saved first. */
+  onOpenChapter: (chapterId: string, nodeId?: string | null) => void;
   onPractice: (chapterIds: string[]) => void;
   onMissing: (message: string) => void;
   /** The selected node, tab or orientation changed (the current history entry follows). */
@@ -148,6 +156,11 @@ export function RepertoireStudyPage({
   );
   // The stored decision is the truth; this session's last write only fills in while it loads.
   const decision = storedDecision.isSuccess ? storedDecision.data : sessionDecision;
+  const occurrences = useRepertoireOccurrencesQuery(repertoireId, positionKey);
+  const otherOccurrences = useMemo(
+    () => occurrencesInOtherChapters(occurrences.data ?? [], chapterId),
+    [occurrences.data, chapterId]
+  );
   const choices = useMemo(
     () => (draft && lookup && node ? deriveChoices(draft, lookup, node.id, color, decision) : null),
     [draft, lookup, node, color, decision]
@@ -474,6 +487,10 @@ export function RepertoireStudyPage({
             }}
             onSetMeta={(nodeId, patch) => workspace().setNodeMeta(nodeId, patch)}
             onSelectNode={selectNode}
+            otherOccurrences={otherOccurrences}
+            onOpenOccurrence={(occurrence) =>
+              onOpenChapter(occurrence.chapterId, occurrence.nodeId)
+            }
           />
         </div>
       ) : null}
@@ -483,7 +500,8 @@ export function RepertoireStudyPage({
           node={node}
           decisionText={decision}
           canEditDecision={Boolean(
-            choices?.side === "player" && choices.rows.some((row) => row.state !== "reference")
+            choices?.side === "player" &&
+            choices.rows.some((row) => row.state === "preferred" || row.state === "accepted")
           )}
           busy={commands.busy}
           onComment={(text) => workspace().setComment(node.id, text)}

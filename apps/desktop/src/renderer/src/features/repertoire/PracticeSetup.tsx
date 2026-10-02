@@ -15,42 +15,20 @@ import { SectionHeader } from "@/components/ui/page";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { cardPadded } from "@/lib/ui";
 import { sortedChapters } from "./repertoire-chapters";
+import {
+  DEFAULT_CARD_LIMIT,
+  DEFAULT_NEW_CARD_LIMIT,
+  MAX_CARD_LIMIT,
+  MAX_DEPTH_PLIES,
+  practiceInputFromForm
+} from "./practice-setup";
 
-export const DEFAULT_CARD_LIMIT = 20;
-export const DEFAULT_NEW_CARD_LIMIT = 5;
+export { initialPracticeInput } from "./practice-setup";
 
 const modeOptions = [
   { value: "review-due" as const, label: "Review due" },
   { value: "learn-new" as const, label: "Learn new" }
 ];
-
-/** The setup's starting values: the saved draft, a preset chapter selection, or the defaults. */
-export function initialPracticeInput(
-  detail: RepertoireDetail,
-  preset: { chapterIds?: string[]; mode?: PracticeMode } | null
-): StartPracticeInput {
-  const saved = detail.workspace?.practiceDraft;
-  const base: StartPracticeInput =
-    saved && saved.repertoireId === detail.id
-      ? saved
-      : {
-          repertoireId: detail.id,
-          mode: "review-due",
-          cardLimit: DEFAULT_CARD_LIMIT,
-          newCardLimit: DEFAULT_NEW_CARD_LIMIT
-        };
-  return {
-    ...base,
-    ...(preset?.chapterIds ? { chapterIds: preset.chapterIds } : {}),
-    ...(preset?.mode ? { mode: preset.mode } : {})
-  };
-}
-
-/** A positive whole number from a field, or undefined when it is empty or invalid. */
-function positiveInt(value: string): number | undefined {
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-}
 
 /**
  * Practice setup (§5.3): mode, chapters (none selected = every enabled opening chapter), maximum
@@ -82,14 +60,15 @@ export function PracticeSetup({
     (chapter) => chapter.kind === "opening" && chapter.enabled
   );
 
-  const input = (override?: PracticeMode): StartPracticeInput => ({
-    repertoireId: detail.id,
-    mode: override ?? mode,
-    ...(chapterIds.length ? { chapterIds } : {}),
-    ...(positiveInt(depth) ? { maxDepthPlies: positiveInt(depth) } : {}),
-    cardLimit: positiveInt(cards) ?? DEFAULT_CARD_LIMIT,
-    newCardLimit: positiveInt(fresh) ?? 0
-  });
+  const input = (override?: PracticeMode): StartPracticeInput =>
+    practiceInputFromForm({
+      repertoireId: detail.id,
+      mode: override ?? mode,
+      chapterIds,
+      depth,
+      cards,
+      fresh
+    });
 
   const toggle = (id: string) =>
     setChapterIds((current) =>
@@ -165,6 +144,9 @@ export function PracticeSetup({
             <Field label="Max depth" hint="plies from the chapter start" htmlFor={ids.depth}>
               <Input
                 id={ids.depth}
+                type="number"
+                min={1}
+                max={MAX_DEPTH_PLIES}
                 inputMode="numeric"
                 placeholder="Any"
                 value={depth}
@@ -174,6 +156,9 @@ export function PracticeSetup({
             <Field label="Cards" htmlFor={ids.cards}>
               <Input
                 id={ids.cards}
+                type="number"
+                min={1}
+                max={MAX_CARD_LIMIT}
                 inputMode="numeric"
                 value={cards}
                 onChange={(event) => setCards(event.target.value)}
@@ -182,6 +167,9 @@ export function PracticeSetup({
             <Field label="New cards" hint="after due ones" htmlFor={ids.fresh}>
               <Input
                 id={ids.fresh}
+                type="number"
+                min={0}
+                max={MAX_CARD_LIMIT}
                 inputMode="numeric"
                 value={fresh}
                 onChange={(event) => setFresh(event.target.value)}

@@ -4,7 +4,7 @@ import { ipcErrorMessage } from "@/lib/ipc-error";
 import type { RepertoireDetail } from "@chaturanga/shared/types/repertoire";
 import { adoptChapterSave, repertoireKeys } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
-import { autosaveStep, isStaleRevisionError } from "./repertoire-model";
+import { autosaveStep, isMissingTargetError, isStaleRevisionError } from "./repertoire-model";
 
 /** Quiet time after the last edit before the draft is saved. */
 export const AUTOSAVE_DELAY_MS = 800;
@@ -38,7 +38,10 @@ async function saveOnce(queryClient: QueryClient): Promise<void> {
     workspace().saveSucceeded(result, generation);
   } catch (error) {
     const message = ipcErrorMessage(error) || "Couldn't save the chapter.";
-    workspace().saveFailed(message, isStaleRevisionError(message));
+    // The repertoire was deleted: nothing left to save the draft into, so drop it rather than
+    // block every later navigation on a save that can never succeed.
+    if (isMissingTargetError(message)) workspace().reset();
+    else workspace().saveFailed(message, isStaleRevisionError(message));
   }
 }
 
@@ -58,7 +61,12 @@ export function saveChapterDraftNow(queryClient: QueryClient): Promise<void> {
  */
 export async function flushChapterDraft(queryClient: QueryClient): Promise<boolean> {
   if (inFlight) await inFlight;
-  if (workspace().saveState.status === "error") return false;
+  const { saveState } = workspace();
+  if (saveState.status === "error") {
+    if (!isMissingTargetError(saveState.message)) return false;
+    workspace().reset();
+    return true;
+  }
   if (workspace().dirty) await saveChapterDraftNow(queryClient);
   const after = workspace();
   return !after.dirty && after.saveState.status !== "error";

@@ -5,7 +5,8 @@ import type {
   RepertoireChapter,
   RepertoireColor,
   RepertoireDecision,
-  RepertoireNodeMeta
+  RepertoireNodeMeta,
+  RepertoireOccurrence
 } from "@chaturanga/shared/types/repertoire";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,14 +27,16 @@ const STATE_ICONS: Record<ChoiceState, typeof Star> = {
   preferred: Star,
   accepted: Check,
   covered: Check,
-  reference: BookOpen
+  reference: BookOpen,
+  untrained: CircleSlash
 };
 
 const STATE_TONES: Record<ChoiceState, "accent" | "info" | "neutral"> = {
   preferred: "accent",
   accepted: "info",
   covered: "info",
-  reference: "neutral"
+  reference: "neutral",
+  untrained: "neutral"
 };
 
 /**
@@ -52,7 +55,9 @@ export function StudyChoicesPanel({
   onSetEdge,
   onPrefer,
   onSetMeta,
-  onSelectNode
+  onSelectNode,
+  otherOccurrences,
+  onOpenOccurrence
 }: {
   chapter: RepertoireChapter;
   lookup: ChapterLookup;
@@ -64,6 +69,9 @@ export function StudyChoicesPanel({
   onPrefer: (row: ChoiceRow) => void;
   onSetMeta: (nodeId: string, patch: Partial<RepertoireNodeMeta>) => void;
   onSelectNode: (nodeId: string) => void;
+  /** Where this position is reached in the repertoire's other chapters. */
+  otherOccurrences: readonly RepertoireOccurrence[];
+  onOpenOccurrence: (occurrence: RepertoireOccurrence) => void;
 }) {
   const choices = useMemo(
     () => deriveChoices(chapter, lookup, selectedNodeId, color, decision),
@@ -108,13 +116,29 @@ export function StudyChoicesPanel({
         )}
       </section>
 
-      {transpositions.length ? (
+      {transpositions.length || otherOccurrences.length ? (
         <section aria-label="Transpositions" className="grid gap-1.5">
           <p className="flex items-center gap-1.5 text-xs font-medium text-fg-secondary">
             <Repeat className="size-3.5" aria-hidden="true" />
-            Also reached at
+            Also reached
           </p>
           <ul className="grid gap-1">
+            {otherOccurrences.slice(0, 8).map((occurrence) => (
+              <li key={`${occurrence.chapterId}:${occurrence.nodeId}`}>
+                <Button
+                  type="button"
+                  variant="link"
+                  size="xs"
+                  className="h-auto whitespace-normal text-left"
+                  onClick={() => onOpenOccurrence(occurrence)}
+                >
+                  <span>
+                    In {occurrence.chapterTitle}:{" "}
+                    <span className="font-mono">{occurrence.path || "the start"}</span>
+                  </span>
+                </Button>
+              </li>
+            ))}
             {transpositions.slice(0, 5).map((nodeId) => (
               <li key={nodeId}>
                 <Button
@@ -124,7 +148,7 @@ export function StudyChoicesPanel({
                   className="font-mono"
                   onClick={() => onSelectNode(nodeId)}
                 >
-                  {pathLabel(lookup, nodeId)}
+                  This chapter: {pathLabel(lookup, nodeId)}
                 </Button>
               </li>
             ))}
@@ -178,6 +202,11 @@ function ChoiceItem({
         <Icon aria-hidden="true" />
         {CHOICE_LABELS[row.state]}
       </Badge>
+      {row.state === "untrained" ? (
+        <span className="text-2xs text-fg-subtle">
+          {row.edge === "reference" ? "reference" : side === "player" ? "accepted" : "covered"}
+        </span>
+      ) : null}
       {row.disabled ? (
         <Badge tone="warn">
           <Ban aria-hidden="true" />
@@ -185,7 +214,31 @@ function ChoiceItem({
         </Badge>
       ) : null}
       <div className="ml-auto flex items-center gap-1">
-        {side === "player" ? (
+        {row.state === "untrained" ? (
+          side === "player" ? (
+            row.edge !== "reference" ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                disabled={busy}
+                onClick={() => onSetEdge("reference")}
+              >
+                Make reference
+              </Button>
+            ) : null
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              disabled={busy}
+              onClick={() => onSetEdge(row.edge === "reference" ? "covered" : "reference")}
+            >
+              {row.edge === "reference" ? "Cover" : "Make reference"}
+            </Button>
+          )
+        ) : side === "player" ? (
           <>
             {row.state === "reference" ? (
               <Button

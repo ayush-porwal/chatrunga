@@ -20,6 +20,7 @@ vi.mock("../repertoire/service", () => {
     "exportRepertoire",
     "getChapter",
     "getDecision",
+    "getOccurrences",
     "getDueSummary",
     "getRepertoire",
     "listRepertoires",
@@ -71,6 +72,7 @@ describe("registerRepertoireIpc", () => {
       ["get", "r1", "getRepertoire"],
       ["getChapter", { repertoireId: "r1", chapterId: "c1" }, "getChapter"],
       ["getDecision", { repertoireId: "r1", positionKey: "v1:key" }, "getDecision"],
+      ["getOccurrences", { repertoireId: "r1", positionKey: "v1:key" }, "getOccurrences"],
       ["create", { name: "Mine", color: "white", tags: ["a"], rootFen: START }, "createRepertoire"],
       [
         "updateMetadata",

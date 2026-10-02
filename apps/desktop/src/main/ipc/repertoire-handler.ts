@@ -9,6 +9,7 @@ import {
   exportRepertoire,
   getChapter,
   getDecision,
+  getOccurrences,
   getDueSummary,
   getRepertoire,
   listRepertoires,
@@ -59,6 +60,9 @@ export function registerRepertoireIpc(): void {
   );
   ipcMain.handle("repertoires:getDecision", (_event, input: unknown) =>
     getDecision(parseDecisionRef(input))
+  );
+  ipcMain.handle("repertoires:getOccurrences", (_event, input: unknown) =>
+    getOccurrences(parseDecisionRef(input))
   );
   ipcMain.handle("repertoires:create", (_event, input: unknown) =>
     createRepertoire(parseCreateRepertoireInput(input))

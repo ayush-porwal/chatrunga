@@ -175,8 +175,8 @@ export function AppPages({
           initialOrientation={repertoire.orientation}
           tab={repertoire.tab}
           onTabChange={on.repertoireTabChange}
-          onOpenChapter={(chapterId) =>
-            on.openRepertoireStudy({ repertoireId: repertoire.repertoireId, chapterId, nodeId: null })
+          onOpenChapter={(chapterId, nodeId = null) =>
+            on.openRepertoireStudy({ repertoireId: repertoire.repertoireId, chapterId, nodeId })
           }
           onPractice={(chapterIds) => on.practiceRepertoireChapters(repertoire.repertoireId, chapterIds)}
           onMissing={on.repertoireMissing}

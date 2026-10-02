@@ -31,7 +31,14 @@ import { BoardStage, BoardWorkspace } from "../board/BoardWorkspace";
 import { ControlledBoard } from "../board/ControlledBoard";
 import { PracticeSetup, initialPracticeInput } from "./PracticeSetup";
 import { PracticeSummaryView } from "./PracticeSummaryView";
-import { hintMarks, lastMoveOf, revealArrows } from "./repertoire-model";
+import {
+  hintMarks,
+  hintStageText,
+  lastMoveOf,
+  nextUnansweredIndex,
+  revealArrows,
+  revealText
+} from "./repertoire-model";
 
 /** How long a correct answer stays on screen before the next card. */
 const ADVANCE_DELAY_MS = 600;
@@ -70,11 +77,30 @@ export function RepertoirePracticePage({
   );
   const start = useStartPracticeMutation();
   const resume = useResumePracticeMutation();
+  const endFinished = useEndPracticeMutation();
+  const { mutate: endFinishedSession } = endFinished;
+  /** The finished session whose summary was asked for (once; Retry asks again). */
+  const summaryRequested = useRef<string | null>(null);
   const saveWorkspace = useSaveRepertoireWorkspaceMutation();
   const [nothingDue, setNothingDue] = useState<PracticeMode | null>(null);
   const [resumeError, setResumeError] = useState<string | null>(null);
   const shownSession = session && session.sessionId === sessionId ? session : null;
   const { mutate: resumeSession } = resume;
+  const finishedWithoutSummary =
+    shownSession?.status === "finished" && summary?.sessionId !== shownSession.sessionId;
+
+  // A session that already ended (Back after "Practice again", a restart) is never shown as live:
+  // ending it again is idempotent and returns its summary.
+  useEffect(() => {
+    if (!finishedWithoutSummary || !shownSession) return;
+    if (summaryRequested.current === shownSession.sessionId) return;
+    summaryRequested.current = shownSession.sessionId;
+    endFinishedSession(shownSession.sessionId, {
+      onSuccess: (result) => practice().setSummary(result),
+      onError: (error) =>
+        setResumeError(ipcErrorMessage(error) || "That session's summary couldn't be read.")
+    });
+  }, [finishedWithoutSummary, shownSession, endFinishedSession]);
 
   // Opening a session's route (history, a restart): resume it from the main process.
   useEffect(() => {
@@ -143,7 +169,7 @@ export function RepertoirePracticePage({
     );
   }
 
-  if (sessionId && !shownSession) {
+  if ((sessionId && !shownSession) || finishedWithoutSummary) {
     return resumeError ? (
       <EmptyState
         className="self-center"
@@ -348,6 +374,13 @@ function PracticeSession({
   }, [replaying, reveal, card.hintStage, hintUci]);
   const position = session.cards.indexOf(card) + 1;
   const nextHintLabel = ["Hint", "Show piece", "Show move"][card.hintStage] ?? null;
+  // Words for what the board shows (arrows and highlights alone aren't accessible).
+  const boardHintText = reveal ? null : hintStageText(card.fen, card.hintStage, hintUci);
+  const revealWords = reveal ? revealText(card.fen, reveal.ucis, reveal.preferredUci) : null;
+  // Every card is final: the next step is the summary.
+  const allFinal = nextUnansweredIndex(session.cards, session.cursor) < 0 && finished;
+  // A correct answer moves on by itself only right after it was given (not on a resumed card).
+  const autoAdvancing = card.state === "answered-correct" && message?.tone === "success";
 
   return (
     <BoardWorkspace
@@ -407,9 +440,9 @@ function PracticeSession({
             <Square />
             End session
           </Button>
-          {finished && card.state !== "answered-correct" ? (
+          {finished && !autoAdvancing ? (
             <Button type="button" variant="primary" size="sm" disabled={busy} onClick={goNext}>
-              Next card
+              {allFinal ? "See summary" : "Next card"}
               <SkipForward />
             </Button>
           ) : null}
@@ -441,6 +474,16 @@ function PracticeSession({
           {card.hintStage >= 1 && hint && !reveal ? (
             <Notice tone="info" icon={<Lightbulb />} title="Hint">
               {hint}
+            </Notice>
+          ) : null}
+          {boardHintText ? (
+            <Notice tone="info" icon={<Lightbulb />} title="On the board">
+              {boardHintText}
+            </Notice>
+          ) : null}
+          {revealWords ? (
+            <Notice tone="info" icon={<Eye />} title="Answer">
+              {revealWords}
             </Notice>
           ) : null}
           {reveal?.explanation ? (

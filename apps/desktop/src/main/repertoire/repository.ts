@@ -563,7 +563,9 @@ export const chapterRepository = {
       `SELECT ${CHAPTER_SUMMARY_COLUMNS}, (
         SELECT COUNT(DISTINCT i.position_key) FROM repertoire_position_index i
         JOIN repertoire_progress p ON p.repertoire_id = i.repertoire_id AND p.position_key = i.position_key
-        WHERE i.chapter_id = c.id AND i.is_decision = 1 AND ${DUE_PROGRESS}) AS due_count
+        WHERE i.chapter_id = c.id AND i.is_decision = 1 AND ${DUE_PROGRESS}
+        AND NOT EXISTS (SELECT 1 FROM repertoires r WHERE r.id = c.repertoire_id
+          AND r.archived_at IS NOT NULL)) AS due_count
         FROM repertoire_chapters c WHERE c.repertoire_id = ? ORDER BY c.sort_order, c.created_at, c.id`,
       now,
       repertoireId
@@ -767,6 +769,29 @@ export const positionIndexRepository = {
       positionKey: row.position_key,
       scopeState: row.scope_state,
       isDecision: row.is_decision === 1,
+      ply: row.ply
+    }));
+  },
+
+  /**
+   * Every occurrence of a position in a repertoire, whatever its scope state, with its chapter's
+   * title; ordered by chapter order, then ply, then node id.
+   */
+  occurrences(
+    repertoireId: string,
+    positionKey: string
+  ): { chapterId: string; chapterTitle: string; nodeId: string; ply: number }[] {
+    return all<{ chapter_id: string; title: string; node_id: string; ply: number }>(
+      `SELECT i.chapter_id, c.title, i.node_id, i.ply FROM repertoire_position_index i
+        JOIN repertoire_chapters c ON c.id = i.chapter_id
+        WHERE i.repertoire_id = ? AND i.position_key = ?
+        ORDER BY c.sort_order, c.created_at, c.id, i.ply, i.node_id`,
+      repertoireId,
+      positionKey
+    ).map((row) => ({
+      chapterId: row.chapter_id,
+      chapterTitle: row.title,
+      nodeId: row.node_id,
       ply: row.ply
     }));
   }

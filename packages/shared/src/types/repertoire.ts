@@ -392,6 +392,16 @@ export type RepertoireDueSummary = {
   continue: { repertoireId: string; chapterId: string; nodeId: string } | null;
 };
 
+/** One place a position is reached in the repertoire (from the derived index). */
+export type RepertoireOccurrence = {
+  chapterId: string;
+  chapterTitle: string;
+  nodeId: string;
+  /** SAN path from the chapter root, e.g. `"1. e4 e5 2. Bc4 Nc6 3. Nf3"`. */
+  path: string;
+  ply: number;
+};
+
 export type RepertoireChangedEvent = {
   /** null: several repertoires may have changed (e.g. after an import of many). */
   repertoireId: string | null;

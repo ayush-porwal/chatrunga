@@ -41,7 +41,9 @@ export const repertoireKeys = {
   detail: (id: string) => ["repertoires", id] as const,
   chapter: (id: string, chapterId: string) => ["repertoires", id, "chapter", chapterId] as const,
   decision: (id: string, positionKey: string) =>
-    ["repertoires", id, "decision", positionKey] as const
+    ["repertoires", id, "decision", positionKey] as const,
+  occurrences: (id: string, positionKey: string) =>
+    ["repertoires", id, "occurrences", positionKey] as const
 };
 
 function repertoires(): ChaturangaApi["repertoires"] | undefined {
@@ -68,14 +70,19 @@ export function invalidateRepertoire(queryClient: QueryClient, id: string | null
       predicate: (query) =>
         query.queryKey[0] === "repertoires" &&
         ((query.queryKey.length === 2 && query.queryKey[1] !== "due") ||
-          query.queryKey[2] === "decision")
+          query.queryKey[2] === "decision" ||
+          query.queryKey[2] === "occurrences")
     });
   }
 }
 
-/** Re-reads the cached decisions of a repertoire (a chapter save can reconcile any of them). */
+/**
+ * Re-reads the cached decisions and occurrence lists of a repertoire (a chapter save can
+ * reconcile any of them).
+ */
 export function invalidateDecisions(queryClient: QueryClient, id: string) {
   void queryClient.invalidateQueries({ queryKey: ["repertoires", id, "decision"] });
+  void queryClient.invalidateQueries({ queryKey: ["repertoires", id, "occurrences"] });
 }
 
 /** Stores a detail the main process returned, and refreshes the summaries that depend on it. */
@@ -125,6 +132,16 @@ export function useRepertoireDecisionQuery(id: string | null, positionKey: strin
     queryKey: repertoireKeys.decision(id ?? "", positionKey ?? ""),
     queryFn: () =>
       requireRepertoires().getDecision({ repertoireId: id!, positionKey: positionKey! }),
+    enabled: Boolean(id && positionKey && repertoires())
+  });
+}
+
+/** Every chapter node reaching a position (transpositions across the repertoire). */
+export function useRepertoireOccurrencesQuery(id: string | null, positionKey: string | null) {
+  return useQuery({
+    queryKey: repertoireKeys.occurrences(id ?? "", positionKey ?? ""),
+    queryFn: () =>
+      requireRepertoires().getOccurrences({ repertoireId: id!, positionKey: positionKey! }),
     enabled: Boolean(id && positionKey && repertoires())
   });
 }

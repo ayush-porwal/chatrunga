@@ -153,6 +153,17 @@ describe("repertoire practice store", () => {
     expect(store().summary?.skipped).toBe(3);
   });
 
+  it("shows hints a resumed card already used", () => {
+    const resumed = session();
+    resumed.cards[0] = cardOf("a", { hintStage: 2 });
+    resumed.cards[1] = cardOf("b", { hintStage: 1, prompt: "Castle" });
+    store().setSession(resumed);
+    expect(store().hint).toBe("Hints used earlier: the piece to move.");
+    store().applyAction("skip", { card: cardOf("a", { state: "skipped", hintStage: 2 }) });
+    store().advance();
+    expect(store().hint).toBe("Castle · Hints used earlier: the written hint.");
+  });
+
   it("replays the lead-up and flips without touching grading", () => {
     store().setSession(session());
     store().setLeadUpIndex(2);

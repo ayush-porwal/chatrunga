@@ -205,7 +205,7 @@ function appendMove(
 }
 
 /** `1. e4 e5 2. Nf3`, or `1... e5 2. Nf3` from a Black-to-move root. */
-function formatPath(path: readonly MoveNode[]): string {
+export function formatPath(path: readonly MoveNode[]): string {
   return path
     .map((node, index) => {
       const number = Math.ceil(node.ply / 2);

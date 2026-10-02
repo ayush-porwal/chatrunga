@@ -42,6 +42,7 @@ import {
   useRepertoireDueSummaryQuery,
   useRepertoiresQuery
 } from "../../queries/repertoire";
+import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
 import { CreateRepertoireDialog } from "./CreateRepertoireDialog";
 import { ImportPgnDialog } from "./ImportPgnDialog";
 import {
@@ -432,7 +433,12 @@ export function RepertoireHubPage({
                   remove.mutate(
                     { id: deleting.id, expectedRevision: deleting.revision },
                     {
-                      onSuccess: () => setDeleting(null),
+                      onSuccess: (_result, input) => {
+                        setDeleting(null);
+                        // Its draft (even an unsaved or failed one) has nowhere to be saved now.
+                        const draft = useRepertoireWorkspaceStore.getState();
+                        if (draft.repertoireId === input.id) draft.reset();
+                      },
                       onError: (error) => {
                         setDeleting(null);
                         fail(error, "Couldn't delete it.");

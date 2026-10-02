@@ -472,6 +472,81 @@ describe("repertoire service: chapters, decisions and index", () => {
     const detail = service.getRepertoire(id);
     expect(detail.dueCount).toBe(1);
     expect(detail.chapters[0].dueCount).toBe(1);
+
+    // Archived: neither the repertoire nor its chapters report due work.
+    const archived = service.archiveRepertoire({
+      id,
+      archived: true,
+      expectedRevision: detail.revision
+    }).repertoire;
+    expect(archived.dueCount).toBe(0);
+    expect(archived.chapters[0].dueCount).toBe(0);
+    const restored = service.archiveRepertoire({
+      id,
+      archived: false,
+      expectedRevision: archived.revision
+    }).repertoire;
+    expect(restored.chapters[0].dueCount).toBe(1);
+
+    // A paused decision isn't due in its chapter either.
+    const paused = service.updateDecision({
+      repertoireId: id,
+      positionKey: START_KEY,
+      expectedRevision: restored.revision,
+      patch: { paused: true }
+    }).repertoire;
+    expect(paused.dueCount).toBe(0);
+    expect(paused.chapters[0].dueCount).toBe(0);
+  });
+
+  it("lists every occurrence of a position with its chapter title and SAN path", () => {
+    const { id } = create();
+    expect(() => service.getOccurrences({ repertoireId: "nope", positionKey: START_KEY })).toThrow(
+      "Invalid repertoireId: not found"
+    );
+    const first = save(id, [["e2e4", "e7e6", "d2d4", "d7d5"]]);
+    const second = save(id, [["d2d4", "e7e6", "e2e4", "d7d5"]], { chapterId: "second" });
+    const shared = positionKey(
+      nodeAt(first.chapter.tree, ["e2e4", "e7e6", "d2d4", "d7d5"]).fenAfter
+    );
+    expect(service.getOccurrences({ repertoireId: id, positionKey: shared })).toEqual([
+      {
+        chapterId: first.chapter.id,
+        chapterTitle: "Chapter",
+        nodeId: nodeAt(first.chapter.tree, ["e2e4", "e7e6", "d2d4", "d7d5"]).id,
+        path: "1. e2e4 e7e6 2. d2d4 d7d5",
+        ply: 4
+      },
+      {
+        chapterId: "second",
+        chapterTitle: "Chapter",
+        nodeId: nodeAt(second.chapter.tree, ["d2d4", "e7e6", "e2e4", "d7d5"]).id,
+        path: "1. d2d4 e7e6 2. e2e4 d7d5",
+        ply: 4
+      }
+    ]);
+    expect(service.getOccurrences({ repertoireId: id, positionKey: "v1:nowhere" })).toEqual([]);
+  });
+
+  it("returns a repeated position within one chapter as two occurrences", () => {
+    const { id } = create();
+    const knights = ["g1f3", "g8f6", "f3g1", "f6g8"];
+    const saved = save(id, [knights]);
+    const occurrences = service.getOccurrences({ repertoireId: id, positionKey: START_KEY });
+    expect(occurrences.map((item) => [item.nodeId, item.path, item.ply])).toEqual([
+      ["root", "", 0],
+      [nodeAt(saved.chapter.tree, knights).id, "1. g1f3 g8f6 2. f3g1 f6g8", 4]
+    ]);
+  });
+
+  it("numbers paths from a Black-to-move root with 1...", () => {
+    const fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+    const { id } = create("black", fen);
+    const saved = save(id, [["e7e5", "g1f3"]]);
+    const node = nodeAt(saved.chapter.tree, ["e7e5", "g1f3"]);
+    expect(
+      service.getOccurrences({ repertoireId: id, positionKey: positionKey(node.fenAfter) })
+    ).toEqual([expect.objectContaining({ nodeId: node.id, path: "1... e7e5 2. g1f3", ply: 3 })]);
   });
 });
 

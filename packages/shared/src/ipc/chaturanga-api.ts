@@ -72,6 +72,7 @@ import type {
   RepertoireChapter,
   RepertoireDecision,
   RepertoireDetail,
+  RepertoireOccurrence,
   RepertoireDueSummary,
   RepertoireListFilters,
   RepertoireSummary,
@@ -286,6 +287,11 @@ export type ChaturangaApi = {
       repertoireId: string;
       positionKey: string;
     }): Promise<RepertoireDecision | null>;
+    /** Every chapter/node reaching a position (transpositions), in chapter then ply order. */
+    getOccurrences(input: {
+      repertoireId: string;
+      positionKey: string;
+    }): Promise<RepertoireOccurrence[]>;
     create(input: CreateRepertoireInput): Promise<RepertoireDetail>;
     updateMetadata(input: UpdateRepertoireMetadataInput): Promise<RepertoireDetail>;
     /** Saves one chapter and reconciles decisions/index/progress in the same transaction. */

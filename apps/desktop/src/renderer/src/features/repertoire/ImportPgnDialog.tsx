@@ -52,20 +52,35 @@ export function ImportPgnDialog({
   const detail = useRepertoireQuery(repertoireId);
   const previewMutation = usePreviewImportMutation();
   const commitMutation = useCommitImportMutation();
-  const { mutate: cancelJob } = useCancelImportMutation();
+  const { mutate: cancelJobMutation } = useCancelImportMutation();
+  /**
+   * Cancels a pending job. After the dialog closed the hook's mutate may no longer run, so the API
+   * is called directly then (best effort: an uncancelled job only expires on its own).
+   */
+  const cancelJob = (jobId: string) => {
+    if (open.current) cancelJobMutation(jobId);
+    else void window.chaturanga?.repertoires.cancelImport(jobId).catch(() => undefined);
+  };
   const [pgn, setPgn] = useState("");
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [selections, setSelections] = useState<ImportSelection[]>([]);
   const [error, setError] = useState<string | null>(null);
   const pendingJob = useRef<string | null>(null);
+  /** False once the dialog closed; a preview resolving after that cancels its job. */
+  const open = useRef(true);
+  /** Bumped per preview: an older preview resolving late cancels its own job. */
+  const previewRequest = useRef(0);
 
   // Closing (or unmounting) with a previewed, uncommitted job cancels it.
-  useEffect(
-    () => () => {
-      if (pendingJob.current) cancelJob(pendingJob.current);
-    },
-    [cancelJob]
-  );
+  useEffect(() => {
+    open.current = true;
+    return () => {
+      open.current = false;
+      const jobId = pendingJob.current;
+      pendingJob.current = null;
+      if (jobId) void window.chaturanga?.repertoires.cancelImport(jobId).catch(() => undefined);
+    };
+  }, []);
 
   const lookups = useMemo(
     () => preview?.games.map((game) => (game.tree.length ? buildChapterLookup(game) : null)) ?? [],
@@ -76,15 +91,22 @@ export function ImportPgnDialog({
     setError(null);
     if (pendingJob.current) cancelJob(pendingJob.current);
     pendingJob.current = null;
-    previewMutation.mutate(
-      { pgn: text },
-      {
-        onSuccess: (result) => {
-          pendingJob.current = result.jobId;
-          setPreview(result);
-          setSelections(defaultSelections(result));
-        },
-        onError: (cause) => setError(ipcErrorMessage(cause) || "That PGN couldn't be read.")
+    const request = ++previewRequest.current;
+    // The promise (unlike per-call callbacks) settles after the dialog unmounts too.
+    previewMutation.mutateAsync({ pgn: text }).then(
+      (result) => {
+        if (!open.current || request !== previewRequest.current) {
+          cancelJob(result.jobId);
+          return;
+        }
+        pendingJob.current = result.jobId;
+        setPreview(result);
+        setSelections(defaultSelections(result));
+      },
+      (cause) => {
+        if (open.current && request === previewRequest.current) {
+          setError(ipcErrorMessage(cause) || "That PGN couldn't be read.");
+        }
       }
     );
   }
