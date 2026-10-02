@@ -421,7 +421,44 @@ describe("installing a downloaded file", () => {
     const corrupt = Buffer.from(content);
     corrupt.fill(0x41, 8, 200);
     serve(corrupt);
-    await expectRejected(/couldn't be read/);
+    await expectRejected(/couldn't be read|damaged|unexpected data|ends in the middle/);
+  });
+
+  /** A good first frame (the header and some rows) followed by `rest`, as pzstd writes many frames. */
+  const framesAfterGoodStart = (rest: Buffer) => Buffer.concat([content, rest]);
+  const laterFrame = () => zstdCompressSync(Buffer.from(Array.from({ length: 800 }, () => `${randomBytes(8).toString("hex")},fen,e2e4,1500,80,90,100,short,,`).join("\n")));
+
+  it("rejects a file whose later frame is cut short, though it starts well", async () => {
+    await installOld();
+    const later = laterFrame();
+    serve(framesAfterGoodStart(later.subarray(0, Math.floor(later.length / 2))));
+    await expectRejected(/ends in the middle of the compressed data/);
+  });
+
+  it("rejects a file with a damaged block in a later frame", async () => {
+    await installOld();
+    const later = Buffer.from(laterFrame());
+    // The first block header (after the 4-byte magic and a small frame header): a reserved block type.
+    const descriptor = later[4];
+    const headerSize = 1 + ((descriptor >> 5) & 1 ? 0 : 1) + [0, 1, 2, 4][descriptor & 3] + [(descriptor >> 5) & 1 ? 1 : 0, 2, 4, 8][descriptor >> 6];
+    later[4 + headerSize] |= 0b110;
+    serve(framesAfterGoodStart(later));
+    await expectRejected(/damaged block/);
+  });
+
+  it("rejects a file with something other than zstd after its frames", async () => {
+    await installOld();
+    serve(framesAfterGoodStart(Buffer.from("<html>trailing</html>")));
+    await expectRejected(/unexpected data at byte/);
+  });
+
+  it("accepts several frames after a skippable one, as pzstd writes them", async () => {
+    const skippable = Buffer.alloc(12);
+    skippable.writeUInt32LE(0x184d2a50, 0);
+    skippable.writeUInt32LE(4, 4);
+    serve(Buffer.concat([skippable, content, laterFrame()]));
+    const installed = await downloadDatabase(SOURCE, () => undefined);
+    expect(installed.filePath).toBe(finalPath);
   });
 
   it("rejects valid zstd with the wrong columns", async () => {
@@ -511,6 +548,42 @@ describe("installing a downloaded file", () => {
     rows.set(SOURCE, { id: SOURCE, sourceId: SOURCE, filePath: finalPath });
     expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([finalPath]);
     expect(await readFile(finalPath)).toEqual(oldContent);
+    expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst"]);
+  });
+
+  /** The app died after the new copy took the file's place but before it was registered. */
+  async function crashAfterSwap() {
+    await installOld();
+    await writeFile(`${finalPath}.bak`, oldContent);
+    await writeFile(finalPath, content);
+    await writeFile(`${finalPath}.part.validator`, '"v2"');
+    await writeFile(`${finalPath}.installing`, "");
+  }
+
+  it("undoes a swap that was never registered when the databases are listed", async () => {
+    await crashAfterSwap();
+    expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([finalPath]);
+    expect(await readFile(finalPath)).toEqual(oldContent);
+    expect(await readFile(`${finalPath}.part`)).toEqual(content);
+    expect((await readdir(dir)).sort()).toEqual([
+      "lichess-puzzles-lichess_db_puzzle.csv.zst",
+      "lichess-puzzles-lichess_db_puzzle.csv.zst.part",
+      "lichess-puzzles-lichess_db_puzzle.csv.zst.part.validator"
+    ]);
+  });
+
+  it("keeps the installed copy when the next download after such a crash fails to register", async () => {
+    await crashAfterSwap();
+    repository.failSave = true;
+    vi.stubGlobal("fetch", fakeServer(content, '"v2"').fetchMock);
+    await expect(downloadDatabase(SOURCE, () => undefined)).rejects.toThrow("disk full");
+    expect(await readFile(finalPath)).toEqual(oldContent);
+    expect(await readdir(dir)).toContain("lichess-puzzles-lichess_db_puzzle.csv.zst.part");
+
+    // Downloading again then finishes from the kept copy (the server confirms it is complete).
+    repository.failSave = false;
+    await downloadDatabase(SOURCE, () => undefined);
+    expect(await readFile(finalPath)).toEqual(content);
     expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst"]);
   });
 

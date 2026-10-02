@@ -50,6 +50,9 @@ function isMissingFile(error: unknown): boolean {
  * dataset-location.ts) gets its new path. Null when the file is gone (the entry is dropped).
  */
 async function onDisk(database: InstalledDatabase): Promise<InstalledDatabase | null> {
+  // An install of a new copy that stopped before it was registered: the registered copy comes back
+  // (the new one may be on disk in its place).
+  if (existsSync(installMarkerFor(database.filePath))) await settleBackup(database.filePath).catch(() => undefined);
   try {
     await stat(database.filePath);
     return database;
@@ -176,6 +179,9 @@ async function runDownload(sourceId: string, onProgress: ProgressSink, signal: A
   await mkdir(dir, { recursive: true });
   const filePath = join(dir, `${source.id}-${basename(new URL(source.url).pathname)}`);
   const partPath = `${filePath}.part`;
+  // An earlier install of this file that was interrupted is undone first: its new copy goes back to
+  // `.part` (this download then finishes at once) and the installed copy comes back from `.bak`.
+  await settleBackup(filePath);
   // The server's ETag / Last-Modified for the `.part` file: a resume only continues the same file.
   const validatorPath = `${partPath}.validator`;
 
@@ -326,6 +332,7 @@ async function finishDownload(
 ): Promise<InstalledDatabase> {
   const validatorPath = `${partPath}.validator`;
   const backupPath = backupPathFor(filePath);
+  const markerPath = installMarkerFor(filePath);
   const stopIfCancelled = () => {
     // Quitting (even after it stopped waiting for this download) — the database may be closed by
     // now — or Cancel was pressed: this download installs nothing.
@@ -348,6 +355,9 @@ async function finishDownload(
   // A second name for the installed file (a copy where hard links aren't supported), so the file
   // never goes missing while it is replaced: a listing or a puzzle request meanwhile still finds it.
   const hadInstalled = existsSync(filePath);
+  // On disk until the new copy is registered: if the app dies before that, the swap is undone at the
+  // next listing or download (see settleBackup) rather than the unregistered copy being kept.
+  await writeFile(markerPath, "");
   if (hadInstalled) await keepAside(filePath, backupPath);
   let promoted = false;
   try {
@@ -362,6 +372,8 @@ async function finishDownload(
       fileSizeBytes: file.size,
       recordCount: source.expectedRecords ?? null
     });
+    // Registered: the swap is final (from here on, a stray `.bak` is just stale).
+    await unlink(markerPath).catch(() => undefined);
     await unlink(backupPath).catch(() => undefined);
     await unlink(validatorPath).catch(() => undefined);
     dropPools(installed.id);
@@ -377,8 +389,9 @@ async function finishDownload(
     try {
       if (promoted) await rename(filePath, partPath);
       if (hadInstalled) await rename(backupPath, filePath);
+      await unlink(markerPath).catch(() => undefined);
     } catch (restoreError) {
-      // The `.bak` stays: the next download or listing puts it back (see `settleBackup`).
+      // The marker and `.bak` stay: the next download or listing undoes the swap (see `settleBackup`).
       logger.warn("databases", `restoring ${source.name} after a failed install failed:`, errorMessage(restoreError));
     }
     throw error;
@@ -388,6 +401,11 @@ async function finishDownload(
 /** Where an installed file waits while a new download replaces it. */
 function backupPathFor(filePath: string): string {
   return `${filePath}.bak`;
+}
+
+/** Present while a new copy of `filePath` is swapped in and not yet registered. */
+function installMarkerFor(filePath: string): string {
+  return `${filePath}.installing`;
 }
 
 async function keepAside(filePath: string, backupPath: string): Promise<void> {
@@ -400,15 +418,25 @@ async function keepAside(filePath: string, backupPath: string): Promise<void> {
 }
 
 /**
- * A `.bak` left by an install that was interrupted (the app crashed or was killed mid-swap): put
- * back when the file itself is missing, otherwise stale and deleted. Run before an install of
- * that file (downloads of one source never overlap) and by `onDisk` for a missing file.
+ * Undoes what an interrupted install left (the app crashed or was killed mid-swap). While its
+ * marker is there the new copy was never registered: if it already took the file's place it goes
+ * back to `.part` (with its `.validator`, so downloading again finishes at once), and the installed
+ * copy comes back from `.bak`. Without a marker, a `.bak` is put back when the file is missing and
+ * is otherwise stale (deleted). Run before each download of that file (downloads of one source never
+ * overlap) and by `onDisk`.
  */
 async function settleBackup(filePath: string): Promise<void> {
   const backupPath = backupPathFor(filePath);
-  if (!existsSync(backupPath)) return;
-  if (existsSync(filePath)) await unlink(backupPath).catch(() => undefined);
-  else await rename(backupPath, filePath);
+  const markerPath = installMarkerFor(filePath);
+  const partPath = `${filePath}.part`;
+  const interrupted = existsSync(markerPath);
+  // Before the swap the new copy is the `.part`; after it, the `.part` is gone and the file is the new copy.
+  if (interrupted && !existsSync(partPath) && existsSync(filePath)) await rename(filePath, partPath);
+  if (existsSync(backupPath)) {
+    if (existsSync(filePath)) await unlink(backupPath).catch(() => undefined);
+    else await rename(backupPath, filePath);
+  }
+  if (interrupted) await unlink(markerPath);
 }
 
 /**
@@ -428,7 +456,7 @@ export async function removeDatabase(id: string): Promise<void> {
     await previous?.catch(() => undefined);
     await running?.promise.catch(() => undefined);
     // The partial files first: if one can't go, the dataset itself (and its entry) are still intact.
-    const paths = [`${database.filePath}.part.validator`, `${database.filePath}.part`, backupPathFor(database.filePath), database.filePath];
+    const paths = [`${database.filePath}.part.validator`, `${database.filePath}.part`, backupPathFor(database.filePath), installMarkerFor(database.filePath), database.filePath];
     for (const path of paths) {
       await unlink(path).catch((error: unknown) => {
         if (!isMissingFile(error)) throw error;
