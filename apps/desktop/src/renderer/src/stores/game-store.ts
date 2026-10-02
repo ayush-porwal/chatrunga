@@ -225,11 +225,22 @@ export const useGameStore = create<GameStore>((set, get) => {
       const parent = state.moveTree.find((node) => node.id === state.currentNodeId);
       const fenBefore = parent?.fenAfter ?? state.currentFen;
       const mover = statusForFen(fenBefore).turn;
-      const applied = applyUserMove(fenBefore, move);
-      if (!applied) {
-        set({ lastError: "Illegal move" });
-        return false;
+      // The clock decides, not the poll: a move made after the flag fell loses on time, and the
+      // increment can't bring an expired clock back.
+      const now = clockNow();
+      const live = state.engineClockLive;
+      if (
+        state.mode === "engine" &&
+        live &&
+        live.stoppedAt === undefined &&
+        live.sideToMove === mover &&
+        remainingClockMs(live, mover, now) <= 0
+      ) {
+        get().resolveTimeout(mover);
+        return reject();
       }
+      const applied = applyUserMove(fenBefore, move);
+      if (!applied) return reject({ lastError: "Illegal move" });
       // A move made while the clock is paused (the user stepped back while the engine thought, and
       // plays on from there): the clock runs again for the side that moved, from the pause, so the
       // time spent there counts against them. If it replaces their own move, that move's increment
@@ -245,7 +256,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           turnStartedAt: paused.stoppedAt
         };
         set({ engineClockLive: running });
-        if (remainingClockMs(running, mover, Date.now()) <= 0) {
+        if (remainingClockMs(running, mover, clockNow()) <= 0) {
           get().resolveTimeout(mover);
           return false;
         }
@@ -416,7 +427,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       set((state) => {
         const live = state.engineClockLive;
         if (!live || live.stoppedAt !== undefined) return {};
-        return { engineClockLive: { ...live, stoppedAt: Date.now(), paused: true } };
+        return { engineClockLive: { ...live, stoppedAt: clockNow(), paused: true } };
       }),
 
     resumeEngineClock: () =>
@@ -427,7 +438,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           whiteMs: live.whiteMs,
           blackMs: live.blackMs,
           sideToMove: live.sideToMove,
-          turnStartedAt: live.turnStartedAt + (Date.now() - live.stoppedAt)
+          turnStartedAt: live.turnStartedAt + (clockNow() - live.stoppedAt)
         };
         return { engineClockLive: running };
       }),
@@ -611,7 +622,57 @@ function stopClock(live: EngineClockLive | null): EngineClockLive | null {
   if (!live) return live;
   // A paused clock ends frozen where it was paused.
   if (live.paused) return { ...live, paused: false };
-  return live.stoppedAt === undefined ? { ...live, stoppedAt: Date.now() } : live;
+  return live.stoppedAt === undefined ? { ...live, stoppedAt: clockNow() } : live;
+}
+
+/** Where the time asleep comes from (the main process; tests swap it). */
+let readTimeAsleep: () => number = () =>
+  typeof window === "undefined" ? 0 : (window.chaturanga?.system?.timeAsleepMs?.() ?? 0);
+
+/**
+ * A wall-clock step this far past the monotonic one means the computer may have slept. Small, so
+ * even a sub-second suspend is read before a move is timed (not left to the wake notice, which can
+ * arrive after it), yet above the millisecond jitter between the two clocks, so a normal check
+ * never asks the main process.
+ */
+const SUSPECT_SLEEP_MS = 25;
+let lastMonotonic = performance.now();
+let lastWall = Date.now();
+/**
+ * Main's total since the app started, read once now: a renderer reloaded later would otherwise
+ * start from 0 and add every earlier sleep at its first check, jumping a running clock forward.
+ */
+let timeAsleep = readTimeAsleep();
+/** The main process said the computer woke up: read the total at the next clock check. */
+let resumedSinceRead = false;
+
+/**
+ * The time base for match clocks: monotonic, so changing the system clock (or an NTP correction)
+ * never adds or removes thinking time. Only differences between two readings mean anything.
+ * `performance.now()` may stop while the computer sleeps, so the time it missed is added back —
+ * as the main process measured it (from suspend to resume, not from wall-clock jumps). That is
+ * read synchronously only when the two clocks drift apart since the last reading, which a sleep
+ * always causes: a clock check never waits on the main process otherwise.
+ */
+export function clockNow(): number {
+  const monotonic = performance.now();
+  const wall = Date.now();
+  if (resumedSinceRead || wall - lastWall - (monotonic - lastMonotonic) > SUSPECT_SLEEP_MS) {
+    timeAsleep = readTimeAsleep();
+    resumedSinceRead = false;
+  }
+  lastMonotonic = monotonic;
+  lastWall = wall;
+  return monotonic + timeAsleep;
+}
+
+/** The computer woke up (main's notice): the next clock check reads the time asleep. */
+export function noteSystemResumed(): void {
+  resumedSinceRead = true;
+}
+
+export function setTimeAsleepSource(source: () => number): void {
+  readTimeAsleep = source;
 }
 
 /** Time left on `side`'s clock at `now` (the running side's clock counts down; a stopped game is frozen). */

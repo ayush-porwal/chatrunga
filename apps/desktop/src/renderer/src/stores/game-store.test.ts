@@ -1,6 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
-import { buildEngineGoClock, remainingClockMs, useGameStore } from "./game-store";
+import { buildEngineGoClock, clockNow, noteSystemResumed, remainingClockMs, setTimeAsleepSource, useGameStore } from "./game-store";
+
+/** Moves both time sources together (the clock treats a wall-only jump as time asleep). */
+function mockTime() {
+  const monotonic = vi.spyOn(performance, "now");
+  const wall = vi.spyOn(Date, "now");
+  const at = (ms: number) => {
+    monotonic.mockReturnValue(ms);
+    wall.mockReturnValue(1_700_000_000_000 + ms);
+  };
+  return at;
+}
 
 describe("game store", () => {
   beforeEach(() => {
@@ -403,7 +414,8 @@ describe("game store", () => {
 
 describe("engine clock pause", () => {
   it("freezes the running clock and resumes it without charging the pause", () => {
-    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    const at = mockTime();
+    at(0);
     const game = useGameStore.getState();
     game.reset();
     game.setMode("engine");
@@ -411,11 +423,11 @@ describe("engine clock pause", () => {
     game.setEngineMatchClock({ initialMs: 10_000, incrementMs: 0 });
     game.initEngineClockLive();
 
-    now.mockReturnValue(2_000);
+    at(2_000);
     useGameStore.getState().pauseEngineClock();
     expect(useGameStore.getState().engineClockLive).toMatchObject({ stoppedAt: 2_000, paused: true });
 
-    now.mockReturnValue(60_000);
+    at(60_000);
     useGameStore.getState().resumeEngineClock();
     const live = useGameStore.getState().engineClockLive!;
     expect(live.stoppedAt).toBeUndefined();
@@ -424,22 +436,23 @@ describe("engine clock pause", () => {
   });
 
   it("a move made while paused charges the side that moved, from the pause", () => {
-    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    const at = mockTime();
+    at(0);
     const game = useGameStore.getState();
     game.reset();
     game.setMode("engine");
     game.setEngineSide("black");
     game.setEngineMatchClock({ initialMs: 10_000, incrementMs: 0 });
     game.initEngineClockLive();
-    now.mockReturnValue(1_000);
+    at(1_000);
     expect(useGameStore.getState().makeMove({ from: "e2", to: "e4" })).toBe(true); // White: 9 s left
-    now.mockReturnValue(1_500);
+    at(1_500);
     useGameStore.getState().pauseEngineClock(); // stepped back while Black (the engine) thought
     useGameStore.getState().goToNode("root");
     // An illegal attempt leaves the clock paused.
     expect(useGameStore.getState().makeMove({ from: "d2", to: "d5" })).toBe(false);
     expect(useGameStore.getState().engineClockLive?.paused).toBe(true);
-    now.mockReturnValue(4_500);
+    at(4_500);
     expect(useGameStore.getState().makeMove({ from: "d2", to: "d4" })).toBe(true);
     const live = useGameStore.getState().engineClockLive!;
     // White is charged the 3 s since the pause, Black keeps its time, and it's Black's turn.
@@ -480,13 +493,7 @@ describe("engine clock pause", () => {
   });
 
   it("a replacement move earns its increment once, not on top of the replaced move's", () => {
-    // Both time sources move together, so the case holds whichever one the clock reads.
-    const monotonic = vi.spyOn(performance, "now");
-    const wall = vi.spyOn(Date, "now");
-    const at = (ms: number) => {
-      monotonic.mockReturnValue(ms);
-      wall.mockReturnValue(1_700_000_000_000 + ms);
-    };
+    const at = mockTime();
     at(0);
     const game = useGameStore.getState();
     game.reset();
@@ -508,3 +515,25 @@ describe("engine clock pause", () => {
   });
 });
 
+describe("clockNow after a renderer reload", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    vi.resetModules();
+  });
+
+  it("starts from main's current total, so earlier sleeps never jump a new clock", async () => {
+    let total = 3_600_000; // an hour asleep before this renderer (re)loaded
+    vi.stubGlobal("window", { chaturanga: { system: { timeAsleepMs: () => total } } });
+    vi.resetModules();
+    const store = await import("./game-store");
+    const monotonic = vi.spyOn(performance, "now").mockReturnValue(1_000);
+    const wall = vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const start = store.clockNow();
+    // Asleep another 500 ms: only that is added.
+    total += 500;
+    monotonic.mockReturnValue(2_000);
+    wall.mockReturnValue(1_700_000_000_000 + 1_000 + 500);
+    expect(store.clockNow() - start).toBe(1_500);
+  });
+});

@@ -119,6 +119,7 @@ export function useEngineDriver(defaultEngineId: string | null): void {
       if (state.currentNodeId !== previous.currentNodeId || state.mode !== previous.mode) infos.discard();
     });
     const unsubscribers = [
+      window.chaturanga?.system?.onResumed?.(noteSystemResumed) ?? (() => {}),
       events.onEngineInfo((info) => {
         if (engineSearches.isCurrent(info.searchId)) infos.push(info);
       }),
