@@ -57,6 +57,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   };
 });
 
+import { randomBytes } from "node:crypto";
 import { zstdCompressSync } from "node:zlib";
 import type { DatabaseDownloadProgress, PuzzleSampleInput } from "@chaturanga/shared/types/database";
 import { logger } from "../logger";
@@ -114,7 +115,13 @@ function fakeServer(content: Buffer, etag: string, options: { failAfter?: number
   return { fetchMock, requests };
 }
 
-const content = Buffer.from("PuzzleId,FEN,Moves\n".repeat(500));
+const LICHESS_HEADER = "PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags";
+/** A valid compressed puzzle file; random ids keep it from compressing to a few bytes. */
+function dataset(rowCount: number): Buffer {
+  const rows = Array.from({ length: rowCount }, (_, index) => `${randomBytes(8).toString("hex")},fen,e2e4 e7e5,${1000 + index},80,90,100,short,,`);
+  return zstdCompressSync(Buffer.from([LICHESS_HEADER, ...rows].join("\n")));
+}
+const content = dataset(800);
 
 /** A module instance of its own, for tests that quit (which leaves the module refusing downloads). */
 async function freshModule() {
@@ -160,7 +167,7 @@ describe("downloadDatabase", () => {
   it("starts over when the file changed upstream since the interruption", async () => {
     vi.stubGlobal("fetch", fakeServer(content, '"v1"', { failAfter: 3000 }).fetchMock);
     await expect(downloadDatabase(SOURCE, () => undefined)).rejects.toThrow();
-    const updated = Buffer.from("PuzzleId,FEN,Moves,Rating\n".repeat(400));
+    const updated = dataset(400);
     vi.stubGlobal("fetch", fakeServer(updated, '"v2"').fetchMock);
     await downloadDatabase(SOURCE, () => undefined);
     expect(await readFile(finalPath)).toEqual(updated);
@@ -262,6 +269,7 @@ describe("download reliability", () => {
     let release: () => void = () => undefined;
     const renaming = new Promise<void>((resolve) => {
       fsHooks.beforeRename = () => {
+        fsHooks.beforeRename = null; // only the rename that puts the file in place
         resolve();
         return new Promise((done) => (release = done));
       };
@@ -275,7 +283,13 @@ describe("download reliability", () => {
     await expect(download).rejects.toThrow("Download cancelled.");
     expect(rows.has(SOURCE)).toBe(false);
     expect(events.map((event) => event.state)).not.toContain("completed");
-    fsHooks.beforeRename = null;
+    // The complete file went back to `.part` with its version, so Download again finishes at once.
+    expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst.part", "lichess-puzzles-lichess_db_puzzle.csv.zst.part.validator"]);
+    const server = fakeServer(content, '"v1"');
+    vi.stubGlobal("fetch", server.fetchMock);
+    await downloadDatabase(SOURCE, () => undefined);
+    expect(server.requests).toEqual([{ Range: `bytes=${content.length}-`, "If-Range": '"v1"' }]);
+    expect(await readFile(finalPath)).toEqual(content);
   });
 
   it("a download that finishes after quitting stopped waiting registers nothing", async () => {
@@ -284,6 +298,7 @@ describe("download reliability", () => {
     let release: () => void = () => undefined;
     const renaming = new Promise<void>((resolve) => {
       fsHooks.beforeRename = () => {
+        fsHooks.beforeRename = null; // only the rename that puts the file in place
         resolve();
         return new Promise((done) => (release = done));
       };
@@ -323,6 +338,150 @@ describe("download reliability", () => {
     await downloadDatabase(SOURCE, () => undefined);
     expect(calls).toBe(2);
     expect(await readFile(finalPath)).toEqual(content);
+  });
+});
+
+describe("installing a downloaded file", () => {
+  const oldContent = dataset(300);
+
+  async function installOld() {
+    await mkdir(dir, { recursive: true });
+    await writeFile(finalPath, oldContent);
+    rows.set(SOURCE, { id: SOURCE, sourceId: SOURCE, filePath: finalPath });
+  }
+
+  function serve(body: Buffer | string, contentType = "application/octet-stream") {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body, { headers: { "content-length": String(Buffer.byteLength(body)), "content-type": contentType, etag: '"v2"' } }))
+    );
+  }
+
+  async function expectRejected(pattern: RegExp) {
+    const events: DatabaseDownloadProgress[] = [];
+    await expect(downloadDatabase(SOURCE, (progress) => events.push(progress))).rejects.toThrow(pattern);
+    expect(events.map((event) => event.state)).not.toContain("completed");
+    expect(events.at(-1)).toMatchObject({ state: "failed", message: expect.stringMatching(/isn't a valid dataset/) });
+    // The previous installation is untouched, and the bad bytes aren't kept for a resume.
+    expect(await readFile(finalPath)).toEqual(oldContent);
+    expect(rows.get(SOURCE)?.filePath).toBe(finalPath);
+    expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst"]);
+  }
+
+  it("rejects a web page served as text/html", async () => {
+    await installOld();
+    serve("<!doctype html><title>Sign in</title>", "text/html; charset=utf-8");
+    await expectRejected(/web page/);
+  });
+
+  it("rejects a web page served with a misleading content type", async () => {
+    await installOld();
+    serve("\n  <html><body>Not found</body></html>");
+    await expectRejected(/web page/);
+  });
+
+  it("rejects a file that isn't zstd", async () => {
+    await installOld();
+    serve(randomBytes(5000));
+    await expectRejected(/isn't zstd-compressed/);
+  });
+
+  it("rejects a corrupt zstd stream", async () => {
+    await installOld();
+    const corrupt = Buffer.from(content);
+    corrupt.fill(0x41, 8, 200);
+    serve(corrupt);
+    await expectRejected(/couldn't be read/);
+  });
+
+  it("rejects valid zstd with the wrong columns", async () => {
+    await installOld();
+    serve(zstdCompressSync(Buffer.from("id,fen,moves\n1,x,e2e4 e7e5\n")));
+    await expectRejected(/expected columns \(PuzzleId,FEN,Moves/);
+  });
+
+  it("accepts the position set's header for the position source", async () => {
+    const header = "internal_id,lichess_game_id,move_number,lichess_url,fen,best_move,difficulty,initiative,development";
+    serve(`${header}\n1,g,13,https://lichess.org/g#13,8/8/8/8/8/8/8/K6k w - - 0 1,a1a2,1,0,1\n`, "text/csv");
+    const installed = await downloadDatabase("chess-position-analysis-results", () => undefined);
+    expect(installed.filePath).toBe(join(dir, "chess-position-analysis-results-chess-positions.csv"));
+  });
+
+  it("replaces an installed file and leaves no backup behind", async () => {
+    await installOld();
+    serve(content);
+    await downloadDatabase(SOURCE, () => undefined);
+    expect(await readFile(finalPath)).toEqual(content);
+    expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst"]);
+  });
+
+  it("keeps the installed file when registering the new one fails, and finishes at once next time", async () => {
+    await installOld();
+    repository.failSave = true;
+    const server = fakeServer(content, '"v2"');
+    vi.stubGlobal("fetch", server.fetchMock);
+    await expect(downloadDatabase(SOURCE, () => undefined)).rejects.toThrow("disk full");
+    expect(await readFile(finalPath)).toEqual(oldContent);
+    expect(await readFile(`${finalPath}.part`)).toEqual(content);
+    expect(await readdir(dir)).not.toContain("lichess-puzzles-lichess_db_puzzle.csv.zst.bak");
+
+    repository.failSave = false;
+    await downloadDatabase(SOURCE, () => undefined);
+    expect(server.requests.at(-1)).toEqual({ Range: `bytes=${content.length}-`, "If-Range": '"v2"' });
+    expect(await readFile(finalPath)).toEqual(content);
+    expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst"]);
+  });
+
+  it("keeps the installed file when Cancel is pressed while the new one is put in place", async () => {
+    await installOld();
+    vi.stubGlobal("fetch", fakeServer(content, '"v2"').fetchMock);
+    let release: () => void = () => undefined;
+    const renaming = new Promise<void>((resolve) => {
+      fsHooks.beforeRename = () => {
+        fsHooks.beforeRename = null;
+        resolve();
+        return new Promise((done) => (release = done));
+      };
+    });
+    const download = downloadDatabase(SOURCE, () => undefined);
+    download.catch(() => undefined);
+    await renaming;
+    cancelDownload(SOURCE);
+    release();
+    await expect(download).rejects.toThrow("Download cancelled.");
+    expect(await readFile(finalPath)).toEqual(oldContent);
+    expect(await readFile(`${finalPath}.part`)).toEqual(content);
+    expect(rows.get(SOURCE)?.filePath).toBe(finalPath);
+  });
+
+  it("keeps the installed file when quitting while the new one is put in place", async () => {
+    const { cancelAllDownloads, downloadDatabase } = await freshModule();
+    await installOld();
+    vi.stubGlobal("fetch", fakeServer(content, '"v2"').fetchMock);
+    let release: () => void = () => undefined;
+    const renaming = new Promise<void>((resolve) => {
+      fsHooks.beforeRename = () => {
+        fsHooks.beforeRename = null;
+        resolve();
+        return new Promise((done) => (release = done));
+      };
+    });
+    const download = downloadDatabase(SOURCE, () => undefined);
+    download.catch(() => undefined);
+    await renaming;
+    await cancelAllDownloads(10);
+    release();
+    await expect(download).rejects.toThrow("Download cancelled.");
+    expect(await readFile(finalPath)).toEqual(oldContent);
+  });
+
+  it("puts back an installed file left in its backup by an interrupted install", async () => {
+    await mkdir(dir, { recursive: true });
+    await writeFile(`${finalPath}.bak`, oldContent);
+    rows.set(SOURCE, { id: SOURCE, sourceId: SOURCE, filePath: finalPath });
+    expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([finalPath]);
+    expect(await readFile(finalPath)).toEqual(oldContent);
+    expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst"]);
   });
 });
 

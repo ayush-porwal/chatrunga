@@ -71,51 +71,65 @@ export async function scanCsvLines(
   const decoder = new TextDecoder();
   let buffer = "";
   let lineIndex = 0;
-  let stopped = false;
-  const emitText = (text: string) => {
-    if (stopped) return;
-    buffer += text;
+  for await (const chunk of decompressedChunks(filePath, compressed)) {
+    buffer += decoder.decode(chunk, { stream: true });
     const lines = buffer.split(/\r?\n/);
     buffer = lines.pop() ?? "";
     for (const line of lines) {
-      if (onLine(line, lineIndex++) === false) {
-        stopped = true;
-        return;
-      }
+      // Breaking out ends the reads (and the decompression) of the rest of the file.
+      if (onLine(line, lineIndex++) === false) return;
     }
-  };
+  }
+  const tail = (buffer + decoder.decode()).trim();
+  if (tail) onLine(tail, lineIndex);
+}
 
-  if (compressed && typeof createZstdDecompress === "function") {
-    for await (const chunk of nativeZstdFrames(filePath)) {
-      emitText(decoder.decode(chunk, { stream: true }));
-      if (stopped) break;
+/**
+ * The file's first line, reading (and decompressing) no more than `maxChars` of text — bounded work
+ * however large or wrong the file is. Null when there is no line break within that much text (a CSV
+ * header is far shorter). Rejects when the file can't be read or decompressed.
+ */
+export async function readFirstLine(filePath: string, compressed: boolean, maxChars = 64 * 1024): Promise<string | null> {
+  const decoder = new TextDecoder();
+  let text = "";
+  let ended = true;
+  for await (const chunk of decompressedChunks(filePath, compressed)) {
+    text += decoder.decode(chunk, { stream: true });
+    const newline = text.search(/\r?\n/);
+    if (newline >= 0) return text.slice(0, newline);
+    if (text.length > maxChars) {
+      ended = false;
+      break;
     }
-    const tail = (buffer + decoder.decode()).trim();
-    if (!stopped && tail) onLine(tail, lineIndex);
+  }
+  if (!ended) return null;
+  text += decoder.decode();
+  return text.length ? text : null;
+}
+
+/** The file's bytes, zstd-decompressed when `compressed`; stopping early (a `break`) ends the reads. */
+async function* decompressedChunks(filePath: string, compressed: boolean): AsyncGenerator<Uint8Array> {
+  if (compressed && typeof createZstdDecompress === "function") {
+    yield* nativeZstdFrames(filePath);
     return;
   }
-
   const file = createReadStream(filePath);
   try {
-    if (compressed) {
-      const decompressor = new Decompress((chunk, final) => emitText(decoder.decode(chunk, { stream: !final })));
-      for await (const chunk of file) {
-        decompressor.push(chunk as Buffer, false);
-        if (stopped) break;
-      }
-      if (!stopped) decompressor.push(new Uint8Array(), true);
-    } else {
-      for await (const chunk of file) {
-        emitText(decoder.decode(chunk as Buffer, { stream: true }));
-        if (stopped) break;
-      }
+    if (!compressed) {
+      for await (const chunk of file) yield chunk as Buffer;
+      return;
     }
+    const output: Uint8Array[] = [];
+    const decompressor = new Decompress((chunk) => output.push(chunk));
+    for await (const chunk of file) {
+      decompressor.push(chunk as Buffer, false);
+      yield* output.splice(0);
+    }
+    decompressor.push(new Uint8Array(), true);
+    yield* output.splice(0);
   } finally {
     file.destroy();
   }
-
-  const tail = (buffer + decoder.decode()).trim();
-  if (!stopped && tail) onLine(tail, lineIndex);
 }
 
 /**

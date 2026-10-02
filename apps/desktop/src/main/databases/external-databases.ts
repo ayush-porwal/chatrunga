@@ -1,6 +1,6 @@
 import { app } from "electron";
-import { createWriteStream, existsSync } from "node:fs";
-import { mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { constants, createWriteStream, existsSync } from "node:fs";
+import { copyFile, link, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -16,6 +16,7 @@ import {
 import { externalDatabaseRepository } from "../db/repositories";
 import { errorMessage, logger } from "../logger";
 import { datasetDir, relocatedDatasetPath } from "./dataset-location";
+import { InvalidDatasetError, isHtmlContentType, validateDataset } from "./dataset-validation";
 import { sampleFromLichessRow, sampleFromPositionRow, type PuzzleRowKind } from "./puzzle-rows";
 import { reservoirScan, type ScanJob, type ScanResult } from "./puzzle-scan";
 
@@ -48,6 +49,9 @@ async function onDisk(database: InstalledDatabase): Promise<InstalledDatabase | 
   } catch (error) {
     if (!isMissingFile(error)) throw error;
   }
+  // Missing because an install was interrupted mid-swap: the installed file is still in its `.bak`.
+  await settleBackup(database.filePath).catch(() => undefined);
+  if (existsSync(database.filePath)) return database;
   const moved = relocatedDatasetPath(database.filePath, app.getPath("userData"));
   if (moved && (await fileSize(moved)) > 0) {
     externalDatabaseRepository.updateFilePath(database.id, moved);
@@ -226,6 +230,12 @@ async function runDownload(sourceId: string, onProgress: ProgressSink, signal: A
     if (!response.ok || !response.body) {
       throw new Error(`Download failed (${response.status} ${response.statusText})`);
     }
+    // An error or sign-in page served as "200 OK" (a captive portal, a moved file): the partial
+    // download, if any, stays untouched for a later resume.
+    if (isHtmlContentType(response.headers.get("content-type"))) {
+      await response.body.cancel();
+      throw new InvalidDatasetError(current, "the server sent a web page instead of the data");
+    }
     // A 206 must continue exactly where the partial file ends, or the bytes would be misplaced.
     if (response.status === 206 && rangeStart(response.headers.get("content-range")) !== offset) {
       await response.body.cancel();
@@ -284,6 +294,15 @@ async function runDownload(sourceId: string, onProgress: ProgressSink, signal: A
   }
 }
 
+/**
+ * Installs a complete `.part` file. Its start is checked first (an error page or a foreign file
+ * must not replace a working database), then it is swapped in so that any failure can be undone:
+ * the installed file is kept as `.bak`, the new one takes its place, and only once it is registered
+ * is the `.bak` deleted. If the check fails, nothing is touched but the bad `.part` (deleted, so the
+ * next attempt starts over). If registering fails or the download is cancelled after the swap, the
+ * old file comes back and the new one returns to `.part` with its `.validator`, so downloading
+ * again finishes at once (the server confirms it is complete) instead of fetching it all again.
+ */
 async function finishDownload(
   source: (typeof externalDatabaseSources)[number],
   partPath: string,
@@ -292,31 +311,91 @@ async function finishDownload(
   totalBytes: number | null,
   signal: AbortSignal
 ): Promise<InstalledDatabase> {
-  // Quitting (even after it stopped waiting for this download): the complete `.part` stays for next time.
-  if (shuttingDown) throw new DownloadCancelledError();
-  await rename(partPath, filePath);
-  await unlink(`${partPath}.validator`).catch(() => undefined);
-  const file = await stat(filePath);
-  // The database may be closed by now; or Cancel was pressed while the file was being put in place
-  // (it stays, so Download again finishes at once, but this download installs nothing).
-  if (shuttingDown) throw new DownloadCancelledError();
-  signal.throwIfAborted();
-  // Registered first: "completed" is only announced for a database Puzzles can use.
-  const installed = externalDatabaseRepository.saveDownloaded({
-    source,
-    filePath,
-    fileSizeBytes: file.size,
-    recordCount: source.expectedRecords ?? null
-  });
-  dropPools(installed.id);
-  onProgress({
-    sourceId: source.id,
-    downloadedBytes: file.size,
-    totalBytes: totalBytes ?? file.size,
-    percent: 100,
-    state: "completed"
-  });
-  return installed;
+  const validatorPath = `${partPath}.validator`;
+  const backupPath = backupPathFor(filePath);
+  const stopIfCancelled = () => {
+    // Quitting (even after it stopped waiting for this download) — the database may be closed by
+    // now — or Cancel was pressed: this download installs nothing.
+    if (shuttingDown) throw new DownloadCancelledError();
+    signal.throwIfAborted();
+  };
+  stopIfCancelled();
+  try {
+    await validateDataset(source, partPath);
+  } catch (error) {
+    if (error instanceof InvalidDatasetError) {
+      await unlink(partPath).catch(() => undefined);
+      await unlink(validatorPath).catch(() => undefined);
+    }
+    throw error;
+  }
+  stopIfCancelled();
+  await settleBackup(filePath);
+
+  // A second name for the installed file (a copy where hard links aren't supported), so the file
+  // never goes missing while it is replaced: a listing or a puzzle request meanwhile still finds it.
+  const hadInstalled = existsSync(filePath);
+  if (hadInstalled) await keepAside(filePath, backupPath);
+  let promoted = false;
+  try {
+    await rename(partPath, filePath);
+    promoted = true;
+    const file = await stat(filePath);
+    stopIfCancelled();
+    // Registered first: "completed" is only announced for a database Puzzles can use.
+    const installed = externalDatabaseRepository.saveDownloaded({
+      source,
+      filePath,
+      fileSizeBytes: file.size,
+      recordCount: source.expectedRecords ?? null
+    });
+    await unlink(backupPath).catch(() => undefined);
+    await unlink(validatorPath).catch(() => undefined);
+    dropPools(installed.id);
+    onProgress({
+      sourceId: source.id,
+      downloadedBytes: file.size,
+      totalBytes: totalBytes ?? file.size,
+      percent: 100,
+      state: "completed"
+    });
+    return installed;
+  } catch (error) {
+    try {
+      if (promoted) await rename(filePath, partPath);
+      if (hadInstalled) await rename(backupPath, filePath);
+    } catch (restoreError) {
+      // The `.bak` stays: the next download or listing puts it back (see `settleBackup`).
+      logger.warn("databases", `restoring ${source.name} after a failed install failed:`, errorMessage(restoreError));
+    }
+    throw error;
+  }
+}
+
+/** Where an installed file waits while a new download replaces it. */
+function backupPathFor(filePath: string): string {
+  return `${filePath}.bak`;
+}
+
+async function keepAside(filePath: string, backupPath: string): Promise<void> {
+  await unlink(backupPath).catch(() => undefined);
+  try {
+    await link(filePath, backupPath);
+  } catch {
+    await copyFile(filePath, backupPath, constants.COPYFILE_FICLONE);
+  }
+}
+
+/**
+ * A `.bak` left by an install that was interrupted (the app crashed or was killed mid-swap): put
+ * back when the file itself is missing, otherwise stale and deleted. Run before an install of
+ * that file (downloads of one source never overlap) and by `onDisk` for a missing file.
+ */
+async function settleBackup(filePath: string): Promise<void> {
+  const backupPath = backupPathFor(filePath);
+  if (!existsSync(backupPath)) return;
+  if (existsSync(filePath)) await unlink(backupPath).catch(() => undefined);
+  else await rename(backupPath, filePath);
 }
 
 /**
@@ -336,7 +415,8 @@ export async function removeDatabase(id: string): Promise<void> {
     await previous?.catch(() => undefined);
     await running?.promise.catch(() => undefined);
     // The partial files first: if one can't go, the dataset itself (and its entry) are still intact.
-    for (const path of [`${database.filePath}.part.validator`, `${database.filePath}.part`, database.filePath]) {
+    const paths = [`${database.filePath}.part.validator`, `${database.filePath}.part`, backupPathFor(database.filePath), database.filePath];
+    for (const path of paths) {
       await unlink(path).catch((error: unknown) => {
         if (!isMissingFile(error)) throw error;
       });
