@@ -245,7 +245,10 @@ export function useEngineDriver(defaultEngineId: string | null): void {
               clock
             })
             .catch((error: unknown) => {
-              if (engineSearches.move === searchId) reportEngineError(error);
+              if (engineSearches.move !== searchId) return;
+              // No search is running: the engine's clock stops with it (no flag for a failed start).
+              abandonEngineMove();
+              reportEngineError(error);
             });
         }
       } else {

@@ -448,11 +448,14 @@ describe("LichessService", () => {
       rapid: { rating: 1600, games: 4, provisional: false }
     });
     expect(await store.getToken()).toBe("lip_fresh-token");
-    const statuses = events.filter((event) => event.type === "status");
-    expect(statuses[0]).toMatchObject({ status: { connecting: true, account: null } });
-    expect(statuses.at(-1)).toMatchObject({
-      status: { connecting: false, account: { id: "salma" } }
-    });
+    const statuses = () => events.filter((event) => event.type === "status");
+    expect(statuses()[0]).toMatchObject({ status: { connecting: true, account: null } });
+    // Status events read the stored status first, so the last one can land just after connect().
+    await vi.waitFor(() =>
+      expect(statuses().at(-1)).toMatchObject({
+        status: { connecting: false, account: { id: "salma" } }
+      })
+    );
   });
 
   it("resolves connect() without an account when cancelled", async () => {
