@@ -407,8 +407,7 @@ function registerTelemetryIpc(): void {
   ipcMain.handle("telemetry:track", (_event, value: unknown): boolean => {
     const telemetry = getTelemetry();
     if (!telemetry?.enabled) return false;
-    recordRendererEvent(telemetry, parseRendererEvent(value));
-    return true;
+    return recordRendererEvent(telemetry, parseRendererEvent(value));
   });
 }
 

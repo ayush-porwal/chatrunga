@@ -68,6 +68,7 @@ export function reviewFailureCode(error: unknown): ReviewFailureCode {
 
 /** A count rounded into a coarse bucket (`"41-80"`), for distributions without exact sizes. */
 export function plyBucket(plies: number): string {
+  if (plies <= 0) return "0";
   if (plies <= 20) return "1-20";
   if (plies <= 40) return "21-40";
   if (plies <= 80) return "41-80";

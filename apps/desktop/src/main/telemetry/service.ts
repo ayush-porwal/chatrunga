@@ -170,14 +170,19 @@ export class TelemetryService {
    * Meaningful foreground use (DAU): `user_active` at most once per UTC day. Only user actions
    * call this — never background work, retries or update checks.
    */
-  markActive(kind: TelemetryActivityKind): void {
-    if (!this.active || this.closed) return;
+  markActive(kind: TelemetryActivityKind): boolean {
+    if (!this.active || this.closed) return false;
     const day = new Date(this.now()).toISOString().slice(0, 10);
-    this.guard("marking activity", () => {
-      if (this.state.get("last_active_day") === day) return;
-      // The day is marked only once its event is queued, so a failed write is retried next time.
-      if (this.enqueue("user_active", { kind, utc_day: day })) this.state.set("last_active_day", day);
-    });
+    // True once today is counted (now or earlier); false when it couldn't be, so callers retry.
+    return (
+      this.guard("marking activity", () => {
+        if (this.state.get("last_active_day") === day) return true;
+        // The day is marked only once its event is queued, so a failed write is retried next time.
+        if (!this.enqueue("user_active", { kind, utc_day: day })) return false;
+        this.state.set("last_active_day", day);
+        return true;
+      }) ?? false
+    );
   }
 
   /** An activation step, recorded once per installation (`existing`: found already done at startup). */

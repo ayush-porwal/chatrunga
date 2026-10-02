@@ -288,10 +288,14 @@ describe("TelemetryService counting helpers", () => {
     } as unknown as typeof db;
     const service = makeService({ db, database: () => flaky, now: () => T0, log: () => undefined });
     service.start();
-    service.markActive("study");
+    // Not counted: the renderer is told, so its throttle lets the next report through.
+    expect(service.markActive("study")).toBe(false);
     service.milestone("engine_ready");
     expect(outboxRows(db)).toEqual([]);
     failInserts = false;
+    expect(service.markActive("study")).toBe(true);
+    // Already counted today: still true (nothing more to report).
+    expect(service.markActive("play")).toBe(true);
     service.markActive("study");
     service.milestone("engine_ready");
     expect(outboxRows(db).map((row) => row.event)).toEqual(["user_active", "activation_milestone"]);

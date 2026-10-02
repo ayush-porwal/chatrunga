@@ -18,6 +18,6 @@ describe("telemetry properties", () => {
     expect(modelProperties("openai/gpt-x")).toEqual({ model_vendor: "openai", model_is_default: false });
     expect(modelProperties("my-own/fine-tune")).toEqual({ model_vendor: "custom", model_is_default: false });
     expect(modelProperties("").model_is_default).toBe(true);
-    expect([10, 40, 41, 120, 300].map(plyBucket)).toEqual(["1-20", "21-40", "41-80", "81-120", "121+"]);
+    expect([0, 10, 40, 41, 120, 300].map(plyBucket)).toEqual(["0", "1-20", "21-40", "41-80", "81-120", "121+"]);
   });
 });

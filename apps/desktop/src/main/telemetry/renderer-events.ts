@@ -7,15 +7,13 @@ export { parseTelemetryRendererEvent as parseRendererEvent } from "@chaturanga/s
  * Records a validated renderer interaction. Main adds identity and common metadata, turns game ids
  * into pseudonyms and keeps the once-per-session rules, whatever the renderer sends.
  */
+/** Whether the report was taken: an activity that couldn't be counted (a failed write) is false. */
 export function recordRendererEvent(
   telemetry: TelemetryService,
   event: TelemetryRendererEvent
-): void {
-  if (!telemetry.enabled) return;
-  if (event.type === "activity") {
-    telemetry.markActive(event.kind);
-    return;
-  }
+): boolean {
+  if (!telemetry.enabled) return false;
+  if (event.type === "activity") return telemetry.markActive(event.kind);
   const gameRef = telemetry.gameRef(event.gameId);
   const review = {
     review_id: event.reviewId ?? undefined,
@@ -27,18 +25,18 @@ export function recordRendererEvent(
 
   switch (event.type) {
     case "review_opened":
-      if (!telemetry.firstInSession(`review_opened:${reviewKey}`)) return;
+      if (!telemetry.firstInSession(`review_opened:${reviewKey}`)) return true;
       telemetry.record("review_opened", review);
       telemetry.markActive("study");
-      return;
+      return true;
     case "review_studied":
-      if (!telemetry.firstInSession(`review_studied:${reviewKey}`)) return;
+      if (!telemetry.firstInSession(`review_studied:${reviewKey}`)) return true;
       telemetry.record("review_studied", review);
       telemetry.milestone("review_studied");
       telemetry.markActive("study");
-      return;
+      return true;
     case "commentary_viewed": {
-      if (!telemetry.firstInSession(`commentary_viewed:${reviewKey}:${event.ply}`)) return;
+      if (!telemetry.firstInSession(`commentary_viewed:${reviewKey}:${event.ply}`)) return true;
       telemetry.record("commentary_viewed", {
         ...review,
         ply: event.ply,
@@ -50,6 +48,7 @@ export function recordRendererEvent(
       }
       telemetry.milestone("commentary_viewed");
       telemetry.markActive("study");
+      return true;
     }
   }
 }
