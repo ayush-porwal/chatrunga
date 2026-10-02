@@ -35,18 +35,6 @@ export type SettingsSectionId =
   | "welcome";
 type SectionId = SettingsSectionId;
 
-const sectionLabels: Record<SectionId, string> = {
-  board: "Board",
-  sound: "Sound",
-  engines: "Engines",
-  downloads: "Engine downloads",
-  commentary: "Commentary",
-  lichess: "Lichess",
-  updates: "Updates",
-  usage: "Usage data",
-  welcome: "Getting started"
-};
-
 const sectionDomId = (id: SectionId) => `settings-${id}`;
 
 export const SettingsPage = memo(function SettingsPage({
@@ -61,16 +49,18 @@ export const SettingsPage = memo(function SettingsPage({
   const settings = useSettingsQuery();
   const desktopApiAvailable = hasDesktopApi();
   const appearance = hydratePieceSettings({ ...defaultSettings, ...(settings.data ?? {}) });
+  // In page order (the scroll spy reports the one being read).
   const sections: SectionId[] = [
     "board",
     "sound",
+    ...(desktopApiAvailable ? (["lichess"] as const) : []),
     "engines",
     ...(desktopApiAvailable ? (["downloads"] as const) : []),
     "commentary",
-    ...(desktopApiAvailable ? (["lichess", "updates", "usage", "welcome"] as const) : [])
+    ...(desktopApiAvailable ? (["updates", "usage", "welcome"] as const) : [])
   ];
-  const navRef = useRef<HTMLElement>(null);
-  const active = useScrollSpy(navRef, sections);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const active = useScrollSpy(contentRef, sections);
   useEffect(() => {
     onSectionChange?.(active);
   }, [active, onSectionChange]);
@@ -86,108 +76,86 @@ export const SettingsPage = memo(function SettingsPage({
 
   return (
     <Page>
-      <PageHeader title="Settings" />
+      <PageHeader title="Settings" actions={<SaveStatus />} />
       {!desktopApiAvailable ? (
         <Notice tone="warn">Engines, files and saved settings need the desktop app. This preview uses defaults.</Notice>
       ) : null}
-      <div className="@container">
-        <SaveStatus className="mb-3 justify-end @4xl:hidden" />
-        <div className="grid gap-8 @4xl:grid-cols-[9.5rem_minmax(0,1fr)]">
-          {/* Section index: sticky beside the cards on wide panels, hidden when the column would crowd them. */}
-          <nav
-            ref={navRef}
-            aria-label="Settings sections"
-            className="sticky top-(--page-gutter-y) hidden self-start pt-0.5 @4xl:grid @4xl:gap-6"
-          >
-            <ul className="grid gap-0.5">
-              {sections.map((id) => (
-                <li key={id}>
-                  <a
-                    href={`#${sectionDomId(id)}`}
-                    aria-current={active === id ? "location" : undefined}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      scrollToSection(id);
-                    }}
-                    className={cn(
-                      "relative flex h-8 items-center rounded-md pl-3 text-sm outline-none transition-colors duration-micro focus-visible:ring-2 focus-visible:ring-accent/50",
-                      active === id ? "text-fg" : "text-fg-muted hover:text-fg-secondary"
-                    )}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        "absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-accent transition-[opacity,transform] duration-standard ease-spring",
-                        active === id ? "scale-y-100 opacity-100" : "scale-y-50 opacity-0"
-                      )}
-                    />
-                    <span className="truncate">{sectionLabels[id]}</span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-            <SaveStatus className="pl-3" />
-          </nav>
+      {/* Full width: large cards span both columns; the smaller ones pair up on a wide window. */}
+      <div ref={contentRef} className="@container grid gap-10">
+        <SettingsGroup title="Board & play">
+          <SectionAnchor id="board" wide>
+            <BoardSection appearance={appearance} />
+          </SectionAnchor>
+          <SectionAnchor id="sound">
+            <SoundSection appearance={appearance} />
+          </SectionAnchor>
+          {desktopApiAvailable ? (
+            <SectionAnchor id="lichess">
+              <LichessAccountSection />
+            </SectionAnchor>
+          ) : null}
+        </SettingsGroup>
 
-          <div className="grid min-w-0 gap-6">
-            <SectionAnchor id="board">
-              <BoardSection appearance={appearance} />
+        <SettingsGroup title="Engines & commentary">
+          <SectionAnchor id="engines" wide>
+            <EnginesSection appearance={appearance} />
+          </SectionAnchor>
+          {desktopApiAvailable ? (
+            <SectionAnchor id="downloads" wide>
+              <EngineAssetsPanel />
             </SectionAnchor>
-            <SectionAnchor id="sound">
-              <SoundSection appearance={appearance} />
-            </SectionAnchor>
-            <SectionAnchor id="engines">
-              <EnginesSection appearance={appearance} />
-            </SectionAnchor>
-            {desktopApiAvailable ? (
-              <SectionAnchor id="downloads">
-                <EngineAssetsPanel />
-              </SectionAnchor>
-            ) : null}
-            <SectionAnchor id="commentary">
-              <section className={cn(cardPadded, "grid gap-4")}>
-                <SectionHeader title="Commentary" description="Game review explains each move with an AI model, through your own OpenRouter account." />
+          ) : null}
+          <SectionAnchor id="commentary" wide>
+            <section className={cn(cardPadded, "grid content-start gap-4")}>
+              <SectionHeader title="Commentary" description="Game review explains each move with an AI model, through your own OpenRouter account." />
+              {/* A form reads best at a comfortable width, not stretched across the page. */}
+              <div className="max-w-2xl">
                 <OpenRouterSettingsCard />
-              </section>
+              </div>
+            </section>
+          </SectionAnchor>
+        </SettingsGroup>
+
+        {desktopApiAvailable ? (
+          <SettingsGroup title="App">
+            <SectionAnchor id="updates">
+              <UpdatesSection appearance={appearance} />
             </SectionAnchor>
-            {desktopApiAvailable ? (
-              <SectionAnchor id="lichess">
-                <LichessAccountSection />
-              </SectionAnchor>
-            ) : null}
-            {desktopApiAvailable ? (
-              <SectionAnchor id="updates">
-                <UpdatesSection appearance={appearance} />
-              </SectionAnchor>
-            ) : null}
-            {desktopApiAvailable ? (
-              <SectionAnchor id="usage">
-                <UsageDataSection appearance={appearance} />
-              </SectionAnchor>
-            ) : null}
-            {desktopApiAvailable ? (
-              <SectionAnchor id="welcome">
-                <WelcomeSection />
-              </SectionAnchor>
-            ) : null}
-          </div>
-        </div>
+            <SectionAnchor id="usage">
+              <UsageDataSection appearance={appearance} />
+            </SectionAnchor>
+            <SectionAnchor id="welcome" wide>
+              <WelcomeSection />
+            </SectionAnchor>
+          </SettingsGroup>
+        ) : null}
       </div>
     </Page>
   );
 });
 
-function SectionAnchor({ id, children }: { id: SectionId; children: ReactNode }) {
+/** A titled group of setting cards: one column, two on a wide panel. */
+function SettingsGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div id={sectionDomId(id)} data-settings-section={id} className="min-w-0 scroll-mt-6">
-      {children}
-    </div>
+    <section className="grid gap-3" aria-label={title}>
+      <h2 className="text-xs font-medium tracking-wide text-fg-muted uppercase">{title}</h2>
+      <div className="grid gap-4 @4xl:grid-cols-2">{children}</div>
+    </section>
   );
 }
 
-function scrollToSection(id: SectionId) {
-  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  document.getElementById(sectionDomId(id))?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+/** A card's anchor (deep links, Back to the section being read); `wide` spans both columns. */
+function SectionAnchor({ id, wide = false, children }: { id: SectionId; wide?: boolean; children: ReactNode }) {
+  return (
+    <div
+      id={sectionDomId(id)}
+      data-settings-section={id}
+      // Paired cards share their row's height.
+      className={cn("grid min-w-0 scroll-mt-6 [&>*]:h-full", wide && "@4xl:col-span-2")}
+    >
+      {children}
+    </div>
+  );
 }
 
 /**
