@@ -42,6 +42,7 @@ import { missedBetween, readClocks, type ClockReading } from "../time-asleep";
 import { parseCommentaryRequestContext } from "@chaturanga/shared/schemas/telemetry";
 import { getTelemetry } from "../telemetry";
 import { commentaryReporter } from "../telemetry/commentary";
+import { usageAnalyticsConsent } from "../telemetry/config";
 import { noteEngineReadiness } from "../telemetry/engine-readiness";
 import { parseRendererEvent, recordRendererEvent } from "../telemetry/renderer-events";
 import {
@@ -402,7 +403,7 @@ function registerTelemetryIpc(): void {
     const telemetry = getTelemetry();
     return telemetry
       ? telemetry.status()
-      : { available: false, reason: "not_configured", enabled: settingsRepository.getStored("usageAnalyticsEnabled") === true, pending: 0 };
+      : { available: false, reason: "not_configured", enabled: usageAnalyticsConsent(settingsRepository.getStored("usageAnalyticsEnabled")), pending: 0 };
   });
   ipcMain.handle("telemetry:track", (_event, value: unknown): boolean => {
     const telemetry = getTelemetry();

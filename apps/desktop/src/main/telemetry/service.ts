@@ -1,8 +1,9 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { TelemetryActivityKind, TelemetryStatus } from "@chaturanga/shared/types/telemetry";
-import type { TelemetryConfig } from "./config";
+import { releaseChannel, type TelemetryConfig } from "./config";
 import { OUTBOX_MAX_ATTEMPTS, TelemetryOutbox, TelemetryState, type OutboxEvent } from "./outbox";
+import { TelemetrySession } from "./session";
 import { deliverBatch, type FetchLike } from "./transport";
 
 /** Every event the app records (docs/telemetry.md defines each one). */
@@ -17,14 +18,24 @@ export type TelemetryEventName =
   | "review_opened"
   | "review_studied"
   | "commentary_requested"
-  | "commentary_provider_attempt"
+  | "$ai_generation"
+  | "$ai_trace"
   | "commentary_completed"
   | "commentary_failed"
   | "commentary_viewed"
   | "commentary_session_started";
 
-/** Allowlisted, content-free values only; `undefined` means unknown and is left out. */
-export type TelemetryProperties = Record<string, string | number | boolean | null | undefined>;
+/** A JSON value (AI generations carry their messages as arrays of objects). */
+export type TelemetryValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly TelemetryValue[]
+  | { readonly [key: string]: TelemetryValue | undefined };
+
+/** Event properties; `undefined` means unknown and is left out. */
+export type TelemetryProperties = Record<string, TelemetryValue | undefined>;
 
 export type ActivationMilestone =
   | "engine_ready"
@@ -33,7 +44,8 @@ export type ActivationMilestone =
   | "review_studied"
   | "commentary_viewed";
 
-const SCHEMA_VERSION = 1;
+/** 2: `$session_id`, `launch_id`, production/nightly channels, AI generations. */
+const SCHEMA_VERSION = 2;
 const BATCH_SIZE = 50;
 /** Batches per drain at most; the rest wait for the next one. */
 const MAX_BATCHES_PER_DRAIN = 10;
@@ -51,6 +63,8 @@ export type TelemetryDeps = {
   consent: () => boolean;
   fetchImpl: FetchLike;
   appVersion: string;
+  /** The build's `MAIN_VITE_RELEASE_CHANNEL` (see {@link releaseChannel}). */
+  buildChannel?: string;
   platform: string;
   arch: string;
   now?: () => number;
@@ -69,7 +83,10 @@ export class TelemetryService {
   private readonly state: TelemetryState;
   private readonly now: () => number;
   private readonly random: () => number;
-  private readonly sessionId = randomUUID();
+  /** One per app launch (`launch_id`). */
+  private readonly launchId = randomUUID();
+  /** PostHog's `$session_id`, rotating with inactivity. */
+  private readonly session = new TelemetrySession();
   private readonly once = new Set<string>();
   private active = false;
   private closed = false;
@@ -153,11 +170,12 @@ export class TelemetryService {
     if (!this.active || this.closed) return false;
     const queued = this.guard(`recording ${event}`, () => {
       this.distinctId();
+      const occurredAt = this.now();
       this.outbox.add({
         uuid: randomUUID(),
         event,
-        occurredAt: this.now(),
-        properties: { ...definedOnly(properties), ...this.commonProperties() },
+        occurredAt,
+        properties: { ...definedOnly(properties), ...this.commonProperties(occurredAt) },
         attempts: 0
       });
       return true;
@@ -345,17 +363,17 @@ export class TelemetryService {
     return this.installationId;
   }
 
-  private commonProperties(): TelemetryProperties {
+  private commonProperties(occurredAt: number): TelemetryProperties {
     return {
       schema_version: SCHEMA_VERSION,
-      session_id: this.sessionId,
+      $session_id: this.session.current(occurredAt),
+      launch_id: this.launchId,
       app_version: this.deps.appVersion,
-      release_channel:
-        this.deps.config.available && this.deps.config.development
-          ? "development"
-          : /-/.test(this.deps.appVersion)
-            ? "beta"
-            : "stable",
+      release_channel: releaseChannel({
+        development: Boolean(this.deps.config.available && this.deps.config.development),
+        appVersion: this.deps.appVersion,
+        buildChannel: this.deps.buildChannel
+      }),
       platform: this.deps.platform,
       arch: this.deps.arch,
       $lib: "chaturanga-desktop",

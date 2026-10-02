@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveTelemetryConfig } from "./config";
+import { releaseChannel, resolveTelemetryConfig, usageAnalyticsConsent } from "./config";
 
 const project = { token: "phc_test", host: "https://eu.i.posthog.com" };
 
@@ -86,5 +86,23 @@ describe("resolveTelemetryConfig", () => {
         host: "https://us.i.posthog.com/some/path"
       }).project
     ).toEqual({ token: "phc_test", host: "https://us.i.posthog.com" });
+  });
+});
+
+describe("releaseChannel", () => {
+  it("is development for dev/test runs, else the build's channel, else nightly for prereleases", () => {
+    expect(releaseChannel({ development: true, appVersion: "1.0.0", buildChannel: "nightly" })).toBe("development");
+    expect(releaseChannel({ development: false, appVersion: "1.0.0", buildChannel: " Nightly " })).toBe("nightly");
+    expect(releaseChannel({ development: false, appVersion: "1.0.0-nightly.1", buildChannel: undefined })).toBe("nightly");
+    expect(releaseChannel({ development: false, appVersion: "1.0.0", buildChannel: undefined })).toBe("production");
+    expect(releaseChannel({ development: false, appVersion: "1.0.0", buildChannel: "something" })).toBe("production");
+  });
+});
+
+describe("usageAnalyticsConsent", () => {
+  it("is on unless the user turned it off", () => {
+    expect(usageAnalyticsConsent(undefined)).toBe(true);
+    expect(usageAnalyticsConsent(true)).toBe(true);
+    expect(usageAnalyticsConsent(false)).toBe(false);
   });
 });

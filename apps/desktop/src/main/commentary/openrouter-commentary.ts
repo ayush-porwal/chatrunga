@@ -60,6 +60,10 @@ export type CommentaryReport =
       httpStatus: number | null;
       latencyMs: number;
       usage: CommentaryUsage | null;
+      /** The request as sent (usage analytics records prompts and answers; never the key). */
+      request: { messages: readonly ChatMessage[]; temperature: number; maxTokens: number };
+      /** The model's answer, when one arrived. */
+      output: string | null;
     }
   | {
       type: "outcome";
@@ -69,6 +73,8 @@ export type CommentaryReport =
       attempts: number;
       firstAttemptValid: boolean;
       latencyMs: number;
+      /** The accepted explanation (successful outcomes only). */
+      prose?: string;
     };
 
 export type OpenRouterCommentaryResult = {
@@ -158,7 +164,7 @@ export async function generateOpenRouterCommentary(
         monotonic,
         report
       });
-      report({ type: "outcome", ply, ok: true, code: null, ...trace, latencyMs: monotonic() - startedAt });
+      report({ type: "outcome", ply, ok: true, code: null, ...trace, latencyMs: monotonic() - startedAt, prose: result.prose });
       return { ...result, generatedAt: now() };
     } catch (failure) {
       const known = failure instanceof CommentaryFailure ? failure : null;
@@ -177,7 +183,7 @@ export function reportUnsent(report: (event: CommentaryReport) => void, ply: num
   report({ type: "outcome", ply, ok: false, code, attempts: 0, firstAttemptValid: false, latencyMs: 0 });
 }
 
-type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
 type AttemptTrace = { attempts: number; firstAttemptValid: boolean };
 
@@ -214,16 +220,18 @@ async function generateOne(
   const attempt = async (reason: "initial" | "validation_retry", messages: ChatMessage[], temperature: number) => {
     trace.attempts += 1;
     const startedAt = monotonic();
-    const base = { type: "attempt" as const, ply, attempt: trace.attempts, reason };
+    const request = { messages, temperature, maxTokens: maxTokensForDetail(payload.commentaryDetail) };
+    const base = { type: "attempt" as const, ply, attempt: trace.attempts, reason, request };
     try {
-      const answer = await requestCompletion(payload, apiKey, model, messages, temperature, fetchImpl, timeoutMs);
+      const answer = await requestCompletion(apiKey, model, request, fetchImpl, timeoutMs);
       const check = validateProse(answer.content, payload);
       report({
         ...base,
         result: check.ok ? "accepted" : "validation_failed",
         httpStatus: 200,
         latencyMs: monotonic() - startedAt,
-        usage: answer.usage
+        usage: answer.usage,
+        output: answer.content
       });
       return { content: answer.content, check };
     } catch (error) {
@@ -233,7 +241,8 @@ async function generateOne(
         result: known?.code ?? "network",
         httpStatus: known?.httpStatus ?? null,
         latencyMs: monotonic() - startedAt,
-        usage: null
+        usage: null,
+        output: null
       });
       throw error;
     }
@@ -261,11 +270,9 @@ async function generateOne(
 }
 
 async function requestCompletion(
-  payload: ReviewInsightPayload,
   apiKey: string,
   model: string,
-  messages: ChatMessage[],
-  temperature: number,
+  request: { messages: readonly ChatMessage[]; temperature: number; maxTokens: number },
   fetchImpl: FetchLike,
   timeoutMs: number
 ): Promise<{ content: string; usage: CommentaryUsage | null }> {
@@ -286,9 +293,9 @@ async function requestCompletion(
       },
       body: JSON.stringify({
         model,
-        temperature,
-        max_tokens: maxTokensForDetail(payload.commentaryDetail),
-        messages
+        temperature: request.temperature,
+        max_tokens: request.maxTokens,
+        messages: request.messages
       }),
       signal: controller.signal
     });

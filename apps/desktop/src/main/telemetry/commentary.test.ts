@@ -113,15 +113,43 @@ describe("commentary analytics", () => {
       model_is_default: true
     });
     expect(
-      of("commentary_provider_attempt").map((attempt) => [
-        attempt.attempt,
-        attempt.reason,
-        attempt.result,
-        attempt.request_id
+      of("$ai_generation").map((generation) => [
+        generation.attempt,
+        generation.reason,
+        generation.result,
+        generation.$ai_trace_id,
+        generation.$ai_is_error
       ])
     ).toEqual([
-      [1, "initial", "validation_failed", requested.request_id],
-      [2, "validation_retry", "accepted", requested.request_id]
+      [1, "initial", "validation_failed", requested.request_id, false],
+      [2, "validation_retry", "accepted", requested.request_id, false]
+    ]);
+    const [first, retry] = of("$ai_generation");
+    expect(first).toMatchObject({
+      $ai_model: "anthropic/claude-sonnet-4.6",
+      $ai_provider: "openrouter",
+      $ai_input_tokens: 900,
+      $ai_output_tokens: 80,
+      $ai_total_cost_usd: 0.004,
+      $ai_latency: 0.1,
+      $ai_http_status: 200,
+      $ai_temperature: 0.7,
+      $ai_output_choices: [{ role: "assistant", content: INVALID_ANSWER }]
+    });
+    // The retry's prompt carries the rejected answer and the correction.
+    expect((retry.$ai_input as { role: string }[]).map((message) => message.role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+      "user"
+    ]);
+    expect(of("$ai_trace")).toEqual([
+      expect.objectContaining({
+        $ai_trace_id: requested.request_id,
+        $ai_is_error: false,
+        $ai_input_state: first.$ai_input,
+        $ai_output_state: expect.stringContaining("grabs central space")
+      })
     ]);
     expect(of("commentary_completed")).toEqual([
       expect.objectContaining({
@@ -175,7 +203,8 @@ describe("commentary analytics", () => {
       first_attempt_valid: true,
       attempts: 1
     });
-    expect(of("commentary_provider_attempt")[0]).not.toHaveProperty("prompt_tokens");
+    expect(of("$ai_generation")[0]).not.toHaveProperty("$ai_input_tokens");
+    expect(of("$ai_generation")[0]).not.toHaveProperty("$ai_total_cost_usd");
 
     // Tokens reported but no cost: cost stays unknown.
     expect(parseUsage({ prompt_tokens: 10, completion_tokens: 2 })).toEqual({
@@ -194,10 +223,14 @@ describe("commentary analytics", () => {
       "user_retry"
     );
     expect(of("commentary_requested")[0]).toMatchObject({ trigger: "user_retry" });
-    expect(of("commentary_provider_attempt")[0]).toMatchObject({
+    expect(of("$ai_generation")[0]).toMatchObject({
       result: "rate_limited",
-      http_status: 429
+      $ai_http_status: 429,
+      $ai_is_error: true,
+      $ai_error: "rate_limited"
     });
+    expect(of("$ai_generation")[0]).not.toHaveProperty("$ai_output_choices");
+    expect(JSON.stringify(of("$ai_generation"))).not.toContain("secret body");
     expect(of("commentary_failed")[0]).toMatchObject({
       error_code: "rate_limited",
       trigger: "user_retry"
@@ -205,22 +238,20 @@ describe("commentary analytics", () => {
     expect(of("user_active")).toHaveLength(1);
   });
 
-  it("never records prompts, answers, keys or game content", async () => {
+  it("records prompts and answers for LLM analytics, but never the API key", async () => {
     const fetchImpl = vi
       .fn()
       .mockResolvedValueOnce(completion(INVALID_ANSWER))
       .mockResolvedValueOnce(completion(GOOD_ANSWER));
-    const { events } = await run(fetchImpl, [payload(1)]);
+    const { events, of } = await run(fetchImpl, [payload(1)]);
     const stored = JSON.stringify(events);
-    for (const forbidden of [
-      "unit-test-key",
-      "Qh5",
-      "grabs central space",
-      "rnbqkbnr",
-      "FACTS",
-      'g1"'
-    ]) {
-      expect(stored).not.toContain(forbidden);
+    expect(stored).not.toContain("unit-test-key");
+    expect(stored).not.toContain('g1"');
+    const generations = JSON.stringify(of("$ai_generation"));
+    for (const recorded of ["Qh5", "grabs central space", "rnbqkbnr"]) {
+      expect(generations).toContain(recorded);
     }
+    // Only the AI events carry the conversation; the product events stay small.
+    expect(JSON.stringify(of("commentary_completed"))).not.toContain("rnbqkbnr");
   });
 });

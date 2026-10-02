@@ -63,10 +63,14 @@ describe("TelemetryService delivery", () => {
       $process_person_profile: false,
       $geoip_disable: true,
       app_version: "1.2.3",
-      release_channel: "stable",
+      release_channel: "production",
       platform: "darwin",
-      schema_version: 1
+      schema_version: 2
     });
+    // PostHog sessions: a UUIDv7 shared by events close together; launch_id is per launch.
+    expect(a.properties.$session_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(b.properties.$session_id).toBe(a.properties.$session_id);
+    expect(a.properties.launch_id).toMatch(/^[0-9a-f-]{36}$/);
     // The distinct id is also inside properties, and a recorded property can't replace it.
     expect(a.properties.distinct_id).toBe(a.distinct_id);
     // Unknown values are left out, never sent as null or 0.

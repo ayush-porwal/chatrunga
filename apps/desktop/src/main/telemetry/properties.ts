@@ -3,8 +3,7 @@ import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import { DEFAULT_COMMENTARY_MODEL } from "@chaturanga/shared/llm/models";
 
 /**
- * Coarse, allowlisted descriptions for analytics: never an engine's own name or path, never a
- * custom model string, never error text.
+ * Coarse descriptions for analytics: never an engine's own name or path, never error text.
  */
 
 export type EngineFamily = "stockfish" | "lc0" | "other";
@@ -35,14 +34,16 @@ const KNOWN_MODEL_VENDORS = new Set([
   "z-ai"
 ]);
 
-/** The model's vendor (`anthropic/…` → `anthropic`), and the model id only when it's the default. */
+/** The OpenRouter model id, its vendor (`anthropic/…` → `anthropic`) and whether it's the default. */
 export function modelProperties(model: string): {
+  model: string;
   model_vendor: string;
   model_is_default: boolean;
 } {
   const trimmed = model.trim() || DEFAULT_COMMENTARY_MODEL;
   const vendor = trimmed.split("/")[0]?.toLowerCase() ?? "";
   return {
+    model: trimmed.slice(0, 200),
     model_vendor: KNOWN_MODEL_VENDORS.has(vendor) ? vendor : "custom",
     model_is_default: trimmed === DEFAULT_COMMENTARY_MODEL
   };

@@ -1,8 +1,8 @@
 # Usage analytics (telemetry)
 
-Chaturanga can send **optional, anonymous product analytics** to [PostHog Cloud](https://posthog.com). It is
-**off until the user turns it on** (Settings → Usage data) and it never sends game content. This document is
-the contract: what is collected, how it is counted, how to configure a build, and how to read the numbers.
+Chaturanga sends **product analytics** to [PostHog Cloud](https://posthog.com). It is **on by default** and
+off with one switch (Settings → Usage data). Besides feature usage it records **AI commentary requests and answers** (PostHog LLM analytics). This document
+is the contract: what is collected, how it is counted, how to configure a build, and how to read the numbers.
 
 Code: `apps/desktop/src/main/telemetry/` (service, outbox, delivery), `packages/shared/src/types/telemetry.ts`
 and `packages/shared/src/schemas/telemetry.ts` (the renderer contract), `apps/desktop/src/renderer/src/lib/usage-telemetry.ts`
@@ -14,7 +14,7 @@ and `app/useUsageTelemetry.ts` (renderer interactions).
   metadata. The renderer can only report four fixed interaction shapes over one validated IPC channel
   (`telemetry:track`); unknown events or extra fields are rejected. The renderer's CSP is unchanged
   (`connect-src 'self'`): the renderer never talks to PostHog.
-- **Explicit events only.** No autocapture, no session recording, no DOM capture, no PostHog browser SDK.
+- **Explicit events only.** No autocapture, no session replay, no DOM capture, no PostHog browser SDK.
 - **Never on the critical path.** Recording is a local SQLite insert; delivery runs in the background. Every
   telemetry failure is caught and logged as a code: a review, commentary request, import or shutdown never
   fails or waits because of analytics.
@@ -30,14 +30,16 @@ There is no Chaturanga account, so **a user is an installation profile**:
 - A new computer, a new OS user, a deleted profile, or a different `CHATURANGA_USER_DATA_DIR` is a new
   installation. One person on two machines counts twice; two people sharing one profile count once.
 - Nothing derives identity from API keys, machine fingerprints, Lichess usernames or hardware.
-- `session_id` is a random UUID per app launch.
+- `$session_id` is PostHog's session (a UUIDv7): one id while the app is in use, a new one after 30 minutes
+  without an event or once a session reaches 24 hours. It powers PostHog's session views (session counts and
+  durations, events per session). `launch_id` is a random UUID per app launch.
 - `game_ref` identifies a library game: an HMAC of the local game id with a random per-installation key, so it is
   stable for that installation, is not the local id, and can't be linked across installations. "Distinct games"
   means distinct library records: importing the same PGN twice is two games.
 - `review_id` is the review operation's UUID. It is now saved with the review (`GameReview.reviewId`), so a review
   opened later is attributable. Reviews saved before this change have none (`legacy_review: true`).
 
-"Observed" totals exclude everyone who never opted in, who is permanently offline, or whose events expired
+"Observed" totals exclude everyone who turned it off, who is permanently offline, or whose events expired
 locally (see limits). Existing users' first event after this change is *first observed*, not a new install;
 no historical library is uploaded. Lifetime totals are bounded by PostHog's data retention (1 year on the free
 plan, 7 years on pay-as-you-go).
@@ -46,7 +48,7 @@ plan, 7 years on pay-as-you-go).
 
 | Control | Effect |
 | --- | --- |
-| Settings → Usage data (`usageAnalyticsEnabled`) | Off by default. Off: nothing is recorded or sent, and **events not sent yet are deleted**. On again: collection resumes; nothing old comes back. |
+| Settings → Usage data (`usageAnalyticsEnabled`) | On by default (an installation that never touched the switch is on; one that turned it off stays off). Off: nothing is recorded or sent, and **events not sent yet are deleted**. On again: collection resumes; nothing old comes back. |
 | `CHATURANGA_TELEMETRY_ENABLED=false` (or `0`) | Hard disable, whatever the setting says. Queued events are deleted at startup. |
 | Development, tests, automation | Never delivered: unpackaged builds, Vitest/`NODE_ENV=test` and runs with `CHATURANGA_USER_DATA_DIR` (UI automation) report `development`. `CHATURANGA_TELEMETRY_DEV=1` opts such a run in (use a separate test project); its events carry `release_channel: "development"`. |
 | No project configured | A build without a token/host can't send anything (Settings says so). |
@@ -54,22 +56,27 @@ plan, 7 years on pay-as-you-go).
 To have already-collected data removed, delete the installation's person/events in PostHog by `distinct_id`
 (the id is in the profile's `chaturanga.sqlite`, table `telemetry_state`).
 
-## Never collected
+## What is and isn't collected
 
-PGN or FEN, moves, player names, event/site headers, game or match URLs, Lichess usernames/ids/tokens, file
-paths, engine names or paths (only `engine_family`: `stockfish` / `lc0` / `other`), model ids other than the
-default (only `model_vendor`, or `custom`), API keys, prompts, generated prose, provider response bodies, and
-error messages (only coded failures). The renderer contract is strict-schema validated in main; tests check
-that content-bearing fields are rejected and that recorded payloads contain none of it.
+- **AI commentary** is recorded in full: each request's messages (the coach prompt and the move's facts: FEN,
+  moves, engine lines, ratings), the model's answer, the model id, tokens, cost and latency (`$ai_generation`,
+  `$ai_trace`). These are the only events that carry game content.
+- **Never collected**: API keys or tokens (the OpenRouter key never leaves the key store), file paths, Lichess
+  usernames/ids/tokens, game or match URLs, engine names or paths (only `engine_family`: `stockfish` / `lc0` /
+  `other`), provider response bodies and error messages (only coded failures). Product events (everything but
+  the AI events) carry no PGN, FEN, moves or player names.
+- The renderer contract is strict-schema validated in main; tests check that content-bearing fields are rejected
+  and that no recorded payload contains the API key.
 
 ## Configuration
 
-The build reads two **public** values (electron-vite `MAIN_VITE_*` build-time variables):
+The build reads these **public** values (electron-vite `MAIN_VITE_*` build-time variables):
 
 | Variable | Value |
 | --- | --- |
 | `MAIN_VITE_POSTHOG_PROJECT_TOKEN` | The project's ingest token (`phc_…`, Project settings → General). It can only send events. **Never** use a personal API key. |
 | `MAIN_VITE_POSTHOG_HOST` | The project's region ingest host: `https://eu.i.posthog.com` (EU Cloud) or `https://us.i.posthog.com` (US Cloud). No region is assumed; it must be https. |
+| `MAIN_VITE_RELEASE_CHANNEL` | `nightly` for nightly builds. Unset for the production app (a version with a prerelease tag, e.g. `0.2.0-nightly.1`, also reports `nightly`). |
 
 - **Releases**: `.github/workflows/release.yml` passes repository variables `POSTHOG_PROJECT_TOKEN` and
   `POSTHOG_HOST` to the build step (Settings → Secrets and variables → Actions → Variables). CI builds (`ci.yml`)
@@ -107,9 +114,10 @@ The build reads two **public** values (electron-vite `MAIN_VITE_*` build-time va
 
 ## Events
 
-Common properties on every event: `schema_version`, `session_id`, `app_version`, `release_channel`
-(`stable` / `beta` / `development`), `platform`, `arch`, `$lib`, `$process_person_profile: false`,
-`$geoip_disable: true`. A property that isn't known is **omitted** (never sent as 0 or null).
+Common properties on every event: `schema_version` (2), `$session_id`, `launch_id`, `app_version`,
+`release_channel` (`production` / `nightly` / `development`), `platform`, `arch`, `$lib`,
+`$process_person_profile: false`, `$geoip_disable: true`. A property that isn't known is **omitted** (never sent
+as 0 or null).
 
 ### Activity and activation
 
@@ -149,8 +157,9 @@ validation triggers one corrective retry.
 
 | Event | When | Properties |
 | --- | --- | --- |
-| `commentary_requested` | One **logical** request for one move | `request_id`, `review_id`, `game_ref`, `ply`, `trigger` (`auto` / `user_retry`), `detail`, `model_vendor`, `model_is_default` |
-| `commentary_provider_attempt` | Each actual HTTP attempt | `request_id`, `attempt`, `reason` (`initial` / `validation_retry`), `result` (`accepted`, `validation_failed`, or a failure code), `http_status`, `latency_ms`, `prompt_tokens`, `completion_tokens`, `cost_usd` (when OpenRouter reported them) |
+| `commentary_requested` | One **logical** request for one move | `request_id`, `review_id`, `game_ref`, `ply`, `trigger` (`auto` / `user_retry`), `detail`, `model`, `model_vendor`, `model_is_default` |
+| `$ai_generation` | Each actual HTTP attempt (PostHog LLM analytics → Generations) | `$ai_trace_id` (= `request_id`), `$ai_span_id`, `$ai_span_name` (`commentary` / `commentary validation retry`), `$ai_provider` (`openrouter`), `$ai_model`, `$ai_input` (the messages sent), `$ai_output_choices` (the answer, when one arrived), `$ai_input_tokens`, `$ai_output_tokens`, `$ai_total_cost_usd` (when OpenRouter reported them), `$ai_latency` (s), `$ai_http_status`, `$ai_temperature`, `$ai_max_tokens`, `$ai_is_error` / `$ai_error` (no answer arrived: the failure code); plus `request_id`, `attempt`, `reason`, `result` (`accepted`, `validation_failed`, or a failure code), `review_id`, `game_ref`, `ply`, `trigger`, `detail` |
+| `$ai_trace` | A logical request that reached the provider ended (LLM analytics → Traces) | `$ai_trace_id`, `$ai_span_name`, `$ai_input_state` (the first attempt's messages), `$ai_output_state` (the accepted explanation), `$ai_latency`, `$ai_is_error`, `$ai_error` |
 | `commentary_completed` / `commentary_failed` | The single terminal outcome per logical request | `request_id`, `ply`, `attempts`, `validation_retried`, `first_attempt_valid`, `latency_ms`, `error_code` (failed), usage totals over **all answered attempts** (`prompt_tokens_total`, `completion_tokens_total`, `cost_usd_total`) and `tokens_complete` / `cost_complete` (false when any answered attempt didn't report them; missing totals are omitted, never 0) |
 | `commentary_viewed` | An explanation stayed in view **2 s** with the Commentary tab visible and the window focused (once per session, review and move) | `review_id`, `game_ref`, `ply`, `served_from_cache` |
 | `commentary_session_started` | The first qualified view for a game in a session | `review_id`, `game_ref`, `legacy_review` |
@@ -162,7 +171,7 @@ Failure codes: `no_api_key`, `unreadable_key`, `invalid_key`, `insufficient_cred
   *attempt* of the same request.
 - A batch with mixed results produces one terminal event per move.
 - Reading a cached explanation is a `commentary_viewed` with `served_from_cache: true` and **no** request or
-  attempt. A result that arrives after the user moved to another move (or hid the tab / left the window) is
+  generation. A result that arrives after the user moved to another move (or hid the tab / left the window) is
   generated (`commentary_completed`) but not viewed.
 - Two seconds in view is a proxy for consumption, not proof of reading.
 - Token/cost totals are the user's own OpenRouter spend (BYOK), not Chaturanga's cost; failed or unreported
@@ -170,26 +179,26 @@ Failure codes: `no_api_key`, `unreadable_key`, `invalid_key`, `insufficient_cred
 
 ## Example reports (PostHog SQL / insights)
 
-All examples exclude development traffic; daily numbers assume the project timezone is UTC (or wrap
+All examples count the production app only (use `!= 'development'` to include nightly); daily numbers assume the project timezone is UTC (or wrap
 `timestamp` in `toTimeZone(timestamp, 'UTC')`).
 
 ```sql
 -- Total observed installations, and first-observed cohort by week
-SELECT count(DISTINCT distinct_id) FROM events WHERE properties.release_channel != 'development';
+SELECT count(DISTINCT distinct_id) FROM events WHERE properties.release_channel = 'production';
 SELECT toStartOfWeek(first_seen) AS cohort, count() FROM (
   SELECT distinct_id, min(timestamp) AS first_seen FROM events
-  WHERE properties.release_channel != 'development' GROUP BY distinct_id
+  WHERE properties.release_channel = 'production' GROUP BY distinct_id
 ) GROUP BY cohort ORDER BY cohort;
 
 -- Daily active installations (UTC)
 SELECT toDate(timestamp) AS day, count(DISTINCT distinct_id) AS dau
-FROM events WHERE event = 'user_active' AND properties.release_channel != 'development'
+FROM events WHERE event = 'user_active' AND properties.release_channel = 'production'
 GROUP BY day ORDER BY day;
 
 -- Review operations, distinct reviewed games, and per installation
 SELECT count(DISTINCT properties.review_id) AS review_operations,
        uniqExact(distinct_id, properties.game_ref) AS distinct_games_reviewed
-FROM events WHERE event = 'review_completed' AND properties.release_channel != 'development';
+FROM events WHERE event = 'review_completed' AND properties.release_channel = 'production';
 SELECT distinct_id, count(DISTINCT properties.review_id) AS reviews,
        count(DISTINCT properties.game_ref) AS games
 FROM events WHERE event = 'review_completed' GROUP BY distinct_id ORDER BY reviews DESC;
@@ -231,8 +240,8 @@ Insights to build in the PostHog UI:
 
 ## Limits and follow-ups
 
-- Users are installations, not people (see Identity). Opted-out and permanently offline installations are never
-  observed.
+- Users are installations, not people (see Identity). Installations that turned it off, and permanently
+  offline ones, are never observed.
 - Delivery is at-least-once; PostHog's deduplication by UUID is eventual.
 - Studying a review is measured on the Game review page; stepping through a review from elsewhere counts as
   activity but not as `review_studied`.

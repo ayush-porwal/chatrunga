@@ -11,8 +11,8 @@ language.
 - **Play:** games against an engine with clocks, plus puzzles from the Lichess database
 - **Local-first:** games and engines stay on your machine; AI commentary runs through your own
   OpenRouter key
-- **Optional usage data:** off unless you turn it on in Settings; anonymous feature counts only,
-  never your games, names, files or keys ([what is collected](docs/telemetry.md))
+- **Usage data:** on by default, off with one switch in Settings; feature usage and AI commentary
+  requests and answers, never your API keys or files ([what is collected](docs/telemetry.md))
 
 ## Download
 

@@ -1,9 +1,10 @@
 /**
- * Usage analytics (optional, off until the user turns it on; see docs/telemetry.md).
+ * Usage analytics (on unless the user turns it off; see docs/telemetry.md).
  *
  * The main process owns identity, common metadata and delivery. The renderer may only report the
  * few interactions below: each has a fixed shape, and main validates it again before recording.
- * Nothing here carries game content (PGN/FEN, names, URLs), file paths, keys or AI text.
+ * Nothing the renderer reports carries game content (PGN/FEN, names, URLs), file paths or keys;
+ * AI commentary requests and answers are recorded by main (`$ai_generation`).
  */
 
 /** What the user was doing when the app counted them as active (meaningful, foreground use). */
@@ -53,7 +54,7 @@ export type TelemetryStatus = {
   /** Collection can be turned on in this build and environment. */
   available: boolean;
   reason: TelemetryUnavailableReason | null;
-  /** The user's choice (Settings → Privacy). */
+  /** The user's choice (Settings → Usage data). */
   enabled: boolean;
   /** Events waiting to be sent (kept across restarts while offline). */
   pending: number;
