@@ -7,9 +7,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const userData = mkdtempSync(join(tmpdir(), "chaturanga-databases-"));
 vi.mock("electron", () => ({ app: { getPath: () => userData } }));
 
-const rows = new Map<string, { id: string; sourceId: string; filePath: string }>();
+const rows = new Map<string, { id: string; sourceId: string; filePath: string; name?: string }>();
 vi.mock("../db/repositories", () => ({
   externalDatabaseRepository: {
+    list: () => [...rows.values()],
+    get: (id: string) => [...rows.values()].find((row) => row.id === id) ?? null,
+    remove: (id: string) => {
+      for (const [key, row] of rows) if (row.id === id) rows.delete(key);
+    },
+    updateFilePath: (id: string, filePath: string) => {
+      for (const row of rows.values()) if (row.id === id) row.filePath = filePath;
+    },
     getBySource: (sourceId: string) => rows.get(sourceId) ?? null,
     saveDownloaded: (input: { source: { id: string }; filePath: string }) => {
       const row = { id: input.source.id, sourceId: input.source.id, filePath: input.filePath };
@@ -19,10 +27,10 @@ vi.mock("../db/repositories", () => ({
   }
 }));
 
-import { downloadDatabase } from "./external-databases";
+import { downloadDatabase, listInstalledDatabases, samplePuzzle } from "./external-databases";
 
 const SOURCE = "lichess-puzzles";
-const dir = join(userData, "databases");
+const dir = join(userData, "puzzle-databases");
 const finalPath = join(dir, "lichess-puzzles-lichess_db_puzzle.csv.zst");
 
 /** A server for one file with ETag, Range and If-Range, like database.lichess.org. */
@@ -152,5 +160,40 @@ describe("downloadDatabase", () => {
     expect(first).toBe(second);
     expect(server.requests).toHaveLength(1);
     expect(await readFile(finalPath)).toEqual(content);
+  });
+});
+
+describe("entries registered in the old folder", () => {
+  const legacyPath = join(userData, "databases", "lichess-puzzles-lichess_db_puzzle.csv.zst");
+
+  it("follow their moved file when listed", async () => {
+    await mkdir(dir, { recursive: true });
+    await writeFile(finalPath, content);
+    rows.set(SOURCE, { id: "db", sourceId: SOURCE, filePath: legacyPath });
+    const listed = await listInstalledDatabases();
+    expect(listed.map((database) => database.filePath)).toEqual([finalPath]);
+    expect(rows.get(SOURCE)?.filePath).toBe(finalPath);
+  });
+
+  it("are dropped when the file is gone from both places", async () => {
+    rows.set(SOURCE, { id: "db", sourceId: SOURCE, filePath: legacyPath });
+    expect(await listInstalledDatabases()).toEqual([]);
+    expect(rows.size).toBe(0);
+  });
+
+  it("follow their moved file when sampled", async () => {
+    await mkdir(dir, { recursive: true });
+    const header = "PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags";
+    const puzzle = "p1,rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1,e2e4 e7e5,1500,80,90,100,short,,";
+    await writeFile(join(dir, "lichess-puzzles-lichess_db_puzzle.csv"), [header, puzzle].join("\n"));
+    rows.set(SOURCE, {
+      id: "db",
+      sourceId: SOURCE,
+      name: "Puzzles",
+      filePath: join(userData, "databases", "lichess-puzzles-lichess_db_puzzle.csv"),
+      format: "csv"
+    } as never);
+    expect((await samplePuzzle({ databaseId: "db" })).id).toBe("p1");
+    expect(rows.get(SOURCE)?.filePath).toBe(join(dir, "lichess-puzzles-lichess_db_puzzle.csv"));
   });
 });
