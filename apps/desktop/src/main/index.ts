@@ -132,7 +132,8 @@ async function startup(): Promise<void> {
   void updateService.start({
     prepareForInstall: async () => {
       // The installer quits without the usual close path: write pending saves first, and if one
-      // failed, ask before losing it (Cancel keeps the app open to retry; no install then).
+      // failed (or the renderer didn't answer), ask before losing it (Cancel keeps the app open to
+      // retry; no install then). Only this part can fail: shutdown() doesn't throw.
       for (const window of BrowserWindow.getAllWindows()) {
         const saved = await requestRendererFlush(window.webContents);
         if (!saved && !window.isDestroyed() && !confirmCloseUnsaved(window)) return false;
@@ -145,14 +146,25 @@ async function startup(): Promise<void> {
 
 /**
  * Stops engines, closes Lichess connections (streams, seek, sign-in server) and the database.
- * Idempotent: an update install runs it before `will-quit` does.
+ * Idempotent: an update install runs it before `will-quit` does. Never throws, and a failed step
+ * doesn't skip the rest: once it has started, the app is on its way out (an install that follows
+ * must not stop at a half-closed app).
  */
 function shutdown(): void {
   shutDown = true;
-  shutdownLichess();
-  engineManager.stop();
-  killAllEngineProcesses();
-  closeDb();
+  const steps: [string, () => void][] = [
+    ["lichess", shutdownLichess],
+    ["engines", () => engineManager.stop()],
+    ["engine processes", killAllEngineProcesses],
+    ["database", closeDb]
+  ];
+  for (const [name, step] of steps) {
+    try {
+      step();
+    } catch (error) {
+      logger.error("main", `shutdown: closing ${name} failed:`, error);
+    }
+  }
 }
 
 /**

@@ -143,7 +143,8 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
       }
     } catch (error) {
       // Not knowing whether the latest changes were saved: don't quit into the installer. The
-      // update stays ready, so Restart to update can be tried again.
+      // update stays ready, so Restart to update can be tried again. (Only writing the saves can
+      // fail: the app's shutdown that follows them never throws, so nothing is closed yet here.)
       logger.error("updater", "cleanup before install failed:", error);
       this.installing = false;
       return false;
@@ -163,12 +164,22 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
     }
     // Silent: the assisted NSIS installer would otherwise show its wizard again; relaunch afterwards.
     setImmediate(() => {
+      // electron-updater reports an installer that didn't start as an "error" event (and stays
+      // running), not as a throw.
+      let failed = false;
+      const onError = () => {
+        failed = true;
+      };
+      updater.on("error", onError);
       try {
         updater.quitAndInstall(true, true);
       } catch (error) {
         logger.error("updater", "quitAndInstall failed:", error);
-        this.restartAfterFailedInstall();
+        failed = true;
+      } finally {
+        updater.off("error", onError);
       }
+      if (failed) this.restartAfterFailedInstall();
     });
     return true;
   }
