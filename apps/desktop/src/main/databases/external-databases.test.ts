@@ -513,6 +513,20 @@ describe("installing a downloaded file", () => {
     expect(await readFile(finalPath)).toEqual(oldContent);
     expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst"]);
   });
+
+  it("keeps the entry of a backup that can't be put back yet, and restores it on a later listing", async () => {
+    await mkdir(dir, { recursive: true });
+    await writeFile(`${finalPath}.bak`, oldContent);
+    rows.set(SOURCE, { id: SOURCE, sourceId: SOURCE, filePath: finalPath });
+    fsHooks.beforeRename = async () => {
+      fsHooks.beforeRename = null;
+      throw Object.assign(new Error("busy"), { code: "EBUSY" });
+    };
+    expect(await listInstalledDatabases()).toEqual([]);
+    expect(rows.has(SOURCE)).toBe(true);
+    expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([finalPath]);
+    expect(await readFile(finalPath)).toEqual(oldContent);
+  });
 });
 
 describe("resume without Content-Length", () => {

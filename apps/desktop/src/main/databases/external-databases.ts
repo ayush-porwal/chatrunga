@@ -57,8 +57,14 @@ async function onDisk(database: InstalledDatabase): Promise<InstalledDatabase | 
     if (!isMissingFile(error)) throw error;
   }
   // Missing because an install was interrupted mid-swap: the installed file is still in its `.bak`.
-  await settleBackup(database.filePath).catch(() => undefined);
+  const restored = await settleBackup(database.filePath).then(
+    () => true,
+    () => false
+  );
   if (existsSync(database.filePath)) return database;
+  // The backup couldn't be put back now (in use, no permission): keep the entry, so a later
+  // listing tries again rather than forgetting a dataset that is still on disk.
+  if (!restored && existsSync(backupPathFor(database.filePath))) return null;
   const moved = relocatedDatasetPath(database.filePath, app.getPath("userData"));
   if (moved && (await fileSize(moved)) > 0) {
     externalDatabaseRepository.updateFilePath(database.id, moved);
