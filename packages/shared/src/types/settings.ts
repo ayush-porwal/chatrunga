@@ -227,8 +227,8 @@ export type AppSettings = {
   /** In-app updates: also offer prerelease (beta) versions. Always on while running a prerelease. */
   updatesIncludeBeta: boolean;
   /**
-   * Send anonymous usage analytics (docs/telemetry.md). Off until the user turns it on; turning it
-   * off deletes events not sent yet. `CHATURANGA_TELEMETRY_ENABLED=false` overrides it.
+   * Send usage analytics (docs/telemetry.md). On unless the user turns it off; turning it off
+   * deletes events not sent yet. `CHATURANGA_TELEMETRY_ENABLED=false` overrides it.
    */
   usageAnalyticsEnabled: boolean;
   theme: "light" | "dark";
@@ -300,7 +300,7 @@ export const defaultSettings: AppSettings = {
   recentFilePaths: [],
   updatesAutoDownload: true,
   updatesIncludeBeta: false,
-  usageAnalyticsEnabled: false,
+  usageAnalyticsEnabled: true,
   theme: "dark",
   lastOpenedGameId: null,
   onboardingCompletedAt: null,

@@ -1,8 +1,9 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { TelemetryActivityKind, TelemetryStatus } from "@chaturanga/shared/types/telemetry";
-import type { TelemetryConfig } from "./config";
+import { releaseChannel, type TelemetryConfig } from "./config";
 import { OUTBOX_MAX_ATTEMPTS, TelemetryOutbox, TelemetryState, type OutboxEvent } from "./outbox";
+import { TelemetrySession } from "./session";
 import { deliverBatch, type FetchLike } from "./transport";
 
 /** Every event the app records (docs/telemetry.md defines each one). */
@@ -17,14 +18,24 @@ export type TelemetryEventName =
   | "review_opened"
   | "review_studied"
   | "commentary_requested"
-  | "commentary_provider_attempt"
+  | "$ai_generation"
+  | "$ai_trace"
   | "commentary_completed"
   | "commentary_failed"
   | "commentary_viewed"
   | "commentary_session_started";
 
-/** Allowlisted, content-free values only; `undefined` means unknown and is left out. */
-export type TelemetryProperties = Record<string, string | number | boolean | null | undefined>;
+/** A JSON value (AI generations carry their messages as arrays of objects). */
+export type TelemetryValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly TelemetryValue[]
+  | { readonly [key: string]: TelemetryValue | undefined };
+
+/** Event properties; `undefined` means unknown and is left out. */
+export type TelemetryProperties = Record<string, TelemetryValue | undefined>;
 
 export type ActivationMilestone =
   | "engine_ready"
@@ -33,7 +44,8 @@ export type ActivationMilestone =
   | "review_studied"
   | "commentary_viewed";
 
-const SCHEMA_VERSION = 1;
+/** 2: `$session_id`, `launch_id`, production/nightly channels, AI generations. */
+const SCHEMA_VERSION = 2;
 const BATCH_SIZE = 50;
 /** Batches per drain at most; the rest wait for the next one. */
 const MAX_BATCHES_PER_DRAIN = 10;
@@ -51,6 +63,8 @@ export type TelemetryDeps = {
   consent: () => boolean;
   fetchImpl: FetchLike;
   appVersion: string;
+  /** The build's `MAIN_VITE_RELEASE_CHANNEL` (see {@link releaseChannel}). */
+  buildChannel?: string;
   platform: string;
   arch: string;
   now?: () => number;
@@ -69,8 +83,13 @@ export class TelemetryService {
   private readonly state: TelemetryState;
   private readonly now: () => number;
   private readonly random: () => number;
-  private readonly sessionId = randomUUID();
+  /** One per app launch (`launch_id`). */
+  private readonly launchId = randomUUID();
+  /** PostHog's `$session_id`, rotating with inactivity. */
+  private readonly session = new TelemetrySession();
+  /** Keys recorded in the current PostHog session ({@link recordOncePerSession}). */
   private readonly once = new Set<string>();
+  private onceSession: string | null = null;
   private active = false;
   private closed = false;
   private draining: Promise<void> | null = null;
@@ -149,15 +168,20 @@ export class TelemetryService {
   }
 
   /** `record`, saying whether the event is now queued. */
-  private enqueue(event: TelemetryEventName, properties: TelemetryProperties): boolean {
+  private enqueue(
+    event: TelemetryEventName,
+    properties: TelemetryProperties,
+    at: number = this.now()
+  ): boolean {
     if (!this.active || this.closed) return false;
     const queued = this.guard(`recording ${event}`, () => {
       this.distinctId();
+      const occurredAt = at;
       this.outbox.add({
         uuid: randomUUID(),
         event,
-        occurredAt: this.now(),
-        properties: { ...definedOnly(properties), ...this.commonProperties() },
+        occurredAt,
+        properties: { ...definedOnly(properties), ...this.commonProperties(occurredAt) },
         attempts: 0
       });
       return true;
@@ -197,9 +221,26 @@ export class TelemetryService {
     });
   }
 
-  /** True the first time `key` is seen in this app session (once-per-session events). */
-  firstInSession(key: string): boolean {
+  /**
+   * Records `event` unless `key` was already recorded in the current session (`$session_id`), for
+   * once-per-session events: a new session (after inactivity, or a day) starts with nothing seen.
+   * The check and the event share one timestamp, so both fall in the same session. True when this
+   * call recorded it; a write that failed isn't marked, so the next report tries again.
+   */
+  recordOncePerSession(
+    key: string,
+    event: TelemetryEventName,
+    properties: TelemetryProperties = {}
+  ): boolean {
+    if (!this.active || this.closed) return false;
+    const at = this.now();
+    const session = this.session.peek(at);
+    if (session !== this.onceSession) {
+      this.once.clear();
+      this.onceSession = session;
+    }
     if (this.once.has(key)) return false;
+    if (!this.enqueue(event, properties, at)) return false;
     this.once.add(key);
     return true;
   }
@@ -345,17 +386,17 @@ export class TelemetryService {
     return this.installationId;
   }
 
-  private commonProperties(): TelemetryProperties {
+  private commonProperties(occurredAt: number): TelemetryProperties {
     return {
       schema_version: SCHEMA_VERSION,
-      session_id: this.sessionId,
+      $session_id: this.session.current(occurredAt),
+      launch_id: this.launchId,
       app_version: this.deps.appVersion,
-      release_channel:
-        this.deps.config.available && this.deps.config.development
-          ? "development"
-          : /-/.test(this.deps.appVersion)
-            ? "beta"
-            : "stable",
+      release_channel: releaseChannel({
+        development: Boolean(this.deps.config.available && this.deps.config.development),
+        appVersion: this.deps.appVersion,
+        buildChannel: this.deps.buildChannel
+      }),
       platform: this.deps.platform,
       arch: this.deps.arch,
       $lib: "chaturanga-desktop",

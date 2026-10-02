@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { reviewInsightPayloadSchema, type ReviewInsightPayload } from "@chaturanga/shared/schemas";
-import { generateOpenRouterCommentary, parseUsage } from "../commentary/openrouter-commentary";
+import {
+  analyticsRedactor,
+  generateOpenRouterCommentary,
+  parseUsage
+} from "../commentary/openrouter-commentary";
 import { commentaryReporter } from "./commentary";
 import { makeService, telemetryDatabase } from "./__fixtures__/telemetry-fixtures";
 
@@ -13,8 +17,9 @@ const GOOD_ANSWER = JSON.stringify({
 });
 const INVALID_ANSWER = "The move loses time after Qh5.";
 
-function payload(ply: number): ReviewInsightPayload {
+function payload(ply: number, extra: Record<string, unknown> = {}): ReviewInsightPayload {
   return reviewInsightPayloadSchema.parse({
+    ...extra,
     schemaVersion: 1,
     player: { rating: 1500, color: "white", ratingBucket: 1500 },
     game: {
@@ -113,15 +118,43 @@ describe("commentary analytics", () => {
       model_is_default: true
     });
     expect(
-      of("commentary_provider_attempt").map((attempt) => [
-        attempt.attempt,
-        attempt.reason,
-        attempt.result,
-        attempt.request_id
+      of("$ai_generation").map((generation) => [
+        generation.attempt,
+        generation.reason,
+        generation.result,
+        generation.$ai_trace_id,
+        generation.$ai_is_error
       ])
     ).toEqual([
-      [1, "initial", "validation_failed", requested.request_id],
-      [2, "validation_retry", "accepted", requested.request_id]
+      [1, "initial", "validation_failed", requested.request_id, false],
+      [2, "validation_retry", "accepted", requested.request_id, false]
+    ]);
+    const [first, retry] = of("$ai_generation");
+    expect(first).toMatchObject({
+      $ai_model: "anthropic/claude-sonnet-4.6",
+      $ai_provider: "openrouter",
+      $ai_input_tokens: 900,
+      $ai_output_tokens: 80,
+      $ai_total_cost_usd: 0.004,
+      $ai_latency: 0.1,
+      $ai_http_status: 200,
+      $ai_temperature: 0.7,
+      $ai_output_choices: [{ role: "assistant", content: INVALID_ANSWER }]
+    });
+    // The retry's prompt carries the rejected answer and the correction.
+    expect((retry.$ai_input as { role: string }[]).map((message) => message.role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+      "user"
+    ]);
+    expect(of("$ai_trace")).toEqual([
+      expect.objectContaining({
+        $ai_trace_id: requested.request_id,
+        $ai_is_error: false,
+        $ai_input_state: first.$ai_input,
+        $ai_output_state: expect.stringContaining("grabs central space")
+      })
     ]);
     expect(of("commentary_completed")).toEqual([
       expect.objectContaining({
@@ -175,7 +208,8 @@ describe("commentary analytics", () => {
       first_attempt_valid: true,
       attempts: 1
     });
-    expect(of("commentary_provider_attempt")[0]).not.toHaveProperty("prompt_tokens");
+    expect(of("$ai_generation")[0]).not.toHaveProperty("$ai_input_tokens");
+    expect(of("$ai_generation")[0]).not.toHaveProperty("$ai_total_cost_usd");
 
     // Tokens reported but no cost: cost stays unknown.
     expect(parseUsage({ prompt_tokens: 10, completion_tokens: 2 })).toEqual({
@@ -194,10 +228,14 @@ describe("commentary analytics", () => {
       "user_retry"
     );
     expect(of("commentary_requested")[0]).toMatchObject({ trigger: "user_retry" });
-    expect(of("commentary_provider_attempt")[0]).toMatchObject({
+    expect(of("$ai_generation")[0]).toMatchObject({
       result: "rate_limited",
-      http_status: 429
+      $ai_http_status: 429,
+      $ai_is_error: true,
+      $ai_error: "rate_limited"
     });
+    expect(of("$ai_generation")[0]).not.toHaveProperty("$ai_output_choices");
+    expect(JSON.stringify(of("$ai_generation"))).not.toContain("secret body");
     expect(of("commentary_failed")[0]).toMatchObject({
       error_code: "rate_limited",
       trigger: "user_retry"
@@ -205,22 +243,55 @@ describe("commentary analytics", () => {
     expect(of("user_active")).toHaveLength(1);
   });
 
-  it("never records prompts, answers, keys or game content", async () => {
+  it("records prompts and answers for LLM analytics, but never the API key", async () => {
     const fetchImpl = vi
       .fn()
       .mockResolvedValueOnce(completion(INVALID_ANSWER))
       .mockResolvedValueOnce(completion(GOOD_ANSWER));
-    const { events } = await run(fetchImpl, [payload(1)]);
+    const { events, of } = await run(fetchImpl, [payload(1)]);
     const stored = JSON.stringify(events);
-    for (const forbidden of [
-      "unit-test-key",
-      "Qh5",
-      "grabs central space",
-      "rnbqkbnr",
-      "FACTS",
-      'g1"'
-    ]) {
-      expect(stored).not.toContain(forbidden);
+    expect(stored).not.toContain("unit-test-key");
+    expect(stored).not.toContain('g1"');
+    const generations = JSON.stringify(of("$ai_generation"));
+    for (const recorded of ["Qh5", "grabs central space", "rnbqkbnr"]) {
+      expect(generations).toContain(recorded);
     }
+    // Only the AI events carry the conversation; the product events stay small.
+    expect(JSON.stringify(of("commentary_completed"))).not.toContain("rnbqkbnr");
+  });
+
+  it("replaces player and engine names in what it records, not in what it sends", async () => {
+    const named = payload(1, { context: { players: { white: "MagnusFan", black: "kakashi__ofleaf" } } });
+    named.engines.stockfish.engineName = "My Secret Engine";
+    const sent: string[] = [];
+    const fetchImpl = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      sent.push(String(init?.body));
+      return completion(GOOD_ANSWER);
+    });
+    const { events, of } = await run(fetchImpl, [named]);
+    expect(sent.join()).toContain("kakashi__ofleaf");
+    const stored = JSON.stringify(events);
+    for (const name of ["MagnusFan", "kakashi__ofleaf", "My Secret Engine"]) {
+      expect(stored).not.toContain(name);
+    }
+    expect(JSON.stringify(of("$ai_generation"))).toContain("[Black]");
+
+    const redact = analyticsRedactor(named);
+    expect(redact("magnusfan (White) vs KAKASHI__OFLEAF, by my secret engine")).toBe(
+      "[White] (White) vs [Black], by [engine]"
+    );
+    expect(analyticsRedactor(payload(1))("unchanged")).toBe("unchanged");
+
+    // Either Unicode spelling of a name, and case-insensitive matches the lowercase can't key.
+    const unicode = analyticsRedactor(
+      payload(1, { context: { players: { white: "Am\u00e9lie", black: "\u039f\u03a3" } } })
+    );
+    expect(unicode("Ame\u0301lie vs \u03bf\u03c2")).toBe("[White] vs [Black]");
+
+    // A one-letter name is replaced too, as a whole word only.
+    const short = analyticsRedactor(payload(1, { context: { players: { white: "A", black: "Bo" } } }));
+    expect(short('{"white":"A","black":"Bo"} A and Bo play a Bongcloud')).toBe(
+      '{"white":"[White]","black":"[Black]"} [White] and [Black] play [White] Bongcloud'
+    );
   });
 });

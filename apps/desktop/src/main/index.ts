@@ -39,7 +39,7 @@ import {
 import { installWindowGlass, windowGlassConstructorOptions } from "./window-glass";
 import { requestRendererFlush } from "./renderer-flush";
 import { getTelemetry, initTelemetry } from "./telemetry";
-import { resolveTelemetryConfig } from "./telemetry/config";
+import { resolveTelemetryConfig, usageAnalyticsConsent } from "./telemetry/config";
 import { noteEngineReadiness } from "./telemetry/engine-readiness";
 import { rescueLegacyDatasets } from "./databases/dataset-location";
 
@@ -163,8 +163,8 @@ async function startup(): Promise<void> {
 }
 
 /**
- * Usage analytics (docs/telemetry.md): off unless this build has a project, the environment allows
- * it and the user turned it on. A failure here never stops the app from starting.
+ * Usage analytics (docs/telemetry.md): on when this build has a project and the environment allows
+ * it, unless the user turned it off. A failure here never stops the app from starting.
  */
 function startTelemetry(): void {
   try {
@@ -176,10 +176,11 @@ function startTelemetry(): void {
         host: import.meta.env.MAIN_VITE_POSTHOG_HOST
       }),
       database: getDb,
-      consent: () => settingsRepository.getStored("usageAnalyticsEnabled") === true,
+      consent: () => usageAnalyticsConsent(settingsRepository.getStored("usageAnalyticsEnabled")),
       // Chromium's network stack: system proxy settings apply.
       fetchImpl: (input, init) => net.fetch(input, init),
       appVersion: app.getVersion(),
+      buildChannel: import.meta.env.MAIN_VITE_RELEASE_CHANNEL,
       platform: process.platform,
       arch: process.arch,
       log: (message, error) => logger.warn("telemetry", message, error === undefined ? "" : errorMessage(error))

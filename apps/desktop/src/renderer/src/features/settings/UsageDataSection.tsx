@@ -18,8 +18,8 @@ const unavailableText: Record<TelemetryUnavailableReason, string> = {
 };
 
 /**
- * Settings → Usage data: the opt-in for anonymous usage analytics (off by default). What it
- * collects is listed in docs/telemetry.md; turning it off deletes events not sent yet.
+ * Settings → Usage data: usage analytics, on by default. What it collects is listed in
+ * docs/telemetry.md; turning it off deletes events not sent yet.
  */
 export function UsageDataSection({ appearance }: { appearance: AppSettings }) {
   const setSetting = useSetSetting();
@@ -44,16 +44,16 @@ export function UsageDataSection({ appearance }: { appearance: AppSettings }) {
     <section className={cn(cardPadded, "grid gap-2")}>
       <SectionHeader
         title="Usage data"
-        description="Help improve Chaturanga by sharing which features are used — never your games, names, files or keys."
+        description="Help improve Chaturanga by sharing how it's used. Never your API keys or files."
       />
       <div className="grid divide-y divide-line-subtle">
         <SettingRow
-          label="Share anonymous usage data"
+          label="Share usage data"
           htmlFor="setting-usage-analytics"
           description={
             unavailable
               ? unavailableText[unavailable]
-              : "Counts such as reviews run, explanations viewed and days the app is used, with a random id for this installation. Off removes anything not sent yet."
+              : "Which features are used (reviews run, explanations viewed, days the app is used) and AI commentary requests and answers, with a random id for this installation. Off removes anything not sent yet."
           }
           control={
             <Switch

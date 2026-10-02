@@ -1,5 +1,8 @@
 import type { TelemetryUnavailableReason } from "@chaturanga/shared/types/telemetry";
 
+/** Which build sent an event: the production app, a nightly build, or a development/test run. */
+export type ReleaseChannel = "production" | "nightly" | "development";
+
 /** Where events go: a PostHog project's public ingest token and its region's ingest host. */
 export type TelemetryProject = { token: string; host: string };
 
@@ -56,4 +59,28 @@ function parseProject(
   } catch {
     return null;
   }
+}
+
+/**
+ * The channel a build reports. A dev/test run is `development`; otherwise the build's
+ * `MAIN_VITE_RELEASE_CHANNEL` (`nightly`) decides, and without it a version with a prerelease tag
+ * (`0.2.0-nightly.20261002`) is nightly and anything else is production.
+ */
+export function releaseChannel(input: {
+  development: boolean;
+  appVersion: string;
+  buildChannel: string | undefined;
+}): ReleaseChannel {
+  if (input.development) return "development";
+  const declared = input.buildChannel?.trim().toLowerCase();
+  if (declared === "nightly" || declared === "production") return declared;
+  return /-/.test(input.appVersion) ? "nightly" : "production";
+}
+
+/**
+ * The user's choice from the stored `usageAnalyticsEnabled` value: on unless they turned it off
+ * (nothing stored, as on a new installation or one that never touched the switch, means on).
+ */
+export function usageAnalyticsConsent(stored: unknown): boolean {
+  return stored !== false;
 }

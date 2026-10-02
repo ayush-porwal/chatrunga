@@ -60,6 +60,13 @@ export type CommentaryReport =
       httpStatus: number | null;
       latencyMs: number;
       usage: CommentaryUsage | null;
+      /**
+       * The request for usage analytics: the messages with player and engine names replaced
+       * ({@link analyticsRedactor}), never the key.
+       */
+      request: { messages: readonly ChatMessage[]; temperature: number; maxTokens: number };
+      /** The model's answer, when one arrived (names replaced the same way). */
+      output: string | null;
     }
   | {
       type: "outcome";
@@ -69,6 +76,8 @@ export type CommentaryReport =
       attempts: number;
       firstAttemptValid: boolean;
       latencyMs: number;
+      /** The accepted explanation (successful outcomes only; names replaced). */
+      prose?: string;
     };
 
 export type OpenRouterCommentaryResult = {
@@ -158,7 +167,15 @@ export async function generateOpenRouterCommentary(
         monotonic,
         report
       });
-      report({ type: "outcome", ply, ok: true, code: null, ...trace, latencyMs: monotonic() - startedAt });
+      report({
+        type: "outcome",
+        ply,
+        ok: true,
+        code: null,
+        ...trace,
+        latencyMs: monotonic() - startedAt,
+        prose: analyticsRedactor(payload)(result.prose)
+      });
       return { ...result, generatedAt: now() };
     } catch (failure) {
       const known = failure instanceof CommentaryFailure ? failure : null;
@@ -171,13 +188,47 @@ export async function generateOpenRouterCommentary(
   return { commentary: results.filter((item): item is ReviewCommentary => item !== null), error };
 }
 
+/**
+ * For usage analytics: replaces the players' names (PGN headers; Lichess usernames for synced
+ * games) and the engine's configured name with placeholders wherever they appear, in the prompt
+ * and in the model's answer. What is sent to OpenRouter is unchanged.
+ */
+export function analyticsRedactor(payload: ReviewInsightPayload): (text: string) => string {
+  const replacements: Array<[string, string]> = [];
+  const add = (value: string | undefined, placeholder: string) => {
+    // One Unicode form for names and text alike (é as one code point or e + accent).
+    const trimmed = value?.normalize("NFC").trim();
+    if (trimmed) replacements.push([trimmed, placeholder]);
+  };
+  add(payload.context?.players?.white, "[White]");
+  add(payload.context?.players?.black, "[Black]");
+  add(payload.engines.stockfish.engineName, "[engine]");
+  if (!replacements.length) return (text) => text;
+  // Longest first, so a name containing another is replaced whole; whole words only, so a short
+  // name ("A") doesn't eat letters out of other words.
+  replacements.sort((a, b) => b[0].length - a[0].length);
+  // One group per name: the matching group picks the placeholder (re-keying the match by
+  // lowercasing it would miss case-insensitive matches such as Σ / ς).
+  const names = replacements.map(([value]) => `(${escapeRegExp(value)})`).join("|");
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])(?:${names})(?![\\p{L}\\p{N}_])`, "giu");
+  return (text) =>
+    text.normalize("NFC").replace(pattern, (match: string, ...groups: unknown[]) => {
+      const index = groups.slice(0, replacements.length).findIndex((group) => group !== undefined);
+      return index >= 0 ? replacements[index]![1] : match;
+    });
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /** A move whose request never reached the provider (no key): one request, no attempts, a failure. */
 export function reportUnsent(report: (event: CommentaryReport) => void, ply: number, code: CommentaryFailureCode): void {
   report({ type: "request", ply });
   report({ type: "outcome", ply, ok: false, code, attempts: 0, firstAttemptValid: false, latencyMs: 0 });
 }
 
-type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
 type AttemptTrace = { attempts: number; firstAttemptValid: boolean };
 
@@ -210,20 +261,27 @@ async function generateOne(
 ): Promise<Omit<ReviewCommentary, "generatedAt">> {
   const { trace, monotonic, report } = instrumentation;
   const ply = payload.game.ply;
+  const redact = analyticsRedactor(payload);
   /** One HTTP attempt, reported with its latency, outcome and (when known) usage. */
   const attempt = async (reason: "initial" | "validation_retry", messages: ChatMessage[], temperature: number) => {
     trace.attempts += 1;
     const startedAt = monotonic();
-    const base = { type: "attempt" as const, ply, attempt: trace.attempts, reason };
+    const request = { messages, temperature, maxTokens: maxTokensForDetail(payload.commentaryDetail) };
+    const reported = {
+      ...request,
+      messages: messages.map((message) => ({ role: message.role, content: redact(message.content) }))
+    };
+    const base = { type: "attempt" as const, ply, attempt: trace.attempts, reason, request: reported };
     try {
-      const answer = await requestCompletion(payload, apiKey, model, messages, temperature, fetchImpl, timeoutMs);
+      const answer = await requestCompletion(apiKey, model, request, fetchImpl, timeoutMs);
       const check = validateProse(answer.content, payload);
       report({
         ...base,
         result: check.ok ? "accepted" : "validation_failed",
         httpStatus: 200,
         latencyMs: monotonic() - startedAt,
-        usage: answer.usage
+        usage: answer.usage,
+        output: redact(answer.content)
       });
       return { content: answer.content, check };
     } catch (error) {
@@ -233,7 +291,8 @@ async function generateOne(
         result: known?.code ?? "network",
         httpStatus: known?.httpStatus ?? null,
         latencyMs: monotonic() - startedAt,
-        usage: null
+        usage: null,
+        output: null
       });
       throw error;
     }
@@ -261,11 +320,9 @@ async function generateOne(
 }
 
 async function requestCompletion(
-  payload: ReviewInsightPayload,
   apiKey: string,
   model: string,
-  messages: ChatMessage[],
-  temperature: number,
+  request: { messages: readonly ChatMessage[]; temperature: number; maxTokens: number },
   fetchImpl: FetchLike,
   timeoutMs: number
 ): Promise<{ content: string; usage: CommentaryUsage | null }> {
@@ -286,9 +343,9 @@ async function requestCompletion(
       },
       body: JSON.stringify({
         model,
-        temperature,
-        max_tokens: maxTokensForDetail(payload.commentaryDetail),
-        messages
+        temperature: request.temperature,
+        max_tokens: request.maxTokens,
+        messages: request.messages
       }),
       signal: controller.signal
     });

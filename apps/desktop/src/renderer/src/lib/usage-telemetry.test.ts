@@ -21,7 +21,7 @@ describe("ViewQualifier (commentary_viewed)", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it("counts an explanation kept in view for the qualifying time, once", () => {
+  it("counts an explanation kept in view for the qualifying time", () => {
     const viewed = vi.fn();
     const qualifier = new ViewQualifier(COMMENTARY_VIEW_QUALIFY_MS, viewed, timers);
     qualifier.update("r1:5", true);
@@ -30,11 +30,16 @@ describe("ViewQualifier (commentary_viewed)", () => {
     vi.advanceTimersByTime(1);
     expect(viewed).toHaveBeenCalledWith("r1:5");
 
-    // Coming back to the same move later is not another view.
-    qualifier.update(null, false);
+    // Staying on it (focus and visibility checks) is the same view.
     qualifier.update("r1:5", true);
     vi.advanceTimersByTime(COMMENTARY_VIEW_QUALIFY_MS * 2);
     expect(viewed).toHaveBeenCalledTimes(1);
+
+    // Coming back to it later is reported again (main keeps it to once per session).
+    qualifier.update(null, false);
+    qualifier.update("r1:5", true);
+    vi.advanceTimersByTime(COMMENTARY_VIEW_QUALIFY_MS);
+    expect(viewed).toHaveBeenCalledTimes(2);
   });
 
   it("moving on, hiding the tab or leaving the window first means it wasn't viewed", () => {
@@ -75,16 +80,32 @@ describe("ViewQualifier (commentary_viewed)", () => {
 describe("StudyCounter (review_studied)", () => {
   it("fires once per review after enough distinct moves", () => {
     const studied = vi.fn();
-    const counter = new StudyCounter(REVIEW_STUDIED_MOVES, studied);
-    counter.select("r1", "n1");
-    counter.select("r1", "n1");
-    counter.select("r1", "n2");
+    const counter = new StudyCounter(REVIEW_STUDIED_MOVES, studied, 1_000);
+    counter.select("r1", "n1", 0);
+    counter.select("r1", "n1", 1);
+    counter.select("r1", "n2", 2);
     expect(studied).not.toHaveBeenCalled();
-    counter.select("r1", "n3");
+    counter.select("r1", "n3", 3);
     expect(studied).toHaveBeenCalledWith("r1");
-    counter.select("r1", "n4");
-    counter.select("r2", "n1");
+    counter.select("r1", "n4", 4);
+    counter.select("r2", "n1", 5);
     expect(studied).toHaveBeenCalledTimes(1);
+  });
+
+  it("after an idle gap, studying the review again takes new selections and fires again", () => {
+    const studied = vi.fn();
+    const counter = new StudyCounter(REVIEW_STUDIED_MOVES, studied, 1_000);
+    for (const [index, move] of ["n1", "n2", "n3"].entries()) counter.select("r1", move, index);
+    expect(studied).toHaveBeenCalledTimes(1);
+    // Still the same stretch of use: more moves don't count again.
+    counter.select("r1", "n4", 900);
+    expect(studied).toHaveBeenCalledTimes(1);
+    // A new session: one move isn't enough, three are.
+    counter.select("r1", "n1", 2_000);
+    expect(studied).toHaveBeenCalledTimes(1);
+    counter.select("r1", "n2", 2_001);
+    counter.select("r1", "n3", 2_002);
+    expect(studied).toHaveBeenCalledTimes(2);
   });
 });
 

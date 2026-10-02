@@ -40,12 +40,11 @@ const studyCounter = new StudyCounter(REVIEW_STUDIED_MOVES, (key) => {
   const target = studyTargets.get(key);
   if (target) trackUsage({ type: "review_studied", ...target });
 });
-const openedReviews = new Set<string>();
-
 /**
  * Game review page analytics: `review_opened` when a saved review is shown (a review this session
  * just produced is a completion, already counted by main), and `review_studied` once the user has
- * selected {@link REVIEW_STUDIED_MOVES} distinct reviewed moves of it.
+ * selected {@link REVIEW_STUDIED_MOVES} distinct reviewed moves of it. Main keeps each to once per
+ * session, so showing the same review again is reported again.
  */
 export function useReviewUsage(): void {
   const review = useReviewStore((state) => (state.status === "ready" ? state.review : null));
@@ -58,8 +57,7 @@ export function useReviewUsage(): void {
   const moves = review?.moves;
 
   useEffect(() => {
-    if (!reviewKey || origin !== "saved" || openedReviews.has(reviewKey)) return;
-    openedReviews.add(reviewKey);
+    if (!reviewKey || origin !== "saved") return;
     trackUsage({ type: "review_opened", reviewId, gameId: analyticsGameId(gameId) });
   }, [gameId, origin, reviewId, reviewKey]);
 
