@@ -109,6 +109,26 @@ describe("review store", () => {
     expect(acceptsReviewEvent(useReviewStore.getState().reviewId, "r2")).toBe(false);
   });
 
+  it("a finished run is a new analysis next to the saved ones; comments count for their own", () => {
+    const saved = { ...review([move("a", "good")]), reviewId: "old", createdAt: 1 };
+    const listed = { reviewId: "old", createdAt: 1, engineName: "Stockfish", moveTimeMs: 1000, depth: null, maiaLevels: [], moveCount: 1, commentaryCount: 2 };
+    useReviewStore.getState().loadReview(saved, [listed]);
+    useReviewStore.getState().startReview("new");
+    useReviewStore.getState().setReview({ ...review([move("a", "best")]), createdAt: 2 });
+    expect(useReviewStore.getState().review?.reviewId).toBe("new");
+    expect(useReviewStore.getState().analyses.map((info) => info.reviewId)).toEqual(["new", "old"]);
+
+    useReviewStore.getState().addCommentary({ ply: 1, prose: "Fine.", generatedAt: 3, providerModel: "test/model" });
+    expect(useReviewStore.getState().analyses.map((info) => info.commentaryCount)).toEqual([1, 2]);
+
+    // Showing the older one again keeps the list.
+    useReviewStore.getState().loadReview(saved);
+    expect(useReviewStore.getState().review?.reviewId).toBe("old");
+    expect(useReviewStore.getState().analyses).toHaveLength(2);
+    useReviewStore.getState().reset();
+    expect(useReviewStore.getState().analyses).toEqual([]);
+  });
+
   it("replaces partial moves for the same node", () => {
     useReviewStore.getState().startReview("r1");
     useReviewStore.getState().applyReviewEvents({ progress: null, moves: [move("a", "good")] });

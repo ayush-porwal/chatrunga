@@ -283,7 +283,7 @@ export function App() {
         if (entry.board.gameId && !useReviewStore.getState().review) {
           const saved = await window.chaturanga?.games.get(entry.board.gameId).catch(() => null);
           if (request !== latestNavigation.current) return "dropped";
-          if (saved?.review) useReviewStore.getState().loadReview(savedReview(saved));
+          if (saved?.review) useReviewStore.getState().loadReview(savedReview(saved), saved.reviews ?? []);
         }
         currentGame().setMode("freeplay");
         setReviewTab(entry.tab as ReviewTab);
@@ -409,6 +409,14 @@ export function App() {
 
   /** An imported PGN (file or the paste dialog) onto the board; a warning (only the first of several games) shows on it. */
   function loadImportedGame(imported: ImportedGame) {
+    // Already in the library: open that copy (with its analyses) rather than a duplicate.
+    if (imported.existingGameId) {
+      const existing = imported.existingGameId;
+      void openSavedGameById(existing).then(() => {
+        if (currentGame().gameId === existing) currentGame().setMatchFeedback("Already in your library: opened your copy.");
+      });
+      return;
+    }
     commitCurrent();
     endBoardActivity();
     currentGame().loadGame(imported.game);

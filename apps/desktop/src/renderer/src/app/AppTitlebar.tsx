@@ -14,6 +14,7 @@ import { useAnalysisStore } from "../stores/analysis-store";
 import { useGameStore } from "../stores/game-store";
 import { useLichessStore } from "../stores/lichess-store";
 import { lichessGameLabel } from "../features/lichess/lichess-game";
+import { AnalysisSwitcher } from "../features/game-review/AnalysisSwitcher";
 import { selectCanGoBack, selectCanGoForward, useHistoryStore } from "../stores/history-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
 import { useReviewStore } from "../stores/review-store";
@@ -265,29 +266,32 @@ export const ReviewTitlebar = memo(function ReviewTitlebar({
       title={<PlayersTitle white={headers.white || "White"} black={headers.black || "Black"} />}
       result={decidedResult(headers.result)}
       actions={
-        running || hasMoves ? (
-          <Button
-            type="button"
-            variant={running ? "outline" : "primary"}
-            size="sm"
-            disabled={!running && gameLoading}
-            onClick={running ? onStop : onAnalyze}
-          >
-            {running ? "Stop" : hasReview ? "Analyze again" : "Analyze"}
-          </Button>
-        ) : (
-          // A disabled button gets no pointer events, so the tooltip hangs off a focusable wrapper.
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span tabIndex={0} className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent/50">
-                <Button type="button" variant="primary" size="sm" disabled>
-                  Analyze
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Add or import moves to review</TooltipContent>
-          </Tooltip>
-        )
+        <>
+          <AnalysisSwitcher />
+          {running || hasMoves ? (
+            <Button
+              type="button"
+              variant={running ? "outline" : "primary"}
+              size="sm"
+              disabled={!running && gameLoading}
+              onClick={running ? onStop : onAnalyze}
+            >
+              {running ? "Stop" : hasReview ? "Analyze again" : "Analyze"}
+            </Button>
+          ) : (
+            // A disabled button gets no pointer events, so the tooltip hangs off a focusable wrapper.
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={0} className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent/50">
+                  <Button type="button" variant="primary" size="sm" disabled>
+                    Analyze
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Add or import moves to review</TooltipContent>
+            </Tooltip>
+          )}
+        </>
       }
     />
   );

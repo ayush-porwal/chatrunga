@@ -41,15 +41,31 @@ function savedHeaders(saved: SavedGame): GameHeaders {
   }
 }
 
-/** Loads a saved game and its stored review into the stores. */
+/** Loads a saved game and its newest analysis (with the list of all of them) into the stores. */
 export function openSavedGame(saved: SavedGame): void {
   useGameStore.getState().loadGame(sessionFromSavedGame(saved));
-  useReviewStore.getState().loadReview(savedReview(saved));
+  useReviewStore.getState().loadReview(savedReview(saved), saved.reviews ?? []);
+}
+
+/** The renumbering each opened game's reviews need (see reviewWithRealPlies), for switching later. */
+const plyShifts = new Map<string, number>();
+
+/**
+ * Shows another saved analysis of the loaded game (and its AI commentary) instead of the one
+ * shown. False when it's gone or the board moved on to another game meanwhile.
+ */
+export async function showSavedAnalysis(gameId: string, reviewId: string): Promise<boolean> {
+  const review = await window.chaturanga?.games.getReview(gameId, reviewId);
+  if (!review || useGameStore.getState().gameId !== gameId) return false;
+  useReviewStore.getState().loadReview(reviewWithRealPlies(review, plyShifts.get(gameId) ?? 0));
+  return true;
 }
 
 /** A saved game's stored review, numbered like its (renumbered) tree. */
 export function savedReview(saved: SavedGame): GameReview | null {
-  return reviewWithRealPlies(saved.review ?? null, legacyPlyShift(saved.moveTree));
+  const shift = legacyPlyShift(saved.moveTree);
+  plyShifts.set(saved.id, shift);
+  return reviewWithRealPlies(saved.review ?? null, shift);
 }
 
 /** A review saved with a ply-0-rooted tree, renumbered the way `withRealPlies` renumbers the tree. */

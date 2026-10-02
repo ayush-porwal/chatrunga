@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ChevronRight, Search, Upload } from "lucide-react";
 import type { GameSummary } from "@chaturanga/shared/types/chess";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useGamesQuery } from "../../queries/api";
 import { useGameStore } from "../../stores/game-store";
@@ -20,13 +21,7 @@ type GameReviewPickerProps = {
   onImport: () => void;
 };
 
-type SourceFilter = "all" | "lichess" | "other";
-
-const sourceFilterOptions = [
-  { value: "all", label: "All" },
-  { value: "lichess", label: "Lichess" },
-  { value: "other", label: "Other" }
-] as const;
+type SourceFilter = "all" | "reviewed" | "lichess" | "other";
 
 type CurrentGame = {
   id: string | null;
@@ -64,6 +59,17 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
   const [query, setQuery] = useState("");
   const [source, setSource] = useState<SourceFilter>("all");
   const hasLichessGames = (games.data ?? []).some((game) => game.source === "lichess");
+  const hasReviewedGames = (games.data ?? []).some((game) => game.id !== currentGameId && game.reviewCount > 0);
+  const sourceFilterOptions: { value: SourceFilter; label: string }[] = [
+    { value: "all", label: "All" },
+    ...(hasReviewedGames ? [{ value: "reviewed" as const, label: "Reviewed" }] : []),
+    ...(hasLichessGames
+      ? [
+          { value: "lichess" as const, label: "Lichess" },
+          { value: "other" as const, label: "Other" }
+        ]
+      : [])
+  ];
   const shown = useShownCount(`${query}|${source}`);
 
   const filteredGames = useMemo(() => {
@@ -71,7 +77,8 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
     const savedGames = (games.data ?? []).filter(
       (game) =>
         game.id !== currentGameId &&
-        (!hasLichessGames || source === "all" || (source === "lichess") === (game.source === "lichess"))
+        (source === "all" ||
+          (source === "reviewed" ? game.reviewCount > 0 : !hasLichessGames || (source === "lichess") === (game.source === "lichess")))
     );
     if (!needle) return savedGames;
     return savedGames.filter((game) =>
@@ -101,7 +108,7 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
         </Button>
       }
     >
-      {hasLichessGames ? (
+      {sourceFilterOptions.length > 1 ? (
         <SegmentedControl
           ariaLabel="Game source"
           size="sm"
@@ -142,7 +149,13 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
           {filteredGames.length ? (
             <div className="grid gap-1.5">
               {filteredGames.slice(0, shown.count).map((game) => (
-                <GameRow key={game.id} title={titleFor(game)} meta={subtitleFor(game)} onClick={() => onSelect(game.id)} />
+                <GameRow
+                  key={game.id}
+                  title={titleFor(game)}
+                  meta={subtitleFor(game)}
+                  analyses={game.reviewCount}
+                  onClick={() => onSelect(game.id)}
+                />
               ))}
               {filteredGames.length > shown.count ? (
                 <Button type="button" variant="ghost" size="sm" className="justify-self-center" onClick={shown.showMore}>
@@ -162,13 +175,31 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
   );
 }
 
-function GameRow({ title, meta, selected = false, onClick }: { title: string; meta: string; selected?: boolean; onClick: () => void }) {
+function GameRow({
+  title,
+  meta,
+  analyses = 0,
+  selected = false,
+  onClick
+}: {
+  title: string;
+  meta: string;
+  /** Saved analyses of the game (a badge says it's been reviewed). */
+  analyses?: number;
+  selected?: boolean;
+  onClick: () => void;
+}) {
   return (
     <button type="button" className={cn(listRowInteractive, "group", selected && listRowSelected)} onClick={onClick}>
       <span className="grid min-w-0 flex-1 gap-0.5">
         <span className="truncate font-medium text-fg">{title}</span>
         <span className="truncate text-xs text-fg-muted">{meta}</span>
       </span>
+      {analyses > 0 ? (
+        <Badge tone="accent" className="shrink-0">
+          {analyses > 1 ? `${analyses} analyses` : "Reviewed"}
+        </Badge>
+      ) : null}
       <ChevronRight className="size-4 shrink-0 text-fg-subtle transition-transform group-hover:translate-x-0.5 group-hover:text-fg" />
     </button>
   );
