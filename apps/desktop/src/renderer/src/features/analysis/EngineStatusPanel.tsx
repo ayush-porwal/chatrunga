@@ -9,23 +9,20 @@ import { useGameStore } from "../../stores/game-store";
 import type { EngineInfo, EngineStatus } from "@chaturanga/shared/types/engine";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
-import { useEnginesQuery } from "../../queries/api";
+import { useEnginesQuery, useSettingsQuery } from "../../queries/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Select } from "@/components/ui/input";
-import { analysisEngineFor } from "./analysis-engine";
+import { defaultSettings } from "@chaturanga/shared/types/settings";
+import { analysisLimitLabel } from "./analysis-engine";
 import { Notice } from "@/components/ui/notice";
-import { cn } from "@/lib/utils";
 import { Eyebrow } from "@/components/ui/page";
 import { Stat, StatGroup } from "@/components/ui/stat";
 
-/** Live analysis asks for three lines; show that many rows from the first line on. */
-const RESERVED_LINES = 3;
-
-function linesWithPlaceholders(lines: readonly EngineInfo[]): Array<EngineInfo | null> {
-  const shown: Array<EngineInfo | null> = lines.slice(0, 5);
-  while (shown.length < RESERVED_LINES) shown.push(null);
+/** As many rows as lines asked for, from the first line on (arriving lines never push content down). */
+function linesWithPlaceholders(lines: readonly EngineInfo[], reserved: number): Array<EngineInfo | null> {
+  const shown: Array<EngineInfo | null> = lines.slice(0, Math.max(reserved, 1));
+  while (shown.length < reserved) shown.push(null);
   return shown;
 }
 
@@ -87,34 +84,6 @@ const EngineLineRow = memo(function EngineLineRow({
     </li>
   );
 });
-
-/**
- * Which engine live analysis uses (every installed, usable engine; Maia ones say so). Changing it
- * while analysing restarts the search with the new engine; the choice is kept for later boards.
- */
-function AnalysisEngineSelect({ className }: { className?: string }) {
-  const engines = useEnginesQuery();
-  const chosen = useAnalysisStore((state) => state.analysisEngineId);
-  const choose = useAnalysisStore((state) => state.chooseAnalysisEngine);
-  const usable = (engines.data ?? []).filter((engine) => engine.isAvailable);
-  const value = analysisEngineFor(usable, chosen);
-  if (!usable.length || !value) return null;
-  return (
-    <Select
-      aria-label="Analysis engine"
-      value={value}
-      onChange={(event) => choose(event.target.value)}
-      className={cn("h-8 text-xs", className)}
-    >
-      {usable.map((engine) => (
-        <option key={engine.id} value={engine.id}>
-          {engine.name}
-          {engine.isHumanPrediction ? " · human-like" : ""}
-        </option>
-      ))}
-    </Select>
-  );
-}
 
 /** The move of an engine line being hovered or focused: the position after it, shown below the lines. */
 type LinePreview = { fenAfter: string; uci: string; label: string; score: string | null };
@@ -225,6 +194,11 @@ function EngineStatusPanelContent({
   const linesNavigable = useGameStore((state) => state.mode !== "engine" || !state.engineSide || Boolean(state.gameOutcome));
   // Live analysis (not an engine game's opponent): the engine can be switched from the header.
   const analysing = useGameStore((state) => state.mode === "analysis");
+  const settings = useSettingsQuery();
+  const analysisSettings = { ...defaultSettings, ...(settings.data ?? {}) };
+  const searchLimit = analysisLimitLabel(analysisSettings);
+  // An engine game asks for one line; live analysis for as many as its settings say.
+  const reservedLines = analysing ? analysisSettings.analysisLines : 1;
   // The hovered line move, for the position it was hovered in (a new position drops it). The card
   // reads that line as it is now, so a line the engine updates under the pointer updates too.
   const [hovered, setHovered] = useState<{ fen: string; target: PreviewTarget } | null>(null);
@@ -251,11 +225,10 @@ function EngineStatusPanelContent({
       {hasData || !idle ? (
         // The tab above already says "Engine": the header names the running engine and its state.
         <div className="flex min-h-6 min-w-0 items-center justify-between gap-2">
-          {analysing ? (
-            <AnalysisEngineSelect className="w-56 max-w-full" />
-          ) : (
-            <span className="truncate text-xs text-fg-muted">{engineName}</span>
-          )}
+          <span className="truncate text-xs text-fg-muted">
+            {engineName}
+            {analysing && searchLimit ? <span className="text-fg-subtle"> · {searchLimit}</span> : null}
+          </span>
           <Badge tone={statusTone[status]}>{statusLabel[status]}</Badge>
         </div>
       ) : null}
@@ -277,7 +250,7 @@ function EngineStatusPanelContent({
                   if (!event.currentTarget.contains(event.relatedTarget as Node | null)) clearPreview();
                 }}
               >
-                {linesWithPlaceholders(topLines).map((line, index) => (
+                {linesWithPlaceholders(topLines, reservedLines).map((line, index) => (
                   <EngineLineRow
                     key={line?.multipv ?? `empty-${index}`}
                     index={index}
@@ -312,16 +285,13 @@ function EngineStatusPanelContent({
         <EmptyState
           icon={<Cpu />}
           title="Engine is idle"
-          description={onStartAnalysis ? "Choose an engine and analyze the current position." : undefined}
+          description={onStartAnalysis ? "Analyze the current position." : undefined}
           action={
             onStartAnalysis ? (
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                <AnalysisEngineSelect className="w-56" />
-                <Button type="button" variant="primary" size="sm" onClick={onStartAnalysis}>
-                  <Play />
-                  Start analysis
-                </Button>
-              </div>
+              <Button type="button" variant="primary" size="sm" onClick={onStartAnalysis}>
+                <Play />
+                Start analysis
+              </Button>
             ) : undefined
           }
           className="py-6"

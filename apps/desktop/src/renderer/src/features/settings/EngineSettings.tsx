@@ -89,7 +89,7 @@ function formatHashSize(mb: number): string {
   return mb >= 1024 && mb % 1024 === 0 ? `${mb / 1024} GB` : `${mb} MB`;
 }
 
-function EnginePerformanceSettings({ appearance }: { appearance: AppSettings }) {
+export function EnginePerformanceSettings({ appearance }: { appearance: AppSettings }) {
   const setSetting = useSetSetting();
   const cores = logicalCores();
   const autoThreads = defaultEngineThreads(cores);

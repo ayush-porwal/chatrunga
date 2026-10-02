@@ -111,7 +111,22 @@ export function BoardView() {
     };
   }, [moveTree, currentNodeId, currentFen, headers, orientation, mode, hasLiveClock]);
 
+  // Live analysis: the engine's best move from this position (a string, so the board only redraws
+  // when it changes, not on every engine update). Only a move legal here (lines of the previous
+  // position are dropped as a search starts, but never trusted).
+  const liveBest = useAnalysisStore((state) =>
+    mode === "analysis" ? (state.topLines.find((line) => (line.multipv ?? 1) === 1)?.pv?.[0] ?? null) : null
+  );
+  const showBestArrow = appearance.analysisBestMoveArrow;
+  const bestArrow = useMemo<DrawShape | null>(() => {
+    if (!showBestArrow || !liveBest) return null;
+    const dests = legalDestsForFen(currentFen) as Map<string, string[]>;
+    if (!dests.get(liveBest.slice(0, 2))?.includes(liveBest.slice(2, 4))) return null;
+    return { orig: liveBest.slice(0, 2) as Key, dest: liveBest.slice(2, 4) as Key, brush: "blue" };
+  }, [showBestArrow, liveBest, currentFen]);
+
   const autoShapes = useMemo<DrawShape[]>(() => {
+    if (bestArrow) return [bestArrow];
     // Only completed moves draw arrows (never the live lines of the move being searched, which
     // change several times a second and made the board flicker).
     const reviewMove = reviewMoves.find((item) => item.nodeId === currentNodeId);
@@ -127,7 +142,7 @@ export function BoardView() {
       });
     }
     return arrows;
-  }, [reviewMoves, currentNodeId]);
+  }, [bestArrow, reviewMoves, currentNodeId]);
 
   // Chessground owns its DOM and keeps it sized itself (its own ResizeObserver repositions pieces
   // on resize) — rebuilding the board on every resize frame is what used to flicker.

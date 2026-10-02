@@ -212,6 +212,22 @@ export type AppSettings = {
   reviewMultiPv: number;
   /** Maia levels to run during review; null = every installed level. */
   reviewMaiaLevels: ReviewMaiaLevel[] | null;
+  /** Live analysis: the engine to analyse with (null: the default engine). */
+  analysisEngineId: string | null;
+  /** Live analysis: how many lines (MultiPV), 1–5. */
+  analysisLines: number;
+  /** Live analysis: search until stopped, to a depth, or for a time per position. */
+  analysisLimit: AnalysisLimit;
+  /** Live analysis: the depth searched to when `analysisLimit` is "depth". */
+  analysisDepth: number;
+  /** Live analysis: seconds per position when `analysisLimit` is "time". */
+  analysisTimeSec: number;
+  /** Live analysis: an arrow for the engine's best move on the board. */
+  analysisBestMoveArrow: boolean;
+  /** The evaluation bar beside the board (every board: analysis, review). */
+  analysisEvalBar: boolean;
+  /** Which side of the board the evaluation bar sits on. */
+  analysisEvalBarSide: EvalBarSide;
   /** UCI `Threads` for the evaluation engine; null = auto (cpus - 1, capped at 8). */
   engineThreads: number | null;
   /** UCI `Hash` (MB) for the evaluation engine. */
@@ -252,6 +268,15 @@ export const REVIEW_MAIA_LEVELS: readonly ReviewMaiaLevel[] = [
   1100, 1300, 1500, 1700, 1900
 ] as const;
 export const MAX_ENGINE_THREADS = 8;
+
+/** How far live analysis searches each position: until stopped (as Lichess's infinite analysis), to a depth, or for a time. */
+export const ANALYSIS_LIMITS = ["infinite", "depth", "time"] as const;
+export type AnalysisLimit = (typeof ANALYSIS_LIMITS)[number];
+export const ANALYSIS_LINES_RANGE = { min: 1, max: 5 } as const;
+export const EVAL_BAR_SIDES = ["left", "right"] as const;
+export type EvalBarSide = (typeof EVAL_BAR_SIDES)[number];
+export const ANALYSIS_DEPTH_RANGE = { min: 8, max: 60 } as const;
+export const ANALYSIS_TIME_RANGE_SEC = { min: 1, max: 300 } as const;
 export const ENGINE_HASH_MB_RANGE = { min: 16, max: 4096 } as const;
 
 export const boardThemeSquareColors: Record<BoardTheme, { light: string; dark: string }> = {
@@ -292,6 +317,14 @@ export const defaultSettings: AppSettings = {
   reviewShowTopLines: true,
   reviewMultiPv: 3,
   reviewMaiaLevels: null,
+  analysisEngineId: null,
+  analysisLines: 3,
+  analysisLimit: "infinite",
+  analysisDepth: 24,
+  analysisTimeSec: 10,
+  analysisBestMoveArrow: true,
+  analysisEvalBar: true,
+  analysisEvalBarSide: "left",
   engineThreads: null,
   engineHashMb: 128,
   recentFilePaths: [],

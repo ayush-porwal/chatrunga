@@ -74,6 +74,10 @@ export type StartLiveAnalysisInput = {
   fen: string;
   moves: string[];
   multipv?: number | null;
+  /** Search to this depth, then stop (Ready). Neither this nor moveTimeMs: search until stopped. */
+  depth?: number | null;
+  /** Search for this long (ms), then stop. */
+  moveTimeMs?: number | null;
 };
 
 /** Clock snapshot passed to UCI `go` for timed games. */

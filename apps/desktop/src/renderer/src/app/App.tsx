@@ -37,7 +37,7 @@ import type { SideTab } from "./GameWorkspace";
 import { AppPages, GameReviewPicker, OnboardingFlow, type AppView } from "./AppPages";
 import { PuzzleInfoPanel } from "./PuzzleInfoPanel";
 import { useBoardShortcuts } from "./useBoardShortcuts";
-import { useEngineDriver } from "./useEngineDriver";
+import { useEngineDriver, type AnalysisOptions } from "./useEngineDriver";
 import { flushGameAutosave, IMPORT_NEEDS_SAVE, useGameAutosave } from "./useGameAutosave";
 import { useUsageActivity } from "./useUsageTelemetry";
 import { useLichess } from "./useLichess";
@@ -127,10 +127,15 @@ export function App() {
   const settingsQuery = useSettingsQuery();
   const settings = useMemo(() => ({ ...defaultSettings, ...(settingsQuery.data ?? {}) }), [settingsQuery.data]);
   const defaultEngineId = useMemo(() => defaultEngineFor(engines.data), [engines.data]);
-  const chosenAnalysisEngine = useAnalysisStore((state) => state.analysisEngineId);
-  const analysisEngineId = useMemo(
-    () => analysisEngineFor(engines.data, chosenAnalysisEngine),
-    [engines.data, chosenAnalysisEngine]
+  // Live analysis as Settings / the Engine tab's settings say: engine, lines and how far to search.
+  const analysisOptions = useMemo<AnalysisOptions>(
+    () => ({
+      engineId: analysisEngineFor(engines.data, settings.analysisEngineId),
+      multipv: settings.analysisLines,
+      depth: settings.analysisLimit === "depth" ? settings.analysisDepth : null,
+      moveTimeMs: settings.analysisLimit === "time" ? settings.analysisTimeSec * 1000 : null
+    }),
+    [engines.data, settings.analysisEngineId, settings.analysisLines, settings.analysisLimit, settings.analysisDepth, settings.analysisTimeSec]
   );
   const reviewRouteId = gameReviewMatch?.params.id ?? null;
   const reviewRouteLoading = Boolean(reviewRouteId && reviewRouteId !== "current" && reviewRouteId !== gameId);
@@ -144,7 +149,7 @@ export function App() {
   useLichess({ onGameStart: (load) => startOnlineGame(load) });
   useMoveKeyboardShortcuts({ enabled: onBoardView });
   useDatabaseDownloads();
-  useEngineDriver(analysisEngineId);
+  useEngineDriver(analysisOptions);
   useGameAutosave();
   useUsageActivity();
   useMoveSounds({ enabled: settings.soundEnabled, volume: settings.soundVolume });

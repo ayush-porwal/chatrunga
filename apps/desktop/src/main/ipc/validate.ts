@@ -246,7 +246,9 @@ export function parseStartAnalysisInput(value: unknown): StartLiveAnalysisInput 
     searchId: asId(input.searchId, "search id"),
     fen: asFen(input.fen),
     moves: asUciMoves(input.moves ?? []),
-    multipv: asOptionalPositive(input.multipv, "multipv", SEARCH_LIMITS.multipv, true)
+    multipv: asOptionalPositive(input.multipv, "multipv", SEARCH_LIMITS.multipv, true),
+    depth: asOptionalPositive(input.depth, "depth", SEARCH_LIMITS.depth, true),
+    moveTimeMs: asOptionalPositive(input.moveTimeMs, "moveTimeMs", SEARCH_LIMITS.moveTimeMs)
   };
 }
 
