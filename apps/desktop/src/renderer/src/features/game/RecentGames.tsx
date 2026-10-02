@@ -1,6 +1,6 @@
-import { useState, type MouseEvent } from "react";
+import { useMemo, useState, type MouseEvent } from "react";
 import { RotateCcw, Trash2 } from "lucide-react";
-import { useDeleteGameMutation, useGamesQuery } from "../../queries/api";
+import { useDeleteGameMutation, useGamePagesQuery, type GameListParams } from "../../queries/api";
 import { useGameStore } from "../../stores/game-store";
 import { useReviewStore } from "../../stores/review-store";
 import { cn } from "@/lib/utils";
@@ -12,15 +12,18 @@ import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { cancelActiveReview } from "../../app/useReviewRunner";
-import { useShownCount } from "@/lib/use-shown-count";
+import { gamesOfPages } from "@/lib/game-pages";
+
+/** The Library tab lists every game, newest first. */
+const LIBRARY: GameListParams = { search: "", filter: "all", excludeId: null };
 
 /** The workspace's Library tab. Opening a game goes through App (`onOpenGame`: history, engine teardown). */
 export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }) {
-  const games = useGamesQuery();
+  const games = useGamePagesQuery(LIBRARY);
+  const list = useMemo(() => gamesOfPages(games.data?.pages), [games.data]);
   const removeGame = useDeleteGameMutation();
   const resetBoard = useGameStore((state) => state.reset);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const shown = useShownCount("library");
 
   async function deleteGame(id: string, event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -71,9 +74,9 @@ export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }
         >
           {ipcErrorMessage(games.error) || "The library couldn't be read."}
         </Notice>
-      ) : games.data?.length ? (
+      ) : list.length ? (
         <ul className="scroll-area -mr-1 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-1" aria-label="Saved games">
-          {games.data.slice(0, shown.count).map((game) => (
+          {list.map((game) => (
             <li
               key={game.id}
               className={cn(
@@ -104,10 +107,16 @@ export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }
               />
             </li>
           ))}
-          {games.data.length > shown.count ? (
+          {games.hasNextPage ? (
             <li className="flex justify-center">
-              <Button type="button" variant="ghost" size="sm" onClick={shown.showMore}>
-                Show more ({games.data.length - shown.count} left)
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={games.isFetchingNextPage}
+                onClick={() => void games.fetchNextPage()}
+              >
+                {games.isFetchingNextPage ? "Loading…" : "Show more"}
               </Button>
             </li>
           ) : null}

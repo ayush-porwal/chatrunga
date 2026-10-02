@@ -62,7 +62,7 @@ describe("gameRepository (SQLite)", () => {
     const { game } = importPgnText(PGN);
     const saved = gameRepository.save({ ...game, id: "chosen-id" });
     expect(saved.id).toBe("chosen-id");
-    expect(gameRepository.list().map((item) => item.id)).toEqual(["chosen-id"]);
+    expect(gameRepository.listPage().items.map((item) => item.id)).toEqual(["chosen-id"]);
   });
 
   it("rebuilds a damaged move tree from the stored PGN", () => {
@@ -207,6 +207,148 @@ describe("gameRepository (SQLite)", () => {
     expect(gameRepository.idsBySource("pgn-import")).toHaveLength(1);
   });
 
+  describe("library pages", () => {
+    type Row = { id: string; source?: string; white?: string | null; black?: string | null; event?: string | null; updatedAt: number };
+
+    /** Test-only: library rows straight into the table (thousands, without parsing PGN). */
+    function insertGames(rows: Row[]) {
+      const insert = getDb().prepare(
+        `INSERT INTO games (id, source, white, black, event, pgn, current_fen, move_tree_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, '', 'startpos', '[]', ?, ?)`
+      );
+      getDb().exec("BEGIN");
+      for (const row of rows) {
+        insert.run(row.id, row.source ?? "pgn-import", row.white ?? "A", row.black ?? "B", row.event ?? null, row.updatedAt, row.updatedAt);
+      }
+      getDb().exec("COMMIT");
+    }
+
+    /** Every page from the first on; fails on a page past the limit or a cursor that loops. */
+    function readAll(query: Parameters<typeof gameRepository.listPage>[0] = {}, limit = 50) {
+      const ids: string[] = [];
+      let cursor = null as ReturnType<typeof gameRepository.listPage>["nextCursor"];
+      let pages = 0;
+      do {
+        const page = gameRepository.listPage({ ...query, limit, cursor });
+        expect(page.items.length).toBeLessThanOrEqual(limit);
+        ids.push(...page.items.map((game) => game.id));
+        cursor = page.nextCursor;
+        pages += 1;
+        expect(pages).toBeLessThan(10_000);
+      } while (cursor);
+      return { ids, pages };
+    }
+
+    /** The order every page follows: newest first, then by id. */
+    function ordered(rows: Row[]): string[] {
+      return [...rows]
+        .sort((a, b) => b.updatedAt - a.updatedAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+        .map((row) => row.id);
+    }
+
+    it("pages through games saved in the same millisecond without repeats or gaps", () => {
+      // 125 games share one timestamp, across page boundaries, between newer and older ones.
+      const rows: Row[] = [
+        { id: "newest", updatedAt: 3_000 },
+        ...Array.from({ length: 125 }, (_, index) => ({ id: `tie-${String(index).padStart(3, "0")}`, updatedAt: 2_000 })),
+        { id: "oldest", updatedAt: 1_000 }
+      ];
+      insertGames(rows);
+      for (const limit of [1, 7, 50]) {
+        const { ids } = readAll({}, limit);
+        expect(ids).toEqual(ordered(rows));
+        expect(new Set(ids).size).toBe(rows.length);
+      }
+    });
+
+    it("pages a large library completely, in order, and stops with no next page", () => {
+      const rows: Row[] = Array.from({ length: 2_000 }, (_, index) => ({
+        id: `g${index}`,
+        // Runs of 10 games share a timestamp; ids sort as text (g10 before g2).
+        updatedAt: 1_000_000 - Math.floor(index / 10)
+      }));
+      insertGames(rows);
+      const { ids, pages } = readAll({}, 200);
+      expect(ids).toEqual(ordered(rows));
+      expect(pages).toBe(10);
+      const last = gameRepository.listPage({ limit: 200, cursor: { updatedAt: 1_000_000 - 199, id: "g1999" } });
+      expect(last).toEqual({ items: [], nextCursor: null });
+    });
+
+    it("keeps a page within the limit, clamped to 1..200", () => {
+      insertGames(Array.from({ length: 450 }, (_, index) => ({ id: `g${index}`, updatedAt: index })));
+      expect(gameRepository.listPage().items).toHaveLength(50);
+      expect(gameRepository.listPage({ limit: 10 }).items).toHaveLength(10);
+      expect(gameRepository.listPage({ limit: 10_000 }).items).toHaveLength(200);
+      expect(gameRepository.listPage({ limit: 0 }).items).toHaveLength(1);
+      expect(gameRepository.listPage({ limit: -5 }).items).toHaveLength(1);
+      expect(gameRepository.listPage({ limit: 2.9 }).items).toHaveLength(2);
+      const page = gameRepository.listPage({ limit: 3 });
+      expect(page.items.map((game) => game.id)).toEqual(["g449", "g448", "g447"]);
+      expect(page.nextCursor).toEqual({ updatedAt: 447, id: "g447" });
+      // A summary only: no PGN, move tree or review.
+      expect(Object.keys(page.items[0]!).sort()).toEqual(
+        ["black", "currentFen", "date", "event", "id", "lastReviewedAt", "result", "reviewCount", "source", "updatedAt", "white"]
+      );
+    });
+
+    it("filters and searches before the limit: a rare match deep in the library is on page 1", () => {
+      insertGames([
+        ...Array.from({ length: 1_000 }, (_, index) => ({ id: `g${index}`, updatedAt: 10_000 + index, white: "Anon", black: "Anon" })),
+        { id: "deep-lichess", source: "lichess", white: "Ånand", black: "Topalov", event: "Sofia", updatedAt: 1 },
+        { id: "deep-puzzle", source: "puzzle", white: "Ånand", updatedAt: 2 }
+      ]);
+      // Case folded as JavaScript does (SQLite's lower() would miss "Å").
+      expect(gameRepository.listPage({ search: "  ÅNAND ", limit: 5 })).toEqual({
+        items: [expect.objectContaining({ id: "deep-lichess" })],
+        nextCursor: null
+      });
+      expect(gameRepository.listPage({ search: "sofia", limit: 5 }).items.map((game) => game.id)).toEqual(["deep-lichess"]);
+      expect(gameRepository.listPage({ filter: "lichess", limit: 5 }).items.map((game) => game.id)).toEqual(["deep-lichess"]);
+      expect(gameRepository.listPage({ filter: "other", limit: 5 }).items.map((game) => game.id)).not.toContain("deep-lichess");
+      // A search with wildcards is plain text.
+      expect(gameRepository.listPage({ search: "%", limit: 5 }).items).toEqual([]);
+      // The game on the board is left out; puzzle sessions never list.
+      expect(gameRepository.listPage({ search: "ånand", excludeId: "deep-lichess" }).items).toEqual([]);
+      expect(readAll({}, 200).ids).not.toContain("deep-puzzle");
+
+      getDb()
+        .prepare("INSERT INTO game_reviews (review_id, game_id, created_at, review_json) VALUES ('r', 'g3', 5, '{}')")
+        .run();
+      expect(gameRepository.listPage({ filter: "reviewed", limit: 5 }).items).toEqual([
+        expect.objectContaining({ id: "g3", reviewCount: 1, lastReviewedAt: 5 })
+      ]);
+    });
+
+    it("searches a filtered list across pages with the cursor", () => {
+      insertGames(
+        Array.from({ length: 300 }, (_, index) => ({
+          id: `g${String(index).padStart(3, "0")}`,
+          updatedAt: Math.floor(index / 4),
+          white: index % 3 === 0 ? "Match" : "Other"
+        }))
+      );
+      const expected = ordered(
+        Array.from({ length: 300 }, (_, index) => ({ id: `g${String(index).padStart(3, "0")}`, updatedAt: Math.floor(index / 4) }))
+      ).filter((id) => Number(id.slice(1)) % 3 === 0);
+      expect(readAll({ search: "match" }, 7).ids).toEqual(expected);
+    });
+
+    it("says which filters the library has games for", () => {
+      expect(gameRepository.facets(null)).toEqual({ hasGames: false, hasLichess: false, hasReviewed: false });
+      insertGames([
+        { id: "board", source: "lichess", updatedAt: 1 },
+        { id: "puzzle", source: "puzzle", updatedAt: 2 }
+      ]);
+      getDb()
+        .prepare("INSERT INTO game_reviews (review_id, game_id, created_at, review_json) VALUES ('r', 'board', 5, '{}')")
+        .run();
+      expect(gameRepository.facets(null)).toEqual({ hasGames: true, hasLichess: true, hasReviewed: true });
+      // Leaving out the game on the board: Lichess still counts it (as the picker always did).
+      expect(gameRepository.facets("board")).toEqual({ hasGames: false, hasLichess: true, hasReviewed: false });
+    });
+  });
+
   describe("analyses", () => {
     const reviewOf = (game: ReturnType<typeof saveImported>, reviewId: string, createdAt: number, extra: object = {}) => ({
       reviewId,
@@ -240,7 +382,7 @@ describe("gameRepository (SQLite)", () => {
       expect(opened.reviews[1]?.maiaLevels).toEqual([]);
       expect(gameRepository.getReview(game.id, "first")?.commentary?.[0]?.prose).toBe("Good start.");
       expect(gameRepository.getReview(game.id, "missing")).toBeNull();
-      expect(gameRepository.list()[0]).toMatchObject({ reviewCount: 2, lastReviewedAt: 20 });
+      expect(gameRepository.listPage().items[0]).toMatchObject({ reviewCount: 2, lastReviewedAt: 20 });
     });
 
     it("saving without a review (or with none) never removes the saved ones", () => {

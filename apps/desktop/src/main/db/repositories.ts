@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import type { SQLInputValue } from "node:sqlite";
+import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
 import { positionFromFen } from "@chaturanga/shared/chess/position";
 import { getDb } from "./index";
@@ -23,6 +23,9 @@ import type {
 } from "@chaturanga/shared/types/engine";
 import type {
   GameHeaders,
+  GameLibraryFacets,
+  GameListPage,
+  GameListQuery,
   GameSource,
   GameSummary,
   MoveNode,
@@ -78,6 +81,36 @@ type GameSummaryRow = Pick<
   GameRow,
   "id" | "source" | "white" | "black" | "event" | "result" | "date" | "current_fen" | "updated_at"
 > & { review_count?: number | null; last_reviewed_at?: number | null };
+
+/** Library pages: `limit` when absent, and the most one page may hold. */
+export const GAME_PAGE_DEFAULT = 50;
+export const GAME_PAGE_MAX = 200;
+
+const GAME_SUMMARY_COLUMNS = `id, source, white, black, event, result, date, current_fen, updated_at`;
+
+/** The columns a library search looks in (as the review picker's search box says). */
+const SEARCH_COLUMNS = ["white", "black", "event", "date", "result"] as const;
+
+/**
+ * SQLite's lower() folds ASCII only; the search folds case as JavaScript does (so "ÅSE" finds
+ * "åse"), through this function, registered once per connection.
+ */
+const LOWER_FN = "chaturanga_lower";
+const lowerRegistered = new WeakSet<DatabaseSync>();
+
+function searchDb(): DatabaseSync {
+  const db = getDb();
+  if (!lowerRegistered.has(db)) {
+    db.function(LOWER_FN, { deterministic: true }, (value) => (typeof value === "string" ? value.toLowerCase() : null));
+    lowerRegistered.add(db);
+  }
+  return db;
+}
+
+function clampLimit(limit: number | undefined): number {
+  if (limit === undefined || !Number.isFinite(limit)) return GAME_PAGE_DEFAULT;
+  return Math.min(GAME_PAGE_MAX, Math.max(1, Math.floor(limit)));
+}
 
 /** A game's analyses as listed (newest first), without their JSON. */
 type ReviewListingRow = Omit<GameReviewRow, "game_id" | "review_json">;
@@ -641,13 +674,76 @@ function saveReview(gameId: string, review: GameReview): void {
 }
 
 export const gameRepository = {
-  /** Library summaries, newest first (served by games_recent_idx; no PGN, tree or review read). */
-  list(): GameSummary[] {
+  /**
+   * One page of library summaries, newest first then by id (games_recent_idx; no PGN, tree or
+   * review read). The filter and search run in SQL before the LIMIT, so a rare match deep in the
+   * library is on the first page; the page after starts strictly after the cursor (keyset), so
+   * games saved in the same millisecond are neither repeated nor skipped.
+   */
+  listPage(query: GameListQuery = {}): GameListPage {
+    const limit = clampLimit(query.limit);
     // Puzzle sessions are never library games (see the cleanup in db/index.ts).
-    return all<GameSummaryRow>(
-      `SELECT id, source, white, black, event, result, date, current_fen, updated_at, ${REVIEW_COUNTS_SQL}
-      FROM games WHERE source != 'puzzle' ORDER BY updated_at DESC, id`
-    ).map(toGameSummary);
+    const where = ["source != 'puzzle'"];
+    const params: SQLInputValue[] = [];
+    if (query.cursor) {
+      // Same as (updated_at < ? OR (updated_at = ? AND id > ?)), written so the index range applies.
+      where.push("updated_at <= ? AND (updated_at < ? OR id > ?)");
+      params.push(query.cursor.updatedAt, query.cursor.updatedAt, query.cursor.id);
+    }
+    if (query.excludeId) {
+      where.push("id != ?");
+      params.push(query.excludeId);
+    }
+    switch (query.filter) {
+      case "reviewed":
+        where.push("EXISTS (SELECT 1 FROM game_reviews r WHERE r.game_id = games.id)");
+        break;
+      case "lichess":
+        where.push("source = 'lichess'");
+        break;
+      case "other":
+        where.push("source != 'lichess'");
+        break;
+      default:
+        break;
+    }
+    const needle = query.search?.trim().toLowerCase() ?? "";
+    if (needle) {
+      where.push(`(${SEARCH_COLUMNS.map((column) => `instr(${LOWER_FN}(${column}), ?) > 0`).join(" OR ")})`);
+      params.push(...SEARCH_COLUMNS.map(() => needle));
+    }
+    // One row past the page says whether there is a next one.
+    const rows = (needle ? searchDb() : getDb())
+      .prepare(
+        `SELECT ${GAME_SUMMARY_COLUMNS}, ${REVIEW_COUNTS_SQL}
+        FROM games WHERE ${where.join(" AND ")} ORDER BY updated_at DESC, id ASC LIMIT ?`
+      )
+      .all(...params, limit + 1) as GameSummaryRow[];
+    const items = rows.slice(0, limit).map(toGameSummary);
+    const last = items.at(-1);
+    return {
+      items,
+      nextCursor: rows.length > limit && last ? { updatedAt: last.updatedAt, id: last.id } : null
+    };
+  },
+
+  /** Which filters the library has games for (each an indexed or early-exit EXISTS). */
+  facets(excludeId: string | null = null): GameLibraryFacets {
+    const row = get<{ has_games: number; has_lichess: number; has_reviewed: number }>(
+      `SELECT
+        EXISTS (SELECT 1 FROM games WHERE source != 'puzzle' AND (?1 IS NULL OR id != ?1)) AS has_games,
+        EXISTS (SELECT 1 FROM games WHERE source = 'lichess') AS has_lichess,
+        EXISTS (
+          SELECT 1 FROM game_reviews r JOIN games g ON g.id = r.game_id
+          WHERE g.source != 'puzzle' AND (?1 IS NULL OR r.game_id != ?1)
+        ) AS has_reviewed`,
+      excludeId
+    );
+    return {
+      hasGames: Boolean(row?.has_games),
+      hasLichess: Boolean(row?.has_lichess),
+      hasReviewed: Boolean(row?.has_reviewed)
+    };
   },
 
   /** One saved analysis of a game, placed on its tree (null when it's gone or doesn't fit). */

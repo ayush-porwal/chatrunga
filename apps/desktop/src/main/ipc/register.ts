@@ -58,6 +58,7 @@ import {
   parseDialogFilters,
   parseEngineInput,
   parseEnginePatch,
+  parseGameListQuery,
   parseLichessAiChallengeInput,
   parseLichessChallengeInput,
   parseLichessDisconnectInput,
@@ -316,7 +317,10 @@ function findLibraryCopy(game: ImportedGame["game"]): string | null {
 
 /** Saved games, PGN files, downloadable databases and settings. */
 function registerLibraryIpc(): void {
-  ipcMain.handle("games:list", () => gameRepository.list());
+  ipcMain.handle("games:listPage", (_event, query: unknown) => gameRepository.listPage(parseGameListQuery(query)));
+  ipcMain.handle("games:facets", (_event, excludeId: unknown) =>
+    gameRepository.facets(excludeId === null || excludeId === undefined ? null : asId(excludeId, "game id"))
+  );
   ipcMain.handle("games:get", (_event, id: unknown) => {
     const game = gameRepository.get(asId(id, "game id"));
     if (!game) throw new Error("Game not found");
