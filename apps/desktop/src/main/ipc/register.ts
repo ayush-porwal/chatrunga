@@ -343,7 +343,11 @@ function registerLibraryIpc(): void {
   const settingsChanged = (keys: readonly (keyof AppSettings)[]) => {
     if (keys.includes("glassEffect")) refreshWindowGlass();
     // Turning usage analytics off deletes what wasn't sent yet; on starts collecting.
-    if (keys.includes("usageAnalyticsEnabled")) getTelemetry()?.refreshConsent();
+    if (keys.includes("usageAnalyticsEnabled")) {
+      getTelemetry()?.refreshConsent();
+      // Set up before the user opted in: the first funnel step is recorded now.
+      noteEngineReadiness(true);
+    }
     if (keys.includes("updatesAutoDownload") || keys.includes("updatesIncludeBeta")) updateService.applySettings();
   };
   ipcMain.handle("settings:set", (_event, key: unknown, value: unknown) => {
@@ -400,10 +404,11 @@ function registerTelemetryIpc(): void {
       ? telemetry.status()
       : { available: false, reason: "not_configured", enabled: settingsRepository.getStored("usageAnalyticsEnabled") === true, pending: 0 };
   });
-  ipcMain.handle("telemetry:track", (_event, value: unknown) => {
+  ipcMain.handle("telemetry:track", (_event, value: unknown): boolean => {
     const telemetry = getTelemetry();
-    if (!telemetry?.enabled) return;
+    if (!telemetry?.enabled) return false;
     recordRendererEvent(telemetry, parseRendererEvent(value));
+    return true;
   });
 }
 

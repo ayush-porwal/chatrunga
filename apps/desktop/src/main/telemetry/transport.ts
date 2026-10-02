@@ -42,7 +42,9 @@ export async function deliverBatch(
           event: event.event,
           distinct_id: distinctId,
           timestamp: new Date(event.occurredAt).toISOString(),
-          properties: event.properties
+          // Also inside properties (PostHog reads it from either place); spread first, so a
+          // recorded property can't change who the event belongs to.
+          properties: { ...event.properties, distinct_id: distinctId }
         }))
       }),
       signal: controller.signal

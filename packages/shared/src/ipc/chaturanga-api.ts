@@ -171,8 +171,11 @@ export type ChaturangaApi = {
   /** Optional usage analytics (docs/telemetry.md); the renderer only reports a few interactions. */
   telemetry: {
     status(): Promise<TelemetryStatus>;
-    /** Fire-and-forget: main validates and may ignore it (collection off, a repeat). */
-    track(event: TelemetryRendererEvent): Promise<void>;
+    /**
+     * Fire-and-forget: main validates and may ignore it (a repeat). Resolves whether collection is
+     * on, so the renderer doesn't spend its throttles on reports nobody records.
+     */
+    track(event: TelemetryRendererEvent): Promise<boolean>;
   };
   events: {
     onEngineInfo(callback: (info: EngineInfo) => void): Unsubscribe;

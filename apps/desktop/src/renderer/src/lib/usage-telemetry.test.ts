@@ -3,7 +3,14 @@ import {
   COMMENTARY_VIEW_QUALIFY_MS,
   REVIEW_STUDIED_MOVES
 } from "@chaturanga/shared/types/telemetry";
-import { analyticsGameId, analyticsReviewId, StudyCounter, ViewQualifier } from "./usage-telemetry";
+import {
+  analyticsGameId,
+  analyticsReviewId,
+  listenForUserInput,
+  reportActivity,
+  StudyCounter,
+  ViewQualifier
+} from "./usage-telemetry";
 
 const timers = {
   setTimeout: (callback: () => void, ms: number) => setTimeout(callback, ms),
@@ -94,5 +101,41 @@ describe("analytics ids", () => {
     );
     expect(analyticsReviewId("review-123")).toBeNull();
     expect(analyticsReviewId(undefined)).toBeNull();
+  });
+});
+
+describe("reportActivity", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("needs recent input with the window in front, and only a recorded report spends the throttle", async () => {
+    const listeners: Record<string, () => void> = {};
+    const track = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+    vi.stubGlobal("window", {
+      addEventListener: (type: string, listener: () => void) => {
+        listeners[type] = listener;
+      },
+      chaturanga: { telemetry: { track } }
+    });
+    const doc = { visibilityState: "visible", hasFocus: () => true };
+    vi.stubGlobal("document", doc);
+    listenForUserInput();
+
+    // No input yet (a restored game, an engine reply): not activity.
+    expect(reportActivity("puzzle", performance.now() + 60_000)).toBe(false);
+    listeners.pointerdown();
+    doc.hasFocus = () => false;
+    expect(reportActivity("puzzle")).toBe(false);
+    doc.hasFocus = () => true;
+
+    // Collection is off: main doesn't record it, so the next one isn't throttled.
+    expect(reportActivity("puzzle")).toBe(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(reportActivity("puzzle")).toBe(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    // Recorded: further reports of this kind wait out the interval.
+    expect(reportActivity("puzzle")).toBe(false);
+    expect(track).toHaveBeenCalledTimes(2);
   });
 });

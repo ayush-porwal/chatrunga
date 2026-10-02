@@ -78,8 +78,10 @@ export class TelemetryService {
   private debounce: ReturnType<typeof setTimeout> | null = null;
   private interval: ReturnType<typeof setInterval> | null = null;
   private installationId: string | null = null;
-  /** The outbox was emptied since collection last stopped (so it isn't purged on every check). */
-  private purged = false;
+  /** Collection is stopped and its stop was handled (timers, in-flight upload). */
+  private stopped = false;
+  /** An opt-out's deletion of unsent events hasn't succeeded yet. */
+  private purgePending = false;
 
   constructor(private readonly deps: TelemetryDeps) {
     this.outbox = new TelemetryOutbox(deps.database);
@@ -93,23 +95,43 @@ export class TelemetryService {
     this.refreshConsent();
   }
 
-  /** The `usageAnalyticsEnabled` setting may have changed. */
+  /**
+   * The `usageAnalyticsEnabled` setting may have changed. Turning off deletes what wasn't sent;
+   * if that deletion fails it is retried on the next check, and collection doesn't start again
+   * until it succeeds (so events from before the opt-out are never delivered after it).
+   */
   refreshConsent(): void {
     if (this.closed) return;
     const next = this.deps.config.available && this.consentGiven();
-    if (next === this.active && (next || this.purged)) return;
-    this.active = next;
-    if (next) {
-      this.purged = false;
-      this.interval = setInterval(() => void this.drain(), DRAIN_INTERVAL_MS);
-      this.interval.unref?.();
-      this.scheduleDrain();
+    if (!next) {
+      if (this.active || !this.stopped) {
+        this.active = false;
+        this.stopped = true;
+        this.stopTimers();
+        this.inFlight?.abort();
+        this.purgePending = true;
+      }
+      this.retryPurge();
       return;
     }
-    this.stopTimers();
-    this.inFlight?.abort();
-    this.guard("purging unsent events", () => this.outbox.purge());
-    this.purged = true;
+    if (this.purgePending && !this.retryPurge()) return;
+    this.stopped = false;
+    if (this.active) return;
+    this.active = true;
+    this.interval = setInterval(() => void this.drain(), DRAIN_INTERVAL_MS);
+    this.interval.unref?.();
+    this.scheduleDrain();
+  }
+
+  /** Deletes unsent events if an opt-out still owes that; true once nothing is owed. */
+  private retryPurge(): boolean {
+    if (!this.purgePending) return true;
+    const purged = this.guard("purging unsent events", () => {
+      this.outbox.purge();
+      return true;
+    });
+    if (purged) this.purgePending = false;
+    return !this.purgePending;
   }
 
   status(): TelemetryStatus {

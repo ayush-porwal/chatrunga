@@ -9,9 +9,14 @@ import type {
  * signals are "a key or pointer was pressed" and "the window is visible and focused".
  */
 
-/** Reports an interaction; never throws, never waits (collection may be off: main ignores it). */
-export function trackUsage(event: TelemetryRendererEvent): void {
-  void window.chaturanga?.telemetry?.track(event).catch(() => undefined);
+/**
+ * Reports an interaction; never throws, never waits. Resolves whether it was recorded (false while
+ * collection is off, or outside the desktop app).
+ */
+export function trackUsage(event: TelemetryRendererEvent): Promise<boolean> {
+  const bridge = window.chaturanga?.telemetry;
+  if (!bridge) return Promise.resolve(false);
+  return bridge.track(event).catch(() => false);
 }
 
 /** The window is on screen and has focus. */
@@ -50,7 +55,11 @@ export function reportActivity(kind: TelemetryActivityKind, now = performance.no
   const last = lastActivityReport.get(kind);
   if (last !== undefined && now - last < ACTIVITY_REPORT_INTERVAL_MS) return false;
   lastActivityReport.set(kind, now);
-  trackUsage({ type: "activity", kind });
+  // Not recorded (collection off): the throttle isn't spent, so the first report after opting in
+  // goes through.
+  void trackUsage({ type: "activity", kind }).then((recorded) => {
+    if (!recorded && lastActivityReport.get(kind) === now) lastActivityReport.delete(kind);
+  });
   return true;
 }
 

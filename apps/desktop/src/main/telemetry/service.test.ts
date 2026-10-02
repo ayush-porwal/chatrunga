@@ -52,7 +52,7 @@ describe("TelemetryService delivery", () => {
     const endpoint = fakeEndpoint();
     const service = makeService({ db, fetchImpl: endpoint.fetchImpl });
     service.start();
-    service.record("review_opened", { review_id: "r1", game_ref: undefined });
+    service.record("review_opened", { review_id: "r1", game_ref: undefined, distinct_id: "someone-else" });
     await service.drain();
     service.record("review_studied");
     await service.drain();
@@ -67,6 +67,8 @@ describe("TelemetryService delivery", () => {
       platform: "darwin",
       schema_version: 1
     });
+    // The distinct id is also inside properties, and a recorded property can't replace it.
+    expect(a.properties.distinct_id).toBe(a.distinct_id);
     // Unknown values are left out, never sent as null or 0.
     expect(a.properties).not.toHaveProperty("game_ref");
     expect(endpoint.batches[0].url).toBe("https://eu.i.posthog.com/batch/");
@@ -207,6 +209,40 @@ describe("TelemetryService collection controls", () => {
       available: false,
       reason: "disabled_by_environment"
     });
+  });
+});
+
+describe("TelemetryService opt-out deletion", () => {
+  it("a failed deletion is retried, and collection doesn't resume until it succeeds", async () => {
+    const db = telemetryDatabase();
+    let failDeletes = true;
+    const flaky = {
+      prepare: (sql: string) => db.prepare(sql),
+      exec: (sql: string) => {
+        if (failDeletes && sql.startsWith("DELETE")) throw new Error("SQLITE_BUSY");
+        return db.exec(sql);
+      }
+    } as unknown as typeof db;
+    const endpoint = fakeEndpoint();
+    let consent = true;
+    const service = makeService({ db, database: () => flaky, fetchImpl: endpoint.fetchImpl, consent: () => consent, log: () => undefined });
+    service.start();
+    service.record("review_started");
+
+    consent = false;
+    service.refreshConsent();
+    expect(outboxRows(db)).toHaveLength(1);
+    // Turned on again while the deletion still fails: stays off, the old event isn't sent.
+    consent = true;
+    service.refreshConsent();
+    expect(service.enabled).toBe(false);
+    await service.drain();
+    expect(endpoint.fetchImpl).not.toHaveBeenCalled();
+
+    failDeletes = false;
+    service.refreshConsent();
+    expect(outboxRows(db)).toEqual([]);
+    expect(service.enabled).toBe(true);
   });
 });
 
