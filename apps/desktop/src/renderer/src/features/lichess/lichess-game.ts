@@ -67,6 +67,21 @@ export function speedLabel(speed: LichessSpeed): string {
   return SPEED_LABELS[speed];
 }
 
+/** A clock as Lichess writes it: `10+5` (minutes + increment seconds; `½+0`, `¼+0` for the short ones). */
+export function clockLabel(clock: { initialMs: number; incrementMs: number }): string {
+  const minutes = clock.initialMs / 60_000;
+  const fractions: Record<number, string> = { 0.25: "¼", 0.5: "½", 0.75: "¾" };
+  const shown = Number.isInteger(minutes) ? String(minutes) : (fractions[minutes] ?? minutes.toFixed(1));
+  return `${shown}+${Math.round(clock.incrementMs / 1000)}`;
+}
+
+/** What kind of Lichess game this is, for the titlebar: `Rated · Rapid · 10+5`. */
+export function lichessGameLabel(game: Pick<LichessGameFull, "rated" | "speed" | "clock">): string {
+  return [game.rated ? "Rated" : "Casual", speedLabel(game.speed), game.clock ? clockLabel(game.clock) : null]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 /** PGN headers for a live Lichess game (the saved game carries them; `site` identifies it on import). */
 export function lichessHeaders(game: LichessGameFull): GameHeaders {
   const date = new Date(game.createdAt);

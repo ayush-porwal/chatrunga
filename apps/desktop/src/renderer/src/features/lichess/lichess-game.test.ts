@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LichessGameFull } from "@chaturanga/shared/types/lichess";
-import { lichessHeaders, lichessOutcome, sideToMoveAfter, speedForClock, yourColor } from "./lichess-game";
+import { clockLabel, lichessGameLabel, lichessHeaders, lichessOutcome, sideToMoveAfter, speedForClock, yourColor } from "./lichess-game";
 
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -18,6 +18,13 @@ const game: LichessGameFull = {
 };
 
 describe("lichess game helpers", () => {
+  it("labels the kind of game: rated or casual, speed and clock", () => {
+    expect(lichessGameLabel(game)).toBe("Rated · Rapid · 10+5");
+    expect(lichessGameLabel({ ...game, rated: false, speed: "correspondence", clock: null })).toBe("Casual · Correspondence");
+    expect(clockLabel({ initialMs: 30_000, incrementMs: 0 })).toBe("½+0");
+    expect(clockLabel({ initialMs: 90_000, incrementMs: 1_000 })).toBe("1.5+1");
+  });
+
   it("finds your side from your account id", () => {
     expect(yourColor(game, "ayush")).toBe("white");
     expect(yourColor(game, "knightrider")).toBe("black");

@@ -183,12 +183,15 @@ export function PlayersTitle({ white, black }: { white: string; black: string })
  */
 export function WorkspaceTitlebar({
   title,
+  meta,
   result,
   status,
   statusIsError = false,
   actions
 }: {
   title?: ReactNode;
+  /** Quiet facts about the game after the title (a Lichess game: `Rated · Rapid · 10+5`). */
+  meta?: ReactNode;
   result?: string | null;
   status?: ReactNode;
   statusIsError?: boolean;
@@ -198,6 +201,7 @@ export function WorkspaceTitlebar({
     <>
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
         {title}
+        {meta ? <span className="shrink-0 text-xs text-fg-muted">{meta}</span> : null}
         {result ? <Badge className="shrink-0 font-mono">{result}</Badge> : null}
         <span
           className={cn("ml-2 min-w-0 truncate", statusIsError ? "text-danger" : "text-fg-muted")}
