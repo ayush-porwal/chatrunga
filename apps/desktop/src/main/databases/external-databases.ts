@@ -52,7 +52,9 @@ function isMissingFile(error: unknown): boolean {
 async function onDisk(database: InstalledDatabase): Promise<InstalledDatabase | null> {
   // An install of a new copy that stopped before it was registered: the registered copy comes back
   // (the new one may be on disk in its place).
-  if (existsSync(installMarkerFor(database.filePath))) await settleBackup(database.filePath).catch(() => undefined);
+  const settled = existsSync(installMarkerFor(database.filePath))
+    ? await settleBackup(database.filePath, database).then(() => true, () => false)
+    : true;
   try {
     await stat(database.filePath);
     return database;
@@ -60,14 +62,13 @@ async function onDisk(database: InstalledDatabase): Promise<InstalledDatabase | 
     if (!isMissingFile(error)) throw error;
   }
   // Missing because an install was interrupted mid-swap: the installed file is still in its `.bak`.
-  const restored = await settleBackup(database.filePath).then(
-    () => true,
-    () => false
-  );
+  const restored = settled && (await settleBackup(database.filePath, database).then(() => true, () => false));
   if (existsSync(database.filePath)) return database;
-  // The backup couldn't be put back now (in use, no permission): keep the entry, so a later
-  // listing tries again rather than forgetting a dataset that is still on disk.
-  if (!restored && existsSync(backupPathFor(database.filePath))) return null;
+  // An interrupted install couldn't be settled now (in use, no permission): keep the entry, so a
+  // later listing tries again rather than forgetting a dataset that is still on disk.
+  if (!restored && (existsSync(backupPathFor(database.filePath)) || existsSync(installMarkerFor(database.filePath)))) {
+    return null;
+  }
   const moved = relocatedDatasetPath(database.filePath, app.getPath("userData"));
   if (moved && (await fileSize(moved)) > 0) {
     externalDatabaseRepository.updateFilePath(database.id, moved);
@@ -181,7 +182,7 @@ async function runDownload(sourceId: string, onProgress: ProgressSink, signal: A
   const partPath = `${filePath}.part`;
   // An earlier install of this file that was interrupted is undone first: its new copy goes back to
   // `.part` (this download then finishes at once) and the installed copy comes back from `.bak`.
-  await settleBackup(filePath);
+  await settleBackup(filePath, externalDatabaseRepository.getBySource(source.id));
   // The server's ETag / Last-Modified for the `.part` file: a resume only continues the same file.
   const validatorPath = `${partPath}.validator`;
 
@@ -350,14 +351,15 @@ async function finishDownload(
     throw error;
   }
   stopIfCancelled();
-  await settleBackup(filePath);
+  await settleBackup(filePath, externalDatabaseRepository.getBySource(source.id));
 
   // A second name for the installed file (a copy where hard links aren't supported), so the file
   // never goes missing while it is replaced: a listing or a puzzle request meanwhile still finds it.
   const hadInstalled = existsSync(filePath);
-  // On disk until the new copy is registered: if the app dies before that, the swap is undone at the
-  // next listing or download (see settleBackup) rather than the unregistered copy being kept.
-  await writeFile(markerPath, "");
+  // On disk until the swap is final, holding the new copy's size: if the app dies before the new copy
+  // is registered, the next listing or download undoes the swap (see settleBackup) rather than
+  // keeping a copy the registry doesn't describe.
+  await writeFile(markerPath, String((await stat(partPath)).size));
   if (hadInstalled) await keepAside(filePath, backupPath);
   let promoted = false;
   try {
@@ -418,25 +420,33 @@ async function keepAside(filePath: string, backupPath: string): Promise<void> {
 }
 
 /**
- * Undoes what an interrupted install left (the app crashed or was killed mid-swap). While its
- * marker is there the new copy was never registered: if it already took the file's place it goes
- * back to `.part` (with its `.validator`, so downloading again finishes at once), and the installed
- * copy comes back from `.bak`. Without a marker, a `.bak` is put back when the file is missing and
- * is otherwise stale (deleted). Run before each download of that file (downloads of one source never
- * overlap) and by `onDisk`.
+ * Undoes what an interrupted install left (the app crashed or was killed mid-swap). Its marker
+ * holds the new copy's size. If the registry (`registered`, the row for that source) already
+ * describes the new copy, the install finished and only its leftovers go. Otherwise the new copy
+ * was never registered: if it already took the file's place it goes back to `.part` (with its
+ * `.validator`, so downloading again finishes at once), and the installed copy comes back from
+ * `.bak`. Without a marker, a `.bak` is put back when the file is missing and is otherwise stale
+ * (deleted). Run before each download of that file (downloads of one source never overlap) and by
+ * `onDisk`.
  */
-async function settleBackup(filePath: string): Promise<void> {
+async function settleBackup(filePath: string, registered: Pick<InstalledDatabase, "fileSizeBytes"> | null): Promise<void> {
   const backupPath = backupPathFor(filePath);
   const markerPath = installMarkerFor(filePath);
   const partPath = `${filePath}.part`;
-  const interrupted = existsSync(markerPath);
+  const marked = existsSync(markerPath);
+  const newSize = marked ? Number(await readFile(markerPath, "utf8")) : NaN;
+  const committed =
+    marked && registered !== null && registered.fileSizeBytes === newSize && !existsSync(partPath) && (await fileSize(filePath)) === newSize;
+  const interrupted = marked && !committed;
   // Before the swap the new copy is the `.part`; after it, the `.part` is gone and the file is the new copy.
   if (interrupted && !existsSync(partPath) && existsSync(filePath)) await rename(filePath, partPath);
   if (existsSync(backupPath)) {
     if (existsSync(filePath)) await unlink(backupPath).catch(() => undefined);
     else await rename(backupPath, filePath);
   }
-  if (interrupted) await unlink(markerPath);
+  // A finished install's resume token for the `.part` it came from.
+  if (committed) await unlink(`${partPath}.validator`).catch(() => undefined);
+  if (marked) await unlink(markerPath);
 }
 
 /**

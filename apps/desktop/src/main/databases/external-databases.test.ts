@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const userData = mkdtempSync(join(tmpdir(), "chaturanga-databases-"));
 vi.mock("electron", () => ({ app: { getPath: () => userData } }));
 
-type Row = { id: string; sourceId: string; filePath: string; name?: string; format?: string };
+type Row = { id: string; sourceId: string; filePath: string; fileSizeBytes?: number; name?: string; format?: string };
 const rows = new Map<string, Row>();
 const repository = vi.hoisted(() => ({ failSave: false }));
 vi.mock("../db/repositories", () => ({
@@ -21,9 +21,9 @@ vi.mock("../db/repositories", () => ({
     remove: (id: string) => {
       for (const [key, row] of rows) if (row.id === id) rows.delete(key);
     },
-    saveDownloaded: (input: { source: { id: string }; filePath: string }) => {
+    saveDownloaded: (input: { source: { id: string }; filePath: string; fileSizeBytes: number }) => {
       if (repository.failSave) throw new Error("disk full");
-      const row = { id: input.source.id, sourceId: input.source.id, filePath: input.filePath };
+      const row = { id: input.source.id, sourceId: input.source.id, filePath: input.filePath, fileSizeBytes: input.fileSizeBytes };
       rows.set(input.source.id, row);
       return row;
     }
@@ -377,7 +377,7 @@ describe("installing a downloaded file", () => {
   async function installOld() {
     await mkdir(dir, { recursive: true });
     await writeFile(finalPath, oldContent);
-    rows.set(SOURCE, { id: SOURCE, sourceId: SOURCE, filePath: finalPath });
+    rows.set(SOURCE, { id: SOURCE, sourceId: SOURCE, filePath: finalPath, fileSizeBytes: oldContent.length });
   }
 
   function serve(body: Buffer | string, contentType = "application/octet-stream") {
@@ -557,7 +557,7 @@ describe("installing a downloaded file", () => {
     await writeFile(`${finalPath}.bak`, oldContent);
     await writeFile(finalPath, content);
     await writeFile(`${finalPath}.part.validator`, '"v2"');
-    await writeFile(`${finalPath}.installing`, "");
+    await writeFile(`${finalPath}.installing`, String(content.length));
   }
 
   it("undoes a swap that was never registered when the databases are listed", async () => {
@@ -570,6 +570,29 @@ describe("installing a downloaded file", () => {
       "lichess-puzzles-lichess_db_puzzle.csv.zst.part",
       "lichess-puzzles-lichess_db_puzzle.csv.zst.part.validator"
     ]);
+  });
+
+  it("keeps an install that was registered before the app died, clearing only its leftovers", async () => {
+    await crashAfterSwap();
+    // Registered: the registry already describes the new copy; only the marker's removal was missed.
+    rows.set(SOURCE, { id: SOURCE, sourceId: SOURCE, filePath: finalPath, fileSizeBytes: content.length });
+    expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([finalPath]);
+    expect(await readFile(finalPath)).toEqual(content);
+    expect(rows.get(SOURCE)?.fileSizeBytes).toBe(content.length);
+    expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst"]);
+  });
+
+  it("keeps the entry while an interrupted install can't be undone yet, and undoes it later", async () => {
+    await crashAfterSwap();
+    fsHooks.beforeRename = async () => {
+      fsHooks.beforeRename = null;
+      throw Object.assign(new Error("busy"), { code: "EBUSY" });
+    };
+    await listInstalledDatabases();
+    expect(rows.has(SOURCE)).toBe(true);
+    expect(await readdir(dir)).toContain("lichess-puzzles-lichess_db_puzzle.csv.zst.installing");
+    expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([finalPath]);
+    expect(await readFile(finalPath)).toEqual(oldContent);
   });
 
   it("keeps the installed copy when the next download after such a crash fails to register", async () => {
