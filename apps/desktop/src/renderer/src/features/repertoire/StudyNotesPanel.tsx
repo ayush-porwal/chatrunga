@@ -51,8 +51,9 @@ export function StudyNotesPanel({
     () =>
       window.chaturanga?.games.onFlushRequest?.(async () => {
         const { commit: save, prompt: promptText, hint: hintText } = pending.current;
-        await Promise.all([save("prompt", promptText), save("hint", hintText)]);
-        return true;
+        const results = await Promise.all([save("prompt", promptText), save("hint", hintText)]);
+        // null: the write failed (undefined: nothing to save).
+        return results.every((result) => result !== null);
       }),
     []
   );

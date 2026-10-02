@@ -38,6 +38,7 @@ import {
   useArchiveRepertoireMutation,
   useDuplicateRepertoireMutation,
   useExportRepertoireMutation,
+  useRemoveChapterMutation,
   useRemoveRepertoireMutation,
   useRepertoireDueSummaryQuery,
   useRepertoiresQuery
@@ -94,6 +95,12 @@ export function RepertoireHubPage({
   const duplicate = useDuplicateRepertoireMutation();
   const archive = useArchiveRepertoireMutation();
   const remove = useRemoveRepertoireMutation();
+  const removeChapter = useRemoveChapterMutation();
+  /** The empty first chapter of a repertoire created to import into; the import replaces it. */
+  const [placeholder, setPlaceholder] = useState<{
+    repertoireId: string;
+    chapterId: string;
+  } | null>(null);
   const exportMutation = useExportRepertoireMutation();
   const [creating, setCreating] = useState(false);
   const [importTarget, setImportTarget] = useState<string | null>(null);
@@ -402,17 +409,37 @@ export function RepertoireHubPage({
           onCreated={(detail, next) => {
             setCreating(false);
             const first = sortedChapters(detail.chapters)[0];
-            if (next === "import") setImportTarget(detail.id);
-            else if (first) onStudy({ repertoireId: detail.id, chapterId: first.id, nodeId: null });
+            if (next === "import") {
+              setImportTarget(detail.id);
+              setPlaceholder(first ? { repertoireId: detail.id, chapterId: first.id } : null);
+            } else if (first)
+              onStudy({ repertoireId: detail.id, chapterId: first.id, nodeId: null });
           }}
         />
       ) : null}
       {importTarget ? (
         <ImportPgnDialog
           repertoireId={importTarget}
-          onClose={() => setImportTarget(null)}
+          onClose={() => {
+            setImportTarget(null);
+            setPlaceholder(null);
+          }}
           onImported={(result) => {
             setImportTarget(null);
+            setPlaceholder(null);
+            const empty = result.repertoire.chapters.find(
+              (chapter) =>
+                chapter.id === placeholder?.chapterId &&
+                result.repertoire.id === placeholder.repertoireId &&
+                chapter.nodeCount === 0
+            );
+            if (empty && result.chaptersAdded > 0) {
+              removeChapter.mutate({
+                repertoireId: result.repertoire.id,
+                chapterId: empty.id,
+                expectedRevision: result.repertoire.revision
+              });
+            }
             setNotice({
               tone: "success",
               text: `Imported ${plural(result.chaptersAdded, "chapter")} into “${result.repertoire.name}”.`

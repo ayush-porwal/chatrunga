@@ -128,7 +128,8 @@ export function RepertoirePracticePage({
           lastNodeId: loaded.workspace?.lastNodeId ?? null,
           orientation: loaded.workspace?.orientation ?? loaded.color,
           practiceDraft: input
-        }
+        },
+        practiceSetup: true
       });
     }
     start.mutate(input, {

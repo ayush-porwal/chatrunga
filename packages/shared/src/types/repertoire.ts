@@ -397,6 +397,11 @@ export type RepertoireWorkspaceState = {
 export type SaveWorkspaceInput = {
   repertoireId: string;
   workspace: RepertoireWorkspaceState;
+  /**
+   * Only the practice setup changed: the write doesn't count as studying, so the last-studied time
+   * and Home's "Continue studying" target stay as they were.
+   */
+  practiceSetup?: boolean;
 };
 
 export type RepertoireListFilters = {

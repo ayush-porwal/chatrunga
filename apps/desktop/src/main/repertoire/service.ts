@@ -719,7 +719,7 @@ export function removeRepertoire(input: RemoveRepertoireInput): void {
 /** Study preferences (last chapter/node, orientation, practice draft); no revision bump. */
 export function saveWorkspace(input: SaveWorkspaceInput): void {
   requireRepertoire(input.repertoireId);
-  workspaceRepository.save(input.repertoireId, input.workspace, clock());
+  workspaceRepository.save(input.repertoireId, input.workspace, clock(), !input.practiceSetup);
 }
 
 /* ------------------------------------------------------------------ import / export */

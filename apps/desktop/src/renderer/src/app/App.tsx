@@ -359,8 +359,9 @@ export function App() {
         return (await openRepertoireStudy(entry, "none")) ? "shown" : "dropped";
       case "repertoire-practice":
         // A session that can't resume offers a new one on the page; nothing is graded on restore.
-        openRepertoirePractice(entry.repertoireId, { sessionId: entry.sessionId }, "none");
-        return "shown";
+        return (await openRepertoirePractice(entry.repertoireId, { sessionId: entry.sessionId }, "none"))
+          ? "shown"
+          : "dropped";
     }
   }
 
@@ -726,27 +727,29 @@ export function App() {
   /**
    * Practice: the setup (no session, optionally with a preset), or a session to resume. A study
    * draft still saving (left through the hub, say) is saved first, so practice grades the edited
-   * chapter; when that save fails, the notice says so and the current screen stays.
+   * chapter; when that save fails, the notice says so and the current screen stays (false, as when
+   * a newer navigation wins).
    */
   async function openRepertoirePractice(
     repertoireId: string,
     { sessionId = null, preset = null }: { sessionId?: string | null; preset?: RepertoireExtras["preset"] } = {},
     history: HistoryMode = "push"
-  ) {
+  ): Promise<boolean> {
     if (history === "push") commitCurrent();
     const request = ++latestNavigation.current;
     const draft = useRepertoireWorkspaceStore.getState();
     if (draft.chapterId && (draft.dirty || draft.saveState.status !== "idle")) {
       const saved = await flushChapterDraft(queryClient);
-      if (request !== latestNavigation.current) return;
+      if (request !== latestNavigation.current) return false;
       if (!saved) {
         useAppNoticeStore.getState().show("This chapter couldn't be saved; reopen it and retry the save before practising.");
-        return;
+        return false;
       }
     }
     setRepertoireExtras((extras) => ({ ...extras, preset }));
     showRepertoireView("repertoire-practice", practicePath(repertoireId, sessionId));
     record(history, { view: "repertoire-practice", repertoireId, sessionId });
+    return true;
   }
 
   /** The session started on the setup page: same screen, now naming the session. */

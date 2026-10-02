@@ -905,19 +905,30 @@ export const workspaceRepository = {
     return row ? toWorkspace(row) : null;
   },
 
-  save(repertoireId: string, workspace: RepertoireWorkspaceState, now: number): void {
+  /**
+   * Stores the workspace. `studied` false (a practice-setup write) keeps the stored study time
+   * (0 for a new row), which orders "Continue studying" and the last-studied date.
+   */
+  save(
+    repertoireId: string,
+    workspace: RepertoireWorkspaceState,
+    now: number,
+    studied = true
+  ): void {
     run(
       `INSERT INTO repertoire_workspace_state (repertoire_id, last_chapter_id, last_node_id, orientation,
         practice_draft_json, updated_at) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(repertoire_id) DO UPDATE SET last_chapter_id = excluded.last_chapter_id,
         last_node_id = excluded.last_node_id, orientation = excluded.orientation,
-        practice_draft_json = excluded.practice_draft_json, updated_at = excluded.updated_at`,
+        practice_draft_json = excluded.practice_draft_json,
+        updated_at = CASE WHEN ? THEN excluded.updated_at ELSE repertoire_workspace_state.updated_at END`,
       repertoireId,
       workspace.lastChapterId,
       workspace.lastNodeId,
       workspace.orientation,
       workspace.practiceDraft ? JSON.stringify(workspace.practiceDraft) : null,
-      now
+      studied ? now : 0,
+      studied ? 1 : 0
     );
   }
 };

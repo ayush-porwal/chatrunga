@@ -865,6 +865,7 @@ export function parseSaveWorkspaceInput(value: unknown): SaveWorkspaceInput {
       lastNodeId: nullable(workspace.lastNodeId, (id) => asId(id, "lastNodeId")) ?? null,
       orientation: asRepertoireColor(workspace.orientation, "orientation"),
       practiceDraft: nullable(workspace.practiceDraft, parseStartPracticeInput) ?? null
-    }
+    },
+    ...(input.practiceSetup === true ? { practiceSetup: true } : {})
   };
 }

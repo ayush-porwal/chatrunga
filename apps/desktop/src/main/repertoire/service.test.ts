@@ -469,6 +469,35 @@ describe("repertoire service: chapters, decisions and index", () => {
     expect(sent.at(-1)).toMatchObject({ payload: { repertoireId: id, kind: "removed" } });
   });
 
+  it("a practice-setup write keeps where to continue studying", () => {
+    const first = create();
+    const firstChapter = save(first.id, [["e2e4"]]).chapter;
+    const second = create();
+    const secondChapter = save(second.id, [["e2e4"]]).chapter;
+    const workspace = (chapterId: string) => ({
+      lastChapterId: chapterId,
+      lastNodeId: null,
+      orientation: "white" as const,
+      practiceDraft: null
+    });
+    service.saveWorkspace({ repertoireId: second.id, workspace: workspace(secondChapter.id) });
+    now += 1000;
+    service.saveWorkspace({ repertoireId: first.id, workspace: workspace(firstChapter.id) });
+    now += 1000;
+    service.saveWorkspace({
+      repertoireId: second.id,
+      workspace: {
+        ...workspace(secondChapter.id),
+        practiceDraft: { repertoireId: second.id, mode: "learn-new" }
+      },
+      practiceSetup: true
+    });
+    expect(service.getDueSummary().continue?.repertoireId).toBe(first.id);
+    expect(service.getRepertoire(second.id).workspace?.practiceDraft).toMatchObject({
+      mode: "learn-new"
+    });
+  });
+
   it("summarises due work and where to continue", () => {
     const { id } = create();
     const saved = save(id, [["e2e4"]]);
