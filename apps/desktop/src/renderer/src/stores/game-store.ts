@@ -258,7 +258,8 @@ export const useGameStore = create<GameStore>((set, get) => {
         set({ engineClockLive: running });
         if (remainingClockMs(running, mover, clockNow()) <= 0) {
           get().resolveTimeout(mover);
-          return false;
+          // Through reject(): the board takes back the piece it already moved.
+          return reject();
         }
       }
       const { moveTree, node } = addMoveNode(
