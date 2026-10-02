@@ -93,6 +93,30 @@ describe("gameRepository (SQLite)", () => {
     expect(gameRepository.get(saved.id)?.review).toBeNull();
   });
 
+  it("moves the review of a game from a set-up position too, and puts the cursor on the rebuilt tree", () => {
+    const fen = "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3";
+    const { game } = importPgnText(`[SetUp "1"]\n[FEN "${fen}"]\n\n3. Bb5 a6 4. Ba4 *`);
+    const saved = gameRepository.save({ ...game, id: "from-fen" });
+    const mainline = saved.moveTree.filter((node) => node.san);
+    expect(mainline[0].ply).toBeGreaterThan(1); // absolute plies
+    const review = {
+      engineId: "sf",
+      depth: null,
+      moveTimeMs: 100,
+      createdAt: 1,
+      summary: {},
+      moves: mainline.map((node) => ({ nodeId: node.id, ply: node.ply, san: node.san, fenAfter: node.fenAfter }))
+    };
+    const cursor = mainline[1];
+    getDb()
+      .prepare("UPDATE games SET move_tree_json = ?, review_json = ?, current_node_id = ?, current_fen = ? WHERE id = ?")
+      .run("{not json", JSON.stringify(review), cursor.id, cursor.fenAfter, saved.id);
+    const reopened = gameRepository.get(saved.id)!;
+    expect(reopened.review?.moves.map((move) => move.san)).toEqual(["Bb5", "a6", "Ba4"]);
+    const node = reopened.moveTree.find((item) => item.id === reopened.currentNodeId);
+    expect(node?.fenAfter).toBe(cursor.fenAfter);
+  });
+
   it("rebuilds a tree whose links point at missing moves", () => {
     const saved = saveImported();
     const broken = saved.moveTree.slice(0, -1);

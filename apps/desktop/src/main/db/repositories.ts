@@ -188,24 +188,44 @@ function parseMoveTree(row: GameRow): { moveTree: MoveNode[]; rebuilt: boolean }
  * that doesn't fit the rebuilt game is dropped rather than shown against the wrong moves.
  */
 export function remapReviewToTree(review: GameReview, moveTree: readonly MoveNode[]): GameReview | null {
-  const byId = new Map(moveTree.map((node) => [node.id, node]));
-  const mainline: MoveNode[] = [];
-  let node = moveTree.find((item) => item.parentId === null);
-  while (node) {
-    mainline.push(node);
-    node = node.children[0] ? byId.get(node.children[0]) : undefined;
-  }
+  // By the node's own ply (absolute: a game from a set-up position starts past 0), not the index.
+  const byPly = new Map(mainlineOf(moveTree).map((node) => [node.ply, node]));
   const moves = [];
   for (const move of review.moves as unknown[]) {
     // A damaged entry drops the review (it can't be placed), never the game.
     if (!move || typeof move !== "object") return null;
     const { ply, fenAfter } = move as Partial<GameReview["moves"][number]>;
     if (!Number.isInteger(ply) || typeof fenAfter !== "string") return null;
-    const target = mainline[ply as number];
+    const target = byPly.get(ply as number);
     if (!target || target.fenAfter !== fenAfter) return null;
     moves.push({ ...(move as GameReview["moves"][number]), nodeId: target.id });
   }
   return { ...review, moves };
+}
+
+/** Root, then the first child at every step. */
+function mainlineOf(moveTree: readonly MoveNode[]): MoveNode[] {
+  const byId = new Map(moveTree.map((node) => [node.id, node]));
+  const line: MoveNode[] = [];
+  let node = moveTree.find((item) => item.parentId === null);
+  while (node) {
+    line.push(node);
+    node = node.children[0] ? byId.get(node.children[0]) : undefined;
+  }
+  return line;
+}
+
+/**
+ * The cursor in a tree rebuilt from the PGN: the old node id is gone, and which occurrence of a
+ * repeated position it was can't be told from a damaged tree. The main-line node showing the saved
+ * position (its last occurrence), else the end of the main line.
+ */
+export function rebuiltCursor(moveTree: readonly MoveNode[], currentFen: string): string | null {
+  const line = mainlineOf(moveTree);
+  for (let index = line.length - 1; index >= 0; index -= 1) {
+    if (line[index].fenAfter === currentFen) return line[index].id;
+  }
+  return line.at(-1)?.id ?? null;
 }
 
 /** The root's id in every tree the app builds (createEmptyGame, importPgnText). */
@@ -299,7 +319,7 @@ function toSavedGame(row: GameRow): SavedGame {
 
   return {
     ...toGameSummary(row),
-    currentNodeId: row.current_node_id,
+    currentNodeId: rebuilt ? rebuiltCursor(moveTree, row.current_fen) : row.current_node_id,
     headers,
     site: row.site,
     round: row.round,
