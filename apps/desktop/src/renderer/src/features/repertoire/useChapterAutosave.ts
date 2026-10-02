@@ -103,6 +103,18 @@ export async function rememberStudyPosition(queryClient: QueryClient): Promise<v
 }
 
 /**
+ * Saves a study draft that outlived its page (left while a save was failing) when the window
+ * closes, so quitting from another page still retries it or keeps the window open. Mount once.
+ */
+export function useChapterDraftCloseFlush(): void {
+  const queryClient = useQueryClient();
+  useEffect(
+    () => window.chaturanga?.games.onFlushRequest?.(() => flushChapterDraft(queryClient)),
+    [queryClient]
+  );
+}
+
+/**
  * Debounced autosave of the repertoire study draft (never through the game store). Saves
  * AUTOSAVE_DELAY_MS after the last edit, waits for a running save, stops on an error until it is
  * cleared, and flushes when the study page unmounts. Returns `flush` for navigation handoffs.

@@ -920,6 +920,22 @@ describe("repertoire service: practice", () => {
     });
   });
 
+  it("a resumed session shows an answer revealed after a wrong move", () => {
+    const { id } = create();
+    save(id, [["e2e4"]]);
+    const { session, card } = learnFirst(id);
+    attempt(session.sessionId, card.queueItemId, "d2d4");
+    expect(service.resumePractice(session.sessionId).shown).toBeUndefined();
+    service.recordPracticeAction({
+      sessionId: session.sessionId,
+      queueItemId: card.queueItemId,
+      action: { kind: "reveal" }
+    });
+    const resumed = service.resumePractice(session.sessionId);
+    expect(resumed.cards[0].state).toBe("answered-wrong");
+    expect(resumed.shown?.revealed).toMatchObject({ ucis: ["e2e4"], preferredUci: "e2e4" });
+  });
+
   it("an illegal move changes no schedule", () => {
     const { id } = create();
     save(id, [["e2e4"]]);

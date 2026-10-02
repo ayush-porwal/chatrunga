@@ -511,7 +511,7 @@ export function RepertoireStudyPage({
           busy={commands.busy}
           onComment={(text) => workspace().setComment(node.id, text)}
           onSaveDecisionText={(field, text) =>
-            positionKey && void commands.writeDecision(positionKey, { [field]: text })
+            positionKey ? commands.writeDecision(positionKey, { [field]: text }) : undefined
           }
         />
       ) : null}

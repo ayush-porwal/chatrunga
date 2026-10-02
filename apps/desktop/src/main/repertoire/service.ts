@@ -931,21 +931,28 @@ function snapshotOf(session: PracticeSessionRecord): PracticeSessionSnapshot {
   };
   const card = session.cards[session.cursor];
   const policy = card ? session.policies[card.queueItemId] : undefined;
-  if (!card || !policy || (!card.hintStage && card.state !== "revealed")) return snapshot;
+  if (!card || !policy) return snapshot;
+  // A reveal after a wrong answer leaves the card answered-wrong; its recorded action says so.
+  const revealed =
+    card.state === "revealed" ||
+    (card.state === "answered-wrong" &&
+      attemptRepository
+        .list(session.id, card.queueItemId)
+        .some((attempt) => attempt.kind === "reveal"));
+  if (!card.hintStage && !revealed) return snapshot;
   // Only what the hint and reveal actions already returned for this card.
   return {
     ...snapshot,
     shown: {
       hint: card.hintStage >= 1 ? policy.hint : null,
       hintUci: card.hintStage >= 2 ? (policy.preferredUci ?? policy.acceptedUcis[0] ?? null) : null,
-      revealed:
-        card.state === "revealed"
-          ? {
-              ucis: policy.acceptedUcis,
-              preferredUci: policy.preferredUci,
-              explanation: policy.explanation ?? policy.hint
-            }
-          : null
+      revealed: revealed
+        ? {
+            ucis: policy.acceptedUcis,
+            preferredUci: policy.preferredUci,
+            explanation: policy.explanation ?? policy.hint
+          }
+        : null
     }
   };
 }

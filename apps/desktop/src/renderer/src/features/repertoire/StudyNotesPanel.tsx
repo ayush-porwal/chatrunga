@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
 import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
@@ -10,7 +10,8 @@ const MAX_COMMENT_LENGTH = 20_000;
 /**
  * Notes for the selected move: its comment (part of the chapter draft, autosaved), and at a
  * position where the player has a decision, the practice prompt and hidden hint (repertoire-wide
- * decision fields, saved on blur). Mount with `key={nodeId}` so fields reset per position.
+ * decision fields, saved on blur or when the window closes). Mount with `key={nodeId}` so fields
+ * reset per position.
  */
 export function StudyNotesPanel({
   node,
@@ -26,7 +27,7 @@ export function StudyNotesPanel({
   canEditDecision: boolean;
   busy: boolean;
   onComment: (text: string) => void;
-  onSaveDecisionText: (field: "prompt" | "hint", text: string | null) => void;
+  onSaveDecisionText: (field: "prompt" | "hint", text: string | null) => Promise<unknown> | void;
 }) {
   const commentId = useId();
   const promptId = useId();
@@ -38,8 +39,23 @@ export function StudyNotesPanel({
   const commit = (field: "prompt" | "hint", value: string) => {
     const next = value.trim() ? value.trim() : null;
     if (next === (decisionText?.[field] ?? null)) return;
-    onSaveDecisionText(field, next);
+    return onSaveDecisionText(field, next);
   };
+
+  // Closing the window doesn't blur the focused field: save what it holds then.
+  const pending = useRef({ commit, prompt, hint });
+  useEffect(() => {
+    pending.current = { commit, prompt, hint };
+  });
+  useEffect(
+    () =>
+      window.chaturanga?.games.onFlushRequest?.(async () => {
+        const { commit: save, prompt: promptText, hint: hintText } = pending.current;
+        await Promise.all([save("prompt", promptText), save("hint", hintText)]);
+        return true;
+      }),
+    []
+  );
 
   return (
     <div className="scroll-area -mr-3 grid h-full min-h-0 content-start gap-5 overflow-y-auto pr-3">

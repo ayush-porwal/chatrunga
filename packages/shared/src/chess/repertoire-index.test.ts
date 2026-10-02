@@ -94,6 +94,8 @@ describe("buildChapterLookup", () => {
     expect(lookup.order).toEqual(["root", "e4", "e4/e5", "e4/e5/Nf3", "e4/c5"]);
     expect(lookup.childrenById.get("e4")).toEqual(["e4/e5", "e4/c5"]);
     expect(lookup.parentPath.get("e4/e5/Nf3")).toEqual(["root", "e4", "e4/e5", "e4/e5/Nf3"]);
+    expect(lookup.parentPath.get("root")).toEqual(["root"]);
+    expect(lookup.parentPath.get("missing")).toBeUndefined();
     expect(lookup.positionKeys.get("root")).toBe(positionKey(START_FEN));
   });
 

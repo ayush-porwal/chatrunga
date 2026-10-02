@@ -24,8 +24,11 @@ export type ChapterLookup = {
   nodesById: Map<string, MoveNode>;
   /** Child ids in authored order (only children that exist in the tree). */
   childrenById: Map<string, string[]>;
-  /** Node ids from the root to the node, both included. */
-  parentPath: Map<string, string[]>;
+  /**
+   * Node ids from the root to the node, both included (undefined when unreachable). Built per call
+   * from parent links, so deep lines don't store a path per node.
+   */
+  parentPath: { get(nodeId: string): string[] | undefined };
   /** Position key of each node's position (`fenAfter`; the root's is the chapter root). */
   positionKeys: Map<string, string>;
   /** Node ids reachable from the root, parents before children (authored order). */
@@ -40,30 +43,41 @@ export type ChapterLookup = {
 export function buildChapterLookup(chapter: Pick<RepertoireChapter, "tree">): ChapterLookup {
   const nodesById = new Map(chapter.tree.map((node) => [node.id, node]));
   const childrenById = new Map<string, string[]>();
-  const parentPath = new Map<string, string[]>();
+  /** How each reachable node was reached (null for the root). */
+  const reachedFrom = new Map<string, string | null>();
   const positionKeys = new Map<string, string>();
   const order: string[] = [];
 
   const root = nodesById.get(REPERTOIRE_ROOT_NODE_ID);
   if (!root) throw new Error("Chapter tree has no root node");
 
-  const stack: { id: string; path: string[] }[] = [{ id: root.id, path: [root.id] }];
+  const stack: { id: string; from: string | null }[] = [{ id: root.id, from: null }];
   while (stack.length) {
-    const { id, path } = stack.pop()!;
-    if (parentPath.has(id)) continue;
+    const { id, from } = stack.pop()!;
+    if (reachedFrom.has(id)) continue;
     const node = nodesById.get(id)!;
-    parentPath.set(id, path);
+    reachedFrom.set(id, from);
     positionKeys.set(id, positionKey(node.fenAfter));
     order.push(id);
     const children = node.children.filter(
-      (childId) => nodesById.has(childId) && !parentPath.has(childId)
+      (childId) => nodesById.has(childId) && !reachedFrom.has(childId)
     );
     childrenById.set(id, children);
     // Reverse so the first child is visited first (pre-order, authored order).
     for (let i = children.length - 1; i >= 0; i--) {
-      stack.push({ id: children[i], path: [...path, children[i]] });
+      stack.push({ id: children[i], from: id });
     }
   }
+  const parentPath = {
+    get(nodeId: string): string[] | undefined {
+      if (!reachedFrom.has(nodeId)) return undefined;
+      const path: string[] = [];
+      for (let id: string | null = nodeId; id !== null; id = reachedFrom.get(id) ?? null) {
+        path.push(id);
+      }
+      return path.reverse();
+    }
+  };
   return { nodesById, childrenById, parentPath, positionKeys, order };
 }
 

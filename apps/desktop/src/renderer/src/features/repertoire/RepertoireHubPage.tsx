@@ -194,7 +194,7 @@ export function RepertoireHubPage({
                 </Button>
                 <Button type="button" variant="primary" onClick={() => onReview(reviewTarget.id)}>
                   <GraduationCap />
-                  Review due ({due.data!.dueCount})
+                  Review due ({reviewTarget.dueCount})
                 </Button>
               </>
             ) : (

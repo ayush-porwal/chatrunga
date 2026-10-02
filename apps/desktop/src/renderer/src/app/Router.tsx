@@ -3,6 +3,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { App } from "./App";
 import { useEngineRegistrySubscription } from "../queries/api";
 import { useRepertoireChangedSubscription } from "../queries/repertoire";
+import { useChapterDraftCloseFlush } from "../features/repertoire/useChapterAutosave";
 import { useReviewEventSubscription } from "./useReviewEventSubscription";
 
 /**
@@ -37,5 +38,6 @@ function RouterShell() {
   useReviewEventSubscription();
   useEngineRegistrySubscription();
   useRepertoireChangedSubscription();
+  useChapterDraftCloseFlush();
   return <App />;
 }
