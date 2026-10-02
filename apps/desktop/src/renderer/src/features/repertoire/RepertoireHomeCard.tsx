@@ -3,13 +3,14 @@ import { BookOpen, GraduationCap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { sectionTitle } from "@/lib/ui";
 import { useRepertoireDueSummaryQuery, useRepertoiresQuery } from "../../queries/repertoire";
-import { mostDue, type StudyTarget } from "./repertoire-chapters";
+import { homeReviewAction, type StudyTarget } from "./repertoire-chapters";
 
 const ACTIVE = {};
 
 /**
- * Home's compact repertoire card (§6.1): decisions due (→ practice the repertoire with the most
- * due) and Continue repertoire study (→ the last chapter and node). Renders nothing when there is
+ * Home's compact repertoire card (§6.1): decisions due across every active repertoire (→ practice
+ * the repertoire with the most due, named with its own count when others are due too, plus
+ * "All repertoires" → hub) and Continue repertoire study (→ the last chapter and node). Renders nothing when there is
  * neither — Home's game content stays the main thing.
  */
 export const RepertoireHomeCard = memo(function RepertoireHomeCard({
@@ -24,7 +25,7 @@ export const RepertoireHomeCard = memo(function RepertoireHomeCard({
   const due = useRepertoireDueSummaryQuery();
   const dueCount = due.data?.dueCount ?? 0;
   const list = useRepertoiresQuery(ACTIVE);
-  const target = dueCount > 0 ? mostDue(list.data ?? []) : null;
+  const review = homeReviewAction(due.data, list.data);
   const continueTarget = due.data?.continue ?? null;
   if (!dueCount && !continueTarget) return null;
 
@@ -46,15 +47,20 @@ export const RepertoireHomeCard = memo(function RepertoireHomeCard({
             Continue repertoire study
           </Button>
         ) : null}
-        {dueCount ? (
+        {review?.showAll ? (
+          <Button type="button" variant="ghost" size="sm" onClick={onHub}>
+            All repertoires
+          </Button>
+        ) : null}
+        {review ? (
           <Button
             type="button"
             variant="primary"
             size="sm"
-            onClick={() => (target ? onReview(target.id) : onHub())}
+            onClick={() => (review.repertoireId ? onReview(review.repertoireId) : onHub())}
           >
             <GraduationCap />
-            Review now
+            {review.label}
           </Button>
         ) : null}
       </div>

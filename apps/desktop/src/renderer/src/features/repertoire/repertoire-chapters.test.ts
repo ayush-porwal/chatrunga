@@ -5,6 +5,7 @@ import { addLine, cardOf, rootNode } from "./__fixtures__/repertoire";
 import {
   chapterOrderAfterMove,
   fenError,
+  homeReviewAction,
   mostDue,
   nextSortOrder,
   plural,
@@ -80,6 +81,46 @@ describe("chapter helpers", () => {
       ])?.id
     ).toBe("b");
     expect(mostDue([{ id: "a", dueCount: 0 }])).toBeNull();
+  });
+
+  describe("homeReviewAction", () => {
+    const e4 = { id: "e4", name: "My 1.e4", dueCount: 7 };
+    const d4 = { id: "d4", name: "Queen's Gambit", dueCount: 5 };
+
+    it("offers nothing when no decision is due", () => {
+      expect(homeReviewAction({ dueCount: 0, repertoireCount: 0 }, [e4])).toBeNull();
+      expect(homeReviewAction(undefined, [e4])).toBeNull();
+    });
+
+    it("keeps Review now when only one repertoire is due", () => {
+      expect(
+        homeReviewAction({ dueCount: 7, repertoireCount: 1 }, [e4, { ...d4, dueCount: 0 }])
+      ).toEqual({ repertoireId: "e4", label: "Review now", showAll: false });
+    });
+
+    it("names the repertoire it opens and offers the hub when several are due", () => {
+      expect(homeReviewAction({ dueCount: 12, repertoireCount: 2 }, [d4, e4])).toEqual({
+        repertoireId: "e4",
+        label: "Review My 1.e4 (7 due)",
+        showAll: true
+      });
+    });
+
+    it("breaks ties like the hub's Review due (first in list order)", () => {
+      const tie = { ...d4, dueCount: 7 };
+      expect(homeReviewAction({ dueCount: 14, repertoireCount: 2 }, [tie, e4])?.repertoireId).toBe(
+        "d4"
+      );
+      expect(homeReviewAction({ dueCount: 14, repertoireCount: 2 }, [e4, tie])?.repertoireId).toBe(
+        "e4"
+      );
+    });
+
+    it("falls back to the hub while the repertoire list is missing", () => {
+      const fallback = { repertoireId: null, label: "Review now", showAll: false };
+      expect(homeReviewAction({ dueCount: 12, repertoireCount: 2 }, undefined)).toEqual(fallback);
+      expect(homeReviewAction({ dueCount: 12, repertoireCount: 2 }, [])).toEqual(fallback);
+    });
   });
 });
 

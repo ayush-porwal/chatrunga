@@ -6,6 +6,7 @@ import {
   type ChapterKind,
   type RepertoireChapterSummary,
   type RepertoireColor,
+  type RepertoireDueSummary,
   type RepertoireSummary
 } from "@chaturanga/shared/types/repertoire";
 
@@ -135,4 +136,35 @@ export function mostDue<T extends Pick<RepertoireSummary, "dueCount">>(
     (best, item) => (item.dueCount > (best?.dueCount ?? 0) ? item : best),
     null
   );
+}
+
+/** What Home's review button does: which repertoire it opens, its label, and whether a quiet
+ * "All repertoires" (→ hub) is offered because other repertoires also have due cards. */
+export type HomeReviewAction = {
+  /** The repertoire to practise, or null to open the hub (list not loaded yet). */
+  repertoireId: string | null;
+  label: string;
+  showAll: boolean;
+};
+
+/**
+ * Home's review action. The heading counts due decisions across every active repertoire, but a
+ * session practises one; when more than one repertoire has due cards the button names the one it
+ * opens (the same `mostDue` pick as the hub's "Review due") with its own count, and the rest stay
+ * reachable through the hub. Null when nothing is due.
+ */
+export function homeReviewAction(
+  due: Pick<RepertoireDueSummary, "dueCount" | "repertoireCount"> | null | undefined,
+  repertoires: readonly Pick<RepertoireSummary, "id" | "name" | "dueCount">[] | null | undefined
+): HomeReviewAction | null {
+  if (!due || due.dueCount <= 0) return null;
+  const target = mostDue(repertoires ?? []);
+  if (!target) return { repertoireId: null, label: "Review now", showAll: false };
+  const several = due.repertoireCount > 1 || target.dueCount < due.dueCount;
+  if (!several) return { repertoireId: target.id, label: "Review now", showAll: false };
+  return {
+    repertoireId: target.id,
+    label: `Review ${target.name} (${target.dueCount} due)`,
+    showAll: true
+  };
 }
