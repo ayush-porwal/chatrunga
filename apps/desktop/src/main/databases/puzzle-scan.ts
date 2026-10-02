@@ -3,6 +3,7 @@
  * so the same code runs in the main process and in the background scan worker.
  */
 import { createReadStream } from "node:fs";
+import { pipeline } from "node:stream";
 import { createZstdDecompress } from "node:zlib";
 import { Decompress } from "fzstd";
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
@@ -81,7 +82,8 @@ export async function scanCsvLines(
   try {
     if (compressed && typeof createZstdDecompress === "function") {
       // Native zstd (Node ≥ 22.15): decompresses on libuv's thread pool, far faster than JS.
-      const decompressed = file.pipe(createZstdDecompress());
+      // `pipeline`, not `pipe`: a read error then fails the decompressor (and this loop) too.
+      const decompressed = pipeline(file, createZstdDecompress(), () => undefined);
       for await (const chunk of decompressed) {
         emitText(decoder.decode(chunk as Buffer, { stream: true }));
         if (stopped) {
