@@ -10,7 +10,6 @@ import { Notice } from "@/components/ui/notice";
 import { Page, PageHeader, SectionHeader } from "@/components/ui/page";
 import { Switch } from "@/components/ui/switch";
 import { hasDesktopApi } from "@/lib/environment";
-import { useWindowGlass } from "@/lib/window-glass";
 import { cardPadded } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { BoardSection } from "./BoardSettings";
@@ -25,7 +24,6 @@ import { useSettingsSaveState } from "./settings-save-state";
 import { useSetSetting } from "./use-set-setting";
 
 export type SettingsSectionId =
-  | "window"
   | "board"
   | "sound"
   | "engines"
@@ -38,7 +36,6 @@ export type SettingsSectionId =
 type SectionId = SettingsSectionId;
 
 const sectionLabels: Record<SectionId, string> = {
-  window: "Window",
   board: "Board",
   sound: "Sound",
   engines: "Engines",
@@ -64,10 +61,7 @@ export const SettingsPage = memo(function SettingsPage({
   const settings = useSettingsQuery();
   const desktopApiAvailable = hasDesktopApi();
   const appearance = hydratePieceSettings({ ...defaultSettings, ...(settings.data ?? {}) });
-  const glass = useWindowGlass();
-  const showWindowSection = Boolean(glass?.supported);
   const sections: SectionId[] = [
-    ...(showWindowSection ? (["window"] as const) : []),
     "board",
     "sound",
     "engines",
@@ -136,11 +130,6 @@ export const SettingsPage = memo(function SettingsPage({
           </nav>
 
           <div className="grid min-w-0 gap-6">
-            {showWindowSection ? (
-              <SectionAnchor id="window">
-                <WindowSection appearance={appearance} reducedTransparency={Boolean(glass?.reducedTransparency)} />
-              </SectionAnchor>
-            ) : null}
             <SectionAnchor id="board">
               <BoardSection appearance={appearance} />
             </SectionAnchor>
@@ -219,7 +208,7 @@ function useScrollSpy(anchorRef: React.RefObject<HTMLElement | null>, sections: 
       }
       if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4) current = sections[sections.length - 1];
       // At the very top the first section is the one being read, even when a short first card lets
-      // the second one's top cross the threshold (Window above Board).
+      // the second one's top cross the threshold.
       if (scroller.scrollTop <= 4) current = sections[0];
       if (current) setActive(current);
     },
@@ -288,33 +277,6 @@ function SaveStatus({ className }: { className?: string }) {
         </span>
       )}
     </p>
-  );
-}
-
-/** macOS only: the translucent (vibrancy) window chrome. */
-function WindowSection({ appearance, reducedTransparency }: { appearance: AppSettings; reducedTransparency: boolean }) {
-  const setSetting = useSetSetting();
-  return (
-    <section className={cn(cardPadded, "grid gap-2")}>
-      <SectionHeader title="Window" />
-      <SettingRow
-        label="Translucent window"
-        htmlFor="setting-glass"
-        description={
-          reducedTransparency
-            ? "Off while Reduce transparency is on in System Settings → Accessibility → Display."
-            : "The sidebar and titlebar show a blurred view of your desktop."
-        }
-        control={
-          <Switch
-            id="setting-glass"
-            checked={appearance.glassEffect && !reducedTransparency}
-            disabled={reducedTransparency}
-            onCheckedChange={(v) => setSetting("glassEffect", v)}
-          />
-        }
-      />
-    </section>
   );
 }
 

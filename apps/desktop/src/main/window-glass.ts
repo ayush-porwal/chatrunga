@@ -1,14 +1,13 @@
 import { app, BrowserWindow, ipcMain, nativeTheme, type BrowserWindowConstructorOptions } from "electron";
 import type { WindowGlassState } from "@chaturanga/shared/ipc/chaturanga-api";
-import { settingsRepository } from "./db/repositories";
 import { resolveWindowGlassState, sameGlassState, windowGlassOptions } from "./window-glass-state";
 
 /*
  * Window glass: macOS vibrancy behind the web contents, visible wherever the renderer leaves the
  * page transparent (the `html.glass` chrome: titlebar + sidebar; the content panel stays opaque).
  *
- * Flow: the state is derived from the `glassEffect` setting and the system Reduce transparency
- * preference → applied to every window (setVibrancy + setBackgroundColor) → pushed to the renderer
+ * Flow: the state is derived from the system Reduce transparency preference (glass is always on
+ * otherwise) → applied to every window (setVibrancy + setBackgroundColor) → pushed to the renderer
  * ("appearance:glassChanged"), which toggles `html.glass`. The preload reads the initial state
  * synchronously so the first frame already matches the native window.
  */
@@ -18,7 +17,7 @@ let lastState: WindowGlassState | null = null;
 function computeState(): WindowGlassState {
   return resolveWindowGlassState({
     platform: process.platform,
-    enabled: settingsRepository.getAll().glassEffect,
+    enabled: true,
     reducedTransparency: nativeTheme.prefersReducedTransparency
   });
 }

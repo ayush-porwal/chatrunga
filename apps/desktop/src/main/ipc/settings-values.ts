@@ -47,7 +47,6 @@ const SETTING_CHECKS: { [K in keyof AppSettings]-?: Check } = {
   showCoordinates: bool,
   showLegalMoves: bool,
   boardAnimation: bool,
-  glassEffect: bool,
   soundEnabled: bool,
   soundVolume: number(0, 1),
   defaultEngineId: nullable(text(200)),

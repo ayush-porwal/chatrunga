@@ -37,7 +37,6 @@ import {
 import { getLichessService } from "../lichess";
 import { errorMessage, logger } from "../logger";
 import { updateService } from "../updater";
-import { refreshWindowGlass } from "../window-glass";
 import { runGameReview } from "./review-handler";
 import { missedBetween, readClocks, type ClockReading } from "../time-asleep";
 import { parseCommentaryRequestContext } from "@chaturanga/shared/schemas/telemetry";
@@ -361,7 +360,6 @@ function registerLibraryIpc(): void {
 
   ipcMain.handle("settings:getAll", () => settingsRepository.getAll());
   const settingsChanged = (keys: readonly (keyof AppSettings)[]) => {
-    if (keys.includes("glassEffect")) refreshWindowGlass();
     // Turning usage analytics off deletes what wasn't sent yet; on starts collecting.
     if (keys.includes("usageAnalyticsEnabled")) {
       getTelemetry()?.refreshConsent();

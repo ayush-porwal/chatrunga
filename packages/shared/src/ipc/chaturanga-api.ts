@@ -80,7 +80,7 @@ export type GenerateCommentaryResult = {
 export type WindowGlassState = {
   /** The platform can show it (macOS). */
   supported: boolean;
-  /** The user's `glassEffect` setting. */
+  /** Always on (there's no setting any more); kept for the state's shape. */
   enabled: boolean;
   /** macOS System Settings → Accessibility → Display → Reduce transparency is on. */
   reducedTransparency: boolean;
