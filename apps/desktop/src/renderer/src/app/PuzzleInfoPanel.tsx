@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Notice } from "@/components/ui/notice";
 import { SideDot } from "@/components/ui/side-dot";
+import { ipcErrorMessage } from "@/lib/ipc-error";
 import { positionStatus } from "@/lib/position-status";
 import { userMoveFromUci } from "@/lib/uci";
 import { sectionTitle } from "@/lib/ui";
@@ -192,7 +193,7 @@ function PuzzleCard({
             <Swords />
             Play engine from here
           </Button>
-          {nextError ? <Notice tone="danger">{nextError.message}</Notice> : null}
+          {nextError ? <Notice tone="danger">{ipcErrorMessage(nextError) || nextError.message}</Notice> : null}
         </div>
       ) : null}
 

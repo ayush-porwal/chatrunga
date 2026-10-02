@@ -2,9 +2,10 @@
  * Streaming scans of a puzzle / position CSV (optionally zstd-compressed). Pure Node — no Electron —
  * so the same code runs in the main process and in the background scan worker.
  */
-import { createReadStream } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { pipeline } from "node:stream";
+import { Worker } from "node:worker_threads";
 import { createZstdDecompress } from "node:zlib";
 import { Decompress } from "fzstd";
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
@@ -161,4 +162,77 @@ async function* nativeZstdFrames(filePath: string): AsyncGenerator<Buffer> {
     if (consumed <= 0) throw new Error(`zstd: no frame at byte ${offset} of ${filePath}`);
     offset += consumed;
   }
+}
+
+/** A scan in progress: `cancel` stops it, and `result` then rejects with `ScanCancelledError`. */
+export type RunningScan = { result: Promise<ScanResult>; cancel: () => void };
+
+/** Runs a scan somewhere (the worker thread in the app; tests may run it in their own thread). */
+export type PuzzleScanner = (job: ScanJob) => RunningScan;
+
+export class ScanCancelledError extends Error {
+  constructor() {
+    super("The puzzle scan was stopped.");
+    this.name = "ScanCancelledError";
+  }
+}
+
+/** The scan worker is missing, crashed or stopped without an answer — not a problem with the file. */
+export class ScanWorkerError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ScanWorkerError";
+  }
+}
+
+/** Longer than any whole-file scan takes: a worker silent for this long is stuck, and stopped. */
+const WORKER_SCAN_TIMEOUT_MS = 5 * 60_000;
+
+/**
+ * Scans in a worker thread running `workerPath` (puzzle-scan-worker.ts, bundled next to the main
+ * entry), one worker per scan. The result settles exactly once: with the worker's answer, or as a
+ * `ScanWorkerError` when the file is missing, the worker throws, or it exits or stalls without
+ * answering — so no caller waits forever.
+ */
+export function workerScanner(workerPath: string, timeoutMs = WORKER_SCAN_TIMEOUT_MS): PuzzleScanner {
+  return (job) => {
+    if (!existsSync(workerPath)) {
+      return {
+        result: Promise.reject(new ScanWorkerError(`the puzzle scanner (${workerPath}) is missing from this installation`)),
+        cancel: () => undefined
+      };
+    }
+    let finish: (outcome: { result: ScanResult } | { error: Error }) => void = () => undefined;
+    const result = new Promise<ScanResult>((resolve, reject) => {
+      let worker: Worker;
+      try {
+        worker = new Worker(workerPath, { workerData: job });
+      } catch (error) {
+        reject(new ScanWorkerError(`the puzzle scanner couldn't start (${error instanceof Error ? error.message : String(error)})`));
+        return;
+      }
+      const timer = setTimeout(() => finish({ error: new ScanWorkerError("the puzzle scanner stopped responding") }), timeoutMs);
+      let settled = false;
+      finish = (outcome) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        void worker.terminate();
+        if ("result" in outcome) resolve(outcome.result);
+        else reject(outcome.error);
+      };
+      worker.once("message", (message: { ok: true; result: ScanResult } | { ok: false; message: string }) =>
+        // A failed scan inside a working worker: the file couldn't be read.
+        finish(message.ok ? { result: message.result } : { error: new Error(message.message) })
+      );
+      worker.once("error", (error: unknown) =>
+        finish({ error: new ScanWorkerError(`the puzzle scanner crashed (${error instanceof Error ? error.message : String(error)})`) })
+      );
+      worker.once("exit", (code) =>
+        // After any message still queued from the worker, which wins if there is one.
+        setImmediate(() => finish({ error: new ScanWorkerError(`the puzzle scanner stopped without an answer (exit code ${code})`) }))
+      );
+    });
+    return { result, cancel: () => finish({ error: new ScanCancelledError() }) };
+  };
 }

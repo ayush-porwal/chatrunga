@@ -66,8 +66,36 @@ import {
   downloadDatabase,
   listInstalledDatabases,
   removeDatabase,
-  samplePuzzle
+  samplePuzzle,
+  setPuzzleScanner
 } from "./external-databases";
+import { reservoirScan, workerScanner, type PuzzleScanner, type ScanJob } from "./puzzle-scan";
+
+/** Scans in this thread (the worker can't load TypeScript sources), stopping when cancelled. */
+const inThreadScanner: PuzzleScanner = (job) => {
+  let cancelled = false;
+  return { result: reservoirScan(job, () => cancelled), cancel: () => void (cancelled = true) };
+};
+
+type GatedScan = { job: ScanJob; cancelled: boolean; release: () => void };
+/** Gated scans: each waits for `release()` (unless `open(job)`), so tests can hold scans in flight. */
+const gatedScans: GatedScan[] = [];
+function gatedScanner(open: (job: ScanJob) => boolean = () => false): PuzzleScanner {
+  return (job) => {
+    const scan: GatedScan = { job, cancelled: false, release: () => undefined };
+    const gate = new Promise<void>((resolve) => (scan.release = resolve));
+    gatedScans.push(scan);
+    if (open(job)) scan.release();
+    return {
+      result: gate.then(() => reservoirScan(job, () => scan.cancelled)),
+      cancel: () => {
+        scan.cancelled = true;
+        scan.release();
+      }
+    };
+  };
+}
+const isQuick = (scan: GatedScan) => scan.job.maxMatches !== undefined;
 
 const SOURCE = "lichess-puzzles";
 const dir = join(userData, "puzzle-databases");
@@ -117,9 +145,9 @@ function fakeServer(content: Buffer, etag: string, options: { failAfter?: number
 
 const LICHESS_HEADER = "PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags";
 /** A valid compressed puzzle file; random ids keep it from compressing to a few bytes. */
-function dataset(rowCount: number): Buffer {
+function dataset(rowCount: number): Buffer<ArrayBuffer> {
   const rows = Array.from({ length: rowCount }, (_, index) => `${randomBytes(8).toString("hex")},fen,e2e4 e7e5,${1000 + index},80,90,100,short,,`);
-  return zstdCompressSync(Buffer.from([LICHESS_HEADER, ...rows].join("\n")));
+  return zstdCompressSync(Buffer.from([LICHESS_HEADER, ...rows].join("\n"))) as Buffer<ArrayBuffer>;
 }
 const content = dataset(800);
 
@@ -135,10 +163,12 @@ beforeEach(async () => {
   fullScans.count = 0;
   fullScans.fail = false;
   fsHooks.beforeRename = null;
+  setPuzzleScanner(inThreadScanner);
   await rm(dir, { recursive: true, force: true });
 });
 
 afterEach(() => {
+  for (const scan of gatedScans.splice(0)) scan.release();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -353,7 +383,7 @@ describe("installing a downloaded file", () => {
   function serve(body: Buffer | string, contentType = "application/octet-stream") {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response(body, { headers: { "content-length": String(Buffer.byteLength(body)), "content-type": contentType, etag: '"v2"' } }))
+      vi.fn(async () => new Response(typeof body === "string" ? body : new Uint8Array(body), { headers: { "content-length": String(Buffer.byteLength(body)), "content-type": contentType, etag: '"v2"' } }))
     );
   }
 
@@ -608,6 +638,107 @@ describe("samplePuzzle", () => {
     await expect(samplePuzzle(input({ ratingMin: 2900 }))).rejects.toThrow(/No puzzle matched/);
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(fullScans.count).toBe(0);
+  });
+
+  it("answers a rare filter from one scan of the whole file", async () => {
+    await install([...Array.from({ length: 3000 }, (_, index) => row(`p${index}`, 1500)), row("rare", 2900)]);
+    const filters = input({ ratingMin: 2800 });
+    expect((await samplePuzzle(filters)).id).toBe("rare");
+    expect((await samplePuzzle(filters)).id).toBe("rare");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(fullScans.count).toBe(0);
+  });
+
+  it("reaches fresh puzzles past the excluded ones at the file's start", async () => {
+    await install(Array.from({ length: 1000 }, (_, index) => row(`p${index}`, 1500)));
+    const excludeIds = Array.from({ length: 600 }, (_, index) => `p${index}`);
+    const sample = await samplePuzzle({ ...input(), excludeIds });
+    expect(Number(sample.id.slice(1))).toBeGreaterThanOrEqual(600);
+  });
+
+  it("scans in the scanner, never in this thread", async () => {
+    const scanner = vi.fn(gatedScanner(() => true));
+    setPuzzleScanner(scanner);
+    await install([row("a", 1500)]);
+    expect((await samplePuzzle(input())).id).toBe("a");
+    expect(scanner).toHaveBeenCalledTimes(1);
+  });
+
+  it("shares one quick scan between identical requests in flight", async () => {
+    setPuzzleScanner(gatedScanner());
+    await install(Array.from({ length: 1000 }, (_, index) => row(`p${index}`, 1500)));
+    const first = samplePuzzle(input());
+    const second = samplePuzzle(input());
+    await vi.waitFor(() => expect(gatedScans.length).toBe(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(gatedScans.filter(isQuick)).toHaveLength(1);
+    gatedScans[0]!.release();
+    const [a, b] = await Promise.all([first, second]);
+    expect(a.id).not.toBe(b.id);
+    expect(gatedScans.filter(isQuick)).toHaveLength(1);
+  });
+
+  it("stops the quick scan of a request replaced by one with other filters", async () => {
+    setPuzzleScanner(gatedScanner());
+    await install(Array.from({ length: 1000 }, (_, index) => row(`p${index}`, 1000 + index)));
+    const older = samplePuzzle(input({ ratingMin: 1100 }));
+    older.catch(() => undefined);
+    await vi.waitFor(() => expect(gatedScans.length).toBe(1));
+    const newer = samplePuzzle(input({ ratingMin: 1500 }));
+    await expect(older).rejects.toThrow(/replaced by a newer one/);
+    expect(gatedScans[0]!.cancelled).toBe(true);
+    await vi.waitFor(() => expect(gatedScans.length).toBe(2));
+    gatedScans[1]!.release();
+    expect(Number((await newer).id.slice(1))).toBeGreaterThanOrEqual(500);
+  });
+
+  it("runs at most two whole-file scans at once", async () => {
+    setPuzzleScanner(gatedScanner((job) => job.maxMatches !== undefined));
+    await install(Array.from({ length: 1000 }, (_, index) => row(`p${index}`, 1500)));
+    for (const ratingMin of [100, 200, 300, 400]) await samplePuzzle(input({ ratingMin }));
+    const full = () => gatedScans.filter((scan) => !isQuick(scan));
+    expect(full()).toHaveLength(2);
+    full()[0]!.release();
+    await vi.waitFor(() => expect(full()).toHaveLength(3));
+    // Of the waiting ones, the newest filters are scanned first.
+    expect(full().map((scan) => scan.job.input.lichess?.ratingMin)).toEqual([100, 200, 400]);
+  });
+
+  it("reports a scanner that fails, distinctly from no match, and works again afterwards", async () => {
+    vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    await install([row("a", 1500)]);
+    setPuzzleScanner(workerScanner(join(userData, "no-such-worker.js")));
+    await expect(samplePuzzle(input())).rejects.toThrow(/Couldn't search Puzzles for puzzles: the puzzle scanner .* is missing/);
+    setPuzzleScanner(inThreadScanner);
+    expect((await samplePuzzle(input())).id).toBe("a");
+  });
+
+  it("reports a worker that crashes or exits without an answer", async () => {
+    vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    await install([row("a", 1500)]);
+    await mkdir(userData, { recursive: true });
+    const crashing = join(userData, "crashing-worker.mjs");
+    const silent = join(userData, "silent-worker.mjs");
+    await writeFile(crashing, 'throw new Error("boom");');
+    await writeFile(silent, "");
+    setPuzzleScanner(workerScanner(crashing));
+    await expect(samplePuzzle(input({ ratingMin: 1 }))).rejects.toThrow(/the puzzle scanner crashed \(boom\)/);
+    setPuzzleScanner(workerScanner(silent));
+    await expect(samplePuzzle(input({ ratingMin: 2 }))).rejects.toThrow(/stopped without an answer \(exit code 0\)/);
+  });
+
+  it("tries a failed whole-file scan again later", async () => {
+    vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    fullScans.fail = true;
+    await install(Array.from({ length: 1000 }, (_, index) => row(`p${index}`, 1500)));
+    await samplePuzzle(input());
+    await vi.waitFor(() => expect(fullScans.count).toBe(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    fullScans.fail = false;
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 60_000);
+    await samplePuzzle(input());
+    await vi.waitFor(() => expect(fullScans.count).toBe(2));
   });
 
   it("logs a failed whole-file scan once and keeps serving from the quick scan", async () => {
