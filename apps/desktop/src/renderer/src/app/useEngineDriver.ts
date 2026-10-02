@@ -223,7 +223,8 @@ export function useEngineDriver(defaultEngineId: string | null): void {
       const enginesTurn =
         game.mode === "engine" && game.engineSide && status.turn === game.engineSide && !status.isEnd && !game.gameOutcome;
       if (engines && enginesTurn && game.engineSide) {
-        const key = `${game.rootFen}|${game.currentNodeId}|${game.currentFen}|${game.engineSide}`;
+        // The match too: a new game from the same position (and side) still needs its first move.
+        const key = `${gameKey}|${game.rootFen}|${game.currentNodeId}|${game.currentFen}|${game.engineSide}`;
         const engineId = useAnalysisStore.getState().activeEngineId;
         if (key !== engineMoveKey && engineId) {
           engineMoveKey = key;
