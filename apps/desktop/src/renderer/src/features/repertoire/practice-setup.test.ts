@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { RepertoireChapterSummary } from "@chaturanga/shared/types/repertoire";
-import { detailOf } from "./__fixtures__/repertoire";
+import type {
+  RepertoireChapterSummary,
+  StartPracticeInput
+} from "@chaturanga/shared/types/repertoire";
+import { addLine, chapterOf, detailOf, rootNode } from "./__fixtures__/repertoire";
+import { pathLabel } from "./repertoire-model";
 import {
+  autoStartPracticeInput,
   boundedInt,
   DEFAULT_CARD_LIMIT,
   initialPracticeInput,
@@ -10,6 +15,8 @@ import {
   practiceInputFromForm,
   practicableChapterIds,
   presetForSetup,
+  rehearsePreset,
+  rehearseStarts,
   targetedPracticeInput
 } from "./practice-setup";
 
@@ -191,5 +198,103 @@ describe("targeted practice presets", () => {
     const chapters = { chapterIds: ["c1"] };
     expect(presetForSetup(chapters)).toBe(chapters);
     expect(presetForSetup(null)).toBeNull();
+  });
+});
+
+describe("rehearse lines setup", () => {
+  const rehearseDetail = (practiceDraft: StartPracticeInput | null = null) =>
+    detailOf({
+      chapters,
+      workspace: { lastChapterId: null, lastNodeId: null, orientation: "white", practiceDraft }
+    });
+
+  it("builds a rehearse scope with chapter, branch and depth, and no card limits", () => {
+    const form = {
+      repertoireId: "r1",
+      mode: "rehearse-lines" as const,
+      chapterIds: ["A"],
+      depth: "12",
+      cards: "20",
+      fresh: "5"
+    };
+    expect(
+      practiceInputFromForm({ ...form, rehearseChapterId: "A", rehearseFromNodeId: "n4" })
+    ).toEqual({
+      repertoireId: "r1",
+      mode: "rehearse-lines",
+      rehearse: { chapterId: "A", fromNodeId: "n4" },
+      maxDepthPlies: 12
+    });
+    expect(
+      practiceInputFromForm({ ...form, depth: "", rehearseChapterId: "A", rehearseFromNodeId: "" })
+    ).toEqual({ repertoireId: "r1", mode: "rehearse-lines", rehearse: { chapterId: "A" } });
+  });
+
+  it("restores a saved rehearsal draft and drops a chapter that can't be rehearsed", () => {
+    const draft: StartPracticeInput = {
+      repertoireId: "r1",
+      mode: "rehearse-lines",
+      rehearse: { chapterId: "A", fromNodeId: "n4" },
+      maxDepthPlies: 8
+    };
+    expect(initialPracticeInput(rehearseDetail(draft), null)).toEqual(draft);
+    const stale = { ...draft, rehearse: { chapterId: "B" } };
+    expect(initialPracticeInput(rehearseDetail(stale), null).rehearse).toBeUndefined();
+  });
+
+  it("preselects a rehearse preset over the draft", () => {
+    const initial = initialPracticeInput(
+      rehearseDetail({ repertoireId: "r1", mode: "review-due", cardLimit: 10 }),
+      { mode: "rehearse-lines", rehearse: { chapterId: "A", fromNodeId: "x" }, maxDepthPlies: 6 }
+    );
+    expect(initial).toMatchObject({
+      mode: "rehearse-lines",
+      rehearse: { chapterId: "A", fromNodeId: "x" },
+      maxDepthPlies: 6,
+      cardLimit: 10
+    });
+  });
+
+  it("auto-starts a rehearse preset, and keeps it on the setup for Practice again", () => {
+    const preset = rehearsePreset({ chapterId: "A", fromNodeId: "n4" }, 10);
+    expect(preset).toEqual({
+      mode: "rehearse-lines",
+      rehearse: { chapterId: "A", fromNodeId: "n4" },
+      maxDepthPlies: 10,
+      autoStart: true
+    });
+    expect(autoStartPracticeInput("r1", preset)).toEqual({
+      repertoireId: "r1",
+      mode: "rehearse-lines",
+      rehearse: { chapterId: "A", fromNodeId: "n4" },
+      maxDepthPlies: 10
+    });
+    expect(autoStartPracticeInput("r1", rehearsePreset({ chapterId: "A" }))).toEqual({
+      repertoireId: "r1",
+      mode: "rehearse-lines",
+      rehearse: { chapterId: "A" }
+    });
+    expect(autoStartPracticeInput("r1", { ...preset, autoStart: false })).toBeNull();
+    expect(presetForSetup(preset)).toEqual({
+      mode: "rehearse-lines",
+      rehearse: { chapterId: "A", fromNodeId: "n4" },
+      maxDepthPlies: 10
+    });
+  });
+
+  it("lists branch starts where the player has an active continuation", () => {
+    let tree = [rootNode()];
+    ({ tree } = addLine(tree, "root", ["e2e4", "e7e5", "g1f3"], "w"));
+    ({ tree } = addLine(tree, "root", ["d2d4"], "d"));
+    ({ tree } = addLine(tree, "w0", ["c7c5"], "s"));
+    const chapter = chapterOf(tree);
+    const { starts, truncated } = rehearseStarts(chapter, "white", pathLabel);
+    expect(starts.map((start) => start.nodeId)).toEqual(["w1"]);
+    expect(starts[0].path).toContain("e5");
+    expect(truncated).toBe(false);
+    expect(rehearseStarts(chapter, "white", pathLabel, 0)).toEqual({
+      starts: [],
+      truncated: true
+    });
   });
 });

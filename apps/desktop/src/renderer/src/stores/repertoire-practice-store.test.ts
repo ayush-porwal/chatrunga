@@ -1,7 +1,22 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import type { PracticeSessionSnapshot } from "@chaturanga/shared/types/repertoire";
+import type {
+  AttemptResult,
+  PracticeCard,
+  PracticeSessionSnapshot,
+  RehearsalStep
+} from "@chaturanga/shared/types/repertoire";
 import { cardOf } from "../features/repertoire/__fixtures__/repertoire";
-import { currentCard, useRepertoirePracticeStore, withCard } from "./repertoire-practice-store";
+import {
+  currentCard,
+  lineCompleteText,
+  OTHER_LINE_TEXT,
+  rehearsalLineNumber,
+  rehearsalStepNumber,
+  rehearsalTitle,
+  useRepertoirePracticeStore,
+  withAppendedCard,
+  withCard
+} from "./repertoire-practice-store";
 
 const store = () => useRepertoirePracticeStore.getState();
 
@@ -208,5 +223,166 @@ describe("repertoire practice store", () => {
     store().applyAction("skip", { card: cardOf("a") });
     expect(store().session).toBeNull();
     expect(store().advance()).toBe(false);
+  });
+});
+
+describe("repertoire practice store: line rehearsal", () => {
+  beforeEach(() => store().reset());
+
+  const lineCard = (
+    id: string,
+    lineId: string,
+    stepIndex: number,
+    extra: Partial<PracticeCard> = {}
+  ) => cardOf(id, { rehearsal: { lineId, stepIndex }, ...extra });
+  const reply = { san: "e5", uci: "e7e5", fen: "after-e5" };
+
+  function rehearsal(cards = [lineCard("a", "L1", 0), lineCard("x", "L2", 0)]) {
+    return {
+      ...session(),
+      mode: "rehearse-lines" as const,
+      scope: { repertoireId: "r1", rehearse: { chapterId: "c1" } },
+      cards
+    };
+  }
+
+  function correct(card: PracticeCard, step: RehearsalStep): AttemptResult {
+    return {
+      outcome: "correct",
+      acceptedUcis: ["e2e4"],
+      preferredUci: "e2e4",
+      feedback: null,
+      card,
+      finalGrade: true,
+      rehearsal: step
+    };
+  }
+
+  it("appends the next decision, animates the reply, then presents it", () => {
+    store().setSession(rehearsal());
+    const next = lineCard("b", "L1", 1, { fen: "after-e5" });
+    store().applyAttempt(
+      correct(lineCard("a", "L1", 0, { state: "answered-correct" }), {
+        reply,
+        next,
+        lineComplete: false,
+        endReason: null
+      })
+    );
+    expect(store().session!.cards.map((card) => card.queueItemId)).toEqual(["a", "x", "b"]);
+    expect(store().session!.cursor).toBe(0);
+    expect(store().reveal).toBeNull();
+    expect(store().rehearsal).toMatchObject({ replyShown: false, auto: true });
+    store().showReply();
+    expect(store().rehearsal?.replyShown).toBe(true);
+    expect(store().presentStep()).toBe("next");
+    expect(currentCard(store().session)?.queueItemId).toBe("b");
+    expect(store().rehearsal).toBeNull();
+    expect(store().message?.text).toBe("The reply: e5.");
+    expect(store().presentStep()).toBe("none");
+  });
+
+  it("ends a line with its reason and keeps the final position", () => {
+    store().setSession(rehearsal());
+    store().applyAttempt(
+      correct(lineCard("a", "L1", 0, { state: "answered-correct" }), {
+        reply,
+        next: null,
+        lineComplete: true,
+        endReason: "stop"
+      })
+    );
+    store().showReply();
+    expect(store().presentStep()).toBe("line-complete");
+    expect(store().lineEnded).toBe("stop");
+    expect(store().message?.text).toBe("Line complete — reached your stop.");
+    expect(store().rehearsal).toMatchObject({ replyShown: true, auto: false });
+    store().continueStep();
+    expect(store().rehearsal?.auto).toBe(false);
+    expect(store().advance()).toBe(true);
+    expect(currentCard(store().session)?.queueItemId).toBe("x");
+    expect(store().lineEnded).toBeNull();
+  });
+
+  it("keeps the card on another line's choice until followed or retried", () => {
+    store().setSession(rehearsal());
+    const otherLine = { chapterId: "c1", chapterTitle: "Italian", nodeId: "n9", path: "1. d4" };
+    store().applyAttempt({
+      outcome: "other-line",
+      otherLine,
+      acceptedUcis: [],
+      preferredUci: null,
+      feedback: null,
+      card: lineCard("a", "L1", 0, { attemptsSoFar: 1 }),
+      finalGrade: false
+    });
+    expect(store().otherLine).toEqual(otherLine);
+    expect(store().message).toEqual({ tone: "info", text: OTHER_LINE_TEXT });
+    expect(store().session!.cursor).toBe(0);
+    store().dismissOtherLine();
+    expect(store().otherLine).toBeNull();
+    expect(store().message).toBeNull();
+
+    store().applyAttempt({
+      outcome: "other-line",
+      otherLine,
+      acceptedUcis: [],
+      preferredUci: null,
+      feedback: null,
+      card: lineCard("a", "L1", 0, { attemptsSoFar: 2 }),
+      finalGrade: false
+    });
+    store().applyAction("follow-other-line", {
+      card: lineCard("a", "L1", 0, { state: "answered-correct" }),
+      rehearsal: { reply, next: lineCard("f", "L3", 1), lineComplete: false, endReason: null }
+    });
+    expect(store().otherLine).toBeNull();
+    expect(store().rehearsal).toMatchObject({ auto: true, replyShown: false });
+    expect(store().session!.cards.at(-1)?.queueItemId).toBe("f");
+  });
+
+  it("holds a revealed step until the player continues the line", () => {
+    store().setSession(rehearsal());
+    store().applyAction("reveal", {
+      card: lineCard("a", "L1", 0, { state: "revealed" }),
+      rehearsal: { reply, next: lineCard("b", "L1", 1), lineComplete: false, endReason: null },
+      revealed: { ucis: ["e2e4"], preferredUci: "e2e4", explanation: null }
+    });
+    expect(store().reveal?.ucis).toEqual(["e2e4"]);
+    expect(store().rehearsal).toMatchObject({ auto: false });
+    store().continueStep();
+    expect(store().rehearsal?.auto).toBe(true);
+  });
+
+  it("doesn't continue a line from a skip or a hint", () => {
+    store().setSession(rehearsal());
+    store().applyAction("skip", {
+      card: lineCard("a", "L1", 0, { state: "skipped" }),
+      rehearsal: { reply, next: lineCard("b", "L1", 1), lineComplete: false, endReason: null }
+    });
+    expect(store().session!.cards).toHaveLength(2);
+    expect(store().rehearsal).toBeNull();
+  });
+
+  it("numbers lines and steps, and names why a line ended", () => {
+    const cards = [lineCard("a", "L1", 0), lineCard("b", "L1", 1), lineCard("c", "L2", 0)];
+    expect(rehearsalLineNumber(cards, "L1")).toBe(1);
+    expect(rehearsalLineNumber(cards, "L2")).toBe(2);
+    expect(rehearsalLineNumber(cards, "L9")).toBe(3);
+    expect(rehearsalTitle("Najdorf", cards, cards[2])).toBe("Rehearsing · Najdorf · line 2");
+    expect(rehearsalStepNumber(cards[1])).toBe(2);
+    expect(lineCompleteText("leaf")).toBe("Line complete — reached the end of the line");
+    expect(lineCompleteText("depth")).toBe("Line complete — reached the depth limit");
+    expect(lineCompleteText(null)).toBe("Line complete — reached the end of the line");
+  });
+
+  it("appends a card once, replacing it when it is already queued", () => {
+    const base = rehearsal();
+    const appended = withAppendedCard(base, lineCard("b", "L1", 1));
+    expect(appended.cards).toHaveLength(3);
+    expect(appended.totals.remaining).toBe(3);
+    const again = withAppendedCard(appended, lineCard("b", "L1", 1, { state: "skipped" }));
+    expect(again.cards).toHaveLength(3);
+    expect(again.totals.skipped).toBe(1);
   });
 });

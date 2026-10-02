@@ -92,7 +92,8 @@ function fail(label: string, reason: string): never {
 }
 
 export function asObject(value: unknown, label: string): Fields {
-  if (!value || typeof value !== "object" || Array.isArray(value)) fail(label, "expected an object");
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    fail(label, "expected an object");
   return value as Fields;
 }
 
@@ -133,7 +134,12 @@ function asFiniteNumber(value: unknown, label: string): number {
  * A search bound (depth, movetime, nodes, MultiPV): null when absent, else a number from 0 up to
  * `max` (a whole number when `integer`). Keeps a request from asking an engine to search forever.
  */
-function asOptionalPositive(value: unknown, label: string, max: number = SEARCH_LIMITS.moveTimeMs, integer = false): number | null {
+function asOptionalPositive(
+  value: unknown,
+  label: string,
+  max: number = SEARCH_LIMITS.moveTimeMs,
+  integer = false
+): number | null {
   if (value === undefined || value === null) return null;
   const number = asFiniteNumber(value, label);
   if (number < 0) fail(label, "must not be negative");
@@ -158,7 +164,12 @@ function asFilterNumber(value: unknown, label: string): number {
   return number;
 }
 
-function asStringArray(value: unknown, label: string, maxItems: number, maxLength = MAX_NAME): string[] {
+function asStringArray(
+  value: unknown,
+  label: string,
+  maxItems: number,
+  maxLength = MAX_NAME
+): string[] {
   if (!Array.isArray(value)) fail(label, "expected an array");
   if (value.length > maxItems) fail(label, "too many items");
   return value.map((item, index) => asString(item, `${label}[${index}]`, maxLength));
@@ -210,21 +221,27 @@ function asMaiaRating(value: unknown): MaiaRating {
 /** Fields shared by engine create / update, all optional. */
 function parseEngineFields(input: Fields): UpdateEngineInput {
   const fields: UpdateEngineInput = {};
-  if (input.name !== undefined) fields.name = asString(input.name, "engine name", MAX_NAME).trim() || "UCI Engine";
-  if (input.executablePath !== undefined) fields.executablePath = asAbsolutePath(input.executablePath, "executable path");
+  if (input.name !== undefined)
+    fields.name = asString(input.name, "engine name", MAX_NAME).trim() || "UCI Engine";
+  if (input.executablePath !== undefined)
+    fields.executablePath = asAbsolutePath(input.executablePath, "executable path");
   const workingDirectory = asOptionalPath(input.workingDirectory, "working directory");
   if (workingDirectory !== undefined) fields.workingDirectory = workingDirectory;
   const weightsPath = asOptionalPath(input.weightsPath, "weights path");
   if (weightsPath !== undefined) fields.weightsPath = weightsPath;
   // Display-only: a local file or an http(s)/data URL (see renderer `localImageSrc`).
-  const imagePath = nullable(input.imagePath, (path) => asString(path, "image path").trim() || null);
+  const imagePath = nullable(
+    input.imagePath,
+    (path) => asString(path, "image path").trim() || null
+  );
   if (imagePath !== undefined) fields.imagePath = imagePath;
   if (input.args !== undefined) fields.args = asEngineArgs(input.args);
   if (input.isDefault !== undefined) fields.isDefault = asBoolean(input.isDefault, "isDefault");
   if (input.isHumanPrediction !== undefined) {
     fields.isHumanPrediction = asBoolean(input.isHumanPrediction, "isHumanPrediction");
   }
-  if (input.maiaRating !== undefined && input.maiaRating !== null) fields.maiaRating = asMaiaRating(input.maiaRating);
+  if (input.maiaRating !== undefined && input.maiaRating !== null)
+    fields.maiaRating = asMaiaRating(input.maiaRating);
   return fields;
 }
 
@@ -260,7 +277,8 @@ function parseClock(value: unknown): EngineGoClock | null {
 
 export function parseStartGameInput(value: unknown): StartEngineGameInput {
   const input = asObject(value, "engine game");
-  if (input.side !== "white" && input.side !== "black") fail("engine side", "expected white or black");
+  if (input.side !== "white" && input.side !== "black")
+    fail("engine side", "expected white or black");
   const side: Color = input.side;
   return {
     engineId: asId(input.engineId, "engine id"),
@@ -295,7 +313,10 @@ export function parseProbeEvalInput(value: unknown): ProbeEvalInput {
     fen: asFen(input.fen),
     moves: asUciMoves(input.moves ?? []),
     // Clamped rather than refused: a probe never needs more than a minute.
-    movetimeMs: Math.min(asOptionalPositive(input.movetimeMs, "movetimeMs", Number.MAX_VALUE) || 400, 60_000)
+    movetimeMs: Math.min(
+      asOptionalPositive(input.movetimeMs, "movetimeMs", Number.MAX_VALUE) || 400,
+      60_000
+    )
   };
 }
 
@@ -321,7 +342,8 @@ export function parseReviewGameInput(value: unknown): ReviewGameInput {
   if (!Array.isArray(input.moves)) fail("review", "moves must be an array");
   if (input.moves.length > MAX_MOVES) fail("review", "too many moves");
   return {
-    reviewId: input.reviewId === undefined ? `review-${Date.now()}` : asId(input.reviewId, "review id"),
+    reviewId:
+      input.reviewId === undefined ? `review-${Date.now()}` : asId(input.reviewId, "review id"),
     gameId: nullable(input.gameId, (id) => asId(id, "game id")),
     engineId: asId(input.engineId, "engine id"),
     predictionEngineIds: optional(input.predictionEngineIds, (ids) =>
@@ -407,7 +429,8 @@ function parseGameHeaders(value: unknown): GameHeaders {
     if (parsed !== undefined) headers[key] = parsed;
   }
   const orientation = input.orientationHint;
-  if (orientation === "white" || orientation === "black" || orientation === null) headers.orientationHint = orientation;
+  if (orientation === "white" || orientation === "black" || orientation === null)
+    headers.orientationHint = orientation;
   else if (orientation !== undefined) fail("orientation header", "expected white or black");
   return headers;
 }
@@ -458,7 +481,9 @@ export function parsePuzzleSampleInput(value: unknown): PuzzleSampleInput {
   const input = asObject(value, "puzzle filters");
   const result: PuzzleSampleInput = {
     databaseId: asId(input.databaseId, "database id"),
-    excludeIds: optional(input.excludeIds, (ids) => asStringArray(ids, "excluded puzzle ids", 10_000, MAX_ID))
+    excludeIds: optional(input.excludeIds, (ids) =>
+      asStringArray(ids, "excluded puzzle ids", 10_000, MAX_ID)
+    )
   };
   if (input.lichess !== undefined && input.lichess !== null) {
     const lichess = asObject(input.lichess, "lichess filters");
@@ -502,7 +527,8 @@ function asIntegerInRange(value: unknown, label: string, min: number, max: numbe
 }
 
 function asChallengeColor(value: unknown): "white" | "black" | "random" {
-  if (value !== "white" && value !== "black" && value !== "random") fail("color", "expected white, black or random");
+  if (value !== "white" && value !== "black" && value !== "random")
+    fail("color", "expected white, black or random");
   return value;
 }
 
@@ -593,7 +619,8 @@ function asRepertoireColor(value: unknown, label = "color"): RepertoireColor {
 }
 
 function asChapterKind(value: unknown): ChapterKind {
-  if (value !== "opening" && value !== "reference") fail("chapter kind", "expected opening or reference");
+  if (value !== "opening" && value !== "reference")
+    fail("chapter kind", "expected opening or reference");
   return value;
 }
 
@@ -677,7 +704,8 @@ export function parseChapterRef(value: unknown): { repertoireId: string; chapter
 export function parseDecisionRef(value: unknown): { repertoireId: string; positionKey: string } {
   const input = asObject(value, "decision");
   const positionKey = asString(input.positionKey, "positionKey", 200).trim();
-  if (!positionKey || CONTROL_CHARS.test(positionKey)) fail("positionKey", "expected a position key");
+  if (!positionKey || CONTROL_CHARS.test(positionKey))
+    fail("positionKey", "expected a position key");
   return { repertoireId: asId(input.repertoireId, "repertoireId"), positionKey };
 }
 
@@ -717,7 +745,8 @@ export function parseUpdateDecisionInput(value: unknown): UpdateDecisionInput {
   const input = asObject(value, "decision update");
   const patch = asObject(input.patch, "decision patch");
   const positionKey = asString(input.positionKey, "positionKey", 200).trim();
-  if (!positionKey || CONTROL_CHARS.test(positionKey)) fail("positionKey", "expected a position key");
+  if (!positionKey || CONTROL_CHARS.test(positionKey))
+    fail("positionKey", "expected a position key");
   const text = (field: unknown, label: string) =>
     nullable(field, (item) => asString(item, label, MAX_POLICY_TEXT));
   return {
@@ -726,7 +755,8 @@ export function parseUpdateDecisionInput(value: unknown): UpdateDecisionInput {
     expectedRevision: asRevision(input.expectedRevision),
     patch: {
       acceptedUcis: optional(patch.acceptedUcis, (ucis) => {
-        if (!Array.isArray(ucis) || ucis.length > 64) fail("acceptedUcis", "expected a short array");
+        if (!Array.isArray(ucis) || ucis.length > 64)
+          fail("acceptedUcis", "expected a short array");
         return ucis.map((uci, index) => asUci(uci, `acceptedUcis[${index}]`));
       }),
       preferredUci: nullable(patch.preferredUci, (uci) => asUci(uci, "preferredUci")),
@@ -770,7 +800,10 @@ export function parseArchiveRepertoireInput(value: unknown): ArchiveRepertoireIn
 
 export function parseRemoveRepertoireInput(value: unknown): RemoveRepertoireInput {
   const input = asObject(value, "repertoire removal");
-  return { id: asId(input.id, "repertoireId"), expectedRevision: asRevision(input.expectedRevision) };
+  return {
+    id: asId(input.id, "repertoireId"),
+    expectedRevision: asRevision(input.expectedRevision)
+  };
 }
 
 export function parsePreviewImportInput(value: unknown): PreviewImportInput {
@@ -817,8 +850,12 @@ export function parseExportInput(value: unknown): ExportInput {
 
 export function parseStartPracticeInput(value: unknown): StartPracticeInput {
   const input = asObject(value, "practice");
-  if (input.mode !== "review-due" && input.mode !== "learn-new") {
-    fail("practice mode", "expected review-due or learn-new");
+  if (
+    input.mode !== "review-due" &&
+    input.mode !== "learn-new" &&
+    input.mode !== "rehearse-lines"
+  ) {
+    fail("practice mode", "expected review-due, learn-new or rehearse-lines");
   }
   const result: StartPracticeInput = {
     repertoireId: asId(input.repertoireId, "repertoireId"),
@@ -832,7 +869,9 @@ export function parseStartPracticeInput(value: unknown): StartPracticeInput {
     asIntegerInRange(plies, "maxDepthPlies", 1, 512)
   );
   if (depth !== undefined) result.maxDepthPlies = depth;
-  const cardLimit = optional(input.cardLimit, (limit) => asIntegerInRange(limit, "cardLimit", 1, 500));
+  const cardLimit = optional(input.cardLimit, (limit) =>
+    asIntegerInRange(limit, "cardLimit", 1, 500)
+  );
   if (cardLimit !== undefined) result.cardLimit = cardLimit;
   const newCardLimit = optional(input.newCardLimit, (limit) =>
     asIntegerInRange(limit, "newCardLimit", 0, 500)
@@ -849,6 +888,16 @@ export function parseStartPracticeInput(value: unknown): StartPracticeInput {
     });
     result.positionKeys = positionKeys;
   }
+  // The chapter is required only when a rehearsal starts (a saved draft may not have one yet).
+  const rehearse = optional(input.rehearse, (value) => {
+    const fields = asObject(value, "rehearse");
+    const fromNodeId = optional(fields.fromNodeId, (id) => asId(id, "rehearse.fromNodeId"));
+    return {
+      chapterId: asId(fields.chapterId, "rehearse.chapterId"),
+      ...(fromNodeId !== undefined ? { fromNodeId } : {})
+    };
+  });
+  if (rehearse) result.rehearse = rehearse;
   return result;
 }
 
@@ -971,8 +1020,13 @@ export function parseLinkGameInput(value: unknown): LinkGameInput {
 export function parsePracticeActionInput(value: unknown): PracticeActionInput {
   const input = asObject(value, "practice action");
   const action = asObject(input.action, "practice action");
-  if (action.kind !== "hint" && action.kind !== "reveal" && action.kind !== "skip") {
-    fail("practice action", "expected hint, reveal or skip");
+  if (
+    action.kind !== "hint" &&
+    action.kind !== "reveal" &&
+    action.kind !== "skip" &&
+    action.kind !== "follow-other-line"
+  ) {
+    fail("practice action", "expected hint, reveal, skip or follow-other-line");
   }
   return {
     sessionId: asId(input.sessionId, "sessionId"),

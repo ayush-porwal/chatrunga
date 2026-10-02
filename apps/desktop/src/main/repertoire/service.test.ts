@@ -1807,7 +1807,10 @@ describe("repertoire service: add from a game", () => {
         `INSERT INTO games (id, source, white, black, pgn, current_fen, move_tree_json, headers_json,
           created_at, updated_at) VALUES ('game-2', 'pgn-import', 'Tal', 'Botvinnik', '', ?, '[]', ?, 1, 1)`
       )
-      .run(START_FEN, JSON.stringify({ white: "Tal", black: "Botvinnik", eco: "B10", event: null }));
+      .run(
+        START_FEN,
+        JSON.stringify({ white: "Tal", black: "Botvinnik", eco: "B10", event: null })
+      );
     const base = {
       repertoireId: id,
       chapterId: chapters[0].id,
@@ -1827,13 +1830,21 @@ describe("repertoire service: add from a game", () => {
     ]);
 
     expect(service.linkGame(base)).toEqual(link);
-    const moved = service.linkGame({ ...base, chapterId: null, gameNodeId: null, capturedPath: "" });
+    const moved = service.linkGame({
+      ...base,
+      chapterId: null,
+      gameNodeId: null,
+      capturedPath: ""
+    });
     expect(moved).toEqual({ ...link, chapterId: null, gameNodeId: null, capturedPath: "" });
     const model = service.linkGame({ ...base, kind: "model" });
     expect(model.id).not.toBe(link.id);
-    expect(service.listGameLinks({ repertoireId: id }).map((item) => item.id).sort()).toEqual(
-      [link.id, model.id].sort()
-    );
+    expect(
+      service
+        .listGameLinks({ repertoireId: id })
+        .map((item) => item.id)
+        .sort()
+    ).toEqual([link.id, model.id].sort());
     expect(service.listGameLinks({ repertoireId: id })).toContainEqual(moved);
     expect(service.getRepertoire(id).revision).toBe(revision);
 
@@ -1903,5 +1914,393 @@ describe("repertoire service: add from a game", () => {
       "Invalid kind: this database predates played links; reset the development database"
     );
     expect(service.linkGame({ ...input, kind: "model" }).kind).toBe("model");
+  });
+});
+
+describe("repertoire service: rehearse lines", () => {
+  // Line A: 1.e4 c5 2.Nf3 d6 3.d4 · B: 1.e4 c5 2.Nf3 Nc6 3.d4 · C: 1.e4 e5 2.Nf3 · D: 1.d4.
+  const LINES = [
+    ["e2e4", "c7c5", "g1f3", "d7d6", "d2d4"],
+    ["e2e4", "c7c5", "g1f3", "b8c6", "d2d4"],
+    ["e2e4", "e7e5", "g1f3"],
+    ["d2d4"]
+  ];
+
+  function setup(lines: string[][] = LINES) {
+    const { id } = create();
+    const { chapter } = save(id, lines);
+    return { id, chapter };
+  }
+
+  function rehearse(repertoireId: string, chapterId: string, extra: object = {}) {
+    return service.startPractice({
+      repertoireId,
+      mode: "rehearse-lines",
+      rehearse: { chapterId },
+      ...extra
+    });
+  }
+
+  function current(sessionId: string) {
+    const snapshot = service.resumePractice(sessionId);
+    return snapshot.cards[snapshot.cursor];
+  }
+
+  it("validates the chapter and start node", () => {
+    const { id, chapter } = setup();
+    expect(() => service.startPractice({ repertoireId: id, mode: "rehearse-lines" })).toThrow(
+      "Invalid rehearse: chapterId is required for rehearse-lines"
+    );
+    expect(() => rehearse(id, "missing")).toThrow("Invalid rehearse.chapterId: not found");
+    expect(() =>
+      service.startPractice({
+        repertoireId: id,
+        mode: "rehearse-lines",
+        rehearse: { chapterId: chapter.id, fromNodeId: "nope" }
+      })
+    ).toThrow("Invalid rehearse.fromNodeId: not in this chapter");
+    const reference = save(id, [["e2e4", "e7e5"]], { chapterId: "ref", kind: "reference" });
+    expect(() => rehearse(id, reference.chapter.id)).toThrow(
+      "Invalid rehearse: this chapter has nothing to rehearse"
+    );
+    const other = create("black");
+    expect(() => rehearse(other.id, chapter.id)).toThrow("Invalid rehearse.chapterId: not found");
+    // A valid node with nothing after it: an empty, finished session.
+    const leaf = service.startPractice({
+      repertoireId: id,
+      mode: "rehearse-lines",
+      rehearse: { chapterId: chapter.id, fromNodeId: nodeAt(chapter.tree, ["d2d4"]).id }
+    });
+    expect(leaf).toMatchObject({ status: "finished", cards: [], totals: { total: 0 } });
+    expect(service.endPractice(leaf.sessionId)).toMatchObject({
+      chapters: [chapter.id],
+      rehearsal: { linesStarted: 0, linesCompleted: 0, otherLineAnswers: 0 }
+    });
+  });
+
+  it("plays lines with authored replies, rotating to unseen branches, and never writes progress", () => {
+    const { id, chapter } = setup();
+    const tree = chapter.tree;
+    const session = rehearse(id, chapter.id);
+    const lineA = `line-${nodeAt(tree, LINES[0]).id}`;
+    expect(session).toMatchObject({ status: "active", cursor: 0, mode: "rehearse-lines" });
+    expect(session.scope.rehearse).toEqual({ chapterId: chapter.id });
+    expect(session.cards).toHaveLength(1);
+    expect(session.cards[0]).toMatchObject({
+      queueItemId: "q1",
+      nodeId: "root",
+      stage: "new",
+      leadUp: [],
+      rehearsal: { lineId: lineA, stepIndex: 0 }
+    });
+
+    const first = attempt(session.sessionId, "q1", "e2e4");
+    expect(first).toMatchObject({
+      outcome: "correct",
+      finalGrade: true,
+      card: { state: "answered-correct" },
+      rehearsal: {
+        reply: { uci: "c7c5" },
+        lineComplete: false,
+        endReason: null,
+        next: {
+          queueItemId: "q2",
+          nodeId: nodeAt(tree, ["e2e4", "c7c5"]).id,
+          rehearsal: { lineId: lineA, stepIndex: 1 }
+        }
+      }
+    });
+    expect(first.rehearsal!.next!.leadUp.map((move) => move.uci)).toEqual(["e2e4", "c7c5"]);
+    expect(attempt(session.sessionId, "q2", "g1f3").rehearsal).toMatchObject({
+      reply: { uci: "d7d6" },
+      next: { queueItemId: "q3" }
+    });
+    // The line ends on the player's move; the next line starts at the root again.
+    const endA = attempt(session.sessionId, "q3", "d2d4");
+    expect(endA.rehearsal).toMatchObject({
+      reply: null,
+      lineComplete: true,
+      endReason: "leaf",
+      next: { queueItemId: "q4", nodeId: "root" }
+    });
+
+    // Second run through 1.e4: the unseen 1...e5 comes before the other 1...c5 line.
+    expect(attempt(session.sessionId, "q4", "e2e4").rehearsal).toMatchObject({
+      reply: { uci: "e7e5" },
+      next: { queueItemId: "q5" }
+    });
+    expect(attempt(session.sessionId, "q5", "g1f3").rehearsal).toMatchObject({
+      reply: null,
+      lineComplete: true,
+      next: { queueItemId: "q6", rehearsal: { lineId: `line-${nodeAt(tree, LINES[1]).id}` } }
+    });
+    expect(attempt(session.sessionId, "q6", "e2e4").rehearsal!.reply!.uci).toBe("c7c5");
+    expect(attempt(session.sessionId, "q7", "g1f3").rehearsal!.reply!.uci).toBe("b8c6");
+    expect(attempt(session.sessionId, "q8", "d2d4").rehearsal).toMatchObject({
+      lineComplete: true,
+      next: { queueItemId: "q9", rehearsal: { lineId: `line-${nodeAt(tree, ["d2d4"]).id}` } }
+    });
+    const last = attempt(session.sessionId, "q9", "d2d4");
+    expect(last.rehearsal).toEqual({
+      reply: null,
+      next: null,
+      lineComplete: true,
+      endReason: "leaf"
+    });
+    const finished = service.resumePractice(session.sessionId);
+    expect(finished).toMatchObject({ status: "finished", totals: { total: 9, correct: 9 } });
+    expect(progressRepository.list(id)).toEqual([]);
+    expect(sent.some((event) => (event.payload as { kind?: string }).kind === "progress")).toBe(
+      false
+    );
+    expect(service.endPractice(session.sessionId)).toMatchObject({
+      unaided: 9,
+      assisted: 0,
+      missed: 0,
+      skipped: 0,
+      chapters: [chapter.id],
+      rehearsal: { linesStarted: 4, linesCompleted: 4, otherLineAnswers: 0 }
+    });
+  });
+
+  it("an accepted choice of a sibling line is not a miss, and can be followed", () => {
+    const { id, chapter } = setup();
+    const session = rehearse(id, chapter.id);
+    const d4 = nodeAt(chapter.tree, ["d2d4"]);
+    const other = attempt(session.sessionId, "q1", "d2d4");
+    expect(other).toMatchObject({
+      outcome: "other-line",
+      finalGrade: false,
+      otherLine: { chapterId: chapter.id, chapterTitle: "Chapter", nodeId: d4.id, path: "1. d4" },
+      card: { state: "unanswered", attemptsSoFar: 1 },
+      acceptedUcis: []
+    });
+    expect(service.resumePractice(session.sessionId).cursor).toBe(0);
+
+    const followed = service.recordPracticeAction({
+      sessionId: session.sessionId,
+      queueItemId: "q1",
+      action: { kind: "follow-other-line" }
+    });
+    // 1.d4 is a leaf: the followed line completes at once and the next line starts.
+    expect(followed).toMatchObject({
+      card: { state: "answered-correct" },
+      rehearsal: { reply: null, lineComplete: true, endReason: "leaf", next: { queueItemId: "q2" } }
+    });
+    expect(() =>
+      service.recordPracticeAction({
+        sessionId: session.sessionId,
+        queueItemId: "q2",
+        action: { kind: "follow-other-line" }
+      })
+    ).toThrow("Invalid action: follow-other-line needs an answer from another line first");
+    // A correct answer after an other-line one is still unaided.
+    expect(attempt(session.sessionId, "q2", "d2d4")).toMatchObject({ outcome: "other-line" });
+    expect(attempt(session.sessionId, "q2", "e2e4")).toMatchObject({
+      outcome: "correct",
+      finalGrade: true
+    });
+    expect(service.endPractice(session.sessionId)).toMatchObject({
+      unaided: 1,
+      missed: 0,
+      rehearsal: { linesStarted: 2, linesCompleted: 1, otherLineAnswers: 2 }
+    });
+  });
+
+  it("refuses to follow a line from another chapter", () => {
+    const { id } = create();
+    const first = save(id, [["e2e4", "e7e5"]]);
+    save(id, [["d2d4", "d7d5"]], { chapterId: "second" });
+    const session = rehearse(id, first.chapter.id);
+    expect(attempt(session.sessionId, "q1", "d2d4")).toMatchObject({
+      outcome: "other-line",
+      otherLine: { chapterId: "second" }
+    });
+    expect(() =>
+      service.recordPracticeAction({
+        sessionId: session.sessionId,
+        queueItemId: "q1",
+        action: { kind: "follow-other-line" }
+      })
+    ).toThrow("Invalid action: that line is in another chapter; rehearse it from there");
+    const learn = service.startPractice({ repertoireId: id, mode: "learn-new" });
+    expect(() =>
+      service.recordPracticeAction({
+        sessionId: learn.sessionId,
+        queueItemId: learn.cards[0].queueItemId,
+        action: { kind: "follow-other-line" }
+      })
+    ).toThrow("Invalid action: follow-other-line is only for rehearse-lines");
+  });
+
+  it("a move outside the repertoire keeps the card for a retry; hints make it assisted", () => {
+    const { id, chapter } = setup();
+    service.updateDecision({
+      repertoireId: id,
+      positionKey: START_KEY,
+      expectedRevision: service.getRepertoire(id).revision,
+      patch: { wrongMoveFeedback: { g1f3: "Not today" } }
+    });
+    const session = rehearse(id, chapter.id);
+    expect(attempt(session.sessionId, "q1", "e2e5").outcome).toBe("illegal");
+    const wrong = attempt(session.sessionId, "q1", "g1f3");
+    expect(wrong).toMatchObject({
+      outcome: "outside-repertoire",
+      finalGrade: true,
+      feedback: "Not today",
+      card: { state: "answered-wrong" },
+      acceptedUcis: []
+    });
+    expect(wrong.rehearsal).toBeUndefined();
+    expect(service.resumePractice(session.sessionId).cursor).toBe(0);
+    const retry = attempt(session.sessionId, "q1", "e2e4");
+    expect(retry).toMatchObject({
+      outcome: "correct",
+      finalGrade: false,
+      card: { state: "answered-wrong" },
+      rehearsal: { reply: { uci: "c7c5" }, next: { queueItemId: "q2" } }
+    });
+    expect(attempt(session.sessionId, "q1", "e2e4").outcome).toBe("already-final");
+
+    const hint = service.recordPracticeAction({
+      sessionId: session.sessionId,
+      queueItemId: "q2",
+      action: { kind: "hint" }
+    });
+    expect(hint.card.hintStage).toBe(1);
+    service.recordPracticeAction({
+      sessionId: session.sessionId,
+      queueItemId: "q2",
+      action: { kind: "hint" }
+    });
+    expect(
+      service.recordPracticeAction({
+        sessionId: session.sessionId,
+        queueItemId: "q2",
+        action: { kind: "hint" }
+      }).revealed
+    ).toMatchObject({ preferredUci: "g1f3" });
+    expect(attempt(session.sessionId, "q2", "g1f3")).toMatchObject({
+      outcome: "correct",
+      finalGrade: true
+    });
+    expect(progressRepository.list(id)).toEqual([]);
+    expect(service.endPractice(session.sessionId)).toMatchObject({
+      unaided: 0,
+      assisted: 1,
+      missed: 1,
+      missedPositionKeys: [START_KEY]
+    });
+  });
+
+  it("reveal misses the card and continues the line", () => {
+    const { id, chapter } = setup();
+    const session = rehearse(id, chapter.id);
+    const result = service.recordPracticeAction({
+      sessionId: session.sessionId,
+      queueItemId: "q1",
+      action: { kind: "reveal" }
+    });
+    expect(result).toMatchObject({
+      card: { state: "revealed" },
+      revealed: { ucis: ["e2e4"], preferredUci: "e2e4" },
+      rehearsal: { reply: { uci: "c7c5" }, lineComplete: false, next: { queueItemId: "q2" } }
+    });
+    expect(current(session.sessionId).queueItemId).toBe("q2");
+    expect(progressRepository.list(id)).toEqual([]);
+    expect(service.endPractice(session.sessionId)).toMatchObject({ missed: 1, unaided: 0 });
+  });
+
+  it("skip ends the current line and starts the next one", () => {
+    const { id, chapter } = setup();
+    const session = rehearse(id, chapter.id);
+    attempt(session.sessionId, "q1", "e2e4");
+    const skipped = service.recordPracticeAction({
+      sessionId: session.sessionId,
+      queueItemId: "q2",
+      action: { kind: "skip" }
+    });
+    expect(skipped).toMatchObject({
+      card: { state: "skipped" },
+      rehearsal: { reply: null, lineComplete: false, next: { queueItemId: "q3", nodeId: "root" } }
+    });
+    // Line A is done (not completed): the next run goes through the unseen 1...e5.
+    expect(attempt(session.sessionId, "q3", "e2e4").rehearsal!.reply!.uci).toBe("e7e5");
+    expect(() =>
+      service.recordPracticeAction({
+        sessionId: session.sessionId,
+        queueItemId: "q1",
+        action: { kind: "hint" }
+      })
+    ).toThrow("Invalid queueItemId: not the current card of this rehearsal");
+    expect(service.endPractice(session.sessionId)).toMatchObject({
+      skipped: 1,
+      rehearsal: { linesStarted: 2, linesCompleted: 0 }
+    });
+  });
+
+  it("starts from an opponent-to-move node with its reply in the lead-up, and ends at the depth limit", () => {
+    const { id, chapter } = setup();
+    const e4 = nodeAt(chapter.tree, ["e2e4"]);
+    const session = service.startPractice({
+      repertoireId: id,
+      mode: "rehearse-lines",
+      rehearse: { chapterId: chapter.id, fromNodeId: e4.id }
+    });
+    expect(session.cards[0].leadUp.map((move) => move.uci)).toEqual(["e2e4", "c7c5"]);
+    expect(session.scope.rehearse).toEqual({ chapterId: chapter.id, fromNodeId: e4.id });
+
+    const shallow = rehearse(id, chapter.id, { maxDepthPlies: 1 });
+    expect(attempt(shallow.sessionId, "q1", "e2e4").rehearsal).toMatchObject({
+      reply: null,
+      lineComplete: true,
+      endReason: "depth",
+      next: { queueItemId: "q2" }
+    });
+  });
+
+  it("ends the line at a stop marker after the authored reply", () => {
+    const { id } = create();
+    const { chapter } = save(id, [["e2e4", "c7c5", "g1f3"]], {
+      meta: (tree) => ({
+        [nodeAt(tree, ["e2e4", "c7c5"]).id]: { edge: "covered", trainingStop: true }
+      })
+    });
+    const session = rehearse(id, chapter.id);
+    expect(attempt(session.sessionId, "q1", "e2e4").rehearsal).toEqual({
+      reply: expect.objectContaining({ uci: "c7c5" }),
+      next: null,
+      lineComplete: true,
+      endReason: "stop"
+    });
+    expect(service.resumePractice(session.sessionId).status).toBe("finished");
+  });
+
+  it("resumes at the same step after a restart, and replays an attempt id", () => {
+    const { id, chapter } = setup();
+    const session = rehearse(id, chapter.id);
+    const first = attempt(session.sessionId, "q1", "e2e4", "same-id");
+    expect(attempt(session.sessionId, "q1", "e2e4", "same-id")).toEqual(first);
+    expect(service.resumePractice(session.sessionId).cards).toHaveLength(2);
+
+    closeDb();
+    const resumed = service.resumePractice(session.sessionId);
+    expect(resumed).toMatchObject({ status: "active", cursor: 1 });
+    expect(resumed.cards[1]).toMatchObject({ queueItemId: "q2", rehearsal: { stepIndex: 1 } });
+    expect(attempt(session.sessionId, "q2", "g1f3").rehearsal!.reply!.uci).toBe("d7d6");
+    expect(attemptRepository.list(session.sessionId)).toHaveLength(2);
+  });
+
+  it("finishes the session when its chapter changes", () => {
+    const { id, chapter } = setup();
+    const session = rehearse(id, chapter.id);
+    attempt(session.sessionId, "q1", "e2e4");
+    save(id, [...LINES, ["c2c4"]]);
+    const resumed = service.resumePractice(session.sessionId);
+    expect(resumed.status).toBe("finished");
+    expect(resumed.cards.map((card) => card.state)).toEqual(["answered-correct", "skipped"]);
+    expect(() => attempt(session.sessionId, "q2", "g1f3")).toThrow(
+      "Invalid sessionId: this practice session has ended"
+    );
   });
 });

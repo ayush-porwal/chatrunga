@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { GraduationCap, Loader2, Microscope, Swords } from "lucide-react";
+import { GraduationCap, Loader2, Microscope, Route, Swords } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
@@ -39,6 +39,7 @@ import {
   pathLabel,
   trainableDecisionCount
 } from "./repertoire-model";
+import type { RehearseTarget } from "./practice-setup";
 import { RepertoireMoveNavigation, useTreeKeyboardNavigation } from "./RepertoireMoveNavigation";
 import { NO_MOVES_TO_PLAY } from "./handoffs";
 import { StudyChaptersPanel } from "./StudyChaptersPanel";
@@ -75,6 +76,7 @@ export function RepertoireStudyPage({
   onTabChange,
   onOpenChapter,
   onPractice,
+  onRehearse,
   onMissing,
   onPositionChanged,
   onOpenGame,
@@ -94,6 +96,8 @@ export function RepertoireStudyPage({
   /** Opens a chapter (at a node: a transposition elsewhere); the open draft is saved first. */
   onOpenChapter: (chapterId: string, nodeId?: string | null) => void;
   onPractice: (chapterIds: string[]) => void;
+  /** Rehearse lines of this chapter, from its start or from a node (the draft is saved first). */
+  onRehearse?: (target: RehearseTarget) => void;
   onMissing: (message: string) => void;
   /** The selected node, tab or orientation changed (the current history entry follows). */
   onPositionChanged: () => void;
@@ -237,6 +241,14 @@ export function RepertoireStudyPage({
     setLocalError(null);
     if (await flush()) onPractice([chapterId]);
     else setLocalError("This chapter isn't saved yet — retry the save before practising.");
+  });
+
+  const rehearse = useEventCallback(async (fromNodeId: string | null) => {
+    if (!onRehearse) return;
+    setLocalError(null);
+    if (await flush()) {
+      onRehearse({ chapterId, ...(fromNodeId ? { fromNodeId } : {}) });
+    } else setLocalError("This chapter isn't saved yet — retry the save before rehearsing.");
   });
 
   const chapters: RepertoireChapterSummary[] = useMemo(() => {
@@ -519,6 +531,19 @@ export function RepertoireStudyPage({
                   Play from here
                 </Button>
               ) : null}
+              {onRehearse ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  title="Play your moves along this chapter's lines, with the replies supplied"
+                  disabled={!draft.enabled || draft.kind !== "opening"}
+                  onClick={() => void rehearse(null)}
+                >
+                  <Route />
+                  Rehearse this chapter
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="primary"
@@ -581,6 +606,11 @@ export function RepertoireStudyPage({
             otherOccurrences={otherOccurrences}
             onOpenOccurrence={(occurrence) =>
               onOpenChapter(occurrence.chapterId, occurrence.nodeId)
+            }
+            onRehearseFromHere={
+              onRehearse && draft.enabled && draft.kind === "opening"
+                ? () => void rehearse(node.id)
+                : undefined
             }
           />
         </div>

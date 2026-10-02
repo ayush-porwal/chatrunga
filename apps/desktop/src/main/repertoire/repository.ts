@@ -165,6 +165,29 @@ export type FrozenPolicy = {
   progressAt?: number | null;
 };
 
+/**
+ * Rehearse-lines session state (kept in `card_state_json` beside the frozen policies). A line is
+ * identified by its end node (see chess/repertoire-rehearsal.ts).
+ */
+export type RehearsalState = {
+  chapterId: string;
+  fromNodeId: string;
+  /** The chapter revision the session was planned against; a change ends the session. */
+  chapterRevision: number;
+  maxDepthPlies: number;
+  /** End node of the line being played. */
+  lineEnd: string;
+  /** How many times each opponent reply (node id) was supplied in this session. */
+  seen: Record<string, number>;
+  /** End nodes of the lines completed or skipped; they are not planned again. */
+  finished: string[];
+  linesStarted: number;
+  linesCompleted: number;
+};
+
+/** Key of the rehearsal state inside `card_state_json` (queue item ids never start with `$`). */
+const REHEARSAL_KEY = "$rehearsal";
+
 export type PracticeSessionRecord = {
   id: string;
   repertoireId: string;
@@ -173,6 +196,8 @@ export type PracticeSessionRecord = {
   snapshotRevision: number;
   cards: PracticeCard[];
   policies: Record<string, FrozenPolicy>;
+  /** Rehearse-lines only. */
+  rehearsal?: RehearsalState;
   cursor: number;
   status: "active" | "finished";
   createdAt: number;
@@ -387,15 +412,23 @@ function toProgress(row: ProgressRow): RepertoireProgress {
   };
 }
 
+function sessionMode(mode: string): PracticeMode {
+  return mode === "learn-new" || mode === "rehearse-lines" ? mode : "review-due";
+}
+
 function toSession(row: SessionRow): PracticeSessionRecord {
+  const { [REHEARSAL_KEY]: rehearsal, ...policies } = parseJson<
+    Record<string, FrozenPolicy> & { [REHEARSAL_KEY]?: RehearsalState }
+  >(row.card_state_json, {});
   return {
     id: row.id,
     repertoireId: row.repertoire_id,
-    mode: row.mode === "learn-new" ? "learn-new" : "review-due",
+    mode: sessionMode(row.mode),
     scope: parseJson<PracticeScope>(row.scope_json, { repertoireId: row.repertoire_id }),
     snapshotRevision: row.snapshot_revision,
     cards: parseJson<PracticeCard[]>(row.queue_json, []),
-    policies: parseJson<Record<string, FrozenPolicy>>(row.card_state_json, {}),
+    policies: policies as Record<string, FrozenPolicy>,
+    ...(rehearsal ? { rehearsal: rehearsal as RehearsalState } : {}),
     cursor: row.cursor,
     status: row.status === "finished" ? "finished" : "active",
     createdAt: row.created_at,
@@ -821,7 +854,11 @@ export const sessionRepository = {
       JSON.stringify(session.scope),
       session.snapshotRevision,
       JSON.stringify(session.cards),
-      JSON.stringify(session.policies),
+      JSON.stringify(
+        session.rehearsal
+          ? { ...session.policies, [REHEARSAL_KEY]: session.rehearsal }
+          : session.policies
+      ),
       session.cursor,
       session.status,
       session.createdAt,

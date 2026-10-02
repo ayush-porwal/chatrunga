@@ -208,6 +208,16 @@ describe("registerRepertoireIpc", () => {
       invoke("startPractice", { repertoireId: "r", mode: "learn-new", cardLimit: 0 })
     ).toThrow(/cardLimit/);
     expect(() =>
+      invoke("startPractice", { repertoireId: "r", mode: "rehearse-lines", rehearse: {} })
+    ).toThrow(/rehearse\.chapterId/);
+    expect(() =>
+      invoke("startPractice", {
+        repertoireId: "r",
+        mode: "rehearse-lines",
+        rehearse: { chapterId: "c", fromNodeId: "" }
+      })
+    ).toThrow(/rehearse\.fromNodeId/);
+    expect(() =>
       invoke("recordPracticeAction", { sessionId: "s", queueItemId: "q", action: { kind: "peek" } })
     ).toThrow(/practice action/);
     expect(() => invoke("previewImport", { path: "/etc/hosts" })).toThrow(/Invalid PGN/);
