@@ -26,7 +26,7 @@ import { EngineManager } from "./engine/engine-manager";
 import { killAllEngineProcesses } from "./engine/uci-process";
 import { registerIpc } from "./ipc/register";
 import { shutdownLichess } from "./lichess";
-import { logger } from "./logger";
+import { errorMessage, logger } from "./logger";
 import { migrateOnboarding } from "./onboarding-migration";
 import { updateService } from "./updater";
 import {
@@ -38,6 +38,9 @@ import {
 } from "./security";
 import { installWindowGlass, windowGlassConstructorOptions } from "./window-glass";
 import { requestRendererFlush } from "./renderer-flush";
+import { getTelemetry, initTelemetry } from "./telemetry";
+import { resolveTelemetryConfig } from "./telemetry/config";
+import { noteEngineReadiness } from "./telemetry/engine-readiness";
 import { rescueLegacyDatasets } from "./databases/dataset-location";
 
 const PRODUCT_NAME = "Chaturanga";
@@ -129,6 +132,7 @@ async function startup(): Promise<void> {
   } catch (error) {
     logger.error("settings", "onboarding migration failed:", error);
   }
+  startTelemetry();
   session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) =>
     callback(isPermissionAllowed(permission))
   );
@@ -158,6 +162,34 @@ async function startup(): Promise<void> {
   });
 }
 
+/**
+ * Usage analytics (docs/telemetry.md): off unless this build has a project, the environment allows
+ * it and the user turned it on. A failure here never stops the app from starting.
+ */
+function startTelemetry(): void {
+  try {
+    initTelemetry({
+      config: resolveTelemetryConfig({
+        env: process.env,
+        isPackaged: app.isPackaged,
+        token: import.meta.env.MAIN_VITE_POSTHOG_PROJECT_TOKEN,
+        host: import.meta.env.MAIN_VITE_POSTHOG_HOST
+      }),
+      database: getDb,
+      consent: () => settingsRepository.getStored("usageAnalyticsEnabled") === true,
+      // Chromium's network stack: system proxy settings apply.
+      fetchImpl: (input, init) => net.fetch(input, init),
+      appVersion: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch,
+      log: (message, error) => logger.warn("telemetry", message, error === undefined ? "" : errorMessage(error))
+    });
+    noteEngineReadiness(true);
+  } catch (error) {
+    logger.error("telemetry", "starting usage analytics failed:", error);
+  }
+}
+
 let shuttingDown: Promise<void> | null = null;
 /** Set once shutdown has finished: the held `will-quit` goes through. */
 let shutdownDone = false;
@@ -178,6 +210,8 @@ function shutdown(): Promise<void> {
       ["engine processes", killAllEngineProcesses],
       // Before the database closes: a download finishing now couldn't register its dataset.
       ["downloads", () => cancelAllDownloads()],
+      // Also before it closes, and time-bounded: what isn't sent stays queued for the next launch.
+      ["usage analytics", () => getTelemetry()?.shutdown()],
       ["database", closeDb]
     ];
     for (const [name, step] of steps) {

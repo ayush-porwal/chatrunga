@@ -128,6 +128,11 @@ jobs:
 
       - name: Build app
         run: pnpm --filter @chaturanga/desktop build
+        env:
+          # Optional usage analytics (docs/telemetry.md): the PostHog project's public ingest token
+          # and its region's host, from repository variables. Unset: the build can't send anything.
+          MAIN_VITE_POSTHOG_PROJECT_TOKEN: ${{ vars.POSTHOG_PROJECT_TOKEN }}
+          MAIN_VITE_POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
 
       - name: Package installers
         working-directory: apps/desktop

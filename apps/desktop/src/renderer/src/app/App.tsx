@@ -38,6 +38,7 @@ import { PuzzleInfoPanel } from "./PuzzleInfoPanel";
 import { useBoardShortcuts } from "./useBoardShortcuts";
 import { useEngineDriver } from "./useEngineDriver";
 import { useGameAutosave } from "./useGameAutosave";
+import { useUsageActivity } from "./useUsageTelemetry";
 import { useLichess } from "./useLichess";
 import { useHistoryShortcuts } from "./useHistoryShortcuts";
 import { useMoveKeyboardShortcuts } from "./useMoveKeyboardShortcuts";
@@ -142,6 +143,7 @@ export function App() {
   useDatabaseDownloads();
   useEngineDriver(defaultEngineId);
   useGameAutosave();
+  useUsageActivity();
   useMoveSounds({ enabled: settings.soundEnabled, volume: settings.soundVolume });
   usePuzzleAutoReply();
   const openReviewSettings = useCallback(() => setReviewTab("settings"), []);

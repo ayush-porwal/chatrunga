@@ -1,3 +1,4 @@
+import type { CommentaryRequestContext, TelemetryRendererEvent, TelemetryStatus } from "../types/telemetry";
 import type {
   GameSummary,
   ImportedGame,
@@ -63,6 +64,8 @@ export type SetOpenRouterConfigInput = {
 
 export type GenerateCommentaryInput = {
   payloads: ReviewInsightPayload[];
+  /** Usage analytics correlation (which review, and whether Retry asked); optional. */
+  context?: CommentaryRequestContext;
 };
 
 export type GenerateCommentaryResult = {
@@ -164,6 +167,15 @@ export type ChaturangaApi = {
     getOpenRouterConfig(): Promise<OpenRouterConfigSummary>;
     setOpenRouterConfig(input: SetOpenRouterConfigInput): Promise<OpenRouterConfigSummary>;
     generate(input: GenerateCommentaryInput): Promise<GenerateCommentaryResult>;
+  };
+  /** Optional usage analytics (docs/telemetry.md); the renderer only reports a few interactions. */
+  telemetry: {
+    status(): Promise<TelemetryStatus>;
+    /**
+     * Fire-and-forget: main validates and may ignore it (a repeat). Resolves whether collection is
+     * on, so the renderer doesn't spend its throttles on reports nobody records.
+     */
+    track(event: TelemetryRendererEvent): Promise<boolean>;
   };
   events: {
     onEngineInfo(callback: (info: EngineInfo) => void): Unsubscribe;

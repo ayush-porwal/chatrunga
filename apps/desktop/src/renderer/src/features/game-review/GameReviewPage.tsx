@@ -37,6 +37,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Notice } from "@/components/ui/notice";
 import { SegmentedControl, tabPanelProps, type SegmentedOption } from "@/components/ui/segmented-control";
 import { Stat, StatGroup } from "@/components/ui/stat";
+import { useReviewUsage } from "../../app/useUsageTelemetry";
 
 const reviewTabOptions: readonly SegmentedOption<ReviewTab>[] = [
   { value: "commentary", label: "Commentary" },
@@ -84,6 +85,7 @@ function GameReviewPageInner({
   // Narrow selectors: this page must not re-render for unrelated game-store changes.
   const gameId = useGameStore((state) => state.gameId);
   useStoreHintsOnLeave(gameId);
+  useReviewUsage();
   const moveTree = useGameStore((state) => state.moveTree);
   const selectedNodeId = useGameStore((state) => state.currentNodeId);
   const boardFen = useGameStore((state) => state.currentFen);

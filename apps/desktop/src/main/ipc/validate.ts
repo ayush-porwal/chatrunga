@@ -284,6 +284,7 @@ export function parseReviewGameInput(value: unknown): ReviewGameInput {
   if (input.moves.length > MAX_MOVES) fail("review", "too many moves");
   return {
     reviewId: input.reviewId === undefined ? `review-${Date.now()}` : asId(input.reviewId, "review id"),
+    gameId: nullable(input.gameId, (id) => asId(id, "game id")),
     engineId: asId(input.engineId, "engine id"),
     predictionEngineIds: optional(input.predictionEngineIds, (ids) =>
       asStringArray(ids, "prediction engine ids", 32, MAX_ID).filter(Boolean)

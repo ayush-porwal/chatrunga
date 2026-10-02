@@ -11,6 +11,8 @@ language.
 - **Play:** games against an engine with clocks, plus puzzles from the Lichess database
 - **Local-first:** games and engines stay on your machine; AI commentary runs through your own
   OpenRouter key
+- **Optional usage data:** off unless you turn it on in Settings; anonymous feature counts only,
+  never your games, names, files or keys ([what is collected](docs/telemetry.md))
 
 ## Download
 
@@ -38,3 +40,6 @@ Releases are built by the manual **release** workflow in GitHub Actions. In-app 
 public GitHub releases of the repo in `build.publish` (`apps/desktop/package.json`). To try the
 update flow locally, run a packaged build with `CHATURANGA_UPDATE_FEED_URL` pointing at a folder
 served over HTTP that holds a `latest-mac.yml` / `latest.yml` / `latest-linux.yml`.
+
+Usage analytics (PostHog) is configured at build time with `MAIN_VITE_POSTHOG_PROJECT_TOKEN` and
+`MAIN_VITE_POSTHOG_HOST`; development and test runs never send. See [docs/telemetry.md](docs/telemetry.md).

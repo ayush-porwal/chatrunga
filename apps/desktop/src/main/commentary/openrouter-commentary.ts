@@ -21,7 +21,55 @@ export type OpenRouterCommentaryOptions = {
   fetchImpl?: FetchLike;
   timeoutMs?: number;
   now?: () => number;
+  /** Monotonic clock for latencies (ms). */
+  monotonic?: () => number;
+  /** Told about each move's request, every HTTP attempt and the outcome (usage analytics). */
+  report?: (event: CommentaryReport) => void;
 };
+
+/** Why a move's commentary failed, as a code (messages are for the UI; codes for analytics). */
+export type CommentaryFailureCode =
+  | "no_api_key"
+  | "unreadable_key"
+  | "invalid_key"
+  | "insufficient_credits"
+  | "invalid_model"
+  | "rate_limited"
+  | "provider_error"
+  | "network"
+  | "timeout"
+  | "empty_response"
+  | "validation_failed";
+
+/** Token counts and cost as OpenRouter reported them; a field it didn't report stays unknown. */
+export type CommentaryUsage = { promptTokens?: number; completionTokens?: number; costUsd?: number };
+
+/**
+ * One logical request per move (`request`), each HTTP attempt it took (`attempt`: the first, and
+ * the corrective retry after a failed validation), and its single terminal `outcome`.
+ */
+export type CommentaryReport =
+  | { type: "request"; ply: number }
+  | {
+      type: "attempt";
+      ply: number;
+      attempt: number;
+      reason: "initial" | "validation_retry";
+      /** `accepted` / `validation_failed` for an answer that arrived; otherwise why it didn't. */
+      result: "accepted" | "validation_failed" | CommentaryFailureCode;
+      httpStatus: number | null;
+      latencyMs: number;
+      usage: CommentaryUsage | null;
+    }
+  | {
+      type: "outcome";
+      ply: number;
+      ok: boolean;
+      code: CommentaryFailureCode | null;
+      attempts: number;
+      firstAttemptValid: boolean;
+      latencyMs: number;
+    };
 
 export type OpenRouterCommentaryResult = {
   commentary: ReviewCommentary[];
@@ -42,18 +90,32 @@ const INVALID_ANSWER_ERROR = "The model's answer didn't match the engine facts, 
  * A failure with a message that is safe to show. Provider response bodies and credential-bearing
  * errors are never passed through; anything else reads as {@link UNREACHABLE_ERROR}.
  */
-class CommentaryFailure extends Error {}
+class CommentaryFailure extends Error {
+  constructor(
+    message: string,
+    readonly code: CommentaryFailureCode,
+    readonly httpStatus: number | null = null
+  ) {
+    super(message);
+  }
+}
 
 function httpFailure(status: number): CommentaryFailure {
   if (status === 401 || status === 403) {
-    return new CommentaryFailure("OpenRouter rejected the API key. Check it in Settings → Commentary.");
+    return new CommentaryFailure("OpenRouter rejected the API key. Check it in Settings → Commentary.", "invalid_key", status);
   }
-  if (status === 402) return new CommentaryFailure("Your OpenRouter account is out of credits.");
+  if (status === 402) return new CommentaryFailure("Your OpenRouter account is out of credits.", "insufficient_credits", status);
   if (status === 404) {
-    return new CommentaryFailure("OpenRouter doesn't know this model. Check the model name in Settings → Commentary.");
+    return new CommentaryFailure(
+      "OpenRouter doesn't know this model. Check the model name in Settings → Commentary.",
+      "invalid_model",
+      status
+    );
   }
-  if (status === 429) return new CommentaryFailure("OpenRouter is rate limiting requests. Try again in a moment.");
-  return new CommentaryFailure(`OpenRouter returned an error (${status}). Try again in a moment.`);
+  if (status === 429) {
+    return new CommentaryFailure("OpenRouter is rate limiting requests. Try again in a moment.", "rate_limited", status);
+  }
+  return new CommentaryFailure(`OpenRouter returned an error (${status}). Try again in a moment.`, "provider_error", status);
 }
 
 /**
@@ -68,18 +130,40 @@ export async function generateOpenRouterCommentary(
   options: OpenRouterCommentaryOptions
 ): Promise<OpenRouterCommentaryResult> {
   const now = options.now ?? Date.now;
+  const monotonic = options.monotonic ?? (() => performance.now());
+  const report = (event: CommentaryReport) => {
+    try {
+      options.report?.(event);
+    } catch {
+      // Reporting is for analytics only; it never changes the commentary.
+    }
+  };
   const apiKey = options.apiKey?.trim();
-  if (!apiKey) return { commentary: [], error: NO_API_KEY_ERROR };
+  if (!apiKey) {
+    for (const payload of payloads) reportUnsent(report, payload.game.ply, "no_api_key");
+    return { commentary: [], error: NO_API_KEY_ERROR };
+  }
 
   const model = options.model?.trim() || DEFAULT_COMMENTARY_MODEL;
   const fetchImpl = options.fetchImpl ?? fetch;
   let error: string | null = null;
   const results = await mapWithConcurrency(payloads, 3, async (payload) => {
+    const ply = payload.game.ply;
+    const startedAt = monotonic();
+    const trace: AttemptTrace = { attempts: 0, firstAttemptValid: false };
+    report({ type: "request", ply });
     try {
-      const result = await generateOne(payload, apiKey, model, fetchImpl, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+      const result = await generateOne(payload, apiKey, model, fetchImpl, options.timeoutMs ?? DEFAULT_TIMEOUT_MS, {
+        trace,
+        monotonic,
+        report
+      });
+      report({ type: "outcome", ply, ok: true, code: null, ...trace, latencyMs: monotonic() - startedAt });
       return { ...result, generatedAt: now() };
     } catch (failure) {
-      error ??= failure instanceof CommentaryFailure ? failure.message : UNREACHABLE_ERROR;
+      const known = failure instanceof CommentaryFailure ? failure : null;
+      error ??= known ? known.message : UNREACHABLE_ERROR;
+      report({ type: "outcome", ply, ok: false, code: known?.code ?? "network", ...trace, latencyMs: monotonic() - startedAt });
       return null;
     }
   });
@@ -87,7 +171,21 @@ export async function generateOpenRouterCommentary(
   return { commentary: results.filter((item): item is ReviewCommentary => item !== null), error };
 }
 
+/** A move whose request never reached the provider (no key): one request, no attempts, a failure. */
+export function reportUnsent(report: (event: CommentaryReport) => void, ply: number, code: CommentaryFailureCode): void {
+  report({ type: "request", ply });
+  report({ type: "outcome", ply, ok: false, code, attempts: 0, firstAttemptValid: false, latencyMs: 0 });
+}
+
 type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+
+type AttemptTrace = { attempts: number; firstAttemptValid: boolean };
+
+type Instrumentation = {
+  trace: AttemptTrace;
+  monotonic: () => number;
+  report: (event: CommentaryReport) => void;
+};
 
 function accepted(
   payload: ReviewInsightPayload,
@@ -107,26 +205,59 @@ async function generateOne(
   apiKey: string,
   model: string,
   fetchImpl: FetchLike,
-  timeoutMs: number
+  timeoutMs: number,
+  instrumentation: Instrumentation
 ): Promise<Omit<ReviewCommentary, "generatedAt">> {
+  const { trace, monotonic, report } = instrumentation;
+  const ply = payload.game.ply;
+  /** One HTTP attempt, reported with its latency, outcome and (when known) usage. */
+  const attempt = async (reason: "initial" | "validation_retry", messages: ChatMessage[], temperature: number) => {
+    trace.attempts += 1;
+    const startedAt = monotonic();
+    const base = { type: "attempt" as const, ply, attempt: trace.attempts, reason };
+    try {
+      const answer = await requestCompletion(payload, apiKey, model, messages, temperature, fetchImpl, timeoutMs);
+      const check = validateProse(answer.content, payload);
+      report({
+        ...base,
+        result: check.ok ? "accepted" : "validation_failed",
+        httpStatus: 200,
+        latencyMs: monotonic() - startedAt,
+        usage: answer.usage
+      });
+      return { content: answer.content, check };
+    } catch (error) {
+      const known = error instanceof CommentaryFailure ? error : null;
+      report({
+        ...base,
+        result: known?.code ?? "network",
+        httpStatus: known?.httpStatus ?? null,
+        latencyMs: monotonic() - startedAt,
+        usage: null
+      });
+      throw error;
+    }
+  };
+
   const messages: ChatMessage[] = [
     { role: "system", content: COACH_SYSTEM_PROMPT },
     { role: "user", content: buildUserMessage(payload) }
   ];
-  const first = await requestCompletion(payload, apiKey, model, messages, 0.7, fetchImpl, timeoutMs);
-  const firstCheck = validateProse(first, payload);
-  if (firstCheck.ok) return accepted(payload, model, firstCheck);
+  const first = await attempt("initial", messages, 0.7);
+  if (first.check.ok) {
+    trace.firstAttemptValid = true;
+    return accepted(payload, model, first.check);
+  }
 
   // One retry that tells the model exactly what was wrong with its answer.
   const retry: ChatMessage[] = [
     ...messages,
-    { role: "assistant", content: first },
-    { role: "user", content: buildRetryMessage(firstCheck, payload) }
+    { role: "assistant", content: first.content },
+    { role: "user", content: buildRetryMessage(first.check, payload) }
   ];
-  const second = await requestCompletion(payload, apiKey, model, retry, 0.3, fetchImpl, timeoutMs);
-  const secondCheck = validateProse(second, payload);
-  if (secondCheck.ok) return accepted(payload, model, secondCheck);
-  throw new CommentaryFailure(INVALID_ANSWER_ERROR);
+  const second = await attempt("validation_retry", retry, 0.3);
+  if (second.check.ok) return accepted(payload, model, second.check);
+  throw new CommentaryFailure(INVALID_ANSWER_ERROR, "validation_failed");
 }
 
 async function requestCompletion(
@@ -137,7 +268,7 @@ async function requestCompletion(
   temperature: number,
   fetchImpl: FetchLike,
   timeoutMs: number
-): Promise<string> {
+): Promise<{ content: string; usage: CommentaryUsage | null }> {
   const controller = new AbortController();
   let timedOut = false;
   const timeout = setTimeout(() => {
@@ -164,18 +295,36 @@ async function requestCompletion(
     if (!response.ok) throw httpFailure(response.status);
     const body = (await response.json()) as {
       choices?: Array<{ message?: { content?: unknown } }>;
+      usage?: unknown;
     };
     const content = body.choices?.[0]?.message?.content;
     if (typeof content !== "string" || !content.trim()) {
-      throw new CommentaryFailure(EMPTY_ANSWER_ERROR);
+      throw new CommentaryFailure(EMPTY_ANSWER_ERROR, "empty_response", response.status);
     }
-    return content.trim();
+    return { content: content.trim(), usage: parseUsage(body.usage) };
   } catch (error) {
-    if (timedOut) throw new CommentaryFailure(TIMEOUT_ERROR);
-    throw error;
+    if (timedOut) throw new CommentaryFailure(TIMEOUT_ERROR, "timeout");
+    if (error instanceof CommentaryFailure) throw error;
+    throw new CommentaryFailure(UNREACHABLE_ERROR, "network");
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/**
+ * OpenRouter's usage block (`prompt_tokens`, `completion_tokens`, `cost` in USD), kept only as
+ * numbers; anything missing or malformed stays unknown — never zero.
+ */
+export function parseUsage(value: unknown): CommentaryUsage | null {
+  if (!value || typeof value !== "object") return null;
+  const usage = value as Record<string, unknown>;
+  const count = (field: unknown) => (typeof field === "number" && Number.isFinite(field) && field >= 0 ? field : undefined);
+  const parsed: CommentaryUsage = {
+    promptTokens: count(usage.prompt_tokens),
+    completionTokens: count(usage.completion_tokens),
+    costUsd: count(usage.cost)
+  };
+  return Object.values(parsed).some((field) => field !== undefined) ? parsed : null;
 }
 
 async function mapWithConcurrency<T, R>(

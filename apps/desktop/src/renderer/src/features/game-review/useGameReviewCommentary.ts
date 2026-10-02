@@ -7,6 +7,14 @@ import { useOpenRouterConfigQuery } from "../../queries/api";
 import { rendererCommentaryError, requestRendererCommentary } from "../../ipc/commentary";
 import { DEFAULT_COMMENTARY_MODEL } from "@chaturanga/shared/llm/models";
 import { buildInsightPayload, type CommentaryDetail } from "./review-utils";
+import { COMMENTARY_VIEW_QUALIFY_MS, type CommentaryTrigger } from "@chaturanga/shared/types/telemetry";
+import {
+  analyticsGameId,
+  analyticsReviewId,
+  isForeground,
+  trackUsage,
+  ViewQualifier
+} from "@/lib/usage-telemetry";
 import {
   CommentaryScheduler,
   commentarySettingsKey,
@@ -128,6 +136,7 @@ export function useGameReviewCommentary({
     target: GameReview;
     key: string;
     settingsKey: string;
+    trigger: CommentaryTrigger;
   }) => {
     const stale = () => !isCurrentReview(input.target) || settingsKeyRef.current !== input.settingsKey;
     const fail = (message: string) => {
@@ -137,6 +146,7 @@ export function useGameReviewCommentary({
     const store = (item: ReviewCommentary | undefined, error: string | null) => {
       if (stale()) return;
       if (item) {
+        freshCommentary.add(viewKey(input.target, item.ply));
         useReviewStore.getState().addCommentary({ ...item, settingsKey: input.settingsKey });
         return;
       }
@@ -144,37 +154,55 @@ export function useGameReviewCommentary({
     };
 
     try {
-      const result = await requestRendererCommentary({ payloads: [input.payload] });
+      const result = await requestRendererCommentary({
+        payloads: [input.payload],
+        context: {
+          reviewId: analyticsReviewId(input.target.reviewId),
+          gameId: analyticsGameId(useGameStore.getState().gameId),
+          trigger: input.trigger
+        }
+      });
       store(result.commentary.find((item) => item.ply === input.payload.game.ply), result.error);
     } catch (error) {
       fail(rendererCommentaryError(error));
     }
   }, []);
 
-  const job = useMemo<CommentaryJob | null>(() => {
+  const jobInput = useMemo(() => {
     if (!payload || !review || !jobKey) return null;
-    const input = { payload, target: review, key: jobKey, settingsKey };
-    return { key: jobKey, run: () => requestOne(input) };
+    return { payload, target: review, key: jobKey, settingsKey };
     // `review` changes whenever commentary is cached; the job only needs the review identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobKey, payload, requestOne]);
+  }, [jobKey, payload]);
+  const job = useMemo<CommentaryJob | null>(
+    () => (jobInput ? { key: jobInput.key, run: () => requestOne({ ...jobInput, trigger: "auto" }) } : null),
+    [jobInput, requestOne]
+  );
 
   useEffect(() => {
     scheduler.schedule(decision === "request" ? job : null);
   }, [decision, job, scheduler]);
 
   const retry = useCallback(() => {
-    if (!job) return;
+    if (!jobInput) return;
     setFailures((current) => {
       const next = { ...current };
-      delete next[job.key];
+      delete next[jobInput.key];
       return next;
     });
-    scheduler.runNow(job);
-  }, [job, scheduler]);
+    // The user asked again: counted apart from the automatic request (and its validation retry).
+    scheduler.runNow({ key: jobInput.key, run: () => requestOne({ ...jobInput, trigger: "user_retry" }) });
+  }, [jobInput, requestOne, scheduler]);
+
+  const status = statusFor(decision, isCurrentCommentary(cached, settingsKey));
+  useCommentaryViewTracking({
+    review,
+    ply: status === "ready" && cached ? reviewedMove?.ply ?? null : null,
+    visible: active
+  });
 
   return {
-    status: statusFor(decision, isCurrentCommentary(cached, settingsKey)),
+    status,
     commentary: cached,
     model: model || DEFAULT_COMMENTARY_MODEL,
     error: decision === "failed" ? failures[jobKey] ?? PROVIDER_FAILED : null,
@@ -200,6 +228,52 @@ function statusFor(decision: CommentaryDecision, hasCurrent: boolean): Commentar
       return hasCurrent ? "ready" : decision;
   }
 }
+
+/** Explanations written in this session (`reviewKey:ply`); any other shown one is from the cache. */
+const freshCommentary = new Set<string>();
+
+function viewKey(review: GameReview, ply: number): string {
+  return `${review.reviewId ?? review.createdAt}:${ply}`;
+}
+
+/**
+ * `commentary_viewed`: the selected move's explanation stays on screen (Commentary tab visible,
+ * window focused) for {@link COMMENTARY_VIEW_QUALIFY_MS}. Moving to another move, hiding the tab
+ * or leaving the window before that cancels it, so an answer arriving after the user moved on is
+ * generated but not viewed. Once per review and move per session.
+ */
+function useCommentaryViewTracking({ review, ply, visible }: { review: GameReview | null; ply: number | null; visible: boolean }) {
+  // The review's identity, not the object: caching another move's explanation mustn't restart it.
+  const key = review && ply !== null ? viewKey(review, ply) : null;
+  const reviewId = analyticsReviewId(review?.reviewId);
+  const [qualifier] = useState(
+    () =>
+      new ViewQualifier(COMMENTARY_VIEW_QUALIFY_MS, (qualified) => {
+        const target = viewTargets.get(qualified);
+        if (target) trackUsage({ type: "commentary_viewed", ...target, source: freshCommentary.has(qualified) ? "fresh" : "cached" });
+      })
+  );
+  useEffect(() => () => qualifier.dispose(), [qualifier]);
+
+  useEffect(() => {
+    if (key && ply !== null) {
+      viewTargets.set(key, { reviewId, gameId: analyticsGameId(useGameStore.getState().gameId), ply });
+    }
+    const check = () => qualifier.update(key, visible && isForeground());
+    check();
+    window.addEventListener("focus", check);
+    window.addEventListener("blur", check);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      window.removeEventListener("focus", check);
+      window.removeEventListener("blur", check);
+      document.removeEventListener("visibilitychange", check);
+      qualifier.update(null, false);
+    };
+  }, [key, ply, qualifier, reviewId, visible]);
+}
+
+const viewTargets = new Map<string, { reviewId: string | null; gameId: string | null; ply: number }>();
 
 function isCurrentReview(target: GameReview): boolean {
   return useReviewStore.getState().review?.createdAt === target.createdAt;

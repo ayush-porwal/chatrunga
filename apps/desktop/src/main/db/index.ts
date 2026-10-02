@@ -115,7 +115,24 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
   },
   // 4: the library lists games newest first (F15): an index for that order, without puzzles.
   (database) =>
-    database.exec("CREATE INDEX IF NOT EXISTS games_recent_idx ON games(updated_at DESC, id) WHERE source != 'puzzle'")
+    database.exec("CREATE INDEX IF NOT EXISTS games_recent_idx ON games(updated_at DESC, id) WHERE source != 'puzzle'"),
+  // 5: usage analytics (telemetry/): events waiting to be sent, and the installation's own state
+  // (random id, milestones reached, last active day). Nothing in them is game content.
+  (database) => {
+    database.exec(`CREATE TABLE IF NOT EXISTS telemetry_outbox (
+      uuid TEXT PRIMARY KEY,
+      event TEXT NOT NULL,
+      occurred_at INTEGER NOT NULL,
+      payload_json TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at INTEGER NOT NULL DEFAULT 0
+    )`);
+    database.exec("CREATE INDEX IF NOT EXISTS telemetry_outbox_due_idx ON telemetry_outbox(next_attempt_at, occurred_at)");
+    database.exec(`CREATE TABLE IF NOT EXISTS telemetry_state (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )`);
+  }
 ];
 
 export function runMigrations(database: DatabaseSync, migrations = MIGRATIONS): void {
