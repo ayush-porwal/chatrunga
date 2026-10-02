@@ -330,6 +330,10 @@ function PracticeSession({
 
   const replaying = leadUpIndex !== null;
   const finished = card.state !== "unanswered";
+  // After a wrong first answer the card stays playable (ungraded retries) until it's revealed or
+  // answered correctly; the grade was fixed by the first answer.
+  const retrying = card.state === "answered-wrong" && !reveal;
+  const canAnswer = !finished || retrying;
   const busy = recordAttempt.isPending || recordAction.isPending || endPractice.isPending;
   const fen = replaying ? card.leadUp[leadUpIndex]!.fen : (pending?.fenAfter ?? card.fen);
   const lastMove = replaying
@@ -367,7 +371,7 @@ function PracticeSession({
           <ControlledBoard
             fen={fen}
             orientation={orientation}
-            movable={!finished && !replaying && !pending && !busy ? color : "none"}
+            movable={canAnswer && !replaying && !pending && !busy ? color : "none"}
             lastMove={lastMove}
             arrows={marks.arrows}
             highlights={marks.highlights}
@@ -470,7 +474,7 @@ function PracticeSession({
               </Button>
             )
           ) : null}
-          {!finished ? (
+          {canAnswer ? (
             <>
               <Button
                 type="button"
@@ -492,33 +496,35 @@ function PracticeSession({
                 <Eye />
                 Reveal
               </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={busy || replaying}
-                onClick={() => act("skip")}
-              >
-                <SkipForward />
-                Skip
-              </Button>
+              {finished ? null : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy || replaying}
+                  onClick={() => act("skip")}
+                >
+                  <SkipForward />
+                  Skip
+                </Button>
+              )}
             </>
           ) : null}
         </div>
-        <CardStatus card={card} />
+        <CardStatus card={card} retrying={retrying} />
       </div>
     </BoardWorkspace>
   );
 }
 
 /** A plain sentence for the card's state (text, not colour alone). */
-function CardStatus({ card }: { card: PracticeCard }) {
+function CardStatus({ card, retrying }: { card: PracticeCard; retrying: boolean }) {
   const text: Record<PracticeCard["state"], string> = {
     unanswered: card.attemptsSoFar
       ? `${card.attemptsSoFar} attempt${card.attemptsSoFar === 1 ? "" : "s"} so far`
       : "",
     "answered-correct": card.hintStage ? "Answered with a hint (assisted)." : "Answered unaided.",
-    "answered-wrong": "Missed.",
+    "answered-wrong": retrying ? "Missed — try again, or reveal the answer." : "Missed.",
     revealed: "Revealed — counts as missed.",
     skipped: "Skipped."
   };

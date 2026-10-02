@@ -41,7 +41,7 @@ export const HomePage = memo(function HomePage({
   onReviewGame,
   onOpenEngineSettings,
   onRepertoireHub,
-  onRepertoirePractice,
+  onRepertoireReview,
   onRepertoireStudy
 }: {
   desktopApiAvailable: boolean;
@@ -58,7 +58,7 @@ export const HomePage = memo(function HomePage({
   /** Settings → Engines (no engine yet: add your own). */
   onOpenEngineSettings: () => void;
   onRepertoireHub: () => void;
-  onRepertoirePractice: (repertoireId: string) => void;
+  onRepertoireReview: (repertoireId: string) => void;
   onRepertoireStudy: (target: StudyTarget) => void;
 }) {
   // The Continue card's game and the Recent list: only these are read, not the whole library.
@@ -81,7 +81,7 @@ export const HomePage = memo(function HomePage({
     <Page>
       <PageHeader title="Home" />
       {desktopApiAvailable ? (
-        <RepertoireHomeCard onHub={onRepertoireHub} onPractice={onRepertoirePractice} onStudy={onRepertoireStudy} />
+        <RepertoireHomeCard onHub={onRepertoireHub} onReview={onRepertoireReview} onStudy={onRepertoireStudy} />
       ) : null}
       {loading ? (
         <HomeSkeleton />

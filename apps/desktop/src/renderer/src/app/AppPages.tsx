@@ -99,6 +99,7 @@ export type PageCommands = {
   repertoireHub: () => void;
   openRepertoireStudy: (target: StudyTarget) => void;
   openRepertoirePractice: (repertoireId: string) => void;
+  reviewRepertoire: (repertoireId: string) => void;
   practiceRepertoireChapters: (repertoireId: string, chapterIds: string[]) => void;
   repertoireMissing: (message: string) => void;
   repertoireTabChange: (tab: StudyTab) => void;
@@ -157,11 +158,15 @@ export function AppPages({
           onReviewGame={on.reviewGame}
           onOpenEngineSettings={on.engineSettings}
           onRepertoireHub={on.repertoireHub}
-          onRepertoirePractice={on.openRepertoirePractice}
+          onRepertoireReview={on.reviewRepertoire}
           onRepertoireStudy={on.openRepertoireStudy}
         />
       ) : view === "repertoire-hub" ? (
-        <RepertoireHubPage onStudy={on.openRepertoireStudy} onPractice={on.openRepertoirePractice} />
+        <RepertoireHubPage
+          onStudy={on.openRepertoireStudy}
+          onPractice={on.openRepertoirePractice}
+          onReview={on.reviewRepertoire}
+        />
       ) : view === "repertoire-study" && repertoire?.view === "repertoire-study" ? (
         <RepertoireStudyPage
           repertoireId={repertoire.repertoireId}

@@ -62,6 +62,17 @@ describe("deriveChoices", () => {
     expect(view.rows.map((row) => row.state)).toEqual(["preferred", "reference"]);
   });
 
+  it("marks nothing preferred when the stored preference is played at another occurrence", () => {
+    // The position is shared with another chapter, where 1. c4 is accepted and preferred.
+    const chapter = chapterOf(sampleChapter());
+    const lookup = buildChapterLookup(chapter);
+    const view = deriveChoices(chapter, lookup, "root", "white", {
+      acceptedUcis: ["c2c4", "e2e4", "d2d4"],
+      preferredUci: "c2c4"
+    });
+    expect(view.rows.map((row) => row.state)).toEqual(["accepted", "accepted"]);
+  });
+
   it("names covered and reference replies at an opponent-to-move position", () => {
     const chapter = chapterOf(sampleChapter(), {
       w1: { edge: "covered" },

@@ -13,11 +13,11 @@ const ACTIVE = {};
  * neither — Home's game content stays the main thing.
  */
 export const RepertoireHomeCard = memo(function RepertoireHomeCard({
-  onPractice,
+  onReview,
   onStudy,
   onHub
 }: {
-  onPractice: (repertoireId: string) => void;
+  onReview: (repertoireId: string) => void;
   onStudy: (target: StudyTarget) => void;
   onHub: () => void;
 }) {
@@ -51,7 +51,7 @@ export const RepertoireHomeCard = memo(function RepertoireHomeCard({
             type="button"
             variant="primary"
             size="sm"
-            onClick={() => (target ? onPractice(target.id) : onHub())}
+            onClick={() => (target ? onReview(target.id) : onHub())}
           >
             <GraduationCap />
             Review now

@@ -6,7 +6,7 @@ import type { Key } from "@lichess-org/chessground/types";
 import { isPromotionMove, statusForFen } from "@chaturanga/shared/chess/position";
 import type { BoardArrow, BoardHighlight, Color, UserMove } from "@chaturanga/shared/types/chess";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { focusRing } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useEventCallback } from "@/lib/use-event-callback";
 import { useBoardAppearance, useCgBoardBackground } from "./useBoardAppearance";
@@ -52,6 +52,8 @@ export type ControlledBoardProps = {
   check?: boolean;
   /** Shows a field under the board for typing moves (SAN or square to square). */
   keyboardInput?: boolean;
+  /** Which edge of the board the typed-move field sits under (default `start`). */
+  keyboardInputAlign?: "start" | "end";
   className?: string;
 };
 
@@ -85,6 +87,7 @@ export function ControlledBoard({
   allowMove,
   check,
   keyboardInput = false,
+  keyboardInputAlign = "start",
   className
 }: ControlledBoardProps) {
   const elementRef = useRef<HTMLDivElement | null>(null);
@@ -289,6 +292,7 @@ export function ControlledBoard({
         <TypedMoveField
           fen={fen}
           disabled={!sideToMoveIsMovable(fen, movable) || Boolean(pendingPromotion)}
+          align={keyboardInputAlign}
           onMove={commitMove}
         />
       ) : null}
@@ -354,10 +358,12 @@ function PromotionPicker({
 function TypedMoveField({
   fen,
   disabled,
+  align,
   onMove
 }: {
   fen: string;
   disabled: boolean;
+  align: "start" | "end";
   onMove: (move: ResolvedMove | null) => boolean;
 }) {
   const [text, setText] = useState("");
@@ -385,16 +391,23 @@ function TypedMoveField({
     setError(null);
   };
 
+  // One compact row: the error sits beside the field (truncated, full text on hover), so showing
+  // or clearing it never moves the layout.
   return (
-    <form className="grid gap-1" onSubmit={handleSubmit}>
-      <Input
+    <form
+      className={cn("flex h-7 min-w-0 items-center gap-2", align === "end" && "flex-row-reverse")}
+      onSubmit={handleSubmit}
+    >
+      <input
+        type="text"
         value={text}
         onChange={(event) => {
           setText(event.target.value);
           if (error) setError(null);
         }}
         disabled={disabled}
-        placeholder="Type a move (Nf3, e2e4)"
+        placeholder="Move…"
+        title="Type a move: Nf3, exd5, O-O, e8=Q or e2e4. Enter plays it."
         aria-label="Type a move"
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? errorId : undefined}
@@ -402,9 +415,18 @@ function TypedMoveField({
         autoCorrect="off"
         autoCapitalize="off"
         spellCheck={false}
+        className={cn(
+          "h-7 w-44 shrink-0 rounded-md border border-line bg-surface px-2 font-mono text-xs text-fg placeholder:text-fg-subtle disabled:cursor-not-allowed disabled:opacity-50",
+          focusRing
+        )}
       />
       {error ? (
-        <span id={errorId} role="alert" className="text-xs text-danger">
+        <span
+          id={errorId}
+          role="alert"
+          title={error}
+          className="min-w-0 truncate text-xs text-danger"
+        >
           {error}
         </span>
       ) : null}

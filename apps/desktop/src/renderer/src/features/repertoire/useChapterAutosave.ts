@@ -128,5 +128,16 @@ export function useChapterAutosave(): { flush: () => Promise<boolean> } {
     [queryClient]
   );
 
+  // Closing the window (or quitting) unmounts nothing: save the draft and the study position then.
+  useEffect(
+    () =>
+      window.chaturanga?.games.onFlushRequest?.(async () => {
+        const saved = await flushChapterDraft(queryClient);
+        if (saved) await rememberStudyPosition(queryClient);
+        return saved;
+      }),
+    [queryClient]
+  );
+
   return { flush: () => flushChapterDraft(queryClient) };
 }

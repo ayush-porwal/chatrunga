@@ -715,13 +715,22 @@ describe("repertoire service: practice", () => {
     expect(wrong).toMatchObject({
       outcome: "outside-repertoire",
       finalGrade: true,
-      feedback: "We play 1.e4"
+      feedback: "We play 1.e4",
+      // Still hidden: the card can be retried.
+      acceptedUcis: [],
+      preferredUci: null
+    });
+    expect(attempt(session.sessionId, card.queueItemId, "g1f3")).toMatchObject({
+      outcome: "outside-repertoire",
+      finalGrade: false,
+      acceptedUcis: []
     });
     const retry = attempt(session.sessionId, card.queueItemId, "e2e4");
     expect(retry).toMatchObject({
       outcome: "correct",
       finalGrade: false,
-      card: { attemptsSoFar: 2 }
+      acceptedUcis: ["e2e4"],
+      card: { attemptsSoFar: 3 }
     });
     expect(progressRepository.get(id, START_KEY)).toMatchObject({
       stage: 0,

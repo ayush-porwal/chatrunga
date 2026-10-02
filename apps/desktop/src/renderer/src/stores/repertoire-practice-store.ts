@@ -103,7 +103,9 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
     let message: PracticeOutcomeMessage | null;
     switch (result.outcome) {
       case "correct":
-        message = { tone: "success", text: "Correct — that's in your repertoire." };
+        message = result.finalGrade
+          ? { tone: "success", text: "Correct — that's in your repertoire." }
+          : { tone: "success", text: "Correct — this card still counts as missed." };
         break;
       case "outside-repertoire":
         message = {
@@ -121,8 +123,10 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
     set({
       session: next,
       message,
+      // A wrong answer's result never carries the answer (the card can be retried); a correct
+      // retry's does, and ends the card showing the accepted moves.
       reveal:
-        result.finalGrade && result.outcome !== "correct" && result.acceptedUcis.length
+        result.outcome === "correct" && !result.finalGrade && result.acceptedUcis.length
           ? { ucis: result.acceptedUcis, preferredUci: result.preferredUci, explanation: null }
           : get().reveal
     });

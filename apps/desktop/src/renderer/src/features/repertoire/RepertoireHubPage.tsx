@@ -67,10 +67,13 @@ const colorOptions = [
  */
 export function RepertoireHubPage({
   onStudy,
-  onPractice
+  onPractice,
+  onReview
 }: {
   onStudy: (target: StudyTarget) => void;
   onPractice: (repertoireId: string) => void;
+  /** Practice set up as a review of everything due. */
+  onReview: (repertoireId: string) => void;
 }) {
   const desktop = Boolean(window.chaturanga?.repertoires);
   const queryClient = useQueryClient();
@@ -183,7 +186,7 @@ export function RepertoireHubPage({
                   <Plus />
                   Create repertoire
                 </Button>
-                <Button type="button" variant="primary" onClick={() => onPractice(reviewTarget.id)}>
+                <Button type="button" variant="primary" onClick={() => onReview(reviewTarget.id)}>
                   <GraduationCap />
                   Review due ({due.data!.dueCount})
                 </Button>

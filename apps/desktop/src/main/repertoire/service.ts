@@ -1197,7 +1197,9 @@ export function recordAttempt(input: RecordAttemptInput): AttemptResult {
       }
     }
 
-    const revealed = gradeIsFinal(card);
+    // A wrong answer keeps the answer hidden so the card can be retried (§5.3); a correct retry,
+    // like any other final state, shows the accepted set.
+    const revealed = card.state === "answered-wrong" ? correct : gradeIsFinal(card);
     const result: AttemptResult = {
       outcome,
       acceptedUcis: revealed ? policy.acceptedUcis : [],

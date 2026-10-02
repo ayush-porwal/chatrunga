@@ -86,8 +86,18 @@ export function deriveChoices(
     .filter((child) => metaOf(child.id).edge === "included")
     .map((child) => child.uci!);
   const supported = new Set(included);
-  const preferred =
-    (decision ? effectivePreferredUci(decision, supported) : null) ?? included[0] ?? null;
+  const stored = decision?.preferredUci ?? null;
+  // The preference is repertoire-wide: one stored for a move this occurrence doesn't have (it's
+  // played at another chapter or route reaching this position) marks nothing here preferred,
+  // instead of naming a local move that hints don't point at.
+  const preferredElsewhere = Boolean(
+    stored &&
+      decision!.acceptedUcis.includes(stored) &&
+      !children.some((child) => child.uci === stored)
+  );
+  const preferred = preferredElsewhere
+    ? null
+    : ((decision ? effectivePreferredUci(decision, supported) : null) ?? included[0] ?? null);
   return {
     side,
     rows: children.map((child) => {

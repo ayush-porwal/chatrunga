@@ -23,12 +23,12 @@ onGlassChanged((state) => {
   glassState = state;
 });
 
-// Closing the window asks for pending saves first; with no flush registered, it's done at once.
-let flushHandler: (() => Promise<boolean>) | null = null;
+// Closing the window asks for pending saves first (the game autosave, a repertoire chapter draft):
+// every registered flush runs, and it's saved only if all of them are. With none, it's done at once.
+const flushHandlers = new Set<() => Promise<boolean>>();
 ipcRenderer.on("games:flush", (_event, token: string) => {
-  const handler = flushHandler;
-  void (handler ? handler().catch(() => false) : Promise.resolve(true)).then((saved) =>
-    ipcRenderer.send("games:flushed", token, saved)
+  void Promise.all([...flushHandlers].map((handler) => handler().catch(() => false))).then((results) =>
+    ipcRenderer.send("games:flushed", token, results.every(Boolean))
   );
 });
 
@@ -69,9 +69,9 @@ const api: ChaturangaApi = {
     remove: (id) => ipcRenderer.invoke("games:remove", id),
     importPgn: (input) => ipcRenderer.invoke("games:importPgn", input),
     onFlushRequest: (handler) => {
-      flushHandler = handler;
+      flushHandlers.add(handler);
       return () => {
-        if (flushHandler === handler) flushHandler = null;
+        flushHandlers.delete(handler);
       };
     }
   },

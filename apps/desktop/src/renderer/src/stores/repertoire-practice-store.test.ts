@@ -49,6 +49,35 @@ describe("repertoire practice store", () => {
     expect(store().reveal).toBeNull();
   });
 
+  it("keeps a wrong first answer retryable, and a correct retry shows the answer", () => {
+    store().setSession(session());
+    store().applyAttempt({
+      outcome: "outside-repertoire",
+      acceptedUcis: [],
+      preferredUci: null,
+      feedback: null,
+      card: cardOf("a", { state: "answered-wrong", attemptsSoFar: 1 }),
+      finalGrade: true
+    });
+    expect(store().reveal).toBeNull();
+    expect(store().session!.totals.wrong).toBe(1);
+
+    store().applyAttempt({
+      outcome: "correct",
+      acceptedUcis: ["e2e4"],
+      preferredUci: "e2e4",
+      feedback: null,
+      card: cardOf("a", { state: "answered-wrong", attemptsSoFar: 2 }),
+      finalGrade: false
+    });
+    expect(store().message).toEqual({
+      tone: "success",
+      text: "Correct — this card still counts as missed."
+    });
+    expect(store().reveal).toEqual({ ucis: ["e2e4"], preferredUci: "e2e4", explanation: null });
+    expect(store().session!.totals.wrong).toBe(1);
+  });
+
   it("marks a correct answer and advances to the next unanswered card", () => {
     store().setSession(session());
     store().applyAttempt({

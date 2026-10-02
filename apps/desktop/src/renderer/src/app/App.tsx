@@ -914,6 +914,13 @@ export function App() {
     openRepertoirePractice: useEventCallback((repertoireId: string) =>
       unlessOnlineGame(() => openRepertoirePractice(repertoireId))
     ),
+    // "Review now" / "Review due": the setup in Review due over every chapter, whatever the last
+    // session's draft was (a Learn new draft would otherwise hide the due decisions).
+    reviewRepertoire: useEventCallback((repertoireId: string) =>
+      unlessOnlineGame(() =>
+        openRepertoirePractice(repertoireId, { preset: { mode: "review-due", chapterIds: [] } })
+      )
+    ),
     practiceRepertoireChapters: useEventCallback((repertoireId: string, chapterIds: string[]) =>
       unlessOnlineGame(() => openRepertoirePractice(repertoireId, { preset: { chapterIds } }))
     ),
