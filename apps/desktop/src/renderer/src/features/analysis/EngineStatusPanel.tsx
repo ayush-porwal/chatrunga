@@ -243,7 +243,8 @@ function EngineStatusPanelContent({
   const hasData = Boolean(latestInfo || topLines.length || best);
   const idle = status === "idle" || status === "error";
   // Nothing to analyse with: say so and point to Settings instead of an error with no way out.
-  const noEngines = engines.isSuccess && !engines.data.some((engine) => engine.isAvailable && !engine.isHumanPrediction);
+  // Any usable engine can analyse (Maia too, when it's the only one installed).
+  const noEngines = engines.isSuccess && !engines.data.some((engine) => engine.isAvailable);
 
   return (
     <section className="grid content-start gap-4">

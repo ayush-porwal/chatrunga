@@ -59,6 +59,15 @@ describe("analysis store", () => {
     expect(topLines.map((line) => line.score?.value)).toEqual([40, 25]);
   });
 
+  it("merges a line's score and moves sent in separate infos", () => {
+    const base = { engineId: "engine-1", multipv: 1, raw: "info", receivedAt: 1 };
+    useAnalysisStore.getState().setInfos([{ ...base, score: { type: "cp", value: 30 }, pv: ["e2e4", "e7e5"] }]);
+    useAnalysisStore.getState().setInfos([{ ...base, pv: ["d2d4"] }]);
+    expect(useAnalysisStore.getState().topLines[0]).toMatchObject({ score: { value: 30 }, pv: ["d2d4"] });
+    useAnalysisStore.getState().setInfos([{ ...base, score: { type: "cp", value: 12 } }]);
+    expect(useAnalysisStore.getState().topLines[0]).toMatchObject({ score: { value: 12 }, pv: ["d2d4"] });
+  });
+
   it("tracks best moves, errors, and active engines", () => {
     useAnalysisStore.getState().setActiveEngine("engine-1");
     useAnalysisStore.getState().setBestMove("e2e4");
