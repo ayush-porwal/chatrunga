@@ -92,7 +92,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm -r --if-present typecheck
-      - run: pnpm -r --if-present test
+      - run: pnpm test:coverage
       - run: node --test scripts/*.test.mjs
 
   build:
@@ -140,6 +140,10 @@ jobs:
           pnpm exec electron-builder ${{ matrix.target }} \
             --publish never \
             -c.extraMetadata.version="${{ needs.plan.outputs.version }}"
+
+      # A package missing main, preload, renderer or the worker would install but not start.
+      - name: Check packaged app contents
+        run: node scripts/check-packaged-app.mjs
 
       # latest*.yml, the .blockmap files and the macOS .zip are what in-app updates (electron-updater)
       # read from the release; keep them in the upload.

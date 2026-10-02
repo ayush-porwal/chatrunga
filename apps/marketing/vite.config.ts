@@ -48,7 +48,7 @@ function withDownloadUrls(html: string): string {
 }
 
 /**
- * Runs on every page (index.html and b/index.html):
+ * Runs on the page (index.html):
  * - Replaces the download placeholders and %SITE_URL% (absolute Open Graph URLs; see withSiteUrl).
  * - Adds width/height to every <img src="/shots/*.jpg"> from the file itself, so re-captured
  *   screenshots never cause layout shift.
