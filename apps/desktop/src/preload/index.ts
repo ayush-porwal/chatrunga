@@ -27,6 +27,10 @@ const api: ChaturangaApi = {
     isElectron: true,
     platform: process.platform
   },
+  system: {
+    timeAsleepMs: () => Number(ipcRenderer.sendSync("system:timeAsleepMs")) || 0,
+    onResumed: subscribe<void>("system:resumed")
+  },
   appearance: {
     getGlass: () => glassState,
     getZoomFactor: () => webFrame.getZoomFactor(),
@@ -84,7 +88,8 @@ const api: ChaturangaApi = {
     onReviewFailed: subscribe<EventPayload<"onReviewFailed">>("review:failed"),
     onDatabaseDownloadProgress: subscribe<EventPayload<"onDatabaseDownloadProgress">>("database:downloadProgress"),
     onUpdateState: subscribe<EventPayload<"onUpdateState">>("updates:state"),
-    onLichessEvent: subscribe<EventPayload<"onLichessEvent">>("lichess:event")
+    onLichessEvent: subscribe<EventPayload<"onLichessEvent">>("lichess:event"),
+
   },
   // Lichess account, play and import (main/lichess).
   lichess: {

@@ -54,6 +54,11 @@ type GameStore = {
   engineClock: EngineClockConfig | null;
   engineClockLive: EngineClockLive | null;
   gameOutcome: GameOutcome | null;
+  /**
+   * Counts moves `makeMove` refused. The board has already drawn the piece on its new square;
+   * it puts the position back when this changes (the stored position didn't change).
+   */
+  rejectedMoves: number;
   loadGame: (game: GameSession) => void;
   makeMove: (move: UserMove) => boolean;
   makeUciMove: (uci: string) => boolean;
@@ -129,13 +134,13 @@ export const useGameStore = create<GameStore>((set, get) => {
     }));
   }
 
-  function advanceClockAfterMove(movedSide: Color): void {
+  function advanceClockAfterMove(movedSide: Color, now: number): void {
     const state = get();
     if (!state.engineClock || !state.engineClockLive) return;
     const cfg = state.engineClock;
     const live = state.engineClockLive;
-    if (live.sideToMove !== movedSide) return;
-    const elapsed = Date.now() - live.turnStartedAt;
+    if (live.sideToMove !== movedSide || live.stoppedAt !== undefined) return;
+    const elapsed = now - live.turnStartedAt;
     let whiteMs = live.whiteMs;
     let blackMs = live.blackMs;
     if (movedSide === "white") {
@@ -148,7 +153,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       engineClockLive: {
         whiteMs,
         blackMs,
-        turnStartedAt: Date.now(),
+        turnStartedAt: now,
         sideToMove: nextTurn
       }
     });
@@ -173,6 +178,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     engineClock: null,
     engineClockLive: null,
     gameOutcome: null,
+    rejectedMoves: 0,
 
     loadGame: (game) => {
       const requestedNode = game.moveTree.find((node) => node.id === game.currentNodeId);
@@ -198,20 +204,34 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     makeMove: (move) => {
       const state = get();
-      if (state.gameOutcome) return false;
+      const reject = (patch: Partial<GameStore> = {}): false => {
+        set((current) => ({ ...patch, rejectedMoves: current.rejectedMoves + 1 }));
+        return false;
+      };
+      if (state.gameOutcome) return reject();
       // Online, a move is only ever played at the end of the game (never as a variation).
       if (state.mode === "online" && state.currentNodeId !== mainlineEndId(state.moveTree)) {
-        set({ lastError: "Go to the latest move to play." });
-        return false;
+        return reject({ lastError: "Go to the latest move to play." });
       }
       const parent = state.moveTree.find((node) => node.id === state.currentNodeId);
       const fenBefore = parent?.fenAfter ?? state.currentFen;
       const mover = statusForFen(fenBefore).turn;
-      const applied = applyUserMove(fenBefore, move);
-      if (!applied) {
-        set({ lastError: "Illegal move" });
-        return false;
+      // The clock decides, not the poll: a move made after the flag fell loses on time, and the
+      // increment can't bring an expired clock back.
+      const now = clockNow();
+      const live = state.engineClockLive;
+      if (
+        state.mode === "engine" &&
+        live &&
+        live.stoppedAt === undefined &&
+        live.sideToMove === mover &&
+        remainingClockMs(live, mover, now) <= 0
+      ) {
+        get().resolveTimeout(mover);
+        return reject();
       }
+      const applied = applyUserMove(fenBefore, move);
+      if (!applied) return reject({ lastError: "Illegal move" });
       const { moveTree, node } = addMoveNode(
         state.moveTree,
         state.currentNodeId,
@@ -221,7 +241,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         applied.fen
       );
       set({ moveTree, currentFen: node.fenAfter, currentNodeId: node.id, lastError: null });
-      advanceClockAfterMove(mover);
+      advanceClockAfterMove(mover, now);
       // Mate / stalemate / draw by rule ends a timed game on the board: freeze both clocks.
       if (get().engineClockLive && statusForFen(node.fenAfter).isEnd) {
         set((current) => ({ engineClockLive: stopClock(current.engineClockLive) }));
@@ -366,7 +386,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         engineClockLive: {
           whiteMs: cfg.initialMs,
           blackMs: cfg.initialMs,
-          turnStartedAt: Date.now(),
+          turnStartedAt: clockNow(),
           sideToMove: turn
         }
       });
@@ -437,7 +457,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     },
 
     setMatchClock: ({ whiteMs, blackMs, sideToMove, running }) => {
-      const at = Date.now();
+      const at = clockNow();
       set({
         engineClockLive: { whiteMs, blackMs, sideToMove, turnStartedAt: at, ...(running ? {} : { stoppedAt: at }) }
       });
@@ -476,7 +496,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     getClockForEngineGo: () => {
       const state = get();
       if (!state.engineClock || !state.engineClockLive) return null;
-      return buildEngineGoClock(state.engineClockLive, state.engineClock, Date.now());
+      return buildEngineGoClock(state.engineClockLive, state.engineClock, clockNow());
     },
 
     toSession: () => {
@@ -547,7 +567,57 @@ function mainlineEndId(moveTree: MoveNode[]): string {
 }
 
 function stopClock(live: EngineClockLive | null): EngineClockLive | null {
-  return live && live.stoppedAt === undefined ? { ...live, stoppedAt: Date.now() } : live;
+  return live && live.stoppedAt === undefined ? { ...live, stoppedAt: clockNow() } : live;
+}
+
+/** Where the time asleep comes from (the main process; tests swap it). */
+let readTimeAsleep: () => number = () =>
+  typeof window === "undefined" ? 0 : (window.chaturanga?.system?.timeAsleepMs?.() ?? 0);
+
+/**
+ * A wall-clock step this far past the monotonic one means the computer may have slept. Small, so
+ * even a sub-second suspend is read before a move is timed (not left to the wake notice, which can
+ * arrive after it), yet above the millisecond jitter between the two clocks, so a normal check
+ * never asks the main process.
+ */
+const SUSPECT_SLEEP_MS = 25;
+let lastMonotonic = performance.now();
+let lastWall = Date.now();
+/**
+ * Main's total since the app started, read once now: a renderer reloaded later would otherwise
+ * start from 0 and add every earlier sleep at its first check, jumping a running clock forward.
+ */
+let timeAsleep = readTimeAsleep();
+/** The main process said the computer woke up: read the total at the next clock check. */
+let resumedSinceRead = false;
+
+/**
+ * The time base for match clocks: monotonic, so changing the system clock (or an NTP correction)
+ * never adds or removes thinking time. Only differences between two readings mean anything.
+ * `performance.now()` may stop while the computer sleeps, so the time it missed is added back —
+ * as the main process measured it (from suspend to resume, not from wall-clock jumps). That is
+ * read synchronously only when the two clocks drift apart since the last reading, which a sleep
+ * always causes: a clock check never waits on the main process otherwise.
+ */
+export function clockNow(): number {
+  const monotonic = performance.now();
+  const wall = Date.now();
+  if (resumedSinceRead || wall - lastWall - (monotonic - lastMonotonic) > SUSPECT_SLEEP_MS) {
+    timeAsleep = readTimeAsleep();
+    resumedSinceRead = false;
+  }
+  lastMonotonic = monotonic;
+  lastWall = wall;
+  return monotonic + timeAsleep;
+}
+
+/** The computer woke up (main's notice): the next clock check reads the time asleep. */
+export function noteSystemResumed(): void {
+  resumedSinceRead = true;
+}
+
+export function setTimeAsleepSource(source: () => number): void {
+  readTimeAsleep = source;
 }
 
 /** Time left on `side`'s clock at `now` (the running side's clock counts down; a stopped game is frozen). */

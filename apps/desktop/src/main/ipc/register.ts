@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
+import { BrowserWindow, dialog, ipcMain, powerMonitor, type IpcMainInvokeEvent } from "electron";
 import type { EventEmitter } from "node:events";
 import { readFile, writeFile } from "node:fs/promises";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
@@ -32,6 +32,7 @@ import { errorMessage, logger } from "../logger";
 import { updateService } from "../updater";
 import { refreshWindowGlass } from "../window-glass";
 import { runGameReview } from "./review-handler";
+import { missedBetween, readClocks, type ClockReading } from "../time-asleep";
 import {
   asAbsolutePath,
   asId,
@@ -132,6 +133,25 @@ export function registerIpc(engineManager: EngineManager): void {
   registerCommentaryIpc();
   registerUpdateIpc();
   registerLichessIpc();
+  // Match clocks run on the renderer's monotonic clock, which may stop while the computer sleeps.
+  // Main keeps the total it missed; the renderer reads it synchronously whenever it checks a clock,
+  // so a move handled right after waking already sees it (an event could arrive too late).
+  let timeAsleepMs = 0;
+  let suspendedAt: ClockReading | null = null;
+  const missedSince = (at: ClockReading) => missedBetween(at, readClocks());
+  powerMonitor.on("suspend", () => {
+    suspendedAt = readClocks();
+  });
+  powerMonitor.on("resume", () => {
+    if (suspendedAt) timeAsleepMs += missedSince(suspendedAt);
+    suspendedAt = null;
+    // Even a short sleep (the renderer's drift check may not notice it): read the total again.
+    broadcast("system:resumed", undefined);
+  });
+  // Also counts a wake main hasn't handled yet (its resume event can come after the renderer's input).
+  ipcMain.on("system:timeAsleepMs", (event) => {
+    event.returnValue = timeAsleepMs + (suspendedAt ? missedSince(suspendedAt) : 0);
+  });
 }
 
 function registerEngineIpc(engineManager: EngineManager): void {
