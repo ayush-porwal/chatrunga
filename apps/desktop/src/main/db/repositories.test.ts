@@ -94,6 +94,44 @@ describe("gameRepository (SQLite)", () => {
     expect(gameRepository.get(saved.id)?.moveTree).toHaveLength(saved.moveTree.length);
   });
 
+  it("rebuilds a tree with a duplicate child, a cycle, a stray move or a missing field", () => {
+    const saved = saveImported();
+    const [root, e4, e5, nf3] = saved.moveTree;
+    const damaged = [
+      // e4 listed twice under the root.
+      [{ ...root, children: [e4.id, e4.id] }, e4, e5, nf3],
+      // e5 and Nf3 point at each other, apart from the root's line.
+      [{ ...root, children: [e4.id] }, { ...e4, children: [] }, { ...e5, parentId: nf3.id }, { ...nf3, children: [e5.id] }],
+      // Nf3 isn't anyone's child.
+      [root, e4, { ...e5, children: [] }, nf3],
+      // e5 has no SAN.
+      [root, e4, { ...e5, san: undefined }, nf3],
+      // The root isn't the canonical one.
+      [{ ...root, id: "start" }, { ...e4, parentId: "start" }, e5, nf3]
+    ];
+    for (const tree of damaged) {
+      getDb().prepare("UPDATE games SET move_tree_json = ? WHERE id = ?").run(JSON.stringify(tree), saved.id);
+      const reopened = gameRepository.get(saved.id)!;
+      expect(reopened.moveTree.filter((node) => node.san).map((node) => node.san)).toEqual(["e4", "e5", "Nf3"]);
+      expect(reopened.moveTree.map((node) => node.id)).not.toEqual(saved.moveTree.map((node) => node.id));
+    }
+  });
+
+  it("opens a stored tree as it is when it's well formed", () => {
+    const saved = saveImported();
+    expect(gameRepository.get(saved.id)?.moveTree).toEqual(saved.moveTree);
+  });
+
+  it("drops stored headers with a value that isn't text, for the PGN's", () => {
+    const saved = saveImported();
+    getDb().prepare("UPDATE games SET headers_json = ? WHERE id = ?").run(JSON.stringify({ white: 1 }), saved.id);
+    expect(gameRepository.get(saved.id)?.headers).toBeNull();
+    getDb()
+      .prepare("UPDATE games SET headers_json = ? WHERE id = ?")
+      .run(JSON.stringify({ white: "Carlsen", eco: null, orientationHint: "black" }), saved.id);
+    expect(gameRepository.get(saved.id)?.headers).toEqual({ white: "Carlsen", eco: null, orientationHint: "black" });
+  });
+
   it("refuses to open a game whose PGN would rebuild only part of the tree", () => {
     const saved = saveImported();
     getDb()

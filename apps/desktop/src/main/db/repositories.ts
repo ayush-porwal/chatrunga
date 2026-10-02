@@ -204,28 +204,66 @@ export function remapReviewToTree(review: GameReview, moveTree: readonly MoveNod
   return { ...review, moves };
 }
 
+/** The root's id in every tree the app builds (createEmptyGame, importPgnText). */
+const ROOT_NODE_ID = "root";
+
+const isString = (value: unknown): value is string => typeof value === "string";
+const isStringOrNull = (value: unknown): value is string | null => value === null || typeof value === "string";
+
+/** Every field a move node needs, with its type. Only the root has no move (san/uci null). */
 function isMoveNodeLike(value: unknown): value is MoveNode {
   if (!value || typeof value !== "object") return false;
-  const node = value as Partial<MoveNode>;
+  const node = value as Record<keyof MoveNode, unknown>;
+  const root = node.id === ROOT_NODE_ID;
   return (
-    typeof node.id === "string" &&
-    typeof node.fenAfter === "string" &&
+    isString(node.id) &&
+    (root ? node.parentId === null : isString(node.parentId)) &&
+    (root ? isStringOrNull(node.san) && isStringOrNull(node.uci) : isString(node.san) && isString(node.uci)) &&
+    isString(node.fenBefore) &&
+    isString(node.fenAfter) &&
+    Number.isInteger(node.ply) &&
+    Array.isArray(node.nags) &&
+    node.nags.every(isString) &&
+    isStringOrNull(node.comment) &&
+    (node.clockAfter === undefined || isStringOrNull(node.clockAfter)) &&
+    Array.isArray(node.arrows) &&
+    Array.isArray(node.highlights) &&
     Array.isArray(node.children) &&
-    (node.parentId === null || typeof node.parentId === "string")
+    node.children.every(isString)
   );
 }
 
-/** One root, and every parent and child link points at a node of the tree (and back). */
+/**
+ * A tree the app can use as it is: well-formed nodes with unique ids, the canonical root, and every
+ * node reached from it exactly once by following children whose parent links point back — so no
+ * duplicate child, cycle or stray node, and walks up through parents always end at the root.
+ */
 export function isConsistentTree(nodes: readonly unknown[]): nodes is MoveNode[] {
-  if (!nodes.length || !nodes.every(isMoveNodeLike)) return false;
-  const tree = nodes as MoveNode[];
-  const byId = new Map(tree.map((node) => [node.id, node]));
-  if (byId.size !== tree.length) return false;
-  if (tree.filter((node) => node.parentId === null).length !== 1) return false;
-  return tree.every(
-    (node) =>
-      (node.parentId === null || byId.get(node.parentId)?.children.includes(node.id)) &&
-      node.children.every((childId) => byId.get(childId)?.parentId === node.id)
+  if (!nodes.every(isMoveNodeLike)) return false;
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const root = byId.get(ROOT_NODE_ID);
+  if (!root || byId.size !== nodes.length) return false;
+  const reached = new Set([root.id]);
+  const pending = [root];
+  for (let node = pending.pop(); node; node = pending.pop()) {
+    for (const childId of node.children) {
+      const child = byId.get(childId);
+      if (!child || child.parentId !== node.id || reached.has(childId)) return false;
+      reached.add(childId);
+      pending.push(child);
+    }
+  }
+  return reached.size === nodes.length;
+}
+
+/**
+ * Stored headers the renderer can use: every value a string or null (orientationHint a colour).
+ * Anything else drops the whole set, and opening falls back to the headers in the row's PGN.
+ */
+function isHeaders(value: unknown): value is GameHeaders {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.entries(value).every(([key, item]) =>
+    key === "orientationHint" ? item === null || item === "white" || item === "black" : isStringOrNull(item)
   );
 }
 
@@ -249,7 +287,7 @@ function toSavedGame(row: GameRow): SavedGame {
   if (row.headers_json) {
     try {
       const parsed: unknown = JSON.parse(row.headers_json);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) headers = parsed as GameHeaders;
+      if (isHeaders(parsed)) headers = parsed;
     } catch {
       headers = null;
     }
