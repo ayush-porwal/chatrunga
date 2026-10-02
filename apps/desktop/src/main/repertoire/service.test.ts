@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -331,6 +331,27 @@ describe("repertoire service: chapters, decisions and index", () => {
     expect(decisionRepository.get(id, positionKey(fen))?.acceptedUcis).toEqual(["e1g1"]);
   });
 
+  it("derives SAN from the move, keeps only numeric NAGs and stores a __proto__ node id", () => {
+    const { id } = create();
+    const detail = service.getRepertoire(id);
+    const base = service.getChapter({ repertoireId: id, chapterId: detail.chapters[0].id });
+    const tree = treeOf(START_FEN, [["e2e4", "e7e5"]]).map((node) =>
+      node.id === "n2" ? { ...node, id: "__proto__" } : node
+    );
+    tree[0] = { ...tree[0], children: ["n1"] };
+    tree[1] = { ...tree[1], san: "d4", nags: ["$1", "e5", "$1234"], children: ["__proto__"] };
+    tree[2] = { ...tree[2], parentId: "n1" };
+    const result = service.saveChapter({
+      repertoireId: id,
+      chapter: { ...base, tree, nodeMeta: JSON.parse('{"__proto__":{"edge":"reference"}}') },
+      expectedRevision: detail.revision
+    });
+    expect(result.chapter.tree.map((node) => node.san)).toEqual([null, "e4", "e5"]);
+    expect(result.chapter.tree[1].nags).toEqual(["$1"]);
+    const stored = service.getChapter({ repertoireId: id, chapterId: base.id });
+    expect(Object.entries(stored.nodeMeta)).toContainEqual(["__proto__", { edge: "reference" }]);
+  });
+
   it("updates a decision: accepting selects an occurrence, removing makes it reference", () => {
     const { id } = create();
     const saved = save(id, [["e2e4"], ["d2d4"]], {
@@ -514,14 +535,14 @@ describe("repertoire service: chapters, decisions and index", () => {
         chapterId: first.chapter.id,
         chapterTitle: "Chapter",
         nodeId: nodeAt(first.chapter.tree, ["e2e4", "e7e6", "d2d4", "d7d5"]).id,
-        path: "1. e2e4 e7e6 2. d2d4 d7d5",
+        path: "1. e4 e6 2. d4 d5",
         ply: 4
       },
       {
         chapterId: "second",
         chapterTitle: "Chapter",
         nodeId: nodeAt(second.chapter.tree, ["d2d4", "e7e6", "e2e4", "d7d5"]).id,
-        path: "1. d2d4 e7e6 2. e2e4 d7d5",
+        path: "1. d4 e6 2. e4 d5",
         ply: 4
       }
     ]);
@@ -535,7 +556,7 @@ describe("repertoire service: chapters, decisions and index", () => {
     const occurrences = service.getOccurrences({ repertoireId: id, positionKey: START_KEY });
     expect(occurrences.map((item) => [item.nodeId, item.path, item.ply])).toEqual([
       ["root", "", 0],
-      [nodeAt(saved.chapter.tree, knights).id, "1. g1f3 g8f6 2. f3g1 f6g8", 4]
+      [nodeAt(saved.chapter.tree, knights).id, "1. Nf3 Nf6 2. Ng1 Ng8", 4]
     ]);
   });
 
@@ -546,7 +567,7 @@ describe("repertoire service: chapters, decisions and index", () => {
     const node = nodeAt(saved.chapter.tree, ["e7e5", "g1f3"]);
     expect(
       service.getOccurrences({ repertoireId: id, positionKey: positionKey(node.fenAfter) })
-    ).toEqual([expect.objectContaining({ nodeId: node.id, path: "1... e7e5 2. g1f3", ply: 3 })]);
+    ).toEqual([expect.objectContaining({ nodeId: node.id, path: "1... e5 2. Nf3", ply: 3 })]);
   });
 });
 
@@ -685,12 +706,29 @@ describe("repertoire service: import and export", () => {
     ).toThrow(/choose at least one game/);
   });
 
-  it("reads a PGN file by path and refuses a relative path", async () => {
-    const path = join(userData, "games.pgn");
-    writeFileSync(path, TWO_GAMES);
-    const preview = await service.previewImport({ path });
-    expect(preview.games).toHaveLength(2);
-    await expect(service.previewImport({ path: "games.pgn" })).rejects.toThrow(/absolute path/);
+  it("keeps only the newest import previews and refuses a game included twice", async () => {
+    const { id, revision } = create();
+    const first = await service.previewImport({ pgn: TWO_GAMES });
+    for (let count = 0; count < 3; count++) await service.previewImport({ pgn: TWO_GAMES });
+    const one = [{ gameIndex: 0, title: "", kind: "opening" as const, include: true }];
+    expect(() =>
+      service.commitImport({
+        jobId: first.jobId,
+        repertoireId: id,
+        expectedRevision: revision,
+        selections: one
+      })
+    ).toThrow(/Invalid jobId/);
+    const latest = await service.previewImport({ pgn: TWO_GAMES });
+    expect(() =>
+      service.commitImport({
+        jobId: latest.jobId,
+        repertoireId: id,
+        expectedRevision: revision,
+        selections: [...one, ...one]
+      })
+    ).toThrow(/included only once/);
+    expect(service.getRepertoire(id).chapters).toHaveLength(1);
   });
 
   it("exports through the save dialog and writes only the picked file", async () => {
@@ -964,6 +1002,7 @@ describe("repertoire service: practice", () => {
     save(id, [["e2e4", "e7e5", "b1c3"]]);
     const resumed = service.resumePractice(session.sessionId);
     expect(resumed.cards.map((card) => card.state)).toEqual(["unanswered", "skipped"]);
+    expect(service.endPractice(session.sessionId).skipped).toBe(1);
     expect(() => service.resumePractice("missing")).toThrow("Invalid sessionId: not found");
   });
 

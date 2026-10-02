@@ -766,8 +766,7 @@ export function parseRemoveRepertoireInput(value: unknown): RemoveRepertoireInpu
 
 export function parsePreviewImportInput(value: unknown): PreviewImportInput {
   const input = asObject(value, "PGN import");
-  if (input.pgn !== undefined) return { pgn: asString(input.pgn, "PGN", MAX_PGN_BYTES) };
-  return { path: asAbsolutePath(input.path, "path") };
+  return { pgn: asString(input.pgn, "PGN", MAX_PGN_BYTES) };
 }
 
 export function parseImportCommitInput(value: unknown): ImportCommitInput {
@@ -775,17 +774,22 @@ export function parseImportCommitInput(value: unknown): ImportCommitInput {
   if (!Array.isArray(input.selections) || input.selections.length > MAX_IMPORT_GAMES) {
     fail("selections", "expected an array of games");
   }
+  const included = new Set<number>();
   return {
     jobId: asId(input.jobId, "jobId"),
     repertoireId: asId(input.repertoireId, "repertoireId"),
     expectedRevision: asRevision(input.expectedRevision),
     selections: input.selections.map((item, index) => {
       const selection = asObject(item, `selections[${index}]`);
+      const gameIndex = asWholeNumber(selection.gameIndex, "gameIndex");
+      const include = asBoolean(selection.include, "include");
+      if (include && included.has(gameIndex)) fail("selections", "a game is included twice");
+      if (include) included.add(gameIndex);
       return {
-        gameIndex: asWholeNumber(selection.gameIndex, "gameIndex"),
+        gameIndex,
         title: asString(selection.title ?? "", "title", MAX_NAME),
         kind: asChapterKind(selection.kind),
-        include: asBoolean(selection.include, "include"),
+        include,
         excludeNodeIds: optional(selection.excludeNodeIds, (ids) =>
           asIdArray(ids, "excludeNodeIds", MAX_CHAPTER_NODES)
         )

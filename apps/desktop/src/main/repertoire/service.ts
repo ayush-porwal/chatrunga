@@ -5,7 +5,7 @@
  */
 import { BrowserWindow, dialog } from "electron";
 import { nanoid } from "nanoid";
-import { readFile, stat, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
 import {
   REPERTOIRE_ROOT_NODE_ID,
@@ -76,7 +76,6 @@ import {
   type ParsedRepertoireGame
 } from "@chaturanga/shared/chess/repertoire-pgn";
 import { broadcast } from "../ipc/broadcast";
-import { asAbsolutePath } from "../ipc/validate";
 import {
   chapterTitle,
   fenAfterMove,
@@ -112,6 +111,8 @@ const MAX_TAG = 50;
 const MAX_POLICY_TEXT = 2_000;
 const MAX_PGN_BYTES = 20 * 1024 * 1024;
 const IMPORT_JOB_TTL_MS = 30 * 60_000;
+/** Pending import previews kept in memory at once; each holds its parsed game trees. */
+const MAX_IMPORT_JOBS = 3;
 const DEFAULT_DUE_LIMIT = 20;
 const DEFAULT_NEW_AFTER_DUE = 5;
 const DEFAULT_LEARN_LIMIT = 10;
@@ -730,26 +731,23 @@ function pruneImportJobs(now: number): void {
   for (const [jobId, job] of importJobs) if (job.expiresAt <= now) importJobs.delete(jobId);
 }
 
-async function readPgnFile(value: string): Promise<string> {
-  const path = asAbsolutePath(value, "path");
-  const info = await stat(path);
-  if (!info.isFile()) throw new Error("Invalid path: not a file");
-  if (info.size > MAX_PGN_BYTES) throw new Error("Invalid path: the file is larger than 20 MiB");
-  return readFile(path, "utf8");
-}
-
 /**
- * Parses every game of a PGN (pasted, or a file path) into a pending job that expires after 30
- * minutes. Bounded by parseRepertoirePgn's limits (games, moves, depth) and a 20 MiB input.
+ * Parses every game of a PGN text (pasted, or read through the native file picker) into a pending
+ * job that expires after 30 minutes. Bounded by parseRepertoirePgn's limits (games, moves, depth)
+ * and a 20 MiB input. At most MAX_IMPORT_JOBS jobs are kept; a new preview drops the oldest.
  */
 export async function previewImport(input: PreviewImportInput): Promise<ImportPreview> {
-  const text = "pgn" in input ? input.pgn : await readPgnFile(input.path);
+  const text = input.pgn;
   if (typeof text !== "string" || text.length > MAX_PGN_BYTES) {
     throw new Error("Invalid PGN: expected text up to 20 MiB");
   }
   const parsed = parseRepertoirePgn(text);
   const now = clock();
   pruneImportJobs(now);
+  for (const oldest of importJobs.keys()) {
+    if (importJobs.size < MAX_IMPORT_JOBS) break;
+    importJobs.delete(oldest);
+  }
   const jobId = nanoid();
   importJobs.set(jobId, { games: parsed.games, expiresAt: now + IMPORT_JOB_TTL_MS });
   return {
@@ -798,6 +796,9 @@ export function commitImport(input: ImportCommitInput): ImportResult {
     const selections = input.selections.filter((selection) => selection.include);
     if (!selections.length)
       throw new Error("Invalid selections: choose at least one game to import");
+    if (new Set(selections.map((selection) => selection.gameIndex)).size !== selections.length) {
+      throw new Error("Invalid selections: each game can be included only once");
+    }
     let sortOrder = chapterRepository.maxSortOrder(record.id) + 1;
     for (const selection of selections) {
       const game = job.games.find((item) => item.index === selection.gameIndex);
@@ -1384,7 +1385,7 @@ export function endPractice(sessionId: string): PracticeSummary {
       unaided: countOf("unaided"),
       assisted: countOf("assisted"),
       missed: countOf("wrong", "reveal"),
-      skipped: attempts.filter((attempt) => attempt.kind === "skip").length,
+      skipped: session.cards.filter((card) => card.state === "skipped").length,
       chapters: [...new Set(session.cards.map((card) => card.chapterId))],
       missedPositionKeys: [
         ...new Set(

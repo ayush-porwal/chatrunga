@@ -160,7 +160,7 @@ describe("registerRepertoireIpc", () => {
       expect(invoke(channel, input)).toBe(method);
     }
     expect(invoke("getDueSummary")).toBe("getDueSummary");
-    expect(invoke("previewImport", { path: "/tmp/a.pgn" })).toBe("previewImport");
+    expect(invoke("previewImport", { pgn: "1. e4 *" })).toBe("previewImport");
     expect(invoke("list", undefined)).toBe("listRepertoires");
     expect(calls.find(([name]) => name === "recordAttempt")?.[1][0]).toEqual({
       sessionId: "s1",
@@ -194,7 +194,18 @@ describe("registerRepertoireIpc", () => {
     expect(() =>
       invoke("recordPracticeAction", { sessionId: "s", queueItemId: "q", action: { kind: "peek" } })
     ).toThrow(/practice action/);
-    expect(() => invoke("previewImport", { path: "relative.pgn" })).toThrow(/absolute path/);
+    expect(() => invoke("previewImport", { path: "/etc/hosts" })).toThrow(/Invalid PGN/);
+    expect(() =>
+      invoke("commitImport", {
+        jobId: "j",
+        repertoireId: "r",
+        expectedRevision: 1,
+        selections: [
+          { gameIndex: 0, title: "", kind: "opening", include: true },
+          { gameIndex: 0, title: "", kind: "reference", include: true }
+        ]
+      })
+    ).toThrow(/included twice/);
     expect(() =>
       invoke("commitImport", { jobId: "j", repertoireId: "r", expectedRevision: 1, selections: {} })
     ).toThrow(/selections/);

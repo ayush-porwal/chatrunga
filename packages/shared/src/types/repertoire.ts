@@ -229,7 +229,7 @@ export type PracticeSummary = {
 
 /* ------------------------------------------------------------------ import / export */
 
-export type PreviewImportInput = { pgn: string } | { path: string };
+export type PreviewImportInput = { pgn: string };
 
 export type ImportInvalidBranch = {
   /** SAN sequence from the game's root to the illegal move's parent, e.g. `"1. e4 e5 2. Nf3"`. */

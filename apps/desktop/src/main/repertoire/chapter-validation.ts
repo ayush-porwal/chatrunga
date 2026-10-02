@@ -3,6 +3,9 @@
  * every node is rebuilt from known fields, every move is replayed from its parent, and castling is
  * stored in standard king-two-squares form (`e1g1`) so accepted moves compare by plain UCI.
  */
+import { makeFen } from "chessops/fen";
+import { makeSanAndPlay } from "chessops/san";
+import { parseUci } from "chessops/util";
 import type { BoardArrow, BoardHighlight, MoveNode } from "@chaturanga/shared/types/chess";
 import {
   REPERTOIRE_ROOT_NODE_ID,
@@ -25,6 +28,7 @@ const MAX_HEADER_VALUE = 2_000;
 const MAX_ANNOTATIONS = 64;
 const UCI_MOVE = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
 const SQUARE = /^[a-h][1-8]$/;
+const NAG = /^\$\d{1,3}$/;
 const EDGES: readonly RepertoireEdgeKind[] = ["reference", "included", "covered"];
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
@@ -53,6 +57,20 @@ export function fenAfterMove(fen: string, uci: string): string | null {
   if (!UCI_MOVE.test(uci)) return null;
   try {
     return fenAfterUci(fen, uci);
+  } catch {
+    return null;
+  }
+}
+
+/** The FEN and SAN after `uci`, or null when it isn't legal (or the FEN can't be read). */
+function playMove(fen: string, uci: string): { fen: string; san: string } | null {
+  if (!UCI_MOVE.test(uci)) return null;
+  try {
+    const position = positionFromFen(fen);
+    const move = parseUci(uci);
+    if (!move || !position.isLegal(move)) return null;
+    const san = makeSanAndPlay(position, move);
+    return { fen: makeFen(position.toSetup()), san };
   } catch {
     return null;
   }
@@ -122,14 +140,14 @@ function sanitizeNode(value: unknown, index: number): MoveNode {
   return {
     id,
     parentId: value.parentId as string | null,
-    san: optionalText(value.san, 32),
+    san: null,
     uci: typeof value.uci === "string" ? value.uci : null,
     fenBefore: typeof value.fenBefore === "string" ? value.fenBefore : value.fenAfter,
     fenAfter: value.fenAfter,
     ply: 0,
     nags: Array.isArray(value.nags)
       ? value.nags
-          .filter((nag): nag is string => typeof nag === "string" && nag.length <= 8)
+          .filter((nag): nag is string => typeof nag === "string" && NAG.test(nag))
           .slice(0, 16)
       : [],
     comment: optionalText(value.comment, MAX_COMMENT),
@@ -143,8 +161,8 @@ function sanitizeNode(value: unknown, index: number): MoveNode {
 /**
  * Validates and normalises a chapter tree rooted at `rootFen`: root id `"root"` without a parent
  * or move, consistent parent/child links, every node reachable once, every move legal from its
- * parent with the matching `fenAfter`, no two siblings playing the same move. Plies are derived
- * from the root FEN. Throws `Invalid chapter tree: node "<id>" …` at the first offending node.
+ * parent with the matching `fenAfter`, no two siblings playing the same move. Plies and SAN are
+ * derived from the root FEN and the moves, so a stored label always matches the board. Throws `Invalid chapter tree: node "<id>" …` at the first offending node.
  */
 export function validateTree(nodes: readonly unknown[], rootFen: string): MoveNode[] {
   if (!nodes.length)
@@ -182,14 +200,16 @@ export function validateTree(nodes: readonly unknown[], rootFen: string): MoveNo
       if (!child.uci || !UCI_MOVE.test(child.uci.toLowerCase()))
         treeError(childId, "has no valid UCI move");
       const uci = normalizeUci(node.fenAfter, child.uci);
-      const fen = fenAfterMove(node.fenAfter, uci);
-      if (!fen) treeError(childId, `plays an illegal move (${child.uci})`);
+      const played = playMove(node.fenAfter, uci);
+      if (!played) treeError(childId, `plays an illegal move (${child.uci})`);
+      const fen = played.fen;
       if (child.fenAfter !== fen && !sameFen(child.fenAfter, fen)) {
         treeError(childId, "has a fenAfter that doesn't follow from its move");
       }
       if (seenMoves.has(uci)) treeError(childId, `repeats a sibling's move (${uci})`);
       seenMoves.add(uci);
       child.uci = uci;
+      child.san = played.san;
       child.fenBefore = node.fenAfter;
       child.fenAfter = fen;
       child.ply = node.ply + 1;
@@ -211,7 +231,8 @@ export function sanitizeNodeMeta(
 ): Record<string, RepertoireNodeMeta> {
   if (!isObject(value)) throw new Error("Invalid chapter metadata: expected an object");
   const ids = new Set(tree.map((node) => node.id));
-  const meta: Record<string, RepertoireNodeMeta> = {};
+  // A null prototype stores an id such as "__proto__" as a plain entry.
+  const meta: Record<string, RepertoireNodeMeta> = Object.create(null);
   for (const [id, entry] of Object.entries(value)) {
     if (!ids.has(id)) continue;
     if (!isObject(entry) || !EDGES.includes(entry.edge as RepertoireEdgeKind)) {
