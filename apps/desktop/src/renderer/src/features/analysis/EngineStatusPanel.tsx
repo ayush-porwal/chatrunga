@@ -310,6 +310,8 @@ function EngineStatusPanelContent({
     []
   );
   const restartFresh = useAnalysisStore((state) => state.restartFresh);
+  // A depth- or time-limited search that reached its limit: no search runs (Restart searches again).
+  const finished = status === "ready";
   const { appearance } = useBoardAppearance();
   const preview = useMemo(
     () => (hovered && hovered.fen === fen ? previewFor(fen, topLines, hovered.target) : null),
@@ -336,7 +338,9 @@ function EngineStatusPanelContent({
           <div className="grid min-w-0 gap-0.5">
             <h3 className="truncate text-base font-semibold text-fg">{engineName ?? "Engine"}</h3>
             <p className="truncate text-xs text-fg-muted">
-              {analysing
+              {analysing && finished
+                ? `Finished at depth ${primary?.depth ?? "–"}`
+                : analysing
                 ? searchLimit
                   ? `Analysing to ${searchLimit}`
                   : "Analysing until stopped"
@@ -350,7 +354,11 @@ function EngineStatusPanelContent({
           <div className="flex shrink-0 items-center gap-1">
             {analysing ? (
               <>
-                <IconButton label="Restart analysis from scratch" icon={<RotateCcw />} onClick={restartFresh} />
+                <IconButton
+                  label={finished ? "Search again from scratch" : "Restart analysis from scratch"}
+                  icon={<RotateCcw />}
+                  onClick={restartFresh}
+                />
                 {onStopAnalysis ? (
                   <Button type="button" variant="outline" size="sm" onClick={onStopAnalysis}>
                     <Square />

@@ -17,9 +17,11 @@ type AnalysisStore = {
    * search replaces each one only when it gets as deep (stopping and starting again, or coming back
    * to a position, carries on from there instead of counting up from depth 1).
    */
-  startSearch: (resultKey?: string | null) => void;
+  startSearch: (resultKey?: string | null, searchId?: string | null) => void;
   /** The key the running search's lines are remembered under (see startSearch). */
   resultKey: string | null;
+  /** The analysis search whose lines are remembered (an engine game's never are). */
+  resultSearchId: string | null;
   /** Search the current position again from scratch, forgetting what was found for it. */
   restartFresh: () => void;
   /**
@@ -45,6 +47,11 @@ function remember(key: string | null, lines: EngineInfo[]): void {
   results.delete(key);
   results.set(key, lines);
   if (results.size > RESULT_CACHE_LIMIT) results.delete(results.keys().next().value!);
+}
+
+/** Only the remembered analysis search's own lines are kept (not an engine game's, under its key). */
+function rememberable(state: Pick<AnalysisStore, "resultKey" | "resultSearchId">, infos: readonly EngineInfo[]): boolean {
+  return Boolean(state.resultKey) && infos.every((info) => info.searchId === state.resultSearchId);
 }
 
 /** Test-only: forget every remembered result. */
@@ -83,9 +90,17 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
   error: null,
   setActiveEngine: (activeEngineId) => set({ activeEngineId }),
   setStatus: (status) => set({ status }),
-  startSearch: (resultKey = null) =>
-    set({ status: "thinking", latestInfo: null, topLines: resultKey ? (results.get(resultKey) ?? []) : [], bestMove: null, resultKey }),
+  startSearch: (resultKey = null, searchId = null) =>
+    set({
+      status: "thinking",
+      latestInfo: null,
+      topLines: resultKey ? (results.get(resultKey) ?? []) : [],
+      bestMove: null,
+      resultKey,
+      resultSearchId: searchId
+    }),
   resultKey: null,
+  resultSearchId: null,
   searchEpoch: 0,
   restartSearch: () => set((state) => ({ searchEpoch: state.searchEpoch + 1 })),
   restartFresh: () =>
@@ -96,14 +111,14 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
   setInfo: (latestInfo) =>
     set((state) => {
       const next = mergeInfos(state.topLines, [latestInfo]);
-      remember(state.resultKey, next.topLines);
+      if (rememberable(state, [latestInfo])) remember(state.resultKey, next.topLines);
       return next;
     }),
   setInfos: (infos) => {
     if (!infos.length) return;
     set((state) => {
       const next = mergeInfos(state.topLines, infos);
-      remember(state.resultKey, next.topLines);
+      if (rememberable(state, infos)) remember(state.resultKey, next.topLines);
       return next;
     });
   },
@@ -117,6 +132,7 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
       topLines: [],
       bestMove: null,
       error: null,
-      resultKey: null
+      resultKey: null,
+      resultSearchId: null
     })
 }));

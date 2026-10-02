@@ -81,10 +81,10 @@ describe("analysis store", () => {
       receivedAt: depth
     });
     const store = useAnalysisStore.getState();
-    store.startSearch("fen|sf|1");
+    store.startSearch("fen|sf|1", "first");
     store.setInfos([line("first", 28, 30)]);
     // Stopped, then started again: the depth-28 line shows at once, not an empty panel.
-    useAnalysisStore.getState().startSearch("fen|sf|1");
+    useAnalysisStore.getState().startSearch("fen|sf|1", "second");
     expect(useAnalysisStore.getState().topLines[0]).toMatchObject({ depth: 28, score: { value: 30 } });
     // The new search's shallow lines don't replace it; one as deep does.
     useAnalysisStore.getState().setInfos([line("second", 5, -80)]);
@@ -94,9 +94,18 @@ describe("analysis store", () => {
     // Another position starts empty; Restart forgets what was found.
     useAnalysisStore.getState().startSearch("other|sf|1");
     expect(useAnalysisStore.getState().topLines).toEqual([]);
-    useAnalysisStore.getState().startSearch("fen|sf|1");
+    useAnalysisStore.getState().startSearch("fen|sf|1", "third");
     useAnalysisStore.getState().restartFresh();
-    useAnalysisStore.getState().startSearch("fen|sf|1");
+    useAnalysisStore.getState().startSearch("fen|sf|1", "fourth");
+    expect(useAnalysisStore.getState().topLines).toEqual([]);
+  });
+
+  it("never remembers another search's lines under an analysis position (an engine game's)", () => {
+    clearAnalysisResults();
+    const info = (searchId: string) => ({ engineId: "sf", searchId, multipv: 1, depth: 20, score: { type: "cp" as const, value: 5 }, pv: ["e2e4"], raw: "", receivedAt: 0 });
+    useAnalysisStore.getState().startSearch("pos|sf|1", "analysis");
+    useAnalysisStore.getState().setInfos([info("engine-game-move")]);
+    useAnalysisStore.getState().startSearch("pos|sf|1", "analysis-2");
     expect(useAnalysisStore.getState().topLines).toEqual([]);
   });
 
