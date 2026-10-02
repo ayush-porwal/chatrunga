@@ -50,13 +50,27 @@ export function assertSpawnable(config: EngineConfig | null): asserts config is 
   if (!config.isAvailable) throw new Error("Engine binary is not available.");
 }
 
-/** How long a shutdown waits for the process to exit. */
+/** How long a stopped process gets to exit by itself (after quit and SIGTERM) before it's killed. */
 const EXIT_WAIT_MS = 2_000;
+/** After SIGKILL, only a process stuck in the kernel (uninterruptible I/O) is still there this late. */
+const KILL_WAIT_MS = 2_000;
 
+/**
+ * Resolves once `proc` has exited. One that ignores quit and SIGTERM is killed outright after
+ * EXIT_WAIT_MS. The wait after that is bounded as well: a process the kernel can't reap yet would
+ * otherwise hold up every later search for good.
+ */
 function processExited(proc: ChildProcessWithoutNullStreams): Promise<void> {
-  if (proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve();
+  // No pid: it never started (its spawn failed), so there is no exit to wait for.
+  if (proc.pid === undefined || proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve();
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, EXIT_WAIT_MS);
+    let timer = setTimeout(() => {
+      proc.kill("SIGKILL");
+      timer = setTimeout(() => {
+        logger.warn("engine", `Engine process ${proc.pid} still running after SIGKILL`);
+        resolve();
+      }, KILL_WAIT_MS);
+    }, EXIT_WAIT_MS);
     proc.once("exit", () => {
       clearTimeout(timer);
       resolve();
@@ -131,6 +145,8 @@ export class EngineManager extends EventEmitter<EngineEvents> {
   private activeReviewIds = new Set<string>();
   /** Waits of the running search that a newer request (or a stop) interrupts. */
   private supersedeListeners = new Set<() => void>();
+  /** The exit of the last process shut down: a replacement starts only after it (lc0's network). */
+  private lastExit: Promise<void> = Promise.resolve();
 
   cancelReview(reviewId: string): void {
     this.cancelledReviewIds.add(reviewId);
@@ -259,6 +275,20 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     return this.killSession();
   }
 
+  /**
+   * Runs `work` (a draw probe's own engine process) with the engine to itself: it starts once the
+   * warm process has exited, and searches requested meanwhile start after it finished.
+   */
+  runExclusive<T>(work: () => Promise<T>): Promise<T> {
+    const exited = this.dispose();
+    const job = this.queue.then(() => exited).then(work);
+    this.queue = job.then(
+      () => undefined,
+      () => undefined
+    );
+    return job;
+  }
+
   /** The running search is no longer wanted: its waits (startup, isready) end now. */
   private supersede(): void {
     for (const listener of [...this.supersedeListeners]) listener();
@@ -273,17 +303,21 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     });
   }
 
-  /** Shuts the process down (resolves once it exited); a queued search still starts a fresh one. */
+  /**
+   * Shuts the process down; resolves once it exited (or, with none running, once the last one
+   * shut down has). A queued search still starts a fresh one, after that exit.
+   */
   private killSession(): Promise<void> {
     this.discardInfos();
     this.clearIdleTimer();
     this.rejectLineWaiter("Engine stopped");
     const session = this.session;
     this.session = null;
-    if (!session) return Promise.resolve();
+    if (!session) return this.lastExit;
     const exited = processExited(session.proc);
     writeUci(session.proc, "stop");
     stopUciProcess(session.proc);
+    this.lastExit = exited;
     return exited;
   }
 
@@ -316,7 +350,7 @@ export class EngineManager extends EventEmitter<EngineEvents> {
       assertSpawnable(config);
       await this.stopSearch();
       current();
-      const session = this.ensureSession(config, kind, searchId);
+      const session = await this.ensureSession(config, kind, searchId);
       // A slow startup (lc0 loading its network) doesn't hold up a newer request: it keeps
       // going in the background, and a newer search of the same engine picks it up.
       await this.untilSuperseded(session.ready);
@@ -336,8 +370,11 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     }
   }
 
-  /** The warm process if it fits `config` and `kind`, else a fresh one (its handshake in `ready`). */
-  private ensureSession(config: EngineConfig, kind: SearchKind, searchId: string): EngineSession {
+  /**
+   * The warm process if it fits `config` and `kind`, else a fresh one (its handshake in `ready`),
+   * started once the process it replaces has exited.
+   */
+  private async ensureSession(config: EngineConfig, kind: SearchKind, searchId: string): Promise<EngineSession> {
     const resources = kind === "analysis" ? engineResourceOptions() : null;
     const key = JSON.stringify([
       config.id,
@@ -350,7 +387,9 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     ]);
     const existing = this.session;
     if (existing && existing.key === key && existing.proc.exitCode === null && !existing.proc.killed) return existing;
-    this.killSession();
+    await this.killSession();
+    // A newer request (or a stop) came in while the old process was exiting: don't start this one.
+    if (this.latestSearchId !== searchId) throw new SupersededError();
 
     const proc = spawnUciProcess(config);
     const session: EngineSession = {

@@ -39,6 +39,16 @@ function fakeEngine(id: string, extraArgs: string[] = []): EngineConfig {
 
 const sent = () => readFileSync(logFile, "utf8").split("\n").filter(Boolean);
 const spawns = () => sent().filter((line) => line === "spawn").length;
+const pids = () => sent().flatMap((line) => (line.startsWith("pid ") ? [Number(line.slice(4))] : []));
+
+function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function collect(manager: InstanceType<typeof EngineManager>) {
   const bestMoves: EngineBestMove[] = [];
@@ -85,6 +95,69 @@ describe("EngineManager", () => {
     await until(() => events.infos.length > 0);
     await manager.dispose();
     expect(sent()).toContain("exit");
+  });
+
+  it("dispose kills an engine that ignores quit and SIGTERM, and resolves once it has exited", async () => {
+    fakeEngine("stubborn", ["stubborn"]);
+    const events = collect(manager);
+    await manager.startAnalysis({ engineId: "stubborn", searchId: "a", fen: START, moves: [], multipv: 1 });
+    await until(() => events.infos.length > 0);
+    const [pid] = pids();
+    await manager.dispose();
+    expect(isRunning(pid)).toBe(false);
+  }, 10_000);
+
+  it("switching engines starts the new process only after the old one has exited", async () => {
+    fakeEngine("lc0", ["slow-exit"]);
+    const events = collect(manager);
+    await manager.startAnalysis({ engineId: "lc0", searchId: "a", fen: START, moves: [], multipv: 1 });
+    await until(() => events.infos.length > 0);
+    await manager.startAnalysis({ engineId: "sf", searchId: "b", fen: START, moves: [], multipv: 1 });
+    await until(() => events.infos.some((info) => info.searchId === "b"));
+    const log = sent();
+    expect(spawns()).toBe(2);
+    expect(log.indexOf("exit")).toBeGreaterThan(-1);
+    expect(log.indexOf("exit")).toBeLessThan(log.lastIndexOf("spawn"));
+  });
+
+  it("a search superseded while the old process exits never starts one", async () => {
+    fakeEngine("lc0", ["slow-exit"]);
+    const events = collect(manager);
+    await manager.startAnalysis({ engineId: "lc0", searchId: "a", fen: START, moves: [], multipv: 1 });
+    await until(() => events.infos.length > 0);
+    const replaced = manager.startAnalysis({ engineId: "sf", searchId: "b", fen: START, moves: [], multipv: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await Promise.all([replaced, manager.startAnalysis({ engineId: "sf", searchId: "c", fen: START, moves: [], multipv: 1 })]);
+    await until(() => events.infos.some((info) => info.searchId === "c"));
+    expect(spawns()).toBe(2);
+    expect(events.infos.some((info) => info.searchId === "b")).toBe(false);
+    expect(events.errors).toEqual([]);
+  });
+
+  it("a search requested during a draw probe starts only after the probe finished", async () => {
+    const events = collect(manager);
+    await manager.startAnalysis({ engineId: "sf", searchId: "a", fen: START, moves: [], multipv: 1 });
+    await until(() => events.infos.length > 0);
+    let finishProbe = () => {};
+    const probeDone = new Promise<void>((resolve) => {
+      finishProbe = resolve;
+    });
+    let warmExitedFirst = false;
+    const probe = manager.runExclusive(async () => {
+      warmExitedFirst = sent().includes("exit");
+      await probeDone;
+      return "score";
+    });
+    const search = manager.startAnalysis({ engineId: "sf", searchId: "b", fen: START, moves: [], multipv: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(spawns()).toBe(1);
+    finishProbe();
+    await expect(probe).resolves.toBe("score");
+    await search;
+    await until(() => events.infos.some((info) => info.searchId === "b"));
+    expect(warmExitedFirst).toBe(true);
+    expect(spawns()).toBe(2);
+    expect(events.errors).toEqual([]);
   });
 
   it("starts a new game when the position doesn't continue the last one", async () => {
