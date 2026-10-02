@@ -339,14 +339,16 @@ export function ControlledBoard({
     <div
       ref={wrapperRef}
       tabIndex={-1}
-      className={cn("group/board flex min-h-0 min-w-0 flex-col gap-1 outline-none", className)}
+      className={cn("group/board flex h-full min-h-0 min-w-0 flex-col gap-1 outline-none", className)}
       onMouseDownCapture={(event) => {
         if (keyboardInput && elementRef.current?.contains(event.target as Node)) {
           wrapperRef.current?.focus({ preventScroll: true });
         }
       }}
     >
-      <div className="relative aspect-square w-full min-w-0">
+      {/* The squares take the height the icon row leaves (the board frame is square and clips), and
+          stay square: width follows height. */}
+      <div className="relative aspect-square min-h-0 min-w-0 max-w-full flex-1 self-center">
         {/* Chessground's classes stay in className so React reconciliation never strips them. */}
         <div
           ref={elementRef}
