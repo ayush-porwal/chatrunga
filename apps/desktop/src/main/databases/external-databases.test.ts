@@ -44,11 +44,23 @@ vi.mock("./puzzle-scan", async (importOriginal) => {
   };
 });
 
+/** Holds a download inside `finishDownload`, after its last cancellation check. */
+const fsHooks = vi.hoisted(() => ({ beforeRename: null as null | (() => Promise<void>) }));
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    rename: async (...args: Parameters<typeof actual.rename>) => {
+      await fsHooks.beforeRename?.();
+      return actual.rename(...args);
+    }
+  };
+});
+
 import { zstdCompressSync } from "node:zlib";
 import type { DatabaseDownloadProgress, PuzzleSampleInput } from "@chaturanga/shared/types/database";
 import { logger } from "../logger";
 import {
-  cancelAllDownloads,
   cancelDownload,
   downloadDatabase,
   listInstalledDatabases,
@@ -104,11 +116,18 @@ function fakeServer(content: Buffer, etag: string, options: { failAfter?: number
 
 const content = Buffer.from("PuzzleId,FEN,Moves\n".repeat(500));
 
+/** A module instance of its own, for tests that quit (which leaves the module refusing downloads). */
+async function freshModule() {
+  vi.resetModules();
+  return import("./external-databases");
+}
+
 beforeEach(async () => {
   rows.clear();
   repository.failSave = false;
   fullScans.count = 0;
   fullScans.fail = false;
+  fsHooks.beforeRename = null;
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -221,6 +240,7 @@ describe("download reliability", () => {
   });
 
   it("quitting waits for a cancelled download to settle", async () => {
+    const { cancelAllDownloads, downloadDatabase } = await freshModule();
     // Sends the first part of the file, then nothing more until cancelled.
     const stream = new ReadableStream<Uint8Array>({
       start: (controller) => controller.enqueue(new Uint8Array(content.subarray(0, 3000))),
@@ -235,6 +255,28 @@ describe("download reliability", () => {
     expect(events.at(-1)?.state).toBe("cancelled");
     expect(rows.has(SOURCE)).toBe(false);
     await download;
+  });
+
+  it("a download that finishes after quitting stopped waiting registers nothing", async () => {
+    const { cancelAllDownloads, downloadDatabase } = await freshModule();
+    vi.stubGlobal("fetch", fakeServer(content, '"v1"').fetchMock);
+    let release: () => void = () => undefined;
+    const renaming = new Promise<void>((resolve) => {
+      fsHooks.beforeRename = () => {
+        resolve();
+        return new Promise((done) => (release = done));
+      };
+    });
+    const events: DatabaseDownloadProgress[] = [];
+    const download = downloadDatabase(SOURCE, (progress) => events.push(progress));
+    download.catch(() => undefined);
+    await renaming;
+    await cancelAllDownloads(10); // gives up on the download stuck in its rename
+    release();
+    await expect(download).rejects.toThrow("Download cancelled.");
+    // The database is closed by now: nothing registered, nothing announced as installed.
+    expect(rows.has(SOURCE)).toBe(false);
+    expect(events.map((event) => event.state)).not.toContain("completed");
   });
 
   it("starts over when a resumed response doesn't continue where the partial ends", async () => {

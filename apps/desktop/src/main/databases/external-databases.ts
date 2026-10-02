@@ -93,11 +93,16 @@ export function cancelDownload(sourceId: string): void {
   inFlight.get(sourceId)?.controller.abort(new DownloadCancelledError());
 }
 
+/** Set once quitting starts: the database is about to close, so no download may register any more. */
+let shuttingDown = false;
+
 /**
  * Quitting: running downloads stop (their partial files stay, so the next attempt resumes).
- * Resolves once they have settled, or after `timeoutMs`, so a stuck one can't hold up the quit.
+ * Resolves once they have settled, or after `timeoutMs`, so a stuck one can't hold up the quit;
+ * one that finishes later still installs nothing (see `finishDownload`).
  */
 export async function cancelAllDownloads(timeoutMs = CANCEL_TIMEOUT_MS): Promise<void> {
+  shuttingDown = true;
   const running = [...inFlight.values()];
   for (const sourceId of inFlight.keys()) cancelDownload(sourceId);
   if (!running.length) return;
@@ -286,9 +291,13 @@ async function finishDownload(
   onProgress: ProgressSink,
   totalBytes: number | null
 ): Promise<InstalledDatabase> {
+  // Quitting (even after it stopped waiting for this download): the complete `.part` stays for next time.
+  if (shuttingDown) throw new DownloadCancelledError();
   await rename(partPath, filePath);
   await unlink(`${partPath}.validator`).catch(() => undefined);
   const file = await stat(filePath);
+  // The database may be closed by now.
+  if (shuttingDown) throw new DownloadCancelledError();
   // Registered first: "completed" is only announced for a database Puzzles can use.
   const installed = externalDatabaseRepository.saveDownloaded({
     source,
