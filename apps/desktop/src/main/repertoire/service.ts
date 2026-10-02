@@ -1069,7 +1069,8 @@ export function startPractice(input: StartPracticeInput): PracticeSessionSnapsho
         fingerprint: acceptanceFingerprint(candidate.effective),
         hint: candidate.decision.hint,
         wrongMoveFeedback: candidate.decision.wrongMoveFeedback,
-        explanation: node.comment ?? null
+        explanation: node.comment ?? null,
+        progressAt: progress.get(candidate.entry.positionKey)?.lastAttemptAt ?? null
       };
     });
 
@@ -1116,15 +1117,24 @@ function cardIndex(session: PracticeSessionRecord, queueItemId: string): number 
   return index;
 }
 
-/** The decision a card was frozen from is unchanged, active and not paused. */
-function stillCurrent(repertoireId: string, positionKey: string, fingerprint: string): boolean {
+/**
+ * A card can still be graded: its repertoire isn't archived, and the decision it was frozen from
+ * is unchanged (same accepted set, supported, not paused) and not graded since by another session.
+ */
+function stillCurrent(repertoireId: string, positionKey: string, policy: FrozenPolicy): boolean {
+  if (repertoireRepository.get(repertoireId)?.archivedAt !== null) return false;
   const decision = decisionRepository.get(repertoireId, positionKey);
-  return (
-    Boolean(decision) &&
-    !decision!.paused &&
-    decision!.acceptanceFingerprint === fingerprint &&
-    decisionRepository.isSupported(repertoireId, positionKey)
-  );
+  if (
+    !decision ||
+    decision.paused ||
+    decision.acceptanceFingerprint !== policy.fingerprint ||
+    !decisionRepository.isSupported(repertoireId, positionKey)
+  ) {
+    return false;
+  }
+  if (policy.progressAt === undefined) return true;
+  const progress = progressRepository.get(repertoireId, positionKey);
+  return (progress?.lastAttemptAt ?? null) === policy.progressAt;
 }
 
 function historyAction(attempt: AttemptRecord): PracticeHistoryAction {
@@ -1135,8 +1145,8 @@ function historyAction(attempt: AttemptRecord): PracticeHistoryAction {
 }
 
 /**
- * Applies a card's final outcome to its progress (scheduler v1). Skipped when the decision changed
- * since the session froze it (§8.3: no grade against a moving set). Returns whether it was written.
+ * Applies a card's final outcome to its progress (scheduler v1). Callers first check the card is
+ * still current (§8.3: no grade against a moving set). Returns whether it was written.
  */
 function applySchedule(
   repertoireId: string,
@@ -1145,7 +1155,6 @@ function applySchedule(
   outcome: PracticeOutcome,
   now: number
 ): boolean {
-  if (!stillCurrent(repertoireId, card.positionKey, policy.fingerprint)) return false;
   const previous = progressRepository.get(repertoireId, card.positionKey);
   const schedule = scheduleAfterOutcome(previous, outcome, now, previous?.lastAttemptAt);
   if (!schedule) return false;
@@ -1171,6 +1180,8 @@ function progressChanged(repertoireId: string): void {
  * Grades a submitted move. Idempotent on `attemptId` (a replay returns the stored result). The
  * first legal answer fixes the grade (with any earlier hint making it assisted); later retries of
  * a wrongly answered card are ungraded reinforcement. Illegal moves change nothing but are kept.
+ * A card whose decision is no longer current is skipped ungraded (`stale`). The stored cursor moves
+ * on only after a correct answer: a wrongly answered card stays current for its retries.
  */
 export function recordAttempt(input: RecordAttemptInput): AttemptResult {
   let scheduled = false;
@@ -1210,6 +1221,12 @@ export function recordAttempt(input: RecordAttemptInput): AttemptResult {
       outcome = "already-final";
     } else if (!legal) {
       outcome = "illegal";
+    } else if (
+      card.state === "unanswered" &&
+      !stillCurrent(session.repertoireId, card.positionKey, policy)
+    ) {
+      outcome = "stale";
+      card.state = "skipped";
     } else {
       outcome = correct ? "correct" : "outside-repertoire";
       card.attemptsSoFar += 1;
@@ -1252,7 +1269,9 @@ export function recordAttempt(input: RecordAttemptInput): AttemptResult {
       at: now
     });
     session.cards[index] = card;
-    if (finalGrade) session.cursor = nextCursor(session.cards, index);
+    if (outcome === "correct" || outcome === "stale") {
+      session.cursor = nextCursor(session.cards, index);
+    }
     session.updatedAt = now;
     sessionRepository.save(session);
     return result;
@@ -1308,7 +1327,15 @@ export function recordPracticeAction(input: PracticeActionInput): PracticeAction
         explanation: policy.hint
       };
     } else if (kind === "reveal") {
-      if (card.state === "unanswered") {
+      if (
+        card.state === "unanswered" &&
+        !stillCurrent(session.repertoireId, card.positionKey, policy)
+      ) {
+        // No grade against a changed decision: the card is skipped, the frozen answer still shown.
+        persist(false, null);
+        card.state = "skipped";
+        session.cursor = nextCursor(session.cards, index);
+      } else if (card.state === "unanswered") {
         const outcome = firstAnswerOutcome([...history.map(historyAction), { kind: "reveal" }]);
         persist(true, outcome);
         card.state = "revealed";
@@ -1339,7 +1366,7 @@ export function recordPracticeAction(input: PracticeActionInput): PracticeAction
 
 /**
  * Reopens a session. When the repertoire changed since the session froze its policies, unanswered
- * cards whose decision changed (or lost support, or was paused) are dropped as skipped.
+ * cards that are no longer current (see stillCurrent) are dropped as skipped.
  */
 export function resumePractice(sessionId: string): PracticeSessionSnapshot {
   const now = clock();
@@ -1350,7 +1377,7 @@ export function resumePractice(sessionId: string): PracticeSessionSnapshot {
     if (record.revision !== session.snapshotRevision) {
       session.cards = session.cards.map((card) =>
         card.state === "unanswered" &&
-        !stillCurrent(record.id, card.positionKey, session.policies[card.queueItemId].fingerprint)
+        !stillCurrent(record.id, card.positionKey, session.policies[card.queueItemId])
           ? { ...card, state: "skipped" }
           : card
       );

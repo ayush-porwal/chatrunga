@@ -200,7 +200,11 @@ export type RecordAttemptInput = {
 };
 
 export type AttemptResult = {
-  outcome: "correct" | "outside-repertoire" | "illegal" | "already-final";
+  /**
+   * `stale`: the decision changed (or was graded by another session, or the repertoire was
+   * archived) since the session froze it, so the card is skipped without a grade.
+   */
+  outcome: "correct" | "outside-repertoire" | "illegal" | "already-final" | "stale";
   /** Revealed only once the card's grade is final; empty before. */
   acceptedUcis: string[];
   preferredUci: string | null;

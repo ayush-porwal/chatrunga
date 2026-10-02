@@ -1006,12 +1006,71 @@ describe("repertoire service: practice", () => {
     expect(() => service.resumePractice("missing")).toThrow("Invalid sessionId: not found");
   });
 
-  it("an edit during the session keeps the grade from moving the schedule", () => {
+  it("an edit during the session skips the card ungraded", () => {
     const { id } = create();
     save(id, [["e2e4"]]);
     const { session, card } = learnFirst(id);
     save(id, [["e2e4"], ["d2d4"]]);
-    expect(attempt(session.sessionId, card.queueItemId, "d2d4").outcome).toBe("outside-repertoire");
+    const result = attempt(session.sessionId, card.queueItemId, "d2d4");
+    expect(result).toMatchObject({ outcome: "stale", finalGrade: false, acceptedUcis: [] });
+    expect(result.card.state).toBe("skipped");
     expect(progressRepository.get(id, START_KEY)).toBeNull();
+    expect(service.endPractice(session.sessionId)).toMatchObject({ missed: 0, skipped: 1 });
+  });
+
+  it("a reveal after an edit skips the card ungraded", () => {
+    const { id } = create();
+    save(id, [["e2e4"]]);
+    const { session, card } = learnFirst(id);
+    save(id, [["e2e4"], ["d2d4"]]);
+    const result = service.recordPracticeAction({
+      sessionId: session.sessionId,
+      queueItemId: card.queueItemId,
+      action: { kind: "reveal" }
+    });
+    expect(result.card.state).toBe("skipped");
+    expect(result.revealed?.ucis).toEqual(["e2e4"]);
+    expect(progressRepository.get(id, START_KEY)).toBeNull();
+  });
+
+  it("a card graded by an overlapping session is skipped in the other", () => {
+    const { id } = create();
+    save(id, [["e2e4"]]);
+    const first = learnFirst(id);
+    const second = learnFirst(id);
+    expect(attempt(first.session.sessionId, first.card.queueItemId, "e2e4").outcome).toBe(
+      "correct"
+    );
+    const stage = progressRepository.get(id, START_KEY)?.stage;
+    expect(attempt(second.session.sessionId, second.card.queueItemId, "e2e4").outcome).toBe(
+      "stale"
+    );
+    expect(progressRepository.get(id, START_KEY)?.stage).toBe(stage);
+  });
+
+  it("archiving stops an open session from grading", () => {
+    const { id } = create();
+    save(id, [["e2e4"]]);
+    const { session, card } = learnFirst(id);
+    const { revision } = service.getRepertoire(id);
+    service.archiveRepertoire({ id, expectedRevision: revision, archived: true });
+    expect(service.resumePractice(session.sessionId).cards[0].state).toBe("skipped");
+    expect(attempt(session.sessionId, card.queueItemId, "e2e4").outcome).toBe("already-final");
+    expect(progressRepository.get(id, START_KEY)).toBeNull();
+  });
+
+  it("a wrong answer keeps the card current on resume", () => {
+    const { id } = create();
+    save(id, [["e2e4", "e7e5", "g1f3"]]);
+    const { session, card } = learnFirst(id);
+    attempt(session.sessionId, card.queueItemId, "d2d4");
+    const resumed = service.resumePractice(session.sessionId);
+    expect(resumed.cards[resumed.cursor]).toMatchObject({
+      queueItemId: card.queueItemId,
+      state: "answered-wrong"
+    });
+    attempt(session.sessionId, card.queueItemId, "e2e4");
+    const after = service.resumePractice(session.sessionId);
+    expect(after.cards[after.cursor].queueItemId).not.toBe(card.queueItemId);
   });
 });

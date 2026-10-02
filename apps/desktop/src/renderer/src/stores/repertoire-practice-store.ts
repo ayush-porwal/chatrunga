@@ -123,6 +123,12 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
       case "illegal":
         message = { tone: "warn", text: "That move isn't legal here." };
         break;
+      case "stale":
+        message = {
+          tone: "info",
+          text: "This decision changed since the session started, so the card was skipped."
+        };
+        break;
       default:
         message = { tone: "info", text: "This card is already finished." };
     }
@@ -162,7 +168,13 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
               explanation: result.revealed.explanation
             }
           : { ucis: [], preferredUci: null, explanation: null },
-        message: { tone: "info", text: "Revealed — this decision counts as missed." }
+        message: {
+          tone: "info",
+          text:
+            result.card.state === "skipped"
+              ? "This decision changed since the session started, so the card was skipped."
+              : "Revealed — this decision counts as missed."
+        }
       });
     } else {
       set({ session: next });

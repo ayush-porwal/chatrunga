@@ -160,6 +160,8 @@ export type FrozenPolicy = {
   wrongMoveFeedback: Record<string, string>;
   /** The occurrence's comment, shown once the answer is revealed. */
   explanation: string | null;
+  /** The decision's last graded attempt when the session froze it (null: never practised). */
+  progressAt?: number | null;
 };
 
 export type PracticeSessionRecord = {
