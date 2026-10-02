@@ -1,3 +1,4 @@
+import { makeFen } from "chessops/fen";
 import { makeSanAndPlay } from "chessops/san";
 import { parseUci } from "chessops/util";
 import { fenAfterUci, positionFromFen, statusForFen } from "@chaturanga/shared/chess/position";
@@ -79,6 +80,44 @@ export function uciLineToSan(fen: string, line: readonly string[]): string[] {
     }
   }
   return sans;
+}
+
+/** One move of an engine line: its SAN, its UCI and the position after it. */
+export type LineStep = { san: string; uci: string; fenAfter: string };
+
+/**
+ * The positions along an engine line from `fen` (stops at the first move that doesn't fit, like
+ * {@link uciLineToSan}).
+ */
+export function uciLineSteps(fen: string, line: readonly string[]): LineStep[] {
+  const position = positionFromFen(fen);
+  const steps: LineStep[] = [];
+  for (const uci of line) {
+    try {
+      const parsed = parseUci(uci);
+      if (!parsed || !position.isLegal(parsed)) break;
+      const san = makeSanAndPlay(position, parsed);
+      steps.push({ san, uci, fenAfter: makeFen(position.toSetup()) });
+    } catch {
+      break;
+    }
+  }
+  return steps;
+}
+
+/** `12. Nf3 d5 13. c4` (or `12… d5 13. c4` with Black to move first) for SAN moves played from `fen`. */
+export function numberedLine(fen: string, sans: readonly string[]): string {
+  const [, turn = "w", , , , fullmove = "1"] = fen.split(" ");
+  let number = Number(fullmove) || 1;
+  let white = turn === "w";
+  const parts: string[] = [];
+  sans.forEach((san, index) => {
+    if (white) parts.push(`${number}. ${san}`);
+    else parts.push(index === 0 ? `${number}… ${san}` : san);
+    if (!white) number += 1;
+    white = !white;
+  });
+  return parts.join(" ");
 }
 
 export function uciSquares(uci: string | null | undefined): { orig: string; dest: string } | null {

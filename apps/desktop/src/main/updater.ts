@@ -286,7 +286,7 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
   private configure(updater: AppUpdater): void {
     const settings = settingsRepository.getAll();
     const autoDownload = this.state.mode === "auto" && settings.updatesAutoDownload;
-    const allowPrerelease = shouldAllowPrerelease(this.state.currentVersion, settings.updatesIncludeBeta);
+    const allowPrerelease = shouldAllowPrerelease(this.state.currentVersion);
     // The bundle updater downloads by itself; electron-updater (Squirrel.Mac) must not try.
     updater.autoDownload = autoDownload && !this.bundleUpdater;
     updater.allowPrerelease = allowPrerelease;

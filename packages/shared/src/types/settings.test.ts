@@ -179,24 +179,17 @@ describe("normalizeCommentaryProvider", () => {
 });
 
 describe("normalizeUpdateSettings", () => {
-  it("defaults to background downloads on and beta releases off", () => {
-    const normalized = normalizeUpdateSettings(defaultSettings);
-    expect(normalized.updatesAutoDownload).toBe(true);
-    expect(normalized.updatesIncludeBeta).toBe(false);
+  it("defaults to background downloads on", () => {
+    expect(normalizeUpdateSettings(defaultSettings).updatesAutoDownload).toBe(true);
   });
 
-  it("keeps saved booleans", () => {
-    const normalized = normalizeUpdateSettings({ ...defaultSettings, updatesAutoDownload: false, updatesIncludeBeta: true });
-    expect(normalized.updatesAutoDownload).toBe(false);
-    expect(normalized.updatesIncludeBeta).toBe(true);
-  });
-
-  it("replaces anything else with the defaults", () => {
+  it("keeps a saved boolean, replaces anything else, and drops the old beta opt-in", () => {
+    expect(normalizeUpdateSettings({ ...defaultSettings, updatesAutoDownload: false }).updatesAutoDownload).toBe(false);
     for (const bad of ["true", 1, null, undefined, {}]) {
-      const stored = { ...defaultSettings, updatesAutoDownload: bad, updatesIncludeBeta: bad } as unknown as AppSettings;
+      const stored = { ...defaultSettings, updatesAutoDownload: bad, updatesIncludeBeta: true } as unknown as AppSettings;
       const normalized = normalizeUpdateSettings(stored);
       expect(normalized.updatesAutoDownload).toBe(true);
-      expect(normalized.updatesIncludeBeta).toBe(false);
+      expect(normalized).not.toHaveProperty("updatesIncludeBeta");
     }
   });
 
@@ -208,17 +201,10 @@ describe("normalizeUpdateSettings", () => {
 });
 
 describe("normalizeAppearanceSettings", () => {
-  it("defaults the translucent window to on", () => {
-    expect(defaultSettings.glassEffect).toBe(true);
-    expect(normalizeAppearanceSettings(defaultSettings).glassEffect).toBe(true);
-  });
-
-  it("keeps a saved boolean and replaces anything else with the default", () => {
-    expect(normalizeAppearanceSettings({ ...defaultSettings, glassEffect: false }).glassEffect).toBe(false);
-    for (const bad of ["false", 0, null, undefined]) {
-      const stored = { ...defaultSettings, glassEffect: bad } as unknown as AppSettings;
-      expect(normalizeAppearanceSettings(stored).glassEffect).toBe(true);
-    }
+  it("drops the translucent-window setting older builds stored (it's always on now)", () => {
+    const stored = { ...defaultSettings, glassEffect: false } as unknown as AppSettings;
+    expect(normalizeAppearanceSettings(stored)).not.toHaveProperty("glassEffect");
+    expect(normalizeAppearanceSettings(defaultSettings)).toBe(defaultSettings);
   });
 });
 

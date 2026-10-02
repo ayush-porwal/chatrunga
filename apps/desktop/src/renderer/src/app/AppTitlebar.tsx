@@ -12,6 +12,8 @@ import { PlayersTitle, WorkspaceTitlebar } from "../features/board/BoardWorkspac
 import { MatchActions } from "../features/analysis/MatchActions";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { useGameStore } from "../stores/game-store";
+import { useLichessStore } from "../stores/lichess-store";
+import { lichessGameLabel } from "../features/lichess/lichess-game";
 import { selectCanGoBack, selectCanGoForward, useHistoryStore } from "../stores/history-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
 import { useReviewStore } from "../stores/review-store";
@@ -198,6 +200,8 @@ export const GameTitlebar = memo(function GameTitlebar({
     })
   );
   const analysisError = useAnalysisStore((state) => state.error);
+  // The Lichess game on the board (a string, so moves don't re-render the titlebar).
+  const lichessLabel = useLichessStore((state) => (state.live ? lichessGameLabel(state.live.full) : null));
   const activeEngineId = useAnalysisStore((state) => state.activeEngineId);
   const activePuzzle = usePuzzleStore((state) => state.activePuzzle);
   const engineName = engines?.find((engine) => engine.id === activeEngineId)?.name ?? null;
@@ -217,6 +221,7 @@ export const GameTitlebar = memo(function GameTitlebar({
   return (
     <WorkspaceTitlebar
       title={title}
+      meta={game.mode === "online" ? lichessLabel : null}
       result={game.outcomeResult ?? game.positionResult ?? decidedResult(game.headers.result)}
       status={game.matchFeedback || error || null}
       statusIsError={!game.matchFeedback && Boolean(error)}

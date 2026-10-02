@@ -186,11 +186,6 @@ export type AppSettings = {
   showCoordinates: boolean;
   showLegalMoves: boolean;
   boardAnimation: boolean;
-  /**
-   * macOS: let the desktop show through the sidebar and titlebar (window vibrancy). Ignored on
-   * other platforms and while the system "Reduce transparency" accessibility setting is on.
-   */
-  glassEffect: boolean;
   soundEnabled: boolean;
   soundVolume: number;
   defaultEngineId: string | null;
@@ -224,13 +219,16 @@ export type AppSettings = {
   recentFilePaths: string[];
   /** In-app updates: download new versions in the background (Windows, Linux AppImage, signed macOS). */
   updatesAutoDownload: boolean;
-  /** In-app updates: also offer prerelease (beta) versions. Always on while running a prerelease. */
-  updatesIncludeBeta: boolean;
   /**
    * Send usage analytics (docs/telemetry.md). On unless the user turns it off; turning it off
    * deletes events not sent yet. `CHATURANGA_TELEMETRY_ENABLED=false` overrides it.
    */
   usageAnalyticsEnabled: boolean;
+  /**
+   * Startup may adopt an Lc0 installed outside the app (Homebrew, PATH) for Maia. Turned off when
+   * the user forgets Lc0's path, back on when they choose a binary; not shown in Settings.
+   */
+  lc0AutoDetect: boolean;
   theme: "light" | "dark";
   lastOpenedGameId: string | null;
   /**
@@ -279,7 +277,6 @@ export const defaultSettings: AppSettings = {
   showCoordinates: true,
   showLegalMoves: true,
   boardAnimation: true,
-  glassEffect: true,
   soundEnabled: true,
   soundVolume: 0.7,
   defaultEngineId: null,
@@ -299,8 +296,8 @@ export const defaultSettings: AppSettings = {
   engineHashMb: 128,
   recentFilePaths: [],
   updatesAutoDownload: true,
-  updatesIncludeBeta: false,
   usageAnalyticsEnabled: true,
+  lc0AutoDetect: true,
   theme: "dark",
   lastOpenedGameId: null,
   onboardingCompletedAt: null,
@@ -339,27 +336,28 @@ export function hydratePieceSettings(settings: AppSettings): AppSettings {
   };
 }
 
-/** Validates the window appearance settings, falling back to defaults for bad values. Idempotent. */
+/**
+ * Drops window settings older builds stored that no longer exist (`glassEffect`: the translucent
+ * window is always on now, unless the system's Reduce transparency is). Idempotent.
+ */
 export function normalizeAppearanceSettings(settings: AppSettings): AppSettings {
-  return {
-    ...settings,
-    glassEffect:
-      typeof settings.glassEffect === "boolean" ? settings.glassEffect : defaultSettings.glassEffect
-  };
+  if (!("glassEffect" in settings)) return settings;
+  const rest: AppSettings & { glassEffect?: unknown } = { ...settings };
+  delete rest.glassEffect;
+  return rest;
 }
 
 /** Validates the in-app update settings, falling back to defaults for bad values. Idempotent. */
 export function normalizeUpdateSettings(settings: AppSettings): AppSettings {
+  // `updatesIncludeBeta` (older builds): there are no beta releases to opt in to any more.
+  const rest: AppSettings & { updatesIncludeBeta?: unknown } = { ...settings };
+  delete rest.updatesIncludeBeta;
   return {
-    ...settings,
+    ...rest,
     updatesAutoDownload:
       typeof settings.updatesAutoDownload === "boolean"
         ? settings.updatesAutoDownload
-        : defaultSettings.updatesAutoDownload,
-    updatesIncludeBeta:
-      typeof settings.updatesIncludeBeta === "boolean"
-        ? settings.updatesIncludeBeta
-        : defaultSettings.updatesIncludeBeta
+        : defaultSettings.updatesAutoDownload
   };
 }
 

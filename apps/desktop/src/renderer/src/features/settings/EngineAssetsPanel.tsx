@@ -12,6 +12,7 @@ import {
   ENGINE_ASSETS,
   applyAssetProgress,
   fetchAssetStatus,
+  maiaNeedsLc0,
   formatSize,
   isAssetInstalled,
   missingDownloads,
@@ -144,6 +145,13 @@ export function EngineAssetsPanel() {
         }
       />
 
+      {maiaNeedsLc0(status) ? (
+        <Notice tone="warn" title="Maia needs Lc0">
+          The Maia networks are installed, but Maia runs inside Lc0, which isn't set up yet. Install Lc0
+          (the command is below), then choose its binary from the Lc0 row's menu. Until then Maia isn't
+          used in reviews and can't be played against.
+        </Notice>
+      ) : null}
       {status ? (
         <div className="grid gap-1.5">
           {entries.map((entry) =>

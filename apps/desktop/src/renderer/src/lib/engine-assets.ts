@@ -23,6 +23,15 @@ export function isAssetInstalled(status: Pick<EngineAssetStatus, "state"> | unde
   return status?.state === "installed" || status?.state === "custom";
 }
 
+/**
+ * Maia networks are installed but can't run: Maia runs inside Lc0, which isn't set up (macOS and
+ * Linux have no Lc0 download, so the user installs it and points the app at it).
+ */
+export function maiaNeedsLc0(status: EngineAssetStatusMap | null): boolean {
+  if (!status || isAssetInstalled(status.lc0)) return false;
+  return ENGINE_ASSETS.some((asset) => asset.id.startsWith("maia-") && isAssetInstalled(status[asset.id]));
+}
+
 /** Installed state + latest known release per asset (no network call); null outside the desktop app. */
 export async function fetchAssetStatus(): Promise<EngineAssetStatusMap | null> {
   return (await window.chaturanga?.assets.status()) ?? null;

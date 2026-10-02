@@ -40,18 +40,21 @@ export function MoveLink({
   san,
   children,
   onActivate,
-  className
+  className,
+  nativeTitle = true
 }: {
   san: string;
   children?: ReactNode;
   onActivate: () => void;
   className?: string;
+  /** The browser's "Go to …" hint; off where the position itself shows on hover (engine lines). */
+  nativeTitle?: boolean;
 }) {
   return (
     <button
       type="button"
       aria-label={`Go to ${san} position`}
-      title={`Go to ${san}`}
+      title={nativeTitle ? `Go to ${san}` : undefined}
       onClick={onActivate}
       className={cn(
         // The tint and underline fade in; the padding is paid back by the negative margin so the

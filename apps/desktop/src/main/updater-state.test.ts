@@ -116,10 +116,9 @@ describe("prerelease handling", () => {
     expect(isPrereleaseVersion("0.2.0")).toBe(false);
   });
 
-  it("offers prereleases only to beta opt-ins and people already on one", () => {
-    expect(shouldAllowPrerelease("0.2.0", false)).toBe(false);
-    expect(shouldAllowPrerelease("0.2.0", true)).toBe(true);
-    expect(shouldAllowPrerelease("0.3.0-beta.2", false)).toBe(true);
+  it("offers prereleases only to a build that is one (production stays on production)", () => {
+    expect(shouldAllowPrerelease("0.2.0")).toBe(false);
+    expect(shouldAllowPrerelease("0.3.0-nightly.2")).toBe(true);
   });
 });
 

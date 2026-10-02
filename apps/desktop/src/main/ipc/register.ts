@@ -26,6 +26,7 @@ import type { EngineEvents, EngineManager } from "../engine/engine-manager";
 import { probeEvalScore } from "../engine/probe-eval";
 import { ALL_ASSET_IDS, getAssetManager, isAssetId, type AssetId } from "../engine/asset-manager";
 import { syncAssetsToEngineRegistry } from "../engine/engine-registry-sync";
+import { detectLc0 } from "../engine/lc0-detect";
 import { getOpenRouterConfigStore } from "../commentary/openrouter-config";
 import {
   UNREADABLE_API_KEY_ERROR,
@@ -36,7 +37,6 @@ import {
 import { getLichessService } from "../lichess";
 import { errorMessage, logger } from "../logger";
 import { updateService } from "../updater";
-import { refreshWindowGlass } from "../window-glass";
 import { runGameReview } from "./review-handler";
 import { missedBetween, readClocks, type ClockReading } from "../time-asleep";
 import { parseCommentaryRequestContext } from "@chaturanga/shared/schemas/telemetry";
@@ -202,6 +202,26 @@ function registerEngineIpc(engineManager: EngineManager): void {
   ipcMain.handle("engines:stop", () => engineManager.stop());
 }
 
+/**
+ * Lc0 has no download on macOS or Linux, so Maia (which runs inside Lc0) only works once the user
+ * points the app at their own Lc0. One they installed in the usual place (e.g. Homebrew) is
+ * picked up at startup instead. Never replaces a path the user chose, never comes back after they
+ * forgot it (until they choose one again), and never fails startup.
+ */
+async function adoptInstalledLc0(assetManager: ReturnType<typeof getAssetManager>): Promise<void> {
+  try {
+    if (settingsRepository.getStored("lc0AutoDetect") === false) return;
+    const current = assetManager.getInstalled().lc0;
+    if (current && current.state !== "missing") return;
+    const found = await detectLc0();
+    if (!found) return;
+    await assetManager.setCustomPath("lc0", found);
+    logger.info("asset-manager", `using the Lc0 found at ${found}`);
+  } catch (error) {
+    logger.warn("asset-manager", "looking for an installed Lc0 failed:", errorMessage(error));
+  }
+}
+
 /** Engine binary + Maia weight downloads, mirrored into the engines table. */
 function registerAssetIpc(): void {
   const assetManager = getAssetManager();
@@ -227,7 +247,7 @@ function registerAssetIpc(): void {
   // Must wait for init: getInstalled() is empty until the state file is loaded.
   // Then one background lookup of the latest engine releases; it honours the on-disk cache
   // TTL, so restarts don't spend the unauthenticated GitHub API budget. Nothing is installed.
-  const ready = assetManager.init();
+  const ready = assetManager.init().then(() => adoptInstalledLc0(assetManager));
   void ready
     .then(syncEngines)
     .then(() => assetManager.refreshReleasesInBackground())
@@ -267,11 +287,16 @@ function registerAssetIpc(): void {
     return result;
   });
   ipcMain.handle("assets:remove", async (_event, assetId: unknown) => {
-    await assetManager.removeAsset(parseAssetId(assetId));
+    const id = parseAssetId(assetId);
+    await assetManager.removeAsset(id);
+    // Forgetting Lc0's path sticks: startup doesn't pick the same binary up again.
+    if (id === "lc0") settingsRepository.set("lc0AutoDetect", false);
     await syncEngines();
   });
   ipcMain.handle("assets:setCustomPath", async (_event, assetId: unknown, customPath: unknown) => {
-    await assetManager.setCustomPath(parseAssetId(assetId), asAbsolutePath(customPath, "custom path"));
+    const id = parseAssetId(assetId);
+    await assetManager.setCustomPath(id, asAbsolutePath(customPath, "custom path"));
+    if (id === "lc0") settingsRepository.set("lc0AutoDetect", true);
     await syncEngines();
   });
 }
@@ -342,14 +367,13 @@ function registerLibraryIpc(): void {
 
   ipcMain.handle("settings:getAll", () => settingsRepository.getAll());
   const settingsChanged = (keys: readonly (keyof AppSettings)[]) => {
-    if (keys.includes("glassEffect")) refreshWindowGlass();
     // Turning usage analytics off deletes what wasn't sent yet; on starts collecting.
     if (keys.includes("usageAnalyticsEnabled")) {
       getTelemetry()?.refreshConsent();
       // Set up before the user opted in: the first funnel step is recorded now.
       noteEngineReadiness(true);
     }
-    if (keys.includes("updatesAutoDownload") || keys.includes("updatesIncludeBeta")) updateService.applySettings();
+    if (keys.includes("updatesAutoDownload")) updateService.applySettings();
   };
   ipcMain.handle("settings:set", (_event, key: unknown, value: unknown) => {
     const settingKey = parseSettingKey(key);

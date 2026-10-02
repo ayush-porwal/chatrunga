@@ -100,23 +100,6 @@ export function UpdatesSection({ appearance }: { appearance: AppSettings }) {
               }
             />
           ) : null}
-          <SettingRow
-            label="Include beta releases"
-            htmlFor="setting-updates-beta"
-            description={
-              state.allowPrerelease && !appearance.updatesIncludeBeta
-                ? "On while you run a beta version."
-                : "Try new features early. Betas may be less stable."
-            }
-            control={
-              <Switch
-                id="setting-updates-beta"
-                checked={appearance.updatesIncludeBeta || state.allowPrerelease}
-                disabled={state.allowPrerelease && !appearance.updatesIncludeBeta}
-                onCheckedChange={(v) => setSetting("updatesIncludeBeta", v)}
-              />
-            }
-          />
           {state.mode === "manual" && state.modeReason ? <p className="pt-2.5 text-xs leading-5 text-fg-subtle">{state.modeReason}</p> : null}
         </div>
       )}

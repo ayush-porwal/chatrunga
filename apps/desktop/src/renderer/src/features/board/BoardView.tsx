@@ -145,7 +145,17 @@ export function BoardView() {
       premovable: { enabled: true, showDests: true, castle: true }
     });
     groundRef.current = ground;
+    // Chessground caches the board's screen position and refreshes it only on resize and scroll;
+    // collapsing the sidebar (or Focus board) moves the board without resizing it, so clicks,
+    // drags and drawn arrows landed a square off. Every press re-reads it first (capture phase,
+    // before Chessground's own listener on the board).
+    const element = elementRef.current;
+    const refreshBounds = () => ground.state.dom.bounds.clear();
+    element.addEventListener("mousedown", refreshBounds, { capture: true });
+    element.addEventListener("touchstart", refreshBounds, { capture: true, passive: true });
     return () => {
+      element.removeEventListener("mousedown", refreshBounds, { capture: true });
+      element.removeEventListener("touchstart", refreshBounds, { capture: true });
       ground.destroy();
       groundRef.current = null;
     };

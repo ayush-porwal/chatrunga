@@ -72,9 +72,12 @@ export function isPrereleaseVersion(version: string): boolean {
   return /^\d+\.\d+\.\d+-/.test(version.trim().replace(/^v/, ""));
 }
 
-/** Prereleases are offered to people already on one, or who opted in to beta releases. */
-export function shouldAllowPrerelease(currentVersion: string, includeBeta: boolean): boolean {
-  return includeBeta || isPrereleaseVersion(currentVersion);
+/**
+ * Prereleases (a future nightly build) are offered only to a build that is one; the production app
+ * only ever updates to production releases.
+ */
+export function shouldAllowPrerelease(currentVersion: string): boolean {
+  return isPrereleaseVersion(currentVersion);
 }
 
 /* ------------------------------------------------------------------ feed + download links */
