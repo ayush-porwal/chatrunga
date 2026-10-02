@@ -1,3 +1,5 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { EngineConfig, MaiaRating, ReviewMoveInputItem } from "@chaturanga/shared/types/engine";
@@ -85,3 +87,71 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
     expect(last.classification).toBe("best");
   }, 30_000);
 });
+
+describe("review reuse", () => {
+  it("a second review with the same settings reuses every finished move; new settings review again", async () => {
+    const run = async (moveTimeMs: number) => {
+      const phases: string[] = [];
+      const review = await reviewGameWithEngine(
+        fakeEngine("sf-cache", "sf"),
+        { reviewId: "c", engineId: "sf-cache", rootFen: START, moves: foolsMate(), multipv: 2, moveTimeMs },
+        { onPhaseProgress: (p) => phases.push(`${p.moveIndex}:${p.phase}`) }
+      );
+      return { review, phases };
+    };
+    const first = await run(77);
+    expect(first.phases.length).toBeGreaterThan(0);
+
+    const again = await run(77);
+    expect(again.phases).toEqual([]);
+    expect(again.review.moves.map((move) => [move.nodeId, move.classification])).toEqual(
+      first.review.moves.map((move) => [move.nodeId, move.classification])
+    );
+
+    const otherBudget = await run(78);
+    expect(otherBudget.phases.length).toBe(first.phases.length);
+  });
+
+  // A shell wrapper stands in for the engine binary, so it can be replaced at the same path.
+  it.skipIf(process.platform === "win32")("an engine binary replaced at the same path reviews again", async () => {
+    const executablePath = join(mkdtempSync(join(tmpdir(), "review-cache-")), "engine");
+    const install = (version: string) =>
+      writeFileSync(executablePath, `#!/bin/sh\n# ${version}\nexec "${process.execPath}" "${FAKE}" sf\n`, { mode: 0o755 });
+    install("v1");
+    const run = async () => {
+      const phases: string[] = [];
+      await reviewGameWithEngine(
+        fakeEngine("sf-binary", "sf", { executablePath, args: [] }),
+        { reviewId: "b", engineId: "sf-binary", rootFen: START, moves: foolsMate(), multipv: 2, moveTimeMs: 50 },
+        { onPhaseProgress: (p) => phases.push(`${p.moveIndex}:${p.phase}`) }
+      );
+      return phases;
+    };
+    const first = await run();
+    expect(first.length).toBeGreaterThan(0);
+    expect(await run()).toEqual([]);
+
+    install("v2 (updated)");
+    expect((await run()).length).toBe(first.length);
+  });
+
+  it.skipIf(process.platform === "win32")("a binary replaced while the engine starts is not cached", async () => {
+    const executablePath = join(mkdtempSync(join(tmpdir(), "review-cache-")), "engine");
+    // Every start replaces the file it was launched from, as an update landing mid-startup would.
+    writeFileSync(executablePath, `#!/bin/sh\necho "# replaced" >> "$0"\nexec "${process.execPath}" "${FAKE}" sf\n`, {
+      mode: 0o755
+    });
+    const run = async () => {
+      const phases: string[] = [];
+      await reviewGameWithEngine(
+        fakeEngine("sf-racing", "sf", { executablePath, args: [] }),
+        { reviewId: "r", engineId: "sf-racing", rootFen: START, moves: foolsMate(), multipv: 2, moveTimeMs: 50 },
+        { onPhaseProgress: (p) => phases.push(`${p.moveIndex}:${p.phase}`) }
+      );
+      return phases;
+    };
+    const first = await run();
+    expect((await run()).length).toBe(first.length);
+  });
+});
+
