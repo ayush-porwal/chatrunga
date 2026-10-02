@@ -25,6 +25,7 @@ import type { SettingsSectionId } from "../features/settings/SettingsPage";
 import { useOnboarding } from "../features/onboarding/useOnboarding";
 import { useEnginesQuery, useSamplePuzzleMutation, useSettingsQuery } from "../queries/api";
 import { useAnalysisStore } from "../stores/analysis-store";
+import { analysisEngineFor, defaultEngineFor } from "../features/analysis/analysis-engine";
 import { useGameStore } from "../stores/game-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
 import { useReviewStore } from "../stores/review-store";
@@ -125,9 +126,11 @@ export function App() {
   const nextPuzzle = useSamplePuzzleMutation();
   const settingsQuery = useSettingsQuery();
   const settings = useMemo(() => ({ ...defaultSettings, ...(settingsQuery.data ?? {}) }), [settingsQuery.data]);
-  const defaultEngineId = useMemo(
-    () => engines.data?.find((engine) => engine.isDefault)?.id ?? engines.data?.[0]?.id ?? null,
-    [engines.data]
+  const defaultEngineId = useMemo(() => defaultEngineFor(engines.data), [engines.data]);
+  const chosenAnalysisEngine = useAnalysisStore((state) => state.analysisEngineId);
+  const analysisEngineId = useMemo(
+    () => analysisEngineFor(engines.data, chosenAnalysisEngine),
+    [engines.data, chosenAnalysisEngine]
   );
   const reviewRouteId = gameReviewMatch?.params.id ?? null;
   const reviewRouteLoading = Boolean(reviewRouteId && reviewRouteId !== "current" && reviewRouteId !== gameId);
@@ -141,7 +144,7 @@ export function App() {
   useLichess({ onGameStart: (load) => startOnlineGame(load) });
   useMoveKeyboardShortcuts({ enabled: onBoardView });
   useDatabaseDownloads();
-  useEngineDriver(defaultEngineId);
+  useEngineDriver(analysisEngineId);
   useGameAutosave();
   useUsageActivity();
   useMoveSounds({ enabled: settings.soundEnabled, volume: settings.soundVolume });
@@ -455,17 +458,14 @@ export function App() {
   function startLiveAnalysis() {
     if (!desktopApiAvailable) return;
     commitCurrent();
-    // No stop: the analysis effect restarts the search for the new mode (and keeps a running one).
-    stopEngineWork({ stopSearch: false });
+    stopEngineWork();
     useReviewStore.getState().reset();
     clearPuzzleSession();
-    currentGame().setMode("analysis");
+    // An analysis board, engine off: the Engine tab offers the engine to use and Start analysis.
+    currentGame().setMode("freeplay");
     currentGame().setGameSource("analysis");
     currentGame().setEngineSide(null);
     currentGame().clearEngineMatchExtras();
-    if (defaultEngineId) useAnalysisStore.getState().setActiveEngine(defaultEngineId);
-    // Search even if this very position was analysed before and the search stopped since.
-    useAnalysisStore.getState().restartSearch();
     setFocusMode(false);
     showGame("engine");
   }

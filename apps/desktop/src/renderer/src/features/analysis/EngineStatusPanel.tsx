@@ -12,7 +12,10 @@ import { useEnginesQuery } from "../../queries/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Select } from "@/components/ui/input";
+import { analysisEngineFor } from "./analysis-engine";
 import { Notice } from "@/components/ui/notice";
+import { cn } from "@/lib/utils";
 import { Eyebrow } from "@/components/ui/page";
 import { Stat, StatGroup } from "@/components/ui/stat";
 
@@ -55,6 +58,34 @@ const EngineLineRow = memo(function EngineLineRow({
     </li>
   );
 });
+
+/**
+ * Which engine live analysis uses (every installed, usable engine; Maia ones say so). Changing it
+ * while analysing restarts the search with the new engine; the choice is kept for later boards.
+ */
+function AnalysisEngineSelect({ className }: { className?: string }) {
+  const engines = useEnginesQuery();
+  const chosen = useAnalysisStore((state) => state.analysisEngineId);
+  const choose = useAnalysisStore((state) => state.chooseAnalysisEngine);
+  const usable = (engines.data ?? []).filter((engine) => engine.isAvailable);
+  const value = analysisEngineFor(engines.data, chosen);
+  if (!usable.length || !value) return null;
+  return (
+    <Select
+      aria-label="Analysis engine"
+      value={value}
+      onChange={(event) => choose(event.target.value)}
+      className={cn("h-8 text-xs", className)}
+    >
+      {usable.map((engine) => (
+        <option key={engine.id} value={engine.id}>
+          {engine.name}
+          {engine.isHumanPrediction ? " · human-like" : ""}
+        </option>
+      ))}
+    </Select>
+  );
+}
 
 const goToLine: GoToLine = (target) => {
   useGameStore.getState().goToLine(target.startNodeId, target.moves);
@@ -117,6 +148,8 @@ function EngineStatusPanelContent({
   const nodeId = useGameStore((state) => state.currentNodeId);
   // During a live engine match lines are read-only (the game store refuses new branches then).
   const linesNavigable = useGameStore((state) => state.mode !== "engine" || !state.engineSide || Boolean(state.gameOutcome));
+  // Live analysis (not an engine game's opponent): the engine can be switched from the header.
+  const analysing = useGameStore((state) => state.mode === "analysis");
   const engines = useEnginesQuery();
   const engineName = engines.data?.find((engine) => engine.id === activeEngineId)?.name ?? null;
   // With MultiPV the latest info can be line 2/3 — read depth/score/best from the principal line.
@@ -133,7 +166,11 @@ function EngineStatusPanelContent({
       {hasData || !idle ? (
         // The tab above already says "Engine": the header names the running engine and its state.
         <div className="flex min-h-6 min-w-0 items-center justify-between gap-2">
-          <span className="truncate text-xs text-fg-muted">{engineName}</span>
+          {analysing ? (
+            <AnalysisEngineSelect className="w-56 max-w-full" />
+          ) : (
+            <span className="truncate text-xs text-fg-muted">{engineName}</span>
+          )}
           <Badge tone={statusTone[status]}>{statusLabel[status]}</Badge>
         </div>
       ) : null}
@@ -182,13 +219,16 @@ function EngineStatusPanelContent({
         <EmptyState
           icon={<Cpu />}
           title="Engine is idle"
-          description={onStartAnalysis ? "Analyze the current position." : undefined}
+          description={onStartAnalysis ? "Choose an engine and analyze the current position." : undefined}
           action={
             onStartAnalysis ? (
-              <Button type="button" variant="primary" size="sm" onClick={onStartAnalysis}>
-                <Play />
-                Start analysis
-              </Button>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <AnalysisEngineSelect className="w-56" />
+                <Button type="button" variant="primary" size="sm" onClick={onStartAnalysis}>
+                  <Play />
+                  Start analysis
+                </Button>
+              </div>
             ) : undefined
           }
           className="py-6"

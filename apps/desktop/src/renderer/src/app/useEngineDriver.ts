@@ -108,7 +108,7 @@ export function createEngineInfoBuffer(
  * It follows the game store with a subscription instead of React state, so the component that
  * mounts it (the app shell) never re-renders because a move was made or the clock ticked.
  */
-export function useEngineDriver(defaultEngineId: string | null): void {
+export function useEngineDriver(analysisEngineId: string | null): void {
   // Engine search output from main.
   useEffect(() => {
     const events = window.chaturanga?.events;
@@ -261,10 +261,11 @@ export function useEngineDriver(defaultEngineId: string | null): void {
       // Live analysis of the current position (restarted only when the position changes — not
       // when an arrow is drawn or a header edited).
       if (engines && game.mode === "analysis" && !status.isEnd && !game.gameOutcome) {
-        const key = `${game.rootFen}|${game.currentNodeId}|${game.currentFen}|${defaultEngineId ?? ""}|${useAnalysisStore.getState().searchEpoch}`;
+        const key = `${game.rootFen}|${game.currentNodeId}|${game.currentFen}|${analysisEngineId ?? ""}|${useAnalysisStore.getState().searchEpoch}`;
         if (key === analysisKey || key === missingEngineKey) return;
         const analysis = useAnalysisStore.getState();
-        const engineId = analysis.activeEngineId ?? defaultEngineId;
+        // The engine chosen for analysis (or the default), never an engine-game opponent left over.
+        const engineId = analysisEngineId;
         if (!engineId) {
           stopAnalysis();
           missingEngineKey = key;
@@ -321,5 +322,5 @@ export function useEngineDriver(defaultEngineId: string | null): void {
       stopAnalysis();
       abandonEngineMove();
     };
-  }, [defaultEngineId]);
+  }, [analysisEngineId]);
 }
