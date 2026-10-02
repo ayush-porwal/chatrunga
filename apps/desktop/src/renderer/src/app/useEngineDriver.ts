@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import type { EngineInfo } from "@chaturanga/shared/types/engine";
 import { currentLineUcis } from "../features/analysis/engine-game-helpers";
@@ -7,7 +7,6 @@ import { useAnalysisStore } from "../stores/analysis-store";
 import { clockNow, noteSystemResumed, remainingClockMs, useGameStore } from "../stores/game-store";
 
 /** Live analysis always asks for the top three lines. */
-const ANALYSIS_MULTIPV = 3;
 const CLOCK_TICK_MS = 200;
 /** Engine lines update the UI at most this often (~6–7 Hz): readable, and cheap to render. */
 export const ENGINE_INFO_FLUSH_MS = 150;
@@ -108,7 +107,33 @@ export function createEngineInfoBuffer(
  * It follows the game store with a subscription instead of React state, so the component that
  * mounts it (the app shell) never re-renders because a move was made or the clock ticked.
  */
-export function useEngineDriver(analysisEngineId: string | null): void {
+/** How live analysis runs: which engine, how many lines, and how far (neither depth nor time: until stopped). */
+export type AnalysisOptions = {
+  engineId: string | null;
+  multipv: number;
+  depth: number | null;
+  moveTimeMs: number | null;
+  /** Threads and Hash: the engine process is restarted with them, so a change restarts analysis. */
+  resources: string;
+};
+
+export function useEngineDriver(analysis: AnalysisOptions): void {
+  const { engineId: analysisEngineId, multipv, depth, moveTimeMs, resources } = analysis;
+  // Read by the driver below when it starts a search. Kept out of its dependencies: changing an
+  // analysis setting must not tear down an engine game's search (and pause its clock); it only
+  // restarts live analysis, through restartSearch.
+  const analysisRef = useRef(analysis);
+  useEffect(() => {
+    const previous = analysisRef.current;
+    analysisRef.current = { engineId: analysisEngineId, multipv, depth, moveTimeMs, resources };
+    const changed =
+      previous.engineId !== analysisEngineId ||
+      previous.multipv !== multipv ||
+      previous.depth !== depth ||
+      previous.moveTimeMs !== moveTimeMs ||
+      previous.resources !== resources;
+    if (changed && useGameStore.getState().mode === "analysis") useAnalysisStore.getState().restartSearch();
+  }, [analysisEngineId, multipv, depth, moveTimeMs, resources]);
   // Engine search output from main.
   useEffect(() => {
     const events = window.chaturanga?.events;
@@ -261,11 +286,12 @@ export function useEngineDriver(analysisEngineId: string | null): void {
       // Live analysis of the current position (restarted only when the position changes — not
       // when an arrow is drawn or a header edited).
       if (engines && game.mode === "analysis" && !status.isEnd && !game.gameOutcome) {
-        const key = `${game.rootFen}|${game.currentNodeId}|${game.currentFen}|${analysisEngineId ?? ""}|${useAnalysisStore.getState().searchEpoch}`;
+        const options = analysisRef.current;
+        const key = `${game.rootFen}|${game.currentNodeId}|${game.currentFen}|${options.engineId ?? ""}|${options.multipv}|${options.depth ?? ""}|${options.moveTimeMs ?? ""}|${useAnalysisStore.getState().searchEpoch}`;
         if (key === analysisKey || key === missingEngineKey) return;
         const analysis = useAnalysisStore.getState();
         // The engine chosen for analysis (or the default), never an engine-game opponent left over.
-        const engineId = analysisEngineId;
+        const engineId = options.engineId;
         if (!engineId) {
           stopAnalysis();
           missingEngineKey = key;
@@ -287,7 +313,9 @@ export function useEngineDriver(analysisEngineId: string | null): void {
             searchId,
             fen: game.rootFen,
             moves: currentLineUcis(game.moveTree, game.currentNodeId),
-            multipv: ANALYSIS_MULTIPV
+            multipv: options.multipv,
+            depth: options.depth,
+            moveTimeMs: options.moveTimeMs
           })
           .catch((error: unknown) => {
             if (engineSearches.analysis === searchId) reportEngineError(error);
@@ -322,5 +350,5 @@ export function useEngineDriver(analysisEngineId: string | null): void {
       stopAnalysis();
       abandonEngineMove();
     };
-  }, [analysisEngineId]);
+  }, []);
 }

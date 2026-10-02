@@ -1,4 +1,7 @@
-import { lazy, memo, Suspense, useId, useMemo, type ReactNode } from "react";
+import { lazy, memo, Suspense, useId, useMemo, useState, type ReactNode } from "react";
+import { SlidersHorizontal } from "lucide-react";
+import { IconButton } from "@/components/ui/icon-button";
+import { AnalysisSettingsDialog } from "../features/analysis/AnalysisSettingsDialog";
 import { useShallow } from "zustand/react/shallow";
 import { QualityBadge } from "@/components/ui/quality-badge";
 import { SegmentedControl, tabPanelProps, type SegmentedOption } from "@/components/ui/segmented-control";
@@ -68,7 +71,7 @@ export const GameWorkspace = memo(function GameWorkspace({
           options={sideTabOptions}
         />
       }
-      summary={gameSummary}
+      summary={sideTab === "engine" ? engineTabSummary : gameSummary}
       footer={gameFooter}
     >
       {sideTab === "notation" ? (
@@ -187,6 +190,24 @@ function GameFooter() {
 
 const boardView = <BoardView />;
 const gameSummary = <GameSummary />;
+/** On the Engine tab the summary row also holds the analysis settings. */
+const engineTabSummary = (
+  <div className="flex w-full items-center justify-between gap-2">
+    <GameSummary />
+    <AnalysisSettingsButton />
+  </div>
+);
+
+/** Opens the live analysis settings (engine, lines, search limit, board display). */
+function AnalysisSettingsButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <IconButton label="Analysis settings" icon={<SlidersHorizontal />} onClick={() => setOpen(true)} className="shrink-0" />
+      {open ? <AnalysisSettingsDialog onClose={() => setOpen(false)} /> : null}
+    </>
+  );
+}
 const gameFooter = <GameFooter />;
 
 /** The store's termination strings in the words the board's result card uses. */

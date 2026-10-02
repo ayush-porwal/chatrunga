@@ -240,7 +240,10 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     });
   }
 
-  /** Starts an infinite MultiPV search for the live analysis panel. */
+  /**
+   * Starts a MultiPV search for the live analysis panel: until stopped, or to the depth / for the
+   * time asked for (its best move then ends it).
+   */
   startAnalysis(input: StartLiveAnalysisInput): Promise<void> {
     const multipv = Math.max(1, Math.min(Math.round(input.multipv ?? 3), 5));
     return this.search("analysis", input.engineId, input.searchId, (session) => {
@@ -250,7 +253,9 @@ export class EngineManager extends EventEmitter<EngineEvents> {
       }
       return () => {
         this.write(positionCommand(input.fen, input.moves));
-        this.write("go infinite");
+        if (input.depth) this.write(`go depth ${input.depth}`);
+        else if (input.moveTimeMs) this.write(`go movetime ${input.moveTimeMs}`);
+        else this.write("go infinite");
       };
     });
   }

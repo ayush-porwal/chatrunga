@@ -89,6 +89,16 @@ describe("EngineManager", () => {
     expect(events.errors).toEqual([]);
   });
 
+  it("live analysis searches until stopped, or to the depth / for the time asked for", async () => {
+    collect(manager);
+    await manager.startAnalysis({ engineId: "sf", searchId: "a", fen: START, moves: [], multipv: 2 });
+    await until(() => sent().includes("go infinite"));
+    await manager.startAnalysis({ engineId: "sf", searchId: "b", fen: START, moves: [], multipv: 2, depth: 18 });
+    await until(() => sent().includes("go depth 18"));
+    await manager.startAnalysis({ engineId: "sf", searchId: "c", fen: START, moves: [], multipv: 2, moveTimeMs: 5000 });
+    await until(() => sent().includes("go movetime 5000"));
+  });
+
   it("dispose resolves once the warm process has exited (a draw probe then runs alone)", async () => {
     const events = collect(manager);
     await manager.startAnalysis({ engineId: "sf", searchId: "a", fen: START, moves: [], multipv: 1 });

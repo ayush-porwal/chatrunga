@@ -94,11 +94,11 @@ export const EvalBar = memo(function EvalBar({ orientation }: { orientation: Col
       role="img"
       aria-label={`Evaluation ${shown.label}`}
       title={shown.label}
-      className="relative h-full w-full overflow-hidden rounded-sm border border-line bg-piece-black animate-fade-in"
+      className="relative h-full w-full overflow-hidden rounded-md border border-line bg-black animate-fade-in"
     >
       <div
         className={cn(
-          "absolute inset-x-0 bg-piece-white transition-[height] duration-emphasis ease-standard motion-reduce:transition-none",
+          "absolute inset-x-0 bg-white transition-[height] duration-emphasis ease-standard motion-reduce:transition-none",
           whiteAtBottom ? "bottom-0" : "top-0"
         )}
         style={{ height: `${shown.whiteShare}%` }}

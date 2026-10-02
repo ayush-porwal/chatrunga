@@ -1,4 +1,6 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { defaultSettings } from "@chaturanga/shared/types/settings";
+import { useSettingsQuery } from "../../queries/api";
 import { Badge } from "@/components/ui/badge";
 import { card, motion } from "@/lib/ui";
 import { cn } from "@/lib/utils";
@@ -64,9 +66,11 @@ export function BoardWorkspace({
   const focused = useBoardFocused();
   const panelVisible = showPanel ?? !focused;
   const easing = useToggleEasing(panelVisible);
+  const { shown: evalBarShown } = useEvalBarPlacement();
   return (
-    // Size container: the grid's width cap is computed from this box's height (cqh).
-    <div className="h-full min-h-0 min-w-0 [container-type:size]">
+    // Size container: the grid's width cap is computed from this box's height (cqh). With the eval
+    // bar off, its column is gone from that cap too (and from the stage below).
+    <div className="h-full min-h-0 min-w-0 [container-type:size]" style={evalBarShown ? undefined : NO_EVAL_COLUMN}>
       <div
         className={cn(
           "mx-auto grid h-full min-h-0 w-full min-w-0 p-(--workspace-pad)",
@@ -130,11 +134,24 @@ function useToggleEasing(visible: boolean): boolean {
 }
 
 /**
- * Board + the two player rows as one unit, with the eval bar's column on the left. The square is
+ * Board + the two player rows as one unit, with the eval bar's column on the side the user chose
+ * (none while the bar is off). The square is
  * computed once from the board cell (a size container): as large as fits after the two 2rem rows
  * and gaps (the same 5rem that `--workspace-board` subtracts) and the eval column, with a 100rem
  * ceiling. The column is always reserved, so the board never moves when the bar comes and goes.
  */
+/** The eval column's width, zeroed while the bar is off. */
+const NO_EVAL_COLUMN = { "--workspace-eval": "0px" } as CSSProperties;
+
+/** Whether the evaluation bar is shown, and on which side of the board. */
+function useEvalBarPlacement(): { shown: boolean; right: boolean } {
+  const settings = useSettingsQuery();
+  return {
+    shown: settings.data?.analysisEvalBar ?? defaultSettings.analysisEvalBar,
+    right: (settings.data?.analysisEvalBarSide ?? defaultSettings.analysisEvalBarSide) === "right"
+  };
+}
+
 export function BoardStage({
   top,
   bottom,
@@ -147,13 +164,23 @@ export function BoardStage({
   evalBar?: ReactNode;
   children: ReactNode;
 }) {
+  // The bar's column is on the side the user chose, or gone (and the board wider) with the bar off.
+  const { shown, right } = useEvalBarPlacement();
   return (
-    <div className="grid w-[min(100cqw,calc(100cqh_-_5rem_+_var(--workspace-eval)),calc(100rem_+_var(--workspace-eval)))] min-w-0 grid-cols-[var(--workspace-eval)_minmax(0,1fr)] gap-y-2">
-      <div className="col-start-2 min-w-0">{top}</div>
-      <div className="col-start-1 row-start-2 pr-1.5">{evalBar}</div>
+    <div
+      className={cn(
+        "grid w-[min(100cqw,calc(100cqh_-_5rem_+_var(--workspace-eval)),calc(100rem_+_var(--workspace-eval)))] min-w-0 gap-y-2",
+        right ? "grid-cols-[minmax(0,1fr)_var(--workspace-eval)]" : "grid-cols-[var(--workspace-eval)_minmax(0,1fr)]"
+      )}
+      style={shown ? undefined : NO_EVAL_COLUMN}
+    >
+      <div className={cn("min-w-0", right ? "col-start-1" : "col-start-2")}>{top}</div>
+      {shown ? <div className={cn("row-start-2", right ? "col-start-2 pl-1.5" : "col-start-1 pr-1.5")}>{evalBar}</div> : null}
       {/* The one board frame: hairline border + radius, no shadow, no card around it. */}
-      <div className="col-start-2 row-start-2 aspect-square w-full overflow-hidden rounded-lg border border-line">{children}</div>
-      <div className="col-start-2 min-w-0">{bottom}</div>
+      <div className={cn("row-start-2 aspect-square w-full overflow-hidden rounded-lg border border-line", right ? "col-start-1" : "col-start-2")}>
+        {children}
+      </div>
+      <div className={cn("min-w-0", right ? "col-start-1" : "col-start-2")}>{bottom}</div>
     </div>
   );
 }
