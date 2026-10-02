@@ -449,14 +449,21 @@ describe("engine clock pause", () => {
   });
 
   it("a replacement move earns its increment once, not on top of the replaced move's", () => {
-    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    // Both time sources move together, so the case holds whichever one the clock reads.
+    const monotonic = vi.spyOn(performance, "now");
+    const wall = vi.spyOn(Date, "now");
+    const at = (ms: number) => {
+      monotonic.mockReturnValue(ms);
+      wall.mockReturnValue(1_700_000_000_000 + ms);
+    };
+    at(0);
     const game = useGameStore.getState();
     game.reset();
     game.setMode("engine");
     game.setEngineSide("black");
     game.setEngineMatchClock({ initialMs: 10_000, incrementMs: 2_000 });
     game.initEngineClockLive();
-    now.mockReturnValue(1_000);
+    at(1_000);
     useGameStore.getState().makeMove({ from: "e2", to: "e4" }); // White: 10 - 1 + 2 = 11 s
     expect(useGameStore.getState().engineClockLive?.whiteMs).toBe(11_000);
     for (const [from, to] of [["d2", "d4"], ["c2", "c4"], ["g1", "f3"]] as const) {
