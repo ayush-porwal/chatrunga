@@ -344,7 +344,7 @@ export function AddToRepertoireDialog({
           {scopeChoice === "path"
             ? "The moves from the start to the selected move, without side variations."
             : scopeChoice === "subtree"
-              ? "The selected move and every variation after it."
+              ? "Every move after the selected position, with its variations."
               : "Every move and variation. A whole game is best kept as reference material."}
         </p>
       </div>

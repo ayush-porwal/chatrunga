@@ -53,8 +53,11 @@ export function StudySourcesSection({
               </span>
               <span className="truncate font-mono text-2xs text-fg-muted" title={link.capturedPath}>
                 {link.capturedPath || "Start"}
-                {link.gameId ? "" : " · (game no longer in library)"}
               </span>
+              {/* Its own line: in the narrow panel a long path would truncate it away. */}
+              {link.gameId ? null : (
+                <span className="text-2xs text-fg-muted">(game no longer in library)</span>
+              )}
             </div>
             {link.gameId && onOpenGame ? (
               <IconButton
