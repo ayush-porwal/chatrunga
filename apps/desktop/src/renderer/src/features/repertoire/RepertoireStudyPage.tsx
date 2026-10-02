@@ -472,11 +472,12 @@ export function RepertoireStudyPage({
             selectedNodeId={node.id}
             onSelect={selectNode}
           />
-          <div className="flex items-center justify-between gap-2 border-t border-line-subtle px-3 py-2">
-            <p className="min-w-0 truncate text-2xs text-fg-subtle">
+          {/* Wraps in a narrow side panel: the three actions must never widen it (it would scroll sideways). */}
+          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-t border-line-subtle px-3 py-2">
+            <p className="min-w-0 flex-1 basis-32 truncate text-2xs text-fg-subtle">
               Play a move on the board to add a variation.
             </p>
-            <div className="flex shrink-0 items-center gap-1.5">
+            <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5">
               {onAnalyze ? (
                 <Button
                   type="button"
