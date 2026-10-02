@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { REVIEW_MAIA_LEVELS, type AppSettings, type ReviewMaiaLevel } from "@chaturanga/shared/types/settings";
 import { useEnginesQuery, useOpenRouterConfigQuery, useUpdateSettingMutation } from "../../queries/api";
 import { pickDefaultEngine, pickMaiaEngines } from "./review-engine-picker";
@@ -11,6 +12,7 @@ import { SectionHeader } from "@/components/ui/page";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SideDot } from "@/components/ui/side-dot";
 import { Switch } from "@/components/ui/switch";
+import { fetchAssetStatus, maiaNeedsLc0 } from "@/lib/engine-assets";
 import { divider, fieldHint, fieldLabel } from "@/lib/ui";
 
 const searchTimeOptions = [
@@ -27,6 +29,27 @@ const multiPvOptions = ["1", "2", "3", "4", "5"].map((value) => ({ value, label:
 function estimateReviewTime(searchTimeMs: number): string {
   const seconds = (81 * searchTimeMs) / 1000;
   return seconds < 90 ? `~${Math.round(seconds)}s` : `~${Math.round(seconds / 60)} min`;
+}
+
+/** Maia networks are installed but Lc0 isn't (Settings → Engine downloads says what to do). */
+function useMaiaNeedsLc0(): boolean {
+  const [needsLc0, setNeedsLc0] = useState(false);
+  useEffect(() => {
+    let current = true;
+    const refresh = () =>
+      void fetchAssetStatus()
+        .then((status) => {
+          if (current) setNeedsLc0(maiaNeedsLc0(status));
+        })
+        .catch(() => undefined);
+    refresh();
+    const off = window.chaturanga?.onAssetStatusChanged(refresh);
+    return () => {
+      current = false;
+      off?.();
+    };
+  }, []);
+  return needsLc0;
 }
 
 export function ReviewSettingsPanel({
@@ -49,6 +72,7 @@ export function ReviewSettingsPanel({
   const selectedMaiaLevels = settings.reviewMaiaLevels
     ? installedMaiaLevels.filter((level) => settings.reviewMaiaLevels?.includes(level))
     : installedMaiaLevels;
+  const needsLc0 = useMaiaNeedsLc0();
   const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => update.mutate({ key, value });
   const toggleMaiaLevel = (level: ReviewMaiaLevel) => {
     const next = selectedMaiaLevels.includes(level)
@@ -105,7 +129,7 @@ export function ReviewSettingsPanel({
             className="py-0"
             control={
               <>
-                {installedMaiaLevels.length ? null : <Badge tone="warn">None installed</Badge>}
+                {installedMaiaLevels.length ? null : <Badge tone="warn">{needsLc0 ? "Needs Lc0" : "None installed"}</Badge>}
                 <Switch checked={settings.reviewUseMaia} onCheckedChange={(value) => set("reviewUseMaia", value)} aria-label="Use Maia models" />
               </>
             }

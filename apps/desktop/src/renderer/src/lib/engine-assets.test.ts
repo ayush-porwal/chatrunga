@@ -6,6 +6,7 @@ import {
   formatSize,
   initialAssetProgress,
   isAssetInstalled,
+  maiaNeedsLc0,
   missingDownloads,
   progressPercent,
   recommendedDownloads,
@@ -44,6 +45,13 @@ describe("engine assets", () => {
     expect(isAssetInstalled(status("stockfish", { state: "custom" }))).toBe(true);
     expect(isAssetInstalled(status("stockfish"))).toBe(false);
     expect(isAssetInstalled(undefined)).toBe(false);
+  });
+
+  it("says Maia needs Lc0 only when a Maia network is installed and Lc0 isn't", () => {
+    expect(maiaNeedsLc0(statusMap({ "maia-1500": { state: "installed" } }))).toBe(true);
+    expect(maiaNeedsLc0(statusMap({ "maia-1500": { state: "installed" }, lc0: { state: "custom" } }))).toBe(false);
+    expect(maiaNeedsLc0(statusMap({ stockfish: { state: "installed" } }))).toBe(false);
+    expect(maiaNeedsLc0(null)).toBe(false);
   });
 
   it("lists only missing assets that can be downloaded on this platform", () => {

@@ -26,6 +26,7 @@ import type { EngineEvents, EngineManager } from "../engine/engine-manager";
 import { probeEvalScore } from "../engine/probe-eval";
 import { ALL_ASSET_IDS, getAssetManager, isAssetId, type AssetId } from "../engine/asset-manager";
 import { syncAssetsToEngineRegistry } from "../engine/engine-registry-sync";
+import { detectLc0 } from "../engine/lc0-detect";
 import { getOpenRouterConfigStore } from "../commentary/openrouter-config";
 import {
   UNREADABLE_API_KEY_ERROR,
@@ -202,6 +203,24 @@ function registerEngineIpc(engineManager: EngineManager): void {
   ipcMain.handle("engines:stop", () => engineManager.stop());
 }
 
+/**
+ * Lc0 has no download on macOS or Linux, so Maia (which runs inside Lc0) only works once the user
+ * points the app at their own Lc0. One they installed in the usual place (e.g. Homebrew) is
+ * picked up at startup instead. Never replaces a path the user chose, and never fails startup.
+ */
+async function adoptInstalledLc0(assetManager: ReturnType<typeof getAssetManager>): Promise<void> {
+  try {
+    const current = assetManager.getInstalled().lc0;
+    if (current && current.state !== "missing") return;
+    const found = detectLc0();
+    if (!found) return;
+    await assetManager.setCustomPath("lc0", found);
+    logger.info("asset-manager", `using the Lc0 found at ${found}`);
+  } catch (error) {
+    logger.warn("asset-manager", "looking for an installed Lc0 failed:", errorMessage(error));
+  }
+}
+
 /** Engine binary + Maia weight downloads, mirrored into the engines table. */
 function registerAssetIpc(): void {
   const assetManager = getAssetManager();
@@ -227,7 +246,7 @@ function registerAssetIpc(): void {
   // Must wait for init: getInstalled() is empty until the state file is loaded.
   // Then one background lookup of the latest engine releases; it honours the on-disk cache
   // TTL, so restarts don't spend the unauthenticated GitHub API budget. Nothing is installed.
-  const ready = assetManager.init();
+  const ready = assetManager.init().then(() => adoptInstalledLc0(assetManager));
   void ready
     .then(syncEngines)
     .then(() => assetManager.refreshReleasesInBackground())
