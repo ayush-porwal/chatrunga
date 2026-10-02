@@ -153,6 +153,8 @@ export type ChaturangaApi = {
   settings: {
     getAll(): Promise<AppSettings>;
     set(key: keyof AppSettings, value: unknown): Promise<void>;
+    /** Several settings in one write (stored together, or not at all). */
+    patch(patch: Partial<AppSettings>): Promise<void>;
   };
   commentary: {
     getOpenRouterConfig(): Promise<OpenRouterConfigSummary>;

@@ -642,6 +642,19 @@ export const settingsRepository = {
     }
   },
 
+  /** Several settings in one transaction: all of them are stored, or none (a theme and its colors). */
+  setMany(patch: Partial<Record<keyof AppSettings, unknown>>): void {
+    const db = getDb();
+    db.exec("BEGIN");
+    try {
+      for (const [key, value] of Object.entries(patch)) this.set(key as keyof AppSettings, value);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  },
+
   set(key: keyof AppSettings, value: unknown): void {
     run(
       `INSERT INTO settings (key, value, updated_at)

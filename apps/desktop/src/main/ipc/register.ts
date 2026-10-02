@@ -1,4 +1,5 @@
 import { BrowserWindow, dialog, ipcMain, powerMonitor, type IpcMainInvokeEvent } from "electron";
+import type { AppSettings } from "@chaturanga/shared/types/settings";
 import type { EventEmitter } from "node:events";
 import { readFile, writeFile } from "node:fs/promises";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
@@ -54,6 +55,7 @@ import {
   parseReviewGameInput,
   parseSaveGameInput,
   parseSettingKey,
+  parseSettingsPatch,
   parseStartAnalysisInput,
   parseStartGameInput
 } from "./validate";
@@ -305,11 +307,19 @@ function registerLibraryIpc(): void {
   });
 
   ipcMain.handle("settings:getAll", () => settingsRepository.getAll());
+  const settingsChanged = (keys: readonly (keyof AppSettings)[]) => {
+    if (keys.includes("glassEffect")) refreshWindowGlass();
+    if (keys.includes("updatesAutoDownload") || keys.includes("updatesIncludeBeta")) updateService.applySettings();
+  };
   ipcMain.handle("settings:set", (_event, key: unknown, value: unknown) => {
     const settingKey = parseSettingKey(key);
     settingsRepository.set(settingKey, value);
-    if (settingKey === "glassEffect") refreshWindowGlass();
-    if (settingKey === "updatesAutoDownload" || settingKey === "updatesIncludeBeta") updateService.applySettings();
+    settingsChanged([settingKey]);
+  });
+  ipcMain.handle("settings:patch", (_event, value: unknown) => {
+    const patch = parseSettingsPatch(value);
+    settingsRepository.setMany(patch);
+    settingsChanged(Object.keys(patch) as (keyof AppSettings)[]);
   });
 }
 

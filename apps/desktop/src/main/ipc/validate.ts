@@ -3,6 +3,7 @@
  * every payload that reaches the file system, the database or an engine
  * process is checked here and rebuilt from known fields only.
  */
+import { parseSettingValue } from "./settings-values";
 import { isAbsolute } from "node:path";
 import { positionFromFen } from "@chaturanga/shared/chess/position";
 import type { GameHeaders, GameSource, SaveGameInput } from "@chaturanga/shared/types/chess";
@@ -337,6 +338,19 @@ const SETTING_KEYS = new Set(Object.keys(defaultSettings));
 export function parseSettingKey(value: unknown): keyof AppSettings {
   if (typeof value !== "string" || !SETTING_KEYS.has(value)) fail("setting", "unknown key");
   return value as keyof AppSettings;
+}
+
+/** Several settings at once (known keys only; at least one). */
+export function parseSettingsPatch(value: unknown): Partial<Record<keyof AppSettings, unknown>> {
+  const input = asObject(value, "settings");
+  const keys = Object.keys(input);
+  if (!keys.length || keys.length > SETTING_KEYS.size) fail("settings", "expected a few settings");
+  const patch: Partial<Record<keyof AppSettings, unknown>> = {};
+  for (const key of keys) {
+    const settingKey = parseSettingKey(key);
+    patch[settingKey] = parseSettingValue(settingKey, input[key]);
+  }
+  return patch;
 }
 
 export function parseDialogFilters(value: unknown): DialogFileFilter[] {
