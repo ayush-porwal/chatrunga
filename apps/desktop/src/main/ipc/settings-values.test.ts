@@ -11,7 +11,8 @@ describe("parseSettingValue", () => {
 
   it("accepts the values the settings screens write", () => {
     expect(parseSettingValue("soundVolume", 0.35)).toBe(0.35);
-    expect(parseSettingValue("boardSquareLight", "#F0D9B5")).toBe("#F0D9B5");
+    expect(parseSettingValue("boardSquareLight", "#F0D9B5")).toBe("#f0d9b5");
+    expect(parseSettingValue("boardSquareDark", " FFFFFF ")).toBe("#ffffff");
     expect(parseSettingValue("engineThreads", 4)).toBe(4);
     expect(parseSettingValue("reviewMaiaLevels", [1100, 1900])).toEqual([1100, 1900]);
     expect(parseSettingValue("onboardingCompletedAt", Date.now())).toBeTypeOf("number");

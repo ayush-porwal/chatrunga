@@ -13,6 +13,8 @@ import {
   type MenuItemConstructorOptions,
   type WebContents
 } from "electron";
+import { canonicalImagePath, isServableImage } from "./image-access";
+import { guardIpcSenders } from "./ipc-guard";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -104,6 +106,8 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 async function startup(): Promise<void> {
+  // Before any IPC handler is registered.
+  guardIpcSenders(appUrl);
   getDb();
   try {
     migrateCommentaryProvider();
@@ -297,8 +301,12 @@ function installWindowReveal(): void {
 /** Serves engine pictures from disk; see `localImagePathFromUrl` for what is allowed. */
 function installLocalImageProtocol(): void {
   protocol.handle(IMAGE_SCHEME, (request) => {
-    const imagePath = localImagePathFromUrl(request.url);
-    if (!imagePath) return new Response(null, { status: 404 });
+    const requested = localImagePathFromUrl(request.url);
+    // Fetch the canonical spelling: on Windows the request can arrive as `/C:/x.png`.
+    const imagePath = requested && canonicalImagePath(requested);
+    if (!imagePath || !isServableImage(imagePath, () => engineRepository.list().map((engine) => engine.imagePath))) {
+      return new Response(null, { status: 404 });
+    }
     return net.fetch(pathToFileURL(imagePath).href);
   });
 }
@@ -361,7 +369,7 @@ function classifyInstallForOnboarding(): void {
     set: (value) => settingsRepository.set("onboardingCompletedAt", value),
     traces: () => ({
       settingKeys: settingsRepository.storedKeys(),
-      games: gameRepository.list().length,
+      games: gameRepository.count(),
       engines: engineRepository.list().length,
       databases: externalDatabaseRepository.list().length,
       engineAssetState: existsSync(join(userData, "engine-assets.json")),

@@ -75,12 +75,19 @@ export function resolveReviewSearchParams(
 }
 
 /** Wall-clock budget: NN + MultiPV needs far more than 15s for depth-based search. */
+/** setTimeout's largest delay: anything above fires at once (Node clamps it to 1 ms). */
+const MAX_TIMER_MS = 2_147_483_647;
+
 export function reviewAnalysisTimeoutMs(params: {
   moveTimeMs: number | null;
   depth: number;
   multipv: number;
   nodes?: number | null;
 }): number {
+  return Math.min(MAX_TIMER_MS, uncappedTimeoutMs(params));
+}
+
+function uncappedTimeoutMs(params: { moveTimeMs: number | null; depth: number; multipv: number; nodes?: number | null }): number {
   const mp = Math.max(1, Math.min(params.multipv, 5));
   // `nodes` mode (typically nodes=1 for Maia policy) returns near-instantly per move;
   // even multi-Maia parallelism finishes well under a second per position.

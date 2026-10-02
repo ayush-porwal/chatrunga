@@ -119,6 +119,21 @@ function get<T>(sql: string, ...params: SQLInputValue[]): T | null {
   return (getDb().prepare(sql).get(...params) as T | undefined) ?? null;
 }
 
+/** Runs `work` as one transaction: all of its writes land, or none do. */
+function transaction<T>(work: () => T): T {
+  const db = getDb();
+  if (db.isTransaction) return work();
+  db.exec("BEGIN");
+  try {
+    const result = work();
+    db.exec("COMMIT");
+    return result;
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 function run(sql: string, ...params: SQLInputValue[]): void {
   getDb().prepare(sql).run(...params);
 }
@@ -413,72 +428,77 @@ export const engineRepository = {
       updatedAt: timestamp
     };
 
-    if (row.isDefault) this.clearDefault();
-    run(
-      `INSERT INTO engines (
-        id, name, executable_path, working_directory, weights_path, image_path, args, protocol,
-        is_default, is_enabled, is_human_prediction, maia_rating, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      row.id,
-      row.name,
-      row.executablePath,
-      row.workingDirectory,
-      row.weightsPath,
-      row.imagePath,
-      row.args,
-      row.protocol,
-      row.isDefault ? 1 : 0,
-      1, // is_enabled: unused legacy NOT NULL column
-      row.isHumanPrediction ? 1 : 0,
-      row.maiaRating,
-      row.createdAt,
-      row.updatedAt
-    );
+    // One default engine at a time: moving the flag is a single change (see migration 3).
+    transaction(() => {
+      if (row.isDefault) this.clearDefault();
+      run(
+        `INSERT INTO engines (
+          id, name, executable_path, working_directory, weights_path, image_path, args, protocol,
+          is_default, is_enabled, is_human_prediction, maia_rating, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        row.id,
+        row.name,
+        row.executablePath,
+        row.workingDirectory,
+        row.weightsPath,
+        row.imagePath,
+        row.args,
+        row.protocol,
+        row.isDefault ? 1 : 0,
+        1, // is_enabled: unused legacy NOT NULL column
+        row.isHumanPrediction ? 1 : 0,
+        row.maiaRating,
+        row.createdAt,
+        row.updatedAt
+      );
+    });
     return this.get(row.id)!;
   },
 
   update(id: string, patch: UpdateEngineInput): EngineConfig {
     const existing = this.get(id);
     if (!existing) throw new Error("Engine not found");
-    if (patch.isDefault) this.clearDefault();
+    transaction(() => {
+      if (patch.isDefault) this.clearDefault();
 
-    run(
-      `UPDATE engines SET
-        name = ?,
-        executable_path = ?,
-        working_directory = ?,
-        weights_path = ?,
-        image_path = ?,
-        args = ?,
-        is_default = ?,
-        is_human_prediction = ?,
-        maia_rating = ?,
-        updated_at = ?
-      WHERE id = ?`,
-      patch.name === undefined ? existing.name : patch.name,
-      patch.executablePath === undefined ? existing.executablePath : patch.executablePath,
-      patch.workingDirectory === undefined ? existing.workingDirectory : patch.workingDirectory,
-      patch.weightsPath === undefined
-        ? existing.weightsPath
-        : patch.weightsPath
-          ? patch.weightsPath.trim()
-          : null,
-      patch.imagePath === undefined
-        ? existing.imagePath
-        : patch.imagePath
-          ? patch.imagePath.trim()
-          : null,
-      patch.args === undefined ? JSON.stringify(existing.args) : JSON.stringify(patch.args),
-      (patch.isDefault === undefined ? existing.isDefault : patch.isDefault) ? 1 : 0,
-      (patch.isHumanPrediction === undefined
-        ? existing.isHumanPrediction
-        : patch.isHumanPrediction)
-        ? 1
-        : 0,
-      patch.maiaRating === undefined ? existing.maiaRating ?? null : patch.maiaRating,
-      now(),
-      id
-    );
+      run(
+        `UPDATE engines SET
+          name = ?,
+          executable_path = ?,
+          working_directory = ?,
+          weights_path = ?,
+          image_path = ?,
+          args = ?,
+          is_default = ?,
+          is_human_prediction = ?,
+          maia_rating = ?,
+          updated_at = ?
+        WHERE id = ?`,
+        patch.name === undefined ? existing.name : patch.name,
+        patch.executablePath === undefined ? existing.executablePath : patch.executablePath,
+        patch.workingDirectory === undefined ? existing.workingDirectory : patch.workingDirectory,
+        patch.weightsPath === undefined
+          ? existing.weightsPath
+          : patch.weightsPath
+            ? patch.weightsPath.trim()
+            : null,
+        patch.imagePath === undefined
+          ? existing.imagePath
+          : patch.imagePath
+            ? patch.imagePath.trim()
+            : null,
+        patch.args === undefined ? JSON.stringify(existing.args) : JSON.stringify(patch.args),
+        (patch.isDefault === undefined ? existing.isDefault : patch.isDefault) ? 1 : 0,
+        (patch.isHumanPrediction === undefined
+          ? existing.isHumanPrediction
+          : patch.isHumanPrediction)
+          ? 1
+          : 0,
+        patch.maiaRating === undefined ? existing.maiaRating ?? null : patch.maiaRating,
+        now(),
+        id
+      );
+    });
 
     const updated = this.get(id);
     if (!updated) throw new Error("Engine not found after update");
@@ -564,12 +584,22 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
 }
 
 export const gameRepository = {
+  /** Library summaries, newest first (served by games_recent_idx; no PGN, tree or review read). */
   list(): GameSummary[] {
     // Puzzle sessions are never library games (see the cleanup in db/index.ts).
     return all<GameSummaryRow>(
       `SELECT id, source, white, black, event, result, date, current_fen, updated_at
-      FROM games WHERE source != 'puzzle' ORDER BY updated_at DESC`
+      FROM games WHERE source != 'puzzle' ORDER BY updated_at DESC, id`
     ).map(toGameSummary);
+  },
+
+  count(): number {
+    return get<{ total: number }>("SELECT COUNT(*) AS total FROM games WHERE source != 'puzzle'")?.total ?? 0;
+  },
+
+  /** Ids of the games from one source (e.g. Lichess imports). */
+  idsBySource(source: GameSource): string[] {
+    return all<{ id: string }>("SELECT id FROM games WHERE source = ?", source).map((row) => row.id);
   },
 
   get(id: string): SavedGame | null {

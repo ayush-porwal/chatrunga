@@ -114,9 +114,12 @@ describe("engine session inputs", () => {
       depth: null,
       clock: { wtime: 1, btime: 2, winc: 0, binc: 0 }
     });
-    expect(() => parseStartGameInput({ engineId: "sf", searchId: "s1", fen: START, moves: [], depth: -1 })).toThrow(/negative/);
-    expect(() => parseStartGameInput({ engineId: "sf", searchId: "s1", fen: START, clock: { wtime: "1" } })).toThrow(/clock/);
-    expect(() => parseStartGameInput({ engineId: "sf", fen: START, moves: [] })).toThrow(/search id/);
+    expect(() => parseStartGameInput({ engineId: "sf", searchId: "s1", side: "white", fen: START, moves: [], depth: -1 })).toThrow(/negative/);
+    expect(() => parseStartGameInput({ engineId: "sf", searchId: "s1", side: "white", fen: START, clock: { wtime: "1" } })).toThrow(/clock/);
+    expect(() => parseStartGameInput({ engineId: "sf", side: "white", fen: START, moves: [] })).toThrow(/search id/);
+    expect(() => parseStartGameInput({ engineId: "sf", searchId: "s1", side: "white", fen: START, depth: 2.5 })).toThrow(/whole/);
+    expect(() => parseStartGameInput({ engineId: "sf", searchId: "s1", side: "white", fen: START, depth: 10_000 })).toThrow(/at most/);
+    expect(() => parseStartGameInput({ engineId: "sf", searchId: "s1", side: "purple", fen: START })).toThrow(/side/);
   });
 
   it("parses analysis and probe requests", () => {
