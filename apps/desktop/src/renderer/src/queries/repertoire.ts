@@ -4,6 +4,7 @@ import type { ChaturangaApi } from "@chaturanga/shared/ipc/chaturanga-api";
 import type {
   ArchiveRepertoireInput,
   ChapterSaveResult,
+  CompareGameInput,
   CreateRepertoireInput,
   DecisionSaveResult,
   DuplicateRepertoireInput,
@@ -28,7 +29,8 @@ import type {
  * Repertoire data through the typed `window.chaturanga.repertoires` API (main process is the
  * authority for content, grading and scheduling). Keys are narrow so a chapter save never re-reads
  * the hub list's trees: `['repertoires','list',filters]`, `['repertoires',id]`,
- * `['repertoires',id,'chapter',chapterId]`, `['repertoires','due']`.
+ * `['repertoires',id,'chapter',chapterId]`, `['repertoires','due']`,
+ * `['repertoires',id,'compare',color,gameHash]`.
  *
  * The detail key is a prefix of the chapter key, so detail invalidations pass `exact: true`.
  * Everything degrades to empty/disabled in the web preview (no `window.chaturanga`).
@@ -43,8 +45,24 @@ export const repertoireKeys = {
   decision: (id: string, positionKey: string) =>
     ["repertoires", id, "decision", positionKey] as const,
   occurrences: (id: string, positionKey: string) =>
-    ["repertoires", id, "occurrences", positionKey] as const
+    ["repertoires", id, "occurrences", positionKey] as const,
+  comparison: (id: string, color: string, gameHash: string) =>
+    ["repertoires", id, "compare", color, gameHash] as const
 };
+
+/**
+ * A short content hash of a game's root and mainline (FNV-1a, 32-bit), for the comparison key:
+ * the same game content keys the same comparison, whatever its node ids or cursor.
+ */
+export function gameContentHash(rootFen: string, moves: readonly string[]): string {
+  const text = `${rootFen}|${moves.join(" ")}`;
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `${(hash >>> 0).toString(36)}-${moves.length}`;
+}
 
 function repertoires(): ChaturangaApi["repertoires"] | undefined {
   return window.chaturanga?.repertoires;
@@ -77,18 +95,20 @@ export function invalidateRepertoire(queryClient: QueryClient, id: string | null
         query.queryKey[0] === "repertoires" &&
         ((query.queryKey.length === 2 && query.queryKey[1] !== "due") ||
           query.queryKey[2] === "decision" ||
-          query.queryKey[2] === "occurrences")
+          query.queryKey[2] === "occurrences" ||
+          query.queryKey[2] === "compare")
     });
   }
 }
 
 /**
- * Re-reads the cached decisions and occurrence lists of a repertoire (a chapter save can
- * reconcile any of them).
+ * Re-reads the cached decisions, occurrence lists and game comparisons of a repertoire (a chapter
+ * save can reconcile any of them).
  */
 export function invalidateDecisions(queryClient: QueryClient, id: string) {
   void queryClient.invalidateQueries({ queryKey: ["repertoires", id, "decision"] });
   void queryClient.invalidateQueries({ queryKey: ["repertoires", id, "occurrences"] });
+  void queryClient.invalidateQueries({ queryKey: ["repertoires", id, "compare"] });
 }
 
 /** Stores a detail the main process returned, and refreshes the summaries that depend on it. */
@@ -157,6 +177,22 @@ export function useRepertoireOccurrencesQuery(id: string | null, positionKey: st
     queryFn: () =>
       requireRepertoires().getOccurrences({ repertoireId: id!, positionKey: positionKey! }),
     enabled: Boolean(id && positionKey && repertoires())
+  });
+}
+
+/**
+ * A game's mainline against one repertoire (§6.3). Keyed by the game's content, so cursor moves
+ * never recompute it; a change to the repertoire re-reads it (see invalidateDecisions).
+ */
+export function useRepertoireComparisonQuery(input: CompareGameInput | null) {
+  const gameHash = input ? gameContentHash(input.rootFen, input.moves) : "";
+  // The key names the input by its content hash (a long mainline doesn't belong in a key).
+  // eslint-disable-next-line @tanstack/query/exhaustive-deps
+  return useQuery({
+    queryKey: repertoireKeys.comparison(input?.repertoireId ?? "", input?.color ?? "", gameHash),
+    queryFn: () => requireRepertoires().compareGame(input!),
+    enabled: Boolean(input && repertoires()),
+    retry: false
   });
 }
 

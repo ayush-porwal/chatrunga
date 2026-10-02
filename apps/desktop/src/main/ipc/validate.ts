@@ -19,6 +19,7 @@ import { GAME_SEARCH_MAX_LENGTH } from "@chaturanga/shared/types/chess";
 import type {
   ArchiveRepertoireInput,
   ChapterKind,
+  CompareGameInput,
   CreateRepertoireInput,
   DuplicateRepertoireInput,
   ExportInput,
@@ -573,6 +574,11 @@ const MAX_REPERTOIRE_TEXT = 5_000;
 const MAX_POLICY_TEXT = 2_000;
 const MAX_CHAPTER_NODES = 100_000;
 const MAX_IMPORT_GAMES = 1_000;
+const MAX_POSITION_KEY = 200;
+/** Targeted practice ("Refresh this decision") names at most this many decisions. */
+const MAX_TARGETED_KEYS = 200;
+/** Mainline plies a game comparison reads. */
+const MAX_COMPARE_MOVES = 600;
 
 function asRevision(value: unknown): number {
   return asWholeNumber(value, "expectedRevision");
@@ -829,7 +835,30 @@ export function parseStartPracticeInput(value: unknown): StartPracticeInput {
     asIntegerInRange(limit, "newCardLimit", 0, 500)
   );
   if (newCardLimit !== undefined) result.newCardLimit = newCardLimit;
+  const positionKeys = optional(input.positionKeys, (keys) =>
+    asStringArray(keys, "positionKeys", MAX_TARGETED_KEYS, MAX_POSITION_KEY)
+  );
+  if (positionKeys) {
+    positionKeys.forEach((key, index) => {
+      if (!key.trim() || CONTROL_CHARS.test(key)) {
+        fail(`positionKeys[${index}]`, "expected a position key");
+      }
+    });
+    result.positionKeys = positionKeys;
+  }
   return result;
+}
+
+export function parseCompareGameInput(value: unknown): CompareGameInput {
+  const input = asObject(value, "game comparison");
+  const moves = asUciMoves(input.moves, "moves");
+  if (moves.length > MAX_COMPARE_MOVES) fail("moves", `more than ${MAX_COMPARE_MOVES} plies`);
+  return {
+    repertoireId: asId(input.repertoireId, "repertoireId"),
+    color: asRepertoireColor(input.color),
+    rootFen: asFen(input.rootFen, "rootFen"),
+    moves
+  };
 }
 
 export function parsePracticeActionInput(value: unknown): PracticeActionInput {

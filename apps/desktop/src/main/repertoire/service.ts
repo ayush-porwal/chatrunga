@@ -5,13 +5,16 @@
  */
 import { BrowserWindow, dialog } from "electron";
 import { nanoid } from "nanoid";
+import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
 import {
+  REPERTOIRE_POSITION_KEY_VERSION,
   REPERTOIRE_ROOT_NODE_ID,
   type ArchiveRepertoireInput,
   type AttemptResult,
   type ChapterSaveResult,
+  type CompareGameInput,
   type CreateRepertoireInput,
   type DecisionSaveResult,
   type DuplicateRepertoireInput,
@@ -33,6 +36,7 @@ import {
   type RepertoireChangedEvent,
   type RepertoireChangeResult,
   type RepertoireChapter,
+  type RepertoireComparison,
   type RepertoireDecision,
   type RepertoireDetail,
   type RepertoireDueSummary,
@@ -69,6 +73,7 @@ import {
   type PracticeHistoryAction,
   type PracticeOutcome
 } from "@chaturanga/shared/chess/repertoire-scheduler";
+import { compareGameToRepertoire } from "@chaturanga/shared/chess/repertoire-compare";
 import {
   exportRepertoirePgn,
   formatPath,
@@ -353,6 +358,70 @@ export function getOccurrences(input: {
     const moves = ids.slice(1).map((id) => lookup!.nodesById.get(id)!);
     return { ...row, path: formatPath(moves) };
   });
+}
+
+/* ------------------------------------------------------------------ game comparison */
+
+/** Mainline plies a comparison accepts (a long game; the comparison only reads the opening). */
+const MAX_COMPARE_MOVES = 600;
+/** Comparisons kept in memory; each entry names the revision it was computed against. */
+const COMPARE_CACHE_SIZE = 32;
+const compareCache = new Map<string, RepertoireComparison>();
+
+/**
+ * A finished game's mainline against one repertoire (§6.3). Archived repertoires can still be
+ * compared. Every move must be legal from `rootFen`. Results are cached by repertoire, revision,
+ * player colour, position-key version and game content, so any repertoire edit (a revision bump)
+ * misses the cache; the 32 most recently used results are kept.
+ */
+export function compareGame(input: CompareGameInput): RepertoireComparison {
+  const record = requireRepertoire(input.repertoireId);
+  if (input.color !== "white" && input.color !== "black") {
+    throw new Error("Invalid color: expected white or black");
+  }
+  if (!isValidFen(input.rootFen)) throw new Error("Invalid rootFen: not a legal position");
+  if (input.moves.length > MAX_COMPARE_MOVES) {
+    throw new Error(`Invalid moves: more than ${MAX_COMPARE_MOVES} plies`);
+  }
+  const gameHash = createHash("sha256")
+    .update(`${input.rootFen}\n${input.moves.join(" ")}`)
+    .digest("hex");
+  const cacheKey = [
+    record.id,
+    record.revision,
+    input.color,
+    REPERTOIRE_POSITION_KEY_VERSION,
+    gameHash
+  ].join("|");
+  const cached = compareCache.get(cacheKey);
+  if (cached) {
+    compareCache.delete(cacheKey);
+    compareCache.set(cacheKey, cached);
+    return cached;
+  }
+
+  let fen = input.rootFen;
+  input.moves.forEach((uci, index) => {
+    const next = fenAfterMove(fen, uci);
+    if (!next) throw new Error(`Invalid moves: "${uci}" (ply ${index + 1}) is not legal`);
+    fen = next;
+  });
+
+  const result = compareGameToRepertoire(
+    { color: input.color, rootFen: input.rootFen, moves: input.moves },
+    {
+      id: record.id,
+      name: record.name,
+      revision: record.revision,
+      chapters: chapterRepository.list(record.id).filter((chapter) => chapter.enabled),
+      decisions: decisionRepository.list(record.id).map(stripFingerprint)
+    }
+  );
+  compareCache.set(cacheKey, result);
+  if (compareCache.size > COMPARE_CACHE_SIZE) {
+    compareCache.delete(compareCache.keys().next().value!);
+  }
+  return result;
 }
 
 /** Due decisions across active repertoires, and the most recent study place (Home card). */
@@ -1005,8 +1074,10 @@ type Candidate = {
  * Starts a session over the eligible decisions of the scope (enabled opening chapters, within the
  * depth limit, not paused, not suspended). Review due: due cards (overdue first) up to
  * `cardLimit` (20), then up to `newCardLimit` (5) unseen ones. Learn new: unseen decisions only,
- * up to `cardLimit` (10). Each card freezes its policy so grading never uses a moving set. Depth
- * counts plies from the chapter root including the tested move (design §5.3).
+ * up to `cardLimit` (10). With `positionKeys` the queue is exactly the named eligible decisions,
+ * in that order and whether or not they are due (learn new keeps only unseen ones); the limits
+ * don't apply and being queued records nothing. Each card freezes its policy so grading never
+ * uses a moving set. Depth counts plies from the chapter root including the tested move (§5.3).
  */
 export function startPractice(input: StartPracticeInput): PracticeSessionSnapshot {
   const now = clock();
@@ -1066,7 +1137,16 @@ export function startPractice(input: StartPracticeInput): PracticeSessionSnapsho
 
     const unseen = orderQueue(candidates.filter((candidate) => !candidate.practiced));
     let picked: Candidate[];
-    if (input.mode === "learn-new") {
+    if (input.positionKeys) {
+      // A targeted queue: the named decisions that are eligible, in the given order, due or not.
+      const byKey = new Map(
+        candidates.map((candidate) => [candidate.entry.positionKey, candidate])
+      );
+      picked = [...new Set(input.positionKeys)]
+        .map((key) => byKey.get(key))
+        .filter((candidate): candidate is Candidate => candidate !== undefined)
+        .filter((candidate) => input.mode === "review-due" || !candidate.practiced);
+    } else if (input.mode === "learn-new") {
       picked = unseen.slice(0, input.cardLimit ?? DEFAULT_LEARN_LIMIT);
     } else {
       const due = orderQueue(
@@ -1134,7 +1214,8 @@ export function startPractice(input: StartPracticeInput): PracticeSessionSnapsho
         ...(input.chapterIds ? { chapterIds: [...input.chapterIds] } : {}),
         ...(input.maxDepthPlies !== undefined ? { maxDepthPlies: input.maxDepthPlies } : {}),
         ...(input.cardLimit !== undefined ? { cardLimit: input.cardLimit } : {}),
-        ...(input.newCardLimit !== undefined ? { newCardLimit: input.newCardLimit } : {})
+        ...(input.newCardLimit !== undefined ? { newCardLimit: input.newCardLimit } : {}),
+        ...(input.positionKeys ? { positionKeys: [...input.positionKeys] } : {})
       },
       snapshotRevision: record.revision,
       cards,

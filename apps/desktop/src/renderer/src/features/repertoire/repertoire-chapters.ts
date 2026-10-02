@@ -128,6 +128,15 @@ export function plural(count: number, noun: string): string {
 /** Where a study screen opens: a chapter and optionally a node in it. */
 export type StudyTarget = { repertoireId: string; chapterId: string; nodeId: string | null };
 
+/** A move another screen asks study to add under `nodeId` (selected, unsaved until autosave). */
+export type StudyStage = { nodeId: string; uci: string; edge: "covered" | "reference" };
+
+/** Opening study from another screen: optionally on a panel, with a move staged. */
+export type StudyOpenTarget = StudyTarget & {
+  tab?: "chapters" | "moves" | "notes";
+  stage?: StudyStage | null;
+};
+
 /** The repertoire with the most due decisions (where "Review due" starts), or null. */
 export function mostDue<T extends Pick<RepertoireSummary, "dueCount">>(
   list: readonly T[]

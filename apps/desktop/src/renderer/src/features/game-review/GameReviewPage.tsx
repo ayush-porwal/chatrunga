@@ -2,6 +2,8 @@ import { memo, useCallback, useDeferredValue, useEffect, useId, useMemo, useStat
 import { useLocation } from "react-router-dom";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
+import type { RepertoireColor } from "@chaturanga/shared/types/repertoire";
+import type { StudyOpenTarget } from "../repertoire/repertoire-chapters";
 import { useGameStore } from "../../stores/game-store";
 import { reviewsByNode, useReviewStore } from "../../stores/review-store";
 import { useDisplayedReviewMoves, useOutdatedReviewMoves } from "../../stores/review-validity";
@@ -19,6 +21,7 @@ import { ReviewBoard, type ReviewArrow } from "./ReviewBoard";
 import { ReviewCommentaryPanel } from "./ReviewCommentaryPanel";
 import { ReviewEnginePanel } from "./ReviewEnginePanel";
 import { ReviewMoveRail } from "./ReviewMoveRail";
+import { ReviewOpeningPanel } from "./ReviewOpeningPanel";
 import { ReviewSettingsPanel } from "./ReviewSettingsPanel";
 import { ReviewTape } from "./ReviewTape";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -43,6 +46,7 @@ import { useReviewUsage } from "../../app/useUsageTelemetry";
 const reviewTabOptions: readonly SegmentedOption<ReviewTab>[] = [
   { value: "commentary", label: "Commentary" },
   { value: "moves", label: "Moves" },
+  { value: "opening", label: "Opening" },
   { value: "engine", label: "Engine" },
   { value: "settings", label: "Settings" }
 ];
@@ -60,6 +64,12 @@ type GameReviewPageProps = {
   onPlay: () => void;
   /** Opens Settings → Commentary (offered when no OpenRouter key is saved). */
   onOpenCommentarySettings?: () => void;
+  /** Opening tab: study a repertoire chapter (Back returns to this review at the same move). */
+  onOpenRepertoireStudy?: (target: StudyOpenTarget) => void;
+  /** Opening tab: "Refresh this decision" (a targeted practice queue). */
+  onRefreshRepertoireDecision?: (repertoireId: string, positionKey: string) => void;
+  /** Opening tab: the repertoire hub (create a repertoire or chapter). */
+  onRepertoireHub?: () => void;
 };
 
 export const GameReviewPage = memo(function GameReviewPage(props: GameReviewPageProps) {
@@ -78,7 +88,10 @@ function GameReviewPageInner({
   onAnalyze,
   onImportPgn,
   onPlay,
-  onOpenCommentarySettings
+  onOpenCommentarySettings,
+  onOpenRepertoireStudy,
+  onRefreshRepertoireDecision,
+  onRepertoireHub
 }: GameReviewPageProps) {
   const location = useLocation();
   const id = reviewIdFromPath(location.pathname);
@@ -100,6 +113,14 @@ function GameReviewPageInner({
   const outdatedMoves = useOutdatedReviewMoves();
   const reviewError = useReviewStore((state) => state.error);
   const reviewInput = useMemo(() => mainlineReviewInput(moveTree), [moveTree]);
+  // The Opening tab's side, picked for this game (kept across tab switches, not across games).
+  const [openingSide, setOpeningSide] = useState<{ gameId: string | null; color: RepertoireColor } | null>(null);
+  const openingColor = openingSide && openingSide.gameId === gameId ? openingSide.color : null;
+  const changeOpeningColor = useCallback((color: RepertoireColor) => setOpeningSide({ gameId, color }), [gameId]);
+  const rememberedRepertoires = useMemo(
+    () => ({ white: settings.repertoireCompareWhite ?? null, black: settings.repertoireCompareBlack ?? null }),
+    [settings.repertoireCompareWhite, settings.repertoireCompareBlack]
+  );
   const isRunning = reviewStatus === "running";
   const reviewByNodeId = useMemo(() => reviewsByNode(moves), [moves]);
   const currentNode = moveTree.find((node) => node.id === selectedNodeId) ?? null;
@@ -311,6 +332,19 @@ function GameReviewPageInner({
         />
       ) : null}
       {activeTab === "moves" ? <ReviewMoveRail nodes={moveTree} selectedNodeId={selectedNodeId} reviews={reviewByNodeId} commentaryByNodeId={commentaryByNodeId} onSelectNode={selectNode} /> : null}
+      {activeTab === "opening" ? (
+        <ReviewOpeningPanel
+          moveTree={moveTree}
+          selectedNodeId={selectedNodeId}
+          onSelectNode={selectNode}
+          color={openingColor}
+          onColorChange={changeOpeningColor}
+          remembered={rememberedRepertoires}
+          onStudy={onOpenRepertoireStudy}
+          onRefreshDecision={onRefreshRepertoireDecision}
+          onHub={onRepertoireHub}
+        />
+      ) : null}
       {activeTab === "engine" && !emptyGame ? (
         <ReviewEnginePanel
           move={panelMove}

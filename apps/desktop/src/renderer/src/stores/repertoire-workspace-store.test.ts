@@ -211,3 +211,51 @@ describe("tree edits", () => {
     expect(promoteChild(tree, "w1")).toEqual(tree);
   });
 });
+
+describe("staging a move from a game comparison", () => {
+  beforeEach(() => store().reset());
+
+  it("adds a new reply under the node with the asked edge, selected and unsaved", () => {
+    load();
+    // After 1.e4 e5 2.Nf3 (w2), Black's 2…Nc6 is new: a covered reply.
+    const result = store().stageMove("w2", "b8c6", "covered");
+    expect(result).toMatchObject({ created: true });
+    const node = store().chapter!.tree.find((item) => item.id === result!.nodeId)!;
+    expect(node).toMatchObject({ parentId: "w2", uci: "b8c6", san: "Nc6" });
+    expect(store().selectedNodeId).toBe(node.id);
+    expect(store().chapter!.nodeMeta[node.id]).toEqual({ edge: "covered" });
+    expect(store().dirty).toBe(true);
+  });
+
+  it("adds the player's played alternative as a reference move (never accepted)", () => {
+    load();
+    // After 1.e4 e5 (w1), White's 2.Bc4 instead of 2.Nf3.
+    const result = store().stageMove("w1", "f1c4", "reference");
+    expect(store().chapter!.nodeMeta[result!.nodeId]).toEqual({ edge: "reference" });
+  });
+
+  it("only selects a move the chapter already has", () => {
+    load();
+    const generation = store().generation;
+    expect(store().stageMove("w0", "e7e5", "covered")).toEqual({ nodeId: "w1", created: false });
+    expect(store().selectedNodeId).toBe("w1");
+    expect(store().generation).toBe(generation);
+    expect(store().dirty).toBe(false);
+  });
+
+  it("changes nothing for an unknown node or an illegal move", () => {
+    load();
+    expect(store().stageMove("missing", "e2e4", "covered")).toBeNull();
+    expect(store().stageMove("w0", "e2e4", "covered")).toBeNull();
+    expect(store().dirty).toBe(false);
+  });
+
+  it("stages standard-UCI castling", () => {
+    let tree = [rootNode()];
+    ({ tree } = addLine(tree, "root", ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "g8f6"], "w"));
+    store().loadChapter(detailOf(), chapterOf(tree));
+    const result = store().stageMove("w5", "e1g1", "reference");
+    const node = store().chapter!.tree.find((item) => item.id === result!.nodeId)!;
+    expect(node.san).toBe("O-O");
+  });
+});

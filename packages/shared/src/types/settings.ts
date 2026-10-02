@@ -247,6 +247,10 @@ export type AppSettings = {
   lc0AutoDetect: boolean;
   theme: "light" | "dark";
   lastOpenedGameId: string | null;
+  /** Game review's Opening tab: the repertoire last compared for White games (null: none yet). */
+  repertoireCompareWhite: string | null;
+  /** Game review's Opening tab: the repertoire last compared for Black games (null: none yet). */
+  repertoireCompareBlack: string | null;
   /**
    * When the first-run welcome was finished or skipped (epoch ms). `null`: not yet (the welcome
    * shows). `0`: an install that predates the welcome (set once at startup, see
@@ -333,6 +337,8 @@ export const defaultSettings: AppSettings = {
   lc0AutoDetect: true,
   theme: "dark",
   lastOpenedGameId: null,
+  repertoireCompareWhite: null,
+  repertoireCompareBlack: null,
   onboardingCompletedAt: null,
   onboardingHintsSeen: []
 };

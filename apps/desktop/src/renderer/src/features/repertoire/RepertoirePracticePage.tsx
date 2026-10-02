@@ -30,6 +30,7 @@ import { usePrefersReducedMotion } from "../board/board-motion";
 import { BoardStage, BoardWorkspace } from "../board/BoardWorkspace";
 import { ControlledBoard } from "../board/ControlledBoard";
 import { PracticeSetup, initialPracticeInput } from "./PracticeSetup";
+import { targetedPracticeInput, type PracticePreset } from "./practice-setup";
 import { PracticeSummaryView } from "./PracticeSummaryView";
 import {
   hintMarks,
@@ -63,8 +64,8 @@ export function RepertoirePracticePage({
 }: {
   repertoireId: string;
   sessionId: string | null;
-  /** Chapters / mode to preselect (e.g. "Practice this chapter"). */
-  preset: { chapterIds?: string[]; mode?: PracticeMode } | null;
+  /** Chapters / mode to preselect (e.g. "Practice this chapter"), or a targeted queue to start. */
+  preset: PracticePreset | null;
   onSessionStarted: (sessionId: string) => void;
   /** Back to the setup (a new session). */
   onSetup: () => void;
@@ -87,6 +88,10 @@ export function RepertoirePracticePage({
   }, [sessionId]);
   const saveWorkspace = useSaveRepertoireWorkspaceMutation();
   const [nothingDue, setNothingDue] = useState<PracticeMode | null>(null);
+  /** An auto-started targeted queue found nothing to practise (the setup shows why). */
+  const [targetEmpty, setTargetEmpty] = useState(false);
+  /** The targeted preset already started (once per preset; Back to it never restarts it). */
+  const [autoStarted, setAutoStarted] = useState<PracticePreset | null>(null);
   const [resumeError, setResumeError] = useState<string | null>(null);
   const shownSession = session && session.sessionId === sessionId ? session : null;
   const { mutate: resumeSession } = resume;
@@ -119,8 +124,11 @@ export function RepertoirePracticePage({
 
   const startSession = useEventCallback((input: StartPracticeInput) => {
     setNothingDue(null);
+    setTargetEmpty(false);
     const loaded = detail.data;
-    if (loaded) {
+    const targeted = Boolean(input.positionKeys?.length);
+    // A targeted queue isn't the setup's draft: the next setup opens as the player left it.
+    if (loaded && !targeted) {
       saveWorkspace.mutate({
         repertoireId,
         workspace: {
@@ -135,7 +143,8 @@ export function RepertoirePracticePage({
     start.mutate(input, {
       onSuccess: (snapshot) => {
         if (!snapshot.cards.length) {
-          setNothingDue(input.mode);
+          if (targeted) setTargetEmpty(true);
+          else setNothingDue(input.mode);
           return;
         }
         practice().setSession(snapshot);
@@ -143,6 +152,19 @@ export function RepertoirePracticePage({
       }
     });
   });
+
+  // "Refresh this decision": the targeted queue starts as soon as the repertoire is known.
+  const loadedId = detail.data?.id ?? null;
+  const targetedInput = useMemo(
+    () => (loadedId && !sessionId ? targetedPracticeInput(loadedId, preset) : null),
+    [loadedId, sessionId, preset]
+  );
+  const autoStartPending = Boolean(targetedInput && autoStarted !== preset);
+  useEffect(() => {
+    if (!targetedInput || autoStarted === preset) return;
+    setAutoStarted(preset);
+    startSession(targetedInput);
+  }, [targetedInput, autoStarted, preset, startSession]);
 
   if (!desktop) {
     return (
@@ -198,13 +220,23 @@ export function RepertoirePracticePage({
     );
   }
 
+  if (autoStartPending || (targetedInput && start.isPending)) {
+    return <Spinner label="Starting practice" />;
+  }
+
   return (
     <PracticeSetup
       key={detail.data.id}
       detail={detail.data}
       initial={initialPracticeInput(detail.data, preset)}
       starting={start.isPending}
-      error={start.error ? ipcErrorMessage(start.error) || "Couldn't start practice." : null}
+      error={
+        start.error
+          ? ipcErrorMessage(start.error) || "Couldn't start practice."
+          : targetEmpty
+            ? "That decision has nothing to practise right now (it may be paused or no longer among your choices). Set up a session below instead."
+            : null
+      }
       nothingDue={nothingDue}
       onStart={startSession}
     />

@@ -25,7 +25,12 @@ import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-s
 import { BoardStage, BoardWorkspace, workspaceTabsClass } from "../board/BoardWorkspace";
 import { ControlledBoard } from "../board/ControlledBoard";
 import { TreeView } from "../game/TreeView";
-import { COLOR_LABELS, nextSortOrder, sortedChapters } from "./repertoire-chapters";
+import {
+  COLOR_LABELS,
+  nextSortOrder,
+  sortedChapters,
+  type StudyStage
+} from "./repertoire-chapters";
 import {
   deriveChoices,
   occurrencesInOtherChapters,
@@ -62,6 +67,8 @@ export function RepertoireStudyPage({
   initialNodeId,
   initialOrientation,
   tab,
+  stage = null,
+  onStageApplied,
   onTabChange,
   onOpenChapter,
   onPractice,
@@ -73,6 +80,10 @@ export function RepertoireStudyPage({
   initialNodeId: string | null;
   initialOrientation: Color | null;
   tab: StudyTab;
+  /** A move to add (or select) once the chapter loads, from a game's opening comparison. */
+  stage?: StudyStage | null;
+  /** The stage was applied (or couldn't be): App forgets it, so it never applies twice. */
+  onStageApplied?: () => void;
   onTabChange: (tab: StudyTab) => void;
   /** Opens a chapter (at a node: a transposition elsewhere); the open draft is saved first. */
   onOpenChapter: (chapterId: string, nodeId?: string | null) => void;
@@ -133,6 +144,15 @@ export function RepertoireStudyPage({
   useEffect(() => {
     if (initialNodeId) workspace().selectNode(initialNodeId);
   }, [initialNodeId]);
+
+  // A staged move (after the node selection above): added with its edge and selected, or only
+  // selected when the chapter already has it. Applied once; the autosave saves it.
+  useEffect(() => {
+    if (!stage || !loadedId) return;
+    const staged = workspace().stageMove(stage.nodeId, stage.uci, stage.edge);
+    if (!staged) setLocalError("The game's move couldn't be added at this position.");
+    onStageApplied?.();
+  }, [stage, loadedId, onStageApplied]);
 
   // The chapter opened after removing the open one is watched again (this runs before the check).
   useEffect(() => {

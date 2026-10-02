@@ -1,5 +1,9 @@
 import { create } from "zustand";
+import { makeFen } from "chessops/fen";
+import { makeSanAndPlay } from "chessops/san";
+import { parseUci } from "chessops/util";
 import { addMoveNode } from "@chaturanga/shared/chess/pgn";
+import { positionFromFen } from "@chaturanga/shared/chess/position";
 import { nodeMetaOf } from "@chaturanga/shared/chess/repertoire-index";
 import { standardCastlingUci } from "@chaturanga/shared/chess/review";
 import type { BoardArrow, BoardHighlight, Color, MoveNode } from "@chaturanga/shared/types/chess";
@@ -59,6 +63,16 @@ type Actions = {
   selectNode: (nodeId: string) => void;
   /** Plays a move from the selected node: selects an existing child or adds a new one. */
   playMove: (uci: string, san: string, fenAfter: string) => { nodeId: string; created: boolean };
+  /**
+   * Stages a move from another screen (a game's opening comparison) under `parentNodeId`: an
+   * existing child is only selected; a new one is added with `edge` and selected, unsaved until
+   * autosave. Null when the parent is unknown or the move is illegal there.
+   */
+  stageMove: (
+    parentNodeId: string,
+    uci: string,
+    edge: RepertoireNodeMeta["edge"]
+  ) => { nodeId: string; created: boolean } | null;
   setNodeMeta: (nodeId: string, patch: Partial<RepertoireNodeMeta>) => void;
   setComment: (nodeId: string, text: string) => void;
   setShapes: (nodeId: string, arrows: BoardArrow[], highlights: BoardHighlight[]) => void;
@@ -130,6 +144,19 @@ export function promoteChild(tree: readonly MoveNode[], nodeId: string): MoveNod
       ? { ...item, children: [nodeId, ...item.children.filter((id) => id !== nodeId)] }
       : item
   );
+}
+
+/** The SAN and resulting position of `uci` from `fen`, or null when it isn't legal there. */
+export function playUci(fen: string, uci: string): { san: string; fenAfter: string } | null {
+  try {
+    const position = positionFromFen(fen);
+    const move = parseUci(uci);
+    if (!move || !position.isLegal(move)) return null;
+    const san = makeSanAndPlay(position, move);
+    return { san, fenAfter: makeFen(position.toSetup()) };
+  } catch {
+    return null;
+  }
 }
 
 function withUndo(
@@ -216,6 +243,19 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
           { selectedNodeId: added.node.id }
         );
         return { nodeId: added.node.id, created: true };
+      },
+
+      stageMove: (parentNodeId, uci, edge) => {
+        const parent = get().chapter?.tree.find((node) => node.id === parentNodeId);
+        if (!parent) return null;
+        const played = playUci(parent.fenAfter, uci);
+        if (!played) return null;
+        const { san, fenAfter } = played;
+        set({ selectedNodeId: parent.id });
+        const result = get().playMove(uci, san, fenAfter);
+        const meta = get().chapter?.nodeMeta[result.nodeId];
+        if (result.created && meta?.edge !== edge) get().setNodeMeta(result.nodeId, { edge });
+        return result;
       },
 
       setNodeMeta: (nodeId, patch) =>
