@@ -133,9 +133,19 @@ export function App() {
       engineId: analysisEngineFor(engines.data, settings.analysisEngineId),
       multipv: settings.analysisLines,
       depth: settings.analysisLimit === "depth" ? settings.analysisDepth : null,
-      moveTimeMs: settings.analysisLimit === "time" ? settings.analysisTimeSec * 1000 : null
+      moveTimeMs: settings.analysisLimit === "time" ? settings.analysisTimeSec * 1000 : null,
+      resources: `${settings.engineThreads ?? "auto"}|${settings.engineHashMb}`
     }),
-    [engines.data, settings.analysisEngineId, settings.analysisLines, settings.analysisLimit, settings.analysisDepth, settings.analysisTimeSec]
+    [
+      engines.data,
+      settings.analysisEngineId,
+      settings.analysisLines,
+      settings.analysisLimit,
+      settings.analysisDepth,
+      settings.analysisTimeSec,
+      settings.engineThreads,
+      settings.engineHashMb
+    ]
   );
   const reviewRouteId = gameReviewMatch?.params.id ?? null;
   const reviewRouteLoading = Boolean(reviewRouteId && reviewRouteId !== "current" && reviewRouteId !== gameId);

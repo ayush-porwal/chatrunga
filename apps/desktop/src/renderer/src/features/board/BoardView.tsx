@@ -115,7 +115,9 @@ export function BoardView() {
   // when it changes, not on every engine update). Only a move legal here (lines of the previous
   // position are dropped as a search starts, but never trusted).
   const liveBest = useAnalysisStore((state) =>
-    mode === "analysis" ? (state.topLines.find((line) => (line.multipv ?? 1) === 1)?.pv?.[0] ?? null) : null
+    mode === "analysis"
+      ? (state.topLines.find((line) => (line.multipv ?? 1) === 1)?.pv?.[0] ?? state.bestMove ?? null)
+      : null
   );
   const showBestArrow = appearance.analysisBestMoveArrow;
   const bestArrow = useMemo<DrawShape | null>(() => {

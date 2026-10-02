@@ -113,24 +113,27 @@ export type AnalysisOptions = {
   multipv: number;
   depth: number | null;
   moveTimeMs: number | null;
+  /** Threads and Hash: the engine process is restarted with them, so a change restarts analysis. */
+  resources: string;
 };
 
 export function useEngineDriver(analysis: AnalysisOptions): void {
-  const { engineId: analysisEngineId, multipv, depth, moveTimeMs } = analysis;
+  const { engineId: analysisEngineId, multipv, depth, moveTimeMs, resources } = analysis;
   // Read by the driver below when it starts a search. Kept out of its dependencies: changing an
   // analysis setting must not tear down an engine game's search (and pause its clock); it only
   // restarts live analysis, through restartSearch.
   const analysisRef = useRef(analysis);
   useEffect(() => {
     const previous = analysisRef.current;
-    analysisRef.current = { engineId: analysisEngineId, multipv, depth, moveTimeMs };
+    analysisRef.current = { engineId: analysisEngineId, multipv, depth, moveTimeMs, resources };
     const changed =
       previous.engineId !== analysisEngineId ||
       previous.multipv !== multipv ||
       previous.depth !== depth ||
-      previous.moveTimeMs !== moveTimeMs;
+      previous.moveTimeMs !== moveTimeMs ||
+      previous.resources !== resources;
     if (changed && useGameStore.getState().mode === "analysis") useAnalysisStore.getState().restartSearch();
-  }, [analysisEngineId, multipv, depth, moveTimeMs]);
+  }, [analysisEngineId, multipv, depth, moveTimeMs, resources]);
   // Engine search output from main.
   useEffect(() => {
     const events = window.chaturanga?.events;
