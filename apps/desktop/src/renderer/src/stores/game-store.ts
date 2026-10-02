@@ -574,8 +574,13 @@ function stopClock(live: EngineClockLive | null): EngineClockLive | null {
 let readTimeAsleep: () => number = () =>
   typeof window === "undefined" ? 0 : (window.chaturanga?.system?.timeAsleepMs?.() ?? 0);
 
-/** A wall-clock step this far past the monotonic one means the computer may have slept. */
-const SUSPECT_SLEEP_MS = 1_000;
+/**
+ * A wall-clock step this far past the monotonic one means the computer may have slept. Small, so
+ * even a sub-second suspend is read before a move is timed (not left to the wake notice, which can
+ * arrive after it), yet above the millisecond jitter between the two clocks, so a normal check
+ * never asks the main process.
+ */
+const SUSPECT_SLEEP_MS = 25;
 let lastMonotonic = performance.now();
 let lastWall = Date.now();
 let timeAsleep = 0;

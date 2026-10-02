@@ -215,10 +215,21 @@ describe("game store", () => {
     wall.mockReturnValue(1_700_000_000_000 + 12_000 + 600_000);
     expect(clockNow() - start).toBe(2_050 + 600_000);
     expect(reads).toHaveBeenCalledTimes(1);
-    // A short sleep the drift check can't see: the wake notice makes the next check read it.
+    // A sub-second sleep is read at once, before the wake notice arrives.
     reads.mockReturnValue(600_400);
+    vi.spyOn(performance, "now").mockReturnValue(12_100);
+    wall.mockReturnValue(1_700_000_000_000 + 12_000 + 600_000 + 50 + 400);
+    expect(clockNow() - start).toBe(2_100 + 600_400);
+    expect(reads).toHaveBeenCalledTimes(2);
+    // Millisecond jitter between the clocks doesn't ask main.
+    vi.spyOn(performance, "now").mockReturnValue(12_200);
+    wall.mockReturnValue(1_700_000_000_000 + 12_000 + 600_000 + 150 + 400 + 3);
+    clockNow();
+    expect(reads).toHaveBeenCalledTimes(2);
+    // A sleep the drift check can't see at all: the wake notice makes the next check read it.
+    reads.mockReturnValue(600_410);
     noteSystemResumed();
-    expect(clockNow() - start).toBe(2_050 + 600_400);
+    expect(clockNow() - start).toBe(2_200 + 600_410);
     setTimeAsleepSource(() => 0);
   });
 
