@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // After electron-builder: checks every packaged app in apps/desktop/dist has the files it can't
 // start (or run engines/datasets) without — main, preload, renderer and the puzzle-scan worker —
-// plus every chunk those entry points import, so a broken package fails the release instead of
+// plus every chunk and asset those entry points refer to, so a broken package fails the release instead of
 // reaching users. What is required comes from the package itself, never from the local out/.
 import { createRequire } from "node:module";
 import { existsSync, readdirSync, statSync } from "node:fs";
@@ -22,11 +22,12 @@ export const REQUIRED = [
   "package.json"
 ];
 
-/** Bundles whose relative imports (code-split chunks) must be packaged too. */
+/** Files whose references (code-split chunks, scripts, styles, sounds) must be packaged too. */
 const ENTRY_POINTS = [
   "out/main/index.js",
   "out/main/puzzle-scan-worker.js",
-  "out/preload/index.cjs"
+  "out/preload/index.cjs",
+  "out/renderer/index.html"
 ];
 
 /** Relative module specifiers in a bundle: static/dynamic `import` and `require` of "./…" or "../…". */
@@ -35,9 +36,34 @@ export function relativeImports(source) {
   return [...new Set([...source.matchAll(pattern)].map((match) => match[1]))];
 }
 
+/** A reference to a file next to the one that names it (not a URL, data: URI or fragment). */
+const isLocal = (reference) => !/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(reference);
+
+/**
+ * The files `source` (at `file`) refers to, by its kind: an HTML page's `src`/`href`; a stylesheet's
+ * `url(…)`; a script's imports and `new URL("…", import.meta.url)` assets, plus — in the renderer,
+ * where Vite lists a lazy chunk's dependencies as plain strings — every quoted "./….js|css".
+ */
+export function references(file, source) {
+  const found = [];
+  const collect = (pattern) => {
+    for (const match of source.matchAll(pattern)) found.push(match[1]);
+  };
+  if (file.endsWith(".html")) {
+    collect(/\b(?:src|href)\s*=\s*["']([^"']+)["']/g);
+  } else if (file.endsWith(".css")) {
+    collect(/url\(\s*["']?([^"')]+)["']?\s*\)/g);
+  } else {
+    found.push(...relativeImports(source));
+    collect(/new URL\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url/g);
+    if (file.startsWith("out/renderer/")) collect(/["'](\.\/[^"'\s]+\.(?:m?js|css))["']/g);
+  }
+  return [...new Set(found.map((reference) => reference.split(/[?#]/)[0]).filter((reference) => reference && isLocal(reference)))];
+}
+
 /**
  * What a package is missing, given its file list and a reader for its files: the required files,
- * then (transitively) every chunk the entry points import.
+ * then (transitively) every file the entry points refer to.
  */
 export function missingFiles(files, readFile) {
   const missing = REQUIRED.filter((file) => !files.has(file));
@@ -47,11 +73,11 @@ export function missingFiles(files, readFile) {
     const file = queue.shift();
     if (seen.has(file)) continue;
     seen.add(file);
-    for (const specifier of relativeImports(readFile(file))) {
-      const target = posix.normalize(posix.join(posix.dirname(file), specifier));
+    for (const reference of references(file, readFile(file))) {
+      const target = posix.normalize(posix.join(posix.dirname(file), reference));
       if (!files.has(target)) {
         if (!missing.includes(target)) missing.push(target);
-      } else if (/\.(c|m)?js$/.test(target)) {
+      } else if (/\.((c|m)?js|css|html)$/.test(target)) {
         queue.push(target);
       }
     }
