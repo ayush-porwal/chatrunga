@@ -215,6 +215,10 @@ export function useEngineDriver(defaultEngineId: string | null): void {
         clockTimer = null;
       }
 
+      // Leaving live analysis (e.g. for an engine game) stops it first: its `stop` ends the latest
+      // search in main, which would otherwise be the game search asked for just below.
+      if (game.mode !== "analysis") stopAnalysis();
+
       // Engine game: ask for a move whenever it is the engine's turn (once per position).
       const enginesTurn =
         game.mode === "engine" && game.engineSide && status.turn === game.engineSide && !status.isEnd && !game.gameOutcome;
