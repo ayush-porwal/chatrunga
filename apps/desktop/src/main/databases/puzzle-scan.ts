@@ -3,6 +3,7 @@
  * so the same code runs in the main process and in the background scan worker.
  */
 import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
 import { pipeline } from "node:stream";
 import { createZstdDecompress } from "node:zlib";
 import { Decompress } from "fzstd";
@@ -37,7 +38,9 @@ export async function reservoirScan(job: ScanJob, isCancelled: () => boolean = (
   const rows: string[][] = [];
   let matches = 0;
   let stopped = false;
+  let lines = 0;
   await scanCsvLines(job.filePath, job.compressed, (line, lineIndex) => {
+    lines += 1;
     if (lineIndex === 0 || !line.trim()) return;
     const row = parseCsvLine(line);
     if (excluded.has(row[0] ?? "") || !matchesCheapFilters(job.kind, row, job.input)) return;
@@ -52,6 +55,10 @@ export async function reservoirScan(job: ScanJob, isCancelled: () => boolean = (
       return false;
     }
   });
+  // Not even a header: the file couldn't be read, which must not pass for "nothing matched".
+  if (!lines && (await stat(job.filePath)).size > 0) {
+    throw new Error(`No lines could be read from ${job.filePath}`);
+  }
   return { rows, matches, complete: !stopped };
 }
 
@@ -78,20 +85,19 @@ export async function scanCsvLines(
     }
   };
 
+  if (compressed && typeof createZstdDecompress === "function") {
+    for await (const chunk of nativeZstdFrames(filePath)) {
+      emitText(decoder.decode(chunk, { stream: true }));
+      if (stopped) break;
+    }
+    const tail = (buffer + decoder.decode()).trim();
+    if (!stopped && tail) onLine(tail, lineIndex);
+    return;
+  }
+
   const file = createReadStream(filePath);
   try {
-    if (compressed && typeof createZstdDecompress === "function") {
-      // Native zstd (Node ≥ 22.15): decompresses on libuv's thread pool, far faster than JS.
-      // `pipeline`, not `pipe`: a read error then fails the decompressor (and this loop) too.
-      const decompressed = pipeline(file, createZstdDecompress(), () => undefined);
-      for await (const chunk of decompressed) {
-        emitText(decoder.decode(chunk as Buffer, { stream: true }));
-        if (stopped) {
-          decompressed.destroy();
-          break;
-        }
-      }
-    } else if (compressed) {
+    if (compressed) {
       const decompressor = new Decompress((chunk, final) => emitText(decoder.decode(chunk, { stream: !final })));
       for await (const chunk of file) {
         decompressor.push(chunk as Buffer, false);
@@ -110,4 +116,35 @@ export async function scanCsvLines(
 
   const tail = (buffer + decoder.decode()).trim();
   if (!stopped && tail) onLine(tail, lineIndex);
+}
+
+/**
+ * Native zstd (Node ≥ 22.15, on libuv's thread pool, far faster than JS) over every frame of the
+ * file. Node's decompressor ends after one frame, and files written by pzstd (the Lichess puzzle
+ * database) are dozens of frames, starting with a skippable one — so each frame gets its own
+ * decompressor, started where the previous one stopped consuming input. A decompression or read
+ * error rejects; stopping early (the caller breaking out) just ends the reads.
+ */
+async function* nativeZstdFrames(filePath: string): AsyncGenerator<Buffer> {
+  const { size } = await stat(filePath);
+  let offset = 0;
+  while (offset < size) {
+    const file = createReadStream(filePath, { start: offset });
+    const decompress = createZstdDecompress();
+    let failure: unknown = null;
+    const frames = pipeline(file, decompress, (error) => {
+      if (error && (error as NodeJS.ErrnoException).code !== "ERR_STREAM_PREMATURE_CLOSE") failure = error;
+    });
+    try {
+      for await (const chunk of frames) yield chunk as Buffer;
+    } finally {
+      file.destroy();
+      decompress.destroy();
+    }
+    if (failure) throw failure;
+    // Input the frame used (bytes read past its end aren't counted).
+    const consumed = decompress.bytesWritten;
+    if (consumed <= 0) throw new Error(`zstd: no frame at byte ${offset} of ${filePath}`);
+    offset += consumed;
+  }
 }
