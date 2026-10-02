@@ -301,6 +301,11 @@ export function savedReviewCommentary(
 export const GAME_REVIEW_SCHEMA_VERSION = 2;
 
 export type GameReview = {
+  /**
+   * The review operation that produced it (ReviewGameInput.reviewId). Correlates usage analytics
+   * for a review opened later; missing on reviews saved before it was recorded.
+   */
+  reviewId?: string;
   /** 2 for reviews produced with real Maia policy; missing/<2 means Maia data is untrusted. */
   schemaVersion?: number;
   engineId: string;
@@ -337,6 +342,8 @@ export type ReviewMoveInputItem = {
 
 export type ReviewGameInput = {
   reviewId: string;
+  /** The library game being reviewed, if it has an id (usage analytics count distinct games). */
+  gameId?: string | null;
   engineId: string;
   /**
    * Maia engine IDs (EngineConfig.maiaRating set). Main filters them to

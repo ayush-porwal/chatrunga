@@ -30,7 +30,8 @@ import { getOpenRouterConfigStore } from "../commentary/openrouter-config";
 import {
   UNREADABLE_API_KEY_ERROR,
   generateOpenRouterCommentary,
-  parseCommentaryPayloads
+  parseCommentaryPayloads,
+  reportUnsent
 } from "../commentary/openrouter-commentary";
 import { getLichessService } from "../lichess";
 import { errorMessage, logger } from "../logger";
@@ -38,6 +39,11 @@ import { updateService } from "../updater";
 import { refreshWindowGlass } from "../window-glass";
 import { runGameReview } from "./review-handler";
 import { missedBetween, readClocks, type ClockReading } from "../time-asleep";
+import { parseCommentaryRequestContext } from "@chaturanga/shared/schemas/telemetry";
+import { getTelemetry } from "../telemetry";
+import { commentaryReporter } from "../telemetry/commentary";
+import { noteEngineReadiness } from "../telemetry/engine-readiness";
+import { parseRendererEvent, recordRendererEvent } from "../telemetry/renderer-events";
 import {
   asAbsolutePath,
   asId,
@@ -139,6 +145,7 @@ export function registerIpc(engineManager: EngineManager): void {
   registerCommentaryIpc();
   registerUpdateIpc();
   registerLichessIpc();
+  registerTelemetryIpc();
   // Match clocks run on the renderer's monotonic clock, which may stop while the computer sleeps.
   // Main keeps the total it missed; the renderer reads it synchronously whenever it checks a clock,
   // so a move handled right after waking already sees it (an event could arrive too late).
@@ -162,10 +169,16 @@ export function registerIpc(engineManager: EngineManager): void {
 
 function registerEngineIpc(engineManager: EngineManager): void {
   ipcMain.handle("engines:list", () => listAllEngines());
-  ipcMain.handle("engines:create", (_event, input: unknown) => engineRepository.create(parseEngineInput(input)));
-  ipcMain.handle("engines:update", (_event, id: unknown, patch: unknown) =>
-    engineRepository.update(asId(id, "engine id"), parseEnginePatch(patch))
-  );
+  ipcMain.handle("engines:create", (_event, input: unknown) => {
+    const engine = engineRepository.create(parseEngineInput(input));
+    noteEngineReadiness(false);
+    return engine;
+  });
+  ipcMain.handle("engines:update", (_event, id: unknown, patch: unknown) => {
+    const engine = engineRepository.update(asId(id, "engine id"), parseEnginePatch(patch));
+    noteEngineReadiness(false);
+    return engine;
+  });
   ipcMain.handle("engines:remove", (_event, id: unknown) => engineRepository.remove(asId(id, "engine id")));
   ipcMain.handle("engines:test", (_event, idOrInput: unknown) => engineManager.testEngine(testConfigFor(idOrInput)));
   ipcMain.handle("engines:startGame", (_event, input: unknown) => engineManager.start(parseStartGameInput(input)));
@@ -201,7 +214,10 @@ function registerAssetIpc(): void {
   // from the welcome dialog become usable for review/analysis right away).
   const syncEngines = () =>
     syncAssetsToEngineRegistry()
-      .then(() => broadcast("engines:changed", undefined))
+      .then(() => {
+        broadcast("engines:changed", undefined);
+        noteEngineReadiness(false);
+      })
       .catch((error) => logger.error("asset-manager", "engine registry sync failed:", error));
 
   assetManager.on("progress", (event) => broadcast("assets:progress", event));
@@ -277,7 +293,15 @@ function registerLibraryIpc(): void {
     recentlyDeletedGames.set(id, Date.now());
     gameRepository.remove(id);
   });
-  ipcMain.handle("games:importPgn", (_event, input: unknown) => importPgnText(parsePgnText(input)));
+  ipcMain.handle("games:importPgn", (_event, input: unknown) => {
+    const imported = importPgnText(parsePgnText(input));
+    // Only the user imports a PGN (file or pasted text), so this is activity too.
+    const telemetry = getTelemetry();
+    telemetry?.record("game_imported", { source: "pgn", games: 1 });
+    telemetry?.milestone("game_imported");
+    telemetry?.markActive("study");
+    return imported;
+  });
 
   ipcMain.handle("databases:list", () => listInstalledDatabases());
   ipcMain.handle("databases:download", (_event, sourceId: unknown) =>
@@ -318,6 +342,8 @@ function registerLibraryIpc(): void {
   ipcMain.handle("settings:getAll", () => settingsRepository.getAll());
   const settingsChanged = (keys: readonly (keyof AppSettings)[]) => {
     if (keys.includes("glassEffect")) refreshWindowGlass();
+    // Turning usage analytics off deletes what wasn't sent yet; on starts collecting.
+    if (keys.includes("usageAnalyticsEnabled")) getTelemetry()?.refreshConsent();
     if (keys.includes("updatesAutoDownload") || keys.includes("updatesIncludeBeta")) updateService.applySettings();
   };
   ipcMain.handle("settings:set", (_event, key: unknown, value: unknown) => {
@@ -347,11 +373,37 @@ function registerCommentaryIpc(): void {
     return getOpenRouterConfigStore().set({ model: input.model, apiKey: input.apiKey as string | null | undefined });
   });
   ipcMain.handle("commentary:generate", async (_event, input: unknown) => {
-    const payloads = parseCommentaryPayloads((input as { payloads?: unknown } | undefined)?.payloads);
+    const fields = input as { payloads?: unknown; context?: unknown } | undefined;
+    const payloads = parseCommentaryPayloads(fields?.payloads);
     const store = getOpenRouterConfigStore();
     const [config, apiKey] = await Promise.all([store.get(), store.getApiKey()]);
-    if (config.hasApiKey && !apiKey) return { commentary: [], error: UNREADABLE_API_KEY_ERROR };
-    return generateOpenRouterCommentary(payloads, { apiKey, model: config.model });
+    const telemetry = getTelemetry();
+    const report = telemetry?.enabled
+      ? commentaryReporter(telemetry, parseCommentaryRequestContext(fields?.context), {
+          model: config.model,
+          detail: payloads[0]?.commentaryDetail ?? null
+        })
+      : undefined;
+    if (config.hasApiKey && !apiKey) {
+      if (report) for (const payload of payloads) reportUnsent(report, payload.game.ply, "unreadable_key");
+      return { commentary: [], error: UNREADABLE_API_KEY_ERROR };
+    }
+    return generateOpenRouterCommentary(payloads, { apiKey, model: config.model, report });
+  });
+}
+
+/** Usage analytics: the renderer's few validated interaction reports, and the status for Settings. */
+function registerTelemetryIpc(): void {
+  ipcMain.handle("telemetry:status", () => {
+    const telemetry = getTelemetry();
+    return telemetry
+      ? telemetry.status()
+      : { available: false, reason: "not_configured", enabled: settingsRepository.getStored("usageAnalyticsEnabled") === true, pending: 0 };
+  });
+  ipcMain.handle("telemetry:track", (_event, value: unknown) => {
+    const telemetry = getTelemetry();
+    if (!telemetry?.enabled) return;
+    recordRendererEvent(telemetry, parseRendererEvent(value));
   });
 }
 
@@ -388,7 +440,15 @@ function registerLichessIpc(): void {
       throw error;
     }
   });
-  ipcMain.handle("lichess:syncGames", () => lichess.syncGames());
+  ipcMain.handle("lichess:syncGames", async () => {
+    const result = await lichess.syncGames();
+    // A sync also runs on its own after connecting, so it isn't counted as activity.
+    if (result.imported > 0) {
+      getTelemetry()?.record("game_imported", { source: "lichess", games: result.imported });
+      getTelemetry()?.milestone("game_imported");
+    }
+    return result;
+  });
   ipcMain.handle("lichess:seek", (_event, input: unknown) => lichess.seek(parseLichessSeekInput(input)));
   ipcMain.handle("lichess:cancelSeek", () => lichess.cancelSeek());
   ipcMain.handle("lichess:challenge", (_event, input: unknown) =>

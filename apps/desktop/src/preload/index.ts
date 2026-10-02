@@ -96,6 +96,10 @@ const api: ChaturangaApi = {
     setOpenRouterConfig: (input) => ipcRenderer.invoke("commentary:setOpenRouterConfig", input),
     generate: (input) => ipcRenderer.invoke("commentary:generate", input)
   },
+  telemetry: {
+    status: () => ipcRenderer.invoke("telemetry:status"),
+    track: (event) => ipcRenderer.invoke("telemetry:track", event)
+  },
   events: {
     onEngineInfo: subscribe<EventPayload<"onEngineInfo">>("engine:info"),
     onEngineBestMove: subscribe<EventPayload<"onEngineBestMove">>("engine:bestmove"),
