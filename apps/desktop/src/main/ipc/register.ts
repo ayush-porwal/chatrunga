@@ -170,8 +170,8 @@ function registerEngineIpc(engineManager: EngineManager): void {
     const input = parseProbeEvalInput(value);
     const config = engineConfigForId(input.engineId);
     if (!config) throw new Error("Engine not found");
-    engineManager.stop();
-    return probeEvalScore(config, input.fen, input.moves, input.movetimeMs);
+    // The warm process (lc0's network) has exited first, and no search starts one during the probe.
+    return engineManager.runExclusive(() => probeEvalScore(config, input.fen, input.moves, input.movetimeMs));
   });
   ipcMain.handle("engines:reviewGame", (_event, input: unknown) =>
     runGameReview(engineManager, parseReviewGameInput(input))

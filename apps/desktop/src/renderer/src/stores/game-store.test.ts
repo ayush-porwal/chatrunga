@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
-import { buildEngineGoClock, clockNow, noteSystemResumed, setTimeAsleepSource, useGameStore } from "./game-store";
+import { buildEngineGoClock, clockNow, noteSystemResumed, remainingClockMs, setTimeAsleepSource, useGameStore } from "./game-store";
 
 /** Moves both time sources together (the clock treats a wall-only jump as time asleep). */
 function mockTime() {
@@ -409,6 +409,109 @@ describe("game store", () => {
       useGameStore.getState().restoreView({ currentNodeId: "gone", mode: "analysis", source: "analysis", engineSide: null, orientation: "black", gameOutcome: null });
       expect(useGameStore.getState()).toMatchObject({ currentNodeId: node, mode: "analysis", orientation: "black" });
     });
+  });
+});
+
+describe("engine clock pause", () => {
+  it("freezes the running clock and resumes it without charging the pause", () => {
+    const at = mockTime();
+    at(0);
+    const game = useGameStore.getState();
+    game.reset();
+    game.setMode("engine");
+    game.setEngineSide("white");
+    game.setEngineMatchClock({ initialMs: 10_000, incrementMs: 0 });
+    game.initEngineClockLive();
+
+    at(2_000);
+    useGameStore.getState().pauseEngineClock();
+    expect(useGameStore.getState().engineClockLive).toMatchObject({ stoppedAt: 2_000, paused: true });
+
+    at(60_000);
+    useGameStore.getState().resumeEngineClock();
+    const live = useGameStore.getState().engineClockLive!;
+    expect(live.stoppedAt).toBeUndefined();
+    expect(remainingClockMs(live, "white", 61_000)).toBe(7_000);
+    vi.restoreAllMocks();
+  });
+
+  it("a move made while paused charges the side that moved, from the pause", () => {
+    const at = mockTime();
+    at(0);
+    const game = useGameStore.getState();
+    game.reset();
+    game.setMode("engine");
+    game.setEngineSide("black");
+    game.setEngineMatchClock({ initialMs: 10_000, incrementMs: 0 });
+    game.initEngineClockLive();
+    at(1_000);
+    expect(useGameStore.getState().makeMove({ from: "e2", to: "e4" })).toBe(true); // White: 9 s left
+    at(1_500);
+    useGameStore.getState().pauseEngineClock(); // stepped back while Black (the engine) thought
+    useGameStore.getState().goToNode("root");
+    // An illegal attempt leaves the clock paused.
+    expect(useGameStore.getState().makeMove({ from: "d2", to: "d5" })).toBe(false);
+    expect(useGameStore.getState().engineClockLive?.paused).toBe(true);
+    at(4_500);
+    expect(useGameStore.getState().makeMove({ from: "d2", to: "d4" })).toBe(true);
+    const live = useGameStore.getState().engineClockLive!;
+    // White is charged the 3 s since the pause, Black keeps its time, and it's Black's turn.
+    expect(live).toMatchObject({ whiteMs: 6_000, blackMs: 10_000, sideToMove: "black" });
+    expect(live.paused).toBeUndefined();
+    vi.restoreAllMocks();
+  });
+
+  it("a move made after the pause used up the mover's time loses on time", () => {
+    const monotonic = vi.spyOn(performance, "now");
+    const wall = vi.spyOn(Date, "now");
+    const at = (ms: number) => {
+      monotonic.mockReturnValue(ms);
+      wall.mockReturnValue(1_700_000_000_000 + ms);
+    };
+    at(0);
+    const game = useGameStore.getState();
+    game.reset();
+    game.setMode("engine");
+    game.setEngineSide("black");
+    game.setEngineMatchClock({ initialMs: 10_000, incrementMs: 2_000 });
+    game.initEngineClockLive();
+    at(1_000);
+    useGameStore.getState().makeMove({ from: "e2", to: "e4" }); // White: 10 - 1 + 2 = 11 s
+    at(1_500);
+    useGameStore.getState().pauseEngineClock();
+    useGameStore.getState().goToNode("root");
+    const before = useGameStore.getState().moveTree.length;
+    // 10 s later: more than the 9 s White had before e4's increment, so the replacement is too late.
+    at(11_500);
+    expect(useGameStore.getState().makeMove({ from: "d2", to: "d4" })).toBe(false);
+    const state = useGameStore.getState();
+    expect(state.gameOutcome).toEqual({ result: "0-1", termination: "Time forfeit" });
+    expect(state.moveTree).toHaveLength(before);
+    expect(remainingClockMs(state.engineClockLive!, "white", 1_700_000_020_000)).toBe(0);
+    expect(remainingClockMs(state.engineClockLive!, "black", 1_700_000_020_000)).toBe(10_000);
+    vi.restoreAllMocks();
+  });
+
+  it("a replacement move earns its increment once, not on top of the replaced move's", () => {
+    const at = mockTime();
+    at(0);
+    const game = useGameStore.getState();
+    game.reset();
+    game.setMode("engine");
+    game.setEngineSide("black");
+    game.setEngineMatchClock({ initialMs: 10_000, incrementMs: 2_000 });
+    game.initEngineClockLive();
+    at(1_000);
+    useGameStore.getState().makeMove({ from: "e2", to: "e4" }); // White: 10 - 1 + 2 = 11 s
+    expect(useGameStore.getState().engineClockLive?.whiteMs).toBe(11_000);
+    for (const [from, to] of [["d2", "d4"], ["c2", "c4"], ["g1", "f3"]] as const) {
+      useGameStore.getState().pauseEngineClock();
+      useGameStore.getState().goToNode("root");
+      useGameStore.getState().makeMove({ from, to }); // replaced at once: no time spent
+    }
+    // Still 11 s: replacing the move again and again doesn't add time.
+    expect(useGameStore.getState().engineClockLive).toMatchObject({ whiteMs: 11_000, sideToMove: "black" });
+    vi.restoreAllMocks();
   });
 });
 

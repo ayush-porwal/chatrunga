@@ -1,5 +1,6 @@
 // Minimal scripted UCI engine for review pipeline tests.
 // argv[2] = "sf" (MultiPV search output) or "maia" (replays captured lc0 VerboseMoveStats).
+// argv[3] = "slow-start": answers `uci` only after 10 s (a large network loading).
 import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { dirname, join } from "node:path";
@@ -13,7 +14,9 @@ let multipv = 1;
 
 createInterface({ input: process.stdin }).on("line", (raw) => {
   const line = raw.trim();
-  if (line === "uci") {
+  if (line === "uci" && process.argv[3] === "slow-start") {
+    setTimeout(() => out("uciok"), 10_000);
+  } else if (line === "uci") {
     out(`id name Fake ${mode}`);
     for (const name of ["Threads", "Hash", "MultiPV"]) out(`option name ${name} type spin default 1 min 1 max 512`);
     out("option name UCI_ShowWDL type check default false");

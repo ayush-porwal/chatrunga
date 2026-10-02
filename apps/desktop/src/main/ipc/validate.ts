@@ -205,6 +205,8 @@ export function parseStartGameInput(value: unknown): StartEngineGameInput {
   const side = input.side === "black" ? "black" : "white";
   return {
     engineId: asId(input.engineId, "engine id"),
+    searchId: asId(input.searchId, "search id"),
+    gameKey: optional(input.gameKey, (key) => asId(key, "game key")),
     side,
     fen: asFen(input.fen),
     moves: asUciMoves(input.moves ?? []),
@@ -218,6 +220,7 @@ export function parseStartAnalysisInput(value: unknown): StartLiveAnalysisInput 
   const input = asObject(value, "analysis");
   return {
     engineId: asId(input.engineId, "engine id"),
+    searchId: asId(input.searchId, "search id"),
     fen: asFen(input.fen),
     moves: asUciMoves(input.moves ?? []),
     multipv: asOptionalPositive(input.multipv, "multipv")

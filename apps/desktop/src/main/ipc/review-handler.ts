@@ -45,6 +45,7 @@ export async function runGameReview(engineManager: EngineManager, input: ReviewG
   const totalMoves = input.moves.length;
 
   engineManager.clearReviewCancellation(reviewId);
+  engineManager.trackReview(reviewId, true);
   try {
     const review = await reviewGameWithEngine(
       config,
@@ -70,6 +71,7 @@ export async function runGameReview(engineManager: EngineManager, input: ReviewG
     engineManager.emit("reviewFailed", { reviewId, message: errorMessage(error) });
     throw error;
   } finally {
+    engineManager.trackReview(reviewId, false);
     engineManager.clearReviewCancellation(reviewId);
   }
 }

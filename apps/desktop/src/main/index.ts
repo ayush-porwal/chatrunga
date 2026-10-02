@@ -154,7 +154,8 @@ function shutdown(): void {
   shutDown = true;
   const steps: [string, () => void][] = [
     ["lichess", shutdownLichess],
-    ["engines", () => engineManager.stop()],
+    ["reviews", () => engineManager.cancelAllReviews()],
+    ["engines", () => void engineManager.dispose()],
     ["engine processes", killAllEngineProcesses],
     ["database", closeDb]
   ];
@@ -219,8 +220,10 @@ function createWindow(): void {
   window.once("ready-to-show", () => setTimeout(() => revealWindow(window), REVEAL_FALLBACK_MS));
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;
-    // The interactive engine belongs to the window (macOS keeps the app alive).
-    engineManager.stop();
+    // The engine work belongs to the window (macOS keeps the app alive): the interactive engine
+    // shuts down and running reviews are cancelled.
+    engineManager.dispose();
+    engineManager.cancelAllReviews();
   });
 
   if (process.env.ELECTRON_RENDERER_URL) {
