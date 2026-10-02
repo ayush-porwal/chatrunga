@@ -16,6 +16,7 @@ import { card, cardPadded, divider, fieldLabel, sectionTitle, well } from "@/lib
 import { cn } from "@/lib/utils";
 import { useDatabasesQuery, useSamplePuzzleMutation } from "../../queries/api";
 import { ipcErrorMessage } from "@/lib/ipc-error";
+import { usePuzzleDraftStore } from "../../stores/puzzle-draft-store";
 
 const lichessThemes = [
   "mate",
@@ -118,19 +119,22 @@ export const PuzzlePage = memo(function PuzzlePage({
     [databases.data]
   );
   const preferred = puzzleDatabases.find((item) => item.sourceId === "lichess-puzzles") ?? puzzleDatabases[0] ?? null;
-  const [databaseId, setDatabaseId] = useState<string>(preferred?.id ?? "");
-  const selectedDatabase = puzzleDatabases.find((item) => item.id === databaseId) ?? preferred;
+  const draft = usePuzzleDraftStore((state) => state.draft);
+  const updateDraft = usePuzzleDraftStore((state) => state.update);
+  const { themes, lengths, openings, side, ratingMin, ratingMax, popularityMin, difficultyMin, difficultyMax, positionTags } = draft;
+  const selectedDatabase = puzzleDatabases.find((item) => item.id === draft.databaseId) ?? preferred;
   const isLichess = selectedDatabase?.sourceId === "lichess-puzzles";
-  const [themes, setThemes] = useState<string[]>([]);
-  const [lengths, setLengths] = useState<string[]>([]);
-  const [openings, setOpenings] = useState<string[]>([]);
-  const [side, setSide] = useState<"any" | "white" | "black">("any");
-  const [ratingMin, setRatingMin] = useState(600);
-  const [ratingMax, setRatingMax] = useState(2800);
-  const [popularityMin, setPopularityMin] = useState(0);
-  const [difficultyMin, setDifficultyMin] = useState(1);
-  const [difficultyMax, setDifficultyMax] = useState(4);
-  const [positionTags, setPositionTags] = useState<string[]>(["initiative", "development"]);
+  const setDatabaseId = (value: string) => updateDraft({ databaseId: value });
+  const setThemes = (value: string[]) => updateDraft({ themes: value });
+  const setLengths = (value: string[]) => updateDraft({ lengths: value });
+  const setOpenings = (value: string[]) => updateDraft({ openings: value });
+  const setSide = (value: "any" | "white" | "black") => updateDraft({ side: value });
+  const setRatingMin = (value: number) => updateDraft({ ratingMin: value });
+  const setRatingMax = (value: number) => updateDraft({ ratingMax: value });
+  const setPopularityMin = (value: number) => updateDraft({ popularityMin: value });
+  const setDifficultyMin = (value: number) => updateDraft({ difficultyMin: value });
+  const setDifficultyMax = (value: number) => updateDraft({ difficultyMax: value });
+  const setPositionTags = (value: string[]) => updateDraft({ positionTags: value });
   const databaseFieldId = useId();
 
   function start() {
@@ -169,18 +173,7 @@ export const PuzzlePage = memo(function PuzzlePage({
     ? themes.length || lengths.length || openings.length || side !== "any" || ratingMin !== 600 || ratingMax !== 2800 || popularityMin !== 0
     : difficultyMin !== 1 || difficultyMax !== 4 || positionTags.join() !== "initiative,development";
 
-  function resetFilters() {
-    setThemes([]);
-    setLengths([]);
-    setOpenings([]);
-    setSide("any");
-    setRatingMin(600);
-    setRatingMax(2800);
-    setPopularityMin(0);
-    setDifficultyMin(1);
-    setDifficultyMax(4);
-    setPositionTags(["initiative", "development"]);
-  }
+  const resetFilters = usePuzzleDraftStore((state) => state.resetFilters);
 
   const summary = isLichess
     ? [

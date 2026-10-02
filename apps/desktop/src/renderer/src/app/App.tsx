@@ -48,6 +48,8 @@ import { ipcErrorMessage } from "@/lib/ipc-error";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { useAppNoticeStore } from "../stores/app-notice-store";
 import { Button } from "@/components/ui/button";
+import { useDatabaseDownloads } from "./useDatabaseDownloads";
+import { usePuzzleDraftStore } from "../stores/puzzle-draft-store";
 
 // Pages and panels load when first opened, so starting the app (Home, the board) doesn't parse the
 // review charts, settings, puzzles, databases or the welcome.
@@ -160,6 +162,7 @@ export function App() {
 
   useLichess({ onGameStart: (load) => startOnlineGame(load) });
   useMoveKeyboardShortcuts({ enabled: onBoardView });
+  useDatabaseDownloads();
   useEngineDriver(defaultEngineId);
   useGameAutosave();
   useMoveSounds({ enabled: settings.soundEnabled, volume: settings.soundVolume });
@@ -745,6 +748,14 @@ export function App() {
     }),
     puzzles: useEventCallback(() => unlessOnlineGame(() => openPuzzlesPage())),
     databases: useEventCallback(() => openDatabasesPage()),
+    // Databases → "Train with this dataset": Puzzles with that dataset chosen (other filters kept).
+    trainWithDatabase: useEventCallback((databaseId: string) =>
+      // A Lichess game on the board keeps it (like the Puzzles item).
+      unlessOnlineGame(() => {
+        usePuzzleDraftStore.getState().update({ databaseId });
+        openPuzzlesPage();
+      })
+    ),
     importPgn: useEventCallback(() => unlessOnlineGame(() => void importPgnFile())),
     exportPgn: useEventCallback(() => void exportPgn()),
     toggleFocus: useEventCallback(() => setFocusMode((value) => !value)),
@@ -911,7 +922,7 @@ export function App() {
             ) : appView === "puzzles" ? (
               <PuzzlePage onDatabases={on.databases} onStart={on.startPuzzle} />
             ) : appView === "databases" ? (
-              <DatabasePage />
+              <DatabasePage onTrain={on.trainWithDatabase} />
             ) : appView === "game-review" ? (
               <GameReviewPage
                 activeTab={reviewTab}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { InstalledDatabase, PuzzleSampleInput } from "@chaturanga/shared/types/database";
-import { parseCsvLine, sampleFromLichessRow, sampleFromPositionRow } from "./puzzle-rows";
+import { matchesCheapFilters, parseCsvLine, sampleFromLichessRow, sampleFromPositionRow } from "./puzzle-rows";
 
 const database = { id: "db1", sourceId: "lichess-puzzles", name: "Lichess puzzles" } as InstalledDatabase;
 // Real row shape from the Lichess puzzle CSV (FEN is before the opponent's move).
@@ -66,5 +66,40 @@ describe("sampleFromPositionRow", () => {
     expect(sampleFromPositionRow(database, row, position(2, []))).toBeNull();
     expect(sampleFromPositionRow(database, row, position(5, ["endgame"]))).toBeNull();
     expect(sampleFromPositionRow(database, row, position(5, ["development"]))).not.toBeNull();
+  });
+});
+
+describe("matchesCheapFilters", () => {
+  it("agrees with the full row parser without doing any chess", () => {
+    const row = parseCsvLine(LICHESS_ROW);
+    const cases = [
+      {},
+      { ratingMax: 1500 },
+      { popularityMin: 90 },
+      { themes: ["fork"] },
+      { themes: ["mateIn2"] },
+      { openings: ["Sicilian_Defense"] },
+      { lengths: ["long"] },
+      { side: "black" as const },
+      { side: "white" as const }
+    ];
+    for (const overrides of cases) {
+      const input = lichessFilters(overrides);
+      expect(matchesCheapFilters("lichess", row, input)).toBe(sampleFromLichessRow(database, row, input) !== null);
+    }
+  });
+
+  it("reads openings from the OpeningTags column (the last), not GameUrl", () => {
+    const row = parseCsvLine(LICHESS_ROW);
+    const input = lichessFilters({ openings: ["Italian_Game_Classical_Variation"] });
+    expect(matchesCheapFilters("lichess", row, input)).toBe(true);
+    expect(sampleFromLichessRow(database, row, input)).not.toBeNull();
+  });
+
+  it("rejects a row with too few moves to make a puzzle", () => {
+    const row = parseCsvLine(LICHESS_ROW.replace("e8d7 a2e6 d7d8 f7f8", "e8d7"));
+    expect(sampleFromLichessRow(database, row, lichessFilters())).toBeNull();
+    expect(matchesCheapFilters("lichess", row, lichessFilters())).toBe(false);
+    expect(matchesCheapFilters("lichess", row, { databaseId: "db1" })).toBe(false);
   });
 });

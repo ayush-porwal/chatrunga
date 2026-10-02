@@ -40,7 +40,7 @@ export type DatabaseDownloadProgress = {
   downloadedBytes: number;
   totalBytes: number | null;
   percent: number | null;
-  state: "downloading" | "completed" | "failed";
+  state: "downloading" | "completed" | "failed" | "cancelled";
   message?: string;
 };
 

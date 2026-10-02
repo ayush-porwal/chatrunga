@@ -15,6 +15,7 @@ import {
 } from "electron";
 import { canonicalImagePath, isServableImage } from "./image-access";
 import { guardIpcSenders } from "./ipc-guard";
+import { cancelAllDownloads } from "./databases/external-databases";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -98,7 +99,16 @@ if (!app.requestSingleInstanceLock()) {
   app.on("before-quit", () => {
     quitRequested = true;
   });
-  app.on("will-quit", shutdown);
+  app.on("will-quit", (event) => {
+    if (shutdownDone) return;
+    // Held until running downloads have stopped, then quit again (this time straight through).
+    event.preventDefault();
+    void shutdown()
+      .catch((error: unknown) => logger.error("main", "shutdown failed:", error))
+      // Not before this event has returned: a quit asked for during `will-quit` is ignored, and
+      // with nothing to wait for, shutdown settles that soon.
+      .finally(() => setImmediate(() => app.quit()));
+  });
   app.whenReady().then(startup, (error) => {
     logger.error("main", "startup failed:", error);
     app.quit();
@@ -142,11 +152,15 @@ async function startup(): Promise<void> {
         const saved = await requestRendererFlush(window.webContents);
         if (!saved && !window.isDestroyed() && !confirmCloseUnsaved(window)) return false;
       }
-      shutdown();
+      await shutdown();
       return true;
     }
   });
 }
+
+let shuttingDown: Promise<void> | null = null;
+/** Set once shutdown has finished: the held `will-quit` goes through. */
+let shutdownDone = false;
 
 /**
  * Stops engines, closes Lichess connections (streams, seek, sign-in server) and the database.
@@ -154,22 +168,29 @@ async function startup(): Promise<void> {
  * doesn't skip the rest: once it has started, the app is on its way out (an install that follows
  * must not stop at a half-closed app).
  */
-function shutdown(): void {
-  shutDown = true;
-  const steps: [string, () => void][] = [
-    ["lichess", shutdownLichess],
-    ["reviews", () => engineManager.cancelAllReviews()],
-    ["engines", () => void engineManager.dispose()],
-    ["engine processes", killAllEngineProcesses],
-    ["database", closeDb]
-  ];
-  for (const [name, step] of steps) {
-    try {
-      step();
-    } catch (error) {
-      logger.error("main", `shutdown: closing ${name} failed:`, error);
+function shutdown(): Promise<void> {
+  shuttingDown ??= (async () => {
+    shutDown = true;
+    const steps: [string, () => void | Promise<void>][] = [
+      ["lichess", shutdownLichess],
+      ["reviews", () => engineManager.cancelAllReviews()],
+      ["engines", () => void engineManager.dispose()],
+      ["engine processes", killAllEngineProcesses],
+      // Before the database closes: a download finishing now couldn't register its dataset.
+      ["downloads", () => cancelAllDownloads()],
+      ["database", closeDb]
+    ];
+    for (const [name, step] of steps) {
+      try {
+        await step();
+      } catch (error) {
+        logger.error("main", `shutdown: closing ${name} failed:`, error);
+      }
     }
-  }
+    // The held `will-quit` goes through now.
+    shutdownDone = true;
+  })();
+  return shuttingDown;
 }
 
 /**

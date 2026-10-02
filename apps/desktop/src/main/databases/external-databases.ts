@@ -1,10 +1,11 @@
 import { app } from "electron";
-import { createReadStream, createWriteStream } from "node:fs";
+import { createWriteStream, existsSync } from "node:fs";
 import { mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { Decompress } from "fzstd";
+import { fileURLToPath } from "node:url";
+import { Worker } from "node:worker_threads";
 import {
   externalDatabaseSources,
   type DatabaseDownloadProgress,
@@ -13,13 +14,22 @@ import {
   type PuzzleSampleInput
 } from "@chaturanga/shared/types/database";
 import { externalDatabaseRepository } from "../db/repositories";
-import { errorMessage } from "../logger";
+import { errorMessage, logger } from "../logger";
 import { datasetDir, relocatedDatasetPath } from "./dataset-location";
-import { parseCsvLine, sampleFromLichessRow, sampleFromPositionRow } from "./puzzle-rows";
+import { sampleFromLichessRow, sampleFromPositionRow, type PuzzleRowKind } from "./puzzle-rows";
+import { reservoirScan, type ScanJob, type ScanResult } from "./puzzle-scan";
 
 const PROGRESS_INTERVAL_MS = 120;
-/** Reservoir-sample among at most this many matches (keeps a scan of a huge file short). */
-const MAX_MATCHES_TO_SAMPLE = 500;
+/** A download with no data for this long is abandoned (its `.part` file stays for a resume). */
+const STALL_TIMEOUT_MS = 60_000;
+/** How long quitting waits for cancelled downloads to close their files. */
+const CANCEL_TIMEOUT_MS = 3_000;
+/** The quick answer for new filters: a random pick among the first matches in the file. */
+const QUICK_MATCHES = 500;
+/** Puzzles kept per filter set from a scan of the whole file; refilled in the background. */
+const POOL_SIZE = 64;
+const POOL_REFILL_BELOW = 8;
+const MAX_POOLS = 6;
 
 type ProgressSink = (progress: DatabaseDownloadProgress) => void;
 
@@ -67,7 +77,48 @@ async function fileSize(path: string): Promise<number> {
 }
 
 /** Downloads in flight, per source: a second request for the same database joins the first. */
-const inFlight = new Map<string, Promise<InstalledDatabase>>();
+const inFlight = new Map<string, { promise: Promise<InstalledDatabase>; controller: AbortController }>();
+/** Removals in progress, per source: a download of that source starts only once its removal is done. */
+const removals = new Map<string, Promise<void>>();
+/** The latest progress of each running download, for a page opened while it runs. */
+const latestProgress = new Map<string, DatabaseDownloadProgress>();
+
+/** Running downloads (their latest progress), e.g. for the Databases page when it opens. */
+export function activeDownloads(): DatabaseDownloadProgress[] {
+  return [...latestProgress.values()];
+}
+
+/** Stops a running download; its `.part` file stays, so downloading again resumes it. */
+export function cancelDownload(sourceId: string): void {
+  inFlight.get(sourceId)?.controller.abort(new DownloadCancelledError());
+}
+
+/** Set once quitting starts: the database is about to close, so no download may register any more. */
+let shuttingDown = false;
+
+/**
+ * Quitting: running downloads stop (their partial files stay, so the next attempt resumes).
+ * Resolves once they have settled, or after `timeoutMs`, so a stuck one can't hold up the quit;
+ * one that finishes later still installs nothing (see `finishDownload`).
+ */
+export async function cancelAllDownloads(timeoutMs = CANCEL_TIMEOUT_MS): Promise<void> {
+  shuttingDown = true;
+  const running = [...inFlight.values()];
+  for (const sourceId of inFlight.keys()) cancelDownload(sourceId);
+  if (!running.length) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    Promise.allSettled(running.map((download) => download.promise)),
+    new Promise((resolve) => (timer = setTimeout(resolve, timeoutMs)))
+  ]);
+  clearTimeout(timer);
+}
+
+class DownloadCancelledError extends Error {
+  constructor() {
+    super("Download cancelled.");
+  }
+}
 
 /**
  * Streams a catalogued source into `userData/puzzle-databases` (see dataset-location.ts), reporting progress. The data goes to a
@@ -77,16 +128,31 @@ const inFlight = new Map<string, Promise<InstalledDatabase>>();
  */
 export function downloadDatabase(sourceId: string, onProgress: ProgressSink): Promise<InstalledDatabase> {
   const running = inFlight.get(sourceId);
-  if (running) return running;
-  const download = runDownload(sourceId, onProgress).finally(() => inFlight.delete(sourceId));
-  inFlight.set(sourceId, download);
-  return download;
+  if (running) return running.promise;
+  const controller = new AbortController();
+  const report: ProgressSink = (progress) => {
+    if (progress.state === "downloading") latestProgress.set(progress.sourceId, progress);
+    else latestProgress.delete(progress.sourceId);
+    onProgress(progress);
+  };
+  const run = () => runDownload(sourceId, report, controller.signal);
+  const removal = removals.get(sourceId);
+  // After a removal of the same database, which would otherwise delete the new files.
+  const promise = (removal ? removal.catch(() => undefined).then(run) : run()).finally(() => {
+    inFlight.delete(sourceId);
+    latestProgress.delete(sourceId);
+  });
+  inFlight.set(sourceId, { promise, controller });
+  return promise;
 }
 
 /** Byte offsets must address the file as stored, so no transfer encoding (gzip) may apply. */
 const IDENTITY = { "Accept-Encoding": "identity" };
 
-async function runDownload(sourceId: string, onProgress: ProgressSink): Promise<InstalledDatabase> {
+/** The server's file didn't match the partial download: start that source over. */
+const RESTART = Symbol("restart");
+
+async function runDownload(sourceId: string, onProgress: ProgressSink, signal: AbortSignal): Promise<InstalledDatabase> {
   const source = externalDatabaseSources.find((item) => item.id === sourceId);
   if (!source) throw new Error("Database source not found");
   const dir = datasetDir(app.getPath("userData"));
@@ -96,75 +162,126 @@ async function runDownload(sourceId: string, onProgress: ProgressSink): Promise<
   // The server's ETag / Last-Modified for the `.part` file: a resume only continues the same file.
   const validatorPath = `${partPath}.validator`;
 
-  const validator = (await readFile(validatorPath, "utf8").catch(() => "")).trim();
-  if (!validator) {
-    // A partial with no recorded version can't be continued safely: start over.
-    await unlink(partPath).catch(() => undefined);
-  }
-  const offset = validator ? await fileSize(partPath) : 0;
-  // If-Range: the server sends the rest only if the file is unchanged, otherwise all of it (200).
-  const response = await fetch(
-    source.url,
-    offset ? { headers: { ...IDENTITY, Range: `bytes=${offset}-`, "If-Range": validator } } : { headers: IDENTITY }
-  );
-  if (response.status === 416 && offset) {
-    await response.body?.cancel();
-    // Same version, nothing past `offset`: complete only if it is exactly the file's length.
-    if (rangeTotal(response.headers.get("content-range")) === offset) {
-      return finishDownload(source, partPath, filePath, onProgress, null);
-    }
-    await unlink(partPath).catch(() => undefined);
-    await unlink(validatorPath).catch(() => undefined);
-    return runDownload(sourceId, onProgress);
-  }
-  if (!response.ok || !response.body) {
-    throw new Error(`Download failed (${response.status} ${response.statusText})`);
-  }
-  // 206: the server continues after `offset`; 200: a new version, or no range asked: start over.
-  const resumed = response.status === 206;
-  const startBytes = resumed ? offset : 0;
-  if (!resumed) {
-    const nextValidator = response.headers.get("etag") ?? response.headers.get("last-modified");
-    if (nextValidator) await writeFile(validatorPath, nextValidator);
-    else await unlink(validatorPath).catch(() => undefined);
-  }
-  const remainingBytes = parseContentLength(response.headers.get("content-length"));
-  const totalBytes = remainingBytes === null ? null : startBytes + remainingBytes;
-  let downloadedBytes = startBytes;
-  let lastEmitAt = 0;
-  const meter = new Transform({
-    transform(chunk: Buffer, _encoding, callback) {
-      downloadedBytes += chunk.byteLength;
-      const now = Date.now();
-      if (now - lastEmitAt >= PROGRESS_INTERVAL_MS) {
-        lastEmitAt = now;
-        onProgress({
-          sourceId: source.id,
-          downloadedBytes,
-          totalBytes,
-          percent: totalBytes ? Math.min(99, Math.round((downloadedBytes / totalBytes) * 100)) : null,
-          state: "downloading"
-        });
-      }
-      callback(null, chunk);
-    }
-  });
+  // Aborted by Cancel, or when no data arrives for a while (a dead connection would otherwise
+  // hold this download — and every retry that joins it — forever).
+  const stall = new AbortController();
+  const stalled = () => stall.abort(new Error("The download stalled. Try again to resume it."));
+  let stallTimer = setTimeout(stalled, STALL_TIMEOUT_MS);
+  const touch = () => {
+    clearTimeout(stallTimer);
+    stallTimer = setTimeout(stalled, STALL_TIMEOUT_MS);
+  };
+  const aborted = AbortSignal.any([signal, stall.signal]);
+  // Shown (with Cancel) right away, before the connection is even made.
+  onProgress({ sourceId: source.id, downloadedBytes: 0, totalBytes: null, percent: null, state: "downloading", message: "Connecting…" });
 
   try {
-    await pipeline(Readable.fromWeb(response.body as never), meter, createWriteStream(partPath, { flags: resumed ? "a" : "w" }));
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const result = await downloadOnce();
+      if (result !== RESTART) return result;
+      await unlink(partPath).catch(() => undefined);
+      await unlink(validatorPath).catch(() => undefined);
+    }
+    throw new Error("The download couldn't be resumed. Try again later.");
   } catch (error) {
-    // The `.part` file stays, so the next attempt resumes instead of starting over.
+    const reason = aborted.aborted ? aborted.reason : error;
     onProgress({
       sourceId: source.id,
       downloadedBytes: 0,
-      totalBytes,
+      totalBytes: null,
       percent: null,
-      state: "failed",
-      message: errorMessage(error)
+      state: reason instanceof DownloadCancelledError ? "cancelled" : "failed",
+      message: errorMessage(reason)
     });
-    throw error;
+    throw reason;
+  } finally {
+    clearTimeout(stallTimer);
   }
-  return finishDownload(source, partPath, filePath, onProgress, totalBytes);
+
+  async function downloadOnce(): Promise<InstalledDatabase | typeof RESTART> {
+    const current = source!;
+    const validator = (await readFile(validatorPath, "utf8").catch(() => "")).trim();
+    if (!validator) {
+      // A partial with no recorded version can't be continued safely: start over.
+      await unlink(partPath).catch(() => undefined);
+    }
+    const offset = validator ? await fileSize(partPath) : 0;
+    // If-Range: the server sends the rest only if the file is unchanged, otherwise all of it (200).
+    const response = await fetch(
+      current.url,
+      offset
+        ? { headers: { ...IDENTITY, Range: `bytes=${offset}-`, "If-Range": validator }, signal: aborted }
+        : { headers: IDENTITY, signal: aborted }
+    );
+    touch();
+    if (response.status === 416 && offset) {
+      await response.body?.cancel();
+      // Same version, nothing past `offset`: complete only if it is exactly the file's length.
+      if (rangeTotal(response.headers.get("content-range")) === offset) {
+        aborted.throwIfAborted();
+        return finishDownload(current, partPath, filePath, onProgress, null, signal);
+      }
+      return RESTART;
+    }
+    if (!response.ok || !response.body) {
+      throw new Error(`Download failed (${response.status} ${response.statusText})`);
+    }
+    // A 206 must continue exactly where the partial file ends, or the bytes would be misplaced.
+    if (response.status === 206 && rangeStart(response.headers.get("content-range")) !== offset) {
+      await response.body.cancel();
+      return RESTART;
+    }
+    // 206: the server continues after `offset`; 200: a new version, or no range asked: start over.
+    const resumed = response.status === 206;
+    const startBytes = resumed ? offset : 0;
+    if (!resumed) {
+      const nextValidator = response.headers.get("etag") ?? response.headers.get("last-modified");
+      if (nextValidator) await writeFile(validatorPath, nextValidator);
+      else await unlink(validatorPath).catch(() => undefined);
+    }
+    const remainingBytes = parseContentLength(response.headers.get("content-length"));
+    // Without a Content-Length, a resumed response's Content-Range still gives the full size.
+    const totalBytes =
+      remainingBytes !== null
+        ? startBytes + remainingBytes
+        : resumed
+          ? rangeSize(response.headers.get("content-range"))
+          : null;
+    let downloadedBytes = startBytes;
+    let lastEmitAt = 0;
+    const meter = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        touch();
+        downloadedBytes += chunk.byteLength;
+        const now = Date.now();
+        if (now - lastEmitAt >= PROGRESS_INTERVAL_MS) {
+          lastEmitAt = now;
+          onProgress({
+            sourceId: current.id,
+            downloadedBytes,
+            totalBytes,
+            percent: totalBytes ? Math.min(99, Math.round((downloadedBytes / totalBytes) * 100)) : null,
+            state: "downloading"
+          });
+        }
+        callback(null, chunk);
+      }
+    });
+
+    // On failure the `.part` file stays, so the next attempt resumes instead of starting over.
+    await pipeline(
+      Readable.fromWeb(response.body as never),
+      meter,
+      createWriteStream(partPath, { flags: resumed ? "a" : "w" }),
+      { signal: aborted }
+    );
+    if (totalBytes !== null && downloadedBytes !== totalBytes) {
+      throw new Error("The download ended early. Try again to resume it.");
+    }
+    // Cancelled (e.g. quitting) just as the transfer ended: the complete `.part` stays for next time.
+    aborted.throwIfAborted();
+    return finishDownload(current, partPath, filePath, onProgress, totalBytes, signal);
+  }
 }
 
 async function finishDownload(
@@ -172,11 +289,26 @@ async function finishDownload(
   partPath: string,
   filePath: string,
   onProgress: ProgressSink,
-  totalBytes: number | null
+  totalBytes: number | null,
+  signal: AbortSignal
 ): Promise<InstalledDatabase> {
+  // Quitting (even after it stopped waiting for this download): the complete `.part` stays for next time.
+  if (shuttingDown) throw new DownloadCancelledError();
   await rename(partPath, filePath);
   await unlink(`${partPath}.validator`).catch(() => undefined);
   const file = await stat(filePath);
+  // The database may be closed by now; or Cancel was pressed while the file was being put in place
+  // (it stays, so Download again finishes at once, but this download installs nothing).
+  if (shuttingDown) throw new DownloadCancelledError();
+  signal.throwIfAborted();
+  // Registered first: "completed" is only announced for a database Puzzles can use.
+  const installed = externalDatabaseRepository.saveDownloaded({
+    source,
+    filePath,
+    fileSizeBytes: file.size,
+    recordCount: source.expectedRecords ?? null
+  });
+  dropPools(installed.id);
   onProgress({
     sourceId: source.id,
     downloadedBytes: file.size,
@@ -184,50 +316,198 @@ async function finishDownload(
     percent: 100,
     state: "completed"
   });
-  return externalDatabaseRepository.saveDownloaded({
-    source,
-    filePath,
-    fileSizeBytes: file.size,
-    recordCount: source.expectedRecords ?? null
-  });
+  return installed;
 }
 
+/**
+ * Deletes the file (and any partial download) first, then the entry: a file that can't be deleted
+ * (in use, no permission) keeps its entry, so it isn't left behind unlisted, and Delete can be retried.
+ */
 export async function removeDatabase(id: string): Promise<void> {
   const database = externalDatabaseRepository.get(id);
   if (!database) return;
-  externalDatabaseRepository.remove(database.id);
-  await unlink(database.filePath).catch((error: unknown) => {
-    if (!isMissingFile(error)) throw error;
+  const { sourceId } = database;
+  // A download of it (Download again) stops first: it would write to files being deleted. Taken
+  // now, before downloads of it start waiting for this removal (waiting for one would never end).
+  const running = inFlight.get(sourceId);
+  running?.controller.abort(new DownloadCancelledError());
+  const previous = removals.get(sourceId);
+  const removal = (async () => {
+    await previous?.catch(() => undefined);
+    await running?.promise.catch(() => undefined);
+    // The partial files first: if one can't go, the dataset itself (and its entry) are still intact.
+    for (const path of [`${database.filePath}.part.validator`, `${database.filePath}.part`, database.filePath]) {
+      await unlink(path).catch((error: unknown) => {
+        if (!isMissingFile(error)) throw error;
+      });
+    }
+    externalDatabaseRepository.remove(database.id);
+    dropPools(database.id);
+  })().finally(() => {
+    if (removals.get(sourceId) === removal) removals.delete(sourceId);
   });
+  removals.set(sourceId, removal);
+  await removal;
 }
 
-/** A uniformly random puzzle among the first matches of the filters. */
+type SamplePool = {
+  /** Candidate rows still to serve, a uniform sample of every match in the file. */
+  rows: string[][];
+  /**
+   * When the file has no more matches than a pool holds: every one of them. Serving takes rows
+   * out of `rows`; this set refills it (a new session may exclude fewer puzzles than the last).
+   */
+  all: string[][] | null;
+  filling: Promise<void> | null;
+  /** Stops the running full-file scan (the pool was dropped). */
+  cancel: (() => void) | null;
+  /** The full-file scan failed (e.g. a corrupt file): not retried for this file version. */
+  failed: boolean;
+};
+
+/** Per database + filters. A small pool, filled from one scan of the whole file, serves many puzzles. */
+const pools = new Map<string, SamplePool>();
+
+/** Per database, file version (a replaced file is a new pool) and filters. */
+function poolKey(input: PuzzleSampleInput, fileVersion: string): string {
+  return JSON.stringify([input.databaseId, fileVersion, input.lichess ?? null, input.position ?? null]);
+}
+
+function dropPool(key: string): void {
+  pools.get(key)?.cancel?.();
+  pools.delete(key);
+}
+
+function dropPools(databaseId: string): void {
+  for (const key of [...pools.keys()]) if (JSON.parse(key)[0] === databaseId) dropPool(key);
+}
+
+/**
+ * A random puzzle matching the filters, drawn from the whole file. The first request for a set of
+ * filters answers from a quick scan of the file's start while a background scan of the whole file
+ * (in a worker thread) fills a pool; later requests take from the pool, so the file isn't
+ * decompressed again for every puzzle, and puzzles near the end are as likely as the first ones.
+ */
 export async function samplePuzzle(input: PuzzleSampleInput): Promise<PuzzleSample> {
   const registered = externalDatabaseRepository.get(input.databaseId);
   if (!registered) throw new Error("Puzzle database not found. Download a database first.");
   const database = await onDisk(registered);
-  if (!database) throw new Error(`${registered.name} is missing from disk. Download the database again.`);
+  if (!database) {
+    dropPools(registered.id);
+    throw new Error(`${registered.name} is missing from disk. Download the database again.`);
+  }
 
-  const sampleRow = database.sourceId === "lichess-puzzles" ? sampleFromLichessRow : sampleFromPositionRow;
-  const excludedIds = new Set(input.excludeIds ?? []);
-  let selected: PuzzleSample | null = null;
-  let matches = 0;
-  await scanCsvLines(database.filePath, database.format.endsWith(".zst"), (line, lineIndex) => {
-    if (lineIndex === 0 || !line.trim()) return;
-    let sample: PuzzleSample | null;
-    try {
-      sample = sampleRow(database, parseCsvLine(line), input);
-    } catch {
-      return; // Malformed row (e.g. an illegal FEN): skip it.
+  const kind: PuzzleRowKind = database.sourceId === "lichess-puzzles" ? "lichess" : "position";
+  const excluded = new Set(input.excludeIds ?? []);
+  const file = await stat(database.filePath);
+  const key = poolKey(input, `${file.size}:${file.mtimeMs}`);
+  let pool = pools.get(key);
+  if (!pool) {
+    pool = { rows: [], all: null, filling: null, cancel: null, failed: false };
+    pools.set(key, pool);
+    // Oldest filter sets go first (their scans stop).
+    for (const oldKey of [...pools.keys()]) {
+      if (pools.size <= MAX_POOLS) break;
+      dropPool(oldKey);
     }
-    if (!sample || excludedIds.has(sample.id)) return;
-    matches += 1;
-    if (Math.random() < 1 / matches) selected = sample;
-    if (matches >= MAX_MATCHES_TO_SAMPLE) return false;
-  });
+  }
+  const job: ScanJob = {
+    filePath: database.filePath,
+    compressed: database.format.endsWith(".zst"),
+    kind,
+    input,
+    // Exclusions are applied when serving, so the rows fit any session with these filters.
+    excludeIds: [],
+    size: POOL_SIZE
+  };
+  const build = (row: string[]) => {
+    try {
+      const sample = (kind === "lichess" ? sampleFromLichessRow : sampleFromPositionRow)(database, row, input);
+      return sample && !excluded.has(sample.id) ? sample : null;
+    } catch {
+      return null; // Malformed row (e.g. an illegal FEN): skip it.
+    }
+  };
 
-  if (!selected) throw new Error("No puzzle matched those filters. Try fewer themes or a wider rating range.");
-  return selected;
+  let sample = takeFromPool(pool, build);
+  if (!sample && pool.all) {
+    // Every match is known: serve them again (the excluded ones are skipped).
+    pool.rows = [...pool.all];
+    sample = takeFromPool(pool, build);
+  }
+  if (!sample && !pool.all) {
+    // Several candidates, so a malformed or excluded row (checked only when serving) doesn't hide
+    // the valid ones; the excluded rows count towards the limit, so it still reaches fresh ones.
+    const quick = await reservoirScan({ ...job, maxMatches: QUICK_MATCHES + excluded.size });
+    if (quick.complete && pools.get(key) === pool) {
+      // It read the whole file (few matches, or none): that is the pool a full scan would give.
+      fillPool(pool, quick);
+      sample = takeFromPool(pool, build);
+    } else {
+      sample = takeFromPool({ rows: quick.rows }, build);
+    }
+  }
+  if (pool.rows.length < POOL_REFILL_BELOW && !pool.filling && !pool.all && !pool.failed) {
+    const target = pool;
+    const scan = scanInWorker(job);
+    target.cancel = scan.cancel;
+    target.filling = scan.result
+      .then((result) => {
+        if (pools.get(key) === target) fillPool(target, result);
+      })
+      .catch((error: unknown) => {
+        if (pools.get(key) !== target) return; // Stopped: the pool was dropped.
+        // Puzzles keep coming from the quick scan of the file's start.
+        target.failed = true;
+        logger.warn("databases", `scanning ${database.name} for puzzles failed:`, errorMessage(error));
+      })
+      .finally(() => {
+        target.filling = null;
+        target.cancel = null;
+      });
+  }
+  if (!sample) throw new Error("No puzzle matched those filters. Try fewer themes or a wider rating range.");
+  return sample;
+}
+
+/** A scan's rows become the pool; a complete scan with few matches holds every one of them. */
+function fillPool(pool: SamplePool, result: ScanResult): void {
+  pool.rows = result.rows;
+  if (result.complete && result.matches <= POOL_SIZE) pool.all = [...result.rows];
+}
+
+/** Takes random rows out of the pool until one makes a puzzle (excluded or broken rows are dropped). */
+function takeFromPool(pool: Pick<SamplePool, "rows">, build: (row: string[]) => PuzzleSample | null): PuzzleSample | null {
+  while (pool.rows.length) {
+    const index = Math.floor(Math.random() * pool.rows.length);
+    const [row] = pool.rows.splice(index, 1);
+    const sample = row ? build(row) : null;
+    if (sample) return sample;
+  }
+  return null;
+}
+
+/** The worker bundled next to the main entry; tests (and a missing file) scan in this thread. */
+const SCAN_WORKER = join(dirname(fileURLToPath(import.meta.url)), "puzzle-scan-worker.js");
+
+function scanInWorker(job: ScanJob): { result: Promise<ScanResult>; cancel: () => void } {
+  if (!existsSync(SCAN_WORKER)) {
+    let cancelled = false;
+    return { result: reservoirScan(job, () => cancelled), cancel: () => (cancelled = true) };
+  }
+  const worker = new Worker(SCAN_WORKER, { workerData: job });
+  const result = new Promise<ScanResult>((resolve, reject) => {
+    worker.once("message", (message: { ok: true; result: ScanResult } | { ok: false; message: string }) => {
+      if (message.ok) resolve(message.result);
+      else reject(new Error(message.message));
+      void worker.terminate();
+    });
+    worker.once("error", reject);
+    worker.once("exit", (code) => {
+      if (code !== 0) reject(new Error(`Puzzle scan stopped (exit ${code}).`));
+    });
+  });
+  return { result, cancel: () => void worker.terminate() };
 }
 
 /** The full length a 416 reports (`Content-Range: bytes` + `*` + `/N`); null when absent or malformed. */
@@ -236,48 +516,19 @@ function rangeTotal(value: string | null): number | null {
   return match ? Number(match[1]) : null;
 }
 
+/** The full size a 206 reports (`Content-Range: bytes START-END/TOTAL`); null when absent or `*`. */
+function rangeSize(value: string | null): number | null {
+  const match = /^bytes \d+-\d+\/(\d+)$/.exec(value?.trim() ?? "");
+  return match ? Number(match[1]) : null;
+}
+
+/** Where a 206 continues (`Content-Range: bytes START-END/TOTAL`); null when absent or malformed. */
+function rangeStart(value: string | null): number | null {
+  const match = /^bytes (\d+)-\d+\/(\d+|\*)$/.exec(value?.trim() ?? "");
+  return match ? Number(match[1]) : null;
+}
+
 function parseContentLength(value: string | null): number | null {
   const parsed = Number(value);
   return value && Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-
-/** Calls `onLine` for every line of a (optionally zstd-compressed) text file until it returns false. */
-async function scanCsvLines(
-  filePath: string,
-  compressed: boolean,
-  onLine: (line: string, lineIndex: number) => boolean | void
-): Promise<void> {
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let lineIndex = 0;
-  let stopped = false;
-  const emitText = (text: string) => {
-    if (stopped) return;
-    buffer += text;
-    const lines = buffer.split(/\r?\n/);
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      if (onLine(line, lineIndex++) === false) {
-        stopped = true;
-        return;
-      }
-    }
-  };
-
-  if (compressed) {
-    const decompressor = new Decompress((chunk, final) => emitText(decoder.decode(chunk, { stream: !final })));
-    for await (const chunk of createReadStream(filePath)) {
-      decompressor.push(chunk as Buffer, false);
-      if (stopped) break;
-    }
-    if (!stopped) decompressor.push(new Uint8Array(), true);
-  } else {
-    for await (const chunk of createReadStream(filePath, { encoding: "utf8" })) {
-      emitText(chunk as string);
-      if (stopped) break;
-    }
-  }
-
-  const tail = buffer.trim();
-  if (!stopped && tail) onLine(tail, lineIndex);
 }

@@ -15,7 +15,11 @@ export default defineConfig({
       externalizeDeps: false,
       rollupOptions: {
         external: ["electron"],
-        input: { index: resolve(rootDir, "src/main/index.ts") }
+        input: {
+          index: resolve(rootDir, "src/main/index.ts"),
+          // Worker thread for whole-file puzzle scans (see databases/external-databases.ts).
+          "puzzle-scan-worker": resolve(rootDir, "src/main/databases/puzzle-scan-worker.ts")
+        }
       }
     }
   },
