@@ -1,0 +1,43 @@
+name: PR Agent
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+  issue_comment:
+
+concurrency:
+  group: pr-agent-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: ${{ github.event.sender.type != 'Bot' }}
+    name: Review pull request
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: read
+      checks: write
+    steps:
+      - name: Review with GLM 5.3
+        uses: the-pr-agent/pr-agent@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ZAI.KEY: ${{ secrets.ZAI_API_KEY }}
+          ZAI_API_BASE: https://api.z.ai/api/coding/paas/v4
+          config.model: zai/glm-5.3
+          config.fallback_models: '["zai/glm-5.3-flash"]'
+          config.custom_model_max_tokens: "1000000"
+          config.reasoning_effort: max
+          config.additional_reasoning_effort_models: '["zai/glm-5.3", "zai/glm-5.3-flash"]'
+          config.persistent_inline_comments: "true"
+          github_action_config.auto_review: "true"
+          github_action_config.auto_describe: "false"
+          github_action_config.auto_improve: "false"
+          github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "synchronize"]'
+          pr_reviewer.persistent_comment: "true"
+          pr_reviewer.final_update_message: "false"
+          pr_reviewer.inline_key_issues: "true"
+          pr_reviewer.num_max_findings: "20"
+          pr_reviewer.extra_instructions: "Only report a finding you are highly confident is a real bug, security issue, or significant performance problem introduced by this diff. Skip the nits pits, speculative concerns, and anything you cannot anchor to a changed line. Do not pad the list to reach the maximum. An empty list is the right result when nothing qualifies."
