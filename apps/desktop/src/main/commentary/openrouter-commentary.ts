@@ -197,15 +197,17 @@ export function analyticsRedactor(payload: ReviewInsightPayload): (text: string)
   const replacements: Array<[string, string]> = [];
   const add = (value: string | undefined, placeholder: string) => {
     const trimmed = value?.trim();
-    if (trimmed && trimmed.length >= 2) replacements.push([trimmed, placeholder]);
+    if (trimmed) replacements.push([trimmed, placeholder]);
   };
   add(payload.context?.players?.white, "[White]");
   add(payload.context?.players?.black, "[Black]");
   add(payload.engines.stockfish.engineName, "[engine]");
   if (!replacements.length) return (text) => text;
-  // Longest first, so a name containing another is replaced whole.
+  // Longest first, so a name containing another is replaced whole; whole words only, so a short
+  // name ("A") doesn't eat letters out of other words.
   replacements.sort((a, b) => b[0].length - a[0].length);
-  const pattern = new RegExp(replacements.map(([value]) => escapeRegExp(value)).join("|"), "gi");
+  const names = replacements.map(([value]) => escapeRegExp(value)).join("|");
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])(?:${names})(?![\\p{L}\\p{N}_])`, "giu");
   const placeholders = new Map(replacements.map(([value, placeholder]) => [value.toLowerCase(), placeholder]));
   return (text) => text.replace(pattern, (match) => placeholders.get(match.toLowerCase()) ?? match);
 }

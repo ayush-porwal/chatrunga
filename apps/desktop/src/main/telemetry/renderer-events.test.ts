@@ -22,6 +22,12 @@ function recorded(db: ReturnType<typeof telemetryDatabase>) {
   );
 }
 
+function outboxTimes(db: ReturnType<typeof telemetryDatabase>): number[] {
+  return (db.prepare("SELECT occurred_at FROM telemetry_outbox").all() as { occurred_at: number }[]).map(
+    (row) => row.occurred_at
+  );
+}
+
 describe("renderer telemetry events: validation", () => {
   it("accepts the allowlisted shapes", () => {
     expect(parseRendererEvent({ type: "activity", kind: "study" })).toEqual({
@@ -185,6 +191,25 @@ describe("renderer telemetry events: counting", () => {
       expect(sessions).toHaveLength(2);
       expect(sessions[0]).not.toBe(sessions[1]);
     }
+  });
+
+  it("the check and the event share a timestamp, so the boundary can't double-count", () => {
+    const db = telemetryDatabase();
+    let now = Date.UTC(2026, 9, 2, 9, 30);
+    // Every read of the clock moves it on by 1 ms.
+    const service = makeService({ db, now: () => (now += 1) });
+    service.start();
+    const OTHER = "9f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+    recordRendererEvent(service, { type: "review_opened", reviewId: OTHER, gameId: "g2" });
+    const lastEventAt = Math.max(...outboxTimes(db));
+    // The next read lands 1 ms before the session would end, the one after it on the boundary.
+    now = lastEventAt + SESSION_IDLE_MS - 2;
+    recordRendererEvent(service, { type: "review_opened", reviewId: REVIEW, gameId: "g1" });
+    recordRendererEvent(service, { type: "review_opened", reviewId: REVIEW, gameId: "g1" });
+    const opened = recorded(db).filter(
+      (event) => event.event === "review_opened" && event.review_id === REVIEW
+    );
+    expect(opened).toHaveLength(1);
   });
 
   it("is ignored entirely while collection is off", () => {

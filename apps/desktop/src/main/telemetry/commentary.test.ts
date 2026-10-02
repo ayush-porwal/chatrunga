@@ -281,5 +281,11 @@ describe("commentary analytics", () => {
       "[White] (White) vs [Black], by [engine]"
     );
     expect(analyticsRedactor(payload(1))("unchanged")).toBe("unchanged");
+
+    // A one-letter name is replaced too, as a whole word only.
+    const short = analyticsRedactor(payload(1, { context: { players: { white: "A", black: "Bo" } } }));
+    expect(short('{"white":"A","black":"Bo"} A and Bo play a Bongcloud')).toBe(
+      '{"white":"[White]","black":"[Black]"} [White] and [Black] play [White] Bongcloud'
+    );
   });
 });

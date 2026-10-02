@@ -25,27 +25,29 @@ export function recordRendererEvent(
 
   switch (event.type) {
     case "review_opened":
-      if (!telemetry.firstInSession(`review_opened:${reviewKey}`)) return true;
-      telemetry.record("review_opened", review);
+      if (!telemetry.recordOncePerSession(`review_opened:${reviewKey}`, "review_opened", review))
+        return true;
       telemetry.markActive("study");
       return true;
     case "review_studied":
-      if (!telemetry.firstInSession(`review_studied:${reviewKey}`)) return true;
-      telemetry.record("review_studied", review);
+      if (!telemetry.recordOncePerSession(`review_studied:${reviewKey}`, "review_studied", review))
+        return true;
       telemetry.milestone("review_studied");
       telemetry.markActive("study");
       return true;
     case "commentary_viewed": {
-      if (!telemetry.firstInSession(`commentary_viewed:${reviewKey}:${event.ply}`)) return true;
-      telemetry.record("commentary_viewed", {
-        ...review,
-        ply: event.ply,
-        served_from_cache: event.source === "cached"
-      });
+      const viewed = telemetry.recordOncePerSession(
+        `commentary_viewed:${reviewKey}:${event.ply}`,
+        "commentary_viewed",
+        { ...review, ply: event.ply, served_from_cache: event.source === "cached" }
+      );
+      if (!viewed) return true;
       // The first explanation viewed for this game in this session opens a commentary session.
-      if (telemetry.firstInSession(`commentary_session:${gameRef ?? reviewKey}`)) {
-        telemetry.record("commentary_session_started", review);
-      }
+      telemetry.recordOncePerSession(
+        `commentary_session:${gameRef ?? reviewKey}`,
+        "commentary_session_started",
+        review
+      );
       telemetry.milestone("commentary_viewed");
       telemetry.markActive("study");
       return true;

@@ -87,7 +87,7 @@ export class TelemetryService {
   private readonly launchId = randomUUID();
   /** PostHog's `$session_id`, rotating with inactivity. */
   private readonly session = new TelemetrySession();
-  /** Keys seen in the current PostHog session ({@link firstInSession}). */
+  /** Keys recorded in the current PostHog session ({@link recordOncePerSession}). */
   private readonly once = new Set<string>();
   private onceSession: string | null = null;
   private active = false;
@@ -168,11 +168,15 @@ export class TelemetryService {
   }
 
   /** `record`, saying whether the event is now queued. */
-  private enqueue(event: TelemetryEventName, properties: TelemetryProperties): boolean {
+  private enqueue(
+    event: TelemetryEventName,
+    properties: TelemetryProperties,
+    at: number = this.now()
+  ): boolean {
     if (!this.active || this.closed) return false;
     const queued = this.guard(`recording ${event}`, () => {
       this.distinctId();
-      const occurredAt = this.now();
+      const occurredAt = at;
       this.outbox.add({
         uuid: randomUUID(),
         event,
@@ -218,16 +222,25 @@ export class TelemetryService {
   }
 
   /**
-   * True the first time `key` is seen in the current session (`$session_id`), for once-per-session
-   * events: a new session (after inactivity, or a day) starts with nothing seen.
+   * Records `event` unless `key` was already recorded in the current session (`$session_id`), for
+   * once-per-session events: a new session (after inactivity, or a day) starts with nothing seen.
+   * The check and the event share one timestamp, so both fall in the same session. True when this
+   * call recorded it; a write that failed isn't marked, so the next report tries again.
    */
-  firstInSession(key: string): boolean {
-    const session = this.session.peek(this.now());
+  recordOncePerSession(
+    key: string,
+    event: TelemetryEventName,
+    properties: TelemetryProperties = {}
+  ): boolean {
+    if (!this.active || this.closed) return false;
+    const at = this.now();
+    const session = this.session.peek(at);
     if (session !== this.onceSession) {
       this.once.clear();
       this.onceSession = session;
     }
     if (this.once.has(key)) return false;
+    if (!this.enqueue(event, properties, at)) return false;
     this.once.add(key);
     return true;
   }
