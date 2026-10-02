@@ -1,5 +1,4 @@
 import { useId, useState } from "react";
-import { START_FEN } from "@chaturanga/shared/chess/position";
 import { Upload } from "lucide-react";
 import type { RepertoireColor, RepertoireDetail } from "@chaturanga/shared/types/repertoire";
 import { Button } from "@/components/ui/button";
@@ -13,7 +12,7 @@ import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useCreateRepertoireMutation } from "../../queries/repertoire";
 import { useAddToRepertoireStore } from "../../stores/add-to-repertoire-store";
 import { useGameStore } from "../../stores/game-store";
-import { hasMoves, sourceFromBoard } from "./add-from-game";
+import { hasMoves, newRepertoireRootFen, sourceFromBoard } from "./add-from-game";
 import { fenError, sortedChapters } from "./repertoire-chapters";
 
 type StartFrom = "initial" | "fen" | "game";
@@ -36,7 +35,8 @@ const startOptions = [
  * New repertoire (§5.1): name and the side you train, starting from the initial position or a
  * validated FEN. "Create and import PGN" creates it and goes straight to the import preview.
  * With a game on the board, "Current game" starts from that game's position and, once created,
- * opens "Add to repertoire" for the whole game into the first chapter (`next` is "add-game").
+ * opens "Add to repertoire" for the whole game into the first chapter (`next` is "add-game");
+ * "Create and import PGN" ignores it and starts from the initial position.
  */
 export function CreateRepertoireDialog({
   onClose,
@@ -61,12 +61,7 @@ export function CreateRepertoireDialog({
     if (!canCreate) return;
     // The game as it is now: the dialog that follows adds this snapshot, whatever the board does.
     const source = fromGame ? sourceFromBoard(useGameStore.getState()) : null;
-    const rootFen =
-      startFrom === "fen"
-        ? fen.trim()
-        : source && source.rootFen !== START_FEN
-          ? source.rootFen
-          : null;
+    const rootFen = newRepertoireRootFen(startFrom, fen, source?.rootFen ?? null, next);
     create.mutate(
       { name: name.trim(), color, ...(rootFen ? { rootFen } : {}) },
       {
@@ -156,7 +151,8 @@ export function CreateRepertoireDialog({
           />
           {startFrom === "game" ? (
             <p className={fieldHint}>
-              Starts from the board game's position; next, choose what of the game to add.
+              Starts from the board game's position; next, choose what of the game to add. Create
+              and import PGN starts from the initial position instead.
             </p>
           ) : null}
         </div>

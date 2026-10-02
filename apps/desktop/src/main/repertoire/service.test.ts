@@ -1663,6 +1663,113 @@ describe("repertoire service: add from a game", () => {
     );
   });
 
+  it("a new line merged into a chapter with a training start trains, and says what won't", () => {
+    const { id } = create();
+    const saved = save(id, [["e2e4", "e7e5", "g1f3"]], {
+      meta: (tree) => ({
+        [nodeAt(tree, ["e2e4", "e7e5", "g1f3"]).id]: { edge: "included", trainingStart: true }
+      })
+    });
+    const source = sourceOf([["d2d4", "d7d5", "c2c4"]]);
+    const confirmed = withDefaults(
+      input(id, source, {
+        destination: { kind: "existing-chapter", chapterId: saved.chapter.id },
+        scope: { kind: "path", toNodeId: nodeAt(source.tree, ["d2d4", "d7d5", "c2c4"]).id }
+      })
+    );
+    const preview = service.previewAddFromGame(confirmed);
+    expect(preview.decisionsAdded).toBe(1);
+    // 1. d4 starts the new line, so its own position isn't asked; 2. c4 is.
+    expect(preview.warnings).toEqual([
+      "1 chosen move won't be trained: the chapter's training starts after them"
+    ]);
+    const result = service.addFromGame(confirmed);
+    const d4 = result.chapter.tree.find((node) => node.uci === "d2d4")!;
+    expect(result.chapter.nodeMeta[d4.id]).toEqual({ edge: "included", trainingStart: true });
+    const afterD5 = positionKey(fenAfterUci(fenAfterUci(START_FEN, "d2d4")!, "d7d5")!);
+    expect(decisionRepository.get(id, afterD5)?.acceptedUcis).toEqual(["c2c4"]);
+  });
+
+  it("an opponent context move covers a matched reference edge so the branch trains", () => {
+    const { id } = create();
+    const saved = save(id, [["e2e4", "e7e5"]], {
+      meta: (tree) => ({ [nodeAt(tree, ["e2e4", "e7e5"]).id]: { edge: "reference" } })
+    });
+    const source = sourceOf(GAME_LINES);
+    const from = nodeAt(source.tree, ["e2e4", "e7e5", "g1f3"]);
+    const confirmed = withDefaults(
+      input(id, source, {
+        destination: { kind: "existing-chapter", chapterId: saved.chapter.id },
+        scope: { kind: "subtree", fromNodeId: from.id, root: "original" }
+      })
+    );
+    expect(service.previewAddFromGame(confirmed).warnings).toEqual([]);
+    const result = service.addFromGame(confirmed);
+    const e5 = result.chapter.tree.find((node) => node.uci === "e7e5")!;
+    expect(result.chapter.nodeMeta[e5.id]).toEqual({ edge: "covered" });
+    const bb5 = result.chapter.tree.find((node) => node.uci === "f1b5")!;
+    expect(decisionRepository.get(id, positionKey(bb5.fenBefore))?.acceptedUcis).toEqual(["f1b5"]);
+  });
+
+  it("warns about chosen moves below an own reference move it can't accept", () => {
+    const { id } = create();
+    const saved = save(id, [["e2e4", "e7e5"]], {
+      meta: (tree) => ({ [nodeAt(tree, ["e2e4"]).id]: { edge: "reference" } })
+    });
+    const source = sourceOf(GAME_LINES);
+    const from = nodeAt(source.tree, ["e2e4", "e7e5", "g1f3"]);
+    const preview = service.previewAddFromGame(
+      withDefaults(
+        input(id, source, {
+          destination: { kind: "existing-chapter", chapterId: saved.chapter.id },
+          scope: { kind: "subtree", fromNodeId: from.id, root: "original" }
+        })
+      )
+    );
+    expect(preview.decisionsAdded).toBe(0);
+    expect(preview.warnings).toEqual([
+      "None of the chosen moves will be trained: nothing from this material is asked",
+      "1 chosen move won't be trained: Bb5 at 1. e4 e5 2. Nf3 Nc6 3. Bb5 is below an unaccepted move"
+    ]);
+  });
+
+  it("warns when a whole game's chosen move is below an unticked one", () => {
+    const { id } = create();
+    const source = sourceOf(GAME_LINES);
+    const nf3 = nodeAt(source.tree, ["e2e4", "e7e5", "g1f3"]).id;
+    const preview = service.previewAddFromGame(
+      input(id, source, {
+        destination: { kind: "new-chapter", title: "", chapterKind: "opening" },
+        policy: { includedNodeIds: [nf3], coveredNodeIds: [] }
+      })
+    );
+    expect(preview.decisionsAdded).toBe(0);
+    expect(preview.warnings).toEqual([
+      "None of the chosen moves will be trained: nothing from this material is asked",
+      "1 chosen move won't be trained: Nf3 at 1. e4 e5 2. Nf3 is below an unaccepted move"
+    ]);
+  });
+
+  it("a re-supported stored move is no conflict and a suspended decision isn't counted as new", () => {
+    const { id } = create();
+    const saved = save(id, [["e2e4", "e7e5", "g1f3"]]);
+    // 1. e4 and the 2. Nf3 decision lose their support; the stored choices stay.
+    save(id, [["d2d4"]], { chapterId: saved.chapter.id });
+    const afterE5 = positionKey(fenAfterUci(fenAfterUci(START_FEN, "e2e4")!, "e7e5")!);
+    expect(decisionRepository.get(id, START_KEY)?.acceptedUcis).toEqual(["e2e4", "d2d4"]);
+    expect(decisionRepository.get(id, afterE5)).toBeTruthy();
+    const source = sourceOf([["e2e4", "e7e5", "g1f3"]]);
+    const preview = service.previewAddFromGame(
+      withDefaults(
+        input(id, source, {
+          scope: { kind: "path", toNodeId: nodeAt(source.tree, ["e2e4", "e7e5", "g1f3"]).id }
+        })
+      )
+    );
+    expect(preview.conflicts).toEqual([]);
+    expect(preview.decisionsAdded).toBe(0);
+  });
+
   it("keeps the link when the library game is deleted, and removes links on request", () => {
     const { id } = create();
     insertLibraryGame("game-1");

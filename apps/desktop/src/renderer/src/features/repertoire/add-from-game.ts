@@ -98,12 +98,39 @@ export function defaultChapterTitle(headers: Record<string, string>): string {
   return players(headers) || headerValue(headers, "Event") || "Game";
 }
 
-/** A linked game in words: "White – Black (Event)", either part alone, or "Unknown game". */
-export function gameLinkLabel(headers: Record<string, string>): string {
+/**
+ * A linked game in words: "White – Black (Event)", either part alone, else (an analysis board game
+ * without tags) "Analysis board · <date>" with the date the link was made.
+ */
+export function gameLinkLabel(headers: Record<string, string>, createdAt: number): string {
   const names = players(headers);
-  const event = headerValue(headers, "Event");
-  if (names && event && event !== "?") return `${names} (${event})`;
-  return names || event || "Unknown game";
+  const value = headerValue(headers, "Event");
+  const event = value === "?" ? "" : value;
+  if (names && event) return `${names} (${event})`;
+  if (names || event) return names || event;
+  const date = new Date(createdAt).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  });
+  return `Analysis board · ${date}`;
+}
+
+/**
+ * The root a new repertoire starts from: the FEN typed for "From FEN"; for "Current game" the
+ * board game's root when it isn't the initial position, and only on the plain Create path (an
+ * imported PGN brings its own games, so "Create and import PGN" starts from the initial
+ * position); null for the initial position.
+ */
+export function newRepertoireRootFen(
+  startFrom: "initial" | "fen" | "game",
+  fen: string,
+  gameRootFen: string | null,
+  next: "study" | "import"
+): string | null {
+  if (startFrom === "fen") return fen.trim();
+  if (startFrom !== "game" || next === "import" || !gameRootFen) return null;
+  return gameRootFen === START_FEN ? null : gameRootFen;
 }
 
 /* ------------------------------------------------------------------ destination defaults */
@@ -322,7 +349,11 @@ export function conflictText(conflict: AddFromGamePreview["conflicts"][number]):
   const where =
     conflict.path.trim() ||
     `move ${fields[5] ?? "?"}${fields[1] === "b" ? " (Black to move)" : ""}`;
-  const existing = conflict.preferredUci ? [conflict.preferredUci] : conflict.existingUcis;
-  const played = existing.map((uci) => sanOf(conflict.fen, uci)).join(" / ") || "another move";
+  // The preference while it is still one of the supported moves, else the first supported one.
+  const preferred =
+    conflict.preferredUci && conflict.existingUcis.includes(conflict.preferredUci)
+      ? conflict.preferredUci
+      : conflict.existingUcis[0];
+  const played = preferred ? sanOf(conflict.fen, preferred) : "another move";
   return `At ${where}: you play ${played} here; this adds ${conflict.newSan} as an alternative`;
 }

@@ -14,6 +14,7 @@ import {
   defaultChapterTitle,
   defaultRepertoireId,
   gameLinkLabel,
+  newRepertoireRootFen,
   hashAddInput,
   hasMoves,
   headerValue,
@@ -155,11 +156,32 @@ describe("labels and destination defaults", () => {
   });
 
   it("labels a linked game with its event", () => {
-    expect(gameLinkLabel({ White: "Tal", Black: "Botvinnik", Event: "WCh" })).toBe(
+    const at = new Date(2026, 9, 3).getTime();
+    expect(gameLinkLabel({ White: "Tal", Black: "Botvinnik", Event: "WCh" }, at)).toBe(
       "Tal – Botvinnik (WCh)"
     );
-    expect(gameLinkLabel({ white: "Tal", black: "Botvinnik", event: "?" })).toBe("Tal – Botvinnik");
-    expect(gameLinkLabel({})).toBe("Unknown game");
+    expect(gameLinkLabel({ white: "Tal", black: "Botvinnik", event: "?" }, at)).toBe(
+      "Tal – Botvinnik"
+    );
+    expect(gameLinkLabel({ Event: "Training" }, at)).toBe("Training");
+    // An analysis board game without tags: the date the link was made.
+    const date = new Date(at).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric"
+    });
+    expect(gameLinkLabel({}, at)).toBe(`Analysis board · ${date}`);
+    expect(gameLinkLabel({ Event: "?" }, at)).toBe(`Analysis board · ${date}`);
+  });
+
+  it("starts a new repertoire from the current game only on the plain Create path", () => {
+    const later = applySan(START_FEN, "e4")!.fen;
+    expect(newRepertoireRootFen("game", "", later, "study")).toBe(later);
+    expect(newRepertoireRootFen("game", "", later, "import")).toBeNull();
+    expect(newRepertoireRootFen("game", "", START_FEN, "study")).toBeNull();
+    expect(newRepertoireRootFen("game", "", null, "study")).toBeNull();
+    expect(newRepertoireRootFen("fen", ` ${later} `, null, "import")).toBe(later);
+    expect(newRepertoireRootFen("initial", "", later, "study")).toBeNull();
   });
 
   it("selects the first candidate that is still an active repertoire, never guessing", () => {
@@ -363,8 +385,12 @@ describe("preview text", () => {
       conflictText({ ...conflict, preferredUci: "f1c4", existingUcis: ["f1c4", "d2d4"] })
     ).toContain("you play Bc4 here");
     expect(
-      conflictText({ ...conflict, preferredUci: null, existingUcis: ["f1c4", "d2d4"] })
-    ).toContain("you play Bc4 / d4 here");
+      conflictText({ ...conflict, preferredUci: null, existingUcis: ["d2d4", "f1c4"] })
+    ).toContain("you play d4 here");
+    // A stored preference that is no longer supported isn't named.
+    expect(
+      conflictText({ ...conflict, preferredUci: "f1b5", existingUcis: ["f1c4", "d2d4"] })
+    ).toContain("you play Bc4 here");
   });
 
   it("falls back to the move number without a path", () => {

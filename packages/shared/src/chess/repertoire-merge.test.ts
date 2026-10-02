@@ -3,6 +3,7 @@ import type { MoveNode } from "../types/chess";
 import type { RepertoireChapter, RepertoireNodeMeta } from "../types/repertoire";
 import { fenAfterUci, START_FEN } from "./position";
 import { rootPly } from "./pgn";
+import { collectDecisions } from "./repertoire-index";
 import { mergeIntoChapter } from "./repertoire-merge";
 
 /** A tree from UCI lines; shared prefixes share nodes; ids `prefix` + counter in creation order. */
@@ -183,6 +184,89 @@ describe("mergeIntoChapter", () => {
       edge: "covered",
       trainingStart: true
     });
+  });
+
+  it("starts a new line that holds included moves when the chapter already marks a start", () => {
+    // The chapter trains from 1. e4 e5 2. Nf3; a new 1. d4 line would otherwise stay before it.
+    const existing = treeOf([["e2e4", "e7e5", "g1f3"]], "n");
+    const meta: Record<string, RepertoireNodeMeta> = {
+      n1: { edge: "included" },
+      n2: { edge: "covered" },
+      n3: { edge: "included", trainingStart: true }
+    };
+    const incoming = treeOf(
+      [
+        ["d2d4", "d7d5", "c2c4"],
+        ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"],
+        ["c2c4", "e7e5"]
+      ],
+      "x"
+    );
+    const result = mergeIntoChapter(chapterOf(existing, meta), {
+      rootFen: START_FEN,
+      tree: incoming,
+      nodeMeta: {
+        x1: { edge: "included" },
+        x2: { edge: "covered" },
+        x3: { edge: "included" },
+        x4: { edge: "included" },
+        x5: { edge: "covered" },
+        x6: { edge: "included" },
+        x7: { edge: "covered" },
+        x8: { edge: "included" },
+        x9: { edge: "reference" },
+        x10: { edge: "covered" }
+      }
+    });
+    const metaOf = (id: string) => result.chapter.nodeMeta[result.idMap[id]];
+    // The first new node of the d4 route is the start; the nodes below it are not.
+    expect(metaOf("x1")).toEqual({ edge: "included", trainingStart: true });
+    expect(metaOf("x2")).toEqual({ edge: "covered" });
+    expect(metaOf("x3")).toEqual({ edge: "included" });
+    // Below the existing start: no new start.
+    expect(metaOf("x7")).toEqual({ edge: "covered" });
+    // No included move follows: left as is.
+    expect(metaOf("x9")).toEqual({ edge: "reference" });
+    const decisions = collectDecisions("white", [result.chapter]);
+    const d4Position = node(result.chapter.tree, result.idMap.x2).fenAfter;
+    expect([...decisions.values()].some((decision) => decision.fen === d4Position)).toBe(true);
+  });
+
+  it("leaves a chapter without a training start unmarked", () => {
+    const result = mergeIntoChapter(chapterOf(treeOf([["e2e4"]], "n")), {
+      rootFen: START_FEN,
+      tree: treeOf([["d2d4", "d7d5", "c2c4"]], "x"),
+      nodeMeta: { x1: { edge: "included" }, x2: { edge: "covered" }, x3: { edge: "included" } }
+    });
+    expect(result.chapter.nodeMeta[result.idMap.x1]).toEqual({ edge: "included" });
+  });
+
+  it("upgrades a covered own move to included when the incoming edge is included", () => {
+    const existing = treeOf([["d2d4", "d7d5"]], "n");
+    const meta: Record<string, RepertoireNodeMeta> = {
+      n1: { edge: "covered" },
+      n2: { edge: "covered" }
+    };
+    const before = collectDecisions("white", [chapterOf(existing, meta)]);
+    expect(before.size).toBe(0);
+    const result = mergeIntoChapter(chapterOf(existing, meta), {
+      rootFen: START_FEN,
+      tree: treeOf([["d2d4", "d7d5", "c2c4"]], "x"),
+      nodeMeta: { x1: { edge: "included" }, x2: { edge: "covered" }, x3: { edge: "reference" } },
+      upgradeNodeIds: ["x1", "x2"]
+    });
+    expect(result.chapter.nodeMeta.n1).toEqual({ edge: "included" });
+    expect(result.chapter.nodeMeta.n2).toEqual({ edge: "covered" });
+    const after = collectDecisions("white", [result.chapter]);
+    expect([...after.values()].map((decision) => decision.fen)).toEqual([START_FEN]);
+    // Not in upgradeNodeIds: stays covered.
+    const kept = mergeIntoChapter(chapterOf(existing, meta), {
+      rootFen: START_FEN,
+      tree: treeOf([["d2d4"]], "x"),
+      nodeMeta: { x1: { edge: "included" } },
+      upgradeNodeIds: []
+    });
+    expect(kept.chapter.nodeMeta.n1).toEqual({ edge: "covered" });
   });
 
   it("matches a root with different move counters and renumbers new moves from the chapter", () => {

@@ -67,6 +67,7 @@ import {
   listOwnMoves,
   pathToPosition,
   proposePolicy,
+  untrainedMoveWarnings,
   type AddFromGamePolicy,
   type ExtractedScope
 } from "@chaturanga/shared/chess/repertoire-add-from-game";
@@ -1171,17 +1172,32 @@ function planAddFromGame(
 
   let draft: RepertoireChapter;
   let alreadyPresent = 0;
+  // Copied id → stored chapter id (the same ids for a new chapter).
+  let chapterIds: Record<string, string> = extracted.sourceToChapterIds;
   if (existing) {
+    // Opponent context moves may cover a matched reference edge; the player's context moves stay
+    // as they are (they can't be accepted here), and moves below them are reported untrained.
+    const byId = new Map(extracted.tree.map((node) => [node.id, node]));
+    const opponentContext = extracted.contextNodeIds.filter((id) => {
+      const node = byId.get(extracted.sourceToChapterIds[id]);
+      return node !== undefined && playerToMove(node.fenBefore) !== record.color;
+    });
     const merged = mergeIntoChapter(existing, {
       rootFen: extracted.rootFen,
       tree: extracted.tree,
       nodeMeta: incomingMeta,
-      upgradeNodeIds: [...policy.includedNodeIds, ...policy.coveredNodeIds].map(
+      upgradeNodeIds: [...policy.includedNodeIds, ...policy.coveredNodeIds, ...opponentContext].map(
         (id) => extracted.sourceToChapterIds[id]
       )
     });
     draft = merged.chapter;
     alreadyPresent = merged.alreadyPresent;
+    chapterIds = Object.fromEntries(
+      Object.entries(extracted.sourceToChapterIds).map(([sourceId, copiedId]) => [
+        sourceId,
+        merged.idMap[copiedId]
+      ])
+    );
   } else {
     const title = destination.kind === "new-chapter" ? destination.title : "";
     draft = {
@@ -1215,13 +1231,15 @@ function planAddFromGame(
   const conflicts: AddFromGamePreview["conflicts"] = [];
   let decisionsAdded = 0;
   for (const [key, entry] of after) {
-    if (!before.has(key)) decisionsAdded += 1;
+    // A stored decision that regains support (suspended before) is not a new one.
+    if (!before.has(key) && !stored.has(key)) decisionsAdded += 1;
     const decision = stored.get(key);
     if (!decision) continue;
     const effective = effectiveAcceptedUcis(decision, before.get(key)?.acceptedUcis ?? new Set());
     if (!effective.length) continue;
     for (const uci of entry.acceptedUcis) {
-      if (effective.includes(uci)) continue;
+      // A stored accepted move that is merely supported again isn't a difference.
+      if (decision.acceptedUcis.includes(uci)) continue;
       conflicts.push({
         positionKey: key,
         fen: entry.fen,
@@ -1247,15 +1265,34 @@ function planAddFromGame(
   );
   const transpositions = [...copiedKeys].filter((key) => indexed.has(key)).length;
 
+  // Which chosen moves the stored chapter will actually ask (§7.1).
+  const ownMoves = listOwnMoves(record.color, extracted);
+  const chosen = new Set(policy.includedNodeIds);
+  const untrained =
+    kind === "opening"
+      ? untrainedMoveWarnings(
+          chapter,
+          ownMoves
+            .filter((move) => chosen.has(move.nodeId) && chapterIds[move.nodeId] !== undefined)
+            .map((move) => ({
+              chapterNodeId: chapterIds[move.nodeId],
+              san: move.san,
+              path: move.path
+            }))
+        )
+      : { trained: 0, warnings: [] };
+
   const warnings: string[] = [];
-  const effectiveIncluded = kind === "opening" ? policy.includedNodeIds.length : 0;
-  if (scope.kind === "whole-game" && !effectiveIncluded) {
+  if (scope.kind === "whole-game" && !untrained.trained && !policy.includedNodeIds.length) {
     warnings.push("Whole game added as reference: nothing will be trained until you accept moves");
   } else if (kind === "reference" && policy.includedNodeIds.length) {
     warnings.push("Reference chapters never train: the chosen moves are kept as study material");
-  } else if (!effectiveIncluded) {
+  } else if (!policy.includedNodeIds.length) {
     warnings.push("No moves are accepted: nothing from this material will be trained");
+  } else if (!untrained.trained) {
+    warnings.push("None of the chosen moves will be trained: nothing from this material is asked");
   }
+  warnings.push(...untrained.warnings);
   if (conflicts.length) {
     const positions = new Set(conflicts.map((conflict) => conflict.positionKey)).size;
     warnings.push(
@@ -1285,7 +1322,7 @@ function planAddFromGame(
       transpositions,
       alreadyPresent,
       defaultPolicy,
-      ownMoves: listOwnMoves(record.color, extracted),
+      ownMoves,
       opponentMoves: listOpponentMoves(record.color, extracted),
       warnings
     }

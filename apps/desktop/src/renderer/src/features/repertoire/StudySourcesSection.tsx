@@ -49,7 +49,7 @@ export function StudySourcesSection({
           <li key={link.id} className={cn(listRow, "gap-1 py-1.5 pl-3 pr-1")}>
             <div className="grid min-w-0 flex-1 gap-0.5">
               <span className="truncate text-sm text-fg-secondary">
-                {gameLinkLabel(link.headers)}
+                {gameLinkLabel(link.headers, link.createdAt)}
               </span>
               <span className="truncate font-mono text-2xs text-fg-muted" title={link.capturedPath}>
                 {link.capturedPath || "Start"}

@@ -18,8 +18,8 @@ export type MergeIncoming = {
   /** Metadata of the incoming tree, keyed by incoming id. */
   nodeMeta: Record<string, RepertoireNodeMeta>;
   /**
-   * Incoming ids whose edge may upgrade a matched existing `reference` edge (the confirmed policy).
-   * Omitted = every incoming node.
+   * Incoming ids whose edge may upgrade a matched existing edge (the confirmed policy and its
+   * context). Omitted = every incoming node.
    */
   upgradeNodeIds?: readonly string[];
 };
@@ -59,8 +59,12 @@ function idGenerator(existing: readonly MoveNode[]): () => string {
  * - other incoming moves are appended as new branches (after the existing children) with fresh
  *   chapter-local ids, and take the incoming metadata (`reference` when there is none; a
  *   `trainingStart` only when the chapter already marks a start, so existing routes keep training);
- * - a matched existing `reference` edge becomes the incoming `included`/`covered` edge when the
- *   node is in `upgradeNodeIds`; an edge is never downgraded.
+ * - when the chapter marks a training start, the first new node of a route that doesn't pass
+ *   through an existing start is marked `trainingStart` when included moves follow it, so the new
+ *   line trains instead of staying before the start;
+ * - a matched existing `reference` edge becomes the incoming `included`/`covered` edge, and a
+ *   matched `covered` edge becomes an incoming `included` one (the player's move, covered only as
+ *   context before), when the node is in `upgradeNodeIds`; an edge is never downgraded.
  * Merging the same material twice adds nothing the second time.
  */
 export function mergeIntoChapter(
@@ -97,6 +101,25 @@ export function mergeIntoChapter(
   let added = 0;
   let alreadyPresent = 0;
 
+  // Whether included moves follow an incoming node (itself included) on a route that no incoming
+  // start below it already covers.
+  const leadsToIncluded = (start: MoveNode): boolean => {
+    const pending = [start];
+    const seen = new Set<string>();
+    for (let item = pending.pop(); item; item = pending.pop()) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      const meta = incoming.nodeMeta[item.id];
+      if (item !== start && meta?.trainingStart) continue;
+      if (meta?.edge === "included") return true;
+      for (const id of item.children) {
+        const child = incomingById.get(id);
+        if (child?.uci) pending.push(child);
+      }
+    }
+    return false;
+  };
+
   const fillEmpty = (target: MoveNode, source: MoveNode) => {
     if (!target.comment?.trim() && source.comment?.trim()) target.comment = source.comment;
     if (!target.nags.length && source.nags.length) target.nags = [...source.nags];
@@ -112,17 +135,25 @@ export function mergeIntoChapter(
   fillEmpty(root, incomingRoot);
 
   // Pre-order over the incoming tree, so new ids follow authored order.
-  const stack: { child: MoveNode; target: MoveNode }[] = [];
+  // `fresh`: the target is a node this merge appended; `underStart`: the target's route passes
+  // through an existing training start.
+  type Item = { child: MoveNode; target: MoveNode; fresh: boolean; underStart: boolean };
+  const stack: Item[] = [];
   const visited = new Set<string>([incomingRoot.id]);
-  const pushChildren = (source: MoveNode, target: MoveNode) => {
+  const pushChildren = (
+    source: MoveNode,
+    target: MoveNode,
+    fresh: boolean,
+    underStart: boolean
+  ) => {
     for (let i = source.children.length - 1; i >= 0; i--) {
       const child = incomingById.get(source.children[i]);
-      if (child?.uci && !visited.has(child.id)) stack.push({ child, target });
+      if (child?.uci && !visited.has(child.id)) stack.push({ child, target, fresh, underStart });
     }
   };
-  pushChildren(incomingRoot, root);
+  pushChildren(incomingRoot, root, false, Boolean(nodeMeta[root.id]?.trainingStart));
   for (let item = stack.pop(); item; item = stack.pop()) {
-    const { child, target } = item;
+    const { child, target, fresh, underStart } = item;
     if (visited.has(child.id)) continue;
     visited.add(child.id);
     const uci = child.uci!;
@@ -133,15 +164,14 @@ export function mergeIntoChapter(
       fillEmpty(match, child);
       const incomingMeta = incoming.nodeMeta[child.id];
       const current = nodeMeta[match.id] ?? { edge: "included" as const };
-      if (
-        current.edge === "reference" &&
-        incomingMeta &&
-        incomingMeta.edge !== "reference" &&
-        (!upgrades || upgrades.has(child.id))
-      ) {
+      const upgrade =
+        incomingMeta !== undefined &&
+        ((current.edge === "reference" && incomingMeta.edge !== "reference") ||
+          (current.edge === "covered" && incomingMeta.edge === "included"));
+      if (upgrade && (!upgrades || upgrades.has(child.id))) {
         nodeMeta[match.id] = { ...current, edge: incomingMeta.edge };
       }
-      pushChildren(child, match);
+      pushChildren(child, match, false, underStart || Boolean(nodeMeta[match.id]?.trainingStart));
       continue;
     }
     const node: MoveNode = {
@@ -167,8 +197,11 @@ export function mergeIntoChapter(
     // A new move without incoming metadata is study material, never a silent acceptance.
     const meta: RepertoireNodeMeta = { ...(incoming.nodeMeta[child.id] ?? { edge: "reference" }) };
     if (meta.trainingStart && !chapterHasStart) delete meta.trainingStart;
+    if (chapterHasStart && !fresh && !underStart && leadsToIncluded(child)) {
+      meta.trainingStart = true;
+    }
     nodeMeta[node.id] = meta;
-    pushChildren(child, node);
+    pushChildren(child, node, true, underStart || Boolean(meta.trainingStart));
   }
 
   return {

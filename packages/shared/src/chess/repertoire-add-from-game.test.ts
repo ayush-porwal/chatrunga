@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MoveNode } from "../types/chess";
-import type { AddFromGameScope } from "../types/repertoire";
+import type { AddFromGameScope, RepertoireNodeMeta } from "../types/repertoire";
 import { applySan, START_FEN } from "./position";
 import { rootPly } from "./pgn";
 import {
@@ -9,7 +9,9 @@ import {
   listOpponentMoves,
   listOwnMoves,
   pathToPosition,
-  proposePolicy
+  proposePolicy,
+  untrainedMoveWarnings,
+  type ExtractedScope
 } from "./repertoire-add-from-game";
 import { collectDecisions } from "./repertoire-index";
 import { positionKey } from "./repertoire-position";
@@ -345,5 +347,64 @@ describe("listOpponentMoves / pathToPosition", () => {
     expect(pathToPosition(extracted, positionKey(START_FEN))).toBe("");
     const line = extractScope(SOURCE, { kind: "path", toNodeId: "e4" });
     expect(pathToPosition(line, key("e4/c5"))).toBeNull();
+  });
+});
+
+describe("untrainedMoveWarnings", () => {
+  const chapterOf = (extracted: ExtractedScope, nodeMeta: Record<string, RepertoireNodeMeta>) => ({
+    kind: "opening" as const,
+    enabled: true,
+    tree: extracted.tree,
+    nodeMeta
+  });
+  const chosen = (extracted: ExtractedScope, sourceIds: string[]) =>
+    listOwnMoves("white", extracted)
+      .filter((move) => sourceIds.includes(move.nodeId))
+      .map((move) => ({
+        chapterNodeId: extracted.sourceToChapterIds[move.nodeId],
+        san: move.san,
+        path: move.path
+      }));
+
+  it("counts moves that train and names those below an unaccepted move", () => {
+    const extracted = extractScope(SOURCE, { kind: "whole-game" });
+    const policy = {
+      includedNodeIds: ["e4/e5/Nf3", "e4/e5/Nf3/Nc6/Bb5"],
+      coveredNodeIds: ["e4/e5", "e4/e5/Nf3/Nc6"]
+    };
+    // 1. e4 stays unticked (reference), so nothing below it trains.
+    const result = untrainedMoveWarnings(
+      chapterOf(extracted, applyPolicy(extracted, policy)),
+      chosen(extracted, policy.includedNodeIds)
+    );
+    expect(result.trained).toBe(0);
+    expect(result.warnings).toEqual([
+      "2 chosen moves won't be trained: Nf3 at 1. e4 e5 2. Nf3, Bb5 at 1. e4 e5 2. Nf3 Nc6 3. Bb5 are below an unaccepted move"
+    ]);
+    const accepted = { ...policy, includedNodeIds: ["e4", ...policy.includedNodeIds] };
+    const all = untrainedMoveWarnings(
+      chapterOf(extracted, applyPolicy(extracted, accepted)),
+      chosen(extracted, accepted.includedNodeIds)
+    );
+    expect(all).toEqual({ trained: 3, warnings: [] });
+  });
+
+  it("reports moves before a training start and a move that starts a line", () => {
+    const extracted = extractScope(SOURCE, { kind: "whole-game" });
+    const policy = {
+      includedNodeIds: ["e4", "e4/e5/Nf3", "e4/e5/Nf3/Nc6/Bb5"],
+      coveredNodeIds: ["e4/e5", "e4/e5/Nf3/Nc6"]
+    };
+    const meta = applyPolicy(extracted, policy);
+    meta[extracted.sourceToChapterIds["e4/e5/Nf3"]].trainingStart = true;
+    const result = untrainedMoveWarnings(
+      chapterOf(extracted, meta),
+      chosen(extracted, policy.includedNodeIds)
+    );
+    expect(result.trained).toBe(1);
+    expect(result.warnings).toEqual([
+      "1 chosen move won't be trained: they come before the chapter's training start",
+      "1 chosen move won't be trained: the chapter's training starts after them"
+    ]);
   });
 });

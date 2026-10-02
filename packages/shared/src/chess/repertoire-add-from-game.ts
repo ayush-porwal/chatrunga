@@ -11,11 +11,17 @@ import {
   REPERTOIRE_ROOT_NODE_ID,
   type AddFromGameScope,
   type ChapterKind,
+  type RepertoireChapter,
   type RepertoireColor,
   type RepertoireNodeMeta
 } from "../types/repertoire";
 import { rootPly } from "./pgn";
-import { defaultImportNodeMeta } from "./repertoire-index";
+import {
+  buildChapterLookup,
+  computeScopeStates,
+  defaultImportNodeMeta,
+  nodeMetaOf
+} from "./repertoire-index";
 import { formatPath } from "./repertoire-pgn";
 import { playerToMove, positionKey } from "./repertoire-position";
 
@@ -315,6 +321,68 @@ export function pathToPosition(extracted: ExtractedScope, key: string): string |
     }
   }
   return null;
+}
+
+/** A move the user chose to accept, by its id in the stored chapter. */
+export type ChosenMove = { chapterNodeId: string; san: string; path: string };
+
+type UntrainedReason =
+  | "reference"
+  | "before-start"
+  | "starts-line"
+  | "after-stop"
+  | "disabled"
+  | "not-included";
+
+const UNTRAINED_TEXT: Record<Exclude<UntrainedReason, "reference">, string> = {
+  "before-start": "they come before the chapter's training start",
+  "starts-line": "the chapter's training starts after them",
+  "after-stop": "they come after a training stop",
+  disabled: "they are in a disabled chapter or line",
+  "not-included": "the chapter keeps them as reference"
+};
+
+/**
+ * Which chosen moves an opening chapter (as it would be stored) will actually ask: a move trains
+ * when its edge is `included` and both it and the position before it are in training scope
+ * (§7.1). Returns how many train, and one warning per reason the others don't, such as "2 chosen
+ * moves won't be trained: they come before the chapter's training start". Moves below an
+ * unaccepted (reference) move are named with their path.
+ */
+export function untrainedMoveWarnings(
+  chapter: Pick<RepertoireChapter, "kind" | "enabled" | "tree" | "nodeMeta">,
+  moves: readonly ChosenMove[]
+): { trained: number; warnings: string[] } {
+  const lookup = buildChapterLookup(chapter);
+  const states = computeScopeStates(chapter, lookup);
+  const untrained = new Map<UntrainedReason, ChosenMove[]>();
+  let trained = 0;
+  for (const move of moves) {
+    const node = lookup.nodesById.get(move.chapterNodeId);
+    const state = states.get(move.chapterNodeId);
+    if (!node || state === undefined) continue;
+    const parentState = node.parentId === null ? undefined : states.get(node.parentId);
+    let reason: UntrainedReason | null;
+    if (state !== "active") reason = state;
+    else if (parentState !== "active") reason = "starts-line";
+    else if (nodeMetaOf(chapter.nodeMeta, node.id).edge !== "included") reason = "not-included";
+    else reason = null;
+    if (reason === null) trained += 1;
+    else untrained.set(reason, [...(untrained.get(reason) ?? []), move]);
+  }
+  const warnings: string[] = [];
+  for (const [reason, list] of untrained) {
+    const count = `${list.length} chosen move${list.length === 1 ? "" : "s"} won't be trained`;
+    if (reason !== "reference") {
+      warnings.push(`${count}: ${UNTRAINED_TEXT[reason]}`);
+      continue;
+    }
+    const named = list.slice(0, 3).map((move) => `${move.san} at ${move.path}`);
+    const more = list.length > 3 ? ` and ${list.length - 3} more` : "";
+    const verb = list.length === 1 ? "is" : "are";
+    warnings.push(`${count}: ${named.join(", ")}${more} ${verb} below an unaccepted move`);
+  }
+  return { trained, warnings };
 }
 
 function listMoves(

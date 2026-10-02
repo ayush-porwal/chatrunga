@@ -94,17 +94,16 @@ export function AddToRepertoireDialog({
     state.repertoireId ? state.baseRevision : 0
   );
 
-  // The repertoire: the user's pick, else the preselected / last used one (undefined: not picked).
-  const [pickedRepertoireId, setPickedRepertoireId] = useState<string | null | undefined>();
+  // The repertoire: the user's pick, else the last used one (undefined: not picked). A preselected
+  // one (just created) counts as picked at once: the cached list may not have it yet.
+  const [pickedRepertoireId, setPickedRepertoireId] = useState<string | null | undefined>(
+    preselect?.repertoireId
+  );
   const repertoires = useMemo(() => list.data ?? [], [list.data]);
   const repertoireId =
     pickedRepertoireId !== undefined
       ? pickedRepertoireId
-      : defaultRepertoireId(repertoires, [
-          preselect?.repertoireId,
-          lastRepertoireId,
-          studiedRepertoireId
-        ]);
+      : defaultRepertoireId(repertoires, [lastRepertoireId, studiedRepertoireId]);
   const detail = useRepertoireQuery(repertoireId);
   const chapters = useMemo(() => sortedChapters(detail.data?.chapters ?? []), [detail.data]);
 
@@ -169,6 +168,7 @@ export function AddToRepertoireDialog({
 
   const add = useAddFromGameMutation();
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [flushing, setFlushing] = useState(false);
   const policyReady = Boolean(baseKey && policyState.baseKey === baseKey);
   const canAdd = Boolean(input && policy && fresh && !add.isPending && !flushing);
@@ -176,6 +176,7 @@ export function AddToRepertoireDialog({
   async function commit() {
     if (!input || !policy || !canAdd || !repertoireId) return;
     setError(null);
+    setNotice(null);
     // An open study draft of this repertoire saves first, so the add doesn't make it stale.
     const draft = useRepertoireWorkspaceStore.getState();
     if (draft.repertoireId === repertoireId && (draft.dirty || draft.saveState.status !== "idle")) {
@@ -187,13 +188,20 @@ export function AddToRepertoireDialog({
         return;
       }
     }
+    // Saving the draft made a new revision: the preview re-runs against it before anything is added.
     const workspace = useRepertoireWorkspaceStore.getState();
-    const revision = Math.max(
-      input.expectedRevision,
-      workspace.repertoireId === repertoireId ? workspace.baseRevision : 0
-    );
+    if (
+      workspace.repertoireId === repertoireId &&
+      workspace.baseRevision > input.expectedRevision
+    ) {
+      void detail.refetch();
+      setNotice(
+        "The chapter open in Study was saved first. Check the updated preview and add again."
+      );
+      return;
+    }
     add.mutate(
-      { ...input, policy, expectedRevision: revision },
+      { ...input, policy },
       {
         onSuccess: (result) => {
           if (useRepertoireWorkspaceStore.getState().repertoireId === repertoireId) {
@@ -456,6 +464,7 @@ export function AddToRepertoireDialog({
         </section>
       ) : null}
 
+      {notice ? <Notice tone="info">{notice}</Notice> : null}
       {error ? <Notice tone="danger">{error}</Notice> : null}
     </Dialog>
   );
