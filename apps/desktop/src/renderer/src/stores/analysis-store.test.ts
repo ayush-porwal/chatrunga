@@ -49,6 +49,16 @@ describe("analysis store", () => {
     expect(useAnalysisStore.getState()).toBe(state);
   });
 
+  it("progress reports without a score or moves don't blank the lines (the last one before a stop)", () => {
+    useAnalysisStore.getState().setInfos([info(1, 40), info(2, 25)]);
+    useAnalysisStore.getState().setInfos([
+      { engineId: "engine-1", depth: 33, raw: "info depth 33 currmove e2e4 currmovenumber 1", receivedAt: 50 },
+      { engineId: "engine-1", nodes: 1_000_000, nps: 900_000, raw: "info nodes 1000000 nps 900000", receivedAt: 51 }
+    ]);
+    const { topLines } = useAnalysisStore.getState();
+    expect(topLines.map((line) => line.score?.value)).toEqual([40, 25]);
+  });
+
   it("tracks best moves, errors, and active engines", () => {
     useAnalysisStore.getState().setActiveEngine("engine-1");
     useAnalysisStore.getState().setBestMove("e2e4");
