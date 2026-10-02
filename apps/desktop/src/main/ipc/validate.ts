@@ -14,6 +14,7 @@ import type {
   GameSource,
   SaveGameInput
 } from "@chaturanga/shared/types/chess";
+import { GAME_SEARCH_MAX_LENGTH } from "@chaturanga/shared/types/chess";
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
 import type {
   CreateEngineInput,
@@ -309,8 +310,6 @@ export function parseReviewGameInput(value: unknown): ReviewGameInput {
 }
 
 const GAME_LIST_FILTERS: readonly GameListFilter[] = ["all", "reviewed", "lichess", "other"];
-/** A library search box's text. */
-const MAX_SEARCH = 200;
 
 /** A library page request (the repository clamps the limit). */
 export function parseGameListQuery(value: unknown): GameListQuery {
@@ -325,7 +324,7 @@ export function parseGameListQuery(value: unknown): GameListQuery {
   return {
     cursor: cursor ?? null,
     limit: optional(input.limit, (limit) => asWholeNumber(limit, "page size")),
-    search: optional(input.search, (search) => asString(search, "search", MAX_SEARCH)),
+    search: optional(input.search, (search) => asString(search, "search", GAME_SEARCH_MAX_LENGTH)),
     filter: (input.filter as GameListFilter | undefined) ?? "all",
     excludeId: nullable(input.excludeId, (id) => asId(id, "game id")) ?? null
   };

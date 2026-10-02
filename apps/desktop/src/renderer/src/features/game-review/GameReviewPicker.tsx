@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { ChevronRight, Search, Upload } from "lucide-react";
-import type { GameListFilter, GameSummary } from "@chaturanga/shared/types/chess";
+import { GAME_SEARCH_MAX_LENGTH, type GameListFilter, type GameSummary } from "@chaturanga/shared/types/chess";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useGameFacetsQuery, useGamePagesQuery } from "../../queries/api";
@@ -76,7 +76,8 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
   ];
   // Searched and filtered in the database, a page at a time. Clearing the box applies at once;
   // typing waits for a pause. Lichess / Other only split a library that has Lichess games.
-  const needle = query.trim();
+  // The box stops at the longest search the library takes (main refuses longer).
+  const needle = query.trim().slice(0, GAME_SEARCH_MAX_LENGTH);
   const debouncedNeedle = useDebouncedValue(needle, SEARCH_DEBOUNCE_MS);
   const games = useGamePagesQuery({
     search: needle ? debouncedNeedle : "",
@@ -122,6 +123,7 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
             autoFocus
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            maxLength={GAME_SEARCH_MAX_LENGTH}
             aria-label="Search saved games"
             placeholder="Search players, event, date or result"
             className="pl-9"

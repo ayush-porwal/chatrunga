@@ -109,6 +109,9 @@ export type GameListCursor = { updatedAt: number; id: string };
 export type GameListFilter = "all" | "reviewed" | "lichess" | "other";
 
 /** One page of the library, filtered and searched in the database before it is cut to `limit`. */
+/** The longest library search text (the search box stops there; IPC refuses longer). */
+export const GAME_SEARCH_MAX_LENGTH = 200;
+
 export type GameListQuery = {
   /** Null (or absent) for the first page; a page's `nextCursor` for the one after it. */
   cursor?: GameListCursor | null;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { GAME_SEARCH_MAX_LENGTH } from "@chaturanga/shared/types/chess";
 import {
   asAbsolutePath,
   asFen,
@@ -285,7 +286,8 @@ describe("parseSettingsPatch", () => {
     expect(() => parseGameListQuery({ limit: 1.5 })).toThrow(/page size/);
     expect(() => parseGameListQuery({ cursor: { updatedAt: "5", id: "g1" } })).toThrow(/cursor/);
     expect(() => parseGameListQuery({ cursor: { updatedAt: 5, id: "" } })).toThrow(/cursor/);
-    expect(() => parseGameListQuery({ search: "x".repeat(201) })).toThrow(/search/);
+    expect(parseGameListQuery({ search: "x".repeat(GAME_SEARCH_MAX_LENGTH) }).search).toHaveLength(GAME_SEARCH_MAX_LENGTH);
+    expect(() => parseGameListQuery({ search: "x".repeat(GAME_SEARCH_MAX_LENGTH + 1) })).toThrow(/search/);
     expect(() => parseGameListQuery("all")).toThrow();
   });
 });
