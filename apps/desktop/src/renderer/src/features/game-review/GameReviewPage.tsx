@@ -34,7 +34,7 @@ import { useStoreHintsOnLeave } from "../onboarding/Coachmark";
 import { useUpdateSettingMutation } from "../../queries/api";
 import { openSavedGame } from "../game/saved-game";
 import { reviewAnchorFor, type CommentaryMoveContext, type MoveNavigationTarget } from "./commentary-moves";
-import type { OpeningSide } from "./opening-comparison";
+import { openingSideFor, type OpeningSide } from "./opening-comparison";
 import { qualityTone } from "@/lib/ui";
 import { Sparkles, Swords, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -127,10 +127,11 @@ function GameReviewPageInner({
   const reviewError = useReviewStore((state) => state.error);
   const reviewInput = useMemo(() => mainlineReviewInput(moveTree), [moveTree]);
   // The Opening tab's side, picked for this game (kept across tab switches and Back, not across games).
-  const openingColor = openingSide && openingSide.gameId === gameId ? openingSide.color : null;
+  const board = useGameStore((state) => state.board);
+  const openingColor = openingSideFor(openingSide, board);
   const changeOpeningColor = useCallback(
-    (color: RepertoireColor) => onOpeningSideChange?.({ gameId, color }),
-    [gameId, onOpeningSideChange]
+    (color: RepertoireColor) => onOpeningSideChange?.({ board, color }),
+    [board, onOpeningSideChange]
   );
   const rememberedRepertoires = useMemo(
     () => ({ white: settings.repertoireCompareWhite ?? null, black: settings.repertoireCompareBlack ?? null }),

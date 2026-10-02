@@ -1,4 +1,4 @@
-import type { OpeningSide } from "../features/game-review/opening-comparison";
+import { openingSideFor, type OpeningSide } from "../features/game-review/opening-comparison";
 import type { ReviewTab } from "../features/game-review/review-utils";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import type { SettingsSectionId } from "../features/settings/SettingsPage";
@@ -72,8 +72,7 @@ export function captureEntry(view: AppView, context: HistoryContext): HistoryEnt
         view,
         board: captureBoard("notation", context.puzzleConfig),
         tab: context.reviewTab,
-        compareColor:
-          context.openingSide && context.openingSide.gameId === useGameStore.getState().gameId ? context.openingSide.color : null
+        compareColor: openingSideFor(context.openingSide, useGameStore.getState().board)
       };
     case "repertoire-study": {
       const screen = context.repertoireScreen;

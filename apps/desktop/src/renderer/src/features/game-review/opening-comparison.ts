@@ -162,7 +162,13 @@ export function tokenTitle(move: Pick<ComparisonMove, "fenBefore" | "san" | "sta
 export type RememberedRepertoires = { white: string | null; black: string | null };
 
 /** The side picked in the Opening tab for one game (a history entry keeps it for Back). */
-export type OpeningSide = { gameId: string | null; color: RepertoireColor };
+/** The Opening tab's side picked for a board (the game store's `board` count when it was picked). */
+export type OpeningSide = { board: number; color: RepertoireColor };
+
+/** The side picked for this board, or null when none was or it was picked for another board. */
+export function openingSideFor(side: OpeningSide | null, board: number): RepertoireColor | null {
+  return side && side.board === board ? side.color : null;
+}
 
 /**
  * The side the saved game's provenance suggests the player had, or null: a Lichess game whose
@@ -188,8 +194,13 @@ export function suggestedSide(input: {
       };
     }
   }
-  if (source === "engine-game" && engineSide) {
-    const color = engineSide === "white" ? "black" : "white";
+  if (source === "engine-game") {
+    // The live match's side, else the "You" header an engine game is saved with.
+    const you = (name: string | null | undefined) => name === "You";
+    const fromHeaders =
+      you(headers.white) !== you(headers.black) ? (you(headers.white) ? "white" : "black") : null;
+    const color = engineSide ? (engineSide === "white" ? "black" : "white") : fromHeaders;
+    if (!color) return null;
     return {
       color,
       hint: `You played ${color === "white" ? "White" : "Black"} against the engine`

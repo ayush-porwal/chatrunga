@@ -362,7 +362,7 @@ export function App() {
         }
         currentGame().setMode("freeplay");
         setReviewTab(entry.tab as ReviewTab);
-        setOpeningSide(entry.compareColor ? { gameId: entry.board.gameId, color: entry.compareColor } : null);
+        setOpeningSide(entry.compareColor ? { board: currentGame().board, color: entry.compareColor } : null);
         const id = entry.board.gameId ?? "current";
         latestNavigation.current += 1;
         setAppView("game-review", () => navigate(`/games/${id}/review`, { replace: true }));

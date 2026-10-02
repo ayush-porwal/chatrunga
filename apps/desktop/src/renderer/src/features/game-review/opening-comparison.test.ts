@@ -16,6 +16,7 @@ import {
   mainlineMoves,
   moveLabel,
   moveNumberOf,
+  openingSideFor,
   pickRepertoire,
   suggestedSide,
   tokenStatus,
@@ -231,7 +232,10 @@ describe("move tokens", () => {
     }
     expect(tokenStatus("deviation")).toEqual({ tone: "warn", label: "Left your repertoire" });
     // Also used for moves after a deviation, so it never claims the repertoire applies later.
-    expect(tokenStatus("outside-scope")).toEqual({ tone: "subtle", label: "Outside your repertoire" });
+    expect(tokenStatus("outside-scope")).toEqual({
+      tone: "subtle",
+      label: "Outside your repertoire"
+    });
     expect(tokenStatus("uncovered").tone).toBe("danger");
   });
 
@@ -284,6 +288,32 @@ describe("colour and repertoire defaults", () => {
     expect(
       suggestedSide({ source: "engine-game", headers, lichessUsername: null, engineSide: "white" })
     ).toEqual({ color: "black", hint: "You played Black against the engine" });
+  });
+
+  it("suggests a saved engine game's side from its You header, not a stale match side", () => {
+    const saved = { white: "Stockfish", black: "You" };
+    expect(
+      suggestedSide({
+        source: "engine-game",
+        headers: saved,
+        lichessUsername: null,
+        engineSide: null
+      })
+    ).toEqual({ color: "black", hint: "You played Black against the engine" });
+    expect(
+      suggestedSide({
+        source: "engine-game",
+        headers: { white: "You", black: "You" },
+        lichessUsername: null,
+        engineSide: null
+      })
+    ).toBeNull();
+  });
+
+  it("keeps a picked side only for the board it was picked on", () => {
+    expect(openingSideFor({ board: 3, color: "black" }, 3)).toBe("black");
+    expect(openingSideFor({ board: 3, color: "black" }, 4)).toBeNull();
+    expect(openingSideFor(null, 3)).toBeNull();
   });
 });
 
