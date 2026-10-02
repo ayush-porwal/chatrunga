@@ -21,6 +21,11 @@ describe("gameFingerprint", () => {
     );
   });
 
+  it("is none for a game with nothing identifying it (anonymous games with the same moves may be unrelated)", () => {
+    expect(fingerprintOf(`[Event "?"]\n\n1. e4 e5 *`)).toBeNull();
+    expect(fingerprintOf(`[White "?"]\n[Black "?"]\n[Date "????.??.??"]\n\n1. e4 e5 *`)).toBeNull();
+  });
+
   it("is the Lichess game for a game from lichess.org", () => {
     expect(fingerprintOf(`[Site "https://lichess.org/abcdEFGH"]\n\n1. d4 *`)).toBe("lichess:abcdEFGH");
     expect(lichessGameId("https://lichess.org/abcdEFGHwxyz")).toBe("abcdEFGH");

@@ -50,14 +50,30 @@ export function openSavedGame(saved: SavedGame): void {
 /** The renumbering each opened game's reviews need (see reviewWithRealPlies), for switching later. */
 const plyShifts = new Map<string, number>();
 
+/** Bumped by each switch, so only the latest one lands. */
+let analysisRequest = 0;
+
 /**
  * Shows another saved analysis of the loaded game (and its AI commentary) instead of the one
- * shown. False when it's gone or the board moved on to another game meanwhile.
+ * shown. False when it's gone, or something changed while it loaded: the board moved to another
+ * game, a later switch was asked for, a review started (its result must still be saved), or the
+ * analysis shown changed (a run finished).
  */
 export async function showSavedAnalysis(gameId: string, reviewId: string): Promise<boolean> {
+  const request = ++analysisRequest;
+  const shownBefore = useReviewStore.getState().review?.reviewId ?? null;
   const review = await window.chaturanga?.games.getReview(gameId, reviewId);
-  if (!review || useGameStore.getState().gameId !== gameId) return false;
-  useReviewStore.getState().loadReview(reviewWithRealPlies(review, plyShifts.get(gameId) ?? 0));
+  const store = useReviewStore.getState();
+  if (
+    !review ||
+    request !== analysisRequest ||
+    useGameStore.getState().gameId !== gameId ||
+    store.status === "running" ||
+    (store.review?.reviewId ?? null) !== shownBefore
+  ) {
+    return false;
+  }
+  store.loadReview(reviewWithRealPlies(review, plyShifts.get(gameId) ?? 0));
   return true;
 }
 

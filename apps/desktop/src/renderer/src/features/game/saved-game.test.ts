@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEmptyGame } from "@chaturanga/shared/chess/pgn";
 import type { SavedGame } from "@chaturanga/shared/types/chess";
 import type { GameReview } from "@chaturanga/shared/types/engine";
-import { reviewWithRealPlies, sessionFromSavedGame } from "./saved-game";
+import { useGameStore } from "../../stores/game-store";
+import { useReviewStore } from "../../stores/review-store";
+import { reviewWithRealPlies, sessionFromSavedGame, showSavedAnalysis } from "./saved-game";
 
 function saved(overrides: Partial<SavedGame> = {}): SavedGame {
   const game = createEmptyGame();
@@ -67,5 +69,32 @@ describe("reviewWithRealPlies", () => {
     const review = { moves: [{ ply: 1 }] } as unknown as GameReview;
     expect(reviewWithRealPlies(review, 0)).toBe(review);
     expect(reviewWithRealPlies(null, 5)).toBeNull();
+  });
+});
+
+describe("showSavedAnalysis", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useReviewStore.getState().reset();
+  });
+
+  const older = { reviewId: "older", engineId: "sf", depth: null, moveTimeMs: 100, createdAt: 1, summary: {}, moves: [] } as unknown as GameReview;
+
+  it("shows the analysis asked for", async () => {
+    vi.stubGlobal("window", { chaturanga: { games: { getReview: async () => older } } });
+    useGameStore.setState({ gameId: "g1" });
+    expect(await showSavedAnalysis("g1", "older")).toBe(true);
+    expect(useReviewStore.getState().review?.reviewId).toBe("older");
+  });
+
+  it("drops a switch that lands after a review started (the run's result must still be saved)", async () => {
+    let answer: (review: GameReview) => void = () => undefined;
+    vi.stubGlobal("window", { chaturanga: { games: { getReview: () => new Promise<GameReview>((resolve) => (answer = resolve)) } } });
+    useGameStore.setState({ gameId: "g1" });
+    const switching = showSavedAnalysis("g1", "older");
+    useReviewStore.getState().startReview("new-run");
+    answer(older);
+    expect(await switching).toBe(false);
+    expect(useReviewStore.getState()).toMatchObject({ status: "running", reviewId: "new-run" });
   });
 });

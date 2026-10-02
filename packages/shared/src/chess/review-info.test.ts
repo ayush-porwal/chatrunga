@@ -26,4 +26,19 @@ describe("review info", () => {
       / · Engine · depth 18$/
     );
   });
+
+  it("doesn't trust stored fields, and counts only the comments the app shows", () => {
+    const odd = {
+      ...review,
+      engineName: 1,
+      moveTimeMs: "fast",
+      maiaEngines: [{ rating: "x" }, { rating: 1500 }],
+      commentary: [
+        { ply: 1, prose: "AI", generatedAt: 0, providerModel: "m" },
+        { ply: 2, prose: "template", generatedAt: 0, fallback: true },
+        { ply: 3, prose: "template", generatedAt: 0, source: "local-fallback" }
+      ]
+    } as unknown as GameReview;
+    expect(savedReviewInfo(odd, "r")).toMatchObject({ engineName: null, moveTimeMs: null, maiaLevels: [1500], commentaryCount: 1 });
+  });
 });

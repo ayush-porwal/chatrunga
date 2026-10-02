@@ -310,7 +310,8 @@ function findLibraryCopy(game: ImportedGame["game"]): string | null {
     const bySite = gameRepository.findIdBySite(`https://lichess.org/${lichess}`);
     if (bySite) return bySite;
   }
-  return gameRepository.findIdByFingerprint(gameFingerprint({ headers: game.headers, rootFen: game.rootFen, moveTree: game.moveTree }));
+  const fingerprint = gameFingerprint({ headers: game.headers, rootFen: game.rootFen, moveTree: game.moveTree });
+  return fingerprint ? gameRepository.findIdByFingerprint(fingerprint) : null;
 }
 
 /** Saved games, PGN files, downloadable databases and settings. */

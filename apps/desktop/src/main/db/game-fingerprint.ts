@@ -6,22 +6,20 @@ import type { GameHeaders, MoveNode } from "@chaturanga/shared/types/chess";
  * that copy instead of adding another: its Lichess game (the URL in Site), or else its starting
  * position, main-line moves, players and date. Moves alone aren't enough: short games repeat.
  * Case, spacing, PGN "?" placeholders and annotations (variations, comments) don't matter.
+ * Null for a game with nothing identifying it (no players, no date, no Lichess game): two such
+ * games with the same moves can be unrelated, so they're never taken for one another.
  */
 export function gameFingerprint(input: {
   headers: Pick<GameHeaders, "site" | "white" | "black" | "date">;
   rootFen: string;
   moveTree: readonly MoveNode[];
-}): string {
+}): string | null {
   const lichess = lichessGameId(input.headers.site);
   if (lichess) return `lichess:${lichess}`;
+  const who = [normalized(input.headers.white), normalized(input.headers.black), normalized(input.headers.date)];
+  if (who.every((part) => !part)) return null;
   const moves = mainlineUcis(input.moveTree);
-  const parts = [
-    input.rootFen.trim(),
-    moves.join(" "),
-    normalized(input.headers.white),
-    normalized(input.headers.black),
-    normalized(input.headers.date)
-  ];
+  const parts = [input.rootFen.trim(), moves.join(" "), ...who];
   return `game:${createHash("sha256").update(parts.join("\n")).digest("hex")}`;
 }
 

@@ -1,17 +1,25 @@
 import type { SavedReviewInfo } from "../types/chess";
-import type { GameReview } from "../types/engine";
+import { savedReviewCommentary, type GameReview } from "../types/engine";
 
-/** How a saved analysis is listed (main stores these columns; the renderer adds a new run's). */
+const finiteOrNull = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
+
+/**
+ * How a saved analysis is listed (main stores these columns; the renderer adds a new run's).
+ * Stored reviews come from older builds too, so every field is checked rather than trusted.
+ */
 export function savedReviewInfo(review: GameReview, reviewId: string): SavedReviewInfo {
+  const maiaEngines = Array.isArray(review.maiaEngines) ? review.maiaEngines : [];
+  const ratings = maiaEngines.map((engine) => finiteOrNull(engine?.rating)).filter((rating): rating is number => rating !== null);
   return {
     reviewId,
-    createdAt: Number.isFinite(review.createdAt) ? review.createdAt : Date.now(),
-    engineName: review.engineName?.trim() || null,
-    moveTimeMs: review.moveTimeMs ?? review.engineSettings?.moveTimeMs ?? null,
-    depth: review.depth ?? review.engineSettings?.depth ?? null,
-    maiaLevels: [...new Set((review.maiaEngines ?? []).map((engine) => engine.rating))].sort((a, b) => a - b),
+    createdAt: finiteOrNull(review.createdAt) ?? Date.now(),
+    engineName: typeof review.engineName === "string" ? review.engineName.trim() || null : null,
+    moveTimeMs: finiteOrNull(review.moveTimeMs) ?? finiteOrNull(review.engineSettings?.moveTimeMs),
+    depth: finiteOrNull(review.depth) ?? finiteOrNull(review.engineSettings?.depth),
+    maiaLevels: [...new Set(ratings)].sort((a, b) => a - b),
     moveCount: Array.isArray(review.moves) ? review.moves.length : 0,
-    commentaryCount: review.commentary?.length ?? 0
+    // The comments the app shows: older offline-template explanations are dropped on load.
+    commentaryCount: Array.isArray(review.commentary) ? (savedReviewCommentary(review.commentary)?.length ?? 0) : 0
   };
 }
 

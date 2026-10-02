@@ -261,9 +261,9 @@ describe("gameRepository (SQLite)", () => {
     it("finds the same game by fingerprint", () => {
       const game = saveImported();
       const { game: again } = importPgnText(PGN);
-      expect(gameRepository.findIdByFingerprint(gameFingerprint(again))).toBe(game.id);
+      expect(gameRepository.findIdByFingerprint(gameFingerprint(again)!)).toBe(game.id);
       const { game: other } = importPgnText(PGN.replace("2. Nf3", "2. Nc3"));
-      expect(gameRepository.findIdByFingerprint(gameFingerprint(other))).toBeNull();
+      expect(gameRepository.findIdByFingerprint(gameFingerprint(other)!)).toBeNull();
     });
   });
 });
