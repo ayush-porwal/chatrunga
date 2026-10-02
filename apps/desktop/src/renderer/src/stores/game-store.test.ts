@@ -481,10 +481,13 @@ describe("engine clock pause", () => {
     useGameStore.getState().pauseEngineClock();
     useGameStore.getState().goToNode("root");
     const before = useGameStore.getState().moveTree.length;
+    const rejected = useGameStore.getState().rejectedMoves;
     // 10 s later: more than the 9 s White had before e4's increment, so the replacement is too late.
     at(11_500);
     expect(useGameStore.getState().makeMove({ from: "d2", to: "d4" })).toBe(false);
     const state = useGameStore.getState();
+    // Counted as refused, so the board takes back the piece it moved.
+    expect(state.rejectedMoves).toBe(rejected + 1);
     expect(state.gameOutcome).toEqual({ result: "0-1", termination: "Time forfeit" });
     expect(state.moveTree).toHaveLength(before);
     expect(remainingClockMs(state.engineClockLive!, "white", 1_700_000_020_000)).toBe(0);
