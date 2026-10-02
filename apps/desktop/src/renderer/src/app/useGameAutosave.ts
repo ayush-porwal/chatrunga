@@ -70,9 +70,15 @@ let pendingFlush: (() => Promise<boolean>) | null = null;
  * saved: a failure kept for a game left earlier (it has its own Retry) doesn't count here.
  */
 export async function flushGameAutosave(): Promise<boolean> {
-  if (pendingFlush) await pendingFlush();
-  const gameId = useGameStore.getState().gameId;
-  return !useSaveStatusStore.getState().failures.some((failure) => failure.gameId === gameId);
+  // A navigation while a save is awaited replaces the board: flush again for the new one, so the
+  // answer is about the board as it is when the import looks (bounded: a board can't keep changing).
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const gameId = useGameStore.getState().gameId;
+    if (pendingFlush) await pendingFlush();
+    if (useGameStore.getState().gameId !== gameId) continue;
+    return !useSaveStatusStore.getState().failures.some((failure) => failure.gameId === gameId);
+  }
+  return false;
 }
 
 export function useGameAutosave(): void {
