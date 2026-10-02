@@ -294,6 +294,39 @@ describe("removeDatabase", () => {
     expect(rows.size).toBe(0);
   });
 
+  it("finishes before a new download of the same database starts", async () => {
+    await mkdir(dir, { recursive: true });
+    await writeFile(finalPath, content);
+    rows.set(SOURCE, { id: "db", sourceId: SOURCE, filePath: finalPath });
+    // A refresh that sends part of the file, then nothing more until cancelled.
+    const stalled = new ReadableStream<Uint8Array>({
+      start: (controller) => controller.enqueue(new Uint8Array(content.subarray(0, 3000))),
+      pull: () => new Promise(() => undefined)
+    });
+    const seenBySecond: Array<{ installed: boolean; files: string[] }> = [];
+    const fetchMock = vi.fn(async () => {
+      if (fetchMock.mock.calls.length === 1) {
+        return new Response(stalled, { headers: { "content-length": String(content.length), etag: '"v1"' } });
+      }
+      seenBySecond.push({ installed: rows.has(SOURCE), files: await readdir(dir) });
+      return new Response(content, { headers: { "content-length": String(content.length), etag: '"v2"' } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const events: DatabaseDownloadProgress[] = [];
+    const refresh = downloadDatabase(SOURCE, (progress) => events.push(progress)).catch(() => undefined);
+    await vi.waitFor(() => expect(events.some((event) => event.downloadedBytes > 0)).toBe(true), { interval: 1 });
+
+    const removal = removeDatabase("db");
+    // Asked for again the moment the cancelled refresh settles, while its files are being deleted.
+    const again = refresh.then(() => downloadDatabase(SOURCE, () => undefined));
+    await removal;
+    await again;
+    // The new download ran only after the removal was done, and nothing of it was deleted.
+    expect(seenBySecond).toEqual([{ installed: false, files: [] }]);
+    expect(await readFile(finalPath)).toEqual(content);
+    expect(rows.get(SOURCE)?.filePath).toBe(finalPath);
+  });
+
   it("keeps the entry when the file can't be deleted", async () => {
     // A directory where the file should be: unlink fails with EISDIR/EPERM, not ENOENT.
     await mkdir(finalPath, { recursive: true });

@@ -78,6 +78,8 @@ async function fileSize(path: string): Promise<number> {
 
 /** Downloads in flight, per source: a second request for the same database joins the first. */
 const inFlight = new Map<string, { promise: Promise<InstalledDatabase>; controller: AbortController }>();
+/** Removals in progress, per source: a download of that source starts only once its removal is done. */
+const removals = new Map<string, Promise<void>>();
 /** The latest progress of each running download, for a page opened while it runs. */
 const latestProgress = new Map<string, DatabaseDownloadProgress>();
 
@@ -128,7 +130,10 @@ export function downloadDatabase(sourceId: string, onProgress: ProgressSink): Pr
     else latestProgress.delete(progress.sourceId);
     onProgress(progress);
   };
-  const promise = runDownload(sourceId, report, controller.signal).finally(() => {
+  const run = () => runDownload(sourceId, report, controller.signal);
+  const removal = removals.get(sourceId);
+  // After a removal of the same database, which would otherwise delete the new files.
+  const promise = (removal ? removal.catch(() => undefined).then(run) : run()).finally(() => {
     inFlight.delete(sourceId);
     latestProgress.delete(sourceId);
   });
@@ -309,20 +314,28 @@ async function finishDownload(
 export async function removeDatabase(id: string): Promise<void> {
   const database = externalDatabaseRepository.get(id);
   if (!database) return;
-  // A download of it (Download again) stops first: it would write to files being deleted.
-  const running = inFlight.get(database.sourceId);
-  if (running) {
-    running.controller.abort(new DownloadCancelledError());
-    await running.promise.catch(() => undefined);
-  }
-  // The partial files first: if one can't go, the dataset itself (and its entry) are still intact.
-  for (const path of [`${database.filePath}.part.validator`, `${database.filePath}.part`, database.filePath]) {
-    await unlink(path).catch((error: unknown) => {
-      if (!isMissingFile(error)) throw error;
-    });
-  }
-  externalDatabaseRepository.remove(database.id);
-  dropPools(database.id);
+  const { sourceId } = database;
+  // A download of it (Download again) stops first: it would write to files being deleted. Taken
+  // now, before downloads of it start waiting for this removal (waiting for one would never end).
+  const running = inFlight.get(sourceId);
+  running?.controller.abort(new DownloadCancelledError());
+  const previous = removals.get(sourceId);
+  const removal = (async () => {
+    await previous?.catch(() => undefined);
+    await running?.promise.catch(() => undefined);
+    // The partial files first: if one can't go, the dataset itself (and its entry) are still intact.
+    for (const path of [`${database.filePath}.part.validator`, `${database.filePath}.part`, database.filePath]) {
+      await unlink(path).catch((error: unknown) => {
+        if (!isMissingFile(error)) throw error;
+      });
+    }
+    externalDatabaseRepository.remove(database.id);
+    dropPools(database.id);
+  })().finally(() => {
+    if (removals.get(sourceId) === removal) removals.delete(sourceId);
+  });
+  removals.set(sourceId, removal);
+  await removal;
 }
 
 type SamplePool = {
