@@ -40,6 +40,19 @@ describe("sessionFromSavedGame", () => {
   it("finds the cursor from the board position for rows without one", () => {
     expect(sessionFromSavedGame(saved({ currentNodeId: null })).currentNodeId).toBe("root");
   });
+
+  it("uses the stored headers, so Elo, time control and termination survive reopening", () => {
+    const session = sessionFromSavedGame(
+      saved({ headers: { white: "Morphy", whiteElo: "2690", timeControl: "-", termination: "Normal", result: "*" } })
+    );
+    expect(session.headers).toMatchObject({ whiteElo: "2690", timeControl: "-", termination: "Normal", result: "1-0" });
+  });
+
+  it("recovers the headers of older rows from their PGN", () => {
+    const pgn = '[Event "Opera game"]\n[White "Morphy"]\n[WhiteElo "2690"]\n[ECO "C41"]\n[Result "1-0"]\n\n1-0';
+    const session = sessionFromSavedGame(saved({ pgn, headers: null }));
+    expect(session.headers).toMatchObject({ white: "Morphy", whiteElo: "2690", eco: "C41", site: "Paris", result: "1-0" });
+  });
 });
 
 describe("reviewWithRealPlies", () => {

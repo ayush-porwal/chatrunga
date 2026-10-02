@@ -1,6 +1,7 @@
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import type { Color, GameHeaders } from "@chaturanga/shared/types/chess";
 import type { LichessGameFull, LichessGameState, LichessPlayer, LichessSpeed } from "@chaturanga/shared/types/lichess";
+import { ipcErrorMessage } from "@/lib/ipc-error";
 
 /** Your side in a Lichess game, from your account id; null when you aren't playing it. */
 export function yourColor(game: Pick<LichessGameFull, "white" | "black">, accountId: string): Color | null {
@@ -119,6 +120,5 @@ export const presetLabel = (preset: LichessClockPreset) => `${preset.minutes}+${
 
 /** Lichess (or the IPC bridge) refused a move or an action: its message, else `fallback`. */
 export function lichessErrorMessage(error: unknown, fallback: string): string {
-  const message = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "";
-  return message || fallback;
+  return ipcErrorMessage(error) || fallback;
 }

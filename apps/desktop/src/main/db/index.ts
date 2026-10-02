@@ -35,6 +35,7 @@ const ddl = [
     pgn TEXT NOT NULL,
     current_fen TEXT NOT NULL,
     current_node_id TEXT,
+    headers_json TEXT,
     move_tree_json TEXT NOT NULL,
     review_json TEXT,
     created_at INTEGER NOT NULL,
@@ -83,6 +84,9 @@ function runMigrations(database: DatabaseSync): void {
   }
   if (!gamesColumns.some((column) => column.name === "current_node_id")) {
     database.exec("ALTER TABLE games ADD COLUMN current_node_id TEXT");
+  }
+  if (!gamesColumns.some((column) => column.name === "headers_json")) {
+    database.exec("ALTER TABLE games ADD COLUMN headers_json TEXT");
   }
   const enginesColumns = database.prepare("PRAGMA table_info(engines)").all() as { name: string }[];
   if (!enginesColumns.some((column) => column.name === "weights_path")) {

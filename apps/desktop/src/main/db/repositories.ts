@@ -1,5 +1,7 @@
 import { nanoid } from "nanoid";
 import type { SQLInputValue } from "node:sqlite";
+import { importPgnText } from "@chaturanga/shared/chess/pgn";
+import { positionFromFen } from "@chaturanga/shared/chess/position";
 import { getDb } from "./index";
 import {
   defaultSettings,
@@ -18,6 +20,7 @@ import type {
   UpdateEngineInput
 } from "@chaturanga/shared/types/engine";
 import type {
+  GameHeaders,
   GameSource,
   GameSummary,
   MoveNode,
@@ -62,6 +65,7 @@ type GameRow = {
   pgn: string;
   current_fen: string;
   current_node_id: string | null;
+  headers_json: string | null;
   move_tree_json: string;
   review_json: string | null;
   created_at: number;
@@ -159,13 +163,172 @@ function toGameSummary(row: GameSummaryRow): GameSummary {
   };
 }
 
-function toSavedGame(row: GameRow): SavedGame {
-  let moveTree: MoveNode[];
+/**
+ * The stored move tree. A damaged one is rebuilt from the row's PGN; if that fails too, opening
+ * the game fails, rather than showing an empty board that autosave would then write over the
+ * stored PGN (the only copy left of the moves).
+ */
+function parseMoveTree(row: GameRow): { moveTree: MoveNode[]; rebuilt: boolean } {
   try {
-    moveTree = JSON.parse(row.move_tree_json) as MoveNode[];
+    const parsed: unknown = JSON.parse(row.move_tree_json);
+    if (Array.isArray(parsed) && isConsistentTree(parsed)) return { moveTree: parsed, rebuilt: false };
   } catch {
-    moveTree = [];
+    // Fall through to the PGN.
   }
+  try {
+    // Strict: a PGN with a move that can't be played would rebuild only part of the game.
+    return { moveTree: importPgnText(row.pgn, { strict: true }).game.moveTree, rebuilt: true };
+  } catch {
+    throw new Error("This saved game is damaged and can't be opened.");
+  }
+}
+
+/**
+ * A review saved with a tree that had to be rebuilt: its moves point at the old node ids, so they
+ * are moved onto the rebuilt main line by ply (the position after each move must match). A review
+ * that doesn't fit the rebuilt game is dropped rather than shown against the wrong moves.
+ */
+export function remapReviewToTree(review: GameReview, moveTree: readonly MoveNode[]): GameReview | null {
+  // By the node's own ply (absolute: a game from a set-up position starts past 0), not the index.
+  const byPly = new Map(mainlineOf(moveTree).map((node) => [node.ply, node]));
+  const moves = [];
+  for (const move of review.moves as unknown[]) {
+    // A damaged entry drops the review (it can't be placed), never the game.
+    if (!move || typeof move !== "object") return null;
+    const { ply, fenAfter } = move as Partial<GameReview["moves"][number]>;
+    if (!Number.isInteger(ply) || typeof fenAfter !== "string") return null;
+    const target = byPly.get(ply as number);
+    if (!target || target.fenAfter !== fenAfter) return null;
+    moves.push({ ...(move as GameReview["moves"][number]), nodeId: target.id });
+  }
+  return { ...review, moves };
+}
+
+/** Root, then the first child at every step. */
+function mainlineOf(moveTree: readonly MoveNode[]): MoveNode[] {
+  const byId = new Map(moveTree.map((node) => [node.id, node]));
+  const line: MoveNode[] = [];
+  let node = moveTree.find((item) => item.parentId === null);
+  while (node) {
+    line.push(node);
+    node = node.children[0] ? byId.get(node.children[0]) : undefined;
+  }
+  return line;
+}
+
+/**
+ * The cursor in a tree rebuilt from the PGN: the old node id is gone, and which occurrence of a
+ * repeated position it was can't be told from a damaged tree. The main-line node showing the saved
+ * position (its last occurrence), else the end of the main line.
+ */
+export function rebuiltCursor(moveTree: readonly MoveNode[], currentFen: string): string | null {
+  const line = mainlineOf(moveTree);
+  for (let index = line.length - 1; index >= 0; index -= 1) {
+    if (line[index].fenAfter === currentFen) return line[index].id;
+  }
+  return line.at(-1)?.id ?? null;
+}
+
+/** The root's id in every tree the app builds (createEmptyGame, importPgnText). */
+const ROOT_NODE_ID = "root";
+
+const isString = (value: unknown): value is string => typeof value === "string";
+const isStringOrNull = (value: unknown): value is string | null => value === null || typeof value === "string";
+
+/** Every field a move node needs, with its type. Only the root has no move (san/uci null). */
+const SQUARE = /^[a-h][1-8]$/;
+const ANNOTATION_COLORS: readonly unknown[] = ["green", "red", "yellow", "blue"];
+
+function isArrow(value: unknown): boolean {
+  const arrow = value as Record<string, unknown> | null;
+  return Boolean(
+    arrow && typeof arrow === "object" && SQUARE.test(String(arrow.orig)) && SQUARE.test(String(arrow.dest)) && ANNOTATION_COLORS.includes(arrow.color)
+  );
+}
+
+function isHighlight(value: unknown): boolean {
+  const highlight = value as Record<string, unknown> | null;
+  return Boolean(highlight && typeof highlight === "object" && SQUARE.test(String(highlight.square)) && ANNOTATION_COLORS.includes(highlight.color));
+}
+
+/** A position the board can show (the board and move list read it as soon as the node is selected). */
+function isPlayableFen(fen: unknown, checked: Map<string, boolean>): boolean {
+  if (typeof fen !== "string") return false;
+  let ok = checked.get(fen);
+  if (ok === undefined) {
+    try {
+      positionFromFen(fen);
+      ok = true;
+    } catch {
+      ok = false;
+    }
+    checked.set(fen, ok);
+  }
+  return ok;
+}
+
+function isMoveNodeLike(value: unknown, fens: Map<string, boolean> = new Map()): value is MoveNode {
+  if (!value || typeof value !== "object") return false;
+  const node = value as Record<keyof MoveNode, unknown>;
+  const root = node.id === ROOT_NODE_ID;
+  return (
+    isString(node.id) &&
+    (root ? node.parentId === null : isString(node.parentId)) &&
+    (root ? isStringOrNull(node.san) && isStringOrNull(node.uci) : isString(node.san) && isString(node.uci)) &&
+    isPlayableFen(node.fenBefore, fens) &&
+    isPlayableFen(node.fenAfter, fens) &&
+    Number.isInteger(node.ply) &&
+    Array.isArray(node.nags) &&
+    node.nags.every(isString) &&
+    isStringOrNull(node.comment) &&
+    (node.clockAfter === undefined || isStringOrNull(node.clockAfter)) &&
+    Array.isArray(node.arrows) &&
+    node.arrows.every(isArrow) &&
+    Array.isArray(node.highlights) &&
+    node.highlights.every(isHighlight) &&
+    Array.isArray(node.children) &&
+    node.children.every(isString)
+  );
+}
+
+/**
+ * A tree the app can use as it is: well-formed nodes with unique ids, the canonical root, and every
+ * node reached from it exactly once by following children whose parent links point back — so no
+ * duplicate child, cycle or stray node, and walks up through parents always end at the root.
+ */
+export function isConsistentTree(nodes: readonly unknown[]): nodes is MoveNode[] {
+  // FENs repeat (each node's fenBefore is its parent's fenAfter): each is parsed once.
+  const fens = new Map<string, boolean>();
+  if (!nodes.every((node) => isMoveNodeLike(node, fens))) return false;
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const root = byId.get(ROOT_NODE_ID);
+  if (!root || byId.size !== nodes.length) return false;
+  const reached = new Set([root.id]);
+  const pending = [root];
+  for (let node = pending.pop(); node; node = pending.pop()) {
+    for (const childId of node.children) {
+      const child = byId.get(childId);
+      if (!child || child.parentId !== node.id || reached.has(childId)) return false;
+      reached.add(childId);
+      pending.push(child);
+    }
+  }
+  return reached.size === nodes.length;
+}
+
+/**
+ * Stored headers the renderer can use: every value a string or null (orientationHint a colour).
+ * Anything else drops the whole set, and opening falls back to the headers in the row's PGN.
+ */
+function isHeaders(value: unknown): value is GameHeaders {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.entries(value).every(([key, item]) =>
+    key === "orientationHint" ? item === null || item === "white" || item === "black" : isStringOrNull(item)
+  );
+}
+
+function toSavedGame(row: GameRow): SavedGame {
+  const { moveTree, rebuilt } = parseMoveTree(row);
 
   let review: GameReview | null = null;
   if (row.review_json) {
@@ -178,10 +341,22 @@ function toSavedGame(row: GameRow): SavedGame {
       review = null;
     }
   }
+  if (review && rebuilt) review = remapReviewToTree(review, moveTree);
+
+  let headers: GameHeaders | null = null;
+  if (row.headers_json) {
+    try {
+      const parsed: unknown = JSON.parse(row.headers_json);
+      if (isHeaders(parsed)) headers = parsed;
+    } catch {
+      headers = null;
+    }
+  }
 
   return {
     ...toGameSummary(row),
-    currentNodeId: row.current_node_id,
+    currentNodeId: rebuilt ? rebuiltCursor(moveTree, row.current_fen) : row.current_node_id,
+    headers,
     site: row.site,
     round: row.round,
     initialFen: row.initial_fen,
@@ -343,8 +518,9 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
   run(
     `INSERT INTO games (
       id, source, white, black, event, site, round, result, date,
-      initial_fen, pgn, current_fen, current_node_id, move_tree_json, review_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      initial_fen, pgn, current_fen, current_node_id, headers_json, move_tree_json, review_json,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       source = excluded.source,
       white = excluded.white,
@@ -358,6 +534,7 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
       pgn = excluded.pgn,
       current_fen = excluded.current_fen,
       current_node_id = excluded.current_node_id,
+      headers_json = excluded.headers_json,
       move_tree_json = excluded.move_tree_json,
       review_json = excluded.review_json,
       updated_at = excluded.updated_at`,
@@ -374,6 +551,7 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
     input.pgn,
     input.currentFen,
     currentNodeId,
+    JSON.stringify(input.headers),
     JSON.stringify(input.moveTree),
     reviewJson,
     createdAt,

@@ -66,11 +66,14 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
   private availableInfo: UpdateInfoLike | null = null;
   private feed: UpdateFeedConfig | null = null;
   private feedOverride: string | null = null;
-  private prepareForInstall: () => void = () => {};
+  /** Resolves false to call the install off (the user kept the app open to save their game). */
+  private prepareForInstall: () => void | boolean | Promise<void | boolean> = () => {};
+  /** An install is being prepared (pending saves are being written): a second click waits. */
+  private installing = false;
   private started: Promise<void> | null = null;
 
   /** Resolves the mode, configures electron-updater and schedules checks. Safe to call once. */
-  start(options: { prepareForInstall: () => void }): Promise<void> {
+  start(options: { prepareForInstall: () => void | boolean | Promise<void | boolean> }): Promise<void> {
     this.prepareForInstall = options.prepareForInstall;
     this.started ??= this.init().catch((error) => {
       logger.error("updater", "init failed:", error);
@@ -124,23 +127,36 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
     }
   }
 
-  /** "Restart to update": stops engines and closes the database, then quits into the installer. */
-  install(): boolean {
+  /**
+   * "Restart to update": writes pending saves, stops engines and closes the database, then quits
+   * into the installer.
+   */
+  async install(): Promise<boolean> {
     const updater = this.updater;
-    if (!updater || this.state.status.kind !== "ready") return false;
+    const status = this.state.status;
+    if (!updater || status.kind !== "ready" || this.installing) return false;
+    this.installing = true;
     try {
-      this.prepareForInstall();
+      if ((await this.prepareForInstall()) === false) {
+        this.installing = false;
+        return false;
+      }
     } catch (error) {
+      // Not knowing whether the latest changes were saved: don't quit into the installer. The
+      // update stays ready, so Restart to update can be tried again. (Only writing the saves can
+      // fail: the app's shutdown that follows them never throws, so nothing is closed yet here.)
       logger.error("updater", "cleanup before install failed:", error);
+      this.installing = false;
+      return false;
     }
-    logger.info("updater", `installing ${this.state.status.version}`);
+    logger.info("updater", `installing ${status.version}`);
     const bundleUpdater = this.bundleUpdater;
     if (bundleUpdater) {
       try {
         bundleUpdater.startSwap({ relaunch: true });
       } catch (error) {
         logger.error("updater", "starting the bundle swap failed:", error);
-        this.setStatus({ kind: "error", message: readableUpdateError(error, "install") });
+        this.restartAfterFailedInstall();
         return false;
       }
       setImmediate(() => app.quit());
@@ -148,14 +164,36 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
     }
     // Silent: the assisted NSIS installer would otherwise show its wizard again; relaunch afterwards.
     setImmediate(() => {
+      // electron-updater reports an installer that didn't start as an "error" event, possibly after
+      // quitAndInstall has returned (the spawn fails asynchronously), and the app stays running:
+      // the listener stays until then. If the installer starts, the app quits and it never fires.
+      let handled = false;
+      const recover = () => {
+        if (handled) return;
+        handled = true;
+        updater.off("error", recover);
+        this.restartAfterFailedInstall();
+      };
+      updater.on("error", recover);
       try {
         updater.quitAndInstall(true, true);
       } catch (error) {
         logger.error("updater", "quitAndInstall failed:", error);
-        this.setStatus({ kind: "error", message: readableUpdateError(error, "install") });
+        recover();
       }
     });
     return true;
+  }
+
+  /**
+   * The installer didn't start, but the app was already shut down for it (saves written, engines,
+   * Lichess and the database closed). Staying open in that state would leave closes skipping the
+   * save flush and nothing to clean up again, so the app starts afresh instead; the downloaded
+   * update is found again there.
+   */
+  private restartAfterFailedInstall(): void {
+    app.relaunch();
+    app.quit();
   }
 
   /** Manual path: opens the installer / release page in the browser (allow-listed URLs only). */

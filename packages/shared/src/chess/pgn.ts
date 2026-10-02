@@ -42,7 +42,11 @@ export function createGameFromFen(input: {
   };
 }
 
-export function importPgnText(pgn: string): ImportedGame {
+/**
+ * `strict` refuses a game with a move that can't be played (rather than dropping that move and
+ * everything after it), for restoring a stored game where a shorter tree would lose moves.
+ */
+export function importPgnText(pgn: string, { strict = false }: { strict?: boolean } = {}): ImportedGame {
   const games = parsePgn(pgn);
   if (!games.length) throw new Error("No PGN game found");
 
@@ -55,7 +59,7 @@ export function importPgnText(pgn: string): ImportedGame {
 
   const byId = new Map<string, MoveNode>([[ROOT_ID, root]]);
   for (const child of game.moves.children) {
-    appendPgnChild(moveTree, byId, ROOT_ID, rootFen, root.ply, child);
+    appendPgnChild(moveTree, byId, ROOT_ID, rootFen, root.ply, child, strict);
   }
 
   // Imported games open on the last mainline move.
@@ -160,10 +164,14 @@ function appendPgnChild(
   parentId: string,
   fenBefore: string,
   ply: number,
-  child: ChildNode<PgnNodeData>
+  child: ChildNode<PgnNodeData>,
+  strict: boolean
 ): void {
   const applied = applySan(fenBefore, child.data.san);
-  if (!applied) return;
+  if (!applied) {
+    if (strict) throw new Error(`Illegal move in PGN: ${child.data.san}`);
+    return;
+  }
   const comments = [...(child.data.startingComments ?? []), ...(child.data.comments ?? [])];
   const commentBlob = comments.join(" ");
   const annotation = parseAnnotationComment(commentBlob);
@@ -188,7 +196,7 @@ function appendPgnChild(
   byId.set(node.id, node);
 
   for (const grandChild of child.children) {
-    appendPgnChild(moveTree, byId, node.id, applied.fen, node.ply, grandChild);
+    appendPgnChild(moveTree, byId, node.id, applied.fen, node.ply, grandChild, strict);
   }
 }
 
