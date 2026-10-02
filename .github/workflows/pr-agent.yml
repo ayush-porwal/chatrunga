@@ -4,14 +4,25 @@ on:
   pull_request:
     types: [opened, reopened, ready_for_review, synchronize]
   issue_comment:
+    types: [created]
 
 concurrency:
-  group: pr-agent-${{ github.event.pull_request.number || github.event.issue.number }}
-  cancel-in-progress: true
+  group: pr-agent-${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   review:
-    if: ${{ github.event.sender.type != 'Bot' }}
+    if: >-
+      ${{
+        (github.event.sender.type != 'Bot' && github.event_name == 'pull_request') ||
+        (
+          github.event.sender.type != 'Bot' &&
+          github.event_name == 'issue_comment' &&
+          github.event.issue.pull_request &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
+          startsWith(github.event.comment.body || '', '/')
+        )
+      }}
     name: Review pull request
     runs-on: ubuntu-latest
     permissions:
@@ -21,7 +32,7 @@ jobs:
       checks: write
     steps:
       - name: Review with GLM 5.3
-        uses: the-pr-agent/pr-agent@main
+        uses: the-pr-agent/pr-agent@1239ac001a297b185fccc313fcd19e476a848851 # main, 2026-10-02
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ZAI.KEY: ${{ secrets.ZAI_API_KEY }}
