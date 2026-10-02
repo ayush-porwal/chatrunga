@@ -1,7 +1,7 @@
 import { Maximize2, Minimize2, PanelLeft, Repeat2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { DESTINATION_ICONS as icons } from "./destination-icons";
-import { memo } from "react";
+import { memo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Eyebrow } from "@/components/ui/page";
@@ -161,10 +161,14 @@ const SidebarCommand = memo(function SidebarCommand({
   shortcut?: string;
   onClick: () => void;
 }) {
+  // The tooltip only exists on the rail. Its open state is held here so hovering while expanded
+  // can't open it: Radix closes a tooltip from its content, which isn't mounted then, so a hover
+  // while expanded stayed "open" and every such tooltip appeared at once on collapse.
+  const [tooltipOpen, setTooltipOpen] = useState(false);
   // One element in both states: 36px tall, full column width (36px when collapsed), icon at 9px +
   // 1px border — the same x as the centred rail button. Only the label and the tooltip change.
   return (
-    <Tooltip>
+    <Tooltip open={tooltipOpen && !expanded} onOpenChange={(open) => setTooltipOpen(open && !expanded)}>
       <TooltipTrigger asChild>
         <Button
           type="button"
