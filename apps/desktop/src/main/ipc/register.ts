@@ -445,8 +445,16 @@ function registerLichessIpc(): void {
       throw error;
     }
   });
+  // The sync whose import is being recorded: callers that join a running sync share its promise,
+  // and only the first records it.
+  let recordedSync: Promise<unknown> | null = null;
   ipcMain.handle("lichess:syncGames", async () => {
-    const result = await lichess.syncGames();
+    const sync = lichess.syncGames();
+    if (sync === recordedSync) return sync;
+    recordedSync = sync;
+    const result = await sync.finally(() => {
+      if (recordedSync === sync) recordedSync = null;
+    });
     // A sync also runs on its own after connecting, so it isn't counted as activity.
     if (result.imported > 0) {
       getTelemetry()?.record("game_imported", { source: "lichess", games: result.imported });

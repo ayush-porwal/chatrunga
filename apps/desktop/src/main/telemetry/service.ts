@@ -145,8 +145,13 @@ export class TelemetryService {
 
   /** Records `event` if collection is on. Never throws, never waits for the network. */
   record(event: TelemetryEventName, properties: TelemetryProperties = {}): void {
-    if (!this.active || this.closed) return;
-    this.guard(`recording ${event}`, () => {
+    this.enqueue(event, properties);
+  }
+
+  /** `record`, saying whether the event is now queued. */
+  private enqueue(event: TelemetryEventName, properties: TelemetryProperties): boolean {
+    if (!this.active || this.closed) return false;
+    const queued = this.guard(`recording ${event}`, () => {
       this.distinctId();
       this.outbox.add({
         uuid: randomUUID(),
@@ -155,8 +160,10 @@ export class TelemetryService {
         properties: { ...definedOnly(properties), ...this.commonProperties() },
         attempts: 0
       });
-      this.scheduleDrain();
+      return true;
     });
+    if (queued) this.scheduleDrain();
+    return queued === true;
   }
 
   /**
@@ -168,8 +175,8 @@ export class TelemetryService {
     const day = new Date(this.now()).toISOString().slice(0, 10);
     this.guard("marking activity", () => {
       if (this.state.get("last_active_day") === day) return;
-      this.state.set("last_active_day", day);
-      this.record("user_active", { kind, utc_day: day });
+      // The day is marked only once its event is queued, so a failed write is retried next time.
+      if (this.enqueue("user_active", { kind, utc_day: day })) this.state.set("last_active_day", day);
     });
   }
 
@@ -179,8 +186,9 @@ export class TelemetryService {
     this.guard(`milestone ${name}`, () => {
       const key = `milestone:${name}`;
       if (this.state.get(key)) return;
-      this.state.set(key, new Date(this.now()).toISOString());
-      this.record("activation_milestone", { milestone: name, existing });
+      if (this.enqueue("activation_milestone", { milestone: name, existing })) {
+        this.state.set(key, new Date(this.now()).toISOString());
+      }
     });
   }
 

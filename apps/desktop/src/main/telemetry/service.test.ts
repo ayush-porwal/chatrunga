@@ -276,6 +276,27 @@ describe("TelemetryService counting helpers", () => {
     ]);
   });
 
+  it("a day or milestone whose event couldn't be queued is recorded on the next try", () => {
+    const db = telemetryDatabase();
+    let failInserts = true;
+    const flaky = {
+      prepare: (sql: string) => {
+        if (failInserts && sql.startsWith("INSERT OR IGNORE INTO telemetry_outbox")) throw new Error("SQLITE_FULL");
+        return db.prepare(sql);
+      },
+      exec: (sql: string) => db.exec(sql)
+    } as unknown as typeof db;
+    const service = makeService({ db, database: () => flaky, now: () => T0, log: () => undefined });
+    service.start();
+    service.markActive("study");
+    service.milestone("engine_ready");
+    expect(outboxRows(db)).toEqual([]);
+    failInserts = false;
+    service.markActive("study");
+    service.milestone("engine_ready");
+    expect(outboxRows(db).map((row) => row.event)).toEqual(["user_active", "activation_milestone"]);
+  });
+
   it("derives a stable game pseudonym that isn't the library id", () => {
     const db = telemetryDatabase();
     const service = makeService({ db });

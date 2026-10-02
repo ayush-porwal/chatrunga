@@ -61,7 +61,8 @@ export function reviewFailureCode(error: unknown): ReviewFailureCode {
   if (/engine not found/i.test(message)) return "engine_not_found";
   if (/not available|ENOENT|EACCES|spawn/i.test(message)) return "engine_unavailable";
   if (/exited|crash|killed/i.test(message)) return "engine_exited";
-  if (/timed out|timeout/i.test(message)) return "timeout";
+  // Review searches say "<engine> did not answer … within <n>s".
+  if (/timed out|timeout|did not answer/i.test(message)) return "timeout";
   return "unknown";
 }
 
