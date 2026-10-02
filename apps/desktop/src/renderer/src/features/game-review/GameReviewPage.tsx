@@ -3,7 +3,8 @@ import { useLocation } from "react-router-dom";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
 import { useGameStore } from "../../stores/game-store";
-import { reviewsByNode, selectDisplayedMoves, useReviewStore } from "../../stores/review-store";
+import { reviewsByNode, useReviewStore } from "../../stores/review-store";
+import { useDisplayedReviewMoves, useOutdatedReviewMoves } from "../../stores/review-validity";
 import {
   averageLoss,
   countByClassification,
@@ -94,7 +95,9 @@ function GameReviewPageInner({
   const selectNode = useGameStore((state) => state.goToNode);
   const reviewStatus = useReviewStore((state) => state.status);
   const review = useReviewStore((state) => state.review);
-  const moves = useReviewStore(selectDisplayedMoves);
+  const moves = useDisplayedReviewMoves();
+  // Moves of the shown analysis the game no longer has (deleted or replaced since): left out above.
+  const outdatedMoves = useOutdatedReviewMoves();
   const reviewError = useReviewStore((state) => state.error);
   const reviewInput = useMemo(() => mainlineReviewInput(moveTree), [moveTree]);
   const isRunning = reviewStatus === "running";
@@ -236,10 +239,15 @@ function GameReviewPageInner({
       }
       summary={summary}
       notices={
-        loadError || reviewError ? (
+        loadError || reviewError || outdatedMoves ? (
           <>
             {loadError ? <Notice tone="warn" className="shrink-0">{loadError}</Notice> : null}
             {reviewError ? <Notice tone="danger" className="shrink-0">{reviewError}</Notice> : null}
+            {outdatedMoves ? (
+              <Notice tone="warn" className="shrink-0">
+                The moves changed after this analysis, so it no longer covers {outdatedMoves === 1 ? "1 move" : `${outdatedMoves} moves`}. Analyse the game again to update it.
+              </Notice>
+            ) : null}
           </>
         ) : null
       }

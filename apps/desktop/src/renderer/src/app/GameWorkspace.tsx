@@ -17,7 +17,8 @@ import { RecentGames } from "../features/game/RecentGames";
 import { mainlineReviewInput } from "../features/game-review/review-utils";
 import { formatMoveEval } from "../features/game-review/review-score";
 import { useGameStore } from "../stores/game-store";
-import { selectDisplayedMoves, useReviewStore } from "../stores/review-store";
+import { useReviewStore } from "../stores/review-store";
+import { useDisplayedReviewMoves } from "../stores/review-validity";
 
 // The eval chart (recharts) loads only once a reviewed game needs it.
 const ReviewTape = lazy(() => import("../features/game-review/ReviewTape").then((module) => ({ default: module.ReviewTape })));
@@ -110,7 +111,7 @@ function GameSummary() {
   );
   const gameOutcome = useGameStore((state) => state.gameOutcome);
   const currentNodeId = useGameStore((state) => state.currentNodeId);
-  const reviewMoves = useReviewStore(selectDisplayedMoves);
+  const reviewMoves = useDisplayedReviewMoves();
   const currentMoveReview = useMemo(
     () => reviewMoves.find((move) => move.nodeId === currentNodeId) ?? null,
     [currentNodeId, reviewMoves]
@@ -153,7 +154,7 @@ function GameFooter() {
   const orientation = useGameStore((state) => state.orientation);
   const goToNode = useGameStore((state) => state.goToNode);
   const reviewStatus = useReviewStore((state) => state.status);
-  const reviewMoves = useReviewStore(selectDisplayedMoves);
+  const reviewMoves = useDisplayedReviewMoves();
   const onReviewedLine = useMemo(
     () => currentNodeId === "root" || reviewMoves.some((move) => move.nodeId === currentNodeId),
     [currentNodeId, reviewMoves]

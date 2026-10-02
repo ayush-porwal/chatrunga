@@ -3,6 +3,7 @@ import type { ReviewInsightPayload } from "@chaturanga/shared/schemas";
 import type { GameReview, MoveReview, ReviewCommentary } from "@chaturanga/shared/types/engine";
 import { useGameStore } from "../../stores/game-store";
 import { useReviewStore } from "../../stores/review-store";
+import { compatibleReviewMoves } from "../../stores/review-validity";
 import { useOpenRouterConfigQuery } from "../../queries/api";
 import { rendererCommentaryError, requestRendererCommentary } from "../../ipc/commentary";
 import { DEFAULT_COMMENTARY_MODEL } from "@chaturanga/shared/llm/models";
@@ -91,9 +92,12 @@ export function useGameReviewCommentary({
 
   useEffect(() => () => scheduler.dispose(), [scheduler]);
 
-  const reviewedMove = review && move && review.moves.some((item) => item.nodeId === move.nodeId) ? move : null;
+  // Only the analysed moves the game still has: a deleted or replaced move is neither explained
+  // nor sent as context for another.
+  const moveTree = useGameStore((state) => state.moveTree);
+  const reviewMoves = useMemo(() => (review ? compatibleReviewMoves(review.moves, moveTree) : undefined), [moveTree, review]);
+  const reviewedMove = reviewMoves && move && reviewMoves.some((item) => item.nodeId === move.nodeId) ? move : null;
   const active = visible && reviewStatus === "ready" && Boolean(reviewedMove);
-  const reviewMoves = review?.moves;
   const white = headers.white ?? undefined;
   const black = headers.black ?? undefined;
   const event = headers.event ?? undefined;

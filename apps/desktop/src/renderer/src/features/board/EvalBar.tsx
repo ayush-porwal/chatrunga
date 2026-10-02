@@ -7,7 +7,7 @@ import type { EngineScore } from "@chaturanga/shared/types/engine";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { useGameStore } from "../../stores/game-store";
 import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
-import { selectDisplayedMoves, useReviewStore } from "../../stores/review-store";
+import { useDisplayedReviewMoves } from "../../stores/review-validity";
 import { formatMoveEval, formatScore } from "../game-review/review-score";
 import { cn } from "@/lib/utils";
 
@@ -43,7 +43,7 @@ export function useBoardEval(): BoardEval | null {
     const primary = state.topLines.find((line) => (line.multipv ?? 1) === 1) ?? state.latestInfo;
     return primary?.score ?? null;
   });
-  const reviewMoves = useReviewStore(selectDisplayedMoves);
+  const reviewMoves = useDisplayedReviewMoves();
   if (game.matchOn || onlineGameLive) return null;
 
   if (game.mode === "analysis") {

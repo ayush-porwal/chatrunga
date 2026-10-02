@@ -9,7 +9,7 @@ import { legalDestsForFen, isPromotionMove, statusForFen } from "@chaturanga/sha
 import type { AnnotationColor, BoardArrow, BoardHighlight, Color, GameMode, MoveNode, UserMove } from "@chaturanga/shared/types/chess";
 import { isMatchMode, useGameStore } from "../../stores/game-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
-import { selectDisplayedMoves, useReviewStore } from "../../stores/review-store";
+import { useDisplayedReviewMoves } from "../../stores/review-validity";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { useEnginesQuery } from "../../queries/api";
 import { cn } from "@/lib/utils";
@@ -64,7 +64,7 @@ export function BoardView() {
   const setNodeAnnotations = useGameStore((state) => state.setNodeAnnotations);
   const activePuzzle = usePuzzleStore((state) => state.activePuzzle);
   const puzzleFeedbackKind = usePuzzleStore((state) => state.feedbackKind);
-  const reviewMoves = useReviewStore(selectDisplayedMoves);
+  const reviewMoves = useDisplayedReviewMoves();
   const engines = useEnginesQuery();
   const activeEngineId = useAnalysisStore((state) => state.activeEngineId);
   const { appearance, squareBackground, squareColors, pieceClassName } = useBoardAppearance();

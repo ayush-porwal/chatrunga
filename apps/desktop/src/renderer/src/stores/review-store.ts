@@ -11,6 +11,9 @@ import {
 
 type ReviewStatus = "idle" | "running" | "ready" | "error" | "cancelled";
 
+/** A move of the line a run analyses: its results hold only while the game still has it. */
+export type ReviewLineMove = { nodeId: string; uci: string };
+
 type ReviewStore = {
   status: ReviewStatus;
   review: GameReview | null;
@@ -20,12 +23,14 @@ type ReviewStore = {
   reviewId: string | null;
   progress: ReviewProgress | null;
   partialMoves: MoveReview[];
+  /** The line the running review analyses (null when none runs, or it was started without one). */
+  runLine: ReviewLineMove[] | null;
   /**
    * Every saved analysis of the loaded game, newest first (re-analysing adds one; each keeps its
    * own AI commentary). `review` is the one shown.
    */
   analyses: SavedReviewInfo[];
-  startReview: (reviewId: string) => void;
+  startReview: (reviewId: string, line?: ReviewLineMove[]) => void;
   setReview: (review: GameReview) => void;
   setError: (error: string) => void;
   reset: () => void;
@@ -50,12 +55,14 @@ export const useReviewStore = create<ReviewStore>((set) => ({
   reviewId: null,
   progress: null,
   partialMoves: [],
+  runLine: null,
   analyses: [],
-  startReview: (reviewId) =>
+  startReview: (reviewId, line) =>
     set((state) => ({
       status: "running",
       error: null,
       reviewId,
+      runLine: line ?? null,
       progress: null,
       partialMoves: [],
       review: state.review
@@ -72,6 +79,7 @@ export const useReviewStore = create<ReviewStore>((set) => ({
         error: null,
         progress: null,
         partialMoves: [],
+        runLine: null,
         analyses: [savedReviewInfo(shown, id), ...state.analyses.filter((info) => info.reviewId !== id)]
       };
     }),
@@ -93,8 +101,8 @@ export const useReviewStore = create<ReviewStore>((set) => ({
   detachRun: () =>
     set((state) =>
       state.status === "running"
-        ? { reviewId: null, status: state.review ? "ready" : "idle", progress: null, partialMoves: [] }
-        : { reviewId: null }
+        ? { reviewId: null, runLine: null, status: state.review ? "ready" : "idle", progress: null, partialMoves: [] }
+        : { reviewId: null, runLine: null }
     ),
   reset: () =>
     set({
@@ -105,6 +113,7 @@ export const useReviewStore = create<ReviewStore>((set) => ({
       reviewId: null,
       progress: null,
       partialMoves: [],
+      runLine: null,
       analyses: []
     }),
   applyReviewEvents: ({ progress, moves }) =>
@@ -129,6 +138,7 @@ export const useReviewStore = create<ReviewStore>((set) => ({
       origin: review ? "saved" : null,
       error: null,
       reviewId: null,
+      runLine: null,
       progress: null,
       partialMoves: []
     }))
