@@ -3,15 +3,27 @@
  * position index, progress invalidation, PGN import/export and practice grading. Every mutation
  * runs in one transaction; change events are broadcast only after it commits.
  */
-import { BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
 import { nanoid } from "nanoid";
 import { createHash } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { readFile, stat, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { GameHeaders, MoveNode } from "@chaturanga/shared/types/chess";
 import {
   COMPARE_GAME_MAX_PLIES,
   REPERTOIRE_POSITION_KEY_VERSION,
   REPERTOIRE_ROOT_NODE_ID,
+  REPERTOIRE_SCHEDULER_VERSION,
+  type BackupImportPreview,
+  type ExportBackupInput,
+  type ExportBackupResult,
+  type PreviewBackupImportInput,
+  type RepertoireBackupDocument,
+  type RepertoireBackupEntry,
+  type RestoreBackupInput,
+  type RestoreBackupResult,
+  type RestoreBackupSelection,
   type AddFromGameInput,
   type AddFromGamePreview,
   type AddFromGameResult,
@@ -91,12 +103,21 @@ import {
 } from "@chaturanga/shared/chess/repertoire-index";
 import {
   firstAnswerOutcome,
+  MAX_STAGE,
   orderQueue,
   scheduleAfterOutcome,
   type PracticeHistoryAction,
   type PracticeOutcome
 } from "@chaturanga/shared/chess/repertoire-scheduler";
 import { compareGameToRepertoire } from "@chaturanga/shared/chess/repertoire-compare";
+import {
+  buildBackupDocument,
+  DEFAULT_BACKUP_LIMITS,
+  diffBackupEntry,
+  remapBackupEntry,
+  stripForExport,
+  validateBackupDocument
+} from "@chaturanga/shared/chess/repertoire-backup";
 import {
   DEFAULT_REHEARSAL_DEPTH_PLIES,
   continuations,
@@ -2751,7 +2772,436 @@ export function endPractice(sessionId: string): PracticeSummary {
   });
 }
 
-/** Forgets pending import jobs (tests). */
+/** Forgets pending PGN import and backup restore jobs (tests). */
 export function resetImportJobs(): void {
   importJobs.clear();
+  backupJobs.clear();
+}
+
+/* ------------------------------------------------------------------ native backup (§10) */
+
+type BackupJob = { document: RepertoireBackupDocument; warnings: string[]; expiresAt: number };
+const backupJobs = new Map<string, BackupJob>();
+const MAX_BACKUP_BYTES = DEFAULT_BACKUP_LIMITS.maxBytes;
+const RETAINED_BACKUP_DIR = "repertoire-backups";
+const BACKUP_FILTERS = [{ name: "Chaturanga backup", extensions: ["json"] }];
+
+function mib(bytes: number): string {
+  return `${Math.ceil((bytes / (1024 * 1024)) * 10) / 10} MiB`;
+}
+
+/**
+ * The stored state of a repertoire as a backup entry, progress included (callers strip it). Read
+ * inside a transaction so chapters, decisions and progress belong to one revision.
+ */
+function backupEntryOf(record: RepertoireRecord): RepertoireBackupEntry {
+  return {
+    repertoire: {
+      id: record.id,
+      name: record.name,
+      color: record.color,
+      description: record.description,
+      tags: [...record.tags],
+      revision: record.revision,
+      archivedAt: record.archivedAt,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt
+    },
+    chapters: chapterRepository.list(record.id),
+    decisions: decisionRepository.list(record.id).map(stripFingerprint),
+    progress: progressRepository.list(record.id),
+    workspace: workspaceRepository.get(record.id),
+    gameLinks: gameLinkRepository.list(record.id)
+  };
+}
+
+function backupDocument(entries: RepertoireBackupEntry[], now: number): RepertoireBackupDocument {
+  return buildBackupDocument(entries, {
+    app: { name: app.getName(), version: app.getVersion() },
+    now,
+    positionKeyVersion: REPERTOIRE_POSITION_KEY_VERSION,
+    schedulerVersion: REPERTOIRE_SCHEDULER_VERSION
+  });
+}
+
+/** `yyyy-mm-dd` in local time, for the suggested file name. */
+function localDate(time: number): string {
+  const date = new Date(time);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/**
+ * Writes a native backup of the chosen repertoires (all of them, archived included, by default)
+ * through a save dialog. The snapshot is read in one transaction, so every repertoire is exported
+ * at one captured revision; progress is included only when asked. The destination is only ever
+ * the path the user picked in the dialog. `savedPath` is null when the dialog was cancelled.
+ */
+export async function exportBackup(
+  input: ExportBackupInput,
+  owner: BrowserWindow | null = null
+): Promise<ExportBackupResult> {
+  const now = clock();
+  const entries = transaction(() => {
+    const ids = input.repertoireIds ?? repertoireRepository.ids();
+    return [...new Set(ids)].map((id) => {
+      const record = repertoireRepository.get(id);
+      if (!record) throw new Error(`Invalid repertoireIds: "${id}" is not in this library`);
+      return stripForExport(backupEntryOf(record), input.includeProgress);
+    });
+  });
+  if (!entries.length) throw new Error("Invalid export: there are no repertoires to back up");
+  const json = JSON.stringify(backupDocument(entries, now));
+  const bytes = Buffer.byteLength(json, "utf8");
+  if (bytes > MAX_BACKUP_BYTES) {
+    throw new Error(
+      `Invalid export: the backup would be ${mib(bytes)}, over the ${mib(MAX_BACKUP_BYTES)} a restore accepts; back up fewer repertoires at once`
+    );
+  }
+  const window = owner ?? BrowserWindow.getFocusedWindow();
+  const options = {
+    defaultPath: `chaturanga-repertoires-${localDate(now)}.json`,
+    filters: BACKUP_FILTERS
+  };
+  const choice = window
+    ? await dialog.showSaveDialog(window, options)
+    : await dialog.showSaveDialog(options);
+  if (choice.canceled || !choice.filePath) {
+    return { savedPath: null, repertoireCount: entries.length, bytes };
+  }
+  await writeFile(choice.filePath, json, "utf8");
+  return { savedPath: choice.filePath, repertoireCount: entries.length, bytes };
+}
+
+function pruneBackupJobs(now: number): void {
+  for (const [jobId, job] of backupJobs) if (job.expiresAt <= now) backupJobs.delete(jobId);
+}
+
+/** The backup text from the native open dialog (size checked before reading), or null. */
+async function pickBackupFile(owner: BrowserWindow | null): Promise<string | null> {
+  const window = owner ?? BrowserWindow.getFocusedWindow();
+  const options: Electron.OpenDialogOptions = {
+    properties: ["openFile"],
+    filters: BACKUP_FILTERS
+  };
+  const choice = window
+    ? await dialog.showOpenDialog(window, options)
+    : await dialog.showOpenDialog(options);
+  const path = choice.canceled ? undefined : choice.filePaths[0];
+  if (!path) return null;
+  const { size } = await stat(path);
+  if (size > MAX_BACKUP_BYTES) {
+    throw new Error(
+      `Invalid backup: the file is ${mib(size)}; backups up to ${mib(MAX_BACKUP_BYTES)} can be restored`
+    );
+  }
+  return readFile(path, "utf8");
+}
+
+/**
+ * Validates a backup (picked through the native open dialog, or given as JSON text) and keeps it
+ * as a pending job for 30 minutes (at most three at once; a new one drops the oldest). Each
+ * repertoire is previewed against a repertoire with the same id in this library, if any, with the
+ * diff replacing it would make. Returns null when the dialog was cancelled.
+ */
+export async function previewBackupImport(
+  input: PreviewBackupImportInput,
+  owner: BrowserWindow | null = null
+): Promise<BackupImportPreview | null> {
+  const text = "pickFile" in input ? await pickBackupFile(owner) : input.json;
+  if (text === null) return null;
+  const { document, warnings } = validateBackupDocument(text);
+  const repertoires = transaction(() =>
+    document.repertoires.map((entry) => {
+      const record = repertoireRepository.get(entry.repertoire.id);
+      return {
+        sourceId: entry.repertoire.id,
+        name: entry.repertoire.name,
+        color: entry.repertoire.color,
+        chapterCount: entry.chapters.length,
+        decisionCount: entry.decisions.length,
+        hasProgress: entry.progress !== null,
+        existing: record ? { id: record.id, name: record.name, revision: record.revision } : null,
+        diff: record ? diffBackupEntry(backupEntryOf(record), entry) : null
+      };
+    })
+  );
+  const now = clock();
+  pruneBackupJobs(now);
+  for (const oldest of backupJobs.keys()) {
+    if (backupJobs.size < MAX_IMPORT_JOBS) break;
+    backupJobs.delete(oldest);
+  }
+  const jobId = nanoid();
+  backupJobs.set(jobId, { document, warnings, expiresAt: now + IMPORT_JOB_TTL_MS });
+  return {
+    jobId,
+    formatVersion: document.formatVersion,
+    exportedAt: document.exportedAt,
+    app: document.app,
+    repertoires,
+    warnings
+  };
+}
+
+export function cancelBackupImport(jobId: string): void {
+  backupJobs.delete(jobId);
+}
+
+/**
+ * The entry's chapters as they will be stored: every tree replayed from its root (validateTree via
+ * sanitizeChapter), metadata pruned. Throws `Invalid backup: chapter "<title>" …` at the first bad
+ * chapter, before anything is written.
+ */
+function restorableChapters(entry: RepertoireBackupEntry): RepertoireChapter[] {
+  return entry.chapters.map((chapter) => {
+    try {
+      return sanitizeChapter(chapter, chapter.revision);
+    } catch (error) {
+      const reason = (error instanceof Error ? error.message : String(error)).replace(
+        /^Invalid /,
+        ""
+      );
+      throw new Error(`Invalid backup: chapter "${chapter.title}" can't be restored (${reason})`, {
+        cause: error
+      });
+    }
+  });
+}
+
+/** Inserts an entry's content under `entry.repertoire.id` (the repertoire row must exist). */
+function insertBackupContent(
+  entry: RepertoireBackupEntry,
+  chapters: readonly RepertoireChapter[],
+  includeProgress: boolean,
+  keepLinkIds: boolean,
+  now: number
+): void {
+  const repertoireId = entry.repertoire.id;
+  for (const chapter of chapters) {
+    const owner = chapterRepository.ownerOf(chapter.id);
+    if (owner && owner.repertoireId !== repertoireId) {
+      throw new Error(
+        `Invalid backup: chapter "${chapter.title}" belongs to another repertoire in this library; restore it as a new copy`
+      );
+    }
+    chapterRepository.upsert(repertoireId, chapter, now);
+  }
+  for (const decision of entry.decisions) {
+    const acceptedUcis = [...new Set(decision.acceptedUcis.map((uci) => uci.toLowerCase()))];
+    decisionRepository.upsert(
+      {
+        repertoireId,
+        positionKey: decision.positionKey,
+        acceptedUcis,
+        preferredUci:
+          decision.preferredUci && acceptedUcis.includes(decision.preferredUci)
+            ? decision.preferredUci
+            : null,
+        prompt: cleanText(decision.prompt, MAX_POLICY_TEXT),
+        hint: cleanText(decision.hint, MAX_POLICY_TEXT),
+        wrongMoveFeedback: Object.fromEntries(
+          Object.entries(decision.wrongMoveFeedback)
+            .slice(0, 64)
+            .map(([uci, text]) => [uci, text.slice(0, MAX_POLICY_TEXT)])
+        ),
+        paused: decision.paused,
+        acceptanceFingerprint: ""
+      },
+      now
+    );
+  }
+  if (includeProgress && entry.progress) {
+    for (const progress of entry.progress) {
+      progressRepository.upsert({
+        ...progress,
+        repertoireId,
+        stage: Math.min(progress.stage, MAX_STAGE)
+      });
+    }
+  }
+  if (entry.workspace) {
+    const known = chapters.some((chapter) => chapter.id === entry.workspace!.lastChapterId);
+    workspaceRepository.save(
+      repertoireId,
+      {
+        lastChapterId: known ? entry.workspace.lastChapterId : null,
+        lastNodeId: known ? entry.workspace.lastNodeId : null,
+        orientation: entry.workspace.orientation,
+        practiceDraft: null
+      },
+      now
+    );
+  }
+  for (const link of entry.gameLinks) {
+    gameLinkRepository.insert({
+      ...link,
+      id: keepLinkIds && !gameLinkRepository.get(link.id) ? link.id : nanoid(),
+      repertoireId,
+      gameId: link.gameId && libraryGameExists(link.gameId) ? link.gameId : null,
+      headers: sanitizeHeaders(link.headers),
+      capturedPath: link.capturedPath.slice(0, MAX_POLICY_TEXT)
+    });
+  }
+}
+
+/** A file-name-safe form of a repertoire id. */
+function safeFileId(id: string): string {
+  return id.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80) || "repertoire";
+}
+
+/** Writes the repertoire's own backup to `<userData>/repertoire-backups/` and returns the path. */
+function retainBackup(record: RepertoireRecord, now: number): string {
+  const directory = join(app.getPath("userData"), RETAINED_BACKUP_DIR);
+  mkdirSync(directory, { recursive: true });
+  const stamp = new Date(now).toISOString().replace(/[:.]/g, "-");
+  const path = join(directory, `${safeFileId(record.id)}-${stamp}.json`);
+  const document = backupDocument([stripForExport(backupEntryOf(record), true)], now);
+  writeFileSync(path, JSON.stringify(document), "utf8");
+  return path;
+}
+
+type RestoredRepertoire = RestoreBackupResult["restored"][number] & { revision: number };
+
+function restoreNewCopy(
+  entry: RepertoireBackupEntry,
+  chapters: readonly RepertoireChapter[],
+  selection: RestoreBackupSelection,
+  now: number
+): RestoredRepertoire {
+  const chapterIds = new Map(chapters.map((chapter) => [chapter.id, nanoid()]));
+  const copy = remapBackupEntry(entry, {
+    newRepertoireId: nanoid(),
+    idFor: (chapterId) => chapterIds.get(chapterId) ?? nanoid(),
+    linkIdFor: () => nanoid()
+  });
+  const name = selection.newName?.trim()
+    ? cleanName(selection.newName)
+    : cleanName(`${entry.repertoire.name || "Repertoire"} (restored)`);
+  repertoireRepository.insert({
+    id: copy.repertoire.id,
+    name,
+    color: copy.repertoire.color,
+    description: cleanText(copy.repertoire.description, MAX_DESCRIPTION) ?? "",
+    tags: cleanTags(copy.repertoire.tags),
+    revision: 1,
+    archivedAt: null,
+    createdAt: now,
+    updatedAt: now
+  });
+  const copiedChapters = chapters.map((chapter) => ({
+    ...chapter,
+    id: chapterIds.get(chapter.id)!,
+    revision: 1
+  }));
+  insertBackupContent(copy, copiedChapters, selection.includeProgress, false, now);
+  reindex(requireRepertoire(copy.repertoire.id), now);
+  return {
+    sourceId: entry.repertoire.id,
+    repertoireId: copy.repertoire.id,
+    mode: "new-copy",
+    retainedBackupPath: null,
+    revision: 1
+  };
+}
+
+function restoreReplace(
+  entry: RepertoireBackupEntry,
+  chapters: readonly RepertoireChapter[],
+  selection: RestoreBackupSelection,
+  now: number
+): RestoredRepertoire {
+  const existing = repertoireRepository.get(entry.repertoire.id);
+  if (!existing) {
+    throw new Error(
+      `Invalid selections: "${entry.repertoire.name}" has no repertoire in this library to replace; restore it as a new copy`
+    );
+  }
+  if (selection.expectedRevision === undefined) {
+    throw new Error("Invalid expectedRevision: required to replace a repertoire");
+  }
+  checkRevision(existing, selection.expectedRevision);
+  // The replaced data is written out before anything is deleted (design §10).
+  const retainedBackupPath = retainBackup(existing, now);
+  // Deleting the row cascades to chapters, decisions, index, progress, sessions, workspace, links.
+  repertoireRepository.remove(existing.id);
+  const revision = Math.max(existing.revision, entry.repertoire.revision) + 1;
+  repertoireRepository.insert({
+    id: existing.id,
+    name: cleanName(entry.repertoire.name || existing.name),
+    color: entry.repertoire.color,
+    description: cleanText(entry.repertoire.description, MAX_DESCRIPTION) ?? "",
+    tags: cleanTags(entry.repertoire.tags),
+    revision,
+    archivedAt: entry.repertoire.archivedAt,
+    createdAt: entry.repertoire.createdAt,
+    updatedAt: now
+  });
+  insertBackupContent(entry, chapters, selection.includeProgress, true, now);
+  reindex(requireRepertoire(existing.id), now);
+  return {
+    sourceId: entry.repertoire.id,
+    repertoireId: existing.id,
+    mode: "replace",
+    retainedBackupPath,
+    revision
+  };
+}
+
+/**
+ * Restores the selected repertoires of a previewed backup in one transaction, so a failure leaves
+ * nothing half-restored. `new-copy` inserts the content under fresh ids at revision 1. `replace`
+ * requires the existing repertoire's revision, writes its own backup to
+ * `<userData>/repertoire-backups/` first, then swaps in the backup's content under the same id
+ * (practice sessions of the replaced data are dropped) at a revision above both. Progress is
+ * restored only with `includeProgress`. A link keeps its game only if this library has it. The
+ * index and effective decisions are rebuilt; change events follow the commit.
+ */
+export function restoreBackup(input: RestoreBackupInput): RestoreBackupResult {
+  const now = clock();
+  pruneBackupJobs(now);
+  const job = backupJobs.get(input.jobId);
+  if (!job) {
+    throw new Error(
+      "Invalid jobId: the backup preview expired or was cancelled; choose the file again"
+    );
+  }
+  if (!input.selections.length) {
+    throw new Error("Invalid selections: choose at least one repertoire to restore");
+  }
+  if (new Set(input.selections.map((item) => item.sourceId)).size !== input.selections.length) {
+    throw new Error("Invalid selections: each repertoire can be restored only once");
+  }
+  const planned = input.selections.map((selection) => {
+    const entry = job.document.repertoires.find(
+      (item) => item.repertoire.id === selection.sourceId
+    );
+    if (!entry) {
+      throw new Error(`Invalid selections: "${selection.sourceId}" is not in this backup`);
+    }
+    return { selection, entry, chapters: restorableChapters(entry) };
+  });
+  const restored = transaction(() =>
+    planned.map(({ selection, entry, chapters }) =>
+      selection.mode === "replace"
+        ? restoreReplace(entry, chapters, selection, now)
+        : restoreNewCopy(entry, chapters, selection, now)
+    )
+  );
+  backupJobs.delete(input.jobId);
+  for (const item of restored) {
+    changed({
+      repertoireId: item.repertoireId,
+      revision: item.revision,
+      kind: item.mode === "replace" ? "updated" : "created"
+    });
+  }
+  return {
+    restored: restored.map(({ sourceId, repertoireId, mode, retainedBackupPath }) => ({
+      sourceId,
+      repertoireId,
+      mode,
+      retainedBackupPath
+    }))
+  };
 }

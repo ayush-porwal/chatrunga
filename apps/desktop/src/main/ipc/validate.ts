@@ -25,10 +25,12 @@ import type {
   CompareGameInput,
   CreateRepertoireInput,
   DuplicateRepertoireInput,
+  ExportBackupInput,
   ExportInput,
   ImportCommitInput,
   LinkGameInput,
   PracticeActionInput,
+  PreviewBackupImportInput,
   PreviewImportInput,
   RecordAttemptInput,
   RemoveChapterInput,
@@ -36,6 +38,7 @@ import type {
   RepertoireColor,
   RepertoireListFilters,
   RepertoireNodeMeta,
+  RestoreBackupInput,
   SaveChapterInput,
   SaveWorkspaceInput,
   StartPracticeInput,
@@ -845,6 +848,56 @@ export function parseExportInput(value: unknown): ExportInput {
   return {
     repertoireId: asId(input.repertoireId, "repertoireId"),
     chapterIds: optional(input.chapterIds, (ids) => asIdArray(ids, "chapterIds", MAX_IMPORT_GAMES))
+  };
+}
+
+/** Repertoires one backup holds (design §11). */
+const MAX_BACKUP_REPERTOIRES = 100;
+/** A backup's JSON text, in UTF-16 code units (never fewer than its UTF-8 bytes / 3). */
+const MAX_BACKUP_JSON = 32 * 1024 * 1024;
+
+export function parseExportBackupInput(value: unknown): ExportBackupInput {
+  const input = asObject(value, "backup export");
+  return {
+    repertoireIds: optional(input.repertoireIds, (ids) =>
+      asIdArray(ids, "repertoireIds", MAX_BACKUP_REPERTOIRES)
+    ),
+    includeProgress: asBoolean(input.includeProgress, "includeProgress")
+  };
+}
+
+/** Either the native file picker (`pickFile: true`) or JSON text; never a filesystem path. */
+export function parsePreviewBackupImportInput(value: unknown): PreviewBackupImportInput {
+  const input = asObject(value, "backup import");
+  if (input.pickFile !== undefined) {
+    if (input.pickFile !== true) fail("pickFile", "expected true");
+    return { pickFile: true };
+  }
+  if (typeof input.json !== "string") fail("backup import", "expected pickFile or json");
+  if (input.json.length > MAX_BACKUP_JSON) fail("backup", "the text is larger than 32 MiB");
+  return { json: input.json };
+}
+
+export function parseRestoreBackupInput(value: unknown): RestoreBackupInput {
+  const input = asObject(value, "backup restore");
+  if (!Array.isArray(input.selections) || input.selections.length > MAX_BACKUP_REPERTOIRES) {
+    fail("selections", "expected an array of repertoires");
+  }
+  return {
+    jobId: asId(input.jobId, "jobId"),
+    selections: input.selections.map((item, index) => {
+      const selection = asObject(item, `selections[${index}]`);
+      if (selection.mode !== "new-copy" && selection.mode !== "replace") {
+        fail(`selections[${index}].mode`, "expected new-copy or replace");
+      }
+      return {
+        sourceId: asId(selection.sourceId, "sourceId"),
+        mode: selection.mode,
+        includeProgress: asBoolean(selection.includeProgress, "includeProgress"),
+        newName: optional(selection.newName, (name) => asString(name, "newName", MAX_NAME)),
+        expectedRevision: optional(selection.expectedRevision, asRevision)
+      };
+    })
   };
 }
 

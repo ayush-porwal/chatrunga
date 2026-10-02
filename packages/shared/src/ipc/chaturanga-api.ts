@@ -52,12 +52,15 @@ import type {
   AddFromGamePreview,
   AddFromGameResult,
   ArchiveRepertoireInput,
+  BackupImportPreview,
   AttemptResult,
   ChapterSaveResult,
   CompareGameInput,
   CreateRepertoireInput,
   DecisionSaveResult,
   DuplicateRepertoireInput,
+  ExportBackupInput,
+  ExportBackupResult,
   ExportInput,
   ExportResult,
   ImportCommitInput,
@@ -68,6 +71,7 @@ import type {
   PracticeActionResult,
   PracticeSessionSnapshot,
   PracticeSummary,
+  PreviewBackupImportInput,
   PreviewImportInput,
   RecordAttemptInput,
   RemoveChapterInput,
@@ -83,6 +87,8 @@ import type {
   RepertoireDueSummary,
   RepertoireListFilters,
   RepertoireSummary,
+  RestoreBackupInput,
+  RestoreBackupResult,
   SaveChapterInput,
   SaveWorkspaceInput,
   StartPracticeInput,
@@ -310,6 +316,12 @@ export type ChaturangaApi = {
     removeGameLink(input: { repertoireId: string; linkId: string }): Promise<void>;
     /** Attaches a library game to a repertoire/chapter (model game, or one played from it); idempotent per (repertoire, game, kind). */
     linkGame(input: LinkGameInput): Promise<RepertoireGameLink>;
+    /** Writes a versioned native backup through the save dialog (§10); never takes a path from the renderer. */
+    exportBackup(input: ExportBackupInput): Promise<ExportBackupResult>;
+    /** Validates a backup and shows what restoring would do; null when the open dialog was cancelled. */
+    previewBackupImport(input: PreviewBackupImportInput): Promise<BackupImportPreview | null>;
+    restoreBackup(input: RestoreBackupInput): Promise<RestoreBackupResult>;
+    cancelBackupImport(jobId: string): Promise<void>;
     create(input: CreateRepertoireInput): Promise<RepertoireDetail>;
     updateMetadata(input: UpdateRepertoireMetadataInput): Promise<RepertoireDetail>;
     /** Saves one chapter and reconciles decisions/index/progress in the same transaction. */

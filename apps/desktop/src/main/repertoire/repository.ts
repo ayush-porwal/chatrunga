@@ -522,6 +522,13 @@ export const repertoireRepository = {
     return row ? toSummary(row) : null;
   },
 
+  /** Every repertoire id, archived ones included, oldest first (backups). */
+  ids(): string[] {
+    return all<{ id: string }>("SELECT id FROM repertoires ORDER BY created_at, id").map(
+      (row) => row.id
+    );
+  },
+
   get(id: string): RepertoireRecord | null {
     const row = get<RepertoireRow>("SELECT * FROM repertoires WHERE id = ?", id);
     return row ? toRecord(row) : null;

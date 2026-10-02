@@ -10,10 +10,12 @@ import type {
   CreateRepertoireInput,
   DecisionSaveResult,
   DuplicateRepertoireInput,
+  ExportBackupInput,
   ExportInput,
   ImportCommitInput,
   LinkGameInput,
   PracticeActionInput,
+  PreviewBackupImportInput,
   PreviewImportInput,
   RecordAttemptInput,
   RemoveChapterInput,
@@ -21,6 +23,7 @@ import type {
   RepertoireDetail,
   RepertoireDueSummary,
   RepertoireListFilters,
+  RestoreBackupInput,
   SaveChapterInput,
   SaveWorkspaceInput,
   StartPracticeInput,
@@ -375,6 +378,45 @@ export function useCancelImportMutation() {
 export function useExportRepertoireMutation() {
   return useMutation({
     mutationFn: (input: ExportInput) => requireRepertoires().export(input)
+  });
+}
+
+/** Writes a native backup through the main-owned save dialog (`savedPath` null when cancelled). */
+export function useExportBackupMutation() {
+  return useMutation({
+    mutationFn: (input: ExportBackupInput) => requireRepertoires().exportBackup(input),
+    retry: false
+  });
+}
+
+/** Opens and validates a backup; null when the open dialog was cancelled. Use mutateAsync. */
+export function usePreviewBackupImportMutation() {
+  return useMutation({
+    mutationFn: (input: PreviewBackupImportInput) =>
+      requireRepertoires().previewBackupImport(input),
+    retry: false
+  });
+}
+
+/** Restores the selected repertoires of a previewed backup and re-reads what they touched. */
+export function useRestoreBackupMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: RestoreBackupInput) => requireRepertoires().restoreBackup(input),
+    retry: false,
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: repertoireKeys.lists });
+      void queryClient.invalidateQueries({ queryKey: repertoireKeys.due });
+      for (const item of result.restored) {
+        void queryClient.invalidateQueries({ queryKey: repertoireKeys.detail(item.repertoireId) });
+      }
+    }
+  });
+}
+
+export function useCancelBackupImportMutation() {
+  return useMutation({
+    mutationFn: (jobId: string) => requireRepertoires().cancelBackupImport(jobId)
   });
 }
 

@@ -12,12 +12,14 @@ const calls: [string, unknown[]][] = [];
 vi.mock("../repertoire/service", () => {
   const names = [
     "archiveRepertoire",
+    "cancelBackupImport",
     "cancelImport",
     "commitImport",
     "compareGame",
     "createRepertoire",
     "duplicateRepertoire",
     "endPractice",
+    "exportBackup",
     "exportRepertoire",
     "getChapter",
     "getDecision",
@@ -25,11 +27,13 @@ vi.mock("../repertoire/service", () => {
     "getDueSummary",
     "getRepertoire",
     "listRepertoires",
+    "previewBackupImport",
     "previewImport",
     "recordAttempt",
     "recordPracticeAction",
     "removeChapter",
     "removeRepertoire",
+    "restoreBackup",
     "resumePractice",
     "saveChapter",
     "saveWorkspace",
@@ -288,5 +292,58 @@ describe("registerRepertoireIpc", () => {
         positionKeys: ["k".repeat(201)]
       })
     ).toThrow(/positionKeys/);
+  });
+
+  it("parses backup inputs and never accepts a filesystem path", () => {
+    const invoke = (channel: string, ...args: unknown[]) =>
+      handlers.get(`repertoires:${channel}`)!({ sender: {} }, ...args);
+    calls.length = 0;
+    expect(invoke("exportBackup", { includeProgress: true, extra: "x" })).toBe("exportBackup");
+    expect(calls.at(-1)?.[1][0]).toEqual({ repertoireIds: undefined, includeProgress: true });
+    expect(invoke("exportBackup", { repertoireIds: ["r1"], includeProgress: false })).toBe(
+      "exportBackup"
+    );
+    expect(invoke("previewBackupImport", { pickFile: true })).toBe("previewBackupImport");
+    expect(calls.at(-1)?.[1][0]).toEqual({ pickFile: true });
+    expect(invoke("previewBackupImport", { json: "{}" })).toBe("previewBackupImport");
+    const restore = {
+      jobId: "j",
+      selections: [
+        { sourceId: "r1", mode: "replace", includeProgress: true, expectedRevision: 3 },
+        { sourceId: "r2", mode: "new-copy", includeProgress: false, newName: "Copy" }
+      ]
+    };
+    expect(invoke("restoreBackup", restore)).toBe("restoreBackup");
+    expect(calls.at(-1)?.[1][0]).toEqual(restore);
+    expect(invoke("cancelBackupImport", "j")).toBe("cancelBackupImport");
+
+    expect(() => invoke("exportBackup", { includeProgress: "yes" })).toThrow(/includeProgress/);
+    expect(() =>
+      invoke("exportBackup", { path: "/tmp/x.json", includeProgress: true })
+    ).not.toThrow();
+    expect(calls.at(-1)?.[1][0]).not.toHaveProperty("path");
+    expect(() => invoke("previewBackupImport", { path: "/etc/hosts" })).toThrow(
+      /expected pickFile or json/
+    );
+    expect(() => invoke("previewBackupImport", { pickFile: "/etc/hosts" })).toThrow(/pickFile/);
+    expect(() => invoke("previewBackupImport", { json: "x".repeat(32 * 1024 * 1024 + 1) })).toThrow(
+      /larger than 32 MiB/
+    );
+    expect(() =>
+      invoke("restoreBackup", {
+        jobId: "j",
+        selections: [{ sourceId: "r1", mode: "merge", includeProgress: true }]
+      })
+    ).toThrow(/expected new-copy or replace/);
+    expect(() =>
+      invoke("restoreBackup", {
+        jobId: "j",
+        selections: [
+          { sourceId: "r1", mode: "replace", includeProgress: true, expectedRevision: -1 }
+        ]
+      })
+    ).toThrow(/expectedRevision/);
+    expect(() => invoke("restoreBackup", { jobId: "j", selections: {} })).toThrow(/selections/);
+    expect(() => invoke("cancelBackupImport", "")).toThrow(/jobId/);
   });
 });
