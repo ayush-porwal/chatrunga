@@ -6,7 +6,8 @@ import { MoveLink, type GoToLine } from "../game-review/MoveLinks";
 import { ReviewBoard } from "../game-review/ReviewBoard";
 import { numberedLine, uciLineSteps, uciLineToSan } from "../game-review/review-utils";
 import { useGameStore } from "../../stores/game-store";
-import type { EngineInfo } from "@chaturanga/shared/types/engine";
+import type { EngineInfo, EngineScore } from "@chaturanga/shared/types/engine";
+import { scoreFromWhitePerspective } from "@chaturanga/shared/chess/review";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
 import { useEnginesQuery, useSettingsQuery } from "../../queries/api";
@@ -79,21 +80,27 @@ function FigurineSan({ san }: { san: string }) {
   );
 }
 
-/** The line's score as a pill: light while White is better, dark while Black is (like the bar). */
-function ScorePill({ score }: { score: string | null }) {
-  const blackBetter = Boolean(score?.startsWith("-"));
+/** An engine score (from the side to move, as UCI reports it) from White's side, as the bar and Lichess show it. */
+function whiteScore(score: EngineScore, fen: string): EngineScore {
+  return scoreFromWhitePerspective(score, fen.split(" ")[1] === "b" ? "black" : "white");
+}
+
+/** The line's score (White's side) as a pill: light while White is better, dark while Black is (like the bar). */
+function ScorePill({ score }: { score: EngineScore | null }) {
+  const blackBetter = Boolean(score && score.value < 0);
+  const label = score ? formatScore(score, 2) : null;
   return (
     <span
       className={cn(
         "inline-flex h-6 min-w-[3.5rem] items-center justify-center rounded-md px-1.5 font-mono text-xs font-semibold tabular-nums",
-        score === null
+        label === null
           ? "bg-surface-raised text-fg-subtle"
           : blackBetter
             ? "border border-line bg-black text-white"
             : "bg-white text-black"
       )}
     >
-      {score ?? "–"}
+      {label ?? "–"}
     </span>
   );
 }
@@ -127,7 +134,7 @@ const EngineLineRow = memo(function EngineLineRow({
 }) {
   const steps = useMemo(() => (line?.pv?.length ? uciLineSteps(fen, line.pv.slice(0, MAX_LINE_MOVES)) : []), [fen, line]);
   const sans = useMemo(() => steps.map((step) => step.san), [steps]);
-  const score = line?.score ? formatScore(line.score, 2) : null;
+  const score = line?.score ? whiteScore(line.score, fen) : null;
   const multipv = line?.multipv ?? index + 1;
   return (
     <li
@@ -161,7 +168,12 @@ const EngineLineRow = memo(function EngineLineRow({
                         <FigurineSan san={step.san} />
                       </MoveLink>
                     ) : (
-                      <span tabIndex={0} className="rounded-[3px] outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/50">
+                      // The figurine is decorative: the move is read out as its SAN (Nf6, not f6).
+                      <span
+                        tabIndex={0}
+                        aria-label={step.san}
+                        className="rounded-[3px] outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/50"
+                      >
                         <FigurineSan san={step.san} />
                       </span>
                     )}
@@ -203,7 +215,7 @@ function previewFor(fen: string, lines: readonly EngineInfo[], target: PreviewTa
     fenAfter: step.fenAfter,
     uci: step.uci,
     label: numberedLine(fen, steps.slice(0, target.moveIndex + 1).map((item) => item.san)),
-    score: line.score ? formatScore(line.score, 2) : null
+    score: line.score ? formatScore(whiteScore(line.score, fen), 2) : null
   };
 }
 
@@ -338,7 +350,9 @@ function EngineStatusPanelContent({
           <div className="grid min-w-0 gap-0.5">
             <h3 className="truncate text-base font-semibold text-fg">{engineName ?? "Engine"}</h3>
             <p className="truncate text-xs text-fg-muted">
-              {analysing && finished
+              {status === "error"
+                ? "The engine stopped with an error"
+                : analysing && finished
                 ? `Finished at depth ${primary?.depth ?? "–"}`
                 : analysing
                 ? searchLimit
@@ -380,7 +394,7 @@ function EngineStatusPanelContent({
           {/* Evenly across the panel: Depth on the left edge, Score centred, Best on the right edge. */}
           <div className="grid grid-cols-3 gap-4">
             <Stat label="Depth" value={primary?.depth ?? "–"} mono />
-            <Stat label="Score" value={primary?.score ? formatScore(primary.score, 2) : "–"} mono className="justify-items-center text-center" />
+            <Stat label="Score" value={primary?.score ? formatScore(whiteScore(primary.score, fen), 2) : "–"} mono className="justify-items-center text-center" />
             <Stat label="Best" value={bestSan ?? "–"} mono className="justify-items-end text-right" />
           </div>
           {topLines.length ? (
