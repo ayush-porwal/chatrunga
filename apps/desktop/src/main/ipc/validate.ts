@@ -12,9 +12,31 @@ import type {
   GameListFilter,
   GameListQuery,
   GameSource,
+  MoveNode,
   SaveGameInput
 } from "@chaturanga/shared/types/chess";
 import { GAME_SEARCH_MAX_LENGTH } from "@chaturanga/shared/types/chess";
+import type {
+  ArchiveRepertoireInput,
+  ChapterKind,
+  CreateRepertoireInput,
+  DuplicateRepertoireInput,
+  ExportInput,
+  ImportCommitInput,
+  PracticeActionInput,
+  PreviewImportInput,
+  RecordAttemptInput,
+  RemoveChapterInput,
+  RemoveRepertoireInput,
+  RepertoireColor,
+  RepertoireListFilters,
+  RepertoireNodeMeta,
+  SaveChapterInput,
+  SaveWorkspaceInput,
+  StartPracticeInput,
+  UpdateDecisionInput,
+  UpdateRepertoireMetadataInput
+} from "@chaturanga/shared/types/repertoire";
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
 import type {
   CreateEngineInput,
@@ -543,4 +565,302 @@ export function parseLichessAiChallengeInput(value: unknown): LichessAiChallenge
 export function parseLichessDisconnectInput(value: unknown): { removeGames: boolean } {
   const input = asObject(value, "disconnect options");
   return { removeGames: asBoolean(input.removeGames, "removeGames") };
+}
+
+/* ------------------------------------------------------------------ repertoires */
+
+const MAX_REPERTOIRE_TEXT = 5_000;
+const MAX_POLICY_TEXT = 2_000;
+const MAX_CHAPTER_NODES = 100_000;
+const MAX_IMPORT_GAMES = 1_000;
+
+function asRevision(value: unknown): number {
+  return asWholeNumber(value, "expectedRevision");
+}
+
+function asRepertoireColor(value: unknown, label = "color"): RepertoireColor {
+  if (value !== "white" && value !== "black") fail(label, "expected white or black");
+  return value;
+}
+
+function asChapterKind(value: unknown): ChapterKind {
+  if (value !== "opening" && value !== "reference") fail("chapter kind", "expected opening or reference");
+  return value;
+}
+
+function asUci(value: unknown, label: string): string {
+  const uci = asString(value, label, 5);
+  if (!UCI_MOVE.test(uci)) fail(label, `"${uci}" is not a UCI move`);
+  return uci;
+}
+
+function asIdArray(value: unknown, label: string, maxItems: number): string[] {
+  if (!Array.isArray(value)) fail(label, "expected an array");
+  if (value.length > maxItems) fail(label, "too many items");
+  return value.map((item, index) => asId(item, `${label}[${index}]`));
+}
+
+function asTextRecord(
+  value: unknown,
+  label: string,
+  maxItems: number,
+  maxLength: number
+): Record<string, string> {
+  const entries = Object.entries(asObject(value, label));
+  if (entries.length > maxItems) fail(label, "too many entries");
+  return Object.fromEntries(
+    entries.map(([key, text]) => [key, asString(text, `${label}.${key}`, maxLength)])
+  );
+}
+
+export function parseRepertoireListFilters(value: unknown): RepertoireListFilters {
+  if (value === undefined || value === null) return {};
+  const input = asObject(value, "repertoire filters");
+  const filters: RepertoireListFilters = {};
+  if (input.color !== undefined) {
+    filters.color = input.color === "all" ? "all" : asRepertoireColor(input.color);
+  }
+  if (input.query !== undefined) filters.query = asString(input.query, "query", MAX_NAME);
+  if (input.archived !== undefined) filters.archived = asBoolean(input.archived, "archived");
+  return filters;
+}
+
+export function parseCreateRepertoireInput(value: unknown): CreateRepertoireInput {
+  const input = asObject(value, "repertoire");
+  return {
+    name: asString(input.name, "name", MAX_NAME),
+    color: asRepertoireColor(input.color),
+    description: optional(input.description, (text) =>
+      asString(text, "description", MAX_REPERTOIRE_TEXT)
+    ),
+    tags: optional(input.tags, (tags) => asStringArray(tags, "tags", 32, 50)),
+    rootFen: optional(input.rootFen, (fen) => asFen(fen, "rootFen")),
+    firstChapterTitle: optional(input.firstChapterTitle, (title) =>
+      asString(title, "firstChapterTitle", MAX_NAME)
+    )
+  };
+}
+
+export function parseUpdateRepertoireMetadataInput(value: unknown): UpdateRepertoireMetadataInput {
+  const input = asObject(value, "repertoire update");
+  const patch = asObject(input.patch, "repertoire patch");
+  return {
+    id: asId(input.id, "repertoireId"),
+    expectedRevision: asRevision(input.expectedRevision),
+    patch: {
+      name: optional(patch.name, (name) => asString(name, "name", MAX_NAME)),
+      description: optional(patch.description, (text) =>
+        asString(text, "description", MAX_REPERTOIRE_TEXT)
+      ),
+      tags: optional(patch.tags, (tags) => asStringArray(tags, "tags", 32, 50))
+    }
+  };
+}
+
+export function parseChapterRef(value: unknown): { repertoireId: string; chapterId: string } {
+  const input = asObject(value, "chapter");
+  return {
+    repertoireId: asId(input.repertoireId, "repertoireId"),
+    chapterId: asId(input.chapterId, "chapterId")
+  };
+}
+
+export function parseDecisionRef(value: unknown): { repertoireId: string; positionKey: string } {
+  const input = asObject(value, "decision");
+  const positionKey = asString(input.positionKey, "positionKey", 200).trim();
+  if (!positionKey || CONTROL_CHARS.test(positionKey)) fail("positionKey", "expected a position key");
+  return { repertoireId: asId(input.repertoireId, "repertoireId"), positionKey };
+}
+
+/**
+ * Shallow shape check, like parseSaveGameInput: the tree must be an array of at most 100,000
+ * nodes; the repertoire service replays and checks every node before anything is stored.
+ */
+export function parseSaveChapterInput(value: unknown): SaveChapterInput {
+  const input = asObject(value, "chapter save");
+  const chapter = asObject(input.chapter, "chapter");
+  if (!Array.isArray(chapter.tree)) fail("chapter tree", "expected an array");
+  if (chapter.tree.length > MAX_CHAPTER_NODES) fail("chapter tree", "too many nodes");
+  return {
+    repertoireId: asId(input.repertoireId, "repertoireId"),
+    expectedRevision: asRevision(input.expectedRevision),
+    chapter: {
+      id: asId(chapter.id, "chapterId"),
+      title: asString(chapter.title, "chapter title", MAX_NAME),
+      sortOrder: asFiniteNumber(chapter.sortOrder, "chapter sortOrder"),
+      kind: asChapterKind(chapter.kind),
+      enabled: asBoolean(chapter.enabled, "chapter enabled"),
+      rootFen: asFen(chapter.rootFen, "chapter rootFen"),
+      revision: typeof chapter.revision === "number" ? chapter.revision : 0,
+      nodeCount: Math.max(chapter.tree.length - 1, 0),
+      dueCount: 0,
+      headers: asTextRecord(chapter.headers ?? {}, "chapter headers", 64, MAX_HEADER),
+      tree: chapter.tree as MoveNode[],
+      nodeMeta: asObject(chapter.nodeMeta ?? {}, "chapter nodeMeta") as Record<
+        string,
+        RepertoireNodeMeta
+      >
+    }
+  };
+}
+
+export function parseUpdateDecisionInput(value: unknown): UpdateDecisionInput {
+  const input = asObject(value, "decision update");
+  const patch = asObject(input.patch, "decision patch");
+  const positionKey = asString(input.positionKey, "positionKey", 200).trim();
+  if (!positionKey || CONTROL_CHARS.test(positionKey)) fail("positionKey", "expected a position key");
+  const text = (field: unknown, label: string) =>
+    nullable(field, (item) => asString(item, label, MAX_POLICY_TEXT));
+  return {
+    repertoireId: asId(input.repertoireId, "repertoireId"),
+    positionKey,
+    expectedRevision: asRevision(input.expectedRevision),
+    patch: {
+      acceptedUcis: optional(patch.acceptedUcis, (ucis) => {
+        if (!Array.isArray(ucis) || ucis.length > 64) fail("acceptedUcis", "expected a short array");
+        return ucis.map((uci, index) => asUci(uci, `acceptedUcis[${index}]`));
+      }),
+      preferredUci: nullable(patch.preferredUci, (uci) => asUci(uci, "preferredUci")),
+      prompt: text(patch.prompt, "prompt"),
+      hint: text(patch.hint, "hint"),
+      wrongMoveFeedback: optional(patch.wrongMoveFeedback, (feedback) => {
+        const record = asTextRecord(feedback, "wrongMoveFeedback", 64, MAX_POLICY_TEXT);
+        for (const uci of Object.keys(record)) asUci(uci, "wrongMoveFeedback move");
+        return record;
+      }),
+      paused: optional(patch.paused, (paused) => asBoolean(paused, "paused"))
+    }
+  };
+}
+
+export function parseRemoveChapterInput(value: unknown): RemoveChapterInput {
+  const input = asObject(value, "chapter removal");
+  return {
+    repertoireId: asId(input.repertoireId, "repertoireId"),
+    chapterId: asId(input.chapterId, "chapterId"),
+    expectedRevision: asRevision(input.expectedRevision)
+  };
+}
+
+export function parseDuplicateRepertoireInput(value: unknown): DuplicateRepertoireInput {
+  const input = asObject(value, "repertoire copy");
+  return {
+    id: asId(input.id, "repertoireId"),
+    name: optional(input.name, (name) => asString(name, "name", MAX_NAME))
+  };
+}
+
+export function parseArchiveRepertoireInput(value: unknown): ArchiveRepertoireInput {
+  const input = asObject(value, "repertoire archive");
+  return {
+    id: asId(input.id, "repertoireId"),
+    archived: asBoolean(input.archived, "archived"),
+    expectedRevision: asRevision(input.expectedRevision)
+  };
+}
+
+export function parseRemoveRepertoireInput(value: unknown): RemoveRepertoireInput {
+  const input = asObject(value, "repertoire removal");
+  return { id: asId(input.id, "repertoireId"), expectedRevision: asRevision(input.expectedRevision) };
+}
+
+export function parsePreviewImportInput(value: unknown): PreviewImportInput {
+  const input = asObject(value, "PGN import");
+  if (input.pgn !== undefined) return { pgn: asString(input.pgn, "PGN", MAX_PGN_BYTES) };
+  return { path: asAbsolutePath(input.path, "path") };
+}
+
+export function parseImportCommitInput(value: unknown): ImportCommitInput {
+  const input = asObject(value, "import commit");
+  if (!Array.isArray(input.selections) || input.selections.length > MAX_IMPORT_GAMES) {
+    fail("selections", "expected an array of games");
+  }
+  return {
+    jobId: asId(input.jobId, "jobId"),
+    repertoireId: asId(input.repertoireId, "repertoireId"),
+    expectedRevision: asRevision(input.expectedRevision),
+    selections: input.selections.map((item, index) => {
+      const selection = asObject(item, `selections[${index}]`);
+      return {
+        gameIndex: asWholeNumber(selection.gameIndex, "gameIndex"),
+        title: asString(selection.title ?? "", "title", MAX_NAME),
+        kind: asChapterKind(selection.kind),
+        include: asBoolean(selection.include, "include"),
+        excludeNodeIds: optional(selection.excludeNodeIds, (ids) =>
+          asIdArray(ids, "excludeNodeIds", MAX_CHAPTER_NODES)
+        )
+      };
+    })
+  };
+}
+
+export function parseExportInput(value: unknown): ExportInput {
+  const input = asObject(value, "export");
+  return {
+    repertoireId: asId(input.repertoireId, "repertoireId"),
+    chapterIds: optional(input.chapterIds, (ids) => asIdArray(ids, "chapterIds", MAX_IMPORT_GAMES))
+  };
+}
+
+export function parseStartPracticeInput(value: unknown): StartPracticeInput {
+  const input = asObject(value, "practice");
+  if (input.mode !== "review-due" && input.mode !== "learn-new") {
+    fail("practice mode", "expected review-due or learn-new");
+  }
+  const result: StartPracticeInput = {
+    repertoireId: asId(input.repertoireId, "repertoireId"),
+    mode: input.mode
+  };
+  const chapterIds = optional(input.chapterIds, (ids) =>
+    asIdArray(ids, "chapterIds", MAX_IMPORT_GAMES)
+  );
+  if (chapterIds) result.chapterIds = chapterIds;
+  const depth = optional(input.maxDepthPlies, (plies) =>
+    asIntegerInRange(plies, "maxDepthPlies", 1, 512)
+  );
+  if (depth !== undefined) result.maxDepthPlies = depth;
+  const cardLimit = optional(input.cardLimit, (limit) => asIntegerInRange(limit, "cardLimit", 1, 500));
+  if (cardLimit !== undefined) result.cardLimit = cardLimit;
+  const newCardLimit = optional(input.newCardLimit, (limit) =>
+    asIntegerInRange(limit, "newCardLimit", 0, 500)
+  );
+  if (newCardLimit !== undefined) result.newCardLimit = newCardLimit;
+  return result;
+}
+
+export function parsePracticeActionInput(value: unknown): PracticeActionInput {
+  const input = asObject(value, "practice action");
+  const action = asObject(input.action, "practice action");
+  if (action.kind !== "hint" && action.kind !== "reveal" && action.kind !== "skip") {
+    fail("practice action", "expected hint, reveal or skip");
+  }
+  return {
+    sessionId: asId(input.sessionId, "sessionId"),
+    queueItemId: asId(input.queueItemId, "queueItemId"),
+    action: { kind: action.kind }
+  };
+}
+
+export function parseRecordAttemptInput(value: unknown): RecordAttemptInput {
+  const input = asObject(value, "attempt");
+  return {
+    sessionId: asId(input.sessionId, "sessionId"),
+    queueItemId: asId(input.queueItemId, "queueItemId"),
+    attemptId: asId(input.attemptId, "attemptId"),
+    uci: asUci(input.uci, "uci")
+  };
+}
+
+export function parseSaveWorkspaceInput(value: unknown): SaveWorkspaceInput {
+  const input = asObject(value, "workspace save");
+  const workspace = asObject(input.workspace, "workspace");
+  return {
+    repertoireId: asId(input.repertoireId, "repertoireId"),
+    workspace: {
+      lastChapterId: nullable(workspace.lastChapterId, (id) => asId(id, "lastChapterId")) ?? null,
+      lastNodeId: nullable(workspace.lastNodeId, (id) => asId(id, "lastNodeId")) ?? null,
+      orientation: asRepertoireColor(workspace.orientation, "orientation"),
+      practiceDraft: nullable(workspace.practiceDraft, parseStartPracticeInput) ?? null
+    }
+  };
 }

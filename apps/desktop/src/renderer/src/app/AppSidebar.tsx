@@ -37,6 +37,7 @@ export const AppSidebar = memo(function AppSidebar({
   onPlay,
   onAnalyze,
   onReview,
+  onRepertoire,
   onPuzzles,
   onDatabases,
   onImport,
@@ -51,6 +52,7 @@ export const AppSidebar = memo(function AppSidebar({
     analyze: boolean;
     play: boolean;
     review: boolean;
+    repertoire: boolean;
     puzzles: boolean;
     databases: boolean;
     settings: boolean;
@@ -62,6 +64,7 @@ export const AppSidebar = memo(function AppSidebar({
   onPlay: () => void;
   onAnalyze: () => void;
   onReview: () => void;
+  onRepertoire: () => void;
   onPuzzles: () => void;
   onDatabases: () => void;
   onImport: () => void;
@@ -99,6 +102,7 @@ export const AppSidebar = memo(function AppSidebar({
         {item(icons.play, "Play", onPlay, active.play)}
         {item(icons.analyze, "Analyze", onAnalyze, active.analyze)}
         {item(icons.review, "Game review", onReview, active.review)}
+        {item(icons.repertoire, "Repertoire", onRepertoire, active.repertoire)}
         {item(icons.puzzles, "Puzzles", onPuzzles, active.puzzles)}
         {item(icons.databases, "Databases", onDatabases, active.databases)}
         {item(icons.importPgn, "Import PGN", onImport)}

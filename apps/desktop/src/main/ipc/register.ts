@@ -73,13 +73,8 @@ import {
   parseStartAnalysisInput,
   parseStartGameInput
 } from "./validate";
-
-/** Sends to every live window (a closed window's webContents must not be used). */
-function broadcast(channel: string, payload: unknown): void {
-  for (const window of BrowserWindow.getAllWindows()) {
-    if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send(channel, payload);
-  }
-}
+import { broadcast } from "./broadcast";
+import { registerRepertoireIpc } from "./repertoire-handler";
 
 const ENGINE_EVENT_CHANNELS: Record<keyof EngineEvents, string> = {
   info: "engine:info",
@@ -150,6 +145,7 @@ export function registerIpc(engineManager: EngineManager): void {
   registerUpdateIpc();
   registerLichessIpc();
   registerTelemetryIpc();
+  registerRepertoireIpc();
   // Match clocks run on the renderer's monotonic clock, which may stop while the computer sleeps.
   // Main keeps the total it missed; the renderer reads it synchronously whenever it checks a clock,
   // so a move handled right after waking already sees it (an event could arrive too late).

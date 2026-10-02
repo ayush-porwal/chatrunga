@@ -5,7 +5,8 @@ import { useGameStore } from "../stores/game-store";
 import { useHistoryStore, type BoardSnapshot, type HistoryEntry } from "../stores/history-store";
 import { useLichessStore } from "../stores/lichess-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
-import type { AppView } from "./AppPages";
+import { useRepertoireWorkspaceStore } from "../stores/repertoire-workspace-store";
+import type { AppView, RepertoireScreen } from "./AppPages";
 import type { SideTab } from "./GameWorkspace";
 
 /**
@@ -26,6 +27,8 @@ export type HistoryContext = {
   settingsSection: SettingsSectionId | null;
   /** The puzzle set the board's puzzle belongs to. */
   puzzleConfig: PuzzleSessionConfig | null;
+  /** The repertoire screen shown (from the route and App's extras). */
+  repertoireScreen: RepertoireScreen | null;
 };
 
 /** The board as it is now, for a history entry. */
@@ -63,6 +66,25 @@ export function captureEntry(view: AppView, context: HistoryContext): HistoryEnt
       return { view, board: captureBoard(context.tab, context.puzzleConfig) };
     case "game-review":
       return { view, board: captureBoard("notation", context.puzzleConfig), tab: context.reviewTab };
+    case "repertoire-study": {
+      const screen = context.repertoireScreen;
+      if (screen?.view !== "repertoire-study") return { view: "repertoire-hub" };
+      const draft = useRepertoireWorkspaceStore.getState();
+      const open = draft.repertoireId === screen.repertoireId && draft.chapterId === screen.chapterId;
+      return {
+        view,
+        repertoireId: screen.repertoireId,
+        chapterId: screen.chapterId,
+        nodeId: open ? draft.selectedNodeId : screen.nodeId,
+        tab: screen.tab,
+        orientation: open ? draft.orientation : screen.orientation
+      };
+    }
+    case "repertoire-practice": {
+      const screen = context.repertoireScreen;
+      if (screen?.view !== "repertoire-practice") return { view: "repertoire-hub" };
+      return { view, repertoireId: screen.repertoireId, sessionId: screen.sessionId };
+    }
     default:
       return { view };
   }

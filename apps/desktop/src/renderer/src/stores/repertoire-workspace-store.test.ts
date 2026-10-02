@@ -1,0 +1,213 @@
+import { beforeEach, describe, expect, it } from "vitest";
+import { fenAfterUci } from "@chaturanga/shared/chess/position";
+import type { ChapterSaveResult } from "@chaturanga/shared/types/repertoire";
+import {
+  addLine,
+  chapterOf,
+  detailOf,
+  rootNode
+} from "../features/repertoire/__fixtures__/repertoire";
+import {
+  promoteChild,
+  removeSubtree,
+  UNDO_LIMIT,
+  useRepertoireWorkspaceStore
+} from "./repertoire-workspace-store";
+
+const store = () => useRepertoireWorkspaceStore.getState();
+
+function sampleTree() {
+  let tree = [rootNode()];
+  ({ tree } = addLine(tree, "root", ["e2e4", "e7e5", "g1f3"], "w"));
+  ({ tree } = addLine(tree, "w0", ["c7c5"], "s"));
+  return tree;
+}
+
+function load(nodeId?: string) {
+  store().loadChapter(detailOf(), chapterOf(sampleTree()), { nodeId });
+}
+
+function play(uci: string) {
+  const fen = store().chapter!.tree.find((node) => node.id === store().selectedNodeId)!.fenAfter;
+  return store().playMove(uci, uci, fenAfterUci(fen, uci)!);
+}
+
+describe("repertoire workspace store", () => {
+  beforeEach(() => store().reset());
+
+  it("loads a chapter at a known node, or the root", () => {
+    load("w1");
+    expect(store().selectedNodeId).toBe("w1");
+    expect(store().baseRevision).toBe(4);
+    expect(store().orientation).toBe("white");
+    load("missing");
+    expect(store().selectedNodeId).toBe("root");
+    expect(store().dirty).toBe(false);
+  });
+
+  it("selects an existing child instead of adding a duplicate move", () => {
+    load();
+    const result = play("e2e4");
+    expect(result).toEqual({ nodeId: "w0", created: false });
+    expect(store().dirty).toBe(false);
+    expect(store().chapter!.tree).toHaveLength(5);
+  });
+
+  it("adds new moves with the default edges and selects them", () => {
+    load("w2");
+    const reply = play("b8c6");
+    expect(reply.created).toBe(true);
+    expect(store().chapter!.nodeMeta[reply.nodeId]).toEqual({ edge: "covered" });
+    const own = play("f1c4");
+    expect(store().chapter!.nodeMeta[own.nodeId]).toEqual({ edge: "reference" });
+    expect(store().selectedNodeId).toBe(own.nodeId);
+    expect(store().dirty).toBe(true);
+    expect(store().generation).toBe(2);
+  });
+
+  it("stores castling as the king's two-square move", () => {
+    let tree = [rootNode()];
+    ({ tree } = addLine(tree, "root", ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "g8f6"], "m"));
+    store().loadChapter(detailOf(), chapterOf(tree), { nodeId: "m5" });
+    const fen = store().chapter!.tree.find((node) => node.id === "m5")!.fenAfter;
+    const fenAfter = fenAfterUci(fen, "e1h1")!;
+    const result = store().playMove("e1h1", "O-O", fenAfter);
+    expect(store().chapter!.tree.find((node) => node.id === result.nodeId)!.uci).toBe("e1g1");
+  });
+
+  it("flips node metadata and drops unset flags", () => {
+    load();
+    store().setNodeMeta("w0", { edge: "reference", disabled: true });
+    expect(store().chapter!.nodeMeta.w0).toEqual({ edge: "reference", disabled: true });
+    store().setNodeMeta("w0", { edge: "included", disabled: false });
+    expect(store().chapter!.nodeMeta.w0).toEqual({ edge: "included" });
+  });
+
+  it("edits comments and shapes", () => {
+    load();
+    store().setComment("w0", "Main move");
+    store().setShapes("w0", [{ orig: "e2", dest: "e4", color: "green" }], []);
+    const node = store().chapter!.tree.find((item) => item.id === "w0")!;
+    expect(node.comment).toBe("Main move");
+    expect(node.arrows).toHaveLength(1);
+    store().setComment("w0", "  ");
+    expect(store().chapter!.tree.find((item) => item.id === "w0")!.comment).toBeNull();
+  });
+
+  it("deletes a line with its metadata and undoes it", () => {
+    load("w2");
+    store().setNodeMeta("w1", { edge: "covered" });
+    expect(store().deleteLine("w1")).toBe(true);
+    expect(store().chapter!.tree.map((node) => node.id)).toEqual(["root", "w0", "s0"]);
+    expect(store().chapter!.nodeMeta.w1).toBeUndefined();
+    expect(store().selectedNodeId).toBe("w0");
+    expect(store().undo()).toBe(true);
+    expect(store().chapter!.tree).toHaveLength(5);
+    expect(store().chapter!.nodeMeta.w1).toEqual({ edge: "covered" });
+    expect(store().undo()).toBe(false);
+    expect(store().deleteLine("root")).toBe(false);
+  });
+
+  it("keeps at most the undo limit", () => {
+    load();
+    for (let index = 0; index < UNDO_LIMIT + 5; index += 1) store().promoteVariation("s0");
+    expect(store().undoStack).toHaveLength(UNDO_LIMIT);
+  });
+
+  it("promotes a variation to the main line", () => {
+    load();
+    store().promoteVariation("s0");
+    expect(store().chapter!.tree.find((node) => node.id === "w0")!.children).toEqual(["s0", "w1"]);
+  });
+
+  it("adopts a save result unless the draft changed while it ran", () => {
+    load();
+    play("d2d4");
+    const generation = store().generation;
+    const saved = { ...store().chapter!, revision: 2 };
+    const result: ChapterSaveResult = {
+      repertoire: detailOf({ revision: 5 }),
+      chapter: saved,
+      decisionsChanged: 0
+    };
+    store().markSaving();
+    store().saveSucceeded(result, generation);
+    expect(store().dirty).toBe(false);
+    expect(store().baseRevision).toBe(5);
+    expect(store().saveState).toEqual({ status: "idle" });
+
+    play("c2c4");
+    const before = store().generation;
+    store().setComment("root", "newer edit");
+    store().saveSucceeded(
+      { ...result, repertoire: detailOf({ revision: 6 }), chapter: { ...saved, revision: 3 } },
+      before
+    );
+    expect(store().dirty).toBe(true);
+    expect(store().baseRevision).toBe(6);
+    expect(store().chapter!.tree.find((node) => node.id === "root")!.comment).toBe("newer edit");
+    expect(store().chapter!.revision).toBe(3);
+  });
+
+  it("ignores a save result for another chapter except its revision", () => {
+    load();
+    store().saveSucceeded(
+      {
+        repertoire: detailOf({ revision: 9 }),
+        chapter: chapterOf(sampleTree(), {}, { id: "other" }),
+        decisionsChanged: 0
+      },
+      0
+    );
+    expect(store().chapterId).toBe("c1");
+    expect(store().baseRevision).toBe(9);
+  });
+
+  it("records save errors and adopts newer revisions only", () => {
+    load();
+    store().saveFailed("stale", true);
+    expect(store().saveState).toEqual({ status: "error", message: "stale", stale: true });
+    store().clearSaveError();
+    store().adoptRevision(2);
+    expect(store().baseRevision).toBe(4);
+    store().adoptRevision(7);
+    expect(store().baseRevision).toBe(7);
+  });
+
+  it("flips the board and remembers decisions per repertoire", () => {
+    load();
+    store().flip();
+    expect(store().orientation).toBe("black");
+    store().rememberDecision({
+      repertoireId: "r1",
+      positionKey: "k",
+      acceptedUcis: ["e2e4"],
+      preferredUci: "e2e4",
+      prompt: null,
+      hint: null,
+      wrongMoveFeedback: {},
+      paused: false
+    });
+    load();
+    expect(store().decisions.k?.preferredUci).toBe("e2e4");
+    store().loadChapter(detailOf({ id: "r2" }), chapterOf(sampleTree()));
+    expect(store().decisions).toEqual({});
+  });
+});
+
+describe("tree edits", () => {
+  it("removes a subtree and unlinks it from its parent", () => {
+    const { tree, removed, parentId } = removeSubtree(sampleTree(), "w0");
+    expect(tree.map((node) => node.id)).toEqual(["root"]);
+    expect(tree[0].children).toEqual([]);
+    expect([...removed].sort()).toEqual(["s0", "w0", "w1", "w2"]);
+    expect(parentId).toBe("root");
+    expect(removeSubtree(sampleTree(), "root").removed.size).toBe(0);
+  });
+
+  it("leaves the tree alone when promoting the root or a main-line move", () => {
+    const tree = sampleTree();
+    expect(promoteChild(tree, "root")).toEqual(tree);
+    expect(promoteChild(tree, "w1")).toEqual(tree);
+  });
+});

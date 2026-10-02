@@ -38,4 +38,12 @@ describe("IPC channels", () => {
     ]);
     expect([...listened].filter((channel) => !sent.has(channel))).toEqual([]);
   });
+
+  it("exposes the repertoire namespace, including getChapter, getDecision and the change event", () => {
+    const requested = matches(preload, /ipcRenderer\.invoke\("(repertoires:\w+)"/g);
+    expect(requested.has("repertoires:getChapter")).toBe(true);
+    expect(requested.has("repertoires:getDecision")).toBe(true);
+    expect(requested.size).toBe(23);
+    expect(matches(preload, /subscribe(?:<[^>]*>)?\("(repertoires:\w+)"/g)).toEqual(new Set(["repertoires:changed"]));
+  });
 });

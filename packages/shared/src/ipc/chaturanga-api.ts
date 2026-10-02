@@ -69,6 +69,8 @@ import type {
   RemoveRepertoireInput,
   RepertoireChangedEvent,
   RepertoireChangeResult,
+  RepertoireChapter,
+  RepertoireDecision,
   RepertoireDetail,
   RepertoireDueSummary,
   RepertoireListFilters,
@@ -276,6 +278,13 @@ export type ChaturangaApi = {
   repertoires: {
     list(filters?: RepertoireListFilters): Promise<RepertoireSummary[]>;
     get(id: string): Promise<RepertoireDetail>;
+    /** One chapter's full content (tree, node metadata, headers); details carry only summaries. */
+    getChapter(input: { repertoireId: string; chapterId: string }): Promise<RepertoireChapter>;
+    /** The stored decision at a position, or null when the repertoire has none there yet. */
+    getDecision(input: {
+      repertoireId: string;
+      positionKey: string;
+    }): Promise<RepertoireDecision | null>;
     create(input: CreateRepertoireInput): Promise<RepertoireDetail>;
     updateMetadata(input: UpdateRepertoireMetadataInput): Promise<RepertoireDetail>;
     /** Saves one chapter and reconciles decisions/index/progress in the same transaction. */

@@ -2,6 +2,10 @@ import { lazy, Suspense, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
+import type { Color } from "@chaturanga/shared/types/chess";
+import type { PracticeMode } from "@chaturanga/shared/types/repertoire";
+import type { StudyTarget } from "../features/repertoire/repertoire-chapters";
+import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
 import type { ReviewTab } from "../features/game-review/review-utils";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import type { SettingsSectionId } from "../features/settings/SettingsPage";
@@ -24,12 +28,51 @@ const PuzzlePage = lazy(() => import("../features/puzzles/PuzzlePage").then((mod
 const SettingsPage = lazy(() =>
   import("../features/settings/SettingsPage").then((module) => ({ default: module.SettingsPage }))
 );
+const RepertoireHubPage = lazy(() =>
+  import("../features/repertoire/RepertoireHubPage").then((module) => ({ default: module.RepertoireHubPage }))
+);
+const RepertoireStudyPage = lazy(() =>
+  import("../features/repertoire/RepertoireStudyPage").then((module) => ({ default: module.RepertoireStudyPage }))
+);
+const RepertoirePracticePage = lazy(() =>
+  import("../features/repertoire/RepertoirePracticePage").then((module) => ({
+    default: module.RepertoirePracticePage
+  }))
+);
 export const OnboardingFlow = lazy(() =>
   import("../features/onboarding/OnboardingFlow").then((module) => ({ default: module.OnboardingFlow }))
 );
 
 /** How a navigation enters Back / Forward (see showView). */
-export type AppView = "home" | "game" | "settings" | "play" | "puzzles" | "databases" | "game-review";
+export type AppView =
+  | "home"
+  | "game"
+  | "settings"
+  | "play"
+  | "puzzles"
+  | "databases"
+  | "game-review"
+  | "repertoire-hub"
+  | "repertoire-study"
+  | "repertoire-practice";
+
+/** The repertoire screen's route (ids from the URL) and the state App keeps for it. */
+export type RepertoireScreen =
+  | {
+      view: "repertoire-study";
+      repertoireId: string;
+      chapterId: string;
+      /** The node to select on open / restore (null: the draft's own, or the root). */
+      nodeId: string | null;
+      orientation: Color | null;
+      tab: StudyTab;
+    }
+  | {
+      view: "repertoire-practice";
+      repertoireId: string;
+      sessionId: string | null;
+      preset: { chapterIds?: string[]; mode?: PracticeMode } | null;
+    };
 
 /** What the pages can ask the app to do (App's command handlers). */
 export type PageCommands = {
@@ -53,6 +96,15 @@ export type PageCommands = {
   openGameFromLibrary: (id: string) => void;
   analyzePosition: () => void;
   stopLiveAnalysis: () => void;
+  repertoireHub: () => void;
+  openRepertoireStudy: (target: StudyTarget) => void;
+  openRepertoirePractice: (repertoireId: string) => void;
+  practiceRepertoireChapters: (repertoireId: string, chapterIds: string[]) => void;
+  repertoireMissing: (message: string) => void;
+  repertoireTabChange: (tab: StudyTab) => void;
+  repertoirePositionChanged: () => void;
+  repertoirePracticeStarted: (sessionId: string) => void;
+  repertoirePracticeSetup: () => void;
 };
 
 /**
@@ -72,6 +124,7 @@ export function AppPages({
   onSideTabChange,
   canStartAnalysis,
   puzzlePanel,
+  repertoire,
   on
 }: {
   view: AppView;
@@ -87,6 +140,7 @@ export function AppPages({
   onSideTabChange: (tab: SideTab) => void;
   canStartAnalysis: boolean;
   puzzlePanel: ReactNode;
+  repertoire: RepertoireScreen | null;
   on: PageCommands;
 }) {
   return (
@@ -102,6 +156,37 @@ export function AppPages({
           onReview={on.openReviewPicker}
           onReviewGame={on.reviewGame}
           onOpenEngineSettings={on.engineSettings}
+          onRepertoireHub={on.repertoireHub}
+          onRepertoirePractice={on.openRepertoirePractice}
+          onRepertoireStudy={on.openRepertoireStudy}
+        />
+      ) : view === "repertoire-hub" ? (
+        <RepertoireHubPage onStudy={on.openRepertoireStudy} onPractice={on.openRepertoirePractice} />
+      ) : view === "repertoire-study" && repertoire?.view === "repertoire-study" ? (
+        <RepertoireStudyPage
+          repertoireId={repertoire.repertoireId}
+          chapterId={repertoire.chapterId}
+          initialNodeId={repertoire.nodeId}
+          initialOrientation={repertoire.orientation}
+          tab={repertoire.tab}
+          onTabChange={on.repertoireTabChange}
+          onOpenChapter={(chapterId) =>
+            on.openRepertoireStudy({ repertoireId: repertoire.repertoireId, chapterId, nodeId: null })
+          }
+          onPractice={(chapterIds) => on.practiceRepertoireChapters(repertoire.repertoireId, chapterIds)}
+          onMissing={on.repertoireMissing}
+          onPositionChanged={on.repertoirePositionChanged}
+        />
+      ) : view === "repertoire-practice" && repertoire?.view === "repertoire-practice" ? (
+        <RepertoirePracticePage
+          repertoireId={repertoire.repertoireId}
+          sessionId={repertoire.sessionId}
+          preset={repertoire.preset}
+          onSessionStarted={on.repertoirePracticeStarted}
+          onSetup={on.repertoirePracticeSetup}
+          onStudy={({ chapterId, nodeId }) =>
+            on.openRepertoireStudy({ repertoireId: repertoire.repertoireId, chapterId, nodeId })
+          }
         />
       ) : view === "settings" ? (
         <SettingsPage initialSection={settingsSection} onSectionChange={on.settingsSectionViewed} />

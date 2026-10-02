@@ -203,6 +203,129 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
       }
       setFingerprint.run(storedFingerprint(row), row.id);
     }
+  },
+  // 7: repertoires (main/repertoire). Chapters hold the authored trees;
+  // decisions, progress and the position index are keyed by the versioned position key. Attempts
+  // cascade only from their session (never from a decision), so edits keep practice history.
+  (database) => {
+    database.exec(`CREATE TABLE IF NOT EXISTS repertoires (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      tags_json TEXT NOT NULL DEFAULT '[]',
+      revision INTEGER NOT NULL DEFAULT 1,
+      archived_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
+    database.exec(`CREATE TABLE IF NOT EXISTS repertoire_chapters (
+      id TEXT PRIMARY KEY,
+      repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      sort_order INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      enabled INTEGER NOT NULL,
+      root_fen TEXT NOT NULL,
+      headers_json TEXT NOT NULL,
+      tree_json TEXT NOT NULL,
+      node_metadata_json TEXT NOT NULL,
+      node_count INTEGER NOT NULL DEFAULT 0,
+      revision INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
+    database.exec(
+      "CREATE INDEX IF NOT EXISTS repertoire_chapters_order_idx ON repertoire_chapters(repertoire_id, sort_order)"
+    );
+    database.exec(`CREATE TABLE IF NOT EXISTS repertoire_decisions (
+      repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+      position_key TEXT NOT NULL,
+      accepted_ucis_json TEXT NOT NULL,
+      preferred_uci TEXT,
+      prompt TEXT,
+      hint TEXT,
+      wrong_move_feedback_json TEXT NOT NULL DEFAULT '{}',
+      paused INTEGER NOT NULL DEFAULT 0,
+      acceptance_fingerprint TEXT NOT NULL DEFAULT '',
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (repertoire_id, position_key)
+    )`);
+    database.exec(`CREATE TABLE IF NOT EXISTS repertoire_position_index (
+      repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+      chapter_id TEXT NOT NULL REFERENCES repertoire_chapters(id) ON DELETE CASCADE,
+      node_id TEXT NOT NULL,
+      position_key TEXT NOT NULL,
+      scope_state TEXT NOT NULL,
+      is_decision INTEGER NOT NULL DEFAULT 0,
+      ply INTEGER NOT NULL,
+      revision INTEGER NOT NULL,
+      key_version INTEGER NOT NULL,
+      PRIMARY KEY (chapter_id, node_id)
+    )`);
+    database.exec(
+      "CREATE INDEX IF NOT EXISTS repertoire_position_index_key_idx ON repertoire_position_index(repertoire_id, position_key)"
+    );
+    database.exec(
+      "CREATE INDEX IF NOT EXISTS repertoire_position_index_chapter_idx ON repertoire_position_index(chapter_id)"
+    );
+    database.exec(`CREATE TABLE IF NOT EXISTS repertoire_progress (
+      repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+      position_key TEXT NOT NULL,
+      stage INTEGER NOT NULL,
+      due_at INTEGER,
+      last_attempt_at INTEGER,
+      lapses INTEGER NOT NULL DEFAULT 0,
+      unaided_successes INTEGER NOT NULL DEFAULT 0,
+      acceptance_fingerprint TEXT NOT NULL,
+      scheduler_version INTEGER NOT NULL,
+      suspended INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (repertoire_id, position_key)
+    )`);
+    database.exec(
+      "CREATE INDEX IF NOT EXISTS repertoire_progress_due_idx ON repertoire_progress(repertoire_id, suspended, due_at)"
+    );
+    database.exec(`CREATE TABLE IF NOT EXISTS repertoire_practice_sessions (
+      id TEXT PRIMARY KEY,
+      repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+      mode TEXT NOT NULL,
+      scope_json TEXT NOT NULL,
+      snapshot_revision INTEGER NOT NULL,
+      queue_json TEXT NOT NULL,
+      card_state_json TEXT NOT NULL,
+      cursor INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
+    database.exec(`CREATE TABLE IF NOT EXISTS repertoire_attempts (
+      attempt_id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES repertoire_practice_sessions(id) ON DELETE CASCADE,
+      queue_item_id TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('attempt', 'hint', 'reveal', 'skip')),
+      uci TEXT,
+      legal INTEGER NOT NULL DEFAULT 1,
+      correct INTEGER NOT NULL DEFAULT 0,
+      is_final_grade INTEGER NOT NULL DEFAULT 0,
+      outcome TEXT,
+      position_key TEXT NOT NULL,
+      fingerprint TEXT NOT NULL,
+      result_json TEXT,
+      at INTEGER NOT NULL,
+      UNIQUE (session_id, queue_item_id, sequence)
+    )`);
+    database.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS repertoire_attempts_final_idx ON repertoire_attempts(session_id, queue_item_id) WHERE is_final_grade = 1"
+    );
+    database.exec(`CREATE TABLE IF NOT EXISTS repertoire_workspace_state (
+      repertoire_id TEXT PRIMARY KEY REFERENCES repertoires(id) ON DELETE CASCADE,
+      last_chapter_id TEXT,
+      last_node_id TEXT,
+      orientation TEXT NOT NULL,
+      practice_draft_json TEXT,
+      updated_at INTEGER NOT NULL
+    )`);
   }
 ];
 

@@ -68,4 +68,37 @@ describe("runMigrations", () => {
     expect(games[0]).toMatchObject({ review_json: null, fingerprint: expect.stringMatching(/^game:[0-9a-f]{64}$/) });
     expect(games[1]?.fingerprint).toBe("lichess:abcdEFGH");
   });
+
+  it("7: creates the repertoire tables with cascades and one final grade per card", () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec("PRAGMA foreign_keys = ON");
+    db.exec(`CREATE TABLE engines (id TEXT PRIMARY KEY, name TEXT, executable_path TEXT, working_directory TEXT, args TEXT,
+      protocol TEXT, is_default INTEGER, is_enabled INTEGER, created_at INTEGER, updated_at INTEGER)`);
+    db.exec(`CREATE TABLE games (id TEXT PRIMARY KEY, source TEXT, site TEXT, updated_at INTEGER)`);
+    db.exec(`CREATE TABLE external_databases (id TEXT PRIMARY KEY, source_id TEXT)`);
+    runMigrations(db, MIGRATIONS);
+    expect(version(db)).toBe(7);
+
+    db.exec(`INSERT INTO repertoires (id, name, color, created_at, updated_at) VALUES ('r', 'R', 'white', 1, 1)`);
+    db.exec(`INSERT INTO repertoire_chapters (id, repertoire_id, title, sort_order, kind, enabled, root_fen,
+      headers_json, tree_json, node_metadata_json, created_at, updated_at)
+      VALUES ('c', 'r', 'C', 0, 'opening', 1, 'fen', '{}', '[]', '{}', 1, 1)`);
+    db.exec(`INSERT INTO repertoire_position_index (repertoire_id, chapter_id, node_id, position_key, scope_state,
+      ply, revision, key_version) VALUES ('r', 'c', 'root', 'k', 'active', 0, 1, 1)`);
+    db.exec(`INSERT INTO repertoire_practice_sessions (id, repertoire_id, mode, scope_json, snapshot_revision,
+      queue_json, card_state_json, status, created_at, updated_at)
+      VALUES ('s', 'r', 'learn-new', '{}', 1, '[]', '{}', 'active', 1, 1)`);
+    const attempt = (id: string, sequence: number, final: number) =>
+      db.exec(`INSERT INTO repertoire_attempts (attempt_id, session_id, queue_item_id, sequence, kind,
+        is_final_grade, position_key, fingerprint, at) VALUES ('${id}', 's', 'q', ${sequence}, 'attempt', ${final}, 'k', '', 1)`);
+    attempt("a1", 1, 1);
+    attempt("a2", 2, 0);
+    expect(() => attempt("a3", 3, 1)).toThrow();
+    expect(() => attempt("a4", 2, 0)).toThrow();
+
+    db.exec("DELETE FROM repertoires WHERE id = 'r'");
+    for (const table of ["repertoire_chapters", "repertoire_position_index", "repertoire_attempts"]) {
+      expect(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()).toEqual({ n: 0 });
+    }
+  });
 });

@@ -18,6 +18,8 @@ import { EngineSetupLine } from "../features/onboarding/EngineSetupStatus";
 import { useLatestGamesQuery } from "../queries/api";
 import { decidedResult } from "./game-title";
 import { ipcErrorMessage } from "@/lib/ipc-error";
+import { RepertoireHomeCard } from "../features/repertoire/RepertoireHomeCard";
+import type { StudyTarget } from "../features/repertoire/repertoire-chapters";
 
 /** How many saved games the Recent list shows under the Continue card. */
 const RECENT_LIMIT = 6;
@@ -37,7 +39,10 @@ export const HomePage = memo(function HomePage({
   onPuzzles,
   onReview,
   onReviewGame,
-  onOpenEngineSettings
+  onOpenEngineSettings,
+  onRepertoireHub,
+  onRepertoirePractice,
+  onRepertoireStudy
 }: {
   desktopApiAvailable: boolean;
   onAnalyze: () => void;
@@ -52,6 +57,9 @@ export const HomePage = memo(function HomePage({
   onReviewGame: (id: string) => void;
   /** Settings → Engines (no engine yet: add your own). */
   onOpenEngineSettings: () => void;
+  onRepertoireHub: () => void;
+  onRepertoirePractice: (repertoireId: string) => void;
+  onRepertoireStudy: (target: StudyTarget) => void;
 }) {
   // The Continue card's game and the Recent list: only these are read, not the whole library.
   const games = useLatestGamesQuery(1 + RECENT_LIMIT);
@@ -72,6 +80,9 @@ export const HomePage = memo(function HomePage({
   return (
     <Page>
       <PageHeader title="Home" />
+      {desktopApiAvailable ? (
+        <RepertoireHomeCard onHub={onRepertoireHub} onPractice={onRepertoirePractice} onStudy={onRepertoireStudy} />
+      ) : null}
       {loading ? (
         <HomeSkeleton />
       ) : games.isError ? (
