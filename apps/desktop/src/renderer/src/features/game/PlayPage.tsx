@@ -291,8 +291,10 @@ function useEngineGameSetup({ onOpenSettings, onBeforeStart, onStart }: EngineGa
       useRepertoireHandoffStore.getState().begin({
         ...initialSession.repertoire,
         gameNodeId: handoffGame.currentNodeId,
-        color: initialSession.playerColor
+        color: initialSession.playerColor,
+        board: useGameStore.getState().board
       });
+      // The choices from before the handoff come back for the next game (see withoutInitialSession).
       usePlayDraftStore.getState().clearInitialSession();
     }
     useAnalysisStore.getState().setActiveEngine(selectedEngineId);

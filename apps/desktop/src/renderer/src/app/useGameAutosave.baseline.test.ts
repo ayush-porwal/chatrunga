@@ -21,6 +21,7 @@ const {
   AUTOSAVE_DELAY_MS,
   holdUntilChanged,
   isHeldUnchanged,
+  onGameSaved,
   unchangedSinceBaseline,
   useGameAutosave
 } = await import("./useGameAutosave");
@@ -111,6 +112,45 @@ describe("useGameAutosave with a held copy", () => {
     useGameStore.getState().reset();
     await settle();
     expect(saveGame).not.toHaveBeenCalled();
+  });
+
+  it("reports a successful save with the game's id, its board and result", async () => {
+    const saves: { gameId: string; board: number; result: string }[] = [];
+    const stop = onGameSaved((saved) => saves.push(saved));
+    loadHeldCopy();
+    const board = useGameStore.getState().board;
+    useGameStore.getState().makeUciMove("b8c6");
+    await settle();
+    stop();
+    expect(saves).toEqual([{ gameId: useGameStore.getState().gameId, board, result: "*" }]);
+  });
+
+  it("reports the first save of a board replaced before it, with that board's number", async () => {
+    const saves: { gameId: string; board: number }[] = [];
+    const stop = onGameSaved((saved) => saves.push(saved));
+    loadHeldCopy();
+    const board = useGameStore.getState().board;
+    useGameStore.getState().makeUciMove("b8c6");
+    // Replaced before the save's quiet period ends: the leaving game is written as it goes.
+    useGameStore.getState().reset();
+    expect(useGameStore.getState().board).toBe(board + 1);
+    await settle();
+    stop();
+    expect(saveGame).toHaveBeenCalledTimes(1);
+    expect(saves).toEqual([{ gameId: saveGame.mock.calls[0][0].id, board, result: "*" }]);
+    expect(saves[0].gameId).toBeTruthy();
+  });
+
+  it("doesn't report a failed save", async () => {
+    saveGame.mockRejectedValueOnce(new Error("disk full"));
+    const saves: unknown[] = [];
+    const stop = onGameSaved((saved) => saves.push(saved));
+    loadHeldCopy();
+    useGameStore.getState().makeUciMove("b8c6");
+    await settle();
+    stop();
+    expect(saveGame).toHaveBeenCalledTimes(1);
+    expect(saves).toEqual([]);
   });
 
   it("forgets the hold when another unsaved board loads", async () => {

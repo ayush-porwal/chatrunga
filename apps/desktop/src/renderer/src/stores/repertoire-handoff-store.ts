@@ -14,7 +14,9 @@ export type PlayedHandoff = {
   /** The game's node at the handoff position (the end of the replayed prefix). */
   gameNodeId: string;
   color: Color;
-  /** The game's library id once autosave gave it one. */
+  /** The game store's `board` the game was loaded as, to match its first save. */
+  board: number;
+  /** The game's library id once its first save succeeded. */
   gameId: string | null;
   /** The game is still the board it started on (false once another board replaced it). */
   onBoard: boolean;
@@ -46,4 +48,16 @@ export function isHandoffGame(played: PlayedHandoff | null, gameId: string | nul
   return Boolean(
     played && (played.onBoard || (played.gameId !== null && played.gameId === gameId))
   );
+}
+
+/**
+ * Whether a library write saved the handoff's game: its id once bound, or before that the board it
+ * was loaded as (a first save can land after another board replaced it).
+ */
+export function isHandoffSave(
+  played: PlayedHandoff | null,
+  saved: { gameId: string; board: number }
+): boolean {
+  if (!played) return false;
+  return played.gameId !== null ? played.gameId === saved.gameId : played.board === saved.board;
 }

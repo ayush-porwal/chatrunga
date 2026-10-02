@@ -1423,8 +1423,9 @@ function headerTags(headers: GameHeaders): Record<string, string> {
 /**
  * Links a library game to the repertoire as a `model` (attached for study) or a `played` game
  * (started from the repertoire). Idempotent per repertoire, game and kind: an existing link is
- * returned, re-pointed at the given chapter/node/path when those differ. No revision bump (the
- * repertoire's content is unchanged), but listeners are told it was updated.
+ * returned, re-pointed at the given chapter/node/path when those differ and with its headers
+ * copied again from the game when they changed (a played game that has since finished). No
+ * revision bump (the repertoire's content is unchanged), but listeners are told it was updated.
  */
 export function linkGame(input: LinkGameInput): RepertoireGameLink {
   const now = clock();
@@ -1438,6 +1439,7 @@ export function linkGame(input: LinkGameInput): RepertoireGameLink {
     }
     const headers = libraryGameExists(input.gameId) ? gameRepository.getHeaders(input.gameId) : null;
     if (!headers) throw new Error("Invalid gameId: the game is not in the library");
+    const tags = headerTags(headers);
 
     const target = {
       chapterId: input.chapterId,
@@ -1446,26 +1448,37 @@ export function linkGame(input: LinkGameInput): RepertoireGameLink {
     };
     const existing = gameLinkRepository.find(record.id, input.gameId, input.kind);
     if (existing) {
-      if (
+      const sameTarget =
         existing.chapterId === target.chapterId &&
         existing.gameNodeId === target.gameNodeId &&
-        existing.capturedPath === target.capturedPath
-      ) {
-        return { link: existing, revision: record.revision };
-      }
-      gameLinkRepository.updateTarget(existing.id, target);
-      return { link: { ...existing, ...target }, revision: record.revision };
+        existing.capturedPath === target.capturedPath;
+      const sameHeaders = JSON.stringify(existing.headers) === JSON.stringify(tags);
+      if (sameTarget && sameHeaders) return { link: existing, revision: record.revision };
+      if (!sameTarget) gameLinkRepository.updateTarget(existing.id, target);
+      if (!sameHeaders) gameLinkRepository.updateHeaders(existing.id, tags);
+      return { link: { ...existing, ...target, headers: tags }, revision: record.revision };
     }
     const link: RepertoireGameLink = {
       id: nanoid(),
       repertoireId: record.id,
       gameId: input.gameId,
       kind: input.kind,
-      headers: headerTags(headers),
+      headers: tags,
       createdAt: now,
       ...target
     };
-    gameLinkRepository.insert(link);
+    try {
+      gameLinkRepository.insert(link);
+    } catch (error) {
+      // An unreleased build created migration 8 without 'played'; its databases still refuse it.
+      if (input.kind === "played" && /CHECK constraint failed/.test(String(error))) {
+        throw new Error(
+          "Invalid kind: this database predates played links; reset the development database",
+          { cause: error }
+        );
+      }
+      throw error;
+    }
     return { link, revision: record.revision };
   });
   changed({ repertoireId: input.repertoireId, revision: result.revision, kind: "updated" });

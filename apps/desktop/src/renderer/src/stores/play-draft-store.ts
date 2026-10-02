@@ -37,11 +37,14 @@ export type PlayDraft = {
   customIncrementSec: number;
   /** A repertoire handoff to start from (Play from here); absent for a normal game. */
   initialSession?: PlayInitialSession;
+  /** The colour and clock chosen before the handoff set its own, restored when it ends. */
+  beforeHandoff?: Pick<PlayDraft, "humanColor" | "clockPreset">;
 };
 
 /**
  * The draft with a repertoire handoff: the player takes the repertoire's colour and the game is
- * untimed unless the player picks a clock afterwards.
+ * untimed unless the player picks a clock afterwards. The earlier colour and clock are kept to
+ * restore (from before the first handoff, when one replaces another).
  */
 export function withInitialSession(
   draft: PlayDraft,
@@ -50,16 +53,24 @@ export function withInitialSession(
   return {
     ...draft,
     initialSession,
+    beforeHandoff: draft.beforeHandoff ?? {
+      humanColor: draft.humanColor,
+      clockPreset: draft.clockPreset
+    },
     humanColor: initialSession.playerColor,
     clockPreset: "infinite"
   };
 }
 
-/** The draft without a handoff (Clear, or the game started from it); other choices stay. */
+/**
+ * The draft without a handoff (Clear, or the game started from it): the colour and clock from
+ * before it come back; other choices stay.
+ */
 export function withoutInitialSession(draft: PlayDraft): PlayDraft {
-  if (!draft.initialSession) return draft;
-  const next = { ...draft };
+  if (!draft.initialSession && !draft.beforeHandoff) return draft;
+  const next = { ...draft, ...draft.beforeHandoff };
   delete next.initialSession;
+  delete next.beforeHandoff;
   return next;
 }
 

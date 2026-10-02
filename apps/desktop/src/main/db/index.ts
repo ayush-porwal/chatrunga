@@ -330,6 +330,8 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
   // 8: repertoire provenance: which game (or part of one) a chapter's material came from. Deleting
   // the library game or the chapter keeps the link (and its copied headers) with a null reference;
   // `unsaved` marks a link to a board game that was never in the library.
+  // 'played' was added to the CHECK before release; a database from the earlier unreleased build
+  // lacks it, and linkGame says to reset it.
   (database) => {
     database.exec(`CREATE TABLE IF NOT EXISTS repertoire_game_links (
       id TEXT PRIMARY KEY,

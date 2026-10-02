@@ -8,7 +8,9 @@ import {
   chapterPath,
   createLinkOnce,
   gameFromInitialSession,
+  handoffAtEnd,
   repertoireCommandBlocked,
+  reviewOpeningAfterFlush,
   type HandoffOrigin,
   type RepertoireCommand
 } from "./handoffs";
@@ -242,5 +244,99 @@ describe("createLinkOnce", () => {
     await linkOnce({ ...input, gameId: "g2" });
     await linkOnce({ ...input, kind: "model" });
     expect(link).toHaveBeenCalledTimes(3);
+  });
+
+  it("links again when the stamp (the game's result) changes", async () => {
+    const link = vi.fn(() => Promise.resolve({}));
+    const linkOnce = createLinkOnce(link);
+    await linkOnce(input, "*");
+    await linkOnce(input, "*");
+    await linkOnce(input, "1-0");
+    await linkOnce(input, "1-0");
+    expect(link).toHaveBeenCalledTimes(2);
+  });
+
+  it("links to the repertoire alone when the chapter was deleted", async () => {
+    const link = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new Error(
+          "Error invoking remote method 'repertoires:linkGame': Error: Invalid chapterId: not found"
+        )
+      )
+      .mockResolvedValueOnce({});
+    const onError = vi.fn();
+    const linkOnce = createLinkOnce(link, onError);
+    await expect(linkOnce(input)).resolves.toBe(true);
+    expect(link).toHaveBeenLastCalledWith({ ...input, chapterId: null });
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("reports a failure once, not on every retry", async () => {
+    const link = vi.fn(() => Promise.reject(new Error("disk full")));
+    const onError = vi.fn();
+    const linkOnce = createLinkOnce(link, onError);
+    await expect(linkOnce(input)).resolves.toBe(false);
+    await expect(linkOnce(input)).resolves.toBe(false);
+    expect(link).toHaveBeenCalledTimes(2);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith("disk full");
+  });
+});
+
+describe("handoffAtEnd", () => {
+  it("is true at a mate and false before it", () => {
+    const line = addLine([rootNode()], "root", ["f2f3", "e7e5", "g2g4", "d8h4"], "f");
+    const chapter = chapterOf(line.tree);
+    expect(handoffAtEnd({ chapter, nodeId: line.ids[3] })).toBe(true);
+    expect(handoffAtEnd({ chapter, nodeId: line.ids[2] })).toBe(false);
+    expect(handoffAtEnd({ chapter, nodeId: "root" })).toBe(false);
+  });
+});
+
+describe("reviewOpeningAfterFlush", () => {
+  const played = {
+    repertoireId: "r1",
+    chapterId: "c1",
+    nodeId: "n2",
+    capturedPath: "1. e4 e5",
+    gameNodeId: "g2",
+    color: "white" as const,
+    board: 3,
+    gameId: "g1",
+    onBoard: true
+  };
+  const base = {
+    request: 4,
+    latestRequest: 4,
+    liveState: { live: null },
+    played,
+    gameId: "g1"
+  };
+
+  it("goes on for the handoff's game when nothing changed", () => {
+    expect(reviewOpeningAfterFlush(base)).toBe("go");
+    // The saved game reopened later (no longer the board it started on).
+    expect(reviewOpeningAfterFlush({ ...base, played: { ...played, onBoard: false } })).toBe("go");
+  });
+
+  it("stops for a newer navigation first", () => {
+    expect(
+      reviewOpeningAfterFlush({ ...base, latestRequest: 5, liveState: { live: { over: false } } })
+    ).toBe("stale");
+  });
+
+  it("stops when a Lichess game started while the save was awaited", () => {
+    expect(reviewOpeningAfterFlush({ ...base, liveState: { live: { over: false } } })).toBe(
+      "blocked"
+    );
+    expect(reviewOpeningAfterFlush({ ...base, liveState: { live: { over: true } } })).toBe("go");
+  });
+
+  it("stops when the board is no longer the handoff's game", () => {
+    expect(
+      reviewOpeningAfterFlush({ ...base, played: { ...played, onBoard: false }, gameId: "other" })
+    ).toBe("gone");
+    expect(reviewOpeningAfterFlush({ ...base, played: null })).toBe("gone");
   });
 });

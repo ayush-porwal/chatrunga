@@ -35,13 +35,28 @@ describe("withInitialSession", () => {
     expect(next).toMatchObject({ engineId: "sf", moveTimeMs: 500, depth: null, customMinutes: 10 });
     expect(draft.initialSession).toBeUndefined();
   });
+
+  it("remembers the colour and clock from before the first handoff", () => {
+    const first = withInitialSession(draft, initial);
+    expect(first.beforeHandoff).toEqual({ humanColor: "white", clockPreset: "blitz5_3" });
+    const second = withInitialSession(
+      { ...first, clockPreset: "rapid10_0" },
+      {
+        ...initial,
+        playerColor: "white"
+      }
+    );
+    expect(second.beforeHandoff).toEqual({ humanColor: "white", clockPreset: "blitz5_3" });
+  });
 });
 
 describe("withoutInitialSession", () => {
-  it("drops the handoff and keeps everything else", () => {
-    const next = withoutInitialSession(withInitialSession(draft, initial));
+  it("drops the handoff, restores the colour and clock and keeps everything else", () => {
+    const handoff = withInitialSession(draft, initial);
+    const next = withoutInitialSession({ ...handoff, clockPreset: "rapid10_0", moveTimeMs: 900 });
     expect("initialSession" in next).toBe(false);
-    expect(next.humanColor).toBe("black");
+    expect("beforeHandoff" in next).toBe(false);
+    expect(next).toEqual({ ...draft, moveTimeMs: 900 });
   });
 
   it("returns the same draft when there is nothing to clear", () => {
@@ -57,6 +72,12 @@ describe("usePlayDraftStore", () => {
     expect(usePlayDraftStore.getState().draft.initialSession).toBe(initial);
     usePlayDraftStore.getState().clearInitialSession();
     expect(usePlayDraftStore.getState().draft.initialSession).toBeUndefined();
-    expect(usePlayDraftStore.getState().draft.engineId).toBe("sf");
+    expect(usePlayDraftStore.getState().draft).toEqual(draft);
+  });
+
+  it("clearing without a handoff (Play opened another way) changes nothing", () => {
+    const before = usePlayDraftStore.getState().draft;
+    usePlayDraftStore.getState().clearInitialSession();
+    expect(usePlayDraftStore.getState().draft).toBe(before);
   });
 });

@@ -88,8 +88,11 @@ import {
 import {
   buildAnalysisSnapshot,
   buildInitialSession,
+  handoffAtEnd,
   LIVE_GAME_NOTICE,
+  NO_MOVES_TO_PLAY,
   repertoireCommandBlocked,
+  reviewOpeningAfterFlush,
   type HandoffOrigin,
   type RepertoireCommand
 } from "../features/repertoire/handoffs";
@@ -710,6 +713,16 @@ export function App() {
     showView("play", history);
   }
 
+  /**
+   * Play opened by anything but Play from here (the sidebar, Home, after a game): a repertoire
+   * handoff left from earlier is dropped, so its position doesn't start a game unasked. Back and
+   * an Engine settings detour return through `openPlayPage` and keep it.
+   */
+  function openFreshPlayPage() {
+    usePlayDraftStore.getState().clearInitialSession();
+    openPlayPage();
+  }
+
   function openPuzzlesPage(history: HistoryMode = "push") {
     if (!desktopApiAvailable) return;
     if (history === "push") commitCurrent();
@@ -905,6 +918,31 @@ export function App() {
   }
 
   /**
+   * The study's handoff origin once its draft is saved, or null with the reason shown: a Lichess
+   * game that started meanwhile keeps the board (read again now, with its notice), the chapter is
+   * no longer loaded, or its position is over.
+   */
+  function handoffOriginAfterFlush(
+    command: "analyze" | "play-from-here",
+    action: string
+  ): HandoffOrigin | null {
+    if (repertoireCommandBlocked(useLichessStore.getState(), command)) {
+      unlessOnlineGame(() => {});
+      return null;
+    }
+    const origin = studyHandoffOrigin();
+    if (!origin) {
+      useAppNoticeStore.getState().show(`The chapter isn't loaded, so ${action} didn't open.`);
+      return null;
+    }
+    if (handoffAtEnd(origin)) {
+      useAppNoticeStore.getState().show(`${NO_MOVES_TO_PLAY}.`, { tone: "info" });
+      return null;
+    }
+    return origin;
+  }
+
+  /**
    * Study → Analyze: the chapter's route to the selected node as a new, unsaved analysis game
    * (saved to the library only once changed). Back returns to the chapter at the same node and tab.
    */
@@ -912,9 +950,7 @@ export function App() {
     if (!desktopApiAvailable) return;
     const request = ++latestNavigation.current;
     if (!(await flushStudyForHandoff(request, "Analyze", () => on.analyzeFromStudy()))) return;
-    // The live game is read again now: one that started while the draft saved keeps the board.
-    if (repertoireCommandBlocked(useLichessStore.getState(), "analyze")) return;
-    const origin = studyHandoffOrigin();
+    const origin = handoffOriginAfterFlush("analyze", "Analyze");
     if (!origin) return;
     commitCurrent();
     endBoardActivity();
@@ -942,8 +978,7 @@ export function App() {
     if (!desktopApiAvailable) return;
     const request = ++latestNavigation.current;
     if (!(await flushStudyForHandoff(request, "Play from here", () => on.playFromStudy()))) return;
-    if (repertoireCommandBlocked(useLichessStore.getState(), "play-from-here")) return;
-    const origin = studyHandoffOrigin();
+    const origin = handoffOriginAfterFlush("play-from-here", "Play from here");
     if (!origin) return;
     usePlayDraftStore.getState().setInitialSession(buildInitialSession(origin));
     useLichessStore.getState().setPlayOpponent("engine");
@@ -966,10 +1001,25 @@ export function App() {
    * repertoire's colour against that repertoire (remembered for the colour, like a pick there).
    */
   async function reviewHandoffOpening() {
-    const played = useRepertoireHandoffStore.getState().played;
-    if (!played) return;
+    if (!useRepertoireHandoffStore.getState().played) return;
+    const request = ++latestNavigation.current;
     // The game's library id (its first save may still be waiting) names the review route.
     await flushGameAutosave();
+    const played = useRepertoireHandoffStore.getState().played;
+    const decision = reviewOpeningAfterFlush({
+      request,
+      latestRequest: latestNavigation.current,
+      liveState: useLichessStore.getState(),
+      played,
+      gameId: currentGame().gameId
+    });
+    if (decision === "blocked") unlessOnlineGame(() => {});
+    if (decision === "gone") {
+      useAppNoticeStore
+        .getState()
+        .show("That game is no longer on the board, so its opening wasn't reviewed.");
+    }
+    if (decision !== "go" || !played) return;
     updateSetting({
       key: played.color === "white" ? "repertoireCompareWhite" : "repertoireCompareBlack",
       value: played.repertoireId
@@ -1089,7 +1139,7 @@ export function App() {
     }),
     importedGame: useEventCallback((imported: ImportedGame) => unlessOnlineGame(() => loadImportedGame(imported))),
     beforePlayStart: useEventCallback(beforeEngineGame),
-    play: useEventCallback(() => openPlayPage()),
+    play: useEventCallback(() => openFreshPlayPage()),
     freeBoard: useEventCallback(() => unlessOnlineGame(startFreeBoard)),
     liveAnalysis: useEventCallback(() => unlessOnlineGame(startLiveAnalysis)),
     stopLiveAnalysis: useEventCallback(stopLiveAnalysis),
@@ -1102,7 +1152,7 @@ export function App() {
     // After a Lichess game: Play, on its Lichess tab.
     playLichess: useEventCallback(() => {
       useLichessStore.getState().setPlayOpponent("lichess");
-      openPlayPage();
+      openFreshPlayPage();
     }),
     puzzles: useEventCallback(() => unlessOnlineGame(() => openPuzzlesPage())),
     databases: useEventCallback(() => openDatabasesPage()),

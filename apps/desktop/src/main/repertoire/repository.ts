@@ -1034,6 +1034,15 @@ export const gameLinkRepository = {
     );
   },
 
+  /** Replaces a link's copied headers (a played game that has since finished). */
+  updateHeaders(id: string, headers: RepertoireGameLink["headers"]): void {
+    run(
+      "UPDATE repertoire_game_links SET headers_json = ? WHERE id = ?",
+      JSON.stringify(headers),
+      id
+    );
+  },
+
   remove(id: string): void {
     run("DELETE FROM repertoire_game_links WHERE id = ?", id);
   }

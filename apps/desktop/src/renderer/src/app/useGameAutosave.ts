@@ -48,6 +48,25 @@ export function sameDocument(a: SavedDocument | null, b: SavedDocument): boolean
 /** Counts every library write, so the save status can tell an older write's reply from a newer's. */
 let writeRevision = 0;
 
+/**
+ * A library write that succeeded: the game's id, the board it was (the game store's `board`, so a
+ * board replaced before its first save is still recognised) and the result it saved.
+ */
+export type GameSaved = { gameId: string; board: number; result: string };
+
+const savedListeners = new Set<(saved: GameSaved) => void>();
+
+/**
+ * Calls `listener` after every successful library write of a game, including the write of a board
+ * being replaced and a retry. Returns the unsubscribe.
+ */
+export function onGameSaved(listener: (saved: GameSaved) => void): () => void {
+  savedListeners.add(listener);
+  return () => {
+    savedListeners.delete(listener);
+  };
+}
+
 /** A new game's library id, chosen before its first write (see `save`). */
 function newGameId(): string {
   return crypto.randomUUID();
@@ -136,13 +155,28 @@ export function useGameAutosave(): void {
     let board = 0;
     let boardReview: { board: number; review: NonNullable<ReviewState["review"]> } | null = null;
 
-    const write = (input: SaveGameInput, document: SavedDocument | null): Promise<unknown> => {
+    const write = (
+      input: SaveGameInput,
+      document: SavedDocument | null,
+      savedBoard: number
+    ): Promise<unknown> => {
       const gameId = input.id ?? null;
       const revision = ++writeRevision;
       lastWrite = saveGame(input).then(
-        // Clears only this game's failure (a game left with a failed save keeps its Retry), and
-        // only if this write is newer than the one that failed.
-        () => useSaveStatusStore.getState().saved(gameId, revision),
+        () => {
+          // Clears only this game's failure (a game left with a failed save keeps its Retry), and
+          // only if this write is newer than the one that failed.
+          useSaveStatusStore.getState().saved(gameId, revision);
+          if (!gameId) return;
+          const saved = { gameId, board: savedBoard, result: input.headers.result ?? "*" };
+          for (const listener of savedListeners) {
+            try {
+              listener(saved);
+            } catch {
+              // A listener's failure is its own; the game is saved.
+            }
+          }
+        },
         (error: unknown) => {
           if (isSaveSuppressed(error)) return;
           // Not in the library as it is now: the next change (or Retry) writes it again.
@@ -151,7 +185,7 @@ export function useGameAutosave(): void {
           useSaveStatusStore.getState().setFailed(
             ipcErrorMessage(error) || "The game couldn't be saved.",
             () => {
-              void write(input, null).then(() => {
+              void write(input, null, savedBoard).then(() => {
                 if (useGameStore.getState().gameId === input.id) void save();
               });
             },
@@ -179,7 +213,7 @@ export function useGameAutosave(): void {
       const current = useGameStore.getState();
       const document = documentOf(current, review);
       stored = document;
-      return write(saveInput(current, resultAnchor, review), document);
+      return write(saveInput(current, resultAnchor, review), document, current.board);
     };
 
     /** Writes what's waiting now; resolves with whether everything is saved. */
@@ -218,7 +252,7 @@ export function useGameAutosave(): void {
       const review = boardReview?.board === board ? boardReview.review : undefined;
       if (stored && sameDocument(stored, documentOf(previous, review ?? stored.review))) return;
       const gameId = previous.gameId ?? newGameId();
-      void write(saveInput({ ...previous, gameId }, resultAnchor, review), null);
+      void write(saveInput({ ...previous, gameId }, resultAnchor, review), null, previous.board);
     };
 
     const unsubscribers = [
@@ -275,7 +309,7 @@ export function useGameAutosave(): void {
           boardReview.review === outgoing
         ) {
           const game = useGameStore.getState();
-          if (game.gameId) void write(saveInput(game, resultAnchor, outgoing), null);
+          if (game.gameId) void write(saveInput(game, resultAnchor, outgoing), null, game.board);
         }
         if (state.review) boardReview = { board, review: state.review };
         schedule();

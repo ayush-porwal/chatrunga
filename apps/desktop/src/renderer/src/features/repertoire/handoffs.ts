@@ -1,6 +1,6 @@
 import { nanoid } from "nanoid";
 import { addMoveNode, exportGameToPgn, rootPly } from "@chaturanga/shared/chess/pgn";
-import { applyUserMove } from "@chaturanga/shared/chess/position";
+import { applyUserMove, statusForFen } from "@chaturanga/shared/chess/position";
 import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import type { Color, GameHeaders, GameSession, MoveNode } from "@chaturanga/shared/types/chess";
 import {
@@ -8,8 +8,10 @@ import {
   type LinkGameInput,
   type RepertoireChapter
 } from "@chaturanga/shared/types/repertoire";
+import { ipcErrorMessage } from "@/lib/ipc-error";
 import { userMoveFromUci } from "@/lib/uci";
 import type { PlayInitialSession } from "../../stores/play-draft-store";
+import { isHandoffGame, type PlayedHandoff } from "../../stores/repertoire-handoff-store";
 import { pathLabel } from "./repertoire-model";
 
 /*
@@ -44,6 +46,15 @@ export function handoffTitle(origin: Pick<HandoffOrigin, "repertoireName" | "cha
 /** The handoff's SAN route ("1. e4 e5 2. Nf3"), or "Start" at the chapter's root. */
 export function handoffPathLabel(origin: Pick<HandoffOrigin, "chapter" | "nodeId">): string {
   return pathLabel(buildChapterLookup(origin.chapter), origin.nodeId);
+}
+
+/** Why Analyze and Play from here are refused at a mate or a draw. */
+export const NO_MOVES_TO_PLAY = "This position has no moves to play";
+
+/** Whether the handoff's position is over (mate, stalemate, a draw): nothing to analyse or play. */
+export function handoffAtEnd(origin: Pick<HandoffOrigin, "chapter" | "nodeId">): boolean {
+  const path = chapterPath(origin.chapter, origin.nodeId);
+  return statusForFen(path[path.length - 1]?.fenAfter ?? origin.chapter.rootFen).isEnd;
 }
 
 /**
@@ -220,29 +231,67 @@ export function repertoireCommandBlocked(
 /** What the guard says when it blocks a command (the same words as the board's own guard). */
 export const LIVE_GAME_NOTICE = "Finish your Lichess game first.";
 
+/**
+ * "Review opening" after waiting for the game's save: go on, or stop because a newer navigation
+ * took over ("stale"), a Lichess game started meanwhile ("blocked"), or the board is no longer the
+ * handoff's game ("gone").
+ */
+export function reviewOpeningAfterFlush(input: {
+  request: number;
+  latestRequest: number;
+  liveState: { live: { over: boolean } | null };
+  played: PlayedHandoff | null;
+  gameId: string | null;
+}): "go" | "stale" | "blocked" | "gone" {
+  if (input.request !== input.latestRequest) return "stale";
+  if (repertoireCommandBlocked(input.liveState, "review-opening")) return "blocked";
+  if (!input.played || !isHandoffGame(input.played, input.gameId)) return "gone";
+  return "go";
+}
+
 /* ------------------------------------------------------------------ played-game link */
 
 /**
  * Wraps `repertoires.linkGame` so each (repertoire, game, kind) is linked at most once per app
- * session: a second call while the first runs joins it, a call after it succeeded does nothing,
- * and a failed call can be tried again. The main process is idempotent too; this only spares
- * repeated writes. Resolves with whether the link is (now) in place.
+ * session for a given `stamp` (the game's result: a finished game links again, so the link copies
+ * its final headers). A second call while the first runs joins it, a call after it succeeded does
+ * nothing, and a failed call is tried again by the next one. A chapter deleted meanwhile links the
+ * game to the repertoire alone. Any other failure is reported once per link through `onError`, not
+ * on every retry. The main process is idempotent too; this only spares repeated writes. Resolves
+ * with whether the link is (now) in place.
  */
-export function createLinkOnce(link: (input: LinkGameInput) => Promise<unknown>) {
-  const linked = new Set<string>();
+export function createLinkOnce(
+  link: (input: LinkGameInput) => Promise<unknown>,
+  onError: (message: string) => void = () => {}
+) {
+  const linked = new Map<string, string>();
   const running = new Map<string, Promise<boolean>>();
-  return (input: LinkGameInput): Promise<boolean> => {
+  const reported = new Set<string>();
+  const linkOrUnfiled = (input: LinkGameInput) =>
+    link(input).catch((error: unknown) => {
+      if (input.chapterId === null || !ipcErrorMessage(error).includes("Invalid chapterId")) {
+        throw error;
+      }
+      return link({ ...input, chapterId: null });
+    });
+  return (input: LinkGameInput, stamp = ""): Promise<boolean> => {
     const key = `${input.repertoireId}\u0000${input.gameId}\u0000${input.kind}`;
-    if (linked.has(key)) return Promise.resolve(true);
+    if (linked.get(key) === stamp) return Promise.resolve(true);
     const pending = running.get(key);
     if (pending) return pending;
-    const attempt = link(input)
+    const attempt = linkOrUnfiled(input)
       .then(
         () => {
-          linked.add(key);
+          linked.set(key, stamp);
           return true;
         },
-        () => false
+        (error: unknown) => {
+          if (!reported.has(key)) {
+            reported.add(key);
+            onError(ipcErrorMessage(error));
+          }
+          return false;
+        }
       )
       .finally(() => running.delete(key));
     running.set(key, attempt);

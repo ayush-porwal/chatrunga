@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { GraduationCap, Loader2, Microscope, Swords } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
+import { statusForFen } from "@chaturanga/shared/chess/position";
 import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import type { BoardArrow, BoardHighlight, Color } from "@chaturanga/shared/types/chess";
 import type { RepertoireChapterSummary } from "@chaturanga/shared/types/repertoire";
@@ -39,6 +40,7 @@ import {
   trainableDecisionCount
 } from "./repertoire-model";
 import { RepertoireMoveNavigation, useTreeKeyboardNavigation } from "./RepertoireMoveNavigation";
+import { NO_MOVES_TO_PLAY } from "./handoffs";
 import { StudyChaptersPanel } from "./StudyChaptersPanel";
 import { StudyChoicesPanel } from "./StudyChoicesPanel";
 import { StudyNotesPanel } from "./StudyNotesPanel";
@@ -291,6 +293,13 @@ export function RepertoireStudyPage({
     );
   }
 
+  // Why Analyze and Play from here can't start (they also wait for the chapter to load, above).
+  const handoffUnavailable = !draft.enabled
+    ? "Enable this chapter to analyse or play from it"
+    : statusForFen(node.fenAfter).isEnd
+      ? NO_MOVES_TO_PLAY
+      : null;
+
   const removeChapter = async (id: string) => {
     const current = id === chapterId;
     if (current) leavingChapter.current = true;
@@ -483,7 +492,11 @@ export function RepertoireStudyPage({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  title="Explore this position on the analysis board (a copy; the chapter stays as it is)"
+                  title={
+                    handoffUnavailable ??
+                    "Explore this position on the analysis board (a copy; the chapter stays as it is)"
+                  }
+                  disabled={handoffUnavailable !== null}
                   onClick={onAnalyze}
                 >
                   <Microscope />
@@ -495,7 +508,11 @@ export function RepertoireStudyPage({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  title="Play the engine from this position as your repertoire's side"
+                  title={
+                    handoffUnavailable ??
+                    "Play the engine from this position as your repertoire's side"
+                  }
+                  disabled={handoffUnavailable !== null}
                   onClick={onPlayFromHere}
                 >
                   <Swords />
