@@ -1,3 +1,4 @@
+import { acceptsReviewEvent } from "../app/useReviewEventSubscription";
 import { beforeEach, describe, expect, it } from "vitest";
 import { reviewsByNode, selectDisplayedMoves, useReviewStore } from "./review-store";
 import type { GameReview, MoveReview, ReviewProgress } from "@chaturanga/shared/types/engine";
@@ -95,6 +96,17 @@ describe("review store", () => {
       partialMoves: []
     });
     expect(useReviewStore.getState().review?.moves).toHaveLength(2);
+  });
+
+  it("leaving a running review keeps the saved one and ignores the run's late events", () => {
+    const saved = review([move("a", "good")]);
+    useReviewStore.getState().loadReview(saved);
+    useReviewStore.getState().startReview("r2");
+    useReviewStore.getState().detachRun();
+    expect(useReviewStore.getState()).toMatchObject({ status: "ready", reviewId: null, partialMoves: [] });
+    expect(useReviewStore.getState().review?.moves).toHaveLength(1);
+    // The cancelled run's completion no longer matches the store, so it's dropped.
+    expect(acceptsReviewEvent(useReviewStore.getState().reviewId, "r2")).toBe(false);
   });
 
   it("replaces partial moves for the same node", () => {

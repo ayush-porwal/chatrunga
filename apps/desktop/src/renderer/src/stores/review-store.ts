@@ -22,6 +22,11 @@ type ReviewStore = {
   setReview: (review: GameReview) => void;
   setError: (error: string) => void;
   reset: () => void;
+  /**
+   * Leave the running review (if any) without dropping the saved one: its late events are ignored
+   * from now on, and the review shown stays the one the game had.
+   */
+  detachRun: () => void;
   /** Apply a throttled batch of engine events in one update (one render per batch). */
   applyReviewEvents: (batch: { progress: ReviewProgress | null; moves: readonly MoveReview[] }) => void;
   markCancelled: () => void;
@@ -68,6 +73,12 @@ export const useReviewStore = create<ReviewStore>((set) => ({
       };
     }),
   setError: (error) => set({ status: "error", error, progress: null }),
+  detachRun: () =>
+    set((state) =>
+      state.status === "running"
+        ? { reviewId: null, status: state.review ? "ready" : "idle", progress: null, partialMoves: [] }
+        : { reviewId: null }
+    ),
   reset: () =>
     set({
       status: "idle",

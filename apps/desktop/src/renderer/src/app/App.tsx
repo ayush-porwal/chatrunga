@@ -460,7 +460,9 @@ export function App() {
     commitCurrent();
     stopEngineWork();
     // The board's review stays: it belongs to this game, and clearing it here made autosave write
-    // "no review" over the saved one (the titlebar's Analyze keeps it too).
+    // "no review" over the saved one (the titlebar's Analyze keeps it too). A review still running
+    // is left (cancelled above): its late result must not replace the saved review.
+    useReviewStore.getState().detachRun();
     clearPuzzleSession();
     // An analysis board, engine off: the Engine tab offers the engine to use and Start analysis.
     currentGame().setMode("freeplay");
