@@ -233,18 +233,22 @@ export const useGameStore = create<GameStore>((set, get) => {
       // A move made while the clock is paused (the user stepped back while the engine thought, and
       // plays on from there): the clock runs again for the side that moved, from the pause, so the
       // time spent there counts against them. If it replaces their own move, that move's increment
-      // is taken back first: the replacement earns it again, not a second one.
+      // is taken back first: the replacement earns it again, not a second one. No flag check ran
+      // while paused, so one that fell meanwhile falls now: the move is too late, they lose on time.
       const paused = get().engineClockLive;
       if (paused?.paused && paused.stoppedAt !== undefined && !state.gameOutcome) {
         const takeBack = paused.sideToMove !== mover ? (state.engineClock?.incrementMs ?? 0) : 0;
-        set({
-          engineClockLive: {
-            whiteMs: mover === "white" ? Math.max(0, paused.whiteMs - takeBack) : paused.whiteMs,
-            blackMs: mover === "black" ? Math.max(0, paused.blackMs - takeBack) : paused.blackMs,
-            sideToMove: mover,
-            turnStartedAt: paused.stoppedAt
-          }
-        });
+        const running: EngineClockLive = {
+          whiteMs: mover === "white" ? Math.max(0, paused.whiteMs - takeBack) : paused.whiteMs,
+          blackMs: mover === "black" ? Math.max(0, paused.blackMs - takeBack) : paused.blackMs,
+          sideToMove: mover,
+          turnStartedAt: paused.stoppedAt
+        };
+        set({ engineClockLive: running });
+        if (remainingClockMs(running, mover, Date.now()) <= 0) {
+          get().resolveTimeout(mover);
+          return false;
+        }
       }
       const { moveTree, node } = addMoveNode(
         state.moveTree,

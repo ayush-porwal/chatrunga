@@ -448,6 +448,37 @@ describe("engine clock pause", () => {
     vi.restoreAllMocks();
   });
 
+  it("a move made after the pause used up the mover's time loses on time", () => {
+    const monotonic = vi.spyOn(performance, "now");
+    const wall = vi.spyOn(Date, "now");
+    const at = (ms: number) => {
+      monotonic.mockReturnValue(ms);
+      wall.mockReturnValue(1_700_000_000_000 + ms);
+    };
+    at(0);
+    const game = useGameStore.getState();
+    game.reset();
+    game.setMode("engine");
+    game.setEngineSide("black");
+    game.setEngineMatchClock({ initialMs: 10_000, incrementMs: 2_000 });
+    game.initEngineClockLive();
+    at(1_000);
+    useGameStore.getState().makeMove({ from: "e2", to: "e4" }); // White: 10 - 1 + 2 = 11 s
+    at(1_500);
+    useGameStore.getState().pauseEngineClock();
+    useGameStore.getState().goToNode("root");
+    const before = useGameStore.getState().moveTree.length;
+    // 10 s later: more than the 9 s White had before e4's increment, so the replacement is too late.
+    at(11_500);
+    expect(useGameStore.getState().makeMove({ from: "d2", to: "d4" })).toBe(false);
+    const state = useGameStore.getState();
+    expect(state.gameOutcome).toEqual({ result: "0-1", termination: "Time forfeit" });
+    expect(state.moveTree).toHaveLength(before);
+    expect(remainingClockMs(state.engineClockLive!, "white", 1_700_000_020_000)).toBe(0);
+    expect(remainingClockMs(state.engineClockLive!, "black", 1_700_000_020_000)).toBe(10_000);
+    vi.restoreAllMocks();
+  });
+
   it("a replacement move earns its increment once, not on top of the replaced move's", () => {
     // Both time sources move together, so the case holds whichever one the clock reads.
     const monotonic = vi.spyOn(performance, "now");
