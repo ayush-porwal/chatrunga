@@ -65,10 +65,19 @@ export function useReviewRunner({
       return;
     }
     const reviewId = crypto.randomUUID();
+    // A game reviewed before its first save gets its library id now (autosave keeps it), so the
+    // review and the saved game it belongs to share one id. Never a puzzle: it isn't saved.
+    const game = useGameStore.getState();
+    let gameId = game.gameId;
+    if (!gameId && game.mode !== "puzzle" && game.source !== "puzzle") {
+      gameId = crypto.randomUUID();
+      useGameStore.getState().setGameId(gameId);
+    }
     review.startReview(reviewId);
     try {
       await window.chaturanga.engines.reviewGame({
         reviewId,
+        gameId,
         engineId: engine.id,
         // Omitted ids let main pick every installed Maia filtered by `reviewMaiaLevels`;
         // an empty list turns Maia off for this review.

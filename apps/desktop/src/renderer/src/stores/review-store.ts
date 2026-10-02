@@ -12,6 +12,8 @@ type ReviewStatus = "idle" | "running" | "ready" | "error" | "cancelled";
 type ReviewStore = {
   status: ReviewStatus;
   review: GameReview | null;
+  /** Where `review` came from: produced by a run in this session, or loaded with a saved game. */
+  origin: "run" | "saved" | null;
   error: string | null;
   reviewId: string | null;
   progress: ReviewProgress | null;
@@ -30,6 +32,7 @@ type ReviewStore = {
 export const useReviewStore = create<ReviewStore>((set) => ({
   status: "idle",
   review: null,
+  origin: null,
   error: null,
   reviewId: null,
   progress: null,
@@ -47,6 +50,7 @@ export const useReviewStore = create<ReviewStore>((set) => ({
     set({
       status: "ready",
       review: { ...review, commentary: [] },
+      origin: "run",
       error: null,
       progress: null,
       partialMoves: []
@@ -68,6 +72,7 @@ export const useReviewStore = create<ReviewStore>((set) => ({
     set({
       status: "idle",
       review: null,
+      origin: null,
       error: null,
       reviewId: null,
       progress: null,
@@ -91,6 +96,7 @@ export const useReviewStore = create<ReviewStore>((set) => ({
       // Saved reviews may hold explanations from the retired offline template; drop them so
       // the AI is asked when those moves are viewed.
       review: review?.commentary ? { ...review, commentary: savedReviewCommentary(review.commentary) } : review,
+      origin: review ? "saved" : null,
       error: null,
       reviewId: null,
       progress: null,
