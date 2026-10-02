@@ -5,10 +5,13 @@ import type { Api } from "@lichess-org/chessground/api";
 import type { Key } from "@lichess-org/chessground/types";
 import { isPromotionMove, statusForFen } from "@chaturanga/shared/chess/position";
 import type { BoardArrow, BoardHighlight, Color, UserMove } from "@chaturanga/shared/types/chess";
+import { Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { focusRing } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useEventCallback } from "@/lib/use-event-callback";
+import { isTyping, OVERLAY_SELECTOR } from "../../app/useBoardShortcuts";
 import { useBoardAppearance, useCgBoardBackground } from "./useBoardAppearance";
 import { useBoardPolish } from "./useBoardPolish";
 import {
@@ -27,7 +30,12 @@ import {
   sideToMoveIsMovable,
   type BoardMovable
 } from "./board-shapes";
-import { parseTypedMove, resolveBoardMove, type ResolvedMove } from "./board-move-input";
+import {
+  parseTypedMove,
+  resolveBoardMove,
+  typedMoveTrigger,
+  type ResolvedMove
+} from "./board-move-input";
 import "./board.css";
 
 export type ControlledBoardProps = {
@@ -50,14 +58,19 @@ export type ControlledBoardProps = {
   allowMove?: (uci: string) => boolean;
   /** Highlights the king in check; defaults to whether the side to move in `fen` is in check. */
   check?: boolean;
-  /** Shows a field under the board for typing moves (SAN or square to square). */
+  /**
+   * Lets the user type moves (SAN or square to square): `/` or a move's first character opens a
+   * small entry over the board's bottom edge.
+   */
   keyboardInput?: boolean;
-  /** Which edge of the board the typed-move field sits under (default `start`). */
-  keyboardInputAlign?: "start" | "end";
+  /** With `keyboardInput`: a quiet keyboard icon under the board's corner (`icon`, the default) or nothing. */
+  keyboardInputAffordance?: "icon" | "none";
   className?: string;
 };
 
 type PendingPromotion = { from: Key; to: Key };
+/** An open typed-move entry: its starting text, and a key that remounts it on every opening. */
+type TypedEntry = { seed: string; key: number };
 
 const NO_ARROWS: readonly BoardArrow[] = [];
 const NO_HIGHLIGHTS: readonly BoardHighlight[] = [];
@@ -87,10 +100,12 @@ export function ControlledBoard({
   allowMove,
   check,
   keyboardInput = false,
-  keyboardInputAlign = "start",
+  keyboardInputAffordance = "icon",
   className
 }: ControlledBoardProps) {
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
   const elementRef = useRef<HTMLDivElement | null>(null);
+  const [typedEntry, setTypedEntry] = useState<TypedEntry | null>(null);
   const groundRef = useRef<Api | null>(null);
   const lastPositionRef = useRef({ fen: "", at: 0 });
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
@@ -204,10 +219,56 @@ export function ControlledBoard({
     [commitMove, fen, pendingPromotion, restoreSoon]
   );
 
-  // A new position from the parent drops a promotion that was waiting on the old one.
+  // A new position from the parent drops a promotion or a typed move begun on the old one.
   useEffect(() => {
     setPendingPromotion(null);
+    setTypedEntry(null);
   }, [fen]);
+
+  // Typing a move: only while the side to move may move and no promotion is being chosen.
+  const canType = keyboardInput && sideToMoveIsMovable(fen, movable) && !pendingPromotion;
+  const entryOpen = canType && typedEntry !== null;
+
+  /** Opens the typed-move entry, seeded with the key that opened it. */
+  const openEntry = useCallback((seed: string) => {
+    setTypedEntry({ seed, key: performance.now() });
+  }, []);
+
+  /** Closes the entry; `refocus` hands focus back to the board so `/` works again at once. */
+  const closeEntry = useCallback((refocus: boolean) => {
+    setTypedEntry(null);
+    if (refocus) wrapperRef.current?.focus({ preventScroll: true });
+  }, []);
+
+  /** A typed move: played (and the entry closed) or refused with the reason to show. */
+  const playTypedMove = useEventCallback((move: ResolvedMove): boolean => {
+    if (!commitMove(move)) return false;
+    closeEntry(true);
+    return true;
+  });
+
+  // `/` or a move's first character opens the entry, when focus is on the board or nowhere in
+  // particular and no text field, dialog or menu owns the keyboard. Captured before the app's own
+  // board shortcuts so the opening key doesn't also do something else.
+  const handleTriggerKey = useEventCallback((event: KeyboardEvent) => {
+    const active = document.activeElement;
+    const inScope =
+      !active || active === document.body || Boolean(wrapperRef.current?.contains(active));
+    const seed = typedMoveTrigger(event, {
+      typing: isTyping(event.target) || isTyping(active),
+      blocked: Boolean(document.querySelector(OVERLAY_SELECTOR)),
+      inScope
+    });
+    if (seed === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openEntry(seed);
+  });
+  useEffect(() => {
+    if (!canType || entryOpen) return;
+    window.addEventListener("keydown", handleTriggerKey, { capture: true });
+    return () => window.removeEventListener("keydown", handleTriggerKey, { capture: true });
+  }, [canType, entryOpen, handleTriggerKey]);
 
   // Position: slide pieces for a single move at a calm pace; snap for jumps and while scrubbing.
   useEffect(() => {
@@ -274,7 +335,17 @@ export function ControlledBoard({
   }, [drawingEnabled, handleShapesChange, shapes]);
 
   return (
-    <div className={cn("flex min-h-0 min-w-0 flex-col gap-2", className)}>
+    // Focusable (not tabbable) so a click on the board gives it focus: `/` then opens the entry.
+    <div
+      ref={wrapperRef}
+      tabIndex={-1}
+      className={cn("group/board flex min-h-0 min-w-0 flex-col gap-1 outline-none", className)}
+      onMouseDownCapture={(event) => {
+        if (keyboardInput && elementRef.current?.contains(event.target as Node)) {
+          wrapperRef.current?.focus({ preventScroll: true });
+        }
+      }}
+    >
       <div className="relative aspect-square w-full min-w-0">
         {/* Chessground's classes stay in className so React reconciliation never strips them. */}
         <div
@@ -287,18 +358,40 @@ export function ControlledBoard({
           )}
         />
         {pendingPromotion ? <PromotionPicker onChoose={choosePromotion} /> : null}
+        {entryOpen && typedEntry ? (
+          <TypedMoveEntry
+            key={typedEntry.key}
+            fen={fen}
+            seed={typedEntry.seed}
+            onMove={playTypedMove}
+            onClose={closeEntry}
+          />
+        ) : null}
       </div>
-      {keyboardInput ? (
-        <TypedMoveField
-          fen={fen}
-          disabled={!sideToMoveIsMovable(fen, movable) || Boolean(pendingPromotion)}
-          align={keyboardInputAlign}
-          onMove={commitMove}
-        />
+      {keyboardInput && keyboardInputAffordance === "icon" ? (
+        // A fixed-height row outside the squares, so the icon never covers a piece and hiding it
+        // (while the entry is open) never shifts the layout.
+        <div className="flex h-7 items-center justify-end">
+          <IconButton
+            label="Type a move (/)"
+            icon={KEYBOARD_ICON}
+            size="icon-xs"
+            tooltipSide="left"
+            aria-expanded={entryOpen}
+            disabled={!canType}
+            onClick={() => openEntry("")}
+            className={cn(
+              "text-fg-subtle opacity-50 hover:opacity-100 focus-visible:opacity-100 group-focus-within/board:opacity-100 group-hover/board:opacity-100",
+              entryOpen && "invisible"
+            )}
+          />
+        </div>
       ) : null}
     </div>
   );
 }
+
+const KEYBOARD_ICON = <Keyboard />;
 
 /**
  * Promotion choice shown over the board. It is a dialog, so the global board shortcuts stand down
@@ -352,62 +445,60 @@ function PromotionPicker({
 }
 
 /**
- * A text field for typing moves. A plain input, so the global F / X / arrow shortcuts already stand
- * down while it has focus (they skip text entry). A wrong move keeps the text and shows why.
+ * The on-demand move entry floating over the board's bottom edge. A plain input (no dialog role),
+ * so the global F / X / arrow shortcuts stand down while it has focus. Enter plays the move; a wrong
+ * move keeps the text and says why. Escape, or leaving it empty, closes it.
  */
-function TypedMoveField({
+function TypedMoveEntry({
   fen,
-  disabled,
-  align,
-  onMove
+  seed,
+  onMove,
+  onClose
 }: {
   fen: string;
-  disabled: boolean;
-  align: "start" | "end";
-  onMove: (move: ResolvedMove | null) => boolean;
+  seed: string;
+  onMove: (move: ResolvedMove) => boolean;
+  onClose: (refocus: boolean) => void;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(seed);
   const [error, setError] = useState<string | null>(null);
   const errorId = useId();
 
-  // A new position makes an old error meaningless.
-  useEffect(() => {
-    setError(null);
-  }, [fen]);
-
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
-    if (disabled) return;
     const result = parseTypedMove(fen, text);
     if (!result.ok) {
       setError(result.error);
       return;
     }
-    if (!onMove(result.move)) {
-      setError(`${result.move.san} isn't accepted here.`);
-      return;
-    }
-    setText("");
-    setError(null);
+    if (!onMove(result.move)) setError(`${result.move.san} isn't accepted here.`);
   };
 
-  // One compact row: the error sits beside the field (truncated, full text on hover), so showing
-  // or clearing it never moves the layout.
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    onClose(true);
+  };
+
   return (
     <form
-      className={cn("flex h-7 min-w-0 items-center gap-2", align === "end" && "flex-row-reverse")}
+      className="absolute bottom-3 left-1/2 z-10 grid w-56 max-w-[calc(100%-1.5rem)] -translate-x-1/2 gap-1 rounded-md border border-line bg-surface-raised/95 p-1.5 shadow-popover backdrop-blur"
       onSubmit={handleSubmit}
     >
       <input
         type="text"
         value={text}
+        autoFocus
         onChange={(event) => {
           setText(event.target.value);
           if (error) setError(null);
         }}
-        disabled={disabled}
-        placeholder="Move…"
-        title="Type a move: Nf3, exd5, O-O, e8=Q or e2e4. Enter plays it."
+        onKeyDown={handleKeyDown}
+        onBlur={() => {
+          if (!text.trim()) onClose(false);
+        }}
+        placeholder="Nf3, e2e4, O-O"
         aria-label="Type a move"
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? errorId : undefined}
@@ -416,17 +507,12 @@ function TypedMoveField({
         autoCapitalize="off"
         spellCheck={false}
         className={cn(
-          "h-7 w-44 shrink-0 rounded-md border border-line bg-surface px-2 font-mono text-xs text-fg placeholder:text-fg-subtle disabled:cursor-not-allowed disabled:opacity-50",
+          "h-7 w-full min-w-0 rounded border border-line bg-surface px-2 font-mono text-xs text-fg placeholder:text-fg-subtle",
           focusRing
         )}
       />
       {error ? (
-        <span
-          id={errorId}
-          role="alert"
-          title={error}
-          className="min-w-0 truncate text-xs text-danger"
-        >
+        <span id={errorId} role="alert" className="px-0.5 text-xs text-danger">
           {error}
         </span>
       ) : null}

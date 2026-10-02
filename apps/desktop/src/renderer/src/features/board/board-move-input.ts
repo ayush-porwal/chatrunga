@@ -41,7 +41,7 @@ export function parseTypedMove(fen: string, text: string): TypedMoveResult {
       candidate.kind === "uci" ? resolveUci(fen, candidate.text) : resolveSan(fen, candidate.text);
     if (move) return { ok: true, move };
   }
-  return { ok: false, error: `${text.trim()} isn't a legal move here.` };
+  return { ok: false, error: `${text.trim()} isn't legal here.` };
 }
 
 type Candidate = { kind: "uci" | "san"; text: string };
@@ -82,4 +82,34 @@ function resolved(
   } catch {
     return null;
   }
+}
+
+/** The parts of a key press that decide whether it opens the typed-move entry. */
+export type TypedMoveTriggerKey = Pick<
+  KeyboardEvent,
+  "key" | "metaKey" | "ctrlKey" | "altKey" | "repeat"
+>;
+
+/**
+ * Keys that open the entry with themselves as its first character: files, piece letters and the
+ * castling letters. Lowercase `f` is left out because it is the app-wide Focus board shortcut
+ * (type `/` first for an f-file move); `x` and the other shortcut keys aren't move starts anyway.
+ */
+const SEED_KEY = /^[a-egh]$|^[NBRQKO0]$/;
+
+/**
+ * What a key press does to a closed typed-move entry: null when it shouldn't open it, otherwise the
+ * text to seed it with (`""` for `/`, the character itself for a move start such as `N` or `e`).
+ * Never opens while a text field has focus (`typing`), while something else owns the keyboard
+ * (`blocked`: a dialog or the promotion picker, or the side to move can't move), when focus is
+ * elsewhere in the app (`inScope` is false), with meta / ctrl / alt held, or on key repeat.
+ */
+export function typedMoveTrigger(
+  event: TypedMoveTriggerKey,
+  { typing, blocked, inScope }: { typing: boolean; blocked: boolean; inScope: boolean }
+): string | null {
+  if (typing || blocked || !inScope) return null;
+  if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return null;
+  if (event.key === "/") return "";
+  return SEED_KEY.test(event.key) ? event.key : null;
 }

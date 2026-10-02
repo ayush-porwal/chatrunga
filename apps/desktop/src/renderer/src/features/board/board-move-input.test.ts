@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { START_FEN } from "@chaturanga/shared/chess/position";
-import { parseTypedMove, resolveBoardMove } from "./board-move-input";
+import { parseTypedMove, resolveBoardMove, typedMoveTrigger } from "./board-move-input";
 
 const PROMOTION = "8/4P3/8/8/8/8/k7/4K3 w - - 0 1";
 const CASTLING = "r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1";
@@ -59,7 +59,7 @@ describe("parseTypedMove", () => {
     });
     expect(parseTypedMove(START_FEN, "Nf6")).toEqual({
       ok: false,
-      error: "Nf6 isn't a legal move here."
+      error: "Nf6 isn't legal here."
     });
     expect(parseTypedMove(START_FEN, "e2e5").ok).toBe(false);
     expect(parseTypedMove(PROMOTION, "e7e8").ok).toBe(false);
@@ -96,5 +96,42 @@ describe("resolveBoardMove", () => {
     expect(resolveBoardMove(START_FEN, "a0", "e4")).toBeNull();
     expect(resolveBoardMove(PROMOTION, "e7", "e8")).toBeNull();
     expect(resolveBoardMove("nope", "e2", "e4")).toBeNull();
+  });
+});
+
+type Modifiers = Partial<Record<"metaKey" | "ctrlKey" | "altKey" | "repeat", boolean>>;
+
+describe("typedMoveTrigger", () => {
+  const press = (key: string, modifiers: Modifiers = {}) => ({
+    key,
+    metaKey: false,
+    ctrlKey: false,
+    altKey: false,
+    repeat: false,
+    ...modifiers
+  });
+  const free = { typing: false, blocked: false, inScope: true };
+
+  it("opens empty on / and seeded on a move start", () => {
+    expect(typedMoveTrigger(press("/"), free)).toBe("");
+    for (const key of ["a", "e", "h", "N", "B", "R", "Q", "K", "O", "0"]) {
+      expect(typedMoveTrigger(press(key), free)).toBe(key);
+    }
+  });
+
+  it("ignores other keys, including the f and x board shortcuts", () => {
+    for (const key of ["f", "x", "F", "X", "i", "n", "1", "Enter", "Escape", "ArrowLeft", " "]) {
+      expect(typedMoveTrigger(press(key), free)).toBeNull();
+    }
+  });
+
+  it("stays shut while typing, blocked, out of scope, with modifiers or on repeat", () => {
+    expect(typedMoveTrigger(press("/"), { ...free, typing: true })).toBeNull();
+    expect(typedMoveTrigger(press("N"), { ...free, blocked: true })).toBeNull();
+    expect(typedMoveTrigger(press("e"), { ...free, inScope: false })).toBeNull();
+    expect(typedMoveTrigger(press("/", { metaKey: true }), free)).toBeNull();
+    expect(typedMoveTrigger(press("e", { ctrlKey: true }), free)).toBeNull();
+    expect(typedMoveTrigger(press("N", { altKey: true }), free)).toBeNull();
+    expect(typedMoveTrigger(press("e", { repeat: true }), free)).toBeNull();
   });
 });
