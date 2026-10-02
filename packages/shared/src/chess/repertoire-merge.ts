@@ -9,6 +9,7 @@ import {
   type RepertoireNodeMeta
 } from "../types/repertoire";
 import { fenAfterUci } from "./position";
+import { nodeMetaOf } from "./repertoire-index";
 import { positionKey } from "./repertoire-position";
 
 export type MergeIncoming = {
@@ -64,7 +65,9 @@ function idGenerator(existing: readonly MoveNode[]): () => string {
  *   line trains instead of staying before the start;
  * - a matched existing `reference` edge becomes the incoming `included`/`covered` edge, and a
  *   matched `covered` edge becomes an incoming `included` one (the player's move, covered only as
- *   context before), when the node is in `upgradeNodeIds`; an edge is never downgraded.
+ *   context before), when the node is in `upgradeNodeIds`; an edge is never downgraded. A move
+ *   upgraded to `included` before the chapter's training start puts a start on the position it is
+ *   played from, so it trains.
  * Merging the same material twice adds nothing the second time.
  */
 export function mergeIntoChapter(
@@ -168,10 +171,17 @@ export function mergeIntoChapter(
         incomingMeta !== undefined &&
         ((current.edge === "reference" && incomingMeta.edge !== "reference") ||
           (current.edge === "covered" && incomingMeta.edge === "included"));
+      let below = underStart;
       if (upgrade && (!upgrades || upgrades.has(child.id))) {
         nodeMeta[match.id] = { ...current, edge: incomingMeta.edge };
+        // A move accepted before the chapter's training start (covered context until now) trains
+        // only when the position it is played from does: that position becomes a start too.
+        if (incomingMeta.edge === "included" && chapterHasStart && !underStart) {
+          nodeMeta[target.id] = { ...nodeMetaOf(nodeMeta, target.id), trainingStart: true };
+          below = true;
+        }
       }
-      pushChildren(child, match, false, underStart || Boolean(nodeMeta[match.id]?.trainingStart));
+      pushChildren(child, match, false, below || Boolean(nodeMeta[match.id]?.trainingStart));
       continue;
     }
     const node: MoveNode = {

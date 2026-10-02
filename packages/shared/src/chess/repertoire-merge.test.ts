@@ -269,6 +269,38 @@ describe("mergeIntoChapter", () => {
     expect(kept.chapter.nodeMeta.n1).toEqual({ edge: "covered" });
   });
 
+  it("a covered own move accepted before the chapter's training start trains from its position", () => {
+    // "This branch · keep moves before" at 1... d5: d4 and d5 are covered context, d5 the start.
+    const existing = treeOf([["d2d4", "d7d5", "c2c4"]], "n");
+    const meta: Record<string, RepertoireNodeMeta> = {
+      n1: { edge: "covered" },
+      n2: { edge: "covered", trainingStart: true },
+      n3: { edge: "included" }
+    };
+    const result = mergeIntoChapter(chapterOf(existing, meta), {
+      rootFen: START_FEN,
+      tree: treeOf([["d2d4", "d7d5", "c2c4"]], "x"),
+      nodeMeta: { x1: { edge: "included" }, x2: { edge: "covered" }, x3: { edge: "included" } },
+      upgradeNodeIds: ["x1", "x2", "x3"]
+    });
+    expect(result.chapter.nodeMeta.n1).toEqual({ edge: "included" });
+    expect(result.chapter.nodeMeta.root).toEqual({ edge: "included", trainingStart: true });
+    const decisions = collectDecisions("white", [result.chapter]);
+    const root = [...decisions.values()].find((decision) => decision.fen === START_FEN);
+    expect(root && [...root.acceptedUcis]).toEqual(["d2d4"]);
+    expect(decisions.size).toBe(2);
+    // Already under the start: nothing moves.
+    const below = mergeIntoChapter(
+      chapterOf(existing, { ...meta, root: { edge: "included", trainingStart: true } }),
+      {
+        rootFen: START_FEN,
+        tree: treeOf([["d2d4"]], "x"),
+        nodeMeta: { x1: { edge: "included" } }
+      }
+    );
+    expect(below.chapter.nodeMeta.n2).toEqual({ edge: "covered", trainingStart: true });
+  });
+
   it("matches a root with different move counters and renumbers new moves from the chapter", () => {
     const later = START_FEN.replace(" 0 1", " 0 5");
     const result = mergeIntoChapter(chapterOf(treeOf([], "n")), {
