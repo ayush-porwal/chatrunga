@@ -232,6 +232,8 @@ describe("staging a move from a game comparison", () => {
     // After 1.e4 e5 (w1), White's 2.Bc4 instead of 2.Nf3.
     const result = store().stageMove("w1", "f1c4", "reference");
     expect(store().chapter!.nodeMeta[result!.nodeId]).toEqual({ edge: "reference" });
+    // The decision stays selected, so Choices shows the new move with Accept.
+    expect(store().selectedNodeId).toBe("w1");
   });
 
   it("only selects a move the chapter already has with that edge", () => {
@@ -263,6 +265,7 @@ describe("staging a move from a game comparison", () => {
     load();
     expect(store().stageMove("w1", "g1f3", "reference")).toEqual({ nodeId: "w2", created: false });
     expect(store().chapter!.nodeMeta.w2).toBeUndefined();
+    expect(store().selectedNodeId).toBe("w1");
     expect(store().dirty).toBe(false);
   });
 

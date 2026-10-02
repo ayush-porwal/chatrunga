@@ -148,8 +148,8 @@ export function RepertoireStudyPage({
     if (initialNodeId) workspace().selectNode(initialNodeId);
   }, [initialNodeId]);
 
-  // A staged move (after the node selection above): added with its edge and selected, or marked
-  // when the chapter already has it (see stageMove). Applied once, and only on a chapter read
+  // A staged move (after the node selection above): added with its edge and selected (a reference
+  // move leaves its decision selected), or marked when the chapter already has it (see stageMove). Applied once, and only on a chapter read
   // since this page opened, so it never edits a stale draft; the autosave saves it.
   useEffect(() => {
     if (!stage || !loadedId || !chapterFresh) return;

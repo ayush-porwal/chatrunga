@@ -370,7 +370,7 @@ function ComparisonResult({
           {stage?.kind === "stage" ? (
             <p className={fieldHint}>
               {stage.edge === "reference"
-                ? "Opens the chapter with your move added for study only (or selected, if the chapter has it); accept it under Choices to make it part of your plan."
+                ? "Opens the chapter at this position with your move added for study only (if the chapter doesn't have it); accept it under Choices to make it part of your plan."
                 : "Opens the chapter with this reply added, or marked, as covered; then choose your answer to it."}
             </p>
           ) : null}

@@ -306,7 +306,7 @@ export function comparisonActions(issue: ComparisonIssue | null): ComparisonActi
     case "no-applicable-chapter":
       return [
         { kind: "choose-repertoire", label: "Choose another repertoire" },
-        { kind: "hub", label: "Create a chapter from this game's start" }
+        { kind: "hub", label: "Choose or create a repertoire" }
       ];
   }
 }

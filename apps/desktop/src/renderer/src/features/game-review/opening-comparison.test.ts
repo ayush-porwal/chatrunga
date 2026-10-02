@@ -360,8 +360,11 @@ describe("comparisonActions", () => {
       comparisonActions(
         comparisonOf(moves, { status: "no-applicable-chapter", chapterId: null, nodeId: null })
           .issue
-      ).map((action) => action.kind)
-    ).toEqual(["choose-repertoire", "hub"]);
+      )
+    ).toEqual([
+      { kind: "choose-repertoire", label: "Choose another repertoire" },
+      { kind: "hub", label: "Choose or create a repertoire" }
+    ]);
     expect(comparisonActions(null)).toEqual([]);
   });
 
