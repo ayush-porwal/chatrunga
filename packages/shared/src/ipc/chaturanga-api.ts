@@ -47,6 +47,39 @@ import type {
   PuzzleSampleInput
 } from "../types/database";
 
+import type {
+  ArchiveRepertoireInput,
+  AttemptResult,
+  ChapterSaveResult,
+  CreateRepertoireInput,
+  DecisionSaveResult,
+  DuplicateRepertoireInput,
+  ExportInput,
+  ExportResult,
+  ImportCommitInput,
+  ImportPreview,
+  ImportResult,
+  PracticeActionInput,
+  PracticeActionResult,
+  PracticeSessionSnapshot,
+  PracticeSummary,
+  PreviewImportInput,
+  RecordAttemptInput,
+  RemoveChapterInput,
+  RemoveRepertoireInput,
+  RepertoireChangedEvent,
+  RepertoireChangeResult,
+  RepertoireDetail,
+  RepertoireDueSummary,
+  RepertoireListFilters,
+  RepertoireSummary,
+  SaveChapterInput,
+  SaveWorkspaceInput,
+  StartPracticeInput,
+  UpdateDecisionInput,
+  UpdateRepertoireMetadataInput
+} from "../types/repertoire";
+
 export type Unsubscribe = () => void;
 
 /** Electron `dialog.showOpenDialog` filter shape */
@@ -233,6 +266,45 @@ export type ChaturangaApi = {
     /** Offers a draw, or accepts the opponent's offer. */
     offerDraw(gameId: string): Promise<void>;
     declineDraw(gameId: string): Promise<void>;
+  };
+
+  /**
+   * Repertoires (main/repertoire): study chapters, repertoire-wide decisions, and practice graded
+   * by the main process. Mutations carrying `expectedRevision` reject when the repertoire changed
+   * since the caller's draft. Practice calls submit moves/actions, never a success flag.
+   */
+  repertoires: {
+    list(filters?: RepertoireListFilters): Promise<RepertoireSummary[]>;
+    get(id: string): Promise<RepertoireDetail>;
+    create(input: CreateRepertoireInput): Promise<RepertoireDetail>;
+    updateMetadata(input: UpdateRepertoireMetadataInput): Promise<RepertoireDetail>;
+    /** Saves one chapter and reconciles decisions/index/progress in the same transaction. */
+    saveChapter(input: SaveChapterInput): Promise<ChapterSaveResult>;
+    updateDecision(input: UpdateDecisionInput): Promise<DecisionSaveResult>;
+    removeChapter(input: RemoveChapterInput): Promise<RepertoireChangeResult>;
+    /** Copies content and decisions; progress starts fresh. */
+    duplicate(input: DuplicateRepertoireInput): Promise<RepertoireDetail>;
+    /** Reversible: archived repertoires contribute no due cards. */
+    archive(input: ArchiveRepertoireInput): Promise<RepertoireChangeResult>;
+    remove(input: RemoveRepertoireInput): Promise<void>;
+    /** Parses every game of the PGN (pasted text, or a file the user picked) into a pending job. */
+    previewImport(input: PreviewImportInput): Promise<ImportPreview>;
+    /** Commits the selected games of a previewed job as chapters, atomically. */
+    commitImport(input: ImportCommitInput): Promise<ImportResult>;
+    cancelImport(jobId: string): Promise<void>;
+    /** Multi-game PGN; the main process offers a save dialog and also returns the text. */
+    export(input: ExportInput): Promise<ExportResult>;
+    startPractice(input: StartPracticeInput): Promise<PracticeSessionSnapshot>;
+    resumePractice(sessionId: string): Promise<PracticeSessionSnapshot>;
+    /** Hint, reveal or skip; persisted before the result is shown. */
+    recordPracticeAction(input: PracticeActionInput): Promise<PracticeActionResult>;
+    /** A submitted move; deduplicated by `attemptId`. */
+    recordAttempt(input: RecordAttemptInput): Promise<AttemptResult>;
+    endPractice(sessionId: string): Promise<PracticeSummary>;
+    saveWorkspace(input: SaveWorkspaceInput): Promise<void>;
+    /** Due decisions across active repertoires, and where to continue studying (Home card). */
+    getDueSummary(): Promise<RepertoireDueSummary>;
+    onChanged(callback: (event: RepertoireChangedEvent) => void): Unsubscribe;
   };
 
   /** In-app updates of Chaturanga itself (main/updater.ts). */
