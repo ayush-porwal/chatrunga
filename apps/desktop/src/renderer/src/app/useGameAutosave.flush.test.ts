@@ -92,16 +92,34 @@ describe("useGameAutosave flushes", () => {
     edit();
     loadSaved("b");
     await vi.runAllTimersAsync();
-    expect(useSaveStatusStore.getState()).toMatchObject({ gameId: "a" });
+    expect(useSaveStatusStore.getState().failures.map((failure) => failure.gameId)).toEqual(["a"]);
 
     edit();
     await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS);
     expect(saveGame.mock.calls.at(-1)?.[0]).toMatchObject({ id: "b" });
     expect(useSaveStatusStore.getState().error).not.toBeNull();
 
-    useSaveStatusStore.getState().retry?.();
+    useSaveStatusStore.getState().retry();
     await vi.runAllTimersAsync();
     expect(saveGame.mock.calls.at(-1)?.[0]).toMatchObject({ id: "a" });
+    expect(useSaveStatusStore.getState().error).toBeNull();
+  });
+
+  it("keeps a left game's failed save when the next game's save fails too, and retries both", async () => {
+    saveGame.mockRejectedValueOnce(new Error("disk full")).mockRejectedValueOnce(new Error("read-only"));
+    loadSaved("a");
+    edit();
+    loadSaved("b");
+    edit();
+    await vi.runAllTimersAsync();
+    expect(useSaveStatusStore.getState().failures.map((failure) => failure.gameId)).toEqual(["a", "b"]);
+    expect(useSaveStatusStore.getState().error).toBe("read-only");
+
+    useSaveStatusStore.getState().retry();
+    await vi.runAllTimersAsync();
+    const retried = saveGame.mock.calls.slice(2).map(([input]) => input.id);
+    expect(retried).toContain("a");
+    expect(retried).toContain("b");
     expect(useSaveStatusStore.getState().error).toBeNull();
   });
 });

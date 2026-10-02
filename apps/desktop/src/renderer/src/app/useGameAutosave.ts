@@ -45,6 +45,9 @@ export function sameDocument(a: SavedDocument | null, b: SavedDocument): boolean
   );
 }
 
+/** Counts every library write, so the save status can tell an older write's reply from a newer's. */
+let writeRevision = 0;
+
 /** A new game's library id, chosen before its first write (see `save`). */
 function newGameId(): string {
   return crypto.randomUUID();
@@ -76,9 +79,11 @@ export function useGameAutosave(): void {
 
     const write = (input: SaveGameInput, document: SavedDocument | null): Promise<unknown> => {
       const gameId = input.id ?? null;
+      const revision = ++writeRevision;
       lastWrite = saveGame(input).then(
-        // Clears only this game's failure: a game left with a failed save keeps its Retry.
-        () => useSaveStatusStore.getState().saved(gameId),
+        // Clears only this game's failure (a game left with a failed save keeps its Retry), and
+        // only if this write is newer than the one that failed.
+        () => useSaveStatusStore.getState().saved(gameId, revision),
         (error: unknown) => {
           if (isSaveSuppressed(error)) return;
           // Not in the library as it is now: the next change (or Retry) writes it again.
@@ -91,7 +96,8 @@ export function useGameAutosave(): void {
                 if (useGameStore.getState().gameId === input.id) void save();
               });
             },
-            gameId
+            gameId,
+            revision
           );
         }
       );

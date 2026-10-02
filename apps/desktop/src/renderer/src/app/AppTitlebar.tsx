@@ -102,7 +102,10 @@ export function LiveGameButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-/** A game's last save failed: says so on every screen until that game saves; click to retry. */
+/**
+ * A game's last save failed: says so on every screen (with the latest error) until every such game
+ * saves; click to retry them all.
+ */
 const SaveFailedButton = memo(function SaveFailedButton() {
   const error = useSaveStatusStore((state) => state.error);
   const retry = useSaveStatusStore((state) => state.retry);
@@ -115,7 +118,7 @@ const SaveFailedButton = memo(function SaveFailedButton() {
           variant="outline"
           size="xs"
           className="ml-2 shrink-0 text-danger [-webkit-app-region:no-drag]"
-          onClick={() => retry?.()}
+          onClick={retry}
         >
           Not saved · Retry
         </Button>
