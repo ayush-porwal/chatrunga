@@ -338,7 +338,7 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
       game_id TEXT REFERENCES games(id) ON DELETE SET NULL,
       unsaved INTEGER NOT NULL DEFAULT 0,
       game_node_id TEXT,
-      kind TEXT NOT NULL CHECK (kind IN ('source', 'model')),
+      kind TEXT NOT NULL CHECK (kind IN ('source', 'model', 'played')),
       headers_json TEXT NOT NULL DEFAULT '{}',
       captured_path TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL

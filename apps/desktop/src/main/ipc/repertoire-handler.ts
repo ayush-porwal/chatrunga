@@ -14,6 +14,7 @@ import {
   getOccurrences,
   getDueSummary,
   getRepertoire,
+  linkGame,
   listGameLinks,
   listRepertoires,
   previewAddFromGame,
@@ -42,6 +43,7 @@ import {
   parseExportInput,
   parseGameLinkQuery,
   parseImportCommitInput,
+  parseLinkGameInput,
   parsePracticeActionInput,
   parsePreviewImportInput,
   parseRecordAttemptInput,
@@ -87,6 +89,9 @@ export function registerRepertoireIpc(): void {
   );
   ipcMain.handle("repertoires:removeGameLink", (_event, input: unknown) =>
     removeGameLink(parseRemoveGameLink(input))
+  );
+  ipcMain.handle("repertoires:linkGame", (_event, input: unknown) =>
+    linkGame(parseLinkGameInput(input))
   );
   ipcMain.handle("repertoires:create", (_event, input: unknown) =>
     createRepertoire(parseCreateRepertoireInput(input))

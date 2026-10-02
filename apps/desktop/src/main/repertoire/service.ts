@@ -7,7 +7,7 @@ import { BrowserWindow, dialog } from "electron";
 import { nanoid } from "nanoid";
 import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
-import type { MoveNode } from "@chaturanga/shared/types/chess";
+import type { GameHeaders, MoveNode } from "@chaturanga/shared/types/chess";
 import {
   COMPARE_GAME_MAX_PLIES,
   REPERTOIRE_POSITION_KEY_VERSION,
@@ -47,6 +47,7 @@ import {
   type RepertoireDecision,
   type RepertoireDetail,
   type RepertoireDueSummary,
+  type LinkGameInput,
   type RepertoireGameLink,
   type RepertoireListFilters,
   type RepertoireNodeMeta,
@@ -100,6 +101,7 @@ import {
   parseRepertoirePgn,
   type ParsedRepertoireGame
 } from "@chaturanga/shared/chess/repertoire-pgn";
+import { gameRepository } from "../db/repositories";
 import { broadcast } from "../ipc/broadcast";
 import {
   chapterTitle,
@@ -1387,6 +1389,87 @@ export function addFromGame(input: AddFromGameInput): AddFromGameResult {
     kind: "updated"
   });
   return result;
+}
+
+/** PGN tag names for the saved game's header fields (orientationHint is not a tag). */
+const PGN_TAGS: Partial<Record<keyof GameHeaders, string>> = {
+  event: "Event",
+  site: "Site",
+  date: "Date",
+  round: "Round",
+  white: "White",
+  black: "Black",
+  whiteElo: "WhiteElo",
+  blackElo: "BlackElo",
+  timeControl: "TimeControl",
+  eco: "ECO",
+  opening: "Opening",
+  utcDate: "UTCDate",
+  utcTime: "UTCTime",
+  termination: "Termination",
+  result: "Result"
+};
+
+/** A saved game's headers as PGN tags (empty values dropped). */
+function headerTags(headers: GameHeaders): Record<string, string> {
+  const tags: Record<string, string> = {};
+  for (const [field, tag] of Object.entries(PGN_TAGS)) {
+    const value = headers[field as keyof GameHeaders];
+    if (typeof value === "string" && value) tags[tag] = value;
+  }
+  return sanitizeHeaders(tags);
+}
+
+/**
+ * Links a library game to the repertoire as a `model` (attached for study) or a `played` game
+ * (started from the repertoire). Idempotent per repertoire, game and kind: an existing link is
+ * returned, re-pointed at the given chapter/node/path when those differ. No revision bump (the
+ * repertoire's content is unchanged), but listeners are told it was updated.
+ */
+export function linkGame(input: LinkGameInput): RepertoireGameLink {
+  const now = clock();
+  const result = transaction(() => {
+    const record = requireRepertoire(input.repertoireId);
+    if (
+      input.chapterId !== null &&
+      chapterRepository.ownerOf(input.chapterId)?.repertoireId !== record.id
+    ) {
+      throw new Error("Invalid chapterId: not found");
+    }
+    const headers = libraryGameExists(input.gameId) ? gameRepository.getHeaders(input.gameId) : null;
+    if (!headers) throw new Error("Invalid gameId: the game is not in the library");
+
+    const target = {
+      chapterId: input.chapterId,
+      gameNodeId: input.gameNodeId,
+      capturedPath: input.capturedPath
+    };
+    const existing = gameLinkRepository.find(record.id, input.gameId, input.kind);
+    if (existing) {
+      if (
+        existing.chapterId === target.chapterId &&
+        existing.gameNodeId === target.gameNodeId &&
+        existing.capturedPath === target.capturedPath
+      ) {
+        return { link: existing, revision: record.revision };
+      }
+      gameLinkRepository.updateTarget(existing.id, target);
+      return { link: { ...existing, ...target }, revision: record.revision };
+    }
+    const link: RepertoireGameLink = {
+      id: nanoid(),
+      repertoireId: record.id,
+      gameId: input.gameId,
+      kind: input.kind,
+      headers: headerTags(headers),
+      createdAt: now,
+      ...target
+    };
+    gameLinkRepository.insert(link);
+    return { link, revision: record.revision };
+  });
+  changed({ repertoireId: input.repertoireId, revision: result.revision, kind: "updated" });
+  return result.link;
 }
 
 /** Provenance links of a repertoire, or of one of its chapters, oldest first. */

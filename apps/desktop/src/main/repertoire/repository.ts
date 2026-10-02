@@ -955,7 +955,7 @@ function toGameLink(row: GameLinkRow): RepertoireGameLink {
     gameId: row.game_id,
     unsaved: row.unsaved === 1,
     gameNodeId: row.game_node_id,
-    kind: row.kind === "model" ? "model" : "source",
+    kind: row.kind === "model" || row.kind === "played" ? row.kind : "source",
     headers: stringRecord(row.headers_json),
     capturedPath: row.captured_path,
     createdAt: row.created_at
@@ -1001,6 +1001,37 @@ export const gameLinkRepository = {
             chapterId
           );
     return rows.map(toGameLink);
+  },
+
+  /** The oldest link of this kind between the repertoire and the game, if any. */
+  find(
+    repertoireId: string,
+    gameId: string,
+    kind: RepertoireGameLink["kind"]
+  ): RepertoireGameLink | null {
+    const row = get<GameLinkRow>(
+      `SELECT * FROM repertoire_game_links WHERE repertoire_id = ? AND game_id = ? AND kind = ?
+        ORDER BY created_at, id LIMIT 1`,
+      repertoireId,
+      gameId,
+      kind
+    );
+    return row ? toGameLink(row) : null;
+  },
+
+  /** Re-points a link at another chapter/node/path; headers and creation time stay. */
+  updateTarget(
+    id: string,
+    target: Pick<RepertoireGameLink, "chapterId" | "gameNodeId" | "capturedPath">
+  ): void {
+    run(
+      `UPDATE repertoire_game_links SET chapter_id = ?, game_node_id = ?, captured_path = ?
+        WHERE id = ?`,
+      target.chapterId,
+      target.gameNodeId,
+      target.capturedPath,
+      id
+    );
   },
 
   remove(id: string): void {

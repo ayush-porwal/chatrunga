@@ -1,5 +1,15 @@
 import { memo, useCallback, useId, useMemo, useRef, useState } from "react";
-import { Bot, Check, ChevronDown, Globe, Play, Settings, SquareDashed } from "lucide-react";
+import {
+  BookOpen,
+  Bot,
+  Check,
+  ChevronDown,
+  Globe,
+  Play,
+  Settings,
+  SquareDashed,
+  X
+} from "lucide-react";
 import { isManagedEngine } from "@chaturanga/shared/engine/managed";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import { useEnginesQuery } from "../../queries/api";
@@ -30,7 +40,12 @@ import {
 } from "@/lib/settings-listbox";
 import { cardPadded, fieldLabel } from "@/lib/ui";
 import { useDismiss } from "@/lib/use-dismiss";
-import { usePlayDraftStore } from "../../stores/play-draft-store";
+import { usePlayDraftStore, type PlayInitialSession } from "../../stores/play-draft-store";
+import { useRepertoireHandoffStore } from "../../stores/repertoire-handoff-store";
+import { holdUntilChanged } from "../../app/useGameAutosave";
+import { ReviewBoard } from "../game-review/ReviewBoard";
+import { gameFromInitialSession } from "../repertoire/handoffs";
+import { Notice } from "@/components/ui/notice";
 import { useListboxKeyboard } from "@/lib/use-listbox-keyboard";
 import { positionStatus } from "@/lib/position-status";
 import { START_FEN } from "@chaturanga/shared/chess/position";
@@ -171,10 +186,13 @@ function useEngineGameSetup({ onOpenSettings, onBeforeStart, onStart }: EngineGa
   // Kept outside the page (play-draft-store): Engine settings and Back return to the same choices.
   const draft = usePlayDraftStore((state) => state.draft);
   const updateDraft = usePlayDraftStore((state) => state.update);
+  // A repertoire handoff (Study → Play from here): the game starts there, as its colour.
+  const initialSession = draft.initialSession ?? null;
+  const [handoffError, setHandoffError] = useState<string | null>(null);
   // A chosen engine that was deleted since falls back to the default — and so does the id used.
   const selectedEngine = engines.data?.find((engine) => engine.id === draft.engineId) ?? defaultEngine;
   const engineId = selectedEngine?.id ?? "";
-  const humanColor: Color = draft.humanColor ?? game.orientation;
+  const humanColor: Color = initialSession?.playerColor ?? draft.humanColor ?? game.orientation;
   const moveTimeMs = draft.moveTimeMs ?? game.moveTimeMs;
   const depth = draft.depth === undefined ? game.depth : draft.depth;
   const clockPreset = draft.clockPreset as ClockPresetId;
@@ -196,7 +214,8 @@ function useEngineGameSetup({ onOpenSettings, onBeforeStart, onStart }: EngineGa
     })
   );
   const [startFrom, setStartFrom] = useState<"new" | "position">("new");
-  const fromPosition = startFrom === "position" && boardPosition ? boardPosition : null;
+  const fromPosition =
+    !initialSession && startFrom === "position" && boardPosition ? boardPosition : null;
 
   function resolveClockMs(): { initialMs: number; incrementMs: number } | null {
     const preset = clockPresets.find((item) => item.id === clockPreset);
@@ -219,11 +238,25 @@ function useEngineGameSetup({ onOpenSettings, onBeforeStart, onStart }: EngineGa
       return;
     }
     if (!selectedEngine?.isAvailable) return;
+    // A Lichess game owns the board until it ends (checked here too, not only on the button).
+    if (selectLiveGameInProgress(useLichessStore.getState())) return;
     const engineColor: Color = humanColor === "white" ? "black" : "white";
     const clock = resolveClockMs();
+    // A repertoire handoff: its moves replayed into the new game (the position keeps its history).
+    const handoffGame = initialSession ? gameFromInitialSession(initialSession, {}) : null;
+    if (initialSession && !handoffGame) {
+      setHandoffError(
+        "This repertoire position couldn't be set up. Clear it and start a new game."
+      );
+      return;
+    }
+    setHandoffError(null);
     onBeforeStart();
     // Play from here: the game begins at the board's position (a PGN with its FEN), not move 1.
-    if (fromPosition) game.loadGame(createGameFromFen({ fen: fromPosition.fen, source: "engine-game" }));
+    if (handoffGame) game.loadGame(handoffGame);
+    else if (fromPosition) {
+      game.loadGame(createGameFromFen({ fen: fromPosition.fen, source: "engine-game" }));
+    }
     else game.reset();
     game.setOrientation(humanColor);
     game.setGameSource("engine-game");
@@ -245,11 +278,22 @@ function useEngineGameSetup({ onOpenSettings, onBeforeStart, onStart }: EngineGa
     // A value still being typed (the field not left yet) is held to the accepted range here too.
     game.setEngineLimits(clampLimit(moveTimeMs, 100, ENGINE_LIMITS.moveTimeMs), clampDepth(depth));
     game.setMatchFeedback(null);
+    // The clock starts at the handoff position (after the replayed prefix), with its side to move.
     if (clock) {
       game.setEngineMatchClock(clock);
       game.initEngineClockLive();
     } else {
       game.setEngineMatchClock(null);
+    }
+    if (initialSession && handoffGame) {
+      // Not in the library until a move is played; then linked to the repertoire as a played game.
+      holdUntilChanged();
+      useRepertoireHandoffStore.getState().begin({
+        ...initialSession.repertoire,
+        gameNodeId: handoffGame.currentNodeId,
+        color: initialSession.playerColor
+      });
+      usePlayDraftStore.getState().clearInitialSession();
     }
     useAnalysisStore.getState().setActiveEngine(selectedEngineId);
     useAnalysisStore.getState().setError(null);
@@ -285,7 +329,13 @@ function useEngineGameSetup({ onOpenSettings, onBeforeStart, onStart }: EngineGa
     setCustomMinutes,
     customIncrementSec,
     setCustomIncrementSec,
-    boardPosition,
+    boardPosition: initialSession ? null : boardPosition,
+    initialSession,
+    clearInitialSession: () => {
+      setHandoffError(null);
+      usePlayDraftStore.getState().clearInitialSession();
+    },
+    handoffError,
     startFrom: fromPosition ? "position" : "new",
     setStartFrom,
     startGame,
@@ -301,9 +351,19 @@ function EngineGameSetupBody({
   onOpenSettings: () => void;
 }) {
   if (setup.enginesLoading) return null;
+  const startingFrom = setup.initialSession ? (
+    <StartingFromCard
+      initial={setup.initialSession}
+      onClear={setup.clearInitialSession}
+      error={setup.handoffError}
+    />
+  ) : null;
   if (!setup.hasEngines) {
+    // The handoff stays in the draft while engines are set up (Settings, then Back here).
     return (
-      <EmptyState
+      <div className="grid gap-5">
+        {startingFrom}
+        <EmptyState
         icon={<Bot />}
         title="No engine installed"
         description="Download Stockfish or add a UCI engine in Settings."
@@ -313,6 +373,7 @@ function EngineGameSetupBody({
           </Button>
         }
       />
+      </div>
     );
   }
 
@@ -320,6 +381,7 @@ function EngineGameSetupBody({
 
   return (
     <div className="grid gap-5">
+      {startingFrom}
       {setup.boardPosition ? (
         <Field label="Start from">
           <SegmentedControl
@@ -350,15 +412,25 @@ function EngineGameSetupBody({
         </div>
       </Field>
 
-      <Field label="Play as">
+      <Field label="Play as" hint={setup.initialSession ? "your repertoire's side" : undefined}>
         <SegmentedControl
           ariaLabel="Play as"
           value={setup.humanColor}
           onChange={setup.setHumanColor}
           className="w-fit"
           options={[
-            { value: "white", label: "White", icon: <SideDot color="white" /> },
-            { value: "black", label: "Black", icon: <SideDot color="black" /> }
+            {
+              value: "white",
+              label: "White",
+              icon: <SideDot color="white" />,
+              disabled: Boolean(setup.initialSession)
+            },
+            {
+              value: "black",
+              label: "Black",
+              icon: <SideDot color="black" />,
+              disabled: Boolean(setup.initialSession)
+            }
           ]}
         />
       </Field>
@@ -587,5 +659,49 @@ function SetupActions({ setup }: { setup: EngineGameSetupState }) {
         Start game
       </Button>
     </>
+  );
+}
+
+/**
+ * The repertoire position an engine game will start from (Study → Play from here): a small board,
+ * its name and route, and Clear to start a normal game instead.
+ */
+function StartingFromCard({
+  initial,
+  onClear,
+  error
+}: {
+  initial: PlayInitialSession;
+  onClear: () => void;
+  error: string | null;
+}) {
+  const fen = useMemo(
+    () => gameFromInitialSession(initial, {})?.currentFen ?? initial.rootFen,
+    [initial]
+  );
+  return (
+    <div className="grid gap-3">
+      <div className="flex flex-wrap items-center gap-4 rounded-xl border border-line p-3">
+        <div className="aspect-square w-28 shrink-0 overflow-hidden rounded-lg">
+          <ReviewBoard fen={fen} orientation={initial.playerColor} className="h-full w-full" />
+        </div>
+        <div className="grid min-w-48 flex-1 gap-1">
+          <Eyebrow className="flex items-center gap-1.5">
+            <BookOpen className="size-3.5" />
+            Starting from
+          </Eyebrow>
+          <p className="text-sm font-medium text-fg">{initial.label}</p>
+          <p className="text-xs text-fg-muted">
+            You play {initial.playerColor === "white" ? "White" : "Black"}. The game is saved to
+            your library; it never changes the repertoire.
+          </p>
+        </div>
+        <Button type="button" variant="ghost" size="sm" onClick={onClear}>
+          <X />
+          Clear
+        </Button>
+      </div>
+      {error ? <Notice tone="danger">{error}</Notice> : null}
+    </div>
   );
 }

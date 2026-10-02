@@ -424,7 +424,8 @@ export const useGameStore = create<GameStore>((set, get) => {
     initEngineClockLive: () => {
       const cfg = get().engineClock;
       if (!cfg) return;
-      const turn = statusForFen(get().rootFen).turn;
+      // The side to move where the game starts (after a replayed prefix, not at its root).
+      const turn = statusForFen(get().currentFen).turn;
       set({
         engineClockLive: {
           whiteMs: cfg.initialMs,

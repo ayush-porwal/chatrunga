@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { GraduationCap, Loader2 } from "lucide-react";
+import { GraduationCap, Loader2, Microscope, Swords } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import type { BoardArrow, BoardHighlight, Color } from "@chaturanga/shared/types/chess";
@@ -75,7 +75,9 @@ export function RepertoireStudyPage({
   onPractice,
   onMissing,
   onPositionChanged,
-  onOpenGame
+  onOpenGame,
+  onAnalyze,
+  onPlayFromHere
 }: {
   repertoireId: string;
   chapterId: string;
@@ -95,6 +97,13 @@ export function RepertoireStudyPage({
   onPositionChanged: () => void;
   /** A source link's saved game, opened on the board at the linked move. */
   onOpenGame?: (gameId: string, nodeId: string | null) => void;
+  /**
+   * "Analyze": the route to the selected node as a new unsaved game on the analysis board. App
+   * saves the draft first (and offers Retry when it can't); Back returns here.
+   */
+  onAnalyze?: () => void;
+  /** "Play from here": an engine game from the selected position, as the repertoire's colour. */
+  onPlayFromHere?: () => void;
 }) {
   const panelId = useId();
   const desktop = Boolean(window.chaturanga?.repertoires);
@@ -464,17 +473,45 @@ export function RepertoireStudyPage({
             onSelect={selectNode}
           />
           <div className="flex items-center justify-between gap-2 border-t border-line-subtle px-3 py-2">
-            <p className="text-2xs text-fg-subtle">Play a move on the board to add a variation.</p>
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              disabled={!draft.enabled || draft.kind !== "opening"}
-              onClick={() => void practiceChapter()}
-            >
-              <GraduationCap />
-              Practice this chapter
-            </Button>
+            <p className="min-w-0 truncate text-2xs text-fg-subtle">
+              Play a move on the board to add a variation.
+            </p>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {onAnalyze ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  title="Explore this position on the analysis board (a copy; the chapter stays as it is)"
+                  onClick={onAnalyze}
+                >
+                  <Microscope />
+                  Analyze
+                </Button>
+              ) : null}
+              {onPlayFromHere ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  title="Play the engine from this position as your repertoire's side"
+                  onClick={onPlayFromHere}
+                >
+                  <Swords />
+                  Play from here
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                disabled={!draft.enabled || draft.kind !== "opening"}
+                onClick={() => void practiceChapter()}
+              >
+                <GraduationCap />
+                Practice this chapter
+              </Button>
+            </div>
           </div>
         </>
       }

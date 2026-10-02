@@ -152,6 +152,7 @@ const api: ChaturangaApi = {
     addFromGame: (input) => ipcRenderer.invoke("repertoires:addFromGame", input),
     listGameLinks: (input) => ipcRenderer.invoke("repertoires:listGameLinks", input),
     removeGameLink: (input) => ipcRenderer.invoke("repertoires:removeGameLink", input),
+    linkGame: (input) => ipcRenderer.invoke("repertoires:linkGame", input),
     create: (input) => ipcRenderer.invoke("repertoires:create", input),
     updateMetadata: (input) => ipcRenderer.invoke("repertoires:updateMetadata", input),
     saveChapter: (input) => ipcRenderer.invoke("repertoires:saveChapter", input),

@@ -23,7 +23,13 @@ import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import { usePuzzleAutoReply } from "../features/puzzles/puzzle-session";
 import type { SettingsSectionId } from "../features/settings/SettingsPage";
 import { useOnboarding } from "../features/onboarding/useOnboarding";
-import { useEnginesQuery, useSamplePuzzleMutation, useSettingsQuery } from "../queries/api";
+import {
+  useEnginesQuery,
+  useSamplePuzzleMutation,
+  useSettingsQuery,
+  useUpdateSettingMutation
+} from "../queries/api";
+import { repertoireKeys } from "../queries/repertoire";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { analysisEngineFor, defaultEngineFor } from "../features/analysis/analysis-engine";
 import { useGameStore } from "../stores/game-store";
@@ -45,7 +51,12 @@ import { AddToRepertoireDialog, AppPages, GameReviewPicker, OnboardingFlow, type
 import { PuzzleInfoPanel } from "./PuzzleInfoPanel";
 import { useBoardShortcuts } from "./useBoardShortcuts";
 import { useEngineDriver, type AnalysisOptions } from "./useEngineDriver";
-import { flushGameAutosave, IMPORT_NEEDS_SAVE, useGameAutosave } from "./useGameAutosave";
+import {
+  flushGameAutosave,
+  holdUntilChanged,
+  IMPORT_NEEDS_SAVE,
+  useGameAutosave
+} from "./useGameAutosave";
 import { useUsageActivity } from "./useUsageTelemetry";
 import { useLichess } from "./useLichess";
 import { useHistoryShortcuts } from "./useHistoryShortcuts";
@@ -69,7 +80,22 @@ import { flushChapterDraft } from "../features/repertoire/useChapterAutosave";
 import { useRepertoirePracticeStore } from "../stores/repertoire-practice-store";
 import { useRepertoireWorkspaceStore } from "../stores/repertoire-workspace-store";
 import { useAddToRepertoireStore } from "../stores/add-to-repertoire-store";
-import { REPERTOIRE_ROOT_NODE_ID, type AddFromGameResult } from "@chaturanga/shared/types/repertoire";
+import {
+  REPERTOIRE_ROOT_NODE_ID,
+  type AddFromGameResult,
+  type RepertoireDetail
+} from "@chaturanga/shared/types/repertoire";
+import {
+  buildAnalysisSnapshot,
+  buildInitialSession,
+  LIVE_GAME_NOTICE,
+  repertoireCommandBlocked,
+  type HandoffOrigin,
+  type RepertoireCommand
+} from "../features/repertoire/handoffs";
+import { usePlayedGameLink } from "../features/repertoire/usePlayedGameLink";
+import { usePlayDraftStore } from "../stores/play-draft-store";
+import { useRepertoireHandoffStore } from "../stores/repertoire-handoff-store";
 import type { RepertoireScreen } from "./AppPages";
 
 /** What App keeps for the repertoire screens besides the ids in the URL. */
@@ -251,6 +277,8 @@ export function App() {
   useDatabaseDownloads();
   useEngineDriver(analysisOptions);
   useGameAutosave();
+  usePlayedGameLink();
+  const { mutate: updateSetting } = useUpdateSettingMutation();
   useUsageActivity();
   useMoveSounds({ enabled: settings.soundEnabled, volume: settings.soundVolume });
   usePuzzleAutoReply();
@@ -312,7 +340,7 @@ export function App() {
     const live = useLichessStore.getState().live;
     if (live && !live.over && replacesLiveBoard(target, live.id)) {
       showGame(sideTab, "none");
-      currentGame().setMatchFeedback("Finish your Lichess game first.");
+      currentGame().setMatchFeedback(LIVE_GAME_NOTICE);
       return;
     }
     commitCurrent();
@@ -419,6 +447,7 @@ export function App() {
     } else if (plan.kind === "session") {
       endBoardActivity();
       currentGame().loadGame(plan.session);
+      if (snapshot.held) holdUntilChanged();
     } else {
       stopEngineWork({ stopSearch: snapshot.mode !== "analysis", keepReview });
       clearPuzzleSession();
@@ -551,7 +580,7 @@ export function App() {
       commitCurrent();
       showGame();
     }
-    currentGame().setMatchFeedback("Finish your Lichess game first.");
+    currentGame().setMatchFeedback(LIVE_GAME_NOTICE);
   }
 
   /** Play → Free board: an empty board to play both sides. */
@@ -610,7 +639,7 @@ export function App() {
     record("push", historyEntry("game"));
   }
 
-  async function openSelectedGameReview(gameId: string) {
+  async function openSelectedGameReview(gameId: string, tab: ReviewTab = "commentary") {
     commitCurrent();
     const request = ++latestNavigation.current;
     if (gameId !== "current" && gameId !== currentGame().gameId) {
@@ -634,7 +663,7 @@ export function App() {
     currentGame().setEngineSide(null);
     currentGame().clearEngineMatchExtras();
     setFocusMode(false);
-    setReviewTab("commentary");
+    setReviewTab(tab);
     setGameReviewPickerOpen(false);
     setAppView("game-review", () => navigate(`/games/${gameId}/review`, { replace: true }));
     record("push", historyEntry("game-review"));
@@ -811,6 +840,144 @@ export function App() {
     openRepertoirePractice(repertoireScreen.repertoireId, { preset: presetForSetup(repertoireScreen.preset) });
   }
 
+  // ---- Repertoire handoffs (Study → Analyze / Play from here) and the Lichess guard -----------
+
+  /**
+   * Runs a repertoire command unless a Lichess game being played would lose the screen to it; then
+   * the board comes back with the notice instead (see unlessOnlineGame). Decided by the live game
+   * state now, not by an earlier finish event.
+   */
+  function unlessRepertoireBlocked(command: RepertoireCommand, action: () => void) {
+    if (!repertoireCommandBlocked(useLichessStore.getState(), command)) return action();
+    unlessOnlineGame(action);
+  }
+
+  /** The open study chapter and selected node as a handoff's origin (null when none is loaded). */
+  function studyHandoffOrigin(): HandoffOrigin | null {
+    if (repertoireScreen?.view !== "repertoire-study") return null;
+    const draft = useRepertoireWorkspaceStore.getState();
+    if (
+      !draft.chapter ||
+      draft.repertoireId !== repertoireScreen.repertoireId ||
+      draft.chapterId !== repertoireScreen.chapterId
+    ) {
+      return null;
+    }
+    const detail = queryClient.getQueryData<RepertoireDetail>(
+      repertoireKeys.detail(repertoireScreen.repertoireId)
+    );
+    return {
+      repertoireId: repertoireScreen.repertoireId,
+      repertoireName: detail?.name ?? "Repertoire",
+      color: draft.color,
+      chapter: draft.chapter,
+      nodeId: draft.selectedNodeId
+    };
+  }
+
+  /**
+   * Saves the study draft before a handoff leaves it. When it can't be saved the draft stays open
+   * with its edits and the notice offers Retry (dismissing it stays on the chapter). False also
+   * when a newer navigation (a Lichess game starting, say) took over meanwhile.
+   */
+  async function flushStudyForHandoff(
+    request: number,
+    action: string,
+    retry: () => void
+  ): Promise<boolean> {
+    const saved = await flushChapterDraft(queryClient);
+    if (request !== latestNavigation.current) return false;
+    if (saved) return true;
+    useAppNoticeStore.getState().show(
+      `This chapter couldn't be saved, so ${action} didn't open. Your edits are kept: retry, ` +
+        "or dismiss to stay and keep editing.",
+      {
+        action: {
+          label: "Retry",
+          onSelect: () => {
+            useRepertoireWorkspaceStore.getState().clearSaveError();
+            retry();
+          }
+        }
+      }
+    );
+    return false;
+  }
+
+  /**
+   * Study → Analyze: the chapter's route to the selected node as a new, unsaved analysis game
+   * (saved to the library only once changed). Back returns to the chapter at the same node and tab.
+   */
+  async function analyzeFromStudy() {
+    if (!desktopApiAvailable) return;
+    const request = ++latestNavigation.current;
+    if (!(await flushStudyForHandoff(request, "Analyze", () => on.analyzeFromStudy()))) return;
+    // The live game is read again now: one that started while the draft saved keeps the board.
+    if (repertoireCommandBlocked(useLichessStore.getState(), "analyze")) return;
+    const origin = studyHandoffOrigin();
+    if (!origin) return;
+    commitCurrent();
+    endBoardActivity();
+    currentGame().loadGame(buildAnalysisSnapshot(origin));
+    holdUntilChanged();
+    currentGame().setEngineSide(null);
+    currentGame().clearEngineMatchExtras();
+    currentGame().setMode("analysis");
+    if (defaultEngineId && !useAnalysisStore.getState().activeEngineId) {
+      useAnalysisStore.getState().setActiveEngine(defaultEngineId);
+    }
+    useAnalysisStore.getState().restartSearch();
+    setFocusMode(false);
+    showGame("engine");
+    currentGame().setMatchFeedback(
+      "Analysing a copy of the chapter line. Back returns to the chapter."
+    );
+  }
+
+  /**
+   * Study → Play from here: Play's engine setup with the selected position, its route and the
+   * repertoire's colour (untimed unless a clock is picked). Back returns to the chapter.
+   */
+  async function playFromStudy() {
+    if (!desktopApiAvailable) return;
+    const request = ++latestNavigation.current;
+    if (!(await flushStudyForHandoff(request, "Play from here", () => on.playFromStudy()))) return;
+    if (repertoireCommandBlocked(useLichessStore.getState(), "play-from-here")) return;
+    const origin = studyHandoffOrigin();
+    if (!origin) return;
+    usePlayDraftStore.getState().setInitialSession(buildInitialSession(origin));
+    useLichessStore.getState().setPlayOpponent("engine");
+    openPlayPage();
+  }
+
+  /** After a game played from a repertoire: the chapter and position it started from. */
+  function returnToRepertoire() {
+    const played = useRepertoireHandoffStore.getState().played;
+    if (!played) return;
+    void openRepertoireStudy({
+      repertoireId: played.repertoireId,
+      chapterId: played.chapterId,
+      nodeId: played.nodeId
+    });
+  }
+
+  /**
+   * After a game played from a repertoire: Game review on the Opening tab, comparing as the
+   * repertoire's colour against that repertoire (remembered for the colour, like a pick there).
+   */
+  async function reviewHandoffOpening() {
+    const played = useRepertoireHandoffStore.getState().played;
+    if (!played) return;
+    // The game's library id (its first save may still be waiting) names the review route.
+    await flushGameAutosave();
+    updateSetting({
+      key: played.color === "white" ? "repertoireCompareWhite" : "repertoireCompareBlack",
+      value: played.repertoireId
+    });
+    setOpeningSide({ board: currentGame().board, color: played.color });
+    await openSelectedGameReview("current", "opening");
+  }
+
   function openDatabasesPage(history: HistoryMode = "push") {
     if (!desktopApiAvailable) return;
     if (history === "push") commitCurrent();
@@ -969,12 +1136,15 @@ export function App() {
     reviewCurrentGame: useEventCallback(() => void openSelectedGameReview("current")),
     repertoireHub: useEventCallback(() => openRepertoireHub()),
     openRepertoireStudy: useEventCallback((target: StudyOpenTarget) =>
-      unlessOnlineGame(() => void openRepertoireStudy(target))
+      unlessRepertoireBlocked(
+        target.stage ? "stage-response" : "open-study",
+        () => void openRepertoireStudy(target)
+      )
     ),
     // "Refresh this decision" (a game's opening comparison): a targeted queue that starts at once.
     // Back returns to the review left (its tab and move are committed first).
     refreshRepertoireDecision: useEventCallback((repertoireId: string, positionKey: string) =>
-      unlessOnlineGame(() =>
+      unlessRepertoireBlocked("refresh-decision", () =>
         openRepertoirePractice(repertoireId, {
           preset: { mode: "review-due", positionKeys: [positionKey], autoStart: true }
         })
@@ -982,17 +1152,20 @@ export function App() {
     ),
     repertoireStageApplied: useEventCallback(() => setRepertoireExtras((extras) => ({ ...extras, stage: null }))),
     openRepertoirePractice: useEventCallback((repertoireId: string) =>
-      unlessOnlineGame(() => openRepertoirePractice(repertoireId))
+      unlessRepertoireBlocked("open-practice", () => void openRepertoirePractice(repertoireId))
     ),
     // "Review now" / "Review due": the setup in Review due over every chapter, whatever the last
     // session's draft was (a Learn new draft would otherwise hide the due decisions).
     reviewRepertoire: useEventCallback((repertoireId: string) =>
-      unlessOnlineGame(() =>
+      unlessRepertoireBlocked("open-practice", () =>
         openRepertoirePractice(repertoireId, { preset: { mode: "review-due", chapterIds: [] } })
       )
     ),
     practiceRepertoireChapters: useEventCallback((repertoireId: string, chapterIds: string[]) =>
-      unlessOnlineGame(() => openRepertoirePractice(repertoireId, { preset: { chapterIds } }))
+      unlessRepertoireBlocked(
+        "open-practice",
+        () => void openRepertoirePractice(repertoireId, { preset: { chapterIds } })
+      )
     ),
     // A chapter / repertoire gone since (deleted, or a stale history entry): the hub, with why.
     repertoireMissing: useEventCallback((message: string) => {
@@ -1025,7 +1198,21 @@ export function App() {
       });
     }),
     repertoirePracticeStarted: useEventCallback(practiceSessionStarted),
-    repertoirePracticeSetup: useEventCallback(practiceSetup)
+    repertoirePracticeSetup: useEventCallback(() =>
+      unlessRepertoireBlocked("open-practice", practiceSetup)
+    ),
+    analyzeFromStudy: useEventCallback(() =>
+      unlessRepertoireBlocked("analyze", () => void analyzeFromStudy())
+    ),
+    playFromStudy: useEventCallback(() =>
+      unlessRepertoireBlocked("play-from-here", () => void playFromStudy())
+    ),
+    returnToRepertoire: useEventCallback(() =>
+      unlessRepertoireBlocked("return-to-repertoire", returnToRepertoire)
+    ),
+    reviewHandoffOpening: useEventCallback(() =>
+      unlessRepertoireBlocked("review-opening", () => void reviewHandoffOpening())
+    )
   };
   useHistoryShortcuts({ onBack: on.back, onForward: on.forward });
   useBoardShortcuts({
@@ -1114,6 +1301,8 @@ export function App() {
               onStopAnalysis={gameMode === "analysis" && desktopApiAvailable ? on.stopLiveAnalysis : null}
               onReviewGame={on.reviewCurrentGame}
               onPlayAgain={on.playLichess}
+              onReviewOpening={on.reviewHandoffOpening}
+              onReturnToRepertoire={on.returnToRepertoire}
             />
           ) : (
             <>

@@ -512,12 +512,23 @@ export type RepertoireGameLink = {
   /** The source was a board game never saved to the library (gameId was null from the start). */
   unsaved: boolean;
   gameNodeId: string | null;
-  kind: "source" | "model";
+  /** `source`: material copied from the game; `model`: attached for study; `played`: a game started from the repertoire (Play from here). */
+  kind: "source" | "model" | "played";
   /** The game's headers at link time (White, Black, Event, Date, Site/URL…). */
   headers: Record<string, string>;
   /** SAN path of the copied route's end in the game, e.g. `"1. e4 e5 2. Nf3"`. */
   capturedPath: string;
   createdAt: number;
+};
+
+export type LinkGameInput = {
+  repertoireId: string;
+  chapterId: string | null;
+  gameId: string;
+  gameNodeId: string | null;
+  kind: "model" | "played";
+  /** SAN path of the handoff/attachment point, e.g. `"1. e4 e5 2. Nf3"`. */
+  capturedPath: string;
 };
 
 /* ------------------------------------------------------------------ game comparison (§6.3) */

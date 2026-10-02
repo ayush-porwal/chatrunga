@@ -27,6 +27,7 @@ import type {
   DuplicateRepertoireInput,
   ExportInput,
   ImportCommitInput,
+  LinkGameInput,
   PracticeActionInput,
   PreviewImportInput,
   RecordAttemptInput,
@@ -948,6 +949,22 @@ export function parseRemoveGameLink(value: unknown): { repertoireId: string; lin
   return {
     repertoireId: asId(input.repertoireId, "repertoireId"),
     linkId: asId(input.linkId, "linkId")
+  };
+}
+
+/** Longest SAN path a game link stores (the handoff or attachment point). */
+const MAX_CAPTURED_PATH = 2000;
+
+export function parseLinkGameInput(value: unknown): LinkGameInput {
+  const input = asObject(value, "game link");
+  if (input.kind !== "model" && input.kind !== "played") fail("kind", "expected model or played");
+  return {
+    repertoireId: asId(input.repertoireId, "repertoireId"),
+    chapterId: nullable(input.chapterId, (id) => asId(id, "chapterId")) ?? null,
+    gameId: asId(input.gameId, "gameId"),
+    gameNodeId: nullable(input.gameNodeId, (id) => asId(id, "gameNodeId")) ?? null,
+    kind: input.kind,
+    capturedPath: asString(input.capturedPath, "capturedPath", MAX_CAPTURED_PATH)
   };
 }
 

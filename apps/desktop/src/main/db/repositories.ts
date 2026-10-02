@@ -406,6 +406,17 @@ function parseStoredReview(json: string, moveTree: readonly MoveNode[], rebuilt:
   return review && rebuilt ? remapReviewToTree(review, moveTree) : review;
 }
 
+/** The row's stored headers, or null when it has none (older rows) or they can't be read. */
+function storedHeaders(headersJson: string | null): GameHeaders | null {
+  if (!headersJson) return null;
+  try {
+    const parsed: unknown = JSON.parse(headersJson);
+    return isHeaders(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function toSavedGame(row: GameRow): SavedGame {
   const { moveTree, rebuilt } = parseMoveTree(row);
 
@@ -419,20 +430,10 @@ function toSavedGame(row: GameRow): SavedGame {
     : undefined;
   const review = newest ? parseStoredReview(newest.review_json, moveTree, rebuilt) : null;
 
-  let headers: GameHeaders | null = null;
-  if (row.headers_json) {
-    try {
-      const parsed: unknown = JSON.parse(row.headers_json);
-      if (isHeaders(parsed)) headers = parsed;
-    } catch {
-      headers = null;
-    }
-  }
-
   return {
     ...toGameSummary(row),
     currentNodeId: rebuilt ? rebuiltCursor(moveTree, row.current_fen) : row.current_node_id,
-    headers,
+    headers: storedHeaders(row.headers_json),
     site: row.site,
     round: row.round,
     initialFen: row.initial_fen,
@@ -776,6 +777,29 @@ export const gameRepository = {
   /** Ids of the games from one source (e.g. Lichess imports). */
   idsBySource(source: GameSource): string[] {
     return all<{ id: string }>("SELECT id FROM games WHERE source = ?", source).map((row) => row.id);
+  },
+
+  /**
+   * A game's headers without reading its tree or reviews: the stored set, or (older rows) the
+   * summary columns. Null when the game is gone.
+   */
+  getHeaders(id: string): GameHeaders | null {
+    const row = get<Pick<GameRow, "event" | "site" | "date" | "round" | "white" | "black" | "result" | "headers_json">>(
+      "SELECT event, site, date, round, white, black, result, headers_json FROM games WHERE id = ?",
+      id
+    );
+    if (!row) return null;
+    return (
+      storedHeaders(row.headers_json) ?? {
+        event: row.event,
+        site: row.site,
+        date: row.date,
+        round: row.round,
+        white: row.white,
+        black: row.black,
+        result: row.result
+      }
+    );
   },
 
   get(id: string): SavedGame | null {

@@ -1799,4 +1799,52 @@ describe("repertoire service: add from a game", () => {
     expect(service.listGameLinks({ repertoireId: id })).toEqual([]);
     expect(service.getRepertoire(id).revision).toBe(revision);
   });
+
+  it("links a library game as model or played, once per kind, without a revision bump", () => {
+    const { id, chapters, revision } = create();
+    getDb()
+      .prepare(
+        `INSERT INTO games (id, source, white, black, pgn, current_fen, move_tree_json, headers_json,
+          created_at, updated_at) VALUES ('game-2', 'pgn-import', 'Tal', 'Botvinnik', '', ?, '[]', ?, 1, 1)`
+      )
+      .run(START_FEN, JSON.stringify({ white: "Tal", black: "Botvinnik", eco: "B10", event: null }));
+    const base = {
+      repertoireId: id,
+      chapterId: chapters[0].id,
+      gameId: "game-2",
+      gameNodeId: "n3",
+      kind: "played" as const,
+      capturedPath: "1. e4 c6"
+    };
+    sent.length = 0;
+    const link = service.linkGame(base);
+    expect(link).toMatchObject({
+      ...base,
+      headers: { White: "Tal", Black: "Botvinnik", ECO: "B10" }
+    });
+    expect(sent).toEqual([
+      { channel: "repertoires:changed", payload: { repertoireId: id, revision, kind: "updated" } }
+    ]);
+
+    expect(service.linkGame(base)).toEqual(link);
+    const moved = service.linkGame({ ...base, chapterId: null, gameNodeId: null, capturedPath: "" });
+    expect(moved).toEqual({ ...link, chapterId: null, gameNodeId: null, capturedPath: "" });
+    const model = service.linkGame({ ...base, kind: "model" });
+    expect(model.id).not.toBe(link.id);
+    expect(service.listGameLinks({ repertoireId: id }).map((item) => item.id).sort()).toEqual(
+      [link.id, model.id].sort()
+    );
+    expect(service.listGameLinks({ repertoireId: id })).toContainEqual(moved);
+    expect(service.getRepertoire(id).revision).toBe(revision);
+
+    expect(() => service.linkGame({ ...base, gameId: "missing" })).toThrow(
+      "Invalid gameId: the game is not in the library"
+    );
+    expect(() => service.linkGame({ ...base, chapterId: "nope" })).toThrow(
+      "Invalid chapterId: not found"
+    );
+    expect(() => service.linkGame({ ...base, repertoireId: "nope" })).toThrow(
+      "Invalid repertoireId: not found"
+    );
+  });
 });
