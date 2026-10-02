@@ -22,11 +22,12 @@ jobs:
     name: Review pull request
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    # One review per PR at a time (a push and a /review comment would otherwise both call the
-    # model and hit its rate limit). Set on the job, so comments that skip it don't queue here.
-    # A new push replaces a review still running; a command waits for the one in progress.
+    # Pushes and commands queue apart: GitHub keeps one waiting job per group, so a shared group
+    # would let a command replace a push review still waiting. A new push replaces the review of an
+    # older one; a command waits for the one in progress. Set on the job, so a comment that skips it
+    # never takes a waiting command's place.
     concurrency:
-      group: pr-agent-${{ github.event.pull_request.number || github.event.issue.number }}
+      group: pr-agent-${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.event_name }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     permissions:
       issues: write
