@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Color, GameMode, GameSession, GameSource } from "@chaturanga/shared/types/chess";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
+import type { RepertoireColor } from "@chaturanga/shared/types/repertoire";
 import type { PlayOpponent } from "./lichess-store";
 
 /**
@@ -36,7 +37,13 @@ export type HistoryEntry =
   | { view: "settings"; section: string | null }
   | { view: "play"; opponent: PlayOpponent | null }
   | { view: "game"; board: BoardSnapshot }
-  | { view: "game-review"; board: BoardSnapshot; tab: string }
+  | {
+      view: "game-review";
+      board: BoardSnapshot;
+      tab: string;
+      /** The Opening tab's picked side for this game (null: not picked, the default applies). */
+      compareColor?: RepertoireColor | null;
+    }
   | { view: "repertoire-hub" }
   | {
       view: "repertoire-study";

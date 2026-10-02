@@ -38,6 +38,7 @@ import type {
   UpdateDecisionInput,
   UpdateRepertoireMetadataInput
 } from "@chaturanga/shared/types/repertoire";
+import { COMPARE_GAME_MAX_PLIES } from "@chaturanga/shared/types/repertoire";
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
 import type {
   CreateEngineInput,
@@ -577,8 +578,6 @@ const MAX_IMPORT_GAMES = 1_000;
 const MAX_POSITION_KEY = 200;
 /** Targeted practice ("Refresh this decision") names at most this many decisions. */
 const MAX_TARGETED_KEYS = 200;
-/** Mainline plies a game comparison reads. */
-const MAX_COMPARE_MOVES = 600;
 
 function asRevision(value: unknown): number {
   return asWholeNumber(value, "expectedRevision");
@@ -852,7 +851,9 @@ export function parseStartPracticeInput(value: unknown): StartPracticeInput {
 export function parseCompareGameInput(value: unknown): CompareGameInput {
   const input = asObject(value, "game comparison");
   const moves = asUciMoves(input.moves, "moves");
-  if (moves.length > MAX_COMPARE_MOVES) fail("moves", `more than ${MAX_COMPARE_MOVES} plies`);
+  if (moves.length > COMPARE_GAME_MAX_PLIES) {
+    fail("moves", `more than ${COMPARE_GAME_MAX_PLIES} plies`);
+  }
   return {
     repertoireId: asId(input.repertoireId, "repertoireId"),
     color: asRepertoireColor(input.color),

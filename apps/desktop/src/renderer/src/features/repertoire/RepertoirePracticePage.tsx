@@ -160,8 +160,11 @@ export function RepertoirePracticePage({
     [loadedId, sessionId, preset]
   );
   const autoStartPending = Boolean(targetedInput && autoStarted !== preset);
+  /** Set before starting, so StrictMode's repeated effect can't start a second session. */
+  const autoStartedRef = useRef<PracticePreset | null>(null);
   useEffect(() => {
-    if (!targetedInput || autoStarted === preset) return;
+    if (!targetedInput || autoStarted === preset || autoStartedRef.current === preset) return;
+    autoStartedRef.current = preset;
     setAutoStarted(preset);
     startSession(targetedInput);
   }, [targetedInput, autoStarted, preset, startSession]);

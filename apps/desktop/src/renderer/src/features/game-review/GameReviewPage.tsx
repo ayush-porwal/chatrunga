@@ -34,6 +34,7 @@ import { useStoreHintsOnLeave } from "../onboarding/Coachmark";
 import { useUpdateSettingMutation } from "../../queries/api";
 import { openSavedGame } from "../game/saved-game";
 import { reviewAnchorFor, type CommentaryMoveContext, type MoveNavigationTarget } from "./commentary-moves";
+import type { OpeningSide } from "./opening-comparison";
 import { qualityTone } from "@/lib/ui";
 import { Sparkles, Swords, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -77,6 +78,9 @@ type GameReviewPageProps = {
   onRefreshRepertoireDecision?: (repertoireId: string, positionKey: string) => void;
   /** Opening tab: the repertoire hub (create a repertoire or chapter). */
   onRepertoireHub?: () => void;
+  /** Opening tab: the side picked for a game (App keeps it so Back restores it). */
+  openingSide?: OpeningSide | null;
+  onOpeningSideChange?: (side: OpeningSide) => void;
 };
 
 export const GameReviewPage = memo(function GameReviewPage(props: GameReviewPageProps) {
@@ -98,7 +102,9 @@ function GameReviewPageInner({
   onOpenCommentarySettings,
   onOpenRepertoireStudy,
   onRefreshRepertoireDecision,
-  onRepertoireHub
+  onRepertoireHub,
+  openingSide = null,
+  onOpeningSideChange
 }: GameReviewPageProps) {
   const location = useLocation();
   const id = reviewIdFromPath(location.pathname);
@@ -120,10 +126,12 @@ function GameReviewPageInner({
   const outdatedMoves = useOutdatedReviewMoves();
   const reviewError = useReviewStore((state) => state.error);
   const reviewInput = useMemo(() => mainlineReviewInput(moveTree), [moveTree]);
-  // The Opening tab's side, picked for this game (kept across tab switches, not across games).
-  const [openingSide, setOpeningSide] = useState<{ gameId: string | null; color: RepertoireColor } | null>(null);
+  // The Opening tab's side, picked for this game (kept across tab switches and Back, not across games).
   const openingColor = openingSide && openingSide.gameId === gameId ? openingSide.color : null;
-  const changeOpeningColor = useCallback((color: RepertoireColor) => setOpeningSide({ gameId, color }), [gameId]);
+  const changeOpeningColor = useCallback(
+    (color: RepertoireColor) => onOpeningSideChange?.({ gameId, color }),
+    [gameId, onOpeningSideChange]
+  );
   const rememberedRepertoires = useMemo(
     () => ({ white: settings.repertoireCompareWhite ?? null, black: settings.repertoireCompareBlack ?? null }),
     [settings.repertoireCompareWhite, settings.repertoireCompareBlack]

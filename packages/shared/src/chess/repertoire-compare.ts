@@ -143,19 +143,56 @@ function coveredReplies(occurrences: readonly Occurrence[]): string[] {
 }
 
 /**
+ * Whether an occurrence plans something after its position: an active included move on the
+ * player's turn, or an active non-reference reply on the opponent's turn.
+ */
+function hasContinuation(occurrence: Occurrence, playerTurn: boolean): boolean {
+  for (const childId of occurrence.lookup.childrenById.get(occurrence.nodeId) ?? []) {
+    if (!occurrence.lookup.nodesById.get(childId)!.uci) continue;
+    if (occurrence.states.get(childId) !== "active") continue;
+    const kind = nodeMetaOf(occurrence.nodeMeta, childId).edge;
+    if (playerTurn ? kind === "included" : kind !== "reference") return true;
+  }
+  return false;
+}
+
+type OccurrenceRef = { chapterId: string; nodeId: string };
+
+/**
+ * The occurrences of one position, best anchor first: those with active continuations, then the
+ * one the game is already following, then the shallowest (the index order).
+ */
+function rankOccurrences(
+  occurrences: readonly Occurrence[],
+  current: OccurrenceRef | null,
+  playerTurn: boolean
+): Occurrence[] {
+  const score = (item: Occurrence) =>
+    (hasContinuation(item, playerTurn) ? 0 : 2) +
+    (item.chapterId === current?.chapterId && item.nodeId === current.nodeId ? 0 : 1);
+  // Stable: equal scores keep the index order (shallowest first).
+  return [...occurrences].sort((a, b) => score(a) - score(b));
+}
+
+/**
  * Compares a game's mainline with a repertoire (§6.3):
  * - positions before any active occurrence are `outside-scope` (a custom-root chapter may apply
  *   later);
  * - at a recognized player decision the played move must be in the repertoire-wide effective
  *   accepted set (stored choices ∩ supported occurrences), else it is the `player-deviation`;
- * - at a recognized opponent position the reply must be a covered active edge of some occurrence,
- *   else it is the `uncovered-opponent` gap;
+ * - at a recognized opponent position the reply must be a covered active edge of some occurrence
+ *   or land on an active position (a transposition into prepared material), else it is the
+ *   `uncovered-opponent` gap;
  * - a recognized position with nothing planned after it (an authored stop or a leaf) is where
- *   `preparation-ends`, reported at the move played from it;
- * - after the first issue, later recognized positions are `transposed-back` context;
+ *   preparation ends; the walk goes on (moves stay `after-end` until a position is recognized
+ *   again) and `preparation-ends` is the issue only when no deviation or gap follows;
+ * - after the first deviation or gap, later recognized positions are `transposed-back` context;
  * - nothing recognized at all is `no-applicable-chapter`.
- * Whose move it is comes from each position, never from ply parity. The walk stops at the first
- * illegal move (the caller validated the game; such moves are left out of `moves`).
+ * When several occurrences recognize a position, the anchor is one with active continuations,
+ * then the one the game is following, then the shallowest; a matched move is credited to the
+ * occurrence that supplied it. Whose move it is comes from each position, never from ply parity.
+ * The walk stops at the first illegal move (the caller validated the game; such moves are left
+ * out of `moves`).
  */
 export function compareGameToRepertoire(
   game: ComparedGame,
@@ -176,12 +213,23 @@ export function compareGameToRepertoire(
       chaptersUsed.push({ chapterId, title: titles.get(chapterId) ?? "" });
     }
   };
+  /** The active occurrences of a position, best anchor first (see `rankOccurrences`). */
+  const rankedAt = (positionFen: string, current: OccurrenceRef | null) =>
+    rankOccurrences(
+      active.get(positionKey(positionFen)) ?? [],
+      current,
+      playerToMove(positionFen) === color
+    );
 
+  /** The first deviation or gap; once set, the comparison only notes returns. */
   let issue: ComparisonIssue | null = null;
+  /** Where preparation first ended; the issue only when nothing actionable follows. */
+  let end: ComparisonIssue | null = null;
+  let matchedAtEnd = 0;
   let matchedAny = false;
   let matchedPlies = 0;
   /** The occurrence the game is following (its chapter continues when it can). */
-  let current: { chapterId: string; nodeId: string } | null = null;
+  let current: OccurrenceRef | null = null;
   /** The previous move was already transposed back (one entry per return, not per ply). */
   let returning = false;
 
@@ -194,15 +242,12 @@ export function compareGameToRepertoire(
     if (!played) break;
     const ply = firstPly + index;
     const fenAfter = played.fenAfter;
-    const occurrences = active.get(key) ?? [];
-    const recognized =
-      occurrences.find(
-        (item) => item.chapterId === current?.chapterId && item.nodeId === current.nodeId
-      ) ??
-      occurrences[0] ??
-      null;
+    const ranked = rankedAt(fen, current);
+    const anchor = ranked[0] ?? null;
+    /** The occurrence the move is credited to. */
+    let credited: OccurrenceRef | null = anchor;
     let status: ComparisonMoveStatus;
-    let next: { chapterId: string; nodeId: string } | null = null;
+    let next: OccurrenceRef | null = null;
 
     const issueAt = (
       kind: ComparisonIssue["status"],
@@ -218,38 +263,44 @@ export function compareGameToRepertoire(
       expectedUcis,
       expectedSans: expectedUcis.map((uci) => sanOf(fen, uci)),
       preferredUci,
-      chapterId: recognized?.chapterId ?? null,
-      chapterTitle: recognized?.title ?? null,
-      nodeId: recognized?.nodeId ?? null
+      chapterId: anchor?.chapterId ?? null,
+      chapterTitle: anchor?.title ?? null,
+      nodeId: anchor?.nodeId ?? null
     });
+    const endHere = () => {
+      if (end) return;
+      end = issueAt("preparation-ends", [], null);
+      matchedAtEnd = matchedPlies;
+    };
 
     if (issue) {
-      if (recognized) {
+      if (anchor) {
         status = "transposed-back";
         if (!returning && !returnedKeys.has(key)) {
           returnedKeys.add(key);
           returnedByTransposition.push({
             ply,
-            chapterId: recognized.chapterId,
-            chapterTitle: recognized.title,
-            nodeId: recognized.nodeId
+            chapterId: anchor.chapterId,
+            chapterTitle: anchor.title,
+            nodeId: anchor.nodeId
           });
         }
       } else {
-        status = issue.status === "preparation-ends" ? "after-end" : "outside-scope";
+        status = "outside-scope";
       }
-    } else if (!recognized) {
-      if (!matchedAny) {
+    } else if (!anchor) {
+      if (end) {
+        status = "after-end";
+      } else if (!matchedAny) {
         status = "outside-scope";
       } else {
         // Defensive: a matched move always reaches an active position (its supporting child is
         // active), so the route ended here (it continues only as context, or not at all).
         status = "after-end";
-        issue = issueAt("preparation-ends", [], null);
+        endHere();
       }
     } else {
       matchedAny = true;
-      noteChapterUsed(recognized.chapterId);
       if (playerToMove(fen) === color) {
         const entry = collected.get(key);
         const supported = entry?.acceptedUcis ?? new Set<string>();
@@ -259,14 +310,14 @@ export function compareGameToRepertoire(
         ).map((uci) => standardCastlingUci(fen, uci));
         if (!accepted.length) {
           status = "after-end";
-          issue = issueAt("preparation-ends", [], null);
+          endHere();
         } else if (accepted.includes(played.uci)) {
           status = "player-choice";
           matchedPlies += 1;
-          const supporting = [recognized, ...occurrences.filter((item) => item !== recognized)];
-          for (const occurrence of supporting) {
+          for (const occurrence of ranked) {
             const child = activeChild(occurrence, played.uci, "included");
             if (child) {
+              credited = occurrence;
               next = { chapterId: occurrence.chapterId, nodeId: child.id };
               break;
             }
@@ -283,26 +334,38 @@ export function compareGameToRepertoire(
           );
         }
       } else {
-        const replies = coveredReplies(occurrences);
-        if (!replies.length) {
-          status = "after-end";
-          issue = issueAt("preparation-ends", [], null);
-        } else if (replies.includes(played.uci)) {
+        let supplied = false;
+        for (const occurrence of ranked) {
+          const child = activeChild(occurrence, played.uci, "covered");
+          if (child) {
+            supplied = true;
+            credited = occurrence;
+            next = { chapterId: occurrence.chapterId, nodeId: child.id };
+            break;
+          }
+        }
+        // A reply that isn't a covered edge here still lands in prepared material when its
+        // position has an active occurrence (a transposition); credit the one it lands on.
+        const landing = supplied ? null : (rankedAt(fenAfter, null)[0] ?? null);
+        if (supplied || landing) {
           status = "covered-reply";
           matchedPlies += 1;
-          const supporting = [recognized, ...occurrences.filter((item) => item !== recognized)];
-          for (const occurrence of supporting) {
-            const child = activeChild(occurrence, played.uci, "covered");
-            if (child) {
-              next = { chapterId: occurrence.chapterId, nodeId: child.id };
-              break;
-            }
+          if (landing) {
+            credited = landing;
+            next = { chapterId: landing.chapterId, nodeId: landing.nodeId };
           }
         } else {
-          status = "uncovered";
-          issue = issueAt("uncovered-opponent", replies, null);
+          const replies = coveredReplies(ranked);
+          if (!replies.length) {
+            status = "after-end";
+            endHere();
+          } else {
+            status = "uncovered";
+            issue = issueAt("uncovered-opponent", replies, null);
+          }
         }
       }
+      if (credited) noteChapterUsed(credited.chapterId);
     }
 
     moves.push({
@@ -313,8 +376,8 @@ export function compareGameToRepertoire(
       fenAfter,
       positionKey: key,
       status,
-      chapterId: recognized?.chapterId ?? null,
-      nodeId: recognized?.nodeId ?? null
+      chapterId: credited?.chapterId ?? null,
+      nodeId: credited?.nodeId ?? null
     });
     returning = status === "transposed-back";
     current = next;
@@ -322,22 +385,32 @@ export function compareGameToRepertoire(
     key = positionKey(fen);
   }
 
-  if (!issue && !matchedAny && !active.has(key)) {
-    const first = moves[0];
-    issue = {
-      status: "no-applicable-chapter",
-      ply: firstPly,
-      fenBefore: game.rootFen,
-      positionKey: first?.positionKey ?? positionKey(game.rootFen),
-      playedUci: first?.uci ?? null,
-      playedSan: first?.san ?? null,
-      expectedUcis: [],
-      expectedSans: [],
-      preferredUci: null,
-      chapterId: null,
-      chapterTitle: null,
-      nodeId: null
-    };
+  if (!issue && end) {
+    issue = end;
+    matchedPlies = matchedAtEnd;
+  }
+  if (!issue && !matchedAny) {
+    // A game that ends exactly where a chapter begins has nothing judged yet, but it applies.
+    const final = rankedAt(fen, null)[0];
+    if (final) {
+      noteChapterUsed(final.chapterId);
+    } else {
+      const first = moves[0];
+      issue = {
+        status: "no-applicable-chapter",
+        ply: firstPly,
+        fenBefore: game.rootFen,
+        positionKey: first?.positionKey ?? positionKey(game.rootFen),
+        playedUci: first?.uci ?? null,
+        playedSan: first?.san ?? null,
+        expectedUcis: [],
+        expectedSans: [],
+        preferredUci: null,
+        chapterId: null,
+        chapterTitle: null,
+        nodeId: null
+      };
+    }
   }
 
   return {

@@ -7,6 +7,7 @@ import type { PracticePreset } from "../features/repertoire/practice-setup";
 import type { StudyOpenTarget, StudyStage } from "../features/repertoire/repertoire-chapters";
 import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
 import type { ReviewTab } from "../features/game-review/review-utils";
+import type { OpeningSide } from "../features/game-review/opening-comparison";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import type { SettingsSectionId } from "../features/settings/SettingsPage";
 import { GameWorkspace, type SideTab } from "./GameWorkspace";
@@ -124,6 +125,8 @@ export function AppPages({
   settingsReady,
   reviewTab,
   onReviewTabChange,
+  openingSide,
+  onOpeningSideChange,
   reviewLoading,
   sideTab,
   onSideTabChange,
@@ -139,6 +142,9 @@ export function AppPages({
   settingsReady: boolean;
   reviewTab: ReviewTab;
   onReviewTabChange: (tab: ReviewTab) => void;
+  /** The Opening tab's picked side (kept here so a history entry can carry it). */
+  openingSide: OpeningSide | null;
+  onOpeningSideChange: (side: OpeningSide) => void;
   /** The review route's game is still loading (Analyze waits). */
   reviewLoading: boolean;
   sideTab: SideTab;
@@ -226,6 +232,8 @@ export function AppPages({
           onOpenRepertoireStudy={on.openRepertoireStudy}
           onRefreshRepertoireDecision={on.refreshRepertoireDecision}
           onRepertoireHub={on.repertoireHub}
+          openingSide={openingSide}
+          onOpeningSideChange={onOpeningSideChange}
         />
       ) : (
         <GameWorkspace

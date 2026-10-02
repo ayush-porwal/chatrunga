@@ -1,3 +1,4 @@
+import type { OpeningSide } from "../features/game-review/opening-comparison";
 import type { ReviewTab } from "../features/game-review/review-utils";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import type { SettingsSectionId } from "../features/settings/SettingsPage";
@@ -23,6 +24,8 @@ export type HistoryContext = {
   /** The workspace's side tab. */
   tab: SideTab;
   reviewTab: ReviewTab;
+  /** The Opening tab's picked side (kept with the review of its own game). */
+  openingSide: OpeningSide | null;
   /** The Settings section being read (else where Settings opened). */
   settingsSection: SettingsSectionId | null;
   /** The puzzle set the board's puzzle belongs to. */
@@ -65,7 +68,13 @@ export function captureEntry(view: AppView, context: HistoryContext): HistoryEnt
     case "game":
       return { view, board: captureBoard(context.tab, context.puzzleConfig) };
     case "game-review":
-      return { view, board: captureBoard("notation", context.puzzleConfig), tab: context.reviewTab };
+      return {
+        view,
+        board: captureBoard("notation", context.puzzleConfig),
+        tab: context.reviewTab,
+        compareColor:
+          context.openingSide && context.openingSide.gameId === useGameStore.getState().gameId ? context.openingSide.color : null
+      };
     case "repertoire-study": {
       const screen = context.repertoireScreen;
       if (screen?.view !== "repertoire-study") return { view: "repertoire-hub" };

@@ -223,7 +223,7 @@ Training boundaries determine the comparison's coached scope: positions before a
 
 Keep repertoire adherence separate from engine move classification and game accuracy. A perfectly playable move can be outside the user's plan; a repertoire move can still receive poor engine evaluation.
 
-**Refresh this decision** starts a targeted queue without marking a new lapse merely because the real game deviated. **Add opponent response** stages the actual response as a reference branch, then asks the player to choose their continuation through normal study/analysis. **Adopt played alternative** shows the policy change and its effects before committing.
+**Refresh this decision** starts a targeted queue without marking a new lapse merely because the real game deviated. **Add opponent response** stages the actual response as a covered reply (so it trains once the player's continuation is accepted), then asks the player to choose their continuation through normal study/analysis. **Adopt played alternative** shows the policy change and its effects before committing.
 
 Cache comparison by game-content hash, repertoire revision, player color, and key-algorithm version. Cursor changes or AI commentary changes alone need not rebuild it. Opening comparison is derived data, not part of the existing engine GameReview schema.
 

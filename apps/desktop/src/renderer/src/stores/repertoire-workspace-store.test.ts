@@ -234,13 +234,45 @@ describe("staging a move from a game comparison", () => {
     expect(store().chapter!.nodeMeta[result!.nodeId]).toEqual({ edge: "reference" });
   });
 
-  it("only selects a move the chapter already has", () => {
-    load();
+  it("only selects a move the chapter already has with that edge", () => {
+    store().loadChapter(detailOf(), chapterOf(sampleTree(), { w1: { edge: "covered" } }));
     const generation = store().generation;
     expect(store().stageMove("w0", "e7e5", "covered")).toEqual({ nodeId: "w1", created: false });
     expect(store().selectedNodeId).toBe("w1");
     expect(store().generation).toBe(generation);
     expect(store().dirty).toBe(false);
+  });
+
+  it("marks an existing reference or disabled reply as covered (enabled)", () => {
+    store().loadChapter(
+      detailOf(),
+      chapterOf(sampleTree(), {
+        w1: { edge: "reference" },
+        s0: { edge: "covered", disabled: true }
+      })
+    );
+    expect(store().stageMove("w0", "e7e5", "covered")).toEqual({ nodeId: "w1", created: false });
+    expect(store().chapter!.nodeMeta.w1).toEqual({ edge: "covered" });
+    expect(store().dirty).toBe(true);
+    store().stageMove("w0", "c7c5", "covered");
+    expect(store().chapter!.nodeMeta.s0).toEqual({ edge: "covered" });
+    expect(store().selectedNodeId).toBe("s0");
+  });
+
+  it("never demotes an existing move when staging it as reference", () => {
+    load();
+    expect(store().stageMove("w1", "g1f3", "reference")).toEqual({ nodeId: "w2", created: false });
+    expect(store().chapter!.nodeMeta.w2).toBeUndefined();
+    expect(store().dirty).toBe(false);
+  });
+
+  it("adopts the open chapter's stored revision with the repertoire's", () => {
+    load();
+    store().adoptRevision(9, 4);
+    expect(store().baseRevision).toBe(9);
+    expect(store().chapter!.revision).toBe(4);
+    store().adoptRevision(10);
+    expect(store().chapter!.revision).toBe(4);
   });
 
   it("changes nothing for an unknown node or an illegal move", () => {

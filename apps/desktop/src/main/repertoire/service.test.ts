@@ -146,7 +146,7 @@ function save(
     kind: options.kind ?? "opening",
     enabled: options.enabled ?? true,
     rootFen,
-    revision: 0,
+    revision: existing?.revision ?? 0,
     nodeCount: 0,
     dueCount: 0,
     headers: {},
@@ -279,6 +279,25 @@ describe("repertoire service: chapters, decisions and index", () => {
       1
     );
     expect(decisionRepository.list(id)).toEqual([]);
+  });
+
+  it("refuses an existing chapter whose revision moved on (e.g. a decision rewrote its edges)", () => {
+    const { id, chapters } = create();
+    const draft = service.getChapter({ repertoireId: id, chapterId: chapters[0].id });
+    const saved = save(id, [["e2e4", "e7e5"]]);
+    expect(saved.chapter.revision).toBe(draft.revision + 1);
+    expect(() =>
+      service.saveChapter({
+        repertoireId: id,
+        chapter: { ...draft, tree: treeOf(START_FEN, [["d2d4"]]) },
+        expectedRevision: saved.repertoire.revision
+      })
+    ).toThrow(
+      `Invalid chapter.revision: chapter changed (stored ${saved.chapter.revision}, expected ${draft.revision})`
+    );
+    expect(service.getChapter({ repertoireId: id, chapterId: chapters[0].id }).tree).toHaveLength(
+      3
+    );
   });
 
   it("rejects an inconsistent tree with the first offending node", () => {
@@ -1333,7 +1352,7 @@ describe("repertoire service: game comparison", () => {
     };
     const first = service.compareGame(input);
     expect(service.compareGame({ ...input, moves: [...input.moves] })).toBe(first);
-    expect(service.compareGame({ ...input, color: "black" })).not.toBe(first);
+    expect(service.compareGame({ ...input, moves: ["e2e4", "e7e5"] })).not.toBe(first);
 
     const { revision } = service.getRepertoire(id);
     service.updateMetadata({ id, expectedRevision: revision, patch: { name: "Renamed" } });
@@ -1351,6 +1370,9 @@ describe("repertoire service: game comparison", () => {
     );
     expect(() => service.compareGame({ ...game, moves: ["e2e4", "e2e4"] })).toThrow(
       'Invalid moves: "e2e4" (ply 2) is not legal'
+    );
+    expect(() => service.compareGame({ ...game, color: "black" })).toThrow(
+      "Invalid color: this repertoire is for white"
     );
     const { revision } = service.getRepertoire(id);
     service.archiveRepertoire({ id, archived: true, expectedRevision: revision });

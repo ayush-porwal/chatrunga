@@ -160,8 +160,8 @@ describe("compareGameToRepertoire", () => {
     const result = compare("white", [a, b], ["e4", "e5", "Nc3", "Nf6"]);
     expect(result.issue).toBeNull();
     expect(result.matchedPlies).toBe(4);
-    // Chapter a recognized 2.Nc3's position; chapter b supplied the continuation.
-    expect(result.moves[2]).toMatchObject({ status: "player-choice", chapterId: "a" });
+    // Both chapters recognize 2.Nc3's position; chapter b supplied the move, so it's credited.
+    expect(result.moves[2]).toMatchObject({ status: "player-choice", chapterId: "b" });
     expect(result.moves[3]).toMatchObject({ status: "covered-reply", chapterId: "b" });
     expect(result.chaptersUsed.map((item) => item.chapterId)).toEqual(["a", "b"]);
   });
@@ -266,6 +266,107 @@ describe("compareGameToRepertoire", () => {
     expect(result.matchedPlies).toBe(2);
     // A game that ends exactly at the leaf has no issue.
     expect(compare("white", [playerLeaf], ["e4", "e5"]).issue).toBeNull();
+  });
+
+  it("keeps scanning after preparation ends: a later deviation is the issue", () => {
+    const a = chapter("white", "a", [["e4", "e5", "Nf3"]]);
+    const root = fenAfter(["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5"]);
+    const b = chapter("white", "b", [["c3"]], { rootFen: root, sortOrder: 1 });
+    const result = compare("white", [a, b], ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "b4"]);
+    expect(result.issue).toMatchObject({
+      status: "player-deviation",
+      ply: 7,
+      playedSan: "b4",
+      expectedSans: ["c3"],
+      chapterId: "b",
+      nodeId: "root"
+    });
+    expect(result.moves.map((move) => move.status)).toEqual([
+      "player-choice",
+      "covered-reply",
+      "player-choice",
+      "after-end",
+      "after-end",
+      "after-end",
+      "deviation"
+    ]);
+    expect(result.chaptersUsed.map((item) => item.chapterId)).toEqual(["a", "b"]);
+  });
+
+  it("falls back to preparation-ends when a later recognized stretch has no issue", () => {
+    const a = chapter("white", "a", [["e4", "e5", "Nf3"]]);
+    const root = fenAfter(["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5"]);
+    const b = chapter("white", "b", [["c3"]], { rootFen: root, sortOrder: 1 });
+    const result = compare("white", [a, b], ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "c3"]);
+    expect(result.issue).toMatchObject({ status: "preparation-ends", ply: 4, chapterId: "a" });
+    expect(result.matchedPlies).toBe(3);
+    expect(result.moves[6]).toMatchObject({ status: "player-choice", chapterId: "b" });
+  });
+
+  it("anchors a deviation at an occurrence with continuations, not an ended route", () => {
+    const a = chapter("white", "a", [["e4", "e5", "Nf3"]], {
+      patch: { "e4/e5": { trainingStop: true } }
+    });
+    const b = chapter("white", "b", [["e4", "e5", "Nf3", "Nc6", "Bb5"]], { sortOrder: 1 });
+    const result = compare("white", [a, b], ["e4", "e5", "Bc4"]);
+    expect(result.issue).toMatchObject({
+      status: "player-deviation",
+      ply: 3,
+      expectedSans: ["Nf3"],
+      chapterId: "b",
+      chapterTitle: "Chapter b",
+      nodeId: "e4/e5"
+    });
+    expect(result.moves[2]).toMatchObject({ chapterId: "b", nodeId: "e4/e5" });
+  });
+
+  it("credits a move to the chapter that supplied it, not one that merely contains the position", () => {
+    const a = chapter("white", "a", [["e4", "e5", "Nf3"]]);
+    const b = chapter("white", "b", [["d4", "d5", "c4"]], { sortOrder: 1 });
+    const result = compare("white", [a, b], ["d4", "d5"]);
+    expect(result.issue).toBeNull();
+    expect(result.moves.map((move) => move.chapterId)).toEqual(["b", "b"]);
+    expect(result.chaptersUsed).toEqual([{ chapterId: "b", title: "Chapter b" }]);
+  });
+
+  it("counts an opponent reply that transposes into prepared material as covered", () => {
+    const a = chapter("white", "a", [["d4", "d5", "c4", "c6", "Nf3"]]);
+    const b = chapter("white", "b", [["d4", "e6", "c4", "d5", "Nc3"]], { sortOrder: 1 });
+    const result = compare("white", [a, b], ["d4", "d5", "c4", "e6", "Nc3"]);
+    expect(result.issue).toBeNull();
+    expect(result.matchedPlies).toBe(5);
+    expect(result.moves.map((move) => move.status)).toEqual([
+      "player-choice",
+      "covered-reply",
+      "player-choice",
+      "covered-reply",
+      "player-choice"
+    ]);
+    // 2…e6 isn't a covered edge after 2.c4 in chapter a; it lands on chapter b's 2…d5 position.
+    expect(result.moves[3]).toMatchObject({ chapterId: "b", nodeId: "d4/e6/c4/d5" });
+    expect(result.moves[4]).toMatchObject({ chapterId: "b", nodeId: "d4/e6/c4/d5" });
+    expect(result.chaptersUsed.map((item) => item.chapterId)).toEqual(["a", "b"]);
+  });
+
+  it("a transposed reply after a leaf continues in the chapter it lands on", () => {
+    const a = chapter("white", "a", [["d4", "d5", "c4", "e6", "Nc3"]]);
+    const b = chapter("white", "b", [["d4", "Nf6", "c4", "e6", "Nc3", "d5", "Bg5"]], {
+      sortOrder: 1
+    });
+    const result = compare("white", [a, b], ["d4", "d5", "c4", "e6", "Nc3", "Nf6", "Bg5"]);
+    expect(result.issue).toBeNull();
+    expect(result.moves[5]).toMatchObject({ status: "covered-reply", chapterId: "b" });
+    expect(result.moves[6]).toMatchObject({ status: "player-choice", chapterId: "b" });
+  });
+
+  it("a game that ends exactly where a custom-root chapter begins has no issue", () => {
+    const root = fenAfter(["e4", "e5", "Nf3"]);
+    const custom = chapter("white", "a", [["Nc6", "Bb5"]], { rootFen: root });
+    const result = compare("white", [custom], ["e4", "e5", "Nf3"]);
+    expect(result.issue).toBeNull();
+    expect(result.matchedPlies).toBe(0);
+    expect(result.moves.every((move) => move.status === "outside-scope")).toBe(true);
+    expect(result.chaptersUsed).toEqual([{ chapterId: "a", title: "Chapter a" }]);
   });
 
   it("reports no applicable chapter when nothing matches", () => {

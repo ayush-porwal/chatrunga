@@ -77,9 +77,12 @@ export function describeComparison(comparison: RepertoireComparison): Comparison
       .reverse()
       .find((move) => move.status === "player-choice" || move.status === "covered-reply");
     if (!recognized) {
-      return moves.length
-        ? { tone: "neutral", text: "No chapter of this repertoire applies to this game" }
-        : { tone: "neutral", text: "This game has no moves to compare" };
+      if (!moves.length) return { tone: "neutral", text: "This game has no moves to compare" };
+      // Nothing judged yet, but the final position is where a chapter begins.
+      const chapter = comparison.chaptersUsed[0];
+      return chapter
+        ? { tone: "info", text: `This game ends where ${chapter.title} begins` }
+        : { tone: "neutral", text: "No chapter of this repertoire applies to this game" };
     }
     return {
       tone: "accent",
@@ -158,6 +161,9 @@ export function tokenTitle(move: Pick<ComparisonMove, "fenBefore" | "san" | "sta
 
 export type RememberedRepertoires = { white: string | null; black: string | null };
 
+/** The side picked in the Opening tab for one game (a history entry keeps it for Back). */
+export type OpeningSide = { gameId: string | null; color: RepertoireColor };
+
 /**
  * The side the saved game's provenance suggests the player had, or null: a Lichess game whose
  * White/Black header is the connected account, or a local game against the engine. Only a
@@ -193,14 +199,15 @@ export function suggestedSide(input: {
 }
 
 /**
- * The colour the Opening tab starts with (never the board orientation): the one colour whose
- * remembered repertoire still exists, else the provenance suggestion, else White.
+ * The colour the Opening tab starts with (never the board orientation): the provenance suggestion,
+ * else the one colour whose remembered repertoire still exists, else White.
  */
 export function defaultCompareColor(
   remembered: RememberedRepertoires,
   repertoires: readonly Pick<RepertoireSummary, "id" | "color">[],
   suggestion: RepertoireColor | null
 ): RepertoireColor {
+  if (suggestion) return suggestion;
   const exists = (color: RepertoireColor) =>
     Boolean(
       remembered[color] &&
@@ -209,7 +216,7 @@ export function defaultCompareColor(
   const white = exists("white");
   const black = exists("black");
   if (white !== black) return white ? "white" : "black";
-  return suggestion ?? "white";
+  return "white";
 }
 
 /** The repertoire to compare against: the remembered one when it's listed, else the first. */

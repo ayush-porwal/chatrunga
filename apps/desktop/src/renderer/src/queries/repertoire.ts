@@ -51,17 +51,28 @@ export const repertoireKeys = {
 };
 
 /**
- * A short content hash of a game's root and mainline (FNV-1a, 32-bit), for the comparison key:
- * the same game content keys the same comparison, whatever its node ids or cursor.
+ * FNV-1a, 64-bit, as 16 hex digits (computed on two 32-bit halves; UTF-16 code units, so ASCII
+ * input matches the byte-wise reference values).
+ */
+export function fnv1a64(text: string): string {
+  let hi = 0xcbf29ce4;
+  let lo = 0x84222325;
+  for (let index = 0; index < text.length; index += 1) {
+    lo ^= text.charCodeAt(index);
+    // × 0x100000001b3 mod 2^64: every partial product stays below 2^53, so it is exact.
+    const low = (lo >>> 0) * 0x1b3;
+    hi = (hi * 0x1b3 + (lo >>> 0) * 0x100 + Math.floor(low / 0x100000000)) >>> 0;
+    lo = low >>> 0;
+  }
+  return `${hi.toString(16).padStart(8, "0")}${(lo >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+/**
+ * The content hash of a game's root and mainline for the comparison key (FNV-1a 64-bit plus the
+ * ply count): the same game content keys the same comparison, whatever its node ids or cursor.
  */
 export function gameContentHash(rootFen: string, moves: readonly string[]): string {
-  const text = `${rootFen}|${moves.join(" ")}`;
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `${(hash >>> 0).toString(36)}-${moves.length}`;
+  return `${fnv1a64(`${rootFen}|${moves.join(" ")}`)}-${moves.length}`;
 }
 
 function repertoires(): ChaturangaApi["repertoires"] | undefined {
@@ -118,16 +129,34 @@ function adoptDetail(queryClient: QueryClient, detail: RepertoireDetail) {
   void queryClient.invalidateQueries({ queryKey: repertoireKeys.due });
 }
 
-/** Keeps cached repertoire summaries in step with the main process. Mount once. */
+/**
+ * Re-reads the chapter trees of a repertoire (every repertoire when null): a decision change can
+ * rewrite edges in chapters other than the one saved.
+ */
+export function invalidateChapters(queryClient: QueryClient, id: string | null) {
+  void queryClient.invalidateQueries(
+    id
+      ? { queryKey: ["repertoires", id, "chapter"] }
+      : {
+          predicate: (query) =>
+            query.queryKey[0] === "repertoires" && query.queryKey[2] === "chapter"
+        }
+  );
+}
+
+/** Keeps cached repertoire summaries and open chapters in step with the main process. Mount once. */
 export function useRepertoireChangedSubscription() {
   const queryClient = useQueryClient();
   useEffect(
     () =>
-      repertoires()?.onChanged?.((event) =>
-        event.kind === "workspace"
-          ? invalidateSummaries(queryClient)
-          : invalidateRepertoire(queryClient, event.repertoireId)
-      ),
+      repertoires()?.onChanged?.((event) => {
+        if (event.kind === "workspace") {
+          invalidateSummaries(queryClient);
+          return;
+        }
+        invalidateRepertoire(queryClient, event.repertoireId);
+        invalidateChapters(queryClient, event.repertoireId);
+      }),
     [queryClient]
   );
 }
@@ -248,6 +277,8 @@ export function adoptDecisionSave(queryClient: QueryClient, result: DecisionSave
   );
   // Settles the same decision under its stored form (and any other one the write affected).
   invalidateDecisions(queryClient, result.repertoire.id);
+  // Accepting or removing a move rewrites edges in whichever chapters hold it.
+  invalidateChapters(queryClient, result.repertoire.id);
   adoptDetail(queryClient, result.repertoire);
 }
 

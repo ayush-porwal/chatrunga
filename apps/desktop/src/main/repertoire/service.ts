@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
 import {
+  COMPARE_GAME_MAX_PLIES,
   REPERTOIRE_POSITION_KEY_VERSION,
   REPERTOIRE_ROOT_NODE_ID,
   type ArchiveRepertoireInput,
@@ -362,8 +363,6 @@ export function getOccurrences(input: {
 
 /* ------------------------------------------------------------------ game comparison */
 
-/** Mainline plies a comparison accepts (a long game; the comparison only reads the opening). */
-const MAX_COMPARE_MOVES = 600;
 /** Comparisons kept in memory; each entry names the revision it was computed against. */
 const COMPARE_CACHE_SIZE = 32;
 const compareCache = new Map<string, RepertoireComparison>();
@@ -379,9 +378,12 @@ export function compareGame(input: CompareGameInput): RepertoireComparison {
   if (input.color !== "white" && input.color !== "black") {
     throw new Error("Invalid color: expected white or black");
   }
+  if (input.color !== record.color) {
+    throw new Error(`Invalid color: this repertoire is for ${record.color}`);
+  }
   if (!isValidFen(input.rootFen)) throw new Error("Invalid rootFen: not a legal position");
-  if (input.moves.length > MAX_COMPARE_MOVES) {
-    throw new Error(`Invalid moves: more than ${MAX_COMPARE_MOVES} plies`);
+  if (input.moves.length > COMPARE_GAME_MAX_PLIES) {
+    throw new Error(`Invalid moves: more than ${COMPARE_GAME_MAX_PLIES} plies`);
   }
   const gameHash = createHash("sha256")
     .update(`${input.rootFen}\n${input.moves.join(" ")}`)
@@ -508,7 +510,11 @@ export function updateMetadata(input: UpdateRepertoireMetadataInput): Repertoire
   return result;
 }
 
-/** Saves one chapter (new or existing) and reconciles decisions, index and progress. */
+/**
+ * Saves one chapter (new or existing) and reconciles decisions, index and progress. An existing
+ * chapter must carry its stored revision: another write (e.g. a decision change rewriting its
+ * edges) may have changed it since the draft was loaded.
+ */
 export function saveChapter(input: SaveChapterInput): ChapterSaveResult {
   const now = clock();
   const result = transaction(() => {
@@ -520,6 +526,11 @@ export function saveChapter(input: SaveChapterInput): ChapterSaveResult {
     const owner = chapterRepository.ownerOf(input.chapter.id);
     if (owner && owner.repertoireId !== record.id) {
       throw new Error("Invalid chapter: it belongs to another repertoire");
+    }
+    if (owner && input.chapter.revision !== owner.revision) {
+      throw new Error(
+        `Invalid chapter.revision: chapter changed (stored ${owner.revision}, expected ${input.chapter.revision})`
+      );
     }
     const chapter = sanitizeChapter(input.chapter, (owner?.revision ?? 0) + 1);
     const next = bump(record, now);

@@ -12,11 +12,12 @@ import {
   Shield
 } from "lucide-react";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
-import type {
-  ComparisonMove,
-  ComparisonMoveStatus,
-  RepertoireColor,
-  RepertoireComparison
+import {
+  COMPARE_GAME_MAX_PLIES,
+  type ComparisonMove,
+  type ComparisonMoveStatus,
+  type RepertoireColor,
+  type RepertoireComparison
 } from "@chaturanga/shared/types/repertoire";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -137,7 +138,8 @@ export const ReviewOpeningPanel = memo(function ReviewOpeningPanel({
             repertoireId: repertoire.id,
             color,
             rootFen,
-            moves: mainline.map((move) => move.uci)
+            // Only the opening matters; the main process refuses longer mainlines.
+            moves: mainline.slice(0, COMPARE_GAME_MAX_PLIES).map((move) => move.uci)
           }
         : null,
     [repertoire, color, rootFen, mainline]
@@ -368,8 +370,8 @@ function ComparisonResult({
           {stage?.kind === "stage" ? (
             <p className={fieldHint}>
               {stage.edge === "reference"
-                ? "Opens the chapter with your move added for study only; accept it under Choices to make it part of your plan."
-                : "Opens the chapter with this reply added as covered; then choose your answer to it."}
+                ? "Opens the chapter with your move added for study only (or selected, if the chapter has it); accept it under Choices to make it part of your plan."
+                : "Opens the chapter with this reply added, or marked, as covered; then choose your answer to it."}
             </p>
           ) : null}
         </div>

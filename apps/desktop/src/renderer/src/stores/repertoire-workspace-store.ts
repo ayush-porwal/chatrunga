@@ -89,8 +89,11 @@ type Actions = {
   saveFailed: (message: string, stale: boolean) => void;
   /** Clears a save error so autosave resumes (after Retry / Keep editing). */
   clearSaveError: () => void;
-  /** Another write (decision, chapter list) moved the repertoire to `revision`. */
-  adoptRevision: (revision: number) => void;
+  /**
+   * Another write (decision, chapter list) moved the repertoire to `revision`; `chapterRevision`
+   * (the open chapter's stored revision) lets the draft overwrite it on its next save.
+   */
+  adoptRevision: (revision: number, chapterRevision?: number) => void;
   rememberDecision: (decision: RepertoireDecision) => void;
 };
 
@@ -254,7 +257,16 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
         set({ selectedNodeId: parent.id });
         const result = get().playMove(uci, san, fenAfter);
         const meta = get().chapter?.nodeMeta[result.nodeId];
-        if (result.created && meta?.edge !== edge) get().setNodeMeta(result.nodeId, { edge });
+        if (result.created) {
+          if (meta?.edge !== edge) get().setNodeMeta(result.nodeId, { edge });
+        } else if (edge !== "reference") {
+          // An existing move staged as covered/included takes that edge and is re-enabled; a
+          // reference stage never demotes a move the chapter already has (it's only selected).
+          const current = nodeMetaOf(get().chapter!.nodeMeta, result.nodeId);
+          if (current.edge !== edge || current.disabled) {
+            get().setNodeMeta(result.nodeId, { edge, disabled: false });
+          }
+        }
         return result;
       },
 
@@ -348,8 +360,18 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
 
       saveFailed: (message, stale) => set({ saveState: { status: "error", message, stale } }),
       clearSaveError: () => set({ saveState: { status: "idle" } }),
-      adoptRevision: (revision) =>
-        set((state) => ({ baseRevision: Math.max(state.baseRevision, revision) })),
+      adoptRevision: (revision, chapterRevision) =>
+        set((state) => ({
+          baseRevision: Math.max(state.baseRevision, revision),
+          ...(chapterRevision !== undefined && state.chapter
+            ? {
+                chapter: {
+                  ...state.chapter,
+                  revision: Math.max(state.chapter.revision, chapterRevision)
+                }
+              }
+            : {})
+        })),
       rememberDecision: (decision) =>
         set((state) => ({ decisions: { ...state.decisions, [decision.positionKey]: decision } }))
     };

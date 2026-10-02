@@ -5,7 +5,7 @@ import type {
   ComparisonMove,
   RepertoireComparison
 } from "@chaturanga/shared/types/repertoire";
-import { gameContentHash } from "../../queries/repertoire";
+import { fnv1a64, gameContentHash } from "../../queries/repertoire";
 import { addLine, rootNode } from "../repertoire/__fixtures__/repertoire";
 import {
   comparisonActions,
@@ -180,6 +180,21 @@ describe("describeComparison", () => {
     ).toBe("Preparation ends before the first move");
   });
 
+  it("says when the game ends where a chapter begins", () => {
+    const moves = movesOf(LINE.slice(0, 3), ["outside-scope", "outside-scope", "outside-scope"]);
+    expect(
+      describeComparison(
+        comparisonOf(moves, null, {
+          matchedPlies: 0,
+          chaptersUsed: [{ chapterId: "c2", title: "Two knights" }]
+        })
+      )
+    ).toEqual({ tone: "info", text: "This game ends where Two knights begins" });
+    expect(describeComparison(comparisonOf(moves, null, { chaptersUsed: [] })).text).toBe(
+      "No chapter of this repertoire applies to this game"
+    );
+  });
+
   it("says when no chapter applies", () => {
     const moves = movesOf(LINE.slice(0, 2), ["outside-scope", "outside-scope"]);
     expect(describeComparison(comparisonOf(moves, { status: "no-applicable-chapter" })).text).toBe(
@@ -233,14 +248,16 @@ describe("colour and repertoire defaults", () => {
     { id: "b1", color: "black" as const }
   ];
 
-  it("starts on the one colour whose remembered repertoire still exists", () => {
-    expect(defaultCompareColor({ white: null, black: "b1" }, list, null)).toBe("black");
-    expect(defaultCompareColor({ white: "w2", black: "gone" }, list, "black")).toBe("white");
-  });
-
-  it("otherwise follows the provenance suggestion, else White", () => {
+  it("starts on the provenance suggestion", () => {
     expect(defaultCompareColor({ white: null, black: null }, list, "black")).toBe("black");
     expect(defaultCompareColor({ white: "w1", black: "b1" }, list, "black")).toBe("black");
+    // The suggestion wins over the one remembered colour.
+    expect(defaultCompareColor({ white: "w2", black: "gone" }, list, "black")).toBe("black");
+  });
+
+  it("otherwise the one colour whose remembered repertoire still exists, else White", () => {
+    expect(defaultCompareColor({ white: null, black: "b1" }, list, null)).toBe("black");
+    expect(defaultCompareColor({ white: "w2", black: "gone" }, list, null)).toBe("white");
     expect(defaultCompareColor({ white: null, black: null }, list, null)).toBe("white");
     // A remembered id listed under the other colour doesn't count.
     expect(defaultCompareColor({ white: "b1", black: null }, list, null)).toBe("white");
@@ -334,5 +351,12 @@ describe("gameContentHash", () => {
     expect(gameContentHash(START_FEN, ["e2e4", "e7e5"])).toBe(a);
     expect(gameContentHash(START_FEN, ["e2e4", "e7e6"])).not.toBe(a);
     expect(gameContentHash(START_FEN, ["e2e4"])).not.toBe(a);
+  });
+
+  it("uses 64-bit FNV-1a (reference values)", () => {
+    expect(fnv1a64("")).toBe("cbf29ce484222325");
+    expect(fnv1a64("a")).toBe("af63dc4c8601ec8c");
+    expect(fnv1a64("foobar")).toBe("85944171f73967e8");
+    expect(gameContentHash(START_FEN, ["e2e4"])).toMatch(/^[0-9a-f]{16}-1$/);
   });
 });

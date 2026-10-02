@@ -438,7 +438,8 @@ export type ComparisonMoveStatus =
   | "deviation"
   /** The opponent's move is not covered at a recognized position. */
   | "uncovered"
-  /** An authored stop or leaf was reached; no further planned decisions. */
+  /** An authored stop or leaf was reached; no further planned decisions until a position is
+   * recognized again. */
   | "after-end"
   /** After the first issue, the game reached a position the repertoire knows again. */
   | "transposed-back";
@@ -453,7 +454,10 @@ export type ComparisonMove = {
   /** Position key of `fenBefore`. */
   positionKey: string;
   status: ComparisonMoveStatus;
-  /** The active occurrence that recognized `fenBefore`, when any. */
+  /**
+   * The active occurrence credited with the move: the one that supplied a matched move (for an
+   * opponent reply that transposes, the one it lands on), else the one that recognized `fenBefore`.
+   */
   chapterId: string | null;
   nodeId: string | null;
 };
@@ -492,18 +496,22 @@ export type RepertoireComparison = {
   moves: ComparisonMove[];
   /** Plies recognized before the first issue (or every ply when there is none). */
   matchedPlies: number;
+  /** null also when the game ends where a chapter begins (nothing judged; `chaptersUsed` names it). */
   issue: ComparisonIssue | null;
   /** Later positions the repertoire knows again, after the issue (context, not a second issue). */
   returnedByTransposition: { ply: number; chapterId: string; chapterTitle: string; nodeId: string }[];
   chaptersUsed: { chapterId: string; title: string }[];
 };
 
+/** Mainline plies a game comparison reads (only the opening matters). */
+export const COMPARE_GAME_MAX_PLIES = 600;
+
 export type CompareGameInput = {
   repertoireId: string;
   /** The side the player had in the game; never inferred from board orientation. */
   color: RepertoireColor;
   rootFen: string;
-  /** The game's mainline as UCI from `rootFen`. */
+  /** The game's mainline as UCI from `rootFen` (the opening only: at most 600 plies). */
   moves: string[];
 };
 
