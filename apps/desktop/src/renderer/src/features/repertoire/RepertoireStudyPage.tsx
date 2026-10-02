@@ -42,6 +42,7 @@ import { RepertoireMoveNavigation, useTreeKeyboardNavigation } from "./Repertoir
 import { StudyChaptersPanel } from "./StudyChaptersPanel";
 import { StudyChoicesPanel } from "./StudyChoicesPanel";
 import { StudyNotesPanel } from "./StudyNotesPanel";
+import { StudySourcesSection } from "./StudySourcesSection";
 import { useChapterAutosave } from "./useChapterAutosave";
 import { useStudyCommands } from "./useStudyCommands";
 
@@ -73,7 +74,8 @@ export function RepertoireStudyPage({
   onOpenChapter,
   onPractice,
   onMissing,
-  onPositionChanged
+  onPositionChanged,
+  onOpenGame
 }: {
   repertoireId: string;
   chapterId: string;
@@ -91,6 +93,8 @@ export function RepertoireStudyPage({
   onMissing: (message: string) => void;
   /** The selected node, tab or orientation changed (the current history entry follows). */
   onPositionChanged: () => void;
+  /** A source link's saved game, opened on the board at the linked move. */
+  onOpenGame?: (gameId: string, nodeId: string | null) => void;
 }) {
   const panelId = useId();
   const desktop = Boolean(window.chaturanga?.repertoires);
@@ -539,6 +543,13 @@ export function RepertoireStudyPage({
           onComment={(text) => workspace().setComment(node.id, text)}
           onSaveDecisionText={(field, text) =>
             positionKey ? commands.writeDecision(positionKey, { [field]: text }) : undefined
+          }
+          footer={
+            <StudySourcesSection
+              repertoireId={repertoireId}
+              chapterId={chapterId}
+              onOpenGame={onOpenGame}
+            />
           }
         />
       ) : null}

@@ -16,6 +16,7 @@ import {
   type RepertoireChapterSummary,
   type RepertoireColor,
   type RepertoireDecision,
+  type RepertoireGameLink,
   type RepertoireListFilters,
   type RepertoireNodeMeta,
   type RepertoireProgress,
@@ -932,3 +933,79 @@ export const workspaceRepository = {
     );
   }
 };
+
+type GameLinkRow = {
+  id: string;
+  repertoire_id: string;
+  chapter_id: string | null;
+  game_id: string | null;
+  game_node_id: string | null;
+  kind: string;
+  headers_json: string;
+  captured_path: string;
+  created_at: number;
+};
+
+function toGameLink(row: GameLinkRow): RepertoireGameLink {
+  return {
+    id: row.id,
+    repertoireId: row.repertoire_id,
+    chapterId: row.chapter_id,
+    gameId: row.game_id,
+    gameNodeId: row.game_node_id,
+    kind: row.kind === "model" ? "model" : "source",
+    headers: stringRecord(row.headers_json),
+    capturedPath: row.captured_path,
+    createdAt: row.created_at
+  };
+}
+
+/** Provenance links (design §6.2, §6.5); a deleted game or chapter leaves a null reference. */
+export const gameLinkRepository = {
+  insert(link: RepertoireGameLink): void {
+    run(
+      `INSERT INTO repertoire_game_links (id, repertoire_id, chapter_id, game_id, game_node_id, kind,
+        headers_json, captured_path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      link.id,
+      link.repertoireId,
+      link.chapterId,
+      link.gameId,
+      link.gameNodeId,
+      link.kind,
+      JSON.stringify(link.headers),
+      link.capturedPath,
+      link.createdAt
+    );
+  },
+
+  get(id: string): RepertoireGameLink | null {
+    const row = get<GameLinkRow>("SELECT * FROM repertoire_game_links WHERE id = ?", id);
+    return row ? toGameLink(row) : null;
+  },
+
+  /** A repertoire's links (optionally one chapter's), oldest first. */
+  list(repertoireId: string, chapterId?: string): RepertoireGameLink[] {
+    const rows =
+      chapterId === undefined
+        ? all<GameLinkRow>(
+            "SELECT * FROM repertoire_game_links WHERE repertoire_id = ? ORDER BY created_at, id",
+            repertoireId
+          )
+        : all<GameLinkRow>(
+            `SELECT * FROM repertoire_game_links WHERE repertoire_id = ? AND chapter_id = ?
+              ORDER BY created_at, id`,
+            repertoireId,
+            chapterId
+          );
+    return rows.map(toGameLink);
+  },
+
+  remove(id: string): void {
+    run("DELETE FROM repertoire_game_links WHERE id = ?", id);
+  }
+};
+
+/** Whether the library has a game with this id (provenance links reference it). */
+export function libraryGameExists(gameId: string): boolean {
+  return get<{ id: string }>("SELECT id FROM games WHERE id = ?", gameId) !== null;
+}

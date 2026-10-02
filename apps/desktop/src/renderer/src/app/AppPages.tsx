@@ -22,6 +22,11 @@ const DatabasePage = lazy(() =>
 const GameReviewPage = lazy(() =>
   import("../features/game-review/GameReviewPage").then((module) => ({ default: module.GameReviewPage }))
 );
+export const AddToRepertoireDialog = lazy(() =>
+  import("../features/repertoire/AddToRepertoireDialog").then((module) => ({
+    default: module.AddToRepertoireDialog
+  }))
+);
 export const GameReviewPicker = lazy(() =>
   import("../features/game-review/GameReviewPicker").then((module) => ({ default: module.GameReviewPicker }))
 );
@@ -109,6 +114,7 @@ export type PageCommands = {
   repertoireMissing: (message: string) => void;
   repertoireTabChange: (tab: StudyTab) => void;
   repertoirePositionChanged: () => void;
+  openGameAtNode: (gameId: string, nodeId: string | null) => void;
   repertoirePracticeStarted: (sessionId: string) => void;
   repertoirePracticeSetup: () => void;
 };
@@ -193,6 +199,7 @@ export function AppPages({
           onPractice={(chapterIds) => on.practiceRepertoireChapters(repertoire.repertoireId, chapterIds)}
           onMissing={on.repertoireMissing}
           onPositionChanged={on.repertoirePositionChanged}
+          onOpenGame={on.openGameAtNode}
         />
       ) : view === "repertoire-practice" && repertoire?.view === "repertoire-practice" ? (
         <RepertoirePracticePage

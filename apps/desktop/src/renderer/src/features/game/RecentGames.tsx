@@ -1,5 +1,5 @@
 import { useMemo, useState, type MouseEvent } from "react";
-import { RotateCcw, Trash2 } from "lucide-react";
+import { BookPlus, FolderOpen, RotateCcw, Trash2 } from "lucide-react";
 import { useDeleteGameMutation, useGamePagesQuery, type GameListParams } from "../../queries/api";
 import { useGameStore } from "../../stores/game-store";
 import { useReviewStore } from "../../stores/review-store";
@@ -8,22 +8,29 @@ import { listRow } from "@/lib/ui";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconButton } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
+import { OverflowMenu } from "@/components/ui/menu";
 import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { cancelActiveReview } from "../../app/useReviewRunner";
 import { gamesOfPages } from "@/lib/game-pages";
+import { useAddToRepertoireStore } from "../../stores/add-to-repertoire-store";
+import { hasMoves, sourceFromSavedGame } from "../repertoire/add-from-game";
 
 /** The Library tab lists every game, newest first. */
 const LIBRARY: GameListParams = { search: "", filter: "all", excludeId: null };
 
-/** The workspace's Library tab. Opening a game goes through App (`onOpenGame`: history, engine teardown). */
+/**
+ * The workspace's Library tab. Opening a game goes through App (`onOpenGame`: history, engine
+ * teardown); "Add to repertoire…" reads the saved game and opens the dialog without loading it.
+ */
 export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }) {
   const games = useGamePagesQuery(LIBRARY);
   const list = useMemo(() => gamesOfPages(games.data?.pages), [games.data]);
   const removeGame = useDeleteGameMutation();
   const resetBoard = useGameStore((state) => state.reset);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const repertoiresAvailable = Boolean(window.chaturanga?.repertoires);
 
   async function deleteGame(id: string, event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -49,6 +56,24 @@ export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }
       resetBoard();
       useReviewStore.getState().reset();
     }
+  }
+
+  /** Reads the saved game (the board keeps its own) and asks to add the whole game. */
+  async function addToRepertoire(id: string) {
+    setDeleteError(null);
+    const saved = await window.chaturanga?.games.get(id).catch(() => null);
+    if (!saved) {
+      setDeleteError("Couldn't read that game.");
+      return;
+    }
+    const source = sourceFromSavedGame(saved);
+    if (!hasMoves(source.tree)) {
+      setDeleteError("That game has no moves to add.");
+      return;
+    }
+    useAddToRepertoireStore
+      .getState()
+      .open({ source, initialScope: { kind: "whole-game" }, entry: "library" });
   }
 
   return (
@@ -96,6 +121,17 @@ export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }
                   {game.event || game.source} · {game.result || "*"}
                 </span>
               </button>
+              <OverflowMenu
+                label="Game actions"
+                items={[
+                  { label: "Open", icon: <FolderOpen />, onSelect: () => onOpenGame(game.id) },
+                  repertoiresAvailable && {
+                    label: "Add to repertoire…",
+                    icon: <BookPlus />,
+                    onSelect: () => void addToRepertoire(game.id)
+                  }
+                ]}
+              />
               <IconButton
                 label="Delete saved game"
                 icon={<Trash2 />}

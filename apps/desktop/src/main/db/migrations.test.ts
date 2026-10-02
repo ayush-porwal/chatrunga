@@ -77,7 +77,7 @@ describe("runMigrations", () => {
     db.exec(`CREATE TABLE games (id TEXT PRIMARY KEY, source TEXT, site TEXT, updated_at INTEGER)`);
     db.exec(`CREATE TABLE external_databases (id TEXT PRIMARY KEY, source_id TEXT)`);
     runMigrations(db, MIGRATIONS);
-    expect(version(db)).toBe(7);
+    expect(version(db)).toBe(MIGRATIONS.length);
 
     db.exec(`INSERT INTO repertoires (id, name, color, created_at, updated_at) VALUES ('r', 'R', 'white', 1, 1)`);
     db.exec(`INSERT INTO repertoire_chapters (id, repertoire_id, title, sort_order, kind, enabled, root_fen,
@@ -100,5 +100,38 @@ describe("runMigrations", () => {
     for (const table of ["repertoire_chapters", "repertoire_position_index", "repertoire_attempts"]) {
       expect(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()).toEqual({ n: 0 });
     }
+  });
+
+  it("8: game links cascade with the repertoire and survive the game or chapter being deleted", () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec("PRAGMA foreign_keys = ON");
+    db.exec(`CREATE TABLE engines (id TEXT PRIMARY KEY, name TEXT, executable_path TEXT, working_directory TEXT, args TEXT,
+      protocol TEXT, is_default INTEGER, is_enabled INTEGER, created_at INTEGER, updated_at INTEGER)`);
+    db.exec(`CREATE TABLE games (id TEXT PRIMARY KEY, source TEXT, site TEXT, updated_at INTEGER)`);
+    db.exec(`CREATE TABLE external_databases (id TEXT PRIMARY KEY, source_id TEXT)`);
+    runMigrations(db, MIGRATIONS);
+    expect(version(db)).toBe(8);
+
+    db.exec(`INSERT INTO games (id, source) VALUES ('g', 'pgn-import')`);
+    db.exec(`INSERT INTO repertoires (id, name, color, created_at, updated_at) VALUES ('r', 'R', 'white', 1, 1)`);
+    db.exec(`INSERT INTO repertoire_chapters (id, repertoire_id, title, sort_order, kind, enabled, root_fen,
+      headers_json, tree_json, node_metadata_json, created_at, updated_at)
+      VALUES ('c', 'r', 'C', 0, 'opening', 1, 'fen', '{}', '[]', '{}', 1, 1)`);
+    const link = (id: string, kind = "source", gameId = "g") =>
+      db.exec(`INSERT INTO repertoire_game_links (id, repertoire_id, chapter_id, game_id, kind, created_at)
+        VALUES ('${id}', 'r', 'c', '${gameId}', '${kind}', 1)`);
+    link("l1");
+    expect(() => link("l2", "other")).toThrow();
+    expect(() => link("l3", "source", "missing")).toThrow();
+
+    db.exec("DELETE FROM games WHERE id = 'g'");
+    db.exec("DELETE FROM repertoire_chapters WHERE id = 'c'");
+    expect(db.prepare("SELECT chapter_id, game_id, headers_json FROM repertoire_game_links").get()).toEqual({
+      chapter_id: null,
+      game_id: null,
+      headers_json: "{}"
+    });
+    db.exec("DELETE FROM repertoires WHERE id = 'r'");
+    expect(db.prepare("SELECT COUNT(*) AS n FROM repertoire_game_links").get()).toEqual({ n: 0 });
   });
 });

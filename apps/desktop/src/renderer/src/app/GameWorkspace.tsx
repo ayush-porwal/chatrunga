@@ -1,5 +1,6 @@
 import { lazy, memo, Suspense, useId, useMemo, useState, type ReactNode } from "react";
-import { SlidersHorizontal } from "lucide-react";
+import { BookPlus, SlidersHorizontal } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { AnalysisSettingsDialog } from "../features/analysis/AnalysisSettingsDialog";
 import { useShallow } from "zustand/react/shallow";
@@ -16,6 +17,8 @@ import { MoveList } from "../features/game/MoveList";
 import { RecentGames } from "../features/game/RecentGames";
 import { mainlineReviewInput } from "../features/game-review/review-utils";
 import { formatMoveEval } from "../features/game-review/review-score";
+import { hasMoves, sourceFromBoard } from "../features/repertoire/add-from-game";
+import { useAddToRepertoireStore } from "../stores/add-to-repertoire-store";
 import { useGameStore } from "../stores/game-store";
 import { useReviewStore } from "../stores/review-store";
 import { useDisplayedReviewMoves } from "../stores/review-validity";
@@ -83,6 +86,7 @@ export const GameWorkspace = memo(function GameWorkspace({
           <section className="flex min-h-40 flex-1 flex-col" aria-label="Moves">
             <MoveList />
           </section>
+          {addToRepertoireButton}
         </div>
       ) : null}
       {sideTab === "engine" ? (
@@ -191,6 +195,33 @@ function GameFooter() {
   );
 }
 
+/**
+ * "Add to repertoire…" for the board's game: the line to the selected move (the whole game from
+ * the starting position). Reads the game store; never writes to it.
+ */
+function AddToRepertoireButton() {
+  const available = useGameStore((state) => hasMoves(state.moveTree));
+  if (!window.chaturanga?.repertoires) return null;
+  const open = () => {
+    const game = useGameStore.getState();
+    const source = sourceFromBoard(game);
+    useAddToRepertoireStore.getState().open({
+      source,
+      initialScope: source.nodeId ? { kind: "path", toNodeId: source.nodeId } : { kind: "whole-game" },
+      entry: "board"
+    });
+  };
+  return (
+    <div className="flex shrink-0 justify-end">
+      <Button type="button" variant="ghost" size="xs" disabled={!available} onClick={open}>
+        <BookPlus />
+        Add to repertoire…
+      </Button>
+    </div>
+  );
+}
+
+const addToRepertoireButton = <AddToRepertoireButton />;
 const boardView = <BoardView />;
 const gameSummary = <GameSummary />;
 /** On the Engine tab the summary row also holds the analysis settings. */

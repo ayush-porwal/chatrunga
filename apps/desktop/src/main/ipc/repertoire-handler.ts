@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain } from "electron";
 import {
+  addFromGame,
   archiveRepertoire,
   cancelImport,
   commitImport,
@@ -13,11 +14,14 @@ import {
   getOccurrences,
   getDueSummary,
   getRepertoire,
+  listGameLinks,
   listRepertoires,
+  previewAddFromGame,
   previewImport,
   recordAttempt,
   recordPracticeAction,
   removeChapter,
+  removeGameLink,
   removeRepertoire,
   resumePractice,
   saveChapter,
@@ -28,6 +32,7 @@ import {
 } from "../repertoire/service";
 import {
   asId,
+  parseAddFromGameInput,
   parseArchiveRepertoireInput,
   parseChapterRef,
   parseCompareGameInput,
@@ -35,11 +40,13 @@ import {
   parseCreateRepertoireInput,
   parseDuplicateRepertoireInput,
   parseExportInput,
+  parseGameLinkQuery,
   parseImportCommitInput,
   parsePracticeActionInput,
   parsePreviewImportInput,
   parseRecordAttemptInput,
   parseRemoveChapterInput,
+  parseRemoveGameLink,
   parseRemoveRepertoireInput,
   parseRepertoireListFilters,
   parseSaveChapterInput,
@@ -68,6 +75,18 @@ export function registerRepertoireIpc(): void {
   );
   ipcMain.handle("repertoires:compareGame", (_event, input: unknown) =>
     compareGame(parseCompareGameInput(input))
+  );
+  ipcMain.handle("repertoires:previewAddFromGame", (_event, input: unknown) =>
+    previewAddFromGame(parseAddFromGameInput(input))
+  );
+  ipcMain.handle("repertoires:addFromGame", (_event, input: unknown) =>
+    addFromGame(parseAddFromGameInput(input))
+  );
+  ipcMain.handle("repertoires:listGameLinks", (_event, input: unknown) =>
+    listGameLinks(parseGameLinkQuery(input))
+  );
+  ipcMain.handle("repertoires:removeGameLink", (_event, input: unknown) =>
+    removeGameLink(parseRemoveGameLink(input))
   );
   ipcMain.handle("repertoires:create", (_event, input: unknown) =>
     createRepertoire(parseCreateRepertoireInput(input))

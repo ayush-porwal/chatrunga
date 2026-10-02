@@ -412,8 +412,10 @@ export function RepertoireHubPage({
             if (next === "import") {
               setImportTarget(detail.id);
               setPlaceholder(first ? { repertoireId: detail.id, chapterId: first.id } : null);
-            } else if (first)
+            } else if (next === "study" && first) {
               onStudy({ repertoireId: detail.id, chapterId: first.id, nodeId: null });
+            }
+            // "add-game": the Add to repertoire dialog is open over the hub.
           }}
         />
       ) : null}
