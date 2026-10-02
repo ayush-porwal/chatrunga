@@ -155,8 +155,7 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
         bundleUpdater.startSwap({ relaunch: true });
       } catch (error) {
         logger.error("updater", "starting the bundle swap failed:", error);
-        this.installing = false;
-        this.setStatus({ kind: "error", message: readableUpdateError(error, "install") });
+        this.restartAfterFailedInstall();
         return false;
       }
       setImmediate(() => app.quit());
@@ -168,11 +167,21 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
         updater.quitAndInstall(true, true);
       } catch (error) {
         logger.error("updater", "quitAndInstall failed:", error);
-        this.installing = false;
-        this.setStatus({ kind: "error", message: readableUpdateError(error, "install") });
+        this.restartAfterFailedInstall();
       }
     });
     return true;
+  }
+
+  /**
+   * The installer didn't start, but the app was already shut down for it (saves written, engines,
+   * Lichess and the database closed). Staying open in that state would leave closes skipping the
+   * save flush and nothing to clean up again, so the app starts afresh instead; the downloaded
+   * update is found again there.
+   */
+  private restartAfterFailedInstall(): void {
+    app.relaunch();
+    app.quit();
   }
 
   /** Manual path: opens the installer / release page in the browser (allow-listed URLs only). */

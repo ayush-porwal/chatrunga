@@ -62,6 +62,31 @@ describe("gameRepository (SQLite)", () => {
     expect(reopened?.moveTree.filter((node) => node.san).map((node) => node.san)).toEqual(["e4", "e5", "Nf3"]);
   });
 
+  it("moves a saved review onto the rebuilt tree, or drops one that doesn't fit", () => {
+    const saved = saveImported();
+    const mainline = saved.moveTree.filter((node) => node.san);
+    const review = {
+      engineId: "sf",
+      depth: null,
+      moveTimeMs: 100,
+      createdAt: 1,
+      summary: {},
+      moves: mainline.map((node, index) => ({ nodeId: node.id, ply: index + 1, san: node.san, fenAfter: node.fenAfter }))
+    };
+    getDb()
+      .prepare("UPDATE games SET move_tree_json = ?, review_json = ? WHERE id = ?")
+      .run("{not json", JSON.stringify(review), saved.id);
+    const reopened = gameRepository.get(saved.id)!;
+    const rebuiltIds = new Set(reopened.moveTree.map((node) => node.id));
+    expect(reopened.review?.moves.map((move) => move.san)).toEqual(["e4", "e5", "Nf3"]);
+    expect(reopened.review?.moves.every((move) => rebuiltIds.has(move.nodeId))).toBe(true);
+
+    // A review of other moves than the PGN's: dropped, not attached to the wrong ones.
+    const wrong = { ...review, moves: review.moves.map((move) => ({ ...move, fenAfter: "8/8/8/8/8/8/8/8 w - - 0 1" })) };
+    getDb().prepare("UPDATE games SET review_json = ? WHERE id = ?").run(JSON.stringify(wrong), saved.id);
+    expect(gameRepository.get(saved.id)?.review).toBeNull();
+  });
+
   it("rebuilds a tree whose links point at missing moves", () => {
     const saved = saveImported();
     const broken = saved.moveTree.slice(0, -1);

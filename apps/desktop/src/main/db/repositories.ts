@@ -167,19 +167,41 @@ function toGameSummary(row: GameSummaryRow): GameSummary {
  * the game fails, rather than showing an empty board that autosave would then write over the
  * stored PGN (the only copy left of the moves).
  */
-function parseMoveTree(row: GameRow): MoveNode[] {
+function parseMoveTree(row: GameRow): { moveTree: MoveNode[]; rebuilt: boolean } {
   try {
     const parsed: unknown = JSON.parse(row.move_tree_json);
-    if (Array.isArray(parsed) && isConsistentTree(parsed)) return parsed;
+    if (Array.isArray(parsed) && isConsistentTree(parsed)) return { moveTree: parsed, rebuilt: false };
   } catch {
     // Fall through to the PGN.
   }
   try {
     // Strict: a PGN with a move that can't be played would rebuild only part of the game.
-    return importPgnText(row.pgn, { strict: true }).game.moveTree;
+    return { moveTree: importPgnText(row.pgn, { strict: true }).game.moveTree, rebuilt: true };
   } catch {
     throw new Error("This saved game is damaged and can't be opened.");
   }
+}
+
+/**
+ * A review saved with a tree that had to be rebuilt: its moves point at the old node ids, so they
+ * are moved onto the rebuilt main line by ply (the position after each move must match). A review
+ * that doesn't fit the rebuilt game is dropped rather than shown against the wrong moves.
+ */
+export function remapReviewToTree(review: GameReview, moveTree: readonly MoveNode[]): GameReview | null {
+  const byId = new Map(moveTree.map((node) => [node.id, node]));
+  const mainline: MoveNode[] = [];
+  let node = moveTree.find((item) => item.parentId === null);
+  while (node) {
+    mainline.push(node);
+    node = node.children[0] ? byId.get(node.children[0]) : undefined;
+  }
+  const moves = [];
+  for (const move of review.moves) {
+    const target = mainline[move.ply];
+    if (!target || target.fenAfter !== move.fenAfter) return null;
+    moves.push({ ...move, nodeId: target.id });
+  }
+  return { ...review, moves };
 }
 
 function isMoveNodeLike(value: unknown): value is MoveNode {
@@ -208,7 +230,7 @@ export function isConsistentTree(nodes: readonly unknown[]): nodes is MoveNode[]
 }
 
 function toSavedGame(row: GameRow): SavedGame {
-  const moveTree = parseMoveTree(row);
+  const { moveTree, rebuilt } = parseMoveTree(row);
 
   let review: GameReview | null = null;
   if (row.review_json) {
@@ -221,6 +243,7 @@ function toSavedGame(row: GameRow): SavedGame {
       review = null;
     }
   }
+  if (review && rebuilt) review = remapReviewToTree(review, moveTree);
 
   let headers: GameHeaders | null = null;
   if (row.headers_json) {
