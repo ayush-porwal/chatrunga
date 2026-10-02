@@ -3,7 +3,7 @@ import type { AppSettings } from "@chaturanga/shared/types/settings";
 import { allowChosenFile } from "../image-access";
 import { parseSettingValue } from "./settings-values";
 import type { EventEmitter } from "node:events";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import { SAVE_SUPPRESSED_AFTER_DELETE } from "@chaturanga/shared/ipc/game-handling";
 import type {
@@ -358,10 +358,14 @@ function registerLibraryIpc(): void {
   ipcMain.handle("databases:samplePuzzle", (_event, input: unknown) => samplePuzzle(parsePuzzleSampleInput(input)));
 
   const pgnFilters = [{ name: "PGN files", extensions: ["pgn"] }];
+  const maxPgnFileBytes = 20 * 1024 * 1024;
   ipcMain.handle("files:openPgnFile", async (event) => {
     const result = await showOpenDialog(event, { properties: ["openFile"], filters: pgnFilters });
     const path = result.canceled ? undefined : result.filePaths[0];
-    return path ? { path, contents: await readFile(path, "utf8") } : null;
+    if (!path) return null;
+    // Checked before reading, so an oversized file is never loaded or sent over IPC.
+    if ((await stat(path)).size > maxPgnFileBytes) throw new Error("That PGN file is larger than 20 MiB.");
+    return { path, contents: await readFile(path, "utf8") };
   });
   // Writes only to the path the user picked in the native save dialog.
   ipcMain.handle("files:savePgnFile", async (event, defaultName: unknown, contents: unknown) => {

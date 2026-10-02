@@ -102,10 +102,14 @@ export function useRepertoireChangedSubscription() {
   );
 }
 
+/** Due counts change as time passes, with no write to announce it, so they're polled. */
+const DUE_REFRESH_MS = 60_000;
+
 export function useRepertoiresQuery(filters: RepertoireListFilters) {
   return useQuery({
     queryKey: repertoireKeys.list(filters),
-    queryFn: () => repertoires()?.list(filters) ?? []
+    queryFn: () => repertoires()?.list(filters) ?? [],
+    refetchInterval: DUE_REFRESH_MS
   });
 }
 
@@ -149,7 +153,8 @@ export function useRepertoireOccurrencesQuery(id: string | null, positionKey: st
 export function useRepertoireDueSummaryQuery() {
   return useQuery({
     queryKey: repertoireKeys.due,
-    queryFn: () => repertoires()?.getDueSummary() ?? EMPTY_DUE
+    queryFn: () => repertoires()?.getDueSummary() ?? EMPTY_DUE,
+    refetchInterval: DUE_REFRESH_MS
   });
 }
 

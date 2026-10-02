@@ -4,6 +4,9 @@ import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { SectionHeader } from "@/components/ui/page";
 
+/** The longest comment a chapter save keeps (the main process's chapter validation limit). */
+const MAX_COMMENT_LENGTH = 20_000;
+
 /**
  * Notes for the selected move: its comment (part of the chapter draft, autosaved), and at a
  * position where the player has a decision, the practice prompt and hidden hint (repertoire-wide
@@ -30,6 +33,7 @@ export function StudyNotesPanel({
   const hintId = useId();
   const [prompt, setPrompt] = useState(decisionText?.prompt ?? "");
   const [hint, setHint] = useState(decisionText?.hint ?? "");
+  const comment = node.comment ?? "";
 
   const commit = (field: "prompt" | "hint", value: string) => {
     const next = value.trim() ? value.trim() : null;
@@ -42,12 +46,18 @@ export function StudyNotesPanel({
       <Field
         label={node.san ? `Comment on ${node.san}` : "Comment on the starting position"}
         htmlFor={commentId}
+        hint={
+          comment.length >= MAX_COMMENT_LENGTH
+            ? `Limit reached: a comment keeps up to ${MAX_COMMENT_LENGTH.toLocaleString()} characters`
+            : undefined
+        }
       >
         <Textarea
           id={commentId}
           className="min-h-28 font-sans"
           placeholder="Plans, ideas, typical mistakes…"
-          value={node.comment ?? ""}
+          maxLength={MAX_COMMENT_LENGTH}
+          value={comment}
           onChange={(event) => onComment(event.target.value)}
         />
       </Field>

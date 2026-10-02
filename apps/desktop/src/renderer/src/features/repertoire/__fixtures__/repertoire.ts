@@ -78,7 +78,7 @@ export function chapterOf(
     enabled: true,
     rootFen: START_FEN,
     revision: 1,
-    nodeCount: tree.length,
+    nodeCount: tree.length - 1,
     dueCount: 0,
     headers: {},
     tree,

@@ -81,7 +81,7 @@ export function StudyChaptersPanel({
                 >
                   <span className="truncate text-sm font-medium text-fg">{chapter.title}</span>
                   <span className="truncate text-2xs text-fg-subtle">
-                    {plural(Math.max(0, chapter.nodeCount - 1), "move")}
+                    {plural(chapter.nodeCount, "move")}
                     {chapter.dueCount ? ` · ${chapter.dueCount} due` : ""}
                   </span>
                 </button>

@@ -899,6 +899,27 @@ describe("repertoire service: practice", () => {
     expect(saved.chapter.id).toBe(card.chapterId);
   });
 
+  it("a resumed session shows the hints and reveal its current card already gave out", () => {
+    const { id } = create();
+    save(id, [["e2e4"]]);
+    const { session, card } = learnFirst(id);
+    expect(service.resumePractice(session.sessionId).shown).toBeUndefined();
+    const hint = { sessionId: session.sessionId, queueItemId: card.queueItemId };
+    service.recordPracticeAction({ ...hint, action: { kind: "hint" } });
+    expect(service.resumePractice(session.sessionId).shown).toEqual({
+      hint: null,
+      hintUci: null,
+      revealed: null
+    });
+    service.recordPracticeAction({ ...hint, action: { kind: "hint" } });
+    expect(service.resumePractice(session.sessionId).shown?.hintUci).toBe("e2e4");
+    service.recordPracticeAction({ ...hint, action: { kind: "reveal" } });
+    expect(service.resumePractice(session.sessionId).shown).toMatchObject({
+      hintUci: "e2e4",
+      revealed: { ucis: ["e2e4"], preferredUci: "e2e4" }
+    });
+  });
+
   it("an illegal move changes no schedule", () => {
     const { id } = create();
     save(id, [["e2e4"]]);
@@ -1046,6 +1067,22 @@ describe("repertoire service: practice", () => {
       "stale"
     );
     expect(progressRepository.get(id, START_KEY)?.stage).toBe(stage);
+  });
+
+  it("an overlapping session stays stale when the clock moved backwards", () => {
+    const { id } = create();
+    save(id, [["e2e4"]]);
+    const learn = learnFirst(id);
+    attempt(learn.session.sessionId, learn.card.queueItemId, "d2d4");
+    service.endPractice(learn.session.sessionId);
+    now += 60 * 60_000;
+    const first = service.startPractice({ repertoireId: id, mode: "review-due" });
+    const second = service.startPractice({ repertoireId: id, mode: "review-due" });
+    now -= 2 * 60 * 60_000;
+    expect(attempt(first.sessionId, first.cards[0].queueItemId, "e2e4").outcome).toBe("correct");
+    const progress = progressRepository.get(id, START_KEY);
+    expect(attempt(second.sessionId, second.cards[0].queueItemId, "e2e4").outcome).toBe("stale");
+    expect(progressRepository.get(id, START_KEY)).toEqual(progress);
   });
 
   it("archiving stops an open session from grading", () => {

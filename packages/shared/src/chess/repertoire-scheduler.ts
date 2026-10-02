@@ -31,8 +31,9 @@ export type RepertoireSchedule = Pick<
 
 /**
  * The schedule after a card's final outcome. `progress` null is a card never graded before.
- * `now` is clamped to at least the last stored attempt (`progress.lastAttemptAt`, or the
- * `lastAttemptAt` argument when later), so a clock moved backwards can't schedule into the past.
+ * `now` is clamped to just after the last stored attempt (`progress.lastAttemptAt`, or the
+ * `lastAttemptAt` argument when later), so a clock moved backwards can't schedule into the past and
+ * every grade advances `lastAttemptAt` (the main process uses it as the progress version).
  * `no-change` returns the existing schedule unchanged (null for a never-graded card).
  */
 export function scheduleAfterOutcome(
@@ -44,7 +45,7 @@ export function scheduleAfterOutcome(
   if (outcome === "no-change") return progress ? { ...progress } : null;
 
   const floor = Math.max(progress?.lastAttemptAt ?? -Infinity, lastAttemptAt ?? -Infinity);
-  const at = Math.max(now, floor);
+  const at = Math.max(now, floor + 1);
   const stage = clampStage(progress?.stage ?? 0);
   const base: RepertoireSchedule = {
     stage,

@@ -70,9 +70,17 @@ describe("scheduleAfterOutcome", () => {
   it("never schedules before the last stored attempt when the clock moves backwards", () => {
     const later = NOW + 5 * DAY;
     const next = scheduleAfterOutcome(progress({ stage: 1, lastAttemptAt: later }), "unaided", NOW);
-    expect(next).toMatchObject({ lastAttemptAt: later, dueAt: later + 3 * DAY });
+    expect(next).toMatchObject({ lastAttemptAt: later + 1, dueAt: later + 1 + 3 * DAY });
     const viaArgument = scheduleAfterOutcome(null, "wrong", NOW, later);
-    expect(viaArgument).toMatchObject({ lastAttemptAt: later, dueAt: later + LAPSE_RETRY_MS });
+    expect(viaArgument).toMatchObject({
+      lastAttemptAt: later + 1,
+      dueAt: later + 1 + LAPSE_RETRY_MS
+    });
+  });
+
+  it("always advances the last attempt, even at the same instant", () => {
+    const next = scheduleAfterOutcome(progress({ stage: 1, lastAttemptAt: NOW }), "assisted", NOW);
+    expect(next?.lastAttemptAt).toBe(NOW + 1);
   });
 
   it("clamps a corrupt stored stage", () => {

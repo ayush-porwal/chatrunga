@@ -92,10 +92,13 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
 
   setSession: (session) => {
     const card = currentCard(session);
+    const shown = session.shown;
     set({
       ...freshCardUi,
-      // Hints taken before (a resumed session) show as what the card records.
-      hint: card ? resumedHintText(card) : null,
+      // Hints taken and a reveal before (a resumed session) show again.
+      hint: card ? (shown?.hint ?? resumedHintText(card)) : null,
+      hintUci: shown?.hintUci ?? null,
+      reveal: shown?.revealed ?? null,
       session: { ...session, totals: totalsOf(session.cards) },
       summary: null,
       orientation: card?.orientation ?? get().orientation

@@ -919,7 +919,7 @@ function totalsOf(cards: readonly PracticeCard[]): PracticeTotals {
 }
 
 function snapshotOf(session: PracticeSessionRecord): PracticeSessionSnapshot {
-  return {
+  const snapshot: PracticeSessionSnapshot = {
     sessionId: session.id,
     repertoireId: session.repertoireId,
     mode: session.mode,
@@ -928,6 +928,25 @@ function snapshotOf(session: PracticeSessionRecord): PracticeSessionSnapshot {
     cursor: session.cursor,
     cards: session.cards,
     totals: totalsOf(session.cards)
+  };
+  const card = session.cards[session.cursor];
+  const policy = card ? session.policies[card.queueItemId] : undefined;
+  if (!card || !policy || (!card.hintStage && card.state !== "revealed")) return snapshot;
+  // Only what the hint and reveal actions already returned for this card.
+  return {
+    ...snapshot,
+    shown: {
+      hint: card.hintStage >= 1 ? policy.hint : null,
+      hintUci: card.hintStage >= 2 ? (policy.preferredUci ?? policy.acceptedUcis[0] ?? null) : null,
+      revealed:
+        card.state === "revealed"
+          ? {
+              ucis: policy.acceptedUcis,
+              preferredUci: policy.preferredUci,
+              explanation: policy.explanation ?? policy.hint
+            }
+          : null
+    }
   };
 }
 

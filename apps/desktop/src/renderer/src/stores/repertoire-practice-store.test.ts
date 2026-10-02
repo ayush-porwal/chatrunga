@@ -164,6 +164,22 @@ describe("repertoire practice store", () => {
     expect(store().hint).toBe("Castle · Hints used earlier: the written hint.");
   });
 
+  it("shows the hint move and reveal a resumed card already gave out", () => {
+    const resumed = session();
+    resumed.cards[0] = cardOf("a", { hintStage: 3, state: "revealed" });
+    resumed.shown = {
+      hint: "Fight for the centre",
+      hintUci: "e2e4",
+      revealed: { ucis: ["e2e4", "d2d4"], preferredUci: "e2e4", explanation: null }
+    };
+    store().setSession(resumed);
+    expect(store()).toMatchObject({
+      hint: "Fight for the centre",
+      hintUci: "e2e4",
+      reveal: { ucis: ["e2e4", "d2d4"], preferredUci: "e2e4" }
+    });
+  });
+
   it("replays the lead-up and flips without touching grading", () => {
     store().setSession(session());
     store().setLeadUpIndex(2);

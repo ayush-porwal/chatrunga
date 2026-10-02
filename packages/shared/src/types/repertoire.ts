@@ -44,6 +44,7 @@ export type RepertoireChapterSummary = {
   enabled: boolean;
   rootFen: string;
   revision: number;
+  /** Moves in the tree, not counting the root node. */
   nodeCount: number;
   /** Due decisions supported by this chapter; chapter totals can overlap (transpositions). */
   dueCount: number;
@@ -180,6 +181,21 @@ export type PracticeSessionSnapshot = {
   cursor: number;
   cards: PracticeCard[];
   totals: PracticeTotals;
+  /**
+   * What the current card already showed (hints taken, its answer once revealed), so a resumed
+   * session shows it again. Absent when nothing was shown.
+   */
+  shown?: PracticeShown;
+};
+
+/** Hint and reveal data the main process already gave out for a card. */
+export type PracticeShown = {
+  /** The authored hint (hint stage 1 or later). */
+  hint: string | null;
+  /** The preferred move hints point at (hint stage 2 or later). */
+  hintUci: string | null;
+  /** The answer, for a revealed card. */
+  revealed: { ucis: string[]; preferredUci: string | null; explanation: string | null } | null;
 };
 
 export type PracticeAction = { kind: "hint" } | { kind: "reveal" } | { kind: "skip" };

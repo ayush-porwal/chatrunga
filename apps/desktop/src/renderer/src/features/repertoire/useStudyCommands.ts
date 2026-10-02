@@ -149,7 +149,7 @@ export function useStudyCommands(repertoireId: string) {
         enabled: true,
         rootFen,
         revision: 0,
-        nodeCount: 1,
+        nodeCount: 0,
         dueCount: 0,
         headers: {},
         tree: [rootNodeFor(rootFen)],

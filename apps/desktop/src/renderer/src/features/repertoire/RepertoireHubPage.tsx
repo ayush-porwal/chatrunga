@@ -62,6 +62,9 @@ const colorOptions = [
   { value: "black" as const, label: "Black" }
 ];
 
+/** Unfiltered, unarchived repertoires (the same list Home reads). */
+const ACTIVE: RepertoireListFilters = {};
+
 /**
  * The repertoire hub (§5.1): review what's due, create, filter and search repertoires, and act on
  * each one (study, practice, import/export PGN, duplicate, archive, delete).
@@ -85,6 +88,8 @@ export function RepertoireHubPage({
   const [now] = useState(() => Date.now());
   const filters: RepertoireListFilters = { color, query: query.trim() || undefined, archived };
   const list = useRepertoiresQuery(filters);
+  // Review targets everything due, whatever the hub is filtered to.
+  const active = useRepertoiresQuery(ACTIVE);
   const due = useRepertoireDueSummaryQuery();
   const duplicate = useDuplicateRepertoireMutation();
   const archive = useArchiveRepertoireMutation();
@@ -100,7 +105,7 @@ export function RepertoireHubPage({
   } | null>(null);
 
   const items = list.data ?? [];
-  const reviewTarget = mostDue(items);
+  const reviewTarget = mostDue(active.data ?? []);
   const continueTarget = due.data?.continue ?? null;
 
   const fail = (error: unknown, fallback: string) =>
