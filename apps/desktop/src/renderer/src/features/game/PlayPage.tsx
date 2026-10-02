@@ -5,7 +5,7 @@ import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import { useEnginesQuery } from "../../queries/api";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { useGameStore } from "../../stores/game-store";
-import { selectLiveGameInProgress, useLichessStore, type PlayOpponent } from "../../stores/lichess-store";
+import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
 import { LichessPlayActions, LichessPlayPanel, useLichessSeekSetup } from "../lichess/LichessPlayPanel";
 import type { Color } from "@chaturanga/shared/types/chess";
 import { ChipButton } from "@/components/ui/badge";
@@ -15,8 +15,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Field } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
-import { Eyebrow, Page, PageHeader } from "@/components/ui/page";
+import { Eyebrow, Page } from "@/components/ui/page";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { BoardThumbnail } from "../settings/board-thumbnail";
 import { SideDot } from "@/components/ui/side-dot";
 import { cn } from "@/lib/utils";
 import { localImageSrc } from "@/lib/local-image";
@@ -83,11 +84,30 @@ const opponentOptions = [
   { value: "board", label: "Free board", icon: <SquareDashed /> }
 ] as const;
 
-const opponentDescriptions: Record<PlayOpponent, string> = {
-  lichess: "Rated and casual games on lichess.org.",
-  engine: "Play against any installed UCI engine.",
-  board: "An empty board: play both sides, try ideas, no clock."
-};
+
+/** Free board: what it is, with the starting position (opened from the header's Open board, or here). */
+function FreeBoardPanel({ disabled, onOpen }: { disabled: boolean; onOpen: () => void }) {
+  return (
+    <section className={cn(cardPadded, "flex flex-wrap items-center gap-6")}>
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={disabled}
+        aria-label="Open a free board"
+        className="w-44 shrink-0 rounded-xl transition-transform hover:scale-[1.02] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-60"
+      >
+        <BoardThumbnail fen={START_FEN} rounded="xl" />
+      </button>
+      <div className="grid min-w-60 flex-1 gap-2">
+        <h2 className="text-base font-semibold text-fg">Free board</h2>
+        <p className="text-sm text-fg-secondary">
+          Play both sides from the starting position: try an opening, test an idea, or replay a game
+          move by move. No clock and no opponent.
+        </p>
+      </div>
+    </section>
+  );
+}
 
 /**
  * Play: every way to start a game. On Lichess (quick pairing or a challenge), against an engine on
@@ -103,33 +123,34 @@ export const PlayPage = memo(function PlayPage(
   const setOpponent = useLichessStore((state) => state.setPlayOpponent);
   const opponent = chosen ?? (connected ? "lichess" : "engine");
   const onlineGameLive = useLichessStore(selectLiveGameInProgress);
+  const actions =
+    opponent === "lichess" ? (
+      <LichessPlayActions setup={lichess} />
+    ) : opponent === "board" ? (
+      <Button type="button" variant="primary" disabled={onlineGameLive} onClick={props.onFreeBoard}>
+        <Play />
+        Open board
+      </Button>
+    ) : setup.hasEngines ? (
+      <SetupActions setup={setup} />
+    ) : null;
   return (
     <Page>
-      {/* Start sits in the header like every page's primary action (Puzzles, Home). */}
-      <PageHeader
-        title="Play"
-        description={opponentDescriptions[opponent]}
-        actions={
-          opponent === "lichess" ? (
-            <LichessPlayActions setup={lichess} />
-          ) : opponent === "board" ? (
-            <Button type="button" variant="primary" disabled={onlineGameLive} onClick={props.onFreeBoard}>
-              <Play />
-              Open board
-            </Button>
-          ) : setup.hasEngines ? (
-            <SetupActions setup={setup} />
-          ) : undefined
-        }
-      />
-      <SegmentedControl ariaLabel="Opponent" value={opponent} onChange={setOpponent} options={opponentOptions} className="w-fit" />
+      {/* The kind of game and its start action on one row (Start is the page's primary action). */}
+      <header className="flex min-h-9 flex-wrap items-center gap-3">
+        <h1 className="sr-only">Play</h1>
+        <SegmentedControl ariaLabel="Opponent" value={opponent} onChange={setOpponent} options={opponentOptions} className="w-fit" />
+        {actions ? <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div> : null}
+      </header>
       {opponent === "lichess" ? (
         <LichessPlayPanel setup={lichess} onOpenGame={props.onOpenLichessGame} />
       ) : opponent === "engine" ? (
         <section className={cardPadded}>
           <EngineGameSetupBody setup={setup} onOpenSettings={props.onOpenSettings} />
         </section>
-      ) : null}
+      ) : (
+        <FreeBoardPanel disabled={onlineGameLive} onOpen={props.onFreeBoard} />
+      )}
     </Page>
   );
 });
