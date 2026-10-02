@@ -66,9 +66,11 @@ export function BoardWorkspace({
   const focused = useBoardFocused();
   const panelVisible = showPanel ?? !focused;
   const easing = useToggleEasing(panelVisible);
+  const { shown: evalBarShown } = useEvalBarPlacement();
   return (
-    // Size container: the grid's width cap is computed from this box's height (cqh).
-    <div className="h-full min-h-0 min-w-0 [container-type:size]">
+    // Size container: the grid's width cap is computed from this box's height (cqh). With the eval
+    // bar off, its column is gone from that cap too (and from the stage below).
+    <div className="h-full min-h-0 min-w-0 [container-type:size]" style={evalBarShown ? undefined : NO_EVAL_COLUMN}>
       <div
         className={cn(
           "mx-auto grid h-full min-h-0 w-full min-w-0 p-(--workspace-pad)",
@@ -138,6 +140,18 @@ function useToggleEasing(visible: boolean): boolean {
  * and gaps (the same 5rem that `--workspace-board` subtracts) and the eval column, with a 100rem
  * ceiling. The column is always reserved, so the board never moves when the bar comes and goes.
  */
+/** The eval column's width, zeroed while the bar is off. */
+const NO_EVAL_COLUMN = { "--workspace-eval": "0px" } as CSSProperties;
+
+/** Whether the evaluation bar is shown, and on which side of the board. */
+function useEvalBarPlacement(): { shown: boolean; right: boolean } {
+  const settings = useSettingsQuery();
+  return {
+    shown: settings.data?.analysisEvalBar ?? defaultSettings.analysisEvalBar,
+    right: (settings.data?.analysisEvalBarSide ?? defaultSettings.analysisEvalBarSide) === "right"
+  };
+}
+
 export function BoardStage({
   top,
   bottom,
@@ -151,16 +165,14 @@ export function BoardStage({
   children: ReactNode;
 }) {
   // The bar's column is on the side the user chose, or gone (and the board wider) with the bar off.
-  const settings = useSettingsQuery();
-  const shown = settings.data?.analysisEvalBar ?? defaultSettings.analysisEvalBar;
-  const right = (settings.data?.analysisEvalBarSide ?? defaultSettings.analysisEvalBarSide) === "right";
+  const { shown, right } = useEvalBarPlacement();
   return (
     <div
       className={cn(
         "grid w-[min(100cqw,calc(100cqh_-_5rem_+_var(--workspace-eval)),calc(100rem_+_var(--workspace-eval)))] min-w-0 gap-y-2",
         right ? "grid-cols-[minmax(0,1fr)_var(--workspace-eval)]" : "grid-cols-[var(--workspace-eval)_minmax(0,1fr)]"
       )}
-      style={shown ? undefined : ({ "--workspace-eval": "0px" } as CSSProperties)}
+      style={shown ? undefined : NO_EVAL_COLUMN}
     >
       <div className={cn("min-w-0", right ? "col-start-1" : "col-start-2")}>{top}</div>
       {shown ? <div className={cn("row-start-2", right ? "col-start-2 pl-1.5" : "col-start-1 pr-1.5")}>{evalBar}</div> : null}

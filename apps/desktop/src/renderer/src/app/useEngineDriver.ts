@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import type { EngineInfo } from "@chaturanga/shared/types/engine";
 import { currentLineUcis } from "../features/analysis/engine-game-helpers";
@@ -117,6 +117,20 @@ export type AnalysisOptions = {
 
 export function useEngineDriver(analysis: AnalysisOptions): void {
   const { engineId: analysisEngineId, multipv, depth, moveTimeMs } = analysis;
+  // Read by the driver below when it starts a search. Kept out of its dependencies: changing an
+  // analysis setting must not tear down an engine game's search (and pause its clock); it only
+  // restarts live analysis, through restartSearch.
+  const analysisRef = useRef(analysis);
+  useEffect(() => {
+    const previous = analysisRef.current;
+    analysisRef.current = { engineId: analysisEngineId, multipv, depth, moveTimeMs };
+    const changed =
+      previous.engineId !== analysisEngineId ||
+      previous.multipv !== multipv ||
+      previous.depth !== depth ||
+      previous.moveTimeMs !== moveTimeMs;
+    if (changed && useGameStore.getState().mode === "analysis") useAnalysisStore.getState().restartSearch();
+  }, [analysisEngineId, multipv, depth, moveTimeMs]);
   // Engine search output from main.
   useEffect(() => {
     const events = window.chaturanga?.events;
@@ -269,11 +283,12 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
       // Live analysis of the current position (restarted only when the position changes — not
       // when an arrow is drawn or a header edited).
       if (engines && game.mode === "analysis" && !status.isEnd && !game.gameOutcome) {
-        const key = `${game.rootFen}|${game.currentNodeId}|${game.currentFen}|${analysisEngineId ?? ""}|${multipv}|${depth ?? ""}|${moveTimeMs ?? ""}|${useAnalysisStore.getState().searchEpoch}`;
+        const options = analysisRef.current;
+        const key = `${game.rootFen}|${game.currentNodeId}|${game.currentFen}|${options.engineId ?? ""}|${options.multipv}|${options.depth ?? ""}|${options.moveTimeMs ?? ""}|${useAnalysisStore.getState().searchEpoch}`;
         if (key === analysisKey || key === missingEngineKey) return;
         const analysis = useAnalysisStore.getState();
         // The engine chosen for analysis (or the default), never an engine-game opponent left over.
-        const engineId = analysisEngineId;
+        const engineId = options.engineId;
         if (!engineId) {
           stopAnalysis();
           missingEngineKey = key;
@@ -295,9 +310,9 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
             searchId,
             fen: game.rootFen,
             moves: currentLineUcis(game.moveTree, game.currentNodeId),
-            multipv,
-            depth,
-            moveTimeMs
+            multipv: options.multipv,
+            depth: options.depth,
+            moveTimeMs: options.moveTimeMs
           })
           .catch((error: unknown) => {
             if (engineSearches.analysis === searchId) reportEngineError(error);
@@ -332,5 +347,5 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
       stopAnalysis();
       abandonEngineMove();
     };
-  }, [analysisEngineId, multipv, depth, moveTimeMs]);
+  }, []);
 }
