@@ -12,6 +12,7 @@ import type {
   EngineAssetStatusMap
 } from "@chaturanga/shared/ipc/chaturanga-api";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
+import type { ImportedGame } from "@chaturanga/shared/types/chess";
 import { engineRepository, gameRepository, settingsRepository } from "../db/repositories";
 import {
   activeDownloads,
@@ -26,6 +27,7 @@ import type { EngineEvents, EngineManager } from "../engine/engine-manager";
 import { probeEvalScore } from "../engine/probe-eval";
 import { ALL_ASSET_IDS, getAssetManager, isAssetId, type AssetId } from "../engine/asset-manager";
 import { syncAssetsToEngineRegistry } from "../engine/engine-registry-sync";
+import { gameFingerprint, lichessGameId } from "../db/game-fingerprint";
 import { detectLc0 } from "../engine/lc0-detect";
 import { getOpenRouterConfigStore } from "../commentary/openrouter-config";
 import {
@@ -301,6 +303,16 @@ function registerAssetIpc(): void {
   });
 }
 
+/** The library game an imported one is a copy of: its Lichess game, else its fingerprint. */
+function findLibraryCopy(game: ImportedGame["game"]): string | null {
+  const lichess = lichessGameId(game.headers.site);
+  if (lichess) {
+    const bySite = gameRepository.findIdBySite(`https://lichess.org/${lichess}`);
+    if (bySite) return bySite;
+  }
+  return gameRepository.findIdByFingerprint(gameFingerprint({ headers: game.headers, rootFen: game.rootFen, moveTree: game.moveTree }));
+}
+
 /** Saved games, PGN files, downloadable databases and settings. */
 function registerLibraryIpc(): void {
   ipcMain.handle("games:list", () => gameRepository.list());
@@ -309,6 +321,9 @@ function registerLibraryIpc(): void {
     if (!game) throw new Error("Game not found");
     return game;
   });
+  ipcMain.handle("games:getReview", (_event, gameId: unknown, reviewId: unknown) =>
+    gameRepository.getReview(asId(gameId, "game id"), asId(reviewId, "review id"))
+  );
   ipcMain.handle("games:save", (_event, value: unknown) => {
     const input = parseSaveGameInput(value);
     if (input.id && wasRecentlyDeleted(input.id)) throw new Error(SAVE_SUPPRESSED_AFTER_DELETE);
@@ -319,8 +334,11 @@ function registerLibraryIpc(): void {
     recentlyDeletedGames.set(id, Date.now());
     gameRepository.remove(id);
   });
-  ipcMain.handle("games:importPgn", (_event, input: unknown) => {
+  ipcMain.handle("games:importPgn", (_event, input: unknown): ImportedGame => {
     const imported = importPgnText(parsePgnText(input));
+    // The library already has this game: open that copy (with its analyses) instead of a new one.
+    const existingGameId = findLibraryCopy(imported.game);
+    if (existingGameId) return { ...imported, existingGameId };
     // Only the user imports a PGN (file or pasted text), so this is activity too.
     const telemetry = getTelemetry();
     telemetry?.record("game_imported", { source: "pgn", games: 1 });

@@ -76,6 +76,11 @@ export type GameSession = {
 export type ImportedGame = {
   game: GameSession;
   warning?: string;
+  /**
+   * The same game is already in the library (same Lichess URL, or the same start, main line,
+   * players and date): it's opened instead of importing a copy.
+   */
+  existingGameId?: string;
 };
 
 export type GameSummary = {
@@ -88,6 +93,24 @@ export type GameSummary = {
   date: string | null;
   currentFen: string;
   updatedAt: number;
+  /** How many analyses (engine reviews) of the game are saved. */
+  reviewCount: number;
+  /** When the newest of them was made (epoch ms); null when there is none. */
+  lastReviewedAt: number | null;
+};
+
+/** One saved analysis of a game, as listed for choosing between them (the review itself loads on demand). */
+export type SavedReviewInfo = {
+  reviewId: string;
+  createdAt: number;
+  engineName: string | null;
+  /** Search per move (ms), or the depth when the review searched to a depth. */
+  moveTimeMs: number | null;
+  depth: number | null;
+  /** Maia ratings used (empty: no Maia). */
+  maiaLevels: number[];
+  moveCount: number;
+  commentaryCount: number;
 };
 
 export type SavedGame = GameSummary & {
@@ -100,7 +123,10 @@ export type SavedGame = GameSummary & {
   initialFen: string | null;
   pgn: string;
   moveTree: MoveNode[];
+  /** The newest analysis (with its AI commentary); the others load by id (`games.getReview`). */
   review: GameReview | null;
+  /** Every saved analysis of the game, newest first. */
+  reviews: SavedReviewInfo[];
 };
 
 export type SaveGameInput = {
@@ -112,6 +138,10 @@ export type SaveGameInput = {
   currentNodeId?: string | null;
   pgn: string;
   moveTree: MoveNode[];
+  /**
+   * The analysis on the board, saved under its `reviewId` (added, or updated with new commentary).
+   * Other saved analyses of the game are never touched; omitted or null saves no analysis.
+   */
   review?: GameReview | null;
 };
 

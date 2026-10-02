@@ -131,6 +131,8 @@ export type ChaturangaApi = {
   games: {
     list(): Promise<GameSummary[]>;
     get(id: string): Promise<SavedGame>;
+    /** One saved analysis of a game (null when it's gone), to show instead of the newest. */
+    getReview(gameId: string, reviewId: string): Promise<GameReview | null>;
     save(input: SaveGameInput): Promise<SavedGame>;
     remove(id: string): Promise<void>;
     importPgn(input: ImportPgnInput): Promise<ImportedGame>;
