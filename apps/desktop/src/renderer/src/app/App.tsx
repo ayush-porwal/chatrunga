@@ -279,7 +279,7 @@ export function App() {
         const outcome = await restoreBoard(entry.board);
         if (outcome !== "restored") return outcome === "shown" ? "shown" : outcome;
         const request = latestNavigation.current;
-        // The review may have been cleared while away (e.g. Analyze resets it): bring the saved one back.
+        // The review may not be loaded (the board was replaced while away): bring the saved one back.
         if (entry.board.gameId && !useReviewStore.getState().review) {
           const saved = await window.chaturanga?.games.get(entry.board.gameId).catch(() => null);
           if (request !== latestNavigation.current) return "dropped";
@@ -459,7 +459,8 @@ export function App() {
     if (!desktopApiAvailable) return;
     commitCurrent();
     stopEngineWork();
-    useReviewStore.getState().reset();
+    // The board's review stays: it belongs to this game, and clearing it here made autosave write
+    // "no review" over the saved one (the titlebar's Analyze keeps it too).
     clearPuzzleSession();
     // An analysis board, engine off: the Engine tab offers the engine to use and Start analysis.
     currentGame().setMode("freeplay");
