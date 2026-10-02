@@ -89,6 +89,13 @@ describe("matchesCheapFilters", () => {
     }
   });
 
+  it("reads openings from the OpeningTags column (the last), not GameUrl", () => {
+    const row = parseCsvLine(LICHESS_ROW);
+    const input = lichessFilters({ openings: ["Italian_Game_Classical_Variation"] });
+    expect(matchesCheapFilters("lichess", row, input)).toBe(true);
+    expect(sampleFromLichessRow(database, row, input)).not.toBeNull();
+  });
+
   it("rejects a row with too few moves to make a puzzle", () => {
     const row = parseCsvLine(LICHESS_ROW.replace("e8d7 a2e6 d7d8 f7f8", "e8d7"));
     expect(sampleFromLichessRow(database, row, lichessFilters())).toBeNull();

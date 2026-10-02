@@ -257,6 +257,27 @@ describe("download reliability", () => {
     await download;
   });
 
+  it("Cancel pressed while the finished file is put in place installs nothing", async () => {
+    vi.stubGlobal("fetch", fakeServer(content, '"v1"').fetchMock);
+    let release: () => void = () => undefined;
+    const renaming = new Promise<void>((resolve) => {
+      fsHooks.beforeRename = () => {
+        resolve();
+        return new Promise((done) => (release = done));
+      };
+    });
+    const events: DatabaseDownloadProgress[] = [];
+    const download = downloadDatabase(SOURCE, (progress) => events.push(progress));
+    download.catch(() => undefined);
+    await renaming;
+    cancelDownload(SOURCE);
+    release();
+    await expect(download).rejects.toThrow("Download cancelled.");
+    expect(rows.has(SOURCE)).toBe(false);
+    expect(events.map((event) => event.state)).not.toContain("completed");
+    fsHooks.beforeRename = null;
+  });
+
   it("a download that finishes after quitting stopped waiting registers nothing", async () => {
     const { cancelAllDownloads, downloadDatabase } = await freshModule();
     vi.stubGlobal("fetch", fakeServer(content, '"v1"').fetchMock);

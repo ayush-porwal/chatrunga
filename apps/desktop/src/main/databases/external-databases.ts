@@ -219,7 +219,7 @@ async function runDownload(sourceId: string, onProgress: ProgressSink, signal: A
       // Same version, nothing past `offset`: complete only if it is exactly the file's length.
       if (rangeTotal(response.headers.get("content-range")) === offset) {
         aborted.throwIfAborted();
-        return finishDownload(current, partPath, filePath, onProgress, null);
+        return finishDownload(current, partPath, filePath, onProgress, null, signal);
       }
       return RESTART;
     }
@@ -280,7 +280,7 @@ async function runDownload(sourceId: string, onProgress: ProgressSink, signal: A
     }
     // Cancelled (e.g. quitting) just as the transfer ended: the complete `.part` stays for next time.
     aborted.throwIfAborted();
-    return finishDownload(current, partPath, filePath, onProgress, totalBytes);
+    return finishDownload(current, partPath, filePath, onProgress, totalBytes, signal);
   }
 }
 
@@ -289,15 +289,18 @@ async function finishDownload(
   partPath: string,
   filePath: string,
   onProgress: ProgressSink,
-  totalBytes: number | null
+  totalBytes: number | null,
+  signal: AbortSignal
 ): Promise<InstalledDatabase> {
   // Quitting (even after it stopped waiting for this download): the complete `.part` stays for next time.
   if (shuttingDown) throw new DownloadCancelledError();
   await rename(partPath, filePath);
   await unlink(`${partPath}.validator`).catch(() => undefined);
   const file = await stat(filePath);
-  // The database may be closed by now.
+  // The database may be closed by now; or Cancel was pressed while the file was being put in place
+  // (it stays, so Download again finishes at once, but this download installs nothing).
   if (shuttingDown) throw new DownloadCancelledError();
+  signal.throwIfAborted();
   // Registered first: "completed" is only announced for a database Puzzles can use.
   const installed = externalDatabaseRepository.saveDownloaded({
     source,
