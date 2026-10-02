@@ -219,8 +219,6 @@ export type AppSettings = {
   recentFilePaths: string[];
   /** In-app updates: download new versions in the background (Windows, Linux AppImage, signed macOS). */
   updatesAutoDownload: boolean;
-  /** In-app updates: also offer prerelease (beta) versions. Always on while running a prerelease. */
-  updatesIncludeBeta: boolean;
   /**
    * Send usage analytics (docs/telemetry.md). On unless the user turns it off; turning it off
    * deletes events not sent yet. `CHATURANGA_TELEMETRY_ENABLED=false` overrides it.
@@ -293,7 +291,6 @@ export const defaultSettings: AppSettings = {
   engineHashMb: 128,
   recentFilePaths: [],
   updatesAutoDownload: true,
-  updatesIncludeBeta: false,
   usageAnalyticsEnabled: true,
   theme: "dark",
   lastOpenedGameId: null,
@@ -346,16 +343,15 @@ export function normalizeAppearanceSettings(settings: AppSettings): AppSettings 
 
 /** Validates the in-app update settings, falling back to defaults for bad values. Idempotent. */
 export function normalizeUpdateSettings(settings: AppSettings): AppSettings {
+  // `updatesIncludeBeta` (older builds): there are no beta releases to opt in to any more.
+  const rest: AppSettings & { updatesIncludeBeta?: unknown } = { ...settings };
+  delete rest.updatesIncludeBeta;
   return {
-    ...settings,
+    ...rest,
     updatesAutoDownload:
       typeof settings.updatesAutoDownload === "boolean"
         ? settings.updatesAutoDownload
-        : defaultSettings.updatesAutoDownload,
-    updatesIncludeBeta:
-      typeof settings.updatesIncludeBeta === "boolean"
-        ? settings.updatesIncludeBeta
-        : defaultSettings.updatesIncludeBeta
+        : defaultSettings.updatesAutoDownload
   };
 }
 

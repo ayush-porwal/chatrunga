@@ -179,24 +179,17 @@ describe("normalizeCommentaryProvider", () => {
 });
 
 describe("normalizeUpdateSettings", () => {
-  it("defaults to background downloads on and beta releases off", () => {
-    const normalized = normalizeUpdateSettings(defaultSettings);
-    expect(normalized.updatesAutoDownload).toBe(true);
-    expect(normalized.updatesIncludeBeta).toBe(false);
+  it("defaults to background downloads on", () => {
+    expect(normalizeUpdateSettings(defaultSettings).updatesAutoDownload).toBe(true);
   });
 
-  it("keeps saved booleans", () => {
-    const normalized = normalizeUpdateSettings({ ...defaultSettings, updatesAutoDownload: false, updatesIncludeBeta: true });
-    expect(normalized.updatesAutoDownload).toBe(false);
-    expect(normalized.updatesIncludeBeta).toBe(true);
-  });
-
-  it("replaces anything else with the defaults", () => {
+  it("keeps a saved boolean, replaces anything else, and drops the old beta opt-in", () => {
+    expect(normalizeUpdateSettings({ ...defaultSettings, updatesAutoDownload: false }).updatesAutoDownload).toBe(false);
     for (const bad of ["true", 1, null, undefined, {}]) {
-      const stored = { ...defaultSettings, updatesAutoDownload: bad, updatesIncludeBeta: bad } as unknown as AppSettings;
+      const stored = { ...defaultSettings, updatesAutoDownload: bad, updatesIncludeBeta: true } as unknown as AppSettings;
       const normalized = normalizeUpdateSettings(stored);
       expect(normalized.updatesAutoDownload).toBe(true);
-      expect(normalized.updatesIncludeBeta).toBe(false);
+      expect(normalized).not.toHaveProperty("updatesIncludeBeta");
     }
   });
 

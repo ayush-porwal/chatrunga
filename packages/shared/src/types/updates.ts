@@ -41,7 +41,7 @@ export type UpdateState = {
   lastCheckedAt: number | null;
   /** Downloads start on their own (the `updatesAutoDownload` setting, `auto` mode only). */
   autoDownload: boolean;
-  /** Prereleases are offered: the user is on one, or turned on "Include beta releases". */
+  /** Prereleases are offered: this build is one (a nightly); production builds never get them. */
   allowPrerelease: boolean;
   /** Why the mode is `manual` / `disabled`, in one sentence (null for `auto`). */
   modeReason: string | null;

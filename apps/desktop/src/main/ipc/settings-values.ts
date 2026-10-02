@@ -66,7 +66,6 @@ const SETTING_CHECKS: { [K in keyof AppSettings]-?: Check } = {
   engineHashMb: number(ENGINE_HASH_MB_RANGE.min, ENGINE_HASH_MB_RANGE.max, true),
   recentFilePaths: list(text(4096), 50),
   updatesAutoDownload: bool,
-  updatesIncludeBeta: bool,
   usageAnalyticsEnabled: bool,
   theme: oneOf("light", "dark"),
   lastOpenedGameId: nullable(text(200)),

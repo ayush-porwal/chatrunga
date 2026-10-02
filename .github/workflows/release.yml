@@ -12,7 +12,7 @@ on:
         options: [patch, minor, major]
         default: patch
       version:
-        description: Exact version instead of a bump, e.g. 0.2.0 or 0.2.0-beta.1 (optional)
+        description: Exact version instead of a bump, e.g. 0.2.0 or 0.2.0-nightly.1 (optional)
         type: string
         required: false
       draft:
@@ -193,8 +193,8 @@ jobs:
           PRERELEASE: ${{ needs.plan.outputs.prerelease }}
           DRAFT: ${{ inputs.draft }}
         run: |
-          # Stable releases are marked latest: in-app updates follow /releases/latest (prereleases
-          # only reach people on a beta or with "Include beta releases" on). Drafts are invisible to
+          # Production releases are marked latest: in-app updates follow /releases/latest
+          # (prereleases only reach a build that is one, i.e. a nightly). Drafts are invisible to
           # them until published.
           flags=()
           [[ "$PRERELEASE" == "true" ]] && flags+=(--prerelease) || flags+=(--latest)

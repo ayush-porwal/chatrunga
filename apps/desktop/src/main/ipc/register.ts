@@ -366,7 +366,7 @@ function registerLibraryIpc(): void {
       // Set up before the user opted in: the first funnel step is recorded now.
       noteEngineReadiness(true);
     }
-    if (keys.includes("updatesAutoDownload") || keys.includes("updatesIncludeBeta")) updateService.applySettings();
+    if (keys.includes("updatesAutoDownload")) updateService.applySettings();
   };
   ipcMain.handle("settings:set", (_event, key: unknown, value: unknown) => {
     const settingKey = parseSettingKey(key);
