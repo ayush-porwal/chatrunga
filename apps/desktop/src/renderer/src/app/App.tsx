@@ -723,14 +723,27 @@ export function App() {
     return true;
   }
 
-  /** Practice: the setup (no session, optionally with a preset), or a session to resume. */
-  function openRepertoirePractice(
+  /**
+   * Practice: the setup (no session, optionally with a preset), or a session to resume. A study
+   * draft still saving (left through the hub, say) is saved first, so practice grades the edited
+   * chapter; when that save fails, the notice says so and the current screen stays.
+   */
+  async function openRepertoirePractice(
     repertoireId: string,
     { sessionId = null, preset = null }: { sessionId?: string | null; preset?: RepertoireExtras["preset"] } = {},
     history: HistoryMode = "push"
   ) {
     if (history === "push") commitCurrent();
-    latestNavigation.current += 1;
+    const request = ++latestNavigation.current;
+    const draft = useRepertoireWorkspaceStore.getState();
+    if (draft.chapterId && (draft.dirty || draft.saveState.status !== "idle")) {
+      const saved = await flushChapterDraft(queryClient);
+      if (request !== latestNavigation.current) return;
+      if (!saved) {
+        useAppNoticeStore.getState().show("This chapter couldn't be saved; reopen it and retry the save before practising.");
+        return;
+      }
+    }
     setRepertoireExtras((extras) => ({ ...extras, preset }));
     showRepertoireView("repertoire-practice", practicePath(repertoireId, sessionId));
     record(history, { view: "repertoire-practice", repertoireId, sessionId });

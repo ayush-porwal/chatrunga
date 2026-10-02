@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { nanoid } from "nanoid";
 import { useQueryClient } from "@tanstack/react-query";
 import type {
@@ -14,7 +14,7 @@ import {
   useUpdateDecisionMutation
 } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
-import { rootNodeFor } from "./repertoire-chapters";
+import { chapterOrderAfterMove, rootNodeFor } from "./repertoire-chapters";
 import { flushChapterDraft } from "./useChapterAutosave";
 
 type ChapterPatch = Partial<Pick<RepertoireChapter, "title" | "kind" | "enabled" | "sortOrder">>;
@@ -25,7 +25,9 @@ const workspace = () => useRepertoireWorkspaceStore.getState();
  * Study writes that go beyond the open draft: decision choices (preferred move, prompt, hint),
  * edits to other chapters, adding and removing chapters. Each one first flushes the draft (so it
  * writes against the latest revision), then adopts the revision the main process returns, so the
- * next autosave is not refused as stale. `error` holds the last failure for the panel.
+ * next autosave is not refused as stale. Writes run one at a time, each against the revision the
+ * previous one returned; a result arriving after another repertoire was opened leaves that
+ * repertoire's draft alone. `error` holds the last failure for the panel.
  */
 export function useStudyCommands(repertoireId: string) {
   const queryClient = useQueryClient();
@@ -33,23 +35,43 @@ export function useStudyCommands(repertoireId: string) {
   const removeChapterMutation = useRemoveChapterMutation();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The last queued write; the next one starts when it settles. */
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const pending = useRef(0);
 
-  /** Runs a write after a flush; false when the draft couldn't be saved first or the write failed. */
-  async function run<T>(write: () => Promise<T>): Promise<T | null> {
+  /** True while the open draft still belongs to this hook's repertoire. */
+  const isOpen = () => workspace().repertoireId === repertoireId;
+
+  /** Adopts a revision this repertoire's write returned, unless another repertoire is open now. */
+  function adopt(revision: number) {
+    if (isOpen()) workspace().adoptRevision(revision);
+  }
+
+  /**
+   * Queues a write behind any running one, then runs it after a flush; null when the draft
+   * couldn't be saved first or the write failed.
+   */
+  function run<T>(write: () => Promise<T>): Promise<T | null> {
+    pending.current += 1;
     setBusy(true);
     setError(null);
-    try {
-      if (!(await flushChapterDraft(queryClient))) {
-        setError("Save the chapter first (see the save status above).");
+    const next = queue.current.then(async () => {
+      try {
+        if (!(await flushChapterDraft(queryClient))) {
+          setError("Save the chapter first (see the save status above).");
+          return null;
+        }
+        return await write();
+      } catch (cause) {
+        setError(ipcErrorMessage(cause) || "That change couldn't be saved.");
         return null;
+      } finally {
+        pending.current -= 1;
+        if (!pending.current) setBusy(false);
       }
-      return await write();
-    } catch (cause) {
-      setError(ipcErrorMessage(cause) || "That change couldn't be saved.");
-      return null;
-    } finally {
-      setBusy(false);
-    }
+    });
+    queue.current = next;
+    return next;
   }
 
   async function writeDecision(positionKey: string, patch: UpdateDecisionInput["patch"]) {
@@ -60,8 +82,8 @@ export function useStudyCommands(repertoireId: string) {
         expectedRevision: workspace().baseRevision,
         patch
       });
-      workspace().adoptRevision(result.repertoire.revision);
-      workspace().rememberDecision(result.decision);
+      adopt(result.repertoire.revision);
+      if (isOpen()) workspace().rememberDecision(result.decision);
       return result.decision;
     });
   }
@@ -81,7 +103,7 @@ export function useStudyCommands(repertoireId: string) {
       expectedRevision: workspace().baseRevision
     });
     adoptChapterSave(queryClient, result);
-    workspace().adoptRevision(result.repertoire.revision);
+    adopt(result.repertoire.revision);
   }
 
   /** The open chapter changes through its draft (autosaved); any other chapter is saved now. */
@@ -99,21 +121,10 @@ export function useStudyCommands(repertoireId: string) {
     chapterId: string,
     direction: -1 | 1
   ) {
-    const ordered = [...chapters].sort((left, right) => left.sortOrder - right.sortOrder);
-    const index = ordered.findIndex((chapter) => chapter.id === chapterId);
-    const neighbour = ordered[index + direction];
-    const chapter = ordered[index];
-    if (!chapter || !neighbour) return;
-    // Distinct orders even when imported chapters shared one.
-    const [first, second] =
-      chapter.sortOrder === neighbour.sortOrder
-        ? [neighbour.sortOrder + direction, chapter.sortOrder]
-        : [neighbour.sortOrder, chapter.sortOrder];
+    const changes = chapterOrderAfterMove(chapters, chapterId, direction);
+    if (!changes.length) return;
     await run(async () => {
-      for (const [id, sortOrder] of [
-        [chapter.id, first],
-        [neighbour.id, second]
-      ] as const) {
+      for (const [id, sortOrder] of changes) {
         if (id === workspace().chapterId) {
           workspace().setChapterFields({ sortOrder });
           if (!(await flushChapterDraft(queryClient)))
@@ -150,7 +161,7 @@ export function useStudyCommands(repertoireId: string) {
         expectedRevision: workspace().baseRevision
       });
       adoptChapterSave(queryClient, result);
-      workspace().adoptRevision(result.repertoire.revision);
+      adopt(result.repertoire.revision);
       return result.chapter.id;
     });
   }
@@ -162,7 +173,7 @@ export function useStudyCommands(repertoireId: string) {
         chapterId,
         expectedRevision: workspace().baseRevision
       });
-      workspace().adoptRevision(result.repertoire.revision);
+      adopt(result.repertoire.revision);
       return result.repertoire;
     });
   }

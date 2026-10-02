@@ -318,6 +318,8 @@ export function RepertoireHubPage({
                   {
                     label: "Practice",
                     icon: <GraduationCap />,
+                    // The main process refuses practice on an archived repertoire.
+                    disabled: Boolean(item.archivedAt),
                     onSelect: () => onPractice(item.id)
                   },
                   {

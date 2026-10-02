@@ -3,6 +3,7 @@ import { START_FEN } from "@chaturanga/shared/chess/position";
 import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import { addLine, cardOf, rootNode } from "./__fixtures__/repertoire";
 import {
+  chapterOrderAfterMove,
   fenError,
   mostDue,
   nextSortOrder,
@@ -28,6 +29,30 @@ describe("chapter helpers", () => {
     expect(sortedChapters(chapters).map((chapter) => chapter.id)).toEqual(["a", "b"]);
     expect(nextSortOrder(chapters)).toBe(3);
     expect(nextSortOrder([])).toBe(0);
+  });
+
+  it("moves a chapter one place, also among shared sort orders", () => {
+    const distinct = [
+      { id: "a", sortOrder: 0 },
+      { id: "b", sortOrder: 2 },
+      { id: "c", sortOrder: 5 }
+    ];
+    expect(chapterOrderAfterMove(distinct, "b", 1)).toEqual([
+      ["b", 5],
+      ["c", 2]
+    ]);
+    expect(chapterOrderAfterMove(distinct, "a", -1)).toEqual([]);
+    const tied = [
+      { id: "a", sortOrder: 1 },
+      { id: "b", sortOrder: 1 },
+      { id: "c", sortOrder: 1 }
+    ];
+    const moved = new Map(chapterOrderAfterMove(tied, "a", 1));
+    const order = tied
+      .map((chapter) => ({ ...chapter, sortOrder: moved.get(chapter.id) ?? chapter.sortOrder }))
+      .sort((left, right) => left.sortOrder - right.sortOrder)
+      .map((chapter) => chapter.id);
+    expect(order).toEqual(["b", "a", "c"]);
   });
 
   it("validates a custom starting FEN", () => {

@@ -36,6 +36,38 @@ export function sortedChapters<T extends Pick<RepertoireChapterSummary, "sortOrd
   return [...chapters].sort((left, right) => left.sortOrder - right.sortOrder);
 }
 
+/**
+ * The sort orders that swap a chapter with its neighbour (`direction` -1 up, +1 down), as
+ * `[chapterId, sortOrder]` pairs for the chapters whose order changes. Distinct orders swap their
+ * values; when any orders are shared (imported chapters), the whole list is renumbered so only the
+ * two chapters trade places. Empty when there is no neighbour that way.
+ */
+export function chapterOrderAfterMove(
+  chapters: readonly Pick<RepertoireChapterSummary, "id" | "sortOrder">[],
+  chapterId: string,
+  direction: -1 | 1
+): Array<[string, number]> {
+  const ordered = sortedChapters(chapters);
+  const index = ordered.findIndex((chapter) => chapter.id === chapterId);
+  const chapter = ordered[index];
+  const neighbour = ordered[index + direction];
+  if (!chapter || !neighbour) return [];
+  const orders = new Set(ordered.map((item) => item.sortOrder));
+  if (orders.size === ordered.length) {
+    return [
+      [chapter.id, neighbour.sortOrder],
+      [neighbour.id, chapter.sortOrder]
+    ];
+  }
+  const swapped = [...ordered];
+  swapped[index] = neighbour;
+  swapped[index + direction] = chapter;
+  return swapped.flatMap(
+    (item, position): Array<[string, number]> =>
+      item.sortOrder === position ? [] : [[item.id, position]]
+  );
+}
+
 /** The order a chapter appended after `chapters` gets. */
 export function nextSortOrder(
   chapters: readonly Pick<RepertoireChapterSummary, "sortOrder">[]

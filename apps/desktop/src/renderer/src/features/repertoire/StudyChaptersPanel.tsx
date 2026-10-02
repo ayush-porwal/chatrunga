@@ -146,6 +146,8 @@ export function StudyChaptersPanel({
           className="flex items-center gap-2"
           onSubmit={(event) => {
             event.preventDefault();
+            // Enter submits even while the button is disabled; a write in flight finishes first.
+            if (busy) return;
             if (adding.trim()) onAdd(adding.trim());
             setAdding(null);
           }}

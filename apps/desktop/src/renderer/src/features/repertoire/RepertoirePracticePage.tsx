@@ -81,6 +81,10 @@ export function RepertoirePracticePage({
   const { mutate: endFinishedSession } = endFinished;
   /** The finished session whose summary was asked for (once; Retry asks again). */
   const summaryRequested = useRef<string | null>(null);
+  // Revisiting a session (its summary since replaced by another's) asks for its summary again.
+  useEffect(() => {
+    summaryRequested.current = null;
+  }, [sessionId]);
   const saveWorkspace = useSaveRepertoireWorkspaceMutation();
   const [nothingDue, setNothingDue] = useState<PracticeMode | null>(null);
   const [resumeError, setResumeError] = useState<string | null>(null);

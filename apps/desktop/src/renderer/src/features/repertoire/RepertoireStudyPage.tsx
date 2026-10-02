@@ -134,6 +134,11 @@ export function RepertoireStudyPage({
     if (initialNodeId) workspace().selectNode(initialNodeId);
   }, [initialNodeId]);
 
+  // The chapter opened after removing the open one is watched again (this runs before the check).
+  useEffect(() => {
+    leavingChapter.current = false;
+  }, [chapterId]);
+
   // Gone since: hand back to the hub with a reason.
   useEffect(() => {
     if (leavingChapter.current) return;
