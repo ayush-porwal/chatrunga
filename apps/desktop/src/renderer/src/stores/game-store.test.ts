@@ -411,3 +411,26 @@ describe("game store", () => {
     });
   });
 });
+
+describe("clockNow after a renderer reload", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    vi.resetModules();
+  });
+
+  it("starts from main's current total, so earlier sleeps never jump a new clock", async () => {
+    let total = 3_600_000; // an hour asleep before this renderer (re)loaded
+    vi.stubGlobal("window", { chaturanga: { system: { timeAsleepMs: () => total } } });
+    vi.resetModules();
+    const store = await import("./game-store");
+    const monotonic = vi.spyOn(performance, "now").mockReturnValue(1_000);
+    const wall = vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const start = store.clockNow();
+    // Asleep another 500 ms: only that is added.
+    total += 500;
+    monotonic.mockReturnValue(2_000);
+    wall.mockReturnValue(1_700_000_000_000 + 1_000 + 500);
+    expect(store.clockNow() - start).toBe(1_500);
+  });
+});

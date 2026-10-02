@@ -583,7 +583,11 @@ let readTimeAsleep: () => number = () =>
 const SUSPECT_SLEEP_MS = 25;
 let lastMonotonic = performance.now();
 let lastWall = Date.now();
-let timeAsleep = 0;
+/**
+ * Main's total since the app started, read once now: a renderer reloaded later would otherwise
+ * start from 0 and add every earlier sleep at its first check, jumping a running clock forward.
+ */
+let timeAsleep = readTimeAsleep();
 /** The main process said the computer woke up: read the total at the next clock check. */
 let resumedSinceRead = false;
 
