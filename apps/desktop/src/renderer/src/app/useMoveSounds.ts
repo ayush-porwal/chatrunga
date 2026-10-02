@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import type { Color, MoveNode } from "@chaturanga/shared/types/chess";
-import { playSound, type SoundKind } from "../sounds/sounds";
+import { keepAudioAwake, playSound, type SoundKind } from "../sounds/sounds";
 import { useGameStore } from "../stores/game-store";
 
 /**
@@ -9,6 +9,8 @@ import { useGameStore } from "../stores/game-store";
  * move — forwards or backwards — and the sound setting is on.
  */
 export function useMoveSounds({ enabled, volume }: { enabled: boolean; volume: number }): void {
+  // Sounds loaded and the output kept awake from launch, so the first moves aren't silent.
+  useEffect(() => (enabled ? keepAudioAwake() : undefined), [enabled]);
   useEffect(() => {
     if (!enabled) return;
     return useGameStore.subscribe((state, previous) => {
