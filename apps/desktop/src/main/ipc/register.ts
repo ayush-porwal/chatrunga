@@ -32,6 +32,7 @@ import { errorMessage, logger } from "../logger";
 import { updateService } from "../updater";
 import { refreshWindowGlass } from "../window-glass";
 import { runGameReview } from "./review-handler";
+import { missedBetween, readClocks, type ClockReading } from "../time-asleep";
 import {
   asAbsolutePath,
   asId,
@@ -136,11 +137,10 @@ export function registerIpc(engineManager: EngineManager): void {
   // Main keeps the total it missed; the renderer reads it synchronously whenever it checks a clock,
   // so a move handled right after waking already sees it (an event could arrive too late).
   let timeAsleepMs = 0;
-  let suspendedAt: { monotonic: number; wall: number } | null = null;
-  const missedSince = (at: { monotonic: number; wall: number }) =>
-    Math.max(0, Date.now() - at.wall - (performance.now() - at.monotonic));
+  let suspendedAt: ClockReading | null = null;
+  const missedSince = (at: ClockReading) => missedBetween(at, readClocks());
   powerMonitor.on("suspend", () => {
-    suspendedAt = { monotonic: performance.now(), wall: Date.now() };
+    suspendedAt = readClocks();
   });
   powerMonitor.on("resume", () => {
     if (suspendedAt) timeAsleepMs += missedSince(suspendedAt);
