@@ -20,7 +20,7 @@ function jpegSize(file: string): { width: number; height: number } {
   throw new Error(`No SOF marker in ${file}`);
 }
 
-/** Absolute site origin from env SITE_URL (e.g. https://chaturanga.app), or null when unset. */
+/** Absolute site origin from env SITE_URL (e.g. https://chaturanga.ayushporwal.com), or null when unset. */
 function siteUrl(): string | null {
   const raw = process.env.SITE_URL?.trim();
   if (!raw) return null;

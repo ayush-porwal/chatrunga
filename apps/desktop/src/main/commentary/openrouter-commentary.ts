@@ -281,7 +281,7 @@ async function requestCompletion(
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://chaturanga.app",
+        "HTTP-Referer": "https://chaturanga.ayushporwal.com",
         "X-Title": "Chaturanga"
       },
       body: JSON.stringify({
