@@ -63,6 +63,8 @@ jobs:
           pr_reviewer.inline_key_issues: "true"
           pr_reviewer.num_max_findings: "20"
           pr_reviewer.enable_large_pr_chunking: "true"
-          # Chunks are reviewed in parallel; two at once stays under the rate limit.
+          # How many chunks a PR too big for one call is split into (files past them go unreviewed).
+          # All chunks are sent at once, so this also caps the burst at 2 calls. 2 × 200k tokens covers
+          # more than the old 5 × 32k did.
           pr_reviewer.max_number_of_calls: "2"
           pr_reviewer.extra_instructions: "Only report a finding you are highly confident is a real bug, security issue, or significant performance problem introduced by this diff. Skip the nits pits, speculative concerns, and anything you cannot anchor to a changed line. Do not pad the list to reach the maximum. An empty list is the right result when nothing qualifies."
