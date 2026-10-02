@@ -1,6 +1,6 @@
-import { importPgnText, legacyPlyShift, nodeIdForBoardFen, withRealPlies } from "@chaturanga/shared/chess/pgn";
+import { importPgnText, nodeIdForBoardFen, withRealPlies } from "@chaturanga/shared/chess/pgn";
 import type { GameReview } from "@chaturanga/shared/types/engine";
-import type { GameHeaders, GameSession, SavedGame } from "@chaturanga/shared/types/chess";
+import type { GameHeaders, GameSession, MoveNode, SavedGame } from "@chaturanga/shared/types/chess";
 import { useGameStore } from "../../stores/game-store";
 import { useReviewStore } from "../../stores/review-store";
 
@@ -47,9 +47,6 @@ export function openSavedGame(saved: SavedGame): void {
   useReviewStore.getState().loadReview(savedReview(saved), saved.reviews ?? []);
 }
 
-/** The renumbering each opened game's reviews need (see reviewWithRealPlies), for switching later. */
-const plyShifts = new Map<string, number>();
-
 /** Bumped by each switch, so only the latest one lands. */
 let analysisRequest = 0;
 
@@ -73,15 +70,25 @@ export async function showSavedAnalysis(gameId: string, reviewId: string): Promi
   ) {
     return false;
   }
-  store.loadReview(reviewWithRealPlies(review, plyShifts.get(gameId) ?? 0));
+  store.loadReview(alignReviewToTree(review, useGameStore.getState().moveTree));
   return true;
 }
 
 /** A saved game's stored review, numbered like its (renumbered) tree. */
 export function savedReview(saved: SavedGame): GameReview | null {
-  const shift = legacyPlyShift(saved.moveTree);
-  plyShifts.set(saved.id, shift);
-  return reviewWithRealPlies(saved.review ?? null, shift);
+  return saved.review ? alignReviewToTree(saved.review, withRealPlies(saved.moveTree)) : null;
+}
+
+/**
+ * A stored review numbered like `moveTree` (the session's, real plies). Each analysis is aligned
+ * on its own, by a move it shares with the tree: one saved before real plies is renumbered, one
+ * already rewritten with them is left as it is, whatever the game's other analyses are.
+ */
+export function alignReviewToTree(review: GameReview, moveTree: readonly MoveNode[]): GameReview {
+  const plies = new Map(moveTree.map((node) => [node.id, node.ply]));
+  const shared = review.moves.find((move) => plies.has(move.nodeId));
+  const shift = shared ? plies.get(shared.nodeId)! - shared.ply : 0;
+  return shift ? (reviewWithRealPlies(review, shift) ?? review) : review;
 }
 
 /** A review saved with a ply-0-rooted tree, renumbered the way `withRealPlies` renumbers the tree. */

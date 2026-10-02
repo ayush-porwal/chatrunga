@@ -63,6 +63,19 @@ describe("useGameAutosave flushes", () => {
     expect(saveGame.mock.calls[0][0]).toMatchObject({ id: "a", review: { moves: [] } });
   });
 
+  it("switching to another analysis first writes one still waiting (a run that just finished)", async () => {
+    loadSaved("a");
+    await vi.runAllTimersAsync();
+    saveGame.mockClear();
+    useReviewStore.getState().startReview("new");
+    useReviewStore.getState().setReview({ moves: [], createdAt: 2 } as unknown as GameReview);
+    // Switched to an older analysis before the autosave delay passed.
+    useReviewStore.getState().loadReview({ reviewId: "old", moves: [], createdAt: 1 } as unknown as GameReview);
+    await vi.runAllTimersAsync();
+    const saved = saveGame.mock.calls.map((call) => call[0].review?.reviewId);
+    expect(saved).toEqual(["new", "old"]);
+  });
+
   it("keeps the stored review of a game left with no review of its own", async () => {
     loadSaved("a");
     edit();

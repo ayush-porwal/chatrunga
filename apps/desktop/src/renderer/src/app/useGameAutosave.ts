@@ -58,6 +58,17 @@ function newGameId(): string {
  * changes. New empty boards and puzzle practice are never saved; opening a saved game doesn't
  * rewrite it; and a pending save is written before the board is replaced or the window closes.
  */
+/** The mounted autosave's flush (null when none is mounted). */
+let pendingFlush: (() => Promise<boolean>) | null = null;
+
+/**
+ * Writes the loaded game's pending changes now (e.g. before importing a PGN, so the library's
+ * check for a copy sees the board as it is). Resolves with whether everything is saved.
+ */
+export function flushGameAutosave(): Promise<boolean> {
+  return pendingFlush ? pendingFlush() : Promise.resolve(true);
+}
+
 export function useGameAutosave(): void {
   const saveGame = useSaveGameMutation().mutateAsync;
 
@@ -121,6 +132,17 @@ export function useGameAutosave(): void {
       return write(saveInput(current, resultAnchor, review), document);
     };
 
+    /** Writes what's waiting now; resolves with whether everything is saved. */
+    const flushPending = async (): Promise<boolean> => {
+      if (timeout) {
+        window.clearTimeout(timeout);
+        timeout = 0;
+        await save();
+      }
+      await lastWrite;
+      return useSaveStatusStore.getState().error === null;
+    };
+
     const schedule = () => {
       window.clearTimeout(timeout);
       timeout = window.setTimeout(() => {
@@ -182,21 +204,31 @@ export function useGameAutosave(): void {
       }),
       useReviewStore.subscribe((state, previous) => {
         if (state.review === previous.review) return;
+        // Another analysis of the same game is now shown (switching, or a run that finished): one
+        // still waiting to be written (a run just finished, a comment just arrived) is written now,
+        // or the save below would only write the new one and its last changes would be lost.
+        const outgoing = previous.review;
+        // (A review cleared as the board is replaced is written with the leaving game: flushLeaving.)
+        if (
+          outgoing &&
+          state.review &&
+          timeout &&
+          state.review.reviewId !== outgoing.reviewId &&
+          boardReview?.board === board &&
+          boardReview.review === outgoing
+        ) {
+          const game = useGameStore.getState();
+          if (game.gameId) void write(saveInput(game, resultAnchor, outgoing), null);
+        }
         if (state.review) boardReview = { board, review: state.review };
         schedule();
       }),
       // Closing the window (or quitting): write what's pending before the renderer goes away.
-      window.chaturanga?.games.onFlushRequest?.(async () => {
-        if (timeout) {
-          window.clearTimeout(timeout);
-          timeout = 0;
-          await save();
-        }
-        await lastWrite;
-        return useSaveStatusStore.getState().error === null;
-      }) ?? (() => {})
+      window.chaturanga?.games.onFlushRequest?.(flushPending) ?? (() => {})
     ];
+    pendingFlush = flushPending;
     return () => {
+      if (pendingFlush === flushPending) pendingFlush = null;
       window.clearTimeout(timeout);
       unsubscribers.forEach((unsubscribe) => unsubscribe());
     };

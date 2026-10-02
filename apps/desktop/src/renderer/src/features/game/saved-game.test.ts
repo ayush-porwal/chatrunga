@@ -4,7 +4,7 @@ import type { SavedGame } from "@chaturanga/shared/types/chess";
 import type { GameReview } from "@chaturanga/shared/types/engine";
 import { useGameStore } from "../../stores/game-store";
 import { useReviewStore } from "../../stores/review-store";
-import { reviewWithRealPlies, sessionFromSavedGame, showSavedAnalysis } from "./saved-game";
+import { alignReviewToTree, reviewWithRealPlies, sessionFromSavedGame, showSavedAnalysis } from "./saved-game";
 
 function saved(overrides: Partial<SavedGame> = {}): SavedGame {
   const game = createEmptyGame();
@@ -96,5 +96,22 @@ describe("showSavedAnalysis", () => {
     answer(older);
     expect(await switching).toBe(false);
     expect(useReviewStore.getState()).toMatchObject({ status: "running", reviewId: "new-run" });
+  });
+});
+
+describe("alignReviewToTree", () => {
+  const tree = [
+    { id: "root", parentId: null, children: ["a"], ply: 4 },
+    { id: "a", parentId: "root", children: [], ply: 5 }
+  ] as unknown as SavedGame["moveTree"];
+  const reviewAt = (ply: number) =>
+    ({ engineId: "sf", depth: null, moveTimeMs: 1, createdAt: 1, summary: {}, moves: [{ nodeId: "a", ply }], commentary: [{ ply, prose: "", generatedAt: 0, providerModel: "m" }] }) as unknown as GameReview;
+
+  it("renumbers an analysis saved before real plies, and leaves one already renumbered alone", () => {
+    const legacy = alignReviewToTree(reviewAt(1), tree);
+    expect(legacy.moves[0]?.ply).toBe(5);
+    expect(legacy.commentary?.[0]?.ply).toBe(5);
+    const current = reviewAt(5);
+    expect(alignReviewToTree(current, tree)).toBe(current);
   });
 });

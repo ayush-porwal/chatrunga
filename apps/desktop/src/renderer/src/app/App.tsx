@@ -38,7 +38,7 @@ import { AppPages, GameReviewPicker, OnboardingFlow, type AppView } from "./AppP
 import { PuzzleInfoPanel } from "./PuzzleInfoPanel";
 import { useBoardShortcuts } from "./useBoardShortcuts";
 import { useEngineDriver } from "./useEngineDriver";
-import { useGameAutosave } from "./useGameAutosave";
+import { flushGameAutosave, useGameAutosave } from "./useGameAutosave";
 import { useUsageActivity } from "./useUsageTelemetry";
 import { useLichess } from "./useLichess";
 import { useHistoryShortcuts } from "./useHistoryShortcuts";
@@ -395,6 +395,8 @@ export function App() {
     try {
       const file = await window.chaturanga.files.openPgnFile();
       if (!file || request !== latestNavigation.current) return;
+      // Pending edits first: the library's check for a copy must see the board as it is.
+      await flushGameAutosave();
       const imported = await window.chaturanga.games.importPgn({ pgn: file.contents });
       // A Lichess game (or another navigation) started meanwhile: it keeps the board.
       if (request !== latestNavigation.current) return;
