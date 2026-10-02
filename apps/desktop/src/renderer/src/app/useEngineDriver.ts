@@ -306,7 +306,8 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
         engineSearches.analysis = searchId;
         analysis.setActiveEngine(engineId);
         analysis.setError(null);
-        analysis.startSearch();
+        // Lines already found for this position (with this engine and line count) show at once.
+        analysis.startSearch(`${game.currentFen}|${engineId}|${options.multipv}`);
         engines
           .startAnalysis({
             engineId,

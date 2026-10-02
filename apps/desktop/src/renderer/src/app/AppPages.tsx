@@ -52,6 +52,7 @@ export type PageCommands = {
   commentarySettings: () => void;
   openGameFromLibrary: (id: string) => void;
   analyzePosition: () => void;
+  stopLiveAnalysis: () => void;
 };
 
 /**
@@ -133,6 +134,7 @@ export function AppPages({
           sideTab={sideTab}
           onSideTabChange={onSideTabChange}
           onStartAnalysis={canStartAnalysis ? on.analyzePosition : undefined}
+          onStopAnalysis={on.stopLiveAnalysis}
           puzzlePanel={puzzlePanel}
           onOpenSettings={on.engineSettings}
         />
