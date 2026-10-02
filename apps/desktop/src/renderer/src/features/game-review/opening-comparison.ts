@@ -135,7 +135,7 @@ export type TokenStatus = {
 };
 
 const TOKEN_STATUS: Record<ComparisonMoveStatus, TokenStatus> = {
-  "outside-scope": { tone: "subtle", label: "Before the repertoire applies" },
+  "outside-scope": { tone: "subtle", label: "Outside your repertoire" },
   "player-choice": { tone: "accent", label: "Your repertoire move" },
   "covered-reply": { tone: "info", label: "Covered opponent reply" },
   deviation: { tone: "warn", label: "Left your repertoire" },

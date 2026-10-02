@@ -215,6 +215,8 @@ describe("move tokens", () => {
       expect(tokenStatus(status).label.length).toBeGreaterThan(0);
     }
     expect(tokenStatus("deviation")).toEqual({ tone: "warn", label: "Left your repertoire" });
+    // Also used for moves after a deviation, so it never claims the repertoire applies later.
+    expect(tokenStatus("outside-scope")).toEqual({ tone: "subtle", label: "Outside your repertoire" });
     expect(tokenStatus("uncovered").tone).toBe("danger");
   });
 

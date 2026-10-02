@@ -427,7 +427,8 @@ export type RepertoireDueSummary = {
 
 /** How one mainline move of a finished game relates to the selected repertoire. */
 export type ComparisonMoveStatus =
-  /** Before any active chapter applies (e.g. a custom-root chapter not reached yet). */
+  /** Not in any active chapter: before one applies (e.g. a custom-root chapter not reached yet), or
+   * after a deviation or uncovered reply that never returns to known preparation. */
   | "outside-scope"
   /** The player's move is an effective accepted choice at a recognized decision. */
   | "player-choice"

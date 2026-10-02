@@ -51,6 +51,13 @@ const reviewTabOptions: readonly SegmentedOption<ReviewTab>[] = [
   { value: "settings", label: "Settings" }
 ];
 
+/**
+ * Five review tabs don't fit the workspace panel at its usual widths with the shared tab padding
+ * and text size, so the labels truncated ("Comme…"): narrower panels tighten the padding, then the
+ * text, so every label stays whole down to the panel's 20rem minimum.
+ */
+const reviewTabsClass = `${workspaceTabsClass} @max-[424px]/panel:[&>button]:px-1.5 @max-[384px]/panel:[&>button]:text-xs @max-[344px]/panel:[&>button]:px-0.5`;
+
 type GameReviewPageProps = {
   activeTab: ReviewTab;
   onTabChange: (tab: ReviewTab) => void;
@@ -252,7 +259,7 @@ function GameReviewPageInner({
           role="tablist"
           panelId={panelId}
           fullWidth
-          className={workspaceTabsClass}
+          className={reviewTabsClass}
           value={activeTab}
           onChange={onTabChange}
           options={reviewTabOptions}

@@ -193,6 +193,22 @@ describe("compareGameToRepertoire", () => {
     ]);
   });
 
+  it("reports a player deviation on the first move (the root position is recognized)", () => {
+    const a = chapter("white", "a", [["e4", "e5", "Nf3", "Nc6", "Bc4"]]);
+    const result = compare("white", [a], ["d4", "d5"]);
+    expect(result.matchedPlies).toBe(0);
+    expect(result.issue).toMatchObject({
+      status: "player-deviation",
+      ply: 1,
+      playedSan: "d4",
+      expectedSans: ["e4"],
+      preferredUci: "e2e4",
+      chapterId: "a",
+      nodeId: "root"
+    });
+    expect(result.moves.map((move) => move.status)).toEqual(["deviation", "outside-scope"]);
+  });
+
   it("reports an uncovered opponent reply with the covered ones", () => {
     const a = chapter("white", "a", [
       ["e4", "e5", "Nf3"],
