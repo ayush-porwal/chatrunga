@@ -6,10 +6,10 @@ export function defaultEngineFor(engines: readonly EngineConfig[] | undefined): 
 }
 
 /**
- * The engine live analysis runs: the one the user chose for analysis while it's still installed
- * and usable, else the default engine.
+ * The engine live analysis runs: the one the user chose while it's still installed and usable,
+ * else the default among the usable engines. Null when none is usable (analysis says so).
  */
 export function analysisEngineFor(engines: readonly EngineConfig[] | undefined, chosen: string | null): string | null {
-  const usable = chosen ? engines?.find((engine) => engine.id === chosen && engine.isAvailable) : undefined;
-  return usable?.id ?? defaultEngineFor(engines);
+  const usable = engines?.filter((engine) => engine.isAvailable) ?? [];
+  return usable.find((engine) => engine.id === chosen)?.id ?? defaultEngineFor(usable);
 }

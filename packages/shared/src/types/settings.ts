@@ -224,6 +224,11 @@ export type AppSettings = {
    * deletes events not sent yet. `CHATURANGA_TELEMETRY_ENABLED=false` overrides it.
    */
   usageAnalyticsEnabled: boolean;
+  /**
+   * Startup may adopt an Lc0 installed outside the app (Homebrew, PATH) for Maia. Turned off when
+   * the user forgets Lc0's path, back on when they choose a binary; not shown in Settings.
+   */
+  lc0AutoDetect: boolean;
   theme: "light" | "dark";
   lastOpenedGameId: string | null;
   /**
@@ -292,6 +297,7 @@ export const defaultSettings: AppSettings = {
   recentFilePaths: [],
   updatesAutoDownload: true,
   usageAnalyticsEnabled: true,
+  lc0AutoDetect: true,
   theme: "dark",
   lastOpenedGameId: null,
   onboardingCompletedAt: null,

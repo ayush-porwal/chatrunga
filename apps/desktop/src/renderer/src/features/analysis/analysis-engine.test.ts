@@ -13,10 +13,14 @@ describe("analysis engine", () => {
     expect(defaultEngineFor(undefined)).toBeNull();
   });
 
-  it("uses the chosen engine while it's installed and usable", () => {
+  it("uses the chosen engine while it's installed and usable, else a usable default", () => {
     expect(analysisEngineFor(engines, "maia")).toBe("maia");
     expect(analysisEngineFor(engines, "gone")).toBe("sf");
     expect(analysisEngineFor(engines, "removed")).toBe("sf");
     expect(analysisEngineFor(engines, null)).toBe("sf");
+    // The default engine itself can't run: the first usable one, never an unusable one.
+    const brokenDefault = [engine("sf", { isDefault: true, isAvailable: false }), engine("lc0")];
+    expect(analysisEngineFor(brokenDefault, null)).toBe("lc0");
+    expect(analysisEngineFor([engine("x", { isAvailable: false })], null)).toBeNull();
   });
 });

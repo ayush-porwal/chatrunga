@@ -56,13 +56,39 @@ describe("keepAudioAwake", () => {
     fake.setForeground(false, "visibilitychange");
     fake.runTimers();
     expect(fake.context.suspend).toHaveBeenCalledTimes(1);
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     fake.setForeground(true, "focus");
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(fake.context.resume).toHaveBeenCalledTimes(1);
 
     stop();
     expect(fake.context.close).toHaveBeenCalled();
     expect(fake.listeners.size).toBe(0);
+  });
+
+  it("coming back while the output is still suspending resumes it once that settles", async () => {
+    const fake = fakeEnvironment();
+    let finishSuspend: () => void = () => undefined;
+    fake.context.suspend = vi.fn(
+      () =>
+        new Promise<undefined>((resolve) => {
+          finishSuspend = () => {
+            fake.context.state = "suspended";
+            resolve(undefined);
+          };
+        })
+    );
+    const stop = keepAudioAwake(fake.environment);
+    fake.setForeground(false, "blur");
+    fake.runTimers();
+    expect(fake.context.suspend).toHaveBeenCalledTimes(1);
+    // Back in front before the suspension finished: still "running", nothing to resume yet.
+    fake.setForeground(true, "focus");
+    expect(fake.context.resume).not.toHaveBeenCalled();
+    finishSuspend();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fake.context.resume).toHaveBeenCalledTimes(1);
+    stop();
   });
 
   it("without Web Audio it does nothing (sounds still play)", () => {

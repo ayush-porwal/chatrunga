@@ -49,17 +49,12 @@ const EngineLineRow = memo(function EngineLineRow({
   nodeId: string;
   onGoToLine?: GoToLine;
   /** A move of this line is hovered or focused (its position shows below the lines). */
-  onPreview?: (preview: LinePreview) => void;
+  onPreview?: (target: PreviewTarget) => void;
 }) {
   const steps = useMemo(() => (line?.pv?.length ? uciLineSteps(fen, line.pv.slice(0, 10)) : []), [fen, line]);
   const sans = useMemo(() => steps.map((step) => step.san), [steps]);
   const score = line?.score ? formatScore(line.score, 2) : null;
-  const previewFor = (moveIndex: number): LinePreview => ({
-    fenAfter: steps[moveIndex]!.fenAfter,
-    uci: steps[moveIndex]!.uci,
-    label: numberedLine(fen, sans.slice(0, moveIndex + 1)),
-    score
-  });
+  const multipv = line?.multipv ?? index + 1;
   return (
     <li className="grid h-8 grid-cols-[1rem_3.5rem_minmax(0,1fr)] items-center gap-2 font-mono text-xs tabular-nums">
       <span className="text-2xs text-fg-subtle">{line?.multipv ?? index + 1}</span>
@@ -70,8 +65,8 @@ const EngineLineRow = memo(function EngineLineRow({
               <Fragment key={`${moveIndex}-${step.san}`}>
                 {moveIndex ? " " : null}
                 <span
-                  onPointerEnter={() => onPreview?.(previewFor(moveIndex))}
-                  onFocus={() => onPreview?.(previewFor(moveIndex))}
+                  onPointerEnter={() => onPreview?.({ multipv, moveIndex })}
+                  onFocus={() => onPreview?.({ multipv, moveIndex })}
                 >
                   {onGoToLine ? (
                     <MoveLink
@@ -102,7 +97,7 @@ function AnalysisEngineSelect({ className }: { className?: string }) {
   const chosen = useAnalysisStore((state) => state.analysisEngineId);
   const choose = useAnalysisStore((state) => state.chooseAnalysisEngine);
   const usable = (engines.data ?? []).filter((engine) => engine.isAvailable);
-  const value = analysisEngineFor(engines.data, chosen);
+  const value = analysisEngineFor(usable, chosen);
   if (!usable.length || !value) return null;
   return (
     <Select
@@ -123,6 +118,23 @@ function AnalysisEngineSelect({ className }: { className?: string }) {
 
 /** The move of an engine line being hovered or focused: the position after it, shown below the lines. */
 type LinePreview = { fenAfter: string; uci: string; label: string; score: string | null };
+/** Which move is hovered: line (MultiPV number) and move index, so an updated line updates the preview. */
+type PreviewTarget = { multipv: number; moveIndex: number };
+
+/** The preview for `target` from the lines as they are now; null once that move is gone. */
+function previewFor(fen: string, lines: readonly EngineInfo[], target: PreviewTarget): LinePreview | null {
+  const line = lines.find((candidate) => (candidate.multipv ?? 1) === target.multipv);
+  if (!line?.pv?.length) return null;
+  const steps = uciLineSteps(fen, line.pv.slice(0, 10));
+  const step = steps[target.moveIndex];
+  if (!step) return null;
+  return {
+    fenAfter: step.fenAfter,
+    uci: step.uci,
+    label: numberedLine(fen, steps.slice(0, target.moveIndex + 1).map((item) => item.san)),
+    score: line.score ? formatScore(line.score, 2) : null
+  };
+}
 
 /**
  * A roomy board under the lines with the position after the move being hovered (or focused), the
@@ -213,10 +225,15 @@ function EngineStatusPanelContent({
   const linesNavigable = useGameStore((state) => state.mode !== "engine" || !state.engineSide || Boolean(state.gameOutcome));
   // Live analysis (not an engine game's opponent): the engine can be switched from the header.
   const analysing = useGameStore((state) => state.mode === "analysis");
-  // The hovered line move, for the position it was hovered in (a new position drops it).
-  const [preview, setPreviewState] = useState<{ fen: string; line: LinePreview } | null>(null);
-  const setPreview = useCallback((line: LinePreview) => setPreviewState({ fen, line }), [fen]);
-  const clearPreview = useCallback(() => setPreviewState(null), []);
+  // The hovered line move, for the position it was hovered in (a new position drops it). The card
+  // reads that line as it is now, so a line the engine updates under the pointer updates too.
+  const [hovered, setHovered] = useState<{ fen: string; target: PreviewTarget } | null>(null);
+  const setPreview = useCallback((target: PreviewTarget) => setHovered({ fen, target }), [fen]);
+  const clearPreview = useCallback(() => setHovered(null), []);
+  const preview = useMemo(
+    () => (hovered && hovered.fen === fen ? previewFor(fen, topLines, hovered.target) : null),
+    [hovered, fen, topLines]
+  );
   const engines = useEnginesQuery();
   const engineName = engines.data?.find((engine) => engine.id === activeEngineId)?.name ?? null;
   // With MultiPV the latest info can be line 2/3 — read depth/score/best from the principal line.
@@ -271,7 +288,7 @@ function EngineStatusPanelContent({
                   />
                 ))}
               </ol>
-              {preview && preview.fen === fen ? <LinePreviewCard preview={preview.line} /> : null}
+              {preview ? <LinePreviewCard preview={preview} /> : null}
             </div>
           ) : null}
         </>

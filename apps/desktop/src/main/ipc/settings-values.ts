@@ -67,6 +67,7 @@ const SETTING_CHECKS: { [K in keyof AppSettings]-?: Check } = {
   recentFilePaths: list(text(4096), 50),
   updatesAutoDownload: bool,
   usageAnalyticsEnabled: bool,
+  lc0AutoDetect: bool,
   theme: oneOf("light", "dark"),
   lastOpenedGameId: nullable(text(200)),
   onboardingCompletedAt: nullable(number(0, Number.MAX_SAFE_INTEGER, true)),

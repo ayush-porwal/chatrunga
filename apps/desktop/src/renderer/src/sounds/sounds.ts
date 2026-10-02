@@ -106,14 +106,27 @@ export function keepAudioAwake(
     if (idleTimer !== null) environment.clearTimeout(idleTimer);
     idleTimer = null;
   };
+  let closed = false;
+  // A suspend or resume in flight: the window may come back (or leave) before it settles, so the
+  // state is checked again once it has.
+  let transition: Promise<void> | null = null;
+  const settle = (change: Promise<void>) => {
+    transition = change
+      .catch(() => undefined)
+      .finally(() => {
+        transition = null;
+        if (!closed) update();
+      });
+  };
   const update = () => {
+    if (transition) return;
     if (environment.isForeground()) {
       clearIdle();
-      if (context.state === "suspended") void context.resume().catch(() => undefined);
+      if (context.state === "suspended") settle(context.resume());
     } else if (idleTimer === null && context.state === "running") {
       idleTimer = environment.setTimeout(() => {
         idleTimer = null;
-        void context.suspend().catch(() => undefined);
+        if (!environment.isForeground() && context.state === "running") settle(context.suspend());
       }, AUDIO_IDLE_SUSPEND_MS);
     }
   };
@@ -122,6 +135,7 @@ export function keepAudioAwake(
   environment.target.addEventListener("blur", update);
   environment.documentTarget.addEventListener("visibilitychange", update);
   return () => {
+    closed = true;
     clearIdle();
     environment.target.removeEventListener("focus", update);
     environment.target.removeEventListener("blur", update);
