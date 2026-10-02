@@ -3,7 +3,7 @@ import { applySan, statusForFen } from "@chaturanga/shared/chess/position";
 import { reviewInsightPayloadSchema } from "@chaturanga/shared/schemas";
 import { validateProse } from "@chaturanga/shared/llm/commentary";
 import type { AnalysisLine, EngineScore, MoveClassification, MoveReview } from "@chaturanga/shared/types/engine";
-import { buildInsightPayload, mainlineReviewInput, reviewIdFromPath } from "./review-utils";
+import { buildInsightPayload, mainlineReviewInput, numberedLine, reviewIdFromPath, uciLineSteps } from "./review-utils";
 
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const cp = (value: number): EngineScore => ({ type: "cp", value });
@@ -313,5 +313,20 @@ describe("game review utilities", () => {
     ];
     expect(mainlineReviewInput(tree)).toHaveLength(1);
     expect(mainlineReviewInput(tree)[0]?.uci).toBe("e2e4");
+  });
+});
+
+describe("engine line steps", () => {
+  const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+  it("gives the position after each move, stopping at one that doesn't fit", () => {
+    const steps = uciLineSteps(START, ["e2e4", "e7e5", "e1e5", "g1f3"]);
+    expect(steps.map((step) => step.san)).toEqual(["e4", "e5"]);
+    expect(steps[1]!.fenAfter).toBe("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2");
+  });
+
+  it("numbers a line from either side to move", () => {
+    expect(numberedLine(START, ["e4", "e5", "Nf3"])).toBe("1. e4 e5 2. Nf3");
+    expect(numberedLine("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 12", ["e5", "Nf3"])).toBe("12… e5 13. Nf3");
   });
 });
