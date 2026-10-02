@@ -18,7 +18,7 @@ vi.mock("../queries/api", () => ({
 }));
 vi.stubGlobal("window", globalThis);
 
-const { AUTOSAVE_DELAY_MS, useGameAutosave } = await import("./useGameAutosave");
+const { AUTOSAVE_DELAY_MS, flushGameAutosave, useGameAutosave } = await import("./useGameAutosave");
 const { useGameStore } = await import("../stores/game-store");
 const { useReviewStore } = await import("../stores/review-store");
 const { useSaveStatusStore } = await import("../stores/save-status-store");
@@ -61,6 +61,28 @@ describe("useGameAutosave flushes", () => {
     await vi.runAllTimersAsync();
     expect(saveGame).toHaveBeenCalledOnce();
     expect(saveGame.mock.calls[0][0]).toMatchObject({ id: "a", review: { moves: [] } });
+  });
+
+  it("switching to another analysis first writes one still waiting (a run that just finished)", async () => {
+    loadSaved("a");
+    await vi.runAllTimersAsync();
+    saveGame.mockClear();
+    useReviewStore.getState().startReview("new");
+    useReviewStore.getState().setReview({ moves: [], createdAt: 2 } as unknown as GameReview);
+    // Switched to an older analysis before the autosave delay passed.
+    useReviewStore.getState().loadReview({ reviewId: "old", moves: [], createdAt: 1 } as unknown as GameReview);
+    await vi.runAllTimersAsync();
+    const saved = saveGame.mock.calls.map((call) => call[0].review?.reviewId);
+    expect(saved).toEqual(["new", "old"]);
+  });
+
+  it("the board counts as saved for an import even while a game left earlier keeps its failure", async () => {
+    useSaveStatusStore.getState().setFailed("disk full", () => undefined, "other-game", 1);
+    loadSaved("a");
+    expect(await flushGameAutosave()).toBe(true);
+    useSaveStatusStore.getState().setFailed("disk full", () => undefined, "a", 2);
+    expect(await flushGameAutosave()).toBe(false);
+    useSaveStatusStore.getState().clear();
   });
 
   it("keeps the stored review of a game left with no review of its own", async () => {

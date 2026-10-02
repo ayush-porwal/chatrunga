@@ -9,6 +9,7 @@ vi.mock("electron", () => ({ app: { getPath: () => userData } }));
 
 const { closeDb, getDb } = await import("./index");
 const { gameRepository } = await import("./repositories");
+const { gameFingerprint } = await import("./game-fingerprint");
 
 const PGN = `[Event "Rapid"]
 [White "Carlsen"]
@@ -21,6 +22,14 @@ const PGN = `[Event "Rapid"]
 
 1. e4 e5 2. Nf3 1-0`;
 
+/** Test-only: puts a review straight into game_reviews (replacing the game's ones), bypassing the save path. */
+function storeReview(gameId: string, review: object) {
+  getDb().prepare("DELETE FROM game_reviews WHERE game_id = ?").run(gameId);
+  getDb()
+    .prepare("INSERT INTO game_reviews (review_id, game_id, created_at, review_json) VALUES (?, ?, ?, ?)")
+    .run(`test-${gameId}`, gameId, 1, JSON.stringify(review));
+}
+
 function saveImported() {
   const { game } = importPgnText(PGN);
   return gameRepository.save({ ...game, headers: game.headers });
@@ -28,6 +37,7 @@ function saveImported() {
 
 describe("gameRepository (SQLite)", () => {
   beforeEach(() => {
+    getDb().exec("DELETE FROM game_reviews");
     getDb().exec("DELETE FROM games");
   });
 
@@ -73,9 +83,8 @@ describe("gameRepository (SQLite)", () => {
       summary: {},
       moves: mainline.map((node, index) => ({ nodeId: node.id, ply: index + 1, san: node.san, fenAfter: node.fenAfter }))
     };
-    getDb()
-      .prepare("UPDATE games SET move_tree_json = ?, review_json = ? WHERE id = ?")
-      .run("{not json", JSON.stringify(review), saved.id);
+    getDb().prepare("UPDATE games SET move_tree_json = ? WHERE id = ?").run("{not json", saved.id);
+    storeReview(saved.id, review);
     const reopened = gameRepository.get(saved.id)!;
     const rebuiltIds = new Set(reopened.moveTree.map((node) => node.id));
     expect(reopened.review?.moves.map((move) => move.san)).toEqual(["e4", "e5", "Nf3"]);
@@ -83,13 +92,13 @@ describe("gameRepository (SQLite)", () => {
 
     // A damaged move entry drops the review; the game still opens.
     const damaged = { ...review, moves: [null, ...review.moves] };
-    getDb().prepare("UPDATE games SET review_json = ? WHERE id = ?").run(JSON.stringify(damaged), saved.id);
+    storeReview(saved.id, damaged);
     expect(gameRepository.get(saved.id)?.review).toBeNull();
     expect(gameRepository.get(saved.id)?.moveTree.length).toBeGreaterThan(1);
 
     // A review of other moves than the PGN's: dropped, not attached to the wrong ones.
     const wrong = { ...review, moves: review.moves.map((move) => ({ ...move, fenAfter: "8/8/8/8/8/8/8/8 w - - 0 1" })) };
-    getDb().prepare("UPDATE games SET review_json = ? WHERE id = ?").run(JSON.stringify(wrong), saved.id);
+    storeReview(saved.id, wrong);
     expect(gameRepository.get(saved.id)?.review).toBeNull();
   });
 
@@ -109,8 +118,9 @@ describe("gameRepository (SQLite)", () => {
     };
     const cursor = mainline[1];
     getDb()
-      .prepare("UPDATE games SET move_tree_json = ?, review_json = ?, current_node_id = ?, current_fen = ? WHERE id = ?")
-      .run("{not json", JSON.stringify(review), cursor.id, cursor.fenAfter, saved.id);
+      .prepare("UPDATE games SET move_tree_json = ?, current_node_id = ?, current_fen = ? WHERE id = ?")
+      .run("{not json", cursor.id, cursor.fenAfter, saved.id);
+    storeReview(saved.id, review);
     const reopened = gameRepository.get(saved.id)!;
     expect(reopened.review?.moves.map((move) => move.san)).toEqual(["Bb5", "a6", "Ba4"]);
     const node = reopened.moveTree.find((item) => item.id === reopened.currentNodeId);
@@ -195,5 +205,65 @@ describe("gameRepository (SQLite)", () => {
     expect(plan.map((row) => row.detail).join(" ")).toContain("games_recent_idx");
     expect(gameRepository.count()).toBe(1);
     expect(gameRepository.idsBySource("pgn-import")).toHaveLength(1);
+  });
+
+  describe("analyses", () => {
+    const reviewOf = (game: ReturnType<typeof saveImported>, reviewId: string, createdAt: number, extra: object = {}) => ({
+      reviewId,
+      engineId: "sf",
+      engineName: "Stockfish 17",
+      depth: null,
+      moveTimeMs: 1000,
+      createdAt,
+      summary: {},
+      moves: game.moveTree.filter((node) => node.san).map((node) => ({ nodeId: node.id, ply: node.ply, san: node.san, fenAfter: node.fenAfter })),
+      ...extra
+    });
+    const saveWith = (game: ReturnType<typeof saveImported>, review: object | null | undefined) => {
+      const { game: session } = importPgnText(PGN);
+      return gameRepository.save({ ...session, id: game.id, review: review as never });
+    };
+
+    it("re-analysing adds an analysis; each keeps its own commentary; the newest opens with the game", () => {
+      const game = saveImported();
+      saveWith(game, reviewOf(game, "first", 10, { maiaEngines: [{ rating: 1500, engineId: "m", name: "Maia" }] }));
+      saveWith(game, reviewOf(game, "second", 20, { engineName: "Lc0" }));
+      // Commentary arriving for the older one (shown again) updates that one only.
+      saveWith(game, reviewOf(game, "first", 10, { commentary: [{ ply: 1, prose: "Good start.", generatedAt: 11 }] }));
+
+      const opened = gameRepository.get(game.id)!;
+      expect(opened.review?.reviewId).toBe("second");
+      expect(opened.reviews.map((info) => [info.reviewId, info.engineName, info.commentaryCount])).toEqual([
+        ["second", "Lc0", 0],
+        ["first", "Stockfish 17", 1]
+      ]);
+      expect(opened.reviews[1]?.maiaLevels).toEqual([]);
+      expect(gameRepository.getReview(game.id, "first")?.commentary?.[0]?.prose).toBe("Good start.");
+      expect(gameRepository.getReview(game.id, "missing")).toBeNull();
+      expect(gameRepository.list()[0]).toMatchObject({ reviewCount: 2, lastReviewedAt: 20 });
+    });
+
+    it("saving without a review (or with none) never removes the saved ones", () => {
+      const game = saveImported();
+      saveWith(game, reviewOf(game, "kept", 10));
+      saveWith(game, null);
+      saveWith(game, undefined);
+      expect(gameRepository.get(game.id)?.reviews.map((info) => info.reviewId)).toEqual(["kept"]);
+    });
+
+    it("deleting a game deletes its analyses", () => {
+      const game = saveImported();
+      saveWith(game, reviewOf(game, "gone", 10));
+      gameRepository.remove(game.id);
+      expect(getDb().prepare("SELECT COUNT(*) AS n FROM game_reviews").get()).toEqual({ n: 0 });
+    });
+
+    it("finds the same game by fingerprint", () => {
+      const game = saveImported();
+      const { game: again } = importPgnText(PGN);
+      expect(gameRepository.findIdByFingerprint(gameFingerprint(again)!)).toBe(game.id);
+      const { game: other } = importPgnText(PGN.replace("2. Nf3", "2. Nc3"));
+      expect(gameRepository.findIdByFingerprint(gameFingerprint(other)!)).toBeNull();
+    });
   });
 });

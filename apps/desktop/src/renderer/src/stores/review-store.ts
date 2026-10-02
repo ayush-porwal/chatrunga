@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { savedReviewInfo } from "@chaturanga/shared/chess/review-info";
+import type { SavedReviewInfo } from "@chaturanga/shared/types/chess";
 import {
   savedReviewCommentary,
   type GameReview,
@@ -18,6 +20,11 @@ type ReviewStore = {
   reviewId: string | null;
   progress: ReviewProgress | null;
   partialMoves: MoveReview[];
+  /**
+   * Every saved analysis of the loaded game, newest first (re-analysing adds one; each keeps its
+   * own AI commentary). `review` is the one shown.
+   */
+  analyses: SavedReviewInfo[];
   startReview: (reviewId: string) => void;
   setReview: (review: GameReview) => void;
   setError: (error: string) => void;
@@ -30,7 +37,8 @@ type ReviewStore = {
   /** Apply a throttled batch of engine events in one update (one render per batch). */
   applyReviewEvents: (batch: { progress: ReviewProgress | null; moves: readonly MoveReview[] }) => void;
   markCancelled: () => void;
-  loadReview: (review: GameReview | null) => void;
+  /** Shows `review`; `analyses` replaces the list (a newly opened game), else the list stays. */
+  loadReview: (review: GameReview | null, analyses?: SavedReviewInfo[]) => void;
   addCommentary: (commentary: ReviewCommentary) => void;
 };
 
@@ -42,6 +50,7 @@ export const useReviewStore = create<ReviewStore>((set) => ({
   reviewId: null,
   progress: null,
   partialMoves: [],
+  analyses: [],
   startReview: (reviewId) =>
     set((state) => ({
       status: "running",
@@ -52,24 +61,32 @@ export const useReviewStore = create<ReviewStore>((set) => ({
       review: state.review
     })),
   setReview: (review) =>
-    set({
-      status: "ready",
-      review: { ...review, commentary: [] },
-      origin: "run",
-      error: null,
-      progress: null,
-      partialMoves: []
+    set((state) => {
+      // A finished run is a new analysis of the game, listed first; the earlier ones stay.
+      const id = review.reviewId ?? state.reviewId ?? `run-${review.createdAt}`;
+      const shown: GameReview = { ...review, reviewId: id, commentary: [] };
+      return {
+        status: "ready",
+        review: shown,
+        origin: "run",
+        error: null,
+        progress: null,
+        partialMoves: [],
+        analyses: [savedReviewInfo(shown, id), ...state.analyses.filter((info) => info.reviewId !== id)]
+      };
     }),
   addCommentary: (commentary) =>
     set((state) => {
       if (!state.review) return state;
       const existing = new Map((state.review.commentary ?? []).map((item) => [item.ply, item]));
       existing.set(commentary.ply, commentary);
+      const review = { ...state.review, commentary: [...existing.values()].sort((a, b) => a.ply - b.ply) };
       return {
-        review: {
-          ...state.review,
-          commentary: [...existing.values()].sort((a, b) => a.ply - b.ply)
-        }
+        review,
+        // The comment belongs to the analysis shown: its count in the list follows.
+        analyses: state.analyses.map((info) =>
+          info.reviewId === review.reviewId ? { ...info, commentaryCount: review.commentary.length } : info
+        )
       };
     }),
   setError: (error) => set({ status: "error", error, progress: null }),
@@ -87,7 +104,8 @@ export const useReviewStore = create<ReviewStore>((set) => ({
       error: null,
       reviewId: null,
       progress: null,
-      partialMoves: []
+      partialMoves: [],
+      analyses: []
     }),
   applyReviewEvents: ({ progress, moves }) =>
     set((state) => {
@@ -101,8 +119,9 @@ export const useReviewStore = create<ReviewStore>((set) => ({
       status: "cancelled",
       progress: null
     }),
-  loadReview: (review) =>
-    set({
+  loadReview: (review, analyses) =>
+    set((state) => ({
+      analyses: analyses ?? state.analyses,
       status: review ? "ready" : "idle",
       // Saved reviews may hold explanations from the retired offline template; drop them so
       // the AI is asked when those moves are viewed.
@@ -112,7 +131,7 @@ export const useReviewStore = create<ReviewStore>((set) => ({
       reviewId: null,
       progress: null,
       partialMoves: []
-    })
+    }))
 }));
 
 /**

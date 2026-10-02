@@ -38,7 +38,7 @@ import { AppPages, GameReviewPicker, OnboardingFlow, type AppView } from "./AppP
 import { PuzzleInfoPanel } from "./PuzzleInfoPanel";
 import { useBoardShortcuts } from "./useBoardShortcuts";
 import { useEngineDriver } from "./useEngineDriver";
-import { useGameAutosave } from "./useGameAutosave";
+import { flushGameAutosave, IMPORT_NEEDS_SAVE, useGameAutosave } from "./useGameAutosave";
 import { useUsageActivity } from "./useUsageTelemetry";
 import { useLichess } from "./useLichess";
 import { useHistoryShortcuts } from "./useHistoryShortcuts";
@@ -283,7 +283,7 @@ export function App() {
         if (entry.board.gameId && !useReviewStore.getState().review) {
           const saved = await window.chaturanga?.games.get(entry.board.gameId).catch(() => null);
           if (request !== latestNavigation.current) return "dropped";
-          if (saved?.review) useReviewStore.getState().loadReview(savedReview(saved));
+          if (saved?.review) useReviewStore.getState().loadReview(savedReview(saved), saved.reviews ?? []);
         }
         currentGame().setMode("freeplay");
         setReviewTab(entry.tab as ReviewTab);
@@ -395,6 +395,12 @@ export function App() {
     try {
       const file = await window.chaturanga.files.openPgnFile();
       if (!file || request !== latestNavigation.current) return;
+      // Pending edits first: the library's check for a copy must see the board as it is. If they
+      // couldn't be saved, importing could add a copy of this very game: stop and say so.
+      if (!(await flushGameAutosave())) {
+        if (request === latestNavigation.current) useAppNoticeStore.getState().show(IMPORT_NEEDS_SAVE);
+        return;
+      }
       const imported = await window.chaturanga.games.importPgn({ pgn: file.contents });
       // A Lichess game (or another navigation) started meanwhile: it keeps the board.
       if (request !== latestNavigation.current) return;
@@ -409,6 +415,14 @@ export function App() {
 
   /** An imported PGN (file or the paste dialog) onto the board; a warning (only the first of several games) shows on it. */
   function loadImportedGame(imported: ImportedGame) {
+    // Already in the library: open that copy (with its analyses) rather than a duplicate.
+    if (imported.existingGameId) {
+      const existing = imported.existingGameId;
+      void openSavedGameById(existing).then(() => {
+        if (currentGame().gameId === existing) currentGame().setMatchFeedback("Already in your library: opened your copy.");
+      });
+      return;
+    }
     commitCurrent();
     endBoardActivity();
     currentGame().loadGame(imported.game);

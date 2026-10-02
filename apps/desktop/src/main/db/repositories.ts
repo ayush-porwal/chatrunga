@@ -3,6 +3,8 @@ import type { SQLInputValue } from "node:sqlite";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
 import { positionFromFen } from "@chaturanga/shared/chess/position";
 import { getDb } from "./index";
+import { gameFingerprint } from "./game-fingerprint";
+import { reviewListingFields, reviewRowId, toSavedReviewInfo, type GameReviewRow } from "./review-rows";
 import {
   defaultSettings,
   hydratePieceSettings,
@@ -75,7 +77,17 @@ type GameRow = {
 type GameSummaryRow = Pick<
   GameRow,
   "id" | "source" | "white" | "black" | "event" | "result" | "date" | "current_fen" | "updated_at"
->;
+> & { review_count?: number | null; last_reviewed_at?: number | null };
+
+/** A game's analyses as listed (newest first), without their JSON. */
+type ReviewListingRow = Omit<GameReviewRow, "game_id" | "review_json">;
+
+const REVIEW_LISTING_COLUMNS =
+  "review_id, created_at, engine_name, move_time_ms, depth, maia_levels_json, move_count, commentary_count";
+
+/** Per-game analysis count and newest date, for summaries. */
+const REVIEW_COUNTS_SQL = `(SELECT COUNT(*) FROM game_reviews r WHERE r.game_id = games.id) AS review_count,
+  (SELECT MAX(r.created_at) FROM game_reviews r WHERE r.game_id = games.id) AS last_reviewed_at`;
 
 type SettingRow = {
   key: string;
@@ -174,7 +186,9 @@ function toGameSummary(row: GameSummaryRow): GameSummary {
     result: row.result,
     date: row.date,
     currentFen: row.current_fen,
-    updatedAt: row.updated_at
+    updatedAt: row.updated_at,
+    reviewCount: row.review_count ?? 0,
+    lastReviewedAt: row.last_reviewed_at ?? null
   };
 }
 
@@ -342,21 +356,35 @@ function isHeaders(value: unknown): value is GameHeaders {
   );
 }
 
+/**
+ * A stored analysis as the renderer can use it: placed on the game's tree (rebuilt trees remap),
+ * or null when it can't be read or doesn't fit the game.
+ */
+function parseStoredReview(json: string, moveTree: readonly MoveNode[], rebuilt: boolean): GameReview | null {
+  let review: GameReview | null = null;
+  try {
+    const parsed = JSON.parse(json) as GameReview;
+    // Reviews saved before real Maia policy was parsed have no schemaVersion;
+    // mark them v1 so consumers ignore their (uniform) Maia probabilities.
+    if (parsed && Array.isArray(parsed.moves)) review = { ...parsed, schemaVersion: parsed.schemaVersion ?? 1 };
+  } catch {
+    review = null;
+  }
+  return review && rebuilt ? remapReviewToTree(review, moveTree) : review;
+}
+
 function toSavedGame(row: GameRow): SavedGame {
   const { moveTree, rebuilt } = parseMoveTree(row);
 
-  let review: GameReview | null = null;
-  if (row.review_json) {
-    try {
-      const parsed = JSON.parse(row.review_json) as GameReview;
-      // Reviews saved before real Maia policy was parsed have no schemaVersion;
-      // mark them v1 so consumers ignore their (uniform) Maia probabilities.
-      if (parsed && Array.isArray(parsed.moves)) review = { ...parsed, schemaVersion: parsed.schemaVersion ?? 1 };
-    } catch {
-      review = null;
-    }
-  }
-  if (review && rebuilt) review = remapReviewToTree(review, moveTree);
+  // Every analysis, newest first; the newest one loads with the game, the others on demand.
+  const listed = all<ReviewListingRow>(
+    `SELECT ${REVIEW_LISTING_COLUMNS} FROM game_reviews WHERE game_id = ? ORDER BY created_at DESC, review_id`,
+    row.id
+  );
+  const newest = listed[0]
+    ? get<{ review_json: string }>("SELECT review_json FROM game_reviews WHERE review_id = ?", listed[0].review_id)
+    : undefined;
+  const review = newest ? parseStoredReview(newest.review_json, moveTree, rebuilt) : null;
 
   let headers: GameHeaders | null = null;
   if (row.headers_json) {
@@ -377,7 +405,10 @@ function toSavedGame(row: GameRow): SavedGame {
     initialFen: row.initial_fen,
     pgn: row.pgn,
     moveTree,
-    review
+    review,
+    reviews: listed.map(toSavedReviewInfo),
+    reviewCount: listed.length,
+    lastReviewedAt: listed[0]?.created_at ?? null
   };
 }
 
@@ -516,17 +547,9 @@ export const engineRepository = {
 
 function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
   const id = input.id || nanoid();
-  const existing = get<{ created_at: number; review_json: string | null }>(
-    "SELECT created_at, review_json FROM games WHERE id = ?",
-    id
-  );
+  const existing = get<{ created_at: number }>("SELECT created_at FROM games WHERE id = ?", id);
   const createdAt = existing?.created_at ?? timestamp;
-  const reviewJson =
-    input.review === undefined
-      ? (existing?.review_json ?? null)
-      : input.review === null
-        ? null
-        : JSON.stringify(input.review);
+  const fingerprint = gameFingerprint({ headers: input.headers, rootFen: input.rootFen, moveTree: input.moveTree });
 
   const requestedNode = input.moveTree.find((node) => node.id === input.currentNodeId);
   const currentNodeId =
@@ -538,7 +561,7 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
   run(
     `INSERT INTO games (
       id, source, white, black, event, site, round, result, date,
-      initial_fen, pgn, current_fen, current_node_id, headers_json, move_tree_json, review_json,
+      initial_fen, pgn, current_fen, current_node_id, headers_json, move_tree_json, fingerprint,
       created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
@@ -556,7 +579,7 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
       current_node_id = excluded.current_node_id,
       headers_json = excluded.headers_json,
       move_tree_json = excluded.move_tree_json,
-      review_json = excluded.review_json,
+      fingerprint = excluded.fingerprint,
       updated_at = excluded.updated_at`,
     id,
     input.source,
@@ -573,14 +596,48 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
     currentNodeId,
     JSON.stringify(input.headers),
     JSON.stringify(input.moveTree),
-    reviewJson,
+    fingerprint,
     createdAt,
     timestamp
   );
+  if (input.review) saveReview(id, input.review);
 
   const saved = gameRepository.get(id);
   if (!saved) throw new Error("Failed to save game");
   return saved;
+}
+
+/**
+ * The analysis on the board, saved under its own id: a new one is added (re-analysing keeps the
+ * earlier ones), and one already saved is updated (its AI commentary grows as moves are viewed).
+ */
+function saveReview(gameId: string, review: GameReview): void {
+  const reviewId = reviewRowId(review, gameId);
+  const fields = reviewListingFields(review);
+  run(
+    `INSERT INTO game_reviews (
+      review_id, game_id, created_at, engine_name, move_time_ms, depth, maia_levels_json, move_count, commentary_count, review_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(review_id) DO UPDATE SET
+      engine_name = excluded.engine_name,
+      move_time_ms = excluded.move_time_ms,
+      depth = excluded.depth,
+      maia_levels_json = excluded.maia_levels_json,
+      move_count = excluded.move_count,
+      commentary_count = excluded.commentary_count,
+      review_json = excluded.review_json
+    WHERE game_reviews.game_id = excluded.game_id`,
+    reviewId,
+    gameId,
+    fields.created_at,
+    fields.engine_name,
+    fields.move_time_ms,
+    fields.depth,
+    fields.maia_levels_json,
+    fields.move_count,
+    fields.commentary_count,
+    JSON.stringify({ ...review, reviewId })
+  );
 }
 
 export const gameRepository = {
@@ -588,9 +645,32 @@ export const gameRepository = {
   list(): GameSummary[] {
     // Puzzle sessions are never library games (see the cleanup in db/index.ts).
     return all<GameSummaryRow>(
-      `SELECT id, source, white, black, event, result, date, current_fen, updated_at
+      `SELECT id, source, white, black, event, result, date, current_fen, updated_at, ${REVIEW_COUNTS_SQL}
       FROM games WHERE source != 'puzzle' ORDER BY updated_at DESC, id`
     ).map(toGameSummary);
+  },
+
+  /** One saved analysis of a game, placed on its tree (null when it's gone or doesn't fit). */
+  getReview(gameId: string, reviewId: string): GameReview | null {
+    const row = get<GameRow>("SELECT * FROM games WHERE id = ?", gameId);
+    const stored = get<{ review_json: string }>(
+      "SELECT review_json FROM game_reviews WHERE game_id = ? AND review_id = ?",
+      gameId,
+      reviewId
+    );
+    if (!row || !stored) return null;
+    const { moveTree, rebuilt } = parseMoveTree(row);
+    return parseStoredReview(stored.review_json, moveTree, rebuilt);
+  },
+
+  /** A library game that is the same game (see gameFingerprint), if any. */
+  findIdByFingerprint(fingerprint: string): string | null {
+    return (
+      get<{ id: string }>(
+        "SELECT id FROM games WHERE fingerprint = ? AND source != 'puzzle' ORDER BY updated_at DESC LIMIT 1",
+        fingerprint
+      )?.id ?? null
+    );
   },
 
   count(): number {
@@ -630,9 +710,8 @@ export const gameRepository = {
   },
 
   /**
-   * Permanently removes the game row. All persisted state for this game lives in that row
-   * (PGN, move tree, headers, embedded engine review JSON, clocks, etc.), so this deletes
-   * everything with no separate review or ancillary tables to clean up.
+   * Permanently removes the game and everything saved with it: its row (PGN, move tree, headers)
+   * and, through the foreign key, every analysis of it in game_reviews.
    */
   remove(id: string): void {
     run("DELETE FROM games WHERE id = ?", id);

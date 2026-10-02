@@ -2,6 +2,10 @@ import { app } from "electron";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import type { GameHeaders, MoveNode } from "@chaturanga/shared/types/chess";
+import type { GameReview } from "@chaturanga/shared/types/engine";
+import { gameFingerprint } from "./game-fingerprint";
+import { reviewListingFields, reviewRowId } from "./review-rows";
 
 let db: DatabaseSync | null = null;
 
@@ -132,8 +136,98 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     )`);
+  },
+  // 6: every analysis of a game is kept (re-analysing adds one; each has its own AI commentary),
+  // in its own table, and games get a fingerprint so importing one the library has opens it.
+  (database) => {
+    database.exec(`CREATE TABLE IF NOT EXISTS game_reviews (
+      review_id TEXT PRIMARY KEY,
+      game_id TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+      created_at INTEGER NOT NULL,
+      engine_name TEXT,
+      move_time_ms INTEGER,
+      depth INTEGER,
+      maia_levels_json TEXT NOT NULL DEFAULT '[]',
+      move_count INTEGER NOT NULL DEFAULT 0,
+      commentary_count INTEGER NOT NULL DEFAULT 0,
+      review_json TEXT NOT NULL
+    )`);
+    database.exec("CREATE INDEX IF NOT EXISTS game_reviews_game_idx ON game_reviews(game_id, created_at DESC)");
+    addColumn(database, "games", "fingerprint", "TEXT");
+    database.exec("CREATE INDEX IF NOT EXISTS games_fingerprint_idx ON games(fingerprint)");
+
+    // A database old enough may lack some of these columns: they read as null.
+    const columns = columnsOf(database, "games");
+    const pick = (name: string) => (columns.has(name) ? name : `NULL AS ${name}`);
+    const wanted = ["site", "white", "black", "date", "initial_fen", "headers_json", "move_tree_json", "review_json"];
+    const rows = database
+      .prepare(`SELECT id, ${wanted.map(pick).join(", ")} FROM games`)
+      .all() as {
+      id: string;
+      site: string | null;
+      white: string | null;
+      black: string | null;
+      date: string | null;
+      initial_fen: string | null;
+      headers_json: string | null;
+      move_tree_json: string | null;
+      review_json: string | null;
+    }[];
+    const insertReview = database.prepare(`INSERT OR IGNORE INTO game_reviews (
+      review_id, game_id, created_at, engine_name, move_time_ms, depth, maia_levels_json, move_count, commentary_count, review_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const setFingerprint = database.prepare("UPDATE games SET fingerprint = ?, review_json = NULL WHERE id = ?");
+    for (const row of rows) {
+      if (row.review_json) {
+        try {
+          const review = JSON.parse(row.review_json) as GameReview;
+          if (review && Array.isArray(review.moves)) {
+            const reviewId = reviewRowId(review, row.id);
+            const fields = reviewListingFields(review);
+            insertReview.run(
+              reviewId,
+              row.id,
+              fields.created_at,
+              fields.engine_name,
+              fields.move_time_ms,
+              fields.depth,
+              fields.maia_levels_json,
+              fields.move_count,
+              fields.commentary_count,
+              JSON.stringify({ ...review, reviewId })
+            );
+          }
+        } catch {
+          // An unreadable review was already being dropped when the game opened.
+        }
+      }
+      setFingerprint.run(storedFingerprint(row), row.id);
+    }
   }
 ];
+
+/** A stored game's fingerprint (null when its tree can't be read; the next save sets it). */
+function storedFingerprint(row: {
+  site: string | null;
+  white: string | null;
+  black: string | null;
+  date: string | null;
+  initial_fen: string | null;
+  headers_json: string | null;
+  move_tree_json: string | null;
+}): string | null {
+  try {
+    if (!row.move_tree_json) return null;
+    const moveTree = JSON.parse(row.move_tree_json) as MoveNode[];
+    if (!Array.isArray(moveTree) || !moveTree.length) return null;
+    const stored = row.headers_json ? (JSON.parse(row.headers_json) as Partial<GameHeaders> | null) : null;
+    const headers = { site: row.site, white: row.white, black: row.black, date: row.date, ...(stored ?? {}) };
+    const rootFen = row.initial_fen ?? moveTree.find((node) => node.parentId === null)?.fenAfter ?? "";
+    return gameFingerprint({ headers, rootFen, moveTree });
+  } catch {
+    return null;
+  }
+}
 
 export function runMigrations(database: DatabaseSync, migrations = MIGRATIONS): void {
   const { user_version: version } = database.prepare("PRAGMA user_version").get() as { user_version: number };

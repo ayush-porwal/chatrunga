@@ -7,6 +7,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { ipcErrorMessage } from "@/lib/ipc-error";
+import { flushGameAutosave, IMPORT_NEEDS_SAVE } from "../../app/useGameAutosave";
 
 /** Paste or open a PGN; the game goes to App (`onImported`), which puts it on the board. */
 export function PgnImportDialog({ onClose, onImported }: { onClose: () => void; onImported: (imported: ImportedGame) => void }) {
@@ -31,6 +32,12 @@ export function PgnImportDialog({ onClose, onImported }: { onClose: () => void; 
     }
     setBusy(true);
     try {
+      // Pending edits first: the library's check for a copy must see the board as it is. If they
+      // couldn't be saved, importing could add a copy of this very game: stop and say so.
+      if (!(await flushGameAutosave())) {
+        if (open.current) setError(IMPORT_NEEDS_SAVE);
+        return;
+      }
       const imported = await window.chaturanga.games.importPgn({ pgn: text });
       if (!open.current || selectLiveGameInProgress(useLichessStore.getState())) return;
       onImported(imported);
