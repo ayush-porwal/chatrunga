@@ -66,10 +66,13 @@ let pendingFlush: (() => Promise<boolean>) | null = null;
 
 /**
  * Writes the loaded game's pending changes now (e.g. before importing a PGN, so the library's
- * check for a copy sees the board as it is). Resolves with whether everything is saved.
+ * check for a copy sees the board as it is). Resolves with whether the game on the board is
+ * saved: a failure kept for a game left earlier (it has its own Retry) doesn't count here.
  */
-export function flushGameAutosave(): Promise<boolean> {
-  return pendingFlush ? pendingFlush() : Promise.resolve(true);
+export async function flushGameAutosave(): Promise<boolean> {
+  if (pendingFlush) await pendingFlush();
+  const gameId = useGameStore.getState().gameId;
+  return !useSaveStatusStore.getState().failures.some((failure) => failure.gameId === gameId);
 }
 
 export function useGameAutosave(): void {
