@@ -81,6 +81,12 @@ describe("gameRepository (SQLite)", () => {
     expect(reopened.review?.moves.map((move) => move.san)).toEqual(["e4", "e5", "Nf3"]);
     expect(reopened.review?.moves.every((move) => rebuiltIds.has(move.nodeId))).toBe(true);
 
+    // A damaged move entry drops the review; the game still opens.
+    const damaged = { ...review, moves: [null, ...review.moves] };
+    getDb().prepare("UPDATE games SET review_json = ? WHERE id = ?").run(JSON.stringify(damaged), saved.id);
+    expect(gameRepository.get(saved.id)?.review).toBeNull();
+    expect(gameRepository.get(saved.id)?.moveTree.length).toBeGreaterThan(1);
+
     // A review of other moves than the PGN's: dropped, not attached to the wrong ones.
     const wrong = { ...review, moves: review.moves.map((move) => ({ ...move, fenAfter: "8/8/8/8/8/8/8/8 w - - 0 1" })) };
     getDb().prepare("UPDATE games SET review_json = ? WHERE id = ?").run(JSON.stringify(wrong), saved.id);

@@ -196,10 +196,14 @@ export function remapReviewToTree(review: GameReview, moveTree: readonly MoveNod
     node = node.children[0] ? byId.get(node.children[0]) : undefined;
   }
   const moves = [];
-  for (const move of review.moves) {
-    const target = mainline[move.ply];
-    if (!target || target.fenAfter !== move.fenAfter) return null;
-    moves.push({ ...move, nodeId: target.id });
+  for (const move of review.moves as unknown[]) {
+    // A damaged entry drops the review (it can't be placed), never the game.
+    if (!move || typeof move !== "object") return null;
+    const { ply, fenAfter } = move as Partial<GameReview["moves"][number]>;
+    if (!Number.isInteger(ply) || typeof fenAfter !== "string") return null;
+    const target = mainline[ply as number];
+    if (!target || target.fenAfter !== fenAfter) return null;
+    moves.push({ ...(move as GameReview["moves"][number]), nodeId: target.id });
   }
   return { ...review, moves };
 }

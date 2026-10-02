@@ -164,22 +164,23 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
     }
     // Silent: the assisted NSIS installer would otherwise show its wizard again; relaunch afterwards.
     setImmediate(() => {
-      // electron-updater reports an installer that didn't start as an "error" event (and stays
-      // running), not as a throw.
-      let failed = false;
-      const onError = () => {
-        failed = true;
+      // electron-updater reports an installer that didn't start as an "error" event, possibly after
+      // quitAndInstall has returned (the spawn fails asynchronously), and the app stays running:
+      // the listener stays until then. If the installer starts, the app quits and it never fires.
+      let handled = false;
+      const recover = () => {
+        if (handled) return;
+        handled = true;
+        updater.off("error", recover);
+        this.restartAfterFailedInstall();
       };
-      updater.on("error", onError);
+      updater.on("error", recover);
       try {
         updater.quitAndInstall(true, true);
       } catch (error) {
         logger.error("updater", "quitAndInstall failed:", error);
-        failed = true;
-      } finally {
-        updater.off("error", onError);
+        recover();
       }
-      if (failed) this.restartAfterFailedInstall();
     });
     return true;
   }
