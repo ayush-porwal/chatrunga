@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 import type { SQLInputValue } from "node:sqlite";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
+import { positionFromFen } from "@chaturanga/shared/chess/position";
 import { getDb } from "./index";
 import {
   defaultSettings,
@@ -235,7 +236,38 @@ const isString = (value: unknown): value is string => typeof value === "string";
 const isStringOrNull = (value: unknown): value is string | null => value === null || typeof value === "string";
 
 /** Every field a move node needs, with its type. Only the root has no move (san/uci null). */
-function isMoveNodeLike(value: unknown): value is MoveNode {
+const SQUARE = /^[a-h][1-8]$/;
+const ANNOTATION_COLORS: readonly unknown[] = ["green", "red", "yellow", "blue"];
+
+function isArrow(value: unknown): boolean {
+  const arrow = value as Record<string, unknown> | null;
+  return Boolean(
+    arrow && typeof arrow === "object" && SQUARE.test(String(arrow.orig)) && SQUARE.test(String(arrow.dest)) && ANNOTATION_COLORS.includes(arrow.color)
+  );
+}
+
+function isHighlight(value: unknown): boolean {
+  const highlight = value as Record<string, unknown> | null;
+  return Boolean(highlight && typeof highlight === "object" && SQUARE.test(String(highlight.square)) && ANNOTATION_COLORS.includes(highlight.color));
+}
+
+/** A position the board can show (the board and move list read it as soon as the node is selected). */
+function isPlayableFen(fen: unknown, checked: Map<string, boolean>): boolean {
+  if (typeof fen !== "string") return false;
+  let ok = checked.get(fen);
+  if (ok === undefined) {
+    try {
+      positionFromFen(fen);
+      ok = true;
+    } catch {
+      ok = false;
+    }
+    checked.set(fen, ok);
+  }
+  return ok;
+}
+
+function isMoveNodeLike(value: unknown, fens: Map<string, boolean> = new Map()): value is MoveNode {
   if (!value || typeof value !== "object") return false;
   const node = value as Record<keyof MoveNode, unknown>;
   const root = node.id === ROOT_NODE_ID;
@@ -243,15 +275,17 @@ function isMoveNodeLike(value: unknown): value is MoveNode {
     isString(node.id) &&
     (root ? node.parentId === null : isString(node.parentId)) &&
     (root ? isStringOrNull(node.san) && isStringOrNull(node.uci) : isString(node.san) && isString(node.uci)) &&
-    isString(node.fenBefore) &&
-    isString(node.fenAfter) &&
+    isPlayableFen(node.fenBefore, fens) &&
+    isPlayableFen(node.fenAfter, fens) &&
     Number.isInteger(node.ply) &&
     Array.isArray(node.nags) &&
     node.nags.every(isString) &&
     isStringOrNull(node.comment) &&
     (node.clockAfter === undefined || isStringOrNull(node.clockAfter)) &&
     Array.isArray(node.arrows) &&
+    node.arrows.every(isArrow) &&
     Array.isArray(node.highlights) &&
+    node.highlights.every(isHighlight) &&
     Array.isArray(node.children) &&
     node.children.every(isString)
   );
@@ -263,7 +297,9 @@ function isMoveNodeLike(value: unknown): value is MoveNode {
  * duplicate child, cycle or stray node, and walks up through parents always end at the root.
  */
 export function isConsistentTree(nodes: readonly unknown[]): nodes is MoveNode[] {
-  if (!nodes.every(isMoveNodeLike)) return false;
+  // FENs repeat (each node's fenBefore is its parent's fenAfter): each is parsed once.
+  const fens = new Map<string, boolean>();
+  if (!nodes.every((node) => isMoveNodeLike(node, fens))) return false;
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const root = byId.get(ROOT_NODE_ID);
   if (!root || byId.size !== nodes.length) return false;

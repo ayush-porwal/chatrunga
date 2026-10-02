@@ -124,7 +124,7 @@ describe("gameRepository (SQLite)", () => {
     expect(gameRepository.get(saved.id)?.moveTree).toHaveLength(saved.moveTree.length);
   });
 
-  it("rebuilds a tree with a duplicate child, a cycle, a stray move or a missing field", () => {
+  it("rebuilds a tree with a duplicate child, a cycle, a stray move, a missing field, a bad FEN or annotation", () => {
     const saved = saveImported();
     const [root, e4, e5, nf3] = saved.moveTree;
     const damaged = [
@@ -137,7 +137,12 @@ describe("gameRepository (SQLite)", () => {
       // e5 has no SAN.
       [root, e4, { ...e5, san: undefined }, nf3],
       // The root isn't the canonical one.
-      [{ ...root, id: "start" }, { ...e4, parentId: "start" }, e5, nf3]
+      [{ ...root, id: "start" }, { ...e4, parentId: "start" }, e5, nf3],
+      // A position the board can't show.
+      [root, { ...e4, fenAfter: "not a fen" }, e5, nf3],
+      // Malformed annotations.
+      [root, { ...e4, arrows: [null] }, e5, nf3],
+      [root, e4, { ...e5, highlights: [{ square: "z9", color: "green" }] }, nf3]
     ];
     for (const tree of damaged) {
       getDb().prepare("UPDATE games SET move_tree_json = ? WHERE id = ?").run(JSON.stringify(tree), saved.id);
@@ -150,6 +155,12 @@ describe("gameRepository (SQLite)", () => {
   it("opens a stored tree as it is when it's well formed", () => {
     const saved = saveImported();
     expect(gameRepository.get(saved.id)?.moveTree).toEqual(saved.moveTree);
+    // Annotations are part of a well-formed tree.
+    const annotated = saved.moveTree.map((node, index) =>
+      index === 1 ? { ...node, arrows: [{ orig: "e2", dest: "e4", color: "green" }], highlights: [{ square: "e4", color: "red" }] } : node
+    );
+    getDb().prepare("UPDATE games SET move_tree_json = ? WHERE id = ?").run(JSON.stringify(annotated), saved.id);
+    expect(gameRepository.get(saved.id)?.moveTree).toEqual(annotated);
   });
 
   it("drops stored headers with a value that isn't text, for the PGN's", () => {
