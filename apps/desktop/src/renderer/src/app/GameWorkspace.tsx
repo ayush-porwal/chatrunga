@@ -41,6 +41,7 @@ export const GameWorkspace = memo(function GameWorkspace({
   onSideTabChange,
   puzzlePanel,
   onStartAnalysis,
+  onStopAnalysis,
   onOpenSettings
 }: {
   /** Library tab: open a saved game on the board. */
@@ -49,6 +50,7 @@ export const GameWorkspace = memo(function GameWorkspace({
   onSideTabChange: (tab: SideTab) => void;
   puzzlePanel: ReactNode;
   onStartAnalysis?: () => void;
+  onStopAnalysis?: () => void;
   onOpenSettings?: () => void;
 }) {
   // The per-move parts (board, summary, footer) subscribe on their own, so stepping through the
@@ -84,7 +86,7 @@ export const GameWorkspace = memo(function GameWorkspace({
       ) : null}
       {sideTab === "engine" ? (
         <div className="scroll-area -mr-3 h-full min-h-0 overflow-y-auto pr-3">
-          <EngineStatusPanel onStartAnalysis={onStartAnalysis} onOpenSettings={onOpenSettings} />
+          <EngineStatusPanel onStartAnalysis={onStartAnalysis} onStopAnalysis={onStopAnalysis} onOpenSettings={onOpenSettings} />
         </div>
       ) : null}
       {sideTab === "library" ? <RecentGames onOpenGame={onOpenGame} /> : null}

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { useAnalysisStore } from "./analysis-store";
+import { clearAnalysisResults, useAnalysisStore } from "./analysis-store";
 import type { EngineInfo } from "@chaturanga/shared/types/engine";
 
 function info(multipv: number, value: number): EngineInfo {
@@ -66,6 +66,47 @@ describe("analysis store", () => {
     expect(useAnalysisStore.getState().topLines[0]).toMatchObject({ score: { value: 30 }, pv: ["d2d4"] });
     useAnalysisStore.getState().setInfos([{ ...base, score: { type: "cp", value: 12 } }]);
     expect(useAnalysisStore.getState().topLines[0]).toMatchObject({ score: { value: 12 }, pv: ["d2d4"] });
+  });
+
+  it("starting a position's search again carries on from the deepest lines found for it", () => {
+    clearAnalysisResults();
+    const line = (searchId: string, depth: number, value: number) => ({
+      engineId: "engine-1",
+      searchId,
+      multipv: 1,
+      depth,
+      score: { type: "cp" as const, value },
+      pv: ["e2e4"],
+      raw: "info",
+      receivedAt: depth
+    });
+    const store = useAnalysisStore.getState();
+    store.startSearch("fen|sf|1", "first");
+    store.setInfos([line("first", 28, 30)]);
+    // Stopped, then started again: the depth-28 line shows at once, not an empty panel.
+    useAnalysisStore.getState().startSearch("fen|sf|1", "second");
+    expect(useAnalysisStore.getState().topLines[0]).toMatchObject({ depth: 28, score: { value: 30 } });
+    // The new search's shallow lines don't replace it; one as deep does.
+    useAnalysisStore.getState().setInfos([line("second", 5, -80)]);
+    expect(useAnalysisStore.getState().topLines[0]?.depth).toBe(28);
+    useAnalysisStore.getState().setInfos([line("second", 29, 25)]);
+    expect(useAnalysisStore.getState().topLines[0]).toMatchObject({ depth: 29, score: { value: 25 } });
+    // Another position starts empty; Restart forgets what was found.
+    useAnalysisStore.getState().startSearch("other|sf|1");
+    expect(useAnalysisStore.getState().topLines).toEqual([]);
+    useAnalysisStore.getState().startSearch("fen|sf|1", "third");
+    useAnalysisStore.getState().restartFresh();
+    useAnalysisStore.getState().startSearch("fen|sf|1", "fourth");
+    expect(useAnalysisStore.getState().topLines).toEqual([]);
+  });
+
+  it("never remembers another search's lines under an analysis position (an engine game's)", () => {
+    clearAnalysisResults();
+    const info = (searchId: string) => ({ engineId: "sf", searchId, multipv: 1, depth: 20, score: { type: "cp" as const, value: 5 }, pv: ["e2e4"], raw: "", receivedAt: 0 });
+    useAnalysisStore.getState().startSearch("pos|sf|1", "analysis");
+    useAnalysisStore.getState().setInfos([info("engine-game-move")]);
+    useAnalysisStore.getState().startSearch("pos|sf|1", "analysis-2");
+    expect(useAnalysisStore.getState().topLines).toEqual([]);
   });
 
   it("tracks best moves, errors, and active engines", () => {
