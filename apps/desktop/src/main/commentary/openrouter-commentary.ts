@@ -196,7 +196,8 @@ export async function generateOpenRouterCommentary(
 export function analyticsRedactor(payload: ReviewInsightPayload): (text: string) => string {
   const replacements: Array<[string, string]> = [];
   const add = (value: string | undefined, placeholder: string) => {
-    const trimmed = value?.trim();
+    // One Unicode form for names and text alike (é as one code point or e + accent).
+    const trimmed = value?.normalize("NFC").trim();
     if (trimmed) replacements.push([trimmed, placeholder]);
   };
   add(payload.context?.players?.white, "[White]");
@@ -206,10 +207,15 @@ export function analyticsRedactor(payload: ReviewInsightPayload): (text: string)
   // Longest first, so a name containing another is replaced whole; whole words only, so a short
   // name ("A") doesn't eat letters out of other words.
   replacements.sort((a, b) => b[0].length - a[0].length);
-  const names = replacements.map(([value]) => escapeRegExp(value)).join("|");
+  // One group per name: the matching group picks the placeholder (re-keying the match by
+  // lowercasing it would miss case-insensitive matches such as Σ / ς).
+  const names = replacements.map(([value]) => `(${escapeRegExp(value)})`).join("|");
   const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])(?:${names})(?![\\p{L}\\p{N}_])`, "giu");
-  const placeholders = new Map(replacements.map(([value, placeholder]) => [value.toLowerCase(), placeholder]));
-  return (text) => text.replace(pattern, (match) => placeholders.get(match.toLowerCase()) ?? match);
+  return (text) =>
+    text.normalize("NFC").replace(pattern, (match: string, ...groups: unknown[]) => {
+      const index = groups.slice(0, replacements.length).findIndex((group) => group !== undefined);
+      return index >= 0 ? replacements[index]![1] : match;
+    });
 }
 
 function escapeRegExp(value: string): string {

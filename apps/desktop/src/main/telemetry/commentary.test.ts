@@ -282,6 +282,12 @@ describe("commentary analytics", () => {
     );
     expect(analyticsRedactor(payload(1))("unchanged")).toBe("unchanged");
 
+    // Either Unicode spelling of a name, and case-insensitive matches the lowercase can't key.
+    const unicode = analyticsRedactor(
+      payload(1, { context: { players: { white: "Am\u00e9lie", black: "\u039f\u03a3" } } })
+    );
+    expect(unicode("Ame\u0301lie vs \u03bf\u03c2")).toBe("[White] vs [Black]");
+
     // A one-letter name is replaced too, as a whole word only.
     const short = analyticsRedactor(payload(1, { context: { players: { white: "A", black: "Bo" } } }));
     expect(short('{"white":"A","black":"Bo"} A and Bo play a Bongcloud')).toBe(
