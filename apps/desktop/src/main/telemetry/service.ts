@@ -87,7 +87,9 @@ export class TelemetryService {
   private readonly launchId = randomUUID();
   /** PostHog's `$session_id`, rotating with inactivity. */
   private readonly session = new TelemetrySession();
+  /** Keys seen in the current PostHog session ({@link firstInSession}). */
   private readonly once = new Set<string>();
+  private onceSession: string | null = null;
   private active = false;
   private closed = false;
   private draining: Promise<void> | null = null;
@@ -215,8 +217,16 @@ export class TelemetryService {
     });
   }
 
-  /** True the first time `key` is seen in this app session (once-per-session events). */
+  /**
+   * True the first time `key` is seen in the current session (`$session_id`), for once-per-session
+   * events: a new session (after inactivity, or a day) starts with nothing seen.
+   */
   firstInSession(key: string): boolean {
+    const session = this.session.peek(this.now());
+    if (session !== this.onceSession) {
+      this.once.clear();
+      this.onceSession = session;
+    }
     if (this.once.has(key)) return false;
     this.once.add(key);
     return true;

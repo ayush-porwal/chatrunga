@@ -36,6 +36,9 @@ export type TelemetryRendererEvent =
       source: CommentaryViewSource;
     };
 
+/** A session (`$session_id`) ends after this long without activity. */
+export const TELEMETRY_SESSION_IDLE_MS = 30 * 60 * 1000;
+
 /** A review counts as studied once this many distinct moves of it were selected in one session. */
 export const REVIEW_STUDIED_MOVES = 3;
 /** An explanation counts as viewed after this long in view, window focused and visible. */

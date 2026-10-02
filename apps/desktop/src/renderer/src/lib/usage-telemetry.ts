@@ -1,6 +1,7 @@
-import type {
-  TelemetryActivityKind,
-  TelemetryRendererEvent
+import {
+  TELEMETRY_SESSION_IDLE_MS,
+  type TelemetryActivityKind,
+  type TelemetryRendererEvent
 } from "@chaturanga/shared/types/telemetry";
 
 /**
@@ -75,14 +76,16 @@ const browserTimers: Timers = {
 
 /**
  * Fires `onQualified(key)` once a key has stayed eligible (e.g. an explanation in view, window in
- * front) for `qualifyMs` without interruption; each key qualifies at most once. Changing the key
- * or losing eligibility before then cancels it, so a result that arrives after the user moved on
- * is never counted as viewed.
+ * front) for `qualifyMs` without interruption. Changing the key or losing eligibility before then
+ * cancels it, so a result that arrives after the user moved on is never counted as viewed. A key
+ * that qualified doesn't again until something else was the candidate (coming back later is a new
+ * view; main keeps the event to once per session).
  */
 export class ViewQualifier {
   private pendingKey: string | null = null;
   private timer: unknown = null;
-  private readonly qualified = new Set<string>();
+  /** The key that qualified last, while it is still the candidate. */
+  private qualified: string | null = null;
 
   constructor(
     private readonly qualifyMs: number,
@@ -92,7 +95,8 @@ export class ViewQualifier {
 
   /** The current candidate: `key` null or `eligible` false means nothing is being viewed now. */
   update(key: string | null, eligible: boolean): void {
-    const candidate = key && eligible && !this.qualified.has(key) ? key : null;
+    if (key !== this.qualified || !eligible) this.qualified = null;
+    const candidate = key && eligible && key !== this.qualified ? key : null;
     if (candidate === this.pendingKey) return;
     this.cancel();
     if (!candidate) return;
@@ -100,7 +104,7 @@ export class ViewQualifier {
     this.timer = this.timers.setTimeout(() => {
       this.timer = null;
       this.pendingKey = null;
-      this.qualified.add(candidate);
+      this.qualified = candidate;
       this.onQualified(candidate);
     }, this.qualifyMs);
   }
@@ -117,29 +121,35 @@ export class ViewQualifier {
 }
 
 /**
- * Counts the distinct moves selected per review (by the user); `onStudied(reviewKey)` fires once
- * per review when the count reaches `threshold`.
+ * Counts the distinct moves selected per review (by the user); `onStudied(reviewKey)` fires when
+ * the count reaches `threshold`. Like a session, a count ends after `idleMs` without a selection:
+ * coming back later needs `threshold` new selections and fires again (main keeps the event to
+ * once per session).
  */
 export class StudyCounter {
-  private readonly seen = new Map<string, Set<string>>();
-  private readonly studied = new Set<string>();
+  private readonly reviews = new Map<
+    string,
+    { moves: Set<string>; lastAt: number; studied: boolean }
+  >();
 
   constructor(
     private readonly threshold: number,
-    private readonly onStudied: (reviewKey: string) => void
+    private readonly onStudied: (reviewKey: string) => void,
+    private readonly idleMs = TELEMETRY_SESSION_IDLE_MS
   ) {}
 
-  select(reviewKey: string, moveKey: string): void {
-    if (this.studied.has(reviewKey)) return;
-    let moves = this.seen.get(reviewKey);
-    if (!moves) {
-      moves = new Set();
-      this.seen.set(reviewKey, moves);
+  select(reviewKey: string, moveKey: string, now = performance.now()): void {
+    let review = this.reviews.get(reviewKey);
+    if (!review || now - review.lastAt >= this.idleMs) {
+      review = { moves: new Set(), lastAt: now, studied: false };
+      this.reviews.set(reviewKey, review);
     }
-    moves.add(moveKey);
-    if (moves.size < this.threshold) return;
-    this.studied.add(reviewKey);
-    this.seen.delete(reviewKey);
+    review.lastAt = now;
+    if (review.studied) return;
+    review.moves.add(moveKey);
+    if (review.moves.size < this.threshold) return;
+    review.studied = true;
+    review.moves.clear();
     this.onStudied(reviewKey);
   }
 }

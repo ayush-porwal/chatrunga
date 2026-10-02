@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { reviewInsightPayloadSchema, type ReviewInsightPayload } from "@chaturanga/shared/schemas";
-import { generateOpenRouterCommentary, parseUsage } from "../commentary/openrouter-commentary";
+import {
+  analyticsRedactor,
+  generateOpenRouterCommentary,
+  parseUsage
+} from "../commentary/openrouter-commentary";
 import { commentaryReporter } from "./commentary";
 import { makeService, telemetryDatabase } from "./__fixtures__/telemetry-fixtures";
 
@@ -13,8 +17,9 @@ const GOOD_ANSWER = JSON.stringify({
 });
 const INVALID_ANSWER = "The move loses time after Qh5.";
 
-function payload(ply: number): ReviewInsightPayload {
+function payload(ply: number, extra: Record<string, unknown> = {}): ReviewInsightPayload {
   return reviewInsightPayloadSchema.parse({
+    ...extra,
     schemaVersion: 1,
     player: { rating: 1500, color: "white", ratingBucket: 1500 },
     game: {
@@ -253,5 +258,28 @@ describe("commentary analytics", () => {
     }
     // Only the AI events carry the conversation; the product events stay small.
     expect(JSON.stringify(of("commentary_completed"))).not.toContain("rnbqkbnr");
+  });
+
+  it("replaces player and engine names in what it records, not in what it sends", async () => {
+    const named = payload(1, { context: { players: { white: "MagnusFan", black: "kakashi__ofleaf" } } });
+    named.engines.stockfish.engineName = "My Secret Engine";
+    const sent: string[] = [];
+    const fetchImpl = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      sent.push(String(init?.body));
+      return completion(GOOD_ANSWER);
+    });
+    const { events, of } = await run(fetchImpl, [named]);
+    expect(sent.join()).toContain("kakashi__ofleaf");
+    const stored = JSON.stringify(events);
+    for (const name of ["MagnusFan", "kakashi__ofleaf", "My Secret Engine"]) {
+      expect(stored).not.toContain(name);
+    }
+    expect(JSON.stringify(of("$ai_generation"))).toContain("[Black]");
+
+    const redact = analyticsRedactor(named);
+    expect(redact("magnusfan (White) vs KAKASHI__OFLEAF, by my secret engine")).toBe(
+      "[White] (White) vs [Black], by [engine]"
+    );
+    expect(analyticsRedactor(payload(1))("unchanged")).toBe("unchanged");
   });
 });

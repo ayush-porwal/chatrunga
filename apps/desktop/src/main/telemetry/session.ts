@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
+import { TELEMETRY_SESSION_IDLE_MS } from "@chaturanga/shared/types/telemetry";
 
 /** A session ends after this long without an event (PostHog's own web default). */
-export const SESSION_IDLE_MS = 30 * 60 * 1000;
+export const SESSION_IDLE_MS = TELEMETRY_SESSION_IDLE_MS;
 /** PostHog splits sessions longer than a day, so a window left open starts a new one by then. */
 export const SESSION_MAX_MS = 24 * 60 * 60 * 1000;
 
@@ -33,6 +34,16 @@ export class TelemetrySession {
 
   /** The session an event recorded at `now` belongs to (starting a new one when due). */
   current(now: number): string {
+    const id = this.peek(now);
+    this.lastEventAt = now;
+    return id;
+  }
+
+  /**
+   * The session `now` falls in, starting a new one when due, without counting `now` as an event
+   * (a check that records nothing doesn't keep a session alive).
+   */
+  peek(now: number): string {
     if (
       !this.id ||
       now - this.lastEventAt >= SESSION_IDLE_MS ||
@@ -41,8 +52,8 @@ export class TelemetrySession {
     ) {
       this.id = uuidv7(now);
       this.startedAt = now;
+      this.lastEventAt = now;
     }
-    this.lastEventAt = now;
     return this.id;
   }
 }

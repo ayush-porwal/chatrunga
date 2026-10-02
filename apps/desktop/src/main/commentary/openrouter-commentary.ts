@@ -60,9 +60,12 @@ export type CommentaryReport =
       httpStatus: number | null;
       latencyMs: number;
       usage: CommentaryUsage | null;
-      /** The request as sent (usage analytics records prompts and answers; never the key). */
+      /**
+       * The request for usage analytics: the messages with player and engine names replaced
+       * ({@link analyticsRedactor}), never the key.
+       */
       request: { messages: readonly ChatMessage[]; temperature: number; maxTokens: number };
-      /** The model's answer, when one arrived. */
+      /** The model's answer, when one arrived (names replaced the same way). */
       output: string | null;
     }
   | {
@@ -73,7 +76,7 @@ export type CommentaryReport =
       attempts: number;
       firstAttemptValid: boolean;
       latencyMs: number;
-      /** The accepted explanation (successful outcomes only). */
+      /** The accepted explanation (successful outcomes only; names replaced). */
       prose?: string;
     };
 
@@ -164,7 +167,15 @@ export async function generateOpenRouterCommentary(
         monotonic,
         report
       });
-      report({ type: "outcome", ply, ok: true, code: null, ...trace, latencyMs: monotonic() - startedAt, prose: result.prose });
+      report({
+        type: "outcome",
+        ply,
+        ok: true,
+        code: null,
+        ...trace,
+        latencyMs: monotonic() - startedAt,
+        prose: analyticsRedactor(payload)(result.prose)
+      });
       return { ...result, generatedAt: now() };
     } catch (failure) {
       const known = failure instanceof CommentaryFailure ? failure : null;
@@ -175,6 +186,32 @@ export async function generateOpenRouterCommentary(
   });
 
   return { commentary: results.filter((item): item is ReviewCommentary => item !== null), error };
+}
+
+/**
+ * For usage analytics: replaces the players' names (PGN headers; Lichess usernames for synced
+ * games) and the engine's configured name with placeholders wherever they appear, in the prompt
+ * and in the model's answer. What is sent to OpenRouter is unchanged.
+ */
+export function analyticsRedactor(payload: ReviewInsightPayload): (text: string) => string {
+  const replacements: Array<[string, string]> = [];
+  const add = (value: string | undefined, placeholder: string) => {
+    const trimmed = value?.trim();
+    if (trimmed && trimmed.length >= 2) replacements.push([trimmed, placeholder]);
+  };
+  add(payload.context?.players?.white, "[White]");
+  add(payload.context?.players?.black, "[Black]");
+  add(payload.engines.stockfish.engineName, "[engine]");
+  if (!replacements.length) return (text) => text;
+  // Longest first, so a name containing another is replaced whole.
+  replacements.sort((a, b) => b[0].length - a[0].length);
+  const pattern = new RegExp(replacements.map(([value]) => escapeRegExp(value)).join("|"), "gi");
+  const placeholders = new Map(replacements.map(([value, placeholder]) => [value.toLowerCase(), placeholder]));
+  return (text) => text.replace(pattern, (match) => placeholders.get(match.toLowerCase()) ?? match);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** A move whose request never reached the provider (no key): one request, no attempts, a failure. */
@@ -216,12 +253,17 @@ async function generateOne(
 ): Promise<Omit<ReviewCommentary, "generatedAt">> {
   const { trace, monotonic, report } = instrumentation;
   const ply = payload.game.ply;
+  const redact = analyticsRedactor(payload);
   /** One HTTP attempt, reported with its latency, outcome and (when known) usage. */
   const attempt = async (reason: "initial" | "validation_retry", messages: ChatMessage[], temperature: number) => {
     trace.attempts += 1;
     const startedAt = monotonic();
     const request = { messages, temperature, maxTokens: maxTokensForDetail(payload.commentaryDetail) };
-    const base = { type: "attempt" as const, ply, attempt: trace.attempts, reason, request };
+    const reported = {
+      ...request,
+      messages: messages.map((message) => ({ role: message.role, content: redact(message.content) }))
+    };
+    const base = { type: "attempt" as const, ply, attempt: trace.attempts, reason, request: reported };
     try {
       const answer = await requestCompletion(apiKey, model, request, fetchImpl, timeoutMs);
       const check = validateProse(answer.content, payload);
@@ -231,7 +273,7 @@ async function generateOne(
         httpStatus: 200,
         latencyMs: monotonic() - startedAt,
         usage: answer.usage,
-        output: answer.content
+        output: redact(answer.content)
       });
       return { content: answer.content, check };
     } catch (error) {

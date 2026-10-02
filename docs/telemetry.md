@@ -32,7 +32,8 @@ There is no Chaturanga account, so **a user is an installation profile**:
 - Nothing derives identity from API keys, machine fingerprints, Lichess usernames or hardware.
 - `$session_id` is PostHog's session (a UUIDv7): one id while the app is in use, a new one after 30 minutes
   without an event or once a session reaches 24 hours. It powers PostHog's session views (session counts and
-  durations, events per session). `launch_id` is a random UUID per app launch.
+  durations, events per session). `launch_id` is a random UUID per app launch. "Once per session" events (`review_opened`, `review_studied`,
+  `commentary_viewed`, `commentary_session_started`) follow `$session_id`: a new session counts them again.
 - `game_ref` identifies a library game: an HMAC of the local game id with a random per-installation key, so it is
   stable for that installation, is not the local id, and can't be linked across installations. "Distinct games"
   means distinct library records: importing the same PGN twice is two games.
@@ -60,13 +61,15 @@ To have already-collected data removed, delete the installation's person/events 
 
 - **AI commentary** is recorded in full: each request's messages (the coach prompt and the move's facts: FEN,
   moves, engine lines, ratings), the model's answer, the model id, tokens, cost and latency (`$ai_generation`,
-  `$ai_trace`). These are the only events that carry game content.
-- **Never collected**: API keys or tokens (the OpenRouter key never leaves the key store), file paths, Lichess
-  usernames/ids/tokens, game or match URLs, engine names or paths (only `engine_family`: `stockfish` / `lc0` /
+  `$ai_trace`). These are the only events that carry game content. In the recorded copy the players' names
+  (PGN headers, Lichess usernames for synced games) and the engine's name are replaced with `[White]`,
+  `[Black]` and `[engine]`, in the prompt and the answer alike; what is sent to OpenRouter is unchanged.
+- **Never collected**: API keys or tokens (the OpenRouter key never leaves the key store), file paths, player
+  names and Lichess usernames/ids/tokens, game or match URLs, engine names or paths (only `engine_family`: `stockfish` / `lc0` /
   `other`), provider response bodies and error messages (only coded failures). Product events (everything but
   the AI events) carry no PGN, FEN, moves or player names.
 - The renderer contract is strict-schema validated in main; tests check that content-bearing fields are rejected
-  and that no recorded payload contains the API key.
+  and that no recorded payload contains the API key or a player's or engine's name.
 
 ## Configuration
 
