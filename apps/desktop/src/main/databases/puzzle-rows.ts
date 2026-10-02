@@ -60,7 +60,9 @@ export function parseCsvLine(line: string): string[] {
 export function matchesCheapFilters(kind: PuzzleRowKind, row: string[], input: PuzzleSampleInput): boolean {
   if (kind === "lichess") {
     const [id, fenBefore, movesRaw, ratingRaw, , popularityRaw, , themesRaw, , openingsRaw] = row;
-    if (!id || !fenBefore || !movesRaw) return false;
+    // The opponent's move and at least one reply, as `sampleFromLichessRow` needs: a row that can't
+    // make a puzzle mustn't take a place in a scan's sample.
+    if (!id || !fenBefore || words(movesRaw).length < 2) return false;
     const filters = input.lichess;
     if (!filters) return true;
     const rating = Number(ratingRaw);

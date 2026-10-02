@@ -375,6 +375,13 @@ describe("samplePuzzle", () => {
     expect((await samplePuzzle(input())).id).toBe("good");
   });
 
+  it("doesn't let rows too short to make a puzzle fill the sample", async () => {
+    // More one-move rows than a quick scan keeps, all before the only real puzzle.
+    const oneMove = (id: string) => `${id},rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1,e2e4,1500,80,90,100,short,,`;
+    await install([...Array.from({ length: 600 }, (_, index) => oneMove(`short${index}`)), row("good", 1500)]);
+    expect((await samplePuzzle(input())).id).toBe("good");
+  });
+
   it("applies the filters and the excluded ids", async () => {
     await install([row("low", 800), row("high", 2500), row("done", 2500)]);
     const sample = await samplePuzzle({ ...input({ ratingMin: 2000 }), excludeIds: ["done"] });

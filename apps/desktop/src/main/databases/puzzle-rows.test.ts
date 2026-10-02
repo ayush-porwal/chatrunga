@@ -88,4 +88,11 @@ describe("matchesCheapFilters", () => {
       expect(matchesCheapFilters("lichess", row, input)).toBe(sampleFromLichessRow(database, row, input) !== null);
     }
   });
+
+  it("rejects a row with too few moves to make a puzzle", () => {
+    const row = parseCsvLine(LICHESS_ROW.replace("e8d7 a2e6 d7d8 f7f8", "e8d7"));
+    expect(sampleFromLichessRow(database, row, lichessFilters())).toBeNull();
+    expect(matchesCheapFilters("lichess", row, lichessFilters())).toBe(false);
+    expect(matchesCheapFilters("lichess", row, { databaseId: "db1" })).toBe(false);
+  });
 });
