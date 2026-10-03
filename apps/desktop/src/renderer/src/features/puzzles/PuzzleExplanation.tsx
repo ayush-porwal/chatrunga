@@ -18,6 +18,7 @@ import { ReviewSettingsPanel } from "../game-review/ReviewSettingsPanel";
 import { uciLineToSan } from "../game-review/review-utils";
 import { explainEngine, explanationKey } from "./puzzle-explanation";
 import { explainView, requestPuzzleExplanation, usePuzzleExplanationStore } from "./puzzle-explanation-store";
+import { solutionIndexForToken, type PuzzleProseLine } from "./puzzle-prose";
 
 const settingsIcon = <Settings2 />;
 
@@ -55,6 +56,11 @@ export function PuzzleExplanation({
   });
   const model = openRouter.data?.model || DEFAULT_COMMENTARY_MODEL;
   const engine = explainEngine(engines.data ?? [], settings.defaultEngineId);
+  const otherSan = entry?.otherSan;
+  const proseLine = useMemo<PuzzleProseLine | null>(
+    () => (linkMoves ? { fen: puzzle.initialFen, solutionSan: uciLineToSan(puzzle.initialFen, puzzle.solutionMoves), otherSan: otherSan ?? [] } : null),
+    [linkMoves, puzzle, otherSan]
+  );
   const explain = () => void requestPuzzleExplanation({ key, puzzle, kind, wrong, engine, settings });
   const openSettings = () => setSettingsOpen(true);
   const gear = <IconButton label="Explanation settings" icon={settingsIcon} size="icon-sm" onClick={openSettings} />;
@@ -91,11 +97,11 @@ export function PuzzleExplanation({
           </div>
           {view.explanation.headline ? (
             <h3 className="font-serif text-base font-semibold leading-6 text-fg">
-              <PuzzleProse text={view.explanation.headline} puzzle={puzzle} linkMoves={linkMoves} />
+              <PuzzleProse text={view.explanation.headline} line={proseLine} />
             </h3>
           ) : null}
           <p className="font-serif text-sm leading-6 text-fg-secondary">
-            <PuzzleProse text={view.explanation.prose} puzzle={puzzle} linkMoves={linkMoves} />
+            <PuzzleProse text={view.explanation.prose} line={proseLine} />
           </p>
         </article>
       ) : view.kind === "error" ? (
@@ -167,25 +173,21 @@ export function PuzzleExplanation({
 }
 
 /**
- * The explanation's text; once the solution is on the board's line, its moves are links that jump
- * there (like the Solution list). Other moves stay text: playing them would leave the puzzle.
+ * The explanation's text; once the solution is on the board's line, the moves that name one of its
+ * plies are links that jump there (like the Solution list). Other moves stay text: playing them
+ * would leave the puzzle.
  */
-function PuzzleProse({ text, puzzle, linkMoves }: { text: string; puzzle: PuzzleSample; linkMoves: boolean }) {
+function PuzzleProse({ text, line }: { text: string; line: PuzzleProseLine | null }) {
   const segments = useMemo(() => tokenizeCommentary(text), [text]);
-  const solution = useMemo(() => uciLineToSan(puzzle.initialFen, puzzle.solutionMoves), [puzzle]);
-  const plain = (san: string) => san.replace(/[+#]+$/, "");
   return (
     <>
       {segments.map((segment, position) => {
         if (segment.kind === "text") return <Fragment key={position}>{segment.text}</Fragment>;
-        const index = linkMoves ? solution.findIndex((san) => plain(san) === plain(segment.san)) : -1;
-        if (index < 0) return <Fragment key={position}>{segment.text}</Fragment>;
+        const index = line ? solutionIndexForToken(segment, line) : null;
+        if (!line || index === null) return <Fragment key={position}>{segment.text}</Fragment>;
+        const moves = line.solutionSan.slice(0, index + 1);
         return (
-          <MoveLink
-            key={position}
-            san={solution[index]}
-            onActivate={() => useGameStore.getState().goToLine("root", solution.slice(0, index + 1))}
-          >
+          <MoveLink key={position} san={line.solutionSan[index]!} onActivate={() => useGameStore.getState().goToLine("root", [...moves])}>
             {segment.text}
           </MoveLink>
         );

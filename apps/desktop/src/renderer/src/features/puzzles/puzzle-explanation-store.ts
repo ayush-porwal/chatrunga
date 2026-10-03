@@ -12,6 +12,7 @@ import type { AppSettings } from "@chaturanga/shared/types/settings";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { usePuzzleStore, type PuzzleWrongMove } from "../../stores/puzzle-store";
 import { buildPuzzleExplanationPayload, explainSearchPlan, puzzleIdentity } from "./puzzle-explanation";
+import { nonSolutionSan } from "./puzzle-prose";
 
 /**
  * The puzzle explanations of this session, by {@link explanationKey}: a finished one stays (opening
@@ -29,6 +30,8 @@ export type ExplainEntry = {
   /** The running request's id (its engine search and provider call), null once it ended. */
   requestId: string | null;
   explanation: PuzzleExplanation | null;
+  /** The moves the coach was told about that aren't the solution's (their mentions don't link). */
+  otherSan: string[];
   error: string | null;
   /** The error is fixed in the explanation settings (no usable evaluation engine). */
   needsSettings: boolean;
@@ -100,7 +103,7 @@ export async function requestPuzzleExplanation(request: ExplainRequest, deps: Ex
   const { key, puzzle } = request;
   const current = usePuzzleExplanationStore.getState().entries[key];
   if (current?.phase === "analysing" || current?.phase === "writing") return;
-  const base = { puzzle: puzzleIdentity(puzzle), explanation: null, error: null, needsSettings: false, cancel: null };
+  const base = { puzzle: puzzleIdentity(puzzle), explanation: null, otherSan: [], error: null, needsSettings: false, cancel: null };
   if (!deps) {
     setEntry(key, { ...base, phase: "error", requestId: null, error: "Explanations need the desktop app." });
     return;
@@ -144,7 +147,7 @@ export async function requestPuzzleExplanation(request: ExplainRequest, deps: Ex
     fail(THIN_FACTS_ERROR);
     return;
   }
-  if (!patchEntry(key, requestId, { phase: "writing" })) return;
+  if (!patchEntry(key, requestId, { phase: "writing", otherSan: nonSolutionSan(payload) })) return;
 
   try {
     const answer = await deps.explainPuzzle({ requestId, payload });

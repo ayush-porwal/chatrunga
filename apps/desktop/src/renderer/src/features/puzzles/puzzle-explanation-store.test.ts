@@ -96,7 +96,7 @@ describe("requestPuzzleExplanation", () => {
 
     answers[0]!.resolve({ explanation, error: null });
     await running;
-    expect(entry()).toMatchObject({ phase: "ready", requestId: null, explanation });
+    expect(entry()).toMatchObject({ phase: "ready", requestId: null, explanation, otherSan: [] });
   });
 
   it("doesn't ask twice while one is running; Regenerate replaces a finished one", async () => {
@@ -152,7 +152,7 @@ describe("requestPuzzleExplanation", () => {
     const { deps } = fakeDeps();
     usePuzzleExplanationStore.setState({
       entries: {
-        "old:solved": { phase: "ready", puzzle: "old", requestId: null, explanation, error: null, needsSettings: false, cancel: null }
+        "old:solved": { phase: "ready", puzzle: "old", requestId: null, explanation, otherSan: [], error: null, needsSettings: false, cancel: null }
       }
     });
     void requestPuzzleExplanation(request, deps);
@@ -191,7 +191,7 @@ describe("requestPuzzleExplanation", () => {
 });
 
 describe("explainView", () => {
-  const ready: ExplainEntry = { phase: "ready", puzzle: puzzleIdentity(puzzle), requestId: null, explanation, error: null, needsSettings: false, cancel: null };
+  const ready: ExplainEntry = { phase: "ready", puzzle: puzzleIdentity(puzzle), requestId: null, explanation, otherSan: [], error: null, needsSettings: false, cancel: null };
   const base = { entry: undefined, configReady: true, commentaryEnabled: true, hasApiKey: true };
 
   it("offers the button once the configuration is known", () => {
