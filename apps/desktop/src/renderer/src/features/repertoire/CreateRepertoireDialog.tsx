@@ -19,6 +19,7 @@ import { useGameStore } from "../../stores/game-store";
 import { hasMoves, newRepertoireRootFen } from "./add-from-game";
 import { ADD_NEEDS_SAVE, captureBoardSource } from "./board-source";
 import { fenError, sortedChapters } from "./repertoire-chapters";
+import { nameError } from "./repertoire-metadata";
 
 type StartFrom = "initial" | "fen" | "game";
 
@@ -61,8 +62,9 @@ export function CreateRepertoireDialog({
   const invalidFen = startFrom === "fen" ? fenError(fen) : null;
   const [capturing, setCapturing] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const invalidName = nameError(name);
   const canCreate =
-    Boolean(name.trim()) &&
+    !invalidName &&
     !invalidFen &&
     !create.isPending &&
     !capturing &&
@@ -149,9 +151,13 @@ export function CreateRepertoireDialog({
             id={ids.name}
             autoFocus
             placeholder="My 1.e4 repertoire"
+            aria-invalid={Boolean(name.trim() && invalidName) || undefined}
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
+          {name.trim() && invalidName ? (
+            <p className="text-2xs text-danger">{invalidName}</p>
+          ) : null}
         </Field>
         <div className="grid gap-1.5">
           <p className="text-xs font-medium text-fg-secondary">You play</p>

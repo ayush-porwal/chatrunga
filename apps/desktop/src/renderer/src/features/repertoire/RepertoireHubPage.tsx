@@ -10,6 +10,7 @@ import {
   HardDriveDownload,
   HardDriveUpload,
   Library,
+  Pencil,
   Play,
   Plus,
   Search,
@@ -52,6 +53,7 @@ import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-s
 import { formatBytes, restoreNotice, shortenPath } from "./backup";
 import { BackupDialog } from "./BackupDialog";
 import { CreateRepertoireDialog } from "./CreateRepertoireDialog";
+import { EditRepertoireDialog } from "./EditRepertoireDialog";
 import { ImportPgnDialog } from "./ImportPgnDialog";
 import { RestoreBackupDialog } from "./RestoreBackupDialog";
 import {
@@ -122,6 +124,7 @@ export function RepertoireHubPage({
   const [creating, setCreating] = useState(false);
   const [importTarget, setImportTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<RepertoireSummary | null>(null);
+  const [editing, setEditing] = useState<RepertoireSummary | null>(null);
   /** The backup dialog's scope: every repertoire, or one. */
   const [backupTarget, setBackupTarget] = useState<"all" | RepertoireSummary | null>(null);
   const [restoring, setRestoring] = useState(false);
@@ -394,6 +397,13 @@ export function RepertoireHubPage({
                     {plural(item.decisionCount, "decision")} · Last studied{" "}
                     {relativeDay(item.lastStudiedAt, now).toLowerCase()}
                   </span>
+                  {item.tags.length ? (
+                    <span className="flex min-w-0 gap-1 overflow-hidden">
+                      {item.tags.map((tag) => (
+                        <Badge key={tag}>{tag}</Badge>
+                      ))}
+                    </span>
+                  ) : null}
                 </span>
                 {item.archivedAt ? <Badge>Archived</Badge> : null}
                 {item.dueCount ? (
@@ -421,6 +431,11 @@ export function RepertoireHubPage({
                     // The main process refuses practice on an archived repertoire.
                     disabled: Boolean(item.archivedAt),
                     onSelect: () => onPractice(item.id)
+                  },
+                  {
+                    label: "Edit repertoire",
+                    icon: <Pencil />,
+                    onSelect: () => setEditing(item)
                   },
                   {
                     label: "Import PGN",
@@ -509,6 +524,16 @@ export function RepertoireHubPage({
               onStudy({ repertoireId: detail.id, chapterId: first.id, nodeId: null });
             }
             // "add-game": the Add to repertoire dialog is open over the hub.
+          }}
+        />
+      ) : null}
+      {editing ? (
+        <EditRepertoireDialog
+          repertoire={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(detail) => {
+            setEditing(null);
+            setNotice({ tone: "success", text: `Saved the details of “${detail.name}”.` });
           }}
         />
       ) : null}
