@@ -410,6 +410,31 @@ function supportedChoices(
 }
 
 /**
+ * The supported choices of `keys` where the changed chapter only gained choices, without reading
+ * the other chapters: what a key supported before is exactly its stored decision's acceptance
+ * fingerprint (every accepted move that had a supporting occurrence), and now it also supports
+ * the chapter's choices. A key without a decision supported nothing before. The merge equals
+ * collectDecisions' for reconciliation: the choices new to the decision come only from this
+ * chapter, in its order.
+ */
+function grownChoices(
+  record: RepertoireRecord,
+  keys: readonly string[],
+  own: ReadonlyMap<string, string[]>
+): Map<string, CollectedDecision> {
+  const collected = new Map<string, CollectedDecision>();
+  for (const key of keys) {
+    const fingerprint = decisionRepository.get(record.id, key)?.acceptanceFingerprint ?? "";
+    const acceptedUcis = new Set(fingerprint ? fingerprint.split(",") : []);
+    for (const uci of own.get(key) ?? []) acceptedUcis.add(uci);
+    if (acceptedUcis.size) {
+      collected.set(key, { positionKey: key, fen: "", acceptedUcis, occurrences: [] });
+    }
+  }
+  return collected;
+}
+
+/**
  * Updates the derived state after one chapter changed — saved (`before` and `after`), added (no
  * `before`) or removed (no `after`) — with the same result as a full reindex, touching only what
  * the chapter can affect. The chapter change must already be stored, and the derived state must
@@ -418,8 +443,9 @@ function supportedChoices(
  * - A change that doesn't feed the index (sameIndexInputs: a comment, a title) writes nothing.
  * - Otherwise the chapter's own index rows are rewritten. Decisions and progress are reconciled
  *   only at the position keys where the chapter's supported choices changed (all of its keys when
- *   it moved in the chapter order); the choices other chapters support there, transpositions
- *   included, are read from those chapters.
+ *   it moved in the chapter order). Where it lost a choice, the choices other chapters support
+ *   there, transpositions included, are read from those chapters; where it only gained choices,
+ *   the stored decisions say what they support (grownChoices).
  * - When the stored index doesn't cover the old chapter (an index from an older key version, a
  *   damaged chapter), it falls back to the full reindex.
  */
@@ -455,13 +481,22 @@ export function reindexChapter(
     }
   }
 
+  // Where the chapter only gained choices, the stored decision already says what the other
+  // chapters support there; anything it lost may still be supported elsewhere, so those keys
+  // read the other chapters.
+  const grown: string[] = [];
+  const shrunk: string[] = [];
+  for (const key of changedKeys) {
+    const kept = new Set(next.choices.get(key));
+    if ((old.choices.get(key) ?? []).every((uci) => kept.has(uci))) grown.push(key);
+    else shrunk.push(key);
+  }
+  const collected = new Map([
+    ...grownChoices(record, grown, next.choices),
+    ...(shrunk.length ? supportedChoices(record, chapterId, shrunk, next.choices) : [])
+  ]);
   const result = changedKeys.length
-    ? reconcilePositions(
-        record,
-        changedKeys,
-        supportedChoices(record, chapterId, changedKeys, next.choices),
-        now
-      )
+    ? reconcilePositions(record, changedKeys, collected, now)
     : { decisionsChanged: 0, progressChanged: false };
   positionIndexRepository.replaceChapter(record.id, chapterId, next.rows, record.revision);
   return result;
