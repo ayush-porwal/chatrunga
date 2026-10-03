@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { create } from "zustand";
 import type { PuzzleAttemptResult, RecordPuzzleAttemptInput } from "@chaturanga/shared/types/puzzle-rating";
 import { ipcErrorMessage } from "@/lib/ipc-error";
-import { onPuzzleAttempt, type DecidedPuzzleAttempt } from "../stores/puzzle-store";
+import { onPuzzleAttempt, type DecidedPuzzleAttempt, type PuzzleAttemptEvent } from "../stores/puzzle-store";
 
 /**
  * The local puzzle rating through `window.chaturanga.puzzles` (main rates attempts and owns the
@@ -110,39 +110,49 @@ export const usePuzzleRecordStore = create<PuzzleRecordStore>((set) => ({
     })
 }));
 
+/** Where an attempt is recorded, and what a recorded one changes. */
+export type AttemptRecorder = {
+  recordAttempt: (input: RecordPuzzleAttemptInput) => Promise<PuzzleAttemptResult>;
+  /** Called after every successful write: the rating, history and failed puzzles may have changed. */
+  onRecorded: () => void;
+};
+
 /**
- * Records each puzzle attempt once it is decided (main rates it), and again when a failed puzzle is
- * finished later (only its completion time is new). An attempt left while still pending is never
- * recorded. Mount once.
+ * Records a decided attempt, and again when a failed puzzle is finished later (main fills in what
+ * is new). Any write that succeeds shows its result on the card: a finished puzzle whose decided
+ * write failed is stored (and rated) by the later one, so the card no longer says it wasn't saved.
+ * Settles once the write has; nothing to record settles at once.
  */
+export async function recordAttemptEvent({ kind, attempt }: PuzzleAttemptEvent, recorder: AttemptRecorder): Promise<void> {
+  if (!isRecordable(attempt)) return;
+  // A clean solve was complete when decided (and recorded with its completion then).
+  if (kind === "completed" && attempt.completedAt === attempt.decidedAt) return;
+  const key = attemptKey(attempt);
+  const store = usePuzzleRecordStore.getState();
+  if (kind === "decided") store.set(key, { status: "saving" });
+  try {
+    const result = await recorder.recordAttempt(recordInput(attempt));
+    store.set(key, { status: "saved", result });
+    recorder.onRecorded();
+  } catch (error) {
+    console.warn(`puzzles.recordAttempt (${kind}) failed`, error);
+    // A completion that failed leaves what the decided write showed.
+    if (kind === "decided") store.set(key, { status: "failed", message: ipcErrorMessage(error) || "unknown error" });
+  }
+}
+
+/** Records each puzzle attempt as it is decided and completed (see recordAttemptEvent). Mount once. */
 export function usePuzzleAttemptRecording(): void {
   const queryClient = useQueryClient();
   useEffect(
     () =>
-      onPuzzleAttempt(({ kind, attempt }) => {
+      onPuzzleAttempt((event) => {
         const puzzles = api()?.puzzles;
-        if (!puzzles || !isRecordable(attempt)) return;
-        const key = attemptKey(attempt);
-        const store = usePuzzleRecordStore.getState();
-        if (kind === "completed") {
-          // A clean solve was complete when decided (and recorded with its completion then).
-          if (attempt.completedAt === attempt.decidedAt) return;
-          void puzzles
-            .recordAttempt(recordInput(attempt))
-            .catch((error: unknown) => console.warn("puzzles.recordAttempt (completed) failed", error));
-          return;
-        }
-        store.set(key, { status: "saving" });
-        puzzles.recordAttempt(recordInput(attempt)).then(
-          (result) => {
-            usePuzzleRecordStore.getState().set(key, { status: "saved", result });
-            void queryClient.invalidateQueries({ queryKey: puzzleKeys.all });
-          },
-          (error: unknown) => {
-            console.warn("puzzles.recordAttempt failed", error);
-            usePuzzleRecordStore.getState().set(key, { status: "failed", message: ipcErrorMessage(error) || "unknown error" });
-          }
-        );
+        if (!puzzles) return;
+        void recordAttemptEvent(event, {
+          recordAttempt: (input) => puzzles.recordAttempt(input),
+          onRecorded: () => void queryClient.invalidateQueries({ queryKey: puzzleKeys.all })
+        });
       }),
     [queryClient]
   );
