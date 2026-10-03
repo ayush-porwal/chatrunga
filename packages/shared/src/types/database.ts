@@ -49,6 +49,8 @@ export type DatabaseDownloadProgress = {
 export type PuzzleSampleInput = {
   databaseId: string;
   excludeIds?: string[];
+  /** Only these puzzles (failed ones tried again); any filters still apply. */
+  ids?: string[];
   lichess?: {
     ratingMin: number;
     ratingMax: number;

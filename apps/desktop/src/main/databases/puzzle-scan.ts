@@ -33,9 +33,12 @@ export type ScanResult = {
 /**
  * Keeps a uniform random sample (reservoir) of the rows that pass the cheap filters. The expensive
  * chess work (the position after the opponent's move) is left for the one row that gets used.
+ * With `input.ids`, only those puzzles match, and the scan ends once all of them are found (as
+ * complete as reading the rest).
  */
 export async function reservoirScan(job: ScanJob, isCancelled: () => boolean = () => false): Promise<ScanResult> {
   const excluded = new Set(job.excludeIds);
+  const wanted = job.input.ids?.length ? new Set(job.input.ids) : null;
   const rows: string[][] = [];
   let matches = 0;
   let stopped = false;
@@ -44,13 +47,16 @@ export async function reservoirScan(job: ScanJob, isCancelled: () => boolean = (
     lines += 1;
     if (lineIndex === 0 || !line.trim()) return;
     const row = parseCsvLine(line);
-    if (excluded.has(row[0] ?? "") || !matchesCheapFilters(job.kind, row, job.input)) return;
+    const id = row[0] ?? "";
+    if (excluded.has(id) || (wanted && !wanted.has(id)) || !matchesCheapFilters(job.kind, row, job.input)) return;
     matches += 1;
     if (rows.length < job.size) rows.push(row);
     else {
       const slot = Math.floor(Math.random() * matches);
       if (slot < job.size) rows[slot] = row;
     }
+    // Ids are unique in a puzzle file: every wanted one is in hand.
+    if (wanted && matches >= wanted.size) return false;
     if ((job.maxMatches !== undefined && matches >= job.maxMatches) || isCancelled()) {
       stopped = true;
       return false;

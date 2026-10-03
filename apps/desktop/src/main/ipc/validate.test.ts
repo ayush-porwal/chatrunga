@@ -194,6 +194,9 @@ describe("library inputs", () => {
     expect(parsed.lichess?.side).toBe("any");
     expect(parsed.position?.difficultyMax).toBe(5);
     expect(() => parsePuzzleSampleInput({ databaseId: "db", lichess: { ratingMin: "low" } })).toThrow();
+    expect(parsePuzzleSampleInput({ databaseId: "db", ids: ["a", "b"] }).ids).toEqual(["a", "b"]);
+    expect(parsePuzzleSampleInput({ databaseId: "db" })).not.toHaveProperty("ids");
+    expect(() => parsePuzzleSampleInput({ databaseId: "db", ids: "a" })).toThrow(/puzzle ids/);
   });
 
   it("parses a decided puzzle attempt", () => {

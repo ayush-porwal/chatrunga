@@ -762,6 +762,18 @@ describe("samplePuzzle", () => {
     expect(fullScans.count).toBe(0);
   });
 
+  it("serves only the puzzles asked for by id, then says none are left", async () => {
+    await install([row("a", 1500), row("b", 2500), row("c", 900), row("d", 1500)]);
+    const retry: PuzzleSampleInput = { databaseId: "puzzles", ids: ["d", "b", "gone"] };
+    const first = await samplePuzzle(retry);
+    const second = await samplePuzzle({ ...retry, excludeIds: [first.id] });
+    expect([first.id, second.id].sort()).toEqual(["b", "d"]);
+    expect(second.ratingDeviation).toBe(80);
+    await expect(samplePuzzle({ ...retry, excludeIds: ["b", "d"] })).rejects.toThrow(/No puzzles left to try again/);
+    // The ids are their own pool: the same file's other requests are unaffected.
+    expect(["a", "b", "c", "d"]).toContain((await samplePuzzle(input())).id);
+  });
+
   it("reaches fresh puzzles past the excluded ones at the file's start", async () => {
     await install(Array.from({ length: 1000 }, (_, index) => row(`p${index}`, 1500)));
     const excludeIds = Array.from({ length: 600 }, (_, index) => `p${index}`);

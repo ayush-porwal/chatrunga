@@ -558,7 +558,7 @@ function startScan(job: ScanJob): RunningScan {
 
 /** Per database, file version (a replaced file is a new pool) and filters. */
 function poolKey(input: PuzzleSampleInput, fileVersion: string): string {
-  return JSON.stringify([input.databaseId, fileVersion, input.lichess ?? null, input.position ?? null]);
+  return JSON.stringify([input.databaseId, fileVersion, input.lichess ?? null, input.position ?? null, input.ids ?? null]);
 }
 
 function poolFor(key: string): SamplePool {
@@ -689,7 +689,8 @@ export async function samplePuzzle(input: PuzzleSampleInput): Promise<PuzzleSamp
     input,
     // Exclusions are applied when serving, so the rows fit any session with these filters.
     excludeIds: [],
-    size: POOL_SIZE
+    // Room for every puzzle asked for by id, so the pool holds them all.
+    size: Math.max(POOL_SIZE, input.ids?.length ?? 0)
   };
   const build = (row: string[]) => {
     try {
@@ -725,15 +726,21 @@ export async function samplePuzzle(input: PuzzleSampleInput): Promise<PuzzleSamp
     sample = serveFromPool(pool, build);
   }
   requestFullScan(pool, job);
-  if (!sample) throw new Error("No puzzle matched those filters. Try fewer themes or a wider rating range.");
+  if (!sample) {
+    throw new Error(
+      input.ids
+        ? "No puzzles left to try again."
+        : "No puzzle matched those filters. Try fewer themes or a wider rating range."
+    );
+  }
   return sample;
 }
 
-/** A scan's rows become the pool; a complete scan with few matches holds every one of them. */
+/** A scan's rows become the pool; a complete scan that kept every match holds all of them. */
 function fillPool(pool: SamplePool, result: ScanResult): void {
   pool.rows = result.rows;
   pool.interim = [];
-  if (result.complete && result.matches <= POOL_SIZE) pool.all = [...result.rows];
+  if (result.complete && result.matches <= result.rows.length) pool.all = [...result.rows];
 }
 
 /** Takes random rows out of the pool until one makes a puzzle (excluded or broken rows are dropped). */

@@ -489,6 +489,8 @@ export function parsePuzzleSampleInput(value: unknown): PuzzleSampleInput {
       asStringArray(ids, "excluded puzzle ids", 10_000, MAX_ID)
     )
   };
+  const ids = optional(input.ids, (ids) => asStringArray(ids, "puzzle ids", 1000, MAX_ID));
+  if (ids) result.ids = ids;
   if (input.lichess !== undefined && input.lichess !== null) {
     const lichess = asObject(input.lichess, "lichess filters");
     const side = lichess.side === "white" || lichess.side === "black" ? lichess.side : "any";
