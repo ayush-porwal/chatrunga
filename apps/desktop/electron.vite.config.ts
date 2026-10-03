@@ -25,6 +25,11 @@ export default defineConfig({
           "repertoire-import-writer-worker": resolve(
             rootDir,
             "src/main/repertoire/import-writer-worker.ts"
+          ),
+          // Worker thread restoring backups on its own connection (repertoire/backup-restore-runner.ts).
+          "repertoire-backup-restore-worker": resolve(
+            rootDir,
+            "src/main/repertoire/backup-restore-worker.ts"
           )
         }
       }

@@ -12,6 +12,7 @@ import {
   type ChapterKind,
   type ImportResult,
   type RepertoireChapter,
+  type RepertoireDecision,
   type RepertoireDetail,
   type RepertoireProgress
 } from "@chaturanga/shared/types/repertoire";
@@ -80,6 +81,13 @@ export function detail(id: string, now: number): RepertoireDetail {
     chapters: chapterRepository.summaries(id, now),
     workspace: workspaceRepository.get(id)
   };
+}
+
+/** The shared decision type, without the stored fingerprint. */
+export function stripFingerprint(stored: StoredDecision): RepertoireDecision {
+  const decision: Partial<StoredDecision> = { ...stored };
+  delete decision.acceptanceFingerprint;
+  return decision as RepertoireDecision;
 }
 
 /** `positionKey` remembering each FEN's key, optionally seeded with keys computed elsewhere. */

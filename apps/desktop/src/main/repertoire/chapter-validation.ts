@@ -24,6 +24,11 @@ import { standardCastlingUci } from "@chaturanga/shared/chess/review";
 import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
 
 export const MAX_TREE_NODES = 100_000;
+const MAX_NAME = 200;
+export const MAX_DESCRIPTION = 5_000;
+const MAX_TAGS = 32;
+const MAX_TAG = 50;
+export const MAX_POLICY_TEXT = 2_000;
 const MAX_ID = 200;
 const MAX_TITLE = 200;
 const MAX_COMMENT = 20_000;
@@ -332,4 +337,28 @@ export function rootNode(fen: string): MoveNode {
     highlights: [],
     children: []
   };
+}
+
+/* ------------------------------------------------------------------ repertoire text */
+
+/** Names, tags and free text of repertoires and decisions: trimmed and bounded. */
+export function cleanName(value: unknown): string {
+  const name = typeof value === "string" ? value.trim().slice(0, MAX_NAME) : "";
+  if (!name) throw new Error("Invalid name: expected a non-empty name");
+  return name;
+}
+
+export function cleanTags(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const tags = value
+    .filter((tag): tag is string => typeof tag === "string")
+    .map((tag) => tag.trim().slice(0, MAX_TAG))
+    .filter(Boolean);
+  return [...new Set(tags)].slice(0, MAX_TAGS);
+}
+
+export function cleanText(value: unknown, max: number): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim().slice(0, max);
+  return text || null;
 }

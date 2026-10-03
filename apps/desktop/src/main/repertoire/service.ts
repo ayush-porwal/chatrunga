@@ -6,16 +6,6 @@
 import { app, BrowserWindow, dialog } from "electron";
 import { nanoid } from "nanoid";
 import { createHash } from "node:crypto";
-import {
-  closeSync,
-  fsyncSync,
-  mkdirSync,
-  openSync,
-  readdirSync,
-  rmSync,
-  unlinkSync,
-  writeFileSync
-} from "node:fs";
 import { open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { GameHeaders, MoveNode } from "@chaturanga/shared/types/chess";
@@ -24,7 +14,6 @@ import {
   COMPARE_GAME_MAX_PLIES,
   REPERTOIRE_POSITION_KEY_VERSION,
   REPERTOIRE_ROOT_NODE_ID,
-  REPERTOIRE_SCHEDULER_VERSION,
   type BackupImportPreview,
   type ExportBackupInput,
   type ExportBackupResult,
@@ -33,7 +22,6 @@ import {
   type RepertoireBackupEntry,
   type RestoreBackupInput,
   type RestoreBackupResult,
-  type RestoreBackupSelection,
   type AddFromGameInput,
   type AddFromGamePreview,
   type AddFromGameResult,
@@ -115,7 +103,6 @@ import {
 } from "@chaturanga/shared/chess/repertoire-index";
 import {
   firstAnswerOutcome,
-  MAX_STAGE,
   orderQueue,
   scheduleAfterOutcome,
   type PracticeHistoryAction,
@@ -123,10 +110,8 @@ import {
 } from "@chaturanga/shared/chess/repertoire-scheduler";
 import { compareGameToRepertoire } from "@chaturanga/shared/chess/repertoire-compare";
 import {
-  buildBackupDocument,
   DEFAULT_BACKUP_LIMITS,
   diffBackupEntry,
-  remapBackupEntry,
   stripForExport,
   validateBackupDocument
 } from "@chaturanga/shared/chess/repertoire-backup";
@@ -156,6 +141,14 @@ import {
 import { startImportParse, type ImportRun } from "./import-runner";
 import { runImportCommit } from "./import-writer";
 import {
+  backupDocument,
+  backupEntryOf,
+  RETAINED_BACKUP_DIR,
+  restoreRefusal,
+  type BackupAppInfo
+} from "./backup-restore";
+import { runBackupRestore } from "./backup-restore-runner";
+import {
   bump,
   checkRevision,
   detail,
@@ -164,11 +157,17 @@ import {
   reindexChapter,
   reindexPositions,
   requireRepertoire,
+  stripFingerprint,
   type ImportCommitChapter
 } from "./core";
 import {
   chapterTitle,
+  cleanName,
+  cleanTags,
+  cleanText,
   fenAfterMove,
+  MAX_DESCRIPTION,
+  MAX_POLICY_TEXT,
   isValidFen,
   normalizeUci,
   rootNode,
@@ -199,11 +198,6 @@ import {
   type StoredDecision
 } from "./repository";
 
-const MAX_NAME = 200;
-const MAX_DESCRIPTION = 5_000;
-const MAX_TAGS = 32;
-const MAX_TAG = 50;
-const MAX_POLICY_TEXT = 2_000;
 const MAX_PGN_BYTES = 20 * 1024 * 1024;
 const IMPORT_JOB_TTL_MS = 30 * 60_000;
 /** Pending import previews kept in memory at once; each holds its parsed game trees. */
@@ -246,34 +240,6 @@ function loadChapter(repertoireId: string, chapterId: string, now: number): Repe
   }
   const chapter = chapterRepository.get(chapterId)!;
   return { ...chapter, dueCount: chapterRepository.dueCount(chapterId, now) };
-}
-
-function cleanName(value: unknown): string {
-  const name = typeof value === "string" ? value.trim().slice(0, MAX_NAME) : "";
-  if (!name) throw new Error("Invalid name: expected a non-empty name");
-  return name;
-}
-
-function cleanTags(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  const tags = value
-    .filter((tag): tag is string => typeof tag === "string")
-    .map((tag) => tag.trim().slice(0, MAX_TAG))
-    .filter(Boolean);
-  return [...new Set(tags)].slice(0, MAX_TAGS);
-}
-
-function cleanText(value: unknown, max: number): string | null {
-  if (typeof value !== "string") return null;
-  const text = value.trim().slice(0, max);
-  return text || null;
-}
-
-/** The shared decision type, without the stored fingerprint. */
-function stripFingerprint(stored: StoredDecision): RepertoireDecision {
-  const decision: Partial<StoredDecision> = { ...stored };
-  delete decision.acceptanceFingerprint;
-  return decision as RepertoireDecision;
 }
 
 /* ------------------------------------------------------------------ index and invalidation */
@@ -880,11 +846,13 @@ const runningImports = new Map<string, ImportRun>();
 /** The limits previews enforce (replaced in tests). */
 let importLimits: ImportLimits = DEFAULT_IMPORT_LIMITS;
 
-/** Worker files the import uses; unset: the bundled ones next to the main entry. */
-let importWorkers: { parse?: string; writer?: string } = {};
+/** Worker files the import and the backup restore use; unset: the bundled ones next to the main entry. */
+let importWorkers: { parse?: string; writer?: string; restore?: string } = {};
 
-/** Points the import at other worker files (tests and benchmarks only); nothing restores them. */
-export function setImportWorkers(next: { parse?: string; writer?: string } = {}): void {
+/** Points the import and restore at other worker files (tests and benchmarks only). */
+export function setImportWorkers(
+  next: { parse?: string; writer?: string; restore?: string } = {}
+): void {
   importWorkers = next;
 }
 
@@ -2908,14 +2876,15 @@ export function resetImportJobs(): void {
 
 /* ------------------------------------------------------------------ native backup (§10) */
 
-type BackupJob = { document: RepertoireBackupDocument; warnings: string[]; expiresAt: number };
+/** A previewed backup: its validated document, and its text for the restore worker. */
+type BackupJob = {
+  document: RepertoireBackupDocument;
+  text: string;
+  warnings: string[];
+  expiresAt: number;
+};
 const backupJobs = new Map<string, BackupJob>();
 const MAX_BACKUP_BYTES = DEFAULT_BACKUP_LIMITS.maxBytes;
-const RETAINED_BACKUP_DIR = "repertoire-backups";
-/** Retained backups kept per repertoire; older ones are deleted after a successful replace. */
-const MAX_RETAINED_BACKUPS = 10;
-/** The format name of the practice history kept beside a retained backup (never restored). */
-const RETAINED_HISTORY_FORMAT = "chaturanga-repertoire-practice-history";
 const BACKUP_FILTERS = [{ name: "Chaturanga backup", extensions: ["json"] }];
 
 function mib(bytes: number): string {
@@ -2931,30 +2900,9 @@ function appVersion(): string {
   return process.env.npm_package_version || app.getVersion();
 }
 
-/**
- * The stored state of a repertoire as a backup entry, progress included (callers strip it). A
- * damaged chapter is kept as its raw stored data rather than failing the whole backup. Read inside
- * a transaction so chapters, decisions and progress belong to one revision.
- */
-function backupEntryOf(record: RepertoireRecord): RepertoireBackupEntry {
-  return {
-    repertoire: {
-      id: record.id,
-      name: record.name,
-      color: record.color,
-      description: record.description,
-      tags: [...record.tags],
-      revision: record.revision,
-      archivedAt: record.archivedAt,
-      createdAt: record.createdAt,
-      updatedAt: record.updatedAt
-    },
-    chapters: chapterRepository.listForBackup(record.id),
-    decisions: decisionRepository.list(record.id).map(stripFingerprint),
-    progress: progressRepository.list(record.id),
-    workspace: workspaceRepository.get(record.id),
-    gameLinks: gameLinkRepository.list(record.id)
-  };
+/** This app, as the writer a backup document names. */
+function backupApp(): BackupAppInfo {
+  return { name: app.getName(), version: appVersion() };
 }
 
 /** One warning per damaged chapter of the entry, saying it was written as raw data. */
@@ -2966,15 +2914,6 @@ function damagedChapterWarnings(entry: RepertoireBackupEntry): string[] {
         ]
       : []
   );
-}
-
-function backupDocument(entries: RepertoireBackupEntry[], now: number): RepertoireBackupDocument {
-  return buildBackupDocument(entries, {
-    app: { name: app.getName(), version: appVersion() },
-    now,
-    positionKeyVersion: REPERTOIRE_POSITION_KEY_VERSION,
-    schedulerVersion: REPERTOIRE_SCHEDULER_VERSION
-  });
 }
 
 /** `yyyy-mm-dd` in local time, for the suggested file name. */
@@ -3027,7 +2966,7 @@ export async function exportBackup(
   }, "read");
   if (!entries.length) throw new Error("Invalid export: there are no repertoires to back up");
   const warnings = entries.flatMap(damagedChapterWarnings);
-  const json = JSON.stringify(backupDocument(entries, now));
+  const json = JSON.stringify(backupDocument(entries, now, backupApp()));
   const bytes = Buffer.byteLength(json, "utf8");
   if (bytes > MAX_BACKUP_BYTES) {
     throw new Error(
@@ -3070,16 +3009,6 @@ function requireBackupJob(jobId: string, now: number): BackupJob {
     );
   }
   return job;
-}
-
-/** Why restore would refuse this backup text (its reason, without "Invalid backup: "), or null. */
-function restoreRefusal(text: string): string | null {
-  try {
-    validateBackupDocument(text);
-    return null;
-  } catch (error) {
-    return String(error instanceof Error ? error.message : error).replace(/^Invalid backup: /, "");
-  }
 }
 
 /** The backup text from the native open dialog (size checked before reading), or null. */
@@ -3165,7 +3094,7 @@ export async function previewBackupImport(
     backupJobs.delete(oldest);
   }
   const jobId = nanoid();
-  const job = { document, warnings, expiresAt: now + IMPORT_JOB_TTL_MS };
+  const job = { document, text, warnings, expiresAt: now + IMPORT_JOB_TTL_MS };
   const preview = previewOf(jobId, job);
   backupJobs.set(jobId, job);
   return preview;
@@ -3187,351 +3116,13 @@ export function cancelBackupImport(jobId: string): void {
 }
 
 /**
- * The entry's chapters as they will be stored: every tree replayed from its root (validateTree via
- * sanitizeChapter), metadata pruned. Throws `Invalid backup: chapter "<title>" …` at the first bad
- * chapter, before anything is written.
+ * Restores the selected repertoires of a previewed backup (backup-restore.ts `runRestoreJob`: one
+ * transaction, with each replaced repertoire's own backup retained first). The restore runs in
+ * the restore worker on its own connection, so the main thread only checks the selections and
+ * waits; it holds the write gate meanwhile (the IPC handler takes it), so other repertoire writes
+ * wait behind it. The job is kept when the restore fails; change events follow the commit.
  */
-function restorableChapters(entry: RepertoireBackupEntry): RepertoireChapter[] {
-  return entry.chapters.map((chapter) => {
-    try {
-      return sanitizeChapter(chapter, chapter.revision);
-    } catch (error) {
-      const reason = (error instanceof Error ? error.message : String(error)).replace(
-        /^Invalid /,
-        ""
-      );
-      throw new Error(`Invalid backup: chapter "${chapter.title}" can't be restored (${reason})`, {
-        cause: error
-      });
-    }
-  });
-}
-
-/** Inserts an entry's content under `entry.repertoire.id` (the repertoire row must exist). */
-function insertBackupContent(
-  entry: RepertoireBackupEntry,
-  chapters: readonly RepertoireChapter[],
-  includeProgress: boolean,
-  keepLinkIds: boolean,
-  now: number
-): void {
-  const repertoireId = entry.repertoire.id;
-  for (const chapter of chapters) {
-    const owner = chapterRepository.ownerOf(chapter.id);
-    if (owner && owner.repertoireId !== repertoireId) {
-      throw new Error(
-        `Invalid backup: chapter "${chapter.title}" belongs to another repertoire in this library; restore it as a new copy`
-      );
-    }
-    chapterRepository.upsert(repertoireId, chapter, now);
-  }
-  for (const decision of entry.decisions) {
-    const acceptedUcis = [...new Set(decision.acceptedUcis.map((uci) => uci.toLowerCase()))];
-    const preferredUci = decision.preferredUci?.toLowerCase() ?? null;
-    decisionRepository.upsert(
-      {
-        repertoireId,
-        positionKey: decision.positionKey,
-        acceptedUcis,
-        preferredUci: preferredUci && acceptedUcis.includes(preferredUci) ? preferredUci : null,
-        prompt: cleanText(decision.prompt, MAX_POLICY_TEXT),
-        hint: cleanText(decision.hint, MAX_POLICY_TEXT),
-        wrongMoveFeedback: Object.fromEntries(
-          Object.entries(decision.wrongMoveFeedback)
-            .slice(0, 64)
-            .map(([uci, text]) => [uci.toLowerCase(), text.slice(0, MAX_POLICY_TEXT)])
-        ),
-        paused: decision.paused,
-        acceptanceFingerprint: ""
-      },
-      now
-    );
-  }
-  if (includeProgress && entry.progress) {
-    for (const progress of entry.progress) {
-      progressRepository.upsert({
-        ...progress,
-        repertoireId,
-        stage: Math.min(progress.stage, MAX_STAGE)
-      });
-    }
-  }
-  if (entry.workspace) {
-    const known = chapters.some((chapter) => chapter.id === entry.workspace!.lastChapterId);
-    workspaceRepository.save(
-      repertoireId,
-      {
-        lastChapterId: known ? entry.workspace.lastChapterId : null,
-        lastNodeId: known ? entry.workspace.lastNodeId : null,
-        orientation: entry.workspace.orientation,
-        practiceDraft: null
-      },
-      now
-    );
-  }
-  for (const link of entry.gameLinks) {
-    gameLinkRepository.insert({
-      ...link,
-      id: keepLinkIds && !gameLinkRepository.get(link.id) ? link.id : nanoid(),
-      repertoireId,
-      gameId: link.gameId && libraryGameExists(link.gameId) ? link.gameId : null,
-      headers: sanitizeHeaders(link.headers),
-      capturedPath: link.capturedPath.slice(0, MAX_POLICY_TEXT)
-    });
-  }
-}
-
-/** A file-name-safe form of a repertoire id. */
-function safeFileId(id: string): string {
-  return id.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80) || "repertoire";
-}
-
-function retainedBackupDirectory(): string {
-  return join(app.getPath("userData"), RETAINED_BACKUP_DIR);
-}
-
-/** Syncs a directory entry to disk (best effort: Windows can't open a directory for this). */
-function syncDirectory(directory: string): void {
-  let descriptor: number | null = null;
-  try {
-    descriptor = openSync(directory, "r");
-    fsyncSync(descriptor);
-  } catch {
-    // The file itself is already synced; only its directory entry may lag.
-  } finally {
-    if (descriptor !== null) closeSync(descriptor);
-  }
-}
-
-/** A replaced repertoire's own backup, prepared before anything is written or deleted. */
-type RetainedCopy = { record: RepertoireRecord; text: string; history: string };
-
-/**
- * The repertoire's own backup (progress included) as Restore from backup reads it, and its raw
- * practice session and attempt rows as a separate forensic history document (never restored, so
- * it can't make the backup too large to restore). Refused, before anything is deleted, when the
- * backup itself would fail the restore's checks: a replace must leave a copy that can be restored.
- */
-function prepareRetainedCopy(record: RepertoireRecord, now: number): RetainedCopy {
-  const { entry, history } = transaction(
-    () => ({
-      entry: stripForExport(backupEntryOf(record), true),
-      history: {
-        format: RETAINED_HISTORY_FORMAT,
-        repertoireId: record.id,
-        exportedAt: now,
-        sessions: sessionRepository.rawRows(record.id),
-        attempts: attemptRepository.rawRowsForRepertoire(record.id)
-      }
-    }),
-    "read"
-  );
-  const text = JSON.stringify(backupDocument([entry], now));
-  const refusal = restoreRefusal(text);
-  if (refusal) {
-    throw new Error(
-      `Invalid selections: "${record.name}" can't be replaced because its own backup couldn't be restored (${refusal}); restore the backup as a new copy`
-    );
-  }
-  return { record, text, history: JSON.stringify(history) };
-}
-
-/** The forensic history file kept beside a retained backup. */
-function historyPathOf(backupPath: string): string {
-  return backupPath.replace(/\.json$/, ".history.json");
-}
-
-/**
- * Writes a prepared copy to `<userData>/repertoire-backups/` and returns the backup's path; its
- * history goes beside it (`<name>.history.json`). The backup is created exclusively (a random
- * suffix on a name collision), then both files and their directory are synced, so they are on
- * disk before the replace deletes anything.
- */
-function retainBackup({ record, text, history }: RetainedCopy, now: number): string {
-  const directory = retainedBackupDirectory();
-  mkdirSync(directory, { recursive: true });
-  const base = `${safeFileId(record.id)}-${new Date(now).toISOString().replace(/[:.]/g, "-")}`;
-  let path = join(directory, `${base}.json`);
-  let descriptor: number | null = null;
-  for (let attempt = 0; descriptor === null; attempt += 1) {
-    try {
-      descriptor = openSync(path, "wx");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST" || attempt >= 5) throw error;
-      path = join(directory, `${base}-${nanoid(8)}.json`);
-    }
-  }
-  try {
-    writeFileSync(descriptor, text, "utf8");
-    fsyncSync(descriptor);
-  } finally {
-    closeSync(descriptor);
-  }
-  const historyDescriptor = openSync(historyPathOf(path), "w");
-  try {
-    writeFileSync(historyDescriptor, history, "utf8");
-    fsyncSync(historyDescriptor);
-  } finally {
-    closeSync(historyDescriptor);
-  }
-  syncDirectory(directory);
-  return path;
-}
-
-const RETAINED_NAME =
-  /^(.+)-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)(?:-[A-Za-z0-9_-]+)?\.json$/;
-
-/**
- * Deletes all but the newest MAX_RETAINED_BACKUPS retained backups of a repertoire (best effort:
- * a file that can't be listed or deleted is left).
- */
-function pruneRetainedBackups(repertoireId: string): void {
-  const directory = retainedBackupDirectory();
-  const fileId = safeFileId(repertoireId);
-  let names: string[];
-  try {
-    names = readdirSync(directory);
-  } catch {
-    return;
-  }
-  const retained = names
-    .map((name) => ({ name, match: RETAINED_NAME.exec(name) }))
-    .filter((item) => item.match?.[1] === fileId)
-    .sort((a, b) => {
-      const stamp = b.match![2].localeCompare(a.match![2]);
-      return stamp || b.name.localeCompare(a.name);
-    });
-  for (const { name } of retained.slice(MAX_RETAINED_BACKUPS)) {
-    try {
-      unlinkSync(join(directory, name));
-      rmSync(historyPathOf(join(directory, name)), { force: true });
-    } catch {
-      // Left for the next replace to try again.
-    }
-  }
-}
-
-type RestoredRepertoire = RestoreBackupResult["restored"][number] & { revision: number };
-
-function restoreNewCopy(
-  entry: RepertoireBackupEntry,
-  chapters: readonly RepertoireChapter[],
-  selection: RestoreBackupSelection,
-  now: number
-): RestoredRepertoire {
-  const chapterIds = new Map(chapters.map((chapter) => [chapter.id, nanoid()]));
-  const copy = remapBackupEntry(entry, {
-    newRepertoireId: nanoid(),
-    idFor: (chapterId) => chapterIds.get(chapterId) ?? nanoid(),
-    linkIdFor: () => nanoid()
-  });
-  const name = selection.newName?.trim()
-    ? cleanName(selection.newName)
-    : cleanName(`${entry.repertoire.name || "Repertoire"} (restored)`);
-  repertoireRepository.insert({
-    id: copy.repertoire.id,
-    name,
-    color: copy.repertoire.color,
-    description: cleanText(copy.repertoire.description, MAX_DESCRIPTION) ?? "",
-    tags: cleanTags(copy.repertoire.tags),
-    revision: 1,
-    archivedAt: null,
-    createdAt: now,
-    updatedAt: now
-  });
-  const copiedChapters = chapters.map((chapter) => ({
-    ...chapter,
-    id: chapterIds.get(chapter.id)!,
-    revision: 1
-  }));
-  insertBackupContent(copy, copiedChapters, selection.includeProgress, false, now);
-  reindex(requireRepertoire(copy.repertoire.id), now);
-  return {
-    sourceId: entry.repertoire.id,
-    repertoireId: copy.repertoire.id,
-    mode: "new-copy",
-    retainedBackupPath: null,
-    revision: 1
-  };
-}
-
-/**
- * The repertoire a replace overwrites, after the checks that refuse it: it must exist, be at the
- * revision the user saw, have the backup's color, and have no practice session in progress.
- */
-function checkReplace(
-  entry: RepertoireBackupEntry,
-  selection: RestoreBackupSelection
-): RepertoireRecord {
-  const existing = repertoireRepository.get(entry.repertoire.id);
-  if (!existing) {
-    throw new Error(
-      `Invalid selections: "${entry.repertoire.name}" has no repertoire in this library to replace; restore it as a new copy`
-    );
-  }
-  if (selection.expectedRevision === undefined) {
-    throw new Error("Invalid expectedRevision: required to replace a repertoire");
-  }
-  checkRevision(existing, selection.expectedRevision);
-  if (existing.color !== entry.repertoire.color) {
-    throw new Error(
-      `Invalid backup: "${existing.name}" is a ${existing.color} repertoire in this library; restore it as a new copy`
-    );
-  }
-  if (sessionRepository.count(existing.id, "active") > 0) {
-    throw new Error(
-      `Invalid selections: "${existing.name}" has a practice session in progress; end it first`
-    );
-  }
-  return existing;
-}
-
-function restoreReplace(
-  entry: RepertoireBackupEntry,
-  chapters: readonly RepertoireChapter[],
-  selection: RestoreBackupSelection,
-  retainedBackupPath: string,
-  now: number
-): RestoredRepertoire {
-  const existing = checkReplace(entry, selection);
-  // Deleting the row cascades to chapters, decisions, index, progress, sessions, workspace, links.
-  repertoireRepository.remove(existing.id);
-  const revision = Math.max(existing.revision, entry.repertoire.revision) + 1;
-  repertoireRepository.insert({
-    id: existing.id,
-    name: cleanName(entry.repertoire.name || existing.name),
-    color: entry.repertoire.color,
-    description: cleanText(entry.repertoire.description, MAX_DESCRIPTION) ?? "",
-    tags: cleanTags(entry.repertoire.tags),
-    revision,
-    archivedAt: entry.repertoire.archivedAt,
-    createdAt: entry.repertoire.createdAt,
-    updatedAt: now
-  });
-  insertBackupContent(entry, chapters, selection.includeProgress, true, now);
-  reindex(requireRepertoire(existing.id), now);
-  return {
-    sourceId: entry.repertoire.id,
-    repertoireId: existing.id,
-    mode: "replace",
-    retainedBackupPath,
-    revision
-  };
-}
-
-/**
- * Restores the selected repertoires of a previewed backup in one transaction, so a failure leaves
- * nothing half-restored. `new-copy` inserts the content under fresh ids at revision 1. `replace`
- * is refused unless checkReplace passes; before the transaction begins, the existing repertoire's
- * own backup (with its practice history) is written and synced to
- * `<userData>/repertoire-backups/`, then its content, progress and practice sessions are swapped
- * for the backup's under the same id at a revision above both. Afterwards only the newest ten
- * retained backups of each replaced repertoire are kept. Progress is restored only with
- * `includeProgress`. A link keeps its game only if this library has it. The index and effective
- * decisions are rebuilt (decisions nothing reaches are suspended); change events follow the
- * commit. Runs on the main thread (see the stack plan's known limitations).
- */
-export function restoreBackup(input: RestoreBackupInput): RestoreBackupResult {
+export async function restoreBackup(input: RestoreBackupInput): Promise<RestoreBackupResult> {
   const now = clock();
   const job = requireBackupJob(input.jobId, now);
   if (!input.selections.length) {
@@ -3540,32 +3131,25 @@ export function restoreBackup(input: RestoreBackupInput): RestoreBackupResult {
   if (new Set(input.selections.map((item) => item.sourceId)).size !== input.selections.length) {
     throw new Error("Invalid selections: each repertoire can be restored only once");
   }
-  const planned = input.selections.map((selection) => {
-    const entry = job.document.repertoires.find(
-      (item) => item.repertoire.id === selection.sourceId
-    );
-    if (!entry) {
+  for (const selection of input.selections) {
+    if (!job.document.repertoires.some((item) => item.repertoire.id === selection.sourceId)) {
       throw new Error(`Invalid selections: "${selection.sourceId}" is not in this backup`);
     }
-    return { selection, entry, chapters: restorableChapters(entry) };
-  });
-  // Every replace is checked, and its own backup prepared (and checked restorable), before any
-  // backup is retained; all are retained before BEGIN.
-  const copies = planned
-    .filter(({ selection }) => selection.mode === "replace")
-    .map(({ selection, entry }) => prepareRetainedCopy(checkReplace(entry, selection), now));
-  const retained = new Map<string, string>();
-  for (const copy of copies) retained.set(copy.record.id, retainBackup(copy, now));
-  const restored = transaction(() =>
-    planned.map(({ selection, entry, chapters }) =>
-      selection.mode === "replace"
-        ? restoreReplace(entry, chapters, selection, retained.get(entry.repertoire.id)!, now)
-        : restoreNewCopy(entry, chapters, selection, now)
-    )
+  }
+  const restored = await runBackupRestore(
+    {
+      text: job.text,
+      selections: input.selections,
+      now,
+      retainedDirectory: join(app.getPath("userData"), RETAINED_BACKUP_DIR),
+      app: backupApp()
+    },
+    databasePath,
+    importWorkers.restore,
+    app.isPackaged === true
   );
   backupJobs.delete(input.jobId);
   for (const item of restored) {
-    if (item.mode === "replace") pruneRetainedBackups(item.repertoireId);
     changed({
       repertoireId: item.repertoireId,
       revision: item.revision,

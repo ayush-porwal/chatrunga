@@ -54,6 +54,17 @@ vi.mock("electron", () => ({
   }
 }));
 
+// The app mock reports a packaged build (for the backup's app version), which requires the bundled
+// restore worker; tests have none, so restores run in this thread as in development.
+vi.mock("./backup-restore-runner", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./backup-restore-runner")>();
+  return {
+    ...actual,
+    runBackupRestore: (...[job, dbPath, workerPath]: Parameters<typeof actual.runBackupRestore>) =>
+      actual.runBackupRestore(job, dbPath, workerPath, false)
+  };
+});
+
 const { closeDb, getDb } = await import("../db");
 const service = await import("./service");
 const { chapterRepository, decisionRepository, positionIndexRepository, progressRepository } =
@@ -296,19 +307,23 @@ describe("native backup: export", () => {
       diff: null,
       damaged: true
     });
-    const copyId = service.restoreBackup({
-      jobId: preview.jobId,
-      selections: [{ sourceId: detail.id, mode: "new-copy", includeProgress: true }]
-    }).restored[0].repertoireId;
+    const copyId = (
+      await service.restoreBackup({
+        jobId: preview.jobId,
+        selections: [{ sourceId: detail.id, mode: "new-copy", includeProgress: true }]
+      })
+    ).restored[0].repertoireId;
     expect(service.getRepertoire(copyId).chapterCount).toBe(1);
 
     // Replacing it with a healthy backup keeps the damaged data in the retained backup.
     const repair = (await service.previewBackupImport({ json: healthy }))!;
     expect(repair.repertoires[0]).toMatchObject({ diff: null, damaged: true });
-    const path = service.restoreBackup({
-      jobId: repair.jobId,
-      selections: [replaceSelection(detail.id, detail.revision)]
-    }).restored[0].retainedBackupPath!;
+    const path = (
+      await service.restoreBackup({
+        jobId: repair.jobId,
+        selections: [replaceSelection(detail.id, detail.revision)]
+      })
+    ).restored[0].retainedBackupPath!;
     const retained = JSON.parse(readFileSync(path, "utf8")) as RepertoireBackupDocument;
     expect(retained.repertoires[0].chapters[1].damaged?.treeJson).toBe("{oops");
     expect(service.getRepertoire(detail.id).chapterCount).toBe(2);
@@ -411,17 +426,19 @@ describe("native backup: preview", () => {
     expect(fresh.repertoires[0].existing?.revision).toBe(edited.revision);
     expect(fresh.repertoires[0].diff).toMatchObject({ chaptersAdded: 1 });
     // The refreshed revision restores; the stale one is still refused.
-    expect(() =>
+    await expect(
       service.restoreBackup({
         jobId: preview.jobId,
         selections: [replaceSelection(detail.id, detail.revision)]
       })
-    ).toThrow(/^Invalid expectedRevision: repertoire changed/);
+    ).rejects.toThrow(/^Invalid expectedRevision: repertoire changed/);
     expect(
-      service.restoreBackup({
-        jobId: preview.jobId,
-        selections: [replaceSelection(detail.id, edited.revision)]
-      }).restored[0].mode
+      (
+        await service.restoreBackup({
+          jobId: preview.jobId,
+          selections: [replaceSelection(detail.id, edited.revision)]
+        })
+      ).restored[0].mode
     ).toBe("replace");
     expect(() => service.refreshBackupPreview(preview.jobId)).toThrow(/Invalid jobId/);
   });
@@ -460,7 +477,7 @@ describe("native backup: preview", () => {
     document.apiKey = "sk-secret";
     document.repertoires[0].settings = { enginePath: "/usr/local/bin/stockfish" };
     const preview = (await service.previewBackupImport({ json: JSON.stringify(document) }))!;
-    const result = service.restoreBackup({
+    const result = await service.restoreBackup({
       jobId: preview.jobId,
       selections: [
         { sourceId: preview.repertoires[0].sourceId, mode: "new-copy", includeProgress: true }
@@ -484,20 +501,20 @@ describe("native backup: preview", () => {
 
     const cancelled = (await service.previewBackupImport({ json: text }))!;
     service.cancelBackupImport(cancelled.jobId);
-    expect(() => restoreWith(cancelled.jobId)).toThrow(
+    await expect(restoreWith(cancelled.jobId)).rejects.toThrow(
       "Invalid jobId: the backup preview expired or was cancelled; choose the file again"
     );
 
     const expiring = (await service.previewBackupImport({ json: text }))!;
     now += 30 * 60_000;
-    expect(() => restoreWith(expiring.jobId)).toThrow(/Invalid jobId/);
+    await expect(restoreWith(expiring.jobId)).rejects.toThrow(/Invalid jobId/);
 
     const jobs: string[] = [];
     for (let index = 0; index < 4; index += 1) {
       jobs.push((await service.previewBackupImport({ json: text }))!.jobId);
     }
-    expect(() => restoreWith(jobs[0])).toThrow(/Invalid jobId/);
-    expect(restoreWith(jobs[3]).restored).toHaveLength(1);
+    await expect(restoreWith(jobs[0])).rejects.toThrow(/Invalid jobId/);
+    expect((await restoreWith(jobs[3])).restored).toHaveLength(1);
   });
 });
 
@@ -509,7 +526,7 @@ describe("native backup: restore", () => {
     getDb().prepare("DELETE FROM games WHERE id = ?").run("game-gone");
     const preview = (await service.previewBackupImport({ json: text }))!;
     sent.length = 0;
-    const result = service.restoreBackup({
+    const result = await service.restoreBackup({
       jobId: preview.jobId,
       selections: [{ sourceId: detail.id, mode: "new-copy", includeProgress: false }]
     });
@@ -569,7 +586,7 @@ describe("native backup: restore", () => {
     const detail = seed();
     const { text } = await exportText(true);
     const preview = (await service.previewBackupImport({ json: text }))!;
-    const result = service.restoreBackup({
+    const result = await service.restoreBackup({
       jobId: preview.jobId,
       selections: [
         { sourceId: detail.id, mode: "new-copy", includeProgress: true, newName: "With progress" }
@@ -597,7 +614,7 @@ describe("native backup: restore", () => {
     expect(preview.repertoires[0].diff).toMatchObject({ chaptersAdded: 1, chaptersRemoved: 0 });
     now += 1_000;
     sent.length = 0;
-    const result = service.restoreBackup({
+    const result = await service.restoreBackup({
       jobId: preview.jobId,
       selections: [
         {
@@ -678,10 +695,12 @@ describe("native backup: restore", () => {
       chaptersRemoved: 0,
       decisionsChanged: 0
     });
-    const copyId = service.restoreBackup({
-      jobId: preview.jobId,
-      selections: [{ sourceId: detail.id, mode: "new-copy", includeProgress: true }]
-    }).restored[0].repertoireId;
+    const copyId = (
+      await service.restoreBackup({
+        jobId: preview.jobId,
+        selections: [{ sourceId: detail.id, mode: "new-copy", includeProgress: true }]
+      })
+    ).restored[0].repertoireId;
     expect(decisionRepository.list(copyId)).toHaveLength(stored.length);
   });
 
@@ -697,10 +716,12 @@ describe("native backup: restore", () => {
     decision.preferredUci = "E2E4";
     decision.wrongMoveFeedback = { D2D4: "Not today" };
     const preview = (await service.previewBackupImport({ json: JSON.stringify(document) }))!;
-    const copyId = service.restoreBackup({
-      jobId: preview.jobId,
-      selections: [{ sourceId: detail.id, mode: "new-copy", includeProgress: false }]
-    }).restored[0].repertoireId;
+    const copyId = (
+      await service.restoreBackup({
+        jobId: preview.jobId,
+        selections: [{ sourceId: detail.id, mode: "new-copy", includeProgress: false }]
+      })
+    ).restored[0].repertoireId;
     expect(decisionRepository.get(copyId, positionKey(START_FEN))).toMatchObject({
       acceptedUcis: accepted,
       preferredUci: "e2e4",
@@ -715,30 +736,34 @@ describe("native backup: restore", () => {
     document.repertoires[0].repertoire.color = "black";
     const black = (await service.previewBackupImport({ json: JSON.stringify(document) }))!;
     expect(black.repertoires[0].diff?.metadataChanged).toEqual(["color"]);
-    expect(() =>
+    await expect(
       service.restoreBackup({
         jobId: black.jobId,
         selections: [replaceSelection(detail.id, detail.revision)]
       })
-    ).toThrow(
+    ).rejects.toThrow(
       'Invalid backup: "Open games" is a white repertoire in this library; restore it as a new copy'
     );
 
     const session = service.startPractice({ repertoireId: detail.id, mode: "learn-new" });
     const preview = (await service.previewBackupImport({ json: text }))!;
-    expect(() =>
+    await expect(
       service.restoreBackup({
         jobId: preview.jobId,
         selections: [replaceSelection(detail.id, detail.revision)]
       })
-    ).toThrow('Invalid selections: "Open games" has a practice session in progress; end it first');
+    ).rejects.toThrow(
+      'Invalid selections: "Open games" has a practice session in progress; end it first'
+    );
     expect(existsSync(join(userData, "repertoire-backups"))).toBe(false);
     service.endPractice(session.sessionId);
     expect(
-      service.restoreBackup({
-        jobId: preview.jobId,
-        selections: [replaceSelection(detail.id, detail.revision)]
-      }).restored[0].mode
+      (
+        await service.restoreBackup({
+          jobId: preview.jobId,
+          selections: [replaceSelection(detail.id, detail.revision)]
+        })
+      ).restored[0].mode
     ).toBe("replace");
   });
 
@@ -757,10 +782,12 @@ describe("native backup: restore", () => {
     const taken = `${detail.id}-${stamp(now)}.json`;
     writeFileSync(join(directory, taken), "taken");
     const preview = (await service.previewBackupImport({ json: text }))!;
-    const path = service.restoreBackup({
-      jobId: preview.jobId,
-      selections: [replaceSelection(detail.id, detail.revision, false)]
-    }).restored[0].retainedBackupPath!;
+    const path = (
+      await service.restoreBackup({
+        jobId: preview.jobId,
+        selections: [replaceSelection(detail.id, detail.revision, false)]
+      })
+    ).restored[0].retainedBackupPath!;
     expect(path).toMatch(new RegExp(`${detail.id}-${stamp(now)}-[A-Za-z0-9_-]+\\.json$`));
     expect(readFileSync(join(directory, taken), "utf8")).toBe("taken");
     const names = readdirSync(directory);
@@ -793,12 +820,12 @@ describe("native backup: restore", () => {
     }
     const preview = (await service.previewBackupImport({ json: text }))!;
     const current = service.getRepertoire(detail.id);
-    expect(() =>
+    await expect(
       service.restoreBackup({
         jobId: preview.jobId,
         selections: [replaceSelection(detail.id, current.revision, false)]
       })
-    ).toThrow(
+    ).rejects.toThrow(
       /can't be replaced because its own backup couldn't be restored \(it has 1,002 chapters/
     );
     expect(service.getRepertoire(detail.id).chapters).toHaveLength(1_002);
@@ -845,13 +872,13 @@ describe("native backup: restore", () => {
         ]
       });
     sent.length = 0;
-    expect(() => replace(detail.revision - 1)).toThrow(
+    await expect(replace(detail.revision - 1)).rejects.toThrow(
       /^Invalid expectedRevision: repertoire changed/i
     );
     expect(existsSync(join(userData, "repertoire-backups"))).toBe(false);
     expect(service.getRepertoire(detail.id).revision).toBe(detail.revision);
     expect(sent).toEqual([]);
-    expect(replace(detail.revision).restored[0].mode).toBe("replace");
+    expect((await replace(detail.revision)).restored[0].mode).toBe("replace");
   });
 
   it("aborts the whole restore on an illegal tree, before any write", async () => {
@@ -861,12 +888,12 @@ describe("native backup: restore", () => {
     const chapter = document.repertoires[0].chapters[1];
     chapter.tree[1].uci = "e2e5";
     const preview = (await service.previewBackupImport({ json: JSON.stringify(document) }))!;
-    expect(() =>
+    await expect(
       service.restoreBackup({
         jobId: preview.jobId,
         selections: [{ sourceId: detail.id, mode: "new-copy", includeProgress: false }]
       })
-    ).toThrow(`Invalid backup: chapter "Chapter second" can't be restored (chapter tree:`);
+    ).rejects.toThrow(`Invalid backup: chapter "Chapter second" can't be restored (chapter tree:`);
     expect(service.listRepertoires()).toHaveLength(1);
   });
 
@@ -874,26 +901,26 @@ describe("native backup: restore", () => {
     const detail = seed();
     const { text } = await exportText(false);
     const preview = (await service.previewBackupImport({ json: text }))!;
-    expect(() =>
+    await expect(
       service.restoreBackup({
         jobId: preview.jobId,
         selections: [{ sourceId: detail.id, mode: "replace", includeProgress: false }]
       })
-    ).toThrow("Invalid expectedRevision: required to replace a repertoire");
+    ).rejects.toThrow("Invalid expectedRevision: required to replace a repertoire");
     service.removeRepertoire({ id: detail.id, expectedRevision: detail.revision });
-    expect(() =>
+    await expect(
       service.restoreBackup({
         jobId: preview.jobId,
         selections: [
           { sourceId: detail.id, mode: "replace", includeProgress: false, expectedRevision: 1 }
         ]
       })
-    ).toThrow(/has no repertoire in this library to replace/);
-    expect(() =>
+    ).rejects.toThrow(/has no repertoire in this library to replace/);
+    await expect(
       service.restoreBackup({
         jobId: preview.jobId,
         selections: [{ sourceId: "other", mode: "new-copy", includeProgress: false }]
       })
-    ).toThrow('Invalid selections: "other" is not in this backup');
+    ).rejects.toThrow('Invalid selections: "other" is not in this backup');
   });
 });

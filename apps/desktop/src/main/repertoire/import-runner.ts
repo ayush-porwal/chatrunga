@@ -36,11 +36,12 @@ export type ImportRun = {
 
 /**
  * The error for a bundled worker file that isn't there. A packaged app passes `requireWorker`, so
- * a broken installation fails loudly instead of parsing or writing on the main thread.
+ * a broken installation fails loudly instead of parsing or writing on the main thread. `task`
+ * names what can't run.
  */
-export function missingWorkerError(workerPath: string): Error {
+export function missingWorkerError(workerPath: string, task = "The PGN import"): Error {
   return new Error(
-    `The PGN import can't run: a file of this installation is missing (${workerPath}). ` +
+    `${task} can't run: a file of this installation is missing (${workerPath}). ` +
       "Reinstall Chaturanga and try again."
   );
 }
