@@ -2,12 +2,14 @@ import { BrowserWindow, ipcMain } from "electron";
 import {
   addFromGame,
   archiveRepertoire,
+  cancelBackupImport,
   cancelImport,
   commitImport,
   compareGame,
   createRepertoire,
   duplicateRepertoire,
   endPractice,
+  exportBackup,
   exportRepertoire,
   getChapter,
   getDecision,
@@ -18,12 +20,15 @@ import {
   listGameLinks,
   listRepertoires,
   previewAddFromGame,
+  previewBackupImport,
   previewImport,
   recordAttempt,
   recordPracticeAction,
+  refreshBackupPreview,
   removeChapter,
   removeGameLink,
   removeRepertoire,
+  restoreBackup,
   resumePractice,
   saveChapter,
   saveWorkspace,
@@ -40,17 +45,20 @@ import {
   parseDecisionRef,
   parseCreateRepertoireInput,
   parseDuplicateRepertoireInput,
+  parseExportBackupInput,
   parseExportInput,
   parseGameLinkQuery,
   parseImportCommitInput,
   parseLinkGameInput,
   parsePracticeActionInput,
+  parsePreviewBackupImportInput,
   parsePreviewImportInput,
   parseRecordAttemptInput,
   parseRemoveChapterInput,
   parseRemoveGameLink,
   parseRemoveRepertoireInput,
   parseRepertoireListFilters,
+  parseRestoreBackupInput,
   parseSaveChapterInput,
   parseSaveWorkspaceInput,
   parseStartPracticeInput,
@@ -129,6 +137,25 @@ export function registerRepertoireIpc(): void {
   // The save dialog is parented to the calling window; the renderer never names a destination.
   ipcMain.handle("repertoires:export", (event, input: unknown) =>
     exportRepertoire(parseExportInput(input), BrowserWindow.fromWebContents(event.sender))
+  );
+  // Native backups: the save/open dialogs are parented to the calling window; no renderer path.
+  ipcMain.handle("repertoires:exportBackup", (event, input: unknown) =>
+    exportBackup(parseExportBackupInput(input), BrowserWindow.fromWebContents(event.sender))
+  );
+  ipcMain.handle("repertoires:previewBackupImport", (event, input: unknown) =>
+    previewBackupImport(
+      parsePreviewBackupImportInput(input),
+      BrowserWindow.fromWebContents(event.sender)
+    )
+  );
+  ipcMain.handle("repertoires:restoreBackup", (_event, input: unknown) =>
+    restoreBackup(parseRestoreBackupInput(input))
+  );
+  ipcMain.handle("repertoires:refreshBackupPreview", (_event, jobId: unknown) =>
+    refreshBackupPreview(asId(jobId, "jobId"))
+  );
+  ipcMain.handle("repertoires:cancelBackupImport", (_event, jobId: unknown) =>
+    cancelBackupImport(asId(jobId, "jobId"))
   );
   ipcMain.handle("repertoires:startPractice", (_event, input: unknown) =>
     startPractice(parseStartPracticeInput(input))

@@ -574,6 +574,151 @@ export type LinkGameInput = {
   capturedPath: string;
 };
 
+/* ------------------------------------------------------------------ native backup (§10) */
+
+export const REPERTOIRE_BACKUP_FORMAT = "chaturanga-repertoire-backup";
+export const REPERTOIRE_BACKUP_FORMAT_VERSION = 1;
+
+/**
+ * A chapter as stored in a backup. A chapter whose stored JSON couldn't be read is written with an
+ * empty tree and its raw stored strings under `damaged`, so a backup never silently loses it; a
+ * restore leaves such a chapter out with a warning.
+ */
+export type RepertoireBackupChapter = RepertoireChapter & {
+  damaged?: { treeJson: string; nodeMetaJson: string; headersJson: string; reason: string };
+};
+
+/**
+ * Raw practice-session and attempt rows of a replaced repertoire, written only into the backup
+ * retained before a replace. Forensic: never validated or restored.
+ */
+export type RepertoireBackupHistory = {
+  sessions: Record<string, unknown>[];
+  attempts: Record<string, unknown>[];
+};
+
+/** One repertoire as stored in a backup: content, policies, boundaries, provenance; progress optional. */
+export type RepertoireBackupEntry = {
+  repertoire: Pick<
+    RepertoireSummary,
+    "id" | "name" | "color" | "description" | "tags" | "revision" | "archivedAt" | "createdAt" | "updatedAt"
+  >;
+  chapters: RepertoireBackupChapter[];
+  decisions: RepertoireDecision[];
+  /** Null when the export left progress out. */
+  progress: RepertoireProgress[] | null;
+  workspace: RepertoireWorkspaceState | null;
+  /** Provenance; `gameId` may point at a game the restoring library doesn't have (set to null then). */
+  gameLinks: RepertoireGameLink[];
+  /** Only in a backup retained before a replace (see RepertoireBackupHistory); never restored. */
+  history?: RepertoireBackupHistory;
+};
+
+/**
+ * The versioned backup document. Never contains credentials, API keys, engine paths or cached
+ * evaluations. Validated (format, versions, limits) before anything is restored.
+ */
+export type RepertoireBackupDocument = {
+  format: typeof REPERTOIRE_BACKUP_FORMAT;
+  formatVersion: number;
+  positionKeyVersion: number;
+  schedulerVersion: number;
+  exportedAt: number;
+  app: { name: string; version: string };
+  repertoires: RepertoireBackupEntry[];
+};
+
+export type ExportBackupInput = {
+  /** Omitted = every repertoire, archived ones included. */
+  repertoireIds?: string[];
+  includeProgress: boolean;
+};
+
+export type ExportBackupResult = {
+  /** Where the save dialog wrote it; null when cancelled. */
+  savedPath: string | null;
+  repertoireCount: number;
+  bytes: number;
+  /** Damaged chapters written as raw data, one line per chapter. */
+  warnings: string[];
+};
+
+/** `pickFile` opens the native open dialog; `json` is for tests and the web preview. */
+export type PreviewBackupImportInput = { pickFile: true } | { json: string };
+
+export type BackupImportPreviewRepertoire = {
+  /** The repertoire id inside the backup. */
+  sourceId: string;
+  name: string;
+  color: RepertoireColor;
+  chapterCount: number;
+  decisionCount: number;
+  hasProgress: boolean;
+  /** A repertoire in this library with the same id (a copy restored earlier, or the original). */
+  existing: { id: string; name: string; revision: number; color: RepertoireColor } | null;
+  /** What replacing `existing` would change; null when `existing` has a damaged chapter. */
+  diff: BackupDiff | null;
+  /** True when `existing` has a chapter that can't be read (no diff; it can still be replaced). */
+  damaged?: boolean;
+};
+
+/** What replacing an existing repertoire with a backup entry would change. */
+export type BackupDiff = {
+  chaptersAdded: number;
+  chaptersChanged: number;
+  chaptersRemoved: number;
+  decisionsChanged: number;
+  /** Progress entries the backup holds. */
+  progressEntries: number;
+  /**
+   * Progress entries stored for the existing repertoire. A replace deletes them all: they are lost
+   * when progress isn't restored, and replaced by the backup's own when it is.
+   */
+  progressDiscarded: number;
+  /** Practice sessions (and their attempts) of the existing repertoire that a replace deletes. */
+  sessionsDiscarded: number;
+  /** Game links the backup adds, and existing ones a replace removes (the games themselves stay). */
+  linksAdded: number;
+  linksRemoved: number;
+  /** Repertoire fields a replace changes, from name, description, tags, archivedAt and color. */
+  metadataChanged: string[];
+};
+
+export type BackupImportPreview = {
+  jobId: string;
+  formatVersion: number;
+  exportedAt: number;
+  app: { name: string; version: string };
+  repertoires: BackupImportPreviewRepertoire[];
+  warnings: string[];
+};
+
+export type RestoreBackupSelection = {
+  sourceId: string;
+  /** `new-copy` (default) restores under a fresh id; `replace` overwrites `existing` after retaining a backup of it. */
+  mode: "new-copy" | "replace";
+  includeProgress: boolean;
+  /** For `new-copy`: the name to use (defaults to "<name> (restored)"). */
+  newName?: string;
+  /** For `replace`: the existing repertoire's revision the user saw. */
+  expectedRevision?: number;
+};
+
+export type RestoreBackupInput = {
+  jobId: string;
+  selections: RestoreBackupSelection[];
+};
+
+export type RestoreBackupResult = {
+  restored: {
+    sourceId: string;
+    repertoireId: string;
+    mode: "new-copy" | "replace";
+    /** For `replace`: where the replaced repertoire's own backup was written first. */
+    retainedBackupPath: string | null;
+  }[];
+};
+
 /* ------------------------------------------------------------------ game comparison (§6.3) */
 
 /** How one mainline move of a finished game relates to the selected repertoire. */

@@ -6,6 +6,9 @@ import {
   Copy,
   Download,
   GraduationCap,
+  HardDrive,
+  HardDriveDownload,
+  HardDriveUpload,
   Library,
   Play,
   Plus,
@@ -31,6 +34,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SideDot } from "@/components/ui/side-dot";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { hasDesktopApi } from "@/lib/environment";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { listRowInteractive } from "@/lib/ui";
 import { cn } from "@/lib/utils";
@@ -45,8 +49,11 @@ import {
   useRepertoiresQuery
 } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
+import { formatBytes, restoreNotice, shortenPath } from "./backup";
+import { BackupDialog } from "./BackupDialog";
 import { CreateRepertoireDialog } from "./CreateRepertoireDialog";
 import { ImportPgnDialog } from "./ImportPgnDialog";
+import { RestoreBackupDialog } from "./RestoreBackupDialog";
 import {
   COLOR_LABELS,
   mostDue,
@@ -71,7 +78,8 @@ const ACTIVE: RepertoireListFilters = {};
 
 /**
  * The repertoire hub (§5.1): review what's due, create, filter and search repertoires, and act on
- * each one (study, practice, import/export PGN, duplicate, archive, delete).
+ * each one (study, practice, import/export PGN, back up, duplicate, archive, delete). Native backup
+ * and restore live in the header's Backup menu (desktop only).
  */
 export function RepertoireHubPage({
   onStudy,
@@ -87,6 +95,9 @@ export function RepertoireHubPage({
   onReview: (repertoireId: string) => void;
 }) {
   const desktop = Boolean(window.chaturanga?.repertoires);
+  // Backups go through main-owned native dialogs, so they're hidden outside the desktop app.
+  const backups =
+    desktop && hasDesktopApi() && Boolean(window.chaturanga?.repertoires.exportBackup);
   const queryClient = useQueryClient();
   const [color, setColor] = useState<ColorFilter>("all");
   const [query, setQuery] = useState("");
@@ -111,10 +122,21 @@ export function RepertoireHubPage({
   const [creating, setCreating] = useState(false);
   const [importTarget, setImportTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<RepertoireSummary | null>(null);
+  /** The backup dialog's scope: every repertoire, or one. */
+  const [backupTarget, setBackupTarget] = useState<"all" | RepertoireSummary | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  // The open study draft, so a restore that replaces its repertoire can ask before discarding it.
+  const draftRepertoireId = useRepertoireWorkspaceStore((state) => state.repertoireId);
+  const draftDirty = useRepertoireWorkspaceStore((state) => state.dirty);
   const [notice, setNotice] = useState<{
     tone: "danger" | "success" | "info";
     text: string;
     pgn?: string;
+    /** Extra lines under the message (where replaced repertoires were backed up). */
+    details?: string[];
+    /** Full path behind a shortened one, as a tooltip. */
+    path?: string;
+    action?: { label: string; onSelect: () => void };
   } | null>(null);
 
   const items = list.data ?? [];
@@ -194,6 +216,24 @@ export function RepertoireHubPage({
         description="Build the openings you play, then practise one decision at a time."
         actions={
           <>
+            {backups ? (
+              <OverflowMenu
+                label="Backup"
+                trigger={{ text: "Backup", icon: <HardDrive /> }}
+                items={[
+                  {
+                    label: "Back up all repertoires…",
+                    icon: <HardDriveDownload />,
+                    onSelect: () => setBackupTarget("all")
+                  },
+                  {
+                    label: "Restore from backup…",
+                    icon: <HardDriveUpload />,
+                    onSelect: () => setRestoring(true)
+                  }
+                ]}
+              />
+            ) : null}
             {continueTarget ? (
               <Button type="button" variant="ghost" onClick={() => onStudy(continueTarget)}>
                 <BookOpen />
@@ -269,6 +309,20 @@ export function RepertoireHubPage({
           tone={notice.tone}
           action={
             <div className="flex gap-2">
+              {notice.action ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  onClick={() => {
+                    const action = notice.action!;
+                    setNotice(null);
+                    action.onSelect();
+                  }}
+                >
+                  {notice.action.label}
+                </Button>
+              ) : null}
               {notice.pgn ? (
                 <Button
                   type="button"
@@ -293,7 +347,14 @@ export function RepertoireHubPage({
             </div>
           }
         >
-          {notice.text}
+          <span title={notice.path}>{notice.text}</span>
+          {notice.details?.length ? (
+            <ul className="mt-1 grid gap-0.5 text-fg-muted">
+              {notice.details.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          ) : null}
         </Notice>
       ) : null}
 
@@ -367,6 +428,11 @@ export function RepertoireHubPage({
                     onSelect: () => setImportTarget(item.id)
                   },
                   { label: "Export PGN", icon: <Download />, onSelect: () => exportPgn(item) },
+                  backups && {
+                    label: "Back up this repertoire…",
+                    icon: <HardDriveDownload />,
+                    onSelect: () => setBackupTarget(item)
+                  },
                   {
                     label: "Duplicate",
                     icon: <Copy />,
@@ -472,6 +538,47 @@ export function RepertoireHubPage({
             setNotice({
               tone: "success",
               text: `Imported ${plural(result.chaptersAdded, "chapter")} into “${result.repertoire.name}”.`
+            });
+          }}
+        />
+      ) : null}
+      {backupTarget ? (
+        <BackupDialog
+          repertoire={backupTarget === "all" ? undefined : backupTarget}
+          onClose={() => setBackupTarget(null)}
+          onSaved={(result) => {
+            setBackupTarget(null);
+            setNotice({
+              tone: "success",
+              text: `Backup saved (${plural(result.repertoireCount, "repertoire")}, ${formatBytes(result.bytes)}) to ${shortenPath(result.savedPath)}.`,
+              details: result.warnings,
+              path: result.savedPath
+            });
+          }}
+        />
+      ) : null}
+      {restoring ? (
+        <RestoreBackupDialog
+          draft={{ repertoireId: draftRepertoireId, dirty: draftDirty }}
+          onClose={() => setRestoring(false)}
+          onRestored={(preview, input, result) => {
+            setRestoring(false);
+            // A replaced repertoire's open study draft describes content that no longer exists
+            // (the dialog asked first when the draft had unsaved edits).
+            const draft = useRepertoireWorkspaceStore.getState();
+            const replaced = result.restored.some(
+              (item) => item.mode === "replace" && item.repertoireId === draft.repertoireId
+            );
+            if (replaced) draft.reset();
+            const message = restoreNotice(preview, input, result);
+            const only = result.restored.length === 1 ? result.restored[0] : null;
+            setNotice({
+              tone: "success",
+              text: message.text,
+              details: message.details,
+              action: only
+                ? { label: "Open", onSelect: () => void study(only.repertoireId) }
+                : undefined
             });
           }}
         />

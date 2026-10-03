@@ -3,6 +3,7 @@ import { MoreHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { frost, popover } from "@/lib/ui";
 import { useDismiss } from "@/lib/use-dismiss";
+import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { usePresence } from "@/components/ui/use-presence";
 
@@ -28,7 +29,16 @@ type MenuItem = {
  * Placement: below the trigger, or above it when the list would be cut off at the bottom of a
  * scrolling container (the last rows of a list) or the window.
  */
-function OverflowMenu({ label, items }: { label: string; items: readonly (MenuItem | false | null | undefined)[] }) {
+function OverflowMenu({
+  label,
+  items,
+  trigger
+}: {
+  label: string;
+  items: readonly (MenuItem | false | null | undefined)[];
+  /** A labelled outline button ("Backup") instead of the "⋯" icon, for a page header's menu. */
+  trigger?: { text: string; icon?: React.ReactNode };
+}) {
   const [open, setOpen] = React.useState(false);
   const rootRef = React.useRef<HTMLDivElement | null>(null);
   const visibleItems = items.filter((item): item is MenuItem => Boolean(item));
@@ -52,14 +62,27 @@ function OverflowMenu({ label, items }: { label: string; items: readonly (MenuIt
 
   return (
     <div ref={rootRef} className="relative inline-flex">
-      <IconButton
-        label={label}
-        icon={<MoreHorizontal />}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        tooltip={!open}
-        onClick={() => setOpen((value) => !value)}
-      />
+      {trigger ? (
+        <Button
+          type="button"
+          variant="outline"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          {trigger.icon}
+          {trigger.text}
+        </Button>
+      ) : (
+        <IconButton
+          label={label}
+          icon={<MoreHorizontal />}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          tooltip={!open}
+          onClick={() => setOpen((value) => !value)}
+        />
+      )}
       {present ? (
         <div
           ref={listRef}
@@ -86,7 +109,7 @@ function OverflowMenu({ label, items }: { label: string; items: readonly (MenuIt
                   item.onSelect();
                 }}
                 className={cn(
-                  "flex h-8 items-center gap-2 rounded-md px-2 text-left text-sm outline-none transition-colors focus-visible:bg-control disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
+                  "flex h-8 items-center gap-2 whitespace-nowrap rounded-md px-2 text-left text-sm outline-none transition-colors focus-visible:bg-control disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
                   item.destructive ? "text-danger hover:bg-danger-soft" : "text-fg-secondary hover:bg-control hover:text-fg"
                 )}
               >

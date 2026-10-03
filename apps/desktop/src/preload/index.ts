@@ -165,6 +165,12 @@ const api: ChaturangaApi = {
     commitImport: (input) => ipcRenderer.invoke("repertoires:commitImport", input),
     cancelImport: (jobId) => ipcRenderer.invoke("repertoires:cancelImport", jobId),
     export: (input) => ipcRenderer.invoke("repertoires:export", input),
+    exportBackup: (input) => ipcRenderer.invoke("repertoires:exportBackup", input),
+    previewBackupImport: (input) => ipcRenderer.invoke("repertoires:previewBackupImport", input),
+    restoreBackup: (input) => ipcRenderer.invoke("repertoires:restoreBackup", input),
+    refreshBackupPreview: (jobId) =>
+      ipcRenderer.invoke("repertoires:refreshBackupPreview", jobId),
+    cancelBackupImport: (jobId) => ipcRenderer.invoke("repertoires:cancelBackupImport", jobId),
     startPractice: (input) => ipcRenderer.invoke("repertoires:startPractice", input),
     resumePractice: (sessionId) => ipcRenderer.invoke("repertoires:resumePractice", sessionId),
     recordPracticeAction: (input) => ipcRenderer.invoke("repertoires:recordPracticeAction", input),

@@ -12,6 +12,7 @@ import {
   type PracticeCard,
   type PracticeMode,
   type PracticeScope,
+  type RepertoireBackupChapter,
   type RepertoireChapter,
   type RepertoireChapterSummary,
   type RepertoireColor,
@@ -29,11 +30,13 @@ import { getDb } from "../db";
 /** A stored chapter whose JSON can't be read. Recoverable: the row is left untouched. */
 export class RepertoireCorruptChapterError extends Error {
   readonly chapterId: string;
+  readonly reason: string;
 
   constructor(chapterId: string, reason: string) {
     super(`Repertoire chapter ${chapterId} is damaged and can't be opened: ${reason}`);
     this.name = "RepertoireCorruptChapterError";
     this.chapterId = chapterId;
+    this.reason = reason;
   }
 }
 
@@ -522,6 +525,13 @@ export const repertoireRepository = {
     return row ? toSummary(row) : null;
   },
 
+  /** Every repertoire id, archived ones included, oldest first (backups). */
+  ids(): string[] {
+    return all<{ id: string }>("SELECT id FROM repertoires ORDER BY created_at, id").map(
+      (row) => row.id
+    );
+  },
+
   get(id: string): RepertoireRecord | null {
     const row = get<RepertoireRow>("SELECT * FROM repertoires WHERE id = ?", id);
     return row ? toRecord(row) : null;
@@ -616,6 +626,36 @@ export const chapterRepository = {
       "SELECT * FROM repertoire_chapters WHERE repertoire_id = ? ORDER BY sort_order, created_at, id",
       repertoireId
     ).map(toChapter);
+  },
+
+  /**
+   * Every chapter of a repertoire, in order, for a backup: a damaged chapter comes back with an
+   * empty tree and its raw stored JSON under `damaged` instead of throwing.
+   */
+  listForBackup(repertoireId: string): RepertoireBackupChapter[] {
+    return all<ChapterRow>(
+      "SELECT * FROM repertoire_chapters WHERE repertoire_id = ? ORDER BY sort_order, created_at, id",
+      repertoireId
+    ).map((row): RepertoireBackupChapter => {
+      try {
+        return toChapter(row);
+      } catch (error) {
+        if (!(error instanceof RepertoireCorruptChapterError)) throw error;
+        return {
+          ...toChapterSummary(row),
+          dueCount: 0,
+          headers: {},
+          tree: [],
+          nodeMeta: {},
+          damaged: {
+            treeJson: row.tree_json,
+            nodeMetaJson: row.node_metadata_json,
+            headersJson: row.headers_json,
+            reason: error.reason
+          }
+        };
+      }
+    });
   },
 
   get(id: string): RepertoireChapter | null {
@@ -848,6 +888,25 @@ export const positionIndexRepository = {
 };
 
 export const sessionRepository = {
+  /** How many practice sessions a repertoire has, optionally only active ones. */
+  count(repertoireId: string, status?: "active"): number {
+    const row = get<{ value: number }>(
+      status
+        ? "SELECT COUNT(*) AS value FROM repertoire_practice_sessions WHERE repertoire_id = ? AND status = ?"
+        : "SELECT COUNT(*) AS value FROM repertoire_practice_sessions WHERE repertoire_id = ?",
+      ...(status ? [repertoireId, status] : [repertoireId])
+    );
+    return row?.value ?? 0;
+  },
+
+  /** A repertoire's session rows exactly as stored (the retained backup's forensic history). */
+  rawRows(repertoireId: string): Record<string, unknown>[] {
+    return all<Record<string, unknown>>(
+      "SELECT * FROM repertoire_practice_sessions WHERE repertoire_id = ? ORDER BY created_at, id",
+      repertoireId
+    ).map((row) => ({ ...row }));
+  },
+
   get(id: string): PracticeSessionRecord | null {
     const row = get<SessionRow>("SELECT * FROM repertoire_practice_sessions WHERE id = ?", id);
     return row ? toSession(row) : null;
@@ -895,6 +954,16 @@ export const sessionRepository = {
 };
 
 export const attemptRepository = {
+  /** Every attempt row of a repertoire's sessions exactly as stored (forensic history). */
+  rawRowsForRepertoire(repertoireId: string): Record<string, unknown>[] {
+    return all<Record<string, unknown>>(
+      `SELECT a.* FROM repertoire_attempts a
+        JOIN repertoire_practice_sessions s ON s.id = a.session_id
+        WHERE s.repertoire_id = ? ORDER BY a.session_id, a.sequence, a.at`,
+      repertoireId
+    ).map((row) => ({ ...row }));
+  },
+
   get(attemptId: string): AttemptRecord | null {
     const row = get<AttemptRow>(
       "SELECT * FROM repertoire_attempts WHERE attempt_id = ?",
