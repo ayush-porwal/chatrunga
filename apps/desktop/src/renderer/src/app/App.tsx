@@ -6,6 +6,7 @@ import { createGameFromFen } from "@chaturanga/shared/chess/pgn";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import type { ImportedGame } from "@chaturanga/shared/types/chess";
 import { defaultSettings } from "@chaturanga/shared/types/settings";
+import { REPERTOIRE_ROOT_NODE_ID } from "@chaturanga/shared/types/repertoire";
 import { Notice } from "@/components/ui/notice";
 import { hasDesktopApi, isElectronMac } from "@/lib/environment";
 import { positionStatus } from "@/lib/position-status";
@@ -702,9 +703,10 @@ export function App() {
         return false;
       }
     }
-    // Restoring the chapter already open: put its node and orientation back directly.
+    // Restoring the chapter already open: put its node (no node is the root) and orientation
+    // back directly.
     if (draft.repertoireId === target.repertoireId && draft.chapterId === target.chapterId) {
-      if (target.nodeId) draft.selectNode(target.nodeId);
+      draft.selectNode(target.nodeId ?? REPERTOIRE_ROOT_NODE_ID);
       if (target.orientation) draft.setOrientation(target.orientation);
     }
     const tab = (target.tab as StudyTab | undefined) ?? repertoireExtras.tab;

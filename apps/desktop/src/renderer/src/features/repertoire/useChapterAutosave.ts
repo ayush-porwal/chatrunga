@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import type { RepertoireDetail } from "@chaturanga/shared/types/repertoire";
-import { adoptChapterSave, repertoireKeys } from "../../queries/repertoire";
+import { adoptChapterSave, invalidateSummaries, repertoireKeys } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
 import { autosaveStep, isMissingTargetError, isStaleRevisionError } from "./repertoire-model";
 
@@ -92,7 +92,7 @@ export async function rememberStudyPosition(queryClient: QueryClient): Promise<v
         practiceDraft: detail?.workspace?.practiceDraft ?? null
       }
     });
-    void queryClient.invalidateQueries({ queryKey: repertoireKeys.due });
+    invalidateSummaries(queryClient);
     void queryClient.invalidateQueries({
       queryKey: repertoireKeys.detail(repertoireId),
       exact: true

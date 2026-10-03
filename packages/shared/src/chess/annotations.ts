@@ -80,7 +80,8 @@ export function serializeAnnotationComment(
   clock?: string | null
 ): string | null {
   const parts: string[] = [];
-  if (text?.trim()) parts.push(text.trim());
+  // A `}` would end the PGN comment early; the text keeps a `)` in its place.
+  if (text?.trim()) parts.push(text.trim().replace(/}/g, ")"));
   if (arrows.length) {
     parts.push(
       `[%cal ${arrows.map((arrow) => `${colorToTag[arrow.color]}${arrow.orig}${arrow.dest}`).join(",")}]`

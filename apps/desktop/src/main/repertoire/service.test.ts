@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MoveNode } from "@chaturanga/shared/types/chess";
+import type { BoardArrow, BoardHighlight, MoveNode } from "@chaturanga/shared/types/chess";
 import type {
   RepertoireChapter,
   RepertoireColor,
@@ -352,6 +352,33 @@ describe("repertoire service: chapters, decisions and index", () => {
     expect(Object.entries(stored.nodeMeta)).toContainEqual(["__proto__", { edge: "reference" }]);
   });
 
+  it("stores titles and tags on one line, valid tag names and known annotation colours only", () => {
+    const { id } = create();
+    const detail = service.getRepertoire(id);
+    const base = service.getChapter({ repertoireId: id, chapterId: detail.chapters[0].id });
+    const tree = treeOf(START_FEN, [["e2e4"]]);
+    const arrow = (color: string) => ({ orig: "e2", dest: "e4", color }) as BoardArrow;
+    tree[1] = {
+      ...tree[1],
+      arrows: [arrow("green"), arrow("purple")],
+      highlights: [{ square: "e4", color: "pink" } as unknown as BoardHighlight]
+    };
+    const result = service.saveChapter({
+      repertoireId: id,
+      chapter: {
+        ...base,
+        title: "Line one\r\nLine two",
+        headers: { White: 'A\n[Black "B"]', "Bad Tag": "x", Annotator: "Me" },
+        tree
+      },
+      expectedRevision: detail.revision
+    });
+    expect(result.chapter.title).toBe("Line one Line two");
+    expect(result.chapter.headers).toEqual({ White: 'A [Black "B"]', Annotator: "Me" });
+    expect(result.chapter.tree[1].arrows).toEqual([arrow("green")]);
+    expect(result.chapter.tree[1].highlights).toEqual([]);
+  });
+
   it("updates a decision: accepting selects an occurrence, removing makes it reference", () => {
     const { id } = create();
     const saved = save(id, [["e2e4"], ["d2d4"]], {
@@ -496,6 +523,31 @@ describe("repertoire service: chapters, decisions and index", () => {
     expect(service.getRepertoire(second.id).workspace?.practiceDraft).toMatchObject({
       mode: "learn-new"
     });
+    expect(sent.at(-1)).toMatchObject({ payload: { repertoireId: second.id, kind: "workspace" } });
+  });
+
+  it("a workspace naming another repertoire's chapter or a missing node keeps no study place", () => {
+    const first = create();
+    const own = save(first.id, [["e2e4"]]).chapter;
+    const other = save(create().id, [["d2d4"]]).chapter;
+    const workspace = (lastChapterId: string, lastNodeId: string) => ({
+      lastChapterId,
+      lastNodeId,
+      orientation: "white" as const,
+      practiceDraft: null
+    });
+    service.saveWorkspace({ repertoireId: first.id, workspace: workspace(other.id, "n1") });
+    expect(service.getRepertoire(first.id).workspace).toMatchObject({
+      lastChapterId: null,
+      lastNodeId: null
+    });
+    service.saveWorkspace({ repertoireId: first.id, workspace: workspace(own.id, "missing") });
+    expect(service.getRepertoire(first.id).workspace).toMatchObject({
+      lastChapterId: own.id,
+      lastNodeId: null
+    });
+    service.saveWorkspace({ repertoireId: first.id, workspace: workspace(own.id, "n1") });
+    expect(service.getDueSummary().continue).toMatchObject({ chapterId: own.id, nodeId: "n1" });
   });
 
   it("summarises due work and where to continue", () => {
@@ -815,6 +867,20 @@ describe("repertoire service: practice", () => {
       maxDepthPlies: 1
     });
     expect(shallow.cards).toHaveLength(0);
+  });
+
+  it("orders new cards by depth from each chapter's root, not by move number", () => {
+    const { id } = create();
+    const first = save(id, [["e2e4", "e7e5", "g1f3"]]);
+    const later = "rnbqkbnr/ppp1pppp/8/3p4/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 0 10";
+    save(id, [["c2c4"]], { chapterId: "second", rootFen: later });
+    const deep = nodeAt(first.chapter.tree, ["e2e4", "e7e5"]);
+    const session = service.startPractice({ repertoireId: id, mode: "learn-new" });
+    expect(session.cards.map((card) => card.positionKey)).toEqual([
+      START_KEY,
+      positionKey(later),
+      positionKey(deep.fenAfter)
+    ]);
   });
 
   it("a correct first answer promotes a new card to stage 1, due in a day", () => {

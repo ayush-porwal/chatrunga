@@ -716,10 +716,33 @@ export function removeRepertoire(input: RemoveRepertoireInput): void {
   changed({ repertoireId: input.id, revision, kind: "removed" });
 }
 
-/** Study preferences (last chapter/node, orientation, practice draft); no revision bump. */
+/**
+ * Study preferences (last chapter/node, orientation, practice draft); no revision bump. A chapter
+ * of another repertoire (or a deleted one) isn't kept as the place to continue, nor a node that
+ * isn't in the chapter. Announced as a `workspace` change, since summaries show when it was last
+ * studied and where to continue.
+ */
 export function saveWorkspace(input: SaveWorkspaceInput): void {
-  requireRepertoire(input.repertoireId);
-  workspaceRepository.save(input.repertoireId, input.workspace, clock(), !input.practiceSetup);
+  const record = requireRepertoire(input.repertoireId);
+  let { lastChapterId, lastNodeId } = input.workspace;
+  if (
+    lastChapterId !== null &&
+    chapterRepository.ownerOf(lastChapterId)?.repertoireId !== record.id
+  ) {
+    lastChapterId = null;
+  }
+  if (lastChapterId === null) lastNodeId = null;
+  else if (lastNodeId !== null) {
+    const tree = chapterRepository.get(lastChapterId)?.tree ?? [];
+    if (!tree.some((node) => node.id === lastNodeId)) lastNodeId = null;
+  }
+  workspaceRepository.save(
+    record.id,
+    { ...input.workspace, lastChapterId, lastNodeId },
+    clock(),
+    !input.practiceSetup
+  );
+  changed({ repertoireId: record.id, revision: record.revision, kind: "workspace" });
 }
 
 /* ------------------------------------------------------------------ import / export */
@@ -973,6 +996,7 @@ type Candidate = {
   occurrence: DecisionOccurrence;
   practiced: boolean;
   dueAt: number | null;
+  /** Plies from the occurrence's chapter root, including the tested move. */
   ply: number;
   chapterOrder: number;
 };
@@ -1018,24 +1042,25 @@ export function startPractice(input: StartPracticeInput): PracticeSessionSnapsho
       if (!decision || decision.paused || stored?.suspended) continue;
       const effective = effectiveAcceptedUcis(decision, entry.acceptedUcis);
       if (!effective.length) continue;
+      // Depth from the chapter root, so chapters starting at different move numbers compare fairly.
       const inScope = entry.occurrences
         .filter((occurrence) => !scope || scope.has(occurrence.chapterId))
-        .filter(
-          (occurrence) =>
-            input.maxDepthPlies === undefined ||
-            occurrence.ply - rootPlies.get(occurrence.chapterId)! + 1 <= input.maxDepthPlies
-        )
-        .sort((a, b) => a.ply - b.ply || a.chapterOrder - b.chapterOrder);
+        .map((occurrence) => ({
+          occurrence,
+          depth: occurrence.ply - rootPlies.get(occurrence.chapterId)! + 1
+        }))
+        .filter(({ depth }) => input.maxDepthPlies === undefined || depth <= input.maxDepthPlies)
+        .sort((a, b) => a.depth - b.depth || a.occurrence.chapterOrder - b.occurrence.chapterOrder);
       if (!inScope.length) continue;
       candidates.push({
         entry,
         decision,
         effective,
-        occurrence: inScope[0],
+        occurrence: inScope[0].occurrence,
         practiced: Boolean(stored),
         dueAt: stored?.dueAt ?? null,
-        ply: inScope[0].ply,
-        chapterOrder: inScope[0].chapterOrder
+        ply: inScope[0].depth,
+        chapterOrder: inScope[0].occurrence.chapterOrder
       });
     }
 

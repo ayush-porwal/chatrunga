@@ -58,6 +58,12 @@ function requireRepertoires(): ChaturangaApi["repertoires"] {
 
 const EMPTY_DUE: RepertoireDueSummary = { dueCount: 0, repertoireCount: 0, continue: null };
 
+/** Re-reads the hub lists and the due summary (last studied, where to continue, due counts). */
+export function invalidateSummaries(queryClient: QueryClient) {
+  void queryClient.invalidateQueries({ queryKey: repertoireKeys.lists });
+  void queryClient.invalidateQueries({ queryKey: repertoireKeys.due });
+}
+
 /** Re-reads summaries and the detail of a repertoire (not its chapter trees). */
 export function invalidateRepertoire(queryClient: QueryClient, id: string | null) {
   void queryClient.invalidateQueries({ queryKey: repertoireKeys.lists });
@@ -97,7 +103,11 @@ export function useRepertoireChangedSubscription() {
   const queryClient = useQueryClient();
   useEffect(
     () =>
-      repertoires()?.onChanged?.((event) => invalidateRepertoire(queryClient, event.repertoireId)),
+      repertoires()?.onChanged?.((event) =>
+        event.kind === "workspace"
+          ? invalidateSummaries(queryClient)
+          : invalidateRepertoire(queryClient, event.repertoireId)
+      ),
     [queryClient]
   );
 }
@@ -292,7 +302,7 @@ export function useSaveRepertoireWorkspaceMutation() {
         repertoireKeys.detail(input.repertoireId),
         (detail) => (detail ? { ...detail, workspace: input.workspace } : detail)
       );
-      void queryClient.invalidateQueries({ queryKey: repertoireKeys.due });
+      invalidateSummaries(queryClient);
     }
   });
 }

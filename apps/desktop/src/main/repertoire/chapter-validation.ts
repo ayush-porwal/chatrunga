@@ -6,7 +6,12 @@
 import { makeFen } from "chessops/fen";
 import { makeSanAndPlay } from "chessops/san";
 import { parseUci } from "chessops/util";
-import type { BoardArrow, BoardHighlight, MoveNode } from "@chaturanga/shared/types/chess";
+import type {
+  AnnotationColor,
+  BoardArrow,
+  BoardHighlight,
+  MoveNode
+} from "@chaturanga/shared/types/chess";
 import {
   REPERTOIRE_ROOT_NODE_ID,
   type RepertoireChapter,
@@ -30,8 +35,13 @@ const UCI_MOVE = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
 const SQUARE = /^[a-h][1-8]$/;
 const NAG = /^\$\d{1,3}$/;
 const EDGES: readonly RepertoireEdgeKind[] = ["reference", "included", "covered"];
+const COLORS: ReadonlySet<string> = new Set<AnnotationColor>(["green", "red", "yellow", "blue"]);
+/** A PGN tag name: letters, digits and underscores. */
+const TAG_NAME = /^[A-Za-z0-9_]+$/;
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+// eslint-disable-next-line no-control-regex
+const CONTROL_RUNS = /[\u0000-\u001f\u007f]+/g;
 
 type Fields = Record<string, unknown>;
 
@@ -105,7 +115,8 @@ function sanitizeArrows(value: unknown): BoardArrow[] {
         SQUARE.test(arrow.orig) &&
         typeof arrow.dest === "string" &&
         SQUARE.test(arrow.dest) &&
-        typeof arrow.color === "string"
+        typeof arrow.color === "string" &&
+        COLORS.has(arrow.color)
     )
     .map((arrow) => ({ orig: arrow.orig, dest: arrow.dest, color: arrow.color }));
 }
@@ -119,7 +130,8 @@ function sanitizeHighlights(value: unknown): BoardHighlight[] {
         isObject(highlight) &&
         typeof highlight.square === "string" &&
         SQUARE.test(highlight.square) &&
-        typeof highlight.color === "string"
+        typeof highlight.color === "string" &&
+        COLORS.has(highlight.color)
     )
     .map((highlight) => ({ square: highlight.square, color: highlight.color }));
 }
@@ -247,22 +259,29 @@ export function sanitizeNodeMeta(
   return meta;
 }
 
-/** PGN tags as stored: string values only, bounded in count and length. */
+/** Text on one line: each run of line breaks or other control characters becomes a space. */
+function singleLine(text: string): string {
+  return text.replace(CONTROL_RUNS, " ");
+}
+
+/**
+ * PGN tags as stored: names in PGN tag syntax, string values on one line (so an exported tag can't
+ * break or add tag lines), bounded in count and length.
+ */
 export function sanitizeHeaders(value: unknown): Record<string, string> {
   if (!isObject(value)) return {};
   const headers: Record<string, string> = {};
   for (const [name, text] of Object.entries(value)) {
     if (Object.keys(headers).length >= MAX_HEADERS) break;
-    if (typeof text !== "string" || !name || name.length > MAX_HEADER_NAME) continue;
-    if (CONTROL_CHARS.test(name)) continue;
-    headers[name] = text.slice(0, MAX_HEADER_VALUE);
+    if (typeof text !== "string" || name.length > MAX_HEADER_NAME || !TAG_NAME.test(name)) continue;
+    headers[name] = singleLine(text.slice(0, MAX_HEADER_VALUE));
   }
   return headers;
 }
 
-/** A chapter title: trimmed, bounded, never empty. */
+/** A chapter title: on one line (it is exported as the Event tag), trimmed, bounded, never empty. */
 export function chapterTitle(value: unknown, fallback = "Untitled chapter"): string {
-  const title = typeof value === "string" ? value.trim().slice(0, MAX_TITLE) : "";
+  const title = typeof value === "string" ? singleLine(value).trim().slice(0, MAX_TITLE) : "";
   return title || fallback;
 }
 

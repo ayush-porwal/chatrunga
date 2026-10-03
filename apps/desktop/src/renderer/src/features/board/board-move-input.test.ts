@@ -114,13 +114,13 @@ describe("typedMoveTrigger", () => {
 
   it("opens empty on / and seeded on a move start", () => {
     expect(typedMoveTrigger(press("/"), free)).toBe("");
-    for (const key of ["a", "e", "h", "N", "B", "R", "Q", "K", "O", "0"]) {
+    for (const key of ["a", "e", "h", "N", "B", "R", "Q", "K", "O", "0", "n", "r", "q", "k"]) {
       expect(typedMoveTrigger(press(key), free)).toBe(key);
     }
   });
 
   it("ignores other keys, including the f and x board shortcuts", () => {
-    for (const key of ["f", "x", "F", "X", "i", "n", "1", "Enter", "Escape", "ArrowLeft", " "]) {
+    for (const key of ["f", "x", "F", "X", "i", "1", "Enter", "Escape", "ArrowLeft", " "]) {
       expect(typedMoveTrigger(press(key), free)).toBeNull();
     }
   });

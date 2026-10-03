@@ -91,11 +91,12 @@ export type TypedMoveTriggerKey = Pick<
 >;
 
 /**
- * Keys that open the entry with themselves as its first character: files, piece letters and the
- * castling letters. Lowercase `f` is left out because it is the app-wide Focus board shortcut
- * (type `/` first for an f-file move); `x` and the other shortcut keys aren't move starts anyway.
+ * Keys that open the entry with themselves as its first character: files, piece letters (either
+ * case, as the parser reads `nf3`; lowercase `b` is the b-file) and the castling letters. Lowercase
+ * `f` is left out because it is the app-wide Focus board shortcut (type `/` first for an f-file
+ * move); `x` and the other shortcut keys aren't move starts anyway.
  */
-const SEED_KEY = /^[a-egh]$|^[NBRQKO0]$/;
+const SEED_KEY = /^[a-eghnrqk]$|^[NBRQKO0]$/;
 
 /**
  * What a key press does to a closed typed-move entry: null when it shouldn't open it, otherwise the

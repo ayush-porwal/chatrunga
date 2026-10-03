@@ -431,5 +431,6 @@ export type RepertoireChangedEvent = {
   /** null: several repertoires may have changed (e.g. after an import of many). */
   repertoireId: string | null;
   revision: number;
-  kind: "created" | "updated" | "removed" | "progress";
+  /** `workspace`: only the study place changed (last studied, where to continue). */
+  kind: "created" | "updated" | "removed" | "progress" | "workspace";
 };
