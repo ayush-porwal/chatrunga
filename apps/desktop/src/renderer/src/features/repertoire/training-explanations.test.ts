@@ -5,6 +5,7 @@ import { addLine, rootNode } from "./__fixtures__/repertoire";
 import {
   blockerExplanation,
   blockerFocusNodeId,
+  importPracticeNote,
   markEffect,
   moveLabel,
   practiceEmptyExplanation,
@@ -242,5 +243,20 @@ describe("studyPracticeAvailability", () => {
         rehearsableLines: 2
       })
     ).toEqual({ practice: null, rehearse: null });
+  });
+});
+
+describe("importPracticeNote", () => {
+  it("says what a game will practise as each kind of chapter", () => {
+    expect(importPracticeNote("reference", 4, "white")).toEqual({
+      text: "Reference: kept for study only, never practised.",
+      warn: false
+    });
+    expect(importPracticeNote("opening", 4, "white").text).toMatch(/^4 decisions to practise/);
+    expect(importPracticeNote("opening", 1, "white").text).toMatch(/^1 decision to practise/);
+    expect(importPracticeNote("opening", 0, "black")).toEqual({
+      text: "No moves of yours (Black) to practise in this game.",
+      warn: true
+    });
   });
 });

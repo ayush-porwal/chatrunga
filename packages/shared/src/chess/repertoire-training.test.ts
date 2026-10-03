@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { RepertoireChapter, RepertoireNodeMeta } from "../types/repertoire";
 import { buildChapterLookup, collectDecisions, defaultImportNodeMeta } from "./repertoire-index";
 import { parseRepertoirePgn } from "./repertoire-pgn";
-import { chapterTraining, ownMoveCause, scopeCause, trainableChapter } from "./repertoire-training";
+import {
+  chapterTraining,
+  importedDecisionCount,
+  ownMoveCause,
+  scopeCause,
+  trainableChapter
+} from "./repertoire-training";
 
 /** 1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 (2. Nc3 as an alternative), ids n1… depth-first. */
 const SICILIAN = "1. e4 c5 2. Nf3 (2. Nc3 Nc6) d6 3. d4 cxd4 4. Nxd4 *";
@@ -55,6 +61,15 @@ describe("import defaults", () => {
     const training = chapterTraining("white", imported);
     expect(training.blocker).toBeNull();
     expect(training.decisionKeys).toHaveLength(4);
+  });
+});
+
+describe("importedDecisionCount", () => {
+  it("counts what an import would train for the player's side", () => {
+    const { chapter } = chapterFrom(SICILIAN);
+    expect(importedDecisionCount("white", chapter.tree)).toBe(4);
+    // Black: 1... c5, 2... d6, 3... cxd4 and, after the covered reply 2. Nc3, 2... Nc6.
+    expect(importedDecisionCount("black", chapter.tree)).toBe(4);
   });
 });
 

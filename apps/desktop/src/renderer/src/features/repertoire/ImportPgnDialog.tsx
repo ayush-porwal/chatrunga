@@ -3,12 +3,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Search, Upload } from "lucide-react";
 import { nanoid } from "nanoid";
 import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
+import { importedDecisionCount } from "@chaturanga/shared/chess/repertoire-training";
 import type {
   ChapterKind,
   ImportPreview,
   ImportProgressEvent,
   ImportResult,
-  ImportSelection
+  ImportSelection,
+  RepertoireColor
 } from "@chaturanga/shared/types/repertoire";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -41,6 +43,7 @@ import {
 import { filterGames, PREVIEW_PAGE_SIZE, setGamesIncluded, setGamesKind } from "./long-lists";
 import { plural } from "./repertoire-chapters";
 import { nodeIdForPathLabel } from "./repertoire-model";
+import { IMPORT_KIND_HELP, importPracticeNote } from "./training-explanations";
 
 /** The default selection of each previewed game: included, its proposed title, opening kind. */
 export function defaultSelections(preview: ImportPreview): ImportSelection[] {
@@ -144,6 +147,21 @@ export function ImportPgnDialog({
 
   // Only games with illegal branches need a lookup (to find each branch's node); building one per
   // game would index every move of a large import on the renderer thread.
+  // What each shown game would practise as an opening chapter (the import default), for the
+  // repertoire's side: only the rendered rows are counted.
+  const color = detail.data?.color ?? null;
+  const shown = found.slice(0, shownCount);
+  const shownKey = shown.join(",");
+  const decisionCounts = useMemo(() => {
+    const counts = new Map<number, number>();
+    if (!preview || !color) return counts;
+    for (const index of shownKey ? shownKey.split(",").map(Number) : []) {
+      const game = preview.games[index];
+      if (game?.tree.length) counts.set(index, importedDecisionCount(color, game.tree));
+    }
+    return counts;
+  }, [preview, color, shownKey]);
+
   const lookups = useMemo(
     () =>
       preview?.games.map((game) =>
@@ -362,6 +380,7 @@ export function ImportPgnDialog({
     >
       {preview ? (
         <>
+          <p className="shrink-0 text-2xs text-fg-muted">{IMPORT_KIND_HELP}</p>
           {preview.games.length > 1 ? (
             <div className="grid shrink-0 gap-2">
               <div className="relative">
@@ -436,11 +455,9 @@ export function ImportPgnDialog({
               </div>
             </div>
           ) : null}
-          <div
-            className="scroll-area -mx-1 grid min-h-0 content-start gap-2 overflow-y-auto px-1"
-          >
+          <div className="scroll-area -mx-1 grid min-h-0 content-start gap-2 overflow-y-auto px-1">
             <ul ref={gameList} className="grid gap-2" aria-label="Games in the PGN">
-              {found.slice(0, shownCount).map((index) => {
+              {shown.map((index) => {
                 const game = preview.games[index];
                 const selection = selections[index];
                 const lookup = lookups[index];
@@ -475,14 +492,21 @@ export function ImportPgnDialog({
                             update(index, { kind: event.target.value as ChapterKind })
                           }
                         >
-                          <option value="opening">Opening</option>
-                          <option value="reference">Reference</option>
+                          <option value="opening">Opening (practised)</option>
+                          <option value="reference">Reference (study only)</option>
                         </Select>
                       </div>
                       <span className="text-xs text-fg-muted tabular-nums">
                         {plural(game.nodeCount, "move")}
                       </span>
                     </div>
+                    {color && game.nodeCount > 0 ? (
+                      <PracticeNote
+                        kind={selection.kind}
+                        decisions={decisionCounts.get(index) ?? 0}
+                        color={color}
+                      />
+                    ) : null}
                     {game.warnings.map((warning) => (
                       <p key={warning} className="text-2xs text-fg-muted">
                         {warning}
@@ -589,4 +613,18 @@ export function ImportPgnDialog({
       ) : null}
     </Dialog>
   );
+}
+
+/** What a previewed game will practise as the chosen kind of chapter. */
+function PracticeNote({
+  kind,
+  decisions,
+  color
+}: {
+  kind: ChapterKind;
+  decisions: number;
+  color: RepertoireColor;
+}) {
+  const note = importPracticeNote(kind, decisions, color);
+  return <p className={cn("text-2xs", note.warn ? "text-warn" : "text-fg-muted")}>{note.text}</p>;
 }

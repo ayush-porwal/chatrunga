@@ -13,6 +13,7 @@ import {
 import {
   buildChapterLookup,
   collectDecisions,
+  defaultImportNodeMeta,
   nodeMetaOf,
   type ChapterLookup
 } from "./repertoire-index";
@@ -165,4 +166,24 @@ export function trainableChapter<
     }
   }
   return { ...chapter, kind: "opening", enabled: true, nodeMeta };
+}
+
+/**
+ * How many decisions an imported game would train as an opening chapter, with the import default
+ * (`defaultImportNodeMeta`): what the import preview tells the player before they commit.
+ */
+export function importedDecisionCount(
+  color: RepertoireColor,
+  tree: RepertoireChapter["tree"]
+): number {
+  return collectDecisions(color, [
+    {
+      id: "preview",
+      kind: "opening",
+      enabled: true,
+      sortOrder: 0,
+      tree,
+      nodeMeta: defaultImportNodeMeta(color, tree)
+    }
+  ]).size;
 }

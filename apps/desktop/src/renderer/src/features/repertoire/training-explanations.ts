@@ -3,6 +3,7 @@ import type { ScopeCause, TrainingBlocker } from "@chaturanga/shared/chess/reper
 import { playerToMove } from "@chaturanga/shared/chess/repertoire-position";
 import {
   REPERTOIRE_ROOT_NODE_ID,
+  type ChapterKind,
   type PracticeMode,
   type RepertoireColor,
   type RepertoireNodeMeta
@@ -315,3 +316,30 @@ export function studyPracticeAvailability(input: {
 function lowerFirst(text: string): string {
   return /^[A-Z][a-z]/.test(text) ? text[0].toLowerCase() + text.slice(1) : text;
 }
+
+/* ------------------------------------------------------------------ import preview */
+
+/** What one previewed game will practise as the chosen kind of chapter. */
+export function importPracticeNote(
+  kind: ChapterKind,
+  decisions: number,
+  color: RepertoireColor
+): { text: string; warn: boolean } {
+  if (kind === "reference") {
+    return { text: "Reference: kept for study only, never practised.", warn: false };
+  }
+  if (!decisions) {
+    return {
+      text: `No moves of yours (${COLOR_LABELS[color]}) to practise in this game.`,
+      warn: true
+    };
+  }
+  return {
+    text: `${decisions} decision${decisions === 1 ? "" : "s"} to practise: your first move at each position. Your other moves stay reference until you accept them in Study.`,
+    warn: false
+  };
+}
+
+/** The import preview's explanation of the two kinds of chapter. */
+export const IMPORT_KIND_HELP =
+  "Opening chapters are practised: your first move at each position is accepted, the opponent's replies are covered, and your other moves stay reference until you accept them. Reference chapters (model games, notes) are kept for study only.";
