@@ -221,26 +221,29 @@ function previewFor(fen: string, lines: readonly EngineInfo[], target: PreviewTa
 }
 
 /**
- * A roomy board under the lines with the position after the move being hovered (or focused), the
- * line up to it and the line's score. Below the lines, it never covers the moves being read.
+ * A roomy board under the lines with the position after the move being hovered (or focused) and
+ * the line's score; the line itself is the one read above it, not repeated. Below the lines, it
+ * never covers the moves being read.
  */
 function LinePreviewCard({ preview, orientation }: { preview: LinePreview; orientation: Color }) {
   return (
-    <div className="grid animate-fade-in gap-3 rounded-xl border border-line-subtle bg-surface-raised/40 p-3" aria-live="polite">
+    // The line is read above (its move highlighted there), so the card names it only for assistive tech.
+    <div
+      role="group"
+      aria-label={`Position after ${preview.label}`}
+      className="grid animate-fade-in gap-3 rounded-xl border border-line-subtle bg-surface-raised/40 p-3"
+    >
       <ReviewBoard
         fen={preview.fenAfter}
         orientation={orientation}
         lastMove={[preview.uci.slice(0, 2), preview.uci.slice(2, 4)]}
         className="aspect-square w-full max-w-md justify-self-center"
       />
-      <div className="grid gap-1">
-        <p className="font-mono text-sm leading-6 text-fg">{preview.label}</p>
-        {preview.score ? (
-          <p className="text-xs text-fg-muted">
-            Line score <span className="font-mono text-fg-secondary">{preview.score}</span>
-          </p>
-        ) : null}
-      </div>
+      {preview.score ? (
+        <p className="text-xs text-fg-muted">
+          Line score <span className="font-mono text-fg-secondary">{preview.score}</span>
+        </p>
+      ) : null}
     </div>
   );
 }
