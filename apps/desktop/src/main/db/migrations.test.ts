@@ -121,12 +121,14 @@ describe("runMigrations", () => {
       db.exec(`INSERT INTO repertoire_game_links (id, repertoire_id, chapter_id, game_id, kind, created_at)
         VALUES ('${id}', 'r', 'c', '${gameId}', '${kind}', 1)`);
     link("l1");
+    link("l4", "model");
+    link("l5", "played");
     expect(() => link("l2", "other")).toThrow();
     expect(() => link("l3", "source", "missing")).toThrow();
 
     db.exec("DELETE FROM games WHERE id = 'g'");
     db.exec("DELETE FROM repertoire_chapters WHERE id = 'c'");
-    expect(db.prepare("SELECT chapter_id, game_id, headers_json FROM repertoire_game_links").get()).toEqual({
+    expect(db.prepare("SELECT chapter_id, game_id, headers_json FROM repertoire_game_links WHERE id = 'l1'").get()).toEqual({
       chapter_id: null,
       game_id: null,
       headers_json: "{}"

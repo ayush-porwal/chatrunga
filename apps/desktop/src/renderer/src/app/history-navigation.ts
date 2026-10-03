@@ -1,5 +1,6 @@
 import { openingSideFor, type OpeningSide } from "../features/game-review/opening-comparison";
 import type { ReviewTab } from "../features/game-review/review-utils";
+import { repertoireCommandBlocked } from "../features/repertoire/handoffs";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import type { SettingsSectionId } from "../features/settings/SettingsPage";
 import { useGameStore } from "../stores/game-store";
@@ -9,6 +10,7 @@ import { usePuzzleStore } from "../stores/puzzle-store";
 import { useRepertoireWorkspaceStore } from "../stores/repertoire-workspace-store";
 import type { AppView, RepertoireScreen } from "./AppPages";
 import type { SideTab } from "./GameWorkspace";
+import { isHeldUnchanged } from "./useGameAutosave";
 
 /**
  * Back / Forward: what a history entry captures of the screen being left, and how its board is
@@ -42,6 +44,8 @@ export function captureBoard(tab: SideTab, puzzleConfig: PuzzleSessionConfig | n
     gameId: game.gameId,
     // Nothing to reload an unsaved game from: keep it whole.
     session: game.gameId ? null : game.toSession(),
+    // An unchanged copy (Study → Analyze) comes back unsaved too.
+    ...(!game.gameId && isHeldUnchanged() ? { held: true as const } : {}),
     currentNodeId: game.currentNodeId,
     mode: game.mode,
     source: game.source,
@@ -103,10 +107,16 @@ export function recordHistory(mode: HistoryMode, entry: HistoryEntry): void {
   else if (mode === "replace") useHistoryStore.getState().replaceCurrent(entry);
 }
 
+/** A live game in progress, for asking the guard about a history entry (goHistory checked it is). */
+const LIVE = { live: { over: false } };
+
 /** Whether showing `entry` would take the board from the Lichess game being played. */
 export function replacesLiveBoard(entry: HistoryEntry, liveGameId: string): boolean {
   if (entry.view === "puzzles") return true; // opening Puzzles puts the board in puzzle mode
   if (entry.view === "game" || entry.view === "game-review") return entry.board.lichessGameId !== liveGameId;
+  // Study and practice take the screen's board (and train or suggest moves); the hub is a list.
+  if (entry.view === "repertoire-study") return repertoireCommandBlocked(LIVE, "open-study");
+  if (entry.view === "repertoire-practice") return repertoireCommandBlocked(LIVE, "resume-practice");
   return false;
 }
 

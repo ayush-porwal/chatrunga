@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { GraduationCap, Loader2 } from "lucide-react";
+import { GraduationCap, Loader2, Microscope, Swords } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
+import { statusForFen } from "@chaturanga/shared/chess/position";
 import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import type { BoardArrow, BoardHighlight, Color } from "@chaturanga/shared/types/chess";
 import type { RepertoireChapterSummary } from "@chaturanga/shared/types/repertoire";
@@ -39,6 +40,7 @@ import {
   trainableDecisionCount
 } from "./repertoire-model";
 import { RepertoireMoveNavigation, useTreeKeyboardNavigation } from "./RepertoireMoveNavigation";
+import { NO_MOVES_TO_PLAY } from "./handoffs";
 import { StudyChaptersPanel } from "./StudyChaptersPanel";
 import { StudyChoicesPanel } from "./StudyChoicesPanel";
 import { StudyNotesPanel } from "./StudyNotesPanel";
@@ -75,7 +77,9 @@ export function RepertoireStudyPage({
   onPractice,
   onMissing,
   onPositionChanged,
-  onOpenGame
+  onOpenGame,
+  onAnalyze,
+  onPlayFromHere
 }: {
   repertoireId: string;
   chapterId: string;
@@ -95,6 +99,13 @@ export function RepertoireStudyPage({
   onPositionChanged: () => void;
   /** A source link's saved game, opened on the board at the linked move. */
   onOpenGame?: (gameId: string, nodeId: string | null) => void;
+  /**
+   * "Analyze": the route to the selected node as a new unsaved game on the analysis board. App
+   * saves the draft first (and offers Retry when it can't); Back returns here.
+   */
+  onAnalyze?: () => void;
+  /** "Play from here": an engine game from the selected position, as the repertoire's colour. */
+  onPlayFromHere?: () => void;
 }) {
   const panelId = useId();
   const desktop = Boolean(window.chaturanga?.repertoires);
@@ -282,6 +293,13 @@ export function RepertoireStudyPage({
     );
   }
 
+  // Why Analyze and Play from here can't start (they also wait for the chapter to load, above).
+  const handoffUnavailable = !draft.enabled
+    ? "Enable this chapter to analyse or play from it"
+    : statusForFen(node.fenAfter).isEnd
+      ? NO_MOVES_TO_PLAY
+      : null;
+
   const removeChapter = async (id: string) => {
     const current = id === chapterId;
     if (current) leavingChapter.current = true;
@@ -463,18 +481,55 @@ export function RepertoireStudyPage({
             selectedNodeId={node.id}
             onSelect={selectNode}
           />
-          <div className="flex items-center justify-between gap-2 border-t border-line-subtle px-3 py-2">
-            <p className="text-2xs text-fg-subtle">Play a move on the board to add a variation.</p>
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              disabled={!draft.enabled || draft.kind !== "opening"}
-              onClick={() => void practiceChapter()}
-            >
-              <GraduationCap />
-              Practice this chapter
-            </Button>
+          {/* Wraps in a narrow side panel: the three actions must never widen it (it would scroll sideways). */}
+          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-t border-line-subtle px-3 py-2">
+            <p className="min-w-0 flex-1 basis-32 truncate text-2xs text-fg-subtle">
+              Play a move on the board to add a variation.
+            </p>
+            <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5">
+              {onAnalyze ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  title={
+                    handoffUnavailable ??
+                    "Explore this position on the analysis board (a copy; the chapter stays as it is)"
+                  }
+                  disabled={handoffUnavailable !== null}
+                  onClick={onAnalyze}
+                >
+                  <Microscope />
+                  Analyze
+                </Button>
+              ) : null}
+              {onPlayFromHere ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  title={
+                    handoffUnavailable ??
+                    "Play the engine from this position as your repertoire's side"
+                  }
+                  disabled={handoffUnavailable !== null}
+                  onClick={onPlayFromHere}
+                >
+                  <Swords />
+                  Play from here
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                disabled={!draft.enabled || draft.kind !== "opening"}
+                onClick={() => void practiceChapter()}
+              >
+                <GraduationCap />
+                Practice this chapter
+              </Button>
+            </div>
           </div>
         </>
       }

@@ -117,6 +117,10 @@ export type PageCommands = {
   openGameAtNode: (gameId: string, nodeId: string | null) => void;
   repertoirePracticeStarted: (sessionId: string) => void;
   repertoirePracticeSetup: () => void;
+  /** Study → Analyze: the open chapter's route to its selected node as a new analysis game. */
+  analyzeFromStudy: () => void;
+  /** Study → Play from here: Play's engine setup starting at the selected node. */
+  playFromStudy: () => void;
 };
 
 /**
@@ -200,6 +204,8 @@ export function AppPages({
           onMissing={on.repertoireMissing}
           onPositionChanged={on.repertoirePositionChanged}
           onOpenGame={on.openGameAtNode}
+          onAnalyze={desktopApiAvailable ? on.analyzeFromStudy : undefined}
+          onPlayFromHere={desktopApiAvailable ? on.playFromStudy : undefined}
         />
       ) : view === "repertoire-practice" && repertoire?.view === "repertoire-practice" ? (
         <RepertoirePracticePage

@@ -1799,4 +1799,109 @@ describe("repertoire service: add from a game", () => {
     expect(service.listGameLinks({ repertoireId: id })).toEqual([]);
     expect(service.getRepertoire(id).revision).toBe(revision);
   });
+
+  it("links a library game as model or played, once per kind, without a revision bump", () => {
+    const { id, chapters, revision } = create();
+    getDb()
+      .prepare(
+        `INSERT INTO games (id, source, white, black, pgn, current_fen, move_tree_json, headers_json,
+          created_at, updated_at) VALUES ('game-2', 'pgn-import', 'Tal', 'Botvinnik', '', ?, '[]', ?, 1, 1)`
+      )
+      .run(START_FEN, JSON.stringify({ white: "Tal", black: "Botvinnik", eco: "B10", event: null }));
+    const base = {
+      repertoireId: id,
+      chapterId: chapters[0].id,
+      gameId: "game-2",
+      gameNodeId: "n3",
+      kind: "played" as const,
+      capturedPath: "1. e4 c6"
+    };
+    sent.length = 0;
+    const link = service.linkGame(base);
+    expect(link).toMatchObject({
+      ...base,
+      headers: { White: "Tal", Black: "Botvinnik", ECO: "B10" }
+    });
+    expect(sent).toEqual([
+      { channel: "repertoires:changed", payload: { repertoireId: id, revision, kind: "updated" } }
+    ]);
+
+    expect(service.linkGame(base)).toEqual(link);
+    const moved = service.linkGame({ ...base, chapterId: null, gameNodeId: null, capturedPath: "" });
+    expect(moved).toEqual({ ...link, chapterId: null, gameNodeId: null, capturedPath: "" });
+    const model = service.linkGame({ ...base, kind: "model" });
+    expect(model.id).not.toBe(link.id);
+    expect(service.listGameLinks({ repertoireId: id }).map((item) => item.id).sort()).toEqual(
+      [link.id, model.id].sort()
+    );
+    expect(service.listGameLinks({ repertoireId: id })).toContainEqual(moved);
+    expect(service.getRepertoire(id).revision).toBe(revision);
+
+    expect(() => service.linkGame({ ...base, gameId: "missing" })).toThrow(
+      "Invalid gameId: the game is not in the library"
+    );
+    expect(() => service.linkGame({ ...base, chapterId: "nope" })).toThrow(
+      "Invalid chapterId: not found"
+    );
+    expect(() => service.linkGame({ ...base, repertoireId: "nope" })).toThrow(
+      "Invalid repertoireId: not found"
+    );
+  });
+
+  it("copies a played game's headers again when it is linked after it finished", () => {
+    const { id, chapters } = create();
+    const insertGame = getDb().prepare(
+      `INSERT INTO games (id, source, white, black, pgn, current_fen, move_tree_json, headers_json,
+        created_at, updated_at) VALUES ('game-3', 'engine-game', 'You', 'Stockfish', '', ?, '[]', ?, 1, 1)`
+    );
+    insertGame.run(START_FEN, JSON.stringify({ white: "You", black: "Stockfish", result: "*" }));
+    const base = {
+      repertoireId: id,
+      chapterId: chapters[0].id,
+      gameId: "game-3",
+      gameNodeId: "n2",
+      kind: "played" as const,
+      capturedPath: "1. e4 c6"
+    };
+    const link = service.linkGame(base);
+    expect(link.headers).toEqual({ White: "You", Black: "Stockfish", Result: "*" });
+
+    getDb()
+      .prepare("UPDATE games SET headers_json = ? WHERE id = 'game-3'")
+      .run(JSON.stringify({ white: "You", black: "Stockfish", result: "1-0" }));
+    const finished = service.linkGame(base);
+    expect(finished).toEqual({
+      ...link,
+      headers: { White: "You", Black: "Stockfish", Result: "1-0" }
+    });
+    expect(service.listGameLinks({ repertoireId: id })).toEqual([finished]);
+  });
+
+  it("says a database from before played links needs a reset", () => {
+    const { id, chapters } = create();
+    getDb().exec(`DROP TABLE repertoire_game_links;
+      CREATE TABLE repertoire_game_links (
+        id TEXT PRIMARY KEY, repertoire_id TEXT NOT NULL, chapter_id TEXT, game_id TEXT,
+        unsaved INTEGER NOT NULL DEFAULT 0, game_node_id TEXT,
+        kind TEXT NOT NULL CHECK (kind IN ('source', 'model')),
+        headers_json TEXT NOT NULL DEFAULT '{}', captured_path TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL)`);
+    getDb()
+      .prepare(
+        `INSERT INTO games (id, source, white, black, pgn, current_fen, move_tree_json, headers_json,
+          created_at, updated_at) VALUES ('game-4', 'engine-game', 'You', 'Stockfish', '', ?, '[]', '{}', 1, 1)`
+      )
+      .run(START_FEN);
+    const input = {
+      repertoireId: id,
+      chapterId: chapters[0].id,
+      gameId: "game-4",
+      gameNodeId: null,
+      capturedPath: ""
+    };
+    expect(() => service.linkGame({ ...input, kind: "played" })).toThrow(
+      "Invalid kind: this database predates played links; reset the development database"
+    );
+    expect(service.linkGame({ ...input, kind: "model" }).kind).toBe("model");
+  });
 });

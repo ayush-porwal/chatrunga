@@ -22,6 +22,7 @@ import {
   parseProbeEvalInput,
   parsePuzzleSampleInput,
   parseRemoveGameLink,
+  parseLinkGameInput,
   parseReviewGameInput,
   parseSaveGameInput,
   parseSettingKey,
@@ -334,5 +335,19 @@ describe("add-from-game inputs", () => {
     expect(parseGameLinkQuery({ repertoireId: "r1", chapterId: "c1" })).toEqual({ repertoireId: "r1", chapterId: "c1" });
     expect(parseRemoveGameLink({ repertoireId: "r1", linkId: "l1" })).toEqual({ repertoireId: "r1", linkId: "l1" });
     expect(() => parseRemoveGameLink({ repertoireId: "r1" })).toThrow(/linkId/);
+  });
+
+  it("parses game links", () => {
+    const valid = { repertoireId: "r1", chapterId: null, gameId: "g1", gameNodeId: "n4", kind: "played", capturedPath: "1. e4" };
+    expect(parseLinkGameInput(valid)).toEqual(valid);
+    expect(parseLinkGameInput({ ...valid, chapterId: "c1", gameNodeId: undefined, kind: "model" })).toMatchObject({
+      chapterId: "c1",
+      gameNodeId: null,
+      kind: "model"
+    });
+    expect(() => parseLinkGameInput({ ...valid, kind: "source" })).toThrow(/kind/);
+    expect(() => parseLinkGameInput({ ...valid, gameId: "" })).toThrow(/gameId/);
+    expect(() => parseLinkGameInput({ ...valid, chapterId: 3 })).toThrow(/chapterId/);
+    expect(() => parseLinkGameInput({ ...valid, capturedPath: "x".repeat(2001) })).toThrow(/capturedPath: too long/);
   });
 });

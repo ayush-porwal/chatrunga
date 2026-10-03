@@ -12,6 +12,7 @@ import type {
   DuplicateRepertoireInput,
   ExportInput,
   ImportCommitInput,
+  LinkGameInput,
   PracticeActionInput,
   PreviewImportInput,
   RecordAttemptInput,
@@ -498,6 +499,20 @@ export function useRemoveGameLinkMutation() {
     mutationFn: (input: { repertoireId: string; linkId: string }) =>
       requireRepertoires().removeGameLink(input),
     onSuccess: (_result, input) =>
+      queryClient.invalidateQueries({ queryKey: repertoireKeys.links(input.repertoireId) })
+  });
+}
+
+/**
+ * Attaches a library game to a repertoire (a model game, or one played from it). Idempotent per
+ * repertoire, game and kind in the main process; the repertoire's link lists follow.
+ */
+export function useLinkGameMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: LinkGameInput) => requireRepertoires().linkGame(input),
+    retry: false,
+    onSuccess: (_link, input) =>
       queryClient.invalidateQueries({ queryKey: repertoireKeys.links(input.repertoireId) })
   });
 }

@@ -26,6 +26,9 @@ import {
   useStartPracticeMutation
 } from "../../queries/repertoire";
 import { currentCard, useRepertoirePracticeStore } from "../../stores/repertoire-practice-store";
+import { useAppNoticeStore } from "../../stores/app-notice-store";
+import { useLichessStore } from "../../stores/lichess-store";
+import { LIVE_GAME_NOTICE, repertoireCommandBlocked } from "./handoffs";
 import { usePrefersReducedMotion } from "../board/board-motion";
 import { BoardStage, BoardWorkspace } from "../board/BoardWorkspace";
 import { ControlledBoard } from "../board/ControlledBoard";
@@ -115,6 +118,8 @@ export function RepertoirePracticePage({
   useEffect(() => {
     if (!sessionId || !desktop) return;
     if (practice().session?.sessionId === sessionId) return;
+    // A Lichess game being played: nothing trains until it ends (the route is guarded in App too).
+    if (repertoireCommandBlocked(useLichessStore.getState(), "resume-practice")) return;
     setResumeError(null);
     resumeSession(sessionId, {
       onSuccess: (snapshot) => practice().setSession(snapshot),
@@ -123,6 +128,10 @@ export function RepertoirePracticePage({
   }, [sessionId, desktop, resumeSession]);
 
   const startSession = useEventCallback((input: StartPracticeInput) => {
+    if (repertoireCommandBlocked(useLichessStore.getState(), "start-practice")) {
+      useAppNoticeStore.getState().show(LIVE_GAME_NOTICE, { tone: "info" });
+      return;
+    }
     setNothingDue(null);
     setTargetEmpty(false);
     const loaded = detail.data;

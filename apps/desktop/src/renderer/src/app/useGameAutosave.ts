@@ -48,6 +48,25 @@ export function sameDocument(a: SavedDocument | null, b: SavedDocument): boolean
 /** Counts every library write, so the save status can tell an older write's reply from a newer's. */
 let writeRevision = 0;
 
+/**
+ * A library write that succeeded: the game's id, the board it was (the game store's `board`, so a
+ * board replaced before its first save is still recognised) and the result it saved.
+ */
+export type GameSaved = { gameId: string; board: number; result: string };
+
+const savedListeners = new Set<(saved: GameSaved) => void>();
+
+/**
+ * Calls `listener` after every successful library write of a game, including the write of a board
+ * being replaced and a retry. Returns the unsubscribe.
+ */
+export function onGameSaved(listener: (saved: GameSaved) => void): () => void {
+  savedListeners.add(listener);
+  return () => {
+    savedListeners.delete(listener);
+  };
+}
+
 /** A new game's library id, chosen before its first write (see `save`). */
 function newGameId(): string {
   return crypto.randomUUID();
@@ -60,6 +79,42 @@ function newGameId(): string {
  */
 /** Shown when an import waits for the board's pending save and it fails. */
 export const IMPORT_NEEDS_SAVE = "Couldn't save the current game first, so nothing was imported. Try again.";
+
+/**
+ * A board loaded as an unsaved copy (Study → Analyze, Play from here): its tree and headers as
+ * they loaded. Like a game opened from the library, it is the baseline: nothing is written until the
+ * user changes it (a move, an annotation, a result). Cleared when another board loads.
+ */
+type UnsavedBaseline = Pick<GameState, "moveTree" | "headers">;
+let unsavedBaseline: UnsavedBaseline | null = null;
+
+/**
+ * Holds the board just loaded out of the library until it changes. Call right after loading it
+ * (after any header patches); a board that already has a library id is unaffected.
+ */
+export function holdUntilChanged(): void {
+  const game = useGameStore.getState();
+  unsavedBaseline = game.gameId ? null : { moveTree: game.moveTree, headers: game.headers };
+}
+
+/** Whether the loaded board is a held copy nobody has changed yet (history keeps that). */
+export function isHeldUnchanged(): boolean {
+  return unchangedSinceBaseline(unsavedBaseline, useGameStore.getState());
+}
+
+/** A held board is unchanged while it has no id, no result and the same tree and headers. */
+export function unchangedSinceBaseline(
+  baseline: UnsavedBaseline | null,
+  game: Pick<GameState, "gameId" | "moveTree" | "headers" | "gameOutcome">
+): boolean {
+  return (
+    baseline !== null &&
+    !game.gameId &&
+    !game.gameOutcome &&
+    game.moveTree === baseline.moveTree &&
+    game.headers === baseline.headers
+  );
+}
 
 /** The mounted autosave's flush (null when none is mounted). */
 let pendingFlush: (() => Promise<boolean>) | null = null;
@@ -100,13 +155,28 @@ export function useGameAutosave(): void {
     let board = 0;
     let boardReview: { board: number; review: NonNullable<ReviewState["review"]> } | null = null;
 
-    const write = (input: SaveGameInput, document: SavedDocument | null): Promise<unknown> => {
+    const write = (
+      input: SaveGameInput,
+      document: SavedDocument | null,
+      savedBoard: number
+    ): Promise<unknown> => {
       const gameId = input.id ?? null;
       const revision = ++writeRevision;
       lastWrite = saveGame(input).then(
-        // Clears only this game's failure (a game left with a failed save keeps its Retry), and
-        // only if this write is newer than the one that failed.
-        () => useSaveStatusStore.getState().saved(gameId, revision),
+        () => {
+          // Clears only this game's failure (a game left with a failed save keeps its Retry), and
+          // only if this write is newer than the one that failed.
+          useSaveStatusStore.getState().saved(gameId, revision);
+          if (!gameId) return;
+          const saved = { gameId, board: savedBoard, result: input.headers.result ?? "*" };
+          for (const listener of savedListeners) {
+            try {
+              listener(saved);
+            } catch {
+              // A listener's failure is its own; the game is saved.
+            }
+          }
+        },
         (error: unknown) => {
           if (isSaveSuppressed(error)) return;
           // Not in the library as it is now: the next change (or Retry) writes it again.
@@ -115,7 +185,7 @@ export function useGameAutosave(): void {
           useSaveStatusStore.getState().setFailed(
             ipcErrorMessage(error) || "The game couldn't be saved.",
             () => {
-              void write(input, null).then(() => {
+              void write(input, null, savedBoard).then(() => {
                 if (useGameStore.getState().gameId === input.id) void save();
               });
             },
@@ -132,6 +202,8 @@ export function useGameAutosave(): void {
       // Puzzle practice is ephemeral: never persist it as a "saved game" / recent entry.
       if (game.mode === "puzzle" && usePuzzleStore.getState().activePuzzle) return lastWrite;
       if (game.moveTree.length <= 1 && !game.gameId) return lastWrite;
+      // An unsaved copy (Study → Analyze, Play from here) waits for its first change.
+      if (unchangedSinceBaseline(unsavedBaseline, game)) return lastWrite;
       const review = useReviewStore.getState().review;
       boardReview = review ? { board, review } : null;
       if (sameDocument(stored, documentOf(game, review))) return lastWrite;
@@ -141,7 +213,7 @@ export function useGameAutosave(): void {
       const current = useGameStore.getState();
       const document = documentOf(current, review);
       stored = document;
-      return write(saveInput(current, resultAnchor, review), document);
+      return write(saveInput(current, resultAnchor, review), document, current.board);
     };
 
     /** Writes what's waiting now; resolves with whether everything is saved. */
@@ -176,10 +248,11 @@ export function useGameAutosave(): void {
       // Puzzle practice is never saved (its board has no library id).
       if ((previous.mode === "puzzle" || previous.source === "puzzle") && !previous.gameId) return;
       if (previous.moveTree.length <= 1 && !previous.gameId) return;
+      if (unchangedSinceBaseline(unsavedBaseline, previous)) return;
       const review = boardReview?.board === board ? boardReview.review : undefined;
       if (stored && sameDocument(stored, documentOf(previous, review ?? stored.review))) return;
       const gameId = previous.gameId ?? newGameId();
-      void write(saveInput({ ...previous, gameId }, resultAnchor, review), null);
+      void write(saveInput({ ...previous, gameId }, resultAnchor, review), null, previous.board);
     };
 
     const unsubscribers = [
@@ -188,6 +261,8 @@ export function useGameAutosave(): void {
         // change only the tree, outcomes/header edits only the headers): new recorded result.
         if (state.headers !== previous.headers && state.moveTree !== previous.moveTree) {
           flushLeaving(previous);
+          // A held copy belongs to the board it was loaded on (the caller holds a new one after).
+          unsavedBaseline = null;
           board += 1;
           resultAnchor = mainlineEnd(state.moveTree)?.id ?? null;
           stored = null;
@@ -234,7 +309,7 @@ export function useGameAutosave(): void {
           boardReview.review === outgoing
         ) {
           const game = useGameStore.getState();
-          if (game.gameId) void write(saveInput(game, resultAnchor, outgoing), null);
+          if (game.gameId) void write(saveInput(game, resultAnchor, outgoing), null, game.board);
         }
         if (state.review) boardReview = { board, review: state.review };
         schedule();

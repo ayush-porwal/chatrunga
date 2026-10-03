@@ -10,6 +10,7 @@ import { titlebarIconButton } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { PlayersTitle, WorkspaceTitlebar } from "../features/board/BoardWorkspace";
 import { MatchActions } from "../features/analysis/MatchActions";
+import { RepertoireHandoffActions } from "../features/repertoire/RepertoireHandoffActions";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { useGameStore } from "../stores/game-store";
 import { useLichessStore } from "../stores/lichess-store";
@@ -172,7 +173,9 @@ export const GameTitlebar = memo(function GameTitlebar({
   onAnalyze,
   onStopAnalysis,
   onReviewGame,
-  onPlayAgain
+  onPlayAgain,
+  onReviewOpening,
+  onReturnToRepertoire
 }: {
   engines: readonly EngineConfig[] | undefined;
   /** Engine errors show here unless the Engine tab (which shows them itself) is visible. */
@@ -183,6 +186,9 @@ export const GameTitlebar = memo(function GameTitlebar({
   /** A finished online game: open it in Game review / find another game. */
   onReviewGame: () => void;
   onPlayAgain: () => void;
+  /** A finished game played from a repertoire: its Opening review / the chapter it came from. */
+  onReviewOpening: () => void;
+  onReturnToRepertoire: () => void;
 }) {
   // Only what the title shows: stepping through moves must not re-render the titlebar.
   const game = useGameStore(
@@ -238,6 +244,10 @@ export const GameTitlebar = memo(function GameTitlebar({
             </Button>
           ) : null}
           <MatchActions onReview={onReviewGame} onPlayAgain={onPlayAgain} />
+          <RepertoireHandoffActions
+            onReviewOpening={onReviewOpening}
+            onReturnToRepertoire={onReturnToRepertoire}
+          />
         </>
       }
     />

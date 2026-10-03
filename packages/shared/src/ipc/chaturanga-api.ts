@@ -63,6 +63,7 @@ import type {
   ImportCommitInput,
   ImportPreview,
   ImportResult,
+  LinkGameInput,
   PracticeActionInput,
   PracticeActionResult,
   PracticeSessionSnapshot,
@@ -307,6 +308,8 @@ export type ChaturangaApi = {
     /** Provenance links of a repertoire, optionally one chapter's. */
     listGameLinks(input: { repertoireId: string; chapterId?: string }): Promise<RepertoireGameLink[]>;
     removeGameLink(input: { repertoireId: string; linkId: string }): Promise<void>;
+    /** Attaches a library game to a repertoire/chapter (model game, or one played from it); idempotent per (repertoire, game, kind). */
+    linkGame(input: LinkGameInput): Promise<RepertoireGameLink>;
     create(input: CreateRepertoireInput): Promise<RepertoireDetail>;
     updateMetadata(input: UpdateRepertoireMetadataInput): Promise<RepertoireDetail>;
     /** Saves one chapter and reconciles decisions/index/progress in the same transaction. */
