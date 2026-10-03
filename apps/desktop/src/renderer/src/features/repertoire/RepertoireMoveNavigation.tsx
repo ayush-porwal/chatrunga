@@ -1,16 +1,10 @@
 import { memo, useEffect, useMemo } from "react";
-import { ChevronLeft, ChevronRight, SkipBack, SkipForward } from "lucide-react";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
-import { IconButton } from "@/components/ui/icon-button";
 import { useEventCallback } from "@/lib/use-event-callback";
 import { isTyping, OVERLAY_SELECTOR } from "../../app/useBoardShortcuts";
 import { lastNodeOfLine, nodeAfterSteps } from "../../app/useMoveKeyboardShortcuts";
 import { markRapidNavigation } from "../board/board-motion";
-
-const firstIcon = <SkipBack />;
-const previousIcon = <ChevronLeft />;
-const nextIcon = <ChevronRight />;
-const lastIcon = <SkipForward />;
+import { MoveNavigationBar } from "../board/MoveNavigationBar";
 
 const ROOT_ID = "root";
 
@@ -49,52 +43,25 @@ export const RepertoireMoveNavigation = memo(function RepertoireMoveNavigation({
   }, [nodes, selectedNodeId]);
 
   const goFirst = useEventCallback(() => onSelect(ROOT_ID));
-  const goPrevious = useEventCallback(() => parentId && onSelect(parentId));
-  const goNext = useEventCallback(() => nextId && onSelect(nextId));
+  const goPrevious = useEventCallback(() => {
+    if (parentId) onSelect(parentId);
+  });
+  const goNext = useEventCallback(() => {
+    if (nextId) onSelect(nextId);
+  });
   const goLast = useEventCallback(() => onSelect(lastId));
 
   return (
-    <nav className="flex items-center justify-between gap-2 px-3 py-2" aria-label="Move navigation">
-      <div className="flex items-center gap-1">
-        <IconButton
-          label="First move"
-          icon={firstIcon}
-          variant="outline"
-          tooltipSide="top"
-          disabled={!canPrevious}
-          onClick={goFirst}
-        />
-        <IconButton
-          label="Previous move"
-          icon={previousIcon}
-          variant="outline"
-          tooltipSide="top"
-          disabled={!canPrevious}
-          onClick={goPrevious}
-        />
-      </div>
-      <p className="font-mono text-xs text-fg-secondary tabular-nums">
-        {total ? `${depth} / ${total}` : "—"}
-      </p>
-      <div className="flex items-center gap-1">
-        <IconButton
-          label="Next move"
-          icon={nextIcon}
-          variant="outline"
-          tooltipSide="top"
-          disabled={!canNext}
-          onClick={goNext}
-        />
-        <IconButton
-          label="Last move"
-          icon={lastIcon}
-          variant="outline"
-          tooltipSide="top"
-          disabled={!canNext}
-          onClick={goLast}
-        />
-      </div>
-    </nav>
+    <MoveNavigationBar
+      depth={depth}
+      total={total}
+      canPrevious={canPrevious}
+      canNext={canNext}
+      onFirst={goFirst}
+      onPrevious={goPrevious}
+      onNext={goNext}
+      onLast={goLast}
+    />
   );
 });
 

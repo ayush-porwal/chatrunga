@@ -19,16 +19,8 @@ export function resolveBoardMove(
 ): ResolvedMove | null {
   const move = userMoveBetween(from, to, promotion);
   if (!move) return null;
-  return resolved(fen, () => applyUserMove(fen, move));
-}
-
-/** Runs a chessops move application, tolerating an unreadable FEN, and normalises castling UCI. */
-function resolved(
-  fen: string,
-  apply: () => { fen: string; san: string; uci: string } | null
-): ResolvedMove | null {
   try {
-    const result = apply();
+    const result = applyUserMove(fen, move);
     if (!result) return null;
     return { uci: standardCastlingUci(fen, result.uci), san: result.san, fenAfter: result.fen };
   } catch {

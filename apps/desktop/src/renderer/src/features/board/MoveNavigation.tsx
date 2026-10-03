@@ -1,14 +1,7 @@
 import { memo, useMemo, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, SkipBack, SkipForward } from "lucide-react";
-import { IconButton } from "@/components/ui/icon-button";
 import { useEventCallback } from "@/lib/use-event-callback";
 import { useGameStore } from "../../stores/game-store";
-
-// Hoisted so the memoised IconButtons skip the per-move re-render of this footer.
-const firstIcon = <SkipBack />;
-const previousIcon = <ChevronLeft />;
-const nextIcon = <ChevronRight />;
-const lastIcon = <SkipForward />;
+import { MoveNavigationBar } from "./MoveNavigationBar";
 
 /**
  * Workspace panel footer: First / Previous · "n / N" · Next / Last, wired to the game store
@@ -57,26 +50,16 @@ export const MoveNavigation = memo(function MoveNavigation({ caption }: { captio
   });
 
   return (
-    <nav className="flex items-center justify-between gap-2 px-3 py-2" aria-label="Move navigation">
-      <div className="flex items-center gap-1">
-        <IconButton label="First move" icon={firstIcon} variant="outline" tooltipSide="top" disabled={!canPrevious} onClick={goFirst} />
-        <IconButton label="Previous move" icon={previousIcon} variant="outline" tooltipSide="top" disabled={!canPrevious} onClick={undo} />
-      </div>
-      <div className="grid min-w-0 justify-items-center gap-0.5 text-center">
-        <p className="font-mono text-xs text-fg-secondary tabular-nums">{total ? `${depth} / ${total}` : "—"}</p>
-        {caption ? <p className="text-2xs text-fg-subtle tabular-nums">{caption}</p> : null}
-      </div>
-      <div className="flex items-center gap-1">
-        <IconButton label="Next move" icon={nextIcon} variant="outline" tooltipSide="top" disabled={!canNext} onClick={redo} />
-        <IconButton
-          label="Last move"
-          icon={lastIcon}
-          variant="outline"
-          tooltipSide="top"
-          disabled={!canNext}
-          onClick={goLast}
-        />
-      </div>
-    </nav>
+    <MoveNavigationBar
+      depth={depth}
+      total={total}
+      caption={caption}
+      canPrevious={canPrevious}
+      canNext={canNext}
+      onFirst={goFirst}
+      onPrevious={undo}
+      onNext={redo}
+      onLast={goLast}
+    />
   );
 });
