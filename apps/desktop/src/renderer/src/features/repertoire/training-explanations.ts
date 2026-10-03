@@ -1,5 +1,11 @@
 import type { ChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
-import type { ScopeCause, TrainingBlocker } from "@chaturanga/shared/chess/repertoire-training";
+import {
+  trainingPicks,
+  type AcceptedAt,
+  type ScopeCause,
+  type TrainingBlocker,
+  type TrainingPick
+} from "@chaturanga/shared/chess/repertoire-training";
 import { playerToMove } from "@chaturanga/shared/chess/repertoire-position";
 import {
   REPERTOIRE_ROOT_NODE_ID,
@@ -9,7 +15,7 @@ import {
   type RepertoireNodeMeta
 } from "@chaturanga/shared/types/repertoire";
 import { COLOR_LABELS } from "./repertoire-chapters";
-import { decisionDeltaLabel, numberedSan } from "./repertoire-model";
+import { decisionDeltaLabel, numberedSan, pathLabel } from "./repertoire-model";
 
 /*
  * Plain-language explanations of what practice asks and why it asks nothing: the study notice of
@@ -26,7 +32,11 @@ export function moveLabel(lookup: ChapterLookup, nodeId: string): string {
 
 /* ------------------------------------------------------------------ why nothing is practised */
 
-export type Explanation = { title: string; detail: string };
+/**
+ * A headline, one short sentence naming the cause (and the move it sits on), and, where it helps,
+ * more context for an accessible description or tooltip rather than the page itself.
+ */
+export type Explanation = { title: string; detail: string; more?: string };
 
 /**
  * Why a chapter has nothing to practise: a headline and what it means, naming the move the cause
@@ -43,24 +53,23 @@ export function blockerExplanation(
     case "left-out":
       return {
         title: `“${chapterTitle}” is left out of practice`,
-        detail:
-          "It is switched off for practice in the Chapters list, so none of its moves are asked."
+        detail: `“${chapterTitle}” is switched off for practice in the Chapters list.`
       };
     case "reference-chapter":
       return {
         title: `“${chapterTitle}” is a reference chapter`,
-        detail:
-          "Reference chapters are kept for study only: none of their moves are asked in practice."
+        detail: `“${chapterTitle}” is a reference chapter, kept for study only.`
       };
     case "reference-move":
       return isOwnMove(lookup, blocker.nodeId, color)
         ? {
             title: "Your moves here are kept as reference",
-            detail: `${move} is reference only (study material), so nothing from it on is asked in practice. Moves you play while studying, and whole games added from the board, start this way until you accept them.`
+            detail: `${move} is reference only, so nothing from it on is asked.`,
+            more: "Moves you play in Study, and games added from the board, start as reference until you accept them."
           }
         : {
             title: "A reply here is kept as reference",
-            detail: `${move} is reference only (study material), so nothing after it is asked in practice.`
+            detail: `${move} is reference only, so nothing after it is asked.`
           };
     case "disabled-branch":
       return {
@@ -75,18 +84,18 @@ export function blockerExplanation(
     case "before-start":
       return {
         title: "Practice starts on another line",
-        detail: `${move} is marked “Start practice here”: moves before it, and lines that don't pass through it, are played for you and never asked.`
+        detail: `${move} is marked “Start practice here”.`,
+        more: "Moves before it, and lines that don't pass through it, are played for you and never asked."
       };
     case "no-moves":
       return {
         title: "No moves yet",
-        detail:
-          "Play your moves on the board to build this chapter, then accept the ones to practise."
+        detail: "Play your moves on the board to build this chapter."
       };
     case "no-own-moves":
       return {
         title: "No moves of yours here",
-        detail: `This chapter only has the opponent's moves (you play ${COLOR_LABELS[color]}). Add your replies on the board.`
+        detail: `Only the opponent's moves so far: add your replies (you play ${COLOR_LABELS[color]}).`
       };
   }
 }
@@ -120,7 +129,7 @@ export function trainingFix(blocker: TrainingBlocker): TrainingFix | null {
         kind: "make-trainable",
         label: "Include in practice",
         description:
-          "Includes the chapter in practice and accepts your first move at each position (replies are covered), as an import does. Other moves stay reference; Undo puts the moves back as they were."
+          "Switches the chapter on and accepts your first move at each position, as an import does; replies are covered. Undo reverts it."
       };
     case "disabled-branch":
       return {
@@ -150,6 +159,43 @@ export function trainingFix(blocker: TrainingBlocker): TrainingFix | null {
     case "no-own-moves":
       return null;
   }
+}
+
+/**
+ * "Include in practice", read against the repertoire before it applies: what the other chapters
+ * practise at the positions where it accepts a move (`read`, for the positions not read yet),
+ * asked again while accepting another move reaches new positions. `acceptedAt` then makes it
+ * accept the moves other chapters practise; `widened` lists the picks that still add a move to a
+ * position other chapters answer differently (the player is asked first).
+ */
+export async function includeInPracticePlan(
+  color: RepertoireColor,
+  chapter: Parameters<typeof trainingPicks>[1],
+  read: (positionKeys: string[]) => Promise<Record<string, readonly string[]>>
+): Promise<{ acceptedAt: AcceptedAt; widened: TrainingPick[] }> {
+  const known = new Map<string, readonly string[]>();
+  const acceptedAt: AcceptedAt = (key) => known.get(key);
+  for (;;) {
+    const picks = trainingPicks(color, chapter, acceptedAt);
+    const unread = [...new Set(picks.map((pick) => pick.positionKey))].filter(
+      (key) => !known.has(key)
+    );
+    if (!unread.length) return { acceptedAt, widened: picks.filter((pick) => pick.widens) };
+    const practised = await read(unread);
+    for (const key of unread) known.set(key, practised[key] ?? []);
+  }
+}
+
+/** The question before "Include in practice" widens decisions other chapters share. */
+export function wideningQuestion(lookup: ChapterLookup, widened: readonly TrainingPick[]): string {
+  const [first, ...rest] = widened;
+  if (!first) return "";
+  const where =
+    first.nodeId === REPERTOIRE_ROOT_NODE_ID
+      ? "at the start"
+      : `after ${pathLabel(lookup, first.nodeId)}`;
+  const more = rest.length ? ` (and ${rest.length} more)` : "";
+  return `Your other chapters play a different move ${where}. Including also accepts ${moveLabel(lookup, first.childId)} there${more}.`;
 }
 
 /**
@@ -206,16 +252,15 @@ export type MarkKey = "trainingStart" | "trainingStop" | "disabled";
 export const MARK_TEXT: Record<MarkKey, { label: string; description: string }> = {
   trainingStart: {
     label: "Start practice here",
-    description:
-      "Practice begins at this move: earlier moves are played for you, and lines that don't pass through here aren't asked."
+    description: "Practice begins at this move; earlier moves and other lines aren't asked."
   },
   trainingStop: {
     label: "End practice here",
-    description: "Practice ends after this move: later moves stay for study but aren't asked."
+    description: "Practice ends after this move; later moves are for study only."
   },
   disabled: {
     label: "Leave out of practice",
-    description: "This move and everything after it stay in the chapter but are never asked."
+    description: "This move and what follows stay in the chapter but are never asked."
   }
 };
 
@@ -227,45 +272,69 @@ export function markEffect(on: boolean, delta: number): string {
 
 /* ------------------------------------------------------------------ practice setup */
 
-/** A practice start with nothing to ask: why, and whether "Learn new" is worth offering. */
-export type PracticeEmpty = Explanation & { offerLearnNew: boolean };
+/**
+ * A practice start with nothing to ask: why, whether "Learn new" is worth offering, and a
+ * secondary note naming chapters in scope that practise nothing when they aren't the cause.
+ */
+export type PracticeEmpty = Explanation & { offerLearnNew: boolean; note?: string };
+
+/** A chapter in a practice scope that has nothing to practise, and why. */
+export type BlockedChapter = { title: string; explanation: Explanation };
 
 /**
- * The practice setup's empty state. With a blocker (the scope's chapter has nothing to practise)
- * it names the chapter and the cause; otherwise the mode explains what it found.
+ * The practice setup's empty state, from what the scope's chapters practise. When none of them
+ * practises anything (`blocked` are all of them), the first is named with its cause. Otherwise
+ * the mode explains what it found, and the chapters that practise nothing are only a note.
  */
 export function practiceEmptyExplanation(
   mode: PracticeMode,
-  blocker: Explanation | null,
-  chapterTitle: string | null
+  blocked: readonly BlockedChapter[],
+  othersPractise: boolean
 ): PracticeEmpty {
-  if (blocker) {
+  const [first, ...rest] = blocked;
+  if (first && !othersPractise) {
     return {
-      title: chapterTitle ? `Nothing to practise in “${chapterTitle}”` : "Nothing to practise yet",
-      detail: `${blocker.title}. ${blocker.detail}`,
-      offerLearnNew: false
+      title: `Nothing to practise in “${first.title}”`,
+      detail: first.explanation.detail,
+      ...(first.explanation.more ? { more: first.explanation.more } : {}),
+      offerLearnNew: false,
+      ...(rest.length
+        ? {
+            note: `${countOf(rest.length, "other chapter")} in scope ${rest.length === 1 ? "has" : "have"} nothing to practise either.`
+          }
+        : {})
     };
   }
+  const note = first
+    ? `“${first.title}”${rest.length ? ` and ${countOf(rest.length, "other chapter")}` : ""} in scope ${blocked.length === 1 ? "has" : "have"} nothing to practise yet.`
+    : undefined;
+  return { ...modeEmptyExplanation(mode), ...(note ? { note } : {}) };
+}
+
+function countOf(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+/** What a practice mode found when its scope practises something but nothing was asked. */
+function modeEmptyExplanation(mode: PracticeMode): PracticeEmpty {
   switch (mode) {
     case "review-due":
       return {
         title: "No reviews due",
-        detail:
-          "Everything in this scope is scheduled for later. Learn new practises the decisions you haven't seen yet.",
+        detail: "Everything in this scope is scheduled for later.",
         offerLearnNew: true
       };
     case "learn-new":
       return {
         title: "Nothing new to learn",
-        detail:
-          "Every decision in this scope has been practised already (paused ones are left out). Review due asks them again when they are due.",
+        detail: "You've practised every decision in this scope (paused ones are left out).",
         offerLearnNew: false
       };
     case "rehearse-lines":
       return {
         title: "Nothing to rehearse from here",
         detail:
-          "No line from this start asks a move of yours: its decisions may be paused, or deeper than the max depth. Pick another start or raise the depth.",
+          "No line from this start asks a move of yours within the max depth (paused decisions are played for you).",
         offerLearnNew: false
       };
   }
@@ -335,11 +404,11 @@ export function importPracticeNote(
     };
   }
   return {
-    text: `${decisions} decision${decisions === 1 ? "" : "s"} to practise: your first move at each position. Your other moves stay reference until you accept them in Study.`,
+    text: `${decisions} decision${decisions === 1 ? "" : "s"} to practise (your first move at each position).`,
     warn: false
   };
 }
 
 /** The import preview's explanation of the two kinds of chapter. */
 export const IMPORT_KIND_HELP =
-  "Opening chapters are practised: your first move at each position is accepted, the opponent's replies are covered, and your other moves stay reference until you accept them. Reference chapters (model games, notes) are kept for study only.";
+  "Opening chapters are practised: your first move at each position is accepted and replies are covered (other moves stay reference). Reference chapters are for study only.";

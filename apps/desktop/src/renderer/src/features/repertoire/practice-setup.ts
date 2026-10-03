@@ -288,22 +288,29 @@ export function rehearseStarts(
   return { starts, truncated: false };
 }
 
+/** The most chapters of a scope read to explain an empty practice start. */
+export const EXPLAINED_CHAPTER_LIMIT = 20;
+
 /**
- * The chapter that explains a practice start with nothing to ask: the rehearsed chapter, else the
- * first chapter in scope. A start over every chapter names one only when the whole repertoire has
- * no decision: the chapter last studied, else the first one. Null when there is no such chapter
- * (the mode's own explanation applies).
+ * The chapters that explain a practice start with nothing to ask: the rehearsed chapter, else the
+ * chapters in scope (the first EXPLAINED_CHAPTER_LIMIT). A start over every chapter names one only
+ * when the whole repertoire has no decision: the chapter last studied, else the first one. Empty
+ * when there is no such chapter (the mode's own explanation applies).
  */
-export function explainedChapterId(
+export function explainedChapterIds(
   detail: Pick<RepertoireDetail, "chapters" | "workspace" | "decisionCount">,
   input: Pick<StartPracticeInput, "mode" | "chapterIds" | "rehearse">
-): string | null {
+): string[] {
   const known = new Set(detail.chapters.map((chapter) => chapter.id));
-  const scoped =
-    input.mode === "rehearse-lines" ? input.rehearse?.chapterId : input.chapterIds?.[0];
-  if (scoped && known.has(scoped)) return scoped;
-  if (detail.decisionCount > 0) return null;
+  if (input.mode === "rehearse-lines" && input.rehearse) {
+    return known.has(input.rehearse.chapterId) ? [input.rehearse.chapterId] : [];
+  }
+  if (input.chapterIds?.length) {
+    return input.chapterIds.filter((id) => known.has(id)).slice(0, EXPLAINED_CHAPTER_LIMIT);
+  }
+  if (detail.decisionCount > 0) return [];
   const last = detail.workspace?.lastChapterId;
-  if (last && known.has(last)) return last;
-  return sortedChapters(detail.chapters)[0]?.id ?? null;
+  if (last && known.has(last)) return [last];
+  const first = sortedChapters(detail.chapters)[0];
+  return first ? [first.id] : [];
 }

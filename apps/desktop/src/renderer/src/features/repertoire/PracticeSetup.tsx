@@ -37,7 +37,7 @@ import {
   MAX_DEPTH_PLIES,
   MAX_REHEARSE_STARTS,
   boundedInt,
-  explainedChapterId,
+  explainedChapterIds,
   practiceInputFromForm,
   rehearseStarts,
   type RehearseStart
@@ -142,6 +142,12 @@ export function PracticeSetup({
 
   // A repertoire with no decision at all is explained before any start.
   const explaining = empty ?? (detail.decisionCount && trainable.length ? null : input());
+  // Kept by value: `explaining` is a new object each render, and the empty state reads these.
+  const explainedKey = explaining ? explainedChapterIds(detail, explaining).join("\n") : "";
+  const explainedIds = useMemo(
+    () => (explainedKey ? explainedKey.split("\n") : []),
+    [explainedKey]
+  );
   const unavailable = startUnavailableReason({
     decisionCount: detail.decisionCount,
     practicableChapters: trainable.length,
@@ -162,7 +168,8 @@ export function PracticeSetup({
           <PracticeEmptyState
             detail={detail}
             mode={explaining.mode}
-            chapterId={explainedChapterId(detail, explaining)}
+            chapterIds={explainedIds}
+            scopeLarger={(explaining.chapterIds?.length ?? 0) > explainedIds.length}
             starting={starting}
             onLearnNew={() => onStart(input("learn-new"))}
             onStudy={onStudy}

@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+  type QueryClient
+} from "@tanstack/react-query";
 import type { ChaturangaApi } from "@chaturanga/shared/ipc/chaturanga-api";
 import type {
   AddFromGameInput,
@@ -214,6 +220,18 @@ export function useRepertoireChapterQuery(id: string | null, chapterId: string |
   });
 }
 
+/** Several chapters of a repertoire (each through its useRepertoireChapterQuery cache entry). */
+export function useRepertoireChaptersQuery(id: string | null, chapterIds: readonly string[]) {
+  return useQueries({
+    queries: chapterIds.map((chapterId) => ({
+      queryKey: repertoireKeys.chapter(id ?? "", chapterId),
+      queryFn: () => requireRepertoires().getChapter({ repertoireId: id!, chapterId }),
+      enabled: Boolean(id && repertoires()),
+      retry: false
+    }))
+  });
+}
+
 /** The stored decision (choices, prompt, hint) at a position; null when there is none yet. */
 export function useRepertoireDecisionQuery(id: string | null, positionKey: string | null) {
   return useQuery({
@@ -222,6 +240,18 @@ export function useRepertoireDecisionQuery(id: string | null, positionKey: strin
       requireRepertoires().getDecision({ repertoireId: id!, positionKey: positionKey! }),
     enabled: Boolean(id && positionKey && repertoires())
   });
+}
+
+/**
+ * The moves the repertoire's other chapters practise at positions of `chapterId` (by position
+ * key), read now: "Include in practice" accepts those where it can.
+ */
+export function fetchPractisedElsewhere(
+  id: string,
+  chapterId: string,
+  positionKeys: string[]
+): Promise<Record<string, string[]>> {
+  return requireRepertoires().getPractisedElsewhere({ repertoireId: id, chapterId, positionKeys });
 }
 
 /** Position keys of the repertoire's paused decisions (a rehearsal plays them as context). */

@@ -94,9 +94,19 @@ test("a chapter of reference moves says why, offers no dead buttons, and is prac
   await openStudy(page);
   const panel = studyPanel(page);
 
-  // Why: White's first move is kept as reference, so nothing after it is practised.
-  await expect(notice(page)).toContainText("Your moves here are kept as reference");
-  await expect(notice(page)).toContainText("1. e4 is reference only");
+  // Why, in one sentence: White's first move is kept as reference, so nothing after it is asked.
+  // What the fix does (and why moves start as reference) is its description and tooltip.
+  await expect(
+    notice(page).getByText("1. e4 is reference only, so nothing from it on is asked.", {
+      exact: true
+    })
+  ).toBeVisible();
+  const include = notice(page).getByRole("button", { name: "Include in practice", exact: true });
+  await expect(include).toHaveAccessibleDescription(
+    /start as reference until you accept them.*Undo reverts it/
+  );
+  await include.hover();
+  await expect(page.getByRole("tooltip")).toContainText("accepts your first move at each position");
   await expect(panel.getByText("0 in this chapter")).toBeVisible();
 
   // The choice explains itself instead of "Not trained here / reference".
@@ -109,9 +119,7 @@ test("a chapter of reference moves says why, offers no dead buttons, and is prac
   // The training marks: plain names, their state and effect, tucked under Advanced.
   const practiceHere = panel.getByRole("region", { name: "Practice at this move" });
   await expect(practiceHere).toContainText("Not practised: 1. e4 is reference only");
-  await practiceHere
-    .getByRole("button", { name: /Advanced: training marks/ })
-    .click();
+  await practiceHere.getByRole("button", { name: /Advanced: training marks/ }).click();
   const start = practiceHere.getByRole("switch", { name: "Start practice here" });
   await expect(start).toHaveAttribute("aria-checked", "false");
   await expect(
@@ -131,7 +139,7 @@ test("a chapter of reference moves says why, offers no dead buttons, and is prac
   ).toBeVisible();
 
   // One click: the import default — White's moves accepted, Black's replies covered.
-  await notice(page).getByRole("button", { name: "Include in practice", exact: true }).click();
+  await include.click();
   await expect(notice(page)).toHaveCount(0);
   await expect(panel.getByText("4 in this chapter")).toBeVisible();
   await expect(choices.getByText(/^Preferred:/)).toBeVisible();
@@ -267,4 +275,46 @@ test("Rehearse from here and Rehearse this chapter know about paused decisions",
   await expect(
     panel.getByRole("button", { name: "Practice this chapter", exact: true })
   ).toBeDisabled();
+});
+
+test("Include in practice asks before accepting a move where another chapter plays a different one", async ({
+  launch
+}) => {
+  const { page } = await launch();
+  await skipWelcome(page);
+  const revision = await seedSicilian(page);
+  // Another chapter practises 2. c3 after 1. e4 c5 (an import's default).
+  await page.evaluate(
+    async ({ name, revision }) => {
+      const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga.repertoires;
+      const [repertoire] = await api.list({ query: name });
+      const preview = await api.previewImport({ pgn: "1. e4 c5 2. c3 *" });
+      await api.commitImport({
+        repertoireId: repertoire!.id,
+        jobId: preview.jobId,
+        expectedRevision: revision,
+        selections: [{ gameIndex: 0, title: "Alapin", kind: "opening", include: true }]
+      });
+    },
+    { name: REPERTOIRE, revision }
+  );
+  await openStudy(page);
+  const panel = studyPanel(page);
+  await expect(panel.getByText("0 in this chapter")).toBeVisible();
+
+  // Accepting 2. Nf3 there would change what "Alapin" practises too: it asks first.
+  await notice(page).getByRole("button", { name: "Include in practice", exact: true }).click();
+  const question = notice(page).getByRole("group", { name: "Include in practice?" });
+  await expect(question).toContainText(
+    "Your other chapters play a different move after 1. e4 c5. Including also accepts 2. Nf3 there."
+  );
+  await question.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(question).toHaveCount(0);
+  await expect(panel.getByText("0 in this chapter")).toBeVisible();
+
+  await notice(page).getByRole("button", { name: "Include in practice", exact: true }).click();
+  await question.getByRole("button", { name: "Include anyway", exact: true }).click();
+  await expect(notice(page)).toHaveCount(0);
+  await expect(panel.getByText("4 in this chapter")).toBeVisible();
+  await expect(page.getByRole("banner", { name: "Titlebar" })).toContainText("Saved");
 });

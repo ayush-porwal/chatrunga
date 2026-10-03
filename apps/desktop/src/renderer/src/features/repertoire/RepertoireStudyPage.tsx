@@ -20,7 +20,7 @@ import {
   lineEnds,
   rehearsalContext
 } from "@chaturanga/shared/chess/repertoire-rehearsal";
-import { chapterTraining } from "@chaturanga/shared/chess/repertoire-training";
+import { chapterTraining, type AcceptedAt } from "@chaturanga/shared/chess/repertoire-training";
 import type { BoardArrow, BoardHighlight, Color } from "@chaturanga/shared/types/chess";
 import {
   REPERTOIRE_ROOT_NODE_ID,
@@ -41,6 +41,7 @@ import { isElectronMac } from "@/lib/environment";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useEventCallback } from "@/lib/use-event-callback";
 import {
+  fetchPractisedElsewhere,
   useRepertoireChapterQuery,
   useRepertoireDecisionQuery,
   useRepertoireOccurrencesQuery,
@@ -83,7 +84,12 @@ import { StudyNotesPanel } from "./StudyNotesPanel";
 import { StudySourcesSection } from "./StudySourcesSection";
 import { StudyTrainingNotice } from "./StudyTrainingNotice";
 import { StudyTree } from "./StudyTree";
-import { blockerExplanation, studyPracticeAvailability } from "./training-explanations";
+import {
+  blockerExplanation,
+  includeInPracticePlan,
+  studyPracticeAvailability,
+  wideningQuestion
+} from "./training-explanations";
 import {
   discardDecisionText,
   keepDecisionTextNow,
@@ -330,6 +336,48 @@ export function RepertoireStudyPage({
     [training, lookup, draft, color, paused, rehearsal]
   );
   const practiceReasonId = useId();
+
+  /**
+   * "Include in practice" waiting on the player: it would add moves at positions other chapters
+   * answer differently (the question, for this chapter), with what it read of the repertoire.
+   */
+  const [widening, setWidening] = useState<{
+    chapterId: string;
+    question: string;
+    acceptedAt: AcceptedAt;
+  } | null>(null);
+  const [including, setIncluding] = useState(false);
+  // Reads what the other chapters practise where it accepts moves, so it accepts those moves
+  // there; asks first when it would still add one where they practise another.
+  const includeInPractice = useEventCallback(async () => {
+    const current = workspace().chapter;
+    if (!current || !lookup) return;
+    setLocalError(null);
+    setIncluding(true);
+    try {
+      const plan = await includeInPracticePlan(color, current, (keys) =>
+        fetchPractisedElsewhere(repertoireId, chapterId, keys)
+      );
+      if (workspace().chapterId !== chapterId) return;
+      if (plan.widened.length) {
+        setWidening({
+          chapterId,
+          question: wideningQuestion(lookup, plan.widened),
+          acceptedAt: plan.acceptedAt
+        });
+      } else {
+        workspace().makeChapterTrainable(plan.acceptedAt);
+      }
+    } catch (error) {
+      setLocalError(`Couldn't include the chapter in practice: ${ipcErrorMessage(error)}`);
+    } finally {
+      setIncluding(false);
+    }
+  });
+  const confirmWidening = useEventCallback(() => {
+    if (widening?.chapterId === chapterId) workspace().makeChapterTrainable(widening.acceptedAt);
+    setWidening(null);
+  });
 
   const selectNode = useEventCallback((nodeId: string) => workspace().selectNode(nodeId));
   useTreeKeyboardNavigation({
@@ -895,8 +943,11 @@ export function RepertoireStudyPage({
               lookup={lookup}
               color={color}
               selectedNodeId={node.id}
-              busy={commands.busy}
-              onMakeTrainable={() => workspace().makeChapterTrainable()}
+              busy={commands.busy || including}
+              widening={widening?.chapterId === chapterId ? widening.question : null}
+              onMakeTrainable={() => void includeInPractice()}
+              onConfirmWidening={confirmWidening}
+              onCancelWidening={() => setWidening(null)}
               onSetMeta={(nodeId, patch) => workspace().setNodeMeta(nodeId, patch)}
               onSelectNode={selectNode}
             />

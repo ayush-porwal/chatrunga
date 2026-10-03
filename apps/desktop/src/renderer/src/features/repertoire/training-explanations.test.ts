@@ -8,11 +8,13 @@ import {
   importPracticeNote,
   markEffect,
   moveLabel,
+  includeInPracticePlan,
   practiceEmptyExplanation,
   scopeStatus,
   startUnavailableReason,
   studyPracticeAvailability,
-  trainingFix
+  trainingFix,
+  wideningQuestion
 } from "./training-explanations";
 
 /** 1. e4 c5 2. Nf3 d6: ids s0…s3. */
@@ -40,8 +42,9 @@ describe("blockerExplanation", () => {
   it("tells the player's reference move from a reply's", () => {
     const own = explain({ kind: "reference-move", nodeId: "s0" });
     expect(own.title).toBe("Your moves here are kept as reference");
-    expect(own.detail).toContain("1. e4 is reference only");
-    expect(own.detail).toContain("until you accept them");
+    // One short sentence on the page; why it happened is more, for the description.
+    expect(own.detail).toBe("1. e4 is reference only, so nothing from it on is asked.");
+    expect(own.more).toContain("until you accept them");
     const reply = explain({ kind: "reference-move", nodeId: "s1" });
     expect(reply.title).toBe("A reply here is kept as reference");
     expect(reply.detail).toContain("1... c5 is reference only");
@@ -143,29 +146,47 @@ describe("markEffect", () => {
 });
 
 describe("practiceEmptyExplanation", () => {
-  it("names the chapter and the cause when the chapter has nothing to practise", () => {
-    const empty = practiceEmptyExplanation(
-      "rehearse-lines",
-      { title: "Your moves here are kept as reference", detail: "1. e4 is reference only." },
-      "Chapter 1"
-    );
-    expect(empty).toEqual({
+  const reference = {
+    title: "Chapter 1",
+    explanation: {
+      title: "Your moves here are kept as reference",
+      detail: "1. e4 is reference only, so nothing from it on is asked.",
+      more: "Moves you play in Study start as reference."
+    }
+  };
+
+  it("names the chapter and the cause when nothing in scope practises anything", () => {
+    expect(practiceEmptyExplanation("rehearse-lines", [reference], false)).toEqual({
       title: "Nothing to practise in “Chapter 1”",
-      detail: "Your moves here are kept as reference. 1. e4 is reference only.",
+      detail: "1. e4 is reference only, so nothing from it on is asked.",
+      more: "Moves you play in Study start as reference.",
       offerLearnNew: false
     });
-    expect(practiceEmptyExplanation("review-due", { title: "T", detail: "D" }, null).title).toBe(
-      "Nothing to practise yet"
+    const second = { ...reference, title: "Chapter 2" };
+    expect(practiceEmptyExplanation("learn-new", [reference, second], false).note).toBe(
+      "1 other chapter in scope has nothing to practise either."
+    );
+  });
+
+  it("gives the mode's own reason when another chapter in scope practises, naming the others only as a note", () => {
+    // Chapter 1 is all reference, another chapter's decisions just aren't due.
+    const empty = practiceEmptyExplanation("review-due", [reference], true);
+    expect(empty).toMatchObject({ title: "No reviews due", offerLearnNew: true });
+    expect(empty.note).toBe("“Chapter 1” in scope has nothing to practise yet.");
+    const second = { ...reference, title: "Chapter 2" };
+    expect(practiceEmptyExplanation("review-due", [reference, second], true).note).toBe(
+      "“Chapter 1” and 1 other chapter in scope have nothing to practise yet."
     );
   });
 
   it("otherwise explains what each mode found", () => {
-    expect(practiceEmptyExplanation("review-due", null, null)).toMatchObject({
+    expect(practiceEmptyExplanation("review-due", [], true)).toEqual({
       title: "No reviews due",
+      detail: "Everything in this scope is scheduled for later.",
       offerLearnNew: true
     });
-    expect(practiceEmptyExplanation("learn-new", null, null).detail).toContain("paused");
-    expect(practiceEmptyExplanation("rehearse-lines", null, null).detail).toContain("max depth");
+    expect(practiceEmptyExplanation("learn-new", [], false).detail).toContain("paused");
+    expect(practiceEmptyExplanation("rehearse-lines", [], false).detail).toContain("max depth");
   });
 });
 
@@ -258,5 +279,55 @@ describe("importPracticeNote", () => {
       text: "No moves of yours (Black) to practise in this game.",
       warn: true
     });
+  });
+});
+
+describe("includeInPracticePlan", () => {
+  /** 1. e4 c5 2. Nf3 (2. Nc3 Nc6 3. g3) d6, every move reference: ids s0…s3, v0…v2. */
+  const tree = addLine(
+    addLine([rootNode()], "root", ["e2e4", "c7c5", "g1f3", "d7d6"], "s").tree,
+    "s1",
+    ["b1c3", "b8c6", "g2g3"],
+    "v"
+  ).tree;
+  const chapter = {
+    kind: "opening" as const,
+    enabled: true,
+    tree,
+    nodeMeta: Object.fromEntries(
+      tree.filter((node) => node.parentId).map((node) => [node.id, { edge: "reference" as const }])
+    )
+  };
+  const keys = buildChapterLookup(chapter).positionKeys;
+
+  it("reads what other chapters practise where it accepts moves, again where another pick leads", async () => {
+    const reads: string[][] = [];
+    const plan = await includeInPracticePlan("white", chapter, async (asked) => {
+      reads.push(asked);
+      return { [keys.get("s1")!]: ["b1c3"] };
+    });
+    // The positions on the first moves' lines; Nc3 is practised after 1... c5, so then the
+    // position after 2... Nc6 too.
+    expect(reads).toEqual([[keys.get("root"), keys.get("s1")], [keys.get("v1")]]);
+    expect(plan.widened).toEqual([]);
+    expect(plan.acceptedAt(keys.get("s1")!)).toEqual(["b1c3"]);
+  });
+
+  it("lists the picks that add a move where other chapters practise another, and asks about them", async () => {
+    const plan = await includeInPracticePlan("white", chapter, async () => ({
+      [keys.get("s1")!]: ["f2f4"]
+    }));
+    expect(plan.widened.map((pick) => pick.childId)).toEqual(["s2"]);
+    expect(wideningQuestion(buildChapterLookup(chapter), plan.widened)).toBe(
+      "Your other chapters play a different move after 1. e4 c5. Including also accepts 2. Nf3 there."
+    );
+    expect(wideningQuestion(buildChapterLookup(chapter), [])).toBe("");
+  });
+
+  it("asks at the start position in its own words", () => {
+    const pick = { nodeId: "root", positionKey: "k", childId: "s0", uci: "e2e4", widens: true };
+    expect(wideningQuestion(buildChapterLookup(chapter), [pick, { ...pick, childId: "s2" }])).toBe(
+      "Your other chapters play a different move at the start. Including also accepts 1. e4 there (and 1 more)."
+    );
   });
 });

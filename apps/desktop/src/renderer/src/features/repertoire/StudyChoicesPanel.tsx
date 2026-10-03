@@ -132,8 +132,8 @@ export function StudyChoicesPanel({
           }
           description={
             choices.side === "player"
-              ? "Accepted moves count as correct in practice, and hints point at the preferred one. Reference moves are kept for study only. “Main line” is just the chapter's move order."
-              : "Practice plays covered replies to you and goes on from there. Reference replies are kept for study only. “Main line” is just the chapter's move order."
+              ? "Accepted moves count as correct in practice; reference moves are for study only."
+              : "Practice plays covered replies to you; reference replies are for study only."
           }
         />
         {choices.rows.length ? (

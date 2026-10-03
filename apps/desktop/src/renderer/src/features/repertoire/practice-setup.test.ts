@@ -9,7 +9,8 @@ import {
   autoStartPracticeInput,
   boundedInt,
   DEFAULT_CARD_LIMIT,
-  explainedChapterId,
+  EXPLAINED_CHAPTER_LIMIT,
+  explainedChapterIds,
   initialPracticeInput,
   MAX_CARD_LIMIT,
   MAX_DEPTH_PLIES,
@@ -370,26 +371,39 @@ describe("savesPracticeDraft", () => {
   });
 });
 
-describe("explainedChapterId", () => {
+describe("explainedChapterIds", () => {
   const chapters = [chapter("b", { sortOrder: 1 }), chapter("a", { sortOrder: 0 })];
   const rehearse = (chapterId: string) =>
     ({ mode: "rehearse-lines", rehearse: { chapterId } }) as const;
 
-  it("names the rehearsed chapter, or the first chapter in scope", () => {
+  it("names the rehearsed chapter, or every chapter in scope", () => {
     const detail = detailOf({ chapters, decisionCount: 3 });
-    expect(explainedChapterId(detail, rehearse("b"))).toBe("b");
-    expect(explainedChapterId(detail, { mode: "learn-new", chapterIds: ["b", "a"] })).toBe("b");
+    expect(explainedChapterIds(detail, rehearse("b"))).toEqual(["b"]);
+    expect(
+      explainedChapterIds(detail, { mode: "learn-new", chapterIds: ["b", "gone", "a"] })
+    ).toEqual(["b", "a"]);
     // A chapter that is gone names nothing in particular.
-    expect(explainedChapterId(detail, rehearse("gone"))).toBeNull();
+    expect(explainedChapterIds(detail, rehearse("gone"))).toEqual([]);
+  });
+
+  it("reads at most the limit of a long scope", () => {
+    const many = Array.from({ length: EXPLAINED_CHAPTER_LIMIT + 5 }, (_, index) =>
+      chapter(`c${index}`, { sortOrder: index })
+    );
+    const ids = explainedChapterIds(detailOf({ chapters: many, decisionCount: 1 }), {
+      mode: "review-due",
+      chapterIds: many.map((item) => item.id)
+    });
+    expect(ids).toHaveLength(EXPLAINED_CHAPTER_LIMIT);
   });
 
   it("over every chapter names one only when the repertoire has no decision", () => {
     expect(
-      explainedChapterId(detailOf({ chapters, decisionCount: 3 }), { mode: "review-due" })
-    ).toBeNull();
+      explainedChapterIds(detailOf({ chapters, decisionCount: 3 }), { mode: "review-due" })
+    ).toEqual([]);
     expect(
-      explainedChapterId(detailOf({ chapters, decisionCount: 0 }), { mode: "review-due" })
-    ).toBe("a");
+      explainedChapterIds(detailOf({ chapters, decisionCount: 0 }), { mode: "review-due" })
+    ).toEqual(["a"]);
     const studied = detailOf({
       chapters,
       decisionCount: 0,
@@ -400,7 +414,7 @@ describe("explainedChapterId", () => {
         practiceDraft: null
       }
     });
-    expect(explainedChapterId(studied, { mode: "review-due" })).toBe("b");
-    expect(explainedChapterId(detailOf({ decisionCount: 0 }), { mode: "review-due" })).toBeNull();
+    expect(explainedChapterIds(studied, { mode: "review-due" })).toEqual(["b"]);
+    expect(explainedChapterIds(detailOf({ decisionCount: 0 }), { mode: "review-due" })).toEqual([]);
   });
 });
