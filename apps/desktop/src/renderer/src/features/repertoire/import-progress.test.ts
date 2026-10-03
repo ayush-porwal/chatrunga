@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ImportProgressEvent } from "@chaturanga/shared/types/repertoire";
 import {
+  adoptCommittedRevision,
   MAX_IMPORT_PGN_BYTES,
   pgnSizeError,
   progressCounts,
@@ -83,5 +84,16 @@ describe("pgnSizeError", () => {
     // 10 characters, 20 bytes.
     expect(pgnSizeError("é".repeat(10), 15)).toMatch(/^This PGN is larger than/);
     expect(pgnSizeError("é".repeat(10), 20)).toBeNull();
+  });
+});
+
+describe("adoptCommittedRevision", () => {
+  it("moves the same repertoire's open draft to the new revision and leaves others alone", () => {
+    const adopted: number[] = [];
+    const adoptRevision = (revision: number) => adopted.push(revision);
+    adoptCommittedRevision({ repertoireId: "r1", adoptRevision }, "r1", 7);
+    adoptCommittedRevision({ repertoireId: "r2", adoptRevision }, "r1", 8);
+    adoptCommittedRevision({ repertoireId: null, adoptRevision }, "r1", 9);
+    expect(adopted).toEqual([7]);
   });
 });

@@ -1,7 +1,7 @@
 /**
  * Runs an import commit in the bundled writer worker (import-writer-worker.ts), sending the
  * chapters in bounded slices with a yield to the event loop between them. Without the bundled
- * worker (tests, a missing file) the same commit runs in this thread.
+ * worker (tests, development) the same commit runs in this thread; a packaged app requires it.
  */
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import type { ImportResult } from "@chaturanga/shared/types/repertoire";
 import { commitImportJob, type ImportCommitJob } from "./core";
+import { missingWorkerError } from "./import-runner";
 import {
   WRITER_SLICE_NODES,
   type ImportWriterData,
@@ -29,14 +30,17 @@ const yieldToEventLoop = () => new Promise<void>((resolve) => setImmediate(resol
 
 /**
  * Commits `job` and resolves with the result once it is stored; rejects with the commit's error
- * (nothing written), or an actionable error when the worker stops before replying.
+ * (nothing written), or an actionable error when the worker stops before replying. With
+ * `requireWorker` (the packaged app), a missing worker file rejects with missingWorkerError.
  */
 export async function runImportCommit(
   job: ImportCommitJob,
   dbPath: () => string,
-  workerPath: string = IMPORT_WRITER_WORKER
+  workerPath: string = IMPORT_WRITER_WORKER,
+  requireWorker = false
 ): Promise<ImportResult> {
   if (!existsSync(workerPath)) {
+    if (requireWorker) throw missingWorkerError(workerPath);
     await yieldToEventLoop();
     return commitImportJob(job);
   }

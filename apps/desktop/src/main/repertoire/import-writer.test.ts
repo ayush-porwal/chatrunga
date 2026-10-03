@@ -107,6 +107,13 @@ describe("runImportCommit (writer worker)", () => {
     });
   });
 
+  it("refuses to commit in this thread when the worker is required (packaged app)", async () => {
+    const missing = join(dir, "missing-writer.js");
+    await expect(runImportCommit(job("ok", [3]), () => "", missing, true)).rejects.toThrow(
+      `a file of this installation is missing (${missing})`
+    );
+  });
+
   it("rejects with the worker's error", async () => {
     await expect(runImportCommit(job("fail", [3]), () => "", FAKE_WRITER)).rejects.toThrow(
       "Invalid expectedRevision: repertoire changed"

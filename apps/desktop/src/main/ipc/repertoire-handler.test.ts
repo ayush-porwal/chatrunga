@@ -9,6 +9,10 @@ vi.mock("electron", () => ({
   BrowserWindow: { fromWebContents: () => null }
 }));
 const calls: [string, unknown[]][] = [];
+/** Service methods called inside the write gate. */
+const gated = new Set<string>();
+let inGate = false;
+let previewOutcome: (() => unknown) | null = null;
 vi.mock("../repertoire/service", () => {
   const names = [
     "archiveRepertoire",
@@ -48,21 +52,32 @@ vi.mock("../repertoire/service", () => {
         name,
         (...args: unknown[]) => {
           calls.push([name, args]);
+          if (inGate) gated.add(name);
+          if (name === "previewImport" && previewOutcome) return previewOutcome();
           return name;
         }
       ])
     ),
-    // Nothing is running in these tests: queued writes run at once.
-    queueRepertoireWrite: (_repertoireId: string, work: () => unknown) => work()
+    // Nothing is running in these tests: gated writes run at once (and synchronously here).
+    withRepertoireWriteGate: (work: () => unknown) => {
+      inGate = true;
+      try {
+        return work();
+      } finally {
+        inGate = false;
+      }
+    }
   };
 });
 
 const { registerRepertoireIpc } = await import("./repertoire-handler");
+const { ImportCancelledError } = await import("../repertoire/import-job");
+const { IMPORT_CANCELLED_REPLY } = await import("@chaturanga/shared/types/repertoire");
 
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 describe("registerRepertoireIpc", () => {
-  it("parses every input before calling the service", () => {
+  it("parses every input before calling the service", async () => {
     registerRepertoireIpc();
     const invoke = (channel: string, ...args: unknown[]) =>
       handlers.get(`repertoires:${channel}`)!({ sender: {} }, ...args);
@@ -173,10 +188,27 @@ describe("registerRepertoireIpc", () => {
       ]
     ];
     for (const [channel, input, method] of valid) {
-      expect(invoke(channel, input)).toBe(method);
+      expect(await invoke(channel, input)).toBe(method);
     }
     expect(invoke("getDueSummary")).toBe("getDueSummary");
-    expect(invoke("previewImport", { pgn: "1. e4 *" })).toBe("previewImport");
+    // Every write passes the write gate (commitImport takes it inside the service); no read does.
+    expect([...gated].sort()).toEqual([
+      "archiveRepertoire",
+      "createRepertoire",
+      "duplicateRepertoire",
+      "endPractice",
+      "recordAttempt",
+      "recordPracticeAction",
+      "removeChapter",
+      "removeRepertoire",
+      "resumePractice",
+      "saveChapter",
+      "saveWorkspace",
+      "startPractice",
+      "updateDecision",
+      "updateMetadata"
+    ]);
+    await expect(invoke("previewImport", { pgn: "1. e4 *" })).resolves.toBe("previewImport");
     expect(invoke("list", undefined)).toBe("listRepertoires");
     expect(calls.find(([name]) => name === "compareGame")?.[1][0]).toEqual({
       repertoireId: "r1",
@@ -305,6 +337,23 @@ describe("registerRepertoireIpc", () => {
     ).toThrow(/positionKeys/);
   });
 
+  it("answers a cancelled preview with the marker, and rejects any other failure", async () => {
+    const invoke = (channel: string, ...args: unknown[]) =>
+      handlers.get(`repertoires:${channel}`)!({ sender: {} }, ...args);
+    try {
+      previewOutcome = () => Promise.reject(new ImportCancelledError());
+      await expect(invoke("previewImport", { pgn: "1. e4 *" })).resolves.toEqual(
+        IMPORT_CANCELLED_REPLY
+      );
+      previewOutcome = () => Promise.reject(new Error("No PGN game found."));
+      await expect(invoke("previewImport", { pgn: "1. e4 *" })).rejects.toThrow(
+        "No PGN game found."
+      );
+    } finally {
+      previewOutcome = null;
+    }
+  });
+
   it("parses backup inputs and never accepts a filesystem path", () => {
     const invoke = (channel: string, ...args: unknown[]) =>
       handlers.get(`repertoires:${channel}`)!({ sender: {} }, ...args);
@@ -326,6 +375,7 @@ describe("registerRepertoireIpc", () => {
     };
     expect(invoke("restoreBackup", restore)).toBe("restoreBackup");
     expect(calls.at(-1)?.[1][0]).toEqual(restore);
+    expect(gated.has("restoreBackup")).toBe(true);
     expect(invoke("cancelBackupImport", "j")).toBe("cancelBackupImport");
     expect(invoke("refreshBackupPreview", "j")).toBe("refreshBackupPreview");
     expect(calls.at(-1)?.[1]).toEqual(["j"]);

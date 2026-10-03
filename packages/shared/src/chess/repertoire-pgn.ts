@@ -18,7 +18,10 @@ export type RepertoirePgnLimits = {
   maxNodes?: number;
   /** Deepest line, in moves from a game's root. */
   maxDepth?: number;
-  /** Longest comment (a move's or a game's, as written, before annotations are read). */
+  /**
+   * Longest comment (a move's or a game's), measured as stored: after `[%cal]`, `[%csl]` and
+   * `[%clk]` tags are read out of it. A longer comment rejects only its game.
+   */
   maxCommentLength?: number;
 };
 
@@ -39,7 +42,10 @@ export type ParsedRepertoireGame = {
   warnings: string[];
   /** Branches that couldn't be replayed; each was left out of `tree` with everything after it. */
   invalidBranches: ImportInvalidBranch[];
-  /** Why the whole game can't be imported (unsupported variant, bad FEN); its tree is empty. */
+  /**
+   * Why the whole game can't be imported (unsupported variant, bad FEN, a comment over the limit);
+   * its tree is empty.
+   */
   rejected: string | null;
 };
 
@@ -139,13 +145,6 @@ function parseGame(game: Game<PgnNodeData>, index: number, budget: Budget): Pars
 
   const rootFen = makeFen(starting.value.toSetup());
   const root = rootNode(rootFen);
-  const rootAnnotation = parseAnnotationComment(
-    checkedComment((game.comments ?? []).join(" "), budget, [])
-  );
-  root.comment = rootAnnotation.text;
-  root.arrows = rootAnnotation.arrows;
-  root.highlights = rootAnnotation.highlights;
-
   const builder: TreeBuilder = {
     tree: [root],
     byId: new Map([[root.id, root]]),
@@ -154,7 +153,19 @@ function parseGame(game: Game<PgnNodeData>, index: number, budget: Budget): Pars
     invalidBranches: [],
     budget
   };
-  for (const child of game.moves.children) appendMove(builder, root, [], child, 1);
+  // A comment over the limit rejects this game only; its moves no longer count toward the limit.
+  const nodesBefore = budget.nodes;
+  try {
+    const rootAnnotation = checkedAnnotation((game.comments ?? []).join(" "), budget, []);
+    root.comment = rootAnnotation.text;
+    root.arrows = rootAnnotation.arrows;
+    root.highlights = rootAnnotation.highlights;
+    for (const child of game.moves.children) appendMove(builder, root, [], child, 1);
+  } catch (error) {
+    if (!(error instanceof CommentTooLongError)) throw error;
+    budget.nodes = nodesBefore;
+    return rejectedGame(error.message);
+  }
 
   return {
     index,
@@ -169,19 +180,26 @@ function parseGame(game: Game<PgnNodeData>, index: number, budget: Budget): Pars
   };
 }
 
-/** The comment, or the actionable error when it is longer than the limit. */
-function checkedComment(
+/** A comment longer than the limit; its game is rejected with this message. */
+class CommentTooLongError extends Error {}
+
+/**
+ * The comment's annotation; throws CommentTooLongError when its text, with the annotation tags
+ * read out, is longer than the limit.
+ */
+function checkedAnnotation(
   comment: string,
   budget: Budget,
   path: readonly Pick<MoveNode, "ply" | "san">[]
-): string {
-  if (comment.length > budget.maxCommentLength) {
-    throw new Error(
-      `A comment is longer than ${budget.maxCommentLength} characters ` +
-        `(at ${formatPath(path) || "the start"}); shorten it before importing.`
+): ReturnType<typeof parseAnnotationComment> {
+  const annotation = parseAnnotationComment(comment);
+  if ((annotation.text?.length ?? 0) > budget.maxCommentLength) {
+    throw new CommentTooLongError(
+      `a comment is longer than ${budget.maxCommentLength} characters ` +
+        `(at ${formatPath(path) || "the start"})`
     );
   }
-  return comment;
+  return annotation;
 }
 
 type TreeBuilder = {
@@ -234,12 +252,10 @@ function appendMove(
         `This PGN has more than ${budget.maxNodes} moves; split it and import it in parts.`
       );
     }
-    const annotation = parseAnnotationComment(
-      checkedComment(
-        [...(child.data.startingComments ?? []), ...(child.data.comments ?? [])].join(" "),
-        budget,
-        [...path, { ply: parent.ply + 1, san: applied.san }]
-      )
+    const annotation = checkedAnnotation(
+      [...(child.data.startingComments ?? []), ...(child.data.comments ?? [])].join(" "),
+      budget,
+      [...path, { ply: parent.ply + 1, san: applied.san }]
     );
     node = {
       id: `n${builder.nextId++}`,

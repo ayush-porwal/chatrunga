@@ -80,9 +80,11 @@ export function getDb(): DatabaseSync {
   mkdirSync(dirname(dbPath), { recursive: true });
   db = new DatabaseSync(dbPath);
   db.exec("PRAGMA journal_mode = WAL");
-  // The import writer worker's connection holds the write lock while it stores an import (its
-  // transaction only runs prepared inserts); a main-thread write waits for it instead of failing.
-  db.exec("PRAGMA busy_timeout = 2000");
+  // The import writer worker's connection holds the write lock while it stores an import.
+  // Repertoire writes wait for it at the service's write gate, asynchronously; node:sqlite's busy
+  // handler sleeps synchronously (the whole main process stalls), so the timeout stays short and
+  // is only a safety net for the few other writes that may land meanwhile.
+  db.exec("PRAGMA busy_timeout = 250");
   db.exec("PRAGMA foreign_keys = ON");
   for (const statement of ddl) db.exec(statement);
   runMigrations(db);
@@ -389,7 +391,7 @@ function storedFingerprint(row: {
 export function runMigrations(database: DatabaseSync, migrations = MIGRATIONS): void {
   const { user_version: version } = database.prepare("PRAGMA user_version").get() as { user_version: number };
   for (let index = version; index < migrations.length; index += 1) {
-    database.exec("BEGIN");
+    database.exec("BEGIN IMMEDIATE");
     try {
       migrations[index](database);
       database.exec(`PRAGMA user_version = ${index + 1}`);

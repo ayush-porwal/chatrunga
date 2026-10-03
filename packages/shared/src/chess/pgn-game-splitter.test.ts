@@ -39,6 +39,18 @@ describe("createPgnGameSplitter", () => {
     }
   });
 
+  it("drops the CR of a CRLF split across pieces, as parsePgn does for the whole text", () => {
+    const crlf =
+      '[Event "CRLF"]\r\n\r\n{ A comment\r\nover\r\nthree lines } 1. e4 { and\r\nanother }' +
+      " e5 *\r\n\r\n1. d4 *\r";
+    const whole = parsePgn(crlf, emptyHeaders);
+    expect(whole[0].comments).toEqual(["A comment\nover\nthree lines"]);
+    expect(JSON.stringify(whole)).not.toContain("\\r");
+    for (let size = 1; size <= crlf.length; size++) {
+      expect(split(crlf, size)).toEqual(whole);
+    }
+  });
+
   it("keeps a tag line inside a comment as comment text", () => {
     const [first] = split(TRICKY, 5);
     expect(first.comments?.[0]).toContain('[Event "Not a game"]');

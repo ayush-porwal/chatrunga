@@ -102,4 +102,14 @@ describe("startImportParse (in this thread, without the bundled worker)", () => 
     run.cancel();
     await expect(run.result).rejects.toBeInstanceOf(ImportCancelledError);
   });
+
+  it("refuses to parse in this thread when the worker is required (packaged app)", async () => {
+    const events: ImportProgress[] = [];
+    const run = startImportParse(job("1. e4 *"), (event) => events.push(event), missing, true);
+    await expect(run.result).rejects.toThrow(
+      `The PGN import can't run: a file of this installation is missing (${missing}). ` +
+        "Reinstall Chaturanga and try again."
+    );
+    expect(events).toEqual([]);
+  });
 });

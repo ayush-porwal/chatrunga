@@ -152,12 +152,22 @@ describe("runImport", () => {
       );
     });
 
-    it("comment size", async () => {
+    it("comment size rejects only the games with a longer comment", async () => {
       const commented = generateRepertoirePgn({ games: 3, movesPerGame: 4, commentLength: 50 });
-      expect((await failure(commented, { maxCommentLength: 40 })).message).toBe(
-        "A comment is longer than 40 characters (at 1. Nf3); shorten it before importing."
+      const pgn = `${commented}\n\n[Event "Plain"]\n\n1. e4 e5 *\n`;
+      expect((await failure(pgn, { maxCommentLength: 40 })).message).toBeUndefined();
+      const { games } = await runImport(
+        { kind: "text", text: pgn },
+        limits({ maxCommentLength: 40 })
       );
-      expect((await failure(commented, { maxCommentLength: 50 })).message).toBeUndefined();
+      expect(games.map((game) => game.rejected)).toEqual([
+        "a comment is longer than 40 characters (at 1. Nf3)",
+        "a comment is longer than 40 characters (at 1. Nf3)",
+        "a comment is longer than 40 characters (at 1. Nf3)",
+        null
+      ]);
+      expect(games[3].nodeCount).toBe(2);
+      expect(Object.keys(games[3].positionKeys)).toHaveLength(3);
     });
 
     it("no game at all", async () => {

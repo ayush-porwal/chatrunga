@@ -1,13 +1,17 @@
 /**
  * One bounded PGN import parse (design §10 Import step 1, §11): the text (or a file, read in
  * pieces) is split into games as it arrives, every game is parsed as soon as it ends, and the
- * byte, game, move, depth and comment limits are enforced along the way, so an oversized input
- * fails at the first limit it crosses instead of after the whole file. Runs in the import worker
+ * byte, game, move and depth limits are enforced along the way, so an oversized input fails at
+ * the first limit it crosses instead of after the whole file (a comment over its limit rejects
+ * only its game). Runs in the import worker
  * (import-worker.ts); it has no Electron dependency, so tests and the benchmark call it directly.
  */
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import type { ImportProgressEvent } from "@chaturanga/shared/types/repertoire";
+import {
+  IMPORT_CANCELLED_MESSAGE,
+  type ImportProgressEvent
+} from "@chaturanga/shared/types/repertoire";
 import { createPgnGameSplitter } from "@chaturanga/shared/chess/pgn-game-splitter";
 import {
   createRepertoirePgnReader,
@@ -23,7 +27,11 @@ export type ImportedGame = ParsedRepertoireGame & { positionKeys: Record<string,
 /** Every game of an import, as the parse gives them. */
 export type ImportedPgn = { games: ImportedGame[] };
 
-/** Where the PGN comes from: text already in memory, or a file streamed from disk. */
+/**
+ * Where the PGN comes from: text already in memory, or a file streamed from disk. Production only
+ * uses `text` for now (the renderer reads a picked file and sends its text); `file` is exercised
+ * by tests, ready for a picker that hands the main process a path.
+ */
 export type ImportSource = { kind: "text"; text: string } | { kind: "file"; path: string };
 
 export type ImportLimits = Required<RepertoirePgnLimits> & {
@@ -55,7 +63,7 @@ export type ImportProgress = Omit<ImportProgressEvent, "jobId" | "error" | "phas
 /** The parse was cancelled; nothing was kept. */
 export class ImportCancelledError extends Error {
   constructor() {
-    super("The import was cancelled.");
+    super(IMPORT_CANCELLED_MESSAGE);
     this.name = "ImportCancelledError";
   }
 }

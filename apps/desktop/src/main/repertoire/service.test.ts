@@ -1,4 +1,5 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -39,7 +40,7 @@ vi.mock("electron", () => ({
   dialog: { showSaveDialog: (...args: unknown[]) => showSaveDialog(...args) }
 }));
 
-const { closeDb, getDb } = await import("../db");
+const { closeDb, databasePath, getDb } = await import("../db");
 const service = await import("./service");
 const { attemptRepository, progressRepository, decisionRepository, positionIndexRepository } =
   await import("./repository");
@@ -898,7 +899,8 @@ describe("repertoire service: import and export", () => {
         variationsPerGame: 2,
         commentLength: 8
       }),
-      "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. O-O (4. c3 Nf6 5. O-O) 4... Nf6 $1 { [%clk 0:05:00] } *"
+      // The illegal 4. Ke3 keeps this game's tree in the preview.
+      "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. O-O (4. c3 Nf6 5. O-O) (4. Ke3) 4... Nf6 $1 { [%clk 0:05:00] } *"
     ];
     const castled = (await service.previewImport({ pgn: fixtures.at(-1)! })).games[0].tree;
     expect(castled.filter((node) => node.san === "O-O").map((node) => node.uci)).toEqual([
@@ -913,7 +915,12 @@ describe("repertoire service: import and export", () => {
         rootFen: game.rootFen,
         headers: game.headers,
         nodeCount: game.nodeCount,
-        tree: game.rejected ? game.tree : validateTree(game.tree, game.rootFen),
+        // Only games with illegal branches carry their tree in the preview.
+        tree: !game.invalidBranches.length
+          ? []
+          : game.rejected
+            ? game.tree
+            : validateTree(game.tree, game.rootFen),
         warnings: game.warnings,
         invalidBranches: game.invalidBranches
       }));
@@ -982,19 +989,23 @@ describe("repertoire service: import and export", () => {
     }
   });
 
-  it("keeps at most three running or pending imports: the oldest running one is cancelled", async () => {
+  it("keeps at most three running or pending imports and never cancels a running one for room", async () => {
     const pgn = generateRepertoirePgn({ games: 900, movesPerGame: 12 });
     const runs = [0, 1, 2, 3].map(() => service.previewImport({ pgn }));
     const outcomes = await Promise.allSettled(runs);
     expect(outcomes.map((outcome) => outcome.status)).toEqual([
-      "rejected",
       "fulfilled",
       "fulfilled",
-      "fulfilled"
+      "fulfilled",
+      "rejected"
     ]);
-    expect((outcomes[0] as PromiseRejectedResult).reason.message).toBe("The import was cancelled.");
-    expect(progressEvents().filter((event) => event.phase === "cancelled")).toHaveLength(1);
+    expect((outcomes[3] as PromiseRejectedResult).reason.message).toBe(
+      "Another import is still parsing; wait or cancel it."
+    );
+    expect(progressEvents().filter((event) => event.phase === "cancelled")).toHaveLength(0);
     expect(progressEvents().filter((event) => event.phase === "ready")).toHaveLength(3);
+    // With the three previewed (none running), a new preview drops the oldest pending one.
+    await expect(service.previewImport({ pgn: TWO_GAMES })).resolves.toBeTruthy();
   });
 
   it("refuses a commit over the move limit before writing anything", async () => {
@@ -1047,7 +1058,7 @@ describe("repertoire service: import and export", () => {
     expect(positionIndexRepository.list(id)).toEqual(stored.rows);
   });
 
-  it("queues a chapter save behind a running import commit, then runs it", async () => {
+  it("queues a chapter save behind a running import commit at the write gate, then runs it", async () => {
     const { id, revision } = create();
     const first = service.getRepertoire(id).chapters[0];
     const chapter = {
@@ -1067,11 +1078,10 @@ describe("repertoire service: import and export", () => {
     expect(() =>
       service.saveChapter({ repertoireId: id, chapter, expectedRevision: revision + 1 })
     ).toThrow(/Invalid expectedRevision/);
-    // ...a queued one waits for the commit, then succeeds.
-    const queued = service.queueRepertoireWrite(id, () =>
+    // ...one through the write gate waits for the commit, then succeeds.
+    const queued = service.withRepertoireWriteGate(() =>
       service.saveChapter({ repertoireId: id, chapter, expectedRevision: revision + 1 })
     );
-    expect(queued).toBeInstanceOf(Promise);
     const [imported, saved] = await Promise.all([commit, queued]);
     expect(imported.repertoire.revision).toBe(revision + 1);
     expect(saved.repertoire.revision).toBe(revision + 2);
@@ -1081,8 +1091,56 @@ describe("repertoire service: import and export", () => {
       revision + 1,
       revision + 2
     ]);
-    // Nothing queued: a write runs at once and returns its value.
-    expect(service.queueRepertoireWrite(id, () => 42)).toBe(42);
+    // Nothing queued: a write runs and settles with its value.
+    await expect(service.withRepertoireWriteGate(() => 42)).resolves.toBe(42);
+  });
+
+  it("runs gated writes one at a time across repertoires; a failure doesn't block the next", async () => {
+    const order: string[] = [];
+    let release!: () => void;
+    const first = service.withRepertoireWriteGate(async () => {
+      order.push("first:start");
+      await new Promise<void>((resolve) => (release = resolve));
+      order.push("first:end");
+    });
+    const failing = service.withRepertoireWriteGate(() => {
+      order.push("failing");
+      throw new Error("nope");
+    });
+    const busy = service.withRepertoireWriteGate(() => {
+      throw Object.assign(new Error("database is locked"), { errcode: 5 });
+    });
+    const last = service.withRepertoireWriteGate(() => order.push("last"));
+    await vi.waitFor(() => expect(order).toEqual(["first:start"]));
+    release();
+    await first;
+    await expect(failing).rejects.toThrow("nope");
+    await expect(busy).rejects.toThrow("The repertoire database is busy; try again.");
+    await last;
+    expect(order).toEqual(["first:start", "first:end", "failing", "last"]);
+  });
+
+  it("reads never take the write lock; a write finding it held fails with the busy error", async () => {
+    const { id } = create();
+    const { transaction } = await import("./repository");
+    const other = new DatabaseSync(databasePath());
+    try {
+      // Another connection (as the import writer) holds the write lock.
+      other.exec("BEGIN IMMEDIATE");
+      const started = performance.now();
+      expect(transaction(() => service.getRepertoire(id).name, "read")).toBe("My white repertoire");
+      expect(performance.now() - started).toBeLessThan(200);
+      expect(() => transaction(() => service.getRepertoire(id), "write")).toThrow(
+        "The repertoire database is busy; try again."
+      );
+      other.exec("ROLLBACK");
+      expect(transaction(() => service.getRepertoire(id).name, "write")).toBe(
+        "My white repertoire"
+      );
+    } finally {
+      if (other.isTransaction) other.exec("ROLLBACK");
+      other.close();
+    }
   });
 
   it("uses the caller's job id, refuses one in use, and cancels it at once", async () => {

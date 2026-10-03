@@ -103,13 +103,31 @@ describe("parseRepertoirePgn", () => {
       /longer than 3 moves \(at 1\. e4 e5 2\. Nf3\)/
     );
     const long = "x".repeat(30);
-    expect(() => parseRepertoirePgn(`1. e4 e5 { ${long} } *`, { maxCommentLength: 20 })).toThrow(
-      "A comment is longer than 20 characters (at 1. e4 e5); shorten it before importing."
-    );
-    expect(() => parseRepertoirePgn(`{ ${long} } 1. e4 *`, { maxCommentLength: 20 })).toThrow(
-      /longer than 20 characters \(at the start\)/
-    );
     expect(parseRepertoirePgn(`1. e4 { ${long} } *`).games[0].tree[1].comment).toBe(long);
+  });
+
+  it("rejects only the game with a comment over the limit, and the rest still imports", () => {
+    const long = "x".repeat(30);
+    const pgn = `1. e4 e5 { ${long} } *\n\n{ ${long} } 1. e4 *\n\n1. d4 d5 *`;
+    const { games } = parseRepertoirePgn(pgn, { maxCommentLength: 20, maxNodes: 3 });
+    expect(games.map((game) => game.rejected)).toEqual([
+      "a comment is longer than 20 characters (at 1. e4 e5)",
+      "a comment is longer than 20 characters (at the start)",
+      null
+    ]);
+    expect(games[0].warnings).toEqual([games[0].rejected]);
+    expect(games[0].nodeCount).toBe(0);
+    // The rejected games' moves don't count toward the move limit (3 here).
+    expect(games[2].nodeCount).toBe(2);
+  });
+
+  it("measures a comment's length after its annotation tags are read out", () => {
+    const arrows = Array.from({ length: 40 }, () => "Ge2e4").join(",");
+    const pgn = `1. e4 { [%cal ${arrows}] [%csl Rd4] [%clk 0:05:00] short note } *`;
+    const [game] = parseRepertoirePgn(pgn, { maxCommentLength: 20 }).games;
+    expect(game.rejected).toBeNull();
+    expect(game.tree[1].comment).toBe("short note");
+    expect(game.tree[1].arrows).toHaveLength(40);
   });
 
   it("reads games one at a time with the same result and limits across games", () => {

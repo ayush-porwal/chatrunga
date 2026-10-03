@@ -1,7 +1,8 @@
 /**
  * Starts an import parse in the bundled worker thread (import-worker.ts) and hands back its result
- * and a cancel function. Without the bundled worker (tests, a missing file) the same parse runs in
- * this thread, yielding to the event loop between pieces of input.
+ * and a cancel function. Without the bundled worker (tests, development) the same parse runs in
+ * this thread, yielding to the event loop between pieces of input; a packaged app requires the
+ * worker instead (see missingWorkerError).
  */
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -33,11 +34,27 @@ export type ImportRun = {
   cancel(): void;
 };
 
-/** Runs `job`, reporting its progress (never after it settled or was cancelled). */
+/**
+ * The error for a bundled worker file that isn't there. A packaged app passes `requireWorker`, so
+ * a broken installation fails loudly instead of parsing or writing on the main thread.
+ */
+export function missingWorkerError(workerPath: string): Error {
+  return new Error(
+    `The PGN import can't run: a file of this installation is missing (${workerPath}). ` +
+      "Reinstall Chaturanga and try again."
+  );
+}
+
+/**
+ * Runs `job`, reporting its progress (never after it settled or was cancelled). With
+ * `requireWorker` (the packaged app), a missing worker file rejects with missingWorkerError
+ * instead of parsing in this thread.
+ */
 export function startImportParse(
   job: ImportWorkerJob,
   onProgress: (progress: ImportProgress) => void,
-  workerPath: string = IMPORT_WORKER
+  workerPath: string = IMPORT_WORKER,
+  requireWorker = false
 ): ImportRun {
   let settled = false;
   let settle!: (outcome: { result: ImportedPgn } | { error: unknown }) => void;
@@ -53,6 +70,10 @@ export function startImportParse(
     if (!settled) onProgress(value);
   };
 
+  if (!existsSync(workerPath) && requireWorker) {
+    settle({ error: missingWorkerError(workerPath) });
+    return { result, cancel: () => undefined };
+  }
   if (!existsSync(workerPath)) {
     let cancelled = false;
     runImport(job.source, job.limits, { onProgress: progress, isCancelled: () => cancelled }).then(

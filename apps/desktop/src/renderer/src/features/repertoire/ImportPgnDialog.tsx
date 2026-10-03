@@ -25,6 +25,7 @@ import {
 } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
 import {
+  adoptCommittedRevision,
   progressCounts,
   progressPercent,
   progressPhaseLabel,
@@ -51,7 +52,8 @@ export function defaultSelections(preview: ImportPreview): ImportSelection[] {
  * Import PGN into a repertoire (design §10): paste or open a file, preview every game (title,
  * kind, moves, warnings and the illegal branches left out), then commit the selected games as
  * chapters in one step. While the PGN is parsed (in a worker) its progress shows with a Cancel
- * button; closing before the commit cancels the pending or running job.
+ * button; closing before the commit cancels the pending or running job. While the commit runs the
+ * dialog can't be closed (it can't be cancelled once the writer has started).
  */
 export function ImportPgnDialog({
   repertoireId,
@@ -205,17 +207,25 @@ export function ImportPgnDialog({
         : detail.data?.revision;
     if (expectedRevision === undefined) return;
     setError(null);
-    commitMutation.mutate(
-      { jobId: preview.jobId, repertoireId, selections, expectedRevision },
-      {
-        onSuccess: (result) => {
-          pendingJob.current = null;
-          if (workspace.repertoireId === repertoireId) {
-            useRepertoireWorkspaceStore.getState().adoptRevision(result.repertoire.revision);
-          }
-          onImported(result);
-        },
-        onError: (cause) => setError(ipcErrorMessage(cause) || "The import couldn't be saved.")
+    // The job belongs to the commit now: unmounting meanwhile must not cancel it. A failed commit
+    // keeps the job, so it is pending again (or cancelled when the dialog is gone).
+    const jobId = preview.jobId;
+    pendingJob.current = null;
+    // The promise (unlike per-call callbacks) settles after the dialog unmounts too, so the open
+    // draft adopts the new revision even when the user navigated away meanwhile.
+    commitMutation.mutateAsync({ jobId, repertoireId, selections, expectedRevision }).then(
+      (result) => {
+        adoptCommittedRevision(
+          useRepertoireWorkspaceStore.getState(),
+          repertoireId,
+          result.repertoire.revision
+        );
+        if (open.current) onImported(result);
+      },
+      (cause) => {
+        if (!open.current) return cancelJob(jobId);
+        pendingJob.current = jobId;
+        setError(ipcErrorMessage(cause) || "The import couldn't be saved.");
       }
     );
   }
@@ -232,11 +242,14 @@ export function ImportPgnDialog({
     <Dialog
       title="Import PGN"
       description={
-        preview
-          ? "Each game becomes a chapter. Choose what to import."
-          : "Paste PGN or open a file; every game in it is read."
+        commitMutation.isPending
+          ? "Importing… please wait."
+          : preview
+            ? "Each game becomes a chapter. Choose what to import."
+            : "Paste PGN or open a file; every game in it is read."
       }
-      onClose={onClose}
+      // No close (×, Escape, backdrop) while the commit runs: it can't be cancelled then.
+      onClose={commitMutation.isPending ? undefined : onClose}
       footer={
         preview ? (
           <>

@@ -164,11 +164,15 @@ function get<T>(sql: string, ...params: SQLInputValue[]): T | null {
   return (getDb().prepare(sql).get(...params) as T | undefined) ?? null;
 }
 
-/** Runs `work` as one transaction: all of its writes land, or none do. */
+/**
+ * Runs `work` as one transaction: all of its writes land, or none do. Every caller writes, so it
+ * takes the write lock up front (IMMEDIATE): a deferred read-then-write transaction would fail
+ * with SQLITE_BUSY at once (no busy wait) if the import writer's connection wrote in between.
+ */
 function transaction<T>(work: () => T): T {
   const db = getDb();
   if (db.isTransaction) return work();
-  db.exec("BEGIN");
+  db.exec("BEGIN IMMEDIATE");
   try {
     const result = work();
     db.exec("COMMIT");
@@ -874,7 +878,7 @@ export const settingsRepository = {
   /** Several settings in one transaction: all of them are stored, or none (a theme and its colors). */
   setMany(patch: Partial<Record<keyof AppSettings, unknown>>): void {
     const db = getDb();
-    db.exec("BEGIN");
+    db.exec("BEGIN IMMEDIATE");
     try {
       for (const [key, value] of Object.entries(patch)) this.set(key as keyof AppSettings, value);
       db.exec("COMMIT");

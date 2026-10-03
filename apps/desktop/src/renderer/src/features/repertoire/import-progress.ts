@@ -67,6 +67,26 @@ export function progressPercent(event: ImportProgressEvent | null): number | nul
   return Math.max(0, Math.min(100, (event.bytesRead / event.totalBytes) * 100));
 }
 
+/** The part of the study workspace store an import commit updates. */
+export type CommittedRevisionTarget = {
+  repertoireId: string | null;
+  adoptRevision: (revision: number) => void;
+};
+
+/**
+ * After an import commit is stored, the open study draft of the same repertoire adopts the new
+ * revision (the import only added chapters, so the draft stays valid); another repertoire's draft,
+ * or none, is left alone. Runs on the commit's result even when the dialog unmounted meanwhile, so
+ * a navigation during the commit can't leave a draft that every later save refuses as stale.
+ */
+export function adoptCommittedRevision(
+  workspace: CommittedRevisionTarget,
+  repertoireId: string,
+  revision: number
+): void {
+  if (workspace.repertoireId === repertoireId) workspace.adoptRevision(revision);
+}
+
 /** Largest PGN one import reads, in UTF-8 bytes (the main process enforces the same limit). */
 export const MAX_IMPORT_PGN_BYTES = 20 * 1024 * 1024;
 

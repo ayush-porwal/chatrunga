@@ -63,7 +63,7 @@ All §11 targets are met.
 
 ## Import through the workers
 
-The preview parse runs in a `worker_threads` parse worker, which also precomputes the position keys. The commit runs in a dedicated writer worker with its own WAL connection, with repertoire writes serialized through the service queue. The main thread only exchanges messages with the workers, so the "no task blocks > 50 ms" target is met.
+The preview parse runs in a `worker_threads` parse worker, which also precomputes the position keys. The commit runs in a dedicated writer worker with its own WAL connection. It holds the service's write gate (`withRepertoireWriteGate`) until the worker replies. The main thread only exchanges messages with the workers, so the "no task blocks > 50 ms" target is met.
 
 | Input                                               | Preview     | Longest main-thread stall | Commit      | Longest main-thread stall |
 | --------------------------------------------------- | ----------- | ------------------------: | ----------- | ------------------------: |
@@ -72,17 +72,25 @@ The preview parse runs in a `worker_threads` parse worker, which also precompute
 
 Before the writer worker, committing 100,000 moves blocked the main thread for 3.7 s.
 
-Caveat: a main-thread SQLite write outside the repertoire queue (for example a game autosave) that lands while the writer worker holds the write lock waits up to about 0.46 s. The 2 s `busy_timeout` bounds that wait. Writes routed through the service queue don't wait this way.
+### Locking while the writer runs
+
+`node:sqlite` waits for a lock with a synchronous sleep (`busy_timeout`), which stalls the whole main process. So the main thread never waits for the writer's lock in SQLite:
+
+- Every repertoire write goes through the service's async write gate: chapter, decision, metadata, archive, remove, create and duplicate; add from game, game links and the workspace; the import commit; backup restore; and every practice write (start, resume, attempts, actions, end). A write that arrives during a commit waits at the gate asynchronously and runs after it. One gate covers all repertoires, so writes run one at a time.
+- Reads never take the write lock. Exports, previews, comparisons and getters use plain deferred transactions or single statements, which in WAL mode read a consistent snapshot while the writer works. Only writes use `BEGIN IMMEDIATE`.
+- `busy_timeout` on the main connection is 250 ms, as a safety net. A repertoire write that still finds the database locked fails with "The repertoire database is busy; try again." Writes outside the repertoire service, such as a game autosave, settings or telemetry, don't pass the gate. If one lands during a commit, it waits at most 250 ms and then fails with SQLite's busy error. The library and settings transactions take the write lock up front too, so they never fail halfway through.
+
+Before the gate, a practice round during the 100,000-move commit stalled the main thread for about 1.05 s, and a game autosave for about 0.46 s.
 
 ### In-thread parse (benchmark proxy)
 
-The benchmark also runs the parse code in its own thread through `importPreviewFromText`. A self-rescheduling `setImmediate` probes the event loop; the longest gap between two probe turns is the longest blocking task. On the main thread this path is never used. Inside the worker, the figure only bounds how quickly the worker answers its own messages, and Cancel terminates the worker immediately either way.
+The benchmark also runs the parse code in its own thread through `importPreviewFromText`. A self-rescheduling `setImmediate` probes the event loop; the longest gap between two probe turns is the longest blocking task. The packaged app never uses this path on the main thread: a missing worker file fails the import with an actionable error. Inside the worker, the figure only bounds how quickly the worker answers its own messages. Cancel rejects the preview at once either way. The worker stops at its next game or input piece, and is terminated if it hasn't stopped within 200 ms.
 
 | Measure (100,000 moves, 0.65 MiB)      | Value                                          |
 | -------------------------------------- | ---------------------------------------------- |
 | Total in-thread parse                  | 2.09 s p50, 2.17 s p95                         |
-| Longest block, 64 KiB pieces (default) | 41.9 ms                                        |
-| Longest block, 32 KiB pieces           | 34.3 ms                                        |
+| Longest block, 64 KiB pieces           | 41.9 ms                                        |
+| Longest block, 32 KiB pieces (default) | 34.3 ms                                        |
 | Longest block, 16 KiB pieces           | 22.1 ms                                        |
 | Longest gap between progress events    | 114 ms (throttled to one per 100 ms per phase) |
 

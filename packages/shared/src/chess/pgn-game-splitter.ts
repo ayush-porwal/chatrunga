@@ -37,15 +37,25 @@ export function createPgnGameSplitter(onGame: (game: Game<PgnNodeData>) => void)
   const check = () => {
     if (failure) throw failure.error;
   };
+  // The parser only drops a line's `\r` when the `\n` arrives in the same piece, so a piece ending
+  // in `\r` keeps it back for the next one (a CRLF split across pieces would leave it in comments).
+  let carry = "";
   return {
     write(chunk) {
       check();
-      parser.parse(chunk, { stream: true });
+      let text = carry + chunk;
+      carry = "";
+      if (text.endsWith("\r")) {
+        carry = "\r";
+        text = text.slice(0, -1);
+      }
+      parser.parse(text, { stream: true });
       check();
     },
     end() {
       check();
-      parser.parse("");
+      parser.parse(carry);
+      carry = "";
       check();
     }
   };

@@ -179,6 +179,7 @@ import {
   progressRepository,
   repertoireRepository,
   sessionRepository,
+  actionableBusyError,
   transaction,
   workspaceRepository,
   type AttemptKind,
@@ -809,18 +810,16 @@ function pruneImportJobs(now: number): void {
 
 /**
  * Keeps room for one more job: running and previewed jobs together stay under MAX_IMPORT_JOBS.
- * The oldest previewed job goes first; with none left, the oldest running parse is cancelled.
+ * The oldest previewed jobs are dropped first; a running parse is never cancelled for room, so
+ * with only running parses left the new preview is refused.
  */
 function makeRoomForImport(): void {
   while (importJobs.size + runningImports.size >= MAX_IMPORT_JOBS) {
     const [pending] = importJobs.keys();
-    if (pending !== undefined) {
-      importJobs.delete(pending);
-      continue;
+    if (pending === undefined) {
+      throw new Error("Another import is still parsing; wait or cancel it.");
     }
-    const [running] = runningImports.keys();
-    if (running === undefined) return;
-    cancelImport(running);
+    importJobs.delete(pending);
   }
 }
 
@@ -848,9 +847,9 @@ function importProgress(
  * (generated when omitted); it is registered before this returns its promise, so `cancelImport`
  * works at once, even before the first progress event. Progress goes out as
  * `repertoires:importProgress` events ending with `ready`, `failed` or `cancelled`. Bounded by
- * the import limits (20 MiB, games, moves, depth, comment size); the first limit crossed rejects
- * with its actionable message. Running and pending jobs together stay under MAX_IMPORT_JOBS: a
- * new preview drops the oldest.
+ * the import limits (20 MiB, games, moves, depth); the first limit crossed rejects with its
+ * actionable message, while a comment over its limit only rejects its game. Running and pending jobs together stay under MAX_IMPORT_JOBS: a
+ * new preview drops the oldest pending job, and is refused while only running parses fill them.
  */
 export async function previewImport(input: PreviewImportInput): Promise<ImportPreview> {
   const text = input.pgn;
@@ -875,7 +874,8 @@ export async function previewImport(input: PreviewImportInput): Promise<ImportPr
       last = progress;
       importProgress(jobId, progress.phase, progress);
     },
-    importWorkers.parse
+    importWorkers.parse,
+    app.isPackaged === true
   );
   runningImports.set(jobId, run);
   let games: ImportedGame[];
@@ -908,49 +908,50 @@ export async function previewImport(input: PreviewImportInput): Promise<ImportPr
       rootFen: game.rootFen,
       headers: game.headers,
       nodeCount: game.nodeCount,
-      tree: game.tree,
+      // Only a game with illegal branches offers lines to exclude; the others send no tree.
+      tree: game.invalidBranches.length ? game.tree : [],
       warnings: game.warnings,
       invalidBranches: game.invalidBranches
     }))
   };
 }
 
-/* Repertoire write queue (design §11): one write at a time per repertoire. */
-const writeQueues = new Map<string, Promise<unknown>>();
+/* Repertoire write gate (design §11): one repertoire write at a time, across every repertoire. */
+let writeGate: Promise<unknown> = Promise.resolve();
 
 /**
- * Runs a repertoire write after the writes already queued for that repertoire (an import commit
- * running in the writer worker). With none queued it runs at once, synchronously, and returns its
- * value; otherwise the returned promise settles when it has run. A failed write doesn't block the
- * ones after it.
+ * Runs a repertoire write once every write already admitted has finished, and settles with its
+ * value. Every repertoire write goes through here (the IPC handlers wrap each one; an import
+ * commit holds the gate while the writer worker runs its whole transaction), so a main-thread
+ * write waits for the writer asynchronously instead of sleeping in SQLite's busy handler with the
+ * main process blocked. Reads never pass the gate. A failed write doesn't block the ones after
+ * it; a write that still finds the database locked rejects with the actionable busy error.
  */
-export function queueRepertoireWrite<T>(
-  repertoireId: string,
-  work: () => T | Promise<T>
-): T | Promise<T> {
-  const pending = writeQueues.get(repertoireId);
-  const result = pending ? pending.then(work, work) : work();
-  if (result instanceof Promise) {
-    const tail = result.then(
-      () => undefined,
-      () => undefined
-    );
-    writeQueues.set(repertoireId, tail);
-    void tail.then(() => {
-      if (writeQueues.get(repertoireId) === tail) writeQueues.delete(repertoireId);
-    });
-  }
+export function withRepertoireWriteGate<T>(work: () => T | Promise<T>): Promise<T> {
+  const run = async () => {
+    try {
+      return await work();
+    } catch (error) {
+      throw actionableBusyError(error);
+    }
+  };
+  const result = writeGate.then(run, run);
+  writeGate = result.then(
+    () => undefined,
+    () => undefined
+  );
   return result;
 }
 
 /**
  * Commits the selected games of a previewed job as new chapters, atomically, in the import writer
- * worker on its own connection (core.ts `commitImportJob`). Queued behind (and ahead of) other
- * writes to the same repertoire; `repertoires:changed` goes out only after the commit is stored.
- * The selections are checked here first; a failed commit writes nothing and keeps the job.
+ * worker on its own connection (core.ts `commitImportJob`). It holds the write gate until the
+ * worker replies, so other repertoire writes wait behind it; `repertoires:changed` goes out only
+ * after the commit is stored. The selections are checked here first; a failed commit writes
+ * nothing and keeps the job.
  */
 export function commitImport(input: ImportCommitInput): Promise<ImportResult> {
-  return Promise.resolve(queueRepertoireWrite(input.repertoireId, () => storeImport(input)));
+  return withRepertoireWriteGate(() => storeImport(input));
 }
 
 async function storeImport(input: ImportCommitInput): Promise<ImportResult> {
@@ -999,7 +1000,8 @@ async function storeImport(input: ImportCommitInput): Promise<ImportResult> {
       chapters
     },
     databasePath,
-    importWorkers.writer
+    importWorkers.writer,
+    app.isPackaged === true
   );
   importJobs.delete(input.jobId);
   changed({
@@ -1049,7 +1051,7 @@ export async function exportRepertoire(
       chapters = chapters.filter((chapter) => wanted.has(chapter.id));
     }
     return { record, chapters };
-  });
+  }, "read");
   if (!chapters.length) throw new Error("Invalid export: there are no chapters to export");
   const pgn = exportRepertoirePgn(
     chapters.map((chapter) => ({
@@ -1390,8 +1392,10 @@ function planAddFromGame(
  */
 export function previewAddFromGame(input: AddFromGameInput): AddFromGamePreview {
   const now = clock();
-  return transaction(() => planAddFromGame(requireRepertoire(input.repertoireId), input, now))
-    .preview;
+  return transaction(
+    () => planAddFromGame(requireRepertoire(input.repertoireId), input, now),
+    "read"
+  ).preview;
 }
 
 /**
@@ -2903,7 +2907,7 @@ export async function exportBackup(
       if (!record) throw new Error(`Invalid repertoireIds: "${id}" is not in this library`);
       return stripForExport(backupEntryOf(record), input.includeProgress);
     });
-  });
+  }, "read");
   if (!entries.length) throw new Error("Invalid export: there are no repertoires to back up");
   const warnings = entries.flatMap(damagedChapterWarnings);
   const json = JSON.stringify(backupDocument(entries, now));
@@ -2988,28 +2992,32 @@ async function pickBackupFile(owner: BrowserWindow | null): Promise<string | nul
  * chapter has no diff and is flagged `damaged` (it can still be replaced or restored as a copy).
  */
 function previewOf(jobId: string, job: BackupJob): BackupImportPreview {
-  const repertoires = transaction(() =>
-    job.document.repertoires.map((entry) => {
-      const record = repertoireRepository.get(entry.repertoire.id);
-      const current = record ? backupEntryOf(record) : null;
-      const damaged = Boolean(current?.chapters.some((chapter) => chapter.damaged));
-      return {
-        sourceId: entry.repertoire.id,
-        name: entry.repertoire.name,
-        color: entry.repertoire.color,
-        chapterCount: entry.chapters.length,
-        decisionCount: entry.decisions.length,
-        hasProgress: (entry.progress?.length ?? 0) > 0,
-        existing: record
-          ? { id: record.id, name: record.name, revision: record.revision, color: record.color }
-          : null,
-        diff:
-          record && current && !damaged
-            ? diffBackupEntry(current, entry, { sessionCount: sessionRepository.count(record.id) })
+  const repertoires = transaction(
+    () =>
+      job.document.repertoires.map((entry) => {
+        const record = repertoireRepository.get(entry.repertoire.id);
+        const current = record ? backupEntryOf(record) : null;
+        const damaged = Boolean(current?.chapters.some((chapter) => chapter.damaged));
+        return {
+          sourceId: entry.repertoire.id,
+          name: entry.repertoire.name,
+          color: entry.repertoire.color,
+          chapterCount: entry.chapters.length,
+          decisionCount: entry.decisions.length,
+          hasProgress: (entry.progress?.length ?? 0) > 0,
+          existing: record
+            ? { id: record.id, name: record.name, revision: record.revision, color: record.color }
             : null,
-        ...(damaged ? { damaged: true } : {})
-      };
-    })
+          diff:
+            record && current && !damaged
+              ? diffBackupEntry(current, entry, {
+                  sessionCount: sessionRepository.count(record.id)
+                })
+              : null,
+          ...(damaged ? { damaged: true } : {})
+        };
+      }),
+    "read"
   );
   return {
     jobId,
@@ -3188,16 +3196,19 @@ type RetainedCopy = { record: RepertoireRecord; text: string; history: string };
  * backup itself would fail the restore's checks: a replace must leave a copy that can be restored.
  */
 function prepareRetainedCopy(record: RepertoireRecord, now: number): RetainedCopy {
-  const { entry, history } = transaction(() => ({
-    entry: stripForExport(backupEntryOf(record), true),
-    history: {
-      format: RETAINED_HISTORY_FORMAT,
-      repertoireId: record.id,
-      exportedAt: now,
-      sessions: sessionRepository.rawRows(record.id),
-      attempts: attemptRepository.rawRowsForRepertoire(record.id)
-    }
-  }));
+  const { entry, history } = transaction(
+    () => ({
+      entry: stripForExport(backupEntryOf(record), true),
+      history: {
+        format: RETAINED_HISTORY_FORMAT,
+        repertoireId: record.id,
+        exportedAt: now,
+        sessions: sessionRepository.rawRows(record.id),
+        attempts: attemptRepository.rawRowsForRepertoire(record.id)
+      }
+    }),
+    "read"
+  );
   const text = JSON.stringify(backupDocument([entry], now));
   const refusal = restoreRefusal(text);
   if (refusal) {
