@@ -2470,7 +2470,9 @@ function rehearsalAttempt(
     }
   }
 
-  const revealed = card.state === "answered-wrong" ? correct : gradeIsFinal(card);
+  // A stale answer reveals nothing: the line it was checked against is no longer the chapter's.
+  const revealed =
+    outcome !== "stale" && (card.state === "answered-wrong" ? correct : gradeIsFinal(card));
   const result: AttemptResult = {
     outcome,
     ...(otherLine ? { otherLine } : {}),
@@ -2479,7 +2481,9 @@ function rehearsalAttempt(
     preferredUci: revealed ? policy.preferredUci : null,
     feedback: outcome === "outside-repertoire" ? (policy.wrongMoveFeedback[uci] ?? null) : null,
     card,
-    finalGrade
+    finalGrade,
+    // Also on a card being retried (still answered-wrong): the session is over either way.
+    ...(outcome === "stale" ? { sessionEnded: true as const } : {})
   };
   attemptRepository.insert({
     attemptId: input.attemptId,

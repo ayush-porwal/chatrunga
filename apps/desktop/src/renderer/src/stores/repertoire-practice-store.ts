@@ -67,6 +67,8 @@ export type RepertoirePracticeState = {
   otherLine: PracticeOtherLine | null;
   /** Rehearsal: the current line ended, and why. */
   lineEnded: RehearsalEndReason | null;
+  /** Why the session ended early (its chapter changed), for the summary; null otherwise. */
+  endNote: string | null;
 };
 
 type Actions = {
@@ -107,7 +109,8 @@ const initialState: RepertoirePracticeState = {
   orientation: "white",
   rehearsal: null,
   otherLine: null,
-  lineEnded: null
+  lineEnded: null,
+  endNote: null
 };
 
 /** Per-card UI state that resets when the card changes. */
@@ -219,6 +222,9 @@ export function lineCompleteText(reason: RehearsalEndReason | null): string {
 
 export const OTHER_LINE_TEXT = "That is a repertoire choice in another line.";
 
+export const SESSION_ENDED_TEXT =
+  "This chapter changed since the session started, so the session ended.";
+
 export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actions>((set, get) => ({
   ...initialState,
 
@@ -234,6 +240,7 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
       message: card ? openingReplyMessage(session, card) : null,
       session: { ...session, totals: totalsOf(session.cards) },
       summary: null,
+      endNote: null,
       orientation: card?.orientation ?? get().orientation
     });
   },
@@ -242,6 +249,17 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
     const { session } = get();
     if (!session) return;
     const next = withStep(withCard(session, result.card), result.rehearsal);
+    if (result.sessionEnded) {
+      // The chapter changed: the session is over (the page moves on to its summary), also when
+      // the card was being retried and so stays answered-wrong.
+      set({
+        session: { ...next, status: "finished" },
+        message: { tone: "info", text: SESSION_ENDED_TEXT },
+        endNote: SESSION_ENDED_TEXT,
+        otherLine: null
+      });
+      return;
+    }
     let message: PracticeOutcomeMessage | null;
     switch (result.outcome) {
       case "correct":
@@ -312,10 +330,8 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
       // No hint was given: the session is over (the page moves on to its summary).
       set({
         session: { ...next, status: "finished" },
-        message: {
-          tone: "info",
-          text: "This chapter changed since the session started, so the session ended."
-        }
+        message: { tone: "info", text: SESSION_ENDED_TEXT },
+        endNote: SESSION_ENDED_TEXT
       });
     } else if (kind === "hint") {
       set({

@@ -106,8 +106,12 @@ export function RepertoirePracticePage({
 }) {
   const desktop = Boolean(window.chaturanga?.repertoires);
   const detail = useRepertoireQuery(repertoireId);
-  const { session, summary } = useRepertoirePracticeStore(
-    useShallow((state) => ({ session: state.session, summary: state.summary }))
+  const { session, summary, endNote } = useRepertoirePracticeStore(
+    useShallow((state) => ({
+      session: state.session,
+      summary: state.summary,
+      endNote: state.endNote
+    }))
   );
   const start = useStartPracticeMutation();
   const resume = useResumePracticeMutation();
@@ -233,6 +237,7 @@ export function RepertoirePracticePage({
         detail={detail.data}
         summary={summary}
         cards={shownSession?.cards ?? []}
+        note={endNote}
         onStudy={onStudy}
         onAgain={onSetup}
         onRehearseAgain={

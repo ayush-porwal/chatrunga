@@ -139,6 +139,41 @@ describe("repertoire practice store", () => {
     );
   });
 
+  it("an attempt that found the chapter changed ends the session, also on a retried card", () => {
+    store().setSession(session());
+    store().applyAttempt({
+      outcome: "stale",
+      acceptedUcis: [],
+      preferredUci: null,
+      feedback: null,
+      card: cardOf("a", { state: "answered-wrong" }),
+      finalGrade: false,
+      sessionEnded: true
+    });
+    expect(store().session!.status).toBe("finished");
+    expect(store().session!.cards[0].state).toBe("answered-wrong");
+    expect(store().message?.text).toBe(
+      "This chapter changed since the session started, so the session ended."
+    );
+    expect(store().endNote).toBe(
+      "This chapter changed since the session started, so the session ended."
+    );
+    // The note survives the summary arriving; a new session clears it.
+    store().setSummary({
+      sessionId: "s1",
+      repertoireId: "r1",
+      unaided: 0,
+      assisted: 0,
+      missed: 1,
+      skipped: 0,
+      chapters: [],
+      missedPositionKeys: []
+    });
+    expect(store().endNote).not.toBeNull();
+    store().setSession(session());
+    expect(store().endNote).toBeNull();
+  });
+
   it("shows hint stages, reveals and skips from the main process's results", () => {
     store().setSession(session());
     store().applyAction("hint", {

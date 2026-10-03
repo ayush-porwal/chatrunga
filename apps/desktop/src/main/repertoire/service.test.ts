@@ -2499,4 +2499,35 @@ describe("repertoire service: rehearse lines", () => {
     });
     expect(service.resumePractice(session.sessionId).status).toBe("finished");
   });
+
+  it("an attempt after the chapter changed ends the session", () => {
+    const { id, chapter } = setup();
+    const session = rehearse(id, chapter.id);
+    attempt(session.sessionId, "q1", "e2e4");
+    save(id, [...LINES, ["c2c4"]]);
+    expect(attempt(session.sessionId, "q2", "g1f3")).toMatchObject({
+      outcome: "stale",
+      card: { state: "skipped" },
+      sessionEnded: true
+    });
+    expect(service.resumePractice(session.sessionId).status).toBe("finished");
+  });
+
+  it("an attempt on a card being retried after the chapter changed also ends the session", () => {
+    const { id, chapter } = setup();
+    const session = rehearse(id, chapter.id);
+    attempt(session.sessionId, "q1", "e2e4");
+    attempt(session.sessionId, "q2", "h2h3");
+    save(id, [...LINES, ["c2c4"]]);
+    const result = attempt(session.sessionId, "q2", "g1f3", "retry-id");
+    expect(result).toMatchObject({
+      outcome: "stale",
+      card: { state: "answered-wrong" },
+      acceptedUcis: [],
+      sessionEnded: true
+    });
+    // A replay of the same attempt id returns the same ended result.
+    expect(attempt(session.sessionId, "q2", "g1f3", "retry-id")).toEqual(result);
+    expect(service.resumePractice(session.sessionId).status).toBe("finished");
+  });
 });

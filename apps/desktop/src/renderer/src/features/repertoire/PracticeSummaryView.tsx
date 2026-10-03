@@ -22,7 +22,8 @@ export function PracticeSummaryView({
   cards,
   onStudy,
   onAgain,
-  onRehearseAgain
+  onRehearseAgain,
+  note
 }: {
   detail: RepertoireDetail;
   summary: PracticeSummary;
@@ -31,6 +32,8 @@ export function PracticeSummaryView({
   onAgain: () => void;
   /** A rehearsal's summary: the same rehearsal again. */
   onRehearseAgain?: () => void;
+  /** Why the session ended early (its chapter changed). */
+  note?: string | null;
 }) {
   const titles = new Map(detail.chapters.map((chapter) => [chapter.id, chapter.title]));
   const missed = firstMissedTarget(summary, cards);
@@ -52,6 +55,11 @@ export function PracticeSummaryView({
                 : "Recall counts each decision once: any accepted move is a correct answer."
             }
           />
+          {note ? (
+            <p role="status" className="text-sm text-fg-muted">
+              {note}
+            </p>
+          ) : null}
           {rehearsal ? (
             <StatGroup>
               <Stat label="Lines started" value={String(rehearsal.linesStarted)} />

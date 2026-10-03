@@ -267,6 +267,8 @@ export type AttemptResult = {
   card: PracticeCard;
   /** This attempt fixed the card's scheduled grade. */
   finalGrade: boolean;
+  /** Rehearse-lines: the attempt found the session's chapter changed and ended the session. */
+  sessionEnded?: true;
 };
 
 export type PracticeActionResult = {
