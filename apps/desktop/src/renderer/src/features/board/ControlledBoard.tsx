@@ -77,7 +77,7 @@ export type TypedMoveControl = {
   /** The side to move may move and no promotion is being chosen. */
   available: boolean;
   open: boolean;
-  /** Opens the entry, empty. */
+  /** Opens the entry, empty; an entry already open keeps its text. */
   openEntry: () => void;
 };
 
@@ -247,8 +247,11 @@ export function ControlledBoard({
     setTypedEntry({ seed, key: performance.now() });
   }, []);
 
-  // Tells the page about the entry, for its typed-move button.
-  const openEmptyEntry = useCallback(() => openEntry(""), [openEntry]);
+  // Tells the page about the entry, for its typed-move button. A repeat click must not remount an
+  // open entry: that would discard a half-typed move.
+  const openEmptyEntry = useCallback(() => {
+    setTypedEntry((current) => current ?? { seed: "", key: performance.now() });
+  }, []);
   const reportTypedMove = useEventCallback((typedMove: TypedMoveControl | null) =>
     onTypedMoveChange?.(typedMove)
   );
@@ -418,7 +421,7 @@ export function TypedMoveButton({
       size="icon-sm"
       tooltipSide={tooltipSide}
       aria-expanded={typedMove.open}
-      disabled={!typedMove.available}
+      disabled={!typedMove.available || typedMove.open}
       onClick={typedMove.openEntry}
       className={cn("text-fg-subtle", className)}
     />
