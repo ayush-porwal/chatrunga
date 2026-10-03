@@ -107,7 +107,9 @@ export const GameWorkspace = memo(function GameWorkspace({
       footer={gameFooter}
     >
       {shownTab === "notation" ? (
-        <div className="flex h-full min-h-0 flex-col gap-3">
+        // A puzzle card taller than the panel (a short window, an explanation) scrolls with the
+        // moves rather than running under the footer.
+        <div className="scroll-area -mr-3 flex h-full min-h-0 flex-col gap-3 overflow-y-auto pr-3">
           {puzzlePanel}
           <section className="flex min-h-40 flex-1 flex-col" aria-label="Moves">
             <MoveList />

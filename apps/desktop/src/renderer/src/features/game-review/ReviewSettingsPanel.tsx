@@ -54,10 +54,13 @@ function useMaiaNeedsLc0(): boolean {
 
 export function ReviewSettingsPanel({
   settings,
-  onClose
+  onClose,
+  embedded = false
 }: {
   settings: AppSettings;
   onClose: () => void;
+  /** Inside a Dialog (the puzzle explanation's settings): the dialog has the title, Done and scrolling. */
+  embedded?: boolean;
 }) {
   const engines = useEnginesQuery();
   const openRouter = useOpenRouterConfigQuery();
@@ -82,11 +85,13 @@ export function ReviewSettingsPanel({
   };
 
   return (
-    <div className="scroll-area -mr-3 grid h-full min-h-0 content-start gap-4 overflow-y-auto pr-3">
-      <SectionHeader
-        title="Review settings"
-        actions={<Button variant="link" size="sm" onClick={onClose}>Done</Button>}
-      />
+    <div className={embedded ? "grid content-start gap-4" : "scroll-area -mr-3 grid h-full min-h-0 content-start gap-4 overflow-y-auto pr-3"}>
+      {embedded ? null : (
+        <SectionHeader
+          title="Review settings"
+          actions={<Button variant="link" size="sm" onClick={onClose}>Done</Button>}
+        />
+      )}
 
       <section className="grid gap-3">
         <SectionHeader as="h3" title="Engine" />

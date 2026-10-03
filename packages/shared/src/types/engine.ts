@@ -271,6 +271,30 @@ export type ReviewCommentary = {
   settingsKey?: string;
 };
 
+/** The AI coach's explanation of a finished puzzle (kept for the session only, never saved). */
+export type PuzzleExplanation = Pick<ReviewCommentary, "prose" | "headline" | "generatedAt" | "providerModel">;
+
+/** One position for {@link AnalysePositionsInput}: searched with `multipv` lines (1–5). */
+export type AnalysePositionInput = { fen: string; multipv: number };
+
+/**
+ * Engine lines for a few single positions (the puzzle explanation), searched with the Game review
+ * engine settings: `moveTimeMs` per position, Threads / Hash from settings. `requestId` cancels it
+ * through `engines.cancelReview`.
+ */
+export type AnalysePositionsInput = {
+  requestId: string;
+  engineId: string;
+  moveTimeMs: number;
+  positions: AnalysePositionInput[];
+};
+
+export type AnalysePositionsResult = {
+  engineName: string;
+  /** Per position, in order: its lines (empty for a finished position). */
+  lines: AnalysisLine[][];
+};
+
 /**
  * Fields older builds wrote into saved reviews: a "Next time" `takeaway`, and `fallback` /
  * `source` marking explanations from the retired offline template ("local-fallback") or hosted

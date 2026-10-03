@@ -324,6 +324,38 @@ export async function reviewGameWithEngine(
   }
 }
 
+/**
+ * MultiPV searches of a few single positions in one engine process, in turn, with the review's
+ * search bound (`moveTimeMs`) and Threads / Hash. A finished position (mate, stalemate) gets no
+ * lines. Not cached: the puzzle explanation asks once per puzzle.
+ */
+export async function analysePositionsWithEngine(
+  config: EngineConfig,
+  input: { positions: readonly { fen: string; multipv: number }[]; moveTimeMs: number },
+  options: Pick<ReviewEngineOptions, "threads" | "hashMb"> & { shouldCancel?: () => boolean } = {}
+): Promise<{ engineName: string; lines: AnalysisLine[][] }> {
+  const search = resolveReviewSearchParams({ moveTimeMs: input.moveTimeMs });
+  const clamp = (multipv: number) => Math.max(1, Math.min(Math.round(multipv), 5));
+  const session = new UciReviewSession(config, options.shouldCancel);
+  try {
+    await session.start({ multipv: clamp(input.positions[0]?.multipv ?? 1), threads: options.threads, hashMb: options.hashMb });
+    const lines: AnalysisLine[][] = [];
+    for (const position of input.positions) {
+      if (options.shouldCancel?.()) throw new Error("Review cancelled");
+      lines.push(
+        terminalStateForFen(position.fen)
+          ? []
+          : await session.analyze({ fen: position.fen, multipv: clamp(position.multipv), search, shouldCancel: options.shouldCancel })
+      );
+    }
+    // A search stopped by the cancel ends with bestmove too: its partial lines are not an answer.
+    if (options.shouldCancel?.()) throw new Error("Review cancelled");
+    return { engineName: session.engineName ?? config.name, lines };
+  } finally {
+    session.stop();
+  }
+}
+
 function buildMoveReview(input: {
   move: ReviewMoveInputItem;
   playedUci: string;

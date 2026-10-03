@@ -49,6 +49,7 @@ import { COMPARE_GAME_MAX_PLIES } from "@chaturanga/shared/types/repertoire";
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
 import type { RecordPuzzleAttemptInput } from "@chaturanga/shared/types/puzzle-rating";
 import type {
+  AnalysePositionsInput,
   CreateEngineInput,
   EngineGoClock,
   MaiaRating,
@@ -360,6 +361,29 @@ export function parseReviewGameInput(value: unknown): ReviewGameInput {
     moveTimeMs: asOptionalPositive(input.moveTimeMs, "moveTimeMs"),
     depth: asOptionalPositive(input.depth, "depth", SEARCH_LIMITS.depth, true),
     multipv: asOptionalPositive(input.multipv, "multipv", SEARCH_LIMITS.multipv, true)
+  };
+}
+
+/** A few positions at most: the puzzle explanation searches the start, and the wrong move's before and after. */
+const MAX_ANALYSE_POSITIONS = 4;
+
+export function parseAnalysePositionsInput(value: unknown): AnalysePositionsInput {
+  const input = asObject(value, "position analysis");
+  if (!Array.isArray(input.positions) || !input.positions.length) fail("position analysis", "positions must be a non-empty array");
+  if (input.positions.length > MAX_ANALYSE_POSITIONS) fail("position analysis", "too many positions");
+  // Clamped rather than refused, like a probe: one explanation never needs a minute per position.
+  const moveTimeMs = Math.min(asOptionalPositive(input.moveTimeMs, "moveTimeMs") || 1000, 60_000);
+  return {
+    requestId: asId(input.requestId, "request id"),
+    engineId: asId(input.engineId, "engine id"),
+    moveTimeMs,
+    positions: input.positions.map((raw: unknown, index: number) => {
+      const position = asObject(raw, `position ${index}`);
+      return {
+        fen: asFen(position.fen, `position ${index} FEN`),
+        multipv: asOptionalPositive(position.multipv, `position ${index} multipv`, SEARCH_LIMITS.multipv, true) || 1
+      };
+    })
   };
 }
 

@@ -37,14 +37,16 @@ import { detectLc0 } from "../engine/lc0-detect";
 import { getOpenRouterConfigStore } from "../commentary/openrouter-config";
 import {
   UNREADABLE_API_KEY_ERROR,
+  explainPuzzleWithOpenRouter,
   generateOpenRouterCommentary,
   parseCommentaryPayloads,
+  parsePuzzleExplanationPayload,
   reportUnsent
 } from "../commentary/openrouter-commentary";
 import { getLichessService } from "../lichess";
 import { errorMessage, logger } from "../logger";
 import { updateService } from "../updater";
-import { runGameReview } from "./review-handler";
+import { runGameReview, runPositionAnalysis } from "./review-handler";
 import { missedBetween, readClocks, type ClockReading } from "../time-asleep";
 import { parseCommentaryRequestContext } from "@chaturanga/shared/schemas/telemetry";
 import { getTelemetry } from "../telemetry";
@@ -59,6 +61,7 @@ import {
   asLichessUci,
   asObject,
   asString,
+  parseAnalysePositionsInput,
   parseDefaultFileName,
   parseDialogFilters,
   parseEngineInput,
@@ -204,6 +207,9 @@ function registerEngineIpc(engineManager: EngineManager): void {
   );
   ipcMain.handle("engines:cancelReview", (_event, reviewId: unknown) =>
     engineManager.cancelReview(asId(reviewId, "review id"))
+  );
+  ipcMain.handle("engines:analysePositions", (_event, input: unknown) =>
+    runPositionAnalysis(engineManager, parseAnalysePositionsInput(input))
   );
   ipcMain.handle("engines:stop", () => engineManager.stop());
 }
@@ -449,6 +455,27 @@ function registerCommentaryIpc(): void {
       return { commentary: [], error: UNREADABLE_API_KEY_ERROR };
     }
     return generateOpenRouterCommentary(payloads, { apiKey, model: config.model, report });
+  });
+  // A finished puzzle's explanation; the renderer cancels it when the user moves to another puzzle.
+  const puzzleRequests = new Map<string, AbortController>();
+  ipcMain.handle("commentary:explainPuzzle", async (_event, input: unknown) => {
+    const fields = asObject(input, "puzzle explanation");
+    const requestId = asId(fields.requestId, "request id");
+    const payload = parsePuzzleExplanationPayload(fields.payload);
+    const controller = new AbortController();
+    puzzleRequests.get(requestId)?.abort();
+    puzzleRequests.set(requestId, controller);
+    try {
+      const store = getOpenRouterConfigStore();
+      const [config, apiKey] = await Promise.all([store.get(), store.getApiKey()]);
+      if (config.hasApiKey && !apiKey) return { explanation: null, error: UNREADABLE_API_KEY_ERROR };
+      return await explainPuzzleWithOpenRouter(payload, { apiKey, model: config.model, signal: controller.signal });
+    } finally {
+      if (puzzleRequests.get(requestId) === controller) puzzleRequests.delete(requestId);
+    }
+  });
+  ipcMain.handle("commentary:cancelPuzzleExplanation", (_event, requestId: unknown) => {
+    puzzleRequests.get(asId(requestId, "request id"))?.abort();
   });
 }
 

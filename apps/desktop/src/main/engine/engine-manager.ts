@@ -124,6 +124,9 @@ export function continuesGame(previous: GamePosition | null, next: GamePosition)
   return previous.moves.every((move, index) => next.moves[index] === move);
 }
 
+/** Cancels kept for review jobs that aren't running (see `cancelReview`). */
+const MAX_EARLY_REVIEW_CANCELS = 16;
+
 /**
  * Owns the single interactive engine (engine games and live analysis) and relays its output as
  * typed events tagged with the search they belong to. The process stays warm between searches
@@ -141,7 +144,14 @@ export class EngineManager extends EventEmitter<EngineEvents> {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingInfos = new Map<number, EngineInfo>();
   private infoTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Cancels of running review jobs (cleared when each finishes). */
   private cancelledReviewIds = new Set<string>();
+  /**
+   * Cancels of jobs that aren't running: kept for one about to start (its cancel can reach main
+   * before its request), but a cancel sent after its job finished is never cleared — so only the
+   * latest few are kept, the oldest dropped first.
+   */
+  private earlyCancelledReviewIds = new Set<string>();
   private activeReviewIds = new Set<string>();
   /** Waits of the running search that a newer request (or a stop) interrupts. */
   private supersedeListeners = new Set<() => void>();
@@ -149,15 +159,25 @@ export class EngineManager extends EventEmitter<EngineEvents> {
   private lastExit: Promise<void> = Promise.resolve();
 
   cancelReview(reviewId: string): void {
-    this.cancelledReviewIds.add(reviewId);
+    if (this.activeReviewIds.has(reviewId)) {
+      this.cancelledReviewIds.add(reviewId);
+      return;
+    }
+    this.earlyCancelledReviewIds.delete(reviewId);
+    this.earlyCancelledReviewIds.add(reviewId);
+    for (const stale of this.earlyCancelledReviewIds) {
+      if (this.earlyCancelledReviewIds.size <= MAX_EARLY_REVIEW_CANCELS) break;
+      this.earlyCancelledReviewIds.delete(stale);
+    }
   }
 
   isReviewCancelled(reviewId: string): boolean {
-    return this.cancelledReviewIds.has(reviewId);
+    return this.cancelledReviewIds.has(reviewId) || this.earlyCancelledReviewIds.has(reviewId);
   }
 
   clearReviewCancellation(reviewId: string): void {
     this.cancelledReviewIds.delete(reviewId);
+    this.earlyCancelledReviewIds.delete(reviewId);
   }
 
   /** A review job started / finished (so closing the window can cancel what's running). */

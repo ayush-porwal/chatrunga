@@ -63,6 +63,7 @@ const api: ChaturangaApi = {
     probeEval: (input) => ipcRenderer.invoke("engines:probeEval", input),
     reviewGame: (input) => ipcRenderer.invoke("engines:reviewGame", input),
     cancelReview: (reviewId) => ipcRenderer.invoke("engines:cancelReview", reviewId),
+    analysePositions: (input) => ipcRenderer.invoke("engines:analysePositions", input),
     stop: () => ipcRenderer.invoke("engines:stop")
   },
   games: {
@@ -109,7 +110,9 @@ const api: ChaturangaApi = {
   commentary: {
     getOpenRouterConfig: () => ipcRenderer.invoke("commentary:getOpenRouterConfig"),
     setOpenRouterConfig: (input) => ipcRenderer.invoke("commentary:setOpenRouterConfig", input),
-    generate: (input) => ipcRenderer.invoke("commentary:generate", input)
+    generate: (input) => ipcRenderer.invoke("commentary:generate", input),
+    explainPuzzle: (input) => ipcRenderer.invoke("commentary:explainPuzzle", input),
+    cancelPuzzleExplanation: (requestId) => ipcRenderer.invoke("commentary:cancelPuzzleExplanation", requestId)
   },
   telemetry: {
     status: () => ipcRenderer.invoke("telemetry:status"),

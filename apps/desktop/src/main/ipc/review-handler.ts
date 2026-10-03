@@ -1,10 +1,16 @@
-import type { EngineConfig, GameReview, ReviewGameInput } from "@chaturanga/shared/types/engine";
+import type {
+  AnalysePositionsInput,
+  AnalysePositionsResult,
+  EngineConfig,
+  GameReview,
+  ReviewGameInput
+} from "@chaturanga/shared/types/engine";
 import { existsSync } from "node:fs";
 import { settingsRepository } from "../db/repositories";
 import { errorMessage } from "../logger";
 import { engineConfigForId, engineResourceOptions, listAllEngines } from "../engine/engine-config";
 import type { EngineManager } from "../engine/engine-manager";
-import { reviewGameWithEngine } from "../engine/review";
+import { analysePositionsWithEngine, reviewGameWithEngine } from "../engine/review";
 import { selectMaiaEnginesForReview } from "../engine/review-analysis";
 import { getTelemetry } from "../telemetry";
 import { engineFamily, plyBucket, reviewFailureCode } from "../telemetry/properties";
@@ -109,5 +115,32 @@ export async function runGameReview(engineManager: EngineManager, input: ReviewG
   } finally {
     engineManager.trackReview(reviewId, false);
     engineManager.clearReviewCancellation(reviewId);
+  }
+}
+
+/**
+ * Engine lines for a few single positions (the puzzle explanation), with the Game review engine
+ * settings. Its own engine process, like a review, so live analysis and a running review carry on;
+ * `cancelReview(requestId)` stops it (and quitting cancels it with the reviews).
+ */
+export async function runPositionAnalysis(
+  engineManager: EngineManager,
+  input: AnalysePositionsInput
+): Promise<AnalysePositionsResult> {
+  const config = engineConfigForId(input.engineId);
+  if (!config) throw new Error("Engine not found");
+  const { requestId } = input;
+  // Unlike a review's, a cancel may come before the request reaches main (the user moved on at
+  // once): it is kept, and only cleared once this request has finished.
+  engineManager.trackReview(requestId, true);
+  try {
+    return await analysePositionsWithEngine(
+      config,
+      { positions: input.positions, moveTimeMs: input.moveTimeMs },
+      { ...engineResourceOptions(), shouldCancel: () => engineManager.isReviewCancelled(requestId) }
+    );
+  } finally {
+    engineManager.trackReview(requestId, false);
+    engineManager.clearReviewCancellation(requestId);
   }
 }
