@@ -91,7 +91,7 @@ export function EditRepertoireDialog({
         form,
         flushDraft: () =>
           mustFlushDraftBeforeImport(useRepertoireWorkspaceStore.getState(), repertoire.id)
-            ? flushChapterDraft(queryClient)
+            ? flushChapterDraft(queryClient, [repertoire.id])
             : Promise.resolve(true),
         load: () =>
           queryClient.fetchQuery({

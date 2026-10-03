@@ -265,7 +265,8 @@ export async function saveStudyDraftFirst({
   request: number;
   navigation: { current: number };
   flush: () => Promise<boolean>;
-  failure: string;
+  /** The notice when the draft stays unsaved (read once the flush settled). */
+  failure: string | (() => string);
   keepChapterId?: string | null;
 }): Promise<boolean> {
   const draft = useRepertoireWorkspaceStore.getState();
@@ -274,7 +275,7 @@ export async function saveStudyDraftFirst({
   const saved = await flush();
   if (request !== navigation.current) return false;
   if (!saved) {
-    useAppNoticeStore.getState().show(failure);
+    useAppNoticeStore.getState().show(typeof failure === "string" ? failure : failure());
     return false;
   }
   return true;

@@ -495,6 +495,19 @@ describe("leaving a study chapter's draft", () => {
     expect(useAppNoticeStore.getState().message).toBe(failure);
   });
 
+  it("reads a notice given as a function once the flush settled", async () => {
+    open({ dirty: true });
+    let cause = "before";
+    const flush = vi.fn(async () => {
+      cause = "the prompt";
+      return false;
+    });
+    expect(
+      await saveStudyDraftFirst({ request: 1, navigation, flush, failure: () => `Unsaved: ${cause}` })
+    ).toBe(false);
+    expect(useAppNoticeStore.getState().message).toBe("Unsaved: the prompt");
+  });
+
   it("gives way silently to a newer navigation that came while it saved", async () => {
     open({ dirty: true });
     const save = deferred<boolean>();

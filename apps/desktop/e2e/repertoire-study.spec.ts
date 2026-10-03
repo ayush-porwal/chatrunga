@@ -10,7 +10,7 @@ const REPERTOIRE = "White repertoire e2e";
  * A White repertoire with a chapter of 1. e4 e5 2. Nf3 Nc6 3. Bc4, which "Study" opens at its
  * start, through the preload bridge.
  */
-function seedRepertoire(page: Page) {
+function seedRepertoire(page: Page, repertoire = REPERTOIRE) {
   return page.evaluate(async (name) => {
     const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga.repertoires;
     const created = await api.create({ name, color: "white" });
@@ -39,7 +39,7 @@ function seedRepertoire(page: Page) {
         practiceDraft: null
       }
     });
-  }, REPERTOIRE);
+  }, repertoire);
 }
 
 /**
@@ -75,9 +75,9 @@ async function refuseInvoke(app: ElectronApplication, channel: string, message: 
 const titlebar = (page: Page) => page.getByRole("banner", { name: "Titlebar" });
 const studyPanel = (page: Page) => page.getByRole("complementary", { name: "Repertoire study" });
 
-async function openStudy(page: Page) {
+async function openStudy(page: Page, repertoire = REPERTOIRE) {
   await sidebar(page).getByRole("button", { name: "Repertoire", exact: true }).click();
-  await page.getByRole("button", { name: `Study ${REPERTOIRE}`, exact: true }).click();
+  await page.getByRole("button", { name: `Study ${repertoire}`, exact: true }).click();
 }
 
 async function backToHub(page: Page) {
@@ -127,6 +127,46 @@ test("a refused practice prompt keeps its text through leaving study, then Retry
   await page.getByRole("tab", { name: "Notes", exact: true }).click();
   await expect(prompt).toHaveValue("Take the centre");
   await expect(titlebar(page)).toContainText("Saved");
+});
+
+test("another repertoire's refused hint doesn't keep this one's chapter from Analyze", async ({
+  launch
+}) => {
+  const OTHER = "Second repertoire e2e";
+  const { app, page } = await launch();
+  await skipWelcome(page);
+  await seedRepertoire(page);
+  await seedRepertoire(page, OTHER);
+
+  // The other repertoire's hint write fails; its text stays unsaved there.
+  await openStudy(page, OTHER);
+  await page.getByRole("tab", { name: "Notes", exact: true }).click();
+  const hint = page.getByRole("textbox", { name: /^Hint/ });
+  await expect(hint).toBeEnabled();
+  const restore = await refuseInvoke(app, "repertoires:updateDecision", "Simulated write failure");
+  await hint.fill("The knight belongs on f3");
+  await hint.press("Tab");
+  await expect(studyPanel(page).getByRole("alert")).toContainText("Simulated write failure");
+  await backToHub(page);
+
+  // This repertoire's chapter is saved: Analyze opens.
+  await page.getByRole("button", { name: `Study ${REPERTOIRE}`, exact: true }).click();
+  await expect(titlebar(page)).toContainText("Saved");
+  await studyPanel(page).getByRole("button", { name: "Analyze", exact: true }).click();
+  await expect(page.getByText("Analysing a copy of the chapter line")).toBeVisible();
+  await expect(page.getByText("This chapter couldn't be saved")).toHaveCount(0);
+
+  // The other repertoire still holds its hint with Retry and Discard.
+  await restore();
+  await openStudy(page, OTHER);
+  await page.getByRole("tab", { name: "Notes", exact: true }).click();
+  await expect(hint).toHaveValue("The knight belongs on f3");
+  await expect(titlebar(page)).toContainText("Unsaved — Simulated write failure");
+  const notice = studyPanel(page).getByRole("alert");
+  await expect(notice.getByRole("button", { name: "Discard", exact: true })).toBeVisible();
+  await notice.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(titlebar(page)).toContainText("Saved");
+  await expect(hint).toHaveValue("The knight belongs on f3");
 });
 
 test("a chapter left out of practice still offers Analyze and Play from here", async ({

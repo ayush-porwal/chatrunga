@@ -22,13 +22,14 @@ const getDecision =
 const { useRepertoireWorkspaceStore } = await import("../../stores/repertoire-workspace-store");
 const {
   discardDecisionText,
+  discardDeletedRepertoireTexts,
   flushDecisionTexts,
   keepDecisionText,
   queueRepertoireWrite,
   retryDecisionTexts,
   saveDecisionText
 } = await import("./decision-text-drafts");
-const { flushChapterDraft } = await import("./useChapterAutosave");
+const { flushChapterDraft, unsavedStudyCause } = await import("./useChapterAutosave");
 
 const store = () => useRepertoireWorkspaceStore.getState();
 const PROMPT = decisionDraftKey("r1", "k1", "prompt");
@@ -221,6 +222,86 @@ describe("decision text drafts", () => {
     updateDecision.mockRejectedValueOnce(new Error("Invalid repertoireId: not found"));
     expect(await flushDecisionTexts(queryClient, flushChapter)).toBe(true);
     expect(store().decisionDrafts[PROMPT]).toBeUndefined();
+  });
+
+  it("doesn't hold back leaving one repertoire for another repertoire's failed draft", async () => {
+    const other = decisionDraftKey("r2", "k9", "hint");
+    const otherPending = decisionDraftKey("r2", "k8", "prompt");
+    store().setDecisionText("r2", "k9", "hint", "Castle early");
+    getRepertoire.mockResolvedValue(detailOf({ id: "r2", revision: 11 }));
+    updateDecision.mockRejectedValueOnce(new Error("disk full"));
+    expect(await saveDecisionText(queryClient, other, { flushChapter })).toBe(false);
+
+    // r1's own prompt saves; r2's pending one is written too, its failed one waits for Retry.
+    store().setDecisionText("r1", "k1", "prompt", "Develop");
+    store().setDecisionText("r2", "k8", "prompt", "Fianchetto");
+    updateDecision.mockImplementation(async (input) => saved(input, 12));
+    expect(await flushChapterDraft(queryClient, ["r1"])).toBe(true);
+    expect(store().decisionDrafts[PROMPT]).toBeUndefined();
+    expect(store().decisionDrafts[otherPending]).toBeUndefined();
+    expect(store().decisionDrafts[other].status).toBe("error");
+    expect(updateDecision).toHaveBeenCalledTimes(3);
+    expect(unsavedStudyCause("r1")).toBeNull();
+
+    // Leaving r2 (or closing the window) is still held back by it.
+    expect(await flushChapterDraft(queryClient, ["r2"])).toBe(false);
+    expect(await flushChapterDraft(queryClient)).toBe(false);
+    expect(unsavedStudyCause("r2")).toBe("decision");
+  });
+
+  it("names why a study flush held back: the chapter, a failed change, or only stale ones", async () => {
+    store().setDecisionText("r1", "k1", "prompt", "Develop");
+    updateDecision.mockRejectedValueOnce(
+      new Error("Invalid expectedRevision: repertoire changed (stored 6, expected 4)")
+    );
+    expect(await flushChapterDraft(queryClient, ["r1"])).toBe(false);
+    expect(unsavedStudyCause("r1")).toBe("stale-decision");
+
+    store().setDecisionText("r1", "k1", "hint", "Knight to f3");
+    store().decisionTextFailed(HINT, "disk full", false);
+    expect(unsavedStudyCause("r1")).toBe("decision");
+
+    store().saveFailed("disk full", false);
+    expect(unsavedStudyCause("r1")).toBe("chapter");
+  });
+
+  it("drops the drafts of a repertoire deleted since (not found when written, or by the hub)", async () => {
+    // Not found when one of its drafts is written: all of its drafts go.
+    store().setDecisionText("r2", "k1", "prompt", "Develop");
+    store().setDecisionText("r2", "k2", "hint", "Knight to f3");
+    getRepertoire.mockResolvedValueOnce(detailOf({ id: "r2", revision: 3 }));
+    updateDecision.mockRejectedValueOnce(new Error("Invalid repertoireId: not found"));
+    expect(
+      await saveDecisionText(queryClient, decisionDraftKey("r2", "k1", "prompt"), {
+        flushChapter
+      })
+    ).toBe(true);
+    expect(store().decisionDrafts).toEqual({});
+
+    // The hub's list doesn't have it, and reading it says it's gone; an archived one (unlisted
+    // but readable) and a listed one stay.
+    store().setDecisionText("r1", "k1", "prompt", "Listed");
+    store().setDecisionText("r3", "k1", "prompt", "Deleted");
+    store().setDecisionText("r4", "k1", "prompt", "Archived");
+    getRepertoire.mockImplementation(async (id) => {
+      if (id === "r3") throw new Error("Invalid repertoireId: not found");
+      return detailOf({ id });
+    });
+    await discardDeletedRepertoireTexts(queryClient, ["r1"]);
+    expect(Object.values(store().decisionDrafts).map((draft) => draft.repertoireId)).toEqual([
+      "r1",
+      "r4"
+    ]);
+    expect(getRepertoire).not.toHaveBeenCalledWith("r1");
+  });
+
+  it("Keep mine drops a stale draft whose repertoire was deleted since", async () => {
+    store().setDecisionText("r1", "k1", "prompt", "Develop");
+    store().decisionTextFailed(PROMPT, "Invalid expectedRevision: repertoire changed", true);
+    getRepertoire.mockRejectedValueOnce(new Error("Invalid repertoireId: not found"));
+    expect(await keepDecisionText(queryClient, PROMPT, flushChapter)).toBe(true);
+    expect(store().decisionDrafts[PROMPT]).toBeUndefined();
+    expect(updateDecision).not.toHaveBeenCalled();
   });
 
   it("writes another repertoire's draft against its stored revision", async () => {

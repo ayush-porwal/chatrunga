@@ -11,7 +11,10 @@ import { decisionDraftPatch, isNotFoundError, isStaleRevisionError } from "./rep
  * A draft is cleared only once the main process confirms its write; a refusal keeps the text with
  * its error (stale when the repertoire moved on, which waits for the player's choice like a stale
  * chapter draft does). Navigation and window-close flushes save pending drafts but never retry a
- * failed one on their own: that is Retry's job.
+ * failed one on their own: that is Retry's job. A navigation is held back only by the drafts of
+ * the repertoire it leaves or uses; another repertoire's are written too, and a failure there
+ * waits on that repertoire's study page (its titlebar and notices offer Retry, Keep mine and
+ * Discard). A draft whose repertoire was deleted is dropped.
  */
 
 const workspace = () => useRepertoireWorkspaceStore.getState();
@@ -107,9 +110,10 @@ export function saveDecisionText(
       return !workspace().decisionDrafts[key];
     } catch (error) {
       const message = ipcErrorMessage(error) || "That change couldn't be saved.";
-      // The repertoire was deleted: the text has nowhere to go, and must not block leaving.
+      // The repertoire was deleted: none of its drafts has anywhere to go, and they must not
+      // block leaving.
       if (isNotFoundError(message, "repertoire")) {
-        workspace().discardDecisionText(key);
+        discardRepertoireTexts(current.repertoireId);
         return true;
       }
       workspace().decisionTextFailed(key, message, isStaleRevisionError(message));
@@ -118,16 +122,57 @@ export function saveDecisionText(
   });
 }
 
-/** Saves every pending draft (of any repertoire). True when none is left unsaved. */
+/**
+ * Saves every pending draft (of any repertoire). True when none of `blockOn`'s repertoires (every
+ * repertoire when omitted, as for closing the window) is left with an unsaved draft: another
+ * repertoire's draft is written too, but a failure there doesn't hold back this navigation.
+ */
 export async function flushDecisionTexts(
   queryClient: QueryClient,
-  flushChapter: FlushChapter
+  flushChapter: FlushChapter,
+  blockOn?: readonly string[]
 ): Promise<boolean> {
-  const keys = Object.keys(workspace().decisionDrafts);
+  const drafts = Object.entries(workspace().decisionDrafts);
   const saved = await Promise.all(
-    keys.map((key) => saveDecisionText(queryClient, key, { flushChapter }))
+    drafts.map(async ([key, draft]) => {
+      if (await saveDecisionText(queryClient, key, { flushChapter })) return true;
+      return blockOn !== undefined && !blockOn.includes(draft.repertoireId);
+    })
   );
   return saved.every(Boolean);
+}
+
+/**
+ * Drops the drafts of repertoires that were deleted: those missing from `listed` (the hub's list)
+ * whose repertoire can't be found either (an archived one isn't listed but still exists).
+ */
+export async function discardDeletedRepertoireTexts(
+  queryClient: QueryClient,
+  listed: readonly string[]
+): Promise<void> {
+  const unlisted = new Set(
+    Object.values(workspace().decisionDrafts)
+      .map((draft) => draft.repertoireId)
+      .filter((id) => !listed.includes(id))
+  );
+  await Promise.all(
+    [...unlisted].map(async (repertoireId) => {
+      try {
+        await readDetail(queryClient, repertoireId);
+      } catch (error) {
+        if (isNotFoundError(ipcErrorMessage(error), "repertoire")) {
+          discardRepertoireTexts(repertoireId);
+        }
+      }
+    })
+  );
+}
+
+/** Drops every draft of a deleted repertoire (a write that is running finds it gone). */
+function discardRepertoireTexts(repertoireId: string): void {
+  for (const [key, draft] of Object.entries(workspace().decisionDrafts)) {
+    if (draft.repertoireId === repertoireId) workspace().discardDecisionText(key);
+  }
 }
 
 /** Retry: writes the repertoire's pending and failed drafts again (stale ones wait for a choice). */
@@ -160,11 +205,13 @@ export async function keepDecisionText(
     try {
       workspace().adoptRevision((await readDetail(queryClient, draft.repertoireId)).revision);
     } catch (error) {
-      workspace().decisionTextFailed(
-        key,
-        ipcErrorMessage(error) || "The repertoire couldn't be read.",
-        true
-      );
+      const message = ipcErrorMessage(error) || "The repertoire couldn't be read.";
+      // Deleted meanwhile: there is nothing to keep it in.
+      if (isNotFoundError(message, "repertoire")) {
+        discardRepertoireTexts(draft.repertoireId);
+        return true;
+      }
+      workspace().decisionTextFailed(key, message, true);
       return false;
     }
   }

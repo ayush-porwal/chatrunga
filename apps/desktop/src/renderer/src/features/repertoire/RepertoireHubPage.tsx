@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -51,6 +51,7 @@ import {
 } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
 import { formatBytes, restoreNotice, shortenPath } from "./backup";
+import { discardDeletedRepertoireTexts } from "./decision-text-drafts";
 import { BackupDialog } from "./BackupDialog";
 import { CreateRepertoireDialog } from "./CreateRepertoireDialog";
 import { EditRepertoireDialog } from "./EditRepertoireDialog";
@@ -110,6 +111,16 @@ export function RepertoireHubPage({
   const list = useRepertoiresQuery(filters);
   // Review targets everything due, whatever the hub is filtered to.
   const active = useRepertoiresQuery(ACTIVE);
+  // An unsaved prompt or hint of a repertoire deleted since has nowhere to go: dropped here, so it
+  // never holds back closing the window.
+  useEffect(() => {
+    if (active.data) {
+      void discardDeletedRepertoireTexts(
+        queryClient,
+        active.data.map((item) => item.id)
+      );
+    }
+  }, [active.data, queryClient]);
   const due = useRepertoireDueSummaryQuery();
   const duplicate = useDuplicateRepertoireMutation();
   const archive = useArchiveRepertoireMutation();

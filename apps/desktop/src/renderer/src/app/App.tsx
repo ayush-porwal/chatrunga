@@ -79,7 +79,11 @@ import type { OpeningSide } from "../features/game-review/opening-comparison";
 import { presetForSetup, type PracticePreset } from "../features/repertoire/practice-setup";
 import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
 import { RepertoirePracticeTitlebar, RepertoireStudyTitlebar } from "../features/repertoire/RepertoireTitlebar";
-import { flushChapterDraft } from "../features/repertoire/useChapterAutosave";
+import {
+  flushChapterDraft,
+  unsavedDecisionMessage,
+  unsavedStudyCause
+} from "../features/repertoire/useChapterAutosave";
 import { useRepertoirePracticeStore } from "../stores/repertoire-practice-store";
 import { useRepertoireWorkspaceStore } from "../stores/repertoire-workspace-store";
 import { useAddToRepertoireStore } from "../stores/add-to-repertoire-store";
@@ -691,11 +695,19 @@ export function App() {
     if (history === "push") commitCurrent();
     const request = ++latestNavigation.current;
     const draft = useRepertoireWorkspaceStore.getState();
+    // Only the repertoire being left can hold this back (the one opened lists its own unsaved
+    // changes on its chapter).
+    const leaving = draft.repertoireId !== target.repertoireId ? draft.repertoireId : null;
     const leftSaved = await saveStudyDraftFirst({
       request,
       navigation: latestNavigation,
-      flush: () => flushChapterDraft(queryClient),
-      failure: "This chapter couldn't be saved; retry the save before opening another one.",
+      flush: () => flushChapterDraft(queryClient, leaving ? [leaving] : []),
+      failure: () =>
+        studyFailure(
+          leaving,
+          "the chapter",
+          "This chapter couldn't be saved; retry the save before opening another one."
+        ),
       keepChapterId: target.chapterId
     });
     if (!leftSaved) return false;
@@ -742,11 +754,20 @@ export function App() {
   ): Promise<boolean> {
     if (history === "push") commitCurrent();
     const request = ++latestNavigation.current;
+    // Held back by the study draft being left and by this repertoire's unsaved changes (practice
+    // shows its prompts and hints), not by another repertoire's.
+    const leaving = useRepertoireWorkspaceStore.getState().repertoireId;
     const leftSaved = await saveStudyDraftFirst({
       request,
       navigation: latestNavigation,
-      flush: () => flushChapterDraft(queryClient),
-      failure: "This chapter couldn't be saved; reopen it and retry the save before practising."
+      flush: () =>
+        flushChapterDraft(queryClient, leaving ? [leaving, repertoireId] : [repertoireId]),
+      failure: () =>
+        studyFailure(
+          leaving,
+          "practice",
+          "This chapter couldn't be saved; reopen it and retry the save before practising."
+        )
     });
     if (!leftSaved) return false;
     setRepertoireExtras((extras) => ({ ...extras, preset }));
@@ -815,12 +836,23 @@ export function App() {
     action: string,
     retry: () => void
   ): Promise<boolean> {
-    const saved = await flushChapterDraft(queryClient);
+    // Only the chapter's own repertoire holds the handoff back: another repertoire's unsaved
+    // prompt or hint is written too, and waits on its own chapter when that fails.
+    const repertoireId = useRepertoireWorkspaceStore.getState().repertoireId;
+    const saved = await flushChapterDraft(queryClient, repertoireId ? [repertoireId] : []);
     if (request !== latestNavigation.current) return false;
     if (saved) return true;
+    const cause = unsavedStudyCause(repertoireId);
+    // Refused as stale: Retry would be refused again; the chapter's notice asks Keep mine or Discard.
+    if (cause === "stale-decision") {
+      useAppNoticeStore.getState().show(unsavedDecisionMessage(true, action));
+      return false;
+    }
     useAppNoticeStore.getState().show(
-      `This chapter couldn't be saved, so ${action} didn't open. Your edits are kept: retry, ` +
-        "or dismiss to stay and keep editing.",
+      cause === "decision"
+        ? unsavedDecisionMessage(false, action)
+        : `This chapter couldn't be saved, so ${action} didn't open. Your edits are kept: retry, ` +
+            "or dismiss to stay and keep editing.",
       {
         action: {
           label: "Retry",
@@ -832,6 +864,18 @@ export function App() {
       }
     );
     return false;
+  }
+
+  /**
+   * A navigation's notice when the study draft it leaves stayed unsaved: the chapter's own
+   * (`chapterMessage`), or the repertoire's prompt, hint or other decision change.
+   */
+  function studyFailure(repertoireId: string | null, action: string, chapterMessage: string) {
+    const cause = unsavedStudyCause(repertoireId);
+    if (cause === "decision" || cause === "stale-decision") {
+      return unsavedDecisionMessage(cause === "stale-decision", action);
+    }
+    return chapterMessage;
   }
 
   /**

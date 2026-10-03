@@ -82,14 +82,52 @@ export async function flushChapterTree(queryClient: QueryClient): Promise<boolea
 
 /**
  * Everything study holds unsaved: the chapter draft, then the practice prompts and hints typed
- * at its positions (decision-text-drafts.ts). True when all of it is saved; false when an error
- * (or a refusal now) keeps something unsaved — callers stay put and show Retry. A failed write
- * is not retried here.
+ * at its positions (decision-text-drafts.ts). True when the chapter draft and the decision changes
+ * of `blockOn`'s repertoires are saved (every repertoire's when omitted, as closing the window
+ * needs); false when an error (or a refusal now) keeps one unsaved — callers stay put and show
+ * Retry. Other repertoires' changes are written too without holding the caller back. A failed
+ * write is not retried here.
  */
-export async function flushChapterDraft(queryClient: QueryClient): Promise<boolean> {
+export async function flushChapterDraft(
+  queryClient: QueryClient,
+  blockOn?: readonly string[]
+): Promise<boolean> {
   const chapterSaved = await flushChapterTree(queryClient);
-  const textSaved = await flushDecisionTexts(queryClient, flushChapterTree);
+  const textSaved = await flushDecisionTexts(queryClient, flushChapterTree, blockOn);
   return chapterSaved && textSaved;
+}
+
+/**
+ * Why a flush of `repertoireId`'s study held the caller back (after flushChapterDraft returned
+ * false): the chapter draft, its decision changes, or only decision changes refused as stale
+ * (Retry can't save those: their notice on the chapter asks Keep mine or Discard). Null when
+ * nothing of it is unsaved any more.
+ */
+export function unsavedStudyCause(
+  repertoireId: string | null
+): "chapter" | "decision" | "stale-decision" | null {
+  const state = workspace();
+  if (state.dirty || state.saveState.status === "error") return "chapter";
+  const own = Object.values(state.decisionDrafts).filter(
+    (draft) => draft.repertoireId === repertoireId
+  );
+  if (!own.length) return null;
+  const failed = own.filter((draft) => draft.status === "error");
+  return failed.length && failed.every((draft) => draft.error?.stale)
+    ? "stale-decision"
+    : "decision";
+}
+
+/**
+ * The notice when a repertoire's prompt, hint, feedback or pause change held back `action` (e.g.
+ * "Analyze"): Retry for a failed write; for one refused as stale, the chapter's notice decides.
+ */
+export function unsavedDecisionMessage(stale: boolean, action: string): string {
+  return stale
+    ? `A practice prompt, hint or other change in this repertoire was also changed elsewhere, so ${action} didn't open. ` +
+        "Keep yours or discard it in the notice on the chapter, then try again."
+    : `A practice prompt, hint or other change in this repertoire couldn't be saved, so ${action} didn't open. ` +
+        "Your text is kept: retry, or discard it in the notice on the chapter.";
 }
 
 /** Writes a typed prompt or hint now (a failed one is retried). */
@@ -202,5 +240,11 @@ export function useChapterAutosave(): { flush: () => Promise<boolean> } {
     [queryClient]
   );
 
-  return { flush: () => flushChapterDraft(queryClient) };
+  // Practising or rehearsing from the page uses only its own repertoire.
+  return {
+    flush: () => {
+      const { repertoireId } = workspace();
+      return flushChapterDraft(queryClient, repertoireId ? [repertoireId] : []);
+    }
+  };
 }
