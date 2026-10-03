@@ -60,7 +60,8 @@ const api: ChaturangaApi = {
     stop: () => ipcRenderer.invoke("engines:stop")
   },
   games: {
-    list: () => ipcRenderer.invoke("games:list"),
+    listPage: (query) => ipcRenderer.invoke("games:listPage", query),
+    facets: (excludeId) => ipcRenderer.invoke("games:facets", excludeId),
     get: (id) => ipcRenderer.invoke("games:get", id),
     getReview: (gameId, reviewId) => ipcRenderer.invoke("games:getReview", gameId, reviewId),
     save: (input) => ipcRenderer.invoke("games:save", input),

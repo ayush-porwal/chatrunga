@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { GAME_SEARCH_MAX_LENGTH } from "@chaturanga/shared/types/chess";
 import {
   asAbsolutePath,
   asFen,
@@ -10,6 +11,7 @@ import {
   parseDialogFilters,
   parseEngineInput,
   parseEnginePatch,
+  parseGameListQuery,
   parseLichessAiChallengeInput,
   parseLichessChallengeInput,
   parseLichessDisconnectInput,
@@ -265,5 +267,27 @@ describe("parseSettingsPatch", () => {
     expect(() => parseSettingsPatch({ nope: 1 })).toThrow();
     expect(() => parseSettingsPatch({})).toThrow();
     expect(() => parseSettingsPatch({ soundVolume: 9 })).toThrow(/soundVolume/);
+  });
+
+  it("parses a library page request from known fields only", () => {
+    expect(parseGameListQuery(undefined)).toEqual({ cursor: null, limit: undefined, search: undefined, filter: "all", excludeId: null });
+    expect(
+      parseGameListQuery({
+        cursor: { updatedAt: 5, id: " g1 ", extra: 1 },
+        limit: 50,
+        search: "carlsen",
+        filter: "lichess",
+        excludeId: "board",
+        sql: "DROP TABLE games"
+      })
+    ).toEqual({ cursor: { updatedAt: 5, id: "g1" }, limit: 50, search: "carlsen", filter: "lichess", excludeId: "board" });
+    expect(() => parseGameListQuery({ filter: "puzzle" })).toThrow(/filter/);
+    expect(() => parseGameListQuery({ limit: -1 })).toThrow(/page size/);
+    expect(() => parseGameListQuery({ limit: 1.5 })).toThrow(/page size/);
+    expect(() => parseGameListQuery({ cursor: { updatedAt: "5", id: "g1" } })).toThrow(/cursor/);
+    expect(() => parseGameListQuery({ cursor: { updatedAt: 5, id: "" } })).toThrow(/cursor/);
+    expect(parseGameListQuery({ search: "x".repeat(GAME_SEARCH_MAX_LENGTH) }).search).toHaveLength(GAME_SEARCH_MAX_LENGTH);
+    expect(() => parseGameListQuery({ search: "x".repeat(GAME_SEARCH_MAX_LENGTH + 1) })).toThrow(/search/);
+    expect(() => parseGameListQuery("all")).toThrow();
   });
 });

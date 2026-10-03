@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const userData = mkdtempSync(join(tmpdir(), "chaturanga-databases-"));
 vi.mock("electron", () => ({ app: { getPath: () => userData } }));
 
-type Row = { id: string; sourceId: string; filePath: string; name?: string; format?: string };
+type Row = { id: string; sourceId: string; filePath: string; fileSizeBytes?: number; name?: string; format?: string };
 const rows = new Map<string, Row>();
 const repository = vi.hoisted(() => ({ failSave: false }));
 vi.mock("../db/repositories", () => ({
@@ -21,9 +21,9 @@ vi.mock("../db/repositories", () => ({
     remove: (id: string) => {
       for (const [key, row] of rows) if (row.id === id) rows.delete(key);
     },
-    saveDownloaded: (input: { source: { id: string }; filePath: string }) => {
+    saveDownloaded: (input: { source: { id: string }; filePath: string; fileSizeBytes: number }) => {
       if (repository.failSave) throw new Error("disk full");
-      const row = { id: input.source.id, sourceId: input.source.id, filePath: input.filePath };
+      const row = { id: input.source.id, sourceId: input.source.id, filePath: input.filePath, fileSizeBytes: input.fileSizeBytes };
       rows.set(input.source.id, row);
       return row;
     }
@@ -57,6 +57,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   };
 });
 
+import { randomBytes } from "node:crypto";
 import { zstdCompressSync } from "node:zlib";
 import type { DatabaseDownloadProgress, PuzzleSampleInput } from "@chaturanga/shared/types/database";
 import { logger } from "../logger";
@@ -65,8 +66,36 @@ import {
   downloadDatabase,
   listInstalledDatabases,
   removeDatabase,
-  samplePuzzle
+  samplePuzzle,
+  setPuzzleScanner
 } from "./external-databases";
+import { reservoirScan, workerScanner, type PuzzleScanner, type ScanJob } from "./puzzle-scan";
+
+/** Scans in this thread (the worker can't load TypeScript sources), stopping when cancelled. */
+const inThreadScanner: PuzzleScanner = (job) => {
+  let cancelled = false;
+  return { result: reservoirScan(job, () => cancelled), cancel: () => void (cancelled = true) };
+};
+
+type GatedScan = { job: ScanJob; cancelled: boolean; release: () => void };
+/** Gated scans: each waits for `release()` (unless `open(job)`), so tests can hold scans in flight. */
+const gatedScans: GatedScan[] = [];
+function gatedScanner(open: (job: ScanJob) => boolean = () => false): PuzzleScanner {
+  return (job) => {
+    const scan: GatedScan = { job, cancelled: false, release: () => undefined };
+    const gate = new Promise<void>((resolve) => (scan.release = resolve));
+    gatedScans.push(scan);
+    if (open(job)) scan.release();
+    return {
+      result: gate.then(() => reservoirScan(job, () => scan.cancelled)),
+      cancel: () => {
+        scan.cancelled = true;
+        scan.release();
+      }
+    };
+  };
+}
+const isQuick = (scan: GatedScan) => scan.job.maxMatches !== undefined;
 
 const SOURCE = "lichess-puzzles";
 const dir = join(userData, "puzzle-databases");
@@ -114,7 +143,13 @@ function fakeServer(content: Buffer, etag: string, options: { failAfter?: number
   return { fetchMock, requests };
 }
 
-const content = Buffer.from("PuzzleId,FEN,Moves\n".repeat(500));
+const LICHESS_HEADER = "PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags";
+/** A valid compressed puzzle file; random ids keep it from compressing to a few bytes. */
+function dataset(rowCount: number): Buffer<ArrayBuffer> {
+  const rows = Array.from({ length: rowCount }, (_, index) => `${randomBytes(8).toString("hex")},fen,e2e4 e7e5,${1000 + index},80,90,100,short,,`);
+  return zstdCompressSync(Buffer.from([LICHESS_HEADER, ...rows].join("\n"))) as Buffer<ArrayBuffer>;
+}
+const content = dataset(800);
 
 /** A module instance of its own, for tests that quit (which leaves the module refusing downloads). */
 async function freshModule() {
@@ -128,10 +163,12 @@ beforeEach(async () => {
   fullScans.count = 0;
   fullScans.fail = false;
   fsHooks.beforeRename = null;
+  setPuzzleScanner(inThreadScanner);
   await rm(dir, { recursive: true, force: true });
 });
 
 afterEach(() => {
+  for (const scan of gatedScans.splice(0)) scan.release();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -160,7 +197,7 @@ describe("downloadDatabase", () => {
   it("starts over when the file changed upstream since the interruption", async () => {
     vi.stubGlobal("fetch", fakeServer(content, '"v1"', { failAfter: 3000 }).fetchMock);
     await expect(downloadDatabase(SOURCE, () => undefined)).rejects.toThrow();
-    const updated = Buffer.from("PuzzleId,FEN,Moves,Rating\n".repeat(400));
+    const updated = dataset(400);
     vi.stubGlobal("fetch", fakeServer(updated, '"v2"').fetchMock);
     await downloadDatabase(SOURCE, () => undefined);
     expect(await readFile(finalPath)).toEqual(updated);
@@ -262,6 +299,7 @@ describe("download reliability", () => {
     let release: () => void = () => undefined;
     const renaming = new Promise<void>((resolve) => {
       fsHooks.beforeRename = () => {
+        fsHooks.beforeRename = null; // only the rename that puts the file in place
         resolve();
         return new Promise((done) => (release = done));
       };
@@ -275,7 +313,13 @@ describe("download reliability", () => {
     await expect(download).rejects.toThrow("Download cancelled.");
     expect(rows.has(SOURCE)).toBe(false);
     expect(events.map((event) => event.state)).not.toContain("completed");
-    fsHooks.beforeRename = null;
+    // The complete file went back to `.part` with its version, so Download again finishes at once.
+    expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst.part", "lichess-puzzles-lichess_db_puzzle.csv.zst.part.validator"]);
+    const server = fakeServer(content, '"v1"');
+    vi.stubGlobal("fetch", server.fetchMock);
+    await downloadDatabase(SOURCE, () => undefined);
+    expect(server.requests).toEqual([{ Range: `bytes=${content.length}-`, "If-Range": '"v1"' }]);
+    expect(await readFile(finalPath)).toEqual(content);
   });
 
   it("a download that finishes after quitting stopped waiting registers nothing", async () => {
@@ -284,6 +328,7 @@ describe("download reliability", () => {
     let release: () => void = () => undefined;
     const renaming = new Promise<void>((resolve) => {
       fsHooks.beforeRename = () => {
+        fsHooks.beforeRename = null; // only the rename that puts the file in place
         resolve();
         return new Promise((done) => (release = done));
       };
@@ -323,6 +368,260 @@ describe("download reliability", () => {
     await downloadDatabase(SOURCE, () => undefined);
     expect(calls).toBe(2);
     expect(await readFile(finalPath)).toEqual(content);
+  });
+});
+
+describe("installing a downloaded file", () => {
+  const oldContent = dataset(300);
+
+  async function installOld() {
+    await mkdir(dir, { recursive: true });
+    await writeFile(finalPath, oldContent);
+    rows.set(SOURCE, { id: SOURCE, sourceId: SOURCE, filePath: finalPath, fileSizeBytes: oldContent.length });
+  }
+
+  function serve(body: Buffer | string, contentType = "application/octet-stream") {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(typeof body === "string" ? body : new Uint8Array(body), { headers: { "content-length": String(Buffer.byteLength(body)), "content-type": contentType, etag: '"v2"' } }))
+    );
+  }
+
+  async function expectRejected(pattern: RegExp) {
+    const events: DatabaseDownloadProgress[] = [];
+    await expect(downloadDatabase(SOURCE, (progress) => events.push(progress))).rejects.toThrow(pattern);
+    expect(events.map((event) => event.state)).not.toContain("completed");
+    expect(events.at(-1)).toMatchObject({ state: "failed", message: expect.stringMatching(/isn't a valid dataset/) });
+    // The previous installation is untouched, and the bad bytes aren't kept for a resume.
+    expect(await readFile(finalPath)).toEqual(oldContent);
+    expect(rows.get(SOURCE)?.filePath).toBe(finalPath);
+    expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst"]);
+  }
+
+  it("rejects a web page served as text/html", async () => {
+    await installOld();
+    serve("<!doctype html><title>Sign in</title>", "text/html; charset=utf-8");
+    await expectRejected(/web page/);
+  });
+
+  it("rejects a web page served with a misleading content type", async () => {
+    await installOld();
+    serve("\n  <html><body>Not found</body></html>");
+    await expectRejected(/web page/);
+  });
+
+  it("rejects a file that isn't zstd", async () => {
+    await installOld();
+    serve(randomBytes(5000));
+    await expectRejected(/isn't zstd-compressed/);
+  });
+
+  it("rejects a corrupt zstd stream", async () => {
+    await installOld();
+    const corrupt = Buffer.from(content);
+    corrupt.fill(0x41, 8, 200);
+    serve(corrupt);
+    await expectRejected(/couldn't be read|damaged|unexpected data|ends in the middle/);
+  });
+
+  /** A good first frame (the header and some rows) followed by `rest`, as pzstd writes many frames. */
+  const framesAfterGoodStart = (rest: Buffer) => Buffer.concat([content, rest]);
+  const laterFrame = () => zstdCompressSync(Buffer.from(Array.from({ length: 800 }, () => `${randomBytes(8).toString("hex")},fen,e2e4,1500,80,90,100,short,,`).join("\n")));
+
+  it("rejects a file whose later frame is cut short, though it starts well", async () => {
+    await installOld();
+    const later = laterFrame();
+    serve(framesAfterGoodStart(later.subarray(0, Math.floor(later.length / 2))));
+    await expectRejected(/ends in the middle of the compressed data/);
+  });
+
+  it("rejects a file with a damaged block in a later frame", async () => {
+    await installOld();
+    const later = Buffer.from(laterFrame());
+    // The first block header (after the 4-byte magic and a small frame header): a reserved block type.
+    const descriptor = later[4];
+    const headerSize = 1 + ((descriptor >> 5) & 1 ? 0 : 1) + [0, 1, 2, 4][descriptor & 3] + [(descriptor >> 5) & 1 ? 1 : 0, 2, 4, 8][descriptor >> 6];
+    later[4 + headerSize] |= 0b110;
+    serve(framesAfterGoodStart(later));
+    await expectRejected(/damaged block/);
+  });
+
+  it("rejects a file with something other than zstd after its frames", async () => {
+    await installOld();
+    serve(framesAfterGoodStart(Buffer.from("<html>trailing</html>")));
+    await expectRejected(/unexpected data at byte/);
+  });
+
+  it("accepts several frames after a skippable one, as pzstd writes them", async () => {
+    const skippable = Buffer.alloc(12);
+    skippable.writeUInt32LE(0x184d2a50, 0);
+    skippable.writeUInt32LE(4, 4);
+    serve(Buffer.concat([skippable, content, laterFrame()]));
+    const installed = await downloadDatabase(SOURCE, () => undefined);
+    expect(installed.filePath).toBe(finalPath);
+  });
+
+  it("rejects valid zstd with the wrong columns", async () => {
+    await installOld();
+    serve(zstdCompressSync(Buffer.from("id,fen,moves\n1,x,e2e4 e7e5\n")));
+    await expectRejected(/expected columns \(PuzzleId,FEN,Moves/);
+  });
+
+  it("accepts the position set's header for the position source", async () => {
+    const header = "internal_id,lichess_game_id,move_number,lichess_url,fen,best_move,difficulty,initiative,development";
+    serve(`${header}\n1,g,13,https://lichess.org/g#13,8/8/8/8/8/8/8/K6k w - - 0 1,a1a2,1,0,1\n`, "text/csv");
+    const installed = await downloadDatabase("chess-position-analysis-results", () => undefined);
+    expect(installed.filePath).toBe(join(dir, "chess-position-analysis-results-chess-positions.csv"));
+  });
+
+  it("replaces an installed file and leaves no backup behind", async () => {
+    await installOld();
+    serve(content);
+    await downloadDatabase(SOURCE, () => undefined);
+    expect(await readFile(finalPath)).toEqual(content);
+    expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst"]);
+  });
+
+  it("keeps the installed file when registering the new one fails, and finishes at once next time", async () => {
+    await installOld();
+    repository.failSave = true;
+    const server = fakeServer(content, '"v2"');
+    vi.stubGlobal("fetch", server.fetchMock);
+    await expect(downloadDatabase(SOURCE, () => undefined)).rejects.toThrow("disk full");
+    expect(await readFile(finalPath)).toEqual(oldContent);
+    expect(await readFile(`${finalPath}.part`)).toEqual(content);
+    expect(await readdir(dir)).not.toContain("lichess-puzzles-lichess_db_puzzle.csv.zst.bak");
+
+    repository.failSave = false;
+    await downloadDatabase(SOURCE, () => undefined);
+    expect(server.requests.at(-1)).toEqual({ Range: `bytes=${content.length}-`, "If-Range": '"v2"' });
+    expect(await readFile(finalPath)).toEqual(content);
+    expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst"]);
+  });
+
+  it("keeps the installed file when Cancel is pressed while the new one is put in place", async () => {
+    await installOld();
+    vi.stubGlobal("fetch", fakeServer(content, '"v2"').fetchMock);
+    let release: () => void = () => undefined;
+    const renaming = new Promise<void>((resolve) => {
+      fsHooks.beforeRename = () => {
+        fsHooks.beforeRename = null;
+        resolve();
+        return new Promise((done) => (release = done));
+      };
+    });
+    const download = downloadDatabase(SOURCE, () => undefined);
+    download.catch(() => undefined);
+    await renaming;
+    cancelDownload(SOURCE);
+    release();
+    await expect(download).rejects.toThrow("Download cancelled.");
+    expect(await readFile(finalPath)).toEqual(oldContent);
+    expect(await readFile(`${finalPath}.part`)).toEqual(content);
+    expect(rows.get(SOURCE)?.filePath).toBe(finalPath);
+  });
+
+  it("keeps the installed file when quitting while the new one is put in place", async () => {
+    const { cancelAllDownloads, downloadDatabase } = await freshModule();
+    await installOld();
+    vi.stubGlobal("fetch", fakeServer(content, '"v2"').fetchMock);
+    let release: () => void = () => undefined;
+    const renaming = new Promise<void>((resolve) => {
+      fsHooks.beforeRename = () => {
+        fsHooks.beforeRename = null;
+        resolve();
+        return new Promise((done) => (release = done));
+      };
+    });
+    const download = downloadDatabase(SOURCE, () => undefined);
+    download.catch(() => undefined);
+    await renaming;
+    await cancelAllDownloads(10);
+    release();
+    await expect(download).rejects.toThrow("Download cancelled.");
+    expect(await readFile(finalPath)).toEqual(oldContent);
+  });
+
+  it("puts back an installed file left in its backup by an interrupted install", async () => {
+    await mkdir(dir, { recursive: true });
+    await writeFile(`${finalPath}.bak`, oldContent);
+    rows.set(SOURCE, { id: SOURCE, sourceId: SOURCE, filePath: finalPath });
+    expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([finalPath]);
+    expect(await readFile(finalPath)).toEqual(oldContent);
+    expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst"]);
+  });
+
+  /** The app died after the new copy took the file's place but before it was registered. */
+  async function crashAfterSwap() {
+    await installOld();
+    await writeFile(`${finalPath}.bak`, oldContent);
+    await writeFile(finalPath, content);
+    await writeFile(`${finalPath}.part.validator`, '"v2"');
+    await writeFile(`${finalPath}.installing`, String(content.length));
+  }
+
+  it("undoes a swap that was never registered when the databases are listed", async () => {
+    await crashAfterSwap();
+    expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([finalPath]);
+    expect(await readFile(finalPath)).toEqual(oldContent);
+    expect(await readFile(`${finalPath}.part`)).toEqual(content);
+    expect((await readdir(dir)).sort()).toEqual([
+      "lichess-puzzles-lichess_db_puzzle.csv.zst",
+      "lichess-puzzles-lichess_db_puzzle.csv.zst.part",
+      "lichess-puzzles-lichess_db_puzzle.csv.zst.part.validator"
+    ]);
+  });
+
+  it("keeps an install that was registered before the app died, clearing only its leftovers", async () => {
+    await crashAfterSwap();
+    // Registered: the registry already describes the new copy; only the marker's removal was missed.
+    rows.set(SOURCE, { id: SOURCE, sourceId: SOURCE, filePath: finalPath, fileSizeBytes: content.length });
+    expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([finalPath]);
+    expect(await readFile(finalPath)).toEqual(content);
+    expect(rows.get(SOURCE)?.fileSizeBytes).toBe(content.length);
+    expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst"]);
+  });
+
+  it("keeps the entry while an interrupted install can't be undone yet, and undoes it later", async () => {
+    await crashAfterSwap();
+    fsHooks.beforeRename = async () => {
+      fsHooks.beforeRename = null;
+      throw Object.assign(new Error("busy"), { code: "EBUSY" });
+    };
+    await listInstalledDatabases();
+    expect(rows.has(SOURCE)).toBe(true);
+    expect(await readdir(dir)).toContain("lichess-puzzles-lichess_db_puzzle.csv.zst.installing");
+    expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([finalPath]);
+    expect(await readFile(finalPath)).toEqual(oldContent);
+  });
+
+  it("keeps the installed copy when the next download after such a crash fails to register", async () => {
+    await crashAfterSwap();
+    repository.failSave = true;
+    vi.stubGlobal("fetch", fakeServer(content, '"v2"').fetchMock);
+    await expect(downloadDatabase(SOURCE, () => undefined)).rejects.toThrow("disk full");
+    expect(await readFile(finalPath)).toEqual(oldContent);
+    expect(await readdir(dir)).toContain("lichess-puzzles-lichess_db_puzzle.csv.zst.part");
+
+    // Downloading again then finishes from the kept copy (the server confirms it is complete).
+    repository.failSave = false;
+    await downloadDatabase(SOURCE, () => undefined);
+    expect(await readFile(finalPath)).toEqual(content);
+    expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst"]);
+  });
+
+  it("keeps the entry of a backup that can't be put back yet, and restores it on a later listing", async () => {
+    await mkdir(dir, { recursive: true });
+    await writeFile(`${finalPath}.bak`, oldContent);
+    rows.set(SOURCE, { id: SOURCE, sourceId: SOURCE, filePath: finalPath });
+    fsHooks.beforeRename = async () => {
+      fsHooks.beforeRename = null;
+      throw Object.assign(new Error("busy"), { code: "EBUSY" });
+    };
+    expect(await listInstalledDatabases()).toEqual([]);
+    expect(rows.has(SOURCE)).toBe(true);
+    expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([finalPath]);
+    expect(await readFile(finalPath)).toEqual(oldContent);
   });
 });
 
@@ -449,6 +748,107 @@ describe("samplePuzzle", () => {
     await expect(samplePuzzle(input({ ratingMin: 2900 }))).rejects.toThrow(/No puzzle matched/);
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(fullScans.count).toBe(0);
+  });
+
+  it("answers a rare filter from one scan of the whole file", async () => {
+    await install([...Array.from({ length: 3000 }, (_, index) => row(`p${index}`, 1500)), row("rare", 2900)]);
+    const filters = input({ ratingMin: 2800 });
+    expect((await samplePuzzle(filters)).id).toBe("rare");
+    expect((await samplePuzzle(filters)).id).toBe("rare");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(fullScans.count).toBe(0);
+  });
+
+  it("reaches fresh puzzles past the excluded ones at the file's start", async () => {
+    await install(Array.from({ length: 1000 }, (_, index) => row(`p${index}`, 1500)));
+    const excludeIds = Array.from({ length: 600 }, (_, index) => `p${index}`);
+    const sample = await samplePuzzle({ ...input(), excludeIds });
+    expect(Number(sample.id.slice(1))).toBeGreaterThanOrEqual(600);
+  });
+
+  it("scans in the scanner, never in this thread", async () => {
+    const scanner = vi.fn(gatedScanner(() => true));
+    setPuzzleScanner(scanner);
+    await install([row("a", 1500)]);
+    expect((await samplePuzzle(input())).id).toBe("a");
+    expect(scanner).toHaveBeenCalledTimes(1);
+  });
+
+  it("shares one quick scan between identical requests in flight", async () => {
+    setPuzzleScanner(gatedScanner());
+    await install(Array.from({ length: 1000 }, (_, index) => row(`p${index}`, 1500)));
+    const first = samplePuzzle(input());
+    const second = samplePuzzle(input());
+    await vi.waitFor(() => expect(gatedScans.length).toBe(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(gatedScans.filter(isQuick)).toHaveLength(1);
+    gatedScans[0]!.release();
+    const [a, b] = await Promise.all([first, second]);
+    expect(a.id).not.toBe(b.id);
+    expect(gatedScans.filter(isQuick)).toHaveLength(1);
+  });
+
+  it("stops the quick scan of a request replaced by one with other filters", async () => {
+    setPuzzleScanner(gatedScanner());
+    await install(Array.from({ length: 1000 }, (_, index) => row(`p${index}`, 1000 + index)));
+    const older = samplePuzzle(input({ ratingMin: 1100 }));
+    older.catch(() => undefined);
+    await vi.waitFor(() => expect(gatedScans.length).toBe(1));
+    const newer = samplePuzzle(input({ ratingMin: 1500 }));
+    await expect(older).rejects.toThrow(/replaced by a newer one/);
+    expect(gatedScans[0]!.cancelled).toBe(true);
+    await vi.waitFor(() => expect(gatedScans.length).toBe(2));
+    gatedScans[1]!.release();
+    expect(Number((await newer).id.slice(1))).toBeGreaterThanOrEqual(500);
+  });
+
+  it("runs at most two whole-file scans at once", async () => {
+    setPuzzleScanner(gatedScanner((job) => job.maxMatches !== undefined));
+    await install(Array.from({ length: 1000 }, (_, index) => row(`p${index}`, 1500)));
+    for (const ratingMin of [100, 200, 300, 400]) await samplePuzzle(input({ ratingMin }));
+    const full = () => gatedScans.filter((scan) => !isQuick(scan));
+    expect(full()).toHaveLength(2);
+    full()[0]!.release();
+    await vi.waitFor(() => expect(full()).toHaveLength(3));
+    // Of the waiting ones, the newest filters are scanned first.
+    expect(full().map((scan) => scan.job.input.lichess?.ratingMin)).toEqual([100, 200, 400]);
+  });
+
+  it("reports a scanner that fails, distinctly from no match, and works again afterwards", async () => {
+    vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    await install([row("a", 1500)]);
+    setPuzzleScanner(workerScanner(join(userData, "no-such-worker.js")));
+    await expect(samplePuzzle(input())).rejects.toThrow(/Couldn't search Puzzles for puzzles: the puzzle scanner .* is missing/);
+    setPuzzleScanner(inThreadScanner);
+    expect((await samplePuzzle(input())).id).toBe("a");
+  });
+
+  it("reports a worker that crashes or exits without an answer", async () => {
+    vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    await install([row("a", 1500)]);
+    await mkdir(userData, { recursive: true });
+    const crashing = join(userData, "crashing-worker.mjs");
+    const silent = join(userData, "silent-worker.mjs");
+    await writeFile(crashing, 'throw new Error("boom");');
+    await writeFile(silent, "");
+    setPuzzleScanner(workerScanner(crashing));
+    await expect(samplePuzzle(input({ ratingMin: 1 }))).rejects.toThrow(/the puzzle scanner crashed \(boom\)/);
+    setPuzzleScanner(workerScanner(silent));
+    await expect(samplePuzzle(input({ ratingMin: 2 }))).rejects.toThrow(/stopped without an answer \(exit code 0\)/);
+  });
+
+  it("tries a failed whole-file scan again later", async () => {
+    vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    fullScans.fail = true;
+    await install(Array.from({ length: 1000 }, (_, index) => row(`p${index}`, 1500)));
+    await samplePuzzle(input());
+    await vi.waitFor(() => expect(fullScans.count).toBe(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    fullScans.fail = false;
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 60_000);
+    await samplePuzzle(input());
+    await vi.waitFor(() => expect(fullScans.count).toBe(2));
   });
 
   it("logs a failed whole-file scan once and keeps serving from the quick scan", async () => {

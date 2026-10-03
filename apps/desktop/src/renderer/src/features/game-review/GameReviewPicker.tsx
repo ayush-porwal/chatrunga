@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { ChevronRight, Search, Upload } from "lucide-react";
-import type { GameSummary } from "@chaturanga/shared/types/chess";
+import { GAME_SEARCH_MAX_LENGTH, type GameListFilter, type GameSummary } from "@chaturanga/shared/types/chess";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useGamesQuery } from "../../queries/api";
+import { useGameFacetsQuery, useGamePagesQuery } from "../../queries/api";
 import { useGameStore } from "../../stores/game-store";
 import { cn } from "@/lib/utils";
 import { listRowInteractive, listRowSelected } from "@/lib/ui";
@@ -13,7 +13,11 @@ import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { Eyebrow } from "@/components/ui/page";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { useShownCount } from "@/lib/use-shown-count";
+import { gamesOfPages } from "@/lib/game-pages";
+import { useDebouncedValue } from "@/lib/use-debounced-value";
+
+/** How long typing pauses before the library is searched. */
+const SEARCH_DEBOUNCE_MS = 150;
 
 type GameReviewPickerProps = {
   onClose: () => void;
@@ -21,7 +25,7 @@ type GameReviewPickerProps = {
   onImport: () => void;
 };
 
-type SourceFilter = "all" | "reviewed" | "lichess" | "other";
+type SourceFilter = GameListFilter;
 
 type CurrentGame = {
   id: string | null;
@@ -41,7 +45,6 @@ function subtitleFor(game: Pick<GameSummary, "event" | "result" | "date">): stri
 }
 
 export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPickerProps) {
-  const games = useGamesQuery();
   const currentGameId = useGameStore((state) => state.gameId);
   const currentWhite = useGameStore((state) => state.headers.white);
   const currentBlack = useGameStore((state) => state.headers.black);
@@ -58,8 +61,9 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
   };
   const [query, setQuery] = useState("");
   const [source, setSource] = useState<SourceFilter>("all");
-  const hasLichessGames = (games.data ?? []).some((game) => game.source === "lichess");
-  const hasReviewedGames = (games.data ?? []).some((game) => game.id !== currentGameId && game.reviewCount > 0);
+  const facets = useGameFacetsQuery(currentGameId);
+  const hasLichessGames = facets.data?.hasLichess ?? false;
+  const hasReviewedGames = facets.data?.hasReviewed ?? false;
   const sourceFilterOptions: { value: SourceFilter; label: string }[] = [
     { value: "all", label: "All" },
     ...(hasReviewedGames ? [{ value: "reviewed" as const, label: "Reviewed" }] : []),
@@ -70,23 +74,17 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
         ]
       : [])
   ];
-  const shown = useShownCount(`${query}|${source}`);
-
-  const filteredGames = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const savedGames = (games.data ?? []).filter(
-      (game) =>
-        game.id !== currentGameId &&
-        (source === "all" ||
-          (source === "reviewed" ? game.reviewCount > 0 : !hasLichessGames || (source === "lichess") === (game.source === "lichess")))
-    );
-    if (!needle) return savedGames;
-    return savedGames.filter((game) =>
-      [game.white, game.black, game.event, game.date, game.result]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(needle))
-    );
-  }, [currentGameId, games.data, hasLichessGames, query, source]);
+  // Searched and filtered in the database, a page at a time. Clearing the box applies at once;
+  // typing waits for a pause. Lichess / Other only split a library that has Lichess games.
+  // The box stops at the longest search the library takes (main refuses longer).
+  const needle = query.trim().slice(0, GAME_SEARCH_MAX_LENGTH);
+  const debouncedNeedle = useDebouncedValue(needle, SEARCH_DEBOUNCE_MS);
+  const games = useGamePagesQuery({
+    search: needle ? debouncedNeedle : "",
+    filter: source === "reviewed" || hasLichessGames ? source : "all",
+    excludeId: currentGameId
+  });
+  const filteredGames = useMemo(() => gamesOfPages(games.data?.pages), [games.data]);
 
   const currentCanReview = currentGame.moveCount > 0;
   const currentLabel = currentGame.white || currentGame.black ? titleFor(currentGame) : "Current game";
@@ -94,7 +92,7 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
     ? [currentGame.event, currentGame.result, `${currentGame.moveCount} plies`].filter(Boolean).join(" · ")
     : "";
 
-  const hasSavedGames = (games.data ?? []).some((game) => game.id !== currentGameId);
+  const hasSavedGames = facets.data?.hasGames ?? false;
 
   return (
     <Dialog
@@ -125,6 +123,7 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
             autoFocus
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            maxLength={GAME_SEARCH_MAX_LENGTH}
             aria-label="Search saved games"
             placeholder="Search players, event, date or result"
             className="pl-9"
@@ -143,12 +142,12 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
         <section className="grid gap-2">
           <div className="flex items-center justify-between gap-2">
             <Eyebrow>Saved games</Eyebrow>
-            {games.isLoading ? <span className="text-2xs text-fg-subtle">Loading…</span> : null}
+            {games.isLoading || games.isPlaceholderData ? <span className="text-2xs text-fg-subtle">Loading…</span> : null}
           </div>
           {games.isError ? <Notice tone="warn">Saved games could not be loaded. Try opening Game review again.</Notice> : null}
           {filteredGames.length ? (
             <div className="grid gap-1.5">
-              {filteredGames.slice(0, shown.count).map((game) => (
+              {filteredGames.map((game) => (
                 <GameRow
                   key={game.id}
                   title={titleFor(game)}
@@ -157,9 +156,16 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
                   onClick={() => onSelect(game.id)}
                 />
               ))}
-              {filteredGames.length > shown.count ? (
-                <Button type="button" variant="ghost" size="sm" className="justify-self-center" onClick={shown.showMore}>
-                  Show more ({filteredGames.length - shown.count} left)
+              {games.hasNextPage ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="justify-self-center"
+                  disabled={games.isFetchingNextPage}
+                  onClick={() => void games.fetchNextPage()}
+                >
+                  {games.isFetchingNextPage ? "Loading…" : "Show more"}
                 </Button>
               ) : null}
             </div>

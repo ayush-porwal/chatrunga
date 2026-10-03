@@ -1,6 +1,8 @@
 import type { CommentaryRequestContext, TelemetryRendererEvent, TelemetryStatus } from "../types/telemetry";
 import type {
-  GameSummary,
+  GameLibraryFacets,
+  GameListPage,
+  GameListQuery,
   ImportedGame,
   ImportPgnInput,
   SavedGame,
@@ -129,7 +131,10 @@ export type ChaturangaApi = {
     stop(): Promise<void>;
   };
   games: {
-    list(): Promise<GameSummary[]>;
+    /** One page of the library, newest first (filtered and searched in the database). */
+    listPage(query: GameListQuery): Promise<GameListPage>;
+    /** Which filters the library has games for, leaving out `excludeId`. */
+    facets(excludeId: string | null): Promise<GameLibraryFacets>;
     get(id: string): Promise<SavedGame>;
     /** One saved analysis of a game (null when it's gone), to show instead of the newest. */
     getReview(gameId: string, reviewId: string): Promise<GameReview | null>;

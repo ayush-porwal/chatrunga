@@ -24,6 +24,31 @@ const POSITION_TAGS = [
 /** Which CSV layout a row has: the Lichess puzzle database, or the position-training set. */
 export type PuzzleRowKind = "lichess" | "position";
 
+/** The row layout of a catalogued source's file. */
+export function rowKindForSource(sourceId: string): PuzzleRowKind {
+  return sourceId === "lichess-puzzles" ? "lichess" : "position";
+}
+
+/**
+ * The header each layout starts with: the columns the row parsers below read by position (the
+ * position set's tag columns after `difficulty` aren't required, so a new tag doesn't break it).
+ */
+const HEADER_COLUMNS: Record<PuzzleRowKind, readonly string[]> = {
+  lichess: ["PuzzleId", "FEN", "Moves", "Rating", "RatingDeviation", "Popularity", "NbPlays", "Themes", "GameUrl", "OpeningTags"],
+  position: ["internal_id", "lichess_game_id", "move_number", "lichess_url", "fen", "best_move", "difficulty"]
+};
+
+/** The header columns a file of this layout must start with, for error messages. */
+export function expectedHeader(kind: PuzzleRowKind): string {
+  return HEADER_COLUMNS[kind].join(",");
+}
+
+/** Whether a file's first line is the header of this layout (case and a leading BOM ignored). */
+export function headerMatches(kind: PuzzleRowKind, line: string): boolean {
+  const columns = parseCsvLine(line.replace(/^\uFEFF/, "").trim()).map((column) => column.trim().toLowerCase());
+  return HEADER_COLUMNS[kind].every((column, index) => columns[index] === column.toLowerCase());
+}
+
 const words = (value: string | undefined) => (value ? value.split(/\s+/).filter(Boolean) : []);
 const finiteOrNull = (value: number) => (Number.isFinite(value) ? value : null);
 

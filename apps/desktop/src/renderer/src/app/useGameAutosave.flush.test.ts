@@ -144,4 +144,45 @@ describe("useGameAutosave flushes", () => {
     expect(retried).toContain("b");
     expect(useSaveStatusStore.getState().error).toBeNull();
   });
+
+  it("writes a header-only edit after the delay", async () => {
+    loadSaved("a");
+    await vi.runAllTimersAsync();
+    expect(saveGame).not.toHaveBeenCalled();
+    useGameStore.getState().patchHeaders({ white: "Carol" });
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS);
+    expect(saveGame).toHaveBeenCalledOnce();
+    expect(saveGame.mock.calls[0][0].headers).toMatchObject({ white: "Carol" });
+  });
+
+  it("writes a header or source edit when the window closes right after it", async () => {
+    loadSaved("a");
+    useGameStore.getState().patchHeaders({ event: "Club final" });
+    expect(await flushGameAutosave()).toBe(true);
+    expect(saveGame).toHaveBeenCalledOnce();
+    expect(saveGame.mock.calls[0][0]).toMatchObject({ id: "a", headers: { event: "Club final" } });
+
+    useGameStore.getState().setGameSource("analysis");
+    expect(await flushGameAutosave()).toBe(true);
+    expect(saveGame).toHaveBeenCalledTimes(2);
+    expect(saveGame.mock.calls[1][0]).toMatchObject({ id: "a", source: "analysis" });
+  });
+
+  it("writes a header edit with the game being left when the board is replaced", async () => {
+    loadSaved("a");
+    useGameStore.getState().patchHeaders({ white: "Carol" });
+    loadSaved("b");
+    await vi.runAllTimersAsync();
+    expect(saveGame).toHaveBeenCalledOnce();
+    expect(saveGame.mock.calls[0][0]).toMatchObject({ id: "a", headers: { white: "Carol" } });
+  });
+
+  it("doesn't write a game opened and closed unchanged", async () => {
+    loadSaved("a");
+    expect(await flushGameAutosave()).toBe(true);
+    await vi.runAllTimersAsync();
+    loadSaved("b");
+    await vi.runAllTimersAsync();
+    expect(saveGame).not.toHaveBeenCalled();
+  });
 });

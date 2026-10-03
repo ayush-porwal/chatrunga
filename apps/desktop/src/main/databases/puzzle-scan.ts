@@ -2,9 +2,10 @@
  * Streaming scans of a puzzle / position CSV (optionally zstd-compressed). Pure Node — no Electron —
  * so the same code runs in the main process and in the background scan worker.
  */
-import { createReadStream } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { pipeline } from "node:stream";
+import { Worker } from "node:worker_threads";
 import { createZstdDecompress } from "node:zlib";
 import { Decompress } from "fzstd";
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
@@ -71,51 +72,65 @@ export async function scanCsvLines(
   const decoder = new TextDecoder();
   let buffer = "";
   let lineIndex = 0;
-  let stopped = false;
-  const emitText = (text: string) => {
-    if (stopped) return;
-    buffer += text;
+  for await (const chunk of decompressedChunks(filePath, compressed)) {
+    buffer += decoder.decode(chunk, { stream: true });
     const lines = buffer.split(/\r?\n/);
     buffer = lines.pop() ?? "";
     for (const line of lines) {
-      if (onLine(line, lineIndex++) === false) {
-        stopped = true;
-        return;
-      }
+      // Breaking out ends the reads (and the decompression) of the rest of the file.
+      if (onLine(line, lineIndex++) === false) return;
     }
-  };
+  }
+  const tail = (buffer + decoder.decode()).trim();
+  if (tail) onLine(tail, lineIndex);
+}
 
-  if (compressed && typeof createZstdDecompress === "function") {
-    for await (const chunk of nativeZstdFrames(filePath)) {
-      emitText(decoder.decode(chunk, { stream: true }));
-      if (stopped) break;
+/**
+ * The file's first line, reading (and decompressing) no more than `maxChars` of text — bounded work
+ * however large or wrong the file is. Null when there is no line break within that much text (a CSV
+ * header is far shorter). Rejects when the file can't be read or decompressed.
+ */
+export async function readFirstLine(filePath: string, compressed: boolean, maxChars = 64 * 1024): Promise<string | null> {
+  const decoder = new TextDecoder();
+  let text = "";
+  let ended = true;
+  for await (const chunk of decompressedChunks(filePath, compressed)) {
+    text += decoder.decode(chunk, { stream: true });
+    const newline = text.search(/\r?\n/);
+    if (newline >= 0) return text.slice(0, newline);
+    if (text.length > maxChars) {
+      ended = false;
+      break;
     }
-    const tail = (buffer + decoder.decode()).trim();
-    if (!stopped && tail) onLine(tail, lineIndex);
+  }
+  if (!ended) return null;
+  text += decoder.decode();
+  return text.length ? text : null;
+}
+
+/** The file's bytes, zstd-decompressed when `compressed`; stopping early (a `break`) ends the reads. */
+async function* decompressedChunks(filePath: string, compressed: boolean): AsyncGenerator<Uint8Array> {
+  if (compressed && typeof createZstdDecompress === "function") {
+    yield* nativeZstdFrames(filePath);
     return;
   }
-
   const file = createReadStream(filePath);
   try {
-    if (compressed) {
-      const decompressor = new Decompress((chunk, final) => emitText(decoder.decode(chunk, { stream: !final })));
-      for await (const chunk of file) {
-        decompressor.push(chunk as Buffer, false);
-        if (stopped) break;
-      }
-      if (!stopped) decompressor.push(new Uint8Array(), true);
-    } else {
-      for await (const chunk of file) {
-        emitText(decoder.decode(chunk as Buffer, { stream: true }));
-        if (stopped) break;
-      }
+    if (!compressed) {
+      for await (const chunk of file) yield chunk as Buffer;
+      return;
     }
+    const output: Uint8Array[] = [];
+    const decompressor = new Decompress((chunk) => output.push(chunk));
+    for await (const chunk of file) {
+      decompressor.push(chunk as Buffer, false);
+      yield* output.splice(0);
+    }
+    decompressor.push(new Uint8Array(), true);
+    yield* output.splice(0);
   } finally {
     file.destroy();
   }
-
-  const tail = (buffer + decoder.decode()).trim();
-  if (!stopped && tail) onLine(tail, lineIndex);
 }
 
 /**
@@ -147,4 +162,77 @@ async function* nativeZstdFrames(filePath: string): AsyncGenerator<Buffer> {
     if (consumed <= 0) throw new Error(`zstd: no frame at byte ${offset} of ${filePath}`);
     offset += consumed;
   }
+}
+
+/** A scan in progress: `cancel` stops it, and `result` then rejects with `ScanCancelledError`. */
+export type RunningScan = { result: Promise<ScanResult>; cancel: () => void };
+
+/** Runs a scan somewhere (the worker thread in the app; tests may run it in their own thread). */
+export type PuzzleScanner = (job: ScanJob) => RunningScan;
+
+export class ScanCancelledError extends Error {
+  constructor() {
+    super("The puzzle scan was stopped.");
+    this.name = "ScanCancelledError";
+  }
+}
+
+/** The scan worker is missing, crashed or stopped without an answer — not a problem with the file. */
+export class ScanWorkerError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ScanWorkerError";
+  }
+}
+
+/** Longer than any whole-file scan takes: a worker silent for this long is stuck, and stopped. */
+const WORKER_SCAN_TIMEOUT_MS = 5 * 60_000;
+
+/**
+ * Scans in a worker thread running `workerPath` (puzzle-scan-worker.ts, bundled next to the main
+ * entry), one worker per scan. The result settles exactly once: with the worker's answer, or as a
+ * `ScanWorkerError` when the file is missing, the worker throws, or it exits or stalls without
+ * answering — so no caller waits forever.
+ */
+export function workerScanner(workerPath: string, timeoutMs = WORKER_SCAN_TIMEOUT_MS): PuzzleScanner {
+  return (job) => {
+    if (!existsSync(workerPath)) {
+      return {
+        result: Promise.reject(new ScanWorkerError(`the puzzle scanner (${workerPath}) is missing from this installation`)),
+        cancel: () => undefined
+      };
+    }
+    let finish: (outcome: { result: ScanResult } | { error: Error }) => void = () => undefined;
+    const result = new Promise<ScanResult>((resolve, reject) => {
+      let worker: Worker;
+      try {
+        worker = new Worker(workerPath, { workerData: job });
+      } catch (error) {
+        reject(new ScanWorkerError(`the puzzle scanner couldn't start (${error instanceof Error ? error.message : String(error)})`));
+        return;
+      }
+      const timer = setTimeout(() => finish({ error: new ScanWorkerError("the puzzle scanner stopped responding") }), timeoutMs);
+      let settled = false;
+      finish = (outcome) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        void worker.terminate();
+        if ("result" in outcome) resolve(outcome.result);
+        else reject(outcome.error);
+      };
+      worker.once("message", (message: { ok: true; result: ScanResult } | { ok: false; message: string }) =>
+        // A failed scan inside a working worker: the file couldn't be read.
+        finish(message.ok ? { result: message.result } : { error: new Error(message.message) })
+      );
+      worker.once("error", (error: unknown) =>
+        finish({ error: new ScanWorkerError(`the puzzle scanner crashed (${error instanceof Error ? error.message : String(error)})`) })
+      );
+      worker.once("exit", (code) =>
+        // After any message still queued from the worker, which wins if there is one.
+        setImmediate(() => finish({ error: new ScanWorkerError(`the puzzle scanner stopped without an answer (exit code ${code})`) }))
+      );
+    });
+    return { result, cancel: () => finish({ error: new ScanCancelledError() }) };
+  };
 }

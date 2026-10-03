@@ -99,6 +99,47 @@ export type GameSummary = {
   lastReviewedAt: number | null;
 };
 
+/** Where a library page starts: just after this game in the list's order (newest first, then id). */
+export type GameListCursor = { updatedAt: number; id: string };
+
+/**
+ * Which library games a list shows: "reviewed" those with a saved analysis, "lichess" the Lichess
+ * imports, "other" everything else.
+ */
+export type GameListFilter = "all" | "reviewed" | "lichess" | "other";
+
+/** One page of the library, filtered and searched in the database before it is cut to `limit`. */
+/** The longest library search text (the search box stops there; IPC refuses longer). */
+export const GAME_SEARCH_MAX_LENGTH = 200;
+
+export type GameListQuery = {
+  /** Null (or absent) for the first page; a page's `nextCursor` for the one after it. */
+  cursor?: GameListCursor | null;
+  /** Games per page (clamped to 1..200; 50 when absent). */
+  limit?: number;
+  /** Case-insensitive text in the players, event, date or result. */
+  search?: string;
+  filter?: GameListFilter;
+  /** A game left out (the one on the board, which the review picker lists on its own). */
+  excludeId?: string | null;
+};
+
+export type GameListPage = {
+  items: GameSummary[];
+  /** Where the next page starts; null when this is the last one. */
+  nextCursor: GameListCursor | null;
+};
+
+/** What the library holds, for which filters to offer (without listing it). */
+export type GameLibraryFacets = {
+  /** Any game other than `excludeId`. */
+  hasGames: boolean;
+  /** Any Lichess import (counting `excludeId`). */
+  hasLichess: boolean;
+  /** Any game other than `excludeId` with a saved analysis. */
+  hasReviewed: boolean;
+};
+
 /** One saved analysis of a game, as listed for choosing between them (the review itself loads on demand). */
 export type SavedReviewInfo = {
   reviewId: string;

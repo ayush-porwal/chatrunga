@@ -1,6 +1,9 @@
 import { useEffect } from "react";
 import type { MoveReview, ReviewProgress } from "@chaturanga/shared/types/engine";
+import { useGameStore } from "../stores/game-store";
 import { useReviewStore } from "../stores/review-store";
+import { lineStillOnMainline } from "../stores/review-validity";
+import { cancelActiveReview } from "./useReviewRunner";
 
 /** Events belong to the review the store is tracking; late events of an older review are dropped. */
 export function acceptsReviewEvent(reviewId: string | null, eventReviewId: string): boolean {
@@ -89,6 +92,11 @@ export function useReviewEventSubscription(): void {
       const store = useReviewStore.getState();
       if (!acceptsReviewEvent(store.reviewId, event.reviewId)) return;
       buffer.discard();
+      // A result for a line the game no longer has is not an analysis of this game.
+      if (store.runLine && !lineStillOnMainline(store.runLine, useGameStore.getState().moveTree)) {
+        store.detachRun();
+        return;
+      }
       store.setReview(event.review);
     });
     const unsubFailed = window.chaturanga.events.onReviewFailed((event) => {
@@ -99,9 +107,22 @@ export function useReviewEventSubscription(): void {
       if (event.message === "Review cancelled") store.markCancelled();
       else store.setError(event.message);
     });
+    // An edit that takes analysed moves off the main line (deleting, replacing or demoting them)
+    // stops the run: its results would describe moves the game no longer has. Extending the line,
+    // moving the cursor or editing a variation leaves it running.
+    const unsubGame = useGameStore.subscribe((state, previous) => {
+      if (state.moveTree === previous.moveTree) return;
+      const store = useReviewStore.getState();
+      if (store.status !== "running" || !store.runLine) return;
+      if (lineStillOnMainline(store.runLine, state.moveTree)) return;
+      buffer.discard();
+      void cancelActiveReview();
+      store.detachRun();
+    });
 
     return () => {
       buffer.discard();
+      unsubGame();
       unsubProgress();
       unsubMoveCompleted();
       unsubCompleted();

@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { useGameStore } from "../../stores/game-store";
-import { reviewsByNode, selectDisplayedMoves, useReviewStore } from "../../stores/review-store";
+import { reviewsByNode } from "../../stores/review-store";
+import { useDisplayedReviewMoves } from "../../stores/review-validity";
 import { TreeView } from "./TreeView";
 
 export function MoveList() {
@@ -8,7 +9,7 @@ export function MoveList() {
   const currentNodeId = useGameStore((state) => state.currentNodeId);
   const goToNode = useGameStore((state) => state.goToNode);
   const deleteLineFromNode = useGameStore((state) => state.deleteLineFromNode);
-  const reviewMoves = useReviewStore(selectDisplayedMoves);
+  const reviewMoves = useDisplayedReviewMoves();
   const reviews = useMemo(() => reviewsByNode(reviewMoves), [reviewMoves]);
   // Stable so the memoised move rows skip re-rendering while stepping through the game.
   const onDeleteLine = useCallback(

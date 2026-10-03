@@ -1,0 +1,75 @@
+name: e2e
+
+# Electron smoke journeys (apps/desktop/e2e): launch the real app and drive it — boot, PGN import,
+# persistence across a restart, positions, puzzles (scan worker), offline analysis. Too slow and
+# windowed for every PR: nightly, on demand, and (release.yml) against every packaged release build.
+on:
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Smoke journeys (Linux, built and packaged)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.0.9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Ubuntu 24.04 blocks the unprivileged user namespaces Chromium's sandbox needs.
+      - name: Allow Chromium's sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      - name: Build app
+        run: pnpm --filter @chaturanga/desktop build
+
+      - name: Smoke journeys (out/ on Electron from node_modules)
+        working-directory: apps/desktop
+        run: xvfb-run -a pnpm test:e2e:run
+
+      # The same journeys against the unpacked app electron-builder makes (asar, packaged paths).
+      - name: Package (unpacked, unsigned)
+        working-directory: apps/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: pnpm exec electron-builder --linux --dir --publish never
+
+      - name: Check packaged app contents
+        run: node scripts/check-packaged-app.mjs
+
+      - name: Smoke journeys (packaged app)
+        working-directory: apps/desktop
+        env:
+          CHATURANGA_E2E_PACKAGED: "1"
+        run: xvfb-run -a pnpm test:e2e:run
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-results
+          path: apps/desktop/test-results/
+          if-no-files-found: ignore

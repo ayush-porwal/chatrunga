@@ -186,11 +186,8 @@ export const PuzzlePage = memo(function PuzzlePage({
       ]
     : [`Difficulty ${difficultyMin}–${difficultyMax}`, ...(positionTags.length ? positionTags.map(formatTag) : ["Any tag"])];
 
-  const startError = samplePuzzle.error
-    ? samplePuzzle.error instanceof Error
-      ? samplePuzzle.error.message
-      : String(samplePuzzle.error)
-    : null;
+  // The main process's message (no match, a scanner failure, a replaced search) without the IPC prefix.
+  const startError = samplePuzzle.error ? ipcErrorMessage(samplePuzzle.error) || String(samplePuzzle.error) : null;
 
   return (
     <Page>

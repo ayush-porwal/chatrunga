@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zstdCompressSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { reservoirScan, scanCsvLines } from "./puzzle-scan";
+import { readFirstLine, reservoirScan, ScanCancelledError, ScanWorkerError, scanCsvLines, workerScanner, type ScanJob } from "./puzzle-scan";
 
 /** A zstd skippable frame (magic 0x184D2A50, little-endian length, payload), as pzstd writes. */
 function skippableFrame(payload: Buffer): Buffer {
@@ -74,5 +74,60 @@ describe("reservoirScan", () => {
     await expect(
       reservoirScan({ filePath: path, compressed: true, kind: "lichess", input: {} as never, excludeIds: [], size: 10 })
     ).rejects.toThrow(/No lines could be read/);
+  });
+});
+
+describe("readFirstLine", () => {
+  it("reads only the start of a large file", async () => {
+    const path = tempFile("lines.csv.zst", zstdCompressSync(Buffer.from(CSV)));
+    expect(await readFirstLine(path, true)).toBe("PuzzleId,FEN,Moves,Rating");
+  });
+
+  it("gives up on text with no line break", async () => {
+    const path = tempFile("blob.csv", "x".repeat(200_000));
+    expect(await readFirstLine(path, false)).toBeNull();
+  });
+});
+
+describe("workerScanner", () => {
+  const job = { filePath: "unused", compressed: false, kind: "lichess", input: {} as never, excludeIds: [], size: 1 } satisfies ScanJob;
+  const worker = (source: string) => tempFile("worker.mjs", source);
+
+  it("resolves with the answer the worker posts before it exits", async () => {
+    const path = worker(
+      'import { parentPort, workerData } from "node:worker_threads";\n' +
+        "parentPort.postMessage({ ok: true, result: { rows: [[workerData.filePath]], matches: 1, complete: true } });"
+    );
+    await expect(workerScanner(path)(job).result).resolves.toEqual({ rows: [["unused"]], matches: 1, complete: true });
+  });
+
+  it("rejects a failed scan as a file error, not a worker failure", async () => {
+    const path = worker('import { parentPort } from "node:worker_threads";\nparentPort.postMessage({ ok: false, message: "corrupt block" });');
+    const failure = await workerScanner(path)(job).result.catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(ScanWorkerError);
+    expect((failure as Error).message).toBe("corrupt block");
+  });
+
+  it.each([
+    ["crashes", 'throw new Error("boom");', /crashed \(boom\)/],
+    ["exits without an answer", "", /without an answer \(exit code 0\)/],
+    ["exits with an error code", "process.exit(3);", /without an answer \(exit code 3\)/]
+  ])("rejects when the worker %s", async (_, source, message) => {
+    const failure = await workerScanner(worker(source))(job).result.catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ScanWorkerError);
+    expect((failure as Error).message).toMatch(message);
+  });
+
+  it("rejects when the worker file is missing", async () => {
+    await expect(workerScanner(join(tmpdir(), "no-such-puzzle-worker.js"))(job).result).rejects.toThrow(ScanWorkerError);
+  });
+
+  it("rejects a stuck worker after the timeout, and a cancelled one at once", async () => {
+    const stuck = worker("setInterval(() => undefined, 1000);");
+    await expect(workerScanner(stuck, 50)(job).result).rejects.toThrow(/stopped responding/);
+    const scan = workerScanner(stuck)(job);
+    scan.cancel();
+    await expect(scan.result).rejects.toThrow(ScanCancelledError);
   });
 });

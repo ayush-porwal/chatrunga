@@ -1,7 +1,21 @@
 import { useCallback, useEffect } from "react";
-import { mutationOptions, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  mutationOptions,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient
+} from "@tanstack/react-query";
 import { SAVE_SUPPRESSED_AFTER_DELETE } from "@chaturanga/shared/ipc/game-handling";
-import type { SaveGameInput } from "@chaturanga/shared/types/chess";
+import type {
+  GameLibraryFacets,
+  GameListCursor,
+  GameListFilter,
+  GameListPage,
+  SaveGameInput
+} from "@chaturanga/shared/types/chess";
 import type { CreateEngineInput, UpdateEngineInput } from "@chaturanga/shared/types/engine";
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
@@ -66,8 +80,50 @@ export function useDeleteEngineMutation() {
   });
 }
 
-export function useGamesQuery() {
-  return useQuery({ queryKey: queryKeys.games, queryFn: () => api()?.games.list() ?? [] });
+/** Games a library list fetches at a time (and adds on "Show more"). */
+export const GAME_PAGE_SIZE = 50;
+
+const NO_GAMES: GameListPage = { items: [], nextCursor: null };
+const NO_FACETS: GameLibraryFacets = { hasGames: false, hasLichess: false, hasReviewed: false };
+
+export type GameListParams = {
+  /** Already trimmed / debounced by the caller (each distinct value is its own cached list). */
+  search: string;
+  filter: GameListFilter;
+  excludeId: string | null;
+};
+
+/**
+ * The library a page at a time, filtered and searched in the database. Everything sits under the
+ * "games" key, so a save, delete or import (which invalidate ["games"]) re-reads it: only the
+ * pages already shown, and only for a list on screen (others refetch when shown again).
+ */
+export function useGamePagesQuery(params: GameListParams) {
+  return useInfiniteQuery({
+    queryKey: [...queryKeys.games, "pages", params] as const,
+    queryFn: async ({ pageParam }): Promise<GameListPage> =>
+      (await api()?.games.listPage({ ...params, cursor: pageParam, limit: GAME_PAGE_SIZE })) ?? NO_GAMES,
+    initialPageParam: null as GameListCursor | null,
+    getNextPageParam: (page) => page.nextCursor,
+    // A new search keeps the last results up while it runs (no skeleton flash per keystroke).
+    placeholderData: keepPreviousData
+  });
+}
+
+/** The newest `count` library games (Home). */
+export function useLatestGamesQuery(count: number) {
+  return useQuery({
+    queryKey: [...queryKeys.games, "latest", count] as const,
+    queryFn: async () => (await api()?.games.listPage({ limit: count }))?.items ?? []
+  });
+}
+
+/** Which filters the library has games for (leaving out `excludeId`). */
+export function useGameFacetsQuery(excludeId: string | null) {
+  return useQuery({
+    queryKey: [...queryKeys.games, "facets", excludeId] as const,
+    queryFn: async () => (await api()?.games.facets(excludeId)) ?? NO_FACETS
+  });
 }
 
 /** Re-reads the saved games list (after games were added outside the renderer, e.g. a Lichess import). */

@@ -202,9 +202,13 @@ export function useGameAutosave(): void {
             });
           }
         }
+        // Anything a save writes (headers and source too: an edit to only those is an edit), and
+        // the mode (puzzle practice isn't saved). The pending timer is what the flushes write.
         if (
           state.currentNodeId !== previous.currentNodeId ||
           state.moveTree !== previous.moveTree ||
+          state.headers !== previous.headers ||
+          state.source !== previous.source ||
           state.mode !== previous.mode ||
           state.gameOutcome !== previous.gameOutcome
         ) {

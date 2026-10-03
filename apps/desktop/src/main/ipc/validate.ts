@@ -6,7 +6,15 @@
 import { parseSettingValue } from "./settings-values";
 import { isAbsolute } from "node:path";
 import { positionFromFen } from "@chaturanga/shared/chess/position";
-import type { Color, GameHeaders, GameSource, SaveGameInput } from "@chaturanga/shared/types/chess";
+import type {
+  Color,
+  GameHeaders,
+  GameListFilter,
+  GameListQuery,
+  GameSource,
+  SaveGameInput
+} from "@chaturanga/shared/types/chess";
+import { GAME_SEARCH_MAX_LENGTH } from "@chaturanga/shared/types/chess";
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
 import type {
   CreateEngineInput,
@@ -298,6 +306,27 @@ export function parseReviewGameInput(value: unknown): ReviewGameInput {
     moveTimeMs: asOptionalPositive(input.moveTimeMs, "moveTimeMs"),
     depth: asOptionalPositive(input.depth, "depth", SEARCH_LIMITS.depth, true),
     multipv: asOptionalPositive(input.multipv, "multipv", SEARCH_LIMITS.multipv, true)
+  };
+}
+
+const GAME_LIST_FILTERS: readonly GameListFilter[] = ["all", "reviewed", "lichess", "other"];
+
+/** A library page request (the repository clamps the limit). */
+export function parseGameListQuery(value: unknown): GameListQuery {
+  const input = value === undefined ? {} : asObject(value, "game list query");
+  const cursor = nullable(input.cursor, (raw) => {
+    const fields = asObject(raw, "game list cursor");
+    return { updatedAt: asFiniteNumber(fields.updatedAt, "cursor time"), id: asId(fields.id, "cursor id") };
+  });
+  if (input.filter !== undefined && !GAME_LIST_FILTERS.includes(input.filter as GameListFilter)) {
+    fail("game list filter", "unknown filter");
+  }
+  return {
+    cursor: cursor ?? null,
+    limit: optional(input.limit, (limit) => asWholeNumber(limit, "page size")),
+    search: optional(input.search, (search) => asString(search, "search", GAME_SEARCH_MAX_LENGTH)),
+    filter: (input.filter as GameListFilter | undefined) ?? "all",
+    excludeId: nullable(input.excludeId, (id) => asId(id, "game id")) ?? null
   };
 }
 

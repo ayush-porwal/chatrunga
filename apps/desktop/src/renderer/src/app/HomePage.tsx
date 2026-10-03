@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { sectionTitle } from "@/lib/ui";
 import { BoardThumbnail } from "../features/settings/board-thumbnail";
 import { EngineSetupLine } from "../features/onboarding/EngineSetupStatus";
-import { useGamesQuery } from "../queries/api";
+import { useLatestGamesQuery } from "../queries/api";
 import { decidedResult } from "./game-title";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 
@@ -53,7 +53,8 @@ export const HomePage = memo(function HomePage({
   /** Settings → Engines (no engine yet: add your own). */
   onOpenEngineSettings: () => void;
 }) {
-  const games = useGamesQuery();
+  // The Continue card's game and the Recent list: only these are read, not the whole library.
+  const games = useLatestGamesQuery(1 + RECENT_LIMIT);
   const list = games.data ?? [];
   const [latest, ...rest] = list;
   const recent = rest.slice(0, RECENT_LIMIT);

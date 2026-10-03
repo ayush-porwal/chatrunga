@@ -13,3 +13,4 @@ stockfish
 .env
 .env.local
 .env.*.local
+test-results

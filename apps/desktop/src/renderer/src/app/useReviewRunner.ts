@@ -73,7 +73,8 @@ export function useReviewRunner({
       gameId = crypto.randomUUID();
       useGameStore.getState().setGameId(gameId);
     }
-    review.startReview(reviewId);
+    // The line analysed: an edit that takes any of it off the main line stops this run.
+    review.startReview(reviewId, reviewInput.map((move) => ({ nodeId: move.nodeId, uci: move.uci })));
     try {
       await window.chaturanga.engines.reviewGame({
         reviewId,
