@@ -570,10 +570,52 @@ describe("repertoire service: chapters, decisions and index", () => {
     expect(service.getDueSummary().continue).toMatchObject({ chapterId: own.id, nodeId: "n1" });
   });
 
+  it("offers the most recently updated unfinished session of an active repertoire to resume", () => {
+    const { id } = create();
+    save(id, [["e2e4", "e7e5", "g1f3"]]);
+    const other = create("black").id;
+    save(other, [["e2e4", "e7e5"]]);
+    const learn = service.startPractice({ repertoireId: id, mode: "learn-new" });
+    expect(service.getDueSummary().resume).toEqual({
+      repertoireId: id,
+      sessionId: learn.sessionId,
+      mode: "learn-new"
+    });
+    now += 1000;
+    const rehearsal = service.startPractice({
+      repertoireId: other,
+      mode: "rehearse-lines",
+      rehearse: { chapterId: service.getRepertoire(other).chapters[0].id }
+    });
+    expect(service.getDueSummary().resume).toEqual({
+      repertoireId: other,
+      sessionId: rehearsal.sessionId,
+      mode: "rehearse-lines"
+    });
+    // An answer makes a session the latest again; an ended one isn't offered.
+    now += 1000;
+    attempt(learn.sessionId, learn.cards[0].queueItemId, "e2e4");
+    expect(service.getDueSummary().resume?.sessionId).toBe(learn.sessionId);
+    service.endPractice(learn.sessionId);
+    expect(service.getDueSummary().resume?.sessionId).toBe(rehearsal.sessionId);
+    // A session of an archived repertoire isn't offered either.
+    service.archiveRepertoire({
+      id: other,
+      archived: true,
+      expectedRevision: service.getRepertoire(other).revision
+    });
+    expect(service.getDueSummary().resume).toBeNull();
+  });
+
   it("summarises due work and where to continue", () => {
     const { id } = create();
     const saved = save(id, [["e2e4"]]);
-    expect(service.getDueSummary()).toEqual({ dueCount: 0, repertoireCount: 0, continue: null });
+    expect(service.getDueSummary()).toEqual({
+      dueCount: 0,
+      repertoireCount: 0,
+      continue: null,
+      resume: null
+    });
     const { session, card } = learnFirst(id);
     attempt(session.sessionId, card.queueItemId, "e2e4");
     service.saveWorkspace({
@@ -589,7 +631,8 @@ describe("repertoire service: chapters, decisions and index", () => {
     expect(service.getDueSummary()).toEqual({
       dueCount: 1,
       repertoireCount: 1,
-      continue: { repertoireId: id, chapterId: saved.chapter.id, nodeId: "root" }
+      continue: { repertoireId: id, chapterId: saved.chapter.id, nodeId: "root" },
+      resume: { repertoireId: id, sessionId: session.sessionId, mode: "learn-new" }
     });
     const detail = service.getRepertoire(id);
     expect(detail.dueCount).toBe(1);
@@ -2100,11 +2143,15 @@ describe("repertoire service: rehearse lines", () => {
       outcome: "correct",
       finalGrade: true
     });
+    // The followed card counts as unaided, in the live totals and the summary alike; following
+    // started a line of its own.
+    expect(service.resumePractice(session.sessionId).totals.correct).toBe(2);
     expect(service.endPractice(session.sessionId)).toMatchObject({
-      unaided: 1,
+      unaided: 2,
       missed: 0,
-      rehearsal: { linesStarted: 2, linesCompleted: 1, otherLineAnswers: 2 }
+      rehearsal: { linesStarted: 3, linesCompleted: 1, otherLineAnswers: 2 }
     });
+    expect(progressRepository.list(id)).toEqual([]);
   });
 
   it("refuses to follow a line from another chapter", () => {
@@ -2207,6 +2254,25 @@ describe("repertoire service: rehearse lines", () => {
       rehearsal: { reply: { uci: "c7c5" }, lineComplete: false, next: { queueItemId: "q2" } }
     });
     expect(current(session.sessionId).queueItemId).toBe("q2");
+    // A retry after a lost response gets the card back instead of an error.
+    expect(
+      service.recordPracticeAction({
+        sessionId: session.sessionId,
+        queueItemId: "q1",
+        action: { kind: "reveal" }
+      })
+    ).toEqual({
+      card: expect.objectContaining({ queueItemId: "q1", state: "revealed" }),
+      revealed: { ucis: ["e2e4"], preferredUci: "e2e4", explanation: null }
+    });
+    expect(
+      service.recordPracticeAction({
+        sessionId: session.sessionId,
+        queueItemId: "q1",
+        action: { kind: "skip" }
+      })
+    ).toEqual({ card: expect.objectContaining({ queueItemId: "q1", state: "revealed" }) });
+    expect(current(session.sessionId).queueItemId).toBe("q2");
     expect(progressRepository.list(id)).toEqual([]);
     expect(service.endPractice(session.sessionId)).toMatchObject({ missed: 1, unaided: 0 });
   });
@@ -2256,6 +2322,101 @@ describe("repertoire service: rehearse lines", () => {
       lineComplete: true,
       endReason: "depth",
       next: { queueItemId: "q2" }
+    });
+  });
+
+  it("rehearses a chapter with a start marker from its start: the lead-up is played, not tested", () => {
+    const { id } = create();
+    const { chapter } = save(id, [...LINES, ["c2c4", "e7e5"]], {
+      meta: (tree) => ({
+        [nodeAt(tree, ["e2e4", "c7c5"]).id]: { edge: "included", trainingStart: true }
+      })
+    });
+    const tree = chapter.tree;
+    const session = rehearse(id, chapter.id);
+    expect(session.cards[0]).toMatchObject({
+      queueItemId: "q1",
+      nodeId: nodeAt(tree, ["e2e4", "c7c5"]).id,
+      rehearsal: { stepIndex: 0, lineNumber: 1 }
+    });
+    expect(session.cards[0].leadUp.map((move) => move.uci)).toEqual(["e2e4", "c7c5"]);
+    expect(attempt(session.sessionId, "q1", "g1f3").rehearsal).toMatchObject({
+      reply: { uci: "d7d6" },
+      next: { queueItemId: "q2" }
+    });
+    expect(attempt(session.sessionId, "q2", "d2d4").rehearsal).toMatchObject({
+      lineComplete: true,
+      next: {
+        queueItemId: "q3",
+        nodeId: nodeAt(tree, ["e2e4", "c7c5"]).id,
+        rehearsal: { stepIndex: 0, lineNumber: 2 }
+      }
+    });
+    attempt(session.sessionId, "q3", "g1f3");
+    expect(attempt(session.sessionId, "q4", "d2d4").rehearsal).toMatchObject({
+      lineComplete: true,
+      next: null
+    });
+    expect(service.endPractice(session.sessionId)).toMatchObject({
+      unaided: 4,
+      rehearsal: { linesStarted: 2, linesCompleted: 2 }
+    });
+  });
+
+  it("following into a line already played this session doesn't count it twice, and keeps its number", () => {
+    const { id, chapter } = setup([["e2e4", "e7e5", "g1f3"], ["d2d4"]]);
+    const session = rehearse(id, chapter.id);
+    attempt(session.sessionId, "q1", "e2e4");
+    expect(attempt(session.sessionId, "q2", "g1f3").rehearsal).toMatchObject({
+      lineComplete: true,
+      next: { queueItemId: "q3", rehearsal: { lineNumber: 2 } }
+    });
+    expect(attempt(session.sessionId, "q3", "e2e4").outcome).toBe("other-line");
+    // 1.e4 only leads to the finished line: it is replayed (nothing else is below) as line 1.
+    expect(
+      service.recordPracticeAction({
+        sessionId: session.sessionId,
+        queueItemId: "q3",
+        action: { kind: "follow-other-line" }
+      }).rehearsal
+    ).toMatchObject({
+      reply: { uci: "e7e5" },
+      next: { queueItemId: "q4", rehearsal: { lineNumber: 1 } }
+    });
+    expect(attempt(session.sessionId, "q4", "g1f3").rehearsal).toMatchObject({
+      lineComplete: true,
+      next: { queueItemId: "q5", nodeId: "root", rehearsal: { lineNumber: 2 } }
+    });
+    attempt(session.sessionId, "q5", "d2d4");
+    expect(service.endPractice(session.sessionId)).toMatchObject({
+      rehearsal: { linesStarted: 4, linesCompleted: 2 }
+    });
+  });
+
+  it("an other-line answer points at an occurrence inside the rehearsed branch first", () => {
+    // 1.d4 d5 2.Nf3 Nf6, 1.d4 Nf6 2.Nf3 d5 and 1.Nf3 d5 2.d4 Nf6 are the same position.
+    const { id, chapter } = setup([
+      ["g1f3", "d7d5", "d2d4", "g8f6", "c1f4"],
+      ["d2d4", "d7d5", "g1f3", "g8f6", "c2c4"],
+      ["d2d4", "g8f6", "g1f3", "d7d5", "c1f4"]
+    ]);
+    const d4 = nodeAt(chapter.tree, ["d2d4"]);
+    const session = service.startPractice({
+      repertoireId: id,
+      mode: "rehearse-lines",
+      rehearse: { chapterId: chapter.id, fromNodeId: d4.id }
+    });
+    expect(attempt(session.sessionId, "q1", "g1f3").rehearsal).toMatchObject({
+      reply: { uci: "g8f6" },
+      next: { queueItemId: "q2" }
+    });
+    expect(attempt(session.sessionId, "q2", "c1f4")).toMatchObject({
+      outcome: "other-line",
+      otherLine: {
+        chapterId: chapter.id,
+        nodeId: nodeAt(chapter.tree, ["d2d4", "g8f6", "g1f3", "d7d5", "c1f4"]).id,
+        path: "1. d4 Nf6 2. Nf3 d5 3. Bf4"
+      }
     });
   });
 

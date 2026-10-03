@@ -110,6 +110,8 @@ export type PageCommands = {
   repertoireStageApplied: () => void;
   openRepertoirePractice: (repertoireId: string) => void;
   reviewRepertoire: (repertoireId: string) => void;
+  /** "Resume practice": the unfinished session's route (it resumes there). */
+  resumeRepertoirePractice: (target: { repertoireId: string; sessionId: string }) => void;
   practiceRepertoireChapters: (repertoireId: string, chapterIds: string[]) => void;
   /** A practice preset that starts on its own (line rehearsal: "Rehearse this chapter / again"). */
   rehearseRepertoire: (repertoireId: string, preset: PracticePreset) => void;
@@ -181,12 +183,14 @@ export function AppPages({
           onOpenEngineSettings={on.engineSettings}
           onRepertoireHub={on.repertoireHub}
           onRepertoireReview={on.reviewRepertoire}
+          onRepertoireResume={on.resumeRepertoirePractice}
           onRepertoireStudy={on.openRepertoireStudy}
         />
       ) : view === "repertoire-hub" ? (
         <RepertoireHubPage
           onStudy={on.openRepertoireStudy}
           onPractice={on.openRepertoirePractice}
+          onResume={on.resumeRepertoirePractice}
           onReview={on.reviewRepertoire}
         />
       ) : view === "repertoire-study" && repertoire?.view === "repertoire-study" ? (

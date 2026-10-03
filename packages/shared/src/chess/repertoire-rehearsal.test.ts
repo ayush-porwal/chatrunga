@@ -3,6 +3,7 @@ import type { MoveNode } from "../types/chess";
 import type { RepertoireColor, RepertoireNodeMeta } from "../types/repertoire";
 import { applySan, START_FEN } from "./position";
 import {
+  canRehearseFrom,
   continuations,
   enumerateLines,
   lineIdOf,
@@ -128,6 +129,69 @@ describe("enumerateLines", () => {
     expect(continuations(context, "e4/e5")).toEqual({ children: [], end: "leaf" });
   });
 
+  it("passes through the lead-up above a start marker without testing it", () => {
+    const lines = [
+      ["e4", "c5", "Nf3", "d6"],
+      ["e4", "c5", "Nf3", "Nc6"],
+      ["e4", "e5", "Nf3"],
+      ["d4", "d5"]
+    ];
+    const context = contextOf(lines, { "e4/c5": { edge: "included", trainingStart: true } });
+    const fromRoot = enumerateLines(context, "root");
+    expect(fromRoot.map((line) => line.endNodeId)).toEqual(["e4/c5/Nf3/d6", "e4/c5/Nf3/Nc6"]);
+    expect(fromRoot[0]).toMatchObject({
+      nodeIds: ["root", "e4", "e4/c5", "e4/c5/Nf3", "e4/c5/Nf3/d6"],
+      decisionNodeIds: ["e4/c5"]
+    });
+    // From inside the lead-up too; a lead-up branch that never reaches training scope is no line.
+    expect(enumerateLines(context, "e4").map((line) => line.endNodeId)).toEqual([
+      "e4/c5/Nf3/d6",
+      "e4/c5/Nf3/Nc6"
+    ]);
+    expect(planRoute(context, "root", new Set(), {})).toMatchObject({
+      endNodeId: "e4/c5/Nf3/d6",
+      nodeIds: ["root", "e4", "e4/c5", "e4/c5/Nf3", "e4/c5/Nf3/d6"]
+    });
+  });
+
+  it("takes only the first authored lead-up move at the player's turn", () => {
+    const context = contextOf(
+      [
+        ["d4", "d5", "c4"],
+        ["e4", "c5", "Nf3"]
+      ],
+      {
+        "d4/d5": { edge: "included", trainingStart: true },
+        "e4/c5": { edge: "included", trainingStart: true }
+      }
+    );
+    expect(enumerateLines(context, "root").map((line) => line.endNodeId)).toEqual(["d4/d5/c4"]);
+    expect(continuations(context, "root")).toEqual({ children: ["d4"], end: null });
+  });
+
+  it("offers a rehearsal only in training scope and within the depth limit", () => {
+    const context = contextOf(
+      [
+        ["e4", "c5", "Nf3", "d6"],
+        ["d4", "d5"]
+      ],
+      {
+        e4: { edge: "included", trainingStart: true },
+        "e4/c5/Nf3": { edge: "included", trainingStop: true },
+        d4: { edge: "reference" }
+      },
+      { depth: 3 }
+    );
+    expect(canRehearseFrom(context, "root")).toBe(false);
+    expect(canRehearseFrom(context, "e4")).toBe(true);
+    expect(canRehearseFrom(context, "e4/c5")).toBe(true);
+    // The stop node is in scope but its next move is past the depth limit; below it is out.
+    expect(canRehearseFrom(context, "e4/c5/Nf3")).toBe(false);
+    expect(canRehearseFrom(context, "e4/c5/Nf3/d6")).toBe(false);
+    expect(canRehearseFrom(context, "d4")).toBe(false);
+    expect(canRehearseFrom(context, "missing")).toBe(false);
+  });
+
   it("follows only included moves at the player's turn", () => {
     const context = contextOf(
       [
@@ -172,6 +236,19 @@ describe("planRoute", () => {
     expect(planRoute(again, "root", new Set(), { "e4/c5": 2, "e4/e5": 2 }).endNodeId).toBe(
       "e4/c5/Nf3/d6"
     );
+  });
+
+  it("avoids lines already finished when nothing pending is below", () => {
+    const context = contextOf(lines);
+    const finished = new Set(["e4/c5/Nf3/d6"]);
+    // Rotation alone would pick 1...c5 2.Nf3 d6 again; the unfinished sibling comes first.
+    expect(planRoute(context, "e4", new Set(), {}, finished).endNodeId).toBe("e4/c5/Nf3/Nc6");
+    expect(planRoute(context, "e4/c5/Nf3", new Set(), {}, finished).endNodeId).toBe(
+      "e4/c5/Nf3/Nc6"
+    );
+    // Everything below finished: the rotation still plans a line.
+    const all = new Set(["e4/c5/Nf3/d6", "e4/c5/Nf3/Nc6"]);
+    expect(planRoute(context, "e4/c5", new Set(), {}, all).endNodeId).toBe("e4/c5/Nf3/d6");
   });
 
   it("finds the move on a route", () => {

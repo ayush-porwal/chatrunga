@@ -1,24 +1,32 @@
 import { memo } from "react";
-import { BookOpen, GraduationCap } from "lucide-react";
+import { BookOpen, GraduationCap, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { sectionTitle } from "@/lib/ui";
 import { useRepertoireDueSummaryQuery, useRepertoiresQuery } from "../../queries/repertoire";
-import { homeReviewAction, type StudyTarget } from "./repertoire-chapters";
+import {
+  homeReviewAction,
+  resumePracticeTarget,
+  type ResumePracticeTarget,
+  type StudyTarget
+} from "./repertoire-chapters";
 
 const ACTIVE = {};
 
 /**
  * Home's compact repertoire card (§6.1): decisions due across every active repertoire (→ practice
  * the repertoire with the most due, named with its own count when others are due too, plus
- * "All repertoires" → hub) and Continue repertoire study (→ the last chapter and node). Renders nothing when there is
- * neither — Home's game content stays the main thing.
+ * "All repertoires" → hub), Resume practice (→ the unfinished session, e.g. after a restart) and
+ * Continue repertoire study (→ the last chapter and node). Renders nothing when there is none of
+ * them — Home's game content stays the main thing.
  */
 export const RepertoireHomeCard = memo(function RepertoireHomeCard({
   onReview,
+  onResume,
   onStudy,
   onHub
 }: {
   onReview: (repertoireId: string) => void;
+  onResume: (target: ResumePracticeTarget) => void;
   onStudy: (target: StudyTarget) => void;
   onHub: () => void;
 }) {
@@ -27,7 +35,8 @@ export const RepertoireHomeCard = memo(function RepertoireHomeCard({
   const list = useRepertoiresQuery(ACTIVE);
   const review = homeReviewAction(due.data, list.data);
   const continueTarget = due.data?.continue ?? null;
-  if (!dueCount && !continueTarget) return null;
+  const resume = resumePracticeTarget(due.data);
+  if (!dueCount && !continueTarget && !resume) return null;
 
   return (
     <section
@@ -45,6 +54,18 @@ export const RepertoireHomeCard = memo(function RepertoireHomeCard({
           <Button type="button" variant="outline" size="sm" onClick={() => onStudy(continueTarget)}>
             <BookOpen />
             Continue repertoire study
+          </Button>
+        ) : null}
+        {resume ? (
+          <Button
+            type="button"
+            variant={dueCount ? "outline" : "primary"}
+            size="sm"
+            title={resume.description}
+            onClick={() => onResume(resume)}
+          >
+            <Play />
+            {resume.label}
           </Button>
         ) : null}
         {review?.showAll ? (

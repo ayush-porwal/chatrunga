@@ -172,8 +172,11 @@ export type PracticeCard = {
   /** 0 none; 1 prompt/hint text; 2 piece to move; 3 from/to squares. */
   hintStage: 0 | 1 | 2 | 3;
   attemptsSoFar: number;
-  /** Rehearse-lines only: which authored line this decision belongs to and how far along it is. */
-  rehearsal?: { lineId: string; stepIndex: number };
+  /**
+   * Rehearse-lines only: which authored line this decision belongs to and how far along it is.
+   * `lineNumber` is the line's number in the session (lines are numbered by first appearance).
+   */
+  rehearsal?: { lineId: string; stepIndex: number; lineNumber?: number };
 };
 
 export type PracticeTotals = {
@@ -455,6 +458,8 @@ export type RepertoireDueSummary = {
   dueCount: number;
   repertoireCount: number;
   continue: { repertoireId: string; chapterId: string; nodeId: string } | null;
+  /** The most recently updated unfinished practice session of an active repertoire. */
+  resume: { repertoireId: string; sessionId: string; mode: PracticeMode } | null;
 };
 
 /* ------------------------------------------------------------------ add from a game (§6.2) */
@@ -641,7 +646,12 @@ export type RepertoireComparison = {
   /** null also when the game ends where a chapter begins (nothing judged; `chaptersUsed` names it). */
   issue: ComparisonIssue | null;
   /** Later positions the repertoire knows again, after the issue (context, not a second issue). */
-  returnedByTransposition: { ply: number; chapterId: string; chapterTitle: string; nodeId: string }[];
+  returnedByTransposition: {
+    ply: number;
+    chapterId: string;
+    chapterTitle: string;
+    nodeId: string;
+  }[];
   chaptersUsed: { chapterId: string; title: string }[];
 };
 

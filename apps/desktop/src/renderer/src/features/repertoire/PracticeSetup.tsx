@@ -1,6 +1,10 @@
 import { useId, useMemo, useState } from "react";
 import { GraduationCap, Route, Sparkles } from "lucide-react";
-import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
+import {
+  DEFAULT_REHEARSAL_DEPTH_PLIES,
+  canRehearseFrom,
+  rehearsalContext
+} from "@chaturanga/shared/chess/repertoire-rehearsal";
 import type {
   PracticeMode,
   RepertoireDetail,
@@ -24,6 +28,7 @@ import {
   MAX_CARD_LIMIT,
   MAX_DEPTH_PLIES,
   MAX_REHEARSE_STARTS,
+  boundedInt,
   practiceInputFromForm,
   rehearseStarts,
   type RehearseStart
@@ -87,7 +92,8 @@ export function PracticeSetup({
   const branch = useRehearseStarts(
     detail,
     rehearsing && rehearseChapterId ? rehearseChapterId : null,
-    initial.rehearse?.chapterId === rehearseChapterId ? (initial.rehearse.fromNodeId ?? "") : ""
+    initial.rehearse?.chapterId === rehearseChapterId ? (initial.rehearse.fromNodeId ?? "") : "",
+    boundedInt(depth, 1, MAX_DEPTH_PLIES) ?? DEFAULT_REHEARSAL_DEPTH_PLIES
   );
   // A branch that is no longer in the chapter starts from the chapter start (once it's loaded).
   const effectiveFrom =
@@ -289,26 +295,31 @@ export function PracticeSetup({
 }
 
 /**
- * The positions a rehearsal of `chapterId` can start from (loaded with the chapter). A preselected
- * branch ("Rehearse from here") that the list leaves out is offered too while it is in the chapter.
+ * The positions a rehearsal of `chapterId` can start from within the depth limit (loaded with the
+ * chapter). A preselected branch ("Rehearse from here", e.g. where the opponent is to move) that
+ * the list leaves out is offered too while a rehearsal can start there.
  */
 function useRehearseStarts(
   detail: RepertoireDetail,
   chapterId: string | null,
-  preselected: string
+  preselected: string,
+  maxDepthPlies: number
 ): { starts: RehearseStart[]; truncated: boolean; loading: boolean } {
   const chapter = useRepertoireChapterQuery(chapterId ? detail.id : null, chapterId);
   const data = chapterId && chapter.data?.id === chapterId ? chapter.data : null;
   const listed = useMemo(() => {
     if (!data) return { starts: [], truncated: false };
-    const result = rehearseStarts(data, detail.color, pathLabel);
+    const result = rehearseStarts(data, detail.color, pathLabel, undefined, maxDepthPlies);
     if (!preselected || result.starts.some((start) => start.nodeId === preselected)) return result;
-    const lookup = buildChapterLookup(data);
-    if (!lookup.nodesById.has(preselected)) return result;
+    const context = rehearsalContext(data, detail.color, maxDepthPlies);
+    if (!canRehearseFrom(context, preselected)) return result;
     return {
       ...result,
-      starts: [{ nodeId: preselected, path: pathLabel(lookup, preselected) }, ...result.starts]
+      starts: [
+        { nodeId: preselected, path: pathLabel(context.lookup, preselected) },
+        ...result.starts
+      ]
     };
-  }, [data, detail.color, preselected]);
+  }, [data, detail.color, preselected, maxDepthPlies]);
   return { ...listed, loading: Boolean(chapterId) && chapter.isPending };
 }

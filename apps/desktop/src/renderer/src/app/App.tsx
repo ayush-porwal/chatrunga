@@ -1211,6 +1211,9 @@ export function App() {
         openRepertoirePractice(repertoireId, { preset: { mode: "review-due", chapterIds: [] } })
       )
     ),
+    resumeRepertoirePractice: useEventCallback(({ repertoireId, sessionId }: { repertoireId: string; sessionId: string }) =>
+      unlessRepertoireBlocked("resume-practice", () => void openRepertoirePractice(repertoireId, { sessionId }))
+    ),
     practiceRepertoireChapters: useEventCallback((repertoireId: string, chapterIds: string[]) =>
       unlessRepertoireBlocked(
         "open-practice",

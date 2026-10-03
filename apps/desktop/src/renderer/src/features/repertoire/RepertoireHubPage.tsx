@@ -7,6 +7,7 @@ import {
   Download,
   GraduationCap,
   Library,
+  Play,
   Plus,
   Search,
   Trash2,
@@ -51,7 +52,9 @@ import {
   mostDue,
   plural,
   relativeDay,
+  resumePracticeTarget,
   sortedChapters,
+  type ResumePracticeTarget,
   type StudyTarget
 } from "./repertoire-chapters";
 
@@ -73,10 +76,13 @@ const ACTIVE: RepertoireListFilters = {};
 export function RepertoireHubPage({
   onStudy,
   onPractice,
+  onResume,
   onReview
 }: {
   onStudy: (target: StudyTarget) => void;
   onPractice: (repertoireId: string) => void;
+  /** The unfinished practice session (e.g. after a restart). */
+  onResume: (target: ResumePracticeTarget) => void;
   /** Practice set up as a review of everything due. */
   onReview: (repertoireId: string) => void;
 }) {
@@ -114,6 +120,7 @@ export function RepertoireHubPage({
   const items = list.data ?? [];
   const reviewTarget = mostDue(active.data ?? []);
   const continueTarget = due.data?.continue ?? null;
+  const resume = resumePracticeTarget(due.data);
 
   const fail = (error: unknown, fallback: string) =>
     setNotice({ tone: "danger", text: ipcErrorMessage(error) || fallback });
@@ -191,6 +198,17 @@ export function RepertoireHubPage({
               <Button type="button" variant="ghost" onClick={() => onStudy(continueTarget)}>
                 <BookOpen />
                 Continue studying
+              </Button>
+            ) : null}
+            {resume ? (
+              <Button
+                type="button"
+                variant="outline"
+                title={resume.description}
+                onClick={() => onResume(resume)}
+              >
+                <Play />
+                {resume.label}
               </Button>
             ) : null}
             {(due.data?.dueCount ?? 0) > 0 && reviewTarget ? (
@@ -327,6 +345,15 @@ export function RepertoireHubPage({
                 label={`${item.name} actions`}
                 items={[
                   { label: "Study", icon: <BookOpen />, onSelect: () => void study(item.id) },
+                  ...(resume?.repertoireId === item.id
+                    ? [
+                        {
+                          label: resume.label,
+                          icon: <Play />,
+                          onSelect: () => onResume(resume)
+                        }
+                      ]
+                    : []),
                   {
                     label: "Practice",
                     icon: <GraduationCap />,

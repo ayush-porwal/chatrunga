@@ -101,6 +101,7 @@ import {
   DEFAULT_REHEARSAL_DEPTH_PLIES,
   continuations,
   enumerateLines,
+  isDecisionNode,
   isPlayerNode,
   lineIdOf,
   nextOnRoute,
@@ -464,11 +465,15 @@ export function compareGame(input: CompareGameInput): RepertoireComparison {
   return result;
 }
 
-/** Due decisions across active repertoires, and the most recent study place (Home card). */
+/**
+ * Due decisions across active repertoires, the most recent study place, and the practice session
+ * to resume (Home card and hub).
+ */
 export function getDueSummary(): RepertoireDueSummary {
   const now = clock();
   const totals = repertoireRepository.dueTotals(now);
   const place = repertoireRepository.lastStudyPlace();
+  const session = sessionRepository.lastActive();
   return {
     ...totals,
     continue: place
@@ -477,6 +482,9 @@ export function getDueSummary(): RepertoireDueSummary {
           chapterId: place.chapterId,
           nodeId: place.nodeId ?? REPERTOIRE_ROOT_NODE_ID
         }
+      : null,
+    resume: session
+      ? { repertoireId: session.repertoireId, sessionId: session.id, mode: session.mode }
       : null
   };
 }
@@ -2121,7 +2129,11 @@ function pushRehearsalCard(
     state: "unanswered",
     hintStage: 0,
     attemptsSoFar: 0,
-    rehearsal: { lineId: lineIdOf(rehearsal.state.lineEnd), stepIndex }
+    rehearsal: {
+      lineId: lineIdOf(rehearsal.state.lineEnd),
+      stepIndex,
+      lineNumber: lineNumberOf(rehearsal.state, rehearsal.state.lineEnd)
+    }
   };
   session.cards.push(card);
   session.policies[queueItemId] = {
@@ -2151,8 +2163,26 @@ function countSeen(state: RehearsalState, nodeId: string): void {
 }
 
 /**
- * Plans the next pending line from the start node and appends its first decision (an opening
- * opponent reply shows in that card's lead-up). With no line left the session is finished and
+ * The session's number of the line ending at `endNodeId`: lines are numbered by first appearance,
+ * so a line planned again keeps its number and a different line gets a new one.
+ */
+function lineNumberOf(state: RehearsalState, endNodeId: string): number {
+  const order = (state.lineOrder ??= []);
+  if (!order.includes(endNodeId)) order.push(endNodeId);
+  return order.indexOf(endNodeId) + 1;
+}
+
+/** Makes the line ending at `endNodeId` the one being played, and counts it as started. */
+function startLine(state: RehearsalState, endNodeId: string): void {
+  state.lineEnd = endNodeId;
+  state.linesStarted += 1;
+  lineNumberOf(state, endNodeId);
+}
+
+/**
+ * Plans the next pending line from the start node and appends its first decision. The moves before
+ * it (lead-up above a "Start training here" marker, an opening opponent reply) are played
+ * automatically and show in that card's lead-up. With no line left the session is finished and
  * null is returned.
  */
 function startNextLine(session: PracticeSessionRecord, rehearsal: Rehearsal): PracticeCard | null {
@@ -2162,20 +2192,21 @@ function startNextLine(session: PracticeSessionRecord, rehearsal: Rehearsal): Pr
     session.status = "finished";
     return null;
   }
-  const plan = planRoute(context, state.fromNodeId, pending, state.seen);
-  state.lineEnd = plan.endNodeId;
-  state.linesStarted += 1;
-  let nodeId = state.fromNodeId;
-  if (!isPlayerNode(context, nodeId)) {
-    // A pending line always has a decision, so the opening reply is never the line's end.
-    nodeId = nextOnRoute(context.lookup, nodeId, plan.endNodeId)!.id;
-    countSeen(state, nodeId);
+  const plan = planRoute(context, state.fromNodeId, pending, state.seen, new Set(state.finished));
+  startLine(state, plan.endNodeId);
+  // A pending line always has a decision before its end, so this stops on the line.
+  let index = 0;
+  while (index < plan.nodeIds.length - 1 && !isDecisionNode(context, plan.nodeIds[index])) {
+    index += 1;
+    if (!isPlayerNode(context, plan.nodeIds[index - 1])) countSeen(state, plan.nodeIds[index]);
   }
-  return pushRehearsalCard(session, rehearsal, nodeId, 0);
+  return pushRehearsalCard(session, rehearsal, plan.nodeIds[index], 0);
 }
 
+/** Marks the current line finished; a line already finished this session isn't counted again. */
 function finishLine(state: RehearsalState, completed: boolean): void {
-  if (!state.finished.includes(state.lineEnd)) state.finished.push(state.lineEnd);
+  if (state.finished.includes(state.lineEnd)) return;
+  state.finished.push(state.lineEnd);
   if (completed) state.linesCompleted += 1;
 }
 
@@ -2207,9 +2238,10 @@ function continueLine(
 
 /**
  * Where an accepted choice that isn't this line's move lives: the first active occurrence of the
- * card's position (its own node first, then the rest of its chapter, then the other enabled
- * opening chapters in order) with an active included child playing `uci`. Index links are only
- * looked up, never followed.
+ * card's position with an active included child playing `uci`. Its own node comes first, then the
+ * occurrences inside the session's branch whose move is within the depth limit, then the rest of
+ * its chapter, then the other enabled opening chapters in order. Index links are only looked up,
+ * never followed.
  */
 function findOtherLine(
   session: PracticeSessionRecord,
@@ -2225,9 +2257,7 @@ function findOtherLine(
     const own = chapter === rehearsal.chapter;
     const lookup = own ? rehearsal.context.lookup : buildChapterLookup(chapter);
     const states = own ? rehearsal.context.states : computeScopeStates(chapter, lookup);
-    const nodeIds = own
-      ? [card.nodeId, ...lookup.order.filter((id) => id !== card.nodeId)]
-      : lookup.order;
+    const nodeIds = own ? ownOccurrenceOrder(rehearsal, card.nodeId) : lookup.order;
     for (const id of nodeIds) {
       if (lookup.positionKeys.get(id) !== card.positionKey || states.get(id) !== "active") {
         continue;
@@ -2255,6 +2285,30 @@ function findOtherLine(
     }
   }
   return null;
+}
+
+/**
+ * The rehearsed chapter's nodes in the order findOtherLine looks at them: `nodeId`, then the nodes
+ * inside the session's branch whose next move is within the depth limit, then the rest.
+ */
+function ownOccurrenceOrder(rehearsal: Rehearsal, nodeId: string): string[] {
+  const { lookup, rootPly, maxDepthPlies } = rehearsal.context;
+  const { fromNodeId } = rehearsal.state;
+  const branch = new Set<string>();
+  const stack = [fromNodeId];
+  while (stack.length) {
+    const id = stack.pop()!;
+    branch.add(id);
+    stack.push(...(lookup.childrenById.get(id) ?? []));
+  }
+  const preferred: string[] = [];
+  const rest: string[] = [];
+  for (const id of lookup.order) {
+    if (id === nodeId) continue;
+    const inBranch = branch.has(id) && lookup.nodesById.get(id)!.ply + 1 - rootPly <= maxDepthPlies;
+    (inBranch ? preferred : rest).push(id);
+  }
+  return [nodeId, ...preferred, ...rest];
 }
 
 /** A card's actions that count towards its first-answer grade (other-line answers don't). */
@@ -2287,7 +2341,7 @@ function startRehearsal(
   const fromNodeId = target.fromNodeId ?? REPERTOIRE_ROOT_NODE_ID;
   const maxDepthPlies = input.maxDepthPlies ?? DEFAULT_REHEARSAL_DEPTH_PLIES;
   const context = rehearsalContext(chapter, record.color, maxDepthPlies);
-  if (!context.lookup.parentPath.has(fromNodeId)) {
+  if (!context.lookup.parentPath.get(fromNodeId)) {
     throw new Error("Invalid rehearse.fromNodeId: not in this chapter");
   }
   const state: RehearsalState = {
@@ -2299,7 +2353,8 @@ function startRehearsal(
     seen: {},
     finished: [],
     linesStarted: 0,
-    linesCompleted: 0
+    linesCompleted: 0,
+    lineOrder: []
   };
   const session: PracticeSessionRecord = {
     id: nanoid(),
@@ -2431,22 +2486,42 @@ function rehearsalAttempt(
  * Rehearsal actions on the current card. Hints work as in the other modes. Reveal misses an
  * unanswered card, then plays the line's move and continues. Skip abandons the current line (not
  * completed) and starts the next one. Follow-other-line, right after an `other-line` answer,
- * switches to that occurrence (same chapter only) and continues from it.
+ * switches to that occurrence (same chapter only) and continues from it. A reveal, skip or follow
+ * of a card the line has already left (a retry after a lost response) returns the card unchanged.
  */
 function rehearsalAction(
   session: PracticeSessionRecord,
   input: PracticeActionInput
 ): PracticeActionResult {
   const index = cardIndex(session, input.queueItemId);
+  const kind = input.action.kind;
   if (index !== session.cursor) {
+    // A retry after a lost response: the line already moved on, so the card is returned as it is.
+    const settled = session.cards[index];
+    const policy = session.policies[settled.queueItemId];
+    if (kind === "reveal") {
+      return {
+        card: settled,
+        revealed: {
+          ucis: policy.acceptedUcis,
+          preferredUci: policy.preferredUci,
+          explanation: policy.explanation ?? policy.hint
+        }
+      };
+    }
+    if (kind === "skip" || kind === "follow-other-line") return { card: settled };
     throw new Error("Invalid queueItemId: not the current card of this rehearsal");
   }
   const card = { ...session.cards[index] };
   const policy = session.policies[card.queueItemId];
   const now = Math.max(clock(), attemptRepository.lastAt(session.id) ?? -Infinity);
   const history = attemptRepository.list(session.id, card.queueItemId);
-  const kind = input.action.kind;
-  const persist = (attemptKind: AttemptKind, isFinalGrade: boolean, outcome: string | null) =>
+  const persist = (
+    attemptKind: AttemptKind,
+    isFinalGrade: boolean,
+    outcome: string | null,
+    correct = false
+  ) =>
     attemptRepository.insert({
       attemptId: nanoid(),
       sessionId: session.id,
@@ -2455,7 +2530,7 @@ function rehearsalAction(
       kind: attemptKind,
       uci: null,
       legal: true,
-      correct: false,
+      correct,
       isFinalGrade,
       outcome,
       positionKey: card.positionKey,
@@ -2536,15 +2611,33 @@ function rehearsalAction(
   if (other.chapterId !== rehearsal.chapter.id) {
     throw new Error("Invalid action: that line is in another chapter; rehearse it from there");
   }
-  if (card.state === "unanswered") card.state = "answered-correct";
+  // A followed answer is a correct recall of the player's own choice (unaided unless a hint was
+  // taken first): its final row keeps the summary in step with the live "Correct" count. Nothing
+  // is scheduled in a rehearsal.
+  const unanswered = card.state === "unanswered";
+  persist(
+    "attempt",
+    unanswered,
+    unanswered
+      ? firstAnswerOutcome([
+          ...gradedHistory(history),
+          { kind: "attempt", legal: true, correct: true }
+        ])
+      : null,
+    true
+  );
+  if (unanswered) card.state = "answered-correct";
   session.cards[index] = card;
+  // Following starts a new line from that occurrence; a line already finished this session is
+  // only replayed when nothing else is left below it (and isn't counted again).
   const plan = planRoute(
     rehearsal.context,
     other.nodeId,
     pendingLines(rehearsal),
-    rehearsal.state.seen
+    rehearsal.state.seen,
+    new Set(rehearsal.state.finished)
   );
-  rehearsal.state.lineEnd = plan.endNodeId;
+  startLine(rehearsal.state, plan.endNodeId);
   const step = continueLine(session, rehearsal, other.nodeId, stepIndex);
   return save({ card, rehearsal: step });
 }

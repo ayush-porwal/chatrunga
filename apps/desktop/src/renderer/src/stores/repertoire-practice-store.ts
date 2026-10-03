@@ -9,6 +9,7 @@ import type {
   PracticeSummary,
   RehearsalStep
 } from "@chaturanga/shared/types/repertoire";
+import { REPERTOIRE_ROOT_NODE_ID } from "@chaturanga/shared/types/repertoire";
 import {
   nextUnansweredIndex,
   resumedHintText,
@@ -83,7 +84,10 @@ type Actions = {
   presentStep: () => "next" | "line-complete" | "none";
   /** Rehearsal: "Try again" after an `other-line` answer. */
   dismissOtherLine: () => void;
-  /** Moves to the next unanswered card; returns false when none is left. */
+  /**
+   * Moves to the next unanswered card (after a completed line, the next line's first decision);
+   * returns false when none is left.
+   */
   advance: () => boolean;
   setSummary: (summary: PracticeSummary) => void;
   setLeadUpIndex: (index: number | null) => void;
@@ -167,14 +171,34 @@ export function rehearsalLineNumber(cards: readonly PracticeCard[], lineId: stri
   return seen.length + 1;
 }
 
-/** "Rehearsing · Najdorf · line 2", the board's title during a rehearsal. */
+/**
+ * "Rehearsing · Najdorf · line 2", the board's title during a rehearsal. The main process numbers
+ * lines by first appearance; cards from before it did are numbered from the queue.
+ */
 export function rehearsalTitle(
   chapterTitle: string,
   cards: readonly PracticeCard[],
   card: PracticeCard
 ): string {
-  const line = card.rehearsal ? rehearsalLineNumber(cards, card.rehearsal.lineId) : 1;
+  const line = card.rehearsal
+    ? (card.rehearsal.lineNumber ?? rehearsalLineNumber(cards, card.rehearsal.lineId))
+    : 1;
   return `Rehearsing · ${chapterTitle} · line ${line}`;
+}
+
+/**
+ * The words for an opponent move the main process played before a line's first decision (a
+ * rehearsal started where the opponent is to move), or null when the card follows no such move.
+ */
+export function openingReplyMessage(
+  session: Pick<PracticeSessionSnapshot, "mode" | "scope">,
+  card: PracticeCard
+): PracticeOutcomeMessage | null {
+  if (session.mode !== "rehearse-lines" || card.rehearsal?.stepIndex !== 0) return null;
+  const from = session.scope.rehearse?.fromNodeId ?? REPERTOIRE_ROOT_NODE_ID;
+  const reply = card.leadUp[card.leadUp.length - 1];
+  if (card.nodeId === from || !reply) return null;
+  return { tone: "info", text: `The reply: ${reply.san}.` };
 }
 
 /** The step of the line a rehearsal card is (1 for the line's first decision). */
@@ -207,6 +231,7 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
       hint: card ? (shown?.hint ?? resumedHintText(card)) : null,
       hintUci: shown?.hintUci ?? null,
       reveal: shown?.revealed ?? null,
+      message: card ? openingReplyMessage(session, card) : null,
       session: { ...session, totals: totalsOf(session.cards) },
       summary: null,
       orientation: card?.orientation ?? get().orientation
@@ -269,8 +294,8 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
   applyAction: (kind, result) => {
     const { session } = get();
     if (!session) return;
-    // Only a reveal or following another line continues a rehearsed line.
-    const continues = kind === "reveal" || kind === "follow-other-line";
+    // A reveal or following another line continues a rehearsed line; a skip starts the next one.
+    const continues = kind === "reveal" || kind === "follow-other-line" || kind === "skip";
     const next = withStep(withCard(session, result.card), continues ? result.rehearsal : undefined);
     if (kind === "follow-other-line") {
       set({
@@ -322,13 +347,22 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
   },
 
   advance: () => {
-    const { session } = get();
+    const { session, rehearsal } = get();
     if (!session) return false;
-    const index = nextUnansweredIndex(session.cards, session.cursor);
+    // After a completed line, its step names the next line's first decision.
+    const nextId = rehearsal?.step.next?.queueItemId;
+    let index = nextId
+      ? session.cards.findIndex(
+          (card) => card.queueItemId === nextId && card.state === "unanswered"
+        )
+      : -1;
+    if (index < 0) index = nextUnansweredIndex(session.cards, session.cursor);
     if (index < 0) return false;
+    const card = session.cards[index];
     set({
       ...freshCardUi,
-      hint: resumedHintText(session.cards[index]),
+      hint: resumedHintText(card),
+      message: openingReplyMessage(session, card),
       session: { ...session, cursor: index }
     });
     return true;
@@ -352,9 +386,10 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
     const { session, rehearsal, lineEnded } = get();
     if (!session || !rehearsal || lineEnded) return "none";
     const { step } = rehearsal;
-    const index = step.next
-      ? session.cards.findIndex((card) => card.queueItemId === step.next!.queueItemId)
-      : -1;
+    const index =
+      step.next && !step.lineComplete
+        ? session.cards.findIndex((card) => card.queueItemId === step.next!.queueItemId)
+        : -1;
     if (index >= 0) {
       const card = session.cards[index];
       set({
@@ -366,12 +401,14 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
       });
       return "next";
     }
+    // The line ended: the step stays (held, not auto) so the board keeps the line's final position
+    // until the next line's first decision (`step.next`) is presented by advance.
     const reason = step.endReason ?? "leaf";
+    const reply = step.reply ? `The reply: ${step.reply.san}. ` : "";
     set({
-      // The step stays (held, not auto) so the board keeps the line's final position.
       rehearsal: { step, replyShown: Boolean(step.reply), auto: false },
       lineEnded: reason,
-      message: { tone: "success", text: `${lineCompleteText(reason)}.` }
+      message: { tone: "success", text: `${reply}${lineCompleteText(reason)}.` }
     });
     return "line-complete";
   },

@@ -3,8 +3,11 @@
  * which opponent reply to supply next. Pure: the main process keeps the session state (replies
  * already seen, lines already finished) and asks these helpers to plan the route.
  *
- * A line is the authored route from the start node to an endpoint, through active nodes only: at
- * the player's turn it follows `included` moves, at the opponent's turn any active reply. It ends
+ * A line is the authored route from the start node to an endpoint, through active nodes: at the
+ * player's turn it follows `included` moves, at the opponent's turn any active reply. Above a
+ * "Start training here" marker the route passes through `before-start` nodes as lead-up (played
+ * automatically, never tested): at the player's turn the first authored move towards training
+ * scope, at the opponent's turn any reply towards it. It ends
  * at a node marked "stop branch here" (`stop`), at a node with no such continuation (`leaf`), or
  * where the next move would exceed the depth limit (`depth`, counted in plies from the chapter
  * root like the other practice modes). Because a route through a tree is unique, a line is
@@ -39,6 +42,8 @@ export type RehearsalContext = {
   color: RepertoireColor;
   rootPly: number;
   maxDepthPlies: number;
+  /** Nodes that are active or have an active descendant (where lead-up moves may go). */
+  reachesActive: Set<string>;
 };
 
 export type RehearsalLine = {
@@ -59,13 +64,26 @@ export function rehearsalContext(
   maxDepthPlies: number = DEFAULT_REHEARSAL_DEPTH_PLIES,
   lookup: ChapterLookup = buildChapterLookup(chapter)
 ): RehearsalContext {
+  const states = computeScopeStates(chapter, lookup);
+  const reachesActive = new Set<string>();
+  // Reverse pre-order visits every node after its descendants.
+  for (let i = lookup.order.length - 1; i >= 0; i--) {
+    const id = lookup.order[i];
+    if (
+      states.get(id) === "active" ||
+      (lookup.childrenById.get(id) ?? []).some((childId) => reachesActive.has(childId))
+    ) {
+      reachesActive.add(id);
+    }
+  }
   return {
     lookup,
-    states: computeScopeStates(chapter, lookup),
+    states,
     nodeMeta: chapter.nodeMeta,
     color,
     rootPly: lookup.nodesById.get(REPERTOIRE_ROOT_NODE_ID)?.ply ?? 0,
-    maxDepthPlies
+    maxDepthPlies,
+    reachesActive
   };
 }
 
@@ -80,30 +98,53 @@ export function isPlayerNode(context: RehearsalContext, nodeId: string): boolean
   return node !== undefined && playerToMove(node.fenAfter) === context.color;
 }
 
+/** The node is a tested position: in training scope with the player to move. */
+export function isDecisionNode(context: RehearsalContext, nodeId: string): boolean {
+  return context.states.get(nodeId) === "active" && isPlayerNode(context, nodeId);
+}
+
 /**
  * The moves a line may continue with from a node, in authored order, or why the line ends there.
- * Only an active node continues; the player's continuations are its active `included` children
- * and the opponent's are its active children.
+ * An active node's continuations are its active `included` children at the player's turn and its
+ * active children at the opponent's. A `before-start` node is lead-up: its children towards
+ * training scope, only the first of them at the player's turn (lead-up is never a decision).
  */
 export function continuations(
   context: RehearsalContext,
   nodeId: string
 ): { children: string[]; end: RehearsalEndReason | null } {
   const { lookup, states, nodeMeta } = context;
-  if (states.get(nodeId) !== "active") return { children: [], end: "leaf" };
+  const state = states.get(nodeId);
+  if (state !== "active" && state !== "before-start") return { children: [], end: "leaf" };
   if (nodeMetaOf(nodeMeta, nodeId).trainingStop) return { children: [], end: "stop" };
   const player = isPlayerNode(context, nodeId);
-  const eligible = (lookup.childrenById.get(nodeId) ?? []).filter((childId) => {
+  let eligible = (lookup.childrenById.get(nodeId) ?? []).filter((childId) => {
     const child = lookup.nodesById.get(childId)!;
-    if (!child.uci || states.get(childId) !== "active") return false;
+    if (!child.uci) return false;
+    if (state === "before-start") return context.reachesActive.has(childId);
+    if (states.get(childId) !== "active") return false;
     return !player || nodeMetaOf(nodeMeta, childId).edge === "included";
   });
+  if (state === "before-start" && player) eligible = eligible.slice(0, 1);
   if (!eligible.length) return { children: [], end: "leaf" };
   const children = eligible.filter(
     (childId) => lookup.nodesById.get(childId)!.ply - context.rootPly <= context.maxDepthPlies
   );
   if (!children.length) return { children: [], end: "depth" };
   return { children, end: null };
+}
+
+/**
+ * A rehearsal can be offered from this node: it is in training scope and the next move is within
+ * the depth limit.
+ */
+export function canRehearseFrom(context: RehearsalContext, nodeId: string): boolean {
+  const node = context.lookup.nodesById.get(nodeId);
+  return (
+    node !== undefined &&
+    context.states.get(nodeId) === "active" &&
+    node.ply + 1 - context.rootPly <= context.maxDepthPlies
+  );
 }
 
 /**
@@ -119,7 +160,7 @@ export function enumerateLines(context: RehearsalContext, startNodeId: string): 
     const last = route[route.length - 1];
     const { children, end } = continuations(context, last);
     if (end) {
-      const decisionNodeIds = route.slice(0, -1).filter((id) => isPlayerNode(context, id));
+      const decisionNodeIds = route.slice(0, -1).filter((id) => isDecisionNode(context, id));
       if (decisionNodeIds.length) {
         lines.push({
           lineId: lineIdOf(last),
@@ -145,23 +186,17 @@ export type RoutePlan = {
 };
 
 /**
- * Plans the line to play from `startNodeId`. Branches that still lead to a pending line (an end
- * node in `pending`) come first. At the player's turn the first such move in authored order is
- * taken; at the opponent's turn replies rotate deterministically: fewest times seen this session
- * (`seen`, keyed by reply node id) first, then authored order. With nothing pending below, the
- * same rotation picks among all continuations.
+ * Whether a node's lines reach a matching end: memoized per call site, computed with an iterative
+ * post-order walk so deep chapters can't overflow the stack.
  */
-export function planRoute(
+function routeTest(
   context: RehearsalContext,
-  startNodeId: string,
-  pending: ReadonlySet<string>,
-  seen: Readonly<Record<string, number>>
-): RoutePlan {
+  matchesEnd: (nodeId: string) => boolean
+): (nodeId: string) => boolean {
   const memo = new Map<string, boolean>();
-  const leadsToPending = (nodeId: string): boolean => {
+  return (nodeId) => {
     const cached = memo.get(nodeId);
     if (cached !== undefined) return cached;
-    // Iterative post-order so deep chapters can't overflow the stack.
     const stack: { id: string; expanded: boolean }[] = [{ id: nodeId, expanded: false }];
     while (stack.length) {
       const top = stack[stack.length - 1];
@@ -169,7 +204,7 @@ export function planRoute(
         stack.pop();
         continue;
       }
-      const { children } = continuations(context, top.id);
+      const { children, end } = continuations(context, top.id);
       if (!top.expanded) {
         top.expanded = true;
         for (const child of children) {
@@ -178,27 +213,45 @@ export function planRoute(
         continue;
       }
       stack.pop();
-      memo.set(top.id, pending.has(top.id) || children.some((child) => memo.get(child) === true));
+      memo.set(
+        top.id,
+        end ? matchesEnd(top.id) : children.some((child) => memo.get(child) === true)
+      );
     }
     return memo.get(nodeId) === true;
   };
+}
+
+/**
+ * Plans the line to play from `startNodeId`. Branches that still lead to a pending line (an end
+ * node in `pending`) come first, then branches leading to a line not in `finished` (so a line
+ * already played this session is only replayed when nothing else is left below). At the player's
+ * turn the first such move in authored order is taken; at the opponent's turn replies rotate
+ * deterministically: fewest times seen this session (`seen`, keyed by reply node id) first, then
+ * authored order.
+ */
+export function planRoute(
+  context: RehearsalContext,
+  startNodeId: string,
+  pending: ReadonlySet<string>,
+  seen: Readonly<Record<string, number>>,
+  finished: ReadonlySet<string> = new Set()
+): RoutePlan {
+  const leadsToPending = routeTest(context, (id) => pending.has(id));
+  const leadsToUnfinished = routeTest(context, (id) => !finished.has(id));
+  const tier = (id: string) => (leadsToPending(id) ? 0 : leadsToUnfinished(id) ? 1 : 2);
 
   const nodeIds = [startNodeId];
   let current = startNodeId;
   for (;;) {
     const { children, end } = continuations(context, current);
     if (end) return { endNodeId: current, endReason: end, nodeIds };
-    let next: string;
-    if (isPlayerNode(context, current)) {
-      next = children.find(leadsToPending) ?? children[0];
-    } else {
-      next = children
-        .map((id, index) => ({ id, index, pending: leadsToPending(id) ? 0 : 1 }))
-        .sort(
-          (a, b) =>
-            a.pending - b.pending || (seen[a.id] ?? 0) - (seen[b.id] ?? 0) || a.index - b.index
+    const ranked = children.map((id, index) => ({ id, index, tier: tier(id) }));
+    const next = isPlayerNode(context, current)
+      ? ranked.sort((a, b) => a.tier - b.tier || a.index - b.index)[0].id
+      : ranked.sort(
+          (a, b) => a.tier - b.tier || (seen[a.id] ?? 0) - (seen[b.id] ?? 0) || a.index - b.index
         )[0].id;
-    }
     nodeIds.push(next);
     current = next;
   }

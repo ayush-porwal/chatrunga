@@ -296,5 +296,24 @@ describe("rehearse lines setup", () => {
       starts: [],
       truncated: true
     });
+    // The move after 1.e4 e5 is ply 3: a depth of 2 leaves nothing to start from.
+    expect(rehearseStarts(chapter, "white", pathLabel, undefined, 3).starts).toHaveLength(1);
+    expect(rehearseStarts(chapter, "white", pathLabel, undefined, 2).starts).toEqual([]);
+  });
+
+  it("lists no branch starts in the lead-up above a start marker or past a stop", () => {
+    let tree = [rootNode()];
+    ({ tree } = addLine(tree, "root", ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"], "w"));
+    const chapter = {
+      ...chapterOf(tree),
+      nodeMeta: {
+        w1: { edge: "included" as const, trainingStart: true },
+        w2: { edge: "included" as const, trainingStop: true }
+      }
+    };
+    // w1 (1.e4 e5) is the start; w2 (2.Nf3) stops, so 2...Nc6 is out of scope.
+    expect(rehearseStarts(chapter, "white", pathLabel).starts.map((start) => start.nodeId)).toEqual(
+      ["w1"]
+    );
   });
 });

@@ -3,6 +3,11 @@ import { GraduationCap, Loader2, Microscope, Route, Swords } from "lucide-react"
 import { useShallow } from "zustand/react/shallow";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
+import {
+  DEFAULT_REHEARSAL_DEPTH_PLIES,
+  canRehearseFrom,
+  rehearsalContext
+} from "@chaturanga/shared/chess/repertoire-rehearsal";
 import type { BoardArrow, BoardHighlight, Color } from "@chaturanga/shared/types/chess";
 import type { RepertoireChapterSummary } from "@chaturanga/shared/types/repertoire";
 import { Button } from "@/components/ui/button";
@@ -216,6 +221,14 @@ export function RepertoireStudyPage({
   const decisionCount = useMemo(
     () => (draft ? trainableDecisionCount(color, draft) : 0),
     [draft, color]
+  );
+  // "Rehearse from here" is offered in training scope within the default depth limit only.
+  const rehearsal = useMemo(
+    () =>
+      draft && lookup && draft.enabled && draft.kind === "opening"
+        ? rehearsalContext(draft, color, DEFAULT_REHEARSAL_DEPTH_PLIES, lookup)
+        : null,
+    [draft, lookup, color]
   );
 
   const selectNode = useEventCallback((nodeId: string) => workspace().selectNode(nodeId));
@@ -608,7 +621,7 @@ export function RepertoireStudyPage({
               onOpenChapter(occurrence.chapterId, occurrence.nodeId)
             }
             onRehearseFromHere={
-              onRehearse && draft.enabled && draft.kind === "opening"
+              onRehearse && rehearsal && canRehearseFrom(rehearsal, node.id)
                 ? () => void rehearse(node.id)
                 : undefined
             }

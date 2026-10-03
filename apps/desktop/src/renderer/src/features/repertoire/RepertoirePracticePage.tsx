@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  BookOpen,
   Eye,
   GraduationCap,
   Lightbulb,
@@ -265,7 +264,7 @@ export function RepertoirePracticePage({
         key={shownSession.sessionId}
         detail={detail.data}
         session={shownSession}
-        onStudy={onStudy}
+        onRehearse={onRehearse}
       />
     );
   }
@@ -313,11 +312,12 @@ type RetryTarget =
 function PracticeSession({
   detail,
   session,
-  onStudy
+  onRehearse
 }: {
   detail: RepertoireDetail;
   session: PracticeSessionSnapshot;
-  onStudy: (target: { chapterId: string; nodeId: string | null }) => void;
+  /** "Rehearse it from <chapter>": a rehearsal of another chapter from an occurrence there. */
+  onRehearse: (preset: PracticePreset) => void;
 }) {
   const card = currentCard(session)!;
   const {
@@ -550,15 +550,18 @@ function PracticeSession({
   const autoAdvancing = rehearsing
     ? Boolean(rehearsal?.auto)
     : card.state === "answered-correct" && message?.tone === "success";
-  // Rehearsal: the footer's way on — continue after a reveal, the next line after an ended one
-  // (or a skipped / stale card), or the summary.
+  // Rehearsal: the footer's way on — continue after a reveal, skip the line after a move outside
+  // the repertoire (the board stays playable to try again), the next line after an ended one (or
+  // a skipped / stale card), or the summary.
   const rehearsalNext: { label: string; onClick: () => void } | null = !rehearsing
     ? null
     : rehearsal && !rehearsal.auto && !lineEnded
       ? { label: "Continue line", onClick: () => practice().continueStep() }
-      : lineEnded || (finished && !rehearsal && !otherLine)
-        ? { label: "Next line", onClick: goNext }
-        : null;
+      : retrying && !held
+        ? { label: "Skip this line", onClick: () => act("skip") }
+        : lineEnded || (finished && !rehearsal && !otherLine)
+          ? { label: "Next line", onClick: goNext }
+          : null;
 
   return (
     <BoardWorkspace
@@ -723,10 +726,15 @@ function PracticeSession({
                 variant="outline"
                 size="sm"
                 onClick={() =>
-                  onStudy({ chapterId: otherLine.chapterId, nodeId: otherLine.nodeId })
+                  onRehearse(
+                    rehearsePreset(
+                      { chapterId: otherLine.chapterId, fromNodeId: otherLine.nodeId },
+                      session.scope.maxDepthPlies
+                    )
+                  )
                 }
               >
-                <BookOpen />
+                <Route />
                 Rehearse it from {otherLine.chapterTitle}
               </Button>
             )}

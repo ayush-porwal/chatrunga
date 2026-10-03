@@ -4,6 +4,7 @@ import type { MoveNode } from "@chaturanga/shared/types/chess";
 import {
   REPERTOIRE_ROOT_NODE_ID,
   type ChapterKind,
+  type PracticeMode,
   type RepertoireChapterSummary,
   type RepertoireColor,
   type RepertoireDueSummary,
@@ -176,4 +177,30 @@ export function homeReviewAction(
     label: `Review ${target.name} (${target.dueCount} due)`,
     showAll: true
   };
+}
+
+/** An unfinished practice session to resume, as Home and the hub offer it. */
+export type ResumePracticeTarget = NonNullable<RepertoireDueSummary["resume"]> & {
+  label: string;
+  /** Says which kind of session it is (the button's tooltip). */
+  description: string;
+};
+
+const RESUME_DESCRIPTIONS: Record<PracticeMode, string> = {
+  "review-due": "Pick up your unfinished review where you left it",
+  "learn-new": "Pick up your unfinished learning session where you left it",
+  "rehearse-lines": "Pick up your unfinished line rehearsal where you left it"
+};
+
+/**
+ * "Resume practice" for the summary's unfinished session, or null when there is none (or, with
+ * `repertoireId`, when it belongs to another repertoire).
+ */
+export function resumePracticeTarget(
+  summary: Pick<RepertoireDueSummary, "resume"> | null | undefined,
+  repertoireId?: string
+): ResumePracticeTarget | null {
+  const resume = summary?.resume ?? null;
+  if (!resume || (repertoireId !== undefined && resume.repertoireId !== repertoireId)) return null;
+  return { ...resume, label: "Resume practice", description: RESUME_DESCRIPTIONS[resume.mode] };
 }

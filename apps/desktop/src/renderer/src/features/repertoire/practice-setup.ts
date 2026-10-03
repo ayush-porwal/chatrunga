@@ -1,9 +1,10 @@
+import { type ChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import {
-  buildChapterLookup,
-  computeScopeStates,
-  type ChapterLookup
-} from "@chaturanga/shared/chess/repertoire-index";
-import { playerToMove } from "@chaturanga/shared/chess/repertoire-position";
+  DEFAULT_REHEARSAL_DEPTH_PLIES,
+  continuations,
+  isDecisionNode,
+  rehearsalContext
+} from "@chaturanga/shared/chess/repertoire-rehearsal";
 import {
   REPERTOIRE_ROOT_NODE_ID,
   type PracticeMode,
@@ -231,28 +232,23 @@ export type RehearseStart = { nodeId: string; path: string };
 
 /**
  * Where a rehearsal can start inside a chapter: positions in training scope where the player is
- * to move and has at least one active continuation, in authored order. The chapter start is the
- * picker's default and isn't listed; `label` names a node's path ("1. e4 e5 2. Nf3").
+ * to move and has a repertoire move within the depth limit, in authored order. The chapter start
+ * is the picker's default and isn't listed; `label` names a node's path ("1. e4 e5 2. Nf3").
  */
 export function rehearseStarts(
   chapter: Pick<RepertoireChapter, "kind" | "enabled" | "tree" | "nodeMeta">,
   color: RepertoireColor,
   label: (lookup: ChapterLookup, nodeId: string) => string,
-  limit = MAX_REHEARSE_STARTS
+  limit = MAX_REHEARSE_STARTS,
+  maxDepthPlies = DEFAULT_REHEARSAL_DEPTH_PLIES
 ): { starts: RehearseStart[]; truncated: boolean } {
-  const lookup = buildChapterLookup(chapter);
-  const states = computeScopeStates(chapter, lookup);
+  const context = rehearsalContext(chapter, color, maxDepthPlies);
   const starts: RehearseStart[] = [];
-  for (const id of lookup.order) {
-    if (id === REPERTOIRE_ROOT_NODE_ID || states.get(id) !== "active") continue;
-    const node = lookup.nodesById.get(id)!;
-    if (playerToMove(node.fenAfter) !== color) continue;
-    const active = (lookup.childrenById.get(id) ?? []).some(
-      (childId) => lookup.nodesById.get(childId)?.uci && states.get(childId) === "active"
-    );
-    if (!active) continue;
+  for (const id of context.lookup.order) {
+    if (id === REPERTOIRE_ROOT_NODE_ID || !isDecisionNode(context, id)) continue;
+    if (!continuations(context, id).children.length) continue;
     if (starts.length >= limit) return { starts, truncated: true };
-    starts.push({ nodeId: id, path: label(lookup, id) });
+    starts.push({ nodeId: id, path: label(context.lookup, id) });
   }
   return { starts, truncated: false };
 }

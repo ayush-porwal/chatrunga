@@ -10,6 +10,7 @@ import {
   nextSortOrder,
   plural,
   relativeDay,
+  resumePracticeTarget,
   rootNodeFor,
   sortedChapters
 } from "./repertoire-chapters";
@@ -141,5 +142,23 @@ describe("import and summary targets", () => {
       nodeId: "n7"
     });
     expect(firstMissedTarget({ missedPositionKeys: ["unknown"] }, cards)).toBeNull();
+  });
+});
+
+describe("resume practice", () => {
+  it("offers the unfinished session, for its own repertoire only", () => {
+    const resume = { repertoireId: "r1", sessionId: "s1", mode: "rehearse-lines" as const };
+    expect(resumePracticeTarget({ resume })).toEqual({
+      ...resume,
+      label: "Resume practice",
+      description: "Pick up your unfinished line rehearsal where you left it"
+    });
+    expect(resumePracticeTarget({ resume }, "r1")?.sessionId).toBe("s1");
+    expect(resumePracticeTarget({ resume }, "r2")).toBeNull();
+    expect(resumePracticeTarget({ resume: { ...resume, mode: "review-due" } })?.description).toBe(
+      "Pick up your unfinished review where you left it"
+    );
+    expect(resumePracticeTarget({ resume: null })).toBeNull();
+    expect(resumePracticeTarget(undefined)).toBeNull();
   });
 });

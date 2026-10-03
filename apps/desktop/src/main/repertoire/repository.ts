@@ -183,6 +183,8 @@ export type RehearsalState = {
   finished: string[];
   linesStarted: number;
   linesCompleted: number;
+  /** End nodes of the lines in the order they first appeared (a line's number is its index + 1). */
+  lineOrder?: string[];
 };
 
 /** Key of the rehearsal state inside `card_state_json` (queue item ids never start with `$`). */
@@ -837,6 +839,19 @@ export const sessionRepository = {
   get(id: string): PracticeSessionRecord | null {
     const row = get<SessionRow>("SELECT * FROM repertoire_practice_sessions WHERE id = ?", id);
     return row ? toSession(row) : null;
+  },
+
+  /** The most recently updated active session of a repertoire that isn't archived. */
+  lastActive(): { id: string; repertoireId: string; mode: PracticeMode } | null {
+    const row = get<{ id: string; repertoire_id: string; mode: string }>(
+      `SELECT s.id, s.repertoire_id, s.mode FROM repertoire_practice_sessions s
+        JOIN repertoires r ON r.id = s.repertoire_id
+        WHERE s.status = 'active' AND r.archived_at IS NULL
+        ORDER BY s.updated_at DESC, s.created_at DESC LIMIT 1`
+    );
+    return row
+      ? { id: row.id, repertoireId: row.repertoire_id, mode: sessionMode(row.mode) }
+      : null;
   },
 
   /** Inserts or replaces a session's mutable state. */
