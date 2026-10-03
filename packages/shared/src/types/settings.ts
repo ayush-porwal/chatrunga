@@ -252,6 +252,12 @@ export type AppSettings = {
   /** Game review's Opening tab: the repertoire last compared for Black games (null: none yet). */
   repertoireCompareBlack: string | null;
   /**
+   * Repertoire practice: how long a correct answer stays before the next card comes by itself,
+   * one of {@link PRACTICE_AUTO_ADVANCE_MS}; 0 waits for Next. An answer with authored notes
+   * always waits, so they can be read.
+   */
+  practiceAutoAdvanceMs: PracticeAutoAdvanceMs;
+  /**
    * When the first-run welcome was finished or skipped (epoch ms). `null`: not yet (the welcome
    * shows). `0`: an install that predates the welcome (set once at startup, see
    * main/onboarding-migration.ts), which never shows it on its own.
@@ -266,6 +272,10 @@ export const ONBOARDING_HINTS = ["commentary-links", "maia-curve"] as const;
 export type OnboardingHintId = (typeof ONBOARDING_HINTS)[number];
 
 export type ReviewCommentaryProvider = "openrouter";
+
+/** Repertoire practice's auto-advance choices (ms): off, then quick to slow. */
+export const PRACTICE_AUTO_ADVANCE_MS = [0, 600, 1500, 3000] as const;
+export type PracticeAutoAdvanceMs = (typeof PRACTICE_AUTO_ADVANCE_MS)[number];
 
 export type ReviewMaiaLevel = MaiaRating;
 export const REVIEW_MAIA_LEVELS: readonly ReviewMaiaLevel[] = [
@@ -339,6 +349,8 @@ export const defaultSettings: AppSettings = {
   lastOpenedGameId: null,
   repertoireCompareWhite: null,
   repertoireCompareBlack: null,
+  // The pace practice always had: a correct answer moves on after 0.6 s.
+  practiceAutoAdvanceMs: 600,
   onboardingCompletedAt: null,
   onboardingHintsSeen: []
 };
@@ -384,6 +396,17 @@ export function normalizeAppearanceSettings(settings: AppSettings): AppSettings 
   const rest: AppSettings & { glassEffect?: unknown } = { ...settings };
   delete rest.glassEffect;
   return rest;
+}
+
+/** Validates the practice settings, falling back to defaults for bad values. Idempotent. */
+export function normalizePracticeSettings(settings: AppSettings): AppSettings {
+  const delay: unknown = settings.practiceAutoAdvanceMs;
+  return {
+    ...settings,
+    practiceAutoAdvanceMs: PRACTICE_AUTO_ADVANCE_MS.includes(delay as PracticeAutoAdvanceMs)
+      ? (delay as PracticeAutoAdvanceMs)
+      : defaultSettings.practiceAutoAdvanceMs
+  };
 }
 
 /** Validates the in-app update settings, falling back to defaults for bad values. Idempotent. */

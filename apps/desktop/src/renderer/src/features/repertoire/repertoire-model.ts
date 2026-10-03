@@ -12,6 +12,7 @@ import type { BoardArrow, BoardHighlight, Square } from "@chaturanga/shared/type
 import {
   CHAPTER_NOT_FOUND_ERROR,
   REPERTOIRE_NOT_FOUND_ERROR,
+  type PracticeAnswer,
   type PracticeCard,
   type PracticeSummary,
   type PracticeTotals,
@@ -509,6 +510,87 @@ export function revealText(
   const preferred = preferredUci && ucis.includes(preferredUci) ? preferredUci : ucis[0];
   const others = ucis.filter((uci) => uci !== preferred).map((uci) => sanOf(fen, uci));
   return `Preferred: ${sanOf(fen, preferred)}${others.length ? ` · also accepted: ${others.join(", ")}` : ""}`;
+}
+
+/** What the answer notes say once a card is decided: the moves, then the authored notes. */
+export type AnswerView = {
+  /** "You played e4." after a correct answer; the reveal's words otherwise. */
+  answer: string;
+  /** The other accepted moves after a correct answer ("Also accepted: d4 (preferred), c4"). */
+  alternatives: string | null;
+  /** The position's explanation (its comment, else the decision's hint). */
+  explanation: string | null;
+  /** Comments of the accepted moves, preferred first. */
+  moveNotes: { uci: string; san: string; text: string }[];
+};
+
+/**
+ * The answer notes of a decided card. `playedUci` is the accepted move just played (null for a
+ * reveal). Only for an answer the main process gave out with the grade, so never before it.
+ */
+export function answerView(
+  fen: string,
+  answer: PracticeAnswer,
+  playedUci: string | null
+): AnswerView {
+  const preferred =
+    answer.preferredUci && answer.ucis.includes(answer.preferredUci)
+      ? answer.preferredUci
+      : (answer.ucis[0] ?? null);
+  const ordered = preferred
+    ? [preferred, ...answer.ucis.filter((uci) => uci !== preferred)]
+    : [...answer.ucis];
+  const played = playedUci && answer.ucis.includes(playedUci) ? playedUci : null;
+  const others = ordered
+    .filter((uci) => uci !== played)
+    .map((uci) => `${sanOf(fen, uci)}${uci === preferred ? " (preferred)" : ""}`);
+  return {
+    answer: played
+      ? `You played ${sanOf(fen, played)}.`
+      : revealText(fen, answer.ucis, answer.preferredUci),
+    alternatives: played && others.length ? `Also accepted: ${others.join(", ")}` : null,
+    explanation: answer.explanation?.trim() || null,
+    moveNotes: ordered.flatMap((uci) => {
+      const text = answer.moveComments?.[uci]?.trim();
+      return text ? [{ uci, san: sanOf(fen, uci), text }] : [];
+    })
+  };
+}
+
+/** The answer has authored words to read (an explanation or a move's comment). */
+export function hasAnswerNotes(answer: PracticeAnswer | null): boolean {
+  if (!answer) return false;
+  return (
+    Boolean(answer.explanation?.trim()) ||
+    Object.values(answer.moveComments ?? {}).some((text) => text.trim())
+  );
+}
+
+/**
+ * How long a correct answer stays before the next card comes by itself, or null when the player
+ * moves on with Next: auto-advance is off (`delayMs` 0), or the answer has notes to read.
+ */
+export function autoAdvanceDelay(delayMs: number, answer: PracticeAnswer | null): number | null {
+  if (delayMs <= 0 || hasAnswerNotes(answer)) return null;
+  return delayMs;
+}
+
+/**
+ * Whether a key press is practice's "next" (Space or Enter): not while typing, while a dialog or
+ * menu owns the keyboard, or on a focused control that Space / Enter already presses (a button,
+ * a link, a switch); not with a modifier held, on key repeat, or once something handled it.
+ */
+export function isPracticeNextKey(
+  event: Pick<
+    KeyboardEvent,
+    "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "repeat" | "defaultPrevented"
+  >,
+  { typing, blocked, onControl }: { typing: boolean; blocked: boolean; onControl: boolean }
+): boolean {
+  if (event.key !== " " && event.key !== "Enter") return false;
+  if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.repeat)
+    return false;
+  return !event.defaultPrevented && !typing && !blocked && !onControl;
 }
 
 /** Words for a board hint: stage 2 "Move the knight", stage 3 "g1 to f3"; null otherwise. */

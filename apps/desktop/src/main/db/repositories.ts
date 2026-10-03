@@ -10,6 +10,7 @@ import {
   hydratePieceSettings,
   normalizeAppearanceSettings,
   normalizeOnboardingSettings,
+  normalizePracticeSettings,
   normalizeReviewEngineSettings,
   normalizeUpdateSettings,
   type AppSettings
@@ -902,8 +903,10 @@ export const settingsRepository = {
       }
     }
     const merged = { ...defaultSettings, ...values } as AppSettings;
-    return normalizeOnboardingSettings(
-      normalizeUpdateSettings(normalizeAppearanceSettings(normalizeReviewEngineSettings(hydratePieceSettings(merged))))
+    return normalizePracticeSettings(
+      normalizeOnboardingSettings(
+        normalizeUpdateSettings(normalizeAppearanceSettings(normalizeReviewEngineSettings(hydratePieceSettings(merged))))
+      )
     );
   },
 

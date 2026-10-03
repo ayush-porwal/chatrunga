@@ -111,6 +111,72 @@ describe("repertoire practice store", () => {
     expect(store().message).toBeNull();
   });
 
+  it("keeps a graded answer's notes for the page, and nothing answer-bearing before", () => {
+    store().setSession(session());
+    expect(store().answer).toBeNull();
+    store().applyAttempt({
+      outcome: "outside-repertoire",
+      acceptedUcis: [],
+      preferredUci: null,
+      feedback: "Not here.",
+      card: cardOf("a", { state: "answered-wrong", attemptsSoFar: 1 }),
+      finalGrade: true
+    });
+    expect(store().answer).toBeNull();
+    store().applyAction("reveal", {
+      card: cardOf("a", { state: "answered-wrong", attemptsSoFar: 1 }),
+      revealed: {
+        ucis: ["e2e4"],
+        preferredUci: "e2e4",
+        explanation: "Centre.",
+        moveComments: { e2e4: "Open games." }
+      }
+    });
+    expect(store().answer).toEqual({
+      ucis: ["e2e4"],
+      preferredUci: "e2e4",
+      explanation: "Centre.",
+      moveComments: { e2e4: "Open games." }
+    });
+    // The feedback on the move just missed stays beside the answer.
+    expect(store().message).toEqual({
+      tone: "info",
+      text: "Revealed — this decision counts as missed.",
+      feedback: "Not here."
+    });
+    expect(store().advance()).toBe(true);
+    expect(store().answer).toBeNull();
+  });
+
+  it("a correct first answer brings its notes without drawing the accepted moves", () => {
+    store().setSession(session());
+    store().applyAttempt({
+      outcome: "correct",
+      acceptedUcis: ["e2e4", "d2d4"],
+      preferredUci: "e2e4",
+      explanation: "Centre.",
+      moveComments: { d2d4: "Closed games." },
+      feedback: null,
+      card: cardOf("a", { state: "answered-correct" }),
+      finalGrade: true
+    });
+    expect(store().answer).toEqual({
+      ucis: ["e2e4", "d2d4"],
+      preferredUci: "e2e4",
+      explanation: "Centre.",
+      moveComments: { d2d4: "Closed games." }
+    });
+    expect(store().reveal).toBeNull();
+  });
+
+  it("a resumed session shows the answer its card already revealed", () => {
+    const revealed = { ucis: ["e2e4"], preferredUci: "e2e4", explanation: null };
+    store().setSession({ ...session(), shown: { hint: null, hintUci: null, revealed } });
+    expect(store().answer).toEqual(revealed);
+    store().setSession(session());
+    expect(store().answer).toBeNull();
+  });
+
   it("reports illegal and already-final attempts", () => {
     store().setSession(session());
     const base = {

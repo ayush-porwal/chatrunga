@@ -164,6 +164,11 @@ export type FrozenPolicy = {
   wrongMoveFeedback: Record<string, string>;
   /** The occurrence's comment, shown once the answer is revealed. */
   explanation: string | null;
+  /**
+   * The authored comments of the accepted moves played from the occurrence, by UCI, shown with
+   * the answer once the grade is final. Absent from sessions frozen before they were kept.
+   */
+  moveComments?: Record<string, string>;
   /** The decision's last graded attempt when the session froze it (null: never practised). */
   progressAt?: number | null;
 };

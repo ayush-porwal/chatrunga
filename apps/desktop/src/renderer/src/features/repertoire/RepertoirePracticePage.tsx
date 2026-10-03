@@ -15,18 +15,22 @@ import { useShallow } from "zustand/react/shallow";
 import type { Color } from "@chaturanga/shared/types/chess";
 import type {
   PracticeAction,
+  PracticeAnswer,
   PracticeCard,
   PracticeMode,
   PracticeSessionSnapshot,
   RepertoireDetail,
   StartPracticeInput
 } from "@chaturanga/shared/types/repertoire";
+import { defaultSettings } from "@chaturanga/shared/types/settings";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Notice } from "@/components/ui/notice";
 import { Stat, StatGroup } from "@/components/ui/stat";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useEventCallback } from "@/lib/use-event-callback";
+import { isTyping, OVERLAY_SELECTOR } from "../../app/useBoardShortcuts";
+import { useSettingsQuery } from "../../queries/api";
 import {
   useEndPracticeMutation,
   useRecordAttemptMutation,
@@ -57,16 +61,16 @@ import {
 } from "./practice-setup";
 import { PracticeSummaryView } from "./PracticeSummaryView";
 import {
+  answerView,
+  autoAdvanceDelay,
   hintMarks,
   hintStageText,
+  isPracticeNextKey,
   lastMoveOf,
   nextUnansweredIndex,
-  revealArrows,
-  revealText
+  revealArrows
 } from "./repertoire-model";
 
-/** How long a correct answer stays on screen before the next card. */
-const ADVANCE_DELAY_MS = 600;
 /** Rehearsal: the brief confirmation before the authored reply is played. */
 const REHEARSAL_CONFIRM_MS = 450;
 /** Rehearsal: how long the reply stays on the board (its motion included) before the next step. */
@@ -82,7 +86,9 @@ const practice = () => useRepertoirePracticeStore.getState();
  * Repertoire practice (design §5.3): setup, then one hidden-answer decision at a time (no tree,
  * notes or authored arrows; a safe prompt may show), then a summary. The main process grades every
  * move and persists hints, reveals and skips before the page shows their result; a failed write
- * keeps the card and offers Retry.
+ * keeps the card and offers Retry. Once a card is decided its answer shows with the authored notes
+ * (the explanation, the accepted moves' comments); Next, Space or Enter moves on, and a correct
+ * answer with nothing to read moves on by itself when auto-advance is on (the setup's "Next card").
  */
 export function RepertoirePracticePage({
   repertoireId,
@@ -334,6 +340,7 @@ function PracticeSession({
     hintUci,
     message,
     reveal,
+    answer,
     leadUpIndex,
     orientation,
     rehearsal,
@@ -345,6 +352,7 @@ function PracticeSession({
       hintUci: state.hintUci,
       message: state.message,
       reveal: state.reveal,
+      answer: state.answer,
       leadUpIndex: state.leadUpIndex,
       orientation: state.orientation,
       rehearsal: state.rehearsal,
@@ -358,6 +366,7 @@ function PracticeSession({
   const endPractice = useEndPracticeMutation();
   const resume = useResumePracticeMutation();
   const reducedMotion = usePrefersReducedMotion();
+  const settings = useSettingsQuery();
   /** The submitted move shown while the main process grades it (cleared unless correct). */
   const [pending, setPending] = useState<PendingAttempt | null>(null);
   /** The board's typed-move entry, opened from the button in the footer. */
@@ -436,16 +445,21 @@ function PracticeSession({
     };
   }, [lineEnded, reducedMotion, goNext]);
 
-  // A correct answer moves on by itself after a moment (cancelled when leaving the page).
+  // A correct answer moves on by itself after the chosen delay, unless auto-advance is off or the
+  // answer has notes to read (cancelled when leaving the page).
+  const advanceDelay = autoAdvanceDelay(
+    settings.data?.practiceAutoAdvanceMs ?? defaultSettings.practiceAutoAdvanceMs,
+    answer
+  );
   useEffect(() => {
-    if (rehearsing) return;
+    if (rehearsing || advanceDelay === null) return;
     if (card.state !== "answered-correct" || message?.tone !== "success") return;
-    advanceTimer.current = window.setTimeout(goNext, ADVANCE_DELAY_MS);
+    advanceTimer.current = window.setTimeout(goNext, advanceDelay);
     return () => {
       if (advanceTimer.current !== null) window.clearTimeout(advanceTimer.current);
       advanceTimer.current = null;
     };
-  }, [rehearsing, card.state, card.queueItemId, message, goNext]);
+  }, [rehearsing, advanceDelay, card.state, card.queueItemId, message, goNext]);
 
   // Lead-up replay: one move per step, then back to the card's position.
   useEffect(() => {
@@ -554,25 +568,42 @@ function PracticeSession({
   const nextHintLabel = ["Hint", "Show piece", "Show move"][card.hintStage] ?? null;
   // Words for what the board shows (arrows and highlights alone aren't accessible).
   const boardHintText = reveal ? null : hintStageText(card.fen, card.hintStage, hintUci);
-  const revealWords = reveal ? revealText(card.fen, reveal.ucis, reveal.preferredUci) : null;
   // Every card is final: the next step is the summary.
   const allFinal = nextUnansweredIndex(session.cards, session.cursor) < 0 && finished;
-  // A correct answer moves on by itself only right after it was given (not on a resumed card).
-  const autoAdvancing = rehearsing
-    ? Boolean(rehearsal?.auto)
-    : card.state === "answered-correct" && message?.tone === "success";
-  // Rehearsal: the footer's way on — continue after a reveal, skip the line after a move outside
+  // The footer's way on. Rehearsal: continue after a reveal, skip the line after a move outside
   // the repertoire (the board stays playable to try again), the next line after an ended one (or
-  // a skipped / stale card), or the summary.
-  const rehearsalNext: { label: string; onClick: () => void } | null = !rehearsing
-    ? null
+  // a skipped / stale card), or the summary. Otherwise the next card once this one is decided
+  // (also while a correct answer waits to move on by itself).
+  const nextAction: { label: string; onClick: () => void; skips?: true } | null = !rehearsing
+    ? finished
+      ? { label: allFinal ? "See summary" : "Next card", onClick: goNext }
+      : null
     : rehearsal && !rehearsal.auto && !lineEnded
       ? { label: "Continue line", onClick: () => practice().continueStep() }
       : retrying && !held
-        ? { label: "Skip this line", onClick: () => act("skip") }
+        ? { label: "Skip this line", onClick: () => act("skip"), skips: true }
         : lineEnded || (finished && !rehearsal && !otherLine)
           ? { label: "Next line", onClick: goNext }
           : null;
+
+  // Space / Enter take the way on (never a skip): not while typing a move or in a dialog, and not
+  // on a focused button, which Space / Enter already press.
+  const onNextKey = useEventCallback((event: KeyboardEvent) => {
+    if (!nextAction || nextAction.skips || busy) return;
+    const active = document.activeElement;
+    const next = isPracticeNextKey(event, {
+      typing: isTyping(event.target) || isTyping(active),
+      blocked: Boolean(document.querySelector(OVERLAY_SELECTOR)),
+      onControl: pressesOnKey(event.target) || pressesOnKey(active)
+    });
+    if (!next) return;
+    event.preventDefault();
+    nextAction.onClick();
+  });
+  useEffect(() => {
+    window.addEventListener("keydown", onNextKey);
+    return () => window.removeEventListener("keydown", onNextKey);
+  }, [onNextKey]);
 
   return (
     <BoardWorkspace
@@ -652,20 +683,17 @@ function PracticeSession({
             </Button>
             <TypedMoveButton typedMove={typedMove} />
           </div>
-          {rehearsalNext ? (
+          {nextAction ? (
             <Button
               type="button"
               variant="primary"
               size="sm"
               disabled={busy}
-              onClick={rehearsalNext.onClick}
+              aria-keyshortcuts={nextAction.skips ? undefined : "Space Enter"}
+              title={nextAction.skips ? undefined : `${nextAction.label} (Space or Enter)`}
+              onClick={nextAction.onClick}
             >
-              {rehearsalNext.label}
-              <SkipForward />
-            </Button>
-          ) : !rehearsing && finished && !autoAdvancing ? (
-            <Button type="button" variant="primary" size="sm" disabled={busy} onClick={goNext}>
-              {allFinal ? "See summary" : "Next card"}
+              {nextAction.label}
               <SkipForward />
             </Button>
           ) : null}
@@ -710,15 +738,8 @@ function PracticeSession({
               {boardHintText}
             </Notice>
           ) : null}
-          {revealWords ? (
-            <Notice tone="info" icon={<Eye />} title="Answer">
-              {revealWords}
-            </Notice>
-          ) : null}
-          {reveal?.explanation ? (
-            <Notice tone="info" title="Why">
-              {reveal.explanation}
-            </Notice>
+          {answer ? (
+            <AnswerNotes fen={card.fen} answer={answer} playedUci={pending?.uci ?? null} />
           ) : null}
         </div>
 
@@ -824,6 +845,61 @@ function PracticeSession({
         <CardStatus card={card} retrying={retrying} />
       </div>
     </BoardWorkspace>
+  );
+}
+
+/** Space / Enter already press this focused control (a button, link, switch…). */
+function pressesOnKey(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    Boolean(
+      target.closest(
+        'button, a[href], summary, [role="button"], [role="link"], [role="checkbox"], [role="switch"], [role="radio"], [role="tab"], [role="option"], [role="menuitem"]'
+      )
+    )
+  );
+}
+
+/**
+ * A decided card's answer: the move played (or the reveal's words), the other accepted moves, the
+ * position's explanation and the accepted moves' own comments. Rendered only from an answer the
+ * main process gave out with the grade.
+ */
+function AnswerNotes({
+  fen,
+  answer,
+  playedUci
+}: {
+  fen: string;
+  answer: PracticeAnswer;
+  playedUci: string | null;
+}) {
+  const view = answerView(fen, answer, playedUci);
+  return (
+    <>
+      <Notice tone="info" icon={<Eye />} title="Answer">
+        {view.answer}
+        {view.alternatives ? (
+          <span className="block text-fg-muted">{view.alternatives}</span>
+        ) : null}
+      </Notice>
+      {view.explanation ? (
+        <Notice tone="info" title="Why">
+          {view.explanation}
+        </Notice>
+      ) : null}
+      {view.moveNotes.length ? (
+        <Notice tone="info" title="Move notes">
+          <ul className="grid gap-1">
+            {view.moveNotes.map((note) => (
+              <li key={note.uci}>
+                <span className="font-mono">{note.san}</span> — {note.text}
+              </li>
+            ))}
+          </ul>
+        </Notice>
+      ) : null}
+    </>
   );
 }
 

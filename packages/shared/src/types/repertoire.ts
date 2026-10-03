@@ -214,6 +214,19 @@ export type PracticeSessionSnapshot = {
   shown?: PracticeShown;
 };
 
+/**
+ * A card's answer, given out only once its grade is final (a correct answer, a reveal): the
+ * accepted moves, the preferred one, the explanation (the position's authored comment, else the
+ * decision's hint) and the authored comments of the accepted moves played from this occurrence,
+ * by UCI. Older results and rehearsal answers carry no `moveComments`.
+ */
+export type PracticeAnswer = {
+  ucis: string[];
+  preferredUci: string | null;
+  explanation: string | null;
+  moveComments?: Record<string, string>;
+};
+
 /** Hint and reveal data the main process already gave out for a card. */
 export type PracticeShown = {
   /** The authored hint (hint stage 1 or later). */
@@ -221,7 +234,7 @@ export type PracticeShown = {
   /** The preferred move hints point at (hint stage 2 or later). */
   hintUci: string | null;
   /** The answer, for a revealed card. */
-  revealed: { ucis: string[]; preferredUci: string | null; explanation: string | null } | null;
+  revealed: PracticeAnswer | null;
 };
 
 export type PracticeAction =
@@ -271,6 +284,13 @@ export type AttemptResult = {
   /** Revealed only once the card's grade is final; empty before. */
   acceptedUcis: string[];
   preferredUci: string | null;
+  /**
+   * With the accepted moves (and only then): the explanation and the accepted moves' comments, as
+   * a reveal gives them (see {@link PracticeAnswer}). Absent from older stored results.
+   */
+  explanation?: string | null;
+  moveComments?: Record<string, string>;
+  /** The author's feedback for this move outside the repertoire, if any. */
   feedback: string | null;
   card: PracticeCard;
   /** This attempt fixed the card's scheduled grade. */
@@ -283,7 +303,8 @@ export type PracticeActionResult = {
   card: PracticeCard;
   /** Rehearse-lines: after a reveal or follow-other-line, the continuation of the line. */
   rehearsal?: RehearsalStep;
-  revealed?: { ucis: string[]; preferredUci: string | null; explanation: string | null };
+  /** A hint's text and move (no accepted moves), or a reveal's answer. */
+  revealed?: PracticeAnswer;
   /** True when the action found the session's chapter changed and ended the session instead. */
   sessionEnded?: true;
 };

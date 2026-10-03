@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import { addLine, cardOf, chapterOf, rootNode } from "./__fixtures__/repertoire";
 import {
+  answerView,
+  autoAdvanceDelay,
   autosaveStep,
+  hasAnswerNotes,
+  isPracticeNextKey,
   decisionCountWithMeta,
   decisionDeltaLabel,
   defaultEdgeForNewMove,
@@ -398,6 +402,77 @@ describe("practice text", () => {
     expect(hintStageText(start, 2, "e4e5")).toBe("Move the piece on e4");
     expect(hintStageText(start, 3, "g1f3")).toBe("g1 to f3");
     expect(hintStageText(start, 3, null)).toBeNull();
+  });
+
+  it("after a correct answer, names the move played, the other accepted moves and the notes", () => {
+    const answer = {
+      ucis: ["e2e4", "g1f3", "c2c4"],
+      preferredUci: "g1f3",
+      explanation: " The centre first. ",
+      moveComments: { e2e4: "Open games.", c2c4: " ", g1f3: "Flexible." }
+    };
+    expect(answerView(start, answer, "e2e4")).toEqual({
+      answer: "You played e4.",
+      alternatives: "Also accepted: Nf3 (preferred), c4",
+      explanation: "The centre first.",
+      moveNotes: [
+        { uci: "g1f3", san: "Nf3", text: "Flexible." },
+        { uci: "e2e4", san: "e4", text: "Open games." }
+      ]
+    });
+    expect(answerView(start, { ...answer, ucis: ["g1f3"] }, "g1f3").alternatives).toBeNull();
+  });
+
+  it("after a reveal, words the answer as the reveal always has", () => {
+    const view = answerView(
+      start,
+      { ucis: ["e2e4", "g1f3"], preferredUci: null, explanation: null },
+      null
+    );
+    expect(view).toEqual({
+      answer: "Preferred: e4 · also accepted: Nf3",
+      alternatives: null,
+      explanation: null,
+      moveNotes: []
+    });
+  });
+
+  it("auto-advances a correct answer only when it is on and there is nothing to read", () => {
+    const plain = { ucis: ["e2e4"], preferredUci: "e2e4", explanation: null };
+    expect(autoAdvanceDelay(600, plain)).toBe(600);
+    expect(autoAdvanceDelay(600, null)).toBe(600);
+    expect(autoAdvanceDelay(0, plain)).toBeNull();
+    expect(autoAdvanceDelay(3000, { ...plain, explanation: "Why" })).toBeNull();
+    expect(autoAdvanceDelay(1500, { ...plain, moveComments: { e2e4: "Note" } })).toBeNull();
+    expect(hasAnswerNotes({ ...plain, explanation: "  ", moveComments: { e2e4: " " } })).toBe(
+      false
+    );
+    expect(hasAnswerNotes(null)).toBe(false);
+  });
+
+  it("takes Space and Enter as Next, except where they already mean something", () => {
+    const key = (key: string, extra: Partial<KeyboardEvent> = {}) => ({
+      key,
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: false,
+      repeat: false,
+      defaultPrevented: false,
+      ...extra
+    });
+    const free = { typing: false, blocked: false, onControl: false };
+    expect(isPracticeNextKey(key(" "), free)).toBe(true);
+    expect(isPracticeNextKey(key("Enter"), free)).toBe(true);
+    expect(isPracticeNextKey(key("n"), free)).toBe(false);
+    expect(isPracticeNextKey(key("f"), free)).toBe(false);
+    expect(isPracticeNextKey(key(" "), { ...free, typing: true })).toBe(false);
+    expect(isPracticeNextKey(key("Enter"), { ...free, blocked: true })).toBe(false);
+    expect(isPracticeNextKey(key("Enter"), { ...free, onControl: true })).toBe(false);
+    expect(isPracticeNextKey(key(" ", { repeat: true }), free)).toBe(false);
+    expect(isPracticeNextKey(key("Enter", { metaKey: true }), free)).toBe(false);
+    expect(isPracticeNextKey(key(" ", { shiftKey: true }), free)).toBe(false);
+    expect(isPracticeNextKey(key(" ", { defaultPrevented: true }), free)).toBe(false);
   });
 
   it("says which hints a resumed card already used", () => {

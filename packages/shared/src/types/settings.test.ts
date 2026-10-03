@@ -11,6 +11,7 @@ import {
   normalizePieceStyle,
   normalizeReviewEngineSettings,
   normalizeOnboardingSettings,
+  normalizePracticeSettings,
   normalizeUpdateSettings,
   resolveEngineThreads
 } from "./settings";
@@ -205,6 +206,23 @@ describe("normalizeAppearanceSettings", () => {
     const stored = { ...defaultSettings, glassEffect: false } as unknown as AppSettings;
     expect(normalizeAppearanceSettings(stored)).not.toHaveProperty("glassEffect");
     expect(normalizeAppearanceSettings(defaultSettings)).toBe(defaultSettings);
+  });
+});
+
+describe("normalizePracticeSettings", () => {
+  it("keeps practice's pace by default: a correct answer moves on after 0.6 s", () => {
+    expect(normalizePracticeSettings(defaultSettings).practiceAutoAdvanceMs).toBe(600);
+  });
+
+  it("keeps an offered delay (0 waits for Next) and replaces anything else", () => {
+    for (const delay of [0, 600, 1500, 3000]) {
+      const stored = { ...defaultSettings, practiceAutoAdvanceMs: delay } as AppSettings;
+      expect(normalizePracticeSettings(stored).practiceAutoAdvanceMs).toBe(delay);
+    }
+    for (const bad of [1000, -1, "600", null, undefined]) {
+      const stored = { ...defaultSettings, practiceAutoAdvanceMs: bad } as unknown as AppSettings;
+      expect(normalizePracticeSettings(stored).practiceAutoAdvanceMs).toBe(600);
+    }
   });
 });
 

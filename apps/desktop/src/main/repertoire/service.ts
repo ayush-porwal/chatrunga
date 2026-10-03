@@ -54,6 +54,7 @@ import {
   type ImportResult,
   type PracticeActionInput,
   type PracticeActionResult,
+  type PracticeAnswer,
   type PracticeCard,
   type PracticeLeadUpMove,
   type PracticeSessionSnapshot,
@@ -1615,15 +1616,39 @@ function snapshotOf(session: PracticeSessionRecord): PracticeSessionSnapshot {
     shown: {
       hint: card.hintStage >= 1 ? policy.hint : null,
       hintUci: card.hintStage >= 2 ? (policy.preferredUci ?? policy.acceptedUcis[0] ?? null) : null,
-      revealed: revealed
-        ? {
-            ucis: policy.acceptedUcis,
-            preferredUci: policy.preferredUci,
-            explanation: policy.explanation ?? policy.hint
-          }
-        : null
+      revealed: revealed ? answerOf(policy) : null
     }
   };
+}
+
+/**
+ * A card's answer as the page shows it once the grade is final: the accepted moves, the
+ * position's explanation (its comment, else the hint) and the accepted moves' own comments.
+ */
+function answerOf(policy: FrozenPolicy): PracticeAnswer {
+  return {
+    ucis: policy.acceptedUcis,
+    preferredUci: policy.preferredUci,
+    explanation: policy.explanation ?? policy.hint,
+    ...(policy.moveComments ? { moveComments: policy.moveComments } : {})
+  };
+}
+
+/** The comments of the accepted moves played from `nodeId` in its chapter, by UCI. */
+function acceptedMoveComments(
+  lookup: ChapterLookup,
+  nodeId: string,
+  accepted: readonly string[]
+): Record<string, string> {
+  const comments: Record<string, string> = {};
+  for (const id of lookup.childrenById.get(nodeId) ?? []) {
+    const child = lookup.nodesById.get(id);
+    const comment = child?.comment?.trim();
+    if (!child?.uci || !comment) continue;
+    const uci = normalizeUci(child.fenBefore, child.uci);
+    if (accepted.includes(uci)) comments[uci] = comment;
+  }
+  return comments;
 }
 
 /** The next unanswered card after `from` (wrapping), or `from` when none is left. */
@@ -1779,6 +1804,7 @@ export function startPractice(input: StartPracticeInput): PracticeSessionSnapsho
         hint: candidate.decision.hint,
         wrongMoveFeedback: candidate.decision.wrongMoveFeedback,
         explanation: node.comment ?? null,
+        moveComments: acceptedMoveComments(lookup, nodeId, candidate.effective),
         progressAt: progress.get(candidate.entry.positionKey)?.lastAttemptAt ?? null
       };
     });
@@ -1955,10 +1981,17 @@ export function recordAttempt(input: RecordAttemptInput): AttemptResult {
     // A wrong answer keeps the answer hidden so the card can be retried (§5.3); a correct retry,
     // like any other final state, shows the accepted set.
     const revealed = card.state === "answered-wrong" ? correct : gradeIsFinal(card);
+    const answer = revealed ? answerOf(policy) : null;
     const result: AttemptResult = {
       outcome,
-      acceptedUcis: revealed ? policy.acceptedUcis : [],
-      preferredUci: revealed ? policy.preferredUci : null,
+      acceptedUcis: answer?.ucis ?? [],
+      preferredUci: answer?.preferredUci ?? null,
+      ...(answer
+        ? {
+            explanation: answer.explanation,
+            ...(answer.moveComments ? { moveComments: answer.moveComments } : {})
+          }
+        : {}),
       feedback: outcome === "outside-repertoire" ? (policy.wrongMoveFeedback[uci] ?? null) : null,
       card,
       finalGrade
@@ -2059,11 +2092,7 @@ export function recordPracticeAction(input: PracticeActionInput): PracticeAction
       } else if (card.state === "answered-wrong") {
         persist(false, null);
       }
-      revealed = {
-        ucis: policy.acceptedUcis,
-        preferredUci: policy.preferredUci,
-        explanation: policy.explanation ?? policy.hint
-      };
+      revealed = answerOf(policy);
     } else if (card.state === "unanswered") {
       persist(false, "no-change");
       card.state = "skipped";

@@ -171,6 +171,8 @@ function save(
     meta?: (tree: MoveNode[]) => Record<string, RepertoireNodeMeta>;
     rootFen?: string;
     enabled?: boolean;
+    /** Authored comments, by the UCI line of the node they belong to (joined with spaces). */
+    comments?: Record<string, string>;
   } = {}
 ) {
   const detail = service.getRepertoire(repertoireId);
@@ -179,6 +181,9 @@ function save(
   );
   const rootFen = options.rootFen ?? existing?.rootFen ?? START_FEN;
   const tree = treeOf(rootFen, lines);
+  for (const [line, comment] of Object.entries(options.comments ?? {})) {
+    nodeAt(tree, line ? line.split(" ") : []).comment = comment;
+  }
   const chapter: RepertoireChapter = {
     id: options.chapterId ?? existing!.id,
     title: "Chapter",
@@ -1648,6 +1653,67 @@ describe("repertoire service: practice", () => {
     const result = attempt(targeted.sessionId, targeted.cards[0].queueItemId, "e2e4");
     expect(result.outcome).toBe("correct");
     expect(progressRepository.get(id, START_KEY)!.lapses).toBe(0);
+  });
+
+  it("gives out the explanation and the accepted moves' comments only with the answer", () => {
+    const { id } = create();
+    save(id, [["e2e4"], ["d2d4"]], {
+      comments: { "": "Choose your centre pawn.", e2e4: "Open games.", d2d4: "  " }
+    });
+    service.updateDecision({
+      repertoireId: id,
+      positionKey: START_KEY,
+      expectedRevision: service.getRepertoire(id).revision,
+      patch: {
+        acceptedUcis: ["e2e4"],
+        hint: "A king's pawn",
+        wrongMoveFeedback: { d2d4: "Not 1.d4 here" }
+      }
+    });
+    const { session, card } = learnFirst(id);
+    const ids = { sessionId: session.sessionId, queueItemId: card.queueItemId };
+    // A hint gives the hint only; a wrong answer only that move's feedback.
+    expect(service.recordPracticeAction({ ...ids, action: { kind: "hint" } }).revealed).toEqual({
+      ucis: [],
+      preferredUci: null,
+      explanation: "A king's pawn"
+    });
+    const wrong = attempt(session.sessionId, card.queueItemId, "d2d4");
+    expect(wrong.feedback).toBe("Not 1.d4 here");
+    expect(wrong).not.toHaveProperty("explanation");
+    expect(wrong).not.toHaveProperty("moveComments");
+    const revealed = service.recordPracticeAction({ ...ids, action: { kind: "reveal" } });
+    expect(revealed.revealed).toEqual({
+      ucis: ["e2e4"],
+      preferredUci: "e2e4",
+      explanation: "Choose your centre pawn.",
+      moveComments: { e2e4: "Open games." }
+    });
+    expect(service.resumePractice(session.sessionId).shown?.revealed).toEqual(revealed.revealed);
+    expect(attempt(session.sessionId, card.queueItemId, "e2e4")).toMatchObject({
+      outcome: "correct",
+      acceptedUcis: ["e2e4"],
+      explanation: "Choose your centre pawn.",
+      moveComments: { e2e4: "Open games." }
+    });
+  });
+
+  it("a correct first answer comes with the explanation, the hint standing in for none", () => {
+    const { id } = create();
+    save(id, [["e2e4"]], { comments: { e2e4: "Open games." } });
+    service.updateDecision({
+      repertoireId: id,
+      positionKey: START_KEY,
+      expectedRevision: service.getRepertoire(id).revision,
+      patch: { hint: "A king's pawn" }
+    });
+    const { session, card } = learnFirst(id);
+    expect(attempt(session.sessionId, card.queueItemId, "e2e4")).toMatchObject({
+      outcome: "correct",
+      finalGrade: true,
+      explanation: "A king's pawn",
+      moveComments: { e2e4: "Open games." }
+    });
   });
 
   it("a targeted queue keeps the given order and drops unknown or paused decisions", () => {

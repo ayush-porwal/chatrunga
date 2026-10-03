@@ -10,6 +10,11 @@ import type {
   RepertoireDetail,
   StartPracticeInput
 } from "@chaturanga/shared/types/repertoire";
+import {
+  defaultSettings,
+  PRACTICE_AUTO_ADVANCE_MS,
+  type PracticeAutoAdvanceMs
+} from "@chaturanga/shared/types/settings";
 import { ChipButton } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -19,7 +24,9 @@ import { Notice } from "@/components/ui/notice";
 import { SectionHeader } from "@/components/ui/page";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { cardPadded } from "@/lib/ui";
+import { useSettingsQuery } from "../../queries/api";
 import { useRepertoireChapterQuery } from "../../queries/repertoire";
+import { useSetSetting } from "../settings/use-set-setting";
 import { sortedChapters } from "./repertoire-chapters";
 import { pathLabel } from "./repertoire-model";
 import {
@@ -42,6 +49,14 @@ const modeOptions = [
   { value: "rehearse-lines" as const, label: "Rehearse lines" }
 ];
 
+/** "Next card" choices: wait for Next, or move on by itself after a correct answer. */
+const ADVANCE_LABELS: Record<PracticeAutoAdvanceMs, string> = {
+  0: "When I press Next",
+  600: "After 0.6 s",
+  1500: "After 1.5 s",
+  3000: "After 3 s"
+};
+
 const START_LABELS: Record<PracticeMode, string> = {
   "review-due": "Start review",
   "learn-new": "Start learning",
@@ -51,7 +66,8 @@ const START_LABELS: Record<PracticeMode, string> = {
 /**
  * Practice setup (§5.3): mode, chapters (none selected = every enabled opening chapter), maximum
  * depth and card limits. "Nothing due" offers Learn new instead. Rehearse lines picks one chapter
- * and optionally a branch to start from; card limits don't apply to it.
+ * and optionally a branch to start from; card limits don't apply to it. "Next card" is the saved
+ * auto-advance preference (a setting, not part of the draft).
  */
 export function PracticeSetup({
   detail,
@@ -74,8 +90,12 @@ export function PracticeSetup({
     cards: useId(),
     fresh: useId(),
     chapter: useId(),
-    from: useId()
+    from: useId(),
+    advance: useId()
   };
+  const settings = useSettingsQuery();
+  const setSetting = useSetSetting();
+  const advanceMs = settings.data?.practiceAutoAdvanceMs ?? defaultSettings.practiceAutoAdvanceMs;
   const [mode, setMode] = useState<PracticeMode>(initial.mode);
   const [chapterIds, setChapterIds] = useState<string[]>(initial.chapterIds ?? []);
   const [depth, setDepth] = useState(initial.maxDepthPlies ? String(initial.maxDepthPlies) : "");
@@ -277,6 +297,31 @@ export function PracticeSetup({
               </>
             )}
           </div>
+          {rehearsing ? null : (
+            <Field
+              label="Next card"
+              hint="after a correct answer; one with notes waits for Next"
+              htmlFor={ids.advance}
+            >
+              <Select
+                id={ids.advance}
+                className="sm:max-w-56"
+                value={String(advanceMs)}
+                onChange={(event) =>
+                  setSetting(
+                    "practiceAutoAdvanceMs",
+                    Number(event.target.value) as PracticeAutoAdvanceMs
+                  )
+                }
+              >
+                {PRACTICE_AUTO_ADVANCE_MS.map((delay) => (
+                  <option key={delay} value={delay}>
+                    {ADVANCE_LABELS[delay]}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
           {error ? <Notice tone="danger">{error}</Notice> : null}
           <Button
             type="button"
