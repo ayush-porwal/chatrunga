@@ -16,6 +16,7 @@ import {
   type RepertoireDetail,
   type StartPracticeInput
 } from "@chaturanga/shared/types/repertoire";
+import { sortedChapters } from "./repertoire-chapters";
 
 /** Pure rules of the practice setup form: defaults, the saved draft, and the main's limits. */
 
@@ -285,4 +286,24 @@ export function rehearseStarts(
     starts.push({ nodeId: id, path: label(context.lookup, id) });
   }
   return { starts, truncated: false };
+}
+
+/**
+ * The chapter that explains a practice start with nothing to ask: the rehearsed chapter, else the
+ * first chapter in scope. A start over every chapter names one only when the whole repertoire has
+ * no decision: the chapter last studied, else the first one. Null when there is no such chapter
+ * (the mode's own explanation applies).
+ */
+export function explainedChapterId(
+  detail: Pick<RepertoireDetail, "chapters" | "workspace" | "decisionCount">,
+  input: Pick<StartPracticeInput, "mode" | "chapterIds" | "rehearse">
+): string | null {
+  const known = new Set(detail.chapters.map((chapter) => chapter.id));
+  const scoped =
+    input.mode === "rehearse-lines" ? input.rehearse?.chapterId : input.chapterIds?.[0];
+  if (scoped && known.has(scoped)) return scoped;
+  if (detail.decisionCount > 0) return null;
+  const last = detail.workspace?.lastChapterId;
+  if (last && known.has(last)) return last;
+  return sortedChapters(detail.chapters)[0]?.id ?? null;
 }

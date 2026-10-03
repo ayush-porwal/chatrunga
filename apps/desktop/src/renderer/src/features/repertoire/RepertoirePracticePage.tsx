@@ -327,12 +327,11 @@ export function RepertoirePracticePage({
             ? "That decision has nothing to practise right now (it may be paused or no longer among your choices). Set up a session below instead."
             : null
       }
-      nothingDue={
-        startState.status === "empty" && !isEmptyTargetedStart(startState)
-          ? startState.input.mode
-          : null
+      empty={
+        startState.status === "empty" && !isEmptyTargetedStart(startState) ? startState.input : null
       }
       onStart={startSession}
+      onStudy={onStudy}
     />
   );
 }

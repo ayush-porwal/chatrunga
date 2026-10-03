@@ -9,6 +9,7 @@ import {
   autoStartPracticeInput,
   boundedInt,
   DEFAULT_CARD_LIMIT,
+  explainedChapterId,
   initialPracticeInput,
   MAX_CARD_LIMIT,
   MAX_DEPTH_PLIES,
@@ -366,5 +367,40 @@ describe("savesPracticeDraft", () => {
       positionKeys: ["k1"]
     };
     expect(savesPracticeDraft(targeted, false)).toBe(false);
+  });
+});
+
+describe("explainedChapterId", () => {
+  const chapters = [chapter("b", { sortOrder: 1 }), chapter("a", { sortOrder: 0 })];
+  const rehearse = (chapterId: string) =>
+    ({ mode: "rehearse-lines", rehearse: { chapterId } }) as const;
+
+  it("names the rehearsed chapter, or the first chapter in scope", () => {
+    const detail = detailOf({ chapters, decisionCount: 3 });
+    expect(explainedChapterId(detail, rehearse("b"))).toBe("b");
+    expect(explainedChapterId(detail, { mode: "learn-new", chapterIds: ["b", "a"] })).toBe("b");
+    // A chapter that is gone names nothing in particular.
+    expect(explainedChapterId(detail, rehearse("gone"))).toBeNull();
+  });
+
+  it("over every chapter names one only when the repertoire has no decision", () => {
+    expect(
+      explainedChapterId(detailOf({ chapters, decisionCount: 3 }), { mode: "review-due" })
+    ).toBeNull();
+    expect(
+      explainedChapterId(detailOf({ chapters, decisionCount: 0 }), { mode: "review-due" })
+    ).toBe("a");
+    const studied = detailOf({
+      chapters,
+      decisionCount: 0,
+      workspace: {
+        lastChapterId: "b",
+        lastNodeId: null,
+        orientation: "white",
+        practiceDraft: null
+      }
+    });
+    expect(explainedChapterId(studied, { mode: "review-due" })).toBe("b");
+    expect(explainedChapterId(detailOf({ decisionCount: 0 }), { mode: "review-due" })).toBeNull();
   });
 });

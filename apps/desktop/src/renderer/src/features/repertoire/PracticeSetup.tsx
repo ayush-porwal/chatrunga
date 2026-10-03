@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from "react";
-import { GraduationCap, Route, Sparkles } from "lucide-react";
+import { GraduationCap, Route } from "lucide-react";
 import {
   DEFAULT_REHEARSAL_DEPTH_PLIES,
   canRehearseFrom,
@@ -17,7 +17,6 @@ import {
 } from "@chaturanga/shared/types/settings";
 import { ChipButton } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/ui/empty-state";
 import { Field } from "@/components/ui/field";
 import { Input, Select } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
@@ -29,6 +28,8 @@ import { useRepertoireChapterQuery } from "../../queries/repertoire";
 import { useSetSetting } from "../settings/use-set-setting";
 import { sortedChapters } from "./repertoire-chapters";
 import { pathLabel } from "./repertoire-model";
+import { startUnavailableReason } from "./training-explanations";
+import { PracticeEmptyState } from "./PracticeEmptyState";
 import {
   DEFAULT_CARD_LIMIT,
   DEFAULT_NEW_CARD_LIMIT,
@@ -36,6 +37,7 @@ import {
   MAX_DEPTH_PLIES,
   MAX_REHEARSE_STARTS,
   boundedInt,
+  explainedChapterId,
   practiceInputFromForm,
   rehearseStarts,
   type RehearseStart
@@ -65,25 +67,31 @@ const START_LABELS: Record<PracticeMode, string> = {
 
 /**
  * Practice setup (§5.3): mode, chapters (none selected = every enabled opening chapter), maximum
- * depth and card limits. "Nothing due" offers Learn new instead. Rehearse lines picks one chapter
- * and optionally a branch to start from; card limits don't apply to it. "Next card" is the saved
- * auto-advance preference (a setting, not part of the draft).
+ * depth and card limits. A start with nothing to ask says why above the form: the chapter in scope
+ * and its cause with a way back to Study, or what the mode found ("Nothing due" offers Learn new).
+ * A repertoire with no decision at all is explained before any start, and Start is disabled with
+ * the reason. Rehearse lines picks one chapter and optionally a branch to start from; card limits
+ * don't apply to it. "Next card" is the saved auto-advance preference (a setting, not part of the
+ * draft).
  */
 export function PracticeSetup({
   detail,
   initial,
   starting,
   error,
-  nothingDue,
-  onStart
+  empty,
+  onStart,
+  onStudy
 }: {
   detail: RepertoireDetail;
   initial: StartPracticeInput;
   starting: boolean;
   error: string | null;
-  /** The last start found no cards for its scope and mode. */
-  nothingDue: PracticeMode | null;
+  /** The last start, which found no cards for its scope and mode (null: none did). */
+  empty: StartPracticeInput | null;
   onStart: (input: StartPracticeInput) => void;
+  /** Study at a chapter and move (the way to fix a chapter with nothing to practise). */
+  onStudy: (target: { chapterId: string; nodeId: string | null }) => void;
 }) {
   const ids = {
     depth: useId(),
@@ -91,7 +99,8 @@ export function PracticeSetup({
     fresh: useId(),
     chapter: useId(),
     from: useId(),
-    advance: useId()
+    advance: useId(),
+    startReason: useId()
   };
   const settings = useSettingsQuery();
   const setSetting = useSetSetting();
@@ -131,6 +140,15 @@ export function PracticeSetup({
       rehearseFromNodeId: effectiveFrom
     });
 
+  // A repertoire with no decision at all is explained before any start.
+  const explaining = empty ?? (detail.decisionCount && trainable.length ? null : input());
+  const unavailable = startUnavailableReason({
+    decisionCount: detail.decisionCount,
+    practicableChapters: trainable.length,
+    rehearsing,
+    rehearseChapterId
+  });
+
   const toggle = (id: string) =>
     setChapterIds((current) =>
       current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
@@ -140,34 +158,15 @@ export function PracticeSetup({
     <div className="scroll-area h-full min-h-0 overflow-y-auto">
       <div className="mx-auto grid w-full max-w-2xl content-start gap-5 px-(--page-gutter) py-(--page-gutter-y)">
         <h1 className="sr-only">Practice {detail.name}</h1>
-        {nothingDue === "review-due" ? (
-          <EmptyState
-            className={cardPadded}
-            icon={<GraduationCap />}
-            title="No reviews due in this scope"
-            description="Everything here is scheduled for later. You can learn decisions you haven't practised yet."
-            action={
-              <Button
-                type="button"
-                variant="primary"
-                disabled={starting}
-                onClick={() => onStart(input("learn-new"))}
-              >
-                <Sparkles />
-                Learn new
-              </Button>
-            }
+        {explaining ? (
+          <PracticeEmptyState
+            detail={detail}
+            mode={explaining.mode}
+            chapterId={explainedChapterId(detail, explaining)}
+            starting={starting}
+            onLearnNew={() => onStart(input("learn-new"))}
+            onStudy={onStudy}
           />
-        ) : nothingDue === "learn-new" ? (
-          <Notice tone="info" title="Nothing new to learn here">
-            Every decision in this scope has been practised. Add accepted moves while studying to
-            create new ones.
-          </Notice>
-        ) : nothingDue === "rehearse-lines" ? (
-          <Notice tone="info" title="Nothing to rehearse here">
-            This chapter or branch has no moves of yours in training. Accept moves while studying,
-            or choose another place to start.
-          </Notice>
         ) : null}
         <section className={`${cardPadded} grid gap-4`} aria-label="Practice setup">
           <SectionHeader
@@ -323,16 +322,23 @@ export function PracticeSetup({
             </Field>
           )}
           {error ? <Notice tone="danger">{error}</Notice> : null}
-          <Button
-            type="button"
-            variant="primary"
-            className="justify-self-start"
-            disabled={starting || !trainable.length || (rehearsing && !rehearseChapterId)}
-            onClick={() => onStart(input())}
-          >
-            {rehearsing ? <Route /> : <GraduationCap />}
-            {starting ? "Starting…" : START_LABELS[mode]}
-          </Button>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <Button
+              type="button"
+              variant="primary"
+              disabled={starting || unavailable !== null}
+              aria-describedby={unavailable ? ids.startReason : undefined}
+              onClick={() => onStart(input())}
+            >
+              {rehearsing ? <Route /> : <GraduationCap />}
+              {starting ? "Starting…" : START_LABELS[mode]}
+            </Button>
+            {unavailable ? (
+              <p id={ids.startReason} className="text-xs text-fg-muted">
+                {unavailable}
+              </p>
+            ) : null}
+          </div>
         </section>
       </div>
     </div>
