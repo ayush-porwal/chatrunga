@@ -135,17 +135,35 @@ export function chapterTraining(
 }
 
 /**
- * The chapter as it trains after "Include in practice": switched on, an opening chapter, and
- * the import default (§10 step 4) filled in along every route that trains — at a position of the
- * player with no accepted move the first authored one is accepted, and opponent replies marked
- * reference are covered. Moves below a reference alternative of the player stay as they are, and
- * training marks (start, end, left-out branches) are kept.
+ * The moves the repertoire already accepts at a position (its stored decision's choices), by
+ * position key; undefined where it has no decision yet.
  */
-export function trainableChapter<
-  T extends Pick<RepertoireChapter, "kind" | "enabled" | "tree" | "nodeMeta">
->(color: RepertoireColor, chapter: T): T {
+export type AcceptedAt = (positionKey: string) => readonly string[] | undefined;
+
+/** A move "Include in practice" accepts at a position of the player that had none accepted. */
+export type TrainingPick = {
+  /** The position's node and key. */
+  nodeId: string;
+  positionKey: string;
+  /** The accepted move's node and UCI. */
+  childId: string;
+  uci: string;
+  /**
+   * The repertoire's decision there doesn't accept it yet (it accepts other moves): including
+   * it widens what every chapter reaching the position practises.
+   */
+  widens: boolean;
+};
+
+/** trainableChapter's walk: the chapter after it, and each move it accepted where none was. */
+function planTrainable<T extends Pick<RepertoireChapter, "kind" | "enabled" | "tree" | "nodeMeta">>(
+  color: RepertoireColor,
+  chapter: T,
+  acceptedAt: AcceptedAt
+): { chapter: T; picks: TrainingPick[] } {
   const lookup = buildChapterLookup(chapter);
   const nodeMeta: Record<string, RepertoireNodeMeta> = { ...chapter.nodeMeta };
+  const picks: TrainingPick[] = [];
   const setEdge = (id: string, edge: RepertoireNodeMeta["edge"]) => {
     nodeMeta[id] = { ...nodeMetaOf(nodeMeta, id), edge };
   };
@@ -155,7 +173,20 @@ export function trainableChapter<
     if (!children.length) continue;
     if (playerToMove(lookup.nodesById.get(id)!.fenAfter) === color) {
       if (!children.some((child) => nodeMetaOf(nodeMeta, child).edge === "included")) {
-        setEdge(children[0], "included");
+        // A move the repertoire already accepts here first (other chapters practise it), so the
+        // shared decision isn't widened; else the first authored one.
+        const positionKey = lookup.positionKeys.get(id)!;
+        const accepted = acceptedAt(positionKey) ?? [];
+        const uciOf = (child: string) => lookup.nodesById.get(child)!.uci!;
+        const childId = children.find((child) => accepted.includes(uciOf(child))) ?? children[0]!;
+        setEdge(childId, "included");
+        picks.push({
+          nodeId: id,
+          positionKey,
+          childId,
+          uci: uciOf(childId),
+          widens: accepted.length > 0 && !accepted.includes(uciOf(childId))
+        });
       }
       pending.push(...children.filter((child) => nodeMetaOf(nodeMeta, child).edge === "included"));
     } else {
@@ -165,7 +196,37 @@ export function trainableChapter<
       pending.push(...children);
     }
   }
-  return { ...chapter, kind: "opening", enabled: true, nodeMeta };
+  return { chapter: { ...chapter, kind: "opening", enabled: true, nodeMeta }, picks };
+}
+
+const noDecisions: AcceptedAt = () => undefined;
+
+/**
+ * The chapter as it trains after "Include in practice": switched on, an opening chapter, and
+ * the import default (§10 step 4) filled in along every route that trains — at a position of the
+ * player with no accepted move one is accepted (one the repertoire's decision there already
+ * accepts, per `acceptedAt`, else the first authored one), and opponent replies marked reference
+ * are covered. Moves below a reference alternative of the player stay as they are, and training
+ * marks (start, end, left-out branches) are kept.
+ */
+export function trainableChapter<
+  T extends Pick<RepertoireChapter, "kind" | "enabled" | "tree" | "nodeMeta">
+>(color: RepertoireColor, chapter: T, acceptedAt: AcceptedAt = noDecisions): T {
+  return planTrainable(color, chapter, acceptedAt).chapter;
+}
+
+/**
+ * The moves trainableChapter(color, chapter, acceptedAt) accepts where none was, with the
+ * positions it reached to accept them: a caller reads the stored decisions at those positions
+ * and asks again until no new position comes up (accepting another move leads elsewhere), then
+ * knows which picks widen a decision other chapters share.
+ */
+export function trainingPicks(
+  color: RepertoireColor,
+  chapter: Pick<RepertoireChapter, "kind" | "enabled" | "tree" | "nodeMeta">,
+  acceptedAt: AcceptedAt = noDecisions
+): TrainingPick[] {
+  return planTrainable(color, chapter, acceptedAt).picks;
 }
 
 /**

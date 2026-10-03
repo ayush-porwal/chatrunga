@@ -7,7 +7,8 @@ import {
   importedDecisionCount,
   ownMoveCause,
   scopeCause,
-  trainableChapter
+  trainableChapter,
+  trainingPicks
 } from "./repertoire-training";
 
 /** 1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 (2. Nc3 as an alternative), ids n1… depth-first. */
@@ -205,5 +206,41 @@ describe("trainableChapter", () => {
   it("leaves a chapter that trains as it was", () => {
     const { chapter } = chapterFrom(SICILIAN);
     expect(trainableChapter("white", chapter).nodeMeta).toEqual(chapter.nodeMeta);
+  });
+
+  it("accepts the move the repertoire already accepts at a position, not widening its decision", () => {
+    const { chapter, ids } = chapterFrom(SICILIAN);
+    const reference = { ...chapter, nodeMeta: allReference(chapter) };
+    const lookup = buildChapterLookup(chapter);
+    const afterC5 = lookup.positionKeys.get(ids["e4 c5"])!;
+    // Another chapter practises 2. Nc3 after 1. e4 c5: this one accepts Nc3 there, not Nf3.
+    const acceptedAt = (key: string) => (key === afterC5 ? ["b1c3"] : undefined);
+    const fixed = trainableChapter("white", reference, acceptedAt);
+    expect(fixed.nodeMeta[ids["e4 c5 Nc3"]]).toEqual({ edge: "included" });
+    expect(fixed.nodeMeta[ids["e4 c5 Nf3"]]).toEqual({ edge: "reference" });
+    const picks = trainingPicks("white", reference, acceptedAt);
+    expect(picks.find((pick) => pick.positionKey === afterC5)).toMatchObject({
+      childId: ids["e4 c5 Nc3"],
+      uci: "b1c3",
+      widens: false
+    });
+    expect(picks.some((pick) => pick.widens)).toBe(false);
+  });
+
+  it("says which picks widen a decision that accepts none of the chapter's moves", () => {
+    const { chapter, ids } = chapterFrom(SICILIAN);
+    const reference = { ...chapter, nodeMeta: allReference(chapter) };
+    // Without decisions: the first authored moves, widening nothing.
+    const first = trainingPicks("white", reference);
+    expect(first.map((pick) => pick.childId)).toContain(ids["e4 c5 Nf3"]);
+    expect(first.every((pick) => !pick.widens)).toBe(true);
+    // The repertoire plays 2. c3 after 1. e4 c5: accepting Nf3 there adds to that decision.
+    const afterC5 = buildChapterLookup(chapter).positionKeys.get(ids["e4 c5"])!;
+    const widened = trainingPicks("white", reference, (key) =>
+      key === afterC5 ? ["c2c3"] : undefined
+    ).filter((pick) => pick.widens);
+    expect(widened).toEqual([
+      expect.objectContaining({ nodeId: ids["e4 c5"], childId: ids["e4 c5 Nf3"], uci: "g1f3" })
+    ]);
   });
 });

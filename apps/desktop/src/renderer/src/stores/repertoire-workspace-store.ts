@@ -5,7 +5,7 @@ import { parseUci } from "chessops/util";
 import { addMoveNode } from "@chaturanga/shared/chess/pgn";
 import { positionFromFen } from "@chaturanga/shared/chess/position";
 import { nodeMetaOf } from "@chaturanga/shared/chess/repertoire-index";
-import { trainableChapter } from "@chaturanga/shared/chess/repertoire-training";
+import { trainableChapter, type AcceptedAt } from "@chaturanga/shared/chess/repertoire-training";
 import { standardCastlingUci } from "@chaturanga/shared/chess/review";
 import type { BoardArrow, BoardHighlight, Color, MoveNode } from "@chaturanga/shared/types/chess";
 import {
@@ -61,10 +61,12 @@ export type RepertoireWorkspaceState = {
   baseRevision: number;
   /**
    * The chapter before each structural edit (adding a move, deleting a line, promoting a
-   * variation, edge and training-mark changes), newest last. Comments, shapes and chapter fields
-   * aren't undone here (their text fields keep native undo); undoing restores the tree's shape and
-   * metadata and keeps the current comments and shapes of the moves it keeps. Both stacks reset
-   * when a chapter loads (another chapter, or a reload after a conflict).
+   * variation, edge and training-mark changes, "Include in practice"), newest last. Comments,
+   * shapes and chapter fields aren't undone here (their text fields keep native undo); undoing
+   * restores the tree's shape and metadata and keeps the current comments and shapes of the moves
+   * it keeps. The one exception is "Include in practice": its step also puts back the chapter's
+   * practice fields (on for practice, kind) it changed. Both stacks reset when a chapter loads
+   * (another chapter, or a reload after a conflict).
    */
   undoStack: RepertoireChapter[];
   /** The chapter before each undo, newest last; a new structural edit clears it. */
@@ -106,10 +108,11 @@ type Actions = {
   setNodeMeta: (nodeId: string, patch: Partial<RepertoireNodeMeta>) => void;
   /**
    * "Include in practice": switches the chapter on as an opening chapter and accepts the first
-   * own move wherever none is accepted, covering reference replies (`trainableChapter`). Undo
-   * puts the moves' marks back (chapter fields are never undone).
+   * own move wherever none is accepted (one the repertoire already accepts there, per
+   * `acceptedAt`), covering reference replies (`trainableChapter`). One undo step puts back all
+   * of it: the moves' marks and whether the chapter was on for practice and of which kind.
    */
-  makeChapterTrainable: () => void;
+  makeChapterTrainable: (acceptedAt?: AcceptedAt) => void;
   setComment: (nodeId: string, text: string) => void;
   setShapes: (nodeId: string, arrows: BoardArrow[], highlights: BoardHighlight[]) => void;
   setChapterFields: (
@@ -323,6 +326,11 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
   (set, get) => {
     /** Set while a compound edit runs: it takes one undo step, recorded before it started. */
     let grouping = false;
+    /**
+     * Undo / Redo entries that also restore the chapter's practice fields (enabled, kind): the
+     * chapter before "Include in practice", and the ones its Undo and Redo leave on the other stack.
+     */
+    const practiceFieldSteps = new WeakSet<RepertoireChapter>();
 
     /**
      * Applies an edit to the draft (bumps the generation, marks it dirty). An undoable one keeps
@@ -371,7 +379,12 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
       const state = get();
       const target = state[from][state[from].length - 1];
       if (!target || !state.chapter) return false;
-      const chapter = withStructureOf(target, state.chapter);
+      const structure = withStructureOf(target, state.chapter);
+      const fields = practiceFieldSteps.has(target);
+      const chapter = fields
+        ? { ...structure, kind: target.kind, enabled: target.enabled }
+        : structure;
+      if (fields) practiceFieldSteps.add(state.chapter);
       set({
         chapter,
         [from]: state[from].slice(0, -1),
@@ -540,8 +553,11 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
           { undoable: true }
         ),
 
-      makeChapterTrainable: () =>
-        edit((chapter) => trainableChapter(get().color, chapter), { undoable: true }),
+      makeChapterTrainable: (acceptedAt) => {
+        const before = get().chapter;
+        edit((chapter) => trainableChapter(get().color, chapter, acceptedAt), { undoable: true });
+        if (before && get().undoStack.at(-1) === before) practiceFieldSteps.add(before);
+      },
 
       setComment: (nodeId, text) => patchNode(nodeId, { comment: text.trim() ? text : null }),
 

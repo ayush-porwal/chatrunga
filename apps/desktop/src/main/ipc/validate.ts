@@ -38,6 +38,7 @@ import type {
   RepertoireColor,
   RepertoireListFilters,
   RepertoireNodeMeta,
+  PractisedElsewhereInput,
   RestoreBackupInput,
   SaveChapterInput,
   SaveWorkspaceInput,
@@ -774,6 +775,22 @@ export function parseDecisionRef(value: unknown): { repertoireId: string; positi
   if (!positionKey || CONTROL_CHARS.test(positionKey))
     fail("positionKey", "expected a position key");
   return { repertoireId: asId(input.repertoireId, "repertoireId"), positionKey };
+}
+
+/** "Include in practice"'s question: positions of a chapter, at most 10,000 keys. */
+export function parsePractisedElsewhereInput(value: unknown): PractisedElsewhereInput {
+  const input = asObject(value, "practised elsewhere");
+  const positionKeys = asStringArray(input.positionKeys, "positionKeys", 10_000, 200).map((key) =>
+    key.trim()
+  );
+  if (positionKeys.some((key) => !key || CONTROL_CHARS.test(key))) {
+    fail("positionKeys", "expected position keys");
+  }
+  return {
+    repertoireId: asId(input.repertoireId, "repertoireId"),
+    chapterId: asId(input.chapterId, "chapterId"),
+    positionKeys
+  };
 }
 
 /**

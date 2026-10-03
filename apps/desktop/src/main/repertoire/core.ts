@@ -418,6 +418,32 @@ function supportedChoices(
 }
 
 /**
+ * The moves the repertoire's other chapters practise at each of `keys` (their supported choices
+ * that the stored decision accepts, as practice asks them): what "Include in practice" in
+ * `chapterId` should accept there, so the decision those chapters share isn't widened. A key no
+ * other chapter practises maps to an empty list.
+ */
+export function practisedElsewhere(
+  record: RepertoireRecord,
+  chapterId: string,
+  keys: readonly string[]
+): Record<string, string[]> {
+  const unique = [...new Set(keys)];
+  const supported = supportedChoices(record, chapterId, unique, new Map());
+  const practised: Record<string, string[]> = {};
+  for (const key of unique) {
+    const entry = supported.get(key);
+    const decision = entry ? decisionRepository.get(record.id, key) : null;
+    practised[key] = !entry
+      ? []
+      : decision
+        ? effectiveAcceptedUcis(decision, entry.acceptedUcis)
+        : [...entry.acceptedUcis];
+  }
+  return practised;
+}
+
+/**
  * The supported choices of `keys` where the changed chapter only gained choices, without reading
  * the other chapters: what a key supported before is exactly its stored decision's acceptance
  * fingerprint (every accepted move that had a supporting occurrence), and now it also supports

@@ -462,6 +462,13 @@ export type ChapterSaveResult = {
   decisionsChanged: number;
 };
 
+/** "Include in practice" asks what the other chapters practise at positions of `chapterId`. */
+export type PractisedElsewhereInput = {
+  repertoireId: string;
+  chapterId: string;
+  positionKeys: string[];
+};
+
 export type UpdateDecisionInput = {
   repertoireId: string;
   positionKey: string;

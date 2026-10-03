@@ -29,6 +29,7 @@ vi.mock("../repertoire/service", () => {
     "getDecision",
     "getOccurrences",
     "getPausedKeys",
+    "getPractisedElsewhere",
     "getDueSummary",
     "getRepertoire",
     "listRepertoires",
@@ -101,6 +102,11 @@ describe("registerRepertoireIpc", () => {
       ["getDecision", { repertoireId: "r1", positionKey: "v1:key" }, "getDecision"],
       ["getOccurrences", { repertoireId: "r1", positionKey: "v1:key" }, "getOccurrences"],
       ["getPausedKeys", "r1", "getPausedKeys"],
+      [
+        "getPractisedElsewhere",
+        { repertoireId: "r1", chapterId: "c1", positionKeys: ["v1:key"] },
+        "getPractisedElsewhere"
+      ],
       [
         "compareGame",
         { repertoireId: "r1", color: "black", rootFen: START, moves: ["e2e4", "c7c5"] },

@@ -90,16 +90,46 @@ describe("repertoire workspace store", () => {
   it("makes a chapter of reference moves practised in one undo step", () => {
     const tree = sampleTree();
     const reference = { w0: { edge: "reference" as const }, w1: { edge: "reference" as const } };
-    store().loadChapter(detailOf(), chapterOf(tree, reference, { enabled: false }));
+    store().loadChapter(
+      detailOf(),
+      chapterOf(tree, reference, { enabled: false, kind: "reference" })
+    );
     store().makeChapterTrainable();
     expect(store().chapter!.enabled).toBe(true);
+    expect(store().chapter!.kind).toBe("opening");
     expect(store().chapter!.nodeMeta.w0).toEqual({ edge: "included" });
     expect(store().chapter!.nodeMeta.w1).toEqual({ edge: "covered" });
     expect(store().dirty).toBe(true);
-    // Undo puts the moves' marks back; chapter fields (on for practice, kind) are never undone.
+    // One Undo puts back everything it changed: the moves' marks, on for practice and the kind.
     expect(store().undo()).toBe(true);
     expect(store().chapter!.nodeMeta).toEqual(reference);
+    expect(store().chapter!.enabled).toBe(false);
+    expect(store().chapter!.kind).toBe("reference");
+    expect(store().undoStack).toHaveLength(0);
+    // Redo applies all of it again, and Undo takes it back again.
+    expect(store().redo()).toBe(true);
+    expect(store().chapter!).toMatchObject({ enabled: true, kind: "opening" });
+    expect(store().chapter!.nodeMeta.w0).toEqual({ edge: "included" });
+    expect(store().undo()).toBe(true);
+    expect(store().chapter!).toMatchObject({ enabled: false, kind: "reference" });
+  });
+
+  it("undoes Include in practice on a chapter whose moves already train: it was only switched on", () => {
+    store().loadChapter(detailOf(), chapterOf(sampleTree(), {}, { enabled: false }));
+    store().makeChapterTrainable();
     expect(store().chapter!.enabled).toBe(true);
+    expect(store().undoStack).toHaveLength(1);
+    expect(store().undo()).toBe(true);
+    expect(store().chapter!.enabled).toBe(false);
+  });
+
+  it("keeps the chapter fields when undoing any other step", () => {
+    load();
+    store().setNodeMeta("w0", { edge: "reference" });
+    store().setChapterFields({ enabled: false });
+    expect(store().undo()).toBe(true);
+    expect(store().chapter!.nodeMeta.w0).toBeUndefined();
+    expect(store().chapter!.enabled).toBe(false);
   });
 
   it("edits comments and shapes", () => {

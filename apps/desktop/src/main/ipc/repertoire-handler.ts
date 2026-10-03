@@ -14,6 +14,7 @@ import {
   getChapter,
   getDecision,
   getPausedKeys,
+  getPractisedElsewhere,
   getOccurrences,
   getDueSummary,
   getRepertoire,
@@ -48,6 +49,7 @@ import {
   parseChapterRef,
   parseCompareGameInput,
   parseDecisionRef,
+  parsePractisedElsewhereInput,
   parseCreateRepertoireInput,
   parseDuplicateRepertoireInput,
   parseExportBackupInput,
@@ -89,6 +91,9 @@ export function registerRepertoireIpc(): void {
   );
   ipcMain.handle("repertoires:getDecision", (_event, input: unknown) =>
     getDecision(parseDecisionRef(input))
+  );
+  ipcMain.handle("repertoires:getPractisedElsewhere", (_event, input: unknown) =>
+    getPractisedElsewhere(parsePractisedElsewhereInput(input))
   );
   ipcMain.handle("repertoires:getPausedKeys", (_event, id: unknown) =>
     getPausedKeys(asId(id, "repertoireId"))

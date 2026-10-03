@@ -94,6 +94,7 @@ import type {
   RepertoireChapter,
   RepertoireComparison,
   RepertoireGameLink,
+  PractisedElsewhereInput,
   RepertoireDecision,
   RepertoireDetail,
   RepertoireOccurrence,
@@ -344,6 +345,11 @@ export type ChaturangaApi = {
       repertoireId: string;
       positionKey: string;
     }): Promise<RepertoireDecision | null>;
+    /**
+     * The moves the repertoire's other chapters practise at positions of a chapter (by position
+     * key; empty where none does), for "Include in practice".
+     */
+    getPractisedElsewhere(input: PractisedElsewhereInput): Promise<Record<string, string[]>>;
     /** Position keys of the repertoire's paused decisions (left out of practice everywhere). */
     getPausedKeys(id: string): Promise<string[]>;
     /** Every chapter/node reaching a position (transpositions), in chapter then ply order. */

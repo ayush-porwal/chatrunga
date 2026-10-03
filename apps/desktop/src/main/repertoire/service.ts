@@ -67,6 +67,7 @@ import {
   type RepertoireListFilters,
   type RepertoireNodeMeta,
   type RepertoireOccurrence,
+  type PractisedElsewhereInput,
   type RepertoireSummary,
   type SaveChapterInput,
   type SaveWorkspaceInput,
@@ -154,6 +155,7 @@ import {
   checkRevision,
   detail,
   memoizedPositionKey,
+  practisedElsewhere,
   reindex,
   reindexChapter,
   reindexPositions,
@@ -269,6 +271,12 @@ export function getDecision(input: {
   requireRepertoire(input.repertoireId);
   const stored = decisionRepository.get(input.repertoireId, input.positionKey);
   return stored ? stripFingerprint(stored) : null;
+}
+
+/** The moves other chapters practise at positions of a chapter (see practisedElsewhere). */
+export function getPractisedElsewhere(input: PractisedElsewhereInput): Record<string, string[]> {
+  const record = requireRepertoire(input.repertoireId);
+  return practisedElsewhere(record, input.chapterId, input.positionKeys);
 }
 
 /**

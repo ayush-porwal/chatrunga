@@ -21,6 +21,7 @@ import {
   parseLichessDisconnectInput,
   parseLichessSeekInput,
   parsePgnText,
+  parsePractisedElsewhereInput,
   parsePreviewImportInput,
   parseProbeEvalInput,
   parseListLimit,
@@ -419,6 +420,23 @@ describe("add-from-game inputs", () => {
     expect(() => parseLinkGameInput({ ...valid, gameId: "" })).toThrow(/gameId/);
     expect(() => parseLinkGameInput({ ...valid, chapterId: 3 })).toThrow(/chapterId/);
     expect(() => parseLinkGameInput({ ...valid, capturedPath: "x".repeat(2001) })).toThrow(/capturedPath: too long/);
+  });
+});
+
+describe("parsePractisedElsewhereInput", () => {
+  it("accepts a chapter's position keys, trimmed, and refuses anything else", () => {
+    expect(
+      parsePractisedElsewhereInput({ repertoireId: "r1", chapterId: "c1", positionKeys: [" v1:a "] })
+    ).toEqual({ repertoireId: "r1", chapterId: "c1", positionKeys: ["v1:a"] });
+    expect(() =>
+      parsePractisedElsewhereInput({ repertoireId: "r1", chapterId: "c1", positionKeys: "v1:a" })
+    ).toThrow("positionKeys");
+    expect(() =>
+      parsePractisedElsewhereInput({ repertoireId: "r1", chapterId: "c1", positionKeys: [" "] })
+    ).toThrow("positionKeys");
+    expect(() =>
+      parsePractisedElsewhereInput({ repertoireId: "r1", chapterId: "", positionKeys: [] })
+    ).toThrow("chapterId");
   });
 });
 

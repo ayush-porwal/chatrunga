@@ -41,10 +41,10 @@ describe("IPC channels", () => {
 
   it("exposes the repertoire namespace, including its lookups and the change event", () => {
     const requested = matches(preload, /ipcRenderer\.invoke\("(repertoires:\w+)"/g);
-    for (const lookup of ["getChapter", "getDecision", "getOccurrences", "compareGame"]) {
+    for (const lookup of ["getChapter", "getDecision", "getOccurrences", "getPractisedElsewhere", "compareGame"]) {
       expect(requested.has(`repertoires:${lookup}`)).toBe(true);
     }
-    expect(requested.size).toBe(37);
+    expect(requested.size).toBe(38);
     expect(matches(preload, /subscribe(?:<[^>]*>)?\("(repertoires:\w+)"/g)).toEqual(new Set(["repertoires:changed", "repertoires:importProgress"]));
   });
 });

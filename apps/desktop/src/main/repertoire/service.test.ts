@@ -269,6 +269,37 @@ describe("repertoire service: chapters, decisions and index", () => {
     expect(decision).not.toHaveProperty("acceptanceFingerprint");
   });
 
+  it("getPractisedElsewhere gives the moves the other chapters practise at a chapter's positions", () => {
+    const { id } = create();
+    const first = save(id, [["e2e4"], ["d2d4"]]);
+    const firstId = first.chapter.id;
+    const second = save(id, [["c2c4"]], { chapterId: "second" });
+    const elsewhere = (chapterId: string) =>
+      service.getPractisedElsewhere({
+        repertoireId: id,
+        chapterId,
+        positionKeys: [START_KEY, START_KEY, "v1:nowhere"]
+      });
+    expect(() =>
+      service.getPractisedElsewhere({ repertoireId: "nope", chapterId: firstId, positionKeys: [] })
+    ).toThrow("Invalid repertoireId: not found");
+    expect(elsewhere(second.chapter.id)).toEqual({
+      [START_KEY]: ["e2e4", "d2d4"],
+      "v1:nowhere": []
+    });
+    // The decision keeps 1. e4 and 1. d4 stored, but only 1. c4 is practised by another chapter.
+    expect(elsewhere(firstId)[START_KEY]).toEqual(["c2c4"]);
+    // A move kept as reference there is no longer practised elsewhere, though still stored.
+    save(id, [["c2c4"]], {
+      chapterId: second.chapter.id,
+      meta: (tree) => ({ [nodeAt(tree, ["c2c4"]).id]: { edge: "reference" } })
+    });
+    expect(service.getDecision({ repertoireId: id, positionKey: START_KEY })?.acceptedUcis).toContain(
+      "c2c4"
+    );
+    expect(elsewhere(firstId)[START_KEY]).toEqual([]);
+  });
+
   it("getPausedKeys lists the paused decisions' position keys", () => {
     const { id } = create();
     expect(() => service.getPausedKeys("nope")).toThrow("Invalid repertoireId: not found");
