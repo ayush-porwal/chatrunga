@@ -12,6 +12,7 @@ import {
   mkdirSync,
   openSync,
   readdirSync,
+  rmSync,
   unlinkSync,
   writeFileSync
 } from "node:fs";
@@ -2794,6 +2795,8 @@ const MAX_BACKUP_BYTES = DEFAULT_BACKUP_LIMITS.maxBytes;
 const RETAINED_BACKUP_DIR = "repertoire-backups";
 /** Retained backups kept per repertoire; older ones are deleted after a successful replace. */
 const MAX_RETAINED_BACKUPS = 10;
+/** The format name of the practice history kept beside a retained backup (never restored). */
+const RETAINED_HISTORY_FORMAT = "chaturanga-repertoire-practice-history";
 const BACKUP_FILTERS = [{ name: "Chaturanga backup", extensions: ["json"] }];
 
 function mib(bytes: number): string {
@@ -2912,6 +2915,14 @@ export async function exportBackup(
       `Invalid export: the backup would be ${mib(bytes)}, over the ${mib(MAX_BACKUP_BYTES)} a restore accepts; back up fewer repertoires at once`
     );
   }
+  // The restore's own checks (repertoire, chapter and move counts too): a backup that couldn't be
+  // restored isn't written.
+  const unrestorable = restoreRefusal(json);
+  if (unrestorable) {
+    throw new Error(
+      `Invalid export: the backup couldn't be restored (${unrestorable}); back up fewer repertoires at once`
+    );
+  }
   const window = owner ?? BrowserWindow.getFocusedWindow();
   const options = {
     defaultPath: `chaturanga-repertoires-${localDate(now)}.json`,
@@ -2940,6 +2951,16 @@ function requireBackupJob(jobId: string, now: number): BackupJob {
     );
   }
   return job;
+}
+
+/** Why restore would refuse this backup text (its reason, without "Invalid backup: "), or null. */
+function restoreRefusal(text: string): string | null {
+  try {
+    validateBackupDocument(text);
+    return null;
+  } catch (error) {
+    return String(error instanceof Error ? error.message : error).replace(/^Invalid backup: /, "");
+  }
 }
 
 /** The backup text from the native open dialog (size checked before reading), or null. */
@@ -2981,7 +3002,9 @@ function previewOf(jobId: string, job: BackupJob): BackupImportPreview {
         chapterCount: entry.chapters.length,
         decisionCount: entry.decisions.length,
         hasProgress: (entry.progress?.length ?? 0) > 0,
-        existing: record ? { id: record.id, name: record.name, revision: record.revision } : null,
+        existing: record
+          ? { id: record.id, name: record.name, revision: record.revision, color: record.color }
+          : null,
         diff:
           record && current && !damaged
             ? diffBackupEntry(current, entry, { sessionCount: sessionRepository.count(record.id) })
@@ -3157,23 +3180,50 @@ function syncDirectory(directory: string): void {
   }
 }
 
+/** A replaced repertoire's own backup, prepared before anything is written or deleted. */
+type RetainedCopy = { record: RepertoireRecord; text: string; history: string };
+
 /**
- * Writes the repertoire's own backup, progress included, to `<userData>/repertoire-backups/` and
- * returns the path. Raw practice session and attempt rows go with it as forensic `history` (never
- * restored). The file is created exclusively (a random suffix on a name collision), then the file
- * and its directory are synced, so it is on disk before the replace deletes anything.
+ * The repertoire's own backup (progress included) as Restore from backup reads it, and its raw
+ * practice session and attempt rows as a separate forensic history document (never restored, so
+ * it can't make the backup too large to restore). Refused, before anything is deleted, when the
+ * backup itself would fail the restore's checks: a replace must leave a copy that can be restored.
  */
-function retainBackup(record: RepertoireRecord, now: number): string {
-  const directory = retainedBackupDirectory();
-  mkdirSync(directory, { recursive: true });
-  const entry = transaction(() => ({
-    ...stripForExport(backupEntryOf(record), true),
+function prepareRetainedCopy(record: RepertoireRecord, now: number): RetainedCopy {
+  const { entry, history } = transaction(() => ({
+    entry: stripForExport(backupEntryOf(record), true),
     history: {
+      format: RETAINED_HISTORY_FORMAT,
+      repertoireId: record.id,
+      exportedAt: now,
       sessions: sessionRepository.rawRows(record.id),
       attempts: attemptRepository.rawRowsForRepertoire(record.id)
     }
   }));
   const text = JSON.stringify(backupDocument([entry], now));
+  const refusal = restoreRefusal(text);
+  if (refusal) {
+    throw new Error(
+      `Invalid selections: "${record.name}" can't be replaced because its own backup couldn't be restored (${refusal}); restore the backup as a new copy`
+    );
+  }
+  return { record, text, history: JSON.stringify(history) };
+}
+
+/** The forensic history file kept beside a retained backup. */
+function historyPathOf(backupPath: string): string {
+  return backupPath.replace(/\.json$/, ".history.json");
+}
+
+/**
+ * Writes a prepared copy to `<userData>/repertoire-backups/` and returns the backup's path; its
+ * history goes beside it (`<name>.history.json`). The backup is created exclusively (a random
+ * suffix on a name collision), then both files and their directory are synced, so they are on
+ * disk before the replace deletes anything.
+ */
+function retainBackup({ record, text, history }: RetainedCopy, now: number): string {
+  const directory = retainedBackupDirectory();
+  mkdirSync(directory, { recursive: true });
   const base = `${safeFileId(record.id)}-${new Date(now).toISOString().replace(/[:.]/g, "-")}`;
   let path = join(directory, `${base}.json`);
   let descriptor: number | null = null;
@@ -3190,6 +3240,13 @@ function retainBackup(record: RepertoireRecord, now: number): string {
     fsyncSync(descriptor);
   } finally {
     closeSync(descriptor);
+  }
+  const historyDescriptor = openSync(historyPathOf(path), "w");
+  try {
+    writeFileSync(historyDescriptor, history, "utf8");
+    fsyncSync(historyDescriptor);
+  } finally {
+    closeSync(historyDescriptor);
   }
   syncDirectory(directory);
   return path;
@@ -3221,6 +3278,7 @@ function pruneRetainedBackups(repertoireId: string): void {
   for (const { name } of retained.slice(MAX_RETAINED_BACKUPS)) {
     try {
       unlinkSync(join(directory, name));
+      rmSync(historyPathOf(join(directory, name)), { force: true });
     } catch {
       // Left for the next replace to try again.
     }
@@ -3365,15 +3423,13 @@ export function restoreBackup(input: RestoreBackupInput): RestoreBackupResult {
     }
     return { selection, entry, chapters: restorableChapters(entry) };
   });
-  // Every replace is checked before any backup is retained, and retained before BEGIN.
-  for (const { selection, entry } of planned) {
-    if (selection.mode === "replace") checkReplace(entry, selection);
-  }
+  // Every replace is checked, and its own backup prepared (and checked restorable), before any
+  // backup is retained; all are retained before BEGIN.
+  const copies = planned
+    .filter(({ selection }) => selection.mode === "replace")
+    .map(({ selection, entry }) => prepareRetainedCopy(checkReplace(entry, selection), now));
   const retained = new Map<string, string>();
-  for (const { selection, entry } of planned) {
-    if (selection.mode !== "replace") continue;
-    retained.set(entry.repertoire.id, retainBackup(checkReplace(entry, selection), now));
-  }
+  for (const copy of copies) retained.set(copy.record.id, retainBackup(copy, now));
   const restored = transaction(() =>
     planned.map(({ selection, entry, chapters }) =>
       selection.mode === "replace"

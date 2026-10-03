@@ -136,6 +136,7 @@ function entry(overrides: Partial<RepertoireBackupEntry> = {}): RepertoireBackup
         repertoireId: "rep-1",
         chapterId: "c1",
         gameId: "game-1",
+        unsaved: false,
         gameNodeId: "g3",
         kind: "source",
         headers: { White: "A" },
@@ -388,6 +389,8 @@ describe("diffBackupEntry", () => {
       progressEntries: 1,
       progressDiscarded: 1,
       sessionsDiscarded: 0,
+      linksAdded: 0,
+      linksRemoved: 0,
       metadataChanged: []
     });
   });
@@ -411,6 +414,8 @@ describe("diffBackupEntry", () => {
       progressEntries: 0,
       progressDiscarded: 1,
       sessionsDiscarded: 0,
+      linksAdded: 0,
+      linksRemoved: 0,
       metadataChanged: []
     });
   });
@@ -431,6 +436,16 @@ describe("diffBackupEntry", () => {
       metadataChanged: ["name", "tags", "archivedAt", "color"]
     });
     expect(diffBackupEntry(entry({ progress: null }), entry()).progressDiscarded).toBe(0);
+  });
+
+  it("counts game links added and removed, whatever their ids", () => {
+    const [link] = entry().gameLinks;
+    const renewed = { ...entry(), gameLinks: [{ ...link, id: "link-2" }] };
+    expect(diffBackupEntry(entry(), renewed)).toMatchObject({ linksAdded: 0, linksRemoved: 0 });
+    const moved = { ...entry(), gameLinks: [{ ...link, capturedPath: "1. e4" }] };
+    expect(diffBackupEntry(entry(), moved)).toMatchObject({ linksAdded: 1, linksRemoved: 1 });
+    const none = { ...entry(), gameLinks: [] };
+    expect(diffBackupEntry(entry(), none)).toMatchObject({ linksAdded: 0, linksRemoved: 1 });
   });
 
   it("ignores node order, accepted-move order and derived fields", () => {

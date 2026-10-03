@@ -655,7 +655,7 @@ export type BackupImportPreviewRepertoire = {
   decisionCount: number;
   hasProgress: boolean;
   /** A repertoire in this library with the same id (a copy restored earlier, or the original). */
-  existing: { id: string; name: string; revision: number } | null;
+  existing: { id: string; name: string; revision: number; color: RepertoireColor } | null;
   /** What replacing `existing` would change; null when `existing` has a damaged chapter. */
   diff: BackupDiff | null;
   /** True when `existing` has a chapter that can't be read (no diff; it can still be replaced). */
@@ -677,6 +677,9 @@ export type BackupDiff = {
   progressDiscarded: number;
   /** Practice sessions (and their attempts) of the existing repertoire that a replace deletes. */
   sessionsDiscarded: number;
+  /** Game links the backup adds, and existing ones a replace removes (the games themselves stay). */
+  linksAdded: number;
+  linksRemoved: number;
   /** Repertoire fields a replace changes, from name, description, tags, archivedAt and color. */
   metadataChanged: string[];
 };

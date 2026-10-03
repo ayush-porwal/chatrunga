@@ -403,6 +403,8 @@ function parseGameLink(
     repertoireId,
     chapterId: chapterId !== null && chapterIds.has(chapterId) ? chapterId : null,
     gameId: nullableId(link.gameId, `${where} game`),
+    // Missing in files written before the field: such a link wasn't marked as never saved.
+    unsaved: link.unsaved === true,
     gameNodeId: nullableId(link.gameNodeId, `${where} game node`),
     kind: link.kind as RepertoireGameLink["kind"],
     headers: link.headers === undefined ? {} : stringRecord(link.headers, `${where} headers`),
@@ -670,6 +672,17 @@ function chapterContent(chapter: RepertoireChapter): string {
   });
 }
 
+/** What a game link says, whatever its id (a replace keeps or renews ids). */
+function linkContent(link: RepertoireGameLink): string {
+  return canonical({
+    kind: link.kind,
+    gameId: link.gameId,
+    chapterId: link.chapterId,
+    gameNodeId: link.gameNodeId,
+    capturedPath: link.capturedPath
+  });
+}
+
 function decisionContent(decision: RepertoireDecision): string {
   return canonical({
     acceptedUcis: [...decision.acceptedUcis].sort(),
@@ -686,8 +699,9 @@ function decisionContent(decision: RepertoireDecision): string {
  * when its title, kind, enabled flag, root, headers, tree or node metadata differ. A decision
  * changed when it was added, removed or edited. `progressEntries` counts the incoming progress,
  * `progressDiscarded` the existing progress a replace deletes, and `sessionsDiscarded` the
- * existing practice sessions (`context.sessionCount`). `metadataChanged` names the repertoire
- * fields that differ.
+ * existing practice sessions (`context.sessionCount`). Game links compare by what they link
+ * (kind, game, chapter, move, path): `linksAdded` and `linksRemoved` count the differences.
+ * `metadataChanged` names the repertoire fields that differ.
  */
 export function diffBackupEntry(
   existing: RepertoireBackupEntry,
@@ -713,6 +727,10 @@ export function diffBackupEntry(
     const b = newDecisions.get(key);
     if (!a || !b || decisionContent(a) !== decisionContent(b)) decisionsChanged += 1;
   }
+  const oldLinks = new Set(existing.gameLinks.map(linkContent));
+  const newLinks = new Set(incoming.gameLinks.map(linkContent));
+  const linksAdded = [...newLinks].filter((link) => !oldLinks.has(link)).length;
+  const linksRemoved = [...oldLinks].filter((link) => !newLinks.has(link)).length;
   const a = existing.repertoire;
   const b = incoming.repertoire;
   const metadataChanged = [
@@ -730,6 +748,8 @@ export function diffBackupEntry(
     progressEntries: incoming.progress?.length ?? 0,
     progressDiscarded: existing.progress?.length ?? 0,
     sessionsDiscarded: context.sessionCount ?? 0,
+    linksAdded,
+    linksRemoved,
     metadataChanged
   };
 }

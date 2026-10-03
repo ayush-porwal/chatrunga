@@ -56,7 +56,7 @@ vi.mock("electron", () => ({
 
 const { closeDb, getDb } = await import("../db");
 const service = await import("./service");
-const { decisionRepository, positionIndexRepository, progressRepository } =
+const { chapterRepository, decisionRepository, positionIndexRepository, progressRepository } =
   await import("./repository");
 
 let now = 1_000_000_000_000;
@@ -323,6 +323,15 @@ describe("native backup: export", () => {
     ).rejects.toThrow('Invalid repertoireIds: "nope" is not in this library');
     expect(showSaveDialog).not.toHaveBeenCalled();
   });
+  it("refuses a backup a restore would refuse, such as too many repertoires", async () => {
+    for (let index = 0; index < 101; index += 1) {
+      service.createRepertoire({ name: `R${index}`, color: "white" });
+    }
+    await expect(service.exportBackup({ includeProgress: false })).rejects.toThrow(
+      "Invalid export: the backup couldn't be restored (it has 101 repertoires; at most 100 can be restored at once); back up fewer repertoires at once"
+    );
+    expect(showSaveDialog).not.toHaveBeenCalled();
+  });
 });
 
 describe("native backup: preview", () => {
@@ -340,7 +349,7 @@ describe("native backup: preview", () => {
         chapterCount: 2,
         decisionCount: detail.decisionCount,
         hasProgress: true,
-        existing: { id: detail.id, name: "Open games", revision: detail.revision },
+        existing: { id: detail.id, name: "Open games", revision: detail.revision, color: "white" },
         diff: {
           chaptersAdded: 0,
           chaptersChanged: 0,
@@ -349,6 +358,8 @@ describe("native backup: preview", () => {
           progressEntries: 1,
           progressDiscarded: 1,
           sessionsDiscarded: 1,
+          linksAdded: 0,
+          linksRemoved: 0,
           metadataChanged: []
         }
       }
@@ -605,11 +616,24 @@ describe("native backup: restore", () => {
     const retained = JSON.parse(readFileSync(restored.retainedBackupPath!, "utf8"));
     expect(retained.repertoires[0].repertoire.revision).toBe(edited.revision);
     expect(retained.repertoires[0].chapters).toHaveLength(1);
-    // Practice history goes into the retained backup only, as raw rows.
-    expect(retained.repertoires[0].history.sessions).toHaveLength(1);
-    expect(retained.repertoires[0].history.sessions[0]).toHaveProperty("queue_json");
-    expect(retained.repertoires[0].history.attempts).toHaveLength(1);
-    expect(retained.repertoires[0].history.attempts[0]).toMatchObject({ attempt_id: "a1" });
+    // Practice history is kept beside the retained backup only, as raw rows, so it can't make the
+    // backup too large to restore.
+    expect(retained.repertoires[0]).not.toHaveProperty("history");
+    const history = JSON.parse(
+      readFileSync(restored.retainedBackupPath!.replace(/\.json$/, ".history.json"), "utf8")
+    );
+    expect(history).toMatchObject({
+      format: "chaturanga-repertoire-practice-history",
+      repertoireId: detail.id
+    });
+    expect(history.sessions).toHaveLength(1);
+    expect(history.sessions[0]).toHaveProperty("queue_json");
+    expect(history.attempts).toHaveLength(1);
+    expect(history.attempts[0]).toMatchObject({ attempt_id: "a1" });
+    // The retained backup is one Restore from backup reads.
+    await expect(
+      service.previewBackupImport({ json: readFileSync(restored.retainedBackupPath!, "utf8") })
+    ).resolves.toMatchObject({ repertoires: [{ sourceId: detail.id }] });
 
     const after = service.getRepertoire(detail.id);
     expect(after.revision).toBe(edited.revision + 1);
@@ -631,6 +655,8 @@ describe("native backup: restore", () => {
       progressEntries: 1,
       progressDiscarded: 1,
       sessionsDiscarded: 0,
+      linksAdded: 0,
+      linksRemoved: 0,
       metadataChanged: []
     });
   });
@@ -739,12 +765,72 @@ describe("native backup: restore", () => {
     expect(readFileSync(join(directory, taken), "utf8")).toBe("taken");
     const names = readdirSync(directory);
     expect(names).toContain(other);
-    const own = names.filter((name) => name !== other);
+    // Each retained backup keeps its practice history beside it; pruning removes both.
+    expect(names.filter((name) => name.endsWith(".history.json"))).toEqual([
+      path
+        .split("/")
+        .pop()!
+        .replace(/\.json$/, ".history.json")
+    ]);
+    const own = names.filter((name) => name !== other && !name.endsWith(".history.json"));
     expect(own).toHaveLength(10);
     expect(own).toContain(taken);
     expect(own.some((name) => path.endsWith(name))).toBe(true);
     expect(own).not.toContain(`${detail.id}-${stamp(now - 11 * 60_000)}.json`);
     expect(own).not.toContain(`${detail.id}-${stamp(now - 10 * 60_000)}.json`);
+  });
+
+  it("refuses a replace whose own backup couldn't be restored, before deleting anything", async () => {
+    const detail = seed();
+    const { text } = await exportText(false);
+    // More chapters than a restore accepts, written straight to storage.
+    for (let index = 0; index < 1_000; index += 1) {
+      chapterRepository.upsert(
+        detail.id,
+        { ...chapterOf(`bulk-${index}`, [["e2e4"]]), sortOrder: index + 2 },
+        now
+      );
+    }
+    const preview = (await service.previewBackupImport({ json: text }))!;
+    const current = service.getRepertoire(detail.id);
+    expect(() =>
+      service.restoreBackup({
+        jobId: preview.jobId,
+        selections: [replaceSelection(detail.id, current.revision, false)]
+      })
+    ).toThrow(
+      /can't be replaced because its own backup couldn't be restored \(it has 1,002 chapters/
+    );
+    expect(service.getRepertoire(detail.id).chapters).toHaveLength(1_002);
+    expect(() => readdirSync(join(userData, "repertoire-backups"))).toThrow();
+  });
+
+  it("counts game links a replace adds or removes in the preview", async () => {
+    const detail = seed();
+    const { text } = await exportText(false);
+    service.removeGameLink({
+      repertoireId: detail.id,
+      linkId: service.listGameLinks({ repertoireId: detail.id })[0].id
+    });
+    insertLibraryGame("game-new");
+    service.linkGame({
+      repertoireId: detail.id,
+      chapterId: "second",
+      gameId: "game-new",
+      gameNodeId: null,
+      kind: "model",
+      capturedPath: ""
+    });
+    const preview = (await service.previewBackupImport({ json: text }))!;
+    expect(preview.repertoires[0].diff).toMatchObject({
+      chaptersAdded: 0,
+      chaptersChanged: 0,
+      chaptersRemoved: 0,
+      decisionsChanged: 0,
+      linksAdded: 1,
+      linksRemoved: 1
+    });
+    expect(preview.repertoires[0].existing).toMatchObject({ color: "white" });
   });
 
   it("writes nothing on a stale expectedRevision and keeps the job for a retry", async () => {

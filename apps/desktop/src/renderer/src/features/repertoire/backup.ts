@@ -33,7 +33,7 @@ export function defaultRestoredName(name: string): string {
 
 /** False when `source` can't replace its existing repertoire: none here, or another color. */
 export function canReplace(source: BackupImportPreviewRepertoire): boolean {
-  return Boolean(source.existing) && !source.diff?.metadataChanged.includes("color");
+  return source.existing !== null && source.existing.color === source.color;
 }
 
 /** Every repertoire included as a new copy, with its progress when the backup has any. */
@@ -175,6 +175,9 @@ export function restoreDiffLine(
     `−${diff.chaptersRemoved}`,
     `${plural(diff.decisionsChanged, "decision")} changed`
   ];
+  if (diff.linksAdded || diff.linksRemoved) {
+    parts.push(`game links +${diff.linksAdded} −${diff.linksRemoved}`);
+  }
   if (includeProgress) {
     parts.push(
       `${diff.progressEntries} progress ${diff.progressEntries === 1 ? "entry" : "entries"}`
@@ -275,8 +278,9 @@ function quotedList(names: readonly string[]): string {
 }
 
 /**
- * The success notice of a restore: the names as restored and, for replacements, where the replaced
- * repertoire's own backup was kept.
+ * The success notice of a restore: the names as restored (a replaced repertoire takes the backup's
+ * name) and, for replacements, where the replaced repertoire's own backup was kept, under the name
+ * it had.
  */
 export function restoreNotice(
   preview: BackupImportPreview,
@@ -286,13 +290,14 @@ export function restoreNotice(
   const names = result.restored.map((item) => {
     const source = preview.repertoires.find((entry) => entry.sourceId === item.sourceId);
     const selection = input.selections.find((entry) => entry.sourceId === item.sourceId);
-    if (item.mode === "replace") return source?.existing?.name ?? source?.name ?? "Repertoire";
+    if (item.mode === "replace") return source?.name || source?.existing?.name || "Repertoire";
     return selection?.newName ?? defaultRestoredName(source?.name ?? "Repertoire");
   });
-  const details = result.restored.flatMap((item, index) =>
-    item.mode === "replace" && item.retainedBackupPath
-      ? [`Previous “${names[index]}” saved to ${shortenPath(item.retainedBackupPath)}`]
-      : []
-  );
+  const details = result.restored.flatMap((item, index) => {
+    if (item.mode !== "replace" || !item.retainedBackupPath) return [];
+    const source = preview.repertoires.find((entry) => entry.sourceId === item.sourceId);
+    const previous = source?.existing?.name ?? names[index];
+    return [`Previous “${previous}” saved to ${shortenPath(item.retainedBackupPath)}`];
+  });
   return { text: `Restored ${quotedList(names)}.`, details };
 }

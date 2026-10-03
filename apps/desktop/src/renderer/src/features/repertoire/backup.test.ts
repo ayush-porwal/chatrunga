@@ -33,7 +33,7 @@ function entry(patch: Partial<BackupImportPreviewRepertoire> = {}): BackupImport
   };
 }
 
-const existing = { id: "rep-2", name: "Black vs e4", revision: 7 };
+const existing = { id: "rep-2", name: "Black vs e4", revision: 7, color: "black" as const };
 const diff = {
   chaptersAdded: 2,
   chaptersChanged: 1,
@@ -42,6 +42,8 @@ const diff = {
   progressEntries: 40,
   progressDiscarded: 12,
   sessionsDiscarded: 3,
+  linksAdded: 0,
+  linksRemoved: 0,
   metadataChanged: [] as string[]
 };
 
@@ -129,6 +131,24 @@ describe("restore rows", () => {
     expect(
       restoreRowsReducer(other, rows, { type: "mode", sourceId: "rep-1", mode: "replace" })
     ).toEqual(rows);
+  });
+
+  it("can't replace a repertoire of the other color even when it has no diff (damaged)", () => {
+    const damaged = previewOf(entry({ existing, diff: null, damaged: true }));
+    const rows = initialRestoreRows(damaged);
+    expect(
+      restoreRowsReducer(damaged, rows, { type: "mode", sourceId: "rep-1", mode: "replace" })
+    ).toEqual(rows);
+    const sameColor = previewOf(
+      entry({ existing: { ...existing, color: "white" }, diff: null, damaged: true })
+    );
+    expect(
+      restoreRowsReducer(sameColor, initialRestoreRows(sameColor), {
+        type: "mode",
+        sourceId: "rep-1",
+        mode: "replace"
+      })[0]?.mode
+    ).toBe("replace");
   });
 
   it("keeps choices on a refreshed preview unless it no longer allows them", () => {
@@ -241,6 +261,9 @@ describe("formatting", () => {
       "+1 chapter · 1 changed · −0 · 5 decisions changed · 1 progress entry"
     );
     expect(restoreDiffLine(diff, false)).toBe("+2 chapters · 1 changed · −0 · 5 decisions changed");
+    expect(restoreDiffLine({ ...diff, linksRemoved: 2 }, false)).toBe(
+      "+2 chapters · 1 changed · −0 · 5 decisions changed · game links +0 −2"
+    );
   });
 
   it("says what a replace discards", () => {
@@ -338,6 +361,33 @@ describe("formatting", () => {
     });
     expect(notice).toEqual({
       text: "Restored “A” and “Black vs e4”.",
+      details: ["Previous “Black vs e4” saved to /b/rep-2.json"]
+    });
+  });
+
+  it("names a replaced repertoire as the backup renames it, and the saved copy by its old name", () => {
+    const renamed = previewOf(entry({ sourceId: "rep-2", name: "Sicilian", existing, diff }));
+    const notice = restoreNotice(
+      renamed,
+      {
+        jobId: "job-1",
+        selections: [
+          { sourceId: "rep-2", mode: "replace", includeProgress: false, expectedRevision: 7 }
+        ]
+      },
+      {
+        restored: [
+          {
+            sourceId: "rep-2",
+            repertoireId: "rep-2",
+            mode: "replace",
+            retainedBackupPath: "/b/rep-2.json"
+          }
+        ]
+      }
+    );
+    expect(notice).toEqual({
+      text: "Restored “Sicilian”.",
       details: ["Previous “Black vs e4” saved to /b/rep-2.json"]
     });
   });
