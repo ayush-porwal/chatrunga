@@ -370,6 +370,43 @@ describe("decision text drafts", () => {
     expect(getRepertoire).not.toHaveBeenCalledWith("r1");
   });
 
+  it("keeps a change whose position left the repertoire without holding back navigation, and saves it once the move is back", async () => {
+    const key = decisionDraftKey("r1", "k1", "paused");
+    store().setDecisionPaused("r1", "k1", true);
+    updateDecision.mockRejectedValue(
+      new Error(
+        "Error invoking remote method 'repertoires:updateDecision': Error: Invalid positionKey: not found in this repertoire"
+      )
+    );
+    expect(await saveDecisionText(queryClient, key, { flushChapter, retry: true })).toBe(false);
+    expect(store().decisionDrafts[key]).toMatchObject({
+      paused: true,
+      status: "error",
+      error: {
+        message: "This position is no longer in the repertoire.",
+        stale: false,
+        missing: true
+      }
+    });
+    expect(decisionTextStatus(store().decisionDrafts, "r1")).toMatchObject({
+      errorMessage: "This position is no longer in the repertoire.",
+      errorStale: false
+    });
+
+    // Navigation and handoffs go on; each flush tries it again. Closing the window still asks.
+    expect(await flushChapterDraft(queryClient, ["r1"])).toBe(true);
+    expect(unsavedStudyCause("r1")).toBeNull();
+    expect(updateDecision).toHaveBeenCalledTimes(2);
+    expect(await flushChapterDraft(queryClient)).toBe(false);
+
+    // Redo puts the move back: the next flush saves it.
+    updateDecision.mockReset();
+    updateDecision.mockImplementationOnce(async (input) => saved(input, 5));
+    expect(await flushChapterDraft(queryClient, ["r1"])).toBe(true);
+    expect(updateDecision.mock.calls[0][0].patch).toEqual({ paused: true });
+    expect(store().decisionDrafts[key]).toBeUndefined();
+  });
+
   it("Keep mine drops a stale draft whose repertoire was deleted since", async () => {
     store().setDecisionText("r1", "k1", "prompt", "Develop");
     store().decisionTextFailed(PROMPT, "Invalid expectedRevision: repertoire changed", true);

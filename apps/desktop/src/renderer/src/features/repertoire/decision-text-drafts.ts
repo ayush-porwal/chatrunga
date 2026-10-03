@@ -3,7 +3,12 @@ import type { RepertoireDecision, RepertoireDetail } from "@chaturanga/shared/ty
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { adoptDecisionSave, invalidateDecisions, repertoireKeys } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
-import { decisionDraftPatch, isNotFoundError, isStaleRevisionError } from "./repertoire-model";
+import {
+  decisionDraftPatch,
+  isNotFoundError,
+  isStaleRevisionError,
+  POSITION_GONE_MESSAGE
+} from "./repertoire-model";
 
 /*
  * Saving the decision changes made in study (the workspace store's `decisionDrafts`): practice
@@ -14,7 +19,9 @@ import { decisionDraftPatch, isNotFoundError, isStaleRevisionError } from "./rep
  * failed one on their own: that is Retry's job. A navigation is held back only by the drafts of
  * the repertoire it leaves or uses; another repertoire's are written too, and a failure there
  * waits on that repertoire's study page (its titlebar and notices offer Retry, Keep mine and
- * Discard). A draft whose repertoire was deleted is dropped.
+ * Discard). A draft whose repertoire was deleted is dropped. One whose position left the
+ * repertoire (its move undone, its line deleted) keeps its text with Discard, is tried again by
+ * every flush (it saves once the move is back) and holds back no navigation.
  */
 
 const workspace = () => useRepertoireWorkspaceStore.getState();
@@ -87,7 +94,9 @@ function writeDecisionText(
   return queueRepertoireWrite(async () => {
     const draft = workspace().decisionDrafts[key];
     if (!draft) return true;
-    if (draft.status === "error" && (draft.error?.stale || !retry)) return false;
+    if (draft.status === "error" && !draft.error?.missing && (draft.error?.stale || !retry)) {
+      return false;
+    }
     const api = window.chaturanga?.repertoires;
     if (!api) {
       workspace().decisionTextFailed(key, "Saving needs the desktop app.", false);
@@ -129,6 +138,10 @@ function writeDecisionText(
         discardRepertoireTexts(current.repertoireId);
         return true;
       }
+      if (isNotFoundError(message, "position")) {
+        workspace().decisionTextFailed(key, POSITION_GONE_MESSAGE, false, true);
+        return false;
+      }
       workspace().decisionTextFailed(key, message, isStaleRevisionError(message));
       return false;
     }
@@ -149,10 +162,17 @@ export async function flushDecisionTexts(
   const saved = await Promise.all(
     drafts.map(async ([key, draft]) => {
       if (await saveDecisionText(queryClient, key, { flushChapter })) return true;
-      return blockOn !== undefined && !blockOn.includes(draft.repertoireId);
+      if (blockOn === undefined) return false;
+      // A change whose position left the repertoire waits for its move to come back or Discard.
+      return !blockOn.includes(draft.repertoireId) || positionGone(key);
     })
   );
   return saved.every(Boolean);
+}
+
+/** The draft's write was refused because its position is in no chapter any more. */
+export function positionGone(key: string): boolean {
+  return workspace().decisionDrafts[key]?.error?.missing === true;
 }
 
 /**

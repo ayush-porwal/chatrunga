@@ -545,6 +545,8 @@ export function RepertoireStudyPage({
   const decisionNotices = failedDrafts.map((failed: DecisionTextDraft) => {
     const key = decisionDraftKey(failed.repertoireId, failed.positionKey, failed.field, failed.uci);
     const stale = Boolean(failed.error?.stale);
+    // Its move was undone or its line deleted: kept for when the move comes back.
+    const missing = Boolean(failed.error?.missing);
     // Where it was typed, when this chapter reaches that position.
     const at = [...lookup.positionKeys].find(([, keyAt]) => keyAt === failed.positionKey);
     const where = at ? ` at ${pathLabel(lookup, at[0])}` : "";
@@ -557,7 +559,13 @@ export function RepertoireStudyPage({
       <Notice
         key={key}
         tone={stale ? "warn" : "danger"}
-        title={stale ? "This repertoire changed elsewhere" : `Couldn't save the ${name}${where}`}
+        title={
+          stale
+            ? "This repertoire changed elsewhere"
+            : missing
+              ? `The ${name} has no position to be saved at`
+              : `Couldn't save the ${name}${where}`
+        }
         action={
           <div className="flex gap-2">
             {stale ? (
@@ -594,7 +602,9 @@ export function RepertoireStudyPage({
       >
         {stale
           ? `Your ${name}${where} wasn't saved. Discard it to see the saved version, or keep yours to save it over that.`
-          : failed.error?.message}
+          : missing
+            ? `${failed.error?.message} Your ${name} is kept: put the move back (Redo) and retry, or discard it.`
+            : failed.error?.message}
       </Notice>
     );
   });

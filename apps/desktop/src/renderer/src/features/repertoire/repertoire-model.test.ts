@@ -260,6 +260,10 @@ describe("autosave decisions", () => {
     expect(isNotFoundError("Invalid positionKey: not found in this repertoire", "chapter")).toBe(
       false
     );
+    expect(isNotFoundError("Invalid positionKey: not found in this repertoire", "position")).toBe(
+      true
+    );
+    expect(isNotFoundError("Invalid chapterId: not found", "position")).toBe(false);
     expect(isNotFoundError("SQLITE_BUSY: database is locked", "repertoire")).toBe(false);
   });
 });

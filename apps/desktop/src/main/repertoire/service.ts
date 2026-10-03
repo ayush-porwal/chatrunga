@@ -12,6 +12,7 @@ import type { GameHeaders, MoveNode } from "@chaturanga/shared/types/chess";
 import {
   CHAPTER_NOT_FOUND_ERROR,
   COMPARE_GAME_MAX_PLIES,
+  POSITION_NOT_FOUND_ERROR,
   REPERTOIRE_POSITION_KEY_VERSION,
   REPERTOIRE_ROOT_NODE_ID,
   type BackupImportPreview,
@@ -557,7 +558,7 @@ export function updateDecision(input: UpdateDecisionInput): DecisionSaveResult {
         occurrences.push({ chapter, lookup, nodeId, node });
       }
     }
-    if (!occurrences.length) throw new Error("Invalid positionKey: not found in this repertoire");
+    if (!occurrences.length) throw new Error(POSITION_NOT_FOUND_ERROR);
     const fen = occurrences[0].node.fenAfter;
     const stored: StoredDecision = decisionRepository.get(record.id, input.positionKey) ?? {
       repertoireId: record.id,

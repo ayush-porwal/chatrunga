@@ -151,7 +151,8 @@ type Actions = {
   markDecisionTextSaving: (key: string) => number | null;
   /** The write of `generation` was confirmed: the draft goes, unless it was edited since. */
   decisionTextSaved: (key: string, generation: number) => void;
-  decisionTextFailed: (key: string, message: string, stale: boolean) => void;
+  /** The write was refused; `missing` when its position is in no chapter any more. */
+  decisionTextFailed: (key: string, message: string, stale: boolean, missing?: boolean) => void;
   /** A failed draft becomes pending again (Retry, or Keep mine after a stale refusal). */
   clearDecisionTextError: (key: string) => void;
 };
@@ -655,14 +656,18 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
         }
       },
 
-      decisionTextFailed: (key, message, stale) =>
+      decisionTextFailed: (key, message, stale, missing = false) =>
         set((state) => {
           const draft = state.decisionDrafts[key];
           if (!draft) return {};
           return {
             decisionDrafts: {
               ...state.decisionDrafts,
-              [key]: { ...draft, status: "error", error: { message, stale } }
+              [key]: {
+                ...draft,
+                status: "error",
+                error: missing ? { message, stale, missing } : { message, stale }
+              }
             }
           };
         }),

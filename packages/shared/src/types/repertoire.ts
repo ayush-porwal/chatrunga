@@ -90,11 +90,13 @@ export const REPERTOIRE_ROOT_NODE_ID = "root";
 
 /**
  * The main process's errors for an id that names nothing: the repertoire, or the chapter, was
- * deleted. IPC hands the renderer only an error's message, so these texts are the contract that
- * tells a deletion (study returns to the hub) from a failure worth retrying.
+ * deleted; or a decision's position is in none of the repertoire's chapters (its move was undone
+ * or its line deleted). IPC hands the renderer only an error's message, so these texts are the
+ * contract that tells a deletion (study returns to the hub) from a failure worth retrying.
  */
 export const REPERTOIRE_NOT_FOUND_ERROR = "Invalid repertoireId: not found";
 export const CHAPTER_NOT_FOUND_ERROR = "Invalid chapterId: not found";
+export const POSITION_NOT_FOUND_ERROR = "Invalid positionKey: not found in this repertoire";
 
 /* ------------------------------------------------------------------ decisions and progress */
 

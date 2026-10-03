@@ -14,6 +14,7 @@ import { playerToMove } from "@chaturanga/shared/chess/repertoire-position";
 import type { BoardArrow, BoardHighlight, Square } from "@chaturanga/shared/types/chess";
 import {
   CHAPTER_NOT_FOUND_ERROR,
+  POSITION_NOT_FOUND_ERROR,
   REPERTOIRE_NOT_FOUND_ERROR,
   type PracticeAnswer,
   type PracticeCard,
@@ -273,14 +274,25 @@ export function isMissingTargetError(message: string): boolean {
 }
 
 /**
- * The repertoire (or the chapter) was deleted: the main process's not-found error for that id
- * (`message` as ipcErrorMessage leaves it). Any other read failure is worth a retry.
+ * The repertoire (or the chapter) was deleted, or a decision's position is in none of its
+ * chapters any more: the main process's not-found error for that id (`message` as ipcErrorMessage
+ * leaves it). Any other read failure is worth a retry.
  */
-export function isNotFoundError(message: string, target: "repertoire" | "chapter"): boolean {
+export function isNotFoundError(
+  message: string,
+  target: "repertoire" | "chapter" | "position"
+): boolean {
   return message.startsWith(
-    target === "repertoire" ? REPERTOIRE_NOT_FOUND_ERROR : CHAPTER_NOT_FOUND_ERROR
+    target === "repertoire"
+      ? REPERTOIRE_NOT_FOUND_ERROR
+      : target === "chapter"
+        ? CHAPTER_NOT_FOUND_ERROR
+        : POSITION_NOT_FOUND_ERROR
   );
 }
+
+/** A decision change whose position left the repertoire (its move undone or line deleted). */
+export const POSITION_GONE_MESSAGE = "This position is no longer in the repertoire.";
 
 export type AutosaveSaveState =
   | { status: "idle" }
@@ -320,8 +332,12 @@ export type DecisionTextDraft = {
   /** Counts edits: a save clears the draft only when nothing was typed while it ran. */
   generation: number;
   status: "pending" | "saving" | "error";
-  /** The refusal (status "error"); `stale` when the repertoire moved on. */
-  error?: { message: string; stale: boolean };
+  /**
+   * The refusal (status "error"); `stale` when the repertoire moved on, `missing` when its position
+   * is in no chapter any more (it saves again once the move is back, and holds back no
+   * navigation meanwhile).
+   */
+  error?: { message: string; stale: boolean; missing?: boolean };
   /**
    * Committed again (a blur, Add, Remove or the pause switch) while its write ran: written again
    * once that write settles, with whatever was typed meanwhile.
