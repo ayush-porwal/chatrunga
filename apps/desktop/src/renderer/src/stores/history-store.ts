@@ -36,7 +36,25 @@ export type HistoryEntry =
   | { view: "settings"; section: string | null }
   | { view: "play"; opponent: PlayOpponent | null }
   | { view: "game"; board: BoardSnapshot }
-  | { view: "game-review"; board: BoardSnapshot; tab: string };
+  | { view: "game-review"; board: BoardSnapshot; tab: string }
+  | { view: "repertoire-hub" }
+  | {
+      view: "repertoire-study";
+      repertoireId: string;
+      chapterId: string;
+      /** The selected node; moving through the tree updates the entry, it never adds one. */
+      nodeId: string | null;
+      /** The study panel tab. */
+      tab: string;
+      /** Board orientation (null: the repertoire's own colour). */
+      orientation: Color | null;
+    }
+  | {
+      view: "repertoire-practice";
+      repertoireId: string;
+      /** The session (null: the setup). Only committed attempts come back on restore. */
+      sessionId: string | null;
+    };
 
 /** Oldest entries fall off beyond this. */
 export const HISTORY_LIMIT = 50;

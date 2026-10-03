@@ -9,7 +9,7 @@ import { usePuzzleStore } from "../stores/puzzle-store";
 import { captureBoard, captureEntry, planBoardRestore, recordHistory, replacesLiveBoard, type HistoryContext } from "./history-navigation";
 import { nextPuzzleInput, puzzleBoard } from "./puzzle-session-controller";
 
-const context: HistoryContext = { tab: "engine", reviewTab: "moves", settingsSection: "engines", puzzleConfig: null };
+const context: HistoryContext = { tab: "engine", reviewTab: "moves", settingsSection: "engines", puzzleConfig: null, repertoireScreen: null };
 const puzzle = {
   id: "p1",
   databaseId: "db",
@@ -76,6 +76,14 @@ describe("history capture", () => {
     expect(captureEntry("game", context)).toMatchObject({ view: "game", board: { gameId: "g1", tab: "engine" } });
     // The review's board is always on the notation tab; the review's own tab is kept beside it.
     expect(captureEntry("game-review", context)).toMatchObject({ view: "game-review", tab: "moves", board: { tab: "notation" } });
+    // A repertoire screen that isn't the one shown falls back to the hub.
+    expect(captureEntry("repertoire-study", context)).toEqual({ view: "repertoire-hub" });
+    const practice = { view: "repertoire-practice", repertoireId: "r1", sessionId: "s1", preset: null } as const;
+    expect(captureEntry("repertoire-practice", { ...context, repertoireScreen: practice })).toEqual({
+      view: "repertoire-practice",
+      repertoireId: "r1",
+      sessionId: "s1"
+    });
   });
 
   it("pushes, replaces or records nothing", () => {

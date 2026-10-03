@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webFrame, type IpcRendererEvent } from "electron";
 import type { ChaturangaApi, Unsubscribe, WindowGlassState } from "@chaturanga/shared/ipc/chaturanga-api";
+import type { RepertoireChangedEvent } from "@chaturanga/shared/types/repertoire";
 
 // Runs sandboxed: only `electron`'s renderer modules are available here, no Node APIs.
 
@@ -22,12 +23,12 @@ onGlassChanged((state) => {
   glassState = state;
 });
 
-// Closing the window asks for pending saves first; with no flush registered, it's done at once.
-let flushHandler: (() => Promise<boolean>) | null = null;
+// Closing the window asks for pending saves first (the game autosave, a repertoire chapter draft):
+// every registered flush runs, and it's saved only if all of them are. With none, it's done at once.
+const flushHandlers = new Set<() => Promise<boolean>>();
 ipcRenderer.on("games:flush", (_event, token: string) => {
-  const handler = flushHandler;
-  void (handler ? handler().catch(() => false) : Promise.resolve(true)).then((saved) =>
-    ipcRenderer.send("games:flushed", token, saved)
+  void Promise.all([...flushHandlers].map((handler) => handler().catch(() => false))).then((results) =>
+    ipcRenderer.send("games:flushed", token, results.every(Boolean))
   );
 });
 
@@ -68,9 +69,9 @@ const api: ChaturangaApi = {
     remove: (id) => ipcRenderer.invoke("games:remove", id),
     importPgn: (input) => ipcRenderer.invoke("games:importPgn", input),
     onFlushRequest: (handler) => {
-      flushHandler = handler;
+      flushHandlers.add(handler);
       return () => {
-        if (flushHandler === handler) flushHandler = null;
+        flushHandlers.delete(handler);
       };
     }
   },
@@ -138,6 +139,34 @@ const api: ChaturangaApi = {
     abort: (gameId) => ipcRenderer.invoke("lichess:abort", gameId),
     offerDraw: (gameId) => ipcRenderer.invoke("lichess:offerDraw", gameId),
     declineDraw: (gameId) => ipcRenderer.invoke("lichess:declineDraw", gameId)
+  },
+  // Repertoires (main/repertoire): study, decisions, import/export and graded practice.
+  repertoires: {
+    list: (filters) => ipcRenderer.invoke("repertoires:list", filters),
+    get: (id) => ipcRenderer.invoke("repertoires:get", id),
+    getChapter: (input) => ipcRenderer.invoke("repertoires:getChapter", input),
+    getDecision: (input) => ipcRenderer.invoke("repertoires:getDecision", input),
+    getOccurrences: (input) => ipcRenderer.invoke("repertoires:getOccurrences", input),
+    create: (input) => ipcRenderer.invoke("repertoires:create", input),
+    updateMetadata: (input) => ipcRenderer.invoke("repertoires:updateMetadata", input),
+    saveChapter: (input) => ipcRenderer.invoke("repertoires:saveChapter", input),
+    updateDecision: (input) => ipcRenderer.invoke("repertoires:updateDecision", input),
+    removeChapter: (input) => ipcRenderer.invoke("repertoires:removeChapter", input),
+    duplicate: (input) => ipcRenderer.invoke("repertoires:duplicate", input),
+    archive: (input) => ipcRenderer.invoke("repertoires:archive", input),
+    remove: (input) => ipcRenderer.invoke("repertoires:remove", input),
+    previewImport: (input) => ipcRenderer.invoke("repertoires:previewImport", input),
+    commitImport: (input) => ipcRenderer.invoke("repertoires:commitImport", input),
+    cancelImport: (jobId) => ipcRenderer.invoke("repertoires:cancelImport", jobId),
+    export: (input) => ipcRenderer.invoke("repertoires:export", input),
+    startPractice: (input) => ipcRenderer.invoke("repertoires:startPractice", input),
+    resumePractice: (sessionId) => ipcRenderer.invoke("repertoires:resumePractice", sessionId),
+    recordPracticeAction: (input) => ipcRenderer.invoke("repertoires:recordPracticeAction", input),
+    recordAttempt: (input) => ipcRenderer.invoke("repertoires:recordAttempt", input),
+    endPractice: (sessionId) => ipcRenderer.invoke("repertoires:endPractice", sessionId),
+    saveWorkspace: (input) => ipcRenderer.invoke("repertoires:saveWorkspace", input),
+    getDueSummary: () => ipcRenderer.invoke("repertoires:getDueSummary"),
+    onChanged: subscribe<RepertoireChangedEvent>("repertoires:changed")
   },
   updates: {
     getState: () => ipcRenderer.invoke("updates:getState"),

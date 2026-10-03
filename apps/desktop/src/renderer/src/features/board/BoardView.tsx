@@ -6,14 +6,14 @@ import type { Key, MoveMetadata } from "@lichess-org/chessground/types";
 import { formatClockForDisplay } from "@chaturanga/shared/chess/clock-display";
 import { clocksOnPathToNode, nodeIdForBoardFen } from "@chaturanga/shared/chess/pgn";
 import { legalDestsForFen, isPromotionMove, statusForFen } from "@chaturanga/shared/chess/position";
-import type { AnnotationColor, BoardArrow, BoardHighlight, Color, GameMode, MoveNode, UserMove } from "@chaturanga/shared/types/chess";
+import type { BoardArrow, BoardHighlight, Color, GameMode, MoveNode, UserMove } from "@chaturanga/shared/types/chess";
 import { isMatchMode, useGameStore } from "../../stores/game-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
 import { useDisplayedReviewMoves } from "../../stores/review-validity";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { useEnginesQuery } from "../../queries/api";
 import { cn } from "@/lib/utils";
-import { asSquare, uciFromUserMove, userMoveBetween } from "@/lib/uci";
+import { uciFromUserMove, userMoveBetween } from "@/lib/uci";
 import { submitPuzzleMove } from "../puzzles/puzzle-session";
 import { PlayerRow } from "./PlayerIdentity";
 import { EvalBar } from "./EvalBar";
@@ -22,6 +22,7 @@ import { EngineClock } from "./EngineClock";
 import { useBoardAppearance, useCgBoardBackground } from "./useBoardAppearance";
 import { useBoardPolish } from "./useBoardPolish";
 import { restoreBoardConfig } from "./board-config";
+import { annotationsFromShapes, shapesFromAnnotations } from "./board-shapes";
 import {
   PIECE_MOVE_MS,
   RAPID_STEP_MS,
@@ -31,13 +32,6 @@ import {
   usePrefersReducedMotion
 } from "./board-motion";
 import "./board.css";
-
-const brushToColor: Record<string, AnnotationColor> = {
-  green: "green",
-  red: "red",
-  yellow: "yellow",
-  blue: "blue"
-};
 
 const LOSING_CLASSIFICATIONS = new Set(["blunder", "mistake", "missed_tactic", "human_error"]);
 /** How long a puzzle right/wrong flash stays on its squares (matches the CSS keyframes). */
@@ -562,31 +556,3 @@ function lastMoveOf(node: Pick<MoveNode, "uci"> | undefined): Key[] | undefined 
 const NO_SHAPES: DrawShape[] = [];
 const NO_ARROWS: BoardArrow[] = [];
 const NO_HIGHLIGHTS: BoardHighlight[] = [];
-
-function shapesFromAnnotations(arrows: BoardArrow[], highlights: BoardHighlight[]): DrawShape[] {
-  return [
-    ...arrows.map((arrow) => ({
-      orig: arrow.orig as Key,
-      dest: arrow.dest as Key,
-      brush: arrow.color
-    })),
-    ...highlights.map((highlight) => ({ orig: highlight.square as Key, brush: highlight.color }))
-  ];
-}
-
-function annotationsFromShapes(shapes: DrawShape[]): {
-  arrows: BoardArrow[];
-  highlights: BoardHighlight[];
-} {
-  const arrows: BoardArrow[] = [];
-  const highlights: BoardHighlight[] = [];
-  for (const shape of shapes) {
-    const color = brushToColor[shape.brush ?? "green"] ?? "green";
-    const orig = asSquare(shape.orig);
-    if (!orig) continue;
-    const dest = shape.dest ? asSquare(shape.dest) : null;
-    if (dest) arrows.push({ orig, dest, color });
-    else if (!shape.dest) highlights.push({ square: orig, color });
-  }
-  return { arrows, highlights };
-}

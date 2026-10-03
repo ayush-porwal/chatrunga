@@ -87,10 +87,9 @@ export function importPgnText(pgn: string, { strict = false }: { strict?: boolea
 }
 
 export function exportGameToPgn(input: { headers: GameHeaders; moveTree: MoveNode[] }): string {
-  const byId = indexMoveTree(input.moveTree);
-  const root = byId.get(ROOT_ID);
+  const root = input.moveTree.find((node) => node.id === ROOT_ID);
   const lines = headersToPgn(input.headers, root?.fenBefore);
-  const body = root ? serializeChildren(byId, root) : "";
+  const body = serializeMoveTreeMoves(input.moveTree);
   const result = input.headers.result || "*";
   lines.push("");
   lines.push(`${body ? `${body} ` : ""}${result}`.trim());
@@ -200,6 +199,16 @@ function appendPgnChild(
   }
 }
 
+/**
+ * PGN movetext of a move tree (no headers, root comment or result): the main line with each
+ * alternative in parentheses, numbered from the root's real ply.
+ */
+export function serializeMoveTreeMoves(moveTree: readonly MoveNode[]): string {
+  const byId = indexMoveTree(moveTree);
+  const root = byId.get(ROOT_ID);
+  return root ? serializeChildren(byId, root) : "";
+}
+
 function indexMoveTree(moveTree: readonly MoveNode[]): Map<string, MoveNode> {
   return new Map(moveTree.map((node) => [node.id, node]));
 }
@@ -303,7 +312,8 @@ function headersToPgn(headers: GameHeaders, rootFen?: string): string[] {
   return lines;
 }
 
-function escapeHeader(value: string): string {
+/** Escapes a PGN tag value (backslashes and double quotes). */
+export function escapeHeader(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 

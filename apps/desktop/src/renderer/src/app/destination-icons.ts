@@ -1,4 +1,4 @@
-import { BarChart3, Database, Download, FileSearch, Home, Puzzle, Settings, Swords, Upload } from "lucide-react";
+import { BarChart3, Database, Download, FileSearch, Home, Library, Puzzle, Settings, Swords, Upload } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 /**
@@ -10,6 +10,7 @@ export const DESTINATION_ICONS = {
   play: Swords,
   analyze: FileSearch,
   review: BarChart3,
+  repertoire: Library,
   puzzles: Puzzle,
   databases: Database,
   importPgn: Upload,

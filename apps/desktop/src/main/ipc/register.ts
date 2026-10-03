@@ -3,7 +3,7 @@ import type { AppSettings } from "@chaturanga/shared/types/settings";
 import { allowChosenFile } from "../image-access";
 import { parseSettingValue } from "./settings-values";
 import type { EventEmitter } from "node:events";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import { SAVE_SUPPRESSED_AFTER_DELETE } from "@chaturanga/shared/ipc/game-handling";
 import type {
@@ -73,13 +73,8 @@ import {
   parseStartAnalysisInput,
   parseStartGameInput
 } from "./validate";
-
-/** Sends to every live window (a closed window's webContents must not be used). */
-function broadcast(channel: string, payload: unknown): void {
-  for (const window of BrowserWindow.getAllWindows()) {
-    if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send(channel, payload);
-  }
-}
+import { broadcast } from "./broadcast";
+import { registerRepertoireIpc } from "./repertoire-handler";
 
 const ENGINE_EVENT_CHANNELS: Record<keyof EngineEvents, string> = {
   info: "engine:info",
@@ -150,6 +145,7 @@ export function registerIpc(engineManager: EngineManager): void {
   registerUpdateIpc();
   registerLichessIpc();
   registerTelemetryIpc();
+  registerRepertoireIpc();
   // Match clocks run on the renderer's monotonic clock, which may stop while the computer sleeps.
   // Main keeps the total it missed; the renderer reads it synchronously whenever it checks a clock,
   // so a move handled right after waking already sees it (an event could arrive too late).
@@ -362,10 +358,14 @@ function registerLibraryIpc(): void {
   ipcMain.handle("databases:samplePuzzle", (_event, input: unknown) => samplePuzzle(parsePuzzleSampleInput(input)));
 
   const pgnFilters = [{ name: "PGN files", extensions: ["pgn"] }];
+  const maxPgnFileBytes = 20 * 1024 * 1024;
   ipcMain.handle("files:openPgnFile", async (event) => {
     const result = await showOpenDialog(event, { properties: ["openFile"], filters: pgnFilters });
     const path = result.canceled ? undefined : result.filePaths[0];
-    return path ? { path, contents: await readFile(path, "utf8") } : null;
+    if (!path) return null;
+    // Checked before reading, so an oversized file is never loaded or sent over IPC.
+    if ((await stat(path)).size > maxPgnFileBytes) throw new Error("That PGN file is larger than 20 MiB.");
+    return { path, contents: await readFile(path, "utf8") };
   });
   // Writes only to the path the user picked in the native save dialog.
   ipcMain.handle("files:savePgnFile", async (event, defaultName: unknown, contents: unknown) => {

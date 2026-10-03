@@ -40,6 +40,10 @@ describe("PGN annotation comments", () => {
     ).toBe("Idea [%cal Gg1f3] [%csl Ye4]");
   });
 
+  it("keeps a closing brace in the text from ending the comment", () => {
+    expect(serializeAnnotationComment("Plan {a} then b", [], [])).toBe("Plan {a) then b");
+  });
+
   it("serializes clock tags", () => {
     expect(serializeAnnotationComment(null, [], [], "0:05:00")).toBe("[%clk 0:05:00]");
   });

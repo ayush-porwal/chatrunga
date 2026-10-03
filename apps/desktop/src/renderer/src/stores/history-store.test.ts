@@ -37,6 +37,47 @@ describe("history store", () => {
     expect(history().entries).toEqual([{ view: "home" }, { view: "settings", section: "lichess" }]);
   });
 
+  it("records repertoire screens, with node and tab changes replacing the study entry", () => {
+    history().push({ view: "repertoire-hub" });
+    const study = {
+      view: "repertoire-study" as const,
+      repertoireId: "r1",
+      chapterId: "c1",
+      nodeId: null,
+      tab: "moves",
+      orientation: "white" as const
+    };
+    history().push(study);
+    history().replaceCurrent({ ...study, nodeId: "n4", tab: "notes" });
+    history().replaceCurrent({ ...study, nodeId: "n5", tab: "notes", orientation: "black" });
+    history().push({ view: "repertoire-practice", repertoireId: "r1", sessionId: null });
+    history().replaceCurrent({ view: "repertoire-practice", repertoireId: "r1", sessionId: "s1" });
+    expect(history().entries).toEqual([
+      { view: "home" },
+      { view: "repertoire-hub" },
+      { ...study, nodeId: "n5", tab: "notes", orientation: "black" },
+      { view: "repertoire-practice", repertoireId: "r1", sessionId: "s1" }
+    ]);
+    history().moveTo(2);
+    expect(selectCanGoForward(history())).toBe(true);
+  });
+
+  it("ignores a push of the same study position", () => {
+    const study = {
+      view: "repertoire-study" as const,
+      repertoireId: "r1",
+      chapterId: "c1",
+      nodeId: "n1",
+      tab: "moves",
+      orientation: "white" as const
+    };
+    history().push(study);
+    history().push({ ...study });
+    expect(history().entries).toHaveLength(2);
+    history().push({ ...study, chapterId: "c2" });
+    expect(history().entries).toHaveLength(3);
+  });
+
   it("forgets the oldest screens past the limit", () => {
     for (let index = 0; index < HISTORY_LIMIT + 10; index += 1) history().push({ view: "settings", section: String(index) });
     expect(history().entries).toHaveLength(HISTORY_LIMIT);
