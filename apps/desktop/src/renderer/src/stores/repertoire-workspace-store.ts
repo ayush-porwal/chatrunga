@@ -140,6 +140,13 @@ type Actions = {
   /** Pausing or resuming the decision at a position (kept until saved or discarded). */
   setDecisionPaused: (repertoireId: string, positionKey: string, paused: boolean) => void;
   discardDecisionText: (key: string) => void;
+  /** Committed while its write runs: the draft is written again once that write settles. */
+  requestDecisionTextSaveAgain: (key: string) => void;
+  /**
+   * After a write settled: whether the draft was committed again meanwhile and should be written
+   * again now (never one refused as stale, which waits for Keep mine or Discard). Clears the mark.
+   */
+  takeDecisionTextSaveAgain: (key: string) => boolean;
   /** A write of the draft started; returns the generation it sends (null: no draft). */
   markDecisionTextSaving: (key: string) => number | null;
   /** The write of `generation` was confirmed: the draft goes, unless it was edited since. */
@@ -605,6 +612,24 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
           delete decisionDrafts[key];
           return { decisionDrafts };
         }),
+
+      requestDecisionTextSaveAgain: (key) =>
+        set((state) => {
+          const draft = state.decisionDrafts[key];
+          if (draft?.status !== "saving") return {};
+          return {
+            decisionDrafts: { ...state.decisionDrafts, [key]: { ...draft, saveAgain: true } }
+          };
+        }),
+
+      takeDecisionTextSaveAgain: (key) => {
+        const draft = get().decisionDrafts[key];
+        if (!draft?.saveAgain) return false;
+        const next = { ...draft };
+        delete next.saveAgain;
+        set((state) => ({ decisionDrafts: { ...state.decisionDrafts, [key]: next } }));
+        return !(draft.status === "error" && draft.error?.stale);
+      },
 
       markDecisionTextSaving: (key) => {
         const draft = get().decisionDrafts[key];

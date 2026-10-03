@@ -64,9 +64,22 @@ function readDetail(queryClient: QueryClient, repertoireId: string): Promise<Rep
 /**
  * Writes one draft (queued behind any running repertoire write). True once it is saved (or was
  * already); false while it stays unsaved: refused now, waiting for a chapter that can't be saved
- * first, or failed earlier and not `retry`ing (a stale refusal is never retried here).
+ * first, or failed earlier and not `retry`ing (a stale refusal is never retried here). A draft
+ * committed again while its write ran is written again as soon as that write settles.
  */
-export function saveDecisionText(
+export async function saveDecisionText(
+  queryClient: QueryClient,
+  key: string,
+  options: { flushChapter: FlushChapter; retry?: boolean }
+): Promise<boolean> {
+  const saved = await writeDecisionText(queryClient, key, options);
+  if (workspace().takeDecisionTextSaveAgain(key)) {
+    return saveDecisionText(queryClient, key, { ...options, retry: true });
+  }
+  return saved;
+}
+
+function writeDecisionText(
   queryClient: QueryClient,
   key: string,
   { flushChapter, retry = false }: { flushChapter: FlushChapter; retry?: boolean }

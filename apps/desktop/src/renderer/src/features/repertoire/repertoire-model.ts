@@ -322,6 +322,11 @@ export type DecisionTextDraft = {
   status: "pending" | "saving" | "error";
   /** The refusal (status "error"); `stale` when the repertoire moved on. */
   error?: { message: string; stale: boolean };
+  /**
+   * Committed again (a blur, Add, Remove or the pause switch) while its write ran: written again
+   * once that write settles, with whatever was typed meanwhile.
+   */
+  saveAgain?: boolean;
 };
 
 /**

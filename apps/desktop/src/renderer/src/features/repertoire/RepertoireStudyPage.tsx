@@ -381,11 +381,16 @@ export function RepertoireStudyPage({
     if (positionKey) workspace().setDecisionText(repertoireId, positionKey, field, text);
   });
   // Blur (or Add / Remove / the pause switch): a draft matching the stored decision is dropped;
-  // any other is written now (after a write of it that is still running). A stale one waits for
-  // Discard / Keep mine.
+  // any other is written now. One whose write is still running is marked to be written again
+  // once that write settles (with what was typed meanwhile). A stale one waits for Discard /
+  // Keep mine.
   const commitDecisionDraft = useEventCallback((key: string) => {
     const draft = workspace().decisionDrafts[key];
     if (!draft) return;
+    if (draft.status === "saving") {
+      workspace().requestDecisionTextSaveAgain(key);
+      return;
+    }
     if (draft.status === "pending" && decisionDraftMatches(draft, decision)) {
       workspace().discardDecisionText(key);
       return;

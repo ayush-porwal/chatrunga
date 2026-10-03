@@ -134,6 +134,81 @@ describe("decision text drafts", () => {
     });
   });
 
+  it.each([
+    {
+      field: "prompt",
+      key: PROMPT,
+      edit: (text: string) => store().setDecisionText("r1", "k1", "prompt", text),
+      patch: (text: string) => ({ prompt: text })
+    },
+    {
+      field: "feedback",
+      key: decisionDraftKey("r1", "k1", "feedback", "d2d4"),
+      edit: (text: string) => store().setWrongMoveFeedback("r1", "k1", "d2d4", text),
+      patch: (text: string) => ({ wrongMoveFeedback: { d2d4: text } })
+    },
+    {
+      field: "paused",
+      key: decisionDraftKey("r1", "k1", "paused"),
+      edit: (text: string) => store().setDecisionPaused("r1", "k1", text === "Second"),
+      patch: (text: string) => ({ paused: text === "Second" })
+    }
+  ])(
+    "writes a $field committed again while its write ran once that write settles",
+    async ({ key, edit, patch }) => {
+      getDecision.mockResolvedValue({ wrongMoveFeedback: {} });
+      edit("First");
+      let finish!: () => void;
+      updateDecision.mockImplementationOnce(
+        (input) => new Promise((resolve) => (finish = () => resolve(saved(input, 5))))
+      );
+      updateDecision.mockImplementationOnce(async (input) => saved(input, 6));
+      const first = saveDecisionText(queryClient, key, { flushChapter });
+      await vi.waitFor(() => expect(updateDecision).toHaveBeenCalled());
+      expect(store().decisionDrafts[key].status).toBe("saving");
+
+      // Typed (or toggled) again and blurred while the first write runs: marked, not lost.
+      edit("Second");
+      store().requestDecisionTextSaveAgain(key);
+      finish();
+      expect(await first).toBe(true);
+      expect(updateDecision).toHaveBeenCalledTimes(2);
+      expect(updateDecision.mock.calls[1][0]).toMatchObject({
+        expectedRevision: 5,
+        patch: patch("Second")
+      });
+      expect(store().decisionDrafts[key]).toBeUndefined();
+    }
+  );
+
+  it("a commit while a write runs that is then refused as stale waits for Keep mine", async () => {
+    store().setDecisionText("r1", "k1", "prompt", "Develop");
+    let refuse!: () => void;
+    updateDecision.mockImplementationOnce(
+      () => new Promise((_, reject) => (refuse = () => reject(new Error("repertoire changed"))))
+    );
+    const first = saveDecisionText(queryClient, PROMPT, { flushChapter });
+    await vi.waitFor(() => expect(updateDecision).toHaveBeenCalled());
+    store().setDecisionText("r1", "k1", "prompt", "Develop with tempo");
+    store().requestDecisionTextSaveAgain(PROMPT);
+    refuse();
+    expect(await first).toBe(false);
+    expect(updateDecision).toHaveBeenCalledTimes(1);
+    expect(store().decisionDrafts[PROMPT]).toMatchObject({
+      text: "Develop with tempo",
+      status: "error",
+      error: { stale: true }
+    });
+    expect(store().decisionDrafts[PROMPT].saveAgain).toBeUndefined();
+  });
+
+  it("marks only a draft whose write is running to be written again", () => {
+    store().setDecisionText("r1", "k1", "prompt", "Develop");
+    store().requestDecisionTextSaveAgain(PROMPT);
+    expect(store().decisionDrafts[PROMPT].saveAgain).toBeUndefined();
+    expect(store().takeDecisionTextSaveAgain(PROMPT)).toBe(false);
+  });
+
   it("waits for Keep mine or Discard after a stale refusal", async () => {
     store().setDecisionText("r1", "k1", "prompt", "Develop");
     updateDecision.mockRejectedValueOnce(
