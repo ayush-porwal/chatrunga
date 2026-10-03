@@ -362,6 +362,45 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
     database.exec(
       "CREATE INDEX IF NOT EXISTS repertoire_game_links_game_idx ON repertoire_game_links(game_id)"
     );
+  },
+  // 9: the local puzzle rating (db/puzzle-attempts.ts). Every decided try at a puzzle, with the
+  // solver's Glicko-2 rating before and after when it was rated, and the current rating in a
+  // single row (written in the same transaction as the attempt that changed it).
+  (database) => {
+    database.exec(`CREATE TABLE IF NOT EXISTS puzzle_attempts (
+      id TEXT PRIMARY KEY,
+      puzzle_id TEXT NOT NULL,
+      database_id TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      outcome TEXT NOT NULL CHECK (outcome IN ('solved', 'failed')),
+      rated INTEGER NOT NULL DEFAULT 0,
+      unrated_reason TEXT,
+      puzzle_rating INTEGER,
+      puzzle_rd INTEGER,
+      rating_before REAL,
+      rd_before REAL,
+      volatility_before REAL,
+      rating_after REAL,
+      rd_after REAL,
+      volatility_after REAL,
+      wrong_move_count INTEGER NOT NULL DEFAULT 0,
+      solution_viewed INTEGER NOT NULL DEFAULT 0,
+      themes_json TEXT NOT NULL DEFAULT '[]',
+      started_at INTEGER NOT NULL,
+      decided_at INTEGER NOT NULL,
+      completed_at INTEGER
+    )`);
+    database.exec("CREATE INDEX IF NOT EXISTS puzzle_attempts_puzzle_idx ON puzzle_attempts(source_id, puzzle_id)");
+    database.exec("CREATE INDEX IF NOT EXISTS puzzle_attempts_rated_idx ON puzzle_attempts(rated, decided_at)");
+    database.exec(`CREATE TABLE IF NOT EXISTS puzzle_rating (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      rating REAL NOT NULL,
+      rd REAL NOT NULL,
+      volatility REAL NOT NULL,
+      rated_count INTEGER NOT NULL DEFAULT 0,
+      last_rated_at INTEGER,
+      updated_at INTEGER NOT NULL
+    )`);
   }
 ];
 

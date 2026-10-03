@@ -46,6 +46,14 @@ import type {
   PuzzleSample,
   PuzzleSampleInput
 } from "../types/database";
+import type {
+  FailedPuzzle,
+  PuzzleAttemptResult,
+  PuzzleRatingPoint,
+  PuzzleRatingSummary,
+  PuzzleThemeStat,
+  RecordPuzzleAttemptInput
+} from "../types/puzzle-rating";
 
 import type {
   AddFromGameInput,
@@ -208,6 +216,17 @@ export type ChaturangaApi = {
     cancelDownload(sourceId: string): Promise<void>;
     /** The latest progress of every running download. */
     activeDownloads(): Promise<DatabaseDownloadProgress[]>;
+  };
+  /** The local puzzle rating: first tries at Lichess puzzles rate the solver (types/puzzle-rating.ts). */
+  puzzles: {
+    /** Stores a decided attempt (rating it when it counts); the same attempt again changes nothing. */
+    recordAttempt(input: RecordPuzzleAttemptInput): Promise<PuzzleAttemptResult>;
+    ratingSummary(): Promise<PuzzleRatingSummary>;
+    /** The rating after each of the latest rated attempts, oldest first. */
+    ratingHistory(limit?: number): Promise<PuzzleRatingPoint[]>;
+    themeStats(limit?: number): Promise<PuzzleThemeStat[]>;
+    /** Puzzles whose latest try failed (of one database source, or all), most recent first. */
+    failedPuzzles(sourceId: string | null, limit?: number): Promise<FailedPuzzle[]>;
   };
   files: {
     openPgnFile(): Promise<{ path: string; contents: string } | null>;

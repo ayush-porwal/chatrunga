@@ -88,6 +88,13 @@ const api: ChaturangaApi = {
     cancelDownload: (sourceId) => ipcRenderer.invoke("databases:cancelDownload", sourceId),
     activeDownloads: () => ipcRenderer.invoke("databases:activeDownloads")
   },
+  puzzles: {
+    recordAttempt: (input) => ipcRenderer.invoke("puzzles:recordAttempt", input),
+    ratingSummary: () => ipcRenderer.invoke("puzzles:ratingSummary"),
+    ratingHistory: (limit) => ipcRenderer.invoke("puzzles:ratingHistory", limit),
+    themeStats: (limit) => ipcRenderer.invoke("puzzles:themeStats", limit),
+    failedPuzzles: (sourceId, limit) => ipcRenderer.invoke("puzzles:failedPuzzles", sourceId, limit)
+  },
   files: {
     openPgnFile: () => ipcRenderer.invoke("files:openPgnFile"),
     savePgnFile: (defaultName, contents) => ipcRenderer.invoke("files:savePgnFile", defaultName, contents),
