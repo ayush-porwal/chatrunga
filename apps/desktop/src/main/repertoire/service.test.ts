@@ -2464,4 +2464,18 @@ describe("repertoire service: rehearse lines", () => {
       "Invalid sessionId: this practice session has ended"
     );
   });
+
+  it("a hint after the chapter changed ends the session instead of hinting the old card", () => {
+    const { id, chapter } = setup();
+    const session = rehearse(id, chapter.id);
+    attempt(session.sessionId, "q1", "e2e4");
+    save(id, [...LINES, ["c2c4"]]);
+    const result = service.recordPracticeAction({
+      sessionId: session.sessionId,
+      queueItemId: "q2",
+      action: { kind: "hint" }
+    });
+    expect(result).toEqual({ card: expect.objectContaining({ state: "skipped", hintStage: 0 }) });
+    expect(service.resumePractice(session.sessionId).status).toBe("finished");
+  });
 });

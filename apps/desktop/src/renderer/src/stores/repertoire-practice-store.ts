@@ -308,7 +308,15 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
       });
       return;
     }
-    if (kind === "hint") {
+    if (kind === "hint" && result.card.state === "skipped") {
+      set({
+        session: next,
+        message: {
+          tone: "info",
+          text: "This line changed since the session started, so the card was skipped."
+        }
+      });
+    } else if (kind === "hint") {
       set({
         session: next,
         hint:

@@ -17,6 +17,7 @@ import {
   presetForSetup,
   rehearsePreset,
   rehearseStarts,
+  savesPracticeDraft,
   targetedPracticeInput
 } from "./practice-setup";
 
@@ -315,5 +316,24 @@ describe("rehearse lines setup", () => {
     expect(rehearseStarts(chapter, "white", pathLabel).starts.map((start) => start.nodeId)).toEqual(
       ["w1"]
     );
+  });
+});
+
+describe("savesPracticeDraft", () => {
+  it("saves only a start from the setup form", () => {
+    const rehearse: StartPracticeInput = {
+      repertoireId: "r1",
+      mode: "rehearse-lines",
+      rehearse: { chapterId: "c1" }
+    };
+    expect(savesPracticeDraft(rehearse, false)).toBe(true);
+    // Study's "Rehearse from here" and the summary's "Rehearse again" are presets.
+    expect(savesPracticeDraft(rehearse, true)).toBe(false);
+    const targeted: StartPracticeInput = {
+      repertoireId: "r1",
+      mode: "review-due",
+      positionKeys: ["k1"]
+    };
+    expect(savesPracticeDraft(targeted, false)).toBe(false);
   });
 });

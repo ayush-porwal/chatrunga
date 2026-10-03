@@ -107,7 +107,7 @@ export function isDecisionNode(context: RehearsalContext, nodeId: string): boole
  * The moves a line may continue with from a node, in authored order, or why the line ends there.
  * An active node's continuations are its active `included` children at the player's turn and its
  * active children at the opponent's. A `before-start` node is lead-up: its children towards
- * training scope, only the first of them at the player's turn (lead-up is never a decision).
+ * training scope, at either side's turn (lead-up is played, never asked).
  */
 export function continuations(
   context: RehearsalContext,
@@ -118,14 +118,13 @@ export function continuations(
   if (state !== "active" && state !== "before-start") return { children: [], end: "leaf" };
   if (nodeMetaOf(nodeMeta, nodeId).trainingStop) return { children: [], end: "stop" };
   const player = isPlayerNode(context, nodeId);
-  let eligible = (lookup.childrenById.get(nodeId) ?? []).filter((childId) => {
+  const eligible = (lookup.childrenById.get(nodeId) ?? []).filter((childId) => {
     const child = lookup.nodesById.get(childId)!;
     if (!child.uci) return false;
     if (state === "before-start") return context.reachesActive.has(childId);
     if (states.get(childId) !== "active") return false;
     return !player || nodeMetaOf(nodeMeta, childId).edge === "included";
   });
-  if (state === "before-start" && player) eligible = eligible.slice(0, 1);
   if (!eligible.length) return { children: [], end: "leaf" };
   const children = eligible.filter(
     (childId) => lookup.nodesById.get(childId)!.ply - context.rootPly <= context.maxDepthPlies
@@ -135,16 +134,27 @@ export function continuations(
 }
 
 /**
- * A rehearsal can be offered from this node: it is in training scope and the next move is within
- * the depth limit.
+ * A rehearsal can be offered from this node: it is in training scope, the next move is within the
+ * depth limit, and some line from it asks the player a move (not a stop, a leaf or only replies).
  */
 export function canRehearseFrom(context: RehearsalContext, nodeId: string): boolean {
   const node = context.lookup.nodesById.get(nodeId);
-  return (
-    node !== undefined &&
-    context.states.get(nodeId) === "active" &&
-    node.ply + 1 - context.rootPly <= context.maxDepthPlies
-  );
+  if (
+    node === undefined ||
+    context.states.get(nodeId) !== "active" ||
+    node.ply + 1 - context.rootPly > context.maxDepthPlies
+  ) {
+    return false;
+  }
+  // A decision that a line continues past is asked on that line.
+  const pending = [nodeId];
+  for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
+    const { children, end } = continuations(context, id);
+    if (end) continue;
+    if (isDecisionNode(context, id)) return true;
+    pending.push(...children);
+  }
+  return false;
 }
 
 /**
@@ -176,6 +186,28 @@ export function enumerateLines(context: RehearsalContext, startNodeId: string): 
     for (let i = children.length - 1; i >= 0; i--) stack.push([...route, children[i]]);
   }
   return lines;
+}
+
+/**
+ * The end nodes of `enumerateLines(context, startNodeId)`, in the same order, found in one walk
+ * over the branch without building each line's route (a session asks for them after every line).
+ */
+export function lineEnds(context: RehearsalContext, startNodeId: string): string[] {
+  const ends: string[] = [];
+  if (!context.lookup.nodesById.has(startNodeId)) return ends;
+  // `asked`: a decision comes before this node on its route.
+  const stack: { id: string; asked: boolean }[] = [{ id: startNodeId, asked: false }];
+  while (stack.length) {
+    const { id, asked } = stack.pop()!;
+    const { children, end } = continuations(context, id);
+    if (end) {
+      if (asked) ends.push(id);
+      continue;
+    }
+    const below = asked || isDecisionNode(context, id);
+    for (let i = children.length - 1; i >= 0; i--) stack.push({ id: children[i], asked: below });
+  }
+  return ends;
 }
 
 export type RoutePlan = {

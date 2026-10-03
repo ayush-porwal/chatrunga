@@ -66,6 +66,15 @@ export function rehearsePreset(target: RehearseTarget, maxDepthPlies?: number): 
 }
 
 /**
+ * Whether starting `input` saves it as the repertoire's practice setup draft: only a start from
+ * the setup form does. An auto-started preset (a targeted queue, a rehearsal from Study or the
+ * summary) is a one-off, so the next setup opens as the player left it.
+ */
+export function savesPracticeDraft(input: StartPracticeInput, fromPreset: boolean): boolean {
+  return !fromPreset && !input.positionKeys?.length;
+}
+
+/**
  * The start input of an auto-started preset (a targeted queue or a line rehearsal), or null when
  * the preset doesn't start on its own.
  */

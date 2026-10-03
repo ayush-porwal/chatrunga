@@ -100,7 +100,7 @@ import { compareGameToRepertoire } from "@chaturanga/shared/chess/repertoire-com
 import {
   DEFAULT_REHEARSAL_DEPTH_PLIES,
   continuations,
-  enumerateLines,
+  lineEnds,
   isDecisionNode,
   isPlayerNode,
   lineIdOf,
@@ -2064,6 +2064,19 @@ type Rehearsal = {
  * repertoire was archived, or the chapter was removed, disabled or edited since it was planned.
  */
 function loadRehearsal(session: PracticeSessionRecord): Rehearsal | null {
+  const current = currentRehearsal(session);
+  if (!current) return null;
+  const { state, chapter, color } = current;
+  return { state, chapter, context: rehearsalContext(chapter, color, state.maxDepthPlies), color };
+}
+
+/**
+ * The rehearsal's chapter and colour while it can continue (the repertoire is active and the
+ * chapter unchanged, enabled and an opening chapter), without indexing it; else null.
+ */
+function currentRehearsal(
+  session: PracticeSessionRecord
+): Pick<Rehearsal, "state" | "chapter" | "color"> | null {
   const state = session.rehearsal;
   if (!state) return null;
   const record = repertoireRepository.get(session.repertoireId);
@@ -2077,12 +2090,7 @@ function loadRehearsal(session: PracticeSessionRecord): Rehearsal | null {
   ) {
     return null;
   }
-  return {
-    state,
-    chapter,
-    context: rehearsalContext(chapter, record.color, state.maxDepthPlies),
-    color: record.color
-  };
+  return { state, chapter, color: record.color };
 }
 
 /** Ends a session that can't continue: every unanswered card is skipped ungraded. */
@@ -2152,9 +2160,9 @@ function pushRehearsalCard(
 function pendingLines(rehearsal: Rehearsal): Set<string> {
   const finished = new Set(rehearsal.state.finished);
   return new Set(
-    enumerateLines(rehearsal.context, rehearsal.state.fromNodeId)
-      .map((line) => line.endNodeId)
-      .filter((endNodeId) => !finished.has(endNodeId))
+    lineEnds(rehearsal.context, rehearsal.state.fromNodeId).filter(
+      (endNodeId) => !finished.has(endNodeId)
+    )
   );
 }
 
@@ -2241,7 +2249,8 @@ function continueLine(
  * card's position with an active included child playing `uci`. Its own node comes first, then the
  * occurrences inside the session's branch whose move is within the depth limit, then the rest of
  * its chapter, then the other enabled opening chapters in order. Index links are only looked up,
- * never followed.
+ * never followed: only the chapters the position index has the position active in are read, and
+ * one that can't be read is passed over.
  */
 function findOtherLine(
   session: PracticeSessionRecord,
@@ -2249,10 +2258,22 @@ function findOtherLine(
   card: PracticeCard,
   uci: string
 ): NonNullable<AttemptResult["otherLine"]> | null {
-  const others = chapterRepository
-    .list(session.repertoireId)
-    .filter((chapter) => chapter.id !== rehearsal.chapter.id);
-  for (const chapter of [rehearsal.chapter, ...others]) {
+  const others = function* () {
+    for (const chapterId of positionIndexRepository.activeChapterIds(
+      session.repertoireId,
+      card.positionKey
+    )) {
+      if (chapterId === rehearsal.chapter.id) continue;
+      let chapter: RepertoireChapter | null = null;
+      try {
+        chapter = chapterRepository.get(chapterId);
+      } catch {
+        // A damaged chapter offers no line; the rehearsed one is intact.
+      }
+      if (chapter) yield chapter;
+    }
+  };
+  for (const chapter of [rehearsal.chapter, ...others()]) {
     if (!chapter.enabled || chapter.kind !== "opening") continue;
     const own = chapter === rehearsal.chapter;
     const lookup = own ? rehearsal.context.lookup : buildChapterLookup(chapter);
@@ -2550,6 +2571,11 @@ function rehearsalAction(
   };
 
   if (kind === "hint") {
+    // A changed chapter ends the rehearsal before a hint is given (or recorded) on its old card.
+    if (!currentRehearsal(session)) {
+      finishStale(session);
+      return save({ card: session.cards[index] });
+    }
     persist("hint", false, null);
     card.hintStage = Math.min(card.hintStage + 1, 3) as PracticeCard["hintStage"];
     session.cards[index] = card;

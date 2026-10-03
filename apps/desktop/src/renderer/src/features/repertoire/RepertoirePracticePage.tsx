@@ -49,7 +49,12 @@ import { usePrefersReducedMotion } from "../board/board-motion";
 import { BoardStage, BoardWorkspace } from "../board/BoardWorkspace";
 import { ControlledBoard } from "../board/ControlledBoard";
 import { PracticeSetup, initialPracticeInput } from "./PracticeSetup";
-import { autoStartPracticeInput, rehearsePreset, type PracticePreset } from "./practice-setup";
+import {
+  autoStartPracticeInput,
+  rehearsePreset,
+  savesPracticeDraft,
+  type PracticePreset
+} from "./practice-setup";
 import { PracticeSummaryView } from "./PracticeSummaryView";
 import {
   hintMarks,
@@ -152,7 +157,7 @@ export function RepertoirePracticePage({
     });
   }, [sessionId, desktop, resumeSession]);
 
-  const startSession = useEventCallback((input: StartPracticeInput) => {
+  const startSession = useEventCallback((input: StartPracticeInput, fromPreset?: boolean) => {
     if (repertoireCommandBlocked(useLichessStore.getState(), "start-practice")) {
       useAppNoticeStore.getState().show(LIVE_GAME_NOTICE, { tone: "info" });
       return;
@@ -161,8 +166,7 @@ export function RepertoirePracticePage({
     setTargetEmpty(false);
     const loaded = detail.data;
     const targeted = Boolean(input.positionKeys?.length);
-    // A targeted queue isn't the setup's draft: the next setup opens as the player left it.
-    if (loaded && !targeted) {
+    if (loaded && savesPracticeDraft(input, fromPreset === true)) {
       saveWorkspace.mutate({
         repertoireId,
         workspace: {
@@ -201,7 +205,7 @@ export function RepertoirePracticePage({
     if (!targetedInput || autoStarted === preset || autoStartedRef.current === preset) return;
     autoStartedRef.current = preset;
     setAutoStarted(preset);
-    startSession(targetedInput);
+    startSession(targetedInput, true);
   }, [targetedInput, autoStarted, preset, startSession]);
 
   if (!desktop) {

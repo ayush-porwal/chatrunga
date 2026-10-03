@@ -811,6 +811,18 @@ export const positionIndexRepository = {
     }));
   },
 
+  /** The chapters with an active occurrence of a position, in chapter order. */
+  activeChapterIds(repertoireId: string, positionKey: string): string[] {
+    return all<{ chapter_id: string }>(
+      `SELECT i.chapter_id FROM repertoire_position_index i
+        JOIN repertoire_chapters c ON c.id = i.chapter_id
+        WHERE i.repertoire_id = ? AND i.position_key = ? AND i.scope_state = 'active'
+        GROUP BY i.chapter_id ORDER BY MIN(c.sort_order), MIN(c.created_at), i.chapter_id`,
+      repertoireId,
+      positionKey
+    ).map((row) => row.chapter_id);
+  },
+
   /**
    * Every occurrence of a position in a repertoire, whatever its scope state, with its chapter's
    * title; ordered by chapter order, then ply, then node id.

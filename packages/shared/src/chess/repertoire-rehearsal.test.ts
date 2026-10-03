@@ -6,6 +6,7 @@ import {
   canRehearseFrom,
   continuations,
   enumerateLines,
+  lineEnds,
   lineIdOf,
   nextOnRoute,
   planRoute,
@@ -154,7 +155,25 @@ describe("enumerateLines", () => {
     });
   });
 
-  it("takes only the first authored lead-up move at the player's turn", () => {
+  it("finds the same line ends without building the lines", () => {
+    const context = contextOf(
+      [
+        ["e4", "c5", "Nf3", "d6"],
+        ["e4", "c5", "Nf3", "Nc6"],
+        ["e4", "e5", "Nf3"],
+        ["d4", "d5", "c4"],
+        ["c4"]
+      ],
+      { "e4/c5/Nf3": { edge: "included", trainingStop: true } }
+    );
+    for (const start of ["root", "e4", "e4/c5", "d4", "c4", "missing"]) {
+      expect(lineEnds(context, start)).toEqual(
+        enumerateLines(context, start).map((line) => line.endNodeId)
+      );
+    }
+  });
+
+  it("plays every lead-up move towards a training start at the player's turn", () => {
     const context = contextOf(
       [
         ["d4", "d5", "c4"],
@@ -165,8 +184,11 @@ describe("enumerateLines", () => {
         "e4/c5": { edge: "included", trainingStart: true }
       }
     );
-    expect(enumerateLines(context, "root").map((line) => line.endNodeId)).toEqual(["d4/d5/c4"]);
-    expect(continuations(context, "root")).toEqual({ children: ["d4"], end: null });
+    expect(enumerateLines(context, "root").map((line) => line.endNodeId)).toEqual([
+      "d4/d5/c4",
+      "e4/c5/Nf3"
+    ]);
+    expect(continuations(context, "root")).toEqual({ children: ["d4", "e4"], end: null });
   });
 
   it("offers a rehearsal only in training scope and within the depth limit", () => {
@@ -190,6 +212,19 @@ describe("enumerateLines", () => {
     expect(canRehearseFrom(context, "e4/c5/Nf3/d6")).toBe(false);
     expect(canRehearseFrom(context, "d4")).toBe(false);
     expect(canRehearseFrom(context, "missing")).toBe(false);
+  });
+
+  it("offers no rehearsal where no line asks a move: a stop or a leaf", () => {
+    const context = contextOf(
+      [
+        ["e4", "c5", "Nf3"],
+        ["e4", "e5"]
+      ],
+      { "e4/c5": { edge: "covered", trainingStop: true } }
+    );
+    expect(canRehearseFrom(context, "root")).toBe(true);
+    expect(canRehearseFrom(context, "e4/c5")).toBe(false);
+    expect(canRehearseFrom(context, "e4/e5")).toBe(false);
   });
 
   it("follows only included moves at the player's turn", () => {
