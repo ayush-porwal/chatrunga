@@ -155,6 +155,41 @@ export type CollectedDecision = {
   occurrences: DecisionOccurrence[];
 };
 
+/** One decision occurrence of a chapter: a node and the choices it supports there. */
+export type ChapterDecisionNode = { nodeId: string; ucis: string[] };
+
+/**
+ * The decision occurrences of one chapter, in lookup order: every `active` node where the
+ * repertoire's player is to move with at least one active, included own-side continuation (none
+ * for a disabled or reference chapter). Each node lists those continuations in branch order.
+ * collectDecisions merges these per position key; the main process uses them to update the
+ * derived state of a single changed chapter.
+ */
+export function chapterDecisionNodes(
+  color: RepertoireColor,
+  chapter: Pick<RepertoireChapter, "enabled" | "kind" | "nodeMeta">,
+  lookup: ChapterLookup,
+  states: ReadonlyMap<string, ScopeState>
+): ChapterDecisionNode[] {
+  if (!chapter.enabled || chapter.kind !== "opening") return [];
+  const found: ChapterDecisionNode[] = [];
+  for (const id of lookup.order) {
+    if (states.get(id) !== "active") continue;
+    const node = lookup.nodesById.get(id)!;
+    if (playerToMove(node.fenAfter) !== color) continue;
+
+    const ucis: string[] = [];
+    for (const childId of lookup.childrenById.get(id) ?? []) {
+      const child = lookup.nodesById.get(childId)!;
+      if (!child.uci || states.get(childId) !== "active") continue;
+      if (nodeMetaOf(chapter.nodeMeta, childId).edge !== "included") continue;
+      ucis.push(child.uci);
+    }
+    if (ucis.length) found.push({ nodeId: id, ucis });
+  }
+  return found;
+}
+
 /**
  * One entry per unique position key where the repertoire's player is to move and at least one
  * active, included own-side continuation exists (in an enabled opening chapter). Both the parent
@@ -175,21 +210,9 @@ export function collectDecisions(
     const lookup = buildChapterLookup(chapter, keyOf);
     const states = computeScopeStates(chapter, lookup);
 
-    for (const id of lookup.order) {
-      if (states.get(id) !== "active") continue;
-      const node = lookup.nodesById.get(id)!;
-      if (playerToMove(node.fenAfter) !== color) continue;
-
-      const ucis: string[] = [];
-      for (const childId of lookup.childrenById.get(id) ?? []) {
-        const child = lookup.nodesById.get(childId)!;
-        if (!child.uci || states.get(childId) !== "active") continue;
-        if (nodeMetaOf(chapter.nodeMeta, childId).edge !== "included") continue;
-        ucis.push(child.uci);
-      }
-      if (!ucis.length) continue;
-
-      const key = lookup.positionKeys.get(id)!;
+    for (const { nodeId, ucis } of chapterDecisionNodes(color, chapter, lookup, states)) {
+      const node = lookup.nodesById.get(nodeId)!;
+      const key = lookup.positionKeys.get(nodeId)!;
       let decision = decisions.get(key);
       if (!decision) {
         decision = {
@@ -201,7 +224,12 @@ export function collectDecisions(
         decisions.set(key, decision);
       }
       for (const uci of ucis) decision.acceptedUcis.add(uci);
-      decision.occurrences.push({ chapterId: chapter.id, nodeId: id, ply: node.ply, chapterOrder });
+      decision.occurrences.push({
+        chapterId: chapter.id,
+        nodeId,
+        ply: node.ply,
+        chapterOrder
+      });
     }
   });
   return decisions;
@@ -248,7 +276,7 @@ export type DecisionReconciliation = {
  */
 export function reconcileDecisions(
   existing: readonly RepertoireDecision[],
-  collected: ReadonlyMap<string, CollectedDecision>,
+  collected: ReadonlyMap<string, Pick<CollectedDecision, "acceptedUcis">>,
   { repertoireId }: { repertoireId: string }
 ): DecisionReconciliation {
   const upserts: RepertoireDecision[] = [];

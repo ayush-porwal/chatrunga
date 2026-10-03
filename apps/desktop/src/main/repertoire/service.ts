@@ -159,7 +159,10 @@ import {
   bump,
   checkRevision,
   detail,
+  memoizedPositionKey,
   reindex,
+  reindexChapter,
+  reindexPositions,
   requireRepertoire,
   type ImportCommitChapter
 } from "./core";
@@ -184,6 +187,7 @@ import {
   repertoireRepository,
   sessionRepository,
   actionableBusyError,
+  RepertoireCorruptChapterError,
   transaction,
   workspaceRepository,
   type AttemptKind,
@@ -222,16 +226,26 @@ function changed(event: RepertoireChangedEvent): void {
 
 /* ------------------------------------------------------------------ shared helpers */
 
+/**
+ * The stored version of a chapter about to be overwritten or removed; undefined when it is
+ * damaged, so the caller rebuilds the derived state in full instead of updating it.
+ */
+function storedChapter(chapterId: string): RepertoireChapter | undefined {
+  try {
+    return chapterRepository.get(chapterId) ?? undefined;
+  } catch (error) {
+    if (error instanceof RepertoireCorruptChapterError) return undefined;
+    throw error;
+  }
+}
+
 /** A stored chapter with its current due count. */
 function loadChapter(repertoireId: string, chapterId: string, now: number): RepertoireChapter {
   if (chapterRepository.ownerOf(chapterId)?.repertoireId !== repertoireId) {
     throw new Error(CHAPTER_NOT_FOUND_ERROR);
   }
   const chapter = chapterRepository.get(chapterId)!;
-  const summary = chapterRepository
-    .summaries(repertoireId, now)
-    .find((item) => item.id === chapterId);
-  return { ...chapter, dueCount: summary?.dueCount ?? 0 };
+  return { ...chapter, dueCount: chapterRepository.dueCount(chapterId, now) };
 }
 
 function cleanName(value: unknown): string {
@@ -471,9 +485,11 @@ export function updateMetadata(input: UpdateRepertoireMetadataInput): Repertoire
 }
 
 /**
- * Saves one chapter (new or existing) and reconciles decisions, index and progress. An existing
- * chapter must carry its stored revision: another write (e.g. a decision change rewriting its
- * edges) may have changed it since the draft was loaded.
+ * Saves one chapter (new or existing) and reconciles decisions, index and progress
+ * (reindexChapter: nothing for a change the index doesn't read, such as a comment; otherwise only
+ * this chapter's rows and the positions it changed). An existing chapter must carry its stored
+ * revision: another write (e.g. a decision change rewriting its edges) may have changed it since
+ * the draft was loaded.
  */
 export function saveChapter(input: SaveChapterInput): ChapterSaveResult {
   const now = clock();
@@ -493,9 +509,11 @@ export function saveChapter(input: SaveChapterInput): ChapterSaveResult {
       );
     }
     const chapter = sanitizeChapter(input.chapter, (owner?.revision ?? 0) + 1);
+    const before = owner ? storedChapter(chapter.id) : null;
     const next = bump(record, now);
     chapterRepository.upsert(record.id, chapter, now);
-    const { decisionsChanged } = reindex(next, now);
+    const { decisionsChanged } =
+      before === undefined ? reindex(next, now) : reindexChapter(next, before, chapter, now);
     return {
       repertoire: detail(record.id, now),
       chapter: loadChapter(record.id, chapter.id, now),
@@ -545,13 +563,25 @@ export function updateDecision(input: UpdateDecisionInput): DecisionSaveResult {
   const result = transaction(() => {
     const record = requireRepertoire(input.repertoireId);
     checkRevision(record, input.expectedRevision);
-    const chapters = chapterRepository.list(record.id).map((chapter) => ({
-      ...chapter,
-      nodeMeta: { ...chapter.nodeMeta }
-    }));
+    // Only chapters the index places the position in can hold it; their keys come from the index.
+    // Without new accepted moves no edge changes, so the first chapter holding it is enough.
+    const chapterIds = new Set(
+      positionIndexRepository
+        .occurrences(record.id, input.positionKey)
+        .map((occurrence) => occurrence.chapterId)
+    );
     const occurrences: Occurrence[] = [];
-    for (const chapter of chapters) {
-      const lookup = buildChapterLookup(chapter);
+    for (const chapterId of chapterIds) {
+      if (occurrences.length && input.patch.acceptedUcis === undefined) break;
+      const stored = chapterRepository.get(chapterId)!;
+      const chapter = { ...stored, nodeMeta: { ...stored.nodeMeta } };
+      const storedKeys = positionIndexRepository.chapterKeys(chapter.id);
+      const seed = new Map<string, string>();
+      for (const node of chapter.tree) {
+        const key = storedKeys.get(node.id);
+        if (key !== undefined) seed.set(node.fenAfter, key);
+      }
+      const lookup = buildChapterLookup(chapter, memoizedPositionKey(seed));
       for (const nodeId of lookup.order) {
         if (lookup.positionKeys.get(nodeId) !== input.positionKey) continue;
         const node = lookup.nodesById.get(nodeId)!;
@@ -650,7 +680,13 @@ export function updateDecision(input: UpdateDecisionInput): DecisionSaveResult {
       chapterRepository.upsert(record.id, { ...chapter, revision: chapter.revision + 1 }, now);
     }
     decisionRepository.upsert(next, now);
-    reindex(bumped, now);
+    // A change that rewrote chapter edges rebuilds the whole repertoire. New accepted moves or a
+    // cleared preference reconcile the decision's own position only. Anything else (prompt, hint,
+    // feedback, pause, another accepted preference) leaves the derived state as it was.
+    if (touchedChapters.size) reindex(bumped, now);
+    else if (patch.acceptedUcis !== undefined || patch.preferredUci === null) {
+      reindexPositions(bumped, [input.positionKey], now);
+    }
     return {
       repertoire: detail(record.id, now),
       decision: stripFingerprint(decisionRepository.get(record.id, input.positionKey)!)
@@ -672,8 +708,16 @@ export function removeChapter(input: RemoveChapterInput): RepertoireChangeResult
     if (chapterRepository.ownerOf(input.chapterId)?.repertoireId !== record.id) {
       throw new Error(CHAPTER_NOT_FOUND_ERROR);
     }
-    chapterRepository.remove(input.chapterId);
-    reindex(bump(record, now), now);
+    const before = storedChapter(input.chapterId);
+    const next = bump(record, now);
+    if (before === undefined) {
+      chapterRepository.remove(input.chapterId);
+      reindex(next, now);
+    } else {
+      // Before the row goes: removing it drops the chapter's index rows, which the update reads.
+      reindexChapter(next, before, null, now);
+      chapterRepository.remove(input.chapterId);
+    }
     return { repertoire: detail(record.id, now) };
   });
   changed({
