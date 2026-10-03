@@ -450,6 +450,12 @@ describe("staging a move from a game comparison", () => {
 describe("repertoire workspace decision drafts", () => {
   const key = decisionDraftKey("r1", "k1", "prompt");
   const draft = () => store().decisionDrafts[key];
+  /** A write of the draft at `draftKey` starts; returns the generation it sends. */
+  const startSaving = (draftKey: string) => {
+    const generation = store().decisionDrafts[draftKey].generation;
+    store().updateDecisionDraft(draftKey, { type: "saving" });
+    return generation;
+  };
 
   beforeEach(() => {
     store().reset();
@@ -466,15 +472,16 @@ describe("repertoire workspace decision drafts", () => {
 
   it("is cleared only by a confirmed save of the text it sent", () => {
     store().setDecisionText("r1", "k1", "prompt", "Develop");
-    const sent = store().markDecisionTextSaving(key)!;
+    const sent = startSaving(key);
     expect(draft().status).toBe("saving");
     store().setDecisionText("r1", "k1", "prompt", "Develop with tempo");
-    store().decisionTextSaved(key, sent);
+    store().updateDecisionDraft(key, { type: "saved", generation: sent });
     // Typed while it saved: the newer text waits for its own write.
     expect(draft()).toMatchObject({ text: "Develop with tempo", status: "pending" });
-    store().decisionTextSaved(key, store().markDecisionTextSaving(key)!);
+    store().updateDecisionDraft(key, { type: "saved", generation: startSaving(key) });
     expect(draft()).toBeUndefined();
-    expect(store().markDecisionTextSaving(key)).toBeNull();
+    expect(store().updateDecisionDraft(key, { type: "saving" })).toBe(false);
+    expect(draft()).toBeUndefined();
   });
 
   it("keeps feedback per wrong move and a pause as drafts of their own", () => {
@@ -494,9 +501,9 @@ describe("repertoire workspace decision drafts", () => {
     });
     expect(Object.keys(store().decisionDrafts)).toHaveLength(3);
     // Toggling back while a pause saves is a newer edit, written after it.
-    const sent = store().markDecisionTextSaving(paused)!;
+    const sent = startSaving(paused);
     store().setDecisionPaused("r1", "k1", false);
-    store().decisionTextSaved(paused, sent);
+    store().updateDecisionDraft(paused, { type: "saved", generation: sent });
     expect(store().decisionDrafts[paused]).toMatchObject({
       paused: false,
       status: "pending",
@@ -508,23 +515,30 @@ describe("repertoire workspace decision drafts", () => {
     const hint = decisionDraftKey("r1", "k1", "hint");
     store().setDecisionText("r1", "k1", "prompt", "Develop");
     store().setDecisionText("r1", "k1", "hint", "Knight to f3");
-    store().decisionTextFailed(key, "disk full", false);
-    store().decisionTextFailed(hint, "repertoire changed", true);
+    store().updateDecisionDraft(key, {
+      type: "failed",
+      error: { message: "disk full", stale: false }
+    });
+    store().updateDecisionDraft(hint, {
+      type: "failed",
+      error: { message: "repertoire changed", stale: true }
+    });
     expect(draft()).toMatchObject({
       text: "Develop",
       status: "error",
       error: { message: "disk full", stale: false }
     });
     store().clearSaveError();
-    expect(draft()).toMatchObject({ status: "pending", error: undefined });
+    expect(draft()).toMatchObject({ status: "pending" });
+    expect(draft().error).toBeUndefined();
     expect(store().decisionDrafts[hint].status).toBe("error");
-    store().clearDecisionTextError(hint);
+    store().updateDecisionDraft(hint, { type: "retry", stale: true });
     expect(store().decisionDrafts[hint].status).toBe("pending");
     store().discardDecisionText(hint);
     expect(store().decisionDrafts[hint]).toBeUndefined();
     // Nothing to fail or clear once it's gone.
-    store().decisionTextFailed(hint, "late", false);
-    store().clearDecisionTextError(hint);
+    store().updateDecisionDraft(hint, { type: "failed", error: { message: "late", stale: false } });
+    store().updateDecisionDraft(hint, { type: "retry", stale: true });
     expect(store().decisionDrafts[hint]).toBeUndefined();
   });
 });

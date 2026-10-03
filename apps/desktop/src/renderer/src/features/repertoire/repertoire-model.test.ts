@@ -27,14 +27,18 @@ import {
   hintStageText,
   isMissingTargetError,
   isNotFoundError,
+  decisionDraftHoldsBack,
   decisionDraftKey,
   decisionDraftMatches,
   decisionDraftName,
   decisionDraftPatch,
+  decisionDraftWritable,
   decisionTextStatus,
   wrongMoveOptions,
   decisionTextValue,
+  decisionWriteFailure,
   type DecisionTextDraft,
+  nextDecisionDraft,
   occurrencesInOtherChapters,
   pieceNameAt,
   resumedHintText,
@@ -269,15 +273,16 @@ describe("autosave decisions", () => {
 });
 
 describe("decision text drafts", () => {
-  const draftOf = (overrides: Partial<DecisionTextDraft>): DecisionTextDraft => ({
-    repertoireId: "r1",
-    positionKey: "k1",
-    field: "prompt",
-    text: "Develop",
-    generation: 1,
-    status: "pending",
-    ...overrides
-  });
+  const draftOf = (overrides: Partial<DecisionTextDraft>): DecisionTextDraft =>
+    ({
+      repertoireId: "r1",
+      positionKey: "k1",
+      field: "prompt",
+      text: "Develop",
+      generation: 1,
+      status: "pending",
+      ...overrides
+    }) as DecisionTextDraft;
 
   it("sends trimmed text, or null for a blank field", () => {
     expect(decisionTextValue("  Develop with tempo ")).toBe("Develop with tempo");
@@ -365,14 +370,135 @@ describe("decision text drafts", () => {
       dirty: true,
       saving: true,
       errorMessage: "refused",
-      errorStale: true
+      errorStale: true,
+      holdsBack: "stale"
     });
     expect(decisionTextStatus(drafts, "r2")).toMatchObject({ errorStale: false, saving: false });
     expect(decisionTextStatus(drafts, "r3")).toEqual({
       dirty: false,
       saving: false,
       errorMessage: null,
-      errorStale: false
+      errorStale: false,
+      holdsBack: null
+    });
+    // A change whose position left the repertoire is unsaved but holds nothing back.
+    const gone = {
+      d: draftOf({
+        status: "error",
+        error: {
+          message: "This position is no longer in the repertoire.",
+          stale: false,
+          missing: true
+        }
+      })
+    };
+    expect(decisionTextStatus(gone, "r1")).toMatchObject({ dirty: true, holdsBack: null });
+    expect(decisionTextStatus({ ...gone, a: drafts.a }, "r1").holdsBack).toBe("unsaved");
+  });
+
+  describe("state machine (nextDecisionDraft)", () => {
+    const change = { repertoireId: "r1", positionKey: "k1", field: "prompt" as const, text: "A" };
+    const failure = { message: "disk full", stale: false };
+    const stale = { message: "repertoire changed", stale: true };
+
+    it("creates a draft on the first edit and keeps its state on later ones", () => {
+      const created = nextDecisionDraft(undefined, { type: "edit", change }).draft!;
+      expect(created).toEqual({ ...change, generation: 1, status: "pending" });
+      const failed = nextDecisionDraft(created, { type: "failed", error: failure }).draft!;
+      expect(nextDecisionDraft(failed, { type: "edit", change: { ...change, text: "B" } })).toEqual(
+        {
+          draft: { ...change, text: "B", generation: 2, status: "error", error: failure },
+          writeAgain: false
+        }
+      );
+      const paused = nextDecisionDraft(undefined, {
+        type: "edit",
+        change: { ...change, field: "paused", text: "", paused: true }
+      }).draft!;
+      expect(paused).toMatchObject({ paused: true });
+      expect(created).not.toHaveProperty("uci");
+      expect(created).not.toHaveProperty("paused");
+    });
+
+    it("drops a draft saved as sent, and keeps one typed while it saved", () => {
+      const saving = nextDecisionDraft(draftOf({}), { type: "saving" }).draft!;
+      expect(saving.status).toBe("saving");
+      expect(nextDecisionDraft(saving, { type: "saved", generation: 1 })).toEqual({
+        draft: null,
+        writeAgain: false
+      });
+      const edited = { ...saving, generation: 2 };
+      expect(nextDecisionDraft(edited, { type: "saved", generation: 1 }).draft).toEqual({
+        ...draftOf({ generation: 2 })
+      });
+      expect(nextDecisionDraft(undefined, { type: "saved", generation: 1 }).draft).toBeNull();
+    });
+
+    it("writes again after a write that ran while it was committed again, unless refused as stale", () => {
+      const saving = nextDecisionDraft(draftOf({}), { type: "saving" }).draft!;
+      const marked = nextDecisionDraft(saving, { type: "commit" }).draft!;
+      expect(marked).toMatchObject({ status: "saving", saveAgain: true });
+      expect(
+        nextDecisionDraft({ ...marked, generation: 2 }, { type: "saved", generation: 1 })
+      ).toEqual({ draft: draftOf({ generation: 2 }), writeAgain: true });
+      // Committed again but unchanged: saved as sent, nothing left to write.
+      expect(nextDecisionDraft(marked, { type: "saved", generation: 1 }).writeAgain).toBe(false);
+      expect(nextDecisionDraft(marked, { type: "failed", error: failure })).toEqual({
+        draft: draftOf({ status: "error", error: failure }),
+        writeAgain: true
+      });
+      expect(nextDecisionDraft(marked, { type: "failed", error: stale }).writeAgain).toBe(false);
+      // Only a running write takes the mark; a new write clears it.
+      expect(nextDecisionDraft(draftOf({}), { type: "commit" }).draft).toEqual(draftOf({}));
+      expect(nextDecisionDraft(marked, { type: "saving" }).draft).toEqual(
+        draftOf({ status: "saving" })
+      );
+    });
+
+    it("retries a failure that isn't stale; Keep mine any failure", () => {
+      const failed = draftOf({ status: "error", error: failure });
+      const refused = draftOf({ status: "error", error: stale });
+      expect(nextDecisionDraft(failed, { type: "retry" }).draft).toEqual(draftOf({}));
+      expect(nextDecisionDraft(refused, { type: "retry" }).draft).toBe(refused);
+      expect(nextDecisionDraft(refused, { type: "retry", stale: true }).draft).toEqual(draftOf({}));
+      expect(nextDecisionDraft(draftOf({}), { type: "retry", stale: true }).draft).toEqual(
+        draftOf({})
+      );
+    });
+
+    it("writes a pending draft; a failed one only on Retry, never a stale one, always a gone position", () => {
+      const missing = {
+        message: "This position is no longer in the repertoire.",
+        stale: false,
+        missing: true
+      };
+      expect(decisionDraftWritable(draftOf({}), false)).toBe(true);
+      expect(decisionDraftWritable(draftOf({ status: "error", error: failure }), false)).toBe(
+        false
+      );
+      expect(decisionDraftWritable(draftOf({ status: "error", error: failure }), true)).toBe(true);
+      expect(decisionDraftWritable(draftOf({ status: "error", error: stale }), true)).toBe(false);
+      expect(decisionDraftWritable(draftOf({ status: "error", error: missing }), false)).toBe(true);
+      expect(decisionDraftHoldsBack(draftOf({ status: "error", error: missing }))).toBe(false);
+      expect(decisionDraftHoldsBack(draftOf({ status: "error", error: stale }))).toBe(true);
+    });
+
+    it("reads a refused write's message in one place", () => {
+      expect(decisionWriteFailure("Invalid repertoireId: not found")).toBe("repertoire-gone");
+      expect(decisionWriteFailure("Invalid positionKey: not found in this repertoire")).toEqual({
+        message: "This position is no longer in the repertoire.",
+        stale: false,
+        missing: true
+      });
+      expect(decisionWriteFailure("Invalid expectedRevision: repertoire changed")).toEqual({
+        message: "Invalid expectedRevision: repertoire changed",
+        stale: true
+      });
+      expect(decisionWriteFailure("disk full")).toEqual({ message: "disk full", stale: false });
+      expect(decisionWriteFailure("read failed", { stale: true })).toEqual({
+        message: "read failed",
+        stale: true
+      });
     });
   });
 });

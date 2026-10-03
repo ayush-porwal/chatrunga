@@ -314,12 +314,20 @@ export const DECISION_SCOPE_TEXT =
  */
 export type DecisionDraftField = DecisionTextField | "feedback" | "paused";
 
-/**
- * A decision change made at a position (a practice prompt or hint, wrong-move feedback, pausing)
- * and not yet confirmed saved. It outlives the notes panel (and the study page), so a failed
- * write keeps the change until it is retried or discarded.
- */
-export type DecisionTextDraft = {
+/** Why a decision draft's last write (or Keep mine's read) was refused. */
+export type DecisionDraftError = {
+  message: string;
+  /** The repertoire moved on: Keep mine or Discard decides (Retry would be refused again). */
+  stale: boolean;
+  /**
+   * Its position is in no chapter any more (its move undone, its line deleted): every flush tries
+   * it again (it saves once the move is back), and it holds back no navigation meanwhile.
+   */
+  missing?: boolean;
+};
+
+/** What a decision draft changes, as typed or toggled. */
+export type DecisionDraftChange = {
   repertoireId: string;
   positionKey: string;
   field: DecisionDraftField;
@@ -329,21 +337,139 @@ export type DecisionTextDraft = {
   text: string;
   /** Whether a pause draft pauses (true) or resumes (false) the decision. */
   paused?: boolean;
+};
+
+/**
+ * A decision change made at a position (a practice prompt or hint, wrong-move feedback, pausing)
+ * and not yet confirmed saved. It outlives the notes panel (and the study page), so a failed
+ * write keeps the change until it is retried or discarded. Its state moves only through
+ * nextDecisionDraft: pending (waiting for a write), saving (a write is running; `saveAgain` when
+ * it was committed again meanwhile) or error (the refusal, until Retry, Keep mine or Discard).
+ */
+export type DecisionTextDraft = DecisionDraftChange & {
   /** Counts edits: a save clears the draft only when nothing was typed while it ran. */
   generation: number;
-  status: "pending" | "saving" | "error";
-  /**
-   * The refusal (status "error"); `stale` when the repertoire moved on, `missing` when its position
-   * is in no chapter any more (it saves again once the move is back, and holds back no
-   * navigation meanwhile).
-   */
-  error?: { message: string; stale: boolean; missing?: boolean };
-  /**
-   * Committed again (a blur, Add, Remove or the pause switch) while its write ran: written again
-   * once that write settles, with whatever was typed meanwhile.
-   */
-  saveAgain?: boolean;
-};
+} & (
+    | { status: "pending"; error?: undefined; saveAgain?: undefined }
+    | {
+        status: "saving";
+        error?: undefined;
+        /**
+         * Committed again (a blur, Add, Remove or the pause switch) while the write ran: written
+         * again once it settles, with whatever was typed meanwhile.
+         */
+        saveAgain?: boolean;
+      }
+    | { status: "error"; error: DecisionDraftError; saveAgain?: undefined }
+  );
+
+/** What happens to a decision draft (see nextDecisionDraft). */
+export type DecisionDraftEvent =
+  /** Typed or toggled: creates the draft, or edits it (a new generation; its state stays). */
+  | { type: "edit"; change: DecisionDraftChange }
+  /** A write of it started. */
+  | { type: "saving" }
+  /** Committed again: while a write runs, it is written again once that write settles. */
+  | { type: "commit" }
+  /** The write of `generation` was confirmed. */
+  | { type: "saved"; generation: number }
+  | { type: "failed"; error: DecisionDraftError }
+  /** Retry (a failure that isn't stale), or Keep mine (`stale`: any failure): pending again. */
+  | { type: "retry"; stale?: boolean };
+
+/**
+ * The one state machine of a decision draft: the draft after `event` (null: it is gone, saved as
+ * typed), and whether it must be written again now (committed while a write ran that has just
+ * settled; never after a stale refusal, which waits for Keep mine or Discard).
+ */
+export function nextDecisionDraft(
+  draft: DecisionTextDraft | undefined,
+  event: DecisionDraftEvent
+): { draft: DecisionTextDraft | null; writeAgain: boolean } {
+  const unchanged = { draft: draft ?? null, writeAgain: false };
+  if (event.type === "edit") {
+    // The key names the field and move, so an edit's change replaces the draft's as a whole.
+    const content = contentOf({ ...event.change, generation: (draft?.generation ?? 0) + 1 });
+    return {
+      draft: draft ? { ...draft, ...content } : { ...content, status: "pending" },
+      writeAgain: false
+    };
+  }
+  if (!draft) return unchanged;
+  const content = contentOf(draft);
+  switch (event.type) {
+    case "saving":
+      return { draft: { ...content, status: "saving" }, writeAgain: false };
+    case "commit":
+      return draft.status === "saving"
+        ? { draft: { ...draft, saveAgain: true }, writeAgain: false }
+        : unchanged;
+    case "saved": {
+      const writeAgain = draft.status === "saving" && draft.saveAgain === true;
+      // Typed while it saved: the newer text stays, pending its own write.
+      if (draft.generation !== event.generation) {
+        return { draft: { ...content, status: "pending" }, writeAgain };
+      }
+      return { draft: null, writeAgain: false };
+    }
+    case "failed":
+      return {
+        draft: { ...content, status: "error", error: event.error },
+        writeAgain: draft.status === "saving" && draft.saveAgain === true && !event.error.stale
+      };
+    case "retry":
+      return draft.status === "error" && (event.stale || !draft.error.stale)
+        ? { draft: { ...content, status: "pending" }, writeAgain: false }
+        : unchanged;
+  }
+}
+
+/** A draft's change and generation, without its state (an unset `uci` or `paused` left out). */
+function contentOf(
+  draft: DecisionDraftChange & { generation: number }
+): DecisionDraftChange & { generation: number } {
+  return {
+    repertoireId: draft.repertoireId,
+    positionKey: draft.positionKey,
+    field: draft.field,
+    text: draft.text,
+    generation: draft.generation,
+    ...(draft.uci !== undefined ? { uci: draft.uci } : {}),
+    ...(draft.paused !== undefined ? { paused: draft.paused } : {})
+  };
+}
+
+/**
+ * Whether a write of the draft goes ahead: a pending one, or a failed one on Retry (`retry`)
+ * unless the refusal was stale. One whose position left the repertoire is always tried again
+ * (it saves once the move is back).
+ */
+export function decisionDraftWritable(draft: DecisionTextDraft, retry: boolean): boolean {
+  if (draft.status !== "error") return true;
+  return draft.error.missing === true || (retry && !draft.error.stale);
+}
+
+/** Whether the draft holds back leaving its repertoire (all but one whose position left it). */
+export function decisionDraftHoldsBack(draft: DecisionTextDraft): boolean {
+  return draft.status !== "error" || draft.error.missing !== true;
+}
+
+/**
+ * What a refused decision write (or Keep mine's read of the repertoire) means for its draft, from
+ * the main process's message: the repertoire was deleted (`"repertoire-gone"`: none of its drafts
+ * has anywhere to go), or the draft's error (its position left the repertoire, a stale revision,
+ * or another failure worth a Retry). `stale` forces a stale error (Keep mine's refused read).
+ */
+export function decisionWriteFailure(
+  message: string,
+  { stale = false }: { stale?: boolean } = {}
+): "repertoire-gone" | DecisionDraftError {
+  if (isNotFoundError(message, "repertoire")) return "repertoire-gone";
+  if (isNotFoundError(message, "position")) {
+    return { message: POSITION_GONE_MESSAGE, stale: false, missing: true };
+  }
+  return { message, stale: stale || isStaleRevisionError(message) };
+}
 
 /**
  * Where a decision draft lives in the workspace store (one per repertoire, position and field,
@@ -453,19 +579,31 @@ export type DecisionTextStatus = {
   errorMessage: string | null;
   /** Every failed write is a stale refusal (Retry would only be refused again). */
   errorStale: boolean;
+  /**
+   * Whether its drafts hold back leaving the repertoire (decisionDraftHoldsBack), and how:
+   * `stale` when every failure among them was refused as stale (only Keep mine or Discard helps).
+   */
+  holdsBack: "unsaved" | "stale" | null;
 };
 
 export function decisionTextStatus(
   drafts: Readonly<Record<string, DecisionTextDraft>>,
-  repertoireId: string
+  repertoireId: string | null
 ): DecisionTextStatus {
   const own = Object.values(drafts).filter((draft) => draft.repertoireId === repertoireId);
   const failed = own.filter((draft) => draft.status === "error");
+  const holding = own.filter(decisionDraftHoldsBack);
+  const holdingFailed = holding.filter((draft) => draft.status === "error");
   return {
     dirty: own.length > 0,
     saving: own.some((draft) => draft.status === "saving"),
-    errorMessage: failed[0]?.error?.message ?? null,
-    errorStale: failed.length > 0 && failed.every((draft) => draft.error?.stale)
+    errorMessage: failed[0]?.error.message ?? null,
+    errorStale: failed.length > 0 && failed.every((draft) => draft.error.stale),
+    holdsBack: !holding.length
+      ? null
+      : holdingFailed.length && holdingFailed.every((draft) => draft.error.stale)
+        ? "stale"
+        : "unsaved"
   };
 }
 
@@ -490,7 +628,7 @@ export function autosaveStep(state: {
 export function saveStatusLabel(state: {
   dirty: boolean;
   saveState: AutosaveSaveState;
-  decisionText?: DecisionTextStatus;
+  decisionText?: Pick<DecisionTextStatus, "dirty" | "saving" | "errorMessage">;
 }): string {
   const decisionText = state.decisionText;
   if (state.saveState.status === "error") return `Unsaved — ${state.saveState.message}`;

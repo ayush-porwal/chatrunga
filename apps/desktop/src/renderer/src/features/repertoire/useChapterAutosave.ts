@@ -11,7 +11,12 @@ import {
   retryDecisionTexts,
   saveDecisionText
 } from "./decision-text-drafts";
-import { autosaveStep, isMissingTargetError, isStaleRevisionError } from "./repertoire-model";
+import {
+  autosaveStep,
+  decisionTextStatus,
+  isMissingTargetError,
+  isStaleRevisionError
+} from "./repertoire-model";
 
 /** Quiet time after the last edit before the draft is saved. */
 export const AUTOSAVE_DELAY_MS = 800;
@@ -108,15 +113,8 @@ export function unsavedStudyCause(
 ): "chapter" | "decision" | "stale-decision" | null {
   const state = workspace();
   if (state.dirty || state.saveState.status === "error") return "chapter";
-  // A change whose position left the repertoire holds nothing back (see flushDecisionTexts).
-  const own = Object.values(state.decisionDrafts).filter(
-    (draft) => draft.repertoireId === repertoireId && !draft.error?.missing
-  );
-  if (!own.length) return null;
-  const failed = own.filter((draft) => draft.status === "error");
-  return failed.length && failed.every((draft) => draft.error?.stale)
-    ? "stale-decision"
-    : "decision";
+  const { holdsBack } = decisionTextStatus(state.decisionDrafts, repertoireId);
+  return holdsBack === "stale" ? "stale-decision" : holdsBack === "unsaved" ? "decision" : null;
 }
 
 /**

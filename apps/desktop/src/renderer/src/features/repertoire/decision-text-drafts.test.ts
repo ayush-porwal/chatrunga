@@ -206,7 +206,7 @@ describe("decision text drafts", () => {
     store().setDecisionText("r1", "k1", "prompt", "Develop");
     store().requestDecisionTextSaveAgain(PROMPT);
     expect(store().decisionDrafts[PROMPT].saveAgain).toBeUndefined();
-    expect(store().takeDecisionTextSaveAgain(PROMPT)).toBe(false);
+    expect(store().updateDecisionDraft(PROMPT, { type: "saved", generation: 2 })).toBe(false);
   });
 
   it("waits for Keep mine or Discard after a stale refusal", async () => {
@@ -333,7 +333,10 @@ describe("decision text drafts", () => {
     expect(unsavedStudyCause("r1")).toBe("stale-decision");
 
     store().setDecisionText("r1", "k1", "hint", "Knight to f3");
-    store().decisionTextFailed(HINT, "disk full", false);
+    store().updateDecisionDraft(HINT, {
+      type: "failed",
+      error: { message: "disk full", stale: false }
+    });
     expect(unsavedStudyCause("r1")).toBe("decision");
 
     store().saveFailed("disk full", false);
@@ -409,7 +412,10 @@ describe("decision text drafts", () => {
 
   it("Keep mine drops a stale draft whose repertoire was deleted since", async () => {
     store().setDecisionText("r1", "k1", "prompt", "Develop");
-    store().decisionTextFailed(PROMPT, "Invalid expectedRevision: repertoire changed", true);
+    store().updateDecisionDraft(PROMPT, {
+      type: "failed",
+      error: { message: "Invalid expectedRevision: repertoire changed", stale: true }
+    });
     getRepertoire.mockRejectedValueOnce(new Error("Invalid repertoireId: not found"));
     expect(await keepDecisionText(queryClient, PROMPT, flushChapter)).toBe(true);
     expect(store().decisionDrafts[PROMPT]).toBeUndefined();

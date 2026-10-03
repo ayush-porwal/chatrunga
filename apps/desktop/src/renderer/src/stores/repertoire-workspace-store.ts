@@ -19,8 +19,11 @@ import {
 import {
   decisionDraftKey,
   defaultEdgeForNewMove,
+  nextDecisionDraft,
   shouldAdoptSaveResult,
   type AutosaveSaveState,
+  type DecisionDraftChange,
+  type DecisionDraftEvent,
   type DecisionTextDraft,
   type DecisionTextField
 } from "../features/repertoire/repertoire-model";
@@ -143,18 +146,13 @@ type Actions = {
   /** Committed while its write runs: the draft is written again once that write settles. */
   requestDecisionTextSaveAgain: (key: string) => void;
   /**
-   * After a write settled: whether the draft was committed again meanwhile and should be written
-   * again now (never one refused as stale, which waits for Keep mine or Discard). Clears the mark.
+   * Moves the draft at `key` through `event` (nextDecisionDraft, the one state machine of a
+   * draft). Returns whether it must be written again now.
    */
-  takeDecisionTextSaveAgain: (key: string) => boolean;
-  /** A write of the draft started; returns the generation it sends (null: no draft). */
-  markDecisionTextSaving: (key: string) => number | null;
-  /** The write of `generation` was confirmed: the draft goes, unless it was edited since. */
-  decisionTextSaved: (key: string, generation: number) => void;
-  /** The write was refused; `missing` when its position is in no chapter any more. */
-  decisionTextFailed: (key: string, message: string, stale: boolean, missing?: boolean) => void;
-  /** A failed draft becomes pending again (Retry, or Keep mine after a stale refusal). */
-  clearDecisionTextError: (key: string) => void;
+  updateDecisionDraft: (
+    key: string,
+    event: Exclude<DecisionDraftEvent, { type: "edit" }>
+  ) => boolean;
 };
 
 const initialState: RepertoireWorkspaceState = {
@@ -371,26 +369,24 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
       return true;
     };
 
-    /** Creates or edits a decision draft (an edit bumps its generation; its status stays). */
-    const putDecisionDraft = (
-      change: Pick<DecisionTextDraft, "repertoireId" | "positionKey" | "field" | "uci" | "text"> &
-        Pick<Partial<DecisionTextDraft>, "paused">
-    ) =>
+    /** Moves one decision draft through `event` (see nextDecisionDraft). */
+    const transitionDraft = (key: string, event: DecisionDraftEvent): boolean => {
+      const { draft, writeAgain } = nextDecisionDraft(get().decisionDrafts[key], event);
       set((state) => {
-        const key = decisionDraftKey(
-          change.repertoireId,
-          change.positionKey,
-          change.field,
-          change.uci
-        );
-        const current = state.decisionDrafts[key];
-        const draft: DecisionTextDraft = current
-          ? { ...current, ...change, generation: current.generation + 1 }
-          : { ...change, generation: 1, status: "pending" };
-        if (draft.uci === undefined) delete draft.uci;
-        if (draft.paused === undefined) delete draft.paused;
-        return { decisionDrafts: { ...state.decisionDrafts, [key]: draft } };
+        const decisionDrafts = { ...state.decisionDrafts };
+        if (draft) decisionDrafts[key] = draft;
+        else delete decisionDrafts[key];
+        return { decisionDrafts };
       });
+      return writeAgain;
+    };
+
+    /** Creates or edits a decision draft (an edit bumps its generation; its status stays). */
+    const putDecisionDraft = (change: DecisionDraftChange) =>
+      transitionDraft(
+        decisionDraftKey(change.repertoireId, change.positionKey, change.field, change.uci),
+        { type: "edit", change }
+      );
 
     /** stageMove's edits, once the move is known to be legal at `parentId`. */
     const stageAt = (
@@ -585,9 +581,7 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
           decisionDrafts: Object.fromEntries(
             Object.entries(state.decisionDrafts).map(([key, draft]) => [
               key,
-              draft.status === "error" && !draft.error?.stale
-                ? { ...draft, status: "pending" as const, error: undefined }
-                : draft
+              nextDecisionDraft(draft, { type: "retry" }).draft!
             ])
           )
         })),
@@ -623,75 +617,12 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
           return { decisionDrafts };
         }),
 
-      requestDecisionTextSaveAgain: (key) =>
-        set((state) => {
-          const draft = state.decisionDrafts[key];
-          if (draft?.status !== "saving") return {};
-          return {
-            decisionDrafts: { ...state.decisionDrafts, [key]: { ...draft, saveAgain: true } }
-          };
-        }),
-
-      takeDecisionTextSaveAgain: (key) => {
-        const draft = get().decisionDrafts[key];
-        if (!draft?.saveAgain) return false;
-        const next = { ...draft };
-        delete next.saveAgain;
-        set((state) => ({ decisionDrafts: { ...state.decisionDrafts, [key]: next } }));
-        return !(draft.status === "error" && draft.error?.stale);
+      requestDecisionTextSaveAgain: (key) => {
+        if (get().decisionDrafts[key]) transitionDraft(key, { type: "commit" });
       },
 
-      markDecisionTextSaving: (key) => {
-        const draft = get().decisionDrafts[key];
-        if (!draft) return null;
-        set((state) => ({
-          decisionDrafts: {
-            ...state.decisionDrafts,
-            [key]: { ...draft, status: "saving", error: undefined }
-          }
-        }));
-        return draft.generation;
-      },
-
-      decisionTextSaved: (key, generation) => {
-        const draft = get().decisionDrafts[key];
-        if (!draft) return;
-        if (draft.generation === generation) get().discardDecisionText(key);
-        else {
-          // Typed while it saved: the newer text stays, pending its own write.
-          set((state) => ({
-            decisionDrafts: { ...state.decisionDrafts, [key]: { ...draft, status: "pending" } }
-          }));
-        }
-      },
-
-      decisionTextFailed: (key, message, stale, missing = false) =>
-        set((state) => {
-          const draft = state.decisionDrafts[key];
-          if (!draft) return {};
-          return {
-            decisionDrafts: {
-              ...state.decisionDrafts,
-              [key]: {
-                ...draft,
-                status: "error",
-                error: missing ? { message, stale, missing } : { message, stale }
-              }
-            }
-          };
-        }),
-
-      clearDecisionTextError: (key) =>
-        set((state) => {
-          const draft = state.decisionDrafts[key];
-          if (draft?.status !== "error") return {};
-          return {
-            decisionDrafts: {
-              ...state.decisionDrafts,
-              [key]: { ...draft, status: "pending", error: undefined }
-            }
-          };
-        })
+      updateDecisionDraft: (key, event) =>
+        get().decisionDrafts[key] ? transitionDraft(key, event) : false
     };
   }
 );
