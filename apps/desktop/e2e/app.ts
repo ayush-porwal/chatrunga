@@ -7,7 +7,8 @@ import {
   type ElectronApplication,
   type Page
 } from "@playwright/test";
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -326,6 +327,45 @@ export async function clickSquare(page: Page, square: string, flipped = false): 
   await page.mouse.click(x, y);
 }
 
+/**
+ * Quits the app and waits for it to exit. One that hasn't exited after `timeoutMs` (stuck quitting)
+ * is killed with its child processes, which on Windows takes `taskkill /T`: killing only the main
+ * process there leaves its helpers running and holding the profile's files.
+ */
+export async function closeApp(app: ElectronApplication, timeoutMs = 20_000): Promise<void> {
+  const closed = app.close().then(
+    () => true,
+    () => true
+  );
+  let timer: NodeJS.Timeout | undefined;
+  const timedOut = new Promise<false>(
+    (resolve) => (timer = setTimeout(() => resolve(false), timeoutMs))
+  );
+  const exited = await Promise.race([closed, timedOut]);
+  clearTimeout(timer);
+  if (exited) return;
+  const pid = app.process().pid;
+  if (process.platform === "win32" && pid !== undefined) {
+    spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
+  } else {
+    app.process().kill("SIGKILL");
+  }
+  await closed;
+}
+
+/**
+ * Deletes a used profile. On Windows a just-closed app's helper processes (crash reporter, GPU) can
+ * hold its files for a moment, so it is retried for a few seconds; a profile still locked after
+ * that is left in the temp folder with a warning, not reported as the test failing.
+ */
+function removeProfile(dir: string): void {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  } catch (error) {
+    console.warn(`Couldn't delete the e2e profile ${dir}: ${(error as Error).message}`);
+  }
+}
+
 type Fixtures = {
   /** A fresh profile directory, deleted after the test. */
   profile: string;
@@ -336,9 +376,10 @@ type Fixtures = {
 export const test = base.extend<Fixtures>({
   // eslint-disable-next-line no-empty-pattern
   profile: async ({}, provide) => {
-    const dir = mkdtempSync(join(tmpdir(), "chaturanga-e2e-"));
+    // The long form of the path: Windows' temp folder can be a short 8.3 name (RUNNER~1).
+    const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "chaturanga-e2e-")));
     await provide(dir);
-    rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+    removeProfile(dir);
   },
   launch: async ({ profile }, provide, testInfo) => {
     const launched: LaunchedApp[] = [];
@@ -354,7 +395,7 @@ export const test = base.extend<Fixtures>({
           contentType: "image/png"
         });
       }
-      await app.close().catch(() => {});
+      await closeApp(app);
       expect(pageErrors, "uncaught errors in the window").toEqual([]);
     }
   }
