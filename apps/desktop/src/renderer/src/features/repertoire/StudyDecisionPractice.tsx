@@ -102,10 +102,13 @@ export function StudyDecisionPractice({
         ? "Saving…"
         : fallback;
 
+  // Only a move offered here now (not accepted since, nor already given feedback) can be added.
+  const chosen = options.some((option) => option.uci === newMove) ? newMove : "";
+
   const add = () => {
-    if (!newMove || !newText.trim()) return;
-    onFeedbackChange(newMove, newText);
-    onCommitFeedback(newMove);
+    if (!chosen || !newText.trim()) return;
+    onFeedbackChange(chosen, newText);
+    onCommitFeedback(chosen);
     setNewMove("");
     setNewText("");
   };
@@ -168,7 +171,7 @@ export function StudyDecisionPractice({
             <Select
               id={moveId}
               disabled={disabled || !options.length}
-              value={newMove}
+              value={chosen}
               onChange={(event) => setNewMove(event.target.value)}
             >
               <option value="">Choose a move outside the repertoire…</option>
@@ -197,7 +200,7 @@ export function StudyDecisionPractice({
             variant="outline"
             size="xs"
             className="justify-self-start"
-            disabled={disabled || !newMove || !newText.trim()}
+            disabled={disabled || !chosen || !newText.trim()}
             onClick={add}
           >
             Add feedback

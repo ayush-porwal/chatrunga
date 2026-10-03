@@ -163,6 +163,23 @@ test("feedback for a wrong move survives a refused write and shows in practice",
   const move = section.getByRole("combobox", { name: "Wrong move" });
   await expect(move.getByRole("option", { name: "e4", exact: true })).toHaveCount(0);
 
+  // A move and text picked after 1. e4 e5 don't carry over to the start position (Home).
+  const blur = () => page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  const newText = section.getByRole("textbox", { name: "Feedback", exact: true });
+  const addFeedback = section.getByRole("button", { name: "Add feedback", exact: true });
+  await blur();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await move.selectOption({ label: "Bc4" });
+  await newText.fill("Develop the knight first");
+  await expect(addFeedback).toBeEnabled();
+  await blur();
+  await page.keyboard.press("Home");
+  await expect(move.getByRole("option", { name: "d4", exact: true })).toHaveCount(1);
+  await expect(move).toHaveValue("");
+  await expect(newText).toHaveValue("");
+  await expect(addFeedback).toBeDisabled();
+
   const restore = await refuseInvoke(app, "repertoires:updateDecision", "Simulated write failure");
   await move.selectOption({ label: "d4" });
   await section.getByRole("textbox", { name: "Feedback", exact: true }).fill("We open with 1.e4");

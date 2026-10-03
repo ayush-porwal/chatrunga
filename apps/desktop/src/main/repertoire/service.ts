@@ -646,7 +646,16 @@ export function updateDecision(input: UpdateDecisionInput): DecisionSaveResult {
           );
         }
         const feedback = cleanText(text, MAX_POLICY_TEXT);
-        if (feedback) next.wrongMoveFeedback[move] = feedback;
+        if (!feedback) continue;
+        // Feedback explains a wrong move: an accepted one takes none. Feedback stored before its
+        // move was accepted (and sent back unchanged with the rest of the map) is dropped.
+        if (next.acceptedUcis.includes(move)) {
+          if (stored.wrongMoveFeedback[move] === feedback) continue;
+          throw new Error(
+            `Invalid wrongMoveFeedback: "${uci}" is an accepted move in this position`
+          );
+        }
+        next.wrongMoveFeedback[move] = feedback;
       }
     }
     if (patch.paused !== undefined) next.paused = patch.paused === true;

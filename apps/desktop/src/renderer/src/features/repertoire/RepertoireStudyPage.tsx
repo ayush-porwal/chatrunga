@@ -932,6 +932,8 @@ export function RepertoireStudyPage({
           decisionControls={
             choices?.side === "player" ? (
               <StudyDecisionPractice
+                // A move and text picked for "Add feedback" belong to this position only.
+                key={positionKey ?? ""}
                 repertoireId={repertoireId}
                 positionKey={positionKey}
                 fen={node.fenAfter}

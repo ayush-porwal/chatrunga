@@ -9,7 +9,8 @@ import {
   type AddFromGameInput,
   type RepertoireChapter,
   type RepertoireColor,
-  type RepertoireNodeMeta
+  type RepertoireNodeMeta,
+  type UpdateDecisionInput
 } from "@chaturanga/shared/types/repertoire";
 import { fenAfterUci, START_FEN } from "@chaturanga/shared/chess/position";
 import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
@@ -2004,6 +2005,35 @@ describe("repertoire service: practice", () => {
     // Left out or blank: removed.
     expect(write({ d2d4: "We play 1.e4", c2c4: "   " })).toEqual({ d2d4: "We play 1.e4" });
     expect(write({})).toEqual({});
+  });
+
+  it("wrong-move feedback never names an accepted move", () => {
+    const { id } = create();
+    save(id, [["e2e4"], ["d2d4"]]);
+    const update = (patch: UpdateDecisionInput["patch"]) =>
+      service.updateDecision({
+        repertoireId: id,
+        positionKey: START_KEY,
+        expectedRevision: service.getRepertoire(id).revision,
+        patch
+      }).decision;
+    update({ acceptedUcis: ["e2e4"] });
+    expect(() => update({ wrongMoveFeedback: { e2e4: "Not this one" } })).toThrow(
+      /Invalid wrongMoveFeedback: "e2e4" is an accepted move/
+    );
+    // Feedback written while 1.d4 was outside the repertoire, then 1.d4 accepted: sent back
+    // unchanged with the rest of the map it is dropped; new text for it is refused.
+    update({ wrongMoveFeedback: { d2d4: "We play 1.e4" } });
+    expect(update({ acceptedUcis: ["e2e4", "d2d4"] }).wrongMoveFeedback).toEqual({
+      d2d4: "We play 1.e4"
+    });
+    expect(() => update({ wrongMoveFeedback: { d2d4: "Changed" } })).toThrow(
+      /"d2d4" is an accepted move/
+    );
+    expect(
+      update({ wrongMoveFeedback: { d2d4: "We play 1.e4", c2c4: "Not the English" } })
+        .wrongMoveFeedback
+    ).toEqual({ c2c4: "Not the English" });
   });
 
   it("a targeted queue keeps the given order and drops unknown or paused decisions", () => {
