@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 
 /** The Puzzles page's choices before a set starts. */
 export type PuzzleDraft = {
@@ -28,6 +29,24 @@ export const DEFAULT_PUZZLE_FILTERS: Omit<PuzzleDraft, "databaseId"> = {
   difficultyMax: 4,
   positionTags: ["initiative", "development"]
 };
+
+/** The draft a set was started from: its database and every filter ("Edit set" reopens the Puzzles page with it). */
+export function draftFromSessionConfig(config: PuzzleSessionConfig): PuzzleDraft {
+  const { lichess, position } = config;
+  return {
+    databaseId: config.databaseId ?? "",
+    themes: [...lichess.themes],
+    lengths: [...lichess.lengths],
+    openings: [...lichess.openings],
+    side: lichess.side,
+    ratingMin: lichess.ratingMin,
+    ratingMax: lichess.ratingMax,
+    popularityMin: lichess.popularityMin,
+    difficultyMin: position.difficultyMin,
+    difficultyMax: position.difficultyMax,
+    positionTags: [...position.tags]
+  };
+}
 
 type PuzzleDraftStore = {
   draft: PuzzleDraft;

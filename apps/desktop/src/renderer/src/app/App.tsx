@@ -68,7 +68,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { useAppNoticeStore } from "../stores/app-notice-store";
 import { Button } from "@/components/ui/button";
 import { useDatabaseDownloads } from "./useDatabaseDownloads";
-import { usePuzzleDraftStore } from "../stores/puzzle-draft-store";
+import { draftFromSessionConfig, usePuzzleDraftStore } from "../stores/puzzle-draft-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Color } from "@chaturanga/shared/types/chess";
@@ -1186,6 +1186,11 @@ export function App() {
     openGameFromLibrary: useEventCallback((id: string) => unlessOnlineGame(() => void openSavedGameById(id))),
     nextPuzzle: useEventCallback(loadNextPuzzle),
     playEngineFromPuzzle: useEventCallback(playEngineFromCurrentPuzzlePosition),
+    // The puzzle card's "Edit set": the Puzzles page with the running set's filters, to start a new set.
+    editPuzzleSet: useEventCallback(() => {
+      if (activePuzzleConfig) usePuzzleDraftStore.getState().update(draftFromSessionConfig(activePuzzleConfig));
+      openPuzzlesPage();
+    }),
     reviewCurrentGame: useEventCallback(() => void openSelectedGameReview("current")),
     repertoireHub: useEventCallback(() => openRepertoireHub()),
     openRepertoireStudy: useEventCallback((target: StudyOpenTarget) =>
@@ -1308,10 +1313,11 @@ export function App() {
         nextPending={nextPuzzle.isPending}
         onNextPuzzle={on.nextPuzzle}
         onPlayEngineFromHere={on.playEngineFromPuzzle}
+        onEditSet={on.editPuzzleSet}
         puzzleConfig={activePuzzleConfig}
       />
     ),
-    [nextPuzzle.error, nextPuzzle.isPending, on.nextPuzzle, on.playEngineFromPuzzle, activePuzzleConfig]
+    [nextPuzzle.error, nextPuzzle.isPending, on.nextPuzzle, on.playEngineFromPuzzle, on.editPuzzleSet, activePuzzleConfig]
   );
 
   const pageTitles: Partial<Record<AppView, string>> = {

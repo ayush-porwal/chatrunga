@@ -14,10 +14,9 @@ import { sectionTitle } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { MoveLink } from "../features/game-review/MoveLinks";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
+import { formatPuzzleTag, puzzleDatasetLabel, puzzleSetSummary } from "../features/puzzles/puzzle-set";
 import { useGameStore } from "../stores/game-store";
-import { usePuzzleStore } from "../stores/puzzle-store";
-
-type PuzzleFeedbackKind = "idle" | "correct" | "wrong" | "complete";
+import { usePuzzleStore, type PuzzleFeedbackKind, type PuzzleOutcome } from "../stores/puzzle-store";
 
 /** A short head shake for a wrong move (Web Animations; skipped under reduced motion). */
 const SHAKE: Keyframe[] = [
@@ -34,12 +33,16 @@ const feedbackTone: Record<PuzzleFeedbackKind, string> = {
   wrong: "border-danger/30 bg-danger-soft",
   complete: "border-accent/40 bg-accent-soft"
 };
+/** A failed puzzle that has been finished: settled, not alarming. */
+const failedCompleteTone = "border-danger/25 bg-surface-sunken";
 
 type PanelProps = {
   nextError: Error | null;
   nextPending: boolean;
   onNextPuzzle: () => void;
   onPlayEngineFromHere: () => void;
+  /** Back to the Puzzles page with this set's filters, to change them and start a new set. */
+  onEditSet: () => void;
   puzzleConfig: PuzzleSessionConfig | null;
 };
 
@@ -53,17 +56,28 @@ export const PuzzleInfoPanel = memo(function PuzzleInfoPanel(props: PanelProps) 
   const feedback = usePuzzleStore((state) => state.feedback);
   const lastExpectedMove = usePuzzleStore((state) => state.lastExpectedMove);
   const solutionIndex = usePuzzleStore((state) => state.solutionIndex);
+  const outcome = usePuzzleStore((state) => state.outcome);
+  const solutionViewed = usePuzzleStore((state) => state.attempt?.solutionViewed ?? false);
+  const wrongMoveCount = usePuzzleStore((state) => state.attempt?.wrongMoves.length ?? 0);
   const terminal = useGameStore((state) => positionStatus(state.currentFen).isEnd);
+  // Still solving on the board (not since turned into an analysis board).
+  const playing = useGameStore((state) => state.mode === "puzzle");
   if (!puzzle) return null;
   return (
+    // Keyed by puzzle: the next one starts with the solution folded and no feedback animation pending.
     <PuzzleCard
+      key={puzzle.id}
       {...props}
       puzzle={puzzle}
       feedbackKind={feedbackKind}
       feedback={feedback}
       lastExpectedMove={lastExpectedMove}
       solutionIndex={solutionIndex}
+      outcome={outcome}
+      solutionViewed={solutionViewed}
+      wrongMoveCount={wrongMoveCount}
       terminal={terminal}
+      playing={playing}
     />
   );
 });
@@ -74,34 +88,44 @@ function PuzzleCard({
   lastExpectedMove,
   nextError,
   nextPending,
+  onEditSet,
   onNextPuzzle,
   onPlayEngineFromHere,
+  outcome,
+  playing,
   puzzle,
   puzzleConfig,
   solutionIndex,
-  terminal
+  solutionViewed,
+  terminal,
+  wrongMoveCount
 }: PanelProps & {
   feedback: string | null;
   feedbackKind: PuzzleFeedbackKind;
   lastExpectedMove: string | null;
+  outcome: PuzzleOutcome;
+  playing: boolean;
   puzzle: PuzzleSample;
   solutionIndex: number;
+  solutionViewed: boolean;
   terminal: boolean;
+  wrongMoveCount: number;
 }) {
-  const solved = feedbackKind === "complete";
+  const complete = feedbackKind === "complete";
+  const failed = outcome === "failed";
   const wrong = feedbackKind === "wrong";
   const plies = puzzle.solutionMoves.length;
-  const progressCount = solved ? plies : Math.min(solutionIndex, plies);
+  const progressCount = complete ? plies : Math.min(solutionIndex, plies);
   // The solver plays every other ply; count their moves, not the replies.
   const playerMoves = Math.max(1, Math.ceil(plies / 2));
   const playerDone = Math.min(playerMoves, Math.ceil(progressCount / 2));
-  const tags = [...puzzle.themes, ...puzzle.openingTags].slice(0, 10);
-  const side = puzzle.sideToMove === "white" ? "White" : "Black";
+  const tags = [...puzzle.themes, ...puzzle.openingTags];
   const solution = useMemo(() => solutionLine(puzzle), [puzzle]);
   // The wrong-move hint for screen readers names the expected move in SAN, like the rest of the UI.
   const expectedSan = lastExpectedMove
     ? (solution.find((move, index) => index >= solutionIndex && move.uci === lastExpectedMove)?.san ?? lastExpectedMove)
     : null;
+  const setLine = puzzleConfig ? puzzleSetSummary(puzzleConfig, puzzleDatasetLabel(puzzle.sourceId, puzzle.sourceName)) : null;
 
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -110,33 +134,44 @@ function PuzzleCard({
     cardRef.current?.animate(SHAKE, { duration: 320, easing: "cubic-bezier(0.2, 0, 0, 1)" });
   }, [wrong, feedback]);
 
-  const headline =
-    feedbackKind === "complete"
-      ? "Solved"
-      : feedbackKind === "correct"
-        ? "Correct"
-        : feedbackKind === "wrong"
-          ? "Not quite"
-          : `${side} to move`;
+  // Side to move is in the summary above the panel (and the mark's dot): the idle card just asks.
+  const headline = complete
+    ? failed
+      ? "Failed"
+      : "Solved"
+    : feedbackKind === "correct"
+      ? "Correct"
+      : wrong
+        ? "Not quite"
+        : "Your turn";
   // The store's sentence repeats the headline for correct / solved; keep only what adds to it.
-  const detail =
-    feedbackKind === "idle"
+  const detail = complete
+    ? failed
+      ? wrongMoveCount
+        ? "Finished after a wrong move."
+        : "Finished with the solution shown."
+      : `${playerMoves === 1 ? "The winning move" : `All ${playerMoves} moves`} found.`
+    : feedbackKind === "idle"
       ? "Find the best move."
-      : feedbackKind === "complete"
-        ? `${playerMoves === 1 ? "The winning move" : `All ${playerMoves} moves`} found.`
-        : feedbackKind === "correct"
-          ? feedback && feedback !== "Correct." ? feedback : "Keep going."
-          : (feedback?.replace(/^Not quite\.\s*/, "") ?? "Try another move.");
+      : feedbackKind === "correct"
+        ? feedback && feedback !== "Correct." ? feedback : "Keep going."
+        : (feedback?.replace(/^Not quite\.\s*/, "") ?? "Try another move.");
+  // Once failed it stays failed; while unfinished, say it can still be played out.
+  const failedNote =
+    failed && !complete
+      ? [
+          "Failed",
+          solutionViewed && !wrongMoveCount ? "solution shown" : null,
+          playing ? "you can still finish it" : null
+        ]
+          .filter(Boolean)
+          .join(" — ")
+      : null;
 
   return (
     <section className="grid shrink-0 gap-3 border-b border-line-subtle pb-3" aria-label="Puzzle">
-      <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="grid min-w-0 gap-0.5">
-          <h2 className={cn(sectionTitle, "truncate")}>Puzzle #{puzzle.id}</h2>
-          <p className="truncate text-xs text-fg-muted" title={puzzle.sourceName}>
-            {puzzle.sourceName}
-          </p>
-        </div>
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <h2 className={cn(sectionTitle, "truncate")}>Puzzle #{puzzle.id}</h2>
         <div className="flex shrink-0 items-center gap-3 text-right">
           {puzzle.rating ? (
             <span className="grid gap-0.5">
@@ -157,15 +192,18 @@ function PuzzleCard({
         ref={cardRef}
         role="status"
         aria-live="polite"
-        className={cn("grid gap-3 rounded-lg border px-3 py-2.5 transition-colors duration-standard ease-standard", feedbackTone[feedbackKind])}
+        className={cn(
+          "grid gap-3 rounded-lg border px-3 py-2.5 transition-colors duration-standard ease-standard",
+          complete && failed ? failedCompleteTone : feedbackTone[feedbackKind]
+        )}
       >
         <div className="flex items-center gap-2.5">
-          <FeedbackMark kind={feedbackKind} sideToMove={puzzle.sideToMove} />
+          <FeedbackMark kind={complete && failed ? "wrong" : feedbackKind} sideToMove={puzzle.sideToMove} />
           <div key={`${feedbackKind}-${feedback ?? ""}`} className="grid min-w-0 flex-1 animate-rise-in gap-0.5">
             <p
               className={cn(
                 "text-sm font-semibold",
-                wrong ? "text-danger" : feedbackKind === "idle" ? "text-fg" : "text-accent-fg"
+                wrong || (complete && failed) ? "text-danger" : feedbackKind === "idle" ? "text-fg" : "text-accent-fg"
               )}
             >
               {headline}
@@ -174,82 +212,110 @@ function PuzzleCard({
             {wrong && expectedSan ? <span className="sr-only"> Expected move: {expectedSan}.</span> : null}
           </div>
         </div>
+        {failedNote ? (
+          <p key={failedNote} className="animate-fade-in text-xs font-medium text-danger">
+            {failedNote}
+          </p>
+        ) : null}
         <SolutionProgress done={playerDone} total={playerMoves} wrong={wrong} />
       </div>
 
-      {solved ? (
+      {complete || failed ? (
         <div className="grid animate-rise-in gap-2">
-          <Button type="button" variant="primary" className="h-10" disabled={nextPending} onClick={onNextPuzzle}>
+          {/* Finished: on to the next one. Failed and unfinished: the next one is there to skip to. */}
+          <Button
+            type="button"
+            variant={complete ? "primary" : "outline"}
+            className={complete ? "h-10" : undefined}
+            disabled={nextPending}
+            onClick={onNextPuzzle}
+          >
             {nextPending ? <Loader2 className="animate-spin" /> : <Puzzle />}
             {nextPending ? "Finding the next puzzle…" : "Next puzzle"}
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={terminal}
-            onClick={onPlayEngineFromHere}
-            title={terminal ? "This position is already finished" : "Continue against the default engine"}
-          >
-            <Swords />
-            Play engine from here
-          </Button>
+          {complete ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={terminal}
+              onClick={onPlayEngineFromHere}
+              title={terminal ? "This position is already finished" : "Continue against the default engine"}
+            >
+              <Swords />
+              Play engine from here
+            </Button>
+          ) : null}
           {nextError ? <Notice tone="danger">{ipcErrorMessage(nextError) || nextError.message}</Notice> : null}
         </div>
       ) : null}
 
-      <div className="grid gap-1">
-        <Disclosure title={solved ? "Solution" : "Show solution"}>
-          <ol className="flex flex-wrap gap-x-2 gap-y-1 text-sm leading-6" aria-label="Solution moves">
-            {solution.map((move, index) => (
-              <li
-                key={`${index}-${move.uci}`}
-                className={cn("tabular-nums", index < progressCount ? "text-fg" : "text-fg-muted")}
-              >
-                {move.number ? <span className="mr-1 text-fg-subtle">{move.number}</span> : null}
-                {/* Once solved every move is on the board's line: each one jumps there. */}
-                {solved && move.valid ? (
-                  <MoveLink
-                    san={move.san}
-                    onActivate={() => useGameStore.getState().goToLine("root", solution.slice(0, index + 1).map((item) => item.san))}
-                  />
-                ) : (
-                  move.san
-                )}
-              </li>
-            ))}
-          </ol>
-        </Disclosure>
-        {puzzleConfig ? (
-          <Disclosure title="Next puzzle filters">
-            <div className="flex flex-wrap gap-1.5">
-              {puzzleFilterChips(puzzleConfig).map((chip) => (
-                <Badge key={chip}>{chip}</Badge>
-              ))}
-            </div>
-          </Disclosure>
-        ) : null}
-      </div>
+      <Disclosure
+        title={complete ? "Solution" : "Show solution"}
+        // Looking before it's solved fails the puzzle (as on Lichess): say so before the click.
+        summary={outcome === "pending" ? "Counts as failed" : undefined}
+        onOpenChange={(open) => {
+          if (open) usePuzzleStore.getState().revealSolution();
+        }}
+      >
+        <ol className="flex flex-wrap gap-x-2 gap-y-1 text-sm leading-6" aria-label="Solution moves">
+          {solution.map((move, index) => (
+            <li
+              key={`${index}-${move.uci}`}
+              className={cn("tabular-nums", index < progressCount ? "text-fg" : "text-fg-muted")}
+            >
+              {move.number ? <span className="mr-1 text-fg-subtle">{move.number}</span> : null}
+              {/* Once finished every move is on the board's line: each one jumps there. */}
+              {complete && move.valid ? (
+                <MoveLink
+                  san={move.san}
+                  onActivate={() => useGameStore.getState().goToLine("root", solution.slice(0, index + 1).map((item) => item.san))}
+                />
+              ) : (
+                move.san
+              )}
+            </li>
+          ))}
+        </ol>
+      </Disclosure>
 
       {tags.length ? (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Themes">
+          <span className="mr-0.5 text-xs text-fg-subtle" aria-hidden="true">
+            Themes
+          </span>
           {tags.map((tag) => (
             <Badge key={tag} className="max-w-full">
-              <span className="truncate">{formatTag(tag)}</span>
+              <span className="truncate">{formatPuzzleTag(tag)}</span>
             </Badge>
           ))}
         </div>
       ) : null}
 
-      {puzzle.gameUrl ? (
-        <a
-          href={puzzle.gameUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex w-fit items-center gap-1.5 rounded text-xs text-fg-muted outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/50"
-        >
-          <ExternalLink className="size-3.5" aria-hidden="true" />
-          Source game
-        </a>
+      {setLine || puzzle.gameUrl ? (
+        <div className="grid gap-1.5">
+          {setLine ? (
+            <div className="flex min-w-0 items-baseline justify-between gap-3">
+              <p className="min-w-0 text-xs leading-5 text-fg-muted">
+                <span className="text-fg-subtle">Set: </span>
+                {setLine}
+              </p>
+              <Button type="button" variant="link" size="xs" className="shrink-0" onClick={onEditSet}>
+                Edit set
+              </Button>
+            </div>
+          ) : null}
+          {puzzle.gameUrl ? (
+            <a
+              href={puzzle.gameUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex w-fit items-center gap-1.5 rounded text-xs text-fg-muted outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/50"
+            >
+              <ExternalLink className="size-3.5" aria-hidden="true" />
+              Source game
+            </a>
+          ) : null}
+        </div>
       ) : null}
     </section>
   );
@@ -335,27 +401,4 @@ function safeApply(fen: string, uci: string): ReturnType<typeof applyUserMove> {
   } catch {
     return null;
   }
-}
-
-/** "mateIn2" → "mate in 2", "Caro-Kann_Defense" → "Caro-Kann Defense". */
-function formatTag(value: string): string {
-  if (value.includes("_")) return value.replace(/_/g, " ");
-  return value.replace(/([a-z])([A-Z0-9])/g, "$1 $2").toLowerCase();
-}
-
-function puzzleFilterChips(config: PuzzleSessionConfig): string[] {
-  if (config.mode === "lichess-puzzle") {
-    return [
-      `rating ${config.lichess.ratingMin}–${config.lichess.ratingMax}`,
-      `popularity ${config.lichess.popularityMin}+`,
-      `side ${config.lichess.side}`,
-      ...(config.lichess.themes.length ? config.lichess.themes.map(formatTag) : ["any theme"]),
-      ...(config.lichess.openings.length ? config.lichess.openings.map(formatTag) : []),
-      ...(config.lichess.lengths.length ? config.lichess.lengths.map(formatTag) : [])
-    ].slice(0, 12);
-  }
-  return [
-    `difficulty ${config.position.difficultyMin}–${config.position.difficultyMax}`,
-    ...(config.position.tags.length ? config.position.tags.map(formatTag) : ["any tag"])
-  ].slice(0, 12);
 }

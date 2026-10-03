@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 
-type PuzzleFeedbackKind = "idle" | "correct" | "wrong" | "complete";
+export type PuzzleFeedbackKind = "idle" | "correct" | "wrong" | "complete";
 
 /**
  * How the puzzle went, as Lichess scores it: `failed` from the first wrong move or from opening
