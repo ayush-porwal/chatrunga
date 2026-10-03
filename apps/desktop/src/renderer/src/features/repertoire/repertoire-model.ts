@@ -61,7 +61,16 @@ export const CHOICE_LABELS: Record<ChoiceState, string> = {
   accepted: "Accepted",
   reference: "Reference only",
   covered: "Covered",
-  untrained: "Not trained here"
+  untrained: "Not practised"
+};
+
+/** What each state means for practice (the badge's description). */
+export const CHOICE_DESCRIPTIONS: Record<ChoiceState, string> = {
+  preferred: "Correct in practice, and the move hints point at.",
+  accepted: "Also correct in practice.",
+  reference: "Kept for study only: practice doesn't count it as correct. Accept it to practise it.",
+  covered: "A reply you prepare for: practice plays it to you and goes on from there.",
+  untrained: "This position isn't practised, so the move isn't asked or played in practice."
 };
 
 /**

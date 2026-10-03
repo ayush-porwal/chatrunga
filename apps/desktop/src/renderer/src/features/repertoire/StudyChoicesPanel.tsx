@@ -12,7 +12,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SectionHeader } from "@/components/ui/page";
 import { BoundaryControls } from "./StudyBoundaryControls";
+import { scopeCause } from "@chaturanga/shared/chess/repertoire-training";
+import { EDGE_NOTES, MARK_TEXT, scopeReason } from "./training-explanations";
 import {
+  CHOICE_DESCRIPTIONS,
   CHOICE_LABELS,
   choiceActions,
   deriveChoices,
@@ -31,12 +34,30 @@ const STATE_ICONS: Record<ChoiceState, typeof Star> = {
   untrained: CircleSlash
 };
 
-const ACTION_LABELS: Record<ChoiceAction["kind"], string> = {
-  accept: "Accept",
-  prefer: "Prefer",
-  "make-reference": "Make reference",
-  cover: "Cover"
+const ACTION_LABELS: Record<ChoiceAction["kind"], { label: string; description: string }> = {
+  accept: { label: "Accept", description: "Count this move as correct in practice" },
+  prefer: { label: "Prefer", description: "Make this the move hints point at in practice" },
+  "make-reference": {
+    label: "Make reference",
+    description: "Keep this move for study only: practice won't ask it or go on after it"
+  },
+  cover: { label: "Cover", description: "Prepare for this reply: practice plays it and goes on" }
 };
+
+/**
+ * Why a row outside training scope isn't practised: what keeps its position out of scope, else
+ * what keeps the move itself out (a left-out branch, an end of practice at the position).
+ */
+function untrainedReason(
+  chapter: RepertoireChapter,
+  lookup: ChapterLookup,
+  positionNodeId: string,
+  row: ChoiceRow
+): string | null {
+  const cause =
+    scopeCause(chapter, lookup, positionNodeId) ?? scopeCause(chapter, lookup, row.nodeId);
+  return cause ? scopeReason(cause, lookup) : null;
+}
 
 const STATE_TONES: Record<ChoiceState, "accent" | "info" | "neutral"> = {
   preferred: "accent",
@@ -111,8 +132,8 @@ export function StudyChoicesPanel({
           }
           description={
             choices.side === "player"
-              ? "Any accepted move counts as correct in practice; hints point at the preferred one. Main line is only the chapter's move order (as PGN export writes it)."
-              : "Covered replies continue into training; reference replies are study only. Main line is only the chapter's move order (as PGN export writes it)."
+              ? "Accepted moves count as correct in practice, and hints point at the preferred one. Reference moves are kept for study only. “Main line” is just the chapter's move order."
+              : "Practice plays covered replies to you and goes on from there. Reference replies are kept for study only. “Main line” is just the chapter's move order."
           }
         />
         {choices.rows.length ? (
@@ -123,6 +144,11 @@ export function StudyChoicesPanel({
                 row={row}
                 side={choices.side}
                 mainLine={row.nodeId === mainLineId && choices.rows.length > 1}
+                untrainedReason={
+                  row.state === "untrained"
+                    ? untrainedReason(chapter, lookup, selectedNodeId, row)
+                    : null
+                }
                 busy={busy}
                 onSelect={() => onSelectNode(row.nodeId)}
                 onSetEdge={(edge) => onSetEdge(row.nodeId, edge)}
@@ -184,6 +210,7 @@ export function StudyChoicesPanel({
       {isRoot ? null : (
         <BoundaryControls
           chapter={chapter}
+          lookup={lookup}
           color={color}
           nodeId={selectedNodeId}
           onSetMeta={onSetMeta}
@@ -198,6 +225,7 @@ function ChoiceItem({
   row,
   side,
   mainLine,
+  untrainedReason,
   busy,
   onSelect,
   onSetEdge,
@@ -207,6 +235,8 @@ function ChoiceItem({
   side: "player" | "opponent";
   /** First in the chapter's order (shown only when there are alternatives). */
   mainLine: boolean;
+  /** Why a move outside training scope isn't practised ("1. e4 is reference only"). */
+  untrainedReason: string | null;
   busy: boolean;
   onSelect: () => void;
   onSetEdge: (edge: RepertoireNodeMeta["edge"]) => void;
@@ -214,63 +244,67 @@ function ChoiceItem({
 }) {
   const Icon = STATE_ICONS[row.state];
   return (
-    <li className="flex min-h-9 items-center gap-2 rounded-lg border border-line-subtle bg-surface-sunken px-2 py-1">
-      <Button
-        type="button"
-        variant="ghost"
-        size="xs"
-        className="min-w-14 justify-start font-mono"
-        onClick={onSelect}
-      >
-        {row.san}
-      </Button>
-      <Badge tone={STATE_TONES[row.state]}>
-        <Icon aria-hidden="true" />
-        {CHOICE_LABELS[row.state]}
-      </Badge>
-      {row.state === "untrained" ? (
-        <span className="text-2xs text-fg-subtle">
-          {row.edge === "reference" ? "reference" : side === "player" ? "accepted" : "covered"}
-        </span>
-      ) : null}
-      {mainLine ? (
-        <span
-          className="whitespace-nowrap text-2xs text-fg-subtle"
-          title="First in this chapter's move order, as PGN export writes it. Promote variation changes it; it doesn't change what practice expects."
+    <li className="grid gap-0.5 rounded-lg border border-line-subtle bg-surface-sunken px-2 py-1">
+      <div className="flex min-h-7 items-center gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          className="min-w-14 justify-start font-mono"
+          onClick={onSelect}
         >
-          main line
-        </span>
-      ) : null}
-      {row.disabled ? (
-        <Badge tone="warn">
-          <Ban aria-hidden="true" />
-          Disabled
+          {row.san}
+        </Button>
+        <Badge tone={STATE_TONES[row.state]} title={CHOICE_DESCRIPTIONS[row.state]}>
+          <Icon aria-hidden="true" />
+          {CHOICE_LABELS[row.state]}
+          <span className="sr-only">: {CHOICE_DESCRIPTIONS[row.state]}</span>
         </Badge>
-      ) : null}
-      <div className="ml-auto flex items-center gap-1">
-        {choiceActions(row, side).map((action) => (
-          <Button
-            key={action.kind}
-            type="button"
-            variant={action.variant}
-            size="xs"
-            disabled={busy}
-            onClick={() =>
-              action.kind === "prefer"
-                ? onPrefer()
-                : onSetEdge(
-                    action.kind === "accept"
-                      ? "included"
-                      : action.kind === "cover"
-                        ? "covered"
-                        : "reference"
-                  )
-            }
+        {mainLine ? (
+          <span
+            className="whitespace-nowrap text-2xs text-fg-subtle"
+            title="First in this chapter's move order, as PGN export writes it. Promote variation changes it; it doesn't change what practice expects."
           >
-            {ACTION_LABELS[action.kind]}
-          </Button>
-        ))}
+            main line
+          </span>
+        ) : null}
+        {row.disabled ? (
+          <Badge tone="warn" title={MARK_TEXT.disabled.description}>
+            <Ban aria-hidden="true" />
+            Left out
+          </Badge>
+        ) : null}
+        <div className="ml-auto flex items-center gap-1">
+          {choiceActions(row, side).map((action) => (
+            <Button
+              key={action.kind}
+              type="button"
+              variant={action.variant}
+              size="xs"
+              disabled={busy}
+              title={ACTION_LABELS[action.kind].description}
+              onClick={() =>
+                action.kind === "prefer"
+                  ? onPrefer()
+                  : onSetEdge(
+                      action.kind === "accept"
+                        ? "included"
+                        : action.kind === "cover"
+                          ? "covered"
+                          : "reference"
+                    )
+              }
+            >
+              {ACTION_LABELS[action.kind].label}
+            </Button>
+          ))}
+        </div>
       </div>
+      {untrainedReason ? (
+        <p className="pl-1 text-2xs text-fg-subtle">
+          {EDGE_NOTES[row.edge]} · not practised because {untrainedReason}
+        </p>
+      ) : null}
     </li>
   );
 }
