@@ -48,6 +48,9 @@ import type {
 } from "../types/database";
 
 import type {
+  AddFromGameInput,
+  AddFromGamePreview,
+  AddFromGameResult,
   ArchiveRepertoireInput,
   AttemptResult,
   ChapterSaveResult,
@@ -72,6 +75,7 @@ import type {
   RepertoireChangeResult,
   RepertoireChapter,
   RepertoireComparison,
+  RepertoireGameLink,
   RepertoireDecision,
   RepertoireDetail,
   RepertoireOccurrence,
@@ -296,6 +300,13 @@ export type ChaturangaApi = {
     }): Promise<RepertoireOccurrence[]>;
     /** A finished game's mainline against one repertoire (§6.3); local, no engine needed. */
     compareGame(input: CompareGameInput): Promise<RepertoireComparison>;
+    /** What adding part of a game would change (§6.2); nothing is written. */
+    previewAddFromGame(input: AddFromGameInput): Promise<AddFromGamePreview>;
+    /** Copies the selected material into a chapter with the confirmed policy and records provenance. */
+    addFromGame(input: AddFromGameInput): Promise<AddFromGameResult>;
+    /** Provenance links of a repertoire, optionally one chapter's. */
+    listGameLinks(input: { repertoireId: string; chapterId?: string }): Promise<RepertoireGameLink[]>;
+    removeGameLink(input: { repertoireId: string; linkId: string }): Promise<void>;
     create(input: CreateRepertoireInput): Promise<RepertoireDetail>;
     updateMetadata(input: UpdateRepertoireMetadataInput): Promise<RepertoireDetail>;
     /** Saves one chapter and reconciles decisions/index/progress in the same transaction. */

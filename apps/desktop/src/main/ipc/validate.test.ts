@@ -7,10 +7,12 @@ import {
   asLichessId,
   asLichessUci,
   asUciMoves,
+  parseAddFromGameInput,
   parseDefaultFileName,
   parseDialogFilters,
   parseEngineInput,
   parseEnginePatch,
+  parseGameLinkQuery,
   parseGameListQuery,
   parseLichessAiChallengeInput,
   parseLichessChallengeInput,
@@ -19,6 +21,7 @@ import {
   parsePgnText,
   parseProbeEvalInput,
   parsePuzzleSampleInput,
+  parseRemoveGameLink,
   parseReviewGameInput,
   parseSaveGameInput,
   parseSettingKey,
@@ -289,5 +292,47 @@ describe("parseSettingsPatch", () => {
     expect(parseGameListQuery({ search: "x".repeat(GAME_SEARCH_MAX_LENGTH) }).search).toHaveLength(GAME_SEARCH_MAX_LENGTH);
     expect(() => parseGameListQuery({ search: "x".repeat(GAME_SEARCH_MAX_LENGTH + 1) })).toThrow(/search/);
     expect(() => parseGameListQuery("all")).toThrow();
+  });
+});
+
+describe("add-from-game inputs", () => {
+  const valid = {
+    repertoireId: "r1",
+    expectedRevision: 3,
+    destination: { kind: "new-chapter", title: "Line", chapterKind: "opening" },
+    source: { gameId: null, headers: { White: "A" }, rootFen: START, tree: [], nodeId: "n2" },
+    scope: { kind: "subtree", fromNodeId: "n2", root: "standalone" },
+    policy: { includedNodeIds: ["n3"], coveredNodeIds: [] }
+  };
+
+  it("parses the discriminated scope and destination and the policy ids", () => {
+    expect(parseAddFromGameInput(valid)).toEqual(valid);
+    expect(parseAddFromGameInput({ ...valid, scope: { kind: "whole-game", extra: 1 } }).scope).toEqual({ kind: "whole-game" });
+    expect(
+      parseAddFromGameInput({ ...valid, destination: { kind: "existing-chapter", chapterId: "c1" } }).destination
+    ).toEqual({ kind: "existing-chapter", chapterId: "c1" });
+    expect(parseAddFromGameInput({ ...valid, source: { ...valid.source, gameId: undefined } }).source.gameId).toBeNull();
+    expect(parseAddFromGameInput({ ...valid, policy: null }).policy).toBeNull();
+    expect(() => parseAddFromGameInput({ ...valid, policy: undefined })).toThrow(/Invalid policy/);
+  });
+
+  it("refuses malformed input", () => {
+    expect(() => parseAddFromGameInput({ ...valid, scope: { kind: "line" } })).toThrow(/Invalid scope/);
+    expect(() => parseAddFromGameInput({ ...valid, scope: { kind: "subtree", fromNodeId: "n2", root: "x" } })).toThrow(/scope root/);
+    expect(() => parseAddFromGameInput({ ...valid, destination: { kind: "x" } })).toThrow(/Invalid destination/);
+    expect(() => parseAddFromGameInput({ ...valid, source: { ...valid.source, tree: {} } })).toThrow(/source tree/);
+    expect(() => parseAddFromGameInput({ ...valid, source: { ...valid.source, rootFen: "bad" } })).toThrow(/source rootFen/);
+    const headers = Object.fromEntries(Array.from({ length: 201 }, (_, index) => [`T${index}`, "v"]));
+    expect(() => parseAddFromGameInput({ ...valid, source: { ...valid.source, headers } })).toThrow(/too many entries/);
+    expect(() => parseAddFromGameInput({ ...valid, policy: { includedNodeIds: [""], coveredNodeIds: [] } })).toThrow(
+      /includedNodeIds\[0\]/
+    );
+  });
+
+  it("parses link queries and removals", () => {
+    expect(parseGameLinkQuery({ repertoireId: "r1" })).toEqual({ repertoireId: "r1" });
+    expect(parseGameLinkQuery({ repertoireId: "r1", chapterId: "c1" })).toEqual({ repertoireId: "r1", chapterId: "c1" });
+    expect(parseRemoveGameLink({ repertoireId: "r1", linkId: "l1" })).toEqual({ repertoireId: "r1", linkId: "l1" });
+    expect(() => parseRemoveGameLink({ repertoireId: "r1" })).toThrow(/linkId/);
   });
 });

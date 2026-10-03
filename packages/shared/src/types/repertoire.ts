@@ -423,6 +423,103 @@ export type RepertoireDueSummary = {
   continue: { repertoireId: string; chapterId: string; nodeId: string } | null;
 };
 
+/* ------------------------------------------------------------------ add from a game (§6.2) */
+
+/** Which part of a game's tree becomes repertoire material. */
+export type AddFromGameScope =
+  /** The main route from the game's root to `toNodeId` (a line, no side variations). */
+  | { kind: "path"; toNodeId: string }
+  /**
+   * The subtree under `fromNodeId` (its variations included). `root: "original"` keeps the
+   * game's root and the moves leading to the node as study context; `root: "standalone"` makes a
+   * chapter whose root is the node's position (SetUp/FEN on export).
+   */
+  | { kind: "subtree"; fromNodeId: string; root: "original" | "standalone" }
+  /** The whole game, variations included; defaults to a reference chapter. */
+  | { kind: "whole-game" };
+
+export type AddFromGameDestination =
+  | { kind: "new-chapter"; title: string; chapterKind: ChapterKind }
+  /** Merge into an existing chapter: matched by root position and UCI paths; existing comments stay. */
+  | { kind: "existing-chapter"; chapterId: string };
+
+/** The source game as the renderer holds it (a library game or the board's unsaved game). */
+export type AddFromGameSource = {
+  /** Library id when the game is saved; null for an unsaved board. */
+  gameId: string | null;
+  headers: Record<string, string>;
+  rootFen: string;
+  tree: MoveNode[];
+  /** The game node the user was looking at when they asked (provenance only). */
+  nodeId: string | null;
+};
+
+export type AddFromGameInput = {
+  repertoireId: string;
+  expectedRevision: number;
+  destination: AddFromGameDestination;
+  source: AddFromGameSource;
+  scope: AddFromGameScope;
+  /**
+   * Explicit choice policy for the copied material, by SOURCE node id: own-side moves to accept
+   * (`included`) and opponent moves to cover; everything else is copied as reference. `null` asks
+   * for the proposed defaults (preview returns them as `defaultPolicy`); the user confirms them.
+   * Never inferred from PGN order or NAGs alone. `addFromGame` requires an explicit policy.
+   */
+  policy: { includedNodeIds: string[]; coveredNodeIds: string[] } | null;
+};
+
+/** What committing `AddFromGameInput` would do, so the dialog can show it first. */
+export type AddFromGamePreview = {
+  chapterTitle: string;
+  /** Moves that will be copied (after scope selection). */
+  nodeCount: number;
+  /** Unique decisions the repertoire gains with the proposed policy. */
+  decisionsAdded: number;
+  /** Positions already decided in this repertoire where the new material proposes another move. */
+  conflicts: {
+    positionKey: string;
+    fen: string;
+    existingUcis: string[];
+    preferredUci: string | null;
+    newUci: string;
+    newSan: string;
+    /** SAN path to the position in the source game, e.g. `"1. e4 e5 2. Nf3 Nc6"`. */
+    path: string;
+  }[];
+  /** Copied positions the repertoire already reaches elsewhere. */
+  transpositions: number;
+  /** For an existing-chapter destination: moves that already exist there (kept, not duplicated). */
+  alreadyPresent: number;
+  /** The proposed default policy (own-side moves along covered routes included; replies covered). */
+  defaultPolicy: { includedNodeIds: string[]; coveredNodeIds: string[] };
+  /** Source own-side move candidates the dialog lists with checkboxes (in route order). */
+  ownMoves: { nodeId: string; san: string; uci: string; ply: number; path: string }[];
+  /** Opponent moves in the selected material (context moves excluded), the "cover replies" set. */
+  opponentMoves: { nodeId: string; san: string; uci: string; ply: number; path: string }[];
+  warnings: string[];
+};
+
+export type AddFromGameResult = ChapterSaveResult & { link: RepertoireGameLink };
+
+/** Provenance: which game (or part of one) a chapter's material came from. */
+export type RepertoireGameLink = {
+  id: string;
+  repertoireId: string;
+  chapterId: string | null;
+  /** Null once the library game was deleted; the copied material and headers remain. */
+  gameId: string | null;
+  /** The source was a board game never saved to the library (gameId was null from the start). */
+  unsaved: boolean;
+  gameNodeId: string | null;
+  kind: "source" | "model";
+  /** The game's headers at link time (White, Black, Event, Date, Site/URL…). */
+  headers: Record<string, string>;
+  /** SAN path of the copied route's end in the game, e.g. `"1. e4 e5 2. Nf3"`. */
+  capturedPath: string;
+  createdAt: number;
+};
+
 /* ------------------------------------------------------------------ game comparison (§6.3) */
 
 /** How one mainline move of a finished game relates to the selected repertoire. */

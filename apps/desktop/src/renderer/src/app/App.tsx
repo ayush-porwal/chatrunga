@@ -6,7 +6,6 @@ import { createGameFromFen } from "@chaturanga/shared/chess/pgn";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import type { ImportedGame } from "@chaturanga/shared/types/chess";
 import { defaultSettings } from "@chaturanga/shared/types/settings";
-import { REPERTOIRE_ROOT_NODE_ID } from "@chaturanga/shared/types/repertoire";
 import { Notice } from "@/components/ui/notice";
 import { hasDesktopApi, isElectronMac } from "@/lib/environment";
 import { positionStatus } from "@/lib/position-status";
@@ -42,7 +41,7 @@ import { nextPuzzleInput, puzzleBoard, usePuzzleSession } from "./puzzle-session
 import { AppSidebar } from "./AppSidebar";
 import { AppTitlebar, GameTitlebar, LiveGameButton, PageTitle, ReviewTitlebar } from "./AppTitlebar";
 import type { SideTab } from "./GameWorkspace";
-import { AppPages, GameReviewPicker, OnboardingFlow, type AppView } from "./AppPages";
+import { AddToRepertoireDialog, AppPages, GameReviewPicker, OnboardingFlow, type AppView } from "./AppPages";
 import { PuzzleInfoPanel } from "./PuzzleInfoPanel";
 import { useBoardShortcuts } from "./useBoardShortcuts";
 import { useEngineDriver, type AnalysisOptions } from "./useEngineDriver";
@@ -69,6 +68,8 @@ import { RepertoirePracticeTitlebar, RepertoireStudyTitlebar } from "../features
 import { flushChapterDraft } from "../features/repertoire/useChapterAutosave";
 import { useRepertoirePracticeStore } from "../stores/repertoire-practice-store";
 import { useRepertoireWorkspaceStore } from "../stores/repertoire-workspace-store";
+import { useAddToRepertoireStore } from "../stores/add-to-repertoire-store";
+import { REPERTOIRE_ROOT_NODE_ID, type AddFromGameResult } from "@chaturanga/shared/types/repertoire";
 import type { RepertoireScreen } from "./AppPages";
 
 /** What App keeps for the repertoire screens besides the ids in the URL. */
@@ -183,7 +184,11 @@ export function App() {
   // Focus mode only exists on a board view; leaving one ends it (the stored flag resets below).
   const onBoardView = boardViews.has(appView);
   const appNotice = useAppNoticeStore((state) => state.message);
+  const appNoticeTone = useAppNoticeStore((state) => state.tone);
+  const appNoticeAction = useAppNoticeStore((state) => state.action);
   const dismissAppNotice = useAppNoticeStore((state) => state.dismiss);
+  const addToRepertoire = useAddToRepertoireStore((state) => state.request);
+  const closeAddToRepertoire = useAddToRepertoireStore((state) => state.close);
   const focused = focusMode && onBoardView;
   // Focus mode collapses the sidebar to its rail without forgetting the user's own choice.
   const sidebarExpanded = actionRailOpen && !focused;
@@ -635,8 +640,11 @@ export function App() {
     record("push", historyEntry("game-review"));
   }
 
-  /** Home → Resume / a recent game: the board with that saved game (the loaded game is kept as is). */
-  async function openSavedGameById(gameId: string) {
+  /**
+   * Home → Resume / a recent game: the board with that saved game (the loaded game is kept as is).
+   * With `nodeId` (a repertoire source link), the board then shows that move when the game has it.
+   */
+  async function openSavedGameById(gameId: string, nodeId: string | null = null) {
     commitCurrent();
     const request = ++latestNavigation.current;
     if (gameId !== currentGame().gameId) {
@@ -654,6 +662,7 @@ export function App() {
       currentGame().setEngineSide(null);
       currentGame().clearEngineMatchExtras();
     }
+    if (nodeId) currentGame().goToNode(nodeId);
     setFocusMode(false);
     showGame();
   }
@@ -996,6 +1005,25 @@ export function App() {
     repertoirePositionChanged: useEventCallback(() => {
       if (appView === "repertoire-study" && !historyBusy.current) record("replace", historyEntry("repertoire-study"));
     }),
+    // A repertoire source link: the saved game on the board at the linked move (no move: the
+    // game's start, even when the game is already open at a later move).
+    openGameAtNode: useEventCallback((gameId: string, nodeId: string | null) =>
+      unlessOnlineGame(() => void openSavedGameById(gameId, nodeId ?? "root"))
+    ),
+    closeAddToRepertoire: useEventCallback(closeAddToRepertoire),
+    // Added: the dialog closes and the notice offers the chapter (Back returns here).
+    addedToRepertoire: useEventCallback((result: AddFromGameResult) => {
+      closeAddToRepertoire();
+      const target = {
+        repertoireId: result.repertoire.id,
+        chapterId: result.chapter.id,
+        nodeId: REPERTOIRE_ROOT_NODE_ID
+      };
+      useAppNoticeStore.getState().show(`Added to ${result.repertoire.name} › ${result.chapter.title}`, {
+        tone: "success",
+        action: { label: "Open chapter", onSelect: () => on.openRepertoireStudy(target) }
+      });
+    }),
     repertoirePracticeStarted: useEventCallback(practiceSessionStarted),
     repertoirePracticeSetup: useEventCallback(practiceSetup)
   };
@@ -1117,12 +1145,27 @@ export function App() {
         <main className={cn(contentPanel, "col-start-2 row-start-2 [view-transition-name:app-content]")}>
           {appNotice ? (
             <Notice
-              tone="danger"
+              tone={appNoticeTone}
               className="mx-(--page-gutter) mt-(--page-gutter-y) w-auto shrink-0"
               action={
-                <Button type="button" variant="link" size="xs" onClick={dismissAppNotice}>
-                  Dismiss
-                </Button>
+                <div className="flex gap-2">
+                  {appNoticeAction ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      onClick={() => {
+                        dismissAppNotice();
+                        appNoticeAction.onSelect();
+                      }}
+                    >
+                      {appNoticeAction.label}
+                    </Button>
+                  ) : null}
+                  <Button type="button" variant="link" size="xs" onClick={dismissAppNotice}>
+                    Dismiss
+                  </Button>
+                </div>
               }
             >
               {appNotice}
@@ -1169,6 +1212,15 @@ export function App() {
         />
       ) : null}
       {importOpen ? <PgnImportDialog onClose={on.closeImportDialog} onImported={on.importedGame} /> : null}
+      {addToRepertoire ? (
+        <AddToRepertoireDialog
+          source={addToRepertoire.source}
+          initialScope={addToRepertoire.initialScope}
+          preselect={addToRepertoire.preselect}
+          onClose={on.closeAddToRepertoire}
+          onDone={on.addedToRepertoire}
+        />
+      ) : null}
       {gameReviewPickerOpen ? (
         <GameReviewPicker
           onClose={on.closeReviewPicker}

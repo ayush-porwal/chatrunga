@@ -12,8 +12,13 @@ import {
   COMPARE_GAME_MAX_PLIES,
   REPERTOIRE_POSITION_KEY_VERSION,
   REPERTOIRE_ROOT_NODE_ID,
+  type AddFromGameInput,
+  type AddFromGamePreview,
+  type AddFromGameResult,
+  type AddFromGameScope,
   type ArchiveRepertoireInput,
   type AttemptResult,
+  type ChapterKind,
   type ChapterSaveResult,
   type CompareGameInput,
   type CreateRepertoireInput,
@@ -37,10 +42,12 @@ import {
   type RepertoireChangedEvent,
   type RepertoireChangeResult,
   type RepertoireChapter,
+  type RepertoireColor,
   type RepertoireComparison,
   type RepertoireDecision,
   type RepertoireDetail,
   type RepertoireDueSummary,
+  type RepertoireGameLink,
   type RepertoireListFilters,
   type RepertoireNodeMeta,
   type RepertoireOccurrence,
@@ -52,7 +59,19 @@ import {
   type UpdateRepertoireMetadataInput
 } from "@chaturanga/shared/types/repertoire";
 import { START_FEN } from "@chaturanga/shared/chess/position";
-import { playerToMove } from "@chaturanga/shared/chess/repertoire-position";
+import { playerToMove, positionKey } from "@chaturanga/shared/chess/repertoire-position";
+import {
+  applyPolicy,
+  extractScope,
+  listOpponentMoves,
+  listOwnMoves,
+  pathToPosition,
+  proposePolicy,
+  untrainedMoveWarnings,
+  type AddFromGamePolicy,
+  type ExtractedScope
+} from "@chaturanga/shared/chess/repertoire-add-from-game";
+import { mergeIntoChapter } from "@chaturanga/shared/chess/repertoire-merge";
 import {
   acceptanceFingerprint,
   buildChapterLookup,
@@ -96,6 +115,8 @@ import {
   attemptRepository,
   chapterRepository,
   decisionRepository,
+  gameLinkRepository,
+  libraryGameExists,
   positionIndexRepository,
   progressRepository,
   repertoireRepository,
@@ -1000,6 +1021,397 @@ export async function exportRepertoire(
     savedPath = choice.filePath;
   }
   return { pgn, chapterCount: chapters.length, savedPath };
+}
+
+/* ------------------------------------------------------------------ add from a game (§6.2) */
+
+type AddFromGamePlan = {
+  /** The chapter as it would be stored (sanitised; next chapter revision). */
+  chapter: RepertoireChapter;
+  preview: AddFromGamePreview;
+  linkHeaders: Record<string, string>;
+  gameNodeId: string | null;
+  capturedPath: string;
+};
+
+/** A title from the game's tags when the dialog gives none. */
+function gameTitle(headers: Record<string, string>): string {
+  const known = (value: string | undefined) => {
+    const trimmed = value?.trim();
+    return trimmed && trimmed !== "?" ? trimmed : null;
+  };
+  const white = known(headers.White ?? headers.white);
+  const black = known(headers.Black ?? headers.black);
+  if (white && black) return `${white} – ${black}`;
+  return known(headers.Event ?? headers.event) ?? "Game excerpt";
+}
+
+/** The game tree checked like a chapter tree (legal moves, root "root", castling as e1g1). */
+function validateSourceTree(input: AddFromGameInput["source"]): {
+  rootFen: string;
+  tree: MoveNode[];
+} {
+  const rootFen = typeof input.rootFen === "string" ? input.rootFen.trim() : "";
+  if (!rootFen || !isValidFen(rootFen)) {
+    throw new Error("Invalid source rootFen: not a legal position");
+  }
+  if (!Array.isArray(input.tree)) throw new Error("Invalid source tree: expected an array");
+  try {
+    return { rootFen, tree: validateTree(input.tree, rootFen) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(message.replace(/^Invalid chapter tree/, "Invalid source tree"), {
+      cause: error
+    });
+  }
+}
+
+/**
+ * The policy's source ids must name moves of the copied material (not its context): included
+ * moves must be the repertoire side's, covered moves the opponent's.
+ */
+function checkPolicy(
+  color: RepertoireColor,
+  extracted: ExtractedScope,
+  policy: AddFromGamePolicy
+): void {
+  const byId = new Map(extracted.tree.map((node) => [node.id, node]));
+  const context = new Set(extracted.contextNodeIds);
+  const moveOf = (sourceId: string): MoveNode => {
+    const chapterId = extracted.sourceToChapterIds[sourceId];
+    const node = chapterId === undefined ? undefined : byId.get(chapterId);
+    if (!node || node.id === REPERTOIRE_ROOT_NODE_ID || context.has(sourceId)) {
+      throw new Error(`Invalid policy: node "${sourceId}" is not part of the selected material`);
+    }
+    return node;
+  };
+  for (const id of policy.includedNodeIds) {
+    if (playerToMove(moveOf(id).fenBefore) !== color) {
+      throw new Error(
+        `Invalid policy: node "${id}" is not a ${color} move, so it can't be accepted`
+      );
+    }
+  }
+  for (const id of policy.coveredNodeIds) {
+    if (playerToMove(moveOf(id).fenBefore) === color) {
+      throw new Error(
+        `Invalid policy: node "${id}" is not an opponent move, so it can't be covered`
+      );
+    }
+  }
+}
+
+/** Source nodes from the root to the scope's end (whole game: the end of its main line). */
+function capturedRoute(tree: readonly MoveNode[], scope: AddFromGameScope): MoveNode[] {
+  const byId = new Map(tree.map((node) => [node.id, node]));
+  let end = byId.get(REPERTOIRE_ROOT_NODE_ID)!;
+  if (scope.kind === "path") end = byId.get(scope.toNodeId) ?? end;
+  else if (scope.kind === "subtree") end = byId.get(scope.fromNodeId) ?? end;
+  else {
+    while (end.children.length && byId.has(end.children[0])) end = byId.get(end.children[0])!;
+  }
+  const route: MoveNode[] = [];
+  for (let node: MoveNode | undefined = end; node && node.parentId !== null; ) {
+    route.unshift(node);
+    node = byId.get(node.parentId);
+  }
+  return route;
+}
+
+/** SAN of `uci` played at a position of the chapter (falls back to the UCI). */
+function sanInChapter(lookup: ChapterLookup, key: string, uci: string): string {
+  for (const id of lookup.order) {
+    if (lookup.positionKeys.get(id) !== key) continue;
+    for (const childId of lookup.childrenById.get(id) ?? []) {
+      const child = lookup.nodesById.get(childId)!;
+      if (child.uci === uci && child.san) return child.san;
+    }
+  }
+  return uci;
+}
+
+/**
+ * Everything adding from a game needs, computed without writing: the validated source, the
+ * extracted material, the would-be chapter (new, or merged into the destination), and the preview
+ * figures measured against the repertoire's current chapters and decisions.
+ */
+function planAddFromGame(
+  record: RepertoireRecord,
+  input: AddFromGameInput,
+  now: number
+): AddFromGamePlan {
+  const { destination, scope } = input;
+  if (input.source.gameId !== null && !libraryGameExists(input.source.gameId)) {
+    throw new Error("Invalid source gameId: the game is not in the library");
+  }
+  const source = validateSourceTree(input.source);
+  const extracted = extractScope(source, scope);
+
+  let existing: RepertoireChapter | null = null;
+  let kind: ChapterKind;
+  if (destination.kind === "existing-chapter") {
+    existing = loadChapter(record.id, destination.chapterId, now);
+    kind = existing.kind;
+  } else if (destination.kind === "new-chapter") {
+    if (destination.chapterKind !== "opening" && destination.chapterKind !== "reference") {
+      throw new Error("Invalid destination: chapter kind must be opening or reference");
+    }
+    kind = destination.chapterKind;
+  } else {
+    throw new Error("Invalid destination: expected a new or an existing chapter");
+  }
+
+  const defaultPolicy = proposePolicy(record.color, extracted, scope, kind);
+  const policy: AddFromGamePolicy = {
+    includedNodeIds: [...new Set((input.policy ?? defaultPolicy).includedNodeIds)],
+    coveredNodeIds: [...new Set((input.policy ?? defaultPolicy).coveredNodeIds)]
+  };
+  checkPolicy(record.color, extracted, policy);
+  const incomingMeta = applyPolicy(extracted, policy);
+  const linkHeaders = sanitizeHeaders(input.source.headers);
+
+  let draft: RepertoireChapter;
+  let alreadyPresent = 0;
+  // Copied id → stored chapter id (the same ids for a new chapter).
+  let chapterIds: Record<string, string> = extracted.sourceToChapterIds;
+  if (existing) {
+    // Opponent context moves may cover a matched reference edge; the player's context moves stay
+    // as they are (they can't be accepted here), and moves below them are reported untrained.
+    const byId = new Map(extracted.tree.map((node) => [node.id, node]));
+    const opponentContext = extracted.contextNodeIds.filter((id) => {
+      const node = byId.get(extracted.sourceToChapterIds[id]);
+      return node !== undefined && playerToMove(node.fenBefore) !== record.color;
+    });
+    const merged = mergeIntoChapter(existing, {
+      rootFen: extracted.rootFen,
+      tree: extracted.tree,
+      nodeMeta: incomingMeta,
+      upgradeNodeIds: [...policy.includedNodeIds, ...policy.coveredNodeIds, ...opponentContext].map(
+        (id) => extracted.sourceToChapterIds[id]
+      )
+    });
+    draft = merged.chapter;
+    alreadyPresent = merged.alreadyPresent;
+    chapterIds = Object.fromEntries(
+      Object.entries(extracted.sourceToChapterIds).map(([sourceId, copiedId]) => [
+        sourceId,
+        merged.idMap[copiedId]
+      ])
+    );
+  } else {
+    const title = destination.kind === "new-chapter" ? destination.title : "";
+    draft = {
+      id: nanoid(),
+      title: chapterTitle(title, gameTitle(linkHeaders)),
+      sortOrder: chapterRepository.maxSortOrder(record.id) + 1,
+      kind,
+      enabled: true,
+      rootFen: extracted.rootFen,
+      revision: 0,
+      nodeCount: extracted.tree.length - 1,
+      dueCount: 0,
+      headers: linkHeaders,
+      tree: extracted.tree,
+      nodeMeta: incomingMeta
+    };
+  }
+  const chapter = sanitizeChapter(draft, (existing?.revision ?? 0) + 1);
+
+  // Figures against the current repertoire.
+  const chapters = chapterRepository.list(record.id);
+  const before = collectDecisions(record.color, chapters);
+  const after = collectDecisions(record.color, [
+    ...chapters.filter((item) => item.id !== chapter.id),
+    chapter
+  ]);
+  const stored = new Map(
+    decisionRepository.list(record.id).map((decision) => [decision.positionKey, decision])
+  );
+  const lookup = buildChapterLookup(chapter);
+  const conflicts: AddFromGamePreview["conflicts"] = [];
+  let decisionsAdded = 0;
+  for (const [key, entry] of after) {
+    // A stored decision that regains support (suspended before) is not a new one.
+    if (!before.has(key) && !stored.has(key)) decisionsAdded += 1;
+    const decision = stored.get(key);
+    if (!decision) continue;
+    const effective = effectiveAcceptedUcis(decision, before.get(key)?.acceptedUcis ?? new Set());
+    if (!effective.length) continue;
+    for (const uci of entry.acceptedUcis) {
+      // A stored accepted move that is merely supported again isn't a difference.
+      if (decision.acceptedUcis.includes(uci)) continue;
+      conflicts.push({
+        positionKey: key,
+        fen: entry.fen,
+        existingUcis: effective,
+        preferredUci: decision.preferredUci,
+        newUci: uci,
+        newSan: sanInChapter(lookup, key, uci),
+        path: pathToPosition(extracted, key) ?? ""
+      });
+    }
+  }
+
+  const indexed = new Set(
+    positionIndexRepository
+      .list(record.id)
+      .filter((row) => row.chapterId !== chapter.id)
+      .map((row) => row.positionKey)
+  );
+  const copiedKeys = new Set(
+    extracted.tree
+      .filter((node) => node.id !== REPERTOIRE_ROOT_NODE_ID)
+      .map((node) => positionKey(node.fenAfter))
+  );
+  const transpositions = [...copiedKeys].filter((key) => indexed.has(key)).length;
+
+  // Which chosen moves the stored chapter will actually ask (§7.1).
+  const ownMoves = listOwnMoves(record.color, extracted);
+  const chosen = new Set(policy.includedNodeIds);
+  const untrained =
+    kind === "opening"
+      ? untrainedMoveWarnings(
+          chapter,
+          ownMoves
+            .filter((move) => chosen.has(move.nodeId) && chapterIds[move.nodeId] !== undefined)
+            .map((move) => ({
+              chapterNodeId: chapterIds[move.nodeId],
+              san: move.san,
+              path: move.path
+            }))
+        )
+      : { trained: 0, warnings: [] };
+
+  const warnings: string[] = [];
+  if (scope.kind === "whole-game" && !untrained.trained && !policy.includedNodeIds.length) {
+    warnings.push("Whole game added as reference: nothing will be trained until you accept moves");
+  } else if (kind === "reference" && policy.includedNodeIds.length) {
+    warnings.push("Reference chapters never train: the chosen moves are kept as study material");
+  } else if (!policy.includedNodeIds.length) {
+    warnings.push("No moves are accepted: nothing from this material will be trained");
+  } else if (!untrained.trained) {
+    warnings.push("None of the chosen moves will be trained: nothing from this material is asked");
+  }
+  warnings.push(...untrained.warnings);
+  if (conflicts.length) {
+    const positions = new Set(conflicts.map((conflict) => conflict.positionKey)).size;
+    warnings.push(
+      `${positions} position${positions === 1 ? " already has" : "s already have"} another repertoire move: the new move is added as an alternative and your preferred move stays`
+    );
+  }
+
+  const route = capturedRoute(source.tree, scope);
+  const nodeIds = new Set(source.tree.map((node) => node.id));
+  const scopeNodeId =
+    scope.kind === "path" ? scope.toNodeId : scope.kind === "subtree" ? scope.fromNodeId : null;
+  const gameNodeId =
+    input.source.nodeId !== null && nodeIds.has(input.source.nodeId)
+      ? input.source.nodeId
+      : scopeNodeId;
+
+  return {
+    chapter,
+    linkHeaders,
+    gameNodeId,
+    capturedPath: formatPath(route),
+    preview: {
+      chapterTitle: chapter.title,
+      nodeCount: extracted.tree.length - 1,
+      decisionsAdded,
+      conflicts,
+      transpositions,
+      alreadyPresent,
+      defaultPolicy,
+      ownMoves,
+      opponentMoves: listOpponentMoves(record.color, extracted),
+      warnings
+    }
+  };
+}
+
+/**
+ * What adding part of a game would do (§6.2), without writing anything: the chapter title, copied
+ * move count, decisions gained, conflicts with existing decisions, transpositions, moves already in
+ * an existing destination chapter, the default policy, the own-side move candidates and warnings.
+ * The source tree is replayed and checked like a saved chapter. A null policy previews the
+ * proposed defaults.
+ */
+export function previewAddFromGame(input: AddFromGameInput): AddFromGamePreview {
+  const now = clock();
+  return transaction(() => planAddFromGame(requireRepertoire(input.repertoireId), input, now))
+    .preview;
+}
+
+/**
+ * Copies the selected material into a new chapter, or merges it into an existing one, with the
+ * confirmed policy; reconciles decisions, index and progress like saveChapter; and records a
+ * `source` provenance link — all in one transaction. A move accepted where the repertoire already
+ * decided another one is added as an accepted alternative; the stored preference is unchanged.
+ * The policy must be explicit: a null policy is refused.
+ */
+export function addFromGame(input: AddFromGameInput): AddFromGameResult {
+  const now = clock();
+  const result = transaction(() => {
+    const record = requireRepertoire(input.repertoireId);
+    checkRevision(record, input.expectedRevision);
+    if (input.policy === null) {
+      throw new Error("Invalid policy: choose which moves to accept before adding");
+    }
+    const plan = planAddFromGame(record, input, now);
+    const next = bump(record, now);
+    chapterRepository.upsert(record.id, plan.chapter, now);
+    const { decisionsChanged } = reindex(next, now);
+    const link: RepertoireGameLink = {
+      id: nanoid(),
+      repertoireId: record.id,
+      chapterId: plan.chapter.id,
+      gameId: input.source.gameId,
+      unsaved: input.source.gameId === null,
+      gameNodeId: plan.gameNodeId,
+      kind: "source",
+      headers: plan.linkHeaders,
+      capturedPath: plan.capturedPath,
+      createdAt: now
+    };
+    gameLinkRepository.insert(link);
+    return {
+      repertoire: detail(record.id, now),
+      chapter: loadChapter(record.id, plan.chapter.id, now),
+      decisionsChanged,
+      link
+    };
+  });
+  changed({
+    repertoireId: input.repertoireId,
+    revision: result.repertoire.revision,
+    kind: "updated"
+  });
+  return result;
+}
+
+/** Provenance links of a repertoire, or of one of its chapters, oldest first. */
+export function listGameLinks(input: {
+  repertoireId: string;
+  chapterId?: string;
+}): RepertoireGameLink[] {
+  requireRepertoire(input.repertoireId);
+  if (
+    input.chapterId !== undefined &&
+    chapterRepository.ownerOf(input.chapterId)?.repertoireId !== input.repertoireId
+  ) {
+    throw new Error("Invalid chapterId: not found");
+  }
+  return gameLinkRepository.list(input.repertoireId, input.chapterId);
+}
+
+/** Removes one provenance link (the copied material stays); no revision bump. */
+export function removeGameLink(input: { repertoireId: string; linkId: string }): void {
+  requireRepertoire(input.repertoireId);
+  const link = gameLinkRepository.get(input.linkId);
+  if (!link || link.repertoireId !== input.repertoireId) {
+    throw new Error("Invalid linkId: not found");
+  }
+  gameLinkRepository.remove(link.id);
 }
 
 /* ------------------------------------------------------------------ practice */

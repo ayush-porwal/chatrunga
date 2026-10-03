@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
 import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
@@ -11,7 +11,7 @@ const MAX_COMMENT_LENGTH = 20_000;
  * Notes for the selected move: its comment (part of the chapter draft, autosaved), and at a
  * position where the player has a decision, the practice prompt and hidden hint (repertoire-wide
  * decision fields, saved on blur or when the window closes). Mount with `key={nodeId}` so fields
- * reset per position.
+ * reset per position. `footer` follows them (the chapter's sources).
  */
 export function StudyNotesPanel({
   node,
@@ -19,7 +19,8 @@ export function StudyNotesPanel({
   canEditDecision,
   busy,
   onComment,
-  onSaveDecisionText
+  onSaveDecisionText,
+  footer
 }: {
   node: MoveNode;
   decisionText: { prompt: string | null; hint: string | null } | null;
@@ -28,6 +29,7 @@ export function StudyNotesPanel({
   busy: boolean;
   onComment: (text: string) => void;
   onSaveDecisionText: (field: "prompt" | "hint", text: string | null) => Promise<unknown> | void;
+  footer?: ReactNode;
 }) {
   const commentId = useId();
   const promptId = useId();
@@ -110,6 +112,7 @@ export function StudyNotesPanel({
           />
         </Field>
       </section>
+      {footer}
     </div>
   );
 }

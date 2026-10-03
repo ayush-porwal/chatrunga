@@ -17,6 +17,9 @@ import type {
 } from "@chaturanga/shared/types/chess";
 import { GAME_SEARCH_MAX_LENGTH } from "@chaturanga/shared/types/chess";
 import type {
+  AddFromGameDestination,
+  AddFromGameInput,
+  AddFromGameScope,
   ArchiveRepertoireInput,
   ChapterKind,
   CompareGameInput,
@@ -859,6 +862,92 @@ export function parseCompareGameInput(value: unknown): CompareGameInput {
     color: asRepertoireColor(input.color),
     rootFen: asFen(input.rootFen, "rootFen"),
     moves
+  };
+}
+
+function parseAddFromGameScope(value: unknown): AddFromGameScope {
+  const scope = asObject(value, "scope");
+  switch (scope.kind) {
+    case "path":
+      return { kind: "path", toNodeId: asId(scope.toNodeId, "scope toNodeId") };
+    case "subtree":
+      if (scope.root !== "original" && scope.root !== "standalone") {
+        fail("scope root", "expected original or standalone");
+      }
+      return {
+        kind: "subtree",
+        fromNodeId: asId(scope.fromNodeId, "scope fromNodeId"),
+        root: scope.root
+      };
+    case "whole-game":
+      return { kind: "whole-game" };
+    default:
+      return fail("scope", "expected path, subtree or whole-game");
+  }
+}
+
+function parseAddFromGameDestination(value: unknown): AddFromGameDestination {
+  const destination = asObject(value, "destination");
+  switch (destination.kind) {
+    case "new-chapter":
+      return {
+        kind: "new-chapter",
+        title: asString(destination.title ?? "", "destination title", MAX_NAME),
+        chapterKind: asChapterKind(destination.chapterKind)
+      };
+    case "existing-chapter":
+      return { kind: "existing-chapter", chapterId: asId(destination.chapterId, "chapterId") };
+    default:
+      return fail("destination", "expected new-chapter or existing-chapter");
+  }
+}
+
+/**
+ * Shallow shape check, like parseSaveGameInput: the source tree must be an array of at most
+ * 100,000 nodes and its headers a string map of at most 200 tags; the policy is null (use the
+ * proposed defaults) or two id lists. The repertoire service replays and checks every node before
+ * anything is copied.
+ */
+export function parseAddFromGameInput(value: unknown): AddFromGameInput {
+  const input = asObject(value, "add from game");
+  const source = asObject(input.source, "source");
+  if (!Array.isArray(source.tree)) fail("source tree", "expected an array");
+  if (source.tree.length > MAX_CHAPTER_NODES) fail("source tree", "too many nodes");
+  const policy = input.policy === null ? null : asObject(input.policy, "policy");
+  return {
+    repertoireId: asId(input.repertoireId, "repertoireId"),
+    expectedRevision: asRevision(input.expectedRevision),
+    destination: parseAddFromGameDestination(input.destination),
+    source: {
+      gameId: nullable(source.gameId, (id) => asId(id, "source gameId")) ?? null,
+      headers: asTextRecord(source.headers ?? {}, "source headers", 200, MAX_HEADER),
+      rootFen: asFen(source.rootFen, "source rootFen"),
+      tree: source.tree as MoveNode[],
+      nodeId: nullable(source.nodeId, (id) => asId(id, "source nodeId")) ?? null
+    },
+    scope: parseAddFromGameScope(input.scope),
+    policy: policy && {
+      includedNodeIds: asIdArray(policy.includedNodeIds, "includedNodeIds", MAX_CHAPTER_NODES),
+      coveredNodeIds: asIdArray(policy.coveredNodeIds, "coveredNodeIds", MAX_CHAPTER_NODES)
+    }
+  };
+}
+
+export function parseGameLinkQuery(value: unknown): { repertoireId: string; chapterId?: string } {
+  const input = asObject(value, "game links");
+  const query: { repertoireId: string; chapterId?: string } = {
+    repertoireId: asId(input.repertoireId, "repertoireId")
+  };
+  const chapterId = optional(input.chapterId, (id) => asId(id, "chapterId"));
+  if (chapterId !== undefined) query.chapterId = chapterId;
+  return query;
+}
+
+export function parseRemoveGameLink(value: unknown): { repertoireId: string; linkId: string } {
+  const input = asObject(value, "game link");
+  return {
+    repertoireId: asId(input.repertoireId, "repertoireId"),
+    linkId: asId(input.linkId, "linkId")
   };
 }
 

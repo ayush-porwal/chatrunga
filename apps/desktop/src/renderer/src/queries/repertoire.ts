@@ -1,7 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { ChaturangaApi } from "@chaturanga/shared/ipc/chaturanga-api";
 import type {
+  AddFromGameInput,
+  AddFromGamePreview,
   ArchiveRepertoireInput,
   ChapterSaveResult,
   CompareGameInput,
@@ -24,13 +26,16 @@ import type {
   UpdateDecisionInput,
   UpdateRepertoireMetadataInput
 } from "@chaturanga/shared/types/repertoire";
+import { useEventCallback } from "@/lib/use-event-callback";
+import { hashAddInput } from "../features/repertoire/add-from-game";
 
 /**
  * Repertoire data through the typed `window.chaturanga.repertoires` API (main process is the
  * authority for content, grading and scheduling). Keys are narrow so a chapter save never re-reads
  * the hub list's trees: `['repertoires','list',filters]`, `['repertoires',id]`,
  * `['repertoires',id,'chapter',chapterId]`, `['repertoires','due']`,
- * `['repertoires',id,'compare',color,gameHash]`.
+ * `['repertoires',id,'compare',color,gameHash]`, `['repertoires',id,'add-preview',inputHash]`,
+ * `['repertoires',id,'links',chapterId|'all']`.
  *
  * The detail key is a prefix of the chapter key, so detail invalidations pass `exact: true`.
  * Everything degrades to empty/disabled in the web preview (no `window.chaturanga`).
@@ -47,7 +52,12 @@ export const repertoireKeys = {
   occurrences: (id: string, positionKey: string) =>
     ["repertoires", id, "occurrences", positionKey] as const,
   comparison: (id: string, color: string, gameHash: string) =>
-    ["repertoires", id, "compare", color, gameHash] as const
+    ["repertoires", id, "compare", color, gameHash] as const,
+  addPreview: (id: string, inputHash: string) =>
+    ["repertoires", id, "add-preview", inputHash] as const,
+  links: (id: string) => ["repertoires", id, "links"] as const,
+  chapterLinks: (id: string, chapterId: string | null) =>
+    ["repertoires", id, "links", chapterId ?? "all"] as const
 };
 
 /**
@@ -107,19 +117,21 @@ export function invalidateRepertoire(queryClient: QueryClient, id: string | null
         ((query.queryKey.length === 2 && query.queryKey[1] !== "due") ||
           query.queryKey[2] === "decision" ||
           query.queryKey[2] === "occurrences" ||
-          query.queryKey[2] === "compare")
+          query.queryKey[2] === "compare" ||
+          query.queryKey[2] === "links")
     });
   }
 }
 
 /**
- * Re-reads the cached decisions, occurrence lists and game comparisons of a repertoire (a chapter
+ * Re-reads the cached decisions, occurrence lists, game comparisons and game links of a repertoire (a chapter
  * save can reconcile any of them).
  */
 export function invalidateDecisions(queryClient: QueryClient, id: string) {
   void queryClient.invalidateQueries({ queryKey: ["repertoires", id, "decision"] });
   void queryClient.invalidateQueries({ queryKey: ["repertoires", id, "occurrences"] });
   void queryClient.invalidateQueries({ queryKey: ["repertoires", id, "compare"] });
+  void queryClient.invalidateQueries({ queryKey: repertoireKeys.links(id) });
 }
 
 /** Stores a detail the main process returned, and refreshes the summaries that depend on it. */
@@ -408,5 +420,84 @@ export function useEndPracticeMutation() {
     mutationFn: (sessionId: string) => requireRepertoires().endPractice(sessionId),
     retry: false,
     onSuccess: (summary) => invalidateRepertoire(queryClient, summary.repertoireId)
+  });
+}
+
+/** A preview with the hash of the input it describes. */
+export type AddFromGamePreviewResult = AddFromGamePreview & { inputHash: string };
+
+/**
+ * What adding part of a game would change (§6.2); nothing is written. The input settles for a
+ * moment first (a title being typed, moves being ticked) and the key names it by its content
+ * hash, which the result carries (`inputHash`) so a caller can tell a preview of the input it
+ * holds now from an older one still shown while the next loads.
+ */
+export function useAddFromGamePreviewQuery(input: AddFromGameInput | null) {
+  const current = input ? hashAddInput(input) : null;
+  const [settledInput, setSettledInput] = useState<{
+    hash: string;
+    input: AddFromGameInput;
+  } | null>(null);
+  // Runs with the input of the render that scheduled it (`current` names its content).
+  const settle = useEventCallback(() => {
+    if (input && current) setSettledInput({ hash: current, input });
+  });
+  useEffect(() => {
+    if (!current) return;
+    const timer = window.setTimeout(settle, 250);
+    return () => window.clearTimeout(timer);
+  }, [current, settle]);
+  const settled = current ? settledInput : null;
+  const hash = settled?.hash ?? null;
+  // The key names the input by its hash (a whole game tree doesn't belong in a key).
+  // eslint-disable-next-line @tanstack/query/exhaustive-deps
+  return useQuery({
+    queryKey: repertoireKeys.addPreview(settled?.input.repertoireId ?? "", hash ?? ""),
+    queryFn: async (): Promise<AddFromGamePreviewResult> => ({
+      ...(await requireRepertoires().previewAddFromGame(settled!.input)),
+      inputHash: hash!
+    }),
+    enabled: Boolean(settled && hash && repertoires()),
+    placeholderData: (previous) => previous,
+    retry: false
+  });
+}
+
+/** Copies part of a game into a chapter; the repertoire's detail, chapter and decisions follow. */
+export function useAddFromGameMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: AddFromGameInput) => requireRepertoires().addFromGame(input),
+    retry: false,
+    onSuccess: (result) => {
+      adoptChapterSave(queryClient, result);
+      void queryClient.invalidateQueries({
+        queryKey: ["repertoires", result.repertoire.id, "add-preview"]
+      });
+    }
+  });
+}
+
+/** The games a repertoire's material came from, optionally only one chapter's. */
+export function useGameLinksQuery(id: string | null, chapterId?: string | null) {
+  return useQuery({
+    queryKey: repertoireKeys.chapterLinks(id ?? "", chapterId ?? null),
+    queryFn: () =>
+      requireRepertoires().listGameLinks({
+        repertoireId: id!,
+        ...(chapterId ? { chapterId } : {})
+      }),
+    enabled: Boolean(id && repertoires())
+  });
+}
+
+/** Forgets where some material came from; the copied moves stay. */
+export function useRemoveGameLinkMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { repertoireId: string; linkId: string }) =>
+      requireRepertoires().removeGameLink(input),
+    onSuccess: (_result, input) =>
+      queryClient.invalidateQueries({ queryKey: repertoireKeys.links(input.repertoireId) })
   });
 }
