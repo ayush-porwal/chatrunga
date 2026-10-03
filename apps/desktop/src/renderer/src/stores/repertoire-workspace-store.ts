@@ -314,7 +314,9 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
 
     /**
      * Applies an edit to the draft (bumps the generation, marks it dirty). An undoable one keeps
-     * the chapter before it for Undo and clears Redo.
+     * the chapter before it for Undo and clears Redo. An edit that leaves the chapter as it was
+     * (Prefer on a move already included, the same comment again) is none: no undo step, nothing
+     * to save, and Redo stays (only its selection applies).
      */
     const edit = (
       change: (chapter: RepertoireChapter) => RepertoireChapter,
@@ -322,9 +324,14 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
     ) => {
       const { chapter, generation, undoStack, redoStack } = get();
       if (!chapter) return;
+      const next = change(chapter);
+      if (sameValue(chapter, next)) {
+        if (options.selectedNodeId) set({ selectedNodeId: options.selectedNodeId });
+        return;
+      }
       const recorded = options.undoable && !grouping;
       set({
-        chapter: change(chapter),
+        chapter: next,
         dirty: true,
         generation: generation + 1,
         undoStack: recorded ? withUndo(undoStack, chapter) : undoStack,
@@ -491,6 +498,8 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
             for (const key of ["trainingStart", "trainingStop", "disabled"] as const) {
               if (!merged[key]) delete merged[key];
             }
+            // What the move has already (a missing entry is an included edge): no edit.
+            if (sameValue(nodeMetaOf(chapter.nodeMeta, nodeId), merged)) return chapter;
             return { ...chapter, nodeMeta: { ...chapter.nodeMeta, [nodeId]: merged } };
           },
           { undoable: true }

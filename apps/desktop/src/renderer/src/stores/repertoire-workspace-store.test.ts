@@ -175,6 +175,33 @@ describe("repertoire workspace store", () => {
     expect(store().redo()).toBe(false);
   });
 
+  it("an edit that changes nothing takes no undo step, isn't dirty and keeps Redo", () => {
+    load();
+    // Prefer on a move already included (no metadata entry, or an explicit one), and the same
+    // flags, comment, shapes and title again.
+    store().setNodeMeta("w0", { edge: "included" });
+    store().setNodeMeta("w0", { disabled: false, trainingStart: false });
+    store().setComment("w0", "");
+    store().setShapes("w0", [], []);
+    store().setChapterFields({ title: store().chapter!.title });
+    expect(store().undoStack).toHaveLength(0);
+    expect(store().dirty).toBe(false);
+    expect(store().generation).toBe(0);
+    expect(store().chapter!.nodeMeta.w0).toBeUndefined();
+
+    store().setNodeMeta("w0", { edge: "reference" });
+    store().undo();
+    expect(store().redoStack).toHaveLength(1);
+    const generation = store().generation;
+    store().setNodeMeta("w0", { edge: "included" });
+    store().setComment("w1", store().chapter!.tree.find((node) => node.id === "w1")!.comment ?? "");
+    expect(store().redoStack).toHaveLength(1);
+    expect(store().undoStack).toHaveLength(0);
+    expect(store().generation).toBe(generation);
+    expect(store().redo()).toBe(true);
+    expect(store().chapter!.nodeMeta.w0).toEqual({ edge: "reference" });
+  });
+
   it("starts each chapter load with no undo or redo", () => {
     load();
     store().promoteVariation("s0");
