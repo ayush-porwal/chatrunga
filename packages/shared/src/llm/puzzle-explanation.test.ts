@@ -115,6 +115,27 @@ describe("puzzle explanation contract", () => {
     expect(() => payload({ outcome: "failed_solution_viewed", mistake: undefined })).not.toThrow();
   });
 
+  it("never grounds a reply to a wrong move that ended the game, and allows none in the facts", () => {
+    const mate = payload({
+      mistake: { ...payload().mistake!, san: "Qh8#", fenAfter: START, ends: "checkmate", refutationSan: [], assessmentAfter: "white_won", swing: undefined, stillWinning: undefined },
+      ideas: undefined
+    });
+    expect(puzzleGroundedSanTokens(mate).has("Nxe5")).toBe(false);
+    const answer = JSON.stringify({ headline: "Two ways to mate", body: "Qh8# is mate as well, but Nxe5 was coming." });
+    expect(validatePuzzleProse(answer, mate)).toMatchObject({ ok: false, reason: "BAD_SAN", details: "Nxe5" });
+    expect(() => payload({ mistake: { ...payload().mistake!, ends: "stalemate" } })).toThrow(/no refutation/);
+  });
+
+  it("asks a mate to be called a mate, and a stalemate or draw to be called one, not refuted", () => {
+    const base = payload().mistake!;
+    const ending = (ends: "checkmate" | "stalemate" | "draw") => payload({ mistake: { ...base, san: "Qh8#", ends, refutationSan: [] } });
+    expect(buildPuzzleUserMessage(ending("checkmate"))).toContain("Qh8# is checkmate too: say so, and explain the idea of the line the puzzle expected (Qxf7#) now.");
+    expect(buildPuzzleUserMessage(ending("stalemate"))).toContain("Qh8# stalemates your opponent, throwing the win away");
+    expect(buildPuzzleUserMessage(ending("draw"))).toContain("Qh8# draws the game at once, throwing the win away");
+    expect(buildPuzzleUserMessage(ending("checkmate"))).not.toContain("does not work");
+    expect(PUZZLE_COACH_SYSTEM_PROMPT).toContain("do NOT call it a mistake");
+  });
+
   it("asks for the case the outcome describes", () => {
     expect(buildPuzzleUserMessage(payload())).toContain("Explain why Qxe5+ does not work");
     expect(buildPuzzleUserMessage(payload({ outcome: "solved", mistake: undefined }))).toContain(

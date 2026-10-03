@@ -1,7 +1,6 @@
 import { buildIdeaFacts } from "@chaturanga/shared/chess/move-ideas";
 import { fenAfterUci } from "@chaturanga/shared/chess/position";
 import { scoreToCentipawns, terminalStateForFen } from "@chaturanga/shared/chess/review";
-import type { EvalAssessment } from "@chaturanga/shared/schemas";
 import {
   puzzleInsightPayloadSchema,
   type PuzzleInsightPayload,
@@ -148,7 +147,7 @@ export function buildPuzzleExplanationPayload({ puzzle, kind, wrong, analysis, s
           playedUci: wrong.uci,
           bestUci: wrong.expectedUci,
           bestLine: puzzle.solutionMoves.slice(wrong.solutionIndex),
-          replyLine: analysis.afterMistake?.[0]?.pv
+          replyLine: mistake.ends ? undefined : analysis.afterMistake?.[0]?.pv
         })
       : buildIdeaFacts({ fenBefore: fen, playedUci: puzzle.solutionMoves[0], bestUci: puzzle.solutionMoves[0], bestLine: puzzle.solutionMoves });
 
@@ -190,30 +189,38 @@ function buildMistake(
   const expected = uciToSan(wrong.fen, wrong.expectedUci);
   if (!fenAfter || !san || !expected) return undefined;
   const solver = puzzle.sideToMove;
-  const refutation = analysis.afterMistake?.[0];
   const terminal = terminalStateForFen(fenAfter);
   const beforeScore = analysis.beforeMistake?.[0]?.scoreWhite ?? null;
-  // A wrong move that ends the game: mate is the solver's win, anything else a draw.
-  const afterScore: EngineScore | null = terminal
-    ? { type: "cp", value: terminal === "checkmate" ? (solver === "white" ? 1000 : -1000) : 0 }
-    : refutation?.scoreWhite ?? null;
-  const assessmentAfter: EvalAssessment | undefined = terminal
-    ? terminal === "checkmate"
-      ? `${solver}_won`
-      : "draw"
-    : assessScore(afterScore);
   const before = beforeScore ? solverCp(beforeScore, solver) : null;
-  const after = afterScore ? solverCp(afterScore, solver) : null;
-  return {
+  const common = {
     moveNumberSan: moveNumberSan(wrong.fen),
     san,
     playedBeforeSan: solutionSan.slice(0, wrong.solutionIndex),
     solutionSan: expected,
     fenBefore: wrong.fen,
     fenAfter,
+    assessmentBefore: assessScore(beforeScore)
+  };
+  // A wrong move that ends the game has no reply to refute it: a mate wins all the same (the
+  // puzzle wanted its own line), a stalemate or draw throws the win away on the spot.
+  if (terminal === "checkmate") return { ...common, ends: terminal, refutationSan: [], assessmentAfter: `${solver}_won` };
+  if (terminal) {
+    return {
+      ...common,
+      ends: terminal,
+      refutationSan: [],
+      assessmentAfter: "draw",
+      swing: before !== null ? swingFor(before, 0) : undefined,
+      stillWinning: false
+    };
+  }
+  const refutation = analysis.afterMistake?.[0];
+  const afterScore = refutation?.scoreWhite ?? null;
+  const after = afterScore ? solverCp(afterScore, solver) : null;
+  return {
+    ...common,
     refutationSan: refutation ? uciLineToSan(fenAfter, refutation.pv).slice(0, 8) : [],
-    assessmentBefore: assessScore(beforeScore),
-    assessmentAfter,
+    assessmentAfter: assessScore(afterScore),
     swing: before !== null && after !== null ? swingFor(before, after) : undefined,
     stillWinning: after !== null ? after >= 200 : undefined
   };

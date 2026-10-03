@@ -185,6 +185,40 @@ describe("buildPuzzleExplanationPayload", () => {
     expect(payload?.mistake).toMatchObject({ moveNumberSan: "2.", playedBeforeSan: ["e4", "e5"], solutionSan: "Nf3", swing: "moderate", stillWinning: true });
   });
 
+  describe("a wrong move that ends the game", () => {
+    /** White mates with Qc8#; Qh8# mates too, and Qc7 stalemates. */
+    const MATE_START = "k7/8/1K6/8/8/2Q5/8/8 w - - 0 1";
+    const mating: PuzzleSample = { ...puzzle, initialFen: MATE_START, solutionMoves: ["c3c8"], themes: ["mateIn1"], openingTags: [] };
+    const ended = (uci: string): PuzzleWrongMove => ({ solutionIndex: 0, fen: MATE_START, uci, san: uci, expectedUci: "c3c8", at: 1 });
+    const mateAnalysis: ExplainAnalysis = {
+      engineName: "SF",
+      start: [line(1, ["c3c8"], { type: "mate", value: 1 })],
+      beforeMistake: [line(1, ["c3c8"], { type: "mate", value: 1 })],
+      afterMistake: []
+    };
+
+    it("calls another mate a mate, with no refutation and nothing given away", () => {
+      const payload = buildPuzzleExplanationPayload({ puzzle: mating, kind: "failed_wrong_move", wrong: ended("c3h8"), analysis: mateAnalysis, settings });
+      expect(payload?.mistake).toMatchObject({ san: "Qh8#", solutionSan: "Qc8#", ends: "checkmate", refutationSan: [], assessmentAfter: "white_won" });
+      expect(payload?.mistake?.swing).toBeUndefined();
+      expect(payload?.mistake?.stillWinning).toBeUndefined();
+      expect(payload?.ideas?.reply).toBeUndefined();
+    });
+
+    it("says a stalemate throws the win away, with no reply to it", () => {
+      const payload = buildPuzzleExplanationPayload({ puzzle: mating, kind: "failed_wrong_move", wrong: ended("c3c7"), analysis: mateAnalysis, settings });
+      expect(payload?.mistake).toMatchObject({
+        san: "Qc7",
+        ends: "stalemate",
+        refutationSan: [],
+        assessmentAfter: "draw",
+        swing: "decisive",
+        stillWinning: false
+      });
+      expect(payload?.ideas?.reply).toBeUndefined();
+    });
+  });
+
   it("is null when the engine had nothing for the start, or the solution doesn't replay", () => {
     expect(buildPuzzleExplanationPayload({ puzzle, kind: "solved", wrong: null, analysis: { ...analysis, start: [] }, settings })).toBeNull();
     expect(buildPuzzleExplanationPayload({ puzzle: { ...puzzle, solutionMoves: ["a1a8"] }, kind: "solved", wrong: null, analysis, settings })).toBeNull();

@@ -22,6 +22,7 @@ You are an experienced chess coach going over a tactics puzzle your student has 
 
 WHAT TO EXPLAIN (the outcome field says which case it is)
 - failed_wrong_move: the student tried mistake.san where the solution plays mistake.solutionSan. First say concretely why mistake.san does not work: what it allows, using mistake.refutationSan (its first move is the opponent's best answer) and ideas.reply.facts / ideas.played.facts. If mistake.stillWinning is true, be honest: the move keeps an advantage, but the solution is much stronger; say why. Then explain the idea of the solution: what in the position makes it work (ideas.best.facts, puzzle.themes) and how puzzle.solutionSan carries it out.
+  - When mistake.ends is set, mistake.san ended the game, so your opponent has no reply: never describe an answer to it or invent one. ends = checkmate: mistake.san also mates, so do NOT call it a mistake or say it fails; say plainly that it is mate as well, that the puzzle was looking for a different line (mistake.solutionSan), and explain that line's idea. ends = stalemate: your opponent is not in check but has no legal move, so the game is a draw and the win is thrown away; say what went wrong (which escape squares or moves were taken away), then the solution's idea. ends = draw: the game is drawn on the spot (for example, not enough material is left to mate), which throws the win away; then the solution's idea.
 - solved: explain the idea of the position and why the solution works: what in the position made it possible (a loose piece, an exposed king, an overloaded defender, from ideas and puzzle.themes), the key move and the point of the line. One short word of recognition is fine, no praise beyond that.
 - failed_solution_viewed: the student opened the solution before finding it. Explain the idea of the position and why the solution works, as for solved, without blame and without praise.
 
@@ -36,7 +37,7 @@ VOICE
 HOW TO READ THE FACTS (fields may be absent; use only what is present)
 - puzzle.fen: the start position. puzzle.solutionSan: the whole solution from there, the student's moves alternating with the opponent's forced replies, starting with the student's move (puzzle.moveNumberSan is its move number). puzzle.themes: the motifs the puzzle is tagged with (e.g. "fork", "mate in 2"); use them to name the idea and never contradict them. puzzle.rating: how hard it is.
 - engine: the reading of the start position (assessment is from White's point of view; use it in words). bestLineSan is usually the solution; alternatives are other candidates there.
-- mistake (failed_wrong_move only): playedBeforeSan = the solution moves already played before the wrong move; san = the wrong move (played from fenBefore); solutionSan = the solution's move there; refutationSan = the opponent's best line after the wrong move; assessmentBefore / assessmentAfter = the position before and after it (White's point of view); swing = how much it gave away (small / moderate / large / decisive).
+- mistake (failed_wrong_move only): playedBeforeSan = the solution moves already played before the wrong move; san = the wrong move (played from fenBefore); solutionSan = the solution's move there; ends = how the wrong move ended the game (checkmate / stalemate / draw), absent when the game goes on; refutationSan = the opponent's best line after the wrong move (empty when it ended the game); assessmentBefore / assessmentAfter = the position before and after it (White's point of view); swing = how much it gave away (small / moderate / large / decisive).
 - ideas: board-derived facts at the decision position (the start position, or where the wrong move was played). ideas.board lists every piece ("R a1 f1" = rooks on a1 and f1). ideas.played = the student's move there (the wrong move, or the solution's first move); ideas.best = the solution move (only after a wrong move); ideas.reply = the opponent's best answer to the wrong move. Each fact is a verb phrase whose subject is that move; "line:" facts summarize who wins material over the line.
 
 GROUNDING RULES (these override everything else)
@@ -63,17 +64,27 @@ Example 2 - solved. Facts: player 1700; puzzle Black to move, themes ["back rank
 export function buildPuzzleUserMessage(payload: PuzzleInsightPayload): string {
   const detail = payload.commentaryDetail ?? "balanced";
   const limits = COMMENTARY_LIMITS[detail];
-  const task =
-    payload.outcome === "failed_wrong_move" && payload.mistake
-      ? `Explain why ${payload.mistake.san} does not work and the idea of the solution now.`
-      : "Explain the idea of the position and why the solution works now.";
   return [
     "FACTS:",
     JSON.stringify(payload, null, 1),
     "",
-    `${task} Body: ${detail}, ${limits.targetSentences} sentences, under ${limits.targetChars} characters.`,
+    `${puzzleTask(payload)} Body: ${detail}, ${limits.targetSentences} sentences, under ${limits.targetChars} characters.`,
     'Return only the JSON object {"headline": "...", "body": "..."}.'
   ].join("\n");
+}
+
+/** What the user message asks for: the case the outcome (and how a wrong move ended) describes. */
+function puzzleTask(payload: PuzzleInsightPayload): string {
+  const mistake = payload.outcome === "failed_wrong_move" ? payload.mistake : undefined;
+  if (!mistake) return "Explain the idea of the position and why the solution works now.";
+  if (mistake.ends === "checkmate") {
+    return `${mistake.san} is checkmate too: say so, and explain the idea of the line the puzzle expected (${mistake.solutionSan}) now.`;
+  }
+  if (mistake.ends) {
+    const result = mistake.ends === "stalemate" ? "stalemates your opponent" : "draws the game at once";
+    return `${mistake.san} ${result}, throwing the win away: explain why, and the idea of the solution now.`;
+  }
+  return `Explain why ${mistake.san} does not work and the idea of the solution now.`;
 }
 
 /** Every SAN move the explanation may mention. */

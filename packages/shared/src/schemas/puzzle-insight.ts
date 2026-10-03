@@ -72,7 +72,15 @@ export const puzzleInsightPayloadSchema = z.object({
       solutionSan: sanTokenSchema,
       fenBefore: z.string().min(10).max(128),
       fenAfter: z.string().min(10).max(128),
-      /** The opponent's best line after the wrong move (its first move is the answer it allows). */
+      /**
+       * The wrong move ended the game: `checkmate` (it mates too — the puzzle expected another
+       * line), `stalemate` or `draw` (it throws the win away). There is no reply to refute it then.
+       */
+      ends: z.enum(["checkmate", "stalemate", "draw"]).optional(),
+      /**
+       * The opponent's best line after the wrong move (its first move is the answer it allows);
+       * empty when it `ends` the game.
+       */
       refutationSan: z.array(sanTokenSchema).max(10),
       assessmentBefore: evalAssessmentSchema.optional(),
       assessmentAfter: evalAssessmentSchema.optional(),
@@ -93,6 +101,11 @@ export const puzzleInsightPayloadSchema = z.object({
   .refine((payload) => (payload.outcome === "failed_wrong_move") === Boolean(payload.mistake), {
     message: "mistake is required for failed_wrong_move, and only then",
     path: ["mistake"]
+  })
+  // A move that ended the game allows no reply.
+  .refine((payload) => !payload.mistake?.ends || !payload.mistake.refutationSan.length, {
+    message: "a mistake that ends the game has no refutation",
+    path: ["mistake", "refutationSan"]
   });
 
 export type PuzzleInsightPayload = z.infer<typeof puzzleInsightPayloadSchema>;
