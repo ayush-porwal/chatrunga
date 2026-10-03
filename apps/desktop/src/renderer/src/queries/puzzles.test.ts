@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DecidedPuzzleAttempt } from "../stores/puzzle-store";
-import { recordInput, usePuzzleRecordStore } from "./puzzles";
+import { attemptKey, isRecordable, recordInput, usePuzzleRecordStore } from "./puzzles";
 
 const attempt: DecidedPuzzleAttempt = {
   id: "a1",
@@ -38,6 +38,20 @@ describe("recordInput", () => {
       decidedAt: 2_000,
       completedAt: null
     });
+  });
+});
+
+describe("what is recorded", () => {
+  it("keys an attempt by its id, else by its puzzle and start", () => {
+    expect(attemptKey(attempt)).toBe("a1");
+    expect(attemptKey({ ...attempt, id: "" })).toBe("00sHx:1000");
+  });
+
+  it("records only a solve or a failure", () => {
+    expect(isRecordable({ outcome: "solved" })).toBe(true);
+    expect(isRecordable({ outcome: "failed" })).toBe(true);
+    expect(isRecordable({ outcome: "pending" })).toBe(false);
+    expect(isRecordable({ outcome: "void" })).toBe(false);
   });
 });
 

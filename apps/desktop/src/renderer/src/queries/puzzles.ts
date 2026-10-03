@@ -52,10 +52,26 @@ export function useFailedPuzzlesQuery(sourceId: string | null) {
   });
 }
 
+/**
+ * The attempt's key for recording (main stores an attempt once per key): its own id, else the
+ * puzzle and the moment it was shown.
+ */
+export function attemptKey(attempt: Pick<DecidedPuzzleAttempt, "id" | "puzzleId" | "startedAt">): string {
+  return attempt.id || `${attempt.puzzleId}:${attempt.startedAt}`;
+}
+
+/**
+ * Only a solve or a failure by the solver is recorded (and maybe rated): any other end of an
+ * attempt (a puzzle whose data broke, say) is not the solver's result.
+ */
+export function isRecordable(attempt: { outcome: string }): attempt is { outcome: "solved" | "failed" } {
+  return attempt.outcome === "solved" || attempt.outcome === "failed";
+}
+
 /** What main is told about a decided attempt. */
 export function recordInput(attempt: DecidedPuzzleAttempt): RecordPuzzleAttemptInput {
   return {
-    attemptId: attempt.id,
+    attemptId: attemptKey(attempt),
     puzzleId: attempt.puzzleId,
     databaseId: attempt.databaseId,
     sourceId: attempt.sourceId,
@@ -105,7 +121,8 @@ export function usePuzzleAttemptRecording(): void {
     () =>
       onPuzzleAttempt(({ kind, attempt }) => {
         const puzzles = api()?.puzzles;
-        if (!puzzles) return;
+        if (!puzzles || !isRecordable(attempt)) return;
+        const key = attemptKey(attempt);
         const store = usePuzzleRecordStore.getState();
         if (kind === "completed") {
           // A clean solve was complete when decided (and recorded with its completion then).
@@ -115,15 +132,15 @@ export function usePuzzleAttemptRecording(): void {
             .catch((error: unknown) => console.warn("puzzles.recordAttempt (completed) failed", error));
           return;
         }
-        store.set(attempt.id, { status: "saving" });
+        store.set(key, { status: "saving" });
         puzzles.recordAttempt(recordInput(attempt)).then(
           (result) => {
-            usePuzzleRecordStore.getState().set(attempt.id, { status: "saved", result });
+            usePuzzleRecordStore.getState().set(key, { status: "saved", result });
             void queryClient.invalidateQueries({ queryKey: puzzleKeys.all });
           },
           (error: unknown) => {
             console.warn("puzzles.recordAttempt failed", error);
-            usePuzzleRecordStore.getState().set(attempt.id, { status: "failed", message: ipcErrorMessage(error) || "unknown error" });
+            usePuzzleRecordStore.getState().set(key, { status: "failed", message: ipcErrorMessage(error) || "unknown error" });
           }
         );
       }),

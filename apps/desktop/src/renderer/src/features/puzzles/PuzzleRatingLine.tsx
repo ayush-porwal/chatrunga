@@ -1,7 +1,7 @@
 import { isProvisional } from "@chaturanga/shared/chess/puzzle-rating";
 import type { PuzzleAttemptResult } from "@chaturanga/shared/types/puzzle-rating";
 import { cn } from "@/lib/utils";
-import { usePuzzleRecordStore } from "../../queries/puzzles";
+import { attemptKey, usePuzzleRecordStore } from "../../queries/puzzles";
 import { usePuzzleStore } from "../../stores/puzzle-store";
 
 /** "1523", or "1523?" while provisional (as Lichess shows it). */
@@ -29,7 +29,7 @@ export function ratingLine(result: PuzzleAttemptResult): { text: string; delta: 
  * 1523 (+12)", "Unrated puzzle", or "Already played — not rated". Nothing before that.
  */
 export function PuzzleRatingLine() {
-  const attemptId = usePuzzleStore((state) => (state.outcome === "pending" ? null : (state.attempt?.id ?? null)));
+  const attemptId = usePuzzleStore((state) => (state.outcome !== "pending" && state.attempt ? attemptKey(state.attempt) : null));
   const record = usePuzzleRecordStore((state) => (attemptId ? state.byAttempt[attemptId] : undefined));
   if (!record || record.status === "saving") return null;
   if (record.status === "failed") {
