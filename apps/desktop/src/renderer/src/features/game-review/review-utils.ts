@@ -280,7 +280,7 @@ function whiteCp(score: EngineScore): number {
 }
 
 /** Verbal reading of a White-perspective score (see evalAssessmentSchema). */
-function assessScore(score: EngineScore | null | undefined): EvalAssessment | undefined {
+export function assessScore(score: EngineScore | null | undefined): EvalAssessment | undefined {
   if (!score) return undefined;
   if (score.type === "mate") {
     if (score.value > 0) return "white_has_forced_mate";

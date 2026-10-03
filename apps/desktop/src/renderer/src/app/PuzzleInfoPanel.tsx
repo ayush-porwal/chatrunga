@@ -14,10 +14,18 @@ import { sectionTitle } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { MoveLink } from "../features/game-review/MoveLinks";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
+import { PuzzleExplanation } from "../features/puzzles/PuzzleExplanation";
+import { explainOutcome } from "../features/puzzles/puzzle-explanation";
 import { formatPuzzleTag, puzzleDatasetLabel, puzzleSetSummary } from "../features/puzzles/puzzle-set";
 import { PuzzleRatingLine } from "../features/puzzles/PuzzleRatingLine";
 import { useGameStore } from "../stores/game-store";
-import { usePuzzleStore, type PuzzleFeedbackKind, type PuzzleOutcome } from "../stores/puzzle-store";
+import {
+  selectFirstWrongMove,
+  usePuzzleStore,
+  type PuzzleFeedbackKind,
+  type PuzzleOutcome,
+  type PuzzleWrongMove
+} from "../stores/puzzle-store";
 
 /** A short head shake for a wrong move (Web Animations; skipped under reduced motion). */
 const SHAKE: Keyframe[] = [
@@ -62,6 +70,7 @@ export const PuzzleInfoPanel = memo(function PuzzleInfoPanel(props: PanelProps) 
   const outcome = usePuzzleStore((state) => state.outcome);
   const solutionViewed = usePuzzleStore((state) => state.attempt?.solutionViewed ?? false);
   const wrongMoveCount = usePuzzleStore((state) => state.attempt?.wrongMoves.length ?? 0);
+  const firstWrongMove = usePuzzleStore(selectFirstWrongMove);
   const terminal = useGameStore((state) => positionStatus(state.currentFen).isEnd);
   // Still solving on the board (not since turned into an analysis board).
   const playing = useGameStore((state) => state.mode === "puzzle");
@@ -80,6 +89,7 @@ export const PuzzleInfoPanel = memo(function PuzzleInfoPanel(props: PanelProps) 
       outcome={outcome}
       solutionViewed={solutionViewed}
       wrongMoveCount={wrongMoveCount}
+      firstWrongMove={firstWrongMove}
       terminal={terminal}
       playing={playing}
     />
@@ -89,6 +99,7 @@ export const PuzzleInfoPanel = memo(function PuzzleInfoPanel(props: PanelProps) 
 function PuzzleCard({
   feedback,
   feedbackKind,
+  firstWrongMove,
   lastExpectedMove,
   nextError,
   nextPending,
@@ -106,6 +117,7 @@ function PuzzleCard({
 }: PanelProps & {
   feedback: string | null;
   feedbackKind: PuzzleFeedbackKind;
+  firstWrongMove: PuzzleWrongMove | null;
   lastExpectedMove: string | null;
   outcome: PuzzleOutcome;
   playing: boolean;
@@ -133,6 +145,8 @@ function PuzzleCard({
   const expectedSan = lastExpectedMove
     ? (solution.find((move, index) => index >= solutionIndex && move.uci === lastExpectedMove)?.san ?? lastExpectedMove)
     : null;
+  // Solved or failed: the AI explanation is offered (never while pending).
+  const explainKind = explainOutcome(outcome, firstWrongMove);
   const setLine = puzzleConfig ? puzzleSetSummary(puzzleConfig, puzzleDatasetLabel(puzzle.sourceId, puzzle.sourceName)) : null;
 
   const cardRef = useRef<HTMLDivElement>(null);
@@ -264,6 +278,8 @@ function PuzzleCard({
           {nextError ? <Notice tone="danger">{ipcErrorMessage(nextError) || nextError.message}</Notice> : null}
         </div>
       ) : null}
+
+      {explainKind ? <PuzzleExplanation puzzle={puzzle} kind={explainKind} wrong={firstWrongMove} linkMoves={complete} /> : null}
 
       <Disclosure
         title={complete ? "Solution" : "Show solution"}
