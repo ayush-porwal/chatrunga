@@ -193,17 +193,27 @@ describe("targeted practice presets", () => {
     expect(initial.mode).toBe("learn-new");
   });
 
-  it("retries a session's misses as a targeted queue, through the same start input", () => {
+  it("retries a session's misses as an ungraded targeted queue", () => {
     const preset = retryMissedPreset({ missedPositionKeys: ["k2", "k1", "k2"] });
-    expect(preset).toEqual({ mode: "review-due", positionKeys: ["k2", "k1"], autoStart: true });
+    expect(preset).toEqual({
+      mode: "review-due",
+      positionKeys: ["k2", "k1"],
+      ungraded: true,
+      autoStart: true
+    });
     expect(targetedPracticeInput("r1", preset)).toEqual({
       repertoireId: "r1",
       mode: "review-due",
       positionKeys: ["k2", "k1"],
       cardLimit: 2,
-      newCardLimit: 2
+      newCardLimit: 2,
+      ungraded: true
     });
     expect(retryMissedPreset({ missedPositionKeys: [] })).toBeNull();
+    // "Refresh this decision" stays a graded targeted queue.
+    expect(
+      targetedPracticeInput("r1", { mode: "review-due", positionKeys: ["k1"], autoStart: true })
+    ).not.toHaveProperty("ungraded");
   });
 
   it("calls a targeted session extra practice", () => {

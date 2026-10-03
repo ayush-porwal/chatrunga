@@ -47,6 +47,8 @@ export type PracticePreset = {
   chapterIds?: string[];
   mode?: PracticeMode;
   positionKeys?: string[];
+  /** A targeted queue as ungraded extra practice ("Retry missed"): no schedule changes. */
+  ungraded?: boolean;
   rehearse?: RehearseTarget;
   /** Rehearsal only: the depth limit to start with ("Rehearse again" keeps the session's). */
   maxDepthPlies?: number;
@@ -67,15 +69,19 @@ export function rehearsePreset(target: RehearseTarget, maxDepthPlies?: number): 
 }
 
 /**
- * "Retry missed": the session's missed decisions as a targeted queue (the same contract as
- * "Refresh this decision"), started at once; null when nothing was missed. It is a new session,
- * so the missed session's own answers and summary stay as they were.
+ * "Retry missed": the session's missed decisions as a targeted queue, started at once; null when
+ * nothing was missed. It is a new session, so the missed session's own answers and summary stay
+ * as they were, and it is ungraded: its answers are recorded with it, but the first scored
+ * attempt's schedule (a missed decision's relearn step, its lapses) stays as it was. "Refresh
+ * this decision" is a graded targeted queue.
  */
 export function retryMissedPreset(
   summary: Pick<PracticeSummary, "missedPositionKeys">
 ): PracticePreset | null {
   const positionKeys = [...new Set(summary.missedPositionKeys)];
-  return positionKeys.length ? { mode: "review-due", positionKeys, autoStart: true } : null;
+  return positionKeys.length
+    ? { mode: "review-due", positionKeys, ungraded: true, autoStart: true }
+    : null;
 }
 
 /** A targeted queue (exact decisions, due or not) is extra practice, not the scheduled review. */
@@ -131,7 +137,8 @@ export function targetedPracticeInput(
     mode: preset.mode ?? "review-due",
     positionKeys,
     cardLimit: limit,
-    newCardLimit: limit
+    newCardLimit: limit,
+    ...(preset.ungraded ? { ungraded: true } : {})
   };
 }
 

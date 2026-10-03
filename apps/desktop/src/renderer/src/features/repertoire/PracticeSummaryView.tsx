@@ -14,15 +14,17 @@ import { missedPositions } from "./repertoire-model";
  * Session summary (§5.3): unaided recalls, assisted answers, missed and skipped decisions, the
  * chapters practised, and the ways on. Counts describe decision recall — no "mastered" score.
  * Every missed decision is listed with its chapter and moves and a link to study it; "Retry
- * missed" practises them again as extra practice (a new targeted session: this one's answers stay
- * as they were). A line rehearsal also counts lines started and completed and answers that
- * belonged to another line, and offers "Rehearse again" (nothing in it was scheduled).
+ * missed" practises them again as ungraded extra practice (a new targeted session: this one's
+ * answers stay as they were, and no schedule changes). A line rehearsal also counts lines started
+ * and completed and answers that belonged to another line, and offers "Rehearse again" (nothing
+ * in it was scheduled).
  */
 export function PracticeSummaryView({
   detail,
   summary,
   cards,
   extraPractice = false,
+  ungraded = false,
   onStudy,
   onAgain,
   onRetryMissed,
@@ -34,6 +36,8 @@ export function PracticeSummaryView({
   cards: readonly PracticeCard[];
   /** The session was itself extra practice (a targeted queue, e.g. a retry of missed decisions). */
   extraPractice?: boolean;
+  /** The session was ungraded extra practice (Retry missed): nothing in it was scheduled. */
+  ungraded?: boolean;
   onStudy: (target: { chapterId: string; nodeId: string | null }) => void;
   onAgain: () => void;
   /** Practise the missed decisions again, as extra practice. */
@@ -64,7 +68,9 @@ export function PracticeSummaryView({
             description={
               rehearsal
                 ? "Results stay in this session: nothing was scheduled. A move from another line isn't a miss."
-                : "Recall counts each decision once: any accepted move is a correct answer."
+                : ungraded
+                  ? "Results stay in this session: nothing was scheduled, so each decision's next review is as your first answer left it."
+                  : "Recall counts each decision once: any accepted move is a correct answer."
             }
           />
           {note ? (
@@ -135,7 +141,8 @@ export function PracticeSummaryView({
           {retry ? (
             <p className="text-xs text-fg-muted">
               Retry missed is extra practice: this session&apos;s answers stay as recorded, and the
-              retry&apos;s answers count as a new review of those decisions.
+              retry changes no schedule — each decision&apos;s next review stays as your first
+              answer set it.
             </p>
           ) : null}
           <div className="flex flex-wrap gap-2">

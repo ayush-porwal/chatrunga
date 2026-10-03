@@ -1752,8 +1752,10 @@ type Candidate = {
  * `cardLimit` (20), then up to `newCardLimit` (5) unseen ones. Learn new: unseen decisions only,
  * up to `cardLimit` (10). With `positionKeys` the queue is exactly the named eligible decisions,
  * in that order and whether or not they are due (learn new keeps only unseen ones); the limits
- * don't apply and being queued records nothing. Each card freezes its policy so grading never
- * uses a moving set. Depth counts plies from the chapter root including the tested move (§5.3).
+ * don't apply and being queued records nothing. An `ungraded` targeted queue ("Retry missed")
+ * records its answers with the session only: no schedule changes. Each card freezes its policy so
+ * grading never uses a moving set. Depth counts plies from the chapter root including the tested
+ * move (§5.3).
  */
 export function startPractice(input: StartPracticeInput): PracticeSessionSnapshot {
   const now = clock();
@@ -1893,7 +1895,8 @@ export function startPractice(input: StartPracticeInput): PracticeSessionSnapsho
         ...(input.maxDepthPlies !== undefined ? { maxDepthPlies: input.maxDepthPlies } : {}),
         ...(input.cardLimit !== undefined ? { cardLimit: input.cardLimit } : {}),
         ...(input.newCardLimit !== undefined ? { newCardLimit: input.newCardLimit } : {}),
-        ...(input.positionKeys ? { positionKeys: [...input.positionKeys] } : {})
+        ...(input.positionKeys ? { positionKeys: [...input.positionKeys] } : {}),
+        ...(input.ungraded && input.positionKeys?.length ? { ungraded: true } : {})
       },
       snapshotRevision: record.revision,
       cards,
@@ -1956,15 +1959,18 @@ function historyAction(attempt: AttemptRecord): PracticeHistoryAction {
 
 /**
  * Applies a card's final outcome to its progress (scheduler v1). Callers first check the card is
- * still current (§8.3: no grade against a moving set). Returns whether it was written.
+ * still current (§8.3: no grade against a moving set). Returns whether it was written. An
+ * ungraded session's outcome is recorded with the session only: progress stays as it was.
  */
 function applySchedule(
-  repertoireId: string,
+  session: PracticeSessionRecord,
   card: PracticeCard,
   policy: FrozenPolicy,
   outcome: PracticeOutcome,
   now: number
 ): boolean {
+  if (session.scope.ungraded) return false;
+  const { repertoireId } = session;
   const previous = progressRepository.get(repertoireId, card.positionKey);
   const schedule = scheduleAfterOutcome(previous, outcome, now, previous?.lastAttemptAt);
   if (!schedule) return false;
@@ -2048,7 +2054,7 @@ export function recordAttempt(input: RecordAttemptInput): AttemptResult {
         ]);
         finalGrade = true;
         card.state = correct ? "answered-correct" : "answered-wrong";
-        scheduled = applySchedule(session.repertoireId, card, policy, gradeOutcome, now);
+        scheduled = applySchedule(session, card, policy, gradeOutcome, now);
       }
     }
 
@@ -2161,7 +2167,7 @@ export function recordPracticeAction(input: PracticeActionInput): PracticeAction
         const outcome = firstAnswerOutcome([...history.map(historyAction), { kind: "reveal" }]);
         persist(true, outcome);
         card.state = "revealed";
-        scheduled = applySchedule(session.repertoireId, card, policy, outcome, now);
+        scheduled = applySchedule(session, card, policy, outcome, now);
         session.cursor = nextCursor(session.cards, index);
       } else if (card.state === "answered-wrong") {
         persist(false, null);

@@ -243,7 +243,7 @@ export function RepertoirePracticePage({
 
   if (summary && summary.sessionId === sessionId) {
     const rehearsed = shownSession?.mode === "rehearse-lines" ? shownSession.scope : null;
-    // Retrying a rehearsal's misses would schedule them: a rehearsal offers Rehearse again instead.
+    // A rehearsal offers Rehearse again instead of Retry missed (its misses are lines, not cards).
     const retry = rehearsed ? null : retryMissedPreset(summary);
     return (
       <PracticeSummaryView
@@ -252,6 +252,7 @@ export function RepertoirePracticePage({
         cards={shownSession?.cards ?? []}
         note={endNote}
         extraPractice={Boolean(shownSession && isExtraPractice(shownSession.scope))}
+        ungraded={shownSession?.scope.ungraded === true}
         onStudy={onStudy}
         onAgain={onSetup}
         onRetryMissed={retry ? () => onRehearse(retry) : undefined}
@@ -627,7 +628,11 @@ function PracticeSession({
                 </span>
               ) : (
                 <>
-                  {isExtraPractice(session.scope) ? "Extra practice · " : ""}
+                  {session.scope.ungraded
+                    ? "Extra practice, not scheduled · "
+                    : isExtraPractice(session.scope)
+                      ? "Extra practice · "
+                      : ""}
                   {card.stage === "new" ? "New decision" : "Review"} ·{" "}
                   {color === "white" ? "White" : "Black"} to play
                 </>

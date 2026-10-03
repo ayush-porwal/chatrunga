@@ -1,6 +1,8 @@
 // Repertoire practice journeys: reading an answer's notes, moving on with Next, and the summary's
 // review queue of missed positions. How to run them: playwright.config.ts.
-import type { Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import type { ElectronApplication, Page } from "@playwright/test";
 import type { ChaturangaApi } from "../../../packages/shared/src/ipc/chaturanga-api";
 import { clickSquare, expect, sidebar, skipWelcome, test } from "./app";
 
@@ -43,6 +45,30 @@ function seedRepertoire(page: Page) {
 
 const practicePanel = (page: Page) => page.getByRole("complementary", { name: "Practice" });
 
+/**
+ * The repertoire's stored practice progress (stage, due date, lapses, successes per decision),
+ * read from a backup with progress written into the throwaway profile.
+ */
+async function storedProgress(app: ElectronApplication, page: Page, profile: string) {
+  const file = join(profile, `progress-${Date.now()}.json`);
+  await app.evaluate(({ dialog }, file) => {
+    const previous = dialog.showSaveDialog;
+    dialog.showSaveDialog = (async () => {
+      dialog.showSaveDialog = previous;
+      return { canceled: false, filePath: file };
+    }) as typeof dialog.showSaveDialog;
+  }, file);
+  await page.evaluate(async () => {
+    const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga.repertoires;
+    const [repertoire] = await api.list({});
+    await api.exportBackup({ repertoireIds: [repertoire.id], includeProgress: true });
+  });
+  const document = JSON.parse(readFileSync(file, "utf8")) as {
+    repertoires: { progress: unknown[] }[];
+  };
+  return document.repertoires[0].progress;
+}
+
 /** Opens the repertoire's chapter in Study, then its practice setup. */
 async function openPracticeSetup(page: Page) {
   await sidebar(page).getByRole("button", { name: "Repertoire", exact: true }).click();
@@ -52,9 +78,10 @@ async function openPracticeSetup(page: Page) {
 }
 
 test("practice shows an answer's notes only after grading, waits for Next, and retries the misses", async ({
-  launch
+  launch,
+  profile
 }) => {
-  const { page } = await launch();
+  const { app, page } = await launch();
   await skipWelcome(page);
   await seedRepertoire(page);
   await openPracticeSetup(page);
@@ -112,10 +139,27 @@ test("practice shows an answer's notes only after grading, waits for Next, and r
     missed.getByRole("button", { name: "Study Italian: 1. e4 e5 2. Nf3 Nc6", exact: true })
   ).toBeVisible();
 
-  // Retry missed: a targeted session of the two misses, labelled extra practice.
+  await expect(page.getByText("the retry changes no schedule", { exact: false })).toBeVisible();
+  const missedProgress = await storedProgress(app, page, profile);
+  expect(missedProgress).toHaveLength(3);
+
+  // Retry missed: a targeted session of the two misses, labelled as extra practice that isn't
+  // scheduled. Correct answers seconds after the misses leave their relearn steps as they were.
   await page.getByRole("button", { name: "Retry missed", exact: true }).click();
   await expect(panel).toContainText("1 of 2");
-  await expect(page.getByText("Extra practice · ", { exact: false })).toBeVisible();
+  await expect(page.getByText("Extra practice, not scheduled · ", { exact: false })).toBeVisible();
+  await clickSquare(page, "g1");
+  await clickSquare(page, "f3");
+  await expect(panel.getByText("You played Nf3.")).toBeVisible();
+  await page.keyboard.press("Space");
+  await expect(panel).toContainText("2 of 2");
+  await clickSquare(page, "f1");
+  await clickSquare(page, "c4");
+  await expect(panel.getByText("You played Bc4.")).toBeVisible();
+  await panel.getByRole("button", { name: "See summary", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Extra practice complete" })).toBeVisible();
+  await expect(page.getByText("nothing was scheduled", { exact: false })).toBeVisible();
+  expect(await storedProgress(app, page, profile)).toEqual(missedProgress);
 });
 
 test("a missed position's Study link opens it in its chapter", async ({ launch }) => {

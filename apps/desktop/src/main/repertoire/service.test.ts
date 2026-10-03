@@ -1921,18 +1921,51 @@ describe("repertoire service: practice", () => {
     expect(lapsed).toMatchObject({ stage: 0, lapses: 1 });
     const firstRows = attemptRepository.list(first.sessionId);
 
-    // "Retry missed": the targeted queue of the missed decisions, graded as any targeted queue.
+    // "Retry missed": the targeted queue of the missed decisions, as ungraded extra practice.
+    const retryMissed = () =>
+      service.startPractice({
+        repertoireId: id,
+        mode: "review-due",
+        positionKeys: summary.missedPositionKeys,
+        cardLimit: 1,
+        newCardLimit: 1,
+        ungraded: true
+      });
     now += 60_000;
-    const retry = service.startPractice({
-      repertoireId: id,
-      mode: "review-due",
-      positionKeys: summary.missedPositionKeys,
-      cardLimit: 1,
-      newCardLimit: 1
-    });
+    const retry = retryMissed();
+    expect(retry.scope.ungraded).toBe(true);
+    expect(service.resumePractice(retry.sessionId).scope.ungraded).toBe(true);
     expect(retry.cards.map((card) => card.positionKey)).toEqual([START_KEY]);
-    expect(attempt(retry.sessionId, retry.cards[0].queueItemId, "e2e4").outcome).toBe("correct");
-    expect(progressRepository.get(id, START_KEY)).toMatchObject({ stage: 1, lapses: 1 });
+    // A correct retry seconds after the miss doesn't jump the relearn step to stage 1.
+    expect(attempt(retry.sessionId, retry.cards[0].queueItemId, "e2e4")).toMatchObject({
+      outcome: "correct",
+      finalGrade: true
+    });
+    expect(progressRepository.get(id, START_KEY)).toEqual(lapsed);
+    // Its answers are recorded with the retry session: its summary counts them.
+    expect(service.endPractice(retry.sessionId)).toMatchObject({ unaided: 1, missed: 0 });
+
+    // A wrong retry adds no second lapse, nor does a reveal.
+    const again = retryMissed();
+    expect(attempt(again.sessionId, again.cards[0].queueItemId, "d2d4").outcome).toBe(
+      "outside-repertoire"
+    );
+    service.recordPracticeAction({
+      sessionId: again.sessionId,
+      queueItemId: again.cards[0].queueItemId,
+      action: { kind: "reveal" }
+    });
+    const third = retryMissed();
+    service.recordPracticeAction({
+      sessionId: third.sessionId,
+      queueItemId: third.cards[0].queueItemId,
+      action: { kind: "reveal" }
+    });
+    expect(progressRepository.get(id, START_KEY)).toEqual(lapsed);
+    expect(service.endPractice(again.sessionId)).toMatchObject({
+      missed: 1,
+      missedPositionKeys: [START_KEY]
+    });
 
     // The first session's answers and summary are unchanged.
     expect(attemptRepository.list(first.sessionId)).toEqual(firstRows);

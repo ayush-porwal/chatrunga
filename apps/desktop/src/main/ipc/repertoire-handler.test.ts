@@ -168,7 +168,8 @@ describe("registerRepertoireIpc", () => {
           maxDepthPlies: 8,
           cardLimit: 5,
           newCardLimit: 0,
-          positionKeys: ["v1:key"]
+          positionKeys: ["v1:key"],
+          ungraded: true
         },
         "startPractice"
       ],
@@ -229,7 +230,8 @@ describe("registerRepertoireIpc", () => {
       moves: ["e2e4", "c7c5"]
     });
     expect(calls.find(([name]) => name === "startPractice")?.[1][0]).toMatchObject({
-      positionKeys: ["v1:key"]
+      positionKeys: ["v1:key"],
+      ungraded: true
     });
     expect(calls.find(([name]) => name === "recordAttempt")?.[1][0]).toEqual({
       sessionId: "s1",
@@ -366,6 +368,26 @@ describe("registerRepertoireIpc", () => {
         positionKeys: ["k".repeat(201)]
       })
     ).toThrow(/positionKeys/);
+    // Ungraded practice is a targeted queue's only, and a flag.
+    expect(() =>
+      invoke("startPractice", { repertoireId: "r", mode: "review-due", ungraded: true })
+    ).toThrow(/Invalid ungraded/);
+    expect(() =>
+      invoke("startPractice", {
+        repertoireId: "r",
+        mode: "rehearse-lines",
+        positionKeys: ["v1:key"],
+        ungraded: true
+      })
+    ).toThrow(/Invalid ungraded/);
+    expect(() =>
+      invoke("startPractice", {
+        repertoireId: "r",
+        mode: "review-due",
+        positionKeys: ["v1:key"],
+        ungraded: "yes"
+      })
+    ).toThrow(/ungraded/);
   });
 
   it("answers a cancelled preview with the marker, and rejects any other failure", async () => {

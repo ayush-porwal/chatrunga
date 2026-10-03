@@ -152,6 +152,13 @@ export type PracticeScope = {
    * for merely being queued.
    */
   positionKeys?: string[];
+  /**
+   * Ungraded extra practice ("Retry missed"): answers, hints and reveals are recorded with the
+   * session (its summary counts them), but no decision's schedule or progress changes — stage,
+   * due date, lapses and successes stay as the first scored attempt left them. Only for a
+   * targeted queue (`positionKeys`); a rehearsal never schedules anyway.
+   */
+  ungraded?: boolean;
   /** Rehearse-lines only: the chapter to rehearse, from its root or from `fromNodeId`. */
   rehearse?: { chapterId: string; fromNodeId?: string };
 };

@@ -1039,6 +1039,13 @@ export function parseStartPracticeInput(value: unknown): StartPracticeInput {
     };
   });
   if (rehearse) result.rehearse = rehearse;
+  const ungraded = optional(input.ungraded, (flag) => asBoolean(flag, "ungraded"));
+  if (ungraded) {
+    if (!result.positionKeys?.length || result.mode === "rehearse-lines") {
+      fail("ungraded", "only a targeted queue (positionKeys) can be ungraded practice");
+    }
+    result.ungraded = true;
+  }
   return result;
 }
 
