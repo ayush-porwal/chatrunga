@@ -106,21 +106,24 @@ function SegmentedControl<T extends string>({
     return () => observer.disconnect();
   }, [selectedIndex, labelsKey, size, fullWidth]);
 
-  // Arrow keys / Home / End move between segments (WAI-ARIA tabs & radio group pattern).
+  // Arrow keys / Home / End move between segments (WAI-ARIA tabs & radio group pattern). A segment
+  // locked with a reason still takes focus (so its tooltip, and the reason, reach keyboard and
+  // screen-reader users) but isn't selected.
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    const enabled = options.filter((option) => !option.disabled);
-    const current = enabled.findIndex((option) => option.value === value);
+    const focusable = options.filter((option) => !option.disabled || option.disabledReason);
+    const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
+    const focused = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    const current = focused !== -1 ? focused : focusable.findIndex((option) => option.value === value);
     let next: number | null = null;
-    if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (current + 1) % enabled.length;
-    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = (current - 1 + enabled.length) % enabled.length;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (current + 1) % focusable.length;
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = (current - 1 + focusable.length) % focusable.length;
     else if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = enabled.length - 1;
-    const option = next === null ? undefined : enabled[next];
-    if (!option) return;
+    else if (event.key === "End") next = focusable.length - 1;
+    const option = next === null ? undefined : focusable[next];
+    if (!option || next === null) return;
     event.preventDefault();
-    onChange(option.value);
-    const buttons = event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled):not([aria-disabled='true'])");
-    buttons[next ?? 0]?.focus();
+    if (!option.disabled) onChange(option.value);
+    buttons[next]?.focus();
   };
   return (
     <div
