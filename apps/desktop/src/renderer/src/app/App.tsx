@@ -21,6 +21,7 @@ import { PgnImportDialog } from "../features/game/PgnImportDialog";
 import { openSavedGame, savedReview } from "../features/game/saved-game";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import { usePuzzleAutoReply } from "../features/puzzles/puzzle-session";
+import { usePuzzleAttemptRecording } from "../queries/puzzles";
 import type { SettingsSectionId } from "../features/settings/SettingsPage";
 import { useOnboarding } from "../features/onboarding/useOnboarding";
 import {
@@ -294,6 +295,7 @@ export function App() {
   useUsageActivity();
   useMoveSounds({ enabled: settings.soundEnabled, volume: settings.soundVolume });
   usePuzzleAutoReply();
+  usePuzzleAttemptRecording();
   const openReviewSettings = useCallback(() => setReviewTab("settings"), []);
   const { startReview, hasMoves: gameHasMoves } = useReviewRunner({
     engines: engines.data,

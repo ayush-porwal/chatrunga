@@ -77,7 +77,7 @@ describe("puzzle outcome", () => {
   });
 
   it("starts a pending attempt for the puzzle shown", () => {
-    usePuzzleStore.getState().setActivePuzzle({ ...puzzle, rating: 1650 });
+    usePuzzleStore.getState().setActivePuzzle({ ...puzzle, rating: 1650, ratingDeviation: 80 });
     expect(usePuzzleStore.getState().outcome).toBe("pending");
     expect(usePuzzleStore.getState().attempt).toEqual({
       id: expect.any(String),
@@ -85,6 +85,8 @@ describe("puzzle outcome", () => {
       databaseId: "db1",
       sourceId: "lichess-puzzles",
       puzzleRating: 1650,
+      puzzleRatingDeviation: 80,
+      themes: ["fork"],
       wrongMoves: [],
       solutionViewed: false,
       startedAt: 1_000,

@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { MoveLink } from "../features/game-review/MoveLinks";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import { formatPuzzleTag, puzzleDatasetLabel, puzzleSetSummary } from "../features/puzzles/puzzle-set";
+import { PuzzleRatingLine } from "../features/puzzles/PuzzleRatingLine";
 import { useGameStore } from "../stores/game-store";
 import { usePuzzleStore, type PuzzleFeedbackKind, type PuzzleOutcome } from "../stores/puzzle-store";
 
@@ -232,6 +233,8 @@ function PuzzleCard({
         ) : null}
         <SolutionProgress done={playerDone} total={playerMoves} wrong={wrong} />
       </div>
+
+      <PuzzleRatingLine />
 
       {complete || failed || broken ? (
         <div className="grid animate-rise-in gap-2">

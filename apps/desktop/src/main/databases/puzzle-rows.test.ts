@@ -25,6 +25,8 @@ describe("sampleFromLichessRow", () => {
       opponentMove: "e8d7",
       solutionMoves: ["a2e6", "d7d8", "f7f8"],
       rating: 1760,
+      ratingDeviation: 80,
+      plays: 72,
       sideToMove: "white",
       themes: ["mate", "mateIn2", "middlegame", "short"],
       openingTags: ["Italian_Game", "Italian_Game_Classical_Variation"]

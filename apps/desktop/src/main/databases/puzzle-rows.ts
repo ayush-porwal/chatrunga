@@ -51,6 +51,8 @@ export function headerMatches(kind: PuzzleRowKind, line: string): boolean {
 
 const words = (value: string | undefined) => (value ? value.split(/\s+/).filter(Boolean) : []);
 const finiteOrNull = (value: number) => (Number.isFinite(value) ? value : null);
+/** A numeric CSV field; null when empty or not a number (`Number("")` would be 0). */
+const numberOrNull = (value: string | undefined) => (value?.trim() ? finiteOrNull(Number(value)) : null);
 
 /** Splits one CSV line, honouring double-quoted fields and `""` escapes. */
 export function parseCsvLine(line: string): string[] {
@@ -143,7 +145,7 @@ export function sampleFromLichessRow(
   row: string[],
   input: PuzzleSampleInput
 ): PuzzleSample | null {
-  const [id, fenBefore, movesRaw, ratingRaw, , popularityRaw, , themesRaw, gameUrl, openingsRaw] = row;
+  const [id, fenBefore, movesRaw, ratingRaw, deviationRaw, popularityRaw, playsRaw, themesRaw, gameUrl, openingsRaw] = row;
   if (!id || !fenBefore || !movesRaw) return null;
   const moves = words(movesRaw);
   if (moves.length < 2) return null;
@@ -176,6 +178,8 @@ export function sampleFromLichessRow(
     opponentMove: moves[0],
     solutionMoves: moves.slice(1),
     rating: finiteOrNull(rating),
+    ratingDeviation: numberOrNull(deviationRaw),
+    plays: numberOrNull(playsRaw),
     popularity: finiteOrNull(popularity),
     themes,
     gameUrl: gameUrl || null,
