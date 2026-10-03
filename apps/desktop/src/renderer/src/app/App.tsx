@@ -38,6 +38,7 @@ import { selectLiveGameInProgress, useLichessStore } from "../stores/lichess-sto
 import { useHistoryStore, type BoardSnapshot, type HistoryEntry } from "../stores/history-store";
 import {
   captureEntry,
+  continuedPuzzleSet,
   planBoardRestore,
   recordHistory,
   replacesLiveBoard,
@@ -326,7 +327,8 @@ export function App() {
       reviewTab,
       openingSide,
       settingsSection: viewedSettingsSection.current ?? settingsSection,
-      puzzleConfig: activePuzzleConfig,
+      puzzleSet: puzzleSession.snapshot,
+      puzzleSetContinues: puzzleSession.continues(currentGame().board),
       repertoireScreen
     });
   }
@@ -442,9 +444,11 @@ export function App() {
       return "shown";
     }
     if (plan.kind === "puzzle") {
-      startPuzzle(plan.sample, plan.config, "none");
+      startPuzzle(plan.sample, plan.set?.config, "none");
       return "shown";
     }
+    // A game played on from a puzzle comes back with its set (and so its Next puzzle).
+    const continuedSet = continuedPuzzleSet(snapshot);
     if (plan.kind === "saved") {
       const saved = await window.chaturanga?.games.get(plan.gameId).catch(() => null);
       if (request !== latestNavigation.current) return "dropped";
@@ -462,8 +466,9 @@ export function App() {
     } else {
       stopEngineWork({ stopSearch: snapshot.mode !== "analysis", keepReview });
       // The same game: one played on from a puzzle keeps its set (Next puzzle).
-      puzzleSession.release(currentGame().board);
+      if (!continuedSet) puzzleSession.release(currentGame().board);
     }
+    if (continuedSet) puzzleSession.resumeOnBoard(continuedSet, currentGame().board);
     currentGame().restoreView(snapshot);
     if (snapshot.mode === "analysis") {
       if (defaultEngineId && !useAnalysisStore.getState().activeEngineId) useAnalysisStore.getState().setActiveEngine(defaultEngineId);

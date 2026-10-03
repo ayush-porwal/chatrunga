@@ -1,7 +1,6 @@
 import { openingSideFor, type OpeningSide } from "../features/game-review/opening-comparison";
 import type { ReviewTab } from "../features/game-review/review-utils";
 import { repertoireCommandBlocked } from "../features/repertoire/handoffs";
-import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import type { SettingsSectionId } from "../features/settings/SettingsPage";
 import { useGameStore } from "../stores/game-store";
 import { useHistoryStore, type BoardSnapshot, type HistoryEntry } from "../stores/history-store";
@@ -9,6 +8,7 @@ import { useLichessStore } from "../stores/lichess-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
 import { useRepertoireWorkspaceStore } from "../stores/repertoire-workspace-store";
 import type { AppView, RepertoireScreen } from "./AppPages";
+import type { PuzzleSetSnapshot } from "./puzzle-session-controller";
 import type { SideTab } from "./side-tabs";
 import { isHeldUnchanged } from "./useGameAutosave";
 
@@ -30,14 +30,16 @@ export type HistoryContext = {
   openingSide: OpeningSide | null;
   /** The Settings section being read (else where Settings opened). */
   settingsSection: SettingsSectionId | null;
-  /** The puzzle set the board's puzzle belongs to. */
-  puzzleConfig: PuzzleSessionConfig | null;
+  /** The puzzle set being played (null without one). */
+  puzzleSet: PuzzleSetSnapshot | null;
+  /** The board is a game played on from that set's puzzle (Play engine from here). */
+  puzzleSetContinues: boolean;
   /** The repertoire screen shown (from the route and App's extras). */
   repertoireScreen: RepertoireScreen | null;
 };
 
 /** The board as it is now, for a history entry. */
-export function captureBoard(tab: SideTab, puzzleConfig: PuzzleSessionConfig | null): BoardSnapshot {
+export function captureBoard(tab: SideTab, puzzleSet: PuzzleSetSnapshot | null, continuesSet = false): BoardSnapshot {
   const game = useGameStore.getState();
   const puzzle = game.mode === "puzzle" ? usePuzzleStore.getState().activePuzzle : null;
   return {
@@ -53,7 +55,9 @@ export function captureBoard(tab: SideTab, puzzleConfig: PuzzleSessionConfig | n
     orientation: game.orientation,
     gameOutcome: game.gameOutcome,
     tab,
-    puzzle: puzzle ? { sample: puzzle, config: puzzleConfig } : null,
+    puzzle: puzzle ? { sample: puzzle } : null,
+    // Its puzzle's set, or the set a game played on from its puzzle goes on with.
+    puzzleSet: puzzle || continuesSet ? puzzleSet : null,
     lichessGameId: game.mode === "online" ? (useLichessStore.getState().live?.id ?? null) : null
   };
 }
@@ -70,11 +74,11 @@ export function captureEntry(view: AppView, context: HistoryContext): HistoryEnt
       return { view, opponent: lichess.playOpponent ?? (connected ? "lichess" : "engine") };
     }
     case "game":
-      return { view, board: captureBoard(context.tab, context.puzzleConfig) };
+      return { view, board: captureBoard(context.tab, context.puzzleSet, context.puzzleSetContinues) };
     case "game-review":
       return {
         view,
-        board: captureBoard("notation", context.puzzleConfig),
+        board: captureBoard("notation", context.puzzleSet, context.puzzleSetContinues),
         tab: context.reviewTab,
         compareColor: openingSideFor(context.openingSide, useGameStore.getState().board)
       };
@@ -130,7 +134,7 @@ export function replacesLiveBoard(entry: HistoryEntry, liveGameId: string): bool
  */
 export type BoardRestore =
   | { kind: "live" }
-  | { kind: "puzzle"; sample: NonNullable<BoardSnapshot["puzzle"]>["sample"]; config: PuzzleSessionConfig }
+  | { kind: "puzzle"; sample: NonNullable<BoardSnapshot["puzzle"]>["sample"]; set: PuzzleSetSnapshot | null }
   | { kind: "saved"; gameId: string }
   | { kind: "session"; session: NonNullable<BoardSnapshot["session"]> }
   | { kind: "same" };
@@ -140,9 +144,22 @@ export function planBoardRestore(snapshot: BoardSnapshot): BoardRestore {
   const live = useLichessStore.getState().live;
   if (snapshot.lichessGameId && live && !live.over && snapshot.lichessGameId === live.id) return { kind: "live" };
   if (snapshot.puzzle) {
-    return { kind: "puzzle", sample: snapshot.puzzle.sample, config: snapshot.puzzle.config as PuzzleSessionConfig };
+    return { kind: "puzzle", sample: snapshot.puzzle.sample, set: snapshotPuzzleSet(snapshot) };
   }
   if (snapshot.gameId && snapshot.gameId !== useGameStore.getState().gameId) return { kind: "saved", gameId: snapshot.gameId };
   if (!snapshot.gameId && snapshot.session) return { kind: "session", session: snapshot.session };
   return { kind: "same" };
+}
+
+/** The puzzle set a snapshot's board belongs to (its puzzle's, or a game played on from one), or null. */
+export function snapshotPuzzleSet(snapshot: BoardSnapshot): PuzzleSetSnapshot | null {
+  return (snapshot.puzzleSet as PuzzleSetSnapshot | null | undefined) ?? null;
+}
+
+/**
+ * The set a restored game goes on with: one played on from a puzzle (Next puzzle resumes the set
+ * after it). Null for a puzzle (it starts its set itself) and for any other board.
+ */
+export function continuedPuzzleSet(snapshot: BoardSnapshot): PuzzleSetSnapshot | null {
+  return snapshot.puzzle ? null : snapshotPuzzleSet(snapshot);
 }
