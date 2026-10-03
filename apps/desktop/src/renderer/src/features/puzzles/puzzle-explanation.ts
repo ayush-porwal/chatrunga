@@ -21,11 +21,16 @@ import { formatPuzzleTag } from "./puzzle-set";
  */
 
 /**
- * The case to explain, or null while the puzzle is still pending or its data turned out broken
- * (nothing is offered then: there is no sound line to explain).
+ * The case to explain, or null while the puzzle is still pending or its data turned out broken —
+ * "void", or failed by the solver and broken after (its scripted line can't be trusted then).
+ * Nothing is offered in those cases.
  */
-export function explainOutcome(outcome: PuzzleOutcome, wrongMove: PuzzleWrongMove | null): PuzzleOutcomeKind | null {
-  if (outcome === "pending" || outcome === "void") return null;
+export function explainOutcome(
+  outcome: PuzzleOutcome,
+  wrongMove: PuzzleWrongMove | null,
+  broken = false
+): PuzzleOutcomeKind | null {
+  if (broken || outcome === "pending" || outcome === "void") return null;
   if (outcome === "solved") return "solved";
   return wrongMove ? "failed_wrong_move" : "failed_solution_viewed";
 }

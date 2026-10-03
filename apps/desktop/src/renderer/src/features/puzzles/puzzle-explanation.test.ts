@@ -48,6 +48,7 @@ describe("which case is explained", () => {
   it("is nothing while pending, then solved, failed by a move, or failed by opening the solution", () => {
     expect(explainOutcome("pending", wrong)).toBeNull();
     expect(explainOutcome("void", null)).toBeNull();
+    expect(explainOutcome("failed", wrong, true)).toBeNull();
     expect(explainOutcome("solved", null)).toBe("solved");
     expect(explainOutcome("failed", wrong)).toBe("failed_wrong_move");
     expect(explainOutcome("failed", null)).toBe("failed_solution_viewed");

@@ -146,7 +146,7 @@ function PuzzleCard({
     ? (solution.find((move, index) => index >= solutionIndex && move.uci === lastExpectedMove)?.san ?? lastExpectedMove)
     : null;
   // Solved or failed: the AI explanation is offered (never while pending).
-  const explainKind = explainOutcome(outcome, firstWrongMove);
+  const explainKind = explainOutcome(outcome, firstWrongMove, broken);
   const setLine = puzzleConfig ? puzzleSetSummary(puzzleConfig, puzzleDatasetLabel(puzzle.sourceId, puzzle.sourceName)) : null;
 
   const cardRef = useRef<HTMLDivElement>(null);
