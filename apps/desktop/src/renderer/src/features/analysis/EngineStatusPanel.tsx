@@ -6,6 +6,7 @@ import { MoveLink, type GoToLine } from "../game-review/MoveLinks";
 import { ReviewBoard } from "../game-review/ReviewBoard";
 import { numberedLine, uciLineSteps, uciLineToSan } from "../game-review/review-utils";
 import { useGameStore } from "../../stores/game-store";
+import type { Color } from "@chaturanga/shared/types/chess";
 import type { EngineInfo, EngineScore } from "@chaturanga/shared/types/engine";
 import { scoreFromWhitePerspective } from "@chaturanga/shared/chess/review";
 import { useAnalysisStore } from "../../stores/analysis-store";
@@ -223,8 +224,7 @@ function previewFor(fen: string, lines: readonly EngineInfo[], target: PreviewTa
  * A roomy board under the lines with the position after the move being hovered (or focused), the
  * line up to it and the line's score. Below the lines, it never covers the moves being read.
  */
-function LinePreviewCard({ preview }: { preview: LinePreview }) {
-  const orientation = useGameStore((state) => state.orientation);
+function LinePreviewCard({ preview, orientation }: { preview: LinePreview; orientation: Color }) {
   return (
     <div className="grid animate-fade-in gap-3 rounded-xl border border-line-subtle bg-surface-raised/40 p-3" aria-live="polite">
       <ReviewBoard
@@ -249,15 +249,59 @@ const goToLine: GoToLine = (target) => {
   useGameStore.getState().goToLine(target.startNodeId, target.moves);
 };
 
+/** The position an engine panel's lines belong to, and what the panel may do with them. */
+export type EnginePanelPosition = {
+  fen: string;
+  /** The node the lines start from (a picked move is a line from here). */
+  nodeId: string;
+  /** The way the line preview's board faces. */
+  orientation: Color;
+  /** Live analysis runs (not an engine game's opponent): Restart is offered. */
+  analysing: boolean;
+  /** An engine game's opponent: its one line is shown. */
+  engineGame: boolean;
+  /** A move of a line was picked: the line up to it, from `nodeId`. Unset, the moves only show. */
+  onGoToLine?: GoToLine;
+};
+
+/** The game board's position for its Engine tab: picking a line's move walks the board there. */
+function useBoardEnginePosition(): EnginePanelPosition {
+  const fen = useGameStore((state) => state.currentFen);
+  const nodeId = useGameStore((state) => state.currentNodeId);
+  const orientation = useGameStore((state) => state.orientation);
+  // During a live engine match lines are read-only (the game store refuses new branches then).
+  const linesNavigable = useGameStore((state) => state.mode !== "engine" || !state.engineSide || Boolean(state.gameOutcome));
+  // Live analysis (not an engine game's opponent): the engine can be switched from the header.
+  const analysing = useGameStore((state) => state.mode === "analysis");
+  const engineGame = useGameStore((state) => state.mode === "engine");
+  return useMemo(
+    () => ({ fen, nodeId, orientation, analysing, engineGame, onGoToLine: linesNavigable ? goToLine : undefined }),
+    [fen, nodeId, orientation, analysing, engineGame, linesNavigable]
+  );
+}
+
+type EnginePanelActions = {
+  /** Starts (or resumes) live analysis: the idle state's button and the header's Start. Omit to hide it. */
+  onStartAnalysis?: () => void;
+  /** Stops live analysis (its lines stay, and Start carries on from them). */
+  onStopAnalysis?: () => void;
+  /** Offered when no engine is installed (the way to get one). */
+  onOpenSettings?: () => void;
+};
+
 /**
  * Workspace "Engine" tab: live search stats and principal variations (flat — the panel is the card).
  * Locked while a Lichess game is being played: outside help is against Lichess's fair-play rules.
  */
-export function EngineStatusPanel(props: {
-  onStartAnalysis?: () => void;
-  onStopAnalysis?: () => void;
-  onOpenSettings?: () => void;
-}) {
+export function EngineStatusPanel(props: EnginePanelActions) {
+  return <EngineAnalysisPanel position={useBoardEnginePosition()} {...props} />;
+}
+
+/**
+ * The engine's search and lines for `position` (the board's, or another screen's such as a
+ * repertoire study's), locked while a Lichess game is being played.
+ */
+export function EngineAnalysisPanel(props: EnginePanelActions & { position: EnginePanelPosition }) {
   const onlineGame = useLichessStore(selectLiveGameInProgress);
   if (onlineGame) {
     return (
@@ -271,17 +315,11 @@ export function EngineStatusPanel(props: {
 }
 
 function EngineStatusPanelContent({
+  position,
   onStartAnalysis,
   onStopAnalysis,
   onOpenSettings
-}: {
-  /** Starts (or resumes) live analysis: the idle state's button and the header's Start. Omit to hide it. */
-  onStartAnalysis?: () => void;
-  /** Stops live analysis (its lines stay, and Start carries on from them). */
-  onStopAnalysis?: () => void;
-  /** Offered when no engine is installed (the way to get one). */
-  onOpenSettings?: () => void;
-}) {
+}: EnginePanelActions & { position: EnginePanelPosition }) {
   // Only what this panel shows (engine info arrives throttled, ~6 updates a second at most).
   const { status, latestInfo, topLines, bestMove, error, activeEngineId } = useAnalysisStore(
     useShallow((state) => ({
@@ -293,17 +331,11 @@ function EngineStatusPanelContent({
       activeEngineId: state.activeEngineId
     }))
   );
-  const fen = useGameStore((state) => state.currentFen);
-  const nodeId = useGameStore((state) => state.currentNodeId);
-  // During a live engine match lines are read-only (the game store refuses new branches then).
-  const linesNavigable = useGameStore((state) => state.mode !== "engine" || !state.engineSide || Boolean(state.gameOutcome));
-  // Live analysis (not an engine game's opponent): the engine can be switched from the header.
-  const analysing = useGameStore((state) => state.mode === "analysis");
+  const { fen, nodeId, orientation, analysing, engineGame, onGoToLine } = position;
   const settings = useSettingsQuery();
   const analysisSettings = { ...defaultSettings, ...(settings.data ?? {}) };
   const searchLimit = analysisLimitLabel(analysisSettings);
   // An engine game asks for one line; live analysis (running or stopped) for as many as its settings say.
-  const engineGame = useGameStore((state) => state.mode === "engine");
   const reservedLines = engineGame ? 1 : analysisSettings.analysisLines;
   // The hovered line move, for the position it was hovered in (a new position drops it). The card
   // reads that line as it is now, so a line the engine updates under the pointer updates too.
@@ -420,12 +452,12 @@ function EngineStatusPanelContent({
                     nodeId={nodeId}
                     expanded={expandedLines.has(line?.multipv ?? index + 1)}
                     onToggle={toggleLine}
-                    onGoToLine={linesNavigable ? goToLine : undefined}
+                    onGoToLine={onGoToLine}
                     onPreview={setPreview}
                   />
                 ))}
               </ol>
-              {preview ? <LinePreviewCard preview={preview} /> : null}
+              {preview ? <LinePreviewCard preview={preview} orientation={orientation} /> : null}
             </div>
           ) : null}
         </>
