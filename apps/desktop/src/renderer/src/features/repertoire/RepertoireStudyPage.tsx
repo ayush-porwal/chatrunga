@@ -373,11 +373,8 @@ export function RepertoireStudyPage({
   }
 
   // Why Analyze and Play from here can't start (they also wait for the chapter to load, above).
-  const handoffUnavailable = !draft.enabled
-    ? "Enable this chapter to analyse or play from it"
-    : statusForFen(node.fenAfter).isEnd
-      ? NO_MOVES_TO_PLAY
-      : null;
+  // Study actions: a chapter left out of practice is still analysed and played from.
+  const handoffUnavailable = statusForFen(node.fenAfter).isEnd ? NO_MOVES_TO_PLAY : null;
 
   const removeChapter = async (id: string) => {
     const current = id === chapterId;
