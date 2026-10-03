@@ -369,12 +369,19 @@ export const useGameStore = create<GameStore>((set, get) => {
       // main line no longer ends there; a resignation, flag or agreement stays.
       const endFen = nextTree.find((item) => item.id === mainlineEndId(nextTree))?.fenAfter ?? state.rootFen;
       const boardOutcome = state.gameOutcome && BOARD_TERMINATIONS.has(state.gameOutcome.termination);
+      const reopened = boardOutcome && !statusForFen(endFen).isEnd;
       set({
         moveTree: nextTree,
         currentNodeId: survivingCurrent?.id ?? parent.id,
         currentFen: survivingCurrent?.fenAfter ?? parent.fenAfter,
         lastError: null,
-        ...(boardOutcome && !statusForFen(endFen).isEnd ? { gameOutcome: null } : {})
+        // The result the headers took from that position goes too (the titlebar reads it).
+        ...(reopened
+          ? {
+              gameOutcome: null,
+              headers: state.headers.result === state.gameOutcome?.result ? { ...state.headers, result: "*" } : state.headers
+            }
+          : {})
       });
       return true;
     },

@@ -424,6 +424,11 @@ describe("game store", () => {
       const size = useGameStore.getState().moveTree.length;
       expect(useGameStore.getState().makeMove({ from: "a7", to: "a6" })).toBe(false);
       expect(useGameStore.getState().moveTree).toHaveLength(size);
+      // Deleting the mating move reopens the game: the result leaves the headers with the outcome.
+      const mate = useGameStore.getState().moveTree.find((node) => node.parentId === beforeMate)!.id;
+      expect(useGameStore.getState().deleteLineFromNode(mate)).toBe(true);
+      expect(useGameStore.getState().gameOutcome).toBeNull();
+      expect(useGameStore.getState().headers.result).toBe("*");
     });
 
     it("leaves a board that isn't an engine game undecided at mate", () => {
