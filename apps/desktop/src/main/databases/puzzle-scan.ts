@@ -35,8 +35,14 @@ export type ScanResult = {
  * chess work (the position after the opponent's move) is left for the one row that gets used.
  * With `input.ids`, only those puzzles match, and the scan ends once all of them are found (as
  * complete as reading the rest); an empty list matches nothing, without reading the file.
+ * `random` (uniform in [0, 1)) is Math.random in the app; tests pass a seeded one, so which rows
+ * are kept is the same on every run.
  */
-export async function reservoirScan(job: ScanJob, isCancelled: () => boolean = () => false): Promise<ScanResult> {
+export async function reservoirScan(
+  job: ScanJob,
+  isCancelled: () => boolean = () => false,
+  random: () => number = Math.random
+): Promise<ScanResult> {
   const excluded = new Set(job.excludeIds);
   const wanted = job.input.ids ? new Set(job.input.ids) : null;
   if (wanted && !wanted.size) return { rows: [], matches: 0, complete: true };
@@ -53,7 +59,7 @@ export async function reservoirScan(job: ScanJob, isCancelled: () => boolean = (
     matches += 1;
     if (rows.length < job.size) rows.push(row);
     else {
-      const slot = Math.floor(Math.random() * matches);
+      const slot = Math.floor(random() * matches);
       if (slot < job.size) rows[slot] = row;
     }
     // Ids are unique in a puzzle file: every wanted one is in hand.
