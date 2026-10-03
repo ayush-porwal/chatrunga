@@ -1,7 +1,9 @@
 // Minimal scripted UCI engine for review pipeline tests.
 // argv[2] = "sf" (MultiPV search output) or "maia" (replays captured lc0 VerboseMoveStats).
 // argv[3] = "slow-start": answers `uci` only after 10 s (a large network loading).
-import { readFileSync } from "node:fs";
+// argv[3] = "wait-for-stop": a search prints its lines at once but its bestmove only on `stop`;
+// every command received is appended to the file argv[4].
+import { appendFileSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,8 +14,11 @@ const maiaLines = readFileSync(join(here, "maia-1100-italian.txt"), "utf8").spli
 const out = (line) => process.stdout.write(`${line}\n`);
 let multipv = 1;
 
+const waitForStop = process.argv[3] === "wait-for-stop";
+
 createInterface({ input: process.stdin }).on("line", (raw) => {
   const line = raw.trim();
+  if (waitForStop) appendFileSync(process.argv[4], `${line}\n`);
   if (line === "uci" && process.argv[3] === "slow-start") {
     setTimeout(() => out("uciok"), 10_000);
   } else if (line === "uci") {
@@ -35,7 +40,8 @@ createInterface({ input: process.stdin }).on("line", (raw) => {
       for (let pv = 1; pv <= multipv; pv += 1) {
         out(`info depth 6 seldepth 8 multipv ${pv} score cp ${60 - pv * 20} wdl 300 500 200 nodes 1000 pv ${moves[pv - 1]}`);
       }
-      out(`bestmove ${moves[0]}`);
+      if (!waitForStop) out(`bestmove ${moves[0]}`);
     }
-  } else if (line === "quit") process.exit(0);
+  } else if (line === "stop" && waitForStop) out("bestmove d1h5");
+  else if (line === "quit") process.exit(0);
 });

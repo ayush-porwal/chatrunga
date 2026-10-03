@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -168,7 +168,7 @@ describe("analysePositionsWithEngine", () => {
     expect(result.lines[0]![0]).toMatchObject({ multipv: 1, pv: ["d1h5"], scoreWhite: { type: "cp", value: 40 } });
   });
 
-  it("refuses partial lines once cancelled", async () => {
+  it("is cancelled while the engine is still starting up", async () => {
     let cancelled = false;
     setTimeout(() => {
       cancelled = true;
@@ -180,6 +180,22 @@ describe("analysePositionsWithEngine", () => {
         { shouldCancel: () => cancelled }
       )
     ).rejects.toThrow("Review cancelled");
+  });
+
+  it("refuses the partial lines a search stopped by the cancel still ends with", async () => {
+    const log = join(mkdtempSync(join(tmpdir(), "chaturanga-review-test-")), "commands.log");
+    writeFileSync(log, "");
+    // Cancelled once the engine is searching: it has printed its lines and answers the stop with a bestmove.
+    const searching = () => readFileSync(log, "utf8").split("\n").some((line) => line.startsWith("go "));
+    await expect(
+      analysePositionsWithEngine(
+        fakeEngine("stoppable", "sf", { args: [FAKE, "sf", "wait-for-stop", log] }),
+        { positions: [{ fen: START, multipv: 2 }], moveTimeMs: 50 },
+        { shouldCancel: searching }
+      )
+    ).rejects.toThrow("Review cancelled");
+    const commands = readFileSync(log, "utf8").split("\n");
+    expect(commands.findIndex((line) => line.startsWith("go "))).toBeLessThan(commands.indexOf("stop"));
   });
 });
 
