@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
 import type { DrawShape } from "@lichess-org/chessground/draw";
@@ -6,7 +6,7 @@ import type { Key, MoveMetadata } from "@lichess-org/chessground/types";
 import { formatClockForDisplay } from "@chaturanga/shared/chess/clock-display";
 import { clocksOnPathToNode, nodeIdForBoardFen } from "@chaturanga/shared/chess/pgn";
 import { legalDestsForFen, isPromotionMove, statusForFen } from "@chaturanga/shared/chess/position";
-import type { BoardArrow, BoardHighlight, Color, GameMode, MoveNode, UserMove } from "@chaturanga/shared/types/chess";
+import type { BoardArrow, BoardHighlight, Color, MoveNode, UserMove } from "@chaturanga/shared/types/chess";
 import { isMatchMode, useGameStore } from "../../stores/game-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
 import { useDisplayedReviewMoves } from "../../stores/review-validity";
@@ -22,6 +22,8 @@ import { EngineClock } from "./EngineClock";
 import { useBoardAppearance, useCgBoardBackground } from "./useBoardAppearance";
 import { useBoardPolish } from "./useBoardPolish";
 import { restoreBoardConfig } from "./board-config";
+import { celebratesEnding, liveEnding, type BoardEndState } from "./game-end";
+import { useBoardConfetti } from "./useBoardConfetti";
 import { annotationsFromShapes, shapesFromAnnotations } from "./board-shapes";
 import {
   PIECE_MOVE_MS,
@@ -36,10 +38,6 @@ import "./board.css";
 const LOSING_CLASSIFICATIONS = new Set(["blunder", "mistake", "missed_tactic", "human_error"]);
 /** How long a puzzle right/wrong flash stays on its squares (matches the CSS keyframes). */
 const FLASH_MS = 900;
-/** The game-over moment: king glow, board ring and result chip. */
-const FINALE_MS = 2800;
-
-type Finale = { key: number; tone: "win" | "loss" | "draw"; title: string; detail: string | null };
 
 export function BoardView() {
   const elementRef = useRef<HTMLDivElement | null>(null);
@@ -183,9 +181,8 @@ export function BoardView() {
   useCgBoardBackground(elementRef, squareBackground, squareColors);
   useBoardPolish(elementRef);
 
-  // Custom square classes: puzzle right/wrong flashes and the game-over king glow.
+  // Custom square classes: puzzle right/wrong flashes.
   const [flash, setFlash] = useState<{ squares: Key[]; kind: "correct" | "wrong"; key: number } | null>(null);
-  const [finale, setFinale] = useState<Finale | null>(null);
   const flashSquares = useCallback((squares: Key[], kind: "correct" | "wrong") => {
     setFlash({ squares, kind, key: performance.now() });
   }, []);
@@ -194,20 +191,11 @@ export function BoardView() {
     const timer = window.setTimeout(() => setFlash(null), FLASH_MS);
     return () => window.clearTimeout(timer);
   }, [flash]);
-  useEffect(() => {
-    if (!finale) return;
-    const timer = window.setTimeout(() => setFinale(null), FINALE_MS);
-    return () => window.clearTimeout(timer);
-  }, [finale]);
   const customHighlights = useMemo(() => {
     const custom = new Map<Key, string>();
-    if (finale) {
-      for (const square of finaleKingSquares(currentFen, finale.tone === "draw" ? null : finaleWinner(currentFen, finale, gameOutcome?.result)))
-        custom.set(square, finale.tone === "draw" ? "cg-finale-draw" : "cg-finale-win");
-    }
     if (flash) for (const square of flash.squares) custom.set(square, `cg-flash-${flash.kind}`);
     return custom;
-  }, [currentFen, finale, flash, gameOutcome?.result]);
+  }, [flash]);
 
   const restoreGroundToCurrentPosition = useCallback(() => {
     const ground = groundRef.current;
@@ -373,38 +361,33 @@ export function BoardView() {
     queueMicrotask(() => ground.playPremove());
   }, [currentFen, engineSide, mode, status.isEnd, status.turn]);
 
-  // The game-over moment plays once, when the game ends on the board (a move just played, a
-  // resignation, a flag, a solved puzzle) — never when stepping to the end of a finished game.
-  const endRef = useRef({
+  // Confetti once, when the user wins as the game ends on the board (a move just played, a
+  // resignation, a flag) or solves a puzzle — never when stepping to the end of a finished game.
+  // The result itself shows in the titlebar and the side panel.
+  const fireConfetti = useBoardConfetti();
+  const endRef = useRef<BoardEndState>({
     ended: status.isEnd || Boolean(gameOutcome),
     outcome: Boolean(gameOutcome),
     treeSize: moveTree.length,
     nodeId: currentNodeId,
-    puzzle: puzzleFeedbackKind
+    puzzleSolved: puzzleFeedbackKind === "complete"
   });
   useEffect(() => {
     const previous = endRef.current;
-    const ended = status.isEnd || Boolean(gameOutcome);
-    const puzzleSolved = mode === "puzzle" && puzzleFeedbackKind === "complete" && previous.puzzle !== "complete";
-    // A move was just played onto the board (not a game loaded, not a step through existing moves).
-    const movePlayed = moveTree.length === previous.treeSize + 1 && currentNode?.parentId === previous.nodeId;
-    const endedLive =
-      mode !== "puzzle" && ended && !previous.ended && (movePlayed || (Boolean(gameOutcome) && !previous.outcome));
-    endRef.current = {
-      ended,
+    const next: BoardEndState = {
+      ended: status.isEnd || Boolean(gameOutcome),
       outcome: Boolean(gameOutcome),
       treeSize: moveTree.length,
       nodeId: currentNodeId,
-      puzzle: puzzleFeedbackKind
+      puzzleSolved: puzzleFeedbackKind === "complete"
     };
-    if (!endedLive && !puzzleSolved) return;
-    const next = puzzleSolved
-      ? { tone: "win" as const, title: "Puzzle solved", detail: null }
-      : describeFinale({ result: gameOutcome?.result ?? status.result, termination: gameOutcome?.termination ?? null, status, mode, engineSide, orientation });
-    // Deferred a frame so the final move's slide has started before the moment plays.
-    const frame = window.requestAnimationFrame(() => setFinale({ key: performance.now(), ...next }));
+    endRef.current = next;
+    const ending = liveEnding(previous, { ...next, mode, parentId: currentNode?.parentId });
+    if (!celebratesEnding(ending, { result: gameOutcome?.result ?? status.result, mode, engineSide })) return;
+    // Deferred a frame so the final move's slide has started first.
+    const frame = window.requestAnimationFrame(() => fireConfetti(elementRef.current, ending === "puzzle" ? "puzzle" : "game"));
     return () => window.cancelAnimationFrame(frame);
-  }, [currentNode?.parentId, currentNodeId, engineSide, gameOutcome, mode, moveTree.length, orientation, puzzleFeedbackKind, status]);
+  }, [currentNode?.parentId, currentNodeId, engineSide, fireConfetti, gameOutcome, mode, moveTree.length, puzzleFeedbackKind, status]);
 
   // Player rows always render (fixed height) so the board never jumps between modes.
   const nameFor = (color: Color, name: string) => {
@@ -454,99 +437,9 @@ export function BoardView() {
             orientation === "white" ? "orientation-white" : "orientation-black"
           )}
         />
-        {finale ? <FinaleOverlay key={finale.key} finale={finale} /> : null}
       </div>
     </BoardStage>
   );
-}
-
-const FinaleOverlay = memo(function FinaleOverlay({ finale }: { finale: Finale }) {
-  return (
-    <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[inherit]" aria-hidden>
-      <div className="board-finale-ring" data-tone={finale.tone} />
-      <div
-        className={cn(
-          "board-finale-chip grid justify-items-center gap-0.5 rounded-xl border px-5 py-3 text-center shadow-popover backdrop-blur-md",
-          finale.tone === "win" ? "border-warn/40 bg-surface-raised/85" : "border-line bg-surface-raised/85"
-        )}
-      >
-        <span className="text-lg font-semibold text-fg">{finale.title}</span>
-        {finale.detail ? <span className="text-xs text-fg-muted">{finale.detail}</span> : null}
-      </div>
-    </div>
-  );
-});
-
-function describeFinale({
-  result,
-  termination,
-  status,
-  mode,
-  engineSide,
-  orientation
-}: {
-  result: string;
-  termination: string | null;
-  status: ReturnType<typeof statusForFen>;
-  mode: string;
-  engineSide: Color | null;
-  orientation: Color;
-}): Omit<Finale, "key"> {
-  const winner: Color | null = result === "1-0" ? "white" : result === "0-1" ? "black" : null;
-  const how =
-    termination === "Time forfeit"
-      ? "on time"
-      : termination === "Player resign"
-        ? "by resignation"
-        : status.isCheckmate
-          ? "by checkmate"
-          : null;
-  const drawHow = status.isStalemate ? "Stalemate" : termination ?? "Draw";
-  const score = result.replace("1/2", "½");
-  // An aborted online game has no result.
-  if (result === "*") return { tone: "draw", title: termination ?? "Game over", detail: null };
-  if (!winner) return { tone: "draw", title: "Draw", detail: `${drawHow} · ${score}` };
-  const versus = isMatchMode(mode as GameMode) && Boolean(engineSide);
-  const user: Color = versus && engineSide ? (engineSide === "white" ? "black" : "white") : orientation;
-  const title = versus ? (winner === user ? "You won" : "You lost") : `${winner === "white" ? "White" : "Black"} wins`;
-  return {
-    tone: versus && winner !== user ? "loss" : "win",
-    title,
-    detail: [how ? capitalize(how) : null, score].filter(Boolean).join(" · ")
-  };
-}
-
-function capitalize(value: string): string {
-  return value ? value[0].toUpperCase() + value.slice(1) : value;
-}
-
-/** Winner of the finale: the result's winner, else (puzzle) the side that just moved. */
-function finaleWinner(fen: string, finale: Finale, result: string | undefined): Color | null {
-  const outcome = result ?? statusForFen(fen).result;
-  if (outcome === "1-0") return "white";
-  if (outcome === "0-1") return "black";
-  // Puzzles have no result: the solver is the side that made the last move.
-  return finale.title === "Puzzle solved" ? (statusForFen(fen).turn === "white" ? "black" : "white") : null;
-}
-
-/** The king square(s) the finale glows on: the winner's king, or both kings for a draw. */
-function finaleKingSquares(fen: string, winner: Color | null): Key[] {
-  const squares: Key[] = [];
-  const rows = fen.split(" ")[0]?.split("/") ?? [];
-  rows.forEach((row, index) => {
-    let file = 0;
-    for (const char of row) {
-      if (/\d/.test(char)) {
-        file += Number(char);
-        continue;
-      }
-      const isKing = char === "K" || char === "k";
-      const color: Color = char === "K" ? "white" : "black";
-      if (isKing && (!winner || winner === color)) squares.push(`${"abcdefgh"[file]}${8 - index}` as Key);
-      file += 1;
-    }
-  });
-  return squares;
 }
 
 function lastMoveOf(node: Pick<MoveNode, "uci"> | undefined): Key[] | undefined {
