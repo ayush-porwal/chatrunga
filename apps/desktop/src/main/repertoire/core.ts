@@ -7,6 +7,7 @@
 import { nanoid } from "nanoid";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
 import {
+  REPERTOIRE_NOT_FOUND_ERROR,
   REPERTOIRE_ROOT_NODE_ID,
   type ChapterKind,
   type ImportResult,
@@ -40,7 +41,7 @@ import {
 
 export function requireRepertoire(id: string): RepertoireRecord {
   const record = repertoireRepository.get(id);
-  if (!record) throw new Error("Invalid repertoireId: not found");
+  if (!record) throw new Error(REPERTOIRE_NOT_FOUND_ERROR);
   return record;
 }
 
@@ -71,7 +72,7 @@ export function bump(
 
 export function detail(id: string, now: number): RepertoireDetail {
   const summary = repertoireRepository.summary(id, now);
-  if (!summary) throw new Error("Invalid repertoireId: not found");
+  if (!summary) throw new Error(REPERTOIRE_NOT_FOUND_ERROR);
   return {
     ...summary,
     chapters: chapterRepository.summaries(id, now),

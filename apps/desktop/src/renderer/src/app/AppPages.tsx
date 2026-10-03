@@ -210,6 +210,7 @@ export function AppPages({
           onPractice={(chapterIds) => on.practiceRepertoireChapters(repertoire.repertoireId, chapterIds)}
           onRehearse={(target) => on.rehearseRepertoire(repertoire.repertoireId, rehearsePreset(target))}
           onMissing={on.repertoireMissing}
+          onHub={on.repertoireHub}
           onPositionChanged={on.repertoirePositionChanged}
           onOpenGame={on.openGameAtNode}
           onAnalyze={desktopApiAvailable ? on.analyzeFromStudy : undefined}

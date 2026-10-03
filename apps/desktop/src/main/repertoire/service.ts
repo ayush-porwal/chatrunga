@@ -20,6 +20,7 @@ import { open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { GameHeaders, MoveNode } from "@chaturanga/shared/types/chess";
 import {
+  CHAPTER_NOT_FOUND_ERROR,
   COMPARE_GAME_MAX_PLIES,
   REPERTOIRE_POSITION_KEY_VERSION,
   REPERTOIRE_ROOT_NODE_ID,
@@ -221,7 +222,7 @@ function changed(event: RepertoireChangedEvent): void {
 /** A stored chapter with its current due count. */
 function loadChapter(repertoireId: string, chapterId: string, now: number): RepertoireChapter {
   if (chapterRepository.ownerOf(chapterId)?.repertoireId !== repertoireId) {
-    throw new Error("Invalid chapterId: not found");
+    throw new Error(CHAPTER_NOT_FOUND_ERROR);
   }
   const chapter = chapterRepository.get(chapterId)!;
   const summary = chapterRepository
@@ -666,7 +667,7 @@ export function removeChapter(input: RemoveChapterInput): RepertoireChangeResult
     const record = requireRepertoire(input.repertoireId);
     checkRevision(record, input.expectedRevision);
     if (chapterRepository.ownerOf(input.chapterId)?.repertoireId !== record.id) {
-      throw new Error("Invalid chapterId: not found");
+      throw new Error(CHAPTER_NOT_FOUND_ERROR);
     }
     chapterRepository.remove(input.chapterId);
     reindex(bump(record, now), now);
@@ -1489,7 +1490,7 @@ export function linkGame(input: LinkGameInput): RepertoireGameLink {
       input.chapterId !== null &&
       chapterRepository.ownerOf(input.chapterId)?.repertoireId !== record.id
     ) {
-      throw new Error("Invalid chapterId: not found");
+      throw new Error(CHAPTER_NOT_FOUND_ERROR);
     }
     const headers = libraryGameExists(input.gameId)
       ? gameRepository.getHeaders(input.gameId)
@@ -1552,7 +1553,7 @@ export function listGameLinks(input: {
     input.chapterId !== undefined &&
     chapterRepository.ownerOf(input.chapterId)?.repertoireId !== input.repertoireId
   ) {
-    throw new Error("Invalid chapterId: not found");
+    throw new Error(CHAPTER_NOT_FOUND_ERROR);
   }
   return gameLinkRepository.list(input.repertoireId, input.chapterId);
 }

@@ -21,6 +21,7 @@ import {
   transpositionsOf,
   hintStageText,
   isMissingTargetError,
+  isNotFoundError,
   occurrencesInOtherChapters,
   pieceNameAt,
   resumedHintText,
@@ -212,6 +213,22 @@ describe("autosave decisions", () => {
         saveState: { status: "error", message: "disk full", stale: false }
       })
     ).toBe("Unsaved — disk full");
+  });
+
+  it("tells a deleted repertoire or chapter from other read failures", () => {
+    expect(isNotFoundError("Invalid repertoireId: not found", "repertoire")).toBe(true);
+    expect(isNotFoundError("Invalid chapterId: not found", "chapter")).toBe(true);
+    expect(isNotFoundError("Invalid chapterId: not found", "repertoire")).toBe(false);
+    expect(
+      isNotFoundError(
+        "Repertoire chapter c1 is damaged and can't be opened: the move tree is missing",
+        "chapter"
+      )
+    ).toBe(false);
+    expect(isNotFoundError("Invalid positionKey: not found in this repertoire", "chapter")).toBe(
+      false
+    );
+    expect(isNotFoundError("SQLITE_BUSY: database is locked", "repertoire")).toBe(false);
   });
 });
 

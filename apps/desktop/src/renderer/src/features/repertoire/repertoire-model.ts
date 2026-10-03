@@ -9,15 +9,17 @@ import {
 import { applyUserMove } from "@chaturanga/shared/chess/position";
 import { playerToMove } from "@chaturanga/shared/chess/repertoire-position";
 import type { BoardArrow, BoardHighlight, Square } from "@chaturanga/shared/types/chess";
-import type {
-  PracticeCard,
-  PracticeSummary,
-  PracticeTotals,
-  RepertoireChapter,
-  RepertoireColor,
-  RepertoireDecision,
-  RepertoireNodeMeta,
-  RepertoireOccurrence
+import {
+  CHAPTER_NOT_FOUND_ERROR,
+  REPERTOIRE_NOT_FOUND_ERROR,
+  type PracticeCard,
+  type PracticeSummary,
+  type PracticeTotals,
+  type RepertoireChapter,
+  type RepertoireColor,
+  type RepertoireDecision,
+  type RepertoireNodeMeta,
+  type RepertoireOccurrence
 } from "@chaturanga/shared/types/repertoire";
 
 /*
@@ -262,6 +264,16 @@ export function isStaleRevisionError(message: string): boolean {
 /** The main process can't find the repertoire (deleted): the draft has nowhere to go. */
 export function isMissingTargetError(message: string): boolean {
   return /not found|no longer exists/i.test(message);
+}
+
+/**
+ * The repertoire (or the chapter) was deleted: the main process's not-found error for that id
+ * (`message` as ipcErrorMessage leaves it). Any other read failure is worth a retry.
+ */
+export function isNotFoundError(message: string, target: "repertoire" | "chapter"): boolean {
+  return message.startsWith(
+    target === "repertoire" ? REPERTOIRE_NOT_FOUND_ERROR : CHAPTER_NOT_FOUND_ERROR
+  );
 }
 
 export type AutosaveSaveState =

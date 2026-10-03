@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { GraduationCap, Loader2, Microscope, Route, Swords } from "lucide-react";
+import { CircleAlert, GraduationCap, Loader2, Microscope, Route, Swords } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/segmented-control";
 import { SideDot } from "@/components/ui/side-dot";
 import { Stat, StatGroup } from "@/components/ui/stat";
+import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useEventCallback } from "@/lib/use-event-callback";
 import {
   useRepertoireChapterQuery,
@@ -38,6 +39,7 @@ import {
 } from "./repertoire-chapters";
 import {
   deriveChoices,
+  isNotFoundError,
   occurrencesInOtherChapters,
   lastMoveOf,
   pathLabel,
@@ -68,7 +70,8 @@ const workspace = () => useRepertoireWorkspaceStore.getState();
  * Repertoire study (design §5.2): the chapter on a store-free board (both sides playable while
  * authoring; drawing on), its tree, choices and boundaries, chapters and notes. Edits go to the
  * workspace draft and autosave against the repertoire revision; nothing passes through the game
- * store. A chapter or repertoire that no longer exists hands back to the hub (`onMissing`).
+ * store. A chapter or repertoire that no longer exists hands back to the hub (`onMissing`); any
+ * other failure to read them keeps the page (and the draft) with the cause and Retry.
  */
 export function RepertoireStudyPage({
   repertoireId,
@@ -83,6 +86,7 @@ export function RepertoireStudyPage({
   onPractice,
   onRehearse,
   onMissing,
+  onHub,
   onPositionChanged,
   onOpenGame,
   onAnalyze,
@@ -104,6 +108,8 @@ export function RepertoireStudyPage({
   /** Rehearse lines of this chapter, from its start or from a node (the draft is saved first). */
   onRehearse?: (target: RehearseTarget) => void;
   onMissing: (message: string) => void;
+  /** Back to the repertoire hub (offered when the chapter couldn't be read). */
+  onHub?: () => void;
   /** The selected node, tab or orientation changed (the current history entry follows). */
   onPositionChanged: () => void;
   /** A source link's saved game, opened on the board at the linked move. */
@@ -191,14 +197,31 @@ export function RepertoireStudyPage({
     leavingChapter.current = false;
   }, [chapterId]);
 
+  // A read that failed because the repertoire or chapter was deleted, or for another reason (a
+  // damaged chapter, a database error): only a deletion leaves the page.
+  const detailError = detail.isError ? ipcErrorMessage(detail.error) : null;
+  const chapterError = chapterQuery.isError ? ipcErrorMessage(chapterQuery.error) : null;
+  const repertoireGone = detailError !== null && isNotFoundError(detailError, "repertoire");
+  const chapterGone = chapterError !== null && isNotFoundError(chapterError, "chapter");
+  const loadError = repertoireGone || chapterGone ? null : (detailError ?? chapterError);
+
   // Gone since: hand back to the hub with a reason.
   useEffect(() => {
     if (leavingChapter.current) return;
-    if (detail.isError) onMissing("That repertoire no longer exists.");
-    else if (detail.data && !detail.data.chapters.some((item) => item.id === chapterId)) {
+    if (repertoireGone) onMissing("That repertoire no longer exists.");
+    else if (
+      chapterGone ||
+      (detail.data && !detail.data.chapters.some((item) => item.id === chapterId))
+    ) {
       onMissing("That chapter no longer exists.");
-    } else if (chapterQuery.isError) onMissing("That chapter couldn't be opened.");
-  }, [detail.isError, detail.data, chapterQuery.isError, chapterId, onMissing]);
+    }
+  }, [repertoireGone, chapterGone, detail.data, chapterId, onMissing]);
+
+  /** Reads the repertoire and chapter again after a failure (the draft stays as it is). */
+  const retryLoad = useEventCallback(() => {
+    if (detail.isError) void detail.refetch();
+    if (chapterQuery.isError) void chapterQuery.refetch();
+  });
 
   useEffect(() => {
     if (draft) onPositionChanged();
@@ -318,6 +341,29 @@ export function RepertoireStudyPage({
     );
   }
 
+  if ((!draft || !lookup || !node) && loadError !== null) {
+    return (
+      <EmptyState
+        className="self-center"
+        icon={<CircleAlert />}
+        title="This chapter couldn't be opened"
+        description={loadError}
+        action={
+          <div className="flex gap-2">
+            <Button type="button" variant="primary" size="sm" onClick={retryLoad}>
+              Retry
+            </Button>
+            {onHub ? (
+              <Button type="button" variant="outline" size="sm" onClick={onHub}>
+                Back to repertoires
+              </Button>
+            ) : null}
+          </div>
+        }
+      />
+    );
+  }
+
   if (!draft || !lookup || !node) {
     return (
       <div className="grid place-items-center" role="status" aria-label="Loading chapter">
@@ -394,6 +440,19 @@ export function RepertoireStudyPage({
   const notices = (
     <>
       {errorNotice}
+      {loadError !== null ? (
+        <Notice
+          tone="danger"
+          title="Couldn't read this repertoire again"
+          action={
+            <Button type="button" variant="outline" size="xs" onClick={retryLoad}>
+              Retry
+            </Button>
+          }
+        >
+          {`${loadError} Your draft is kept.`}
+        </Notice>
+      ) : null}
       {commands.error || localError ? (
         <Notice
           tone="danger"
