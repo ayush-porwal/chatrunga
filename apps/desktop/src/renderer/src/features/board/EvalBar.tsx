@@ -7,6 +7,7 @@ import type { EngineScore } from "@chaturanga/shared/types/engine";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { useGameStore } from "../../stores/game-store";
 import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
+import { usePuzzleStore } from "../../stores/puzzle-store";
 import { useDisplayedReviewMoves } from "../../stores/review-validity";
 import { formatMoveEval, formatScore } from "../game-review/review-score";
 import { cn } from "@/lib/utils";
@@ -27,7 +28,7 @@ export function evalShare(score: EngineScore): number {
 /**
  * The evaluation for the position on the board: live analysis while the engine runs, else the
  * game review's evaluation of this move. Null when there is none, and always during a match that
- * is still being played (an engine game or a live Lichess game).
+ * is still being played (an engine game or a live Lichess game) or a puzzle not yet solved or failed.
  */
 export function useBoardEval(): BoardEval | null {
   const game = useGameStore(
@@ -43,8 +44,10 @@ export function useBoardEval(): BoardEval | null {
     const primary = state.topLines.find((line) => (line.multipv ?? 1) === 1) ?? state.latestInfo;
     return primary?.score ?? null;
   });
+  // A puzzle still being solved: any evaluation would give the answer away.
+  const puzzleOpen = usePuzzleStore((state) => Boolean(state.activePuzzle) && state.outcome === "pending");
   const reviewMoves = useDisplayedReviewMoves();
-  if (game.matchOn || onlineGameLive) return null;
+  if (game.matchOn || onlineGameLive || (game.mode === "puzzle" && puzzleOpen)) return null;
 
   if (game.mode === "analysis") {
     // The game is over on the board: the result, not a score left over from the previous position.

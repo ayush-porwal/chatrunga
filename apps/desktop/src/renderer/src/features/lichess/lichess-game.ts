@@ -15,7 +15,7 @@ export function isGameOver(state: Pick<LichessGameState, "status">): boolean {
 }
 
 /**
- * The PGN result and a termination in the words the board's finale uses ("Player resign", "Time
+ * The PGN result and a termination in the words engine games use ("Player resign", "Time
  * forfeit", …) for a finished Lichess game; null while it's still being played. Aborted games have
  * no result ("*").
  */

@@ -31,7 +31,7 @@ describe("lichess game helpers", () => {
     expect(yourColor(game, "someone")).toBeNull();
   });
 
-  it("maps Lichess statuses to results and finale terminations", () => {
+  it("maps Lichess statuses to results and terminations", () => {
     expect(lichessOutcome({ status: "started", winner: null })).toBeNull();
     expect(lichessOutcome({ status: "mate", winner: "white" })).toEqual({ result: "1-0", termination: "Checkmate" });
     expect(lichessOutcome({ status: "resign", winner: "black" })).toEqual({ result: "0-1", termination: "Player resign" });

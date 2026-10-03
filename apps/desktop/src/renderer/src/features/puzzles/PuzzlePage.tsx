@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { useDatabasesQuery, useSamplePuzzleMutation } from "../../queries/api";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { usePuzzleDraftStore } from "../../stores/puzzle-draft-store";
+import { formatPuzzleTag as formatTag } from "./puzzle-set";
 
 const lichessThemes = [
   "mate",
@@ -516,10 +517,10 @@ function PositionTrainingFilters({
     <div className="grid gap-4">
       <RangeField
         label="Difficulty"
-        hint="1–10"
+        hint="1–4"
         className="max-w-sm"
         min={1}
-        max={10}
+        max={4}
         valueMin={difficultyMin}
         valueMax={difficultyMax}
         onMinChange={onDifficultyMinChange}
@@ -537,14 +538,6 @@ function selectionSummary(selected: string[]): string {
   if (!selected.length) return "Any";
   if (selected.length === 1) return formatTag(selected[0]);
   return `${selected.length} selected`;
-}
-
-/** Display label for a Lichess/strategic tag value: "Caro-Kann_Defense" → "Caro-Kann Defense", "mateIn2" → "mate in 2". */
-function formatTag(value: string): string {
-  if (value.includes("_")) return value.replace(/_/g, " ");
-  return value
-    .replace(/([a-z])([A-Z0-9])/g, "$1 $2")
-    .toLowerCase();
 }
 
 /**

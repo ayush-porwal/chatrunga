@@ -171,86 +171,6 @@ cg-board square.cg-flash-wrong {
   }
 }
 
-/* Game over: the winner's king glows (twice); a draw marks both kings once. */
-cg-board square.cg-finale-win {
-  background: radial-gradient(circle at center, rgb(240 206 110 / 0.7) 0%, rgb(240 206 110 / 0.28) 46%, rgb(240 206 110 / 0) 72%);
-  animation: cg-finale-glow 1100ms var(--ease-enter) 2 both;
-}
-
-cg-board square.cg-finale-draw {
-  background: radial-gradient(circle at center, rgb(216 219 224 / 0.5) 0%, rgb(216 219 224 / 0) 70%);
-  animation: cg-finale-glow 1100ms var(--ease-enter) both;
-}
-
-@keyframes cg-finale-glow {
-  0% {
-    opacity: 0;
-    scale: 0.6;
-  }
-  45% {
-    opacity: 1;
-    scale: 1.25;
-  }
-  100% {
-    opacity: 1;
-    scale: 1;
-  }
-}
-
-/* ---------------------------------------------------------------- finale overlay (BoardView) */
-
-.board-finale-ring {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  border-radius: inherit;
-  box-shadow: inset 0 0 0 2px rgb(240 206 110 / 0.85), inset 0 0 48px rgb(240 206 110 / 0.28);
-  animation: board-finale-ring 1600ms var(--ease-enter) both;
-}
-
-.board-finale-ring[data-tone="loss"] {
-  box-shadow: inset 0 0 0 2px rgb(169 173 180 / 0.5), inset 0 0 40px rgb(0 0 0 / 0.35);
-}
-
-.board-finale-ring[data-tone="draw"] {
-  box-shadow: inset 0 0 0 2px rgb(216 219 224 / 0.6), inset 0 0 40px rgb(216 219 224 / 0.14);
-}
-
-@keyframes board-finale-ring {
-  0% {
-    opacity: 0;
-  }
-  22% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-
-.board-finale-chip {
-  animation: board-finale-chip 2800ms var(--ease-enter) both;
-}
-
-@keyframes board-finale-chip {
-  0% {
-    opacity: 0;
-    transform: translateY(6px) scale(0.96);
-  }
-  10% {
-    opacity: 1;
-    transform: none;
-  }
-  82% {
-    opacity: 1;
-    transform: none;
-  }
-  100% {
-    opacity: 0;
-    transform: translateY(-2px);
-  }
-}
-
 /* ---------------------------------------------------------------- clocks */
 
 .board-clock-low[data-running="true"] {
@@ -264,27 +184,7 @@ cg-board square.cg-finale-draw {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  cg-board square.cg-finale-win,
-  cg-board square.cg-finale-draw {
-    animation: none;
-  }
-
-  .board-finale-chip {
-    animation-name: board-finale-chip-reduced;
-  }
-
   .board-clock-low[data-running="true"] {
     animation: none;
-  }
-}
-
-@keyframes board-finale-chip-reduced {
-  0%,
-  100% {
-    opacity: 0;
-  }
-  10%,
-  82% {
-    opacity: 1;
   }
 }

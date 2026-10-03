@@ -38,15 +38,16 @@ import { selectLiveGameInProgress, useLichessStore } from "../stores/lichess-sto
 import { useHistoryStore, type BoardSnapshot, type HistoryEntry } from "../stores/history-store";
 import {
   captureEntry,
+  continuedPuzzleSet,
   planBoardRestore,
   recordHistory,
   replacesLiveBoard,
   type HistoryMode
 } from "./history-navigation";
-import { nextPuzzleInput, puzzleBoard, usePuzzleSession } from "./puzzle-session-controller";
+import { nextPuzzleInput, puzzleBoard, usePuzzleSession, type PuzzleSetStart } from "./puzzle-session-controller";
 import { AppSidebar } from "./AppSidebar";
 import { AppTitlebar, GameTitlebar, LiveGameButton, PageTitle, ReviewTitlebar } from "./AppTitlebar";
-import type { SideTab } from "./GameWorkspace";
+import type { SideTab } from "./side-tabs";
 import { AddToRepertoireDialog, AppPages, GameReviewPicker, OnboardingFlow, type AppView } from "./AppPages";
 import { PuzzleInfoPanel } from "./PuzzleInfoPanel";
 import { useBoardShortcuts } from "./useBoardShortcuts";
@@ -55,8 +56,10 @@ import {
   flushGameAutosave,
   holdUntilChanged,
   IMPORT_NEEDS_SAVE,
+  mainlineEnd,
   useGameAutosave
 } from "./useGameAutosave";
+import { boardResultPatch } from "../features/analysis/post-game";
 import { useUsageActivity } from "./useUsageTelemetry";
 import { useLichess } from "./useLichess";
 import { useHistoryShortcuts } from "./useHistoryShortcuts";
@@ -68,7 +71,8 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { useAppNoticeStore } from "../stores/app-notice-store";
 import { Button } from "@/components/ui/button";
 import { useDatabaseDownloads } from "./useDatabaseDownloads";
-import { usePuzzleDraftStore } from "../stores/puzzle-draft-store";
+import { draftFromSessionConfig, usePuzzleDraftStore } from "../stores/puzzle-draft-store";
+import { usePuzzleStore } from "../stores/puzzle-store";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Color } from "@chaturanga/shared/types/chess";
 import type { StudyOpenTarget, StudyStage } from "../features/repertoire/repertoire-chapters";
@@ -229,15 +233,20 @@ export function App() {
   const windowControlsVisible = isElectronMac();
   // Narrow subscriptions: the shell must not re-render on every move (it would cascade into the
   // sidebar, titlebar and every tooltip). Handlers read the store directly via currentGame().
-  const { gameId, gameSource, gameMode, gameDecided } = useGameStore(
+  const { gameId, gameSource, gameMode, gameDecided, gameBoard } = useGameStore(
     useShallow((state) => ({
       gameId: state.gameId,
       gameSource: state.source,
       gameMode: state.mode,
-      gameDecided: Boolean(state.gameOutcome)
+      gameDecided: Boolean(state.gameOutcome),
+      gameBoard: state.board
     }))
   );
+  // A game played on from a puzzle: Next puzzle (after it) resumes the set.
+  const puzzleSetContinues = puzzleSession.continues(gameBoard);
   const positionIsEnd = useGameStore((state) => positionStatus(state.currentFen).isEnd);
+  // A puzzle opens to analysis once it's solved or failed (before that the engine would give it away).
+  const puzzleDecided = usePuzzleStore((state) => Boolean(state.activePuzzle) && state.outcome !== "pending");
   // A Lichess game on the board: nothing may replace it and the engine stays off until it ends.
   const onlineGameLive = useLichessStore(selectLiveGameInProgress);
   const engines = useEnginesQuery();
@@ -318,7 +327,8 @@ export function App() {
       reviewTab,
       openingSide,
       settingsSection: viewedSettingsSection.current ?? settingsSection,
-      puzzleConfig: activePuzzleConfig,
+      puzzleSet: puzzleSession.snapshot,
+      puzzleSetContinues: puzzleSession.continues(currentGame().board),
       repertoireScreen
     });
   }
@@ -434,9 +444,12 @@ export function App() {
       return "shown";
     }
     if (plan.kind === "puzzle") {
-      startPuzzle(plan.sample, plan.config, "none");
+      // Its set again, still excluding every puzzle the set has shown (since this entry too).
+      startPuzzle(plan.sample, plan.set ?? undefined, "none");
       return "shown";
     }
+    // A game played on from a puzzle comes back with its set (and so its Next puzzle).
+    const continuedSet = continuedPuzzleSet(snapshot);
     if (plan.kind === "saved") {
       const saved = await window.chaturanga?.games.get(plan.gameId).catch(() => null);
       if (request !== latestNavigation.current) return "dropped";
@@ -453,8 +466,10 @@ export function App() {
       if (snapshot.held) holdUntilChanged();
     } else {
       stopEngineWork({ stopSearch: snapshot.mode !== "analysis", keepReview });
-      clearPuzzleSession();
+      // The same game: one played on from a puzzle keeps its set (Next puzzle).
+      if (!continuedSet) puzzleSession.release(currentGame().board);
     }
+    if (continuedSet) puzzleSession.resumeOnBoard(continuedSet, currentGame().board);
     currentGame().restoreView(snapshot);
     if (snapshot.mode === "analysis") {
       if (defaultEngineId && !useAnalysisStore.getState().activeEngineId) useAnalysisStore.getState().setActiveEngine(defaultEngineId);
@@ -626,12 +641,16 @@ export function App() {
    * "Analyze" in the titlebar / Engine tab: analyse the loaded game in place (keeps moves and
    * review). A finished match's result and clocks are cleared (the headers keep the result): with
    * them the board refuses moves and the engine won't search. Back returns to the game as it was.
+   * From a finished position (after mate or stalemate), analysis starts at the move that ended it.
    */
   function analyzeCurrentPosition() {
     if (!desktopApiAvailable) return;
     commitCurrent();
     // A board still loading (Back / Forward, a saved game) must not replace this one afterwards.
     latestNavigation.current += 1;
+    const { currentFen, currentNodeId, moveTree } = currentGame();
+    const parentId = moveTree.find((node) => node.id === currentNodeId)?.parentId;
+    if (positionStatus(currentFen).isEnd && parentId) currentGame().goToNode(parentId);
     currentGame().setEngineSide(null);
     currentGame().clearEngineMatchExtras();
     currentGame().setMode("analysis");
@@ -660,7 +679,8 @@ export function App() {
       openSavedGame(saved);
     } else {
       stopEngineWork();
-      clearPuzzleSession();
+      // Back from the review returns to a game played on from a puzzle with its Next puzzle.
+      puzzleSession.release(currentGame().board);
     }
     currentGame().setMode("freeplay");
     currentGame().setEngineSide(null);
@@ -1028,6 +1048,28 @@ export function App() {
     await openSelectedGameReview("current", "opening");
   }
 
+  /**
+   * After an engine game (one played on from a puzzle too): Game review of it, its review started
+   * at once unless it already has one.
+   */
+  async function reviewFinishedEngineGame() {
+    const request = ++latestNavigation.current;
+    // The game's library id (its first save may still be waiting) names what the review saves to.
+    await flushGameAutosave();
+    if (request !== latestNavigation.current) return;
+    // Ended on the board (mate, stalemate): the review shows its result like a resignation's.
+    const game = currentGame();
+    const result = boardResultPatch({
+      gameOutcome: game.gameOutcome,
+      headers: game.headers,
+      endFen: mainlineEnd(game.moveTree)?.fenAfter ?? game.currentFen
+    });
+    if (result) game.patchHeaders(result);
+    const reviewed = Boolean(useReviewStore.getState().review);
+    await openSelectedGameReview("current");
+    if (!reviewed) void startReview();
+  }
+
   function openDatabasesPage(history: HistoryMode = "push") {
     if (!desktopApiAvailable) return;
     if (history === "push") commitCurrent();
@@ -1054,7 +1096,9 @@ export function App() {
     const engineSide = position.turn;
     const humanSide = engineSide === "white" ? "black" : "white";
     commitCurrent();
-    endBoardActivity();
+    // Not endBoardActivity: the puzzle set stays, so Next puzzle resumes it once this game ends.
+    stopEngineWork();
+    useReviewStore.getState().reset();
     currentGame().loadGame(
       createGameFromFen({
         fen,
@@ -1069,6 +1113,7 @@ export function App() {
         }
       })
     );
+    puzzleSession.continueOnBoard(currentGame().board);
     currentGame().setOrientation(humanSide);
     currentGame().setMode("engine");
     currentGame().setEngineSide(engineSide);
@@ -1084,14 +1129,14 @@ export function App() {
   }
 
   /**
-   * Loads a puzzle onto the board. `config` starts a new puzzle set (a history step); without it the
-   * set continues (the next puzzle takes the current entry's place).
+   * Loads a puzzle onto the board. `set` starts a puzzle set (a new one: a history step; or one
+   * history brings back); without it the set continues (the next puzzle takes the current entry's place).
    */
-  function startPuzzle(puzzle: PuzzleSample, config?: PuzzleSessionConfig, history: HistoryMode = config ? "push" : "replace") {
+  function startPuzzle(puzzle: PuzzleSample, set?: PuzzleSetStart, history: HistoryMode = set ? "push" : "replace") {
     if (history === "push") commitCurrent();
     stopEngineWork();
     useReviewStore.getState().reset();
-    puzzleSession.begin(puzzle, config);
+    puzzleSession.begin(puzzle, set);
     currentGame().loadGame(puzzleBoard(puzzle));
     currentGame().setMode("puzzle");
     currentGame().setGameSource("puzzle");
@@ -1109,9 +1154,17 @@ export function App() {
     }
     // The next puzzle takes over only if nothing else was opened while it loaded.
     const request = latestNavigation.current;
+    // After a game played on from a puzzle, that game stays a step of its own (Back returns to it).
+    const fromGame = puzzleSetContinues;
     nextPuzzle.mutate(input, {
       onSuccess: (puzzle) => {
-        if (request === latestNavigation.current) startPuzzle(puzzle);
+        if (request === latestNavigation.current) startPuzzle(puzzle, undefined, fromGame ? "push" : "replace");
+      },
+      onError: (error) => {
+        // The puzzle card shows the error on a puzzle; the game's titlebar does after a game.
+        if (fromGame && request === latestNavigation.current) {
+          currentGame().setMatchFeedback(`Couldn't load the next puzzle: ${ipcErrorMessage(error) || "unknown error"}`);
+        }
       }
     });
   }
@@ -1179,11 +1232,17 @@ export function App() {
     startReview: useEventCallback(() => void startReview()),
     stopReview: useEventCallback(() => void cancelActiveReview()),
     showGame: useEventCallback(() => showGame()),
-    startPuzzle: useEventCallback((config: PuzzleSessionConfig, puzzle: PuzzleSample) => startPuzzle(puzzle, config)),
+    startPuzzle: useEventCallback((config: PuzzleSessionConfig, puzzle: PuzzleSample) => startPuzzle(puzzle, { config })),
     openGameFromLibrary: useEventCallback((id: string) => unlessOnlineGame(() => void openSavedGameById(id))),
     nextPuzzle: useEventCallback(loadNextPuzzle),
     playEngineFromPuzzle: useEventCallback(playEngineFromCurrentPuzzlePosition),
+    // The puzzle card's "Edit set": the Puzzles page with the running set's filters, to start a new set.
+    editPuzzleSet: useEventCallback(() => {
+      if (activePuzzleConfig) usePuzzleDraftStore.getState().update(draftFromSessionConfig(activePuzzleConfig));
+      openPuzzlesPage();
+    }),
     reviewCurrentGame: useEventCallback(() => void openSelectedGameReview("current")),
+    reviewEngineGame: useEventCallback(() => void reviewFinishedEngineGame()),
     repertoireHub: useEventCallback(() => openRepertoireHub()),
     openRepertoireStudy: useEventCallback((target: StudyOpenTarget) =>
       unlessRepertoireBlocked(
@@ -1305,10 +1364,11 @@ export function App() {
         nextPending={nextPuzzle.isPending}
         onNextPuzzle={on.nextPuzzle}
         onPlayEngineFromHere={on.playEngineFromPuzzle}
+        onEditSet={on.editPuzzleSet}
         puzzleConfig={activePuzzleConfig}
       />
     ),
-    [nextPuzzle.error, nextPuzzle.isPending, on.nextPuzzle, on.playEngineFromPuzzle, activePuzzleConfig]
+    [nextPuzzle.error, nextPuzzle.isPending, on.nextPuzzle, on.playEngineFromPuzzle, on.editPuzzleSet, activePuzzleConfig]
   );
 
   const pageTitles: Partial<Record<AppView, string>> = {
@@ -1362,6 +1422,9 @@ export function App() {
               onStopAnalysis={gameMode === "analysis" && desktopApiAvailable ? on.stopLiveAnalysis : null}
               onReviewGame={on.reviewCurrentGame}
               onPlayAgain={on.playLichess}
+              onReviewEngineGame={on.reviewEngineGame}
+              onNextPuzzle={puzzleSetContinues ? on.nextPuzzle : null}
+              nextPuzzlePending={nextPuzzle.isPending}
               onReviewOpening={on.reviewHandoffOpening}
               onReturnToRepertoire={on.returnToRepertoire}
             />
@@ -1443,7 +1506,9 @@ export function App() {
               reviewLoading={reviewRouteLoading}
               sideTab={sideTab}
               onSideTabChange={setSideTab}
-              canStartAnalysis={desktopApiAvailable && gameMode === "freeplay" && !positionIsEnd}
+              canStartAnalysis={
+                desktopApiAvailable && (gameMode === "freeplay" || (gameMode === "puzzle" && puzzleDecided)) && !positionIsEnd
+              }
               puzzlePanel={puzzlePanel}
               repertoire={repertoireScreen}
               on={on}

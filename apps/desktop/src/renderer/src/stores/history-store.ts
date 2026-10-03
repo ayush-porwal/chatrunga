@@ -11,6 +11,12 @@ import type { PlayOpponent } from "./lichess-store";
  * and dialogs are not entries.
  */
 
+/**
+ * A puzzle set as a board's entry keeps it: which set (its id), its filters (the Puzzles page's
+ * config) and the puzzles shown by then.
+ */
+export type PuzzleSetRecord = { id: string; config: unknown; shownIds: string[] };
+
 /** A board as it was: the game (saved id, or the whole session when it was never saved) and how it was shown. */
 export type BoardSnapshot = {
   gameId: string | null;
@@ -27,7 +33,12 @@ export type BoardSnapshot = {
   /** The workspace's side tab. */
   tab: "notation" | "engine" | "library";
   /** A puzzle on the board: restored by starting it again (never mid-solution). */
-  puzzle: { sample: PuzzleSample; config: unknown } | null;
+  puzzle: { sample: PuzzleSample } | null;
+  /**
+   * The puzzle set the board belongs to: its puzzle's, or a game played on from one (Play engine
+   * from here), which comes back with its set and so with its Next puzzle.
+   */
+  puzzleSet: PuzzleSetRecord | null;
   /** The Lichess game on the board, if any: it can only be the one being played now. */
   lichessGameId: string | null;
 };

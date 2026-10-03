@@ -19,6 +19,7 @@ function Disclosure({
   title,
   summary,
   defaultOpen = false,
+  onOpenChange,
   children
 }: {
   title: React.ReactNode;
@@ -26,6 +27,8 @@ function Disclosure({
   summary?: React.ReactNode;
   /** Start expanded (read on mount only), e.g. when the section needs the user's attention. */
   defaultOpen?: boolean;
+  /** Told each time the user opens or closes it. */
+  onOpenChange?: (open: boolean) => void;
   children: React.ReactNode;
 }) {
   const [isOpen, setIsOpen] = React.useState(defaultOpen);
@@ -48,7 +51,10 @@ function Disclosure({
         type="button"
         aria-expanded={isOpen}
         aria-controls={contentId}
-        onClick={() => setIsOpen((open) => !open)}
+        onClick={() => {
+          setIsOpen(!isOpen);
+          onOpenChange?.(!isOpen);
+        }}
         className="group flex min-h-8 w-full items-center gap-1.5 rounded-md text-left text-sm font-medium text-fg-secondary outline-none transition-colors hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/70"
       >
         <ChevronRight

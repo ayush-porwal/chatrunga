@@ -19,14 +19,16 @@ function advancePuzzle(feedback: string): void {
  * Checks the user's move (UCI) against the active puzzle's next solution move. The expected move
  * is played through `play` and the puzzle advances; anything else is marked wrong and not played.
  * Returns whether the move was played (callers restore the board otherwise). `fenBefore` (default:
- * the board's position) names the wrong move in SAN in the feedback.
+ * the board's position) is where the move was played from: a wrong move is recorded with it, and
+ * named in SAN in the feedback.
  */
 export function submitPuzzleMove(uci: string, play: () => boolean, fenBefore = useGameStore.getState().currentFen): boolean {
-  const { activePuzzle, solutionIndex, markWrongMove } = usePuzzleStore.getState();
+  const { activePuzzle, solutionIndex, markWrongMove, feedbackKind } = usePuzzleStore.getState();
   const expected = activePuzzle?.solutionMoves[solutionIndex];
-  if (!expected) return false;
+  // A broken puzzle has ended: no move is checked against it any more.
+  if (!expected || feedbackKind === "broken") return false;
   if (uci !== expected) {
-    markWrongMove({ played: sanOf(fenBefore, uci), expected });
+    markWrongMove({ uci, san: sanOf(fenBefore, uci), fen: fenBefore, expected });
     return false;
   }
   if (!play()) return false;
@@ -58,7 +60,7 @@ export function usePuzzleAutoReply(): void {
     const reply = activePuzzle.solutionMoves[solutionIndex];
     const timeout = window.setTimeout(() => {
       if (!useGameStore.getState().makeUciMove(reply)) {
-        usePuzzleStore.getState().markWrongMove({ played: "Auto reply failed", expected: reply });
+        usePuzzleStore.getState().markReplyFailed();
         return;
       }
       advancePuzzle("Good. Find the next move.");

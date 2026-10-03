@@ -35,6 +35,25 @@ describe("submitPuzzleMove", () => {
     expect(usePuzzleStore.getState()).toMatchObject({ solutionIndex: 0, feedbackKind: "wrong", lastExpectedMove: "e2e4" });
   });
 
+  it("records the wrong move with the position it was played from, failing the puzzle", () => {
+    const fen = "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1";
+    usePuzzleStore.getState().setActivePuzzle({ ...puzzle, initialFen: fen, solutionMoves: ["a1a8"] });
+    submitPuzzleMove("a1a5", () => true, fen);
+    expect(usePuzzleStore.getState().outcome).toBe("failed");
+    expect(usePuzzleStore.getState().attempt?.wrongMoves).toMatchObject([
+      { solutionIndex: 0, fen, uci: "a1a5", san: "Ra5", expectedUci: "a1a8" }
+    ]);
+    // Finishing it afterwards doesn't make it solved.
+    expect(submitPuzzleMove("a1a8", () => true, fen)).toBe(true);
+    expect(usePuzzleStore.getState()).toMatchObject({ feedbackKind: "complete", outcome: "failed" });
+  });
+
+  it("solves a puzzle finished without a wrong move", () => {
+    usePuzzleStore.getState().setActivePuzzle({ ...puzzle, solutionMoves: ["e2e4"] });
+    expect(submitPuzzleMove("e2e4", () => true)).toBe(true);
+    expect(usePuzzleStore.getState().outcome).toBe("solved");
+  });
+
   it("names the wrong move in SAN, and still accepts the right move afterwards", () => {
     const fen = "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1";
     usePuzzleStore.getState().setActivePuzzle({ ...puzzle, initialFen: fen, solutionMoves: ["a1a8"] });
@@ -47,6 +66,15 @@ describe("submitPuzzleMove", () => {
   it("does not advance when the move cannot be played", () => {
     expect(submitPuzzleMove("e2e4", () => false)).toBe(false);
     expect(usePuzzleStore.getState().solutionIndex).toBe(0);
+  });
+
+  it("ignores moves once the puzzle's data broke, without failing the solver", () => {
+    usePuzzleStore.getState().markReplyFailed();
+    const play = vi.fn(() => true);
+    expect(submitPuzzleMove("e2e4", play)).toBe(false);
+    expect(submitPuzzleMove("d2d4", play)).toBe(false);
+    expect(play).not.toHaveBeenCalled();
+    expect(usePuzzleStore.getState()).toMatchObject({ feedbackKind: "broken", outcome: "void", solutionIndex: 0 });
   });
 
   it("completes the puzzle on the last solution move", () => {

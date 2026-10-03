@@ -5,6 +5,8 @@ export type ExternalDatabaseFormat = "csv" | "csv.zst" | "pgn" | "jsonl.zst";
 export type ExternalDatabaseSource = {
   id: string;
   name: string;
+  /** A short everyday name, where the full one is too long or formal ("Chess positions"). */
+  shortName?: string;
   provider: string;
   kind: ExternalDatabaseKind;
   format: ExternalDatabaseFormat;
@@ -85,6 +87,7 @@ export const externalDatabaseSources = [
   {
     id: "lichess-puzzles",
     name: "Lichess Puzzle Database",
+    shortName: "Lichess puzzles",
     provider: "Lichess",
     kind: "puzzle",
     format: "csv.zst",
@@ -119,6 +122,7 @@ export const externalDatabaseSources = [
   {
     id: "chess-position-analysis-results",
     name: "Chess Position Analysis Results",
+    shortName: "Chess positions",
     provider: "Neil GD",
     kind: "position",
     format: "csv",

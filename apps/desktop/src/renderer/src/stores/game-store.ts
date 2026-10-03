@@ -286,6 +286,18 @@ export const useGameStore = create<GameStore>((set, get) => {
       if (get().engineClockLive && statusForFen(node.fenAfter).isEnd) {
         set((current) => ({ engineClockLive: stopClock(current.engineClockLive) }));
       }
+      // An engine game ended on the board is decided like a resignation (and as Back brings it
+      // back): no more moves, so stepping back can't play on in a variation (Analyze can).
+      const ended = boardOutcome(node.fenAfter);
+      if (state.mode === "engine" && state.engineSide && ended && mainlineEndId(moveTree) === node.id) {
+        // The headers take the result (the moves already say how it ended, no Termination tag).
+        set((current) => ({
+          gameOutcome: ended,
+          headers: { ...current.headers, result: ended.result },
+          engineClockLive: stopClock(current.engineClockLive),
+          pendingPromotion: null
+        }));
+      }
       return true;
     },
 
@@ -357,12 +369,19 @@ export const useGameStore = create<GameStore>((set, get) => {
       // main line no longer ends there; a resignation, flag or agreement stays.
       const endFen = nextTree.find((item) => item.id === mainlineEndId(nextTree))?.fenAfter ?? state.rootFen;
       const boardOutcome = state.gameOutcome && BOARD_TERMINATIONS.has(state.gameOutcome.termination);
+      const reopened = boardOutcome && !statusForFen(endFen).isEnd;
       set({
         moveTree: nextTree,
         currentNodeId: survivingCurrent?.id ?? parent.id,
         currentFen: survivingCurrent?.fenAfter ?? parent.fenAfter,
         lastError: null,
-        ...(boardOutcome && !statusForFen(endFen).isEnd ? { gameOutcome: null } : {})
+        // The result the headers took from that position goes too (the titlebar reads it).
+        ...(reopened
+          ? {
+              gameOutcome: null,
+              headers: state.headers.result === state.gameOutcome?.result ? { ...state.headers, result: "*" } : state.headers
+            }
+          : {})
       });
       return true;
     },
@@ -533,12 +552,10 @@ export const useGameStore = create<GameStore>((set, get) => {
         const node = state.moveTree.find((item) => item.id === view.currentNodeId);
         // Finished by a result (resignation, flag, agreement) or on the board (mate, stalemate, a draw by rule).
         const endFen = state.moveTree.find((item) => item.id === mainlineEndId(state.moveTree))?.fenAfter ?? state.currentFen;
-        const end = statusForFen(endFen);
-        const decidedEngineGame = view.mode === "engine" && Boolean(view.engineSide) && (Boolean(view.gameOutcome) || end.isEnd);
+        const end = boardOutcome(endFen);
+        const decidedEngineGame = view.mode === "engine" && Boolean(view.engineSide) && (Boolean(view.gameOutcome) || Boolean(end));
         // Ended on the board: record it as the outcome, so the engine doesn't play on from an earlier move.
-        const outcome =
-          view.gameOutcome ??
-          (end.isEnd ? { result: end.result, termination: end.isCheckmate ? "checkmate" : end.isStalemate ? "stalemate" : "draw" } : null);
+        const outcome = view.gameOutcome ?? end;
         const mode: GameMode =
           view.mode === "online" || view.mode === "puzzle" || (view.mode === "engine" && !decidedEngineGame) ? "freeplay" : view.mode;
         return {
@@ -600,6 +617,13 @@ export function buildEngineGoClock(
 
 /** Terminations that come from the final position (restoreView records them for board-ended games). */
 const BOARD_TERMINATIONS = new Set(["checkmate", "stalemate", "draw"]);
+
+/** The result of a position that ends the game on the board (mate, stalemate, a draw by rule), or null. */
+function boardOutcome(fen: string): GameOutcome | null {
+  const end = statusForFen(fen);
+  if (!end.isEnd) return null;
+  return { result: end.result, termination: end.isCheckmate ? "checkmate" : end.isStalemate ? "stalemate" : "draw" };
+}
 
 /** Engine games and online games: the user against an opponent the app moves for. */
 export function isMatchMode(mode: GameMode): boolean {

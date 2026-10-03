@@ -1,27 +1,68 @@
 import { useEffect, useState } from "react";
-import { BarChart3, Flag, Handshake, Loader2, Swords, X } from "lucide-react";
+import { BarChart3, FileSearch, Flag, Handshake, Loader2, Puzzle, Swords, X } from "lucide-react";
 import { engineAcceptsHumanDrawOffer } from "@chaturanga/shared/engine/draw-offer";
 import { statusForFen } from "@chaturanga/shared/chess/position";
+import { mainlineEnd } from "../../app/useGameAutosave";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { useGameStore } from "../../stores/game-store";
+import { isHandoffGame, useRepertoireHandoffStore } from "../../stores/repertoire-handoff-store";
 import { currentLineUcis } from "./engine-game-helpers";
+import { engineGameEnded } from "./post-game";
 import { lichessErrorMessage } from "../lichess/lichess-game";
 import { useLichessStore, type LiveLichessGame } from "../../stores/lichess-store";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
+/** What an engine game that has ended offers in the titlebar (see EnginePostGameActions). */
+export type EnginePostGameHandlers = {
+  /** Game review of this game (its review starts unless it has one). */
+  onReviewGame: () => void;
+  /** Analyse the game in place. */
+  onAnalyze: () => void;
+  /** A game played on from a puzzle: the set's next puzzle (null for any other game). */
+  onNextPuzzle: (() => void) | null;
+  nextPuzzlePending: boolean;
+};
+
 /**
- * The titlebar's match controls: Offer draw / Resign against the engine; online, the Lichess game's
- * controls (abort, draw offers, resign) and, once it ends, Review and Play again.
+ * The titlebar's match controls: Offer draw / Resign against the engine and, once that game ends,
+ * Review game / Analyze (and Next puzzle after a game played from a puzzle); online, the Lichess
+ * game's controls (abort, draw offers, resign) and, once it ends, Review and Play again.
  */
-export function MatchActions({ onReview, onPlayAgain }: { onReview: () => void; onPlayAgain: () => void }) {
+export function MatchActions({
+  onReview,
+  onPlayAgain,
+  postGame
+}: {
+  onReview: () => void;
+  onPlayAgain: () => void;
+  postGame: EnginePostGameHandlers;
+}) {
   const mode = useGameStore((s) => s.mode);
   const live = useLichessStore((s) => s.live);
   if (mode === "online" && live) return <LichessMatchActions live={live} onReview={onReview} onPlayAgain={onPlayAgain} />;
-  return <EngineMatchActions />;
+  return <EngineMatchActions postGame={postGame} />;
 }
 
-function EngineMatchActions() {
+/**
+ * Whether the engine game on the board has ended (a result decided, or a finished position at the
+ * end of its main line). A game played from a repertoire is left out: it has its own actions
+ * (RepertoireHandoffActions).
+ */
+export function useEnginePostGame(): boolean {
+  const played = useRepertoireHandoffStore((state) => state.played);
+  return useGameStore(
+    (state) =>
+      engineGameEnded({
+        mode: state.mode,
+        engineSide: state.engineSide,
+        gameOutcome: state.gameOutcome,
+        endFen: mainlineEnd(state.moveTree)?.fenAfter ?? state.currentFen
+      }) && !isHandoffGame(played, state.gameId)
+  );
+}
+
+function EngineMatchActions({ postGame }: { postGame: EnginePostGameHandlers }) {
   const mode = useGameStore((s) => s.mode);
   const engineSide = useGameStore((s) => s.engineSide);
   const currentFen = useGameStore((s) => s.currentFen);
@@ -31,9 +72,13 @@ function EngineMatchActions() {
   const gameOutcome = useGameStore((s) => s.gameOutcome);
   const analysisStatus = useAnalysisStore((s) => s.status);
   const activeEngineId = useAnalysisStore((s) => s.activeEngineId);
+  const showPostGame = useEnginePostGame();
   const [drawBusy, setDrawBusy] = useState(false);
 
-  if (mode !== "engine" || !engineSide || gameOutcome) return null;
+  if (mode !== "engine" || !engineSide) return null;
+  if (showPostGame) return <EnginePostGameActions {...postGame} />;
+  // Ended, but played from a repertoire: its own actions show (nothing is left to offer or resign).
+  if (engineGameEnded({ mode, engineSide, gameOutcome, endFen: mainlineEnd(moveTree)?.fenAfter ?? currentFen })) return null;
 
   const humanColor = engineSide === "white" ? "black" : "white";
   const status = statusForFen(currentFen);
@@ -92,6 +137,31 @@ function EngineMatchActions() {
       >
         <Flag />
         Resign
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * After an engine game (one played on from a puzzle too): Review game (the main action), Analyze
+ * and, after a puzzle, Next puzzle in the same set. Resign / Offer draw are gone with the game.
+ */
+function EnginePostGameActions({ onReviewGame, onAnalyze, onNextPuzzle, nextPuzzlePending }: EnginePostGameHandlers) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 [-webkit-app-region:no-drag]">
+      {onNextPuzzle ? (
+        <Button type="button" variant="ghost" size="sm" disabled={nextPuzzlePending} onClick={onNextPuzzle}>
+          {nextPuzzlePending ? <Loader2 className="animate-spin" /> : <Puzzle />}
+          Next puzzle
+        </Button>
+      ) : null}
+      <Button type="button" variant="ghost" size="sm" onClick={onAnalyze}>
+        <FileSearch />
+        Analyze
+      </Button>
+      <Button type="button" variant="primary" size="sm" onClick={onReviewGame}>
+        <BarChart3 />
+        Review game
       </Button>
     </div>
   );

@@ -122,6 +122,18 @@ export function matchesCheapFilters(kind: PuzzleRowKind, row: string[], input: P
 }
 
 /**
+ * Whether every move of `moves` (UCI) can be played in turn from `fen`. Checked only for the row
+ * being served, never during a scan (the scan applies `matchesCheapFilters` alone).
+ */
+function playsThrough(fen: string, moves: string[]): boolean {
+  let position: string | null = fen;
+  for (const move of moves) {
+    position = position ? fenAfterUci(position, move) : null;
+  }
+  return position !== null;
+}
+
+/**
  * Lichess puzzle CSV: PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,
  * NbPlays,Themes,GameUrl,OpeningTags. The FEN is before the opponent's move;
  * the puzzle starts after `Moves[0]`.
@@ -141,6 +153,8 @@ export function sampleFromLichessRow(
   const openingTags = words(openingsRaw);
   const initialFen = fenAfterUci(fenBefore, moves[0]);
   if (!initialFen) return null;
+  // The whole line must play: a scripted reply that can't be made would leave the puzzle stuck.
+  if (!playsThrough(initialFen, moves.slice(1))) return null;
   const sideToMove = statusForFen(initialFen).turn;
 
   const filters = input.lichess;
@@ -179,6 +193,7 @@ export function sampleFromPositionRow(
 ): PuzzleSample | null {
   const [internalId, , , lichessUrl, fen, bestMove, difficultyRaw, ...tagValues] = row;
   if (!internalId || !fen || !bestMove) return null;
+  if (!playsThrough(fen, [bestMove])) return null;
   const difficulty = Number(difficultyRaw);
   const activeTags = POSITION_TAGS.filter((_, index) => tagValues[index] === "1");
 

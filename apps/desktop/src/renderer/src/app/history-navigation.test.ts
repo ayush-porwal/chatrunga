@@ -6,10 +6,18 @@ import { useGameStore } from "../stores/game-store";
 import { useHistoryStore, type HistoryEntry } from "../stores/history-store";
 import { useLichessStore } from "../stores/lichess-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
-import { captureBoard, captureEntry, planBoardRestore, recordHistory, replacesLiveBoard, type HistoryContext } from "./history-navigation";
+import {
+  captureBoard,
+  captureEntry,
+  continuedPuzzleSet,
+  planBoardRestore,
+  recordHistory,
+  replacesLiveBoard,
+  type HistoryContext
+} from "./history-navigation";
 import { nextPuzzleInput, puzzleBoard } from "./puzzle-session-controller";
 
-const context: HistoryContext = { tab: "engine", reviewTab: "moves", openingSide: null, settingsSection: "engines", puzzleConfig: null, repertoireScreen: null };
+const context: HistoryContext = { tab: "engine", reviewTab: "moves", openingSide: null, settingsSection: "engines", puzzleSet: null, puzzleSetContinues: false, repertoireScreen: null };
 const puzzle = {
   id: "p1",
   databaseId: "db",
@@ -22,6 +30,7 @@ const puzzle = {
   sideToMove: "white"
 } as PuzzleSample;
 const config = { databaseId: "db", lichess: { ratingMin: 1000 }, position: {} } as unknown as PuzzleSessionConfig;
+const set = { id: "s1", config, shownIds: ["p1"] };
 
 function loadSaved(id: string | null) {
   const { game } = importPgnText("1. e4 e5 2. Nf3 *");
@@ -52,9 +61,23 @@ describe("history capture", () => {
   it("records the puzzle on the board with its set, and only in puzzle mode", () => {
     usePuzzleStore.getState().setActivePuzzle(puzzle);
     useGameStore.getState().loadGame(puzzleBoard(puzzle));
-    expect(captureBoard("notation", config).puzzle).toBeNull();
+    expect(captureBoard("notation", set).puzzle).toBeNull();
+    expect(captureBoard("notation", set).puzzleSet).toBeNull();
     useGameStore.getState().setMode("puzzle");
-    expect(captureBoard("notation", config).puzzle).toEqual({ sample: puzzle, config });
+    expect(captureBoard("notation", set)).toMatchObject({ puzzle: { sample: puzzle }, puzzleSet: set });
+  });
+
+  it("records the set with a game played on from its puzzle, and with no other game", () => {
+    loadSaved(null);
+    useGameStore.getState().setMode("engine");
+    expect(captureBoard("notation", set, true)).toMatchObject({ puzzle: null, puzzleSet: set });
+    expect(captureBoard("notation", set, false).puzzleSet).toBeNull();
+    expect(captureEntry("game", { ...context, puzzleSet: set, puzzleSetContinues: true })).toMatchObject({
+      board: { puzzleSet: set }
+    });
+    expect(captureEntry("game-review", { ...context, puzzleSet: set, puzzleSetContinues: true })).toMatchObject({
+      board: { puzzleSet: set }
+    });
   });
 
   it("records the Lichess game only for an online board", () => {
@@ -115,7 +138,23 @@ describe("history restore", () => {
     expect(planBoardRestore(unsaved)).toMatchObject({ kind: "session", session: unsaved.session });
 
     // A puzzle starts again rather than its position coming back mid-solution.
-    expect(planBoardRestore({ ...same, puzzle: { sample: puzzle, config } })).toEqual({ kind: "puzzle", sample: puzzle, config });
+    expect(planBoardRestore({ ...same, puzzle: { sample: puzzle }, puzzleSet: set })).toEqual({ kind: "puzzle", sample: puzzle, set });
+    expect(planBoardRestore({ ...same, puzzle: { sample: puzzle } })).toEqual({ kind: "puzzle", sample: puzzle, set: null });
+  });
+
+  it("brings a game played on from a puzzle back with its set, saved or not", () => {
+    loadSaved("g1");
+    const saved = captureBoard("notation", set, true);
+    loadSaved(null);
+    const unsaved = captureBoard("notation", set, true);
+    loadSaved("g2");
+    expect(planBoardRestore(saved)).toEqual({ kind: "saved", gameId: "g1" });
+    expect(continuedPuzzleSet(saved)).toEqual(set);
+    expect(planBoardRestore(unsaved)).toMatchObject({ kind: "session" });
+    expect(continuedPuzzleSet(unsaved)).toEqual(set);
+    // An unrelated game has no set to keep; a puzzle starts its set itself.
+    expect(continuedPuzzleSet(captureBoard("notation", set))).toBeNull();
+    expect(continuedPuzzleSet({ ...saved, puzzle: { sample: puzzle } })).toBeNull();
   });
 
   it("leaves the Lichess game being played on the board, and reloads one that ended", () => {
