@@ -126,14 +126,16 @@ export function mergeIntoChapter(
     return false;
   };
 
-  // Whether a start on `position` would also start training an included move of the chapter
-  // (other than `accepted`) that is before every start now: such moves stay as authored.
+  // Whether a start on `position` would also start asking an included move of the chapter (other
+  // than `accepted`) that isn't asked now: one before every start, or one that is itself a start
+  // (played from a position before it). Moves below a start are already asked.
   const startsOtherMoves = (position: MoveNode, accepted: MoveNode): boolean => {
     const pending = [...position.children];
     for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
       const node = byId.get(id);
-      if (!node || nodeMeta[id]?.trainingStart) continue;
+      if (!node) continue;
       if (node !== accepted && nodeMetaOf(nodeMeta, id).edge === "included") return true;
+      if (nodeMeta[id]?.trainingStart) continue;
       pending.push(...node.children);
     }
     return false;

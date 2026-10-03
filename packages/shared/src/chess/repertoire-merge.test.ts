@@ -341,6 +341,40 @@ describe("mergeIntoChapter", () => {
     expect([...decisions.values()].some((decision) => decision.fen === START_FEN)).toBe(false);
   });
 
+  it("accepting a move doesn't start asking an included move that is itself the training start", () => {
+    // 1. e4 is included and marked "Start training here": it is played, not asked.
+    const meta: Record<string, RepertoireNodeMeta> = {
+      n1: { edge: "included", trainingStart: true },
+      n2: { edge: "covered" },
+      n3: { edge: "included" },
+      n4: { edge: "covered" }
+    };
+    const upgraded = mergeIntoChapter(
+      chapterOf(treeOf([["e2e4", "e7e5", "g1f3"], ["d2d4"]], "n"), meta),
+      {
+        rootFen: START_FEN,
+        tree: treeOf([["d2d4"]], "x"),
+        nodeMeta: { x1: { edge: "included" } }
+      }
+    );
+    expect(upgraded.chapter.nodeMeta.n4).toEqual({ edge: "included" });
+    expect(upgraded.chapter.nodeMeta.root?.trainingStart).toBeUndefined();
+    const fresh = mergeIntoChapter(chapterOf(treeOf([["e2e4", "e7e5", "g1f3"]], "n"), meta), {
+      rootFen: START_FEN,
+      tree: treeOf([["c2c4", "e7e5", "b1c3"]], "x"),
+      nodeMeta: { x1: { edge: "included" }, x2: { edge: "covered" }, x3: { edge: "included" } }
+    });
+    expect(fresh.chapter.nodeMeta.root?.trainingStart).toBeUndefined();
+    expect(fresh.chapter.nodeMeta[fresh.idMap.x1]).toEqual({
+      edge: "included",
+      trainingStart: true
+    });
+    for (const result of [upgraded, fresh]) {
+      const decisions = collectDecisions("white", [result.chapter]);
+      expect([...decisions.values()].some((decision) => decision.fen === START_FEN)).toBe(false);
+    }
+  });
+
   it("matches a root with different move counters and renumbers new moves from the chapter", () => {
     const later = START_FEN.replace(" 0 1", " 0 5");
     const result = mergeIntoChapter(chapterOf(treeOf([], "n")), {
