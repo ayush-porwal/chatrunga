@@ -11,7 +11,7 @@ import type {
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { usePuzzleStore, type PuzzleWrongMove } from "../../stores/puzzle-store";
-import { buildPuzzleExplanationPayload, explainSearchPlan } from "./puzzle-explanation";
+import { buildPuzzleExplanationPayload, explainSearchPlan, puzzleIdentity } from "./puzzle-explanation";
 
 /**
  * The puzzle explanations of this session, by {@link explanationKey}: a finished one stays (opening
@@ -24,7 +24,8 @@ export type ExplainPhase = "analysing" | "writing" | "ready" | "error";
 
 export type ExplainEntry = {
   phase: ExplainPhase;
-  puzzleId: string;
+  /** The puzzle's {@link puzzleIdentity} (its database and id). */
+  puzzle: string;
   /** The running request's id (its engine search and provider call), null once it ended. */
   requestId: string | null;
   explanation: PuzzleExplanation | null;
@@ -99,7 +100,7 @@ export async function requestPuzzleExplanation(request: ExplainRequest, deps: Ex
   const { key, puzzle } = request;
   const current = usePuzzleExplanationStore.getState().entries[key];
   if (current?.phase === "analysing" || current?.phase === "writing") return;
-  const base = { puzzleId: puzzle.id, explanation: null, error: null, needsSettings: false, cancel: null };
+  const base = { puzzle: puzzleIdentity(puzzle), explanation: null, error: null, needsSettings: false, cancel: null };
   if (!deps) {
     setEntry(key, { ...base, phase: "error", requestId: null, error: "Explanations need the desktop app." });
     return;
@@ -159,12 +160,13 @@ export async function requestPuzzleExplanation(request: ExplainRequest, deps: Ex
 }
 
 /**
- * Cancels and forgets every running explanation that isn't for `puzzleId` (finished ones stay for
- * the session). A late answer of a cancelled request finds no entry and is dropped.
+ * Cancels and forgets every running explanation that isn't for `puzzle` (a {@link puzzleIdentity};
+ * finished ones stay for the session). A late answer of a cancelled request finds no entry and is
+ * dropped.
  */
-export function cancelPuzzleExplanations(puzzleId: string | null): void {
+export function cancelPuzzleExplanations(puzzle: string | null): void {
   for (const [key, entry] of Object.entries(usePuzzleExplanationStore.getState().entries)) {
-    if (entry.puzzleId === puzzleId || !entry.requestId) continue;
+    if (entry.puzzle === puzzle || !entry.requestId) continue;
     entry.cancel?.();
     setEntry(key, null);
   }
@@ -177,8 +179,8 @@ function watchActivePuzzle(): void {
   if (watching) return;
   watching = true;
   usePuzzleStore.subscribe((state, previous) => {
-    const id = state.activePuzzle?.id ?? null;
-    if (id !== (previous.activePuzzle?.id ?? null)) cancelPuzzleExplanations(id);
+    const active = state.activePuzzle ? puzzleIdentity(state.activePuzzle) : null;
+    if (active !== (previous.activePuzzle ? puzzleIdentity(previous.activePuzzle) : null)) cancelPuzzleExplanations(active);
   });
 }
 

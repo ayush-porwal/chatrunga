@@ -10,6 +10,7 @@ import {
   explainOutcome,
   explainSearchPlan,
   explanationKey,
+  puzzleIdentity,
   swingFor,
   type ExplainAnalysis
 } from "./puzzle-explanation";
@@ -53,10 +54,17 @@ describe("which case is explained", () => {
   });
 
   it("caches per puzzle and outcome, and per wrong move", () => {
-    expect(explanationKey("p1", "solved", null)).toBe("p1:solved");
-    expect(explanationKey("p1", "failed_wrong_move", wrong)).toBe("p1:failed_wrong_move:0:h5e5");
-    expect(explanationKey("p1", "failed_wrong_move", { ...wrong, uci: "c4f7" })).not.toBe(explanationKey("p1", "failed_wrong_move", wrong));
-    expect(explanationKey("p1", "failed_solution_viewed", null)).toBe("p1:failed_solution_viewed");
+    expect(explanationKey(puzzle, "solved", null)).toBe('["db","qA0001"]:solved');
+    expect(explanationKey(puzzle, "failed_wrong_move", wrong)).toBe('["db","qA0001"]:failed_wrong_move:0:h5e5');
+    expect(explanationKey(puzzle, "failed_wrong_move", { ...wrong, uci: "c4f7" })).not.toBe(explanationKey(puzzle, "failed_wrong_move", wrong));
+    expect(explanationKey(puzzle, "failed_solution_viewed", null)).toBe('["db","qA0001"]:failed_solution_viewed');
+  });
+
+  it("tells apart puzzles with the same id in different databases", () => {
+    const other = { ...puzzle, databaseId: "db2" };
+    expect(puzzleIdentity(other)).not.toBe(puzzleIdentity(puzzle));
+    expect(explanationKey(other, "solved", null)).not.toBe(explanationKey(puzzle, "solved", null));
+    expect(puzzleIdentity({ databaseId: "a:b", id: "c" })).not.toBe(puzzleIdentity({ databaseId: "a", id: "b:c" }));
   });
 });
 

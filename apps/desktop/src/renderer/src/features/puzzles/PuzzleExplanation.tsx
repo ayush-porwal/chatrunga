@@ -45,7 +45,7 @@ export function PuzzleExplanation({
   const openRouter = useOpenRouterConfigQuery();
   const update = useUpdateSettingMutation();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const key = explanationKey(puzzle.id, kind, wrong);
+  const key = explanationKey(puzzle, kind, wrong);
   const entry = usePuzzleExplanationStore((state) => state.entries[key]);
   const view = explainView({
     entry,

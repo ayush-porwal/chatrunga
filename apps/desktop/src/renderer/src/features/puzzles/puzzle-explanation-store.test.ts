@@ -3,6 +3,7 @@ import type { ExplainPuzzleResult } from "@chaturanga/shared/ipc/chaturanga-api"
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import type { AnalysePositionsResult, EngineConfig } from "@chaturanga/shared/types/engine";
 import { usePuzzleStore } from "../../stores/puzzle-store";
+import { explanationKey, puzzleIdentity } from "./puzzle-explanation";
 import {
   NO_ENGINE_ERROR,
   cancelPuzzleExplanations,
@@ -27,7 +28,7 @@ const puzzle: PuzzleSample = {
   sideToMove: "white"
 };
 const request: ExplainRequest = {
-  key: "p1:solved",
+  key: explanationKey(puzzle, "solved", null),
   puzzle,
   kind: "solved",
   wrong: null,
@@ -127,15 +128,35 @@ describe("requestPuzzleExplanation", () => {
     expect(entry()).toBeUndefined();
   });
 
+  it("moving to a puzzle with the same id in another database is moving to another puzzle", async () => {
+    const { deps, searches, answers } = fakeDeps();
+    const other = { ...puzzle, databaseId: "db2" };
+    usePuzzleStore.getState().setActivePuzzle(puzzle);
+    void requestPuzzleExplanation(request, deps);
+    usePuzzleStore.getState().setActivePuzzle(other);
+    expect(deps.cancel).toHaveBeenCalledWith("r1");
+    expect(entry()).toBeUndefined();
+
+    const otherRequest = { ...request, puzzle: other, key: explanationKey(other, "solved", null) };
+    const running = requestPuzzleExplanation(otherRequest, deps);
+    expect(entry(otherRequest.key)).toMatchObject({ phase: "analysing", requestId: "r2", puzzle: puzzleIdentity(other) });
+    searches[1]!.resolve(analysis);
+    await flush();
+    answers[0]!.resolve({ explanation, error: null });
+    await running;
+    expect(entry(otherRequest.key)?.phase).toBe("ready");
+    expect(entry()).toBeUndefined();
+  });
+
   it("keeps finished explanations and the current puzzle's request when cancelling", async () => {
     const { deps } = fakeDeps();
     usePuzzleExplanationStore.setState({
       entries: {
-        "old:solved": { phase: "ready", puzzleId: "old", requestId: null, explanation, error: null, needsSettings: false, cancel: null }
+        "old:solved": { phase: "ready", puzzle: "old", requestId: null, explanation, error: null, needsSettings: false, cancel: null }
       }
     });
     void requestPuzzleExplanation(request, deps);
-    cancelPuzzleExplanations("p1");
+    cancelPuzzleExplanations(puzzleIdentity(puzzle));
     expect(deps.cancel).not.toHaveBeenCalled();
     expect(entry("old:solved")?.phase).toBe("ready");
     expect(entry()?.phase).toBe("analysing");
@@ -170,7 +191,7 @@ describe("requestPuzzleExplanation", () => {
 });
 
 describe("explainView", () => {
-  const ready: ExplainEntry = { phase: "ready", puzzleId: "p1", requestId: null, explanation, error: null, needsSettings: false, cancel: null };
+  const ready: ExplainEntry = { phase: "ready", puzzle: puzzleIdentity(puzzle), requestId: null, explanation, error: null, needsSettings: false, cancel: null };
   const base = { entry: undefined, configReady: true, commentaryEnabled: true, hasApiKey: true };
 
   it("offers the button once the configuration is known", () => {

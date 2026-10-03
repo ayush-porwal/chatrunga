@@ -32,11 +32,24 @@ export function explainOutcome(outcome: PuzzleOutcome, wrongMove: PuzzleWrongMov
 }
 
 /**
- * The session cache key: the puzzle, how it went and, after a wrong move, which one — a later try
- * at the same puzzle with another mistake is explained afresh.
+ * Which puzzle this is across databases: a puzzle's id is its source row's, so two databases can
+ * both have a puzzle with the same id.
  */
-export function explanationKey(puzzleId: string, kind: PuzzleOutcomeKind, wrong: PuzzleWrongMove | null): string {
-  return kind === "failed_wrong_move" && wrong ? `${puzzleId}:${kind}:${wrong.solutionIndex}:${wrong.uci}` : `${puzzleId}:${kind}`;
+export function puzzleIdentity(puzzle: Pick<PuzzleSample, "databaseId" | "id">): string {
+  return JSON.stringify([puzzle.databaseId, puzzle.id]);
+}
+
+/**
+ * The session cache key: the puzzle ({@link puzzleIdentity}), how it went and, after a wrong move,
+ * which one — a later try at the same puzzle with another mistake is explained afresh.
+ */
+export function explanationKey(
+  puzzle: Pick<PuzzleSample, "databaseId" | "id">,
+  kind: PuzzleOutcomeKind,
+  wrong: PuzzleWrongMove | null
+): string {
+  const identity = puzzleIdentity(puzzle);
+  return kind === "failed_wrong_move" && wrong ? `${identity}:${kind}:${wrong.solutionIndex}:${wrong.uci}` : `${identity}:${kind}`;
 }
 
 /** The Game review evaluation engine: the chosen one, else the automatic pick; null when unusable. */
