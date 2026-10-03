@@ -51,7 +51,7 @@ import { useLichessStore } from "../../stores/lichess-store";
 import { LIVE_GAME_NOTICE, repertoireCommandBlocked } from "./handoffs";
 import { usePrefersReducedMotion } from "../board/board-motion";
 import { BoardStage, BoardWorkspace } from "../board/BoardWorkspace";
-import { ControlledBoard, TypedMoveButton, type TypedMoveControl } from "../board/ControlledBoard";
+import { ControlledBoard } from "../board/ControlledBoard";
 import { PracticeSetup, initialPracticeInput } from "./PracticeSetup";
 import {
   autoStartPracticeInput,
@@ -379,8 +379,6 @@ function PracticeSession({
   const settings = useSettingsQuery();
   /** The submitted move shown while the main process grades it (cleared unless correct). */
   const [pending, setPending] = useState<PendingAttempt | null>(null);
-  /** The board's typed-move entry, opened from the button in the footer. */
-  const [typedMove, setTypedMove] = useState<TypedMoveControl | null>(null);
   const [failed, setFailed] = useState<{ message: string; retry: RetryTarget } | null>(null);
   const advanceTimer = useRef<number | null>(null);
   const color: Color = detail.color;
@@ -655,8 +653,6 @@ function PracticeSession({
             arrows={marks.arrows}
             highlights={marks.highlights}
             onMove={onMove}
-            keyboardInput
-            onTypedMoveChange={setTypedMove}
           />
         </BoardStage>
       }
@@ -691,13 +687,10 @@ function PracticeSession({
       }
       footer={
         <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
-          <div className="flex items-center gap-1">
-            <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={finish}>
-              <Square />
-              End session
-            </Button>
-            <TypedMoveButton typedMove={typedMove} />
-          </div>
+          <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={finish}>
+            <Square />
+            End session
+          </Button>
           {nextAction ? (
             <Button
               type="button"

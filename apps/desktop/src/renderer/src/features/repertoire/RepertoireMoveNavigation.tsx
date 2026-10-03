@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, type ReactNode } from "react";
+import { memo, useEffect, useMemo } from "react";
 import { ChevronLeft, ChevronRight, SkipBack, SkipForward } from "lucide-react";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
 import { IconButton } from "@/components/ui/icon-button";
@@ -25,14 +25,11 @@ const KEYBOARD_WIDGET_SELECTOR =
 export const RepertoireMoveNavigation = memo(function RepertoireMoveNavigation({
   nodes,
   selectedNodeId,
-  onSelect,
-  trailing
+  onSelect
 }: {
   nodes: readonly MoveNode[];
   selectedNodeId: string;
   onSelect: (nodeId: string) => void;
-  /** Extra controls at the row's right end (the board's typed-move button). */
-  trailing?: ReactNode;
 }) {
   const { depth, total, canPrevious, canNext, lastId, parentId, nextId } = useMemo(() => {
     const byId = new Map(nodes.map((node) => [node.id, node]));
@@ -96,7 +93,6 @@ export const RepertoireMoveNavigation = memo(function RepertoireMoveNavigation({
           disabled={!canNext}
           onClick={goLast}
         />
-        {trailing}
       </div>
     </nav>
   );

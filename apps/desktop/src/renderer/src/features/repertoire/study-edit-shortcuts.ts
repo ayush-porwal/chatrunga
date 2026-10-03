@@ -1,7 +1,7 @@
 /*
  * Keys for editing the Study move tree: Undo / Redo of structural edits (⌘Z / ⇧⌘Z on macOS,
- * Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y elsewhere) and P to promote the selected variation. P opens no
- * typed move (it isn't a move start) and no other app shortcut uses it.
+ * Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y elsewhere) and P to promote the selected variation. No other app
+ * shortcut uses P.
  */
 
 export type StudyEditAction = "undo" | "redo" | "promote";

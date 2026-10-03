@@ -49,7 +49,7 @@ import {
   useRepertoireWorkspaceStore
 } from "../../stores/repertoire-workspace-store";
 import { BoardStage, BoardWorkspace, workspaceTabsClass } from "../board/BoardWorkspace";
-import { ControlledBoard, TypedMoveButton, type TypedMoveControl } from "../board/ControlledBoard";
+import { ControlledBoard } from "../board/ControlledBoard";
 import {
   COLOR_LABELS,
   nextSortOrder,
@@ -182,10 +182,6 @@ export function RepertoireStudyPage({
     step: RepertoireChapter | undefined;
   } | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
-  /** The board's typed-move entry, opened from the button in the move navigation row. */
-  const [typedMove, setTypedMove] = useState<TypedMoveControl | null>(null);
-  // Hoisted so the memoised navigation row skips the page's unrelated re-renders.
-  const typedMoveButton = useMemo(() => <TypedMoveButton typedMove={typedMove} />, [typedMove]);
   /** Set while this page removes the open chapter itself (not a "missing chapter" case). */
   const leavingChapter = useRef(false);
   const [mountedAt] = useState(() => Date.now());
@@ -708,8 +704,6 @@ export function RepertoireStudyPage({
             highlights={node.highlights}
             onShapesChange={onShapesChange}
             onMove={onMove}
-            keyboardInput
-            onTypedMoveChange={setTypedMove}
           />
         </BoardStage>
       }
@@ -746,7 +740,6 @@ export function RepertoireStudyPage({
             nodes={draft.tree}
             selectedNodeId={node.id}
             onSelect={selectNode}
-            trailing={typedMoveButton}
           />
           {/* Wraps in a narrow side panel: the four actions must never widen it (it would scroll sideways). */}
           <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-t border-line-subtle px-3 py-2">
