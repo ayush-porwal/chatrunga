@@ -61,6 +61,10 @@ export const UpdateButton = memo(function UpdateButton({
   const feedbackTimer = useRef(0);
 
   const view = updateButtonView(state, feedback, now);
+  // The tooltip is off while there's an update (the card replaces it), so Radix never reports a
+  // close then (it only reports changes from the `open` it is given): a hover then must not leave
+  // it "open", or it would show unasked once the update goes away (a failed download).
+  if (view.hasUpdate && tipOpen) setTipOpen(false);
   const cardOpen = view.hasUpdate && anchor !== null && (hovered || pinned);
   const { present, state: presence } = usePresence(cardOpen);
 
@@ -174,7 +178,7 @@ export const UpdateButton = memo(function UpdateButton({
 
   return (
     <>
-      <Tooltip open={!view.hasUpdate && (tipOpen || feedback !== null)} onOpenChange={setTipOpen}>
+      <Tooltip open={!view.hasUpdate && (tipOpen || feedback !== null)} onOpenChange={(open) => setTipOpen(open && !view.hasUpdate)}>
         <TooltipTrigger asChild>
           <Button
             ref={buttonRef}
