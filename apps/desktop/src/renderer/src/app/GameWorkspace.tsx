@@ -25,11 +25,10 @@ import { useGameStore } from "../stores/game-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
 import { useReviewStore } from "../stores/review-store";
 import { useDisplayedReviewMoves } from "../stores/review-validity";
+import { availableSideTab, type PuzzleTabs, type SideTab } from "./side-tabs";
 
 // The eval chart (recharts) loads only once a reviewed game needs it.
 const ReviewTape = lazy(() => import("../features/game-review/ReviewTape").then((module) => ({ default: module.ReviewTape })));
-
-export type SideTab = "notation" | "engine" | "library";
 
 const sideTabOptions: readonly SegmentedOption<SideTab>[] = [
   { value: "notation", label: "Moves" },
@@ -47,21 +46,11 @@ const lockedPuzzleTabOptions: readonly SegmentedOption<SideTab>[] = [
   { value: "engine", label: "Engine", disabled: true, disabledReason: "Available after the puzzle is solved or failed" }
 ];
 
-/** The puzzle on this board: none, still being solved (`locked`), or solved / failed (`open`). */
-export type PuzzleTabs = "none" | "locked" | "open";
-
 function usePuzzleTabs(): PuzzleTabs {
   const puzzleBoard = useGameStore((state) => state.source === "puzzle");
   return usePuzzleStore((state) =>
     !puzzleBoard || !state.activePuzzle ? "none" : state.outcome === "pending" ? "locked" : "open"
   );
-}
-
-/** The tab shown: a puzzle never shows Library, nor Engine while it is locked. */
-export function availableSideTab(tab: SideTab, puzzle: PuzzleTabs): SideTab {
-  if (puzzle === "none") return tab;
-  if (tab === "library" || (tab === "engine" && puzzle === "locked")) return "notation";
-  return tab;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { availableSideTab } from "./GameWorkspace";
+import { availableSideTab } from "./side-tabs";
 
 describe("availableSideTab", () => {
   it("keeps any tab without a puzzle", () => {

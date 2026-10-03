@@ -10,7 +10,8 @@ import type { ReviewTab } from "../features/game-review/review-utils";
 import type { OpeningSide } from "../features/game-review/opening-comparison";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import type { SettingsSectionId } from "../features/settings/SettingsPage";
-import { GameWorkspace, type SideTab } from "./GameWorkspace";
+import { GameWorkspace } from "./GameWorkspace";
+import type { SideTab } from "./side-tabs";
 import { HomePage } from "./HomePage";
 
 // Pages and panels load when first opened, so starting the app (Home, the board) doesn't parse the

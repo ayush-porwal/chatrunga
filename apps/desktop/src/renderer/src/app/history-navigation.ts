@@ -9,7 +9,7 @@ import { useLichessStore } from "../stores/lichess-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
 import { useRepertoireWorkspaceStore } from "../stores/repertoire-workspace-store";
 import type { AppView, RepertoireScreen } from "./AppPages";
-import type { SideTab } from "./GameWorkspace";
+import type { SideTab } from "./side-tabs";
 import { isHeldUnchanged } from "./useGameAutosave";
 
 /**

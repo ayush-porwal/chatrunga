@@ -46,7 +46,7 @@ import {
 import { nextPuzzleInput, puzzleBoard, usePuzzleSession } from "./puzzle-session-controller";
 import { AppSidebar } from "./AppSidebar";
 import { AppTitlebar, GameTitlebar, LiveGameButton, PageTitle, ReviewTitlebar } from "./AppTitlebar";
-import type { SideTab } from "./GameWorkspace";
+import type { SideTab } from "./side-tabs";
 import { AddToRepertoireDialog, AppPages, GameReviewPicker, OnboardingFlow, type AppView } from "./AppPages";
 import { PuzzleInfoPanel } from "./PuzzleInfoPanel";
 import { useBoardShortcuts } from "./useBoardShortcuts";
