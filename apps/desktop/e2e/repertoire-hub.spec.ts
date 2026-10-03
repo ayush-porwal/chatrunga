@@ -303,106 +303,111 @@ const typeSearch = (label: string, value: string) => `
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, ${JSON.stringify(value)});
   input.dispatchEvent(new Event("input", { bubbles: true }));`;
 
-test("benchmark: a 500-chapter repertoire's chapter list and import preview", async ({
-  launch
-}) => {
-  test.setTimeout(240_000);
-  const { page } = await launch();
-  await skipWelcome(page);
-  const seeded = await seedCollection(page, "Large collection", lines(500));
-  expect(seeded.chapters).toBe(500);
+test(
+  "benchmark: a 500-chapter repertoire's chapter list and import preview",
+  { tag: "@perf" },
+  async ({ launch }) => {
+    test.setTimeout(240_000);
+    const { page } = await launch();
+    await skipWelcome(page);
+    const seeded = await seedCollection(page, "Large collection", lines(500));
+    expect(seeded.chapters).toBe(500);
 
-  await openChapters(page, "Large collection");
-  const openChaptersMs: number[] = [];
-  for (let run = 0; run < 3; run++) {
-    await page.getByRole("tab", { name: "Moves", exact: true }).click();
-    openChaptersMs.push(await timeInPage(page, clickTab("Chapters")));
-  }
-  const chapterRows = await page
-    .getByRole("list", { name: "Chapters" })
-    .getByRole("listitem")
-    .count();
-  const filterChaptersMs: number[] = [];
-  for (const query of ["line 4", "line 49", "", "line 4", ""]) {
-    filterChaptersMs.push(await timeInPage(page, typeSearch("Search chapters", query)));
-  }
-
-  // The write a bulk action makes (one call), against the save per chapter it replaces.
-  const writes = await withApi(page, { id: seeded.id }, async (api, { id }) => {
-    const detail = await api.get(id);
-    const ids = detail.chapters.slice(1, 101).map((chapter) => chapter.id);
-    let revision = detail.revision;
-    let start = performance.now();
-    for (const chapterId of ids) {
-      const chapter = await api.getChapter({ repertoireId: id, chapterId });
-      const saved = await api.saveChapter({
-        repertoireId: id,
-        chapter: { ...chapter, enabled: false },
-        expectedRevision: revision
-      });
-      revision = saved.repertoire.revision;
+    await openChapters(page, "Large collection");
+    const openChaptersMs: number[] = [];
+    for (let run = 0; run < 3; run++) {
+      await page.getByRole("tab", { name: "Moves", exact: true }).click();
+      openChaptersMs.push(await timeInPage(page, clickTab("Chapters")));
     }
-    const perChapterSaves100Ms = Math.round(performance.now() - start);
-    start = performance.now();
-    const batch = await api.updateChapters({
-      repertoireId: id,
-      chapterIds: ids,
-      expectedRevision: revision,
-      patch: { enabled: true }
-    });
-    const bulk100Ms = Math.round(performance.now() - start);
-    start = performance.now();
-    await api.updateChapters({
-      repertoireId: id,
-      chapterIds: detail.chapters.slice(1).map((chapter) => chapter.id),
-      expectedRevision: batch.repertoire.revision,
-      patch: { kind: "reference" }
-    });
-    return { perChapterSaves100Ms, bulk100Ms, bulk499Ms: Math.round(performance.now() - start) };
-  });
+    const chapterRows = await page
+      .getByRole("list", { name: "Chapters" })
+      .getByRole("listitem")
+      .count();
+    const filterChaptersMs: number[] = [];
+    for (const query of ["line 4", "line 49", "", "line 4", ""]) {
+      filterChaptersMs.push(await timeInPage(page, typeSearch("Search chapters", query)));
+    }
 
-  await page
-    .getByRole("navigation", { name: "Repertoire location" })
-    .getByRole("button", { name: "Repertoire", exact: true })
-    .click();
-  await page.getByRole("button", { name: "Large collection actions", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Import PGN", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Import PGN" });
-  await dialog.getByRole("textbox", { name: "PGN text" }).fill(collectionPgn(lines(500)));
-  await dialog.getByRole("button", { name: "Preview", exact: true }).click();
-  const games = dialog.getByRole("list", { name: "Games in the PGN" });
-  await expect(games).toBeVisible({ timeout: 60_000 });
-  const previewRows = await games.getByRole("listitem").count();
-  // However long the list, the dialog fits the window: heading, search and Import stay in view
-  // while only the list scrolls.
-  const heading = dialog.getByRole("heading", { name: "Import PGN" });
-  const importButton = dialog.getByRole("button", { name: "Import 500 chapters", exact: true });
-  await expectInWindow(page, dialog);
-  await expectInWindow(page, heading);
-  await expectInWindow(page, importButton);
-  await games.evaluate((list) => list.parentElement!.scrollTo({ top: 1e6 }));
-  await expect(dialog.getByRole("button", { name: /^Show 50 more/ })).toBeInViewport();
-  await expectInWindow(page, heading);
-  await expectInWindow(page, dialog.getByRole("searchbox", { name: "Search games" }));
-  await expectInWindow(page, importButton);
-  await test.info().attach("import-preview-500-games", {
-    body: await page.screenshot(),
-    contentType: "image/png"
-  });
-  const toggleGameMs: number[] = [];
-  for (let run = 0; run < 3; run++) {
-    toggleGameMs.push(
-      await timeInPage(page, `document.querySelector('input[aria-label="Import game 1"]').click()`)
+    // The write a bulk action makes (one call), against the save per chapter it replaces.
+    const writes = await withApi(page, { id: seeded.id }, async (api, { id }) => {
+      const detail = await api.get(id);
+      const ids = detail.chapters.slice(1, 101).map((chapter) => chapter.id);
+      let revision = detail.revision;
+      let start = performance.now();
+      for (const chapterId of ids) {
+        const chapter = await api.getChapter({ repertoireId: id, chapterId });
+        const saved = await api.saveChapter({
+          repertoireId: id,
+          chapter: { ...chapter, enabled: false },
+          expectedRevision: revision
+        });
+        revision = saved.repertoire.revision;
+      }
+      const perChapterSaves100Ms = Math.round(performance.now() - start);
+      start = performance.now();
+      const batch = await api.updateChapters({
+        repertoireId: id,
+        chapterIds: ids,
+        expectedRevision: revision,
+        patch: { enabled: true }
+      });
+      const bulk100Ms = Math.round(performance.now() - start);
+      start = performance.now();
+      await api.updateChapters({
+        repertoireId: id,
+        chapterIds: detail.chapters.slice(1).map((chapter) => chapter.id),
+        expectedRevision: batch.repertoire.revision,
+        patch: { kind: "reference" }
+      });
+      return { perChapterSaves100Ms, bulk100Ms, bulk499Ms: Math.round(performance.now() - start) };
+    });
+
+    await page
+      .getByRole("navigation", { name: "Repertoire location" })
+      .getByRole("button", { name: "Repertoire", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Large collection actions", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Import PGN", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Import PGN" });
+    await dialog.getByRole("textbox", { name: "PGN text" }).fill(collectionPgn(lines(500)));
+    await dialog.getByRole("button", { name: "Preview", exact: true }).click();
+    const games = dialog.getByRole("list", { name: "Games in the PGN" });
+    await expect(games).toBeVisible({ timeout: 60_000 });
+    const previewRows = await games.getByRole("listitem").count();
+    // However long the list, the dialog fits the window: heading, search and Import stay in view
+    // while only the list scrolls.
+    const heading = dialog.getByRole("heading", { name: "Import PGN" });
+    const importButton = dialog.getByRole("button", { name: "Import 500 chapters", exact: true });
+    await expectInWindow(page, dialog);
+    await expectInWindow(page, heading);
+    await expectInWindow(page, importButton);
+    await games.evaluate((list) => list.parentElement!.scrollTo({ top: 1e6 }));
+    await expect(dialog.getByRole("button", { name: /^Show 50 more/ })).toBeInViewport();
+    await expectInWindow(page, heading);
+    await expectInWindow(page, dialog.getByRole("searchbox", { name: "Search games" }));
+    await expectInWindow(page, importButton);
+    await test.info().attach("import-preview-500-games", {
+      body: await page.screenshot(),
+      contentType: "image/png"
+    });
+    const toggleGameMs: number[] = [];
+    for (let run = 0; run < 3; run++) {
+      toggleGameMs.push(
+        await timeInPage(
+          page,
+          `document.querySelector('input[aria-label="Import game 1"]').click()`
+        )
+      );
+    }
+    const filterGamesMs: number[] = [];
+    for (const query of ["line 4", "line 49", "", "line 4", ""]) {
+      filterGamesMs.push(await timeInPage(page, typeSearch("Search games", query)));
+    }
+
+    console.log(
+      `REPERTOIRE_LIST_BENCH ${JSON.stringify({ chapterRows, openChaptersMs, filterChaptersMs, previewRows, toggleGameMs, filterGamesMs, ...writes })}`
     );
+    expect(chapterRows).toBeLessThan(100);
+    expect(previewRows).toBe(50);
   }
-  const filterGamesMs: number[] = [];
-  for (const query of ["line 4", "line 49", "", "line 4", ""]) {
-    filterGamesMs.push(await timeInPage(page, typeSearch("Search games", query)));
-  }
-
-  console.log(
-    `REPERTOIRE_LIST_BENCH ${JSON.stringify({ chapterRows, openChaptersMs, filterChaptersMs, previewRows, toggleGameMs, filterGamesMs, ...writes })}`
-  );
-  expect(chapterRows).toBeLessThan(100);
-  expect(previewRows).toBe(50);
-});
+);

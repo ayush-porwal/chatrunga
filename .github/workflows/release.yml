@@ -153,7 +153,8 @@ jobs:
       # The Electron smoke journeys (apps/desktop/e2e) against the unpacked app just packaged for
       # this runner's OS and CPU: a build that installs but can't start, import, save or scan
       # puzzles stops here, on every OS. Throwaway profiles, no network, no analytics or update
-      # checks. The same journeys run nightly on Linux and Windows (e2e.yml).
+      # checks. The timing benchmarks (tagged @perf) are left out: they are slow and machine-bound,
+      # and run nightly instead. The same journeys run nightly on Linux and Windows (e2e.yml).
       - name: Smoke-test the packaged app
         id: smoke
         timeout-minutes: 15
@@ -166,9 +167,9 @@ jobs:
           if [[ "$RUNNER_OS" == "Linux" ]]; then
             # Ubuntu 24.04 blocks the user namespaces Chromium's sandbox needs; no display either.
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-            xvfb-run -a pnpm test:e2e:run
+            xvfb-run -a pnpm test:e2e:run --grep-invert @perf
           else
-            pnpm test:e2e:run
+            pnpm test:e2e:run --grep-invert @perf
           fi
 
       - name: Upload smoke-test results

@@ -3,7 +3,8 @@ name: e2e
 # Electron smoke journeys (apps/desktop/e2e): launch the real app and drive it — boot, PGN import,
 # persistence across a restart, positions, puzzles (scan worker), offline analysis — on Linux and
 # Windows, from out/ and as the packaged app. Too slow and windowed for every PR: nightly, on
-# demand, and (release.yml) against every packaged release build.
+# demand, and (release.yml) against every packaged release build. The timing benchmarks (tagged
+# @perf) run last, in a step of their own that reports but doesn't fail the run.
 on:
   schedule:
     - cron: "30 3 * * *"
@@ -20,7 +21,7 @@ jobs:
   smoke:
     name: Smoke journeys (${{ matrix.name }}, built and packaged)
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 60
     strategy:
       # Each OS reports on its own: a Linux failure doesn't hide whether Windows passes.
       fail-fast: false
@@ -65,9 +66,9 @@ jobs:
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Linux" ]]; then
-            xvfb-run -a pnpm test:e2e:run
+            xvfb-run -a pnpm test:e2e:run --grep-invert @perf
           else
-            pnpm test:e2e:run
+            pnpm test:e2e:run --grep-invert @perf
           fi
 
       # The same journeys against the unpacked app electron-builder makes (asar, packaged paths).
@@ -88,9 +89,9 @@ jobs:
           CHATURANGA_E2E_PACKAGED: "1"
         run: |
           if [[ "$RUNNER_OS" == "Linux" ]]; then
-            xvfb-run -a pnpm test:e2e:run
+            xvfb-run -a pnpm test:e2e:run --grep-invert @perf
           else
-            pnpm test:e2e:run
+            pnpm test:e2e:run --grep-invert @perf
           fi
 
       - name: Upload test results
@@ -98,5 +99,31 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: e2e-results-${{ runner.os }}
+          path: apps/desktop/test-results/
+          if-no-files-found: ignore
+
+      # The timing benchmarks (@perf) against the packaged app, once the required journeys have
+      # passed. Their bounds depend on the runner, so a miss is reported (the step shows as failed
+      # and its results are uploaded) without failing the run. The timings are in the step's log.
+      - name: Timing benchmarks (packaged app, non-blocking)
+        id: perf
+        continue-on-error: true
+        timeout-minutes: 20
+        working-directory: apps/desktop
+        shell: bash
+        env:
+          CHATURANGA_E2E_PACKAGED: "1"
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a pnpm test:e2e:run --grep @perf
+          else
+            pnpm test:e2e:run --grep @perf
+          fi
+
+      - name: Upload timing benchmark results
+        if: always() && steps.perf.outcome != 'skipped'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-perf-results-${{ runner.os }}
           path: apps/desktop/test-results/
           if-no-files-found: ignore
