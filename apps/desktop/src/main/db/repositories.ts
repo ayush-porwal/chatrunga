@@ -164,19 +164,68 @@ function get<T>(sql: string, ...params: SQLInputValue[]): T | null {
   return (getDb().prepare(sql).get(...params) as T | undefined) ?? null;
 }
 
-/** Runs `work` as one transaction: all of its writes land, or none do. */
+/**
+ * Runs `work` as one transaction: all of its writes land, or none do. Every caller writes, so it
+ * takes the write lock up front (IMMEDIATE): a deferred read-then-write transaction would fail
+ * with SQLITE_BUSY at once (no busy wait) if the import writer's connection wrote in between. A
+ * BEGIN that finds the lock held past the busy timeout throws its BUSY error unchanged.
+ */
 function transaction<T>(work: () => T): T {
   const db = getDb();
   if (db.isTransaction) return work();
-  db.exec("BEGIN");
+  db.exec("BEGIN IMMEDIATE");
   try {
     const result = work();
     db.exec("COMMIT");
     return result;
   } catch (error) {
-    db.exec("ROLLBACK");
+    // SQLite may already have ended the transaction (a failed COMMIT, or an error that rolls back
+    // by itself); a ROLLBACK then throws "no transaction is active" and would hide `error`, such
+    // as the BUSY that retryOnceIfBusy retries on.
+    if (db.isTransaction) db.exec("ROLLBACK");
     throw error;
   }
+}
+
+/** Pause before retrying a write that found the database busy. */
+export const BUSY_RETRY_DELAY_MS = 300;
+
+/**
+ * Runs a write; if SQLite reports BUSY (another connection, such as the repertoire import writer,
+ * held the write lock past the busy timeout), waits `delayMs` without blocking and tries once more
+ * before rejecting. For writes the user would otherwise lose, like a game save.
+ */
+export async function retryOnceIfBusy<T>(
+  work: () => T,
+  delayMs: number = BUSY_RETRY_DELAY_MS
+): Promise<T> {
+  try {
+    return work();
+  } catch (error) {
+    const code = (error as { errcode?: unknown } | null)?.errcode;
+    if (typeof code !== "number" || (code & 0xff) !== 5) throw error;
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    return work();
+  }
+}
+
+/**
+ * Saves a game the user would otherwise lose (`games:save`), with one retry when the database is
+ * busy (see retryOnceIfBusy). A new game gets its id once, so a retry can't add it twice, and
+ * `suppressed` (a game deleted moments ago) is checked before every attempt, so a retry that
+ * waited while the game was deleted doesn't bring it back.
+ */
+export function saveGameRetrying(
+  input: SaveGameInput,
+  suppressed: (gameId: string) => Error | null,
+  delayMs: number = BUSY_RETRY_DELAY_MS
+): Promise<SavedGame> {
+  const withId = { ...input, id: input.id || nanoid() };
+  return retryOnceIfBusy(() => {
+    const refusal = suppressed(withId.id);
+    if (refusal) throw refusal;
+    return gameRepository.save(withId);
+  }, delayMs);
 }
 
 function run(sql: string, ...params: SQLInputValue[]): void {
@@ -592,49 +641,52 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
     input.moveTree.find((node) => node.parentId === null)?.id ??
     "root";
 
-  run(
-    `INSERT INTO games (
-      id, source, white, black, event, site, round, result, date,
-      initial_fen, pgn, current_fen, current_node_id, headers_json, move_tree_json, fingerprint,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      source = excluded.source,
-      white = excluded.white,
-      black = excluded.black,
-      event = excluded.event,
-      site = excluded.site,
-      round = excluded.round,
-      result = excluded.result,
-      date = excluded.date,
-      initial_fen = excluded.initial_fen,
-      pgn = excluded.pgn,
-      current_fen = excluded.current_fen,
-      current_node_id = excluded.current_node_id,
-      headers_json = excluded.headers_json,
-      move_tree_json = excluded.move_tree_json,
-      fingerprint = excluded.fingerprint,
-      updated_at = excluded.updated_at`,
-    id,
-    input.source,
-    input.headers.white ?? null,
-    input.headers.black ?? null,
-    input.headers.event ?? null,
-    input.headers.site ?? null,
-    input.headers.round ?? null,
-    input.headers.result ?? "*",
-    input.headers.date ?? null,
-    input.rootFen,
-    input.pgn,
-    input.currentFen,
-    currentNodeId,
-    JSON.stringify(input.headers),
-    JSON.stringify(input.moveTree),
-    fingerprint,
-    createdAt,
-    timestamp
-  );
-  if (input.review) saveReview(id, input.review);
+  // The game and its review land together: a busy failure in between leaves neither.
+  transaction(() => {
+    run(
+      `INSERT INTO games (
+        id, source, white, black, event, site, round, result, date,
+        initial_fen, pgn, current_fen, current_node_id, headers_json, move_tree_json, fingerprint,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        source = excluded.source,
+        white = excluded.white,
+        black = excluded.black,
+        event = excluded.event,
+        site = excluded.site,
+        round = excluded.round,
+        result = excluded.result,
+        date = excluded.date,
+        initial_fen = excluded.initial_fen,
+        pgn = excluded.pgn,
+        current_fen = excluded.current_fen,
+        current_node_id = excluded.current_node_id,
+        headers_json = excluded.headers_json,
+        move_tree_json = excluded.move_tree_json,
+        fingerprint = excluded.fingerprint,
+        updated_at = excluded.updated_at`,
+      id,
+      input.source,
+      input.headers.white ?? null,
+      input.headers.black ?? null,
+      input.headers.event ?? null,
+      input.headers.site ?? null,
+      input.headers.round ?? null,
+      input.headers.result ?? "*",
+      input.headers.date ?? null,
+      input.rootFen,
+      input.pgn,
+      input.currentFen,
+      currentNodeId,
+      JSON.stringify(input.headers),
+      JSON.stringify(input.moveTree),
+      fingerprint,
+      createdAt,
+      timestamp
+    );
+    if (input.review) saveReview(id, input.review);
+  });
 
   const saved = gameRepository.get(id);
   if (!saved) throw new Error("Failed to save game");
@@ -874,7 +926,7 @@ export const settingsRepository = {
   /** Several settings in one transaction: all of them are stored, or none (a theme and its colors). */
   setMany(patch: Partial<Record<keyof AppSettings, unknown>>): void {
     const db = getDb();
-    db.exec("BEGIN");
+    db.exec("BEGIN IMMEDIATE");
     try {
       for (const [key, value] of Object.entries(patch)) this.set(key as keyof AppSettings, value);
       db.exec("COMMIT");

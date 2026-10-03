@@ -6,6 +6,7 @@ import type { GameHeaders, MoveNode } from "@chaturanga/shared/types/chess";
 import type { GameReview } from "@chaturanga/shared/types/engine";
 import { gameFingerprint } from "./game-fingerprint";
 import { reviewListingFields, reviewRowId } from "./review-rows";
+import { setRepertoireConnection } from "../repertoire/connection";
 
 let db: DatabaseSync | null = null;
 
@@ -67,13 +68,23 @@ const ddl = [
   )`
 ];
 
+/** The database file (the import writer worker opens its own connection to it). */
+export function databasePath(): string {
+  return join(app.getPath("userData"), "chaturanga.sqlite");
+}
+
 export function getDb(): DatabaseSync {
   if (db) return db;
 
-  const dbPath = join(app.getPath("userData"), "chaturanga.sqlite");
+  const dbPath = databasePath();
   mkdirSync(dirname(dbPath), { recursive: true });
   db = new DatabaseSync(dbPath);
   db.exec("PRAGMA journal_mode = WAL");
+  // The import writer worker's connection holds the write lock while it stores an import.
+  // Repertoire writes wait for it at the service's write gate, asynchronously, so they never sleep
+  // here. node:sqlite's busy handler sleeps synchronously (the main process stalls), so the timeout
+  // is bounded: a rare other write (a game autosave) stalls up to 1 s rather than failing.
+  db.exec("PRAGMA busy_timeout = 1000");
   db.exec("PRAGMA foreign_keys = ON");
   for (const statement of ddl) db.exec(statement);
   runMigrations(db);
@@ -380,7 +391,7 @@ function storedFingerprint(row: {
 export function runMigrations(database: DatabaseSync, migrations = MIGRATIONS): void {
   const { user_version: version } = database.prepare("PRAGMA user_version").get() as { user_version: number };
   for (let index = version; index < migrations.length; index += 1) {
-    database.exec("BEGIN");
+    database.exec("BEGIN IMMEDIATE");
     try {
       migrations[index](database);
       database.exec(`PRAGMA user_version = ${index + 1}`);
@@ -391,6 +402,9 @@ export function runMigrations(database: DatabaseSync, migrations = MIGRATIONS): 
     }
   }
 }
+
+// Repertoire queries run on this connection in the main process.
+setRepertoireConnection(getDb);
 
 export function closeDb(): void {
   db?.close();

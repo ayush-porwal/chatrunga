@@ -18,7 +18,14 @@ export default defineConfig({
         input: {
           index: resolve(rootDir, "src/main/index.ts"),
           // Worker thread for whole-file puzzle scans (see databases/external-databases.ts).
-          "puzzle-scan-worker": resolve(rootDir, "src/main/databases/puzzle-scan-worker.ts")
+          "puzzle-scan-worker": resolve(rootDir, "src/main/databases/puzzle-scan-worker.ts"),
+          // Worker thread for PGN import parses (see repertoire/import-runner.ts).
+          "repertoire-import-worker": resolve(rootDir, "src/main/repertoire/import-worker.ts"),
+          // Worker thread storing import commits on its own connection (repertoire/import-writer.ts).
+          "repertoire-import-writer-worker": resolve(
+            rootDir,
+            "src/main/repertoire/import-writer-worker.ts"
+          )
         }
       }
     }

@@ -811,7 +811,13 @@ export function parseRemoveRepertoireInput(value: unknown): RemoveRepertoireInpu
 
 export function parsePreviewImportInput(value: unknown): PreviewImportInput {
   const input = asObject(value, "PGN import");
-  return { pgn: asString(input.pgn, "PGN", MAX_PGN_BYTES) };
+  // The import's own size-limit message, not a generic "too long" (design §11).
+  if (typeof input.pgn === "string" && input.pgn.length > MAX_PGN_BYTES) {
+    throw new Error("This PGN is larger than 20 MiB; split it and import it in parts.");
+  }
+  const pgn = asString(input.pgn, "PGN", MAX_PGN_BYTES);
+  const jobId = optional(input.jobId, (id) => asId(id, "jobId"));
+  return jobId === undefined ? { pgn } : { pgn, jobId };
 }
 
 export function parseImportCommitInput(value: unknown): ImportCommitInput {

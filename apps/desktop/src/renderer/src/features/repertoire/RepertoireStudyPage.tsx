@@ -30,7 +30,6 @@ import {
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
 import { BoardStage, BoardWorkspace, workspaceTabsClass } from "../board/BoardWorkspace";
 import { ControlledBoard } from "../board/ControlledBoard";
-import { TreeView } from "../game/TreeView";
 import {
   COLOR_LABELS,
   nextSortOrder,
@@ -51,6 +50,7 @@ import { StudyChaptersPanel } from "./StudyChaptersPanel";
 import { StudyChoicesPanel } from "./StudyChoicesPanel";
 import { StudyNotesPanel } from "./StudyNotesPanel";
 import { StudySourcesSection } from "./StudySourcesSection";
+import { StudyTree } from "./StudyTree";
 import { useChapterAutosave } from "./useChapterAutosave";
 import { useStudyCommands } from "./useStudyCommands";
 
@@ -200,7 +200,11 @@ export function RepertoireStudyPage({
     if (draft) onPositionChanged();
   }, [draft, selectedNodeId, tab, orientation, onPositionChanged]);
 
-  const lookup = useMemo(() => (draft ? buildChapterLookup(draft) : null), [draft]);
+  // Once per tree revision (design §11): selecting a node, editing edges/training marks or chapter
+  // fields, and an autosave that returns the same tree (see reuseUnchangedTree) keep the lookup;
+  // only new moves, comments or shapes (a changed tree) rebuild it.
+  const tree = draft?.tree;
+  const lookup = useMemo(() => (tree ? buildChapterLookup({ tree }) : null), [tree]);
   const node = lookup?.nodesById.get(selectedNodeId) ?? lookup?.nodesById.get("root") ?? null;
   const positionKey = lookup?.positionKeys.get(node?.id ?? "") ?? null;
   const storedDecision = useRepertoireDecisionQuery(repertoireId, positionKey);
@@ -593,8 +597,9 @@ export function RepertoireStudyPage({
       {tab === "moves" ? (
         <div className="scroll-area -mr-3 flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-3">
           <section className="flex max-h-[45%] min-h-32 shrink-0 flex-col" aria-label="Moves">
-            <TreeView
-              nodes={draft.tree}
+            <StudyTree
+              key={chapterId}
+              lookup={lookup}
               selectedNodeId={node.id}
               onSelectNode={selectNode}
               onDeleteLine={onDeleteLine}

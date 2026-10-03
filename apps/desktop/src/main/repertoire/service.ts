@@ -49,6 +49,7 @@ import {
   type ExportResult,
   type ImportCommitInput,
   type ImportPreview,
+  type ImportProgressEvent,
   type ImportResult,
   type PracticeActionInput,
   type PracticeActionResult,
@@ -101,11 +102,9 @@ import {
   buildChapterLookup,
   collectDecisions,
   computeScopeStates,
-  defaultImportNodeMeta,
   effectiveAcceptedUcis,
   effectivePreferredUci,
   nodeMetaOf,
-  reconcileDecisions,
   type ChapterLookup,
   type CollectedDecision,
   type DecisionOccurrence
@@ -139,14 +138,27 @@ import {
   rehearsalContext,
   type RehearsalContext
 } from "@chaturanga/shared/chess/repertoire-rehearsal";
-import {
-  exportRepertoirePgn,
-  formatPath,
-  parseRepertoirePgn,
-  type ParsedRepertoireGame
-} from "@chaturanga/shared/chess/repertoire-pgn";
+import { exportRepertoirePgn, formatPath } from "@chaturanga/shared/chess/repertoire-pgn";
+import { databasePath } from "../db";
 import { gameRepository } from "../db/repositories";
 import { broadcast } from "../ipc/broadcast";
+import {
+  DEFAULT_IMPORT_LIMITS,
+  ImportCancelledError,
+  type ImportedGame,
+  type ImportLimits,
+  type ImportProgress
+} from "./import-job";
+import { startImportParse, type ImportRun } from "./import-runner";
+import { runImportCommit } from "./import-writer";
+import {
+  bump,
+  checkRevision,
+  detail,
+  reindex,
+  requireRepertoire,
+  type ImportCommitChapter
+} from "./core";
 import {
   chapterTitle,
   fenAfterMove,
@@ -167,12 +179,12 @@ import {
   progressRepository,
   repertoireRepository,
   sessionRepository,
+  actionableBusyError,
   transaction,
   workspaceRepository,
   type AttemptKind,
   type AttemptRecord,
   type FrozenPolicy,
-  type PositionIndexRow,
   type PracticeSessionRecord,
   type RehearsalState,
   type RepertoireRecord,
@@ -205,43 +217,6 @@ function changed(event: RepertoireChangedEvent): void {
 }
 
 /* ------------------------------------------------------------------ shared helpers */
-
-function requireRepertoire(id: string): RepertoireRecord {
-  const record = repertoireRepository.get(id);
-  if (!record) throw new Error("Invalid repertoireId: not found");
-  return record;
-}
-
-/** Refuses a stale draft: the stored revision must be the one the caller started from. */
-function checkRevision(record: RepertoireRecord, expected: number): void {
-  if (record.revision !== expected) {
-    throw new Error(
-      `Invalid expectedRevision: repertoire changed (stored ${record.revision}, expected ${expected})`
-    );
-  }
-}
-
-/** Bumps the repertoire's revision and saves it; returns the new record. */
-function bump(record: RepertoireRecord, now: number, patch: Partial<RepertoireRecord> = {}) {
-  const next: RepertoireRecord = {
-    ...record,
-    ...patch,
-    revision: record.revision + 1,
-    updatedAt: now
-  };
-  repertoireRepository.update(next);
-  return next;
-}
-
-function detail(id: string, now: number): RepertoireDetail {
-  const summary = repertoireRepository.summary(id, now);
-  if (!summary) throw new Error("Invalid repertoireId: not found");
-  return {
-    ...summary,
-    chapters: chapterRepository.summaries(id, now),
-    workspace: workspaceRepository.get(id)
-  };
-}
 
 /** A stored chapter with its current due count. */
 function loadChapter(repertoireId: string, chapterId: string, now: number): RepertoireChapter {
@@ -284,101 +259,6 @@ function stripFingerprint(stored: StoredDecision): RepertoireDecision {
 }
 
 /* ------------------------------------------------------------------ index and invalidation */
-
-type ReindexResult = { decisionsChanged: number; progressChanged: boolean };
-
-/**
- * Rebuilds the derived state of a repertoire from all of its chapters (design §8.3): reconciles
- * decisions with the collected index, replaces the position index rows, and updates progress
- * eligibility — a decision nothing supports is suspended; an accepted move removed from its
- * effective set makes it due now (no lapse); re-enabling identical choices just unsuspends it, so
- * its timestamps come back unchanged.
- */
-function reindex(record: RepertoireRecord, now: number): ReindexResult {
-  const chapters = chapterRepository.list(record.id);
-  const collected = collectDecisions(record.color, chapters);
-  const existing = decisionRepository.list(record.id);
-  const { upserts } = reconcileDecisions(existing, collected, { repertoireId: record.id });
-
-  const decisions = new Map(existing.map((decision) => [decision.positionKey, decision]));
-  const touched = new Set<string>();
-  for (const upsert of upserts) {
-    const previous = decisions.get(upsert.positionKey);
-    decisions.set(upsert.positionKey, {
-      ...upsert,
-      acceptanceFingerprint: previous?.acceptanceFingerprint ?? ""
-    });
-    touched.add(upsert.positionKey);
-  }
-
-  let decisionsChanged = 0;
-  for (const decision of decisions.values()) {
-    const entry = collected.get(decision.positionKey);
-    const fingerprint = entry
-      ? acceptanceFingerprint(effectiveAcceptedUcis(decision, entry.acceptedUcis))
-      : "";
-    if (fingerprint === decision.acceptanceFingerprint && !touched.has(decision.positionKey))
-      continue;
-    decisionsChanged += 1;
-    decision.acceptanceFingerprint = fingerprint;
-    decisionRepository.upsert(decision, now);
-  }
-
-  const occurrenceIds = new Set<string>();
-  for (const entry of collected.values()) {
-    for (const occurrence of entry.occurrences) {
-      occurrenceIds.add(`${occurrence.chapterId}\u0000${occurrence.nodeId}`);
-    }
-  }
-  const rows: PositionIndexRow[] = [];
-  for (const chapter of chapters) {
-    const lookup = buildChapterLookup(chapter);
-    const states = computeScopeStates(chapter, lookup);
-    for (const nodeId of lookup.order) {
-      rows.push({
-        chapterId: chapter.id,
-        nodeId,
-        positionKey: lookup.positionKeys.get(nodeId)!,
-        scopeState: states.get(nodeId)!,
-        isDecision: occurrenceIds.has(`${chapter.id}\u0000${nodeId}`),
-        ply: lookup.nodesById.get(nodeId)!.ply
-      });
-    }
-  }
-  positionIndexRepository.replace(record.id, rows, record.revision);
-
-  let progressChanged = false;
-  for (const progress of progressRepository.list(record.id)) {
-    const entry = collected.get(progress.positionKey);
-    const decision = decisions.get(progress.positionKey);
-    const effective = entry && decision ? effectiveAcceptedUcis(decision, entry.acceptedUcis) : [];
-    if (!effective.length) {
-      if (!progress.suspended) {
-        progressRepository.upsert({ ...progress, suspended: true });
-        progressChanged = true;
-      }
-      continue;
-    }
-    const fingerprint = acceptanceFingerprint(effective);
-    const next = { ...progress, suspended: false };
-    if (fingerprint !== progress.acceptanceFingerprint) {
-      const previous = progress.acceptanceFingerprint
-        ? progress.acceptanceFingerprint.split(",")
-        : [];
-      if (previous.some((uci) => !effective.includes(uci))) next.dueAt = now;
-      next.acceptanceFingerprint = fingerprint;
-    }
-    if (
-      next.suspended !== progress.suspended ||
-      next.dueAt !== progress.dueAt ||
-      next.acceptanceFingerprint !== progress.acceptanceFingerprint
-    ) {
-      progressRepository.upsert(next);
-      progressChanged = true;
-    }
-  }
-  return { decisionsChanged, progressChanged };
-}
 
 /* ------------------------------------------------------------------ queries */
 
@@ -903,117 +783,226 @@ export function saveWorkspace(input: SaveWorkspaceInput): void {
 
 /* ------------------------------------------------------------------ import / export */
 
-type ImportJob = { games: ParsedRepertoireGame[]; expiresAt: number };
+type ImportJob = { games: ImportedGame[]; expiresAt: number };
+/** Previewed imports waiting for a commit, oldest first. */
 const importJobs = new Map<string, ImportJob>();
+/** Imports still being parsed (in the import worker), oldest first. */
+const runningImports = new Map<string, ImportRun>();
+/** The limits previews enforce (replaced in tests). */
+let importLimits: ImportLimits = DEFAULT_IMPORT_LIMITS;
+
+/** Worker files the import uses; unset: the bundled ones next to the main entry. */
+let importWorkers: { parse?: string; writer?: string } = {};
+
+/** Points the import at other worker files (tests and benchmarks only); nothing restores them. */
+export function setImportWorkers(next: { parse?: string; writer?: string } = {}): void {
+  importWorkers = next;
+}
+
+/** Replaces the import limits (tests only); pass nothing to restore the defaults. */
+export function setImportLimits(next?: Partial<ImportLimits>): void {
+  importLimits = { ...DEFAULT_IMPORT_LIMITS, ...next };
+}
 
 function pruneImportJobs(now: number): void {
   for (const [jobId, job] of importJobs) if (job.expiresAt <= now) importJobs.delete(jobId);
 }
 
 /**
- * Parses every game of a PGN text (pasted, or read through the native file picker) into a pending
- * job that expires after 30 minutes. Bounded by parseRepertoirePgn's limits (games, moves, depth)
- * and a 20 MiB input. At most MAX_IMPORT_JOBS jobs are kept; a new preview drops the oldest.
+ * Keeps room for one more job: running and previewed jobs together stay under MAX_IMPORT_JOBS.
+ * The oldest previewed jobs are dropped first; a running parse is never cancelled for room, so
+ * with only running parses left the new preview is refused.
+ */
+function makeRoomForImport(): void {
+  while (importJobs.size + runningImports.size >= MAX_IMPORT_JOBS) {
+    const [pending] = importJobs.keys();
+    if (pending === undefined) {
+      throw new Error("Another import is still parsing; wait or cancel it.");
+    }
+    importJobs.delete(pending);
+  }
+}
+
+function importProgress(
+  jobId: string,
+  phase: ImportProgressEvent["phase"],
+  progress: Omit<ImportProgress, "phase">,
+  error: string | null = null
+): void {
+  const event: ImportProgressEvent = {
+    jobId,
+    phase,
+    bytesRead: progress.bytesRead,
+    totalBytes: progress.totalBytes,
+    gamesSeen: progress.gamesSeen,
+    nodesSeen: progress.nodesSeen,
+    error
+  };
+  broadcast("repertoires:importProgress", event);
+}
+
+/**
+ * Parses every game of a PGN text (pasted, or read through the native file picker) in the import
+ * worker, into a pending job that expires after 30 minutes. The job id is the caller's `jobId`
+ * (generated when omitted); it is registered before this returns its promise, so `cancelImport`
+ * works at once, even before the first progress event. Progress goes out as
+ * `repertoires:importProgress` events ending with `ready`, `failed` or `cancelled`. Bounded by
+ * the import limits (20 MiB, games, moves, depth); the first limit crossed rejects with its
+ * actionable message, while a comment over its limit only rejects its game. Running and pending jobs together stay under MAX_IMPORT_JOBS: a
+ * new preview drops the oldest pending job, and is refused while only running parses fill them.
  */
 export async function previewImport(input: PreviewImportInput): Promise<ImportPreview> {
   const text = input.pgn;
   if (typeof text !== "string" || text.length > MAX_PGN_BYTES) {
     throw new Error("Invalid PGN: expected text up to 20 MiB");
   }
-  const parsed = parseRepertoirePgn(text);
+  const jobId = input.jobId ?? nanoid();
+  if (runningImports.has(jobId) || importJobs.has(jobId)) {
+    throw new Error("Invalid jobId: already in use");
+  }
+  pruneImportJobs(clock());
+  makeRoomForImport();
+  let last: Omit<ImportProgress, "phase"> = {
+    bytesRead: 0,
+    totalBytes: null,
+    gamesSeen: 0,
+    nodesSeen: 0
+  };
+  const run = startImportParse(
+    { jobId, source: { kind: "text", text }, limits: importLimits },
+    (progress) => {
+      last = progress;
+      importProgress(jobId, progress.phase, progress);
+    },
+    importWorkers.parse,
+    app.isPackaged === true
+  );
+  runningImports.set(jobId, run);
+  let games: ImportedGame[];
+  try {
+    games = (await run.result).games;
+  } catch (error) {
+    if (error instanceof ImportCancelledError) {
+      importProgress(jobId, "cancelled", last);
+    } else {
+      importProgress(jobId, "failed", last, error instanceof Error ? error.message : String(error));
+    }
+    throw error;
+  } finally {
+    if (runningImports.get(jobId) === run) runningImports.delete(jobId);
+  }
   const now = clock();
   pruneImportJobs(now);
-  for (const oldest of importJobs.keys()) {
-    if (importJobs.size < MAX_IMPORT_JOBS) break;
-    importJobs.delete(oldest);
-  }
-  const jobId = nanoid();
-  importJobs.set(jobId, { games: parsed.games, expiresAt: now + IMPORT_JOB_TTL_MS });
+  importJobs.set(jobId, { games, expiresAt: now + IMPORT_JOB_TTL_MS });
+  importProgress(jobId, "ready", {
+    ...last,
+    bytesRead: last.totalBytes ?? last.bytesRead,
+    gamesSeen: games.length,
+    nodesSeen: games.reduce((sum, game) => sum + game.nodeCount, 0)
+  });
   return {
     jobId,
-    games: parsed.games.map((game) => ({
+    games: games.map((game) => ({
       index: game.index,
       proposedTitle: game.proposedTitle,
       rootFen: game.rootFen,
       headers: game.headers,
       nodeCount: game.nodeCount,
-      tree: game.tree,
+      // Only a game with illegal branches offers lines to exclude; the others send no tree.
+      tree: game.invalidBranches.length ? game.tree : [],
       warnings: game.warnings,
       invalidBranches: game.invalidBranches
     }))
   };
 }
 
-/** The tree without the excluded nodes and their subtrees. */
-function pruneTree(tree: readonly MoveNode[], excludeNodeIds: readonly string[]): MoveNode[] {
-  if (excludeNodeIds.includes(REPERTOIRE_ROOT_NODE_ID)) {
-    throw new Error("Invalid excludeNodeIds: the root can't be excluded");
-  }
-  const byId = new Map(tree.map((node) => [node.id, node]));
-  const dropped = new Set<string>();
-  const pending = excludeNodeIds.filter((id) => byId.has(id));
-  for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
-    if (dropped.has(id)) continue;
-    dropped.add(id);
-    pending.push(...byId.get(id)!.children);
-  }
-  return tree
-    .filter((node) => !dropped.has(node.id))
-    .map((node) => ({ ...node, children: node.children.filter((id) => !dropped.has(id)) }));
+/* Repertoire write gate (design §11): one repertoire write at a time, across every repertoire. */
+let writeGate: Promise<unknown> = Promise.resolve();
+
+/**
+ * Runs a repertoire write once every write already admitted has finished, and settles with its
+ * value. Every repertoire write goes through here (the IPC handlers wrap each one; an import
+ * commit holds the gate while the writer worker runs its whole transaction), so a main-thread
+ * write waits for the writer asynchronously instead of sleeping in SQLite's busy handler with the
+ * main process blocked. Reads never pass the gate. A failed write doesn't block the ones after
+ * it; a write that still finds the database locked rejects with the actionable busy error.
+ */
+export function withRepertoireWriteGate<T>(work: () => T | Promise<T>): Promise<T> {
+  const run = async () => {
+    try {
+      return await work();
+    } catch (error) {
+      throw actionableBusyError(error);
+    }
+  };
+  const result = writeGate.then(run, run);
+  writeGate = result.then(
+    () => undefined,
+    () => undefined
+  );
+  return result;
 }
 
-/** Commits the selected games of a previewed job as new chapters, atomically. */
-export function commitImport(input: ImportCommitInput): ImportResult {
+/**
+ * Commits the selected games of a previewed job as new chapters, atomically, in the import writer
+ * worker on its own connection (core.ts `commitImportJob`). It holds the write gate until the
+ * worker replies, so other repertoire writes wait behind it; `repertoires:changed` goes out only
+ * after the commit is stored. The selections are checked here first; a failed commit writes
+ * nothing and keeps the job.
+ */
+export function commitImport(input: ImportCommitInput): Promise<ImportResult> {
+  return withRepertoireWriteGate(() => storeImport(input));
+}
+
+async function storeImport(input: ImportCommitInput): Promise<ImportResult> {
   const now = clock();
   pruneImportJobs(now);
   const job = importJobs.get(input.jobId);
   if (!job)
     throw new Error("Invalid jobId: the import expired or was cancelled; preview the PGN again");
-  const result = transaction(() => {
-    const record = requireRepertoire(input.repertoireId);
-    checkRevision(record, input.expectedRevision);
-    const selections = input.selections.filter((selection) => selection.include);
-    if (!selections.length)
-      throw new Error("Invalid selections: choose at least one game to import");
-    if (new Set(selections.map((selection) => selection.gameIndex)).size !== selections.length) {
-      throw new Error("Invalid selections: each game can be included only once");
-    }
-    let sortOrder = chapterRepository.maxSortOrder(record.id) + 1;
-    for (const selection of selections) {
-      const game = job.games.find((item) => item.index === selection.gameIndex);
-      if (!game)
-        throw new Error(`Invalid selections: game ${selection.gameIndex} is not in this import`);
-      if (game.rejected) {
-        throw new Error(
-          `Invalid selections: game ${selection.gameIndex + 1} can't be imported (${game.rejected})`
-        );
-      }
-      if (selection.kind !== "opening" && selection.kind !== "reference") {
-        throw new Error("Invalid selections: kind must be opening or reference");
-      }
-      const tree = validateTree(pruneTree(game.tree, selection.excludeNodeIds ?? []), game.rootFen);
-      chapterRepository.upsert(
-        record.id,
-        {
-          id: nanoid(),
-          title: chapterTitle(selection.title, game.proposedTitle),
-          sortOrder: sortOrder++,
-          kind: selection.kind,
-          enabled: true,
-          rootFen: game.rootFen,
-          revision: 1,
-          nodeCount: tree.length - 1,
-          dueCount: 0,
-          headers: sanitizeHeaders(game.headers),
-          tree,
-          nodeMeta: defaultImportNodeMeta(record.color, tree)
-        },
-        now
+  // Checked again inside the writer's transaction.
+  checkRevision(requireRepertoire(input.repertoireId), input.expectedRevision);
+  const selections = input.selections.filter((selection) => selection.include);
+  if (!selections.length) throw new Error("Invalid selections: choose at least one game to import");
+  if (new Set(selections.map((selection) => selection.gameIndex)).size !== selections.length) {
+    throw new Error("Invalid selections: each game can be included only once");
+  }
+  const gamesByIndex = new Map(job.games.map((game) => [game.index, game]));
+  const chapters: ImportCommitChapter[] = selections.map((selection) => {
+    const game = gamesByIndex.get(selection.gameIndex);
+    if (!game)
+      throw new Error(`Invalid selections: game ${selection.gameIndex} is not in this import`);
+    if (game.rejected) {
+      throw new Error(
+        `Invalid selections: game ${selection.gameIndex + 1} can't be imported (${game.rejected})`
       );
     }
-    reindex(bump(record, now), now);
-    return { repertoire: detail(record.id, now), chaptersAdded: selections.length };
+    if (selection.kind !== "opening" && selection.kind !== "reference") {
+      throw new Error("Invalid selections: kind must be opening or reference");
+    }
+    return {
+      title: selection.title,
+      proposedTitle: game.proposedTitle,
+      kind: selection.kind,
+      rootFen: game.rootFen,
+      headers: game.headers,
+      tree: game.tree,
+      excludeNodeIds: selection.excludeNodeIds ?? [],
+      positionKeys: game.positionKeys
+    };
   });
+  const result = await runImportCommit(
+    {
+      repertoireId: input.repertoireId,
+      expectedRevision: input.expectedRevision,
+      now,
+      maxNodes: importLimits.maxNodes,
+      chapters
+    },
+    databasePath,
+    importWorkers.writer,
+    app.isPackaged === true
+  );
   importJobs.delete(input.jobId);
   changed({
     repertoireId: input.repertoireId,
@@ -1023,7 +1012,17 @@ export function commitImport(input: ImportCommitInput): ImportResult {
   return result;
 }
 
+/**
+ * Cancels an import: a running parse stops (its preview rejects with "The import was cancelled."
+ * and a `cancelled` progress event follows), and a previewed job is forgotten. Nothing was written
+ * either way; an unknown job id is ignored.
+ */
 export function cancelImport(jobId: string): void {
+  const running = runningImports.get(jobId);
+  if (running) {
+    runningImports.delete(jobId);
+    running.cancel();
+  }
   importJobs.delete(jobId);
 }
 
@@ -1052,7 +1051,7 @@ export async function exportRepertoire(
       chapters = chapters.filter((chapter) => wanted.has(chapter.id));
     }
     return { record, chapters };
-  });
+  }, "read");
   if (!chapters.length) throw new Error("Invalid export: there are no chapters to export");
   const pgn = exportRepertoirePgn(
     chapters.map((chapter) => ({
@@ -1393,8 +1392,10 @@ function planAddFromGame(
  */
 export function previewAddFromGame(input: AddFromGameInput): AddFromGamePreview {
   const now = clock();
-  return transaction(() => planAddFromGame(requireRepertoire(input.repertoireId), input, now))
-    .preview;
+  return transaction(
+    () => planAddFromGame(requireRepertoire(input.repertoireId), input, now),
+    "read"
+  ).preview;
 }
 
 /**
@@ -2781,8 +2782,9 @@ export function endPractice(sessionId: string): PracticeSummary {
   });
 }
 
-/** Forgets pending PGN import and backup restore jobs (tests). */
+/** Forgets pending PGN import and backup restore jobs, cancelling running parses (tests). */
 export function resetImportJobs(): void {
+  for (const jobId of [...runningImports.keys()]) cancelImport(jobId);
   importJobs.clear();
   backupJobs.clear();
 }
@@ -2905,7 +2907,7 @@ export async function exportBackup(
       if (!record) throw new Error(`Invalid repertoireIds: "${id}" is not in this library`);
       return stripForExport(backupEntryOf(record), input.includeProgress);
     });
-  });
+  }, "read");
   if (!entries.length) throw new Error("Invalid export: there are no repertoires to back up");
   const warnings = entries.flatMap(damagedChapterWarnings);
   const json = JSON.stringify(backupDocument(entries, now));
@@ -2990,28 +2992,32 @@ async function pickBackupFile(owner: BrowserWindow | null): Promise<string | nul
  * chapter has no diff and is flagged `damaged` (it can still be replaced or restored as a copy).
  */
 function previewOf(jobId: string, job: BackupJob): BackupImportPreview {
-  const repertoires = transaction(() =>
-    job.document.repertoires.map((entry) => {
-      const record = repertoireRepository.get(entry.repertoire.id);
-      const current = record ? backupEntryOf(record) : null;
-      const damaged = Boolean(current?.chapters.some((chapter) => chapter.damaged));
-      return {
-        sourceId: entry.repertoire.id,
-        name: entry.repertoire.name,
-        color: entry.repertoire.color,
-        chapterCount: entry.chapters.length,
-        decisionCount: entry.decisions.length,
-        hasProgress: (entry.progress?.length ?? 0) > 0,
-        existing: record
-          ? { id: record.id, name: record.name, revision: record.revision, color: record.color }
-          : null,
-        diff:
-          record && current && !damaged
-            ? diffBackupEntry(current, entry, { sessionCount: sessionRepository.count(record.id) })
+  const repertoires = transaction(
+    () =>
+      job.document.repertoires.map((entry) => {
+        const record = repertoireRepository.get(entry.repertoire.id);
+        const current = record ? backupEntryOf(record) : null;
+        const damaged = Boolean(current?.chapters.some((chapter) => chapter.damaged));
+        return {
+          sourceId: entry.repertoire.id,
+          name: entry.repertoire.name,
+          color: entry.repertoire.color,
+          chapterCount: entry.chapters.length,
+          decisionCount: entry.decisions.length,
+          hasProgress: (entry.progress?.length ?? 0) > 0,
+          existing: record
+            ? { id: record.id, name: record.name, revision: record.revision, color: record.color }
             : null,
-        ...(damaged ? { damaged: true } : {})
-      };
-    })
+          diff:
+            record && current && !damaged
+              ? diffBackupEntry(current, entry, {
+                  sessionCount: sessionRepository.count(record.id)
+                })
+              : null,
+          ...(damaged ? { damaged: true } : {})
+        };
+      }),
+    "read"
   );
   return {
     jobId,
@@ -3190,16 +3196,19 @@ type RetainedCopy = { record: RepertoireRecord; text: string; history: string };
  * backup itself would fail the restore's checks: a replace must leave a copy that can be restored.
  */
 function prepareRetainedCopy(record: RepertoireRecord, now: number): RetainedCopy {
-  const { entry, history } = transaction(() => ({
-    entry: stripForExport(backupEntryOf(record), true),
-    history: {
-      format: RETAINED_HISTORY_FORMAT,
-      repertoireId: record.id,
-      exportedAt: now,
-      sessions: sessionRepository.rawRows(record.id),
-      attempts: attemptRepository.rawRowsForRepertoire(record.id)
-    }
-  }));
+  const { entry, history } = transaction(
+    () => ({
+      entry: stripForExport(backupEntryOf(record), true),
+      history: {
+        format: RETAINED_HISTORY_FORMAT,
+        repertoireId: record.id,
+        exportedAt: now,
+        sessions: sessionRepository.rawRows(record.id),
+        attempts: attemptRepository.rawRowsForRepertoire(record.id)
+      }
+    }),
+    "read"
+  );
   const text = JSON.stringify(backupDocument([entry], now));
   const refusal = restoreRefusal(text);
   if (refusal) {

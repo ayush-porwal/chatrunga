@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,8 +8,8 @@ import { importPgnText } from "@chaturanga/shared/chess/pgn";
 const userData = mkdtempSync(join(tmpdir(), "chaturanga-repo-test-"));
 vi.mock("electron", () => ({ app: { getPath: () => userData } }));
 
-const { closeDb, getDb } = await import("./index");
-const { gameRepository } = await import("./repositories");
+const { closeDb, databasePath, getDb } = await import("./index");
+const { gameRepository, retryOnceIfBusy, saveGameRetrying } = await import("./repositories");
 const { gameFingerprint } = await import("./game-fingerprint");
 
 const PGN = `[Event "Rapid"]
@@ -408,4 +409,109 @@ describe("gameRepository (SQLite)", () => {
       expect(gameRepository.findIdByFingerprint(gameFingerprint(other)!)).toBeNull();
     });
   });
+});
+
+// The busy tests below wait out SQLite's 1 s busy_timeout (once or twice): bounded by a sleep, not
+// CPU, so each gets a 15 s ceiling instead of the 5 s default to stay clear of slow CI runners.
+const BUSY_WAIT_MS = 15_000;
+
+describe("retryOnceIfBusy (a game save while another connection holds the write lock)", () => {
+  it("a save finding the write lock held fails with the BUSY error itself, not a failed ROLLBACK", () => {
+    getDb();
+    const other = new DatabaseSync(databasePath());
+    try {
+      other.exec("BEGIN IMMEDIATE");
+      getDb().exec("PRAGMA busy_timeout = 0");
+      let caught: unknown;
+      try {
+        saveImported();
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toMatchObject({ errcode: 5 });
+      expect(getDb().isTransaction).toBe(false);
+    } finally {
+      getDb().exec("PRAGMA busy_timeout = 1000");
+      if (other.isTransaction) other.exec("ROLLBACK");
+      other.close();
+    }
+  });
+
+  it("retries once after the delay and saves when the lock was released meanwhile", async () => {
+    getDb();
+    const other = new DatabaseSync(databasePath());
+    try {
+      other.exec("BEGIN IMMEDIATE");
+      // Runs once the first attempt has failed (its busy wait blocks this thread).
+      setTimeout(() => other.exec("ROLLBACK"), 10);
+      const saved = await retryOnceIfBusy(() => saveImported(), 300);
+      expect(gameRepository.get(saved.id)).not.toBeNull();
+    } finally {
+      if (other.isTransaction) other.exec("ROLLBACK");
+      other.close();
+    }
+  }, BUSY_WAIT_MS);
+
+  it("rejects with the busy error when the lock is still held, and passes other errors at once", async () => {
+    getDb();
+    const other = new DatabaseSync(databasePath());
+    try {
+      other.exec("BEGIN IMMEDIATE");
+      await expect(retryOnceIfBusy(() => saveImported(), 10)).rejects.toMatchObject({
+        errcode: 5
+      });
+    } finally {
+      if (other.isTransaction) other.exec("ROLLBACK");
+      other.close();
+    }
+    let calls = 0;
+    await expect(
+      retryOnceIfBusy(() => {
+        calls += 1;
+        throw new Error("Game not found");
+      }, 10)
+    ).rejects.toThrow("Game not found");
+    expect(calls).toBe(1);
+  }, BUSY_WAIT_MS);
+});
+
+describe("saveGameRetrying (games:save)", () => {
+  const busyWhile = async (work: (release: () => void) => Promise<void>) => {
+    getDb();
+    const other = new DatabaseSync(databasePath());
+    try {
+      other.exec("BEGIN IMMEDIATE");
+      await work(() => other.exec("ROLLBACK"));
+    } finally {
+      if (other.isTransaction) other.exec("ROLLBACK");
+      other.close();
+    }
+  };
+
+  it("keeps a new game's id across the retry, so it is saved once", async () => {
+    const { game } = importPgnText(PGN);
+    const count = () => (getDb().prepare("SELECT COUNT(*) AS n FROM games").get() as { n: number }).n;
+    const before = count();
+    await busyWhile(async (release) => {
+      setTimeout(release, 10);
+      const saved = await saveGameRetrying({ ...game, id: null }, () => null, 300);
+      expect(gameRepository.get(saved.id)).not.toBeNull();
+    });
+    expect(count()).toBe(before + 1);
+  }, BUSY_WAIT_MS);
+
+  it("checks the delete guard again before the retry", async () => {
+    const { game } = importPgnText(PGN);
+    let deleted = false;
+    await busyWhile(async (release) => {
+      // The game is deleted while the retry waits.
+      setTimeout(() => {
+        deleted = true;
+        release();
+      }, 10);
+      const suppressed = () => (deleted ? new Error("suppressed") : null);
+      await expect(saveGameRetrying({ ...game, id: "g-deleted" }, suppressed, 300)).rejects.toThrow("suppressed");
+    });
+    expect(gameRepository.get("g-deleted")).toBeNull();
+  }, BUSY_WAIT_MS);
 });

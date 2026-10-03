@@ -296,7 +296,11 @@ export type PracticeSummary = {
 
 /* ------------------------------------------------------------------ import / export */
 
-export type PreviewImportInput = { pgn: string };
+/**
+ * `jobId`: optional client-generated id (nanoid) so the renderer can match `onImportProgress`
+ * events and cancel before the preview resolves; the main process generates one when omitted.
+ */
+export type PreviewImportInput = { pgn: string; jobId?: string };
 
 export type ImportInvalidBranch = {
   /** SAN sequence from the game's root to the illegal move's parent, e.g. `"1. e4 e5 2. Nf3"`. */
@@ -311,7 +315,11 @@ export type ImportPreviewGame = {
   rootFen: string;
   headers: Record<string, string>;
   nodeCount: number;
-  /** The parsed tree (deterministic ids) so `excludeNodeIds` can name branches to drop. */
+  /**
+   * The parsed tree (deterministic ids) so `excludeNodeIds` can name branches to drop. Only games
+   * with `invalidBranches` carry it (the only lines a preview offers to exclude); every other game
+   * sends an empty array, which keeps a large preview small. The commit uses the stored tree.
+   */
   tree: MoveNode[];
   warnings: string[];
   invalidBranches: ImportInvalidBranch[];
@@ -824,6 +832,29 @@ export type RepertoireOccurrence = {
   /** SAN path from the chapter root, e.g. `"1. e4 e5 2. Bc4 Nc6 3. Nf3"`. */
   path: string;
   ply: number;
+};
+
+/** The rejection message of a cancelled import preview. */
+export const IMPORT_CANCELLED_MESSAGE = "The import was cancelled.";
+
+/**
+ * What `repertoires:previewImport` sends over IPC for a cancelled preview (a cancel isn't a failed
+ * handler, so it isn't logged as one); the preload turns it back into a rejection with
+ * IMPORT_CANCELLED_MESSAGE, so `previewImport` still rejects.
+ */
+export const IMPORT_CANCELLED_REPLY = { importCancelled: true } as const;
+
+/** Progress of a PGN import job (parsing runs in a worker; design §10, §11). */
+export type ImportProgressEvent = {
+  jobId: string;
+  phase: "reading" | "parsing" | "validating" | "ready" | "cancelled" | "failed";
+  /** Bytes of PGN consumed so far, and the total when known. */
+  bytesRead: number;
+  totalBytes: number | null;
+  gamesSeen: number;
+  nodesSeen: number;
+  /** For `failed`: the actionable error message. */
+  error: string | null;
 };
 
 export type RepertoireChangedEvent = {

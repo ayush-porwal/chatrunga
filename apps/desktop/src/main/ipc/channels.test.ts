@@ -45,6 +45,6 @@ describe("IPC channels", () => {
       expect(requested.has(`repertoires:${lookup}`)).toBe(true);
     }
     expect(requested.size).toBe(35);
-    expect(matches(preload, /subscribe(?:<[^>]*>)?\("(repertoires:\w+)"/g)).toEqual(new Set(["repertoires:changed"]));
+    expect(matches(preload, /subscribe(?:<[^>]*>)?\("(repertoires:\w+)"/g)).toEqual(new Set(["repertoires:changed", "repertoires:importProgress"]));
   });
 });

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { START_FEN } from "./position";
-import { exportRepertoirePgn, parseRepertoirePgn } from "./repertoire-pgn";
+import { parsePgn, emptyHeaders } from "chessops/pgn";
+import {
+  createRepertoirePgnReader,
+  exportRepertoirePgn,
+  parseRepertoirePgn
+} from "./repertoire-pgn";
 
 const TWO_GAMES = `[Event "Sicilian: Najdorf"]
 [Site "https://lichess.org/study/abc"]
@@ -97,6 +102,65 @@ describe("parseRepertoirePgn", () => {
     expect(() => parseRepertoirePgn("1. e4 e5 2. Nf3 Nc6 *", { maxDepth: 3 })).toThrow(
       /longer than 3 moves \(at 1\. e4 e5 2\. Nf3\)/
     );
+    const long = "x".repeat(30);
+    expect(parseRepertoirePgn(`1. e4 { ${long} } *`).games[0].tree[1].comment).toBe(long);
+  });
+
+  it("rejects only the game with a comment over the limit, and the rest still imports", () => {
+    const long = "x".repeat(30);
+    const pgn = `1. e4 e5 { ${long} } *\n\n{ ${long} } 1. e4 *\n\n1. d4 d5 *`;
+    const { games } = parseRepertoirePgn(pgn, { maxCommentLength: 20, maxNodes: 3 });
+    expect(games.map((game) => game.rejected)).toEqual([
+      "a comment is longer than 20 characters (at 1. e4 e5)",
+      "a comment is longer than 20 characters (at the start)",
+      null
+    ]);
+    expect(games[0].warnings).toEqual([games[0].rejected]);
+    expect(games[0].nodeCount).toBe(0);
+    // The rejected games' moves don't count toward the move limit (3 here).
+    expect(games[2].nodeCount).toBe(2);
+  });
+
+  it("rejects a game for its long comment even when the move limit is reached first", () => {
+    const long = "x".repeat(30);
+    const pgn = `1. e4 e5 *\n\n1. d4 d5 2. c4 { ${long} } *\n\n1. c4 *`;
+    const { games } = parseRepertoirePgn(pgn, { maxCommentLength: 20, maxNodes: 3 });
+    expect(games.map((game) => game.rejected)).toEqual([
+      null,
+      "a comment is longer than 20 characters (at 1. d4 d5 2. c4)",
+      null
+    ]);
+    expect(() => parseRepertoirePgn("1. e4 e5 *\n\n1. d4 d5 2. c4 *", { maxNodes: 3 })).toThrow(
+      /more than 3 moves/
+    );
+  });
+
+  it("measures a comment's length after its annotation tags are read out", () => {
+    const arrows = Array.from({ length: 40 }, () => "Ge2e4").join(",");
+    const pgn = `1. e4 { [%cal ${arrows}] [%csl Rd4] [%clk 0:05:00] short note } *`;
+    const [game] = parseRepertoirePgn(pgn, { maxCommentLength: 20 }).games;
+    expect(game.rejected).toBeNull();
+    expect(game.tree[1].comment).toBe("short note");
+    expect(game.tree[1].arrows).toHaveLength(40);
+  });
+
+  it("reads games one at a time with the same result and limits across games", () => {
+    const reader = createRepertoirePgnReader();
+    for (const game of parsePgn(TWO_GAMES, emptyHeaders)) reader.push(game);
+    expect(reader.gamesSeen).toBe(2);
+    expect(reader.nodesSeen).toBe(
+      parseRepertoirePgn(TWO_GAMES).games.reduce((n, g) => n + g.nodeCount, 0)
+    );
+    expect(reader.finish()).toEqual(parseRepertoirePgn(TWO_GAMES));
+
+    // The game limit fails on the first game past it, before later games are parsed.
+    const limited = createRepertoirePgnReader({ maxGames: 1 });
+    const [first, second] = parsePgn(TWO_GAMES, emptyHeaders);
+    limited.push(first);
+    expect(() => limited.push(second)).toThrow(
+      "This PGN has more than 1 games; one import can hold at most 1. Split the file and import it in parts."
+    );
+    expect(() => createRepertoirePgnReader().finish()).toThrow("No PGN game found.");
   });
 
   it("titles untitled games by position", () => {

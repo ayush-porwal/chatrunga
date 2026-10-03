@@ -19,6 +19,7 @@ import {
   parseLichessDisconnectInput,
   parseLichessSeekInput,
   parsePgnText,
+  parsePreviewImportInput,
   parseProbeEvalInput,
   parsePuzzleSampleInput,
   parseRemoveGameLink,
@@ -349,5 +350,14 @@ describe("add-from-game inputs", () => {
     expect(() => parseLinkGameInput({ ...valid, gameId: "" })).toThrow(/gameId/);
     expect(() => parseLinkGameInput({ ...valid, chapterId: 3 })).toThrow(/chapterId/);
     expect(() => parseLinkGameInput({ ...valid, capturedPath: "x".repeat(2001) })).toThrow(/capturedPath: too long/);
+  });
+});
+
+describe("parsePreviewImportInput", () => {
+  it("refuses text over 20 MiB with the import's size-limit message", () => {
+    expect(() => parsePreviewImportInput({ pgn: "x".repeat(20 * 1024 * 1024 + 1) })).toThrow(
+      "This PGN is larger than 20 MiB; split it and import it in parts."
+    );
+    expect(parsePreviewImportInput({ pgn: "1. e4 *", jobId: "job-1" })).toEqual({ pgn: "1. e4 *", jobId: "job-1" });
   });
 });

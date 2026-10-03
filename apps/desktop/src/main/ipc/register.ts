@@ -13,7 +13,12 @@ import type {
 } from "@chaturanga/shared/ipc/chaturanga-api";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
 import type { ImportedGame } from "@chaturanga/shared/types/chess";
-import { engineRepository, gameRepository, settingsRepository } from "../db/repositories";
+import {
+  engineRepository,
+  gameRepository,
+  saveGameRetrying,
+  settingsRepository
+} from "../db/repositories";
 import {
   activeDownloads,
   cancelDownload,
@@ -326,9 +331,10 @@ function registerLibraryIpc(): void {
     gameRepository.getReview(asId(gameId, "game id"), asId(reviewId, "review id"))
   );
   ipcMain.handle("games:save", (_event, value: unknown) => {
-    const input = parseSaveGameInput(value);
-    if (input.id && wasRecentlyDeleted(input.id)) throw new Error(SAVE_SUPPRESSED_AFTER_DELETE);
-    return gameRepository.save(input);
+    // A save landing while the import writer holds the write lock gets one more try.
+    return saveGameRetrying(parseSaveGameInput(value), (gameId) =>
+      wasRecentlyDeleted(gameId) ? new Error(SAVE_SUPPRESSED_AFTER_DELETE) : null
+    );
   });
   ipcMain.handle("games:remove", (_event, value: unknown) => {
     const id = asId(value, "game id");

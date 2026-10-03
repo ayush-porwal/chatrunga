@@ -3,7 +3,7 @@
  * chapter with all of its tags, annotations and variations; export writes one game per chapter.
  */
 import { emptyHeaders, parsePgn, startingPosition } from "chessops/pgn";
-import type { ChildNode, PgnNodeData } from "chessops/pgn";
+import type { ChildNode, Game, PgnNodeData } from "chessops/pgn";
 import { makeFen } from "chessops/fen";
 import type { MoveNode } from "../types/chess";
 import { REPERTOIRE_ROOT_NODE_ID, type ImportInvalidBranch } from "../types/repertoire";
@@ -18,6 +18,11 @@ export type RepertoirePgnLimits = {
   maxNodes?: number;
   /** Deepest line, in moves from a game's root. */
   maxDepth?: number;
+  /**
+   * Longest comment (a move's or a game's), measured as stored: after `[%cal]`, `[%csl]` and
+   * `[%clk]` tags are read out of it. A longer comment rejects only its game.
+   */
+  maxCommentLength?: number;
 };
 
 export type ParsedRepertoireGame = {
@@ -37,7 +42,10 @@ export type ParsedRepertoireGame = {
   warnings: string[];
   /** Branches that couldn't be replayed; each was left out of `tree` with everything after it. */
   invalidBranches: ImportInvalidBranch[];
-  /** Why the whole game can't be imported (unsupported variant, bad FEN); its tree is empty. */
+  /**
+   * Why the whole game can't be imported (unsupported variant, bad FEN, a comment over the limit);
+   * its tree is empty.
+   */
   rejected: string | null;
 };
 
@@ -52,77 +60,186 @@ const SUPPORTED_VARIANTS = new Set(["standard", "chess", "from position"]);
  */
 export function parseRepertoirePgn(
   pgn: string,
-  { maxGames = 1000, maxNodes = 100_000, maxDepth = 128 }: RepertoirePgnLimits = {}
+  limits: RepertoirePgnLimits = {}
 ): ParsedRepertoirePgn {
-  const games = parsePgn(pgn, emptyHeaders).filter(
-    (game) => game.headers.size > 0 || game.moves.children.length > 0 || game.comments?.length
-  );
-  if (!games.length) throw new Error("No PGN game found.");
-  if (games.length > maxGames) {
-    throw new Error(
-      `This PGN has ${games.length} games; one import can hold at most ${maxGames}. ` +
-        "Split the file and import it in parts."
-    );
-  }
+  const reader = createRepertoirePgnReader(limits);
+  for (const game of parsePgn(pgn, emptyHeaders)) reader.push(game);
+  return reader.finish();
+}
 
-  const budget = { nodes: 0, maxNodes, maxDepth };
+/** Parses games one at a time, keeping the limits across all of them (see `parseRepertoirePgn`). */
+export type RepertoirePgnReader = {
+  /**
+   * Adds the next game of the input; empty games (no tags, moves or comments) are skipped and
+   * give null. Throws the actionable limit error as soon as a limit is exceeded.
+   */
+  push(game: Game<PgnNodeData>): ParsedRepertoireGame | null;
+  /** Every game pushed so far; throws when there was none. */
+  finish(): ParsedRepertoirePgn;
+  /** Games kept so far (empty ones excluded). */
+  readonly gamesSeen: number;
+  /** Moves kept so far across all games. */
+  readonly nodesSeen: number;
+};
+
+/** An incremental `parseRepertoirePgn`: same ids, warnings, limits and messages, one game at a time. */
+export function createRepertoirePgnReader({
+  maxGames = 1000,
+  maxNodes = 100_000,
+  maxDepth = 128,
+  maxCommentLength = 20_000
+}: RepertoirePgnLimits = {}): RepertoirePgnReader {
+  const budget = { nodes: 0, maxNodes, maxDepth, maxCommentLength };
+  const games: ParsedRepertoireGame[] = [];
   return {
-    games: games.map((game, index) => {
-      const headers = Object.fromEntries(game.headers);
-      const proposedTitle = titleFromHeaders(headers, index);
-      const rejectedGame = (reason: string): ParsedRepertoireGame => ({
-        index,
-        proposedTitle,
-        rootFen: START_FEN,
-        headers,
-        tree: [rootNode(START_FEN)],
-        nodeCount: 0,
-        warnings: [reason],
-        invalidBranches: [],
-        rejected: reason
-      });
-
-      const variant = headers.Variant?.trim();
-      if (variant && !SUPPORTED_VARIANTS.has(variant.toLowerCase())) {
-        return rejectedGame(
-          `Unsupported variant "${variant}": only standard chess can be imported.`
+    push(game) {
+      if (!game.headers.size && !game.moves.children.length && !game.comments?.length) return null;
+      if (games.length >= maxGames) {
+        throw new Error(
+          `This PGN has more than ${maxGames} games; one import can hold at most ${maxGames}. ` +
+            "Split the file and import it in parts."
         );
       }
-      const starting = startingPosition(game.headers);
-      if (starting.isErr) {
-        return rejectedGame(`Invalid starting position (FEN tag): ${starting.error.message}.`);
-      }
-
-      const rootFen = makeFen(starting.value.toSetup());
-      const root = rootNode(rootFen);
-      const rootAnnotation = parseAnnotationComment((game.comments ?? []).join(" "));
-      root.comment = rootAnnotation.text;
-      root.arrows = rootAnnotation.arrows;
-      root.highlights = rootAnnotation.highlights;
-
-      const builder: TreeBuilder = {
-        tree: [root],
-        byId: new Map([[root.id, root]]),
-        nextId: 1,
-        warnings: [],
-        invalidBranches: [],
-        budget
-      };
-      for (const child of game.moves.children) appendMove(builder, root, [], child, 1);
-
-      return {
-        index,
-        proposedTitle,
-        rootFen,
-        headers,
-        tree: builder.tree,
-        nodeCount: builder.tree.length - 1,
-        warnings: builder.warnings,
-        invalidBranches: builder.invalidBranches,
-        rejected: null
-      };
-    })
+      const parsed = parseGame(game, games.length, budget);
+      games.push(parsed);
+      return parsed;
+    },
+    finish() {
+      if (!games.length) throw new Error("No PGN game found.");
+      return { games };
+    },
+    get gamesSeen() {
+      return games.length;
+    },
+    get nodesSeen() {
+      return budget.nodes;
+    }
   };
+}
+
+type Budget = { nodes: number; maxNodes: number; maxDepth: number; maxCommentLength: number };
+
+function parseGame(game: Game<PgnNodeData>, index: number, budget: Budget): ParsedRepertoireGame {
+  const headers = Object.fromEntries(game.headers);
+  const proposedTitle = titleFromHeaders(headers, index);
+  const rejectedGame = (reason: string): ParsedRepertoireGame => ({
+    index,
+    proposedTitle,
+    rootFen: START_FEN,
+    headers,
+    tree: [rootNode(START_FEN)],
+    nodeCount: 0,
+    warnings: [reason],
+    invalidBranches: [],
+    rejected: reason
+  });
+
+  const variant = headers.Variant?.trim();
+  if (variant && !SUPPORTED_VARIANTS.has(variant.toLowerCase())) {
+    return rejectedGame(`Unsupported variant "${variant}": only standard chess can be imported.`);
+  }
+  const starting = startingPosition(game.headers);
+  if (starting.isErr) {
+    return rejectedGame(`Invalid starting position (FEN tag): ${starting.error.message}.`);
+  }
+
+  const rootFen = makeFen(starting.value.toSetup());
+  const root = rootNode(rootFen);
+  const builder: TreeBuilder = {
+    tree: [root],
+    byId: new Map([[root.id, root]]),
+    nextId: 1,
+    warnings: [],
+    invalidBranches: [],
+    budget
+  };
+  // A comment over the limit rejects this game only; its moves no longer count toward the limit.
+  const nodesBefore = budget.nodes;
+  try {
+    const rootAnnotation = checkedAnnotation((game.comments ?? []).join(" "), budget, []);
+    root.comment = rootAnnotation.text;
+    root.arrows = rootAnnotation.arrows;
+    root.highlights = rootAnnotation.highlights;
+    for (const child of game.moves.children) appendMove(builder, root, [], child, 1);
+  } catch (error) {
+    // The move limit can be reached before this game's over-long comment is read: the comment
+    // still rejects the game alone (its moves don't count), rather than failing the import.
+    const tooLong =
+      error instanceof CommentTooLongError
+        ? error
+        : error instanceof MoveBudgetError
+          ? firstLongComment(game, root.ply, budget)
+          : null;
+    if (!tooLong) throw error;
+    budget.nodes = nodesBefore;
+    return rejectedGame(tooLong.message);
+  }
+
+  return {
+    index,
+    proposedTitle,
+    rootFen,
+    headers,
+    tree: builder.tree,
+    nodeCount: builder.tree.length - 1,
+    warnings: builder.warnings,
+    invalidBranches: builder.invalidBranches,
+    rejected: null
+  };
+}
+
+/** A comment longer than the limit; its game is rejected with this message. */
+class CommentTooLongError extends Error {}
+
+/** The import has more moves than its limit. */
+class MoveBudgetError extends Error {}
+
+/**
+ * The error for the first comment of `game` (its root at `rootPly`) over the length limit, or
+ * null when there is none. Reads the parsed game only; nothing is built.
+ */
+function firstLongComment(
+  game: Game<PgnNodeData>,
+  rootPly: number,
+  budget: Budget
+): CommentTooLongError | null {
+  try {
+    checkedAnnotation((game.comments ?? []).join(" "), budget, []);
+    type Item = { node: ChildNode<PgnNodeData>; path: Pick<MoveNode, "ply" | "san">[] };
+    const pending: Item[] = [...game.moves.children].reverse().map((node) => ({ node, path: [] }));
+    for (let item = pending.pop(); item; item = pending.pop()) {
+      const { node, path } = item;
+      const here = [...path, { ply: rootPly + path.length + 1, san: node.data.san }];
+      const comments = [...(node.data.startingComments ?? []), ...(node.data.comments ?? [])];
+      checkedAnnotation(comments.join(" "), budget, here);
+      for (let i = node.children.length - 1; i >= 0; i--) {
+        pending.push({ node: node.children[i], path: here });
+      }
+    }
+    return null;
+  } catch (error) {
+    if (error instanceof CommentTooLongError) return error;
+    throw error;
+  }
+}
+
+/**
+ * The comment's annotation; throws CommentTooLongError when its text, with the annotation tags
+ * read out, is longer than the limit.
+ */
+function checkedAnnotation(
+  comment: string,
+  budget: Budget,
+  path: readonly Pick<MoveNode, "ply" | "san">[]
+): ReturnType<typeof parseAnnotationComment> {
+  const annotation = parseAnnotationComment(comment);
+  if ((annotation.text?.length ?? 0) > budget.maxCommentLength) {
+    throw new CommentTooLongError(
+      `a comment is longer than ${budget.maxCommentLength} characters ` +
+        `(at ${formatPath(path) || "the start"})`
+    );
+  }
+  return annotation;
 }
 
 type TreeBuilder = {
@@ -131,7 +248,7 @@ type TreeBuilder = {
   nextId: number;
   warnings: string[];
   invalidBranches: ImportInvalidBranch[];
-  budget: { nodes: number; maxNodes: number; maxDepth: number };
+  budget: Budget;
 };
 
 function appendMove(
@@ -171,12 +288,14 @@ function appendMove(
     node = sibling;
   } else {
     if (++budget.nodes > budget.maxNodes) {
-      throw new Error(
+      throw new MoveBudgetError(
         `This PGN has more than ${budget.maxNodes} moves; split it and import it in parts.`
       );
     }
-    const annotation = parseAnnotationComment(
-      [...(child.data.startingComments ?? []), ...(child.data.comments ?? [])].join(" ")
+    const annotation = checkedAnnotation(
+      [...(child.data.startingComments ?? []), ...(child.data.comments ?? [])].join(" "),
+      budget,
+      [...path, { ply: parent.ply + 1, san: applied.san }]
     );
     node = {
       id: `n${builder.nextId++}`,
@@ -205,7 +324,7 @@ function appendMove(
 }
 
 /** `1. e4 e5 2. Nf3`, or `1... e5 2. Nf3` from a Black-to-move root. */
-export function formatPath(path: readonly MoveNode[]): string {
+export function formatPath(path: readonly Pick<MoveNode, "ply" | "san">[]): string {
   return path
     .map((node, index) => {
       const number = Math.ceil(node.ply / 2);

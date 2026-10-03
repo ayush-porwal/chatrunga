@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer, webFrame, type IpcRendererEvent } from "electron";
 import type { ChaturangaApi, Unsubscribe, WindowGlassState } from "@chaturanga/shared/ipc/chaturanga-api";
-import type { RepertoireChangedEvent } from "@chaturanga/shared/types/repertoire";
+import {
+  IMPORT_CANCELLED_MESSAGE,
+  IMPORT_CANCELLED_REPLY,
+  type ImportProgressEvent,
+  type RepertoireChangedEvent
+} from "@chaturanga/shared/types/repertoire";
 
 // Runs sandboxed: only `electron`'s renderer modules are available here, no Node APIs.
 
@@ -161,7 +166,14 @@ const api: ChaturangaApi = {
     duplicate: (input) => ipcRenderer.invoke("repertoires:duplicate", input),
     archive: (input) => ipcRenderer.invoke("repertoires:archive", input),
     remove: (input) => ipcRenderer.invoke("repertoires:remove", input),
-    previewImport: (input) => ipcRenderer.invoke("repertoires:previewImport", input),
+    // A cancelled preview arrives as a marker (see IMPORT_CANCELLED_REPLY); it still rejects here.
+    previewImport: async (input) => {
+      const reply = await ipcRenderer.invoke("repertoires:previewImport", input);
+      if (reply?.importCancelled === IMPORT_CANCELLED_REPLY.importCancelled) {
+        throw new Error(IMPORT_CANCELLED_MESSAGE);
+      }
+      return reply;
+    },
     commitImport: (input) => ipcRenderer.invoke("repertoires:commitImport", input),
     cancelImport: (jobId) => ipcRenderer.invoke("repertoires:cancelImport", jobId),
     export: (input) => ipcRenderer.invoke("repertoires:export", input),
@@ -178,7 +190,8 @@ const api: ChaturangaApi = {
     endPractice: (sessionId) => ipcRenderer.invoke("repertoires:endPractice", sessionId),
     saveWorkspace: (input) => ipcRenderer.invoke("repertoires:saveWorkspace", input),
     getDueSummary: () => ipcRenderer.invoke("repertoires:getDueSummary"),
-    onChanged: subscribe<RepertoireChangedEvent>("repertoires:changed")
+    onChanged: subscribe<RepertoireChangedEvent>("repertoires:changed"),
+    onImportProgress: subscribe<ImportProgressEvent>("repertoires:importProgress")
   },
   updates: {
     getState: () => ipcRenderer.invoke("updates:getState"),

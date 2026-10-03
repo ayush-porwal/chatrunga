@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Upload } from "lucide-react";
+import { nanoid } from "nanoid";
 import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import type {
   ChapterKind,
   ImportPreview,
+  ImportProgressEvent,
   ImportResult,
   ImportSelection
 } from "@chaturanga/shared/types/repertoire";
@@ -11,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
+import { Progress } from "@/components/ui/progress";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { well } from "@/lib/ui";
 import { cn } from "@/lib/utils";
@@ -21,6 +25,19 @@ import {
   useRepertoireQuery
 } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
+import { flushChapterDraft } from "./useChapterAutosave";
+import {
+  adoptCommittedRevision,
+  importExpectedRevision,
+  mustFlushDraftBeforeImport,
+  progressCounts,
+  progressPercent,
+  progressPhaseLabel,
+  pgnSizeError,
+  startPreviewRun,
+  stepPreviewRun,
+  type PreviewRun
+} from "./import-progress";
 import { plural } from "./repertoire-chapters";
 import { nodeIdForPathLabel } from "./repertoire-model";
 
@@ -38,7 +55,9 @@ export function defaultSelections(preview: ImportPreview): ImportSelection[] {
 /**
  * Import PGN into a repertoire (design §10): paste or open a file, preview every game (title,
  * kind, moves, warnings and the illegal branches left out), then commit the selected games as
- * chapters in one step. Closing before the commit cancels the pending job.
+ * chapters in one step. While the PGN is parsed (in a worker) its progress shows with a Cancel
+ * button; closing before the commit cancels the pending or running job. While the commit runs the
+ * dialog can't be closed (it can't be cancelled once the writer has started).
  */
 export function ImportPgnDialog({
   repertoireId,
@@ -49,6 +68,7 @@ export function ImportPgnDialog({
   onClose: () => void;
   onImported: (result: ImportResult) => void;
 }) {
+  const queryClient = useQueryClient();
   const detail = useRepertoireQuery(repertoireId);
   const previewMutation = usePreviewImportMutation();
   const commitMutation = useCommitImportMutation();
@@ -70,45 +90,106 @@ export function ImportPgnDialog({
   const open = useRef(true);
   /** Bumped per preview: an older preview resolving late cancels its own job. */
   const previewRequest = useRef(0);
+  /** The running preview, with the jobId this dialog gave it; null when none runs. */
+  const run = useRef<PreviewRun | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [progress, setProgress] = useState<ImportProgressEvent | null>(null);
+  /** True while the open study draft is saved before a commit. */
+  const [flushing, setFlushing] = useState(false);
+
+  /** Leaves the running preview: its late result or rejection is ignored from now on. */
+  const endRun = () => {
+    run.current = null;
+    previewRequest.current += 1;
+    setPreviewing(false);
+    setProgress(null);
+  };
 
   // Closing (or unmounting) with a previewed, uncommitted job cancels it.
   useEffect(() => {
     open.current = true;
     return () => {
       open.current = false;
-      const jobId = pendingJob.current;
+      const jobId = pendingJob.current ?? run.current?.jobId;
       pendingJob.current = null;
       if (jobId) void window.chaturanga?.repertoires.cancelImport(jobId).catch(() => undefined);
     };
   }, []);
 
+  // Progress of the running preview (matched by the jobId this dialog generated for it);
+  // subscribed before any preview starts so no event is missed.
+  useEffect(() => {
+    const unsubscribe = window.chaturanga?.repertoires.onImportProgress?.((event) => {
+      if (!run.current) return;
+      const step = stepPreviewRun(run.current, event);
+      if (step.kind === "update") {
+        run.current = step.run;
+        setProgress(step.run.latest);
+      } else if (step.kind === "cancelled") {
+        endRun();
+      } else if (step.kind === "failed") {
+        endRun();
+        setError(step.error);
+      }
+    });
+    return () => unsubscribe?.();
+  }, []);
+
+  // Only games with illegal branches need a lookup (to find each branch's node); building one per
+  // game would index every move of a large import on the renderer thread.
   const lookups = useMemo(
-    () => preview?.games.map((game) => (game.tree.length ? buildChapterLookup(game) : null)) ?? [],
+    () =>
+      preview?.games.map((game) =>
+        game.tree.length && game.invalidBranches.length ? buildChapterLookup(game) : null
+      ) ?? [],
     [preview]
   );
 
   function runPreview(text: string) {
     setError(null);
+    const sizeError = pgnSizeError(text);
+    if (sizeError) {
+      setError(sizeError);
+      return;
+    }
     if (pendingJob.current) cancelJob(pendingJob.current);
     pendingJob.current = null;
     const request = ++previewRequest.current;
+    const jobId = nanoid();
+    run.current = startPreviewRun(jobId);
+    setPreviewing(true);
+    setProgress(null);
     // The promise (unlike per-call callbacks) settles after the dialog unmounts too.
-    previewMutation.mutateAsync({ pgn: text }).then(
+    previewMutation.mutateAsync({ pgn: text, jobId }).then(
       (result) => {
         if (!open.current || request !== previewRequest.current) {
           cancelJob(result.jobId);
           return;
         }
+        run.current = null;
+        setPreviewing(false);
+        setProgress(null);
         pendingJob.current = result.jobId;
         setPreview(result);
         setSelections(defaultSelections(result));
       },
       (cause) => {
         if (open.current && request === previewRequest.current) {
+          run.current = null;
+          setPreviewing(false);
+          setProgress(null);
           setError(ipcErrorMessage(cause) || "That PGN couldn't be read.");
         }
       }
     );
+  }
+
+  /** Cancels the running preview and returns to the input. */
+  function cancelPreview() {
+    const current = run.current;
+    if (!current) return;
+    cancelJob(current.jobId);
+    endRun();
   }
 
   async function chooseFile() {
@@ -123,27 +204,52 @@ export function ImportPgnDialog({
     }
   }
 
-  function commit() {
-    if (!preview) return;
-    // The study draft (if open) knows a newer revision than the cached detail after its saves.
-    const workspace = useRepertoireWorkspaceStore.getState();
-    const expectedRevision =
-      workspace.repertoireId === repertoireId
-        ? Math.max(workspace.baseRevision, detail.data?.revision ?? 0)
-        : detail.data?.revision;
+  async function commit() {
+    if (!preview || flushing) return;
+    setError(null);
+    // An import into the repertoire whose draft is open saves that draft first, so no autosave
+    // runs (or comes due) during the commit and races its revision bump; the commit then expects
+    // the revision that save stored. A draft that can't be saved keeps the dialog open.
+    if (mustFlushDraftBeforeImport(useRepertoireWorkspaceStore.getState(), repertoireId)) {
+      setFlushing(true);
+      let saved: boolean;
+      try {
+        saved = await flushChapterDraft(queryClient);
+      } finally {
+        if (open.current) setFlushing(false);
+      }
+      if (!open.current) return;
+      if (!saved) {
+        setError("The open chapter couldn't be saved; retry its save, then import.");
+        return;
+      }
+    }
+    const expectedRevision = importExpectedRevision(
+      useRepertoireWorkspaceStore.getState(),
+      repertoireId,
+      detail.data?.revision
+    );
     if (expectedRevision === undefined) return;
     setError(null);
-    commitMutation.mutate(
-      { jobId: preview.jobId, repertoireId, selections, expectedRevision },
-      {
-        onSuccess: (result) => {
-          pendingJob.current = null;
-          if (workspace.repertoireId === repertoireId) {
-            useRepertoireWorkspaceStore.getState().adoptRevision(result.repertoire.revision);
-          }
-          onImported(result);
-        },
-        onError: (cause) => setError(ipcErrorMessage(cause) || "The import couldn't be saved.")
+    // The job belongs to the commit now: unmounting meanwhile must not cancel it. A failed commit
+    // keeps the job, so it is pending again (or cancelled when the dialog is gone).
+    const jobId = preview.jobId;
+    pendingJob.current = null;
+    // The promise (unlike per-call callbacks) settles after the dialog unmounts too, so the open
+    // draft adopts the new revision even when the user navigated away meanwhile.
+    commitMutation.mutateAsync({ jobId, repertoireId, selections, expectedRevision }).then(
+      (result) => {
+        adoptCommittedRevision(
+          useRepertoireWorkspaceStore.getState(),
+          repertoireId,
+          result.repertoire.revision
+        );
+        if (open.current) onImported(result);
+      },
+      (cause) => {
+        if (!open.current) return cancelJob(jobId);
+        pendingJob.current = jobId;
+        setError(ipcErrorMessage(cause) || "The import couldn't be saved.");
       }
     );
   }
@@ -154,17 +260,21 @@ export function ImportPgnDialog({
     );
 
   const included = selections.filter((selection) => selection.include).length;
-  const busy = previewMutation.isPending || commitMutation.isPending;
+  const committing = flushing || commitMutation.isPending;
+  const busy = previewing || committing;
 
   return (
     <Dialog
       title="Import PGN"
       description={
-        preview
-          ? "Each game becomes a chapter. Choose what to import."
-          : "Paste PGN or open a file; every game in it is read."
+        committing
+          ? "Importing… please wait."
+          : preview
+            ? "Each game becomes a chapter. Choose what to import."
+            : "Paste PGN or open a file; every game in it is read."
       }
-      onClose={onClose}
+      // No close (×, Escape, backdrop) while the commit runs: it can't be cancelled then.
+      onClose={committing ? undefined : onClose}
       footer={
         preview ? (
           <>
@@ -186,9 +296,9 @@ export function ImportPgnDialog({
               variant="primary"
               size="sm"
               disabled={busy || !included || !detail.data}
-              onClick={commit}
+              onClick={() => void commit()}
             >
-              {commitMutation.isPending ? "Importing…" : `Import ${plural(included, "chapter")}`}
+              {committing ? "Importing…" : `Import ${plural(included, "chapter")}`}
             </Button>
           </>
         ) : (
@@ -210,7 +320,7 @@ export function ImportPgnDialog({
               disabled={busy || !pgn.trim()}
               onClick={() => runPreview(pgn)}
             >
-              {previewMutation.isPending ? "Reading…" : "Preview"}
+              {previewing ? "Reading…" : "Preview"}
             </Button>
           </>
         )
@@ -311,13 +421,34 @@ export function ImportPgnDialog({
           })}
         </ul>
       ) : (
-        <Textarea
-          aria-label="PGN text"
-          autoFocus
-          value={pgn}
-          onChange={(event) => setPgn(event.target.value)}
-          placeholder={'[Event "My 1.e4 repertoire"]\n\n1. e4 e5 2. Nf3 (2. Bc4) *'}
-        />
+        <>
+          <Textarea
+            aria-label="PGN text"
+            autoFocus
+            disabled={previewing}
+            value={pgn}
+            onChange={(event) => setPgn(event.target.value)}
+            placeholder={'[Event "My 1.e4 repertoire"]\n\n1. e4 e5 2. Nf3 (2. Bc4) *'}
+          />
+          {previewing ? (
+            <div className={cn(well, "grid gap-2 p-3")} role="status" aria-live="polite">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="font-medium text-fg">{progressPhaseLabel(progress)}</span>
+                <span className="text-fg-muted tabular-nums">{progressCounts(progress)}</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  className="ml-auto"
+                  onClick={cancelPreview}
+                >
+                  Cancel
+                </Button>
+              </div>
+              <Progress value={progressPercent(progress)} aria-label="Reading the PGN" />
+            </div>
+          ) : null}
+        </>
       )}
       {error ? <Notice tone="danger">{error}</Notice> : null}
     </Dialog>

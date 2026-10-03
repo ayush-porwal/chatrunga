@@ -20,7 +20,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "dist:mac": "pnpm --filter @chaturanga/desktop dist:mac",
-    "generate:piece-css": "node scripts/generate-piece-theme-css.mjs"
+    "generate:piece-css": "node scripts/generate-piece-theme-css.mjs",
+    "bench:repertoire": "node scripts/bench-repertoire.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -115,9 +115,10 @@ export class TelemetryOutbox {
     this.database().exec("DELETE FROM telemetry_outbox");
   }
 
+  /** Runs a batch of writes in one transaction, taking the write lock up front (IMMEDIATE). */
   private inTransaction(work: () => void): void {
     const database = this.database();
-    database.exec("BEGIN");
+    database.exec("BEGIN IMMEDIATE");
     try {
       work();
       database.exec("COMMIT");

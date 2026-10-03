@@ -27,6 +27,12 @@ type TreeViewProps = {
   emptyLabel?: ReactNode;
   className?: string;
   ariaLabel?: string;
+  /**
+   * Rows standing for collapsed branches (node id → moves hidden behind it): drawn as one
+   * "… N more moves" row that calls `onExpandRow` instead of selecting a move.
+   */
+  collapsedRows?: ReadonlyMap<string, number>;
+  onExpandRow?: (nodeId: string) => void;
 };
 
 export function TreeView({
@@ -40,7 +46,9 @@ export function TreeView({
   onDeleteLine,
   emptyLabel = "No moves yet.",
   className,
-  ariaLabel = "Move tree"
+  ariaLabel = "Move tree",
+  collapsedRows,
+  onExpandRow
 }: TreeViewProps) {
   const model = useMemo(() => buildTreeModel(nodes, ROOT_ID), [nodes]);
   const listRef = useRef<HTMLDivElement>(null);
@@ -73,19 +81,32 @@ export function TreeView({
 
   const renderVariationBlocks = (blocks: TreeVariationBlock[] | undefined) =>
     blocks?.map((block, blockIndex) =>
-      block.rows.map((row, rowIndex) => (
-        <VariationRow
-          key={`${row.node.id}-${blockIndex}-${rowIndex}`}
-          row={row}
-          selected={selectedNodeId === row.node.id}
-          review={reviews?.get(row.node.id)}
-          commentary={commentaryByNodeId?.get(row.node.id)}
-          showScores={showScores}
-          showCommentaryState={showCommentaryState}
-          onSelectNode={onSelectNode}
-          onDeleteLine={onDeleteLine}
-        />
-      ))
+      block.rows.map((row, rowIndex) => {
+        const hiddenMoves = collapsedRows?.get(row.node.id);
+        if (hiddenMoves !== undefined) {
+          return (
+            <CollapsedRow
+              key={`${row.node.id}-${blockIndex}-${rowIndex}`}
+              row={row}
+              hiddenMoves={hiddenMoves}
+              onExpand={onExpandRow}
+            />
+          );
+        }
+        return (
+          <VariationRow
+            key={`${row.node.id}-${blockIndex}-${rowIndex}`}
+            row={row}
+            selected={selectedNodeId === row.node.id}
+            review={reviews?.get(row.node.id)}
+            commentary={commentaryByNodeId?.get(row.node.id)}
+            showScores={showScores}
+            showCommentaryState={showCommentaryState}
+            onSelectNode={onSelectNode}
+            onDeleteLine={onDeleteLine}
+          />
+        );
+      })
     );
 
   const cell = (node: MoveNode | undefined) =>
@@ -186,6 +207,37 @@ const VariationRow = memo(function VariationRow({
       <div className="col-span-2 min-w-0">
         <TreeNodeButton node={row.node} variation {...button} />
       </div>
+    </div>
+  );
+});
+
+/** A collapsed branch: one row that expands the moves hidden behind it. */
+const CollapsedRow = memo(function CollapsedRow({
+  row,
+  hiddenMoves,
+  onExpand
+}: {
+  row: TreeVariationRow;
+  hiddenMoves: number;
+  onExpand?: (nodeId: string) => void;
+}) {
+  const visualDepth = Math.min(row.depth, MAX_VISUAL_DEPTH);
+  return (
+    <div
+      className="border-l border-line-strong"
+      style={{ paddingInlineStart: `${visualDepth * 12 + 4}px` }}
+      data-tree-depth={row.depth}
+      role="treeitem"
+      aria-level={row.depth + 1}
+      aria-expanded={false}
+    >
+      <button
+        type="button"
+        className="flex h-7 w-full items-center rounded-md px-2 text-left text-xs text-fg-subtle outline-none transition-colors duration-micro ease-standard hover:bg-control hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/50"
+        onClick={() => onExpand?.(row.node.id)}
+      >
+        … {hiddenMoves} more {hiddenMoves === 1 ? "move" : "moves"}
+      </button>
     </div>
   );
 });

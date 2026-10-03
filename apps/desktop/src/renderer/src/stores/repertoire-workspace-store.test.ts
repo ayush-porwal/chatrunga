@@ -10,6 +10,7 @@ import {
 import {
   promoteChild,
   removeSubtree,
+  reuseUnchangedTree,
   UNDO_LIMIT,
   useRepertoireWorkspaceStore
 } from "./repertoire-workspace-store";
@@ -147,6 +148,50 @@ describe("repertoire workspace store", () => {
     expect(store().baseRevision).toBe(6);
     expect(store().chapter!.tree.find((node) => node.id === "root")!.comment).toBe("newer edit");
     expect(store().chapter!.revision).toBe(3);
+  });
+
+  it("keeps the draft's tree identity when a save returns the same tree", () => {
+    load();
+    play("d2d4");
+    const local = store().chapter!.tree;
+    // A save result is a fresh copy from the main process (absent optional fields included).
+    const copy = local.map((node) => ({ ...node, clockAfter: undefined }));
+    const result: ChapterSaveResult = {
+      repertoire: detailOf({ revision: 5 }),
+      chapter: { ...store().chapter!, tree: copy, revision: 2 },
+      decisionsChanged: 0
+    };
+    store().saveSucceeded(result, store().generation);
+    expect(store().chapter!.tree).toBe(local);
+    expect(store().chapter!.revision).toBe(2);
+
+    const normalized = local.map((node) =>
+      node.id === "root" ? { ...node, comment: "normalized" } : node
+    );
+    store().saveSucceeded(
+      { ...result, chapter: { ...result.chapter, tree: normalized, revision: 3 } },
+      store().generation
+    );
+    expect(store().chapter!.tree).toBe(normalized);
+  });
+
+  it("reuses a tree only when every node matches", () => {
+    const tree = sampleTree();
+    expect(reuseUnchangedTree(tree, tree.slice(0, -1))).not.toBe(tree);
+    const moved = tree.map((node) =>
+      node.id === "w0" ? { ...node, children: [...node.children].reverse() } : node
+    );
+    expect(reuseUnchangedTree(tree, moved)).toBe(moved);
+    const arrows = tree.map((node) =>
+      node.id === "w1"
+        ? {
+            ...node,
+            arrows: [{ orig: "e2" as const, dest: "e4" as const, color: "green" as const }]
+          }
+        : node
+    );
+    expect(reuseUnchangedTree(tree, arrows)).toBe(arrows);
+    expect(reuseUnchangedTree(tree, structuredClone(tree))).toBe(tree);
   });
 
   it("ignores a save result for another chapter except its revision", () => {
