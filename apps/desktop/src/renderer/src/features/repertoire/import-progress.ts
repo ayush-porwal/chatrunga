@@ -66,3 +66,20 @@ export function progressPercent(event: ImportProgressEvent | null): number | nul
   if (event.phase === "validating" || event.phase === "ready") return 100;
   return Math.max(0, Math.min(100, (event.bytesRead / event.totalBytes) * 100));
 }
+
+/** Largest PGN one import reads, in UTF-8 bytes (the main process enforces the same limit). */
+export const MAX_IMPORT_PGN_BYTES = 20 * 1024 * 1024;
+
+/**
+ * The size-limit message for PGN text over `maxBytes`, or null when it fits. Checked before the
+ * text is sent, so an oversized paste or file is refused before any parsing (design §11).
+ */
+export function pgnSizeError(text: string, maxBytes = MAX_IMPORT_PGN_BYTES): string | null {
+  // UTF-8 needs at least one byte per UTF-16 unit and at most three, so most texts skip encoding.
+  const tooLarge =
+    text.length > maxBytes ||
+    (text.length * 3 > maxBytes && new TextEncoder().encode(text).length > maxBytes);
+  if (!tooLarge) return null;
+  const mib = Math.round((maxBytes / (1024 * 1024)) * 10) / 10;
+  return `This PGN is larger than ${mib} MiB; split it and import it in parts.`;
+}

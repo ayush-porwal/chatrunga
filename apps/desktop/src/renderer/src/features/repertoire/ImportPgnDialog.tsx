@@ -28,6 +28,7 @@ import {
   progressCounts,
   progressPercent,
   progressPhaseLabel,
+  pgnSizeError,
   startPreviewRun,
   stepPreviewRun,
   type PreviewRun
@@ -125,13 +126,23 @@ export function ImportPgnDialog({
     return () => unsubscribe?.();
   }, []);
 
+  // Only games with illegal branches need a lookup (to find each branch's node); building one per
+  // game would index every move of a large import on the renderer thread.
   const lookups = useMemo(
-    () => preview?.games.map((game) => (game.tree.length ? buildChapterLookup(game) : null)) ?? [],
+    () =>
+      preview?.games.map((game) =>
+        game.tree.length && game.invalidBranches.length ? buildChapterLookup(game) : null
+      ) ?? [],
     [preview]
   );
 
   function runPreview(text: string) {
     setError(null);
+    const sizeError = pgnSizeError(text);
+    if (sizeError) {
+      setError(sizeError);
+      return;
+    }
     if (pendingJob.current) cancelJob(pendingJob.current);
     pendingJob.current = null;
     const request = ++previewRequest.current;

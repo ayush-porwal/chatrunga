@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ImportProgressEvent } from "@chaturanga/shared/types/repertoire";
 import {
+  MAX_IMPORT_PGN_BYTES,
+  pgnSizeError,
   progressCounts,
   progressPercent,
   progressPhaseLabel,
@@ -65,5 +67,21 @@ describe("import preview progress", () => {
     expect(progressPercent(event({ bytesRead: 250 }))).toBe(25);
     expect(progressPercent(event({ bytesRead: 5000 }))).toBe(100);
     expect(progressPercent(event({ phase: "validating", bytesRead: 10 }))).toBe(100);
+  });
+});
+
+describe("pgnSizeError", () => {
+  it("is null for text within the limit", () => {
+    expect(pgnSizeError("1. e4 e5 *")).toBeNull();
+    expect(pgnSizeError("x".repeat(30), 30)).toBeNull();
+  });
+
+  it("names the limit for text over it, counting UTF-8 bytes", () => {
+    expect(pgnSizeError("x".repeat(MAX_IMPORT_PGN_BYTES + 1))).toBe(
+      "This PGN is larger than 20 MiB; split it and import it in parts."
+    );
+    // 10 characters, 20 bytes.
+    expect(pgnSizeError("é".repeat(10), 15)).toMatch(/^This PGN is larger than/);
+    expect(pgnSizeError("é".repeat(10), 20)).toBeNull();
   });
 });
