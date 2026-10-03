@@ -39,7 +39,7 @@ import {
  * resetting the draft keeps them, so a failed write is never lost by moving on.
  */
 
-/** Drafts kept for Undo (deleting a line, and other structural edits). */
+/** Structural edits kept for Undo (and as many undone ones for Redo). */
 export const UNDO_LIMIT = 20;
 
 export type RepertoireWorkspaceState = {
@@ -55,7 +55,16 @@ export type RepertoireWorkspaceState = {
   saveState: AutosaveSaveState;
   /** The repertoire revision the draft is based on (`expectedRevision` of the next write). */
   baseRevision: number;
+  /**
+   * The chapter before each structural edit (adding a move, deleting a line, promoting a
+   * variation, edge and training-mark changes), newest last. Comments, shapes and chapter fields
+   * aren't undone here (their text fields keep native undo); undoing restores the tree's shape and
+   * metadata and keeps the current comments and shapes of the moves it keeps. Both stacks reset
+   * when a chapter loads (another chapter, or a reload after a conflict).
+   */
   undoStack: RepertoireChapter[];
+  /** The chapter before each undo, newest last; a new structural edit clears it. */
+  redoStack: RepertoireChapter[];
   /** Decisions written this session (until the API can read them back). */
   decisions: Record<string, RepertoireDecision>;
   /** Decision changes (prompt, hint, feedback, pause) not yet saved, by decisionDraftKey. */
@@ -91,7 +100,13 @@ type Actions = {
   ) => void;
   deleteLine: (nodeId: string) => boolean;
   undo: () => boolean;
-  promoteVariation: (nodeId: string) => void;
+  redo: () => boolean;
+  /**
+   * Moves the variation holding `nodeId` one level up: the nearest move on its path that isn't
+   * its parent's first continuation becomes the first (the chapter's authored main line there,
+   * as PGN export writes it). False when the path is the main line already.
+   */
+  promoteVariation: (nodeId: string) => boolean;
   flip: () => void;
   setOrientation: (orientation: Color) => void;
   markSaving: () => void;
@@ -146,6 +161,7 @@ const initialState: RepertoireWorkspaceState = {
   saveState: { status: "idle" },
   baseRevision: 0,
   undoStack: [],
+  redoStack: [],
   decisions: {},
   decisionDrafts: {}
 };
@@ -185,6 +201,57 @@ export function promoteChild(tree: readonly MoveNode[], nodeId: string): MoveNod
       ? { ...item, children: [nodeId, ...item.children.filter((id) => id !== nodeId)] }
       : item
   );
+}
+
+/**
+ * The move `promoteVariation` moves for `nodeId`: the node itself or its nearest ancestor that
+ * isn't its parent's first child. Null on the main line (or for the root).
+ */
+export function promotionTarget(tree: readonly MoveNode[], nodeId: string): string | null {
+  const byId = new Map(tree.map((node) => [node.id, node]));
+  let node = byId.get(nodeId);
+  while (node?.parentId) {
+    const parent = byId.get(node.parentId);
+    if (parent && parent.children[0] !== node.id) return node.id;
+    node = parent;
+  }
+  return null;
+}
+
+/**
+ * `snapshot`'s tree shape and metadata with `current`'s chapter fields, and the current comments,
+ * shapes and NAGs of the moves both have: what Undo and Redo restore.
+ */
+export function withStructureOf(
+  snapshot: RepertoireChapter,
+  current: RepertoireChapter
+): RepertoireChapter {
+  const latest = new Map(current.tree.map((node) => [node.id, node]));
+  return {
+    ...current,
+    nodeMeta: snapshot.nodeMeta,
+    tree: snapshot.tree.map((node) => {
+      const now = latest.get(node.id);
+      return now
+        ? {
+            ...node,
+            comment: now.comment,
+            nags: now.nags,
+            arrows: now.arrows,
+            highlights: now.highlights
+          }
+        : node;
+    })
+  };
+}
+
+/** `nodeId` when `tree` has it, else its nearest ancestor (in `from`) that `tree` has. */
+function nearestKept(tree: readonly MoveNode[], from: readonly MoveNode[], nodeId: string): string {
+  const kept = new Set(tree.map((node) => node.id));
+  const byId = new Map(from.map((node) => [node.id, node]));
+  let id: string | null = nodeId;
+  while (id && !kept.has(id)) id = byId.get(id)?.parentId ?? null;
+  return id ?? REPERTOIRE_ROOT_NODE_ID;
 }
 
 /**
@@ -234,20 +301,59 @@ function withUndo(
 
 export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Actions>(
   (set, get) => {
-    /** Applies an edit to the draft (bumps the generation, marks it dirty). */
+    /** Set while a compound edit runs: it takes one undo step, recorded before it started. */
+    let grouping = false;
+
+    /**
+     * Applies an edit to the draft (bumps the generation, marks it dirty). An undoable one keeps
+     * the chapter before it for Undo and clears Redo.
+     */
     const edit = (
       change: (chapter: RepertoireChapter) => RepertoireChapter,
       options: { undoable?: boolean; selectedNodeId?: string } = {}
     ) => {
-      const { chapter, generation, undoStack } = get();
+      const { chapter, generation, undoStack, redoStack } = get();
       if (!chapter) return;
+      const recorded = options.undoable && !grouping;
       set({
         chapter: change(chapter),
         dirty: true,
         generation: generation + 1,
-        undoStack: options.undoable ? withUndo(undoStack, chapter) : undoStack,
+        undoStack: recorded ? withUndo(undoStack, chapter) : undoStack,
+        redoStack: recorded ? [] : redoStack,
         ...(options.selectedNodeId ? { selectedNodeId: options.selectedNodeId } : {})
       });
+    };
+
+    /** Runs `edits` as one undo step (when they change the draft at all). */
+    const group = <T>(edits: () => T): T => {
+      const { chapter, undoStack } = get();
+      grouping = true;
+      try {
+        return edits();
+      } finally {
+        grouping = false;
+        if (chapter && get().chapter !== chapter) {
+          set({ undoStack: withUndo(undoStack, chapter), redoStack: [] });
+        }
+      }
+    };
+
+    /** Undo / Redo: moves the draft to the top of `from`, keeping the current one on `to`. */
+    const step = (from: "undoStack" | "redoStack", to: "undoStack" | "redoStack") => {
+      const state = get();
+      const target = state[from][state[from].length - 1];
+      if (!target || !state.chapter) return false;
+      const chapter = withStructureOf(target, state.chapter);
+      set({
+        chapter,
+        [from]: state[from].slice(0, -1),
+        [to]: withUndo(state[to], state.chapter),
+        dirty: true,
+        generation: state.generation + 1,
+        selectedNodeId: nearestKept(chapter.tree, state.chapter.tree, state.selectedNodeId)
+      });
+      return true;
     };
 
     /** Creates or edits a decision draft (an edit bumps its generation; its status stays). */
@@ -270,6 +376,30 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
         if (draft.paused === undefined) delete draft.paused;
         return { decisionDrafts: { ...state.decisionDrafts, [key]: draft } };
       });
+
+    /** stageMove's edits, once the move is known to be legal at `parentId`. */
+    const stageAt = (
+      parentId: string,
+      uci: string,
+      { san, fenAfter }: { san: string; fenAfter: string },
+      edge: RepertoireNodeMeta["edge"]
+    ) => {
+      set({ selectedNodeId: parentId });
+      const result = get().playMove(uci, san, fenAfter);
+      const meta = get().chapter?.nodeMeta[result.nodeId];
+      if (result.created) {
+        if (meta?.edge !== edge) get().setNodeMeta(result.nodeId, { edge });
+      } else if (edge !== "reference") {
+        // An existing move staged as covered/included takes that edge and is re-enabled; a
+        // reference stage never demotes a move the chapter already has (it's only selected).
+        const current = nodeMetaOf(get().chapter!.nodeMeta, result.nodeId);
+        if (current.edge !== edge || current.disabled) {
+          get().setNodeMeta(result.nodeId, { edge, disabled: false });
+        }
+      }
+      if (edge === "reference") set({ selectedNodeId: parentId });
+      return result;
+    };
 
     const patchNode = (nodeId: string, patch: Partial<MoveNode>) =>
       edit((chapter) => ({
@@ -328,7 +458,7 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
               [added.node.id]: { edge: defaultEdgeForNewMove(parent.fenAfter, color) }
             }
           }),
-          { selectedNodeId: added.node.id }
+          { undoable: true, selectedNodeId: added.node.id }
         );
         return { nodeId: added.node.id, created: true };
       },
@@ -338,33 +468,25 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
         if (!parent) return null;
         const played = playUci(parent.fenAfter, uci);
         if (!played) return null;
-        const { san, fenAfter } = played;
-        set({ selectedNodeId: parent.id });
-        const result = get().playMove(uci, san, fenAfter);
-        const meta = get().chapter?.nodeMeta[result.nodeId];
-        if (result.created) {
-          if (meta?.edge !== edge) get().setNodeMeta(result.nodeId, { edge });
-        } else if (edge !== "reference") {
-          // An existing move staged as covered/included takes that edge and is re-enabled; a
-          // reference stage never demotes a move the chapter already has (it's only selected).
-          const current = nodeMetaOf(get().chapter!.nodeMeta, result.nodeId);
-          if (current.edge !== edge || current.disabled) {
-            get().setNodeMeta(result.nodeId, { edge, disabled: false });
-          }
-        }
-        if (edge === "reference") set({ selectedNodeId: parent.id });
-        return result;
+        // Adding the move and setting its edge are one undo step.
+        return group(() => stageAt(parent.id, uci, played, edge));
       },
 
       setNodeMeta: (nodeId, patch) =>
-        edit((chapter) => {
-          const merged: RepertoireNodeMeta = { ...nodeMetaOf(chapter.nodeMeta, nodeId), ...patch };
-          // Unset flags are dropped so the stored metadata stays minimal.
-          for (const key of ["trainingStart", "trainingStop", "disabled"] as const) {
-            if (!merged[key]) delete merged[key];
-          }
-          return { ...chapter, nodeMeta: { ...chapter.nodeMeta, [nodeId]: merged } };
-        }),
+        edit(
+          (chapter) => {
+            const merged: RepertoireNodeMeta = {
+              ...nodeMetaOf(chapter.nodeMeta, nodeId),
+              ...patch
+            };
+            // Unset flags are dropped so the stored metadata stays minimal.
+            for (const key of ["trainingStart", "trainingStop", "disabled"] as const) {
+              if (!merged[key]) delete merged[key];
+            }
+            return { ...chapter, nodeMeta: { ...chapter.nodeMeta, [nodeId]: merged } };
+          },
+          { undoable: true }
+        ),
 
       setComment: (nodeId, text) => patchNode(nodeId, { comment: text.trim() ? text : null }),
 
@@ -387,26 +509,18 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
         return true;
       },
 
-      undo: () => {
-        const { undoStack, selectedNodeId, generation } = get();
-        const previous = undoStack[undoStack.length - 1];
-        if (!previous) return false;
-        set({
-          chapter: previous,
-          undoStack: undoStack.slice(0, -1),
-          dirty: true,
-          generation: generation + 1,
-          selectedNodeId: previous.tree.some((node) => node.id === selectedNodeId)
-            ? selectedNodeId
-            : REPERTOIRE_ROOT_NODE_ID
+      undo: () => step("undoStack", "redoStack"),
+
+      redo: () => step("redoStack", "undoStack"),
+
+      promoteVariation: (nodeId) => {
+        const target = promotionTarget(get().chapter?.tree ?? [], nodeId);
+        if (!target) return false;
+        edit((chapter) => ({ ...chapter, tree: promoteChild(chapter.tree, target) }), {
+          undoable: true
         });
         return true;
       },
-
-      promoteVariation: (nodeId) =>
-        edit((chapter) => ({ ...chapter, tree: promoteChild(chapter.tree, nodeId) }), {
-          undoable: true
-        }),
 
       flip: () =>
         set((state) => ({ orientation: state.orientation === "white" ? "black" : "white" })),

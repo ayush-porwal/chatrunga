@@ -96,6 +96,8 @@ export function StudyChoicesPanel({
     [lookup, selectedNodeId]
   );
   const isRoot = selectedNodeId === "root";
+  /** The first continuation in the chapter's order: its authored main line (PGN export's). */
+  const mainLineId = lookup.childrenById.get(selectedNodeId)?.[0] ?? null;
 
   return (
     <div className="grid gap-4">
@@ -113,8 +115,8 @@ export function StudyChoicesPanel({
           }
           description={
             choices.side === "player"
-              ? "Any accepted move counts as correct in practice; hints point at the preferred one."
-              : "Covered replies continue into training; reference replies are study only."
+              ? "Any accepted move counts as correct in practice; hints point at the preferred one. Main line is only the chapter's move order (as PGN export writes it)."
+              : "Covered replies continue into training; reference replies are study only. Main line is only the chapter's move order (as PGN export writes it)."
           }
         />
         {choices.rows.length ? (
@@ -124,6 +126,7 @@ export function StudyChoicesPanel({
                 key={row.nodeId}
                 row={row}
                 side={choices.side}
+                mainLine={row.nodeId === mainLineId && choices.rows.length > 1}
                 busy={busy}
                 onSelect={() => onSelectNode(row.nodeId)}
                 onSetEdge={(edge) => onSetEdge(row.nodeId, edge)}
@@ -176,7 +179,8 @@ export function StudyChoicesPanel({
             ))}
           </ul>
           <p className="text-2xs text-fg-subtle">
-            A preferred move, prompt or hint applies to every occurrence of this position.
+            A preferred move, prompt, hint, wrong-move feedback or pause applies to every occurrence
+            of this position.
           </p>
         </section>
       ) : null}
@@ -197,6 +201,7 @@ export function StudyChoicesPanel({
 function ChoiceItem({
   row,
   side,
+  mainLine,
   busy,
   onSelect,
   onSetEdge,
@@ -204,6 +209,8 @@ function ChoiceItem({
 }: {
   row: ChoiceRow;
   side: "player" | "opponent";
+  /** First in the chapter's order (shown only when there are alternatives). */
+  mainLine: boolean;
   busy: boolean;
   onSelect: () => void;
   onSetEdge: (edge: RepertoireNodeMeta["edge"]) => void;
@@ -228,6 +235,14 @@ function ChoiceItem({
       {row.state === "untrained" ? (
         <span className="text-2xs text-fg-subtle">
           {row.edge === "reference" ? "reference" : side === "player" ? "accepted" : "covered"}
+        </span>
+      ) : null}
+      {mainLine ? (
+        <span
+          className="whitespace-nowrap text-2xs text-fg-subtle"
+          title="First in this chapter's move order, as PGN export writes it. Promote variation changes it; it doesn't change what practice expects."
+        >
+          main line
         </span>
       ) : null}
       {row.disabled ? (

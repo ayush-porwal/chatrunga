@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { fenAfterUci } from "@chaturanga/shared/chess/position";
+import { exportRepertoirePgn } from "@chaturanga/shared/chess/repertoire-pgn";
 import type { ChapterSaveResult } from "@chaturanga/shared/types/repertoire";
 import {
   addLine,
@@ -10,6 +11,7 @@ import {
 import { decisionDraftKey } from "../features/repertoire/repertoire-model";
 import {
   promoteChild,
+  promotionTarget,
   removeSubtree,
   reuseUnchangedTree,
   UNDO_LIMIT,
@@ -106,20 +108,93 @@ describe("repertoire workspace store", () => {
     expect(store().undo()).toBe(true);
     expect(store().chapter!.tree).toHaveLength(5);
     expect(store().chapter!.nodeMeta.w1).toEqual({ edge: "covered" });
+    // The edge change before it is a step of its own.
+    expect(store().undo()).toBe(true);
+    expect(store().chapter!.nodeMeta.w1).toBeUndefined();
     expect(store().undo()).toBe(false);
     expect(store().deleteLine("root")).toBe(false);
   });
 
   it("keeps at most the undo limit", () => {
     load();
-    for (let index = 0; index < UNDO_LIMIT + 5; index += 1) store().promoteVariation("s0");
+    for (let index = 0; index < UNDO_LIMIT + 5; index += 1) {
+      store().promoteVariation(index % 2 ? "w1" : "s0");
+    }
     expect(store().undoStack).toHaveLength(UNDO_LIMIT);
+    while (store().undo());
+    expect(store().redoStack).toHaveLength(UNDO_LIMIT);
   });
 
   it("promotes a variation to the main line", () => {
     load();
-    store().promoteVariation("s0");
+    expect(store().promoteVariation("s0")).toBe(true);
     expect(store().chapter!.tree.find((node) => node.id === "w0")!.children).toEqual(["s0", "w1"]);
+    // On the main line already: nothing to promote, and nothing to undo.
+    expect(store().promoteVariation("s0")).toBe(false);
+    expect(store().undoStack).toHaveLength(1);
+  });
+
+  it("promotes the variation a deeper move belongs to", () => {
+    load();
+    expect(promotionTarget(store().chapter!.tree, "w2")).toBeNull();
+    expect(promotionTarget(store().chapter!.tree, "root")).toBeNull();
+    store().promoteVariation("s0");
+    // 1... e5 2. Nf3 is now the side line: promoting from Nf3 moves 1... e5 back up.
+    expect(promotionTarget(store().chapter!.tree, "w2")).toBe("w1");
+    store().promoteVariation("w2");
+    expect(store().chapter!.tree.find((node) => node.id === "w0")!.children).toEqual(["w1", "s0"]);
+  });
+
+  it("undoes and redoes structural edits, keeping comments typed since", () => {
+    load("w2");
+    const added = play("b8c6");
+    store().setComment("w2", "Develops");
+    store().setNodeMeta("w1", { trainingStart: true });
+    store().promoteVariation("s0");
+    expect(store().undoStack).toHaveLength(3);
+
+    expect(store().undo()).toBe(true);
+    expect(store().chapter!.tree.find((node) => node.id === "w0")!.children).toEqual(["w1", "s0"]);
+    expect(store().undo()).toBe(true);
+    expect(store().chapter!.nodeMeta.w1).toBeUndefined();
+    expect(store().undo()).toBe(true);
+    // The added move is gone and its parent selected; the comment typed after it stays.
+    expect(store().chapter!.tree.some((node) => node.id === added.nodeId)).toBe(false);
+    expect(store().selectedNodeId).toBe("w2");
+    expect(store().chapter!.tree.find((node) => node.id === "w2")!.comment).toBe("Develops");
+    expect(store().dirty).toBe(true);
+    expect(store().undo()).toBe(false);
+
+    expect(store().redo()).toBe(true);
+    expect(store().chapter!.tree.some((node) => node.id === added.nodeId)).toBe(true);
+    expect(store().redo()).toBe(true);
+    expect(store().chapter!.nodeMeta.w1).toEqual({ edge: "included", trainingStart: true });
+    // A new edit drops what is left to redo.
+    store().setNodeMeta("w0", { disabled: true });
+    expect(store().redoStack).toHaveLength(0);
+    expect(store().redo()).toBe(false);
+  });
+
+  it("starts each chapter load with no undo or redo", () => {
+    load();
+    store().promoteVariation("s0");
+    store().undo();
+    expect(store().redoStack).toHaveLength(1);
+    load();
+    expect(store().undoStack).toHaveLength(0);
+    expect(store().redoStack).toHaveLength(0);
+  });
+
+  it("exports the promoted variation as the PGN main line", () => {
+    load();
+    const pgn = () => exportRepertoirePgn([store().chapter!]);
+    expect(pgn()).toContain("1. e4 e5 (1... c5) 2. Nf3 *");
+    store().promoteVariation("s0");
+    expect(pgn()).toContain("1. e4 c5 (1... e5 2. Nf3) *");
+    store().undo();
+    expect(pgn()).toContain("1. e4 e5 (1... c5) 2. Nf3 *");
+    store().redo();
+    expect(pgn()).toContain("1. e4 c5 (1... e5 2. Nf3) *");
   });
 
   it("adopts a save result unless the draft changed while it ran", () => {
@@ -280,6 +355,10 @@ describe("staging a move from a game comparison", () => {
     expect(store().chapter!.nodeMeta[result!.nodeId]).toEqual({ edge: "reference" });
     // The decision stays selected, so Choices shows the new move with Accept.
     expect(store().selectedNodeId).toBe("w1");
+    // Adding it and setting its edge are one undo step.
+    expect(store().undoStack).toHaveLength(1);
+    store().undo();
+    expect(store().chapter!.tree.some((node) => node.id === result!.nodeId)).toBe(false);
   });
 
   it("only selects a move the chapter already has with that edge", () => {

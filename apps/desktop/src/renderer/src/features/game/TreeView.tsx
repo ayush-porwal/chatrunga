@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useMemo, useRef, type ReactNode } from "react";
-import { Check, Trash2 } from "lucide-react";
+import { ArrowUpToLine, Check, Trash2 } from "lucide-react";
 import { reviewLabel } from "@chaturanga/shared/chess/review";
 import { formatMoveEval } from "../game-review/review-score";
 import type { MoveReview, ReviewCommentary } from "@chaturanga/shared/types/engine";
@@ -24,6 +24,8 @@ type TreeViewProps = {
   showScores?: boolean;
   showCommentaryState?: boolean;
   onDeleteLine?: (nodeId: string) => void;
+  /** Offered on a selected move inside a variation: moves that variation up (see its owner). */
+  onPromoteVariation?: (nodeId: string) => void;
   emptyLabel?: ReactNode;
   className?: string;
   ariaLabel?: string;
@@ -44,6 +46,7 @@ export function TreeView({
   showScores = false,
   showCommentaryState = false,
   onDeleteLine,
+  onPromoteVariation,
   emptyLabel = "No moves yet.",
   className,
   ariaLabel = "Move tree",
@@ -104,6 +107,7 @@ export function TreeView({
             showCommentaryState={showCommentaryState}
             onSelectNode={onSelectNode}
             onDeleteLine={onDeleteLine}
+            onPromoteVariation={onPromoteVariation}
           />
         );
       })
@@ -120,6 +124,7 @@ export function TreeView({
         showCommentaryState={showCommentaryState}
         onSelectNode={onSelectNode}
         onDeleteLine={onDeleteLine}
+        onPromoteVariation={onPromoteVariation}
       />
     ) : (
       <span aria-hidden="true" />
@@ -184,6 +189,7 @@ type NodeButtonProps = {
   variation?: boolean;
   onSelectNode: (nodeId: string) => void;
   onDeleteLine?: (nodeId: string) => void;
+  onPromoteVariation?: (nodeId: string) => void;
 };
 
 /** Memoised: stepping through a game re-renders only the two rows whose selection changed. */
@@ -251,7 +257,8 @@ const TreeNodeButton = memo(function TreeNodeButton({
   showCommentaryState,
   variation = false,
   onSelectNode,
-  onDeleteLine
+  onDeleteLine,
+  onPromoteVariation
 }: NodeButtonProps) {
   const title = review
     ? `${reviewLabel(review.classification)} · ${formatMoveEval(review)}`
@@ -260,6 +267,7 @@ const TreeNodeButton = memo(function TreeNodeButton({
       : node.san ?? "Move";
 
   const showDelete = selected && Boolean(onDeleteLine);
+  const showPromote = selected && variation && Boolean(onPromoteVariation);
 
   return (
     <div className="group relative min-w-0">
@@ -276,7 +284,7 @@ const TreeNodeButton = memo(function TreeNodeButton({
             : variation
               ? "text-fg-muted hover:bg-control hover:text-fg"
               : "text-fg-secondary hover:bg-control hover:text-fg",
-          showDelete && "pr-8"
+          (showDelete || showPromote) && (showDelete && showPromote ? "pr-15" : "pr-8")
         )}
         title={title}
         onClick={() => onSelectNode(node.id)}
@@ -295,6 +303,23 @@ const TreeNodeButton = memo(function TreeNodeButton({
           ) : null}
         </span>
       </button>
+      {showPromote ? (
+        <IconButton
+          label={`Promote the variation with ${node.san ?? "the selected move"}`}
+          icon={<ArrowUpToLine />}
+          variant="ghost"
+          size="icon-xs"
+          tooltipSide="left"
+          className={cn(
+            "absolute top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+            showDelete ? "right-8" : "right-0.5"
+          )}
+          onClick={(event) => {
+            event.stopPropagation();
+            onPromoteVariation?.(node.id);
+          }}
+        />
+      ) : null}
       {showDelete ? (
         <IconButton
           label={`Delete line from ${node.san ?? "selected move"}`}

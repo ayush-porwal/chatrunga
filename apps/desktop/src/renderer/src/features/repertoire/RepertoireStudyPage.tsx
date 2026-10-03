@@ -1,6 +1,16 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { CircleAlert, GraduationCap, Loader2, Microscope, Route, Swords } from "lucide-react";
+import {
+  ArrowUpToLine,
+  CircleAlert,
+  GraduationCap,
+  Loader2,
+  Microscope,
+  Redo2,
+  Route,
+  Swords,
+  Undo2
+} from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
@@ -10,7 +20,10 @@ import {
   rehearsalContext
 } from "@chaturanga/shared/chess/repertoire-rehearsal";
 import type { BoardArrow, BoardHighlight, Color } from "@chaturanga/shared/types/chess";
-import type { RepertoireChapterSummary } from "@chaturanga/shared/types/repertoire";
+import type {
+  RepertoireChapter,
+  RepertoireChapterSummary
+} from "@chaturanga/shared/types/repertoire";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Notice } from "@/components/ui/notice";
@@ -21,6 +34,7 @@ import {
 } from "@/components/ui/segmented-control";
 import { SideDot } from "@/components/ui/side-dot";
 import { Stat, StatGroup } from "@/components/ui/stat";
+import { isElectronMac } from "@/lib/environment";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useEventCallback } from "@/lib/use-event-callback";
 import {
@@ -29,7 +43,11 @@ import {
   useRepertoireOccurrencesQuery,
   useRepertoireQuery
 } from "../../queries/repertoire";
-import { playUci, useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
+import {
+  playUci,
+  promotionTarget,
+  useRepertoireWorkspaceStore
+} from "../../stores/repertoire-workspace-store";
 import { BoardStage, BoardWorkspace, workspaceTabsClass } from "../board/BoardWorkspace";
 import { ControlledBoard, TypedMoveButton, type TypedMoveControl } from "../board/ControlledBoard";
 import {
@@ -66,7 +84,9 @@ import {
   saveDecisionTextNow,
   useChapterAutosave
 } from "./useChapterAutosave";
+import { studyEditShortcutLabels } from "./study-edit-shortcuts";
 import { useStudyCommands } from "./useStudyCommands";
+import { useStudyEditShortcuts } from "./useStudyEditShortcuts";
 
 export type StudyTab = "chapters" | "moves" | "notes";
 
@@ -156,7 +176,11 @@ export function RepertoireStudyPage({
       }))
     );
   const draft = loadedId ? chapter : null;
-  const [deletedLine, setDeletedLine] = useState<string | null>(null);
+  /** The line just deleted, with the undo step that brings it back (offered while it's the last). */
+  const [deletedLine, setDeletedLine] = useState<{
+    label: string;
+    step: RepertoireChapter | undefined;
+  } | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   /** The board's typed-move entry, opened from the button in the move navigation row. */
   const [typedMove, setTypedMove] = useState<TypedMoveControl | null>(null);
@@ -300,7 +324,27 @@ export function RepertoireStudyPage({
   });
   const onDeleteLine = useEventCallback((nodeId: string) => {
     const label = lookup ? pathLabel(lookup, nodeId) : "";
-    if (workspace().deleteLine(nodeId)) setDeletedLine(label);
+    if (workspace().deleteLine(nodeId)) {
+      setDeletedLine({ label, step: workspace().undoStack.at(-1) });
+    }
+  });
+  const promoteVariation = useEventCallback((nodeId: string) => {
+    workspace().promoteVariation(nodeId);
+  });
+  const lastUndo = useRepertoireWorkspaceStore((state) => state.undoStack.at(-1));
+  const canRedo = useRepertoireWorkspaceStore((state) => state.redoStack.length > 0);
+  const canPromote = useMemo(
+    () => Boolean(draft && promotionTarget(draft.tree, selectedNodeId)),
+    [draft, selectedNodeId]
+  );
+  const editLabels = studyEditShortcutLabels(isElectronMac());
+  useStudyEditShortcuts({
+    enabled: Boolean(draft),
+    onAction: (action) => {
+      if (action === "undo") workspace().undo();
+      else if (action === "redo") workspace().redo();
+      else workspace().promoteVariation(workspace().selectedNodeId);
+    }
   });
   const practiceChapter = useEventCallback(async () => {
     setLocalError(null);
@@ -587,7 +631,7 @@ export function RepertoireStudyPage({
           {commands.error ?? localError}
         </Notice>
       ) : null}
-      {deletedLine !== null ? (
+      {deletedLine !== null && deletedLine.step === lastUndo ? (
         <Notice
           tone="info"
           action={
@@ -609,7 +653,7 @@ export function RepertoireStudyPage({
             </div>
           }
         >
-          Deleted the line from {deletedLine}.
+          Deleted the line from {deletedLine.label}.
         </Notice>
       ) : null}
     </>
@@ -777,12 +821,57 @@ export function RepertoireStudyPage({
       {tab === "moves" ? (
         <div className="scroll-area -mr-3 flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-3">
           <section className="flex max-h-[45%] min-h-32 shrink-0 flex-col" aria-label="Moves">
+            <div
+              className="flex flex-wrap items-center justify-between gap-1 pb-1"
+              role="group"
+              aria-label="Edit the move tree"
+            >
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  disabled={!lastUndo}
+                  title={`Undo the last change to the moves or their training marks (${editLabels.undo.label})`}
+                  aria-keyshortcuts={editLabels.undo.aria}
+                  onClick={() => workspace().undo()}
+                >
+                  <Undo2 />
+                  Undo
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  disabled={!canRedo}
+                  title={`Redo (${editLabels.redo.label})`}
+                  aria-keyshortcuts={editLabels.redo.aria}
+                  onClick={() => workspace().redo()}
+                >
+                  <Redo2 />
+                  Redo
+                </Button>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                disabled={!canPromote}
+                title={`Move the selected variation up in this chapter's order, which PGN export writes as its main line (${editLabels.promote.label}). What practice expects stays as set under Choices.`}
+                aria-keyshortcuts={editLabels.promote.aria}
+                onClick={() => promoteVariation(node.id)}
+              >
+                <ArrowUpToLine />
+                Promote variation
+              </Button>
+            </div>
             <StudyTree
               key={chapterId}
               lookup={lookup}
               selectedNodeId={node.id}
               onSelectNode={selectNode}
               onDeleteLine={onDeleteLine}
+              onPromoteVariation={promoteVariation}
               emptyLabel="No moves yet — play the first move on the board."
               ariaLabel="Chapter moves"
             />

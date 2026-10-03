@@ -1389,6 +1389,45 @@ describe("repertoire service: import and export", () => {
       service.exportRepertoire({ repertoireId: id, chapterIds: ["nope"] })
     ).rejects.toThrow(/Invalid chapterIds/);
   });
+
+  it("exports a promoted variation as the main line without changing the preferred move", async () => {
+    const { id } = create();
+    const saved = save(id, [["e2e4", "e7e5"], ["d2d4"]], {
+      meta: (tree) =>
+        Object.fromEntries(
+          tree.filter((node) => node.parentId).map((node) => [node.id, { edge: "included" }])
+        )
+    });
+    expect(service.getDecision({ repertoireId: id, positionKey: START_KEY })).toMatchObject({
+      acceptedUcis: ["e2e4", "d2d4"],
+      preferredUci: "e2e4"
+    });
+    expect((await service.exportRepertoire({ repertoireId: id })).pgn).toContain(
+      "1. e4 (1. d4) 1... e5 *"
+    );
+
+    // Promoting 1. d4 reorders the root's moves (what Study's Promote variation saves).
+    const promoted = service.saveChapter({
+      repertoireId: id,
+      expectedRevision: saved.repertoire.revision,
+      chapter: {
+        ...saved.chapter,
+        tree: saved.chapter.tree.map((node) =>
+          node.id === "root" ? { ...node, children: [...node.children].reverse() } : node
+        )
+      }
+    });
+    expect(promoted.chapter.tree.find((node) => node.id === "root")!.children).toEqual(
+      [...saved.chapter.tree.find((node) => node.id === "root")!.children].reverse()
+    );
+    expect((await service.exportRepertoire({ repertoireId: id })).pgn).toContain(
+      "1. d4 (1. e4 e5) *"
+    );
+    // The trained answer is the decision's preference, not the authored order.
+    expect(service.getDecision({ repertoireId: id, positionKey: START_KEY })).toMatchObject({
+      preferredUci: "e2e4"
+    });
+  });
 });
 
 describe("repertoire service: practice", () => {
