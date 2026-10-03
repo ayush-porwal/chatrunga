@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { snapBoardSize } from "./board-frame";
+import { centringInsets, snapBoardSize } from "./board-frame";
 
 /** Chessground's own rounding (render.ts `updateBounds`), which the frame must agree with. */
 const chessgroundEdge = (width: number, ratio: number) => (Math.floor((width * ratio) / 8) * 8) / ratio;
@@ -41,5 +41,32 @@ describe("snapBoardSize", () => {
     expect(snapBoardSize(5, 2)).toBe(4);
     expect(snapBoardSize(400, 0)).toBe(0);
     expect(snapBoardSize(Number.NaN, 1)).toBe(0);
+  });
+});
+
+describe("centringInsets", () => {
+  const centre = (start: number, end: number, insets: { start: number; end: number }) => (start + insets.start + end - insets.end) / 2;
+
+  it("centres the workspace under the titlebar on the window", () => {
+    // 800px tall window: 54px titlebar, the panel 8px above the bottom edge (1px borders).
+    const insets = centringInsets(55, 791, 800);
+    expect(insets).toEqual({ start: 0, end: 46 });
+    expect(centre(55, 791, insets)).toBe(400);
+  });
+
+  it("keeps the longest centred span when a notice pushes the workspace further down", () => {
+    const insets = centringInsets(160.5, 791, 800);
+    expect(insets).toEqual({ start: 0, end: 791 - 639.5 });
+    expect(centre(160.5, 791, insets)).toBe(400);
+    // Mirrored: a span that reaches further before the centre than after it is trimmed at its start.
+    expect(centringInsets(0, 900, 1000)).toEqual({ start: 100, end: 0 });
+  });
+
+  it("changes nothing for a span already centred on the window", () => {
+    expect(centringInsets(30, 770, 800)).toEqual({ start: 0, end: 0 });
+  });
+
+  it("collapses to the centre line when the span doesn't reach it", () => {
+    expect(centringInsets(600, 900, 1000)).toEqual({ start: 0, end: 400 });
   });
 });

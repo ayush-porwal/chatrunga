@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { card, motion } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useBoardFocused } from "./board-focus";
-import { useSnappedBoardFrame } from "./useBoardFrame";
+import { useFocusCentring, useSnappedBoardFrame } from "./useBoardFrame";
 
 /*
  * The board workspace: ONE layout for every board screen (free board, Analysis, Game review,
@@ -25,7 +25,10 @@ import { useSnappedBoardFrame } from "./useBoardFrame";
  *
  * Focus mode (board-focus.ts): the panel column eases to 0 and the panel slides out with it —
  * it keeps its own width while the column clips it, so its text never re-wraps mid-animation.
- * The board cell grows into the space frame by frame (the board is sized from the cell).
+ * The board cell grows into the space frame by frame (the board is sized from the cell). The board
+ * square is centred on the window itself, with the sidebar rail and titlebar still showing: the
+ * workspace pads itself to a window-centred box (the rail's width across, a measured inset down —
+ * useFocusCentring) and evens out the eval column.
  *
  * Sizing (the `--workspace-*` variables in app.css, fluid from the 980px minimum to ultra-wide):
  * the panel grows with the window (320px → 34rem); padding and gap scale together; the board is
@@ -67,18 +70,42 @@ export function BoardWorkspace({
   const focused = useBoardFocused();
   const panelVisible = showPanel ?? !focused;
   const easing = useToggleEasing(panelVisible);
-  const { shown: evalBarShown } = useEvalBarPlacement();
+  const { shown: evalBarShown, right: evalBarRight } = useEvalBarPlacement();
+  // Focus mode centres the board square on the window (not on the content panel).
+  const centred = focused && !panelVisible;
+  const rootRef = useRef<HTMLDivElement>(null);
+  useFocusCentring(rootRef, centred);
   return (
     // Size container: the grid's width cap is computed from this box's height (cqh). With the eval
     // bar off, its column is gone from that cap too (and from the stage below).
-    <div className="h-full min-h-0 min-w-0 [container-type:size]" style={evalBarShown ? undefined : NO_EVAL_COLUMN}>
+    <div
+      ref={rootRef}
+      className={cn(
+        "h-full min-h-0 min-w-0 [container-type:size]",
+        easing && "transition-[padding] duration-emphasis ease-standard",
+        // Centred across: the content panel starts after the sidebar rail but ends only 0.5rem (its
+        // mr-2) short of the window's edge, so the difference pads the right; the eval column's width
+        // pads the side away from the bar, so the square itself (not square + bar) is centred. From
+        // the rail's own variable, not a measurement: it is already the rail's width while the sidebar
+        // eases shut, so this eases once to its final value with everything else.
+        centred &&
+          (evalBarRight
+            ? "pr-[calc(var(--sidebar-width)-0.5rem)] pl-(--workspace-eval)"
+            : "pr-[calc(var(--sidebar-width)-0.5rem+var(--workspace-eval))]")
+      )}
+      style={evalBarShown ? undefined : NO_EVAL_COLUMN}
+    >
       <div
         className={cn(
           "mx-auto grid h-full min-h-0 w-full min-w-0 p-(--workspace-pad)",
           // Same track count in both states, so the column, the gap and the cap ease together — like the
           // sidebar. Only while the panel is toggling: these sizes follow the window, and a transition
           // left on would make the board trail a live window resize.
-          easing && "transition-[grid-template-columns,column-gap,max-width] duration-emphasis ease-standard",
+          easing && "transition-[grid-template-columns,column-gap,max-width,padding] duration-emphasis ease-standard",
+          // Centred down (useFocusCentring): here rather than on the size container above, whose
+          // height the width cap is computed from — changing it mid-ease would restart that transition.
+          centred &&
+            "pt-[calc(var(--workspace-pad)+var(--centre-inset-top,0px))] pb-[calc(var(--workspace-pad)+var(--centre-inset-bottom,0px))]",
           panelVisible
             ? "max-w-[calc(var(--workspace-board)+var(--workspace-eval)+3*var(--workspace-pad)+var(--workspace-panel))] grid-cols-[minmax(0,1fr)_var(--workspace-panel)] gap-(--workspace-pad)"
             : "max-w-[calc(var(--workspace-board)+var(--workspace-eval)+2*var(--workspace-pad))] grid-cols-[minmax(0,1fr)_0px] gap-0"

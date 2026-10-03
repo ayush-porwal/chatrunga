@@ -1,5 +1,5 @@
 import { useLayoutEffect, type RefObject } from "react";
-import { snapBoardSize } from "./board-frame";
+import { centringInsets, snapBoardSize } from "./board-frame";
 
 /**
  * Sizes the board frame's content box (`--board-size` on `frameRef`) to whole-pixel squares
@@ -46,4 +46,36 @@ export function useSnappedBoardFrame(probeRef: RefObject<HTMLElement | null>, fr
       media?.removeEventListener("change", onRatioChange);
     };
   }, [probeRef, frameRef]);
+}
+
+/**
+ * While `active` (focus mode), keeps `--centre-inset-top` / `--centre-inset-bottom` on `rootRef` at
+ * the centringInsets of its top and bottom edges, so the workspace can pad its board cell to a span
+ * centred on the window, whatever the titlebar (window zoom) and a notice above the board take.
+ * Measured from the root's border box, which the insets never change (they pad a child), so
+ * applying them can't trigger another measurement. Cleared when inactive.
+ */
+export function useFocusCentring(rootRef: RefObject<HTMLElement | null>, active: boolean): void {
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root || !active) return;
+    const update = () => {
+      const { top, bottom } = root.getBoundingClientRect();
+      const insets = centringInsets(top, bottom, window.innerHeight);
+      root.style.setProperty("--centre-inset-top", `${insets.start}px`);
+      root.style.setProperty("--centre-inset-bottom", `${insets.end}px`);
+    };
+    update();
+    // The root resizes with the window and when a notice comes or goes; a window resize also moves
+    // the window's centre.
+    const observer = new ResizeObserver(update);
+    observer.observe(root, { box: "border-box" });
+    window.addEventListener("resize", update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+      root.style.removeProperty("--centre-inset-top");
+      root.style.removeProperty("--centre-inset-bottom");
+    };
+  }, [rootRef, active]);
 }
