@@ -165,6 +165,31 @@ export type FrozenPolicy = {
   progressAt?: number | null;
 };
 
+/**
+ * Rehearse-lines session state (kept in `card_state_json` beside the frozen policies). A line is
+ * identified by its end node (see chess/repertoire-rehearsal.ts).
+ */
+export type RehearsalState = {
+  chapterId: string;
+  fromNodeId: string;
+  /** The chapter revision the session was planned against; a change ends the session. */
+  chapterRevision: number;
+  maxDepthPlies: number;
+  /** End node of the line being played. */
+  lineEnd: string;
+  /** How many times each opponent reply (node id) was supplied in this session. */
+  seen: Record<string, number>;
+  /** End nodes of the lines completed or skipped; they are not planned again. */
+  finished: string[];
+  linesStarted: number;
+  linesCompleted: number;
+  /** End nodes of the lines in the order they first appeared (a line's number is its index + 1). */
+  lineOrder?: string[];
+};
+
+/** Key of the rehearsal state inside `card_state_json` (queue item ids never start with `$`). */
+const REHEARSAL_KEY = "$rehearsal";
+
 export type PracticeSessionRecord = {
   id: string;
   repertoireId: string;
@@ -173,6 +198,8 @@ export type PracticeSessionRecord = {
   snapshotRevision: number;
   cards: PracticeCard[];
   policies: Record<string, FrozenPolicy>;
+  /** Rehearse-lines only. */
+  rehearsal?: RehearsalState;
   cursor: number;
   status: "active" | "finished";
   createdAt: number;
@@ -387,15 +414,23 @@ function toProgress(row: ProgressRow): RepertoireProgress {
   };
 }
 
+function sessionMode(mode: string): PracticeMode {
+  return mode === "learn-new" || mode === "rehearse-lines" ? mode : "review-due";
+}
+
 function toSession(row: SessionRow): PracticeSessionRecord {
+  const { [REHEARSAL_KEY]: rehearsal, ...policies } = parseJson<
+    Record<string, FrozenPolicy> & { [REHEARSAL_KEY]?: RehearsalState }
+  >(row.card_state_json, {});
   return {
     id: row.id,
     repertoireId: row.repertoire_id,
-    mode: row.mode === "learn-new" ? "learn-new" : "review-due",
+    mode: sessionMode(row.mode),
     scope: parseJson<PracticeScope>(row.scope_json, { repertoireId: row.repertoire_id }),
     snapshotRevision: row.snapshot_revision,
     cards: parseJson<PracticeCard[]>(row.queue_json, []),
-    policies: parseJson<Record<string, FrozenPolicy>>(row.card_state_json, {}),
+    policies: policies as Record<string, FrozenPolicy>,
+    ...(rehearsal ? { rehearsal: rehearsal as RehearsalState } : {}),
     cursor: row.cursor,
     status: row.status === "finished" ? "finished" : "active",
     createdAt: row.created_at,
@@ -776,6 +811,18 @@ export const positionIndexRepository = {
     }));
   },
 
+  /** The chapters with an active occurrence of a position, in chapter order. */
+  activeChapterIds(repertoireId: string, positionKey: string): string[] {
+    return all<{ chapter_id: string }>(
+      `SELECT i.chapter_id FROM repertoire_position_index i
+        JOIN repertoire_chapters c ON c.id = i.chapter_id
+        WHERE i.repertoire_id = ? AND i.position_key = ? AND i.scope_state = 'active'
+        GROUP BY i.chapter_id ORDER BY MIN(c.sort_order), MIN(c.created_at), i.chapter_id`,
+      repertoireId,
+      positionKey
+    ).map((row) => row.chapter_id);
+  },
+
   /**
    * Every occurrence of a position in a repertoire, whatever its scope state, with its chapter's
    * title; ordered by chapter order, then ply, then node id.
@@ -806,6 +853,19 @@ export const sessionRepository = {
     return row ? toSession(row) : null;
   },
 
+  /** The most recently updated active session of a repertoire that isn't archived. */
+  lastActive(): { id: string; repertoireId: string; mode: PracticeMode } | null {
+    const row = get<{ id: string; repertoire_id: string; mode: string }>(
+      `SELECT s.id, s.repertoire_id, s.mode FROM repertoire_practice_sessions s
+        JOIN repertoires r ON r.id = s.repertoire_id
+        WHERE s.status = 'active' AND r.archived_at IS NULL
+        ORDER BY s.updated_at DESC, s.created_at DESC LIMIT 1`
+    );
+    return row
+      ? { id: row.id, repertoireId: row.repertoire_id, mode: sessionMode(row.mode) }
+      : null;
+  },
+
   /** Inserts or replaces a session's mutable state. */
   save(session: PracticeSessionRecord): void {
     run(
@@ -821,7 +881,11 @@ export const sessionRepository = {
       JSON.stringify(session.scope),
       session.snapshotRevision,
       JSON.stringify(session.cards),
-      JSON.stringify(session.policies),
+      JSON.stringify(
+        session.rehearsal
+          ? { ...session.policies, [REHEARSAL_KEY]: session.rehearsal }
+          : session.policies
+      ),
       session.cursor,
       session.status,
       session.createdAt,

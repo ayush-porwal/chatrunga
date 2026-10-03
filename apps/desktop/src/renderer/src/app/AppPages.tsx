@@ -3,7 +3,7 @@ import { Loader2 } from "lucide-react";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import type { Color } from "@chaturanga/shared/types/chess";
-import type { PracticePreset } from "../features/repertoire/practice-setup";
+import { rehearsePreset, type PracticePreset } from "../features/repertoire/practice-setup";
 import type { StudyOpenTarget, StudyStage } from "../features/repertoire/repertoire-chapters";
 import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
 import type { ReviewTab } from "../features/game-review/review-utils";
@@ -110,7 +110,11 @@ export type PageCommands = {
   repertoireStageApplied: () => void;
   openRepertoirePractice: (repertoireId: string) => void;
   reviewRepertoire: (repertoireId: string) => void;
+  /** "Resume practice": the unfinished session's route (it resumes there). */
+  resumeRepertoirePractice: (target: { repertoireId: string; sessionId: string }) => void;
   practiceRepertoireChapters: (repertoireId: string, chapterIds: string[]) => void;
+  /** A practice preset that starts on its own (line rehearsal: "Rehearse this chapter / again"). */
+  rehearseRepertoire: (repertoireId: string, preset: PracticePreset) => void;
   repertoireMissing: (message: string) => void;
   repertoireTabChange: (tab: StudyTab) => void;
   repertoirePositionChanged: () => void;
@@ -179,12 +183,14 @@ export function AppPages({
           onOpenEngineSettings={on.engineSettings}
           onRepertoireHub={on.repertoireHub}
           onRepertoireReview={on.reviewRepertoire}
+          onRepertoireResume={on.resumeRepertoirePractice}
           onRepertoireStudy={on.openRepertoireStudy}
         />
       ) : view === "repertoire-hub" ? (
         <RepertoireHubPage
           onStudy={on.openRepertoireStudy}
           onPractice={on.openRepertoirePractice}
+          onResume={on.resumeRepertoirePractice}
           onReview={on.reviewRepertoire}
         />
       ) : view === "repertoire-study" && repertoire?.view === "repertoire-study" ? (
@@ -201,6 +207,7 @@ export function AppPages({
             on.openRepertoireStudy({ repertoireId: repertoire.repertoireId, chapterId, nodeId })
           }
           onPractice={(chapterIds) => on.practiceRepertoireChapters(repertoire.repertoireId, chapterIds)}
+          onRehearse={(target) => on.rehearseRepertoire(repertoire.repertoireId, rehearsePreset(target))}
           onMissing={on.repertoireMissing}
           onPositionChanged={on.repertoirePositionChanged}
           onOpenGame={on.openGameAtNode}
@@ -217,6 +224,7 @@ export function AppPages({
           onStudy={({ chapterId, nodeId }) =>
             on.openRepertoireStudy({ repertoireId: repertoire.repertoireId, chapterId, nodeId })
           }
+          onRehearse={(preset) => on.rehearseRepertoire(repertoire.repertoireId, preset)}
         />
       ) : view === "settings" ? (
         <SettingsPage initialSection={settingsSection} onSectionChange={on.settingsSectionViewed} />

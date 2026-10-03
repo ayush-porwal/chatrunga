@@ -1,8 +1,13 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { GraduationCap, Loader2, Microscope, Swords } from "lucide-react";
+import { GraduationCap, Loader2, Microscope, Route, Swords } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
+import {
+  DEFAULT_REHEARSAL_DEPTH_PLIES,
+  canRehearseFrom,
+  rehearsalContext
+} from "@chaturanga/shared/chess/repertoire-rehearsal";
 import type { BoardArrow, BoardHighlight, Color } from "@chaturanga/shared/types/chess";
 import type { RepertoireChapterSummary } from "@chaturanga/shared/types/repertoire";
 import { Button } from "@/components/ui/button";
@@ -39,6 +44,7 @@ import {
   pathLabel,
   trainableDecisionCount
 } from "./repertoire-model";
+import type { RehearseTarget } from "./practice-setup";
 import { RepertoireMoveNavigation, useTreeKeyboardNavigation } from "./RepertoireMoveNavigation";
 import { NO_MOVES_TO_PLAY } from "./handoffs";
 import { StudyChaptersPanel } from "./StudyChaptersPanel";
@@ -75,6 +81,7 @@ export function RepertoireStudyPage({
   onTabChange,
   onOpenChapter,
   onPractice,
+  onRehearse,
   onMissing,
   onPositionChanged,
   onOpenGame,
@@ -94,6 +101,8 @@ export function RepertoireStudyPage({
   /** Opens a chapter (at a node: a transposition elsewhere); the open draft is saved first. */
   onOpenChapter: (chapterId: string, nodeId?: string | null) => void;
   onPractice: (chapterIds: string[]) => void;
+  /** Rehearse lines of this chapter, from its start or from a node (the draft is saved first). */
+  onRehearse?: (target: RehearseTarget) => void;
   onMissing: (message: string) => void;
   /** The selected node, tab or orientation changed (the current history entry follows). */
   onPositionChanged: () => void;
@@ -213,6 +222,14 @@ export function RepertoireStudyPage({
     () => (draft ? trainableDecisionCount(color, draft) : 0),
     [draft, color]
   );
+  // "Rehearse from here" is offered in training scope within the default depth limit only.
+  const rehearsal = useMemo(
+    () =>
+      draft && lookup && draft.enabled && draft.kind === "opening"
+        ? rehearsalContext(draft, color, DEFAULT_REHEARSAL_DEPTH_PLIES, lookup)
+        : null,
+    [draft, lookup, color]
+  );
 
   const selectNode = useEventCallback((nodeId: string) => workspace().selectNode(nodeId));
   useTreeKeyboardNavigation({
@@ -237,6 +254,14 @@ export function RepertoireStudyPage({
     setLocalError(null);
     if (await flush()) onPractice([chapterId]);
     else setLocalError("This chapter isn't saved yet — retry the save before practising.");
+  });
+
+  const rehearse = useEventCallback(async (fromNodeId: string | null) => {
+    if (!onRehearse) return;
+    setLocalError(null);
+    if (await flush()) {
+      onRehearse({ chapterId, ...(fromNodeId ? { fromNodeId } : {}) });
+    } else setLocalError("This chapter isn't saved yet — retry the save before rehearsing.");
   });
 
   const chapters: RepertoireChapterSummary[] = useMemo(() => {
@@ -481,7 +506,7 @@ export function RepertoireStudyPage({
             selectedNodeId={node.id}
             onSelect={selectNode}
           />
-          {/* Wraps in a narrow side panel: the three actions must never widen it (it would scroll sideways). */}
+          {/* Wraps in a narrow side panel: the four actions must never widen it (it would scroll sideways). */}
           <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-t border-line-subtle px-3 py-2">
             <p className="min-w-0 flex-1 basis-32 truncate text-2xs text-fg-subtle">
               Play a move on the board to add a variation.
@@ -517,6 +542,19 @@ export function RepertoireStudyPage({
                 >
                   <Swords />
                   Play from here
+                </Button>
+              ) : null}
+              {onRehearse ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  title="Play your moves along this chapter's lines, with the replies supplied"
+                  disabled={!draft.enabled || draft.kind !== "opening"}
+                  onClick={() => void rehearse(null)}
+                >
+                  <Route />
+                  Rehearse this chapter
                 </Button>
               ) : null}
               <Button
@@ -581,6 +619,11 @@ export function RepertoireStudyPage({
             otherOccurrences={otherOccurrences}
             onOpenOccurrence={(occurrence) =>
               onOpenChapter(occurrence.chapterId, occurrence.nodeId)
+            }
+            onRehearseFromHere={
+              onRehearse && rehearsal && canRehearseFrom(rehearsal, node.id)
+                ? () => void rehearse(node.id)
+                : undefined
             }
           />
         </div>

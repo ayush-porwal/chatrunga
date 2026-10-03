@@ -1,8 +1,19 @@
-import type {
-  PracticeMode,
-  RepertoireChapterSummary,
-  RepertoireDetail,
-  StartPracticeInput
+import { type ChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
+import {
+  DEFAULT_REHEARSAL_DEPTH_PLIES,
+  continuations,
+  isDecisionNode,
+  rehearsalContext
+} from "@chaturanga/shared/chess/repertoire-rehearsal";
+import {
+  REPERTOIRE_ROOT_NODE_ID,
+  type PracticeMode,
+  type PracticeScope,
+  type RepertoireChapter,
+  type RepertoireChapterSummary,
+  type RepertoireColor,
+  type RepertoireDetail,
+  type StartPracticeInput
 } from "@chaturanga/shared/types/repertoire";
 
 /** Pure rules of the practice setup form: defaults, the saved draft, and the main's limits. */
@@ -22,17 +33,68 @@ export function practicableChapterIds(
   );
 }
 
+/** The chapter (and optional branch) a line rehearsal plays. */
+export type RehearseTarget = NonNullable<PracticeScope["rehearse"]>;
+
 /**
  * What a practice screen opens with: chapters / mode to preselect ("Practice this chapter",
- * "Review due"), or a targeted queue of decisions (`positionKeys`, e.g. "Refresh this decision"
- * from a game's opening comparison) that starts on its own when `autoStart` is set.
+ * "Review due"), a targeted queue of decisions (`positionKeys`, e.g. "Refresh this decision"
+ * from a game's opening comparison), or a line rehearsal (`rehearse`, "Rehearse from here"). A
+ * targeted queue or a rehearsal starts on its own when `autoStart` is set.
  */
 export type PracticePreset = {
   chapterIds?: string[];
   mode?: PracticeMode;
   positionKeys?: string[];
+  rehearse?: RehearseTarget;
+  /** Rehearsal only: the depth limit to start with ("Rehearse again" keeps the session's). */
+  maxDepthPlies?: number;
   autoStart?: boolean;
 };
+
+/** The preset that rehearses `target` at once (Study's "Rehearse this chapter / from here"). */
+export function rehearsePreset(target: RehearseTarget, maxDepthPlies?: number): PracticePreset {
+  return {
+    mode: "rehearse-lines",
+    rehearse: {
+      chapterId: target.chapterId,
+      ...(target.fromNodeId ? { fromNodeId: target.fromNodeId } : {})
+    },
+    ...(maxDepthPlies ? { maxDepthPlies } : {}),
+    autoStart: true
+  };
+}
+
+/**
+ * Whether starting `input` saves it as the repertoire's practice setup draft: only a start from
+ * the setup form does. An auto-started preset (a targeted queue, a rehearsal from Study or the
+ * summary) is a one-off, so the next setup opens as the player left it.
+ */
+export function savesPracticeDraft(input: StartPracticeInput, fromPreset: boolean): boolean {
+  return !fromPreset && !input.positionKeys?.length;
+}
+
+/**
+ * The start input of an auto-started preset (a targeted queue or a line rehearsal), or null when
+ * the preset doesn't start on its own.
+ */
+export function autoStartPracticeInput(
+  repertoireId: string,
+  preset: PracticePreset | null
+): StartPracticeInput | null {
+  if (preset?.autoStart && preset.mode === "rehearse-lines" && preset.rehearse) {
+    const { rehearse } = rehearsePreset(preset.rehearse);
+    const depth =
+      preset.maxDepthPlies !== undefined ? clamp(preset.maxDepthPlies, 1, MAX_DEPTH_PLIES) : 0;
+    return {
+      repertoireId,
+      mode: "rehearse-lines",
+      rehearse,
+      ...(depth ? { maxDepthPlies: depth } : {})
+    };
+  }
+  return targetedPracticeInput(repertoireId, preset);
+}
 
 /**
  * The start input of an auto-started targeted preset, or null when the preset isn't one. Only
@@ -55,13 +117,20 @@ export function targetedPracticeInput(
   };
 }
 
-/** The preset "Practice again" keeps: a targeted queue isn't repeated (the setup opens instead). */
+/**
+ * The preset "Practice again" keeps: a targeted queue or a rehearsal isn't repeated (the setup
+ * opens instead, a rehearsal's chapter and branch preselected).
+ */
 export function presetForSetup(preset: PracticePreset | null): PracticePreset | null {
   if (!preset || (!preset.autoStart && !preset.positionKeys)) return preset;
-  const { chapterIds, mode } = preset;
-  return chapterIds || mode
-    ? { ...(chapterIds ? { chapterIds } : {}), ...(mode ? { mode } : {}) }
-    : null;
+  const { chapterIds, mode, rehearse, maxDepthPlies } = preset;
+  const kept: PracticePreset = {
+    ...(chapterIds ? { chapterIds } : {}),
+    ...(mode ? { mode } : {}),
+    ...(rehearse ? { rehearse } : {}),
+    ...(rehearse && maxDepthPlies ? { maxDepthPlies } : {})
+  };
+  return Object.keys(kept).length ? kept : null;
 }
 
 /**
@@ -86,16 +155,21 @@ export function initialPracticeInput(
   const merged: StartPracticeInput = {
     ...base,
     ...(preset?.chapterIds ? { chapterIds: preset.chapterIds } : {}),
-    ...(preset?.mode ? { mode: preset.mode } : {})
+    ...(preset?.mode ? { mode: preset.mode } : {}),
+    ...(preset?.rehearse ? { rehearse: preset.rehearse } : {}),
+    ...(preset?.rehearse && preset.maxDepthPlies ? { maxDepthPlies: preset.maxDepthPlies } : {})
   };
   const allowed = practicableChapterIds(detail.chapters);
-  const { chapterIds, ...rest } = merged;
+  const { chapterIds, rehearse, ...rest } = merged;
   // A targeted queue is never the setup's form (it starts on its own).
   delete rest.positionKeys;
   const kept = (chapterIds ?? []).filter((id) => allowed.has(id));
+  // A rehearsal of a chapter that is gone, disabled or reference falls back to the chapter picker.
+  const keptRehearse = rehearse && allowed.has(rehearse.chapterId) ? rehearse : null;
   return {
     ...rest,
     ...(kept.length ? { chapterIds: kept } : {}),
+    ...(keptRehearse ? { rehearse: keptRehearse } : {}),
     ...(rest.cardLimit !== undefined
       ? { cardLimit: clamp(rest.cardLimit, 1, MAX_CARD_LIMIT) }
       : {}),
@@ -119,7 +193,10 @@ export function boundedInt(value: string, min: number, max: number): number | un
   return Math.min(parsed, max);
 }
 
-/** The start input built from the form's fields, within the main process's limits. */
+/**
+ * The start input built from the form's fields, within the main process's limits. A rehearsal
+ * sends its chapter, optional branch and depth only: card limits don't apply to it.
+ */
 export function practiceInputFromForm(form: {
   repertoireId: string;
   mode: PracticeMode;
@@ -127,8 +204,26 @@ export function practiceInputFromForm(form: {
   depth: string;
   cards: string;
   fresh: string;
+  /** Rehearsal: the chapter, and the branch's node ("" or absent: the chapter start). */
+  rehearseChapterId?: string;
+  rehearseFromNodeId?: string;
 }): StartPracticeInput {
   const depth = boundedInt(form.depth, 1, MAX_DEPTH_PLIES);
+  if (form.mode === "rehearse-lines") {
+    return {
+      repertoireId: form.repertoireId,
+      mode: form.mode,
+      ...(form.rehearseChapterId
+        ? {
+            rehearse: {
+              chapterId: form.rehearseChapterId,
+              ...(form.rehearseFromNodeId ? { fromNodeId: form.rehearseFromNodeId } : {})
+            }
+          }
+        : {}),
+      ...(depth ? { maxDepthPlies: depth } : {})
+    };
+  }
   return {
     repertoireId: form.repertoireId,
     mode: form.mode,
@@ -137,4 +232,32 @@ export function practiceInputFromForm(form: {
     cardLimit: boundedInt(form.cards, 1, MAX_CARD_LIMIT) ?? DEFAULT_CARD_LIMIT,
     newCardLimit: boundedInt(form.fresh, 0, MAX_CARD_LIMIT) ?? 0
   };
+}
+
+/** How many branch starts the setup's picker lists before it says the rest are left out. */
+export const MAX_REHEARSE_STARTS = 200;
+
+export type RehearseStart = { nodeId: string; path: string };
+
+/**
+ * Where a rehearsal can start inside a chapter: positions in training scope where the player is
+ * to move and has a repertoire move within the depth limit, in authored order. The chapter start
+ * is the picker's default and isn't listed; `label` names a node's path ("1. e4 e5 2. Nf3").
+ */
+export function rehearseStarts(
+  chapter: Pick<RepertoireChapter, "kind" | "enabled" | "tree" | "nodeMeta">,
+  color: RepertoireColor,
+  label: (lookup: ChapterLookup, nodeId: string) => string,
+  limit = MAX_REHEARSE_STARTS,
+  maxDepthPlies = DEFAULT_REHEARSAL_DEPTH_PLIES
+): { starts: RehearseStart[]; truncated: boolean } {
+  const context = rehearsalContext(chapter, color, maxDepthPlies);
+  const starts: RehearseStart[] = [];
+  for (const id of context.lookup.order) {
+    if (id === REPERTOIRE_ROOT_NODE_ID || !isDecisionNode(context, id)) continue;
+    if (!continuations(context, id).children.length) continue;
+    if (starts.length >= limit) return { starts, truncated: true };
+    starts.push({ nodeId: id, path: label(context.lookup, id) });
+  }
+  return { starts, truncated: false };
 }

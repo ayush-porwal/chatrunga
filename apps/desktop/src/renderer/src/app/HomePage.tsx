@@ -19,7 +19,7 @@ import { useLatestGamesQuery } from "../queries/api";
 import { decidedResult } from "./game-title";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { RepertoireHomeCard } from "../features/repertoire/RepertoireHomeCard";
-import type { StudyTarget } from "../features/repertoire/repertoire-chapters";
+import type { ResumePracticeTarget, StudyTarget } from "../features/repertoire/repertoire-chapters";
 
 /** How many saved games the Recent list shows under the Continue card. */
 const RECENT_LIMIT = 6;
@@ -42,6 +42,7 @@ export const HomePage = memo(function HomePage({
   onOpenEngineSettings,
   onRepertoireHub,
   onRepertoireReview,
+  onRepertoireResume,
   onRepertoireStudy
 }: {
   desktopApiAvailable: boolean;
@@ -59,6 +60,7 @@ export const HomePage = memo(function HomePage({
   onOpenEngineSettings: () => void;
   onRepertoireHub: () => void;
   onRepertoireReview: (repertoireId: string) => void;
+  onRepertoireResume: (target: ResumePracticeTarget) => void;
   onRepertoireStudy: (target: StudyTarget) => void;
 }) {
   // The Continue card's game and the Recent list: only these are read, not the whole library.
@@ -81,7 +83,12 @@ export const HomePage = memo(function HomePage({
     <Page>
       <PageHeader title="Home" />
       {desktopApiAvailable ? (
-        <RepertoireHomeCard onHub={onRepertoireHub} onReview={onRepertoireReview} onStudy={onRepertoireStudy} />
+        <RepertoireHomeCard
+          onHub={onRepertoireHub}
+          onReview={onRepertoireReview}
+          onResume={onRepertoireResume}
+          onStudy={onRepertoireStudy}
+        />
       ) : null}
       {loading ? (
         <HomeSkeleton />

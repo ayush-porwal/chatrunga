@@ -73,7 +73,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { Color } from "@chaturanga/shared/types/chess";
 import type { StudyOpenTarget, StudyStage } from "../features/repertoire/repertoire-chapters";
 import type { OpeningSide } from "../features/game-review/opening-comparison";
-import { presetForSetup } from "../features/repertoire/practice-setup";
+import { presetForSetup, type PracticePreset } from "../features/repertoire/practice-setup";
 import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
 import { RepertoirePracticeTitlebar, RepertoireStudyTitlebar } from "../features/repertoire/RepertoireTitlebar";
 import { flushChapterDraft } from "../features/repertoire/useChapterAutosave";
@@ -1211,11 +1211,22 @@ export function App() {
         openRepertoirePractice(repertoireId, { preset: { mode: "review-due", chapterIds: [] } })
       )
     ),
+    resumeRepertoirePractice: useEventCallback(({ repertoireId, sessionId }: { repertoireId: string; sessionId: string }) =>
+      unlessRepertoireBlocked("resume-practice", () => void openRepertoirePractice(repertoireId, { sessionId }))
+    ),
     practiceRepertoireChapters: useEventCallback((repertoireId: string, chapterIds: string[]) =>
       unlessRepertoireBlocked(
         "open-practice",
         () => void openRepertoirePractice(repertoireId, { preset: { chapterIds } })
       )
+    ),
+    // "Rehearse this chapter / from here" (Study) and "Rehearse again" (a summary): the rehearsal
+    // starts at once, as a new step (Back returns to where it was asked for).
+    rehearseRepertoire: useEventCallback((repertoireId: string, preset: PracticePreset) =>
+      unlessRepertoireBlocked("open-practice", () => {
+        useRepertoirePracticeStore.getState().reset();
+        void openRepertoirePractice(repertoireId, { preset });
+      })
     ),
     // A chapter / repertoire gone since (deleted, or a stale history entry): the hub, with why.
     repertoireMissing: useEventCallback((message: string) => {

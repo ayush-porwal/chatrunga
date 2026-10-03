@@ -122,7 +122,12 @@ export type RepertoireProgress = {
 
 /* ------------------------------------------------------------------ practice */
 
-export type PracticeMode = "review-due" | "learn-new";
+/**
+ * `rehearse-lines` plays authored lines from a chapter (or a branch of it): the player makes their
+ * moves, the main process supplies the authored opponent replies with deterministic rotation, and
+ * nothing is scheduled (session results only, design §5.3).
+ */
+export type PracticeMode = "review-due" | "learn-new" | "rehearse-lines";
 
 export type PracticeScope = {
   repertoireId: string;
@@ -137,6 +142,8 @@ export type PracticeScope = {
    * for merely being queued.
    */
   positionKeys?: string[];
+  /** Rehearse-lines only: the chapter to rehearse, from its root or from `fromNodeId`. */
+  rehearse?: { chapterId: string; fromNodeId?: string };
 };
 
 export type StartPracticeInput = PracticeScope & { mode: PracticeMode };
@@ -165,6 +172,11 @@ export type PracticeCard = {
   /** 0 none; 1 prompt/hint text; 2 piece to move; 3 from/to squares. */
   hintStage: 0 | 1 | 2 | 3;
   attemptsSoFar: number;
+  /**
+   * Rehearse-lines only: which authored line this decision belongs to and how far along it is.
+   * `lineNumber` is the line's number in the session (lines are numbered by first appearance).
+   */
+  rehearsal?: { lineId: string; stepIndex: number; lineNumber?: number };
 };
 
 export type PracticeTotals = {
@@ -204,7 +216,12 @@ export type PracticeShown = {
   revealed: { ucis: string[]; preferredUci: string | null; explanation: string | null } | null;
 };
 
-export type PracticeAction = { kind: "hint" } | { kind: "reveal" } | { kind: "skip" };
+export type PracticeAction =
+  | { kind: "hint" }
+  | { kind: "reveal" }
+  | { kind: "skip" }
+  /** Rehearse-lines: after an `other-line` answer, continue along that other occurrence instead. */
+  | { kind: "follow-other-line" };
 
 export type PracticeActionInput = {
   sessionId: string;
@@ -221,12 +238,28 @@ export type RecordAttemptInput = {
   uci: string;
 };
 
+/** Rehearse-lines: what happened after an answer — the authored reply and the next decision. */
+export type RehearsalStep = {
+  /** The opponent's authored reply (null when the line ended on the player's move). */
+  reply: PracticeLeadUpMove | null;
+  /** The next decision on this line, or null when the line is complete. */
+  next: PracticeCard | null;
+  lineComplete: boolean;
+  /** Why the line ended, when it did. */
+  endReason: "stop" | "leaf" | "depth" | null;
+};
+
 export type AttemptResult = {
   /**
    * `stale`: the decision changed (or was graded by another session, or the repertoire was
    * archived) since the session froze it, so the card is skipped without a grade.
+   * `other-line` (rehearse-lines only): a legal move that is an accepted repertoire choice in another
+   * line; not a memory failure. The card stays current; the player may retry or follow it.
    */
-  outcome: "correct" | "outside-repertoire" | "illegal" | "already-final" | "stale";
+  outcome: "correct" | "outside-repertoire" | "illegal" | "already-final" | "stale" | "other-line";
+  /** For `other-line`: where that choice lives. */
+  otherLine?: { chapterId: string; chapterTitle: string; nodeId: string; path: string };
+  rehearsal?: RehearsalStep;
   /** Revealed only once the card's grade is final; empty before. */
   acceptedUcis: string[];
   preferredUci: string | null;
@@ -234,11 +267,17 @@ export type AttemptResult = {
   card: PracticeCard;
   /** This attempt fixed the card's scheduled grade. */
   finalGrade: boolean;
+  /** Rehearse-lines: the attempt found the session's chapter changed and ended the session. */
+  sessionEnded?: true;
 };
 
 export type PracticeActionResult = {
   card: PracticeCard;
+  /** Rehearse-lines: after a reveal or follow-other-line, the continuation of the line. */
+  rehearsal?: RehearsalStep;
   revealed?: { ucis: string[]; preferredUci: string | null; explanation: string | null };
+  /** True when the action found the session's chapter changed and ended the session instead. */
+  sessionEnded?: true;
 };
 
 export type PracticeSummary = {
@@ -251,6 +290,8 @@ export type PracticeSummary = {
   /** Ids of the chapters the session's cards came from. */
   chapters: string[];
   missedPositionKeys: string[];
+  /** Rehearse-lines only. */
+  rehearsal?: { linesStarted: number; linesCompleted: number; otherLineAnswers: number };
 };
 
 /* ------------------------------------------------------------------ import / export */
@@ -421,6 +462,8 @@ export type RepertoireDueSummary = {
   dueCount: number;
   repertoireCount: number;
   continue: { repertoireId: string; chapterId: string; nodeId: string } | null;
+  /** The most recently updated unfinished practice session of an active repertoire. */
+  resume: { repertoireId: string; sessionId: string; mode: PracticeMode } | null;
 };
 
 /* ------------------------------------------------------------------ add from a game (§6.2) */
@@ -607,7 +650,12 @@ export type RepertoireComparison = {
   /** null also when the game ends where a chapter begins (nothing judged; `chaptersUsed` names it). */
   issue: ComparisonIssue | null;
   /** Later positions the repertoire knows again, after the issue (context, not a second issue). */
-  returnedByTransposition: { ply: number; chapterId: string; chapterTitle: string; nodeId: string }[];
+  returnedByTransposition: {
+    ply: number;
+    chapterId: string;
+    chapterTitle: string;
+    nodeId: string;
+  }[];
   chaptersUsed: { chapterId: string; title: string }[];
 };
 

@@ -32,11 +32,13 @@ import {
   type PracticeActionInput,
   type PracticeActionResult,
   type PracticeCard,
+  type PracticeLeadUpMove,
   type PracticeSessionSnapshot,
   type PracticeSummary,
   type PracticeTotals,
   type PreviewImportInput,
   type RecordAttemptInput,
+  type RehearsalStep,
   type RemoveChapterInput,
   type RemoveRepertoireInput,
   type RepertoireChangedEvent,
@@ -96,6 +98,18 @@ import {
 } from "@chaturanga/shared/chess/repertoire-scheduler";
 import { compareGameToRepertoire } from "@chaturanga/shared/chess/repertoire-compare";
 import {
+  DEFAULT_REHEARSAL_DEPTH_PLIES,
+  continuations,
+  lineEnds,
+  isDecisionNode,
+  isPlayerNode,
+  lineIdOf,
+  nextOnRoute,
+  planRoute,
+  rehearsalContext,
+  type RehearsalContext
+} from "@chaturanga/shared/chess/repertoire-rehearsal";
+import {
   exportRepertoirePgn,
   formatPath,
   parseRepertoirePgn,
@@ -125,10 +139,12 @@ import {
   sessionRepository,
   transaction,
   workspaceRepository,
+  type AttemptKind,
   type AttemptRecord,
   type FrozenPolicy,
   type PositionIndexRow,
   type PracticeSessionRecord,
+  type RehearsalState,
   type RepertoireRecord,
   type StoredDecision
 } from "./repository";
@@ -449,11 +465,15 @@ export function compareGame(input: CompareGameInput): RepertoireComparison {
   return result;
 }
 
-/** Due decisions across active repertoires, and the most recent study place (Home card). */
+/**
+ * Due decisions across active repertoires, the most recent study place, and the practice session
+ * to resume (Home card and hub).
+ */
 export function getDueSummary(): RepertoireDueSummary {
   const now = clock();
   const totals = repertoireRepository.dueTotals(now);
   const place = repertoireRepository.lastStudyPlace();
+  const session = sessionRepository.lastActive();
   return {
     ...totals,
     continue: place
@@ -462,6 +482,9 @@ export function getDueSummary(): RepertoireDueSummary {
           chapterId: place.chapterId,
           nodeId: place.nodeId ?? REPERTOIRE_ROOT_NODE_ID
         }
+      : null,
+    resume: session
+      ? { repertoireId: session.repertoireId, sessionId: session.id, mode: session.mode }
       : null
   };
 }
@@ -1437,7 +1460,9 @@ export function linkGame(input: LinkGameInput): RepertoireGameLink {
     ) {
       throw new Error("Invalid chapterId: not found");
     }
-    const headers = libraryGameExists(input.gameId) ? gameRepository.getHeaders(input.gameId) : null;
+    const headers = libraryGameExists(input.gameId)
+      ? gameRepository.getHeaders(input.gameId)
+      : null;
     if (!headers) throw new Error("Invalid gameId: the game is not in the library");
     const tags = headerTags(headers);
 
@@ -1606,6 +1631,7 @@ export function startPractice(input: StartPracticeInput): PracticeSessionSnapsho
     if (record.archivedAt !== null) {
       throw new Error("Invalid practice: this repertoire is archived; restore it to practice");
     }
+    if (input.mode === "rehearse-lines") return startRehearsal(input, record, now);
     const chapters = chapterRepository.list(record.id);
     const known = new Map(chapters.map((chapter) => [chapter.id, chapter]));
     const scope = input.chapterIds ? new Set(input.chapterIds) : null;
@@ -1851,6 +1877,7 @@ export function recordAttempt(input: RecordAttemptInput): AttemptResult {
       return JSON.parse(prior.resultJson) as AttemptResult;
     }
     const session = requireActiveSession(input.sessionId);
+    if (session.mode === "rehearse-lines") return rehearsalAttempt(session, input);
     repertoireId = session.repertoireId;
     const index = cardIndex(session, input.queueItemId);
     const card = { ...session.cards[index] };
@@ -1943,6 +1970,7 @@ export function recordPracticeAction(input: PracticeActionInput): PracticeAction
   let repertoireId = "";
   const result = transaction((): PracticeActionResult => {
     const session = requireActiveSession(input.sessionId);
+    if (session.mode === "rehearse-lines") return rehearsalAction(session, input);
     repertoireId = session.repertoireId;
     const index = cardIndex(session, input.queueItemId);
     const card = { ...session.cards[index] };
@@ -1950,6 +1978,9 @@ export function recordPracticeAction(input: PracticeActionInput): PracticeAction
     const now = Math.max(clock(), attemptRepository.lastAt(session.id) ?? -Infinity);
     const history = attemptRepository.list(session.id, card.queueItemId);
     const kind = input.action.kind;
+    if (kind === "follow-other-line") {
+      throw new Error("Invalid action: follow-other-line is only for rehearse-lines");
+    }
     const persist = (isFinalGrade: boolean, outcome: PracticeOutcome | null) =>
       attemptRepository.insert({
         attemptId: nanoid(),
@@ -2016,9 +2047,635 @@ export function recordPracticeAction(input: PracticeActionInput): PracticeAction
   return result;
 }
 
+/* ------------------------------------------------------------------ practice: rehearse lines */
+
+/** Marker stored in an attempt row's `outcome` for an answer from another line (not a miss). */
+const OTHER_LINE = "other-line";
+
+type Rehearsal = {
+  state: RehearsalState;
+  chapter: RepertoireChapter;
+  context: RehearsalContext;
+  color: RepertoireColor;
+};
+
+/**
+ * The session's chapter prepared for rehearsal, or null when the session can't continue: the
+ * repertoire was archived, or the chapter was removed, disabled or edited since it was planned.
+ */
+function loadRehearsal(session: PracticeSessionRecord): Rehearsal | null {
+  const current = currentRehearsal(session);
+  if (!current) return null;
+  const { state, chapter, color } = current;
+  return { state, chapter, context: rehearsalContext(chapter, color, state.maxDepthPlies), color };
+}
+
+/**
+ * The rehearsal's chapter and colour while it can continue (the repertoire is active and the
+ * chapter unchanged, enabled and an opening chapter), without indexing it; else null.
+ */
+function currentRehearsal(
+  session: PracticeSessionRecord
+): Pick<Rehearsal, "state" | "chapter" | "color"> | null {
+  const state = session.rehearsal;
+  if (!state) return null;
+  const record = repertoireRepository.get(session.repertoireId);
+  if (!record || record.archivedAt !== null) return null;
+  const chapter = chapterRepository.get(state.chapterId);
+  if (
+    !chapter ||
+    chapter.revision !== state.chapterRevision ||
+    !chapter.enabled ||
+    chapter.kind !== "opening"
+  ) {
+    return null;
+  }
+  return { state, chapter, color: record.color };
+}
+
+/** Ends a session that can't continue: every unanswered card is skipped ungraded. */
+function finishStale(session: PracticeSessionRecord): void {
+  session.cards = session.cards.map((card) =>
+    card.state === "unanswered" ? { ...card, state: "skipped" } : card
+  );
+  session.status = "finished";
+}
+
+function leadUpMove(node: MoveNode): PracticeLeadUpMove {
+  return { san: node.san ?? "", uci: node.uci ?? "", fen: node.fenAfter };
+}
+
+/**
+ * Appends the decision at `nodeId` on the current line as the session's current card. Its frozen
+ * policy accepts exactly the line's own move there (other accepted choices are `other-line`).
+ */
+function pushRehearsalCard(
+  session: PracticeSessionRecord,
+  rehearsal: Rehearsal,
+  nodeId: string,
+  stepIndex: number
+): PracticeCard {
+  const { lookup } = rehearsal.context;
+  const node = lookup.nodesById.get(nodeId)!;
+  const key = lookup.positionKeys.get(nodeId)!;
+  const move = nextOnRoute(lookup, nodeId, rehearsal.state.lineEnd)!;
+  const decision = decisionRepository.get(session.repertoireId, key);
+  const queueItemId = `q${session.cards.length + 1}`;
+  const card: PracticeCard = {
+    queueItemId,
+    positionKey: key,
+    fen: node.fenAfter,
+    orientation: rehearsal.color,
+    leadUp: lookup.parentPath
+      .get(nodeId)!
+      .slice(1)
+      .map((id) => leadUpMove(lookup.nodesById.get(id)!)),
+    chapterId: rehearsal.chapter.id,
+    nodeId,
+    prompt: decision?.prompt ?? null,
+    stage: progressRepository.get(session.repertoireId, key) ? "review" : "new",
+    state: "unanswered",
+    hintStage: 0,
+    attemptsSoFar: 0,
+    rehearsal: {
+      lineId: lineIdOf(rehearsal.state.lineEnd),
+      stepIndex,
+      lineNumber: lineNumberOf(rehearsal.state, rehearsal.state.lineEnd)
+    }
+  };
+  session.cards.push(card);
+  session.policies[queueItemId] = {
+    acceptedUcis: [move.uci!],
+    preferredUci: move.uci!,
+    fingerprint: acceptanceFingerprint([move.uci!]),
+    hint: decision?.hint ?? null,
+    wrongMoveFeedback: decision?.wrongMoveFeedback ?? {},
+    explanation: node.comment ?? null
+  };
+  session.cursor = session.cards.length - 1;
+  return card;
+}
+
+/** End nodes of the lines from the session's start node that are neither completed nor skipped. */
+function pendingLines(rehearsal: Rehearsal): Set<string> {
+  const finished = new Set(rehearsal.state.finished);
+  return new Set(
+    lineEnds(rehearsal.context, rehearsal.state.fromNodeId).filter(
+      (endNodeId) => !finished.has(endNodeId)
+    )
+  );
+}
+
+function countSeen(state: RehearsalState, nodeId: string): void {
+  state.seen[nodeId] = (state.seen[nodeId] ?? 0) + 1;
+}
+
+/**
+ * The session's number of the line ending at `endNodeId`: lines are numbered by first appearance,
+ * so a line planned again keeps its number and a different line gets a new one.
+ */
+function lineNumberOf(state: RehearsalState, endNodeId: string): number {
+  const order = (state.lineOrder ??= []);
+  if (!order.includes(endNodeId)) order.push(endNodeId);
+  return order.indexOf(endNodeId) + 1;
+}
+
+/** Makes the line ending at `endNodeId` the one being played, and counts it as started. */
+function startLine(state: RehearsalState, endNodeId: string): void {
+  state.lineEnd = endNodeId;
+  state.linesStarted += 1;
+  lineNumberOf(state, endNodeId);
+}
+
+/**
+ * Plans the next pending line from the start node and appends its first decision. The moves before
+ * it (lead-up above a "Start training here" marker, an opening opponent reply) are played
+ * automatically and show in that card's lead-up. With no line left the session is finished and
+ * null is returned.
+ */
+function startNextLine(session: PracticeSessionRecord, rehearsal: Rehearsal): PracticeCard | null {
+  const { state, context } = rehearsal;
+  const pending = pendingLines(rehearsal);
+  if (!pending.size) {
+    session.status = "finished";
+    return null;
+  }
+  const plan = planRoute(context, state.fromNodeId, pending, state.seen, new Set(state.finished));
+  startLine(state, plan.endNodeId);
+  // A pending line always has a decision before its end, so this stops on the line.
+  let index = 0;
+  while (index < plan.nodeIds.length - 1 && !isDecisionNode(context, plan.nodeIds[index])) {
+    index += 1;
+    if (!isPlayerNode(context, plan.nodeIds[index - 1])) countSeen(state, plan.nodeIds[index]);
+  }
+  return pushRehearsalCard(session, rehearsal, plan.nodeIds[index], 0);
+}
+
+/** Marks the current line finished; a line already finished this session isn't counted again. */
+function finishLine(state: RehearsalState, completed: boolean): void {
+  if (state.finished.includes(state.lineEnd)) return;
+  state.finished.push(state.lineEnd);
+  if (completed) state.linesCompleted += 1;
+}
+
+/**
+ * Continues the current line from `reachedId`, the node the player's move (or a revealed or
+ * followed move) led to: supplies the authored reply on the line and appends the next decision,
+ * or completes the line and starts the next one.
+ */
+function continueLine(
+  session: PracticeSessionRecord,
+  rehearsal: Rehearsal,
+  reachedId: string,
+  stepIndex: number
+): RehearsalStep {
+  const { state, context } = rehearsal;
+  const complete = (reply: PracticeLeadUpMove | null): RehearsalStep => {
+    const endReason = continuations(context, state.lineEnd).end ?? "leaf";
+    finishLine(state, true);
+    return { reply, next: startNextLine(session, rehearsal), lineComplete: true, endReason };
+  };
+  if (reachedId === state.lineEnd) return complete(null);
+  const replyNode = nextOnRoute(context.lookup, reachedId, state.lineEnd)!;
+  countSeen(state, replyNode.id);
+  const reply = leadUpMove(replyNode);
+  if (replyNode.id === state.lineEnd) return complete(reply);
+  const next = pushRehearsalCard(session, rehearsal, replyNode.id, stepIndex + 1);
+  return { reply, next, lineComplete: false, endReason: null };
+}
+
+/**
+ * Where an accepted choice that isn't this line's move lives: the first active occurrence of the
+ * card's position with an active included child playing `uci`. Its own node comes first, then the
+ * occurrences inside the session's branch whose move is within the depth limit, then the rest of
+ * its chapter, then the other enabled opening chapters in order. Index links are only looked up,
+ * never followed: only the chapters the position index has the position active in are read, and
+ * one that can't be read is passed over.
+ */
+function findOtherLine(
+  session: PracticeSessionRecord,
+  rehearsal: Rehearsal,
+  card: PracticeCard,
+  uci: string
+): NonNullable<AttemptResult["otherLine"]> | null {
+  const others = function* () {
+    for (const chapterId of positionIndexRepository.activeChapterIds(
+      session.repertoireId,
+      card.positionKey
+    )) {
+      if (chapterId === rehearsal.chapter.id) continue;
+      let chapter: RepertoireChapter | null = null;
+      try {
+        chapter = chapterRepository.get(chapterId);
+      } catch {
+        // A damaged chapter offers no line; the rehearsed one is intact.
+      }
+      if (chapter) yield chapter;
+    }
+  };
+  for (const chapter of [rehearsal.chapter, ...others()]) {
+    if (!chapter.enabled || chapter.kind !== "opening") continue;
+    const own = chapter === rehearsal.chapter;
+    const lookup = own ? rehearsal.context.lookup : buildChapterLookup(chapter);
+    const states = own ? rehearsal.context.states : computeScopeStates(chapter, lookup);
+    const nodeIds = own ? ownOccurrenceOrder(rehearsal, card.nodeId) : lookup.order;
+    for (const id of nodeIds) {
+      if (lookup.positionKeys.get(id) !== card.positionKey || states.get(id) !== "active") {
+        continue;
+      }
+      for (const childId of lookup.childrenById.get(id) ?? []) {
+        const child = lookup.nodesById.get(childId)!;
+        if (
+          child.uci !== uci ||
+          states.get(childId) !== "active" ||
+          nodeMetaOf(chapter.nodeMeta, childId).edge !== "included"
+        ) {
+          continue;
+        }
+        const path = lookup.parentPath
+          .get(childId)!
+          .slice(1)
+          .map((nodeId) => lookup.nodesById.get(nodeId)!);
+        return {
+          chapterId: chapter.id,
+          chapterTitle: chapter.title,
+          nodeId: childId,
+          path: formatPath(path)
+        };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * The rehearsed chapter's nodes in the order findOtherLine looks at them: `nodeId`, then the nodes
+ * inside the session's branch whose next move is within the depth limit, then the rest.
+ */
+function ownOccurrenceOrder(rehearsal: Rehearsal, nodeId: string): string[] {
+  const { lookup, rootPly, maxDepthPlies } = rehearsal.context;
+  const { fromNodeId } = rehearsal.state;
+  const branch = new Set<string>();
+  const stack = [fromNodeId];
+  while (stack.length) {
+    const id = stack.pop()!;
+    branch.add(id);
+    stack.push(...(lookup.childrenById.get(id) ?? []));
+  }
+  const preferred: string[] = [];
+  const rest: string[] = [];
+  for (const id of lookup.order) {
+    if (id === nodeId) continue;
+    const inBranch = branch.has(id) && lookup.nodesById.get(id)!.ply + 1 - rootPly <= maxDepthPlies;
+    (inBranch ? preferred : rest).push(id);
+  }
+  return [nodeId, ...preferred, ...rest];
+}
+
+/** A card's actions that count towards its first-answer grade (other-line answers don't). */
+function gradedHistory(history: readonly AttemptRecord[]): PracticeHistoryAction[] {
+  return history.filter((attempt) => attempt.outcome !== OTHER_LINE).map(historyAction);
+}
+
+/**
+ * Starts a rehearsal of one chapter from its root or `rehearse.fromNodeId`. The queue grows as
+ * lines are played: the first card is the first decision of the first planned line. A disabled or
+ * reference chapter is refused; a valid start node with no line to play gives an empty, finished
+ * session.
+ */
+function startRehearsal(
+  input: StartPracticeInput,
+  record: RepertoireRecord,
+  now: number
+): PracticeSessionSnapshot {
+  const target = input.rehearse;
+  if (!target?.chapterId) {
+    throw new Error("Invalid rehearse: chapterId is required for rehearse-lines");
+  }
+  const chapter = chapterRepository.get(target.chapterId);
+  if (!chapter || chapterRepository.ownerOf(chapter.id)?.repertoireId !== record.id) {
+    throw new Error("Invalid rehearse.chapterId: not found");
+  }
+  if (!chapter.enabled || chapter.kind !== "opening") {
+    throw new Error("Invalid rehearse: this chapter has nothing to rehearse");
+  }
+  const fromNodeId = target.fromNodeId ?? REPERTOIRE_ROOT_NODE_ID;
+  const maxDepthPlies = input.maxDepthPlies ?? DEFAULT_REHEARSAL_DEPTH_PLIES;
+  const context = rehearsalContext(chapter, record.color, maxDepthPlies);
+  if (!context.lookup.parentPath.get(fromNodeId)) {
+    throw new Error("Invalid rehearse.fromNodeId: not in this chapter");
+  }
+  const state: RehearsalState = {
+    chapterId: chapter.id,
+    fromNodeId,
+    chapterRevision: chapter.revision,
+    maxDepthPlies,
+    lineEnd: fromNodeId,
+    seen: {},
+    finished: [],
+    linesStarted: 0,
+    linesCompleted: 0,
+    lineOrder: []
+  };
+  const session: PracticeSessionRecord = {
+    id: nanoid(),
+    repertoireId: record.id,
+    mode: "rehearse-lines",
+    scope: {
+      repertoireId: record.id,
+      ...(input.maxDepthPlies !== undefined ? { maxDepthPlies: input.maxDepthPlies } : {}),
+      rehearse: {
+        chapterId: chapter.id,
+        ...(target.fromNodeId !== undefined ? { fromNodeId: target.fromNodeId } : {})
+      }
+    },
+    snapshotRevision: record.revision,
+    cards: [],
+    policies: {},
+    rehearsal: state,
+    cursor: 0,
+    status: "active",
+    createdAt: now,
+    updatedAt: now
+  };
+  startNextLine(session, { state, chapter, context, color: record.color });
+  sessionRepository.save(session);
+  return snapshotOf(session);
+}
+
+/**
+ * Rehearsal grading (§5.3). Only the current card can be answered. The line's own move is
+ * correct: the first legal answer fixes the session grade (never progress), and the line goes on
+ * with the next authored reply and decision. Another accepted choice at this position is
+ * `other-line`: not a miss, the card stays open. Anything else is outside the repertoire: the card
+ * stays current for retries. A changed chapter ends the session (`stale`).
+ */
+function rehearsalAttempt(
+  session: PracticeSessionRecord,
+  input: RecordAttemptInput
+): AttemptResult {
+  const index = cardIndex(session, input.queueItemId);
+  const card = { ...session.cards[index] };
+  const policy = session.policies[card.queueItemId];
+  const now = Math.max(clock(), attemptRepository.lastAt(session.id) ?? -Infinity);
+  const history = attemptRepository.list(session.id, card.queueItemId);
+  const uci = normalizeUci(card.fen, input.uci);
+  const legal = fenAfterMove(card.fen, uci) !== null;
+  const correct = legal && uci === policy.acceptedUcis[0];
+  const open =
+    index === session.cursor && (card.state === "unanswered" || card.state === "answered-wrong");
+
+  let outcome: AttemptResult["outcome"];
+  let finalGrade = false;
+  let recorded: string | null = null;
+  let otherLine: AttemptResult["otherLine"] | null = null;
+  let step: RehearsalStep | undefined;
+  const rehearsal = open && legal ? loadRehearsal(session) : null;
+  if (!open) {
+    outcome = "already-final";
+  } else if (!legal) {
+    outcome = "illegal";
+  } else if (!rehearsal) {
+    outcome = "stale";
+    finishStale(session);
+    if (card.state === "unanswered") card.state = "skipped";
+  } else if (correct) {
+    outcome = "correct";
+    card.attemptsSoFar += 1;
+    if (card.state === "unanswered") {
+      recorded = firstAnswerOutcome([
+        ...gradedHistory(history),
+        { kind: "attempt", legal: true, correct: true }
+      ]);
+      finalGrade = true;
+      card.state = "answered-correct";
+    }
+    session.cards[index] = card;
+    const child = nextOnRoute(rehearsal.context.lookup, card.nodeId, rehearsal.state.lineEnd)!;
+    step = continueLine(session, rehearsal, child.id, card.rehearsal?.stepIndex ?? 0);
+  } else if ((otherLine = findOtherLine(session, rehearsal, card, uci))) {
+    outcome = "other-line";
+    card.attemptsSoFar += 1;
+    recorded = OTHER_LINE;
+  } else {
+    outcome = "outside-repertoire";
+    card.attemptsSoFar += 1;
+    if (card.state === "unanswered") {
+      recorded = firstAnswerOutcome([
+        ...gradedHistory(history),
+        { kind: "attempt", legal: true, correct: false }
+      ]);
+      finalGrade = true;
+      card.state = "answered-wrong";
+    }
+  }
+
+  // A stale answer reveals nothing: the line it was checked against is no longer the chapter's.
+  const revealed =
+    outcome !== "stale" && (card.state === "answered-wrong" ? correct : gradeIsFinal(card));
+  const result: AttemptResult = {
+    outcome,
+    ...(otherLine ? { otherLine } : {}),
+    ...(step ? { rehearsal: step } : {}),
+    acceptedUcis: revealed ? policy.acceptedUcis : [],
+    preferredUci: revealed ? policy.preferredUci : null,
+    feedback: outcome === "outside-repertoire" ? (policy.wrongMoveFeedback[uci] ?? null) : null,
+    card,
+    finalGrade,
+    // Also on a card being retried (still answered-wrong): the session is over either way.
+    ...(outcome === "stale" ? { sessionEnded: true as const } : {})
+  };
+  attemptRepository.insert({
+    attemptId: input.attemptId,
+    sessionId: session.id,
+    queueItemId: card.queueItemId,
+    sequence: (history.at(-1)?.sequence ?? 0) + 1,
+    kind: "attempt",
+    uci,
+    legal,
+    correct,
+    isFinalGrade: finalGrade,
+    outcome: recorded,
+    positionKey: card.positionKey,
+    fingerprint: policy.fingerprint,
+    resultJson: JSON.stringify(result),
+    at: now
+  });
+  session.cards[index] = card;
+  session.updatedAt = now;
+  sessionRepository.save(session);
+  return result;
+}
+
+/**
+ * Rehearsal actions on the current card. Hints work as in the other modes. Reveal misses an
+ * unanswered card, then plays the line's move and continues. Skip abandons the current line (not
+ * completed) and starts the next one. Follow-other-line, right after an `other-line` answer,
+ * switches to that occurrence (same chapter only) and continues from it. A reveal, skip or follow
+ * of a card the line has already left (a retry after a lost response) returns the card unchanged.
+ */
+function rehearsalAction(
+  session: PracticeSessionRecord,
+  input: PracticeActionInput
+): PracticeActionResult {
+  const index = cardIndex(session, input.queueItemId);
+  const kind = input.action.kind;
+  if (index !== session.cursor) {
+    // A retry after a lost response: the line already moved on, so the card is returned as it is.
+    const settled = session.cards[index];
+    const policy = session.policies[settled.queueItemId];
+    if (kind === "reveal") {
+      return {
+        card: settled,
+        revealed: {
+          ucis: policy.acceptedUcis,
+          preferredUci: policy.preferredUci,
+          explanation: policy.explanation ?? policy.hint
+        }
+      };
+    }
+    if (kind === "skip" || kind === "follow-other-line") return { card: settled };
+    throw new Error("Invalid queueItemId: not the current card of this rehearsal");
+  }
+  const card = { ...session.cards[index] };
+  const policy = session.policies[card.queueItemId];
+  const now = Math.max(clock(), attemptRepository.lastAt(session.id) ?? -Infinity);
+  const history = attemptRepository.list(session.id, card.queueItemId);
+  const persist = (
+    attemptKind: AttemptKind,
+    isFinalGrade: boolean,
+    outcome: string | null,
+    correct = false
+  ) =>
+    attemptRepository.insert({
+      attemptId: nanoid(),
+      sessionId: session.id,
+      queueItemId: card.queueItemId,
+      sequence: (history.at(-1)?.sequence ?? 0) + 1,
+      kind: attemptKind,
+      uci: null,
+      legal: true,
+      correct,
+      isFinalGrade,
+      outcome,
+      positionKey: card.positionKey,
+      fingerprint: policy.fingerprint,
+      resultJson: null,
+      at: now
+    });
+  const save = (result: PracticeActionResult): PracticeActionResult => {
+    session.updatedAt = now;
+    sessionRepository.save(session);
+    return result;
+  };
+  const revealed = {
+    ucis: policy.acceptedUcis,
+    preferredUci: policy.preferredUci,
+    explanation: policy.explanation ?? policy.hint
+  };
+
+  if (kind === "hint") {
+    // A changed chapter ends the rehearsal before a hint is given (or recorded) on its old card.
+    if (!currentRehearsal(session)) {
+      finishStale(session);
+      return save({ card: session.cards[index], sessionEnded: true });
+    }
+    persist("hint", false, null);
+    card.hintStage = Math.min(card.hintStage + 1, 3) as PracticeCard["hintStage"];
+    session.cards[index] = card;
+    return save({
+      card,
+      revealed: {
+        ucis: [],
+        preferredUci: card.hintStage >= 2 ? policy.preferredUci : null,
+        explanation: policy.hint
+      }
+    });
+  }
+
+  const open = card.state === "unanswered" || card.state === "answered-wrong";
+  const lastAction = history.at(-1);
+  if (
+    kind === "follow-other-line" &&
+    (!open || lastAction?.outcome !== OTHER_LINE || !lastAction.resultJson)
+  ) {
+    throw new Error("Invalid action: follow-other-line needs an answer from another line first");
+  }
+  if (!open) return kind === "reveal" ? { card, revealed } : { card };
+
+  const rehearsal = loadRehearsal(session);
+  if (!rehearsal) {
+    if (kind !== "follow-other-line") persist(kind, false, null);
+    finishStale(session);
+    const skipped = session.cards[index];
+    return save(kind === "reveal" ? { card: skipped, revealed } : { card: skipped });
+  }
+  const stepIndex = card.rehearsal?.stepIndex ?? 0;
+
+  if (kind === "reveal") {
+    if (card.state === "unanswered") {
+      persist("reveal", true, firstAnswerOutcome([...gradedHistory(history), { kind: "reveal" }]));
+      card.state = "revealed";
+    } else {
+      persist("reveal", false, null);
+    }
+    session.cards[index] = card;
+    const child = nextOnRoute(rehearsal.context.lookup, card.nodeId, rehearsal.state.lineEnd)!;
+    const step = continueLine(session, rehearsal, child.id, stepIndex);
+    return save({ card, rehearsal: step, revealed });
+  }
+
+  if (kind === "skip") {
+    persist("skip", false, card.state === "unanswered" ? "no-change" : null);
+    if (card.state === "unanswered") card.state = "skipped";
+    session.cards[index] = card;
+    finishLine(rehearsal.state, false);
+    const next = startNextLine(session, rehearsal);
+    return save({ card, rehearsal: { reply: null, next, lineComplete: false, endReason: null } });
+  }
+
+  const other = (JSON.parse(lastAction!.resultJson!) as AttemptResult).otherLine;
+  if (!other) {
+    throw new Error("Invalid action: follow-other-line needs an answer from another line first");
+  }
+  if (other.chapterId !== rehearsal.chapter.id) {
+    throw new Error("Invalid action: that line is in another chapter; rehearse it from there");
+  }
+  // A followed answer is a correct recall of the player's own choice (unaided unless a hint was
+  // taken first): its final row keeps the summary in step with the live "Correct" count. Nothing
+  // is scheduled in a rehearsal.
+  const unanswered = card.state === "unanswered";
+  persist(
+    "attempt",
+    unanswered,
+    unanswered
+      ? firstAnswerOutcome([
+          ...gradedHistory(history),
+          { kind: "attempt", legal: true, correct: true }
+        ])
+      : null,
+    true
+  );
+  if (unanswered) card.state = "answered-correct";
+  session.cards[index] = card;
+  // Following starts a new line from that occurrence; a line already finished this session is
+  // only replayed when nothing else is left below it (and isn't counted again).
+  const plan = planRoute(
+    rehearsal.context,
+    other.nodeId,
+    pendingLines(rehearsal),
+    rehearsal.state.seen,
+    new Set(rehearsal.state.finished)
+  );
+  startLine(rehearsal.state, plan.endNodeId);
+  const step = continueLine(session, rehearsal, other.nodeId, stepIndex);
+  return save({ card, rehearsal: step });
+}
+
 /**
  * Reopens a session. When the repertoire changed since the session froze its policies, unanswered
- * cards that are no longer current (see stillCurrent) are dropped as skipped.
+ * cards that are no longer current (see stillCurrent) are dropped as skipped. A rehearsal keeps
+ * its queue, cursor and line; if its chapter changed, the session is finished instead.
  */
 export function resumePractice(sessionId: string): PracticeSessionSnapshot {
   const now = clock();
@@ -2026,7 +2683,13 @@ export function resumePractice(sessionId: string): PracticeSessionSnapshot {
     const session = requireSession(sessionId);
     if (session.status === "finished") return snapshotOf(session);
     const record = requireRepertoire(session.repertoireId);
-    if (record.revision !== session.snapshotRevision) {
+    if (record.revision !== session.snapshotRevision && session.mode === "rehearse-lines") {
+      // A rehearsal is planned against one chapter revision: a changed chapter ends it.
+      if (!loadRehearsal(session)) finishStale(session);
+      session.snapshotRevision = record.revision;
+      session.updatedAt = now;
+      sessionRepository.save(session);
+    } else if (record.revision !== session.snapshotRevision) {
       session.cards = session.cards.map((card) =>
         card.state === "unanswered" &&
         !stillCurrent(record.id, card.positionKey, session.policies[card.queueItemId])
@@ -2065,14 +2728,25 @@ export function endPractice(sessionId: string): PracticeSummary {
       assisted: countOf("assisted"),
       missed: countOf("wrong", "reveal"),
       skipped: session.cards.filter((card) => card.state === "skipped").length,
-      chapters: [...new Set(session.cards.map((card) => card.chapterId))],
+      chapters: session.rehearsal
+        ? [session.rehearsal.chapterId]
+        : [...new Set(session.cards.map((card) => card.chapterId))],
       missedPositionKeys: [
         ...new Set(
           finals
             .filter((attempt) => attempt.outcome === "wrong" || attempt.outcome === "reveal")
             .map((attempt) => attempt.positionKey)
         )
-      ]
+      ],
+      ...(session.rehearsal
+        ? {
+            rehearsal: {
+              linesStarted: session.rehearsal.linesStarted,
+              linesCompleted: session.rehearsal.linesCompleted,
+              otherLineAnswers: attempts.filter((attempt) => attempt.outcome === OTHER_LINE).length
+            }
+          }
+        : {})
     };
   });
 }

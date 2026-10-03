@@ -1,5 +1,15 @@
 import { useMemo } from "react";
-import { Ban, BookOpen, Check, CircleSlash, Flag, Repeat, Star, StopCircle } from "lucide-react";
+import {
+  Ban,
+  BookOpen,
+  Check,
+  CircleSlash,
+  Flag,
+  Repeat,
+  Route,
+  Star,
+  StopCircle
+} from "lucide-react";
 import { nodeMetaOf, type ChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import type {
   RepertoireChapter,
@@ -57,7 +67,8 @@ export function StudyChoicesPanel({
   onSetMeta,
   onSelectNode,
   otherOccurrences,
-  onOpenOccurrence
+  onOpenOccurrence,
+  onRehearseFromHere
 }: {
   chapter: RepertoireChapter;
   lookup: ChapterLookup;
@@ -72,6 +83,8 @@ export function StudyChoicesPanel({
   /** Where this position is reached in the repertoire's other chapters. */
   otherOccurrences: readonly RepertoireOccurrence[];
   onOpenOccurrence: (occurrence: RepertoireOccurrence) => void;
+  /** "Rehearse from here": line rehearsal starting at the selected move (absent: unavailable). */
+  onRehearseFromHere?: () => void;
 }) {
   const choices = useMemo(
     () => deriveChoices(chapter, lookup, selectedNodeId, color, decision),
@@ -165,6 +178,7 @@ export function StudyChoicesPanel({
           color={color}
           nodeId={selectedNodeId}
           onSetMeta={onSetMeta}
+          onRehearseFromHere={onRehearseFromHere}
         />
       )}
     </div>
@@ -299,12 +313,14 @@ function BoundaryControls({
   chapter,
   color,
   nodeId,
-  onSetMeta
+  onSetMeta,
+  onRehearseFromHere
 }: {
   chapter: RepertoireChapter;
   color: RepertoireColor;
   nodeId: string;
   onSetMeta: (nodeId: string, patch: Partial<RepertoireNodeMeta>) => void;
+  onRehearseFromHere?: () => void;
 }) {
   const meta = nodeMetaOf(chapter.nodeMeta, nodeId);
   const toggles = useMemo(() => {
@@ -368,6 +384,18 @@ function BoundaryControls({
             </span>
           </Button>
         ))}
+        {onRehearseFromHere ? (
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            title="Play your moves along this branch, with the replies supplied"
+            onClick={onRehearseFromHere}
+          >
+            <Route aria-hidden="true" />
+            Rehearse from here
+          </Button>
+        ) : null}
       </div>
     </section>
   );

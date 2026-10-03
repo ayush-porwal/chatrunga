@@ -96,7 +96,12 @@ function requireRepertoires(): ChaturangaApi["repertoires"] {
   return api;
 }
 
-const EMPTY_DUE: RepertoireDueSummary = { dueCount: 0, repertoireCount: 0, continue: null };
+const EMPTY_DUE: RepertoireDueSummary = {
+  dueCount: 0,
+  repertoireCount: 0,
+  continue: null,
+  resume: null
+};
 
 /** Re-reads the hub lists and the due summary (last studied, where to continue, due counts). */
 export function invalidateSummaries(queryClient: QueryClient) {
@@ -388,9 +393,12 @@ export function useSaveRepertoireWorkspaceMutation() {
 }
 
 export function useStartPracticeMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: StartPracticeInput) => requireRepertoires().startPractice(input),
-    retry: false
+    retry: false,
+    // Home and the hub offer the new session's "Resume practice".
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: repertoireKeys.due })
   });
 }
 
