@@ -2475,7 +2475,28 @@ describe("repertoire service: rehearse lines", () => {
       queueItemId: "q2",
       action: { kind: "hint" }
     });
-    expect(result).toEqual({ card: expect.objectContaining({ state: "skipped", hintStage: 0 }) });
+    expect(result).toEqual({
+      card: expect.objectContaining({ state: "skipped", hintStage: 0 }),
+      sessionEnded: true
+    });
+    expect(service.resumePractice(session.sessionId).status).toBe("finished");
+  });
+
+  it("a hint on a card being retried after the chapter changed also ends the session", () => {
+    const { id, chapter } = setup();
+    const session = rehearse(id, chapter.id);
+    attempt(session.sessionId, "q1", "e2e4");
+    attempt(session.sessionId, "q2", "h2h3");
+    save(id, [...LINES, ["c2c4"]]);
+    const result = service.recordPracticeAction({
+      sessionId: session.sessionId,
+      queueItemId: "q2",
+      action: { kind: "hint" }
+    });
+    expect(result).toEqual({
+      card: expect.objectContaining({ state: "answered-wrong", hintStage: 0 }),
+      sessionEnded: true
+    });
     expect(service.resumePractice(session.sessionId).status).toBe("finished");
   });
 });

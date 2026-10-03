@@ -274,6 +274,8 @@ export type PracticeActionResult = {
   /** Rehearse-lines: after a reveal or follow-other-line, the continuation of the line. */
   rehearsal?: RehearsalStep;
   revealed?: { ucis: string[]; preferredUci: string | null; explanation: string | null };
+  /** True when the action found the session's chapter changed and ended the session instead. */
+  sessionEnded?: true;
 };
 
 export type PracticeSummary = {

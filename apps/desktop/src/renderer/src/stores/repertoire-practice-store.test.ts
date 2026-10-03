@@ -126,6 +126,19 @@ describe("repertoire practice store", () => {
     expect(store().message?.tone).toBe("info");
   });
 
+  it("a hint that found the chapter changed ends the session without showing a hint", () => {
+    store().setSession(session());
+    store().applyAction("hint", {
+      card: cardOf("a", { state: "answered-wrong" }),
+      sessionEnded: true
+    });
+    expect(store().session!.status).toBe("finished");
+    expect(store().hint).toBeNull();
+    expect(store().message?.text).toBe(
+      "This chapter changed since the session started, so the session ended."
+    );
+  });
+
   it("shows hint stages, reveals and skips from the main process's results", () => {
     store().setSession(session());
     store().applyAction("hint", {

@@ -2574,7 +2574,7 @@ function rehearsalAction(
     // A changed chapter ends the rehearsal before a hint is given (or recorded) on its old card.
     if (!currentRehearsal(session)) {
       finishStale(session);
-      return save({ card: session.cards[index] });
+      return save({ card: session.cards[index], sessionEnded: true });
     }
     persist("hint", false, null);
     card.hintStage = Math.min(card.hintStage + 1, 3) as PracticeCard["hintStage"];

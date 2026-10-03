@@ -308,12 +308,13 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
       });
       return;
     }
-    if (kind === "hint" && result.card.state === "skipped") {
+    if (kind === "hint" && result.sessionEnded) {
+      // No hint was given: the session is over (the page moves on to its summary).
       set({
-        session: next,
+        session: { ...next, status: "finished" },
         message: {
           tone: "info",
-          text: "This line changed since the session started, so the card was skipped."
+          text: "This chapter changed since the session started, so the session ended."
         }
       });
     } else if (kind === "hint") {
