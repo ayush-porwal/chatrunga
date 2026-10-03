@@ -45,7 +45,10 @@ export const usePuzzleExplanationStore = create<{ entries: Record<string, Explai
 export type ExplainDeps = {
   analysePositions: (input: AnalysePositionsInput) => Promise<AnalysePositionsResult>;
   explainPuzzle: (input: ExplainPuzzleInput) => Promise<ExplainPuzzleResult>;
-  cancel: (requestId: string) => void;
+  /** Stops the engine search of a request (only while it runs: main keeps a cancel until then). */
+  cancelSearch: (requestId: string) => void;
+  /** Stops the provider call of a request. */
+  cancelWriting: (requestId: string) => void;
   newId: () => string;
 };
 
@@ -86,10 +89,8 @@ function desktopDeps(): ExplainDeps | null {
   return {
     analysePositions: (input) => api.engines.analysePositions(input),
     explainPuzzle: (input) => api.commentary.explainPuzzle(input),
-    cancel: (requestId) => {
-      void api.engines.cancelReview(requestId).catch(() => undefined);
-      void api.commentary.cancelPuzzleExplanation(requestId).catch(() => undefined);
-    },
+    cancelSearch: (requestId) => void api.engines.cancelReview(requestId).catch(() => undefined),
+    cancelWriting: (requestId) => void api.commentary.cancelPuzzleExplanation(requestId).catch(() => undefined),
     newId: () => crypto.randomUUID()
   };
 }
@@ -114,7 +115,12 @@ export async function requestPuzzleExplanation(request: ExplainRequest, deps: Ex
   }
   watchActivePuzzle();
   const requestId = deps.newId();
-  setEntry(key, { ...base, phase: "analysing", requestId, cancel: () => deps.cancel(requestId) });
+  // Each phase cancels what it runs: the search while analysing, then the provider call.
+  const cancel = () => {
+    if (usePuzzleExplanationStore.getState().entries[key]?.phase === "analysing") deps.cancelSearch(requestId);
+    else deps.cancelWriting(requestId);
+  };
+  setEntry(key, { ...base, phase: "analysing", requestId, cancel });
   const fail = (error: string) => patchEntry(key, requestId, { phase: "error", requestId: null, error, cancel: null });
 
   const plan = explainSearchPlan(puzzle, request.wrong, request.settings.reviewMultiPv);

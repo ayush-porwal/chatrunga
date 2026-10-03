@@ -250,6 +250,50 @@ describe("EngineManager", () => {
   });
 });
 
+describe("EngineManager review cancels", () => {
+  it("keeps a running job's cancel until it finishes", () => {
+    const manager = new EngineManager();
+    manager.trackReview("r1", true);
+    manager.cancelReview("r1");
+    expect(manager.isReviewCancelled("r1")).toBe(true);
+    manager.trackReview("r1", false);
+    manager.clearReviewCancellation("r1");
+    expect(manager.isReviewCancelled("r1")).toBe(false);
+  });
+
+  it("keeps a cancel that arrives before its job starts", () => {
+    const manager = new EngineManager();
+    manager.cancelReview("early");
+    manager.trackReview("early", true);
+    expect(manager.isReviewCancelled("early")).toBe(true);
+    manager.clearReviewCancellation("early");
+    expect(manager.isReviewCancelled("early")).toBe(false);
+  });
+
+  it("forgets the oldest cancels of jobs that aren't running, so late ones don't pile up", () => {
+    const manager = new EngineManager();
+    manager.trackReview("running", true);
+    manager.cancelReview("running");
+    for (let index = 0; index < 100; index += 1) manager.cancelReview(`finished-${index}`);
+    expect(manager.isReviewCancelled("finished-0")).toBe(false);
+    expect(manager.isReviewCancelled("finished-83")).toBe(false);
+    expect(manager.isReviewCancelled("finished-84")).toBe(true);
+    expect(manager.isReviewCancelled("finished-99")).toBe(true);
+    // A running job's cancel is never dropped for them.
+    expect(manager.isReviewCancelled("running")).toBe(true);
+  });
+
+  it("cancelling everything cancels only what's running", () => {
+    const manager = new EngineManager();
+    manager.trackReview("a", true);
+    manager.trackReview("b", true);
+    manager.trackReview("b", false);
+    manager.cancelAllReviews();
+    expect(manager.isReviewCancelled("a")).toBe(true);
+    expect(manager.isReviewCancelled("b")).toBe(false);
+  });
+});
+
 describe("continuesGame", () => {
   it("is true only for the same start with earlier moves unchanged", () => {
     expect(continuesGame({ fen: START, moves: ["e2e4"] }, { fen: START, moves: ["e2e4", "e7e5", "g1f3"] })).toBe(true);

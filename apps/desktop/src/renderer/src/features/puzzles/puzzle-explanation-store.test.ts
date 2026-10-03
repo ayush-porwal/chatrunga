@@ -67,7 +67,8 @@ function fakeDeps() {
       answers.push(next);
       return next.promise;
     }),
-    cancel: vi.fn(),
+    cancelSearch: vi.fn(),
+    cancelWriting: vi.fn(),
     newId: () => `r${++id}`
   } satisfies ExplainDeps;
   return { deps, searches, answers };
@@ -119,7 +120,8 @@ describe("requestPuzzleExplanation", () => {
     usePuzzleStore.getState().setActivePuzzle(puzzle);
     const running = requestPuzzleExplanation(request, deps);
     usePuzzleStore.getState().setActivePuzzle({ ...puzzle, id: "p2" });
-    expect(deps.cancel).toHaveBeenCalledWith("r1");
+    expect(deps.cancelSearch).toHaveBeenCalledWith("r1");
+    expect(deps.cancelWriting).not.toHaveBeenCalled();
     expect(entry()).toBeUndefined();
 
     searches[0]!.resolve(analysis);
@@ -134,7 +136,7 @@ describe("requestPuzzleExplanation", () => {
     usePuzzleStore.getState().setActivePuzzle(puzzle);
     void requestPuzzleExplanation(request, deps);
     usePuzzleStore.getState().setActivePuzzle(other);
-    expect(deps.cancel).toHaveBeenCalledWith("r1");
+    expect(deps.cancelSearch).toHaveBeenCalledWith("r1");
     expect(entry()).toBeUndefined();
 
     const otherRequest = { ...request, puzzle: other, key: explanationKey(other, "solved", null) };
@@ -148,6 +150,19 @@ describe("requestPuzzleExplanation", () => {
     expect(entry()).toBeUndefined();
   });
 
+  it("once the search is done, moving on cancels only the provider call (main has no search to stop)", async () => {
+    const { deps, searches } = fakeDeps();
+    usePuzzleStore.getState().setActivePuzzle(puzzle);
+    void requestPuzzleExplanation(request, deps);
+    searches[0]!.resolve(analysis);
+    await flush();
+    expect(entry()?.phase).toBe("writing");
+    usePuzzleStore.getState().setActivePuzzle({ ...puzzle, id: "p2" });
+    expect(deps.cancelWriting).toHaveBeenCalledWith("r1");
+    expect(deps.cancelSearch).not.toHaveBeenCalled();
+    expect(entry()).toBeUndefined();
+  });
+
   it("keeps finished explanations and the current puzzle's request when cancelling", async () => {
     const { deps } = fakeDeps();
     usePuzzleExplanationStore.setState({
@@ -157,7 +172,7 @@ describe("requestPuzzleExplanation", () => {
     });
     void requestPuzzleExplanation(request, deps);
     cancelPuzzleExplanations(puzzleIdentity(puzzle));
-    expect(deps.cancel).not.toHaveBeenCalled();
+    expect(deps.cancelSearch).not.toHaveBeenCalled();
     expect(entry("old:solved")?.phase).toBe("ready");
     expect(entry()?.phase).toBe("analysing");
   });
