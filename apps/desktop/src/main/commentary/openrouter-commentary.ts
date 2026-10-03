@@ -1,13 +1,20 @@
 import { reviewInsightPayloadSchema, type ReviewInsightPayload } from "@chaturanga/shared/schemas";
+import { puzzleInsightPayloadSchema, type PuzzleInsightPayload } from "@chaturanga/shared/schemas/puzzle-insight";
 import {
   COACH_SYSTEM_PROMPT,
   buildRetryMessage,
   buildUserMessage,
   maxTokensForDetail,
   validateProse,
+  type CommentaryValidationFailure,
   type CommentaryValidationResult
 } from "@chaturanga/shared/llm/commentary";
-import type { ReviewCommentary } from "@chaturanga/shared/types/engine";
+import {
+  PUZZLE_COACH_SYSTEM_PROMPT,
+  buildPuzzleUserMessage,
+  validatePuzzleProse
+} from "@chaturanga/shared/llm/puzzle-explanation";
+import type { PuzzleExplanation, ReviewCommentary } from "@chaturanga/shared/types/engine";
 import { DEFAULT_COMMENTARY_MODEL } from "@chaturanga/shared/llm/models";
 
 const OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
@@ -109,6 +116,9 @@ class CommentaryFailure extends Error {
   }
 }
 
+/** The caller cancelled the request (the user moved on); not a failure to show or count. */
+class CommentaryCancelled extends Error {}
+
 function httpFailure(status: number): CommentaryFailure {
   if (status === 401 || status === 403) {
     return new CommentaryFailure("OpenRouter rejected the API key. Check it in Settings → Commentary.", "invalid_key", status);
@@ -162,11 +172,12 @@ export async function generateOpenRouterCommentary(
     const trace: AttemptTrace = { attempts: 0, firstAttemptValid: false };
     report({ type: "request", ply });
     try {
-      const result = await generateOne(payload, apiKey, model, fetchImpl, options.timeoutMs ?? DEFAULT_TIMEOUT_MS, {
+      const check = await generateOne(reviewTask(payload), apiKey, model, fetchImpl, options.timeoutMs ?? DEFAULT_TIMEOUT_MS, {
         trace,
         monotonic,
         report
       });
+      const result = accepted(payload, model, check);
       report({
         type: "outcome",
         ply,
@@ -251,30 +262,57 @@ function accepted(
   };
 }
 
+/**
+ * One coach request: the system and user turns, how to check an answer against the facts, the
+ * correction for the single retry, and how the analytics copy is redacted.
+ */
+type CoachTask = {
+  ply: number;
+  messages: ChatMessage[];
+  maxTokens: number;
+  validate: (raw: string) => CommentaryValidationResult;
+  retryMessage: (failure: CommentaryValidationFailure) => string;
+  redact: (text: string) => string;
+};
+
+function reviewTask(payload: ReviewInsightPayload): CoachTask {
+  return {
+    ply: payload.game.ply,
+    messages: [
+      { role: "system", content: COACH_SYSTEM_PROMPT },
+      { role: "user", content: buildUserMessage(payload) }
+    ],
+    maxTokens: maxTokensForDetail(payload.commentaryDetail),
+    validate: (raw) => validateProse(raw, payload),
+    retryMessage: (failure) => buildRetryMessage(failure, payload),
+    redact: analyticsRedactor(payload)
+  };
+}
+
 async function generateOne(
-  payload: ReviewInsightPayload,
+  task: CoachTask,
   apiKey: string,
   model: string,
   fetchImpl: FetchLike,
   timeoutMs: number,
-  instrumentation: Instrumentation
-): Promise<Omit<ReviewCommentary, "generatedAt">> {
+  instrumentation: Instrumentation,
+  signal?: AbortSignal
+): Promise<Extract<CommentaryValidationResult, { ok: true }>> {
   const { trace, monotonic, report } = instrumentation;
-  const ply = payload.game.ply;
-  const redact = analyticsRedactor(payload);
+  const { ply, redact } = task;
   /** One HTTP attempt, reported with its latency, outcome and (when known) usage. */
   const attempt = async (reason: "initial" | "validation_retry", messages: ChatMessage[], temperature: number) => {
     trace.attempts += 1;
     const startedAt = monotonic();
-    const request = { messages, temperature, maxTokens: maxTokensForDetail(payload.commentaryDetail) };
+    const request = { messages, temperature, maxTokens: task.maxTokens };
     const reported = {
       ...request,
       messages: messages.map((message) => ({ role: message.role, content: redact(message.content) }))
     };
     const base = { type: "attempt" as const, ply, attempt: trace.attempts, reason, request: reported };
     try {
-      const answer = await requestCompletion(apiKey, model, request, fetchImpl, timeoutMs);
-      const check = validateProse(answer.content, payload);
+      const answer = await requestCompletion(apiKey, model, request, fetchImpl, timeoutMs, signal);
+      const check = task.validate(answer.content);
       report({
         ...base,
         result: check.ok ? "accepted" : "validation_failed",
@@ -285,6 +323,7 @@ async function generateOne(
       });
       return { content: answer.content, check };
     } catch (error) {
+      if (error instanceof CommentaryCancelled) throw error;
       const known = error instanceof CommentaryFailure ? error : null;
       report({
         ...base,
@@ -298,24 +337,20 @@ async function generateOne(
     }
   };
 
-  const messages: ChatMessage[] = [
-    { role: "system", content: COACH_SYSTEM_PROMPT },
-    { role: "user", content: buildUserMessage(payload) }
-  ];
-  const first = await attempt("initial", messages, 0.7);
+  const first = await attempt("initial", task.messages, 0.7);
   if (first.check.ok) {
     trace.firstAttemptValid = true;
-    return accepted(payload, model, first.check);
+    return first.check;
   }
 
   // One retry that tells the model exactly what was wrong with its answer.
   const retry: ChatMessage[] = [
-    ...messages,
+    ...task.messages,
     { role: "assistant", content: first.content },
-    { role: "user", content: buildRetryMessage(first.check, payload) }
+    { role: "user", content: task.retryMessage(first.check) }
   ];
   const second = await attempt("validation_retry", retry, 0.3);
-  if (second.check.ok) return accepted(payload, model, second.check);
+  if (second.check.ok) return second.check;
   throw new CommentaryFailure(INVALID_ANSWER_ERROR, "validation_failed");
 }
 
@@ -324,14 +359,18 @@ async function requestCompletion(
   model: string,
   request: { messages: readonly ChatMessage[]; temperature: number; maxTokens: number },
   fetchImpl: FetchLike,
-  timeoutMs: number
+  timeoutMs: number,
+  signal?: AbortSignal
 ): Promise<{ content: string; usage: CommentaryUsage | null }> {
+  if (signal?.aborted) throw new CommentaryCancelled();
   const controller = new AbortController();
   let timedOut = false;
   const timeout = setTimeout(() => {
     timedOut = true;
     controller.abort();
   }, timeoutMs);
+  const cancel = () => controller.abort();
+  signal?.addEventListener("abort", cancel, { once: true });
   try {
     const response = await fetchImpl(OPENROUTER_ENDPOINT, {
       method: "POST",
@@ -360,11 +399,13 @@ async function requestCompletion(
     }
     return { content: content.trim(), usage: parseUsage(body.usage) };
   } catch (error) {
+    if (signal?.aborted) throw new CommentaryCancelled();
     if (timedOut) throw new CommentaryFailure(TIMEOUT_ERROR, "timeout");
     if (error instanceof CommentaryFailure) throw error;
     throw new CommentaryFailure(UNREACHABLE_ERROR, "network");
   } finally {
     clearTimeout(timeout);
+    signal?.removeEventListener("abort", cancel);
   }
 }
 
@@ -404,4 +445,65 @@ async function mapWithConcurrency<T, R>(
 /** Validate at the main-process boundary before any provider call. */
 export function parseCommentaryPayloads(input: unknown): ReviewInsightPayload[] {
   return reviewInsightPayloadSchema.array().min(1).max(600).parse(input);
+}
+
+export type PuzzleExplanationResult = {
+  explanation: PuzzleExplanation | null;
+  /** A safe, user-facing status (as for review commentary); null when it worked or was cancelled. */
+  error: string | null;
+  /** `signal` aborted it before an answer was accepted. */
+  cancelled?: boolean;
+};
+
+/**
+ * Explains one finished puzzle (see packages/shared/src/llm/puzzle-explanation.ts): one request,
+ * validated against the puzzle's facts, with the same single corrective retry as review
+ * commentary. `signal` cancels it (the user moved on to another puzzle). Not reported to usage
+ * analytics.
+ */
+export async function explainPuzzleWithOpenRouter(
+  payload: PuzzleInsightPayload,
+  options: Omit<OpenRouterCommentaryOptions, "report"> & { signal?: AbortSignal }
+): Promise<PuzzleExplanationResult> {
+  const apiKey = options.apiKey?.trim();
+  if (!apiKey) return { explanation: null, error: NO_API_KEY_ERROR };
+  const model = options.model?.trim() || DEFAULT_COMMENTARY_MODEL;
+  const task: CoachTask = {
+    ply: 0,
+    messages: [
+      { role: "system", content: PUZZLE_COACH_SYSTEM_PROMPT },
+      { role: "user", content: buildPuzzleUserMessage(payload) }
+    ],
+    maxTokens: maxTokensForDetail(payload.commentaryDetail),
+    validate: (raw) => validatePuzzleProse(raw, payload),
+    retryMessage: (failure) => buildRetryMessage(failure, payload),
+    redact: (text) => text
+  };
+  const instrumentation: Instrumentation = {
+    trace: { attempts: 0, firstAttemptValid: false },
+    monotonic: options.monotonic ?? (() => performance.now()),
+    report: () => undefined
+  };
+  try {
+    const fetchImpl = options.fetchImpl ?? fetch;
+    const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const check = await generateOne(task, apiKey, model, fetchImpl, timeoutMs, instrumentation, options.signal);
+    return {
+      explanation: {
+        prose: check.prose,
+        ...(check.headline ? { headline: check.headline } : {}),
+        providerModel: model,
+        generatedAt: (options.now ?? Date.now)()
+      },
+      error: null
+    };
+  } catch (failure) {
+    if (failure instanceof CommentaryCancelled) return { explanation: null, error: null, cancelled: true };
+    return { explanation: null, error: failure instanceof CommentaryFailure ? failure.message : UNREACHABLE_ERROR };
+  }
+}
+
+/** Validate a puzzle explanation request at the main-process boundary before any provider call. */
+export function parsePuzzleExplanationPayload(input: unknown): PuzzleInsightPayload {
+  return puzzleInsightPayloadSchema.parse(input);
 }

@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { reviewInsightPayloadSchema, type ReviewInsightPayload } from "@chaturanga/shared/schemas";
-import { NO_API_KEY_ERROR, generateOpenRouterCommentary, parseCommentaryPayloads } from "./openrouter-commentary";
+import type { PuzzleInsightPayload } from "@chaturanga/shared/schemas/puzzle-insight";
+import {
+  NO_API_KEY_ERROR,
+  explainPuzzleWithOpenRouter,
+  generateOpenRouterCommentary,
+  parseCommentaryPayloads,
+  parsePuzzleExplanationPayload
+} from "./openrouter-commentary";
 
 function payload(): ReviewInsightPayload {
   return reviewInsightPayloadSchema.parse({
@@ -166,5 +173,84 @@ describe("generateOpenRouterCommentary", () => {
   it("validates the renderer batch before making a provider call", () => {
     expect(() => parseCommentaryPayloads([])).toThrow();
     expect(parseCommentaryPayloads([payload()])).toHaveLength(1);
+  });
+});
+
+const PUZZLE_START = "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4";
+
+/** Scholar's mate as a solved puzzle (4.Qxf7#). */
+function puzzlePayload(): PuzzleInsightPayload {
+  return parsePuzzleExplanationPayload({
+    schemaVersion: 1,
+    player: { rating: 1500 },
+    puzzle: { fen: PUZZLE_START, sideToMove: "white", moveNumberSan: "4.", themes: ["mate in 1"], solutionSan: ["Qxf7#"] },
+    outcome: "solved",
+    engine: { assessment: "white_has_forced_mate", bestMoveSan: "Qxf7#", bestLineSan: ["Qxf7#"] },
+    commentaryDetail: "concise"
+  });
+}
+
+const PUZZLE_ANSWER = JSON.stringify({
+  headline: "The f7 pawn had one defender",
+  body: "Only the king guarded f7, and the bishop on c4 backs up your queen, so Qxf7# is mate on the spot."
+});
+
+describe("explainPuzzleWithOpenRouter", () => {
+  it("sends the puzzle prompt and returns the validated explanation", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(completion(PUZZLE_ANSWER));
+    const result = await explainPuzzleWithOpenRouter(puzzlePayload(), {
+      apiKey: "unit-test-key",
+      model: "openai/test-model",
+      fetchImpl,
+      now: () => 42
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(String(fetchImpl.mock.calls[0]![1].body)) as { messages: { content: string }[]; max_tokens: number };
+    expect(body.messages[0]!.content).toContain("tactics puzzle");
+    expect(body.messages[1]!.content).toContain('"solutionSan"');
+    expect(body.max_tokens).toBe(350);
+    expect(result).toEqual({
+      explanation: {
+        headline: "The f7 pawn had one defender",
+        prose: expect.stringContaining("Qxf7#"),
+        providerModel: "openai/test-model",
+        generatedAt: 42
+      },
+      error: null
+    });
+  });
+
+  it("retries once with the correction, then reports an ungrounded answer", async () => {
+    const bad = JSON.stringify({ headline: "Mate", body: "Bxf7+ first, then Qxf7# mates." });
+    const fetchImpl = vi.fn().mockResolvedValueOnce(completion(bad)).mockResolvedValueOnce(completion(PUZZLE_ANSWER));
+    const retried = await explainPuzzleWithOpenRouter(puzzlePayload(), { apiKey: "unit-test-key", fetchImpl });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(String(fetchImpl.mock.calls[1]![1].body)).toContain("You wrote the move Bxf7+");
+    expect(retried.explanation?.headline).toBe("The f7 pawn had one defender");
+
+    const always = vi.fn().mockImplementation(async () => completion(bad));
+    const failed = await explainPuzzleWithOpenRouter(puzzlePayload(), { apiKey: "unit-test-key", fetchImpl: always });
+    expect(failed).toEqual({ explanation: null, error: expect.stringContaining("didn't match the engine facts") });
+  });
+
+  it("is cancelled by its signal, without an error to show", async () => {
+    const controller = new AbortController();
+    const fetchImpl = vi.fn(
+      (_url: string | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+          controller.abort();
+        })
+    );
+    const result = await explainPuzzleWithOpenRouter(puzzlePayload(), { apiKey: "unit-test-key", fetchImpl, signal: controller.signal });
+    expect(result).toEqual({ explanation: null, error: null, cancelled: true });
+  });
+
+  it("needs a key and a valid payload before any provider call", async () => {
+    const fetchImpl = vi.fn();
+    expect(await explainPuzzleWithOpenRouter(puzzlePayload(), { apiKey: " ", fetchImpl })).toEqual({ explanation: null, error: NO_API_KEY_ERROR });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(() => parsePuzzleExplanationPayload({ ...puzzlePayload(), outcome: "failed_wrong_move" })).toThrow();
   });
 });

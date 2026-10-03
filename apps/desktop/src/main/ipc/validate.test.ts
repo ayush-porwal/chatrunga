@@ -8,6 +8,7 @@ import {
   asLichessUci,
   asUciMoves,
   parseAddFromGameInput,
+  parseAnalysePositionsInput,
   parseDefaultFileName,
   parseDialogFilters,
   parseEngineInput,
@@ -155,6 +156,32 @@ describe("engine session inputs", () => {
     expect(parseReviewGameInput({ engineId: "sf", rootFen: START, moves: [] }).reviewId).toMatch(/^review-/);
     expect(() => parseReviewGameInput({ engineId: "sf", rootFen: START, moves: [{ uci: "bad" }] })).toThrow();
     expect(() => parseReviewGameInput({ engineId: "sf", rootFen: START })).toThrow(/moves/);
+  });
+
+  it("parses a few positions to analyse", () => {
+    expect(
+      parseAnalysePositionsInput({
+        requestId: "p1",
+        engineId: "sf",
+        moveTimeMs: 120_000,
+        positions: [{ fen: START, multipv: 3 }, { fen: AFTER_E4 }],
+        extra: true
+      })
+    ).toEqual({
+      requestId: "p1",
+      engineId: "sf",
+      moveTimeMs: 60_000,
+      positions: [
+        { fen: START, multipv: 3 },
+        { fen: AFTER_E4, multipv: 1 }
+      ]
+    });
+    const position = { fen: START, multipv: 1 };
+    expect(() => parseAnalysePositionsInput({ requestId: "p1", engineId: "sf", positions: [] })).toThrow(/non-empty/);
+    expect(() => parseAnalysePositionsInput({ requestId: "p1", engineId: "sf", positions: Array(5).fill(position) })).toThrow(/too many/);
+    expect(() => parseAnalysePositionsInput({ requestId: "p1", engineId: "sf", positions: [{ fen: START, multipv: 6 }] })).toThrow(/at most/);
+    expect(() => parseAnalysePositionsInput({ requestId: "p1", engineId: "sf", positions: [{ fen: "nonsense" }] })).toThrow(/FEN/);
+    expect(() => parseAnalysePositionsInput({ engineId: "sf", positions: [position] })).toThrow(/request id/);
   });
 });
 

@@ -9,6 +9,8 @@ import type {
   SaveGameInput
 } from "../types/chess";
 import type {
+  AnalysePositionsInput,
+  AnalysePositionsResult,
   CreateEngineInput,
   EngineBestMove,
   EngineConfig,
@@ -18,6 +20,7 @@ import type {
   EngineTestResult,
   GameReview,
   ProbeEvalInput,
+  PuzzleExplanation,
   ReviewCompleted,
   ReviewFailed,
   ReviewGameInput,
@@ -29,6 +32,7 @@ import type {
   UpdateEngineInput
 } from "../types/engine";
 import type { AppSettings } from "../types/settings";
+import type { PuzzleInsightPayload } from "../schemas/puzzle-insight";
 import type { UpdateState } from "../types/updates";
 import type {
   LichessAiChallengeInput,
@@ -133,6 +137,19 @@ export type GenerateCommentaryResult = {
   error: string | null;
 };
 
+export type ExplainPuzzleInput = {
+  /** Cancels it through `commentary.cancelPuzzleExplanation`. */
+  requestId: string;
+  payload: PuzzleInsightPayload;
+};
+
+export type ExplainPuzzleResult = {
+  explanation: PuzzleExplanation | null;
+  /** A safe, user-facing reason when there is no explanation (null when it was cancelled). */
+  error: string | null;
+  cancelled?: boolean;
+};
+
 /**
  * Window translucency ("glass"): macOS vibrancy behind the sidebar and titlebar. The renderer
  * mirrors `active` as the `glass` class on <html>, which makes the chrome surfaces translucent.
@@ -186,6 +203,8 @@ export type ChaturangaApi = {
     probeEval(input: ProbeEvalInput): Promise<EngineScore | null>;
     reviewGame(input: ReviewGameInput): Promise<GameReview>;
     cancelReview(reviewId: string): Promise<void>;
+    /** Engine lines for a few single positions; `cancelReview(requestId)` stops it. */
+    analysePositions(input: AnalysePositionsInput): Promise<AnalysePositionsResult>;
     stop(): Promise<void>;
   };
   games: {
@@ -244,6 +263,9 @@ export type ChaturangaApi = {
     getOpenRouterConfig(): Promise<OpenRouterConfigSummary>;
     setOpenRouterConfig(input: SetOpenRouterConfigInput): Promise<OpenRouterConfigSummary>;
     generate(input: GenerateCommentaryInput): Promise<GenerateCommentaryResult>;
+    /** Explains a finished puzzle (one grounded answer; never saved). */
+    explainPuzzle(input: ExplainPuzzleInput): Promise<ExplainPuzzleResult>;
+    cancelPuzzleExplanation(requestId: string): Promise<void>;
   };
   /** Optional usage analytics (docs/telemetry.md); the renderer only reports a few interactions. */
   telemetry: {

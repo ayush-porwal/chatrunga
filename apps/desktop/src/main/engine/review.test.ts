@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { EngineConfig, MaiaRating, ReviewMoveInputItem } from "@chaturanga/shared/types/engine";
 import { fenAfterUci } from "@chaturanga/shared/chess/position";
-import { reviewGameWithEngine } from "./review";
+import { analysePositionsWithEngine, reviewGameWithEngine } from "./review";
 
 const FAKE = join(__dirname, "__fixtures__", "fake-uci.mjs");
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -152,6 +152,34 @@ describe("review reuse", () => {
     };
     const first = await run();
     expect((await run()).length).toBe(first.length);
+  });
+});
+
+describe("analysePositionsWithEngine", () => {
+  it("searches each position with its own line count and skips a finished one", async () => {
+    const mated = foolsMate()[3]!.fenAfter;
+    const result = await analysePositionsWithEngine(
+      fakeEngine("sf", "sf"),
+      { positions: [{ fen: START, multipv: 3 }, { fen: mated, multipv: 2 }, { fen: START, multipv: 1 }], moveTimeMs: 50 },
+      { threads: 1, hashMb: 16 }
+    );
+    expect(result.engineName).toBe("Fake sf");
+    expect(result.lines.map((lines) => lines.length)).toEqual([3, 0, 1]);
+    expect(result.lines[0]![0]).toMatchObject({ multipv: 1, pv: ["d1h5"], scoreWhite: { type: "cp", value: 40 } });
+  });
+
+  it("refuses partial lines once cancelled", async () => {
+    let cancelled = false;
+    setTimeout(() => {
+      cancelled = true;
+    }, 100);
+    await expect(
+      analysePositionsWithEngine(
+        fakeEngine("slow", "sf", { args: [FAKE, "sf", "slow-start"] }),
+        { positions: [{ fen: START, multipv: 1 }], moveTimeMs: 50 },
+        { shouldCancel: () => cancelled }
+      )
+    ).rejects.toThrow("Review cancelled");
   });
 });
 
