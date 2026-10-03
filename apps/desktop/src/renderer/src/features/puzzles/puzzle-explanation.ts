@@ -21,9 +21,12 @@ import { formatPuzzleTag } from "./puzzle-set";
  * for it, and the grounded facts sent to the coach (packages/shared/src/llm/puzzle-explanation.ts).
  */
 
-/** The case to explain, or null while the puzzle is still pending (nothing is offered then). */
+/**
+ * The case to explain, or null while the puzzle is still pending or its data turned out broken
+ * (nothing is offered then: there is no sound line to explain).
+ */
 export function explainOutcome(outcome: PuzzleOutcome, wrongMove: PuzzleWrongMove | null): PuzzleOutcomeKind | null {
-  if (outcome === "pending") return null;
+  if (outcome === "pending" || outcome === "void") return null;
   if (outcome === "solved") return "solved";
   return wrongMove ? "failed_wrong_move" : "failed_solution_viewed";
 }
