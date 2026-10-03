@@ -83,6 +83,8 @@ const SETTING_CHECKS: { [K in keyof AppSettings]-?: Check } = {
   lc0AutoDetect: bool,
   theme: oneOf("light", "dark"),
   lastOpenedGameId: nullable(text(200)),
+  repertoireCompareWhite: nullable(text(200)),
+  repertoireCompareBlack: nullable(text(200)),
   onboardingCompletedAt: nullable(number(0, Number.MAX_SAFE_INTEGER, true)),
   onboardingHintsSeen: list(oneOf(...ONBOARDING_HINTS), ONBOARDING_HINTS.length)
 };

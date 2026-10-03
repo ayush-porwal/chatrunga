@@ -211,3 +211,86 @@ describe("tree edits", () => {
     expect(promoteChild(tree, "w1")).toEqual(tree);
   });
 });
+
+describe("staging a move from a game comparison", () => {
+  beforeEach(() => store().reset());
+
+  it("adds a new reply under the node with the asked edge, selected and unsaved", () => {
+    load();
+    // After 1.e4 e5 2.Nf3 (w2), Black's 2…Nc6 is new: a covered reply.
+    const result = store().stageMove("w2", "b8c6", "covered");
+    expect(result).toMatchObject({ created: true });
+    const node = store().chapter!.tree.find((item) => item.id === result!.nodeId)!;
+    expect(node).toMatchObject({ parentId: "w2", uci: "b8c6", san: "Nc6" });
+    expect(store().selectedNodeId).toBe(node.id);
+    expect(store().chapter!.nodeMeta[node.id]).toEqual({ edge: "covered" });
+    expect(store().dirty).toBe(true);
+  });
+
+  it("adds the player's played alternative as a reference move (never accepted)", () => {
+    load();
+    // After 1.e4 e5 (w1), White's 2.Bc4 instead of 2.Nf3.
+    const result = store().stageMove("w1", "f1c4", "reference");
+    expect(store().chapter!.nodeMeta[result!.nodeId]).toEqual({ edge: "reference" });
+    // The decision stays selected, so Choices shows the new move with Accept.
+    expect(store().selectedNodeId).toBe("w1");
+  });
+
+  it("only selects a move the chapter already has with that edge", () => {
+    store().loadChapter(detailOf(), chapterOf(sampleTree(), { w1: { edge: "covered" } }));
+    const generation = store().generation;
+    expect(store().stageMove("w0", "e7e5", "covered")).toEqual({ nodeId: "w1", created: false });
+    expect(store().selectedNodeId).toBe("w1");
+    expect(store().generation).toBe(generation);
+    expect(store().dirty).toBe(false);
+  });
+
+  it("marks an existing reference or disabled reply as covered (enabled)", () => {
+    store().loadChapter(
+      detailOf(),
+      chapterOf(sampleTree(), {
+        w1: { edge: "reference" },
+        s0: { edge: "covered", disabled: true }
+      })
+    );
+    expect(store().stageMove("w0", "e7e5", "covered")).toEqual({ nodeId: "w1", created: false });
+    expect(store().chapter!.nodeMeta.w1).toEqual({ edge: "covered" });
+    expect(store().dirty).toBe(true);
+    store().stageMove("w0", "c7c5", "covered");
+    expect(store().chapter!.nodeMeta.s0).toEqual({ edge: "covered" });
+    expect(store().selectedNodeId).toBe("s0");
+  });
+
+  it("never demotes an existing move when staging it as reference", () => {
+    load();
+    expect(store().stageMove("w1", "g1f3", "reference")).toEqual({ nodeId: "w2", created: false });
+    expect(store().chapter!.nodeMeta.w2).toBeUndefined();
+    expect(store().selectedNodeId).toBe("w1");
+    expect(store().dirty).toBe(false);
+  });
+
+  it("adopts the open chapter's stored revision with the repertoire's", () => {
+    load();
+    store().adoptRevision(9, 4);
+    expect(store().baseRevision).toBe(9);
+    expect(store().chapter!.revision).toBe(4);
+    store().adoptRevision(10);
+    expect(store().chapter!.revision).toBe(4);
+  });
+
+  it("changes nothing for an unknown node or an illegal move", () => {
+    load();
+    expect(store().stageMove("missing", "e2e4", "covered")).toBeNull();
+    expect(store().stageMove("w0", "e2e4", "covered")).toBeNull();
+    expect(store().dirty).toBe(false);
+  });
+
+  it("stages standard-UCI castling", () => {
+    let tree = [rootNode()];
+    ({ tree } = addLine(tree, "root", ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "g8f6"], "w"));
+    store().loadChapter(detailOf(), chapterOf(tree));
+    const result = store().stageMove("w5", "e1g1", "reference");
+    const node = store().chapter!.tree.find((item) => item.id === result!.nodeId)!;
+    expect(node.san).toBe("O-O");
+  });
+});

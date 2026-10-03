@@ -9,7 +9,7 @@ import { usePuzzleStore } from "../stores/puzzle-store";
 import { captureBoard, captureEntry, planBoardRestore, recordHistory, replacesLiveBoard, type HistoryContext } from "./history-navigation";
 import { nextPuzzleInput, puzzleBoard } from "./puzzle-session-controller";
 
-const context: HistoryContext = { tab: "engine", reviewTab: "moves", settingsSection: "engines", puzzleConfig: null, repertoireScreen: null };
+const context: HistoryContext = { tab: "engine", reviewTab: "moves", openingSide: null, settingsSection: "engines", puzzleConfig: null, repertoireScreen: null };
 const puzzle = {
   id: "p1",
   databaseId: "db",

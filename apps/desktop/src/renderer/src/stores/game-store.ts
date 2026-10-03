@@ -61,6 +61,12 @@ type GameStore = {
    * it puts the position back when this changes (the stored position didn't change).
    */
   rejectedMoves: number;
+  /**
+   * Counts the boards loaded or started, so a choice made for one board isn't applied to the
+   * next (unsaved games all have a null id).
+   */
+  board: number;
+  /** Loads a game; the engine side is cleared (a match sets its own after loading). */
   loadGame: (game: GameSession) => void;
   makeMove: (move: UserMove) => boolean;
   makeUciMove: (uci: string) => boolean;
@@ -187,13 +193,15 @@ export const useGameStore = create<GameStore>((set, get) => {
     engineClockLive: null,
     gameOutcome: null,
     rejectedMoves: 0,
+    board: 0,
 
     loadGame: (game) => {
       const requestedNode = game.moveTree.find((node) => node.id === game.currentNodeId);
       const fallbackNode = game.moveTree.find((node) => node.fenAfter === game.currentFen);
       const rootNode = game.moveTree.find((node) => node.parentId === null) ?? game.moveTree[0];
       const currentNode = requestedNode ?? fallbackNode ?? rootNode;
-      set(() => ({
+      set((state) => ({
+        board: state.board + 1,
         gameId: game.id,
         source: game.source,
         headers: game.headers,
@@ -202,6 +210,8 @@ export const useGameStore = create<GameStore>((set, get) => {
         moveTree: game.moveTree,
         currentNodeId: currentNode?.id ?? game.currentNodeId,
         orientation: game.headers.orientationHint ?? get().orientation,
+        // The session doesn't say who played whom: the last match's side would describe another game.
+        engineSide: null,
         pendingPromotion: null,
         lastError: null,
         matchFeedback: null,
@@ -369,7 +379,8 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     reset: () => {
       const next = createEmptyGame();
-      set({
+      set((state) => ({
+        board: state.board + 1,
         gameId: null,
         source: next.source,
         headers: next.headers,
@@ -385,7 +396,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         engineClock: null,
         engineClockLive: null,
         gameOutcome: null
-      });
+      }));
     },
 
     flip: () => set((state) => ({ orientation: state.orientation === "white" ? "black" : "white" })),

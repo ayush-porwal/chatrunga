@@ -3,6 +3,7 @@ import {
   archiveRepertoire,
   cancelImport,
   commitImport,
+  compareGame,
   createRepertoire,
   duplicateRepertoire,
   endPractice,
@@ -29,6 +30,7 @@ import {
   asId,
   parseArchiveRepertoireInput,
   parseChapterRef,
+  parseCompareGameInput,
   parseDecisionRef,
   parseCreateRepertoireInput,
   parseDuplicateRepertoireInput,
@@ -63,6 +65,9 @@ export function registerRepertoireIpc(): void {
   );
   ipcMain.handle("repertoires:getOccurrences", (_event, input: unknown) =>
     getOccurrences(parseDecisionRef(input))
+  );
+  ipcMain.handle("repertoires:compareGame", (_event, input: unknown) =>
+    compareGame(parseCompareGameInput(input))
   );
   ipcMain.handle("repertoires:create", (_event, input: unknown) =>
     createRepertoire(parseCreateRepertoireInput(input))

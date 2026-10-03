@@ -51,6 +51,7 @@ import type {
   ArchiveRepertoireInput,
   AttemptResult,
   ChapterSaveResult,
+  CompareGameInput,
   CreateRepertoireInput,
   DecisionSaveResult,
   DuplicateRepertoireInput,
@@ -70,6 +71,7 @@ import type {
   RepertoireChangedEvent,
   RepertoireChangeResult,
   RepertoireChapter,
+  RepertoireComparison,
   RepertoireDecision,
   RepertoireDetail,
   RepertoireOccurrence,
@@ -292,6 +294,8 @@ export type ChaturangaApi = {
       repertoireId: string;
       positionKey: string;
     }): Promise<RepertoireOccurrence[]>;
+    /** A finished game's mainline against one repertoire (§6.3); local, no engine needed. */
+    compareGame(input: CompareGameInput): Promise<RepertoireComparison>;
     create(input: CreateRepertoireInput): Promise<RepertoireDetail>;
     updateMetadata(input: UpdateRepertoireMetadataInput): Promise<RepertoireDetail>;
     /** Saves one chapter and reconciles decisions/index/progress in the same transaction. */

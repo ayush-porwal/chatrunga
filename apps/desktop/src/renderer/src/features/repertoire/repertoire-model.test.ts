@@ -187,6 +187,9 @@ describe("autosave decisions", () => {
     expect(
       isStaleRevisionError("Invalid expectedRevision: repertoire changed (stored 5, expected 4)")
     ).toBe(true);
+    expect(
+      isStaleRevisionError("Invalid chapter.revision: chapter changed (stored 3, expected 2)")
+    ).toBe(true);
     expect(isStaleRevisionError("Invalid chapter: tree has no root")).toBe(false);
   });
 

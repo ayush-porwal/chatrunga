@@ -81,6 +81,18 @@ describe("game store", () => {
     expect(state.currentFen).toBe(state.moveTree.find((node) => node.id === e4NodeId)?.fenAfter);
   });
 
+  it("clears the engine side and counts a new board on every load or reset", () => {
+    const store = useGameStore.getState();
+    store.setMode("engine");
+    store.setEngineSide("white");
+    const before = useGameStore.getState().board;
+    store.loadGame(store.toSession());
+    expect(useGameStore.getState().engineSide).toBeNull();
+    expect(useGameStore.getState().board).toBe(before + 1);
+    useGameStore.getState().reset();
+    expect(useGameStore.getState().board).toBe(before + 2);
+  });
+
   it("does not delete the root position", () => {
     expect(useGameStore.getState().deleteLineFromNode("root")).toBe(false);
     expect(useGameStore.getState().currentNodeId).toBe("root");

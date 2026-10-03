@@ -8,7 +8,9 @@ import {
   MAX_CARD_LIMIT,
   MAX_DEPTH_PLIES,
   practiceInputFromForm,
-  practicableChapterIds
+  practicableChapterIds,
+  presetForSetup,
+  targetedPracticeInput
 } from "./practice-setup";
 
 function chapter(
@@ -138,5 +140,56 @@ describe("practice setup", () => {
       cardLimit: 10,
       newCardLimit: 0
     });
+  });
+});
+
+describe("targeted practice presets", () => {
+  it("starts exactly the named decisions, whether due or new", () => {
+    expect(
+      targetedPracticeInput("r1", {
+        mode: "review-due",
+        positionKeys: ["k1", "k1", "k2"],
+        autoStart: true
+      })
+    ).toEqual({
+      repertoireId: "r1",
+      mode: "review-due",
+      positionKeys: ["k1", "k2"],
+      cardLimit: 2,
+      newCardLimit: 2
+    });
+  });
+
+  it("is no targeted start without autoStart or keys", () => {
+    expect(targetedPracticeInput("r1", { positionKeys: ["k1"] })).toBeNull();
+    expect(targetedPracticeInput("r1", { autoStart: true, positionKeys: [] })).toBeNull();
+    expect(targetedPracticeInput("r1", null)).toBeNull();
+  });
+
+  it("never puts the targeted keys into the setup form", () => {
+    const detail = detailOf({
+      workspace: {
+        lastChapterId: null,
+        lastNodeId: null,
+        orientation: "white",
+        practiceDraft: { repertoireId: "r1", mode: "learn-new", positionKeys: ["stale"] }
+      }
+    });
+    const initial = initialPracticeInput(detail, {
+      positionKeys: ["k1"],
+      autoStart: true
+    });
+    expect(initial.positionKeys).toBeUndefined();
+    expect(initial.mode).toBe("learn-new");
+  });
+
+  it("opens Practice again on the setup, keeping only chapters and mode", () => {
+    expect(presetForSetup({ mode: "review-due", positionKeys: ["k1"], autoStart: true })).toEqual({
+      mode: "review-due"
+    });
+    expect(presetForSetup({ positionKeys: ["k1"], autoStart: true })).toBeNull();
+    const chapters = { chapterIds: ["c1"] };
+    expect(presetForSetup(chapters)).toBe(chapters);
+    expect(presetForSetup(null)).toBeNull();
   });
 });

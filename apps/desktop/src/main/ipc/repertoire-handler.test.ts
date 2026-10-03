@@ -14,6 +14,7 @@ vi.mock("../repertoire/service", () => {
     "archiveRepertoire",
     "cancelImport",
     "commitImport",
+    "compareGame",
     "createRepertoire",
     "duplicateRepertoire",
     "endPractice",
@@ -73,6 +74,11 @@ describe("registerRepertoireIpc", () => {
       ["getChapter", { repertoireId: "r1", chapterId: "c1" }, "getChapter"],
       ["getDecision", { repertoireId: "r1", positionKey: "v1:key" }, "getDecision"],
       ["getOccurrences", { repertoireId: "r1", positionKey: "v1:key" }, "getOccurrences"],
+      [
+        "compareGame",
+        { repertoireId: "r1", color: "black", rootFen: START, moves: ["e2e4", "c7c5"] },
+        "compareGame"
+      ],
       ["create", { name: "Mine", color: "white", tags: ["a"], rootFen: START }, "createRepertoire"],
       [
         "updateMetadata",
@@ -126,7 +132,8 @@ describe("registerRepertoireIpc", () => {
           chapterIds: ["c1"],
           maxDepthPlies: 8,
           cardLimit: 5,
-          newCardLimit: 0
+          newCardLimit: 0,
+          positionKeys: ["v1:key"]
         },
         "startPractice"
       ],
@@ -162,6 +169,15 @@ describe("registerRepertoireIpc", () => {
     expect(invoke("getDueSummary")).toBe("getDueSummary");
     expect(invoke("previewImport", { pgn: "1. e4 *" })).toBe("previewImport");
     expect(invoke("list", undefined)).toBe("listRepertoires");
+    expect(calls.find(([name]) => name === "compareGame")?.[1][0]).toEqual({
+      repertoireId: "r1",
+      color: "black",
+      rootFen: START,
+      moves: ["e2e4", "c7c5"]
+    });
+    expect(calls.find(([name]) => name === "startPractice")?.[1][0]).toMatchObject({
+      positionKeys: ["v1:key"]
+    });
     expect(calls.find(([name]) => name === "recordAttempt")?.[1][0]).toEqual({
       sessionId: "s1",
       queueItemId: "q1",
@@ -235,5 +251,32 @@ describe("registerRepertoireIpc", () => {
     expect(() =>
       invoke("getDecision", { repertoireId: "r", positionKey: "k".repeat(201) })
     ).toThrow(/positionKey/);
+    const game = { repertoireId: "r", color: "white", rootFen: START, moves: ["e2e4"] };
+    expect(() => invoke("compareGame", { ...game, color: "both" })).toThrow(
+      "Invalid color: expected white or black"
+    );
+    expect(() => invoke("compareGame", { ...game, rootFen: "8/8/8 w" })).toThrow(/Invalid rootFen/);
+    expect(() => invoke("compareGame", { ...game, moves: ["e2-e4"] })).toThrow(/Invalid moves/);
+    expect(() =>
+      invoke("compareGame", { ...game, moves: Array.from({ length: 601 }, () => "e2e4") })
+    ).toThrow(/Invalid moves: more than 600 plies/);
+    expect(() => invoke("compareGame", { ...game, repertoireId: "" })).toThrow(/repertoireId/);
+    expect(() =>
+      invoke("startPractice", { repertoireId: "r", mode: "review-due", positionKeys: "v1:key" })
+    ).toThrow(/positionKeys/);
+    expect(() =>
+      invoke("startPractice", {
+        repertoireId: "r",
+        mode: "review-due",
+        positionKeys: Array.from({ length: 201 }, (_, index) => `v1:${index}`)
+      })
+    ).toThrow(/positionKeys/);
+    expect(() =>
+      invoke("startPractice", {
+        repertoireId: "r",
+        mode: "review-due",
+        positionKeys: ["k".repeat(201)]
+      })
+    ).toThrow(/positionKeys/);
   });
 });

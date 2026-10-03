@@ -4,6 +4,7 @@ import type { ChaturangaApi } from "@chaturanga/shared/ipc/chaturanga-api";
 import type {
   ArchiveRepertoireInput,
   ChapterSaveResult,
+  CompareGameInput,
   CreateRepertoireInput,
   DecisionSaveResult,
   DuplicateRepertoireInput,
@@ -28,7 +29,8 @@ import type {
  * Repertoire data through the typed `window.chaturanga.repertoires` API (main process is the
  * authority for content, grading and scheduling). Keys are narrow so a chapter save never re-reads
  * the hub list's trees: `['repertoires','list',filters]`, `['repertoires',id]`,
- * `['repertoires',id,'chapter',chapterId]`, `['repertoires','due']`.
+ * `['repertoires',id,'chapter',chapterId]`, `['repertoires','due']`,
+ * `['repertoires',id,'compare',color,gameHash]`.
  *
  * The detail key is a prefix of the chapter key, so detail invalidations pass `exact: true`.
  * Everything degrades to empty/disabled in the web preview (no `window.chaturanga`).
@@ -43,8 +45,35 @@ export const repertoireKeys = {
   decision: (id: string, positionKey: string) =>
     ["repertoires", id, "decision", positionKey] as const,
   occurrences: (id: string, positionKey: string) =>
-    ["repertoires", id, "occurrences", positionKey] as const
+    ["repertoires", id, "occurrences", positionKey] as const,
+  comparison: (id: string, color: string, gameHash: string) =>
+    ["repertoires", id, "compare", color, gameHash] as const
 };
+
+/**
+ * FNV-1a, 64-bit, as 16 hex digits (computed on two 32-bit halves; UTF-16 code units, so ASCII
+ * input matches the byte-wise reference values).
+ */
+export function fnv1a64(text: string): string {
+  let hi = 0xcbf29ce4;
+  let lo = 0x84222325;
+  for (let index = 0; index < text.length; index += 1) {
+    lo ^= text.charCodeAt(index);
+    // × 0x100000001b3 mod 2^64: every partial product stays below 2^53, so it is exact.
+    const low = (lo >>> 0) * 0x1b3;
+    hi = (hi * 0x1b3 + (lo >>> 0) * 0x100 + Math.floor(low / 0x100000000)) >>> 0;
+    lo = low >>> 0;
+  }
+  return `${hi.toString(16).padStart(8, "0")}${(lo >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+/**
+ * The content hash of a game's root and mainline for the comparison key (FNV-1a 64-bit plus the
+ * ply count): the same game content keys the same comparison, whatever its node ids or cursor.
+ */
+export function gameContentHash(rootFen: string, moves: readonly string[]): string {
+  return `${fnv1a64(`${rootFen}|${moves.join(" ")}`)}-${moves.length}`;
+}
 
 function repertoires(): ChaturangaApi["repertoires"] | undefined {
   return window.chaturanga?.repertoires;
@@ -77,18 +106,20 @@ export function invalidateRepertoire(queryClient: QueryClient, id: string | null
         query.queryKey[0] === "repertoires" &&
         ((query.queryKey.length === 2 && query.queryKey[1] !== "due") ||
           query.queryKey[2] === "decision" ||
-          query.queryKey[2] === "occurrences")
+          query.queryKey[2] === "occurrences" ||
+          query.queryKey[2] === "compare")
     });
   }
 }
 
 /**
- * Re-reads the cached decisions and occurrence lists of a repertoire (a chapter save can
- * reconcile any of them).
+ * Re-reads the cached decisions, occurrence lists and game comparisons of a repertoire (a chapter
+ * save can reconcile any of them).
  */
 export function invalidateDecisions(queryClient: QueryClient, id: string) {
   void queryClient.invalidateQueries({ queryKey: ["repertoires", id, "decision"] });
   void queryClient.invalidateQueries({ queryKey: ["repertoires", id, "occurrences"] });
+  void queryClient.invalidateQueries({ queryKey: ["repertoires", id, "compare"] });
 }
 
 /** Stores a detail the main process returned, and refreshes the summaries that depend on it. */
@@ -98,16 +129,34 @@ function adoptDetail(queryClient: QueryClient, detail: RepertoireDetail) {
   void queryClient.invalidateQueries({ queryKey: repertoireKeys.due });
 }
 
-/** Keeps cached repertoire summaries in step with the main process. Mount once. */
+/**
+ * Re-reads the chapter trees of a repertoire (every repertoire when null): a decision change can
+ * rewrite edges in chapters other than the one saved.
+ */
+export function invalidateChapters(queryClient: QueryClient, id: string | null) {
+  void queryClient.invalidateQueries(
+    id
+      ? { queryKey: ["repertoires", id, "chapter"] }
+      : {
+          predicate: (query) =>
+            query.queryKey[0] === "repertoires" && query.queryKey[2] === "chapter"
+        }
+  );
+}
+
+/** Keeps cached repertoire summaries and open chapters in step with the main process. Mount once. */
 export function useRepertoireChangedSubscription() {
   const queryClient = useQueryClient();
   useEffect(
     () =>
-      repertoires()?.onChanged?.((event) =>
-        event.kind === "workspace"
-          ? invalidateSummaries(queryClient)
-          : invalidateRepertoire(queryClient, event.repertoireId)
-      ),
+      repertoires()?.onChanged?.((event) => {
+        if (event.kind === "workspace") {
+          invalidateSummaries(queryClient);
+          return;
+        }
+        invalidateRepertoire(queryClient, event.repertoireId);
+        invalidateChapters(queryClient, event.repertoireId);
+      }),
     [queryClient]
   );
 }
@@ -157,6 +206,22 @@ export function useRepertoireOccurrencesQuery(id: string | null, positionKey: st
     queryFn: () =>
       requireRepertoires().getOccurrences({ repertoireId: id!, positionKey: positionKey! }),
     enabled: Boolean(id && positionKey && repertoires())
+  });
+}
+
+/**
+ * A game's mainline against one repertoire (§6.3). Keyed by the game's content, so cursor moves
+ * never recompute it; a change to the repertoire re-reads it (see invalidateDecisions).
+ */
+export function useRepertoireComparisonQuery(input: CompareGameInput | null) {
+  const gameHash = input ? gameContentHash(input.rootFen, input.moves) : "";
+  // The key names the input by its content hash (a long mainline doesn't belong in a key).
+  // eslint-disable-next-line @tanstack/query/exhaustive-deps
+  return useQuery({
+    queryKey: repertoireKeys.comparison(input?.repertoireId ?? "", input?.color ?? "", gameHash),
+    queryFn: () => requireRepertoires().compareGame(input!),
+    enabled: Boolean(input && repertoires()),
+    retry: false
   });
 }
 
@@ -212,6 +277,8 @@ export function adoptDecisionSave(queryClient: QueryClient, result: DecisionSave
   );
   // Settles the same decision under its stored form (and any other one the write affected).
   invalidateDecisions(queryClient, result.repertoire.id);
+  // Accepting or removing a move rewrites edges in whichever chapters hold it.
+  invalidateChapters(queryClient, result.repertoire.id);
   adoptDetail(queryClient, result.repertoire);
 }
 

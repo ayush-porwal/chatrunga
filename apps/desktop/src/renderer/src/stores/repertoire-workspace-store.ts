@@ -1,5 +1,9 @@
 import { create } from "zustand";
+import { makeFen } from "chessops/fen";
+import { makeSanAndPlay } from "chessops/san";
+import { parseUci } from "chessops/util";
 import { addMoveNode } from "@chaturanga/shared/chess/pgn";
+import { positionFromFen } from "@chaturanga/shared/chess/position";
 import { nodeMetaOf } from "@chaturanga/shared/chess/repertoire-index";
 import { standardCastlingUci } from "@chaturanga/shared/chess/review";
 import type { BoardArrow, BoardHighlight, Color, MoveNode } from "@chaturanga/shared/types/chess";
@@ -59,6 +63,17 @@ type Actions = {
   selectNode: (nodeId: string) => void;
   /** Plays a move from the selected node: selects an existing child or adds a new one. */
   playMove: (uci: string, san: string, fenAfter: string) => { nodeId: string; created: boolean };
+  /**
+   * Stages a move from another screen (a game's opening comparison) under `parentNodeId`: an
+   * existing child is only selected; a new one is added with `edge` and selected, unsaved until
+   * autosave. A reference stage selects the parent instead, so Choices lists the move with Accept.
+   * Null when the parent is unknown or the move is illegal there.
+   */
+  stageMove: (
+    parentNodeId: string,
+    uci: string,
+    edge: RepertoireNodeMeta["edge"]
+  ) => { nodeId: string; created: boolean } | null;
   setNodeMeta: (nodeId: string, patch: Partial<RepertoireNodeMeta>) => void;
   setComment: (nodeId: string, text: string) => void;
   setShapes: (nodeId: string, arrows: BoardArrow[], highlights: BoardHighlight[]) => void;
@@ -75,8 +90,11 @@ type Actions = {
   saveFailed: (message: string, stale: boolean) => void;
   /** Clears a save error so autosave resumes (after Retry / Keep editing). */
   clearSaveError: () => void;
-  /** Another write (decision, chapter list) moved the repertoire to `revision`. */
-  adoptRevision: (revision: number) => void;
+  /**
+   * Another write (decision, chapter list) moved the repertoire to `revision`; `chapterRevision`
+   * (the open chapter's stored revision) lets the draft overwrite it on its next save.
+   */
+  adoptRevision: (revision: number, chapterRevision?: number) => void;
   rememberDecision: (decision: RepertoireDecision) => void;
 };
 
@@ -130,6 +148,19 @@ export function promoteChild(tree: readonly MoveNode[], nodeId: string): MoveNod
       ? { ...item, children: [nodeId, ...item.children.filter((id) => id !== nodeId)] }
       : item
   );
+}
+
+/** The SAN and resulting position of `uci` from `fen`, or null when it isn't legal there. */
+export function playUci(fen: string, uci: string): { san: string; fenAfter: string } | null {
+  try {
+    const position = positionFromFen(fen);
+    const move = parseUci(uci);
+    if (!move || !position.isLegal(move)) return null;
+    const san = makeSanAndPlay(position, move);
+    return { san, fenAfter: makeFen(position.toSetup()) };
+  } catch {
+    return null;
+  }
 }
 
 function withUndo(
@@ -216,6 +247,29 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
           { selectedNodeId: added.node.id }
         );
         return { nodeId: added.node.id, created: true };
+      },
+
+      stageMove: (parentNodeId, uci, edge) => {
+        const parent = get().chapter?.tree.find((node) => node.id === parentNodeId);
+        if (!parent) return null;
+        const played = playUci(parent.fenAfter, uci);
+        if (!played) return null;
+        const { san, fenAfter } = played;
+        set({ selectedNodeId: parent.id });
+        const result = get().playMove(uci, san, fenAfter);
+        const meta = get().chapter?.nodeMeta[result.nodeId];
+        if (result.created) {
+          if (meta?.edge !== edge) get().setNodeMeta(result.nodeId, { edge });
+        } else if (edge !== "reference") {
+          // An existing move staged as covered/included takes that edge and is re-enabled; a
+          // reference stage never demotes a move the chapter already has (it's only selected).
+          const current = nodeMetaOf(get().chapter!.nodeMeta, result.nodeId);
+          if (current.edge !== edge || current.disabled) {
+            get().setNodeMeta(result.nodeId, { edge, disabled: false });
+          }
+        }
+        if (edge === "reference") set({ selectedNodeId: parent.id });
+        return result;
       },
 
       setNodeMeta: (nodeId, patch) =>
@@ -308,8 +362,18 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
 
       saveFailed: (message, stale) => set({ saveState: { status: "error", message, stale } }),
       clearSaveError: () => set({ saveState: { status: "idle" } }),
-      adoptRevision: (revision) =>
-        set((state) => ({ baseRevision: Math.max(state.baseRevision, revision) })),
+      adoptRevision: (revision, chapterRevision) =>
+        set((state) => ({
+          baseRevision: Math.max(state.baseRevision, revision),
+          ...(chapterRevision !== undefined && state.chapter
+            ? {
+                chapter: {
+                  ...state.chapter,
+                  revision: Math.max(state.chapter.revision, chapterRevision)
+                }
+              }
+            : {})
+        })),
       rememberDecision: (decision) =>
         set((state) => ({ decisions: { ...state.decisions, [decision.positionKey]: decision } }))
     };

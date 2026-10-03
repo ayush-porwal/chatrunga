@@ -131,6 +131,12 @@ export type PracticeScope = {
   maxDepthPlies?: number;
   cardLimit?: number;
   newCardLimit?: number;
+  /**
+   * A targeted queue: exactly these decisions, whether or not they are due (e.g. "Refresh this
+   * decision" from a game's opening comparison). Other filters still apply; no lapse is recorded
+   * for merely being queued.
+   */
+  positionKeys?: string[];
 };
 
 export type StartPracticeInput = PracticeScope & { mode: PracticeMode };
@@ -415,6 +421,98 @@ export type RepertoireDueSummary = {
   dueCount: number;
   repertoireCount: number;
   continue: { repertoireId: string; chapterId: string; nodeId: string } | null;
+};
+
+/* ------------------------------------------------------------------ game comparison (§6.3) */
+
+/** How one mainline move of a finished game relates to the selected repertoire. */
+export type ComparisonMoveStatus =
+  /** Not in any active chapter: before one applies (e.g. a custom-root chapter not reached yet), or
+   * after a deviation or uncovered reply that never returns to known preparation. */
+  | "outside-scope"
+  /** The player's move is an effective accepted choice at a recognized decision. */
+  | "player-choice"
+  /** The opponent's move is a covered reply at a recognized position. */
+  | "covered-reply"
+  /** The player's move is outside the accepted set at a recognized decision. */
+  | "deviation"
+  /** The opponent's move is not covered at a recognized position. */
+  | "uncovered"
+  /** An authored stop or leaf was reached; no further planned decisions until a position is
+   * recognized again. */
+  | "after-end"
+  /** After the first issue, the game reached a position the repertoire knows again. */
+  | "transposed-back";
+
+export type ComparisonMove = {
+  /** Absolute ply of the move (odd = White moved), as MoveNode.ply. */
+  ply: number;
+  san: string;
+  uci: string;
+  fenBefore: string;
+  fenAfter: string;
+  /** Position key of `fenBefore`. */
+  positionKey: string;
+  status: ComparisonMoveStatus;
+  /**
+   * The active occurrence credited with the move: the one that supplied a matched move (for an
+   * opponent reply that transposes, the one it lands on), else the one that recognized `fenBefore`.
+   */
+  chapterId: string | null;
+  nodeId: string | null;
+};
+
+export type ComparisonIssueStatus =
+  | "player-deviation"
+  | "uncovered-opponent"
+  | "preparation-ends"
+  | "no-applicable-chapter";
+
+/** The earliest actionable difference between the game and the repertoire. */
+export type ComparisonIssue = {
+  status: ComparisonIssueStatus;
+  /** Ply of the move that caused it; for "preparation-ends", the first move after the end. */
+  ply: number;
+  /** The board before that move: what the player should recognize. */
+  fenBefore: string;
+  positionKey: string;
+  playedUci: string | null;
+  playedSan: string | null;
+  /** Repertoire-wide effective accepted choices (player deviation) or covered replies (gap). */
+  expectedUcis: string[];
+  expectedSans: string[];
+  preferredUci: string | null;
+  chapterId: string | null;
+  chapterTitle: string | null;
+  nodeId: string | null;
+};
+
+export type RepertoireComparison = {
+  repertoireId: string;
+  repertoireName: string;
+  color: RepertoireColor;
+  /** Repertoire revision the comparison was computed against. */
+  revision: number;
+  moves: ComparisonMove[];
+  /** Plies recognized before the first issue (or every ply when there is none). */
+  matchedPlies: number;
+  /** null also when the game ends where a chapter begins (nothing judged; `chaptersUsed` names it). */
+  issue: ComparisonIssue | null;
+  /** Later positions the repertoire knows again, after the issue (context, not a second issue). */
+  returnedByTransposition: { ply: number; chapterId: string; chapterTitle: string; nodeId: string }[];
+  chaptersUsed: { chapterId: string; title: string }[];
+};
+
+/** Mainline plies a game comparison reads (only the opening matters). */
+export const COMPARE_GAME_MAX_PLIES = 600;
+
+export type CompareGameInput = {
+  repertoireId: string;
+  /** The side the player had in the game; never inferred from board orientation. */
+  color: RepertoireColor;
+  rootFen: string;
+  /** The game's mainline as UCI from `rootFen` (the opening only: at most 600 plies). */
+  moves: string[];
 };
 
 /** One place a position is reached in the repertoire (from the derived index). */

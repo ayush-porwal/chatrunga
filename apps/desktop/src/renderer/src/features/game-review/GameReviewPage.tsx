@@ -2,6 +2,8 @@ import { memo, useCallback, useDeferredValue, useEffect, useId, useMemo, useStat
 import { useLocation } from "react-router-dom";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
+import type { RepertoireColor } from "@chaturanga/shared/types/repertoire";
+import type { StudyOpenTarget } from "../repertoire/repertoire-chapters";
 import { useGameStore } from "../../stores/game-store";
 import { reviewsByNode, useReviewStore } from "../../stores/review-store";
 import { useDisplayedReviewMoves, useOutdatedReviewMoves } from "../../stores/review-validity";
@@ -19,6 +21,7 @@ import { ReviewBoard, type ReviewArrow } from "./ReviewBoard";
 import { ReviewCommentaryPanel } from "./ReviewCommentaryPanel";
 import { ReviewEnginePanel } from "./ReviewEnginePanel";
 import { ReviewMoveRail } from "./ReviewMoveRail";
+import { ReviewOpeningPanel } from "./ReviewOpeningPanel";
 import { ReviewSettingsPanel } from "./ReviewSettingsPanel";
 import { ReviewTape } from "./ReviewTape";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -31,6 +34,7 @@ import { useStoreHintsOnLeave } from "../onboarding/Coachmark";
 import { useUpdateSettingMutation } from "../../queries/api";
 import { openSavedGame } from "../game/saved-game";
 import { reviewAnchorFor, type CommentaryMoveContext, type MoveNavigationTarget } from "./commentary-moves";
+import { openingSideFor, type OpeningSide } from "./opening-comparison";
 import { qualityTone } from "@/lib/ui";
 import { Sparkles, Swords, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -43,9 +47,17 @@ import { useReviewUsage } from "../../app/useUsageTelemetry";
 const reviewTabOptions: readonly SegmentedOption<ReviewTab>[] = [
   { value: "commentary", label: "Commentary" },
   { value: "moves", label: "Moves" },
+  { value: "opening", label: "Opening" },
   { value: "engine", label: "Engine" },
   { value: "settings", label: "Settings" }
 ];
+
+/**
+ * Five review tabs don't fit the workspace panel at its usual widths with the shared tab padding
+ * and text size, so the labels truncated ("Comme…"): narrower panels tighten the padding, then the
+ * text, so every label stays whole down to the panel's 20rem minimum.
+ */
+const reviewTabsClass = `${workspaceTabsClass} @max-[424px]/panel:[&>button]:px-1.5 @max-[384px]/panel:[&>button]:text-xs @max-[344px]/panel:[&>button]:px-0.5`;
 
 type GameReviewPageProps = {
   activeTab: ReviewTab;
@@ -60,6 +72,15 @@ type GameReviewPageProps = {
   onPlay: () => void;
   /** Opens Settings → Commentary (offered when no OpenRouter key is saved). */
   onOpenCommentarySettings?: () => void;
+  /** Opening tab: study a repertoire chapter (Back returns to this review at the same move). */
+  onOpenRepertoireStudy?: (target: StudyOpenTarget) => void;
+  /** Opening tab: "Refresh this decision" (a targeted practice queue). */
+  onRefreshRepertoireDecision?: (repertoireId: string, positionKey: string) => void;
+  /** Opening tab: the repertoire hub (create a repertoire or chapter). */
+  onRepertoireHub?: () => void;
+  /** Opening tab: the side picked for a game (App keeps it so Back restores it). */
+  openingSide?: OpeningSide | null;
+  onOpeningSideChange?: (side: OpeningSide) => void;
 };
 
 export const GameReviewPage = memo(function GameReviewPage(props: GameReviewPageProps) {
@@ -78,7 +99,12 @@ function GameReviewPageInner({
   onAnalyze,
   onImportPgn,
   onPlay,
-  onOpenCommentarySettings
+  onOpenCommentarySettings,
+  onOpenRepertoireStudy,
+  onRefreshRepertoireDecision,
+  onRepertoireHub,
+  openingSide = null,
+  onOpeningSideChange
 }: GameReviewPageProps) {
   const location = useLocation();
   const id = reviewIdFromPath(location.pathname);
@@ -100,6 +126,17 @@ function GameReviewPageInner({
   const outdatedMoves = useOutdatedReviewMoves();
   const reviewError = useReviewStore((state) => state.error);
   const reviewInput = useMemo(() => mainlineReviewInput(moveTree), [moveTree]);
+  // The Opening tab's side, picked for this game (kept across tab switches and Back, not across games).
+  const board = useGameStore((state) => state.board);
+  const openingColor = openingSideFor(openingSide, board);
+  const changeOpeningColor = useCallback(
+    (color: RepertoireColor) => onOpeningSideChange?.({ board, color }),
+    [board, onOpeningSideChange]
+  );
+  const rememberedRepertoires = useMemo(
+    () => ({ white: settings.repertoireCompareWhite ?? null, black: settings.repertoireCompareBlack ?? null }),
+    [settings.repertoireCompareWhite, settings.repertoireCompareBlack]
+  );
   const isRunning = reviewStatus === "running";
   const reviewByNodeId = useMemo(() => reviewsByNode(moves), [moves]);
   const currentNode = moveTree.find((node) => node.id === selectedNodeId) ?? null;
@@ -231,7 +268,7 @@ function GameReviewPageInner({
           role="tablist"
           panelId={panelId}
           fullWidth
-          className={workspaceTabsClass}
+          className={reviewTabsClass}
           value={activeTab}
           onChange={onTabChange}
           options={reviewTabOptions}
@@ -311,6 +348,19 @@ function GameReviewPageInner({
         />
       ) : null}
       {activeTab === "moves" ? <ReviewMoveRail nodes={moveTree} selectedNodeId={selectedNodeId} reviews={reviewByNodeId} commentaryByNodeId={commentaryByNodeId} onSelectNode={selectNode} /> : null}
+      {activeTab === "opening" ? (
+        <ReviewOpeningPanel
+          moveTree={moveTree}
+          selectedNodeId={selectedNodeId}
+          onSelectNode={selectNode}
+          color={openingColor}
+          onColorChange={changeOpeningColor}
+          remembered={rememberedRepertoires}
+          onStudy={onOpenRepertoireStudy}
+          onRefreshDecision={onRefreshRepertoireDecision}
+          onHub={onRepertoireHub}
+        />
+      ) : null}
       {activeTab === "engine" && !emptyGame ? (
         <ReviewEnginePanel
           move={panelMove}

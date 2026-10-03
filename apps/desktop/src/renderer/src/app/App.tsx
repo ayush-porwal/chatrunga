@@ -61,7 +61,9 @@ import { useDatabaseDownloads } from "./useDatabaseDownloads";
 import { usePuzzleDraftStore } from "../stores/puzzle-draft-store";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Color } from "@chaturanga/shared/types/chess";
-import type { StudyTarget } from "../features/repertoire/repertoire-chapters";
+import type { StudyOpenTarget, StudyStage } from "../features/repertoire/repertoire-chapters";
+import type { OpeningSide } from "../features/game-review/opening-comparison";
+import { presetForSetup } from "../features/repertoire/practice-setup";
 import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
 import { RepertoirePracticeTitlebar, RepertoireStudyTitlebar } from "../features/repertoire/RepertoireTitlebar";
 import { flushChapterDraft } from "../features/repertoire/useChapterAutosave";
@@ -75,9 +77,17 @@ type RepertoireExtras = {
   orientation: Color | null;
   tab: StudyTab;
   preset: Extract<RepertoireScreen, { view: "repertoire-practice" }>["preset"];
+  /** A move to stage once the study chapter loads (from a game's opening comparison). */
+  stage: StudyStage | null;
 };
 
-const initialRepertoireExtras: RepertoireExtras = { nodeId: null, orientation: null, tab: "moves", preset: null };
+const initialRepertoireExtras: RepertoireExtras = {
+  nodeId: null,
+  orientation: null,
+  tab: "moves",
+  preset: null,
+  stage: null
+};
 
 const boardViews: ReadonlySet<AppView> = new Set(["game", "game-review", "repertoire-study", "repertoire-practice"]);
 /** Views whose board is the game store's (the game's move keys apply there). */
@@ -99,6 +109,8 @@ export function App() {
   const [gameReviewPickerOpen, setGameReviewPickerOpen] = useState(false);
   const [sideTab, setSideTab] = useState<SideTab>("notation");
   const [reviewTab, setReviewTab] = useState<ReviewTab>("commentary");
+  /** The Opening tab's picked side (per game); game-review history entries carry it. */
+  const [openingSide, setOpeningSide] = useState<OpeningSide | null>(null);
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId | null>(null);
   /** The Settings section being read (scroll-spy), which history records; the state above is only where Settings opens. */
   const viewedSettingsSection = useRef<SettingsSectionId | null>(null);
@@ -153,7 +165,8 @@ export function App() {
         chapterId: studyChapterId,
         nodeId: repertoireExtras.nodeId,
         orientation: repertoireExtras.orientation,
-        tab: repertoireExtras.tab
+        tab: repertoireExtras.tab,
+        stage: repertoireExtras.stage
       };
     }
     if (practiceRepertoireId) {
@@ -267,6 +280,7 @@ export function App() {
     return captureEntry(view, {
       tab,
       reviewTab,
+      openingSide,
       settingsSection: viewedSettingsSection.current ?? settingsSection,
       puzzleConfig: activePuzzleConfig,
       repertoireScreen
@@ -336,7 +350,8 @@ export function App() {
         return outcome === "restored" || outcome === "shown" ? "shown" : outcome;
       }
       case "game-review": {
-        const outcome = await restoreBoard(entry.board);
+        // The review running for this game keeps going (left for a repertoire screen, say).
+        const outcome = await restoreBoard(entry.board, { keepReview: true });
         if (outcome !== "restored") return outcome === "shown" ? "shown" : outcome;
         const request = latestNavigation.current;
         // The review may not be loaded (the board was replaced while away): bring the saved one back.
@@ -347,6 +362,7 @@ export function App() {
         }
         currentGame().setMode("freeplay");
         setReviewTab(entry.tab as ReviewTab);
+        setOpeningSide(entry.compareColor ? { board: currentGame().board, color: entry.compareColor } : null);
         const id = entry.board.gameId ?? "current";
         latestNavigation.current += 1;
         setAppView("game-review", () => navigate(`/games/${id}/review`, { replace: true }));
@@ -369,9 +385,12 @@ export function App() {
   /**
    * Puts a history entry's board back: "restored" (the caller shows it), "shown" (already on
    * screen: the live Lichess game, or a restarted puzzle), "gone" (the game was deleted) or
-   * "dropped" (a newer navigation won).
+   * "dropped" (a newer navigation won). `keepReview`: a running review of the same game isn't cancelled.
    */
-  async function restoreBoard(snapshot: BoardSnapshot): Promise<"restored" | "shown" | "gone" | "dropped"> {
+  async function restoreBoard(
+    snapshot: BoardSnapshot,
+    { keepReview = false }: { keepReview?: boolean } = {}
+  ): Promise<"restored" | "shown" | "gone" | "dropped"> {
     const request = ++latestNavigation.current;
     const plan = planBoardRestore(snapshot);
     if (plan.kind === "live") {
@@ -396,7 +415,7 @@ export function App() {
       endBoardActivity();
       currentGame().loadGame(plan.session);
     } else {
-      stopEngineWork({ stopSearch: snapshot.mode !== "analysis" });
+      stopEngineWork({ stopSearch: snapshot.mode !== "analysis", keepReview });
       clearPuzzleSession();
     }
     currentGame().restoreView(snapshot);
@@ -421,10 +440,16 @@ export function App() {
     clearPuzzleSession();
   }
 
-  /** Ends what the engine is doing (search, review) before switching to another activity. */
-  function stopEngineWork({ stopSearch = true }: { stopSearch?: boolean } = {}) {
+  /**
+   * Ends what the engine is doing (search, review) before switching to another activity.
+   * `keepReview` leaves a running review of the loaded game alone (it runs in its own process).
+   */
+  function stopEngineWork({
+    stopSearch = true,
+    keepReview = false
+  }: { stopSearch?: boolean; keepReview?: boolean } = {}) {
     if (stopSearch) void window.chaturanga?.engines.stop();
-    void cancelActiveReview();
+    if (!keepReview) void cancelActiveReview();
     useAnalysisStore.getState().reset();
   }
 
@@ -672,7 +697,8 @@ export function App() {
 
   /** Shows a repertoire screen at `path`; the route change is part of the same view transition. */
   function showRepertoireView(view: AppView, path: string) {
-    if (useGameStore.getState().mode !== "engine") stopEngineWork();
+    // Live analysis stops; a review of the game behind keeps running (Back to it shows its progress).
+    if (useGameStore.getState().mode !== "engine") stopEngineWork({ keepReview: true });
     if (!boardViews.has(view) || !repertoireViews.has(appView)) setFocusMode(false);
     setAppView(view, () => navigate(path, { replace: true }));
   }
@@ -689,7 +715,7 @@ export function App() {
    * fails the draft stays open with its error (false). A newer navigation meanwhile wins (false).
    */
   async function openRepertoireStudy(
-    target: StudyTarget & { tab?: string; orientation?: Color | null },
+    target: Omit<StudyOpenTarget, "tab"> & { tab?: string; orientation?: Color | null },
     history: HistoryMode = "push"
   ): Promise<boolean> {
     if (history === "push") commitCurrent();
@@ -710,7 +736,14 @@ export function App() {
       if (target.orientation) draft.setOrientation(target.orientation);
     }
     const tab = (target.tab as StudyTab | undefined) ?? repertoireExtras.tab;
-    setRepertoireExtras({ nodeId: target.nodeId, orientation: target.orientation ?? null, tab, preset: null });
+    // A staged move is applied once by the study page; history entries never carry it.
+    setRepertoireExtras({
+      nodeId: target.nodeId,
+      orientation: target.orientation ?? null,
+      tab,
+      preset: null,
+      stage: target.stage ?? null
+    });
     showRepertoireView(
       "repertoire-study",
       `/repertoires/${encodeURIComponent(target.repertoireId)}/chapters/${encodeURIComponent(target.chapterId)}`
@@ -766,7 +799,7 @@ export function App() {
   function practiceSetup() {
     if (repertoireScreen?.view !== "repertoire-practice") return;
     useRepertoirePracticeStore.getState().reset();
-    openRepertoirePractice(repertoireScreen.repertoireId, { preset: repertoireScreen.preset });
+    openRepertoirePractice(repertoireScreen.repertoireId, { preset: presetForSetup(repertoireScreen.preset) });
   }
 
   function openDatabasesPage(history: HistoryMode = "push") {
@@ -926,9 +959,19 @@ export function App() {
     playEngineFromPuzzle: useEventCallback(playEngineFromCurrentPuzzlePosition),
     reviewCurrentGame: useEventCallback(() => void openSelectedGameReview("current")),
     repertoireHub: useEventCallback(() => openRepertoireHub()),
-    openRepertoireStudy: useEventCallback((target: StudyTarget) =>
+    openRepertoireStudy: useEventCallback((target: StudyOpenTarget) =>
       unlessOnlineGame(() => void openRepertoireStudy(target))
     ),
+    // "Refresh this decision" (a game's opening comparison): a targeted queue that starts at once.
+    // Back returns to the review left (its tab and move are committed first).
+    refreshRepertoireDecision: useEventCallback((repertoireId: string, positionKey: string) =>
+      unlessOnlineGame(() =>
+        openRepertoirePractice(repertoireId, {
+          preset: { mode: "review-due", positionKeys: [positionKey], autoStart: true }
+        })
+      )
+    ),
+    repertoireStageApplied: useEventCallback(() => setRepertoireExtras((extras) => ({ ...extras, stage: null }))),
     openRepertoirePractice: useEventCallback((repertoireId: string) =>
       unlessOnlineGame(() => openRepertoirePractice(repertoireId))
     ),
@@ -1102,6 +1145,8 @@ export function App() {
               settingsReady={settingsQuery.isSuccess}
               reviewTab={reviewTab}
               onReviewTabChange={setReviewTab}
+              openingSide={openingSide}
+              onOpeningSideChange={setOpeningSide}
               reviewLoading={reviewRouteLoading}
               sideTab={sideTab}
               onSideTabChange={setSideTab}

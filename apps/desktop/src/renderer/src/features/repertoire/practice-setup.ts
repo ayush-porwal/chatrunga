@@ -23,13 +23,55 @@ export function practicableChapterIds(
 }
 
 /**
+ * What a practice screen opens with: chapters / mode to preselect ("Practice this chapter",
+ * "Review due"), or a targeted queue of decisions (`positionKeys`, e.g. "Refresh this decision"
+ * from a game's opening comparison) that starts on its own when `autoStart` is set.
+ */
+export type PracticePreset = {
+  chapterIds?: string[];
+  mode?: PracticeMode;
+  positionKeys?: string[];
+  autoStart?: boolean;
+};
+
+/**
+ * The start input of an auto-started targeted preset, or null when the preset isn't one. Only
+ * the named decisions are queued (no saved chapter filter or depth applies), each whether due or
+ * new.
+ */
+export function targetedPracticeInput(
+  repertoireId: string,
+  preset: PracticePreset | null
+): StartPracticeInput | null {
+  const positionKeys = [...new Set(preset?.positionKeys ?? [])];
+  if (!preset?.autoStart || !positionKeys.length) return null;
+  const limit = clamp(positionKeys.length, 1, MAX_CARD_LIMIT);
+  return {
+    repertoireId,
+    mode: preset.mode ?? "review-due",
+    positionKeys,
+    cardLimit: limit,
+    newCardLimit: limit
+  };
+}
+
+/** The preset "Practice again" keeps: a targeted queue isn't repeated (the setup opens instead). */
+export function presetForSetup(preset: PracticePreset | null): PracticePreset | null {
+  if (!preset || (!preset.autoStart && !preset.positionKeys)) return preset;
+  const { chapterIds, mode } = preset;
+  return chapterIds || mode
+    ? { ...(chapterIds ? { chapterIds } : {}), ...(mode ? { mode } : {}) }
+    : null;
+}
+
+/**
  * The setup's starting values: the saved draft or the defaults, then a preset. Chapter ids that
  * no longer exist, are disabled or are reference chapters are dropped (the key too when none is
  * left, meaning every enabled opening chapter), so a stale draft can't be refused on Start.
  */
 export function initialPracticeInput(
   detail: Pick<RepertoireDetail, "id" | "chapters" | "workspace">,
-  preset: { chapterIds?: string[]; mode?: PracticeMode } | null
+  preset: PracticePreset | null
 ): StartPracticeInput {
   const saved = detail.workspace?.practiceDraft;
   const base: StartPracticeInput =
@@ -48,6 +90,8 @@ export function initialPracticeInput(
   };
   const allowed = practicableChapterIds(detail.chapters);
   const { chapterIds, ...rest } = merged;
+  // A targeted queue is never the setup's form (it starts on its own).
+  delete rest.positionKeys;
   const kept = (chapterIds ?? []).filter((id) => allowed.has(id));
   return {
     ...rest,

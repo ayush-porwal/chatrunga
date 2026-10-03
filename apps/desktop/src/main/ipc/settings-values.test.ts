@@ -16,6 +16,8 @@ describe("parseSettingValue", () => {
     expect(parseSettingValue("engineThreads", 4)).toBe(4);
     expect(parseSettingValue("reviewMaiaLevels", [1100, 1900])).toEqual([1100, 1900]);
     expect(parseSettingValue("onboardingCompletedAt", Date.now())).toBeTypeOf("number");
+    expect(parseSettingValue("repertoireCompareWhite", "rep-1")).toBe("rep-1");
+    expect(parseSettingValue("repertoireCompareBlack", null)).toBeNull();
   });
 
   it("rejects values of the wrong type or out of range", () => {
@@ -26,5 +28,7 @@ describe("parseSettingValue", () => {
     expect(() => parseSettingValue("engineHashMb", 1)).toThrow();
     expect(() => parseSettingValue("reviewMaiaLevels", [1200])).toThrow();
     expect(() => parseSettingValue("recentFilePaths", "path")).toThrow();
+    expect(() => parseSettingValue("repertoireCompareWhite", 7)).toThrow(/repertoireCompareWhite/);
+    expect(() => parseSettingValue("repertoireCompareBlack", "x".repeat(201))).toThrow();
   });
 });

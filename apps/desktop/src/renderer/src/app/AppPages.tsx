@@ -3,10 +3,11 @@ import { Loader2 } from "lucide-react";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import type { Color } from "@chaturanga/shared/types/chess";
-import type { PracticeMode } from "@chaturanga/shared/types/repertoire";
-import type { StudyTarget } from "../features/repertoire/repertoire-chapters";
+import type { PracticePreset } from "../features/repertoire/practice-setup";
+import type { StudyOpenTarget, StudyStage } from "../features/repertoire/repertoire-chapters";
 import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
 import type { ReviewTab } from "../features/game-review/review-utils";
+import type { OpeningSide } from "../features/game-review/opening-comparison";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import type { SettingsSectionId } from "../features/settings/SettingsPage";
 import { GameWorkspace, type SideTab } from "./GameWorkspace";
@@ -66,12 +67,14 @@ export type RepertoireScreen =
       nodeId: string | null;
       orientation: Color | null;
       tab: StudyTab;
+      /** A move to stage once the chapter loads (applied once; see repertoireStageApplied). */
+      stage: StudyStage | null;
     }
   | {
       view: "repertoire-practice";
       repertoireId: string;
       sessionId: string | null;
-      preset: { chapterIds?: string[]; mode?: PracticeMode } | null;
+      preset: PracticePreset | null;
     };
 
 /** What the pages can ask the app to do (App's command handlers). */
@@ -97,7 +100,9 @@ export type PageCommands = {
   analyzePosition: () => void;
   stopLiveAnalysis: () => void;
   repertoireHub: () => void;
-  openRepertoireStudy: (target: StudyTarget) => void;
+  openRepertoireStudy: (target: StudyOpenTarget) => void;
+  refreshRepertoireDecision: (repertoireId: string, positionKey: string) => void;
+  repertoireStageApplied: () => void;
   openRepertoirePractice: (repertoireId: string) => void;
   reviewRepertoire: (repertoireId: string) => void;
   practiceRepertoireChapters: (repertoireId: string, chapterIds: string[]) => void;
@@ -120,6 +125,8 @@ export function AppPages({
   settingsReady,
   reviewTab,
   onReviewTabChange,
+  openingSide,
+  onOpeningSideChange,
   reviewLoading,
   sideTab,
   onSideTabChange,
@@ -135,6 +142,9 @@ export function AppPages({
   settingsReady: boolean;
   reviewTab: ReviewTab;
   onReviewTabChange: (tab: ReviewTab) => void;
+  /** The Opening tab's picked side (kept here so a history entry can carry it). */
+  openingSide: OpeningSide | null;
+  onOpeningSideChange: (side: OpeningSide) => void;
   /** The review route's game is still loading (Analyze waits). */
   reviewLoading: boolean;
   sideTab: SideTab;
@@ -174,6 +184,8 @@ export function AppPages({
           initialNodeId={repertoire.nodeId}
           initialOrientation={repertoire.orientation}
           tab={repertoire.tab}
+          stage={repertoire.stage}
+          onStageApplied={on.repertoireStageApplied}
           onTabChange={on.repertoireTabChange}
           onOpenChapter={(chapterId, nodeId = null) =>
             on.openRepertoireStudy({ repertoireId: repertoire.repertoireId, chapterId, nodeId })
@@ -217,6 +229,11 @@ export function AppPages({
           onImportPgn={on.importPgn}
           onPlay={on.play}
           onOpenCommentarySettings={on.commentarySettings}
+          onOpenRepertoireStudy={on.openRepertoireStudy}
+          onRefreshRepertoireDecision={on.refreshRepertoireDecision}
+          onRepertoireHub={on.repertoireHub}
+          openingSide={openingSide}
+          onOpeningSideChange={onOpeningSideChange}
         />
       ) : (
         <GameWorkspace

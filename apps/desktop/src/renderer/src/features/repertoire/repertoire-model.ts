@@ -254,9 +254,9 @@ export function shouldAdoptSaveResult(
   return generationAtSave === currentGeneration;
 }
 
-/** The main process refused a save because the repertoire moved on (a stale draft). */
+/** The main process refused a save because the repertoire or chapter moved on (a stale draft). */
 export function isStaleRevisionError(message: string): boolean {
-  return /expectedRevision|repertoire changed/i.test(message);
+  return /expectedRevision|chapter\.revision|(repertoire|chapter) changed/i.test(message);
 }
 
 /** The main process can't find the repertoire (deleted): the draft has nowhere to go. */

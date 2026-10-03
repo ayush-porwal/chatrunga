@@ -146,7 +146,7 @@ function save(
     kind: options.kind ?? "opening",
     enabled: options.enabled ?? true,
     rootFen,
-    revision: 0,
+    revision: existing?.revision ?? 0,
     nodeCount: 0,
     dueCount: 0,
     headers: {},
@@ -279,6 +279,25 @@ describe("repertoire service: chapters, decisions and index", () => {
       1
     );
     expect(decisionRepository.list(id)).toEqual([]);
+  });
+
+  it("refuses an existing chapter whose revision moved on (e.g. a decision rewrote its edges)", () => {
+    const { id, chapters } = create();
+    const draft = service.getChapter({ repertoireId: id, chapterId: chapters[0].id });
+    const saved = save(id, [["e2e4", "e7e5"]]);
+    expect(saved.chapter.revision).toBe(draft.revision + 1);
+    expect(() =>
+      service.saveChapter({
+        repertoireId: id,
+        chapter: { ...draft, tree: treeOf(START_FEN, [["d2d4"]]) },
+        expectedRevision: saved.repertoire.revision
+      })
+    ).toThrow(
+      `Invalid chapter.revision: chapter changed (stored ${saved.chapter.revision}, expected ${draft.revision})`
+    );
+    expect(service.getChapter({ repertoireId: id, chapterId: chapters[0].id }).tree).toHaveLength(
+      3
+    );
   });
 
   it("rejects an inconsistent tree with the first offending node", () => {
@@ -1220,5 +1239,143 @@ describe("repertoire service: practice", () => {
     attempt(session.sessionId, card.queueItemId, "e2e4");
     const after = service.resumePractice(session.sessionId);
     expect(after.cards[after.cursor].queueItemId).not.toBe(card.queueItemId);
+  });
+
+  it("a targeted queue starts with a decision that isn't due, and grading it adds no lapse", () => {
+    const { id } = create();
+    save(id, [["e2e4", "e7e5", "g1f3"]]);
+    const first = learnFirst(id);
+    attempt(first.session.sessionId, first.card.queueItemId, "e2e4");
+    service.endPractice(first.session.sessionId);
+    const before = progressRepository.get(id, START_KEY)!;
+    expect(before).toMatchObject({ stage: 1, lapses: 0, dueAt: now + DAY });
+
+    // Not due yet: an ordinary review queue has nothing due.
+    expect(
+      service.startPractice({ repertoireId: id, mode: "review-due", newCardLimit: 0 }).cards
+    ).toHaveLength(0);
+    now += 60_000;
+    const targeted = service.startPractice({
+      repertoireId: id,
+      mode: "review-due",
+      positionKeys: [START_KEY]
+    });
+    expect(targeted.status).toBe("active");
+    expect(targeted.cards).toHaveLength(1);
+    expect(targeted.cards[0]).toMatchObject({ positionKey: START_KEY, stage: "review" });
+    expect(targeted.scope.positionKeys).toEqual([START_KEY]);
+    expect(service.resumePractice(targeted.sessionId).scope.positionKeys).toEqual([START_KEY]);
+    expect(progressRepository.get(id, START_KEY)).toEqual(before);
+
+    const result = attempt(targeted.sessionId, targeted.cards[0].queueItemId, "e2e4");
+    expect(result.outcome).toBe("correct");
+    expect(progressRepository.get(id, START_KEY)!.lapses).toBe(0);
+  });
+
+  it("a targeted queue keeps the given order and drops unknown or paused decisions", () => {
+    const { id } = create();
+    save(id, [["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"]]);
+    const afterE5 = positionKey(fenAfterUci(fenAfterUci(START_FEN, "e2e4")!, "e7e5")!);
+    const afterNc6 = positionKey(
+      ["e2e4", "e7e5", "g1f3", "b8c6"].reduce((fen, uci) => fenAfterUci(fen, uci)!, START_FEN)
+    );
+    const { revision } = service.getRepertoire(id);
+    service.updateDecision({
+      repertoireId: id,
+      positionKey: afterNc6,
+      expectedRevision: revision,
+      patch: { paused: true }
+    });
+    const session = service.startPractice({
+      repertoireId: id,
+      mode: "review-due",
+      positionKeys: [afterE5, "v1:unknown", afterNc6, START_KEY, afterE5]
+    });
+    expect(session.cards.map((card) => [card.positionKey, card.stage])).toEqual([
+      [afterE5, "new"],
+      [START_KEY, "new"]
+    ]);
+  });
+});
+
+describe("repertoire service: game comparison", () => {
+  function twoChapters() {
+    const { id } = create();
+    save(id, [["e2e4", "e7e5", "g1f3"]]);
+    save(id, [["e2e4", "e7e5", "b1c3", "g8f6", "f1c4"]], { chapterId: "c2" });
+    return id;
+  }
+
+  it("compares a game across two chapters and reports the first deviation", () => {
+    const id = twoChapters();
+    const firstChapter = service.getRepertoire(id).chapters[0].id;
+    const inRepertoire = service.compareGame({
+      repertoireId: id,
+      color: "white",
+      rootFen: START_FEN,
+      moves: ["e2e4", "e7e5", "b1c3", "g8f6", "f1c4"]
+    });
+    expect(inRepertoire.issue).toBeNull();
+    expect(inRepertoire.matchedPlies).toBe(5);
+    expect(inRepertoire.chaptersUsed.map((item) => item.chapterId)).toEqual([firstChapter, "c2"]);
+
+    const deviation = service.compareGame({
+      repertoireId: id,
+      color: "white",
+      rootFen: START_FEN,
+      moves: ["e2e4", "e7e5", "d2d4", "e5d4"]
+    });
+    expect(deviation.matchedPlies).toBe(2);
+    expect(deviation.issue).toMatchObject({
+      status: "player-deviation",
+      ply: 3,
+      playedUci: "d2d4",
+      expectedUcis: ["g1f3", "b1c3"],
+      preferredUci: "g1f3",
+      chapterId: firstChapter
+    });
+    expect(deviation.moves.map((move) => move.status)).toEqual([
+      "player-choice",
+      "covered-reply",
+      "deviation",
+      "outside-scope"
+    ]);
+  });
+
+  it("caches by revision: a repeat is the same result, an edit computes a new one", () => {
+    const id = twoChapters();
+    const input = {
+      repertoireId: id,
+      color: "white" as const,
+      rootFen: START_FEN,
+      moves: ["e2e4", "e7e5", "f1c4"]
+    };
+    const first = service.compareGame(input);
+    expect(service.compareGame({ ...input, moves: [...input.moves] })).toBe(first);
+    expect(service.compareGame({ ...input, moves: ["e2e4", "e7e5"] })).not.toBe(first);
+
+    const { revision } = service.getRepertoire(id);
+    service.updateMetadata({ id, expectedRevision: revision, patch: { name: "Renamed" } });
+    const second = service.compareGame(input);
+    expect(second).not.toBe(first);
+    expect(second).toMatchObject({ revision: revision + 1, repertoireName: "Renamed" });
+    expect(second.issue).toEqual(first.issue);
+  });
+
+  it("refuses an unknown repertoire or an illegal move; compares an archived repertoire", () => {
+    const id = twoChapters();
+    const game = { repertoireId: id, color: "white" as const, rootFen: START_FEN, moves: ["e2e4"] };
+    expect(() => service.compareGame({ ...game, repertoireId: "nope" })).toThrow(
+      "Invalid repertoireId: not found"
+    );
+    expect(() => service.compareGame({ ...game, moves: ["e2e4", "e2e4"] })).toThrow(
+      'Invalid moves: "e2e4" (ply 2) is not legal'
+    );
+    expect(() => service.compareGame({ ...game, color: "black" })).toThrow(
+      "Invalid color: this repertoire is for white"
+    );
+    const { revision } = service.getRepertoire(id);
+    service.archiveRepertoire({ id, archived: true, expectedRevision: revision });
+    expect(service.compareGame(game)).toMatchObject({ issue: null, matchedPlies: 1 });
   });
 });
