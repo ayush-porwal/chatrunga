@@ -939,6 +939,7 @@ type GameLinkRow = {
   repertoire_id: string;
   chapter_id: string | null;
   game_id: string | null;
+  unsaved: number;
   game_node_id: string | null;
   kind: string;
   headers_json: string;
@@ -952,6 +953,7 @@ function toGameLink(row: GameLinkRow): RepertoireGameLink {
     repertoireId: row.repertoire_id,
     chapterId: row.chapter_id,
     gameId: row.game_id,
+    unsaved: row.unsaved === 1,
     gameNodeId: row.game_node_id,
     kind: row.kind === "model" ? "model" : "source",
     headers: stringRecord(row.headers_json),
@@ -964,12 +966,13 @@ function toGameLink(row: GameLinkRow): RepertoireGameLink {
 export const gameLinkRepository = {
   insert(link: RepertoireGameLink): void {
     run(
-      `INSERT INTO repertoire_game_links (id, repertoire_id, chapter_id, game_id, game_node_id, kind,
-        headers_json, captured_path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO repertoire_game_links (id, repertoire_id, chapter_id, game_id, unsaved, game_node_id,
+        kind, headers_json, captured_path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       link.id,
       link.repertoireId,
       link.chapterId,
       link.gameId,
+      link.unsaved ? 1 : 0,
       link.gameNodeId,
       link.kind,
       JSON.stringify(link.headers),

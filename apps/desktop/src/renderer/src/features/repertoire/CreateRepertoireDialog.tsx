@@ -1,6 +1,10 @@
 import { useId, useState } from "react";
 import { Upload } from "lucide-react";
-import type { RepertoireColor, RepertoireDetail } from "@chaturanga/shared/types/repertoire";
+import type {
+  AddFromGameSource,
+  RepertoireColor,
+  RepertoireDetail
+} from "@chaturanga/shared/types/repertoire";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
@@ -12,7 +16,8 @@ import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useCreateRepertoireMutation } from "../../queries/repertoire";
 import { useAddToRepertoireStore } from "../../stores/add-to-repertoire-store";
 import { useGameStore } from "../../stores/game-store";
-import { hasMoves, newRepertoireRootFen, sourceFromBoard } from "./add-from-game";
+import { hasMoves, newRepertoireRootFen } from "./add-from-game";
+import { ADD_NEEDS_SAVE, captureBoardSource } from "./board-source";
 import { fenError, sortedChapters } from "./repertoire-chapters";
 
 type StartFrom = "initial" | "fen" | "game";
@@ -54,13 +59,30 @@ export function CreateRepertoireDialog({
   const boardHasGame = useGameStore((state) => hasMoves(state.moveTree));
   const fromGame = startFrom === "game" && boardHasGame;
   const invalidFen = startFrom === "fen" ? fenError(fen) : null;
+  const [capturing, setCapturing] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const canCreate =
-    Boolean(name.trim()) && !invalidFen && !create.isPending && (startFrom !== "game" || fromGame);
+    Boolean(name.trim()) &&
+    !invalidFen &&
+    !create.isPending &&
+    !capturing &&
+    (startFrom !== "game" || fromGame);
 
-  const submit = (next: "study" | "import") => {
+  const submit = async (next: "study" | "import") => {
     if (!canCreate) return;
-    // The game as it is now: the dialog that follows adds this snapshot, whatever the board does.
-    const source = fromGame ? sourceFromBoard(useGameStore.getState()) : null;
+    setSaveError(null);
+    // The game as it is now (saved first): the dialog that follows adds this snapshot, whatever
+    // the board does.
+    let source: AddFromGameSource | null = null;
+    if (fromGame) {
+      setCapturing(true);
+      source = await captureBoardSource();
+      setCapturing(false);
+      if (!source) {
+        setSaveError(ADD_NEEDS_SAVE);
+        return;
+      }
+    }
     const rootFen = newRepertoireRootFen(startFrom, fen, source?.rootFen ?? null, next);
     create.mutate(
       { name: name.trim(), color, ...(rootFen ? { rootFen } : {}) },
@@ -97,7 +119,7 @@ export function CreateRepertoireDialog({
             variant="outline"
             size="sm"
             disabled={!canCreate}
-            onClick={() => submit("import")}
+            onClick={() => void submit("import")}
           >
             <Upload />
             Create and import PGN
@@ -107,7 +129,7 @@ export function CreateRepertoireDialog({
             variant="primary"
             size="sm"
             disabled={!canCreate}
-            onClick={() => submit("study")}
+            onClick={() => void submit("study")}
           >
             {create.isPending ? "Creating…" : "Create"}
           </Button>
@@ -119,7 +141,7 @@ export function CreateRepertoireDialog({
         className="grid gap-4"
         onSubmit={(event) => {
           event.preventDefault();
-          submit("study");
+          void submit("study");
         }}
       >
         <Field label="Name" htmlFor={ids.name}>
@@ -171,6 +193,7 @@ export function CreateRepertoireDialog({
         ) : null}
         <button type="submit" hidden />
       </form>
+      {saveError ? <Notice tone="danger">{saveError}</Notice> : null}
       {create.error ? (
         <Notice tone="danger">{ipcErrorMessage(create.error) || "Couldn't create it."}</Notice>
       ) : null}

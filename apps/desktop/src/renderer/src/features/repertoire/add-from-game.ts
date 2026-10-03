@@ -7,6 +7,7 @@ import {
   type AddFromGameScope,
   type AddFromGameSource,
   type ChapterKind,
+  type RepertoireGameLink,
   type RepertoireSummary
 } from "@chaturanga/shared/types/repertoire";
 import { sessionFromSavedGame } from "../game/saved-game";
@@ -114,6 +115,11 @@ export function gameLinkLabel(headers: Record<string, string>, createdAt: number
     year: "numeric"
   });
   return `Analysis board · ${date}`;
+}
+
+/** Why a link has no game to open: never saved from the board, or deleted from the library. */
+export function missingGameNote(link: Pick<RepertoireGameLink, "unsaved">): string {
+  return link.unsaved ? "(from the Analyze board, never saved)" : "(game no longer in library)";
 }
 
 /**

@@ -301,6 +301,46 @@ describe("mergeIntoChapter", () => {
     expect(below.chapter.nodeMeta.n2).toEqual({ edge: "covered", trainingStart: true });
   });
 
+  it("a new included first move trains from its position when no other move would start", () => {
+    const existing = treeOf([["e2e4", "e7e5", "g1f3"]], "n");
+    const meta: Record<string, RepertoireNodeMeta> = {
+      n1: { edge: "covered" },
+      n2: { edge: "covered", trainingStart: true },
+      n3: { edge: "included" }
+    };
+    const result = mergeIntoChapter(chapterOf(existing, meta), {
+      rootFen: START_FEN,
+      tree: treeOf([["d2d4", "d7d5", "c2c4"]], "x"),
+      nodeMeta: { x1: { edge: "included" }, x2: { edge: "covered" }, x3: { edge: "included" } }
+    });
+    expect(result.chapter.nodeMeta.root).toEqual({ edge: "included", trainingStart: true });
+    expect(result.chapter.nodeMeta[result.idMap.x1]).toEqual({ edge: "included" });
+    const decisions = collectDecisions("white", [result.chapter]);
+    const root = [...decisions.values()].find((decision) => decision.fen === START_FEN);
+    expect(root && [...root.acceptedUcis]).toEqual(["d2d4"]);
+  });
+
+  it("accepting a covered move doesn't start training the chapter's other moves before its start", () => {
+    // 1. e4 is included but trains only from 2... Nc6; 1. d4 is covered context.
+    const existing = treeOf([["e2e4", "e7e5", "g1f3", "b8c6"], ["d2d4"]], "n");
+    const meta: Record<string, RepertoireNodeMeta> = {
+      n1: { edge: "included" },
+      n2: { edge: "covered" },
+      n3: { edge: "included" },
+      n4: { edge: "covered", trainingStart: true },
+      n5: { edge: "covered" }
+    };
+    const result = mergeIntoChapter(chapterOf(existing, meta), {
+      rootFen: START_FEN,
+      tree: treeOf([["d2d4"]], "x"),
+      nodeMeta: { x1: { edge: "included" } }
+    });
+    expect(result.chapter.nodeMeta.n5).toEqual({ edge: "included" });
+    expect(result.chapter.nodeMeta.root?.trainingStart).toBeUndefined();
+    const decisions = collectDecisions("white", [result.chapter]);
+    expect([...decisions.values()].some((decision) => decision.fen === START_FEN)).toBe(false);
+  });
+
   it("matches a root with different move counters and renumbers new moves from the chapter", () => {
     const later = START_FEN.replace(" 0 1", " 0 5");
     const result = mergeIntoChapter(chapterOf(treeOf([], "n")), {

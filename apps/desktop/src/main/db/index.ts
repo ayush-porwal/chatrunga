@@ -328,13 +328,15 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
     )`);
   },
   // 8: repertoire provenance: which game (or part of one) a chapter's material came from. Deleting
-  // the library game or the chapter keeps the link (and its copied headers) with a null reference.
+  // the library game or the chapter keeps the link (and its copied headers) with a null reference;
+  // `unsaved` marks a link to a board game that was never in the library.
   (database) => {
     database.exec(`CREATE TABLE IF NOT EXISTS repertoire_game_links (
       id TEXT PRIMARY KEY,
       repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
       chapter_id TEXT REFERENCES repertoire_chapters(id) ON DELETE SET NULL,
       game_id TEXT REFERENCES games(id) ON DELETE SET NULL,
+      unsaved INTEGER NOT NULL DEFAULT 0,
       game_node_id TEXT,
       kind TEXT NOT NULL CHECK (kind IN ('source', 'model')),
       headers_json TEXT NOT NULL DEFAULT '{}',

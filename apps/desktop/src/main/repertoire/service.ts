@@ -1366,6 +1366,7 @@ export function addFromGame(input: AddFromGameInput): AddFromGameResult {
       repertoireId: record.id,
       chapterId: plan.chapter.id,
       gameId: input.source.gameId,
+      unsaved: input.source.gameId === null,
       gameNodeId: plan.gameNodeId,
       kind: "source",
       headers: plan.linkHeaders,

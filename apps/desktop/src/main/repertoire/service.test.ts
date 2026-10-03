@@ -1464,6 +1464,7 @@ describe("repertoire service: add from a game", () => {
       repertoireId: id,
       chapterId: result.chapter.id,
       gameId: null,
+      unsaved: true,
       gameNodeId: end.id,
       kind: "source",
       capturedPath: "1. e4 e5 2. Nf3 Nc6"
@@ -1774,10 +1775,15 @@ describe("repertoire service: add from a game", () => {
     const { id } = create();
     insertLibraryGame("game-1");
     const result = service.addFromGame(input(id, sourceOf(GAME_LINES, "game-1")));
-    expect(result.link.gameId).toBe("game-1");
+    expect(result.link).toMatchObject({ gameId: "game-1", unsaved: false });
     getDb().exec("DELETE FROM games WHERE id = 'game-1'");
     const [link] = service.listGameLinks({ repertoireId: id, chapterId: result.chapter.id });
-    expect(link).toMatchObject({ id: result.link.id, gameId: null, headers: { White: "Alice" } });
+    expect(link).toMatchObject({
+      id: result.link.id,
+      gameId: null,
+      unsaved: false,
+      headers: { White: "Alice" }
+    });
     expect(service.getChapter({ repertoireId: id, chapterId: result.chapter.id }).nodeCount).toBe(
       6
     );

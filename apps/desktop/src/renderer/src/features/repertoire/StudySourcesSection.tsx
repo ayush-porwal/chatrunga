@@ -6,12 +6,13 @@ import { ipcErrorMessage } from "@/lib/ipc-error";
 import { listRow } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useGameLinksQuery, useRemoveGameLinkMutation } from "../../queries/repertoire";
-import { gameLinkLabel } from "./add-from-game";
+import { gameLinkLabel, missingGameNote } from "./add-from-game";
 
 /**
  * The games a chapter's material came from (design §5.2 / §6.5): who played, the copied route,
  * "Open game" at the linked move while the game is still in the library, and Remove (the copied
- * moves stay). A deleted game keeps its link with a note, and only Remove.
+ * moves stay). A deleted game keeps its link with a note, and only Remove; so does a board game
+ * that was never saved, with its own note.
  */
 export function StudySourcesSection({
   repertoireId,
@@ -56,7 +57,7 @@ export function StudySourcesSection({
               </span>
               {/* Its own line: in the narrow panel a long path would truncate it away. */}
               {link.gameId ? null : (
-                <span className="text-2xs text-fg-muted">(game no longer in library)</span>
+                <span className="text-2xs text-fg-muted">{missingGameNote(link)}</span>
               )}
             </div>
             {link.gameId && onOpenGame ? (

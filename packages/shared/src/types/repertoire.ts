@@ -509,6 +509,8 @@ export type RepertoireGameLink = {
   chapterId: string | null;
   /** Null once the library game was deleted; the copied material and headers remain. */
   gameId: string | null;
+  /** The source was a board game never saved to the library (gameId was null from the start). */
+  unsaved: boolean;
   gameNodeId: string | null;
   kind: "source" | "model";
   /** The game's headers at link time (White, Black, Event, Date, Site/URL…). */

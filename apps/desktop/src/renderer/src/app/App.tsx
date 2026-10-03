@@ -6,7 +6,6 @@ import { createGameFromFen } from "@chaturanga/shared/chess/pgn";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import type { ImportedGame } from "@chaturanga/shared/types/chess";
 import { defaultSettings } from "@chaturanga/shared/types/settings";
-import { REPERTOIRE_ROOT_NODE_ID } from "@chaturanga/shared/types/repertoire";
 import { Notice } from "@/components/ui/notice";
 import { hasDesktopApi, isElectronMac } from "@/lib/environment";
 import { positionStatus } from "@/lib/position-status";
@@ -1006,9 +1005,10 @@ export function App() {
     repertoirePositionChanged: useEventCallback(() => {
       if (appView === "repertoire-study" && !historyBusy.current) record("replace", historyEntry("repertoire-study"));
     }),
-    // A repertoire source link: the saved game on the board at the linked move.
+    // A repertoire source link: the saved game on the board at the linked move (no move: the
+    // game's start, even when the game is already open at a later move).
     openGameAtNode: useEventCallback((gameId: string, nodeId: string | null) =>
-      unlessOnlineGame(() => void openSavedGameById(gameId, nodeId))
+      unlessOnlineGame(() => void openSavedGameById(gameId, nodeId ?? "root"))
     ),
     closeAddToRepertoire: useEventCallback(closeAddToRepertoire),
     // Added: the dialog closes and the notice offers the chapter (Back returns here).

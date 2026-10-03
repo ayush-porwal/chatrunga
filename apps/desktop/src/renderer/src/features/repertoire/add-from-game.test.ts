@@ -14,6 +14,7 @@ import {
   defaultChapterTitle,
   defaultRepertoireId,
   gameLinkLabel,
+  missingGameNote,
   newRepertoireRootFen,
   hashAddInput,
   hasMoves,
@@ -172,6 +173,11 @@ describe("labels and destination defaults", () => {
     });
     expect(gameLinkLabel({}, at)).toBe(`Analysis board · ${date}`);
     expect(gameLinkLabel({ Event: "?" }, at)).toBe(`Analysis board · ${date}`);
+  });
+
+  it("tells a board game never saved from a library game deleted since", () => {
+    expect(missingGameNote({ unsaved: true })).toBe("(from the Analyze board, never saved)");
+    expect(missingGameNote({ unsaved: false })).toBe("(game no longer in library)");
   });
 
   it("starts a new repertoire from the current game only on the plain Create path", () => {
