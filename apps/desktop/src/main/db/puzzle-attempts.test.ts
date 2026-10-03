@@ -105,6 +105,18 @@ describe("puzzleAttemptRepository (SQLite)", () => {
     expect(later).toBeGreaterThan(soon);
   });
 
+  it("rates an attempt recorded after a later one on the current rating, with no idle time, keeping the later time", () => {
+    const later = attempt({ decidedAt: T0 + 10 * DAY });
+    const early = attempt({ decidedAt: T0 });
+    const first = repository.record(later, T0 + 10 * DAY);
+    const late = repository.record(early, T0 + 10 * DAY);
+    expect(late.before).toEqual(first.after);
+    expect(late.after).toEqual(rateAttempt(first.after!, { rating: 1500, deviation: 75 }, true, later.decidedAt));
+    expect(repository.summary(T0 + 10 * DAY)).toMatchObject({ ...late.after, ratedCount: 2, lastRatedAt: later.decidedAt });
+    // The chain is in the order recorded.
+    expect(repository.history().map((point) => point.rating)).toEqual([first.after!.rating, late.after!.rating]);
+  });
+
   it("rolls the rating back with the attempt when storing it fails", () => {
     const input = attempt();
     // A CHECK violation on the attempt row, after the rating row was written in the transaction.

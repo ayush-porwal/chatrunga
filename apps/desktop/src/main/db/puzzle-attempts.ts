@@ -106,13 +106,18 @@ export const puzzleAttemptRepository = {
       const at = Math.min(input.decidedAt, now);
       if (unratedReason === null) {
         const stored = storedRating();
+        const lastRatedAt = stored?.last_rated_at ?? null;
+        // Rated attempts form one chain in the order they are recorded (main records them one at a
+        // time, as they arrive). One decided before the last rated attempt (a clock set back, say)
+        // is rated on the current rating with no idle time, and the rating keeps the later time.
+        const ratedAt = lastRatedAt === null ? at : Math.max(at, lastRatedAt);
         before = stored ? { rating: stored.rating, deviation: stored.rd, volatility: stored.volatility } : DEFAULT_PUZZLE_RATING;
         after = rateAttempt(
           before,
           { rating: input.puzzleRating!, deviation: input.puzzleRatingDeviation! },
           input.outcome === "solved",
-          at,
-          stored?.last_rated_at ?? null
+          ratedAt,
+          lastRatedAt
         );
         run(
           `INSERT INTO puzzle_rating (id, rating, rd, volatility, rated_count, last_rated_at, updated_at)
@@ -122,12 +127,12 @@ export const puzzleAttemptRepository = {
             rd = excluded.rd,
             volatility = excluded.volatility,
             rated_count = puzzle_rating.rated_count + 1,
-            last_rated_at = MAX(COALESCE(puzzle_rating.last_rated_at, 0), excluded.last_rated_at),
+            last_rated_at = excluded.last_rated_at,
             updated_at = excluded.updated_at`,
           after.rating,
           after.deviation,
           after.volatility,
-          at,
+          ratedAt,
           now
         );
       }
