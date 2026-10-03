@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  archivePath,
   checkArchive,
   checkDist,
   findArchives,
@@ -65,6 +66,12 @@ test("finds relative imports, not packages or built-ins", () => {
   const source =
     'import a from "./a.js"; import("../b.js"); require("./c.cjs"); import "node:fs"; import x from "electron";';
   assert.deepEqual(relativeImports(source), ["./a.js", "../b.js", "./c.cjs"]);
+});
+
+test("looks files up in an archive by the OS's separator (asar can't find out/main/… on Windows)", () => {
+  assert.equal(archivePath("out/main/index.js", "\\"), "out\\main\\index.js");
+  assert.equal(archivePath("out/main/index.js", "/"), "out/main/index.js");
+  assert.equal(archivePath("package.json", "\\"), "package.json");
 });
 
 test("a complete package passes", async () => {
