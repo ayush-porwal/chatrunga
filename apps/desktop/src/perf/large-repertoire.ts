@@ -175,3 +175,15 @@ export function generateGame(random: () => number, tree: MoveNode[], plies: numb
   }
   return moves;
 }
+
+/** The tree with one random legal move added below its last leaf (a structural edit). */
+export function extendLeaf(random: () => number, tree: MoveNode[]): MoveNode[] {
+  const leaf = [...tree].reverse().find((node) => !node.children.length) ?? tree[0];
+  const moves = legalMoves(positionOf(leaf.fenAfter));
+  if (!moves.length) return tree;
+  const node = moveNode(`x${tree.length}`, leaf, moves[Math.floor(random() * moves.length)]);
+  return [
+    ...tree.map((item) => (item.id === leaf.id ? { ...item, children: [node.id] } : item)),
+    node
+  ];
+}

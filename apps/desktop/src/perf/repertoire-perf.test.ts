@@ -25,18 +25,33 @@ import {
   expandPathTo,
   subtreeSizes
 } from "../renderer/src/features/repertoire/study-tree-model";
-import { generateChapter, generateGame, seededRandom, type TreeShape } from "./large-repertoire";
+import {
+  extendLeaf,
+  generateChapter,
+  generateGame,
+  seededRandom,
+  type TreeShape
+} from "./large-repertoire";
 
 const userData = mkdtempSync(join(tmpdir(), "chaturanga-repertoire-perf-"));
 vi.mock("electron", () => ({
-  app: { getPath: () => userData },
+  app: { getPath: () => userData, getName: () => "Chaturanga", getVersion: () => "0.0.0" },
   BrowserWindow: { getAllWindows: () => [], getFocusedWindow: () => null },
   dialog: {}
 }));
 
 const { closeDb } = await import("../main/db");
 const service = await import("../main/repertoire/service");
-const { chapterRepository } = await import("../main/repertoire/repository");
+const { chapterRepository, decisionRepository, positionIndexRepository, transaction } =
+  await import("../main/repertoire/repository");
+const { reindex, requireRepertoire } = await import("../main/repertoire/core");
+const { backupDocument, backupEntryOf } = await import("../main/repertoire/backup-restore");
+const { stripForExport } = await import("@chaturanga/shared/chess/repertoire-backup");
+
+/** Builds the derived state of a repertoire seeded straight through the repository. */
+function reindexSeeded(repertoireId: string): void {
+  transaction(() => reindex(requireRepertoire(repertoireId), Date.now()));
+}
 const { importPreviewFromText, runImport } = await import("../main/repertoire/import-job");
 
 const FULL = process.env.RUN_PERF === "1";
@@ -48,6 +63,8 @@ const SIZE = FULL
       bigChapter: 5000,
       gamePlies: 300,
       importChapters: 1000,
+      singleChapters: 500,
+      singleMoves: 100,
       runs: 30
     }
   : {
@@ -57,6 +74,8 @@ const SIZE = FULL
       bigChapter: 200,
       gamePlies: 40,
       importChapters: 10,
+      singleChapters: 12,
+      singleMoves: 20,
       runs: 3
     };
 
@@ -181,7 +200,7 @@ describe("repertoire performance (design §11)", { timeout: 600_000 }, () => {
         occurrences += chapter.tree.length;
         if (c > 0) chapterRepository.upsert(detail.id, chapter, Date.now());
       }
-      // Saving the first chapter reindexes the whole repertoire once.
+      reindexSeeded(detail.id);
       const saved = service.saveChapter({
         repertoireId: detail.id,
         chapter: chapters[0],
@@ -346,5 +365,123 @@ describe("repertoire performance (design §11)", { timeout: 600_000 }, () => {
     }
     facts["import: longest gap between progress events, ms"] = round(maxProgressGap);
     expect(nodes).toBe(SIZE.importChapters * SIZE.movesPerChapter);
+  });
+  it("saves one chapter of a single large repertoire without stalling the main thread", async () => {
+    // One repertoire holding every chapter: a save used to reindex all of them (audit R02).
+    const detail = service.createRepertoire({ name: "Single large repertoire", color: "white" });
+    const chapters: RepertoireChapter[] = [];
+    for (let c = 0; c < SIZE.singleChapters; c++) {
+      const chapter = generateChapter(random, SMALL_SHAPE(SIZE.singleMoves), {
+        id: c === 0 ? detail.chapters[0].id : `single${c}`,
+        title: `Chapter ${c + 1}`,
+        sortOrder: c,
+        color: "white"
+      });
+      chapters.push(chapter);
+      if (c > 0) chapterRepository.upsert(detail.id, chapter, Date.now());
+    }
+    reindexSeeded(detail.id);
+    let saved = service.saveChapter({
+      repertoireId: detail.id,
+      chapter: chapters[0],
+      expectedRevision: detail.revision
+    });
+    const occurrences = chapters.reduce((sum, chapter) => sum + chapter.tree.length, 0);
+    facts["single repertoire: chapters × moves"] =
+      `${SIZE.singleChapters} × ${SIZE.singleMoves} (${occurrences} occurrences)`;
+
+    const target = chapters[Math.floor(SIZE.singleChapters / 2)];
+    let chapter = service.getChapter({ repertoireId: detail.id, chapterId: target.id });
+    let revision = saved.repertoire.revision;
+    const save = (next: RepertoireChapter) => {
+      saved = service.saveChapter({
+        repertoireId: detail.id,
+        chapter: next,
+        expectedRevision: revision
+      });
+      revision = saved.repertoire.revision;
+      chapter = saved.chapter;
+    };
+    let edit = 0;
+    const commentOnly = () => {
+      edit += 1;
+      save({
+        ...chapter,
+        tree: chapter.tree.map((node) =>
+          node.id === "root" ? { ...node, comment: `Edit ${edit}` } : node
+        )
+      });
+    };
+    const addMove = () => save({ ...chapter, tree: extendLeaf(random, chapter.tree) });
+    measure("Single repertoire: comment-only saveChapter", commentOnly);
+    measure("Single repertoire: saveChapter adding one move", addMove);
+    // A decision's prompt: the start position (in every chapter) and the least shared one.
+    const decisions = decisionRepository.list(detail.id);
+    const sharing = (key: string) =>
+      new Set(positionIndexRepository.occurrences(detail.id, key).map((row) => row.chapterId)).size;
+    const ranked = decisions
+      .map((decision) => ({ key: decision.positionKey, count: sharing(decision.positionKey) }))
+      .sort((a, b) => a.count - b.count);
+    for (const { key, count } of [ranked[ranked.length - 1], ranked[0]]) {
+      measure(`Single repertoire: updateDecision prompt (position in ${count} chapters)`, () => {
+        edit += 1;
+        revision = service.updateDecision({
+          repertoireId: detail.id,
+          expectedRevision: revision,
+          positionKey: key,
+          patch: { prompt: `Prompt ${edit}` }
+        }).repertoire.revision;
+      });
+    }
+    chapter = service.getChapter({ repertoireId: detail.id, chapterId: target.id });
+
+    // The longest main-thread gap while saves arrive through the write gate, as the IPC handlers
+    // run them, interleaved with other event-loop work.
+    for (const [name, run] of [
+      ["comment-only saves", commentOnly],
+      ["one-move saves", addMove]
+    ] as const) {
+      const probe = probeEventLoop();
+      for (let index = 0; index < SIZE.runs; index++) {
+        await service.withRepertoireWriteGate(run);
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      facts[`single repertoire: longest main-thread block during ${name}, ms`] = round(
+        await probe.stop()
+      );
+    }
+    expect(chapter.revision).toBeGreaterThan(1);
+
+    // Restoring this repertoire's backup as a copy. Without the bundled restore worker (as here)
+    // it runs in this thread: its duration is how long it blocked the main thread before the
+    // worker. The packaged app restores in the worker; e2e/repertoire-perf.spec.ts measures that.
+    const json = transaction(
+      () =>
+        JSON.stringify(
+          backupDocument([stripForExport(backupEntryOf(requireRepertoire(detail.id)), true)], 0, {
+            name: "Chaturanga",
+            version: "0.0.0"
+          })
+        ),
+      "read"
+    );
+    const restores: number[] = [];
+    for (let run = 0; run < (FULL ? 3 : 1); run++) {
+      const preview = (await service.previewBackupImport({ json }))!;
+      const started = performance.now();
+      await service.restoreBackup({
+        jobId: preview.jobId,
+        selections: [{ sourceId: detail.id, mode: "new-copy", includeProgress: true }]
+      });
+      restores.push(performance.now() - started);
+    }
+    restores.sort((a, b) => a - b);
+    results.push({
+      name: "Single repertoire: restoreBackup as a copy, in this thread (no worker)",
+      p50: percentile(restores, 50),
+      p95: percentile(restores, 95),
+      max: restores[restores.length - 1],
+      runs: restores.length
+    });
   });
 });
