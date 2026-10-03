@@ -2774,6 +2774,51 @@ describe("repertoire service: rehearse lines", () => {
     });
   });
 
+  it("plays a paused decision's move as context and never asks it", () => {
+    const line = ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4"];
+    const { id, chapter } = setup([line]);
+    const keyAfter = (plies: number) =>
+      positionKey(line.slice(0, plies).reduce((fen, uci) => fenAfterUci(fen, uci)!, START_FEN));
+    const pause = (key: string) =>
+      service.updateDecision({
+        repertoireId: id,
+        positionKey: key,
+        expectedRevision: service.getRepertoire(id).revision,
+        patch: { paused: true }
+      });
+    // 2. Nf3 is paused: after 1. e4 e5 the line goes on with Nf3 Nc6 to 3. Bc4's decision.
+    pause(keyAfter(2));
+    const session = rehearse(id, chapter.id);
+    expect(session.cards[0]).toMatchObject({ nodeId: "root", rehearsal: { stepIndex: 0 } });
+    const first = attempt(session.sessionId, "q1", "e2e4");
+    expect(first.rehearsal).toMatchObject({
+      reply: { uci: "e7e5" },
+      lineComplete: false,
+      next: {
+        positionKey: keyAfter(4),
+        leadUp: line.slice(0, 4).map((uci) => expect.objectContaining({ uci })),
+        rehearsal: { stepIndex: 1 }
+      }
+    });
+    expect(attempt(session.sessionId, "q2", "f1c4").rehearsal).toMatchObject({
+      lineComplete: true
+    });
+    expect(service.endPractice(session.sessionId)).toMatchObject({
+      unaided: 2,
+      rehearsal: { linesStarted: 1, linesCompleted: 1 }
+    });
+
+    // The first decision paused too: the line starts at 3. Bc4's, its lead-up played.
+    pause(START_KEY);
+    const later = rehearse(id, chapter.id);
+    expect(later.cards).toHaveLength(1);
+    expect(later.cards[0]).toMatchObject({ positionKey: keyAfter(4), rehearsal: { stepIndex: 0 } });
+
+    // Every decision paused: nothing to rehearse.
+    pause(keyAfter(4));
+    expect(rehearse(id, chapter.id)).toMatchObject({ status: "finished", cards: [] });
+  });
+
   it("plays lines with authored replies, rotating to unseen branches, and never writes progress", () => {
     const { id, chapter } = setup();
     const tree = chapter.tree;

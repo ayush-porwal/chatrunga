@@ -12,6 +12,7 @@ import {
   openingReplyMessage,
   OTHER_LINE_TEXT,
   rehearsalLineNumber,
+  rehearsalReplyMessage,
   rehearsalStepNumber,
   rehearsalTitle,
   useRepertoirePracticeStore,
@@ -529,6 +530,25 @@ describe("repertoire practice store: line rehearsal", () => {
     expect(openingReplyMessage(session(), cardOf("d", { nodeId: "x", leadUp }))).toBeNull();
     store().setSession(rehearsal());
     expect(store().message).toBeNull();
+  });
+
+  it("names the moves played for paused decisions after a reply", () => {
+    const leadUp = [
+      { san: "e4", uci: "e2e4", fen: "f1" },
+      { san: "e5", uci: "e7e5", fen: "f2" },
+      { san: "Nf3", uci: "g1f3", fen: "f3" },
+      { san: "Nc6", uci: "b8c6", fen: "f4" }
+    ];
+    const next = lineCard("b", "L1", 1, { leadUp });
+    expect(rehearsalReplyMessage(leadUp[1], next)).toEqual({
+      tone: "info",
+      text: "The reply: e5. Played for you (paused): Nf3 Nc6."
+    });
+    expect(rehearsalReplyMessage(leadUp[3], next)).toEqual({
+      tone: "info",
+      text: "The reply: Nc6."
+    });
+    expect(rehearsalReplyMessage(null, next)).toBeNull();
   });
 
   it("numbers lines and steps, and names why a line ended", () => {

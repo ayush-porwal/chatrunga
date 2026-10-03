@@ -12,7 +12,8 @@
  * where the next move would exceed the depth limit (`depth`, counted in plies from the chapter
  * root like the other practice modes). Because a route through a tree is unique, a line is
  * identified by its end node. Index links to other chapters are never followed, so a repeated
- * position is just another finite occurrence.
+ * position is just another finite occurrence. A paused decision is never asked: its line plays
+ * the move there as context, like lead-up, and a line with no other decision isn't offered.
  */
 import type { MoveNode } from "../types/chess";
 import {
@@ -44,6 +45,8 @@ export type RehearsalContext = {
   maxDepthPlies: number;
   /** Nodes that are active or have an active descendant (where lead-up moves may go). */
   reachesActive: Set<string>;
+  /** Position keys of paused decisions: played as context, never asked. */
+  paused: ReadonlySet<string>;
 };
 
 export type RehearsalLine = {
@@ -57,12 +60,16 @@ export type RehearsalLine = {
   decisionNodeIds: string[];
 };
 
-/** Indexes a chapter for rehearsal with the given depth limit. */
+/**
+ * Indexes a chapter for rehearsal with the given depth limit; `paused` names the position keys of
+ * paused decisions (none when omitted).
+ */
 export function rehearsalContext(
   chapter: Pick<RepertoireChapter, "kind" | "enabled" | "tree" | "nodeMeta">,
   color: RepertoireColor,
   maxDepthPlies: number = DEFAULT_REHEARSAL_DEPTH_PLIES,
-  lookup: ChapterLookup = buildChapterLookup(chapter)
+  lookup: ChapterLookup = buildChapterLookup(chapter),
+  paused: ReadonlySet<string> = new Set()
 ): RehearsalContext {
   const states = computeScopeStates(chapter, lookup);
   const reachesActive = new Set<string>();
@@ -83,7 +90,8 @@ export function rehearsalContext(
     color,
     rootPly: lookup.nodesById.get(REPERTOIRE_ROOT_NODE_ID)?.ply ?? 0,
     maxDepthPlies,
-    reachesActive
+    reachesActive,
+    paused
   };
 }
 
@@ -98,9 +106,16 @@ export function isPlayerNode(context: RehearsalContext, nodeId: string): boolean
   return node !== undefined && playerToMove(node.fenAfter) === context.color;
 }
 
-/** The node is a tested position: in training scope with the player to move. */
+/**
+ * The node is a tested position: in training scope with the player to move, and its decision
+ * isn't paused (a paused one's move is played as context).
+ */
 export function isDecisionNode(context: RehearsalContext, nodeId: string): boolean {
-  return context.states.get(nodeId) === "active" && isPlayerNode(context, nodeId);
+  return (
+    context.states.get(nodeId) === "active" &&
+    isPlayerNode(context, nodeId) &&
+    !context.paused.has(context.lookup.positionKeys.get(nodeId) ?? "")
+  );
 }
 
 /**

@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { MoveNode } from "../types/chess";
 import type { RepertoireColor, RepertoireNodeMeta } from "../types/repertoire";
 import { applySan, START_FEN } from "./position";
+import { buildChapterLookup } from "./repertoire-index";
 import {
   canRehearseFrom,
   continuations,
   enumerateLines,
+  isDecisionNode,
   lineEnds,
   lineIdOf,
   nextOnRoute,
@@ -93,6 +95,33 @@ describe("enumerateLines", () => {
       nodeIds: ["root", "e4", "e4/c5", "e4/c5/Nf3", "e4/c5/Nf3/d6"],
       decisionNodeIds: ["root", "e4/c5"]
     });
+  });
+
+  it("never asks a paused decision, and leaves out a line with no other decision", () => {
+    const tree = treeFromLines([
+      ["e4", "c5", "Nf3", "d6", "d4"],
+      ["e4", "e5", "Nf3"]
+    ]);
+    const chapter = { kind: "opening" as const, enabled: true, tree, nodeMeta: {} };
+    const lookup = buildChapterLookup(chapter);
+    const keyOf = (id: string) => lookup.positionKeys.get(id)!;
+    const context = rehearsalContext(
+      chapter,
+      "white",
+      undefined,
+      lookup,
+      new Set([keyOf("e4/c5"), keyOf("e4/e5")])
+    );
+    expect(isDecisionNode(context, "e4/c5")).toBe(false);
+    expect(isDecisionNode(context, "e4/c5/Nf3/d6")).toBe(true);
+    expect(enumerateLines(context, "root").map((line) => line.decisionNodeIds)).toEqual([
+      ["root", "e4/c5/Nf3/d6"],
+      ["root"]
+    ]);
+    // From 1... e5 the only decision left is paused: nothing to rehearse there.
+    expect(enumerateLines(context, "e4/e5")).toEqual([]);
+    expect(canRehearseFrom(context, "e4/e5")).toBe(false);
+    expect(canRehearseFrom(context, "e4/c5")).toBe(true);
   });
 
   it("stops at a stop marker and at the depth limit", () => {

@@ -6,6 +6,7 @@ import type {
   PracticeActionResult,
   PracticeAnswer,
   PracticeCard,
+  PracticeLeadUpMove,
   PracticeSessionSnapshot,
   PracticeSummary,
   RehearsalStep
@@ -217,6 +218,28 @@ export function openingReplyMessage(
   const reply = card.leadUp[card.leadUp.length - 1];
   if (card.nodeId === from || !reply) return null;
   return { tone: "info", text: `The reply: ${reply.san}.` };
+}
+
+/**
+ * The words for a rehearsal's reply before `next`, and for the moves played after it at paused
+ * decisions (never asked: they and their replies are the end of the next card's lead-up).
+ */
+export function rehearsalReplyMessage(
+  reply: PracticeLeadUpMove | null,
+  next: PracticeCard
+): PracticeOutcomeMessage | null {
+  if (!reply) return null;
+  let at = next.leadUp.length - 1;
+  while (at >= 0 && !(next.leadUp[at].uci === reply.uci && next.leadUp[at].fen === reply.fen)) {
+    at -= 1;
+  }
+  const played = at >= 0 ? next.leadUp.slice(at + 1).map((move) => move.san) : [];
+  return {
+    tone: "info",
+    text: played.length
+      ? `The reply: ${reply.san}. Played for you (paused): ${played.join(" ")}.`
+      : `The reply: ${reply.san}.`
+  };
 }
 
 /** The step of the line a rehearsal card is (1 for the line's first decision). */
@@ -437,7 +460,7 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
         hint: resumedHintText(card),
         session: { ...session, cursor: index },
         // The reply is announced in words too (the board's motion alone isn't accessible).
-        message: step.reply ? { tone: "info", text: `The reply: ${step.reply.san}.` } : null
+        message: rehearsalReplyMessage(step.reply, card)
       });
       return "next";
     }

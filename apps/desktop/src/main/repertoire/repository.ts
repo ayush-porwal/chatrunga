@@ -791,6 +791,16 @@ export const decisionRepository = {
     ).map(toDecision);
   },
 
+  /** The position keys of the repertoire's paused decisions. */
+  pausedKeys(repertoireId: string): Set<string> {
+    return new Set(
+      all<{ position_key: string }>(
+        "SELECT position_key FROM repertoire_decisions WHERE repertoire_id = ? AND paused = 1",
+        repertoireId
+      ).map((row) => row.position_key)
+    );
+  },
+
   get(repertoireId: string, positionKey: string): StoredDecision | null {
     const row = get<DecisionRow>(
       "SELECT * FROM repertoire_decisions WHERE repertoire_id = ? AND position_key = ?",

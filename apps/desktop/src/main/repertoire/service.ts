@@ -2208,7 +2208,18 @@ function loadRehearsal(session: PracticeSessionRecord): Rehearsal | null {
   const current = currentRehearsal(session);
   if (!current) return null;
   const { state, chapter, color } = current;
-  return { state, chapter, context: rehearsalContext(chapter, color, state.maxDepthPlies), color };
+  return {
+    state,
+    chapter,
+    context: rehearsalContext(
+      chapter,
+      color,
+      state.maxDepthPlies,
+      undefined,
+      decisionRepository.pausedKeys(session.repertoireId)
+    ),
+    color
+  };
 }
 
 /**
@@ -2362,7 +2373,8 @@ function finishLine(state: RehearsalState, completed: boolean): void {
 /**
  * Continues the current line from `reachedId`, the node the player's move (or a revealed or
  * followed move) led to: supplies the authored reply on the line and appends the next decision,
- * or completes the line and starts the next one.
+ * or completes the line and starts the next one. A paused decision after the reply isn't asked:
+ * the line's move there and the reply after it are played as context (the next card's lead-up).
  */
 function continueLine(
   session: PracticeSessionRecord,
@@ -2380,8 +2392,14 @@ function continueLine(
   const replyNode = nextOnRoute(context.lookup, reachedId, state.lineEnd)!;
   countSeen(state, replyNode.id);
   const reply = leadUpMove(replyNode);
-  if (replyNode.id === state.lineEnd) return complete(reply);
-  const next = pushRehearsalCard(session, rehearsal, replyNode.id, stepIndex + 1);
+  let decisionId = replyNode.id;
+  while (decisionId !== state.lineEnd && !isDecisionNode(context, decisionId)) {
+    const move = nextOnRoute(context.lookup, decisionId, state.lineEnd)!;
+    if (!isPlayerNode(context, decisionId)) countSeen(state, move.id);
+    decisionId = move.id;
+  }
+  if (decisionId === state.lineEnd) return complete(reply);
+  const next = pushRehearsalCard(session, rehearsal, decisionId, stepIndex + 1);
   return { reply, next, lineComplete: false, endReason: null };
 }
 
@@ -2502,7 +2520,14 @@ function startRehearsal(
   }
   const fromNodeId = target.fromNodeId ?? REPERTOIRE_ROOT_NODE_ID;
   const maxDepthPlies = input.maxDepthPlies ?? DEFAULT_REHEARSAL_DEPTH_PLIES;
-  const context = rehearsalContext(chapter, record.color, maxDepthPlies);
+  // A paused decision is played as context, never asked (as practice leaves it out).
+  const context = rehearsalContext(
+    chapter,
+    record.color,
+    maxDepthPlies,
+    undefined,
+    decisionRepository.pausedKeys(record.id)
+  );
   if (!context.lookup.parentPath.get(fromNodeId)) {
     throw new Error("Invalid rehearse.fromNodeId: not in this chapter");
   }
