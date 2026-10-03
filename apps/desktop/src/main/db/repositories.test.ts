@@ -9,7 +9,7 @@ const userData = mkdtempSync(join(tmpdir(), "chaturanga-repo-test-"));
 vi.mock("electron", () => ({ app: { getPath: () => userData } }));
 
 const { closeDb, databasePath, getDb } = await import("./index");
-const { gameRepository, retryOnceIfBusy } = await import("./repositories");
+const { gameRepository, retryOnceIfBusy, saveGameRetrying } = await import("./repositories");
 const { gameFingerprint } = await import("./game-fingerprint");
 
 const PGN = `[Event "Rapid"]
@@ -447,5 +447,46 @@ describe("retryOnceIfBusy (a game save while another connection holds the write 
       }, 10)
     ).rejects.toThrow("Game not found");
     expect(calls).toBe(1);
+  });
+});
+
+describe("saveGameRetrying (games:save)", () => {
+  const busyWhile = async (work: (release: () => void) => Promise<void>) => {
+    getDb();
+    const other = new DatabaseSync(databasePath());
+    try {
+      other.exec("BEGIN IMMEDIATE");
+      await work(() => other.exec("ROLLBACK"));
+    } finally {
+      if (other.isTransaction) other.exec("ROLLBACK");
+      other.close();
+    }
+  };
+
+  it("keeps a new game's id across the retry, so it is saved once", async () => {
+    const { game } = importPgnText(PGN);
+    const count = () => (getDb().prepare("SELECT COUNT(*) AS n FROM games").get() as { n: number }).n;
+    const before = count();
+    await busyWhile(async (release) => {
+      setTimeout(release, 10);
+      const saved = await saveGameRetrying({ ...game, id: null }, () => null, 300);
+      expect(gameRepository.get(saved.id)).not.toBeNull();
+    });
+    expect(count()).toBe(before + 1);
+  });
+
+  it("checks the delete guard again before the retry", async () => {
+    const { game } = importPgnText(PGN);
+    let deleted = false;
+    await busyWhile(async (release) => {
+      // The game is deleted while the retry waits.
+      setTimeout(() => {
+        deleted = true;
+        release();
+      }, 10);
+      const suppressed = () => (deleted ? new Error("suppressed") : null);
+      await expect(saveGameRetrying({ ...game, id: "g-deleted" }, suppressed, 300)).rejects.toThrow("suppressed");
+    });
+    expect(gameRepository.get("g-deleted")).toBeNull();
   });
 });

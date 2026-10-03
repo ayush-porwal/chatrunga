@@ -162,9 +162,17 @@ function parseGame(game: Game<PgnNodeData>, index: number, budget: Budget): Pars
     root.highlights = rootAnnotation.highlights;
     for (const child of game.moves.children) appendMove(builder, root, [], child, 1);
   } catch (error) {
-    if (!(error instanceof CommentTooLongError)) throw error;
+    // The move limit can be reached before this game's over-long comment is read: the comment
+    // still rejects the game alone (its moves don't count), rather than failing the import.
+    const tooLong =
+      error instanceof CommentTooLongError
+        ? error
+        : error instanceof MoveBudgetError
+          ? firstLongComment(game, root.ply, budget)
+          : null;
+    if (!tooLong) throw error;
     budget.nodes = nodesBefore;
-    return rejectedGame(error.message);
+    return rejectedGame(tooLong.message);
   }
 
   return {
@@ -182,6 +190,38 @@ function parseGame(game: Game<PgnNodeData>, index: number, budget: Budget): Pars
 
 /** A comment longer than the limit; its game is rejected with this message. */
 class CommentTooLongError extends Error {}
+
+/** The import has more moves than its limit. */
+class MoveBudgetError extends Error {}
+
+/**
+ * The error for the first comment of `game` (its root at `rootPly`) over the length limit, or
+ * null when there is none. Reads the parsed game only; nothing is built.
+ */
+function firstLongComment(
+  game: Game<PgnNodeData>,
+  rootPly: number,
+  budget: Budget
+): CommentTooLongError | null {
+  try {
+    checkedAnnotation((game.comments ?? []).join(" "), budget, []);
+    type Item = { node: ChildNode<PgnNodeData>; path: Pick<MoveNode, "ply" | "san">[] };
+    const pending: Item[] = [...game.moves.children].reverse().map((node) => ({ node, path: [] }));
+    for (let item = pending.pop(); item; item = pending.pop()) {
+      const { node, path } = item;
+      const here = [...path, { ply: rootPly + path.length + 1, san: node.data.san }];
+      const comments = [...(node.data.startingComments ?? []), ...(node.data.comments ?? [])];
+      checkedAnnotation(comments.join(" "), budget, here);
+      for (let i = node.children.length - 1; i >= 0; i--) {
+        pending.push({ node: node.children[i], path: here });
+      }
+    }
+    return null;
+  } catch (error) {
+    if (error instanceof CommentTooLongError) return error;
+    throw error;
+  }
+}
 
 /**
  * The comment's annotation; throws CommentTooLongError when its text, with the annotation tags
@@ -248,7 +288,7 @@ function appendMove(
     node = sibling;
   } else {
     if (++budget.nodes > budget.maxNodes) {
-      throw new Error(
+      throw new MoveBudgetError(
         `This PGN has more than ${budget.maxNodes} moves; split it and import it in parts.`
       );
     }

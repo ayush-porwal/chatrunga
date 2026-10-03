@@ -121,6 +121,20 @@ describe("parseRepertoirePgn", () => {
     expect(games[2].nodeCount).toBe(2);
   });
 
+  it("rejects a game for its long comment even when the move limit is reached first", () => {
+    const long = "x".repeat(30);
+    const pgn = `1. e4 e5 *\n\n1. d4 d5 2. c4 { ${long} } *\n\n1. c4 *`;
+    const { games } = parseRepertoirePgn(pgn, { maxCommentLength: 20, maxNodes: 3 });
+    expect(games.map((game) => game.rejected)).toEqual([
+      null,
+      "a comment is longer than 20 characters (at 1. d4 d5 2. c4)",
+      null
+    ]);
+    expect(() => parseRepertoirePgn("1. e4 e5 *\n\n1. d4 d5 2. c4 *", { maxNodes: 3 })).toThrow(
+      /more than 3 moves/
+    );
+  });
+
   it("measures a comment's length after its annotation tags are read out", () => {
     const arrows = Array.from({ length: 40 }, () => "Ge2e4").join(",");
     const pgn = `1. e4 { [%cal ${arrows}] [%csl Rd4] [%clk 0:05:00] short note } *`;

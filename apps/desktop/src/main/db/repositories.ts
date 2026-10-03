@@ -205,6 +205,25 @@ export async function retryOnceIfBusy<T>(
   }
 }
 
+/**
+ * Saves a game the user would otherwise lose (`games:save`), with one retry when the database is
+ * busy (see retryOnceIfBusy). A new game gets its id once, so a retry can't add it twice, and
+ * `suppressed` (a game deleted moments ago) is checked before every attempt, so a retry that
+ * waited while the game was deleted doesn't bring it back.
+ */
+export function saveGameRetrying(
+  input: SaveGameInput,
+  suppressed: (gameId: string) => Error | null,
+  delayMs: number = BUSY_RETRY_DELAY_MS
+): Promise<SavedGame> {
+  const withId = { ...input, id: input.id || nanoid() };
+  return retryOnceIfBusy(() => {
+    const refusal = suppressed(withId.id);
+    if (refusal) throw refusal;
+    return gameRepository.save(withId);
+  }, delayMs);
+}
+
 function run(sql: string, ...params: SQLInputValue[]): void {
   getDb().prepare(sql).run(...params);
 }
@@ -618,49 +637,52 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
     input.moveTree.find((node) => node.parentId === null)?.id ??
     "root";
 
-  run(
-    `INSERT INTO games (
-      id, source, white, black, event, site, round, result, date,
-      initial_fen, pgn, current_fen, current_node_id, headers_json, move_tree_json, fingerprint,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      source = excluded.source,
-      white = excluded.white,
-      black = excluded.black,
-      event = excluded.event,
-      site = excluded.site,
-      round = excluded.round,
-      result = excluded.result,
-      date = excluded.date,
-      initial_fen = excluded.initial_fen,
-      pgn = excluded.pgn,
-      current_fen = excluded.current_fen,
-      current_node_id = excluded.current_node_id,
-      headers_json = excluded.headers_json,
-      move_tree_json = excluded.move_tree_json,
-      fingerprint = excluded.fingerprint,
-      updated_at = excluded.updated_at`,
-    id,
-    input.source,
-    input.headers.white ?? null,
-    input.headers.black ?? null,
-    input.headers.event ?? null,
-    input.headers.site ?? null,
-    input.headers.round ?? null,
-    input.headers.result ?? "*",
-    input.headers.date ?? null,
-    input.rootFen,
-    input.pgn,
-    input.currentFen,
-    currentNodeId,
-    JSON.stringify(input.headers),
-    JSON.stringify(input.moveTree),
-    fingerprint,
-    createdAt,
-    timestamp
-  );
-  if (input.review) saveReview(id, input.review);
+  // The game and its review land together: a busy failure in between leaves neither.
+  transaction(() => {
+    run(
+      `INSERT INTO games (
+        id, source, white, black, event, site, round, result, date,
+        initial_fen, pgn, current_fen, current_node_id, headers_json, move_tree_json, fingerprint,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        source = excluded.source,
+        white = excluded.white,
+        black = excluded.black,
+        event = excluded.event,
+        site = excluded.site,
+        round = excluded.round,
+        result = excluded.result,
+        date = excluded.date,
+        initial_fen = excluded.initial_fen,
+        pgn = excluded.pgn,
+        current_fen = excluded.current_fen,
+        current_node_id = excluded.current_node_id,
+        headers_json = excluded.headers_json,
+        move_tree_json = excluded.move_tree_json,
+        fingerprint = excluded.fingerprint,
+        updated_at = excluded.updated_at`,
+      id,
+      input.source,
+      input.headers.white ?? null,
+      input.headers.black ?? null,
+      input.headers.event ?? null,
+      input.headers.site ?? null,
+      input.headers.round ?? null,
+      input.headers.result ?? "*",
+      input.headers.date ?? null,
+      input.rootFen,
+      input.pgn,
+      input.currentFen,
+      currentNodeId,
+      JSON.stringify(input.headers),
+      JSON.stringify(input.moveTree),
+      fingerprint,
+      createdAt,
+      timestamp
+    );
+    if (input.review) saveReview(id, input.review);
+  });
 
   const saved = gameRepository.get(id);
   if (!saved) throw new Error("Failed to save game");
