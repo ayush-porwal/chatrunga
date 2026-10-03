@@ -411,6 +411,10 @@ describe("gameRepository (SQLite)", () => {
   });
 });
 
+// The busy tests below wait out SQLite's 1 s busy_timeout (once or twice): bounded by a sleep, not
+// CPU, so each gets a 15 s ceiling instead of the 5 s default to stay clear of slow CI runners.
+const BUSY_WAIT_MS = 15_000;
+
 describe("retryOnceIfBusy (a game save while another connection holds the write lock)", () => {
   it("a save finding the write lock held fails with the BUSY error itself, not a failed ROLLBACK", () => {
     getDb();
@@ -446,7 +450,7 @@ describe("retryOnceIfBusy (a game save while another connection holds the write 
       if (other.isTransaction) other.exec("ROLLBACK");
       other.close();
     }
-  });
+  }, BUSY_WAIT_MS);
 
   it("rejects with the busy error when the lock is still held, and passes other errors at once", async () => {
     getDb();
@@ -468,7 +472,7 @@ describe("retryOnceIfBusy (a game save while another connection holds the write 
       }, 10)
     ).rejects.toThrow("Game not found");
     expect(calls).toBe(1);
-  });
+  }, BUSY_WAIT_MS);
 });
 
 describe("saveGameRetrying (games:save)", () => {
@@ -494,7 +498,7 @@ describe("saveGameRetrying (games:save)", () => {
       expect(gameRepository.get(saved.id)).not.toBeNull();
     });
     expect(count()).toBe(before + 1);
-  });
+  }, BUSY_WAIT_MS);
 
   it("checks the delete guard again before the retry", async () => {
     const { game } = importPgnText(PGN);
@@ -509,5 +513,5 @@ describe("saveGameRetrying (games:save)", () => {
       await expect(saveGameRetrying({ ...game, id: "g-deleted" }, suppressed, 300)).rejects.toThrow("suppressed");
     });
     expect(gameRepository.get("g-deleted")).toBeNull();
-  });
+  }, BUSY_WAIT_MS);
 });

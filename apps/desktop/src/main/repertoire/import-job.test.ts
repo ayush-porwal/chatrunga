@@ -37,17 +37,30 @@ function expectedImport(pgn: string) {
 }
 
 const MANY = generateRepertoirePgn({ games: 400, movesPerGame: 12, variationsPerGame: 3 });
+/** A smaller fixture wherever the size itself isn't under test (parsing MANY costs ~0.7 s under coverage). */
+const FEW = generateRepertoirePgn({ games: 40, movesPerGame: 12, variationsPerGame: 3 });
+/** A chunk size far below IMPORT_CHUNK_CHARS (a generated game is ~140 characters), so games straddle chunk boundaries. */
+const SMALL_CHUNK = 256;
 
 describe("runImport", () => {
   it("gives what parseRepertoirePgn gives plus position keys, from text and from a file", async () => {
-    const expected = expectedImport(MANY);
-    expect(expected.games).toHaveLength(400);
+    // 40 games are enough: in 256-character chunks they span twenty-odd chunk boundaries, most
+    // of them inside a game, which is what the streaming path must get right. (400 games timed
+    // out under CI coverage.)
+    const expected = expectedImport(FEW);
+    expect(expected.games).toHaveLength(40);
     expect(expected.games[0].nodeCount).toBe(18);
-    expect(await importPreviewFromText(MANY)).toEqual(expected);
-    const path = join(dir, "many.pgn");
-    writeFileSync(path, MANY);
+    expect(FEW.length).toBeGreaterThan(10 * SMALL_CHUNK);
+    expect(await importPreviewFromText(FEW)).toEqual(expected);
     expect(
-      await runImport({ kind: "file", path }, DEFAULT_IMPORT_LIMITS, { chunkChars: 1000 })
+      await runImport({ kind: "text", text: FEW }, DEFAULT_IMPORT_LIMITS, {
+        chunkChars: SMALL_CHUNK
+      })
+    ).toEqual(expected);
+    const path = join(dir, "few.pgn");
+    writeFileSync(path, FEW);
+    expect(
+      await runImport({ kind: "file", path }, DEFAULT_IMPORT_LIMITS, { chunkChars: SMALL_CHUNK })
     ).toEqual(expected);
   });
 
@@ -116,11 +129,11 @@ describe("runImport", () => {
     }
 
     it("bytes, before parsing (text and file)", async () => {
-      const { message, last } = await failure(MANY, { maxBytes: 1024 });
+      const { message, last } = await failure(FEW, { maxBytes: 1024 });
       expect(message).toBe("This PGN is larger than 1024 bytes; split it and import it in parts.");
       expect(last).toBeNull();
       const path = join(dir, "big.pgn");
-      writeFileSync(path, MANY);
+      writeFileSync(path, FEW);
       await expect(
         runImport({ kind: "file", path }, limits({ maxBytes: 2 * 1024 * 1024 }))
       ).resolves.toBeTruthy();
@@ -206,8 +219,8 @@ describe("resultMessages", () => {
 
 describe("benchmarkImport", () => {
   it("times a parse and reports its size", async () => {
-    const result = await benchmarkImport(MANY);
-    expect(result).toMatchObject({ games: 400, nodes: 400 * 18, bytes: Buffer.byteLength(MANY) });
+    const result = await benchmarkImport(FEW);
+    expect(result).toMatchObject({ games: 40, nodes: 40 * 18, bytes: Buffer.byteLength(FEW) });
     expect(result.totalMs).toBeGreaterThan(0);
     expect(result.progressEvents).toBeGreaterThanOrEqual(2);
   });

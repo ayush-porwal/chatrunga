@@ -962,7 +962,7 @@ describe("repertoire service: import and export", () => {
   });
 
   it("broadcasts progress for the job, ending with ready", async () => {
-    const pgn = generateRepertoirePgn({ games: 600, movesPerGame: 12 });
+    const pgn = generateRepertoirePgn({ games: 150, movesPerGame: 12 });
     const preview = await service.previewImport({ pgn });
     const events = progressEvents();
     expect(events.every((event) => event.jobId === preview.jobId)).toBe(true);
@@ -973,8 +973,8 @@ describe("repertoire service: import and export", () => {
       phase: "ready",
       bytesRead: Buffer.byteLength(pgn),
       totalBytes: Buffer.byteLength(pgn),
-      gamesSeen: 600,
-      nodesSeen: 600 * 12,
+      gamesSeen: 150,
+      nodesSeen: 150 * 12,
       error: null
     });
   });
@@ -984,8 +984,10 @@ describe("repertoire service: import and export", () => {
     const pgn = generateRepertoirePgn({ games: 900, movesPerGame: 12 });
     const pending = service.previewImport({ pgn });
     // The first event names the job; cancel once parsing is under way.
-    await vi.waitFor(() =>
-      expect(progressEvents().some((event) => event.phase === "parsing")).toBe(true)
+    // A 10 s ceiling, not vi.waitFor's 1 s: coverage on a CI runner slows the parse 2-4x.
+    await vi.waitFor(
+      () => expect(progressEvents().some((event) => event.phase === "parsing")).toBe(true),
+      { timeout: 10_000 }
     );
     const jobId = progressEvents()[0].jobId;
     service.cancelImport(jobId);
@@ -1158,6 +1160,8 @@ describe("repertoire service: import and export", () => {
     expect(order).toEqual(["first:start", "first:end", "failing", "last"]);
   });
 
+  // Bounded by SQLite's 1 s busy_timeout (a sleep, not CPU): a 15 s ceiling, not the 5 s
+  // default, so a slow CI runner can't time it out.
   it("reads never take the write lock; a write finding it held fails with the busy error", async () => {
     const { id } = create();
     const { transaction } = await import("./repository");
@@ -1179,7 +1183,7 @@ describe("repertoire service: import and export", () => {
       if (other.isTransaction) other.exec("ROLLBACK");
       other.close();
     }
-  });
+  }, 15_000);
 
   it("uses the caller's job id, refuses one in use, and cancels it at once", async () => {
     const preview = await service.previewImport({ pgn: TWO_GAMES, jobId: "job-1" });
