@@ -16,6 +16,15 @@
   container-type: inline-size;
 }
 
+/* The stage's board frame (BoardStage) is already sized to whole-pixel squares (board-frame.ts), so
+   Chessground's container fills it instead of keeping its own rounded size: re-measured from layout
+   (1/64 px units, and a ratio like 1.65 that isn't exact in floating point), the frame can come back a
+   hair under its edge and Chessground would round a whole 8 device pixels off, leaving a strip. */
+.board-frame cg-container {
+  width: 100% !important;
+  height: 100% !important;
+}
+
 /* ---------------------------------------------------------------- squares */
 
 cg-board square.last-move {

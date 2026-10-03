@@ -165,10 +165,13 @@ const SidebarCommand = memo(function SidebarCommand({
   shortcut?: string;
   onClick: () => void;
 }) {
-  // The tooltip only exists on the rail. Its open state is held here so hovering while expanded
-  // can't open it: Radix closes a tooltip from its content, which isn't mounted then, so a hover
-  // while expanded stayed "open" and every such tooltip appeared at once on collapse.
+  // The tooltip only exists on the rail, so its open state is held here: a hover while expanded
+  // can't open it, and expanding forgets one that was open. Radix only reports a change that differs
+  // from the `open` it is given, and that is false while expanded, so the close for a tooltip open
+  // when the sidebar expanded (hover a rail icon, then F) never arrives; kept, it would reappear,
+  // with every other such item's, on the next collapse and ignore the pointer.
   const [tooltipOpen, setTooltipOpen] = useState(false);
+  if (expanded && tooltipOpen) setTooltipOpen(false);
   // One element in both states: 36px tall, full column width (36px when collapsed), icon at 9px +
   // 1px border — the same x as the centred rail button. Only the label and the tooltip change.
   return (

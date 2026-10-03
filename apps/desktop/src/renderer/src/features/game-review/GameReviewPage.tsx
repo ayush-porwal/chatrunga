@@ -259,7 +259,8 @@ function GameReviewPageInner({
           top={<PlayerRow name={boardTop.name} elo={boardTop.elo} color={boardTop.color} />}
           bottom={<PlayerRow name={boardBottom.name} elo={boardBottom.elo} color={boardBottom.color} />}
         >
-          <ReviewBoard fen={boardFen} orientation={orientation} arrows={arrows} lastMove={lastMove ? [lastMove.orig, lastMove.dest] : undefined} className="h-full w-full" />
+          {/* Square corners: the stage's frame clips the board to its own radius. */}
+          <ReviewBoard fen={boardFen} orientation={orientation} arrows={arrows} lastMove={lastMove ? [lastMove.orig, lastMove.dest] : undefined} className="h-full w-full rounded-none" />
         </BoardStage>
       }
       tabs={

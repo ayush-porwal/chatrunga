@@ -1,10 +1,11 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { defaultSettings } from "@chaturanga/shared/types/settings";
 import { useSettingsQuery } from "../../queries/api";
 import { Badge } from "@/components/ui/badge";
 import { card, motion } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useBoardFocused } from "./board-focus";
+import { useFocusCentring, useSnappedBoardFrame } from "./useBoardFrame";
 
 /*
  * The board workspace: ONE layout for every board screen (free board, Analysis, Game review,
@@ -24,7 +25,10 @@ import { useBoardFocused } from "./board-focus";
  *
  * Focus mode (board-focus.ts): the panel column eases to 0 and the panel slides out with it —
  * it keeps its own width while the column clips it, so its text never re-wraps mid-animation.
- * The board cell grows into the space frame by frame (the board is sized from the cell).
+ * The board cell grows into the space frame by frame (the board is sized from the cell). The board
+ * square is centred on the window itself, with the sidebar rail and titlebar still showing: the
+ * workspace pads itself to a window-centred box (the rail's width across, a measured inset down —
+ * useFocusCentring) and evens out the eval column.
  *
  * Sizing (the `--workspace-*` variables in app.css, fluid from the 980px minimum to ultra-wide):
  * the panel grows with the window (320px → 34rem); padding and gap scale together; the board is
@@ -66,18 +70,42 @@ export function BoardWorkspace({
   const focused = useBoardFocused();
   const panelVisible = showPanel ?? !focused;
   const easing = useToggleEasing(panelVisible);
-  const { shown: evalBarShown } = useEvalBarPlacement();
+  const { shown: evalBarShown, right: evalBarRight } = useEvalBarPlacement();
+  // Focus mode centres the board square on the window (not on the content panel).
+  const centred = focused && !panelVisible;
+  const rootRef = useRef<HTMLDivElement>(null);
+  useFocusCentring(rootRef, centred);
   return (
     // Size container: the grid's width cap is computed from this box's height (cqh). With the eval
     // bar off, its column is gone from that cap too (and from the stage below).
-    <div className="h-full min-h-0 min-w-0 [container-type:size]" style={evalBarShown ? undefined : NO_EVAL_COLUMN}>
+    <div
+      ref={rootRef}
+      className={cn(
+        "h-full min-h-0 min-w-0 [container-type:size]",
+        easing && "transition-[padding] duration-emphasis ease-standard",
+        // Centred across: the content panel starts after the sidebar rail but ends only 0.5rem (its
+        // mr-2) short of the window's edge, so the difference pads the right; the eval column's width
+        // pads the side away from the bar, so the square itself (not square + bar) is centred. From
+        // the rail's own variable, not a measurement: it is already the rail's width while the sidebar
+        // eases shut, so this eases once to its final value with everything else.
+        centred &&
+          (evalBarRight
+            ? "pr-[calc(var(--sidebar-width)-0.5rem)] pl-(--workspace-eval)"
+            : "pr-[calc(var(--sidebar-width)-0.5rem+var(--workspace-eval))]")
+      )}
+      style={evalBarShown ? undefined : NO_EVAL_COLUMN}
+    >
       <div
         className={cn(
           "mx-auto grid h-full min-h-0 w-full min-w-0 p-(--workspace-pad)",
           // Same track count in both states, so the column, the gap and the cap ease together — like the
           // sidebar. Only while the panel is toggling: these sizes follow the window, and a transition
           // left on would make the board trail a live window resize.
-          easing && "transition-[grid-template-columns,column-gap,max-width] duration-emphasis ease-standard",
+          easing && "transition-[grid-template-columns,column-gap,max-width,padding] duration-emphasis ease-standard",
+          // Centred down (useFocusCentring): here rather than on the size container above, whose
+          // height the width cap is computed from — changing it mid-ease would restart that transition.
+          centred &&
+            "pt-[calc(var(--workspace-pad)+var(--centre-inset-top,0px))] pb-[calc(var(--workspace-pad)+var(--centre-inset-bottom,0px))]",
           panelVisible
             ? "max-w-[calc(var(--workspace-board)+var(--workspace-eval)+3*var(--workspace-pad)+var(--workspace-panel))] grid-cols-[minmax(0,1fr)_var(--workspace-panel)] gap-(--workspace-pad)"
             : "max-w-[calc(var(--workspace-board)+var(--workspace-eval)+2*var(--workspace-pad))] grid-cols-[minmax(0,1fr)_0px] gap-0"
@@ -138,7 +166,9 @@ function useToggleEasing(visible: boolean): boolean {
  * (none while the bar is off). The square is
  * computed once from the board cell (a size container): as large as fits after the two 2rem rows
  * and gaps (the same 5rem that `--workspace-board` subtracts) and the eval column, with a 100rem
- * ceiling. The column is always reserved, so the board never moves when the bar comes and goes.
+ * ceiling, then rounded down to whole-pixel squares (useSnappedBoardFrame) so Chessground's board
+ * fills the frame exactly. The column is always reserved, so the board never moves when the bar
+ * comes and goes.
  */
 /** The eval column's width, zeroed while the bar is off. */
 const NO_EVAL_COLUMN = { "--workspace-eval": "0px" } as CSSProperties;
@@ -166,21 +196,37 @@ export function BoardStage({
 }) {
   // The bar's column is on the side the user chose, or gone (and the board wider) with the bar off.
   const { shown, right } = useEvalBarPlacement();
+  const probeRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  useSnappedBoardFrame(probeRef, frameRef);
+  const boardColumn = right ? "col-start-1" : "col-start-2";
   return (
+    // `--board-avail`: the frame's largest edge in the cell (beside the eval column, under the rows).
+    // The board column is as wide as the frame, which is that edge snapped to whole-pixel squares, so
+    // the player rows and the eval bar line up with the board's own edges.
     <div
       className={cn(
-        "grid w-[min(100cqw,calc(100cqh_-_5rem_+_var(--workspace-eval)),calc(100rem_+_var(--workspace-eval)))] min-w-0 gap-y-2",
-        right ? "grid-cols-[minmax(0,1fr)_var(--workspace-eval)]" : "grid-cols-[var(--workspace-eval)_minmax(0,1fr)]"
+        "relative grid min-w-0 gap-y-2 [--board-avail:min(100cqw_-_var(--workspace-eval),100cqh_-_5rem,100rem)]",
+        right ? "grid-cols-[auto_var(--workspace-eval)]" : "grid-cols-[var(--workspace-eval)_auto]"
       )}
       style={shown ? undefined : NO_EVAL_COLUMN}
     >
-      <div className={cn("min-w-0", right ? "col-start-1" : "col-start-2")}>{top}</div>
+      <div ref={probeRef} className="invisible absolute h-0 w-(--board-avail)" aria-hidden="true" />
+      {/* The rows take the board's width and never widen it (no intrinsic width of their own). */}
+      <div className={cn("min-w-0 contain-inline-size", boardColumn)}>{top}</div>
       {shown ? <div className={cn("row-start-2", right ? "col-start-2 pl-1.5" : "col-start-1 pr-1.5")}>{evalBar}</div> : null}
-      {/* The one board frame: hairline border + radius, no shadow, no card around it. */}
-      <div className={cn("row-start-2 aspect-square w-full overflow-hidden rounded-lg border border-line", right ? "col-start-1" : "col-start-2")}>
+      {/* The one board frame: hairline border + radius, no shadow, no card around it. Its content box
+          is the board (the fallback edge is only for the first layout, before it's measured). */}
+      <div
+        ref={frameRef}
+        className={cn(
+          "board-frame row-start-2 box-content size-[var(--board-size,calc(var(--board-avail)_-_2px))] overflow-hidden rounded-lg border border-line",
+          boardColumn
+        )}
+      >
         {children}
       </div>
-      <div className={cn("min-w-0", right ? "col-start-1" : "col-start-2")}>{bottom}</div>
+      <div className={cn("min-w-0 contain-inline-size", boardColumn)}>{bottom}</div>
     </div>
   );
 }
