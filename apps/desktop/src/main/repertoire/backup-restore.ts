@@ -43,7 +43,14 @@ import {
   sanitizeChapter,
   sanitizeHeaders
 } from "./chapter-validation";
-import { checkRevision, reindex, requireRepertoire, stripFingerprint } from "./core";
+import {
+  applyReindex,
+  checkRevision,
+  planReindex,
+  requireRepertoire,
+  stripFingerprint,
+  type ReindexPlan
+} from "./core";
 import {
   attemptRepository,
   chapterRepository,
@@ -55,7 +62,8 @@ import {
   sessionRepository,
   transaction,
   workspaceRepository,
-  type RepertoireRecord
+  type RepertoireRecord,
+  type StoredDecision
 } from "./repository";
 
 /** The directory under userData that keeps replaced repertoires' own backups. */
@@ -162,10 +170,73 @@ function restorableChapters(entry: RepertoireBackupEntry): RepertoireChapter[] {
   });
 }
 
-/** Inserts an entry's content under `entry.repertoire.id` (the repertoire row must exist). */
-function insertBackupContent(
+/**
+ * What a restore writes for one repertoire, prepared before the write transaction begins: its
+ * chapters, its decisions as they will be stored, and the reindex planned from both (the
+ * expensive part: every tree's lookup, position keys and scope). The transaction only writes them.
+ */
+type PreparedContent = {
+  /** The entry, under the id it is restored as. */
+  entry: RepertoireBackupEntry;
+  chapters: RepertoireChapter[];
+  decisions: StoredDecision[];
+  plan: ReindexPlan;
+};
+
+/** The entry's decisions as they will be stored under `entry.repertoire.id`. */
+function restorableDecisions(entry: RepertoireBackupEntry): StoredDecision[] {
+  return entry.decisions.map((decision) => {
+    const acceptedUcis = [...new Set(decision.acceptedUcis.map((uci) => uci.toLowerCase()))];
+    const preferredUci = decision.preferredUci?.toLowerCase() ?? null;
+    return {
+      repertoireId: entry.repertoire.id,
+      positionKey: decision.positionKey,
+      acceptedUcis,
+      preferredUci: preferredUci && acceptedUcis.includes(preferredUci) ? preferredUci : null,
+      prompt: cleanText(decision.prompt, MAX_POLICY_TEXT),
+      hint: cleanText(decision.hint, MAX_POLICY_TEXT),
+      wrongMoveFeedback: Object.fromEntries(
+        Object.entries(decision.wrongMoveFeedback)
+          .slice(0, 64)
+          .map(([uci, text]) => [uci.toLowerCase(), text.slice(0, MAX_POLICY_TEXT)])
+      ),
+      paused: decision.paused,
+      acceptanceFingerprint: ""
+    };
+  });
+}
+
+/**
+ * Prepares an entry's content, outside the write transaction. The reindex is planned over the
+ * chapters in the order the repository lists them once inserted (sort order, then id: every row
+ * is created at the same time), so it is the plan a reindex after the inserts would make.
+ */
+function prepareContent(
   entry: RepertoireBackupEntry,
-  chapters: readonly RepertoireChapter[],
+  chapters: RepertoireChapter[]
+): PreparedContent {
+  const decisions = restorableDecisions(entry);
+  const ordered = [...chapters].sort(
+    (a, b) => a.sortOrder - b.sortOrder || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  );
+  return {
+    entry,
+    chapters,
+    decisions,
+    plan: planReindex(
+      { id: entry.repertoire.id, color: entry.repertoire.color },
+      ordered,
+      decisions
+    )
+  };
+}
+
+/**
+ * Inserts prepared content under `entry.repertoire.id` (the repertoire row must exist), then
+ * writes its planned reindex.
+ */
+function insertBackupContent(
+  { entry, chapters, decisions, plan }: PreparedContent,
   includeProgress: boolean,
   keepLinkIds: boolean,
   now: number
@@ -180,28 +251,7 @@ function insertBackupContent(
     }
     chapterRepository.upsert(repertoireId, chapter, now);
   }
-  for (const decision of entry.decisions) {
-    const acceptedUcis = [...new Set(decision.acceptedUcis.map((uci) => uci.toLowerCase()))];
-    const preferredUci = decision.preferredUci?.toLowerCase() ?? null;
-    decisionRepository.upsert(
-      {
-        repertoireId,
-        positionKey: decision.positionKey,
-        acceptedUcis,
-        preferredUci: preferredUci && acceptedUcis.includes(preferredUci) ? preferredUci : null,
-        prompt: cleanText(decision.prompt, MAX_POLICY_TEXT),
-        hint: cleanText(decision.hint, MAX_POLICY_TEXT),
-        wrongMoveFeedback: Object.fromEntries(
-          Object.entries(decision.wrongMoveFeedback)
-            .slice(0, 64)
-            .map(([uci, text]) => [uci.toLowerCase(), text.slice(0, MAX_POLICY_TEXT)])
-        ),
-        paused: decision.paused,
-        acceptanceFingerprint: ""
-      },
-      now
-    );
-  }
+  for (const decision of decisions) decisionRepository.upsert(decision, now);
   if (includeProgress && entry.progress) {
     for (const progress of entry.progress) {
       progressRepository.upsert({
@@ -234,6 +284,7 @@ function insertBackupContent(
       capturedPath: link.capturedPath.slice(0, MAX_POLICY_TEXT)
     });
   }
+  applyReindex(requireRepertoire(repertoireId), plan, now);
 }
 
 /** A file-name-safe form of a repertoire id. */
@@ -370,18 +421,30 @@ function pruneRetainedBackups(directory: string, repertoireId: string): void {
 
 export type RestoredRepertoire = RestoreBackupResult["restored"][number] & { revision: number };
 
-function restoreNewCopy(
+/** A new copy's content under fresh repertoire, chapter and link ids, at revision 1. */
+function prepareNewCopy(
   entry: RepertoireBackupEntry,
-  chapters: readonly RepertoireChapter[],
-  selection: RestoreBackupSelection,
-  now: number
-): RestoredRepertoire {
+  chapters: readonly RepertoireChapter[]
+): PreparedContent {
   const chapterIds = new Map(chapters.map((chapter) => [chapter.id, nanoid()]));
   const copy = remapBackupEntry(entry, {
     newRepertoireId: nanoid(),
     idFor: (chapterId) => chapterIds.get(chapterId) ?? nanoid(),
     linkIdFor: () => nanoid()
   });
+  return prepareContent(
+    copy,
+    chapters.map((chapter) => ({ ...chapter, id: chapterIds.get(chapter.id)!, revision: 1 }))
+  );
+}
+
+function restoreNewCopy(
+  entry: RepertoireBackupEntry,
+  prepared: PreparedContent,
+  selection: RestoreBackupSelection,
+  now: number
+): RestoredRepertoire {
+  const copy = prepared.entry;
   const name = selection.newName?.trim()
     ? cleanName(selection.newName)
     : cleanName(`${entry.repertoire.name || "Repertoire"} (restored)`);
@@ -396,13 +459,7 @@ function restoreNewCopy(
     createdAt: now,
     updatedAt: now
   });
-  const copiedChapters = chapters.map((chapter) => ({
-    ...chapter,
-    id: chapterIds.get(chapter.id)!,
-    revision: 1
-  }));
-  insertBackupContent(copy, copiedChapters, selection.includeProgress, false, now);
-  reindex(requireRepertoire(copy.repertoire.id), now);
+  insertBackupContent(prepared, selection.includeProgress, false, now);
   return {
     sourceId: entry.repertoire.id,
     repertoireId: copy.repertoire.id,
@@ -444,12 +501,13 @@ function checkReplace(
 }
 
 function restoreReplace(
-  entry: RepertoireBackupEntry,
-  chapters: readonly RepertoireChapter[],
+  prepared: PreparedContent,
   selection: RestoreBackupSelection,
   retainedBackupPath: string,
   now: number
 ): RestoredRepertoire {
+  const { entry } = prepared;
+  // Checked again inside the transaction: the repertoire may have changed since it was retained.
   const existing = checkReplace(entry, selection);
   // Deleting the row cascades to chapters, decisions, index, progress, sessions, workspace, links.
   repertoireRepository.remove(existing.id);
@@ -465,8 +523,7 @@ function restoreReplace(
     createdAt: entry.repertoire.createdAt,
     updatedAt: now
   });
-  insertBackupContent(entry, chapters, selection.includeProgress, true, now);
-  reindex(requireRepertoire(existing.id), now);
+  insertBackupContent(prepared, selection.includeProgress, true, now);
   return {
     sourceId: entry.repertoire.id,
     repertoireId: existing.id,
@@ -485,7 +542,9 @@ function restoreReplace(
  * revision above both. Afterwards only the newest ten retained backups of each replaced
  * repertoire are kept. Progress is restored only with `includeProgress`. A link keeps its game
  * only if this library has it. The index and effective decisions are rebuilt (decisions nothing
- * reaches are suspended).
+ * reaches are suspended). Validation, the chapters' replay and the reindex plan are all computed
+ * before BEGIN, so the write lock (which the main connection's own writes wait on) is held only
+ * for the checks that must see the database as written and the inserts and deletes.
  */
 export function runRestoreJob(job: RestoreJob): RestoredRepertoire[] {
   const { now, selections } = job;
@@ -495,7 +554,15 @@ export function runRestoreJob(job: RestoreJob): RestoredRepertoire[] {
     if (!entry) {
       throw new Error(`Invalid selections: "${selection.sourceId}" is not in this backup`);
     }
-    return { selection, entry, chapters: restorableChapters(entry) };
+    const chapters = restorableChapters(entry);
+    return {
+      selection,
+      entry,
+      prepared:
+        selection.mode === "replace"
+          ? prepareContent(entry, chapters)
+          : prepareNewCopy(entry, chapters)
+    };
   });
   // Every replace is checked, and its own backup prepared (and checked restorable), before any
   // backup is retained; all are retained before BEGIN.
@@ -509,10 +576,10 @@ export function runRestoreJob(job: RestoreJob): RestoredRepertoire[] {
     retained.set(copy.record.id, retainBackup(copy, now, job.retainedDirectory));
   }
   const restored = transaction(() =>
-    planned.map(({ selection, entry, chapters }) =>
+    planned.map(({ selection, entry, prepared }) =>
       selection.mode === "replace"
-        ? restoreReplace(entry, chapters, selection, retained.get(entry.repertoire.id)!, now)
-        : restoreNewCopy(entry, chapters, selection, now)
+        ? restoreReplace(prepared, selection, retained.get(entry.repertoire.id)!, now)
+        : restoreNewCopy(entry, prepared, selection, now)
     )
   );
   for (const item of restored) {

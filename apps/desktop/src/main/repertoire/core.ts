@@ -123,7 +123,7 @@ export type ReindexPlan = {
  * caller may compute it before taking the write lock (the import writer does).
  */
 export function planReindex(
-  record: RepertoireRecord,
+  record: Pick<RepertoireRecord, "id" | "color">,
   chapters: readonly RepertoireChapter[],
   existing: readonly StoredDecision[],
   keyOf: (fen: string) => string = memoizedPositionKey()

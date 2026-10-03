@@ -14,7 +14,8 @@ import type { MoveNode } from "@chaturanga/shared/types/chess";
 import type {
   RepertoireBackupDocument,
   RepertoireChapter,
-  RepertoireNodeMeta
+  RepertoireNodeMeta,
+  RestoreBackupSelection
 } from "@chaturanga/shared/types/repertoire";
 import { fenAfterUci, START_FEN } from "@chaturanga/shared/chess/position";
 import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
@@ -67,8 +68,14 @@ vi.mock("./backup-restore-runner", async (importOriginal) => {
 
 const { closeDb, getDb } = await import("../db");
 const service = await import("./service");
-const { chapterRepository, decisionRepository, positionIndexRepository, progressRepository } =
-  await import("./repository");
+const {
+  chapterRepository,
+  decisionRepository,
+  positionIndexRepository,
+  progressRepository,
+  repertoireRepository
+} = await import("./repository");
+const { reindex } = await import("./core");
 
 let now = 1_000_000_000_000;
 service.setRepertoireClock(() => now);
@@ -580,6 +587,36 @@ describe("native backup: restore", () => {
     ]);
     // The source is untouched.
     expect(service.getRepertoire(detail.id).revision).toBe(detail.revision);
+  });
+
+  it("writes the derived state a reindex of the restored chapters makes, planned before it locks", async () => {
+    const detail = seed();
+    const { text } = await exportText(true);
+    const restore = async (selection: RestoreBackupSelection) => {
+      const preview = (await service.previewBackupImport({ json: text }))!;
+      return (await service.restoreBackup({ jobId: preview.jobId, selections: [selection] }))
+        .restored[0].repertoireId;
+    };
+    const copyId = await restore({ sourceId: detail.id, mode: "new-copy", includeProgress: true });
+    const replacedId = await restore({
+      sourceId: detail.id,
+      mode: "replace",
+      includeProgress: true,
+      expectedRevision: detail.revision
+    });
+    for (const id of [copyId, replacedId]) {
+      const index = positionIndexRepository.list(id);
+      const decisions = decisionRepository.list(id);
+      const progress = progressRepository.list(id);
+      expect(index.length).toBeGreaterThan(0);
+      expect(reindex(repertoireRepository.get(id)!, now)).toEqual({
+        decisionsChanged: 0,
+        progressChanged: false
+      });
+      expect(positionIndexRepository.list(id)).toEqual(index);
+      expect(decisionRepository.list(id)).toEqual(decisions);
+      expect(progressRepository.list(id)).toEqual(progress);
+    }
   });
 
   it("restores progress only with includeProgress", async () => {
