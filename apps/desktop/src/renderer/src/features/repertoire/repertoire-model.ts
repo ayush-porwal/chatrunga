@@ -152,6 +152,40 @@ export function deriveChoices(
   };
 }
 
+/** A button of a choice row: what it does to the move, and how prominent it is. */
+export type ChoiceAction = {
+  kind: "accept" | "prefer" | "make-reference" | "cover";
+  variant: "outline" | "ghost";
+};
+
+/**
+ * The actions a choice row offers. A move outside training scope can only be kept as reference
+ * (or covered again, at the opponent's turn): accepting or preferring it can't make a decision.
+ * In scope, the player's reference move can be accepted, any accepted move preferred, and a
+ * trained move made reference; an opponent's reply toggles between covered and reference.
+ */
+export function choiceActions(
+  row: Pick<ChoiceRow, "state" | "edge">,
+  side: ChoicesView["side"]
+): ChoiceAction[] {
+  if (row.state === "untrained") {
+    if (side === "player") {
+      return row.edge === "reference" ? [] : [{ kind: "make-reference", variant: "ghost" }];
+    }
+    return [{ kind: row.edge === "reference" ? "cover" : "make-reference", variant: "ghost" }];
+  }
+  if (side === "opponent") {
+    return row.state === "covered"
+      ? [{ kind: "make-reference", variant: "ghost" }]
+      : [{ kind: "cover", variant: "outline" }];
+  }
+  const actions: ChoiceAction[] = [];
+  if (row.state === "reference") actions.push({ kind: "accept", variant: "outline" });
+  if (row.state !== "preferred") actions.push({ kind: "prefer", variant: "outline" });
+  if (row.state !== "reference") actions.push({ kind: "make-reference", variant: "ghost" });
+  return actions;
+}
+
 /** Default edge of a move added while studying (§5.2): own moves reference, replies covered. */
 export function defaultEdgeForNewMove(
   fenBefore: string,

@@ -14,9 +14,11 @@ import { SectionHeader } from "@/components/ui/page";
 import { BoundaryControls } from "./StudyBoundaryControls";
 import {
   CHOICE_LABELS,
+  choiceActions,
   deriveChoices,
   pathLabel,
   transpositionsOf,
+  type ChoiceAction,
   type ChoiceRow,
   type ChoiceState
 } from "./repertoire-model";
@@ -27,6 +29,13 @@ const STATE_ICONS: Record<ChoiceState, typeof Star> = {
   covered: Check,
   reference: BookOpen,
   untrained: CircleSlash
+};
+
+const ACTION_LABELS: Record<ChoiceAction["kind"], string> = {
+  accept: "Accept",
+  prefer: "Prefer",
+  "make-reference": "Make reference",
+  cover: "Cover"
 };
 
 const STATE_TONES: Record<ChoiceState, "accent" | "info" | "neutral"> = {
@@ -239,81 +248,28 @@ function ChoiceItem({
         </Badge>
       ) : null}
       <div className="ml-auto flex items-center gap-1">
-        {row.state === "untrained" ? (
-          side === "player" ? (
-            row.edge !== "reference" ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                disabled={busy}
-                onClick={() => onSetEdge("reference")}
-              >
-                Make reference
-              </Button>
-            ) : null
-          ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              disabled={busy}
-              onClick={() => onSetEdge(row.edge === "reference" ? "covered" : "reference")}
-            >
-              {row.edge === "reference" ? "Cover" : "Make reference"}
-            </Button>
-          )
-        ) : side === "player" ? (
-          <>
-            {row.state === "reference" ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="xs"
-                disabled={busy}
-                onClick={() => onSetEdge("included")}
-              >
-                Accept
-              </Button>
-            ) : null}
-            {row.state !== "preferred" ? (
-              <Button type="button" variant="outline" size="xs" disabled={busy} onClick={onPrefer}>
-                Prefer
-              </Button>
-            ) : null}
-            {row.state !== "reference" ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                disabled={busy}
-                onClick={() => onSetEdge("reference")}
-              >
-                Make reference
-              </Button>
-            ) : null}
-          </>
-        ) : row.state === "covered" ? (
+        {choiceActions(row, side).map((action) => (
           <Button
+            key={action.kind}
             type="button"
-            variant="ghost"
+            variant={action.variant}
             size="xs"
             disabled={busy}
-            onClick={() => onSetEdge("reference")}
+            onClick={() =>
+              action.kind === "prefer"
+                ? onPrefer()
+                : onSetEdge(
+                    action.kind === "accept"
+                      ? "included"
+                      : action.kind === "cover"
+                        ? "covered"
+                        : "reference"
+                  )
+            }
           >
-            Make reference
+            {ACTION_LABELS[action.kind]}
           </Button>
-        ) : (
-          <Button
-            type="button"
-            variant="outline"
-            size="xs"
-            disabled={busy}
-            onClick={() => onSetEdge("covered")}
-          >
-            Cover
-          </Button>
-        )}
+        ))}
       </div>
     </li>
   );

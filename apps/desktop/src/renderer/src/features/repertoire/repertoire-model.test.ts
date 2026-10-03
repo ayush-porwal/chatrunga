@@ -5,6 +5,7 @@ import {
   answerView,
   autoAdvanceDelay,
   autosaveStep,
+  choiceActions,
   hasAnswerNotes,
   isPracticeNextKey,
   leadUpLabel,
@@ -43,7 +44,8 @@ import {
   pieceNameAt,
   resumedHintText,
   revealText,
-  sanOf
+  sanOf,
+  type ChoiceRow
 } from "./repertoire-model";
 
 /** 1. e4 e5 2. Nf3, with 1. d4 and 1... c5 as alternatives. */
@@ -147,6 +149,43 @@ describe("deriveChoices", () => {
     expect(deriveChoices(chapter, buildChapterLookup(chapter), "nope", "white", null).rows).toEqual(
       []
     );
+  });
+});
+
+describe("choiceActions", () => {
+  const kinds = (row: Pick<ChoiceRow, "state" | "edge">, side: "player" | "opponent") =>
+    choiceActions(row, side).map((action) => `${action.kind}:${action.variant}`);
+
+  it("offers the player's moves accept, prefer and make reference by state", () => {
+    expect(kinds({ state: "preferred", edge: "included" }, "player")).toEqual([
+      "make-reference:ghost"
+    ]);
+    expect(kinds({ state: "accepted", edge: "included" }, "player")).toEqual([
+      "prefer:outline",
+      "make-reference:ghost"
+    ]);
+    expect(kinds({ state: "reference", edge: "reference" }, "player")).toEqual([
+      "accept:outline",
+      "prefer:outline"
+    ]);
+  });
+
+  it("toggles an opponent's reply between covered and reference", () => {
+    expect(kinds({ state: "covered", edge: "covered" }, "opponent")).toEqual([
+      "make-reference:ghost"
+    ]);
+    expect(kinds({ state: "reference", edge: "reference" }, "opponent")).toEqual(["cover:outline"]);
+  });
+
+  it("outside training scope only keeps a move as reference (or covers a reply again)", () => {
+    expect(kinds({ state: "untrained", edge: "included" }, "player")).toEqual([
+      "make-reference:ghost"
+    ]);
+    expect(kinds({ state: "untrained", edge: "reference" }, "player")).toEqual([]);
+    expect(kinds({ state: "untrained", edge: "reference" }, "opponent")).toEqual(["cover:ghost"]);
+    expect(kinds({ state: "untrained", edge: "covered" }, "opponent")).toEqual([
+      "make-reference:ghost"
+    ]);
   });
 });
 
