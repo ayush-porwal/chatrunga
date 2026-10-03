@@ -9,7 +9,7 @@ import { positionStatus } from "@/lib/position-status";
 import { titlebarIconButton } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { PlayersTitle, WorkspaceTitlebar } from "../features/board/BoardWorkspace";
-import { MatchActions } from "../features/analysis/MatchActions";
+import { MatchActions, useEnginePostGame } from "../features/analysis/MatchActions";
 import { RepertoireHandoffActions } from "../features/repertoire/RepertoireHandoffActions";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { useGameStore } from "../stores/game-store";
@@ -164,7 +164,8 @@ export function PageTitle({ children }: { children: ReactNode }) {
 
 /**
  * Titlebar for the game view: players (or the puzzle, or the mode name while both sides are
- * unnamed) · result · transient status … Analyze/Stop · match actions (Offer draw, Resign).
+ * unnamed) · result · transient status … Analyze/Stop · match actions (Offer draw, Resign; once
+ * the game ends, Review game / Analyze / Next puzzle).
  */
 export const GameTitlebar = memo(function GameTitlebar({
   engines,
@@ -174,6 +175,9 @@ export const GameTitlebar = memo(function GameTitlebar({
   onStopAnalysis,
   onReviewGame,
   onPlayAgain,
+  onReviewEngineGame,
+  onNextPuzzle,
+  nextPuzzlePending,
   onReviewOpening,
   onReturnToRepertoire
 }: {
@@ -186,6 +190,11 @@ export const GameTitlebar = memo(function GameTitlebar({
   /** A finished online game: open it in Game review / find another game. */
   onReviewGame: () => void;
   onPlayAgain: () => void;
+  /** A finished engine game: Game review, its review started unless it has one. */
+  onReviewEngineGame: () => void;
+  /** A finished engine game played on from a puzzle: the set's next puzzle (null otherwise). */
+  onNextPuzzle: (() => void) | null;
+  nextPuzzlePending: boolean;
   /** A finished game played from a repertoire: its Opening review / the chapter it came from. */
   onReviewOpening: () => void;
   onReturnToRepertoire: () => void;
@@ -211,6 +220,8 @@ export const GameTitlebar = memo(function GameTitlebar({
   const lichessLabel = useLichessStore((state) => (state.live ? lichessGameLabel(state.live.full) : null));
   const activeEngineId = useAnalysisStore((state) => state.activeEngineId);
   const activePuzzle = usePuzzleStore((state) => state.activePuzzle);
+  // A finished engine game's own row (MatchActions) has Analyze: the button here would repeat it.
+  const enginePostGame = useEnginePostGame();
   const engineName = engines?.find((engine) => engine.id === activeEngineId)?.name ?? null;
 
   const error = game.lastError || (showAnalysisError ? analysisError : null);
@@ -238,12 +249,16 @@ export const GameTitlebar = memo(function GameTitlebar({
             <Button type="button" variant="outline" size="sm" onClick={onStopAnalysis}>
               Stop analysis
             </Button>
-          ) : canAnalyze ? (
+          ) : canAnalyze && !enginePostGame ? (
             <Button type="button" variant="primary" size="sm" onClick={onAnalyze}>
               Analyze
             </Button>
           ) : null}
-          <MatchActions onReview={onReviewGame} onPlayAgain={onPlayAgain} />
+          <MatchActions
+            onReview={onReviewGame}
+            onPlayAgain={onPlayAgain}
+            postGame={{ onReviewGame: onReviewEngineGame, onAnalyze, onNextPuzzle, nextPuzzlePending }}
+          />
           <RepertoireHandoffActions
             onReviewOpening={onReviewOpening}
             onReturnToRepertoire={onReturnToRepertoire}

@@ -55,8 +55,10 @@ import {
   flushGameAutosave,
   holdUntilChanged,
   IMPORT_NEEDS_SAVE,
+  mainlineEnd,
   useGameAutosave
 } from "./useGameAutosave";
+import { boardResultPatch } from "../features/analysis/post-game";
 import { useUsageActivity } from "./useUsageTelemetry";
 import { useLichess } from "./useLichess";
 import { useHistoryShortcuts } from "./useHistoryShortcuts";
@@ -633,12 +635,16 @@ export function App() {
    * "Analyze" in the titlebar / Engine tab: analyse the loaded game in place (keeps moves and
    * review). A finished match's result and clocks are cleared (the headers keep the result): with
    * them the board refuses moves and the engine won't search. Back returns to the game as it was.
+   * From a finished position (after mate or stalemate), analysis starts at the move that ended it.
    */
   function analyzeCurrentPosition() {
     if (!desktopApiAvailable) return;
     commitCurrent();
     // A board still loading (Back / Forward, a saved game) must not replace this one afterwards.
     latestNavigation.current += 1;
+    const { currentFen, currentNodeId, moveTree } = currentGame();
+    const parentId = moveTree.find((node) => node.id === currentNodeId)?.parentId;
+    if (positionStatus(currentFen).isEnd && parentId) currentGame().goToNode(parentId);
     currentGame().setEngineSide(null);
     currentGame().clearEngineMatchExtras();
     currentGame().setMode("analysis");
@@ -1036,6 +1042,28 @@ export function App() {
     await openSelectedGameReview("current", "opening");
   }
 
+  /**
+   * After an engine game (one played on from a puzzle too): Game review of it, its review started
+   * at once unless it already has one.
+   */
+  async function reviewFinishedEngineGame() {
+    const request = ++latestNavigation.current;
+    // The game's library id (its first save may still be waiting) names what the review saves to.
+    await flushGameAutosave();
+    if (request !== latestNavigation.current) return;
+    // Ended on the board (mate, stalemate): the review shows its result like a resignation's.
+    const game = currentGame();
+    const result = boardResultPatch({
+      gameOutcome: game.gameOutcome,
+      headers: game.headers,
+      endFen: mainlineEnd(game.moveTree)?.fenAfter ?? game.currentFen
+    });
+    if (result) game.patchHeaders(result);
+    const reviewed = Boolean(useReviewStore.getState().review);
+    await openSelectedGameReview("current");
+    if (!reviewed) void startReview();
+  }
+
   function openDatabasesPage(history: HistoryMode = "push") {
     if (!desktopApiAvailable) return;
     if (history === "push") commitCurrent();
@@ -1208,6 +1236,7 @@ export function App() {
       openPuzzlesPage();
     }),
     reviewCurrentGame: useEventCallback(() => void openSelectedGameReview("current")),
+    reviewEngineGame: useEventCallback(() => void reviewFinishedEngineGame()),
     repertoireHub: useEventCallback(() => openRepertoireHub()),
     openRepertoireStudy: useEventCallback((target: StudyOpenTarget) =>
       unlessRepertoireBlocked(
@@ -1387,6 +1416,9 @@ export function App() {
               onStopAnalysis={gameMode === "analysis" && desktopApiAvailable ? on.stopLiveAnalysis : null}
               onReviewGame={on.reviewCurrentGame}
               onPlayAgain={on.playLichess}
+              onReviewEngineGame={on.reviewEngineGame}
+              onNextPuzzle={puzzleSetContinues ? on.nextPuzzle : null}
+              nextPuzzlePending={nextPuzzle.isPending}
               onReviewOpening={on.reviewHandoffOpening}
               onReturnToRepertoire={on.returnToRepertoire}
             />
