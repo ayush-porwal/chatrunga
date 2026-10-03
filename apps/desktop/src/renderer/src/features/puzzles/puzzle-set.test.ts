@@ -43,6 +43,13 @@ describe("puzzle set", () => {
     ).toBe("Lichess puzzles · Rating 1200–1800 · Black to move · Popularity 50+ · fork, mate in 2 · short · Caro-Kann Defense");
   });
 
+  it("says when the range is around the solver's rating, and names a retry set by its size", () => {
+    const around = { ...config, difficulty: "easier" as const, lichess: { ...config.lichess, ratingMin: 1050, ratingMax: 1350 } };
+    expect(puzzleSetSummary(around, "Lichess puzzles")).toBe("Lichess puzzles · Rating 1050–1350 (easier, around yours)");
+    expect(puzzleSetSummary({ ...config, retryIds: ["a", "b"] }, "Lichess puzzles")).toBe("Lichess puzzles · 2 failed puzzles again");
+    expect(puzzleSetSummary({ ...config, retryIds: ["a"] }, "Lichess puzzles")).toBe("Lichess puzzles · 1 failed puzzle again");
+  });
+
   it("describes a position set by its difficulty and tags", () => {
     const positions = { ...config, mode: "position-training" as const };
     expect(puzzleSetSummary(positions, "Chess positions")).toBe("Chess positions · Difficulty 1–4 · initiative, development");

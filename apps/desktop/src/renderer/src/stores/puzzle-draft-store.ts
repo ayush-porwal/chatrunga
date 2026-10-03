@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { PuzzleDifficulty } from "@chaturanga/shared/chess/puzzle-rating";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 
 /** The Puzzles page's choices before a set starts. */
@@ -11,6 +12,8 @@ export type PuzzleDraft = {
   side: "any" | "white" | "black";
   ratingMin: number;
   ratingMax: number;
+  /** "Around my rating" (Lichess sets): the range follows the solver's rating; null = ratingMin–Max. */
+  difficulty: PuzzleDifficulty | null;
   popularityMin: number;
   difficultyMin: number;
   difficultyMax: number;
@@ -24,6 +27,7 @@ export const DEFAULT_PUZZLE_FILTERS: Omit<PuzzleDraft, "databaseId"> = {
   side: "any",
   ratingMin: 600,
   ratingMax: 2800,
+  difficulty: null,
   popularityMin: 0,
   difficultyMin: 1,
   difficultyMax: 4,
@@ -41,6 +45,7 @@ export function draftFromSessionConfig(config: PuzzleSessionConfig): PuzzleDraft
     side: lichess.side,
     ratingMin: lichess.ratingMin,
     ratingMax: lichess.ratingMax,
+    difficulty: config.difficulty ?? null,
     popularityMin: lichess.popularityMin,
     difficultyMin: position.difficultyMin,
     difficultyMax: position.difficultyMax,

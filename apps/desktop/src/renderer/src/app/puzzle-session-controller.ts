@@ -21,9 +21,13 @@ export function puzzleBoard(puzzle: PuzzleSample): GameSession {
   });
 }
 
-/** The request for the set's next puzzle (excluding those already shown), or null with no dataset chosen. */
+/**
+ * The request for the set's next puzzle (excluding those already shown), or null with no dataset
+ * chosen. A set of failed puzzles tried again asks for those by id, without the filters.
+ */
 export function nextPuzzleInput(config: PuzzleSessionConfig | null, shownIds: string[]): PuzzleSampleInput | null {
   if (!config?.databaseId) return null;
+  if (config.retryIds) return { databaseId: config.databaseId, excludeIds: shownIds, ids: config.retryIds };
   return { databaseId: config.databaseId, excludeIds: shownIds, lichess: config.lichess, position: config.position };
 }
 

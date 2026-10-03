@@ -1,5 +1,12 @@
 import { memo, useId, useMemo, useState, type ReactNode } from "react";
-import { Database, Loader2, Play, Puzzle, RotateCcw } from "lucide-react";
+import { Database, Loader2, Play, Puzzle, Repeat, RotateCcw } from "lucide-react";
+import {
+  DEFAULT_PUZZLE_RATING,
+  isPuzzleDifficulty,
+  PUZZLE_DIFFICULTIES,
+  ratingRangeFor,
+  type PuzzleDifficulty
+} from "@chaturanga/shared/chess/puzzle-rating";
 import { externalDatabaseSources, type PuzzleSample } from "@chaturanga/shared/types/database";
 import { Badge, ChipButton } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,9 +22,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { card, cardPadded, divider, fieldLabel, sectionTitle, well } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useDatabasesQuery, useSamplePuzzleMutation } from "../../queries/api";
+import { useFailedPuzzlesQuery, usePuzzleRatingSummaryQuery } from "../../queries/puzzles";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { usePuzzleDraftStore } from "../../stores/puzzle-draft-store";
 import { formatPuzzleTag as formatTag } from "./puzzle-set";
+import { PuzzleRatingCard } from "./PuzzleRatingCard";
+import { formatPuzzleRating, formatRatingDelta } from "./PuzzleRatingLine";
 
 const lichessThemes = [
   "mate",
@@ -90,6 +100,13 @@ const strategicTags = [
 export type PuzzleSessionConfig = {
   databaseId: string | null;
   mode: "lichess-puzzle" | "position-training";
+  /**
+   * "Around my rating": the Lichess rating range was set this far from the solver's rating when the
+   * set started (null or absent: the range was chosen by hand).
+   */
+  difficulty?: PuzzleDifficulty | null;
+  /** Failed puzzles tried again: only these are drawn (the filters below are kept for Edit set). */
+  retryIds?: string[];
   lichess: {
     ratingMin: number;
     ratingMax: number;
@@ -122,30 +139,39 @@ export const PuzzlePage = memo(function PuzzlePage({
   const preferred = puzzleDatabases.find((item) => item.sourceId === "lichess-puzzles") ?? puzzleDatabases[0] ?? null;
   const draft = usePuzzleDraftStore((state) => state.draft);
   const updateDraft = usePuzzleDraftStore((state) => state.update);
-  const { themes, lengths, openings, side, ratingMin, ratingMax, popularityMin, difficultyMin, difficultyMax, positionTags } = draft;
+  const { themes, lengths, openings, side, ratingMin, ratingMax, difficulty, popularityMin, difficultyMin, difficultyMax, positionTags } = draft;
   const selectedDatabase = puzzleDatabases.find((item) => item.id === draft.databaseId) ?? preferred;
   const isLichess = selectedDatabase?.sourceId === "lichess-puzzles";
+  const ratingSummary = usePuzzleRatingSummaryQuery();
+  const userRating = ratingSummary.data ?? { ...DEFAULT_PUZZLE_RATING };
+  // "Around my rating": the range follows the solver's current rating (Lichess sets only).
+  const aroundRange = isLichess && difficulty ? ratingRangeFor(userRating.rating, difficulty) : null;
+  const drawnRatingMin = aroundRange?.ratingMin ?? ratingMin;
+  const drawnRatingMax = aroundRange?.ratingMax ?? ratingMax;
+  const failedPuzzles = useFailedPuzzlesQuery(selectedDatabase?.sourceId ?? null);
+  const failedIds = useMemo(() => (failedPuzzles.data ?? []).map((puzzle) => puzzle.puzzleId), [failedPuzzles.data]);
   const setDatabaseId = (value: string) => updateDraft({ databaseId: value });
   const setThemes = (value: string[]) => updateDraft({ themes: value });
   const setLengths = (value: string[]) => updateDraft({ lengths: value });
   const setOpenings = (value: string[]) => updateDraft({ openings: value });
   const setSide = (value: "any" | "white" | "black") => updateDraft({ side: value });
-  const setRatingMin = (value: number) => updateDraft({ ratingMin: value });
-  const setRatingMax = (value: number) => updateDraft({ ratingMax: value });
+  const onRatingMinChange = (value: number) => updateDraft({ ratingMin: value });
+  const onRatingMaxChange = (value: number) => updateDraft({ ratingMax: value });
+  const setDifficulty = (value: PuzzleDifficulty | null) => updateDraft({ difficulty: value });
   const setPopularityMin = (value: number) => updateDraft({ popularityMin: value });
   const setDifficultyMin = (value: number) => updateDraft({ difficultyMin: value });
   const setDifficultyMax = (value: number) => updateDraft({ difficultyMax: value });
   const setPositionTags = (value: string[]) => updateDraft({ positionTags: value });
   const databaseFieldId = useId();
 
-  function start() {
-    if (!selectedDatabase) return;
-    const config = {
-      databaseId: selectedDatabase.id,
+  function sessionConfig(databaseId: string): PuzzleSessionConfig {
+    return {
+      databaseId,
       mode: isLichess ? "lichess-puzzle" : "position-training",
+      difficulty: isLichess ? difficulty : null,
       lichess: {
-        ratingMin,
-        ratingMax,
+        ratingMin: drawnRatingMin,
+        ratingMax: drawnRatingMax,
         popularityMin,
         lengths,
         themes,
@@ -157,7 +183,12 @@ export const PuzzlePage = memo(function PuzzlePage({
         difficultyMax,
         tags: positionTags
       }
-    } satisfies PuzzleSessionConfig;
+    };
+  }
+
+  function start() {
+    if (!selectedDatabase) return;
+    const config = sessionConfig(selectedDatabase.id);
     samplePuzzle.mutate(
       {
         databaseId: selectedDatabase.id,
@@ -170,15 +201,31 @@ export const PuzzlePage = memo(function PuzzlePage({
     );
   }
 
+  /** A set of the puzzles whose latest try failed (recorded unrated: they were played before). */
+  function retryFailed() {
+    if (!selectedDatabase || !failedIds.length) return;
+    const config: PuzzleSessionConfig = { ...sessionConfig(selectedDatabase.id), retryIds: failedIds };
+    samplePuzzle.mutate({ databaseId: selectedDatabase.id, ids: failedIds }, { onSuccess: (puzzle) => onStart(config, puzzle) });
+  }
+  const retrying = samplePuzzle.isPending && Boolean(samplePuzzle.variables?.ids);
+
   const filtersChanged = isLichess
-    ? themes.length || lengths.length || openings.length || side !== "any" || ratingMin !== 600 || ratingMax !== 2800 || popularityMin !== 0
+    ? themes.length ||
+      lengths.length ||
+      openings.length ||
+      side !== "any" ||
+      ratingMin !== 600 ||
+      ratingMax !== 2800 ||
+      difficulty !== null ||
+      popularityMin !== 0
     : difficultyMin !== 1 || difficultyMax !== 4 || positionTags.join() !== "initiative,development";
 
   const resetFilters = usePuzzleDraftStore((state) => state.resetFilters);
 
   const summary = isLichess
     ? [
-        `Rated ${ratingMin}–${ratingMax}`,
+        `Rated ${drawnRatingMin}–${drawnRatingMax}`,
+        ...(aroundRange ? [`${difficultyLabel(difficulty)}, around your rating`] : []),
         side === "any" ? "Either side to move" : `${side === "white" ? "White" : "Black"} to move`,
         ...(popularityMin !== 0 ? [`Popularity ${popularityMin}+`] : []),
         ...(themes.length ? themes.map(formatTag) : ["Any theme"]),
@@ -245,15 +292,18 @@ export const PuzzlePage = memo(function PuzzlePage({
                   lengths={lengths}
                   openings={openings}
                   popularityMin={popularityMin}
-                  ratingMax={ratingMax}
-                  ratingMin={ratingMin}
+                  ratingMax={drawnRatingMax}
+                  ratingMin={drawnRatingMin}
+                  difficulty={difficulty}
+                  userRating={formatPuzzleRating(userRating)}
                   side={side}
                   themes={themes}
                   onLengthsChange={setLengths}
                   onOpeningsChange={setOpenings}
                   onPopularityMinChange={setPopularityMin}
-                  onRatingMaxChange={setRatingMax}
-                  onRatingMinChange={setRatingMin}
+                  onRatingMaxChange={onRatingMaxChange}
+                  onRatingMinChange={onRatingMinChange}
+                  onDifficultyChange={setDifficulty}
                   onSideChange={setSide}
                   onThemesChange={setThemes}
                 />
@@ -269,52 +319,73 @@ export const PuzzlePage = memo(function PuzzlePage({
               )}
             </section>
 
-            {/* The set as it will be drawn, and the one action — first on narrow panels, sticky beside the filters on wide ones. */}
-            <aside
-              className={cn(cardPadded, "order-first grid gap-4 @3xl:sticky @3xl:top-0 @3xl:order-none")}
-              aria-labelledby="puzzle-set-title"
-            >
-              <div className="grid gap-1">
-                <h2 id="puzzle-set-title" className={sectionTitle}>
-                  {isLichess ? "Puzzle set" : "Position set"}
-                </h2>
-                <p className="truncate text-xs text-fg-muted" title={selectedDatabase.name}>
-                  {selectedDatabase.name}
-                </p>
-              </div>
-              <ul className="flex flex-wrap gap-1.5" aria-label="Active filters">
-                {summary.map((item) => (
-                  <li key={item} className="max-w-full">
-                    <Badge size="md" className="max-w-full animate-fade-in">
-                      <span className="truncate">{item}</span>
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
-              {startError ? (
-                <Notice tone="danger" className="animate-rise-in">
-                  {startError}
-                </Notice>
-              ) : null}
-              <div className="grid gap-2">
-                <Button type="button" variant="primary" className="h-10" disabled={samplePuzzle.isPending} onClick={start}>
-                  {samplePuzzle.isPending ? <Loader2 className="animate-spin" /> : <Play />}
-                  {samplePuzzle.isPending ? "Finding a puzzle…" : "Start puzzle set"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className={cn("transition-opacity duration-standard", !filtersChanged && "pointer-events-none opacity-0")}
-                  tabIndex={filtersChanged ? undefined : -1}
-                  aria-hidden={filtersChanged ? undefined : true}
-                  onClick={resetFilters}
-                >
-                  <RotateCcw />
-                  Reset filters
-                </Button>
-              </div>
-            </aside>
+            {/*
+              The set as it will be drawn, its actions, and the rating — first on narrow panels, sticky
+              beside the filters on wide ones.
+            */}
+            <div className="order-first grid gap-6 @3xl:sticky @3xl:top-0 @3xl:order-none">
+              <aside className={cn(cardPadded, "grid gap-4")} aria-labelledby="puzzle-set-title">
+                <div className="grid gap-1">
+                  <h2 id="puzzle-set-title" className={sectionTitle}>
+                    {isLichess ? "Puzzle set" : "Position set"}
+                  </h2>
+                  <p className="truncate text-xs text-fg-muted" title={selectedDatabase.name}>
+                    {selectedDatabase.name}
+                  </p>
+                </div>
+                <ul className="flex flex-wrap gap-1.5" aria-label="Active filters">
+                  {summary.map((item) => (
+                    <li key={item} className="max-w-full">
+                      <Badge size="md" className="max-w-full animate-fade-in">
+                        <span className="truncate">{item}</span>
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
+                {isLichess ? null : (
+                  // The position set grades difficulty 1–4, with no rating to play against.
+                  <p className="text-xs leading-5 text-fg-muted">Unrated: these positions don&apos;t change your puzzle rating.</p>
+                )}
+                {startError ? (
+                  <Notice tone="danger" className="animate-rise-in">
+                    {startError}
+                  </Notice>
+                ) : null}
+                <div className="grid gap-2">
+                  <Button type="button" variant="primary" className="h-10" disabled={samplePuzzle.isPending} onClick={start}>
+                    {samplePuzzle.isPending && !retrying ? <Loader2 className="animate-spin" /> : <Play />}
+                    {samplePuzzle.isPending && !retrying ? "Finding a puzzle…" : "Start puzzle set"}
+                  </Button>
+                  {failedIds.length ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={samplePuzzle.isPending}
+                      onClick={retryFailed}
+                      title="Puzzles whose last try failed, from this database (not rated again)"
+                    >
+                      {retrying ? <Loader2 className="animate-spin" /> : <Repeat />}
+                      {retrying
+                        ? "Finding them…"
+                        : `Retry ${failedIds.length} failed ${failedIds.length === 1 ? "puzzle" : "puzzles"}`}
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className={cn("transition-opacity duration-standard", !filtersChanged && "pointer-events-none opacity-0")}
+                    tabIndex={filtersChanged ? undefined : -1}
+                    aria-hidden={filtersChanged ? undefined : true}
+                    onClick={resetFilters}
+                  >
+                    <RotateCcw />
+                    Reset filters
+                  </Button>
+                </div>
+              </aside>
+              <PuzzleRatingCard />
+            </div>
           </div>
         </div>
       ) : (
@@ -417,7 +488,13 @@ const sideOptions = [
   { value: "black", label: "Black", icon: <SideDot color="black" /> }
 ] as const;
 
+/** "Normal", or "Custom range" without a difficulty. */
+function difficultyLabel(difficulty: PuzzleDifficulty | null): string {
+  return PUZZLE_DIFFICULTIES.find((item) => item.id === difficulty)?.label ?? "Custom range";
+}
+
 function LichessPuzzleFilters({
+  difficulty,
   lengths,
   openings,
   popularityMin,
@@ -425,6 +502,8 @@ function LichessPuzzleFilters({
   ratingMin,
   side,
   themes,
+  userRating,
+  onDifficultyChange,
   onLengthsChange,
   onOpeningsChange,
   onPopularityMinChange,
@@ -433,13 +512,18 @@ function LichessPuzzleFilters({
   onSideChange,
   onThemesChange
 }: {
+  difficulty: PuzzleDifficulty | null;
   lengths: string[];
   openings: string[];
   popularityMin: number;
+  /** The range drawn from: the one typed in, or the one around the solver's rating. */
   ratingMax: number;
   ratingMin: number;
   side: "any" | "white" | "black";
   themes: string[];
+  /** The solver's rating as shown ("1523", "1500?"). */
+  userRating: string;
+  onDifficultyChange: (value: PuzzleDifficulty | null) => void;
   onLengthsChange: (value: string[]) => void;
   onOpeningsChange: (value: string[]) => void;
   onPopularityMinChange: (value: number) => void;
@@ -449,18 +533,37 @@ function LichessPuzzleFilters({
   onThemesChange: (value: string[]) => void;
 }) {
   const popularityId = useId();
+  const difficultyId = useId();
   return (
     <div className="grid gap-4">
-      <div className="grid gap-4 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto]">
+      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+        <Field label="Difficulty" hint={`Around your rating, ${userRating}`} htmlFor={difficultyId}>
+          <Select
+            id={difficultyId}
+            value={difficulty ?? ""}
+            onChange={(event) => onDifficultyChange(isPuzzleDifficulty(event.target.value) ? event.target.value : null)}
+          >
+            <option value="">Custom range</option>
+            {PUZZLE_DIFFICULTIES.map((item) => (
+              <option key={item.id} value={item.id}>
+                {`${item.label} (${formatRatingDelta(item.offset)})`}
+              </option>
+            ))}
+          </Select>
+        </Field>
         <RangeField
           label="Rating"
+          hint={difficulty ? "From your rating" : undefined}
           min={0}
           max={3500}
           valueMin={ratingMin}
           valueMax={ratingMax}
+          disabled={difficulty !== null}
           onMinChange={onRatingMinChange}
           onMaxChange={onRatingMaxChange}
         />
+      </div>
+      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
         <Field label="Min popularity" hint="−100 to 100" htmlFor={popularityId}>
           <Input
             id={popularityId}
@@ -566,6 +669,7 @@ function RangeField({
   valueMax,
   onMinChange,
   onMaxChange,
+  disabled = false,
   className
 }: {
   label: string;
@@ -576,6 +680,8 @@ function RangeField({
   valueMax: number;
   onMinChange: (value: number) => void;
   onMaxChange: (value: number) => void;
+  /** Set elsewhere (e.g. from the solver's rating): shown, not editable. */
+  disabled?: boolean;
   className?: string;
 }) {
   const id = useId();
@@ -589,6 +695,7 @@ function RangeField({
           min={min}
           max={max}
           value={valueMin}
+          disabled={disabled}
           onChange={(event) => onMinChange(Number(event.target.value))}
         />
         <span aria-hidden="true" className="text-fg-subtle">
@@ -600,6 +707,7 @@ function RangeField({
           min={min}
           max={max}
           value={valueMax}
+          disabled={disabled}
           onChange={(event) => onMaxChange(Number(event.target.value))}
         />
       </div>
