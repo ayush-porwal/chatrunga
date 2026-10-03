@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_PUZZLE_RATING, rateAttempt } from "@chaturanga/shared/chess/puzzle-rating";
+import { DEFAULT_PUZZLE_RATING, rateAttempt, ratingAfterIdle } from "@chaturanga/shared/chess/puzzle-rating";
 import type { RecordPuzzleAttemptInput } from "@chaturanga/shared/types/puzzle-rating";
 
 const userData = mkdtempSync(join(tmpdir(), "chaturanga-puzzle-attempts-test-"));
@@ -66,7 +66,8 @@ describe("puzzleAttemptRepository (SQLite)", () => {
   it("chains ratings: each rated attempt starts from the last one's result", () => {
     const first = repository.record(attempt({ outcome: "solved" }));
     const second = repository.record(attempt({ outcome: "failed", wrongMoveCount: 1 }));
-    expect(second.before).toEqual(first.after);
+    expect(second.before).toMatchObject({ rating: first.after!.rating, volatility: first.after!.volatility });
+    expect(second.before!.deviation).toBeCloseTo(first.after!.deviation, 3); // widened for a second only
     expect(second.delta).toBeLessThan(0);
     expect(repository.history().map((point) => point.rating)).toEqual([first.after!.rating, second.after!.rating]);
   });
@@ -100,6 +101,18 @@ describe("puzzleAttemptRepository (SQLite)", () => {
     expect(position).toMatchObject({ rated: false, unratedReason: "unrated-puzzle" });
     expect(noDeviation).toMatchObject({ rated: false, unratedReason: "unrated-puzzle" });
     expect(repository.summary()).toMatchObject({ ...DEFAULT_PUZZLE_RATING, ratedCount: 0, attemptCount: 2 });
+  });
+
+  it("plays an attempt at the rating widened for the idle time, and stores that as its rating before", () => {
+    const first = repository.record(attempt({ decidedAt: T0 }), T0);
+    const input = attempt({ decidedAt: T0 + 60 * DAY });
+    const second = repository.record(input, T0 + 60 * DAY);
+    const before = ratingAfterIdle(first.after!, T0, T0 + 60 * DAY);
+    expect(before.deviation).toBeGreaterThan(first.after!.deviation);
+    expect(second.before).toEqual(before);
+    expect(second.after).toEqual(rateAttempt(before, { rating: 1500, deviation: 75 }, true, input.decidedAt));
+    const row = getDb().prepare("SELECT rating_before, rd_before, volatility_before FROM puzzle_attempts WHERE id = ?").get(input.attemptId);
+    expect(row).toEqual({ rating_before: before.rating, rd_before: before.deviation, volatility_before: before.volatility });
   });
 
   it("widens the shown deviation with time since the last rated attempt", () => {

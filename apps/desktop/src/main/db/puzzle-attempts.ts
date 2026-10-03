@@ -121,14 +121,12 @@ export const puzzleAttemptRepository = {
         // time, as they arrive). One decided before the last rated attempt (a clock set back, say)
         // is rated on the current rating with no idle time, and the rating keeps the later time.
         const ratedAt = lastRatedAt === null ? at : Math.max(at, lastRatedAt);
-        before = stored ? { rating: stored.rating, deviation: stored.rd, volatility: stored.volatility } : DEFAULT_PUZZLE_RATING;
-        after = rateAttempt(
-          before,
-          { rating: input.puzzleRating!, deviation: input.puzzleRatingDeviation! },
-          input.outcome === "solved",
-          ratedAt,
-          lastRatedAt
-        );
+        // The rating this attempt is played at: the stored one, its deviation widened for the idle
+        // time since the last rated attempt (what the card and the attempt's row show as before).
+        before = stored
+          ? ratingAfterIdle({ rating: stored.rating, deviation: stored.rd, volatility: stored.volatility }, lastRatedAt, ratedAt)
+          : DEFAULT_PUZZLE_RATING;
+        after = rateAttempt(before, { rating: input.puzzleRating!, deviation: input.puzzleRatingDeviation! }, input.outcome === "solved", ratedAt);
         run(
           `INSERT INTO puzzle_rating (id, rating, rd, volatility, rated_count, last_rated_at, updated_at)
           VALUES (1, ?, ?, ?, 1, ?, ?)
