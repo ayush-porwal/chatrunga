@@ -30,7 +30,7 @@ const puzzle = {
   sideToMove: "white"
 } as PuzzleSample;
 const config = { databaseId: "db", lichess: { ratingMin: 1000 }, position: {} } as unknown as PuzzleSessionConfig;
-const set = { config, shownIds: ["p1"] };
+const set = { id: "s1", config, shownIds: ["p1"] };
 
 function loadSaved(id: string | null) {
   const { game } = importPgnText("1. e4 e5 2. Nf3 *");

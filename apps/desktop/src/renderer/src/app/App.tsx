@@ -44,7 +44,7 @@ import {
   replacesLiveBoard,
   type HistoryMode
 } from "./history-navigation";
-import { nextPuzzleInput, puzzleBoard, usePuzzleSession } from "./puzzle-session-controller";
+import { nextPuzzleInput, puzzleBoard, usePuzzleSession, type PuzzleSetStart } from "./puzzle-session-controller";
 import { AppSidebar } from "./AppSidebar";
 import { AppTitlebar, GameTitlebar, LiveGameButton, PageTitle, ReviewTitlebar } from "./AppTitlebar";
 import type { SideTab } from "./side-tabs";
@@ -444,7 +444,8 @@ export function App() {
       return "shown";
     }
     if (plan.kind === "puzzle") {
-      startPuzzle(plan.sample, plan.set?.config, "none");
+      // Its set again, still excluding every puzzle the set has shown (since this entry too).
+      startPuzzle(plan.sample, plan.set ?? undefined, "none");
       return "shown";
     }
     // A game played on from a puzzle comes back with its set (and so its Next puzzle).
@@ -1128,14 +1129,14 @@ export function App() {
   }
 
   /**
-   * Loads a puzzle onto the board. `config` starts a new puzzle set (a history step); without it the
-   * set continues (the next puzzle takes the current entry's place).
+   * Loads a puzzle onto the board. `set` starts a puzzle set (a new one: a history step; or one
+   * history brings back); without it the set continues (the next puzzle takes the current entry's place).
    */
-  function startPuzzle(puzzle: PuzzleSample, config?: PuzzleSessionConfig, history: HistoryMode = config ? "push" : "replace") {
+  function startPuzzle(puzzle: PuzzleSample, set?: PuzzleSetStart, history: HistoryMode = set ? "push" : "replace") {
     if (history === "push") commitCurrent();
     stopEngineWork();
     useReviewStore.getState().reset();
-    puzzleSession.begin(puzzle, config);
+    puzzleSession.begin(puzzle, set);
     currentGame().loadGame(puzzleBoard(puzzle));
     currentGame().setMode("puzzle");
     currentGame().setGameSource("puzzle");
@@ -1231,7 +1232,7 @@ export function App() {
     startReview: useEventCallback(() => void startReview()),
     stopReview: useEventCallback(() => void cancelActiveReview()),
     showGame: useEventCallback(() => showGame()),
-    startPuzzle: useEventCallback((config: PuzzleSessionConfig, puzzle: PuzzleSample) => startPuzzle(puzzle, config)),
+    startPuzzle: useEventCallback((config: PuzzleSessionConfig, puzzle: PuzzleSample) => startPuzzle(puzzle, { config })),
     openGameFromLibrary: useEventCallback((id: string) => unlessOnlineGame(() => void openSavedGameById(id))),
     nextPuzzle: useEventCallback(loadNextPuzzle),
     playEngineFromPuzzle: useEventCallback(playEngineFromCurrentPuzzlePosition),

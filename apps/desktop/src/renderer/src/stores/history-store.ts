@@ -11,8 +11,11 @@ import type { PlayOpponent } from "./lichess-store";
  * and dialogs are not entries.
  */
 
-/** A puzzle set as a board's entry keeps it: its filters (the Puzzles page's config) and the puzzles shown by then. */
-export type PuzzleSetRecord = { config: unknown; shownIds: string[] };
+/**
+ * A puzzle set as a board's entry keeps it: which set (its id), its filters (the Puzzles page's
+ * config) and the puzzles shown by then.
+ */
+export type PuzzleSetRecord = { id: string; config: unknown; shownIds: string[] };
 
 /** A board as it was: the game (saved id, or the whole session when it was never saved) and how it was shown. */
 export type BoardSnapshot = {
