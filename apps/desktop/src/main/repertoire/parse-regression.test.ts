@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseRepertoirePgn } from "@chaturanga/shared/chess/repertoire-pgn";
+import { importedDecisionCount } from "@chaturanga/shared/chess/repertoire-training";
 import { validateTree } from "./chapter-validation";
 import { runImport } from "./import-job";
 
@@ -24,7 +25,15 @@ describe("import parse regression fixture", () => {
   it("the worker's parse gives the snapshot, whatever the chunk size", async () => {
     for (const chunkChars of [1, 7, 64, 32 * 1024]) {
       const { games } = await runImport({ kind: "text", text: pgn }, undefined, { chunkChars });
-      const parsed = games.map(({ positionKeys, ...game }) => {
+      const parsed = games.map(({ positionKeys, decisions, ...game }) => {
+        expect(decisions).toEqual(
+          game.rejected
+            ? { white: 0, black: 0 }
+            : {
+                white: importedDecisionCount("white", game.tree),
+                black: importedDecisionCount("black", game.tree)
+              }
+        );
         expect(Object.keys(positionKeys)).toHaveLength(game.rejected ? 0 : game.tree.length);
         return game;
       });

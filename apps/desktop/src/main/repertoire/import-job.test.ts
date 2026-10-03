@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { parseRepertoirePgn } from "@chaturanga/shared/chess/repertoire-pgn";
 import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
+import { importedDecisionCount } from "@chaturanga/shared/chess/repertoire-training";
 import {
   DEFAULT_IMPORT_LIMITS,
   ImportCancelledError,
@@ -31,7 +32,13 @@ function expectedImport(pgn: string) {
       ...game,
       positionKeys: Object.fromEntries(
         game.rejected ? [] : game.tree.map((node) => [node.id, positionKey(node.fenAfter)])
-      )
+      ),
+      decisions: game.rejected
+        ? { white: 0, black: 0 }
+        : {
+            white: importedDecisionCount("white", game.tree),
+            black: importedDecisionCount("black", game.tree)
+          }
     }))
   };
 }
@@ -62,6 +69,16 @@ describe("runImport", () => {
     expect(
       await runImport({ kind: "file", path }, DEFAULT_IMPORT_LIMITS, { chunkChars: SMALL_CHUNK })
     ).toEqual(expected);
+  });
+
+  it("counts what each game practises as an opening chapter for either colour", async () => {
+    const { games } = await importPreviewFromText(
+      '1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 *\n\n[Variant "Atomic"]\n\n1. e4 *'
+    );
+    expect(games.map((game) => game.decisions)).toEqual([
+      { white: 4, black: 3 },
+      { white: 0, black: 0 }
+    ]);
   });
 
   it("reports progress at most once per interval per phase, every phase once at least", async () => {

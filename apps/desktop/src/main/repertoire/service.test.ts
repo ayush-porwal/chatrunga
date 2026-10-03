@@ -15,6 +15,7 @@ import {
 import { fenAfterUci, START_FEN } from "@chaturanga/shared/chess/position";
 import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
 import { parseRepertoirePgn } from "@chaturanga/shared/chess/repertoire-pgn";
+import { importedDecisionCount } from "@chaturanga/shared/chess/repertoire-training";
 import type { ImportProgressEvent } from "@chaturanga/shared/types/repertoire";
 import { generateRepertoirePgn } from "./import-bench";
 import { validateTree } from "./chapter-validation";
@@ -1127,6 +1128,12 @@ describe("repertoire service: import and export", () => {
           : game.rejected
             ? game.tree
             : validateTree(game.tree, game.rootFen),
+        decisions: game.rejected
+          ? { white: 0, black: 0 }
+          : {
+              white: importedDecisionCount("white", game.tree),
+              black: importedDecisionCount("black", game.tree)
+            },
         warnings: game.warnings,
         invalidBranches: game.invalidBranches
       }));

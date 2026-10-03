@@ -135,7 +135,7 @@ export function chapterTraining(
 }
 
 /**
- * The chapter as it trains after "Practise this chapter": switched on, an opening chapter, and
+ * The chapter as it trains after "Include in practice": switched on, an opening chapter, and
  * the import default (§10 step 4) filled in along every route that trains — at a position of the
  * player with no accepted move the first authored one is accepted, and opponent replies marked
  * reference are covered. Moves below a reference alternative of the player stay as they are, and
@@ -170,20 +170,26 @@ export function trainableChapter<
 
 /**
  * How many decisions an imported game would train as an opening chapter, with the import default
- * (`defaultImportNodeMeta`): what the import preview tells the player before they commit.
+ * (`defaultImportNodeMeta`): what the import preview tells the player before they commit. `keyOf`
+ * gives a FEN's position key when the caller has them already (the import worker).
  */
 export function importedDecisionCount(
   color: RepertoireColor,
-  tree: RepertoireChapter["tree"]
+  tree: RepertoireChapter["tree"],
+  keyOf?: (fen: string) => string
 ): number {
-  return collectDecisions(color, [
-    {
-      id: "preview",
-      kind: "opening",
-      enabled: true,
-      sortOrder: 0,
-      tree,
-      nodeMeta: defaultImportNodeMeta(color, tree)
-    }
-  ]).size;
+  return collectDecisions(
+    color,
+    [
+      {
+        id: "preview",
+        kind: "opening",
+        enabled: true,
+        sortOrder: 0,
+        tree,
+        nodeMeta: defaultImportNodeMeta(color, tree)
+      }
+    ],
+    keyOf
+  ).size;
 }

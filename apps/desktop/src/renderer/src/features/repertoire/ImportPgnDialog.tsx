@@ -3,7 +3,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Search, Upload } from "lucide-react";
 import { nanoid } from "nanoid";
 import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
-import { importedDecisionCount } from "@chaturanga/shared/chess/repertoire-training";
 import type {
   ChapterKind,
   ImportPreview,
@@ -147,20 +146,8 @@ export function ImportPgnDialog({
 
   // Only games with illegal branches need a lookup (to find each branch's node); building one per
   // game would index every move of a large import on the renderer thread.
-  // What each shown game would practise as an opening chapter (the import default), for the
-  // repertoire's side: only the rendered rows are counted.
   const color = detail.data?.color ?? null;
   const shown = found.slice(0, shownCount);
-  const shownKey = shown.join(",");
-  const decisionCounts = useMemo(() => {
-    const counts = new Map<number, number>();
-    if (!preview || !color) return counts;
-    for (const index of shownKey ? shownKey.split(",").map(Number) : []) {
-      const game = preview.games[index];
-      if (game?.tree.length) counts.set(index, importedDecisionCount(color, game.tree));
-    }
-    return counts;
-  }, [preview, color, shownKey]);
 
   const lookups = useMemo(
     () =>
@@ -483,7 +470,7 @@ export function ImportPgnDialog({
                         value={selection.title}
                         onChange={(event) => update(index, { title: event.target.value })}
                       />
-                      <div className="w-36">
+                      <div className="w-48">
                         <Select
                           aria-label={`Chapter kind for game ${game.index + 1}`}
                           className="h-8"
@@ -503,7 +490,7 @@ export function ImportPgnDialog({
                     {color && game.nodeCount > 0 ? (
                       <PracticeNote
                         kind={selection.kind}
-                        decisions={decisionCounts.get(index) ?? 0}
+                        decisions={game.decisions[color]}
                         color={color}
                       />
                     ) : null}

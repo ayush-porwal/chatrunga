@@ -10,7 +10,8 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import {
   IMPORT_CANCELLED_MESSAGE,
-  type ImportProgressEvent
+  type ImportProgressEvent,
+  type RepertoireColor
 } from "@chaturanga/shared/types/repertoire";
 import { createPgnGameSplitter } from "@chaturanga/shared/chess/pgn-game-splitter";
 import {
@@ -19,10 +20,20 @@ import {
   type RepertoirePgnLimits
 } from "@chaturanga/shared/chess/repertoire-pgn";
 import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
+import { importedDecisionCount } from "@chaturanga/shared/chess/repertoire-training";
 import { validateTree } from "./chapter-validation";
 
-/** A parsed game with its validated tree and each node's position key (empty when rejected). */
-export type ImportedGame = ParsedRepertoireGame & { positionKeys: Record<string, string> };
+/**
+ * A parsed game with its validated tree, each node's position key and what it would practise
+ * (empty and none when rejected).
+ */
+export type ImportedGame = ParsedRepertoireGame & {
+  positionKeys: Record<string, string>;
+  /** What the game practises as an opening chapter, per repertoire colour (the preview's). */
+  decisions: Record<RepertoireColor, number>;
+};
+
+const NO_DECISIONS: Record<RepertoireColor, number> = { white: 0, black: 0 };
 
 /** Every game of an import, as the parse gives them. */
 export type ImportedPgn = { games: ImportedGame[] };
@@ -177,13 +188,22 @@ export async function runImport(
   const games: ImportedGame[] = [];
   for (const game of parsed.games) {
     if (game.rejected) {
-      games.push({ ...game, positionKeys: {} });
+      games.push({ ...game, positionKeys: {}, decisions: NO_DECISIONS });
     } else {
       try {
         const tree = validateTree(game.tree, game.rootFen);
         const positionKeys: Record<string, string> = {};
-        for (const node of tree) positionKeys[node.id] = positionKey(node.fenAfter);
-        games.push({ ...game, tree, positionKeys });
+        const keysByFen = new Map<string, string>();
+        for (const node of tree) {
+          positionKeys[node.id] = positionKey(node.fenAfter);
+          keysByFen.set(node.fenAfter, positionKeys[node.id]);
+        }
+        const keyOf = (fen: string) => keysByFen.get(fen) ?? positionKey(fen);
+        const decisions = {
+          white: importedDecisionCount("white", tree, keyOf),
+          black: importedDecisionCount("black", tree, keyOf)
+        };
+        games.push({ ...game, tree, positionKeys, decisions });
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         games.push({
@@ -191,7 +211,8 @@ export async function runImport(
           nodeCount: 0,
           warnings: [...game.warnings, reason],
           rejected: reason,
-          positionKeys: {}
+          positionKeys: {},
+          decisions: NO_DECISIONS
         });
       }
     }

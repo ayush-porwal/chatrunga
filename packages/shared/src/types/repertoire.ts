@@ -359,6 +359,11 @@ export type ImportPreviewGame = {
    * sends an empty array, which keeps a large preview small. The commit uses the stored tree.
    */
   tree: MoveNode[];
+  /**
+   * Decisions the game would practise as an opening chapter with the import default, for a
+   * repertoire of each colour (0 for a rejected game).
+   */
+  decisions: Record<RepertoireColor, number>;
   warnings: string[];
   invalidBranches: ImportInvalidBranch[];
 };

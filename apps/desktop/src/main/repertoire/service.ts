@@ -995,6 +995,7 @@ export async function previewImport(input: PreviewImportInput): Promise<ImportPr
       nodeCount: game.nodeCount,
       // Only a game with illegal branches offers lines to exclude; the others send no tree.
       tree: game.invalidBranches.length ? game.tree : [],
+      decisions: game.decisions,
       warnings: game.warnings,
       invalidBranches: game.invalidBranches
     }))
