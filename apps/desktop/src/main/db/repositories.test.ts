@@ -412,6 +412,27 @@ describe("gameRepository (SQLite)", () => {
 });
 
 describe("retryOnceIfBusy (a game save while another connection holds the write lock)", () => {
+  it("a save finding the write lock held fails with the BUSY error itself, not a failed ROLLBACK", () => {
+    getDb();
+    const other = new DatabaseSync(databasePath());
+    try {
+      other.exec("BEGIN IMMEDIATE");
+      getDb().exec("PRAGMA busy_timeout = 0");
+      let caught: unknown;
+      try {
+        saveImported();
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toMatchObject({ errcode: 5 });
+      expect(getDb().isTransaction).toBe(false);
+    } finally {
+      getDb().exec("PRAGMA busy_timeout = 1000");
+      if (other.isTransaction) other.exec("ROLLBACK");
+      other.close();
+    }
+  });
+
   it("retries once after the delay and saves when the lock was released meanwhile", async () => {
     getDb();
     const other = new DatabaseSync(databasePath());

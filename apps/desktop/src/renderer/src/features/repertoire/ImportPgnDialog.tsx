@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Upload } from "lucide-react";
 import { nanoid } from "nanoid";
 import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
@@ -24,8 +25,11 @@ import {
   useRepertoireQuery
 } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
+import { flushChapterDraft } from "./useChapterAutosave";
 import {
   adoptCommittedRevision,
+  importExpectedRevision,
+  mustFlushDraftBeforeImport,
   progressCounts,
   progressPercent,
   progressPhaseLabel,
@@ -64,6 +68,7 @@ export function ImportPgnDialog({
   onClose: () => void;
   onImported: (result: ImportResult) => void;
 }) {
+  const queryClient = useQueryClient();
   const detail = useRepertoireQuery(repertoireId);
   const previewMutation = usePreviewImportMutation();
   const commitMutation = useCommitImportMutation();
@@ -89,6 +94,8 @@ export function ImportPgnDialog({
   const run = useRef<PreviewRun | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [progress, setProgress] = useState<ImportProgressEvent | null>(null);
+  /** True while the open study draft is saved before a commit. */
+  const [flushing, setFlushing] = useState(false);
 
   /** Leaves the running preview: its late result or rejection is ignored from now on. */
   const endRun = () => {
@@ -197,14 +204,31 @@ export function ImportPgnDialog({
     }
   }
 
-  function commit() {
-    if (!preview) return;
-    // The study draft (if open) knows a newer revision than the cached detail after its saves.
-    const workspace = useRepertoireWorkspaceStore.getState();
-    const expectedRevision =
-      workspace.repertoireId === repertoireId
-        ? Math.max(workspace.baseRevision, detail.data?.revision ?? 0)
-        : detail.data?.revision;
+  async function commit() {
+    if (!preview || flushing) return;
+    setError(null);
+    // An import into the repertoire whose draft is open saves that draft first, so no autosave
+    // runs (or comes due) during the commit and races its revision bump; the commit then expects
+    // the revision that save stored. A draft that can't be saved keeps the dialog open.
+    if (mustFlushDraftBeforeImport(useRepertoireWorkspaceStore.getState(), repertoireId)) {
+      setFlushing(true);
+      let saved: boolean;
+      try {
+        saved = await flushChapterDraft(queryClient);
+      } finally {
+        if (open.current) setFlushing(false);
+      }
+      if (!open.current) return;
+      if (!saved) {
+        setError("The open chapter couldn't be saved; retry its save, then import.");
+        return;
+      }
+    }
+    const expectedRevision = importExpectedRevision(
+      useRepertoireWorkspaceStore.getState(),
+      repertoireId,
+      detail.data?.revision
+    );
     if (expectedRevision === undefined) return;
     setError(null);
     // The job belongs to the commit now: unmounting meanwhile must not cancel it. A failed commit
@@ -236,20 +260,21 @@ export function ImportPgnDialog({
     );
 
   const included = selections.filter((selection) => selection.include).length;
-  const busy = previewing || commitMutation.isPending;
+  const committing = flushing || commitMutation.isPending;
+  const busy = previewing || committing;
 
   return (
     <Dialog
       title="Import PGN"
       description={
-        commitMutation.isPending
+        committing
           ? "Importing… please wait."
           : preview
             ? "Each game becomes a chapter. Choose what to import."
             : "Paste PGN or open a file; every game in it is read."
       }
       // No close (×, Escape, backdrop) while the commit runs: it can't be cancelled then.
-      onClose={commitMutation.isPending ? undefined : onClose}
+      onClose={committing ? undefined : onClose}
       footer={
         preview ? (
           <>
@@ -271,9 +296,9 @@ export function ImportPgnDialog({
               variant="primary"
               size="sm"
               disabled={busy || !included || !detail.data}
-              onClick={commit}
+              onClick={() => void commit()}
             >
-              {commitMutation.isPending ? "Importing…" : `Import ${plural(included, "chapter")}`}
+              {committing ? "Importing…" : `Import ${plural(included, "chapter")}`}
             </Button>
           </>
         ) : (

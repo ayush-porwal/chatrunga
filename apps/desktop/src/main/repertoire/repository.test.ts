@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,7 +9,7 @@ import type { RepertoireChapter } from "@chaturanga/shared/types/repertoire";
 const userData = mkdtempSync(join(tmpdir(), "chaturanga-repertoire-repo-test-"));
 vi.mock("electron", () => ({ app: { getPath: () => userData } }));
 
-const { closeDb, getDb } = await import("../db");
+const { closeDb, databasePath, getDb } = await import("../db");
 const {
   RepertoireCorruptChapterError,
   attemptRepository,
@@ -171,6 +172,39 @@ describe("repertoire repository (SQLite)", () => {
     expect(() =>
       transaction(() => {
         repertoireRepository.insert(record);
+        throw new Error("boom");
+      })
+    ).toThrow("boom");
+    expect(repertoireRepository.get("r1")).toBeNull();
+  });
+
+  it("surfaces a busy BEGIN as the busy error, and never hides an error behind a failed ROLLBACK", () => {
+    const other = new DatabaseSync(databasePath());
+    try {
+      other.exec("PRAGMA busy_timeout = 0");
+      getDb().exec("PRAGMA busy_timeout = 0");
+      other.exec("BEGIN IMMEDIATE");
+      let caught: unknown;
+      try {
+        transaction(() => repertoireRepository.insert(record));
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toMatchObject({
+        message: "The repertoire database is busy; try again.",
+        cause: { errcode: 5 }
+      });
+      expect(getDb().isTransaction).toBe(false);
+    } finally {
+      if (other.isTransaction) other.exec("ROLLBACK");
+      other.close();
+      getDb().exec("PRAGMA busy_timeout = 1000");
+    }
+    // A failure after SQLite already ended the transaction rethrows that failure unchanged.
+    expect(() =>
+      transaction(() => {
+        repertoireRepository.insert(record);
+        getDb().exec("ROLLBACK");
         throw new Error("boom");
       })
     ).toThrow("boom");

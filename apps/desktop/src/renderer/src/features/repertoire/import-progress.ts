@@ -67,6 +67,36 @@ export function progressPercent(event: ImportProgressEvent | null): number | nul
   return Math.max(0, Math.min(100, (event.bytesRead / event.totalBytes) * 100));
 }
 
+/** The part of the study workspace store an import commit reads its revision from. */
+export type CommitRevisionSource = { repertoireId: string | null; baseRevision: number };
+
+/**
+ * True when an import into `repertoireId` must first flush the open study draft: it is that
+ * repertoire's, so an autosave running (or due) during the commit would race the import's
+ * revision bump and be refused as stale. Another repertoire's draft, or none, needs no flush.
+ */
+export function mustFlushDraftBeforeImport(
+  workspace: CommitRevisionSource,
+  repertoireId: string
+): boolean {
+  return workspace.repertoireId === repertoireId;
+}
+
+/**
+ * The revision an import commit expects, read after the flush: the open draft of the same
+ * repertoire knows a newer revision than the cached detail after its saves; otherwise the cached
+ * detail's (undefined while it isn't loaded, and the commit waits).
+ */
+export function importExpectedRevision(
+  workspace: CommitRevisionSource,
+  repertoireId: string,
+  cachedRevision: number | undefined
+): number | undefined {
+  return workspace.repertoireId === repertoireId
+    ? Math.max(workspace.baseRevision, cachedRevision ?? 0)
+    : cachedRevision;
+}
+
 /** The part of the study workspace store an import commit updates. */
 export type CommittedRevisionTarget = {
   repertoireId: string | null;

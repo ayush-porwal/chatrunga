@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { ImportProgressEvent } from "@chaturanga/shared/types/repertoire";
 import {
   adoptCommittedRevision,
+  importExpectedRevision,
+  mustFlushDraftBeforeImport,
   MAX_IMPORT_PGN_BYTES,
   pgnSizeError,
   progressCounts,
@@ -95,5 +97,24 @@ describe("adoptCommittedRevision", () => {
     adoptCommittedRevision({ repertoireId: "r2", adoptRevision }, "r1", 8);
     adoptCommittedRevision({ repertoireId: null, adoptRevision }, "r1", 9);
     expect(adopted).toEqual([7]);
+  });
+});
+
+describe("import commit into the open repertoire", () => {
+  it("flushes the draft first only when it belongs to the repertoire imported into", () => {
+    expect(mustFlushDraftBeforeImport({ repertoireId: "r1", baseRevision: 3 }, "r1")).toBe(true);
+    expect(mustFlushDraftBeforeImport({ repertoireId: "r2", baseRevision: 3 }, "r1")).toBe(false);
+    expect(mustFlushDraftBeforeImport({ repertoireId: null, baseRevision: 0 }, "r1")).toBe(false);
+  });
+
+  it("expects the revision the flushed draft stored, else the cached detail's", () => {
+    // The flush saved the draft at revision 5 while the cached detail still says 4.
+    expect(importExpectedRevision({ repertoireId: "r1", baseRevision: 5 }, "r1", 4)).toBe(5);
+    expect(importExpectedRevision({ repertoireId: "r1", baseRevision: 5 }, "r1", 6)).toBe(6);
+    expect(importExpectedRevision({ repertoireId: "r1", baseRevision: 5 }, "r1", undefined)).toBe(5);
+    expect(importExpectedRevision({ repertoireId: "r2", baseRevision: 9 }, "r1", 4)).toBe(4);
+    expect(
+      importExpectedRevision({ repertoireId: null, baseRevision: 0 }, "r1", undefined)
+    ).toBeUndefined();
   });
 });

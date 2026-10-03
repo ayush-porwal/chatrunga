@@ -40,6 +40,39 @@ vi.mock("electron", () => ({
   dialog: { showSaveDialog: (...args: unknown[]) => showSaveDialog(...args) }
 }));
 
+/**
+ * Parses the next previews start are held here instead of running, while `holdParses` is set:
+ * each settles only when the test resolves it, so a test can keep imports "running" for as long
+ * as it needs without parsing a large input against the clock.
+ */
+const heldParses = vi.hoisted(() => ({
+  hold: false,
+  runs: [] as { resolve: () => void; cancelled: boolean }[]
+}));
+vi.mock("./import-runner", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./import-runner")>();
+  const { ImportCancelledError } = await import("./import-job");
+  return {
+    ...actual,
+    startImportParse: (...args: Parameters<typeof actual.startImportParse>) => {
+      if (!heldParses.hold) return actual.startImportParse(...args);
+      let settle!: (outcome: Error | null) => void;
+      const result = new Promise<{ games: [] }>((resolve, reject) => {
+        settle = (error) => (error ? reject(error) : resolve({ games: [] }));
+      });
+      const run = { resolve: () => settle(null), cancelled: false };
+      heldParses.runs.push(run);
+      return {
+        result,
+        cancel: () => {
+          run.cancelled = true;
+          settle(new ImportCancelledError());
+        }
+      };
+    }
+  };
+});
+
 const { closeDb, databasePath, getDb } = await import("../db");
 const service = await import("./service");
 const { attemptRepository, progressRepository, decisionRepository, positionIndexRepository } =
@@ -990,18 +1023,23 @@ describe("repertoire service: import and export", () => {
   });
 
   it("keeps at most three running or pending imports and never cancels a running one for room", async () => {
-    const pgn = generateRepertoirePgn({ games: 900, movesPerGame: 12 });
-    const runs = [0, 1, 2, 3].map(() => service.previewImport({ pgn }));
-    const outcomes = await Promise.allSettled(runs);
-    expect(outcomes.map((outcome) => outcome.status)).toEqual([
-      "fulfilled",
-      "fulfilled",
-      "fulfilled",
-      "rejected"
-    ]);
-    expect((outcomes[3] as PromiseRejectedResult).reason.message).toBe(
-      "Another import is still parsing; wait or cancel it."
-    );
+    // Held parses (see heldParses): the three stay running until released, whatever the machine.
+    heldParses.hold = true;
+    heldParses.runs.length = 0;
+    try {
+      const runs = [0, 1, 2].map(() => service.previewImport({ pgn: TWO_GAMES }));
+      expect(heldParses.runs).toHaveLength(3);
+      // A fourth, with three running, is refused; none of the running ones is cancelled for it.
+      await expect(service.previewImport({ pgn: TWO_GAMES })).rejects.toThrow(
+        "Another import is still parsing; wait or cancel it."
+      );
+      expect(heldParses.runs).toHaveLength(3);
+      expect(heldParses.runs.some((run) => run.cancelled)).toBe(false);
+      for (const run of heldParses.runs) run.resolve();
+      await expect(Promise.all(runs)).resolves.toHaveLength(3);
+    } finally {
+      heldParses.hold = false;
+    }
     expect(progressEvents().filter((event) => event.phase === "cancelled")).toHaveLength(0);
     expect(progressEvents().filter((event) => event.phase === "ready")).toHaveLength(3);
     // With the three previewed (none running), a new preview drops the oldest pending one.
