@@ -33,8 +33,8 @@ const feedbackTone: Record<PuzzleFeedbackKind, string> = {
   wrong: "border-danger/30 bg-danger-soft",
   complete: "border-accent/40 bg-accent-soft"
 };
-/** A failed puzzle that has been finished: settled, not alarming. */
-const failedCompleteTone = "border-danger/25 bg-surface-sunken";
+/** A failed puzzle that is over: settled, not alarming. */
+const failedSettledTone = "border-danger/25 bg-surface-sunken";
 
 type PanelProps = {
   nextError: Error | null;
@@ -135,7 +135,9 @@ function PuzzleCard({
   }, [wrong, feedback]);
 
   // Side to move is in the summary above the panel (and the mark's dot): the idle card just asks.
-  const headline = complete
+  // Over: finished, or failed and left unfinished (the board has since become an analysis board).
+  const settled = complete || (failed && !playing);
+  const headline = settled
     ? failed
       ? "Failed"
       : "Solved"
@@ -145,11 +147,15 @@ function PuzzleCard({
         ? "Not quite"
         : "Your turn";
   // The store's sentence repeats the headline for correct / solved; keep only what adds to it.
-  const detail = complete
+  const detail = settled
     ? failed
       ? wrongMoveCount
-        ? "Finished after a wrong move."
-        : "Finished with the solution shown."
+        ? complete
+          ? "Finished after a wrong move."
+          : "A wrong move was played."
+        : complete
+          ? "Finished with the solution shown."
+          : "The solution was shown."
       : `${playerMoves === 1 ? "The winning move" : `All ${playerMoves} moves`} found.`
     : feedbackKind === "idle"
       ? "Find the best move."
@@ -158,14 +164,10 @@ function PuzzleCard({
         : (feedback?.replace(/^Not quite\.\s*/, "") ?? "Try another move.");
   // Once failed it stays failed; while unfinished, say it can still be played out.
   const failedNote =
-    failed && !complete
-      ? [
-          "Failed",
-          solutionViewed && !wrongMoveCount ? "solution shown" : null,
-          playing ? "you can still finish it" : null
-        ]
-          .filter(Boolean)
-          .join(" — ")
+    failed && !settled
+      ? solutionViewed && !wrongMoveCount
+        ? "Failed — solution shown. You can still finish it."
+        : "Failed — you can still finish it."
       : null;
 
   return (
@@ -194,16 +196,16 @@ function PuzzleCard({
         aria-live="polite"
         className={cn(
           "grid gap-3 rounded-lg border px-3 py-2.5 transition-colors duration-standard ease-standard",
-          complete && failed ? failedCompleteTone : feedbackTone[feedbackKind]
+          settled && failed ? failedSettledTone : feedbackTone[feedbackKind]
         )}
       >
         <div className="flex items-center gap-2.5">
-          <FeedbackMark kind={complete && failed ? "wrong" : feedbackKind} sideToMove={puzzle.sideToMove} />
+          <FeedbackMark kind={settled && failed ? "wrong" : feedbackKind} sideToMove={puzzle.sideToMove} />
           <div key={`${feedbackKind}-${feedback ?? ""}`} className="grid min-w-0 flex-1 animate-rise-in gap-0.5">
             <p
               className={cn(
                 "text-sm font-semibold",
-                wrong || (complete && failed) ? "text-danger" : feedbackKind === "idle" ? "text-fg" : "text-accent-fg"
+                wrong || (settled && failed) ? "text-danger" : feedbackKind === "idle" ? "text-fg" : "text-accent-fg"
               )}
             >
               {headline}
