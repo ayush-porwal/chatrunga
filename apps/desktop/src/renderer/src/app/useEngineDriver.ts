@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import type { EngineInfo } from "@chaturanga/shared/types/engine";
 import { currentLineUcis } from "../features/analysis/engine-game-helpers";
+import { liveAnalysisSubject } from "../features/analysis/live-analysis";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { clockNow, noteSystemResumed, remainingClockMs, useGameStore } from "../stores/game-store";
@@ -285,9 +286,10 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
 
       // Live analysis of the current position (restarted only when the position changes — not
       // when an arrow is drawn or a header edited).
-      if (engines && game.mode === "analysis" && !status.isEnd && !game.gameOutcome) {
+      const subject = liveAnalysisSubject(game);
+      if (engines && subject) {
         const options = analysisRef.current;
-        const key = `${game.rootFen}|${game.currentNodeId}|${game.currentFen}|${options.engineId ?? ""}|${options.multipv}|${options.depth ?? ""}|${options.moveTimeMs ?? ""}|${useAnalysisStore.getState().searchEpoch}`;
+        const key = `${subject.key}|${options.engineId ?? ""}|${options.multipv}|${options.depth ?? ""}|${options.moveTimeMs ?? ""}|${useAnalysisStore.getState().searchEpoch}`;
         if (key === analysisKey || key === missingEngineKey) return;
         const analysis = useAnalysisStore.getState();
         // The engine chosen for analysis (or the default), never an engine-game opponent left over.
@@ -309,15 +311,15 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
         // Lines already found for this position (with this engine, line count and search limit)
         // show at once; only this search's own lines are remembered.
         analysis.startSearch(
-          `${game.currentFen}|${engineId}|${options.multipv}|${options.depth ?? ""}|${options.moveTimeMs ?? ""}`,
+          `${subject.fen}|${engineId}|${options.multipv}|${options.depth ?? ""}|${options.moveTimeMs ?? ""}`,
           searchId
         );
         engines
           .startAnalysis({
             engineId,
             searchId,
-            fen: game.rootFen,
-            moves: currentLineUcis(game.moveTree, game.currentNodeId),
+            fen: subject.rootFen,
+            moves: subject.moves(),
             multipv: options.multipv,
             depth: options.depth,
             moveTimeMs: options.moveTimeMs
