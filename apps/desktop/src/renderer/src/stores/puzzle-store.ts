@@ -2,14 +2,16 @@ import { nanoid } from "nanoid";
 import { create } from "zustand";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 
-export type PuzzleFeedbackKind = "idle" | "correct" | "wrong" | "complete";
+/** `broken`: the puzzle's own data is broken (a scripted reply can't be played), so it ended there. */
+export type PuzzleFeedbackKind = "idle" | "correct" | "wrong" | "complete" | "broken";
 
 /**
  * How the puzzle went, as Lichess scores it: `failed` from the first wrong move or from opening
  * the solution before it is solved (it stays failed even when finished afterwards), `solved` when
- * the last move is found with neither. `pending` until one of those happens.
+ * the last move is found with neither. `pending` until one of those happens. `void`: the puzzle's
+ * data broke before it was decided — neither solved nor failed, nothing to rate.
  */
-export type PuzzleOutcome = "pending" | "solved" | "failed";
+export type PuzzleOutcome = "pending" | "solved" | "failed" | "void";
 
 /** A move the solver tried that isn't the solution's (it is refused, never played). */
 export type PuzzleWrongMove = {
@@ -50,8 +52,8 @@ export type PuzzleAttempt = {
   completedAt: number | null;
 };
 
-/** An attempt whose outcome is known, as the attempt events carry it. */
-export type DecidedPuzzleAttempt = PuzzleAttempt & { outcome: Exclude<PuzzleOutcome, "pending"> };
+/** An attempt whose outcome is known, as the attempt events carry it (a void one sends none). */
+export type DecidedPuzzleAttempt = PuzzleAttempt & { outcome: Exclude<PuzzleOutcome, "pending" | "void"> };
 
 /**
  * `decided`: the outcome left `pending` (once per attempt — the first wrong move, the solution
@@ -73,8 +75,11 @@ type PuzzleStore = {
   advanceSolution: (count: number, feedback?: string) => void;
   /** A wrong try at the next solution move from `fen`: recorded, and the puzzle is failed. */
   markWrongMove: (input: { uci: string; san: string; fen: string; expected: string }) => void;
-  /** The scripted reply couldn't be played (bad puzzle data): said so, without failing the solver. */
-  markReplyFailed: (expected: string) => void;
+  /**
+   * The scripted reply couldn't be played (bad puzzle data): the puzzle ends there, broken — void
+   * if it wasn't decided yet (the solver isn't failed, and nothing is reported to rate).
+   */
+  markReplyFailed: () => void;
   /** The solution was opened: fails a puzzle not yet decided; nothing once it is finished. */
   revealSolution: () => void;
   markComplete: () => void;
@@ -95,7 +100,7 @@ export function onPuzzleAttempt(listener: (event: PuzzleAttemptEvent) => void): 
 }
 
 function emit(kind: PuzzleAttemptEvent["kind"], state: Pick<PuzzleStore, "attempt" | "outcome">): void {
-  if (!state.attempt || state.outcome === "pending") return;
+  if (!state.attempt || state.outcome === "pending" || state.outcome === "void") return;
   const event: PuzzleAttemptEvent = { kind, attempt: { ...state.attempt, outcome: state.outcome } };
   for (const listener of [...listeners]) listener(event);
 }
@@ -150,7 +155,8 @@ export const usePuzzleStore = create<PuzzleStore>((set, get) => ({
       lastExpectedMove: null
     })),
   markWrongMove: ({ uci, san, fen, expected }) => {
-    const { attempt, outcome, solutionIndex } = get();
+    const { attempt, outcome, solutionIndex, feedbackKind } = get();
+    if (feedbackKind === "broken") return;
     const now = Date.now();
     const deciding = Boolean(attempt) && outcome === "pending";
     set({
@@ -170,15 +176,16 @@ export const usePuzzleStore = create<PuzzleStore>((set, get) => ({
     });
     if (deciding) emit("decided", get());
   },
-  markReplyFailed: (expected) =>
-    set({
-      feedbackKind: "wrong",
-      feedback: "The puzzle's reply couldn't be played.",
-      lastExpectedMove: expected
-    }),
+  markReplyFailed: () =>
+    set((state) => ({
+      feedbackKind: "broken",
+      feedback: "This puzzle's data is broken — skip it.",
+      lastExpectedMove: null,
+      outcome: state.outcome === "pending" ? "void" : state.outcome
+    })),
   revealSolution: () => {
     const { attempt, outcome } = get();
-    if (!attempt || attempt.completedAt !== null || attempt.solutionViewed) return;
+    if (!attempt || attempt.completedAt !== null || attempt.solutionViewed || outcome === "void") return;
     const deciding = outcome === "pending";
     set({
       outcome: "failed",
@@ -187,7 +194,8 @@ export const usePuzzleStore = create<PuzzleStore>((set, get) => ({
     if (deciding) emit("decided", get());
   },
   markComplete: () => {
-    const { attempt, outcome } = get();
+    const { attempt, outcome, feedbackKind } = get();
+    if (feedbackKind === "broken") return;
     const now = Date.now();
     const deciding = Boolean(attempt) && outcome === "pending";
     const completing = Boolean(attempt) && attempt?.completedAt === null;

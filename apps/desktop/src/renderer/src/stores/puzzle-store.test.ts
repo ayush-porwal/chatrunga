@@ -165,12 +165,25 @@ describe("puzzle outcome", () => {
     expect(usePuzzleStore.getState().attempt?.solutionViewed).toBe(false);
   });
 
-  it("a reply the puzzle couldn't play is shown without failing the solver", () => {
+  it("a reply the puzzle couldn't play ends it as broken: void, the solver not failed, nothing to rate", () => {
     usePuzzleStore.getState().setActivePuzzle(puzzle);
-    usePuzzleStore.getState().markReplyFailed("e7e5");
-    expect(usePuzzleStore.getState()).toMatchObject({ feedbackKind: "wrong", outcome: "pending" });
-    expect(usePuzzleStore.getState().attempt?.wrongMoves).toEqual([]);
+    usePuzzleStore.getState().markReplyFailed();
+    expect(usePuzzleStore.getState()).toMatchObject({ feedbackKind: "broken", outcome: "void", lastExpectedMove: null });
+    expect(usePuzzleStore.getState().attempt).toMatchObject({ wrongMoves: [], decidedAt: null, completedAt: null });
+    // Ended: nothing afterwards decides it (a move, the solution opened, the line finished).
+    usePuzzleStore.getState().markWrongMove({ uci: "a2a3", san: "a3", fen: start, expected: "e2e4" });
+    usePuzzleStore.getState().revealSolution();
+    usePuzzleStore.getState().markComplete();
+    expect(usePuzzleStore.getState()).toMatchObject({ feedbackKind: "broken", outcome: "void" });
     expect(events).toEqual([]);
+  });
+
+  it("a puzzle already failed stays failed when its reply then breaks", () => {
+    usePuzzleStore.getState().setActivePuzzle(puzzle);
+    usePuzzleStore.getState().markWrongMove({ uci: "a2a3", san: "a3", fen: start, expected: "e2e4" });
+    usePuzzleStore.getState().markReplyFailed();
+    expect(usePuzzleStore.getState()).toMatchObject({ feedbackKind: "broken", outcome: "failed" });
+    expect(events.map((event) => event.kind)).toEqual(["decided"]);
   });
 
   it("a new puzzle starts a new attempt, and a reset clears it", () => {

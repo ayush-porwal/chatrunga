@@ -31,7 +31,8 @@ const feedbackTone: Record<PuzzleFeedbackKind, string> = {
   idle: "border-line bg-surface-sunken",
   correct: "border-accent/30 bg-accent-soft",
   wrong: "border-danger/30 bg-danger-soft",
-  complete: "border-accent/40 bg-accent-soft"
+  complete: "border-accent/40 bg-accent-soft",
+  broken: "border-line bg-surface-sunken"
 };
 /** A failed puzzle that is over: settled, not alarming. */
 const failedSettledTone = "border-danger/25 bg-surface-sunken";
@@ -116,6 +117,8 @@ function PuzzleCard({
   const complete = feedbackKind === "complete";
   const failed = outcome === "failed";
   const wrong = feedbackKind === "wrong";
+  // Its data is broken (a scripted reply can't be played): over, neither solved nor failed by it.
+  const broken = feedbackKind === "broken";
   const plies = puzzle.solutionMoves.length;
   const progressCount = complete ? plies : Math.min(solutionIndex, plies);
   // The solver plays every other ply; count their moves, not the replies.
@@ -139,33 +142,37 @@ function PuzzleCard({
   }, [wrong, feedback]);
 
   // Side to move is in the summary above the panel (and the mark's dot): the idle card just asks.
-  // Over: finished, or failed and left unfinished (the board has since become an analysis board).
-  const settled = complete || (failed && !playing);
-  const headline = settled
-    ? failed
-      ? "Failed"
-      : "Solved"
-    : feedbackKind === "correct"
-      ? "Correct"
-      : wrong
-        ? "Not quite"
-        : "Your turn";
-  // The store's sentence repeats the headline for correct / solved; keep only what adds to it.
-  const detail = settled
-    ? failed
-      ? wrongMoveCount
-        ? complete
-          ? "Finished after a wrong move."
-          : "A wrong move was played."
-        : complete
-          ? "Finished with the solution shown."
-          : "The solution was shown."
-      : `${playerMoves === 1 ? "The winning move" : `All ${playerMoves} moves`} found.`
-    : feedbackKind === "idle"
-      ? "Find the best move."
+  // Over: finished, broken, or failed and left unfinished (the board has since become an analysis board).
+  const settled = complete || broken || (failed && !playing);
+  const headline = broken
+    ? "Broken puzzle"
+    : settled
+      ? failed
+        ? "Failed"
+        : "Solved"
       : feedbackKind === "correct"
-        ? feedback && feedback !== "Correct." ? feedback : "Keep going."
-        : (feedback?.replace(/^Not quite\.\s*/, "") ?? "Try another move.");
+        ? "Correct"
+        : wrong
+          ? "Not quite"
+          : "Your turn";
+  // The store's sentence repeats the headline for correct / solved; keep only what adds to it.
+  const detail = broken
+    ? "This puzzle's data is broken — skip it."
+    : settled
+      ? failed
+        ? wrongMoveCount
+          ? complete
+            ? "Finished after a wrong move."
+            : "A wrong move was played."
+          : complete
+            ? "Finished with the solution shown."
+            : "The solution was shown."
+        : `${playerMoves === 1 ? "The winning move" : `All ${playerMoves} moves`} found.`
+      : feedbackKind === "idle"
+        ? "Find the best move."
+        : feedbackKind === "correct"
+          ? feedback && feedback !== "Correct." ? feedback : "Keep going."
+          : (feedback?.replace(/^Not quite\.\s*/, "") ?? "Try another move.");
   // Once failed it stays failed; while unfinished, say it can still be played out.
   const failedNote =
     failed && !settled
@@ -209,7 +216,7 @@ function PuzzleCard({
             <p
               className={cn(
                 "text-sm font-semibold",
-                wrong || (settled && failed) ? "text-danger" : feedbackKind === "idle" ? "text-fg" : "text-accent-fg"
+                broken ? "text-fg" : wrong || (settled && failed) ? "text-danger" : feedbackKind === "idle" ? "text-fg" : "text-accent-fg"
               )}
             >
               {headline}
@@ -226,13 +233,13 @@ function PuzzleCard({
         <SolutionProgress done={playerDone} total={playerMoves} wrong={wrong} />
       </div>
 
-      {complete || failed ? (
+      {complete || failed || broken ? (
         <div className="grid animate-rise-in gap-2">
-          {/* Finished: on to the next one. Failed and unfinished: the next one is there to skip to. */}
+          {/* Finished or broken: on to the next one. Failed and unfinished: the next one is there to skip to. */}
           <Button
             type="button"
-            variant={complete ? "primary" : "outline"}
-            className={complete ? "h-10" : undefined}
+            variant={complete || broken ? "primary" : "outline"}
+            className={complete || broken ? "h-10" : undefined}
             disabled={nextPending}
             onClick={onNextPuzzle}
           >
@@ -336,15 +343,16 @@ function FeedbackMark({ kind, sideToMove }: { kind: PuzzleFeedbackKind; sideToMo
     );
   }
   const wrong = kind === "wrong";
+  const broken = kind === "broken";
   return (
     <span
       key={kind}
       className={cn(
         "grid size-7 shrink-0 animate-pop-in place-items-center rounded-full",
-        wrong ? "bg-danger/20 text-danger" : kind === "complete" ? "bg-accent text-canvas" : "bg-accent/20 text-accent"
+        wrong ? "bg-danger/20 text-danger" : broken ? "bg-control text-fg-muted" : kind === "complete" ? "bg-accent text-canvas" : "bg-accent/20 text-accent"
       )}
     >
-      {wrong ? <X className="size-4" strokeWidth={2.5} /> : <Check className="size-4" strokeWidth={kind === "complete" ? 3 : 2.5} />}
+      {wrong || broken ? <X className="size-4" strokeWidth={2.5} /> : <Check className="size-4" strokeWidth={kind === "complete" ? 3 : 2.5} />}
     </span>
   );
 }

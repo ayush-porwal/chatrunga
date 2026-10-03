@@ -68,6 +68,15 @@ describe("submitPuzzleMove", () => {
     expect(usePuzzleStore.getState().solutionIndex).toBe(0);
   });
 
+  it("ignores moves once the puzzle's data broke, without failing the solver", () => {
+    usePuzzleStore.getState().markReplyFailed();
+    const play = vi.fn(() => true);
+    expect(submitPuzzleMove("e2e4", play)).toBe(false);
+    expect(submitPuzzleMove("d2d4", play)).toBe(false);
+    expect(play).not.toHaveBeenCalled();
+    expect(usePuzzleStore.getState()).toMatchObject({ feedbackKind: "broken", outcome: "void", solutionIndex: 0 });
+  });
+
   it("completes the puzzle on the last solution move", () => {
     usePuzzleStore.setState({ solutionIndex: 2 });
     expect(submitPuzzleMove("g1f3", () => true)).toBe(true);

@@ -23,9 +23,10 @@ function advancePuzzle(feedback: string): void {
  * named in SAN in the feedback.
  */
 export function submitPuzzleMove(uci: string, play: () => boolean, fenBefore = useGameStore.getState().currentFen): boolean {
-  const { activePuzzle, solutionIndex, markWrongMove } = usePuzzleStore.getState();
+  const { activePuzzle, solutionIndex, markWrongMove, feedbackKind } = usePuzzleStore.getState();
   const expected = activePuzzle?.solutionMoves[solutionIndex];
-  if (!expected) return false;
+  // A broken puzzle has ended: no move is checked against it any more.
+  if (!expected || feedbackKind === "broken") return false;
   if (uci !== expected) {
     markWrongMove({ uci, san: sanOf(fenBefore, uci), fen: fenBefore, expected });
     return false;
@@ -59,7 +60,7 @@ export function usePuzzleAutoReply(): void {
     const reply = activePuzzle.solutionMoves[solutionIndex];
     const timeout = window.setTimeout(() => {
       if (!useGameStore.getState().makeUciMove(reply)) {
-        usePuzzleStore.getState().markReplyFailed(reply);
+        usePuzzleStore.getState().markReplyFailed();
         return;
       }
       advancePuzzle("Good. Find the next move.");

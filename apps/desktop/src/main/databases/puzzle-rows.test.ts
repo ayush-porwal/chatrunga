@@ -45,6 +45,12 @@ describe("sampleFromLichessRow", () => {
   it("skips incomplete rows", () => {
     expect(sampleFromLichessRow(database, ["id", "fen"], lichessFilters())).toBeNull();
   });
+
+  it("skips a row whose solution line can't be played to the end", () => {
+    // The last scripted move (f7f8 → f7f1) is illegal: the puzzle would get stuck there.
+    const broken = parseCsvLine(LICHESS_ROW.replace("d7d8 f7f8", "d7d8 f7f1"));
+    expect(sampleFromLichessRow(database, broken, lichessFilters())).toBeNull();
+  });
 });
 
 describe("sampleFromPositionRow", () => {
@@ -59,6 +65,10 @@ describe("sampleFromPositionRow", () => {
       difficulty: 3,
       sideToMove: "white"
     });
+  });
+
+  it("skips a row whose best move can't be played", () => {
+    expect(sampleFromPositionRow(database, row.map((value) => (value === "e2e4" ? "e2e5" : value)), { databaseId: "db1" })).toBeNull();
   });
 
   it("filters by difficulty and tags", () => {
