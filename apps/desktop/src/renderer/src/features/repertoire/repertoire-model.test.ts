@@ -28,7 +28,11 @@ import {
   isMissingTargetError,
   isNotFoundError,
   decisionDraftKey,
+  decisionDraftMatches,
+  decisionDraftName,
+  decisionDraftPatch,
   decisionTextStatus,
+  wrongMoveOptions,
   decisionTextValue,
   type DecisionTextDraft,
   occurrencesInOtherChapters,
@@ -281,6 +285,72 @@ describe("decision text drafts", () => {
     expect(decisionDraftKey("r1", "k1", "hint")).not.toBe(decisionDraftKey("r2", "k1", "hint"));
   });
 
+  it("keys feedback drafts per wrong move", () => {
+    expect(decisionDraftKey("r1", "k1", "feedback", "d2d4")).not.toBe(
+      decisionDraftKey("r1", "k1", "feedback", "c2c4")
+    );
+    expect(decisionDraftKey("r1", "k1", "paused")).not.toBe(
+      decisionDraftKey("r1", "k1", "feedback", "paused")
+    );
+  });
+
+  it("writes text fields, the pause, and feedback merged into the stored map", () => {
+    expect(decisionDraftPatch(draftOf({ text: " Develop " }), null)).toEqual({
+      prompt: "Develop"
+    });
+    expect(decisionDraftPatch(draftOf({ field: "hint", text: " " }), null)).toEqual({
+      hint: null
+    });
+    expect(decisionDraftPatch(draftOf({ field: "paused", text: "", paused: true }), null)).toEqual({
+      paused: true
+    });
+    const stored = { wrongMoveFeedback: { c2c4: "Not the English", d2d4: "Old" } };
+    expect(
+      decisionDraftPatch(draftOf({ field: "feedback", uci: "d2d4", text: " We play e4 " }), stored)
+    ).toEqual({ wrongMoveFeedback: { c2c4: "Not the English", d2d4: "We play e4" } });
+    // Blank text removes that move's feedback only.
+    expect(
+      decisionDraftPatch(draftOf({ field: "feedback", uci: "d2d4", text: "" }), stored)
+    ).toEqual({ wrongMoveFeedback: { c2c4: "Not the English" } });
+    expect(stored.wrongMoveFeedback.d2d4).toBe("Old");
+    expect(
+      decisionDraftPatch(draftOf({ field: "feedback", uci: "g1f3", text: "No" }), null)
+    ).toEqual({ wrongMoveFeedback: { g1f3: "No" } });
+  });
+
+  it("tells when a draft holds what the decision stores", () => {
+    const decision = {
+      prompt: "Develop",
+      hint: null,
+      wrongMoveFeedback: { d2d4: "We play e4" },
+      paused: false
+    };
+    expect(decisionDraftMatches(draftOf({ text: " Develop " }), decision)).toBe(true);
+    expect(decisionDraftMatches(draftOf({ field: "hint", text: "" }), decision)).toBe(true);
+    expect(decisionDraftMatches(draftOf({ field: "hint", text: "Nf3" }), decision)).toBe(false);
+    const feedback = (uci: string, text: string) => draftOf({ field: "feedback", uci, text });
+    expect(decisionDraftMatches(feedback("d2d4", "We play e4"), decision)).toBe(true);
+    expect(decisionDraftMatches(feedback("d2d4", ""), decision)).toBe(false);
+    expect(decisionDraftMatches(feedback("c2c4", ""), decision)).toBe(true);
+    const pause = (paused: boolean) => draftOf({ field: "paused", text: "", paused });
+    expect(decisionDraftMatches(pause(false), decision)).toBe(true);
+    expect(decisionDraftMatches(pause(true), decision)).toBe(false);
+    expect(decisionDraftMatches(pause(false), null)).toBe(true);
+  });
+
+  it("names a draft's change for notices", () => {
+    expect(decisionDraftName(draftOf({}))).toBe("practice prompt");
+    expect(decisionDraftName(draftOf({ field: "hint" }))).toBe("hint");
+    expect(decisionDraftName(draftOf({ field: "feedback", uci: "d2d4" }), "d4")).toBe(
+      "feedback for d4"
+    );
+    expect(decisionDraftName(draftOf({ field: "feedback", uci: "d2d4" }))).toBe(
+      "feedback for d2d4"
+    );
+    expect(decisionDraftName(draftOf({ field: "paused", paused: true }))).toBe("pause");
+    expect(decisionDraftName(draftOf({ field: "paused", paused: false }))).toBe("resume");
+  });
+
   it("summarises one repertoire's drafts for the save status", () => {
     const drafts = {
       a: draftOf({ status: "saving" }),
@@ -300,6 +370,32 @@ describe("decision text drafts", () => {
       errorMessage: null,
       errorStale: false
     });
+  });
+});
+
+describe("wrongMoveOptions", () => {
+  it("lists the legal moves left once accepted moves and existing feedback are excluded", () => {
+    const start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    const options = wrongMoveOptions(start, new Set(["e2e4", "d2d4"]));
+    expect(options).toHaveLength(18);
+    expect(options.map((option) => option.uci)).not.toContain("e2e4");
+    expect(options).toContainEqual({ uci: "g1f3", san: "Nf3" });
+    expect(options.map((option) => option.san)).toEqual(
+      [...options.map((option) => option.san)].sort((a, b) => a.localeCompare(b))
+    );
+    expect(wrongMoveOptions("not a fen", new Set())).toEqual([]);
+  });
+
+  it("lists castling king-two-squares and each promotion piece", () => {
+    const castling = wrongMoveOptions("4k3/8/8/8/8/8/8/4K2R w K - 0 1", new Set());
+    expect(castling).toContainEqual({ uci: "e1g1", san: "O-O" });
+    expect(castling.map((option) => option.uci)).not.toContain("e1h1");
+    const promotion = wrongMoveOptions("8/P6k/8/8/8/8/8/K7 w - - 0 1", new Set(["a7a8q"]));
+    expect(promotion.filter((option) => option.uci.startsWith("a7a8")).map((o) => o.san)).toEqual([
+      "a8=B",
+      "a8=N",
+      "a8=R"
+    ]);
   });
 });
 

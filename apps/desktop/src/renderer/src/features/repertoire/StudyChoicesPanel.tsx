@@ -5,6 +5,7 @@ import {
   Check,
   CircleSlash,
   Flag,
+  PauseCircle,
   Repeat,
   Route,
   Star,
@@ -74,7 +75,7 @@ export function StudyChoicesPanel({
   lookup: ChapterLookup;
   color: RepertoireColor;
   selectedNodeId: string;
-  decision: Pick<RepertoireDecision, "acceptedUcis" | "preferredUci"> | null;
+  decision: Pick<RepertoireDecision, "acceptedUcis" | "preferredUci" | "paused"> | null;
   busy: boolean;
   onSetEdge: (nodeId: string, edge: RepertoireNodeMeta["edge"]) => void;
   onPrefer: (row: ChoiceRow) => void;
@@ -102,6 +103,14 @@ export function StudyChoicesPanel({
         <SectionHeader
           as="h3"
           title={choices.side === "player" ? "Your choices here" : "Replies you prepare for"}
+          actions={
+            choices.side === "player" && decision?.paused ? (
+              <Badge tone="warn" title="Left out of practice everywhere it occurs (see Notes)">
+                <PauseCircle aria-hidden="true" />
+                Paused in practice
+              </Badge>
+            ) : null
+          }
           description={
             choices.side === "player"
               ? "Any accepted move counts as correct in practice; hints point at the preferred one."

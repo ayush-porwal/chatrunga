@@ -29,7 +29,7 @@ import {
   useRepertoireOccurrencesQuery,
   useRepertoireQuery
 } from "../../queries/repertoire";
-import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
+import { playUci, useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
 import { BoardStage, BoardWorkspace, workspaceTabsClass } from "../board/BoardWorkspace";
 import { ControlledBoard, TypedMoveButton, type TypedMoveControl } from "../board/ControlledBoard";
 import {
@@ -40,7 +40,8 @@ import {
 } from "./repertoire-chapters";
 import {
   decisionDraftKey,
-  decisionTextValue,
+  decisionDraftMatches,
+  decisionDraftName,
   deriveChoices,
   isNotFoundError,
   occurrencesInOtherChapters,
@@ -55,6 +56,7 @@ import { RepertoireMoveNavigation, useTreeKeyboardNavigation } from "./Repertoir
 import { NO_MOVES_TO_PLAY } from "./handoffs";
 import { StudyChaptersPanel } from "./StudyChaptersPanel";
 import { StudyChoicesPanel } from "./StudyChoicesPanel";
+import { StudyDecisionPractice } from "./StudyDecisionPractice";
 import { StudyNotesPanel } from "./StudyNotesPanel";
 import { StudySourcesSection } from "./StudySourcesSection";
 import { StudyTree } from "./StudyTree";
@@ -251,7 +253,7 @@ export function RepertoireStudyPage({
   );
   // The stored decision is the truth; this session's last write only fills in while it loads.
   const decision = storedDecision.isSuccess ? storedDecision.data : sessionDecision;
-  /** This repertoire's prompt and hint writes that failed (at any position). */
+  /** This repertoire's decision writes that failed (at any position). */
   const failedDrafts = useRepertoireWorkspaceStore(
     useShallow((state) =>
       Object.values(state.decisionDrafts).filter(
@@ -334,21 +336,33 @@ export function RepertoireStudyPage({
   const changeDecisionText = useEventCallback((field: DecisionTextField, text: string) => {
     if (positionKey) workspace().setDecisionText(repertoireId, positionKey, field, text);
   });
-  // Blur: a draft matching the stored text is dropped; any other is written now. A stale one
-  // waits for Discard / Keep mine.
-  const commitDecisionText = useEventCallback((field: DecisionTextField) => {
-    if (!positionKey) return;
-    const key = decisionDraftKey(repertoireId, positionKey, field);
+  // Blur (or Add / Remove / the pause switch): a draft matching the stored decision is dropped;
+  // any other is written now (after a write of it that is still running). A stale one waits for
+  // Discard / Keep mine.
+  const commitDecisionDraft = useEventCallback((key: string) => {
     const draft = workspace().decisionDrafts[key];
-    if (!draft || draft.status === "saving") return;
-    if (
-      draft.status === "pending" &&
-      decisionTextValue(draft.text) === (decision?.[field] ?? null)
-    ) {
+    if (!draft) return;
+    if (draft.status === "pending" && decisionDraftMatches(draft, decision)) {
       workspace().discardDecisionText(key);
       return;
     }
     void saveDecisionTextNow(queryClient, key);
+  });
+  const commitDecisionText = useEventCallback((field: DecisionTextField) => {
+    if (positionKey) commitDecisionDraft(decisionDraftKey(repertoireId, positionKey, field));
+  });
+  const changeFeedback = useEventCallback((uci: string, text: string) => {
+    if (positionKey) workspace().setWrongMoveFeedback(repertoireId, positionKey, uci, text);
+  });
+  const commitFeedback = useEventCallback((uci: string) => {
+    if (positionKey) {
+      commitDecisionDraft(decisionDraftKey(repertoireId, positionKey, "feedback", uci));
+    }
+  });
+  const setPaused = useEventCallback((paused: boolean) => {
+    if (!positionKey) return;
+    workspace().setDecisionPaused(repertoireId, positionKey, paused);
+    commitDecisionDraft(decisionDraftKey(repertoireId, positionKey, "paused"));
   });
 
   const reload = useEventCallback(async () => {
@@ -410,6 +424,12 @@ export function RepertoireStudyPage({
       </div>
     );
   }
+
+  /** The player is to move here with at least one accepted move (a decision exists). */
+  const canEditDecision = Boolean(
+    choices?.side === "player" &&
+    choices.rows.some((row) => row.state === "preferred" || row.state === "accepted")
+  );
 
   // Why Analyze and Play from here can't start (they also wait for the chapter to load, above).
   // Study actions: a chapter left out of practice is still analysed and played from.
@@ -474,14 +494,16 @@ export function RepertoireStudyPage({
     ) : null;
 
   const decisionNotices = failedDrafts.map((failed: DecisionTextDraft) => {
-    const key = decisionDraftKey(failed.repertoireId, failed.positionKey, failed.field);
+    const key = decisionDraftKey(failed.repertoireId, failed.positionKey, failed.field, failed.uci);
     const stale = Boolean(failed.error?.stale);
-    const name = failed.field === "prompt" ? "practice prompt" : "hint";
     // Where it was typed, when this chapter reaches that position.
-    const at = [...lookup.positionKeys].find(
-      ([, keyAt]) => keyAt === failed.positionKey
-    );
+    const at = [...lookup.positionKeys].find(([, keyAt]) => keyAt === failed.positionKey);
     const where = at ? ` at ${pathLabel(lookup, at[0])}` : "";
+    const fenAt = at ? lookup.nodesById.get(at[0])?.fenAfter : undefined;
+    const name = decisionDraftName(
+      failed,
+      fenAt && failed.uci ? playUci(fenAt, failed.uci)?.san : undefined
+    );
     return (
       <Notice
         key={key}
@@ -798,14 +820,26 @@ export function RepertoireStudyPage({
           decisionText={decision}
           repertoireId={repertoireId}
           positionKey={positionKey}
-          canEditDecision={Boolean(
-            choices?.side === "player" &&
-            choices.rows.some((row) => row.state === "preferred" || row.state === "accepted")
-          )}
+          canEditDecision={canEditDecision}
           busy={commands.busy}
           onComment={(text) => workspace().setComment(node.id, text)}
           onDecisionTextChange={changeDecisionText}
           onCommitDecisionText={commitDecisionText}
+          decisionControls={
+            choices?.side === "player" ? (
+              <StudyDecisionPractice
+                repertoireId={repertoireId}
+                positionKey={positionKey}
+                fen={node.fenAfter}
+                decision={decision}
+                canEditDecision={canEditDecision}
+                busy={commands.busy}
+                onFeedbackChange={changeFeedback}
+                onCommitFeedback={commitFeedback}
+                onSetPaused={setPaused}
+              />
+            ) : null
+          }
           footer={
             <StudySourcesSection
               repertoireId={repertoireId}

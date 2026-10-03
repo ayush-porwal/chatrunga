@@ -6,7 +6,10 @@ import {
   type ChapterLookup,
   type ScopeState
 } from "@chaturanga/shared/chess/repertoire-index";
-import { applyUserMove } from "@chaturanga/shared/chess/position";
+import { makeSan } from "chessops/san";
+import { makeUci } from "chessops/util";
+import { applyUserMove, positionFromFen } from "@chaturanga/shared/chess/position";
+import { standardCastlingUci } from "@chaturanga/shared/chess/review";
 import { playerToMove } from "@chaturanga/shared/chess/repertoire-position";
 import type { BoardArrow, BoardHighlight, Square } from "@chaturanga/shared/types/chess";
 import {
@@ -21,7 +24,8 @@ import {
   type RepertoireColor,
   type RepertoireDecision,
   type RepertoireNodeMeta,
-  type RepertoireOccurrence
+  type RepertoireOccurrence,
+  type UpdateDecisionInput
 } from "@chaturanga/shared/types/repertoire";
 
 /*
@@ -285,17 +289,34 @@ export type AutosaveSaveState =
 
 export type DecisionTextField = "prompt" | "hint";
 
+/** The longest prompt, hint or feedback a decision write accepts (the main process's limit). */
+export const MAX_DECISION_TEXT_LENGTH = 2_000;
+
+/** How the scope of the repertoire-wide decision fields is described in Study. */
+export const DECISION_SCOPE_TEXT =
+  "Repertoire-wide: applies wherever this position occurs, in every chapter and transposition.";
+
 /**
- * A practice prompt or hint typed at a position and not yet confirmed saved. It outlives the
- * notes panel (and the study page), so a failed write keeps the text until it is retried or
- * discarded.
+ * What a decision draft changes at a position: the prompt or hint, the feedback for one wrong
+ * move (the draft's `uci`), or whether the decision is paused.
+ */
+export type DecisionDraftField = DecisionTextField | "feedback" | "paused";
+
+/**
+ * A decision change made at a position (a practice prompt or hint, wrong-move feedback, pausing)
+ * and not yet confirmed saved. It outlives the notes panel (and the study page), so a failed
+ * write keeps the change until it is retried or discarded.
  */
 export type DecisionTextDraft = {
   repertoireId: string;
   positionKey: string;
-  field: DecisionTextField;
-  /** The field as typed (the write sends it trimmed, or null when blank). */
+  field: DecisionDraftField;
+  /** The wrong move (UCI) a feedback draft explains. */
+  uci?: string;
+  /** The prompt, hint or feedback as typed (sent trimmed; blank clears it). Unused for a pause. */
   text: string;
+  /** Whether a pause draft pauses (true) or resumes (false) the decision. */
+  paused?: boolean;
   /** Counts edits: a save clears the draft only when nothing was typed while it ran. */
   generation: number;
   status: "pending" | "saving" | "error";
@@ -303,18 +324,104 @@ export type DecisionTextDraft = {
   error?: { message: string; stale: boolean };
 };
 
-/** Where a decision draft lives in the workspace store (one per repertoire, position and field). */
+/**
+ * Where a decision draft lives in the workspace store (one per repertoire, position and field,
+ * and per wrong move for feedback).
+ */
 export function decisionDraftKey(
   repertoireId: string,
   positionKey: string,
-  field: DecisionTextField
+  field: DecisionDraftField,
+  uci?: string
 ): string {
-  return JSON.stringify([repertoireId, positionKey, field]);
+  return JSON.stringify(
+    uci === undefined ? [repertoireId, positionKey, field] : [repertoireId, positionKey, field, uci]
+  );
 }
 
-/** What a prompt or hint write sends: trimmed, or null for a blank field. */
+/** What a prompt, hint or feedback write sends: trimmed, or null for a blank field. */
 export function decisionTextValue(text: string): string | null {
   return text.trim() ? text.trim() : null;
+}
+
+/**
+ * The decision write a draft makes. Feedback is stored as one map per position, so its write
+ * sends the stored map (`stored`, read just before) with this move's text set, or removed when
+ * the text is blank; feedback for other moves stays as stored.
+ */
+export function decisionDraftPatch(
+  draft: DecisionTextDraft,
+  stored: Pick<RepertoireDecision, "wrongMoveFeedback"> | null
+): UpdateDecisionInput["patch"] {
+  if (draft.field === "paused") return { paused: draft.paused === true };
+  if (draft.field === "feedback") {
+    const wrongMoveFeedback = { ...stored?.wrongMoveFeedback };
+    const text = decisionTextValue(draft.text);
+    if (text) wrongMoveFeedback[draft.uci!] = text;
+    else delete wrongMoveFeedback[draft.uci!];
+    return { wrongMoveFeedback };
+  }
+  return { [draft.field]: decisionTextValue(draft.text) };
+}
+
+/** The draft holds what the decision already stores (it can be dropped without a write). */
+export function decisionDraftMatches(
+  draft: DecisionTextDraft,
+  decision: Pick<RepertoireDecision, DecisionTextField | "wrongMoveFeedback" | "paused"> | null
+): boolean {
+  if (draft.field === "paused") return draft.paused === (decision?.paused ?? false);
+  const stored =
+    draft.field === "feedback"
+      ? (decision?.wrongMoveFeedback[draft.uci!] ?? null)
+      : (decision?.[draft.field] ?? null);
+  return decisionTextValue(draft.text) === stored;
+}
+
+/** A legal move at a position, as wrong-move feedback lists it. */
+export type MoveOption = { uci: string; san: string };
+
+/**
+ * The legal moves at `fen` other than `excluded` (the accepted moves, and moves that already have
+ * feedback), by SAN: what "Add feedback" offers. Castling is listed king-two-squares, as the main
+ * process stores it; a promotion is listed once per piece.
+ */
+export function wrongMoveOptions(fen: string, excluded: ReadonlySet<string>): MoveOption[] {
+  let position: ReturnType<typeof positionFromFen>;
+  try {
+    position = positionFromFen(fen);
+  } catch {
+    return [];
+  }
+  const options = new Map<string, MoveOption>();
+  for (const [from, dests] of position.allDests()) {
+    for (const to of dests) {
+      const promotes =
+        position.board.get(from)?.role === "pawn" && (to >> 3 === 0 || to >> 3 === 7);
+      for (const promotion of promotes
+        ? (["queen", "rook", "bishop", "knight"] as const)
+        : [undefined]) {
+        const move = { from, to, ...(promotion ? { promotion } : {}) };
+        const uci = standardCastlingUci(fen, makeUci(move));
+        if (excluded.has(uci) || options.has(uci)) continue;
+        options.set(uci, { uci, san: makeSan(position, move) });
+      }
+    }
+  }
+  return [...options.values()].sort((a, b) => a.san.localeCompare(b.san));
+}
+
+/** How notices name a draft's change ("the hint", "the feedback for d4"…). */
+export function decisionDraftName(draft: DecisionTextDraft, moveLabel?: string): string {
+  switch (draft.field) {
+    case "prompt":
+      return "practice prompt";
+    case "hint":
+      return "hint";
+    case "feedback":
+      return `feedback for ${moveLabel ?? draft.uci}`;
+    case "paused":
+      return draft.paused ? "pause" : "resume";
+  }
 }
 
 /** The decision drafts of one repertoire, as the save status needs them (flat, so selectable). */

@@ -6,14 +6,16 @@ import type {
   UpdateDecisionInput
 } from "@chaturanga/shared/types/repertoire";
 import { addLine, chapterOf, detailOf, rootNode } from "./__fixtures__/repertoire";
-import { decisionDraftKey } from "./repertoire-model";
+import { decisionDraftKey, decisionTextStatus } from "./repertoire-model";
 
 vi.stubGlobal("window", globalThis);
 
 const updateDecision = vi.fn<(input: UpdateDecisionInput) => Promise<DecisionSaveResult>>();
 const getRepertoire = vi.fn<(id: string) => Promise<unknown>>();
+const getDecision =
+  vi.fn<(input: { repertoireId: string; positionKey: string }) => Promise<unknown>>();
 (globalThis as unknown as { chaturanga: unknown }).chaturanga = {
-  repertoires: { updateDecision, get: getRepertoire },
+  repertoires: { updateDecision, get: getRepertoire, getDecision },
   games: {}
 };
 
@@ -41,8 +43,8 @@ function saved(input: UpdateDecisionInput, revision: number): DecisionSaveResult
     preferredUci: "e2e4",
     prompt: input.patch.prompt ?? null,
     hint: input.patch.hint ?? null,
-    wrongMoveFeedback: {},
-    paused: false
+    wrongMoveFeedback: input.patch.wrongMoveFeedback ?? {},
+    paused: input.patch.paused ?? false
   } as RepertoireDecision;
   return {
     repertoire: detailOf({ id: input.repertoireId, revision }),
@@ -64,6 +66,7 @@ describe("decision text drafts", () => {
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     updateDecision.mockReset();
     getRepertoire.mockReset();
+    getDecision.mockReset();
     flushChapter.mockClear();
     chapterSaved = true;
     store().reset();
@@ -153,6 +156,64 @@ describe("decision text drafts", () => {
     store().setDecisionText("r1", "k1", "hint", "Knight to f3");
     discardDecisionText(queryClient, HINT);
     expect(store().decisionDrafts[HINT]).toBeUndefined();
+  });
+
+  it("merges feedback for one move into the stored feedback, read just before writing", async () => {
+    const key = decisionDraftKey("r1", "k1", "feedback", "d2d4");
+    store().setWrongMoveFeedback("r1", "k1", "d2d4", " We play 1.e4 ");
+    getDecision.mockResolvedValueOnce({ wrongMoveFeedback: { c2c4: "Not the English" } });
+    updateDecision.mockImplementationOnce(async (input) => saved(input, 5));
+    expect(await saveDecisionText(queryClient, key, { flushChapter })).toBe(true);
+    expect(getDecision).toHaveBeenCalledWith({ repertoireId: "r1", positionKey: "k1" });
+    expect(updateDecision.mock.calls[0][0].patch).toEqual({
+      wrongMoveFeedback: { c2c4: "Not the English", d2d4: "We play 1.e4" }
+    });
+    expect(store().decisionDrafts[key]).toBeUndefined();
+
+    // Removing it: blank text leaves the other move's feedback.
+    store().setWrongMoveFeedback("r1", "k1", "c2c4", "");
+    getDecision.mockResolvedValueOnce({
+      wrongMoveFeedback: { c2c4: "Not the English", d2d4: "We play 1.e4" }
+    });
+    updateDecision.mockImplementationOnce(async (input) => saved(input, 6));
+    expect(
+      await saveDecisionText(queryClient, decisionDraftKey("r1", "k1", "feedback", "c2c4"), {
+        flushChapter
+      })
+    ).toBe(true);
+    expect(updateDecision.mock.calls[1][0].patch).toEqual({
+      wrongMoveFeedback: { d2d4: "We play 1.e4" }
+    });
+  });
+
+  it("keeps a refused pause until Retry, and never reports it saved meanwhile", async () => {
+    const key = decisionDraftKey("r1", "k1", "paused");
+    store().setDecisionPaused("r1", "k1", true);
+    updateDecision.mockRejectedValueOnce(new Error("disk full"));
+    expect(await saveDecisionText(queryClient, key, { flushChapter })).toBe(false);
+    expect(store().decisionDrafts[key]).toMatchObject({
+      field: "paused",
+      paused: true,
+      status: "error",
+      error: { message: "disk full", stale: false }
+    });
+    expect(decisionTextStatus(store().decisionDrafts, "r1")).toMatchObject({
+      dirty: true,
+      errorMessage: "disk full"
+    });
+    expect(await flushChapterDraft(queryClient)).toBe(false);
+
+    updateDecision.mockImplementationOnce(async (input) => saved(input, 5));
+    expect(await retryDecisionTexts(queryClient, "r1", flushChapter)).toBe(true);
+    expect(updateDecision).toHaveBeenLastCalledWith({
+      repertoireId: "r1",
+      positionKey: "k1",
+      expectedRevision: 4,
+      patch: { paused: true }
+    });
+    expect(store().decisionDrafts[key]).toBeUndefined();
+    expect(store().decisions.k1.paused).toBe(true);
+    expect(decisionTextStatus(store().decisionDrafts, "r1").dirty).toBe(false);
   });
 
   it("drops the text of a deleted repertoire rather than block leaving", async () => {

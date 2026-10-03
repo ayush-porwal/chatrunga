@@ -566,7 +566,11 @@ describe("repertoire service: chapters, decisions and index", () => {
     const edited = service.updateMetadata({
       id,
       expectedRevision: revision,
-      patch: { name: "  Sicilian Najdorf  ", description: " Main lines ", tags: [" sharp ", "sharp", ""] }
+      patch: {
+        name: "  Sicilian Najdorf  ",
+        description: " Main lines ",
+        tags: [" sharp ", "sharp", ""]
+      }
     });
     expect(edited).toMatchObject({
       name: "Sicilian Najdorf",
@@ -656,7 +660,9 @@ describe("repertoire service: chapters, decisions and index", () => {
       patch: { enabled: true, kind: "reference" }
     });
     expect(reference.chaptersChanged).toBe(2);
-    expect(reference.repertoire.chapters.filter((chapter) => chapter.kind === "reference")).toHaveLength(2);
+    expect(
+      reference.repertoire.chapters.filter((chapter) => chapter.kind === "reference")
+    ).toHaveLength(2);
     expect(reference.repertoire.decisionCount).toBe(0);
     const reopened = service.updateChapters({
       repertoireId: id,
@@ -1891,6 +1897,74 @@ describe("repertoire service: practice", () => {
     // The first session's answers and summary are unchanged.
     expect(attemptRepository.list(first.sessionId)).toEqual(firstRows);
     expect(service.endPractice(first.sessionId)).toEqual(summary);
+  });
+
+  it("a paused decision leaves practice and due counts, and resuming keeps its progress", () => {
+    const { id } = create();
+    save(id, [["e2e4", "e7e5", "g1f3"]]);
+    const first = learnFirst(id);
+    attempt(first.session.sessionId, first.card.queueItemId, "e2e4");
+    const learned = progressRepository.get(id, START_KEY)!;
+    expect(learned).toMatchObject({ stage: 1, unaidedSuccesses: 1 });
+    now += 2 * DAY;
+    expect(service.getRepertoire(id).dueCount).toBe(1);
+    // A card dealt before the pause is skipped ungraded once the decision is paused.
+    const dealt = service.startPractice({ repertoireId: id, mode: "review-due" });
+    expect(dealt.cards[0].positionKey).toBe(START_KEY);
+
+    const paused = service.updateDecision({
+      repertoireId: id,
+      positionKey: START_KEY,
+      expectedRevision: service.getRepertoire(id).revision,
+      patch: { paused: true }
+    });
+    expect(paused.decision.paused).toBe(true);
+    expect(paused.repertoire).toMatchObject({ dueCount: 0, decisionCount: 1 });
+    expect(service.getDueSummary().dueCount).toBe(0);
+    expect(attempt(dealt.sessionId, dealt.cards[0].queueItemId, "e2e4").outcome).toBe("stale");
+    for (const mode of ["review-due", "learn-new"] as const) {
+      const session = service.startPractice({ repertoireId: id, mode });
+      expect(session.cards.map((card) => card.positionKey)).not.toContain(START_KEY);
+    }
+    expect(progressRepository.get(id, START_KEY)).toEqual(learned);
+
+    const resumed = service.updateDecision({
+      repertoireId: id,
+      positionKey: START_KEY,
+      expectedRevision: paused.repertoire.revision,
+      patch: { paused: false }
+    });
+    expect(resumed.decision.paused).toBe(false);
+    // Its first scored attempt and schedule are as they were: still a due review, not a new card.
+    expect(progressRepository.get(id, START_KEY)).toEqual(learned);
+    expect(resumed.repertoire).toMatchObject({ dueCount: 1, decisionCount: 2 });
+    const review = service.startPractice({ repertoireId: id, mode: "review-due" });
+    expect(review.cards.map((card) => [card.positionKey === START_KEY, card.stage])).toEqual([
+      [true, "review"],
+      [false, "new"]
+    ]);
+  });
+
+  it("wrong-move feedback names legal moves and is replaced as a whole", () => {
+    const { id } = create();
+    save(id, [["e2e4"]]);
+    const write = (wrongMoveFeedback: Record<string, string>) =>
+      service.updateDecision({
+        repertoireId: id,
+        positionKey: START_KEY,
+        expectedRevision: service.getRepertoire(id).revision,
+        patch: { wrongMoveFeedback }
+      }).decision.wrongMoveFeedback;
+    expect(() => write({ e2e5: "Not a move" })).toThrow(
+      /Invalid wrongMoveFeedback: "e2e5" is not a legal move/
+    );
+    expect(write({ d2d4: " We play 1.e4 ", c2c4: "Not the English" })).toEqual({
+      d2d4: "We play 1.e4",
+      c2c4: "Not the English"
+    });
+    // Left out or blank: removed.
+    expect(write({ d2d4: "We play 1.e4", c2c4: "   " })).toEqual({ d2d4: "We play 1.e4" });
+    expect(write({})).toEqual({});
   });
 
   it("a targeted queue keeps the given order and drops unknown or paused decisions", () => {

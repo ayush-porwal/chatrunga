@@ -1,12 +1,13 @@
 import type { QueryClient } from "@tanstack/react-query";
-import type { RepertoireDetail } from "@chaturanga/shared/types/repertoire";
+import type { RepertoireDecision, RepertoireDetail } from "@chaturanga/shared/types/repertoire";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { adoptDecisionSave, invalidateDecisions, repertoireKeys } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
-import { decisionTextValue, isNotFoundError, isStaleRevisionError } from "./repertoire-model";
+import { decisionDraftPatch, isNotFoundError, isStaleRevisionError } from "./repertoire-model";
 
 /*
- * Saving the practice prompts and hints typed in study (the workspace store's `decisionDrafts`).
+ * Saving the decision changes made in study (the workspace store's `decisionDrafts`): practice
+ * prompts and hints, wrong-move feedback, and pausing a decision.
  * A draft is cleared only once the main process confirms its write; a refusal keeps the text with
  * its error (stale when the repertoire moved on, which waits for the player's choice like a stale
  * chapter draft does). Navigation and window-close flushes save pending drafts but never retry a
@@ -22,7 +23,7 @@ let writes: Promise<unknown> = Promise.resolve();
 
 /**
  * Runs repertoire writes one at a time, each once the previous one settled, so each sends the
- * revision the previous one returned. Shared by the study commands and the prompt and hint saves.
+ * revision the previous one returned. Shared by the study commands and the decision draft saves.
  */
 export function queueRepertoireWrite<T>(write: () => Promise<T>): Promise<T> {
   const next = writes.then(write);
@@ -35,6 +36,18 @@ async function expectedRevision(queryClient: QueryClient, repertoireId: string):
   const state = workspace();
   if (state.repertoireId === repertoireId) return state.baseRevision;
   return (await readDetail(queryClient, repertoireId)).revision;
+}
+
+function readDecision(
+  queryClient: QueryClient,
+  repertoireId: string,
+  positionKey: string
+): Promise<RepertoireDecision | null> {
+  return queryClient.fetchQuery({
+    queryKey: repertoireKeys.decision(repertoireId, positionKey),
+    queryFn: () => window.chaturanga!.repertoires.getDecision({ repertoireId, positionKey }),
+    staleTime: 0
+  });
 }
 
 function readDetail(queryClient: QueryClient, repertoireId: string): Promise<RepertoireDetail> {
@@ -73,11 +86,17 @@ export function saveDecisionText(
     if (!current) return true;
     const generation = workspace().markDecisionTextSaving(key)!;
     try {
+      // Feedback replaces the position's whole map: it is merged into the stored one, read now
+      // (after any earlier queued write), so feedback saved for other moves stays.
+      const stored =
+        current.field === "feedback"
+          ? await readDecision(queryClient, current.repertoireId, current.positionKey)
+          : null;
       const result = await api.updateDecision({
         repertoireId: current.repertoireId,
         positionKey: current.positionKey,
         expectedRevision: await expectedRevision(queryClient, current.repertoireId),
-        patch: { [current.field]: decisionTextValue(current.text) }
+        patch: decisionDraftPatch(current, stored)
       });
       adoptDecisionSave(queryClient, result);
       if (workspace().repertoireId === result.repertoire.id) {
@@ -128,7 +147,7 @@ export async function retryDecisionTexts(
 
 /**
  * After a stale refusal, "Keep mine": the write goes again against the repertoire's current
- * revision, replacing the newer prompt or hint (as Keep editing does for a chapter draft).
+ * revision, replacing the newer stored value (as Keep editing does for a chapter draft).
  */
 export async function keepDecisionText(
   queryClient: QueryClient,
@@ -153,7 +172,7 @@ export async function keepDecisionText(
   return saveDecisionText(queryClient, key, { flushChapter, retry: true });
 }
 
-/** Drops the typed text; the stored prompt or hint shows again (re-read, in case it changed). */
+/** Drops the change; the stored value shows again (re-read, in case it changed). */
 export function discardDecisionText(queryClient: QueryClient, key: string): void {
   const draft = workspace().decisionDrafts[key];
   if (!draft) return;

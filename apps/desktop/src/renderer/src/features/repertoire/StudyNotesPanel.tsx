@@ -4,23 +4,25 @@ import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { SectionHeader } from "@/components/ui/page";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
-import { decisionDraftKey, type DecisionTextField } from "./repertoire-model";
+import {
+  DECISION_SCOPE_TEXT,
+  MAX_DECISION_TEXT_LENGTH,
+  decisionDraftKey,
+  type DecisionTextField
+} from "./repertoire-model";
 
 /** The longest comment a chapter save keeps (the main process's chapter validation limit). */
 const MAX_COMMENT_LENGTH = 20_000;
-
-/** The longest prompt or hint a decision write accepts (the main process's decision validation limit). */
-export const MAX_DECISION_TEXT_LENGTH = 2_000;
 
 const FIELD_NAMES: Record<DecisionTextField, string> = { prompt: "prompt", hint: "hint" };
 
 /**
  * Notes for the selected move: its comment (part of the chapter draft, autosaved), and at a
  * position where the player has a decision, the practice prompt and hidden hint (repertoire-wide
- * decision fields). Their typed text lives in the workspace store as a draft until its
- * write is confirmed, so moving to another position or leaving study never drops it; it is saved
- * on blur, and with the chapter draft on navigation or when the window closes. `footer` follows
- * them (the chapter's sources).
+ * decision fields), followed by `decisionControls`. Their typed text lives in the workspace store
+ * as a draft until its write is confirmed, so moving to another position or leaving study never
+ * drops it; it is saved on blur, and with the chapter draft on navigation or when the window
+ * closes. `footer` follows them (the chapter's sources).
  */
 export function StudyNotesPanel({
   node,
@@ -32,6 +34,7 @@ export function StudyNotesPanel({
   onComment,
   onDecisionTextChange,
   onCommitDecisionText,
+  decisionControls,
   footer
 }: {
   node: MoveNode;
@@ -46,6 +49,8 @@ export function StudyNotesPanel({
   onDecisionTextChange: (field: DecisionTextField, text: string) => void;
   /** The field lost focus: save its draft (or drop it when it matches the stored text). */
   onCommitDecisionText: (field: DecisionTextField) => void;
+  /** After the prompt and hint: the decision's wrong-move feedback and pause. */
+  decisionControls?: ReactNode;
   footer?: ReactNode;
 }) {
   const commentId = useId();
@@ -104,7 +109,7 @@ export function StudyNotesPanel({
           title="Practice prompt and hint"
           description={
             canEditDecision
-              ? "Shared by every occurrence of this position in the repertoire."
+              ? DECISION_SCOPE_TEXT
               : "Available where you are to move and have accepted at least one move."
           }
         />
@@ -133,6 +138,7 @@ export function StudyNotesPanel({
           />
         </Field>
       </section>
+      {decisionControls}
       {footer}
     </div>
   );

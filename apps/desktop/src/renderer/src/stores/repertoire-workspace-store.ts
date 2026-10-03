@@ -34,8 +34,8 @@ import {
  * the draft when no edit happened meanwhile (`shouldAdoptSaveResult`); otherwise the newer draft
  * stays dirty and saves next against the revision the save returned.
  *
- * `decisionDrafts` hold practice prompts and hints typed at a position until their write is
- * confirmed (see decision-text-drafts.ts). They belong to no chapter: opening another chapter or
+ * `decisionDrafts` hold decision changes made at a position (practice prompts and hints,
+ * wrong-move feedback, pausing) until their write is confirmed (see decision-text-drafts.ts). They belong to no chapter: opening another chapter or
  * resetting the draft keeps them, so a failed write is never lost by moving on.
  */
 
@@ -58,7 +58,7 @@ export type RepertoireWorkspaceState = {
   undoStack: RepertoireChapter[];
   /** Decisions written this session (until the API can read them back). */
   decisions: Record<string, RepertoireDecision>;
-  /** Prompt and hint text not yet saved, by decisionDraftKey. */
+  /** Decision changes (prompt, hint, feedback, pause) not yet saved, by decisionDraftKey. */
   decisionDrafts: Record<string, DecisionTextDraft>;
 };
 
@@ -115,6 +115,15 @@ type Actions = {
     field: DecisionTextField,
     text: string
   ) => void;
+  /** The feedback typed for one wrong move at a position (blank: remove it once saved). */
+  setWrongMoveFeedback: (
+    repertoireId: string,
+    positionKey: string,
+    uci: string,
+    text: string
+  ) => void;
+  /** Pausing or resuming the decision at a position (kept until saved or discarded). */
+  setDecisionPaused: (repertoireId: string, positionKey: string, paused: boolean) => void;
   discardDecisionText: (key: string) => void;
   /** A write of the draft started; returns the generation it sends (null: no draft). */
   markDecisionTextSaving: (key: string) => number | null;
@@ -240,6 +249,27 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
         ...(options.selectedNodeId ? { selectedNodeId: options.selectedNodeId } : {})
       });
     };
+
+    /** Creates or edits a decision draft (an edit bumps its generation; its status stays). */
+    const putDecisionDraft = (
+      change: Pick<DecisionTextDraft, "repertoireId" | "positionKey" | "field" | "uci" | "text"> &
+        Pick<Partial<DecisionTextDraft>, "paused">
+    ) =>
+      set((state) => {
+        const key = decisionDraftKey(
+          change.repertoireId,
+          change.positionKey,
+          change.field,
+          change.uci
+        );
+        const current = state.decisionDrafts[key];
+        const draft: DecisionTextDraft = current
+          ? { ...current, ...change, generation: current.generation + 1 }
+          : { ...change, generation: 1, status: "pending" };
+        if (draft.uci === undefined) delete draft.uci;
+        if (draft.paused === undefined) delete draft.paused;
+        return { decisionDrafts: { ...state.decisionDrafts, [key]: draft } };
+      });
 
     const patchNode = (nodeId: string, patch: Partial<MoveNode>) =>
       edit((chapter) => ({
@@ -446,14 +476,13 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
         set((state) => ({ decisions: { ...state.decisions, [decision.positionKey]: decision } })),
 
       setDecisionText: (repertoireId, positionKey, field, text) =>
-        set((state) => {
-          const key = decisionDraftKey(repertoireId, positionKey, field);
-          const current = state.decisionDrafts[key];
-          const draft: DecisionTextDraft = current
-            ? { ...current, text, generation: current.generation + 1 }
-            : { repertoireId, positionKey, field, text, generation: 1, status: "pending" };
-          return { decisionDrafts: { ...state.decisionDrafts, [key]: draft } };
-        }),
+        putDecisionDraft({ repertoireId, positionKey, field, text }),
+
+      setWrongMoveFeedback: (repertoireId, positionKey, uci, text) =>
+        putDecisionDraft({ repertoireId, positionKey, field: "feedback", uci, text }),
+
+      setDecisionPaused: (repertoireId, positionKey, paused) =>
+        putDecisionDraft({ repertoireId, positionKey, field: "paused", text: "", paused }),
 
       discardDecisionText: (key) =>
         set((state) => {

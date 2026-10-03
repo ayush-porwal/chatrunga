@@ -371,6 +371,33 @@ describe("repertoire workspace decision drafts", () => {
     expect(store().markDecisionTextSaving(key)).toBeNull();
   });
 
+  it("keeps feedback per wrong move and a pause as drafts of their own", () => {
+    store().setWrongMoveFeedback("r1", "k1", "d2d4", "We play 1.e4");
+    store().setWrongMoveFeedback("r1", "k1", "c2c4", "Not the English");
+    store().setDecisionPaused("r1", "k1", true);
+    const d4 = decisionDraftKey("r1", "k1", "feedback", "d2d4");
+    const paused = decisionDraftKey("r1", "k1", "paused");
+    expect(store().decisionDrafts[d4]).toEqual({
+      repertoireId: "r1",
+      positionKey: "k1",
+      field: "feedback",
+      uci: "d2d4",
+      text: "We play 1.e4",
+      generation: 1,
+      status: "pending"
+    });
+    expect(Object.keys(store().decisionDrafts)).toHaveLength(3);
+    // Toggling back while a pause saves is a newer edit, written after it.
+    const sent = store().markDecisionTextSaving(paused)!;
+    store().setDecisionPaused("r1", "k1", false);
+    store().decisionTextSaved(paused, sent);
+    expect(store().decisionDrafts[paused]).toMatchObject({
+      paused: false,
+      status: "pending",
+      generation: 2
+    });
+  });
+
   it("keeps a failed write's text; Retry (clearSaveError) leaves a stale one alone", () => {
     const hint = decisionDraftKey("r1", "k1", "hint");
     store().setDecisionText("r1", "k1", "prompt", "Develop");

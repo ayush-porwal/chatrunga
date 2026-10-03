@@ -522,7 +522,9 @@ function isActiveIncluded(occurrence: Occurrence, child: MoveNode): boolean {
  * Updates the policy at one position. Accepting a move with no supporting included occurrence
  * selects one (its edge becomes `included`) in the same transaction (§7.1); removing an accepted
  * move turns its included occurrences into reference moves so reconciliation doesn't re-add it.
- * A move with no occurrence at all in the repertoire is refused.
+ * A move with no occurrence at all in the repertoire is refused. Wrong-move feedback names legal
+ * moves of the position. Pausing keeps the decision's progress: a paused decision is left out of
+ * practice and due counts, and resuming it brings back its schedule as it was.
  */
 export function updateDecision(input: UpdateDecisionInput): DecisionSaveResult {
   const now = clock();
@@ -633,10 +635,17 @@ export function updateDecision(input: UpdateDecisionInput): DecisionSaveResult {
     if (patch.prompt !== undefined) next.prompt = cleanText(patch.prompt, MAX_POLICY_TEXT);
     if (patch.hint !== undefined) next.hint = cleanText(patch.hint, MAX_POLICY_TEXT);
     if (patch.wrongMoveFeedback !== undefined) {
+      // The whole map is replaced: a move left out (or with blank text) loses its feedback.
       next.wrongMoveFeedback = {};
       for (const [uci, text] of Object.entries(patch.wrongMoveFeedback)) {
+        const move = normalizeUci(fen, uci);
+        if (!fenAfterMove(fen, move)) {
+          throw new Error(
+            `Invalid wrongMoveFeedback: "${uci}" is not a legal move in this position`
+          );
+        }
         const feedback = cleanText(text, MAX_POLICY_TEXT);
-        if (feedback) next.wrongMoveFeedback[normalizeUci(fen, uci)] = feedback;
+        if (feedback) next.wrongMoveFeedback[move] = feedback;
       }
     }
     if (patch.paused !== undefined) next.paused = patch.paused === true;
