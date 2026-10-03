@@ -230,14 +230,17 @@ export function App() {
   const windowControlsVisible = isElectronMac();
   // Narrow subscriptions: the shell must not re-render on every move (it would cascade into the
   // sidebar, titlebar and every tooltip). Handlers read the store directly via currentGame().
-  const { gameId, gameSource, gameMode, gameDecided } = useGameStore(
+  const { gameId, gameSource, gameMode, gameDecided, gameBoard } = useGameStore(
     useShallow((state) => ({
       gameId: state.gameId,
       gameSource: state.source,
       gameMode: state.mode,
-      gameDecided: Boolean(state.gameOutcome)
+      gameDecided: Boolean(state.gameOutcome),
+      gameBoard: state.board
     }))
   );
+  // A game played on from a puzzle: Next puzzle (after it) resumes the set.
+  const puzzleSetContinues = puzzleSession.continues(gameBoard);
   const positionIsEnd = useGameStore((state) => positionStatus(state.currentFen).isEnd);
   // A puzzle opens to analysis once it's solved or failed (before that the engine would give it away).
   const puzzleDecided = usePuzzleStore((state) => Boolean(state.activePuzzle) && state.outcome !== "pending");
@@ -456,7 +459,8 @@ export function App() {
       if (snapshot.held) holdUntilChanged();
     } else {
       stopEngineWork({ stopSearch: snapshot.mode !== "analysis", keepReview });
-      clearPuzzleSession();
+      // The same game: one played on from a puzzle keeps its set (Next puzzle).
+      puzzleSession.release(currentGame().board);
     }
     currentGame().restoreView(snapshot);
     if (snapshot.mode === "analysis") {
@@ -663,7 +667,8 @@ export function App() {
       openSavedGame(saved);
     } else {
       stopEngineWork();
-      clearPuzzleSession();
+      // Back from the review returns to a game played on from a puzzle with its Next puzzle.
+      puzzleSession.release(currentGame().board);
     }
     currentGame().setMode("freeplay");
     currentGame().setEngineSide(null);
@@ -1057,7 +1062,9 @@ export function App() {
     const engineSide = position.turn;
     const humanSide = engineSide === "white" ? "black" : "white";
     commitCurrent();
-    endBoardActivity();
+    // Not endBoardActivity: the puzzle set stays, so Next puzzle resumes it once this game ends.
+    stopEngineWork();
+    useReviewStore.getState().reset();
     currentGame().loadGame(
       createGameFromFen({
         fen,
@@ -1072,6 +1079,7 @@ export function App() {
         }
       })
     );
+    puzzleSession.continueOnBoard(currentGame().board);
     currentGame().setOrientation(humanSide);
     currentGame().setMode("engine");
     currentGame().setEngineSide(engineSide);
@@ -1112,9 +1120,17 @@ export function App() {
     }
     // The next puzzle takes over only if nothing else was opened while it loaded.
     const request = latestNavigation.current;
+    // After a game played on from a puzzle, that game stays a step of its own (Back returns to it).
+    const fromGame = puzzleSetContinues;
     nextPuzzle.mutate(input, {
       onSuccess: (puzzle) => {
-        if (request === latestNavigation.current) startPuzzle(puzzle);
+        if (request === latestNavigation.current) startPuzzle(puzzle, undefined, fromGame ? "push" : "replace");
+      },
+      onError: (error) => {
+        // The puzzle card shows the error on a puzzle; the game's titlebar does after a game.
+        if (fromGame && request === latestNavigation.current) {
+          currentGame().setMatchFeedback(`Couldn't load the next puzzle: ${ipcErrorMessage(error) || "unknown error"}`);
+        }
       }
     });
   }
