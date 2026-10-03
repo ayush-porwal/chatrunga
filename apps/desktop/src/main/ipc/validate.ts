@@ -42,6 +42,7 @@ import type {
   SaveChapterInput,
   SaveWorkspaceInput,
   StartPracticeInput,
+  UpdateChaptersInput,
   UpdateDecisionInput,
   UpdateRepertoireMetadataInput
 } from "@chaturanga/shared/types/repertoire";
@@ -845,6 +846,24 @@ export function parseRemoveChapterInput(value: unknown): RemoveChapterInput {
     chapterId: asId(input.chapterId, "chapterId"),
     expectedRevision: asRevision(input.expectedRevision)
   };
+}
+
+export function parseUpdateChaptersInput(value: unknown): UpdateChaptersInput {
+  const input = asObject(value, "chapters update");
+  const patch = asObject(input.patch, "chapters patch");
+  const parsed: UpdateChaptersInput = {
+    repertoireId: asId(input.repertoireId, "repertoireId"),
+    chapterIds: asIdArray(input.chapterIds, "chapterIds", MAX_IMPORT_GAMES),
+    expectedRevision: asRevision(input.expectedRevision),
+    patch: {
+      enabled: optional(patch.enabled, (enabled) => asBoolean(enabled, "enabled")),
+      kind: optional(patch.kind, asChapterKind)
+    }
+  };
+  if (parsed.patch.enabled === undefined && parsed.patch.kind === undefined) {
+    fail("chapters patch", "expected enabled or kind");
+  }
+  return parsed;
 }
 
 export function parseDuplicateRepertoireInput(value: unknown): DuplicateRepertoireInput {

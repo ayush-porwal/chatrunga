@@ -26,6 +26,7 @@ import {
   recordPracticeAction,
   refreshBackupPreview,
   removeChapter,
+  updateChapters,
   removeGameLink,
   removeRepertoire,
   restoreBackup,
@@ -58,6 +59,7 @@ import {
   parsePreviewImportInput,
   parseRecordAttemptInput,
   parseRemoveChapterInput,
+  parseUpdateChaptersInput,
   parseRemoveGameLink,
   parseRemoveRepertoireInput,
   parseRepertoireListFilters,
@@ -130,6 +132,10 @@ export function registerRepertoireIpc(): void {
   ipcMain.handle("repertoires:removeChapter", (_event, input: unknown) => {
     const parsed = parseRemoveChapterInput(input);
     return withRepertoireWriteGate(() => removeChapter(parsed));
+  });
+  ipcMain.handle("repertoires:updateChapters", (_event, input: unknown) => {
+    const parsed = parseUpdateChaptersInput(input);
+    return withRepertoireWriteGate(() => updateChapters(parsed));
   });
   ipcMain.handle("repertoires:duplicate", (_event, input: unknown) => {
     const parsed = parseDuplicateRepertoireInput(input);

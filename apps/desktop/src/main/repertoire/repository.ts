@@ -740,6 +740,22 @@ export const chapterRepository = {
     );
   },
 
+  /** Sets a chapter's kind and practice switch with its new revision, leaving its tree as stored. */
+  updateSettings(
+    id: string,
+    settings: Pick<RepertoireChapter, "kind" | "enabled" | "revision">,
+    now: number
+  ): void {
+    run(
+      "UPDATE repertoire_chapters SET kind = ?, enabled = ?, revision = ?, updated_at = ? WHERE id = ?",
+      settings.kind,
+      settings.enabled ? 1 : 0,
+      settings.revision,
+      now,
+      id
+    );
+  },
+
   remove(id: string): void {
     run("DELETE FROM repertoire_chapters WHERE id = ?", id);
   }

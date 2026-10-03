@@ -43,6 +43,7 @@ vi.mock("../repertoire/service", () => {
     "saveChapter",
     "saveWorkspace",
     "startPractice",
+    "updateChapters",
     "updateDecision",
     "updateMetadata"
   ];
@@ -130,6 +131,16 @@ describe("registerRepertoireIpc", () => {
         { repertoireId: "r1", chapterId: "c1", expectedRevision: 1 },
         "removeChapter"
       ],
+      [
+        "updateChapters",
+        {
+          repertoireId: "r1",
+          chapterIds: ["c1", "c2"],
+          expectedRevision: 1,
+          patch: { enabled: false, kind: "reference" }
+        },
+        "updateChapters"
+      ],
       ["duplicate", { id: "r1" }, "duplicateRepertoire"],
       ["archive", { id: "r1", archived: true, expectedRevision: 1 }, "archiveRepertoire"],
       ["remove", { id: "r1", expectedRevision: 1 }, "removeRepertoire"],
@@ -205,6 +216,7 @@ describe("registerRepertoireIpc", () => {
       "saveChapter",
       "saveWorkspace",
       "startPractice",
+      "updateChapters",
       "updateDecision",
       "updateMetadata"
     ]);
@@ -242,6 +254,25 @@ describe("registerRepertoireIpc", () => {
     expect(() => invoke("updateMetadata", { id: "r", expectedRevision: -1, patch: {} })).toThrow(
       /expectedRevision/
     );
+    expect(() =>
+      invoke("updateChapters", { repertoireId: "r", chapterIds: ["c"], expectedRevision: 1, patch: {} })
+    ).toThrow("Invalid chapters patch: expected enabled or kind");
+    expect(() =>
+      invoke("updateChapters", {
+        repertoireId: "r",
+        chapterIds: ["c"],
+        expectedRevision: 1,
+        patch: { kind: "sideline" }
+      })
+    ).toThrow(/chapter kind/);
+    expect(() =>
+      invoke("updateChapters", {
+        repertoireId: "r",
+        chapterIds: "c",
+        expectedRevision: 1,
+        patch: { enabled: true }
+      })
+    ).toThrow(/chapterIds/);
     expect(() => invoke("startPractice", { repertoireId: "r", mode: "rehearse" })).toThrow(
       /practice mode/
     );

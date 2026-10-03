@@ -173,6 +173,7 @@ const api: ChaturangaApi = {
     saveChapter: (input) => ipcRenderer.invoke("repertoires:saveChapter", input),
     updateDecision: (input) => ipcRenderer.invoke("repertoires:updateDecision", input),
     removeChapter: (input) => ipcRenderer.invoke("repertoires:removeChapter", input),
+    updateChapters: (input) => ipcRenderer.invoke("repertoires:updateChapters", input),
     duplicate: (input) => ipcRenderer.invoke("repertoires:duplicate", input),
     archive: (input) => ipcRenderer.invoke("repertoires:archive", input),
     remove: (input) => ipcRenderer.invoke("repertoires:remove", input),

@@ -105,6 +105,8 @@ import type {
   SaveChapterInput,
   SaveWorkspaceInput,
   StartPracticeInput,
+  UpdateChaptersInput,
+  UpdateChaptersResult,
   UpdateDecisionInput,
   UpdateRepertoireMetadataInput
 } from "../types/repertoire";
@@ -372,6 +374,8 @@ export type ChaturangaApi = {
     saveChapter(input: SaveChapterInput): Promise<ChapterSaveResult>;
     updateDecision(input: UpdateDecisionInput): Promise<DecisionSaveResult>;
     removeChapter(input: RemoveChapterInput): Promise<RepertoireChangeResult>;
+    /** Sets enabled and/or kind on several chapters in one transaction (bulk chapter actions). */
+    updateChapters(input: UpdateChaptersInput): Promise<UpdateChaptersResult>;
     /** Copies content and decisions; progress starts fresh. */
     duplicate(input: DuplicateRepertoireInput): Promise<RepertoireDetail>;
     /** Reversible: archived repertoires contribute no due cards. */

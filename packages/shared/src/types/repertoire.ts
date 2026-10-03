@@ -406,10 +406,32 @@ export type CreateRepertoireInput = {
   firstChapterTitle?: string;
 };
 
+/**
+ * Lengths the main process keeps of a repertoire's name, description and tags (longer text is
+ * cut, extra tags dropped); the renderer's forms refuse past them instead.
+ */
+export const REPERTOIRE_METADATA_LIMITS = {
+  name: 200,
+  description: 5_000,
+  tags: 32,
+  tag: 50
+} as const;
+
 export type UpdateRepertoireMetadataInput = {
   id: string;
   expectedRevision: number;
   patch: { name?: string; description?: string; tags?: string[] };
+};
+
+/**
+ * One write that sets practice eligibility and/or kind on several chapters (the chapter list's
+ * bulk actions): one revision check and one reconciliation, however many chapters it names.
+ */
+export type UpdateChaptersInput = {
+  repertoireId: string;
+  chapterIds: string[];
+  expectedRevision: number;
+  patch: { enabled?: boolean; kind?: ChapterKind };
 };
 
 export type SaveChapterInput = {
@@ -447,6 +469,11 @@ export type DecisionSaveResult = {
 
 export type RepertoireChangeResult = {
   repertoire: RepertoireDetail;
+};
+
+export type UpdateChaptersResult = RepertoireChangeResult & {
+  /** Chapters the write changed (those already in the requested state are left alone). */
+  chaptersChanged: number;
 };
 
 export type RemoveChapterInput = {

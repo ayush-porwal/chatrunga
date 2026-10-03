@@ -4,11 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BoardArrow, BoardHighlight, MoveNode } from "@chaturanga/shared/types/chess";
-import type {
-  AddFromGameInput,
-  RepertoireChapter,
-  RepertoireColor,
-  RepertoireNodeMeta
+import {
+  REPERTOIRE_METADATA_LIMITS,
+  type AddFromGameInput,
+  type RepertoireChapter,
+  type RepertoireColor,
+  type RepertoireNodeMeta
 } from "@chaturanga/shared/types/repertoire";
 import { fenAfterUci, START_FEN } from "@chaturanga/shared/chess/position";
 import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
@@ -558,6 +559,152 @@ describe("repertoire service: chapters, decisions and index", () => {
     service.removeRepertoire({ id, expectedRevision: removed.repertoire.revision });
     expect(() => service.getRepertoire(id)).toThrow("Invalid repertoireId: not found");
     expect(sent.at(-1)).toMatchObject({ payload: { repertoireId: id, kind: "removed" } });
+  });
+
+  it("edits name, description and tags against the revision, and search finds the new tag", () => {
+    const { id, revision } = create();
+    const edited = service.updateMetadata({
+      id,
+      expectedRevision: revision,
+      patch: { name: "  Sicilian Najdorf  ", description: " Main lines ", tags: [" sharp ", "sharp", ""] }
+    });
+    expect(edited).toMatchObject({
+      name: "Sicilian Najdorf",
+      description: "Main lines",
+      tags: ["sharp"],
+      revision: revision + 1
+    });
+    expect(service.listRepertoires({ query: "SHARP" }).map((item) => item.id)).toEqual([id]);
+    expect(service.listRepertoires({ query: "white" })).toEqual([]);
+    expect(sent.at(-1)).toMatchObject({ payload: { repertoireId: id, kind: "updated" } });
+    // Another write since the editor opened: refused, nothing overwritten.
+    expect(() =>
+      service.updateMetadata({ id, expectedRevision: revision, patch: { name: "Stale" } })
+    ).toThrow("Invalid expectedRevision: repertoire changed (stored 2, expected 1)");
+    expect(service.getRepertoire(id).name).toBe("Sicilian Najdorf");
+    expect(() =>
+      service.updateMetadata({ id, expectedRevision: edited.revision, patch: { name: " " } })
+    ).toThrow(/Invalid name/);
+  });
+
+  it("keeps metadata exactly up to the limits the renderer's forms enforce", () => {
+    const { id, revision } = create();
+    const limits = REPERTOIRE_METADATA_LIMITS;
+    const tags = Array.from({ length: limits.tags + 1 }, (_, index) =>
+      `${index}`.padEnd(limits.tag, "t")
+    );
+    const atLimit = service.updateMetadata({
+      id,
+      expectedRevision: revision,
+      patch: {
+        name: "n".repeat(limits.name),
+        description: "d".repeat(limits.description),
+        tags: tags.slice(0, limits.tags)
+      }
+    });
+    expect(atLimit.name).toHaveLength(limits.name);
+    expect(atLimit.description).toHaveLength(limits.description);
+    expect(atLimit.tags).toEqual(tags.slice(0, limits.tags));
+    const over = service.updateMetadata({
+      id,
+      expectedRevision: atLimit.revision,
+      patch: {
+        name: "n".repeat(limits.name + 1),
+        description: "d".repeat(limits.description + 1),
+        tags: [...tags.slice(0, limits.tags - 1), `${tags.at(-1)}x`, tags.at(-1)!]
+      }
+    });
+    expect(over.name).toHaveLength(limits.name);
+    expect(over.description).toHaveLength(limits.description);
+    expect(over.tags).toHaveLength(limits.tags);
+    expect(over.tags.at(-1)).toHaveLength(limits.tag);
+  });
+
+  it("sets enabled and kind on several chapters in one revision, skipping unchanged ones", () => {
+    const { id } = create();
+    const first = save(id, [["e2e4", "e7e5", "g1f3"]]);
+    const second = save(id, [["d2d4", "d7d5", "c2c4"]], { chapterId: "c2" });
+    const third = save(id, [["c2c4"]], { chapterId: "c3", enabled: false });
+    expect(third.repertoire.decisionCount).toBe(3);
+    const before = service.getRepertoire(id);
+    sent.length = 0;
+
+    const disabled = service.updateChapters({
+      repertoireId: id,
+      chapterIds: [first.chapter.id, "c2", "c3", "c2"],
+      expectedRevision: before.revision,
+      patch: { enabled: false }
+    });
+    expect(disabled.chaptersChanged).toBe(2);
+    expect(disabled.repertoire.revision).toBe(before.revision + 1);
+    expect(disabled.repertoire.decisionCount).toBe(0);
+    const byId = new Map(disabled.repertoire.chapters.map((chapter) => [chapter.id, chapter]));
+    expect(byId.get(first.chapter.id)).toMatchObject({
+      enabled: false,
+      revision: first.chapter.revision + 1
+    });
+    expect(byId.get("c2")).toMatchObject({ enabled: false, revision: second.chapter.revision + 1 });
+    expect(byId.get("c3")).toMatchObject({ enabled: false, revision: third.chapter.revision });
+    // The trees are untouched; one change event for the whole batch.
+    expect(service.getChapter({ repertoireId: id, chapterId: "c2" }).tree).toHaveLength(4);
+    expect(sent.filter((event) => event.channel === "repertoires:changed")).toHaveLength(1);
+
+    const reference = service.updateChapters({
+      repertoireId: id,
+      chapterIds: ["c2", "c3"],
+      expectedRevision: disabled.repertoire.revision,
+      patch: { enabled: true, kind: "reference" }
+    });
+    expect(reference.chaptersChanged).toBe(2);
+    expect(reference.repertoire.chapters.filter((chapter) => chapter.kind === "reference")).toHaveLength(2);
+    expect(reference.repertoire.decisionCount).toBe(0);
+    const reopened = service.updateChapters({
+      repertoireId: id,
+      chapterIds: ["c2"],
+      expectedRevision: reference.repertoire.revision,
+      patch: { kind: "opening" }
+    });
+    expect(reopened.repertoire.decisionCount).toBe(2);
+
+    // Nothing to change: no write, no event, same revision.
+    sent.length = 0;
+    const unchanged = service.updateChapters({
+      repertoireId: id,
+      chapterIds: ["c2"],
+      expectedRevision: reopened.repertoire.revision,
+      patch: { kind: "opening", enabled: true }
+    });
+    expect(unchanged).toMatchObject({
+      chaptersChanged: 0,
+      repertoire: { revision: reopened.repertoire.revision }
+    });
+    expect(sent).toEqual([]);
+  });
+
+  it("refuses a stale or foreign batch chapter update and writes none of it", () => {
+    const { id } = create();
+    const saved = save(id, [["e2e4"]]);
+    const other = create("black");
+    const revision = saved.repertoire.revision;
+    expect(() =>
+      service.updateChapters({
+        repertoireId: id,
+        chapterIds: [saved.chapter.id],
+        expectedRevision: revision - 1,
+        patch: { enabled: false }
+      })
+    ).toThrow(/Invalid expectedRevision/);
+    expect(() =>
+      service.updateChapters({
+        repertoireId: id,
+        chapterIds: [saved.chapter.id, other.chapters[0].id],
+        expectedRevision: revision,
+        patch: { enabled: false }
+      })
+    ).toThrow("Invalid chapterIds: not found");
+    const after = service.getRepertoire(id);
+    expect(after.revision).toBe(revision);
+    expect(after.chapters[0]).toMatchObject({ enabled: true, revision: saved.chapter.revision });
   });
 
   it("a practice-setup write keeps where to continue studying", () => {

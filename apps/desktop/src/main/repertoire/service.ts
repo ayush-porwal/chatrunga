@@ -82,6 +82,8 @@ import {
   type SaveChapterInput,
   type SaveWorkspaceInput,
   type StartPracticeInput,
+  type UpdateChaptersInput,
+  type UpdateChaptersResult,
   type UpdateDecisionInput,
   type UpdateRepertoireMetadataInput
 } from "@chaturanga/shared/types/repertoire";
@@ -679,6 +681,47 @@ export function removeChapter(input: RemoveChapterInput): RepertoireChangeResult
     revision: result.repertoire.revision,
     kind: "updated"
   });
+  return result;
+}
+
+/**
+ * Sets practice eligibility and/or kind on several chapters at once (the chapter list's bulk
+ * actions): one revision check, one bump and one reconciliation in a single transaction, rather
+ * than one chapter save per row. Chapters already in the requested state keep their revision; when
+ * none changes, nothing is written and the repertoire keeps its revision too.
+ */
+export function updateChapters(input: UpdateChaptersInput): UpdateChaptersResult {
+  const now = clock();
+  const result = transaction(() => {
+    const record = requireRepertoire(input.repertoireId);
+    checkRevision(record, input.expectedRevision);
+    const stored = new Map(
+      chapterRepository.summaries(record.id, now).map((chapter) => [chapter.id, chapter])
+    );
+    let chaptersChanged = 0;
+    for (const chapterId of new Set(input.chapterIds)) {
+      const chapter = stored.get(chapterId);
+      if (!chapter) throw new Error("Invalid chapterIds: not found");
+      const kind = input.patch.kind ?? chapter.kind;
+      const enabled = input.patch.enabled ?? chapter.enabled;
+      if (kind === chapter.kind && enabled === chapter.enabled) continue;
+      chapterRepository.updateSettings(
+        chapterId,
+        { kind, enabled, revision: chapter.revision + 1 },
+        now
+      );
+      chaptersChanged += 1;
+    }
+    if (chaptersChanged) reindex(bump(record, now), now);
+    return { repertoire: detail(record.id, now), chaptersChanged };
+  });
+  if (result.chaptersChanged) {
+    changed({
+      repertoireId: input.repertoireId,
+      revision: result.repertoire.revision,
+      kind: "updated"
+    });
+  }
   return result;
 }
 
