@@ -81,7 +81,7 @@ function newGameId(): string {
 export const IMPORT_NEEDS_SAVE = "Couldn't save the current game first, so nothing was imported. Try again.";
 
 /**
- * A board loaded as an unsaved copy (Study → Analyze, Play from here): its tree and headers as
+ * A board loaded as an unsaved copy (Play from here's engine game): its tree and headers as
  * they loaded. Like a game opened from the library, it is the baseline: nothing is written until the
  * user changes it (a move, an annotation, a result). Cleared when another board loads.
  */
@@ -202,7 +202,7 @@ export function useGameAutosave(): void {
       // Puzzle practice is ephemeral: never persist it as a "saved game" / recent entry.
       if (game.mode === "puzzle" && usePuzzleStore.getState().activePuzzle) return lastWrite;
       if (game.moveTree.length <= 1 && !game.gameId) return lastWrite;
-      // An unsaved copy (Study → Analyze, Play from here) waits for its first change.
+      // An unsaved copy (Play from here's engine game) waits for its first change.
       if (unchangedSinceBaseline(unsavedBaseline, game)) return lastWrite;
       const review = useReviewStore.getState().review;
       boardReview = review ? { board, review } : null;

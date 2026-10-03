@@ -22,7 +22,7 @@ export type BoardSnapshot = {
   gameId: string | null;
   /** Only for a game without an id (nothing to reload it from). */
   session: GameSession | null;
-  /** That unsaved game is a copy nobody changed yet (Study → Analyze): restoring doesn't save it. */
+  /** That unsaved game is a copy nobody changed yet (Play from here): restoring doesn't save it. */
   held?: true;
   currentNodeId: string;
   mode: GameMode;

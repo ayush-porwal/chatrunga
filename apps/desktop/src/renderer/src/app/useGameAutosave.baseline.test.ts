@@ -29,7 +29,7 @@ const { useGameStore } = await import("../stores/game-store");
 const { useReviewStore } = await import("../stores/review-store");
 const { useSaveStatusStore } = await import("../stores/save-status-store");
 
-/** An unsaved copy with moves (like Study → Analyze), held until it changes. */
+/** An unsaved copy with moves (like Play from here's), held until it changes. */
 function loadHeldCopy() {
   const { game } = importPgnText("1. e4 e5 2. Nf3 *");
   useGameStore.getState().loadGame({ ...game, id: null, source: "analysis" });
