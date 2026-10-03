@@ -5,13 +5,14 @@ import { flushGameAutosave, onGameSaved } from "../../app/useGameAutosave";
 import { useLinkGameMutation } from "../../queries/repertoire";
 import { useAppNoticeStore } from "../../stores/app-notice-store";
 import { useGameStore } from "../../stores/game-store";
-import { isHandoffSave, useRepertoireHandoffStore } from "../../stores/repertoire-handoff-store";
+import { handoffForSave, useRepertoireHandoffStore } from "../../stores/repertoire-handoff-store";
 import { createLinkOnce } from "./handoffs";
 
 /**
  * Links an engine game played from a repertoire (Play from here) to that repertoire as a
  * `played` game once a save of it succeeds: binds the handoff to the library id that save wrote
- * (also when the board was replaced before its first save, which then writes it as it leaves),
+ * (also when the board was replaced before its first save, which then writes it as it leaves, or
+ * another Play from here started before that save was answered),
  * links again when the game's result changes (so the link copies its final headers), and retries
  * a failed link on the game's next save. Closing the window waits for a link still being written.
  * Mount once (App).
@@ -49,10 +50,10 @@ export function usePlayedGameLink(): void {
         }
       }),
       onGameSaved((saved) => {
-        const played = handoff().played;
-        if (!played || !isHandoffSave(played, saved)) return;
+        const played = handoffForSave(handoff(), saved);
+        if (!played) return;
         if (typeof window.chaturanga?.repertoires?.linkGame !== "function") return;
-        handoff().bindGame(saved.gameId);
+        handoff().bindGame(saved.gameId, played.board);
         const attempt = linkOnce(
           {
             repertoireId: played.repertoireId,

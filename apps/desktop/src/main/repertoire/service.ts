@@ -1462,6 +1462,7 @@ export function linkGame(input: LinkGameInput): RepertoireGameLink {
       id: nanoid(),
       repertoireId: record.id,
       gameId: input.gameId,
+      unsaved: false,
       kind: input.kind,
       headers: tags,
       createdAt: now,

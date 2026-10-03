@@ -1882,7 +1882,8 @@ describe("repertoire service: add from a game", () => {
     getDb().exec(`DROP TABLE repertoire_game_links;
       CREATE TABLE repertoire_game_links (
         id TEXT PRIMARY KEY, repertoire_id TEXT NOT NULL, chapter_id TEXT, game_id TEXT,
-        game_node_id TEXT, kind TEXT NOT NULL CHECK (kind IN ('source', 'model')),
+        unsaved INTEGER NOT NULL DEFAULT 0, game_node_id TEXT,
+        kind TEXT NOT NULL CHECK (kind IN ('source', 'model')),
         headers_json TEXT NOT NULL DEFAULT '{}', captured_path TEXT NOT NULL DEFAULT '',
         created_at INTEGER NOT NULL)`);
     getDb()

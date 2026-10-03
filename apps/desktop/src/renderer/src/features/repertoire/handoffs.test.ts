@@ -7,6 +7,7 @@ import {
   buildInitialSession,
   chapterPath,
   createLinkOnce,
+  gameHasEnded,
   gameFromInitialSession,
   handoffAtEnd,
   repertoireCommandBlocked,
@@ -199,6 +200,20 @@ describe("repertoireCommandBlocked", () => {
   });
 });
 
+describe("gameHasEnded", () => {
+  const playing = { gameOutcome: null, headers: { result: "*" }, endFen: START_FEN };
+
+  it("is ended by an outcome this session, a decided saved result or a finished position", () => {
+    expect(gameHasEnded(playing)).toBe(false);
+    expect(gameHasEnded({ ...playing, gameOutcome: { result: "1-0" } })).toBe(true);
+    // Reopened after a resignation: the board doesn't show it, the saved result does.
+    expect(gameHasEnded({ ...playing, headers: { result: "0-1" } })).toBe(true);
+    expect(gameHasEnded({ ...playing, headers: { result: "1/2-1/2" } })).toBe(true);
+    const mated = "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3";
+    expect(gameHasEnded({ ...playing, endFen: mated })).toBe(true);
+  });
+});
+
 describe("createLinkOnce", () => {
   const input: LinkGameInput = {
     repertoireId: "r1",
@@ -227,6 +242,22 @@ describe("createLinkOnce", () => {
     resolve();
     await expect(first).resolves.toBe(true);
     expect(link).toHaveBeenCalledTimes(1);
+  });
+
+  it("links again with a newer stamp that arrives while a link is running", async () => {
+    const resolvers: (() => void)[] = [];
+    const link = vi.fn(() => new Promise<void>((done) => resolvers.push(done)));
+    const linkOnce = createLinkOnce(link);
+    const unfinished = linkOnce(input, "*");
+    const finished = linkOnce(input, "1-0");
+    expect(linkOnce(input, "1-0")).toBe(finished);
+    resolvers[0]();
+    await expect(unfinished).resolves.toBe(true);
+    await vi.waitFor(() => expect(link).toHaveBeenCalledTimes(2));
+    resolvers[1]();
+    await expect(finished).resolves.toBe(true);
+    await expect(linkOnce(input, "1-0")).resolves.toBe(true);
+    expect(link).toHaveBeenCalledTimes(2);
   });
 
   it("tries again after a failure", async () => {

@@ -9,6 +9,7 @@ import {
   type RepertoireChapter
 } from "@chaturanga/shared/types/repertoire";
 import { ipcErrorMessage } from "@/lib/ipc-error";
+import { positionStatus } from "@/lib/position-status";
 import { userMoveFromUci } from "@/lib/uci";
 import type { PlayInitialSession } from "../../stores/play-draft-store";
 import { isHandoffGame, type PlayedHandoff } from "../../stores/repertoire-handoff-store";
@@ -18,6 +19,25 @@ import { pathLabel } from "./repertoire-model";
  * Study → Analyze / Play from here (design §6.2, §6.4, §9.3): the pure parts. A handoff copies the
  * chapter's route into a new, independent game; nothing here reads or writes a store.
  */
+
+const DECIDED_RESULTS = new Set(["1-0", "0-1", "1/2-1/2"]);
+
+/**
+ * Whether a game has ended: a result decided this session (resignation, flag, agreement), a
+ * decided result in its headers (such a game reopened from the library, whose final position
+ * needn't show it), or a finished position at the end of its main line (`endFen`).
+ */
+export function gameHasEnded(game: {
+  gameOutcome: unknown;
+  headers: Pick<GameHeaders, "result">;
+  endFen: string;
+}): boolean {
+  return (
+    Boolean(game.gameOutcome) ||
+    DECIDED_RESULTS.has(game.headers.result?.trim() ?? "") ||
+    positionStatus(game.endFen).isEnd
+  );
+}
 
 /** The chapter and position a handoff starts from, and the repertoire it belongs to. */
 export type HandoffOrigin = {
@@ -254,7 +274,8 @@ export function reviewOpeningAfterFlush(input: {
 /**
  * Wraps `repertoires.linkGame` so each (repertoire, game, kind) is linked at most once per app
  * session for a given `stamp` (the game's result: a finished game links again, so the link copies
- * its final headers). A second call while the first runs joins it, a call after it succeeded does
+ * its final headers). A second call while the first runs joins it (with another stamp, it links
+ * again once the first settles, and later callers join that), a call after it succeeded does
  * nothing, and a failed call is tried again by the next one. A chapter deleted meanwhile links the
  * game to the repertoire alone. Any other failure is reported once per link through `onError`, not
  * on every retry. The main process is idempotent too; this only spares repeated writes. Resolves
@@ -265,7 +286,7 @@ export function createLinkOnce(
   onError: (message: string) => void = () => {}
 ) {
   const linked = new Map<string, string>();
-  const running = new Map<string, Promise<boolean>>();
+  const running = new Map<string, { stamp: string; attempt: Promise<boolean> }>();
   const reported = new Set<string>();
   const linkOrUnfiled = (input: LinkGameInput) =>
     link(input).catch((error: unknown) => {
@@ -274,27 +295,32 @@ export function createLinkOnce(
       }
       return link({ ...input, chapterId: null });
     });
+  const linkNow = (key: string, input: LinkGameInput, stamp: string): Promise<boolean> =>
+    linkOrUnfiled(input).then(
+      () => {
+        linked.set(key, stamp);
+        return true;
+      },
+      (error: unknown) => {
+        if (!reported.has(key)) {
+          reported.add(key);
+          onError(ipcErrorMessage(error));
+        }
+        return false;
+      }
+    );
   return (input: LinkGameInput, stamp = ""): Promise<boolean> => {
     const key = `${input.repertoireId}\u0000${input.gameId}\u0000${input.kind}`;
-    if (linked.get(key) === stamp) return Promise.resolve(true);
     const pending = running.get(key);
-    if (pending) return pending;
-    const attempt = linkOrUnfiled(input)
-      .then(
-        () => {
-          linked.set(key, stamp);
-          return true;
-        },
-        (error: unknown) => {
-          if (!reported.has(key)) {
-            reported.add(key);
-            onError(ipcErrorMessage(error));
-          }
-          return false;
-        }
-      )
-      .finally(() => running.delete(key));
-    running.set(key, attempt);
+    if (pending?.stamp === stamp) return pending.attempt;
+    if (!pending && linked.get(key) === stamp) return Promise.resolve(true);
+    const attempt = pending
+      ? pending.attempt.then(() => (linked.get(key) === stamp ? true : linkNow(key, input, stamp)))
+      : linkNow(key, input, stamp);
+    running.set(key, { stamp, attempt });
+    void attempt.finally(() => {
+      if (running.get(key)?.attempt === attempt) running.delete(key);
+    });
     return attempt;
   };
 }

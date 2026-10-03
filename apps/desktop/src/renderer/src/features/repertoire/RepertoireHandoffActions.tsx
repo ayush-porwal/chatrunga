@@ -1,9 +1,9 @@
 import { BookOpen, Undo2 } from "lucide-react";
-import { positionStatus } from "@/lib/position-status";
 import { Button } from "@/components/ui/button";
 import { mainlineEnd } from "../../app/useGameAutosave";
 import { useGameStore } from "../../stores/game-store";
 import { isHandoffGame, useRepertoireHandoffStore } from "../../stores/repertoire-handoff-store";
+import { gameHasEnded } from "./handoffs";
 
 /**
  * The titlebar's actions once a game played from a repertoire (Play from here) has ended:
@@ -19,11 +19,13 @@ export function RepertoireHandoffActions({
 }) {
   const played = useRepertoireHandoffStore((state) => state.played);
   const gameId = useGameStore((state) => state.gameId);
-  // Decided by a result (resignation, flag, agreement) or on the board at the end of the game.
-  const ended = useGameStore(
-    (state) =>
-      Boolean(state.gameOutcome) ||
-      positionStatus(mainlineEnd(state.moveTree)?.fenAfter ?? state.currentFen).isEnd
+  // Decided by a result (resignation, flag, agreement; saved with a reopened game) or on the board.
+  const ended = useGameStore((state) =>
+    gameHasEnded({
+      gameOutcome: state.gameOutcome,
+      headers: state.headers,
+      endFen: mainlineEnd(state.moveTree)?.fenAfter ?? state.currentFen
+    })
   );
   const engineGame = useGameStore((state) => state.source === "engine-game");
   if (!ended || !engineGame || !isHandoffGame(played, gameId)) return null;
