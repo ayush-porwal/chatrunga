@@ -1,10 +1,11 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { defaultSettings } from "@chaturanga/shared/types/settings";
 import { useSettingsQuery } from "../../queries/api";
 import { Badge } from "@/components/ui/badge";
 import { card, motion } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useBoardFocused } from "./board-focus";
+import { useSnappedBoardFrame } from "./useBoardFrame";
 
 /*
  * The board workspace: ONE layout for every board screen (free board, Analysis, Game review,
@@ -138,7 +139,9 @@ function useToggleEasing(visible: boolean): boolean {
  * (none while the bar is off). The square is
  * computed once from the board cell (a size container): as large as fits after the two 2rem rows
  * and gaps (the same 5rem that `--workspace-board` subtracts) and the eval column, with a 100rem
- * ceiling. The column is always reserved, so the board never moves when the bar comes and goes.
+ * ceiling, then rounded down to whole-pixel squares (useSnappedBoardFrame) so Chessground's board
+ * fills the frame exactly. The column is always reserved, so the board never moves when the bar
+ * comes and goes.
  */
 /** The eval column's width, zeroed while the bar is off. */
 const NO_EVAL_COLUMN = { "--workspace-eval": "0px" } as CSSProperties;
@@ -166,21 +169,37 @@ export function BoardStage({
 }) {
   // The bar's column is on the side the user chose, or gone (and the board wider) with the bar off.
   const { shown, right } = useEvalBarPlacement();
+  const probeRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  useSnappedBoardFrame(probeRef, frameRef);
+  const boardColumn = right ? "col-start-1" : "col-start-2";
   return (
+    // `--board-avail`: the frame's largest edge in the cell (beside the eval column, under the rows).
+    // The board column is as wide as the frame, which is that edge snapped to whole-pixel squares, so
+    // the player rows and the eval bar line up with the board's own edges.
     <div
       className={cn(
-        "grid w-[min(100cqw,calc(100cqh_-_5rem_+_var(--workspace-eval)),calc(100rem_+_var(--workspace-eval)))] min-w-0 gap-y-2",
-        right ? "grid-cols-[minmax(0,1fr)_var(--workspace-eval)]" : "grid-cols-[var(--workspace-eval)_minmax(0,1fr)]"
+        "relative grid min-w-0 gap-y-2 [--board-avail:min(100cqw_-_var(--workspace-eval),100cqh_-_5rem,100rem)]",
+        right ? "grid-cols-[auto_var(--workspace-eval)]" : "grid-cols-[var(--workspace-eval)_auto]"
       )}
       style={shown ? undefined : NO_EVAL_COLUMN}
     >
-      <div className={cn("min-w-0", right ? "col-start-1" : "col-start-2")}>{top}</div>
+      <div ref={probeRef} className="invisible absolute h-0 w-(--board-avail)" aria-hidden="true" />
+      {/* The rows take the board's width and never widen it (no intrinsic width of their own). */}
+      <div className={cn("min-w-0 contain-inline-size", boardColumn)}>{top}</div>
       {shown ? <div className={cn("row-start-2", right ? "col-start-2 pl-1.5" : "col-start-1 pr-1.5")}>{evalBar}</div> : null}
-      {/* The one board frame: hairline border + radius, no shadow, no card around it. */}
-      <div className={cn("row-start-2 aspect-square w-full overflow-hidden rounded-lg border border-line", right ? "col-start-1" : "col-start-2")}>
+      {/* The one board frame: hairline border + radius, no shadow, no card around it. Its content box
+          is the board (the fallback edge is only for the first layout, before it's measured). */}
+      <div
+        ref={frameRef}
+        className={cn(
+          "board-frame row-start-2 box-content size-[var(--board-size,calc(var(--board-avail)_-_2px))] overflow-hidden rounded-lg border border-line",
+          boardColumn
+        )}
+      >
         {children}
       </div>
-      <div className={cn("min-w-0", right ? "col-start-1" : "col-start-2")}>{bottom}</div>
+      <div className={cn("min-w-0 contain-inline-size", boardColumn)}>{bottom}</div>
     </div>
   );
 }

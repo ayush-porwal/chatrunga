@@ -370,12 +370,12 @@ export function ControlledBoard({
         }
       }}
     >
-      {/* Fills the stage's frame edge to edge, like the other boards. Chessground's classes stay in
-          className so React reconciliation never strips them. */}
+      {/* Fills the stage's frame edge to edge, like the other boards; the frame clips the corners.
+          Chessground's classes stay in className so React reconciliation never strips them. */}
       <div
         ref={elementRef}
         className={cn(
-          "cg-wrap board-surface h-full w-full overflow-hidden rounded-lg",
+          "cg-wrap board-surface h-full w-full",
           interactive && "manipulable",
           pieceClassName,
           orientation === "white" ? "orientation-white" : "orientation-black"
