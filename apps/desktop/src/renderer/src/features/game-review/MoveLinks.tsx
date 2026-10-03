@@ -41,19 +41,22 @@ export function MoveLink({
   children,
   onActivate,
   className,
-  nativeTitle = true
+  nativeTitle = true,
+  label
 }: {
   san: string;
   children?: ReactNode;
   onActivate: () => void;
   className?: string;
+  /** What activating it does, for assistive tech (default: going to the move's position). */
+  label?: string;
   /** The browser's "Go to …" hint; off where the position itself shows on hover (engine lines). */
   nativeTitle?: boolean;
 }) {
   return (
     <button
       type="button"
-      aria-label={`Go to ${san} position`}
+      aria-label={label ?? `Go to ${san} position`}
       title={nativeTitle ? `Go to ${san}` : undefined}
       onClick={onActivate}
       className={cn(

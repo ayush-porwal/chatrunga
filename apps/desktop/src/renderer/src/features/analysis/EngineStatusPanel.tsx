@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useMemo, useState } from "react";
+import { Fragment, memo, useCallback, useMemo, useState, type ReactNode } from "react";
 import { ChevronDown, Cpu, Lock, Play, RotateCcw, Settings, Square } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { formatScore } from "../game-review/review-score";
@@ -121,6 +121,7 @@ const EngineLineRow = memo(function EngineLineRow({
   expanded,
   onToggle,
   onGoToLine,
+  goToLineLabel,
   onPreview
 }: {
   index: number;
@@ -130,6 +131,7 @@ const EngineLineRow = memo(function EngineLineRow({
   expanded: boolean;
   onToggle: (multipv: number) => void;
   onGoToLine?: GoToLine;
+  goToLineLabel?: (san: string) => string;
   /** A move of this line is hovered or focused (its position shows below the lines). */
   onPreview?: (target: PreviewTarget) => void;
 }) {
@@ -163,6 +165,7 @@ const EngineLineRow = memo(function EngineLineRow({
                       <MoveLink
                         san={step.san}
                         nativeTitle={false}
+                        label={goToLineLabel?.(step.san)}
                         className="text-current hover:text-accent"
                         onActivate={() => onGoToLine({ startNodeId: nodeId, moves: sans.slice(0, moveIndex + 1) })}
                       >
@@ -225,7 +228,15 @@ function previewFor(fen: string, lines: readonly EngineInfo[], target: PreviewTa
  * the line's score; the line itself is the one read above it, not repeated. Below the lines, it
  * never covers the moves being read.
  */
-function LinePreviewCard({ preview, orientation }: { preview: LinePreview; orientation: Color }) {
+function LinePreviewCard({
+  preview,
+  orientation,
+  compact
+}: {
+  preview: LinePreview;
+  orientation: Color;
+  compact: boolean;
+}) {
   return (
     // The line is read above (its move highlighted there), so the card names it only for assistive tech.
     <div
@@ -237,7 +248,7 @@ function LinePreviewCard({ preview, orientation }: { preview: LinePreview; orien
         fen={preview.fenAfter}
         orientation={orientation}
         lastMove={[preview.uci.slice(0, 2), preview.uci.slice(2, 4)]}
-        className="aspect-square w-full max-w-md justify-self-center"
+        className={cn("aspect-square w-full justify-self-center", compact ? "max-w-56" : "max-w-md")}
       />
       {preview.score ? (
         <p className="text-xs text-fg-muted">
@@ -265,6 +276,8 @@ export type EnginePanelPosition = {
   engineGame: boolean;
   /** A move of a line was picked: the line up to it, from `nodeId`. Unset, the moves only show. */
   onGoToLine?: GoToLine;
+  /** What picking a move does, for assistive tech (default: going to its position). */
+  goToLineLabel?: (san: string) => string;
 };
 
 /** The game board's position for its Engine tab: picking a line's move walks the board there. */
@@ -292,6 +305,16 @@ type EnginePanelActions = {
   onOpenSettings?: () => void;
 };
 
+/** How a screen other than the board's Engine tab fits the panel in (see StudyEnginePanel). */
+type EnginePanelLayout = {
+  /** A control at the end of the header (e.g. Close); the header then always shows. */
+  headerAction?: ReactNode;
+  /** One line under "Lines" saying what picking a move does. */
+  linesHint?: ReactNode;
+  /** A smaller preview board, for a panel that shares its height with other content. */
+  compactPreview?: boolean;
+};
+
 /**
  * Workspace "Engine" tab: live search stats and principal variations (flat — the panel is the card).
  * Locked while a Lichess game is being played: outside help is against Lichess's fair-play rules.
@@ -304,7 +327,9 @@ export function EngineStatusPanel(props: EnginePanelActions) {
  * The engine's search and lines for `position` (the board's, or another screen's such as a
  * repertoire study's), locked while a Lichess game is being played.
  */
-export function EngineAnalysisPanel(props: EnginePanelActions & { position: EnginePanelPosition }) {
+export function EngineAnalysisPanel(
+  props: EnginePanelActions & EnginePanelLayout & { position: EnginePanelPosition }
+) {
   const onlineGame = useLichessStore(selectLiveGameInProgress);
   if (onlineGame) {
     return (
@@ -321,8 +346,11 @@ function EngineStatusPanelContent({
   position,
   onStartAnalysis,
   onStopAnalysis,
-  onOpenSettings
-}: EnginePanelActions & { position: EnginePanelPosition }) {
+  onOpenSettings,
+  headerAction,
+  linesHint,
+  compactPreview = false
+}: EnginePanelActions & EnginePanelLayout & { position: EnginePanelPosition }) {
   // Only what this panel shows (engine info arrives throttled, ~6 updates a second at most).
   const { status, latestInfo, topLines, bestMove, error, activeEngineId } = useAnalysisStore(
     useShallow((state) => ({
@@ -334,7 +362,7 @@ function EngineStatusPanelContent({
       activeEngineId: state.activeEngineId
     }))
   );
-  const { fen, nodeId, orientation, analysing, engineGame, onGoToLine } = position;
+  const { fen, nodeId, orientation, analysing, engineGame, onGoToLine, goToLineLabel } = position;
   const settings = useSettingsQuery();
   const analysisSettings = { ...defaultSettings, ...(settings.data ?? {}) };
   const searchLimit = analysisLimitLabel(analysisSettings);
@@ -378,7 +406,7 @@ function EngineStatusPanelContent({
 
   return (
     <section className="grid content-start gap-4">
-      {hasData || !idle ? (
+      {hasData || !idle || headerAction ? (
         // The tab above already says "Engine": the header names the engine, how far it searches,
         // and holds the controls (Stop / Start, and Restart from scratch).
         <div className="flex min-w-0 items-center justify-between gap-3">
@@ -421,6 +449,7 @@ function EngineStatusPanelContent({
                 Start
               </Button>
             ) : null}
+            {headerAction}
           </div>
         </div>
       ) : null}
@@ -435,6 +464,7 @@ function EngineStatusPanelContent({
           {topLines.length ? (
             <div className="grid gap-1">
               <Eyebrow>Lines</Eyebrow>
+              {linesHint ? <p className="text-xs text-fg-muted">{linesHint}</p> : null}
               {/* Rows are reserved up to the MultiPV count so lines arriving never push content down. */}
               {/* The board's piece set, so the lines' figurines are the board's pieces. */}
               <ol
@@ -456,11 +486,12 @@ function EngineStatusPanelContent({
                     expanded={expandedLines.has(line?.multipv ?? index + 1)}
                     onToggle={toggleLine}
                     onGoToLine={onGoToLine}
+                    goToLineLabel={goToLineLabel}
                     onPreview={setPreview}
                   />
                 ))}
               </ol>
-              {preview ? <LinePreviewCard preview={preview} orientation={orientation} /> : null}
+              {preview ? <LinePreviewCard preview={preview} orientation={orientation} compact={compactPreview} /> : null}
             </div>
           ) : null}
         </>

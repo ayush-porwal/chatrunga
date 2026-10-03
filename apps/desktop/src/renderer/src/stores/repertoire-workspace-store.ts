@@ -85,6 +85,13 @@ type Actions = {
   /** Plays a move from the selected node: selects an existing child or adds a new one. */
   playMove: (uci: string, san: string, fenAfter: string) => { nodeId: string; created: boolean };
   /**
+   * Plays `ucis` from `fromNodeId` as one undo step (an engine line picked in study), each move as
+   * a move played on the board would be: one the chapter has is followed, a new one is added with
+   * a board move's edge. Selects the last move. Null, changing nothing, when the node is unknown,
+   * the line is empty or a move is illegal where it's played.
+   */
+  playLine: (fromNodeId: string, ucis: readonly string[]) => { nodeId: string; created: boolean } | null;
+  /**
    * Stages a move from another screen (a game's opening comparison) under `parentNodeId`: an
    * existing child is only selected; a new one is added with `edge` and selected, unsaved until
    * autosave. A reference stage selects the parent instead, so Choices lists the move with Accept.
@@ -472,6 +479,31 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
           { undoable: true, selectedNodeId: added.node.id }
         );
         return { nodeId: added.node.id, created: true };
+      },
+
+      playLine: (fromNodeId, ucis) => {
+        const start = get().chapter?.tree.find((node) => node.id === fromNodeId);
+        if (!start || !ucis.length) return null;
+        // The whole line is checked before anything is added: an illegal move adds none of it.
+        const moves: Array<{ uci: string; san: string; fenAfter: string }> = [];
+        let fen = start.fenAfter;
+        for (const uci of ucis) {
+          const played = playUci(fen, uci);
+          if (!played) return null;
+          moves.push({ uci, ...played });
+          fen = played.fenAfter;
+        }
+        return group(() => {
+          set({ selectedNodeId: start.id });
+          let created = false;
+          let nodeId = start.id;
+          for (const move of moves) {
+            const result = get().playMove(move.uci, move.san, move.fenAfter);
+            created ||= result.created;
+            nodeId = result.nodeId;
+          }
+          return { nodeId, created };
+        });
       },
 
       stageMove: (parentNodeId, uci, edge) => {

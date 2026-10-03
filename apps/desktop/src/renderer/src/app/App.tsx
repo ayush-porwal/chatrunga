@@ -53,7 +53,6 @@ import { useBoardShortcuts } from "./useBoardShortcuts";
 import { useEngineDriver, type AnalysisOptions } from "./useEngineDriver";
 import {
   flushGameAutosave,
-  holdUntilChanged,
   IMPORT_NEEDS_SAVE,
   mainlineEnd,
   useGameAutosave
@@ -93,7 +92,6 @@ import {
   type RepertoireDetail
 } from "@chaturanga/shared/types/repertoire";
 import {
-  buildAnalysisSnapshot,
   buildInitialSession,
   handoffAtEnd,
   LIVE_GAME_NOTICE,
@@ -672,7 +670,11 @@ export function App() {
   /** Shows a repertoire screen at `path`; the route change is part of the same view transition. */
   function showRepertoireView(view: AppView, path: string) {
     // Live analysis stops; a review of the game behind keeps running (Back to it shows its progress).
-    if (useGameStore.getState().mode !== "engine") stopEngineWork({ keepReview: true });
+    // Study's engine panel stops its own search (closed, Study left, another chapter): while it is
+    // open the engine already searches the study, not the board, and another visit to the same
+    // chapter (Back, a transposition) keeps it running.
+    const studyEngineOpen = useAnalysisStore.getState().target !== null;
+    if (useGameStore.getState().mode !== "engine" && !studyEngineOpen) stopEngineWork({ keepReview: true });
     if (!boardViews.has(view) || !repertoireViews.has(appView)) setFocusMode(false);
     setAppView(view, () => navigate(path, { replace: true }));
   }
@@ -791,7 +793,7 @@ export function App() {
     openRepertoirePractice(repertoireScreen.repertoireId, { preset: presetForSetup(repertoireScreen.preset) });
   }
 
-  // ---- Repertoire handoffs (Study → Analyze / Play from here) and the Lichess guard -----------
+  // ---- Repertoire handoffs (Study → Play from here) and the Lichess guard ----------------------
 
   /**
    * Runs a repertoire command unless a Lichess game being played would lose the screen to it; then
@@ -884,7 +886,7 @@ export function App() {
    * no longer loaded, or its position is over.
    */
   function handoffOriginAfterFlush(
-    command: "analyze" | "play-from-here",
+    command: RepertoireCommand,
     action: string
   ): HandoffOrigin | null {
     if (repertoireCommandBlocked(useLichessStore.getState(), command)) {
@@ -901,34 +903,6 @@ export function App() {
       return null;
     }
     return origin;
-  }
-
-  /**
-   * Study → Analyze: the chapter's route to the selected node as a new, unsaved analysis game
-   * (saved to the library only once changed). Back returns to the chapter at the same node and tab.
-   */
-  async function analyzeFromStudy() {
-    if (!desktopApiAvailable) return;
-    const request = ++latestNavigation.current;
-    if (!(await flushStudyForHandoff(request, "Analyze", () => on.analyzeFromStudy()))) return;
-    const origin = handoffOriginAfterFlush("analyze", "Analyze");
-    if (!origin) return;
-    commitCurrent();
-    endBoardActivity();
-    currentGame().loadGame(buildAnalysisSnapshot(origin));
-    holdUntilChanged();
-    currentGame().setEngineSide(null);
-    currentGame().clearEngineMatchExtras();
-    currentGame().setMode("analysis");
-    if (defaultEngineId && !useAnalysisStore.getState().activeEngineId) {
-      useAnalysisStore.getState().setActiveEngine(defaultEngineId);
-    }
-    useAnalysisStore.getState().restartSearch();
-    setFocusMode(false);
-    showGame("engine");
-    currentGame().setMatchFeedback(
-      "Analysing a copy of the chapter line. Back returns to the chapter."
-    );
   }
 
   /**
@@ -1261,9 +1235,6 @@ export function App() {
     repertoirePracticeStarted: useEventCallback(practiceSessionStarted),
     repertoirePracticeSetup: useEventCallback(() =>
       unlessRepertoireBlocked("open-practice", practiceSetup)
-    ),
-    analyzeFromStudy: useEventCallback(() =>
-      unlessRepertoireBlocked("analyze", () => void analyzeFromStudy())
     ),
     playFromStudy: useEventCallback(() =>
       unlessRepertoireBlocked("play-from-here", () => void playFromStudy())

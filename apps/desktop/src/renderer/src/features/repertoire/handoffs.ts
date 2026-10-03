@@ -1,4 +1,3 @@
-import { nanoid } from "nanoid";
 import { addMoveNode, exportGameToPgn, rootPly } from "@chaturanga/shared/chess/pgn";
 import { applyUserMove, statusForFen } from "@chaturanga/shared/chess/position";
 import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
@@ -16,8 +15,8 @@ import { isHandoffGame, type PlayedHandoff } from "../../stores/repertoire-hando
 import { pathLabel } from "./repertoire-model";
 
 /*
- * Study → Analyze / Play from here (design §6.2, §6.4, §9.3): the pure parts. A handoff copies the
- * chapter's route into a new, independent game; nothing here reads or writes a store.
+ * Study → Play from here (design §6.2, §6.4, §9.3): the pure parts. A handoff copies the chapter's
+ * route into a new, independent game; nothing here reads or writes a store.
  */
 
 const DECIDED_RESULTS = new Set(["1-0", "0-1", "1/2-1/2"]);
@@ -58,7 +57,7 @@ export function chapterPath(chapter: Pick<RepertoireChapter, "tree">, nodeId: st
   });
 }
 
-/** "<repertoire> › <chapter>", the snapshot's Event and the start of the Play card's label. */
+/** "<repertoire> › <chapter>", the start of the Play card's label. */
 export function handoffTitle(origin: Pick<HandoffOrigin, "repertoireName" | "chapter">): string {
   return `${origin.repertoireName} › ${origin.chapter.title}`;
 }
@@ -68,63 +67,13 @@ export function handoffPathLabel(origin: Pick<HandoffOrigin, "chapter" | "nodeId
   return pathLabel(buildChapterLookup(origin.chapter), origin.nodeId);
 }
 
-/** Why Analyze and Play from here are refused at a mate or a draw. */
+/** Why Play from here is refused (and the study engine has nothing to search) at a mate or a draw. */
 export const NO_MOVES_TO_PLAY = "This position has no moves to play";
 
-/** Whether the handoff's position is over (mate, stalemate, a draw): nothing to analyse or play. */
+/** Whether the handoff's position is over (mate, stalemate, a draw): nothing to play. */
 export function handoffAtEnd(origin: Pick<HandoffOrigin, "chapter" | "nodeId">): boolean {
   const path = chapterPath(origin.chapter, origin.nodeId);
   return statusForFen(path[path.length - 1]?.fenAfter ?? origin.chapter.rootFen).isEnd;
-}
-
-/**
- * Study → Analyze: a new unsaved game (no library id, source "analysis") whose tree is the
- * chapter's root-to-node route, with each node's comment, NAGs, arrows and highlights copied and
- * fresh node ids (the root stays "root", as every game tree's does). The cursor is on the selected
- * node and the board faces the repertoire's colour. Variations explored on it reach the repertoire
- * only through "Add to repertoire".
- */
-export function buildAnalysisSnapshot(
-  origin: HandoffOrigin,
-  newId: () => string = nanoid
-): GameSession {
-  const path = chapterPath(origin.chapter, origin.nodeId);
-  const rootFen = path[0]?.fenAfter ?? origin.chapter.rootFen;
-  const basePly = rootPly(rootFen);
-  const ids = path.map((node, index) => (index === 0 ? REPERTOIRE_ROOT_NODE_ID : newId()));
-  const moveTree: MoveNode[] = path.map((node, index) => ({
-    id: ids[index],
-    parentId: index === 0 ? null : ids[index - 1],
-    san: index === 0 ? null : node.san,
-    uci: index === 0 ? null : node.uci,
-    fenBefore: index === 0 ? rootFen : node.fenBefore,
-    fenAfter: index === 0 ? rootFen : node.fenAfter,
-    ply: basePly + index,
-    nags: [...node.nags],
-    comment: node.comment,
-    clockAfter: null,
-    arrows: node.arrows.map((arrow) => ({ ...arrow })),
-    highlights: node.highlights.map((highlight) => ({ ...highlight })),
-    children: index + 1 < path.length ? [ids[index + 1]] : []
-  }));
-  if (!moveTree.length) moveTree.push(emptyRoot(rootFen));
-  const headers: GameHeaders = {
-    event: handoffTitle(origin),
-    site: "?",
-    result: "*",
-    orientationHint: origin.color
-  };
-  const current = moveTree[moveTree.length - 1];
-  return {
-    id: null,
-    source: "analysis",
-    headers,
-    rootFen,
-    currentFen: current.fenAfter,
-    currentNodeId: current.id,
-    moveTree,
-    pgn: exportGameToPgn({ headers, moveTree })
-  };
 }
 
 /** Study → Play from here: what the Play page needs to start an engine game at the handoff. */
@@ -213,7 +162,6 @@ export type RepertoireCommand =
   | "resume-practice"
   | "refresh-decision"
   | "stage-response"
-  | "analyze"
   | "play-from-here"
   | "return-to-repertoire"
   | "review-opening";
@@ -230,7 +178,6 @@ const BOARD_REPLACING: ReadonlySet<RepertoireCommand> = new Set<RepertoireComman
   "resume-practice",
   "refresh-decision",
   "stage-response",
-  "analyze",
   "play-from-here",
   "return-to-repertoire",
   "review-opening"

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { EngineInfo, EngineStatus } from "@chaturanga/shared/types/engine";
+import type { AnalysisTarget } from "../features/analysis/live-analysis";
 
 type AnalysisStore = {
   /** The engine running now (live analysis, or the opponent in an engine game). */
@@ -35,6 +36,13 @@ type AnalysisStore = {
   setInfos: (infos: readonly EngineInfo[]) => void;
   setBestMove: (bestMove: string | null) => void;
   setError: (error: string | null) => void;
+  /**
+   * A position off the game board for live analysis to search instead of the board's (see
+   * AnalysisTarget). Only its owner sets and clears it: `reset` (the board's engine work ending)
+   * leaves it.
+   */
+  target: AnalysisTarget | null;
+  setTarget: (target: AnalysisTarget | null) => void;
   reset: () => void;
 };
 
@@ -124,6 +132,8 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
   },
   setBestMove: (bestMove) => set({ bestMove, status: "ready" }),
   setError: (error) => set({ error, status: "error" }),
+  target: null,
+  setTarget: (target) => set({ target }),
   reset: () =>
     set({
       activeEngineId: null,

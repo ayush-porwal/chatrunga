@@ -447,6 +447,58 @@ describe("staging a move from a game comparison", () => {
   });
 });
 
+describe("playing an engine line into the chapter", () => {
+  beforeEach(() => store().reset());
+
+  it("adds the line from the node as one undo step with a board move's edges, selecting its end", () => {
+    load("w2");
+    // After 1.e4 e5 2.Nf3: 2…Nc6 3.Bb5, both new.
+    const result = store().playLine("w2", ["b8c6", "f1b5"]);
+    expect(result).toMatchObject({ created: true });
+    const end = store().chapter!.tree.find((node) => node.id === result!.nodeId)!;
+    const reply = store().chapter!.tree.find((node) => node.id === end.parentId)!;
+    expect([reply.san, end.san]).toEqual(["Nc6", "Bb5"]);
+    expect(reply.parentId).toBe("w2");
+    expect(store().chapter!.nodeMeta[reply.id]).toEqual({ edge: "covered" });
+    expect(store().chapter!.nodeMeta[end.id]).toEqual({ edge: "reference" });
+    expect(store().selectedNodeId).toBe(end.id);
+    expect(store().dirty).toBe(true);
+    expect(store().undoStack).toHaveLength(1);
+    store().undo();
+    expect(store().chapter!.tree).toHaveLength(5);
+    expect(store().selectedNodeId).toBe("w2");
+    store().redo();
+    expect(store().chapter!.tree.some((node) => node.id === end.id)).toBe(true);
+  });
+
+  it("follows the moves the chapter has and adds only the rest", () => {
+    load();
+    const result = store().playLine("root", ["e2e4", "e7e5", "f1c4"]);
+    const end = store().chapter!.tree.find((node) => node.id === result!.nodeId)!;
+    expect(end).toMatchObject({ parentId: "w1", san: "Bc4" });
+    expect(store().chapter!.tree).toHaveLength(6);
+  });
+
+  it("only selects a line the chapter already has: no undo step, nothing to save", () => {
+    load();
+    expect(store().playLine("w0", ["e7e5", "g1f3"])).toEqual({ nodeId: "w2", created: false });
+    expect(store().selectedNodeId).toBe("w2");
+    expect(store().dirty).toBe(false);
+    expect(store().undoStack).toHaveLength(0);
+  });
+
+  it("changes nothing for an unknown node, an empty line or an illegal move anywhere in it", () => {
+    load("w1");
+    expect(store().playLine("missing", ["g1f3"])).toBeNull();
+    expect(store().playLine("w1", [])).toBeNull();
+    // Nc3 is legal, the next "move" isn't: not even Nc3 is added.
+    expect(store().playLine("w1", ["b1c3", "e5e4"])).toBeNull();
+    expect(store().chapter!.tree).toHaveLength(5);
+    expect(store().selectedNodeId).toBe("w1");
+    expect(store().dirty).toBe(false);
+  });
+});
+
 describe("repertoire workspace decision drafts", () => {
   const key = decisionDraftKey("r1", "k1", "prompt");
   const draft = () => store().decisionDrafts[key];

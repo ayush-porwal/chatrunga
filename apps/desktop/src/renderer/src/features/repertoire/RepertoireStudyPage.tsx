@@ -75,6 +75,7 @@ import { NO_MOVES_TO_PLAY } from "./handoffs";
 import { StudyChaptersPanel } from "./StudyChaptersPanel";
 import { StudyChoicesPanel } from "./StudyChoicesPanel";
 import { StudyDecisionPractice } from "./StudyDecisionPractice";
+import { StudyEnginePanel, StudyEvalBar } from "./StudyEnginePanel";
 import { StudyNotesPanel } from "./StudyNotesPanel";
 import { StudySourcesSection } from "./StudySourcesSection";
 import { StudyTree } from "./StudyTree";
@@ -121,7 +122,7 @@ export function RepertoireStudyPage({
   onHub,
   onPositionChanged,
   onOpenGame,
-  onAnalyze,
+  onOpenEngineSettings,
   onPlayFromHere
 }: {
   repertoireId: string;
@@ -146,15 +147,13 @@ export function RepertoireStudyPage({
   onPositionChanged: () => void;
   /** A source link's saved game, opened on the board at the linked move. */
   onOpenGame?: (gameId: string, nodeId: string | null) => void;
-  /**
-   * "Analyze": the route to the selected node as a new unsaved game on the analysis board. App
-   * saves the draft first (and offers Retry when it can't); Back returns here.
-   */
-  onAnalyze?: () => void;
+  /** Settings' engines, offered by the engine panel (Analyze) when no engine is installed. */
+  onOpenEngineSettings?: () => void;
   /** "Play from here": an engine game from the selected position, as the repertoire's colour. */
   onPlayFromHere?: () => void;
 }) {
   const panelId = useId();
+  const enginePanelId = useId();
   const queryClient = useQueryClient();
   const desktop = Boolean(window.chaturanga?.repertoires);
   const detail = useRepertoireQuery(repertoireId);
@@ -182,6 +181,12 @@ export function RepertoireStudyPage({
     step: RepertoireChapter | undefined;
   } | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
+  /**
+   * The chapter the engine panel (Analyze) is open for: another chapter closes it, which stops
+   * its search (as closing it or leaving Study does).
+   */
+  const [engineChapterId, setEngineChapterId] = useState<string | null>(null);
+  const engineOpen = engineChapterId === chapterId;
   /** Set while this page removes the open chapter itself (not a "missing chapter" case). */
   const leavingChapter = useRef(false);
   const [mountedAt] = useState(() => Date.now());
@@ -476,8 +481,8 @@ export function RepertoireStudyPage({
     choices.rows.some((row) => row.state === "preferred" || row.state === "accepted")
   );
 
-  // Why Analyze and Play from here can't start (they also wait for the chapter to load, above).
-  // Study actions: a chapter left out of practice is still analysed and played from.
+  // Why Play from here can't start (it also waits for the chapter to load, above). A study action:
+  // a chapter left out of practice is still played from.
   const handoffUnavailable = statusForFen(node.fenAfter).isEnd ? NO_MOVES_TO_PLAY : null;
 
   const removeChapter = async (id: string) => {
@@ -670,6 +675,18 @@ export function RepertoireStudyPage({
     </>
   );
 
+  // Under the notices and above the tab, so the moves stay in view while the engine runs.
+  const enginePanel = engineOpen ? (
+    <StudyEnginePanel
+      id={enginePanelId}
+      chapter={draft}
+      node={node}
+      orientation={orientation}
+      onClose={() => setEngineChapterId(null)}
+      onOpenSettings={onOpenEngineSettings}
+    />
+  ) : null;
+
   const turn: Color = node.fenAfter.split(" ")[1] === "b" ? "black" : "white";
 
   return (
@@ -678,6 +695,9 @@ export function RepertoireStudyPage({
       tabPanel={tabPanelProps(panelId, tab)}
       board={
         <BoardStage
+          evalBar={
+            engineOpen ? <StudyEvalBar fen={node.fenAfter} orientation={orientation} /> : undefined
+          }
           top={
             <p className="flex h-8 min-w-0 items-center gap-2 text-sm text-fg-secondary">
               <SideDot color={color} />
@@ -733,7 +753,12 @@ export function RepertoireStudyPage({
           <Stat label="Decisions" value={`${decisionCount} in this chapter`} />
         </StatGroup>
       }
-      notices={notices}
+      notices={
+        <>
+          {notices}
+          {enginePanel}
+        </>
+      }
       footer={
         <>
           <RepertoireMoveNavigation
@@ -747,22 +772,22 @@ export function RepertoireStudyPage({
               Play a move on the board to add a variation.
             </p>
             <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5">
-              {onAnalyze ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  title={
-                    handoffUnavailable ??
-                    "Explore this position on the analysis board (a copy; the chapter stays as it is)"
-                  }
-                  disabled={handoffUnavailable !== null}
-                  onClick={onAnalyze}
-                >
-                  <Microscope />
-                  Analyze
-                </Button>
-              ) : null}
+              <Button
+                type="button"
+                variant={engineOpen ? "default" : "ghost"}
+                size="sm"
+                title={
+                  engineOpen
+                    ? "Close the engine"
+                    : "Show the engine's best lines for the selected position here"
+                }
+                aria-expanded={engineOpen}
+                aria-controls={engineOpen ? enginePanelId : undefined}
+                onClick={() => setEngineChapterId(engineOpen ? null : chapterId)}
+              >
+                <Microscope />
+                Analyze
+              </Button>
               {onPlayFromHere ? (
                 <Button
                   type="button"
