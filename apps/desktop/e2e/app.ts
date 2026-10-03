@@ -266,20 +266,21 @@ export const FAKE_ENGINE = join(desktopDir, "src/main/engine/__fixtures__/fake-l
 
 /**
  * Registers the fake engine as the default, through the preload bridge (the Settings form needs a
- * native file picker; this is set-up, not the journey). Its log of UCI commands goes to `logFile`.
+ * native file picker; this is set-up, not the journey). Its log of UCI commands goes to `logFile`;
+ * `mode` is the script's own (e.g. "lines": lines that fit the position, see the script).
  */
-export function registerFakeEngine(page: Page, logFile: string) {
+export function registerFakeEngine(page: Page, logFile: string, mode?: string) {
   return page.evaluate(
-    ([executablePath, script, log]) => {
+    ([executablePath, script, log, mode]) => {
       const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga;
       return api.engines.create({
         name: "Fake UCI",
         executablePath,
-        args: [script, log],
+        args: mode ? [script, log, mode] : [script, log],
         isDefault: true
       });
     },
-    [process.execPath, FAKE_ENGINE, logFile] as const
+    [process.execPath, FAKE_ENGINE, logFile, mode ?? ""] as const
   );
 }
 

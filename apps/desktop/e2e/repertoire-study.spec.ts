@@ -129,7 +129,7 @@ test("a refused practice prompt keeps its text through leaving study, then Retry
   await expect(titlebar(page)).toContainText("Saved");
 });
 
-test("another repertoire's refused hint doesn't keep this one's chapter from Analyze", async ({
+test("another repertoire's refused hint doesn't keep this one's chapter from Play from here", async ({
   launch
 }) => {
   const OTHER = "Second repertoire e2e";
@@ -149,11 +149,11 @@ test("another repertoire's refused hint doesn't keep this one's chapter from Ana
   await expect(studyPanel(page).getByRole("alert")).toContainText("Simulated write failure");
   await backToHub(page);
 
-  // This repertoire's chapter is saved: Analyze opens.
+  // This repertoire's chapter is saved: Play from here opens.
   await page.getByRole("button", { name: `Study ${REPERTOIRE}`, exact: true }).click();
   await expect(titlebar(page)).toContainText("Saved");
-  await studyPanel(page).getByRole("button", { name: "Analyze", exact: true }).click();
-  await expect(page.getByText("Analysing a copy of the chapter line")).toBeVisible();
+  await studyPanel(page).getByRole("button", { name: "Play from here", exact: true }).click();
+  await expect(page.getByText(`${REPERTOIRE} › Italian — starting position`)).toBeVisible();
   await expect(page.getByText("This chapter couldn't be saved")).toHaveCount(0);
 
   // The other repertoire still holds its hint with Retry and Discard.
@@ -190,7 +190,7 @@ test("a chapter left out of practice still offers Analyze and Play from here", a
   const analyze = panel.getByRole("button", { name: "Analyze", exact: true });
   await expect(analyze).toBeEnabled();
   await analyze.click();
-  await expect(page.getByText("Analysing a copy of the chapter line")).toBeVisible();
+  await expect(panel.getByRole("region", { name: "Engine analysis" })).toBeVisible();
 });
 
 test("a chapter that can't be read keeps the study page with Retry", async ({ launch }) => {
