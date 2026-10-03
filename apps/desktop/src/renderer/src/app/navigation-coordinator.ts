@@ -225,8 +225,9 @@ export async function restoreBoard(
   if (snapshot.mode === "analysis") {
     const analysis = useAnalysisStore.getState();
     if (shell.defaultEngineId && !analysis.activeEngineId) analysis.setActiveEngine(shell.defaultEngineId);
-    // The search was stopped while away; the position may be the same, so ask for it again.
-    useAnalysisStore.getState().restartSearch();
+    // The search was stopped while away; the position may be the same, so ask for it again (the
+    // board's own search: a study's engine panel left on the way hands the engine back to it).
+    useAnalysisStore.getState().restartBoardSearch();
   }
   shell.exitFocus();
   return "restored";

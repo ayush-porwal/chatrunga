@@ -191,6 +191,8 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
     let lastTarget: AnalysisTarget | null = null;
     /** A search of an analysis target was started (its lines are in the analysis store). */
     let searchedTarget = false;
+    /** The searchEpoch when the current target was set (none: the last one's). */
+    let targetSetAt = 0;
     /** Last analysis attempt that failed for want of an engine (reported once, not on every update). */
     let missingEngineKey: string | null = null;
     let scheduled = false;
@@ -234,10 +236,12 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
       const status = statusForFen(game.currentFen);
       const target = useAnalysisStore.getState().target;
 
-      // A target cleared (the study's engine panel closed): its search stops and its lines go
-      // (an engine game's own state stays). The board's analysis doesn't resume behind it: it was
-      // stopped when the board was left, and searches again when the board is shown
-      // (restartSearch) or its position changes.
+      // A target cleared (the study's engine panel closed, Study left): its search stops and its
+      // lines go (an engine game's own state stays). The engine goes back to the board: its
+      // analysis searches again if the board was asked for since the target was set (Back to an
+      // analysis board, Analyze on it: restartBoardSearch, before or after the panel unmounts).
+      // Otherwise it doesn't resume behind Study: it was stopped when the board was left, and
+      // searches again when the board is shown or its position changes.
       if (lastTarget && !target) {
         if (searchedTarget) {
           stopAnalysis();
@@ -245,7 +249,8 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
         }
         searchedTarget = false;
         missingEngineKey = null;
-        const board = liveAnalysisSubject(game);
+        const boardWanted = useAnalysisStore.getState().boardSearchEpoch > targetSetAt;
+        const board = boardWanted ? null : liveAnalysisSubject(game);
         analysisKey = board ? `${board.key}|${optionsKey(analysisRef.current)}` : null;
       }
       lastTarget = target;
@@ -383,6 +388,7 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
     // A requested restart (restartSearch) re-runs the analysis for the same position; a target set,
     // moved or cleared changes what it searches.
     const unsubscribeRestart = useAnalysisStore.subscribe((state, previous) => {
+      if (state.target && !previous.target) targetSetAt = state.searchEpoch;
       if (state.searchEpoch !== previous.searchEpoch || state.target !== previous.target) schedule();
     });
     sync();

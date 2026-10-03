@@ -197,6 +197,10 @@ describe("Back / Forward", () => {
     expect(shell.stopEngineWork).toHaveBeenCalledWith({ stopSearch: false, keepReview: false });
     expect(useGameStore.getState().mode).toBe("analysis");
     expect(useAnalysisStore.getState().activeEngineId).toBe("stockfish");
+    // The board's own search: a study engine panel left on the way hands the engine back to it.
+    const { searchEpoch, boardSearchEpoch } = useAnalysisStore.getState();
+    expect(boardSearchEpoch).toBe(searchEpoch);
+    expect(searchEpoch).toBeGreaterThan(0);
   });
 
   it("starts a puzzle again rather than restoring it mid-solution", async () => {

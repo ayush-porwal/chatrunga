@@ -558,7 +558,7 @@ export function App() {
     if (defaultEngineId && !useAnalysisStore.getState().activeEngineId) {
       useAnalysisStore.getState().setActiveEngine(defaultEngineId);
     }
-    useAnalysisStore.getState().restartSearch();
+    useAnalysisStore.getState().restartBoardSearch();
     record("push", historyEntry("game"));
   }
 

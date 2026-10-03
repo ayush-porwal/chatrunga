@@ -31,6 +31,14 @@ type AnalysisStore = {
    */
   searchEpoch: number;
   restartSearch: () => void;
+  /**
+   * The searchEpoch of the last request to analyse the game board itself (Back to an analysis
+   * board, Analyze on it). A study engine panel's target cleared after such a request hands the
+   * engine back to the board's search (see useEngineDriver); one cleared without it doesn't.
+   */
+  boardSearchEpoch: number;
+  /** restartSearch for the game board's own analysis, shown again (see boardSearchEpoch). */
+  restartBoardSearch: () => void;
   setInfo: (info: EngineInfo) => void;
   /** Apply a throttled batch of engine infos in one update (one render per batch). */
   setInfos: (infos: readonly EngineInfo[]) => void;
@@ -111,6 +119,9 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
   resultSearchId: null,
   searchEpoch: 0,
   restartSearch: () => set((state) => ({ searchEpoch: state.searchEpoch + 1 })),
+  boardSearchEpoch: 0,
+  restartBoardSearch: () =>
+    set((state) => ({ searchEpoch: state.searchEpoch + 1, boardSearchEpoch: state.searchEpoch + 1 })),
   restartFresh: () =>
     set((state) => {
       if (state.resultKey) results.delete(state.resultKey);
