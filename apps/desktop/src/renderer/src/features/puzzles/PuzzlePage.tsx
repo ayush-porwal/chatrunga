@@ -517,10 +517,10 @@ function PositionTrainingFilters({
     <div className="grid gap-4">
       <RangeField
         label="Difficulty"
-        hint="1–10"
+        hint="1–4"
         className="max-w-sm"
         min={1}
-        max={10}
+        max={4}
         valueMin={difficultyMin}
         valueMax={difficultyMax}
         onMinChange={onDifficultyMinChange}
