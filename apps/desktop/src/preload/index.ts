@@ -161,6 +161,7 @@ const api: ChaturangaApi = {
     get: (id) => ipcRenderer.invoke("repertoires:get", id),
     getChapter: (input) => ipcRenderer.invoke("repertoires:getChapter", input),
     getDecision: (input) => ipcRenderer.invoke("repertoires:getDecision", input),
+    getPausedKeys: (id) => ipcRenderer.invoke("repertoires:getPausedKeys", id),
     getOccurrences: (input) => ipcRenderer.invoke("repertoires:getOccurrences", input),
     compareGame: (input) => ipcRenderer.invoke("repertoires:compareGame", input),
     previewAddFromGame: (input) => ipcRenderer.invoke("repertoires:previewAddFromGame", input),

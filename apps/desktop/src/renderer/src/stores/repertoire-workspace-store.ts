@@ -5,6 +5,7 @@ import { parseUci } from "chessops/util";
 import { addMoveNode } from "@chaturanga/shared/chess/pgn";
 import { positionFromFen } from "@chaturanga/shared/chess/position";
 import { nodeMetaOf } from "@chaturanga/shared/chess/repertoire-index";
+import { trainableChapter } from "@chaturanga/shared/chess/repertoire-training";
 import { standardCastlingUci } from "@chaturanga/shared/chess/review";
 import type { BoardArrow, BoardHighlight, Color, MoveNode } from "@chaturanga/shared/types/chess";
 import {
@@ -103,6 +104,12 @@ type Actions = {
     edge: RepertoireNodeMeta["edge"]
   ) => { nodeId: string; created: boolean } | null;
   setNodeMeta: (nodeId: string, patch: Partial<RepertoireNodeMeta>) => void;
+  /**
+   * "Practise this chapter": switches the chapter on as an opening chapter and accepts the first
+   * own move wherever none is accepted, covering reference replies (`trainableChapter`). Undo
+   * puts the moves' marks back (chapter fields are never undone).
+   */
+  makeChapterTrainable: () => void;
   setComment: (nodeId: string, text: string) => void;
   setShapes: (nodeId: string, arrows: BoardArrow[], highlights: BoardHighlight[]) => void;
   setChapterFields: (
@@ -532,6 +539,9 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
           },
           { undoable: true }
         ),
+
+      makeChapterTrainable: () =>
+        edit((chapter) => trainableChapter(get().color, chapter), { undoable: true }),
 
       setComment: (nodeId, text) => patchNode(nodeId, { comment: text.trim() ? text : null }),
 

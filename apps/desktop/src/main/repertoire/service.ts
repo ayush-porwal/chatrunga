@@ -272,6 +272,15 @@ export function getDecision(input: {
 }
 
 /**
+ * Position keys of the repertoire's paused decisions: practice leaves them out and a rehearsal
+ * plays their moves as context, so Study offers a rehearsal only where something else is asked.
+ */
+export function getPausedKeys(id: string): string[] {
+  requireRepertoire(id);
+  return [...decisionRepository.pausedKeys(id)].sort();
+}
+
+/**
  * Every occurrence of a position in the repertoire (any scope state: this is for study
  * navigation, not training), with its chapter title and SAN path. Each involved chapter's tree is
  * read once per call.

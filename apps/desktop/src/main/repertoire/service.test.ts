@@ -268,6 +268,20 @@ describe("repertoire service: chapters, decisions and index", () => {
     expect(decision).not.toHaveProperty("acceptanceFingerprint");
   });
 
+  it("getPausedKeys lists the paused decisions' position keys", () => {
+    const { id } = create();
+    expect(() => service.getPausedKeys("nope")).toThrow("Invalid repertoireId: not found");
+    const saved = save(id, [["e2e4"]]);
+    expect(service.getPausedKeys(id)).toEqual([]);
+    service.updateDecision({
+      repertoireId: id,
+      positionKey: START_KEY,
+      expectedRevision: saved.repertoire.revision,
+      patch: { paused: true }
+    });
+    expect(service.getPausedKeys(id)).toEqual([START_KEY]);
+  });
+
   it("an included own-side move makes exactly one decision with index rows", () => {
     const { id } = create();
     const result = save(id, [["e2e4", "e7e5"]]);

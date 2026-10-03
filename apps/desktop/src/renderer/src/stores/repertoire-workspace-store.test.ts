@@ -87,6 +87,21 @@ describe("repertoire workspace store", () => {
     expect(store().chapter!.nodeMeta.w0).toEqual({ edge: "included" });
   });
 
+  it("makes a chapter of reference moves practised in one undo step", () => {
+    const tree = sampleTree();
+    const reference = { w0: { edge: "reference" as const }, w1: { edge: "reference" as const } };
+    store().loadChapter(detailOf(), chapterOf(tree, reference, { enabled: false }));
+    store().makeChapterTrainable();
+    expect(store().chapter!.enabled).toBe(true);
+    expect(store().chapter!.nodeMeta.w0).toEqual({ edge: "included" });
+    expect(store().chapter!.nodeMeta.w1).toEqual({ edge: "covered" });
+    expect(store().dirty).toBe(true);
+    // Undo puts the moves' marks back; chapter fields (on for practice, kind) are never undone.
+    expect(store().undo()).toBe(true);
+    expect(store().chapter!.nodeMeta).toEqual(reference);
+    expect(store().chapter!.enabled).toBe(true);
+  });
+
   it("edits comments and shapes", () => {
     load();
     store().setComment("w0", "Main move");

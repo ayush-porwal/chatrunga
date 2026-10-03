@@ -17,12 +17,15 @@ import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import {
   DEFAULT_REHEARSAL_DEPTH_PLIES,
   canRehearseFrom,
+  lineEnds,
   rehearsalContext
 } from "@chaturanga/shared/chess/repertoire-rehearsal";
+import { chapterTraining } from "@chaturanga/shared/chess/repertoire-training";
 import type { BoardArrow, BoardHighlight, Color } from "@chaturanga/shared/types/chess";
-import type {
-  RepertoireChapter,
-  RepertoireChapterSummary
+import {
+  REPERTOIRE_ROOT_NODE_ID,
+  type RepertoireChapter,
+  type RepertoireChapterSummary
 } from "@chaturanga/shared/types/repertoire";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -41,6 +44,7 @@ import {
   useRepertoireChapterQuery,
   useRepertoireDecisionQuery,
   useRepertoireOccurrencesQuery,
+  useRepertoirePausedKeysQuery,
   useRepertoireQuery
 } from "../../queries/repertoire";
 import {
@@ -65,7 +69,6 @@ import {
   occurrencesInOtherChapters,
   lastMoveOf,
   pathLabel,
-  trainableDecisionCount,
   type DecisionTextDraft,
   type DecisionTextField
 } from "./repertoire-model";
@@ -78,7 +81,9 @@ import { StudyDecisionPractice } from "./StudyDecisionPractice";
 import { StudyEnginePanel, StudyEvalBar } from "./StudyEnginePanel";
 import { StudyNotesPanel } from "./StudyNotesPanel";
 import { StudySourcesSection } from "./StudySourcesSection";
+import { StudyTrainingNotice } from "./StudyTrainingNotice";
 import { StudyTree } from "./StudyTree";
+import { blockerExplanation, studyPracticeAvailability } from "./training-explanations";
 import {
   discardDecisionText,
   keepDecisionTextNow,
@@ -295,18 +300,36 @@ export function RepertoireStudyPage({
     () => (draft && lookup && node ? deriveChoices(draft, lookup, node.id, color, decision) : null),
     [draft, lookup, node, color, decision]
   );
-  const decisionCount = useMemo(
-    () => (draft ? trainableDecisionCount(color, draft) : 0),
-    [draft, color]
+  const training = useMemo(
+    () => (draft && lookup ? chapterTraining(color, draft, lookup) : null),
+    [draft, lookup, color]
   );
-  // "Rehearse from here" is offered in training scope within the default depth limit only.
+  const decisionCount = training?.decisionKeys.length ?? 0;
+  const pausedKeys = useRepertoirePausedKeysQuery(repertoireId).data;
+  const paused = useMemo(() => new Set(pausedKeys ?? []), [pausedKeys]);
+  // "Rehearse from here" is offered in training scope within the default depth limit only, where
+  // a line asks a decision that isn't paused (a paused one is played as context).
   const rehearsal = useMemo(
     () =>
       draft && lookup && draft.enabled && draft.kind === "opening"
-        ? rehearsalContext(draft, color, DEFAULT_REHEARSAL_DEPTH_PLIES, lookup)
+        ? rehearsalContext(draft, color, DEFAULT_REHEARSAL_DEPTH_PLIES, lookup, paused)
         : null,
-    [draft, lookup, color]
+    [draft, lookup, color, paused]
   );
+  const availability = useMemo(
+    () =>
+      studyPracticeAvailability({
+        blocker:
+          training?.blocker && lookup && draft
+            ? blockerExplanation(training.blocker, draft.title, lookup, color)
+            : null,
+        decisionKeys: training?.decisionKeys ?? [],
+        paused,
+        rehearsableLines: rehearsal ? lineEnds(rehearsal, REPERTOIRE_ROOT_NODE_ID).length : 0
+      }),
+    [training, lookup, draft, color, paused, rehearsal]
+  );
+  const practiceReasonId = useId();
 
   const selectNode = useEventCallback((nodeId: string) => workspace().selectNode(nodeId));
   useTreeKeyboardNavigation({
@@ -768,8 +791,14 @@ export function RepertoireStudyPage({
           />
           {/* Wraps in a narrow side panel: the four actions must never widen it (it would scroll sideways). */}
           <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-t border-line-subtle px-3 py-2">
-            <p className="min-w-0 flex-1 basis-32 truncate text-2xs text-fg-subtle">
-              Play a move on the board to add a variation.
+            <p
+              id={practiceReasonId}
+              className="min-w-0 flex-1 basis-32 truncate text-2xs text-fg-subtle"
+              title={availability.practice ?? availability.rehearse ?? undefined}
+            >
+              {availability.practice ??
+                availability.rehearse ??
+                "Play a move on the board to add a variation."}
             </p>
             <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5">
               <Button
@@ -809,8 +838,12 @@ export function RepertoireStudyPage({
                   type="button"
                   variant="outline"
                   size="sm"
-                  title="Play your moves along this chapter's lines, with the replies supplied"
-                  disabled={!draft.enabled || draft.kind !== "opening"}
+                  title={
+                    availability.rehearse ??
+                    "Play your moves along this chapter's lines, with the replies supplied"
+                  }
+                  disabled={availability.rehearse !== null}
+                  aria-describedby={availability.rehearse ? practiceReasonId : undefined}
                   onClick={() => void rehearse(null)}
                 >
                   <Route />
@@ -821,7 +854,9 @@ export function RepertoireStudyPage({
                 type="button"
                 variant="primary"
                 size="sm"
-                disabled={!draft.enabled || draft.kind !== "opening"}
+                title={availability.practice ?? undefined}
+                disabled={availability.practice !== null}
+                aria-describedby={availability.practice ? practiceReasonId : undefined}
                 onClick={() => void practiceChapter()}
               >
                 <GraduationCap />
@@ -853,6 +888,19 @@ export function RepertoireStudyPage({
       ) : null}
       {tab === "moves" ? (
         <div className="scroll-area -mr-3 flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-3">
+          {training?.blocker ? (
+            <StudyTrainingNotice
+              blocker={training.blocker}
+              chapterTitle={draft.title}
+              lookup={lookup}
+              color={color}
+              selectedNodeId={node.id}
+              busy={commands.busy}
+              onMakeTrainable={() => workspace().makeChapterTrainable()}
+              onSetMeta={(nodeId, patch) => workspace().setNodeMeta(nodeId, patch)}
+              onSelectNode={selectNode}
+            />
+          ) : null}
           <section className="flex max-h-[45%] min-h-32 shrink-0 flex-col" aria-label="Moves">
             <div
               className="flex flex-wrap items-center justify-between gap-1 pb-1"

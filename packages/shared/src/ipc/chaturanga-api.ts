@@ -344,6 +344,8 @@ export type ChaturangaApi = {
       repertoireId: string;
       positionKey: string;
     }): Promise<RepertoireDecision | null>;
+    /** Position keys of the repertoire's paused decisions (left out of practice everywhere). */
+    getPausedKeys(id: string): Promise<string[]>;
     /** Every chapter/node reaching a position (transpositions), in chapter then ply order. */
     getOccurrences(input: {
       repertoireId: string;

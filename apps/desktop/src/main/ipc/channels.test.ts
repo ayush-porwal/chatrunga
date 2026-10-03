@@ -44,7 +44,7 @@ describe("IPC channels", () => {
     for (const lookup of ["getChapter", "getDecision", "getOccurrences", "compareGame"]) {
       expect(requested.has(`repertoires:${lookup}`)).toBe(true);
     }
-    expect(requested.size).toBe(36);
+    expect(requested.size).toBe(37);
     expect(matches(preload, /subscribe(?:<[^>]*>)?\("(repertoires:\w+)"/g)).toEqual(new Set(["repertoires:changed", "repertoires:importProgress"]));
   });
 });

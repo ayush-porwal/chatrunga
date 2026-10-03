@@ -13,6 +13,7 @@ import {
   exportRepertoire,
   getChapter,
   getDecision,
+  getPausedKeys,
   getOccurrences,
   getDueSummary,
   getRepertoire,
@@ -88,6 +89,9 @@ export function registerRepertoireIpc(): void {
   );
   ipcMain.handle("repertoires:getDecision", (_event, input: unknown) =>
     getDecision(parseDecisionRef(input))
+  );
+  ipcMain.handle("repertoires:getPausedKeys", (_event, id: unknown) =>
+    getPausedKeys(asId(id, "repertoireId"))
   );
   ipcMain.handle("repertoires:getOccurrences", (_event, input: unknown) =>
     getOccurrences(parseDecisionRef(input))
