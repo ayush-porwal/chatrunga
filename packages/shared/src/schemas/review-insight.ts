@@ -9,7 +9,7 @@ import { ratingCurveSchema, maiaRatingBucketSchema } from "./rating-curve";
  * sending it to OpenRouter.
  */
 
-const sanTokenSchema = z
+export const sanTokenSchema = z
   .string()
   .min(2)
   .max(10)
@@ -38,7 +38,7 @@ const moveClassificationSchema = z.enum([
   "human_error"
 ]);
 
-const sideSchema = z.enum(["white", "black"]);
+export const sideSchema = z.enum(["white", "black"]);
 const moveNumberSanSchema = z.string().regex(/^\d+\.(\.\.)?$/);
 
 /**
@@ -46,7 +46,7 @@ const moveNumberSanSchema = z.string().regex(/^\d+\.(\.\.)?$/);
  * the position without quoting numbers. "*_won" / "draw" describe a finished
  * game (checkmate, stalemate, insufficient material).
  */
-const evalAssessmentSchema = z.enum([
+export const evalAssessmentSchema = z.enum([
   "equal",
   "white_slightly_better",
   "white_clearly_better",
@@ -63,7 +63,7 @@ const evalAssessmentSchema = z.enum([
 
 export type EvalAssessment = z.infer<typeof evalAssessmentSchema>;
 
-const commentaryDetailSchema = z.enum(["concise", "balanced", "detailed"]);
+export const commentaryDetailSchema = z.enum(["concise", "balanced", "detailed"]);
 
 /** One engine candidate in the position before the move (MultiPV line). */
 const engineAlternativeSchema = z.object({
@@ -126,7 +126,7 @@ const positionSnapshotSchema = z.object({
  * Board-derived ideas: piece placement, what the played / best / reply moves
  * do in chess terms, and a positional snapshot before and after the move.
  */
-const ideaFactsSchema = z.object({
+export const ideaFactsSchema = z.object({
   board: z.object({ white: z.string().min(3).max(200), black: z.string().min(3).max(200) }),
   played: moveIdeaSchema,
   best: moveIdeaSchema.optional(),

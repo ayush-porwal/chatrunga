@@ -1,4 +1,4 @@
-import type { ReviewInsightPayload } from "../schemas/review-insight";
+import type { IdeaFactsPayload, ReviewInsightPayload } from "../schemas/review-insight";
 
 /**
  * Provider-neutral coach contract: the prompt, the response parser and the
@@ -9,7 +9,7 @@ import type { ReviewInsightPayload } from "../schemas/review-insight";
  * Grounding still holds: every move, square, tactic and evaluation must come
  * from the facts, and the validator enforces it.
  */
-type CommentaryDetailLevel = NonNullable<ReviewInsightPayload["commentaryDetail"]>;
+export type CommentaryDetailLevel = NonNullable<ReviewInsightPayload["commentaryDetail"]>;
 
 /**
  * Per-detail budget for the BODY. `targetSentences` / `targetChars` are what
@@ -51,7 +51,7 @@ export const COMMENTARY_LIMITS: Record<
   }
 };
 
-const HEADLINE_MAX_WORDS = 8;
+export const HEADLINE_MAX_WORDS = 8;
 const HEADLINE_MAX_CHARS = 80;
 
 function commentaryLimits(detail: ReviewInsightPayload["commentaryDetail"]) {
@@ -202,8 +202,7 @@ function extractFactSquares(fact: ReviewInsightPayload["tacticalFacts"][number])
 }
 
 /** All free-text idea statements (they are generated from legal positions). */
-function ideaTexts(payload: ReviewInsightPayload): string[] {
-  const ideas = payload.ideas;
+export function ideaFactTexts(ideas: IdeaFactsPayload | undefined): string[] {
   if (!ideas) return [];
   const texts: string[] = [ideas.board.white, ideas.board.black];
   for (const move of [ideas.played, ideas.best, ideas.reply]) {
@@ -248,10 +247,17 @@ export function groundedSanTokens(payload: ReviewInsightPayload): Set<string> {
   for (const signal of payload.engineSignals ?? []) {
     if (signal.kind === "quiet_threat") tokens.add(signal.threatSan);
   }
-  for (const text of ideaTexts(payload)) {
+  for (const token of sanTokensInTexts(ideaFactTexts(payload.ideas))) tokens.add(token);
+  return tokens;
+}
+
+/** Unambiguous SAN moves (pieces, captures, castling, promotions) named inside fact sentences. */
+export function sanTokensInTexts(texts: Iterable<string>): string[] {
+  const tokens: string[] = [];
+  for (const text of texts) {
     for (const match of text.matchAll(SAN_TOKEN_REGEX)) {
       const token = stripPunctuation(match[1] ?? match[0]);
-      if (/[KQRBN]|O-O|x|=/.test(token)) tokens.add(token);
+      if (/[KQRBN]|O-O|x|=/.test(token)) tokens.push(token);
     }
   }
   return tokens;
@@ -284,23 +290,42 @@ function boardFromFen(fen: string): Map<string, string> {
   return board;
 }
 
-type Grounding = {
+/**
+ * What an answer may mention: these SAN moves, these squares, and pieces standing on these
+ * boards (a piece may be named by its square, "Rf1" for a rook on f1).
+ */
+export type CommentaryGrounding = {
   san: Set<string>;
   squares: Set<string>;
   boards: Map<string, string>[];
 };
 
-function grounding(payload: ReviewInsightPayload): Grounding {
-  const san = new Set(Array.from(groundedSanTokens(payload), normalizeSan));
-  const squares = new Set<string>();
+/**
+ * The grounding of a set of facts: the SAN moves they list, the squares those moves, the fact
+ * sentences (`texts`) and `squares` name, and every occupied square of the `fens`.
+ */
+export function groundingFrom(input: {
+  san: Iterable<string>;
+  texts?: Iterable<string>;
+  squares?: Iterable<string>;
+  fens: readonly string[];
+}): CommentaryGrounding {
+  const san = new Set(Array.from(input.san, normalizeSan));
+  const squares = new Set<string>(input.squares ?? []);
   for (const token of san) for (const square of squaresIn(token)) squares.add(square);
-  for (const fact of payload.tacticalFacts ?? []) {
-    for (const square of extractFactSquares(fact)) squares.add(square);
-  }
-  for (const text of ideaTexts(payload)) for (const square of squaresIn(text)) squares.add(square);
-  const boards = [boardFromFen(payload.game.fenBefore), boardFromFen(payload.game.fenAfter)];
+  for (const text of input.texts ?? []) for (const square of squaresIn(text)) squares.add(square);
+  const boards = input.fens.map(boardFromFen);
   for (const board of boards) for (const square of board.keys()) squares.add(square);
   return { san, squares, boards };
+}
+
+function grounding(payload: ReviewInsightPayload): CommentaryGrounding {
+  return groundingFrom({
+    san: groundedSanTokens(payload),
+    texts: ideaFactTexts(payload.ideas),
+    squares: (payload.tacticalFacts ?? []).flatMap(extractFactSquares),
+    fens: [payload.game.fenBefore, payload.game.fenAfter]
+  });
 }
 
 /** "Rf1" naming a rook that actually stands on f1 is a piece reference, not a move. */
@@ -321,7 +346,7 @@ function sentenceCount(text: string): number {
 function checkText(
   text: string,
   part: "headline" | "body",
-  ground: Grounding
+  ground: CommentaryGrounding
 ): CommentaryValidationFailure | null {
   for (const pattern of BANNED_PATTERNS) {
     const match = pattern.exec(text);
@@ -386,9 +411,22 @@ export function validateCommentary(
   parts: CoachParts,
   payload: ReviewInsightPayload
 ): CommentaryValidationResult {
+  return validateGroundedParts(parts, payload.commentaryDetail, () => grounding(payload));
+}
+
+/**
+ * The checks behind {@link validateCommentary} for any facts: length and sentence caps for the
+ * detail level, the headline's shape, banned phrasing and raw evaluations, and every move and
+ * square grounded (`ground` is only built once the cheap checks pass).
+ */
+export function validateGroundedParts(
+  parts: CoachParts,
+  detail: CommentaryDetailLevel | undefined,
+  ground: () => CommentaryGrounding
+): CommentaryValidationResult {
   const body = parts.body.trim();
   if (!body) return { ok: false, reason: "EMPTY", part: "body" };
-  const limits = commentaryLimits(payload.commentaryDetail);
+  const limits = commentaryLimits(detail);
   if (body.length > limits.maxChars) {
     return { ok: false, reason: "TOO_LONG", details: `len=${body.length}`, part: "body" };
   }
@@ -409,14 +447,14 @@ export function validateCommentary(
     }
   }
 
-  const ground = grounding(payload);
+  const grounded = ground();
   const checks: Array<[string | undefined, "headline" | "body"]> = [
     [headline, "headline"],
     [body, "body"]
   ];
   for (const [text, part] of checks) {
     if (!text) continue;
-    const failure = checkText(text, part, ground);
+    const failure = checkText(text, part, grounded);
     if (failure) return failure;
   }
   return { ok: true, prose: body, ...(headline ? { headline } : {}) };
@@ -436,7 +474,7 @@ export function validateProse(
 /** A specific correction for the retry turn ("You wrote Nd5, which is not in the facts."). */
 function describeValidationFailure(
   failure: CommentaryValidationFailure,
-  payload?: ReviewInsightPayload
+  payload?: Pick<ReviewInsightPayload, "commentaryDetail">
 ): string {
   const where = failure.part && failure.part !== "body" ? ` in the ${failure.part}` : "";
   const limits = commentaryLimits(payload?.commentaryDetail);
@@ -464,7 +502,7 @@ function describeValidationFailure(
 /** User-turn text for the single retry after a rejected answer. */
 export function buildRetryMessage(
   failure: CommentaryValidationFailure,
-  payload?: ReviewInsightPayload
+  payload?: Pick<ReviewInsightPayload, "commentaryDetail">
 ): string {
   return `PREVIOUS RESPONSE WAS INVALID. Fix the problem described below and answer again with only the JSON object.\nProblem: ${describeValidationFailure(failure, payload)}\nRewrite the whole answer with that fixed, keeping the same facts, and return only the JSON object {"headline": "...", "body": "..."}.`;
 }
