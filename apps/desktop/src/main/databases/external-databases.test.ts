@@ -412,7 +412,10 @@ describe("installing a downloaded file", () => {
 
   it("rejects a file that isn't zstd", async () => {
     await installOld();
-    serve(randomBytes(5000));
+    const bytes = randomBytes(5000);
+    // A leading "<" (or whitespace then "<") would read as a web page instead: about 1 run in 200.
+    bytes[0] = 0;
+    serve(bytes);
     await expectRejected(/isn't zstd-compressed/);
   });
 
