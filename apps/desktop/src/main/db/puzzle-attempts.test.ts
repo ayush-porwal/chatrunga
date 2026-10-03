@@ -148,4 +148,20 @@ describe("puzzleAttemptRepository (SQLite)", () => {
     expect(repository.failed(null, 1)).toHaveLength(1);
     expect(repository.failed("lichess-puzzles")[0]).toMatchObject({ sourceId: "lichess-puzzles", databaseId: "db-lichess", puzzleRating: 1500 });
   });
+
+  it("takes a puzzle's latest try by when it was decided, not when it was recorded", () => {
+    // A solved retry recorded before the earlier failure it followed.
+    repository.record(attempt({ puzzleId: "a", outcome: "solved", decidedAt: T0 + 2 * DAY }));
+    repository.record(attempt({ puzzleId: "a", outcome: "failed", decidedAt: T0 + DAY }));
+    // And a failed retry recorded before the earlier solve.
+    repository.record(attempt({ puzzleId: "b", outcome: "failed", decidedAt: T0 + 2 * DAY }));
+    repository.record(attempt({ puzzleId: "b", outcome: "solved", decidedAt: T0 + DAY }));
+    // Decided at the same moment: the one recorded last.
+    repository.record(attempt({ puzzleId: "c", outcome: "solved", decidedAt: T0 }));
+    repository.record(attempt({ puzzleId: "c", outcome: "failed", decidedAt: T0 }));
+    expect(repository.failed(null).map((puzzle) => [puzzle.puzzleId, puzzle.failedAt])).toEqual([
+      ["b", T0 + 2 * DAY],
+      ["c", T0]
+    ]);
+  });
 });

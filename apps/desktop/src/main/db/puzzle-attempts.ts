@@ -217,7 +217,10 @@ export const puzzleAttemptRepository = {
     }));
   },
 
-  /** Puzzles (of one source, or all) whose latest try failed, most recent failure first. */
+  /**
+   * Puzzles (of one source, or all) whose latest try (by when it was decided, then recorded)
+   * failed, most recent failure first.
+   */
   failed(sourceId: string | null, limit = 100): FailedPuzzle[] {
     return all<{ puzzle_id: string; source_id: string; database_id: string; decided_at: number; puzzle_rating: number | null }>(
       `SELECT attempt.puzzle_id, attempt.source_id, attempt.database_id, attempt.decided_at, attempt.puzzle_rating
@@ -225,8 +228,10 @@ export const puzzleAttemptRepository = {
       WHERE attempt.outcome = 'failed'
         AND (?1 IS NULL OR attempt.source_id = ?1)
         AND attempt.rowid = (
-          SELECT MAX(latest.rowid) FROM puzzle_attempts latest
+          SELECT latest.rowid FROM puzzle_attempts latest
           WHERE latest.source_id = attempt.source_id AND latest.puzzle_id = attempt.puzzle_id
+          ORDER BY latest.decided_at DESC, latest.rowid DESC
+          LIMIT 1
         )
       ORDER BY attempt.decided_at DESC
       LIMIT ?2`,
