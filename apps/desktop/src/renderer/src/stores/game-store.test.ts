@@ -408,6 +408,32 @@ describe("game store", () => {
       expect(useGameStore.getState().gameOutcome).toBeNull();
     });
 
+    it("decides an engine game that ends on the board, so no variation is played after it", () => {
+      useGameStore.getState().setMode("engine");
+      useGameStore.getState().setEngineSide("white");
+      for (const [from, to] of [["f2", "f3"], ["e7", "e5"], ["g2", "g4"]] as const) {
+        useGameStore.getState().makeMove({ from, to });
+      }
+      const beforeMate = useGameStore.getState().currentNodeId;
+      expect(useGameStore.getState().gameOutcome).toBeNull();
+      useGameStore.getState().makeMove({ from: "d8", to: "h4" });
+      expect(useGameStore.getState().gameOutcome).toEqual({ result: "0-1", termination: "checkmate" });
+      expect(useGameStore.getState().headers.result).toBe("0-1");
+      // As after a resignation: stepping back doesn't reopen the match.
+      useGameStore.getState().goToNode(beforeMate);
+      const size = useGameStore.getState().moveTree.length;
+      expect(useGameStore.getState().makeMove({ from: "a7", to: "a6" })).toBe(false);
+      expect(useGameStore.getState().moveTree).toHaveLength(size);
+    });
+
+    it("leaves a board that isn't an engine game undecided at mate", () => {
+      useGameStore.getState().setMode("analysis");
+      for (const [from, to] of [["f2", "f3"], ["e7", "e5"], ["g2", "g4"], ["d8", "h4"]] as const) {
+        useGameStore.getState().makeMove({ from, to });
+      }
+      expect(useGameStore.getState().gameOutcome).toBeNull();
+    });
+
     it("turns a match still being played (or a live online game) into a free board", () => {
       for (const mode of ["engine", "online"] as const) {
         useGameStore.getState().restoreView({ currentNodeId: "root", mode, source: "new", engineSide: "black", orientation: "white", gameOutcome: null });
