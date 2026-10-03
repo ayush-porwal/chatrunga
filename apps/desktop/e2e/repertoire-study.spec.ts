@@ -74,6 +74,8 @@ async function refuseInvoke(app: ElectronApplication, channel: string, message: 
 
 const titlebar = (page: Page) => page.getByRole("banner", { name: "Titlebar" });
 const studyPanel = (page: Page) => page.getByRole("complementary", { name: "Repertoire study" });
+/** Analyze and Play from here: icons in the side panel's status row, on the selected position. */
+const positionActions = (page: Page) => page.getByRole("group", { name: "Position actions" });
 
 async function openStudy(page: Page, repertoire = REPERTOIRE) {
   await sidebar(page).getByRole("button", { name: "Repertoire", exact: true }).click();
@@ -152,7 +154,7 @@ test("another repertoire's refused hint doesn't keep this one's chapter from Pla
   // This repertoire's chapter is saved: Play from here opens.
   await page.getByRole("button", { name: `Study ${REPERTOIRE}`, exact: true }).click();
   await expect(titlebar(page)).toContainText("Saved");
-  await studyPanel(page).getByRole("button", { name: "Play from here", exact: true }).click();
+  await positionActions(page).getByRole("button", { name: "Play from here", exact: true }).click();
   await expect(page.getByText(`${REPERTOIRE} › Italian — starting position`)).toBeVisible();
   await expect(page.getByText("This chapter couldn't be saved")).toHaveCount(0);
 
@@ -186,8 +188,10 @@ test("a chapter left out of practice still offers Analyze and Play from here", a
   await expect(
     panel.getByRole("button", { name: "Practice this chapter", exact: true })
   ).toBeDisabled();
-  await expect(panel.getByRole("button", { name: "Play from here", exact: true })).toBeEnabled();
-  const analyze = panel.getByRole("button", { name: "Analyze", exact: true });
+  await expect(
+    positionActions(page).getByRole("button", { name: "Play from here", exact: true })
+  ).toBeEnabled();
+  const analyze = positionActions(page).getByRole("button", { name: "Analyze", exact: true });
   await expect(analyze).toBeEnabled();
   await analyze.click();
   await expect(panel.getByRole("region", { name: "Engine analysis" })).toBeVisible();

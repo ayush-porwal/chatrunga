@@ -100,6 +100,9 @@ export function StudyEnginePanel({
   );
 
   return (
+    // Its natural height above the tab (header and the lines in full; the tab below takes the rest
+    // and keeps its own minimum). Only past 60% of the body (many or unfolded lines) does it
+    // scroll. A hovered move's preview floats beside the side panel, so it never grows this.
     <section
       id={id}
       aria-label="Engine analysis"
@@ -128,8 +131,8 @@ export function StudyEnginePanel({
           onStartAnalysis={restartSearch}
           onOpenSettings={onOpenSettings}
           headerAction={closeButton}
-          linesHint="Pick a move to add the line up to it to this chapter."
-          compactPreview
+          linesHint="Click a move to add its line to the chapter."
+          compact
         />
       )}
       {lineError?.nodeId === node.id ? <Notice tone="danger">{lineError.message}</Notice> : null}

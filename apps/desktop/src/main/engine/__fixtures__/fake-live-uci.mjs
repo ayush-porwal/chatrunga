@@ -3,7 +3,7 @@
 // `go infinite` streams info lines until `stop`; any other `go` answers after 30 ms.
 // argv[3] = "slow-start": `uciok` only after 10 s (a large network loading); "slow-exit": quit and
 // SIGTERM take 300 ms to end the process (a network being freed); "stubborn": both are ignored;
-// "lines": `go infinite` streams two lines that fit the position (LINES below, by the moves after
+// "lines": `go infinite` streams three lines that fit the position (LINES below, by the moves after
 // the start position), and none for a position it doesn't know.
 import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
@@ -14,15 +14,15 @@ let timer = null;
 let depth = 0;
 /** The moves of the last `position` command (after `moves`). */
 let positionMoves = "";
-/** "lines" mode: the two lines for each position, by its moves from the start position. */
+/** "lines" mode: the three lines for each position, by its moves from the start position. */
 const LINES = {
-  "": ["e2e4 e7e5 g1f3", "d2d4 d7d5"],
-  e2e4: ["e7e5 g1f3", "c7c5 g1f3"],
-  "e2e4 e7e5": ["g1f3 b8c6", "f1c4 g8f6"],
-  "e2e4 e7e5 g1f3": ["b8c6 f1b5", "g8f6 f3e5"],
-  "e2e4 e7e5 g1f3 b8c6": ["f1b5 a7a6", "f1c4 f8c5"],
-  "e2e4 e7e5 g1f3 b8c6 f1c4": ["g8f6 d2d3", "f8c5 c2c3"],
-  "e2e4 e7e5 g1f3 b8c6 f1c4 g8f6": ["d2d3 f8c5", "f3g5 d7d5"]
+  "": ["e2e4 e7e5 g1f3", "d2d4 d7d5", "g1f3 g8f6"],
+  e2e4: ["e7e5 g1f3", "c7c5 g1f3", "e7e6 d2d4"],
+  "e2e4 e7e5": ["g1f3 b8c6", "f1c4 g8f6", "b1c3 g8f6"],
+  "e2e4 e7e5 g1f3": ["b8c6 f1b5", "g8f6 f3e5", "d7d6 d2d4"],
+  "e2e4 e7e5 g1f3 b8c6": ["f1b5 a7a6", "f1c4 f8c5", "d2d4 e5d4"],
+  "e2e4 e7e5 g1f3 b8c6 f1c4": ["g8f6 d2d3", "f8c5 c2c3", "f8e7 d2d4"],
+  "e2e4 e7e5 g1f3 b8c6 f1c4 g8f6": ["d2d3 f8c5", "f3g5 d7d5", "b1c3 f8c5"]
 };
 const mode = process.argv[3];
 log("spawn");

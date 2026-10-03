@@ -5,10 +5,8 @@ import {
   CircleAlert,
   GraduationCap,
   Loader2,
-  Microscope,
   Redo2,
   Route,
-  Swords,
   Undo2
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
@@ -40,6 +38,7 @@ import { Stat, StatGroup } from "@/components/ui/stat";
 import { isElectronMac } from "@/lib/environment";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useEventCallback } from "@/lib/use-event-callback";
+import { cn } from "@/lib/utils";
 import {
   fetchPractisedElsewhere,
   useRepertoireChapterQuery,
@@ -53,6 +52,7 @@ import {
   promotionTarget,
   useRepertoireWorkspaceStore
 } from "../../stores/repertoire-workspace-store";
+import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
 import { BoardStage, BoardWorkspace, workspaceTabsClass } from "../board/BoardWorkspace";
 import { ControlledBoard } from "../board/ControlledBoard";
 import {
@@ -75,12 +75,13 @@ import {
 } from "./repertoire-model";
 import type { RehearseTarget } from "./practice-setup";
 import { RepertoireMoveNavigation, useTreeKeyboardNavigation } from "./RepertoireMoveNavigation";
-import { NO_MOVES_TO_PLAY } from "./handoffs";
+import { LIVE_GAME_NOTICE, NO_MOVES_TO_PLAY } from "./handoffs";
 import { StudyChaptersPanel } from "./StudyChaptersPanel";
 import { StudyChoicesPanel } from "./StudyChoicesPanel";
 import { StudyDecisionPractice } from "./StudyDecisionPractice";
 import { StudyEnginePanel, StudyEvalBar } from "./StudyEnginePanel";
 import { StudyNotesPanel } from "./StudyNotesPanel";
+import { StudyPositionActions } from "./StudyPositionActions";
 import { StudySourcesSection } from "./StudySourcesSection";
 import { StudyTrainingNotice } from "./StudyTrainingNotice";
 import { StudyTree } from "./StudyTree";
@@ -336,6 +337,7 @@ export function RepertoireStudyPage({
     [training, lookup, draft, color, paused, rehearsal]
   );
   const practiceReasonId = useId();
+  const onlineGameLive = useLichessStore(selectLiveGameInProgress);
 
   /**
    * "Include in practice" waiting on the player: it would add moves at positions other chapters
@@ -554,7 +556,18 @@ export function RepertoireStudyPage({
 
   // Why Play from here can't start (it also waits for the chapter to load, above). A study action:
   // a chapter left out of practice is still played from.
-  const handoffUnavailable = statusForFen(node.fenAfter).isEnd ? NO_MOVES_TO_PLAY : null;
+  // The engine panel too, while closed (open, it says so itself and can always be closed).
+  const positionOver = statusForFen(node.fenAfter).isEnd;
+  const handoffUnavailable = positionOver
+    ? NO_MOVES_TO_PLAY
+    : onlineGameLive
+      ? LIVE_GAME_NOTICE
+      : null;
+  const analyzeUnavailable = positionOver
+    ? NO_MOVES_TO_PLAY
+    : onlineGameLive
+      ? "The engine is off during your Lichess game."
+      : null;
 
   const removeChapter = async (id: string) => {
     const current = id === chapterId;
@@ -811,18 +824,30 @@ export function RepertoireStudyPage({
         />
       }
       summary={
-        <StatGroup className="w-full">
-          <Stat
-            label="To move"
-            value={
-              <span className="inline-flex items-center gap-2">
-                <SideDot color={turn} />
-                {choices?.side === "player" ? "You" : "Opponent"}
-              </span>
-            }
+        // The position's facts, then what can be done with it: Analyze (the engine panel, which
+        // opens just below) and Play from here.
+        <div className="flex w-full min-w-0 items-center gap-3">
+          <StatGroup className="min-w-0 flex-1 auto-cols-[minmax(0,max-content)] gap-5">
+            <Stat
+              label="To move"
+              value={
+                <span className="inline-flex items-center gap-2">
+                  <SideDot color={turn} />
+                  {choices?.side === "player" ? "You" : "Opponent"}
+                </span>
+              }
+            />
+            <Stat label="Decisions" value={`${decisionCount} in this chapter`} />
+          </StatGroup>
+          <StudyPositionActions
+            engineOpen={engineOpen}
+            enginePanelId={enginePanelId}
+            analyzeUnavailable={analyzeUnavailable}
+            onToggleEngine={() => setEngineChapterId(engineOpen ? null : chapterId)}
+            playUnavailable={handoffUnavailable}
+            onPlayFromHere={onPlayFromHere}
           />
-          <Stat label="Decisions" value={`${decisionCount} in this chapter`} />
-        </StatGroup>
+        </div>
       }
       notices={
         <>
@@ -837,55 +862,21 @@ export function RepertoireStudyPage({
             selectedNodeId={node.id}
             onSelect={selectNode}
           />
-          {/* Wraps in a narrow side panel: the four actions must never widen it (it would scroll sideways). */}
-          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-t border-line-subtle px-3 py-2">
-            <p
-              id={practiceReasonId}
-              className="min-w-0 flex-1 basis-32 truncate text-2xs text-fg-subtle"
-              title={availability.practice ?? availability.rehearse ?? undefined}
-            >
+          {/* The status line wraps (never cut off); the chapter's two actions share one row, their
+              labels shortened in a narrow panel (the names stay whole for assistive tech). */}
+          <div className="grid gap-2 border-t border-line-subtle px-3 py-2">
+            <p id={practiceReasonId} className="text-2xs leading-4 text-fg-subtle">
               {availability.practice ??
                 availability.rehearse ??
                 "Play a move on the board to add a variation."}
             </p>
-            <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5">
-              <Button
-                type="button"
-                variant={engineOpen ? "default" : "ghost"}
-                size="sm"
-                title={
-                  engineOpen
-                    ? "Close the engine"
-                    : "Show the engine's best lines for the selected position here"
-                }
-                aria-expanded={engineOpen}
-                aria-controls={engineOpen ? enginePanelId : undefined}
-                onClick={() => setEngineChapterId(engineOpen ? null : chapterId)}
-              >
-                <Microscope />
-                Analyze
-              </Button>
-              {onPlayFromHere ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  title={
-                    handoffUnavailable ??
-                    "Play the engine from this position as your repertoire's side"
-                  }
-                  disabled={handoffUnavailable !== null}
-                  onClick={onPlayFromHere}
-                >
-                  <Swords />
-                  Play from here
-                </Button>
-              ) : null}
+            <div className={cn("grid gap-2", onRehearse && "grid-cols-2")}>
               {onRehearse ? (
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
+                  aria-label="Rehearse this chapter"
                   title={
                     availability.rehearse ??
                     "Play your moves along this chapter's lines, with the replies supplied"
@@ -895,20 +886,25 @@ export function RepertoireStudyPage({
                   onClick={() => void rehearse(null)}
                 >
                   <Route />
-                  Rehearse this chapter
+                  <span>
+                    Rehearse<span className="hidden @[26rem]/panel:inline"> this chapter</span>
+                  </span>
                 </Button>
               ) : null}
               <Button
                 type="button"
                 variant="primary"
                 size="sm"
-                title={availability.practice ?? undefined}
+                aria-label="Practice this chapter"
+                title={availability.practice ?? "Practise this chapter's decisions"}
                 disabled={availability.practice !== null}
                 aria-describedby={availability.practice ? practiceReasonId : undefined}
                 onClick={() => void practiceChapter()}
               >
                 <GraduationCap />
-                Practice this chapter
+                <span>
+                  Practice<span className="hidden @[26rem]/panel:inline"> this chapter</span>
+                </span>
               </Button>
             </div>
           </div>
@@ -952,7 +948,8 @@ export function RepertoireStudyPage({
               onSelectNode={selectNode}
             />
           ) : null}
-          <section className="flex max-h-[45%] min-h-32 shrink-0 flex-col" aria-label="Moves">
+          {/* About three rows of moves at least, also under the engine panel (the tab scrolls on to the choices). */}
+          <section className="flex max-h-[45%] min-h-40 shrink-0 flex-col" aria-label="Moves">
             <div
               className="flex flex-wrap items-center justify-between gap-1 pb-1"
               role="group"
