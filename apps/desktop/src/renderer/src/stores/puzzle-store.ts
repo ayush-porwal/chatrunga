@@ -34,13 +34,17 @@ export type PuzzleAttempt = {
   /**
    * This try's own id: every puzzle shown — the same one started again too (Back) — is a new try,
    * so nothing of the last one (the solution left open) carries over to it.
+   * Recording it is idempotent on it.
    */
   id: string;
   puzzleId: string;
   databaseId: string;
   sourceId: string;
-  /** The puzzle's own rating (Lichess sets; null for position sets). */
+  /** The puzzle's own rating and its deviation (Lichess sets; null for position sets). */
   puzzleRating: number | null;
+  puzzleRatingDeviation: number | null;
+  /** The puzzle's themes (per-theme statistics). */
+  themes: string[];
   /** In the order they were tried. */
   wrongMoves: PuzzleWrongMove[];
   /** The solution was opened before the puzzle was finished. */
@@ -117,6 +121,8 @@ function newAttempt(puzzle: PuzzleSample): PuzzleAttempt {
     databaseId: puzzle.databaseId,
     sourceId: puzzle.sourceId,
     puzzleRating: puzzle.rating ?? null,
+    puzzleRatingDeviation: puzzle.ratingDeviation ?? null,
+    themes: [...puzzle.themes],
     wrongMoves: [],
     solutionViewed: false,
     startedAt: Date.now(),

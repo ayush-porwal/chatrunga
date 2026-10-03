@@ -27,6 +27,7 @@ describe("puzzle draft store", () => {
       side: "white",
       ratingMin: 1000,
       ratingMax: 1900,
+      difficulty: null,
       popularityMin: 20,
       difficultyMin: 2,
       difficultyMax: 3,
@@ -38,5 +39,18 @@ describe("puzzle draft store", () => {
     usePuzzleDraftStore.getState().update(draftFromSessionConfig(config));
     expect(usePuzzleDraftStore.getState().draft).toMatchObject({ databaseId: "db2", positionTags: ["space"], difficultyMax: 3 });
     expect(draftFromSessionConfig({ ...config, databaseId: null }).databaseId).toBe("");
+  });
+
+  it('round-trips "Around my rating", so Edit set keeps the difficulty instead of the range it gave', () => {
+    const config: PuzzleSessionConfig = {
+      databaseId: "db1",
+      mode: "lichess-puzzle",
+      difficulty: "harder",
+      lichess: { ratingMin: 1650, ratingMax: 1950, popularityMin: 0, lengths: [], themes: [], openings: [], side: "any" },
+      position: { difficultyMin: 1, difficultyMax: 4, tags: [] }
+    };
+    expect(draftFromSessionConfig(config)).toMatchObject({ difficulty: "harder", ratingMin: 1650, ratingMax: 1950 });
+    // A set from before the choice existed was a hand-picked range.
+    expect(draftFromSessionConfig({ ...config, difficulty: undefined }).difficulty).toBeNull();
   });
 });

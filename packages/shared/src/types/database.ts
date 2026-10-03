@@ -49,6 +49,8 @@ export type DatabaseDownloadProgress = {
 export type PuzzleSampleInput = {
   databaseId: string;
   excludeIds?: string[];
+  /** Only these puzzles (failed ones tried again); any filters still apply. */
+  ids?: string[];
   lichess?: {
     ratingMin: number;
     ratingMax: number;
@@ -75,6 +77,10 @@ export type PuzzleSample = {
   opponentMove?: string | null;
   solutionMoves: string[];
   rating?: number | null;
+  /** The Glicko-2 deviation of `rating` (Lichess sets), which the local puzzle rating needs. */
+  ratingDeviation?: number | null;
+  /** How often the puzzle was played on Lichess. */
+  plays?: number | null;
   popularity?: number | null;
   themes: string[];
   gameUrl?: string | null;

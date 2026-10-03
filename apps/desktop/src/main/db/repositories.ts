@@ -170,7 +170,7 @@ function get<T>(sql: string, ...params: SQLInputValue[]): T | null {
  * with SQLITE_BUSY at once (no busy wait) if the import writer's connection wrote in between. A
  * BEGIN that finds the lock held past the busy timeout throws its BUSY error unchanged.
  */
-function transaction<T>(work: () => T): T {
+export function transaction<T>(work: () => T): T {
   const db = getDb();
   if (db.isTransaction) return work();
   db.exec("BEGIN IMMEDIATE");

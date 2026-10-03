@@ -110,7 +110,7 @@ describe("runMigrations", () => {
     db.exec(`CREATE TABLE games (id TEXT PRIMARY KEY, source TEXT, site TEXT, updated_at INTEGER)`);
     db.exec(`CREATE TABLE external_databases (id TEXT PRIMARY KEY, source_id TEXT)`);
     runMigrations(db, MIGRATIONS);
-    expect(version(db)).toBe(8);
+    expect(version(db)).toBe(MIGRATIONS.length);
 
     db.exec(`INSERT INTO games (id, source) VALUES ('g', 'pgn-import')`);
     db.exec(`INSERT INTO repertoires (id, name, color, created_at, updated_at) VALUES ('r', 'R', 'white', 1, 1)`);
@@ -135,5 +135,29 @@ describe("runMigrations", () => {
     });
     db.exec("DELETE FROM repertoires WHERE id = 'r'");
     expect(db.prepare("SELECT COUNT(*) AS n FROM repertoire_game_links").get()).toEqual({ n: 0 });
+  });
+
+  it("9: adds puzzle attempts and a single-row puzzle rating", () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec("PRAGMA user_version = 8");
+    runMigrations(db, MIGRATIONS);
+    expect(version(db)).toBe(9);
+
+    const insertAttempt = (id: string, outcome: string) =>
+      db.exec(`INSERT INTO puzzle_attempts (id, puzzle_id, database_id, source_id, outcome, started_at, decided_at)
+        VALUES ('${id}', 'p', 'd', 'lichess-puzzles', '${outcome}', 1, 2)`);
+    insertAttempt("a1", "solved");
+    insertAttempt("a2", "failed");
+    expect(() => insertAttempt("a3", "abandoned")).toThrow();
+    expect(db.prepare("SELECT rated, wrong_move_count, solution_viewed, themes_json, completed_at FROM puzzle_attempts WHERE id = 'a1'").get()).toEqual({
+      rated: 0,
+      wrong_move_count: 0,
+      solution_viewed: 0,
+      themes_json: "[]",
+      completed_at: null
+    });
+
+    db.exec("INSERT INTO puzzle_rating (id, rating, rd, volatility, updated_at) VALUES (1, 1500, 500, 0.09, 1)");
+    expect(() => db.exec("INSERT INTO puzzle_rating (id, rating, rd, volatility, updated_at) VALUES (2, 1500, 500, 0.09, 1)")).toThrow();
   });
 });

@@ -75,6 +75,29 @@ describe("reservoirScan", () => {
       reservoirScan({ filePath: path, compressed: true, kind: "lichess", input: {} as never, excludeIds: [], size: 10 })
     ).rejects.toThrow(/No lines could be read/);
   });
+
+  it("keeps only the puzzles asked for by id, and stops once it has all of them", async () => {
+    const path = tempFile("ids.csv", CSV);
+    const job = (ids: string[]): ScanJob => ({ filePath: path, compressed: false, kind: "lichess", input: { databaseId: "db", ids }, excludeIds: [], size: 10 });
+    const found = await reservoirScan(job(["p1999", "p5", "missing"]));
+    expect(found.rows.map((row) => row[0]).sort()).toEqual(["p1999", "p5"]);
+    expect(found).toMatchObject({ matches: 2, complete: true });
+    // Both found near the start: the rest of the file isn't needed, and the scan is still complete.
+    let cancelChecks = 0;
+    const early = await reservoirScan(job(["p0", "p2"]), () => {
+      cancelChecks += 1;
+      return false;
+    });
+    expect(early).toMatchObject({ matches: 2, complete: true });
+    expect(cancelChecks).toBe(1); // after the first match only
+  });
+
+  it("matches nothing for an empty id list (not every puzzle)", async () => {
+    const path = tempFile("no-ids.csv", CSV);
+    await expect(
+      reservoirScan({ filePath: path, compressed: false, kind: "lichess", input: { databaseId: "db", ids: [] }, excludeIds: [], size: 10 })
+    ).resolves.toEqual({ rows: [], matches: 0, complete: true });
+  });
 });
 
 describe("readFirstLine", () => {

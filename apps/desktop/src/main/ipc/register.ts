@@ -80,6 +80,7 @@ import {
 } from "./validate";
 import { broadcast } from "./broadcast";
 import { registerRepertoireIpc } from "./repertoire-handler";
+import { registerPuzzleIpc } from "./puzzle-handler";
 
 const ENGINE_EVENT_CHANNELS: Record<keyof EngineEvents, string> = {
   info: "engine:info",
@@ -151,6 +152,7 @@ export function registerIpc(engineManager: EngineManager): void {
   registerLichessIpc();
   registerTelemetryIpc();
   registerRepertoireIpc();
+  registerPuzzleIpc();
   // Match clocks run on the renderer's monotonic clock, which may stop while the computer sleeps.
   // Main keeps the total it missed; the renderer reads it synchronously whenever it checks a clock,
   // so a move handled right after waking already sees it (an event could arrive too late).

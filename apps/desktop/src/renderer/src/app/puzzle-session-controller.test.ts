@@ -36,6 +36,11 @@ describe("nextPuzzleInput", () => {
     expect(nextPuzzleInput(config, ["a", "b"])).toMatchObject({ databaseId: "lichess-puzzles", excludeIds: ["a", "b"] });
   });
 
+  it("asks a set of failed puzzles for those by id, without the filters", () => {
+    const retry = { ...config, retryIds: ["x", "y"], lichess: { ratingMin: 0 } } as PuzzleSessionConfig;
+    expect(nextPuzzleInput(retry, ["x"])).toEqual({ databaseId: "lichess-puzzles", excludeIds: ["x"], ids: ["x", "y"] });
+  });
+
   it("is null without a dataset", () => {
     expect(nextPuzzleInput(null, [])).toBeNull();
   });

@@ -47,6 +47,7 @@ import type {
 } from "@chaturanga/shared/types/repertoire";
 import { COMPARE_GAME_MAX_PLIES } from "@chaturanga/shared/types/repertoire";
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
+import type { RecordPuzzleAttemptInput } from "@chaturanga/shared/types/puzzle-rating";
 import type {
   CreateEngineInput,
   EngineGoClock,
@@ -488,6 +489,8 @@ export function parsePuzzleSampleInput(value: unknown): PuzzleSampleInput {
       asStringArray(ids, "excluded puzzle ids", 10_000, MAX_ID)
     )
   };
+  const ids = optional(input.ids, (ids) => asStringArray(ids, "puzzle ids", 1000, MAX_ID));
+  if (ids) result.ids = ids;
   if (input.lichess !== undefined && input.lichess !== null) {
     const lichess = asObject(input.lichess, "lichess filters");
     const side = lichess.side === "white" || lichess.side === "black" ? lichess.side : "any";
@@ -510,6 +513,42 @@ export function parsePuzzleSampleInput(value: unknown): PuzzleSampleInput {
     };
   }
   return result;
+}
+
+/** A timestamp in ms (any time from 1970 to well past this century). */
+function asTimestamp(value: unknown, label: string): number {
+  return asIntegerInRange(value, label, 0, 8.64e15);
+}
+
+/** A decided puzzle attempt to record (and maybe rate). */
+export function parseRecordPuzzleAttemptInput(value: unknown): RecordPuzzleAttemptInput {
+  const input = asObject(value, "puzzle attempt");
+  const outcome = input.outcome;
+  if (outcome !== "solved" && outcome !== "failed") fail("puzzle outcome", "expected solved or failed");
+  // Lichess puzzle ratings and deviations: anything a real puzzle has, with room to spare.
+  const rating = nullable(input.puzzleRating, (rating) => asNumberInRange(rating, "puzzle rating", 0, 5000)) ?? null;
+  const deviation =
+    nullable(input.puzzleRatingDeviation, (deviation) => asNumberInRange(deviation, "puzzle rating deviation", 0, 1000)) ?? null;
+  return {
+    attemptId: asId(input.attemptId, "attempt id"),
+    puzzleId: asId(input.puzzleId, "puzzle id"),
+    databaseId: asId(input.databaseId, "database id"),
+    sourceId: asId(input.sourceId, "database source"),
+    outcome,
+    puzzleRating: rating,
+    puzzleRatingDeviation: deviation,
+    themes: asStringArray(input.themes ?? [], "puzzle themes", 64, 64),
+    wrongMoveCount: asIntegerInRange(input.wrongMoveCount, "wrong move count", 0, MAX_MOVES),
+    solutionViewed: asBoolean(input.solutionViewed, "solution viewed"),
+    startedAt: asTimestamp(input.startedAt, "started at"),
+    decidedAt: asTimestamp(input.decidedAt, "decided at"),
+    completedAt: nullable(input.completedAt, (at) => asTimestamp(at, "completed at")) ?? null
+  };
+}
+
+/** How many entries a puzzle statistics list returns (1–`max`, else `fallback`). */
+export function parseListLimit(value: unknown, fallback: number, max: number): number {
+  return value === undefined || value === null ? fallback : asIntegerInRange(value, "limit", 1, max);
 }
 
 /** Lichess game and challenge ids: 8 characters (12 for a player's full game id). */
