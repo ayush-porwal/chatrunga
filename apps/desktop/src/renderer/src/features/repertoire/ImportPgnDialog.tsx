@@ -25,7 +25,7 @@ import {
   useRepertoireQuery
 } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
-import { flushChapterDraft } from "./useChapterAutosave";
+import { flushChapterTree } from "./useChapterAutosave";
 import {
   adoptCommittedRevision,
   importExpectedRevision,
@@ -214,7 +214,7 @@ export function ImportPgnDialog({
       setFlushing(true);
       let saved: boolean;
       try {
-        saved = await flushChapterDraft(queryClient);
+        saved = await flushChapterTree(queryClient);
       } finally {
         if (open.current) setFlushing(false);
       }

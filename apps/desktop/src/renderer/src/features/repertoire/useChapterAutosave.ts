@@ -4,6 +4,13 @@ import { ipcErrorMessage } from "@/lib/ipc-error";
 import type { RepertoireDetail } from "@chaturanga/shared/types/repertoire";
 import { adoptChapterSave, invalidateSummaries, repertoireKeys } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
+import {
+  discardDecisionText,
+  flushDecisionTexts,
+  keepDecisionText,
+  retryDecisionTexts,
+  saveDecisionText
+} from "./decision-text-drafts";
 import { autosaveStep, isMissingTargetError, isStaleRevisionError } from "./repertoire-model";
 
 /** Quiet time after the last edit before the draft is saved. */
@@ -56,10 +63,11 @@ export function saveChapterDraftNow(queryClient: QueryClient): Promise<void> {
 }
 
 /**
- * Waits for the running save and writes any unsaved edits. True when the draft is saved; false
- * when a save error (or a refusal now) keeps it unsaved — callers stay put and show Retry.
+ * The chapter draft only: waits for the running save and writes any unsaved edits. True when the
+ * draft is saved; false when a save error (or a refusal now) keeps it unsaved. For writes that
+ * need the chapter's tree stored first; leaving the study draft uses flushChapterDraft.
  */
-export async function flushChapterDraft(queryClient: QueryClient): Promise<boolean> {
+export async function flushChapterTree(queryClient: QueryClient): Promise<boolean> {
   if (inFlight) await inFlight;
   const { saveState } = workspace();
   if (saveState.status === "error") {
@@ -71,6 +79,38 @@ export async function flushChapterDraft(queryClient: QueryClient): Promise<boole
   const after = workspace();
   return !after.dirty && after.saveState.status !== "error";
 }
+
+/**
+ * Everything study holds unsaved: the chapter draft, then the practice prompts and hints typed
+ * at its positions (decision-text-drafts.ts). True when all of it is saved; false when an error
+ * (or a refusal now) keeps something unsaved — callers stay put and show Retry. A failed write
+ * is not retried here.
+ */
+export async function flushChapterDraft(queryClient: QueryClient): Promise<boolean> {
+  const chapterSaved = await flushChapterTree(queryClient);
+  const textSaved = await flushDecisionTexts(queryClient, flushChapterTree);
+  return chapterSaved && textSaved;
+}
+
+/** Writes a typed prompt or hint now (a failed one is retried). */
+export function saveDecisionTextNow(queryClient: QueryClient, key: string): Promise<boolean> {
+  return saveDecisionText(queryClient, key, { flushChapter: flushChapterTree, retry: true });
+}
+
+/** Retry for a repertoire's unsaved prompts and hints. */
+export function retryDecisionTextsNow(
+  queryClient: QueryClient,
+  repertoireId: string
+): Promise<boolean> {
+  return retryDecisionTexts(queryClient, repertoireId, flushChapterTree);
+}
+
+/** Keep mine, after a stale refusal: saved over the newer prompt or hint. */
+export function keepDecisionTextNow(queryClient: QueryClient, key: string): Promise<boolean> {
+  return keepDecisionText(queryClient, key, flushChapterTree);
+}
+
+export { discardDecisionText };
 
 /**
  * Stores the open chapter, node and orientation as the repertoire's workspace (Home's and the
@@ -103,8 +143,9 @@ export async function rememberStudyPosition(queryClient: QueryClient): Promise<v
 }
 
 /**
- * Saves a study draft that outlived its page (left while a save was failing) when the window
- * closes, so quitting from another page still retries it or keeps the window open. Mount once.
+ * Saves a study draft that outlived its page (left while a save was failing, or a prompt or hint
+ * whose write failed) when the window closes, so quitting from another page still saves it or
+ * keeps the window open. Mount once.
  */
 export function useChapterDraftCloseFlush(): void {
   const queryClient = useQueryClient();
@@ -138,17 +179,19 @@ export function useChapterAutosave(): { flush: () => Promise<boolean> } {
     };
   }, [dirty, generation, saveState, queryClient]);
 
-  // Leaving the page saves what is left (the store outlives the page, so the save completes),
-  // then remembers where you were for "Continue studying".
+  // Leaving the page saves what is left (the store outlives the page, so the saves complete),
+  // then remembers where you were for "Continue studying" once the chapter is saved.
   useEffect(
-    () => () =>
-      void flushChapterDraft(queryClient).then((saved) => {
+    () => () => {
+      void flushChapterTree(queryClient).then((saved) => {
         if (saved) void rememberStudyPosition(queryClient);
-      }),
+      });
+      void flushDecisionTexts(queryClient, flushChapterTree);
+    },
     [queryClient]
   );
 
-  // Closing the window (or quitting) unmounts nothing: save the draft and the study position then.
+  // Closing the window (or quitting) unmounts nothing: save the drafts and the study position then.
   useEffect(
     () =>
       window.chaturanga?.games.onFlushRequest?.(async () => {

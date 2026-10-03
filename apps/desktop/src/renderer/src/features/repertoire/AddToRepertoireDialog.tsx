@@ -45,7 +45,7 @@ import {
 } from "./add-from-game";
 import { COLOR_LABELS, plural, sortedChapters } from "./repertoire-chapters";
 import { isStaleRevisionError } from "./repertoire-model";
-import { flushChapterDraft } from "./useChapterAutosave";
+import { flushChapterTree } from "./useChapterAutosave";
 
 /** Active repertoires of both colours: the game's colour is never used to guess. */
 const ALL_ACTIVE = { color: "all" } as const;
@@ -181,7 +181,7 @@ export function AddToRepertoireDialog({
     const draft = useRepertoireWorkspaceStore.getState();
     if (draft.repertoireId === repertoireId && (draft.dirty || draft.saveState.status !== "idle")) {
       setFlushing(true);
-      const saved = await flushChapterDraft(queryClient);
+      const saved = await flushChapterTree(queryClient);
       setFlushing(false);
       if (!saved) {
         setError("The chapter open in Study isn't saved yet. Save it there, then add again.");

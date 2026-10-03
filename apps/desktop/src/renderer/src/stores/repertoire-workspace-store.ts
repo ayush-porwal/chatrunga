@@ -17,9 +17,12 @@ import {
   type RepertoireNodeMeta
 } from "@chaturanga/shared/types/repertoire";
 import {
+  decisionDraftKey,
   defaultEdgeForNewMove,
   shouldAdoptSaveResult,
-  type AutosaveSaveState
+  type AutosaveSaveState,
+  type DecisionTextDraft,
+  type DecisionTextField
 } from "../features/repertoire/repertoire-model";
 
 /**
@@ -30,6 +33,10 @@ import {
  * `generation` counts edits. A save remembers the generation it sent, and its result only replaces
  * the draft when no edit happened meanwhile (`shouldAdoptSaveResult`); otherwise the newer draft
  * stays dirty and saves next against the revision the save returned.
+ *
+ * `decisionDrafts` hold practice prompts and hints typed at a position until their write is
+ * confirmed (see decision-text-drafts.ts). They belong to no chapter: opening another chapter or
+ * resetting the draft keeps them, so a failed write is never lost by moving on.
  */
 
 /** Drafts kept for Undo (deleting a line, and other structural edits). */
@@ -51,6 +58,8 @@ export type RepertoireWorkspaceState = {
   undoStack: RepertoireChapter[];
   /** Decisions written this session (until the API can read them back). */
   decisions: Record<string, RepertoireDecision>;
+  /** Prompt and hint text not yet saved, by decisionDraftKey. */
+  decisionDrafts: Record<string, DecisionTextDraft>;
 };
 
 type Actions = {
@@ -88,7 +97,10 @@ type Actions = {
   markSaving: () => void;
   saveSucceeded: (result: ChapterSaveResult, generationAtSave: number) => void;
   saveFailed: (message: string, stale: boolean) => void;
-  /** Clears a save error so autosave resumes (after Retry / Keep editing). */
+  /**
+   * Clears a save error so autosave resumes (after Retry / Keep editing). A prompt or hint write
+   * that failed (not as stale) becomes pending again, so the next flush retries it.
+   */
   clearSaveError: () => void;
   /**
    * Another write (decision, chapter list) moved the repertoire to `revision`; `chapterRevision`
@@ -96,6 +108,21 @@ type Actions = {
    */
   adoptRevision: (revision: number, chapterRevision?: number) => void;
   rememberDecision: (decision: RepertoireDecision) => void;
+  /** The prompt or hint field as typed at a position (kept until saved or discarded). */
+  setDecisionText: (
+    repertoireId: string,
+    positionKey: string,
+    field: DecisionTextField,
+    text: string
+  ) => void;
+  discardDecisionText: (key: string) => void;
+  /** A write of the draft started; returns the generation it sends (null: no draft). */
+  markDecisionTextSaving: (key: string) => number | null;
+  /** The write of `generation` was confirmed: the draft goes, unless it was edited since. */
+  decisionTextSaved: (key: string, generation: number) => void;
+  decisionTextFailed: (key: string, message: string, stale: boolean) => void;
+  /** A failed draft becomes pending again (Retry, or Keep mine after a stale refusal). */
+  clearDecisionTextError: (key: string) => void;
 };
 
 const initialState: RepertoireWorkspaceState = {
@@ -110,7 +137,8 @@ const initialState: RepertoireWorkspaceState = {
   saveState: { status: "idle" },
   baseRevision: 0,
   undoStack: [],
-  decisions: {}
+  decisions: {},
+  decisionDrafts: {}
 };
 
 /** Removes `nodeId` and its subtree. Returns the tree, the removed ids and the parent id. */
@@ -230,6 +258,7 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
         set({
           ...initialState,
           decisions: get().repertoireId === detail.id ? get().decisions : {},
+          decisionDrafts: get().decisionDrafts,
           repertoireId: detail.id,
           chapterId: chapter.id,
           color: detail.color,
@@ -240,7 +269,7 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
         });
       },
 
-      reset: () => set(initialState),
+      reset: () => set({ ...initialState, decisionDrafts: get().decisionDrafts }),
 
       selectNode: (nodeId) => {
         const { chapter } = get();
@@ -389,7 +418,18 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
       },
 
       saveFailed: (message, stale) => set({ saveState: { status: "error", message, stale } }),
-      clearSaveError: () => set({ saveState: { status: "idle" } }),
+      clearSaveError: () =>
+        set((state) => ({
+          saveState: { status: "idle" },
+          decisionDrafts: Object.fromEntries(
+            Object.entries(state.decisionDrafts).map(([key, draft]) => [
+              key,
+              draft.status === "error" && !draft.error?.stale
+                ? { ...draft, status: "pending" as const, error: undefined }
+                : draft
+            ])
+          )
+        })),
       adoptRevision: (revision, chapterRevision) =>
         set((state) => ({
           baseRevision: Math.max(state.baseRevision, revision),
@@ -403,7 +443,73 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
             : {})
         })),
       rememberDecision: (decision) =>
-        set((state) => ({ decisions: { ...state.decisions, [decision.positionKey]: decision } }))
+        set((state) => ({ decisions: { ...state.decisions, [decision.positionKey]: decision } })),
+
+      setDecisionText: (repertoireId, positionKey, field, text) =>
+        set((state) => {
+          const key = decisionDraftKey(repertoireId, positionKey, field);
+          const current = state.decisionDrafts[key];
+          const draft: DecisionTextDraft = current
+            ? { ...current, text, generation: current.generation + 1 }
+            : { repertoireId, positionKey, field, text, generation: 1, status: "pending" };
+          return { decisionDrafts: { ...state.decisionDrafts, [key]: draft } };
+        }),
+
+      discardDecisionText: (key) =>
+        set((state) => {
+          if (!state.decisionDrafts[key]) return {};
+          const decisionDrafts = { ...state.decisionDrafts };
+          delete decisionDrafts[key];
+          return { decisionDrafts };
+        }),
+
+      markDecisionTextSaving: (key) => {
+        const draft = get().decisionDrafts[key];
+        if (!draft) return null;
+        set((state) => ({
+          decisionDrafts: {
+            ...state.decisionDrafts,
+            [key]: { ...draft, status: "saving", error: undefined }
+          }
+        }));
+        return draft.generation;
+      },
+
+      decisionTextSaved: (key, generation) => {
+        const draft = get().decisionDrafts[key];
+        if (!draft) return;
+        if (draft.generation === generation) get().discardDecisionText(key);
+        else {
+          // Typed while it saved: the newer text stays, pending its own write.
+          set((state) => ({
+            decisionDrafts: { ...state.decisionDrafts, [key]: { ...draft, status: "pending" } }
+          }));
+        }
+      },
+
+      decisionTextFailed: (key, message, stale) =>
+        set((state) => {
+          const draft = state.decisionDrafts[key];
+          if (!draft) return {};
+          return {
+            decisionDrafts: {
+              ...state.decisionDrafts,
+              [key]: { ...draft, status: "error", error: { message, stale } }
+            }
+          };
+        }),
+
+      clearDecisionTextError: (key) =>
+        set((state) => {
+          const draft = state.decisionDrafts[key];
+          if (draft?.status !== "error") return {};
+          return {
+            decisionDrafts: {
+              ...state.decisionDrafts,
+              [key]: { ...draft, status: "pending", error: undefined }
+            }
+          };
+        })
     };
   }
 );

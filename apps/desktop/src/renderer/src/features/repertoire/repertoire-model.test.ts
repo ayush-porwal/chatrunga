@@ -22,6 +22,10 @@ import {
   hintStageText,
   isMissingTargetError,
   isNotFoundError,
+  decisionDraftKey,
+  decisionTextStatus,
+  decisionTextValue,
+  type DecisionTextDraft,
   occurrencesInOtherChapters,
   pieceNameAt,
   resumedHintText,
@@ -215,6 +219,25 @@ describe("autosave decisions", () => {
     ).toBe("Unsaved — disk full");
   });
 
+  it("never says Saved while a prompt or hint is unsaved, saving or refused", () => {
+    const idle = { dirty: false, saveState: { status: "idle" } } as const;
+    const text = { dirty: true, saving: false, errorMessage: null, errorStale: false };
+    expect(saveStatusLabel({ ...idle, decisionText: { ...text, dirty: false } })).toBe("Saved");
+    expect(saveStatusLabel({ ...idle, decisionText: text })).toBe("Unsaved changes");
+    expect(saveStatusLabel({ ...idle, decisionText: { ...text, saving: true } })).toBe("Saving…");
+    expect(saveStatusLabel({ ...idle, decisionText: { ...text, errorMessage: "disk full" } })).toBe(
+      "Unsaved — disk full"
+    );
+    // The chapter's own failure is named first.
+    expect(
+      saveStatusLabel({
+        dirty: true,
+        saveState: { status: "error", message: "chapter refused", stale: false },
+        decisionText: { ...text, errorMessage: "prompt refused" }
+      })
+    ).toBe("Unsaved — chapter refused");
+  });
+
   it("tells a deleted repertoire or chapter from other read failures", () => {
     expect(isNotFoundError("Invalid repertoireId: not found", "repertoire")).toBe(true);
     expect(isNotFoundError("Invalid chapterId: not found", "chapter")).toBe(true);
@@ -229,6 +252,49 @@ describe("autosave decisions", () => {
       false
     );
     expect(isNotFoundError("SQLITE_BUSY: database is locked", "repertoire")).toBe(false);
+  });
+});
+
+describe("decision text drafts", () => {
+  const draftOf = (overrides: Partial<DecisionTextDraft>): DecisionTextDraft => ({
+    repertoireId: "r1",
+    positionKey: "k1",
+    field: "prompt",
+    text: "Develop",
+    generation: 1,
+    status: "pending",
+    ...overrides
+  });
+
+  it("sends trimmed text, or null for a blank field", () => {
+    expect(decisionTextValue("  Develop with tempo ")).toBe("Develop with tempo");
+    expect(decisionTextValue("   ")).toBeNull();
+  });
+
+  it("keys a draft by repertoire, position and field", () => {
+    expect(decisionDraftKey("r1", "k1", "prompt")).not.toBe(decisionDraftKey("r1", "k1", "hint"));
+    expect(decisionDraftKey("r1", "k1", "hint")).not.toBe(decisionDraftKey("r2", "k1", "hint"));
+  });
+
+  it("summarises one repertoire's drafts for the save status", () => {
+    const drafts = {
+      a: draftOf({ status: "saving" }),
+      b: draftOf({ field: "hint", status: "error", error: { message: "refused", stale: true } }),
+      c: draftOf({ repertoireId: "r2", status: "error", error: { message: "x", stale: false } })
+    };
+    expect(decisionTextStatus(drafts, "r1")).toEqual({
+      dirty: true,
+      saving: true,
+      errorMessage: "refused",
+      errorStale: true
+    });
+    expect(decisionTextStatus(drafts, "r2")).toMatchObject({ errorStale: false, saving: false });
+    expect(decisionTextStatus(drafts, "r3")).toEqual({
+      dirty: false,
+      saving: false,
+      errorMessage: null,
+      errorStale: false
+    });
   });
 });
 

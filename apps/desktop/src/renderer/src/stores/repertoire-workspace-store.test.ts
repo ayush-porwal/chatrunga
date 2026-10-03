@@ -7,6 +7,7 @@ import {
   detailOf,
   rootNode
 } from "../features/repertoire/__fixtures__/repertoire";
+import { decisionDraftKey } from "../features/repertoire/repertoire-model";
 import {
   promoteChild,
   removeSubtree,
@@ -337,5 +338,60 @@ describe("staging a move from a game comparison", () => {
     const result = store().stageMove("w5", "e1g1", "reference");
     const node = store().chapter!.tree.find((item) => item.id === result!.nodeId)!;
     expect(node.san).toBe("O-O");
+  });
+});
+
+describe("repertoire workspace decision drafts", () => {
+  const key = decisionDraftKey("r1", "k1", "prompt");
+  const draft = () => store().decisionDrafts[key];
+
+  beforeEach(() => {
+    store().reset();
+    useRepertoireWorkspaceStore.setState({ decisionDrafts: {} });
+  });
+
+  it("keeps typed text across chapters, repertoires and resets", () => {
+    store().setDecisionText("r1", "k1", "prompt", "Develop");
+    load();
+    store().loadChapter(detailOf({ id: "r2" }), chapterOf(sampleTree()));
+    store().reset();
+    expect(draft()).toMatchObject({ text: "Develop", status: "pending", generation: 1 });
+  });
+
+  it("is cleared only by a confirmed save of the text it sent", () => {
+    store().setDecisionText("r1", "k1", "prompt", "Develop");
+    const sent = store().markDecisionTextSaving(key)!;
+    expect(draft().status).toBe("saving");
+    store().setDecisionText("r1", "k1", "prompt", "Develop with tempo");
+    store().decisionTextSaved(key, sent);
+    // Typed while it saved: the newer text waits for its own write.
+    expect(draft()).toMatchObject({ text: "Develop with tempo", status: "pending" });
+    store().decisionTextSaved(key, store().markDecisionTextSaving(key)!);
+    expect(draft()).toBeUndefined();
+    expect(store().markDecisionTextSaving(key)).toBeNull();
+  });
+
+  it("keeps a failed write's text; Retry (clearSaveError) leaves a stale one alone", () => {
+    const hint = decisionDraftKey("r1", "k1", "hint");
+    store().setDecisionText("r1", "k1", "prompt", "Develop");
+    store().setDecisionText("r1", "k1", "hint", "Knight to f3");
+    store().decisionTextFailed(key, "disk full", false);
+    store().decisionTextFailed(hint, "repertoire changed", true);
+    expect(draft()).toMatchObject({
+      text: "Develop",
+      status: "error",
+      error: { message: "disk full", stale: false }
+    });
+    store().clearSaveError();
+    expect(draft()).toMatchObject({ status: "pending", error: undefined });
+    expect(store().decisionDrafts[hint].status).toBe("error");
+    store().clearDecisionTextError(hint);
+    expect(store().decisionDrafts[hint].status).toBe("pending");
+    store().discardDecisionText(hint);
+    expect(store().decisionDrafts[hint]).toBeUndefined();
+    // Nothing to fail or clear once it's gone.
+    store().decisionTextFailed(hint, "late", false);
+    store().clearDecisionTextError(hint);
+    expect(store().decisionDrafts[hint]).toBeUndefined();
   });
 });

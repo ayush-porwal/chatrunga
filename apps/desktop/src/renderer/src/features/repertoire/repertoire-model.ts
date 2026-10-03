@@ -281,6 +281,64 @@ export type AutosaveSaveState =
   | { status: "saving" }
   | { status: "error"; message: string; stale: boolean };
 
+export type DecisionTextField = "prompt" | "hint";
+
+/**
+ * A practice prompt or hint typed at a position and not yet confirmed saved. It outlives the
+ * notes panel (and the study page), so a failed write keeps the text until it is retried or
+ * discarded.
+ */
+export type DecisionTextDraft = {
+  repertoireId: string;
+  positionKey: string;
+  field: DecisionTextField;
+  /** The field as typed (the write sends it trimmed, or null when blank). */
+  text: string;
+  /** Counts edits: a save clears the draft only when nothing was typed while it ran. */
+  generation: number;
+  status: "pending" | "saving" | "error";
+  /** The refusal (status "error"); `stale` when the repertoire moved on. */
+  error?: { message: string; stale: boolean };
+};
+
+/** Where a decision draft lives in the workspace store (one per repertoire, position and field). */
+export function decisionDraftKey(
+  repertoireId: string,
+  positionKey: string,
+  field: DecisionTextField
+): string {
+  return JSON.stringify([repertoireId, positionKey, field]);
+}
+
+/** What a prompt or hint write sends: trimmed, or null for a blank field. */
+export function decisionTextValue(text: string): string | null {
+  return text.trim() ? text.trim() : null;
+}
+
+/** The decision drafts of one repertoire, as the save status needs them (flat, so selectable). */
+export type DecisionTextStatus = {
+  dirty: boolean;
+  saving: boolean;
+  /** The first failed write's message, or null. */
+  errorMessage: string | null;
+  /** Every failed write is a stale refusal (Retry would only be refused again). */
+  errorStale: boolean;
+};
+
+export function decisionTextStatus(
+  drafts: Readonly<Record<string, DecisionTextDraft>>,
+  repertoireId: string
+): DecisionTextStatus {
+  const own = Object.values(drafts).filter((draft) => draft.repertoireId === repertoireId);
+  const failed = own.filter((draft) => draft.status === "error");
+  return {
+    dirty: own.length > 0,
+    saving: own.some((draft) => draft.status === "saving"),
+    errorMessage: failed[0]?.error?.message ?? null,
+    errorStale: failed.length > 0 && failed.every((draft) => draft.error?.stale)
+  };
+}
+
 /**
  * What the autosave loop does now: `schedule` a debounced save, `wait` for the running one,
  * stay `blocked` on an error until the user retries (a stale draft must never save over newer
@@ -295,11 +353,20 @@ export function autosaveStep(state: {
   return state.dirty ? "schedule" : "idle";
 }
 
-/** Titlebar text for the save state. */
-export function saveStatusLabel(state: { dirty: boolean; saveState: AutosaveSaveState }): string {
-  if (state.saveState.status === "saving") return "Saving…";
+/**
+ * Titlebar text for the save state: the chapter draft's, and the prompt and hint writes at its
+ * positions (never "Saved" while one of them is pending or failed).
+ */
+export function saveStatusLabel(state: {
+  dirty: boolean;
+  saveState: AutosaveSaveState;
+  decisionText?: DecisionTextStatus;
+}): string {
+  const decisionText = state.decisionText;
   if (state.saveState.status === "error") return `Unsaved — ${state.saveState.message}`;
-  return state.dirty ? "Unsaved changes" : "Saved";
+  if (decisionText?.errorMessage) return `Unsaved — ${decisionText.errorMessage}`;
+  if (state.saveState.status === "saving" || decisionText?.saving) return "Saving…";
+  return state.dirty || decisionText?.dirty ? "Unsaved changes" : "Saved";
 }
 
 /* ------------------------------------------------------------------ practice */

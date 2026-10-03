@@ -14,20 +14,22 @@ import {
   useUpdateDecisionMutation
 } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
+import { queueRepertoireWrite } from "./decision-text-drafts";
 import { chapterOrderAfterMove, rootNodeFor } from "./repertoire-chapters";
-import { flushChapterDraft } from "./useChapterAutosave";
+import { flushChapterTree } from "./useChapterAutosave";
 
 type ChapterPatch = Partial<Pick<RepertoireChapter, "title" | "kind" | "enabled" | "sortOrder">>;
 
 const workspace = () => useRepertoireWorkspaceStore.getState();
 
 /**
- * Study writes that go beyond the open draft: decision choices (preferred move, prompt, hint),
- * edits to other chapters, adding and removing chapters. Each one first flushes the draft (so it
- * writes against the latest revision), then adopts the revision the main process returns, so the
- * next autosave is not refused as stale. Writes run one at a time, each against the revision the
- * previous one returned; a result arriving after another repertoire was opened leaves that
- * repertoire's draft alone. `error` holds the last failure for the panel.
+ * Study writes that go beyond the open draft: decision choices (the preferred move; typed prompts
+ * and hints save through decision-text-drafts.ts), edits to other chapters, adding and removing
+ * chapters. Each one first flushes the chapter draft (so it writes against the latest revision),
+ * then adopts the revision the main process returns, so the next autosave is not refused as
+ * stale. Writes run one at a time (queued with the prompt and hint saves), each against the
+ * revision the previous one returned; a result arriving after another repertoire was opened
+ * leaves that repertoire's draft alone. `error` holds the last failure for the panel.
  */
 export function useStudyCommands(repertoireId: string) {
   const queryClient = useQueryClient();
@@ -35,8 +37,6 @@ export function useStudyCommands(repertoireId: string) {
   const removeChapterMutation = useRemoveChapterMutation();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** The last queued write; the next one starts when it settles. */
-  const queue = useRef<Promise<unknown>>(Promise.resolve());
   const pending = useRef(0);
 
   /** True while the open draft still belongs to this hook's repertoire. */
@@ -55,9 +55,9 @@ export function useStudyCommands(repertoireId: string) {
     pending.current += 1;
     setBusy(true);
     setError(null);
-    const next = queue.current.then(async () => {
+    return queueRepertoireWrite(async () => {
       try {
-        if (!(await flushChapterDraft(queryClient))) {
+        if (!(await flushChapterTree(queryClient))) {
           setError("Save the chapter first (see the save status above).");
           return null;
         }
@@ -70,8 +70,6 @@ export function useStudyCommands(repertoireId: string) {
         if (!pending.current) setBusy(false);
       }
     });
-    queue.current = next;
-    return next;
   }
 
   async function writeDecision(positionKey: string, patch: UpdateDecisionInput["patch"]) {
@@ -127,7 +125,7 @@ export function useStudyCommands(repertoireId: string) {
       for (const [id, sortOrder] of changes) {
         if (id === workspace().chapterId) {
           workspace().setChapterFields({ sortOrder });
-          if (!(await flushChapterDraft(queryClient)))
+          if (!(await flushChapterTree(queryClient)))
             throw new Error("The chapter couldn't be saved.");
         } else {
           await saveOtherChapter(id, { sortOrder });

@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { CircleAlert, GraduationCap, Loader2, Microscope, Route, Swords } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { statusForFen } from "@chaturanga/shared/chess/position";
@@ -38,12 +39,16 @@ import {
   type StudyStage
 } from "./repertoire-chapters";
 import {
+  decisionDraftKey,
+  decisionTextValue,
   deriveChoices,
   isNotFoundError,
   occurrencesInOtherChapters,
   lastMoveOf,
   pathLabel,
-  trainableDecisionCount
+  trainableDecisionCount,
+  type DecisionTextDraft,
+  type DecisionTextField
 } from "./repertoire-model";
 import type { RehearseTarget } from "./practice-setup";
 import { RepertoireMoveNavigation, useTreeKeyboardNavigation } from "./RepertoireMoveNavigation";
@@ -53,7 +58,12 @@ import { StudyChoicesPanel } from "./StudyChoicesPanel";
 import { StudyNotesPanel } from "./StudyNotesPanel";
 import { StudySourcesSection } from "./StudySourcesSection";
 import { StudyTree } from "./StudyTree";
-import { useChapterAutosave } from "./useChapterAutosave";
+import {
+  discardDecisionText,
+  keepDecisionTextNow,
+  saveDecisionTextNow,
+  useChapterAutosave
+} from "./useChapterAutosave";
 import { useStudyCommands } from "./useStudyCommands";
 
 export type StudyTab = "chapters" | "moves" | "notes";
@@ -123,6 +133,7 @@ export function RepertoireStudyPage({
   onPlayFromHere?: () => void;
 }) {
   const panelId = useId();
+  const queryClient = useQueryClient();
   const desktop = Boolean(window.chaturanga?.repertoires);
   const detail = useRepertoireQuery(repertoireId);
   const chapterQuery = useRepertoireChapterQuery(repertoireId, chapterId);
@@ -240,6 +251,14 @@ export function RepertoireStudyPage({
   );
   // The stored decision is the truth; this session's last write only fills in while it loads.
   const decision = storedDecision.isSuccess ? storedDecision.data : sessionDecision;
+  /** This repertoire's prompt and hint writes that failed (at any position). */
+  const failedDrafts = useRepertoireWorkspaceStore(
+    useShallow((state) =>
+      Object.values(state.decisionDrafts).filter(
+        (draft) => draft.repertoireId === repertoireId && draft.status === "error"
+      )
+    )
+  );
   const occurrences = useRepertoireOccurrencesQuery(repertoireId, positionKey);
   const otherOccurrences = useMemo(
     () => occurrencesInOtherChapters(occurrences.data ?? [], chapterId),
@@ -311,6 +330,26 @@ export function RepertoireStudyPage({
       )
     );
   }, [detail.data, draft]);
+
+  const changeDecisionText = useEventCallback((field: DecisionTextField, text: string) => {
+    if (positionKey) workspace().setDecisionText(repertoireId, positionKey, field, text);
+  });
+  // Blur: a draft matching the stored text is dropped; any other is written now. A stale one
+  // waits for Discard / Keep mine.
+  const commitDecisionText = useEventCallback((field: DecisionTextField) => {
+    if (!positionKey) return;
+    const key = decisionDraftKey(repertoireId, positionKey, field);
+    const draft = workspace().decisionDrafts[key];
+    if (!draft || draft.status === "saving") return;
+    if (
+      draft.status === "pending" &&
+      decisionTextValue(draft.text) === (decision?.[field] ?? null)
+    ) {
+      workspace().discardDecisionText(key);
+      return;
+    }
+    void saveDecisionTextNow(queryClient, key);
+  });
 
   const reload = useEventCallback(async () => {
     const [nextDetail, nextChapter] = await Promise.all([detail.refetch(), chapterQuery.refetch()]);
@@ -434,9 +473,65 @@ export function RepertoireStudyPage({
       </Notice>
     ) : null;
 
+  const decisionNotices = failedDrafts.map((failed: DecisionTextDraft) => {
+    const key = decisionDraftKey(failed.repertoireId, failed.positionKey, failed.field);
+    const stale = Boolean(failed.error?.stale);
+    const name = failed.field === "prompt" ? "practice prompt" : "hint";
+    // Where it was typed, when this chapter reaches that position.
+    const at = [...lookup.positionKeys].find(
+      ([, keyAt]) => keyAt === failed.positionKey
+    );
+    const where = at ? ` at ${pathLabel(lookup, at[0])}` : "";
+    return (
+      <Notice
+        key={key}
+        tone={stale ? "warn" : "danger"}
+        title={stale ? "This repertoire changed elsewhere" : `Couldn't save the ${name}${where}`}
+        action={
+          <div className="flex gap-2">
+            {stale ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                title={`Save your ${name} over the newer version`}
+                onClick={() => void keepDecisionTextNow(queryClient, key)}
+              >
+                Keep mine
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                onClick={() => void saveDecisionTextNow(queryClient, key)}
+              >
+                Retry
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="link"
+              size="xs"
+              title={`Drop the typed ${name}; the saved one shows again`}
+              onClick={() => discardDecisionText(queryClient, key)}
+            >
+              Discard
+            </Button>
+          </div>
+        }
+      >
+        {stale
+          ? `Your ${name}${where} wasn't saved. Discard it to see the saved version, or keep yours to save it over that.`
+          : failed.error?.message}
+      </Notice>
+    );
+  });
+
   const notices = (
     <>
       {errorNotice}
+      {decisionNotices}
       {loadError !== null ? (
         <Notice
           tone="danger"
@@ -697,18 +792,19 @@ export function RepertoireStudyPage({
       ) : null}
       {tab === "notes" ? (
         <StudyNotesPanel
-          key={`${node.id}:${positionKey}:${decision?.prompt ?? ""}:${decision?.hint ?? ""}`}
+          key={node.id}
           node={node}
           decisionText={decision}
+          repertoireId={repertoireId}
+          positionKey={positionKey}
           canEditDecision={Boolean(
             choices?.side === "player" &&
             choices.rows.some((row) => row.state === "preferred" || row.state === "accepted")
           )}
           busy={commands.busy}
           onComment={(text) => workspace().setComment(node.id, text)}
-          onSaveDecisionText={(field, text) =>
-            positionKey ? commands.writeDecision(positionKey, { [field]: text }) : undefined
-          }
+          onDecisionTextChange={changeDecisionText}
+          onCommitDecisionText={commitDecisionText}
           footer={
             <StudySourcesSection
               repertoireId={repertoireId}
