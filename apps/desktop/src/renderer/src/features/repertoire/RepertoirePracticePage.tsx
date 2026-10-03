@@ -17,7 +17,6 @@ import type {
   PracticeAction,
   PracticeAnswer,
   PracticeCard,
-  PracticeMode,
   PracticeSessionSnapshot,
   RepertoireDetail,
   StartPracticeInput
@@ -61,6 +60,14 @@ import {
   savesPracticeDraft,
   type PracticePreset
 } from "./practice-setup";
+import {
+  beginStart,
+  IDLE_START,
+  isEmptyTargetedStart,
+  settleStart,
+  startShowsSpinner,
+  type PracticeStart
+} from "./practice-start";
 import { PracticeSummaryView } from "./PracticeSummaryView";
 import {
   answerView,
@@ -126,8 +133,7 @@ export function RepertoirePracticePage({
   );
   const start = useStartPracticeMutation();
   const resume = useResumePracticeMutation();
-  const endFinished = useEndPracticeMutation();
-  const { mutate: endFinishedSession } = endFinished;
+  const { mutateAsync: endFinishedSession } = useEndPracticeMutation();
   /** The finished session whose summary was asked for (once; Retry asks again). */
   const summaryRequested = useRef<string | null>(null);
   // Revisiting a session (its summary since replaced by another's) asks for its summary again.
@@ -135,9 +141,9 @@ export function RepertoirePracticePage({
     summaryRequested.current = null;
   }, [sessionId]);
   const saveWorkspace = useSaveRepertoireWorkspaceMutation();
-  const [nothingDue, setNothingDue] = useState<PracticeMode | null>(null);
-  /** An auto-started targeted queue found nothing to practise (the setup shows why). */
-  const [targetEmpty, setTargetEmpty] = useState(false);
+  /** The last start and how it ended (only the newest start settles it). */
+  const [startState, setStartState] = useState<PracticeStart>(IDLE_START);
+  const startRequest = useRef(0);
   /** The targeted preset already started (once per preset; Back to it never restarts it). */
   const [autoStarted, setAutoStarted] = useState<PracticePreset | null>(null);
   const [resumeError, setResumeError] = useState<string | null>(null);
@@ -147,16 +153,18 @@ export function RepertoirePracticePage({
     shownSession?.status === "finished" && summary?.sessionId !== shownSession.sessionId;
 
   // A session that already ended (Back after "Practice again", a restart) is never shown as live:
-  // ending it again is idempotent and returns its summary.
+  // ending it again is idempotent and returns its summary. Asked once per session, so the answer
+  // is taken from the promise: a per-call callback would be lost if this page's mutation observer
+  // were resubscribed meanwhile (React's StrictMode remount does that).
   useEffect(() => {
     if (!finishedWithoutSummary || !shownSession) return;
     if (summaryRequested.current === shownSession.sessionId) return;
     summaryRequested.current = shownSession.sessionId;
-    endFinishedSession(shownSession.sessionId, {
-      onSuccess: (result) => practice().setSummary(result),
-      onError: (error) =>
+    endFinishedSession(shownSession.sessionId).then(
+      (result) => practice().setSummary(result),
+      (error) =>
         setResumeError(ipcErrorMessage(error) || "That session's summary couldn't be read.")
-    });
+    );
   }, [finishedWithoutSummary, shownSession, endFinishedSession]);
 
   // Opening a session's route (history, a restart): resume it from the main process.
@@ -172,15 +180,17 @@ export function RepertoirePracticePage({
     });
   }, [sessionId, desktop, resumeSession]);
 
+  /**
+   * Starts a session. The answer is taken from the promise, never from per-call callbacks or the
+   * mutation's pending flag: an auto-start runs once from an effect, and a remount of this page
+   * (StrictMode) would otherwise lose its answer and leave the spinner up for good.
+   */
   const startSession = useEventCallback((input: StartPracticeInput, fromPreset?: boolean) => {
     if (repertoireCommandBlocked(useLichessStore.getState(), "start-practice")) {
       useAppNoticeStore.getState().show(LIVE_GAME_NOTICE, { tone: "info" });
       return;
     }
-    setNothingDue(null);
-    setTargetEmpty(false);
     const loaded = detail.data;
-    const targeted = Boolean(input.positionKeys?.length);
     if (loaded && savesPracticeDraft(input, fromPreset === true)) {
       saveWorkspace.mutate({
         repertoireId,
@@ -193,17 +203,23 @@ export function RepertoirePracticePage({
         practiceSetup: true
       });
     }
-    start.mutate(input, {
-      onSuccess: (snapshot) => {
-        if (!snapshot.cards.length) {
-          if (targeted) setTargetEmpty(true);
-          else setNothingDue(input.mode);
-          return;
-        }
+    const request = ++startRequest.current;
+    setStartState(beginStart(request, input, fromPreset === true));
+    start.mutateAsync(input).then(
+      (snapshot) => {
+        setStartState((state) => settleStart(state, request, { kind: "answered", snapshot }));
+        if (request !== startRequest.current || !snapshot.cards.length) return;
         practice().setSession(snapshot);
         onSessionStarted(snapshot.sessionId);
-      }
-    });
+      },
+      (error) =>
+        setStartState((state) =>
+          settleStart(state, request, {
+            kind: "failed",
+            message: ipcErrorMessage(error) || "Couldn't start practice."
+          })
+        )
+    );
   });
 
   // "Refresh this decision" / "Rehearse from here": the preset's session starts as soon as the
@@ -294,7 +310,7 @@ export function RepertoirePracticePage({
     );
   }
 
-  if (autoStartPending || (targetedInput && start.isPending)) {
+  if (autoStartPending || startShowsSpinner(startState)) {
     return <Spinner label="Starting practice" />;
   }
 
@@ -303,15 +319,19 @@ export function RepertoirePracticePage({
       key={detail.data.id}
       detail={detail.data}
       initial={initialPracticeInput(detail.data, preset)}
-      starting={start.isPending}
+      starting={startState.status === "starting"}
       error={
-        start.error
-          ? ipcErrorMessage(start.error) || "Couldn't start practice."
-          : targetEmpty
+        startState.status === "failed"
+          ? startState.message
+          : isEmptyTargetedStart(startState)
             ? "That decision has nothing to practise right now (it may be paused or no longer among your choices). Set up a session below instead."
             : null
       }
-      nothingDue={nothingDue}
+      nothingDue={
+        startState.status === "empty" && !isEmptyTargetedStart(startState)
+          ? startState.input.mode
+          : null
+      }
       onStart={startSession}
     />
   );
