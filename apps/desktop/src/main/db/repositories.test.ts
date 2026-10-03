@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,8 +8,8 @@ import { importPgnText } from "@chaturanga/shared/chess/pgn";
 const userData = mkdtempSync(join(tmpdir(), "chaturanga-repo-test-"));
 vi.mock("electron", () => ({ app: { getPath: () => userData } }));
 
-const { closeDb, getDb } = await import("./index");
-const { gameRepository } = await import("./repositories");
+const { closeDb, databasePath, getDb } = await import("./index");
+const { gameRepository, retryOnceIfBusy } = await import("./repositories");
 const { gameFingerprint } = await import("./game-fingerprint");
 
 const PGN = `[Event "Rapid"]
@@ -407,5 +408,44 @@ describe("gameRepository (SQLite)", () => {
       const { game: other } = importPgnText(PGN.replace("2. Nf3", "2. Nc3"));
       expect(gameRepository.findIdByFingerprint(gameFingerprint(other)!)).toBeNull();
     });
+  });
+});
+
+describe("retryOnceIfBusy (a game save while another connection holds the write lock)", () => {
+  it("retries once after the delay and saves when the lock was released meanwhile", async () => {
+    getDb();
+    const other = new DatabaseSync(databasePath());
+    try {
+      other.exec("BEGIN IMMEDIATE");
+      // Runs once the first attempt has failed (its busy wait blocks this thread).
+      setTimeout(() => other.exec("ROLLBACK"), 10);
+      const saved = await retryOnceIfBusy(() => saveImported(), 300);
+      expect(gameRepository.get(saved.id)).not.toBeNull();
+    } finally {
+      if (other.isTransaction) other.exec("ROLLBACK");
+      other.close();
+    }
+  });
+
+  it("rejects with the busy error when the lock is still held, and passes other errors at once", async () => {
+    getDb();
+    const other = new DatabaseSync(databasePath());
+    try {
+      other.exec("BEGIN IMMEDIATE");
+      await expect(retryOnceIfBusy(() => saveImported(), 10)).rejects.toMatchObject({
+        errcode: 5
+      });
+    } finally {
+      if (other.isTransaction) other.exec("ROLLBACK");
+      other.close();
+    }
+    let calls = 0;
+    await expect(
+      retryOnceIfBusy(() => {
+        calls += 1;
+        throw new Error("Game not found");
+      }, 10)
+    ).rejects.toThrow("Game not found");
+    expect(calls).toBe(1);
   });
 });

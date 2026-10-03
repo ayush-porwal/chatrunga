@@ -81,10 +81,10 @@ export function getDb(): DatabaseSync {
   db = new DatabaseSync(dbPath);
   db.exec("PRAGMA journal_mode = WAL");
   // The import writer worker's connection holds the write lock while it stores an import.
-  // Repertoire writes wait for it at the service's write gate, asynchronously; node:sqlite's busy
-  // handler sleeps synchronously (the whole main process stalls), so the timeout stays short and
-  // is only a safety net for the few other writes that may land meanwhile.
-  db.exec("PRAGMA busy_timeout = 250");
+  // Repertoire writes wait for it at the service's write gate, asynchronously, so they never sleep
+  // here. node:sqlite's busy handler sleeps synchronously (the main process stalls), so the timeout
+  // is bounded: a rare other write (a game autosave) stalls up to 1 s rather than failing.
+  db.exec("PRAGMA busy_timeout = 1000");
   db.exec("PRAGMA foreign_keys = ON");
   for (const statement of ddl) db.exec(statement);
   runMigrations(db);

@@ -183,6 +183,28 @@ function transaction<T>(work: () => T): T {
   }
 }
 
+/** Pause before retrying a write that found the database busy. */
+export const BUSY_RETRY_DELAY_MS = 300;
+
+/**
+ * Runs a write; if SQLite reports BUSY (another connection, such as the repertoire import writer,
+ * held the write lock past the busy timeout), waits `delayMs` without blocking and tries once more
+ * before rejecting. For writes the user would otherwise lose, like a game save.
+ */
+export async function retryOnceIfBusy<T>(
+  work: () => T,
+  delayMs: number = BUSY_RETRY_DELAY_MS
+): Promise<T> {
+  try {
+    return work();
+  } catch (error) {
+    const code = (error as { errcode?: unknown } | null)?.errcode;
+    if (typeof code !== "number" || (code & 0xff) !== 5) throw error;
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    return work();
+  }
+}
+
 function run(sql: string, ...params: SQLInputValue[]): void {
   getDb().prepare(sql).run(...params);
 }
