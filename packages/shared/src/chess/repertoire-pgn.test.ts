@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { START_FEN } from "./position";
-import { exportRepertoirePgn, parseRepertoirePgn } from "./repertoire-pgn";
+import { parsePgn, emptyHeaders } from "chessops/pgn";
+import {
+  createRepertoirePgnReader,
+  exportRepertoirePgn,
+  parseRepertoirePgn
+} from "./repertoire-pgn";
 
 const TWO_GAMES = `[Event "Sicilian: Najdorf"]
 [Site "https://lichess.org/study/abc"]
@@ -97,6 +102,33 @@ describe("parseRepertoirePgn", () => {
     expect(() => parseRepertoirePgn("1. e4 e5 2. Nf3 Nc6 *", { maxDepth: 3 })).toThrow(
       /longer than 3 moves \(at 1\. e4 e5 2\. Nf3\)/
     );
+    const long = "x".repeat(30);
+    expect(() => parseRepertoirePgn(`1. e4 e5 { ${long} } *`, { maxCommentLength: 20 })).toThrow(
+      "A comment is longer than 20 characters (at 1. e4 e5); shorten it before importing."
+    );
+    expect(() => parseRepertoirePgn(`{ ${long} } 1. e4 *`, { maxCommentLength: 20 })).toThrow(
+      /longer than 20 characters \(at the start\)/
+    );
+    expect(parseRepertoirePgn(`1. e4 { ${long} } *`).games[0].tree[1].comment).toBe(long);
+  });
+
+  it("reads games one at a time with the same result and limits across games", () => {
+    const reader = createRepertoirePgnReader();
+    for (const game of parsePgn(TWO_GAMES, emptyHeaders)) reader.push(game);
+    expect(reader.gamesSeen).toBe(2);
+    expect(reader.nodesSeen).toBe(
+      parseRepertoirePgn(TWO_GAMES).games.reduce((n, g) => n + g.nodeCount, 0)
+    );
+    expect(reader.finish()).toEqual(parseRepertoirePgn(TWO_GAMES));
+
+    // The game limit fails on the first game past it, before later games are parsed.
+    const limited = createRepertoirePgnReader({ maxGames: 1 });
+    const [first, second] = parsePgn(TWO_GAMES, emptyHeaders);
+    limited.push(first);
+    expect(() => limited.push(second)).toThrow(
+      "This PGN has more than 1 games; one import can hold at most 1. Split the file and import it in parts."
+    );
+    expect(() => createRepertoirePgnReader().finish()).toThrow("No PGN game found.");
   });
 
   it("titles untitled games by position", () => {

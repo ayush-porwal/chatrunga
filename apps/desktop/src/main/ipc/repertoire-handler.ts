@@ -22,6 +22,7 @@ import {
   previewAddFromGame,
   previewBackupImport,
   previewImport,
+  queueRepertoireWrite,
   recordAttempt,
   recordPracticeAction,
   refreshBackupPreview,
@@ -66,7 +67,10 @@ import {
   parseUpdateRepertoireMetadataInput
 } from "./validate";
 
-/** Repertoires (main/repertoire/service.ts): every input is parsed before the service sees it. */
+/**
+ * Repertoires (main/repertoire/service.ts): every input is parsed before the service sees it.
+ * Writes to one repertoire are queued behind a running import commit (`queueRepertoireWrite`).
+ */
 export function registerRepertoireIpc(): void {
   ipcMain.handle("repertoires:list", (_event, filters: unknown) =>
     listRepertoires(parseRepertoireListFilters(filters))
@@ -89,42 +93,50 @@ export function registerRepertoireIpc(): void {
   ipcMain.handle("repertoires:previewAddFromGame", (_event, input: unknown) =>
     previewAddFromGame(parseAddFromGameInput(input))
   );
-  ipcMain.handle("repertoires:addFromGame", (_event, input: unknown) =>
-    addFromGame(parseAddFromGameInput(input))
-  );
+  ipcMain.handle("repertoires:addFromGame", (_event, input: unknown) => {
+    const parsed = parseAddFromGameInput(input);
+    return queueRepertoireWrite(parsed.repertoireId, () => addFromGame(parsed));
+  });
   ipcMain.handle("repertoires:listGameLinks", (_event, input: unknown) =>
     listGameLinks(parseGameLinkQuery(input))
   );
   ipcMain.handle("repertoires:removeGameLink", (_event, input: unknown) =>
     removeGameLink(parseRemoveGameLink(input))
   );
-  ipcMain.handle("repertoires:linkGame", (_event, input: unknown) =>
-    linkGame(parseLinkGameInput(input))
-  );
+  ipcMain.handle("repertoires:linkGame", (_event, input: unknown) => {
+    const parsed = parseLinkGameInput(input);
+    return queueRepertoireWrite(parsed.repertoireId, () => linkGame(parsed));
+  });
   ipcMain.handle("repertoires:create", (_event, input: unknown) =>
     createRepertoire(parseCreateRepertoireInput(input))
   );
-  ipcMain.handle("repertoires:updateMetadata", (_event, input: unknown) =>
-    updateMetadata(parseUpdateRepertoireMetadataInput(input))
-  );
-  ipcMain.handle("repertoires:saveChapter", (_event, input: unknown) =>
-    saveChapter(parseSaveChapterInput(input))
-  );
-  ipcMain.handle("repertoires:updateDecision", (_event, input: unknown) =>
-    updateDecision(parseUpdateDecisionInput(input))
-  );
-  ipcMain.handle("repertoires:removeChapter", (_event, input: unknown) =>
-    removeChapter(parseRemoveChapterInput(input))
-  );
+  ipcMain.handle("repertoires:updateMetadata", (_event, input: unknown) => {
+    const parsed = parseUpdateRepertoireMetadataInput(input);
+    return queueRepertoireWrite(parsed.id, () => updateMetadata(parsed));
+  });
+  ipcMain.handle("repertoires:saveChapter", (_event, input: unknown) => {
+    const parsed = parseSaveChapterInput(input);
+    return queueRepertoireWrite(parsed.repertoireId, () => saveChapter(parsed));
+  });
+  ipcMain.handle("repertoires:updateDecision", (_event, input: unknown) => {
+    const parsed = parseUpdateDecisionInput(input);
+    return queueRepertoireWrite(parsed.repertoireId, () => updateDecision(parsed));
+  });
+  ipcMain.handle("repertoires:removeChapter", (_event, input: unknown) => {
+    const parsed = parseRemoveChapterInput(input);
+    return queueRepertoireWrite(parsed.repertoireId, () => removeChapter(parsed));
+  });
   ipcMain.handle("repertoires:duplicate", (_event, input: unknown) =>
     duplicateRepertoire(parseDuplicateRepertoireInput(input))
   );
-  ipcMain.handle("repertoires:archive", (_event, input: unknown) =>
-    archiveRepertoire(parseArchiveRepertoireInput(input))
-  );
-  ipcMain.handle("repertoires:remove", (_event, input: unknown) =>
-    removeRepertoire(parseRemoveRepertoireInput(input))
-  );
+  ipcMain.handle("repertoires:archive", (_event, input: unknown) => {
+    const parsed = parseArchiveRepertoireInput(input);
+    return queueRepertoireWrite(parsed.id, () => archiveRepertoire(parsed));
+  });
+  ipcMain.handle("repertoires:remove", (_event, input: unknown) => {
+    const parsed = parseRemoveRepertoireInput(input);
+    return queueRepertoireWrite(parsed.id, () => removeRepertoire(parsed));
+  });
   ipcMain.handle("repertoires:previewImport", (_event, input: unknown) =>
     previewImport(parsePreviewImportInput(input))
   );
@@ -172,8 +184,9 @@ export function registerRepertoireIpc(): void {
   ipcMain.handle("repertoires:endPractice", (_event, sessionId: unknown) =>
     endPractice(asId(sessionId, "sessionId"))
   );
-  ipcMain.handle("repertoires:saveWorkspace", (_event, input: unknown) =>
-    saveWorkspace(parseSaveWorkspaceInput(input))
-  );
+  ipcMain.handle("repertoires:saveWorkspace", (_event, input: unknown) => {
+    const parsed = parseSaveWorkspaceInput(input);
+    return queueRepertoireWrite(parsed.repertoireId, () => saveWorkspace(parsed));
+  });
   ipcMain.handle("repertoires:getDueSummary", () => getDueSummary());
 }

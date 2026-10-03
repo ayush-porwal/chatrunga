@@ -6,6 +6,7 @@ import type { GameHeaders, MoveNode } from "@chaturanga/shared/types/chess";
 import type { GameReview } from "@chaturanga/shared/types/engine";
 import { gameFingerprint } from "./game-fingerprint";
 import { reviewListingFields, reviewRowId } from "./review-rows";
+import { setRepertoireConnection } from "../repertoire/connection";
 
 let db: DatabaseSync | null = null;
 
@@ -67,13 +68,21 @@ const ddl = [
   )`
 ];
 
+/** The database file (the import writer worker opens its own connection to it). */
+export function databasePath(): string {
+  return join(app.getPath("userData"), "chaturanga.sqlite");
+}
+
 export function getDb(): DatabaseSync {
   if (db) return db;
 
-  const dbPath = join(app.getPath("userData"), "chaturanga.sqlite");
+  const dbPath = databasePath();
   mkdirSync(dirname(dbPath), { recursive: true });
   db = new DatabaseSync(dbPath);
   db.exec("PRAGMA journal_mode = WAL");
+  // The import writer worker's connection holds the write lock while it stores an import (its
+  // transaction only runs prepared inserts); a main-thread write waits for it instead of failing.
+  db.exec("PRAGMA busy_timeout = 2000");
   db.exec("PRAGMA foreign_keys = ON");
   for (const statement of ddl) db.exec(statement);
   runMigrations(db);
@@ -391,6 +400,9 @@ export function runMigrations(database: DatabaseSync, migrations = MIGRATIONS): 
     }
   }
 }
+
+// Repertoire queries run on this connection in the main process.
+setRepertoireConnection(getDb);
 
 export function closeDb(): void {
   db?.close();

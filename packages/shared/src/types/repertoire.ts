@@ -296,7 +296,11 @@ export type PracticeSummary = {
 
 /* ------------------------------------------------------------------ import / export */
 
-export type PreviewImportInput = { pgn: string };
+/**
+ * `jobId`: optional client-generated id (nanoid) so the renderer can match `onImportProgress`
+ * events and cancel before the preview resolves; the main process generates one when omitted.
+ */
+export type PreviewImportInput = { pgn: string; jobId?: string };
 
 export type ImportInvalidBranch = {
   /** SAN sequence from the game's root to the illegal move's parent, e.g. `"1. e4 e5 2. Nf3"`. */
@@ -824,6 +828,19 @@ export type RepertoireOccurrence = {
   /** SAN path from the chapter root, e.g. `"1. e4 e5 2. Bc4 Nc6 3. Nf3"`. */
   path: string;
   ply: number;
+};
+
+/** Progress of a PGN import job (parsing runs in a worker; design §10, §11). */
+export type ImportProgressEvent = {
+  jobId: string;
+  phase: "reading" | "parsing" | "validating" | "ready" | "cancelled" | "failed";
+  /** Bytes of PGN consumed so far, and the total when known. */
+  bytesRead: number;
+  totalBytes: number | null;
+  gamesSeen: number;
+  nodesSeen: number;
+  /** For `failed`: the actionable error message. */
+  error: string | null;
 };
 
 export type RepertoireChangedEvent = {

@@ -38,9 +38,13 @@ export type ChapterLookup = {
 /**
  * Indexes a chapter tree once. Walks from the root iteratively and visits each node id once, so a
  * malformed tree (a cycle, a node listed twice) can't recurse forever; unreachable nodes are left
- * out.
+ * out. `keyOf` gives a FEN's position key; a caller with keys already computed (an import worker)
+ * passes a lookup instead of recomputing them.
  */
-export function buildChapterLookup(chapter: Pick<RepertoireChapter, "tree">): ChapterLookup {
+export function buildChapterLookup(
+  chapter: Pick<RepertoireChapter, "tree">,
+  keyOf: (fen: string) => string = positionKey
+): ChapterLookup {
   const nodesById = new Map(chapter.tree.map((node) => [node.id, node]));
   const childrenById = new Map<string, string[]>();
   /** How each reachable node was reached (null for the root). */
@@ -57,7 +61,7 @@ export function buildChapterLookup(chapter: Pick<RepertoireChapter, "tree">): Ch
     if (reachedFrom.has(id)) continue;
     const node = nodesById.get(id)!;
     reachedFrom.set(id, from);
-    positionKeys.set(id, positionKey(node.fenAfter));
+    positionKeys.set(id, keyOf(node.fenAfter));
     order.push(id);
     const children = node.children.filter(
       (childId) => nodesById.has(childId) && !reachedFrom.has(childId)
@@ -160,14 +164,15 @@ export type CollectedDecision = {
  */
 export function collectDecisions(
   color: RepertoireColor,
-  chapters: readonly RepertoireChapterContent[]
+  chapters: readonly RepertoireChapterContent[],
+  keyOf: (fen: string) => string = positionKey
 ): Map<string, CollectedDecision> {
   const decisions = new Map<string, CollectedDecision>();
   const ordered = [...chapters].sort((a, b) => a.sortOrder - b.sortOrder);
 
   ordered.forEach((chapter, chapterOrder) => {
     if (!chapter.enabled || chapter.kind !== "opening") return;
-    const lookup = buildChapterLookup(chapter);
+    const lookup = buildChapterLookup(chapter, keyOf);
     const states = computeScopeStates(chapter, lookup);
 
     for (const id of lookup.order) {

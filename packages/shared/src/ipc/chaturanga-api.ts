@@ -65,6 +65,7 @@ import type {
   ExportResult,
   ImportCommitInput,
   ImportPreview,
+  ImportProgressEvent,
   ImportResult,
   LinkGameInput,
   PracticeActionInput,
@@ -353,6 +354,8 @@ export type ChaturangaApi = {
     /** Due decisions across active repertoires, and where to continue studying (Home card). */
     getDueSummary(): Promise<RepertoireDueSummary>;
     onChanged(callback: (event: RepertoireChangedEvent) => void): Unsubscribe;
+    /** Progress of `previewImport` jobs; the preview itself still resolves with the result. */
+    onImportProgress(callback: (event: ImportProgressEvent) => void): Unsubscribe;
   };
 
   /** In-app updates of Chaturanga itself (main/updater.ts). */

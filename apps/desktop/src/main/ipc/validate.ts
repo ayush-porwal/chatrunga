@@ -811,7 +811,9 @@ export function parseRemoveRepertoireInput(value: unknown): RemoveRepertoireInpu
 
 export function parsePreviewImportInput(value: unknown): PreviewImportInput {
   const input = asObject(value, "PGN import");
-  return { pgn: asString(input.pgn, "PGN", MAX_PGN_BYTES) };
+  const pgn = asString(input.pgn, "PGN", MAX_PGN_BYTES);
+  const jobId = optional(input.jobId, (id) => asId(id, "jobId"));
+  return jobId === undefined ? { pgn } : { pgn, jobId };
 }
 
 export function parseImportCommitInput(value: unknown): ImportCommitInput {

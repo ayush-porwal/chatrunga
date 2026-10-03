@@ -150,6 +150,31 @@ export function promoteChild(tree: readonly MoveNode[], nodeId: string): MoveNod
   );
 }
 
+/**
+ * Field-wise equality of two plain values (arrays, objects, primitives). A null or undefined field
+ * counts as absent, as a save's JSON round trip may drop it.
+ */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b || (a == null && b == null)) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = Object.keys(left).filter((key) => left[key] != null);
+  const otherKeys = Object.keys(right).filter((key) => right[key] != null);
+  return keys.length === otherKeys.length && keys.every((key) => sameValue(left[key], right[key]));
+}
+
+/**
+ * The saved tree, or the local one when the save returned the same content: the draft's tree
+ * keeps its identity across autosaves, so the study page's lookup and tree rows (memoised on it)
+ * aren't rebuilt after every save (design §11).
+ */
+export function reuseUnchangedTree(local: MoveNode[], saved: MoveNode[]): MoveNode[] {
+  if (local.length !== saved.length) return saved;
+  return local.every((node, index) => sameValue(node, saved[index])) ? local : saved;
+}
+
 /** The SAN and resulting position of `uci` from `fen`, or null when it isn't legal there. */
 export function playUci(fen: string, uci: string): { san: string; fenAfter: string } | null {
   try {
@@ -341,8 +366,11 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
         }
         const baseRevision = result.repertoire.revision;
         if (shouldAdoptSaveResult(generationAtSave, state.generation)) {
+          const tree = state.chapter
+            ? reuseUnchangedTree(state.chapter.tree, result.chapter.tree)
+            : result.chapter.tree;
           set({
-            chapter: result.chapter,
+            chapter: { ...result.chapter, tree },
             dirty: false,
             baseRevision,
             saveState: { status: "idle" },

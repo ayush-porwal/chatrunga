@@ -11,6 +11,10 @@ import type {
 } from "@chaturanga/shared/types/repertoire";
 import { fenAfterUci, START_FEN } from "@chaturanga/shared/chess/position";
 import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
+import { parseRepertoirePgn } from "@chaturanga/shared/chess/repertoire-pgn";
+import type { ImportProgressEvent } from "@chaturanga/shared/types/repertoire";
+import { generateRepertoirePgn } from "./import-bench";
+import { validateTree } from "./chapter-validation";
 
 const userData = mkdtempSync(join(tmpdir(), "chaturanga-repertoire-test-"));
 const sent: { channel: string; payload: unknown }[] = [];
@@ -39,6 +43,7 @@ const { closeDb, getDb } = await import("../db");
 const service = await import("./service");
 const { attemptRepository, progressRepository, decisionRepository, positionIndexRepository } =
   await import("./repository");
+const core = await import("./core");
 
 const DAY = 24 * 60 * 60_000;
 let now = 1_000_000_000_000;
@@ -776,7 +781,7 @@ describe("repertoire service: import and export", () => {
     const { id, revision } = create();
     const preview = await service.previewImport({ pgn: TWO_GAMES });
     expect(preview.games.map((game) => game.proposedTitle)).toEqual(["Italian", "Scotch"]);
-    const result = service.commitImport({
+    const result = await service.commitImport({
       jobId: preview.jobId,
       repertoireId: id,
       expectedRevision: revision,
@@ -805,49 +810,49 @@ describe("repertoire service: import and export", () => {
     expect(scotch.nodeMeta[scotch.tree[1].id]).toEqual({ edge: "included" });
     // Root (1.e4), after 1...e5 (2.Nf3), after 2...Nc6 (Bc4 from one chapter, d4 from the other).
     expect(result.repertoire.decisionCount).toBe(3);
-    expect(() =>
+    await expect(
       service.commitImport({
         jobId: preview.jobId,
         repertoireId: id,
         expectedRevision: 2,
         selections: []
       })
-    ).toThrow(/Invalid jobId/);
+    ).rejects.toThrow(/Invalid jobId/);
   });
 
   it("cancelling leaves no rows, and a stale revision on commit writes nothing", async () => {
     const { id, revision } = create();
     const cancelled = await service.previewImport({ pgn: TWO_GAMES });
     service.cancelImport(cancelled.jobId);
-    expect(() =>
+    await expect(
       service.commitImport({
         jobId: cancelled.jobId,
         repertoireId: id,
         expectedRevision: revision,
         selections: [{ gameIndex: 0, title: "", kind: "opening", include: true }]
       })
-    ).toThrow(/Invalid jobId/);
+    ).rejects.toThrow(/Invalid jobId/);
     const preview = await service.previewImport({ pgn: TWO_GAMES });
-    expect(() =>
+    await expect(
       service.commitImport({
         jobId: preview.jobId,
         repertoireId: id,
         expectedRevision: revision + 1,
         selections: [{ gameIndex: 0, title: "", kind: "opening", include: true }]
       })
-    ).toThrow("Invalid expectedRevision: repertoire changed (stored 1, expected 2)");
+    ).rejects.toThrow("Invalid expectedRevision: repertoire changed (stored 1, expected 2)");
     expect(service.getRepertoire(id).chapters).toHaveLength(1);
     expect(getDb().prepare("SELECT COUNT(*) AS n FROM repertoire_chapters").get()).toEqual({
       n: 1
     });
-    expect(() =>
+    await expect(
       service.commitImport({
         jobId: preview.jobId,
         repertoireId: id,
         expectedRevision: revision,
         selections: [{ gameIndex: 0, title: "", kind: "opening", include: false }]
       })
-    ).toThrow(/choose at least one game/);
+    ).rejects.toThrow(/choose at least one game/);
   });
 
   it("keeps only the newest import previews and refuses a game included twice", async () => {
@@ -855,24 +860,253 @@ describe("repertoire service: import and export", () => {
     const first = await service.previewImport({ pgn: TWO_GAMES });
     for (let count = 0; count < 3; count++) await service.previewImport({ pgn: TWO_GAMES });
     const one = [{ gameIndex: 0, title: "", kind: "opening" as const, include: true }];
-    expect(() =>
+    await expect(
       service.commitImport({
         jobId: first.jobId,
         repertoireId: id,
         expectedRevision: revision,
         selections: one
       })
-    ).toThrow(/Invalid jobId/);
+    ).rejects.toThrow(/Invalid jobId/);
     const latest = await service.previewImport({ pgn: TWO_GAMES });
-    expect(() =>
+    await expect(
       service.commitImport({
         jobId: latest.jobId,
         repertoireId: id,
         expectedRevision: revision,
         selections: [...one, ...one]
       })
-    ).toThrow(/included only once/);
+    ).rejects.toThrow(/included only once/);
     expect(service.getRepertoire(id).chapters).toHaveLength(1);
+  });
+
+  /** The import progress events broadcast so far. */
+  const progressEvents = () =>
+    sent
+      .filter((entry) => entry.channel === "repertoires:importProgress")
+      .map((entry) => entry.payload as ImportProgressEvent);
+
+  // The only difference: trees come validated in their stored form (castling as e1g1, not e1h1).
+  it("previews what the synchronous parser gives, trees as stored (regression)", async () => {
+    const fixtures = [
+      TWO_GAMES,
+      '[Event "Custom"]\n[SetUp "1"]\n[FEN "8/8/8/4k3/8/8/4P3/4K3 w - - 0 1"]\n\n1. e4 Kd6 *',
+      '[Variant "Atomic"]\n\n1. e4 *\n\n[Event "Ok"]\n\n1. d4 d5 (1... Nf6 2. c4) 2. Ke3 *',
+      generateRepertoirePgn({
+        games: 30,
+        movesPerGame: 10,
+        variationsPerGame: 2,
+        commentLength: 8
+      }),
+      "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. O-O (4. c3 Nf6 5. O-O) 4... Nf6 $1 { [%clk 0:05:00] } *"
+    ];
+    const castled = (await service.previewImport({ pgn: fixtures.at(-1)! })).games[0].tree;
+    expect(castled.filter((node) => node.san === "O-O").map((node) => node.uci)).toEqual([
+      "e1g1",
+      "e1g1"
+    ]);
+    for (const pgn of fixtures) {
+      const preview = await service.previewImport({ pgn });
+      const expected = parseRepertoirePgn(pgn).games.map((game) => ({
+        index: game.index,
+        proposedTitle: game.proposedTitle,
+        rootFen: game.rootFen,
+        headers: game.headers,
+        nodeCount: game.nodeCount,
+        tree: game.rejected ? game.tree : validateTree(game.tree, game.rootFen),
+        warnings: game.warnings,
+        invalidBranches: game.invalidBranches
+      }));
+      expect(preview.games).toEqual(expected);
+    }
+  });
+
+  it("broadcasts progress for the job, ending with ready", async () => {
+    const pgn = generateRepertoirePgn({ games: 600, movesPerGame: 12 });
+    const preview = await service.previewImport({ pgn });
+    const events = progressEvents();
+    expect(events.every((event) => event.jobId === preview.jobId)).toBe(true);
+    expect(events[0]).toMatchObject({ phase: "reading", bytesRead: 0, error: null });
+    expect(events.map((event) => event.phase)).toContain("parsing");
+    expect(events.at(-1)).toEqual({
+      jobId: preview.jobId,
+      phase: "ready",
+      bytesRead: Buffer.byteLength(pgn),
+      totalBytes: Buffer.byteLength(pgn),
+      gamesSeen: 600,
+      nodesSeen: 600 * 12,
+      error: null
+    });
+  });
+
+  it("cancelling a running preview rejects it, broadcasts cancelled and writes nothing", async () => {
+    const { id, revision } = create();
+    const pgn = generateRepertoirePgn({ games: 900, movesPerGame: 12 });
+    const pending = service.previewImport({ pgn });
+    // The first event names the job; cancel once parsing is under way.
+    await vi.waitFor(() =>
+      expect(progressEvents().some((event) => event.phase === "parsing")).toBe(true)
+    );
+    const jobId = progressEvents()[0].jobId;
+    service.cancelImport(jobId);
+    await expect(pending).rejects.toThrow("The import was cancelled.");
+    const last = progressEvents().at(-1)!;
+    expect(last).toMatchObject({ jobId, phase: "cancelled", error: null });
+    expect(last.gamesSeen).toBeLessThan(900);
+    await expect(
+      service.commitImport({
+        jobId,
+        repertoireId: id,
+        expectedRevision: revision,
+        selections: [{ gameIndex: 0, title: "", kind: "opening", include: true }]
+      })
+    ).rejects.toThrow(/Invalid jobId/);
+    expect(getDb().prepare("SELECT COUNT(*) AS n FROM repertoire_chapters").get()).toEqual({
+      n: 1
+    });
+  });
+
+  it("a limit rejects the preview with its message and broadcasts failed", async () => {
+    service.setImportLimits({ maxGames: 5 });
+    try {
+      const pgn = generateRepertoirePgn({ games: 400, movesPerGame: 6 });
+      await expect(service.previewImport({ pgn })).rejects.toThrow(
+        "This PGN has more than 5 games; one import can hold at most 5."
+      );
+      const last = progressEvents().at(-1)!;
+      expect(last.phase).toBe("failed");
+      expect(last.error).toMatch(/more than 5 games/);
+      expect(last.bytesRead).toBeLessThan(Buffer.byteLength(pgn));
+    } finally {
+      service.setImportLimits();
+    }
+  });
+
+  it("keeps at most three running or pending imports: the oldest running one is cancelled", async () => {
+    const pgn = generateRepertoirePgn({ games: 900, movesPerGame: 12 });
+    const runs = [0, 1, 2, 3].map(() => service.previewImport({ pgn }));
+    const outcomes = await Promise.allSettled(runs);
+    expect(outcomes.map((outcome) => outcome.status)).toEqual([
+      "rejected",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled"
+    ]);
+    expect((outcomes[0] as PromiseRejectedResult).reason.message).toBe("The import was cancelled.");
+    expect(progressEvents().filter((event) => event.phase === "cancelled")).toHaveLength(1);
+    expect(progressEvents().filter((event) => event.phase === "ready")).toHaveLength(3);
+  });
+
+  it("refuses a commit over the move limit before writing anything", async () => {
+    const { id, revision } = create();
+    const preview = await service.previewImport({ pgn: TWO_GAMES });
+    service.setImportLimits({ maxNodes: 6 });
+    try {
+      await expect(
+        service.commitImport({
+          jobId: preview.jobId,
+          repertoireId: id,
+          expectedRevision: revision,
+          selections: [
+            { gameIndex: 0, title: "", kind: "opening", include: true },
+            { gameIndex: 1, title: "", kind: "opening", include: true }
+          ]
+        })
+      ).rejects.toThrow("The selected games have more than 6 moves; import them in parts.");
+    } finally {
+      service.setImportLimits();
+    }
+    expect(service.getRepertoire(id).chapters).toHaveLength(1);
+  });
+
+  it("stores the same derived state as a full reindex (precomputed keys, writer path)", async () => {
+    const { id, revision } = create();
+    save(id, [["e2e4", "e7e5", "g1f3"]]);
+    const pgn = generateRepertoirePgn({ games: 20, movesPerGame: 9, variationsPerGame: 3 });
+    const preview = await service.previewImport({ pgn: TWO_GAMES + "\n" + pgn });
+    await service.commitImport({
+      jobId: preview.jobId,
+      repertoireId: id,
+      expectedRevision: revision + 1,
+      selections: preview.games.map((game) => ({
+        gameIndex: game.index,
+        title: "",
+        kind: "opening" as const,
+        include: true,
+        excludeNodeIds: game.index === 1 ? ["n6"] : []
+      }))
+    });
+    const stored = {
+      decisions: decisionRepository.list(id),
+      rows: positionIndexRepository.list(id)
+    };
+    expect(stored.rows.length).toBe(1 + 4 + 6 + 3 + 20 * 15 + 22);
+    const { transaction } = await import("./repository");
+    transaction(() => core.reindex(core.requireRepertoire(id), now));
+    expect(decisionRepository.list(id)).toEqual(stored.decisions);
+    expect(positionIndexRepository.list(id)).toEqual(stored.rows);
+  });
+
+  it("queues a chapter save behind a running import commit, then runs it", async () => {
+    const { id, revision } = create();
+    const first = service.getRepertoire(id).chapters[0];
+    const chapter = {
+      ...service.getChapter({ repertoireId: id, chapterId: first.id }),
+      tree: treeOf(START_FEN, [["e2e4"], ["d2d4"]]),
+      nodeMeta: {}
+    };
+    const preview = await service.previewImport({ pgn: TWO_GAMES });
+    sent.length = 0;
+    const commit = service.commitImport({
+      jobId: preview.jobId,
+      repertoireId: id,
+      expectedRevision: revision,
+      selections: [{ gameIndex: 0, title: "", kind: "opening", include: true }]
+    });
+    // The import isn't stored yet: a direct save at its revision is refused...
+    expect(() =>
+      service.saveChapter({ repertoireId: id, chapter, expectedRevision: revision + 1 })
+    ).toThrow(/Invalid expectedRevision/);
+    // ...a queued one waits for the commit, then succeeds.
+    const queued = service.queueRepertoireWrite(id, () =>
+      service.saveChapter({ repertoireId: id, chapter, expectedRevision: revision + 1 })
+    );
+    expect(queued).toBeInstanceOf(Promise);
+    const [imported, saved] = await Promise.all([commit, queued]);
+    expect(imported.repertoire.revision).toBe(revision + 1);
+    expect(saved.repertoire.revision).toBe(revision + 2);
+    expect(saved.repertoire.chapters).toHaveLength(2);
+    const changes = sent.filter((entry) => entry.channel === "repertoires:changed");
+    expect(changes.map((entry) => (entry.payload as { revision: number }).revision)).toEqual([
+      revision + 1,
+      revision + 2
+    ]);
+    // Nothing queued: a write runs at once and returns its value.
+    expect(service.queueRepertoireWrite(id, () => 42)).toBe(42);
+  });
+
+  it("uses the caller's job id, refuses one in use, and cancels it at once", async () => {
+    const preview = await service.previewImport({ pgn: TWO_GAMES, jobId: "job-1" });
+    expect(preview.jobId).toBe("job-1");
+    expect(progressEvents().every((event) => event.jobId === "job-1")).toBe(true);
+    await expect(service.previewImport({ pgn: TWO_GAMES, jobId: "job-1" })).rejects.toThrow(
+      "Invalid jobId: already in use"
+    );
+
+    sent.length = 0;
+    const pending = service.previewImport({ pgn: TWO_GAMES, jobId: "job-2" });
+    service.cancelImport("job-2");
+    await expect(pending).rejects.toThrow("The import was cancelled.");
+    const phases = progressEvents().map((event) => event.phase);
+    expect(progressEvents().every((event) => event.jobId === "job-2")).toBe(true);
+    expect(phases.at(-1)).toBe("cancelled");
+    expect(phases).not.toContain("ready");
+    expect(phases.filter((phase) => phase === "cancelled")).toHaveLength(1);
+    // The id is free again, and an unknown id is ignored.
+    expect(() => service.cancelImport("no-such-job")).not.toThrow();
+    await expect(service.previewImport({ pgn: TWO_GAMES, jobId: "job-2" })).resolves.toMatchObject({
+      jobId: "job-2"
+    });
   });
 
   it("exports through the save dialog and writes only the picked file", async () => {

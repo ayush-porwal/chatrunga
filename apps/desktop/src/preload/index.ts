@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webFrame, type IpcRendererEvent } from "electron";
 import type { ChaturangaApi, Unsubscribe, WindowGlassState } from "@chaturanga/shared/ipc/chaturanga-api";
-import type { RepertoireChangedEvent } from "@chaturanga/shared/types/repertoire";
+import type { ImportProgressEvent, RepertoireChangedEvent } from "@chaturanga/shared/types/repertoire";
 
 // Runs sandboxed: only `electron`'s renderer modules are available here, no Node APIs.
 
@@ -178,7 +178,8 @@ const api: ChaturangaApi = {
     endPractice: (sessionId) => ipcRenderer.invoke("repertoires:endPractice", sessionId),
     saveWorkspace: (input) => ipcRenderer.invoke("repertoires:saveWorkspace", input),
     getDueSummary: () => ipcRenderer.invoke("repertoires:getDueSummary"),
-    onChanged: subscribe<RepertoireChangedEvent>("repertoires:changed")
+    onChanged: subscribe<RepertoireChangedEvent>("repertoires:changed"),
+    onImportProgress: subscribe<ImportProgressEvent>("repertoires:importProgress")
   },
   updates: {
     getState: () => ipcRenderer.invoke("updates:getState"),

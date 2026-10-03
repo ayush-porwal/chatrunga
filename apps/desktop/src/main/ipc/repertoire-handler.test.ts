@@ -42,15 +42,19 @@ vi.mock("../repertoire/service", () => {
     "updateDecision",
     "updateMetadata"
   ];
-  return Object.fromEntries(
-    names.map((name) => [
-      name,
-      (...args: unknown[]) => {
-        calls.push([name, args]);
-        return name;
-      }
-    ])
-  );
+  return {
+    ...Object.fromEntries(
+      names.map((name) => [
+        name,
+        (...args: unknown[]) => {
+          calls.push([name, args]);
+          return name;
+        }
+      ])
+    ),
+    // Nothing is running in these tests: queued writes run at once.
+    queueRepertoireWrite: (_repertoireId: string, work: () => unknown) => work()
+  };
 });
 
 const { registerRepertoireIpc } = await import("./repertoire-handler");
@@ -226,6 +230,12 @@ describe("registerRepertoireIpc", () => {
       invoke("recordPracticeAction", { sessionId: "s", queueItemId: "q", action: { kind: "peek" } })
     ).toThrow(/practice action/);
     expect(() => invoke("previewImport", { path: "/etc/hosts" })).toThrow(/Invalid PGN/);
+    expect(() => invoke("previewImport", { pgn: "1. e4 *", jobId: "" })).toThrow(/jobId/);
+    expect(() => invoke("previewImport", { pgn: "1. e4 *", jobId: 7 })).toThrow(/jobId/);
+    invoke("previewImport", { pgn: "1. e4 *", jobId: "job-1" });
+    expect(calls.at(-1)).toEqual(["previewImport", [{ pgn: "1. e4 *", jobId: "job-1" }]]);
+    invoke("previewImport", { pgn: "1. e4 *" });
+    expect(calls.at(-1)?.[1][0]).toEqual({ pgn: "1. e4 *" });
     expect(() =>
       invoke("commitImport", {
         jobId: "j",
