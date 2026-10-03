@@ -71,14 +71,19 @@ describe("puzzleAttemptRepository (SQLite)", () => {
     expect(repository.history().map((point) => point.rating)).toEqual([first.after!.rating, second.after!.rating]);
   });
 
-  it("records the same attempt once: a repeat returns the stored result and only fills in completedAt", () => {
+  it("records the same attempt once: a repeat returns the stored result and only adds what was learned since", () => {
     const input = attempt({ outcome: "failed", wrongMoveCount: 1, completedAt: null });
     const first = repository.record(input);
-    const again = repository.record({ ...input, outcome: "solved", completedAt: input.decidedAt + 5000 });
+    // Finished later, after two more wrong moves and a look at the solution.
+    const again = repository.record({ ...input, outcome: "solved", wrongMoveCount: 3, solutionViewed: true, completedAt: input.decidedAt + 5000 });
     expect(again).toEqual(first);
     expect(repository.summary().ratedCount).toBe(1);
-    const row = getDb().prepare("SELECT outcome, completed_at FROM puzzle_attempts WHERE id = ?").get(input.attemptId);
-    expect(row).toEqual({ outcome: "failed", completed_at: input.decidedAt + 5000 });
+    const row = () =>
+      getDb().prepare("SELECT outcome, wrong_move_count, solution_viewed, completed_at FROM puzzle_attempts WHERE id = ?").get(input.attemptId);
+    expect(row()).toEqual({ outcome: "failed", wrong_move_count: 3, solution_viewed: 1, completed_at: input.decidedAt + 5000 });
+    // An older copy arriving late takes nothing away.
+    expect(repository.record({ ...input, completedAt: input.decidedAt + 9000 })).toEqual(first);
+    expect(row()).toEqual({ outcome: "failed", wrong_move_count: 3, solution_viewed: 1, completed_at: input.decidedAt + 5000 });
   });
 
   it("only rates the first try at a puzzle: later ones are stored unrated", () => {

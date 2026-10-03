@@ -78,16 +78,26 @@ function storedRating(): RatingRow | null {
 export const puzzleAttemptRepository = {
   /**
    * Stores a decided attempt and, for the first try at a rated puzzle, rates the solver. Recording
-   * the same attempt again returns what was stored (never rating twice) and only fills in a
-   * `completedAt` learned since (a failed puzzle finished afterwards).
+   * the same attempt again returns what was stored (never rating twice, the outcome kept) and only
+   * adds what was learned since — a failed puzzle finished afterwards: its completion, and the wrong
+   * moves made and the solution opened after it was decided (these only grow, so an older copy
+   * arriving late takes nothing away).
    */
   record(input: RecordPuzzleAttemptInput, now: number = Date.now()): PuzzleAttemptResult {
     return transaction(() => {
       const existing = get<AttemptRow>("SELECT * FROM puzzle_attempts WHERE id = ?", input.attemptId);
       if (existing) {
-        if (existing.completed_at === null && input.completedAt !== null) {
-          run("UPDATE puzzle_attempts SET completed_at = ? WHERE id = ?", input.completedAt, input.attemptId);
-        }
+        run(
+          `UPDATE puzzle_attempts SET
+            wrong_move_count = MAX(wrong_move_count, ?),
+            solution_viewed = MAX(solution_viewed, ?),
+            completed_at = COALESCE(completed_at, ?)
+          WHERE id = ?`,
+          input.wrongMoveCount,
+          input.solutionViewed ? 1 : 0,
+          input.completedAt,
+          input.attemptId
+        );
         return toResult(existing);
       }
 
