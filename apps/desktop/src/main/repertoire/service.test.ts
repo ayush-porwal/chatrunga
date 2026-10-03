@@ -1716,6 +1716,36 @@ describe("repertoire service: practice", () => {
     });
   });
 
+  it("retrying a session's missed decisions leaves that session's grades as they were", () => {
+    const { id } = create();
+    save(id, [["e2e4", "e7e5", "g1f3"]]);
+    const first = service.startPractice({ repertoireId: id, mode: "learn-new" });
+    attempt(first.sessionId, first.cards[0].queueItemId, "d2d4");
+    attempt(first.sessionId, first.cards[1].queueItemId, "g1f3");
+    const summary = service.endPractice(first.sessionId);
+    expect(summary).toMatchObject({ unaided: 1, missed: 1, missedPositionKeys: [START_KEY] });
+    const lapsed = progressRepository.get(id, START_KEY)!;
+    expect(lapsed).toMatchObject({ stage: 0, lapses: 1 });
+    const firstRows = attemptRepository.list(first.sessionId);
+
+    // "Retry missed": the targeted queue of the missed decisions, graded as any targeted queue.
+    now += 60_000;
+    const retry = service.startPractice({
+      repertoireId: id,
+      mode: "review-due",
+      positionKeys: summary.missedPositionKeys,
+      cardLimit: 1,
+      newCardLimit: 1
+    });
+    expect(retry.cards.map((card) => card.positionKey)).toEqual([START_KEY]);
+    expect(attempt(retry.sessionId, retry.cards[0].queueItemId, "e2e4").outcome).toBe("correct");
+    expect(progressRepository.get(id, START_KEY)).toMatchObject({ stage: 1, lapses: 1 });
+
+    // The first session's answers and summary are unchanged.
+    expect(attemptRepository.list(first.sessionId)).toEqual(firstRows);
+    expect(service.endPractice(first.sessionId)).toEqual(summary);
+  });
+
   it("a targeted queue keeps the given order and drops unknown or paused decisions", () => {
     const { id } = create();
     save(id, [["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"]]);

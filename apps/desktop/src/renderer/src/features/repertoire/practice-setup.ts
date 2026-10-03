@@ -9,6 +9,7 @@ import {
   REPERTOIRE_ROOT_NODE_ID,
   type PracticeMode,
   type PracticeScope,
+  type PracticeSummary,
   type RepertoireChapter,
   type RepertoireChapterSummary,
   type RepertoireColor,
@@ -63,6 +64,23 @@ export function rehearsePreset(target: RehearseTarget, maxDepthPlies?: number): 
     ...(maxDepthPlies ? { maxDepthPlies } : {}),
     autoStart: true
   };
+}
+
+/**
+ * "Retry missed": the session's missed decisions as a targeted queue (the same contract as
+ * "Refresh this decision"), started at once; null when nothing was missed. It is a new session,
+ * so the missed session's own answers and summary stay as they were.
+ */
+export function retryMissedPreset(
+  summary: Pick<PracticeSummary, "missedPositionKeys">
+): PracticePreset | null {
+  const positionKeys = [...new Set(summary.missedPositionKeys)];
+  return positionKeys.length ? { mode: "review-due", positionKeys, autoStart: true } : null;
+}
+
+/** A targeted queue (exact decisions, due or not) is extra practice, not the scheduled review. */
+export function isExtraPractice(scope: Pick<PracticeScope, "positionKeys">): boolean {
+  return Boolean(scope.positionKeys?.length);
 }
 
 /**

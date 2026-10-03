@@ -15,8 +15,10 @@ import {
   practiceInputFromForm,
   practicableChapterIds,
   presetForSetup,
+  isExtraPractice,
   rehearsePreset,
   rehearseStarts,
+  retryMissedPreset,
   savesPracticeDraft,
   targetedPracticeInput
 } from "./practice-setup";
@@ -189,6 +191,25 @@ describe("targeted practice presets", () => {
     });
     expect(initial.positionKeys).toBeUndefined();
     expect(initial.mode).toBe("learn-new");
+  });
+
+  it("retries a session's misses as a targeted queue, through the same start input", () => {
+    const preset = retryMissedPreset({ missedPositionKeys: ["k2", "k1", "k2"] });
+    expect(preset).toEqual({ mode: "review-due", positionKeys: ["k2", "k1"], autoStart: true });
+    expect(targetedPracticeInput("r1", preset)).toEqual({
+      repertoireId: "r1",
+      mode: "review-due",
+      positionKeys: ["k2", "k1"],
+      cardLimit: 2,
+      newCardLimit: 2
+    });
+    expect(retryMissedPreset({ missedPositionKeys: [] })).toBeNull();
+  });
+
+  it("calls a targeted session extra practice", () => {
+    expect(isExtraPractice({ positionKeys: ["k1"] })).toBe(true);
+    expect(isExtraPractice({ positionKeys: [] })).toBe(false);
+    expect(isExtraPractice({})).toBe(false);
   });
 
   it("opens Practice again on the setup, keeping only chapters and mode", () => {

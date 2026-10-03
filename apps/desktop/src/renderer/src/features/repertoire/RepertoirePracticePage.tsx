@@ -55,7 +55,9 @@ import { ControlledBoard, TypedMoveButton, type TypedMoveControl } from "../boar
 import { PracticeSetup, initialPracticeInput } from "./PracticeSetup";
 import {
   autoStartPracticeInput,
+  isExtraPractice,
   rehearsePreset,
+  retryMissedPreset,
   savesPracticeDraft,
   type PracticePreset
 } from "./practice-setup";
@@ -107,7 +109,10 @@ export function RepertoirePracticePage({
   /** Back to the setup (a new session). */
   onSetup: () => void;
   onStudy: (target: { chapterId: string; nodeId: string | null }) => void;
-  /** "Rehearse again": a new rehearsal started from a preset (a new step in history). */
+  /**
+   * A new session started from a preset, as a new step in history: "Rehearse again", or "Retry
+   * missed" (the missed decisions as a targeted queue).
+   */
   onRehearse: (preset: PracticePreset) => void;
 }) {
   const desktop = Boolean(window.chaturanga?.repertoires);
@@ -238,14 +243,18 @@ export function RepertoirePracticePage({
 
   if (summary && summary.sessionId === sessionId) {
     const rehearsed = shownSession?.mode === "rehearse-lines" ? shownSession.scope : null;
+    // Retrying a rehearsal's misses would schedule them: a rehearsal offers Rehearse again instead.
+    const retry = rehearsed ? null : retryMissedPreset(summary);
     return (
       <PracticeSummaryView
         detail={detail.data}
         summary={summary}
         cards={shownSession?.cards ?? []}
         note={endNote}
+        extraPractice={Boolean(shownSession && isExtraPractice(shownSession.scope))}
         onStudy={onStudy}
         onAgain={onSetup}
+        onRetryMissed={retry ? () => onRehearse(retry) : undefined}
         onRehearseAgain={
           rehearsed?.rehearse
             ? () => onRehearse(rehearsePreset(rehearsed.rehearse!, rehearsed.maxDepthPlies))
@@ -618,6 +627,7 @@ function PracticeSession({
                 </span>
               ) : (
                 <>
+                  {isExtraPractice(session.scope) ? "Extra practice · " : ""}
                   {card.stage === "new" ? "New decision" : "Review"} ·{" "}
                   {color === "white" ? "White" : "Black"} to play
                 </>

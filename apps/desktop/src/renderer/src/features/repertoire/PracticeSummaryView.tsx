@@ -1,4 +1,4 @@
-import { BookOpen, Route, RotateCcw } from "lucide-react";
+import { BookOpen, RefreshCcw, Route, RotateCcw } from "lucide-react";
 import type {
   PracticeCard,
   PracticeSummary,
@@ -8,37 +8,45 @@ import { Button } from "@/components/ui/button";
 import { SectionHeader } from "@/components/ui/page";
 import { Stat, StatGroup } from "@/components/ui/stat";
 import { cardPadded } from "@/lib/ui";
-import { firstMissedTarget } from "./repertoire-model";
+import { missedPositions } from "./repertoire-model";
 
 /**
  * Session summary (§5.3): unaided recalls, assisted answers, missed and skipped decisions, the
- * chapters practised, and the ways on. Counts describe decision recall — no "mastered" score. A
- * line rehearsal also counts lines started and completed and answers that belonged to another
- * line, and offers "Rehearse again" (nothing in it was scheduled).
+ * chapters practised, and the ways on. Counts describe decision recall — no "mastered" score.
+ * Every missed decision is listed with its chapter and moves and a link to study it; "Retry
+ * missed" practises them again as extra practice (a new targeted session: this one's answers stay
+ * as they were). A line rehearsal also counts lines started and completed and answers that
+ * belonged to another line, and offers "Rehearse again" (nothing in it was scheduled).
  */
 export function PracticeSummaryView({
   detail,
   summary,
   cards,
+  extraPractice = false,
   onStudy,
   onAgain,
+  onRetryMissed,
   onRehearseAgain,
   note
 }: {
   detail: RepertoireDetail;
   summary: PracticeSummary;
   cards: readonly PracticeCard[];
+  /** The session was itself extra practice (a targeted queue, e.g. a retry of missed decisions). */
+  extraPractice?: boolean;
   onStudy: (target: { chapterId: string; nodeId: string | null }) => void;
   onAgain: () => void;
+  /** Practise the missed decisions again, as extra practice. */
+  onRetryMissed?: () => void;
   /** A rehearsal's summary: the same rehearsal again. */
   onRehearseAgain?: () => void;
   /** Why the session ended early (its chapter changed). */
   note?: string | null;
 }) {
   const titles = new Map(detail.chapters.map((chapter) => [chapter.id, chapter.title]));
-  const missed = firstMissedTarget(summary, cards);
+  const missed = missedPositions(summary, cards);
   const rehearsal = summary.rehearsal ?? null;
-  const hasMissed = summary.missedPositionKeys.length > 0;
+  const retry = summary.missedPositionKeys.length ? onRetryMissed : undefined;
   return (
     <div className="scroll-area h-full min-h-0 overflow-y-auto">
       <div className="mx-auto grid w-full max-w-2xl content-start gap-5 px-(--page-gutter) py-(--page-gutter-y)">
@@ -46,7 +54,11 @@ export function PracticeSummaryView({
           <SectionHeader
             title={
               <span id="practice-summary-title">
-                {rehearsal ? "Rehearsal complete" : "Session complete"}
+                {rehearsal
+                  ? "Rehearsal complete"
+                  : extraPractice
+                    ? "Extra practice complete"
+                    : "Session complete"}
               </span>
             }
             description={
@@ -79,22 +91,64 @@ export function PracticeSummaryView({
               {summary.chapters.map((id) => titles.get(id) ?? "Removed chapter").join(", ")}
             </p>
           ) : null}
-          <div className="flex flex-wrap gap-2">
-            {hasMissed ? (
-              <Button
-                type="button"
-                variant="primary"
-                disabled={!missed && !summary.chapters[0]}
-                onClick={() => onStudy(missed ?? { chapterId: summary.chapters[0], nodeId: null })}
+          {missed.length ? (
+            <section aria-labelledby="practice-missed-title" className="grid gap-1">
+              <h3 id="practice-missed-title" className="text-xs font-medium text-fg-secondary">
+                Missed positions
+              </h3>
+              <ul
+                aria-labelledby="practice-missed-title"
+                className="grid divide-y divide-line-subtle"
               >
-                <BookOpen />
-                Study missed positions
+                {missed.map((position) => {
+                  const chapterTitle = titles.get(position.chapterId) ?? "Removed chapter";
+                  return (
+                    <li
+                      key={position.positionKey}
+                      className="flex min-w-0 items-center justify-between gap-3 py-2"
+                    >
+                      <div className="grid min-w-0 gap-0.5">
+                        <span className="truncate text-sm text-fg">{chapterTitle}</span>
+                        <span className="truncate font-mono text-xs text-fg-muted">
+                          {position.path}
+                        </span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        aria-label={`Study ${chapterTitle}: ${position.path}`}
+                        disabled={!titles.has(position.chapterId)}
+                        onClick={() =>
+                          onStudy({ chapterId: position.chapterId, nodeId: position.nodeId })
+                        }
+                      >
+                        <BookOpen />
+                        Study
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ) : null}
+          {retry ? (
+            <p className="text-xs text-fg-muted">
+              Retry missed is extra practice: this session&apos;s answers stay as recorded, and the
+              retry&apos;s answers count as a new review of those decisions.
+            </p>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            {retry ? (
+              <Button type="button" variant="primary" onClick={retry}>
+                <RefreshCcw />
+                Retry missed
               </Button>
             ) : null}
             {onRehearseAgain ? (
               <Button
                 type="button"
-                variant={hasMissed ? "outline" : "primary"}
+                variant={retry ? "outline" : "primary"}
                 onClick={onRehearseAgain}
               >
                 <Route />
@@ -103,7 +157,7 @@ export function PracticeSummaryView({
             ) : null}
             <Button
               type="button"
-              variant={hasMissed || onRehearseAgain ? "outline" : "primary"}
+              variant={retry || onRehearseAgain ? "outline" : "primary"}
               onClick={onAgain}
             >
               <RotateCcw />

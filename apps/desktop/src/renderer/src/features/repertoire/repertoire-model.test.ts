@@ -7,6 +7,7 @@ import {
   autosaveStep,
   hasAnswerNotes,
   isPracticeNextKey,
+  leadUpLabel,
   decisionCountWithMeta,
   decisionDeltaLabel,
   defaultEdgeForNewMove,
@@ -473,6 +474,23 @@ describe("practice text", () => {
     expect(isPracticeNextKey(key("Enter", { metaKey: true }), free)).toBe(false);
     expect(isPracticeNextKey(key(" ", { shiftKey: true }), free)).toBe(false);
     expect(isPracticeNextKey(key(" ", { defaultPrevented: true }), free)).toBe(false);
+  });
+
+  it("numbers a lead-up from each move's resulting position", () => {
+    expect(leadUpLabel([])).toBe("Start");
+    expect(
+      leadUpLabel([
+        { san: "e4", fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1" },
+        { san: "c5", fen: "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2" },
+        { san: "Nf3", fen: "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2" }
+      ])
+    ).toBe("1. e4 c5 2. Nf3");
+    // A chapter starting with Black to move.
+    expect(
+      leadUpLabel([
+        { san: "Nc6", fen: "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3" }
+      ])
+    ).toBe("2... Nc6");
   });
 
   it("says which hints a resumed card already used", () => {

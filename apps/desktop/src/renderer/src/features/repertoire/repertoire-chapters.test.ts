@@ -14,7 +14,7 @@ import {
   rootNodeFor,
   sortedChapters
 } from "./repertoire-chapters";
-import { firstMissedTarget, nodeIdForPathLabel } from "./repertoire-model";
+import { missedPositions, nodeIdForPathLabel } from "./repertoire-model";
 
 describe("chapter helpers", () => {
   it("builds a root node with the position's real ply", () => {
@@ -135,13 +135,25 @@ describe("import and summary targets", () => {
     expect(nodeIdForPathLabel(lookup, "")).toBeNull();
   });
 
-  it("opens study at the first missed card it can place", () => {
-    const cards = [cardOf("a", { chapterId: "c2", nodeId: "n7" })];
-    expect(firstMissedTarget({ missedPositionKeys: ["unknown", "key-a"] }, cards)).toEqual({
-      chapterId: "c2",
-      nodeId: "n7"
-    });
-    expect(firstMissedTarget({ missedPositionKeys: ["unknown"] }, cards)).toBeNull();
+  it("lists every missed card it can place, in the summary's order, with its moves", () => {
+    const afterE4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+    const afterE5 = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2";
+    const cards = [
+      cardOf("a", { chapterId: "c1", nodeId: "root", leadUp: [] }),
+      cardOf("b", {
+        chapterId: "c2",
+        nodeId: "n7",
+        leadUp: [
+          { san: "e4", uci: "e2e4", fen: afterE4 },
+          { san: "e5", uci: "e7e5", fen: afterE5 }
+        ]
+      })
+    ];
+    expect(missedPositions({ missedPositionKeys: ["key-b", "unknown", "key-a"] }, cards)).toEqual([
+      { positionKey: "key-b", chapterId: "c2", nodeId: "n7", path: "1. e4 e5" },
+      { positionKey: "key-a", chapterId: "c1", nodeId: "root", path: "Start" }
+    ]);
+    expect(missedPositions({ missedPositionKeys: ["unknown"] }, cards)).toEqual([]);
   });
 });
 

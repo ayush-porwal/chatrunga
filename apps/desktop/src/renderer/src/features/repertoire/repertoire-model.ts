@@ -14,6 +14,7 @@ import {
   REPERTOIRE_NOT_FOUND_ERROR,
   type PracticeAnswer,
   type PracticeCard,
+  type PracticeLeadUpMove,
   type PracticeSummary,
   type PracticeTotals,
   type RepertoireChapter,
@@ -428,16 +429,49 @@ export function revealArrows(ucis: readonly string[], preferredUci: string | nul
   });
 }
 
-/** Where "Study missed positions" opens: the first missed card's chapter and node, when known. */
-export function firstMissedTarget(
+/** A missed decision as the summary lists it: where to study it and the moves that lead there. */
+export type MissedPosition = {
+  positionKey: string;
+  chapterId: string;
+  nodeId: string;
+  /** The authored moves from the chapter start, numbered (`1. e4 e5 2. Nf3`), or "Start". */
+  path: string;
+};
+
+/** Every missed decision of a session the session's cards can place, in the summary's order. */
+export function missedPositions(
   summary: Pick<PracticeSummary, "missedPositionKeys">,
-  cards: readonly Pick<PracticeCard, "positionKey" | "chapterId" | "nodeId">[]
-): { chapterId: string; nodeId: string } | null {
-  for (const key of summary.missedPositionKeys) {
-    const card = cards.find((item) => item.positionKey === key);
-    if (card) return { chapterId: card.chapterId, nodeId: card.nodeId };
-  }
-  return null;
+  cards: readonly Pick<PracticeCard, "positionKey" | "chapterId" | "nodeId" | "leadUp">[]
+): MissedPosition[] {
+  return summary.missedPositionKeys.flatMap((positionKey) => {
+    const card = cards.find((item) => item.positionKey === positionKey);
+    return card
+      ? [
+          {
+            positionKey,
+            chapterId: card.chapterId,
+            nodeId: card.nodeId,
+            path: leadUpLabel(card.leadUp)
+          }
+        ]
+      : [];
+  });
+}
+
+/**
+ * A card's lead-up as numbered moves (`1. e4 c5 2. Nf3`, `3... Nc6` when Black moved first); "Start"
+ * when the decision is at the chapter start. Numbers come from each move's resulting position.
+ */
+export function leadUpLabel(leadUp: readonly Pick<PracticeLeadUpMove, "san" | "fen">[]): string {
+  if (!leadUp.length) return "Start";
+  return leadUp
+    .map((move, index) => {
+      const after = moveNumberOf(move.fen);
+      // White to move after it: Black just moved, in the move numbered one lower.
+      if (!after.white) return `${after.fullmove}. ${move.san}`;
+      return index === 0 ? `${Math.max(1, after.fullmove - 1)}... ${move.san}` : move.san;
+    })
+    .join(" ");
 }
 
 /**
