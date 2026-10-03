@@ -27,6 +27,7 @@ import type {
   SaveChapterInput,
   SaveWorkspaceInput,
   StartPracticeInput,
+  UpdateChaptersInput,
   UpdateDecisionInput,
   UpdateRepertoireMetadataInput
 } from "@chaturanga/shared/types/repertoire";
@@ -320,6 +321,20 @@ export function useRemoveChapterMutation() {
       queryClient.removeQueries({
         queryKey: repertoireKeys.chapter(input.repertoireId, input.chapterId)
       });
+      adoptDetail(queryClient, repertoire);
+    }
+  });
+}
+
+/** Bulk enable/disable or kind change; the changed chapters' cached trees are re-read. */
+export function useUpdateChaptersMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateChaptersInput) => requireRepertoires().updateChapters(input),
+    retry: false,
+    onSuccess: ({ repertoire }) => {
+      invalidateChapters(queryClient, repertoire.id);
+      invalidateDecisions(queryClient, repertoire.id);
       adoptDetail(queryClient, repertoire);
     }
   });

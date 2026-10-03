@@ -11,14 +11,19 @@ import {
   adoptChapterSave,
   repertoireKeys,
   useRemoveChapterMutation,
+  useUpdateChaptersMutation,
   useUpdateDecisionMutation
 } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
 import { queueRepertoireWrite } from "./decision-text-drafts";
+import type { ChapterBulkPatch } from "./long-lists";
 import { chapterOrderAfterMove, rootNodeFor } from "./repertoire-chapters";
 import { flushChapterTree } from "./useChapterAutosave";
 
 type ChapterPatch = Partial<Pick<RepertoireChapter, "title" | "kind" | "enabled" | "sortOrder">>;
+
+/** Chapter ids one bulk write names at most (the main process refuses more). */
+const BULK_CHAPTER_LIMIT = 1_000;
 
 const workspace = () => useRepertoireWorkspaceStore.getState();
 
@@ -35,6 +40,7 @@ export function useStudyCommands(repertoireId: string) {
   const queryClient = useQueryClient();
   const updateDecision = useUpdateDecisionMutation();
   const removeChapterMutation = useRemoveChapterMutation();
+  const updateChaptersMutation = useUpdateChaptersMutation();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pending = useRef(0);
@@ -113,6 +119,32 @@ export function useStudyCommands(repertoireId: string) {
     return (await run(() => saveOtherChapter(chapterId, patch).then(() => true))) ?? false;
   }
 
+  /**
+   * Bulk enable/disable or kind change. The other chapters change in one main-process write per
+   * BULK_CHAPTER_LIMIT ids (one revision check and reconciliation, not a save per chapter); the
+   * open chapter changes through its draft, like a single edit, after that write.
+   */
+  async function editChapters(chapterIds: readonly string[], patch: ChapterBulkPatch) {
+    if (!chapterIds.length) return true;
+    const result = await run(async () => {
+      const others = chapterIds.filter((id) => id !== workspace().chapterId);
+      for (let start = 0; start < others.length; start += BULK_CHAPTER_LIMIT) {
+        const { repertoire } = await updateChaptersMutation.mutateAsync({
+          repertoireId,
+          chapterIds: others.slice(start, start + BULK_CHAPTER_LIMIT),
+          expectedRevision: workspace().baseRevision,
+          patch
+        });
+        adopt(repertoire.revision);
+      }
+      if (isOpen() && chapterIds.includes(workspace().chapterId ?? "")) {
+        workspace().setChapterFields(patch);
+      }
+      return true;
+    });
+    return result ?? false;
+  }
+
   /** Swaps a chapter's place with its neighbour (`direction` -1 up, +1 down). */
   async function moveChapter(
     chapters: readonly RepertoireChapterSummary[],
@@ -182,6 +214,7 @@ export function useStudyCommands(repertoireId: string) {
     clearError: () => setError(null),
     writeDecision,
     editChapter,
+    editChapters,
     moveChapter,
     addChapter,
     removeChapter

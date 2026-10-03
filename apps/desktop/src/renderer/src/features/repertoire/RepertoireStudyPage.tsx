@@ -742,6 +742,7 @@ export function RepertoireStudyPage({
           onRename={(id, title) => void commands.editChapter(id, { title })}
           onSetEnabled={(id, enabled) => void commands.editChapter(id, { enabled })}
           onSetKind={(id, kind) => void commands.editChapter(id, { kind })}
+          onSetMany={(ids, patch) => void commands.editChapters(ids, patch)}
           onMove={(id, direction) => void commands.moveChapter(chapters, id, direction)}
           onAdd={(title) =>
             void commands
