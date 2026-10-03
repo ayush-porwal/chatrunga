@@ -119,7 +119,9 @@ function PuzzleCard({
   // The solver plays every other ply; count their moves, not the replies.
   const playerMoves = Math.max(1, Math.ceil(plies / 2));
   const playerDone = Math.min(playerMoves, Math.ceil(progressCount / 2));
-  const tags = [...puzzle.themes, ...puzzle.openingTags];
+  // A theme like "mate in 2" or "fork" gives the answer away, so the puzzle's own tags wait until
+  // it is solved or failed (the Set line still shows the filters the user chose).
+  const tags = outcome === "pending" ? [] : [...puzzle.themes, ...puzzle.openingTags];
   const solution = useMemo(() => solutionLine(puzzle), [puzzle]);
   // The wrong-move hint for screen readers names the expected move in SAN, like the rest of the UI.
   const expectedSan = lastExpectedMove

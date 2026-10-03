@@ -55,7 +55,9 @@ export function BoardView() {
   const setPendingPromotion = useGameStore((state) => state.setPendingPromotion);
   const setNodeAnnotations = useGameStore((state) => state.setNodeAnnotations);
   const activePuzzle = usePuzzleStore((state) => state.activePuzzle);
-  const puzzleFeedbackKind = usePuzzleStore((state) => state.feedbackKind);
+  // Only a clean solve celebrates: a puzzle finished after a wrong move or a look at the solution
+  // also reaches "complete", but it was failed.
+  const puzzleSolved = usePuzzleStore((state) => state.feedbackKind === "complete" && state.outcome === "solved");
   const reviewMoves = useDisplayedReviewMoves();
   const engines = useEnginesQuery();
   const activeEngineId = useAnalysisStore((state) => state.activeEngineId);
@@ -370,7 +372,7 @@ export function BoardView() {
     outcome: Boolean(gameOutcome),
     treeSize: moveTree.length,
     nodeId: currentNodeId,
-    puzzleSolved: puzzleFeedbackKind === "complete"
+    puzzleSolved
   });
   useEffect(() => {
     const previous = endRef.current;
@@ -379,7 +381,7 @@ export function BoardView() {
       outcome: Boolean(gameOutcome),
       treeSize: moveTree.length,
       nodeId: currentNodeId,
-      puzzleSolved: puzzleFeedbackKind === "complete"
+      puzzleSolved
     };
     endRef.current = next;
     const ending = liveEnding(previous, { ...next, mode, parentId: currentNode?.parentId });
@@ -387,7 +389,7 @@ export function BoardView() {
     // Deferred a frame so the final move's slide has started first.
     const frame = window.requestAnimationFrame(() => fireConfetti(elementRef.current, ending === "puzzle" ? "puzzle" : "game"));
     return () => window.cancelAnimationFrame(frame);
-  }, [currentNode?.parentId, currentNodeId, engineSide, fireConfetti, gameOutcome, mode, moveTree.length, puzzleFeedbackKind, status]);
+  }, [currentNode?.parentId, currentNodeId, engineSide, fireConfetti, gameOutcome, mode, moveTree.length, puzzleSolved, status]);
 
   // Player rows always render (fixed height) so the board never jumps between modes.
   const nameFor = (color: Color, name: string) => {
