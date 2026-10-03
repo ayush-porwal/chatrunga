@@ -52,6 +52,7 @@ type PanelProps = {
  */
 export const PuzzleInfoPanel = memo(function PuzzleInfoPanel(props: PanelProps) {
   const puzzle = usePuzzleStore((state) => state.activePuzzle);
+  const attemptId = usePuzzleStore((state) => state.attempt?.id);
   const feedbackKind = usePuzzleStore((state) => state.feedbackKind);
   const feedback = usePuzzleStore((state) => state.feedback);
   const lastExpectedMove = usePuzzleStore((state) => state.lastExpectedMove);
@@ -64,9 +65,10 @@ export const PuzzleInfoPanel = memo(function PuzzleInfoPanel(props: PanelProps) 
   const playing = useGameStore((state) => state.mode === "puzzle");
   if (!puzzle) return null;
   return (
-    // Keyed by puzzle: the next one starts with the solution folded and no feedback animation pending.
+    // Keyed by attempt, not puzzle: the next one, and this one started again (Back), start with
+    // the solution folded and no feedback animation pending (whatever the last try left open).
     <PuzzleCard
-      key={puzzle.id}
+      key={attemptId}
       {...props}
       puzzle={puzzle}
       feedbackKind={feedbackKind}

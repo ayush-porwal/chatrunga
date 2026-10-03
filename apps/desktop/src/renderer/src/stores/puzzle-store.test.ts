@@ -80,6 +80,7 @@ describe("puzzle outcome", () => {
     usePuzzleStore.getState().setActivePuzzle({ ...puzzle, rating: 1650 });
     expect(usePuzzleStore.getState().outcome).toBe("pending");
     expect(usePuzzleStore.getState().attempt).toEqual({
+      id: expect.any(String),
       puzzleId: "p1",
       databaseId: "db1",
       sourceId: "lichess-puzzles",
@@ -179,6 +180,19 @@ describe("puzzle outcome", () => {
     expect(usePuzzleStore.getState()).toMatchObject({ outcome: "pending", attempt: { puzzleId: "p2", wrongMoves: [] } });
     usePuzzleStore.getState().reset();
     expect(usePuzzleStore.getState()).toMatchObject({ outcome: "pending", attempt: null, activePuzzle: null });
+  });
+
+  it("starting the same puzzle again is a new attempt, the solution not viewed in it", () => {
+    usePuzzleStore.getState().setActivePuzzle(puzzle);
+    usePuzzleStore.getState().revealSolution();
+    const first = usePuzzleStore.getState().attempt;
+    expect(first).toMatchObject({ solutionViewed: true });
+    usePuzzleStore.getState().setActivePuzzle(puzzle);
+    const again = usePuzzleStore.getState().attempt;
+    expect(again).toMatchObject({ puzzleId: "p1", solutionViewed: false, decidedAt: null });
+    expect(again?.id).toEqual(expect.any(String));
+    expect(again?.id).not.toBe(first?.id);
+    expect(usePuzzleStore.getState().outcome).toBe("pending");
   });
 
   it("stops reporting to an unsubscribed listener", () => {

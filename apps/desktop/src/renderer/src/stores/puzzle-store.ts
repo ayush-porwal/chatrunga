@@ -1,3 +1,4 @@
+import { nanoid } from "nanoid";
 import { create } from "zustand";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 
@@ -28,6 +29,11 @@ export type PuzzleWrongMove = {
  * explanation of the mistake need. The outcome is the store's `outcome`.
  */
 export type PuzzleAttempt = {
+  /**
+   * This try's own id: every puzzle shown — the same one started again too (Back) — is a new try,
+   * so nothing of the last one (the solution left open) carries over to it.
+   */
+  id: string;
   puzzleId: string;
   databaseId: string;
   sourceId: string;
@@ -101,6 +107,7 @@ export function selectFirstWrongMove(state: Pick<PuzzleStore, "attempt">): Puzzl
 
 function newAttempt(puzzle: PuzzleSample): PuzzleAttempt {
   return {
+    id: nanoid(),
     puzzleId: puzzle.id,
     databaseId: puzzle.databaseId,
     sourceId: puzzle.sourceId,
