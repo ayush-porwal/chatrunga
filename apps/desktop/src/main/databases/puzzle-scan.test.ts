@@ -91,6 +91,13 @@ describe("reservoirScan", () => {
     expect(early).toMatchObject({ matches: 2, complete: true });
     expect(cancelChecks).toBe(1); // after the first match only
   });
+
+  it("matches nothing for an empty id list (not every puzzle)", async () => {
+    const path = tempFile("no-ids.csv", CSV);
+    await expect(
+      reservoirScan({ filePath: path, compressed: false, kind: "lichess", input: { databaseId: "db", ids: [] }, excludeIds: [], size: 10 })
+    ).resolves.toEqual({ rows: [], matches: 0, complete: true });
+  });
 });
 
 describe("readFirstLine", () => {

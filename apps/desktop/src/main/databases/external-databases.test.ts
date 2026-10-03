@@ -774,6 +774,11 @@ describe("samplePuzzle", () => {
     expect(["a", "b", "c", "d"]).toContain((await samplePuzzle(input())).id);
   });
 
+  it("serves nothing for an empty id list, not any puzzle", async () => {
+    await install([row("a", 1500), row("b", 2500)]);
+    await expect(samplePuzzle({ databaseId: "puzzles", ids: [] })).rejects.toThrow(/No puzzles left to try again/);
+  });
+
   it("reaches fresh puzzles past the excluded ones at the file's start", async () => {
     await install(Array.from({ length: 1000 }, (_, index) => row(`p${index}`, 1500)));
     const excludeIds = Array.from({ length: 600 }, (_, index) => `p${index}`);

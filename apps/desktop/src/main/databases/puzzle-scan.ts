@@ -34,11 +34,12 @@ export type ScanResult = {
  * Keeps a uniform random sample (reservoir) of the rows that pass the cheap filters. The expensive
  * chess work (the position after the opponent's move) is left for the one row that gets used.
  * With `input.ids`, only those puzzles match, and the scan ends once all of them are found (as
- * complete as reading the rest).
+ * complete as reading the rest); an empty list matches nothing, without reading the file.
  */
 export async function reservoirScan(job: ScanJob, isCancelled: () => boolean = () => false): Promise<ScanResult> {
   const excluded = new Set(job.excludeIds);
-  const wanted = job.input.ids?.length ? new Set(job.input.ids) : null;
+  const wanted = job.input.ids ? new Set(job.input.ids) : null;
+  if (wanted && !wanted.size) return { rows: [], matches: 0, complete: true };
   const rows: string[][] = [];
   let matches = 0;
   let stopped = false;
