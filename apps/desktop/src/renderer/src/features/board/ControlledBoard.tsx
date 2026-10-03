@@ -63,9 +63,22 @@ export type ControlledBoardProps = {
    * small entry over the board's bottom edge.
    */
   keyboardInput?: boolean;
-  /** With `keyboardInput`: a quiet keyboard icon under the board's corner (`icon`, the default) or nothing. */
-  keyboardInputAffordance?: "icon" | "none";
+  /**
+   * With `keyboardInput`: reports the typed-move entry's state and a way to open it, so the page
+   * can put a <TypedMoveButton> in its own control row (the board fills its frame, with no room
+   * for one). Called again whenever the state changes, and with `null` on unmount.
+   */
+  onTypedMoveChange?: (typedMove: TypedMoveControl | null) => void;
   className?: string;
+};
+
+/** The typed-move entry, as seen from outside the board. */
+export type TypedMoveControl = {
+  /** The side to move may move and no promotion is being chosen. */
+  available: boolean;
+  open: boolean;
+  /** Opens the entry, empty; an entry already open keeps its text. */
+  openEntry: () => void;
 };
 
 type PendingPromotion = { from: Key; to: Key };
@@ -100,7 +113,7 @@ export function ControlledBoard({
   allowMove,
   check,
   keyboardInput = false,
-  keyboardInputAffordance = "icon",
+  onTypedMoveChange,
   className
 }: ControlledBoardProps) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -234,6 +247,20 @@ export function ControlledBoard({
     setTypedEntry({ seed, key: performance.now() });
   }, []);
 
+  // Tells the page about the entry, for its typed-move button. A repeat click must not remount an
+  // open entry: that would discard a half-typed move.
+  const openEmptyEntry = useCallback(() => {
+    setTypedEntry((current) => current ?? { seed: "", key: performance.now() });
+  }, []);
+  const reportTypedMove = useEventCallback((typedMove: TypedMoveControl | null) =>
+    onTypedMoveChange?.(typedMove)
+  );
+  useEffect(() => {
+    if (!keyboardInput) return;
+    reportTypedMove({ available: canType, open: entryOpen, openEntry: openEmptyEntry });
+  }, [canType, entryOpen, keyboardInput, openEmptyEntry, reportTypedMove]);
+  useEffect(() => () => reportTypedMove(null), [reportTypedMove]);
+
   /** Closes the entry; `refocus` hands focus back to the board so `/` works again at once. */
   const closeEntry = useCallback((refocus: boolean) => {
     setTypedEntry(null);
@@ -339,61 +366,68 @@ export function ControlledBoard({
     <div
       ref={wrapperRef}
       tabIndex={-1}
-      className={cn("group/board flex h-full min-h-0 min-w-0 flex-col gap-1 outline-none", className)}
+      className={cn("relative h-full w-full min-h-0 min-w-0 outline-none", className)}
       onMouseDownCapture={(event) => {
         if (keyboardInput && elementRef.current?.contains(event.target as Node)) {
           wrapperRef.current?.focus({ preventScroll: true });
         }
       }}
     >
-      {/* The squares take the height the icon row leaves (the board frame is square and clips), and
-          stay square: width follows height. */}
-      <div className="relative aspect-square min-h-0 min-w-0 max-w-full flex-1 self-center">
-        {/* Chessground's classes stay in className so React reconciliation never strips them. */}
-        <div
-          ref={elementRef}
-          className={cn(
-            "cg-wrap board-surface h-full w-full overflow-hidden rounded-lg",
-            interactive && "manipulable",
-            pieceClassName,
-            orientation === "white" ? "orientation-white" : "orientation-black"
-          )}
+      {/* Fills the stage's frame edge to edge, like the other boards. Chessground's classes stay in
+          className so React reconciliation never strips them. */}
+      <div
+        ref={elementRef}
+        className={cn(
+          "cg-wrap board-surface h-full w-full overflow-hidden rounded-lg",
+          interactive && "manipulable",
+          pieceClassName,
+          orientation === "white" ? "orientation-white" : "orientation-black"
+        )}
+      />
+      {pendingPromotion ? <PromotionPicker onChoose={choosePromotion} /> : null}
+      {entryOpen && typedEntry ? (
+        <TypedMoveEntry
+          key={typedEntry.key}
+          fen={fen}
+          seed={typedEntry.seed}
+          onMove={playTypedMove}
+          onClose={closeEntry}
         />
-        {pendingPromotion ? <PromotionPicker onChoose={choosePromotion} /> : null}
-        {entryOpen && typedEntry ? (
-          <TypedMoveEntry
-            key={typedEntry.key}
-            fen={fen}
-            seed={typedEntry.seed}
-            onMove={playTypedMove}
-            onClose={closeEntry}
-          />
-        ) : null}
-      </div>
-      {keyboardInput && keyboardInputAffordance === "icon" ? (
-        // A fixed-height row outside the squares, so the icon never covers a piece and hiding it
-        // (while the entry is open) never shifts the layout.
-        <div className="flex h-7 items-center justify-end">
-          <IconButton
-            label="Type a move (/)"
-            icon={KEYBOARD_ICON}
-            size="icon-xs"
-            tooltipSide="left"
-            aria-expanded={entryOpen}
-            disabled={!canType}
-            onClick={() => openEntry("")}
-            className={cn(
-              "text-fg-subtle opacity-50 hover:opacity-100 focus-visible:opacity-100 group-focus-within/board:opacity-100 group-hover/board:opacity-100",
-              entryOpen && "invisible"
-            )}
-          />
-        </div>
       ) : null}
     </div>
   );
 }
 
 const KEYBOARD_ICON = <Keyboard />;
+
+/**
+ * The quiet keyboard button that opens a ControlledBoard's typed-move entry, for the page's control
+ * row next to the board. Renders nothing until the board reports its entry (`onTypedMoveChange`).
+ */
+export function TypedMoveButton({
+  typedMove,
+  tooltipSide = "top",
+  className
+}: {
+  typedMove: TypedMoveControl | null;
+  tooltipSide?: "top" | "right" | "bottom" | "left";
+  className?: string;
+}) {
+  if (!typedMove) return null;
+  return (
+    <IconButton
+      label="Type a move (/)"
+      icon={KEYBOARD_ICON}
+      size="icon-sm"
+      tooltipSide={tooltipSide}
+      aria-expanded={typedMove.open}
+      disabled={!typedMove.available || typedMove.open}
+      onClick={typedMove.openEntry}
+      className={cn("text-fg-subtle", className)}
+    />
+  );
+}
+
 
 /**
  * Promotion choice shown over the board. It is a dialog, so the global board shortcuts stand down
