@@ -118,10 +118,18 @@ async function installMainProcessGuards(app: ElectronApplication): Promise<void>
       fetches: string[];
       workers: string[];
       workerMessages: string[];
+      workerAnswers: WorkerAnswer[];
       dialogs: string[];
       routes: { [url: string]: string };
     };
-    const state: Record = { fetches: [], workers: [], workerMessages: [], dialogs: [], routes: {} };
+    const state: Record = {
+      fetches: [],
+      workers: [],
+      workerMessages: [],
+      workerAnswers: [],
+      dialogs: [],
+      routes: {}
+    };
     (globalThis as unknown as { __e2e: Record }).__e2e = state;
 
     // Native dialogs would block the run: open/save are cancelled unless a test stubs a file;
@@ -176,14 +184,33 @@ async function installMainProcessGuards(app: ElectronApplication): Promise<void>
       constructor(filename: string | URL, options?: ConstructorParameters<typeof Original>[1]) {
         super(filename, options);
         state.workers.push(String(filename));
-        this.once("message", (message: unknown) =>
-          state.workerMessages.push(JSON.stringify(message).slice(0, 200))
-        );
+        this.once("message", (message: unknown) => {
+          state.workerMessages.push(JSON.stringify(message).slice(0, 200));
+          // A puzzle scan's answer, in full: whether it read the whole file, and the ids it kept.
+          const answer = message as {
+            ok?: boolean;
+            result?: { rows: string[][]; matches: number; complete: boolean };
+          };
+          state.workerAnswers.push({
+            ok: answer.ok === true,
+            complete: answer.result?.complete ?? null,
+            matches: answer.result?.matches ?? null,
+            ids: answer.result?.rows.map((row) => row[0] ?? "") ?? []
+          });
+        });
       }
     };
     process.getBuiltinModule("node:module").syncBuiltinESMExports();
   });
 }
+
+/** A worker thread's answer, as recorded: a puzzle scan's is `{ ok, complete, matches, ids }`. */
+export type WorkerAnswer = {
+  ok: boolean;
+  complete: boolean | null;
+  matches: number | null;
+  ids: string[];
+};
 
 /** What the main-process doubles recorded. */
 export function mainRecord(app: ElectronApplication) {
@@ -194,6 +221,7 @@ export function mainRecord(app: ElectronApplication) {
           fetches: string[];
           workers: string[];
           workerMessages: string[];
+          workerAnswers: WorkerAnswer[];
           dialogs: string[];
         };
       }
@@ -202,6 +230,7 @@ export function mainRecord(app: ElectronApplication) {
       fetches: [...state.fetches],
       workers: [...state.workers],
       workerMessages: [...state.workerMessages],
+      workerAnswers: [...state.workerAnswers],
       dialogs: [...state.dialogs]
     };
   });

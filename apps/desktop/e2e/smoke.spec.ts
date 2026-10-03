@@ -15,6 +15,7 @@ import {
 import {
   ENDGAME_PGN,
   LICHESS_PUZZLES_URL,
+  QUICK_SCAN_MATCHES,
   RUY_LOPEZ_PGN,
   writeLichessPuzzleFile,
   writePgn
@@ -146,39 +147,39 @@ test("serves a puzzle from a local puzzle database, scanned in the worker thread
 
   await sidebar(page).getByRole("button", { name: "Puzzles", exact: true }).click();
   await page.getByRole("button", { name: "Start puzzle set" }).click();
-  const title = page.getByRole("region", { name: "Puzzle" }).getByRole("heading", { level: 2 });
-  await expect(title).toHaveText(/^Puzzle #q[AB]\d{4}$/, { timeout: 30_000 });
+  const puzzle = page.getByRole("region", { name: "Puzzle" });
+  const title = puzzle.getByRole("heading", { level: 2 });
+  // Every row a quick scan of the file's start can reach is `qA0000` (see the fixture).
+  await expect(title).toHaveText("Puzzle #qA0000", { timeout: 30_000 });
 
-  // The first puzzle starts a whole-file scan in puzzle-scan-worker.js, which answers.
+  // Two scans, both in puzzle-scan-worker.js: the quick one that answered the first puzzle, and
+  // the whole-file one it started, which keeps a sample of every match in the file.
   await expect
-    .poll(
-      async () => {
-        const record = await mainRecord(app);
-        return {
-          worker: record.workers.some((file) => /puzzle-scan-worker\.js$/.test(file)),
-          ok: record.workerMessages.some((m) => m.startsWith('{"ok":true'))
-        };
-      },
-      { timeout: 30_000 }
-    )
-    .toEqual({ worker: true, ok: true });
+    .poll(async () => (await mainRecord(app)).workerAnswers.some((answer) => answer.complete), {
+      timeout: 30_000
+    })
+    .toBe(true);
+  const record = await mainRecord(app);
+  expect(record.workers).toHaveLength(2);
+  for (const file of record.workers) expect(file).toMatch(/puzzle-scan-worker\.js$/);
+  const quick = record.workerAnswers.find((answer) => answer.complete === false);
+  const whole = record.workerAnswers.find((answer) => answer.complete === true);
+  expect(quick).toMatchObject({ ok: true, matches: QUICK_SCAN_MATCHES });
+  expect(new Set(quick?.ids)).toEqual(new Set(["qA0000"]));
+  expect(whole).toMatchObject({ ok: true, matches: 3000 });
 
-  // Solve (Qxf7#) and take puzzles until one comes from past the quick scan's reach (`qB…`): only
-  // the worker's pool holds those (about 5 in 6 of its rows), so a handful of tries suffice.
-  let lastTitle = "";
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    lastTitle = (await title.textContent()) ?? "";
-    if (lastTitle.includes("#qB")) break;
-    // The board takes the moves once the puzzle is set up (the opponent's move played).
-    await expect(page.getByRole("region", { name: "Puzzle" })).toContainText("0 of 1 move found");
-    await clickSquare(page, "h5");
-    await clickSquare(page, "f7");
-    const next = page.getByRole("button", { name: "Next puzzle", exact: true });
-    await expect(next).toBeVisible();
-    await next.click();
-    await expect(title).not.toHaveText(lastTitle);
-  }
-  expect(lastTitle).toContain("#qB");
+  // Solve (Qxf7#) and take the next puzzle: with qA0000 shown (and so excluded), it is served from
+  // the whole-file scan's sample, and is a `qB` row only that scan reached. (For the sample to hold
+  // none, all 64 of its rows would have to come from the first sixth of the file: about 1 in 10^50.)
+  await expect(puzzle).toContainText("0 of 1 move found");
+  await clickSquare(page, "h5");
+  await clickSquare(page, "f7");
+  const next = page.getByRole("button", { name: "Next puzzle", exact: true });
+  await expect(next).toBeVisible();
+  await next.click();
+  await expect(title).toHaveText(/^Puzzle #qB\d{4}$/);
+  const id = (await title.textContent())?.replace("Puzzle #", "");
+  expect(whole?.ids).toContain(id);
 });
 
 test("works offline: library and engine analysis without a network", async ({
