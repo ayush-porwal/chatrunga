@@ -152,11 +152,10 @@ jobs:
 
       # The Electron smoke journeys (apps/desktop/e2e) against the unpacked app just packaged for
       # this runner's OS and CPU: a build that installs but can't start, import, save or scan
-      # puzzles stops here. Throwaway profiles, no network, no analytics or update checks.
-      # Windows isn't verified on a runner yet: its result is reported but doesn't block.
+      # puzzles stops here, on every OS. Throwaway profiles, no network, no analytics or update
+      # checks. The same journeys run nightly on Linux and Windows (e2e.yml).
       - name: Smoke-test the packaged app
         id: smoke
-        continue-on-error: ${{ runner.os == 'Windows' }}
         timeout-minutes: 15
         working-directory: apps/desktop
         shell: bash
