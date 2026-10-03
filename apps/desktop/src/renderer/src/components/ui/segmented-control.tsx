@@ -1,11 +1,17 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type SegmentedOption<T extends string> = {
   value: T;
   label: string;
   icon?: React.ReactNode;
   disabled?: boolean;
+  /**
+   * Why a disabled segment is unavailable, shown as its tooltip. The segment then stays hoverable
+   * (aria-disabled instead of disabled) so the reason can be read; it still can't be chosen.
+   */
+  disabledReason?: string;
 };
 
 type SegmentedControlProps<T extends string> = {
@@ -113,7 +119,7 @@ function SegmentedControl<T extends string>({
     if (!option) return;
     event.preventDefault();
     onChange(option.value);
-    const buttons = event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)");
+    const buttons = event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled):not([aria-disabled='true'])");
     buttons[next ?? 0]?.focus();
   };
   return (
@@ -135,7 +141,8 @@ function SegmentedControl<T extends string>({
       />
       {options.map((option, index) => {
         const selected = option.value === value;
-        return (
+        const explained = Boolean(option.disabled && option.disabledReason);
+        const segment = (
           <button
             key={option.value}
             type="button"
@@ -145,11 +152,14 @@ function SegmentedControl<T extends string>({
             aria-controls={role === "tablist" && panelId ? panelId : undefined}
             aria-selected={role === "tablist" ? selected : undefined}
             aria-checked={role === "radiogroup" ? selected : undefined}
+            aria-disabled={explained || undefined}
             tabIndex={selected || (!hasSelection && index === 0) ? 0 : -1}
-            disabled={option.disabled}
-            onClick={() => onChange(option.value)}
+            disabled={option.disabled && !explained}
+            onClick={() => {
+              if (!option.disabled) onChange(option.value);
+            }}
             className={cn(
-              "relative inline-flex min-w-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md font-medium text-fg-muted outline-none transition-[color,box-shadow,scale] duration-micro ease-standard hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/70 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 motion-reduce:active:scale-100 [&_svg]:shrink-0",
+              "relative inline-flex min-w-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md font-medium text-fg-muted outline-none transition-[color,box-shadow,scale] duration-micro ease-standard hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/70 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:text-fg-muted aria-disabled:active:scale-100 motion-reduce:active:scale-100 [&_svg]:shrink-0",
               size === "sm" ? "h-7 px-2 text-xs [&_svg]:size-3.5" : "h-8 px-3 text-sm [&_svg]:size-4",
               fullWidth && "flex-1",
               selected && "text-fg"
@@ -158,6 +168,13 @@ function SegmentedControl<T extends string>({
             {option.icon}
             <span className="truncate">{option.label}</span>
           </button>
+        );
+        if (!explained) return segment;
+        return (
+          <Tooltip key={option.value}>
+            <TooltipTrigger asChild>{segment}</TooltipTrigger>
+            <TooltipContent side="bottom">{option.disabledReason}</TooltipContent>
+          </Tooltip>
         );
       })}
     </div>

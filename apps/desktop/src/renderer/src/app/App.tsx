@@ -69,6 +69,7 @@ import { useAppNoticeStore } from "../stores/app-notice-store";
 import { Button } from "@/components/ui/button";
 import { useDatabaseDownloads } from "./useDatabaseDownloads";
 import { usePuzzleDraftStore } from "../stores/puzzle-draft-store";
+import { usePuzzleStore } from "../stores/puzzle-store";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Color } from "@chaturanga/shared/types/chess";
 import type { StudyOpenTarget, StudyStage } from "../features/repertoire/repertoire-chapters";
@@ -238,6 +239,8 @@ export function App() {
     }))
   );
   const positionIsEnd = useGameStore((state) => positionStatus(state.currentFen).isEnd);
+  // A puzzle opens to analysis once it's solved or failed (before that the engine would give it away).
+  const puzzleDecided = usePuzzleStore((state) => Boolean(state.activePuzzle) && state.outcome !== "pending");
   // A Lichess game on the board: nothing may replace it and the engine stays off until it ends.
   const onlineGameLive = useLichessStore(selectLiveGameInProgress);
   const engines = useEnginesQuery();
@@ -1443,7 +1446,9 @@ export function App() {
               reviewLoading={reviewRouteLoading}
               sideTab={sideTab}
               onSideTabChange={setSideTab}
-              canStartAnalysis={desktopApiAvailable && gameMode === "freeplay" && !positionIsEnd}
+              canStartAnalysis={
+                desktopApiAvailable && (gameMode === "freeplay" || (gameMode === "puzzle" && puzzleDecided)) && !positionIsEnd
+              }
               puzzlePanel={puzzlePanel}
               repertoire={repertoireScreen}
               on={on}

@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useId, useMemo, useState, type ReactNode } from "react";
+import { lazy, memo, Suspense, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { BookPlus, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -22,6 +22,7 @@ import { ADD_NEEDS_SAVE, captureBoardSource } from "../features/repertoire/board
 import { useAddToRepertoireStore } from "../stores/add-to-repertoire-store";
 import { useAppNoticeStore } from "../stores/app-notice-store";
 import { useGameStore } from "../stores/game-store";
+import { usePuzzleStore } from "../stores/puzzle-store";
 import { useReviewStore } from "../stores/review-store";
 import { useDisplayedReviewMoves } from "../stores/review-validity";
 
@@ -36,10 +37,38 @@ const sideTabOptions: readonly SegmentedOption<SideTab>[] = [
   { value: "library", label: "Library" }
 ];
 
+/** A puzzle has no Library; its Engine tab is locked until the puzzle is solved or failed (it would give the answer away). */
+const puzzleTabOptions: readonly SegmentedOption<SideTab>[] = [
+  { value: "notation", label: "Moves" },
+  { value: "engine", label: "Engine" }
+];
+const lockedPuzzleTabOptions: readonly SegmentedOption<SideTab>[] = [
+  { value: "notation", label: "Moves" },
+  { value: "engine", label: "Engine", disabled: true, disabledReason: "Available after the puzzle is solved or failed" }
+];
+
+/** The puzzle on this board: none, still being solved (`locked`), or solved / failed (`open`). */
+export type PuzzleTabs = "none" | "locked" | "open";
+
+function usePuzzleTabs(): PuzzleTabs {
+  const puzzleBoard = useGameStore((state) => state.source === "puzzle");
+  return usePuzzleStore((state) =>
+    !puzzleBoard || !state.activePuzzle ? "none" : state.outcome === "pending" ? "locked" : "open"
+  );
+}
+
+/** The tab shown: a puzzle never shows Library, nor Engine while it is locked. */
+export function availableSideTab(tab: SideTab, puzzle: PuzzleTabs): SideTab {
+  if (puzzle === "none") return tab;
+  if (tab === "library" || (tab === "engine" && puzzle === "locked")) return "notation";
+  return tab;
+}
+
 /**
  * The game view (free board, Analysis, engine and Lichess games, Puzzle) rendered through the shared board
  * workspace — same geometry as Game review. Tabs: Moves · Engine · Library (the puzzle card sits
- * atop Moves). Footer: eval graph when the game has been reviewed, then move navigation.
+ * atop Moves; a puzzle has no Library, and its Engine tab opens once it's solved or failed).
+ * Footer: eval graph when the game has been reviewed, then move navigation.
  */
 export const GameWorkspace = memo(function GameWorkspace({
   onOpenGame,
@@ -62,9 +91,15 @@ export const GameWorkspace = memo(function GameWorkspace({
   // The per-move parts (board, summary, footer) subscribe on their own, so stepping through the
   // game re-renders them and not the whole workspace (tabs, panel, puzzle card).
   const panelId = useId();
+  const puzzleTabs = usePuzzleTabs();
+  const shownTab = availableSideTab(sideTab, puzzleTabs);
+  // A tab the puzzle doesn't offer (Library, or Engine while locked) is never kept as the stored one.
+  useEffect(() => {
+    if (shownTab !== sideTab) onSideTabChange(shownTab);
+  }, [onSideTabChange, shownTab, sideTab]);
   return (
     <BoardWorkspace
-      tabPanel={tabPanelProps(panelId, sideTab)}
+      tabPanel={tabPanelProps(panelId, shownTab)}
       panelLabel="Game"
       board={boardView}
       tabs={
@@ -74,29 +109,30 @@ export const GameWorkspace = memo(function GameWorkspace({
           panelId={panelId}
           fullWidth
           className={workspaceTabsClass}
-          value={sideTab}
+          value={shownTab}
           onChange={onSideTabChange}
-          options={sideTabOptions}
+          options={puzzleTabs === "none" ? sideTabOptions : puzzleTabs === "locked" ? lockedPuzzleTabOptions : puzzleTabOptions}
         />
       }
-      summary={sideTab === "engine" ? engineTabSummary : gameSummary}
+      summary={shownTab === "engine" ? engineTabSummary : gameSummary}
       footer={gameFooter}
     >
-      {sideTab === "notation" ? (
+      {shownTab === "notation" ? (
         <div className="flex h-full min-h-0 flex-col gap-3">
           {puzzlePanel}
           <section className="flex min-h-40 flex-1 flex-col" aria-label="Moves">
             <MoveList />
           </section>
-          {addToRepertoireButton}
+          {/* A puzzle isn't saved, so it can't be added to a repertoire. */}
+          {puzzleTabs === "none" ? addToRepertoireButton : null}
         </div>
       ) : null}
-      {sideTab === "engine" ? (
+      {shownTab === "engine" ? (
         <div className="scroll-area -mr-3 h-full min-h-0 overflow-y-auto pr-3">
           <EngineStatusPanel onStartAnalysis={onStartAnalysis} onStopAnalysis={onStopAnalysis} onOpenSettings={onOpenSettings} />
         </div>
       ) : null}
-      {sideTab === "library" ? <RecentGames onOpenGame={onOpenGame} /> : null}
+      {shownTab === "library" ? <RecentGames onOpenGame={onOpenGame} /> : null}
     </BoardWorkspace>
   );
 });
