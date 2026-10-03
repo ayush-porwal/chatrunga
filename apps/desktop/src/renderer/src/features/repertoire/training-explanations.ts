@@ -118,7 +118,7 @@ export function trainingFix(blocker: TrainingBlocker): TrainingFix | null {
     case "reference-move":
       return {
         kind: "make-trainable",
-        label: "Practise this chapter",
+        label: "Include in practice",
         description:
           "Includes the chapter in practice and accepts your first move at each position (replies are covered), as an import does. Other moves stay reference; Undo puts the moves back as they were."
       };

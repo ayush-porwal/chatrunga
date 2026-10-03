@@ -105,7 +105,7 @@ type Actions = {
   ) => { nodeId: string; created: boolean } | null;
   setNodeMeta: (nodeId: string, patch: Partial<RepertoireNodeMeta>) => void;
   /**
-   * "Practise this chapter": switches the chapter on as an opening chapter and accepts the first
+   * "Include in practice": switches the chapter on as an opening chapter and accepts the first
    * own move wherever none is accepted, covering reference replies (`trainableChapter`). Undo
    * puts the moves' marks back (chapter fields are never undone).
    */

@@ -76,7 +76,7 @@ describe("trainingFix", () => {
     ] as const) {
       expect(trainingFix(blocker)).toMatchObject({
         kind: "make-trainable",
-        label: "Practise this chapter"
+        label: "Include in practice"
       });
     }
   });

@@ -81,7 +81,7 @@ export function BoundaryControls({
       />
       <Disclosure
         key={nodeId}
-        title="Advanced: where practice starts and ends"
+        title="Advanced: training marks"
         summary={
           marked.length ? marked.map((item) => MARK_TEXT[item.key].label).join(", ") : "No marks"
         }
