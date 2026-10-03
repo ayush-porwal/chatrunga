@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { FolderOpen, RefreshCw } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
 import type {
   BackupImportPreview,
   RestoreBackupInput,
@@ -18,17 +17,21 @@ import { ipcErrorMessage } from "@/lib/ipc-error";
 import { well } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import {
-  repertoireKeys,
   useCancelBackupImportMutation,
   usePreviewBackupImportMutation,
+  useRefreshBackupPreviewMutation,
   useRestoreBackupMutation
 } from "../../queries/repertoire";
 import {
   backupWarningsNotice,
   buildRestoreInput,
+  canReplace,
   initialRestoreRows,
   isStaleRevisionError,
+  replacedDirtyDraftName,
   restoreDiffLine,
+  restoreLossLines,
+  restoreMetadataLine,
   restoreRowsReducer,
   type RestoreRowAction,
   type RestoreRowState
@@ -39,14 +42,20 @@ type ModeValue = RestoreRowState["mode"];
 
 /**
  * Restore repertoires from a native backup (design §10): pick a file in the main-owned open
- * dialog, review what it holds and what replacing would change, then restore the chosen ones as
- * new copies (the default) or over their existing repertoire (a backup of which is kept first).
- * Closing before the restore cancels the pending job; a failure stays in the dialog.
+ * dialog, review what it holds and what replacing would change (including the progress and
+ * practice history a replace discards), then restore the chosen ones as new copies (the default)
+ * or over their existing repertoire (a backup of which is kept first). Replacing the repertoire of
+ * a dirty study draft asks first. After a stale-revision refusal, Restore stays off until the
+ * preview is reloaded and its fresh diff shown. Closing before the restore cancels the pending
+ * job; a failure stays in the dialog.
  */
 export function RestoreBackupDialog({
+  draft,
   onClose,
   onRestored
 }: {
+  /** The open study draft; replacing its repertoire while it is dirty asks for confirmation. */
+  draft?: { repertoireId: string | null; dirty: boolean };
   onClose: () => void;
   onRestored: (
     preview: BackupImportPreview,
@@ -54,16 +63,17 @@ export function RestoreBackupDialog({
     result: RestoreBackupResult
   ) => void;
 }) {
-  const queryClient = useQueryClient();
   const previewMutation = usePreviewBackupImportMutation();
+  const refreshMutation = useRefreshBackupPreviewMutation();
   const restoreMutation = useRestoreBackupMutation();
   const { mutate: cancelJobMutation } = useCancelBackupImportMutation();
   const [preview, setPreview] = useState<BackupImportPreview | null>(null);
   const [rows, setRows] = useState<RestoreRowState[]>([]);
   const [error, setError] = useState<{ message: string; stale: boolean } | null>(null);
-  /** Revisions re-read after a stale-revision failure, keyed by the existing repertoire's id. */
-  const [revisions, setRevisions] = useState<ReadonlyMap<string, number> | null>(null);
-  const [reloading, setReloading] = useState(false);
+  /** True once the preview was reloaded after a stale-revision refusal. */
+  const [refreshed, setRefreshed] = useState(false);
+  /** The name of the repertoire whose unsaved study edits the pending restore would discard. */
+  const [confirmDraft, setConfirmDraft] = useState<string | null>(null);
   const pendingJob = useRef<string | null>(null);
   /** False once the dialog closed; a preview resolving after that cancels its job. */
   const open = useRef(true);
@@ -111,7 +121,7 @@ export function RestoreBackupDialog({
         pendingJob.current = result.jobId;
         setPreview(result);
         setRows(initialRestoreRows(result));
-        setRevisions(null);
+        setRefreshed(false);
       },
       (cause) => {
         if (open.current && request === previewRequest.current) {
@@ -125,49 +135,45 @@ export function RestoreBackupDialog({
   }
 
   /**
-   * After a stale-revision failure: re-reads each repertoire being replaced so the retry sends its
-   * current revision. The job still holds the backup, but its diff was computed earlier.
+   * After a stale-revision failure: recomputes the job's preview against the library as it is now,
+   * so the fresh revisions and diffs are shown before Restore is offered again.
    */
-  async function reloadRevisions() {
-    const api = window.chaturanga?.repertoires;
-    if (!api || !preview) return;
-    setReloading(true);
-    try {
-      const fresh = new Map<string, number>();
-      for (const row of rows) {
-        const existing = preview.repertoires.find(
-          (item) => item.sourceId === row.sourceId
-        )?.existing;
-        if (!row.include || row.mode !== "replace" || !existing) continue;
-        const detail = await queryClient.fetchQuery({
-          queryKey: repertoireKeys.detail(existing.id),
-          queryFn: () => api.get(existing.id),
-          staleTime: 0
-        });
-        fresh.set(existing.id, detail.revision);
+  function refreshPreview() {
+    if (!preview) return;
+    const jobId = preview.jobId;
+    refreshMutation.mutateAsync(jobId).then(
+      (fresh) => {
+        if (!open.current || pendingJob.current !== jobId) return;
+        setPreview(fresh);
+        setRows((current) =>
+          restoreRowsReducer(fresh, current, { type: "refresh", preview: fresh })
+        );
+        setRefreshed(true);
+        setError(null);
+      },
+      (cause) => {
+        if (open.current) {
+          setError({
+            message:
+              ipcErrorMessage(cause) ||
+              "Couldn't reload the preview. Choose the file again, or restore as a new copy.",
+            stale: false
+          });
+        }
       }
-      void queryClient.invalidateQueries({ queryKey: repertoireKeys.lists });
-      if (!open.current) return;
-      setRevisions(fresh);
-      setError(null);
-    } catch (cause) {
-      if (open.current) {
-        setError({
-          message:
-            ipcErrorMessage(cause) ||
-            "Couldn't re-read the repertoire to replace. Restore it as a new copy instead.",
-          stale: false
-        });
-      }
-    } finally {
-      if (open.current) setReloading(false);
-    }
+    );
   }
 
-  function restore() {
+  function restore(confirmed = false) {
     if (!preview) return;
-    const input = buildRestoreInput(preview, rows, revisions ?? undefined);
+    const input = buildRestoreInput(preview, rows);
     if (!input.selections.length) return;
+    const draftName = draft && !confirmed ? replacedDirtyDraftName(preview, input, draft) : null;
+    if (draftName) {
+      setConfirmDraft(draftName);
+      return;
+    }
+    setConfirmDraft(null);
     setError(null);
     restoreMutation.mutate(input, {
       onSuccess: (result) => {
@@ -183,7 +189,7 @@ export function RestoreBackupDialog({
   }
 
   const included = rows.filter((row) => row.include).length;
-  const busy = previewMutation.isPending || restoreMutation.isPending || reloading;
+  const busy = previewMutation.isPending || restoreMutation.isPending || refreshMutation.isPending;
   const warnings = preview ? backupWarningsNotice(preview.warnings) : null;
 
   return (
@@ -207,8 +213,8 @@ export function RestoreBackupDialog({
               type="button"
               variant="primary"
               size="sm"
-              disabled={busy || !included}
-              onClick={restore}
+              disabled={busy || !included || Boolean(error?.stale)}
+              onClick={() => restore()}
             >
               {restoreMutation.isPending
                 ? "Restoring…"
@@ -233,9 +239,9 @@ export function RestoreBackupDialog({
           {warnings.lines.join("\n")}
         </Notice>
       ) : null}
-      {revisions ? (
+      {refreshed ? (
         <Notice tone="info">
-          The repertoires to replace were re-read; the changes shown may be outdated.
+          The preview was reloaded. Review the changes below before restoring.
         </Notice>
       ) : null}
       {preview ? (
@@ -245,9 +251,13 @@ export function RestoreBackupDialog({
               const row = rows.find((entry) => entry.sourceId === item.sourceId);
               if (!row) return null;
               const replacing = row.mode === "replace" && item.existing;
+              const otherColor = Boolean(item.existing) && !canReplace(item);
+              const restoringProgress = item.hasProgress && row.includeProgress;
+              const metadataLine = item.diff ? restoreMetadataLine(item.diff) : null;
+              const lossLines = item.diff ? restoreLossLines(item.diff, restoringProgress) : [];
               const modeOptions: { value: ModeValue; label: string; disabled?: boolean }[] = [
                 { value: "new-copy", label: "New copy" },
-                { value: "replace", label: "Replace existing", disabled: !item.existing }
+                { value: "replace", label: "Replace existing", disabled: !canReplace(item) }
               ];
               return (
                 <li
@@ -308,18 +318,33 @@ export function RestoreBackupDialog({
                           </label>
                         ) : null}
                       </div>
+                      {otherColor && item.existing ? (
+                        <p className="text-xs text-fg-muted">
+                          “{item.existing.name}” here is a{" "}
+                          {COLOR_LABELS[item.color === "white" ? "black" : "white"].toLowerCase()}{" "}
+                          repertoire, so this one can only be restored as a new copy.
+                        </p>
+                      ) : null}
                       {replacing && item.existing ? (
                         <>
                           <p className="text-xs text-fg-muted">
-                            Replaces “{item.existing.name}” (revision{" "}
-                            {revisions?.get(item.existing.id) ?? item.existing.revision})
-                            {item.diff
-                              ? ` · ${restoreDiffLine(item.diff, row.includeProgress)}`
-                              : ""}
+                            Replaces “{item.existing.name}” (revision {item.existing.revision})
+                            {item.diff ? ` · ${restoreDiffLine(item.diff, restoringProgress)}` : ""}
+                            {metadataLine ? ` · ${metadataLine}` : ""}
                           </p>
-                          <Notice tone="danger" appear={false}>
-                            Replacing overwrites “{item.existing.name}”. A backup of it is saved
-                            first.
+                          {item.damaged ? (
+                            <Notice tone="warn" appear={false}>
+                              “{item.existing.name}” has a damaged chapter, so the changes can’t be
+                              listed. Its stored data is kept in the backup saved first.
+                            </Notice>
+                          ) : null}
+                          <Notice
+                            tone="danger"
+                            appear={false}
+                            title={lossLines.length ? `${lossLines.join(". ")}.` : undefined}
+                          >
+                            Replacing overwrites “{item.existing.name}”, and its practice history is
+                            lost. A backup of it is saved first.
                           </Notice>
                         </>
                       ) : (
@@ -357,7 +382,7 @@ export function RestoreBackupDialog({
                 variant="outline"
                 size="xs"
                 disabled={busy}
-                onClick={() => void reloadRevisions()}
+                onClick={refreshPreview}
               >
                 <RefreshCw />
                 Reload preview
@@ -367,6 +392,40 @@ export function RestoreBackupDialog({
         >
           {error.message}
         </Notice>
+      ) : null}
+      {confirmDraft ? (
+        <Dialog
+          size="sm"
+          title="Discard unsaved study edits?"
+          description={`“${confirmDraft}” has study edits that aren't saved yet.`}
+          onClose={() => setConfirmDraft(null)}
+          footer={
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setConfirmDraft(null)}
+              >
+                Keep editing
+              </Button>
+              <Button
+                type="button"
+                variant="ghost-destructive"
+                size="sm"
+                disabled={busy}
+                onClick={() => restore(true)}
+              >
+                Discard edits and restore
+              </Button>
+            </>
+          }
+        >
+          <p className="text-sm text-fg-secondary">
+            Replacing it from the backup discards those edits. Cancel to go back and save them
+            first.
+          </p>
+        </Dialog>
       ) : null}
     </Dialog>
   );

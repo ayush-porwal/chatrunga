@@ -20,6 +20,7 @@ export type RestoreRowState = {
 
 export type RestoreRowAction =
   | { type: "reset"; preview: BackupImportPreview }
+  | { type: "refresh"; preview: BackupImportPreview }
   | { type: "include"; sourceId: string; include: boolean }
   | { type: "mode"; sourceId: string; mode: RestoreBackupSelection["mode"] }
   | { type: "progress"; sourceId: string; includeProgress: boolean }
@@ -28,6 +29,11 @@ export type RestoreRowAction =
 /** The name a restored copy gets when none is typed. */
 export function defaultRestoredName(name: string): string {
   return `${name} (restored)`;
+}
+
+/** False when `source` can't replace its existing repertoire: none here, or another color. */
+export function canReplace(source: BackupImportPreviewRepertoire): boolean {
+  return Boolean(source.existing) && !source.diff?.metadataChanged.includes("color");
 }
 
 /** Every repertoire included as a new copy, with its progress when the backup has any. */
@@ -51,6 +57,18 @@ export function restoreRowsReducer(
   action: RestoreRowAction
 ): RestoreRowState[] {
   if (action.type === "reset") return initialRestoreRows(action.preview);
+  if (action.type === "refresh") {
+    // Keeps the choices made, except a replace or progress the fresh preview no longer allows.
+    return rows.map((row) => {
+      const source = action.preview.repertoires.find((item) => item.sourceId === row.sourceId);
+      if (!source) return row;
+      return {
+        ...row,
+        mode: row.mode === "replace" && !canReplace(source) ? "new-copy" : row.mode,
+        includeProgress: source.hasProgress && row.includeProgress
+      };
+    });
+  }
   const source = preview?.repertoires.find((item) => item.sourceId === action.sourceId);
   if (!source) return rows;
   return rows.map((row) => {
@@ -59,7 +77,9 @@ export function restoreRowsReducer(
       case "include":
         return { ...row, include: action.include };
       case "mode":
-        return action.mode === "replace" && !source.existing ? row : { ...row, mode: action.mode };
+        return action.mode === "replace" && !canReplace(source)
+          ? row
+          : { ...row, mode: action.mode };
       case "progress":
         return source.hasProgress ? { ...row, includeProgress: action.includeProgress } : row;
       case "name":
@@ -163,6 +183,72 @@ export function restoreDiffLine(
   return parts.join(" · ");
 }
 
+const METADATA_LABELS: Record<string, string> = {
+  name: "name",
+  description: "notes",
+  tags: "tags",
+  archivedAt: "archived state",
+  color: "color"
+};
+
+/** "Also changes its name and tags", or null when the repertoire's own fields stay the same. */
+export function restoreMetadataLine(
+  diff: NonNullable<BackupImportPreviewRepertoire["diff"]>
+): string | null {
+  const labels = diff.metadataChanged.map((field) => METADATA_LABELS[field] ?? field);
+  if (!labels.length) return null;
+  const list =
+    labels.length === 1
+      ? labels[0]
+      : `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
+  return `Also changes its ${list}`;
+}
+
+/**
+ * What a replace deletes for good: the current progress when progress isn't restored (otherwise
+ * the backup's replaces it), and every practice session with its history.
+ */
+export function restoreLossLines(
+  diff: NonNullable<BackupImportPreviewRepertoire["diff"]>,
+  restoringProgress: boolean
+): string[] {
+  const lines: string[] = [];
+  if (diff.progressDiscarded) {
+    const entries = `${diff.progressDiscarded} progress ${diff.progressDiscarded === 1 ? "entry" : "entries"}`;
+    lines.push(
+      restoringProgress
+        ? `Current progress (${entries}) is replaced by the backup's`
+        : `Current progress (${entries}) is discarded`
+    );
+  }
+  if (diff.sessionsDiscarded) {
+    lines.push(
+      `${plural(diff.sessionsDiscarded, "practice session")} and ${diff.sessionsDiscarded === 1 ? "its" : "their"} history ${diff.sessionsDiscarded === 1 ? "is" : "are"} discarded`
+    );
+  }
+  return lines;
+}
+
+/**
+ * The name of the repertoire whose unsaved study draft a restore would overwrite (a replace of
+ * the draft's repertoire while the draft is dirty), or null.
+ */
+export function replacedDirtyDraftName(
+  preview: BackupImportPreview,
+  input: RestoreBackupInput,
+  draft: { repertoireId: string | null; dirty: boolean }
+): string | null {
+  if (!draft.dirty || !draft.repertoireId) return null;
+  for (const selection of input.selections) {
+    if (selection.mode !== "replace") continue;
+    const existing = preview.repertoires.find(
+      (item) => item.sourceId === selection.sourceId
+    )?.existing;
+    if (existing?.id === draft.repertoireId) return existing.name;
+  }
+  return null;
+}
+
 /** The preview's warnings as a notice (a title and its distinct lines), or null when none. */
 export function backupWarningsNotice(
   warnings: readonly string[]
@@ -178,7 +264,7 @@ export function backupWarningsNotice(
 
 /** True for the main process's refusal of a replace whose expected revision is out of date. */
 export function isStaleRevisionError(message: string): boolean {
-  return /revision/i.test(message);
+  return /^Invalid expectedRevision: repertoire changed/.test(message);
 }
 
 /** "“A”", "“A” and “B”", "“A”, “B” and “C”". */

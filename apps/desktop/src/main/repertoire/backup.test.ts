@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,7 +30,12 @@ const showOpenDialog = vi.fn(async (...args: unknown[]) => {
   return { canceled: true, filePaths: [] as string[] };
 });
 vi.mock("electron", () => ({
-  app: { getPath: () => userData, getName: () => "Chaturanga", getVersion: () => "9.9.9" },
+  app: {
+    isPackaged: true,
+    getPath: () => userData,
+    getName: () => "Chaturanga",
+    getVersion: () => "9.9.9"
+  },
   BrowserWindow: {
     getAllWindows: () => [
       {
@@ -139,10 +152,14 @@ function insertLibraryGame(id: string) {
 /** A repertoire with two chapters, decisions, one progress row and two game links. */
 function seed() {
   const created = service.createRepertoire({ name: "Open games", color: "white" });
-  const first = chapterOf(created.chapters[0].id, [
-    ["e2e4", "e7e5", "g1f3"],
-    ["e2e4", "c7c5", "g1f3"]
-  ]);
+  // An existing chapter is saved at its stored revision.
+  const first = {
+    ...chapterOf(created.chapters[0].id, [
+      ["e2e4", "e7e5", "g1f3"],
+      ["e2e4", "c7c5", "g1f3"]
+    ]),
+    revision: created.chapters[0].revision
+  };
   const detail = service.saveChapter({
     repertoireId: created.id,
     chapter: first,
@@ -188,7 +205,14 @@ function seed() {
       practiceDraft: null
     }
   });
+  // A finished session: practice history without one in progress (that would block a replace).
+  service.endPractice(session.sessionId);
   return service.getRepertoire(created.id);
+}
+
+/** The repertoire's one replace selection at `expectedRevision`. */
+function replaceSelection(sourceId: string, expectedRevision: number, includeProgress = true) {
+  return { sourceId, mode: "replace" as const, includeProgress, expectedRevision };
 }
 
 /** Exports through a mocked save dialog and returns the written text. */
@@ -204,7 +228,13 @@ describe("native backup: export", () => {
   it("writes a versioned document through the save dialog, never secrets or settings", async () => {
     const detail = seed();
     const { result, text, path } = await exportText(true);
-    expect(result).toEqual({ savedPath: path, repertoireCount: 1, bytes: Buffer.byteLength(text) });
+    expect(result).toEqual({
+      savedPath: path,
+      repertoireCount: 1,
+      bytes: Buffer.byteLength(text),
+      warnings: []
+    });
+    expect(existsSync(`${path}.tmp`)).toBe(false);
     const options = showSaveDialog.mock.calls[0][0] as Record<string, unknown>;
     expect(options.defaultPath).toMatch(/^chaturanga-repertoires-\d{4}-\d{2}-\d{2}\.json$/);
     expect(options.filters).toEqual([{ name: "Chaturanga backup", extensions: ["json"] }]);
@@ -241,6 +271,49 @@ describe("native backup: export", () => {
     expect(cancelled.repertoireCount).toBe(1);
   });
 
+  it("writes a damaged chapter as raw data with a warning, and previews it without a diff", async () => {
+    const detail = seed();
+    const { text: healthy } = await exportText(true);
+    getDb()
+      .prepare("UPDATE repertoire_chapters SET tree_json = ? WHERE id = ?")
+      .run("{oops", "second");
+    const { result, text } = await exportText(true);
+    expect(result.warnings).toEqual([
+      `Repertoire "Open games": chapter "Chapter second" is damaged (its stored JSON is unreadable); its stored data was written as is and can't be restored`
+    ]);
+    const written = (JSON.parse(text) as RepertoireBackupDocument).repertoires[0].chapters;
+    expect(written.map((chapter) => chapter.damaged?.treeJson ?? null)).toEqual([null, "{oops"]);
+    expect(written[1]).toMatchObject({ title: "Chapter second", rootFen: START_FEN, tree: [] });
+
+    // The damaged chapter is left out of a restore; the existing repertoire has no diff.
+    const preview = (await service.previewBackupImport({ json: text }))!;
+    expect(preview.warnings).toEqual([
+      `repertoire "Open games": 1 chapter was damaged when backed up and will be left out`
+    ]);
+    expect(preview.repertoires[0]).toMatchObject({
+      chapterCount: 1,
+      existing: { id: detail.id },
+      diff: null,
+      damaged: true
+    });
+    const copyId = service.restoreBackup({
+      jobId: preview.jobId,
+      selections: [{ sourceId: detail.id, mode: "new-copy", includeProgress: true }]
+    }).restored[0].repertoireId;
+    expect(service.getRepertoire(copyId).chapterCount).toBe(1);
+
+    // Replacing it with a healthy backup keeps the damaged data in the retained backup.
+    const repair = (await service.previewBackupImport({ json: healthy }))!;
+    expect(repair.repertoires[0]).toMatchObject({ diff: null, damaged: true });
+    const path = service.restoreBackup({
+      jobId: repair.jobId,
+      selections: [replaceSelection(detail.id, detail.revision)]
+    }).restored[0].retainedBackupPath!;
+    const retained = JSON.parse(readFileSync(path, "utf8")) as RepertoireBackupDocument;
+    expect(retained.repertoires[0].chapters[1].damaged?.treeJson).toBe("{oops");
+    expect(service.getRepertoire(detail.id).chapterCount).toBe(2);
+  });
+
   it("refuses unknown repertoire ids and an empty library", async () => {
     await expect(service.exportBackup({ includeProgress: false })).rejects.toThrow(
       "Invalid export: there are no repertoires to back up"
@@ -273,10 +346,73 @@ describe("native backup: preview", () => {
           chaptersChanged: 0,
           chaptersRemoved: 0,
           decisionsChanged: 0,
-          progressEntries: 1
+          progressEntries: 1,
+          progressDiscarded: 1,
+          sessionsDiscarded: 1,
+          metadataChanged: []
         }
       }
     ]);
+  });
+
+  it("reads a picked file that starts with a byte order mark", async () => {
+    seed();
+    const { text } = await exportText(true);
+    const path = join(files, "bom.json");
+    writeFileSync(path, `\uFEFF${text}`, "utf8");
+    showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [path] });
+    const preview = await service.previewBackupImport({ pickFile: true });
+    expect(preview?.repertoires).toHaveLength(1);
+  });
+
+  it("says a repertoire has no progress when its progress list is empty", async () => {
+    seed();
+    const { text } = await exportText(true);
+    const document = JSON.parse(text) as RepertoireBackupDocument;
+    document.repertoires[0].progress = [];
+    const preview = (await service.previewBackupImport({ json: JSON.stringify(document) }))!;
+    expect(preview.repertoires[0].hasProgress).toBe(false);
+  });
+
+  it("names changed metadata in the diff", async () => {
+    const detail = seed();
+    const { text } = await exportText(true);
+    service.updateMetadata({
+      id: detail.id,
+      expectedRevision: detail.revision,
+      patch: { name: "Renamed", tags: ["new"] }
+    });
+    const preview = (await service.previewBackupImport({ json: text }))!;
+    expect(preview.repertoires[0].diff?.metadataChanged).toEqual(["name", "tags"]);
+  });
+
+  it("refreshes a pending preview against the library as it is now", async () => {
+    const detail = seed();
+    const { text } = await exportText(true);
+    const preview = (await service.previewBackupImport({ json: text }))!;
+    const edited = service.removeChapter({
+      repertoireId: detail.id,
+      chapterId: "second",
+      expectedRevision: detail.revision
+    }).repertoire;
+    const fresh = service.refreshBackupPreview(preview.jobId);
+    expect(fresh.jobId).toBe(preview.jobId);
+    expect(fresh.repertoires[0].existing?.revision).toBe(edited.revision);
+    expect(fresh.repertoires[0].diff).toMatchObject({ chaptersAdded: 1 });
+    // The refreshed revision restores; the stale one is still refused.
+    expect(() =>
+      service.restoreBackup({
+        jobId: preview.jobId,
+        selections: [replaceSelection(detail.id, detail.revision)]
+      })
+    ).toThrow(/^Invalid expectedRevision: repertoire changed/);
+    expect(
+      service.restoreBackup({
+        jobId: preview.jobId,
+        selections: [replaceSelection(detail.id, edited.revision)]
+      }).restored[0].mode
+    ).toBe("replace");
+    expect(() => service.refreshBackupPreview(preview.jobId)).toThrow(/Invalid jobId/);
   });
 
   it("reads a picked file, and returns null when the open dialog is cancelled", async () => {
@@ -469,6 +605,11 @@ describe("native backup: restore", () => {
     const retained = JSON.parse(readFileSync(restored.retainedBackupPath!, "utf8"));
     expect(retained.repertoires[0].repertoire.revision).toBe(edited.revision);
     expect(retained.repertoires[0].chapters).toHaveLength(1);
+    // Practice history goes into the retained backup only, as raw rows.
+    expect(retained.repertoires[0].history.sessions).toHaveLength(1);
+    expect(retained.repertoires[0].history.sessions[0]).toHaveProperty("queue_json");
+    expect(retained.repertoires[0].history.attempts).toHaveLength(1);
+    expect(retained.repertoires[0].history.attempts[0]).toMatchObject({ attempt_id: "a1" });
 
     const after = service.getRepertoire(detail.id);
     expect(after.revision).toBe(edited.revision + 1);
@@ -487,8 +628,123 @@ describe("native backup: restore", () => {
       chaptersChanged: 0,
       chaptersRemoved: 0,
       decisionsChanged: 0,
-      progressEntries: 1
+      progressEntries: 1,
+      progressDiscarded: 1,
+      sessionsDiscarded: 0,
+      metadataChanged: []
     });
+  });
+
+  it("keeps decisions no chapter reaches, so a backup of an edited library diffs empty", async () => {
+    const detail = seed();
+    service.removeChapter({
+      repertoireId: detail.id,
+      chapterId: "second",
+      expectedRevision: detail.revision
+    });
+    const stored = decisionRepository.list(detail.id);
+    const { text } = await exportText(true);
+    const preview = (await service.previewBackupImport({ json: text }))!;
+    expect(preview.warnings).toEqual([]);
+    expect(preview.repertoires[0].diff).toMatchObject({
+      chaptersAdded: 0,
+      chaptersChanged: 0,
+      chaptersRemoved: 0,
+      decisionsChanged: 0
+    });
+    const copyId = service.restoreBackup({
+      jobId: preview.jobId,
+      selections: [{ sourceId: detail.id, mode: "new-copy", includeProgress: true }]
+    }).restored[0].repertoireId;
+    expect(decisionRepository.list(copyId)).toHaveLength(stored.length);
+  });
+
+  it("lowercases preferred moves and wrong-move feedback keys", async () => {
+    const detail = seed();
+    const { text } = await exportText(false);
+    const document = JSON.parse(text) as RepertoireBackupDocument;
+    const decision = document.repertoires[0].decisions.find(
+      (item) => item.positionKey === positionKey(START_FEN)
+    )!;
+    const accepted = decision.acceptedUcis;
+    decision.acceptedUcis = accepted.map((uci) => uci.toUpperCase());
+    decision.preferredUci = "E2E4";
+    decision.wrongMoveFeedback = { D2D4: "Not today" };
+    const preview = (await service.previewBackupImport({ json: JSON.stringify(document) }))!;
+    const copyId = service.restoreBackup({
+      jobId: preview.jobId,
+      selections: [{ sourceId: detail.id, mode: "new-copy", includeProgress: false }]
+    }).restored[0].repertoireId;
+    expect(decisionRepository.get(copyId, positionKey(START_FEN))).toMatchObject({
+      acceptedUcis: accepted,
+      preferredUci: "e2e4",
+      wrongMoveFeedback: { d2d4: "Not today" }
+    });
+  });
+
+  it("refuses to replace a repertoire of the other color or with a session in progress", async () => {
+    const detail = seed();
+    const { text } = await exportText(false);
+    const document = JSON.parse(text) as RepertoireBackupDocument;
+    document.repertoires[0].repertoire.color = "black";
+    const black = (await service.previewBackupImport({ json: JSON.stringify(document) }))!;
+    expect(black.repertoires[0].diff?.metadataChanged).toEqual(["color"]);
+    expect(() =>
+      service.restoreBackup({
+        jobId: black.jobId,
+        selections: [replaceSelection(detail.id, detail.revision)]
+      })
+    ).toThrow(
+      'Invalid backup: "Open games" is a white repertoire in this library; restore it as a new copy'
+    );
+
+    const session = service.startPractice({ repertoireId: detail.id, mode: "learn-new" });
+    const preview = (await service.previewBackupImport({ json: text }))!;
+    expect(() =>
+      service.restoreBackup({
+        jobId: preview.jobId,
+        selections: [replaceSelection(detail.id, detail.revision)]
+      })
+    ).toThrow('Invalid selections: "Open games" has a practice session in progress; end it first');
+    expect(existsSync(join(userData, "repertoire-backups"))).toBe(false);
+    service.endPractice(session.sessionId);
+    expect(
+      service.restoreBackup({
+        jobId: preview.jobId,
+        selections: [replaceSelection(detail.id, detail.revision)]
+      }).restored[0].mode
+    ).toBe("replace");
+  });
+
+  it("creates retained backups exclusively and keeps the newest ten per repertoire", async () => {
+    const detail = seed();
+    const { text } = await exportText(false);
+    const directory = join(userData, "repertoire-backups");
+    mkdirSync(directory, { recursive: true });
+    const stamp = (time: number) => new Date(time).toISOString().replace(/[:.]/g, "-");
+    for (let index = 1; index <= 11; index += 1) {
+      writeFileSync(join(directory, `${detail.id}-${stamp(now - index * 60_000)}.json`), "{}");
+    }
+    const other = `${detail.id}-other-${stamp(now - 3_600_000)}.json`;
+    writeFileSync(join(directory, other), "{}");
+    // A file already holds the name this replace would use: the retained one gets a suffix.
+    const taken = `${detail.id}-${stamp(now)}.json`;
+    writeFileSync(join(directory, taken), "taken");
+    const preview = (await service.previewBackupImport({ json: text }))!;
+    const path = service.restoreBackup({
+      jobId: preview.jobId,
+      selections: [replaceSelection(detail.id, detail.revision, false)]
+    }).restored[0].retainedBackupPath!;
+    expect(path).toMatch(new RegExp(`${detail.id}-${stamp(now)}-[A-Za-z0-9_-]+\\.json$`));
+    expect(readFileSync(join(directory, taken), "utf8")).toBe("taken");
+    const names = readdirSync(directory);
+    expect(names).toContain(other);
+    const own = names.filter((name) => name !== other);
+    expect(own).toHaveLength(10);
+    expect(own).toContain(taken);
+    expect(own.some((name) => path.endsWith(name))).toBe(true);
+    expect(own).not.toContain(`${detail.id}-${stamp(now - 11 * 60_000)}.json`);
+    expect(own).not.toContain(`${detail.id}-${stamp(now - 10 * 60_000)}.json`);
   });
 
   it("writes nothing on a stale expectedRevision and keeps the job for a retry", async () => {

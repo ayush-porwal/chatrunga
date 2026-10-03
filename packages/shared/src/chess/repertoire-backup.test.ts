@@ -254,19 +254,48 @@ describe("validateBackupDocument", () => {
     );
   });
 
-  it("drops decisions at unknown positions and progress without a decision, with warnings", () => {
+  it("keeps decisions and progress no chapter reaches, and drops malformed keys with warnings", () => {
     const source = entry();
+    const unreachable = positionKey(fenAfterUci(START_FEN, "d2d4")!);
+    source.decisions.push({ ...source.decisions[0], positionKey: unreachable });
     source.decisions.push({ ...source.decisions[0], positionKey: "v1:not-a-position" });
-    source.progress!.push({ ...source.progress![0], positionKey: positionKey(afterE4E5) });
-    source.decisions.splice(1, 1);
+    source.decisions.push({ ...source.decisions[0] });
+    source.progress!.push({ ...source.progress![0], positionKey: unreachable });
+    source.progress!.push({ ...source.progress![0], positionKey: "garbage" });
     const { document, warnings } = validateBackupDocument(roundTrip(documentOf([source])));
     expect(document.repertoires[0].decisions.map((item) => item.positionKey)).toEqual([
-      positionKey(START_FEN)
+      positionKey(START_FEN),
+      positionKey(afterE4E5),
+      unreachable
     ]);
-    expect(document.repertoires[0].progress).toHaveLength(1);
+    expect(document.repertoires[0].progress!.map((row) => row.positionKey)).toEqual([
+      positionKey(START_FEN),
+      unreachable
+    ]);
     expect(warnings).toEqual([
-      `repertoire "Open games": 1 decision doesn't match a position in its chapters and was left out`,
-      `repertoire "Open games": 1 progress entry doesn't match a decision and was left out`
+      `repertoire "Open games": 2 decisions don't have a valid, unique position key and were left out`,
+      `repertoire "Open games": 1 progress entry doesn't have a valid, unique position key and was left out`
+    ]);
+  });
+
+  it("ignores a leading byte order mark", () => {
+    const text = JSON.stringify(documentOf([entry()]));
+    expect(validateBackupDocument(`\uFEFF${text}`).document).toEqual(
+      validateBackupDocument(text).document
+    );
+  });
+
+  it("leaves out a chapter that was damaged when backed up, with a warning", () => {
+    const source = entry();
+    source.chapters.push({
+      ...chapter("broken", []),
+      tree: [],
+      damaged: { treeJson: "{oops", nodeMetaJson: "{}", headersJson: "{}", reason: "unreadable" }
+    });
+    const { document, warnings } = validateBackupDocument(roundTrip(documentOf([source])));
+    expect(document.repertoires[0].chapters.map((item) => item.id)).toEqual(["c1"]);
+    expect(warnings).toEqual([
+      `repertoire "Open games": 1 chapter was damaged when backed up and will be left out`
     ]);
   });
 
@@ -356,7 +385,10 @@ describe("diffBackupEntry", () => {
       chaptersChanged: 0,
       chaptersRemoved: 0,
       decisionsChanged: 0,
-      progressEntries: 1
+      progressEntries: 1,
+      progressDiscarded: 1,
+      sessionsDiscarded: 0,
+      metadataChanged: []
     });
   });
 
@@ -376,8 +408,29 @@ describe("diffBackupEntry", () => {
       chaptersChanged: 1,
       chaptersRemoved: 1,
       decisionsChanged: 1,
-      progressEntries: 0
+      progressEntries: 0,
+      progressDiscarded: 1,
+      sessionsDiscarded: 0,
+      metadataChanged: []
     });
+  });
+
+  it("counts the progress and sessions a replace discards and names changed metadata", () => {
+    const incoming = entry({ progress: null });
+    incoming.repertoire = {
+      ...incoming.repertoire,
+      name: "Renamed",
+      tags: ["e4", "new"],
+      color: "black",
+      archivedAt: 7
+    };
+    expect(diffBackupEntry(entry(), incoming, { sessionCount: 3 })).toMatchObject({
+      progressEntries: 0,
+      progressDiscarded: 1,
+      sessionsDiscarded: 3,
+      metadataChanged: ["name", "tags", "archivedAt", "color"]
+    });
+    expect(diffBackupEntry(entry({ progress: null }), entry()).progressDiscarded).toBe(0);
   });
 
   it("ignores node order, accepted-move order and derived fields", () => {

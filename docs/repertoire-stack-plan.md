@@ -10,7 +10,7 @@
 | 2 | `feat/repertoire-add-from-games` | **Add to repertoire** from the Library and from the Analyze board's selected variation; source provenance (`repertoire_game_links`); "Use current game/line" when creating | §6.2 |
 | 3 | `feat/repertoire-handoffs` | Study → **Analyze** as an independent game snapshot with a return target; **Play from here** against the engine from a repertoire position/path; Lichess live-game guards on every repertoire command that would replace the board | §6.2, §6.4, §9.3 |
 | 4 | `feat/repertoire-rehearse` | **Rehearse lines** practice mode: authored opponent replies with deterministic rotation, out-of-branch accepted move handled as "a repertoire choice in another line", session-only results | §5.3 |
-| 5 | `feat/repertoire-backup` | Versioned native JSON **backup/restore** (validated, default new copy, include-progress option, retained copy when replacing) | §10 |
+| 5 | `feat/repertoire-backup` | Versioned native JSON **backup/restore** (validated, default new copy, include-progress option, retained copy when replacing). Known limitation: validation, the retained-copy write and the restore transaction run synchronously on the main thread, bounded by the backup limits (32 MiB, 100 repertoires, 1,000 chapters, 200,000 moves); a backup near those limits can block the main event loop for longer than the §11 50 ms budget. Moving them to the import worker's writer is left to row 6 | §10 |
 | 6 | `feat/repertoire-import-worker` | PGN parsing in a worker with cancellation/progress, representative large-collection benchmark, tree windowing if the benchmark requires it | §10, §11 |
 
 Rules carried over: main process stays the authority; nothing repertoire-related enters the game

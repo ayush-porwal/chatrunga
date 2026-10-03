@@ -82,7 +82,7 @@ export function BackupDialog({
     >
       <SettingRow
         label="Include practice progress"
-        description="Schedules and history, so practice picks up where it left off after a restore."
+        description="Recall schedules, so practice picks up where it left off after a restore."
         control={
           <Switch
             checked={includeProgress}

@@ -321,6 +321,8 @@ export type ChaturangaApi = {
     /** Validates a backup and shows what restoring would do; null when the open dialog was cancelled. */
     previewBackupImport(input: PreviewBackupImportInput): Promise<BackupImportPreview | null>;
     restoreBackup(input: RestoreBackupInput): Promise<RestoreBackupResult>;
+    /** Recomputes a pending backup preview's revisions and diffs against the library now. */
+    refreshBackupPreview(jobId: string): Promise<BackupImportPreview>;
     cancelBackupImport(jobId: string): Promise<void>;
     create(input: CreateRepertoireInput): Promise<RepertoireDetail>;
     updateMetadata(input: UpdateRepertoireMetadataInput): Promise<RepertoireDetail>;

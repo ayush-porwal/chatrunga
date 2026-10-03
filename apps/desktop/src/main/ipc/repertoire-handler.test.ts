@@ -31,6 +31,7 @@ vi.mock("../repertoire/service", () => {
     "previewImport",
     "recordAttempt",
     "recordPracticeAction",
+    "refreshBackupPreview",
     "removeChapter",
     "removeRepertoire",
     "restoreBackup",
@@ -316,6 +317,8 @@ describe("registerRepertoireIpc", () => {
     expect(invoke("restoreBackup", restore)).toBe("restoreBackup");
     expect(calls.at(-1)?.[1][0]).toEqual(restore);
     expect(invoke("cancelBackupImport", "j")).toBe("cancelBackupImport");
+    expect(invoke("refreshBackupPreview", "j")).toBe("refreshBackupPreview");
+    expect(calls.at(-1)?.[1]).toEqual(["j"]);
 
     expect(() => invoke("exportBackup", { includeProgress: "yes" })).toThrow(/includeProgress/);
     expect(() =>
@@ -345,5 +348,6 @@ describe("registerRepertoireIpc", () => {
     ).toThrow(/expectedRevision/);
     expect(() => invoke("restoreBackup", { jobId: "j", selections: {} })).toThrow(/selections/);
     expect(() => invoke("cancelBackupImport", "")).toThrow(/jobId/);
+    expect(() => invoke("refreshBackupPreview", 7)).toThrow(/jobId/);
   });
 });

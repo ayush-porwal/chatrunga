@@ -10,7 +10,10 @@ import {
   formatBytes,
   initialRestoreRows,
   isStaleRevisionError,
+  replacedDirtyDraftName,
   restoreDiffLine,
+  restoreLossLines,
+  restoreMetadataLine,
   restoreNotice,
   restoreRowsReducer,
   shortenPath
@@ -36,7 +39,10 @@ const diff = {
   chaptersChanged: 1,
   chaptersRemoved: 0,
   decisionsChanged: 5,
-  progressEntries: 40
+  progressEntries: 40,
+  progressDiscarded: 12,
+  sessionsDiscarded: 3,
+  metadataChanged: [] as string[]
 };
 
 function previewOf(...repertoires: BackupImportPreviewRepertoire[]): BackupImportPreview {
@@ -113,6 +119,29 @@ describe("restore rows", () => {
       mode: "replace"
     });
     expect(allowed[1]?.mode).toBe("replace");
+  });
+
+  it("can't replace a repertoire of the other color", () => {
+    const other = previewOf(
+      entry({ existing, diff: { ...diff, metadataChanged: ["name", "color"] } })
+    );
+    const rows = initialRestoreRows(other);
+    expect(
+      restoreRowsReducer(other, rows, { type: "mode", sourceId: "rep-1", mode: "replace" })
+    ).toEqual(rows);
+  });
+
+  it("keeps choices on a refreshed preview unless it no longer allows them", () => {
+    let rows = initialRestoreRows(preview);
+    rows = restoreRowsReducer(preview, rows, { type: "mode", sourceId: "rep-2", mode: "replace" });
+    rows = restoreRowsReducer(preview, rows, { type: "name", sourceId: "rep-1", newName: "Mine" });
+    const same = restoreRowsReducer(preview, rows, { type: "refresh", preview });
+    expect(same).toEqual(rows);
+    const gone = previewOf(entry({ hasProgress: false }), entry({ sourceId: "rep-2" }));
+    expect(restoreRowsReducer(preview, rows, { type: "refresh", preview: gone })).toEqual([
+      { ...rows[0], includeProgress: false },
+      { ...rows[1], mode: "new-copy" }
+    ]);
   });
 
   it("can't restore progress the backup doesn't have", () => {
@@ -214,6 +243,57 @@ describe("formatting", () => {
     expect(restoreDiffLine(diff, false)).toBe("+2 chapters · 1 changed · −0 · 5 decisions changed");
   });
 
+  it("says what a replace discards", () => {
+    expect(restoreLossLines(diff, false)).toEqual([
+      "Current progress (12 progress entries) is discarded",
+      "3 practice sessions and their history are discarded"
+    ]);
+    expect(restoreLossLines({ ...diff, progressDiscarded: 1, sessionsDiscarded: 1 }, true)).toEqual(
+      [
+        "Current progress (1 progress entry) is replaced by the backup's",
+        "1 practice session and its history is discarded"
+      ]
+    );
+    expect(
+      restoreLossLines({ ...diff, progressDiscarded: 0, sessionsDiscarded: 0 }, false)
+    ).toEqual([]);
+  });
+
+  it("names changed repertoire fields", () => {
+    expect(restoreMetadataLine(diff)).toBeNull();
+    expect(restoreMetadataLine({ ...diff, metadataChanged: ["name"] })).toBe(
+      "Also changes its name"
+    );
+    expect(
+      restoreMetadataLine({ ...diff, metadataChanged: ["name", "description", "archivedAt"] })
+    ).toBe("Also changes its name, notes and archived state");
+  });
+
+  it("finds the dirty study draft a replace would overwrite", () => {
+    const input = {
+      jobId: "job-1",
+      selections: [
+        { sourceId: "rep-2", mode: "replace" as const, includeProgress: false, expectedRevision: 7 }
+      ]
+    };
+    expect(replacedDirtyDraftName(preview, input, { repertoireId: "rep-2", dirty: true })).toBe(
+      "Black vs e4"
+    );
+    expect(replacedDirtyDraftName(preview, input, { repertoireId: "rep-2", dirty: false })).toBe(
+      null
+    );
+    expect(replacedDirtyDraftName(preview, input, { repertoireId: "rep-1", dirty: true })).toBe(
+      null
+    );
+    const copy = {
+      ...input,
+      selections: [{ sourceId: "rep-2", mode: "new-copy" as const, includeProgress: false }]
+    };
+    expect(replacedDirtyDraftName(preview, copy, { repertoireId: "rep-2", dirty: true })).toBe(
+      null
+    );
+  });
+
   it("maps warnings to a notice", () => {
     expect(backupWarningsNotice([])).toBeNull();
     expect(backupWarningsNotice(["  ", ""])).toBeNull();
@@ -228,8 +308,13 @@ describe("formatting", () => {
   });
 
   it("recognises a stale-revision refusal", () => {
-    expect(isStaleRevisionError("Invalid expectedRevision: 7 (current 8)")).toBe(true);
-    expect(isStaleRevisionError("Invalid backup: unsupported format")).toBe(false);
+    expect(
+      isStaleRevisionError("Invalid expectedRevision: repertoire changed (stored 8, expected 7)")
+    ).toBe(true);
+    expect(isStaleRevisionError("Invalid expectedRevision: required to replace a repertoire")).toBe(
+      false
+    );
+    expect(isStaleRevisionError("Invalid backup: chapter revision is not a number")).toBe(false);
   });
 
   it("lists restored names and retained backups", () => {

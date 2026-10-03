@@ -125,6 +125,9 @@ export function RepertoireHubPage({
   /** The backup dialog's scope: every repertoire, or one. */
   const [backupTarget, setBackupTarget] = useState<"all" | RepertoireSummary | null>(null);
   const [restoring, setRestoring] = useState(false);
+  // The open study draft, so a restore that replaces its repertoire can ask before discarding it.
+  const draftRepertoireId = useRepertoireWorkspaceStore((state) => state.repertoireId);
+  const draftDirty = useRepertoireWorkspaceStore((state) => state.dirty);
   const [notice, setNotice] = useState<{
     tone: "danger" | "success" | "info";
     text: string;
@@ -548,6 +551,7 @@ export function RepertoireHubPage({
             setNotice({
               tone: "success",
               text: `Backup saved (${plural(result.repertoireCount, "repertoire")}, ${formatBytes(result.bytes)}) to ${shortenPath(result.savedPath)}.`,
+              details: result.warnings,
               path: result.savedPath
             });
           }}
@@ -555,10 +559,12 @@ export function RepertoireHubPage({
       ) : null}
       {restoring ? (
         <RestoreBackupDialog
+          draft={{ repertoireId: draftRepertoireId, dirty: draftDirty }}
           onClose={() => setRestoring(false)}
           onRestored={(preview, input, result) => {
             setRestoring(false);
-            // A replaced repertoire's open study draft describes content that no longer exists.
+            // A replaced repertoire's open study draft describes content that no longer exists
+            // (the dialog asked first when the draft had unsaved edits).
             const draft = useRepertoireWorkspaceStore.getState();
             const replaced = result.restored.some(
               (item) => item.mode === "replace" && item.repertoireId === draft.repertoireId

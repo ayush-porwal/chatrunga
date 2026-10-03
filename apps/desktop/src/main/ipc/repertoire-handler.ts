@@ -24,6 +24,7 @@ import {
   previewImport,
   recordAttempt,
   recordPracticeAction,
+  refreshBackupPreview,
   removeChapter,
   removeGameLink,
   removeRepertoire,
@@ -149,6 +150,9 @@ export function registerRepertoireIpc(): void {
   );
   ipcMain.handle("repertoires:restoreBackup", (_event, input: unknown) =>
     restoreBackup(parseRestoreBackupInput(input))
+  );
+  ipcMain.handle("repertoires:refreshBackupPreview", (_event, jobId: unknown) =>
+    refreshBackupPreview(asId(jobId, "jobId"))
   );
   ipcMain.handle("repertoires:cancelBackupImport", (_event, jobId: unknown) =>
     cancelBackupImport(asId(jobId, "jobId"))

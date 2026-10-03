@@ -414,6 +414,16 @@ export function useRestoreBackupMutation() {
   });
 }
 
+/** Recomputes a pending backup preview against the library as it is now (after a stale refusal). */
+export function useRefreshBackupPreviewMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: string) => requireRepertoires().refreshBackupPreview(jobId),
+    retry: false,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: repertoireKeys.lists })
+  });
+}
+
 export function useCancelBackupImportMutation() {
   return useMutation({
     mutationFn: (jobId: string) => requireRepertoires().cancelBackupImport(jobId)

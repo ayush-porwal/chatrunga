@@ -168,6 +168,8 @@ const api: ChaturangaApi = {
     exportBackup: (input) => ipcRenderer.invoke("repertoires:exportBackup", input),
     previewBackupImport: (input) => ipcRenderer.invoke("repertoires:previewBackupImport", input),
     restoreBackup: (input) => ipcRenderer.invoke("repertoires:restoreBackup", input),
+    refreshBackupPreview: (jobId) =>
+      ipcRenderer.invoke("repertoires:refreshBackupPreview", jobId),
     cancelBackupImport: (jobId) => ipcRenderer.invoke("repertoires:cancelBackupImport", jobId),
     startPractice: (input) => ipcRenderer.invoke("repertoires:startPractice", input),
     resumePractice: (sessionId) => ipcRenderer.invoke("repertoires:resumePractice", sessionId),
