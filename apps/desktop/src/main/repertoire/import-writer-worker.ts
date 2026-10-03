@@ -5,9 +5,8 @@
  * `commitImportJob` in one transaction, replying `{ ok, result }` or `{ ok: false, error }`. If the
  * worker dies mid-way the transaction never commits, so nothing is written.
  */
-import { DatabaseSync } from "node:sqlite";
 import { parentPort, workerData } from "node:worker_threads";
-import { setRepertoireConnection } from "./connection";
+import { withOwnConnection } from "./connection";
 import { commitImportJob, type ImportCommitChapter } from "./core";
 import type {
   ImportWriterData,
@@ -20,20 +19,13 @@ const chapters: ImportCommitChapter[] = [];
 const reply = (message: ImportWriterReply) => parentPort?.postMessage(message);
 
 function commit(): void {
-  const db = new DatabaseSync(dbPath);
   try {
-    db.exec("PRAGMA journal_mode = WAL");
-    db.exec("PRAGMA foreign_keys = ON");
-    db.exec("PRAGMA busy_timeout = 5000");
-    // A larger page cache shortens the transaction (the 100,000 index rows), so the write lock
-    // other connections wait on is held for less time.
-    db.exec("PRAGMA cache_size = -65536");
-    setRepertoireConnection(() => db);
-    reply({ ok: true, result: commitImportJob({ ...job, chapters }) });
+    reply({
+      ok: true,
+      result: withOwnConnection(dbPath, () => commitImportJob({ ...job, chapters }))
+    });
   } catch (error) {
     reply({ ok: false, error: error instanceof Error ? error.message : String(error) });
-  } finally {
-    db.close();
   }
 }
 

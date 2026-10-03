@@ -6,27 +6,18 @@
  * replies once, `{ ok, restored }` or `{ ok: false, error }`. If the worker dies mid-way the
  * transaction never commits, so nothing is restored.
  */
-import { DatabaseSync } from "node:sqlite";
 import { parentPort, workerData } from "node:worker_threads";
 import { runRestoreJob, type BackupRestoreData, type BackupRestoreReply } from "./backup-restore";
-import { setRepertoireConnection } from "./connection";
+import { withOwnConnection } from "./connection";
 
 const { dbPath, job } = workerData as BackupRestoreData;
 const reply = (message: BackupRestoreReply) => parentPort?.postMessage(message);
 
 function restore(): void {
-  const db = new DatabaseSync(dbPath);
   try {
-    db.exec("PRAGMA journal_mode = WAL");
-    db.exec("PRAGMA foreign_keys = ON");
-    db.exec("PRAGMA busy_timeout = 5000");
-    db.exec("PRAGMA cache_size = -65536");
-    setRepertoireConnection(() => db);
-    reply({ ok: true, restored: runRestoreJob(job) });
+    reply({ ok: true, restored: withOwnConnection(dbPath, () => runRestoreJob(job)) });
   } catch (error) {
     reply({ ok: false, error: error instanceof Error ? error.message : String(error) });
-  } finally {
-    db.close();
   }
 }
 

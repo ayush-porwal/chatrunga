@@ -668,6 +668,7 @@ export const chapterRepository = {
   },
 
   /** Every chapter of a repertoire, in order (throws if one is damaged). */
+  /** A repertoire's chapters in order (compareChaptersAsListed, for rows created together). */
   list(repertoireId: string): RepertoireChapter[] {
     return all<ChapterRow>(
       "SELECT * FROM repertoire_chapters WHERE repertoire_id = ? ORDER BY sort_order, created_at, id",
@@ -782,6 +783,18 @@ export const chapterRepository = {
     run("DELETE FROM repertoire_chapters WHERE id = ?", id);
   }
 };
+
+/**
+ * The order chapterRepository.list returns chapters inserted at the same time in (equal
+ * created_at): by sort order, then id (SQLite compares the ASCII ids byte by byte). Lets a writer
+ * plan from chapters before inserting them (a backup restore plans its reindex before BEGIN).
+ */
+export function compareChaptersAsListed(
+  a: Pick<RepertoireChapter, "sortOrder" | "id">,
+  b: Pick<RepertoireChapter, "sortOrder" | "id">
+): number {
+  return a.sortOrder - b.sortOrder || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+}
 
 export const decisionRepository = {
   list(repertoireId: string): StoredDecision[] {

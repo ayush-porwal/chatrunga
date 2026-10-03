@@ -14,6 +14,7 @@ const {
   RepertoireCorruptChapterError,
   attemptRepository,
   chapterRepository,
+  compareChaptersAsListed,
   decisionRepository,
   progressRepository,
   repertoireRepository,
@@ -22,6 +23,7 @@ const {
   workspaceRepository
 } = await import("./repository");
 const { rootNode } = await import("./chapter-validation");
+const { repertoireDb, setRepertoireConnection, withOwnConnection } = await import("./connection");
 
 const record = {
   id: "r1",
@@ -233,6 +235,49 @@ describe("repertoire repository (SQLite)", () => {
       chapterRepository.get("c1");
     } catch (error) {
       expect((error as InstanceType<typeof RepertoireCorruptChapterError>).chapterId).toBe("c1");
+    }
+  });
+
+  it("lists chapters inserted together in compareChaptersAsListed's order", () => {
+    repertoireRepository.insert(record);
+    const chapters = ["b", "a2", "a10", "Z", "c"].map((id, index) => ({
+      ...chapter,
+      id,
+      sortOrder: index % 2
+    }));
+    for (const item of chapters) chapterRepository.upsert("r1", item, 5);
+    expect(chapterRepository.list("r1").map((item) => item.id)).toEqual(
+      [...chapters].sort(compareChaptersAsListed).map((item) => item.id)
+    );
+  });
+
+  it("runs a worker's work on its own WAL connection, then closes it", () => {
+    const main = repertoireDb();
+    let seen: { journal: unknown; foreignKeys: unknown; busy: unknown } | null = null;
+    let own: DatabaseSync | null = null;
+    let separate = false;
+    try {
+      expect(() =>
+        withOwnConnection(databasePath(), () => {
+          own = repertoireDb();
+          separate = own !== main;
+          seen = {
+            journal: own.prepare("PRAGMA journal_mode").get(),
+            foreignKeys: own.prepare("PRAGMA foreign_keys").get(),
+            busy: own.prepare("PRAGMA busy_timeout").get()
+          };
+          throw new Error("work failed");
+        })
+      ).toThrow("work failed");
+      expect(separate).toBe(true);
+      expect(seen).toEqual({
+        journal: { journal_mode: "wal" },
+        foreignKeys: { foreign_keys: 1 },
+        busy: { timeout: 5000 }
+      });
+      expect(() => own!.prepare("SELECT 1")).toThrow(/not open/);
+    } finally {
+      setRepertoireConnection(getDb);
     }
   });
 });

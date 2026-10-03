@@ -54,6 +54,7 @@ import {
 import {
   attemptRepository,
   chapterRepository,
+  compareChaptersAsListed,
   decisionRepository,
   gameLinkRepository,
   libraryGameExists,
@@ -208,17 +209,15 @@ function restorableDecisions(entry: RepertoireBackupEntry): StoredDecision[] {
 
 /**
  * Prepares an entry's content, outside the write transaction. The reindex is planned over the
- * chapters in the order the repository lists them once inserted (sort order, then id: every row
- * is created at the same time), so it is the plan a reindex after the inserts would make.
+ * chapters in the order the repository lists them once inserted (every row is created at the same
+ * time), so it is the plan a reindex after the inserts would make.
  */
 function prepareContent(
   entry: RepertoireBackupEntry,
   chapters: RepertoireChapter[]
 ): PreparedContent {
   const decisions = restorableDecisions(entry);
-  const ordered = [...chapters].sort(
-    (a, b) => a.sortOrder - b.sortOrder || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
-  );
+  const ordered = [...chapters].sort(compareChaptersAsListed);
   return {
     entry,
     chapters,
