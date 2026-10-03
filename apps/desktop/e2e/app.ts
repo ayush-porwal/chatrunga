@@ -188,15 +188,16 @@ async function installMainProcessGuards(app: ElectronApplication): Promise<void>
         this.once("message", (message: unknown) => {
           state.workerMessages.push(JSON.stringify(message).slice(0, 200));
           // A puzzle scan's answer, in full: whether it read the whole file, and the ids it kept.
+          // Other workers (a repertoire import's writer) answer without rows.
           const answer = message as {
             ok?: boolean;
-            result?: { rows: string[][]; matches: number; complete: boolean };
+            result?: { rows?: string[][]; matches?: number; complete?: boolean };
           };
           state.workerAnswers.push({
             ok: answer.ok === true,
             complete: answer.result?.complete ?? null,
             matches: answer.result?.matches ?? null,
-            ids: answer.result?.rows.map((row) => row[0] ?? "") ?? []
+            ids: answer.result?.rows?.map((row) => row[0] ?? "") ?? []
           });
         });
       }
