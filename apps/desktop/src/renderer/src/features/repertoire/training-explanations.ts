@@ -375,11 +375,19 @@ export function startUnavailableReason(state: {
   practicableChapters: number;
   rehearsing: boolean;
   rehearseChapterId: string;
+  /**
+   * Whether a rehearsal of the chosen chapter from its start asks a move (false: every line only
+   * plays paused decisions, replies or lead-up); null while that isn't known yet.
+   */
+  rehearseChapterAsks?: boolean | null;
 }): string | null {
   if (!state.decisionCount || !state.practicableChapters) {
     return "Nothing in this repertoire is practised yet — see why above.";
   }
   if (state.rehearsing && !state.rehearseChapterId) return "Choose a chapter to rehearse.";
+  if (state.rehearsing && state.rehearseChapterAsks === false) {
+    return "No line in this chapter asks a move of yours that isn't paused.";
+  }
   return null;
 }
 

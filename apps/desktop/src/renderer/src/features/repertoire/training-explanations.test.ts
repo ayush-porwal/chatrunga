@@ -211,6 +211,18 @@ describe("startUnavailableReason", () => {
       startUnavailableReason({ ...ready, rehearsing: true, rehearseChapterId: "c1" })
     ).toBeNull();
   });
+
+  it("keeps a rehearsal of a chapter whose lines ask only paused decisions from starting", () => {
+    const rehearse = { ...ready, rehearsing: true, rehearseChapterId: "c1" };
+    expect(startUnavailableReason({ ...rehearse, rehearseChapterAsks: false })).toBe(
+      "No line in this chapter asks a move of yours that isn't paused."
+    );
+    // Not known yet (still loading), or it asks: Start stays available.
+    expect(startUnavailableReason({ ...rehearse, rehearseChapterAsks: null })).toBeNull();
+    expect(startUnavailableReason({ ...rehearse, rehearseChapterAsks: true })).toBeNull();
+    // Only a rehearsal reads it.
+    expect(startUnavailableReason({ ...ready, rehearseChapterAsks: false })).toBeNull();
+  });
 });
 
 describe("studyPracticeAvailability", () => {

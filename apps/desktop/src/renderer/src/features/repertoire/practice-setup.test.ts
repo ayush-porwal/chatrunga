@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import type {
   RepertoireChapterSummary,
   StartPracticeInput
@@ -349,6 +350,22 @@ describe("rehearse lines setup", () => {
     expect(rehearseStarts(chapter, "white", pathLabel).starts.map((start) => start.nodeId)).toEqual(
       ["w1"]
     );
+  });
+
+  it("lists no branch start at a paused decision (played as context, never asked)", () => {
+    let tree = [rootNode()];
+    ({ tree } = addLine(tree, "root", ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"], "w"));
+    const chapter = chapterOf(tree);
+    const keys = buildChapterLookup(chapter).positionKeys;
+    expect(rehearseStarts(chapter, "white", pathLabel).starts.map((start) => start.nodeId)).toEqual(
+      ["w1", "w3"]
+    );
+    const paused = new Set([keys.get("w1")!]);
+    expect(
+      rehearseStarts(chapter, "white", pathLabel, undefined, undefined, paused).starts.map(
+        (start) => start.nodeId
+      )
+    ).toEqual(["w3"]);
   });
 });
 

@@ -269,15 +269,17 @@ export type RehearseStart = { nodeId: string; path: string };
  * Where a rehearsal can start inside a chapter: positions in training scope where the player is
  * to move and has a repertoire move within the depth limit, in authored order. The chapter start
  * is the picker's default and isn't listed; `label` names a node's path ("1. e4 e5 2. Nf3").
+ * `paused` (position keys) are paused decisions: played as context, so never a start.
  */
 export function rehearseStarts(
   chapter: Pick<RepertoireChapter, "kind" | "enabled" | "tree" | "nodeMeta">,
   color: RepertoireColor,
   label: (lookup: ChapterLookup, nodeId: string) => string,
   limit = MAX_REHEARSE_STARTS,
-  maxDepthPlies = DEFAULT_REHEARSAL_DEPTH_PLIES
+  maxDepthPlies = DEFAULT_REHEARSAL_DEPTH_PLIES,
+  paused: ReadonlySet<string> = new Set()
 ): { starts: RehearseStart[]; truncated: boolean } {
-  const context = rehearsalContext(chapter, color, maxDepthPlies);
+  const context = rehearsalContext(chapter, color, maxDepthPlies, undefined, paused);
   const starts: RehearseStart[] = [];
   for (const id of context.lookup.order) {
     if (id === REPERTOIRE_ROOT_NODE_ID || !isDecisionNode(context, id)) continue;

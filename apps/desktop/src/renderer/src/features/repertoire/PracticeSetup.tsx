@@ -3,12 +3,14 @@ import { GraduationCap, Route } from "lucide-react";
 import {
   DEFAULT_REHEARSAL_DEPTH_PLIES,
   canRehearseFrom,
+  lineEnds,
   rehearsalContext
 } from "@chaturanga/shared/chess/repertoire-rehearsal";
-import type {
-  PracticeMode,
-  RepertoireDetail,
-  StartPracticeInput
+import {
+  REPERTOIRE_ROOT_NODE_ID,
+  type PracticeMode,
+  type RepertoireDetail,
+  type StartPracticeInput
 } from "@chaturanga/shared/types/repertoire";
 import {
   defaultSettings,
@@ -24,7 +26,7 @@ import { SectionHeader } from "@/components/ui/page";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { cardPadded } from "@/lib/ui";
 import { useSettingsQuery } from "../../queries/api";
-import { useRepertoireChapterQuery } from "../../queries/repertoire";
+import { useRepertoireChapterQuery, useRepertoirePausedKeysQuery } from "../../queries/repertoire";
 import { useSetSetting } from "../settings/use-set-setting";
 import { sortedChapters } from "./repertoire-chapters";
 import { pathLabel } from "./repertoire-model";
@@ -152,7 +154,8 @@ export function PracticeSetup({
     decisionCount: detail.decisionCount,
     practicableChapters: trainable.length,
     rehearsing,
-    rehearseChapterId
+    rehearseChapterId,
+    rehearseChapterAsks: branch.asks
   });
 
   const toggle = (id: string) =>
@@ -354,22 +357,32 @@ export function PracticeSetup({
 
 /**
  * The positions a rehearsal of `chapterId` can start from within the depth limit (loaded with the
- * chapter). A preselected branch ("Rehearse from here", e.g. where the opponent is to move) that
- * the list leaves out is offered too while a rehearsal can start there.
+ * chapter and the repertoire's paused decisions, which are played as context and never asked),
+ * and whether one from the chapter start asks a move (`asks`; null until loaded). A preselected
+ * branch ("Rehearse from here", e.g. where the opponent is to move) that the list leaves out is
+ * offered too while a rehearsal can start there.
  */
 function useRehearseStarts(
   detail: RepertoireDetail,
   chapterId: string | null,
   preselected: string,
   maxDepthPlies: number
-): { starts: RehearseStart[]; truncated: boolean; loading: boolean } {
+): { starts: RehearseStart[]; truncated: boolean; asks: boolean | null; loading: boolean } {
   const chapter = useRepertoireChapterQuery(chapterId ? detail.id : null, chapterId);
+  const pausedKeys = useRepertoirePausedKeysQuery(chapterId ? detail.id : null);
   const data = chapterId && chapter.data?.id === chapterId ? chapter.data : null;
+  // A failed read of the paused decisions leaves none paused, as Study does.
+  const pausedLoading = Boolean(chapterId) && pausedKeys.isPending;
   const listed = useMemo(() => {
-    if (!data) return { starts: [], truncated: false };
-    const result = rehearseStarts(data, detail.color, pathLabel, undefined, maxDepthPlies);
+    if (!data || pausedLoading) return { starts: [], truncated: false, asks: null };
+    const paused = new Set(pausedKeys.data ?? []);
+    const context = rehearsalContext(data, detail.color, maxDepthPlies, undefined, paused);
+    const asks = lineEnds(context, REPERTOIRE_ROOT_NODE_ID).length > 0;
+    const result = {
+      ...rehearseStarts(data, detail.color, pathLabel, undefined, maxDepthPlies, paused),
+      asks
+    };
     if (!preselected || result.starts.some((start) => start.nodeId === preselected)) return result;
-    const context = rehearsalContext(data, detail.color, maxDepthPlies);
     if (!canRehearseFrom(context, preselected)) return result;
     return {
       ...result,
@@ -378,6 +391,6 @@ function useRehearseStarts(
         ...result.starts
       ]
     };
-  }, [data, detail.color, preselected, maxDepthPlies]);
-  return { ...listed, loading: Boolean(chapterId) && chapter.isPending };
+  }, [data, pausedLoading, pausedKeys.data, detail.color, preselected, maxDepthPlies]);
+  return { ...listed, loading: Boolean(chapterId) && (chapter.isPending || pausedLoading) };
 }
