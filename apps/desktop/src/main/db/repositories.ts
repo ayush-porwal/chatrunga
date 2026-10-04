@@ -494,7 +494,7 @@ function parseStoredReview(
       playerRating: settingsRepository.getAll().reviewPlayerRating
     });
   } catch {
-    // Moves too damaged to assess: the review still opens, unmarked.
+    // Damaged moves are left unassessed one by one; anything worse still opens the review, unmarked.
     return placed;
   }
 }

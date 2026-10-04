@@ -180,6 +180,19 @@ describe("gameRepository (SQLite)", () => {
       .prepare("SELECT review_json FROM game_reviews WHERE game_id = ?")
       .get(saved.id) as { review_json: string };
     expect(row.review_json).toBe(JSON.stringify(stored));
+
+    // One damaged move stays unmarked; the rest keep their marks.
+    const damaged = {
+      ...stored,
+      moves: stored.moves.map((move, index) => (index === 8 ? { ...move, motifs: null } : move))
+    };
+    storeReview(saved.id, damaged);
+    const partly = gameRepository.get(saved.id)!.review!;
+    expect(partly.assessmentsRecomputed).toBe(true);
+    expect(partly.moves[8]?.assessment).toBeUndefined();
+    expect(partly.moves.map((move) => move.assessment?.annotation ?? null).filter(Boolean)).toEqual(
+      ["inaccuracy", "blunder", "good", "mistake"]
+    );
   });
 
   it("moves the review of a game from a set-up position too, and puts the cursor on the rebuilt tree", () => {
