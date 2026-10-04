@@ -34,7 +34,11 @@ export default defineConfig({
   plugins: ["eslint", "typescript", "unicorn", "oxc", "react", "jsx-a11y"],
   // TanStack Query's rules have no native port. The plugin is pinned (JS plugins are alpha) and
   // scripts/lint-config.test.mjs proves its rules still fire.
-  jsPlugins: [{ name: "@tanstack/query", specifier: "@tanstack/eslint-plugin-query" }],
+  jsPlugins: [
+    { name: "@tanstack/query", specifier: "@tanstack/eslint-plugin-query" },
+    // The app's own rules, each with valid and invalid fixtures (scripts/oxlint-plugin-chaturanga.test.mjs).
+    { name: "chaturanga", specifier: "./scripts/oxlint-plugin-chaturanga/index.mjs" }
+  ],
   // Type-aware rules (oxlint-tsgolint) use each file's tsconfig.
   options: {
     typeAware: true,
@@ -130,7 +134,10 @@ export default defineConfig({
     "@tanstack/query/no-unstable-deps": "error",
     "@tanstack/query/infinite-query-property-order": "error",
     "@tanstack/query/no-void-query-fn": "error",
-    "@tanstack/query/mutation-property-order": "error"
+    "@tanstack/query/mutation-property-order": "error",
+
+    // A lint-disable comment names its rule and says, after `--`, why the exception is safe.
+    "chaturanga/disable-needs-reason": "error"
   },
   overrides: [
     // The TypeScript compiler already rejects these in .ts files (typescript-eslint's
@@ -259,7 +266,9 @@ export default defineConfig({
         "typescript/no-unsafe-return": "off",
         // vi.fn() takes its types from its implementation or the method it spies on; restating
         // them as type parameters adds noise, not safety.
-        "vitest/require-mock-type-parameters": "off"
+        "vitest/require-mock-type-parameters": "off",
+        // Await the milestone (or use fake timers), never a real sleep.
+        "chaturanga/no-test-sleep": "error"
       }
     },
     // Plain JS (repo scripts, fake engines): no tsconfig type-checks these files, so their values

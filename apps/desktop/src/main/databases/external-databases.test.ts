@@ -808,6 +808,7 @@ describe("samplePuzzle", () => {
     const first = samplePuzzle(input());
     const second = samplePuzzle(input());
     await vi.waitFor(() => expect(gatedScans.length).toBe(1));
+    // oxlint-disable-next-line chaturanga/no-test-sleep -- an absence check: the second request joining shows no event, only no second scan
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(gatedScans.filter(isQuick)).toHaveLength(1);
     gatedScans[0]!.release();

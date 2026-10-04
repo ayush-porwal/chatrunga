@@ -91,7 +91,7 @@ const GAME_SOURCES: readonly GameSource[] = [
 ];
 /** UCI long algebraic move (castling may be king-takes-rook in Chess960 form). */
 const UCI_MOVE = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
-// eslint-disable-next-line no-control-regex
+// oxlint-disable-next-line no-control-regex -- it matches the control characters an input may not contain
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
 type Fields = Record<string, unknown>;

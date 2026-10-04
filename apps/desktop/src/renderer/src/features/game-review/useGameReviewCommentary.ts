@@ -175,8 +175,7 @@ export function useGameReviewCommentary({
   const jobInput = useMemo(() => {
     if (!payload || !review || !jobKey) return null;
     return { payload, target: review, key: jobKey, settingsKey };
-    // `review` changes whenever commentary is cached; the job only needs the review identity.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- `review` changes whenever commentary is cached; the job needs only the review's identity
   }, [jobKey, payload]);
   const job = useMemo<CommentaryJob | null>(
     () => (jobInput ? { key: jobInput.key, run: () => requestOne({ ...jobInput, trigger: "auto" }) } : null),

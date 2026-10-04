@@ -57,7 +57,7 @@ const MAX_TAGS = 64;
 const MAX_RECORD_ENTRIES = 256;
 const EDGES: readonly RepertoireEdgeKind[] = ["reference", "included", "covered"];
 const LINK_KINDS: readonly RepertoireGameLink["kind"][] = ["source", "model", "played"];
-// eslint-disable-next-line no-control-regex
+// oxlint-disable-next-line no-control-regex -- it matches the control characters a backup field may not contain
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
 type Fields = Record<string, unknown>;

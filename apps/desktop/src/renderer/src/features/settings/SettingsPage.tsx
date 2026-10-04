@@ -180,7 +180,7 @@ function useScrollSpy(anchorRef: React.RefObject<HTMLElement | null>, sections: 
       if (scroller.scrollTop <= 4) current = sections[0];
       if (current) setActive(current);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` stands for the section list
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- `key` stands for the section list
     [key]
   );
 

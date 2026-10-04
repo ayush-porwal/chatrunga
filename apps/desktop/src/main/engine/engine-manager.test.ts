@@ -162,6 +162,7 @@ describe("EngineManager", () => {
     const search = manager.startAnalysis({ engineId: "sf", searchId: "b", fen: START, moves: [], multipv: 1 });
     // The warm process is gone: a search that didn't wait for the probe would start one now.
     await expectEventually(() => sent().includes("exit"));
+    // oxlint-disable-next-line chaturanga/no-test-sleep -- an absence check: no event marks a spawn that didn't happen
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(spawns()).toBe(1);
     finishProbe();

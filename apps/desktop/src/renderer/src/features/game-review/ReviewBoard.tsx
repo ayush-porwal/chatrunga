@@ -71,8 +71,7 @@ export function ReviewBoard({ fen, orientation, arrows = NO_ARROWS, lastMove, cl
       ground.destroy();
       groundRef.current = null;
     };
-    // The board API is created once; prop updates are handled below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- the board API is created once; prop updates are handled below
   }, []);
 
   useEffect(() => {

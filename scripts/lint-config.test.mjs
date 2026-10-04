@@ -508,6 +508,21 @@ export const value = 1;
 `
   },
 
+  // The app's own rules, loaded through the config (their fixtures: oxlint-plugin-chaturanga.test.mjs).
+  {
+    name: "a disable comment without a reason, and a real sleep in a test",
+    file: "apps/desktop/src/main/custom.test.ts",
+    rules: ["chaturanga(disable-needs-reason)", "chaturanga(no-test-sleep)"],
+    lines: [1, 4],
+    code: `// oxlint-disable-next-line no-debugger
+debugger;
+it("waits", async () => {
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(1).toBe(1);
+});
+`
+  },
+
   // eslint:recommended and typescript-eslint's recommended set (a sample of each kind).
   {
     name: "recommended rules: unused values, empty blocks, ts-ignore, debugger and const",

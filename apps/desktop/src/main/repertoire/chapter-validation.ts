@@ -45,9 +45,9 @@ const EDGES: readonly RepertoireEdgeKind[] = ["reference", "included", "covered"
 const COLORS: ReadonlySet<string> = new Set<AnnotationColor>(["green", "red", "yellow", "blue"]);
 /** A PGN tag name: letters, digits and underscores. */
 const TAG_NAME = /^[A-Za-z0-9_]+$/;
-// eslint-disable-next-line no-control-regex
+// oxlint-disable-next-line no-control-regex -- it matches the control characters a chapter field may not contain
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
-// eslint-disable-next-line no-control-regex
+// oxlint-disable-next-line no-control-regex -- the same control characters, in runs to collapse
 const CONTROL_RUNS = /[\u0000-\u001f\u007f]+/g;
 
 type Fields = Record<string, unknown>;
