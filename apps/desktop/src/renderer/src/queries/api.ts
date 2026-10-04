@@ -51,6 +51,21 @@ export function useEngineRegistrySubscription() {
   );
 }
 
+/**
+ * Reads the settings again when the main process changed some itself (the Lichess ratings sync).
+ * Mount once.
+ */
+export function useSettingsChangedSubscription() {
+  const queryClient = useQueryClient();
+  useEffect(
+    () =>
+      api()?.events.onSettingsChanged?.(
+        () => void queryClient.invalidateQueries({ queryKey: queryKeys.settings })
+      ),
+    [queryClient]
+  );
+}
+
 export function useEnginesQuery() {
   return useQuery({
     queryKey: queryKeys.engines,

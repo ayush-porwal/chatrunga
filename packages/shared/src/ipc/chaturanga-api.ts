@@ -307,6 +307,8 @@ export type ChaturangaApi = {
     onUpdateState(callback: (state: UpdateState) => void): Unsubscribe;
     /** Lichess account, seek, challenge, game and import events (main/lichess). */
     onLichessEvent(callback: (event: LichessEvent) => void): Unsubscribe;
+    /** Settings the main process changed itself (the Lichess ratings sync): read them again. */
+    onSettingsChanged(callback: (keys: (keyof AppSettings)[]) => void): Unsubscribe;
   };
 
   /**

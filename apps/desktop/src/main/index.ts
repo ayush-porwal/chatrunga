@@ -30,7 +30,7 @@ import {
 import { EngineManager } from "./engine/engine-manager";
 import { killAllEngineProcesses } from "./engine/uci-process";
 import { registerIpc } from "./ipc/register";
-import { shutdownLichess } from "./lichess";
+import { shutdownLichess, startLichessRatingSync } from "./lichess";
 import { errorMessage, logger } from "./logger";
 import { migrateOnboarding } from "./onboarding-migration";
 import { migratePlayerRatings } from "./rating-migration";
@@ -163,6 +163,11 @@ async function startup(): Promise<void> {
   installWindowGlass();
   installWindowReveal();
   registerIpc(engineManager);
+  try {
+    startLichessRatingSync();
+  } catch (error) {
+    logger.error("lichess", "starting the ratings sync failed:", error);
+  }
   installApplicationMenu();
   const icon = createAppIcon();
   if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);

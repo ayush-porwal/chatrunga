@@ -16,6 +16,7 @@
 import { EventEmitter } from "node:events";
 import type { GameSource } from "@chaturanga/shared/types/chess";
 import type {
+  LichessAccount,
   LichessAiChallengeInput,
   LichessChallenge,
   LichessChallengeInput,
@@ -191,6 +192,24 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
     if (options.removeGames) this.options.games.removeBySource("lichess");
     this.emitStatus();
     return this.readStatus();
+  }
+
+  /**
+   * Reads the account's ratings again (`GET /api/account`) and saves them. Null when no account
+   * with a usable token is connected; rejects when Lichess can't be reached.
+   */
+  async refreshAccount(): Promise<LichessAccount | null> {
+    const { account, tokenRejected } = await this.options.store.status();
+    if (!account || tokenRejected) return null;
+    const fresh = normalizeAccount(
+      await this.client.json("/api/account"),
+      account.connectedAt,
+      account.lastSyncAt
+    );
+    if (fresh.id !== account.id) return null;
+    const saved = await this.options.store.updatePerfs(account.id, fresh.perfs);
+    if (saved) this.emitStatus();
+    return saved;
   }
 
   // --- Game import -----------------------------------------------------------------------------

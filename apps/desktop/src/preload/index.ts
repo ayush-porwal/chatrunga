@@ -163,7 +163,8 @@ const api: ChaturangaApi = {
       "database:downloadProgress"
     ),
     onUpdateState: subscribe<EventPayload<"onUpdateState">>("updates:state"),
-    onLichessEvent: subscribe<EventPayload<"onLichessEvent">>("lichess:event")
+    onLichessEvent: subscribe<EventPayload<"onLichessEvent">>("lichess:event"),
+    onSettingsChanged: subscribe<EventPayload<"onSettingsChanged">>("settings:changed")
   },
   // Lichess account, play and import (main/lichess).
   lichess: {

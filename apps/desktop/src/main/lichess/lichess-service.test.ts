@@ -522,6 +522,44 @@ describe("LichessService", () => {
     });
   });
 
+  it("reads the account's ratings again and keeps them with the account", async () => {
+    const { service, store, events } = await setup({
+      "GET /api/account": () =>
+        json({
+          id: "kenneth",
+          username: "Kenneth",
+          perfs: {
+            blitz: { rating: 1720, games: 300, prov: false },
+            rapid: { rating: 1810, games: 4, prov: true }
+          }
+        })
+    });
+    const account = await service.refreshAccount();
+    expect(account?.perfs).toEqual({
+      blitz: { rating: 1720, games: 300, provisional: false },
+      rapid: { rating: 1810, games: 4, provisional: true }
+    });
+    // The rest of the account is as it was connected.
+    expect((await store.status()).account).toEqual({ ...ACCOUNT, perfs: account?.perfs });
+    await vi.waitFor(() =>
+      expect(events.at(-1)).toMatchObject({
+        type: "status",
+        status: { account: { perfs: account?.perfs } }
+      })
+    );
+  });
+
+  it("reads no ratings without an account, and fails when Lichess can't be reached", async () => {
+    const signedOut = await setup({}, { connected: false });
+    expect(await signedOut.service.refreshAccount()).toBeNull();
+    expect(signedOut.requests).toHaveLength(0);
+    const offline = await setup({
+      "GET /api/account": () => Promise.reject(new TypeError("fetch failed"))
+    });
+    await expect(offline.service.refreshAccount()).rejects.toThrow(/fetch failed|reach/i);
+    expect((await offline.store.status()).account).toEqual(ACCOUNT);
+  });
+
   it("reports a failed import", async () => {
     const { service, events } = await setup({ "GET /api/games/user/Kenneth": () => json({}, 429) });
     await expect(service.syncGames()).rejects.toThrow(/Try again in a minute/);
