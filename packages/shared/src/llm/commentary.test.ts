@@ -148,7 +148,7 @@ describe("review insight payload schema", () => {
           stockfish: { ...base.engines.stockfish, alternatives: tooManyAlternatives }
         }
       })
-    ).toThrow();
+    ).toThrow(/at most 3/);
     const recent = Array.from({ length: 9 }, () => ({
       moveNumberSan: "3.",
       san: "Bc4",
@@ -159,13 +159,13 @@ describe("review insight payload schema", () => {
         ...base,
         context: { ...base.context, recentMoves: recent }
       })
-    ).toThrow();
+    ).toThrow(/at most 8/);
     expect(() =>
       reviewInsightPayloadSchema.parse({
         ...base,
         context: { ...base.context, event: "x".repeat(81) }
       })
-    ).toThrow();
+    ).toThrow(/at most 80/);
   });
 
   it("accepts terminal checkmate payloads with an M0 evaluation", () => {

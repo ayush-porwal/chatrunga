@@ -91,7 +91,7 @@ describe("authorizeInBrowser", () => {
     expect(codeChallengeFor(exchange.code_verifier!)).toBe(params.get("code_challenge"));
 
     // The one-shot server is gone.
-    await expect(callback(authorize, { code: "again", state })).rejects.toThrow();
+    await expect(callback(authorize, { code: "again", state })).rejects.toThrow(/fetch failed/);
   });
 
   it("tells the browser when the code exchange fails, and rejects", async () => {

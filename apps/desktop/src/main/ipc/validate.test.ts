@@ -45,30 +45,30 @@ describe("primitive validators", () => {
   it("accepts ids and rejects empty / multi-line ones", () => {
     expect(asId(" abc ")).toBe("abc");
     expect(() => asId("")).toThrow(/Invalid id/);
-    expect(() => asId("a\nb")).toThrow();
-    expect(() => asId(42)).toThrow();
+    expect(() => asId("a\nb")).toThrow(/expected a non-empty identifier/);
+    expect(() => asId(42)).toThrow(/Invalid id: expected a string/);
     expect(() => asId("x".repeat(201))).toThrow(/too long/);
   });
 
   it("requires absolute paths", () => {
     expect(asAbsolutePath(" /usr/local/bin/stockfish ", "path")).toBe("/usr/local/bin/stockfish");
     expect(() => asAbsolutePath("stockfish", "path")).toThrow(/absolute/);
-    expect(() => asAbsolutePath("/bin/sh\0", "path")).toThrow();
-    expect(() => asAbsolutePath("", "path")).toThrow();
+    expect(() => asAbsolutePath("/bin/sh\0", "path")).toThrow(/Invalid path/);
+    expect(() => asAbsolutePath("", "path")).toThrow(/Invalid path/);
   });
 
   it("accepts legal FENs only, and never newlines (UCI command injection)", () => {
     expect(asFen(START)).toBe(START);
     expect(() => asFen(`${START}\nquit`)).toThrow(/control/);
     expect(() => asFen("8/8/8/8/8/8/8/8 w - - 0 1")).toThrow(/legal/);
-    expect(() => asFen("hello")).toThrow();
+    expect(() => asFen("hello")).toThrow(/Invalid FEN/);
   });
 
   it("accepts UCI moves only", () => {
     expect(asUciMoves(["e2e4", "e7e8q", "e1h1"])).toEqual(["e2e4", "e7e8q", "e1h1"]);
     expect(() => asUciMoves(["e4"])).toThrow(/UCI move/);
-    expect(() => asUciMoves(["e2e4 quit"])).toThrow();
-    expect(() => asUciMoves("e2e4")).toThrow();
+    expect(() => asUciMoves(["e2e4 quit"])).toThrow(/Invalid moves\[0\]: too long/);
+    expect(() => asUciMoves("e2e4")).toThrow(/Invalid moves: expected an array/);
   });
 });
 
@@ -157,7 +157,7 @@ describe("engine session inputs", () => {
     expect(review.moves[0]).toMatchObject({ uci: "e2e4", clockAfter: null });
     expect(review.nodes).toBeNull();
     expect(parseReviewGameInput({ engineId: "sf", rootFen: START, moves: [] }).reviewId).toMatch(/^review-/);
-    expect(() => parseReviewGameInput({ engineId: "sf", rootFen: START, moves: [{ uci: "bad" }] })).toThrow();
+    expect(() => parseReviewGameInput({ engineId: "sf", rootFen: START, moves: [{ uci: "bad" }] })).toThrow(/"bad" is not a UCI move/);
     expect(() => parseReviewGameInput({ engineId: "sf", rootFen: START })).toThrow(/moves/);
   });
 
@@ -202,7 +202,7 @@ describe("library inputs", () => {
 
   it("parses PGN imports and settings keys", () => {
     expect(parsePgnText({ pgn: "1. e4 *" })).toBe("1. e4 *");
-    expect(() => parsePgnText({})).toThrow();
+    expect(() => parsePgnText({})).toThrow(/Invalid PGN/);
     expect(parseSettingKey("reviewMultiPv")).toBe("reviewMultiPv");
     expect(() => parseSettingKey("__proto__")).toThrow(/unknown key/);
   });
@@ -210,7 +210,7 @@ describe("library inputs", () => {
   it("parses dialog inputs", () => {
     expect(parseDialogFilters(undefined)).toEqual([]);
     expect(parseDialogFilters([{ name: "Images", extensions: ["png"] }])).toEqual([{ name: "Images", extensions: ["png"] }]);
-    expect(() => parseDialogFilters([{ name: "x" }])).toThrow();
+    expect(() => parseDialogFilters([{ name: "x" }])).toThrow(/Invalid file filter extensions/);
     expect(parseDefaultFileName("../../etc/game.pgn")).toBe(".._.._etc_game.pgn");
     expect(parseDefaultFileName("  ")).toBe("chaturanga-game.pgn");
   });
@@ -223,7 +223,7 @@ describe("library inputs", () => {
     });
     expect(parsed.lichess?.side).toBe("any");
     expect(parsed.position?.difficultyMax).toBe(5);
-    expect(() => parsePuzzleSampleInput({ databaseId: "db", lichess: { ratingMin: "low" } })).toThrow();
+    expect(() => parsePuzzleSampleInput({ databaseId: "db", lichess: { ratingMin: "low" } })).toThrow(/Invalid ratingMin/);
     expect(parsePuzzleSampleInput({ databaseId: "db", ids: ["a", "b"] }).ids).toEqual(["a", "b"]);
     expect(parsePuzzleSampleInput({ databaseId: "db" })).not.toHaveProperty("ids");
     expect(() => parsePuzzleSampleInput({ databaseId: "db", ids: "a" })).toThrow(/puzzle ids/);
@@ -270,11 +270,11 @@ describe("Lichess inputs", () => {
     expect(asLichessId("abcd1234")).toBe("abcd1234");
     expect(asLichessId("abcd1234WXYZ")).toBe("abcd1234WXYZ");
     expect(() => asLichessId("abc")).toThrow(/Lichess id/);
-    expect(() => asLichessId("abcd1234/../account")).toThrow();
-    expect(() => asLichessId("abcd 234")).toThrow();
+    expect(() => asLichessId("abcd1234/../account")).toThrow(/Invalid Lichess id: too long/);
+    expect(() => asLichessId("abcd 234")).toThrow(/not a Lichess id/);
     expect(asLichessUci("e7e8q")).toBe("e7e8q");
     expect(() => asLichessUci("e4")).toThrow(/UCI/);
-    expect(() => asLichessUci("e2e4/")).toThrow();
+    expect(() => asLichessUci("e2e4/")).toThrow(/"e2e4\/" is not a UCI move/);
   });
 
   it("parses seeks", () => {
@@ -291,7 +291,7 @@ describe("Lichess inputs", () => {
     expect(() =>
       parseLichessSeekInput({ minutes: 10, incrementSec: 0, rated: true, ratingRange: [1800, 1400] })
     ).toThrow(/rating range/);
-    expect(() => parseLichessSeekInput({ minutes: 10, incrementSec: 0, rated: true, ratingRange: [1] })).toThrow();
+    expect(() => parseLichessSeekInput({ minutes: 10, incrementSec: 0, rated: true, ratingRange: [1] })).toThrow(/Invalid rating range/);
   });
 
   it("parses challenges", () => {
@@ -331,16 +331,16 @@ describe("parseSaveGameInput headers", () => {
   });
 
   it("rejects headers that aren't text", () => {
-    expect(() => parseSaveGameInput({ ...base, headers: { white: 42 } })).toThrow();
-    expect(() => parseSaveGameInput({ ...base, headers: { orientationHint: "up" } })).toThrow();
+    expect(() => parseSaveGameInput({ ...base, headers: { white: 42 } })).toThrow(/Invalid white header/);
+    expect(() => parseSaveGameInput({ ...base, headers: { orientationHint: "up" } })).toThrow(/Invalid orientation header/);
   });
 });
 
 describe("parseSettingsPatch", () => {
   it("keeps known keys and refuses unknown or empty patches", () => {
     expect(parseSettingsPatch({ boardTheme: "green", boardSquareLight: null })).toEqual({ boardTheme: "green", boardSquareLight: null });
-    expect(() => parseSettingsPatch({ nope: 1 })).toThrow();
-    expect(() => parseSettingsPatch({})).toThrow();
+    expect(() => parseSettingsPatch({ nope: 1 })).toThrow(/Invalid setting: unknown key/);
+    expect(() => parseSettingsPatch({})).toThrow(/expected a few settings/);
     expect(() => parseSettingsPatch({ soundVolume: 9 })).toThrow(/soundVolume/);
   });
 
@@ -363,7 +363,7 @@ describe("parseSettingsPatch", () => {
     expect(() => parseGameListQuery({ cursor: { updatedAt: 5, id: "" } })).toThrow(/cursor/);
     expect(parseGameListQuery({ search: "x".repeat(GAME_SEARCH_MAX_LENGTH) }).search).toHaveLength(GAME_SEARCH_MAX_LENGTH);
     expect(() => parseGameListQuery({ search: "x".repeat(GAME_SEARCH_MAX_LENGTH + 1) })).toThrow(/search/);
-    expect(() => parseGameListQuery("all")).toThrow();
+    expect(() => parseGameListQuery("all")).toThrow(/Invalid game list query/);
   });
 });
 

@@ -38,7 +38,7 @@ describe("runMigrations", () => {
     db.exec(`INSERT INTO engines (id, is_default, updated_at) VALUES ('old', 1, 1), ('new', 1, 2)`);
     runMigrations(db, MIGRATIONS);
     expect(db.prepare("SELECT id FROM engines WHERE is_default = 1").all()).toEqual([{ id: "new" }]);
-    expect(() => db.exec("UPDATE engines SET is_default = 1 WHERE id = 'old'")).toThrow();
+    expect(() => db.exec("UPDATE engines SET is_default = 1 WHERE id = 'old'")).toThrow(/UNIQUE constraint failed: engines.is_default/);
   });
 
   it("6: moves each game's review into game_reviews and fingerprints the game", () => {
@@ -93,8 +93,8 @@ describe("runMigrations", () => {
         is_final_grade, position_key, fingerprint, at) VALUES ('${id}', 's', 'q', ${sequence}, 'attempt', ${final}, 'k', '', 1)`);
     attempt("a1", 1, 1);
     attempt("a2", 2, 0);
-    expect(() => attempt("a3", 3, 1)).toThrow();
-    expect(() => attempt("a4", 2, 0)).toThrow();
+    expect(() => attempt("a3", 3, 1)).toThrow(/UNIQUE constraint failed: repertoire_attempts/);
+    expect(() => attempt("a4", 2, 0)).toThrow(/UNIQUE constraint failed: repertoire_attempts/);
 
     db.exec("DELETE FROM repertoires WHERE id = 'r'");
     for (const table of ["repertoire_chapters", "repertoire_position_index", "repertoire_attempts"]) {
@@ -123,8 +123,8 @@ describe("runMigrations", () => {
     link("l1");
     link("l4", "model");
     link("l5", "played");
-    expect(() => link("l2", "other")).toThrow();
-    expect(() => link("l3", "source", "missing")).toThrow();
+    expect(() => link("l2", "other")).toThrow(/CHECK constraint failed/);
+    expect(() => link("l3", "source", "missing")).toThrow(/FOREIGN KEY constraint failed/);
 
     db.exec("DELETE FROM games WHERE id = 'g'");
     db.exec("DELETE FROM repertoire_chapters WHERE id = 'c'");

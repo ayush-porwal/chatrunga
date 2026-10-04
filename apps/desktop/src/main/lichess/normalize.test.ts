@@ -89,7 +89,7 @@ describe("normalizeGameFull", () => {
   });
 
   it("requires an id", () => {
-    expect(() => normalizeGameFull({ ...GAME_FULL, id: undefined })).toThrow();
+    expect(() => normalizeGameFull({ ...GAME_FULL, id: undefined })).toThrow(/without an id/);
   });
 });
 

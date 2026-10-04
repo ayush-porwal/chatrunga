@@ -292,6 +292,55 @@ export function Query({ id }: { id: string }) {
 `
   },
 
+  // Test hygiene in unit and e2e tests.
+  {
+    name: "tests can't be focused or skipped, and every expect is complete and specific",
+    file: "apps/desktop/src/main/hygiene.test.ts",
+    rules: [
+      "vitest(no-focused-tests)",
+      "vitest(no-disabled-tests)",
+      "vitest(valid-expect)",
+      "vitest(valid-expect-in-promise)",
+      "vitest(require-to-throw-message)",
+      "vitest(no-conditional-expect)",
+      "vitest(expect-expect)"
+    ],
+    lines: [3, 4, 6, 8, 11, 13, 14, 16],
+    code: `const parse = (value: unknown) => String(value);
+const load = () => Promise.resolve(1);
+it.only("focused", () => expect(parse(1)).toBe("1"));
+it.skip("skipped", () => expect(parse(1)).toBe("1"));
+it("incomplete", () => {
+  expect(parse(1));
+});
+it("unawaited", () => { load().then((value) => { expect(value).toBe(1); }); });
+it("any error", () => {
+  expect(() => parse(1)).not.toThrow(/x/);
+  expect(() => parse(1)).toThrow();
+});
+it("conditional", () => {
+  if (parse(1)) expect(parse(1)).toBe("1");
+});
+it("no assertions", () => {
+  parse(1);
+});
+`
+  },
+  {
+    name: "complete tests pass: a failure message, a specific error and an assertion helper",
+    file: "apps/desktop/src/main/hygiene-ok.test.ts",
+    rules: ["vitest(valid-expect)", "vitest(require-to-throw-message)", "vitest(expect-expect)"],
+    lines: [],
+    code: `const parse = (value: unknown) => String(value);
+const expectParsed = (value: unknown) => expect(parse(value), "parsed").toBe(String(value));
+it("message", () => {
+  expect(parse(1), "the number as text").toBe("1");
+  expect(() => JSON.parse("{")).toThrow(/JSON/);
+});
+it("helper", () => expectParsed(2));
+`
+  },
+
   // eslint:recommended and typescript-eslint's recommended set (a sample of each kind).
   {
     name: "recommended rules: unused values, empty blocks, ts-ignore, debugger and const",

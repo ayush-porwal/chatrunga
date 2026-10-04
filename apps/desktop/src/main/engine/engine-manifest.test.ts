@@ -27,9 +27,13 @@ function expectValidEntry(entry: ManifestPlatformEntry | undefined, label: strin
   expect(parsed.protocol, `${label} url`).toBe("https:");
   expect(["github.com", "raw.githubusercontent.com"], `${label} host`).toContain(parsed.hostname);
   expect(Number.isInteger(sizeBytes) && sizeBytes > 0, `${label} sizeBytes`).toBe(true);
+  // Optional fields are checked when an entry has them (archives have extract and a pattern).
+  // oxlint-disable-next-line vitest/no-conditional-expect -- sha256 is optional per entry
   if (sha256 !== undefined) expect(sha256, `${label} sha256`).toMatch(/^[0-9a-f]{64}$/);
   if (extract !== undefined) {
+    // oxlint-disable-next-line vitest/no-conditional-expect -- only archives name an extract format
     expect(["tar", "tar.gz", "tar.xz", "zip"], `${label} extract`).toContain(extract);
+    // oxlint-disable-next-line vitest/no-conditional-expect -- only archives carry a pattern
     expect(() => new RegExp(executablePattern!), `${label} executablePattern`).not.toThrow();
   }
 }
@@ -144,6 +148,7 @@ describe("bundled fallback manifest", () => {
     for (const platform of SUPPORTED_PLATFORMS) {
       const entry = resolveManifestEntry(ENGINE_MANIFEST, "lc0", platform);
       if (entry) expectValidEntry(entry, `lc0 ${platform}`);
+      // oxlint-disable-next-line vitest/no-conditional-expect -- a platform has one or the other
       else expect(ENGINE_MANIFEST.lc0.installInstructions[platform], `lc0 ${platform}`).toBeTruthy();
     }
     expect(resolveManifestEntry(ENGINE_MANIFEST, "lc0", "win32-x64")).not.toBeNull();

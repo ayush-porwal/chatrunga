@@ -50,6 +50,7 @@ describe("LichessAccountStore", () => {
       account: { id: "kenneth" },
       encryptedToken: expect.any(String)
     });
+    // oxlint-disable-next-line vitest/no-conditional-expect -- Windows has no POSIX file modes
     if (process.platform !== "win32") expect((await stat(path)).mode & 0o777).toBe(0o600);
   });
 
@@ -102,7 +103,7 @@ describe("LichessAccountStore", () => {
     await store.save(ACCOUNT, "t1");
     await store.clear();
     expect(await store.status()).toEqual({ account: null, tokenRejected: false });
-    await expect(stat(path)).rejects.toThrow();
+    await expect(stat(path)).rejects.toMatchObject({ code: "ENOENT" });
 
     const unavailable = new LichessAccountStore(path, {
       ...secureStorage(),
@@ -119,6 +120,6 @@ describe("LichessAccountStore", () => {
     // A directory in the file's place can't be unlinked like a file.
     const directoryPath = `${path}.dir`;
     await mkdir(directoryPath);
-    await expect(new LichessAccountStore(directoryPath, secureStorage()).clear()).rejects.toThrow();
+    await expect(new LichessAccountStore(directoryPath, secureStorage()).clear()).rejects.toMatchObject({ code: expect.stringMatching(/^(EISDIR|EPERM)$/) });
   });
 });

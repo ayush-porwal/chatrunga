@@ -76,7 +76,7 @@ describe("renderer telemetry events: validation", () => {
       "activity",
       null
     ];
-    for (const value of bad) expect(() => parseRendererEvent(value)).toThrow();
+    for (const value of bad) expect(() => parseRendererEvent(value)).toThrow(expect.objectContaining({ name: "ZodError" }));
   });
 
   it("drops a malformed commentary context instead of trusting it", () => {

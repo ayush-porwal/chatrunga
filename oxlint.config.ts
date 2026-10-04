@@ -192,6 +192,26 @@ export default defineConfig({
       env: { browser: true, node: true },
       rules: { "no-restricted-imports": "off" }
     },
+    // Test hygiene: nothing focused or skipped reaches CI, and every expect is complete.
+    {
+      files: ["**/*.test.{ts,tsx,mjs}", "**/__fixtures__/**", "apps/desktop/e2e/**"],
+      plugins: ["vitest"],
+      rules: {
+        "vitest/no-focused-tests": "error",
+        "vitest/no-disabled-tests": "error",
+        // vitest's expect takes an optional failure message as its second argument.
+        "vitest/valid-expect": ["error", { maxArgs: 2 }],
+        "vitest/valid-expect-in-promise": "error",
+        // A test's assertions may live in a named helper (`expectRejected(/web page/)`).
+        "vitest/expect-expect": [
+          "error",
+          { assertFunctionNames: ["expect", "expect*", "assert", "assert*"] }
+        ],
+        // vi.fn() takes its types from its implementation or the method it spies on; restating
+        // them as type parameters adds noise, not safety.
+        "vitest/require-mock-type-parameters": "off"
+      }
+    },
     // Plain JS (repo scripts, fake engines): Node globals. Undefined names are caught here, as the
     // type checker does for TypeScript.
     {

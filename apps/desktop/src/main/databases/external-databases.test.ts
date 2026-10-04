@@ -196,7 +196,7 @@ describe("downloadDatabase", () => {
 
   it("starts over when the file changed upstream since the interruption", async () => {
     vi.stubGlobal("fetch", fakeServer(content, '"v1"', { failAfter: 3000 }).fetchMock);
-    await expect(downloadDatabase(SOURCE, () => undefined)).rejects.toThrow();
+    await expect(downloadDatabase(SOURCE, () => undefined)).rejects.toThrow(/connection reset/);
     const updated = dataset(400);
     vi.stubGlobal("fetch", fakeServer(updated, '"v2"').fetchMock);
     await downloadDatabase(SOURCE, () => undefined);
@@ -240,7 +240,7 @@ describe("downloadDatabase", () => {
     rows.set(SOURCE, { id: SOURCE, sourceId: SOURCE, filePath: finalPath });
     const server = fakeServer(content, '"v1"', { failAfter: 2000 });
     vi.stubGlobal("fetch", server.fetchMock);
-    await expect(downloadDatabase(SOURCE, () => undefined)).rejects.toThrow();
+    await expect(downloadDatabase(SOURCE, () => undefined)).rejects.toThrow(/connection reset/);
     await downloadDatabase(SOURCE, () => undefined);
     expect(server.requests[1]).toEqual({ Range: "bytes=2000-", "If-Range": '"v1"' });
     expect(await readFile(finalPath)).toEqual(content);
@@ -696,7 +696,7 @@ describe("removeDatabase", () => {
     // A directory where the file should be: unlink fails with EISDIR/EPERM, not ENOENT.
     await mkdir(finalPath, { recursive: true });
     rows.set(SOURCE, { id: "db", sourceId: SOURCE, filePath: finalPath });
-    await expect(removeDatabase("db")).rejects.toThrow();
+    await expect(removeDatabase("db")).rejects.toMatchObject({ code: expect.stringMatching(/^(EISDIR|EPERM)$/) });
     expect(rows.size).toBe(1);
   });
 });

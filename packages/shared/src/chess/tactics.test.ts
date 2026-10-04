@@ -11,8 +11,8 @@ import type { TacticalFact } from "../schemas/tactical-fact";
  * a move that created the tactic, and now it's the opponent's turn).
  */
 
-const findKind = (facts: TacticalFact[], kind: TacticalFact["kind"]) =>
-  facts.find((f) => f.kind === kind);
+const findKind = <K extends TacticalFact["kind"]>(facts: TacticalFact[], kind: K) =>
+  facts.find((f): f is Extract<TacticalFact, { kind: K }> => f.kind === kind);
 
 describe("analyzeTacticsForPosition — hanging", () => {
   it("flags a hanging pawn with no defenders", () => {
@@ -20,12 +20,7 @@ describe("analyzeTacticsForPosition — hanging", () => {
     // After black moved (e.g. Nc5), it's white's turn, and white has a hanging pawn.
     const fen = "rnbqkb1r/pppppppp/8/2n5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1";
     const facts = analyzeTacticsForPosition(fen, "white");
-    const hanging = findKind(facts, "hanging");
-    expect(hanging).toBeDefined();
-    if (hanging?.kind === "hanging") {
-      expect(hanging.piece.square).toBe("e4");
-      expect(hanging.piece.role).toBe("pawn");
-    }
+    expect(findKind(facts, "hanging")).toMatchObject({ piece: { square: "e4", role: "pawn" } });
   });
 
   it("does not flag a defended piece as hanging", () => {
@@ -44,16 +39,12 @@ describe("analyzeTacticsForPosition — fork", () => {
     const fen = "2k1q3/8/3N4/8/8/8/8/K7 b - - 0 1";
     const facts = analyzeTacticsForPosition(fen, "white");
     const fork = findKind(facts, "fork");
-    expect(fork).toBeDefined();
-    if (fork?.kind === "fork") {
-      expect(fork.attacker.role).toBe("knight");
-      expect(fork.attacker.square).toBe("d6");
-      const targetRoles = fork.targets.map((t) => t.role);
-      expect(targetRoles).toContain("queen");
-      expect(targetRoles).toContain("king");
-      // Sorted highest-value first
-      expect(fork.targets[0].role).toBe("king");
-    }
+    expect(fork).toMatchObject({ attacker: { role: "knight", square: "d6" } });
+    const targetRoles = fork?.targets.map((t) => t.role);
+    expect(targetRoles).toContain("queen");
+    expect(targetRoles).toContain("king");
+    // Sorted highest-value first
+    expect(targetRoles?.[0]).toBe("king");
   });
 
   it("flags a knight fork on two minor pieces if one is undefended", () => {
@@ -61,11 +52,7 @@ describe("analyzeTacticsForPosition — fork", () => {
     // The bishop and rook have no defenders.
     const fen = "7k/8/2b3r1/4N3/8/8/8/4K3 b - - 0 1";
     const facts = analyzeTacticsForPosition(fen, "white");
-    const fork = findKind(facts, "fork");
-    expect(fork).toBeDefined();
-    if (fork?.kind === "fork") {
-      expect(fork.attacker.square).toBe("e5");
-    }
+    expect(findKind(facts, "fork")).toMatchObject({ attacker: { square: "e5" } });
   });
 });
 
@@ -75,14 +62,11 @@ describe("analyzeTacticsForPosition — pin", () => {
     // a8-h1 diagonal: b3, c4, d5, e6, f7, g8.
     const fen = "6k1/8/4n3/8/8/1B6/8/4K3 b - - 0 1";
     const facts = analyzeTacticsForPosition(fen, "white");
-    const pin = findKind(facts, "pin");
-    expect(pin).toBeDefined();
-    if (pin?.kind === "pin") {
-      expect(pin.pinned.square).toBe("e6");
-      expect(pin.pinned.role).toBe("knight");
-      expect(pin.pinner.square).toBe("b3");
-      expect(pin.behind.role).toBe("king");
-    }
+    expect(findKind(facts, "pin")).toMatchObject({
+      pinned: { square: "e6", role: "knight" },
+      pinner: { square: "b3" },
+      behind: { role: "king" }
+    });
   });
 });
 
@@ -96,13 +80,11 @@ describe("analyzeTacticsForPosition — skewer", () => {
     // Setup: white rook a1, black king a4, black rook a8 — rook a1 hits king a4, behind a4 sits rook a8.
     const fen = "r7/8/8/8/k7/8/8/R3K3 b - - 0 1";
     const facts = analyzeTacticsForPosition(fen, "white");
-    const skewer = findKind(facts, "skewer");
-    expect(skewer).toBeDefined();
-    if (skewer?.kind === "skewer") {
-      expect(skewer.attacker.role).toBe("rook");
-      expect(skewer.front.role).toBe("king");
-      expect(skewer.behind.role).toBe("rook");
-    }
+    expect(findKind(facts, "skewer")).toMatchObject({
+      attacker: { role: "rook" },
+      front: { role: "king" },
+      behind: { role: "rook" }
+    });
   });
 });
 

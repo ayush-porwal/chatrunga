@@ -291,12 +291,14 @@ describe("repertoire performance (design §11)", { timeout: 600_000 }, () => {
     const chapters = chaptersByRepertoire.get(repertoireId)!;
     const moves = generateGame(random, bigChapter.tree, SIZE.gamePlies);
     facts["comparison game plies"] = moves.length;
-    measure(`compareGameToRepertoire (${moves.length} plies, pure)`, () =>
+    const compare = () =>
       compareGameToRepertoire(
         { color: "white", rootFen: START_FEN, moves },
         { id: repertoireId, name: "R", revision: 1, chapters, decisions: [] }
-      )
-    );
+      );
+    measure(`compareGameToRepertoire (${moves.length} plies, pure)`, compare);
+    // Every ply of the long game is judged, not just a prefix.
+    expect(compare().moves).toHaveLength(moves.length);
     // The service caches by game hash: drop a different number of final plies on every run.
     let trim = 0;
     measure(`compareGame via service (≤ ${moves.length} plies, SQLite + compare)`, () => {

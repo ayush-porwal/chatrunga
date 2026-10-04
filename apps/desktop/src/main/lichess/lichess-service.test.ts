@@ -406,7 +406,7 @@ describe("LichessService", () => {
     const { service, events } = await setup({
       "POST /api/challenge/chal1234/cancel": () => json({ error: "Server error" }, 500)
     });
-    await expect(service.cancelChallenge("chal1234")).rejects.toThrow();
+    await expect(service.cancelChallenge("chal1234")).rejects.toThrow(/Server error/);
     expect(events).toContainEqual({ type: "challengeGone", challengeId: "chal1234", reason: "canceled" });
   });
 

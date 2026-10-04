@@ -171,7 +171,7 @@ describe("generateOpenRouterCommentary", () => {
   });
 
   it("validates the renderer batch before making a provider call", () => {
-    expect(() => parseCommentaryPayloads([])).toThrow();
+    expect(() => parseCommentaryPayloads([])).toThrow(/at least 1/);
     expect(parseCommentaryPayloads([payload()])).toHaveLength(1);
   });
 });

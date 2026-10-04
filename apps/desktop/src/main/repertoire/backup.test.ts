@@ -866,7 +866,7 @@ describe("native backup: restore", () => {
       /can't be replaced because its own backup couldn't be restored \(it has 1,002 chapters/
     );
     expect(service.getRepertoire(detail.id).chapters).toHaveLength(1_002);
-    expect(() => readdirSync(join(userData, "repertoire-backups"))).toThrow();
+    expect(() => readdirSync(join(userData, "repertoire-backups"))).toThrow(/ENOENT/);
   });
 
   it("counts game links a replace adds or removes in the preview", async () => {

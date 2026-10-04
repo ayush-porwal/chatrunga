@@ -224,14 +224,16 @@ describe("resultMessages", () => {
     ]);
     // Reassembled, the messages give the result back.
     const games: typeof result.games = [];
+    const sliceSizes: number[] = [];
     for (const message of messages) {
       if (message.type === "game") games.push({ ...message.game, tree: [], positionKeys: {} });
       if (message.type === "nodes") {
-        expect(message.nodes.length).toBeLessThanOrEqual(RESULT_SLICE_NODES);
+        sliceSizes.push(message.nodes.length);
         games.at(-1)!.tree.push(...message.nodes);
         for (const [id, key] of message.keys) games.at(-1)!.positionKeys[id] = key;
       }
     }
+    expect(Math.max(...sliceSizes)).toBeLessThanOrEqual(RESULT_SLICE_NODES);
     expect({ games }).toEqual(result);
   });
 });

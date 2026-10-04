@@ -24,14 +24,14 @@ describe("parseSettingValue", () => {
 
   it("rejects values of the wrong type or out of range", () => {
     expect(() => parseSettingValue("soundVolume", 7)).toThrow(/soundVolume/);
-    expect(() => parseSettingValue("showCoordinates", "yes")).toThrow();
-    expect(() => parseSettingValue("boardTheme", "neon")).toThrow();
-    expect(() => parseSettingValue("reviewMultiPv", 2.5)).toThrow();
-    expect(() => parseSettingValue("engineHashMb", 1)).toThrow();
-    expect(() => parseSettingValue("reviewMaiaLevels", [1200])).toThrow();
-    expect(() => parseSettingValue("recentFilePaths", "path")).toThrow();
+    expect(() => parseSettingValue("showCoordinates", "yes")).toThrow(/setting showCoordinates/);
+    expect(() => parseSettingValue("boardTheme", "neon")).toThrow(/setting boardTheme/);
+    expect(() => parseSettingValue("reviewMultiPv", 2.5)).toThrow(/setting reviewMultiPv/);
+    expect(() => parseSettingValue("engineHashMb", 1)).toThrow(/setting engineHashMb/);
+    expect(() => parseSettingValue("reviewMaiaLevels", [1200])).toThrow(/setting reviewMaiaLevels/);
+    expect(() => parseSettingValue("recentFilePaths", "path")).toThrow(/setting recentFilePaths/);
     expect(() => parseSettingValue("repertoireCompareWhite", 7)).toThrow(/repertoireCompareWhite/);
-    expect(() => parseSettingValue("repertoireCompareBlack", "x".repeat(201))).toThrow();
+    expect(() => parseSettingValue("repertoireCompareBlack", "x".repeat(201))).toThrow(/setting repertoireCompareBlack/);
     expect(() => parseSettingValue("practiceAutoAdvanceMs", 1000)).toThrow(/practiceAutoAdvanceMs/);
   });
 });

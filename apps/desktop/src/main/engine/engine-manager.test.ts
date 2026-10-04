@@ -60,7 +60,7 @@ function collect(manager: InstanceType<typeof EngineManager>) {
   return { bestMoves, infos, errors };
 }
 
-const until = (check: () => boolean) => vi.waitFor(() => expect(check()).toBe(true), { timeout: 3_000, interval: 10 });
+const expectEventually = (check: () => boolean) => vi.waitFor(() => expect(check()).toBe(true), { timeout: 3_000, interval: 10 });
 
 describe("EngineManager", () => {
   let manager: InstanceType<typeof EngineManager>;
@@ -81,7 +81,7 @@ describe("EngineManager", () => {
     const moves = ["e2e4", "e7e5", "g1f3", "b8c6"];
     for (let ply = 0; ply < moves.length; ply += 2) {
       await manager.start({ engineId: "sf", searchId: `m${ply}`, side: "black", fen: START, moves: moves.slice(0, ply + 1), moveTimeMs: 10 });
-      await until(() => events.bestMoves.length === ply / 2 + 1);
+      await expectEventually(() => events.bestMoves.length === ply / 2 + 1);
     }
     expect(spawns()).toBe(1);
     expect(sent().filter((line) => line === "ucinewgame")).toHaveLength(1);
@@ -92,17 +92,17 @@ describe("EngineManager", () => {
   it("live analysis searches until stopped, or to the depth / for the time asked for", async () => {
     collect(manager);
     await manager.startAnalysis({ engineId: "sf", searchId: "a", fen: START, moves: [], multipv: 2 });
-    await until(() => sent().includes("go infinite"));
+    await expectEventually(() => sent().includes("go infinite"));
     await manager.startAnalysis({ engineId: "sf", searchId: "b", fen: START, moves: [], multipv: 2, depth: 18 });
-    await until(() => sent().includes("go depth 18"));
+    await expectEventually(() => sent().includes("go depth 18"));
     await manager.startAnalysis({ engineId: "sf", searchId: "c", fen: START, moves: [], multipv: 2, moveTimeMs: 5000 });
-    await until(() => sent().includes("go movetime 5000"));
+    await expectEventually(() => sent().includes("go movetime 5000"));
   });
 
   it("dispose resolves once the warm process has exited (a draw probe then runs alone)", async () => {
     const events = collect(manager);
     await manager.startAnalysis({ engineId: "sf", searchId: "a", fen: START, moves: [], multipv: 1 });
-    await until(() => events.infos.length > 0);
+    await expectEventually(() => events.infos.length > 0);
     await manager.dispose();
     expect(sent()).toContain("exit");
   });
@@ -111,7 +111,7 @@ describe("EngineManager", () => {
     fakeEngine("stubborn", ["stubborn"]);
     const events = collect(manager);
     await manager.startAnalysis({ engineId: "stubborn", searchId: "a", fen: START, moves: [], multipv: 1 });
-    await until(() => events.infos.length > 0);
+    await expectEventually(() => events.infos.length > 0);
     const [pid] = pids();
     await manager.dispose();
     expect(isRunning(pid)).toBe(false);
@@ -121,9 +121,9 @@ describe("EngineManager", () => {
     fakeEngine("lc0", ["slow-exit"]);
     const events = collect(manager);
     await manager.startAnalysis({ engineId: "lc0", searchId: "a", fen: START, moves: [], multipv: 1 });
-    await until(() => events.infos.length > 0);
+    await expectEventually(() => events.infos.length > 0);
     await manager.startAnalysis({ engineId: "sf", searchId: "b", fen: START, moves: [], multipv: 1 });
-    await until(() => events.infos.some((info) => info.searchId === "b"));
+    await expectEventually(() => events.infos.some((info) => info.searchId === "b"));
     const log = sent();
     expect(spawns()).toBe(2);
     expect(log.indexOf("exit")).toBeGreaterThan(-1);
@@ -134,11 +134,11 @@ describe("EngineManager", () => {
     fakeEngine("lc0", ["slow-exit"]);
     const events = collect(manager);
     await manager.startAnalysis({ engineId: "lc0", searchId: "a", fen: START, moves: [], multipv: 1 });
-    await until(() => events.infos.length > 0);
+    await expectEventually(() => events.infos.length > 0);
     const replaced = manager.startAnalysis({ engineId: "sf", searchId: "b", fen: START, moves: [], multipv: 1 });
     await new Promise((resolve) => setTimeout(resolve, 50));
     await Promise.all([replaced, manager.startAnalysis({ engineId: "sf", searchId: "c", fen: START, moves: [], multipv: 1 })]);
-    await until(() => events.infos.some((info) => info.searchId === "c"));
+    await expectEventually(() => events.infos.some((info) => info.searchId === "c"));
     expect(spawns()).toBe(2);
     expect(events.infos.some((info) => info.searchId === "b")).toBe(false);
     expect(events.errors).toEqual([]);
@@ -147,7 +147,7 @@ describe("EngineManager", () => {
   it("a search requested during a draw probe starts only after the probe finished", async () => {
     const events = collect(manager);
     await manager.startAnalysis({ engineId: "sf", searchId: "a", fen: START, moves: [], multipv: 1 });
-    await until(() => events.infos.length > 0);
+    await expectEventually(() => events.infos.length > 0);
     let finishProbe = () => {};
     const probeDone = new Promise<void>((resolve) => {
       finishProbe = resolve;
@@ -164,7 +164,7 @@ describe("EngineManager", () => {
     finishProbe();
     await expect(probe).resolves.toBe("score");
     await search;
-    await until(() => events.infos.some((info) => info.searchId === "b"));
+    await expectEventually(() => events.infos.some((info) => info.searchId === "b"));
     expect(warmExitedFirst).toBe(true);
     expect(spawns()).toBe(2);
     expect(events.errors).toEqual([]);
@@ -173,19 +173,19 @@ describe("EngineManager", () => {
   it("starts a new game when the position doesn't continue the last one", async () => {
     const events = collect(manager);
     await manager.start({ engineId: "sf", searchId: "a", side: "black", fen: START, moves: ["e2e4"], moveTimeMs: 10 });
-    await until(() => events.bestMoves.length === 1);
+    await expectEventually(() => events.bestMoves.length === 1);
     await manager.start({ engineId: "sf", searchId: "b", side: "black", fen: START, moves: ["d2d4"], moveTimeMs: 10 });
-    await until(() => events.bestMoves.length === 2);
+    await expectEventually(() => events.bestMoves.length === 2);
     expect(sent().filter((line) => line === "ucinewgame")).toHaveLength(2);
   });
 
   it("moving through analysis positions reuses the process and drops the old search's output", async () => {
     const events = collect(manager);
     await manager.startAnalysis({ engineId: "sf", searchId: "p1", fen: START, moves: [], multipv: 1 });
-    await until(() => events.infos.some((info) => info.searchId === "p1"));
+    await expectEventually(() => events.infos.some((info) => info.searchId === "p1"));
     await manager.startAnalysis({ engineId: "sf", searchId: "p2", fen: START, moves: ["e2e4"], multipv: 1 });
     const seen = events.infos.length;
-    await until(() => events.infos.slice(seen).some((info) => info.searchId === "p2"));
+    await expectEventually(() => events.infos.slice(seen).some((info) => info.searchId === "p2"));
     expect(spawns()).toBe(1);
     // The first search's bestmove (after stop) was consumed, not relayed.
     expect(events.bestMoves).toEqual([]);
@@ -198,7 +198,7 @@ describe("EngineManager", () => {
     const first = manager.startAnalysis({ engineId: "sf", searchId: "old", fen: START, moves: [], multipv: 1 });
     const second = manager.startAnalysis({ engineId: "sf", searchId: "new", fen: START, moves: ["d2d4"], multipv: 1 });
     await Promise.all([first, second]);
-    await until(() => events.infos.some((info) => info.searchId === "new"));
+    await expectEventually(() => events.infos.some((info) => info.searchId === "new"));
     expect(events.infos.some((info) => info.searchId === "old")).toBe(false);
     expect(events.errors).toEqual([]);
     expect(sent().filter((line) => line === "go infinite")).toHaveLength(1);
@@ -207,7 +207,7 @@ describe("EngineManager", () => {
   it("stop ends the search but keeps the engine warm; a new engine config respawns", async () => {
     const events = collect(manager);
     await manager.startAnalysis({ engineId: "sf", searchId: "p1", fen: START, moves: [], multipv: 1 });
-    await until(() => events.infos.length > 0);
+    await expectEventually(() => events.infos.length > 0);
     await manager.stop();
     await manager.startAnalysis({ engineId: "sf", searchId: "p2", fen: START, moves: [], multipv: 1 });
     expect(spawns()).toBe(1);
@@ -219,9 +219,9 @@ describe("EngineManager", () => {
   it("a new game resets the engine even when it starts from the same position", async () => {
     const events = collect(manager);
     await manager.start({ engineId: "sf", searchId: "a", gameKey: "g1", side: "white", fen: START, moves: [], moveTimeMs: 10 });
-    await until(() => events.bestMoves.length === 1);
+    await expectEventually(() => events.bestMoves.length === 1);
     await manager.start({ engineId: "sf", searchId: "b", gameKey: "g2", side: "white", fen: START, moves: [], moveTimeMs: 10 });
-    await until(() => events.bestMoves.length === 2);
+    await expectEventually(() => events.bestMoves.length === 2);
     expect(sent().filter((line) => line === "ucinewgame")).toHaveLength(2);
   });
 
@@ -234,7 +234,7 @@ describe("EngineManager", () => {
     await manager.stop();
     await slow;
     await manager.startAnalysis({ engineId: "sf", searchId: "fast", fen: START, moves: [], multipv: 1 });
-    await until(() => events.infos.some((info) => info.searchId === "fast"));
+    await expectEventually(() => events.infos.some((info) => info.searchId === "fast"));
     expect(Date.now() - started).toBeLessThan(3_000);
     expect(events.errors).toEqual([]);
   });

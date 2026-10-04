@@ -33,7 +33,7 @@ describe("scanCsvLines", () => {
   it.each([true, false])("fails instead of hanging when the file can't be read (compressed: %s)", async (compressed) => {
     // A directory opens but every read fails (EISDIR).
     const directory = mkdtempSync(join(tmpdir(), "chaturanga-scan-"));
-    await expect(scanCsvLines(directory, compressed, () => undefined)).rejects.toThrow();
+    await expect(scanCsvLines(directory, compressed, () => undefined)).rejects.toThrow(/EISDIR/);
   });
 
   it("reads every frame of a multi-frame file that starts with a skippable frame (pzstd, Lichess)", async () => {
@@ -63,7 +63,7 @@ describe("scanCsvLines", () => {
     const corrupt = Buffer.from(good);
     corrupt.fill(0x41, 20, 60);
     const path = tempFile("bad.csv.zst", Buffer.concat([zstdCompressSync(Buffer.from("PuzzleId,FEN\n")), corrupt]));
-    await expect(readLines(path, true)).rejects.toThrow();
+    await expect(readLines(path, true)).rejects.toThrow(/Data corruption detected/);
   });
 });
 
