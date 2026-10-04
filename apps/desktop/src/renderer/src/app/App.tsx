@@ -270,10 +270,9 @@ export function App() {
   const windowControlsVisible = isElectronMac();
   // Narrow subscriptions: the shell must not re-render on every move (it would cascade into the
   // sidebar, titlebar and every tooltip). Handlers read the store directly via currentGame().
-  const { gameId, gameSource, gameMode, gameDecided, gameBoard } = useGameStore(
+  const { gameId, gameMode, gameDecided, gameBoard } = useGameStore(
     useShallow((state) => ({
       gameId: state.gameId,
-      gameSource: state.source,
       gameMode: state.mode,
       gameDecided: Boolean(state.gameOutcome),
       gameBoard: state.board
@@ -320,12 +319,6 @@ export function App() {
   const reviewRouteLoading = Boolean(
     reviewRouteId && reviewRouteId !== "current" && reviewRouteId !== gameId
   );
-  const canAnalyzeGame =
-    desktopApiAvailable &&
-    !positionIsEnd &&
-    gameSource !== "new" &&
-    gameSource !== "puzzle" &&
-    (gameMode === "freeplay" || ((gameMode === "engine" || gameMode === "online") && gameDecided));
 
   useLichess({ onGameStart: (load) => startOnlineGame(load) });
   // The repertoire board has its own move keys (they must not step the game behind it).
@@ -589,7 +582,7 @@ export function App() {
     showGame("engine");
   }
 
-  /** Titlebar "Stop analysis": leave live analysis but keep the position and moves (not a step of its own). */
+  /** The Analysis switch turned off: leave live analysis but keep the position and moves (not a step of its own). */
   function stopLiveAnalysis() {
     latestNavigation.current += 1;
     currentGame().setMode("freeplay");
@@ -1457,11 +1450,7 @@ export function App() {
             <GameTitlebar
               engines={engines.data}
               showAnalysisError={sideTab !== "engine" || focused}
-              canAnalyze={canAnalyzeGame}
               onAnalyze={on.analyzePosition}
-              onStopAnalysis={
-                gameMode === "analysis" && desktopApiAvailable ? on.stopLiveAnalysis : null
-              }
               onReviewGame={on.reviewCurrentGame}
               onPlayAgain={on.playLichess}
               onReviewEngineGame={on.reviewEngineGame}
@@ -1560,10 +1549,14 @@ export function App() {
                 reviewLoading={reviewRouteLoading}
                 sideTab={sideTab}
                 onSideTabChange={setSideTab}
+                // The Engine tab's Analysis switch is the only Start: a free board, a solved
+                // puzzle, or a finished engine or Lichess game (analysed in place).
                 canStartAnalysis={
                   desktopApiAvailable &&
-                  (gameMode === "freeplay" || (gameMode === "puzzle" && puzzleDecided)) &&
-                  !positionIsEnd
+                  !positionIsEnd &&
+                  (gameMode === "freeplay" ||
+                    (gameMode === "puzzle" && puzzleDecided) ||
+                    ((gameMode === "engine" || gameMode === "online") && gameDecided))
                 }
                 puzzlePanel={puzzlePanel}
                 repertoire={repertoireScreen}

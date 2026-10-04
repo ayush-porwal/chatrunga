@@ -307,7 +307,9 @@ test("the Analyze board marks the reviewed move, the game's own board does not",
 
   // With live analysis started on it, the mark stays.
   await goToPly(page, 7);
-  await titlebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
-  await expect(titlebar(page).getByRole("button", { name: "Stop analysis" })).toBeVisible();
+  await page.getByRole("tab", { name: "Engine" }).click();
+  const analysis = page.getByRole("switch", { name: "Analysis" });
+  await analysis.click();
+  await expect(analysis).toHaveAttribute("aria-checked", "true");
   await expect(board(page).getByRole("img", { name: "Blunder: Nxe5" })).toBeVisible();
 });
