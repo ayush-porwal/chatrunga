@@ -89,19 +89,7 @@ describe("interpretRatingCurve", () => {
 });
 
 describe("buildRatingCurve", () => {
-  it("assembles a schema-shaped RatingCurve object", () => {
-    const curve = buildRatingCurve({
-      playedProb: [0.78, 0.62, 0.31, 0.12, 0.04],
-      bestProb: [0.08, 0.18, 0.41, 0.72, 0.89],
-      playedIsBest: false,
-      userBucket: 1500
-    });
-    expect(curve.ratings).toEqual([1100, 1300, 1500, 1700, 1900]);
-    expect(curve.userRatingBucket).toBe(1500);
-    expect(curve.interpretation.label).toBe("trap_at_low_rating");
-  });
-
-  it("preserves probability values exactly", () => {
+  it("assembles a schema-shaped RatingCurve, keeping the probabilities exactly", () => {
     const played = [0.78, 0.62, 0.31, 0.12, 0.04] as const;
     const best = [0.08, 0.18, 0.41, 0.72, 0.89] as const;
     const curve = buildRatingCurve({
@@ -110,8 +98,11 @@ describe("buildRatingCurve", () => {
       playedIsBest: false,
       userBucket: 1500
     });
+    expect(curve.ratings).toEqual([1100, 1300, 1500, 1700, 1900]);
     expect(curve.playedProb).toEqual(played);
     expect(curve.bestProb).toEqual(best);
+    expect(curve.userRatingBucket).toBe(1500);
+    expect(curve.interpretation.label).toBe("trap_at_low_rating");
   });
 });
 
@@ -123,13 +114,10 @@ describe("probFor", () => {
     userBucket: 1500
   });
 
-  it("returns played probability for the requested bucket", () => {
+  it("returns the played or best probability for the requested bucket", () => {
     expect(probFor(curve, 1100, "played")).toBeCloseTo(0.78);
     expect(probFor(curve, 1500, "played")).toBeCloseTo(0.31);
     expect(probFor(curve, 1900, "played")).toBeCloseTo(0.04);
-  });
-
-  it("returns best probability for the requested bucket", () => {
     expect(probFor(curve, 1100, "best")).toBeCloseTo(0.08);
     expect(probFor(curve, 1700, "best")).toBeCloseTo(0.72);
   });

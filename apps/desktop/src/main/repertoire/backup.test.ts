@@ -388,16 +388,6 @@ describe("native backup: preview", () => {
     ]);
   });
 
-  it("reads a picked file that starts with a byte order mark", async () => {
-    seed();
-    const { text } = await exportText(true);
-    const path = join(files, "bom.json");
-    writeFileSync(path, `\uFEFF${text}`, "utf8");
-    showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [path] });
-    const preview = await service.previewBackupImport({ pickFile: true });
-    expect(preview?.repertoires).toHaveLength(1);
-  });
-
   it("says a repertoire has no progress when its progress list is empty", async () => {
     seed();
     const { text } = await exportText(true);
@@ -450,9 +440,11 @@ describe("native backup: preview", () => {
     expect(() => service.refreshBackupPreview(preview.jobId)).toThrow(/Invalid jobId/);
   });
 
-  it("reads a picked file, and returns null when the open dialog is cancelled", async () => {
+  it("reads a picked file (one starting with a byte order mark too), and returns null when the open dialog is cancelled", async () => {
     seed();
-    const { path } = await exportText(false);
+    const { path, text } = await exportText(false);
+    // Saved by an editor that adds a BOM.
+    writeFileSync(path, `\uFEFF${text}`, "utf8");
     expect(await service.previewBackupImport({ pickFile: true })).toBeNull();
     showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [path] });
     const preview = await service.previewBackupImport({ pickFile: true });

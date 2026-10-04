@@ -153,7 +153,7 @@ describe("game store", () => {
     });
   });
 
-  it("builds UCI clock snapshots and advances live clocks after moves", () => {
+  it("starts the live clocks full and charges the mover's time after a move", () => {
     const at = mockTime();
     at(1_000);
     useGameStore.getState().setEngineMatchClock({ initialMs: 10_000, incrementMs: 500 });
@@ -171,7 +171,6 @@ describe("game store", () => {
       blackMs: 10_000,
       sideToMove: "black"
     });
-    vi.restoreAllMocks();
   });
 
   it("a move after the flag fell loses on time, and the increment can't revive the clock", () => {
@@ -456,6 +455,7 @@ describe("game store", () => {
 });
 
 describe("engine clock pause", () => {
+  afterEach(() => vi.restoreAllMocks());
   it("freezes the running clock and resumes it without charging the pause", () => {
     const at = mockTime();
     at(0);
@@ -475,7 +475,6 @@ describe("engine clock pause", () => {
     const live = useGameStore.getState().engineClockLive!;
     expect(live.stoppedAt).toBeUndefined();
     expect(remainingClockMs(live, "white", 61_000)).toBe(7_000);
-    vi.restoreAllMocks();
   });
 
   it("a move made while paused charges the side that moved, from the pause", () => {
@@ -501,16 +500,10 @@ describe("engine clock pause", () => {
     // White is charged the 3 s since the pause, Black keeps its time, and it's Black's turn.
     expect(live).toMatchObject({ whiteMs: 6_000, blackMs: 10_000, sideToMove: "black" });
     expect(live.paused).toBeUndefined();
-    vi.restoreAllMocks();
   });
 
   it("a move made after the pause used up the mover's time loses on time", () => {
-    const monotonic = vi.spyOn(performance, "now");
-    const wall = vi.spyOn(Date, "now");
-    const at = (ms: number) => {
-      monotonic.mockReturnValue(ms);
-      wall.mockReturnValue(1_700_000_000_000 + ms);
-    };
+    const at = mockTime();
     at(0);
     const game = useGameStore.getState();
     game.reset();
@@ -535,7 +528,6 @@ describe("engine clock pause", () => {
     expect(state.moveTree).toHaveLength(before);
     expect(remainingClockMs(state.engineClockLive!, "white", 1_700_000_020_000)).toBe(0);
     expect(remainingClockMs(state.engineClockLive!, "black", 1_700_000_020_000)).toBe(10_000);
-    vi.restoreAllMocks();
   });
 
   it("a replacement move earns its increment once, not on top of the replaced move's", () => {
@@ -557,7 +549,6 @@ describe("engine clock pause", () => {
     }
     // Still 11 s: replacing the move again and again doesn't add time.
     expect(useGameStore.getState().engineClockLive).toMatchObject({ whiteMs: 11_000, sideToMove: "black" });
-    vi.restoreAllMocks();
   });
 });
 

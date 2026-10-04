@@ -38,6 +38,8 @@ describe("analyzeTacticsForPosition — fork", () => {
     // Custom position — knight just landed on f7 attacking both.
     const fen = "2k1q3/8/3N4/8/8/8/8/K7 b - - 0 1";
     const facts = analyzeTacticsForPosition(fen, "white");
+    // Reported once, not once per target.
+    expect(facts.filter((fact) => fact.kind === "fork")).toHaveLength(1);
     const fork = findKind(facts, "fork");
     expect(fork).toMatchObject({ attacker: { role: "knight", square: "d6" } });
     const targetRoles = fork?.targets.map((t) => t.role);
@@ -72,12 +74,8 @@ describe("analyzeTacticsForPosition — pin", () => {
 
 describe("analyzeTacticsForPosition — skewer", () => {
   it("flags a skewer (king in front, rook behind)", () => {
-    // White rook on a1 attacks black king on a8 with black rook on a5 behind ...
-    // wait skewer = front higher value than behind. So king-front (high) skewers rook-behind.
-    // Rook attacks down a-file: a8 king (front), a5 rook (behind? no, a5 between).
-    // Setup: white rook a1, black king a8, black rook a4 — rook a1 hits king a8 with rook a4 between
-    // That's pin (rook a4 pinned to king). For skewer we need king IN FRONT.
-    // Setup: white rook a1, black king a4, black rook a8 — rook a1 hits king a4, behind a4 sits rook a8.
+    // A skewer has the more valuable piece in front: the a1 rook hits the king on a4, and the
+    // rook on a8 stands behind it.
     const fen = "r7/8/8/8/k7/8/8/R3K3 b - - 0 1";
     const facts = analyzeTacticsForPosition(fen, "white");
     expect(findKind(facts, "skewer")).toMatchObject({
@@ -85,19 +83,6 @@ describe("analyzeTacticsForPosition — skewer", () => {
       front: { role: "king" },
       behind: { role: "rook" }
     });
-  });
-});
-
-describe("analyzeTacticsForPosition — multiple motifs in one position", () => {
-  it("returns an array of all detected motifs without duplication", () => {
-    // Position with a clean fork: white knight on f7 attacks black king on g8 + queen on d8.
-    const fen = "2k1q3/8/3N4/8/8/8/8/K7 b - - 0 1";
-    const facts = analyzeTacticsForPosition(fen, "white");
-    expect(facts.length).toBeGreaterThanOrEqual(1);
-    // No duplicate fork entries for the same attacker.
-    const forks = facts.filter((f) => f.kind === "fork");
-    const forkSquares = new Set(forks.map((f) => f.kind === "fork" && f.attacker.square));
-    expect(forkSquares.size).toBe(forks.length);
   });
 });
 

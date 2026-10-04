@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { OUTBOX_MAX_AGE_MS, OUTBOX_MAX_ATTEMPTS, OUTBOX_MAX_EVENTS } from "./outbox";
 import {
   AVAILABLE,
@@ -9,8 +9,6 @@ import {
 } from "./__fixtures__/telemetry-fixtures";
 
 const T0 = Date.UTC(2026, 9, 2, 9, 30);
-
-afterEach(() => vi.useRealTimers());
 
 describe("TelemetryService delivery", () => {
   it("keeps events offline across a restart and resends them with the same uuid and time", async () => {

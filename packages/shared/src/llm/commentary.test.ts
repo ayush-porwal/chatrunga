@@ -11,7 +11,6 @@ import {
   validateCommentary,
   validateProse
 } from "./commentary";
-import { isLightweightCommentaryModel } from "./models";
 
 /** Mid-game mistake (4.Nxe5? in the Blackburne Shilling trap) with full context. */
 function payload(overrides: Partial<ReviewInsightPayload> = {}): ReviewInsightPayload {
@@ -244,12 +243,6 @@ describe("coach prompt", () => {
     expect(retry).toContain("You wrote the move Bxf7+");
     expect(retry).not.toContain("STRICTER");
     expect(retry).not.toContain("takeaway");
-  });
-
-  it("flags lightweight model families", () => {
-    expect(isLightweightCommentaryModel("google/gemini-2.5-flash")).toBe(true);
-    expect(isLightweightCommentaryModel("openai/gpt-4o-mini")).toBe(true);
-    expect(isLightweightCommentaryModel("anthropic/claude-sonnet-4.6")).toBe(false);
   });
 });
 

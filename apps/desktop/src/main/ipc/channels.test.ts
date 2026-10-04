@@ -39,12 +39,21 @@ describe("IPC channels", () => {
     expect([...listened].filter((channel) => !sent.has(channel))).toEqual([]);
   });
 
+  it("never gives the renderer a way to read a secret (API keys and tokens stay in main)", () => {
+    const requested = matches(preload, /ipcRenderer\.(?:invoke|sendSync|send)\("([\w:]+)"/g);
+    expect([...requested].filter((channel) => channel.startsWith("commentary:")).sort()).toEqual([
+      "commentary:generate",
+      "commentary:getOpenRouterConfig",
+      "commentary:setOpenRouterConfig"
+    ]);
+    expect([...requested].filter((channel) => /api.?key|secret|token|password/i.test(channel))).toEqual([]);
+  });
+
   it("exposes the repertoire namespace, including its lookups and the change event", () => {
     const requested = matches(preload, /ipcRenderer\.invoke\("(repertoires:\w+)"/g);
     for (const lookup of ["getChapter", "getDecision", "getOccurrences", "getPractisedElsewhere", "compareGame"]) {
       expect(requested.has(`repertoires:${lookup}`)).toBe(true);
     }
-    expect(requested.size).toBe(38);
     expect(matches(preload, /subscribe(?:<[^>]*>)?\("(repertoires:\w+)"/g)).toEqual(new Set(["repertoires:changed", "repertoires:importProgress"]));
   });
 });

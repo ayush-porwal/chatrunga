@@ -306,13 +306,14 @@ describe("game review utilities", () => {
     expect(payload?.engines.stockfish).toMatchObject({ evalAfter: "0.00", evalLossCp: 1000, assessment: { after: "draw", afterBest: "white_has_forced_mate" }, bestMoveSan: "Kg2" });
   });
 
-  it("extracts the first-child review line", () => {
+  it("extracts the first-child review line, not a variation", () => {
     const tree = [
-      { id: "root", parentId: null, san: null, uci: null, fenBefore: "", fenAfter: "start", ply: 0, nags: [], comment: null, arrows: [], highlights: [], children: ["n1"] },
-      { id: "n1", parentId: "root", san: "e4", uci: "e2e4", fenBefore: "start", fenAfter: "after", ply: 1, nags: [], comment: null, arrows: [], highlights: [], children: [] }
+      { id: "root", parentId: null, san: null, uci: null, fenBefore: "", fenAfter: "start", ply: 0, nags: [], comment: null, arrows: [], highlights: [], children: ["n1", "v1"] },
+      { id: "n1", parentId: "root", san: "e4", uci: "e2e4", fenBefore: "start", fenAfter: "after", ply: 1, nags: [], comment: null, arrows: [], highlights: [], children: ["n2"] },
+      { id: "v1", parentId: "root", san: "d4", uci: "d2d4", fenBefore: "start", fenAfter: "after-d4", ply: 1, nags: [], comment: null, arrows: [], highlights: [], children: [] },
+      { id: "n2", parentId: "n1", san: "e5", uci: "e7e5", fenBefore: "after", fenAfter: "after-e5", ply: 2, nags: [], comment: null, arrows: [], highlights: [], children: [] }
     ];
-    expect(mainlineReviewInput(tree)).toHaveLength(1);
-    expect(mainlineReviewInput(tree)[0]?.uci).toBe("e2e4");
+    expect(mainlineReviewInput(tree).map((move) => move.uci)).toEqual(["e2e4", "e7e5"]);
   });
 });
 

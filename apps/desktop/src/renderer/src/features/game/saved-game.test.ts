@@ -97,6 +97,16 @@ describe("showSavedAnalysis", () => {
     expect(await switching).toBe(false);
     expect(useReviewStore.getState()).toMatchObject({ status: "running", reviewId: "new-run" });
   });
+
+  it("drops a switch that lands after the game was opened again", async () => {
+    let answer: (review: GameReview) => void = () => undefined;
+    vi.stubGlobal("window", { chaturanga: { games: { getReview: () => new Promise<GameReview>((resolve) => (answer = resolve)) } } });
+    useGameStore.setState({ gameId: "g1" });
+    const switching = showSavedAnalysis("g1", "older");
+    openSavedGame(saved({ id: "g1", reviews: [] }));
+    answer(older);
+    expect(await switching).toBe(false);
+  });
 });
 
 describe("alignReviewToTree", () => {
@@ -113,17 +123,5 @@ describe("alignReviewToTree", () => {
     expect(legacy.commentary?.[0]?.ply).toBe(5);
     const current = reviewAt(5);
     expect(alignReviewToTree(current, tree)).toBe(current);
-  });
-
-  it("drops a switch that lands after the game was opened again", async () => {
-    const older = { reviewId: "older", engineId: "sf", depth: null, moveTimeMs: 100, createdAt: 1, summary: {}, moves: [] } as unknown as GameReview;
-    let answer: (review: GameReview) => void = () => undefined;
-    vi.stubGlobal("window", { chaturanga: { games: { getReview: () => new Promise<GameReview>((resolve) => (answer = resolve)) } } });
-    useGameStore.setState({ gameId: "g1" });
-    const switching = showSavedAnalysis("g1", "older");
-    openSavedGame(saved({ id: "g1", reviews: [] }));
-    answer(older);
-    expect(await switching).toBe(false);
-    vi.unstubAllGlobals();
   });
 });

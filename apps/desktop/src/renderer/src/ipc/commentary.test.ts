@@ -6,11 +6,6 @@ afterEach(() => {
 });
 
 describe("renderer commentary bridge", () => {
-  it("does not expose a secret-read method on the renderer bridge", () => {
-    vi.stubGlobal("window", { chaturanga: { commentary: {} } });
-    expect("getApiKey" in (window.chaturanga?.commentary ?? {})).toBe(false);
-  });
-
   it("passes generation through the preload bridge", async () => {
     const generate = vi.fn().mockResolvedValue({ commentary: [], error: null });
     vi.stubGlobal("window", { chaturanga: { commentary: { generate } } });

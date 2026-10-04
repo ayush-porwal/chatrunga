@@ -67,6 +67,18 @@ describe("withoutInitialSession", () => {
 describe("usePlayDraftStore", () => {
   beforeEach(() => usePlayDraftStore.setState({ draft }));
 
+  it("keeps the engine-game choices across visits, each update merged into the draft", () => {
+    usePlayDraftStore.getState().update({ engineId: "lc0", humanColor: "black", clockPreset: "rapid15_10" });
+    usePlayDraftStore.getState().update({ depth: 12 });
+    expect(usePlayDraftStore.getState().draft).toMatchObject({
+      engineId: "lc0",
+      humanColor: "black",
+      clockPreset: "rapid15_10",
+      depth: 12,
+      moveTimeMs: 500
+    });
+  });
+
   it("sets and clears the initial session", () => {
     usePlayDraftStore.getState().setInitialSession(initial);
     expect(usePlayDraftStore.getState().draft.initialSession).toBe(initial);

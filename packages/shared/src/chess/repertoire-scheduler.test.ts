@@ -2,10 +2,8 @@ import { describe, expect, it } from "vitest";
 import { REPERTOIRE_SCHEDULER_VERSION } from "../types/repertoire";
 import {
   firstAnswerOutcome,
-  LAPSE_RETRY_MS,
   orderQueue,
   scheduleAfterOutcome,
-  STAGE_INTERVALS_DAYS,
   type RepertoireSchedule
 } from "./repertoire-scheduler";
 
@@ -45,7 +43,8 @@ describe("scheduleAfterOutcome", () => {
       intervals.push((current.dueAt! - at) / DAY);
       at = current.dueAt!;
     }
-    expect(intervals).toEqual([...STAGE_INTERVALS_DAYS, 60, 60]);
+    // The spec's ladder in days, capped at 60.
+    expect(intervals).toEqual([1, 3, 7, 14, 30, 60, 60, 60]);
     expect(current).toMatchObject({ stage: 6, unaidedSuccesses: 8 });
   });
 
@@ -57,7 +56,7 @@ describe("scheduleAfterOutcome", () => {
   it("resets on a wrong answer or a reveal, once per lapse, due in ten minutes", () => {
     for (const outcome of ["wrong", "reveal"] as const) {
       const next = scheduleAfterOutcome(progress({ stage: 4, lapses: 2 }), outcome, NOW);
-      expect(next).toMatchObject({ stage: 0, lapses: 3, dueAt: NOW + LAPSE_RETRY_MS });
+      expect(next).toMatchObject({ stage: 0, lapses: 3, dueAt: NOW + 10 * 60_000 });
     }
   });
 
@@ -74,7 +73,7 @@ describe("scheduleAfterOutcome", () => {
     const viaArgument = scheduleAfterOutcome(null, "wrong", NOW, later);
     expect(viaArgument).toMatchObject({
       lastAttemptAt: later + 1,
-      dueAt: later + 1 + LAPSE_RETRY_MS
+      dueAt: later + 1 + 10 * 60_000
     });
   });
 

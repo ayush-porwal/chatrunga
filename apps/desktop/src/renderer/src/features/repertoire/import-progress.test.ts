@@ -27,12 +27,9 @@ function event(patch: Partial<ImportProgressEvent> = {}): ImportProgressEvent {
 }
 
 describe("import preview progress", () => {
-  it("starts with the jobId the dialog generated and no progress yet", () => {
-    expect(startPreviewRun("job-1")).toEqual({ jobId: "job-1", latest: null });
-  });
-
-  it("follows only its own job's events", () => {
+  it("starts with the dialog's jobId and no progress, then follows only that job's events", () => {
     const run = startPreviewRun("job-1");
+    expect(run).toEqual({ jobId: "job-1", latest: null });
     // Any phase of another job (an earlier preview, another window) is ignored.
     for (const phase of ["reading", "parsing", "cancelled", "failed"] as const) {
       expect(stepPreviewRun(run, event({ jobId: "other", phase }))).toEqual({ kind: "ignore" });

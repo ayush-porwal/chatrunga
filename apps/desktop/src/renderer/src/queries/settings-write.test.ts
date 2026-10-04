@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MutationObserver, QueryClient, QueryObserver } from "@tanstack/react-query";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
 import { revertFailedWrite, settingsWriteOptions } from "./api";
-import { addPendingSettings, pendingSettings, withPendingSettings } from "./settings-pending";
+import { addPendingSettings, dropPendingSettings, pendingSettings, withPendingSettings } from "./settings-pending";
 import { flushSettingsBatches, SettingsBatch } from "../features/settings/use-set-setting";
 
 describe("revertFailedWrite", () => {
@@ -53,7 +53,6 @@ describe("SettingsBatch", () => {
 
 describe("settings not written yet", () => {
   it("stay on top of a read until their batch settles", async () => {
-    const { pendingSettings, withPendingSettings } = await import("./settings-pending");
     let finish: () => void = () => {};
     const write = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
     const batch = new SettingsBatch(250);
@@ -70,14 +69,15 @@ describe("settings not written yet", () => {
 });
 
 describe("an explicit write after a drag", () => {
-  it("replaces the drag's pending value for the same keys", async () => {
-    const { addPendingSettings, dropPendingSettings, withPendingSettings } = await import("./settings-pending");
+  // A pending value left behind would show over every later read in this file.
+  afterEach(() => dropPendingSettings(["boardSquareLight", "soundVolume"]));
+
+  it("replaces the drag's pending value for the same keys", () => {
     addPendingSettings({ boardSquareLight: "#123456", soundVolume: 0.4 });
     dropPendingSettings(["boardSquareLight"]);
     const shown = withPendingSettings({ ...defaultSettings, boardSquareLight: null, soundVolume: 0.7 });
     expect(shown.boardSquareLight).toBeNull();
     expect(shown.soundVolume).toBe(0.4);
-    dropPendingSettings(["soundVolume"]);
   });
 });
 

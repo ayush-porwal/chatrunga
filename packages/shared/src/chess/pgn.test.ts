@@ -32,12 +32,14 @@ describe("PGN import/export", () => {
     expect(exportGameToPgn(imported.game)).toContain("[%cal Gg1f3]");
   });
 
-  it("parses clk with chessops when tags are packed (Lichess-style)", () => {
-    const imported = importPgnText(
-      '[White "W"][Black "B"][Result "*"]\n1. e4 {[%eval 0.10][%clk 0:01:00]} e5 {[%clk 0:00:59][%eval 0.12]} *'
-    );
-    expect(imported.game.moveTree.find((n) => n.uci === "e2e4")?.clockAfter).toBe("0:01:00");
-    expect(imported.game.moveTree.find((n) => n.uci === "e7e5")?.clockAfter).toBe("0:00:59");
+  it.each([
+    ["packed tags (Lichess-style), eval before or after clk", '[White "W"][Black "B"][Result "*"]\n1. e4 {[%eval 0.10][%clk 0:01:00]} e5 {[%clk 0:00:59][%eval 0.12]} *'],
+    ["no space after the opening brace", "1. e4 {[%clk 0:01:00]} e5 { [%clk 0:00:59] } *"],
+    ["eval and clk spaced in one comment", '[White "W"][Black "B"][Result "*"]\n1. e4 { [%eval 0.17] [%clk 0:01:00] } e5 { [%clk 0:00:59] } 2. Nf3 *']
+  ])("reads move clocks from comments: %s", (_shape, pgn) => {
+    const { moveTree } = importPgnText(pgn).game;
+    expect(moveTree.find((n) => n.uci === "e2e4")?.clockAfter).toBe("0:01:00");
+    expect(moveTree.find((n) => n.uci === "e7e5")?.clockAfter).toBe("0:00:59");
   });
 
   it("imports En Croissant export: root eval, fractional clk, Orientation", () => {
@@ -58,21 +60,6 @@ describe("PGN import/export", () => {
     expect(imported.game.moveTree.find((n) => n.san === "c5")?.clockAfter).toBe("0:02:58.246");
   });
 
-  it("parses clk in comment with no space after opening brace", () => {
-    const imported = importPgnText("1. e4 {[%clk 0:10:00]} e5 { [%clk 0:09:00] } *");
-    expect(imported.game.moveTree.find((n) => n.uci === "e2e4")?.clockAfter).toBe("0:10:00");
-    expect(imported.game.moveTree.find((n) => n.uci === "e7e5")?.clockAfter).toBe("0:09:00");
-  });
-
-  it("captures Lichess-style combined comment with eval and clk", () => {
-    const imported = importPgnText(
-      '[White "W"][Black "B"][Result "*"]\n1. e4 { [%eval 0.17] [%clk 0:01:00] } e5 { [%clk 0:00:59] } 2. Nf3 *'
-    );
-    const e4 = imported.game.moveTree.find((n) => n.uci === "e2e4");
-    const e5 = imported.game.moveTree.find((n) => n.uci === "e7e5");
-    expect(e4?.clockAfter).toBe("0:01:00");
-    expect(e5?.clockAfter).toBe("0:00:59");
-  });
 
   it("captures extended headers and move clocks", () => {
     const pgn = `[Event "Rapid"]
