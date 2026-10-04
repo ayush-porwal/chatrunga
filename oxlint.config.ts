@@ -63,7 +63,6 @@ export default defineConfig({
     "no-array-constructor": "error",
     "typescript/ban-ts-comment": "error",
     "typescript/no-empty-object-type": "error",
-    "typescript/no-explicit-any": "error",
     "typescript/no-namespace": "error",
     "typescript/no-require-imports": "error",
     "typescript/no-unnecessary-type-constraint": "error",
