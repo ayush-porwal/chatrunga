@@ -85,7 +85,7 @@ type GameReviewPageProps = {
   /** Offered when the game has no moves to review. */
   onImportPgn: () => void;
   onPlay: () => void;
-  /** Opens Settings → Commentary (offered when no OpenRouter key is saved). */
+  /** Opens Settings → AI (offered when no OpenRouter key is saved). */
   onOpenCommentarySettings?: () => void;
   /** Opening tab: study a repertoire chapter (Back returns to this review at the same move). */
   onOpenRepertoireStudy?: (target: StudyOpenTarget) => void;

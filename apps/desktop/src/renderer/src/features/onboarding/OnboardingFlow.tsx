@@ -1146,7 +1146,7 @@ function DoneStep({
         <SummaryRow tone={hasKey ? "done" : "skipped"} title="AI coach">
           {hasKey
             ? "Your OpenRouter key is saved. Reviews come with explanations."
-            : "Skipped. Reviews show the engine’s findings; add a key in Settings, Commentary."}
+            : "Skipped. Reviews show the engine’s findings; add a key in Settings, AI."}
         </SummaryRow>
       </ul>
 

@@ -4,7 +4,7 @@ import { useOpenRouterConfigQuery } from "../../queries/api";
 export type OpenRouterSaveState = { kind: "idle" | "saving" | "saved" | "error"; message?: string };
 
 /**
- * Saving the OpenRouter model / API key (Settings → Commentary, Review settings and the welcome).
+ * Saving the OpenRouter model / API key (Settings → AI and the welcome).
  * The key goes straight over the preload IPC boundary to main, which encrypts it; nothing here
  * keeps it after the call, and it is never read back (only `hasApiKey`).
  */

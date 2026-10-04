@@ -20,6 +20,7 @@ import type { PuzzleWrongMove } from "../../stores/puzzle-store";
 import { tokenizeCommentary } from "../game-review/commentary-moves";
 import { MoveLink } from "../game-review/MoveLinks";
 import { ReviewSettingsPanel } from "../game-review/ReviewSettingsPanel";
+import { useOpenSettings } from "../settings/settings-link";
 import { uciLineToSan } from "../game-review/review-utils";
 import { explainEngine, explanationKey } from "./puzzle-explanation";
 import {
@@ -80,6 +81,7 @@ export function PuzzleExplanation({
   const explain = () =>
     void requestPuzzleExplanation({ key, puzzle, kind, wrong, engine, settings });
   const openSettings = () => setSettingsOpen(true);
+  const openAppSettings = useOpenSettings();
   const gear = (
     <IconButton
       label="Explanation settings"
@@ -189,7 +191,13 @@ export function PuzzleExplanation({
               : "AI commentary is off."}
           </p>
           {view.kind === "no-key" ? (
-            <Button type="button" variant="outline" size="xs" onClick={openSettings}>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              // The key lives in app Settings → AI (every AI feature shares it).
+              onClick={openAppSettings ? () => openAppSettings("ai") : openSettings}
+            >
               Add API key
             </Button>
           ) : (

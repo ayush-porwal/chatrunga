@@ -10,10 +10,9 @@ import {
   useUpdateSettingMutation
 } from "../../queries/api";
 import { pickDefaultEngine, pickMaiaEngines } from "./review-engine-picker";
-import { OpenRouterSettingsCard } from "../settings/OpenRouterSettingsCard";
+import { useOpenSettings } from "../settings/settings-link";
 import { Badge, ChipButton } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Disclosure } from "@/components/ui/disclosure";
 import { Field, SettingRow } from "@/components/ui/field";
 import { Input, Select } from "@/components/ui/input";
 import { SectionHeader } from "@/components/ui/page";
@@ -86,6 +85,7 @@ export function ReviewSettingsPanel({
     ? installedMaiaLevels.filter((level) => settings.reviewMaiaLevels?.includes(level))
     : installedMaiaLevels;
   const needsLc0 = useMaiaNeedsLc0();
+  const openSettings = useOpenSettings();
   const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) =>
     update.mutate({ key, value });
   const toggleMaiaLevel = (level: ReviewMaiaLevel) => {
@@ -290,16 +290,23 @@ export function ReviewSettingsPanel({
             }
           />
         </Field>
-        <Disclosure
-          // defaultOpen is read on mount only: remount once the config has loaded so a missing
-          // key opens the form (isSuccess stays true across refetches, so saving a key won't re-collapse it).
-          key={openRouter.isSuccess ? "config-loaded" : "config-loading"}
-          title="OpenRouter"
-          summary={openRouter.isLoading ? undefined : hasApiKey ? "Key saved" : "No key"}
-          defaultOpen={openRouter.isSuccess && !hasApiKey}
-        >
-          <OpenRouterSettingsCard />
-        </Disclosure>
+        <SettingRow
+          label="Model and API key"
+          description={
+            openRouter.isLoading
+              ? undefined
+              : hasApiKey
+                ? "Shared by every AI feature. A key is saved."
+                : "Shared by every AI feature. No key saved yet."
+          }
+          control={
+            openSettings ? (
+              <Button variant="link" size="sm" onClick={() => openSettings("ai")}>
+                AI settings
+              </Button>
+            ) : null
+          }
+        />
       </section>
     </div>
   );

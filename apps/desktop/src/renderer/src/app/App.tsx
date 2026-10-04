@@ -1180,7 +1180,8 @@ export function App() {
       showView("home");
     }),
     settings: useEventCallback(() => openSettings(null)),
-    commentarySettings: useEventCallback(() => openSettings("commentary")),
+    commentarySettings: useEventCallback(() => openSettings("ai")),
+    openSettings: useEventCallback((section: SettingsSectionId) => openSettings(section)),
     engineSettings: useEventCallback(() => openSettings("engines")),
     back: useEventCallback(() => void goHistory(-1)),
     forward: useEventCallback(() => void goHistory(1)),

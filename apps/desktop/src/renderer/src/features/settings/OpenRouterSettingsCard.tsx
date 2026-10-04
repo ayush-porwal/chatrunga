@@ -13,10 +13,9 @@ import { cn } from "@/lib/utils";
 import { OPENROUTER_KEYS_URL, useOpenRouterSave } from "./use-openrouter-save";
 
 /**
- * Shared BYOK commentary form (Settings → Commentary, and embedded in Review settings): the
- * OpenRouter model and API key that Game review's AI commentary uses.
- * Renders only the fields — no card chrome or heading — so the host decides the frame
- * (a card with a SectionHeader on Settings, a Disclosure in the review panel).
+ * The BYOK AI form (Settings → AI): the one OpenRouter model and API key every AI feature uses
+ * (Game review's commentary, puzzle explanations). Renders only the fields — no card chrome or
+ * heading — so the host decides the frame.
  *
  * The secret is sent directly over the preload IPC boundary to main, then cleared from
  * component state; it is never read back.
@@ -43,7 +42,7 @@ export function OpenRouterSettingsCard() {
       ? saveState.message
       : hasApiKey
         ? "A key is saved."
-        : "No key saved. Commentary needs one.";
+        : "No key saved. AI features need one.";
 
   return (
     <div className="grid max-w-xl min-w-0 gap-3">

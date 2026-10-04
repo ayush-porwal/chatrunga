@@ -79,7 +79,7 @@ export function ReviewCommentaryPanel({
   onRetry: () => void;
   /** Offered as the "No review yet" action. */
   onAnalyze?: () => void;
-  /** Opens Settings → Commentary (where the OpenRouter key is saved). */
+  /** Opens Settings → AI (where the OpenRouter key is saved). */
   onOpenCommentarySettings?: () => void;
   /** Switches to the review's own Settings tab. */
   onOpenReviewSettings?: () => void;

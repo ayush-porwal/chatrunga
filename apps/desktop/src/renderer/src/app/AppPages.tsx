@@ -10,6 +10,7 @@ import type { ReviewTab } from "../features/game-review/review-utils";
 import type { OpeningSide } from "../features/game-review/opening-comparison";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import type { SettingsSectionId } from "../features/settings/SettingsPage";
+import { OpenSettingsContext } from "../features/settings/settings-link";
 import { GameWorkspace } from "./GameWorkspace";
 import type { SideTab } from "./side-tabs";
 import { HomePage } from "./HomePage";
@@ -116,6 +117,8 @@ export type PageCommands = {
   trainWithDatabase: (databaseId: string) => void;
   startReview: () => void;
   commentarySettings: () => void;
+  /** App Settings at a section (links from a page or dialog: AI settings, ratings). */
+  openSettings: (section: SettingsSectionId) => void;
   openGameFromLibrary: (id: string) => void;
   analyzePosition: () => void;
   stopLiveAnalysis: () => void;
@@ -182,110 +185,115 @@ export function AppPages({
   on: PageCommands;
 }) {
   return (
-    <Suspense fallback={<PageLoading />}>
-      {view === "home" ? (
-        <HomePage
-          desktopApiAvailable={desktopApiAvailable}
-          onAnalyze={on.liveAnalysis}
-          onImportPgn={on.importPgn}
-          onPlay={on.play}
-          onOpenGame={on.openGame}
-          onPuzzles={on.puzzles}
-          onReview={on.openReviewPicker}
-          onReviewGame={on.reviewGame}
-          onOpenEngineSettings={on.engineSettings}
-          onRepertoireHub={on.repertoireHub}
-          onRepertoireReview={on.reviewRepertoire}
-          onRepertoireResume={on.resumeRepertoirePractice}
-          onRepertoireStudy={on.openRepertoireStudy}
-        />
-      ) : view === "repertoire-hub" ? (
-        <RepertoireHubPage
-          onStudy={on.openRepertoireStudy}
-          onPractice={on.openRepertoirePractice}
-          onResume={on.resumeRepertoirePractice}
-          onReview={on.reviewRepertoire}
-        />
-      ) : view === "repertoire-study" && repertoire?.view === "repertoire-study" ? (
-        <RepertoireStudyPage
-          repertoireId={repertoire.repertoireId}
-          chapterId={repertoire.chapterId}
-          initialNodeId={repertoire.nodeId}
-          initialOrientation={repertoire.orientation}
-          tab={repertoire.tab}
-          stage={repertoire.stage}
-          onStageApplied={on.repertoireStageApplied}
-          onTabChange={on.repertoireTabChange}
-          onOpenChapter={(chapterId, nodeId = null) =>
-            on.openRepertoireStudy({ repertoireId: repertoire.repertoireId, chapterId, nodeId })
-          }
-          onPractice={(chapterIds) =>
-            on.practiceRepertoireChapters(repertoire.repertoireId, chapterIds)
-          }
-          onRehearse={(target) =>
-            on.rehearseRepertoire(repertoire.repertoireId, rehearsePreset(target))
-          }
-          onMissing={on.repertoireMissing}
-          onHub={on.repertoireHub}
-          onPositionChanged={on.repertoirePositionChanged}
-          onOpenGame={on.openGameAtNode}
-          onOpenEngineSettings={on.engineSettings}
-          onPlayFromHere={desktopApiAvailable ? on.playFromStudy : undefined}
-        />
-      ) : view === "repertoire-practice" && repertoire?.view === "repertoire-practice" ? (
-        <RepertoirePracticePage
-          repertoireId={repertoire.repertoireId}
-          sessionId={repertoire.sessionId}
-          preset={repertoire.preset}
-          onSessionStarted={on.repertoirePracticeStarted}
-          onSetup={on.repertoirePracticeSetup}
-          onStudy={({ chapterId, nodeId }) =>
-            on.openRepertoireStudy({ repertoireId: repertoire.repertoireId, chapterId, nodeId })
-          }
-          onRehearse={(preset) => on.rehearseRepertoire(repertoire.repertoireId, preset)}
-        />
-      ) : view === "settings" ? (
-        <SettingsPage initialSection={settingsSection} onSectionChange={on.settingsSectionViewed} />
-      ) : view === "play" ? (
-        <PlayPage
-          onOpenSettings={on.engineSettings}
-          onBeforeStart={on.beforePlayStart}
-          onStart={on.showGame}
-          onOpenLichessGame={on.showGame}
-          onFreeBoard={on.freeBoard}
-        />
-      ) : view === "puzzles" ? (
-        <PuzzlePage onDatabases={on.databases} onStart={on.startPuzzle} />
-      ) : view === "databases" ? (
-        <DatabasePage onTrain={on.trainWithDatabase} />
-      ) : view === "game-review" ? (
-        <GameReviewPage
-          activeTab={reviewTab}
-          onTabChange={onReviewTabChange}
-          settings={settings}
-          settingsReady={settingsReady}
-          onAnalyze={reviewLoading ? undefined : on.startReview}
-          onImportPgn={on.importPgn}
-          onPlay={on.play}
-          onOpenCommentarySettings={on.commentarySettings}
-          onOpenRepertoireStudy={on.openRepertoireStudy}
-          onRefreshRepertoireDecision={on.refreshRepertoireDecision}
-          onRepertoireHub={on.repertoireHub}
-          openingSide={openingSide}
-          onOpeningSideChange={onOpeningSideChange}
-        />
-      ) : (
-        <GameWorkspace
-          onOpenGame={on.openGameFromLibrary}
-          sideTab={sideTab}
-          onSideTabChange={onSideTabChange}
-          onStartAnalysis={canStartAnalysis ? on.analyzePosition : undefined}
-          onStopAnalysis={on.stopLiveAnalysis}
-          puzzlePanel={puzzlePanel}
-          onOpenSettings={on.engineSettings}
-        />
-      )}
-    </Suspense>
+    <OpenSettingsContext.Provider value={on.openSettings}>
+      <Suspense fallback={<PageLoading />}>
+        {view === "home" ? (
+          <HomePage
+            desktopApiAvailable={desktopApiAvailable}
+            onAnalyze={on.liveAnalysis}
+            onImportPgn={on.importPgn}
+            onPlay={on.play}
+            onOpenGame={on.openGame}
+            onPuzzles={on.puzzles}
+            onReview={on.openReviewPicker}
+            onReviewGame={on.reviewGame}
+            onOpenEngineSettings={on.engineSettings}
+            onRepertoireHub={on.repertoireHub}
+            onRepertoireReview={on.reviewRepertoire}
+            onRepertoireResume={on.resumeRepertoirePractice}
+            onRepertoireStudy={on.openRepertoireStudy}
+          />
+        ) : view === "repertoire-hub" ? (
+          <RepertoireHubPage
+            onStudy={on.openRepertoireStudy}
+            onPractice={on.openRepertoirePractice}
+            onResume={on.resumeRepertoirePractice}
+            onReview={on.reviewRepertoire}
+          />
+        ) : view === "repertoire-study" && repertoire?.view === "repertoire-study" ? (
+          <RepertoireStudyPage
+            repertoireId={repertoire.repertoireId}
+            chapterId={repertoire.chapterId}
+            initialNodeId={repertoire.nodeId}
+            initialOrientation={repertoire.orientation}
+            tab={repertoire.tab}
+            stage={repertoire.stage}
+            onStageApplied={on.repertoireStageApplied}
+            onTabChange={on.repertoireTabChange}
+            onOpenChapter={(chapterId, nodeId = null) =>
+              on.openRepertoireStudy({ repertoireId: repertoire.repertoireId, chapterId, nodeId })
+            }
+            onPractice={(chapterIds) =>
+              on.practiceRepertoireChapters(repertoire.repertoireId, chapterIds)
+            }
+            onRehearse={(target) =>
+              on.rehearseRepertoire(repertoire.repertoireId, rehearsePreset(target))
+            }
+            onMissing={on.repertoireMissing}
+            onHub={on.repertoireHub}
+            onPositionChanged={on.repertoirePositionChanged}
+            onOpenGame={on.openGameAtNode}
+            onOpenEngineSettings={on.engineSettings}
+            onPlayFromHere={desktopApiAvailable ? on.playFromStudy : undefined}
+          />
+        ) : view === "repertoire-practice" && repertoire?.view === "repertoire-practice" ? (
+          <RepertoirePracticePage
+            repertoireId={repertoire.repertoireId}
+            sessionId={repertoire.sessionId}
+            preset={repertoire.preset}
+            onSessionStarted={on.repertoirePracticeStarted}
+            onSetup={on.repertoirePracticeSetup}
+            onStudy={({ chapterId, nodeId }) =>
+              on.openRepertoireStudy({ repertoireId: repertoire.repertoireId, chapterId, nodeId })
+            }
+            onRehearse={(preset) => on.rehearseRepertoire(repertoire.repertoireId, preset)}
+          />
+        ) : view === "settings" ? (
+          <SettingsPage
+            initialSection={settingsSection}
+            onSectionChange={on.settingsSectionViewed}
+          />
+        ) : view === "play" ? (
+          <PlayPage
+            onOpenSettings={on.engineSettings}
+            onBeforeStart={on.beforePlayStart}
+            onStart={on.showGame}
+            onOpenLichessGame={on.showGame}
+            onFreeBoard={on.freeBoard}
+          />
+        ) : view === "puzzles" ? (
+          <PuzzlePage onDatabases={on.databases} onStart={on.startPuzzle} />
+        ) : view === "databases" ? (
+          <DatabasePage onTrain={on.trainWithDatabase} />
+        ) : view === "game-review" ? (
+          <GameReviewPage
+            activeTab={reviewTab}
+            onTabChange={onReviewTabChange}
+            settings={settings}
+            settingsReady={settingsReady}
+            onAnalyze={reviewLoading ? undefined : on.startReview}
+            onImportPgn={on.importPgn}
+            onPlay={on.play}
+            onOpenCommentarySettings={on.commentarySettings}
+            onOpenRepertoireStudy={on.openRepertoireStudy}
+            onRefreshRepertoireDecision={on.refreshRepertoireDecision}
+            onRepertoireHub={on.repertoireHub}
+            openingSide={openingSide}
+            onOpeningSideChange={onOpeningSideChange}
+          />
+        ) : (
+          <GameWorkspace
+            onOpenGame={on.openGameFromLibrary}
+            sideTab={sideTab}
+            onSideTabChange={onSideTabChange}
+            onStartAnalysis={canStartAnalysis ? on.analyzePosition : undefined}
+            onStopAnalysis={on.stopLiveAnalysis}
+            puzzlePanel={puzzlePanel}
+            onOpenSettings={on.engineSettings}
+          />
+        )}
+      </Suspense>
+    </OpenSettingsContext.Provider>
   );
 }
 
