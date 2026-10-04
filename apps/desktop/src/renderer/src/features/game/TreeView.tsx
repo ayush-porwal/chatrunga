@@ -45,12 +45,10 @@ const ROOT_ID = "root";
 /** Deeper variations stop indenting (the depth is still in the row's title). */
 const MAX_VISUAL_DEPTH = 8;
 
-/** Number · White's move · its eval · Black's move · its eval (the evals only with review data). */
-const SCORED_ROW = "grid-cols-[1.625rem_minmax(0,1fr)_2.5rem_minmax(0,1fr)_2.5rem]";
-const PLAIN_ROW = "grid-cols-[1.625rem_minmax(0,1fr)_minmax(0,1fr)]";
-/** A variation's row: its number (`12…`), the move and, with review data, its eval. */
-const SCORED_VARIATION_ROW = "grid-cols-[2rem_minmax(0,1fr)_2.5rem]";
-const PLAIN_VARIATION_ROW = "grid-cols-[2rem_minmax(0,1fr)]";
+/** Number · White's move · Black's move: two equal blocks, each holding its move's eval. */
+const ROW_GRID = "grid-cols-[1.625rem_minmax(0,1fr)_minmax(0,1fr)]";
+/** A variation's row: its number (`12…`) and the move. */
+const VARIATION_ROW_GRID = "grid-cols-[2rem_minmax(0,1fr)]";
 
 type TreeViewProps = {
   nodes: readonly MoveNode[];
@@ -112,7 +110,6 @@ export function TreeView({
   const { pieceClassName } = useBoardAppearance();
   const listId = useId();
   const showScores = Boolean(reviews?.size);
-  const rowGrid = showScores ? SCORED_ROW : PLAIN_ROW;
 
   const [folds, setFolds] = useState<LineFolds>(() => setAllLineFolds(loadShowAllLines()));
   const toggleFold = useCallback(
@@ -175,7 +172,7 @@ export function TreeView({
         id={bestLineId(node.id)}
         node={node}
         review={review}
-        gridClassName={rowGrid}
+        gridClassName={ROW_GRID}
         orientation={orientation}
         onPlayLine={onPlayLine}
       />
@@ -221,14 +218,7 @@ export function TreeView({
     );
 
   const cell = (node: MoveNode | undefined) =>
-    node ? (
-      <MoveCell {...cellProps(node)} />
-    ) : (
-      <>
-        <span aria-hidden="true" />
-        {showScores ? <span aria-hidden="true" /> : null}
-      </>
-    );
+    node ? <MoveCell {...cellProps(node)} /> : <span aria-hidden="true" />;
 
   const items = mainlineItems(model, { bookEndNodeId, showsBestLine });
 
@@ -243,17 +233,12 @@ export function TreeView({
         ref={headerRef}
         className={cn(
           "sticky top-0 z-10 mb-1 grid items-center gap-x-1 border-b border-line-subtle bg-surface py-1.5 text-xs text-fg-muted",
-          rowGrid
+          ROW_GRID
         )}
       >
         <span className="text-center">#</span>
-        <span className={cn("px-1.5", showScores && "col-span-2")}>White</span>
-        <span
-          className={cn(
-            "flex min-w-0 items-center justify-between gap-2 pl-1.5",
-            showScores && "col-span-2"
-          )}
-        >
+        <span className="px-1.5">White</span>
+        <span className="flex min-w-0 items-center justify-between gap-2 pl-1.5">
           <span className="truncate">Black</span>
           {hasLines ? (
             <button
@@ -294,7 +279,7 @@ export function TreeView({
               return (
                 <div
                   key={`main-${item.number}-${item.white?.id ?? "empty"}-${item.black?.id ?? "empty"}`}
-                  className={cn("grid min-h-8 items-center gap-x-1", rowGrid)}
+                  className={cn("grid min-h-8 items-center gap-x-1", ROW_GRID)}
                   role="row"
                   aria-level={1}
                 >
@@ -310,7 +295,7 @@ export function TreeView({
                 <OpeningRow
                   key={`opening-${item.afterNodeId}`}
                   opening={opening}
-                  gridClassName={rowGrid}
+                  gridClassName={ROW_GRID}
                 />
               ) : null;
             case "best":
@@ -381,7 +366,7 @@ const VariationRow = memo(function VariationRow({
     <div
       className={cn(
         "grid min-h-8 items-center gap-x-1 border-l border-line-strong",
-        cell.showScores ? SCORED_VARIATION_ROW : PLAIN_VARIATION_ROW
+        VARIATION_ROW_GRID
       )}
       style={{ paddingInlineStart: `${visualDepth * 12 + 4}px` }}
       data-tree-depth={row.depth}
@@ -460,110 +445,111 @@ const MoveCell = memo(function MoveCell({
   const foldable = lineUnfolded !== undefined && Boolean(onToggleLine);
 
   return (
-    <>
-      <div
+    <div
+      className={cn(
+        "group relative min-w-0 rounded-[0.3125rem] transition-colors duration-micro ease-standard",
+        selected ? "bg-accent-soft" : "hover:bg-control"
+      )}
+      data-move-cell={node.id}
+    >
+      <button
+        type="button"
+        data-tree-node-id={node.id}
+        aria-current={selected ? "step" : undefined}
+        // Named by its SAN (the piece is drawn, not written); the mark has its own name beside it.
+        aria-label={san}
         className={cn(
-          "group relative min-w-0 rounded-[0.3125rem] transition-colors duration-micro ease-standard",
-          selected ? "bg-accent-soft" : "hover:bg-control"
+          "flex h-8 w-full min-w-0 items-center gap-[0.4375rem] rounded-[0.3125rem] px-1.5 text-left text-[0.90625rem] font-medium tracking-[0.01em] outline-none",
+          "focus-visible:ring-2 focus-visible:ring-accent/50",
+          annotation
+            ? annotationTone[annotation].text
+            : selected
+              ? "text-fg"
+              : variation
+                ? "text-fg-muted"
+                : "text-fg-secondary",
+          selected && "font-semibold"
         )}
-        data-move-cell={node.id}
+        title={title}
+        onClick={() => onSelectNode(node.id)}
       >
-        <button
-          type="button"
-          data-tree-node-id={node.id}
-          aria-current={selected ? "step" : undefined}
-          // Named by its SAN (the piece is drawn, not written); the mark has its own name beside it.
-          aria-label={san}
-          className={cn(
-            "flex h-8 w-full min-w-0 items-center gap-[0.4375rem] rounded-[0.3125rem] px-1.5 text-left text-[0.90625rem] font-medium tracking-[0.01em] outline-none",
-            "focus-visible:ring-2 focus-visible:ring-accent/50",
-            annotation
-              ? annotationTone[annotation].text
-              : selected
-                ? "text-fg"
-                : variation
-                  ? "text-fg-muted"
-                  : "text-fg-secondary",
-            selected && "font-semibold",
-            (showDelete || showPromote) && (showDelete && showPromote ? "pr-15" : "pr-8")
-          )}
-          title={title}
-          onClick={() => onSelectNode(node.id)}
-        >
-          {/* The mark's slot: its disc sits over it (beside the button, so it can be its own control). */}
-          <span aria-hidden className="w-[1.125rem] shrink-0" />
-          <span className="flex min-w-0 items-center">
-            {node.san ? (
-              <span className="inline-flex w-[1.3em] shrink-0 justify-center">
-                <Figurine role={sanPiece(node.san)} className="m-0" />
-              </span>
-            ) : null}
-            <span className="truncate">{node.san ? bareSan(node.san) : san}</span>
-          </span>
-          {variation ? <span className="shrink-0 text-fg-subtle">↳</span> : null}
+        {/* The mark's slot: its disc sits over it (beside the button, so it can be its own control). */}
+        <span aria-hidden className="w-[1.125rem] shrink-0" />
+        <span className="flex min-w-0 items-center">
+          {node.san ? (
+            <span className="inline-flex w-[1.3em] shrink-0 justify-center">
+              <Figurine role={sanPiece(node.san)} className="m-0" />
+            </span>
+          ) : null}
+          <span className="truncate">{node.san ? bareSan(node.san) : san}</span>
+        </span>
+        {variation ? <span className="shrink-0 text-fg-subtle">↳</span> : null}
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
           {showCommentaryState && commentary ? (
             <Check
               aria-label="Commentary ready"
-              className={cn("ml-auto size-3 shrink-0", selected ? "text-fg" : "text-accent")}
+              className={cn("size-3 shrink-0", selected ? "text-fg" : "text-accent")}
             />
           ) : null}
-        </button>
-        {annotation ? (
-          <span className="pointer-events-none absolute top-1/2 left-1.5 flex -translate-y-1/2">
-            {foldable ? (
-              <button
-                type="button"
-                aria-expanded={lineUnfolded}
-                aria-controls={lineUnfolded ? lineId : undefined}
-                aria-label={`${annotationLabel(annotation)}: ${lineUnfolded ? "hide" : "show"} the best line`}
-                title={`${annotationLabel(annotation)} · ${lineUnfolded ? "hide" : "show"} the best line`}
-                className="pointer-events-auto flex cursor-pointer rounded-full outline-none transition-transform duration-micro ease-standard hover:scale-110 focus-visible:ring-2 focus-visible:ring-accent/50"
-                onClick={() => onToggleLine?.(node.id)}
-              >
-                <MoveMarkDisc annotation={annotation} decorative />
-              </button>
-            ) : (
-              <MoveMarkDisc annotation={annotation} />
-            )}
-          </span>
-        ) : null}
-        {showPromote ? (
-          <IconButton
-            label={`Promote the variation with ${node.san ?? "the selected move"}`}
-            icon={<ArrowUpToLine />}
-            variant="ghost"
-            size="icon-xs"
-            tooltipSide="left"
-            className={cn(
-              "absolute top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
-              showDelete ? "right-8" : "right-0.5"
-            )}
-            onClick={(event) => {
-              event.stopPropagation();
-              onPromoteVariation?.(node.id);
-            }}
-          />
-        ) : null}
-        {showDelete ? (
-          <IconButton
-            label={`Delete line from ${node.san ?? "selected move"}`}
-            icon={<Trash2 />}
-            variant="ghost-destructive"
-            size="icon-xs"
-            tooltipSide="left"
-            className="absolute right-0.5 top-1/2 -translate-y-1/2 opacity-0 hover:bg-danger-soft group-hover:opacity-100 focus-visible:opacity-100"
-            onClick={(event) => {
-              event.stopPropagation();
-              onDeleteLine?.(node.id);
-            }}
-          />
-        ) : null}
-      </div>
-      {showScores ? (
-        <span className="pr-0.5 text-right font-mono text-[0.71875rem] text-fg-subtle tabular-nums">
-          {review ? formatMoveEval(review) : null}
+          {/* Its eval, right-aligned inside the move's block (a fixed width keeps rows aligned). */}
+          {showScores ? (
+            <span className="w-[2.5rem] text-right font-mono text-[0.71875rem] font-normal tracking-normal text-fg-subtle tabular-nums">
+              {review ? formatMoveEval(review) : null}
+            </span>
+          ) : null}
+        </span>
+      </button>
+      {annotation ? (
+        <span className="pointer-events-none absolute top-1/2 left-1.5 flex -translate-y-1/2">
+          {foldable ? (
+            <button
+              type="button"
+              aria-expanded={lineUnfolded}
+              aria-controls={lineUnfolded ? lineId : undefined}
+              aria-label={`${annotationLabel(annotation)}: ${lineUnfolded ? "hide" : "show"} the best line`}
+              title={`${annotationLabel(annotation)} · ${lineUnfolded ? "hide" : "show"} the best line`}
+              className="pointer-events-auto flex cursor-pointer rounded-full outline-none transition-transform duration-micro ease-standard hover:scale-110 focus-visible:ring-2 focus-visible:ring-accent/50"
+              onClick={() => onToggleLine?.(node.id)}
+            >
+              <MoveMarkDisc annotation={annotation} decorative />
+            </button>
+          ) : (
+            <MoveMarkDisc annotation={annotation} />
+          )}
         </span>
       ) : null}
-    </>
+      {showPromote ? (
+        <IconButton
+          label={`Promote the variation with ${node.san ?? "the selected move"}`}
+          icon={<ArrowUpToLine />}
+          variant="ghost"
+          size="icon-xs"
+          tooltipSide="left"
+          // Over the eval while the move is hovered, on the selected block's own colour.
+          className={cn(
+            "absolute top-1/2 -translate-y-1/2 bg-accent-soft opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+            showDelete ? "right-8" : "right-0.5"
+          )}
+          onClick={(event) => {
+            event.stopPropagation();
+            onPromoteVariation?.(node.id);
+          }}
+        />
+      ) : null}
+      {showDelete ? (
+        <IconButton
+          label={`Delete line from ${node.san ?? "selected move"}`}
+          icon={<Trash2 />}
+          variant="ghost-destructive"
+          size="icon-xs"
+          tooltipSide="left"
+          className="absolute right-0.5 top-1/2 -translate-y-1/2 bg-accent-soft opacity-0 hover:bg-danger-soft group-hover:opacity-100 focus-visible:opacity-100"
+          onClick={(event) => {
+            event.stopPropagation();
+            onDeleteLine?.(node.id);
+          }}
+        />
+      ) : null}
+    </div>
   );
 });
