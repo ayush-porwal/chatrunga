@@ -138,8 +138,10 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
 
   // Each strip folds on its own, remembered across a reload. Under a height set with the splitter,
   // folding hands its height to the others (unset, the charts take the default for the views shown).
+  // As tall as the panel allows (End), so the views are above their minimums and a fold's height
+  // has somewhere to go, whatever the window's size (Windows' frame leaves less height).
   await splitter(page).focus();
-  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("End");
   const winHeight = async () => (await view(page, "winning-chances").boundingBox())?.height ?? 0;
   const before = await winHeight();
   await charts(page).getByRole("button", { name: "Time per move" }).click();
