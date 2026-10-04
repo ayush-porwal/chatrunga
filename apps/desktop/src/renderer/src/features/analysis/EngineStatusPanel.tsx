@@ -550,7 +550,8 @@ function EngineStatusPanelContent({
                   icon={<RotateCcw />}
                   onClick={restartFresh}
                 />
-                {onStopAnalysis ? (
+                {/* An engine that stopped with an error runs no search: Restart is the way on. */}
+                {onStopAnalysis && status !== "error" ? (
                   <Button type="button" variant="outline" size="sm" onClick={onStopAnalysis}>
                     <Square />
                     Stop

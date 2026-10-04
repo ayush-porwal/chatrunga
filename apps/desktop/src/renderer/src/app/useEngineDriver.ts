@@ -47,6 +47,17 @@ export function applyEngineInfos(batch: readonly EngineInfo[]): void {
     .setInfos(batch.filter((info) => engineSearches.isCurrent(info.searchId)));
 }
 
+/**
+ * The engine's search for its move failed (the engine quit during it): no move is coming, so its
+ * clock stops (a dead engine doesn't lose on time). The same position isn't searched again by
+ * itself (an engine that quits on it would quit again); stepping away and back asks again.
+ */
+function endFailedEngineMove(): void {
+  engineSearches.move = null;
+  const game = useGameStore.getState();
+  if (game.engineClockLive?.sideToMove === game.engineSide) game.pauseEngineClock();
+}
+
 function playEngineMove(move: string): void {
   useAnalysisStore.getState().setBestMove(move);
   if (!useGameStore.getState().makeUciMove(move))
@@ -179,6 +190,10 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
       }),
       events.onEngineError((error) => {
         if (error.searchId && !engineSearches.isCurrent(error.searchId)) return;
+        // The lines the engine sent before it failed go first: applied after the error, they
+        // would show its search as running again.
+        infos.flushNow();
+        if (error.searchId && error.searchId === engineSearches.move) endFailedEngineMove();
         useAnalysisStore.getState().setError(error.message);
       })
     ];

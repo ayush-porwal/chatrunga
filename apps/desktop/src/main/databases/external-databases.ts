@@ -576,6 +576,11 @@ type SamplePool = {
   all: string[][] | null;
   /** From the latest quick scan, while `rows` waits for a whole-file scan (see above). */
   interim: string[][];
+  /**
+   * The quick scan result last put into the pool. Requests that joined one scan each see its
+   * result; only the first fills the pool, so a later one can't put back a row already served.
+   */
+  appliedQuick: ScanResult | null;
   /** Quick scans in flight, joined by identical requests. */
   quick: Set<QuickScan>;
   /** The job of the whole-file scan, running (`full`) or waiting for a free slot (`queued`). */
@@ -636,6 +641,7 @@ function poolFor(key: string): SamplePool {
     rows: [],
     all: null,
     interim: [],
+    appliedQuick: null,
     quick: new Set(),
     fullJob: null,
     full: null,
@@ -815,9 +821,12 @@ export async function samplePuzzle(input: PuzzleSampleInput): Promise<PuzzleSamp
     }
     // A scan that reached the end of the file saw every match: no larger one would find more.
     scanned = result.complete ? Infinity : quick.limit;
-    // It read the whole file (few matches, or none): that is the pool a full scan would give.
-    if (result.complete) fillPool(pool, result);
-    else pool.interim = [...result.rows];
+    if (pool.appliedQuick !== result) {
+      pool.appliedQuick = result;
+      // It read the whole file (few matches, or none): that is the pool a full scan would give.
+      if (result.complete) fillPool(pool, result);
+      else pool.interim = [...result.rows];
+    }
     sample = serveFromPool(pool, build);
   }
   requestFullScan(pool, job);

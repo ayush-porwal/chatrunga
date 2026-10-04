@@ -978,6 +978,8 @@ describe("samplePuzzle", () => {
   });
 
   it("shares one quick scan between identical requests in flight", async () => {
+    // The same draw for both: each must still get its own puzzle from the one shared result.
+    vi.spyOn(Math, "random").mockReturnValue(0);
     setPuzzleScanner(gatedScanner());
     await install(Array.from({ length: 1000 }, (_, index) => row(`p${index}`, 1500)));
     const first = samplePuzzle(input());
