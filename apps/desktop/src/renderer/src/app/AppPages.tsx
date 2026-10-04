@@ -280,6 +280,7 @@ export function AppPages({
             onRepertoireHub={on.repertoireHub}
             openingSide={openingSide}
             onOpeningSideChange={onOpeningSideChange}
+            onOpenPuzzles={on.puzzles}
           />
         ) : (
           <GameWorkspace
