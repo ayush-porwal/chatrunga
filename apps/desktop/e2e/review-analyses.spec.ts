@@ -102,9 +102,12 @@ test("the saved-analysis picker is compact, details each analysis, and deletes o
   await expect(picker(page).locator("[data-analysis-option]")).toHaveCount(3);
   const newest = option(page, /Oct 4/);
   await expect(newest).toContainText("Latest");
-  await expect(newest).toContainText("Stockfish 19 · 250 ms/move · Maia 1100–1900");
+  // Each row reads its engine and search; the rest of how it was made is in its tooltip.
+  await expect(newest).toContainText("Stockfish 19 · 250 ms/move");
+  await expect(newest).not.toContainText("Maia");
+  await expect(newest).toHaveAttribute("title", /Stockfish 19 · 250 ms\/move · Maia 1100–1900/);
   await expect(newest).toHaveAttribute("aria-current", "true");
-  await expect(option(page, /Oct 3/)).toContainText("Stockfish 18 · 1 s/move · Maia 1100–1900");
+  await expect(option(page, /Oct 3/)).toContainText("Stockfish 18 · 1 s/move");
   await expect(option(page, /Oct 3/)).not.toHaveAttribute("aria-current", "true");
   await expect(option(page, /Oct 3/)).not.toContainText("Latest");
   // The list paints above the review panel and board (it's portalled out of the titlebar), and
@@ -148,9 +151,7 @@ test("the saved-analysis picker is compact, details each analysis, and deletes o
   await expect(option(page, /Oct 3/)).toHaveAttribute("aria-current", "true");
 
   // Delete all asks with the count, then the review is back to Analyze.
-  await picker(page)
-    .getByRole("button", { name: "Delete all analyses of this game", exact: true })
-    .click();
+  await picker(page).getByRole("button", { name: "Delete all analyses", exact: true }).click();
   const confirmAll = page.getByRole("dialog", { name: "Delete all 2 analyses of this game?" });
   await expect(confirmAll).toContainText("This can't be undone.");
   await confirmAll.getByRole("button", { name: "Delete all", exact: true }).click();

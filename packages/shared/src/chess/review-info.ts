@@ -48,12 +48,7 @@ export function reviewInfoWhen(info: SavedReviewInfo, locale?: string): string {
 
 /** How an analysis was made: `Stockfish 17 · 1 s/move · Maia 1100–1900 · 12 AI comments`. */
 export function reviewInfoDetails(info: SavedReviewInfo): string {
-  const search =
-    info.moveTimeMs !== null
-      ? `${info.moveTimeMs >= 1000 ? `${+(info.moveTimeMs / 1000).toFixed(1)} s` : `${info.moveTimeMs} ms`}/move`
-      : info.depth !== null
-        ? `depth ${info.depth}`
-        : null;
+  const search = reviewInfoSearch(info);
   const maia = info.maiaLevels.length
     ? `Maia ${info.maiaLevels.length > 1 ? `${info.maiaLevels[0]}–${info.maiaLevels[info.maiaLevels.length - 1]}` : info.maiaLevels[0]}`
     : null;
@@ -61,4 +56,20 @@ export function reviewInfoDetails(info: SavedReviewInfo): string {
     ? `${info.commentaryCount} AI comment${info.commentaryCount === 1 ? "" : "s"}`
     : null;
   return [info.engineName ?? "Engine", search, maia, comments].filter(Boolean).join(" · ");
+}
+
+/** How an analysis was made, in brief (a list row's second line): `Stockfish 17 · 1 s/move`. */
+export function reviewInfoBrief(info: SavedReviewInfo): string {
+  return [info.engineName ?? "Engine", reviewInfoSearch(info)].filter(Boolean).join(" · ");
+}
+
+function reviewInfoSearch(info: SavedReviewInfo): string | null {
+  if (info.moveTimeMs !== null) {
+    const time =
+      info.moveTimeMs >= 1000
+        ? `${+(info.moveTimeMs / 1000).toFixed(1)} s`
+        : `${info.moveTimeMs} ms`;
+    return `${time}/move`;
+  }
+  return info.depth !== null ? `depth ${info.depth}` : null;
 }

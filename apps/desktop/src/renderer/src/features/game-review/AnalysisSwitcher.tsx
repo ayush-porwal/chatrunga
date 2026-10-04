@@ -9,7 +9,7 @@ import {
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, Trash2 } from "lucide-react";
 import {
-  reviewInfoDetails,
+  reviewInfoBrief,
   reviewInfoLabel,
   reviewInfoWhen
 } from "@chaturanga/shared/chess/review-info";
@@ -35,8 +35,11 @@ type PendingDelete = { reviewId: string } | "all";
 
 const OPTION_SELECTOR = "[data-analysis-option]";
 
-/** The button's and its list's one width (the list sits right-aligned under it: the same edges). */
-const PICKER_WIDTH = "w-80 max-w-[calc(100vw-1rem)]";
+/**
+ * The button's and its list's one width, compact (the list sits right-aligned under it: the same
+ * edges). Each row reads in it without truncating: its date, Latest, and engine and search.
+ */
+const PICKER_WIDTH = "w-60 max-w-[calc(100vw-1rem)]";
 
 /**
  * The game's saved analyses in Game review's titlebar: a compact button naming the one shown (its
@@ -241,7 +244,7 @@ export function AnalysisSwitcher() {
                   className="flex h-8 items-center gap-2 whitespace-nowrap rounded-md px-2 text-left text-sm text-danger outline-none transition-colors hover:bg-danger-soft focus-visible:bg-danger-soft [&_svg]:size-4 [&_svg]:shrink-0"
                 >
                   <Trash2 aria-hidden="true" />
-                  Delete all analyses of this game
+                  Delete all analyses
                 </button>
               </div>
             </div>,
@@ -294,7 +297,10 @@ export function AnalysisSwitcher() {
   );
 }
 
-/** One saved analysis in the list: when (and Latest), how it was made, and its delete button. */
+/**
+ * One saved analysis in the list: when (and Latest), its engine and search, and its delete button.
+ * Everything else about how it was made (Maia levels, AI comments) is in its tooltip.
+ */
 function AnalysisRow({
   info,
   latest,
@@ -314,7 +320,7 @@ function AnalysisRow({
   onDelete: () => void;
 }) {
   const when = reviewInfoWhen(info);
-  const details = reviewInfoDetails(info);
+  const label = reviewInfoLabel(info);
   return (
     <div className="group/row flex items-center gap-1 rounded-md transition-colors hover:bg-control focus-within:bg-control">
       <button
@@ -322,6 +328,7 @@ function AnalysisRow({
         data-analysis-option
         aria-current={selected ? "true" : undefined}
         tabIndex={hidden ? -1 : undefined}
+        title={label}
         onClick={onChoose}
         onKeyDown={onKeyDown}
         className="flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
@@ -335,9 +342,7 @@ function AnalysisRow({
             <span className="truncate">{when}</span>
             {latest ? <LatestTag /> : null}
           </span>
-          <span className="truncate text-xs text-fg-muted" title={details}>
-            {details}
-          </span>
+          <span className="truncate text-xs text-fg-muted">{reviewInfoBrief(info)}</span>
         </span>
       </button>
       <IconButton
