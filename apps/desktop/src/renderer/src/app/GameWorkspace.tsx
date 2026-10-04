@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useEffect, useId, useMemo, useState, type ReactNode } from "react";
-import { BookPlus, SlidersHorizontal } from "lucide-react";
+import { BookPlus, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { AnalysisSettingsDialog } from "../features/analysis/AnalysisSettingsDialog";
@@ -316,7 +316,7 @@ function AnalysisSettingsButton() {
     <>
       <IconButton
         label="Analysis settings"
-        icon={<SlidersHorizontal />}
+        icon={<Settings />}
         onClick={() => setOpen(true)}
         className="shrink-0"
       />

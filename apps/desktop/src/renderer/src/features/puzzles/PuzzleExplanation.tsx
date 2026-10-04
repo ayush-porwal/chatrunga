@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { KeyRound, Loader2, MessageSquareOff, RefreshCw, Settings2, Sparkles } from "lucide-react";
+import { KeyRound, Loader2, MessageSquareOff, RefreshCw, Settings, Sparkles } from "lucide-react";
 import type { PuzzleOutcomeKind } from "@chaturanga/shared/schemas/puzzle-insight";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
@@ -30,7 +30,7 @@ import {
 } from "./puzzle-explanation-store";
 import { solutionIndexForToken, type PuzzleProseLine } from "./puzzle-prose";
 
-const settingsIcon = <Settings2 />;
+const settingsIcon = <Settings />;
 
 /**
  * "Explain with AI" in the puzzle card, once the puzzle is solved or failed: one button, then the
@@ -157,7 +157,7 @@ export function PuzzleExplanation({
           action={
             view.needsSettings ? (
               <Button type="button" variant="outline" size="xs" onClick={openSettings}>
-                <Settings2 />
+                <Settings />
                 Settings
               </Button>
             ) : (

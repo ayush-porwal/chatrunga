@@ -319,7 +319,6 @@ export const ReviewTitlebar = memo(function ReviewTitlebar({
       actions={
         <>
           <AnalysisSwitcher />
-          <ReviewSettingsButton className={titlebarIconButton} />
           {running || hasMoves ? (
             <Button
               type="button"
@@ -347,6 +346,8 @@ export const ReviewTitlebar = memo(function ReviewTitlebar({
               <TooltipContent side="bottom">Add or import moves to review</TooltipContent>
             </Tooltip>
           )}
+          {/* Settings always end the row. */}
+          <ReviewSettingsButton className={titlebarIconButton} />
         </>
       }
     />
