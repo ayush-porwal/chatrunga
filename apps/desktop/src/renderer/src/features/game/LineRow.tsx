@@ -16,9 +16,13 @@ import { bareSan, sanPiece } from "./move-list-model";
  * A move clicked in the move list doesn't take focus: the board and the list's highlight show where
  * the game is, and the ← → that follow (global shortcuts) would otherwise draw a focus ring on the
  * clicked move while another one is current. Tab still focuses moves, with their ring.
+ * Whatever had focus still gives it up, as a click would make it: a tab bar clicked just before
+ * would otherwise keep the ← → for its own tabs.
  */
 export function keepFocusOnPress(event: MouseEvent) {
   event.preventDefault();
+  const focused = document.activeElement;
+  if (focused instanceof HTMLElement && focused !== document.body) focused.blur();
 }
 
 /** A move of a line drawn with the board's piece, as the move list draws moves (`♘d2`, `♙a4`). */
