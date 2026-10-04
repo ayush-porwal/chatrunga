@@ -18,14 +18,20 @@ const SCREENSHOT = process.env.CHATURANGA_E2E_ENGINE_PANEL_SCREENSHOT;
 const ACTIONS_SCREENSHOT = process.env.CHATURANGA_E2E_STUDY_ACTIONS_SCREENSHOT;
 
 /**
- * Resizes the page to `width`×`height` (the window's content; no larger than the screen's work
- * area, e.g. a small CI display) and waits for it to lay out again. Returns the size it got.
+ * Resizes the page to `width`×`height` (the window's content) and waits for it to lay out again.
+ * Returns the size it got. On a screen too small for that (e.g. a CI display) the window stays a
+ * few pixels inside the work area: Chromium on X11 shrinks a window that would fill the screen
+ * exactly by a pixel, so a window sized to the screen never reaches the size asked for.
  */
 async function resizeWindow(app: ElectronApplication, page: Page, width: number, height: number) {
   const size = await app.evaluate(
     ({ BrowserWindow, screen }, [width, height]) => {
       const area = screen.getPrimaryDisplay().workAreaSize;
-      const fitted = [Math.min(width, area.width), Math.min(height, area.height)] as const;
+      const margin = 8;
+      const fitted = [
+        Math.min(width, area.width - margin),
+        Math.min(height, area.height - margin)
+      ] as const;
       BrowserWindow.getAllWindows()[0]!.setContentSize(...fitted);
       return fitted;
     },
@@ -35,18 +41,27 @@ async function resizeWindow(app: ElectronApplication, page: Page, width: number,
   return size;
 }
 
-/** The locator's box once it has stopped changing (the board settles a moment after a resize). */
+/**
+ * The locator's box once it has stopped changing: the same in two reads a quarter second apart
+ * (the board and the side panel lay out again over a few frames after a resize). Two reads taken
+ * back to back could both catch the layout mid-change.
+ */
 async function settledBox(locator: Locator) {
-  let last = await locator.boundingBox();
+  let last: string | undefined;
+  let box: Awaited<ReturnType<Locator["boundingBox"]>> = null;
   await expect
-    .poll(async () => {
-      const box = await locator.boundingBox();
-      const same = JSON.stringify(box) === JSON.stringify(last);
-      last = box;
-      return same;
-    })
+    .poll(
+      async () => {
+        box = await locator.boundingBox();
+        const read = JSON.stringify(box);
+        const same = box !== null && read === last;
+        last = read;
+        return same;
+      },
+      { intervals: [250] }
+    )
     .toBe(true);
-  return last;
+  return box!;
 }
 
 /**
@@ -113,6 +128,26 @@ const addLine = (page: Page, san: string) =>
     exact: true
   });
 
+/** The process id of the fake engine started last (it logs `pid <id>` as it starts). */
+function enginePid(log: string): number {
+  const line = engineCommands(log)
+    .filter((entry) => entry.startsWith("pid "))
+    .at(-1);
+  if (!line) throw new Error("the fake engine never started");
+  return Number(line.slice("pid ".length));
+}
+
+/** Whether a process with this id is running (signal 0 only checks; it works on Windows too). */
+function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM: it runs, but as someone else.
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
 /** The UCI commands the fake engine received, in order. */
 function engineCommands(log: string): string[] {
   try {
@@ -150,9 +185,10 @@ test("Analyze runs the engine in study: its lines follow the selection, a picked
     [1280, 800]
   ] as const) {
     const [shownWidth, shownHeight] = await resizeWindow(app, page, width, height);
-    await expect
-      .poll(async () => (await rehearse.boundingBox())?.y)
-      .toBe((await practise.boundingBox())?.y);
+    // Both read once the layout has settled, so neither is compared against a stale box.
+    const rehearseBox = await settledBox(rehearse);
+    const practiseBox = await settledBox(practise);
+    expect(rehearseBox.y).toBe(practiseBox.y);
     if (ACTIONS_SCREENSHOT) {
       await page.screenshot({ path: `${ACTIONS_SCREENSHOT}-${shownWidth}x${shownHeight}.png` });
     }
@@ -343,11 +379,15 @@ test("leaving Study by any route stops the engine panel's search", async ({ laun
       .at(-1)
   ).toBe("position fen rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
 
-  // Closing the window ends the engine with it (macOS keeps the app running).
+  // Closing the window ends the engine with it (macOS keeps the app running): its process is gone.
+  // Elsewhere it also ran its exit handler; on Windows a kill ends a process without running it.
   await studyWithEngine(page);
   from = engineCommands(log).length;
+  const pid = enginePid(log);
+  expect(isRunning(pid), "the panel's engine runs").toBe(true);
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.close());
-  await expect.poll(() => engineCommands(log).slice(from)).toContain("exit");
+  await expect.poll(() => isRunning(pid)).toBe(false);
+  if (process.platform !== "win32") expect(engineCommands(log).slice(from)).toContain("exit");
 });
 
 test("Play from here stops the panel's search and the engine game gets the engine", async ({
