@@ -325,7 +325,8 @@ export function ReviewSettingsPanel({
         )}
         <SettingRow
           label="Rating"
-          description={reviewRatingLabel(rating)}
+          // A game's dialog already says it under Review as (the rating its review is made for).
+          description={reviewSide ? undefined : reviewRatingLabel(rating)}
           control={
             openSettings ? (
               <Button variant="link" size="sm" onClick={() => openSettings("ratings")}>
