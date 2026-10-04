@@ -3,9 +3,10 @@
 // its piece, the book moves end in the opening's row, and each marked error's BEST line folds under
 // it: its moves preview their position on hover (the game's own moves don't), and clicking one
 // browses the line on the board without adding it to the game; only a new move played from it does.
+// The game's own variations are line rows too, under the move they were played instead of.
 // How to run them: playwright.config.ts.
 import { join } from "node:path";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import {
   clickSquare,
   expect,
@@ -29,6 +30,7 @@ const reviewTabs = (page: Page) => page.getByRole("tablist", { name: "Game revie
 const moveTree = (page: Page) => page.getByRole("tree", { name: "Reviewed move tree" });
 const bestLines = (page: Page) => moveTree(page).getByRole("group", { name: /^Best line: / });
 const previews = (page: Page) => moveTree(page).locator("[data-line-preview]");
+const variations = (tree: Locator) => tree.getByRole("group", { name: /^Variation: / });
 const counter = (page: Page) =>
   page.getByRole("navigation", { name: "Move navigation" }).getByRole("paragraph").first();
 
@@ -96,7 +98,7 @@ test("BEST lines fold under their errors, preview on hover and are browsed on th
   const second = line.getByRole("button", { name: "Show 4. Nxd4 exd4 on the board" });
   await first.click();
   await expect(first).toHaveAttribute("aria-current", "step");
-  await expect(tree.getByRole("treeitem")).toHaveCount(0);
+  await expect(variations(tree)).toHaveCount(0);
   await expect(tree.locator('[data-tree-node-id][aria-current="step"]')).toHaveCount(0);
   // → steps along the line and stays on its last move; ← steps back, then before its first move
   // returns to the game move it branches from (3… Nd4).
@@ -120,7 +122,7 @@ test("BEST lines fold under their errors, preview on hover and are browsed on th
   await tree.getByRole("button", { name: "Nxf7", exact: true }).click();
   await expect(counter(page)).toHaveText("9 / 14");
   await expect(line.locator('[aria-current="step"]')).toHaveCount(0);
-  await expect(tree.getByRole("treeitem")).toHaveCount(0);
+  await expect(variations(tree)).toHaveCount(0);
 
   // The disc folds the line again.
   await tree.getByRole("button", { name: "Blunder: hide the best line" }).click();
@@ -136,7 +138,7 @@ test("BEST lines fold under their errors, preview on hover and are browsed on th
   await expect(bestLines(page)).toHaveCount(0);
 
   // On the Analyze board, a new move played from a line's position makes the line up to it a real
-  // variation: 4. Nxd4 exd4, then 5. d3.
+  // variation: 4. Nxd4 exd4, then 5. d3. The BEST row stays, and the variation's row follows it.
   await sidebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
   await page
     .getByRole("tablist", { name: "Workspace panels" })
@@ -145,12 +147,122 @@ test("BEST lines fold under their errors, preview on hover and are browsed on th
   const gameMoves = page.getByRole("tree", { name: "Game moves" });
   await gameMoves.getByRole("button", { name: "Blunder: show the best line" }).first().click();
   await gameMoves.getByRole("button", { name: "Show 4. Nxd4 exd4 on the board" }).click();
-  await expect(gameMoves.getByRole("treeitem")).toHaveCount(0);
+  await expect(variations(gameMoves)).toHaveCount(0);
   await clickSquare(page, "d2");
   await clickSquare(page, "d3");
-  await expect(gameMoves.getByRole("treeitem")).toHaveCount(3);
-  await expect(gameMoves.getByRole("button", { name: "d3", exact: true })).toHaveAttribute(
+  const played = gameMoves.getByRole("group", { name: "Variation: 4. Nxd4 exd4 5. d3" });
+  await expect(played).toBeVisible();
+  await expect(variations(gameMoves)).toHaveCount(1);
+  await expect(played.getByRole("button", { name: "d3", exact: true })).toHaveAttribute(
     "aria-current",
     "step"
   );
+  const bestRow = gameMoves.getByRole("group", { name: "Best line: 4. Nxd4 exd4" });
+  await expect(bestRow).toBeVisible();
+  expect(await top(played)).toBeGreaterThan(await top(bestRow));
+});
+
+/** A locator's box (it must be on screen). */
+async function box(locator: Locator) {
+  const found = await locator.boundingBox();
+  if (!found) throw new Error("not on screen");
+  return found;
+}
+const top = async (locator: Locator) => (await box(locator)).y;
+const left = async (locator: Locator) => (await box(locator)).x;
+
+// A long side line (the Giuoco Piano, 18 plies), instead of 3. Bb5.
+const BRANCHED_PGN = `[Event "Variations e2e"]
+[White "Alpha"]
+[Black "Beta"]
+[Result "*"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 (3. Bc4 Bc5 4. c3 Nf6 5. d4 exd4 6. cxd4 Bb4+ 7. Bd2 Bxd2+ 8. Nbxd2 d5
+9. exd5 Nxd5 10. Qb3 Nce7 11. O-O O-O 12. Rfe1 c6) 3... a6 *
+`;
+const LONG_LINE =
+  "Variation: 3. Bc4 Bc5 4. c3 Nf6 5. d4 exd4 6. cxd4 Bb4+ 7. Bd2 Bxd2+ 8. Nbxd2 d5 9. exd5 Nxd5 10. Qb3 Nce7 11. O-O O-O 12. Rfe1 c6";
+
+test("variations are line rows under the move they replace: browsed, nested, folded when long, and deleted from their row", async ({
+  launch,
+  profile
+}) => {
+  const { app, page } = await launch();
+  await skipWelcome(page);
+  await importPgnFile(app, page, writePgn(profile, "branched.pgn", BRANCHED_PGN));
+  const tree = page.getByRole("tree", { name: "Game moves" });
+  await expect(tree.getByRole("button", { name: "a6", exact: true })).toBeVisible();
+
+  // A long line starts folded to one row, its end clipped; the chevron shows it whole, and folds it.
+  const long = tree.getByRole("group", { name: LONG_LINE });
+  await expect(long).toBeVisible();
+  const showWhole = long.getByRole("button", { name: "Show the whole line" });
+  await expect(showWhole).toHaveAttribute("aria-expanded", "false");
+  const lastMove = long.getByRole("button", { name: "c6", exact: true });
+  const firstMove = long.getByRole("button", { name: "Bc4", exact: true });
+  const foldedHeight = (await box(long)).height;
+  expect(await left(lastMove)).toBeGreaterThan((await box(long)).x + (await box(long)).width);
+  await showWhole.click();
+  const fold = long.getByRole("button", { name: "Fold the line" });
+  await expect(fold).toHaveAttribute("aria-expanded", "true");
+  expect((await box(long)).height).toBeGreaterThan(foldedHeight);
+  // Every move is inside the row now, the last ones wrapped onto later rows.
+  const longBox = await box(long);
+  const lastBox = await box(lastMove);
+  expect(lastBox.x + lastBox.width).toBeLessThanOrEqual(longBox.x + longBox.width);
+  expect(lastBox.y).toBeGreaterThan(await top(firstMove));
+  await fold.click();
+  await expect(showWhole).toHaveAttribute("aria-expanded", "false");
+
+  // Playing off the main line from 2… Nc6 makes a variation row under the pair of 3. Bb5.
+  await tree.getByRole("button", { name: "Nc6", exact: true }).click();
+  await clickSquare(page, "d2");
+  await clickSquare(page, "d4");
+  await clickSquare(page, "e5");
+  await clickSquare(page, "d4");
+  const played = tree.getByRole("group", { name: "Variation: 3. d4 exd4" });
+  await expect(played).toBeVisible();
+  const exd4 = played.getByRole("button", { name: "exd4", exact: true });
+  const d4 = played.getByRole("button", { name: "d4", exact: true });
+  await expect(exd4).toHaveAttribute("aria-current", "step");
+  expect(await top(played)).toBeGreaterThan(
+    await top(tree.getByRole("button", { name: "Bb5", exact: true }))
+  );
+
+  // Its moves are the game's: clicking one goes to it, and ← → step along the variation.
+  await d4.click();
+  await expect(d4).toHaveAttribute("aria-current", "step");
+  await expect(d4).not.toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(exd4).toHaveAttribute("aria-current", "step");
+  await page.keyboard.press("ArrowLeft");
+  await expect(d4).toHaveAttribute("aria-current", "step");
+
+  // Another move after 3. d4 nests under the variation's row, one step in.
+  await clickSquare(page, "d7");
+  await clickSquare(page, "d6");
+  const nested = tree.getByRole("group", { name: "Variation: 3… d6" });
+  await expect(nested).toBeVisible();
+  await expect(nested.getByRole("button", { name: "d6", exact: true })).toHaveAttribute(
+    "aria-current",
+    "step"
+  );
+  expect(await left(nested)).toBeGreaterThan(await left(played));
+  expect(await top(nested)).toBeGreaterThan(await top(played));
+
+  // The row's delete icon (shown on hover) deletes the line from its current move (the app asks
+  // with window.confirm, answered yes here).
+  await page.evaluate(() => {
+    window.confirm = () => true;
+  });
+  await nested.hover();
+  await nested.getByRole("button", { name: "Delete line from d6" }).click();
+  await expect(nested).toHaveCount(0);
+  await expect(played).toBeVisible();
+  // With none of its moves current, the row's icons act on its first move: the whole line.
+  await tree.getByRole("button", { name: "a6", exact: true }).click();
+  await played.hover();
+  await played.getByRole("button", { name: "Delete line from d4" }).click();
+  await expect(played).toHaveCount(0);
+  await expect(variations(tree)).toHaveCount(1);
 });
