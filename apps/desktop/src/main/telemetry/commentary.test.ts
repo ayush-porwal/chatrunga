@@ -265,7 +265,7 @@ describe("commentary analytics", () => {
     named.engines.stockfish.engineName = "My Secret Engine";
     const sent: string[] = [];
     const fetchImpl = vi.fn(async (_url: string | URL, init?: RequestInit) => {
-      sent.push(String(init?.body));
+      sent.push(typeof init?.body === "string" ? init.body : "");
       return completion(GOOD_ANSWER);
     });
     const { events, of } = await run(fetchImpl, [named]);

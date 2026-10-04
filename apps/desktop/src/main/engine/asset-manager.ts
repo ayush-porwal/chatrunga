@@ -491,9 +491,9 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     const succeeded: AssetId[] = [];
     const failed: { id: AssetId; reason: string }[] = [];
     const queue = [...ids];
-    const running: Promise<void>[] = [];
-    while (queue.length > 0 || running.length > 0) {
-      while (running.length < concurrency && queue.length > 0) {
+    const running = new Set<Promise<void>>();
+    while (queue.length > 0 || running.size > 0) {
+      while (running.size < concurrency && queue.length > 0) {
         const id = queue.shift()!;
         const promise = this.downloadAsset(id)
           .then(() => {
@@ -503,11 +503,11 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
             failed.push({ id, reason: errorText(err) });
           })
           .finally(() => {
-            running.splice(running.indexOf(promise), 1);
+            running.delete(promise);
           });
-        running.push(promise);
+        running.add(promise);
       }
-      if (running.length > 0) await Promise.race(running.map((p) => p.catch(() => undefined)));
+      if (running.size > 0) await Promise.race([...running].map((p) => p.catch(() => undefined)));
     }
     return { succeeded, failed };
   }

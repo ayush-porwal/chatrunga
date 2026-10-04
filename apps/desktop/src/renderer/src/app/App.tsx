@@ -312,7 +312,7 @@ export function App() {
   function showView(view: AppView, history: HistoryMode = "push", tab: SideTab = sideTab) {
     latestNavigation.current += 1;
     // The route change belongs to the same view transition, so the old snapshot is the real old view.
-    setAppView(view, leavesRoute(view) ? () => navigate("/", { replace: true }) : undefined);
+    setAppView(view, leavesRoute(view) ? () => void navigate("/", { replace: true }) : undefined);
     record(history, historyEntry(view, tab));
   }
 
@@ -368,7 +368,7 @@ export function App() {
       setOpeningSide(entry.compareColor ? { board: currentGame().board, color: entry.compareColor } : null);
       const id = entry.board.gameId ?? "current";
       latestNavigation.current += 1;
-      setAppView("game-review", () => navigate(`/games/${id}/review`, { replace: true }));
+      setAppView("game-review", () => void navigate(`/games/${id}/review`, { replace: true }));
     },
     startPuzzle: ({ sample, set }) => startPuzzle(sample, set ?? undefined, "none"),
     getSavedGame: (id) => window.chaturanga?.games.get(id) ?? Promise.reject(new Error("Saved games need the desktop app.")),
@@ -589,7 +589,7 @@ export function App() {
     setFocusMode(false);
     setReviewTab(tab);
     setGameReviewPickerOpen(false);
-    setAppView("game-review", () => navigate(`/games/${gameId}/review`, { replace: true }));
+    setAppView("game-review", () => void navigate(`/games/${gameId}/review`, { replace: true }));
     record("push", historyEntry("game-review"));
   }
 
@@ -660,7 +660,7 @@ export function App() {
     setSettingsSection(section);
     record("push", { view: "settings", section });
     latestNavigation.current += 1;
-    setAppView("settings", leavesRoute("settings") ? () => navigate("/", { replace: true }) : undefined);
+    setAppView("settings", leavesRoute("settings") ? () => void navigate("/", { replace: true }) : undefined);
   }
 
   // ---- Repertoire ------------------------------------------------------------------------------
@@ -676,7 +676,7 @@ export function App() {
     const studyEngineOpen = useAnalysisStore.getState().target !== null;
     if (useGameStore.getState().mode !== "engine" && !studyEngineOpen) stopEngineWork({ keepReview: true });
     if (!boardViews.has(view) || !repertoireViews.has(appView)) setFocusMode(false);
-    setAppView(view, () => navigate(path, { replace: true }));
+    setAppView(view, () => void navigate(path, { replace: true }));
   }
 
   function openRepertoireHub(history: HistoryMode = "push") {
@@ -784,7 +784,7 @@ export function App() {
   function practiceSessionStarted(sessionId: string) {
     if (repertoireScreen?.view !== "repertoire-practice") return;
     const { repertoireId } = repertoireScreen;
-    navigate(practicePath(repertoireId, sessionId), { replace: true });
+    void navigate(practicePath(repertoireId, sessionId), { replace: true });
     record("replace", { view: "repertoire-practice", repertoireId, sessionId });
   }
 
@@ -792,7 +792,7 @@ export function App() {
   function practiceSetup() {
     if (repertoireScreen?.view !== "repertoire-practice") return;
     useRepertoirePracticeStore.getState().reset();
-    openRepertoirePractice(repertoireScreen.repertoireId, { preset: presetForSetup(repertoireScreen.preset) });
+    void openRepertoirePractice(repertoireScreen.repertoireId, { preset: presetForSetup(repertoireScreen.preset) });
   }
 
   // ---- Repertoire handoffs (Study → Play from here) and the Lichess guard ----------------------
@@ -1176,7 +1176,7 @@ export function App() {
     // Back returns to the review left (its tab and move are committed first).
     refreshRepertoireDecision: useEventCallback((repertoireId: string, positionKey: string) =>
       unlessRepertoireBlocked("refresh-decision", () =>
-        openRepertoirePractice(repertoireId, {
+        void openRepertoirePractice(repertoireId, {
           preset: { mode: "review-due", positionKeys: [positionKey], autoStart: true }
         })
       )
@@ -1189,7 +1189,7 @@ export function App() {
     // session's draft was (a Learn new draft would otherwise hide the due decisions).
     reviewRepertoire: useEventCallback((repertoireId: string) =>
       unlessRepertoireBlocked("open-practice", () =>
-        openRepertoirePractice(repertoireId, { preset: { mode: "review-due", chapterIds: [] } })
+        void openRepertoirePractice(repertoireId, { preset: { mode: "review-due", chapterIds: [] } })
       )
     ),
     resumeRepertoirePractice: useEventCallback(({ repertoireId, sessionId }: { repertoireId: string; sessionId: string }) =>

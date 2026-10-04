@@ -254,7 +254,7 @@ function useCommentaryViewTracking({ review, ply, visible }: { review: GameRevie
     () =>
       new ViewQualifier(COMMENTARY_VIEW_QUALIFY_MS, (qualified) => {
         const target = viewTargets.get(qualified);
-        if (target) trackUsage({ type: "commentary_viewed", ...target, source: freshCommentary.has(qualified) ? "fresh" : "cached" });
+        if (target) void trackUsage({ type: "commentary_viewed", ...target, source: freshCommentary.has(qualified) ? "fresh" : "cached" });
       })
   );
   useEffect(() => () => qualifier.dispose(), [qualifier]);

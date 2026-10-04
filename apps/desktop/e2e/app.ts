@@ -258,7 +258,7 @@ export function routeToFile(app: ElectronApplication, url: string, file: string)
 /** The next native open dialog picks `file`. */
 export function stubOpenFile(app: ElectronApplication, file: string) {
   return app.evaluate(({ dialog }, file) => {
-    const previous = dialog.showOpenDialog;
+    const previous = dialog.showOpenDialog.bind(dialog);
     dialog.showOpenDialog = (async () => {
       dialog.showOpenDialog = previous;
       return { canceled: false, filePaths: [file] };

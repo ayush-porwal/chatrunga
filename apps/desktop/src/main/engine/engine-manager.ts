@@ -330,7 +330,8 @@ export class EngineManager extends EventEmitter<EngineEvents> {
 
   /**
    * Shuts the process down; resolves once it exited (or, with none running, once the last one
-   * shut down has). A queued search still starts a fresh one, after that exit.
+   * shut down has). A queued search still starts a fresh one, after that exit. Never rejects, so a
+   * caller that needn't wait discards it (`void`): the next session waits on `lastExit` itself.
    */
   private killSession(): Promise<void> {
     this.discardInfos();
@@ -390,7 +391,7 @@ export class EngineManager extends EventEmitter<EngineEvents> {
       // A newer search (or a stop) replaced this one: expected, not an error to report.
       if (error instanceof SupersededError || this.latestSearchId !== searchId) return;
       this.emit("error", { engineId, searchId, message: errorMessage(error) });
-      this.killSession();
+      void this.killSession();
       throw error;
     }
   }
@@ -460,7 +461,7 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     })();
     // A failed startup nobody waits for any more (superseded) still ends that process.
     session.ready.catch(() => {
-      if (this.session === session) this.killSession();
+      if (this.session === session) void this.killSession();
     });
     return session;
   }
@@ -479,7 +480,7 @@ export class EngineManager extends EventEmitter<EngineEvents> {
       await stopped;
     } catch {
       // No bestmove: the engine is stuck (or it had just sent one). Start over with a new process.
-      if (this.session === session) this.killSession();
+      if (this.session === session) void this.killSession();
     }
     this.scheduleIdleShutdown();
   }
@@ -495,7 +496,7 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     if (!this.session) return;
     this.idleTimer = setTimeout(() => {
       this.idleTimer = null;
-      if (!this.session?.searchId) this.killSession();
+      if (!this.session?.searchId) void this.killSession();
     }, IDLE_ENGINE_MS);
     this.idleTimer.unref?.();
   }

@@ -35,6 +35,10 @@ export default defineConfig({
   // TanStack Query's rules have no native port. The plugin is pinned (JS plugins are alpha) and
   // scripts/lint-config.test.mjs proves its rules still fire.
   jsPlugins: [{ name: "@tanstack/query", specifier: "@tanstack/eslint-plugin-query" }],
+  // Type-aware rules (oxlint-tsgolint) use each file's tsconfig.
+  options: {
+    typeAware: true
+  },
   // Code that is outright wrong or useless. Rules below add to it (or switch one off, with why).
   categories: {
     correctness: "error"
@@ -57,6 +61,19 @@ export default defineConfig({
     "typescript/no-require-imports": "error",
     "typescript/no-unnecessary-type-constraint": "error",
     "typescript/no-unsafe-function-type": "error",
+
+    // Dropped promises, and async callbacks where a sync one is expected.
+    "typescript/no-floating-promises": [
+      "error",
+      {
+        // node:test's test() and describe() return promises the runner itself awaits.
+        allowForKnownSafeCalls: [
+          { from: "package", name: ["test", "describe", "it", "suite"], package: "node:test" }
+        ]
+      }
+    ],
+    "typescript/no-misused-promises": "error",
+    "typescript/await-thenable": "error",
 
     // Copying a collection before a loop that changes it (`for (const key of [...pools.keys()])`
     // with a body that deletes) is deliberate here; the rule reads every such copy as waste.

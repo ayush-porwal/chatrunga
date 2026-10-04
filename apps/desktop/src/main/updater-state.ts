@@ -282,7 +282,7 @@ export const CHECK_FAILED_MESSAGE = "Couldn’t check for updates";
  * electron-updater errors can be pages long (they include the HTTP response).
  */
 export function readableUpdateError(error: unknown, phase: "check" | "download" | "install"): string {
-  const raw = error instanceof Error ? error.message : String(error ?? "");
+  const raw = error instanceof Error ? error.message : typeof error === "string" ? error : "";
   const text = raw.toLowerCase();
   const prefix = phase === "check" ? CHECK_FAILED_MESSAGE : phase === "download" ? "Couldn’t download the update" : "Couldn’t install the update";
   let reason: string | null = null;

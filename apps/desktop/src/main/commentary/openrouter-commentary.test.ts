@@ -150,7 +150,7 @@ describe("generateOpenRouterCommentary", () => {
   it("keeps the accepted plies of a batch when one fails", async () => {
     const second = { ...payload(), game: { ...payload().game, ply: 2 } };
     const fetchImpl = vi.fn(async (_url: string | URL, init?: RequestInit) =>
-      String(init?.body).includes('\\"ply\\": 2') ? new Response("", { status: 503 }) : completion(GOOD_ANSWER)
+      (typeof init?.body === "string" ? init.body : "").includes('\\"ply\\": 2') ? new Response("", { status: 503 }) : completion(GOOD_ANSWER)
     );
     const result = await generateOpenRouterCommentary([payload(), second], { apiKey: "unit-test-key", fetchImpl });
 

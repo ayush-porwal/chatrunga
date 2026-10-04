@@ -68,7 +68,9 @@ export class SettingsBatch {
     if (!this.done) {
       let settle: (result: Promise<unknown>) => void = () => {};
       const promise = new Promise<unknown>((resolve, reject) => {
-        settle = (result) => result.then(resolve, reject);
+        settle = (result) => {
+          result.then(resolve, reject);
+        };
       });
       this.done = { promise, settle };
       trackSettingsSave(promise);

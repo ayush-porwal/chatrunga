@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Bot, File, FolderOpen, Image, Pencil, Play, Plus, Star, Trash2 } from "lucide-react";
-import type { DialogFileFilter } from "@chaturanga/shared/ipc/chaturanga-api";
+import type { ChaturangaApi, DialogFileFilter } from "@chaturanga/shared/ipc/chaturanga-api";
 import type { CreateEngineInput, EngineConfig, UpdateEngineInput } from "@chaturanga/shared/types/engine";
 import { defaultEngineThreads, defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
 import {
@@ -420,23 +420,22 @@ function EngineForm({
 }) {
   const desktopApiAvailable = hasDesktopApi();
 
-  async function pickExecutable() {
-    if (!window.chaturanga) return;
-    const selected = await window.chaturanga.files.selectExecutable();
-    if (selected) onChange({ executablePath: selected });
+  /** Opens a native file dialog; a cancelled or failed one leaves the form as it was. */
+  function pick(open: (files: ChaturangaApi["files"]) => Promise<string | null>, apply: (path: string) => void) {
+    const files = window.chaturanga?.files;
+    if (!files) return;
+    open(files).then(
+      (selected) => {
+        if (selected) apply(selected);
+      },
+      (error: unknown) => console.warn("file dialog failed", error)
+    );
   }
-
-  async function pickWeightsFile() {
-    if (!window.chaturanga) return;
-    const selected = await window.chaturanga.files.selectOpenFile(nnWeightsDialogFilters);
-    if (selected) onChange({ weightsPath: selected });
-  }
-
-  async function pickImage() {
-    if (!window.chaturanga) return;
-    const selected = await window.chaturanga.files.selectOpenFile(engineImageDialogFilters);
-    if (selected) onChange({ imagePath: selected });
-  }
+  const pickExecutable = () => pick((files) => files.selectExecutable(), (path) => onChange({ executablePath: path }));
+  const pickWeightsFile = () =>
+    pick((files) => files.selectOpenFile(nnWeightsDialogFilters), (path) => onChange({ weightsPath: path }));
+  const pickImage = () =>
+    pick((files) => files.selectOpenFile(engineImageDialogFilters), (path) => onChange({ imagePath: path }));
 
   return (
     <div className="grid gap-3">

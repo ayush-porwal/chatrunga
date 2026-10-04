@@ -292,6 +292,42 @@ export function Query({ id }: { id: string }) {
 `
   },
 
+  // Type-aware rules (oxlint-tsgolint).
+  {
+    name: "dropped promises, async callbacks where a sync one is expected, and awaiting a non-promise",
+    file: "apps/desktop/src/main/async.ts",
+    rules: [
+      "typescript(no-floating-promises)",
+      "typescript(no-misused-promises)",
+      "typescript(await-thenable)"
+    ],
+    lines: [3, 4, 8],
+    code: `const save = async (value: number) => value;
+export function run(list: number[]) {
+  save(1);
+  list.forEach(async (value) => await save(value));
+  return list;
+}
+export async function wait() {
+  await 5;
+}
+`
+  },
+  {
+    name: "awaited, handled or explicitly discarded promises pass",
+    file: "apps/desktop/src/main/async-ok.ts",
+    rules: ["typescript(no-floating-promises)", "typescript(no-misused-promises)"],
+    lines: [],
+    code: `const save = async (value: number) => value;
+export async function run(list: number[]) {
+  await save(1);
+  save(2).catch(() => undefined);
+  void save(3);
+  await Promise.all(list.map(async (value) => save(value)));
+}
+`
+  },
+
   // Test hygiene in unit and e2e tests.
   {
     name: "tests can't be focused or skipped, and every expect is complete and specific",
@@ -381,6 +417,24 @@ let workDir;
 before(() => {
   workDir = mkdtempSync(join(tmpdir(), "chaturanga-lint-"));
   writeFileSync(join(workDir, ".oxlintrc.json"), JSON.stringify(portableConfig()));
+  // Type-aware rules need a program: one strict project over every case.
+  writeFileSync(
+    join(workDir, "tsconfig.json"),
+    JSON.stringify({
+      compilerOptions: {
+        target: "ES2022",
+        lib: ["ES2022", "DOM", "DOM.Iterable"],
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        jsx: "react-jsx",
+        strict: true,
+        skipLibCheck: true,
+        noEmit: true,
+        types: []
+      },
+      include: ["**/*.ts", "**/*.tsx"]
+    })
+  );
   for (const { file, code } of CASES) {
     mkdirSync(dirname(join(workDir, file)), { recursive: true });
     writeFileSync(join(workDir, file), code);

@@ -135,7 +135,7 @@ test(
     // The next save dialog writes the backup into the throwaway profile.
     const file = join(profile, "backup.json");
     await app.evaluate(({ dialog }, file) => {
-      const previous = dialog.showSaveDialog;
+      const previous = dialog.showSaveDialog.bind(dialog);
       dialog.showSaveDialog = (async () => {
         dialog.showSaveDialog = previous;
         return { canceled: false, filePath: file };

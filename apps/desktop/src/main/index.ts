@@ -282,7 +282,7 @@ function createWindow(): void {
     if (mainWindow === window) mainWindow = null;
     // The engine work belongs to the window (macOS keeps the app alive): the interactive engine
     // shuts down and running reviews are cancelled.
-    engineManager.dispose();
+    void engineManager.dispose();
     engineManager.cancelAllReviews();
   });
 

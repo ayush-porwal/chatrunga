@@ -407,10 +407,10 @@ function ChallengeRow({ challenge, disabled }: { challenge: LichessChallenge; di
   const side = challenge.yourColor === "random" ? "random side" : `you play ${challenge.yourColor}`;
   const rating = challenge.opponent.rating ? ` (${challenge.opponent.rating})` : "";
 
-  function run(action: ((id: string) => Promise<void>) | undefined) {
-    if (!action) return;
+  function run(action: "declineChallenge" | "acceptChallenge" | "cancelChallenge") {
+    if (!api) return;
     setBusy(true);
-    action(challenge.id)
+    api[action](challenge.id)
       .then(() => useLichessStore.getState().removeChallenge(challenge.id))
       .catch(() => setBusy(false));
   }
@@ -431,17 +431,17 @@ function ChallengeRow({ challenge, disabled }: { challenge: LichessChallenge; di
       </span>
       {challenge.direction === "in" ? (
         <span className="flex shrink-0 gap-1.5">
-          <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => run(api?.declineChallenge)}>
+          <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => run("declineChallenge")}>
             <X />
             Decline
           </Button>
-          <Button type="button" variant="primary" size="sm" disabled={busy || disabled} onClick={() => run(api?.acceptChallenge)}>
+          <Button type="button" variant="primary" size="sm" disabled={busy || disabled} onClick={() => run("acceptChallenge")}>
             <Check />
             Accept
           </Button>
         </span>
       ) : (
-        <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => run(api?.cancelChallenge)}>
+        <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => run("cancelChallenge")}>
           Cancel
         </Button>
       )}
