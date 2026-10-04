@@ -81,21 +81,22 @@ describe("centringInsets", () => {
 });
 
 describe("draggedBoardEdge", () => {
-  it("keeps the grip under the pointer across: the edge changes by the move", () => {
-    expect(draggedBoardEdge(500, 40, 10, 900)).toBe(540);
-    expect(draggedBoardEdge(500, -60, -40, 900)).toBe(440);
-  });
-
-  it("keeps the grip under the pointer down: the edge changes by twice the move", () => {
-    // The corner moves half the edge change down: 60 more edge, 30px lower.
+  it("shrinks the board straight left or up, and grows it straight right or down", () => {
+    expect(draggedBoardEdge(500, -80, 0, 900)).toBe(420);
+    expect(draggedBoardEdge(500, 40, 0, 900)).toBe(540);
+    // The corner moves half the edge change down (the board is centred down): twice the move.
+    expect(draggedBoardEdge(500, 0, -50, 900)).toBe(400);
     expect(draggedBoardEdge(500, 0, 30, 900)).toBe(560);
-    expect(draggedBoardEdge(500, -10, 30, 900)).toBe(560);
-    expect(draggedBoardEdge(500, -100, -40, 900)).toBe(420);
   });
 
-  it("follows the move that asks for more, so straight left or up alone leaves it", () => {
-    expect(draggedBoardEdge(500, -80, 0, 900)).toBe(500);
-    expect(draggedBoardEdge(500, 0, -50, 900)).toBe(500);
+  it("follows the axis the pointer moved most along on a diagonal", () => {
+    // Across leads: 40 against twice 10 down.
+    expect(draggedBoardEdge(500, 40, 10, 900)).toBe(540);
+    // Down leads: twice 30 against 10 left; and twice 40 up against 60 left.
+    expect(draggedBoardEdge(500, -10, 30, 900)).toBe(560);
+    expect(draggedBoardEdge(500, -60, -40, 900)).toBe(420);
+    // Along the corner's own path (d across, d/2 down) both agree, and the grip stays under it.
+    expect(draggedBoardEdge(500, -140, -70, 900)).toBe(360);
   });
 
   it("stops at the edge that leaves the side panel its minimum width", () => {

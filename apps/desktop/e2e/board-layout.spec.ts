@@ -125,9 +125,13 @@ test("the board fills its space, and its corner grip resizes it for the side pan
   // Dragging it up and left shrinks the square, and the panel takes the width it frees.
   const panelBefore = (await box(panel)).width;
   await page.mouse.down();
-  await page.mouse.move(corner.x - 140, corner.y - 140, { steps: 10 });
-  // Still shown mid-drag, wherever the pointer is.
+  // Along the corner's own path: 140 across, 70 up (the board is centred down its cell).
+  await page.mouse.move(corner.x - 140, corner.y - 70, { steps: 10 });
+  // Still shown mid-drag, and still under the pointer.
   await expect.poll(() => gripOpacity(page)).toBe("1");
+  const followed = await gripCentre(page);
+  expect(Math.abs(followed.x - (corner.x - 140))).toBeLessThan(6);
+  expect(Math.abs(followed.y - (corner.y - 70))).toBeLessThan(6);
   await page.mouse.up();
   const resized = await boardEdge(page);
   expect(resized).toBeGreaterThan(filled - 150);

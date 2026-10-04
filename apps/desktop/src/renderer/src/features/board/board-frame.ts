@@ -56,10 +56,12 @@ export function clampBoardEdge(edge: number, max: number): number {
 /**
  * The board's edge while its bottom-right grip is dragged `dx` across and `dy` down from where the
  * drag started at edge `start` (clampBoardEdge). The board is anchored at its cell's left edge and
- * centred down it, so an edge change of d moves the grip d across but only d/2 down: the edge
- * follows whichever move asks for more, `dx` across or `2·dy` down, which keeps the grip under the
- * pointer on that axis and grows or shrinks the board as a square whichever way the pointer leans.
+ * centred down it, so an edge change of d moves the grip d across but only d/2 down. The edge
+ * follows the axis the pointer moved most along, `dx` across or `2·dy` down, growing or shrinking
+ * as a square: straight left or up shrinks it, straight right or down grows it, and the grip stays
+ * under the pointer along that axis.
  */
 export function draggedBoardEdge(start: number, dx: number, dy: number, max: number): number {
-  return clampBoardEdge(start + Math.max(dx, 2 * dy), max);
+  const down = 2 * dy;
+  return clampBoardEdge(start + (Math.abs(dx) >= Math.abs(down) ? dx : down), max);
 }
