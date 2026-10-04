@@ -52,6 +52,7 @@ const assessmentTagSchema = z.enum([
   "punishes_error",
   "missed_chance",
   "missed_tactic",
+  "saves_material",
   "tactic",
   "hard_to_find",
   "natural_move",
@@ -285,7 +286,7 @@ export const reviewInsightPayloadSchema = z.object({
   /** How damaging the move was, when it was an error (marked or not). */
   severity: errorSeveritySchema.optional(),
   /** The facts behind the mark (or the absence of one). */
-  assessmentTags: z.array(assessmentTagSchema).max(18).optional(),
+  assessmentTags: z.array(assessmentTagSchema).max(19).optional(),
   curatorReason: curatorReasonSchema,
   tacticalFacts: z.array(tacticalFactSchema),
   engineSignals: z.array(engineSignalSchema),

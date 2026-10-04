@@ -207,6 +207,11 @@ export type AssessmentTag =
   | "missed_chance"
   /** The better move had a concrete tactic (fork, pin, winning capture, mate…). */
   | "missed_tactic"
+  /**
+   * The other candidates lose material this move keeps: a rescue. Without Maia to say it was hard
+   * to find, that alone is not a critical find.
+   */
+  | "saves_material"
   /** The played move was itself that tactic. */
   | "tactic"
   /** Unlikely at the player's level (Maia), yet near-best. */

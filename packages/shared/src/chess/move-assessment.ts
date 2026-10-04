@@ -266,13 +266,13 @@ function materialBalance(
 }
 
 /**
- * Material (in pawns) the mover gives up along `line` (the played move first, then the engine's
- * best defence): what the defence takes, net of anything the played move captured, and not won
- * straight back by the mover's next move. 0 for a trade, a recapture, a line that doesn't fit the
- * position, or one too short to tell (the mover's next move is needed).
+ * Material (in pawns) the mover is down along `line` (the move first, then the engine's best
+ * defence), net of anything the move itself took: after the reply, and still after the mover's
+ * next move when the line has one (the smaller of the two, so material won straight back doesn't
+ * count). A one-ply line counts what the move takes. Null when the line doesn't fit the position.
  */
-export function sacrificedMaterial(fenBefore: string, line: readonly string[]): number {
-  if (line.length < 3) return 0;
+function materialGiven(fenBefore: string, line: readonly string[]): number | null {
+  if (!line.length) return null;
   try {
     const pos = positionFromFen(fenBefore);
     const mover = pos.turn;
@@ -280,22 +280,43 @@ export function sacrificedMaterial(fenBefore: string, line: readonly string[]): 
     const given: number[] = [];
     for (const uci of line.slice(0, 3)) {
       const move = parseUci(uci);
-      if (!move || !pos.isLegal(move)) return 0;
+      if (!move || !pos.isLegal(move)) return null;
       pos.play(move);
       given.push(start - materialBalance(pos, mover));
     }
-    // After the defence (ply 2) and still after the mover's next move (ply 3).
-    return Math.max(0, Math.min(given[1] ?? 0, given[2] ?? 0));
+    if (given.length >= 3) return Math.min(given[1] ?? 0, given[2] ?? 0);
+    return given[given.length - 1] ?? null;
   } catch {
-    return 0;
+    return null;
   }
+}
+
+/**
+ * Material (in pawns) the played move gives up by choice: what its line loses (see materialGiven;
+ * it needs the reply and the mover's next move to tell) beyond the other candidate that loses the
+ * least. Material every candidate loses — a fork, a pinned or trapped piece — is a forced loss, not
+ * a sacrifice; with no other candidate to compare, nothing counts.
+ */
+export function sacrificedMaterial(
+  fenBefore: string,
+  line: readonly string[],
+  alternatives: readonly (readonly string[])[]
+): number {
+  if (line.length < 3) return 0;
+  const given = materialGiven(fenBefore, line);
+  const kept = alternatives
+    .map((alternative) => materialGiven(fenBefore, alternative))
+    .filter((value) => value !== null);
+  if (given === null || given <= 0 || !kept.length) return 0;
+  return Math.max(0, given - Math.min(...kept));
 }
 
 type Candidate = {
   kind: "brilliant" | "great" | null;
   /** Played move's winning chances against the best other candidate's (null: none). */
   gap: number | null;
-  sacrifice: boolean;
+  /** The other candidates lose material the played move keeps (a rescue, not a find by itself). */
+  savesMaterial: boolean;
 };
 
 /**
@@ -307,16 +328,27 @@ function candidateFrom(lines: readonly AnalysisLine[], move: AssessableMove): Ca
   const sorted = sortedLines(lines);
   const best = sorted[0];
   const played = sorted.find((line) => line.pv[0] === move.playedMove);
-  if (!best || !played) return { kind: null, gap: null, sacrifice: false };
+  if (!best || !played) return { kind: null, gap: null, savesMaterial: false };
   const playedWin = lineWin(played);
-  const others = sorted.filter((line) => line !== played).map(lineWin);
-  const gap = others.length ? playedWin - Math.max(...others) : null;
-  if (lineWin(best) - playedWin > NEAR_BEST) return { kind: null, gap, sacrifice: false };
-  const sacrifice = sacrificedMaterial(move.fenBefore, played.pv) >= SACRIFICE_POINTS;
-  if (sacrifice && playedWin >= SOUND_WIN) return { kind: "brilliant", gap, sacrifice };
+  const others = sorted.filter((line) => line !== played);
+  const gap = others.length ? playedWin - Math.max(...others.map(lineWin)) : null;
+  const playedGiven = materialGiven(move.fenBefore, played.pv);
+  const othersGiven = others
+    .map((line) => materialGiven(move.fenBefore, line.pv))
+    .filter((value) => value !== null);
+  const savesMaterial =
+    playedGiven !== null && othersGiven.length > 0 && Math.min(...othersGiven) - playedGiven >= 1;
+  if (lineWin(best) - playedWin > NEAR_BEST) return { kind: null, gap, savesMaterial };
+  const sacrifice =
+    sacrificedMaterial(
+      move.fenBefore,
+      played.pv,
+      others.map((line) => line.pv)
+    ) >= SACRIFICE_POINTS;
+  if (sacrifice && playedWin >= SOUND_WIN) return { kind: "brilliant", gap, savesMaterial };
   if (gap !== null && gap >= GREAT_GAP && playedWin >= FIGHTING_WIN)
-    return { kind: "great", gap, sacrifice };
-  return { kind: null, gap, sacrifice };
+    return { kind: "great", gap, savesMaterial };
+  return { kind: null, gap, savesMaterial };
 }
 
 /** The Maia level nearest the player's rating (1500 when unknown), among those that ran. */
@@ -344,17 +376,23 @@ function probabilityOf(prediction: RatingPrediction, uci: string): number | null
  * - "candidate": it may be Great or Brilliant, which a deeper search must confirm;
  * - "recheck": it was outside the MultiPV window and its loss sits near a severity boundary, so a
  *   same-budget search of only the played move gives a consistent evaluation.
- * Context-free (no previous move), so a cached move needs the same checks.
+ * It applies the same exclusions as {@link assessMove} (pass the same context), so no search is
+ * run for a mark that could never be given.
  */
 export type VerificationNeed = "candidate" | "recheck";
 
-export function verificationNeed(move: AssessableMove): VerificationNeed | null {
+export function verificationNeed(
+  move: AssessableMove,
+  context: AssessmentContext = {}
+): VerificationNeed | null {
   const evidence = evidenceFor(move);
   if (!evidence || terminalOf(move)) return null;
   const winBefore = moverWin(evidence.before);
   if (evidence.playedLine) {
-    if (winBefore >= DECIDED_WIN || legalMoveCount(move.fenBefore) < 2) return null;
-    return candidateFrom(evidence.lines, move).kind ? "candidate" : null;
+    const gate = praiseGate(move, evidence, context);
+    return gate.excludedBy === null && candidateFor(evidence.lines, move, gate).kind
+      ? "candidate"
+      : null;
   }
   if (move.verification?.playedLine !== undefined) return null;
   if (evidence.before.kind === "mate" || evidence.after.kind === "mate") return null;
@@ -363,6 +401,89 @@ export function verificationNeed(move: AssessableMove): VerificationNeed | null 
     (threshold) => Math.abs(loss - threshold) <= RECHECK_MARGIN
   );
   return nearBoundary ? "recheck" : null;
+}
+
+/** What decides whether a move without an error may be praised, and how. */
+type PraiseGate = {
+  /** The first exclusion that rules out every positive mark but Good (null: none). */
+  excludedBy: "forced" | "recapture" | "near_best" | "decided" | "opening" | null;
+  /** The opponent's mistake or blunder gave something away (they weren't already lost before it). */
+  opponentErred: boolean;
+  /** The Maia level read for this move (null: no Maia evidence). */
+  prediction: RatingPrediction | null;
+  /** Maia's most likely move at the player's level is the played one. */
+  naturalMove: boolean;
+  /** …and that likely: the move is obvious, not a find. */
+  obvious: boolean;
+  /** The played move is the engine's best and carries a real tactic. */
+  tactic: boolean;
+};
+
+function praiseGate(
+  move: AssessableMove,
+  evidence: Evidence,
+  context: AssessmentContext
+): PraiseGate {
+  const { lines, before, after, playedLine } = evidence;
+  const winBefore = moverWin(before);
+  const winLoss = Math.max(0, winBefore - moverWin(after));
+  const previous =
+    context.previous && context.previous.move.fenAfter === move.fenBefore ? context.previous : null;
+  const opponentErred =
+    (previous?.assessment.severity === "mistake" || previous?.assessment.severity === "blunder") &&
+    (previous.assessment.winBefore ?? 0) > DECIDED_LOSS;
+  const prediction =
+    context.trustMaia === false
+      ? null
+      : predictionAtLevel(move.humanPredictions, context.playerRating);
+  const humanTop = prediction?.topMoves[0] ?? null;
+  const naturalMove = Boolean(humanTop && humanTop.uci === move.playedMove);
+  const engineTop = lines[0]?.pv[0] === move.playedMove;
+  const excludedBy =
+    legalMoveCount(move.fenBefore) < 2
+      ? "forced"
+      : isRecapture(move, previous?.move ?? null)
+        ? "recapture"
+        : !playedLine || winLoss > NEAR_BEST
+          ? "near_best"
+          : winBefore >= DECIDED_WIN
+            ? "decided"
+            : move.ply <= OPENING_PLIES &&
+                winBefore >= OPENING_BALANCE[0] &&
+                winBefore <= OPENING_BALANCE[1] &&
+                !opponentErred
+              ? "opening"
+              : null;
+  return {
+    excludedBy,
+    opponentErred,
+    prediction,
+    naturalMove,
+    obvious: naturalMove && humanTop !== null && humanTop.prob >= OBVIOUS_PROBABILITY,
+    tactic: engineTop && move.motifs.some((motif) => TACTICAL_MOTIFS.has(motif))
+  };
+}
+
+/**
+ * The Great / Brilliant candidate one search's lines make of the move, once the move is cleared
+ * for praise: never the obvious move at the player's level, and — without Maia to say it was hard
+ * to find — never a move whose only merit is keeping material the other candidates lose (a piece
+ * rescued, a loss avoided) unless it is itself a tactic.
+ */
+function candidateFor(
+  lines: readonly AnalysisLine[],
+  move: AssessableMove,
+  gate: PraiseGate
+): Candidate & { blocked: boolean } {
+  const candidate = candidateFrom(lines, move);
+  if (!candidate.kind) return { ...candidate, blocked: false };
+  const rescueOnly =
+    candidate.kind === "great" &&
+    candidate.savesMaterial &&
+    gate.prediction === null &&
+    !gate.tactic;
+  if (gate.obvious || rescueOnly) return { ...candidate, kind: null, blocked: true };
+  return { ...candidate, blocked: false };
 }
 
 /** Rounds to one decimal (assessments are stored and shown at that precision). */
@@ -412,19 +533,9 @@ export function assessMove(move: AssessableMove, context: AssessmentContext = {}
     tags: [...tags]
   });
 
-  const previous =
-    context.previous && context.previous.move.fenAfter === move.fenBefore ? context.previous : null;
-  // The opponent's mistake or blunder gave something away: they were not already lost before it.
-  const opponentErred =
-    (previous?.assessment.severity === "mistake" || previous?.assessment.severity === "blunder") &&
-    (previous.assessment.winBefore ?? 0) > DECIDED_LOSS;
-  const prediction =
-    context.trustMaia === false
-      ? null
-      : predictionAtLevel(move.humanPredictions, context.playerRating);
-  const humanTop = prediction?.topMoves[0] ?? null;
-  const naturalMove = Boolean(humanTop && humanTop.uci === move.playedMove);
-  if (naturalMove) tags.add("natural_move");
+  const gate = praiseGate(move, evidence, context);
+  const { opponentErred, prediction } = gate;
+  if (gate.naturalMove) tags.add("natural_move");
 
   const { severity, mateTag } = severityFor(before, after);
   if (mateTag) tags.add(mateTag);
@@ -447,43 +558,37 @@ export function assessMove(move: AssessableMove, context: AssessmentContext = {}
     return result(severity, severity);
   }
 
-  // No error: praise only what clears every exclusion below.
-  if (legalMoveCount(move.fenBefore) < 2) {
-    tags.add("forced");
-    return result(null, null);
+  // No error: praise only what clears every exclusion (the same ones verificationNeed applies).
+  switch (gate.excludedBy) {
+    case "forced":
+    case "recapture":
+      tags.add(gate.excludedBy);
+      return result(null, null);
+    case "near_best":
+      return result(null, null);
+    case "decided":
+    case "opening":
+    case null:
+      break;
   }
-  if (isRecapture(move, previous?.move ?? null)) {
-    tags.add("recapture");
-    return result(null, null);
-  }
-  if (!playedLine || winLoss > NEAR_BEST) return result(null, null);
   if (opponentErred) tags.add("punishes_error");
   const punishes =
     opponentErred &&
     ((alternativeGap !== null && alternativeGap >= CHOICE_GAP) ||
       (engineTop && move.motifs.length > 0));
-  if (winBefore >= DECIDED_WIN) {
-    tags.add("decided");
-    return result(null, punishes ? "good" : null);
-  }
-  if (
-    move.ply <= OPENING_PLIES &&
-    winBefore >= OPENING_BALANCE[0] &&
-    winBefore <= OPENING_BALANCE[1] &&
-    !opponentErred
-  ) {
-    tags.add("opening");
-    return result(null, null);
+  if (gate.excludedBy === "decided" || gate.excludedBy === "opening") {
+    tags.add(gate.excludedBy);
+    return result(null, gate.excludedBy === "decided" && punishes ? "good" : null);
   }
 
-  const obvious = naturalMove && humanTop !== null && humanTop.prob >= OBVIOUS_PROBABILITY;
-  const candidate = candidateFrom(lines, move);
-  if (candidate.kind && !obvious) {
+  const candidate = candidateFor(lines, move, gate);
+  if (candidate.blocked && candidate.savesMaterial && !gate.obvious) tags.add("saves_material");
+  if (candidate.kind) {
     const deeper = move.verification?.deeperLines;
     if (!deeper?.length) {
       tags.add("unverified");
     } else {
-      const confirmed = candidateFrom(deeper, move);
+      const confirmed = candidateFor(deeper, move, gate);
       if (confirmed.kind === "brilliant") {
         tags.add("sacrifice");
         return result(null, "brilliant");
@@ -497,11 +602,10 @@ export function assessMove(move: AssessableMove, context: AssessmentContext = {}
   }
 
   const choiceMattered = alternativeGap !== null && alternativeGap >= CHOICE_GAP;
-  const tactic = engineTop && move.motifs.some((motif) => TACTICAL_MOTIFS.has(motif));
   const playedProbability = prediction ? probabilityOf(prediction, move.playedMove) : null;
   const hardToFind = playedProbability !== null && playedProbability < HARD_PROBABILITY;
-  if (engineTop && choiceMattered && (tactic || hardToFind)) {
-    if (tactic) tags.add("tactic");
+  if (engineTop && choiceMattered && (gate.tactic || hardToFind)) {
+    if (gate.tactic) tags.add("tactic");
     if (hardToFind) tags.add("hard_to_find");
     return result(null, "excellent");
   }
@@ -533,7 +637,9 @@ export function assessMoves(
 /**
  * A saved review with assessments under the current policy: unchanged when it already has them,
  * else re-assessed from its stored evaluations and flagged `assessmentsRecomputed` (no deeper
- * search runs here, so nothing that needs one is marked), with its summary counted again.
+ * search runs here, so nothing that needs one is marked), with its summary counted again. Saved
+ * reviews come from older builds: a move too damaged to assess stays unassessed (unmarked) and the
+ * rest keep their marks.
  */
 export function withCurrentAssessments(
   review: GameReview,
@@ -543,11 +649,24 @@ export function withCurrentAssessments(
     review.assessmentPolicy === MOVE_ASSESSMENT_POLICY &&
     review.moves.every((move) => move.assessment?.policy === MOVE_ASSESSMENT_POLICY);
   if (current) return review;
-  const assessments = assessMoves(review.moves, {
-    playerRating: options.playerRating,
-    trustMaia: (review.schemaVersion ?? 0) >= 2
+  const trustMaia = (review.schemaVersion ?? 0) >= 2;
+  let previous: AssessmentContext["previous"] = null;
+  const moves = review.moves.map((move): MoveReview => {
+    const { assessment: stale, ...rest } = move;
+    void stale;
+    try {
+      const assessment = assessMove(move, {
+        playerRating: options.playerRating,
+        trustMaia,
+        previous
+      });
+      previous = { move, assessment };
+      return { ...rest, assessment };
+    } catch {
+      previous = null;
+      return rest;
+    }
   });
-  const moves = review.moves.map((move, index) => ({ ...move, assessment: assessments[index] }));
   return {
     ...review,
     moves,

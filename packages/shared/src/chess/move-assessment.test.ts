@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { MoveAssessment, MoveReview, RatingPrediction } from "../types/engine";
 import {
   MOVE_ASSESSMENT_POLICY,
-  SEVERITY_THRESHOLDS,
   annotationGlyph,
   annotationLabel,
   annotationOf,
@@ -29,6 +28,14 @@ const AFTER_E4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
 const GREEK_GIFT = "r1bq1rk1/pppn1ppp/4p3/3pP3/1b1P4/2NB1N2/PPP2PPP/R1BQK2R w KQ - 0 8";
 /** White's king on a1 is checked by the queen on b2; Kxb2 is the only legal move. */
 const ONE_LEGAL_MOVE = "k7/8/8/8/8/8/1q6/K7 w - - 0 1";
+/** Ne2+ forks White's king and queen: every king move loses the queen. */
+const ROYAL_FORK = "6k1/pp3ppp/8/8/8/2Q5/PP2nPPP/R5K1 w - - 0 30";
+/** The knight on c3 is pinned by the bishop on b4 and attacked by the pawn on d4. */
+const PINNED_KNIGHT = "6k1/5ppp/8/8/1b1p4/2N5/PP5P/4K2R w K - 0 30";
+/** The bishop on a7 is trapped by the rook on a8 and the pawns on b6 and c7. */
+const TRAPPED_BISHOP = "r5k1/B1p2ppp/1p6/8/8/8/5PPP/6K1 w - - 0 30";
+/** The queen on d4 is attacked by the pawn on c5; Qe3 keeps it. */
+const QUEEN_ATTACKED = "3r2k1/5ppp/8/2p5/3Q4/8/5PPP/5RK1 w - - 0 30";
 
 const cp = (cp: number): MoverEval => ({ kind: "cp", cp });
 const mate = (moverMates: boolean): MoverEval => ({ kind: "mate", moverMates });
@@ -115,10 +122,6 @@ describe("winning chances (Lichess WinPercent)", () => {
     [60, "blunder"]
   ] as const)("a drop of %f points is %s", (loss, severity) => {
     expect(severityForLoss(loss)).toBe(severity);
-  });
-
-  it("uses Lichess's 0.1 / 0.2 / 0.3 thresholds on the [-1, 1] scale", () => {
-    expect(SEVERITY_THRESHOLDS).toEqual({ inaccuracy: 5, mistake: 10, blunder: 15 });
   });
 });
 
@@ -454,6 +457,47 @@ describe("assessMove: critical finds (Great)", () => {
     expect(assessMove(holding).annotation).toBe("great");
   });
 
+  describe("a move that only keeps material the others lose", () => {
+    const rescue = verified(
+      position(QUEEN_ATTACKED, "Qe3", [
+        ["d4e3 h7h6 h2h3", "cp 50"],
+        ["g1h1 c5d4 h2h3", "cp -800"]
+      ])
+    );
+
+    it("is not Great without Maia evidence (or with only an older review's)", () => {
+      expect(assessMove(rescue).annotation).toBeNull();
+      expect(assessMove(rescue).tags).toContain("saves_material");
+      const unusual: RatingPrediction[] = [
+        { rating: 1500, topMoves: [{ uci: "g1h1", prob: 0.4 }], playedProb: 0.05 }
+      ];
+      expect(
+        assessMove({ ...rescue, humanPredictions: unusual }, { trustMaia: false }).annotation
+      ).toBeNull();
+      // Nor does it cost a deeper search.
+      expect(verificationNeed(rescue)).toBeNull();
+    });
+
+    it("is Great when Maia says it was not the natural move, or when it is itself a tactic", () => {
+      const unusual: RatingPrediction[] = [
+        { rating: 1500, topMoves: [{ uci: "g1h1", prob: 0.4 }], playedProb: 0.05 }
+      ];
+      expect(
+        assessMove({ ...rescue, humanPredictions: unusual }, { playerRating: 1500 }).annotation
+      ).toBe("great");
+      expect(
+        verificationNeed({ ...rescue, humanPredictions: unusual }, { playerRating: 1500 })
+      ).toBe("candidate");
+      expect(assessMove({ ...rescue, motifs: ["fork"] }).annotation).toBe("great");
+      const natural: RatingPrediction[] = [
+        { rating: 1500, topMoves: [{ uci: "d4e3", prob: 0.8 }], playedProb: 0.8 }
+      ];
+      expect(
+        assessMove({ ...rescue, humanPredictions: natural }, { playerRating: 1500 }).annotation
+      ).toBeNull();
+    });
+  });
+
   it("does not call the most natural move at the player's level a find", () => {
     const natural: RatingPrediction[] = [
       { rating: 1500, topMoves: [{ uci: "e2e4", prob: 0.7 }], playedProb: 0.7 }
@@ -496,24 +540,86 @@ describe("assessMove: sacrifices (Brilliant)", () => {
     expect(assessMove(verified(dubious)).annotation).toBeNull();
   });
 
+  const castle = ["e1g1", "c7c5"];
   it.each([
-    ["a bishop for a pawn, not won back", "d3h7 g8h7 f3g5", 2],
-    ["a trade", "d3h7 f8h8", 0],
-    ["a line too short to tell", "d3h7 g8h7", 0],
-    ["a line that doesn't fit", "d3h7 a1a8 f3g5", 0],
-    ["no capture at all", "e1g1 c7c5 d1e2", 0]
-  ] as const)("sacrificedMaterial: %s", (_name, line, expected) => {
-    expect(sacrificedMaterial(GREEK_GIFT, line.split(" "))).toBe(expected);
+    ["a bishop for a pawn, not won back", "d3h7 g8h7 f3g5", [castle], 2],
+    ["a trade", "d3h7 f8h8", [castle], 0],
+    ["a line too short to tell", "d3h7 g8h7", [castle], 0],
+    ["a line that doesn't fit", "d3h7 a1a8 f3g5", [castle], 0],
+    ["no capture at all", "e1g1 c7c5 d1e2", [["d3h7", "g8h7", "f3g5"]], 0],
+    ["no other candidate to compare", "d3h7 g8h7 f3g5", [], 0],
+    ["the other candidate loses as much", "d3h7 g8h7 f3g5", [["d3h7", "g8h7", "d1d3"]], 0]
+  ] as const)("sacrificedMaterial: %s", (_name, line, alternatives, expected) => {
+    expect(sacrificedMaterial(GREEK_GIFT, line.split(" "), alternatives)).toBe(expected);
   });
 
   it("counts a sacrifice won straight back as none", () => {
     // 1. e4 e5 2. Nf3 Nc6 3. Nxe5 Nxe5 4. d4: the knight is gone, and d4 doesn't win it back.
     const fen = "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3";
-    expect(sacrificedMaterial(fen, ["f3e5", "c6e5", "d2d4"])).toBe(2);
-    expect(sacrificedMaterial("8/8/8/8/8/2k5/1p6/K1R5 w - - 0 1", ["c1c3", "b2b1q", "a1b1"])).toBe(
-      0
-    );
-    expect(sacrificedMaterial("not a fen", ["e2e4", "e7e5", "g1f3"])).toBe(0);
+    expect(sacrificedMaterial(fen, ["f3e5", "c6e5", "d2d4"], [["d2d3", "f8c5"]])).toBe(2);
+    expect(
+      sacrificedMaterial("8/8/8/8/8/2k5/1p6/K1R5 w - - 0 1", ["c1c3", "b2b1q", "a1b1"], [["c1c2"]])
+    ).toBe(0);
+    expect(sacrificedMaterial("not a fen", ["e2e4", "e7e5", "g1f3"], [["d2d4"]])).toBe(0);
+  });
+
+  // Material every candidate loses is a forced loss, never a sacrifice.
+  it.each([
+    [
+      "a royal fork (every king move loses the queen to Nxc3)",
+      ROYAL_FORK,
+      "Kf1",
+      [
+        ["g1f1 e2c3 b2c3 g8f8", "cp 480"],
+        ["g1h1 e2c3 b2c3 g8f8", "cp 470"]
+      ]
+    ],
+    [
+      "a pinned knight (dxc3 wins it whatever White plays)",
+      PINNED_KNIGHT,
+      "h4",
+      [
+        ["h2h4 d4c3 b2c3", "cp 300"],
+        ["e1g1 d4c3 b2c3", "cp 290"],
+        ["a2a3 d4c3 b2c3", "cp 280"]
+      ]
+    ],
+    [
+      "a trapped bishop (lost to the rook, or for a pawn on b6)",
+      TRAPPED_BISHOP,
+      "h3",
+      [
+        ["h2h3 a8a7 h3h4", "cp 200"],
+        ["a7b6 c7b6 h2h3", "cp 190"],
+        ["a7b8 a8b8 h2h3", "cp 120"]
+      ]
+    ]
+  ] as const)("is not Brilliant: %s", (_name, fen, san, lines) => {
+    const move = verified(position(fen, san, lines));
+    const assessment = assessMove(move);
+    expect(assessment.annotation).not.toBe("brilliant");
+    expect(assessment.tags).not.toContain("sacrifice");
+    const played = move.topLines[0]!;
+    // Less than the exchange (the bishop for b6's pawn was the least loss on offer).
+    expect(
+      sacrificedMaterial(
+        fen,
+        played.pv,
+        move.topLines.slice(1).map((line) => line.pv)
+      )
+    ).toBeLessThan(2);
+  });
+
+  it("still counts giving up a piece another candidate keeps", () => {
+    // a3 would win the pinning bishop back after dxc3; h4 lets the knight go for a pawn.
+    const lines = [
+      ["h2h4 d4c3 b2c3", "cp 300"],
+      ["a2a3 d4c3 a3b4", "cp 290"]
+    ] as const;
+    expect(
+      sacrificedMaterial(PINNED_KNIGHT, lines[0][0].split(" "), [lines[1][0].split(" ")])
+    ).toBe(2);
+    expect(assessMove(verified(position(PINNED_KNIGHT, "h4", lines))).annotation).toBe("brilliant");
   });
 });
 
@@ -623,9 +729,17 @@ describe("verificationNeed", () => {
         ])
       )
     ).toBe("candidate");
-    expect(verificationNeed(position(GREEK_GIFT, "Bxh7+", [["d3h7 g8h7 f3g5", "cp 250"]]))).toBe(
-      "candidate"
-    );
+    expect(
+      verificationNeed(
+        position(GREEK_GIFT, "Bxh7+", [
+          ["d3h7 g8h7 f3g5", "cp 250"],
+          ["e1g1 c7c5", "cp 60"]
+        ])
+      )
+    ).toBe("candidate");
+    expect(
+      verificationNeed(position(GREEK_GIFT, "Bxh7+", [["d3h7 g8h7 f3g5", "cp 250"]]))
+    ).toBeNull();
     expect(
       verificationNeed(
         position(START_FEN, "e4", [
@@ -643,6 +757,48 @@ describe("verificationNeed", () => {
       )
     ).toBeNull();
     expect(verificationNeed(position(ONE_LEGAL_MOVE, "Kxb2", [["a1b2", "cp 0"]]))).toBeNull();
+  });
+
+  it("runs no deeper search for a move the exclusions rule out", () => {
+    // 1. e4 d5 2. exd5 Qxd5: a recapture, however critical, is never praised, so it isn't searched.
+    const afterTake = "rnbqkbnr/ppp1pppp/8/3P4/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 2";
+    const capture = position(
+      "rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+      "exd5",
+      [["e4d5", "cp 30"]]
+    );
+    // Maia says Qxd5 was no natural move, so only the recapture rule stands in the way.
+    const unusual: RatingPrediction[] = [
+      { rating: 1500, topMoves: [{ uci: "g8f6", prob: 0.5 }], playedProb: 0.05 }
+    ];
+    const recapture = position(
+      afterTake,
+      "Qxd5",
+      [
+        ["d8d5 b1c3 d5a5", "cp 0"],
+        ["g8f6 c2c4 e7e6", "cp -300"]
+      ],
+      {
+        ply: 30,
+        humanPredictions: unusual
+      }
+    );
+    const previous = { move: capture, assessment: assessMove(capture) };
+    expect(verificationNeed(recapture)).toBe("candidate");
+    expect(verificationNeed(recapture, { previous })).toBeNull();
+    expect(assessMove(verified(recapture), { previous }).annotation).toBeNull();
+    // Early in a balanced game (opening theory): no search either.
+    const early = position(
+      START_FEN,
+      "e4",
+      [
+        ["e2e4", "cp 50"],
+        ["d2d4", "cp -62"]
+      ],
+      { ply: 4 }
+    );
+    expect(verificationNeed(early)).toBeNull();
+    expect(verificationNeed({ ...early, ply: 20 })).toBe("candidate");
   });
 
   it.each([
@@ -761,6 +917,34 @@ describe("saved reviews", () => {
     });
     // The stored legacy verdict is kept as it was, never shown.
     expect(review.moves[6]?.classification).toBe("best");
+  });
+
+  it("keeps the marks of the other moves when one stored move is too damaged to assess", () => {
+    const stored = storedReview();
+    const damaged = { ...stored.moves[6]!, motifs: undefined } as unknown as MoveReview;
+    const review = withCurrentAssessments({
+      ...stored,
+      moves: stored.moves.map((move, index) => (index === 6 ? damaged : move))
+    });
+    expect(review.assessmentsRecomputed).toBe(true);
+    expect(review.moves[6]?.assessment).toBeUndefined();
+    expect(review.moves.map((move) => annotationOf(move))).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
+      "inaccuracy",
+      null,
+      null,
+      "blunder",
+      "good",
+      null,
+      null,
+      "mistake",
+      null
+    ]);
+    expect(review.summary).toMatchObject({ inaccuracies: 1, mistakes: 1, blunders: 1 });
   });
 
   it("leaves a review on the current policy as it is", () => {
