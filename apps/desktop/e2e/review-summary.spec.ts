@@ -106,15 +106,16 @@ test("the summary scores both sides, names the opening and phases, and its secti
   const practice = summary(page).getByRole("group", { name: "Practise your mistakes" });
   await expect(practice.getByRole("button", { name: /^Mate in 1/ })).toBeVisible();
 
-  // Each section folds behind its divider, the marks behind the rule under Accuracy, and stays
-  // folded when the summary is shown again. The Accuracy row always shows.
+  // Each section folds behind its header (⌄ Phases), and stays folded when the summary is shown
+  // again. Folding Accuracy hides the mark rows; its boxes stay on the header row.
   const phasesToggle = summary(page).getByRole("button", { name: "Phases" });
   await expect(phasesToggle).toHaveAttribute("aria-expanded", "true");
   await phasesToggle.click();
   await expect(phasesToggle).toHaveAttribute("aria-expanded", "false");
   await expect(phases).toHaveCount(0);
-  const marksToggle = summary(page).getByRole("button", { name: "Marks" });
-  await marksToggle.click();
+  const accuracyToggle = summary(page).getByRole("button", { name: "Accuracy", exact: true });
+  await accuracyToggle.click();
+  await expect(accuracyToggle).toHaveAttribute("aria-expanded", "false");
   await expect(summary(page).getByRole("table", { name: "Marks" })).toHaveCount(0);
   await expect(summary(page).getByLabel(/^White accuracy/)).toBeVisible();
   await reviewTabs(page).getByRole("tab", { name: "Commentary", exact: true }).click();
@@ -125,7 +126,7 @@ test("the summary scores both sides, names the opening and phases, and its secti
   );
   await expect(summary(page).getByRole("table", { name: "Accuracy by phase" })).toHaveCount(0);
   await summary(page).getByRole("button", { name: "Phases" }).click();
-  await summary(page).getByRole("button", { name: "Marks" }).click();
+  await summary(page).getByRole("button", { name: "Accuracy", exact: true }).click();
   await expect(summary(page).getByRole("table", { name: "Accuracy by phase" })).toBeVisible();
 
   // Start review: the first of White's key moments, explained in the Commentary tab.

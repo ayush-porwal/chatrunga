@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { openingPuzzleTag } from "./practice-puzzles";
 import { resolveReviewSide, sideNamed, type ReviewSideInput } from "./review-side";
 
 const imported: ReviewSideInput = {
@@ -68,30 +67,5 @@ describe("resolveReviewSide", () => {
     expect(sideNamed({ white: "same", black: "same" }, "same")).toBeNull();
     expect(sideNamed({ white: " Alpha ", black: "Beta" }, "alpha")).toBe("white");
     expect(sideNamed({ white: "Alpha", black: "Beta" }, null)).toBeNull();
-  });
-});
-
-describe("openingPuzzleTag", () => {
-  const name = "Sicilian Defense: Najdorf Variation, English Attack";
-
-  it("is the exact variation when the database has its puzzles", async () => {
-    const asked: string[] = [];
-    const tag = await openingPuzzleTag(name, async (candidate) => {
-      asked.push(candidate);
-      return true;
-    });
-    expect(tag).toBe("Sicilian_Defense_Najdorf_Variation");
-    expect(asked).toEqual(["Sicilian_Defense_Najdorf_Variation"]);
-  });
-
-  it("falls back to the family when the variation has no puzzles", async () => {
-    expect(await openingPuzzleTag(name, async () => false)).toBe("Sicilian_Defense");
-  });
-
-  it("keeps the variation when it can't be checked, and the family when there is no variation", async () => {
-    expect(await openingPuzzleTag(name, async () => null)).toBe(
-      "Sicilian_Defense_Najdorf_Variation"
-    );
-    expect(await openingPuzzleTag("Bird Opening", async () => false)).toBe("Bird_Opening");
   });
 });

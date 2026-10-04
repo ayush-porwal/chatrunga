@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import {
   CollapsibleBody,
   CollapsibleHeader,
+  CollapsibleToggle,
   useCollapsible
 } from "@/components/ui/collapsible-section";
 import { SideDot } from "@/components/ui/side-dot";
@@ -16,7 +17,7 @@ import { useDatabasesQuery } from "../../queries/api";
 import { MoveMarkDisc } from "../board/MoveMarkDisc";
 import {
   lichessOpeningProbe,
-  openingPuzzleTag,
+  findOpeningPuzzles,
   setOpeningPuzzleFilter,
   setThemePuzzleFilter
 } from "./practice-puzzles";
@@ -78,6 +79,7 @@ export const ReviewSummary = memo(function ReviewSummary({
   onOpenPuzzles?: () => void;
 }) {
   const rows = useMemo(() => scoreboardRows(moves), [moves]);
+  const marks = useCollapsible("review-summary:accuracy");
   const white = useMemo(() => sideAccuracy(moves, "white"), [moves]);
   const black = useMemo(() => sideAccuracy(moves, "black"), [moves]);
   const phases = useMemo(
@@ -102,13 +104,17 @@ export const ReviewSummary = memo(function ReviewSummary({
       role="region"
     >
       <div className={cn(TRACKS, "text-sm text-fg-secondary")}>
+        {/* ⌄ Accuracy: the boxes stay on the header row; folding hides the mark rows. */}
         <div role="table" aria-label="Accuracy" className="col-span-full grid grid-cols-subgrid">
-          <div
-            role="row"
-            className="col-span-full grid min-h-[34px] grid-cols-subgrid items-center"
-          >
-            <span role="rowheader" className="font-medium text-fg">
-              Accuracy
+          <div role="row" className="col-span-full grid min-h-10 grid-cols-subgrid items-center">
+            <span role="rowheader" className="min-w-0">
+              <CollapsibleToggle
+                open={marks.open}
+                onToggle={marks.toggle}
+                controls={marks.contentId}
+              >
+                Accuracy
+              </CollapsibleToggle>
             </span>
             <AccuracyBox side="white" value={white} />
             <span role="cell" className="grid place-items-center">
@@ -117,9 +123,8 @@ export const ReviewSummary = memo(function ReviewSummary({
             <AccuracyBox side="black" value={black} />
           </div>
         </div>
-
-        {rows.length ? (
-          <SummarySection id="marks" label="Marks" className="my-1.5">
+        <CollapsibleBody section={marks} className="col-span-full grid grid-cols-subgrid pt-1">
+          {rows.length ? (
             <div role="table" aria-label="Marks" className="col-span-full grid grid-cols-subgrid">
               {rows.map((row) => (
                 <div
@@ -127,7 +132,7 @@ export const ReviewSummary = memo(function ReviewSummary({
                   role="row"
                   className="col-span-full grid min-h-[34px] grid-cols-subgrid items-center"
                 >
-                  <span role="rowheader" className="font-medium text-fg">
+                  <span role="rowheader" className="pl-[18px] font-medium text-fg">
                     {annotationLabel(row.annotation)}
                   </span>
                   <Count
@@ -146,8 +151,8 @@ export const ReviewSummary = memo(function ReviewSummary({
                 </div>
               ))}
             </div>
-          </SummarySection>
-        ) : null}
+          ) : null}
+        </CollapsibleBody>
 
         {opening ? (
           <SummarySection id="opening" title="Opening">
@@ -226,36 +231,33 @@ export const ReviewSummary = memo(function ReviewSummary({
 });
 
 /**
- * A summary section under an accordion divider: a one-word label inside the rule (── OPENING ── ⌄),
- * or a plain rule (the marks under the Accuracy row), its chevron at the right end. Folding is
- * remembered per section; the body keeps the scoreboard's four tracks.
+ * A summary section: the panel's one header style (⌄ Opening, its chevron at the left, as the
+ * charts' "Winning chances"), folding remembered per section; the body keeps the four tracks.
  */
 function SummarySection({
   id,
   title,
-  label,
-  className,
   children
 }: {
   id: string;
-  /** The one-word divider label; none: a plain rule named by `label`. */
-  title?: string;
-  label?: string;
-  className?: string;
+  title: string;
   children: ReactNode;
 }) {
   const section = useCollapsible(`review-summary:${id}`);
   return (
     <>
       <CollapsibleHeader
-        section={section}
-        variant="divider"
-        label={label}
-        className={cn("col-span-full", className ?? "mt-2.5 mb-1")}
+        open={section.open}
+        onToggle={section.toggle}
+        controls={section.contentId}
+        className="col-span-full mt-2"
       >
         {title}
       </CollapsibleHeader>
-      <CollapsibleBody section={section} className="col-span-full grid grid-cols-subgrid">
+      <CollapsibleBody
+        section={section}
+        className="col-span-full grid grid-cols-subgrid pt-1 pl-[18px]"
+      >
         {children}
       </CollapsibleBody>
     </>
@@ -348,26 +350,27 @@ function OpeningBlock({
   onOpenRepertoire: () => void;
   onOpenPuzzles?: () => void;
 }) {
-  const [finding, setFinding] = useState(false);
-  // A search answered after the panel closed must not take the user to Puzzles.
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
+  // "idle", searching the puzzle file ("finding"), or nothing found even for the family ("none").
+  const [search, setSearch] = useState<"idle" | "finding" | "none">("idle");
+  // Leaving the summary gives the search up: its answer can't take the user to Puzzles any more.
+  const leave = useRef<AbortController | null>(null);
+  useEffect(() => () => leave.current?.abort(), []);
 
   const openPuzzles = async () => {
-    if (!onOpenPuzzles || finding) return;
-    setFinding(true);
-    try {
-      const tag = await openingPuzzleTag(opening.name, lichessOpeningProbe(lichessDatabaseId));
-      if (!mounted.current || !tag) return;
-      setOpeningPuzzleFilter(tag, lichessDatabaseId);
+    if (!onOpenPuzzles || search === "finding") return;
+    const controller = new AbortController();
+    leave.current = controller;
+    setSearch("finding");
+    const result = await findOpeningPuzzles(
+      opening.name,
+      lichessOpeningProbe(lichessDatabaseId),
+      controller.signal
+    );
+    if (result.status === "cancelled") return;
+    setSearch(result.status === "none" ? "none" : "idle");
+    if (result.status === "found") {
+      setOpeningPuzzleFilter(result.tag, lichessDatabaseId);
       onOpenPuzzles();
-    } finally {
-      if (mounted.current) setFinding(false);
     }
   };
 
@@ -389,11 +392,12 @@ function OpeningBlock({
               variant="default"
               size="sm"
               className="bg-surface-raised"
-              disabled={finding}
+              disabled={search === "finding"}
+              aria-busy={search === "finding" || undefined}
               onClick={() => void openPuzzles()}
             >
-              {finding ? <Loader2 className="animate-spin" /> : <Puzzle />}
-              Opening puzzles
+              {search === "finding" ? <Loader2 className="animate-spin" /> : <Puzzle />}
+              {search === "finding" ? "Finding puzzles…" : "Opening puzzles"}
             </Button>
           ) : null}
           <Button
@@ -407,6 +411,11 @@ function OpeningBlock({
             My repertoire
           </Button>
         </div>
+        {search === "none" ? (
+          <p role="status" className="mt-1 text-xs text-fg-muted">
+            No puzzles for this opening yet.
+          </p>
+        ) : null}
       </div>
     </div>
   );

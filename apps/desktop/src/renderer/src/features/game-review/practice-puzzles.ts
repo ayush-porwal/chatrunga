@@ -12,17 +12,34 @@ import { lichessOpeningTags, type PracticeTheme } from "./review-summary";
 export type OpeningTagProbe = (tag: string) => Promise<boolean | null>;
 
 /**
- * The OpeningTags filter for an opening: its exact variation, or its family when the database
- * has no puzzle of that variation (or the name has no variation). Null for a nameless opening.
+ * What looking for an opening's puzzles came to: the OpeningTags filter to open Puzzles with;
+ * none at all, even for the opening's family; or given up (the user left while it searched).
  */
-export async function openingPuzzleTag(
+export type OpeningPuzzleSearch =
+  | { status: "found"; tag: string }
+  | { status: "none" }
+  | { status: "cancelled" };
+
+/**
+ * Finds the OpeningTags filter for an opening: its exact variation, else its family when the
+ * database has no puzzle of that variation (or the name has no variation). A tag that couldn't be
+ * checked (no database yet, a failed search) is used as is: the Puzzles page says what's wrong.
+ * `signal` aborts it between searches (each search can read the whole puzzle file).
+ */
+export async function findOpeningPuzzles(
   name: string,
-  hasPuzzles: OpeningTagProbe
-): Promise<string | null> {
+  hasPuzzles: OpeningTagProbe,
+  signal?: AbortSignal
+): Promise<OpeningPuzzleSearch> {
   const { family, variation } = lichessOpeningTags(name);
-  if (!family) return null;
-  if (!variation) return family;
-  return (await hasPuzzles(variation)) === false ? family : variation;
+  if (!family) return { status: "none" };
+  for (const tag of variation ? [variation, family] : [family]) {
+    if (signal?.aborted) return { status: "cancelled" };
+    const found = await hasPuzzles(tag);
+    if (signal?.aborted) return { status: "cancelled" };
+    if (found !== false) return { status: "found", tag };
+  }
+  return { status: "none" };
 }
 
 /** What samplePuzzle says when no puzzle matches the filters. */
@@ -30,7 +47,9 @@ const NO_MATCH = /No puzzle matched/i;
 
 /**
  * Asks the Lichess puzzle database (`databaseId`) for any puzzle tagged `tag`, over every rating.
- * False only when it has none; null when there is no database or the search failed.
+ * False only when it has none; null when there is no database or the search failed (or a newer
+ * puzzle search replaced it: main's scans stop when another set of filters is asked for, which is
+ * how leaving mid-search ends this one's scan).
  */
 export function lichessOpeningProbe(databaseId: string | null): OpeningTagProbe {
   return async (tag) => {

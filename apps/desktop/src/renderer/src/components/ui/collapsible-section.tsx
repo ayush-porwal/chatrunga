@@ -1,17 +1,21 @@
 import * as React from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown } from "lucide-react";
+import { sectionTitle } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 
 /**
  * A section the user can fold away, remembered per section (localStorage, per viewer: a blocked or
  * empty store just starts at `defaultOpen`). The panel's multi-part screens use it: the review
- * summary's OPENING / PHASES / PRACTICE, the review charts, the review settings' groups.
+ * summary's sections, the review charts, the review settings' groups. One header for all of them:
+ * a left chevron and the title (⌄ Opening), as the charts' "Winning chances".
  *
  *   const section = useCollapsible("review-summary:opening");
- *   <CollapsibleHeader section={section} variant="divider">Opening</CollapsibleHeader>
+ *   <CollapsibleHeader open={section.open} onToggle={section.toggle} controls={section.contentId}>
+ *     Opening
+ *   </CollapsibleHeader>
  *   <CollapsibleBody section={section} className="grid gap-2">…</CollapsibleBody>
  *
- * Or both at once: <CollapsibleSection storageKey=… title="Opening" variant="divider">…</CollapsibleSection>.
+ * Or both at once: <CollapsibleSection storageKey=… title="Opening">…</CollapsibleSection>.
  * The header is a button with aria-expanded / aria-controls; a folded body isn't rendered (its
  * element stays, `hidden`, so aria-controls always points at it).
  */
@@ -64,75 +68,77 @@ export function useCollapsible(storageKey: string, defaultOpen = true): Collapsi
 }
 
 /**
- * The section's toggle, an accordion row: the whole row is the button, its chevron at the right
- * end (down while open, right while folded), muted with a hover highlight.
- * - `divider`: a rule with a one-word label inside it (── OPENING ── ⌄), small mono caps; without
- *   a label, a plain rule (── ⌄).
- * - `heading`: a small heading at the left; `actions` (outside the button) after the row.
+ * The section's toggle: a small heading whose button is a chevron at its LEFT and the title
+ * (⌄ Opening while open, › Opening folded), as the review charts' "Winning chances" header. Use it
+ * alone where the row holds more (the summary's Accuracy row keeps its boxes beside it).
+ */
+export function CollapsibleToggle({
+  open,
+  onToggle,
+  controls,
+  className,
+  children
+}: {
+  open: boolean;
+  onToggle: () => void;
+  /** The body's id (aria-controls). */
+  controls: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <h3 className={cn(sectionTitle, "min-w-0", className)}>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={controls}
+        onClick={onToggle}
+        className="flex min-w-0 items-center gap-1 rounded-sm outline-none transition-colors duration-micro ease-standard hover:text-fg-secondary focus-visible:ring-2 focus-visible:ring-accent/50"
+      >
+        <ChevronDown
+          aria-hidden
+          className={cn(
+            "size-3.5 shrink-0 text-fg-subtle transition-transform duration-micro ease-standard",
+            !open && "-rotate-90"
+          )}
+        />
+        <span className="truncate">{children}</span>
+      </button>
+    </h3>
+  );
+}
+
+/**
+ * A section's header row: the toggle at the left, `actions` (outside the button) at the right.
+ * Every folding section of the review panel uses this one row, so they share height and spacing.
  */
 export function CollapsibleHeader({
-  section,
-  variant = "heading",
-  label,
+  open,
+  onToggle,
+  controls,
   actions,
   className,
   children
 }: {
-  section: Collapsible;
-  variant?: "divider" | "heading";
-  /** The accessible name when the row has no text (a plain divider rule). */
-  label?: string;
+  open: boolean;
+  onToggle: () => void;
+  controls: string;
   actions?: React.ReactNode;
   className?: string;
-  children?: React.ReactNode;
+  children: React.ReactNode;
 }) {
-  const Chevron = section.open ? ChevronDown : ChevronRight;
-  const chevron = (
-    <Chevron
-      aria-hidden
-      className="size-3.5 shrink-0 text-fg-subtle transition-colors duration-micro group-hover:text-fg-secondary"
-    />
-  );
-  const buttonProps = {
-    type: "button" as const,
-    "aria-expanded": section.open,
-    "aria-controls": section.contentId,
-    "aria-label": label,
-    onClick: section.toggle
-  };
-  if (variant === "divider") {
-    return (
-      <button
-        {...buttonProps}
-        className={cn(
-          "group flex min-h-6 w-full items-center gap-2.5 rounded-md px-1 font-mono text-2xs font-medium tracking-[0.1em] text-fg-subtle uppercase outline-none transition-colors duration-micro hover:bg-control/60 hover:text-fg-secondary focus-visible:ring-2 focus-visible:ring-accent/70",
-          className
-        )}
-      >
-        <span aria-hidden className="h-px flex-1 bg-line" />
-        {children ? (
-          <>
-            <span>{children}</span>
-            <span aria-hidden className="h-px flex-1 bg-line" />
-          </>
-        ) : null}
-        {chevron}
-      </button>
-    );
-  }
   return (
-    <div className={cn("flex min-w-0 items-center gap-2", className)}>
-      <button
-        {...buttonProps}
-        className="group flex min-h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-1 text-left text-xs font-medium text-fg-muted outline-none transition-colors duration-micro hover:bg-control/60 hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/70"
-      >
-        <span className="min-w-0 flex-1 truncate">{children}</span>
-        {chevron}
-      </button>
-      {actions ? <div className="flex shrink-0 items-center gap-1">{actions}</div> : null}
+    <div className={cn(collapsibleHeaderRow, className)}>
+      <CollapsibleToggle open={open} onToggle={onToggle} controls={controls}>
+        {children}
+      </CollapsibleToggle>
+      {actions ? <div className="flex min-w-0 items-center gap-1.5">{actions}</div> : null}
     </div>
   );
 }
+
+/** The header row's box (height and spacing), for a row laid out by its owner. */
+export const collapsibleHeaderRow = "flex min-h-6 shrink-0 items-center justify-between gap-3";
 
 /** The section's body: rendered only while open. */
 export function CollapsibleBody({
@@ -156,7 +162,6 @@ export function CollapsibleBody({
 export function CollapsibleSection({
   storageKey,
   title,
-  variant = "heading",
   defaultOpen = true,
   actions,
   className,
@@ -166,7 +171,6 @@ export function CollapsibleSection({
 }: {
   storageKey: string;
   title: React.ReactNode;
-  variant?: "divider" | "heading";
   defaultOpen?: boolean;
   actions?: React.ReactNode;
   className?: string;
@@ -178,8 +182,9 @@ export function CollapsibleSection({
   return (
     <div className={className}>
       <CollapsibleHeader
-        section={section}
-        variant={variant}
+        open={section.open}
+        onToggle={section.toggle}
+        controls={section.contentId}
         actions={actions}
         className={headerClassName}
       >
