@@ -1,26 +1,24 @@
 import type { GameOpening, MoveReview, ReviewCommentary } from "@chaturanga/shared/types/engine";
 import type { Color, MoveNode } from "@chaturanga/shared/types/chess";
 import type { KeyMoment } from "@chaturanga/shared/chess/key-moments";
+import { useState } from "react";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
 import { TreeView } from "../game/TreeView";
 import type { PlayLine } from "../game/BestLineRow";
+import { loadMovesView, saveMovesView, type MovesView } from "../game/move-list-prefs";
 import { MomentList } from "./KeyMoments";
 
-/** What the Moves tab lists: the key moments, every marked move, or the whole move tree. */
-export type MovesView = "key" | "marked" | "all";
-
 const viewOptions: readonly SegmentedOption<MovesView>[] = [
-  { value: "key", label: "Key moments" },
-  { value: "marked", label: "All marks" },
-  { value: "all", label: "All moves" }
+  { value: "moves", label: "Moves" },
+  { value: "key", label: "Key insights" }
 ];
 
 const NO_MOVES: readonly MoveReview[] = [];
 const NO_MOMENTS: readonly KeyMoment[] = [];
 
 /**
- * The Moves tab: the full move tree (main line + variations) with each move's mark and score, or
- * the focused lists — the key moments, or every marked move (errors included) in game order.
+ * The Moves tab: the move list (main line + variations) with each move's mark and score, or the
+ * key insights (the game's key moments). The view picked is remembered.
  */
 export function ReviewMoveRail({
   nodes,
@@ -28,11 +26,8 @@ export function ReviewMoveRail({
   reviews,
   commentaryByNodeId,
   onSelectNode,
-  view = "all",
-  onViewChange,
   moves = NO_MOVES,
   keyMoments = NO_MOMENTS,
-  marks = NO_MOMENTS,
   opening,
   onPlayLine,
   orientation
@@ -42,13 +37,9 @@ export function ReviewMoveRail({
   reviews: ReadonlyMap<string, MoveReview>;
   commentaryByNodeId: ReadonlyMap<string, ReviewCommentary>;
   onSelectNode: (nodeId: string) => void;
-  view?: MovesView;
-  onViewChange?: (view: MovesView) => void;
   /** The reviewed moves the lists point at. */
   moves?: readonly MoveReview[];
   keyMoments?: readonly KeyMoment[];
-  /** Every marked move, in game order. */
-  marks?: readonly KeyMoment[];
   /** The game's opening, named after the last book move. */
   opening?: GameOpening | null;
   /** Plays a BEST line on the board as a variation. */
@@ -56,6 +47,11 @@ export function ReviewMoveRail({
   /** The board's orientation, for the BEST lines' preview boards. */
   orientation?: Color;
 }) {
+  const [view, setView] = useState<MovesView>(loadMovesView);
+  const changeView = (next: MovesView) => {
+    saveMovesView(next);
+    setView(next);
+  };
   const tree = (
     <TreeView
       nodes={nodes}
@@ -72,7 +68,6 @@ export function ReviewMoveRail({
       className="-mr-3 h-full pr-3"
     />
   );
-  if (!onViewChange) return tree;
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2">
       <SegmentedControl
@@ -81,19 +76,19 @@ export function ReviewMoveRail({
         fullWidth
         options={viewOptions}
         value={view}
-        onChange={onViewChange}
+        onChange={changeView}
       />
-      {view === "all" ? (
+      {view === "moves" ? (
         tree
       ) : (
         <div className="scroll-area -mr-3 min-h-0 overflow-y-auto pr-3">
           <MomentList
-            moments={view === "key" ? keyMoments : marks}
+            moments={keyMoments}
             moves={moves}
             selectedNodeId={selectedNodeId}
             onSelectNode={onSelectNode}
-            label={view === "key" ? "Key moments of the game" : "Every marked move"}
-            emptyTitle={view === "key" ? "No key moments yet." : "No marked moves yet."}
+            label="Key insights"
+            emptyTitle="No key insights yet."
           />
         </div>
       )}

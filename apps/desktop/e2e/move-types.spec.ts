@@ -175,19 +175,19 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
   ).toBeVisible();
   await screenshot(page, "move-tree");
 
-  // The focused lists: the key moments, and every mark (errors included, book moves not).
+  // The Moves tab's other view, the key insights (the reviewed side's key moments), is remembered.
   const views = page.getByRole("radiogroup", { name: "Moves shown" });
-  await views.getByRole("radio", { name: "All marks" }).click();
-  const marks = page.getByRole("list", { name: "Every marked move" });
-  await expect(marks.getByRole("listitem")).toHaveCount(6);
-  await screenshot(page, "all-marks");
-  await marks.getByRole("button", { name: /Qxg2/ }).click();
-  await expect(counter(page)).toHaveText("10 / 14");
-  await views.getByRole("radio", { name: "Key moments" }).click();
-  await expect(
-    page.getByRole("list", { name: "Key moments of the game" }).getByRole("listitem")
-  ).toHaveCount(4);
-  await views.getByRole("radio", { name: "All moves" }).click();
+  await expect(views.getByRole("radio", { name: "Moves", exact: true })).toBeChecked();
+  await views.getByRole("radio", { name: "Key insights" }).click();
+  const insights = page.getByRole("list", { name: "Key insights" });
+  await expect(insights.getByRole("listitem")).toHaveCount(3);
+  await screenshot(page, "key-insights");
+  await insights.getByRole("button", { name: /Nxf7/ }).click();
+  await expect(counter(page)).toHaveText("9 / 14");
+  await reviewTabs(page).getByRole("tab", { name: "Commentary", exact: true }).click();
+  await reviewTabs(page).getByRole("tab", { name: "Moves", exact: true }).click();
+  await expect(insights).toBeVisible();
+  await views.getByRole("radio", { name: "Moves", exact: true }).click();
   await expect(moveTree(page)).toBeVisible();
 
   // The graph marks the same moves (book moves stay neutral) and rings the key moments.

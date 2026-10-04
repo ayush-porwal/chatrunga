@@ -94,11 +94,6 @@ export function keyMoments(
   return chosen.sort((a, b) => a.ply - b.ply);
 }
 
-/** Every marked move but the book moves, in game order (the "all marks" view). */
-export function markedMoves(moves: readonly MoveReview[]): KeyMoment[] {
-  return rankedMoments(moves).sort((a, b) => a.ply - b.ply);
-}
-
 /**
  * The moment to go to from `ply` (0 = the start), forwards or backwards; null when there is none
  * that way.

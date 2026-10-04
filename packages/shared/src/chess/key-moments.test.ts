@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MoveAnnotation, MoveAssessment, MoveReview } from "../types/engine";
-import {
-  adjacentMoment,
-  keyMoments,
-  markedMoves,
-  momentWeight,
-  rankedMoments
-} from "./key-moments";
+import { adjacentMoment, keyMoments, momentWeight, rankedMoments } from "./key-moments";
 import { assessMoves } from "./move-assessment";
 import { trapReviewMoves } from "./__fixtures__/trap-game";
 
@@ -79,14 +73,13 @@ describe("key moments", () => {
     expect(momentWeight(item)).toBe(weight);
   });
 
-  it("never makes a book move a moment, nor lists it with the marks", () => {
+  it("never makes a book move a moment", () => {
     const game = moves([
       [1, assessment("book")],
       [2, assessment("book", { winLoss: 40 })],
       [3, assessment("inaccuracy", { winLoss: 6 })]
     ]);
     expect(keyMoments(game).map((moment) => moment.ply)).toEqual([3]);
-    expect(markedMoves(game).map((moment) => moment.annotation)).toEqual(["inaccuracy"]);
   });
 
   it("leads the trap game with its blunders, the critical reply and the mate allowed", () => {
@@ -97,8 +90,6 @@ describe("key moments", () => {
       [9, "blunder"],
       [13, "mistake"]
     ]);
-    // Every mark stays available, in game order.
-    expect(markedMoves(game).map((moment) => moment.ply)).toEqual([6, 7, 8, 9, 10, 13]);
   });
 
   it("takes one moment per sequence: a move and the reply to it are one lesson", () => {

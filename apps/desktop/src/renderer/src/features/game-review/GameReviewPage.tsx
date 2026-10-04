@@ -44,10 +44,9 @@ import {
 } from "./commentary-moves";
 import { openingSideFor, type OpeningSide } from "./opening-comparison";
 import { annotationTone } from "@/lib/ui";
-import { keyMoments, markedMoves } from "@chaturanga/shared/chess/key-moments";
+import { keyMoments } from "@chaturanga/shared/chess/key-moments";
 import type { ErrorSeverity } from "@chaturanga/shared/types/engine";
 import { KeyMomentNav } from "./KeyMoments";
-import type { MovesView } from "./ReviewMoveRail";
 import { Sparkles, Swords, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -219,11 +218,9 @@ function GameReviewPageInner({
   // re-computing (and re-flowing) on every analysed move.
   const statMoves = isRunning ? EMPTY_MOVES : moves;
   const counts = useMemo(() => countBySeverity(statMoves), [statMoves]);
-  // The focused review: the game's few strongest lessons, and every mark for the Moves tab.
+  // The focused review: the game's few strongest lessons (the key insights).
   const moments = useMemo(() => keyMoments(statMoves), [statMoves]);
-  const marks = useMemo(() => markedMoves(statMoves), [statMoves]);
   const momentIds = useMemo(() => new Set(moments.map((moment) => moment.nodeId)), [moments]);
-  const [movesView, setMovesView] = useState<MovesView>("all");
   const accuracy = useMemo(() => reviewAccuracy(statMoves), [statMoves]);
   const average = useMemo(() => averageLoss(statMoves), [statMoves]);
   const { mutate: updateSetting } = useUpdateSettingMutation();
@@ -484,11 +481,8 @@ function GameReviewPageInner({
           reviews={reviewByNodeId}
           commentaryByNodeId={commentaryByNodeId}
           onSelectNode={selectNode}
-          view={movesView}
-          onViewChange={setMovesView}
           moves={moves}
           keyMoments={moments}
-          marks={marks}
           opening={isRunning ? null : review?.opening}
           onPlayLine={playBestLine}
           orientation={orientation}
