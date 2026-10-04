@@ -192,10 +192,12 @@ export function BoardWorkspace({
       >
         {/* The board block (player rows + board) is centred down its cell, so a board shorter than
             the space splits the spare height above and below. A resized board's cell is exactly its
-            width (app.css), anchored at the content's left edge. */}
+            width (app.css), anchored at the content's left edge. Over the splitter beside it, so the
+            move mark's badge on an edge square overhangs whole (the badge lets the pointer through to
+            the splitter). */}
         <section
           className={cn(
-            "col-start-1 row-start-1 grid min-h-0 min-w-0 items-center [container-type:size]",
+            "relative z-[1] col-start-1 row-start-1 grid min-h-0 min-w-0 items-center [container-type:size]",
             resizedEdge === null ? "justify-items-center" : "justify-items-start"
           )}
           aria-label="Board"
