@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
+import { activeBestLine, openBestLine } from "../features/game/best-line-cursor";
+import { uciLineSteps } from "../features/game-review/review-utils";
 import {
   buildEngineGoClock,
   clockNow,
@@ -314,6 +316,57 @@ describe("game store", () => {
       useGameStore.getState().setEngineSide("black");
       expect(useGameStore.getState().goToLine("root", ["d4"])).toBe(false);
       expect(useGameStore.getState().goToLine("root", ["e4"])).toBe(true);
+    });
+  });
+
+  describe("BEST lines", () => {
+    const pgn = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Nd4 4. Nxe5 Qg5 *";
+    /** 4. Nxe5?? (the error, ply 7) and its BEST line 4. Nxd4 exd4 5. O-O from 3… Nd4. */
+    function browse(index: number) {
+      useGameStore.getState().loadGame(importPgnText(pgn).game);
+      const tree = useGameStore.getState().moveTree;
+      const error = tree.find((node) => node.san === "Nxe5")!;
+      const steps = uciLineSteps(error.fenBefore, ["f3d4", "e5d4", "e1g1"]);
+      const cursor = openBestLine(error.id, error.parentId!, steps, index)!;
+      useGameStore.getState().showBestLine(cursor);
+      return { error, size: tree.length, steps };
+    }
+
+    it("shows a line's position on the board without changing the game's moves", () => {
+      const { error, size, steps } = browse(1);
+      const state = useGameStore.getState();
+      expect(state.currentFen).toBe(steps[1]!.fenAfter);
+      expect(state.currentNodeId).toBe(error.id);
+      expect(state.moveTree).toHaveLength(size);
+      expect(activeBestLine(state)?.index).toBe(1);
+    });
+
+    it("leaves the line for a game move", () => {
+      const { error } = browse(1);
+      useGameStore.getState().goToNode(error.id);
+      expect(activeBestLine(useGameStore.getState())).toBeNull();
+      expect(useGameStore.getState().currentFen).toBe(error.fenAfter);
+    });
+
+    it("makes the line a real variation only when a new move is played from it", () => {
+      const { error, size } = browse(1);
+      expect(useGameStore.getState().makeMove({ from: "d2", to: "d3" })).toBe(true);
+      const state = useGameStore.getState();
+      // Nxd4, exd4 (the line up to the position shown) and the new d3, branching off 3… Nd4.
+      expect(state.moveTree).toHaveLength(size + 3);
+      const played = state.moveTree.find((node) => node.id === state.currentNodeId)!;
+      const reply = state.moveTree.find((node) => node.id === played.parentId)!;
+      const first = state.moveTree.find((node) => node.id === reply.parentId)!;
+      expect([first.san, reply.san, played.san]).toEqual(["Nxd4", "exd4", "d3"]);
+      expect(first.parentId).toBe(error.parentId);
+      expect(activeBestLine(state)).toBeNull();
+    });
+
+    it("refuses an illegal move from a line's position and keeps the game as it was", () => {
+      const { size } = browse(1);
+      expect(useGameStore.getState().makeMove({ from: "a1", to: "a8" })).toBe(false);
+      expect(useGameStore.getState().moveTree).toHaveLength(size);
+      expect(activeBestLine(useGameStore.getState())?.index).toBe(1);
     });
   });
 

@@ -4,7 +4,8 @@ import type { KeyMoment } from "@chaturanga/shared/chess/key-moments";
 import { useState } from "react";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
 import { TreeView } from "../game/TreeView";
-import type { PlayLine } from "../game/BestLineRow";
+import { activeBestLine } from "../game/best-line-cursor";
+import { useGameStore } from "../../stores/game-store";
 import { loadMovesView, saveMovesView, type MovesView } from "../game/move-list-prefs";
 import { MomentList } from "./KeyMoments";
 
@@ -29,7 +30,6 @@ export function ReviewMoveRail({
   moves = NO_MOVES,
   keyMoments = NO_MOMENTS,
   opening,
-  onPlayLine,
   orientation
 }: {
   nodes: readonly MoveNode[];
@@ -42,8 +42,6 @@ export function ReviewMoveRail({
   keyMoments?: readonly KeyMoment[];
   /** The game's opening, named after the last book move. */
   opening?: GameOpening | null;
-  /** Plays a BEST line on the board as a variation. */
-  onPlayLine?: PlayLine;
   /** The board's orientation, for the BEST lines' preview boards. */
   orientation?: Color;
 }) {
@@ -52,6 +50,9 @@ export function ReviewMoveRail({
     saveMovesView(next);
     setView(next);
   };
+  // A BEST line's move is shown on the board without being added to the game.
+  const showBestLine = useGameStore((state) => state.showBestLine);
+  const bestLine = useGameStore(activeBestLine);
   const tree = (
     <TreeView
       nodes={nodes}
@@ -61,7 +62,8 @@ export function ReviewMoveRail({
       commentaryByNodeId={commentaryByNodeId}
       showCommentaryState
       opening={opening}
-      onPlayLine={onPlayLine}
+      onBrowseLine={showBestLine}
+      activeBestLine={bestLine}
       orientation={orientation}
       emptyLabel="No moves to review."
       ariaLabel="Reviewed move tree"

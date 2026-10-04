@@ -6,6 +6,7 @@ import type { Color } from "@chaturanga/shared/types/chess";
 import type { EngineScore, MoveReview } from "@chaturanga/shared/types/engine";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { useGameStore } from "../../stores/game-store";
+import { activeBestLine } from "../game/best-line-cursor";
 import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
 import { useDisplayedReviewMoves } from "../../stores/review-validity";
@@ -124,6 +125,8 @@ export function useBoardEval(): BoardEval | null {
       mode: state.mode,
       fen: state.currentFen,
       nodeId: state.currentNodeId,
+      // A BEST line's position isn't a game move: no review evaluation of its own.
+      bestLine: Boolean(activeBestLine(state)),
       matchOn:
         (state.mode === "engine" || state.mode === "online") &&
         Boolean(state.engineSide) &&
@@ -141,7 +144,7 @@ export function useBoardEval(): BoardEval | null {
 
   if (game.mode === "analysis") return liveAnalysisEval(game.fen, liveScore);
 
-  if (!reviewMoves.length) return null;
+  if (!reviewMoves.length || game.bestLine) return null;
   const move = reviewMoves.find((item) => item.nodeId === game.nodeId);
   const evaluation = move ? reviewedMoveEval(move) : null;
   if (evaluation) return evaluation;

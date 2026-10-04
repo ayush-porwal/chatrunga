@@ -31,7 +31,8 @@ import {
   type LineFolds
 } from "./move-list-model";
 import { loadShowAllLines, saveShowAllLines } from "./move-list-prefs";
-import { BestLineRow, type PlayLine } from "./BestLineRow";
+import { BestLineRow, type BrowseLine } from "./BestLineRow";
+import type { BestLineCursor } from "./best-line-cursor";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconButton } from "@/components/ui/icon-button";
 import { annotationTone } from "@/lib/ui";
@@ -63,8 +64,10 @@ type TreeViewProps = {
   onPromoteVariation?: (nodeId: string) => void;
   /** The game's opening: its row follows the last book move. */
   opening?: GameOpening | null;
-  /** Plays a BEST line's moves on the board as a variation. Unset, the lines only show. */
-  onPlayLine?: PlayLine;
+  /** Shows a BEST line's move on the board (not added to the game). Unset, the lines only show. */
+  onBrowseLine?: BrowseLine;
+  /** The BEST line on the board, if any: its move is the current one, not the game's. */
+  activeBestLine?: BestLineCursor | null;
   /** The way the BEST lines' preview boards face (the board's orientation). */
   orientation?: Color;
   emptyLabel?: ReactNode;
@@ -95,7 +98,8 @@ export function TreeView({
   onDeleteLine,
   onPromoteVariation,
   opening = null,
-  onPlayLine,
+  onBrowseLine,
+  activeBestLine = null,
   orientation = "white",
   emptyLabel = "No moves yet.",
   className,
@@ -174,7 +178,8 @@ export function TreeView({
         review={review}
         gridClassName={ROW_GRID}
         orientation={orientation}
-        onPlayLine={onPlayLine}
+        currentIndex={activeBestLine?.markedNodeId === node.id ? activeBestLine.index : null}
+        onBrowse={onBrowseLine}
       />
     );
   };
@@ -184,7 +189,8 @@ export function TreeView({
     const foldable = hasBestLine(review);
     return {
       node,
-      selected: selectedNodeId === node.id,
+      // While a BEST line is on the board, its move is the current one, not the error's.
+      selected: selectedNodeId === node.id && !activeBestLine,
       review,
       commentary: commentaryByNodeId?.get(node.id),
       showScores,

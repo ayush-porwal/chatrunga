@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { markRapidNavigation } from "../features/board/board-motion";
 import { useGameStore } from "../stores/game-store";
+import { activeBestLine, stepBestLine } from "../features/game/best-line-cursor";
 import { OVERLAY_SELECTOR } from "./useBoardShortcuts";
 
 /** Elements whose own keyboard handling must not also step through the game. */
@@ -73,6 +74,14 @@ export function useMoveKeyboardShortcuts({ enabled }: { enabled: boolean }): voi
     if (!enabled) return;
     const steps = createStepScheduler((delta) => {
       const game = useGameStore.getState();
+      // On a BEST line, the steps follow the line (back before it: the game move it leaves from).
+      const line = activeBestLine(game);
+      if (line) {
+        const next = stepBestLine(line, delta);
+        if (next.kind === "line") game.showBestLine(next.cursor);
+        else game.goToNode(nodeAfterSteps(game.moveTree, next.nodeId, next.stepsLeft));
+        return;
+      }
       const target = nodeAfterSteps(game.moveTree, game.currentNodeId, delta);
       if (target !== game.currentNodeId) game.goToNode(target);
     });

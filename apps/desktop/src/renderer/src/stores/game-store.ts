@@ -17,6 +17,12 @@ import type {
   UserMove
 } from "@chaturanga/shared/types/chess";
 import { userMoveFromUci } from "@/lib/uci";
+import {
+  activeBestLine,
+  bestLineSans,
+  bestLineStep,
+  type BestLineCursor
+} from "../features/game/best-line-cursor";
 
 type PendingPromotion = { from: string; to: string } | null;
 
@@ -62,6 +68,11 @@ type GameStore = {
   engineClockLive: EngineClockLive | null;
   gameOutcome: GameOutcome | null;
   /**
+   * A marked error's BEST line being browsed (see activeBestLine): the board shows one of its
+   * positions while the game stays on the error, and the move tree is unchanged.
+   */
+  bestLine: BestLineCursor | null;
+  /**
    * Counts moves `makeMove` refused. The board has already drawn the piece on its new square;
    * it puts the position back when this changes (the stored position didn't change).
    */
@@ -76,6 +87,11 @@ type GameStore = {
   makeMove: (move: UserMove) => boolean;
   makeUciMove: (uci: string) => boolean;
   goToNode: (nodeId: string) => void;
+  /**
+   * Shows a position of a BEST line on the board (the game goes to its error, the tree is not
+   * changed). A new move played there makes the line up to it a real variation (`makeMove`).
+   */
+  showBestLine: (cursor: BestLineCursor) => void;
   /**
    * Play `moves` (SAN or UCI) from `startNodeId`, reusing existing children (main line or an
    * existing variation) and appending the rest as a new variation, then select the final node.
@@ -202,6 +218,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     engineClock: null,
     engineClockLive: null,
     gameOutcome: null,
+    bestLine: null,
     rejectedMoves: 0,
     board: 0,
 
@@ -232,6 +249,19 @@ export const useGameStore = create<GameStore>((set, get) => {
     },
 
     makeMove: (move) => {
+      // A move played on a BEST line's position: the line up to it becomes a real variation (its
+      // existing moves reused), then the move is played from there as from any other node.
+      const line = activeBestLine(get());
+      if (line) {
+        if (!applyUserMove(bestLineStep(line).fenAfter, move)) {
+          set((current) => ({
+            lastError: "Illegal move",
+            rejectedMoves: current.rejectedMoves + 1
+          }));
+          return false;
+        }
+        if (!get().goToLine(line.anchorNodeId, bestLineSans(line))) return false;
+      }
       const state = get();
       const reject = (patch: Partial<GameStore> = {}): false => {
         set((current) => ({ ...patch, rejectedMoves: current.rejectedMoves + 1 }));
@@ -320,7 +350,8 @@ export const useGameStore = create<GameStore>((set, get) => {
       const state = get();
       if (state.gameOutcome) return false;
       const parent = state.moveTree.find((node) => node.id === state.currentNodeId);
-      const fenBefore = parent?.fenAfter ?? state.currentFen;
+      const line = activeBestLine(state);
+      const fenBefore = line ? bestLineStep(line).fenAfter : (parent?.fenAfter ?? state.currentFen);
       if (!fenAfterUci(fenBefore, uci)) {
         set({ lastError: `Engine returned illegal move: ${uci}` });
         return false;
@@ -332,7 +363,23 @@ export const useGameStore = create<GameStore>((set, get) => {
     goToNode: (nodeId) => {
       const node = get().moveTree.find((item) => item.id === nodeId);
       // A promotion being chosen belongs to the position it started from.
-      if (node) set({ currentNodeId: node.id, currentFen: node.fenAfter, pendingPromotion: null });
+      if (node)
+        set({
+          currentNodeId: node.id,
+          currentFen: node.fenAfter,
+          pendingPromotion: null,
+          bestLine: null
+        });
+    },
+
+    showBestLine: (cursor) => {
+      if (!get().moveTree.some((node) => node.id === cursor.markedNodeId)) return;
+      set({
+        bestLine: cursor,
+        currentNodeId: cursor.markedNodeId,
+        currentFen: bestLineStep(cursor).fenAfter,
+        pendingPromotion: null
+      });
     },
 
     goToLine: (startNodeId, moves) => {
@@ -370,7 +417,8 @@ export const useGameStore = create<GameStore>((set, get) => {
         currentNodeId: node.id,
         currentFen: node.fenAfter,
         pendingPromotion: null,
-        lastError: null
+        lastError: null,
+        bestLine: null
       });
       return true;
     },

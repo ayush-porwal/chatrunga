@@ -25,6 +25,7 @@ import { PlayerRow } from "./PlayerIdentity";
 import { EvalBar } from "./EvalBar";
 import { BoardMoveMarkBadge } from "./BoardMoveMarkBadge";
 import { boardMoveMark, mainBoardSurface } from "./move-mark";
+import { activeBestLine, bestLineStep } from "../game/best-line-cursor";
 import { BoardStage } from "./BoardWorkspace";
 import { EngineClock } from "./EngineClock";
 import { boardClocksAt } from "./board-clocks";
@@ -72,15 +73,20 @@ export function BoardView() {
   const reviewMoves = useDisplayedReviewMoves();
   const reviewRunning = useReviewStore((state) => state.status === "running");
   const source = useGameStore((state) => state.source);
+  // A BEST line on the board: its position isn't a game move, so the error it answers lends it
+  // no mark, arrows or drawings; its own move is the one highlighted.
+  const bestLine = useGameStore(activeBestLine);
   // The reviewed move's mark on its square: on the Analyze board only (never in play or puzzles).
   const moveMark = useMemo(
     () =>
-      boardMoveMark(mainBoardSurface(mode, source), {
-        running: reviewRunning,
-        moves: reviewMoves,
-        nodeId: currentNodeId
-      }),
-    [currentNodeId, mode, reviewMoves, reviewRunning, source]
+      bestLine
+        ? null
+        : boardMoveMark(mainBoardSurface(mode, source), {
+            running: reviewRunning,
+            moves: reviewMoves,
+            nodeId: currentNodeId
+          }),
+    [bestLine, currentNodeId, mode, reviewMoves, reviewRunning, source]
   );
   const engines = useEnginesQuery();
   const activeEngineId = useAnalysisStore((state) => state.activeEngineId);
@@ -88,8 +94,8 @@ export function BoardView() {
   const reducedMotion = usePrefersReducedMotion();
   const activeEngine = engines.data?.find((engine) => engine.id === activeEngineId) ?? null;
   const currentNode = useMemo(
-    () => moveTree.find((node) => node.id === currentNodeId),
-    [moveTree, currentNodeId]
+    () => (bestLine ? undefined : moveTree.find((node) => node.id === currentNodeId)),
+    [bestLine, moveTree, currentNodeId]
   );
   const status = useMemo(() => statusForFen(currentFen), [currentFen]);
   const animationEnabled = appearance.boardAnimation && !reducedMotion;
@@ -166,7 +172,9 @@ export function BoardView() {
     if (bestArrow) return [bestArrow];
     // Only completed moves draw arrows (never the live lines of the move being searched, which
     // change several times a second and made the board flicker).
-    const reviewMove = reviewMoves.find((item) => item.nodeId === currentNodeId);
+    const reviewMove = currentNode
+      ? reviewMoves.find((item) => item.nodeId === currentNode.id)
+      : undefined;
     const best = reviewMove?.bestMove ? uciSquares(reviewMove.bestMove) : null;
     if (!reviewMove || !best) return NO_SHAPES;
     const arrows: DrawShape[] = [{ orig: best[0], dest: best[1], brush: "paleGreen" }];
@@ -183,7 +191,7 @@ export function BoardView() {
       });
     }
     return arrows;
-  }, [bestArrow, reviewMoves, currentNodeId]);
+  }, [bestArrow, reviewMoves, currentNode]);
 
   // Chessground owns its DOM and keeps it sized itself (its own ResizeObserver repositions pieces
   // on resize) — rebuilding the board on every resize frame is what used to flicker.
@@ -251,12 +259,14 @@ export function BoardView() {
   const restoreGroundToCurrentPosition = useCallback(() => {
     const ground = groundRef.current;
     if (!ground) return;
+    const game = useGameStore.getState();
     const {
       currentFen: fen,
       orientation: boardOrientation,
       moveTree: tree,
       currentNodeId: nodeId
-    } = useGameStore.getState();
+    } = game;
+    const line = activeBestLine(game);
     ground.cancelPremove();
     ground.cancelMove();
     ground.selectSquare(null);
@@ -264,7 +274,7 @@ export function BoardView() {
       restoreBoardConfig({
         fen,
         orientation: boardOrientation,
-        lastMove: lastMoveOf(tree.find((item) => item.id === nodeId)),
+        lastMove: lastMoveOf(line ? bestLineStep(line) : tree.find((item) => item.id === nodeId)),
         movableColor: movablePieceColor,
         showDests: appearance.showLegalMoves,
         animate: animationEnabled
@@ -355,7 +365,7 @@ export function BoardView() {
       animation: { enabled: animate, duration: PIECE_MOVE_MS },
       turnColor: status.turn,
       check: status.isCheck,
-      lastMove: lastMoveOf(currentNode)
+      lastMove: lastMoveOf(bestLine ? bestLineStep(bestLine) : currentNode)
     });
     if (positionChanged && !isRapidNavigation(now)) {
       // Chessground paints on its next frame; fade the fresh highlights in right after.
@@ -365,6 +375,7 @@ export function BoardView() {
     }
   }, [
     animationEnabled,
+    bestLine,
     currentFen,
     currentNode,
     currentNodeId,
@@ -426,10 +437,13 @@ export function BoardView() {
           currentNode?.highlights ?? NO_HIGHLIGHTS
         ),
         autoShapes,
-        onChange: (newShapes) => setNodeAnnotations(currentNodeId, annotationsFromShapes(newShapes))
+        // Drawings belong to a game move (a BEST line's position isn't one: they aren't kept).
+        onChange: (newShapes) => {
+          if (currentNode) setNodeAnnotations(currentNode.id, annotationsFromShapes(newShapes));
+        }
       }
     });
-  }, [autoShapes, currentNode?.arrows, currentNode?.highlights, currentNodeId, setNodeAnnotations]);
+  }, [autoShapes, currentNode, setNodeAnnotations]);
 
   useEffect(() => {
     const ground = groundRef.current;

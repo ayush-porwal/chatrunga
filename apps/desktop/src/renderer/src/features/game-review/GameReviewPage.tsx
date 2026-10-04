@@ -5,6 +5,7 @@ import type { MoveReview } from "@chaturanga/shared/types/engine";
 import type { RepertoireColor } from "@chaturanga/shared/types/repertoire";
 import type { StudyOpenTarget } from "../repertoire/repertoire-chapters";
 import { useGameStore } from "../../stores/game-store";
+import { activeBestLine, bestLineStep } from "../game/best-line-cursor";
 import { reviewsByNode, useReviewStore } from "../../stores/review-store";
 import { useDisplayedReviewMoves, useOutdatedReviewMoves } from "../../stores/review-validity";
 import { boardClocksAt, sideToMove } from "../board/board-clocks";
@@ -161,6 +162,10 @@ function GameReviewPageInner({
   const reviewByNodeId = useMemo(() => reviewsByNode(moves), [moves]);
   const currentNode = moveTree.find((node) => node.id === selectedNodeId) ?? null;
   const selectedMove = reviewByNodeId.get(selectedNodeId) ?? null;
+  // A BEST line on the board: the panels stay on its error, the board shows the line's position
+  // (its move highlighted, none of the error's arrows or mark).
+  const bestLine = useGameStore(activeBestLine);
+  const boardMove = bestLine ? null : selectedMove;
   // On an unreviewed variation, commentary and engine evidence stay on the nearest reviewed ancestor.
   // The move whose commentary / engine line a link was clicked from keeps the anchor on its lines.
   const [linkOriginNodeId, setLinkOriginNodeId] = useState<string | null>(null);
@@ -197,11 +202,6 @@ function GameReviewPageInner({
     },
     [panelNodeId]
   );
-  // A BEST line's move in the move list: its line from the error's parent, anchored on the error.
-  const playBestLine = useCallback((target: MoveNavigationTarget, markedNodeId: string) => {
-    setLinkOriginNodeId(markedNodeId);
-    useGameStore.getState().goToLine(target.startNodeId, target.moves);
-  }, []);
   const commentaryMap = useMemo(
     () => new Map((isRunning ? [] : (review?.commentary ?? [])).map((item) => [item.ply, item])),
     [review?.commentary, isRunning]
@@ -286,20 +286,25 @@ function GameReviewPageInner({
   }, [id, gameId]);
 
   const arrows = useMemo<ReviewArrow[]>(() => {
-    if (!selectedMove) return [];
+    if (!boardMove) return [];
     const result: ReviewArrow[] = [];
-    const best = uciSquares(selectedMove.bestMove);
+    const best = uciSquares(boardMove.bestMove);
     if (best) result.push({ ...best, brush: "green" });
-    const played = uciSquares(selectedMove.playedMove);
+    const played = uciSquares(boardMove.playedMove);
     // Red for a move that cost something (any error, marked or not), blue otherwise.
     if (played && played.orig !== best?.orig)
-      result.push({ ...played, brush: selectedMove.assessment?.severity ? "red" : "blue" });
+      result.push({ ...played, brush: boardMove.assessment?.severity ? "red" : "blue" });
     return result;
-  }, [selectedMove]);
-  const lastMove = uciSquares(selectedMove?.playedMove ?? currentNode?.uci ?? null);
+  }, [boardMove]);
+  const lastMove = uciSquares(
+    bestLine ? bestLineStep(bestLine).uci : (selectedMove?.playedMove ?? currentNode?.uci ?? null)
+  );
   const moveMark = useMemo(
-    () => boardMoveMark("review", { running: isRunning, moves, nodeId: selectedNodeId }),
-    [isRunning, moves, selectedNodeId]
+    () =>
+      bestLine
+        ? null
+        : boardMoveMark("review", { running: isRunning, moves, nodeId: selectedNodeId }),
+    [bestLine, isRunning, moves, selectedNodeId]
   );
   const whitePlayer = {
     name: headers.white || "White",
@@ -570,7 +575,6 @@ function GameReviewPageInner({
             moves={moves}
             keyMoments={moments}
             opening={isRunning ? null : review?.opening}
-            onPlayLine={playBestLine}
             orientation={orientation}
           />
         ) : null}
