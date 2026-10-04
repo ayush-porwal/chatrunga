@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent
+} from "react";
+import { createPortal } from "react-dom";
 import { Check, ChevronDown, Trash2 } from "lucide-react";
 import {
   reviewInfoDetails,
@@ -44,24 +52,42 @@ export function AnalysisSwitcher() {
   const deleteAnalyses = useDeleteAnalysesMutation();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const [dismissRoots] = useState(() => [rootRef, menuRef] as const);
+  const [anchor, setAnchor] = useState<MenuAnchor | null>(null);
   const { present, state } = usePresence(open);
 
   const close = useCallback(() => {
     // Escape (or a click outside) from inside the list hands focus back to the button.
-    if (rootRef.current?.contains(document.activeElement)) triggerRef.current?.focus();
+    if (menuRef.current?.contains(document.activeElement)) triggerRef.current?.focus();
     setOpen(false);
   }, []);
-  useDismiss(rootRef, open, close);
+  useDismiss(dismissRoots, open, close);
 
-  // Opening moves focus to the analysis shown, so the arrow keys start there.
-  useEffect(() => {
+  // The list is portalled to the body (the review panel and board paint over anything left in the
+  // titlebar's stacking context), so it is placed under the button, right-aligned, by measuring.
+  useLayoutEffect(() => {
     if (!open) return;
+    const place = () => {
+      const trigger = triggerRef.current;
+      if (trigger) setAnchor(menuAnchor(trigger.getBoundingClientRect()));
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [open]);
+
+  // Opening moves focus to the analysis shown, so the arrow keys start there (once the list is
+  // placed: the first opening renders it only after measuring).
+  const placed = anchor !== null;
+  useEffect(() => {
+    if (!open || !placed) return;
     const options = [...(listRef.current?.querySelectorAll<HTMLElement>(OPTION_SELECTOR) ?? [])];
     (options.find((option) => option.getAttribute("aria-current") === "true") ?? options[0])?.focus(
       { preventScroll: true }
     );
-  }, [open]);
+  }, [open, placed]);
 
   const locked = running || loading || deleteAnalyses.isPending;
   if (!analyses.length || !gameId) return null;
@@ -160,54 +186,61 @@ export function AnalysisSwitcher() {
         )}
       </Tooltip>
 
-      {present ? (
-        <div
-          role="dialog"
-          aria-label="Saved analyses"
-          data-state={state}
-          className={cn(
-            "absolute right-0 top-[calc(100%+4px)] z-50 w-80 max-w-[calc(100vw-2rem)] [-webkit-app-region:no-drag]",
-            state === "closed" && "pointer-events-none"
-          )}
-        >
-          <span
-            aria-hidden="true"
-            data-state={state}
-            className={cn(frost, "rounded-lg animate-fade-in data-[state=closed]:animate-fade-out")}
-          />
-          <div
-            ref={listRef}
-            data-state={state}
-            className={cn(
-              popover,
-              "relative grid max-h-[min(24rem,70vh)] origin-top-right gap-0.5 overflow-y-auto"
-            )}
-          >
-            {analyses.map((info, index) => (
-              <AnalysisRow
-                key={info.reviewId}
-                info={info}
-                latest={index === 0}
-                selected={info.reviewId === shownId}
-                hidden={state === "closed"}
-                onChoose={() => choose(info.reviewId)}
-                onKeyDown={onOptionKeyDown}
-                onDelete={() => askToDelete({ reviewId: info.reviewId })}
-              />
-            ))}
-            <Separator className="my-1" />
-            <button
-              type="button"
-              tabIndex={state === "closed" ? -1 : undefined}
-              onClick={() => askToDelete("all")}
-              className="flex h-8 items-center gap-2 whitespace-nowrap rounded-md px-2 text-left text-sm text-danger outline-none transition-colors hover:bg-danger-soft focus-visible:bg-danger-soft [&_svg]:size-4 [&_svg]:shrink-0"
+      {present && anchor
+        ? createPortal(
+            <div
+              ref={menuRef}
+              role="dialog"
+              aria-label="Saved analyses"
+              data-state={state}
+              // z-50 like every popover; a confirmation opened from it is portalled after it, so on top.
+              className={cn(
+                "fixed z-50 w-80 max-w-[calc(100vw-1rem)] [-webkit-app-region:no-drag]",
+                state === "closed" && "pointer-events-none"
+              )}
+              style={{ top: anchor.top, right: anchor.right }}
             >
-              <Trash2 aria-hidden="true" />
-              Delete all analyses of this game
-            </button>
-          </div>
-        </div>
-      ) : null}
+              <span
+                aria-hidden="true"
+                data-state={state}
+                className={cn(
+                  frost,
+                  "rounded-lg animate-fade-in data-[state=closed]:animate-fade-out"
+                )}
+              />
+              <div
+                ref={listRef}
+                data-state={state}
+                className={cn(popover, "relative grid origin-top-right gap-0.5 overflow-y-auto")}
+                style={{ maxHeight: anchor.maxHeight }}
+              >
+                {analyses.map((info, index) => (
+                  <AnalysisRow
+                    key={info.reviewId}
+                    info={info}
+                    latest={index === 0}
+                    selected={info.reviewId === shownId}
+                    hidden={state === "closed"}
+                    onChoose={() => choose(info.reviewId)}
+                    onKeyDown={onOptionKeyDown}
+                    onDelete={() => askToDelete({ reviewId: info.reviewId })}
+                  />
+                ))}
+                <Separator className="my-1" />
+                <button
+                  type="button"
+                  tabIndex={state === "closed" ? -1 : undefined}
+                  onClick={() => askToDelete("all")}
+                  className="flex h-8 items-center gap-2 whitespace-nowrap rounded-md px-2 text-left text-sm text-danger outline-none transition-colors hover:bg-danger-soft focus-visible:bg-danger-soft [&_svg]:size-4 [&_svg]:shrink-0"
+                >
+                  <Trash2 aria-hidden="true" />
+                  Delete all analyses of this game
+                </button>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
 
       {pendingDelete ? (
         <Dialog
@@ -308,6 +341,27 @@ function AnalysisRow({
       />
     </div>
   );
+}
+
+/** Where the portalled list sits: under the button, right edges aligned, inside the window. */
+type MenuAnchor = { top: number; right: number; maxHeight: number };
+
+const MENU_GAP = 4;
+const WINDOW_MARGIN = 8;
+
+function menuAnchor(
+  trigger: Pick<DOMRect, "bottom" | "right">,
+  viewport: { width: number; height: number } = {
+    width: window.innerWidth,
+    height: window.innerHeight
+  }
+): MenuAnchor {
+  const top = trigger.bottom + MENU_GAP;
+  return {
+    top,
+    right: Math.max(WINDOW_MARGIN, viewport.width - trigger.right),
+    maxHeight: Math.max(120, Math.min(384, viewport.height - top - WINDOW_MARGIN))
+  };
 }
 
 function LatestTag() {

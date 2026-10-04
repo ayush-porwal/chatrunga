@@ -107,6 +107,19 @@ test("the saved-analysis picker is compact, details each analysis, and deletes o
   await expect(option(page, /Oct 3/)).toContainText("Stockfish 18 · 1 s/move · Maia 1100–1900");
   await expect(option(page, /Oct 3/)).not.toHaveAttribute("aria-current", "true");
   await expect(option(page, /Oct 3/)).not.toContainText("Latest");
+  // The list paints above the review panel and board (it's portalled out of the titlebar), and
+  // fits inside the window's right edge.
+  for (const row of await picker(page).locator("[data-analysis-option]").all()) {
+    const topmost = await row.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return hit !== null && element.contains(hit);
+    });
+    expect(topmost).toBe(true);
+  }
+  const menuBox = await picker(page).boundingBox();
+  const viewportWidth = await page.evaluate(() => window.innerWidth);
+  expect((menuBox?.x ?? 0) + (menuBox?.width ?? Infinity)).toBeLessThanOrEqual(viewportWidth);
   // Up and Down move between them.
   await expect(newest).toBeFocused();
   await page.keyboard.press("ArrowDown");
