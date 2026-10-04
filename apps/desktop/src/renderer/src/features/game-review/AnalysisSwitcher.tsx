@@ -35,6 +35,9 @@ type PendingDelete = { reviewId: string } | "all";
 
 const OPTION_SELECTOR = "[data-analysis-option]";
 
+/** The button's and its list's one width (the list sits right-aligned under it: the same edges). */
+const PICKER_WIDTH = "w-80 max-w-[calc(100vw-1rem)]";
+
 /**
  * The game's saved analyses in Game review's titlebar: a compact button naming the one shown (its
  * date, and Latest when it's the newest; the rest in its tooltip) that opens the list to switch
@@ -158,16 +161,19 @@ export function AnalysisSwitcher() {
             aria-label={shown ? `Analysis: ${triggerName(shown, shownIndex === 0)}` : "Analyses"}
             disabled={locked}
             onClick={() => (open ? close() : setOpen(true))}
-            className="max-w-56 tabular-nums"
+            // The list's width whatever the entry: it never jumps, and lines up with the list.
+            className={cn(PICKER_WIDTH, "justify-between tabular-nums")}
           >
-            {shown ? (
-              <>
-                <span className="min-w-0 truncate">{reviewInfoWhen(shown)}</span>
-                {shownIndex === 0 ? <LatestTag /> : null}
-              </>
-            ) : (
-              <span className="min-w-0 truncate">Analyses</span>
-            )}
+            <span className="flex min-w-0 items-center gap-2">
+              {shown ? (
+                <>
+                  <span className="min-w-0 truncate">{reviewInfoWhen(shown)}</span>
+                  {shownIndex === 0 ? <LatestTag /> : null}
+                </>
+              ) : (
+                <span className="min-w-0 truncate">Analyses</span>
+              )}
+            </span>
             <ChevronDown
               aria-hidden="true"
               className={cn(
@@ -195,7 +201,8 @@ export function AnalysisSwitcher() {
               data-state={state}
               // z-50 like every popover; a confirmation opened from it is portalled after it, so on top.
               className={cn(
-                "fixed z-50 w-80 max-w-[calc(100vw-1rem)] [-webkit-app-region:no-drag]",
+                "fixed z-50 [-webkit-app-region:no-drag]",
+                PICKER_WIDTH,
                 state === "closed" && "pointer-events-none"
               )}
               style={{ top: anchor.top, right: anchor.right }}
@@ -307,6 +314,7 @@ function AnalysisRow({
   onDelete: () => void;
 }) {
   const when = reviewInfoWhen(info);
+  const details = reviewInfoDetails(info);
   return (
     <div className="group/row flex items-center gap-1 rounded-md transition-colors hover:bg-control focus-within:bg-control">
       <button
@@ -327,7 +335,9 @@ function AnalysisRow({
             <span className="truncate">{when}</span>
             {latest ? <LatestTag /> : null}
           </span>
-          <span className="truncate text-xs text-fg-muted">{reviewInfoDetails(info)}</span>
+          <span className="truncate text-xs text-fg-muted" title={details}>
+            {details}
+          </span>
         </span>
       </button>
       <IconButton
