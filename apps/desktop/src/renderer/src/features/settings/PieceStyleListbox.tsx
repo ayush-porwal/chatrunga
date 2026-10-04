@@ -67,6 +67,7 @@ export function PieceStyleListbox({
           type="button"
           className={cn(settingsListboxTriggerClass, open && settingsListboxTriggerOpenRing)}
           aria-expanded={open}
+          role="combobox"
           aria-haspopup="listbox"
           aria-controls={listboxDomId}
           aria-labelledby={`${id}-label`}

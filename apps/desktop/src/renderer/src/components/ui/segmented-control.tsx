@@ -126,6 +126,7 @@ function SegmentedControl<T extends string>({
     buttons[next]?.focus();
   };
   return (
+    // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- the role is a prop (radiogroup or tablist); the group moves focus between its options with the arrow keys
     <div
       ref={containerRef}
       role={role}

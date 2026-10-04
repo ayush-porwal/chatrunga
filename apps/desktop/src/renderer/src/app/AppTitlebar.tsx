@@ -307,6 +307,7 @@ export const ReviewTitlebar = memo(function ReviewTitlebar({
             // A disabled button gets no pointer events, so the tooltip hangs off a focusable wrapper.
             <Tooltip>
               <TooltipTrigger asChild>
+                {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a disabled button can't take focus, so its wrapper does, to show why it's disabled */}
                 <span tabIndex={0} className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent/50">
                   <Button type="button" variant="primary" size="sm" disabled>
                     Analyze

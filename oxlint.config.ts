@@ -31,7 +31,7 @@ export default defineConfig({
     ".claude/**",
     ".worktrees/**"
   ],
-  plugins: ["eslint", "typescript", "unicorn", "oxc", "react"],
+  plugins: ["eslint", "typescript", "unicorn", "oxc", "react", "jsx-a11y"],
   // TanStack Query's rules have no native port. The plugin is pinned (JS plugins are alpha) and
   // scripts/lint-config.test.mjs proves its rules still fire.
   jsPlugins: [{ name: "@tanstack/query", specifier: "@tanstack/eslint-plugin-query" }],
@@ -110,6 +110,15 @@ export default defineConfig({
     "react/purity": "error",
     "react/set-state-in-render": "error",
     "react/unsupported-syntax": "warn",
+
+    // Accessibility (jsx-a11y's correctness rules). Two don't fit how the app is built: focus moves
+    // into a dialog or inline editor the user just opened (the WAI-ARIA dialog pattern; nothing
+    // autofocuses on load), and custom widgets keep their ARIA roles on styled elements
+    // (role="status" regions, radio cards, listboxes) where the native tag can't be styled alike.
+    "jsx-a11y/no-autofocus": "off",
+    "jsx-a11y/prefer-tag-over-role": "off",
+    // The app's Switch renders a native switch button, so a label wrapping it labels a control.
+    "jsx-a11y/label-has-associated-control": ["error", { controlComponents: ["Switch"] }],
 
     // TanStack Query: query keys list every variable the query reads, and query options are stable.
     "@tanstack/query/exhaustive-deps": "error",

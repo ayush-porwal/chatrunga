@@ -179,6 +179,7 @@ const EngineLineRow = memo(function EngineLineRow({
                     ) : (
                       // The figurine is decorative: the move is read out as its SAN (Nf6, not f6).
                       <span
+                        // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a move that isn't a link is still reachable by keyboard, read out as its SAN
                         tabIndex={0}
                         aria-label={step.san}
                         className="rounded-[3px] outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/50"
@@ -534,6 +535,7 @@ function EngineStatusPanelContent({
               {linesHint ? <p className="text-xs text-fg-muted">{linesHint}</p> : null}
               {/* Rows are reserved up to the MultiPV count so lines arriving never push content down. */}
               {/* The board's piece set, so the lines' figurines are the board's pieces. */}
+              {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- leaving the list (pointer or focus) ends the move preview */}
               <ol
                 ref={setLinesList}
                 className={cn("cg-wrap divide-y divide-line-subtle", cgWrapPieceSetClass(appearance.pieceStyle), piecePresentationTailwindClass(appearance.piecePresentation))}

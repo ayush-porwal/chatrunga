@@ -577,6 +577,7 @@ function EngineDropdown({
         ref={triggerRef}
         id={id}
         type="button"
+        role="combobox"
         className={cn(settingsListboxTriggerClass, open && settingsListboxTriggerOpenRing)}
         aria-expanded={open}
         aria-haspopup="listbox"

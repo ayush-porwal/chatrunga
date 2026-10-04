@@ -122,6 +122,7 @@ export function OnboardingFlow({
   const heading = { headingRef, headingId, footer };
 
   return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- the modal dialog handles Escape, keeps Tab inside and stops the app's shortcuts
     <div
       ref={rootRef}
       role="dialog"

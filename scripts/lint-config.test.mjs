@@ -237,6 +237,51 @@ export function Incompatible() {
 `
   },
 
+  // Accessibility.
+  {
+    name: "accessibility: clickable static elements, images without text, unlabelled controls",
+    file: "apps/desktop/src/renderer/src/features/a11y.tsx",
+    rules: [
+      "jsx-a11y(no-static-element-interactions)",
+      "jsx-a11y(click-events-have-key-events)",
+      "jsx-a11y(alt-text)",
+      "jsx-a11y(anchor-is-valid)"
+    ],
+    lines: [3, 3, 4, 5],
+    code: `export function A11y({ onOpen }: { onOpen: () => void }) {
+  return (<>
+    <div onClick={onOpen}>Open</div>
+    <img src="board.png" />
+    <a href="#" onClick={onOpen}>Open</a>
+  </>);
+}
+`
+  },
+  {
+    name: "accessibility: buttons, described images and labelled switches pass",
+    file: "apps/desktop/src/renderer/src/features/a11y-ok.tsx",
+    rules: [
+      "jsx-a11y(no-static-element-interactions)",
+      "jsx-a11y(alt-text)",
+      "jsx-a11y(label-has-associated-control)"
+    ],
+    lines: [],
+    code: `function Switch(props: { checked: boolean }) {
+  return <button type="button" role="switch" aria-checked={props.checked} />;
+}
+export function A11y({ onOpen }: { onOpen: () => void }) {
+  return (<>
+    <button type="button" onClick={onOpen}>Open</button>
+    <img src="board.png" alt="The position after 1. e4" />
+    <label>
+      <Switch checked />
+      Archived
+    </label>
+  </>);
+}
+`
+  },
+
   // TanStack Query's rules, through the pinned JS plugin.
   {
     name: "TanStack Query rules: query keys, stable clients, stable deps and property order",

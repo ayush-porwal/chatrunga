@@ -189,7 +189,7 @@ export function EditRepertoireDialog({
             </p>
           ) : null}
         </Field>
-        <button type="submit" hidden />
+        <button type="submit" hidden aria-label="Save repertoire" />
       </form>
       {changedElsewhere ? (
         <Notice

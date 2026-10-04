@@ -300,12 +300,14 @@ function PromotionPicker({
     onChoose(null);
   };
   return (
+    // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- a click on the dimmed board cancels; Escape and the piece buttons are the keyboard path
     <div
       className="absolute inset-0 z-20 grid place-items-center rounded-lg bg-black/45 backdrop-blur-[1px]"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onChoose(null);
       }}
     >
+      {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- the dialog's Escape cancels the promotion */}
       <div
         role="dialog"
         aria-modal="true"

@@ -122,6 +122,7 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
       <div className="grid items-start gap-x-8 gap-y-6 @2xl:grid-cols-[minmax(0,1fr)_minmax(11rem,14rem)]">
         <div className="grid min-w-0 gap-5">
           <Field label="Board theme" hint={selectedThemeLabel}>
+            {/* oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- focus goes to the checked radio inside (roving tabindex), not to the group */}
             <div
               role="radiogroup"
               aria-label="Board theme"

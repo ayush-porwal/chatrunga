@@ -215,6 +215,7 @@ export const UpdateButton = memo(function UpdateButton({
       </Tooltip>
       {present && anchor && state
         ? createPortal(
+            // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- the hover card stays open while the pointer is on it
             <div
               ref={cardRef}
               role="dialog"

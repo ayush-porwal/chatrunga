@@ -125,6 +125,7 @@ function Dialog({
         if (onClose && event.target === event.currentTarget) onClose();
       }}
     >
+      {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- the dialog keeps Tab inside itself (focus trap) */}
       <section
         ref={panelRef}
         role="dialog"

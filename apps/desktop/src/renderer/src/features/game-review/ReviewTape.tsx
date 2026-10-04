@@ -145,6 +145,7 @@ const GraphHelp = memo(function GraphHelp() {
   return (
     <UiTooltip>
       <TooltipTrigger asChild>
+        {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the info icon takes focus so keyboard users can open its tooltip */}
         <span tabIndex={0} aria-label="About the graph" className="grid size-6 place-items-center rounded-md text-fg-subtle outline-none transition-colors duration-micro ease-standard hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/50">
           <Info className="size-3.5" />
         </span>

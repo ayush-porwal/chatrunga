@@ -275,7 +275,6 @@ const TreeNodeButton = memo(function TreeNodeButton({
         type="button"
         data-tree-node-id={node.id}
         aria-current={selected ? "step" : undefined}
-        aria-selected={selected}
         className={cn(
           "flex h-8 w-full min-w-0 items-center gap-1.5 rounded-md px-2 text-left outline-none",
           "transition-[background-color,color,box-shadow] duration-micro ease-standard focus-visible:ring-2 focus-visible:ring-accent/50",
