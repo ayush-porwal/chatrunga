@@ -6,6 +6,8 @@ import type {
   ReviewGameInput
 } from "@chaturanga/shared/types/engine";
 import { existsSync } from "node:fs";
+import { resolveReviewRating, type ReviewRating } from "@chaturanga/shared/chess/review-rating";
+import type { AppSettings } from "@chaturanga/shared/types/settings";
 import { settingsRepository } from "../db/repositories";
 import { errorMessage } from "../logger";
 import { engineConfigForId, engineResourceOptions, listAllEngines } from "../engine/engine-config";
@@ -42,6 +44,27 @@ function maiaEnginesFor(input: ReviewGameInput, evaluationEngine: EngineConfig) 
 }
 
 /**
+ * The rating a review is made for (chess/review-rating.ts): the game's own for the reviewed side,
+ * else the Settings one for its mode. Never asks Lichess. The Maia model is the nearest of the
+ * levels this review runs (none when it runs no Maia).
+ */
+export function reviewRatingFor(
+  input: Pick<ReviewGameInput, "rating" | "timeControl">,
+  settings: Pick<AppSettings, "playerRatings" | "reviewPlayerColor">,
+  maiaEngines: readonly { maiaRating: number }[]
+): ReviewRating {
+  const context = input.rating;
+  return resolveReviewRating({
+    side: context?.side ?? settings.reviewPlayerColor,
+    gameRatings: context ? { white: context.whiteElo, black: context.blackElo } : null,
+    timeControl: input.timeControl,
+    speed: context?.speed ?? null,
+    ratings: settings.playerRatings,
+    installedMaiaModels: maiaEngines.map((engine) => engine.maiaRating)
+  });
+}
+
+/**
  * Runs a full game review, streaming progress through EngineManager events
  * (relayed to the renderer) and resolving with the finished review.
  *
@@ -61,6 +84,7 @@ export async function runGameReview(
   const { reviewId } = input;
   const totalMoves = input.moves.length;
   const maiaEngines = maiaEnginesFor(input, config);
+  const rating = reviewRatingFor(input, settings, maiaEngines);
 
   const telemetry = getTelemetry();
   const startedAt = performance.now();
@@ -100,10 +124,11 @@ export async function runGameReview(
         shouldCancel: () => engineManager.isReviewCancelled(reviewId)
       },
       maiaEngines,
-      { ...engineResourceOptions(settings), playerRating: settings.reviewPlayerRating }
+      { ...engineResourceOptions(settings), playerRating: rating.rating }
     );
-    // The operation id travels with the saved review, so opening it later is attributable.
-    const finished: GameReview = { ...review, reviewId };
+    // The operation id travels with the saved review, so opening it later is attributable; the
+    // rating it was made for, so it shows where that came from.
+    const finished: GameReview = { ...review, reviewId, rating };
     telemetry?.record("review_completed", {
       ...operation,
       duration_ms: Math.round(performance.now() - startedAt)

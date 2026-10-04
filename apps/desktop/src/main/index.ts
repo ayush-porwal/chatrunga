@@ -33,6 +33,7 @@ import { registerIpc } from "./ipc/register";
 import { shutdownLichess } from "./lichess";
 import { errorMessage, logger } from "./logger";
 import { migrateOnboarding } from "./onboarding-migration";
+import { migratePlayerRatings } from "./rating-migration";
 import { updateService } from "./updater";
 import {
   isAppUrl,
@@ -141,6 +142,16 @@ async function startup(): Promise<void> {
     classifyInstallForOnboarding();
   } catch (error) {
     logger.error("settings", "onboarding migration failed:", error);
+  }
+  try {
+    const result = migratePlayerRatings({
+      storedRatings: () => settingsRepository.getStored("playerRatings"),
+      legacyRating: () => settingsRepository.getStored("reviewPlayerRating"),
+      set: (ratings) => settingsRepository.set("playerRatings", ratings)
+    });
+    if (result === "migrated") logger.info("settings", "ratings: one rating per mode");
+  } catch (error) {
+    logger.error("settings", "ratings migration failed:", error);
   }
   startTelemetry();
   session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) =>

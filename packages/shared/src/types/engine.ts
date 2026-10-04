@@ -1,3 +1,4 @@
+import type { ReviewRating, ReviewRatingContext } from "../chess/review-rating";
 import type { Color } from "./chess";
 
 export type EngineProtocol = "uci";
@@ -532,6 +533,11 @@ export type GameReview = {
   opening?: GameOpening | null;
   /** AI commentary, keyed by ply; requested on demand as moves are viewed. */
   commentary?: ReviewCommentary[];
+  /**
+   * The rating the review was made for (it picks the Maia level), where it came from (the game,
+   * or Settings for the game's mode) and the Maia model nearest it. Missing on older reviews.
+   */
+  rating?: ReviewRating;
 };
 
 export type ReviewMoveInputItem = {
@@ -559,6 +565,12 @@ export type ReviewGameInput = {
   predictionEngineIds?: string[];
   /** PGN TimeControl tag (e.g. "600+5"); used for the increment in `timeSpentMs`. */
   timeControl?: string | null;
+  /**
+   * The reviewed side and the game's own ratings and Lichess speed, from which main resolves the
+   * rating the review is made for (see chess/review-rating.ts). Omitted: the `reviewPlayerColor`
+   * setting's side, rated from Settings for the TimeControl's mode.
+   */
+  rating?: ReviewRatingContext | null;
   rootFen: string;
   moves: ReviewMoveInputItem[];
   /**

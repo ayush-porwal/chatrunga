@@ -1,5 +1,6 @@
 import type { MaiaRating } from "./engine";
 import { isOneOf } from "./guards";
+import { normalizePlayerRatings, uniformRatings, type PlayerRatings } from "./ratings";
 
 export type BoardTheme =
   | "brown"
@@ -210,7 +211,11 @@ export type AppSettings = {
    */
   reviewCommentaryProvider: ReviewCommentaryProvider;
   reviewCommentaryDetail: CommentaryDetail;
-  reviewPlayerRating: number;
+  /**
+   * The player's rating per Lichess mode (Settings → Ratings): typed in, or synced from the
+   * connected Lichess account. A review without the game's own rating reads its mode's.
+   */
+  playerRatings: PlayerRatings;
   reviewPlayerColor: "white" | "black";
   reviewShowTopLines: boolean;
   /** MultiPV lines per reviewed position (1-5). */
@@ -331,7 +336,7 @@ export const defaultSettings: AppSettings = {
   reviewCommentaryEnabled: true,
   reviewCommentaryProvider: "openrouter",
   reviewCommentaryDetail: "balanced",
-  reviewPlayerRating: 1500,
+  playerRatings: uniformRatings(),
   reviewPlayerColor: "white",
   reviewShowTopLines: true,
   reviewMultiPv: 3,
@@ -359,6 +364,12 @@ export const defaultSettings: AppSettings = {
   onboardingCompletedAt: null,
   onboardingHintsSeen: []
 };
+
+/**
+ * Settings older builds stored that are no longer settings; read once, at startup, to migrate them
+ * (main/rating-migration.ts). `reviewPlayerRating`: the one rating every mode now starts from.
+ */
+export type LegacySettingKey = "reviewPlayerRating";
 
 /** Whether `key` names a setting (every setting has a default). */
 export function isSettingKey(key: string): key is keyof AppSettings {
@@ -476,6 +487,16 @@ export function normalizeOnboardingSettings(settings: AppSettings): AppSettings 
   };
 }
 
+/**
+ * Validates the per-mode ratings (a damaged mode falls back to the default) and drops the single
+ * rating older builds stored, which startup migrated into them. Idempotent.
+ */
+export function normalizeRatingSettings(settings: AppSettings): AppSettings {
+  const rest: AppSettings & { reviewPlayerRating?: unknown } = { ...settings };
+  delete rest.reviewPlayerRating;
+  return { ...rest, playerRatings: normalizePlayerRatings(settings.playerRatings) };
+}
+
 /** Returns normalized `#rrggbb` or null if invalid / empty. */
 export function normalizeBoardSquareHex(input: string | null | undefined): string | null {
   if (input == null) return null;
@@ -545,12 +566,6 @@ export function normalizeReviewEngineSettings(settings: AppSettings): AppSetting
       ENGINE_HASH_MB_RANGE.min,
       ENGINE_HASH_MB_RANGE.max,
       defaultSettings.engineHashMb
-    ),
-    reviewPlayerRating: clampInt(
-      settings.reviewPlayerRating,
-      100,
-      3500,
-      defaultSettings.reviewPlayerRating
     ),
     // A legacy value not yet migrated at startup (see main/index.ts) reads as OpenRouter.
     reviewCommentaryProvider: normalizeCommentaryProvider(settings.reviewCommentaryProvider)

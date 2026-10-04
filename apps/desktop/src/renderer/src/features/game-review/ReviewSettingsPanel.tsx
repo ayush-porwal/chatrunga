@@ -11,10 +11,11 @@ import {
 } from "../../queries/api";
 import { pickDefaultEngine, pickMaiaEngines } from "./review-engine-picker";
 import { useOpenSettings } from "../settings/settings-link";
+import { reviewRatingLabel, useReviewRating } from "./use-review-rating";
 import { Badge, ChipButton } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, SettingRow } from "@/components/ui/field";
-import { Input, Select } from "@/components/ui/input";
+import { Select } from "@/components/ui/input";
 import { SectionHeader } from "@/components/ui/page";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SideDot } from "@/components/ui/side-dot";
@@ -85,6 +86,8 @@ export function ReviewSettingsPanel({
     ? installedMaiaLevels.filter((level) => settings.reviewMaiaLevels?.includes(level))
     : installedMaiaLevels;
   const needsLc0 = useMaiaNeedsLc0();
+  // The rating a review of this game uses; edited (per mode) in app Settings.
+  const rating = useReviewRating(settings);
   const openSettings = useOpenSettings();
   const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) =>
     update.mutate({ key, value });
@@ -274,22 +277,17 @@ export function ReviewSettingsPanel({
             ]}
           />
         </Field>
-        <Field label="Your rating" hint="400–3500" htmlFor="review-rating">
-          <Input
-            id="review-rating"
-            type="number"
-            min={400}
-            max={3500}
-            step={10}
-            value={settings.reviewPlayerRating}
-            onChange={(event) =>
-              set(
-                "reviewPlayerRating",
-                Math.round(Math.max(400, Math.min(3500, Number(event.target.value) || 1500)))
-              )
-            }
-          />
-        </Field>
+        <SettingRow
+          label="Rating"
+          description={reviewRatingLabel(rating)}
+          control={
+            openSettings ? (
+              <Button variant="link" size="sm" onClick={() => openSettings("ratings")}>
+                Edit ratings
+              </Button>
+            ) : null
+          }
+        />
         <SettingRow
           label="Model and API key"
           description={

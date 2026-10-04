@@ -33,6 +33,7 @@ import { BoardMoveMarkBadge } from "../board/BoardMoveMarkBadge";
 import { boardMoveMark } from "../board/move-mark";
 import { MoveNavigation } from "../board/MoveNavigation";
 import { useGameReviewCommentary } from "./useGameReviewCommentary";
+import { useReviewRating } from "./use-review-rating";
 import { useStoreHintsOnLeave } from "../onboarding/Coachmark";
 import { useUpdateSettingMutation } from "../../queries/api";
 import { openSavedGame } from "../game/saved-game";
@@ -226,10 +227,13 @@ function GameReviewPageInner({
     [updateSetting]
   );
   const openReviewSettings = useCallback(() => onTabChange("settings"), [onTabChange]);
+  // The rating the shown review was made for (an older one: what a review now would use).
+  const currentRating = useReviewRating(settings);
+  const userRating = review?.rating?.rating ?? currentRating.rating;
   const selected = useGameReviewCommentary({
     enabled: settings.reviewCommentaryEnabled,
     detail: settings.reviewCommentaryDetail,
-    userRating: settings.reviewPlayerRating,
+    userRating,
     playerColor: settings.reviewPlayerColor,
     settingsReady,
     move: panelMove,
@@ -453,7 +457,7 @@ function GameReviewPageInner({
           model={selected.model}
           error={selected.error}
           detail={settings.reviewCommentaryDetail}
-          userRating={settings.reviewPlayerRating}
+          userRating={userRating}
           onRetry={selected.retry}
           rewrite={selected.rewrite}
           onAnalyze={onAnalyze}
@@ -501,7 +505,7 @@ function GameReviewPageInner({
           hasReview={hasMoves}
           running={isRunning}
           showTopLines={settings.reviewShowTopLines}
-          userRating={settings.reviewPlayerRating}
+          userRating={userRating}
           onAnalyze={onAnalyze}
           moves={moves}
           parentNodeId={panelParentId}

@@ -20,6 +20,7 @@ import { BoardSection } from "./BoardSettings";
 import { EngineAssetsPanel } from "./EngineAssetsPanel";
 import { EnginesSection } from "./EngineSettings";
 import { OpenRouterSettingsCard } from "./OpenRouterSettingsCard";
+import { RatingsSection } from "./RatingsSection";
 import { LichessAccountSection } from "../lichess/LichessAccount";
 import { UpdatesSection } from "../updates/UpdatesSection";
 import { UsageDataSection } from "./UsageDataSection";
@@ -33,6 +34,7 @@ export type SettingsSectionId =
   | "engines"
   | "downloads"
   | "ai"
+  | "ratings"
   | "lichess"
   | "updates"
   | "usage"
@@ -58,6 +60,7 @@ export const SettingsPage = memo(function SettingsPage({
     "board",
     "sound",
     ...(desktopApiAvailable ? (["lichess"] as const) : []),
+    "ratings",
     "engines",
     ...(desktopApiAvailable ? (["downloads"] as const) : []),
     "ai",
@@ -100,6 +103,12 @@ export const SettingsPage = memo(function SettingsPage({
               <LichessAccountSection />
             </SectionAnchor>
           ) : null}
+        </SettingsGroup>
+
+        <SettingsGroup title="Ratings">
+          <SectionAnchor id="ratings" wide>
+            <RatingsSection appearance={appearance} />
+          </SectionAnchor>
         </SettingsGroup>
 
         <SettingsGroup title="Engines & AI">

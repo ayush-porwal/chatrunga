@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fenAfterUci } from "@chaturanga/shared/chess/position";
 import { validatePuzzleProse } from "@chaturanga/shared/llm/puzzle-explanation";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
+import { uniformRatings } from "@chaturanga/shared/types/ratings";
 import type { AnalysisLine, EngineConfig, EngineScore } from "@chaturanga/shared/types/engine";
 import type { PuzzleWrongMove } from "../../stores/puzzle-store";
 import {
@@ -52,7 +53,10 @@ const analysis: ExplainAnalysis = {
   beforeMistake: [line(1, ["h5f7"], { type: "mate", value: 1 })],
   afterMistake: [line(1, ["c6e5", "c4b3"], { type: "cp", value: -650 })]
 };
-const settings = { reviewPlayerRating: 1320, reviewCommentaryDetail: "concise" as const };
+const settings = {
+  playerRatings: { ...uniformRatings(1800), rapid: { source: "manual" as const, rating: 1320 } },
+  reviewCommentaryDetail: "concise" as const
+};
 
 describe("which case is explained", () => {
   it("is nothing while pending, then solved, failed by a move, or failed by opening the solution", () => {

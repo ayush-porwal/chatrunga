@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { reviewRatingContext } from "@chaturanga/shared/chess/review-rating";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import { mainlineReviewInput } from "../features/game-review/review-utils";
@@ -40,7 +41,7 @@ export function useReviewRunner({
   // Only "is there a main line?" is rendered; the game itself is read when a review starts, so the
   // app shell does not re-render on every move.
   const hasMoves = useGameStore((state) => hasMainlineMove(state.moveTree));
-  const { defaultEngineId, reviewUseMaia, reviewSearchTimeMs } = settings;
+  const { defaultEngineId, reviewUseMaia, reviewSearchTimeMs, reviewPlayerColor } = settings;
 
   const startReview = useCallback(async () => {
     const review = useReviewStore.getState();
@@ -89,7 +90,9 @@ export function useReviewRunner({
         rootFen,
         moves: reviewInput,
         moveTimeMs: reviewSearchTimeMs,
-        timeControl: headers.timeControl ?? null
+        timeControl: headers.timeControl ?? null,
+        // Main rates the review from the game's own rating for this side, else Settings.
+        rating: reviewRatingContext(headers, game.source, reviewPlayerColor)
       });
     } catch (error) {
       // The invoke error wraps main's message; a cancelled review (or one replaced by another
@@ -99,7 +102,15 @@ export function useReviewRunner({
         useReviewStore.getState().setError(message);
       }
     }
-  }, [defaultEngineId, engines, gameLoading, onEngineMissing, reviewSearchTimeMs, reviewUseMaia]);
+  }, [
+    defaultEngineId,
+    engines,
+    gameLoading,
+    onEngineMissing,
+    reviewPlayerColor,
+    reviewSearchTimeMs,
+    reviewUseMaia
+  ]);
 
   return { startReview, hasMoves };
 }

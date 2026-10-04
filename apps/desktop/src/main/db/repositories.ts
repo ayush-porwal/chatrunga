@@ -18,11 +18,14 @@ import {
   normalizeAppearanceSettings,
   normalizeOnboardingSettings,
   normalizePracticeSettings,
+  normalizeRatingSettings,
   normalizeReviewEngineSettings,
   normalizeUpdateSettings,
   settingKeys,
-  type AppSettings
+  type AppSettings,
+  type LegacySettingKey
 } from "@chaturanga/shared/types/settings";
+import { resolveGameReviewRating } from "@chaturanga/shared/chess/review-rating";
 import type {
   CreateEngineInput,
   EngineConfig,
@@ -475,6 +478,7 @@ function isHeaders(value: unknown): value is GameHeaders {
  */
 function parseStoredReview(
   json: string,
+  row: GameRow,
   moveTree: readonly MoveNode[],
   rebuilt: boolean
 ): GameReview | null {
@@ -493,12 +497,26 @@ function parseStoredReview(
   try {
     return withCurrentAssessments(placed, {
       openingBook: openingBook(),
-      playerRating: settingsRepository.getAll().reviewPlayerRating
+      playerRating: placed.rating?.rating ?? settingsRatingFor(row)
     });
   } catch {
     // Damaged moves are left unassessed one by one; anything worse still opens the review, unmarked.
     return placed;
   }
+}
+
+/**
+ * The rating a review saved before reviews recorded theirs is re-assessed for: the game's own
+ * rating for the reviewed side, else the Settings rating for its mode (chess/review-rating.ts).
+ */
+function settingsRatingFor(row: GameRow): number {
+  const settings = settingsRepository.getAll();
+  return resolveGameReviewRating({
+    headers: storedHeaders(row.headers_json) ?? { event: row.event, site: row.site },
+    source: row.source,
+    side: settings.reviewPlayerColor,
+    ratings: settings.playerRatings
+  }).rating;
 }
 
 /** The row's stored headers, or null when it has none (older rows) or they can't be read. */
@@ -526,7 +544,7 @@ function toSavedGame(row: GameRow): SavedGame {
         listed[0].review_id
       )
     : undefined;
-  const review = newest ? parseStoredReview(newest.review_json, moveTree, rebuilt) : null;
+  const review = newest ? parseStoredReview(newest.review_json, row, moveTree, rebuilt) : null;
 
   return {
     ...toGameSummary(row),
@@ -868,7 +886,7 @@ export const gameRepository = {
     );
     if (!row || !stored) return null;
     const { moveTree, rebuilt } = parseMoveTree(row);
-    return parseStoredReview(stored.review_json, moveTree, rebuilt);
+    return parseStoredReview(stored.review_json, row, moveTree, rebuilt);
   },
 
   /** A library game that is the same game (see gameFingerprint), if any. */
@@ -971,10 +989,12 @@ export const settingsRepository = {
       }
     }
     const merged = { ...defaultSettings, ...values } as AppSettings;
-    return normalizePracticeSettings(
-      normalizeOnboardingSettings(
-        normalizeUpdateSettings(
-          normalizeAppearanceSettings(normalizeReviewEngineSettings(hydratePieceSettings(merged)))
+    return normalizeRatingSettings(
+      normalizePracticeSettings(
+        normalizeOnboardingSettings(
+          normalizeUpdateSettings(
+            normalizeAppearanceSettings(normalizeReviewEngineSettings(hydratePieceSettings(merged)))
+          )
         )
       )
     );
@@ -986,7 +1006,7 @@ export const settingsRepository = {
   },
 
   /** The raw persisted value (before defaults/normalization), or undefined when never set. */
-  getStored(key: keyof AppSettings): unknown {
+  getStored(key: keyof AppSettings | LegacySettingKey): unknown {
     const row = get<SettingRow>("SELECT key, value FROM settings WHERE key = ?", key);
     if (!row) return undefined;
     try {

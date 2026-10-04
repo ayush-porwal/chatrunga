@@ -30,6 +30,7 @@ import { formatSize, setupRowPercent, type SetupRow } from "@/lib/engine-assets"
 import { isElectronMac } from "@/lib/environment";
 import { fieldHint, fieldLabel, focusRing, motion } from "@/lib/ui";
 import { cn } from "@/lib/utils";
+import { applyRatingToAllModes, headlineRating } from "@chaturanga/shared/types/ratings";
 import { useOpenRouterConfigQuery, useSettingsQuery } from "../../queries/api";
 import { BoardThumbnail } from "../settings/board-thumbnail";
 import { OPENROUTER_KEYS_URL, useOpenRouterSave } from "../settings/use-openrouter-save";
@@ -703,14 +704,18 @@ function LevelStep({
   onBack: () => void;
   onNext: () => void;
 }) {
-  const [ratingText, setRatingText] = useState(String(settings.reviewPlayerRating));
-  const selected = nearestLevelPreset(settings.reviewPlayerRating);
-  const exact = LEVEL_PRESETS.some((preset) => preset.rating === settings.reviewPlayerRating);
+  // One rating, for every mode (Settings → Ratings has them one by one).
+  const yourRating = headlineRating(settings.playerRatings);
+  const [ratingText, setRatingText] = useState(String(yourRating));
+  const selected = nearestLevelPreset(yourRating);
+  const exact = LEVEL_PRESETS.some((preset) => preset.rating === yourRating);
   const customTheme = Boolean(settings.boardSquareLight || settings.boardSquareDark);
+  const applyRating = (rating: number) =>
+    setSetting("playerRatings", applyRatingToAllModes(settings.playerRatings, rating));
 
   const setRating = (rating: number) => {
     setRatingText(String(rating));
-    setSetting("reviewPlayerRating", rating);
+    applyRating(rating);
   };
 
   return (
@@ -758,7 +763,7 @@ function LevelStep({
                     checked ? "text-accent-fg" : "text-fg"
                   )}
                 >
-                  {checked && !exact ? settings.reviewPlayerRating : preset.rating}
+                  {checked && !exact ? yourRating : preset.rating}
                 </span>
                 <span className="truncate text-2xs text-fg-muted">{preset.label}</span>
               </button>
@@ -782,9 +787,9 @@ function LevelStep({
               setRatingText(event.target.value);
               const value = Number(event.target.value);
               if (event.target.value && value >= 400 && value <= 3500)
-                setSetting("reviewPlayerRating", Math.round(value));
+                applyRating(Math.round(value));
             }}
-            onBlur={() => setRating(clampRating(Number(ratingText) || settings.reviewPlayerRating))}
+            onBlur={() => setRating(clampRating(Number(ratingText) || yourRating))}
           />
           <span className={fieldHint}>Any rating system is fine; a guess works too.</span>
         </div>
@@ -1113,8 +1118,9 @@ function DoneStep({
                 : "Skipped. Home offers the download whenever you want it."
             };
 
-  const preset = nearestLevelPreset(settings.reviewPlayerRating);
-  const exact = preset.rating === settings.reviewPlayerRating;
+  const yourRating = headlineRating(settings.playerRatings);
+  const preset = nearestLevelPreset(yourRating);
+  const exact = preset.rating === yourRating;
   const side = settings.reviewPlayerColor === "black" ? "Black" : "White";
 
   return (
@@ -1141,7 +1147,7 @@ function DoneStep({
         <SummaryRow tone="done" title="Your level">
           {exact
             ? `${preset.rating}, ${preset.label.toLowerCase()}. Explanations are written for ${side}.`
-            : `${settings.reviewPlayerRating}. Explanations are written for ${side}.`}
+            : `${yourRating}. Explanations are written for ${side}.`}
         </SummaryRow>
         <SummaryRow tone={hasKey ? "done" : "skipped"} title="AI coach">
           {hasKey

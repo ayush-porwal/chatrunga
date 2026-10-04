@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
+import { uniformRatings } from "@chaturanga/shared/types/ratings";
 import { parseSettingValue, parseSettingWrite } from "./settings-values";
 
 describe("parseSettingValue", () => {
@@ -20,6 +21,12 @@ describe("parseSettingValue", () => {
     expect(parseSettingValue("repertoireCompareBlack", null)).toBeNull();
     expect(parseSettingValue("practiceAutoAdvanceMs", 0)).toBe(0);
     expect(parseSettingValue("practiceAutoAdvanceMs", 3000)).toBe(3000);
+    const ratings = {
+      ...uniformRatings(1500),
+      blitz: { source: "lichess", rating: 1720, syncedAt: Date.now(), provisional: false },
+      rapid: { source: "manual", rating: 1650, edited: true }
+    };
+    expect(parseSettingValue("playerRatings", ratings)).toEqual(ratings);
   });
 
   it("rejects values of the wrong type or out of range", () => {
@@ -35,6 +42,16 @@ describe("parseSettingValue", () => {
       /setting repertoireCompareBlack/
     );
     expect(() => parseSettingValue("practiceAutoAdvanceMs", 1000)).toThrow(/practiceAutoAdvanceMs/);
+    // One rating per mode: not the single number older builds stored, nor a mode short or damaged.
+    expect(() => parseSettingValue("playerRatings", 1500)).toThrow(/setting playerRatings/);
+    const { correspondence: _missing, ...fourModes } = uniformRatings(1500);
+    expect(() => parseSettingValue("playerRatings", fourModes)).toThrow(/playerRatings/);
+    expect(() =>
+      parseSettingValue("playerRatings", {
+        ...uniformRatings(1500),
+        blitz: { source: "lichess", rating: 1720 }
+      })
+    ).toThrow(/playerRatings/);
   });
 });
 
