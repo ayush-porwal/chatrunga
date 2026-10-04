@@ -127,8 +127,13 @@ export async function runGameReview(
       { ...engineResourceOptions(settings), playerRating: rating.rating }
     );
     // The operation id travels with the saved review, so opening it later is attributable; the
-    // rating it was made for, so it shows where that came from.
-    const finished: GameReview = { ...review, reviewId, rating };
+    // rating it was made for, so it shows where that came from; and the side it was made for.
+    const finished: GameReview = {
+      ...review,
+      reviewId,
+      rating,
+      side: input.rating?.side ?? settings.reviewPlayerColor
+    };
     telemetry?.record("review_completed", {
       ...operation,
       duration_ms: Math.round(performance.now() - startedAt)

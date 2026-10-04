@@ -174,12 +174,16 @@ describe("the rating a review is made for", () => {
     expect(reviewGameWithEngine.mock.lastCall?.[4]).toMatchObject({ playerRating: 1533 });
     // This profile runs no Maia (reviewUseMaia off), so no model is named.
     expect(review.rating).toEqual({ rating: 1533, source: "game", mode: "blitz", maiaModel: null });
+    // The side it was made for is saved with it (Review as).
+    expect(review.side).toBe("black");
   });
 
   it("is the Settings rating for the game's mode without one, rapid without a time control", async () => {
     reviewGameWithEngine.mockResolvedValue(finished);
     const review = await runGameReview(fakeManager() as never, { ...input("r-unrated") });
     expect(review.rating).toMatchObject({ rating: 1500, source: "settings", mode: "rapid" });
+    // Without a side from the renderer, the Settings side.
+    expect(review.side).toBe("white");
   });
 });
 

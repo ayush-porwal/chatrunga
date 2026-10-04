@@ -24,17 +24,20 @@ export function reviewMaiaModels(
  * The rating a review of the loaded game is made for, and where it comes from
  * (chess/review-rating.ts): what a review started now would use. A finished review says what it
  * was made for in `GameReview.rating`; show that one for it (`review?.rating ?? this`).
+ * `side`: the side the game is reviewed as (review-side.ts); the Settings side without one.
  */
 export function useReviewRating(
   settings: Pick<
     AppSettings,
     "playerRatings" | "reviewPlayerColor" | "reviewUseMaia" | "reviewMaiaLevels"
-  >
+  >,
+  side?: "white" | "black"
 ): ReviewRating {
   const headers = useGameStore((state) => state.headers);
   const source = useGameStore((state) => state.source);
   const engines = useEnginesQuery();
-  const { playerRatings, reviewPlayerColor, reviewUseMaia, reviewMaiaLevels } = settings;
+  const { playerRatings, reviewUseMaia, reviewMaiaLevels } = settings;
+  const reviewPlayerColor = side ?? settings.reviewPlayerColor;
   return useMemo(
     () =>
       resolveGameReviewRating({

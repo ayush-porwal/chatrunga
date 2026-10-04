@@ -33,7 +33,7 @@ import type { GameHeaders, MoveNode } from "@chaturanga/shared/types/chess";
 import { MAIA_BUCKETS, type MaiaRatingBucket } from "@chaturanga/shared/schemas/rating-curve";
 
 type ReviewMoveInput = ReviewGameInput["moves"][number];
-export type ReviewTab = "commentary" | "moves" | "opening" | "engine" | "settings";
+export type ReviewTab = "summary" | "commentary" | "moves" | "opening" | "engine";
 
 export function reviewIdFromPath(pathname: string): string {
   return pathname.match(/^\/games\/([^/]+)\/review\/?$/)?.[1] ?? "current";

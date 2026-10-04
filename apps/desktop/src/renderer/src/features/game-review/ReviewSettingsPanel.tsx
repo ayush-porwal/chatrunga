@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Field, SettingRow } from "@/components/ui/field";
 import { Select } from "@/components/ui/input";
 import { SectionHeader } from "@/components/ui/page";
+import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SideDot } from "@/components/ui/side-dot";
 import { Switch } from "@/components/ui/switch";
@@ -62,15 +63,26 @@ function useMaiaNeedsLc0(): boolean {
   return needsLc0;
 }
 
+/** The game's own review side (Review as), for the game review's settings dialog. */
+export type ReviewSideSetting = {
+  side: "white" | "black";
+  whiteName: string;
+  blackName: string;
+  onChange: (side: "white" | "black") => void;
+};
+
 export function ReviewSettingsPanel({
   settings,
   onClose,
-  embedded = false
+  embedded = false,
+  reviewSide
 }: {
   settings: AppSettings;
   onClose: () => void;
-  /** Inside a Dialog (the puzzle explanation's settings): the dialog has the title, Done and scrolling. */
+  /** Inside a Dialog (the review's and the puzzle explanation's settings): the dialog has the title, Done and scrolling. */
   embedded?: boolean;
+  /** The loaded game's side; without it the side control sets the Settings side. */
+  reviewSide?: ReviewSideSetting;
 }) {
   const engines = useEnginesQuery();
   const openRouter = useOpenRouterConfigQuery();
@@ -87,7 +99,7 @@ export function ReviewSettingsPanel({
     : installedMaiaLevels;
   const needsLc0 = useMaiaNeedsLc0();
   // The rating a review of this game uses; edited (per mode) in app Settings.
-  const rating = useReviewRating(settings);
+  const rating = useReviewRating(settings, reviewSide?.side);
   const openSettings = useOpenSettings();
   const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) =>
     update.mutate({ key, value });
@@ -119,8 +131,11 @@ export function ReviewSettingsPanel({
         />
       )}
 
-      <section className="grid gap-3">
-        <SectionHeader as="h3" title="Engine" />
+      <CollapsibleSection
+        storageKey="review-settings:engine"
+        title="Engine"
+        bodyClassName="grid gap-3 pt-2"
+      >
         <Field label="Evaluation engine" htmlFor="review-engine">
           <Select
             id="review-engine"
@@ -234,12 +249,15 @@ export function ReviewSettingsPanel({
             </div>
           ) : null}
         </div>
-      </section>
+      </CollapsibleSection>
 
       <div className={divider} />
 
-      <section className="grid gap-3">
-        <SectionHeader as="h3" title="Commentary" />
+      <CollapsibleSection
+        storageKey="review-settings:commentary"
+        title="Commentary"
+        bodyClassName="grid gap-3 pt-2"
+      >
         <SettingRow
           label="AI commentary"
           description="Explain each move from the engine evidence."
@@ -265,18 +283,41 @@ export function ReviewSettingsPanel({
             <option value="detailed">Detailed</option>
           </Select>
         </Field>
-        <Field label="Reviewing side">
-          <SegmentedControl
-            ariaLabel="Reviewing side"
-            fullWidth
-            value={settings.reviewPlayerColor}
-            onChange={(value) => set("reviewPlayerColor", value)}
-            options={[
-              { value: "white", label: "White", icon: <SideDot color="white" /> },
-              { value: "black", label: "Black", icon: <SideDot color="black" /> }
-            ]}
-          />
-        </Field>
+        {reviewSide ? (
+          <Field label="Review as">
+            <SegmentedControl
+              ariaLabel="Review as"
+              fullWidth
+              value={reviewSide.side}
+              onChange={reviewSide.onChange}
+              options={[
+                {
+                  value: "white",
+                  label: `White · ${reviewSide.whiteName}`,
+                  icon: <SideDot color="white" />
+                },
+                {
+                  value: "black",
+                  label: `Black · ${reviewSide.blackName}`,
+                  icon: <SideDot color="black" />
+                }
+              ]}
+            />
+          </Field>
+        ) : (
+          <Field label="Reviewing side">
+            <SegmentedControl
+              ariaLabel="Reviewing side"
+              fullWidth
+              value={settings.reviewPlayerColor}
+              onChange={(value) => set("reviewPlayerColor", value)}
+              options={[
+                { value: "white", label: "White", icon: <SideDot color="white" /> },
+                { value: "black", label: "Black", icon: <SideDot color="black" /> }
+              ]}
+            />
+          </Field>
+        )}
         <SettingRow
           label="Rating"
           description={reviewRatingLabel(rating)}
@@ -305,7 +346,7 @@ export function ReviewSettingsPanel({
             ) : null
           }
         />
-      </section>
+      </CollapsibleSection>
     </div>
   );
 }

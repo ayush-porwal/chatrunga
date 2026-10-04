@@ -48,6 +48,8 @@ type ReviewStore = {
   /** Shows `review`; `analyses` replaces the list (a newly opened game), else the list stays. */
   loadReview: (review: GameReview | null, analyses?: SavedReviewInfo[]) => void;
   addCommentary: (commentary: ReviewCommentary) => void;
+  /** The shown analysis is for `side` from now on (Review as; the autosave writes it). */
+  setReviewSide: (side: "white" | "black") => void;
 };
 
 export const useReviewStore = create<ReviewStore>((set) => ({
@@ -108,6 +110,10 @@ export const useReviewStore = create<ReviewStore>((set) => ({
         )
       };
     }),
+  setReviewSide: (side) =>
+    set((state) =>
+      state.review && state.review.side !== side ? { review: { ...state.review, side } } : state
+    ),
   setError: (error) => set({ status: "error", error, progress: null }),
   detachRun: () =>
     set((state) =>

@@ -18,6 +18,7 @@ import { loadSidebarExpanded, saveSidebarExpanded } from "@/lib/layout-prefs";
 import { BoardFocusContext } from "../features/board/board-focus";
 import { PromotionDialog } from "../features/board/PromotionDialog";
 import type { ReviewTab } from "../features/game-review/review-utils";
+import { openReviewSettingsDialog } from "../features/game-review/ReviewSettingsDialog";
 import { PgnImportDialog } from "../features/game/PgnImportDialog";
 import { openSavedGame } from "../features/game/saved-game";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
@@ -169,7 +170,7 @@ export function App() {
   const [importOpen, setImportOpen] = useState(false);
   const [gameReviewPickerOpen, setGameReviewPickerOpen] = useState(false);
   const [sideTab, setSideTab] = useState<SideTab>("notation");
-  const [reviewTab, setReviewTab] = useState<ReviewTab>("commentary");
+  const [reviewTab, setReviewTab] = useState<ReviewTab>("summary");
   /** The Opening tab's picked side (per game); game-review history entries carry it. */
   const [openingSide, setOpeningSide] = useState<OpeningSide | null>(null);
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId | null>(null);
@@ -338,12 +339,14 @@ export function App() {
   useMoveSounds({ enabled: settings.soundEnabled, volume: settings.soundVolume });
   usePuzzleAutoReply();
   usePuzzleAttemptRecording();
-  const openReviewSettings = useCallback(() => setReviewTab("settings"), []);
+  // Review as: a game whose side isn't known yet asks on the Summary before its review starts.
+  const askReviewSide = useCallback(() => setReviewTab("summary"), []);
   const { startReview, hasMoves: gameHasMoves } = useReviewRunner({
     engines: engines.data,
     settings,
     gameLoading: reviewRouteLoading,
-    onEngineMissing: openReviewSettings
+    onEngineMissing: openReviewSettingsDialog,
+    onSideNeeded: askReviewSide
   });
 
   /**
@@ -618,7 +621,7 @@ export function App() {
     record("push", historyEntry("game"));
   }
 
-  async function openSelectedGameReview(gameId: string, tab: ReviewTab = "commentary") {
+  async function openSelectedGameReview(gameId: string, tab: ReviewTab = "summary") {
     commitCurrent();
     const request = ++latestNavigation.current;
     if (gameId !== "current" && gameId !== currentGame().gameId) {

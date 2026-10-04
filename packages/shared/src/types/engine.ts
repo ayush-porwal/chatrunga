@@ -538,6 +538,11 @@ export type GameReview = {
    * or Settings for the game's mode) and the Maia model nearest it. Missing on older reviews.
    */
   rating?: ReviewRating;
+  /**
+   * The side the review is for ("Review as"): it orients the board, picks the key moments and is
+   * "You" in the charts and commentary. Missing on older reviews.
+   */
+  side?: "white" | "black";
 };
 
 export type ReviewMoveInputItem = {

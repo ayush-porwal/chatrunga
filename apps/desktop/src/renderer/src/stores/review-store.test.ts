@@ -210,6 +210,22 @@ describe("review store", () => {
     expect(useReviewStore.getState()).toMatchObject({ status: "ready", review: loaded });
   });
 
+  it("keeps the side a review is for on the shown review (the autosave writes it)", () => {
+    useReviewStore.getState().loadReview(review([move("loaded", null)]));
+    const before = useReviewStore.getState().review;
+    useReviewStore.getState().setReviewSide("black");
+    expect(useReviewStore.getState().review).toMatchObject({ side: "black", createdAt: 1 });
+    expect(useReviewStore.getState().review).not.toBe(before);
+    // The same side again is no change (no save).
+    const after = useReviewStore.getState().review;
+    useReviewStore.getState().setReviewSide("black");
+    expect(useReviewStore.getState().review).toBe(after);
+    // Nothing to keep it on without a review.
+    useReviewStore.getState().reset();
+    useReviewStore.getState().setReviewSide("white");
+    expect(useReviewStore.getState().review).toBeNull();
+  });
+
   it("drops saved offline-template commentary and legacy fields when loading a review", () => {
     const ai = {
       ply: 1,
