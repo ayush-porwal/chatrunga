@@ -368,6 +368,16 @@ function registerLibraryIpc(): void {
   ipcMain.handle("games:getReview", (_event, gameId: unknown, reviewId: unknown) =>
     gameRepository.getReview(asId(gameId, "game id"), asId(reviewId, "review id"))
   );
+  // Deleting analyses never deletes the game; each resolves once the rows are gone.
+  ipcMain.handle("games:removeReview", async (_event, gameId: unknown, reviewId: unknown) => {
+    const game = asId(gameId, "game id");
+    const review = asId(reviewId, "review id");
+    await retryOnceIfBusy(() => gameRepository.removeReview(game, review));
+  });
+  ipcMain.handle("games:removeReviews", async (_event, gameId: unknown) => {
+    const game = asId(gameId, "game id");
+    await retryOnceIfBusy(() => gameRepository.removeReviews(game));
+  });
   ipcMain.handle("games:save", (_event, value: unknown) => {
     // A save landing while the import writer or a backup restore holds the write lock gets one
     // more try.

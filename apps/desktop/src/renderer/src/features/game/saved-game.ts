@@ -1,6 +1,12 @@
 import { importPgnText, nodeIdForBoardFen, withRealPlies } from "@chaturanga/shared/chess/pgn";
 import type { GameReview } from "@chaturanga/shared/types/engine";
-import type { GameHeaders, GameSession, MoveNode, SavedGame } from "@chaturanga/shared/types/chess";
+import type {
+  GameHeaders,
+  GameSession,
+  MoveNode,
+  SavedGame,
+  SavedReviewInfo
+} from "@chaturanga/shared/types/chess";
 import { useGameStore } from "../../stores/game-store";
 import { useReviewStore } from "../../stores/review-store";
 
@@ -75,6 +81,50 @@ export async function showSavedAnalysis(gameId: string, reviewId: string): Promi
   }
   store.loadReview(alignReviewToTree(review, useGameStore.getState().moveTree));
   return true;
+}
+
+/**
+ * The saved analysis Game review shows: the one loaded, or the newest for a review saved before
+ * reviews had ids. Null while none is shown.
+ */
+export function shownAnalysisId(
+  analyses: readonly SavedReviewInfo[],
+  review: GameReview | null
+): string | null {
+  if (!review) return null;
+  const id = review.reviewId;
+  return id && analyses.some((info) => info.reviewId === id) ? id : (analyses[0]?.reviewId ?? null);
+}
+
+/**
+ * After saved analyses of the game on the board were deleted (their ids, or `"all"`): they leave
+ * the list, and when the one shown went, the newest left is shown instead, or none, so Game review
+ * offers Analyze again. A review running keeps the board; another game opened meanwhile is left
+ * alone.
+ */
+export async function showAfterAnalysesDeleted(
+  gameId: string,
+  deleted: readonly string[] | "all"
+): Promise<void> {
+  if (useGameStore.getState().gameId !== gameId) return;
+  const store = useReviewStore.getState();
+  const gone = (reviewId: string) => deleted === "all" || deleted.includes(reviewId);
+  const shownId = shownAnalysisId(store.analyses, store.review);
+  const left = store.analyses.filter((info) => !gone(info.reviewId));
+  store.setAnalyses(left);
+  const shown = store.review;
+  if (!shown || shownId === null || !gone(shownId) || store.status === "running") return;
+  const next = left[0];
+  if (next && (await showSavedAnalysis(gameId, next.reviewId).catch(() => false))) return;
+  const now = useReviewStore.getState();
+  if (
+    useGameStore.getState().gameId === gameId &&
+    now.status !== "running" &&
+    now.review?.createdAt === shown.createdAt &&
+    now.review.reviewId === shown.reviewId
+  ) {
+    now.loadReview(null);
+  }
 }
 
 /** A saved game's stored review, numbered like its (renumbered) tree. */

@@ -170,6 +170,21 @@ export function isSaveSuppressed(error: unknown): boolean {
   return ipcErrorMessage(error) === SAVE_SUPPRESSED_AFTER_DELETE;
 }
 
+/**
+ * Deletes one saved analysis of a game (`reviewId`), or every one (null); the game stays. The
+ * library lists each game's analysis count, so the games queries are read again.
+ */
+export function useDeleteAnalysesMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ gameId, reviewId }: { gameId: string; reviewId: string | null }) =>
+      reviewId === null
+        ? requireApi().games.removeReviews(gameId)
+        : requireApi().games.removeReview(gameId, reviewId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.games })
+  });
+}
+
 export function useDeleteGameMutation() {
   const queryClient = useQueryClient();
   return useMutation({

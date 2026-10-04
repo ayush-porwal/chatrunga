@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GameReview } from "../types/engine";
-import { reviewInfoLabel, savedReviewInfo } from "./review-info";
+import { reviewInfoLabel, reviewInfoWhen, savedReviewInfo } from "./review-info";
 
 const review = {
   engineId: "sf",
@@ -31,6 +31,10 @@ describe("review info", () => {
     expect(reviewInfoLabel(info, "en-US")).toMatch(
       /^Oct 2, .* · Stockfish 17 · 1 s\/move · Maia 1100–1900 · 1 AI comment$/
     );
+    // The time reads like a clock, without a leading zero: `Oct 4, 4:01 PM`.
+    expect(
+      reviewInfoWhen({ ...info, createdAt: new Date(2026, 9, 4, 16, 1).getTime() }, "en-US")
+    ).toBe("Oct 4, 4:01 PM");
     expect(
       reviewInfoLabel(
         {

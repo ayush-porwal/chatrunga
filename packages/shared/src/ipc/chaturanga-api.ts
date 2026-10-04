@@ -233,6 +233,10 @@ export type ChaturangaApi = {
     get(id: string): Promise<SavedGame>;
     /** One saved analysis of a game (null when it's gone), to show instead of the newest. */
     getReview(gameId: string, reviewId: string): Promise<GameReview | null>;
+    /** Deletes one saved analysis of a game (with its AI commentary); the game stays. */
+    removeReview(gameId: string, reviewId: string): Promise<void>;
+    /** Deletes every saved analysis of a game; the game stays. */
+    removeReviews(gameId: string): Promise<void>;
     save(input: SaveGameInput): Promise<SavedGame>;
     remove(id: string): Promise<void>;
     importPgn(input: ImportPgnInput): Promise<ImportedGame>;

@@ -767,11 +767,19 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
 }
 
 /**
+ * Analyses the user deleted in this session. The renderer's autosave is debounced, so a save of
+ * the game can still carry one just deleted (a comment arrived for it a moment before); the upsert
+ * would bring it back. Review ids are never reused, so remembering them is enough.
+ */
+const deletedReviewIds = new Set<string>();
+
+/**
  * The analysis on the board, saved under its own id: a new one is added (re-analysing keeps the
  * earlier ones), and one already saved is updated (its AI commentary grows as moves are viewed).
  */
 function saveReview(gameId: string, review: GameReview): void {
   const reviewId = reviewRowId(review, gameId);
+  if (deletedReviewIds.has(reviewId)) return;
   const fields = reviewListingFields(review);
   run(
     `INSERT INTO game_reviews (
@@ -887,6 +895,32 @@ export const gameRepository = {
     if (!row || !stored) return null;
     const { moveTree, rebuilt } = parseMoveTree(row);
     return parseStoredReview(stored.review_json, row, moveTree, rebuilt);
+  },
+
+  /**
+   * Deletes one analysis of a game (its AI commentary goes with it); the game and its other
+   * analyses stay. Returns whether there was one to delete.
+   */
+  removeReview(gameId: string, reviewId: string): boolean {
+    const { changes } = getDb()
+      .prepare("DELETE FROM game_reviews WHERE game_id = ? AND review_id = ?")
+      .run(gameId, reviewId);
+    deletedReviewIds.add(reviewId);
+    return Number(changes) > 0;
+  },
+
+  /** Deletes every analysis of a game, never the game itself. Returns how many were deleted. */
+  removeReviews(gameId: string): number {
+    const ids = transaction(() => {
+      const listed = all<{ review_id: string }>(
+        "SELECT review_id FROM game_reviews WHERE game_id = ?",
+        gameId
+      );
+      run("DELETE FROM game_reviews WHERE game_id = ?", gameId);
+      return listed.map((row) => row.review_id);
+    });
+    for (const id of ids) deletedReviewIds.add(id);
+    return ids.length;
   },
 
   /** A library game that is the same game (see gameFingerprint), if any. */

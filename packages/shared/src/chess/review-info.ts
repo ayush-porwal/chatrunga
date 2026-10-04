@@ -30,15 +30,24 @@ export function savedReviewInfo(review: GameReview, reviewId: string): SavedRevi
 
 /**
  * One line naming an analysis, for choosing between a game's analyses:
- * `Oct 2, 20:15 · Stockfish 17 · 1 s/move · Maia 1100–1900 · 12 AI comments`.
+ * `Oct 2, 8:15 PM · Stockfish 17 · 1 s/move · Maia 1100–1900 · 12 AI comments`.
  */
 export function reviewInfoLabel(info: SavedReviewInfo, locale?: string): string {
-  const when = new Date(info.createdAt).toLocaleString(locale, {
+  return `${reviewInfoWhen(info, locale)} · ${reviewInfoDetails(info)}`;
+}
+
+/** When an analysis was made, the way it's picked out in a list: `Oct 2, 8:15 PM`. */
+export function reviewInfoWhen(info: SavedReviewInfo, locale?: string): string {
+  return new Date(info.createdAt).toLocaleString(locale, {
     month: "short",
     day: "numeric",
-    hour: "2-digit",
+    hour: "numeric",
     minute: "2-digit"
   });
+}
+
+/** How an analysis was made: `Stockfish 17 · 1 s/move · Maia 1100–1900 · 12 AI comments`. */
+export function reviewInfoDetails(info: SavedReviewInfo): string {
   const search =
     info.moveTimeMs !== null
       ? `${info.moveTimeMs >= 1000 ? `${+(info.moveTimeMs / 1000).toFixed(1)} s` : `${info.moveTimeMs} ms`}/move`
@@ -51,5 +60,5 @@ export function reviewInfoLabel(info: SavedReviewInfo, locale?: string): string 
   const comments = info.commentaryCount
     ? `${info.commentaryCount} AI comment${info.commentaryCount === 1 ? "" : "s"}`
     : null;
-  return [when, info.engineName ?? "Engine", search, maia, comments].filter(Boolean).join(" · ");
+  return [info.engineName ?? "Engine", search, maia, comments].filter(Boolean).join(" · ");
 }

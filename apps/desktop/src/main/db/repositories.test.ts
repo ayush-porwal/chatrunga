@@ -635,6 +635,72 @@ describe("gameRepository (SQLite)", () => {
       expect(gameRepository.get(game.id)?.reviews.map((info) => info.reviewId)).toEqual(["kept"]);
     });
 
+    const reviewIdsOf = (gameId: string) =>
+      getDb()
+        .prepare("SELECT review_id FROM game_reviews WHERE game_id = ? ORDER BY review_id")
+        .all(gameId)
+        .map((row) => row.review_id);
+    /**
+     * Two games with analyses: `game` (`${p}a`, `${p}b`, `${p}c`) and `other` (`${p}other`). Each
+     * test takes its own prefix: a deleted id stays deleted for the whole run (main remembers it).
+     */
+    const twoReviewedGames = (p: string) => {
+      const game = saveImported();
+      saveWith(game, reviewOf(game, `${p}a`, 10));
+      saveWith(game, reviewOf(game, `${p}b`, 20));
+      saveWith(game, reviewOf(game, `${p}c`, 30));
+      const { game: session } = importPgnText(PGN.replace("2. Nf3", "2. Nc3"));
+      const other = gameRepository.save(session);
+      saveWith(other, reviewOf(other, `${p}other`, 40));
+      return { game, other };
+    };
+
+    it("deleting one analysis deletes only that one: the game and every other analysis stay", () => {
+      const { game, other } = twoReviewedGames("one-");
+      const before = gameRepository.get(game.id)!;
+
+      expect(gameRepository.removeReview(game.id, "one-c")).toBe(true);
+
+      expect(reviewIdsOf(game.id)).toEqual(["one-a", "one-b"]);
+      expect(reviewIdsOf(other.id)).toEqual(["one-other"]);
+      const after = gameRepository.get(game.id)!;
+      expect(after).toMatchObject({ pgn: before.pgn, moveTree: before.moveTree, reviewCount: 2 });
+      // The newest left now opens with the game.
+      expect(after.review?.reviewId).toBe("one-b");
+      // An analysis of another game isn't deleted through this one's id.
+      expect(gameRepository.removeReview(game.id, "one-other")).toBe(false);
+      expect(reviewIdsOf(other.id)).toEqual(["one-other"]);
+    });
+
+    it("deleting all of a game's analyses keeps the game and other games' analyses", () => {
+      const { game, other } = twoReviewedGames("all-");
+
+      expect(gameRepository.removeReviews(game.id)).toBe(3);
+
+      expect(reviewIdsOf(game.id)).toEqual([]);
+      expect(reviewIdsOf(other.id)).toEqual(["all-other"]);
+      expect(gameRepository.get(game.id)).toMatchObject({
+        id: game.id,
+        review: null,
+        reviews: [],
+        reviewCount: 0
+      });
+      expect(gameRepository.removeReviews(game.id)).toBe(0);
+    });
+
+    it("a late save of the game carrying a deleted analysis doesn't bring it back", () => {
+      const { game } = twoReviewedGames("late-");
+      gameRepository.removeReview(game.id, "late-b");
+      gameRepository.removeReviews(game.id);
+      // The debounced autosave writes the game with the analysis that was shown.
+      saveWith(game, reviewOf(game, "late-b", 20));
+      saveWith(game, reviewOf(game, "late-a", 10));
+      expect(reviewIdsOf(game.id)).toEqual([]);
+      // A new analysis still saves.
+      saveWith(game, reviewOf(game, "late-new", 50));
+      expect(reviewIdsOf(game.id)).toEqual(["late-new"]);
+    });
+
     it("deleting a game deletes its analyses", () => {
       const game = saveImported();
       saveWith(game, reviewOf(game, "gone", 10));
