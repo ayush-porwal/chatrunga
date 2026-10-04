@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
 import {
+  barScoreSide,
   barScoreText,
   evalBarLabel,
   evalShare,
   liveAnalysisEval,
-  reviewedMoveEval
+  reviewedMoveEval,
+  scoreEval
 } from "./EvalBar";
 
 describe("evalShare", () => {
@@ -31,7 +33,8 @@ describe("liveAnalysisEval", () => {
     expect(liveAnalysisEval(AFTER_E4, { type: "cp", value: 50 })).toEqual({
       whiteShare: evalShare({ type: "cp", value: -50 }),
       label: "-0.5",
-      barText: "0.5"
+      barText: "0.5",
+      barSide: "black"
     });
   });
 
@@ -44,13 +47,15 @@ describe("liveAnalysisEval", () => {
     expect(liveAnalysisEval(mated, { type: "cp", value: 300 })).toEqual({
       whiteShare: 0,
       label: "0-1 #",
-      barText: "0-1"
+      barText: "0-1",
+      barSide: "black"
     });
     const stalemate = "7k/5Q2/6K1/8/8/8/8/8 b - - 0 1";
     expect(liveAnalysisEval(stalemate, null)).toEqual({
       whiteShare: 50,
       label: "½-½",
-      barText: "½-½"
+      barText: "½-½",
+      barSide: "white"
     });
   });
 });
@@ -75,9 +80,27 @@ describe("barScoreText", () => {
   });
 });
 
+describe("barScoreSide", () => {
+  it("is the better side's", () => {
+    expect(barScoreSide({ type: "cp", value: 230 })).toBe("white");
+    expect(barScoreSide({ type: "cp", value: -230 })).toBe("black");
+    expect(barScoreSide({ type: "mate", value: 3 })).toBe("white");
+    expect(barScoreSide({ type: "mate", value: -2 })).toBe("black");
+  });
+
+  it("is White's for any score that prints 0.0, as for an exact 0", () => {
+    expect(barScoreSide({ type: "cp", value: 0 })).toBe("white");
+    expect(barScoreSide({ type: "cp", value: 4 })).toBe("white");
+    expect(barScoreSide({ type: "cp", value: -4 })).toBe("white");
+    // From -5 the bar prints 0.1, Black's edge.
+    expect(barScoreText({ type: "cp", value: -5 })).toBe("0.1");
+    expect(barScoreSide({ type: "cp", value: -5 })).toBe("black");
+  });
+});
+
 describe("evalBarLabel", () => {
-  const white = { whiteShare: 80, barText: "2.3" };
-  const black = { whiteShare: 20, barText: "2.3" };
+  const white = { barSide: "white", barText: "2.3" } as const;
+  const black = { barSide: "black", barText: "2.3" } as const;
 
   it("sits at the better side's end: White's at the bottom, Black's at the top", () => {
     expect(evalBarLabel(white, "white")).toEqual({ text: "2.3", side: "white", atTop: false });
@@ -89,9 +112,12 @@ describe("evalBarLabel", () => {
     expect(evalBarLabel(black, "black")).toEqual({ text: "2.3", side: "black", atTop: false });
   });
 
-  it("puts an even score at White's end, as the fill does", () => {
-    expect(evalBarLabel({ whiteShare: 50, barText: "0.0" }, "white").side).toBe("white");
-    expect(evalBarLabel({ whiteShare: 50, barText: "½-½" }, "black").atTop).toBe(true);
+  it("puts a near-even score at White's end, the same end as an exact 0", () => {
+    // Its fill dips just below even, but its text still reads 0.0 at White's end.
+    const nearEven = scoreEval({ type: "cp", value: -4 });
+    expect(nearEven.whiteShare).toBeLessThan(50);
+    expect(evalBarLabel(nearEven, "white")).toEqual({ text: "0.0", side: "white", atTop: false });
+    expect(evalBarLabel(nearEven, "black").atTop).toBe(true);
   });
 });
 
@@ -106,14 +132,14 @@ describe("reviewedMoveEval", () => {
         evalAfter: { type: "mate", value: 0 },
         terminal: "checkmate"
       })
-    ).toEqual({ whiteShare: 0, label: "0-1 #", barText: "0-1" });
+    ).toEqual({ whiteShare: 0, label: "0-1 #", barText: "0-1", barSide: "black" });
     expect(
       reviewedMoveEval({
         fenBefore: blackToMove,
         evalAfter: { type: "cp", value: 0 },
         terminal: "stalemate"
       })
-    ).toEqual({ whiteShare: 50, label: "½-½", barText: "½-½" });
+    ).toEqual({ whiteShare: 50, label: "½-½", barText: "½-½", barSide: "white" });
   });
 
   it("shows the evaluation after any other move, and nothing without one", () => {
@@ -122,7 +148,12 @@ describe("reviewedMoveEval", () => {
       evalAfter: { type: "mate", value: -3 },
       terminal: null
     };
-    expect(reviewedMoveEval(move)).toEqual({ whiteShare: 0, label: "M-3", barText: "M3" });
+    expect(reviewedMoveEval(move)).toEqual({
+      whiteShare: 0,
+      label: "M-3",
+      barText: "M3",
+      barSide: "black"
+    });
     expect(reviewedMoveEval({ ...move, evalAfter: null })).toBeNull();
   });
 });

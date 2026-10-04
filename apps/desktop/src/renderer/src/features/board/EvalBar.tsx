@@ -9,14 +9,20 @@ import { useGameStore } from "../../stores/game-store";
 import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
 import { useDisplayedReviewMoves } from "../../stores/review-validity";
-import { formatMoveEval, formatScore, terminalEvalLabel } from "../game-review/review-score";
+import {
+  formatMoveEval,
+  formatScore,
+  moverIsWhite,
+  terminalEvalLabel
+} from "../game-review/review-score";
 import { cn } from "@/lib/utils";
 
 /**
  * What the bar shows: White's share of it (0–100), the evaluation as text (signed, for its
- * accessible name and tooltip) and the short text drawn inside the bar (see barScoreText).
+ * accessible name and tooltip), the short text drawn inside the bar (see barScoreText) and the
+ * side whose end that text sits at (see barScoreSide).
  */
-export type BoardEval = { whiteShare: number; label: string; barText: string };
+export type BoardEval = { whiteShare: number; label: string; barText: string; barSide: Color };
 
 /**
  * White's share of the bar for a White-perspective score: Lichess's winning-chances curve, so a
@@ -35,25 +41,46 @@ export function evalShare(score: EngineScore): number {
  */
 export function barScoreText(score: EngineScore): string {
   if (score.type === "mate") return `M${Math.abs(score.value)}`;
-  const tenths = Math.round(Math.abs(score.value) / 10) / 10;
-  return tenths >= 10 ? String(Math.round(tenths)) : tenths.toFixed(1);
+  const pawns = barPawns(score.value);
+  return pawns >= 10 ? String(Math.round(pawns)) : pawns.toFixed(1);
+}
+
+/** The size of a centipawn edge in pawns, rounded to the tenth the bar prints. */
+function barPawns(centipawns: number): number {
+  return Math.round(Math.abs(centipawns) / 10) / 10;
+}
+
+/**
+ * The side whose end of the bar a White-perspective score's text sits at: the better side, and
+ * White on a score that prints "0.0" (a few centipawns either way), as on an exact 0. So the same
+ * text never sits at two ends.
+ */
+export function barScoreSide(score: EngineScore): Color {
+  const blackBetter =
+    score.type === "mate" ? score.value < 0 : score.value < 0 && barPawns(score.value) > 0;
+  return blackBetter ? "black" : "white";
 }
 
 /** The bar's evaluation of a White-perspective score. */
 export function scoreEval(score: EngineScore): BoardEval {
-  return { whiteShare: evalShare(score), label: formatScore(score), barText: barScoreText(score) };
+  return {
+    whiteShare: evalShare(score),
+    label: formatScore(score),
+    barText: barScoreText(score),
+    barSide: barScoreSide(score)
+  };
 }
 
 /**
- * Where the bar's text goes: at the end of the side that is better (White on an even score, as
- * the fill is), which is White's end at the bottom unless the board is flipped. `side` is that
- * side, so the text can take the colour that reads on its fill.
+ * Where the bar's text goes: at its side's end (the better side's, White's on an even score),
+ * which is White's end at the bottom unless the board is flipped. `side` is returned so the text
+ * can take the colour that reads on its fill.
  */
 export function evalBarLabel(
-  evaluation: Pick<BoardEval, "whiteShare" | "barText">,
+  evaluation: Pick<BoardEval, "barText" | "barSide">,
   orientation: Color
 ): { text: string; side: Color; atTop: boolean } {
-  const side: Color = evaluation.whiteShare >= 50 ? "white" : "black";
+  const side = evaluation.barSide;
   return { text: evaluation.barText, side, atTop: side !== orientation };
 }
 
@@ -70,7 +97,8 @@ export function liveAnalysisEval(fen: string, score: EngineScore | null): BoardE
     return {
       whiteShare,
       label: draw ? "½-½" : `${status.result} #`,
-      barText: draw ? "½-½" : status.result
+      barText: draw ? "½-½" : status.result,
+      barSide: status.result === "0-1" ? "black" : "white"
     };
   }
   if (!score) return null;
@@ -134,12 +162,13 @@ export function reviewedMoveEval(
   if (!move.evalAfter) return null;
   const result = terminalEvalLabel(move);
   if (!result) return scoreEval(move.evalAfter);
-  if (result === "½-½") return { whiteShare: 50, label: result, barText: result };
-  const whiteMoved = move.fenBefore.split(" ")[1] !== "b";
+  if (result === "½-½") return { whiteShare: 50, label: result, barText: result, barSide: "white" };
+  const whiteMoved = moverIsWhite(move);
   return {
     whiteShare: whiteMoved ? 100 : 0,
     label: formatMoveEval(move),
-    barText: whiteMoved ? "1-0" : "0-1"
+    barText: whiteMoved ? "1-0" : "0-1",
+    barSide: whiteMoved ? "white" : "black"
   };
 }
 
@@ -173,7 +202,8 @@ export function EvalBarFill({
     current &&
     (current.whiteShare !== held?.whiteShare ||
       current.label !== held.label ||
-      current.barText !== held.barText)
+      current.barText !== held.barText ||
+      current.barSide !== held.barSide)
   )
     setHeld(current);
   else if (!current && held && !(live && searching)) setHeld(null);
