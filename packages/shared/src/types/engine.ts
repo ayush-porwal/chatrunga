@@ -149,7 +149,12 @@ export type AnalysisLine = {
   pv: string[];
 };
 
-export type MoveClassification =
+/**
+ * The one-label verdict reviews stored before move assessments were versioned (every move got
+ * one; see {@link MoveAssessment}). Kept only so those saved reviews still type-check; nothing
+ * shows it.
+ */
+export type LegacyMoveClassification =
   | "best"
   | "excellent"
   | "good"
@@ -158,6 +163,113 @@ export type MoveClassification =
   | "blunder"
   | "missed_tactic"
   | "human_error";
+
+/**
+ * How damaging a move was: the mover's drop in winning chances (Lichess model; see
+ * chess/move-assessment.ts). Says nothing about why the move was played.
+ */
+export type ErrorSeverity = "inaccuracy" | "mistake" | "blunder";
+
+/**
+ * The coaching mark a review shows on a move. Most moves carry none: an ordinary move, an engine
+ * match, a forced reply or a move the analysis can't vouch for stays unmarked.
+ * - `brilliant`: a sound sacrifice, verified by a deeper search;
+ * - `great`: a critical find (every other candidate was far worse), verified by a deeper search;
+ * - `excellent`: near-best, with a tactic found or a move that is hard to find at the player's level;
+ * - `good`: punishes the opponent's preceding mistake;
+ * - `miss`: passes up the chance the opponent's preceding mistake gave (its severity is kept apart);
+ * - `inaccuracy` / `mistake` / `blunder`: the error's severity.
+ */
+export type MoveAnnotation =
+  | "brilliant"
+  | "great"
+  | "excellent"
+  | "good"
+  | "miss"
+  | "inaccuracy"
+  | "mistake"
+  | "blunder";
+
+/**
+ * Evidence behind an assessment, shown with the move and given to the AI coach so it explains
+ * facts rather than inventing them.
+ */
+export type AssessmentTag =
+  /** The played move was the engine's first choice (information, never a mark by itself). */
+  | "engine_top"
+  /** Every other candidate the engine checked was far worse. */
+  | "only_move"
+  /** Material given up against the best defence, and not won straight back. */
+  | "sacrifice"
+  /** Played right after the opponent's mistake or blunder, keeping what it gave. */
+  | "punishes_error"
+  /** Gave back the advantage the opponent's preceding mistake or blunder had handed over. */
+  | "missed_chance"
+  /** The better move had a concrete tactic (fork, pin, winning capture, mate…). */
+  | "missed_tactic"
+  /**
+   * The other candidates lose material this move keeps: a rescue. Without Maia to say it was hard
+   * to find, that alone is not a critical find.
+   */
+  | "saves_material"
+  /** The played move was itself that tactic. */
+  | "tactic"
+  /** Unlikely at the player's level (Maia), yet near-best. */
+  | "hard_to_find"
+  /** The most likely move at the player's level (Maia). */
+  | "natural_move"
+  /** The only legal move. */
+  | "forced"
+  /** Takes back on the square the opponent just captured on. */
+  | "recapture"
+  /** Early and balanced: treated as opening theory, not praised. */
+  | "opening"
+  /** The game was already decided before the move (conversion or a lost cause). */
+  | "decided"
+  /** The move allowed a forced mate. */
+  | "mate_created"
+  /** The move let a forced mate slip. */
+  | "mate_lost"
+  /** A candidate for Great or Brilliant that no deeper search confirmed. */
+  | "unverified"
+  /** A candidate the deeper search disagreed with. */
+  | "unstable"
+  /** The analysis lacks the evaluations an assessment needs. */
+  | "incomplete";
+
+/** One move's objective assessment under {@link MoveAssessment.policy}. */
+export type MoveAssessment = {
+  /** The policy version that produced it (MOVE_ASSESSMENT_POLICY in chess/move-assessment.ts). */
+  policy: number;
+  /** Mover's winning chances (0–100) with best play before the move. */
+  winBefore: number | null;
+  /** Mover's winning chances (0–100) after the played move. */
+  winAfter: number | null;
+  /** Percentage points of winning chances lost against best play (never negative). */
+  winLoss: number | null;
+  /**
+   * How much better the played move was than the best other candidate the engine checked, in
+   * percentage points (negative: a candidate was better); null when there was no other candidate.
+   */
+  alternativeGap: number | null;
+  severity: ErrorSeverity | null;
+  annotation: MoveAnnotation | null;
+  tags: AssessmentTag[];
+};
+
+/**
+ * Extra searches a review ran to check a move before marking it (see `verificationNeed`). They
+ * use the same engine; `deeperLines` a longer search, `playedLine` the review's own budget.
+ */
+export type MoveVerification = {
+  /** A deeper MultiPV search of `fenBefore` (candidates for Great or Brilliant). */
+  deeperLines?: AnalysisLine[];
+  /**
+   * `fenBefore` searched with only the played move (`searchmoves`), when it was outside the
+   * MultiPV window and its loss sat near a severity boundary. Mover perspective.
+   */
+  playedLine?: AnalysisLine | null;
+};
 
 export type MaiaRating = 1100 | 1300 | 1500 | 1700 | 1900;
 
@@ -204,7 +316,12 @@ export type MoveReview = {
   /** Evaluation after the engine's recommended continuation, when available. */
   bestEvalAfter?: EngineScore | null;
   evalLoss: number | null;
-  classification: MoveClassification;
+  /** Legacy single-label verdict of reviews saved before {@link MoveAssessment}; never shown. */
+  classification?: LegacyMoveClassification;
+  /** Objective assessment and coaching mark (absent only while a saved review is re-derived). */
+  assessment?: MoveAssessment;
+  /** Extra searches run to verify the assessment, when any were needed. */
+  verification?: MoveVerification;
   bestMove: string | null;
   bestLine: string[];
   /** MultiPV lines of `fenBefore` (side to move = mover). */
@@ -241,15 +358,26 @@ export type MoveReview = {
   timeSpentMs?: number;
 };
 
+/**
+ * Counts over a review's moves. Error counts follow severity (every error counts, marked or not);
+ * the positive counts follow the marks.
+ */
 export type GameReviewSummary = {
   totalMoves: number;
+  /** Moves that matched the engine's first choice (marked or not). */
   best: number;
+  brilliant?: number;
+  great?: number;
   excellent: number;
   good: number;
+  /** Errors that passed up the chance the opponent's mistake gave. */
+  misses?: number;
   inaccuracies: number;
   mistakes: number;
   blunders: number;
+  /** Errors where the better move had a concrete tactic. */
   missedTactics: number;
+  /** Errors that were the most likely move at the player's level (Maia). */
   humanErrors?: number;
   averageCentipawnLoss: number | null;
 };
@@ -269,6 +397,12 @@ export type ReviewCommentary = {
    * older saved reviews, which are treated as current.
    */
   settingsKey?: string;
+  /**
+   * The coach payload version it was written from (REVIEW_INSIGHT_PAYLOAD_VERSION). Absent: before
+   * move marks (version 1), when every move was sent with a one-label verdict, so the text may
+   * praise or judge a move its current mark doesn't.
+   */
+  payloadVersion?: number;
 };
 
 /** The AI coach's explanation of a finished puzzle (kept for the session only, never saved). */
@@ -328,8 +462,11 @@ export function savedReviewCommentary(
   });
 }
 
-/** Current `GameReview.schemaVersion`. Reviews below 2 carry fake (uniform) Maia probabilities. */
-export const GAME_REVIEW_SCHEMA_VERSION = 2;
+/**
+ * Current `GameReview.schemaVersion`. Reviews below 2 carry fake (uniform) Maia probabilities;
+ * from 3 every move carries an assessment (and its verification searches).
+ */
+export const GAME_REVIEW_SCHEMA_VERSION = 3;
 
 export type GameReview = {
   /**
@@ -337,8 +474,18 @@ export type GameReview = {
    * for a review opened later; missing on reviews saved before it was recorded.
    */
   reviewId?: string;
-  /** 2 for reviews produced with real Maia policy; missing/<2 means Maia data is untrusted. */
+  /** 2+ for reviews produced with real Maia policy; missing/<2 means Maia data is untrusted. */
   schemaVersion?: number;
+  /**
+   * The move-assessment policy its moves' assessments follow. A saved review from an older policy
+   * (or none) is re-assessed from its stored evaluations when it loads.
+   */
+  assessmentPolicy?: number;
+  /**
+   * The assessments were re-derived from stored evaluations after the review was made (it
+   * predates the current policy), so the review says so and marks nothing that needed a deeper search.
+   */
+  assessmentsRecomputed?: boolean;
   engineId: string;
   engineName?: string;
   engineSettings?: {

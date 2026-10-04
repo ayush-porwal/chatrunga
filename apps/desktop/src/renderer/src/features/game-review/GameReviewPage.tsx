@@ -9,7 +9,7 @@ import { reviewsByNode, useReviewStore } from "../../stores/review-store";
 import { useDisplayedReviewMoves, useOutdatedReviewMoves } from "../../stores/review-validity";
 import {
   averageLoss,
-  countByClassification,
+  countBySeverity,
   mainlineReviewInput,
   moveLabel,
   reviewAccuracy,
@@ -39,7 +39,11 @@ import {
   type MoveNavigationTarget
 } from "./commentary-moves";
 import { openingSideFor, type OpeningSide } from "./opening-comparison";
-import { qualityTone } from "@/lib/ui";
+import { annotationTone } from "@/lib/ui";
+import { keyMoments, markedMoves } from "@chaturanga/shared/chess/key-moments";
+import type { ErrorSeverity } from "@chaturanga/shared/types/engine";
+import { KeyMomentNav } from "./KeyMoments";
+import type { MovesView } from "./ReviewMoveRail";
 import { Sparkles, Swords, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -205,7 +209,12 @@ function GameReviewPageInner({
   // Stats describe the finished review; while the pass runs they hold "—" instead of
   // re-computing (and re-flowing) on every analysed move.
   const statMoves = isRunning ? EMPTY_MOVES : moves;
-  const counts = useMemo(() => countByClassification(statMoves), [statMoves]);
+  const counts = useMemo(() => countBySeverity(statMoves), [statMoves]);
+  // The focused review: the game's few strongest lessons, and every mark for the Moves tab.
+  const moments = useMemo(() => keyMoments(statMoves), [statMoves]);
+  const marks = useMemo(() => markedMoves(statMoves), [statMoves]);
+  const momentIds = useMemo(() => new Set(moments.map((moment) => moment.nodeId)), [moments]);
+  const [movesView, setMovesView] = useState<MovesView>("all");
   const accuracy = useMemo(() => reviewAccuracy(statMoves), [statMoves]);
   const average = useMemo(() => averageLoss(statMoves), [statMoves]);
   const { mutate: updateSetting } = useUpdateSettingMutation();
@@ -248,14 +257,9 @@ function GameReviewPageInner({
     const best = uciSquares(selectedMove.bestMove);
     if (best) result.push({ ...best, brush: "green" });
     const played = uciSquares(selectedMove.playedMove);
+    // Red for a move that cost something (any error, marked or not), blue otherwise.
     if (played && played.orig !== best?.orig)
-      result.push({
-        ...played,
-        brush:
-          selectedMove.classification === "best" || selectedMove.classification === "excellent"
-            ? "blue"
-            : "red"
-      });
+      result.push({ ...played, brush: selectedMove.assessment?.severity ? "red" : "blue" });
     return result;
   }, [selectedMove]);
   const lastMove = uciSquares(selectedMove?.playedMove ?? currentNode?.uci ?? null);
@@ -274,6 +278,13 @@ function GameReviewPageInner({
   const boardBottom = orientation === "white" ? whitePlayer : blackPlayer;
   const onMainline =
     selectedNodeId === "root" || reviewInput.some((move) => move.nodeId === selectedNodeId);
+  // Key-moment steps count from the selected move (a variation counts from the move it leaves).
+  const selectedPly = currentAnchor?.move.ply ?? currentNode?.ply ?? 0;
+  const momentNav = useMemo(
+    () => <KeyMomentNav moments={moments} selectedPly={selectedPly} onSelectNode={selectNode} />,
+    [moments, selectNode, selectedPly]
+  );
+  const recomputed = Boolean(review?.assessmentsRecomputed) && !isRunning;
   const hasMoves = moves.length > 0;
   const hasStats = hasMoves && !isRunning;
   /** No main-line moves (and no saved review): nothing to analyse or explain. */
@@ -328,7 +339,7 @@ function GameReviewPageInner({
       }
       summary={summary}
       notices={
-        loadError || reviewError || outdatedMoves ? (
+        loadError || reviewError || outdatedMoves || recomputed ? (
           <>
             {loadError ? (
               <Notice tone="warn" className="shrink-0">
@@ -338,6 +349,13 @@ function GameReviewPageInner({
             {reviewError ? (
               <Notice tone="danger" className="shrink-0">
                 {reviewError}
+              </Notice>
+            ) : null}
+            {recomputed ? (
+              <Notice tone="info" className="shrink-0">
+                This analysis predates the current move marks, so they were worked out again from
+                its saved evaluations. Great and Brilliant need a deeper search: analyse the game
+                again to see them.
               </Notice>
             ) : null}
             {outdatedMoves ? (
@@ -361,6 +379,8 @@ function GameReviewPageInner({
                 onSelectNode={selectNode}
                 orientation={orientation}
                 totalPlies={isRunning ? reviewInput.length : undefined}
+                keyMomentIds={momentIds}
+                actions={momentNav}
               />
             </div>
           ) : null}
@@ -404,6 +424,7 @@ function GameReviewPageInner({
           detail={settings.reviewCommentaryDetail}
           userRating={settings.reviewPlayerRating}
           onRetry={selected.retry}
+          rewrite={selected.rewrite}
           onAnalyze={onAnalyze}
           onOpenCommentarySettings={onOpenCommentarySettings}
           onOpenReviewSettings={openReviewSettings}
@@ -411,6 +432,9 @@ function GameReviewPageInner({
           moveContext={moveContext}
           onGoToLine={goToLine}
           variationAnchor={variationAnchor}
+          keyMoments={moments}
+          reviewMoves={moves}
+          onSelectNode={selectNode}
         />
       ) : null}
       {activeTab === "moves" ? (
@@ -420,6 +444,11 @@ function GameReviewPageInner({
           reviews={reviewByNodeId}
           commentaryByNodeId={commentaryByNodeId}
           onSelectNode={selectNode}
+          view={movesView}
+          onViewChange={setMovesView}
+          moves={moves}
+          keyMoments={moments}
+          marks={marks}
         />
       ) : null}
       {activeTab === "opening" ? (
@@ -485,20 +514,22 @@ function ReviewProgressCaption({ fallbackTotal }: { fallbackTotal: number }) {
   );
 }
 
-function ErrorCounts({ counts }: { counts: Record<string, number> }) {
+function ErrorCounts({ counts }: { counts: Record<ErrorSeverity, number> }) {
   const items = [
     { key: "blunder", label: "blunders", glyph: "??" },
     { key: "mistake", label: "mistakes", glyph: "?" },
     { key: "inaccuracy", label: "inaccuracies", glyph: "?!" }
   ] as const;
-  const summary = items.map((item) => `${counts[item.key] ?? 0} ${item.label}`).join(", ");
+  const summary = items.map((item) => `${counts[item.key]} ${item.label}`).join(", ");
   return (
     <span className="inline-flex items-baseline gap-2" aria-label={summary} title={summary}>
       {items.map((item) => {
-        const count = counts[item.key] ?? 0;
+        const count = counts[item.key];
         return (
           <span key={item.key} className="inline-flex items-baseline">
-            <span className={count ? qualityTone[item.key].text : "text-fg-subtle"}>{count}</span>
+            <span className={count ? annotationTone[item.key].text : "text-fg-subtle"}>
+              {count}
+            </span>
             <span className="text-2xs font-normal text-fg-subtle">{item.glyph}</span>
           </span>
         );

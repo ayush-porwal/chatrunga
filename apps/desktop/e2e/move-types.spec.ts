@@ -1,0 +1,298 @@
+// Game review's move marks through the built app: a short game reviewed on the fake UCI engine in
+// its "review" mode (scripted lines for the Blackburne Shilling trap, see the script). Ordinary
+// moves stay unmarked, the errors and the verified critical find are marked, the key moments lead
+// the review and can be stepped through, and a saved analysis from before the current marks opens
+// re-assessed and says so. How to run them: playwright.config.ts.
+import { join } from "node:path";
+import type { Locator, Page } from "@playwright/test";
+import type { ChaturangaApi } from "../../../packages/shared/src/ipc/chaturanga-api";
+import type { GameReview } from "../../../packages/shared/src/types/engine";
+import { trapReviewMoves } from "../../../packages/shared/src/chess/__fixtures__/trap-game";
+import { MOVE_ASSESSMENT_POLICY } from "../../../packages/shared/src/chess/move-assessment";
+import {
+  closeApp,
+  expect,
+  importPgnFile,
+  registerFakeEngine,
+  sidebar,
+  skipWelcome,
+  test
+} from "./app";
+import { writePgn } from "./fixtures";
+
+const TRAP_PGN = `[Event "Move marks e2e"]
+[White "Alpha"]
+[Black "Beta"]
+[Result "0-1"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bc4 Nd4 4. Nxe5 Qg5 5. Nxf7 Qxg2 6. Rf1 Qxe4+ 7. Be2 Nf3# 0-1
+`;
+
+/** Each move's mark (null: unmarked), in game order. */
+const MARKS: readonly [string, string | null][] = [
+  ["e4", null],
+  ["e5", null],
+  ["Nf3", null],
+  ["Nc6", null],
+  ["Bc4", null],
+  ["Nd4", "inaccuracy"],
+  ["Nxe5", "blunder"],
+  ["Qg5", "great"],
+  ["Nxf7", "blunder"],
+  ["Qxg2", "good"],
+  ["Rf1", null],
+  ["Qxe4+", null],
+  ["Be2", "mistake"],
+  ["Nf3#", null]
+];
+
+/** Where the journey's screenshots go (`<dir>/move-types-*.png`; unset: none are taken). */
+const SCREENSHOT_DIR = process.env.CHATURANGA_E2E_MOVE_TYPES_SCREENSHOTS;
+
+async function screenshot(page: Page, name: string) {
+  if (SCREENSHOT_DIR)
+    await page.screenshot({ path: join(SCREENSHOT_DIR, `move-types-${name}.png`) });
+}
+
+const titlebar = (page: Page) => page.getByRole("banner", { name: "Titlebar" });
+const reviewTabs = (page: Page) => page.getByRole("tablist", { name: "Game review sections" });
+const moveTree = (page: Page) => page.getByRole("tree", { name: "Reviewed move tree" });
+const keyMomentNav = (page: Page) => page.getByRole("group", { name: "Key moments" });
+const counter = (page: Page) =>
+  page.getByRole("navigation", { name: "Move navigation" }).getByRole("paragraph").first();
+
+/** The move tree's button for the `index`-th main-line move (SANs repeat: Nf3 is played twice). */
+function treeMove(page: Page, index: number): Locator {
+  return moveTree(page)
+    .locator("[data-tree-node-id]")
+    .filter({ hasNotText: "Starting position" })
+    .nth(index);
+}
+
+/** The marks the move tree shows, in game order. */
+async function treeMarks(page: Page): Promise<[string, string | null][]> {
+  const marks: [string, string | null][] = [];
+  for (let index = 0; index < MARKS.length; index += 1) {
+    const button = treeMove(page, index);
+    const san = (await button.locator("span.font-mono").first().textContent())?.trim() ?? "";
+    const badge = button.locator("[data-annotation]");
+    marks.push([san, (await badge.count()) ? await badge.getAttribute("data-annotation") : null]);
+  }
+  return marks;
+}
+
+test("a reviewed game marks only the moves that matter, leads with its key moments and steps through them", async ({
+  launch,
+  profile
+}) => {
+  test.setTimeout(120_000);
+  const { app, page } = await launch();
+  await skipWelcome(page);
+  await registerFakeEngine(page, join(profile, "uci.log"), "review");
+  await importPgnFile(app, page, writePgn(profile, "trap.pgn", TRAP_PGN));
+  await expect(page.getByRole("region", { name: "Board" })).toBeVisible();
+
+  await sidebar(page).getByRole("button", { name: "Game review", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Choose a game" })
+    .getByRole("button", { name: /^Alpha vs Beta/ })
+    .click();
+  await expect(reviewTabs(page)).toBeVisible();
+  await titlebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
+  await expect(
+    titlebar(page).getByRole("button", { name: "Analyze again", exact: true })
+  ).toBeVisible({ timeout: 60_000 });
+
+  // The summary counts every error by severity: one inaccuracy, one mistake, two blunders.
+  await expect(page.getByLabel("2 blunders, 1 mistakes, 1 inaccuracies")).toBeVisible();
+
+  // Before a move is picked, the commentary tab leads with the key moments.
+  await page
+    .getByRole("navigation", { name: "Move navigation" })
+    .getByRole("button", { name: "First move", exact: true })
+    .click();
+  await expect(counter(page)).toHaveText("0 / 14");
+  const leading = page.getByRole("list", { name: "Key moments of the game" });
+  await expect(leading.getByRole("listitem")).toHaveCount(4);
+  await expect(leading.getByRole("listitem").nth(0)).toContainText("4. Nxe5");
+  await expect(leading.getByRole("listitem").nth(0)).toContainText("Blunder");
+  await expect(leading.getByRole("listitem").nth(1)).toContainText("4… Qg5");
+  await expect(leading.getByRole("listitem").nth(1)).toContainText("Great");
+  await expect(leading.getByRole("listitem").nth(2)).toContainText("5. Nxf7");
+  await expect(leading.getByRole("listitem").nth(3)).toContainText("7. Be2");
+  await expect(leading.getByRole("listitem").nth(3)).toContainText("Allows a forced mate.");
+  await screenshot(page, "key-moments");
+
+  // Key-moment navigation: from the start to each moment in turn, and back.
+  await expect(keyMomentNav(page)).toContainText("4 key moments");
+  await expect(
+    keyMomentNav(page).getByRole("button", { name: "Previous key moment" })
+  ).toBeDisabled();
+  await keyMomentNav(page).getByRole("button", { name: "Next key moment" }).click();
+  await expect(counter(page)).toHaveText("7 / 14");
+  await expect(keyMomentNav(page)).toContainText("Key moment 1 of 4");
+  await keyMomentNav(page).getByRole("button", { name: "Next key moment" }).click();
+  await expect(counter(page)).toHaveText("8 / 14");
+  await expect(keyMomentNav(page)).toContainText("Key moment 2 of 4");
+  // The selected move's header names its mark and says why.
+  const header = page.getByRole("heading", { name: "4… Qg5", level: 2 });
+  await expect(header).toBeVisible();
+  await expect(
+    page.getByText(/A critical find: every other move the engine checked was at least 18% worse/)
+  ).toBeVisible();
+  await screenshot(page, "great");
+  await keyMomentNav(page).getByRole("button", { name: "Next key moment" }).click();
+  await keyMomentNav(page).getByRole("button", { name: "Next key moment" }).click();
+  await expect(counter(page)).toHaveText("13 / 14");
+  await expect(keyMomentNav(page).getByRole("button", { name: "Next key moment" })).toBeDisabled();
+  await keyMomentNav(page).getByRole("button", { name: "Previous key moment" }).click();
+  await expect(counter(page)).toHaveText("9 / 14");
+
+  // An ordinary move has no mark at all: no badge, and no praise for matching the engine.
+  await page
+    .getByRole("navigation", { name: "Move navigation" })
+    .getByRole("button", { name: "First move", exact: true })
+    .click();
+  await page
+    .getByRole("navigation", { name: "Move navigation" })
+    .getByRole("button", { name: "Next move", exact: true })
+    .click();
+  await expect(page.getByRole("heading", { name: "1. e4", level: 2 })).toBeVisible();
+  await expect(page.locator("header [data-annotation]")).toHaveCount(0);
+  await expect(page.getByText("The engine's top choice.")).toBeVisible();
+
+  // The move tree marks exactly the moves that matter.
+  await reviewTabs(page).getByRole("tab", { name: "Moves", exact: true }).click();
+  await expect(moveTree(page)).toBeVisible();
+  expect(await treeMarks(page)).toEqual(MARKS);
+  await expect(treeMove(page, 7).getByRole("img", { name: "Great" })).toHaveText("!");
+  await expect(treeMove(page, 6).getByRole("img", { name: "Blunder" })).toHaveText("??");
+  await screenshot(page, "move-tree");
+
+  // The focused lists: the key moments, and every mark (errors included).
+  const views = page.getByRole("radiogroup", { name: "Moves shown" });
+  await views.getByRole("radio", { name: "All marks" }).click();
+  const marks = page.getByRole("list", { name: "Every marked move" });
+  await expect(marks.getByRole("listitem")).toHaveCount(6);
+  await screenshot(page, "all-marks");
+  await marks.getByRole("button", { name: /Qxg2/ }).click();
+  await expect(counter(page)).toHaveText("10 / 14");
+  await views.getByRole("radio", { name: "Key moments" }).click();
+  await expect(
+    page.getByRole("list", { name: "Key moments of the game" }).getByRole("listitem")
+  ).toHaveCount(4);
+  await views.getByRole("radio", { name: "All moves" }).click();
+  await expect(moveTree(page)).toBeVisible();
+
+  // The graph marks the same moves and rings the key moments.
+  const graph = page.getByRole("region", { name: "Game evaluation graph" });
+  await expect(graph.locator("circle[data-annotation]")).toHaveCount(6);
+  await expect(graph.locator("circle[data-key-moment]")).toHaveCount(4);
+  await expect(
+    graph.getByRole("button", { name: "4. Nxe5, Blunder, key moment, after -2.5" })
+  ).toBeVisible();
+
+  // The saved analysis reopens with the same marks (the Great included) after a restart.
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga;
+        const [game] = (await api.games.listPage({ limit: 1 })).items;
+        return game ? ((await api.games.get(game.id)).review?.assessmentPolicy ?? null) : null;
+      })
+    )
+    .toBe(MOVE_ASSESSMENT_POLICY);
+  await closeApp(app);
+  const again = await launch();
+  await sidebar(again.page).getByRole("button", { name: "Home", exact: true }).click();
+  await expect(again.page.getByText("3 errors found")).toBeVisible();
+  await again.page.getByRole("button", { name: "Open review", exact: true }).click();
+  await reviewTabs(again.page).getByRole("tab", { name: "Moves", exact: true }).click();
+  expect(await treeMarks(again.page)).toEqual(MARKS);
+  await expect(again.page.getByText(/This analysis predates the current move marks/)).toHaveCount(
+    0
+  );
+});
+
+test("an analysis saved before the current marks opens re-assessed from its evaluations, and says so", async ({
+  launch
+}) => {
+  const { page } = await launch();
+  await skipWelcome(page);
+  // An older build's analysis of the game (evaluations only, a one-label verdict on every move),
+  // saved through the preload bridge (set-up, not the journey).
+  const legacy = trapReviewMoves().map((move) => ({ ...move, classification: "best" as const }));
+  await page.evaluate(
+    async ([pgn, moves]) => {
+      const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga;
+      const { game } = await api.games.importPgn({ pgn });
+      const saved = await api.games.save({ ...game });
+      const byPly = new Map(
+        saved.moveTree.filter((node) => node.san).map((node) => [node.ply, node.id])
+      );
+      const review: GameReview = {
+        reviewId: "legacy-analysis",
+        schemaVersion: 2,
+        engineId: "sf",
+        engineName: "Stockfish",
+        depth: null,
+        moveTimeMs: 250,
+        createdAt: Date.now(),
+        summary: {
+          totalMoves: 14,
+          best: 14,
+          excellent: 0,
+          good: 0,
+          inaccuracies: 0,
+          mistakes: 0,
+          blunders: 0,
+          missedTactics: 0,
+          averageCentipawnLoss: 0
+        },
+        moves: moves.map((move) => ({ ...move, nodeId: byPly.get(move.ply) ?? move.nodeId })),
+        // An explanation the AI coach wrote for that build, when every move came with a verdict.
+        commentary: [
+          {
+            ply: 8,
+            headline: "A brilliant queen sortie",
+            prose: "Well spotted: Qg5 hits g2 and the knight on e5.",
+            generatedAt: 1,
+            providerModel: "test/model"
+          }
+        ]
+      };
+      await api.games.save({ ...game, id: saved.id, review });
+    },
+    [TRAP_PGN, legacy] as const
+  );
+
+  // Home counts its errors again from the stored evaluations (its own summary said none).
+  await page.reload();
+  await sidebar(page).getByRole("button", { name: "Home", exact: true }).click();
+  await expect(page.getByText("3 errors found")).toBeVisible();
+  await page.getByRole("button", { name: "Open review", exact: true }).click();
+  await expect(page.getByText(/This analysis predates the current move marks/)).toBeVisible();
+  await reviewTabs(page).getByRole("tab", { name: "Moves", exact: true }).click();
+  // The errors come back; Qg5 had no deeper search, so it is only Good (it punished Nxe5).
+  expect(await treeMarks(page)).toEqual(
+    MARKS.map(([san, mark]) => [san, san === "Qg5" ? "good" : mark])
+  );
+  await screenshot(page, "recomputed");
+
+  // That explanation still shows, labelled as written before the current marks (nothing is
+  // requested on its own). This profile has no OpenRouter key, so it can't be written again here.
+  await reviewTabs(page).getByRole("tab", { name: "Commentary", exact: true }).click();
+  await treeMoveFromTape(page, "4… Qg5");
+  await expect(page.getByText("Well spotted: Qg5 hits g2 and the knight on e5.")).toBeVisible();
+  await expect(page.getByText("Written before the current move marks")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Write again" })).toHaveCount(0);
+  await screenshot(page, "earlier-commentary");
+});
+
+/** Selects a move by its point on the evaluation graph. */
+async function treeMoveFromTape(page: Page, label: string) {
+  await page
+    .getByRole("region", { name: "Game evaluation graph" })
+    .getByRole("button", { name: new RegExp(`^${label},`) })
+    .click();
+}

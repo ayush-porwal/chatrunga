@@ -42,7 +42,6 @@ import {
 import "./board.css";
 import { uciSquares } from "@chaturanga/shared/chess/square";
 
-const LOSING_CLASSIFICATIONS = new Set(["blunder", "mistake", "missed_tactic", "human_error"]);
 /** How long a puzzle right/wrong flash stays on its squares (matches the CSS keyframes). */
 const FLASH_MS = 900;
 
@@ -166,7 +165,8 @@ export function BoardView() {
       arrows.push({
         orig: played[0],
         dest: played[1],
-        brush: LOSING_CLASSIFICATIONS.has(reviewMove.classification) ? "paleRed" : "paleBlue"
+        // Red for a move that cost something (any error, marked or not).
+        brush: reviewMove.assessment?.severity ? "paleRed" : "paleBlue"
       });
     }
     return arrows;

@@ -22,8 +22,10 @@ import {
 import {
   CommentaryScheduler,
   commentarySettingsKey,
+  canRequestCommentary,
   decideCommentary,
   isCurrentCommentary,
+  writtenForEarlierMarks,
   type CommentaryDecision,
   type CommentaryJob
 } from "./commentary-scheduler";
@@ -56,6 +58,13 @@ export type SelectedMoveCommentary = {
   model: string;
   error: string | null;
   retry: () => void;
+  /**
+   * Set when the explanation shown was written before the current move marks: asking for a new
+   * one (never automatic — explanations are paid for; null while a request can't be made: AI
+   * commentary off, no key, configuration loading), whether that is under way, and why the last
+   * request failed.
+   */
+  rewrite: { run: (() => void) | null; pending: boolean; error: string | null } | null;
 };
 
 type Options = {
@@ -158,16 +167,20 @@ export function useGameReviewCommentary({
     : undefined;
   const jobKey =
     review && reviewedMove ? `${review.createdAt}:${reviewedMove.ply}:${settingsKey}` : "";
-  const decision = decideCommentary({
-    active,
+  const prerequisites = {
     enabled,
     configLoading: !settingsReady || openRouterConfig.isLoading,
     hasApiKey: Boolean(openRouterConfig.data?.hasApiKey),
-    hasPayload: Boolean(payload),
+    hasPayload: Boolean(payload)
+  };
+  const decision = decideCommentary({
+    active,
+    ...prerequisites,
     cached,
     settingsKey,
     failed: Boolean(jobKey && failures[jobKey])
   });
+  const canRequest = canRequestCommentary(prerequisites);
 
   const requestOne = useCallback(
     async (input: {
@@ -187,7 +200,11 @@ export function useGameReviewCommentary({
         if (stale()) return;
         if (item) {
           freshCommentary.add(viewKey(input.target, item.ply));
-          useReviewStore.getState().addCommentary({ ...item, settingsKey: input.settingsKey });
+          useReviewStore.getState().addCommentary({
+            ...item,
+            settingsKey: input.settingsKey,
+            payloadVersion: input.payload.schemaVersion
+          });
           return;
         }
         fail(error ?? PROVIDER_FAILED);
@@ -244,6 +261,26 @@ export function useGameReviewCommentary({
     });
   }, [jobInput, requestOne, scheduler]);
 
+  // An explanation from before the current marks: rewritten only when the user asks.
+  const [rewriting, setRewriting] = useState<string | null>(null);
+  const earlier = writtenForEarlierMarks(cached);
+  const rewrite = useMemo(
+    () =>
+      earlier && jobKey
+        ? {
+            run: canRequest
+              ? () => {
+                  setRewriting(jobKey);
+                  retry();
+                }
+              : null,
+            pending: rewriting === jobKey && !failures[jobKey],
+            error: rewriting === jobKey ? (failures[jobKey] ?? null) : null
+          }
+        : null,
+    [canRequest, earlier, failures, jobKey, retry, rewriting]
+  );
+
   const status = statusFor(decision, isCurrentCommentary(cached, settingsKey));
   useCommentaryViewTracking({
     review,
@@ -256,7 +293,8 @@ export function useGameReviewCommentary({
     commentary: cached,
     model: model || DEFAULT_COMMENTARY_MODEL,
     error: decision === "failed" ? (failures[jobKey] ?? PROVIDER_FAILED) : null,
-    retry
+    retry,
+    rewrite
   };
 }
 

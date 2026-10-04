@@ -1,4 +1,4 @@
-import type { EngineScore, MoveClassification, TerminalState } from "../types/engine";
+import type { EngineScore, TerminalState } from "../types/engine";
 import { makeSquare, parseUci } from "chessops/util";
 import { positionFromFen, statusForFen } from "./position";
 
@@ -70,45 +70,4 @@ export function formatEngineScore(score: EngineScore | null | undefined): string
   if (score.type === "mate") return `M${score.value}`;
   const value = score.value / 100;
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}`;
-}
-
-export function classifyMove(input: {
-  playedMove: string;
-  bestMove: string | null;
-  evalLoss: number | null;
-  hasMissedTactic: boolean;
-  humanPrediction?: string | null;
-}): MoveClassification {
-  if (input.bestMove && input.playedMove === input.bestMove) return "best";
-  if (input.evalLoss === null) return "good";
-  if (input.hasMissedTactic && input.evalLoss >= 150) return "missed_tactic";
-  if (input.humanPrediction && input.playedMove === input.humanPrediction && input.evalLoss >= 150)
-    return "human_error";
-  if (input.evalLoss <= 15) return "best";
-  if (input.evalLoss <= 35) return "excellent";
-  if (input.evalLoss <= 80) return "good";
-  if (input.evalLoss <= 150) return "inaccuracy";
-  if (input.evalLoss <= 300) return "mistake";
-  return "blunder";
-}
-
-export function reviewLabel(classification: MoveClassification): string {
-  switch (classification) {
-    case "best":
-      return "Best";
-    case "excellent":
-      return "Excellent";
-    case "good":
-      return "Good";
-    case "inaccuracy":
-      return "Inaccuracy";
-    case "mistake":
-      return "Mistake";
-    case "blunder":
-      return "Blunder";
-    case "missed_tactic":
-      return "Missed tactic";
-    case "human_error":
-      return "Human Error";
-  }
 }

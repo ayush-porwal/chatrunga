@@ -1,4 +1,4 @@
-import type { MoveClassification } from "@chaturanga/shared/types/engine";
+import type { MoveAnnotation } from "@chaturanga/shared/types/engine";
 
 /*
  * Shared class strings built on the design tokens in styles/app.css.
@@ -161,23 +161,66 @@ export const listRowInteractive = `${listRow} transition-[color,background-color
 
 export const listRowSelected = "border-accent/50 bg-accent-soft text-fg";
 
-/* ------------------------------------------------------------------ review classification */
+/* ------------------------------------------------------------------ review marks */
 
 /**
- * One colour language for move quality, shared by the move tree, review tape,
- * commentary badge and summary counts.
+ * One colour language for move marks, shared by the move tree, review graph, headers and summary
+ * counts. Colour is never the only signal: every mark also has its glyph and label.
  * - `badge`: tinted pill (bg + text) — use for "?!", "Blunder", etc.
  * - `text`: foreground colour only — use for counts and inline labels.
  * - `dot`: solid background — use for small markers.
+ * - `fill`: CSS colour for SVG marks (the graph's dots).
  */
-export const qualityTone: Record<MoveClassification, { badge: string; text: string; dot: string }> =
-  {
-    best: { badge: "bg-accent/15 text-accent-fg", text: "text-accent", dot: "bg-accent" },
-    excellent: { badge: "bg-accent/15 text-accent-fg", text: "text-accent", dot: "bg-accent" },
-    good: { badge: "bg-info/15 text-info", text: "text-info", dot: "bg-info" },
-    inaccuracy: { badge: "bg-warn/15 text-warn", text: "text-warn", dot: "bg-warn" },
-    mistake: { badge: "bg-caution/15 text-caution", text: "text-caution", dot: "bg-caution" },
-    blunder: { badge: "bg-danger/15 text-danger", text: "text-danger", dot: "bg-danger" },
-    missed_tactic: { badge: "bg-danger/15 text-danger", text: "text-danger", dot: "bg-danger" },
-    human_error: { badge: "bg-danger/15 text-danger", text: "text-danger", dot: "bg-danger" }
-  };
+export const annotationTone: Record<
+  MoveAnnotation,
+  { badge: string; text: string; dot: string; fill: string }
+> = {
+  brilliant: {
+    badge: "bg-brilliant/15 text-brilliant",
+    text: "text-brilliant",
+    dot: "bg-brilliant",
+    fill: "var(--color-brilliant)"
+  },
+  great: {
+    badge: "bg-info/15 text-info",
+    text: "text-info",
+    dot: "bg-info",
+    fill: "var(--color-info)"
+  },
+  excellent: {
+    badge: "bg-accent/15 text-accent-fg",
+    text: "text-accent",
+    dot: "bg-accent",
+    fill: "var(--color-accent)"
+  },
+  good: {
+    badge: "bg-accent/10 text-accent-fg",
+    text: "text-accent",
+    dot: "bg-accent",
+    fill: "var(--color-accent)"
+  },
+  miss: {
+    badge: "bg-miss/15 text-miss",
+    text: "text-miss",
+    dot: "bg-miss",
+    fill: "var(--color-miss)"
+  },
+  inaccuracy: {
+    badge: "bg-warn/15 text-warn",
+    text: "text-warn",
+    dot: "bg-warn",
+    fill: "var(--color-warn)"
+  },
+  mistake: {
+    badge: "bg-caution/15 text-caution",
+    text: "text-caution",
+    dot: "bg-caution",
+    fill: "var(--color-caution)"
+  },
+  blunder: {
+    badge: "bg-danger/15 text-danger",
+    text: "text-danger",
+    dot: "bg-danger",
+    fill: "var(--color-danger)"
+  }
+};

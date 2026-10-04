@@ -72,17 +72,6 @@ export function selectMaiaEnginesForReview(
   return [...byRating.values()].sort((a, b) => a.maiaRating - b.maiaRating);
 }
 
-/** Nearest Maia bucket that actually ran, for the player's rating. */
-export function nearestRatingBucket(
-  playerRating: number | null | undefined,
-  available: readonly MaiaRating[]
-): MaiaRating | null {
-  if (available.length === 0) return null;
-  const target =
-    typeof playerRating === "number" && Number.isFinite(playerRating) ? playerRating : 1500;
-  return [...available].sort((a, b) => Math.abs(a - target) - Math.abs(b - target) || a - b)[0];
-}
-
 // ─── Engine output → review data ───────────────────────────────────────────
 
 /**

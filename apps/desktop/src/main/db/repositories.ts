@@ -2,6 +2,7 @@ import { nanoid } from "nanoid";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
 import { positionFromFen } from "@chaturanga/shared/chess/position";
+import { withCurrentAssessments } from "@chaturanga/shared/chess/move-assessment";
 import { getDb } from "./index";
 import { gameFingerprint } from "./game-fingerprint";
 import {
@@ -467,7 +468,9 @@ function isHeaders(value: unknown): value is GameHeaders {
 
 /**
  * A stored analysis as the renderer can use it: placed on the game's tree (rebuilt trees remap),
- * or null when it can't be read or doesn't fit the game.
+ * with its moves assessed under the current policy (an older review is re-assessed from its stored
+ * evaluations and says so; the row itself is left as it was), or null when it can't be read or
+ * doesn't fit the game.
  */
 function parseStoredReview(
   json: string,
@@ -484,7 +487,16 @@ function parseStoredReview(
   } catch {
     review = null;
   }
-  return review && rebuilt ? remapReviewToTree(review, moveTree) : review;
+  const placed = review && rebuilt ? remapReviewToTree(review, moveTree) : review;
+  if (!placed) return null;
+  try {
+    return withCurrentAssessments(placed, {
+      playerRating: settingsRepository.getAll().reviewPlayerRating
+    });
+  } catch {
+    // Damaged moves are left unassessed one by one; anything worse still opens the review, unmarked.
+    return placed;
+  }
 }
 
 /** The row's stored headers, or null when it has none (older rows) or they can't be read. */

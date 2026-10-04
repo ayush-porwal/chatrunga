@@ -7,10 +7,13 @@ import type {
   MaiaRating,
   ReviewMoveInputItem
 } from "@chaturanga/shared/types/engine";
-import { fenAfterUci } from "@chaturanga/shared/chess/position";
+import { applySan, fenAfterUci } from "@chaturanga/shared/chess/position";
+import { MOVE_ASSESSMENT_POLICY } from "@chaturanga/shared/chess/move-assessment";
 import { analysePositionsWithEngine, reviewGameWithEngine } from "./review";
 
 const FAKE = join(__dirname, "__fixtures__", "fake-uci.mjs");
+/** The scripted engine with review lines for the Blackburne Shilling trap (see its "review" modes). */
+const SCRIPTED = join(__dirname, "__fixtures__", "fake-live-uci.mjs");
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 function fakeEngine(
@@ -55,6 +58,48 @@ function foolsMate(): ReviewMoveInputItem[] {
   });
 }
 
+/** 1. e4 e5 2. Nf3 Nc6 3. Bc4 Nd4 4. Nxe5 Qg5 5. Nxf7 Qxg2 6. Rf1 Qxe4+ 7. Be2 Nf3# (first `plies`). */
+function trapGame(plies = 14): ReviewMoveInputItem[] {
+  const sans = [
+    "e4",
+    "e5",
+    "Nf3",
+    "Nc6",
+    "Bc4",
+    "Nd4",
+    "Nxe5",
+    "Qg5",
+    "Nxf7",
+    "Qxg2",
+    "Rf1",
+    "Qxe4+",
+    "Be2",
+    "Nf3#"
+  ];
+  let fen = START;
+  return sans.slice(0, plies).map((san, index) => {
+    const played = applySan(fen, san)!;
+    const item = {
+      nodeId: `t${index}`,
+      ply: index + 1,
+      san: played.san,
+      uci: played.uci,
+      fenBefore: fen,
+      fenAfter: played.fen
+    };
+    fen = played.fen;
+    return item;
+  });
+}
+
+function scriptedEngine(
+  id: string,
+  log: string,
+  mode: "review" | "review-unstable" | "review-stuck-check"
+): EngineConfig {
+  return fakeEngine(id, "sf", { args: [SCRIPTED, log, mode] });
+}
+
 describe("reviewGameWithEngine (scripted UCI engines)", () => {
   it("degrades when one Maia cannot start, records engine data and synthesizes the terminal eval", async () => {
     const maia1100 = { ...fakeEngine("maia-1100", "maia"), maiaRating: 1100 as MaiaRating };
@@ -79,7 +124,8 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
       { threads: 2, hashMb: 64, playerRating: 1200 }
     );
 
-    expect(review.schemaVersion).toBe(2);
+    expect(review.schemaVersion).toBe(3);
+    expect(review.assessmentPolicy).toBe(MOVE_ASSESSMENT_POLICY);
     expect(review.engineName).toBe("Fake sf");
     expect(review.engineSettings).toEqual({
       multipv: 3,
@@ -122,7 +168,155 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
     expect(last.replyLines).toEqual([]);
     expect(last.wdlAfter).toEqual({ win: 0, draw: 0, loss: 1000 });
     expect(last.evalLoss).toBe(0);
-    expect(last.classification).toBe("best");
+    // Delivering mate is no error, and no mark either: the game was already decided.
+    expect(last.assessment).toMatchObject({ severity: null, annotation: null });
+    expect(last.classification).toBeUndefined();
+    expect(review.moves.every((move) => move.assessment?.policy === MOVE_ASSESSMENT_POLICY)).toBe(
+      true
+    );
+  }, 30_000);
+
+  it("marks only the moves that matter, verifying the critical find with a deeper search", async () => {
+    const log = join(mkdtempSync(join(tmpdir(), "review-marks-")), "uci.log");
+    const review = await reviewGameWithEngine(scriptedEngine("scripted", log, "review"), {
+      reviewId: "m",
+      engineId: "scripted",
+      rootFen: START,
+      moves: trapGame(),
+      multipv: 3,
+      moveTimeMs: 40
+    });
+    expect(review.moves.map((move) => [move.san, move.assessment?.annotation ?? null])).toEqual([
+      ["e4", null],
+      ["e5", null],
+      ["Nf3", null],
+      ["Nc6", null],
+      ["Bc4", null],
+      ["Nd4", "inaccuracy"],
+      ["Nxe5", "blunder"],
+      ["Qg5", "great"],
+      ["Nxf7", "blunder"],
+      ["Qxg2", "good"],
+      ["Rf1", null],
+      ["Qxe4+", null],
+      ["Be2", "mistake"],
+      ["Nf3#", null]
+    ]);
+    const qg5 = review.moves[7];
+    expect(qg5.verification?.deeperLines?.map((line) => line.pv[0])).toEqual([
+      "d8g5",
+      "d8e7",
+      "d4c2"
+    ]);
+    expect(qg5.assessment?.tags).toEqual(
+      expect.arrayContaining(["engine_top", "punishes_error", "only_move"])
+    );
+    expect(review.moves[12].assessment?.tags).toContain("mate_created");
+    // Only the critical find needed a check; the routine moves and the clear errors didn't.
+    expect(review.moves.filter((move) => move.verification).map((move) => move.san)).toEqual([
+      "Qg5"
+    ]);
+    expect(review.summary).toMatchObject({
+      inaccuracies: 1,
+      mistakes: 1,
+      blunders: 2,
+      great: 1,
+      good: 1,
+      brilliant: 0
+    });
+  }, 30_000);
+
+  it("withholds a mark a deeper search disagrees with, and searches a borderline error's move alone", async () => {
+    const log = join(mkdtempSync(join(tmpdir(), "review-unstable-")), "uci.log");
+    const review = await reviewGameWithEngine(
+      scriptedEngine("scripted-unstable", log, "review-unstable"),
+      {
+        reviewId: "u",
+        engineId: "scripted-unstable",
+        rootFen: START,
+        moves: trapGame(8),
+        multipv: 3,
+        moveTimeMs: 40
+      }
+    );
+    const [nxe5, qg5] = review.moves.slice(6);
+    // From the reply search Nxe5 lost 15.4 points (a blunder by a hair); the played move searched
+    // on its own, from the same position, shows it lost 13.6.
+    expect(nxe5.verification?.playedLine).toMatchObject({
+      pv: ["f3e5", "d8g5"],
+      score: { type: "cp", value: -30 }
+    });
+    expect(nxe5.assessment).toMatchObject({
+      severity: "mistake",
+      annotation: "mistake",
+      winLoss: 13.6
+    });
+    // Qg5 looked like the only move; the deeper search preferred Qe7, so it is not marked Great.
+    expect(qg5.assessment?.annotation).toBe("good");
+    expect(qg5.assessment?.tags).toContain("unstable");
+  }, 30_000);
+});
+
+describe("review checks", () => {
+  it("a check search that hangs leaves the move unverified and the review goes on", async () => {
+    const log = join(mkdtempSync(join(tmpdir(), "review-stuck-")), "uci.log");
+    const review = await reviewGameWithEngine(
+      scriptedEngine("scripted-stuck", log, "review-stuck-check"),
+      {
+        reviewId: "s",
+        engineId: "scripted-stuck",
+        rootFen: START,
+        moves: trapGame(),
+        multipv: 3,
+        moveTimeMs: 40
+      },
+      {},
+      [],
+      { checkTimeoutMs: 300 }
+    );
+    const qg5 = review.moves[7];
+    expect(qg5.verification).toBeUndefined();
+    // Not Great without the check; it still punished Nxe5.
+    expect(qg5.assessment?.annotation).toBe("good");
+    expect(qg5.assessment?.tags).toContain("unverified");
+    // The searches after it read their own answers.
+    expect(review.moves.slice(8).map((move) => move.assessment?.annotation ?? null)).toEqual([
+      "blunder",
+      "good",
+      null,
+      null,
+      "mistake",
+      null
+    ]);
+  }, 30_000);
+
+  it("cancelling during a check still cancels the review", async () => {
+    const log = join(mkdtempSync(join(tmpdir(), "review-stuck-cancel-")), "uci.log");
+    let cancelled = false;
+    const started = Date.now();
+    await expect(
+      reviewGameWithEngine(
+        scriptedEngine("scripted-stuck-cancel", log, "review-stuck-check"),
+        {
+          reviewId: "sc",
+          engineId: "scripted-stuck-cancel",
+          rootFen: START,
+          moves: trapGame(),
+          multipv: 3,
+          moveTimeMs: 40
+        },
+        {
+          onMoveCompleted: ({ moveIndex }) => {
+            // Qg5 (move 8) is checked right after Nxe5 completes: cancel while it hangs.
+            if (moveIndex === 6) setTimeout(() => (cancelled = true), 200);
+          },
+          shouldCancel: () => cancelled
+        },
+        [],
+        { checkTimeoutMs: 20_000 }
+      )
+    ).rejects.toThrow("Review cancelled");
+    expect(Date.now() - started).toBeLessThan(10_000);
   }, 30_000);
 });
 
@@ -149,8 +343,8 @@ describe("review reuse", () => {
 
     const again = await run(77);
     expect(again.phases).toEqual([]);
-    expect(again.review.moves.map((move) => [move.nodeId, move.classification])).toEqual(
-      first.review.moves.map((move) => [move.nodeId, move.classification])
+    expect(again.review.moves.map((move) => [move.nodeId, move.assessment])).toEqual(
+      first.review.moves.map((move) => [move.nodeId, move.assessment])
     );
 
     const otherBudget = await run(78);

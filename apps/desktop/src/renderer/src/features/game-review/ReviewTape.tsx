@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState, type ReactNode } from "react";
 import {
   CartesianGrid,
   Line,
@@ -14,7 +14,9 @@ import type { MoveReview } from "@chaturanga/shared/types/engine";
 import { ReviewBoard } from "./ReviewBoard";
 import { moveLabel } from "./review-utils";
 import { CHART_SCORE_LIMIT, formatMoveEval, whiteChartScore } from "./review-score";
-import { QualityBadge } from "@/components/ui/quality-badge";
+import { annotationLabel } from "@chaturanga/shared/chess/move-assessment";
+import { AnnotationBadge } from "@/components/ui/annotation-badge";
+import { annotationTone } from "@/lib/ui";
 import { Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { SectionHeader } from "@/components/ui/page";
@@ -26,6 +28,8 @@ type ChartPoint = {
   label: string;
   score: number;
   move: MoveReview | null;
+  /** One of the review's key moments (drawn ringed). */
+  key: boolean;
 };
 
 /** White-perspective graph value of a non-terminal score (e.g. the first move's `evalBefore`). */
@@ -83,12 +87,18 @@ export const ReviewTape = memo(function ReviewTape({
   onSelectNode,
   orientation,
   variationSelected = false,
-  totalPlies
+  totalPlies,
+  keyMomentIds,
+  actions
 }: {
   moves: readonly MoveReview[];
   selectedNodeId: string | null;
   onSelectNode: (nodeId: string) => void;
   orientation: Color;
+  /** Node ids of the review's key moments: their points are ringed. */
+  keyMomentIds?: ReadonlySet<string>;
+  /** Extra controls in the graph's header (key-moment navigation). */
+  actions?: ReactNode;
   /** The selected node is off the main line, so no point on the graph is highlighted. */
   variationSelected?: boolean;
   /**
@@ -104,16 +114,18 @@ export const ReviewTape = memo(function ReviewTape({
         ply: 0,
         label: "Start",
         score: first ? chartScore(first.evalBefore) : 0,
-        move: null
+        move: null,
+        key: false
       },
       ...moves.map((move) => ({
         ply: move.ply,
         label: moveLabel(move),
         score: whiteChartScore(move),
-        move
+        move,
+        key: keyMomentIds?.has(move.nodeId) ?? false
       }))
     ];
-  }, [moves]);
+  }, [keyMomentIds, moves]);
 
   const yDomain = useMemo<[number, number]>(() => {
     let maxAbs = 50;
@@ -142,7 +154,8 @@ export const ReviewTape = memo(function ReviewTape({
                 Variation
               </Badge>
             ) : null}
-            <GraphHelp />
+            {actions}
+            <GraphHelp keyMoments={keyMomentIds !== undefined} />
           </>
         }
       />
@@ -160,8 +173,11 @@ export const ReviewTape = memo(function ReviewTape({
   );
 });
 
-/** The graph's help tooltip; memoised so selecting moves does not re-render its tooltip tree. */
-const GraphHelp = memo(function GraphHelp() {
+/**
+ * The graph's help tooltip (rings are explained only where key moments are drawn); memoised so
+ * selecting moves does not re-render its tooltip tree.
+ */
+const GraphHelp = memo(function GraphHelp({ keyMoments }: { keyMoments: boolean }) {
   return (
     <UiTooltip>
       <TooltipTrigger asChild>
@@ -175,8 +191,8 @@ const GraphHelp = memo(function GraphHelp() {
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-60">
-        White&apos;s perspective: above zero means White is better. Click a point to jump to that
-        move.
+        White&apos;s perspective: above zero means White is better. Coloured points are marked moves
+        {keyMoments ? "; ringed ones are the key moments" : ""}. Click a point to jump to that move.
       </TooltipContent>
     </UiTooltip>
   );
@@ -256,19 +272,30 @@ const EvalChart = memo(function EvalChart({
     (props: { cx?: number; cy?: number; index?: number; payload?: unknown }) => {
       const point = data.find((item) => item === props.payload);
       const interactive = Boolean(point?.move);
+      const annotation = point?.move?.assessment?.annotation ?? null;
       const label = point?.move
-        ? `${moveLabel(point.move)}, after ${formatMoveEval(point.move)}`
+        ? [
+            moveLabel(point.move),
+            annotation ? annotationLabel(annotation) : null,
+            point.key ? "key moment" : null,
+            `after ${formatMoveEval(point.move)}`
+          ]
+            .filter(Boolean)
+            .join(", ")
         : "Starting position";
       return (
         <circle
           key={`dot-${point?.ply ?? props.index}`}
           cx={props.cx}
           cy={props.cy}
-          r={2.5}
+          r={point?.key ? 4 : annotation ? 3.25 : 2.5}
           className="cursor-pointer outline-none focus-visible:[stroke:var(--color-accent)] focus-visible:[stroke-width:2]"
-          fill={point?.move ? "var(--color-info)" : "var(--color-fg-subtle)"}
-          stroke="var(--color-surface)"
-          strokeWidth={1}
+          // Only marked moves are coloured; every other point (the start included) is neutral.
+          fill={annotation ? annotationTone[annotation].fill : "var(--color-fg-subtle)"}
+          stroke={point?.key ? "var(--color-fg)" : "var(--color-surface)"}
+          strokeWidth={point?.key ? 1.5 : 1}
+          data-annotation={annotation ?? undefined}
+          data-key-moment={point?.key ? "true" : undefined}
           tabIndex={interactive ? 0 : -1}
           role={interactive ? "button" : undefined}
           aria-label={label}
@@ -303,7 +330,10 @@ const EvalChart = memo(function EvalChart({
           <ReviewBoard fen={move.fenAfter} orientation={orientation} className="size-24 shrink-0" />
           <div className="grid min-w-0 content-start gap-1 py-0.5">
             <p className="font-mono font-semibold text-fg">{moveLabel(move)}</p>
-            <QualityBadge classification={move.classification} className="justify-self-start" />
+            <AnnotationBadge
+              annotation={move.assessment?.annotation ?? null}
+              className="justify-self-start"
+            />
             <p className="font-mono text-fg-muted tabular-nums">
               {formatMoveEval(move)} · {move.evalLoss ?? "—"}cp
             </p>

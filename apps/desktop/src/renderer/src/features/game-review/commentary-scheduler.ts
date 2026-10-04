@@ -1,4 +1,5 @@
 import type { ReviewCommentary } from "@chaturanga/shared/types/engine";
+import { REVIEW_INSIGHT_PAYLOAD_VERSION } from "@chaturanga/shared/schemas/review-insight";
 
 /**
  * On-demand AI commentary policy. Nothing is requested while the engine pass runs or when it
@@ -38,6 +39,28 @@ export function isCurrentCommentary(
   settingsKey: string
 ): item is ReviewCommentary {
   return Boolean(item && (!item.settingsKey || item.settingsKey === settingsKey));
+}
+
+/**
+ * The explanation was written from an earlier coach payload (before move marks), so it may praise
+ * or judge the move differently from its current mark. It is still shown, labelled as such, and
+ * only written again when the user asks (explanations are paid for).
+ */
+export function writtenForEarlierMarks(item: ReviewCommentary | undefined): boolean {
+  return Boolean(item) && (item?.payloadVersion ?? 1) < REVIEW_INSIGHT_PAYLOAD_VERSION;
+}
+
+/**
+ * A new explanation can be asked for by hand (Write again) only when an automatic request could be
+ * made: AI commentary is on, its configuration has loaded, a key is saved and the move has a payload.
+ */
+export function canRequestCommentary(input: {
+  enabled: boolean;
+  configLoading: boolean;
+  hasApiKey: boolean;
+  hasPayload: boolean;
+}): boolean {
+  return input.enabled && !input.configLoading && input.hasApiKey && input.hasPayload;
 }
 
 export type CommentaryDecision =

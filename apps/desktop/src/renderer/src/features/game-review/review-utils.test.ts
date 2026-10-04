@@ -5,11 +5,14 @@ import { validateProse } from "@chaturanga/shared/llm/commentary";
 import type {
   AnalysisLine,
   EngineScore,
-  MoveClassification,
+  ErrorSeverity,
+  MoveAnnotation,
+  MoveAssessment,
   MoveReview
 } from "@chaturanga/shared/types/engine";
 import {
   buildInsightPayload,
+  countBySeverity,
   mainlineReviewInput,
   numberedLine,
   reviewIdFromPath,
@@ -23,12 +26,30 @@ type PlySpec = {
   san: string;
   evalBefore: EngineScore;
   evalAfter: EngineScore;
-  classification: MoveClassification;
+  severity?: ErrorSeverity;
+  annotation?: MoveAnnotation;
   evalLoss: number;
   best: string[];
   topLines?: { pv: string[]; scoreWhite: EngineScore }[];
   clockRemainingMs?: number;
 };
+
+/** An assessment with the given verdict (the coach payload reads only these fields' meaning). */
+function assessed(
+  severity: ErrorSeverity | null,
+  annotation: MoveAnnotation | null
+): MoveAssessment {
+  return {
+    policy: 1,
+    winBefore: 50,
+    winAfter: 50,
+    winLoss: 0,
+    alternativeGap: null,
+    severity,
+    annotation,
+    tags: []
+  };
+}
 
 /** Plays SAN moves from the start position and attaches engine data to each ply. */
 function buildGame(plies: PlySpec[]): MoveReview[] {
@@ -56,7 +77,7 @@ function buildGame(plies: PlySpec[]): MoveReview[] {
       evalAfter: spec.evalAfter,
       bestEvalAfter: spec.evalBefore,
       evalLoss: spec.evalLoss,
-      classification: spec.classification,
+      assessment: assessed(spec.severity ?? null, spec.annotation ?? null),
       bestMove: spec.best[0] ?? null,
       bestLine: spec.best,
       topLines,
@@ -70,7 +91,7 @@ function buildGame(plies: PlySpec[]): MoveReview[] {
 
 /** 1.e4 e5 2.Nf3 Nc6 3.Bc4 Nd4 4.Nxe5? Qg5 — the Blackburne Shilling trap. */
 function trapGame(): MoveReview[] {
-  const ok = { classification: "best" as const, evalLoss: 5 };
+  const ok = { evalLoss: 5 };
   return buildGame([
     {
       san: "e4",
@@ -117,7 +138,8 @@ function trapGame(): MoveReview[] {
       evalBefore: cp(25),
       evalAfter: cp(90),
       best: ["g8f6", "d2d3"],
-      classification: "inaccuracy",
+      severity: "inaccuracy",
+      annotation: "inaccuracy",
       evalLoss: 65,
       clockRemainingMs: 280_000
     },
@@ -131,7 +153,8 @@ function trapGame(): MoveReview[] {
         { pv: ["e1g1", "g8f6", "f3d4"], scoreWhite: cp(60) },
         { pv: ["c2c3", "d4f3", "d1f3"], scoreWhite: cp(50) }
       ],
-      classification: "mistake",
+      severity: "mistake",
+      annotation: "mistake",
       evalLoss: 270,
       clockRemainingMs: 284_000
     },
@@ -148,7 +171,8 @@ function trapGame(): MoveReview[] {
       evalBefore: cp(-190),
       evalAfter: cp(-600),
       best: ["c4f7", "e8e7"],
-      classification: "blunder",
+      severity: "blunder",
+      annotation: "blunder",
       evalLoss: 400
     }
   ]);
@@ -166,7 +190,6 @@ function move(overrides: Partial<MoveReview> = {}): MoveReview {
     evalAfter: { type: "cp", value: 15 },
     bestEvalAfter: { type: "cp", value: 25 },
     evalLoss: 10,
-    classification: "best",
     bestMove: "e2e4",
     bestLine: ["e2e4", "e7e5"],
     topLines: [],
@@ -187,7 +210,43 @@ describe("game review utilities", () => {
     const payload = buildInsightPayload(move(), 1500);
     expect(payload?.engines.stockfish.bestMoveSan).toBe("e4");
     expect(payload?.engines.stockfish.bestLineSan).toEqual(["e4", "e5"]);
-    expect(payload?.classification).toBe("best");
+    // An ordinary engine match carries no mark, and the coach is told so.
+    expect(payload?.annotation).toBeNull();
+    expect(payload?.severity).toBeUndefined();
+  });
+
+  it("tells the coach a verified find was one, and an error what it cost", () => {
+    const great = buildInsightPayload(move({ assessment: assessed(null, "great") }), 1500);
+    expect(great).toMatchObject({ annotation: "great", curatorReason: "difficult_find" });
+    const good = buildInsightPayload(move({ assessment: assessed(null, "good") }), 1500);
+    expect(good).toMatchObject({ annotation: "good", curatorReason: "move_review" });
+    // An inaccuracy left unmarked (a decided game) is still explained as an error.
+    const unmarked = buildInsightPayload(
+      move({ assessment: { ...assessed("inaccuracy", null), tags: ["decided"] } }),
+      1500
+    );
+    expect(unmarked).toMatchObject({
+      annotation: null,
+      severity: "inaccuracy",
+      curatorReason: "mistake",
+      assessmentTags: ["decided"]
+    });
+    expect(() => reviewInsightPayloadSchema.parse(unmarked)).not.toThrow();
+  });
+
+  it("counts errors by severity, marked or not", () => {
+    const moves = trapGame();
+    expect(countBySeverity(moves)).toEqual({ inaccuracy: 1, mistake: 1, blunder: 1 });
+    expect(
+      countBySeverity([
+        move({ assessment: { ...assessed("inaccuracy", null), tags: ["decided"] } }),
+        move()
+      ])
+    ).toEqual({
+      inaccuracy: 1,
+      mistake: 0,
+      blunder: 0
+    });
   });
 
   it("uses a neutral review reason when no Maia data is available", () => {
@@ -245,7 +304,7 @@ describe("game review utilities", () => {
     expect(payload!.context?.recentMoves?.at(-1)).toMatchObject({
       moveNumberSan: "3...",
       mover: "black",
-      classification: "inaccuracy",
+      annotation: "inaccuracy",
       evalAfter: "+0.90"
     });
     expect(payload!.context?.mistakesSoFar).toEqual({
@@ -255,8 +314,12 @@ describe("game review utilities", () => {
     expect(payload!.context?.actualReply).toEqual({
       moveNumberSan: "4...",
       san: "Qg5",
-      classification: "best",
       matchesEngine: true
+    });
+    expect(payload).toMatchObject({
+      annotation: "mistake",
+      severity: "mistake",
+      curatorReason: "mistake"
     });
     expect(payload!.context).toMatchObject({
       players: { white: "Alice", black: "Bob" },
@@ -457,7 +520,6 @@ describe("game review utilities", () => {
       evalAfter: null,
       bestEvalAfter: null,
       evalLoss: null,
-      classification: "best",
       bestMove: "d1d8",
       bestLine: ["d1d8"]
     });
@@ -488,7 +550,6 @@ describe("game review utilities", () => {
       evalAfter: null,
       bestEvalAfter: { type: "mate", value: 8 },
       evalLoss: null,
-      classification: "good",
       bestMove: "h1g2",
       bestLine: ["h1g2", "a8a7"]
     });

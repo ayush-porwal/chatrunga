@@ -44,7 +44,6 @@ function setup(overrides: Partial<MoveReview> = {}) {
     evalBefore: { type: "cp", value: 0 },
     evalAfter: { type: "cp", value: 0 },
     evalLoss: 0,
-    classification: "best",
     bestMove: node.uci,
     bestLine: node.uci ? [node.uci] : [],
     topLines: [],
@@ -55,7 +54,6 @@ function setup(overrides: Partial<MoveReview> = {}) {
   if (!base) throw new Error("missing ply 7");
   const move: MoveReview = {
     ...base,
-    classification: "blunder",
     bestMove: "f3d4",
     bestLine: ["f3d4", "e5d4", "e1g1"],
     topLines: [line(1, ["f3d4", "e5d4", "e1g1"]), line(2, ["c2c3", "d4f3", "d1f3"])],

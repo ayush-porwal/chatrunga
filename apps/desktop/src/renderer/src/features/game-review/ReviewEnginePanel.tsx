@@ -20,7 +20,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { SectionHeader } from "@/components/ui/page";
 import { Stat, StatGroup } from "@/components/ui/stat";
 import { divider } from "@/lib/ui";
-import { QualityBadge } from "@/components/ui/quality-badge";
+import { AnnotationBadge } from "@/components/ui/annotation-badge";
+import { MoveMarkNote } from "./KeyMoments";
 import { replyLineUcis } from "./commentary-moves";
 import { MoveLine, VariationAnchorNote, type GoToLine } from "./MoveLinks";
 import { cn } from "@/lib/utils";
@@ -106,8 +107,10 @@ export function ReviewEnginePanel({
     >
       <header className="flex min-h-8 items-center gap-2">
         <h2 className="font-mono text-base font-semibold text-fg">{moveLabel(move)}</h2>
-        <QualityBadge classification={move.classification} />
+        <AnnotationBadge annotation={move.assessment?.annotation ?? null} />
       </header>
+
+      <MoveMarkNote assessment={move.assessment} className="-mt-2" />
 
       {variationAnchor ? (
         <VariationAnchorNote label={variationAnchor.label} onBack={variationAnchor.onBack} />
@@ -118,6 +121,10 @@ export function ReviewEnginePanel({
         <Stat label="After" value={formatMoveEval(move)} mono />
         <Stat label="Best" value={formatScore(move.bestEvalAfter)} mono />
         <Stat label="Loss" value={move.evalLoss === null ? "—" : `${move.evalLoss}cp`} mono />
+      </StatGroup>
+      <StatGroup>
+        <Stat label="Win chance" value={formatChances(move)} mono />
+        <Stat label="Engine rank" value={formatRank(move)} mono />
         {move.timeSpentMs !== undefined ? (
           <Stat label="Time" value={formatMillisecondsClock(move.timeSpentMs)} mono />
         ) : null}
@@ -217,6 +224,20 @@ export function ReviewEnginePanel({
 }
 
 const NO_MOVES: readonly MoveReview[] = [];
+
+/** Where the played move ranked among the engine's candidates ("1 of 3"; "—" outside them). */
+function formatRank(move: MoveReview): string {
+  const rank = move.playedRank ?? null;
+  return rank === null ? "—" : `${rank} of ${move.topLines.length}`;
+}
+
+/** The mover's winning chances before (best play) and after the move: "62% → 41%". */
+function formatChances(move: MoveReview): string {
+  const before = move.assessment?.winBefore;
+  const after = move.assessment?.winAfter;
+  if (before === null || before === undefined || after === null || after === undefined) return "—";
+  return `${Math.round(before)}% → ${Math.round(after)}%`;
+}
 
 /** The square a tactical fact is about (the hanging/pinned piece, or the attacker). */
 function factSquare(fact: TacticalFact): string {
