@@ -4,15 +4,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BoardArrow, BoardHighlight, MoveNode } from "@chaturanga/shared/types/chess";
-import type {
-  AddFromGameInput,
-  RepertoireChapter,
-  RepertoireColor,
-  RepertoireNodeMeta
+import {
+  REPERTOIRE_METADATA_LIMITS,
+  type AddFromGameInput,
+  type RepertoireChapter,
+  type RepertoireColor,
+  type RepertoireNodeMeta,
+  type UpdateDecisionInput
 } from "@chaturanga/shared/types/repertoire";
 import { fenAfterUci, START_FEN } from "@chaturanga/shared/chess/position";
 import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
 import { parseRepertoirePgn } from "@chaturanga/shared/chess/repertoire-pgn";
+import { importedDecisionCount } from "@chaturanga/shared/chess/repertoire-training";
 import type { ImportProgressEvent } from "@chaturanga/shared/types/repertoire";
 import { generateRepertoirePgn } from "./import-bench";
 import { validateTree } from "./chapter-validation";
@@ -171,6 +174,8 @@ function save(
     meta?: (tree: MoveNode[]) => Record<string, RepertoireNodeMeta>;
     rootFen?: string;
     enabled?: boolean;
+    /** Authored comments, by the UCI line of the node they belong to (joined with spaces). */
+    comments?: Record<string, string>;
   } = {}
 ) {
   const detail = service.getRepertoire(repertoireId);
@@ -179,6 +184,9 @@ function save(
   );
   const rootFen = options.rootFen ?? existing?.rootFen ?? START_FEN;
   const tree = treeOf(rootFen, lines);
+  for (const [line, comment] of Object.entries(options.comments ?? {})) {
+    nodeAt(tree, line ? line.split(" ") : []).comment = comment;
+  }
   const chapter: RepertoireChapter = {
     id: options.chapterId ?? existing!.id,
     title: "Chapter",
@@ -259,6 +267,51 @@ describe("repertoire service: chapters, decisions and index", () => {
     const decision = service.getDecision({ repertoireId: id, positionKey: START_KEY });
     expect(decision?.preferredUci).toBe("d2d4");
     expect(decision).not.toHaveProperty("acceptanceFingerprint");
+  });
+
+  it("getPractisedElsewhere gives the moves the other chapters practise at a chapter's positions", () => {
+    const { id } = create();
+    const first = save(id, [["e2e4"], ["d2d4"]]);
+    const firstId = first.chapter.id;
+    const second = save(id, [["c2c4"]], { chapterId: "second" });
+    const elsewhere = (chapterId: string) =>
+      service.getPractisedElsewhere({
+        repertoireId: id,
+        chapterId,
+        positionKeys: [START_KEY, START_KEY, "v1:nowhere"]
+      });
+    expect(() =>
+      service.getPractisedElsewhere({ repertoireId: "nope", chapterId: firstId, positionKeys: [] })
+    ).toThrow("Invalid repertoireId: not found");
+    expect(elsewhere(second.chapter.id)).toEqual({
+      [START_KEY]: ["e2e4", "d2d4"],
+      "v1:nowhere": []
+    });
+    // The decision keeps 1. e4 and 1. d4 stored, but only 1. c4 is practised by another chapter.
+    expect(elsewhere(firstId)[START_KEY]).toEqual(["c2c4"]);
+    // A move kept as reference there is no longer practised elsewhere, though still stored.
+    save(id, [["c2c4"]], {
+      chapterId: second.chapter.id,
+      meta: (tree) => ({ [nodeAt(tree, ["c2c4"]).id]: { edge: "reference" } })
+    });
+    expect(service.getDecision({ repertoireId: id, positionKey: START_KEY })?.acceptedUcis).toContain(
+      "c2c4"
+    );
+    expect(elsewhere(firstId)[START_KEY]).toEqual([]);
+  });
+
+  it("getPausedKeys lists the paused decisions' position keys", () => {
+    const { id } = create();
+    expect(() => service.getPausedKeys("nope")).toThrow("Invalid repertoireId: not found");
+    const saved = save(id, [["e2e4"]]);
+    expect(service.getPausedKeys(id)).toEqual([]);
+    service.updateDecision({
+      repertoireId: id,
+      positionKey: START_KEY,
+      expectedRevision: saved.repertoire.revision,
+      patch: { paused: true }
+    });
+    expect(service.getPausedKeys(id)).toEqual([START_KEY]);
   });
 
   it("an included own-side move makes exactly one decision with index rows", () => {
@@ -553,6 +606,158 @@ describe("repertoire service: chapters, decisions and index", () => {
     service.removeRepertoire({ id, expectedRevision: removed.repertoire.revision });
     expect(() => service.getRepertoire(id)).toThrow("Invalid repertoireId: not found");
     expect(sent.at(-1)).toMatchObject({ payload: { repertoireId: id, kind: "removed" } });
+  });
+
+  it("edits name, description and tags against the revision, and search finds the new tag", () => {
+    const { id, revision } = create();
+    const edited = service.updateMetadata({
+      id,
+      expectedRevision: revision,
+      patch: {
+        name: "  Sicilian Najdorf  ",
+        description: " Main lines ",
+        tags: [" sharp ", "sharp", ""]
+      }
+    });
+    expect(edited).toMatchObject({
+      name: "Sicilian Najdorf",
+      description: "Main lines",
+      tags: ["sharp"],
+      revision: revision + 1
+    });
+    expect(service.listRepertoires({ query: "SHARP" }).map((item) => item.id)).toEqual([id]);
+    expect(service.listRepertoires({ query: "white" })).toEqual([]);
+    expect(sent.at(-1)).toMatchObject({ payload: { repertoireId: id, kind: "updated" } });
+    // Another write since the editor opened: refused, nothing overwritten.
+    expect(() =>
+      service.updateMetadata({ id, expectedRevision: revision, patch: { name: "Stale" } })
+    ).toThrow("Invalid expectedRevision: repertoire changed (stored 2, expected 1)");
+    expect(service.getRepertoire(id).name).toBe("Sicilian Najdorf");
+    expect(() =>
+      service.updateMetadata({ id, expectedRevision: edited.revision, patch: { name: " " } })
+    ).toThrow(/Invalid name/);
+  });
+
+  it("keeps metadata exactly up to the limits the renderer's forms enforce", () => {
+    const { id, revision } = create();
+    const limits = REPERTOIRE_METADATA_LIMITS;
+    const tags = Array.from({ length: limits.tags + 1 }, (_, index) =>
+      `${index}`.padEnd(limits.tag, "t")
+    );
+    const atLimit = service.updateMetadata({
+      id,
+      expectedRevision: revision,
+      patch: {
+        name: "n".repeat(limits.name),
+        description: "d".repeat(limits.description),
+        tags: tags.slice(0, limits.tags)
+      }
+    });
+    expect(atLimit.name).toHaveLength(limits.name);
+    expect(atLimit.description).toHaveLength(limits.description);
+    expect(atLimit.tags).toEqual(tags.slice(0, limits.tags));
+    const over = service.updateMetadata({
+      id,
+      expectedRevision: atLimit.revision,
+      patch: {
+        name: "n".repeat(limits.name + 1),
+        description: "d".repeat(limits.description + 1),
+        tags: [...tags.slice(0, limits.tags - 1), `${tags.at(-1)}x`, tags.at(-1)!]
+      }
+    });
+    expect(over.name).toHaveLength(limits.name);
+    expect(over.description).toHaveLength(limits.description);
+    expect(over.tags).toHaveLength(limits.tags);
+    expect(over.tags.at(-1)).toHaveLength(limits.tag);
+  });
+
+  it("sets enabled and kind on several chapters in one revision, skipping unchanged ones", () => {
+    const { id } = create();
+    const first = save(id, [["e2e4", "e7e5", "g1f3"]]);
+    const second = save(id, [["d2d4", "d7d5", "c2c4"]], { chapterId: "c2" });
+    const third = save(id, [["c2c4"]], { chapterId: "c3", enabled: false });
+    expect(third.repertoire.decisionCount).toBe(3);
+    const before = service.getRepertoire(id);
+    sent.length = 0;
+
+    const disabled = service.updateChapters({
+      repertoireId: id,
+      chapterIds: [first.chapter.id, "c2", "c3", "c2"],
+      expectedRevision: before.revision,
+      patch: { enabled: false }
+    });
+    expect(disabled.chaptersChanged).toBe(2);
+    expect(disabled.repertoire.revision).toBe(before.revision + 1);
+    expect(disabled.repertoire.decisionCount).toBe(0);
+    const byId = new Map(disabled.repertoire.chapters.map((chapter) => [chapter.id, chapter]));
+    expect(byId.get(first.chapter.id)).toMatchObject({
+      enabled: false,
+      revision: first.chapter.revision + 1
+    });
+    expect(byId.get("c2")).toMatchObject({ enabled: false, revision: second.chapter.revision + 1 });
+    expect(byId.get("c3")).toMatchObject({ enabled: false, revision: third.chapter.revision });
+    // The trees are untouched; one change event for the whole batch.
+    expect(service.getChapter({ repertoireId: id, chapterId: "c2" }).tree).toHaveLength(4);
+    expect(sent.filter((event) => event.channel === "repertoires:changed")).toHaveLength(1);
+
+    const reference = service.updateChapters({
+      repertoireId: id,
+      chapterIds: ["c2", "c3"],
+      expectedRevision: disabled.repertoire.revision,
+      patch: { enabled: true, kind: "reference" }
+    });
+    expect(reference.chaptersChanged).toBe(2);
+    expect(
+      reference.repertoire.chapters.filter((chapter) => chapter.kind === "reference")
+    ).toHaveLength(2);
+    expect(reference.repertoire.decisionCount).toBe(0);
+    const reopened = service.updateChapters({
+      repertoireId: id,
+      chapterIds: ["c2"],
+      expectedRevision: reference.repertoire.revision,
+      patch: { kind: "opening" }
+    });
+    expect(reopened.repertoire.decisionCount).toBe(2);
+
+    // Nothing to change: no write, no event, same revision.
+    sent.length = 0;
+    const unchanged = service.updateChapters({
+      repertoireId: id,
+      chapterIds: ["c2"],
+      expectedRevision: reopened.repertoire.revision,
+      patch: { kind: "opening", enabled: true }
+    });
+    expect(unchanged).toMatchObject({
+      chaptersChanged: 0,
+      repertoire: { revision: reopened.repertoire.revision }
+    });
+    expect(sent).toEqual([]);
+  });
+
+  it("refuses a stale or foreign batch chapter update and writes none of it", () => {
+    const { id } = create();
+    const saved = save(id, [["e2e4"]]);
+    const other = create("black");
+    const revision = saved.repertoire.revision;
+    expect(() =>
+      service.updateChapters({
+        repertoireId: id,
+        chapterIds: [saved.chapter.id],
+        expectedRevision: revision - 1,
+        patch: { enabled: false }
+      })
+    ).toThrow(/Invalid expectedRevision/);
+    expect(() =>
+      service.updateChapters({
+        repertoireId: id,
+        chapterIds: [saved.chapter.id, other.chapters[0].id],
+        expectedRevision: revision,
+        patch: { enabled: false }
+      })
+    ).toThrow("Invalid chapterIds: not found");
+    const after = service.getRepertoire(id);
+    expect(after.revision).toBe(revision);
+    expect(after.chapters[0]).toMatchObject({ enabled: true, revision: saved.chapter.revision });
   });
 
   it("a practice-setup write keeps where to continue studying", () => {
@@ -954,6 +1159,12 @@ describe("repertoire service: import and export", () => {
           : game.rejected
             ? game.tree
             : validateTree(game.tree, game.rootFen),
+        decisions: game.rejected
+          ? { white: 0, black: 0 }
+          : {
+              white: importedDecisionCount("white", game.tree),
+              black: importedDecisionCount("black", game.tree)
+            },
         warnings: game.warnings,
         invalidBranches: game.invalidBranches
       }));
@@ -1230,6 +1441,45 @@ describe("repertoire service: import and export", () => {
     await expect(
       service.exportRepertoire({ repertoireId: id, chapterIds: ["nope"] })
     ).rejects.toThrow(/Invalid chapterIds/);
+  });
+
+  it("exports a promoted variation as the main line without changing the preferred move", async () => {
+    const { id } = create();
+    const saved = save(id, [["e2e4", "e7e5"], ["d2d4"]], {
+      meta: (tree) =>
+        Object.fromEntries(
+          tree.filter((node) => node.parentId).map((node) => [node.id, { edge: "included" }])
+        )
+    });
+    expect(service.getDecision({ repertoireId: id, positionKey: START_KEY })).toMatchObject({
+      acceptedUcis: ["e2e4", "d2d4"],
+      preferredUci: "e2e4"
+    });
+    expect((await service.exportRepertoire({ repertoireId: id })).pgn).toContain(
+      "1. e4 (1. d4) 1... e5 *"
+    );
+
+    // Promoting 1. d4 reorders the root's moves (what Study's Promote variation saves).
+    const promoted = service.saveChapter({
+      repertoireId: id,
+      expectedRevision: saved.repertoire.revision,
+      chapter: {
+        ...saved.chapter,
+        tree: saved.chapter.tree.map((node) =>
+          node.id === "root" ? { ...node, children: [...node.children].reverse() } : node
+        )
+      }
+    });
+    expect(promoted.chapter.tree.find((node) => node.id === "root")!.children).toEqual(
+      [...saved.chapter.tree.find((node) => node.id === "root")!.children].reverse()
+    );
+    expect((await service.exportRepertoire({ repertoireId: id })).pgn).toContain(
+      "1. d4 (1. e4 e5) *"
+    );
+    // The trained answer is the decision's preference, not the authored order.
+    expect(service.getDecision({ repertoireId: id, positionKey: START_KEY })).toMatchObject({
+      preferredUci: "e2e4"
+    });
   });
 });
 
@@ -1648,6 +1898,227 @@ describe("repertoire service: practice", () => {
     const result = attempt(targeted.sessionId, targeted.cards[0].queueItemId, "e2e4");
     expect(result.outcome).toBe("correct");
     expect(progressRepository.get(id, START_KEY)!.lapses).toBe(0);
+  });
+
+  it("gives out the explanation and the accepted moves' comments only with the answer", () => {
+    const { id } = create();
+    save(id, [["e2e4"], ["d2d4"]], {
+      comments: { "": "Choose your centre pawn.", e2e4: "Open games.", d2d4: "  " }
+    });
+    service.updateDecision({
+      repertoireId: id,
+      positionKey: START_KEY,
+      expectedRevision: service.getRepertoire(id).revision,
+      patch: {
+        acceptedUcis: ["e2e4"],
+        hint: "A king's pawn",
+        wrongMoveFeedback: { d2d4: "Not 1.d4 here" }
+      }
+    });
+    const { session, card } = learnFirst(id);
+    const ids = { sessionId: session.sessionId, queueItemId: card.queueItemId };
+    // A hint gives the hint only; a wrong answer only that move's feedback.
+    expect(service.recordPracticeAction({ ...ids, action: { kind: "hint" } }).revealed).toEqual({
+      ucis: [],
+      preferredUci: null,
+      explanation: "A king's pawn"
+    });
+    const wrong = attempt(session.sessionId, card.queueItemId, "d2d4");
+    expect(wrong.feedback).toBe("Not 1.d4 here");
+    expect(wrong).not.toHaveProperty("explanation");
+    expect(wrong).not.toHaveProperty("moveComments");
+    const revealed = service.recordPracticeAction({ ...ids, action: { kind: "reveal" } });
+    expect(revealed.revealed).toEqual({
+      ucis: ["e2e4"],
+      preferredUci: "e2e4",
+      explanation: "Choose your centre pawn.",
+      moveComments: { e2e4: "Open games." }
+    });
+    expect(service.resumePractice(session.sessionId).shown?.revealed).toEqual(revealed.revealed);
+    expect(attempt(session.sessionId, card.queueItemId, "e2e4")).toMatchObject({
+      outcome: "correct",
+      acceptedUcis: ["e2e4"],
+      explanation: "Choose your centre pawn.",
+      moveComments: { e2e4: "Open games." }
+    });
+  });
+
+  it("a correct first answer comes with the explanation, the hint standing in for none", () => {
+    const { id } = create();
+    save(id, [["e2e4"]], { comments: { e2e4: "Open games." } });
+    service.updateDecision({
+      repertoireId: id,
+      positionKey: START_KEY,
+      expectedRevision: service.getRepertoire(id).revision,
+      patch: { hint: "A king's pawn" }
+    });
+    const { session, card } = learnFirst(id);
+    expect(attempt(session.sessionId, card.queueItemId, "e2e4")).toMatchObject({
+      outcome: "correct",
+      finalGrade: true,
+      explanation: "A king's pawn",
+      moveComments: { e2e4: "Open games." }
+    });
+  });
+
+  it("retrying a session's missed decisions leaves that session's grades as they were", () => {
+    const { id } = create();
+    save(id, [["e2e4", "e7e5", "g1f3"]]);
+    const first = service.startPractice({ repertoireId: id, mode: "learn-new" });
+    attempt(first.sessionId, first.cards[0].queueItemId, "d2d4");
+    attempt(first.sessionId, first.cards[1].queueItemId, "g1f3");
+    const summary = service.endPractice(first.sessionId);
+    expect(summary).toMatchObject({ unaided: 1, missed: 1, missedPositionKeys: [START_KEY] });
+    const lapsed = progressRepository.get(id, START_KEY)!;
+    expect(lapsed).toMatchObject({ stage: 0, lapses: 1 });
+    const firstRows = attemptRepository.list(first.sessionId);
+
+    // "Retry missed": the targeted queue of the missed decisions, as ungraded extra practice.
+    const retryMissed = () =>
+      service.startPractice({
+        repertoireId: id,
+        mode: "review-due",
+        positionKeys: summary.missedPositionKeys,
+        cardLimit: 1,
+        newCardLimit: 1,
+        ungraded: true
+      });
+    now += 60_000;
+    const retry = retryMissed();
+    expect(retry.scope.ungraded).toBe(true);
+    expect(service.resumePractice(retry.sessionId).scope.ungraded).toBe(true);
+    expect(retry.cards.map((card) => card.positionKey)).toEqual([START_KEY]);
+    // A correct retry seconds after the miss doesn't jump the relearn step to stage 1.
+    expect(attempt(retry.sessionId, retry.cards[0].queueItemId, "e2e4")).toMatchObject({
+      outcome: "correct",
+      finalGrade: true
+    });
+    expect(progressRepository.get(id, START_KEY)).toEqual(lapsed);
+    // Its answers are recorded with the retry session: its summary counts them.
+    expect(service.endPractice(retry.sessionId)).toMatchObject({ unaided: 1, missed: 0 });
+
+    // A wrong retry adds no second lapse, nor does a reveal.
+    const again = retryMissed();
+    expect(attempt(again.sessionId, again.cards[0].queueItemId, "d2d4").outcome).toBe(
+      "outside-repertoire"
+    );
+    service.recordPracticeAction({
+      sessionId: again.sessionId,
+      queueItemId: again.cards[0].queueItemId,
+      action: { kind: "reveal" }
+    });
+    const third = retryMissed();
+    service.recordPracticeAction({
+      sessionId: third.sessionId,
+      queueItemId: third.cards[0].queueItemId,
+      action: { kind: "reveal" }
+    });
+    expect(progressRepository.get(id, START_KEY)).toEqual(lapsed);
+    expect(service.endPractice(again.sessionId)).toMatchObject({
+      missed: 1,
+      missedPositionKeys: [START_KEY]
+    });
+
+    // The first session's answers and summary are unchanged.
+    expect(attemptRepository.list(first.sessionId)).toEqual(firstRows);
+    expect(service.endPractice(first.sessionId)).toEqual(summary);
+  });
+
+  it("a paused decision leaves practice and due counts, and resuming keeps its progress", () => {
+    const { id } = create();
+    save(id, [["e2e4", "e7e5", "g1f3"]]);
+    const first = learnFirst(id);
+    attempt(first.session.sessionId, first.card.queueItemId, "e2e4");
+    const learned = progressRepository.get(id, START_KEY)!;
+    expect(learned).toMatchObject({ stage: 1, unaidedSuccesses: 1 });
+    now += 2 * DAY;
+    expect(service.getRepertoire(id).dueCount).toBe(1);
+    // A card dealt before the pause is skipped ungraded once the decision is paused.
+    const dealt = service.startPractice({ repertoireId: id, mode: "review-due" });
+    expect(dealt.cards[0].positionKey).toBe(START_KEY);
+
+    const paused = service.updateDecision({
+      repertoireId: id,
+      positionKey: START_KEY,
+      expectedRevision: service.getRepertoire(id).revision,
+      patch: { paused: true }
+    });
+    expect(paused.decision.paused).toBe(true);
+    expect(paused.repertoire).toMatchObject({ dueCount: 0, decisionCount: 1 });
+    expect(service.getDueSummary().dueCount).toBe(0);
+    expect(attempt(dealt.sessionId, dealt.cards[0].queueItemId, "e2e4").outcome).toBe("stale");
+    for (const mode of ["review-due", "learn-new"] as const) {
+      const session = service.startPractice({ repertoireId: id, mode });
+      expect(session.cards.map((card) => card.positionKey)).not.toContain(START_KEY);
+    }
+    expect(progressRepository.get(id, START_KEY)).toEqual(learned);
+
+    const resumed = service.updateDecision({
+      repertoireId: id,
+      positionKey: START_KEY,
+      expectedRevision: paused.repertoire.revision,
+      patch: { paused: false }
+    });
+    expect(resumed.decision.paused).toBe(false);
+    // Its first scored attempt and schedule are as they were: still a due review, not a new card.
+    expect(progressRepository.get(id, START_KEY)).toEqual(learned);
+    expect(resumed.repertoire).toMatchObject({ dueCount: 1, decisionCount: 2 });
+    const review = service.startPractice({ repertoireId: id, mode: "review-due" });
+    expect(review.cards.map((card) => [card.positionKey === START_KEY, card.stage])).toEqual([
+      [true, "review"],
+      [false, "new"]
+    ]);
+  });
+
+  it("wrong-move feedback names legal moves and is replaced as a whole", () => {
+    const { id } = create();
+    save(id, [["e2e4"]]);
+    const write = (wrongMoveFeedback: Record<string, string>) =>
+      service.updateDecision({
+        repertoireId: id,
+        positionKey: START_KEY,
+        expectedRevision: service.getRepertoire(id).revision,
+        patch: { wrongMoveFeedback }
+      }).decision.wrongMoveFeedback;
+    expect(() => write({ e2e5: "Not a move" })).toThrow(
+      /Invalid wrongMoveFeedback: "e2e5" is not a legal move/
+    );
+    expect(write({ d2d4: " We play 1.e4 ", c2c4: "Not the English" })).toEqual({
+      d2d4: "We play 1.e4",
+      c2c4: "Not the English"
+    });
+    // Left out or blank: removed.
+    expect(write({ d2d4: "We play 1.e4", c2c4: "   " })).toEqual({ d2d4: "We play 1.e4" });
+    expect(write({})).toEqual({});
+  });
+
+  it("wrong-move feedback never names an accepted move", () => {
+    const { id } = create();
+    save(id, [["e2e4"], ["d2d4"]]);
+    const update = (patch: UpdateDecisionInput["patch"]) =>
+      service.updateDecision({
+        repertoireId: id,
+        positionKey: START_KEY,
+        expectedRevision: service.getRepertoire(id).revision,
+        patch
+      }).decision;
+    update({ acceptedUcis: ["e2e4"] });
+    expect(() => update({ wrongMoveFeedback: { e2e4: "Not this one" } })).toThrow(
+      /Invalid wrongMoveFeedback: "e2e4" is an accepted move/
+    );
+    // Feedback written while 1.d4 was outside the repertoire, then 1.d4 accepted: sent back
+    // unchanged with the rest of the map it is dropped; new text for it is refused.
+    update({ wrongMoveFeedback: { d2d4: "We play 1.e4" } });
+    expect(update({ acceptedUcis: ["e2e4", "d2d4"] }).wrongMoveFeedback).toEqual({
+      d2d4: "We play 1.e4"
+    });
+    expect(() => update({ wrongMoveFeedback: { d2d4: "Changed" } })).toThrow(
+      /"d2d4" is an accepted move/
+    );
+    expect(
+      update({ wrongMoveFeedback: { d2d4: "We play 1.e4", c2c4: "Not the English" } })
+        .wrongMoveFeedback
+    ).toEqual({ c2c4: "Not the English" });
   });
 
   it("a targeted queue keeps the given order and drops unknown or paused decisions", () => {
@@ -2353,6 +2824,51 @@ describe("repertoire service: rehearse lines", () => {
       chapters: [chapter.id],
       rehearsal: { linesStarted: 0, linesCompleted: 0, otherLineAnswers: 0 }
     });
+  });
+
+  it("plays a paused decision's move as context and never asks it", () => {
+    const line = ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4"];
+    const { id, chapter } = setup([line]);
+    const keyAfter = (plies: number) =>
+      positionKey(line.slice(0, plies).reduce((fen, uci) => fenAfterUci(fen, uci)!, START_FEN));
+    const pause = (key: string) =>
+      service.updateDecision({
+        repertoireId: id,
+        positionKey: key,
+        expectedRevision: service.getRepertoire(id).revision,
+        patch: { paused: true }
+      });
+    // 2. Nf3 is paused: after 1. e4 e5 the line goes on with Nf3 Nc6 to 3. Bc4's decision.
+    pause(keyAfter(2));
+    const session = rehearse(id, chapter.id);
+    expect(session.cards[0]).toMatchObject({ nodeId: "root", rehearsal: { stepIndex: 0 } });
+    const first = attempt(session.sessionId, "q1", "e2e4");
+    expect(first.rehearsal).toMatchObject({
+      reply: { uci: "e7e5" },
+      lineComplete: false,
+      next: {
+        positionKey: keyAfter(4),
+        leadUp: line.slice(0, 4).map((uci) => expect.objectContaining({ uci })),
+        rehearsal: { stepIndex: 1 }
+      }
+    });
+    expect(attempt(session.sessionId, "q2", "f1c4").rehearsal).toMatchObject({
+      lineComplete: true
+    });
+    expect(service.endPractice(session.sessionId)).toMatchObject({
+      unaided: 2,
+      rehearsal: { linesStarted: 1, linesCompleted: 1 }
+    });
+
+    // The first decision paused too: the line starts at 3. Bc4's, its lead-up played.
+    pause(START_KEY);
+    const later = rehearse(id, chapter.id);
+    expect(later.cards).toHaveLength(1);
+    expect(later.cards[0]).toMatchObject({ positionKey: keyAfter(4), rehearsal: { stepIndex: 0 } });
+
+    // Every decision paused: nothing to rehearse.
+    pause(keyAfter(4));
+    expect(rehearse(id, chapter.id)).toMatchObject({ status: "finished", cards: [] });
   });
 
   it("plays lines with authored replies, rotating to unseen branches, and never writes progress", () => {

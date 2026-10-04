@@ -161,6 +161,9 @@ const api: ChaturangaApi = {
     get: (id) => ipcRenderer.invoke("repertoires:get", id),
     getChapter: (input) => ipcRenderer.invoke("repertoires:getChapter", input),
     getDecision: (input) => ipcRenderer.invoke("repertoires:getDecision", input),
+    getPractisedElsewhere: (input) =>
+      ipcRenderer.invoke("repertoires:getPractisedElsewhere", input),
+    getPausedKeys: (id) => ipcRenderer.invoke("repertoires:getPausedKeys", id),
     getOccurrences: (input) => ipcRenderer.invoke("repertoires:getOccurrences", input),
     compareGame: (input) => ipcRenderer.invoke("repertoires:compareGame", input),
     previewAddFromGame: (input) => ipcRenderer.invoke("repertoires:previewAddFromGame", input),
@@ -173,6 +176,7 @@ const api: ChaturangaApi = {
     saveChapter: (input) => ipcRenderer.invoke("repertoires:saveChapter", input),
     updateDecision: (input) => ipcRenderer.invoke("repertoires:updateDecision", input),
     removeChapter: (input) => ipcRenderer.invoke("repertoires:removeChapter", input),
+    updateChapters: (input) => ipcRenderer.invoke("repertoires:updateChapters", input),
     duplicate: (input) => ipcRenderer.invoke("repertoires:duplicate", input),
     archive: (input) => ipcRenderer.invoke("repertoires:archive", input),
     remove: (input) => ipcRenderer.invoke("repertoires:remove", input),

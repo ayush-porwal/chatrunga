@@ -13,6 +13,8 @@ import {
   exportRepertoire,
   getChapter,
   getDecision,
+  getPausedKeys,
+  getPractisedElsewhere,
   getOccurrences,
   getDueSummary,
   getRepertoire,
@@ -26,6 +28,7 @@ import {
   recordPracticeAction,
   refreshBackupPreview,
   removeChapter,
+  updateChapters,
   removeGameLink,
   removeRepertoire,
   restoreBackup,
@@ -46,6 +49,7 @@ import {
   parseChapterRef,
   parseCompareGameInput,
   parseDecisionRef,
+  parsePractisedElsewhereInput,
   parseCreateRepertoireInput,
   parseDuplicateRepertoireInput,
   parseExportBackupInput,
@@ -58,6 +62,7 @@ import {
   parsePreviewImportInput,
   parseRecordAttemptInput,
   parseRemoveChapterInput,
+  parseUpdateChaptersInput,
   parseRemoveGameLink,
   parseRemoveRepertoireInput,
   parseRepertoireListFilters,
@@ -86,6 +91,12 @@ export function registerRepertoireIpc(): void {
   );
   ipcMain.handle("repertoires:getDecision", (_event, input: unknown) =>
     getDecision(parseDecisionRef(input))
+  );
+  ipcMain.handle("repertoires:getPractisedElsewhere", (_event, input: unknown) =>
+    getPractisedElsewhere(parsePractisedElsewhereInput(input))
+  );
+  ipcMain.handle("repertoires:getPausedKeys", (_event, id: unknown) =>
+    getPausedKeys(asId(id, "repertoireId"))
   );
   ipcMain.handle("repertoires:getOccurrences", (_event, input: unknown) =>
     getOccurrences(parseDecisionRef(input))
@@ -130,6 +141,10 @@ export function registerRepertoireIpc(): void {
   ipcMain.handle("repertoires:removeChapter", (_event, input: unknown) => {
     const parsed = parseRemoveChapterInput(input);
     return withRepertoireWriteGate(() => removeChapter(parsed));
+  });
+  ipcMain.handle("repertoires:updateChapters", (_event, input: unknown) => {
+    const parsed = parseUpdateChaptersInput(input);
+    return withRepertoireWriteGate(() => updateChapters(parsed));
   });
   ipcMain.handle("repertoires:duplicate", (_event, input: unknown) => {
     const parsed = parseDuplicateRepertoireInput(input);

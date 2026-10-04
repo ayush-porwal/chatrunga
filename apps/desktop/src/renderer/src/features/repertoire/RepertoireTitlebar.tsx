@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 import { useRepertoireQuery } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
 import { WorkspaceTitlebar } from "../board/BoardWorkspace";
-import { saveStatusLabel } from "./repertoire-model";
-import { saveChapterDraftNow } from "./useChapterAutosave";
+import { decisionTextStatus, saveStatusLabel } from "./repertoire-model";
+import { retryDecisionTextsNow, saveChapterDraftNow } from "./useChapterAutosave";
 
 /** "Repertoire › My White repertoire › Italian" with links back to the hub. */
 function Crumbs({
@@ -48,9 +48,10 @@ function Crumbs({
 }
 
 /**
- * Study titlebar: where you are, and the save state of the chapter draft ("Saved", "Saving…",
- * "Unsaved — <error>") with Retry for a failed save. A stale draft's choices (Reload / Keep
- * editing) are in the panel notice; Retry would only be refused again.
+ * Study titlebar: where you are, and the save state of the chapter draft and of the prompts and
+ * hints typed in it ("Saved", "Saving…", "Unsaved — <error>") with Retry for a failed save. A
+ * stale draft's choices (Reload / Keep editing, Discard / Keep mine) are in the panel notices;
+ * Retry would only be refused again.
  */
 export const RepertoireStudyTitlebar = memo(function RepertoireStudyTitlebar({
   repertoireId,
@@ -68,21 +69,29 @@ export const RepertoireStudyTitlebar = memo(function RepertoireStudyTitlebar({
       saveState: state.saveState
     }))
   );
+  const decisionText = useRepertoireWorkspaceStore(
+    useShallow((state) => decisionTextStatus(state.decisionDrafts, repertoireId))
+  );
   const failed = saveState.status === "error";
+  const retryChapter = failed && !saveState.stale;
+  const retryText = decisionText.errorMessage !== null && !decisionText.errorStale;
   return (
     <WorkspaceTitlebar
       title={<Crumbs name={detail.data?.name ?? null} chapterTitle={chapterTitle} onHub={onHub} />}
-      status={chapterTitle ? saveStatusLabel({ dirty, saveState }) : null}
-      statusIsError={failed}
+      status={chapterTitle ? saveStatusLabel({ dirty, saveState, decisionText }) : null}
+      statusIsError={failed || decisionText.errorMessage !== null}
       actions={
-        failed && !saveState.stale ? (
+        retryChapter || retryText ? (
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={() => {
-              useRepertoireWorkspaceStore.getState().clearSaveError();
-              void saveChapterDraftNow(queryClient);
+              if (retryChapter) {
+                useRepertoireWorkspaceStore.getState().clearSaveError();
+                void saveChapterDraftNow(queryClient);
+              }
+              void retryDecisionTextsNow(queryClient, repertoireId);
             }}
           >
             Retry

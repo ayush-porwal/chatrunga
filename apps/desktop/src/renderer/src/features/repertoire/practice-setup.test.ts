@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import type {
   RepertoireChapterSummary,
   StartPracticeInput
@@ -9,14 +10,18 @@ import {
   autoStartPracticeInput,
   boundedInt,
   DEFAULT_CARD_LIMIT,
+  EXPLAINED_CHAPTER_LIMIT,
+  explainedChapterIds,
   initialPracticeInput,
   MAX_CARD_LIMIT,
   MAX_DEPTH_PLIES,
   practiceInputFromForm,
   practicableChapterIds,
   presetForSetup,
+  isExtraPractice,
   rehearsePreset,
   rehearseStarts,
+  retryMissedPreset,
   savesPracticeDraft,
   targetedPracticeInput
 } from "./practice-setup";
@@ -191,6 +196,35 @@ describe("targeted practice presets", () => {
     expect(initial.mode).toBe("learn-new");
   });
 
+  it("retries a session's misses as an ungraded targeted queue", () => {
+    const preset = retryMissedPreset({ missedPositionKeys: ["k2", "k1", "k2"] });
+    expect(preset).toEqual({
+      mode: "review-due",
+      positionKeys: ["k2", "k1"],
+      ungraded: true,
+      autoStart: true
+    });
+    expect(targetedPracticeInput("r1", preset)).toEqual({
+      repertoireId: "r1",
+      mode: "review-due",
+      positionKeys: ["k2", "k1"],
+      cardLimit: 2,
+      newCardLimit: 2,
+      ungraded: true
+    });
+    expect(retryMissedPreset({ missedPositionKeys: [] })).toBeNull();
+    // "Refresh this decision" stays a graded targeted queue.
+    expect(
+      targetedPracticeInput("r1", { mode: "review-due", positionKeys: ["k1"], autoStart: true })
+    ).not.toHaveProperty("ungraded");
+  });
+
+  it("calls a targeted session extra practice", () => {
+    expect(isExtraPractice({ positionKeys: ["k1"] })).toBe(true);
+    expect(isExtraPractice({ positionKeys: [] })).toBe(false);
+    expect(isExtraPractice({})).toBe(false);
+  });
+
   it("opens Practice again on the setup, keeping only chapters and mode", () => {
     expect(presetForSetup({ mode: "review-due", positionKeys: ["k1"], autoStart: true })).toEqual({
       mode: "review-due"
@@ -317,6 +351,22 @@ describe("rehearse lines setup", () => {
       ["w1"]
     );
   });
+
+  it("lists no branch start at a paused decision (played as context, never asked)", () => {
+    let tree = [rootNode()];
+    ({ tree } = addLine(tree, "root", ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"], "w"));
+    const chapter = chapterOf(tree);
+    const keys = buildChapterLookup(chapter).positionKeys;
+    expect(rehearseStarts(chapter, "white", pathLabel).starts.map((start) => start.nodeId)).toEqual(
+      ["w1", "w3"]
+    );
+    const paused = new Set([keys.get("w1")!]);
+    expect(
+      rehearseStarts(chapter, "white", pathLabel, undefined, undefined, paused).starts.map(
+        (start) => start.nodeId
+      )
+    ).toEqual(["w3"]);
+  });
 });
 
 describe("savesPracticeDraft", () => {
@@ -335,5 +385,53 @@ describe("savesPracticeDraft", () => {
       positionKeys: ["k1"]
     };
     expect(savesPracticeDraft(targeted, false)).toBe(false);
+  });
+});
+
+describe("explainedChapterIds", () => {
+  const chapters = [chapter("b", { sortOrder: 1 }), chapter("a", { sortOrder: 0 })];
+  const rehearse = (chapterId: string) =>
+    ({ mode: "rehearse-lines", rehearse: { chapterId } }) as const;
+
+  it("names the rehearsed chapter, or every chapter in scope", () => {
+    const detail = detailOf({ chapters, decisionCount: 3 });
+    expect(explainedChapterIds(detail, rehearse("b"))).toEqual(["b"]);
+    expect(
+      explainedChapterIds(detail, { mode: "learn-new", chapterIds: ["b", "gone", "a"] })
+    ).toEqual(["b", "a"]);
+    // A chapter that is gone names nothing in particular.
+    expect(explainedChapterIds(detail, rehearse("gone"))).toEqual([]);
+  });
+
+  it("reads at most the limit of a long scope", () => {
+    const many = Array.from({ length: EXPLAINED_CHAPTER_LIMIT + 5 }, (_, index) =>
+      chapter(`c${index}`, { sortOrder: index })
+    );
+    const ids = explainedChapterIds(detailOf({ chapters: many, decisionCount: 1 }), {
+      mode: "review-due",
+      chapterIds: many.map((item) => item.id)
+    });
+    expect(ids).toHaveLength(EXPLAINED_CHAPTER_LIMIT);
+  });
+
+  it("over every chapter names one only when the repertoire has no decision", () => {
+    expect(
+      explainedChapterIds(detailOf({ chapters, decisionCount: 3 }), { mode: "review-due" })
+    ).toEqual([]);
+    expect(
+      explainedChapterIds(detailOf({ chapters, decisionCount: 0 }), { mode: "review-due" })
+    ).toEqual(["a"]);
+    const studied = detailOf({
+      chapters,
+      decisionCount: 0,
+      workspace: {
+        lastChapterId: "b",
+        lastNodeId: null,
+        orientation: "white",
+        practiceDraft: null
+      }
+    });
+    expect(explainedChapterIds(studied, { mode: "review-due" })).toEqual(["b"]);
+    expect(explainedChapterIds(detailOf({ decisionCount: 0 }), { mode: "review-due" })).toEqual([]);
   });
 });

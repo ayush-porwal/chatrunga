@@ -6,24 +6,15 @@
 import { app, BrowserWindow, dialog } from "electron";
 import { nanoid } from "nanoid";
 import { createHash } from "node:crypto";
-import {
-  closeSync,
-  fsyncSync,
-  mkdirSync,
-  openSync,
-  readdirSync,
-  rmSync,
-  unlinkSync,
-  writeFileSync
-} from "node:fs";
 import { open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { GameHeaders, MoveNode } from "@chaturanga/shared/types/chess";
 import {
+  CHAPTER_NOT_FOUND_ERROR,
   COMPARE_GAME_MAX_PLIES,
+  POSITION_NOT_FOUND_ERROR,
   REPERTOIRE_POSITION_KEY_VERSION,
   REPERTOIRE_ROOT_NODE_ID,
-  REPERTOIRE_SCHEDULER_VERSION,
   type BackupImportPreview,
   type ExportBackupInput,
   type ExportBackupResult,
@@ -32,7 +23,6 @@ import {
   type RepertoireBackupEntry,
   type RestoreBackupInput,
   type RestoreBackupResult,
-  type RestoreBackupSelection,
   type AddFromGameInput,
   type AddFromGamePreview,
   type AddFromGameResult,
@@ -53,6 +43,7 @@ import {
   type ImportResult,
   type PracticeActionInput,
   type PracticeActionResult,
+  type PracticeAnswer,
   type PracticeCard,
   type PracticeLeadUpMove,
   type PracticeSessionSnapshot,
@@ -76,10 +67,13 @@ import {
   type RepertoireListFilters,
   type RepertoireNodeMeta,
   type RepertoireOccurrence,
+  type PractisedElsewhereInput,
   type RepertoireSummary,
   type SaveChapterInput,
   type SaveWorkspaceInput,
   type StartPracticeInput,
+  type UpdateChaptersInput,
+  type UpdateChaptersResult,
   type UpdateDecisionInput,
   type UpdateRepertoireMetadataInput
 } from "@chaturanga/shared/types/repertoire";
@@ -111,7 +105,6 @@ import {
 } from "@chaturanga/shared/chess/repertoire-index";
 import {
   firstAnswerOutcome,
-  MAX_STAGE,
   orderQueue,
   scheduleAfterOutcome,
   type PracticeHistoryAction,
@@ -119,10 +112,8 @@ import {
 } from "@chaturanga/shared/chess/repertoire-scheduler";
 import { compareGameToRepertoire } from "@chaturanga/shared/chess/repertoire-compare";
 import {
-  buildBackupDocument,
   DEFAULT_BACKUP_LIMITS,
   diffBackupEntry,
-  remapBackupEntry,
   stripForExport,
   validateBackupDocument
 } from "@chaturanga/shared/chess/repertoire-backup";
@@ -152,16 +143,34 @@ import {
 import { startImportParse, type ImportRun } from "./import-runner";
 import { runImportCommit } from "./import-writer";
 import {
+  backupDocument,
+  backupEntryOf,
+  RETAINED_BACKUP_DIR,
+  restoreRefusal,
+  type BackupAppInfo
+} from "./backup-restore";
+import { runBackupRestore } from "./backup-restore-runner";
+import {
   bump,
   checkRevision,
   detail,
+  memoizedPositionKey,
+  practisedElsewhere,
   reindex,
+  reindexChapter,
+  reindexPositions,
   requireRepertoire,
+  stripFingerprint,
   type ImportCommitChapter
 } from "./core";
 import {
   chapterTitle,
+  cleanName,
+  cleanTags,
+  cleanText,
   fenAfterMove,
+  MAX_DESCRIPTION,
+  MAX_POLICY_TEXT,
   isValidFen,
   normalizeUci,
   rootNode,
@@ -180,6 +189,7 @@ import {
   repertoireRepository,
   sessionRepository,
   actionableBusyError,
+  RepertoireCorruptChapterError,
   transaction,
   workspaceRepository,
   type AttemptKind,
@@ -191,11 +201,6 @@ import {
   type StoredDecision
 } from "./repository";
 
-const MAX_NAME = 200;
-const MAX_DESCRIPTION = 5_000;
-const MAX_TAGS = 32;
-const MAX_TAG = 50;
-const MAX_POLICY_TEXT = 2_000;
 const MAX_PGN_BYTES = 20 * 1024 * 1024;
 const IMPORT_JOB_TTL_MS = 30 * 60_000;
 /** Pending import previews kept in memory at once; each holds its parsed game trees. */
@@ -218,44 +223,26 @@ function changed(event: RepertoireChangedEvent): void {
 
 /* ------------------------------------------------------------------ shared helpers */
 
+/**
+ * The stored version of a chapter about to be overwritten or removed; undefined when it is
+ * damaged, so the caller rebuilds the derived state in full instead of updating it.
+ */
+function storedChapter(chapterId: string): RepertoireChapter | undefined {
+  try {
+    return chapterRepository.get(chapterId) ?? undefined;
+  } catch (error) {
+    if (error instanceof RepertoireCorruptChapterError) return undefined;
+    throw error;
+  }
+}
+
 /** A stored chapter with its current due count. */
 function loadChapter(repertoireId: string, chapterId: string, now: number): RepertoireChapter {
   if (chapterRepository.ownerOf(chapterId)?.repertoireId !== repertoireId) {
-    throw new Error("Invalid chapterId: not found");
+    throw new Error(CHAPTER_NOT_FOUND_ERROR);
   }
   const chapter = chapterRepository.get(chapterId)!;
-  const summary = chapterRepository
-    .summaries(repertoireId, now)
-    .find((item) => item.id === chapterId);
-  return { ...chapter, dueCount: summary?.dueCount ?? 0 };
-}
-
-function cleanName(value: unknown): string {
-  const name = typeof value === "string" ? value.trim().slice(0, MAX_NAME) : "";
-  if (!name) throw new Error("Invalid name: expected a non-empty name");
-  return name;
-}
-
-function cleanTags(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  const tags = value
-    .filter((tag): tag is string => typeof tag === "string")
-    .map((tag) => tag.trim().slice(0, MAX_TAG))
-    .filter(Boolean);
-  return [...new Set(tags)].slice(0, MAX_TAGS);
-}
-
-function cleanText(value: unknown, max: number): string | null {
-  if (typeof value !== "string") return null;
-  const text = value.trim().slice(0, max);
-  return text || null;
-}
-
-/** The shared decision type, without the stored fingerprint. */
-function stripFingerprint(stored: StoredDecision): RepertoireDecision {
-  const decision: Partial<StoredDecision> = { ...stored };
-  delete decision.acceptanceFingerprint;
-  return decision as RepertoireDecision;
+  return { ...chapter, dueCount: chapterRepository.dueCount(chapterId, now) };
 }
 
 /* ------------------------------------------------------------------ index and invalidation */
@@ -284,6 +271,21 @@ export function getDecision(input: {
   requireRepertoire(input.repertoireId);
   const stored = decisionRepository.get(input.repertoireId, input.positionKey);
   return stored ? stripFingerprint(stored) : null;
+}
+
+/** The moves other chapters practise at positions of a chapter (see practisedElsewhere). */
+export function getPractisedElsewhere(input: PractisedElsewhereInput): Record<string, string[]> {
+  const record = requireRepertoire(input.repertoireId);
+  return practisedElsewhere(record, input.chapterId, input.positionKeys);
+}
+
+/**
+ * Position keys of the repertoire's paused decisions: practice leaves them out and a rehearsal
+ * plays their moves as context, so Study offers a rehearsal only where something else is asked.
+ */
+export function getPausedKeys(id: string): string[] {
+  requireRepertoire(id);
+  return [...decisionRepository.pausedKeys(id)].sort();
 }
 
 /**
@@ -467,9 +469,11 @@ export function updateMetadata(input: UpdateRepertoireMetadataInput): Repertoire
 }
 
 /**
- * Saves one chapter (new or existing) and reconciles decisions, index and progress. An existing
- * chapter must carry its stored revision: another write (e.g. a decision change rewriting its
- * edges) may have changed it since the draft was loaded.
+ * Saves one chapter (new or existing) and reconciles decisions, index and progress
+ * (reindexChapter: nothing for a change the index doesn't read, such as a comment; otherwise only
+ * this chapter's rows and the positions it changed). An existing chapter must carry its stored
+ * revision: another write (e.g. a decision change rewriting its edges) may have changed it since
+ * the draft was loaded.
  */
 export function saveChapter(input: SaveChapterInput): ChapterSaveResult {
   const now = clock();
@@ -489,9 +493,11 @@ export function saveChapter(input: SaveChapterInput): ChapterSaveResult {
       );
     }
     const chapter = sanitizeChapter(input.chapter, (owner?.revision ?? 0) + 1);
+    const before = owner ? storedChapter(chapter.id) : null;
     const next = bump(record, now);
     chapterRepository.upsert(record.id, chapter, now);
-    const { decisionsChanged } = reindex(next, now);
+    const { decisionsChanged } =
+      before === undefined ? reindex(next, now) : reindexChapter(next, before, chapter, now);
     return {
       repertoire: detail(record.id, now),
       chapter: loadChapter(record.id, chapter.id, now),
@@ -534,20 +540,34 @@ function isActiveIncluded(occurrence: Occurrence, child: MoveNode): boolean {
  * Updates the policy at one position. Accepting a move with no supporting included occurrence
  * selects one (its edge becomes `included`) in the same transaction (§7.1); removing an accepted
  * move turns its included occurrences into reference moves so reconciliation doesn't re-add it.
- * A move with no occurrence at all in the repertoire is refused.
+ * A move with no occurrence at all in the repertoire is refused. Wrong-move feedback names legal
+ * moves of the position. Pausing keeps the decision's progress: a paused decision is left out of
+ * practice and due counts, and resuming it brings back its schedule as it was.
  */
 export function updateDecision(input: UpdateDecisionInput): DecisionSaveResult {
   const now = clock();
   const result = transaction(() => {
     const record = requireRepertoire(input.repertoireId);
     checkRevision(record, input.expectedRevision);
-    const chapters = chapterRepository.list(record.id).map((chapter) => ({
-      ...chapter,
-      nodeMeta: { ...chapter.nodeMeta }
-    }));
+    // Only chapters the index places the position in can hold it; their keys come from the index.
+    // Without new accepted moves no edge changes, so the first chapter holding it is enough.
+    const chapterIds = new Set(
+      positionIndexRepository
+        .occurrences(record.id, input.positionKey)
+        .map((occurrence) => occurrence.chapterId)
+    );
     const occurrences: Occurrence[] = [];
-    for (const chapter of chapters) {
-      const lookup = buildChapterLookup(chapter);
+    for (const chapterId of chapterIds) {
+      if (occurrences.length && input.patch.acceptedUcis === undefined) break;
+      const stored = chapterRepository.get(chapterId)!;
+      const chapter = { ...stored, nodeMeta: { ...stored.nodeMeta } };
+      const storedKeys = positionIndexRepository.chapterKeys(chapter.id);
+      const seed = new Map<string, string>();
+      for (const node of chapter.tree) {
+        const key = storedKeys.get(node.id);
+        if (key !== undefined) seed.set(node.fenAfter, key);
+      }
+      const lookup = buildChapterLookup(chapter, memoizedPositionKey(seed));
       for (const nodeId of lookup.order) {
         if (lookup.positionKeys.get(nodeId) !== input.positionKey) continue;
         const node = lookup.nodesById.get(nodeId)!;
@@ -555,7 +575,7 @@ export function updateDecision(input: UpdateDecisionInput): DecisionSaveResult {
         occurrences.push({ chapter, lookup, nodeId, node });
       }
     }
-    if (!occurrences.length) throw new Error("Invalid positionKey: not found in this repertoire");
+    if (!occurrences.length) throw new Error(POSITION_NOT_FOUND_ERROR);
     const fen = occurrences[0].node.fenAfter;
     const stored: StoredDecision = decisionRepository.get(record.id, input.positionKey) ?? {
       repertoireId: record.id,
@@ -633,10 +653,26 @@ export function updateDecision(input: UpdateDecisionInput): DecisionSaveResult {
     if (patch.prompt !== undefined) next.prompt = cleanText(patch.prompt, MAX_POLICY_TEXT);
     if (patch.hint !== undefined) next.hint = cleanText(patch.hint, MAX_POLICY_TEXT);
     if (patch.wrongMoveFeedback !== undefined) {
+      // The whole map is replaced: a move left out (or with blank text) loses its feedback.
       next.wrongMoveFeedback = {};
       for (const [uci, text] of Object.entries(patch.wrongMoveFeedback)) {
+        const move = normalizeUci(fen, uci);
+        if (!fenAfterMove(fen, move)) {
+          throw new Error(
+            `Invalid wrongMoveFeedback: "${uci}" is not a legal move in this position`
+          );
+        }
         const feedback = cleanText(text, MAX_POLICY_TEXT);
-        if (feedback) next.wrongMoveFeedback[normalizeUci(fen, uci)] = feedback;
+        if (!feedback) continue;
+        // Feedback explains a wrong move: an accepted one takes none. Feedback stored before its
+        // move was accepted (and sent back unchanged with the rest of the map) is dropped.
+        if (next.acceptedUcis.includes(move)) {
+          if (stored.wrongMoveFeedback[move] === feedback) continue;
+          throw new Error(
+            `Invalid wrongMoveFeedback: "${uci}" is an accepted move in this position`
+          );
+        }
+        next.wrongMoveFeedback[move] = feedback;
       }
     }
     if (patch.paused !== undefined) next.paused = patch.paused === true;
@@ -646,7 +682,13 @@ export function updateDecision(input: UpdateDecisionInput): DecisionSaveResult {
       chapterRepository.upsert(record.id, { ...chapter, revision: chapter.revision + 1 }, now);
     }
     decisionRepository.upsert(next, now);
-    reindex(bumped, now);
+    // A change that rewrote chapter edges rebuilds the whole repertoire. New accepted moves or a
+    // cleared preference reconcile the decision's own position only. Anything else (prompt, hint,
+    // feedback, pause, another accepted preference) leaves the derived state as it was.
+    if (touchedChapters.size) reindex(bumped, now);
+    else if (patch.acceptedUcis !== undefined || patch.preferredUci === null) {
+      reindexPositions(bumped, [input.positionKey], now);
+    }
     return {
       repertoire: detail(record.id, now),
       decision: stripFingerprint(decisionRepository.get(record.id, input.positionKey)!)
@@ -666,10 +708,18 @@ export function removeChapter(input: RemoveChapterInput): RepertoireChangeResult
     const record = requireRepertoire(input.repertoireId);
     checkRevision(record, input.expectedRevision);
     if (chapterRepository.ownerOf(input.chapterId)?.repertoireId !== record.id) {
-      throw new Error("Invalid chapterId: not found");
+      throw new Error(CHAPTER_NOT_FOUND_ERROR);
     }
-    chapterRepository.remove(input.chapterId);
-    reindex(bump(record, now), now);
+    const before = storedChapter(input.chapterId);
+    const next = bump(record, now);
+    if (before === undefined) {
+      chapterRepository.remove(input.chapterId);
+      reindex(next, now);
+    } else {
+      // Before the row goes: removing it drops the chapter's index rows, which the update reads.
+      reindexChapter(next, before, null, now);
+      chapterRepository.remove(input.chapterId);
+    }
     return { repertoire: detail(record.id, now) };
   });
   changed({
@@ -677,6 +727,47 @@ export function removeChapter(input: RemoveChapterInput): RepertoireChangeResult
     revision: result.repertoire.revision,
     kind: "updated"
   });
+  return result;
+}
+
+/**
+ * Sets practice eligibility and/or kind on several chapters at once (the chapter list's bulk
+ * actions): one revision check, one bump and one reconciliation in a single transaction, rather
+ * than one chapter save per row. Chapters already in the requested state keep their revision; when
+ * none changes, nothing is written and the repertoire keeps its revision too.
+ */
+export function updateChapters(input: UpdateChaptersInput): UpdateChaptersResult {
+  const now = clock();
+  const result = transaction(() => {
+    const record = requireRepertoire(input.repertoireId);
+    checkRevision(record, input.expectedRevision);
+    const stored = new Map(
+      chapterRepository.summaries(record.id, now).map((chapter) => [chapter.id, chapter])
+    );
+    let chaptersChanged = 0;
+    for (const chapterId of new Set(input.chapterIds)) {
+      const chapter = stored.get(chapterId);
+      if (!chapter) throw new Error("Invalid chapterIds: not found");
+      const kind = input.patch.kind ?? chapter.kind;
+      const enabled = input.patch.enabled ?? chapter.enabled;
+      if (kind === chapter.kind && enabled === chapter.enabled) continue;
+      chapterRepository.updateSettings(
+        chapterId,
+        { kind, enabled, revision: chapter.revision + 1 },
+        now
+      );
+      chaptersChanged += 1;
+    }
+    if (chaptersChanged) reindex(bump(record, now), now);
+    return { repertoire: detail(record.id, now), chaptersChanged };
+  });
+  if (result.chaptersChanged) {
+    changed({
+      repertoireId: input.repertoireId,
+      revision: result.repertoire.revision,
+      kind: "updated"
+    });
+  }
   return result;
 }
 
@@ -791,11 +882,13 @@ const runningImports = new Map<string, ImportRun>();
 /** The limits previews enforce (replaced in tests). */
 let importLimits: ImportLimits = DEFAULT_IMPORT_LIMITS;
 
-/** Worker files the import uses; unset: the bundled ones next to the main entry. */
-let importWorkers: { parse?: string; writer?: string } = {};
+/** Worker files the import and the backup restore use; unset: the bundled ones next to the main entry. */
+let importWorkers: { parse?: string; writer?: string; restore?: string } = {};
 
-/** Points the import at other worker files (tests and benchmarks only); nothing restores them. */
-export function setImportWorkers(next: { parse?: string; writer?: string } = {}): void {
+/** Points the import and restore at other worker files (tests and benchmarks only). */
+export function setImportWorkers(
+  next: { parse?: string; writer?: string; restore?: string } = {}
+): void {
   importWorkers = next;
 }
 
@@ -910,6 +1003,7 @@ export async function previewImport(input: PreviewImportInput): Promise<ImportPr
       nodeCount: game.nodeCount,
       // Only a game with illegal branches offers lines to exclude; the others send no tree.
       tree: game.invalidBranches.length ? game.tree : [],
+      decisions: game.decisions,
       warnings: game.warnings,
       invalidBranches: game.invalidBranches
     }))
@@ -1489,7 +1583,7 @@ export function linkGame(input: LinkGameInput): RepertoireGameLink {
       input.chapterId !== null &&
       chapterRepository.ownerOf(input.chapterId)?.repertoireId !== record.id
     ) {
-      throw new Error("Invalid chapterId: not found");
+      throw new Error(CHAPTER_NOT_FOUND_ERROR);
     }
     const headers = libraryGameExists(input.gameId)
       ? gameRepository.getHeaders(input.gameId)
@@ -1552,7 +1646,7 @@ export function listGameLinks(input: {
     input.chapterId !== undefined &&
     chapterRepository.ownerOf(input.chapterId)?.repertoireId !== input.repertoireId
   ) {
-    throw new Error("Invalid chapterId: not found");
+    throw new Error(CHAPTER_NOT_FOUND_ERROR);
   }
   return gameLinkRepository.list(input.repertoireId, input.chapterId);
 }
@@ -1614,15 +1708,39 @@ function snapshotOf(session: PracticeSessionRecord): PracticeSessionSnapshot {
     shown: {
       hint: card.hintStage >= 1 ? policy.hint : null,
       hintUci: card.hintStage >= 2 ? (policy.preferredUci ?? policy.acceptedUcis[0] ?? null) : null,
-      revealed: revealed
-        ? {
-            ucis: policy.acceptedUcis,
-            preferredUci: policy.preferredUci,
-            explanation: policy.explanation ?? policy.hint
-          }
-        : null
+      revealed: revealed ? answerOf(policy) : null
     }
   };
+}
+
+/**
+ * A card's answer as the page shows it once the grade is final: the accepted moves, the
+ * position's explanation (its comment, else the hint) and the accepted moves' own comments.
+ */
+function answerOf(policy: FrozenPolicy): PracticeAnswer {
+  return {
+    ucis: policy.acceptedUcis,
+    preferredUci: policy.preferredUci,
+    explanation: policy.explanation ?? policy.hint,
+    ...(policy.moveComments ? { moveComments: policy.moveComments } : {})
+  };
+}
+
+/** The comments of the accepted moves played from `nodeId` in its chapter, by UCI. */
+function acceptedMoveComments(
+  lookup: ChapterLookup,
+  nodeId: string,
+  accepted: readonly string[]
+): Record<string, string> {
+  const comments: Record<string, string> = {};
+  for (const id of lookup.childrenById.get(nodeId) ?? []) {
+    const child = lookup.nodesById.get(id);
+    const comment = child?.comment?.trim();
+    if (!child?.uci || !comment) continue;
+    const uci = normalizeUci(child.fenBefore, child.uci);
+    if (accepted.includes(uci)) comments[uci] = comment;
+  }
+  return comments;
 }
 
 /** The next unanswered card after `from` (wrapping), or `from` when none is left. */
@@ -1652,8 +1770,10 @@ type Candidate = {
  * `cardLimit` (20), then up to `newCardLimit` (5) unseen ones. Learn new: unseen decisions only,
  * up to `cardLimit` (10). With `positionKeys` the queue is exactly the named eligible decisions,
  * in that order and whether or not they are due (learn new keeps only unseen ones); the limits
- * don't apply and being queued records nothing. Each card freezes its policy so grading never
- * uses a moving set. Depth counts plies from the chapter root including the tested move (§5.3).
+ * don't apply and being queued records nothing. An `ungraded` targeted queue ("Retry missed")
+ * records its answers with the session only: no schedule changes. Each card freezes its policy so
+ * grading never uses a moving set. Depth counts plies from the chapter root including the tested
+ * move (§5.3).
  */
 export function startPractice(input: StartPracticeInput): PracticeSessionSnapshot {
   const now = clock();
@@ -1778,6 +1898,7 @@ export function startPractice(input: StartPracticeInput): PracticeSessionSnapsho
         hint: candidate.decision.hint,
         wrongMoveFeedback: candidate.decision.wrongMoveFeedback,
         explanation: node.comment ?? null,
+        moveComments: acceptedMoveComments(lookup, nodeId, candidate.effective),
         progressAt: progress.get(candidate.entry.positionKey)?.lastAttemptAt ?? null
       };
     });
@@ -1792,7 +1913,8 @@ export function startPractice(input: StartPracticeInput): PracticeSessionSnapsho
         ...(input.maxDepthPlies !== undefined ? { maxDepthPlies: input.maxDepthPlies } : {}),
         ...(input.cardLimit !== undefined ? { cardLimit: input.cardLimit } : {}),
         ...(input.newCardLimit !== undefined ? { newCardLimit: input.newCardLimit } : {}),
-        ...(input.positionKeys ? { positionKeys: [...input.positionKeys] } : {})
+        ...(input.positionKeys ? { positionKeys: [...input.positionKeys] } : {}),
+        ...(input.ungraded && input.positionKeys?.length ? { ungraded: true } : {})
       },
       snapshotRevision: record.revision,
       cards,
@@ -1855,15 +1977,18 @@ function historyAction(attempt: AttemptRecord): PracticeHistoryAction {
 
 /**
  * Applies a card's final outcome to its progress (scheduler v1). Callers first check the card is
- * still current (§8.3: no grade against a moving set). Returns whether it was written.
+ * still current (§8.3: no grade against a moving set). Returns whether it was written. An
+ * ungraded session's outcome is recorded with the session only: progress stays as it was.
  */
 function applySchedule(
-  repertoireId: string,
+  session: PracticeSessionRecord,
   card: PracticeCard,
   policy: FrozenPolicy,
   outcome: PracticeOutcome,
   now: number
 ): boolean {
+  if (session.scope.ungraded) return false;
+  const { repertoireId } = session;
   const previous = progressRepository.get(repertoireId, card.positionKey);
   const schedule = scheduleAfterOutcome(previous, outcome, now, previous?.lastAttemptAt);
   if (!schedule) return false;
@@ -1947,17 +2072,24 @@ export function recordAttempt(input: RecordAttemptInput): AttemptResult {
         ]);
         finalGrade = true;
         card.state = correct ? "answered-correct" : "answered-wrong";
-        scheduled = applySchedule(session.repertoireId, card, policy, gradeOutcome, now);
+        scheduled = applySchedule(session, card, policy, gradeOutcome, now);
       }
     }
 
     // A wrong answer keeps the answer hidden so the card can be retried (§5.3); a correct retry,
     // like any other final state, shows the accepted set.
     const revealed = card.state === "answered-wrong" ? correct : gradeIsFinal(card);
+    const answer = revealed ? answerOf(policy) : null;
     const result: AttemptResult = {
       outcome,
-      acceptedUcis: revealed ? policy.acceptedUcis : [],
-      preferredUci: revealed ? policy.preferredUci : null,
+      acceptedUcis: answer?.ucis ?? [],
+      preferredUci: answer?.preferredUci ?? null,
+      ...(answer
+        ? {
+            explanation: answer.explanation,
+            ...(answer.moveComments ? { moveComments: answer.moveComments } : {})
+          }
+        : {}),
       feedback: outcome === "outside-repertoire" ? (policy.wrongMoveFeedback[uci] ?? null) : null,
       card,
       finalGrade
@@ -2053,16 +2185,12 @@ export function recordPracticeAction(input: PracticeActionInput): PracticeAction
         const outcome = firstAnswerOutcome([...history.map(historyAction), { kind: "reveal" }]);
         persist(true, outcome);
         card.state = "revealed";
-        scheduled = applySchedule(session.repertoireId, card, policy, outcome, now);
+        scheduled = applySchedule(session, card, policy, outcome, now);
         session.cursor = nextCursor(session.cards, index);
       } else if (card.state === "answered-wrong") {
         persist(false, null);
       }
-      revealed = {
-        ucis: policy.acceptedUcis,
-        preferredUci: policy.preferredUci,
-        explanation: policy.explanation ?? policy.hint
-      };
+      revealed = answerOf(policy);
     } else if (card.state === "unanswered") {
       persist(false, "no-change");
       card.state = "skipped";
@@ -2098,7 +2226,18 @@ function loadRehearsal(session: PracticeSessionRecord): Rehearsal | null {
   const current = currentRehearsal(session);
   if (!current) return null;
   const { state, chapter, color } = current;
-  return { state, chapter, context: rehearsalContext(chapter, color, state.maxDepthPlies), color };
+  return {
+    state,
+    chapter,
+    context: rehearsalContext(
+      chapter,
+      color,
+      state.maxDepthPlies,
+      undefined,
+      decisionRepository.pausedKeys(session.repertoireId)
+    ),
+    color
+  };
 }
 
 /**
@@ -2252,7 +2391,8 @@ function finishLine(state: RehearsalState, completed: boolean): void {
 /**
  * Continues the current line from `reachedId`, the node the player's move (or a revealed or
  * followed move) led to: supplies the authored reply on the line and appends the next decision,
- * or completes the line and starts the next one.
+ * or completes the line and starts the next one. A paused decision after the reply isn't asked:
+ * the line's move there and the reply after it are played as context (the next card's lead-up).
  */
 function continueLine(
   session: PracticeSessionRecord,
@@ -2270,8 +2410,14 @@ function continueLine(
   const replyNode = nextOnRoute(context.lookup, reachedId, state.lineEnd)!;
   countSeen(state, replyNode.id);
   const reply = leadUpMove(replyNode);
-  if (replyNode.id === state.lineEnd) return complete(reply);
-  const next = pushRehearsalCard(session, rehearsal, replyNode.id, stepIndex + 1);
+  let decisionId = replyNode.id;
+  while (decisionId !== state.lineEnd && !isDecisionNode(context, decisionId)) {
+    const move = nextOnRoute(context.lookup, decisionId, state.lineEnd)!;
+    if (!isPlayerNode(context, decisionId)) countSeen(state, move.id);
+    decisionId = move.id;
+  }
+  if (decisionId === state.lineEnd) return complete(reply);
+  const next = pushRehearsalCard(session, rehearsal, decisionId, stepIndex + 1);
   return { reply, next, lineComplete: false, endReason: null };
 }
 
@@ -2392,7 +2538,14 @@ function startRehearsal(
   }
   const fromNodeId = target.fromNodeId ?? REPERTOIRE_ROOT_NODE_ID;
   const maxDepthPlies = input.maxDepthPlies ?? DEFAULT_REHEARSAL_DEPTH_PLIES;
-  const context = rehearsalContext(chapter, record.color, maxDepthPlies);
+  // A paused decision is played as context, never asked (as practice leaves it out).
+  const context = rehearsalContext(
+    chapter,
+    record.color,
+    maxDepthPlies,
+    undefined,
+    decisionRepository.pausedKeys(record.id)
+  );
   if (!context.lookup.parentPath.get(fromNodeId)) {
     throw new Error("Invalid rehearse.fromNodeId: not in this chapter");
   }
@@ -2791,14 +2944,15 @@ export function resetImportJobs(): void {
 
 /* ------------------------------------------------------------------ native backup (§10) */
 
-type BackupJob = { document: RepertoireBackupDocument; warnings: string[]; expiresAt: number };
+/** A previewed backup: its validated document, and its text for the restore worker. */
+type BackupJob = {
+  document: RepertoireBackupDocument;
+  text: string;
+  warnings: string[];
+  expiresAt: number;
+};
 const backupJobs = new Map<string, BackupJob>();
 const MAX_BACKUP_BYTES = DEFAULT_BACKUP_LIMITS.maxBytes;
-const RETAINED_BACKUP_DIR = "repertoire-backups";
-/** Retained backups kept per repertoire; older ones are deleted after a successful replace. */
-const MAX_RETAINED_BACKUPS = 10;
-/** The format name of the practice history kept beside a retained backup (never restored). */
-const RETAINED_HISTORY_FORMAT = "chaturanga-repertoire-practice-history";
 const BACKUP_FILTERS = [{ name: "Chaturanga backup", extensions: ["json"] }];
 
 function mib(bytes: number): string {
@@ -2814,30 +2968,9 @@ function appVersion(): string {
   return process.env.npm_package_version || app.getVersion();
 }
 
-/**
- * The stored state of a repertoire as a backup entry, progress included (callers strip it). A
- * damaged chapter is kept as its raw stored data rather than failing the whole backup. Read inside
- * a transaction so chapters, decisions and progress belong to one revision.
- */
-function backupEntryOf(record: RepertoireRecord): RepertoireBackupEntry {
-  return {
-    repertoire: {
-      id: record.id,
-      name: record.name,
-      color: record.color,
-      description: record.description,
-      tags: [...record.tags],
-      revision: record.revision,
-      archivedAt: record.archivedAt,
-      createdAt: record.createdAt,
-      updatedAt: record.updatedAt
-    },
-    chapters: chapterRepository.listForBackup(record.id),
-    decisions: decisionRepository.list(record.id).map(stripFingerprint),
-    progress: progressRepository.list(record.id),
-    workspace: workspaceRepository.get(record.id),
-    gameLinks: gameLinkRepository.list(record.id)
-  };
+/** This app, as the writer a backup document names. */
+function backupApp(): BackupAppInfo {
+  return { name: app.getName(), version: appVersion() };
 }
 
 /** One warning per damaged chapter of the entry, saying it was written as raw data. */
@@ -2849,15 +2982,6 @@ function damagedChapterWarnings(entry: RepertoireBackupEntry): string[] {
         ]
       : []
   );
-}
-
-function backupDocument(entries: RepertoireBackupEntry[], now: number): RepertoireBackupDocument {
-  return buildBackupDocument(entries, {
-    app: { name: app.getName(), version: appVersion() },
-    now,
-    positionKeyVersion: REPERTOIRE_POSITION_KEY_VERSION,
-    schedulerVersion: REPERTOIRE_SCHEDULER_VERSION
-  });
 }
 
 /** `yyyy-mm-dd` in local time, for the suggested file name. */
@@ -2910,7 +3034,7 @@ export async function exportBackup(
   }, "read");
   if (!entries.length) throw new Error("Invalid export: there are no repertoires to back up");
   const warnings = entries.flatMap(damagedChapterWarnings);
-  const json = JSON.stringify(backupDocument(entries, now));
+  const json = JSON.stringify(backupDocument(entries, now, backupApp()));
   const bytes = Buffer.byteLength(json, "utf8");
   if (bytes > MAX_BACKUP_BYTES) {
     throw new Error(
@@ -2953,16 +3077,6 @@ function requireBackupJob(jobId: string, now: number): BackupJob {
     );
   }
   return job;
-}
-
-/** Why restore would refuse this backup text (its reason, without "Invalid backup: "), or null. */
-function restoreRefusal(text: string): string | null {
-  try {
-    validateBackupDocument(text);
-    return null;
-  } catch (error) {
-    return String(error instanceof Error ? error.message : error).replace(/^Invalid backup: /, "");
-  }
 }
 
 /** The backup text from the native open dialog (size checked before reading), or null. */
@@ -3048,7 +3162,7 @@ export async function previewBackupImport(
     backupJobs.delete(oldest);
   }
   const jobId = nanoid();
-  const job = { document, warnings, expiresAt: now + IMPORT_JOB_TTL_MS };
+  const job = { document, text, warnings, expiresAt: now + IMPORT_JOB_TTL_MS };
   const preview = previewOf(jobId, job);
   backupJobs.set(jobId, job);
   return preview;
@@ -3070,351 +3184,13 @@ export function cancelBackupImport(jobId: string): void {
 }
 
 /**
- * The entry's chapters as they will be stored: every tree replayed from its root (validateTree via
- * sanitizeChapter), metadata pruned. Throws `Invalid backup: chapter "<title>" …` at the first bad
- * chapter, before anything is written.
+ * Restores the selected repertoires of a previewed backup (backup-restore.ts `runRestoreJob`: one
+ * transaction, with each replaced repertoire's own backup retained first). The restore runs in
+ * the restore worker on its own connection, so the main thread only checks the selections and
+ * waits; it holds the write gate meanwhile (the IPC handler takes it), so other repertoire writes
+ * wait behind it. The job is kept when the restore fails; change events follow the commit.
  */
-function restorableChapters(entry: RepertoireBackupEntry): RepertoireChapter[] {
-  return entry.chapters.map((chapter) => {
-    try {
-      return sanitizeChapter(chapter, chapter.revision);
-    } catch (error) {
-      const reason = (error instanceof Error ? error.message : String(error)).replace(
-        /^Invalid /,
-        ""
-      );
-      throw new Error(`Invalid backup: chapter "${chapter.title}" can't be restored (${reason})`, {
-        cause: error
-      });
-    }
-  });
-}
-
-/** Inserts an entry's content under `entry.repertoire.id` (the repertoire row must exist). */
-function insertBackupContent(
-  entry: RepertoireBackupEntry,
-  chapters: readonly RepertoireChapter[],
-  includeProgress: boolean,
-  keepLinkIds: boolean,
-  now: number
-): void {
-  const repertoireId = entry.repertoire.id;
-  for (const chapter of chapters) {
-    const owner = chapterRepository.ownerOf(chapter.id);
-    if (owner && owner.repertoireId !== repertoireId) {
-      throw new Error(
-        `Invalid backup: chapter "${chapter.title}" belongs to another repertoire in this library; restore it as a new copy`
-      );
-    }
-    chapterRepository.upsert(repertoireId, chapter, now);
-  }
-  for (const decision of entry.decisions) {
-    const acceptedUcis = [...new Set(decision.acceptedUcis.map((uci) => uci.toLowerCase()))];
-    const preferredUci = decision.preferredUci?.toLowerCase() ?? null;
-    decisionRepository.upsert(
-      {
-        repertoireId,
-        positionKey: decision.positionKey,
-        acceptedUcis,
-        preferredUci: preferredUci && acceptedUcis.includes(preferredUci) ? preferredUci : null,
-        prompt: cleanText(decision.prompt, MAX_POLICY_TEXT),
-        hint: cleanText(decision.hint, MAX_POLICY_TEXT),
-        wrongMoveFeedback: Object.fromEntries(
-          Object.entries(decision.wrongMoveFeedback)
-            .slice(0, 64)
-            .map(([uci, text]) => [uci.toLowerCase(), text.slice(0, MAX_POLICY_TEXT)])
-        ),
-        paused: decision.paused,
-        acceptanceFingerprint: ""
-      },
-      now
-    );
-  }
-  if (includeProgress && entry.progress) {
-    for (const progress of entry.progress) {
-      progressRepository.upsert({
-        ...progress,
-        repertoireId,
-        stage: Math.min(progress.stage, MAX_STAGE)
-      });
-    }
-  }
-  if (entry.workspace) {
-    const known = chapters.some((chapter) => chapter.id === entry.workspace!.lastChapterId);
-    workspaceRepository.save(
-      repertoireId,
-      {
-        lastChapterId: known ? entry.workspace.lastChapterId : null,
-        lastNodeId: known ? entry.workspace.lastNodeId : null,
-        orientation: entry.workspace.orientation,
-        practiceDraft: null
-      },
-      now
-    );
-  }
-  for (const link of entry.gameLinks) {
-    gameLinkRepository.insert({
-      ...link,
-      id: keepLinkIds && !gameLinkRepository.get(link.id) ? link.id : nanoid(),
-      repertoireId,
-      gameId: link.gameId && libraryGameExists(link.gameId) ? link.gameId : null,
-      headers: sanitizeHeaders(link.headers),
-      capturedPath: link.capturedPath.slice(0, MAX_POLICY_TEXT)
-    });
-  }
-}
-
-/** A file-name-safe form of a repertoire id. */
-function safeFileId(id: string): string {
-  return id.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80) || "repertoire";
-}
-
-function retainedBackupDirectory(): string {
-  return join(app.getPath("userData"), RETAINED_BACKUP_DIR);
-}
-
-/** Syncs a directory entry to disk (best effort: Windows can't open a directory for this). */
-function syncDirectory(directory: string): void {
-  let descriptor: number | null = null;
-  try {
-    descriptor = openSync(directory, "r");
-    fsyncSync(descriptor);
-  } catch {
-    // The file itself is already synced; only its directory entry may lag.
-  } finally {
-    if (descriptor !== null) closeSync(descriptor);
-  }
-}
-
-/** A replaced repertoire's own backup, prepared before anything is written or deleted. */
-type RetainedCopy = { record: RepertoireRecord; text: string; history: string };
-
-/**
- * The repertoire's own backup (progress included) as Restore from backup reads it, and its raw
- * practice session and attempt rows as a separate forensic history document (never restored, so
- * it can't make the backup too large to restore). Refused, before anything is deleted, when the
- * backup itself would fail the restore's checks: a replace must leave a copy that can be restored.
- */
-function prepareRetainedCopy(record: RepertoireRecord, now: number): RetainedCopy {
-  const { entry, history } = transaction(
-    () => ({
-      entry: stripForExport(backupEntryOf(record), true),
-      history: {
-        format: RETAINED_HISTORY_FORMAT,
-        repertoireId: record.id,
-        exportedAt: now,
-        sessions: sessionRepository.rawRows(record.id),
-        attempts: attemptRepository.rawRowsForRepertoire(record.id)
-      }
-    }),
-    "read"
-  );
-  const text = JSON.stringify(backupDocument([entry], now));
-  const refusal = restoreRefusal(text);
-  if (refusal) {
-    throw new Error(
-      `Invalid selections: "${record.name}" can't be replaced because its own backup couldn't be restored (${refusal}); restore the backup as a new copy`
-    );
-  }
-  return { record, text, history: JSON.stringify(history) };
-}
-
-/** The forensic history file kept beside a retained backup. */
-function historyPathOf(backupPath: string): string {
-  return backupPath.replace(/\.json$/, ".history.json");
-}
-
-/**
- * Writes a prepared copy to `<userData>/repertoire-backups/` and returns the backup's path; its
- * history goes beside it (`<name>.history.json`). The backup is created exclusively (a random
- * suffix on a name collision), then both files and their directory are synced, so they are on
- * disk before the replace deletes anything.
- */
-function retainBackup({ record, text, history }: RetainedCopy, now: number): string {
-  const directory = retainedBackupDirectory();
-  mkdirSync(directory, { recursive: true });
-  const base = `${safeFileId(record.id)}-${new Date(now).toISOString().replace(/[:.]/g, "-")}`;
-  let path = join(directory, `${base}.json`);
-  let descriptor: number | null = null;
-  for (let attempt = 0; descriptor === null; attempt += 1) {
-    try {
-      descriptor = openSync(path, "wx");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST" || attempt >= 5) throw error;
-      path = join(directory, `${base}-${nanoid(8)}.json`);
-    }
-  }
-  try {
-    writeFileSync(descriptor, text, "utf8");
-    fsyncSync(descriptor);
-  } finally {
-    closeSync(descriptor);
-  }
-  const historyDescriptor = openSync(historyPathOf(path), "w");
-  try {
-    writeFileSync(historyDescriptor, history, "utf8");
-    fsyncSync(historyDescriptor);
-  } finally {
-    closeSync(historyDescriptor);
-  }
-  syncDirectory(directory);
-  return path;
-}
-
-const RETAINED_NAME =
-  /^(.+)-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)(?:-[A-Za-z0-9_-]+)?\.json$/;
-
-/**
- * Deletes all but the newest MAX_RETAINED_BACKUPS retained backups of a repertoire (best effort:
- * a file that can't be listed or deleted is left).
- */
-function pruneRetainedBackups(repertoireId: string): void {
-  const directory = retainedBackupDirectory();
-  const fileId = safeFileId(repertoireId);
-  let names: string[];
-  try {
-    names = readdirSync(directory);
-  } catch {
-    return;
-  }
-  const retained = names
-    .map((name) => ({ name, match: RETAINED_NAME.exec(name) }))
-    .filter((item) => item.match?.[1] === fileId)
-    .sort((a, b) => {
-      const stamp = b.match![2].localeCompare(a.match![2]);
-      return stamp || b.name.localeCompare(a.name);
-    });
-  for (const { name } of retained.slice(MAX_RETAINED_BACKUPS)) {
-    try {
-      unlinkSync(join(directory, name));
-      rmSync(historyPathOf(join(directory, name)), { force: true });
-    } catch {
-      // Left for the next replace to try again.
-    }
-  }
-}
-
-type RestoredRepertoire = RestoreBackupResult["restored"][number] & { revision: number };
-
-function restoreNewCopy(
-  entry: RepertoireBackupEntry,
-  chapters: readonly RepertoireChapter[],
-  selection: RestoreBackupSelection,
-  now: number
-): RestoredRepertoire {
-  const chapterIds = new Map(chapters.map((chapter) => [chapter.id, nanoid()]));
-  const copy = remapBackupEntry(entry, {
-    newRepertoireId: nanoid(),
-    idFor: (chapterId) => chapterIds.get(chapterId) ?? nanoid(),
-    linkIdFor: () => nanoid()
-  });
-  const name = selection.newName?.trim()
-    ? cleanName(selection.newName)
-    : cleanName(`${entry.repertoire.name || "Repertoire"} (restored)`);
-  repertoireRepository.insert({
-    id: copy.repertoire.id,
-    name,
-    color: copy.repertoire.color,
-    description: cleanText(copy.repertoire.description, MAX_DESCRIPTION) ?? "",
-    tags: cleanTags(copy.repertoire.tags),
-    revision: 1,
-    archivedAt: null,
-    createdAt: now,
-    updatedAt: now
-  });
-  const copiedChapters = chapters.map((chapter) => ({
-    ...chapter,
-    id: chapterIds.get(chapter.id)!,
-    revision: 1
-  }));
-  insertBackupContent(copy, copiedChapters, selection.includeProgress, false, now);
-  reindex(requireRepertoire(copy.repertoire.id), now);
-  return {
-    sourceId: entry.repertoire.id,
-    repertoireId: copy.repertoire.id,
-    mode: "new-copy",
-    retainedBackupPath: null,
-    revision: 1
-  };
-}
-
-/**
- * The repertoire a replace overwrites, after the checks that refuse it: it must exist, be at the
- * revision the user saw, have the backup's color, and have no practice session in progress.
- */
-function checkReplace(
-  entry: RepertoireBackupEntry,
-  selection: RestoreBackupSelection
-): RepertoireRecord {
-  const existing = repertoireRepository.get(entry.repertoire.id);
-  if (!existing) {
-    throw new Error(
-      `Invalid selections: "${entry.repertoire.name}" has no repertoire in this library to replace; restore it as a new copy`
-    );
-  }
-  if (selection.expectedRevision === undefined) {
-    throw new Error("Invalid expectedRevision: required to replace a repertoire");
-  }
-  checkRevision(existing, selection.expectedRevision);
-  if (existing.color !== entry.repertoire.color) {
-    throw new Error(
-      `Invalid backup: "${existing.name}" is a ${existing.color} repertoire in this library; restore it as a new copy`
-    );
-  }
-  if (sessionRepository.count(existing.id, "active") > 0) {
-    throw new Error(
-      `Invalid selections: "${existing.name}" has a practice session in progress; end it first`
-    );
-  }
-  return existing;
-}
-
-function restoreReplace(
-  entry: RepertoireBackupEntry,
-  chapters: readonly RepertoireChapter[],
-  selection: RestoreBackupSelection,
-  retainedBackupPath: string,
-  now: number
-): RestoredRepertoire {
-  const existing = checkReplace(entry, selection);
-  // Deleting the row cascades to chapters, decisions, index, progress, sessions, workspace, links.
-  repertoireRepository.remove(existing.id);
-  const revision = Math.max(existing.revision, entry.repertoire.revision) + 1;
-  repertoireRepository.insert({
-    id: existing.id,
-    name: cleanName(entry.repertoire.name || existing.name),
-    color: entry.repertoire.color,
-    description: cleanText(entry.repertoire.description, MAX_DESCRIPTION) ?? "",
-    tags: cleanTags(entry.repertoire.tags),
-    revision,
-    archivedAt: entry.repertoire.archivedAt,
-    createdAt: entry.repertoire.createdAt,
-    updatedAt: now
-  });
-  insertBackupContent(entry, chapters, selection.includeProgress, true, now);
-  reindex(requireRepertoire(existing.id), now);
-  return {
-    sourceId: entry.repertoire.id,
-    repertoireId: existing.id,
-    mode: "replace",
-    retainedBackupPath,
-    revision
-  };
-}
-
-/**
- * Restores the selected repertoires of a previewed backup in one transaction, so a failure leaves
- * nothing half-restored. `new-copy` inserts the content under fresh ids at revision 1. `replace`
- * is refused unless checkReplace passes; before the transaction begins, the existing repertoire's
- * own backup (with its practice history) is written and synced to
- * `<userData>/repertoire-backups/`, then its content, progress and practice sessions are swapped
- * for the backup's under the same id at a revision above both. Afterwards only the newest ten
- * retained backups of each replaced repertoire are kept. Progress is restored only with
- * `includeProgress`. A link keeps its game only if this library has it. The index and effective
- * decisions are rebuilt (decisions nothing reaches are suspended); change events follow the
- * commit. Runs on the main thread (see the stack plan's known limitations).
- */
-export function restoreBackup(input: RestoreBackupInput): RestoreBackupResult {
+export async function restoreBackup(input: RestoreBackupInput): Promise<RestoreBackupResult> {
   const now = clock();
   const job = requireBackupJob(input.jobId, now);
   if (!input.selections.length) {
@@ -3423,32 +3199,25 @@ export function restoreBackup(input: RestoreBackupInput): RestoreBackupResult {
   if (new Set(input.selections.map((item) => item.sourceId)).size !== input.selections.length) {
     throw new Error("Invalid selections: each repertoire can be restored only once");
   }
-  const planned = input.selections.map((selection) => {
-    const entry = job.document.repertoires.find(
-      (item) => item.repertoire.id === selection.sourceId
-    );
-    if (!entry) {
+  for (const selection of input.selections) {
+    if (!job.document.repertoires.some((item) => item.repertoire.id === selection.sourceId)) {
       throw new Error(`Invalid selections: "${selection.sourceId}" is not in this backup`);
     }
-    return { selection, entry, chapters: restorableChapters(entry) };
-  });
-  // Every replace is checked, and its own backup prepared (and checked restorable), before any
-  // backup is retained; all are retained before BEGIN.
-  const copies = planned
-    .filter(({ selection }) => selection.mode === "replace")
-    .map(({ selection, entry }) => prepareRetainedCopy(checkReplace(entry, selection), now));
-  const retained = new Map<string, string>();
-  for (const copy of copies) retained.set(copy.record.id, retainBackup(copy, now));
-  const restored = transaction(() =>
-    planned.map(({ selection, entry, chapters }) =>
-      selection.mode === "replace"
-        ? restoreReplace(entry, chapters, selection, retained.get(entry.repertoire.id)!, now)
-        : restoreNewCopy(entry, chapters, selection, now)
-    )
+  }
+  const restored = await runBackupRestore(
+    {
+      text: job.text,
+      selections: input.selections,
+      now,
+      retainedDirectory: join(app.getPath("userData"), RETAINED_BACKUP_DIR),
+      app: backupApp()
+    },
+    databasePath,
+    importWorkers.restore,
+    app.isPackaged === true
   );
   backupJobs.delete(input.jobId);
   for (const item of restored) {
-    if (item.mode === "replace") pruneRetainedBackups(item.repertoireId);
     changed({
       repertoireId: item.repertoireId,
       revision: item.revision,

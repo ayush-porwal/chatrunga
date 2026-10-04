@@ -88,6 +88,16 @@ export type RepertoireChapter = RepertoireChapterSummary & {
 /** Root node id of every chapter tree. */
 export const REPERTOIRE_ROOT_NODE_ID = "root";
 
+/**
+ * The main process's errors for an id that names nothing: the repertoire, or the chapter, was
+ * deleted; or a decision's position is in none of the repertoire's chapters (its move was undone
+ * or its line deleted). IPC hands the renderer only an error's message, so these texts are the
+ * contract that tells a deletion (study returns to the hub) from a failure worth retrying.
+ */
+export const REPERTOIRE_NOT_FOUND_ERROR = "Invalid repertoireId: not found";
+export const CHAPTER_NOT_FOUND_ERROR = "Invalid chapterId: not found";
+export const POSITION_NOT_FOUND_ERROR = "Invalid positionKey: not found in this repertoire";
+
 /* ------------------------------------------------------------------ decisions and progress */
 
 /** The player's intended choices at one position, repertoire-wide. */
@@ -142,6 +152,13 @@ export type PracticeScope = {
    * for merely being queued.
    */
   positionKeys?: string[];
+  /**
+   * Ungraded extra practice ("Retry missed"): answers, hints and reveals are recorded with the
+   * session (its summary counts them), but no decision's schedule or progress changes — stage,
+   * due date, lapses and successes stay as the first scored attempt left them. Only for a
+   * targeted queue (`positionKeys`); a rehearsal never schedules anyway.
+   */
+  ungraded?: boolean;
   /** Rehearse-lines only: the chapter to rehearse, from its root or from `fromNodeId`. */
   rehearse?: { chapterId: string; fromNodeId?: string };
 };
@@ -206,6 +223,19 @@ export type PracticeSessionSnapshot = {
   shown?: PracticeShown;
 };
 
+/**
+ * A card's answer, given out only once its grade is final (a correct answer, a reveal): the
+ * accepted moves, the preferred one, the explanation (the position's authored comment, else the
+ * decision's hint) and the authored comments of the accepted moves played from this occurrence,
+ * by UCI. Older results and rehearsal answers carry no `moveComments`.
+ */
+export type PracticeAnswer = {
+  ucis: string[];
+  preferredUci: string | null;
+  explanation: string | null;
+  moveComments?: Record<string, string>;
+};
+
 /** Hint and reveal data the main process already gave out for a card. */
 export type PracticeShown = {
   /** The authored hint (hint stage 1 or later). */
@@ -213,7 +243,7 @@ export type PracticeShown = {
   /** The preferred move hints point at (hint stage 2 or later). */
   hintUci: string | null;
   /** The answer, for a revealed card. */
-  revealed: { ucis: string[]; preferredUci: string | null; explanation: string | null } | null;
+  revealed: PracticeAnswer | null;
 };
 
 export type PracticeAction =
@@ -263,6 +293,13 @@ export type AttemptResult = {
   /** Revealed only once the card's grade is final; empty before. */
   acceptedUcis: string[];
   preferredUci: string | null;
+  /**
+   * With the accepted moves (and only then): the explanation and the accepted moves' comments, as
+   * a reveal gives them (see {@link PracticeAnswer}). Absent from older stored results.
+   */
+  explanation?: string | null;
+  moveComments?: Record<string, string>;
+  /** The author's feedback for this move outside the repertoire, if any. */
   feedback: string | null;
   card: PracticeCard;
   /** This attempt fixed the card's scheduled grade. */
@@ -275,7 +312,8 @@ export type PracticeActionResult = {
   card: PracticeCard;
   /** Rehearse-lines: after a reveal or follow-other-line, the continuation of the line. */
   rehearsal?: RehearsalStep;
-  revealed?: { ucis: string[]; preferredUci: string | null; explanation: string | null };
+  /** A hint's text and move (no accepted moves), or a reveal's answer. */
+  revealed?: PracticeAnswer;
   /** True when the action found the session's chapter changed and ended the session instead. */
   sessionEnded?: true;
 };
@@ -321,6 +359,11 @@ export type ImportPreviewGame = {
    * sends an empty array, which keeps a large preview small. The commit uses the stored tree.
    */
   tree: MoveNode[];
+  /**
+   * Decisions the game would practise as an opening chapter with the import default, for a
+   * repertoire of each colour (0 for a rejected game).
+   */
+  decisions: Record<RepertoireColor, number>;
   warnings: string[];
   invalidBranches: ImportInvalidBranch[];
 };
@@ -377,10 +420,32 @@ export type CreateRepertoireInput = {
   firstChapterTitle?: string;
 };
 
+/**
+ * Lengths the main process keeps of a repertoire's name, description and tags (longer text is
+ * cut, extra tags dropped); the renderer's forms refuse past them instead.
+ */
+export const REPERTOIRE_METADATA_LIMITS = {
+  name: 200,
+  description: 5_000,
+  tags: 32,
+  tag: 50
+} as const;
+
 export type UpdateRepertoireMetadataInput = {
   id: string;
   expectedRevision: number;
   patch: { name?: string; description?: string; tags?: string[] };
+};
+
+/**
+ * One write that sets practice eligibility and/or kind on several chapters (the chapter list's
+ * bulk actions): one revision check and one reconciliation, however many chapters it names.
+ */
+export type UpdateChaptersInput = {
+  repertoireId: string;
+  chapterIds: string[];
+  expectedRevision: number;
+  patch: { enabled?: boolean; kind?: ChapterKind };
 };
 
 export type SaveChapterInput = {
@@ -395,6 +460,13 @@ export type ChapterSaveResult = {
   repertoire: RepertoireDetail;
   chapter: RepertoireChapter;
   decisionsChanged: number;
+};
+
+/** "Include in practice" asks what the other chapters practise at positions of `chapterId`. */
+export type PractisedElsewhereInput = {
+  repertoireId: string;
+  chapterId: string;
+  positionKeys: string[];
 };
 
 export type UpdateDecisionInput = {
@@ -418,6 +490,11 @@ export type DecisionSaveResult = {
 
 export type RepertoireChangeResult = {
   repertoire: RepertoireDetail;
+};
+
+export type UpdateChaptersResult = RepertoireChangeResult & {
+  /** Chapters the write changed (those already in the requested state are left alone). */
+  chaptersChanged: number;
 };
 
 export type RemoveChapterInput = {

@@ -8,6 +8,7 @@ import {
   EVAL_BAR_SIDES,
   normalizeBoardSquareHex,
   ONBOARDING_HINTS,
+  PRACTICE_AUTO_ADVANCE_MS,
   REVIEW_MAIA_LEVELS,
   type AppSettings
 } from "@chaturanga/shared/types/settings";
@@ -85,6 +86,7 @@ const SETTING_CHECKS: { [K in keyof AppSettings]-?: Check } = {
   lastOpenedGameId: nullable(text(200)),
   repertoireCompareWhite: nullable(text(200)),
   repertoireCompareBlack: nullable(text(200)),
+  practiceAutoAdvanceMs: oneOf(...PRACTICE_AUTO_ADVANCE_MS),
   onboardingCompletedAt: nullable(number(0, Number.MAX_SAFE_INTEGER, true)),
   onboardingHintsSeen: list(oneOf(...ONBOARDING_HINTS), ONBOARDING_HINTS.length)
 };

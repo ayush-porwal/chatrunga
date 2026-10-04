@@ -22,7 +22,7 @@ The collection comes from a seeded PRNG (`apps/desktop/src/perf/large-repertoire
 | Comparison game | 300 plies. It follows the large chapter's main line, then continues with random legal moves    |
 | Import PGN      | 1,000 games × 100 moves = 100,000 moves, 0.65 MiB, exported with `exportRepertoirePgn`         |
 
-Seeding takes about 5 s. It covers generation, `chapterRepository.upsert`, and one `saveChapter` per repertoire, which reindexes all 10 of its chapters.
+Seeding takes about 5 s. It covers generation, `chapterRepository.upsert`, one full `reindex` per repertoire (a save only updates the chapter it changed, see below) and one `saveChapter` per repertoire.
 
 ## Reference machine
 
@@ -60,6 +60,38 @@ All §11 targets are met.
 | ------------------------------------------ | -----: | -----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `collectDecisions` over all 1,000 chapters |  643.3 |  678.4 | No direct §11 target. Real calls cover one repertoire (about 1,000 nodes, roughly 7 ms) from `reindex` and practice start, never the whole collection. Cost grows linearly with nodes. |
 | `listRepertoires` (hub summary query)      |   21.2 |   21.7 | Aggregates only; no tree is loaded. Well under target, so no SQL change is needed.                                                                                                     |
+
+## Edits in one large repertoire (audit R02)
+
+A second workload keeps every chapter in **one** repertoire: 500 chapters × 100 moves (50,500 occurrences), white, all from the start position, so the start position is a decision in every chapter. It measures a comment-only `saveChapter`, a `saveChapter` that adds one move, a prompt edit (`updateDecision`) on the most and the least shared decision, and the longest main-thread block while 30 of each save arrive through the write gate, as the IPC handlers run them. It also times a restore of that repertoire's backup in the benchmark's own thread.
+
+Before, every chapter save and decision edit rebuilt the whole repertoire's index, decisions and progress synchronously (`reindex` over every chapter). Now:
+
+- `reindexChapter` (core.ts) compares the stored chapter with the saved one. A change the index doesn't read (comments, titles, headers, NAGs, arrows, highlights) writes nothing derived. Otherwise only the chapter's own index rows are rewritten, and decisions and progress are reconciled only at the position keys whose supported choices changed in that chapter. Where the chapter only gained choices, the stored decision's acceptance fingerprint already says what the other chapters support; where it lost one, the chapters sharing that position (transpositions included) are found through the index and read. If the stored index doesn't cover the old chapter, it falls back to the full reindex. Removing a chapter takes the same path.
+- `updateDecision` finds the position's occurrences through the index. A prompt, hint, feedback or pause edit changes nothing derived; new accepted moves or a cleared preference reconcile that one position; only an edit that rewrites chapter edges still runs the full reindex.
+- `reindex-chapter.test.ts` checks every incremental result (decisions, fingerprints, index rows, progress suspension and due times, `decisionsChanged`) against a full reindex of the same state, over random edit sequences with transpositions, enable/disable, kind and order changes, deletions, added and removed chapters, decision edits and practised progress. It also fails if a comment-only save or a one-move save calls the full reindex.
+
+A save's remaining cost is the response it returns: the repertoire summary (`detail`, about 15 ms here) and the saved chapter. The chapter's due count is now one query for that chapter instead of the summaries of all 500.
+
+Same machine, plain Node through vitest (other work was running on the machine, so absolute numbers are noisy):
+
+| Workload (500 chapters × 100 moves, one repertoire)   | Before p50 / p95 ms | After p50 / p95 ms |
+| ----------------------------------------------------- | ------------------: | -----------------: |
+| Comment-only `saveChapter`                            |           756 / 790 |            23 / 25 |
+| `saveChapter` adding one move                         |           755 / 781 |            26 / 29 |
+| `updateDecision` prompt, position in all 500 chapters |       1,134 / 1,238 |            25 / 28 |
+| `updateDecision` prompt, position in 1 chapter        |       1,050 / 1,113 |            22 / 32 |
+| Longest main-thread block, 30 comment-only saves      |                 812 |                 28 |
+| Longest main-thread block, 30 one-move saves          |                 926 |                 29 |
+| `restoreBackup` as a copy, in the calling thread      |               1,682 |    (in the worker) |
+
+In the built Electron app (`e2e/repertoire-perf.spec.ts`, 500 imported chapters of the same 100-move line, so every position is shared by every chapter), a 5 ms main-process heartbeat saw 27 ms around a comment-only save and 26–36 ms around a save adding a move at the shared start position; the audit's probe had measured 434 ms for the comment-only save. The journey fails above 200 ms.
+
+### Backup restore in a worker
+
+Restore (`backup-restore.ts` `runRestoreJob`) runs in the restore worker (`repertoire-backup-restore-worker.js`) on its own WAL connection: validation of the chosen backup, each replaced repertoire's retained copy (its snapshot, the check that it can be restored, the synced files), the restore transaction with its reindex, and the pruning of old retained copies. The service checks the selections, hands the worker the backup text and waits; it holds the repertoire write gate meanwhile, so other repertoire writes wait behind it, and `repertoires:changed` goes out after the commit. A failed or crashed restore writes nothing (the transaction never commits) and keeps the previewed job. Without the bundled worker (tests, development) the same restore runs in the calling thread; a packaged app requires it.
+
+In the built app, two restores of a 50,000-move repertoire (a copy, then a replace) kept the longest main-process gap at 13–14 ms; in the calling thread one restore takes about 1.7 s. The preview still validates the backup on the main thread: two previews of that backup blocked it for about 230 ms.
 
 ## Import through the workers
 
@@ -120,4 +152,4 @@ Windowing (virtualised rows) is not needed at these counts. Revisit it only if e
 
 - Numbers are from plain Node on a fast desktop, not a packaged Electron build. Repeat them on the documented reference desktop before choosing release budgets.
 - React render and commit time is not measured, since vitest runs without a DOM. Visible row count is the proxy.
-- The worker import figures come from the bundled workers. The benchmark's in-thread figures exercise the same parse code without them. Re-run `pnpm bench:repertoire` after changes to `import-job.ts` or the reindex.
+- The worker import figures come from the bundled workers. The benchmark's in-thread figures exercise the same parse code without them. Re-run `pnpm bench:repertoire` after changes to `import-job.ts`, the reindex or `reindexChapter`.

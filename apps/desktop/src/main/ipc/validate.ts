@@ -38,10 +38,12 @@ import type {
   RepertoireColor,
   RepertoireListFilters,
   RepertoireNodeMeta,
+  PractisedElsewhereInput,
   RestoreBackupInput,
   SaveChapterInput,
   SaveWorkspaceInput,
   StartPracticeInput,
+  UpdateChaptersInput,
   UpdateDecisionInput,
   UpdateRepertoireMetadataInput
 } from "@chaturanga/shared/types/repertoire";
@@ -775,6 +777,22 @@ export function parseDecisionRef(value: unknown): { repertoireId: string; positi
   return { repertoireId: asId(input.repertoireId, "repertoireId"), positionKey };
 }
 
+/** "Include in practice"'s question: positions of a chapter, at most 10,000 keys. */
+export function parsePractisedElsewhereInput(value: unknown): PractisedElsewhereInput {
+  const input = asObject(value, "practised elsewhere");
+  const positionKeys = asStringArray(input.positionKeys, "positionKeys", 10_000, 200).map((key) =>
+    key.trim()
+  );
+  if (positionKeys.some((key) => !key || CONTROL_CHARS.test(key))) {
+    fail("positionKeys", "expected position keys");
+  }
+  return {
+    repertoireId: asId(input.repertoireId, "repertoireId"),
+    chapterId: asId(input.chapterId, "chapterId"),
+    positionKeys
+  };
+}
+
 /**
  * Shallow shape check, like parseSaveGameInput: the tree must be an array of at most 100,000
  * nodes; the repertoire service replays and checks every node before anything is stored.
@@ -845,6 +863,24 @@ export function parseRemoveChapterInput(value: unknown): RemoveChapterInput {
     chapterId: asId(input.chapterId, "chapterId"),
     expectedRevision: asRevision(input.expectedRevision)
   };
+}
+
+export function parseUpdateChaptersInput(value: unknown): UpdateChaptersInput {
+  const input = asObject(value, "chapters update");
+  const patch = asObject(input.patch, "chapters patch");
+  const parsed: UpdateChaptersInput = {
+    repertoireId: asId(input.repertoireId, "repertoireId"),
+    chapterIds: asIdArray(input.chapterIds, "chapterIds", MAX_IMPORT_GAMES),
+    expectedRevision: asRevision(input.expectedRevision),
+    patch: {
+      enabled: optional(patch.enabled, (enabled) => asBoolean(enabled, "enabled")),
+      kind: optional(patch.kind, asChapterKind)
+    }
+  };
+  if (parsed.patch.enabled === undefined && parsed.patch.kind === undefined) {
+    fail("chapters patch", "expected enabled or kind");
+  }
+  return parsed;
 }
 
 export function parseDuplicateRepertoireInput(value: unknown): DuplicateRepertoireInput {
@@ -1020,6 +1056,13 @@ export function parseStartPracticeInput(value: unknown): StartPracticeInput {
     };
   });
   if (rehearse) result.rehearse = rehearse;
+  const ungraded = optional(input.ungraded, (flag) => asBoolean(flag, "ungraded"));
+  if (ungraded) {
+    if (!result.positionKeys?.length || result.mode === "rehearse-lines") {
+      fail("ungraded", "only a targeted queue (positionKeys) can be ungraded practice");
+    }
+    result.ungraded = true;
+  }
   return result;
 }
 

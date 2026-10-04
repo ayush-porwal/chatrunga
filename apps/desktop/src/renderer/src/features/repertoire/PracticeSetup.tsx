@@ -1,27 +1,37 @@
 import { useId, useMemo, useState } from "react";
-import { GraduationCap, Route, Sparkles } from "lucide-react";
+import { GraduationCap, Route } from "lucide-react";
 import {
   DEFAULT_REHEARSAL_DEPTH_PLIES,
   canRehearseFrom,
+  lineEnds,
   rehearsalContext
 } from "@chaturanga/shared/chess/repertoire-rehearsal";
-import type {
-  PracticeMode,
-  RepertoireDetail,
-  StartPracticeInput
+import {
+  REPERTOIRE_ROOT_NODE_ID,
+  type PracticeMode,
+  type RepertoireDetail,
+  type StartPracticeInput
 } from "@chaturanga/shared/types/repertoire";
+import {
+  defaultSettings,
+  PRACTICE_AUTO_ADVANCE_MS,
+  type PracticeAutoAdvanceMs
+} from "@chaturanga/shared/types/settings";
 import { ChipButton } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/ui/empty-state";
 import { Field } from "@/components/ui/field";
 import { Input, Select } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { SectionHeader } from "@/components/ui/page";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { cardPadded } from "@/lib/ui";
-import { useRepertoireChapterQuery } from "../../queries/repertoire";
+import { useSettingsQuery } from "../../queries/api";
+import { useRepertoireChapterQuery, useRepertoirePausedKeysQuery } from "../../queries/repertoire";
+import { useSetSetting } from "../settings/use-set-setting";
 import { sortedChapters } from "./repertoire-chapters";
 import { pathLabel } from "./repertoire-model";
+import { startUnavailableReason } from "./training-explanations";
+import { PracticeEmptyState } from "./PracticeEmptyState";
 import {
   DEFAULT_CARD_LIMIT,
   DEFAULT_NEW_CARD_LIMIT,
@@ -29,6 +39,7 @@ import {
   MAX_DEPTH_PLIES,
   MAX_REHEARSE_STARTS,
   boundedInt,
+  explainedChapterIds,
   practiceInputFromForm,
   rehearseStarts,
   type RehearseStart
@@ -42,6 +53,14 @@ const modeOptions = [
   { value: "rehearse-lines" as const, label: "Rehearse lines" }
 ];
 
+/** "Next card" choices: wait for Next, or move on by itself after a correct answer. */
+const ADVANCE_LABELS: Record<PracticeAutoAdvanceMs, string> = {
+  0: "When I press Next",
+  600: "After 0.6 s",
+  1500: "After 1.5 s",
+  3000: "After 3 s"
+};
+
 const START_LABELS: Record<PracticeMode, string> = {
   "review-due": "Start review",
   "learn-new": "Start learning",
@@ -50,32 +69,44 @@ const START_LABELS: Record<PracticeMode, string> = {
 
 /**
  * Practice setup (§5.3): mode, chapters (none selected = every enabled opening chapter), maximum
- * depth and card limits. "Nothing due" offers Learn new instead. Rehearse lines picks one chapter
- * and optionally a branch to start from; card limits don't apply to it.
+ * depth and card limits. A start with nothing to ask says why above the form: the chapter in scope
+ * and its cause with a way back to Study, or what the mode found ("Nothing due" offers Learn new).
+ * A repertoire with no decision at all is explained before any start, and Start is disabled with
+ * the reason. Rehearse lines picks one chapter and optionally a branch to start from; card limits
+ * don't apply to it. "Next card" is the saved auto-advance preference (a setting, not part of the
+ * draft).
  */
 export function PracticeSetup({
   detail,
   initial,
   starting,
   error,
-  nothingDue,
-  onStart
+  empty,
+  onStart,
+  onStudy
 }: {
   detail: RepertoireDetail;
   initial: StartPracticeInput;
   starting: boolean;
   error: string | null;
-  /** The last start found no cards for its scope and mode. */
-  nothingDue: PracticeMode | null;
+  /** The last start, which found no cards for its scope and mode (null: none did). */
+  empty: StartPracticeInput | null;
   onStart: (input: StartPracticeInput) => void;
+  /** Study at a chapter and move (the way to fix a chapter with nothing to practise). */
+  onStudy: (target: { chapterId: string; nodeId: string | null }) => void;
 }) {
   const ids = {
     depth: useId(),
     cards: useId(),
     fresh: useId(),
     chapter: useId(),
-    from: useId()
+    from: useId(),
+    advance: useId(),
+    startReason: useId()
   };
+  const settings = useSettingsQuery();
+  const setSetting = useSetSetting();
+  const advanceMs = settings.data?.practiceAutoAdvanceMs ?? defaultSettings.practiceAutoAdvanceMs;
   const [mode, setMode] = useState<PracticeMode>(initial.mode);
   const [chapterIds, setChapterIds] = useState<string[]>(initial.chapterIds ?? []);
   const [depth, setDepth] = useState(initial.maxDepthPlies ? String(initial.maxDepthPlies) : "");
@@ -111,6 +142,22 @@ export function PracticeSetup({
       rehearseFromNodeId: effectiveFrom
     });
 
+  // A repertoire with no decision at all is explained before any start.
+  const explaining = empty ?? (detail.decisionCount && trainable.length ? null : input());
+  // Kept by value: `explaining` is a new object each render, and the empty state reads these.
+  const explainedKey = explaining ? explainedChapterIds(detail, explaining).join("\n") : "";
+  const explainedIds = useMemo(
+    () => (explainedKey ? explainedKey.split("\n") : []),
+    [explainedKey]
+  );
+  const unavailable = startUnavailableReason({
+    decisionCount: detail.decisionCount,
+    practicableChapters: trainable.length,
+    rehearsing,
+    rehearseChapterId,
+    rehearseChapterAsks: branch.asks
+  });
+
   const toggle = (id: string) =>
     setChapterIds((current) =>
       current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
@@ -120,34 +167,16 @@ export function PracticeSetup({
     <div className="scroll-area h-full min-h-0 overflow-y-auto">
       <div className="mx-auto grid w-full max-w-2xl content-start gap-5 px-(--page-gutter) py-(--page-gutter-y)">
         <h1 className="sr-only">Practice {detail.name}</h1>
-        {nothingDue === "review-due" ? (
-          <EmptyState
-            className={cardPadded}
-            icon={<GraduationCap />}
-            title="No reviews due in this scope"
-            description="Everything here is scheduled for later. You can learn decisions you haven't practised yet."
-            action={
-              <Button
-                type="button"
-                variant="primary"
-                disabled={starting}
-                onClick={() => onStart(input("learn-new"))}
-              >
-                <Sparkles />
-                Learn new
-              </Button>
-            }
+        {explaining ? (
+          <PracticeEmptyState
+            detail={detail}
+            mode={explaining.mode}
+            chapterIds={explainedIds}
+            scopeLarger={(explaining.chapterIds?.length ?? 0) > explainedIds.length}
+            starting={starting}
+            onLearnNew={() => onStart(input("learn-new"))}
+            onStudy={onStudy}
           />
-        ) : nothingDue === "learn-new" ? (
-          <Notice tone="info" title="Nothing new to learn here">
-            Every decision in this scope has been practised. Add accepted moves while studying to
-            create new ones.
-          </Notice>
-        ) : nothingDue === "rehearse-lines" ? (
-          <Notice tone="info" title="Nothing to rehearse here">
-            This chapter or branch has no moves of yours in training. Accept moves while studying,
-            or choose another place to start.
-          </Notice>
         ) : null}
         <section className={`${cardPadded} grid gap-4`} aria-label="Practice setup">
           <SectionHeader
@@ -277,17 +306,49 @@ export function PracticeSetup({
               </>
             )}
           </div>
+          {rehearsing ? null : (
+            <Field
+              label="Next card"
+              hint="after a correct answer; one with notes waits for Next"
+              htmlFor={ids.advance}
+            >
+              <Select
+                id={ids.advance}
+                className="sm:max-w-56"
+                value={String(advanceMs)}
+                onChange={(event) =>
+                  setSetting(
+                    "practiceAutoAdvanceMs",
+                    Number(event.target.value) as PracticeAutoAdvanceMs
+                  )
+                }
+              >
+                {PRACTICE_AUTO_ADVANCE_MS.map((delay) => (
+                  <option key={delay} value={delay}>
+                    {ADVANCE_LABELS[delay]}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
           {error ? <Notice tone="danger">{error}</Notice> : null}
-          <Button
-            type="button"
-            variant="primary"
-            className="justify-self-start"
-            disabled={starting || !trainable.length || (rehearsing && !rehearseChapterId)}
-            onClick={() => onStart(input())}
-          >
-            {rehearsing ? <Route /> : <GraduationCap />}
-            {starting ? "Starting…" : START_LABELS[mode]}
-          </Button>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <Button
+              type="button"
+              variant="primary"
+              disabled={starting || unavailable !== null}
+              aria-describedby={unavailable ? ids.startReason : undefined}
+              onClick={() => onStart(input())}
+            >
+              {rehearsing ? <Route /> : <GraduationCap />}
+              {starting ? "Starting…" : START_LABELS[mode]}
+            </Button>
+            {unavailable ? (
+              <p id={ids.startReason} className="text-xs text-fg-muted">
+                {unavailable}
+              </p>
+            ) : null}
+          </div>
         </section>
       </div>
     </div>
@@ -296,22 +357,32 @@ export function PracticeSetup({
 
 /**
  * The positions a rehearsal of `chapterId` can start from within the depth limit (loaded with the
- * chapter). A preselected branch ("Rehearse from here", e.g. where the opponent is to move) that
- * the list leaves out is offered too while a rehearsal can start there.
+ * chapter and the repertoire's paused decisions, which are played as context and never asked),
+ * and whether one from the chapter start asks a move (`asks`; null until loaded). A preselected
+ * branch ("Rehearse from here", e.g. where the opponent is to move) that the list leaves out is
+ * offered too while a rehearsal can start there.
  */
 function useRehearseStarts(
   detail: RepertoireDetail,
   chapterId: string | null,
   preselected: string,
   maxDepthPlies: number
-): { starts: RehearseStart[]; truncated: boolean; loading: boolean } {
+): { starts: RehearseStart[]; truncated: boolean; asks: boolean | null; loading: boolean } {
   const chapter = useRepertoireChapterQuery(chapterId ? detail.id : null, chapterId);
+  const pausedKeys = useRepertoirePausedKeysQuery(chapterId ? detail.id : null);
   const data = chapterId && chapter.data?.id === chapterId ? chapter.data : null;
+  // A failed read of the paused decisions leaves none paused, as Study does.
+  const pausedLoading = Boolean(chapterId) && pausedKeys.isPending;
   const listed = useMemo(() => {
-    if (!data) return { starts: [], truncated: false };
-    const result = rehearseStarts(data, detail.color, pathLabel, undefined, maxDepthPlies);
+    if (!data || pausedLoading) return { starts: [], truncated: false, asks: null };
+    const paused = new Set(pausedKeys.data ?? []);
+    const context = rehearsalContext(data, detail.color, maxDepthPlies, undefined, paused);
+    const asks = lineEnds(context, REPERTOIRE_ROOT_NODE_ID).length > 0;
+    const result = {
+      ...rehearseStarts(data, detail.color, pathLabel, undefined, maxDepthPlies, paused),
+      asks
+    };
     if (!preselected || result.starts.some((start) => start.nodeId === preselected)) return result;
-    const context = rehearsalContext(data, detail.color, maxDepthPlies);
     if (!canRehearseFrom(context, preselected)) return result;
     return {
       ...result,
@@ -320,6 +391,6 @@ function useRehearseStarts(
         ...result.starts
       ]
     };
-  }, [data, detail.color, preselected, maxDepthPlies]);
-  return { ...listed, loading: Boolean(chapterId) && chapter.isPending };
+  }, [data, pausedLoading, pausedKeys.data, detail.color, preselected, maxDepthPlies]);
+  return { ...listed, loading: Boolean(chapterId) && (chapter.isPending || pausedLoading) };
 }

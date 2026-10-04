@@ -7,6 +7,13 @@
 //                                                      against the unpacked app electron-builder left in dist/
 //   CHATURANGA_E2E_EXECUTABLE=<path>                   against that executable
 //
+// Timing benchmarks (500-chapter lists, 50,000-move saves and restores, main-process stall bounds)
+// are tagged `{ tag: "@perf" }`. The release smoke skips them (`--grep-invert @perf`): they are
+// slow and their bounds depend on the machine. The nightly run (e2e.yml) runs them as a separate,
+// non-blocking step after the required journeys, and a local run includes them unless filtered:
+//   pnpm --filter @chaturanga/desktop test:e2e:run --grep-invert @perf   the release selection
+//   pnpm --filter @chaturanga/desktop test:e2e:run --grep @perf          the benchmarks alone
+//
 // Each test gets a throwaway profile (CHATURANGA_USER_DATA_DIR); network, analytics, updates and
 // native dialogs are disabled or stubbed (see app.ts). Linux needs a display: run under xvfb-run.
 import { defineConfig } from "@playwright/test";

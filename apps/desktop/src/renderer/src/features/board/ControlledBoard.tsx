@@ -1,17 +1,13 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
 import type { Key } from "@lichess-org/chessground/types";
 import { isPromotionMove, statusForFen } from "@chaturanga/shared/chess/position";
 import type { BoardArrow, BoardHighlight, Color, UserMove } from "@chaturanga/shared/types/chess";
-import { Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
-import { focusRing } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useEventCallback } from "@/lib/use-event-callback";
-import { isTyping, OVERLAY_SELECTOR } from "../../app/useBoardShortcuts";
 import { useBoardAppearance, useCgBoardBackground } from "./useBoardAppearance";
 import { useBoardPolish } from "./useBoardPolish";
 import {
@@ -27,15 +23,9 @@ import {
   chessgroundMovableColor,
   movableDests,
   shapesFromAnnotations,
-  sideToMoveIsMovable,
   type BoardMovable
 } from "./board-shapes";
-import {
-  parseTypedMove,
-  resolveBoardMove,
-  typedMoveTrigger,
-  type ResolvedMove
-} from "./board-move-input";
+import { resolveBoardMove, type ResolvedMove } from "./board-move-input";
 import "./board.css";
 
 export type ControlledBoardProps = {
@@ -58,32 +48,10 @@ export type ControlledBoardProps = {
   allowMove?: (uci: string) => boolean;
   /** Highlights the king in check; defaults to whether the side to move in `fen` is in check. */
   check?: boolean;
-  /**
-   * Lets the user type moves (SAN or square to square): `/` or a move's first character opens a
-   * small entry over the board's bottom edge.
-   */
-  keyboardInput?: boolean;
-  /**
-   * With `keyboardInput`: reports the typed-move entry's state and a way to open it, so the page
-   * can put a <TypedMoveButton> in its own control row (the board fills its frame, with no room
-   * for one). Called again whenever the state changes, and with `null` on unmount.
-   */
-  onTypedMoveChange?: (typedMove: TypedMoveControl | null) => void;
   className?: string;
 };
 
-/** The typed-move entry, as seen from outside the board. */
-export type TypedMoveControl = {
-  /** The side to move may move and no promotion is being chosen. */
-  available: boolean;
-  open: boolean;
-  /** Opens the entry, empty; an entry already open keeps its text. */
-  openEntry: () => void;
-};
-
 type PendingPromotion = { from: Key; to: Key };
-/** An open typed-move entry: its starting text, and a key that remounts it on every opening. */
-type TypedEntry = { seed: string; key: number };
 
 const NO_ARROWS: readonly BoardArrow[] = [];
 const NO_HIGHLIGHTS: readonly BoardHighlight[] = [];
@@ -112,13 +80,9 @@ export function ControlledBoard({
   onMove,
   allowMove,
   check,
-  keyboardInput = false,
-  onTypedMoveChange,
   className
 }: ControlledBoardProps) {
-  const wrapperRef = useRef<HTMLDivElement | null>(null);
   const elementRef = useRef<HTMLDivElement | null>(null);
-  const [typedEntry, setTypedEntry] = useState<TypedEntry | null>(null);
   const groundRef = useRef<Api | null>(null);
   const lastPositionRef = useRef({ fen: "", at: 0 });
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
@@ -198,16 +162,14 @@ export function ControlledBoard({
   }, [restorePosition]);
 
   /** Hands a legal move to the parent, or puts the piece back when it is refused. */
-  const commitMove = useEventCallback((move: ResolvedMove | null): boolean => {
+  const commitMove = useEventCallback((move: ResolvedMove | null) => {
     if (
       !move ||
       (allowMove && !allowMove(move.uci)) ||
       onMove(move.uci, move.san, move.fenAfter) === false
     ) {
       restoreSoon();
-      return false;
     }
-    return true;
   });
 
   const handleBoardMove = useEventCallback((orig: Key, dest: Key) => {
@@ -232,70 +194,10 @@ export function ControlledBoard({
     [commitMove, fen, pendingPromotion, restoreSoon]
   );
 
-  // A new position from the parent drops a promotion or a typed move begun on the old one.
+  // A new position from the parent drops a promotion begun on the old one.
   useEffect(() => {
     setPendingPromotion(null);
-    setTypedEntry(null);
   }, [fen]);
-
-  // Typing a move: only while the side to move may move and no promotion is being chosen.
-  const canType = keyboardInput && sideToMoveIsMovable(fen, movable) && !pendingPromotion;
-  const entryOpen = canType && typedEntry !== null;
-
-  /** Opens the typed-move entry, seeded with the key that opened it. */
-  const openEntry = useCallback((seed: string) => {
-    setTypedEntry({ seed, key: performance.now() });
-  }, []);
-
-  // Tells the page about the entry, for its typed-move button. A repeat click must not remount an
-  // open entry: that would discard a half-typed move.
-  const openEmptyEntry = useCallback(() => {
-    setTypedEntry((current) => current ?? { seed: "", key: performance.now() });
-  }, []);
-  const reportTypedMove = useEventCallback((typedMove: TypedMoveControl | null) =>
-    onTypedMoveChange?.(typedMove)
-  );
-  useEffect(() => {
-    if (!keyboardInput) return;
-    reportTypedMove({ available: canType, open: entryOpen, openEntry: openEmptyEntry });
-  }, [canType, entryOpen, keyboardInput, openEmptyEntry, reportTypedMove]);
-  useEffect(() => () => reportTypedMove(null), [reportTypedMove]);
-
-  /** Closes the entry; `refocus` hands focus back to the board so `/` works again at once. */
-  const closeEntry = useCallback((refocus: boolean) => {
-    setTypedEntry(null);
-    if (refocus) wrapperRef.current?.focus({ preventScroll: true });
-  }, []);
-
-  /** A typed move: played (and the entry closed) or refused with the reason to show. */
-  const playTypedMove = useEventCallback((move: ResolvedMove): boolean => {
-    if (!commitMove(move)) return false;
-    closeEntry(true);
-    return true;
-  });
-
-  // `/` or a move's first character opens the entry, when focus is on the board or nowhere in
-  // particular and no text field, dialog or menu owns the keyboard. Captured before the app's own
-  // board shortcuts so the opening key doesn't also do something else.
-  const handleTriggerKey = useEventCallback((event: KeyboardEvent) => {
-    const active = document.activeElement;
-    const inScope =
-      !active || active === document.body || Boolean(wrapperRef.current?.contains(active));
-    const seed = typedMoveTrigger(event, {
-      typing: isTyping(event.target) || isTyping(active),
-      blocked: Boolean(document.querySelector(OVERLAY_SELECTOR)),
-      inScope
-    });
-    if (seed === null) return;
-    event.preventDefault();
-    event.stopPropagation();
-    openEntry(seed);
-  });
-  useEffect(() => {
-    if (!canType || entryOpen) return;
-    window.addEventListener("keydown", handleTriggerKey, { capture: true });
-    return () => window.removeEventListener("keydown", handleTriggerKey, { capture: true });
-  }, [canType, entryOpen, handleTriggerKey]);
 
   // Position: slide pieces for a single move at a calm pace; snap for jumps and while scrubbing.
   useEffect(() => {
@@ -362,17 +264,7 @@ export function ControlledBoard({
   }, [drawingEnabled, handleShapesChange, shapes]);
 
   return (
-    // Focusable (not tabbable) so a click on the board gives it focus: `/` then opens the entry.
-    <div
-      ref={wrapperRef}
-      tabIndex={-1}
-      className={cn("relative h-full w-full min-h-0 min-w-0 outline-none", className)}
-      onMouseDownCapture={(event) => {
-        if (keyboardInput && elementRef.current?.contains(event.target as Node)) {
-          wrapperRef.current?.focus({ preventScroll: true });
-        }
-      }}
-    >
+    <div className={cn("relative h-full w-full min-h-0 min-w-0", className)}>
       {/* Fills the stage's frame edge to edge, like the other boards; the frame clips the corners.
           Chessground's classes stay in className so React reconciliation never strips them. */}
       <div
@@ -385,49 +277,9 @@ export function ControlledBoard({
         )}
       />
       {pendingPromotion ? <PromotionPicker onChoose={choosePromotion} /> : null}
-      {entryOpen && typedEntry ? (
-        <TypedMoveEntry
-          key={typedEntry.key}
-          fen={fen}
-          seed={typedEntry.seed}
-          onMove={playTypedMove}
-          onClose={closeEntry}
-        />
-      ) : null}
     </div>
   );
 }
-
-const KEYBOARD_ICON = <Keyboard />;
-
-/**
- * The quiet keyboard button that opens a ControlledBoard's typed-move entry, for the page's control
- * row next to the board. Renders nothing until the board reports its entry (`onTypedMoveChange`).
- */
-export function TypedMoveButton({
-  typedMove,
-  tooltipSide = "top",
-  className
-}: {
-  typedMove: TypedMoveControl | null;
-  tooltipSide?: "top" | "right" | "bottom" | "left";
-  className?: string;
-}) {
-  if (!typedMove) return null;
-  return (
-    <IconButton
-      label="Type a move (/)"
-      icon={KEYBOARD_ICON}
-      size="icon-sm"
-      tooltipSide={tooltipSide}
-      aria-expanded={typedMove.open}
-      disabled={!typedMove.available || typedMove.open}
-      onClick={typedMove.openEntry}
-      className={cn("text-fg-subtle", className)}
-    />
-  );
-}
-
 
 /**
  * Promotion choice shown over the board. It is a dialog, so the global board shortcuts stand down
@@ -477,82 +329,6 @@ function PromotionPicker({
         </div>
       </div>
     </div>
-  );
-}
-
-/**
- * The on-demand move entry floating over the board's bottom edge. A plain input (no dialog role),
- * so the global F / X / arrow shortcuts stand down while it has focus. Enter plays the move; a wrong
- * move keeps the text and says why. Escape, or leaving it empty, closes it.
- */
-function TypedMoveEntry({
-  fen,
-  seed,
-  onMove,
-  onClose
-}: {
-  fen: string;
-  seed: string;
-  onMove: (move: ResolvedMove) => boolean;
-  onClose: (refocus: boolean) => void;
-}) {
-  const [text, setText] = useState(seed);
-  const [error, setError] = useState<string | null>(null);
-  const errorId = useId();
-
-  const handleSubmit = (event: FormEvent) => {
-    event.preventDefault();
-    const result = parseTypedMove(fen, text);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    if (!onMove(result.move)) setError(`${result.move.san} isn't accepted here.`);
-  };
-
-  const handleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== "Escape") return;
-    event.preventDefault();
-    event.stopPropagation();
-    onClose(true);
-  };
-
-  return (
-    <form
-      className="absolute bottom-3 left-1/2 z-10 grid w-56 max-w-[calc(100%-1.5rem)] -translate-x-1/2 gap-1 rounded-md border border-line bg-surface-raised/95 p-1.5 shadow-popover backdrop-blur"
-      onSubmit={handleSubmit}
-    >
-      <input
-        type="text"
-        value={text}
-        autoFocus
-        onChange={(event) => {
-          setText(event.target.value);
-          if (error) setError(null);
-        }}
-        onKeyDown={handleKeyDown}
-        onBlur={() => {
-          if (!text.trim()) onClose(false);
-        }}
-        placeholder="Nf3, e2e4, O-O"
-        aria-label="Type a move"
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : undefined}
-        autoComplete="off"
-        autoCorrect="off"
-        autoCapitalize="off"
-        spellCheck={false}
-        className={cn(
-          "h-7 w-full min-w-0 rounded border border-line bg-surface px-2 font-mono text-xs text-fg placeholder:text-fg-subtle",
-          focusRing
-        )}
-      />
-      {error ? (
-        <span id={errorId} role="alert" className="px-0.5 text-xs text-danger">
-          {error}
-        </span>
-      ) : null}
-    </form>
   );
 }
 

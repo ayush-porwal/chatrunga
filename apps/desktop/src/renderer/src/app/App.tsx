@@ -18,7 +18,7 @@ import { BoardFocusContext } from "../features/board/board-focus";
 import { PromotionDialog } from "../features/board/PromotionDialog";
 import type { ReviewTab } from "../features/game-review/review-utils";
 import { PgnImportDialog } from "../features/game/PgnImportDialog";
-import { openSavedGame, savedReview } from "../features/game/saved-game";
+import { openSavedGame } from "../features/game/saved-game";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import { usePuzzleAutoReply } from "../features/puzzles/puzzle-session";
 import { usePuzzleAttemptRecording } from "../queries/puzzles";
@@ -36,15 +36,13 @@ import { analysisEngineFor, defaultEngineFor } from "../features/analysis/analys
 import { useGameStore } from "../stores/game-store";
 import { useReviewStore } from "../stores/review-store";
 import { selectLiveGameInProgress, useLichessStore } from "../stores/lichess-store";
-import { useHistoryStore, type BoardSnapshot, type HistoryEntry } from "../stores/history-store";
+import { useHistoryStore, type HistoryEntry } from "../stores/history-store";
 import {
   captureEntry,
-  continuedPuzzleSet,
-  planBoardRestore,
   recordHistory,
-  replacesLiveBoard,
   type HistoryMode
 } from "./history-navigation";
+import { saveStudyDraftFirst, useHistoryRestore } from "./navigation-coordinator";
 import { nextPuzzleInput, puzzleBoard, usePuzzleSession, type PuzzleSetStart } from "./puzzle-session-controller";
 import { AppSidebar } from "./AppSidebar";
 import { AppTitlebar, GameTitlebar, LiveGameButton, PageTitle, ReviewTitlebar } from "./AppTitlebar";
@@ -55,7 +53,6 @@ import { useBoardShortcuts } from "./useBoardShortcuts";
 import { useEngineDriver, type AnalysisOptions } from "./useEngineDriver";
 import {
   flushGameAutosave,
-  holdUntilChanged,
   IMPORT_NEEDS_SAVE,
   mainlineEnd,
   useGameAutosave
@@ -81,7 +78,11 @@ import type { OpeningSide } from "../features/game-review/opening-comparison";
 import { presetForSetup, type PracticePreset } from "../features/repertoire/practice-setup";
 import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
 import { RepertoirePracticeTitlebar, RepertoireStudyTitlebar } from "../features/repertoire/RepertoireTitlebar";
-import { flushChapterDraft } from "../features/repertoire/useChapterAutosave";
+import {
+  flushChapterDraft,
+  unsavedDecisionMessage,
+  unsavedStudyCause
+} from "../features/repertoire/useChapterAutosave";
 import { useRepertoirePracticeStore } from "../stores/repertoire-practice-store";
 import { useRepertoireWorkspaceStore } from "../stores/repertoire-workspace-store";
 import { useAddToRepertoireStore } from "../stores/add-to-repertoire-store";
@@ -91,7 +92,6 @@ import {
   type RepertoireDetail
 } from "@chaturanga/shared/types/repertoire";
 import {
-  buildAnalysisSnapshot,
   buildInitialSession,
   handoffAtEnd,
   LIVE_GAME_NOTICE,
@@ -342,145 +342,44 @@ export function App() {
     useHistoryStore.getState().commitCurrent(historyEntry(appView));
   }
 
-  /** A Back / Forward still loading its screen: further presses wait for it (the index moves once it's shown). */
-  const historyBusy = useRef(false);
-
-  /** Back (-1) / Forward (+1). A Lichess game being played keeps the board. */
-  async function goHistory(delta: -1 | 1) {
-    if (historyBusy.current) return;
-    const history = useHistoryStore.getState();
-    const targetIndex = history.index + delta;
-    const target = history.entries[targetIndex];
-    if (!target) return;
-    const live = useLichessStore.getState().live;
-    if (live && !live.over && replacesLiveBoard(target, live.id)) {
-      showGame(sideTab, "none");
-      currentGame().setMatchFeedback(LIVE_GAME_NOTICE);
-      return;
-    }
-    commitCurrent();
-    historyBusy.current = true;
-    try {
-      const outcome = await restoreEntry(target);
-      // Only once the screen is shown: the index always names what's on screen.
-      if (outcome === "shown") useHistoryStore.getState().moveTo(targetIndex);
-      // A game deleted since: forget its entry (the next press goes past it).
-      else if (outcome === "gone") useHistoryStore.getState().removeAt(targetIndex);
-    } finally {
-      historyBusy.current = false;
-    }
-  }
-
-  /** Shows a history entry: "shown", "gone" (its game was deleted) or "dropped" (a newer navigation won). */
-  async function restoreEntry(entry: HistoryEntry): Promise<"shown" | "gone" | "dropped"> {
-    switch (entry.view) {
-      case "home":
-        showView("home", "none");
-        return "shown";
-      case "settings":
-        viewedSettingsSection.current = entry.section as SettingsSectionId | null;
-        setSettingsSection(entry.section as SettingsSectionId | null);
-        showView("settings", "none");
-        return "shown";
-      case "play":
-        if (entry.opponent) useLichessStore.getState().setPlayOpponent(entry.opponent);
-        openPlayPage("none");
-        return "shown";
-      case "puzzles":
-        openPuzzlesPage("none");
-        return "shown";
-      case "databases":
-        openDatabasesPage("none");
-        return "shown";
-      case "game": {
-        const outcome = await restoreBoard(entry.board);
-        if (outcome === "restored") showGame(entry.board.tab, "none");
-        return outcome === "restored" || outcome === "shown" ? "shown" : outcome;
-      }
-      case "game-review": {
-        // The review running for this game keeps going (left for a repertoire screen, say).
-        const outcome = await restoreBoard(entry.board, { keepReview: true });
-        if (outcome !== "restored") return outcome === "shown" ? "shown" : outcome;
-        const request = latestNavigation.current;
-        // The review may not be loaded (the board was replaced while away): bring the saved one back.
-        if (entry.board.gameId && !useReviewStore.getState().review) {
-          const saved = await window.chaturanga?.games.get(entry.board.gameId).catch(() => null);
-          if (request !== latestNavigation.current) return "dropped";
-          if (saved?.review) useReviewStore.getState().loadReview(savedReview(saved), saved.reviews ?? []);
-        }
-        currentGame().setMode("freeplay");
-        setReviewTab(entry.tab as ReviewTab);
-        setOpeningSide(entry.compareColor ? { board: currentGame().board, color: entry.compareColor } : null);
-        const id = entry.board.gameId ?? "current";
-        latestNavigation.current += 1;
-        setAppView("game-review", () => navigate(`/games/${id}/review`, { replace: true }));
-        return "shown";
-      }
-      case "repertoire-hub":
-        openRepertoireHub("none");
-        return "shown";
-      case "repertoire-study":
-        // A chapter deleted since falls back to the hub from the page (with a notice).
-        return (await openRepertoireStudy(entry, "none")) ? "shown" : "dropped";
-      case "repertoire-practice":
-        // A session that can't resume offers a new one on the page; nothing is graded on restore.
-        return (await openRepertoirePractice(entry.repertoireId, { sessionId: entry.sessionId }, "none"))
-          ? "shown"
-          : "dropped";
-    }
-  }
-
   /**
-   * Puts a history entry's board back: "restored" (the caller shows it), "shown" (already on
-   * screen: the live Lichess game, or a restarted puzzle), "gone" (the game was deleted) or
-   * "dropped" (a newer navigation won). `keepReview`: a running review of the same game isn't cancelled.
+   * Back / Forward (navigation-coordinator.ts) through these commands; none records history (the
+   * index moves once the screen is shown). `historyBusy` while a restore is still loading.
    */
-  async function restoreBoard(
-    snapshot: BoardSnapshot,
-    { keepReview = false }: { keepReview?: boolean } = {}
-  ): Promise<"restored" | "shown" | "gone" | "dropped"> {
-    const request = ++latestNavigation.current;
-    const plan = planBoardRestore(snapshot);
-    if (plan.kind === "live") {
-      showGame(snapshot.tab, "none");
-      return "shown";
-    }
-    if (plan.kind === "puzzle") {
-      // Its set again, still excluding every puzzle the set has shown (since this entry too).
-      startPuzzle(plan.sample, plan.set ?? undefined, "none");
-      return "shown";
-    }
-    // A game played on from a puzzle comes back with its set (and so its Next puzzle).
-    const continuedSet = continuedPuzzleSet(snapshot);
-    if (plan.kind === "saved") {
-      const saved = await window.chaturanga?.games.get(plan.gameId).catch(() => null);
-      if (request !== latestNavigation.current) return "dropped";
-      if (!saved) {
-        currentGame().setMatchFeedback("That game was deleted.");
-        return "gone";
-      }
-      stopEngineWork();
-      clearPuzzleSession();
-      openSavedGame(saved);
-    } else if (plan.kind === "session") {
-      endBoardActivity();
-      currentGame().loadGame(plan.session);
-      if (snapshot.held) holdUntilChanged();
-    } else {
-      stopEngineWork({ stopSearch: snapshot.mode !== "analysis", keepReview });
-      // The same game: one played on from a puzzle keeps its set (Next puzzle).
-      if (!continuedSet) puzzleSession.release(currentGame().board);
-    }
-    if (continuedSet) puzzleSession.resumeOnBoard(continuedSet, currentGame().board);
-    currentGame().restoreView(snapshot);
-    if (snapshot.mode === "analysis") {
-      if (defaultEngineId && !useAnalysisStore.getState().activeEngineId) useAnalysisStore.getState().setActiveEngine(defaultEngineId);
-      // The search was stopped while away; the position may be the same, so ask for it again.
-      useAnalysisStore.getState().restartSearch();
-    }
-    setFocusMode(false);
-    return "restored";
-  }
+  const { go: goHistory, busy: historyBusy } = useHistoryRestore({
+    navigation: latestNavigation,
+    commitCurrent: () => commitCurrent(),
+    showLiveGame: () => showGame(sideTab, "none"),
+    showHome: () => showView("home", "none"),
+    showSettings: (section) => {
+      viewedSettingsSection.current = section as SettingsSectionId | null;
+      setSettingsSection(section as SettingsSectionId | null);
+      showView("settings", "none");
+    },
+    openPlay: () => openPlayPage("none"),
+    openPuzzles: () => openPuzzlesPage("none"),
+    openDatabases: () => openDatabasesPage("none"),
+    openRepertoireHub: () => openRepertoireHub("none"),
+    openRepertoireStudy: (entry) => openRepertoireStudy(entry, "none"),
+    openRepertoirePractice: (repertoireId, sessionId) => openRepertoirePractice(repertoireId, { sessionId }, "none"),
+    showGame: (tab) => showGame(tab, "none"),
+    showGameReview: (entry) => {
+      setReviewTab(entry.tab as ReviewTab);
+      setOpeningSide(entry.compareColor ? { board: currentGame().board, color: entry.compareColor } : null);
+      const id = entry.board.gameId ?? "current";
+      latestNavigation.current += 1;
+      setAppView("game-review", () => navigate(`/games/${id}/review`, { replace: true }));
+    },
+    startPuzzle: ({ sample, set }) => startPuzzle(sample, set ?? undefined, "none"),
+    getSavedGame: (id) => window.chaturanga?.games.get(id) ?? Promise.reject(new Error("Saved games need the desktop app.")),
+    stopEngineWork: (options) => stopEngineWork(options),
+    clearPuzzleSession: () => clearPuzzleSession(),
+    releasePuzzleSession: () => puzzleSession.release(currentGame().board),
+    resumePuzzleSet: (set) => puzzleSession.resumeOnBoard(set, currentGame().board),
+    endBoardActivity: () => endBoardActivity(),
+    defaultEngineId,
+    exitFocus: () => setFocusMode(false)
+  });
 
   const clearPuzzleSession = puzzleSession.clear;
 
@@ -659,7 +558,7 @@ export function App() {
     if (defaultEngineId && !useAnalysisStore.getState().activeEngineId) {
       useAnalysisStore.getState().setActiveEngine(defaultEngineId);
     }
-    useAnalysisStore.getState().restartSearch();
+    useAnalysisStore.getState().restartBoardSearch();
     record("push", historyEntry("game"));
   }
 
@@ -771,7 +670,11 @@ export function App() {
   /** Shows a repertoire screen at `path`; the route change is part of the same view transition. */
   function showRepertoireView(view: AppView, path: string) {
     // Live analysis stops; a review of the game behind keeps running (Back to it shows its progress).
-    if (useGameStore.getState().mode !== "engine") stopEngineWork({ keepReview: true });
+    // Study's engine panel stops its own search (closed, Study left, another chapter): while it is
+    // open the engine already searches the study, not the board, and another visit to the same
+    // chapter (Back, a transposition) keeps it running.
+    const studyEngineOpen = useAnalysisStore.getState().target !== null;
+    if (useGameStore.getState().mode !== "engine" && !studyEngineOpen) stopEngineWork({ keepReview: true });
     if (!boardViews.has(view) || !repertoireViews.has(appView)) setFocusMode(false);
     setAppView(view, () => navigate(path, { replace: true }));
   }
@@ -794,14 +697,24 @@ export function App() {
     if (history === "push") commitCurrent();
     const request = ++latestNavigation.current;
     const draft = useRepertoireWorkspaceStore.getState();
-    if (draft.chapterId && draft.chapterId !== target.chapterId && (draft.dirty || draft.saveState.status !== "idle")) {
-      const saved = await flushChapterDraft(queryClient);
-      if (request !== latestNavigation.current) return false;
-      if (!saved) {
-        useAppNoticeStore.getState().show("This chapter couldn't be saved; retry the save before opening another one.");
-        return false;
-      }
-    }
+    // Only the study page being left can hold this back with its repertoire's unsaved decision
+    // changes (the one opened lists its own on its chapter). A study left earlier (for the hub,
+    // say) keeps its changes, with Retry and Discard, on its own page.
+    const studying = studyOnScreen();
+    const leaving = studying && studying !== target.repertoireId ? studying : null;
+    const leftSaved = await saveStudyDraftFirst({
+      request,
+      navigation: latestNavigation,
+      flush: () => flushChapterDraft(queryClient, leaving ? [leaving] : []),
+      failure: () =>
+        studyFailure(
+          leaving,
+          "the chapter",
+          "This chapter couldn't be saved; retry the save before opening another one."
+        ),
+      keepChapterId: target.chapterId
+    });
+    if (!leftSaved) return false;
     // Restoring the chapter already open: put its node (no node is the root) and orientation
     // back directly.
     if (draft.repertoireId === target.repertoireId && draft.chapterId === target.chapterId) {
@@ -845,15 +758,22 @@ export function App() {
   ): Promise<boolean> {
     if (history === "push") commitCurrent();
     const request = ++latestNavigation.current;
-    const draft = useRepertoireWorkspaceStore.getState();
-    if (draft.chapterId && (draft.dirty || draft.saveState.status !== "idle")) {
-      const saved = await flushChapterDraft(queryClient);
-      if (request !== latestNavigation.current) return false;
-      if (!saved) {
-        useAppNoticeStore.getState().show("This chapter couldn't be saved; reopen it and retry the save before practising.");
-        return false;
-      }
-    }
+    // Held back by the study page being left and by this repertoire's unsaved changes (practice
+    // shows its prompts and hints, and pauses), not by another repertoire's.
+    const studying = studyOnScreen();
+    const blockOn = studying && studying !== repertoireId ? [studying, repertoireId] : [repertoireId];
+    const leftSaved = await saveStudyDraftFirst({
+      request,
+      navigation: latestNavigation,
+      flush: () => flushChapterDraft(queryClient, blockOn),
+      failure: () =>
+        studyFailure(
+          blockOn.find((id) => unsavedStudyCause(id) !== null) ?? null,
+          "practice",
+          "This chapter couldn't be saved; reopen it and retry the save before practising."
+        )
+    });
+    if (!leftSaved) return false;
     setRepertoireExtras((extras) => ({ ...extras, preset }));
     showRepertoireView("repertoire-practice", practicePath(repertoireId, sessionId));
     record(history, { view: "repertoire-practice", repertoireId, sessionId });
@@ -875,7 +795,7 @@ export function App() {
     openRepertoirePractice(repertoireScreen.repertoireId, { preset: presetForSetup(repertoireScreen.preset) });
   }
 
-  // ---- Repertoire handoffs (Study → Analyze / Play from here) and the Lichess guard -----------
+  // ---- Repertoire handoffs (Study → Play from here) and the Lichess guard ----------------------
 
   /**
    * Runs a repertoire command unless a Lichess game being played would lose the screen to it; then
@@ -920,12 +840,23 @@ export function App() {
     action: string,
     retry: () => void
   ): Promise<boolean> {
-    const saved = await flushChapterDraft(queryClient);
+    // Only the chapter's own repertoire holds the handoff back: another repertoire's unsaved
+    // prompt or hint is written too, and waits on its own chapter when that fails.
+    const repertoireId = useRepertoireWorkspaceStore.getState().repertoireId;
+    const saved = await flushChapterDraft(queryClient, repertoireId ? [repertoireId] : []);
     if (request !== latestNavigation.current) return false;
     if (saved) return true;
+    const cause = unsavedStudyCause(repertoireId);
+    // Refused as stale: Retry would be refused again; the chapter's notice asks Keep mine or Discard.
+    if (cause === "stale-decision") {
+      useAppNoticeStore.getState().show(unsavedDecisionMessage(true, action));
+      return false;
+    }
     useAppNoticeStore.getState().show(
-      `This chapter couldn't be saved, so ${action} didn't open. Your edits are kept: retry, ` +
-        "or dismiss to stay and keep editing.",
+      cause === "decision"
+        ? unsavedDecisionMessage(false, action)
+        : `This chapter couldn't be saved, so ${action} didn't open. Your edits are kept: retry, ` +
+            "or dismiss to stay and keep editing.",
       {
         action: {
           label: "Retry",
@@ -940,12 +871,29 @@ export function App() {
   }
 
   /**
+   * A navigation's notice when the study draft it leaves stayed unsaved: the chapter's own
+   * (`chapterMessage`), or the repertoire's prompt, hint or other decision change.
+   */
+  /** The repertoire whose study page is on screen (null on any other screen). */
+  function studyOnScreen(): string | null {
+    return repertoireScreen?.view === "repertoire-study" ? repertoireScreen.repertoireId : null;
+  }
+
+  function studyFailure(repertoireId: string | null, action: string, chapterMessage: string) {
+    const cause = unsavedStudyCause(repertoireId);
+    if (cause === "decision" || cause === "stale-decision") {
+      return unsavedDecisionMessage(cause === "stale-decision", action);
+    }
+    return chapterMessage;
+  }
+
+  /**
    * The study's handoff origin once its draft is saved, or null with the reason shown: a Lichess
    * game that started meanwhile keeps the board (read again now, with its notice), the chapter is
    * no longer loaded, or its position is over.
    */
   function handoffOriginAfterFlush(
-    command: "analyze" | "play-from-here",
+    command: RepertoireCommand,
     action: string
   ): HandoffOrigin | null {
     if (repertoireCommandBlocked(useLichessStore.getState(), command)) {
@@ -962,34 +910,6 @@ export function App() {
       return null;
     }
     return origin;
-  }
-
-  /**
-   * Study → Analyze: the chapter's route to the selected node as a new, unsaved analysis game
-   * (saved to the library only once changed). Back returns to the chapter at the same node and tab.
-   */
-  async function analyzeFromStudy() {
-    if (!desktopApiAvailable) return;
-    const request = ++latestNavigation.current;
-    if (!(await flushStudyForHandoff(request, "Analyze", () => on.analyzeFromStudy()))) return;
-    const origin = handoffOriginAfterFlush("analyze", "Analyze");
-    if (!origin) return;
-    commitCurrent();
-    endBoardActivity();
-    currentGame().loadGame(buildAnalysisSnapshot(origin));
-    holdUntilChanged();
-    currentGame().setEngineSide(null);
-    currentGame().clearEngineMatchExtras();
-    currentGame().setMode("analysis");
-    if (defaultEngineId && !useAnalysisStore.getState().activeEngineId) {
-      useAnalysisStore.getState().setActiveEngine(defaultEngineId);
-    }
-    useAnalysisStore.getState().restartSearch();
-    setFocusMode(false);
-    showGame("engine");
-    currentGame().setMatchFeedback(
-      "Analysing a copy of the chapter line. Back returns to the chapter."
-    );
   }
 
   /**
@@ -1322,9 +1242,6 @@ export function App() {
     repertoirePracticeStarted: useEventCallback(practiceSessionStarted),
     repertoirePracticeSetup: useEventCallback(() =>
       unlessRepertoireBlocked("open-practice", practiceSetup)
-    ),
-    analyzeFromStudy: useEventCallback(() =>
-      unlessRepertoireBlocked("analyze", () => void analyzeFromStudy())
     ),
     playFromStudy: useEventCallback(() =>
       unlessRepertoireBlocked("play-from-here", () => void playFromStudy())

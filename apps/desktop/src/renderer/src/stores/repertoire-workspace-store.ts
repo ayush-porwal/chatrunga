@@ -5,6 +5,7 @@ import { parseUci } from "chessops/util";
 import { addMoveNode } from "@chaturanga/shared/chess/pgn";
 import { positionFromFen } from "@chaturanga/shared/chess/position";
 import { nodeMetaOf } from "@chaturanga/shared/chess/repertoire-index";
+import { trainableChapter, type AcceptedAt } from "@chaturanga/shared/chess/repertoire-training";
 import { standardCastlingUci } from "@chaturanga/shared/chess/review";
 import type { BoardArrow, BoardHighlight, Color, MoveNode } from "@chaturanga/shared/types/chess";
 import {
@@ -17,9 +18,15 @@ import {
   type RepertoireNodeMeta
 } from "@chaturanga/shared/types/repertoire";
 import {
+  decisionDraftKey,
   defaultEdgeForNewMove,
+  nextDecisionDraft,
   shouldAdoptSaveResult,
-  type AutosaveSaveState
+  type AutosaveSaveState,
+  type DecisionDraftChange,
+  type DecisionDraftEvent,
+  type DecisionTextDraft,
+  type DecisionTextField
 } from "../features/repertoire/repertoire-model";
 
 /**
@@ -30,9 +37,13 @@ import {
  * `generation` counts edits. A save remembers the generation it sent, and its result only replaces
  * the draft when no edit happened meanwhile (`shouldAdoptSaveResult`); otherwise the newer draft
  * stays dirty and saves next against the revision the save returned.
+ *
+ * `decisionDrafts` hold decision changes made at a position (practice prompts and hints,
+ * wrong-move feedback, pausing) until their write is confirmed (see decision-text-drafts.ts). They belong to no chapter: opening another chapter or
+ * resetting the draft keeps them, so a failed write is never lost by moving on.
  */
 
-/** Drafts kept for Undo (deleting a line, and other structural edits). */
+/** Structural edits kept for Undo (and as many undone ones for Redo). */
 export const UNDO_LIMIT = 20;
 
 export type RepertoireWorkspaceState = {
@@ -48,9 +59,22 @@ export type RepertoireWorkspaceState = {
   saveState: AutosaveSaveState;
   /** The repertoire revision the draft is based on (`expectedRevision` of the next write). */
   baseRevision: number;
+  /**
+   * The chapter before each structural edit (adding a move, deleting a line, promoting a
+   * variation, edge and training-mark changes, "Include in practice"), newest last. Comments,
+   * shapes and chapter fields aren't undone here (their text fields keep native undo); undoing
+   * restores the tree's shape and metadata and keeps the current comments and shapes of the moves
+   * it keeps. The one exception is "Include in practice": its step also puts back the chapter's
+   * practice fields (on for practice, kind) it changed. Both stacks reset when a chapter loads
+   * (another chapter, or a reload after a conflict).
+   */
   undoStack: RepertoireChapter[];
+  /** The chapter before each undo, newest last; a new structural edit clears it. */
+  redoStack: RepertoireChapter[];
   /** Decisions written this session (until the API can read them back). */
   decisions: Record<string, RepertoireDecision>;
+  /** Decision changes (prompt, hint, feedback, pause) not yet saved, by decisionDraftKey. */
+  decisionDrafts: Record<string, DecisionTextDraft>;
 };
 
 type Actions = {
@@ -64,6 +88,13 @@ type Actions = {
   /** Plays a move from the selected node: selects an existing child or adds a new one. */
   playMove: (uci: string, san: string, fenAfter: string) => { nodeId: string; created: boolean };
   /**
+   * Plays `ucis` from `fromNodeId` as one undo step (an engine line picked in study), each move as
+   * a move played on the board would be: one the chapter has is followed, a new one is added with
+   * a board move's edge. Selects the last move. Null, changing nothing, when the node is unknown,
+   * the line is empty or a move is illegal where it's played.
+   */
+  playLine: (fromNodeId: string, ucis: readonly string[]) => { nodeId: string; created: boolean } | null;
+  /**
    * Stages a move from another screen (a game's opening comparison) under `parentNodeId`: an
    * existing child is only selected; a new one is added with `edge` and selected, unsaved until
    * autosave. A reference stage selects the parent instead, so Choices lists the move with Accept.
@@ -75,6 +106,13 @@ type Actions = {
     edge: RepertoireNodeMeta["edge"]
   ) => { nodeId: string; created: boolean } | null;
   setNodeMeta: (nodeId: string, patch: Partial<RepertoireNodeMeta>) => void;
+  /**
+   * "Include in practice": switches the chapter on as an opening chapter and accepts the first
+   * own move wherever none is accepted (one the repertoire already accepts there, per
+   * `acceptedAt`), covering reference replies (`trainableChapter`). One undo step puts back all
+   * of it: the moves' marks and whether the chapter was on for practice and of which kind.
+   */
+  makeChapterTrainable: (acceptedAt?: AcceptedAt) => void;
   setComment: (nodeId: string, text: string) => void;
   setShapes: (nodeId: string, arrows: BoardArrow[], highlights: BoardHighlight[]) => void;
   setChapterFields: (
@@ -82,13 +120,22 @@ type Actions = {
   ) => void;
   deleteLine: (nodeId: string) => boolean;
   undo: () => boolean;
-  promoteVariation: (nodeId: string) => void;
+  redo: () => boolean;
+  /**
+   * Moves the variation holding `nodeId` one level up: the nearest move on its path that isn't
+   * its parent's first continuation becomes the first (the chapter's authored main line there,
+   * as PGN export writes it). False when the path is the main line already.
+   */
+  promoteVariation: (nodeId: string) => boolean;
   flip: () => void;
   setOrientation: (orientation: Color) => void;
   markSaving: () => void;
   saveSucceeded: (result: ChapterSaveResult, generationAtSave: number) => void;
   saveFailed: (message: string, stale: boolean) => void;
-  /** Clears a save error so autosave resumes (after Retry / Keep editing). */
+  /**
+   * Clears a save error so autosave resumes (after Retry / Keep editing). A prompt or hint write
+   * that failed (not as stale) becomes pending again, so the next flush retries it.
+   */
   clearSaveError: () => void;
   /**
    * Another write (decision, chapter list) moved the repertoire to `revision`; `chapterRevision`
@@ -96,6 +143,33 @@ type Actions = {
    */
   adoptRevision: (revision: number, chapterRevision?: number) => void;
   rememberDecision: (decision: RepertoireDecision) => void;
+  /** The prompt or hint field as typed at a position (kept until saved or discarded). */
+  setDecisionText: (
+    repertoireId: string,
+    positionKey: string,
+    field: DecisionTextField,
+    text: string
+  ) => void;
+  /** The feedback typed for one wrong move at a position (blank: remove it once saved). */
+  setWrongMoveFeedback: (
+    repertoireId: string,
+    positionKey: string,
+    uci: string,
+    text: string
+  ) => void;
+  /** Pausing or resuming the decision at a position (kept until saved or discarded). */
+  setDecisionPaused: (repertoireId: string, positionKey: string, paused: boolean) => void;
+  discardDecisionText: (key: string) => void;
+  /** Committed while its write runs: the draft is written again once that write settles. */
+  requestDecisionTextSaveAgain: (key: string) => void;
+  /**
+   * Moves the draft at `key` through `event` (nextDecisionDraft, the one state machine of a
+   * draft). Returns whether it must be written again now.
+   */
+  updateDecisionDraft: (
+    key: string,
+    event: Exclude<DecisionDraftEvent, { type: "edit" }>
+  ) => boolean;
 };
 
 const initialState: RepertoireWorkspaceState = {
@@ -110,7 +184,9 @@ const initialState: RepertoireWorkspaceState = {
   saveState: { status: "idle" },
   baseRevision: 0,
   undoStack: [],
-  decisions: {}
+  redoStack: [],
+  decisions: {},
+  decisionDrafts: {}
 };
 
 /** Removes `nodeId` and its subtree. Returns the tree, the removed ids and the parent id. */
@@ -148,6 +224,57 @@ export function promoteChild(tree: readonly MoveNode[], nodeId: string): MoveNod
       ? { ...item, children: [nodeId, ...item.children.filter((id) => id !== nodeId)] }
       : item
   );
+}
+
+/**
+ * The move `promoteVariation` moves for `nodeId`: the node itself or its nearest ancestor that
+ * isn't its parent's first child. Null on the main line (or for the root).
+ */
+export function promotionTarget(tree: readonly MoveNode[], nodeId: string): string | null {
+  const byId = new Map(tree.map((node) => [node.id, node]));
+  let node = byId.get(nodeId);
+  while (node?.parentId) {
+    const parent = byId.get(node.parentId);
+    if (parent && parent.children[0] !== node.id) return node.id;
+    node = parent;
+  }
+  return null;
+}
+
+/**
+ * `snapshot`'s tree shape and metadata with `current`'s chapter fields, and the current comments,
+ * shapes and NAGs of the moves both have: what Undo and Redo restore.
+ */
+export function withStructureOf(
+  snapshot: RepertoireChapter,
+  current: RepertoireChapter
+): RepertoireChapter {
+  const latest = new Map(current.tree.map((node) => [node.id, node]));
+  return {
+    ...current,
+    nodeMeta: snapshot.nodeMeta,
+    tree: snapshot.tree.map((node) => {
+      const now = latest.get(node.id);
+      return now
+        ? {
+            ...node,
+            comment: now.comment,
+            nags: now.nags,
+            arrows: now.arrows,
+            highlights: now.highlights
+          }
+        : node;
+    })
+  };
+}
+
+/** `nodeId` when `tree` has it, else its nearest ancestor (in `from`) that `tree` has. */
+function nearestKept(tree: readonly MoveNode[], from: readonly MoveNode[], nodeId: string): string {
+  const kept = new Set(tree.map((node) => node.id));
+  const byId = new Map(from.map((node) => [node.id, node]));
+  let id: string | null = nodeId;
+  while (id && !kept.has(id)) id = byId.get(id)?.parentId ?? null;
+  return id ?? REPERTOIRE_ROOT_NODE_ID;
 }
 
 /**
@@ -197,20 +324,119 @@ function withUndo(
 
 export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Actions>(
   (set, get) => {
-    /** Applies an edit to the draft (bumps the generation, marks it dirty). */
+    /** Set while a compound edit runs: it takes one undo step, recorded before it started. */
+    let grouping = false;
+    /**
+     * Undo / Redo entries that also restore the chapter's practice fields (enabled, kind): the
+     * chapter before "Include in practice", and the ones its Undo and Redo leave on the other stack.
+     */
+    const practiceFieldSteps = new WeakSet<RepertoireChapter>();
+
+    /**
+     * Applies an edit to the draft (bumps the generation, marks it dirty). An undoable one keeps
+     * the chapter before it for Undo and clears Redo. An edit that leaves the chapter as it was
+     * (Prefer on a move already included, the same comment again) is none: no undo step, nothing
+     * to save, and Redo stays (only its selection applies).
+     */
     const edit = (
       change: (chapter: RepertoireChapter) => RepertoireChapter,
       options: { undoable?: boolean; selectedNodeId?: string } = {}
     ) => {
-      const { chapter, generation, undoStack } = get();
+      const { chapter, generation, undoStack, redoStack } = get();
       if (!chapter) return;
+      const next = change(chapter);
+      if (sameValue(chapter, next)) {
+        if (options.selectedNodeId) set({ selectedNodeId: options.selectedNodeId });
+        return;
+      }
+      const recorded = options.undoable && !grouping;
       set({
-        chapter: change(chapter),
+        chapter: next,
         dirty: true,
         generation: generation + 1,
-        undoStack: options.undoable ? withUndo(undoStack, chapter) : undoStack,
+        undoStack: recorded ? withUndo(undoStack, chapter) : undoStack,
+        redoStack: recorded ? [] : redoStack,
         ...(options.selectedNodeId ? { selectedNodeId: options.selectedNodeId } : {})
       });
+    };
+
+    /** Runs `edits` as one undo step (when they change the draft at all). */
+    const group = <T>(edits: () => T): T => {
+      const { chapter, undoStack } = get();
+      grouping = true;
+      try {
+        return edits();
+      } finally {
+        grouping = false;
+        if (chapter && get().chapter !== chapter) {
+          set({ undoStack: withUndo(undoStack, chapter), redoStack: [] });
+        }
+      }
+    };
+
+    /** Undo / Redo: moves the draft to the top of `from`, keeping the current one on `to`. */
+    const step = (from: "undoStack" | "redoStack", to: "undoStack" | "redoStack") => {
+      const state = get();
+      const target = state[from][state[from].length - 1];
+      if (!target || !state.chapter) return false;
+      const structure = withStructureOf(target, state.chapter);
+      const fields = practiceFieldSteps.has(target);
+      const chapter = fields
+        ? { ...structure, kind: target.kind, enabled: target.enabled }
+        : structure;
+      if (fields) practiceFieldSteps.add(state.chapter);
+      set({
+        chapter,
+        [from]: state[from].slice(0, -1),
+        [to]: withUndo(state[to], state.chapter),
+        dirty: true,
+        generation: state.generation + 1,
+        selectedNodeId: nearestKept(chapter.tree, state.chapter.tree, state.selectedNodeId)
+      });
+      return true;
+    };
+
+    /** Moves one decision draft through `event` (see nextDecisionDraft). */
+    const transitionDraft = (key: string, event: DecisionDraftEvent): boolean => {
+      const { draft, writeAgain } = nextDecisionDraft(get().decisionDrafts[key], event);
+      set((state) => {
+        const decisionDrafts = { ...state.decisionDrafts };
+        if (draft) decisionDrafts[key] = draft;
+        else delete decisionDrafts[key];
+        return { decisionDrafts };
+      });
+      return writeAgain;
+    };
+
+    /** Creates or edits a decision draft (an edit bumps its generation; its status stays). */
+    const putDecisionDraft = (change: DecisionDraftChange) =>
+      transitionDraft(
+        decisionDraftKey(change.repertoireId, change.positionKey, change.field, change.uci),
+        { type: "edit", change }
+      );
+
+    /** stageMove's edits, once the move is known to be legal at `parentId`. */
+    const stageAt = (
+      parentId: string,
+      uci: string,
+      { san, fenAfter }: { san: string; fenAfter: string },
+      edge: RepertoireNodeMeta["edge"]
+    ) => {
+      set({ selectedNodeId: parentId });
+      const result = get().playMove(uci, san, fenAfter);
+      const meta = get().chapter?.nodeMeta[result.nodeId];
+      if (result.created) {
+        if (meta?.edge !== edge) get().setNodeMeta(result.nodeId, { edge });
+      } else if (edge !== "reference") {
+        // An existing move staged as covered/included takes that edge and is re-enabled; a
+        // reference stage never demotes a move the chapter already has (it's only selected).
+        const current = nodeMetaOf(get().chapter!.nodeMeta, result.nodeId);
+        if (current.edge !== edge || current.disabled) {
+          get().setNodeMeta(result.nodeId, { edge, disabled: false });
+        }
+      }
+      if (edge === "reference") set({ selectedNodeId: parentId });
+      return result;
     };
 
     const patchNode = (nodeId: string, patch: Partial<MoveNode>) =>
@@ -230,6 +456,7 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
         set({
           ...initialState,
           decisions: get().repertoireId === detail.id ? get().decisions : {},
+          decisionDrafts: get().decisionDrafts,
           repertoireId: detail.id,
           chapterId: chapter.id,
           color: detail.color,
@@ -240,7 +467,7 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
         });
       },
 
-      reset: () => set(initialState),
+      reset: () => set({ ...initialState, decisionDrafts: get().decisionDrafts }),
 
       selectNode: (nodeId) => {
         const { chapter } = get();
@@ -269,9 +496,34 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
               [added.node.id]: { edge: defaultEdgeForNewMove(parent.fenAfter, color) }
             }
           }),
-          { selectedNodeId: added.node.id }
+          { undoable: true, selectedNodeId: added.node.id }
         );
         return { nodeId: added.node.id, created: true };
+      },
+
+      playLine: (fromNodeId, ucis) => {
+        const start = get().chapter?.tree.find((node) => node.id === fromNodeId);
+        if (!start || !ucis.length) return null;
+        // The whole line is checked before anything is added: an illegal move adds none of it.
+        const moves: Array<{ uci: string; san: string; fenAfter: string }> = [];
+        let fen = start.fenAfter;
+        for (const uci of ucis) {
+          const played = playUci(fen, uci);
+          if (!played) return null;
+          moves.push({ uci, ...played });
+          fen = played.fenAfter;
+        }
+        return group(() => {
+          set({ selectedNodeId: start.id });
+          let created = false;
+          let nodeId = start.id;
+          for (const move of moves) {
+            const result = get().playMove(move.uci, move.san, move.fenAfter);
+            created ||= result.created;
+            nodeId = result.nodeId;
+          }
+          return { nodeId, created };
+        });
       },
 
       stageMove: (parentNodeId, uci, edge) => {
@@ -279,33 +531,33 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
         if (!parent) return null;
         const played = playUci(parent.fenAfter, uci);
         if (!played) return null;
-        const { san, fenAfter } = played;
-        set({ selectedNodeId: parent.id });
-        const result = get().playMove(uci, san, fenAfter);
-        const meta = get().chapter?.nodeMeta[result.nodeId];
-        if (result.created) {
-          if (meta?.edge !== edge) get().setNodeMeta(result.nodeId, { edge });
-        } else if (edge !== "reference") {
-          // An existing move staged as covered/included takes that edge and is re-enabled; a
-          // reference stage never demotes a move the chapter already has (it's only selected).
-          const current = nodeMetaOf(get().chapter!.nodeMeta, result.nodeId);
-          if (current.edge !== edge || current.disabled) {
-            get().setNodeMeta(result.nodeId, { edge, disabled: false });
-          }
-        }
-        if (edge === "reference") set({ selectedNodeId: parent.id });
-        return result;
+        // Adding the move and setting its edge are one undo step.
+        return group(() => stageAt(parent.id, uci, played, edge));
       },
 
       setNodeMeta: (nodeId, patch) =>
-        edit((chapter) => {
-          const merged: RepertoireNodeMeta = { ...nodeMetaOf(chapter.nodeMeta, nodeId), ...patch };
-          // Unset flags are dropped so the stored metadata stays minimal.
-          for (const key of ["trainingStart", "trainingStop", "disabled"] as const) {
-            if (!merged[key]) delete merged[key];
-          }
-          return { ...chapter, nodeMeta: { ...chapter.nodeMeta, [nodeId]: merged } };
-        }),
+        edit(
+          (chapter) => {
+            const merged: RepertoireNodeMeta = {
+              ...nodeMetaOf(chapter.nodeMeta, nodeId),
+              ...patch
+            };
+            // Unset flags are dropped so the stored metadata stays minimal.
+            for (const key of ["trainingStart", "trainingStop", "disabled"] as const) {
+              if (!merged[key]) delete merged[key];
+            }
+            // What the move has already (a missing entry is an included edge): no edit.
+            if (sameValue(nodeMetaOf(chapter.nodeMeta, nodeId), merged)) return chapter;
+            return { ...chapter, nodeMeta: { ...chapter.nodeMeta, [nodeId]: merged } };
+          },
+          { undoable: true }
+        ),
+
+      makeChapterTrainable: (acceptedAt) => {
+        const before = get().chapter;
+        edit((chapter) => trainableChapter(get().color, chapter, acceptedAt), { undoable: true });
+        if (before && get().undoStack.at(-1) === before) practiceFieldSteps.add(before);
+      },
 
       setComment: (nodeId, text) => patchNode(nodeId, { comment: text.trim() ? text : null }),
 
@@ -328,26 +580,18 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
         return true;
       },
 
-      undo: () => {
-        const { undoStack, selectedNodeId, generation } = get();
-        const previous = undoStack[undoStack.length - 1];
-        if (!previous) return false;
-        set({
-          chapter: previous,
-          undoStack: undoStack.slice(0, -1),
-          dirty: true,
-          generation: generation + 1,
-          selectedNodeId: previous.tree.some((node) => node.id === selectedNodeId)
-            ? selectedNodeId
-            : REPERTOIRE_ROOT_NODE_ID
+      undo: () => step("undoStack", "redoStack"),
+
+      redo: () => step("redoStack", "undoStack"),
+
+      promoteVariation: (nodeId) => {
+        const target = promotionTarget(get().chapter?.tree ?? [], nodeId);
+        if (!target) return false;
+        edit((chapter) => ({ ...chapter, tree: promoteChild(chapter.tree, target) }), {
+          undoable: true
         });
         return true;
       },
-
-      promoteVariation: (nodeId) =>
-        edit((chapter) => ({ ...chapter, tree: promoteChild(chapter.tree, nodeId) }), {
-          undoable: true
-        }),
 
       flip: () =>
         set((state) => ({ orientation: state.orientation === "white" ? "black" : "white" })),
@@ -389,7 +633,16 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
       },
 
       saveFailed: (message, stale) => set({ saveState: { status: "error", message, stale } }),
-      clearSaveError: () => set({ saveState: { status: "idle" } }),
+      clearSaveError: () =>
+        set((state) => ({
+          saveState: { status: "idle" },
+          decisionDrafts: Object.fromEntries(
+            Object.entries(state.decisionDrafts).map(([key, draft]) => [
+              key,
+              nextDecisionDraft(draft, { type: "retry" }).draft!
+            ])
+          )
+        })),
       adoptRevision: (revision, chapterRevision) =>
         set((state) => ({
           baseRevision: Math.max(state.baseRevision, revision),
@@ -403,7 +656,31 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
             : {})
         })),
       rememberDecision: (decision) =>
-        set((state) => ({ decisions: { ...state.decisions, [decision.positionKey]: decision } }))
+        set((state) => ({ decisions: { ...state.decisions, [decision.positionKey]: decision } })),
+
+      setDecisionText: (repertoireId, positionKey, field, text) =>
+        putDecisionDraft({ repertoireId, positionKey, field, text }),
+
+      setWrongMoveFeedback: (repertoireId, positionKey, uci, text) =>
+        putDecisionDraft({ repertoireId, positionKey, field: "feedback", uci, text }),
+
+      setDecisionPaused: (repertoireId, positionKey, paused) =>
+        putDecisionDraft({ repertoireId, positionKey, field: "paused", text: "", paused }),
+
+      discardDecisionText: (key) =>
+        set((state) => {
+          if (!state.decisionDrafts[key]) return {};
+          const decisionDrafts = { ...state.decisionDrafts };
+          delete decisionDrafts[key];
+          return { decisionDrafts };
+        }),
+
+      requestDecisionTextSaveAgain: (key) => {
+        if (get().decisionDrafts[key]) transitionDraft(key, { type: "commit" });
+      },
+
+      updateDecisionDraft: (key, event) =>
+        get().decisionDrafts[key] ? transitionDraft(key, event) : false
     };
   }
 );

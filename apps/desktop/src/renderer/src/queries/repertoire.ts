@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+  type QueryClient
+} from "@tanstack/react-query";
 import type { ChaturangaApi } from "@chaturanga/shared/ipc/chaturanga-api";
 import type {
   AddFromGameInput,
@@ -27,6 +33,7 @@ import type {
   SaveChapterInput,
   SaveWorkspaceInput,
   StartPracticeInput,
+  UpdateChaptersInput,
   UpdateDecisionInput,
   UpdateRepertoireMetadataInput
 } from "@chaturanga/shared/types/repertoire";
@@ -39,7 +46,7 @@ import { hashAddInput } from "../features/repertoire/add-from-game";
  * the hub list's trees: `['repertoires','list',filters]`, `['repertoires',id]`,
  * `['repertoires',id,'chapter',chapterId]`, `['repertoires','due']`,
  * `['repertoires',id,'compare',color,gameHash]`, `['repertoires',id,'add-preview',inputHash]`,
- * `['repertoires',id,'links',chapterId|'all']`.
+ * `['repertoires',id,'links',chapterId|'all']`, `['repertoires',id,'paused']`.
  *
  * The detail key is a prefix of the chapter key, so detail invalidations pass `exact: true`.
  * Everything degrades to empty/disabled in the web preview (no `window.chaturanga`).
@@ -53,6 +60,7 @@ export const repertoireKeys = {
   chapter: (id: string, chapterId: string) => ["repertoires", id, "chapter", chapterId] as const,
   decision: (id: string, positionKey: string) =>
     ["repertoires", id, "decision", positionKey] as const,
+  pausedKeys: (id: string) => ["repertoires", id, "paused"] as const,
   occurrences: (id: string, positionKey: string) =>
     ["repertoires", id, "occurrences", positionKey] as const,
   comparison: (id: string, color: string, gameHash: string) =>
@@ -125,6 +133,7 @@ export function invalidateRepertoire(queryClient: QueryClient, id: string | null
         query.queryKey[0] === "repertoires" &&
         ((query.queryKey.length === 2 && query.queryKey[1] !== "due") ||
           query.queryKey[2] === "decision" ||
+          query.queryKey[2] === "paused" ||
           query.queryKey[2] === "occurrences" ||
           query.queryKey[2] === "compare" ||
           query.queryKey[2] === "links")
@@ -133,11 +142,12 @@ export function invalidateRepertoire(queryClient: QueryClient, id: string | null
 }
 
 /**
- * Re-reads the cached decisions, occurrence lists, game comparisons and game links of a repertoire (a chapter
- * save can reconcile any of them).
+ * Re-reads the cached decisions, paused positions, occurrence lists, game comparisons and game
+ * links of a repertoire (a chapter save can reconcile any of them).
  */
 export function invalidateDecisions(queryClient: QueryClient, id: string) {
   void queryClient.invalidateQueries({ queryKey: ["repertoires", id, "decision"] });
+  void queryClient.invalidateQueries({ queryKey: repertoireKeys.pausedKeys(id) });
   void queryClient.invalidateQueries({ queryKey: ["repertoires", id, "occurrences"] });
   void queryClient.invalidateQueries({ queryKey: ["repertoires", id, "compare"] });
   void queryClient.invalidateQueries({ queryKey: repertoireKeys.links(id) });
@@ -210,6 +220,18 @@ export function useRepertoireChapterQuery(id: string | null, chapterId: string |
   });
 }
 
+/** Several chapters of a repertoire (each through its useRepertoireChapterQuery cache entry). */
+export function useRepertoireChaptersQuery(id: string | null, chapterIds: readonly string[]) {
+  return useQueries({
+    queries: chapterIds.map((chapterId) => ({
+      queryKey: repertoireKeys.chapter(id ?? "", chapterId),
+      queryFn: () => requireRepertoires().getChapter({ repertoireId: id!, chapterId }),
+      enabled: Boolean(id && repertoires()),
+      retry: false
+    }))
+  });
+}
+
 /** The stored decision (choices, prompt, hint) at a position; null when there is none yet. */
 export function useRepertoireDecisionQuery(id: string | null, positionKey: string | null) {
   return useQuery({
@@ -217,6 +239,27 @@ export function useRepertoireDecisionQuery(id: string | null, positionKey: strin
     queryFn: () =>
       requireRepertoires().getDecision({ repertoireId: id!, positionKey: positionKey! }),
     enabled: Boolean(id && positionKey && repertoires())
+  });
+}
+
+/**
+ * The moves the repertoire's other chapters practise at positions of `chapterId` (by position
+ * key), read now: "Include in practice" accepts those where it can.
+ */
+export function fetchPractisedElsewhere(
+  id: string,
+  chapterId: string,
+  positionKeys: string[]
+): Promise<Record<string, string[]>> {
+  return requireRepertoires().getPractisedElsewhere({ repertoireId: id, chapterId, positionKeys });
+}
+
+/** Position keys of the repertoire's paused decisions (a rehearsal plays them as context). */
+export function useRepertoirePausedKeysQuery(id: string | null) {
+  return useQuery({
+    queryKey: repertoireKeys.pausedKeys(id ?? ""),
+    queryFn: () => requireRepertoires().getPausedKeys(id!),
+    enabled: Boolean(id && repertoires())
   });
 }
 
@@ -320,6 +363,20 @@ export function useRemoveChapterMutation() {
       queryClient.removeQueries({
         queryKey: repertoireKeys.chapter(input.repertoireId, input.chapterId)
       });
+      adoptDetail(queryClient, repertoire);
+    }
+  });
+}
+
+/** Bulk enable/disable or kind change; the changed chapters' cached trees are re-read. */
+export function useUpdateChaptersMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateChaptersInput) => requireRepertoires().updateChapters(input),
+    retry: false,
+    onSuccess: ({ repertoire }) => {
+      invalidateChapters(queryClient, repertoire.id);
+      invalidateDecisions(queryClient, repertoire.id);
       adoptDetail(queryClient, repertoire);
     }
   });

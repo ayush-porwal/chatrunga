@@ -6,12 +6,14 @@ import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  archivePath,
   checkArchive,
   checkDist,
   findArchives,
   missingFiles,
   references,
-  relativeImports
+  relativeImports,
+  WORKERS
 } from "./check-packaged-app.mjs";
 
 const desktop = fileURLToPath(new URL("../apps/desktop/", import.meta.url));
@@ -31,6 +33,10 @@ const completeApp = () => ({
   "out/main/chunks/puzzle-scan-Q1w2E3.js":
     'import { x } from "./shared-9.js";\nexport const t = x;\n',
   "out/main/chunks/shared-9.js": "export const x = 3;\n",
+  "out/main/repertoire-import-worker.js": 'import { x } from "./chunks/shared-9.js";\n',
+  "out/main/repertoire-import-writer-worker.js": 'import { c } from "./chunks/core-Mn7.js";\n',
+  "out/main/repertoire-backup-restore-worker.js": 'import { c } from "./chunks/core-Mn7.js";\n',
+  "out/main/chunks/core-Mn7.js": "export const c = 4;\n",
   "out/preload/index.cjs": 'require("electron");\n',
   "out/renderer/index.html":
     '<!doctype html><link rel="icon" href="data:image/svg+xml,x"><script type="module" src="./assets/index-Ab1.js"></script><link rel="stylesheet" href="./assets/index-Cd2.css">',
@@ -67,6 +73,12 @@ test("finds relative imports, not packages or built-ins", () => {
   assert.deepEqual(relativeImports(source), ["./a.js", "../b.js", "./c.cjs"]);
 });
 
+test("looks files up in an archive by the OS's separator (asar can't find out/main/… on Windows)", () => {
+  assert.equal(archivePath("out/main/index.js", "\\"), "out\\main\\index.js");
+  assert.equal(archivePath("out/main/index.js", "/"), "out/main/index.js");
+  assert.equal(archivePath("package.json", "\\"), "package.json");
+});
+
 test("a complete package passes", async () => {
   const archive = await pack(completeApp());
   const result = checkArchive(archive);
@@ -77,6 +89,17 @@ test("a complete package passes", async () => {
 test("the puzzle-scan worker is required whatever the local build has", async () => {
   const archive = await pack(without(completeApp(), "out/main/puzzle-scan-worker.js"));
   assert.deepEqual(checkArchive(archive).missing, ["out/main/puzzle-scan-worker.js"]);
+});
+
+test("every worker thread main starts by path is required, with the chunks it imports", async () => {
+  for (const worker of WORKERS) {
+    assert.deepEqual(checkArchive(await pack(without(completeApp(), worker))).missing, [worker]);
+  }
+  // The import writer and the backup restore share a chunk only workers import.
+  assert.deepEqual(
+    checkArchive(await pack(without(completeApp(), "out/main/chunks/core-Mn7.js"))).missing,
+    ["out/main/chunks/core-Mn7.js"]
+  );
 });
 
 test("a chunk the worker imports must be packaged, transitively", async () => {

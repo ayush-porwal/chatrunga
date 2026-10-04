@@ -7,7 +7,8 @@ import {
   type ElectronApplication,
   type Page
 } from "@playwright/test";
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -94,6 +95,11 @@ export async function launchApp(profile: string): Promise<LaunchedApp> {
     NO_PROXY: "localhost,127.0.0.1,::1"
   });
   const switches = [`--proxy-server=${BLACKHOLE}`];
+  // macOS: Chromium keeps its cookie key in the login keychain under "Chaturanga Safe Storage". An
+  // item an installed Chaturanga created belongs to that build's signature, so a freshly packaged
+  // (ad-hoc signed) app reading it, as it does on quit, waits on a keychain password prompt and
+  // never exits. A throwaway profile needs no real key: the mock keychain never asks.
+  if (process.platform === "darwin") switches.push("--use-mock-keychain");
   // Escape hatch for Linux hosts without unprivileged user namespaces (no Chromium sandbox there).
   if (process.env.CHATURANGA_E2E_NO_SANDBOX === "1") switches.push("--no-sandbox");
   const app = await _electron.launch({
@@ -118,10 +124,18 @@ async function installMainProcessGuards(app: ElectronApplication): Promise<void>
       fetches: string[];
       workers: string[];
       workerMessages: string[];
+      workerAnswers: WorkerAnswer[];
       dialogs: string[];
       routes: { [url: string]: string };
     };
-    const state: Record = { fetches: [], workers: [], workerMessages: [], dialogs: [], routes: {} };
+    const state: Record = {
+      fetches: [],
+      workers: [],
+      workerMessages: [],
+      workerAnswers: [],
+      dialogs: [],
+      routes: {}
+    };
     (globalThis as unknown as { __e2e: Record }).__e2e = state;
 
     // Native dialogs would block the run: open/save are cancelled unless a test stubs a file;
@@ -176,14 +190,34 @@ async function installMainProcessGuards(app: ElectronApplication): Promise<void>
       constructor(filename: string | URL, options?: ConstructorParameters<typeof Original>[1]) {
         super(filename, options);
         state.workers.push(String(filename));
-        this.once("message", (message: unknown) =>
-          state.workerMessages.push(JSON.stringify(message).slice(0, 200))
-        );
+        this.once("message", (message: unknown) => {
+          state.workerMessages.push(JSON.stringify(message).slice(0, 200));
+          // A puzzle scan's answer, in full: whether it read the whole file, and the ids it kept.
+          // Other workers (a repertoire import's writer) answer without rows.
+          const answer = message as {
+            ok?: boolean;
+            result?: { rows?: string[][]; matches?: number; complete?: boolean };
+          };
+          state.workerAnswers.push({
+            ok: answer.ok === true,
+            complete: answer.result?.complete ?? null,
+            matches: answer.result?.matches ?? null,
+            ids: answer.result?.rows?.map((row) => row[0] ?? "") ?? []
+          });
+        });
       }
     };
     process.getBuiltinModule("node:module").syncBuiltinESMExports();
   });
 }
+
+/** A worker thread's answer, as recorded: a puzzle scan's is `{ ok, complete, matches, ids }`. */
+export type WorkerAnswer = {
+  ok: boolean;
+  complete: boolean | null;
+  matches: number | null;
+  ids: string[];
+};
 
 /** What the main-process doubles recorded. */
 export function mainRecord(app: ElectronApplication) {
@@ -194,6 +228,7 @@ export function mainRecord(app: ElectronApplication) {
           fetches: string[];
           workers: string[];
           workerMessages: string[];
+          workerAnswers: WorkerAnswer[];
           dialogs: string[];
         };
       }
@@ -202,6 +237,7 @@ export function mainRecord(app: ElectronApplication) {
       fetches: [...state.fetches],
       workers: [...state.workers],
       workerMessages: [...state.workerMessages],
+      workerAnswers: [...state.workerAnswers],
       dialogs: [...state.dialogs]
     };
   });
@@ -235,20 +271,21 @@ export const FAKE_ENGINE = join(desktopDir, "src/main/engine/__fixtures__/fake-l
 
 /**
  * Registers the fake engine as the default, through the preload bridge (the Settings form needs a
- * native file picker; this is set-up, not the journey). Its log of UCI commands goes to `logFile`.
+ * native file picker; this is set-up, not the journey). Its log of UCI commands goes to `logFile`;
+ * `mode` is the script's own (e.g. "lines": lines that fit the position, see the script).
  */
-export function registerFakeEngine(page: Page, logFile: string) {
+export function registerFakeEngine(page: Page, logFile: string, mode?: string) {
   return page.evaluate(
-    ([executablePath, script, log]) => {
+    ([executablePath, script, log, mode]) => {
       const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga;
       return api.engines.create({
         name: "Fake UCI",
         executablePath,
-        args: [script, log],
+        args: mode ? [script, log, mode] : [script, log],
         isDefault: true
       });
     },
-    [process.execPath, FAKE_ENGINE, logFile] as const
+    [process.execPath, FAKE_ENGINE, logFile, mode ?? ""] as const
   );
 }
 
@@ -297,6 +334,60 @@ export async function clickSquare(page: Page, square: string, flipped = false): 
   await page.mouse.click(x, y);
 }
 
+/**
+ * Quits the app and waits for it to exit, which takes well under a second. One that hasn't exited
+ * after `timeoutMs` is stuck quitting: it is killed with its child processes (on Windows that takes
+ * `taskkill /T`: killing only the main process there leaves its helpers running and holding the
+ * profile's files), and the test fails, so a quit that hangs is reported rather than waited out.
+ */
+export async function closeApp(app: ElectronApplication, timeoutMs = 10_000): Promise<void> {
+  // An app closed before (by the test) has no process to ask about.
+  let child: ReturnType<ElectronApplication["process"]> | null = null;
+  try {
+    child = app.process();
+  } catch {
+    child = null;
+  }
+  const processExited = new Promise<true>((resolve) => {
+    if (!child || child.exitCode !== null || child.signalCode !== null) resolve(true);
+    else child.once("exit", () => resolve(true));
+  });
+  // A close that fails counts as exited only once the process has: a rejection with the app
+  // still running waits for the timeout (and the kill) like any other stuck quit.
+  const closed = app.close().then(
+    () => true as const,
+    () => processExited
+  );
+  let timer: NodeJS.Timeout | undefined;
+  const timedOut = new Promise<false>(
+    (resolve) => (timer = setTimeout(() => resolve(false), timeoutMs))
+  );
+  const exited = await Promise.race([closed, timedOut]);
+  clearTimeout(timer);
+  if (exited) return;
+  const pid = app.process().pid;
+  if (process.platform === "win32" && pid !== undefined) {
+    spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
+  } else {
+    app.process().kill("SIGKILL");
+  }
+  await closed;
+  throw new Error(`The app hadn't exited ${timeoutMs / 1000} s after quitting, so it was killed.`);
+}
+
+/**
+ * Deletes a used profile. On Windows a just-closed app's helper processes (crash reporter, GPU) can
+ * hold its files for a moment, so it is retried for a few seconds; a profile still locked after
+ * that is left in the temp folder with a warning, not reported as the test failing.
+ */
+function removeProfile(dir: string): void {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  } catch (error) {
+    console.warn(`Couldn't delete the e2e profile ${dir}: ${(error as Error).message}`);
+  }
+}
+
 type Fixtures = {
   /** A fresh profile directory, deleted after the test. */
   profile: string;
@@ -307,9 +398,10 @@ type Fixtures = {
 export const test = base.extend<Fixtures>({
   // eslint-disable-next-line no-empty-pattern
   profile: async ({}, provide) => {
-    const dir = mkdtempSync(join(tmpdir(), "chaturanga-e2e-"));
+    // The long form of the path: Windows' temp folder can be a short 8.3 name (RUNNER~1).
+    const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "chaturanga-e2e-")));
     await provide(dir);
-    rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+    removeProfile(dir);
   },
   launch: async ({ profile }, provide, testInfo) => {
     const launched: LaunchedApp[] = [];
@@ -318,16 +410,20 @@ export const test = base.extend<Fixtures>({
       launched.push(app);
       return app;
     });
-    for (const [index, { app, page, pageErrors }] of launched.entries()) {
+    // Every launch is closed even when one fails to quit; the first failure is reported after.
+    let stuck: unknown;
+    for (const [index, { app, page }] of launched.entries()) {
       if (testInfo.status !== testInfo.expectedStatus && !page.isClosed()) {
         await testInfo.attach(`screen-${index}`, {
           body: await page.screenshot().catch(() => Buffer.alloc(0)),
           contentType: "image/png"
         });
       }
-      await app.close().catch(() => {});
-      expect(pageErrors, "uncaught errors in the window").toEqual([]);
+      await closeApp(app).catch((error: unknown) => (stuck ??= error));
     }
+    if (stuck) throw stuck;
+    for (const { pageErrors } of launched)
+      expect(pageErrors, "uncaught errors in the window").toEqual([]);
   }
 });
 

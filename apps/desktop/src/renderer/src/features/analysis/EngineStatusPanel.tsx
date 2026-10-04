@@ -1,4 +1,5 @@
-import { Fragment, memo, useCallback, useMemo, useState } from "react";
+import { Fragment, memo, useCallback, useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, Cpu, Lock, Play, RotateCcw, Settings, Square } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { formatScore } from "../game-review/review-score";
@@ -6,6 +7,7 @@ import { MoveLink, type GoToLine } from "../game-review/MoveLinks";
 import { ReviewBoard } from "../game-review/ReviewBoard";
 import { numberedLine, uciLineSteps, uciLineToSan } from "../game-review/review-utils";
 import { useGameStore } from "../../stores/game-store";
+import type { Color } from "@chaturanga/shared/types/chess";
 import type { EngineInfo, EngineScore } from "@chaturanga/shared/types/engine";
 import { scoreFromWhitePerspective } from "@chaturanga/shared/chess/review";
 import { useAnalysisStore } from "../../stores/analysis-store";
@@ -118,8 +120,10 @@ const EngineLineRow = memo(function EngineLineRow({
   fen,
   nodeId,
   expanded,
+  compact,
   onToggle,
   onGoToLine,
+  goToLineLabel,
   onPreview
 }: {
   index: number;
@@ -127,8 +131,11 @@ const EngineLineRow = memo(function EngineLineRow({
   fen: string;
   nodeId: string;
   expanded: boolean;
+  /** A tighter row (see EnginePanelLayout's `compact`). */
+  compact: boolean;
   onToggle: (multipv: number) => void;
   onGoToLine?: GoToLine;
+  goToLineLabel?: (san: string) => string;
   /** A move of this line is hovered or focused (its position shows below the lines). */
   onPreview?: (target: PreviewTarget) => void;
 }) {
@@ -139,8 +146,9 @@ const EngineLineRow = memo(function EngineLineRow({
   return (
     <li
       className={cn(
-        "grid grid-cols-[auto_minmax(0,1fr)_1.75rem] gap-x-2.5 py-1.5 text-[0.8125rem] leading-6",
-        expanded ? "items-start" : "min-h-9 items-center"
+        "grid grid-cols-[auto_minmax(0,1fr)_1.75rem] gap-x-2.5 text-[0.8125rem] leading-6",
+        compact ? "py-1" : "py-1.5",
+        expanded ? "items-start" : compact ? "min-h-8 items-center" : "min-h-9 items-center"
       )}
     >
       <ScorePill score={score} />
@@ -162,6 +170,7 @@ const EngineLineRow = memo(function EngineLineRow({
                       <MoveLink
                         san={step.san}
                         nativeTitle={false}
+                        label={goToLineLabel?.(step.san)}
                         className="text-current hover:text-accent"
                         onActivate={() => onGoToLine({ startNodeId: nodeId, moves: sans.slice(0, moveIndex + 1) })}
                       >
@@ -220,28 +229,78 @@ function previewFor(fen: string, lines: readonly EngineInfo[], target: PreviewTa
 }
 
 /**
- * A roomy board under the lines with the position after the move being hovered (or focused), the
- * line up to it and the line's score. Below the lines, it never covers the moves being read.
+ * A roomy board under the lines with the position after the move being hovered (or focused) and
+ * the line's score; the line itself is the one read above it, not repeated. Below the lines, it
+ * never covers the moves being read. Compact, see FloatingLinePreview.
  */
-function LinePreviewCard({ preview }: { preview: LinePreview }) {
-  const orientation = useGameStore((state) => state.orientation);
+function LinePreviewCard({
+  preview,
+  orientation,
+  compact
+}: {
+  preview: LinePreview;
+  orientation: Color;
+  compact: boolean;
+}) {
   return (
-    <div className="grid animate-fade-in gap-3 rounded-xl border border-line-subtle bg-surface-raised/40 p-3" aria-live="polite">
+    // The line is read above (its move highlighted there), so the card names it only for assistive tech.
+    <div
+      role="group"
+      aria-label={`Position after ${preview.label}`}
+      className={cn(
+        "grid animate-fade-in gap-3 rounded-xl border border-line-subtle p-3",
+        compact ? "bg-surface-raised shadow-popover" : "bg-surface-raised/40"
+      )}
+    >
       <ReviewBoard
         fen={preview.fenAfter}
         orientation={orientation}
         lastMove={[preview.uci.slice(0, 2), preview.uci.slice(2, 4)]}
-        className="aspect-square w-full max-w-md justify-self-center"
+        className={cn("aspect-square w-full justify-self-center", compact ? "max-w-48" : "max-w-md")}
       />
-      <div className="grid gap-1">
-        <p className="font-mono text-sm leading-6 text-fg">{preview.label}</p>
-        {preview.score ? (
-          <p className="text-xs text-fg-muted">
-            Line score <span className="font-mono text-fg-secondary">{preview.score}</span>
-          </p>
-        ) : null}
-      </div>
+      {preview.score ? (
+        <p className="text-xs text-fg-muted">
+          Line score <span className="font-mono text-fg-secondary">{preview.score}</span>
+        </p>
+      ) : null}
     </div>
+  );
+}
+
+/** The floating preview's width (a 192px board and its padding) and its gap from the panel. */
+const FLOATING_PREVIEW_WIDTH = 218;
+const FLOATING_PREVIEW_GAP = 20;
+
+/**
+ * The compact panel's preview (Study): beside the side panel, over the board's edge, level with
+ * the lines, like a tooltip of the hovered move. Never in the panel, where it would grow it or
+ * cover the moves and the edit buttons under it. In a portal: the panel clips its content and is
+ * a containing block for fixed boxes.
+ */
+function FloatingLinePreview({
+  anchor,
+  preview,
+  orientation
+}: {
+  /** The lines' list, which it is placed beside. */
+  anchor: HTMLElement;
+  preview: LinePreview;
+  orientation: Color;
+}) {
+  const box = anchor.getBoundingClientRect();
+  const panelLeft = anchor.closest("aside")?.getBoundingClientRect().left ?? box.left;
+  return createPortal(
+    <div
+      className="fixed z-50"
+      style={{
+        top: Math.max(8, Math.min(box.top, window.innerHeight - FLOATING_PREVIEW_WIDTH - 60)),
+        left: Math.max(8, panelLeft - FLOATING_PREVIEW_GAP - FLOATING_PREVIEW_WIDTH),
+        width: FLOATING_PREVIEW_WIDTH
+      }}
+    >
+      <LinePreviewCard preview={preview} orientation={orientation} compact />
+    </div>,
+    document.body
   );
 }
 
@@ -249,15 +308,77 @@ const goToLine: GoToLine = (target) => {
   useGameStore.getState().goToLine(target.startNodeId, target.moves);
 };
 
+/** The position an engine panel's lines belong to, and what the panel may do with them. */
+export type EnginePanelPosition = {
+  fen: string;
+  /** The node the lines start from (a picked move is a line from here). */
+  nodeId: string;
+  /** The way the line preview's board faces. */
+  orientation: Color;
+  /** Live analysis runs (not an engine game's opponent): Restart is offered. */
+  analysing: boolean;
+  /** An engine game's opponent: its one line is shown. */
+  engineGame: boolean;
+  /** A move of a line was picked: the line up to it, from `nodeId`. Unset, the moves only show. */
+  onGoToLine?: GoToLine;
+  /** What picking a move does, for assistive tech (default: going to its position). */
+  goToLineLabel?: (san: string) => string;
+};
+
+/** The game board's position for its Engine tab: picking a line's move walks the board there. */
+function useBoardEnginePosition(): EnginePanelPosition {
+  const fen = useGameStore((state) => state.currentFen);
+  const nodeId = useGameStore((state) => state.currentNodeId);
+  const orientation = useGameStore((state) => state.orientation);
+  // During a live engine match lines are read-only (the game store refuses new branches then).
+  const linesNavigable = useGameStore((state) => state.mode !== "engine" || !state.engineSide || Boolean(state.gameOutcome));
+  // Live analysis (not an engine game's opponent): the engine can be switched from the header.
+  const analysing = useGameStore((state) => state.mode === "analysis");
+  const engineGame = useGameStore((state) => state.mode === "engine");
+  return useMemo(
+    () => ({ fen, nodeId, orientation, analysing, engineGame, onGoToLine: linesNavigable ? goToLine : undefined }),
+    [fen, nodeId, orientation, analysing, engineGame, linesNavigable]
+  );
+}
+
+type EnginePanelActions = {
+  /** Starts (or resumes) live analysis: the idle state's button and the header's Start. Omit to hide it. */
+  onStartAnalysis?: () => void;
+  /** Stops live analysis (its lines stay, and Start carries on from them). */
+  onStopAnalysis?: () => void;
+  /** Offered when no engine is installed (the way to get one). */
+  onOpenSettings?: () => void;
+};
+
+/** How a screen other than the board's Engine tab fits the panel in (see StudyEnginePanel). */
+type EnginePanelLayout = {
+  /** A control at the end of the header (e.g. Close); the header then always shows. */
+  headerAction?: ReactNode;
+  /** One line above the lines saying what picking a move does. */
+  linesHint?: ReactNode;
+  /**
+   * For a panel sharing its height with other content (Study's moves): a one-row header with the
+   * depth in it, no Depth / Score / Best row (the first line's score and move say them), tighter
+   * lines, and the hovered move's preview floating beside the panel (FloatingLinePreview).
+   */
+  compact?: boolean;
+};
+
 /**
  * Workspace "Engine" tab: live search stats and principal variations (flat — the panel is the card).
  * Locked while a Lichess game is being played: outside help is against Lichess's fair-play rules.
  */
-export function EngineStatusPanel(props: {
-  onStartAnalysis?: () => void;
-  onStopAnalysis?: () => void;
-  onOpenSettings?: () => void;
-}) {
+export function EngineStatusPanel(props: EnginePanelActions) {
+  return <EngineAnalysisPanel position={useBoardEnginePosition()} {...props} />;
+}
+
+/**
+ * The engine's search and lines for `position` (the board's, or another screen's such as a
+ * repertoire study's), locked while a Lichess game is being played.
+ */
+export function EngineAnalysisPanel(
+  props: EnginePanelActions & EnginePanelLayout & { position: EnginePanelPosition }
+) {
   const onlineGame = useLichessStore(selectLiveGameInProgress);
   if (onlineGame) {
     return (
@@ -271,17 +392,14 @@ export function EngineStatusPanel(props: {
 }
 
 function EngineStatusPanelContent({
+  position,
   onStartAnalysis,
   onStopAnalysis,
-  onOpenSettings
-}: {
-  /** Starts (or resumes) live analysis: the idle state's button and the header's Start. Omit to hide it. */
-  onStartAnalysis?: () => void;
-  /** Stops live analysis (its lines stay, and Start carries on from them). */
-  onStopAnalysis?: () => void;
-  /** Offered when no engine is installed (the way to get one). */
-  onOpenSettings?: () => void;
-}) {
+  onOpenSettings,
+  headerAction,
+  linesHint,
+  compact = false
+}: EnginePanelActions & EnginePanelLayout & { position: EnginePanelPosition }) {
   // Only what this panel shows (engine info arrives throttled, ~6 updates a second at most).
   const { status, latestInfo, topLines, bestMove, error, activeEngineId } = useAnalysisStore(
     useShallow((state) => ({
@@ -293,23 +411,19 @@ function EngineStatusPanelContent({
       activeEngineId: state.activeEngineId
     }))
   );
-  const fen = useGameStore((state) => state.currentFen);
-  const nodeId = useGameStore((state) => state.currentNodeId);
-  // During a live engine match lines are read-only (the game store refuses new branches then).
-  const linesNavigable = useGameStore((state) => state.mode !== "engine" || !state.engineSide || Boolean(state.gameOutcome));
-  // Live analysis (not an engine game's opponent): the engine can be switched from the header.
-  const analysing = useGameStore((state) => state.mode === "analysis");
+  const { fen, nodeId, orientation, analysing, engineGame, onGoToLine, goToLineLabel } = position;
   const settings = useSettingsQuery();
   const analysisSettings = { ...defaultSettings, ...(settings.data ?? {}) };
   const searchLimit = analysisLimitLabel(analysisSettings);
   // An engine game asks for one line; live analysis (running or stopped) for as many as its settings say.
-  const engineGame = useGameStore((state) => state.mode === "engine");
   const reservedLines = engineGame ? 1 : analysisSettings.analysisLines;
   // The hovered line move, for the position it was hovered in (a new position drops it). The card
   // reads that line as it is now, so a line the engine updates under the pointer updates too.
   const [hovered, setHovered] = useState<{ fen: string; target: PreviewTarget } | null>(null);
   const setPreview = useCallback((target: PreviewTarget) => setHovered({ fen, target }), [fen]);
   const clearPreview = useCallback(() => setHovered(null), []);
+  /** The lines' list, which a compact panel's floating preview is placed beside. */
+  const [linesList, setLinesList] = useState<HTMLOListElement | null>(null);
   // Unfolded lines (by MultiPV number): the whole line with move numbers.
   const [expandedLines, setExpandedLines] = useState<ReadonlySet<number>>(() => new Set());
   const toggleLine = useCallback(
@@ -340,31 +454,45 @@ function EngineStatusPanelContent({
   // Nothing to analyse with: say so and point to Settings instead of an error with no way out.
   // Any usable engine can analyse (Maia too, when it's the only one installed).
   const noEngines = engines.isSuccess && !engines.data.some((engine) => engine.isAvailable);
+  const statusLabel =
+    status === "error"
+      ? "The engine stopped with an error"
+      : analysing && finished
+        ? `Finished at depth ${primary?.depth ?? "–"}`
+        : analysing
+          ? searchLimit
+            ? `Analysing to ${searchLimit}`
+            : "Analysing until stopped"
+          : status === "starting"
+            ? "Starting…"
+            : status === "thinking"
+              ? "Thinking…"
+              : "Stopped";
+  // Compact: the depth reached while searching (the Depth stat isn't shown), else the status.
+  const compactStatus =
+    analysing && !finished && status !== "error" && primary?.depth
+      ? `Depth ${primary.depth}`
+      : statusLabel;
 
   return (
-    <section className="grid content-start gap-4">
-      {hasData || !idle ? (
+    <section className={cn("grid content-start", compact ? "gap-2" : "gap-4")}>
+      {hasData || !idle || headerAction ? (
         // The tab above already says "Engine": the header names the engine, how far it searches,
         // and holds the controls (Stop / Start, and Restart from scratch).
         <div className="flex min-w-0 items-center justify-between gap-3">
-          <div className="grid min-w-0 gap-0.5">
-            <h3 className="truncate text-base font-semibold text-fg">{engineName ?? "Engine"}</h3>
-            <p className="truncate text-xs text-fg-muted">
-              {status === "error"
-                ? "The engine stopped with an error"
-                : analysing && finished
-                ? `Finished at depth ${primary?.depth ?? "–"}`
-                : analysing
-                ? searchLimit
-                  ? `Analysing to ${searchLimit}`
-                  : "Analysing until stopped"
-                : status === "starting"
-                  ? "Starting…"
-                  : status === "thinking"
-                    ? "Thinking…"
-                    : "Stopped"}
-            </p>
-          </div>
+          {compact ? (
+            <div className="flex min-w-0 items-baseline gap-2">
+              <h3 className="truncate text-sm font-semibold text-fg">{engineName ?? "Engine"}</h3>
+              <p className="truncate text-xs text-fg-muted" title={statusLabel}>
+                {compactStatus}
+              </p>
+            </div>
+          ) : (
+            <div className="grid min-w-0 gap-0.5">
+              <h3 className="truncate text-base font-semibold text-fg">{engineName ?? "Engine"}</h3>
+              <p className="truncate text-xs text-fg-muted">{statusLabel}</p>
+            </div>
+          )}
           <div className="flex shrink-0 items-center gap-1">
             {analysing ? (
               <>
@@ -386,23 +514,28 @@ function EngineStatusPanelContent({
                 Start
               </Button>
             ) : null}
+            {headerAction}
           </div>
         </div>
       ) : null}
       {hasData ? (
         <>
-          {/* Evenly across the panel: Depth on the left edge, Score centred, Best on the right edge. */}
-          <div className="grid grid-cols-3 gap-4">
-            <Stat label="Depth" value={primary?.depth ?? "–"} mono />
-            <Stat label="Score" value={primary?.score ? formatScore(whiteScore(primary.score, fen), 2) : "–"} mono className="justify-items-center text-center" />
-            <Stat label="Best" value={bestSan ?? "–"} mono className="justify-items-end text-right" />
-          </div>
+          {compact ? null : (
+            // Evenly across the panel: Depth on the left edge, Score centred, Best on the right edge.
+            <div className="grid grid-cols-3 gap-4">
+              <Stat label="Depth" value={primary?.depth ?? "–"} mono />
+              <Stat label="Score" value={primary?.score ? formatScore(whiteScore(primary.score, fen), 2) : "–"} mono className="justify-items-center text-center" />
+              <Stat label="Best" value={bestSan ?? "–"} mono className="justify-items-end text-right" />
+            </div>
+          )}
           {topLines.length ? (
             <div className="grid gap-1">
-              <Eyebrow>Lines</Eyebrow>
+              {compact ? null : <Eyebrow>Lines</Eyebrow>}
+              {linesHint ? <p className="text-xs text-fg-muted">{linesHint}</p> : null}
               {/* Rows are reserved up to the MultiPV count so lines arriving never push content down. */}
               {/* The board's piece set, so the lines' figurines are the board's pieces. */}
               <ol
+                ref={setLinesList}
                 className={cn("cg-wrap divide-y divide-line-subtle", cgWrapPieceSetClass(appearance.pieceStyle), piecePresentationTailwindClass(appearance.piecePresentation))}
                 // Unlayered `.cg-wrap` rules (board.css inline-size containment) would size this list.
                 style={{ display: "block", containerType: "normal" }}
@@ -419,13 +552,19 @@ function EngineStatusPanelContent({
                     fen={fen}
                     nodeId={nodeId}
                     expanded={expandedLines.has(line?.multipv ?? index + 1)}
+                    compact={compact}
                     onToggle={toggleLine}
-                    onGoToLine={linesNavigable ? goToLine : undefined}
+                    onGoToLine={onGoToLine}
+                    goToLineLabel={goToLineLabel}
                     onPreview={setPreview}
                   />
                 ))}
               </ol>
-              {preview ? <LinePreviewCard preview={preview} /> : null}
+              {preview && compact && linesList ? (
+                <FloatingLinePreview anchor={linesList} preview={preview} orientation={orientation} />
+              ) : preview && !compact ? (
+                <LinePreviewCard preview={preview} orientation={orientation} compact={false} />
+              ) : null}
             </div>
           ) : null}
         </>

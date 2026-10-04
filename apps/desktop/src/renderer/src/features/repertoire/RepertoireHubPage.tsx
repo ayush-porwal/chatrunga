@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -10,6 +10,7 @@ import {
   HardDriveDownload,
   HardDriveUpload,
   Library,
+  Pencil,
   Play,
   Plus,
   Search,
@@ -50,8 +51,10 @@ import {
 } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
 import { formatBytes, restoreNotice, shortenPath } from "./backup";
+import { discardDeletedRepertoireTexts } from "./decision-text-drafts";
 import { BackupDialog } from "./BackupDialog";
 import { CreateRepertoireDialog } from "./CreateRepertoireDialog";
+import { EditRepertoireDialog } from "./EditRepertoireDialog";
 import { ImportPgnDialog } from "./ImportPgnDialog";
 import { RestoreBackupDialog } from "./RestoreBackupDialog";
 import {
@@ -108,6 +111,16 @@ export function RepertoireHubPage({
   const list = useRepertoiresQuery(filters);
   // Review targets everything due, whatever the hub is filtered to.
   const active = useRepertoiresQuery(ACTIVE);
+  // An unsaved prompt or hint of a repertoire deleted since has nowhere to go: dropped here, so it
+  // never holds back closing the window.
+  useEffect(() => {
+    if (active.data) {
+      void discardDeletedRepertoireTexts(
+        queryClient,
+        active.data.map((item) => item.id)
+      );
+    }
+  }, [active.data, queryClient]);
   const due = useRepertoireDueSummaryQuery();
   const duplicate = useDuplicateRepertoireMutation();
   const archive = useArchiveRepertoireMutation();
@@ -122,6 +135,7 @@ export function RepertoireHubPage({
   const [creating, setCreating] = useState(false);
   const [importTarget, setImportTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<RepertoireSummary | null>(null);
+  const [editing, setEditing] = useState<RepertoireSummary | null>(null);
   /** The backup dialog's scope: every repertoire, or one. */
   const [backupTarget, setBackupTarget] = useState<"all" | RepertoireSummary | null>(null);
   const [restoring, setRestoring] = useState(false);
@@ -394,6 +408,13 @@ export function RepertoireHubPage({
                     {plural(item.decisionCount, "decision")} · Last studied{" "}
                     {relativeDay(item.lastStudiedAt, now).toLowerCase()}
                   </span>
+                  {item.tags.length ? (
+                    <span className="flex min-w-0 gap-1 overflow-hidden">
+                      {item.tags.map((tag) => (
+                        <Badge key={tag}>{tag}</Badge>
+                      ))}
+                    </span>
+                  ) : null}
                 </span>
                 {item.archivedAt ? <Badge>Archived</Badge> : null}
                 {item.dueCount ? (
@@ -421,6 +442,11 @@ export function RepertoireHubPage({
                     // The main process refuses practice on an archived repertoire.
                     disabled: Boolean(item.archivedAt),
                     onSelect: () => onPractice(item.id)
+                  },
+                  {
+                    label: "Edit repertoire",
+                    icon: <Pencil />,
+                    onSelect: () => setEditing(item)
                   },
                   {
                     label: "Import PGN",
@@ -509,6 +535,16 @@ export function RepertoireHubPage({
               onStudy({ repertoireId: detail.id, chapterId: first.id, nodeId: null });
             }
             // "add-game": the Add to repertoire dialog is open over the hub.
+          }}
+        />
+      ) : null}
+      {editing ? (
+        <EditRepertoireDialog
+          repertoire={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(detail) => {
+            setEditing(null);
+            setNotice({ tone: "success", text: `Saved the details of “${detail.name}”.` });
           }}
         />
       ) : null}

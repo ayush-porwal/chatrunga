@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GAME_SEARCH_MAX_LENGTH } from "@chaturanga/shared/types/chess";
+import { REPERTOIRE_METADATA_LIMITS } from "@chaturanga/shared/types/repertoire";
 import {
   asAbsolutePath,
   asFen,
@@ -20,6 +21,7 @@ import {
   parseLichessDisconnectInput,
   parseLichessSeekInput,
   parsePgnText,
+  parsePractisedElsewhereInput,
   parsePreviewImportInput,
   parseProbeEvalInput,
   parseListLimit,
@@ -31,6 +33,7 @@ import {
   parseSaveGameInput,
   parseSettingKey,
   parseSettingsPatch,
+  parseUpdateRepertoireMetadataInput,
   parseStartAnalysisInput,
   parseStartGameInput
 } from "./validate";
@@ -420,11 +423,51 @@ describe("add-from-game inputs", () => {
   });
 });
 
+describe("parsePractisedElsewhereInput", () => {
+  it("accepts a chapter's position keys, trimmed, and refuses anything else", () => {
+    expect(
+      parsePractisedElsewhereInput({ repertoireId: "r1", chapterId: "c1", positionKeys: [" v1:a "] })
+    ).toEqual({ repertoireId: "r1", chapterId: "c1", positionKeys: ["v1:a"] });
+    expect(() =>
+      parsePractisedElsewhereInput({ repertoireId: "r1", chapterId: "c1", positionKeys: "v1:a" })
+    ).toThrow("positionKeys");
+    expect(() =>
+      parsePractisedElsewhereInput({ repertoireId: "r1", chapterId: "c1", positionKeys: [" "] })
+    ).toThrow("positionKeys");
+    expect(() =>
+      parsePractisedElsewhereInput({ repertoireId: "r1", chapterId: "", positionKeys: [] })
+    ).toThrow("chapterId");
+  });
+});
+
 describe("parsePreviewImportInput", () => {
   it("refuses text over 20 MiB with the import's size-limit message", () => {
     expect(() => parsePreviewImportInput({ pgn: "x".repeat(20 * 1024 * 1024 + 1) })).toThrow(
       "This PGN is larger than 20 MiB; split it and import it in parts."
     );
     expect(parsePreviewImportInput({ pgn: "1. e4 *", jobId: "job-1" })).toEqual({ pgn: "1. e4 *", jobId: "job-1" });
+  });
+});
+
+describe("parseUpdateRepertoireMetadataInput", () => {
+  const limits = REPERTOIRE_METADATA_LIMITS;
+  const parse = (patch: object) =>
+    parseUpdateRepertoireMetadataInput({ id: "r1", expectedRevision: 3, patch });
+
+  it("accepts metadata at the limits the renderer's forms enforce", () => {
+    const tags = Array.from({ length: limits.tags }, () => "t".repeat(limits.tag));
+    expect(
+      parse({ name: "n".repeat(limits.name), description: "d".repeat(limits.description), tags })
+        .patch
+    ).toEqual({ name: "n".repeat(limits.name), description: "d".repeat(limits.description), tags });
+  });
+
+  it("refuses metadata past them", () => {
+    expect(() => parse({ name: "n".repeat(limits.name + 1) })).toThrow(/name/);
+    expect(() => parse({ description: "d".repeat(limits.description + 1) })).toThrow(/description/);
+    expect(() => parse({ tags: ["t".repeat(limits.tag + 1)] })).toThrow(/tags/);
+    expect(() => parse({ tags: Array.from({ length: limits.tags + 1 }, (_, i) => `t${i}`) })).toThrow(
+      /tags/
+    );
   });
 });

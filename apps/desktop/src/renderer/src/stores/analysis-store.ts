@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { EngineInfo, EngineStatus } from "@chaturanga/shared/types/engine";
+import type { AnalysisTarget } from "../features/analysis/live-analysis";
 
 type AnalysisStore = {
   /** The engine running now (live analysis, or the opponent in an engine game). */
@@ -30,11 +31,26 @@ type AnalysisStore = {
    */
   searchEpoch: number;
   restartSearch: () => void;
+  /**
+   * The searchEpoch of the last request to analyse the game board itself (Back to an analysis
+   * board, Analyze on it). A study engine panel's target cleared after such a request hands the
+   * engine back to the board's search (see useEngineDriver); one cleared without it doesn't.
+   */
+  boardSearchEpoch: number;
+  /** restartSearch for the game board's own analysis, shown again (see boardSearchEpoch). */
+  restartBoardSearch: () => void;
   setInfo: (info: EngineInfo) => void;
   /** Apply a throttled batch of engine infos in one update (one render per batch). */
   setInfos: (infos: readonly EngineInfo[]) => void;
   setBestMove: (bestMove: string | null) => void;
   setError: (error: string | null) => void;
+  /**
+   * A position off the game board for live analysis to search instead of the board's (see
+   * AnalysisTarget). Only its owner sets and clears it: `reset` (the board's engine work ending)
+   * leaves it.
+   */
+  target: AnalysisTarget | null;
+  setTarget: (target: AnalysisTarget | null) => void;
   reset: () => void;
 };
 
@@ -103,6 +119,9 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
   resultSearchId: null,
   searchEpoch: 0,
   restartSearch: () => set((state) => ({ searchEpoch: state.searchEpoch + 1 })),
+  boardSearchEpoch: 0,
+  restartBoardSearch: () =>
+    set((state) => ({ searchEpoch: state.searchEpoch + 1, boardSearchEpoch: state.searchEpoch + 1 })),
   restartFresh: () =>
     set((state) => {
       if (state.resultKey) results.delete(state.resultKey);
@@ -124,6 +143,8 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
   },
   setBestMove: (bestMove) => set({ bestMove, status: "ready" }),
   setError: (error) => set({ error, status: "error" }),
+  target: null,
+  setTarget: (target) => set({ target }),
   reset: () =>
     set({
       activeEngineId: null,

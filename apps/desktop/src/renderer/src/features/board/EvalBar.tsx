@@ -26,6 +26,30 @@ export function evalShare(score: EngineScore): number {
 }
 
 /**
+ * Live analysis's evaluation of `fen` from its principal line's `score` (from the side to move, as
+ * UCI reports it). A finished position shows its result, not a score left over from the previous
+ * position. Null while there is no score yet.
+ */
+export function liveAnalysisEval(fen: string, score: EngineScore | null): BoardEval | null {
+  const status = statusForFen(fen);
+  if (status.isEnd) {
+    const whiteShare = status.result === "1-0" ? 100 : status.result === "0-1" ? 0 : 50;
+    return { whiteShare, label: status.isCheckmate ? `${status.result} #` : "½-½" };
+  }
+  if (!score) return null;
+  const white = scoreFromWhitePerspective(score, status.turn);
+  return { whiteShare: evalShare(white), label: formatScore(white) };
+}
+
+/** The principal line's score of the live analysis (the latest info's before any line arrives). */
+export function useLiveAnalysisScore(): EngineScore | null {
+  return useAnalysisStore((state) => {
+    const primary = state.topLines.find((line) => (line.multipv ?? 1) === 1) ?? state.latestInfo;
+    return primary?.score ?? null;
+  });
+}
+
+/**
  * The evaluation for the position on the board: live analysis while the engine runs, else the
  * game review's evaluation of this move. Null when there is none, and always during a match that
  * is still being played (an engine game or a live Lichess game) or a puzzle not yet solved or failed.
@@ -40,26 +64,13 @@ export function useBoardEval(): BoardEval | null {
     }))
   );
   const onlineGameLive = useLichessStore(selectLiveGameInProgress);
-  const liveScore = useAnalysisStore((state) => {
-    const primary = state.topLines.find((line) => (line.multipv ?? 1) === 1) ?? state.latestInfo;
-    return primary?.score ?? null;
-  });
+  const liveScore = useLiveAnalysisScore();
   // A puzzle still being solved: any evaluation would give the answer away.
   const puzzleOpen = usePuzzleStore((state) => Boolean(state.activePuzzle) && state.outcome === "pending");
   const reviewMoves = useDisplayedReviewMoves();
   if (game.matchOn || onlineGameLive || (game.mode === "puzzle" && puzzleOpen)) return null;
 
-  if (game.mode === "analysis") {
-    // The game is over on the board: the result, not a score left over from the previous position.
-    const status = statusForFen(game.fen);
-    if (status.isEnd) {
-      const whiteShare = status.result === "1-0" ? 100 : status.result === "0-1" ? 0 : 50;
-      return { whiteShare, label: status.isCheckmate ? `${status.result} #` : "½-½" };
-    }
-    if (!liveScore) return null;
-    const white = scoreFromWhitePerspective(liveScore, statusForFen(game.fen).turn);
-    return { whiteShare: evalShare(white), label: formatScore(white) };
-  }
+  if (game.mode === "analysis") return liveAnalysisEval(game.fen, liveScore);
 
   if (!reviewMoves.length) return null;
   const move = reviewMoves.find((item) => item.nodeId === game.nodeId);
@@ -77,18 +88,33 @@ export function useBoardEval(): BoardEval | null {
   return null;
 }
 
-/**
- * The vertical eval bar beside the board: White's share grows from White's side of the board.
- * Keeps its last value while a new search starts, so it glides instead of blinking.
- */
+/** The game board's eval bar (see useBoardEval). */
 export const EvalBar = memo(function EvalBar({ orientation }: { orientation: Color }) {
   const current = useBoardEval();
+  const live = useGameStore((state) => state.mode === "analysis");
+  return <EvalBarFill orientation={orientation} evaluation={current} live={live} />;
+});
+
+/**
+ * The vertical eval bar beside a board: White's share grows from White's side of the board. With
+ * `live` analysis it keeps its last value while a new search starts, so it glides instead of
+ * blinking.
+ */
+export function EvalBarFill({
+  orientation,
+  evaluation: current,
+  live
+}: {
+  orientation: Color;
+  evaluation: BoardEval | null;
+  /** The evaluation comes from live analysis (held through a new search's first moments). */
+  live: boolean;
+}) {
   const searching = useAnalysisStore((state) => state.status === "thinking");
-  const mode = useGameStore((state) => state.mode);
   // The last evaluation shown, held through the moment a new search has no score yet.
   const [held, setHeld] = useState<BoardEval | null>(current);
   if (current && (current.whiteShare !== held?.whiteShare || current.label !== held.label)) setHeld(current);
-  else if (!current && held && !(mode === "analysis" && searching)) setHeld(null);
+  else if (!current && held && !(live && searching)) setHeld(null);
   const shown = current ?? held;
   if (!shown) return null;
   const whiteAtBottom = orientation === "white";
@@ -110,4 +136,4 @@ export const EvalBar = memo(function EvalBar({ orientation }: { orientation: Col
       <div aria-hidden="true" className="absolute inset-x-0 top-1/2 h-px bg-accent/60" />
     </div>
   );
-});
+}

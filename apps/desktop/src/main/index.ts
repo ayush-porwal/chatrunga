@@ -324,15 +324,21 @@ function flushSavesBeforeClose(window: BrowserWindow): void {
   });
 }
 
-/** The last save failed: close anyway (losing the latest changes), or stay to retry? */
+/**
+ * A save failed (a game's, a study chapter's, or a repertoire's prompt, hint or other change in
+ * any repertoire): close anyway (losing the latest changes), or stay to retry?
+ */
 function confirmCloseUnsaved(window: BrowserWindow): boolean {
   const choice = dialog.showMessageBoxSync(window, {
     type: "warning",
     buttons: ["Close Anyway", "Cancel"],
     defaultId: 1,
     cancelId: 1,
-    message: "Your latest changes to this game couldn't be saved.",
-    detail: "Close anyway and lose them, or cancel and use Retry in the titlebar."
+    message: "Some of your latest changes couldn't be saved.",
+    detail:
+      "Close anyway and lose them, or cancel to keep them: a game's or chapter's titlebar offers " +
+      "Retry, and a repertoire's chapter lists the practice prompts, hints and other changes " +
+      "that weren't saved."
   });
   return choice === 0;
 }

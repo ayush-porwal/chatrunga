@@ -12,6 +12,7 @@ import {
   openingReplyMessage,
   OTHER_LINE_TEXT,
   rehearsalLineNumber,
+  rehearsalReplyMessage,
   rehearsalStepNumber,
   rehearsalTitle,
   useRepertoirePracticeStore,
@@ -109,6 +110,72 @@ describe("repertoire practice store", () => {
     expect(store().advance()).toBe(true);
     expect(store().session!.cursor).toBe(1);
     expect(store().message).toBeNull();
+  });
+
+  it("keeps a graded answer's notes for the page, and nothing answer-bearing before", () => {
+    store().setSession(session());
+    expect(store().answer).toBeNull();
+    store().applyAttempt({
+      outcome: "outside-repertoire",
+      acceptedUcis: [],
+      preferredUci: null,
+      feedback: "Not here.",
+      card: cardOf("a", { state: "answered-wrong", attemptsSoFar: 1 }),
+      finalGrade: true
+    });
+    expect(store().answer).toBeNull();
+    store().applyAction("reveal", {
+      card: cardOf("a", { state: "answered-wrong", attemptsSoFar: 1 }),
+      revealed: {
+        ucis: ["e2e4"],
+        preferredUci: "e2e4",
+        explanation: "Centre.",
+        moveComments: { e2e4: "Open games." }
+      }
+    });
+    expect(store().answer).toEqual({
+      ucis: ["e2e4"],
+      preferredUci: "e2e4",
+      explanation: "Centre.",
+      moveComments: { e2e4: "Open games." }
+    });
+    // The feedback on the move just missed stays beside the answer.
+    expect(store().message).toEqual({
+      tone: "info",
+      text: "Revealed — this decision counts as missed.",
+      feedback: "Not here."
+    });
+    expect(store().advance()).toBe(true);
+    expect(store().answer).toBeNull();
+  });
+
+  it("a correct first answer brings its notes without drawing the accepted moves", () => {
+    store().setSession(session());
+    store().applyAttempt({
+      outcome: "correct",
+      acceptedUcis: ["e2e4", "d2d4"],
+      preferredUci: "e2e4",
+      explanation: "Centre.",
+      moveComments: { d2d4: "Closed games." },
+      feedback: null,
+      card: cardOf("a", { state: "answered-correct" }),
+      finalGrade: true
+    });
+    expect(store().answer).toEqual({
+      ucis: ["e2e4", "d2d4"],
+      preferredUci: "e2e4",
+      explanation: "Centre.",
+      moveComments: { d2d4: "Closed games." }
+    });
+    expect(store().reveal).toBeNull();
+  });
+
+  it("a resumed session shows the answer its card already revealed", () => {
+    const revealed = { ucis: ["e2e4"], preferredUci: "e2e4", explanation: null };
+    store().setSession({ ...session(), shown: { hint: null, hintUci: null, revealed } });
+    expect(store().answer).toEqual(revealed);
+    store().setSession(session());
+    expect(store().answer).toBeNull();
   });
 
   it("reports illegal and already-final attempts", () => {
@@ -463,6 +530,25 @@ describe("repertoire practice store: line rehearsal", () => {
     expect(openingReplyMessage(session(), cardOf("d", { nodeId: "x", leadUp }))).toBeNull();
     store().setSession(rehearsal());
     expect(store().message).toBeNull();
+  });
+
+  it("names the moves played for paused decisions after a reply", () => {
+    const leadUp = [
+      { san: "e4", uci: "e2e4", fen: "f1" },
+      { san: "e5", uci: "e7e5", fen: "f2" },
+      { san: "Nf3", uci: "g1f3", fen: "f3" },
+      { san: "Nc6", uci: "b8c6", fen: "f4" }
+    ];
+    const next = lineCard("b", "L1", 1, { leadUp });
+    expect(rehearsalReplyMessage(leadUp[1], next)).toEqual({
+      tone: "info",
+      text: "The reply: e5. Played for you (paused): Nf3 Nc6."
+    });
+    expect(rehearsalReplyMessage(leadUp[3], next)).toEqual({
+      tone: "info",
+      text: "The reply: Nc6."
+    });
+    expect(rehearsalReplyMessage(null, next)).toBeNull();
   });
 
   it("numbers lines and steps, and names why a line ended", () => {

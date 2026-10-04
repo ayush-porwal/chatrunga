@@ -28,6 +28,8 @@ vi.mock("../repertoire/service", () => {
     "getChapter",
     "getDecision",
     "getOccurrences",
+    "getPausedKeys",
+    "getPractisedElsewhere",
     "getDueSummary",
     "getRepertoire",
     "listRepertoires",
@@ -43,6 +45,7 @@ vi.mock("../repertoire/service", () => {
     "saveChapter",
     "saveWorkspace",
     "startPractice",
+    "updateChapters",
     "updateDecision",
     "updateMetadata"
   ];
@@ -98,6 +101,12 @@ describe("registerRepertoireIpc", () => {
       ["getChapter", { repertoireId: "r1", chapterId: "c1" }, "getChapter"],
       ["getDecision", { repertoireId: "r1", positionKey: "v1:key" }, "getDecision"],
       ["getOccurrences", { repertoireId: "r1", positionKey: "v1:key" }, "getOccurrences"],
+      ["getPausedKeys", "r1", "getPausedKeys"],
+      [
+        "getPractisedElsewhere",
+        { repertoireId: "r1", chapterId: "c1", positionKeys: ["v1:key"] },
+        "getPractisedElsewhere"
+      ],
       [
         "compareGame",
         { repertoireId: "r1", color: "black", rootFen: START, moves: ["e2e4", "c7c5"] },
@@ -130,6 +139,16 @@ describe("registerRepertoireIpc", () => {
         { repertoireId: "r1", chapterId: "c1", expectedRevision: 1 },
         "removeChapter"
       ],
+      [
+        "updateChapters",
+        {
+          repertoireId: "r1",
+          chapterIds: ["c1", "c2"],
+          expectedRevision: 1,
+          patch: { enabled: false, kind: "reference" }
+        },
+        "updateChapters"
+      ],
       ["duplicate", { id: "r1" }, "duplicateRepertoire"],
       ["archive", { id: "r1", archived: true, expectedRevision: 1 }, "archiveRepertoire"],
       ["remove", { id: "r1", expectedRevision: 1 }, "removeRepertoire"],
@@ -157,7 +176,8 @@ describe("registerRepertoireIpc", () => {
           maxDepthPlies: 8,
           cardLimit: 5,
           newCardLimit: 0,
-          positionKeys: ["v1:key"]
+          positionKeys: ["v1:key"],
+          ungraded: true
         },
         "startPractice"
       ],
@@ -205,6 +225,7 @@ describe("registerRepertoireIpc", () => {
       "saveChapter",
       "saveWorkspace",
       "startPractice",
+      "updateChapters",
       "updateDecision",
       "updateMetadata"
     ]);
@@ -217,7 +238,8 @@ describe("registerRepertoireIpc", () => {
       moves: ["e2e4", "c7c5"]
     });
     expect(calls.find(([name]) => name === "startPractice")?.[1][0]).toMatchObject({
-      positionKeys: ["v1:key"]
+      positionKeys: ["v1:key"],
+      ungraded: true
     });
     expect(calls.find(([name]) => name === "recordAttempt")?.[1][0]).toEqual({
       sessionId: "s1",
@@ -242,6 +264,25 @@ describe("registerRepertoireIpc", () => {
     expect(() => invoke("updateMetadata", { id: "r", expectedRevision: -1, patch: {} })).toThrow(
       /expectedRevision/
     );
+    expect(() =>
+      invoke("updateChapters", { repertoireId: "r", chapterIds: ["c"], expectedRevision: 1, patch: {} })
+    ).toThrow("Invalid chapters patch: expected enabled or kind");
+    expect(() =>
+      invoke("updateChapters", {
+        repertoireId: "r",
+        chapterIds: ["c"],
+        expectedRevision: 1,
+        patch: { kind: "sideline" }
+      })
+    ).toThrow(/chapter kind/);
+    expect(() =>
+      invoke("updateChapters", {
+        repertoireId: "r",
+        chapterIds: "c",
+        expectedRevision: 1,
+        patch: { enabled: true }
+      })
+    ).toThrow(/chapterIds/);
     expect(() => invoke("startPractice", { repertoireId: "r", mode: "rehearse" })).toThrow(
       /practice mode/
     );
@@ -335,6 +376,26 @@ describe("registerRepertoireIpc", () => {
         positionKeys: ["k".repeat(201)]
       })
     ).toThrow(/positionKeys/);
+    // Ungraded practice is a targeted queue's only, and a flag.
+    expect(() =>
+      invoke("startPractice", { repertoireId: "r", mode: "review-due", ungraded: true })
+    ).toThrow(/Invalid ungraded/);
+    expect(() =>
+      invoke("startPractice", {
+        repertoireId: "r",
+        mode: "rehearse-lines",
+        positionKeys: ["v1:key"],
+        ungraded: true
+      })
+    ).toThrow(/Invalid ungraded/);
+    expect(() =>
+      invoke("startPractice", {
+        repertoireId: "r",
+        mode: "review-due",
+        positionKeys: ["v1:key"],
+        ungraded: "yes"
+      })
+    ).toThrow(/ungraded/);
   });
 
   it("answers a cancelled preview with the marker, and rejects any other failure", async () => {

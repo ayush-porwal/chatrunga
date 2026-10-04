@@ -67,7 +67,97 @@ describe("scanCsvLines", () => {
   });
 });
 
+/** A small seeded PRNG (mulberry32): the same draws in [0, 1) on every run. */
+function seeded(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
+  };
+}
+
+/** Draws that come from `values` in order; running out fails the test (an unexpected draw). */
+function scripted(values: number[]): () => number {
+  const queue = [...values];
+  return () => {
+    const next = queue.shift();
+    if (next === undefined) throw new Error("an unexpected random draw");
+    return next;
+  };
+}
+
+/** A Lichess-format CSV whose rows `p0`… all pass the cheap filters (no filters set). */
+function lichessCsv(count: number): string {
+  return ["PuzzleId,FEN,Moves,Rating", ...Array.from({ length: count }, (_, i) => `p${i},fen ${i},e2e4 e7e5,1500`)].join("\n");
+}
+
+const scanJob = (filePath: string, size: number, extra: Partial<ScanJob> = {}): ScanJob => ({
+  filePath,
+  compressed: false,
+  kind: "lichess",
+  input: {} as never,
+  excludeIds: [],
+  size,
+  ...extra
+});
+
+const ids = (rows: string[][]) => rows.map((row) => row[0]);
+
 describe("reservoirScan", () => {
+  it("keeps every match in file order while there are no more than it holds, drawing nothing", async () => {
+    const path = tempFile("few.csv", lichessCsv(3));
+    const result = await reservoirScan(scanJob(path, 5), undefined, scripted([]));
+    expect(result).toEqual({ rows: expect.any(Array), matches: 3, complete: true });
+    expect(ids(result.rows)).toEqual(["p0", "p1", "p2"]);
+  });
+
+  it("puts each later match in the slot its draw picks, or drops it when the slot is past the sample", async () => {
+    const path = tempFile("draws.csv", lichessCsv(5));
+    // Match 3: slot ⌊0.1·3⌋ = 0 takes p2. Match 4: ⌊0.9·4⌋ = 3, past the 2 kept: p3 is dropped.
+    // Match 5: ⌊0.3·5⌋ = 1 takes p4.
+    const result = await reservoirScan(scanJob(path, 2), undefined, scripted([0.1, 0.9, 0.3]));
+    expect(ids(result.rows)).toEqual(["p2", "p4"]);
+    expect(result).toMatchObject({ matches: 5, complete: true });
+  });
+
+  it("excluded and filtered-out rows neither count as matches nor take a draw", async () => {
+    const csv = ["PuzzleId,FEN,Moves,Rating", "p0,fen,e2e4 e7e5,1500", "gone,fen,e2e4 e7e5,1500", "short,fen,e2e4,1500", "p1,fen,e2e4 e7e5,1500", "p2,fen,e2e4 e7e5,1500"].join("\n");
+    const path = tempFile("skips.csv", csv);
+    // Only p2 (the third match) draws: ⌊0.5·3⌋ = 1 takes p1's slot.
+    const result = await reservoirScan(scanJob(path, 2, { excludeIds: ["gone"] }), undefined, scripted([0.5]));
+    expect(ids(result.rows)).toEqual(["p0", "p2"]);
+    expect(result).toMatchObject({ matches: 3, complete: true });
+  });
+
+  it("a quick scan stops at its match limit with an incomplete sample of the file's start", async () => {
+    const path = tempFile("quick.csv", lichessCsv(100));
+    const result = await reservoirScan(scanJob(path, 4, { maxMatches: 10 }), undefined, seeded(7));
+    expect(result).toMatchObject({ matches: 10, complete: false });
+    expect(result.rows).toHaveLength(4);
+    for (const id of ids(result.rows)) expect(Number(id?.slice(1))).toBeLessThan(10);
+  });
+
+  it("a seeded scan keeps the same rows on every run, and gives every row an equal chance", async () => {
+    const path = tempFile("uniform.csv", lichessCsv(20));
+    const first = await reservoirScan(scanJob(path, 5), undefined, seeded(42));
+    const again = await reservoirScan(scanJob(path, 5), undefined, seeded(42));
+    expect(ids(again.rows)).toEqual(ids(first.rows));
+
+    // 5 of 20 rows: each is kept a quarter of the time, whether early (in the first fill) or late.
+    const random = seeded(2026);
+    const kept = new Map<string, number>();
+    const trials = 800;
+    for (let trial = 0; trial < trials; trial += 1) {
+      const { rows } = await reservoirScan(scanJob(path, 5), undefined, random);
+      for (const id of ids(rows)) kept.set(id!, (kept.get(id!) ?? 0) + 1);
+    }
+    expect(kept.size).toBe(20);
+    for (const count of kept.values()) expect(Math.abs(count / trials - 0.25)).toBeLessThan(0.06);
+  });
+
   it("a file nothing could be read from is an error, not an empty result", async () => {
     // Only a skippable frame: a valid zstd file with no content.
     const path = tempFile("empty.csv.zst", skippableFrame(Buffer.from("nothing here")));

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { fenAfterUci } from "@chaturanga/shared/chess/position";
+import { exportRepertoirePgn } from "@chaturanga/shared/chess/repertoire-pgn";
 import type { ChapterSaveResult } from "@chaturanga/shared/types/repertoire";
 import {
   addLine,
@@ -7,8 +8,10 @@ import {
   detailOf,
   rootNode
 } from "../features/repertoire/__fixtures__/repertoire";
+import { decisionDraftKey } from "../features/repertoire/repertoire-model";
 import {
   promoteChild,
+  promotionTarget,
   removeSubtree,
   reuseUnchangedTree,
   UNDO_LIMIT,
@@ -84,6 +87,51 @@ describe("repertoire workspace store", () => {
     expect(store().chapter!.nodeMeta.w0).toEqual({ edge: "included" });
   });
 
+  it("makes a chapter of reference moves practised in one undo step", () => {
+    const tree = sampleTree();
+    const reference = { w0: { edge: "reference" as const }, w1: { edge: "reference" as const } };
+    store().loadChapter(
+      detailOf(),
+      chapterOf(tree, reference, { enabled: false, kind: "reference" })
+    );
+    store().makeChapterTrainable();
+    expect(store().chapter!.enabled).toBe(true);
+    expect(store().chapter!.kind).toBe("opening");
+    expect(store().chapter!.nodeMeta.w0).toEqual({ edge: "included" });
+    expect(store().chapter!.nodeMeta.w1).toEqual({ edge: "covered" });
+    expect(store().dirty).toBe(true);
+    // One Undo puts back everything it changed: the moves' marks, on for practice and the kind.
+    expect(store().undo()).toBe(true);
+    expect(store().chapter!.nodeMeta).toEqual(reference);
+    expect(store().chapter!.enabled).toBe(false);
+    expect(store().chapter!.kind).toBe("reference");
+    expect(store().undoStack).toHaveLength(0);
+    // Redo applies all of it again, and Undo takes it back again.
+    expect(store().redo()).toBe(true);
+    expect(store().chapter!).toMatchObject({ enabled: true, kind: "opening" });
+    expect(store().chapter!.nodeMeta.w0).toEqual({ edge: "included" });
+    expect(store().undo()).toBe(true);
+    expect(store().chapter!).toMatchObject({ enabled: false, kind: "reference" });
+  });
+
+  it("undoes Include in practice on a chapter whose moves already train: it was only switched on", () => {
+    store().loadChapter(detailOf(), chapterOf(sampleTree(), {}, { enabled: false }));
+    store().makeChapterTrainable();
+    expect(store().chapter!.enabled).toBe(true);
+    expect(store().undoStack).toHaveLength(1);
+    expect(store().undo()).toBe(true);
+    expect(store().chapter!.enabled).toBe(false);
+  });
+
+  it("keeps the chapter fields when undoing any other step", () => {
+    load();
+    store().setNodeMeta("w0", { edge: "reference" });
+    store().setChapterFields({ enabled: false });
+    expect(store().undo()).toBe(true);
+    expect(store().chapter!.nodeMeta.w0).toBeUndefined();
+    expect(store().chapter!.enabled).toBe(false);
+  });
+
   it("edits comments and shapes", () => {
     load();
     store().setComment("w0", "Main move");
@@ -105,20 +153,120 @@ describe("repertoire workspace store", () => {
     expect(store().undo()).toBe(true);
     expect(store().chapter!.tree).toHaveLength(5);
     expect(store().chapter!.nodeMeta.w1).toEqual({ edge: "covered" });
+    // The edge change before it is a step of its own.
+    expect(store().undo()).toBe(true);
+    expect(store().chapter!.nodeMeta.w1).toBeUndefined();
     expect(store().undo()).toBe(false);
     expect(store().deleteLine("root")).toBe(false);
   });
 
   it("keeps at most the undo limit", () => {
     load();
-    for (let index = 0; index < UNDO_LIMIT + 5; index += 1) store().promoteVariation("s0");
+    for (let index = 0; index < UNDO_LIMIT + 5; index += 1) {
+      store().promoteVariation(index % 2 ? "w1" : "s0");
+    }
     expect(store().undoStack).toHaveLength(UNDO_LIMIT);
+    while (store().undo());
+    expect(store().redoStack).toHaveLength(UNDO_LIMIT);
   });
 
   it("promotes a variation to the main line", () => {
     load();
-    store().promoteVariation("s0");
+    expect(store().promoteVariation("s0")).toBe(true);
     expect(store().chapter!.tree.find((node) => node.id === "w0")!.children).toEqual(["s0", "w1"]);
+    // On the main line already: nothing to promote, and nothing to undo.
+    expect(store().promoteVariation("s0")).toBe(false);
+    expect(store().undoStack).toHaveLength(1);
+  });
+
+  it("promotes the variation a deeper move belongs to", () => {
+    load();
+    expect(promotionTarget(store().chapter!.tree, "w2")).toBeNull();
+    expect(promotionTarget(store().chapter!.tree, "root")).toBeNull();
+    store().promoteVariation("s0");
+    // 1... e5 2. Nf3 is now the side line: promoting from Nf3 moves 1... e5 back up.
+    expect(promotionTarget(store().chapter!.tree, "w2")).toBe("w1");
+    store().promoteVariation("w2");
+    expect(store().chapter!.tree.find((node) => node.id === "w0")!.children).toEqual(["w1", "s0"]);
+  });
+
+  it("undoes and redoes structural edits, keeping comments typed since", () => {
+    load("w2");
+    const added = play("b8c6");
+    store().setComment("w2", "Develops");
+    store().setNodeMeta("w1", { trainingStart: true });
+    store().promoteVariation("s0");
+    expect(store().undoStack).toHaveLength(3);
+
+    expect(store().undo()).toBe(true);
+    expect(store().chapter!.tree.find((node) => node.id === "w0")!.children).toEqual(["w1", "s0"]);
+    expect(store().undo()).toBe(true);
+    expect(store().chapter!.nodeMeta.w1).toBeUndefined();
+    expect(store().undo()).toBe(true);
+    // The added move is gone and its parent selected; the comment typed after it stays.
+    expect(store().chapter!.tree.some((node) => node.id === added.nodeId)).toBe(false);
+    expect(store().selectedNodeId).toBe("w2");
+    expect(store().chapter!.tree.find((node) => node.id === "w2")!.comment).toBe("Develops");
+    expect(store().dirty).toBe(true);
+    expect(store().undo()).toBe(false);
+
+    expect(store().redo()).toBe(true);
+    expect(store().chapter!.tree.some((node) => node.id === added.nodeId)).toBe(true);
+    expect(store().redo()).toBe(true);
+    expect(store().chapter!.nodeMeta.w1).toEqual({ edge: "included", trainingStart: true });
+    // A new edit drops what is left to redo.
+    store().setNodeMeta("w0", { disabled: true });
+    expect(store().redoStack).toHaveLength(0);
+    expect(store().redo()).toBe(false);
+  });
+
+  it("an edit that changes nothing takes no undo step, isn't dirty and keeps Redo", () => {
+    load();
+    // Prefer on a move already included (no metadata entry, or an explicit one), and the same
+    // flags, comment, shapes and title again.
+    store().setNodeMeta("w0", { edge: "included" });
+    store().setNodeMeta("w0", { disabled: false, trainingStart: false });
+    store().setComment("w0", "");
+    store().setShapes("w0", [], []);
+    store().setChapterFields({ title: store().chapter!.title });
+    expect(store().undoStack).toHaveLength(0);
+    expect(store().dirty).toBe(false);
+    expect(store().generation).toBe(0);
+    expect(store().chapter!.nodeMeta.w0).toBeUndefined();
+
+    store().setNodeMeta("w0", { edge: "reference" });
+    store().undo();
+    expect(store().redoStack).toHaveLength(1);
+    const generation = store().generation;
+    store().setNodeMeta("w0", { edge: "included" });
+    store().setComment("w1", store().chapter!.tree.find((node) => node.id === "w1")!.comment ?? "");
+    expect(store().redoStack).toHaveLength(1);
+    expect(store().undoStack).toHaveLength(0);
+    expect(store().generation).toBe(generation);
+    expect(store().redo()).toBe(true);
+    expect(store().chapter!.nodeMeta.w0).toEqual({ edge: "reference" });
+  });
+
+  it("starts each chapter load with no undo or redo", () => {
+    load();
+    store().promoteVariation("s0");
+    store().undo();
+    expect(store().redoStack).toHaveLength(1);
+    load();
+    expect(store().undoStack).toHaveLength(0);
+    expect(store().redoStack).toHaveLength(0);
+  });
+
+  it("exports the promoted variation as the PGN main line", () => {
+    load();
+    const pgn = () => exportRepertoirePgn([store().chapter!]);
+    expect(pgn()).toContain("1. e4 e5 (1... c5) 2. Nf3 *");
+    store().promoteVariation("s0");
+    expect(pgn()).toContain("1. e4 c5 (1... e5 2. Nf3) *");
+    store().undo();
+    expect(pgn()).toContain("1. e4 e5 (1... c5) 2. Nf3 *");
+    store().redo();
+    expect(pgn()).toContain("1. e4 c5 (1... e5 2. Nf3) *");
   });
 
   it("adopts a save result unless the draft changed while it ran", () => {
@@ -279,6 +427,10 @@ describe("staging a move from a game comparison", () => {
     expect(store().chapter!.nodeMeta[result!.nodeId]).toEqual({ edge: "reference" });
     // The decision stays selected, so Choices shows the new move with Accept.
     expect(store().selectedNodeId).toBe("w1");
+    // Adding it and setting its edge are one undo step.
+    expect(store().undoStack).toHaveLength(1);
+    store().undo();
+    expect(store().chapter!.tree.some((node) => node.id === result!.nodeId)).toBe(false);
   });
 
   it("only selects a move the chapter already has with that edge", () => {
@@ -337,5 +489,153 @@ describe("staging a move from a game comparison", () => {
     const result = store().stageMove("w5", "e1g1", "reference");
     const node = store().chapter!.tree.find((item) => item.id === result!.nodeId)!;
     expect(node.san).toBe("O-O");
+  });
+});
+
+describe("playing an engine line into the chapter", () => {
+  beforeEach(() => store().reset());
+
+  it("adds the line from the node as one undo step with a board move's edges, selecting its end", () => {
+    load("w2");
+    // After 1.e4 e5 2.Nf3: 2…Nc6 3.Bb5, both new.
+    const result = store().playLine("w2", ["b8c6", "f1b5"]);
+    expect(result).toMatchObject({ created: true });
+    const end = store().chapter!.tree.find((node) => node.id === result!.nodeId)!;
+    const reply = store().chapter!.tree.find((node) => node.id === end.parentId)!;
+    expect([reply.san, end.san]).toEqual(["Nc6", "Bb5"]);
+    expect(reply.parentId).toBe("w2");
+    expect(store().chapter!.nodeMeta[reply.id]).toEqual({ edge: "covered" });
+    expect(store().chapter!.nodeMeta[end.id]).toEqual({ edge: "reference" });
+    expect(store().selectedNodeId).toBe(end.id);
+    expect(store().dirty).toBe(true);
+    expect(store().undoStack).toHaveLength(1);
+    store().undo();
+    expect(store().chapter!.tree).toHaveLength(5);
+    expect(store().selectedNodeId).toBe("w2");
+    store().redo();
+    expect(store().chapter!.tree.some((node) => node.id === end.id)).toBe(true);
+  });
+
+  it("follows the moves the chapter has and adds only the rest", () => {
+    load();
+    const result = store().playLine("root", ["e2e4", "e7e5", "f1c4"]);
+    const end = store().chapter!.tree.find((node) => node.id === result!.nodeId)!;
+    expect(end).toMatchObject({ parentId: "w1", san: "Bc4" });
+    expect(store().chapter!.tree).toHaveLength(6);
+  });
+
+  it("only selects a line the chapter already has: no undo step, nothing to save", () => {
+    load();
+    expect(store().playLine("w0", ["e7e5", "g1f3"])).toEqual({ nodeId: "w2", created: false });
+    expect(store().selectedNodeId).toBe("w2");
+    expect(store().dirty).toBe(false);
+    expect(store().undoStack).toHaveLength(0);
+  });
+
+  it("changes nothing for an unknown node, an empty line or an illegal move anywhere in it", () => {
+    load("w1");
+    expect(store().playLine("missing", ["g1f3"])).toBeNull();
+    expect(store().playLine("w1", [])).toBeNull();
+    // Nc3 is legal, the next "move" isn't: not even Nc3 is added.
+    expect(store().playLine("w1", ["b1c3", "e5e4"])).toBeNull();
+    expect(store().chapter!.tree).toHaveLength(5);
+    expect(store().selectedNodeId).toBe("w1");
+    expect(store().dirty).toBe(false);
+  });
+});
+
+describe("repertoire workspace decision drafts", () => {
+  const key = decisionDraftKey("r1", "k1", "prompt");
+  const draft = () => store().decisionDrafts[key];
+  /** A write of the draft at `draftKey` starts; returns the generation it sends. */
+  const startSaving = (draftKey: string) => {
+    const generation = store().decisionDrafts[draftKey].generation;
+    store().updateDecisionDraft(draftKey, { type: "saving" });
+    return generation;
+  };
+
+  beforeEach(() => {
+    store().reset();
+    useRepertoireWorkspaceStore.setState({ decisionDrafts: {} });
+  });
+
+  it("keeps typed text across chapters, repertoires and resets", () => {
+    store().setDecisionText("r1", "k1", "prompt", "Develop");
+    load();
+    store().loadChapter(detailOf({ id: "r2" }), chapterOf(sampleTree()));
+    store().reset();
+    expect(draft()).toMatchObject({ text: "Develop", status: "pending", generation: 1 });
+  });
+
+  it("is cleared only by a confirmed save of the text it sent", () => {
+    store().setDecisionText("r1", "k1", "prompt", "Develop");
+    const sent = startSaving(key);
+    expect(draft().status).toBe("saving");
+    store().setDecisionText("r1", "k1", "prompt", "Develop with tempo");
+    store().updateDecisionDraft(key, { type: "saved", generation: sent });
+    // Typed while it saved: the newer text waits for its own write.
+    expect(draft()).toMatchObject({ text: "Develop with tempo", status: "pending" });
+    store().updateDecisionDraft(key, { type: "saved", generation: startSaving(key) });
+    expect(draft()).toBeUndefined();
+    expect(store().updateDecisionDraft(key, { type: "saving" })).toBe(false);
+    expect(draft()).toBeUndefined();
+  });
+
+  it("keeps feedback per wrong move and a pause as drafts of their own", () => {
+    store().setWrongMoveFeedback("r1", "k1", "d2d4", "We play 1.e4");
+    store().setWrongMoveFeedback("r1", "k1", "c2c4", "Not the English");
+    store().setDecisionPaused("r1", "k1", true);
+    const d4 = decisionDraftKey("r1", "k1", "feedback", "d2d4");
+    const paused = decisionDraftKey("r1", "k1", "paused");
+    expect(store().decisionDrafts[d4]).toEqual({
+      repertoireId: "r1",
+      positionKey: "k1",
+      field: "feedback",
+      uci: "d2d4",
+      text: "We play 1.e4",
+      generation: 1,
+      status: "pending"
+    });
+    expect(Object.keys(store().decisionDrafts)).toHaveLength(3);
+    // Toggling back while a pause saves is a newer edit, written after it.
+    const sent = startSaving(paused);
+    store().setDecisionPaused("r1", "k1", false);
+    store().updateDecisionDraft(paused, { type: "saved", generation: sent });
+    expect(store().decisionDrafts[paused]).toMatchObject({
+      paused: false,
+      status: "pending",
+      generation: 2
+    });
+  });
+
+  it("keeps a failed write's text; Retry (clearSaveError) leaves a stale one alone", () => {
+    const hint = decisionDraftKey("r1", "k1", "hint");
+    store().setDecisionText("r1", "k1", "prompt", "Develop");
+    store().setDecisionText("r1", "k1", "hint", "Knight to f3");
+    store().updateDecisionDraft(key, {
+      type: "failed",
+      error: { message: "disk full", stale: false }
+    });
+    store().updateDecisionDraft(hint, {
+      type: "failed",
+      error: { message: "repertoire changed", stale: true }
+    });
+    expect(draft()).toMatchObject({
+      text: "Develop",
+      status: "error",
+      error: { message: "disk full", stale: false }
+    });
+    store().clearSaveError();
+    expect(draft()).toMatchObject({ status: "pending" });
+    expect(draft().error).toBeUndefined();
+    expect(store().decisionDrafts[hint].status).toBe("error");
+    store().updateDecisionDraft(hint, { type: "retry", stale: true });
+    expect(store().decisionDrafts[hint].status).toBe("pending");
+    store().discardDecisionText(hint);
+    expect(store().decisionDrafts[hint]).toBeUndefined();
+    // Nothing to fail or clear once it's gone.
+    store().updateDecisionDraft(hint, { type: "failed", error: { message: "late", stale: false } });
+    store().updateDecisionDraft(hint, { type: "retry", stale: true });
+    expect(store().decisionDrafts[hint]).toBeUndefined();
   });
 });

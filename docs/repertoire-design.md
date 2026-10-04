@@ -460,7 +460,7 @@ Implementation rules:
 - Bound imports by bytes, game count, occurrences, nesting depth, and comment size before committing (a comment over its limit, measured without annotation tags, rejects only its game). Proposed defaults: 20 MiB input, 1,000 chapters per import, 100,000 occurrences, and 128 variation nesting levels; return an actionable limit error. Confirm limits through stress tests rather than truncating material.
 - Use cancellation/job tokens for import, delayed practice replies, and analysis handoffs. Late work must not update a new owner/session.
 
-Reuse existing semantic colors, typography, buttons, notices, segmented controls, skeletons, and motion settings. Accepted/preferred/reference states need text or icons as well as color. Practice feedback uses a polite live region and should not steal board focus. Supply keyboard move entry for the repertoire board, including SAN or square-to-square input and promotion selection, so recall is usable without dragging. Existing F/X focus/flip shortcuts keep their meaning and are disabled in text fields. Honor reduced motion and offer immediate lead-up replay.
+Reuse existing semantic colors, typography, buttons, notices, segmented controls, skeletons, and motion settings. Accepted/preferred/reference states need text or icons as well as color. Practice feedback uses a polite live region and should not steal board focus. Existing F/X focus/flip shortcuts keep their meaning and are disabled in text fields. Honor reduced motion and offer immediate lead-up replay.
 
 Empty, loading, unsaved, failed-import, missing-chapter, deleted-source-game, and no-due-card states each get a specific message and recovery action. A saving error must remain visible until data is saved or exported.
 

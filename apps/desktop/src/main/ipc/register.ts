@@ -16,6 +16,7 @@ import type { ImportedGame } from "@chaturanga/shared/types/chess";
 import {
   engineRepository,
   gameRepository,
+  retryOnceIfBusy,
   saveGameRetrying,
   settingsRepository
 } from "../db/repositories";
@@ -179,17 +180,25 @@ export function registerIpc(engineManager: EngineManager): void {
 
 function registerEngineIpc(engineManager: EngineManager): void {
   ipcMain.handle("engines:list", () => listAllEngines());
-  ipcMain.handle("engines:create", (_event, input: unknown) => {
-    const engine = engineRepository.create(parseEngineInput(input));
+  // These writes (like the settings and game ones below) get one more try when another
+  // connection holds the write lock past the busy timeout: a repertoire import or backup restore.
+  ipcMain.handle("engines:create", async (_event, input: unknown) => {
+    const parsed = parseEngineInput(input);
+    const engine = await retryOnceIfBusy(() => engineRepository.create(parsed));
     noteEngineReadiness(false);
     return engine;
   });
-  ipcMain.handle("engines:update", (_event, id: unknown, patch: unknown) => {
-    const engine = engineRepository.update(asId(id, "engine id"), parseEnginePatch(patch));
+  ipcMain.handle("engines:update", async (_event, id: unknown, patch: unknown) => {
+    const engineId = asId(id, "engine id");
+    const parsed = parseEnginePatch(patch);
+    const engine = await retryOnceIfBusy(() => engineRepository.update(engineId, parsed));
     noteEngineReadiness(false);
     return engine;
   });
-  ipcMain.handle("engines:remove", (_event, id: unknown) => engineRepository.remove(asId(id, "engine id")));
+  ipcMain.handle("engines:remove", (_event, id: unknown) => {
+    const engineId = asId(id, "engine id");
+    return retryOnceIfBusy(() => engineRepository.remove(engineId));
+  });
   ipcMain.handle("engines:test", (_event, idOrInput: unknown) => engineManager.testEngine(testConfigFor(idOrInput)));
   ipcMain.handle("engines:startGame", (_event, input: unknown) => engineManager.start(parseStartGameInput(input)));
   ipcMain.handle("engines:startAnalysis", (_event, input: unknown) =>
@@ -339,15 +348,16 @@ function registerLibraryIpc(): void {
     gameRepository.getReview(asId(gameId, "game id"), asId(reviewId, "review id"))
   );
   ipcMain.handle("games:save", (_event, value: unknown) => {
-    // A save landing while the import writer holds the write lock gets one more try.
+    // A save landing while the import writer or a backup restore holds the write lock gets one
+    // more try.
     return saveGameRetrying(parseSaveGameInput(value), (gameId) =>
       wasRecentlyDeleted(gameId) ? new Error(SAVE_SUPPRESSED_AFTER_DELETE) : null
     );
   });
-  ipcMain.handle("games:remove", (_event, value: unknown) => {
+  ipcMain.handle("games:remove", async (_event, value: unknown) => {
     const id = asId(value, "game id");
     recentlyDeletedGames.set(id, Date.now());
-    gameRepository.remove(id);
+    await retryOnceIfBusy(() => gameRepository.remove(id));
   });
   ipcMain.handle("games:importPgn", (_event, input: unknown): ImportedGame => {
     const imported = importPgnText(parsePgnText(input));
@@ -412,14 +422,15 @@ function registerLibraryIpc(): void {
     }
     if (keys.includes("updatesAutoDownload")) updateService.applySettings();
   };
-  ipcMain.handle("settings:set", (_event, key: unknown, value: unknown) => {
+  ipcMain.handle("settings:set", async (_event, key: unknown, value: unknown) => {
     const settingKey = parseSettingKey(key);
-    settingsRepository.set(settingKey, parseSettingValue(settingKey, value));
+    const parsed = parseSettingValue(settingKey, value);
+    await retryOnceIfBusy(() => settingsRepository.set(settingKey, parsed));
     settingsChanged([settingKey]);
   });
-  ipcMain.handle("settings:patch", (_event, value: unknown) => {
+  ipcMain.handle("settings:patch", async (_event, value: unknown) => {
     const patch = parseSettingsPatch(value);
-    settingsRepository.setMany(patch);
+    await retryOnceIfBusy(() => settingsRepository.setMany(patch));
     settingsChanged(Object.keys(patch) as (keyof AppSettings)[]);
   });
 }

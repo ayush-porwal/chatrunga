@@ -1,8 +1,10 @@
 name: e2e
 
 # Electron smoke journeys (apps/desktop/e2e): launch the real app and drive it — boot, PGN import,
-# persistence across a restart, positions, puzzles (scan worker), offline analysis. Too slow and
-# windowed for every PR: nightly, on demand, and (release.yml) against every packaged release build.
+# persistence across a restart, positions, puzzles (scan worker), offline analysis — on Linux and
+# Windows, from out/ and as the packaged app. Too slow and windowed for every PR: nightly, on
+# demand, and (release.yml) against every packaged release build. The timing benchmarks (tagged
+# @perf) run last, in a step of their own that reports but doesn't fail the run.
 on:
   schedule:
     - cron: "30 3 * * *"
@@ -17,9 +19,20 @@ permissions:
 
 jobs:
   smoke:
-    name: Smoke journeys (Linux, built and packaged)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    name: Smoke journeys (${{ matrix.name }}, built and packaged)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      # Each OS reports on its own: a Linux failure doesn't hide whether Windows passes.
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-latest
+            target: --linux
+          - name: Windows
+            os: windows-latest
+            target: --win
     env:
       CI: "true"
     steps:
@@ -41,35 +54,76 @@ jobs:
 
       # Ubuntu 24.04 blocks the unprivileged user namespaces Chromium's sandbox needs.
       - name: Allow Chromium's sandbox
+        if: runner.os == 'Linux'
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
 
       - name: Build app
         run: pnpm --filter @chaturanga/desktop build
 
+      # Linux runners have no display: the app runs under xvfb there.
       - name: Smoke journeys (out/ on Electron from node_modules)
         working-directory: apps/desktop
-        run: xvfb-run -a pnpm test:e2e:run
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a pnpm test:e2e:run --grep-invert @perf
+          else
+            pnpm test:e2e:run --grep-invert @perf
+          fi
 
       # The same journeys against the unpacked app electron-builder makes (asar, packaged paths).
       - name: Package (unpacked, unsigned)
         working-directory: apps/desktop
+        shell: bash
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: pnpm exec electron-builder --linux --dir --publish never
+        run: pnpm exec electron-builder ${{ matrix.target }} --dir --publish never
 
       - name: Check packaged app contents
         run: node scripts/check-packaged-app.mjs
 
       - name: Smoke journeys (packaged app)
         working-directory: apps/desktop
+        shell: bash
         env:
           CHATURANGA_E2E_PACKAGED: "1"
-        run: xvfb-run -a pnpm test:e2e:run
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a pnpm test:e2e:run --grep-invert @perf
+          else
+            pnpm test:e2e:run --grep-invert @perf
+          fi
 
       - name: Upload test results
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: e2e-results
+          name: e2e-results-${{ runner.os }}
+          path: apps/desktop/test-results/
+          if-no-files-found: ignore
+
+      # The timing benchmarks (@perf) against the packaged app, once the required journeys have
+      # passed. Their bounds depend on the runner, so a miss is reported (the step shows as failed
+      # and its results are uploaded) without failing the run. The timings are in the step's log.
+      - name: Timing benchmarks (packaged app, non-blocking)
+        id: perf
+        continue-on-error: true
+        timeout-minutes: 20
+        working-directory: apps/desktop
+        shell: bash
+        env:
+          CHATURANGA_E2E_PACKAGED: "1"
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a pnpm test:e2e:run --grep @perf
+          else
+            pnpm test:e2e:run --grep @perf
+          fi
+
+      - name: Upload timing benchmark results
+        if: always() && steps.perf.outcome != 'skipped'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-perf-results-${{ runner.os }}
           path: apps/desktop/test-results/
           if-no-files-found: ignore

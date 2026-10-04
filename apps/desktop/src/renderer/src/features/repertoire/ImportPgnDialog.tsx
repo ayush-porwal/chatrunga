@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Upload } from "lucide-react";
+import { AlertTriangle, Search, Upload } from "lucide-react";
 import { nanoid } from "nanoid";
 import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import type {
@@ -8,7 +8,8 @@ import type {
   ImportPreview,
   ImportProgressEvent,
   ImportResult,
-  ImportSelection
+  ImportSelection,
+  RepertoireColor
 } from "@chaturanga/shared/types/repertoire";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -25,7 +26,8 @@ import {
   useRepertoireQuery
 } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
-import { flushChapterDraft } from "./useChapterAutosave";
+import { flushDecisionTexts } from "./decision-text-drafts";
+import { flushChapterTree, flushChapterTreeInWrite } from "./useChapterAutosave";
 import {
   adoptCommittedRevision,
   importExpectedRevision,
@@ -38,8 +40,10 @@ import {
   stepPreviewRun,
   type PreviewRun
 } from "./import-progress";
+import { filterGames, PREVIEW_PAGE_SIZE, setGamesIncluded, setGamesKind } from "./long-lists";
 import { plural } from "./repertoire-chapters";
 import { nodeIdForPathLabel } from "./repertoire-model";
+import { IMPORT_KIND_HELP, importPracticeNote } from "./training-explanations";
 
 /** The default selection of each previewed game: included, its proposed title, opening kind. */
 export function defaultSelections(preview: ImportPreview): ImportSelection[] {
@@ -96,6 +100,12 @@ export function ImportPgnDialog({
   const [progress, setProgress] = useState<ImportProgressEvent | null>(null);
   /** True while the open study draft is saved before a commit. */
   const [flushing, setFlushing] = useState(false);
+  /** The preview's search, and the games it found (every game when it's blank). */
+  const [gameQuery, setGameQuery] = useState("");
+  const [found, setFound] = useState<number[]>([]);
+  /** Rows of `found` rendered; "Show more" adds a page. */
+  const [shownCount, setShownCount] = useState(PREVIEW_PAGE_SIZE);
+  const gameList = useRef<HTMLUListElement | null>(null);
 
   /** Leaves the running preview: its late result or rejection is ignored from now on. */
   const endRun = () => {
@@ -137,6 +147,9 @@ export function ImportPgnDialog({
 
   // Only games with illegal branches need a lookup (to find each branch's node); building one per
   // game would index every move of a large import on the renderer thread.
+  const color = detail.data?.color ?? null;
+  const shown = found.slice(0, shownCount);
+
   const lookups = useMemo(
     () =>
       preview?.games.map((game) =>
@@ -172,6 +185,9 @@ export function ImportPgnDialog({
         pendingJob.current = result.jobId;
         setPreview(result);
         setSelections(defaultSelections(result));
+        setGameQuery("");
+        setFound(result.games.map((_game, index) => index));
+        setShownCount(PREVIEW_PAGE_SIZE);
       },
       (cause) => {
         if (open.current && request === previewRequest.current) {
@@ -207,14 +223,20 @@ export function ImportPgnDialog({
   async function commit() {
     if (!preview || flushing) return;
     setError(null);
-    // An import into the repertoire whose draft is open saves that draft first, so no autosave
-    // runs (or comes due) during the commit and races its revision bump; the commit then expects
-    // the revision that save stored. A draft that can't be saved keeps the dialog open.
+    // An import into the repertoire whose draft is open, or whose prompt, hint, feedback or pause
+    // change is unsaved, saves those first, so no autosave or decision write runs (or comes due)
+    // during the commit and races its revision bump; the commit then expects the revision those
+    // saves stored. A chapter draft that can't be saved keeps the dialog open. A decision change
+    // refused now stays on its chapter with Retry (nothing of it is written during the commit),
+    // so it doesn't hold the import back.
     if (mustFlushDraftBeforeImport(useRepertoireWorkspaceStore.getState(), repertoireId)) {
       setFlushing(true);
       let saved: boolean;
       try {
-        saved = await flushChapterDraft(queryClient);
+        const ownDraft = useRepertoireWorkspaceStore.getState().repertoireId === repertoireId;
+        saved = !ownDraft || (await flushChapterTree(queryClient));
+        // Holds nothing back (no repertoire to block on): a refusal stays with its chapter.
+        if (saved) await flushDecisionTexts(queryClient, flushChapterTreeInWrite, []);
       } finally {
         if (open.current) setFlushing(false);
       }
@@ -259,7 +281,29 @@ export function ImportPgnDialog({
       current.map((item, position) => (position === index ? { ...item, ...patch } : item))
     );
 
+  /**
+   * Searches the games by title or number. The result is taken when the search changes, so
+   * renaming a found game never hides the row being typed in.
+   */
+  const search = (query: string) => {
+    setGameQuery(query);
+    setFound(preview ? filterGames(preview.games, selections, query) : []);
+    setShownCount(PREVIEW_PAGE_SIZE);
+  };
+
+  /** Shows the next page of games and moves focus to the first one it adds. */
+  const showMore = () => {
+    const first = found[shownCount];
+    setShownCount((count) => count + PREVIEW_PAGE_SIZE);
+    requestAnimationFrame(() =>
+      gameList.current
+        ?.querySelector<HTMLInputElement>(`[data-game-index="${first}"] input[type="checkbox"]`)
+        ?.focus()
+    );
+  };
+
   const included = selections.filter((selection) => selection.include).length;
+  const searching = Boolean(gameQuery.trim());
   const committing = flushing || commitMutation.isPending;
   const busy = previewing || committing;
 
@@ -325,101 +369,207 @@ export function ImportPgnDialog({
           </>
         )
       }
-      bodyClassName="grid gap-3"
+      // The preview's search and bulk actions stay put above its own scrolling list of games.
+      bodyClassName={preview ? "flex flex-col gap-3 overflow-hidden" : "grid gap-3"}
     >
       {preview ? (
-        <ul className="grid gap-2" aria-label="Games in the PGN">
-          {preview.games.map((game, index) => {
-            const selection = selections[index];
-            const lookup = lookups[index];
-            if (!selection) return null;
-            return (
-              <li
-                key={game.index}
-                className={cn(well, "grid gap-2 p-3", !selection.include && "opacity-70")}
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <input
-                    type="checkbox"
-                    className="size-4 accent-accent"
-                    aria-label={`Import game ${game.index + 1}`}
-                    checked={selection.include}
-                    disabled={!game.nodeCount}
-                    onChange={(event) => update(index, { include: event.target.checked })}
-                  />
-                  <Input
-                    aria-label={`Chapter title for game ${game.index + 1}`}
-                    className="h-8 min-w-40 flex-1"
-                    value={selection.title}
-                    onChange={(event) => update(index, { title: event.target.value })}
-                  />
-                  <div className="w-36">
-                    <Select
-                      aria-label={`Chapter kind for game ${game.index + 1}`}
-                      className="h-8"
-                      value={selection.kind}
-                      onChange={(event) =>
-                        update(index, { kind: event.target.value as ChapterKind })
-                      }
-                    >
-                      <option value="opening">Opening</option>
-                      <option value="reference">Reference</option>
-                    </Select>
-                  </div>
-                  <span className="text-xs text-fg-muted tabular-nums">
-                    {plural(game.nodeCount, "move")}
-                  </span>
+        <>
+          <p className="shrink-0 text-2xs text-fg-muted">{IMPORT_KIND_HELP}</p>
+          {preview.games.length > 1 ? (
+            <div className="grid shrink-0 gap-2">
+              <div className="relative">
+                <Search
+                  className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-fg-subtle"
+                  aria-hidden="true"
+                />
+                <Input
+                  type="search"
+                  aria-label="Search games"
+                  placeholder="Search by title or game number"
+                  className="h-8 pl-8"
+                  value={gameQuery}
+                  disabled={busy}
+                  onChange={(event) => search(event.target.value)}
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="mr-auto text-xs text-fg-muted" aria-live="polite">
+                  {included} of {plural(preview.games.length, "game")} included
+                  {searching ? ` · ${found.length} found` : ""}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  disabled={busy || !found.length}
+                  onClick={() =>
+                    setSelections((current) =>
+                      setGamesIncluded(current, preview.games, found, true)
+                    )
+                  }
+                >
+                  {searching ? "Include found" : "Include all"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  disabled={busy || !found.length}
+                  onClick={() =>
+                    setSelections((current) =>
+                      setGamesIncluded(current, preview.games, found, false)
+                    )
+                  }
+                >
+                  {searching ? "Exclude found" : "Exclude all"}
+                </Button>
+                <div className="w-36">
+                  <Select
+                    aria-label={
+                      searching
+                        ? "Chapter kind for the included games found"
+                        : "Chapter kind for every included game"
+                    }
+                    className="h-7 text-xs"
+                    value=""
+                    disabled={busy || !found.length}
+                    onChange={(event) =>
+                      setSelections((current) =>
+                        setGamesKind(current, found, event.target.value as ChapterKind)
+                      )
+                    }
+                  >
+                    <option value="" disabled>
+                      Set kind…
+                    </option>
+                    <option value="opening">All opening</option>
+                    <option value="reference">All reference</option>
+                  </Select>
                 </div>
-                {game.warnings.map((warning) => (
-                  <p key={warning} className="text-2xs text-fg-muted">
-                    {warning}
-                  </p>
-                ))}
-                {game.invalidBranches.map((branch, branchIndex) => {
-                  const parentId = lookup ? nodeIdForPathLabel(lookup, branch.path) : null;
-                  const excluded = Boolean(
-                    parentId && selection.excludeNodeIds?.includes(parentId)
-                  );
-                  return (
-                    <div
-                      key={`${branch.path}-${branchIndex}`}
-                      className="flex items-start gap-2 text-xs text-fg-secondary"
-                    >
-                      <AlertTriangle
-                        className="mt-0.5 size-3.5 shrink-0 text-warn"
-                        aria-hidden="true"
+              </div>
+            </div>
+          ) : null}
+          <div className="scroll-area -mx-1 grid min-h-0 content-start gap-2 overflow-y-auto px-1">
+            <ul ref={gameList} className="grid gap-2" aria-label="Games in the PGN">
+              {shown.map((index) => {
+                const game = preview.games[index];
+                const selection = selections[index];
+                const lookup = lookups[index];
+                if (!game || !selection) return null;
+                return (
+                  <li
+                    key={game.index}
+                    data-game-index={index}
+                    className={cn(well, "grid gap-2 p-3", !selection.include && "opacity-70")}
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-accent"
+                        aria-label={`Import game ${game.index + 1}`}
+                        checked={selection.include}
+                        disabled={!game.nodeCount}
+                        onChange={(event) => update(index, { include: event.target.checked })}
                       />
-                      <p className="min-w-0 flex-1">
-                        <span className="font-mono">
-                          {branch.path ? `${branch.path} ` : ""}
-                          {branch.san}
-                        </span>{" "}
-                        — {branch.reason}
-                        {excluded ? " The line leading to it is excluded too." : ""}
-                      </p>
-                      {parentId ? (
-                        <Button
-                          type="button"
-                          variant="link"
-                          size="xs"
-                          onClick={() =>
-                            update(index, {
-                              excludeNodeIds: excluded
-                                ? (selection.excludeNodeIds ?? []).filter((id) => id !== parentId)
-                                : [...(selection.excludeNodeIds ?? []), parentId]
-                            })
+                      <Input
+                        aria-label={`Chapter title for game ${game.index + 1}`}
+                        className="h-8 min-w-40 flex-1"
+                        value={selection.title}
+                        onChange={(event) => update(index, { title: event.target.value })}
+                      />
+                      <div className="w-48">
+                        <Select
+                          aria-label={`Chapter kind for game ${game.index + 1}`}
+                          className="h-8"
+                          value={selection.kind}
+                          onChange={(event) =>
+                            update(index, { kind: event.target.value as ChapterKind })
                           }
                         >
-                          {excluded ? "Keep line" : "Exclude line"}
-                        </Button>
-                      ) : null}
+                          <option value="opening">Opening (practised)</option>
+                          <option value="reference">Reference (study only)</option>
+                        </Select>
+                      </div>
+                      <span className="text-xs text-fg-muted tabular-nums">
+                        {plural(game.nodeCount, "move")}
+                      </span>
                     </div>
-                  );
-                })}
-              </li>
-            );
-          })}
-        </ul>
+                    {color && game.nodeCount > 0 ? (
+                      <PracticeNote
+                        kind={selection.kind}
+                        decisions={game.decisions[color]}
+                        color={color}
+                      />
+                    ) : null}
+                    {game.warnings.map((warning) => (
+                      <p key={warning} className="text-2xs text-fg-muted">
+                        {warning}
+                      </p>
+                    ))}
+                    {game.invalidBranches.map((branch, branchIndex) => {
+                      const parentId = lookup ? nodeIdForPathLabel(lookup, branch.path) : null;
+                      const excluded = Boolean(
+                        parentId && selection.excludeNodeIds?.includes(parentId)
+                      );
+                      return (
+                        <div
+                          key={`${branch.path}-${branchIndex}`}
+                          className="flex items-start gap-2 text-xs text-fg-secondary"
+                        >
+                          <AlertTriangle
+                            className="mt-0.5 size-3.5 shrink-0 text-warn"
+                            aria-hidden="true"
+                          />
+                          <p className="min-w-0 flex-1">
+                            <span className="font-mono">
+                              {branch.path ? `${branch.path} ` : ""}
+                              {branch.san}
+                            </span>{" "}
+                            — {branch.reason}
+                            {excluded ? " The line leading to it is excluded too." : ""}
+                          </p>
+                          {parentId ? (
+                            <Button
+                              type="button"
+                              variant="link"
+                              size="xs"
+                              onClick={() =>
+                                update(index, {
+                                  excludeNodeIds: excluded
+                                    ? (selection.excludeNodeIds ?? []).filter(
+                                        (id) => id !== parentId
+                                      )
+                                    : [...(selection.excludeNodeIds ?? []), parentId]
+                                })
+                              }
+                            >
+                              {excluded ? "Keep line" : "Exclude line"}
+                            </Button>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </li>
+                );
+              })}
+            </ul>
+            {searching && !found.length ? (
+              <p className="text-xs text-fg-muted">No games match “{gameQuery.trim()}”.</p>
+            ) : null}
+            {found.length > shownCount ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="justify-self-start"
+                onClick={showMore}
+              >
+                Show {Math.min(PREVIEW_PAGE_SIZE, found.length - shownCount)} more (
+                {found.length - shownCount} not shown)
+              </Button>
+            ) : null}
+          </div>
+        </>
       ) : (
         <>
           <Textarea
@@ -450,7 +600,25 @@ export function ImportPgnDialog({
           ) : null}
         </>
       )}
-      {error ? <Notice tone="danger">{error}</Notice> : null}
+      {error ? (
+        <Notice tone="danger" className="shrink-0">
+          {error}
+        </Notice>
+      ) : null}
     </Dialog>
   );
+}
+
+/** What a previewed game will practise as the chosen kind of chapter. */
+function PracticeNote({
+  kind,
+  decisions,
+  color
+}: {
+  kind: ChapterKind;
+  decisions: number;
+  color: RepertoireColor;
+}) {
+  const note = importPracticeNote(kind, decisions, color);
+  return <p className={cn("text-2xs", note.warn ? "text-warn" : "text-fg-muted")}>{note.text}</p>;
 }

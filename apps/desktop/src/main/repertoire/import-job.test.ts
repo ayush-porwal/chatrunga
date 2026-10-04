@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { parseRepertoirePgn } from "@chaturanga/shared/chess/repertoire-pgn";
 import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
+import { importedDecisionCount } from "@chaturanga/shared/chess/repertoire-training";
 import {
   DEFAULT_IMPORT_LIMITS,
   ImportCancelledError,
@@ -31,7 +32,13 @@ function expectedImport(pgn: string) {
       ...game,
       positionKeys: Object.fromEntries(
         game.rejected ? [] : game.tree.map((node) => [node.id, positionKey(node.fenAfter)])
-      )
+      ),
+      decisions: game.rejected
+        ? { white: 0, black: 0 }
+        : {
+            white: importedDecisionCount("white", game.tree),
+            black: importedDecisionCount("black", game.tree)
+          }
     }))
   };
 }
@@ -64,16 +71,28 @@ describe("runImport", () => {
     ).toEqual(expected);
   });
 
+  it("counts what each game practises as an opening chapter for either colour", async () => {
+    const { games } = await importPreviewFromText(
+      '1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 *\n\n[Variant "Atomic"]\n\n1. e4 *'
+    );
+    expect(games.map((game) => game.decisions)).toEqual([
+      { white: 4, black: 3 },
+      { white: 0, black: 0 }
+    ]);
+  });
+
   it("reports progress at most once per interval per phase, every phase once at least", async () => {
     let clock = 0;
     const events: ImportProgress[] = [];
-    await runImport({ kind: "text", text: MANY }, DEFAULT_IMPORT_LIMITS, {
+    // FEW in 100-character chunks gives as many chunks as MANY in 1000-character ones, without
+    // parsing 400 games (this test timed out under CI coverage with MANY).
+    await runImport({ kind: "text", text: FEW }, DEFAULT_IMPORT_LIMITS, {
       onProgress: (event) => events.push(event),
-      chunkChars: 1000,
+      chunkChars: 100,
       // Each reading of the clock advances it 30 ms: one report in four passes the 100 ms gap.
       now: () => (clock += 30)
     });
-    const chunks = Math.ceil(MANY.length / 1000);
+    const chunks = Math.ceil(FEW.length / 100);
     const phases = events.map((event) => event.phase);
     expect(phases[0]).toBe("reading");
     expect(phases.at(-1)).toBe("validating");
@@ -87,10 +106,10 @@ describe("runImport", () => {
     }
     expect(events.at(-1)).toEqual({
       phase: "validating",
-      bytesRead: Buffer.byteLength(MANY),
-      totalBytes: Buffer.byteLength(MANY),
-      gamesSeen: 400,
-      nodesSeen: 400 * 18
+      bytesRead: Buffer.byteLength(FEW),
+      totalBytes: Buffer.byteLength(FEW),
+      gamesSeen: 40,
+      nodesSeen: 40 * 18
     });
   });
 

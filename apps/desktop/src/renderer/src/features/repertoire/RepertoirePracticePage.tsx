@@ -15,18 +15,21 @@ import { useShallow } from "zustand/react/shallow";
 import type { Color } from "@chaturanga/shared/types/chess";
 import type {
   PracticeAction,
+  PracticeAnswer,
   PracticeCard,
-  PracticeMode,
   PracticeSessionSnapshot,
   RepertoireDetail,
   StartPracticeInput
 } from "@chaturanga/shared/types/repertoire";
+import { defaultSettings } from "@chaturanga/shared/types/settings";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Notice } from "@/components/ui/notice";
 import { Stat, StatGroup } from "@/components/ui/stat";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useEventCallback } from "@/lib/use-event-callback";
+import { isTyping, OVERLAY_SELECTOR } from "../../app/useBoardShortcuts";
+import { useSettingsQuery } from "../../queries/api";
 import {
   useEndPracticeMutation,
   useRecordAttemptMutation,
@@ -47,26 +50,36 @@ import { useLichessStore } from "../../stores/lichess-store";
 import { LIVE_GAME_NOTICE, repertoireCommandBlocked } from "./handoffs";
 import { usePrefersReducedMotion } from "../board/board-motion";
 import { BoardStage, BoardWorkspace } from "../board/BoardWorkspace";
-import { ControlledBoard, TypedMoveButton, type TypedMoveControl } from "../board/ControlledBoard";
+import { ControlledBoard } from "../board/ControlledBoard";
 import { PracticeSetup, initialPracticeInput } from "./PracticeSetup";
 import {
   autoStartPracticeInput,
+  isExtraPractice,
   rehearsePreset,
+  retryMissedPreset,
   savesPracticeDraft,
   type PracticePreset
 } from "./practice-setup";
+import {
+  beginStart,
+  IDLE_START,
+  isEmptyTargetedStart,
+  settleStart,
+  startShowsSpinner,
+  type PracticeStart
+} from "./practice-start";
 import { PracticeSummaryView } from "./PracticeSummaryView";
 import {
+  answerView,
+  autoAdvanceDelay,
   hintMarks,
   hintStageText,
+  isPracticeNextKey,
   lastMoveOf,
   nextUnansweredIndex,
-  revealArrows,
-  revealText
+  revealArrows
 } from "./repertoire-model";
 
-/** How long a correct answer stays on screen before the next card. */
-const ADVANCE_DELAY_MS = 600;
 /** Rehearsal: the brief confirmation before the authored reply is played. */
 const REHEARSAL_CONFIRM_MS = 450;
 /** Rehearsal: how long the reply stays on the board (its motion included) before the next step. */
@@ -82,7 +95,9 @@ const practice = () => useRepertoirePracticeStore.getState();
  * Repertoire practice (design §5.3): setup, then one hidden-answer decision at a time (no tree,
  * notes or authored arrows; a safe prompt may show), then a summary. The main process grades every
  * move and persists hints, reveals and skips before the page shows their result; a failed write
- * keeps the card and offers Retry.
+ * keeps the card and offers Retry. Once a card is decided its answer shows with the authored notes
+ * (the explanation, the accepted moves' comments); Next, Space or Enter moves on, and a correct
+ * answer with nothing to read moves on by itself when auto-advance is on (the setup's "Next card").
  */
 export function RepertoirePracticePage({
   repertoireId,
@@ -101,7 +116,10 @@ export function RepertoirePracticePage({
   /** Back to the setup (a new session). */
   onSetup: () => void;
   onStudy: (target: { chapterId: string; nodeId: string | null }) => void;
-  /** "Rehearse again": a new rehearsal started from a preset (a new step in history). */
+  /**
+   * A new session started from a preset, as a new step in history: "Rehearse again", or "Retry
+   * missed" (the missed decisions as a targeted queue).
+   */
   onRehearse: (preset: PracticePreset) => void;
 }) {
   const desktop = Boolean(window.chaturanga?.repertoires);
@@ -115,8 +133,7 @@ export function RepertoirePracticePage({
   );
   const start = useStartPracticeMutation();
   const resume = useResumePracticeMutation();
-  const endFinished = useEndPracticeMutation();
-  const { mutate: endFinishedSession } = endFinished;
+  const { mutateAsync: endFinishedSession } = useEndPracticeMutation();
   /** The finished session whose summary was asked for (once; Retry asks again). */
   const summaryRequested = useRef<string | null>(null);
   // Revisiting a session (its summary since replaced by another's) asks for its summary again.
@@ -124,9 +141,9 @@ export function RepertoirePracticePage({
     summaryRequested.current = null;
   }, [sessionId]);
   const saveWorkspace = useSaveRepertoireWorkspaceMutation();
-  const [nothingDue, setNothingDue] = useState<PracticeMode | null>(null);
-  /** An auto-started targeted queue found nothing to practise (the setup shows why). */
-  const [targetEmpty, setTargetEmpty] = useState(false);
+  /** The last start and how it ended (only the newest start settles it). */
+  const [startState, setStartState] = useState<PracticeStart>(IDLE_START);
+  const startRequest = useRef(0);
   /** The targeted preset already started (once per preset; Back to it never restarts it). */
   const [autoStarted, setAutoStarted] = useState<PracticePreset | null>(null);
   const [resumeError, setResumeError] = useState<string | null>(null);
@@ -136,16 +153,18 @@ export function RepertoirePracticePage({
     shownSession?.status === "finished" && summary?.sessionId !== shownSession.sessionId;
 
   // A session that already ended (Back after "Practice again", a restart) is never shown as live:
-  // ending it again is idempotent and returns its summary.
+  // ending it again is idempotent and returns its summary. Asked once per session, so the answer
+  // is taken from the promise: a per-call callback would be lost if this page's mutation observer
+  // were resubscribed meanwhile (React's StrictMode remount does that).
   useEffect(() => {
     if (!finishedWithoutSummary || !shownSession) return;
     if (summaryRequested.current === shownSession.sessionId) return;
     summaryRequested.current = shownSession.sessionId;
-    endFinishedSession(shownSession.sessionId, {
-      onSuccess: (result) => practice().setSummary(result),
-      onError: (error) =>
+    endFinishedSession(shownSession.sessionId).then(
+      (result) => practice().setSummary(result),
+      (error) =>
         setResumeError(ipcErrorMessage(error) || "That session's summary couldn't be read.")
-    });
+    );
   }, [finishedWithoutSummary, shownSession, endFinishedSession]);
 
   // Opening a session's route (history, a restart): resume it from the main process.
@@ -161,15 +180,17 @@ export function RepertoirePracticePage({
     });
   }, [sessionId, desktop, resumeSession]);
 
+  /**
+   * Starts a session. The answer is taken from the promise, never from per-call callbacks or the
+   * mutation's pending flag: an auto-start runs once from an effect, and a remount of this page
+   * (StrictMode) would otherwise lose its answer and leave the spinner up for good.
+   */
   const startSession = useEventCallback((input: StartPracticeInput, fromPreset?: boolean) => {
     if (repertoireCommandBlocked(useLichessStore.getState(), "start-practice")) {
       useAppNoticeStore.getState().show(LIVE_GAME_NOTICE, { tone: "info" });
       return;
     }
-    setNothingDue(null);
-    setTargetEmpty(false);
     const loaded = detail.data;
-    const targeted = Boolean(input.positionKeys?.length);
     if (loaded && savesPracticeDraft(input, fromPreset === true)) {
       saveWorkspace.mutate({
         repertoireId,
@@ -182,17 +203,23 @@ export function RepertoirePracticePage({
         practiceSetup: true
       });
     }
-    start.mutate(input, {
-      onSuccess: (snapshot) => {
-        if (!snapshot.cards.length) {
-          if (targeted) setTargetEmpty(true);
-          else setNothingDue(input.mode);
-          return;
-        }
+    const request = ++startRequest.current;
+    setStartState(beginStart(request, input, fromPreset === true));
+    start.mutateAsync(input).then(
+      (snapshot) => {
+        setStartState((state) => settleStart(state, request, { kind: "answered", snapshot }));
+        if (request !== startRequest.current || !snapshot.cards.length) return;
         practice().setSession(snapshot);
         onSessionStarted(snapshot.sessionId);
-      }
-    });
+      },
+      (error) =>
+        setStartState((state) =>
+          settleStart(state, request, {
+            kind: "failed",
+            message: ipcErrorMessage(error) || "Couldn't start practice."
+          })
+        )
+    );
   });
 
   // "Refresh this decision" / "Rehearse from here": the preset's session starts as soon as the
@@ -232,14 +259,19 @@ export function RepertoirePracticePage({
 
   if (summary && summary.sessionId === sessionId) {
     const rehearsed = shownSession?.mode === "rehearse-lines" ? shownSession.scope : null;
+    // A rehearsal offers Rehearse again instead of Retry missed (its misses are lines, not cards).
+    const retry = rehearsed ? null : retryMissedPreset(summary);
     return (
       <PracticeSummaryView
         detail={detail.data}
         summary={summary}
         cards={shownSession?.cards ?? []}
         note={endNote}
+        extraPractice={Boolean(shownSession && isExtraPractice(shownSession.scope))}
+        ungraded={shownSession?.scope.ungraded === true}
         onStudy={onStudy}
         onAgain={onSetup}
+        onRetryMissed={retry ? () => onRehearse(retry) : undefined}
         onRehearseAgain={
           rehearsed?.rehearse
             ? () => onRehearse(rehearsePreset(rehearsed.rehearse!, rehearsed.maxDepthPlies))
@@ -278,7 +310,7 @@ export function RepertoirePracticePage({
     );
   }
 
-  if (autoStartPending || (targetedInput && start.isPending)) {
+  if (autoStartPending || startShowsSpinner(startState)) {
     return <Spinner label="Starting practice" />;
   }
 
@@ -287,16 +319,19 @@ export function RepertoirePracticePage({
       key={detail.data.id}
       detail={detail.data}
       initial={initialPracticeInput(detail.data, preset)}
-      starting={start.isPending}
+      starting={startState.status === "starting"}
       error={
-        start.error
-          ? ipcErrorMessage(start.error) || "Couldn't start practice."
-          : targetEmpty
+        startState.status === "failed"
+          ? startState.message
+          : isEmptyTargetedStart(startState)
             ? "That decision has nothing to practise right now (it may be paused or no longer among your choices). Set up a session below instead."
             : null
       }
-      nothingDue={nothingDue}
+      empty={
+        startState.status === "empty" && !isEmptyTargetedStart(startState) ? startState.input : null
+      }
       onStart={startSession}
+      onStudy={onStudy}
     />
   );
 }
@@ -334,6 +369,7 @@ function PracticeSession({
     hintUci,
     message,
     reveal,
+    answer,
     leadUpIndex,
     orientation,
     rehearsal,
@@ -345,6 +381,7 @@ function PracticeSession({
       hintUci: state.hintUci,
       message: state.message,
       reveal: state.reveal,
+      answer: state.answer,
       leadUpIndex: state.leadUpIndex,
       orientation: state.orientation,
       rehearsal: state.rehearsal,
@@ -358,10 +395,9 @@ function PracticeSession({
   const endPractice = useEndPracticeMutation();
   const resume = useResumePracticeMutation();
   const reducedMotion = usePrefersReducedMotion();
+  const settings = useSettingsQuery();
   /** The submitted move shown while the main process grades it (cleared unless correct). */
   const [pending, setPending] = useState<PendingAttempt | null>(null);
-  /** The board's typed-move entry, opened from the button in the footer. */
-  const [typedMove, setTypedMove] = useState<TypedMoveControl | null>(null);
   const [failed, setFailed] = useState<{ message: string; retry: RetryTarget } | null>(null);
   const advanceTimer = useRef<number | null>(null);
   const color: Color = detail.color;
@@ -436,16 +472,21 @@ function PracticeSession({
     };
   }, [lineEnded, reducedMotion, goNext]);
 
-  // A correct answer moves on by itself after a moment (cancelled when leaving the page).
+  // A correct answer moves on by itself after the chosen delay, unless auto-advance is off or the
+  // answer has notes to read (cancelled when leaving the page).
+  const advanceDelay = autoAdvanceDelay(
+    settings.data?.practiceAutoAdvanceMs ?? defaultSettings.practiceAutoAdvanceMs,
+    answer
+  );
   useEffect(() => {
-    if (rehearsing) return;
+    if (rehearsing || advanceDelay === null) return;
     if (card.state !== "answered-correct" || message?.tone !== "success") return;
-    advanceTimer.current = window.setTimeout(goNext, ADVANCE_DELAY_MS);
+    advanceTimer.current = window.setTimeout(goNext, advanceDelay);
     return () => {
       if (advanceTimer.current !== null) window.clearTimeout(advanceTimer.current);
       advanceTimer.current = null;
     };
-  }, [rehearsing, card.state, card.queueItemId, message, goNext]);
+  }, [rehearsing, advanceDelay, card.state, card.queueItemId, message, goNext]);
 
   // Lead-up replay: one move per step, then back to the card's position.
   useEffect(() => {
@@ -554,25 +595,42 @@ function PracticeSession({
   const nextHintLabel = ["Hint", "Show piece", "Show move"][card.hintStage] ?? null;
   // Words for what the board shows (arrows and highlights alone aren't accessible).
   const boardHintText = reveal ? null : hintStageText(card.fen, card.hintStage, hintUci);
-  const revealWords = reveal ? revealText(card.fen, reveal.ucis, reveal.preferredUci) : null;
   // Every card is final: the next step is the summary.
   const allFinal = nextUnansweredIndex(session.cards, session.cursor) < 0 && finished;
-  // A correct answer moves on by itself only right after it was given (not on a resumed card).
-  const autoAdvancing = rehearsing
-    ? Boolean(rehearsal?.auto)
-    : card.state === "answered-correct" && message?.tone === "success";
-  // Rehearsal: the footer's way on — continue after a reveal, skip the line after a move outside
+  // The footer's way on. Rehearsal: continue after a reveal, skip the line after a move outside
   // the repertoire (the board stays playable to try again), the next line after an ended one (or
-  // a skipped / stale card), or the summary.
-  const rehearsalNext: { label: string; onClick: () => void } | null = !rehearsing
-    ? null
+  // a skipped / stale card), or the summary. Otherwise the next card once this one is decided
+  // (also while a correct answer waits to move on by itself).
+  const nextAction: { label: string; onClick: () => void; skips?: true } | null = !rehearsing
+    ? finished
+      ? { label: allFinal ? "See summary" : "Next card", onClick: goNext }
+      : null
     : rehearsal && !rehearsal.auto && !lineEnded
       ? { label: "Continue line", onClick: () => practice().continueStep() }
       : retrying && !held
-        ? { label: "Skip this line", onClick: () => act("skip") }
+        ? { label: "Skip this line", onClick: () => act("skip"), skips: true }
         : lineEnded || (finished && !rehearsal && !otherLine)
           ? { label: "Next line", onClick: goNext }
           : null;
+
+  // Space / Enter take the way on (never a skip): not while typing a move or in a dialog, and not
+  // on a focused button, which Space / Enter already press.
+  const onNextKey = useEventCallback((event: KeyboardEvent) => {
+    if (!nextAction || nextAction.skips || busy) return;
+    const active = document.activeElement;
+    const next = isPracticeNextKey(event, {
+      typing: isTyping(event.target) || isTyping(active),
+      blocked: Boolean(document.querySelector(OVERLAY_SELECTOR)),
+      onControl: pressesOnKey(event.target) || pressesOnKey(active)
+    });
+    if (!next) return;
+    event.preventDefault();
+    nextAction.onClick();
+  });
+  useEffect(() => {
+    window.addEventListener("keydown", onNextKey);
+    return () => window.removeEventListener("keydown", onNextKey);
+  }, [onNextKey]);
 
   return (
     <BoardWorkspace
@@ -587,6 +645,11 @@ function PracticeSession({
                 </span>
               ) : (
                 <>
+                  {session.scope.ungraded
+                    ? "Extra practice, not scheduled · "
+                    : isExtraPractice(session.scope)
+                      ? "Extra practice · "
+                      : ""}
                   {card.stage === "new" ? "New decision" : "Review"} ·{" "}
                   {color === "white" ? "White" : "Black"} to play
                 </>
@@ -609,8 +672,6 @@ function PracticeSession({
             arrows={marks.arrows}
             highlights={marks.highlights}
             onMove={onMove}
-            keyboardInput
-            onTypedMoveChange={setTypedMove}
           />
         </BoardStage>
       }
@@ -645,27 +706,21 @@ function PracticeSession({
       }
       footer={
         <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
-          <div className="flex items-center gap-1">
-            <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={finish}>
-              <Square />
-              End session
-            </Button>
-            <TypedMoveButton typedMove={typedMove} />
-          </div>
-          {rehearsalNext ? (
+          <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={finish}>
+            <Square />
+            End session
+          </Button>
+          {nextAction ? (
             <Button
               type="button"
               variant="primary"
               size="sm"
               disabled={busy}
-              onClick={rehearsalNext.onClick}
+              aria-keyshortcuts={nextAction.skips ? undefined : "Space Enter"}
+              title={nextAction.skips ? undefined : `${nextAction.label} (Space or Enter)`}
+              onClick={nextAction.onClick}
             >
-              {rehearsalNext.label}
-              <SkipForward />
-            </Button>
-          ) : !rehearsing && finished && !autoAdvancing ? (
-            <Button type="button" variant="primary" size="sm" disabled={busy} onClick={goNext}>
-              {allFinal ? "See summary" : "Next card"}
+              {nextAction.label}
               <SkipForward />
             </Button>
           ) : null}
@@ -710,15 +765,8 @@ function PracticeSession({
               {boardHintText}
             </Notice>
           ) : null}
-          {revealWords ? (
-            <Notice tone="info" icon={<Eye />} title="Answer">
-              {revealWords}
-            </Notice>
-          ) : null}
-          {reveal?.explanation ? (
-            <Notice tone="info" title="Why">
-              {reveal.explanation}
-            </Notice>
+          {answer ? (
+            <AnswerNotes fen={card.fen} answer={answer} playedUci={pending?.uci ?? null} />
           ) : null}
         </div>
 
@@ -824,6 +872,61 @@ function PracticeSession({
         <CardStatus card={card} retrying={retrying} />
       </div>
     </BoardWorkspace>
+  );
+}
+
+/** Space / Enter already press this focused control (a button, link, switch…). */
+function pressesOnKey(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    Boolean(
+      target.closest(
+        'button, a[href], summary, [role="button"], [role="link"], [role="checkbox"], [role="switch"], [role="radio"], [role="tab"], [role="option"], [role="menuitem"]'
+      )
+    )
+  );
+}
+
+/**
+ * A decided card's answer: the move played (or the reveal's words), the other accepted moves, the
+ * position's explanation and the accepted moves' own comments. Rendered only from an answer the
+ * main process gave out with the grade.
+ */
+function AnswerNotes({
+  fen,
+  answer,
+  playedUci
+}: {
+  fen: string;
+  answer: PracticeAnswer;
+  playedUci: string | null;
+}) {
+  const view = answerView(fen, answer, playedUci);
+  return (
+    <>
+      <Notice tone="info" icon={<Eye />} title="Answer">
+        {view.answer}
+        {view.alternatives ? (
+          <span className="block text-fg-muted">{view.alternatives}</span>
+        ) : null}
+      </Notice>
+      {view.explanation ? (
+        <Notice tone="info" title="Why">
+          {view.explanation}
+        </Notice>
+      ) : null}
+      {view.moveNotes.length ? (
+        <Notice tone="info" title="Move notes">
+          <ul className="grid gap-1">
+            {view.moveNotes.map((note) => (
+              <li key={note.uci}>
+                <span className="font-mono">{note.san}</span> — {note.text}
+              </li>
+            ))}
+          </ul>
+        </Notice>
+      ) : null}
+    </>
   );
 }
 

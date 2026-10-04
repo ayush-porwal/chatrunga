@@ -164,6 +164,11 @@ export type FrozenPolicy = {
   wrongMoveFeedback: Record<string, string>;
   /** The occurrence's comment, shown once the answer is revealed. */
   explanation: string | null;
+  /**
+   * The authored comments of the accepted moves played from the occurrence, by UCI, shown with
+   * the answer once the grade is final. Absent from sessions frozen before they were kept.
+   */
+  moveComments?: Record<string, string>;
   /** The decision's last graded attempt when the session froze it (null: never practised). */
   progressAt?: number | null;
 };
@@ -648,7 +653,22 @@ export const chapterRepository = {
     ).map(toChapterSummary);
   },
 
+  /** One chapter's due count (bound: now), as `summaries` counts it, without the other chapters. */
+  dueCount(chapterId: string, now: number): number {
+    const row = get<{ value: number }>(
+      `SELECT COUNT(DISTINCT i.position_key) AS value FROM repertoire_position_index i
+        JOIN repertoire_progress p ON p.repertoire_id = i.repertoire_id AND p.position_key = i.position_key
+        WHERE i.chapter_id = ? AND i.is_decision = 1 AND ${DUE_PROGRESS}
+        AND NOT EXISTS (SELECT 1 FROM repertoires r WHERE r.id = i.repertoire_id
+          AND r.archived_at IS NOT NULL)`,
+      chapterId,
+      now
+    );
+    return row?.value ?? 0;
+  },
+
   /** Every chapter of a repertoire, in order (throws if one is damaged). */
+  /** A repertoire's chapters in order (compareChaptersAsListed, for rows created together). */
   list(repertoireId: string): RepertoireChapter[] {
     return all<ChapterRow>(
       "SELECT * FROM repertoire_chapters WHERE repertoire_id = ? ORDER BY sort_order, created_at, id",
@@ -700,6 +720,14 @@ export const chapterRepository = {
     return row ? { repertoireId: row.repertoire_id, revision: row.revision } : null;
   },
 
+  /** A repertoire's chapter ids in chapter order (without reading their trees). */
+  orderedIds(repertoireId: string): string[] {
+    return all<{ id: string }>(
+      "SELECT id FROM repertoire_chapters WHERE repertoire_id = ? ORDER BY sort_order, created_at, id",
+      repertoireId
+    ).map((row) => row.id);
+  },
+
   maxSortOrder(repertoireId: string): number {
     const row = get<{ value: number | null }>(
       "SELECT MAX(sort_order) AS value FROM repertoire_chapters WHERE repertoire_id = ?",
@@ -735,10 +763,38 @@ export const chapterRepository = {
     );
   },
 
+  /** Sets a chapter's kind and practice switch with its new revision, leaving its tree as stored. */
+  updateSettings(
+    id: string,
+    settings: Pick<RepertoireChapter, "kind" | "enabled" | "revision">,
+    now: number
+  ): void {
+    run(
+      "UPDATE repertoire_chapters SET kind = ?, enabled = ?, revision = ?, updated_at = ? WHERE id = ?",
+      settings.kind,
+      settings.enabled ? 1 : 0,
+      settings.revision,
+      now,
+      id
+    );
+  },
+
   remove(id: string): void {
     run("DELETE FROM repertoire_chapters WHERE id = ?", id);
   }
 };
+
+/**
+ * The order chapterRepository.list returns chapters inserted at the same time in (equal
+ * created_at): by sort order, then id (SQLite compares the ASCII ids byte by byte). Lets a writer
+ * plan from chapters before inserting them (a backup restore plans its reindex before BEGIN).
+ */
+export function compareChaptersAsListed(
+  a: Pick<RepertoireChapter, "sortOrder" | "id">,
+  b: Pick<RepertoireChapter, "sortOrder" | "id">
+): number {
+  return a.sortOrder - b.sortOrder || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+}
 
 export const decisionRepository = {
   list(repertoireId: string): StoredDecision[] {
@@ -746,6 +802,16 @@ export const decisionRepository = {
       "SELECT * FROM repertoire_decisions WHERE repertoire_id = ? ORDER BY position_key",
       repertoireId
     ).map(toDecision);
+  },
+
+  /** The position keys of the repertoire's paused decisions. */
+  pausedKeys(repertoireId: string): Set<string> {
+    return new Set(
+      all<{ position_key: string }>(
+        "SELECT position_key FROM repertoire_decisions WHERE repertoire_id = ? AND paused = 1",
+        repertoireId
+      ).map((row) => row.position_key)
+    );
   },
 
   get(repertoireId: string, positionKey: string): StoredDecision | null {
@@ -834,27 +900,95 @@ export const progressRepository = {
   }
 };
 
+/** Most bound parameters one `IN (…)` list of a query uses. */
+const IN_CHUNK = 500;
+
+function insertIndexRows(
+  repertoireId: string,
+  rows: readonly PositionIndexRow[],
+  revision: number
+): void {
+  const insert = repertoireDb().prepare(
+    `INSERT INTO repertoire_position_index (repertoire_id, chapter_id, node_id, position_key, scope_state,
+      is_decision, ply, revision, key_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  for (const row of rows) {
+    insert.run(
+      repertoireId,
+      row.chapterId,
+      row.nodeId,
+      row.positionKey,
+      row.scopeState,
+      row.isDecision ? 1 : 0,
+      row.ply,
+      revision,
+      REPERTOIRE_POSITION_KEY_VERSION
+    );
+  }
+}
+
 export const positionIndexRepository = {
-  /** Replaces a repertoire's derived index rows. */
+  /**
+   * Replaces a repertoire's derived index rows. Each row keeps the repertoire revision it was
+   * written at: an incremental update rewrites only the changed chapter's rows (see core.ts).
+   */
   replace(repertoireId: string, rows: readonly PositionIndexRow[], revision: number): void {
     run("DELETE FROM repertoire_position_index WHERE repertoire_id = ?", repertoireId);
-    const insert = repertoireDb().prepare(
-      `INSERT INTO repertoire_position_index (repertoire_id, chapter_id, node_id, position_key, scope_state,
-        is_decision, ply, revision, key_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    );
-    for (const row of rows) {
-      insert.run(
-        repertoireId,
-        row.chapterId,
-        row.nodeId,
-        row.positionKey,
-        row.scopeState,
-        row.isDecision ? 1 : 0,
-        row.ply,
-        revision,
+    insertIndexRows(repertoireId, rows, revision);
+  },
+
+  /** Replaces one chapter's derived index rows (none: the chapter was removed). */
+  replaceChapter(
+    repertoireId: string,
+    chapterId: string,
+    rows: readonly PositionIndexRow[],
+    revision: number
+  ): void {
+    run("DELETE FROM repertoire_position_index WHERE chapter_id = ?", chapterId);
+    insertIndexRows(repertoireId, rows, revision);
+  },
+
+  /** A chapter's stored position keys by node id (rows of the current key version only). */
+  chapterKeys(chapterId: string): Map<string, string> {
+    return new Map(
+      all<{ node_id: string; position_key: string }>(
+        `SELECT node_id, position_key FROM repertoire_position_index
+          WHERE chapter_id = ? AND key_version = ?`,
+        chapterId,
         REPERTOIRE_POSITION_KEY_VERSION
-      );
+      ).map((row) => [row.node_id, row.position_key])
+    );
+  },
+
+  /**
+   * The decision occurrences (`is_decision`) of the given position keys, outside one chapter when
+   * `exceptChapterId` is given.
+   */
+  decisionOccurrences(
+    repertoireId: string,
+    positionKeys: readonly string[],
+    exceptChapterId: string | null = null
+  ): { chapterId: string; nodeId: string; positionKey: string }[] {
+    const found: { chapterId: string; nodeId: string; positionKey: string }[] = [];
+    const except = exceptChapterId === null ? [] : [exceptChapterId];
+    for (let start = 0; start < positionKeys.length; start += IN_CHUNK) {
+      const keys = positionKeys.slice(start, start + IN_CHUNK);
+      for (const row of all<{ chapter_id: string; node_id: string; position_key: string }>(
+        `SELECT chapter_id, node_id, position_key FROM repertoire_position_index
+          WHERE repertoire_id = ? AND is_decision = 1${except.length ? " AND chapter_id != ?" : ""}
+          AND position_key IN (${keys.map(() => "?").join(", ")})`,
+        repertoireId,
+        ...except,
+        ...keys
+      )) {
+        found.push({
+          chapterId: row.chapter_id,
+          nodeId: row.node_id,
+          positionKey: row.position_key
+        });
+      }
     }
+    return found;
   },
 
   list(repertoireId: string): PositionIndexRow[] {

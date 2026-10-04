@@ -122,8 +122,6 @@ export type PageCommands = {
   openGameAtNode: (gameId: string, nodeId: string | null) => void;
   repertoirePracticeStarted: (sessionId: string) => void;
   repertoirePracticeSetup: () => void;
-  /** Study → Analyze: the open chapter's route to its selected node as a new analysis game. */
-  analyzeFromStudy: () => void;
   /** Study → Play from here: Play's engine setup starting at the selected node. */
   playFromStudy: () => void;
 };
@@ -210,9 +208,10 @@ export function AppPages({
           onPractice={(chapterIds) => on.practiceRepertoireChapters(repertoire.repertoireId, chapterIds)}
           onRehearse={(target) => on.rehearseRepertoire(repertoire.repertoireId, rehearsePreset(target))}
           onMissing={on.repertoireMissing}
+          onHub={on.repertoireHub}
           onPositionChanged={on.repertoirePositionChanged}
           onOpenGame={on.openGameAtNode}
-          onAnalyze={desktopApiAvailable ? on.analyzeFromStudy : undefined}
+          onOpenEngineSettings={on.engineSettings}
           onPlayFromHere={desktopApiAvailable ? on.playFromStudy : undefined}
         />
       ) : view === "repertoire-practice" && repertoire?.view === "repertoire-practice" ? (

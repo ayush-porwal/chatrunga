@@ -18,6 +18,8 @@ describe("parseSettingValue", () => {
     expect(parseSettingValue("onboardingCompletedAt", Date.now())).toBeTypeOf("number");
     expect(parseSettingValue("repertoireCompareWhite", "rep-1")).toBe("rep-1");
     expect(parseSettingValue("repertoireCompareBlack", null)).toBeNull();
+    expect(parseSettingValue("practiceAutoAdvanceMs", 0)).toBe(0);
+    expect(parseSettingValue("practiceAutoAdvanceMs", 3000)).toBe(3000);
   });
 
   it("rejects values of the wrong type or out of range", () => {
@@ -30,5 +32,6 @@ describe("parseSettingValue", () => {
     expect(() => parseSettingValue("recentFilePaths", "path")).toThrow();
     expect(() => parseSettingValue("repertoireCompareWhite", 7)).toThrow(/repertoireCompareWhite/);
     expect(() => parseSettingValue("repertoireCompareBlack", "x".repeat(201))).toThrow();
+    expect(() => parseSettingValue("practiceAutoAdvanceMs", 1000)).toThrow(/practiceAutoAdvanceMs/);
   });
 });

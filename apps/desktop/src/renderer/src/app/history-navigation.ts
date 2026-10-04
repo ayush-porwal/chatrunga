@@ -46,7 +46,7 @@ export function captureBoard(tab: SideTab, puzzleSet: PuzzleSetSnapshot | null, 
     gameId: game.gameId,
     // Nothing to reload an unsaved game from: keep it whole.
     session: game.gameId ? null : game.toSession(),
-    // An unchanged copy (Study → Analyze) comes back unsaved too.
+    // An unchanged copy (Play from here, no move played yet) comes back unsaved too.
     ...(!game.gameId && isHeldUnchanged() ? { held: true as const } : {}),
     currentNodeId: game.currentNodeId,
     mode: game.mode,

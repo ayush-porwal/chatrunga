@@ -1,4 +1,5 @@
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { modalBackdrop, modalPanel, modalPanelCompact } from "@/lib/ui";
@@ -23,6 +24,11 @@ const FOCUSABLE =
  *
  * Motion: the backdrop fades and the panel rises/scales in (emphasis); on unmount a static copy
  * fades/scales out (micro) — parents keep mounting it conditionally, nothing to wire up.
+ * Size: the panel never outgrows the window; header and footer stay put while the body scrolls
+ * (a body with its own scrolling list can turn that off with `overflow-hidden`).
+ * Placement: rendered into document.body over the whole window. Inside the content panel it was
+ * clipped to that panel (its view-transition name contains it), so a tall dialog lost its top under
+ * the titlebar; the backdrop is also no-drag, so the titlebar's drag region can't take its clicks.
  * Focus: moves into the panel on open (unless a child autofocused), Tab cycles inside it, and focus
  * returns to the previously focused control on close.
  */
@@ -106,11 +112,14 @@ function Dialog({
     }
   };
 
-  return (
+  return createPortal(
     <div
       ref={backdropRef}
       data-state="open"
-      className={cn(modalBackdrop, "group/dialog data-[state=closed]:animate-fade-out")}
+      className={cn(
+        modalBackdrop,
+        "group/dialog [-webkit-app-region:no-drag] data-[state=closed]:animate-fade-out"
+      )}
       role="presentation"
       onMouseDown={(event) => {
         if (onClose && event.target === event.currentTarget) onClose();
@@ -129,7 +138,7 @@ function Dialog({
           "flex flex-col gap-4 outline-none group-data-[state=closed]/dialog:animate-dialog-out"
         )}
       >
-        <header className="flex items-start justify-between gap-3">
+        <header className="flex shrink-0 items-start justify-between gap-3">
           <div className="grid min-w-0 gap-1">
             <h2 id={titleId} className="text-base font-semibold text-fg">
               {title}
@@ -144,10 +153,17 @@ function Dialog({
             <IconButton label="Close" icon={<X />} size="icon-sm" className="-mr-1.5 -mt-1" onClick={onClose} tooltip={false} />
           ) : null}
         </header>
-        {children ? <div className={cn("min-h-0", bodyClassName)}>{children}</div> : null}
-        {footer ? <footer className="flex items-center justify-end gap-2">{footer}</footer> : null}
+        {/* The body scrolls between the pinned header and footer, so a long body never pushes them
+            out of the window; the 4px inset keeps focus rings at its edges unclipped. */}
+        {children ? (
+          <div className={cn("-m-1 min-h-0 overflow-y-auto p-1", bodyClassName)}>{children}</div>
+        ) : null}
+        {footer ? (
+          <footer className="flex shrink-0 items-center justify-end gap-2">{footer}</footer>
+        ) : null}
       </section>
-    </div>
+    </div>,
+    document.body
   );
 }
 

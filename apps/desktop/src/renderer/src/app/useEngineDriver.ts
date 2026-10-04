@@ -2,9 +2,11 @@ import { useEffect, useRef } from "react";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import type { EngineInfo } from "@chaturanga/shared/types/engine";
 import { currentLineUcis } from "../features/analysis/engine-game-helpers";
+import { liveAnalysisSubject, type AnalysisTarget } from "../features/analysis/live-analysis";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { clockNow, noteSystemResumed, remainingClockMs, useGameStore } from "../stores/game-store";
+import { selectLiveGameInProgress, useLichessStore } from "../stores/lichess-store";
 
 /** Live analysis always asks for the top three lines. */
 const CLOCK_TICK_MS = 200;
@@ -132,7 +134,8 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
       previous.depth !== depth ||
       previous.moveTimeMs !== moveTimeMs ||
       previous.resources !== resources;
-    if (changed && useGameStore.getState().mode === "analysis") useAnalysisStore.getState().restartSearch();
+    const analysing = useGameStore.getState().mode === "analysis" || useAnalysisStore.getState().target !== null;
+    if (changed && analysing) useAnalysisStore.getState().restartSearch();
   }, [analysisEngineId, multipv, depth, moveTimeMs, resources]);
   // Engine search output from main.
   useEffect(() => {
@@ -142,6 +145,10 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
     // A new position discards lines still buffered for the previous one.
     const unsubscribePosition = useGameStore.subscribe((state, previous) => {
       if (state.currentNodeId !== previous.currentNodeId || state.mode !== previous.mode) infos.discard();
+    });
+    // So does another analysis target (the study's next move, or none).
+    const unsubscribeTarget = useAnalysisStore.subscribe((state, previous) => {
+      if (state.target !== previous.target) infos.discard();
     });
     const unsubscribers = [
       window.chaturanga?.system?.onResumed?.(noteSystemResumed) ?? (() => {}),
@@ -167,6 +174,7 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
     return () => {
       infos.discard();
       unsubscribePosition();
+      unsubscribeTarget();
       unsubscribers.forEach((unsubscribe) => unsubscribe());
     };
   }, []);
@@ -179,6 +187,12 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
     let engineMoveKey: string | null = null;
     /** Position being analysed (live analysis), or null when no search of ours runs. */
     let analysisKey: string | null = null;
+    /** The analysis target in effect at the last sync (see AnalysisTarget). */
+    let lastTarget: AnalysisTarget | null = null;
+    /** A search of an analysis target was started (its lines are in the analysis store). */
+    let searchedTarget = false;
+    /** The searchEpoch when the current target was set (none: the last one's). */
+    let targetSetAt = 0;
     /** Last analysis attempt that failed for want of an engine (reported once, not on every update). */
     let missingEngineKey: string | null = null;
     let scheduled = false;
@@ -212,11 +226,38 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
     /** Identifies the match, so the engine resets for a new one even from the same position. */
     let gameKey = newSearchId();
 
+    const optionsKey = (options: AnalysisOptions) =>
+      `${options.engineId ?? ""}|${options.multipv}|${options.depth ?? ""}|${options.moveTimeMs ?? ""}|${useAnalysisStore.getState().searchEpoch}`;
+
     const sync = () => {
       scheduled = false;
       if (disposed) return;
       const game = useGameStore.getState();
       const status = statusForFen(game.currentFen);
+      const target = useAnalysisStore.getState().target;
+
+      // A target cleared (the study's engine panel closed, Study left): its search stops and its
+      // lines go (an engine game's own state stays). The engine goes back to the board: its
+      // analysis searches again if the board was asked for since the target was set (Back to an
+      // analysis board, Analyze on it: restartBoardSearch, before or after the panel unmounts).
+      // Otherwise it doesn't resume behind Study: it was stopped when the board was left, and
+      // searches again when the board is shown or its position changes.
+      if (lastTarget && !target) {
+        if (searchedTarget) {
+          stopAnalysis();
+          useAnalysisStore.getState().reset();
+        }
+        searchedTarget = false;
+        missingEngineKey = null;
+        const boardWanted = useAnalysisStore.getState().boardSearchEpoch > targetSetAt;
+        const board = boardWanted ? null : liveAnalysisSubject(game);
+        analysisKey = board ? `${board.key}|${optionsKey(analysisRef.current)}` : null;
+      }
+      lastTarget = target;
+      const subject = liveAnalysisSubject(game, {
+        target,
+        onlineGameLive: selectLiveGameInProgress(useLichessStore.getState())
+      });
 
       // A decided game (mate, resignation, draw, flag) stops any search.
       if (game.gameOutcome && game.gameOutcome !== lastOutcome) {
@@ -241,8 +282,9 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
       }
 
       // Leaving live analysis (e.g. for an engine game) stops it first: its `stop` ends the latest
-      // search in main, which would otherwise be the game search asked for just below.
-      if (game.mode !== "analysis") stopAnalysis();
+      // search in main, which would otherwise be the game search asked for just below. A target's
+      // search goes on whatever the board's mode (it only runs while no game holds the engine).
+      if (game.mode !== "analysis" && !(target && subject)) stopAnalysis();
 
       // Engine game: ask for a move whenever it is the engine's turn (once per position).
       const enginesTurn =
@@ -285,10 +327,11 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
 
       // Live analysis of the current position (restarted only when the position changes — not
       // when an arrow is drawn or a header edited).
-      if (engines && game.mode === "analysis" && !status.isEnd && !game.gameOutcome) {
+      if (engines && subject) {
         const options = analysisRef.current;
-        const key = `${game.rootFen}|${game.currentNodeId}|${game.currentFen}|${options.engineId ?? ""}|${options.multipv}|${options.depth ?? ""}|${options.moveTimeMs ?? ""}|${useAnalysisStore.getState().searchEpoch}`;
+        const key = `${subject.key}|${optionsKey(options)}`;
         if (key === analysisKey || key === missingEngineKey) return;
+        if (target) searchedTarget = true;
         const analysis = useAnalysisStore.getState();
         // The engine chosen for analysis (or the default), never an engine-game opponent left over.
         const engineId = options.engineId;
@@ -309,15 +352,15 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
         // Lines already found for this position (with this engine, line count and search limit)
         // show at once; only this search's own lines are remembered.
         analysis.startSearch(
-          `${game.currentFen}|${engineId}|${options.multipv}|${options.depth ?? ""}|${options.moveTimeMs ?? ""}`,
+          `${subject.fen}|${engineId}|${options.multipv}|${options.depth ?? ""}|${options.moveTimeMs ?? ""}`,
           searchId
         );
         engines
           .startAnalysis({
             engineId,
             searchId,
-            fen: game.rootFen,
-            moves: currentLineUcis(game.moveTree, game.currentNodeId),
+            fen: subject.rootFen,
+            moves: subject.moves(),
             multipv: options.multipv,
             depth: options.depth,
             moveTimeMs: options.moveTimeMs
@@ -342,9 +385,11 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
       if (state.headers !== previous.headers && state.moveTree !== previous.moveTree) gameKey = newSearchId();
       schedule();
     });
-    // A requested restart (restartSearch) re-runs the analysis for the same position.
+    // A requested restart (restartSearch) re-runs the analysis for the same position; a target set,
+    // moved or cleared changes what it searches.
     const unsubscribeRestart = useAnalysisStore.subscribe((state, previous) => {
-      if (state.searchEpoch !== previous.searchEpoch) schedule();
+      if (state.target && !previous.target) targetSetAt = state.searchEpoch;
+      if (state.searchEpoch !== previous.searchEpoch || state.target !== previous.target) schedule();
     });
     sync();
     return () => {

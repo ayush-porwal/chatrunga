@@ -121,4 +121,13 @@ describe("analysis store", () => {
     useAnalysisStore.getState().setError("failed");
     expect(useAnalysisStore.getState()).toMatchObject({ error: "failed", status: "error" });
   });
+
+  it("keeps the analysis target through a reset: only its owner clears it", () => {
+    const target = { owner: "chapter", nodeId: "root", rootFen: "fen", moves: [], fen: "fen" };
+    useAnalysisStore.getState().setTarget(target);
+    useAnalysisStore.getState().reset();
+    expect(useAnalysisStore.getState().target).toBe(target);
+    useAnalysisStore.getState().setTarget(null);
+    expect(useAnalysisStore.getState().target).toBeNull();
+  });
 });

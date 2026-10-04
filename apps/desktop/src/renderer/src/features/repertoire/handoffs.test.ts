@@ -3,7 +3,6 @@ import { START_FEN, statusForFen } from "@chaturanga/shared/chess/position";
 import type { LinkGameInput } from "@chaturanga/shared/types/repertoire";
 import { addLine, chapterOf, rootNode } from "./__fixtures__/repertoire";
 import {
-  buildAnalysisSnapshot,
   buildInitialSession,
   chapterPath,
   createLinkOnce,
@@ -50,61 +49,6 @@ describe("chapterPath", () => {
   it("falls back to the root for an unknown node", () => {
     const { chapter } = italian();
     expect(chapterPath(chapter, "nope").map((node) => node.id)).toEqual(["root"]);
-  });
-});
-
-describe("buildAnalysisSnapshot", () => {
-  it("copies the route to the selected node as a new unsaved analysis game", () => {
-    let next = 0;
-    const session = buildAnalysisSnapshot(origin("m2"), () => `n${++next}`);
-    expect(session.id).toBeNull();
-    expect(session.source).toBe("analysis");
-    expect(session.rootFen).toBe(START_FEN);
-    expect(session.moveTree.map((node) => node.id)).toEqual(["root", "n1", "n2", "n3"]);
-    expect(session.moveTree.map((node) => node.san)).toEqual([null, "e4", "e5", "Nf3"]);
-    // Only the route: the side line and later moves stay in the chapter.
-    expect(session.moveTree.find((node) => node.san === "c5")).toBeUndefined();
-    expect(session.moveTree.map((node) => node.children)).toEqual([["n1"], ["n2"], ["n3"], []]);
-    expect(session.moveTree.map((node) => node.parentId)).toEqual([null, "root", "n1", "n2"]);
-    expect(session.currentNodeId).toBe("n3");
-    expect(session.currentFen).toBe(session.moveTree[3].fenAfter);
-    expect(session.moveTree.map((node) => node.ply)).toEqual([0, 1, 2, 3]);
-  });
-
-  it("copies comments, NAGs, arrows and highlights along the route", () => {
-    const session = buildAnalysisSnapshot(origin("m2"));
-    const e5 = session.moveTree[2];
-    expect(e5.comment).toBe("The classical reply");
-    expect(e5.nags).toEqual(["$1"]);
-    expect(e5.arrows).toEqual([{ orig: "g1", dest: "f3", color: "green" }]);
-    expect(e5.highlights).toEqual([{ square: "e5", color: "red" }]);
-    expect(session.moveTree[0].comment).toBe("Start of the chapter");
-    // Copies, not the chapter's own arrays.
-    const { chapter } = italian();
-    expect(e5.arrows).not.toBe(chapter.tree.find((node) => node.id === "m1")!.arrows);
-  });
-
-  it("regenerates node ids (never the chapter's)", () => {
-    const session = buildAnalysisSnapshot(origin("m4"));
-    const chapterIds = new Set(italian().chapter.tree.map((node) => node.id));
-    const moveIds = session.moveTree.slice(1).map((node) => node.id);
-    expect(moveIds.some((id) => chapterIds.has(id))).toBe(false);
-    expect(new Set(moveIds).size).toBe(moveIds.length);
-  });
-
-  it("names the game after the repertoire and chapter and faces the repertoire's colour", () => {
-    const session = buildAnalysisSnapshot({ ...origin("m1"), color: "black" });
-    expect(session.headers.event).toBe("My 1.e4 › Italian");
-    expect(session.headers.result).toBe("*");
-    expect(session.headers.orientationHint).toBe("black");
-    expect(session.pgn).toContain('[Event "My 1.e4 › Italian"]');
-    expect(session.pgn).toContain("1. e4 e5");
-  });
-
-  it("is just the root at the chapter's start", () => {
-    const session = buildAnalysisSnapshot(origin("root"));
-    expect(session.moveTree).toHaveLength(1);
-    expect(session.currentNodeId).toBe("root");
   });
 });
 
@@ -171,7 +115,6 @@ describe("repertoireCommandBlocked", () => {
     "resume-practice",
     "refresh-decision",
     "stage-response",
-    "analyze",
     "play-from-here",
     "return-to-repertoire",
     "review-opening"
@@ -194,9 +137,9 @@ describe("repertoireCommandBlocked", () => {
 
   it("reads the live state at command time (a newer game blocks again)", () => {
     const state: { live: { over: boolean } | null } = { live: { over: true } };
-    expect(repertoireCommandBlocked(state, "analyze")).toBe(false);
+    expect(repertoireCommandBlocked(state, "play-from-here")).toBe(false);
     state.live = { over: false };
-    expect(repertoireCommandBlocked(state, "analyze")).toBe(true);
+    expect(repertoireCommandBlocked(state, "play-from-here")).toBe(true);
   });
 });
 

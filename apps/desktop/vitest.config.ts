@@ -26,6 +26,7 @@ export default defineConfig({
         "src/main/ipc-guard.ts",
         "src/main/renderer-flush.ts",
         "src/main/databases/puzzle-scan-worker.ts",
+        "src/main/repertoire/backup-restore-worker.ts",
         "src/main/ipc/review-handler.ts",
         "src/main/databases/external-databases.ts",
         "src/main/engine/engine-config.ts",

@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import { addLine, cardOf, chapterOf, rootNode } from "./__fixtures__/repertoire";
 import {
+  answerView,
+  autoAdvanceDelay,
   autosaveStep,
+  choiceActions,
+  hasAnswerNotes,
+  isPracticeNextKey,
+  leadUpLabel,
   decisionCountWithMeta,
   decisionDeltaLabel,
   defaultEdgeForNewMove,
@@ -21,11 +27,25 @@ import {
   transpositionsOf,
   hintStageText,
   isMissingTargetError,
+  isNotFoundError,
+  decisionDraftHoldsBack,
+  decisionDraftKey,
+  decisionDraftMatches,
+  decisionDraftName,
+  decisionDraftPatch,
+  decisionDraftWritable,
+  decisionTextStatus,
+  wrongMoveOptions,
+  decisionTextValue,
+  decisionWriteFailure,
+  type DecisionTextDraft,
+  nextDecisionDraft,
   occurrencesInOtherChapters,
   pieceNameAt,
   resumedHintText,
   revealText,
-  sanOf
+  sanOf,
+  type ChoiceRow
 } from "./repertoire-model";
 
 /** 1. e4 e5 2. Nf3, with 1. d4 and 1... c5 as alternatives. */
@@ -132,6 +152,43 @@ describe("deriveChoices", () => {
   });
 });
 
+describe("choiceActions", () => {
+  const kinds = (row: Pick<ChoiceRow, "state" | "edge">, side: "player" | "opponent") =>
+    choiceActions(row, side).map((action) => `${action.kind}:${action.variant}`);
+
+  it("offers the player's moves accept, prefer and make reference by state", () => {
+    expect(kinds({ state: "preferred", edge: "included" }, "player")).toEqual([
+      "make-reference:ghost"
+    ]);
+    expect(kinds({ state: "accepted", edge: "included" }, "player")).toEqual([
+      "prefer:outline",
+      "make-reference:ghost"
+    ]);
+    expect(kinds({ state: "reference", edge: "reference" }, "player")).toEqual([
+      "accept:outline",
+      "prefer:outline"
+    ]);
+  });
+
+  it("toggles an opponent's reply between covered and reference", () => {
+    expect(kinds({ state: "covered", edge: "covered" }, "opponent")).toEqual([
+      "make-reference:ghost"
+    ]);
+    expect(kinds({ state: "reference", edge: "reference" }, "opponent")).toEqual(["cover:outline"]);
+  });
+
+  it("outside training scope only keeps a move as reference (or covers a reply again)", () => {
+    expect(kinds({ state: "untrained", edge: "included" }, "player")).toEqual([
+      "make-reference:ghost"
+    ]);
+    expect(kinds({ state: "untrained", edge: "reference" }, "player")).toEqual([]);
+    expect(kinds({ state: "untrained", edge: "reference" }, "opponent")).toEqual(["cover:ghost"]);
+    expect(kinds({ state: "untrained", edge: "covered" }, "opponent")).toEqual([
+      "make-reference:ghost"
+    ]);
+  });
+});
+
 describe("boundaries", () => {
   it("defaults new own moves to reference and replies to covered", () => {
     const tree = sampleChapter();
@@ -212,6 +269,302 @@ describe("autosave decisions", () => {
         saveState: { status: "error", message: "disk full", stale: false }
       })
     ).toBe("Unsaved — disk full");
+  });
+
+  it("never says Saved while a prompt or hint is unsaved, saving or refused", () => {
+    const idle = { dirty: false, saveState: { status: "idle" } } as const;
+    const text = { dirty: true, saving: false, errorMessage: null, errorStale: false };
+    expect(saveStatusLabel({ ...idle, decisionText: { ...text, dirty: false } })).toBe("Saved");
+    expect(saveStatusLabel({ ...idle, decisionText: text })).toBe("Unsaved changes");
+    expect(saveStatusLabel({ ...idle, decisionText: { ...text, saving: true } })).toBe("Saving…");
+    expect(saveStatusLabel({ ...idle, decisionText: { ...text, errorMessage: "disk full" } })).toBe(
+      "Unsaved — disk full"
+    );
+    // The chapter's own failure is named first.
+    expect(
+      saveStatusLabel({
+        dirty: true,
+        saveState: { status: "error", message: "chapter refused", stale: false },
+        decisionText: { ...text, errorMessage: "prompt refused" }
+      })
+    ).toBe("Unsaved — chapter refused");
+  });
+
+  it("tells a deleted repertoire or chapter from other read failures", () => {
+    expect(isNotFoundError("Invalid repertoireId: not found", "repertoire")).toBe(true);
+    expect(isNotFoundError("Invalid chapterId: not found", "chapter")).toBe(true);
+    expect(isNotFoundError("Invalid chapterId: not found", "repertoire")).toBe(false);
+    expect(
+      isNotFoundError(
+        "Repertoire chapter c1 is damaged and can't be opened: the move tree is missing",
+        "chapter"
+      )
+    ).toBe(false);
+    expect(isNotFoundError("Invalid positionKey: not found in this repertoire", "chapter")).toBe(
+      false
+    );
+    expect(isNotFoundError("Invalid positionKey: not found in this repertoire", "position")).toBe(
+      true
+    );
+    expect(isNotFoundError("Invalid chapterId: not found", "position")).toBe(false);
+    expect(isNotFoundError("SQLITE_BUSY: database is locked", "repertoire")).toBe(false);
+  });
+});
+
+describe("decision text drafts", () => {
+  const draftOf = (overrides: Partial<DecisionTextDraft>): DecisionTextDraft =>
+    ({
+      repertoireId: "r1",
+      positionKey: "k1",
+      field: "prompt",
+      text: "Develop",
+      generation: 1,
+      status: "pending",
+      ...overrides
+    }) as DecisionTextDraft;
+
+  it("sends trimmed text, or null for a blank field", () => {
+    expect(decisionTextValue("  Develop with tempo ")).toBe("Develop with tempo");
+    expect(decisionTextValue("   ")).toBeNull();
+  });
+
+  it("keys a draft by repertoire, position and field", () => {
+    expect(decisionDraftKey("r1", "k1", "prompt")).not.toBe(decisionDraftKey("r1", "k1", "hint"));
+    expect(decisionDraftKey("r1", "k1", "hint")).not.toBe(decisionDraftKey("r2", "k1", "hint"));
+  });
+
+  it("keys feedback drafts per wrong move", () => {
+    expect(decisionDraftKey("r1", "k1", "feedback", "d2d4")).not.toBe(
+      decisionDraftKey("r1", "k1", "feedback", "c2c4")
+    );
+    expect(decisionDraftKey("r1", "k1", "paused")).not.toBe(
+      decisionDraftKey("r1", "k1", "feedback", "paused")
+    );
+  });
+
+  it("writes text fields, the pause, and feedback merged into the stored map", () => {
+    expect(decisionDraftPatch(draftOf({ text: " Develop " }), null)).toEqual({
+      prompt: "Develop"
+    });
+    expect(decisionDraftPatch(draftOf({ field: "hint", text: " " }), null)).toEqual({
+      hint: null
+    });
+    expect(decisionDraftPatch(draftOf({ field: "paused", text: "", paused: true }), null)).toEqual({
+      paused: true
+    });
+    const stored = { wrongMoveFeedback: { c2c4: "Not the English", d2d4: "Old" } };
+    expect(
+      decisionDraftPatch(draftOf({ field: "feedback", uci: "d2d4", text: " We play e4 " }), stored)
+    ).toEqual({ wrongMoveFeedback: { c2c4: "Not the English", d2d4: "We play e4" } });
+    // Blank text removes that move's feedback only.
+    expect(
+      decisionDraftPatch(draftOf({ field: "feedback", uci: "d2d4", text: "" }), stored)
+    ).toEqual({ wrongMoveFeedback: { c2c4: "Not the English" } });
+    expect(stored.wrongMoveFeedback.d2d4).toBe("Old");
+    expect(
+      decisionDraftPatch(draftOf({ field: "feedback", uci: "g1f3", text: "No" }), null)
+    ).toEqual({ wrongMoveFeedback: { g1f3: "No" } });
+  });
+
+  it("tells when a draft holds what the decision stores", () => {
+    const decision = {
+      prompt: "Develop",
+      hint: null,
+      wrongMoveFeedback: { d2d4: "We play e4" },
+      paused: false
+    };
+    expect(decisionDraftMatches(draftOf({ text: " Develop " }), decision)).toBe(true);
+    expect(decisionDraftMatches(draftOf({ field: "hint", text: "" }), decision)).toBe(true);
+    expect(decisionDraftMatches(draftOf({ field: "hint", text: "Nf3" }), decision)).toBe(false);
+    const feedback = (uci: string, text: string) => draftOf({ field: "feedback", uci, text });
+    expect(decisionDraftMatches(feedback("d2d4", "We play e4"), decision)).toBe(true);
+    expect(decisionDraftMatches(feedback("d2d4", ""), decision)).toBe(false);
+    expect(decisionDraftMatches(feedback("c2c4", ""), decision)).toBe(true);
+    const pause = (paused: boolean) => draftOf({ field: "paused", text: "", paused });
+    expect(decisionDraftMatches(pause(false), decision)).toBe(true);
+    expect(decisionDraftMatches(pause(true), decision)).toBe(false);
+    expect(decisionDraftMatches(pause(false), null)).toBe(true);
+  });
+
+  it("names a draft's change for notices", () => {
+    expect(decisionDraftName(draftOf({}))).toBe("practice prompt");
+    expect(decisionDraftName(draftOf({ field: "hint" }))).toBe("hint");
+    expect(decisionDraftName(draftOf({ field: "feedback", uci: "d2d4" }), "d4")).toBe(
+      "feedback for d4"
+    );
+    expect(decisionDraftName(draftOf({ field: "feedback", uci: "d2d4" }))).toBe(
+      "feedback for d2d4"
+    );
+    expect(decisionDraftName(draftOf({ field: "paused", paused: true }))).toBe("pause");
+    expect(decisionDraftName(draftOf({ field: "paused", paused: false }))).toBe("resume");
+  });
+
+  it("summarises one repertoire's drafts for the save status", () => {
+    const drafts = {
+      a: draftOf({ status: "saving" }),
+      b: draftOf({ field: "hint", status: "error", error: { message: "refused", stale: true } }),
+      c: draftOf({ repertoireId: "r2", status: "error", error: { message: "x", stale: false } })
+    };
+    expect(decisionTextStatus(drafts, "r1")).toEqual({
+      dirty: true,
+      saving: true,
+      errorMessage: "refused",
+      errorStale: true,
+      holdsBack: "stale"
+    });
+    expect(decisionTextStatus(drafts, "r2")).toMatchObject({ errorStale: false, saving: false });
+    expect(decisionTextStatus(drafts, "r3")).toEqual({
+      dirty: false,
+      saving: false,
+      errorMessage: null,
+      errorStale: false,
+      holdsBack: null
+    });
+    // A change whose position left the repertoire is unsaved but holds nothing back.
+    const gone = {
+      d: draftOf({
+        status: "error",
+        error: {
+          message: "This position is no longer in the repertoire.",
+          stale: false,
+          missing: true
+        }
+      })
+    };
+    expect(decisionTextStatus(gone, "r1")).toMatchObject({ dirty: true, holdsBack: null });
+    expect(decisionTextStatus({ ...gone, a: drafts.a }, "r1").holdsBack).toBe("unsaved");
+  });
+
+  describe("state machine (nextDecisionDraft)", () => {
+    const change = { repertoireId: "r1", positionKey: "k1", field: "prompt" as const, text: "A" };
+    const failure = { message: "disk full", stale: false };
+    const stale = { message: "repertoire changed", stale: true };
+
+    it("creates a draft on the first edit and keeps its state on later ones", () => {
+      const created = nextDecisionDraft(undefined, { type: "edit", change }).draft!;
+      expect(created).toEqual({ ...change, generation: 1, status: "pending" });
+      const failed = nextDecisionDraft(created, { type: "failed", error: failure }).draft!;
+      expect(nextDecisionDraft(failed, { type: "edit", change: { ...change, text: "B" } })).toEqual(
+        {
+          draft: { ...change, text: "B", generation: 2, status: "error", error: failure },
+          writeAgain: false
+        }
+      );
+      const paused = nextDecisionDraft(undefined, {
+        type: "edit",
+        change: { ...change, field: "paused", text: "", paused: true }
+      }).draft!;
+      expect(paused).toMatchObject({ paused: true });
+      expect(created).not.toHaveProperty("uci");
+      expect(created).not.toHaveProperty("paused");
+    });
+
+    it("drops a draft saved as sent, and keeps one typed while it saved", () => {
+      const saving = nextDecisionDraft(draftOf({}), { type: "saving" }).draft!;
+      expect(saving.status).toBe("saving");
+      expect(nextDecisionDraft(saving, { type: "saved", generation: 1 })).toEqual({
+        draft: null,
+        writeAgain: false
+      });
+      const edited = { ...saving, generation: 2 };
+      expect(nextDecisionDraft(edited, { type: "saved", generation: 1 }).draft).toEqual({
+        ...draftOf({ generation: 2 })
+      });
+      expect(nextDecisionDraft(undefined, { type: "saved", generation: 1 }).draft).toBeNull();
+    });
+
+    it("writes again after a write that ran while it was committed again, unless refused as stale", () => {
+      const saving = nextDecisionDraft(draftOf({}), { type: "saving" }).draft!;
+      const marked = nextDecisionDraft(saving, { type: "commit" }).draft!;
+      expect(marked).toMatchObject({ status: "saving", saveAgain: true });
+      expect(
+        nextDecisionDraft({ ...marked, generation: 2 }, { type: "saved", generation: 1 })
+      ).toEqual({ draft: draftOf({ generation: 2 }), writeAgain: true });
+      // Committed again but unchanged: saved as sent, nothing left to write.
+      expect(nextDecisionDraft(marked, { type: "saved", generation: 1 }).writeAgain).toBe(false);
+      expect(nextDecisionDraft(marked, { type: "failed", error: failure })).toEqual({
+        draft: draftOf({ status: "error", error: failure }),
+        writeAgain: true
+      });
+      expect(nextDecisionDraft(marked, { type: "failed", error: stale }).writeAgain).toBe(false);
+      // Only a running write takes the mark; a new write clears it.
+      expect(nextDecisionDraft(draftOf({}), { type: "commit" }).draft).toEqual(draftOf({}));
+      expect(nextDecisionDraft(marked, { type: "saving" }).draft).toEqual(
+        draftOf({ status: "saving" })
+      );
+    });
+
+    it("retries a failure that isn't stale; Keep mine any failure", () => {
+      const failed = draftOf({ status: "error", error: failure });
+      const refused = draftOf({ status: "error", error: stale });
+      expect(nextDecisionDraft(failed, { type: "retry" }).draft).toEqual(draftOf({}));
+      expect(nextDecisionDraft(refused, { type: "retry" }).draft).toBe(refused);
+      expect(nextDecisionDraft(refused, { type: "retry", stale: true }).draft).toEqual(draftOf({}));
+      expect(nextDecisionDraft(draftOf({}), { type: "retry", stale: true }).draft).toEqual(
+        draftOf({})
+      );
+    });
+
+    it("writes a pending draft; a failed one only on Retry, never a stale one, always a gone position", () => {
+      const missing = {
+        message: "This position is no longer in the repertoire.",
+        stale: false,
+        missing: true
+      };
+      expect(decisionDraftWritable(draftOf({}), false)).toBe(true);
+      expect(decisionDraftWritable(draftOf({ status: "error", error: failure }), false)).toBe(
+        false
+      );
+      expect(decisionDraftWritable(draftOf({ status: "error", error: failure }), true)).toBe(true);
+      expect(decisionDraftWritable(draftOf({ status: "error", error: stale }), true)).toBe(false);
+      expect(decisionDraftWritable(draftOf({ status: "error", error: missing }), false)).toBe(true);
+      expect(decisionDraftHoldsBack(draftOf({ status: "error", error: missing }))).toBe(false);
+      expect(decisionDraftHoldsBack(draftOf({ status: "error", error: stale }))).toBe(true);
+    });
+
+    it("reads a refused write's message in one place", () => {
+      expect(decisionWriteFailure("Invalid repertoireId: not found")).toBe("repertoire-gone");
+      expect(decisionWriteFailure("Invalid positionKey: not found in this repertoire")).toEqual({
+        message: "This position is no longer in the repertoire.",
+        stale: false,
+        missing: true
+      });
+      expect(decisionWriteFailure("Invalid expectedRevision: repertoire changed")).toEqual({
+        message: "Invalid expectedRevision: repertoire changed",
+        stale: true
+      });
+      expect(decisionWriteFailure("disk full")).toEqual({ message: "disk full", stale: false });
+      expect(decisionWriteFailure("read failed", { stale: true })).toEqual({
+        message: "read failed",
+        stale: true
+      });
+    });
+  });
+});
+
+describe("wrongMoveOptions", () => {
+  it("lists the legal moves left once accepted moves and existing feedback are excluded", () => {
+    const start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    const options = wrongMoveOptions(start, new Set(["e2e4", "d2d4"]));
+    expect(options).toHaveLength(18);
+    expect(options.map((option) => option.uci)).not.toContain("e2e4");
+    expect(options).toContainEqual({ uci: "g1f3", san: "Nf3" });
+    expect(options.map((option) => option.san)).toEqual(
+      [...options.map((option) => option.san)].sort((a, b) => a.localeCompare(b))
+    );
+    expect(wrongMoveOptions("not a fen", new Set())).toEqual([]);
+  });
+
+  it("lists castling king-two-squares and each promotion piece", () => {
+    const castling = wrongMoveOptions("4k3/8/8/8/8/8/8/4K2R w K - 0 1", new Set());
+    expect(castling).toContainEqual({ uci: "e1g1", san: "O-O" });
+    expect(castling.map((option) => option.uci)).not.toContain("e1h1");
+    const promotion = wrongMoveOptions("8/P6k/8/8/8/8/8/K7 w - - 0 1", new Set(["a7a8q"]));
+    expect(promotion.filter((option) => option.uci.startsWith("a7a8")).map((o) => o.san)).toEqual([
+      "a8=B",
+      "a8=N",
+      "a8=R"
+    ]);
   });
 });
 
@@ -315,6 +668,94 @@ describe("practice text", () => {
     expect(hintStageText(start, 2, "e4e5")).toBe("Move the piece on e4");
     expect(hintStageText(start, 3, "g1f3")).toBe("g1 to f3");
     expect(hintStageText(start, 3, null)).toBeNull();
+  });
+
+  it("after a correct answer, names the move played, the other accepted moves and the notes", () => {
+    const answer = {
+      ucis: ["e2e4", "g1f3", "c2c4"],
+      preferredUci: "g1f3",
+      explanation: " The centre first. ",
+      moveComments: { e2e4: "Open games.", c2c4: " ", g1f3: "Flexible." }
+    };
+    expect(answerView(start, answer, "e2e4")).toEqual({
+      answer: "You played e4.",
+      alternatives: "Also accepted: Nf3 (preferred), c4",
+      explanation: "The centre first.",
+      moveNotes: [
+        { uci: "g1f3", san: "Nf3", text: "Flexible." },
+        { uci: "e2e4", san: "e4", text: "Open games." }
+      ]
+    });
+    expect(answerView(start, { ...answer, ucis: ["g1f3"] }, "g1f3").alternatives).toBeNull();
+  });
+
+  it("after a reveal, words the answer as the reveal always has", () => {
+    const view = answerView(
+      start,
+      { ucis: ["e2e4", "g1f3"], preferredUci: null, explanation: null },
+      null
+    );
+    expect(view).toEqual({
+      answer: "Preferred: e4 · also accepted: Nf3",
+      alternatives: null,
+      explanation: null,
+      moveNotes: []
+    });
+  });
+
+  it("auto-advances a correct answer only when it is on and there is nothing to read", () => {
+    const plain = { ucis: ["e2e4"], preferredUci: "e2e4", explanation: null };
+    expect(autoAdvanceDelay(600, plain)).toBe(600);
+    expect(autoAdvanceDelay(600, null)).toBe(600);
+    expect(autoAdvanceDelay(0, plain)).toBeNull();
+    expect(autoAdvanceDelay(3000, { ...plain, explanation: "Why" })).toBeNull();
+    expect(autoAdvanceDelay(1500, { ...plain, moveComments: { e2e4: "Note" } })).toBeNull();
+    expect(hasAnswerNotes({ ...plain, explanation: "  ", moveComments: { e2e4: " " } })).toBe(
+      false
+    );
+    expect(hasAnswerNotes(null)).toBe(false);
+  });
+
+  it("takes Space and Enter as Next, except where they already mean something", () => {
+    const key = (key: string, extra: Partial<KeyboardEvent> = {}) => ({
+      key,
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: false,
+      repeat: false,
+      defaultPrevented: false,
+      ...extra
+    });
+    const free = { typing: false, blocked: false, onControl: false };
+    expect(isPracticeNextKey(key(" "), free)).toBe(true);
+    expect(isPracticeNextKey(key("Enter"), free)).toBe(true);
+    expect(isPracticeNextKey(key("n"), free)).toBe(false);
+    expect(isPracticeNextKey(key("f"), free)).toBe(false);
+    expect(isPracticeNextKey(key(" "), { ...free, typing: true })).toBe(false);
+    expect(isPracticeNextKey(key("Enter"), { ...free, blocked: true })).toBe(false);
+    expect(isPracticeNextKey(key("Enter"), { ...free, onControl: true })).toBe(false);
+    expect(isPracticeNextKey(key(" ", { repeat: true }), free)).toBe(false);
+    expect(isPracticeNextKey(key("Enter", { metaKey: true }), free)).toBe(false);
+    expect(isPracticeNextKey(key(" ", { shiftKey: true }), free)).toBe(false);
+    expect(isPracticeNextKey(key(" ", { defaultPrevented: true }), free)).toBe(false);
+  });
+
+  it("numbers a lead-up from each move's resulting position", () => {
+    expect(leadUpLabel([])).toBe("Start");
+    expect(
+      leadUpLabel([
+        { san: "e4", fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1" },
+        { san: "c5", fen: "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2" },
+        { san: "Nf3", fen: "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2" }
+      ])
+    ).toBe("1. e4 c5 2. Nf3");
+    // A chapter starting with Black to move.
+    expect(
+      leadUpLabel([
+        { san: "Nc6", fen: "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3" }
+      ])
+    ).toBe("2... Nc6");
   });
 
   it("says which hints a resumed card already used", () => {

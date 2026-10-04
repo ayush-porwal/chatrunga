@@ -9,12 +9,14 @@ import {
   REPERTOIRE_ROOT_NODE_ID,
   type PracticeMode,
   type PracticeScope,
+  type PracticeSummary,
   type RepertoireChapter,
   type RepertoireChapterSummary,
   type RepertoireColor,
   type RepertoireDetail,
   type StartPracticeInput
 } from "@chaturanga/shared/types/repertoire";
+import { sortedChapters } from "./repertoire-chapters";
 
 /** Pure rules of the practice setup form: defaults, the saved draft, and the main's limits. */
 
@@ -46,6 +48,8 @@ export type PracticePreset = {
   chapterIds?: string[];
   mode?: PracticeMode;
   positionKeys?: string[];
+  /** A targeted queue as ungraded extra practice ("Retry missed"): no schedule changes. */
+  ungraded?: boolean;
   rehearse?: RehearseTarget;
   /** Rehearsal only: the depth limit to start with ("Rehearse again" keeps the session's). */
   maxDepthPlies?: number;
@@ -63,6 +67,27 @@ export function rehearsePreset(target: RehearseTarget, maxDepthPlies?: number): 
     ...(maxDepthPlies ? { maxDepthPlies } : {}),
     autoStart: true
   };
+}
+
+/**
+ * "Retry missed": the session's missed decisions as a targeted queue, started at once; null when
+ * nothing was missed. It is a new session, so the missed session's own answers and summary stay
+ * as they were, and it is ungraded: its answers are recorded with it, but the first scored
+ * attempt's schedule (a missed decision's relearn step, its lapses) stays as it was. "Refresh
+ * this decision" is a graded targeted queue.
+ */
+export function retryMissedPreset(
+  summary: Pick<PracticeSummary, "missedPositionKeys">
+): PracticePreset | null {
+  const positionKeys = [...new Set(summary.missedPositionKeys)];
+  return positionKeys.length
+    ? { mode: "review-due", positionKeys, ungraded: true, autoStart: true }
+    : null;
+}
+
+/** A targeted queue (exact decisions, due or not) is extra practice, not the scheduled review. */
+export function isExtraPractice(scope: Pick<PracticeScope, "positionKeys">): boolean {
+  return Boolean(scope.positionKeys?.length);
 }
 
 /**
@@ -113,7 +138,8 @@ export function targetedPracticeInput(
     mode: preset.mode ?? "review-due",
     positionKeys,
     cardLimit: limit,
-    newCardLimit: limit
+    newCardLimit: limit,
+    ...(preset.ungraded ? { ungraded: true } : {})
   };
 }
 
@@ -243,15 +269,19 @@ export type RehearseStart = { nodeId: string; path: string };
  * Where a rehearsal can start inside a chapter: positions in training scope where the player is
  * to move and has a repertoire move within the depth limit, in authored order. The chapter start
  * is the picker's default and isn't listed; `label` names a node's path ("1. e4 e5 2. Nf3").
+ * `paused` (position keys) are paused decisions: played as context, so none is listed here. (The
+ * setup still offers one preselected by Study's "Rehearse from here" while a decision below it is
+ * asked: the rehearsal plays it as lead-up.)
  */
 export function rehearseStarts(
   chapter: Pick<RepertoireChapter, "kind" | "enabled" | "tree" | "nodeMeta">,
   color: RepertoireColor,
   label: (lookup: ChapterLookup, nodeId: string) => string,
   limit = MAX_REHEARSE_STARTS,
-  maxDepthPlies = DEFAULT_REHEARSAL_DEPTH_PLIES
+  maxDepthPlies = DEFAULT_REHEARSAL_DEPTH_PLIES,
+  paused: ReadonlySet<string> = new Set()
 ): { starts: RehearseStart[]; truncated: boolean } {
-  const context = rehearsalContext(chapter, color, maxDepthPlies);
+  const context = rehearsalContext(chapter, color, maxDepthPlies, undefined, paused);
   const starts: RehearseStart[] = [];
   for (const id of context.lookup.order) {
     if (id === REPERTOIRE_ROOT_NODE_ID || !isDecisionNode(context, id)) continue;
@@ -260,4 +290,31 @@ export function rehearseStarts(
     starts.push({ nodeId: id, path: label(context.lookup, id) });
   }
   return { starts, truncated: false };
+}
+
+/** The most chapters of a scope read to explain an empty practice start. */
+export const EXPLAINED_CHAPTER_LIMIT = 20;
+
+/**
+ * The chapters that explain a practice start with nothing to ask: the rehearsed chapter, else the
+ * chapters in scope (the first EXPLAINED_CHAPTER_LIMIT). A start over every chapter names one only
+ * when the whole repertoire has no decision: the chapter last studied, else the first one. Empty
+ * when there is no such chapter (the mode's own explanation applies).
+ */
+export function explainedChapterIds(
+  detail: Pick<RepertoireDetail, "chapters" | "workspace" | "decisionCount">,
+  input: Pick<StartPracticeInput, "mode" | "chapterIds" | "rehearse">
+): string[] {
+  const known = new Set(detail.chapters.map((chapter) => chapter.id));
+  if (input.mode === "rehearse-lines" && input.rehearse) {
+    return known.has(input.rehearse.chapterId) ? [input.rehearse.chapterId] : [];
+  }
+  if (input.chapterIds?.length) {
+    return input.chapterIds.filter((id) => known.has(id)).slice(0, EXPLAINED_CHAPTER_LIMIT);
+  }
+  if (detail.decisionCount > 0) return [];
+  const last = detail.workspace?.lastChapterId;
+  if (last && known.has(last)) return [last];
+  const first = sortedChapters(detail.chapters)[0];
+  return first ? [first.id] : [];
 }

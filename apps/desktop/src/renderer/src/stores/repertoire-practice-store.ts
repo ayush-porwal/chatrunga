@@ -4,7 +4,9 @@ import type {
   AttemptResult,
   PracticeAction,
   PracticeActionResult,
+  PracticeAnswer,
   PracticeCard,
+  PracticeLeadUpMove,
   PracticeSessionSnapshot,
   PracticeSummary,
   RehearsalStep
@@ -30,11 +32,8 @@ export type PracticeOutcomeMessage = {
   feedback?: string | null;
 };
 
-export type PracticeReveal = {
-  ucis: string[];
-  preferredUci: string | null;
-  explanation: string | null;
-};
+/** A revealed answer: its accepted moves are drawn on the board. */
+export type PracticeReveal = PracticeAnswer;
 
 /** Why a rehearsed line ended. */
 export type RehearsalEndReason = NonNullable<RehearsalStep["endReason"]>;
@@ -58,6 +57,11 @@ export type RepertoirePracticeState = {
   hintUci: string | null;
   message: PracticeOutcomeMessage | null;
   reveal: PracticeReveal | null;
+  /**
+   * The current card's answer with its authored notes, once its grade is final (a correct answer
+   * or a reveal); null before, so nothing answer-bearing shows while the card can be answered.
+   */
+  answer: PracticeAnswer | null;
   /** Index into the card's lead-up while replaying it; null shows the card's position. */
   leadUpIndex: number | null;
   orientation: Color;
@@ -105,6 +109,7 @@ const initialState: RepertoirePracticeState = {
   hintUci: null,
   message: null,
   reveal: null,
+  answer: null,
   leadUpIndex: null,
   orientation: "white",
   rehearsal: null,
@@ -119,11 +124,22 @@ const freshCardUi = {
   hintUci: null,
   message: null,
   reveal: null,
+  answer: null,
   leadUpIndex: null,
   rehearsal: null,
   otherLine: null,
   lineEnded: null
 };
+
+/** The answer a correct attempt's result gives out, with its notes when it has them. */
+function answerOf(result: AttemptResult): PracticeAnswer {
+  return {
+    ucis: result.acceptedUcis,
+    preferredUci: result.preferredUci,
+    explanation: result.explanation ?? null,
+    ...(result.moveComments ? { moveComments: result.moveComments } : {})
+  };
+}
 
 /** The current card of a session, if any. */
 export function currentCard(session: PracticeSessionSnapshot | null): PracticeCard | null {
@@ -204,6 +220,28 @@ export function openingReplyMessage(
   return { tone: "info", text: `The reply: ${reply.san}.` };
 }
 
+/**
+ * The words for a rehearsal's reply before `next`, and for the moves played after it at paused
+ * decisions (never asked: they and their replies are the end of the next card's lead-up).
+ */
+export function rehearsalReplyMessage(
+  reply: PracticeLeadUpMove | null,
+  next: PracticeCard
+): PracticeOutcomeMessage | null {
+  if (!reply) return null;
+  let at = next.leadUp.length - 1;
+  while (at >= 0 && !(next.leadUp[at].uci === reply.uci && next.leadUp[at].fen === reply.fen)) {
+    at -= 1;
+  }
+  const played = at >= 0 ? next.leadUp.slice(at + 1).map((move) => move.san) : [];
+  return {
+    tone: "info",
+    text: played.length
+      ? `The reply: ${reply.san}. Played for you (paused): ${played.join(" ")}.`
+      : `The reply: ${reply.san}.`
+  };
+}
+
 /** The step of the line a rehearsal card is (1 for the line's first decision). */
 export function rehearsalStepNumber(card: PracticeCard): number {
   return (card.rehearsal?.stepIndex ?? 0) + 1;
@@ -237,6 +275,7 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
       hint: card ? (shown?.hint ?? resumedHintText(card)) : null,
       hintUci: shown?.hintUci ?? null,
       reveal: shown?.revealed ?? null,
+      answer: shown?.revealed ?? null,
       message: card ? openingReplyMessage(session, card) : null,
       session: { ...session, totals: totalsOf(session.cards) },
       summary: null,
@@ -295,16 +334,17 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
         message = { tone: "info", text: "This card is already finished." };
     }
     const step = result.outcome === "correct" ? result.rehearsal : undefined;
+    // A wrong answer's result never carries the answer (the card can be retried); a correct one's
+    // does, shown with its notes (a rehearsal moves on instead).
+    const answer =
+      result.outcome === "correct" && !step && result.acceptedUcis.length ? answerOf(result) : null;
     set({
       session: next,
       message,
       otherLine: null,
-      // A wrong answer's result never carries the answer (the card can be retried); a correct
-      // retry's does, and ends the card showing the accepted moves (a rehearsal moves on instead).
-      reveal:
-        result.outcome === "correct" && !step && !result.finalGrade && result.acceptedUcis.length
-          ? { ucis: result.acceptedUcis, preferredUci: result.preferredUci, explanation: null }
-          : get().reveal,
+      // A correct retry ends the card showing the accepted moves on the board too.
+      reveal: answer && !result.finalGrade ? answer : get().reveal,
+      answer: answer ?? get().answer,
       rehearsal: step ? { step, replyShown: false, auto: true } : get().rehearsal
     });
   },
@@ -344,21 +384,19 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
         hintUci: result.revealed?.preferredUci ?? result.revealed?.ucis[0] ?? get().hintUci
       });
     } else if (kind === "reveal") {
+      const revealed = result.revealed ?? { ucis: [], preferredUci: null, explanation: null };
       set({
         session: next,
-        reveal: result.revealed
-          ? {
-              ucis: result.revealed.ucis,
-              preferredUci: result.revealed.preferredUci,
-              explanation: result.revealed.explanation
-            }
-          : { ucis: [], preferredUci: null, explanation: null },
+        reveal: revealed,
+        answer: revealed,
         message: {
           tone: "info",
           text:
             result.card.state === "skipped"
               ? "This decision changed since the session started, so the card was skipped."
-              : "Revealed — this decision counts as missed."
+              : "Revealed — this decision counts as missed.",
+          // The author's words on the move just missed stay beside the answer.
+          feedback: get().message?.feedback ?? null
         },
         otherLine: null,
         // A rehearsal waits on the answer until the player continues the line.
@@ -422,7 +460,7 @@ export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actio
         hint: resumedHintText(card),
         session: { ...session, cursor: index },
         // The reply is announced in words too (the board's motion alone isn't accessible).
-        message: step.reply ? { tone: "info", text: `The reply: ${step.reply.san}.` } : null
+        message: rehearsalReplyMessage(step.reply, card)
       });
       return "next";
     }
