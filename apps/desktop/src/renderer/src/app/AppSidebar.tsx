@@ -14,8 +14,9 @@ import { BOARD_SHORTCUTS } from "./useBoardShortcuts";
 
 /**
  * Left navigation, below the titlebar on the window chrome (no border — the inset content panel
- * next to it provides the edge). Expanded: labelled items. Collapsed: an icon rail with tooltips.
- * Both states use the same 36px rows and the same icon x-position (18px), so toggling never moves
+ * next to it provides the edge). Expanded: labelled items. Collapsed: a 56px icon rail with
+ * tooltips. The titlebar's sidebar toggle switches between the two, and App remembers the choice.
+ * Both states use the same 36px rows and the same icon x-position (20px), so toggling never moves
  * an icon; every command stays one click away in both states.
  *
  * Board commands (Focus board, Flip board) sit in the bottom group, above Settings, and only on
@@ -92,7 +93,7 @@ export const AppSidebar = memo(function AppSidebar({
 
   return (
     <nav
-      className="scroll-area col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col justify-between gap-3 overflow-y-auto overflow-x-hidden px-2 pb-2"
+      className="scroll-area col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col justify-between gap-3 overflow-y-auto overflow-x-hidden px-2.5 pb-2"
       aria-label="Application actions"
       data-chrome
     >
@@ -196,8 +197,9 @@ const SidebarCommand = memo(function SidebarCommand({
   // with every other such item's, on the next collapse and ignore the pointer.
   const [tooltipOpen, setTooltipOpen] = useState(false);
   if (expanded && tooltipOpen) setTooltipOpen(false);
-  // One element in both states: 36px tall, full column width (36px when collapsed), icon at 9px +
-  // 1px border — the same x as the centred rail button. Only the label and the tooltip change.
+  // One element in both states: 36px tall, full column width (36px in the 56px rail, inside the
+  // nav's 10px padding), icon at 9px + 1px border — the same x as the centred rail button. Only the
+  // label and the tooltip change.
   return (
     <Tooltip
       open={tooltipOpen && !expanded}

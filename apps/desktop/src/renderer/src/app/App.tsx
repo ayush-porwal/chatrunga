@@ -14,6 +14,7 @@ import { useViewTransitionState, type ViewTransitionKind } from "@/lib/use-view-
 import { useEventCallback } from "@/lib/use-event-callback";
 import { signalWindowReady } from "@/lib/window-glass";
 import { cn } from "@/lib/utils";
+import { loadSidebarExpanded, saveSidebarExpanded } from "@/lib/layout-prefs";
 import { BoardFocusContext } from "../features/board/board-focus";
 import { PromotionDialog } from "../features/board/PromotionDialog";
 import type { ReviewTab } from "../features/game-review/review-utils";
@@ -180,7 +181,9 @@ export function App() {
    * a newer selection (or after the user went elsewhere) is dropped instead of taking over.
    */
   const latestNavigation = useRef(0);
-  const [actionRailOpen, setActionRailOpen] = useState(true);
+  // Expanded or the icon rail, as the user last left it (the sidebar toggle).
+  const [actionRailOpen, setActionRailOpen] = useState(loadSidebarExpanded);
+  useEffect(() => saveSidebarExpanded(actionRailOpen), [actionRailOpen]);
   const puzzleSession = usePuzzleSession();
   const activePuzzleConfig = puzzleSession.config;
   const onboarding = useOnboarding();
@@ -1418,7 +1421,7 @@ export function App() {
           // rem: the sidebar grows with the type step on big monitors (app.css), like the rest of the UI.
           sidebarExpanded
             ? "[--sidebar-width:clamp(12.5rem,17vw,17rem)]"
-            : "[--sidebar-width:3.25rem]"
+            : "[--sidebar-width:3.5rem]"
         )}
       >
         <AppTitlebar
