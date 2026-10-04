@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // After electron-builder: checks every packaged app in apps/desktop/dist has the files it can't
-// start (or run engines/datasets) without — main, preload, renderer and the puzzle-scan worker —
+// start (or run engines/datasets) without — main, preload, renderer and the worker threads —
 // plus every chunk and asset those entry points refer to, so a broken package fails the release instead of
 // reaching users. What is required comes from the package itself, never from the local out/.
 import { createRequire } from "node:module";
@@ -13,10 +13,22 @@ const desktop = fileURLToPath(new URL("../apps/desktop/", import.meta.url));
 const require = createRequire(join(desktop, "package.json"));
 const asar = require("@electron/asar");
 
-/** Files every package must contain. The worker is required: a build without it can't scan puzzle files off the main thread. */
+/**
+ * The worker threads main starts by file path (not imports, so no reference finds them). Each is
+ * required: a packaged build without one can't scan puzzle files, preview or store a repertoire
+ * import, or restore a repertoire backup (packaged builds never fall back to the main thread).
+ */
+export const WORKERS = [
+  "out/main/puzzle-scan-worker.js",
+  "out/main/repertoire-import-worker.js",
+  "out/main/repertoire-import-writer-worker.js",
+  "out/main/repertoire-backup-restore-worker.js"
+];
+
+/** Files every package must contain. */
 export const REQUIRED = [
   "out/main/index.js",
-  "out/main/puzzle-scan-worker.js",
+  ...WORKERS,
   "out/preload/index.cjs",
   "out/renderer/index.html",
   "package.json"
@@ -25,7 +37,7 @@ export const REQUIRED = [
 /** Files whose references (code-split chunks, scripts, styles, sounds) must be packaged too. */
 const ENTRY_POINTS = [
   "out/main/index.js",
-  "out/main/puzzle-scan-worker.js",
+  ...WORKERS,
   "out/preload/index.cjs",
   "out/renderer/index.html"
 ];

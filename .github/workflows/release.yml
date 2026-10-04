@@ -146,7 +146,7 @@ jobs:
             --publish never \
             -c.extraMetadata.version="${{ needs.plan.outputs.version }}"
 
-      # A package missing main, preload, renderer or the worker would install but not start.
+      # A package missing main, preload, renderer or a worker would install but not start.
       - name: Check packaged app contents
         run: node scripts/check-packaged-app.mjs
 
