@@ -1423,8 +1423,9 @@ export function App() {
           // The sidebar column eases open/closed; the content panel follows it frame by frame.
           "transition-[grid-template-columns] duration-emphasis ease-standard",
           // rem: the sidebar grows with the type step on big monitors (app.css), like the rest of the UI.
+          // Narrow (its labels are one short word): the width goes to the board and its panel.
           sidebarExpanded
-            ? "[--sidebar-width:clamp(12.5rem,17vw,17rem)]"
+            ? "[--sidebar-width:clamp(11rem,13vw,13.5rem)]"
             : "[--sidebar-width:3.5rem]"
         )}
       >
