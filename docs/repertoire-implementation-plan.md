@@ -39,7 +39,7 @@ Library "Add to repertoire", import worker threads, large-collection profiling.
 
 - `pnpm lint`, `pnpm -r --if-present typecheck`, `pnpm test` must stay green; coverage
   thresholds are never lowered.
-- Renderer never imports Electron/Node; main never imports renderer. ESLint enforces it.
+- Renderer never imports Electron/Node; main never imports renderer. Oxlint enforces it (oxlint.config.ts).
 - Nothing repertoire-related is loaded into `useGameStore` (autosave would create library games).
 - IPC channels are `repertoires:<method>`; the `channels.test.ts` contract test must pass.
 - Runtime validation follows `validate.ts` style (hand-written parsers, `Invalid <label>: …`).
