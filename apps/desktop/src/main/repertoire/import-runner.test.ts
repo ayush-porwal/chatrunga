@@ -92,6 +92,17 @@ describe("startImportParse (worker thread)", () => {
       const ticksAfterCancel = mode === "stuck" ? ticks + 5 : ticks;
       await vi.waitFor(() => expect(stuckTicks()).toBeGreaterThanOrEqual(ticksAfterCancel));
       expect(events).toBe(before);
+      // ...and it is terminated: its ticks stop (two reads 50 ms apart, ten ticks' worth, agree).
+      let seen = -1;
+      await vi.waitFor(
+        () => {
+          const now = stuckTicks();
+          const stopped = now === seen;
+          seen = now;
+          expect(stopped).toBe(true);
+        },
+        { interval: 50, timeout: 3_000 }
+      );
     }
   });
 });
