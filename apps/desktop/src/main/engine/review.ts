@@ -44,13 +44,15 @@ import {
   buildRatingPrediction,
   computeEvalLoss,
   linesFromInfoStream,
-  parseClock,
-  parseTimeControl,
   tacticalMotifsForBestMove,
   terminalScore,
-  terminalWdl,
-  timeSpentForMove
+  terminalWdl
 } from "./review-analysis";
+import {
+  parseClock,
+  parseTimeControl,
+  timeSpentForMove
+} from "@chaturanga/shared/chess/move-times";
 import {
   createLineSplitter,
   LOG_UCI,

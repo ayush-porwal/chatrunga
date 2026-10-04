@@ -9,7 +9,6 @@ import type {
   EngineScore,
   MaiaRating,
   RatingPrediction,
-  ReviewMoveInputItem,
   TerminalState,
   Wdl
 } from "@chaturanga/shared/types/engine";
@@ -271,46 +270,4 @@ function captureGain(fen: string, uci: string): "hanging" | "winning" | null {
   const defenders = pos.kingAttackers(move.to, victim.color, occupied);
   if (defenders.isEmpty()) return "hanging";
   return PIECE_VALUE[victim.role] > PIECE_VALUE[mover.role] ? "winning" : null;
-}
-
-// ─── Clocks ────────────────────────────────────────────────────────────────
-
-export function parseClock(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const parts = value.trim().split(":").map(Number);
-  if (parts.length < 2 || parts.some((part) => !Number.isFinite(part))) return null;
-  if (parts.length === 2) return Math.round(parts[0] * 60_000 + parts[1] * 1000);
-  if (parts.length === 3)
-    return Math.round(parts[0] * 3_600_000 + parts[1] * 60_000 + parts[2] * 1000);
-  return null;
-}
-
-/** PGN TimeControl `base[+inc]` in seconds (e.g. "600+5"); null for "-", "?" or multi-period controls. */
-export function parseTimeControl(
-  value: string | null | undefined
-): { baseMs: number; incrementMs: number } | null {
-  const match = value?.trim().match(/^(\d+(?:\.\d+)?)(?:\+(\d+(?:\.\d+)?))?$/);
-  if (!match) return null;
-  return {
-    baseMs: Math.round(Number(match[1]) * 1000),
-    incrementMs: Math.round(Number(match[2] ?? 0) * 1000)
-  };
-}
-
-/**
- * Time the mover spent on move `index`: their previous clock (two plies back,
- * or the base time for their first move) minus their clock now, plus the
- * increment they received for this move.
- */
-export function timeSpentForMove(
-  moves: readonly Pick<ReviewMoveInputItem, "clockAfter">[],
-  index: number,
-  timeControl: { baseMs: number; incrementMs: number } | null
-): number | undefined {
-  const current = parseClock(moves[index]?.clockAfter);
-  if (current === null) return undefined;
-  const previous =
-    index >= 2 ? parseClock(moves[index - 2]?.clockAfter) : (timeControl?.baseMs ?? null);
-  if (previous === null) return undefined;
-  return Math.max(0, previous - current + (timeControl?.incrementMs ?? 0));
 }
