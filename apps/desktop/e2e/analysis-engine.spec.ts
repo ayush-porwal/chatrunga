@@ -82,8 +82,10 @@ test("an engine that dies during live analysis ends the search, and Restart sear
   await expect(panel.getByText(CRASHED)).toBeVisible({ timeout: 15_000 });
   await expect(panel).toContainText("The engine stopped with an error");
   await expect(panel.getByRole("button", { name: "Go to Rb1 position" })).toBeVisible();
-  // No search runs: no Stop, and Restart is offered.
-  await expect(panel.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
+  // No search runs: Restart is offered (the Analysis switch stays on: analysis is still wanted).
+  await expect(
+    page.getByRole("complementary", { name: "Game" }).getByRole("switch", { name: "Analysis" })
+  ).toHaveAttribute("aria-checked", "true");
   const spawns = () => engineCommands(log).filter((line) => line === "spawn").length;
   expect(spawns()).toBe(1);
 

@@ -1,6 +1,6 @@
 import { Fragment, memo, useCallback, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Cpu, Lock, Play, RotateCcw, Settings, Square } from "lucide-react";
+import { ChevronDown, Cpu, Lock, RotateCcw, Settings } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { formatScore } from "../game-review/review-score";
 import { MoveLink, type GoToLine } from "../game-review/MoveLinks";
@@ -370,10 +370,6 @@ function useBoardEnginePosition(): EnginePanelPosition {
 }
 
 type EnginePanelActions = {
-  /** Starts (or resumes) live analysis: the idle state's button and the header's Start. Omit to hide it. */
-  onStartAnalysis?: () => void;
-  /** Stops live analysis (its lines stay, and Start carries on from them). */
-  onStopAnalysis?: () => void;
   /** Offered when no engine is installed (the way to get one). */
   onOpenSettings?: () => void;
 };
@@ -421,8 +417,6 @@ export function EngineAnalysisPanel(
 
 function EngineStatusPanelContent({
   position,
-  onStartAnalysis,
-  onStopAnalysis,
   onOpenSettings,
   headerAction,
   linesHint,
@@ -509,7 +503,7 @@ function EngineStatusPanelContent({
     <section className={cn("grid content-start", compact ? "gap-2" : "gap-4")}>
       {hasData || !idle || headerAction ? (
         // The tab above already says "Engine": the header names the engine, how far it searches,
-        // and holds the controls (Stop / Start, and Restart from scratch).
+        // and offers Restart from scratch (the Analysis switch above the panel starts and stops it).
         <div className="flex min-w-0 items-center justify-between gap-3">
           {compact ? (
             <div className="flex min-w-0 items-baseline gap-2">
@@ -525,26 +519,13 @@ function EngineStatusPanelContent({
             </div>
           )}
           <div className="flex shrink-0 items-center gap-1">
+            {/* An engine that stopped with an error runs no search: Restart is the way on. */}
             {analysing ? (
-              <>
-                <IconButton
-                  label={finished ? "Search again from scratch" : "Restart analysis from scratch"}
-                  icon={<RotateCcw />}
-                  onClick={restartFresh}
-                />
-                {/* An engine that stopped with an error runs no search: Restart is the way on. */}
-                {onStopAnalysis && status !== "error" ? (
-                  <Button type="button" variant="outline" size="sm" onClick={onStopAnalysis}>
-                    <Square />
-                    Stop
-                  </Button>
-                ) : null}
-              </>
-            ) : onStartAnalysis ? (
-              <Button type="button" variant="primary" size="sm" onClick={onStartAnalysis}>
-                <Play />
-                Start
-              </Button>
+              <IconButton
+                label={finished ? "Search again from scratch" : "Restart analysis from scratch"}
+                icon={<RotateCcw />}
+                onClick={restartFresh}
+              />
             ) : null}
             {headerAction}
           </div>
@@ -635,22 +616,7 @@ function EngineStatusPanelContent({
           }
           className="py-6"
         />
-      ) : idle ? (
-        <EmptyState
-          icon={<Cpu />}
-          title="Engine is idle"
-          description={onStartAnalysis ? "Analyze the current position." : undefined}
-          action={
-            onStartAnalysis ? (
-              <Button type="button" variant="primary" size="sm" onClick={onStartAnalysis}>
-                <Play />
-                Start analysis
-              </Button>
-            ) : undefined
-          }
-          className="py-6"
-        />
-      ) : (
+      ) : idle ? null : (
         <EmptyState
           compact
           title={

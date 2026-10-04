@@ -2,6 +2,9 @@ import { lazy, memo, Suspense, useEffect, useId, useMemo, useState, type ReactNo
 import { BookPlus, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useEnginesQuery } from "../queries/api";
 import { AnalysisSettingsDialog } from "../features/analysis/AnalysisSettingsDialog";
 import { useShallow } from "zustand/react/shallow";
 import { AnnotationBadge } from "@/components/ui/annotation-badge";
@@ -120,7 +123,13 @@ export const GameWorkspace = memo(function GameWorkspace({
           }
         />
       }
-      summary={shownTab === "engine" ? engineTabSummary : gameSummary}
+      summary={
+        shownTab === "engine" ? (
+          <EngineTabSummary onStartAnalysis={onStartAnalysis} onStopAnalysis={onStopAnalysis} />
+        ) : (
+          gameSummary
+        )
+      }
       footer={gameFooter}
     >
       {shownTab === "notation" ? (
@@ -137,11 +146,7 @@ export const GameWorkspace = memo(function GameWorkspace({
       ) : null}
       {shownTab === "engine" ? (
         <div className="scroll-area -mr-3 h-full min-h-0 overflow-y-auto pr-3">
-          <EngineStatusPanel
-            onStartAnalysis={onStartAnalysis}
-            onStopAnalysis={onStopAnalysis}
-            onOpenSettings={onOpenSettings}
-          />
+          <EngineStatusPanel onOpenSettings={onOpenSettings} />
         </div>
       ) : null}
       {shownTab === "library" ? <RecentGames onOpenGame={onOpenGame} /> : null}
@@ -301,13 +306,65 @@ function AddToRepertoireButton() {
 const addToRepertoireButton = <AddToRepertoireButton />;
 const boardView = <BoardView />;
 const gameSummary = <GameSummary />;
-/** On the Engine tab the summary row also holds the analysis settings. */
-const engineTabSummary = (
-  <div className="flex w-full items-center justify-between gap-2">
-    <GameSummary />
-    <AnalysisSettingsButton />
-  </div>
-);
+/**
+ * On the Engine tab the summary row also holds the Analysis switch (live analysis on and off: the
+ * only Start / Stop for the panel's engine) and the analysis settings, last.
+ */
+const EngineTabSummary = memo(function EngineTabSummary({
+  onStartAnalysis,
+  onStopAnalysis
+}: {
+  onStartAnalysis?: () => void;
+  onStopAnalysis?: () => void;
+}) {
+  return (
+    <div className="flex w-full items-center justify-between gap-2">
+      <GameSummary />
+      <div className="flex shrink-0 items-center gap-2.5">
+        <AnalysisSwitch onStart={onStartAnalysis} onStop={onStopAnalysis} />
+        <AnalysisSettingsButton />
+      </div>
+    </div>
+  );
+});
+
+/**
+ * The Analysis switch: on while live analysis runs (the game store's analysis mode, which the
+ * engine driver searches), so it always says what the engine is doing. Off without an engine
+ * installed (it says why), or while the board can't be analysed (a game being played).
+ */
+function AnalysisSwitch({ onStart, onStop }: { onStart?: () => void; onStop?: () => void }) {
+  const on = useGameStore((state) => state.mode === "analysis");
+  const engines = useEnginesQuery();
+  const noEngine = engines.isSuccess && !engines.data.some((engine) => engine.isAvailable);
+  const disabled = noEngine || (on ? !onStop : !onStart);
+  const control = (
+    <label className="flex items-center gap-1.5 text-xs text-fg-secondary">
+      <Switch
+        checked={on}
+        disabled={disabled}
+        aria-label="Analysis"
+        onCheckedChange={(next) => (next ? onStart?.() : onStop?.())}
+      />
+      <span aria-hidden>Analysis</span>
+    </label>
+  );
+  if (!noEngine) return control;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a disabled switch can't take focus, so its wrapper does, to say why it's off
+          tabIndex={0}
+          className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+        >
+          {control}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">Install an engine in Settings to analyse</TooltipContent>
+    </Tooltip>
+  );
+}
 
 /** Opens the live analysis settings (engine, lines, search limit, board display). */
 function AnalysisSettingsButton() {
