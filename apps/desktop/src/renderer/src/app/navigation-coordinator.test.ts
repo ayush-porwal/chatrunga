@@ -572,7 +572,9 @@ describe("leaving a study chapter's draft", () => {
     };
     open({ dirty: false, saveState: { status: "idle" }, decisionDrafts });
     const flush = vi.fn(async () => false);
-    expect(await saveStudyDraftFirst({ request: 1, navigation, flush, failure, keepChapterId: "c2" })).toBe(false);
+    expect(
+      await saveStudyDraftFirst({ request: 1, navigation, flush, failure, keepChapterId: "c2" })
+    ).toBe(false);
     expect(flush).toHaveBeenCalledTimes(1);
     expect(useAppNoticeStore.getState().message).toBe(failure);
 
@@ -583,7 +585,9 @@ describe("leaving a study chapter's draft", () => {
 
     // Reopening the open chapter leaves nothing: its changes stay on it.
     open({ dirty: false, saveState: { status: "idle" }, decisionDrafts });
-    expect(await saveStudyDraftFirst({ request: 1, navigation, flush, failure, keepChapterId: "c1" })).toBe(true);
+    expect(
+      await saveStudyDraftFirst({ request: 1, navigation, flush, failure, keepChapterId: "c1" })
+    ).toBe(true);
     expect(flush).toHaveBeenCalledTimes(1);
   });
 

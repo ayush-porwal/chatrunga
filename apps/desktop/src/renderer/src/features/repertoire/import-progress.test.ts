@@ -100,16 +100,28 @@ describe("adoptCommittedRevision", () => {
 describe("import commit into the open repertoire", () => {
   it("flushes the draft first only when it belongs to the repertoire imported into", () => {
     const none = { decisionDrafts: {} };
-    expect(mustFlushDraftBeforeImport({ repertoireId: "r1", baseRevision: 3, ...none }, "r1")).toBe(true);
-    expect(mustFlushDraftBeforeImport({ repertoireId: "r2", baseRevision: 3, ...none }, "r1")).toBe(false);
-    expect(mustFlushDraftBeforeImport({ repertoireId: null, baseRevision: 0, ...none }, "r1")).toBe(false);
+    expect(mustFlushDraftBeforeImport({ repertoireId: "r1", baseRevision: 3, ...none }, "r1")).toBe(
+      true
+    );
+    expect(mustFlushDraftBeforeImport({ repertoireId: "r2", baseRevision: 3, ...none }, "r1")).toBe(
+      false
+    );
+    expect(mustFlushDraftBeforeImport({ repertoireId: null, baseRevision: 0, ...none }, "r1")).toBe(
+      false
+    );
   });
 
   it("also flushes first while a prompt or other decision change of that repertoire is unsaved", () => {
     const decisionDrafts = { "r1|k1|prompt": { repertoireId: "r1" } };
-    expect(mustFlushDraftBeforeImport({ repertoireId: "r2", baseRevision: 3, decisionDrafts }, "r1")).toBe(true);
-    expect(mustFlushDraftBeforeImport({ repertoireId: null, baseRevision: 0, decisionDrafts }, "r1")).toBe(true);
-    expect(mustFlushDraftBeforeImport({ repertoireId: "r2", baseRevision: 3, decisionDrafts }, "r3")).toBe(false);
+    expect(
+      mustFlushDraftBeforeImport({ repertoireId: "r2", baseRevision: 3, decisionDrafts }, "r1")
+    ).toBe(true);
+    expect(
+      mustFlushDraftBeforeImport({ repertoireId: null, baseRevision: 0, decisionDrafts }, "r1")
+    ).toBe(true);
+    expect(
+      mustFlushDraftBeforeImport({ repertoireId: "r2", baseRevision: 3, decisionDrafts }, "r3")
+    ).toBe(false);
   });
 
   it("expects the revision the flushed draft stored, else the cached detail's", () => {

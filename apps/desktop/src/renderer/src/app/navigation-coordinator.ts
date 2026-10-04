@@ -296,7 +296,8 @@ export async function saveStudyDraftFirst({
 }): Promise<boolean> {
   const draft = useRepertoireWorkspaceStore.getState();
   if (draft.chapterId && draft.chapterId === keepChapterId) return true;
-  const chapterUnsaved = draft.chapterId !== null && (draft.dirty || draft.saveState.status !== "idle");
+  const chapterUnsaved =
+    draft.chapterId !== null && (draft.dirty || draft.saveState.status !== "idle");
   if (!chapterUnsaved && Object.keys(draft.decisionDrafts).length === 0) return true;
   const saved = await flush();
   if (request !== navigation.current) return false;

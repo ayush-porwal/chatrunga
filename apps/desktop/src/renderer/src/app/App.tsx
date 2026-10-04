@@ -821,7 +821,8 @@ export function App() {
     // Held back by the study page being left and by this repertoire's unsaved changes (practice
     // shows its prompts and hints, and pauses), not by another repertoire's.
     const studying = studyOnScreen();
-    const blockOn = studying && studying !== repertoireId ? [studying, repertoireId] : [repertoireId];
+    const blockOn =
+      studying && studying !== repertoireId ? [studying, repertoireId] : [repertoireId];
     const leftSaved = await saveStudyDraftFirst({
       request,
       navigation: latestNavigation,
