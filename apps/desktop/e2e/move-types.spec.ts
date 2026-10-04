@@ -100,54 +100,70 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
     .click();
   await expect(reviewTabs(page)).toBeVisible();
   await titlebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
+  // An imported game asks which side it's reviewed as before its review starts: White.
+  await page
+    .getByRole("radiogroup", { name: "Review this game as" })
+    .getByRole("radio", { name: "White (Alpha)" })
+    .click();
+  await page.getByRole("button", { name: "Start review", exact: true }).click();
   await expect(
     titlebar(page).getByRole("button", { name: "Analyze again", exact: true })
   ).toBeVisible({ timeout: 60_000 });
 
-  // The summary counts every error by severity: one mistake, two blunders (book moves are none).
-  await expect(page.getByLabel("2 blunders, 1 mistakes, 0 inaccuracies")).toBeVisible();
+  // The summary counts each side's marks: White's two blunders and mistake, Black's Great and Good.
+  const markRow = (name: string) =>
+    page.getByRole("table", { name: "Marks" }).getByRole("row").filter({ hasText: name });
+  await expect(markRow("Blunder").getByRole("cell", { name: "White 2" })).toBeVisible();
+  await expect(markRow("Mistake").getByRole("cell", { name: "White 1" })).toBeVisible();
+  await expect(markRow("Great").getByRole("cell", { name: "Black 1" })).toBeVisible();
 
-  // Before a move is picked, the commentary tab leads with the key moments.
+  // Before a move is picked, the commentary tab leads with White's key moments (Black's Great is
+  // the opponent's).
+  await reviewTabs(page).getByRole("tab", { name: "Commentary", exact: true }).click();
   await page
     .getByRole("navigation", { name: "Move navigation" })
     .getByRole("button", { name: "First move", exact: true })
     .click();
   await expect(counter(page)).toHaveText("0 / 14");
   const leading = page.getByRole("list", { name: "Key moments of the game" });
-  await expect(leading.getByRole("listitem")).toHaveCount(4);
+  await expect(leading.getByRole("listitem")).toHaveCount(3);
   await expect(leading.getByRole("listitem").nth(0)).toContainText("4. Nxe5");
   await expect(leading.getByRole("listitem").nth(0)).toContainText("Blunder");
-  await expect(leading.getByRole("listitem").nth(1)).toContainText("4… Qg5");
-  await expect(leading.getByRole("listitem").nth(1)).toContainText("Great");
-  await expect(leading.getByRole("listitem").nth(2)).toContainText("5. Nxf7");
-  await expect(leading.getByRole("listitem").nth(3)).toContainText("7. Be2");
-  await expect(leading.getByRole("listitem").nth(3)).toContainText("Allows a forced mate.");
+  await expect(leading.getByRole("listitem").nth(1)).toContainText("5. Nxf7");
+  await expect(leading.getByRole("listitem").nth(2)).toContainText("7. Be2");
+  await expect(leading.getByRole("listitem").nth(2)).toContainText("Allows a forced mate.");
+  // The cards never say what an error cost.
+  await expect(leading).not.toContainText("of the winning chances");
   await screenshot(page, "key-moments");
 
   // Key-moment navigation: from the start to each moment in turn, and back.
-  await expect(keyMomentNav(page)).toContainText("4 key moments");
+  await expect(keyMomentNav(page)).toContainText("3 key moments");
   await expect(
     keyMomentNav(page).getByRole("button", { name: "Previous key moment" })
   ).toBeDisabled();
   await keyMomentNav(page).getByRole("button", { name: "Next key moment" }).click();
   await expect(counter(page)).toHaveText("7 / 14");
-  await expect(keyMomentNav(page)).toContainText("Key moment 1 of 4");
+  await expect(keyMomentNav(page)).toContainText("Key moment 1 of 3");
   await keyMomentNav(page).getByRole("button", { name: "Next key moment" }).click();
-  await expect(counter(page)).toHaveText("8 / 14");
-  await expect(keyMomentNav(page)).toContainText("Key moment 2 of 4");
-  // The selected move's header names its mark and says why.
+  await expect(counter(page)).toHaveText("9 / 14");
+  await expect(keyMomentNav(page)).toContainText("Key moment 2 of 3");
+  await keyMomentNav(page).getByRole("button", { name: "Next key moment" }).click();
+  await expect(counter(page)).toHaveText("13 / 14");
+  await expect(keyMomentNav(page).getByRole("button", { name: "Next key moment" })).toBeDisabled();
+  await keyMomentNav(page).getByRole("button", { name: "Previous key moment" }).click();
+  await expect(counter(page)).toHaveText("9 / 14");
+
+  // The selected move's header names its mark and says why: 4… Qg5, the critical find.
+  await page
+    .getByRole("navigation", { name: "Move navigation" })
+    .getByRole("button", { name: "Previous move", exact: true })
+    .click();
   const header = page.getByRole("heading", { name: "4… Qg5", level: 2 });
   await expect(header).toBeVisible();
   await expect(
     page.getByText(/A critical find: every other move the engine checked was at least 18% worse/)
   ).toBeVisible();
   await screenshot(page, "great");
-  await keyMomentNav(page).getByRole("button", { name: "Next key moment" }).click();
-  await keyMomentNav(page).getByRole("button", { name: "Next key moment" }).click();
-  await expect(counter(page)).toHaveText("13 / 14");
-  await expect(keyMomentNav(page).getByRole("button", { name: "Next key moment" })).toBeDisabled();
-  await keyMomentNav(page).getByRole("button", { name: "Previous key moment" }).click();
-  await expect(counter(page)).toHaveText("9 / 14");
 
   // A book move says it is opening theory, and nothing more.
   const navigation = page.getByRole("navigation", { name: "Move navigation" });
@@ -193,7 +209,7 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
   // The graph marks the same moves (book moves stay neutral) and rings the key moments.
   const graph = page.getByRole("region", { name: "Game evaluation graph" });
   await expect(graph.locator("circle[data-annotation]")).toHaveCount(6);
-  await expect(graph.locator("circle[data-key-moment]")).toHaveCount(4);
+  await expect(graph.locator("circle[data-key-moment]")).toHaveCount(3);
   await expect(
     graph.getByRole("button", { name: "4. Nxe5, Blunder, key moment, after -2.5" })
   ).toBeVisible();
