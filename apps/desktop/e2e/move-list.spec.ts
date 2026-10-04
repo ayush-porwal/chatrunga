@@ -40,6 +40,12 @@ test("BEST lines fold under their errors, preview on hover and play on the board
     .click();
   const titlebar = page.getByRole("banner", { name: "Titlebar" });
   await titlebar.getByRole("button", { name: "Analyze", exact: true }).click();
+  // An imported game asks which side it's reviewed as: White.
+  await page
+    .getByRole("radiogroup", { name: "Review this game as" })
+    .getByRole("radio", { name: "White (Alpha)" })
+    .click();
+  await page.getByRole("button", { name: "Start review", exact: true }).click();
   await expect(titlebar.getByRole("button", { name: "Analyze again", exact: true })).toBeVisible({
     timeout: 60_000
   });
