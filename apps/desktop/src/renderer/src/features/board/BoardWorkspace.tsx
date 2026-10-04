@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { defaultSettings } from "@chaturanga/shared/types/settings";
 import { useSettingsQuery } from "../../queries/api";
 import { Badge } from "@/components/ui/badge";
 import { card, motion } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useBoardFocused } from "./board-focus";
+import { BoardResizeContext, BoardResizeGrip } from "./BoardResizeGrip";
+import { useBoardEdgeStore } from "./useBoardEdge";
 import { useFocusCentring, useSnappedBoardFrame } from "./useBoardFrame";
 
 /*
@@ -36,6 +38,12 @@ import { useFocusCentring, useSnappedBoardFrame } from "./useBoardFrame";
  * panel and centred, so on a wide window the spare width goes to both outer margins and the board
  * stays next to its panel. On a narrow window the cap is not reached and the board takes the
  * width left beside the panel.
+ *
+ * Resizing (BoardResizeGrip, while the panel shows): the board fills its space by default; dragging
+ * the grip in its bottom-right corner sets a smaller (or larger) edge, shared by every board
+ * workspace and remembered, and the panel takes the width that frees within its own min and max
+ * (`.board-resized` in app.css). A double-click on the grip fills the space again. Focus mode
+ * always fills.
  */
 
 export function BoardWorkspace({
@@ -75,13 +83,26 @@ export function BoardWorkspace({
   const centred = focused && !panelVisible;
   const rootRef = useRef<HTMLDivElement>(null);
   useFocusCentring(rootRef, centred);
+  // The edge the board was resized to (null: it fills); only beside the panel.
+  const storedEdge = useBoardEdgeStore((state) => state.edge);
+  const resizedEdge = panelVisible ? storedEdge : null;
+  const maxRef = useRef<HTMLDivElement>(null);
+  const resizable = useMemo(() => (panelVisible ? { maxRef } : null), [panelVisible]);
+  const rootStyle = useMemo<CSSProperties | undefined>(() => {
+    if (evalBarShown && resizedEdge === null) return undefined;
+    return {
+      ...(evalBarShown ? null : NO_EVAL_COLUMN),
+      ...(resizedEdge === null ? null : { "--workspace-board-user": `${resizedEdge}px` })
+    };
+  }, [evalBarShown, resizedEdge]);
   return (
     // Size container: the grid's width cap is computed from this box's height (cqh). With the eval
     // bar off, its column is gone from that cap too (and from the stage below).
     <div
       ref={rootRef}
       className={cn(
-        "h-full min-h-0 min-w-0 [container-type:size]",
+        "board-workspace h-full min-h-0 min-w-0 [container-type:size]",
+        resizedEdge !== null && "board-resized",
         easing && "transition-[padding] duration-emphasis ease-standard",
         // Centred across: the content panel starts after the sidebar rail but ends only 0.5rem (its
         // mr-2) short of the window's edge, so the difference pads the right; the eval column's width
@@ -93,8 +114,14 @@ export function BoardWorkspace({
             ? "pr-[calc(var(--sidebar-width)-0.5rem)] pl-(--workspace-eval)"
             : "pr-[calc(var(--sidebar-width)-0.5rem+var(--workspace-eval))]")
       )}
-      style={evalBarShown ? undefined : NO_EVAL_COLUMN}
+      style={rootStyle}
     >
+      {/* Measures the largest edge a resize can reach (the grip's limit). */}
+      <div
+        ref={maxRef}
+        className="invisible pointer-events-none absolute h-0 w-(--workspace-board-max)"
+        aria-hidden="true"
+      />
       <div
         className={cn(
           "mx-auto grid h-full min-h-0 w-full min-w-0 p-(--workspace-pad)",
@@ -112,11 +139,15 @@ export function BoardWorkspace({
             : "max-w-[calc(var(--workspace-board)+var(--workspace-eval)+2*var(--workspace-pad))] grid-cols-[minmax(0,1fr)_0px] gap-0"
         )}
       >
+        {/* A resized board sits at the top of its cell, level with the panel's top edge. */}
         <section
-          className="grid min-h-0 min-w-0 place-items-center [container-type:size]"
+          className={cn(
+            "grid min-h-0 min-w-0 justify-items-center [container-type:size]",
+            resizedEdge === null ? "items-center" : "items-start"
+          )}
           aria-label="Board"
         >
-          {board}
+          <BoardResizeContext.Provider value={resizable}>{board}</BoardResizeContext.Provider>
         </section>
         {/* The cell clips; the panel keeps its full width and slides out with the column's left edge. */}
         <div
@@ -230,15 +261,17 @@ export function BoardStage({
         </div>
       ) : null}
       {/* The one board frame: hairline border + radius, no shadow, no card around it. Its content box
-          is the board (the fallback edge is only for the first layout, before it's measured). */}
+          is the board (the fallback edge is only for the first layout, before it's measured). The
+          resize grip sits in its bottom-right corner, over the board. */}
       <div
         ref={frameRef}
         className={cn(
-          "board-frame row-start-2 box-content size-[var(--board-size,calc(var(--board-avail)_-_2px))] overflow-hidden rounded-lg border border-line",
+          "board-frame relative row-start-2 box-content size-[var(--board-size,calc(var(--board-avail)_-_2px))] overflow-hidden rounded-lg border border-line",
           boardColumn
         )}
       >
         {children}
+        <BoardResizeGrip availRef={probeRef} />
       </div>
       <div className={cn("min-w-0 contain-inline-size", boardColumn)}>{bottom}</div>
     </div>

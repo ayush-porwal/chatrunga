@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { centringInsets, snapBoardSize } from "./board-frame";
+import {
+  MIN_BOARD_EDGE,
+  centringInsets,
+  clampBoardEdge,
+  draggedBoardEdge,
+  snapBoardSize
+} from "./board-frame";
 
 /** Chessground's own rounding (render.ts `updateBounds`), which the frame must agree with. */
 const chessgroundEdge = (width: number, ratio: number) =>
@@ -70,5 +76,34 @@ describe("centringInsets", () => {
 
   it("collapses to the centre line when the span doesn't reach it", () => {
     expect(centringInsets(600, 900, 1000)).toEqual({ start: 0, end: 400 });
+  });
+});
+
+describe("draggedBoardEdge", () => {
+  it("grows and shrinks the square by the pointer's larger move across or down", () => {
+    expect(draggedBoardEdge(500, 40, 10, 900)).toBe(540);
+    expect(draggedBoardEdge(500, -10, 30, 900)).toBe(530);
+    expect(draggedBoardEdge(500, -60, -20, 900)).toBe(480);
+    // Straight left or up alone leaves it: the other move (none) is the larger.
+    expect(draggedBoardEdge(500, -80, 0, 900)).toBe(500);
+  });
+
+  it("stops at the edge that leaves the side panel its minimum width", () => {
+    expect(draggedBoardEdge(700, 300, 0, 820)).toBe(820);
+  });
+
+  it("never shrinks the board below the minimum edge", () => {
+    expect(draggedBoardEdge(300, -400, -400, 900)).toBe(MIN_BOARD_EDGE);
+  });
+});
+
+describe("clampBoardEdge", () => {
+  it("keeps an edge inside the bounds as it is", () => {
+    expect(clampBoardEdge(512.5, 900)).toBe(512.5);
+  });
+
+  it("gives way to a space smaller than the minimum edge", () => {
+    expect(clampBoardEdge(400, MIN_BOARD_EDGE - 40)).toBe(MIN_BOARD_EDGE - 40);
+    expect(clampBoardEdge(400, -5)).toBe(0);
   });
 });

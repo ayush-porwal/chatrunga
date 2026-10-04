@@ -25,6 +25,40 @@
   height: 100% !important;
 }
 
+/* ---------------------------------------------------------------- resize grip */
+
+/* The board's resize grip (BoardResizeGrip): three neutral diagonal lines in the frame's
+   bottom-right corner, shown only while the pointer is over that corner or dragging it. Over the
+   board's layers (the move mark included), inside the frame's rounded clip. */
+.board-resize-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 1.375rem;
+  height: 1.375rem;
+  cursor: nwse-resize;
+  touch-action: none;
+  opacity: 0;
+  transition: opacity var(--transition-duration-micro) var(--ease-standard);
+  background: linear-gradient(
+      135deg,
+      transparent 0 45%,
+      rgb(0 0 0 / 0.45) 45% 52%,
+      transparent 52% 64%,
+      rgb(0 0 0 / 0.45) 64% 71%,
+      transparent 71% 83%,
+      rgb(0 0 0 / 0.45) 83% 90%,
+      transparent 90%
+    )
+    no-repeat right 3px bottom 3px / 1rem 1rem;
+}
+
+.board-resize-grip:hover,
+.board-resize-grip[data-dragging] {
+  opacity: 1;
+}
+
 /* ---------------------------------------------------------------- squares */
 
 cg-board square.last-move {

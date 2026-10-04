@@ -248,11 +248,58 @@ html:has(.onb-root) {
   --page-gutter-y: clamp(1.25rem, 2vw, 3rem);
   --page-content: clamp(64rem, 20rem + 42vw, 88rem);
   --workspace-pad: clamp(0.75rem, 1.25vw, 2rem);
-  --workspace-panel: clamp(20rem, 10.5rem + 14.5vw, 34rem);
+  /* The side panel's bounds, and its width beside a board that fills its space. */
+  --workspace-panel-min: 20rem;
+  --workspace-panel-max: 34rem;
+  --workspace-panel-fill: clamp(
+    var(--workspace-panel-min),
+    10.5rem + 14.5vw,
+    var(--workspace-panel-max)
+  );
+  --workspace-panel: var(--workspace-panel-fill);
   /* Board edge from the workspace height: the two 2rem player rows and their 0.5rem gaps are 5rem. */
   --workspace-board: min(100cqh - 2 * var(--workspace-pad) - 5rem, 100rem);
   /* The eval bar's column left of the board (bar + gap), reserved on every board screen. */
   --workspace-eval: 1.75rem;
+}
+
+/*
+ * The board workspace's root (BoardWorkspace), a size container. Declared on it rather than :root
+ * because they read its own `--workspace-eval` (0 while the eval bar is off):
+ * - `--workspace-board-fill`: the edge of a board that fills its space (the height's, or on a narrow
+ *   window the width's beside the panel);
+ * - `--workspace-board-max`: the largest edge a resize can reach, beside the panel at its minimum.
+ */
+.board-workspace {
+  --workspace-board-fill: min(
+    100cqh - 2 * var(--workspace-pad) - 5rem,
+    100rem,
+    100cqw - 3 * var(--workspace-pad) - var(--workspace-eval) - var(--workspace-panel-fill)
+  );
+  --workspace-board-max: min(
+    100cqh - 2 * var(--workspace-pad) - 5rem,
+    100rem,
+    100cqw - 3 * var(--workspace-pad) - var(--workspace-eval) - var(--workspace-panel-min)
+  );
+}
+
+/*
+ * A board resized with its corner grip (BoardResizeGrip): its edge is capped at the chosen
+ * `--workspace-board-user`, and the panel takes the width that frees beside the filled board (or
+ * gives it up), within its bounds. So the board and panel keep the filled layout's width until the
+ * panel reaches a bound; past its maximum the spare width goes to the outer margins again.
+ */
+.board-workspace.board-resized {
+  --workspace-board: min(
+    100cqh - 2 * var(--workspace-pad) - 5rem,
+    100rem,
+    var(--workspace-board-user)
+  );
+  --workspace-panel: clamp(
+    var(--workspace-panel-min),
+    var(--workspace-panel-fill) + var(--workspace-board-fill) - var(--workspace-board),
+    var(--workspace-panel-max)
+  );
 }
 
 body {

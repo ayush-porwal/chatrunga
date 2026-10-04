@@ -1,4 +1,5 @@
-// Board frame geometry for BoardStage and BoardWorkspace (applied by the hooks in useBoardFrame).
+// Board frame geometry for BoardStage and BoardWorkspace (applied by the hooks in useBoardFrame and
+// the corner grip in BoardResizeGrip).
 
 /**
  * Chessground draws whole-device-pixel squares: it sizes its <cg-container> to
@@ -27,4 +28,24 @@ export function centringInsets(
   const centre = length / 2;
   const half = Math.max(0, Math.min(centre - start, end - centre));
   return { start: Math.max(0, centre - half - start), end: Math.max(0, end - centre - half) };
+}
+
+/** The smallest edge (CSS px) the corner grip resizes the board to. */
+export const MIN_BOARD_EDGE = 240;
+
+/**
+ * A resized board's edge kept between MIN_BOARD_EDGE and `max`, the largest edge the workspace
+ * leaves beside the side panel at its minimum width. A space smaller than the minimum wins.
+ */
+export function clampBoardEdge(edge: number, max: number): number {
+  return Math.max(0, Math.min(max, Math.max(MIN_BOARD_EDGE, edge)));
+}
+
+/**
+ * The board's edge while its bottom-right grip is dragged `dx` across and `dy` down from where the
+ * drag started at edge `start`: the larger of the two moves, so the board grows or shrinks as a
+ * square whichever way the pointer leans (clampBoardEdge).
+ */
+export function draggedBoardEdge(start: number, dx: number, dy: number, max: number): number {
+  return clampBoardEdge(start + Math.max(dx, dy), max);
 }
