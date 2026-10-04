@@ -1,6 +1,11 @@
 import { useEffect } from "react";
 import { markRapidNavigation } from "../features/board/board-motion";
 import { useGameStore } from "../stores/game-store";
+import { activeBestLine, stepBestLine } from "../features/game/best-line-cursor";
+import { alternativeTarget } from "../features/game/move-alternatives";
+import { bestLineMoves } from "../features/game/move-list-model";
+import { reviewsByNode, selectDisplayedMoves, useReviewStore } from "../stores/review-store";
+import { compatibleReviewMoves } from "../stores/review-validity";
 import { OVERLAY_SELECTOR } from "./useBoardShortcuts";
 
 /** Elements whose own keyboard handling must not also step through the game. */
@@ -64,7 +69,34 @@ export function createStepScheduler(
 }
 
 /**
- * ← → step through the current line, Home jumps to the start, End to the end of the line. Only
+ * ↓ / ↑ switch the board to the next / previous alternative to the current move (see
+ * move-alternatives.ts), BEST lines included as the move list shows them. False when there is none.
+ */
+function switchAlternative(delta: 1 | -1): boolean {
+  const game = useGameStore.getState();
+  const line = activeBestLine(game);
+  // The BEST lines the move list shows: the displayed review's, for the moves the game still has.
+  const reviews = reviewsByNode(
+    compatibleReviewMoves(selectDisplayedMoves(useReviewStore.getState()), game.moveTree)
+  );
+  const target = alternativeTarget(
+    game.moveTree,
+    line ? { kind: "best", cursor: line } : { kind: "node", nodeId: game.currentNodeId },
+    (nodeId) => {
+      const review = reviews.get(nodeId);
+      return review ? bestLineMoves(review) : [];
+    },
+    delta
+  );
+  if (!target) return false;
+  if (target.kind === "best") game.showBestLine(target.cursor);
+  else game.goToNode(target.nodeId);
+  return true;
+}
+
+/**
+ * ← → step through the current line, Home jumps to the start, End to the end of the line, ↑ ↓
+ * switch between the alternatives to the current move. Only
  * while a board is on screen (`enabled`) and no dialog or menu is open — elsewhere those keys
  * scroll the page or belong to the open control.
  */
@@ -73,6 +105,14 @@ export function useMoveKeyboardShortcuts({ enabled }: { enabled: boolean }): voi
     if (!enabled) return;
     const steps = createStepScheduler((delta) => {
       const game = useGameStore.getState();
+      // On a BEST line, the steps follow the line (back before it: the game move it leaves from).
+      const line = activeBestLine(game);
+      if (line) {
+        const next = stepBestLine(line, delta);
+        if (next.kind === "line") game.showBestLine(next.cursor);
+        else game.goToNode(nodeAfterSteps(game.moveTree, next.nodeId, next.stepsLeft));
+        return;
+      }
       const target = nodeAfterSteps(game.moveTree, game.currentNodeId, delta);
       if (target !== game.currentNodeId) game.goToNode(target);
     });
@@ -100,6 +140,12 @@ export function useMoveKeyboardShortcuts({ enabled }: { enabled: boolean }): voi
           if (lineEnd !== game.currentNodeId) game.goToNode(lineEnd);
           break;
         }
+        case "ArrowUp":
+        case "ArrowDown":
+          steps.cancel();
+          // Nothing to switch to: the key keeps its own use (scrolling).
+          if (!switchAlternative(event.key === "ArrowDown" ? 1 : -1)) return;
+          break;
         default:
           return;
       }

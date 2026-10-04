@@ -71,38 +71,16 @@ const noticeTone: Record<ComparisonTone, "info" | "warn" | "danger" | "success">
 };
 
 /**
- * The game review's Opening tab (design §6.3): the player's side and repertoire, the game's
- * mainline against it (status line, chapters, returns by transposition, a move strip that follows
- * the review cursor) and the actions on the earliest difference. Runs locally from the recorded
- * moves; needs no engine review. The side is chosen by the player (a provenance hint at most),
- * never read from the board orientation.
+ * The game against the user's repertoire for one side: the side (the one picked, else the
+ * default), that side's repertoires and the one compared, and the comparison of the game's
+ * mainline. Shared by the OPENING section's headline and its comparison panel (one query).
  */
-export const ReviewOpeningPanel = memo(function ReviewOpeningPanel({
-  moveTree,
-  selectedNodeId,
-  onSelectNode,
-  color: chosenColor,
-  onColorChange,
-  remembered,
-  onStudy,
-  onRefreshDecision,
-  onHub
-}: {
-  moveTree: readonly MoveNode[];
-  selectedNodeId: string;
-  onSelectNode: (nodeId: string) => void;
-  /** The side picked for this game (null: not picked yet, the default applies). */
-  color: RepertoireColor | null;
-  onColorChange: (color: RepertoireColor) => void;
-  /** The last repertoire chosen per colour (settings). */
-  remembered: RememberedRepertoires;
-  onStudy?: (target: StudyOpenTarget) => void;
-  onRefreshDecision?: (repertoireId: string, positionKey: string) => void;
-  onHub?: () => void;
-}) {
+function useOpeningComparison(
+  moveTree: readonly MoveNode[],
+  chosenColor: RepertoireColor | null,
+  remembered: RememberedRepertoires
+) {
   const desktop = Boolean(window.chaturanga?.repertoires);
-  const selectId = useId();
-  const selectRef = useRef<HTMLSelectElement | null>(null);
   const rootFen = useGameStore((state) => state.rootFen);
   const source = useGameStore((state) => state.source);
   const headers = useGameStore((state) => state.headers);
@@ -110,7 +88,6 @@ export const ReviewOpeningPanel = memo(function ReviewOpeningPanel({
   const lichessUsername = useLichessStore((state) => state.status.account?.username ?? null);
   const list = useRepertoiresQuery(ALL_ACTIVE);
   const repertoires = useMemo(() => list.data ?? [], [list.data]);
-  const { mutate: updateSetting } = useUpdateSettingMutation();
 
   const suggestion = useMemo(
     () =>
@@ -146,6 +123,70 @@ export const ReviewOpeningPanel = memo(function ReviewOpeningPanel({
     [repertoire, color, rootFen, mainline]
   );
   const comparison = useRepertoireComparisonQuery(desktop ? input : null);
+  return { desktop, list, suggestion, color, ofColor, repertoire, mainline, comparison };
+}
+
+/**
+ * One muted line on the game against the user's repertoire for the side compared ("In repertoire
+ * through move 6", "Left your repertoire at move 4: …"); nothing without a repertoire for it, or
+ * while the comparison runs.
+ */
+export function RepertoireHeadline({
+  moveTree,
+  color,
+  remembered,
+  className
+}: {
+  moveTree: readonly MoveNode[];
+  color: RepertoireColor | null;
+  remembered: RememberedRepertoires;
+  className?: string;
+}) {
+  const { repertoire, comparison } = useOpeningComparison(moveTree, color, remembered);
+  const summary = useMemo(
+    () => (comparison.data ? describeComparison(comparison.data) : null),
+    [comparison.data]
+  );
+  if (!repertoire || !summary) return null;
+  return <p className={className}>{summary.text}</p>;
+}
+
+/**
+ * The game against the user's repertoire (design §6.3), in the review summary's OPENING section:
+ * the player's side and repertoire, the game's mainline against it (status line, chapters, returns
+ * by transposition, a move strip that follows the review cursor) and the actions on the earliest
+ * difference. Runs locally from the recorded moves; needs no engine review. The side is chosen by
+ * the player (a provenance hint at most), never read from the board orientation. Laid out compact,
+ * for the section's width.
+ */
+export const ReviewOpeningPanel = memo(function ReviewOpeningPanel({
+  moveTree,
+  selectedNodeId,
+  onSelectNode,
+  color: chosenColor,
+  onColorChange,
+  remembered,
+  onStudy,
+  onRefreshDecision,
+  onHub
+}: {
+  moveTree: readonly MoveNode[];
+  selectedNodeId: string;
+  onSelectNode: (nodeId: string) => void;
+  /** The side picked for this game (null: not picked yet, the default applies). */
+  color: RepertoireColor | null;
+  onColorChange: (color: RepertoireColor) => void;
+  /** The last repertoire chosen per colour (settings). */
+  remembered: RememberedRepertoires;
+  onStudy?: (target: StudyOpenTarget) => void;
+  onRefreshDecision?: (repertoireId: string, positionKey: string) => void;
+  onHub?: () => void;
+}) {
+  const selectId = useId();
+  const selectRef = useRef<HTMLSelectElement | null>(null);
+  const { mutate: updateSetting } = useUpdateSettingMutation();
+  const { desktop, list, suggestion, color, ofColor, repertoire, mainline, comparison } =
+    useOpeningComparison(moveTree, chosenColor, remembered);
 
   const chooseRepertoire = (id: string) =>
     updateSetting({
@@ -156,8 +197,7 @@ export const ReviewOpeningPanel = memo(function ReviewOpeningPanel({
   if (!desktop) {
     return (
       <EmptyState
-        className="self-center"
-        icon={<BookOpen />}
+        compact
         title="Comparison needs the desktop app"
         description="Your repertoires live in the app's local library."
       />
@@ -224,20 +264,20 @@ export const ReviewOpeningPanel = memo(function ReviewOpeningPanel({
       </Notice>
     );
   } else if (!repertoire) {
+    // Compact, for the summary's width: one line, and the way to build one.
     body = (
-      <EmptyState
-        icon={<BookOpen />}
-        title={`No ${COLOR_NAME[color]} repertoire yet`}
-        description="Build one to see where this game left your preparation."
-        action={
-          onHub ? (
-            <Button type="button" variant="primary" size="sm" onClick={onHub}>
-              <Plus />
-              Create
-            </Button>
-          ) : null
-        }
-      />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="min-w-0 text-xs text-fg-muted">
+          No {COLOR_NAME[color]} repertoire yet. Build one to see where this game left your
+          preparation.
+        </p>
+        {onHub ? (
+          <Button type="button" variant="primary" size="xs" onClick={onHub}>
+            <Plus />
+            Create
+          </Button>
+        ) : null}
+      </div>
     );
   } else if (!mainline.length) {
     body = <EmptyState compact title="This game has no moves to compare." />;
@@ -293,7 +333,7 @@ export const ReviewOpeningPanel = memo(function ReviewOpeningPanel({
   }
 
   return (
-    <div className="scroll-area -mr-3 flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-3">
+    <div className="grid min-w-0 gap-3">
       {header}
       {body}
     </div>
@@ -347,7 +387,7 @@ function ComparisonResult({
   const stage = actions.find((action) => action.kind === "stage");
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-3">
       <Notice tone={noticeTone[summary.tone]} aria-live="polite">
         {summary.text}
       </Notice>

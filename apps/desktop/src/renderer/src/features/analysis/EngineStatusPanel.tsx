@@ -1,6 +1,6 @@
-import { Fragment, memo, useCallback, useMemo, useState, type ReactNode } from "react";
+import { Fragment, memo, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Cpu, Lock, Play, RotateCcw, Settings, Square } from "lucide-react";
+import { ChevronDown, Cpu, Lock, RotateCcw, Settings } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { formatScore } from "../game-review/review-score";
 import { MoveLink, type GoToLine } from "../game-review/MoveLinks";
@@ -26,8 +26,11 @@ import {
   cgWrapPieceSetClass,
   piecePresentationTailwindClass
 } from "@chaturanga/shared/types/settings";
-import { CgPieceGlyph, type PreviewPieceRole } from "../settings/piece-style-preview";
+import type { PreviewPieceRole } from "../settings/piece-style-preview";
+import { Figurine } from "../board/Figurine";
 import { useBoardAppearance } from "../board/useBoardAppearance";
+import { PREVIEW_BOARD_MIN } from "../game/move-list-model";
+import { usePreviewBoardSize } from "../game/usePreviewBoardSize";
 
 /** As many rows as lines asked for, from the first line on (arriving lines never push content down). */
 function linesWithPlaceholders(
@@ -60,16 +63,6 @@ const FIGURINE_ROLES: Record<string, PreviewPieceRole> = {
   B: "bishop",
   N: "knight"
 };
-
-/** A piece of the board's own set, sized to the text (must sit inside the lines' piece-set wrapper). */
-function Figurine({ role }: { role: PreviewPieceRole }) {
-  return (
-    // The sprites carry their own padding: pulled in so the piece sits against its square (♘f6).
-    <span className="relative -mr-[0.14em] -ml-[0.06em] inline-block size-[1.35em] overflow-hidden align-[-0.32em]">
-      <CgPieceGlyph color="white" role={role} />
-    </span>
-  );
-}
 
 /** A SAN move with its piece drawn as the board's piece (`♘f3`, `exd5`, `O-O`, `e8=♕`). */
 function FigurineSan({ san }: { san: string }) {
@@ -236,7 +229,7 @@ const EngineLineRow = memo(function EngineLineRow({
 });
 
 /** The move of an engine line being hovered or focused: the position after it, shown below the lines. */
-type LinePreview = { fenAfter: string; uci: string; label: string; score: string | null };
+type LinePreview = { fenAfter: string; uci: string; label: string };
 /** Which move is hovered: line (MultiPV number) and move index, so an updated line updates the preview. */
 type PreviewTarget = { multipv: number; moveIndex: number };
 
@@ -257,14 +250,13 @@ function previewFor(
     label: numberedLine(
       fen,
       steps.slice(0, target.moveIndex + 1).map((item) => item.san)
-    ),
-    score: line.score ? formatScore(whiteScore(line.score, fen), 2) : null
+    )
   };
 }
 
 /**
- * A roomy board under the lines with the position after the move being hovered (or focused) and
- * the line's score; the line itself is the one read above it, not repeated. Below the lines, it
+ * A roomy board under the lines with the position after the move being hovered (or focused): just
+ * the board, since the line is read above it (its move highlighted there). Below the lines, it
  * never covers the moves being read. Compact, see FloatingLinePreview.
  */
 function LinePreviewCard({
@@ -276,36 +268,42 @@ function LinePreviewCard({
   orientation: Color;
   compact: boolean;
 }) {
+  // Under the lines it keeps a BEST line preview's bounds (usePreviewBoardSize), so a wide panel
+  // never shows a board that crowds the lines out; the floating (compact) one has its own width.
+  const slotRef = useRef<HTMLDivElement>(null);
+  const size = usePreviewBoardSize(slotRef);
   return (
-    // The line is read above (its move highlighted there), so the card names it only for assistive tech.
+    // Named only for assistive tech: the line is read above it.
     <div
+      ref={slotRef}
       role="group"
       aria-label={`Position after ${preview.label}`}
-      className={cn(
-        "grid animate-fade-in gap-3 rounded-xl border border-line-subtle p-3",
-        compact ? "bg-surface-raised shadow-popover" : "bg-surface-raised/40"
-      )}
+      className={cn("grid animate-fade-in", compact && "rounded-md shadow-popover")}
     >
-      <ReviewBoard
-        fen={preview.fenAfter}
-        orientation={orientation}
-        lastMove={[preview.uci.slice(0, 2), preview.uci.slice(2, 4)]}
-        className={cn(
-          "aspect-square w-full justify-self-center",
-          compact ? "max-w-48" : "max-w-md"
-        )}
-      />
-      {preview.score ? (
-        <p className="text-xs text-fg-muted">
-          Line score <span className="font-mono text-fg-secondary">{preview.score}</span>
-        </p>
-      ) : null}
+      <div
+        className={cn("w-full justify-self-center", compact && "max-w-48")}
+        style={
+          compact
+            ? undefined
+            : {
+                maxWidth: size ?? PREVIEW_BOARD_MIN,
+                visibility: size === null ? "hidden" : undefined
+              }
+        }
+      >
+        <ReviewBoard
+          fen={preview.fenAfter}
+          orientation={orientation}
+          lastMove={[preview.uci.slice(0, 2), preview.uci.slice(2, 4)]}
+          className="aspect-square w-full"
+        />
+      </div>
     </div>
   );
 }
 
-/** The floating preview's width (a 192px board and its padding) and its gap from the panel. */
-const FLOATING_PREVIEW_WIDTH = 218;
+/** The floating preview's width (its 192px board) and its gap from the panel. */
+const FLOATING_PREVIEW_WIDTH = 192;
 const FLOATING_PREVIEW_GAP = 20;
 
 /**
@@ -330,7 +328,7 @@ function FloatingLinePreview({
     <div
       className="fixed z-50"
       style={{
-        top: Math.max(8, Math.min(box.top, window.innerHeight - FLOATING_PREVIEW_WIDTH - 60)),
+        top: Math.max(8, Math.min(box.top, window.innerHeight - FLOATING_PREVIEW_WIDTH - 8)),
         left: Math.max(8, panelLeft - FLOATING_PREVIEW_GAP - FLOATING_PREVIEW_WIDTH),
         width: FLOATING_PREVIEW_WIDTH
       }}
@@ -388,10 +386,6 @@ function useBoardEnginePosition(): EnginePanelPosition {
 }
 
 type EnginePanelActions = {
-  /** Starts (or resumes) live analysis: the idle state's button and the header's Start. Omit to hide it. */
-  onStartAnalysis?: () => void;
-  /** Stops live analysis (its lines stay, and Start carries on from them). */
-  onStopAnalysis?: () => void;
   /** Offered when no engine is installed (the way to get one). */
   onOpenSettings?: () => void;
 };
@@ -439,8 +433,6 @@ export function EngineAnalysisPanel(
 
 function EngineStatusPanelContent({
   position,
-  onStartAnalysis,
-  onStopAnalysis,
   onOpenSettings,
   headerAction,
   linesHint,
@@ -527,7 +519,7 @@ function EngineStatusPanelContent({
     <section className={cn("grid content-start", compact ? "gap-2" : "gap-4")}>
       {hasData || !idle || headerAction ? (
         // The tab above already says "Engine": the header names the engine, how far it searches,
-        // and holds the controls (Stop / Start, and Restart from scratch).
+        // and offers Restart from scratch (the Analysis switch above the panel starts and stops it).
         <div className="flex min-w-0 items-center justify-between gap-3">
           {compact ? (
             <div className="flex min-w-0 items-baseline gap-2">
@@ -543,26 +535,13 @@ function EngineStatusPanelContent({
             </div>
           )}
           <div className="flex shrink-0 items-center gap-1">
+            {/* An engine that stopped with an error runs no search: Restart is the way on. */}
             {analysing ? (
-              <>
-                <IconButton
-                  label={finished ? "Search again from scratch" : "Restart analysis from scratch"}
-                  icon={<RotateCcw />}
-                  onClick={restartFresh}
-                />
-                {/* An engine that stopped with an error runs no search: Restart is the way on. */}
-                {onStopAnalysis && status !== "error" ? (
-                  <Button type="button" variant="outline" size="sm" onClick={onStopAnalysis}>
-                    <Square />
-                    Stop
-                  </Button>
-                ) : null}
-              </>
-            ) : onStartAnalysis ? (
-              <Button type="button" variant="primary" size="sm" onClick={onStartAnalysis}>
-                <Play />
-                Start
-              </Button>
+              <IconButton
+                label={finished ? "Search again from scratch" : "Restart analysis from scratch"}
+                icon={<RotateCcw />}
+                onClick={restartFresh}
+              />
             ) : null}
             {headerAction}
           </div>
@@ -653,22 +632,7 @@ function EngineStatusPanelContent({
           }
           className="py-6"
         />
-      ) : idle ? (
-        <EmptyState
-          icon={<Cpu />}
-          title="Engine is idle"
-          description={onStartAnalysis ? "Analyze the current position." : undefined}
-          action={
-            onStartAnalysis ? (
-              <Button type="button" variant="primary" size="sm" onClick={onStartAnalysis}>
-                <Play />
-                Start analysis
-              </Button>
-            ) : undefined
-          }
-          className="py-6"
-        />
-      ) : (
+      ) : idle ? null : (
         <EmptyState
           compact
           title={

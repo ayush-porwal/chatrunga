@@ -66,8 +66,10 @@ function EngineSwatch({
 }
 
 /**
- * The clock box beside a player row. Fixed minimum width and tabular digits so the text never
- * shifts as it counts; `low` (little time left) turns it red and, while it runs, pulses gently.
+ * The clock box beside a player row: a light box for White and a dark one for Black, with a subtle
+ * accent ring on the side to move (`active`). Fixed minimum width and tabular digits so the text
+ * never shifts as it counts; `low` (little time left) turns the time red and, while it runs, pulses
+ * gently.
  */
 export function ClockFace({
   color,
@@ -88,16 +90,13 @@ export function ClockFace({
       aria-label={`${color === "white" ? "White" : "Black"} clock`}
       data-running={running ? "true" : undefined}
       className={cn(
-        "min-w-[4.75rem] rounded-md border px-2 py-0.5 text-right text-base font-semibold tabular-nums",
-        "transition-[background-color,border-color,color] duration-standard ease-standard",
-        low
-          ? cn(
-              "board-clock-low border-danger/60 text-danger",
-              active ? "bg-danger-soft" : "bg-surface-sunken"
-            )
-          : active
-            ? "border-accent/50 bg-accent-soft text-fg"
-            : "border-line bg-surface-sunken text-fg-muted"
+        "min-w-[4.75rem] rounded-md px-2 py-0.5 text-right text-base font-semibold tabular-nums",
+        "transition-[box-shadow,color] duration-standard ease-standard",
+        color === "white"
+          ? "bg-side-white text-side-white-fg"
+          : "bg-side-black text-fg inset-ring inset-ring-line",
+        low && cn("board-clock-low", color === "white" ? "text-mark-blunder" : "text-danger"),
+        active && (low ? "ring-2 ring-danger/60" : "ring-2 ring-accent/60")
       )}
     >
       {text}

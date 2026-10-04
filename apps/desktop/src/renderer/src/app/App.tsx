@@ -14,9 +14,12 @@ import { useViewTransitionState, type ViewTransitionKind } from "@/lib/use-view-
 import { useEventCallback } from "@/lib/use-event-callback";
 import { signalWindowReady } from "@/lib/window-glass";
 import { cn } from "@/lib/utils";
+import { loadSidebarExpanded, saveSidebarExpanded } from "@/lib/layout-prefs";
 import { BoardFocusContext } from "../features/board/board-focus";
 import { PromotionDialog } from "../features/board/PromotionDialog";
 import type { ReviewTab } from "../features/game-review/review-utils";
+import { openReviewSettingsDialog } from "../features/game-review/ReviewSettingsDialog";
+import { rememberCollapsibleOpen } from "@/components/ui/collapsible-section";
 import { PgnImportDialog } from "../features/game/PgnImportDialog";
 import { openSavedGame } from "../features/game/saved-game";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
@@ -168,7 +171,7 @@ export function App() {
   const [importOpen, setImportOpen] = useState(false);
   const [gameReviewPickerOpen, setGameReviewPickerOpen] = useState(false);
   const [sideTab, setSideTab] = useState<SideTab>("notation");
-  const [reviewTab, setReviewTab] = useState<ReviewTab>("commentary");
+  const [reviewTab, setReviewTab] = useState<ReviewTab>("summary");
   /** The Opening tab's picked side (per game); game-review history entries carry it. */
   const [openingSide, setOpeningSide] = useState<OpeningSide | null>(null);
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId | null>(null);
@@ -180,7 +183,9 @@ export function App() {
    * a newer selection (or after the user went elsewhere) is dropped instead of taking over.
    */
   const latestNavigation = useRef(0);
-  const [actionRailOpen, setActionRailOpen] = useState(true);
+  // Expanded or the icon rail, as the user last left it (the sidebar toggle).
+  const [actionRailOpen, setActionRailOpen] = useState(loadSidebarExpanded);
+  useEffect(() => saveSidebarExpanded(actionRailOpen), [actionRailOpen]);
   const puzzleSession = usePuzzleSession();
   const activePuzzleConfig = puzzleSession.config;
   const onboarding = useOnboarding();
@@ -266,10 +271,9 @@ export function App() {
   const windowControlsVisible = isElectronMac();
   // Narrow subscriptions: the shell must not re-render on every move (it would cascade into the
   // sidebar, titlebar and every tooltip). Handlers read the store directly via currentGame().
-  const { gameId, gameSource, gameMode, gameDecided, gameBoard } = useGameStore(
+  const { gameId, gameMode, gameDecided, gameBoard } = useGameStore(
     useShallow((state) => ({
       gameId: state.gameId,
-      gameSource: state.source,
       gameMode: state.mode,
       gameDecided: Boolean(state.gameOutcome),
       gameBoard: state.board
@@ -316,12 +320,6 @@ export function App() {
   const reviewRouteLoading = Boolean(
     reviewRouteId && reviewRouteId !== "current" && reviewRouteId !== gameId
   );
-  const canAnalyzeGame =
-    desktopApiAvailable &&
-    !positionIsEnd &&
-    gameSource !== "new" &&
-    gameSource !== "puzzle" &&
-    (gameMode === "freeplay" || ((gameMode === "engine" || gameMode === "online") && gameDecided));
 
   useLichess({ onGameStart: (load) => startOnlineGame(load) });
   // The repertoire board has its own move keys (they must not step the game behind it).
@@ -335,12 +333,14 @@ export function App() {
   useMoveSounds({ enabled: settings.soundEnabled, volume: settings.soundVolume });
   usePuzzleAutoReply();
   usePuzzleAttemptRecording();
-  const openReviewSettings = useCallback(() => setReviewTab("settings"), []);
+  // Review as: a game whose side isn't known yet asks on the Summary before its review starts.
+  const askReviewSide = useCallback(() => setReviewTab("summary"), []);
   const { startReview, hasMoves: gameHasMoves } = useReviewRunner({
     engines: engines.data,
     settings,
     gameLoading: reviewRouteLoading,
-    onEngineMissing: openReviewSettings
+    onEngineMissing: openReviewSettingsDialog,
+    onSideNeeded: askReviewSide
   });
 
   /**
@@ -583,7 +583,7 @@ export function App() {
     showGame("engine");
   }
 
-  /** Titlebar "Stop analysis": leave live analysis but keep the position and moves (not a step of its own). */
+  /** The Analysis switch turned off: leave live analysis but keep the position and moves (not a step of its own). */
   function stopLiveAnalysis() {
     latestNavigation.current += 1;
     currentGame().setMode("freeplay");
@@ -615,7 +615,7 @@ export function App() {
     record("push", historyEntry("game"));
   }
 
-  async function openSelectedGameReview(gameId: string, tab: ReviewTab = "commentary") {
+  async function openSelectedGameReview(gameId: string, tab: ReviewTab = "summary") {
     commitCurrent();
     const request = ++latestNavigation.current;
     if (gameId !== "current" && gameId !== currentGame().gameId) {
@@ -1032,7 +1032,9 @@ export function App() {
       value: played.repertoireId
     });
     setOpeningSide({ board: currentGame().board, color: played.color });
-    await openSelectedGameReview("current", "opening");
+    // The comparison is in the summary's OPENING section: shown unfolded.
+    rememberCollapsibleOpen("review-summary:repertoire", true);
+    await openSelectedGameReview("current", "summary");
   }
 
   /**
@@ -1177,7 +1179,8 @@ export function App() {
       showView("home");
     }),
     settings: useEventCallback(() => openSettings(null)),
-    commentarySettings: useEventCallback(() => openSettings("commentary")),
+    commentarySettings: useEventCallback(() => openSettings("ai")),
+    openSettings: useEventCallback((section: SettingsSectionId) => openSettings(section)),
     engineSettings: useEventCallback(() => openSettings("engines")),
     back: useEventCallback(() => void goHistory(-1)),
     forward: useEventCallback(() => void goHistory(1)),
@@ -1416,9 +1419,10 @@ export function App() {
           // The sidebar column eases open/closed; the content panel follows it frame by frame.
           "transition-[grid-template-columns] duration-emphasis ease-standard",
           // rem: the sidebar grows with the type step on big monitors (app.css), like the rest of the UI.
+          // Narrow (its labels are one short word): the width goes to the board and its panel.
           sidebarExpanded
-            ? "[--sidebar-width:clamp(12.5rem,17vw,17rem)]"
-            : "[--sidebar-width:3.25rem]"
+            ? "[--sidebar-width:clamp(11rem,13vw,13.5rem)]"
+            : "[--sidebar-width:3.5rem]"
         )}
       >
         <AppTitlebar
@@ -1449,11 +1453,7 @@ export function App() {
             <GameTitlebar
               engines={engines.data}
               showAnalysisError={sideTab !== "engine" || focused}
-              canAnalyze={canAnalyzeGame}
               onAnalyze={on.analyzePosition}
-              onStopAnalysis={
-                gameMode === "analysis" && desktopApiAvailable ? on.stopLiveAnalysis : null
-              }
               onReviewGame={on.reviewCurrentGame}
               onPlayAgain={on.playLichess}
               onReviewEngineGame={on.reviewEngineGame}
@@ -1552,10 +1552,14 @@ export function App() {
                 reviewLoading={reviewRouteLoading}
                 sideTab={sideTab}
                 onSideTabChange={setSideTab}
+                // The Engine tab's Analysis switch is the only Start: a free board, a solved
+                // puzzle, or a finished engine or Lichess game (analysed in place).
                 canStartAnalysis={
                   desktopApiAvailable &&
-                  (gameMode === "freeplay" || (gameMode === "puzzle" && puzzleDecided)) &&
-                  !positionIsEnd
+                  !positionIsEnd &&
+                  (gameMode === "freeplay" ||
+                    (gameMode === "puzzle" && puzzleDecided) ||
+                    ((gameMode === "engine" || gameMode === "online") && gameDecided))
                 }
                 puzzlePanel={puzzlePanel}
                 repertoire={repertoireScreen}

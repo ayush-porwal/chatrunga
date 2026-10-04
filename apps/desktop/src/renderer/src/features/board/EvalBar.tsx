@@ -6,6 +6,7 @@ import type { Color } from "@chaturanga/shared/types/chess";
 import type { EngineScore, MoveReview } from "@chaturanga/shared/types/engine";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { useGameStore } from "../../stores/game-store";
+import { activeBestLine } from "../game/best-line-cursor";
 import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
 import { useDisplayedReviewMoves } from "../../stores/review-validity";
@@ -124,6 +125,8 @@ export function useBoardEval(): BoardEval | null {
       mode: state.mode,
       fen: state.currentFen,
       nodeId: state.currentNodeId,
+      // A BEST line's position isn't a game move: no review evaluation of its own.
+      bestLine: Boolean(activeBestLine(state)),
       matchOn:
         (state.mode === "engine" || state.mode === "online") &&
         Boolean(state.engineSide) &&
@@ -141,7 +144,7 @@ export function useBoardEval(): BoardEval | null {
 
   if (game.mode === "analysis") return liveAnalysisEval(game.fen, liveScore);
 
-  if (!reviewMoves.length) return null;
+  if (!reviewMoves.length || game.bestLine) return null;
   const move = reviewMoves.find((item) => item.nodeId === game.nodeId);
   const evaluation = move ? reviewedMoveEval(move) : null;
   if (evaluation) return evaluation;
@@ -180,10 +183,11 @@ export const EvalBar = memo(function EvalBar({ orientation }: { orientation: Col
 });
 
 /**
- * The vertical eval bar beside a board: White's share grows from White's side of the board, and
- * the evaluation is printed at the better side's end (evalBarLabel), dark on the white fill and
- * light on the black. With `live` analysis it keeps its last value while a new search starts, so
- * it glides instead of blinking.
+ * The vertical eval bar beside a board, drawn as chess.com draws it: White's share in white grows
+ * from White's side of the board over Black's warm dark grey, and the evaluation is printed small
+ * and bold at the better side's end (evalBarLabel), dark on the white fill and light on the grey.
+ * With `live` analysis it keeps its last value while a new search starts, so it glides instead of
+ * blinking.
  */
 export function EvalBarFill({
   orientation,
@@ -216,25 +220,23 @@ export function EvalBarFill({
       role="img"
       aria-label={`Evaluation ${shown.label}`}
       title={shown.label}
-      className="relative h-full w-full overflow-hidden rounded-md border border-line bg-black animate-fade-in"
+      className="relative h-full w-full overflow-hidden rounded-[3px] bg-eval-black animate-fade-in"
     >
       <div
         className={cn(
-          "absolute inset-x-0 bg-white transition-[height] duration-emphasis ease-standard motion-reduce:transition-none",
+          "absolute inset-x-0 bg-eval-white transition-[height] duration-emphasis ease-standard motion-reduce:transition-none",
           whiteAtBottom ? "bottom-0" : "top-0"
         )}
         style={{ height: `${shown.whiteShare}%` }}
       />
-      {/* The even line, so a small edge still reads against it. */}
-      <div aria-hidden="true" className="absolute inset-x-0 top-1/2 h-px bg-accent/60" />
       {/* Positioned over the fill (never in the flow), so a longer number never moves anything. */}
       <span
         aria-hidden="true"
         data-eval-side={text.side}
         className={cn(
-          "absolute inset-x-0 overflow-hidden text-center text-[0.625rem] font-semibold leading-none tracking-tighter tabular-nums whitespace-nowrap select-none",
-          text.atTop ? "top-1" : "bottom-1",
-          text.side === "white" ? "text-piece-black" : "text-piece-white"
+          "absolute inset-x-0 overflow-hidden text-center text-[10px] font-bold leading-none tracking-tighter tabular-nums whitespace-nowrap select-none",
+          text.atTop ? "top-[5px]" : "bottom-[5px]",
+          text.side === "white" ? "text-eval-black" : "text-eval-white"
         )}
       >
         {text.text}

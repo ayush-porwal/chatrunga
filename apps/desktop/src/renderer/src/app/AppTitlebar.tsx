@@ -9,7 +9,7 @@ import { positionStatus } from "@/lib/position-status";
 import { titlebarIconButton } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { PlayersTitle, WorkspaceTitlebar } from "../features/board/BoardWorkspace";
-import { MatchActions, useEnginePostGame } from "../features/analysis/MatchActions";
+import { MatchActions } from "../features/analysis/MatchActions";
 import { RepertoireHandoffActions } from "../features/repertoire/RepertoireHandoffActions";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { useGameStore } from "../stores/game-store";
@@ -182,15 +182,13 @@ export function PageTitle({ children }: { children: ReactNode }) {
 
 /**
  * Titlebar for the game view: players (or the puzzle, or the mode name while both sides are
- * unnamed) · result · transient status … Analyze/Stop · match actions (Offer draw, Resign; once
- * the game ends, Review game / Analyze / Next puzzle).
+ * unnamed) · result · transient status … match actions (Offer draw, Resign; once the game ends,
+ * Review game / Analyze / Next puzzle). Live analysis starts and stops with the Engine tab's switch.
  */
 export const GameTitlebar = memo(function GameTitlebar({
   engines,
   showAnalysisError,
-  canAnalyze,
   onAnalyze,
-  onStopAnalysis,
   onReviewGame,
   onPlayAgain,
   onReviewEngineGame,
@@ -202,9 +200,8 @@ export const GameTitlebar = memo(function GameTitlebar({
   engines: readonly EngineConfig[] | undefined;
   /** Engine errors show here unless the Engine tab (which shows them itself) is visible. */
   showAnalysisError: boolean;
-  canAnalyze: boolean;
+  /** A finished engine game's Analyze (its post-game row); live analysis is the Engine tab's switch. */
   onAnalyze: () => void;
-  onStopAnalysis: (() => void) | null;
   /** A finished online game: open it in Game review / find another game. */
   onReviewGame: () => void;
   onPlayAgain: () => void;
@@ -240,8 +237,6 @@ export const GameTitlebar = memo(function GameTitlebar({
   );
   const activeEngineId = useAnalysisStore((state) => state.activeEngineId);
   const activePuzzle = usePuzzleStore((state) => state.activePuzzle);
-  // A finished engine game's own row (MatchActions) has Analyze: the button here would repeat it.
-  const enginePostGame = useEnginePostGame();
   const engineName = engines?.find((engine) => engine.id === activeEngineId)?.name ?? null;
 
   const error = game.lastError || (showAnalysisError ? analysisError : null);
@@ -265,15 +260,6 @@ export const GameTitlebar = memo(function GameTitlebar({
       statusIsError={!game.matchFeedback && Boolean(error)}
       actions={
         <>
-          {onStopAnalysis ? (
-            <Button type="button" variant="outline" size="sm" onClick={onStopAnalysis}>
-              Stop analysis
-            </Button>
-          ) : canAnalyze && !enginePostGame ? (
-            <Button type="button" variant="primary" size="sm" onClick={onAnalyze}>
-              Analyze
-            </Button>
-          ) : null}
           <MatchActions
             onReview={onReviewGame}
             onPlayAgain={onPlayAgain}

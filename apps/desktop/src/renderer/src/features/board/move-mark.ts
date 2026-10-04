@@ -40,8 +40,9 @@ export function showsMoveMarks(surface: MarkSurface): boolean {
 
 /**
  * The mark of the move at `nodeId`, or null: on a surface without marks, while a review is still
- * running (its marks are not final), and for a move the review doesn't cover or didn't mark
- * (ordinary moves stay unmarked). `moves` are the reviewed moves the game still has
+ * running (its marks are not final), for a move the review doesn't cover or didn't mark
+ * (ordinary moves stay unmarked), and for a book move (a badge on every opening move would bury
+ * the marks that matter; the move list shows it). `moves` are the reviewed moves the game still has
  * (compatibleReviewMoves), so a move changed since the analysis gets no badge.
  */
 export function boardMoveMark(
@@ -52,7 +53,7 @@ export function boardMoveMark(
   const move = moves.find((item) => item.nodeId === nodeId);
   const annotation = annotationOf(move);
   const squares = move ? uciSquares(move.playedMove) : null;
-  if (!move || !annotation || !squares) return null;
+  if (!move || !annotation || annotation === "book" || !squares) return null;
   return {
     nodeId,
     square: squares[1],

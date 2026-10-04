@@ -1,5 +1,6 @@
 // Repertoire authoring journeys (pausing a decision, wrong-move feedback, promoting a variation
-// with undo / redo) through the built app; how to run them: playwright.config.ts.
+// with undo / redo, or from its row in the move list) through the built app; how to run them:
+// playwright.config.ts.
 import type { ElectronApplication, Page } from "@playwright/test";
 import type { ChaturangaApi } from "../../../packages/shared/src/ipc/chaturanga-api";
 import { clickSquare, expect, sidebar, skipWelcome, test } from "./app";
@@ -247,4 +248,31 @@ test("a variation is promoted with P and the promotion undone and redone from th
   await page.getByRole("tab", { name: "Moves", exact: true }).click();
   await expect(titlebar(page)).toContainText("Saved");
   await expect.poll(() => storedFirstMoves(page, seeded)).toEqual(["d4", "e4"]);
+});
+
+test("a variation's row promotes it from its hover icon", async ({ launch }) => {
+  const { page } = await launch();
+  await skipWelcome(page);
+  const seeded = await seedRepertoire(page);
+  await openStudy(page);
+  const tree = page.getByRole("tree", { name: "Chapter moves" });
+
+  // 1. d4 from the start: a variation row under the chapter's 1. e4.
+  await clickSquare(page, "d2");
+  await clickSquare(page, "d4");
+  const row = tree.getByRole("group", { name: "Variation: 1. d4" });
+  await expect(row).toBeVisible();
+  await expect(row.getByRole("button", { name: "d4", exact: true })).toHaveAttribute(
+    "aria-current",
+    "step"
+  );
+
+  await row.hover();
+  await row.getByRole("button", { name: "Promote the variation with d4" }).click();
+  await expect.poll(() => storedFirstMoves(page, seeded)).toEqual(["d4", "e4"]);
+  // 1. e4 is the variation now, its whole line in one row.
+  await expect(
+    tree.getByRole("group", { name: "Variation: 1. e4 e5 2. Nf3 Nc6 3. Bc4" })
+  ).toBeVisible();
+  await expect(tree.getByRole("group", { name: /^Variation: 1\. d4/ })).toHaveCount(0);
 });

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEmptyGame } from "@chaturanga/shared/chess/pgn";
-import type { SavedGame } from "@chaturanga/shared/types/chess";
+import type { SavedGame, SavedReviewInfo } from "@chaturanga/shared/types/chess";
 import type { GameReview } from "@chaturanga/shared/types/engine";
 import { useGameStore } from "../../stores/game-store";
 import { useReviewStore } from "../../stores/review-store";
@@ -9,6 +9,7 @@ import {
   openSavedGame,
   reviewWithRealPlies,
   sessionFromSavedGame,
+  showAfterAnalysesDeleted,
   showSavedAnalysis
 } from "./saved-game";
 
@@ -157,6 +158,78 @@ describe("showSavedAnalysis", () => {
     openSavedGame(saved({ id: "g1", reviews: [] }));
     answer(older);
     expect(await switching).toBe(false);
+  });
+});
+
+describe("showAfterAnalysesDeleted", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useReviewStore.getState().reset();
+  });
+
+  const review = (reviewId: string, createdAt: number) =>
+    ({
+      reviewId,
+      engineId: "sf",
+      depth: null,
+      moveTimeMs: 100,
+      createdAt,
+      summary: {},
+      moves: []
+    }) as unknown as GameReview;
+  const info = (reviewId: string, createdAt: number) =>
+    ({ reviewId, createdAt }) as unknown as SavedReviewInfo;
+  const reviews = { a: review("a", 3), b: review("b", 2), c: review("c", 1) };
+
+  /** The game g1 with analyses a (newest), b and c, showing `shown`. */
+  function showing(shown: keyof typeof reviews) {
+    const getReview = vi.fn(async (_gameId: string, reviewId: string) =>
+      reviewId in reviews ? reviews[reviewId as keyof typeof reviews] : null
+    );
+    vi.stubGlobal("window", { chaturanga: { games: { getReview } } });
+    useGameStore.setState({ gameId: "g1" });
+    useReviewStore
+      .getState()
+      .loadReview(reviews[shown], [info("a", 3), info("b", 2), info("c", 1)]);
+    return getReview;
+  }
+  const listed = () => useReviewStore.getState().analyses.map((item) => item.reviewId);
+
+  it("deleting another analysis only drops it from the list", async () => {
+    const getReview = showing("a");
+    await showAfterAnalysesDeleted("g1", ["b"]);
+    expect(listed()).toEqual(["a", "c"]);
+    expect(useReviewStore.getState().review?.reviewId).toBe("a");
+    expect(getReview).not.toHaveBeenCalled();
+  });
+
+  it("deleting the one shown shows the newest left", async () => {
+    showing("a");
+    await showAfterAnalysesDeleted("g1", ["a"]);
+    expect(listed()).toEqual(["b", "c"]);
+    expect(useReviewStore.getState()).toMatchObject({
+      status: "ready",
+      review: { reviewId: "b" }
+    });
+  });
+
+  it("deleting the last one, or all of them, leaves nothing shown (Analyze again)", async () => {
+    showing("c");
+    useReviewStore.getState().setAnalyses([info("c", 1)]);
+    await showAfterAnalysesDeleted("g1", ["c"]);
+    expect(useReviewStore.getState()).toMatchObject({ status: "idle", review: null, analyses: [] });
+
+    showing("b");
+    await showAfterAnalysesDeleted("g1", "all");
+    expect(useReviewStore.getState()).toMatchObject({ status: "idle", review: null, analyses: [] });
+  });
+
+  it("leaves the board alone when another game was opened meanwhile", async () => {
+    showing("a");
+    useGameStore.setState({ gameId: "g2" });
+    await showAfterAnalysesDeleted("g1", "all");
+    expect(listed()).toEqual(["a", "b", "c"]);
+    expect(useReviewStore.getState().review?.reviewId).toBe("a");
   });
 });
 

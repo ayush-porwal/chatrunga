@@ -1,12 +1,16 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
+import { standardCastlingUci } from "@chaturanga/shared/chess/review";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
 import { mainlineReviewInput } from "../features/game-review/review-utils";
 import { useGameStore } from "./game-store";
 import { compatibleReviewMoves, lineStillOnMainline } from "./review-validity";
 
-/** The reviewed moves of the board's main line, as a finished review holds them. */
+/**
+ * The reviewed moves of the board's main line, as a finished review holds them (the review stores
+ * a castle the standard way, as the main process's review does).
+ */
 function reviewOfMainline(): MoveReview[] {
   return mainlineReviewInput(useGameStore.getState().moveTree).map(
     (move) =>
@@ -14,7 +18,7 @@ function reviewOfMainline(): MoveReview[] {
         nodeId: move.nodeId,
         ply: move.ply,
         san: move.san,
-        playedMove: move.uci,
+        playedMove: standardCastlingUci(move.fenBefore, move.uci),
         fenBefore: move.fenBefore,
         fenAfter: move.fenAfter
       }) as MoveReview
@@ -69,6 +73,20 @@ describe("review validity", () => {
     useGameStore.getState().makeUciMove("g1f3");
     useGameStore.getState().goToNode(nodeBySan("e4").id);
     useGameStore.getState().makeUciMove("c7c5");
+    expect(compatibleReviewMoves(moves, tree())).toBe(moves);
+  });
+
+  it("keeps the analysis of imported castles, which the tree stores as king takes rook", () => {
+    const { game } = importPgnText(
+      "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. O-O d6 5. d3 Be6 6. Nc3 Qd7 7. Be3 O-O-O *"
+    );
+    useGameStore.getState().loadGame({ ...game, id: "castles" });
+    const castles = tree().filter((node) => node.san?.startsWith("O-O"));
+    expect(castles.map((node) => node.uci)).toEqual(["e1h1", "e8a8"]);
+    const moves = reviewOfMainline();
+    expect(
+      moves.filter((move) => move.san.startsWith("O-O")).map((move) => move.playedMove)
+    ).toEqual(["e1g1", "e8c8"]);
     expect(compatibleReviewMoves(moves, tree())).toBe(moves);
   });
 

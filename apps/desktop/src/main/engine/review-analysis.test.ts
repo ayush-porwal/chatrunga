@@ -8,11 +8,9 @@ import {
   computeEvalLoss,
   linesFromInfoStream,
   maiaRatingFromText,
-  parseTimeControl,
   selectMaiaEnginesForReview,
   tacticalMotifsForBestMove,
-  terminalScore,
-  timeSpentForMove
+  terminalScore
 } from "./review-analysis";
 
 const ITALIAN = "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3";
@@ -257,24 +255,6 @@ describe("tacticalMotifsForBestMove", () => {
     expect(tacticalMotifsForBestMove(backRank, "d1d8", { type: "mate", value: 1 })).toContain(
       "checkmate"
     );
-  });
-});
-
-describe("clocks", () => {
-  it("uses the mover's own previous clock plus increment", () => {
-    const moves = [
-      { clockAfter: "0:10:00" }, // white
-      { clockAfter: "0:09:50" }, // black
-      { clockAfter: "0:09:30" }, // white spent 30s, +5 inc
-      { clockAfter: "0:09:48" } // black spent 2s, +5 inc
-    ];
-    const tc = parseTimeControl("600+5");
-    expect(tc).toEqual({ baseMs: 600_000, incrementMs: 5000 });
-    expect(timeSpentForMove(moves, 2, tc)).toBe(35_000);
-    expect(timeSpentForMove(moves, 3, tc)).toBe(7000);
-    expect(timeSpentForMove(moves, 1, tc)).toBe(15_000);
-    expect(timeSpentForMove(moves, 1, null)).toBeUndefined();
-    expect(parseTimeControl("-")).toBeNull();
   });
 });
 

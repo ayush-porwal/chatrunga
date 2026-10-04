@@ -137,6 +137,20 @@ export class LichessAccountStore {
     });
   }
 
+  /**
+   * The account's ratings read again from Lichess. Only for the account still connected (another
+   * may have signed in meanwhile); returns the saved account, or null when it is gone.
+   */
+  updatePerfs(accountId: string, perfs: LichessAccount["perfs"]): Promise<LichessAccount | null> {
+    return this.serialize(async () => {
+      const current = await this.read();
+      if (current.account?.id !== accountId) return null;
+      const account = { ...current.account, perfs };
+      await this.write({ ...current, account });
+      return account;
+    });
+  }
+
   /** Forgets the account. Only a file that's already gone is fine: a credential left on disk must fail loudly. */
   clear(): Promise<void> {
     return this.serialize(() =>

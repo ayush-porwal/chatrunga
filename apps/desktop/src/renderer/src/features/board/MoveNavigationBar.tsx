@@ -40,7 +40,11 @@ export const MoveNavigationBar = memo(function MoveNavigationBar({
   onLast
 }: MoveNavigationBarProps) {
   return (
-    <nav className="flex items-center justify-between gap-2 px-3 py-2" aria-label="Move navigation">
+    // The row spans the panel at any width, as the tabs above do.
+    <nav
+      className="flex w-full items-center justify-between gap-2 px-3 py-2"
+      aria-label="Move navigation"
+    >
       <div className="flex items-center gap-1">
         <IconButton
           label="First move"

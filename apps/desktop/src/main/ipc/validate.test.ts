@@ -220,6 +220,32 @@ describe("engine session inputs", () => {
     expect(() => parseReviewGameInput({ engineId: "sf", rootFen: START })).toThrow(/moves/);
   });
 
+  it("parses the rating context a review is resolved from", () => {
+    const base = { engineId: "sf", rootFen: START, moves: [] };
+    expect(
+      parseReviewGameInput({
+        ...base,
+        rating: { side: "black", whiteElo: 1810, blackElo: null, speed: "blitz" }
+      }).rating
+    ).toEqual({ side: "black", whiteElo: 1810, blackElo: null, speed: "blitz" });
+    expect(parseReviewGameInput({ ...base, rating: null }).rating).toBeNull();
+    expect(() =>
+      parseReviewGameInput({ ...base, rating: { side: "red", whiteElo: null, blackElo: null } })
+    ).toThrow(/unknown side/);
+    expect(() =>
+      parseReviewGameInput({
+        ...base,
+        rating: { side: "white", whiteElo: 99_999, blackElo: null, speed: null }
+      })
+    ).toThrow(/white rating/);
+    expect(() =>
+      parseReviewGameInput({
+        ...base,
+        rating: { side: "white", whiteElo: null, blackElo: null, speed: "hyper" }
+      })
+    ).toThrow(/unknown speed/);
+  });
+
   it("parses a few positions to analyse", () => {
     expect(
       parseAnalysePositionsInput({

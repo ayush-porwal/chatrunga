@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { promoteToMainline } from "@chaturanga/shared/chess/move-tree-promote";
 import { addMoveNode, createEmptyGame, exportGameToPgn } from "@chaturanga/shared/chess/pgn";
 import {
   applySan,
@@ -17,6 +18,12 @@ import type {
   UserMove
 } from "@chaturanga/shared/types/chess";
 import { userMoveFromUci } from "@/lib/uci";
+import {
+  activeBestLine,
+  bestLineSans,
+  bestLineStep,
+  type BestLineCursor
+} from "../features/game/best-line-cursor";
 
 type PendingPromotion = { from: string; to: string } | null;
 
@@ -62,6 +69,11 @@ type GameStore = {
   engineClockLive: EngineClockLive | null;
   gameOutcome: GameOutcome | null;
   /**
+   * A marked error's BEST line being browsed (see activeBestLine): the board shows one of its
+   * positions while the game stays on the error, and the move tree is unchanged.
+   */
+  bestLine: BestLineCursor | null;
+  /**
    * Counts moves `makeMove` refused. The board has already drawn the piece on its new square;
    * it puts the position back when this changes (the stored position didn't change).
    */
@@ -77,6 +89,11 @@ type GameStore = {
   makeUciMove: (uci: string) => boolean;
   goToNode: (nodeId: string) => void;
   /**
+   * Shows a position of a BEST line on the board (the game goes to its error, the tree is not
+   * changed). A new move played there makes the line up to it a real variation (`makeMove`).
+   */
+  showBestLine: (cursor: BestLineCursor) => void;
+  /**
    * Play `moves` (SAN or UCI) from `startNodeId`, reusing existing children (main line or an
    * existing variation) and appending the rest as a new variation, then select the final node.
    * Pure navigation: never changes mode or starts an engine. Returns false (and changes nothing)
@@ -84,6 +101,12 @@ type GameStore = {
    */
   goToLine: (startNodeId: string, moves: readonly string[]) => boolean;
   deleteLineFromNode: (nodeId: string) => boolean;
+  /**
+   * Makes the line through `nodeId` the main line (the line it replaces becomes the first variation
+   * at each branch point); the current move stays. Refused (false) on the main line, for an unknown
+   * move, and during a live match.
+   */
+  promoteVariation: (nodeId: string) => boolean;
   undo: () => void;
   redo: () => void;
   reset: () => void;
@@ -202,6 +225,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     engineClock: null,
     engineClockLive: null,
     gameOutcome: null,
+    bestLine: null,
     rejectedMoves: 0,
     board: 0,
 
@@ -232,6 +256,19 @@ export const useGameStore = create<GameStore>((set, get) => {
     },
 
     makeMove: (move) => {
+      // A move played on a BEST line's position: the line up to it becomes a real variation (its
+      // existing moves reused), then the move is played from there as from any other node.
+      const line = activeBestLine(get());
+      if (line) {
+        if (!applyUserMove(bestLineStep(line).fenAfter, move)) {
+          set((current) => ({
+            lastError: "Illegal move",
+            rejectedMoves: current.rejectedMoves + 1
+          }));
+          return false;
+        }
+        if (!get().goToLine(line.anchorNodeId, bestLineSans(line))) return false;
+      }
       const state = get();
       const reject = (patch: Partial<GameStore> = {}): false => {
         set((current) => ({ ...patch, rejectedMoves: current.rejectedMoves + 1 }));
@@ -320,7 +357,8 @@ export const useGameStore = create<GameStore>((set, get) => {
       const state = get();
       if (state.gameOutcome) return false;
       const parent = state.moveTree.find((node) => node.id === state.currentNodeId);
-      const fenBefore = parent?.fenAfter ?? state.currentFen;
+      const line = activeBestLine(state);
+      const fenBefore = line ? bestLineStep(line).fenAfter : (parent?.fenAfter ?? state.currentFen);
       if (!fenAfterUci(fenBefore, uci)) {
         set({ lastError: `Engine returned illegal move: ${uci}` });
         return false;
@@ -332,7 +370,23 @@ export const useGameStore = create<GameStore>((set, get) => {
     goToNode: (nodeId) => {
       const node = get().moveTree.find((item) => item.id === nodeId);
       // A promotion being chosen belongs to the position it started from.
-      if (node) set({ currentNodeId: node.id, currentFen: node.fenAfter, pendingPromotion: null });
+      if (node)
+        set({
+          currentNodeId: node.id,
+          currentFen: node.fenAfter,
+          pendingPromotion: null,
+          bestLine: null
+        });
+    },
+
+    showBestLine: (cursor) => {
+      if (!get().moveTree.some((node) => node.id === cursor.markedNodeId)) return;
+      set({
+        bestLine: cursor,
+        currentNodeId: cursor.markedNodeId,
+        currentFen: bestLineStep(cursor).fenAfter,
+        pendingPromotion: null
+      });
     },
 
     goToLine: (startNodeId, moves) => {
@@ -370,7 +424,8 @@ export const useGameStore = create<GameStore>((set, get) => {
         currentNodeId: node.id,
         currentFen: node.fenAfter,
         pendingPromotion: null,
-        lastError: null
+        lastError: null,
+        bestLine: null
       });
       return true;
     },
@@ -395,29 +450,23 @@ export const useGameStore = create<GameStore>((set, get) => {
       const survivingCurrent = currentWasDeleted
         ? parent
         : nextTree.find((item) => item.id === state.currentNodeId);
-      // An outcome the final position decided (mate, stalemate, a draw by rule) goes with it once the
-      // main line no longer ends there; a resignation, flag or agreement stays.
-      const endFen =
-        nextTree.find((item) => item.id === mainlineEndId(nextTree))?.fenAfter ?? state.rootFen;
-      const boardOutcome =
-        state.gameOutcome && BOARD_TERMINATIONS.has(state.gameOutcome.termination);
-      const reopened = boardOutcome && !statusForFen(endFen).isEnd;
       set({
         moveTree: nextTree,
         currentNodeId: survivingCurrent?.id ?? parent.id,
         currentFen: survivingCurrent?.fenAfter ?? parent.fenAfter,
         lastError: null,
-        // The result the headers took from that position goes too (the titlebar reads it).
-        ...(reopened
-          ? {
-              gameOutcome: null,
-              headers:
-                state.headers.result === state.gameOutcome?.result
-                  ? { ...state.headers, result: "*" }
-                  : state.headers
-            }
-          : {})
+        ...outcomeAfterEdit(state, nextTree)
       });
+      return true;
+    },
+
+    promoteVariation: (nodeId) => {
+      const state = get();
+      // During a live match the main line is the game being played.
+      if (isMatchMode(state.mode) && state.engineSide && !state.gameOutcome) return false;
+      const nextTree = promoteToMainline(state.moveTree, nodeId);
+      if (!nextTree) return false;
+      set({ moveTree: nextTree, lastError: null, ...outcomeAfterEdit(state, nextTree) });
       return true;
     },
 
@@ -695,6 +744,28 @@ function boardOutcome(fen: string): GameOutcome | null {
   return {
     result: end.result,
     termination: end.isCheckmate ? "checkmate" : end.isStalemate ? "stalemate" : "draw"
+  };
+}
+
+/**
+ * An outcome the final position decided (mate, stalemate, a draw by rule) goes once an edit leaves
+ * the main line ending elsewhere, with the result the headers took from it (the titlebar reads
+ * it); a resignation, flag or agreement stays.
+ */
+function outcomeAfterEdit(
+  state: Pick<GameStore, "gameOutcome" | "headers" | "rootFen">,
+  nextTree: MoveNode[]
+): Partial<Pick<GameStore, "gameOutcome" | "headers">> {
+  const endFen =
+    nextTree.find((item) => item.id === mainlineEndId(nextTree))?.fenAfter ?? state.rootFen;
+  const fromBoard = state.gameOutcome && BOARD_TERMINATIONS.has(state.gameOutcome.termination);
+  if (!fromBoard || statusForFen(endFen).isEnd) return {};
+  return {
+    gameOutcome: null,
+    headers:
+      state.headers.result === state.gameOutcome?.result
+        ? { ...state.headers, result: "*" }
+        : state.headers
   };
 }
 

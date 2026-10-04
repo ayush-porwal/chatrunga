@@ -10,13 +10,14 @@ import {
   useUpdateSettingMutation
 } from "../../queries/api";
 import { pickDefaultEngine, pickMaiaEngines } from "./review-engine-picker";
-import { OpenRouterSettingsCard } from "../settings/OpenRouterSettingsCard";
+import { useOpenSettings } from "../settings/settings-link";
+import { reviewRatingLabel, useReviewRating } from "./use-review-rating";
 import { Badge, ChipButton } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Disclosure } from "@/components/ui/disclosure";
 import { Field, SettingRow } from "@/components/ui/field";
-import { Input, Select } from "@/components/ui/input";
+import { Select } from "@/components/ui/input";
 import { SectionHeader } from "@/components/ui/page";
+import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SideDot } from "@/components/ui/side-dot";
 import { Switch } from "@/components/ui/switch";
@@ -62,15 +63,28 @@ function useMaiaNeedsLc0(): boolean {
   return needsLc0;
 }
 
+/** The game's own review side (Review as), for the game review's settings dialog. */
+export type ReviewSideSetting = {
+  side: "white" | "black";
+  whiteName: string;
+  blackName: string;
+  /** The rating the review is made for, and where it came from ("1533 · from the game"). */
+  ratingLabel: string;
+  onChange: (side: "white" | "black") => void;
+};
+
 export function ReviewSettingsPanel({
   settings,
   onClose,
-  embedded = false
+  embedded = false,
+  reviewSide
 }: {
   settings: AppSettings;
   onClose: () => void;
-  /** Inside a Dialog (the puzzle explanation's settings): the dialog has the title, Done and scrolling. */
+  /** Inside a Dialog (the review's and the puzzle explanation's settings): the dialog has the title, Done and scrolling. */
   embedded?: boolean;
+  /** The loaded game's side; without it the side control sets the Settings side. */
+  reviewSide?: ReviewSideSetting;
 }) {
   const engines = useEnginesQuery();
   const openRouter = useOpenRouterConfigQuery();
@@ -86,6 +100,9 @@ export function ReviewSettingsPanel({
     ? installedMaiaLevels.filter((level) => settings.reviewMaiaLevels?.includes(level))
     : installedMaiaLevels;
   const needsLc0 = useMaiaNeedsLc0();
+  // The rating a review of this game uses; edited (per mode) in app Settings.
+  const rating = useReviewRating(settings, reviewSide?.side);
+  const openSettings = useOpenSettings();
   const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) =>
     update.mutate({ key, value });
   const toggleMaiaLevel = (level: ReviewMaiaLevel) => {
@@ -116,8 +133,12 @@ export function ReviewSettingsPanel({
         />
       )}
 
-      <section className="grid gap-3">
-        <SectionHeader as="h3" title="Engine" />
+      <CollapsibleSection
+        size="sub"
+        storageKey="review-settings:engine"
+        title="Engine"
+        bodyClassName="grid gap-3 pt-2"
+      >
         <Field label="Evaluation engine" htmlFor="review-engine">
           <Select
             id="review-engine"
@@ -231,12 +252,16 @@ export function ReviewSettingsPanel({
             </div>
           ) : null}
         </div>
-      </section>
+      </CollapsibleSection>
 
       <div className={divider} />
 
-      <section className="grid gap-3">
-        <SectionHeader as="h3" title="Commentary" />
+      <CollapsibleSection
+        size="sub"
+        storageKey="review-settings:commentary"
+        title="Commentary"
+        bodyClassName="grid gap-3 pt-2"
+      >
         <SettingRow
           label="AI commentary"
           description="Explain each move from the engine evidence."
@@ -262,45 +287,72 @@ export function ReviewSettingsPanel({
             <option value="detailed">Detailed</option>
           </Select>
         </Field>
-        <Field label="Reviewing side">
-          <SegmentedControl
-            ariaLabel="Reviewing side"
-            fullWidth
-            value={settings.reviewPlayerColor}
-            onChange={(value) => set("reviewPlayerColor", value)}
-            options={[
-              { value: "white", label: "White", icon: <SideDot color="white" /> },
-              { value: "black", label: "Black", icon: <SideDot color="black" /> }
-            ]}
-          />
-        </Field>
-        <Field label="Your rating" hint="400–3500" htmlFor="review-rating">
-          <Input
-            id="review-rating"
-            type="number"
-            min={400}
-            max={3500}
-            step={10}
-            value={settings.reviewPlayerRating}
-            onChange={(event) =>
-              set(
-                "reviewPlayerRating",
-                Math.round(Math.max(400, Math.min(3500, Number(event.target.value) || 1500)))
-              )
-            }
-          />
-        </Field>
-        <Disclosure
-          // defaultOpen is read on mount only: remount once the config has loaded so a missing
-          // key opens the form (isSuccess stays true across refetches, so saving a key won't re-collapse it).
-          key={openRouter.isSuccess ? "config-loaded" : "config-loading"}
-          title="OpenRouter"
-          summary={openRouter.isLoading ? undefined : hasApiKey ? "Key saved" : "No key"}
-          defaultOpen={openRouter.isSuccess && !hasApiKey}
-        >
-          <OpenRouterSettingsCard />
-        </Disclosure>
-      </section>
+        {reviewSide ? (
+          <Field label="Review as">
+            <SegmentedControl
+              ariaLabel="Review as"
+              fullWidth
+              value={reviewSide.side}
+              onChange={reviewSide.onChange}
+              options={[
+                {
+                  value: "white",
+                  label: `White · ${reviewSide.whiteName}`,
+                  icon: <SideDot color="white" />
+                },
+                {
+                  value: "black",
+                  label: `Black · ${reviewSide.blackName}`,
+                  icon: <SideDot color="black" />
+                }
+              ]}
+            />
+            <p className={fieldHint}>Rating {reviewSide.ratingLabel}</p>
+          </Field>
+        ) : (
+          <Field label="Reviewing side">
+            <SegmentedControl
+              ariaLabel="Reviewing side"
+              fullWidth
+              value={settings.reviewPlayerColor}
+              onChange={(value) => set("reviewPlayerColor", value)}
+              options={[
+                { value: "white", label: "White", icon: <SideDot color="white" /> },
+                { value: "black", label: "Black", icon: <SideDot color="black" /> }
+              ]}
+            />
+          </Field>
+        )}
+        <SettingRow
+          label="Rating"
+          // A game's dialog already says it under Review as (the rating its review is made for).
+          description={reviewSide ? undefined : reviewRatingLabel(rating)}
+          control={
+            openSettings ? (
+              <Button variant="link" size="sm" onClick={() => openSettings("ratings")}>
+                Edit ratings
+              </Button>
+            ) : null
+          }
+        />
+        <SettingRow
+          label="Model and API key"
+          description={
+            openRouter.isLoading
+              ? undefined
+              : hasApiKey
+                ? "Shared by every AI feature. A key is saved."
+                : "Shared by every AI feature. No key saved yet."
+          }
+          control={
+            openSettings ? (
+              <Button variant="link" size="sm" onClick={() => openSettings("ai")}>
+                AI settings
+              </Button>
+            ) : null
+          }
+        />
+      </CollapsibleSection>
     </div>
   );
 }

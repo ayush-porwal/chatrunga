@@ -4,10 +4,11 @@
  *
  * Errors follow Lichess's winning-chances model (`WinPercent` below; its Advice thresholds of
  * 0.1 / 0.2 / 0.3 on a [-1, 1] scale are 5 / 10 / 15 percentage points), with its separate rules
- * for moves that allow or let slip a forced mate. Praise is our own policy and deliberately
- * conservative: an engine match earns nothing by itself, forced replies, recaptures, opening
- * moves and moves in decided positions are never praised, and Great / Brilliant need a deeper
- * search that agrees. Missing or disagreeing analysis gives no mark.
+ * for moves that allow or let slip a forced mate. Book moves (opening theory, from the bundled
+ * opening book; chess/opening-book.ts) are marked Book and never judged. Praise is our own policy
+ * and deliberately conservative: an engine match earns nothing by itself, forced replies,
+ * recaptures and moves in decided positions are never praised, and Great / Brilliant need a
+ * deeper search that agrees. Missing or disagreeing analysis gives no mark.
  *
  * Pure (no engine or process access): main assesses moves as a review runs, and saved reviews
  * from an older policy are re-assessed from their stored evaluations when they load.
@@ -27,6 +28,7 @@ import type {
   RatingPrediction,
   TerminalState
 } from "../types/engine";
+import { classifyOpening, type OpeningBook } from "./opening-book";
 import { positionFromFen, statusForFen } from "./position";
 import { scoreFromWhitePerspective, terminalStateForFen } from "./review";
 
@@ -34,7 +36,7 @@ import { scoreFromWhitePerspective, terminalStateForFen } from "./review";
  * Version of the rules below. Bump it whenever a threshold or rule changes: saved reviews from
  * another version are re-assessed (and say so) when they load.
  */
-export const MOVE_ASSESSMENT_POLICY = 2;
+export const MOVE_ASSESSMENT_POLICY = 3;
 
 /** Lichess's WinPercent slope (scalachess eval.scala). */
 const WIN_MULTIPLIER = 0.00368208;
@@ -64,9 +66,6 @@ const FIGHTING_WIN = 30;
 const SOUND_WIN = 50;
 /** Miss: the opponent's error had made the mover clearly better (about +1.1). */
 const OPPORTUNITY_WIN = 60;
-/** The first plies of a balanced game are treated as opening theory (no opening book here). */
-const OPENING_PLIES = 16;
-const OPENING_BALANCE: readonly [number, number] = [35, 65];
 /** A sacrifice gives up at least this much material (the exchange, or a piece for a pawn). */
 const SACRIFICE_POINTS = 2;
 /** Maia: a move this likely at the player's level is obvious, not a find. */
@@ -165,6 +164,8 @@ export type AssessmentContext = {
   playerRating?: number | null;
   /** Maia probabilities are real (reviews with schemaVersion 2+). */
   trustMaia?: boolean;
+  /** The move is opening theory: a book move (see classifyOpening). */
+  book?: boolean;
 };
 
 type Evidence = {
@@ -394,7 +395,7 @@ export function verificationNeed(
   context: AssessmentContext = {}
 ): VerificationNeed | null {
   const evidence = evidenceFor(move);
-  if (!evidence || terminalOf(move)) return null;
+  if (!evidence || terminalOf(move) || context.book) return null;
   const winBefore = moverWin(evidence.before);
   if (evidence.playedLine) {
     const gate = praiseGate(move, evidence, context);
@@ -414,7 +415,7 @@ export function verificationNeed(
 /** What decides whether a move without an error may be praised, and how. */
 type PraiseGate = {
   /** The first exclusion that rules out every positive mark but Good (null: none). */
-  excludedBy: "forced" | "recapture" | "near_best" | "decided" | "opening" | null;
+  excludedBy: "forced" | "recapture" | "near_best" | "decided" | null;
   /** The opponent's mistake or blunder gave something away (they weren't already lost before it). */
   opponentErred: boolean;
   /** The Maia level read for this move (null: no Maia evidence). */
@@ -456,12 +457,7 @@ function praiseGate(
           ? "near_best"
           : winBefore >= DECIDED_WIN
             ? "decided"
-            : move.ply <= OPENING_PLIES &&
-                winBefore >= OPENING_BALANCE[0] &&
-                winBefore <= OPENING_BALANCE[1] &&
-                !opponentErred
-              ? "opening"
-              : null;
+            : null;
   return {
     excludedBy,
     opponentErred,
@@ -501,12 +497,14 @@ function round1(value: number): number {
 
 /**
  * Assesses one move. `context.previous` is the opponent's move into this position (Miss, Good and
- * recaptures depend on it).
+ * recaptures depend on it); `context.book` makes it a book move, marked Book whatever it cost.
  */
 export function assessMove(move: AssessableMove, context: AssessmentContext = {}): MoveAssessment {
   const tags = new Set<AssessmentTag>();
+  if (context.book) tags.add("book");
   const evidence = evidenceFor(move);
   if (!evidence) {
+    tags.add("incomplete");
     return {
       policy: MOVE_ASSESSMENT_POLICY,
       winBefore: null,
@@ -514,8 +512,8 @@ export function assessMove(move: AssessableMove, context: AssessmentContext = {}
       winLoss: null,
       alternativeGap: null,
       severity: null,
-      annotation: null,
-      tags: ["incomplete"]
+      annotation: context.book ? "book" : null,
+      tags: [...tags]
     };
   }
   const { lines, before, after, playedLine } = evidence;
@@ -541,6 +539,8 @@ export function assessMove(move: AssessableMove, context: AssessmentContext = {}
     annotation,
     tags: [...tags]
   });
+  // Opening theory is never an error, a mark of praise or a key moment.
+  if (context.book) return result(null, "book");
 
   const gate = praiseGate(move, evidence, context);
   const { opponentErred, prediction } = gate;
@@ -576,7 +576,6 @@ export function assessMove(move: AssessableMove, context: AssessmentContext = {}
     case "near_best":
       return result(null, null);
     case "decided":
-    case "opening":
     case null:
       break;
   }
@@ -585,9 +584,9 @@ export function assessMove(move: AssessableMove, context: AssessmentContext = {}
     opponentErred &&
     ((alternativeGap !== null && alternativeGap >= CHOICE_GAP) ||
       (engineTop && move.motifs.length > 0));
-  if (gate.excludedBy === "decided" || gate.excludedBy === "opening") {
-    tags.add(gate.excludedBy);
-    return result(null, gate.excludedBy === "decided" && punishes ? "good" : null);
+  if (gate.excludedBy === "decided") {
+    tags.add("decided");
+    return result(null, punishes ? "good" : null);
   }
 
   const candidate = candidateFor(lines, move, gate);
@@ -622,18 +621,29 @@ export function assessMove(move: AssessableMove, context: AssessmentContext = {}
   return result(null, punishes ? "good" : null);
 }
 
-/** Assesses a line of moves in order, each in the context of the move before it. */
+/** Options for assessing a whole line: its book moves come from `openingBook` (none without one). */
+export type LineAssessmentOptions = Omit<AssessmentContext, "previous" | "book"> & {
+  openingBook?: OpeningBook | null;
+};
+
+/**
+ * Assesses a game's main line in order (from its start position), each move in the context of the
+ * move before it.
+ */
 export function assessMoves(
-  moves: readonly AssessableMove[],
-  options: Omit<AssessmentContext, "previous"> = {}
+  moves: readonly (AssessableMove & Pick<MoveReview, "san">)[],
+  options: LineAssessmentOptions = {}
 ): MoveAssessment[] {
+  const { openingBook, ...context } = options;
+  const book = openingBook ? classifyOpening(openingBook, moves).book : [];
   const assessments: MoveAssessment[] = [];
   moves.forEach((move, index) => {
     const previousMove = moves[index - 1];
     const previousAssessment = assessments[index - 1];
     assessments.push(
       assessMove(move, {
-        ...options,
+        ...context,
+        book: book[index] ?? false,
         previous:
           previousMove && previousAssessment
             ? { move: previousMove, assessment: previousAssessment }
@@ -647,27 +657,30 @@ export function assessMoves(
 /**
  * A saved review with assessments under the current policy: unchanged when it already has them,
  * else re-assessed from its stored evaluations and flagged `assessmentsRecomputed` (no deeper
- * search runs here, so nothing that needs one is marked), with its summary counted again. Saved
+ * search runs here, so nothing that needs one is marked), with its summary counted again and its
+ * book moves and opening classified from `openingBook` (kept as they were without one). Saved
  * reviews come from older builds: a move too damaged to assess stays unassessed (unmarked) and the
  * rest keep their marks.
  */
 export function withCurrentAssessments(
   review: GameReview,
-  options: Pick<AssessmentContext, "playerRating"> = {}
+  options: Pick<AssessmentContext, "playerRating"> & { openingBook?: OpeningBook | null } = {}
 ): GameReview {
   const current =
     review.assessmentPolicy === MOVE_ASSESSMENT_POLICY &&
     review.moves.every((move) => move.assessment?.policy === MOVE_ASSESSMENT_POLICY);
   if (current) return review;
   const trustMaia = (review.schemaVersion ?? 0) >= 2;
+  const theory = options.openingBook ? classifyOpeningSafely(options.openingBook, review) : null;
   let previous: AssessmentContext["previous"] = null;
-  const moves = review.moves.map((move): MoveReview => {
+  const moves = review.moves.map((move, index): MoveReview => {
     const { assessment: stale, ...rest } = move;
     void stale;
     try {
       const assessment = assessMove(move, {
         playerRating: options.playerRating,
         trustMaia,
+        book: theory?.book[index] ?? false,
         previous
       });
       previous = { move, assessment };
@@ -681,9 +694,19 @@ export function withCurrentAssessments(
     ...review,
     moves,
     summary: summarizeMoves(moves),
+    ...(theory ? { opening: theory.opening } : {}),
     assessmentPolicy: MOVE_ASSESSMENT_POLICY,
     assessmentsRecomputed: true
   };
+}
+
+/** A saved review's book moves and opening; none when its moves can't be read as a line. */
+function classifyOpeningSafely(book: OpeningBook, review: GameReview) {
+  try {
+    return classifyOpening(book, review.moves);
+  } catch {
+    return { book: [], opening: null };
+  }
 }
 
 /**
@@ -693,6 +716,7 @@ export function withCurrentAssessments(
 export function summarizeMoves(moves: readonly MoveReview[]): GameReviewSummary {
   const summary: GameReviewSummary = {
     totalMoves: moves.length,
+    book: 0,
     best: 0,
     brilliant: 0,
     great: 0,
@@ -735,6 +759,9 @@ export function summarizeMoves(moves: readonly MoveReview[]): GameReviewSummary 
     if (assessment.severity && assessment.tags.includes("natural_move"))
       summary.humanErrors = (summary.humanErrors ?? 0) + 1;
     switch (assessment.annotation) {
+      case "book":
+        summary.book = (summary.book ?? 0) + 1;
+        break;
       case "brilliant":
         summary.brilliant = (summary.brilliant ?? 0) + 1;
         break;
@@ -777,6 +804,8 @@ export function severityOf(
 
 export function annotationLabel(annotation: MoveAnnotation): string {
   switch (annotation) {
+    case "book":
+      return "Book";
     case "brilliant":
       return "Brilliant";
     case "great":
@@ -797,11 +826,14 @@ export function annotationLabel(annotation: MoveAnnotation): string {
 }
 
 /**
- * The mark's glyph: the standard NAGs where one exists (!!, !, ?!, ?, ??); Excellent, Good and
- * Miss have none, so they use symbols that read as no NAG ("!!" is never used for Excellent).
+ * The mark's glyph: the standard NAGs where one exists (!!, !, ?!, ?, ??); Excellent, Good, Miss
+ * and Book have none, so they use symbols that read as no NAG ("!!" is never used for Excellent).
+ * Book's is a text stand-in: the badges draw it as an open book icon.
  */
 export function annotationGlyph(annotation: MoveAnnotation): string {
   switch (annotation) {
+    case "book":
+      return "📖";
     case "brilliant":
       return "!!";
     case "great":
@@ -818,58 +850,5 @@ export function annotationGlyph(annotation: MoveAnnotation): string {
       return "?";
     case "blunder":
       return "??";
-  }
-}
-
-export function severityLabel(severity: ErrorSeverity): string {
-  switch (severity) {
-    case "inaccuracy":
-      return "Inaccuracy";
-    case "mistake":
-      return "Mistake";
-    case "blunder":
-      return "Blunder";
-  }
-}
-
-/** "12%" for a percentage-point amount (whole points; "<1%" for a sliver). */
-function points(value: number): string {
-  const rounded = Math.round(value);
-  return rounded < 1 ? "<1%" : `${rounded}%`;
-}
-
-/**
- * One plain sentence saying why a move carries its mark, built only from the assessment's own
- * facts. An unmarked move gets none, except an error left unmarked because the game was decided.
- */
-export function assessmentReason(assessment: MoveAssessment | null | undefined): string | null {
-  if (!assessment) return null;
-  const tags = new Set(assessment.tags);
-  const loss = assessment.winLoss ?? 0;
-  const lost = `It cost ${points(loss)} of the winning chances.`;
-  if (!assessment.annotation) {
-    return assessment.severity && tags.has("decided")
-      ? `${severityLabel(assessment.severity)} in a game that was already decided, so it isn't marked.`
-      : null;
-  }
-  switch (assessment.annotation) {
-    case "brilliant":
-      return "A sound sacrifice: it gives up material and holds against the best defence, confirmed by a deeper search.";
-    case "great":
-      return `A critical find: every other move the engine checked was at least ${points(assessment.alternativeGap ?? GREAT_GAP)} worse, confirmed by a deeper search.`;
-    case "excellent":
-      return tags.has("tactic")
-        ? "Finds the tactic: near-best, and the other candidates were clearly worse."
-        : "Near-best and hard to find at your level; the other candidates were clearly worse.";
-    case "good":
-      return "Punishes the opponent's error and keeps what it gave.";
-    case "miss":
-      return `Gives back the chance the opponent's error created. ${lost}`;
-    case "inaccuracy":
-    case "mistake":
-    case "blunder":
-      if (tags.has("mate_created")) return "Allows a forced mate.";
-      if (tags.has("mate_lost")) return "Lets a forced mate slip.";
-      return lost;
   }
 }

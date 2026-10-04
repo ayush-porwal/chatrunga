@@ -70,7 +70,7 @@ export type ExplainRequest = {
   engine: EngineConfig | null;
   settings: Pick<
     AppSettings,
-    "reviewSearchTimeMs" | "reviewMultiPv" | "reviewPlayerRating" | "reviewCommentaryDetail"
+    "reviewSearchTimeMs" | "reviewMultiPv" | "playerRatings" | "reviewCommentaryDetail"
   >;
 };
 

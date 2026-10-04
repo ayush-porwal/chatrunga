@@ -3,8 +3,7 @@ import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key, MoveMetadata } from "@lichess-org/chessground/types";
-import { formatClockForDisplay } from "@chaturanga/shared/chess/clock-display";
-import { clocksOnPathToNode, nodeIdForBoardFen } from "@chaturanga/shared/chess/pgn";
+import { nodeIdForBoardFen } from "@chaturanga/shared/chess/pgn";
 import { legalDestsForFen, isPromotionMove, statusForFen } from "@chaturanga/shared/chess/position";
 import type {
   BoardArrow,
@@ -26,8 +25,10 @@ import { PlayerRow } from "./PlayerIdentity";
 import { EvalBar } from "./EvalBar";
 import { BoardMoveMarkBadge } from "./BoardMoveMarkBadge";
 import { boardMoveMark, mainBoardSurface } from "./move-mark";
+import { activeBestLine, bestLineStep } from "../game/best-line-cursor";
 import { BoardStage } from "./BoardWorkspace";
 import { EngineClock } from "./EngineClock";
+import { boardClocksAt } from "./board-clocks";
 import { useBoardAppearance, useCgBoardBackground } from "./useBoardAppearance";
 import { useBoardPolish } from "./useBoardPolish";
 import { restoreBoardConfig } from "./board-config";
@@ -72,15 +73,20 @@ export function BoardView() {
   const reviewMoves = useDisplayedReviewMoves();
   const reviewRunning = useReviewStore((state) => state.status === "running");
   const source = useGameStore((state) => state.source);
+  // A BEST line on the board: its position isn't a game move, so the error it answers lends it
+  // no mark, arrows or drawings; its own move is the one highlighted.
+  const bestLine = useGameStore(activeBestLine);
   // The reviewed move's mark on its square: on the Analyze board only (never in play or puzzles).
   const moveMark = useMemo(
     () =>
-      boardMoveMark(mainBoardSurface(mode, source), {
-        running: reviewRunning,
-        moves: reviewMoves,
-        nodeId: currentNodeId
-      }),
-    [currentNodeId, mode, reviewMoves, reviewRunning, source]
+      bestLine
+        ? null
+        : boardMoveMark(mainBoardSurface(mode, source), {
+            running: reviewRunning,
+            moves: reviewMoves,
+            nodeId: currentNodeId
+          }),
+    [bestLine, currentNodeId, mode, reviewMoves, reviewRunning, source]
   );
   const engines = useEnginesQuery();
   const activeEngineId = useAnalysisStore((state) => state.activeEngineId);
@@ -88,8 +94,8 @@ export function BoardView() {
   const reducedMotion = usePrefersReducedMotion();
   const activeEngine = engines.data?.find((engine) => engine.id === activeEngineId) ?? null;
   const currentNode = useMemo(
-    () => moveTree.find((node) => node.id === currentNodeId),
-    [moveTree, currentNodeId]
+    () => (bestLine ? undefined : moveTree.find((node) => node.id === currentNodeId)),
+    [bestLine, moveTree, currentNodeId]
   );
   const status = useMemo(() => statusForFen(currentFen), [currentFen]);
   const animationEnabled = appearance.boardAnimation && !reducedMotion;
@@ -117,29 +123,27 @@ export function BoardView() {
       self?.fenAfter === currentFen
         ? currentNodeId
         : nodeIdForBoardFen(moveTree, currentFen, currentNodeId);
-    const { white: wClock, black: bClock } = clocksOnPathToNode(moveTree, clockAnchorId);
-    const hasMoveClocks = Boolean(wClock ?? bClock);
+    const tc = headers.timeControl?.trim() || null;
+    // Each side's time at this move from the game's [%clk]; no clock boxes for a game without them.
+    const clocks = boardClocksAt(moveTree, clockAnchorId, tc);
     const white = headers.white?.trim() || "White";
     const black = headers.black?.trim() || "Black";
     const wElo = headers.whiteElo?.trim() || null;
     const bElo = headers.blackElo?.trim() || null;
-    const tc = headers.timeControl?.trim() || null;
 
     const topIsBlack = orientation === "white";
-    // No clock box at all when the game has no clock data (e.g. PGN imports without %clk).
-    const fmt = (v: string | null) => (v ? formatClockForDisplay(v) : "");
     const liveClock = isMatchMode(mode) && hasLiveClock;
     return {
       topName: topIsBlack ? black : white,
       topElo: topIsBlack ? bElo : wElo,
-      topClock: fmt(topIsBlack ? bClock : wClock),
+      topClock: clocks ? clocks[topIsBlack ? "black" : "white"] : "",
       topColor: (topIsBlack ? "black" : "white") as Color,
       bottomName: topIsBlack ? white : black,
       bottomElo: topIsBlack ? wElo : bElo,
-      bottomClock: fmt(topIsBlack ? wClock : bClock),
+      bottomClock: clocks ? clocks[topIsBlack ? "white" : "black"] : "",
       bottomColor: (topIsBlack ? "white" : "black") as Color,
       // The live engine clock already shows the time control; only hint it for imported games.
-      showTcHint: Boolean(tc && tc !== "-" && !hasMoveClocks && !liveClock)
+      showTcHint: Boolean(tc && tc !== "-" && !clocks && !liveClock)
     };
   }, [moveTree, currentNodeId, currentFen, headers, orientation, mode, hasLiveClock]);
 
@@ -168,7 +172,9 @@ export function BoardView() {
     if (bestArrow) return [bestArrow];
     // Only completed moves draw arrows (never the live lines of the move being searched, which
     // change several times a second and made the board flicker).
-    const reviewMove = reviewMoves.find((item) => item.nodeId === currentNodeId);
+    const reviewMove = currentNode
+      ? reviewMoves.find((item) => item.nodeId === currentNode.id)
+      : undefined;
     const best = reviewMove?.bestMove ? uciSquares(reviewMove.bestMove) : null;
     if (!reviewMove || !best) return NO_SHAPES;
     const arrows: DrawShape[] = [{ orig: best[0], dest: best[1], brush: "paleGreen" }];
@@ -185,7 +191,7 @@ export function BoardView() {
       });
     }
     return arrows;
-  }, [bestArrow, reviewMoves, currentNodeId]);
+  }, [bestArrow, reviewMoves, currentNode]);
 
   // Chessground owns its DOM and keeps it sized itself (its own ResizeObserver repositions pieces
   // on resize) — rebuilding the board on every resize frame is what used to flicker.
@@ -253,12 +259,14 @@ export function BoardView() {
   const restoreGroundToCurrentPosition = useCallback(() => {
     const ground = groundRef.current;
     if (!ground) return;
+    const game = useGameStore.getState();
     const {
       currentFen: fen,
       orientation: boardOrientation,
       moveTree: tree,
       currentNodeId: nodeId
-    } = useGameStore.getState();
+    } = game;
+    const line = activeBestLine(game);
     ground.cancelPremove();
     ground.cancelMove();
     ground.selectSquare(null);
@@ -266,7 +274,7 @@ export function BoardView() {
       restoreBoardConfig({
         fen,
         orientation: boardOrientation,
-        lastMove: lastMoveOf(tree.find((item) => item.id === nodeId)),
+        lastMove: lastMoveOf(line ? bestLineStep(line) : tree.find((item) => item.id === nodeId)),
         movableColor: movablePieceColor,
         showDests: appearance.showLegalMoves,
         animate: animationEnabled
@@ -357,7 +365,7 @@ export function BoardView() {
       animation: { enabled: animate, duration: PIECE_MOVE_MS },
       turnColor: status.turn,
       check: status.isCheck,
-      lastMove: lastMoveOf(currentNode)
+      lastMove: lastMoveOf(bestLine ? bestLineStep(bestLine) : currentNode)
     });
     if (positionChanged && !isRapidNavigation(now)) {
       // Chessground paints on its next frame; fade the fresh highlights in right after.
@@ -367,6 +375,7 @@ export function BoardView() {
     }
   }, [
     animationEnabled,
+    bestLine,
     currentFen,
     currentNode,
     currentNodeId,
@@ -428,10 +437,13 @@ export function BoardView() {
           currentNode?.highlights ?? NO_HIGHLIGHTS
         ),
         autoShapes,
-        onChange: (newShapes) => setNodeAnnotations(currentNodeId, annotationsFromShapes(newShapes))
+        // Drawings belong to a game move (a BEST line's position isn't one: they aren't kept).
+        onChange: (newShapes) => {
+          if (currentNode) setNodeAnnotations(currentNode.id, annotationsFromShapes(newShapes));
+        }
       }
     });
-  }, [autoShapes, currentNode?.arrows, currentNode?.highlights, currentNodeId, setNodeAnnotations]);
+  }, [autoShapes, currentNode, setNodeAnnotations]);
 
   useEffect(() => {
     const ground = groundRef.current;
@@ -525,7 +537,8 @@ export function BoardView() {
         />
       }
     >
-      <div className="relative h-full w-full">
+      {/* Its own stacking context: Chessground's layers and the move mark stack within the board. */}
+      <div className="relative isolate h-full w-full">
         {/*
           Chessground mutates the mount node’s classList (cg-wrap, orientation-*, manipulable).
           Keeping those classes in React-controlled className prevents reconciliation from stripping them,

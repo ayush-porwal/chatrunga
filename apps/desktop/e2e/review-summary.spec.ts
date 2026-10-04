@@ -1,0 +1,339 @@
+// The review summary through the built app: an imported game asks which side to review it as,
+// the summary's scoreboard, opening, phases and practice chips (each section folds, and stays
+// folded), the opening and theme shortcuts into Puzzles, the review settings dialog switching
+// sides, and key-moment cards that neither expand nor show commentary with AI commentary off.
+// A short game reviewed on the fake UCI engine's "review" mode (the Blackburne Shilling trap, as
+// in move-types.spec.ts). How to run them: playwright.config.ts.
+import type { Page } from "@playwright/test";
+import {
+  expect,
+  importPgnFile,
+  registerFakeEngine,
+  routeToFile,
+  sidebar,
+  skipWelcome,
+  test
+} from "./app";
+import { join } from "node:path";
+import { LICHESS_PUZZLES_URL, writeLichessPuzzleFile, writePgn } from "./fixtures";
+
+const TRAP_PGN = `[Event "Review summary e2e"]
+[White "Alpha"]
+[Black "Beta"]
+[Result "0-1"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bc4 Nd4 4. Nxe5 Qg5 5. Nxf7 Qxg2 6. Rf1 Qxe4+ 7. Be2 Nf3# 0-1
+`;
+
+const titlebar = (page: Page) => page.getByRole("banner", { name: "Titlebar" });
+const reviewTabs = (page: Page) => page.getByRole("tablist", { name: "Game review sections" });
+const summary = (page: Page) => page.getByRole("region", { name: "Review summary" });
+const markRow = (page: Page, mark: string) =>
+  summary(page).getByRole("table", { name: "Marks" }).getByRole("row").filter({ hasText: mark });
+
+/** Imports the trap game, opens its review and analyses it as `side` (picked in the prompt). */
+async function reviewTrapGameAs(
+  page: Page,
+  app: Parameters<typeof importPgnFile>[0],
+  profile: string,
+  side: "White (Alpha)" | "Black (Beta)"
+) {
+  await registerFakeEngine(page, join(profile, "uci.log"), "review");
+  await importPgnFile(app, page, writePgn(profile, "trap.pgn", TRAP_PGN));
+  await expect(page.getByRole("region", { name: "Board" })).toBeVisible();
+  await sidebar(page).getByRole("button", { name: "Game review", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Choose a game" })
+    .getByRole("button", { name: /^Alpha vs Beta/ })
+    .click();
+  await expect(reviewTabs(page)).toBeVisible();
+
+  // An imported game asks before its review starts; nothing names the Lichess account here, so
+  // the Settings side (White) is preselected.
+  const prompt = page.getByRole("radiogroup", { name: "Review this game as" });
+  await expect(prompt).toBeVisible();
+  await expect(prompt.getByRole("radio", { name: "White (Alpha)" })).toHaveAttribute(
+    "aria-checked",
+    "true"
+  );
+  // The titlebar's Analyze asks too, instead of starting.
+  await titlebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
+  await expect(prompt).toBeVisible();
+  // A radio group: the arrow keys move the pick and focus between the two sides.
+  const white = prompt.getByRole("radio", { name: "White (Alpha)" });
+  const black = prompt.getByRole("radio", { name: "Black (Beta)" });
+  await white.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(black).toHaveAttribute("aria-checked", "true");
+  await expect(black).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(white).toHaveAttribute("aria-checked", "true");
+  await expect(white).toBeFocused();
+  await prompt.getByRole("radio", { name: side }).click();
+  await page.getByRole("button", { name: "Start review", exact: true }).click();
+  await expect(
+    titlebar(page).getByRole("button", { name: "Analyze again", exact: true })
+  ).toBeVisible({ timeout: 60_000 });
+}
+
+test("the summary scores both sides, names the opening and phases, and its sections fold", async ({
+  launch,
+  profile
+}) => {
+  test.setTimeout(120_000);
+  const { app, page } = await launch();
+  await skipWelcome(page);
+  await reviewTrapGameAs(page, app, profile, "White (Alpha)");
+
+  // The first screen after the review: the summary, the board turned to White.
+  await expect(reviewTabs(page).getByRole("tab", { name: "Summary" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  // No row for the side and rating under the tabs: they're in the review settings dialog.
+  await expect(page.getByText("Review as White", { exact: true })).toHaveCount(0);
+  await expect(summary(page).getByLabel(/^White accuracy \d+\.\d$/)).toBeVisible();
+  await expect(summary(page).getByLabel(/^Black accuracy \d+\.\d$/)).toBeVisible();
+  await expect(summary(page).getByRole("img", { name: "Accuracy" })).toBeVisible();
+
+  // Only the marks the game has, best to worst, counted per side; no centipawns anywhere.
+  const marks = summary(page).getByRole("table", { name: "Marks" }).getByRole("rowheader");
+  await expect(marks).toHaveText(["Book", "Great", "Good", "Mistake", "Blunder"]);
+  await expect(markRow(page, "Book").getByRole("cell", { name: "White 3" })).toBeVisible();
+  await expect(markRow(page, "Book").getByRole("cell", { name: "Black 3" })).toBeVisible();
+  await expect(markRow(page, "Blunder").getByRole("cell", { name: "White 2" })).toBeVisible();
+  await expect(markRow(page, "Great").getByRole("cell", { name: "Black 1" })).toBeVisible();
+  await expect(summary(page)).not.toContainText("cp");
+
+  // The opening: where the book ended and the move that left it.
+  await expect(summary(page)).toContainText("Book until move 3 · left theory with 4. Nxe5");
+  // The repertoire comparison is here, not in a tab of its own: "My repertoire" unfolds it inside
+  // the OPENING section. This profile has no repertoire: no headline, and the way to create one.
+  await expect(reviewTabs(page).getByRole("tab", { name: "Opening", exact: true })).toHaveCount(0);
+  const myRepertoire = summary(page).getByRole("button", { name: "My repertoire" });
+  await expect(myRepertoire).toHaveAttribute("aria-expanded", "false");
+  await myRepertoire.click();
+  await expect(myRepertoire).toHaveAttribute("aria-expanded", "true");
+  const comparison = summary(page).getByRole("region", { name: "Your repertoire" });
+  await expect(comparison).toContainText("No White repertoire yet");
+  await expect(comparison.getByRole("button", { name: "Create" })).toBeVisible();
+  await expect(
+    comparison.getByRole("radiogroup", { name: "Your side in this game" }).getByRole("radio", {
+      name: "White"
+    })
+  ).toBeChecked();
+  await myRepertoire.click();
+  await expect(comparison).toBeHidden();
+
+  // Phases: the opening (the book) and the middlegame; the game never reached an endgame.
+  const phases = summary(page).getByRole("table", { name: "Accuracy by phase" });
+  await expect(phases.getByRole("rowheader")).toHaveText(["Opening", "Middlegame"]);
+
+  // Practice: the themes behind White's errors, Be2's mate in one among them.
+  const practice = summary(page).getByRole("group", { name: "Practise your mistakes" });
+  await expect(practice.getByRole("button", { name: /^Mate in 1/ })).toBeVisible();
+
+  // Each section folds behind its header (⌄ Phases), and stays folded when the summary is shown
+  // again. Folding Accuracy hides its whole body: the boxes (its first row) and the mark rows.
+  const phasesToggle = summary(page).getByRole("button", { name: "Phases" });
+  await expect(phasesToggle).toHaveAttribute("aria-expanded", "true");
+  await phasesToggle.click();
+  await expect(phasesToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(phases).toHaveCount(0);
+  const accuracyToggle = summary(page).getByRole("button", { name: "Accuracy", exact: true });
+  await accuracyToggle.click();
+  await expect(accuracyToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(summary(page).getByRole("table", { name: "Marks" })).toHaveCount(0);
+  await expect(summary(page).getByLabel(/^White accuracy/)).toBeHidden();
+  await reviewTabs(page).getByRole("tab", { name: "Commentary", exact: true }).click();
+  await reviewTabs(page).getByRole("tab", { name: "Summary", exact: true }).click();
+  await expect(summary(page).getByRole("button", { name: "Phases" })).toHaveAttribute(
+    "aria-expanded",
+    "false"
+  );
+  await expect(summary(page).getByRole("table", { name: "Accuracy by phase" })).toHaveCount(0);
+  await summary(page).getByRole("button", { name: "Phases" }).click();
+  await summary(page).getByRole("button", { name: "Accuracy", exact: true }).click();
+  await expect(summary(page).getByRole("table", { name: "Accuracy by phase" })).toBeVisible();
+  await expect(summary(page).getByLabel(/^White accuracy \d+\.\d$/)).toBeVisible();
+
+  // Start review is in the panel's footer, on every tab, just above the move navigation; it
+  // starts with the first of White's key moments, explained in the Commentary tab.
+  const panel = page.getByRole("complementary", { name: "Review" });
+  const start = panel.getByRole("button", { name: "Start review", exact: true });
+  await expect(summary(page).getByRole("button", { name: "Start review" })).toHaveCount(0);
+  await reviewTabs(page).getByRole("tab", { name: "Moves", exact: true }).click();
+  await expect(start).toBeVisible();
+  const startBox = await start.boundingBox();
+  const navBox = await panel.getByRole("navigation", { name: "Move navigation" }).boundingBox();
+  if (!startBox || !navBox) throw new Error("Start review or the navigation not visible");
+  expect(startBox.y + startBox.height).toBeLessThanOrEqual(navBox.y + 1);
+  await start.click();
+  await expect(reviewTabs(page).getByRole("tab", { name: "Commentary" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  await expect(page.getByRole("heading", { name: "4. Nxe5", level: 2 })).toBeVisible();
+});
+
+test("the summary's opening and practice shortcuts open Puzzles with that filter", async ({
+  launch,
+  profile
+}) => {
+  test.setTimeout(120_000);
+  const { app, page } = await launch();
+  // A Lichess puzzle database whose puzzles are all tagged Italian_Game (mate in one).
+  await routeToFile(app, LICHESS_PUZZLES_URL, writeLichessPuzzleFile(profile));
+  await skipWelcome(page);
+  await sidebar(page).getByRole("button", { name: "Databases", exact: true }).click();
+  const lichess = page
+    .getByRole("article")
+    .filter({ has: page.getByRole("heading", { name: "Lichess Puzzle Database" }) });
+  await lichess.getByRole("button", { name: "Download", exact: true }).click();
+  await expect(lichess.getByRole("button", { name: "Train with this dataset" })).toBeVisible({
+    timeout: 30_000
+  });
+  await reviewTrapGameAs(page, app, profile, "White (Alpha)");
+
+  // Opening puzzles: the game's variation has none here, so its family, Italian Game.
+  await summary(page).getByRole("button", { name: "Opening puzzles" }).click();
+  await expect(page.getByRole("heading", { name: "Puzzles", level: 1 })).toBeVisible({
+    timeout: 30_000
+  });
+  await page.getByRole("button", { name: "Openings" }).click();
+  await expect(page.getByRole("button", { name: "Remove Italian Game" })).toBeVisible();
+
+  // Back to the review: a practice chip opens Puzzles with its theme.
+  await sidebar(page).getByRole("button", { name: "Game review", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Choose a game" });
+  await expect(reviewTabs(page).or(picker)).toBeVisible();
+  if (await picker.isVisible())
+    await picker.getByRole("button", { name: /^Alpha vs Beta/ }).click();
+  await reviewTabs(page).getByRole("tab", { name: "Summary", exact: true }).click();
+  await summary(page)
+    .getByRole("group", { name: "Practise your mistakes" })
+    .getByRole("button", { name: /^Mate in 1/ })
+    .click();
+  await expect(page.getByRole("heading", { name: "Puzzles", level: 1 })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Remove mate in 1" })).toBeVisible();
+  // The opening filter was cleared for it.
+  await page.getByRole("button", { name: "Openings" }).click();
+  await expect(page.getByRole("button", { name: "Remove Italian Game" })).toHaveCount(0);
+});
+
+test("review settings are a dialog that switches sides; with AI off, cards don't expand", async ({
+  launch,
+  profile
+}) => {
+  test.setTimeout(120_000);
+  const { app, page } = await launch();
+  await skipWelcome(page);
+  await reviewTrapGameAs(page, app, profile, "White (Alpha)");
+
+  // No Settings tab: the gear in the panel's header opens the settings as a dialog.
+  await expect(reviewTabs(page).getByRole("tab", { name: "Settings", exact: true })).toHaveCount(0);
+  // The panel's header: "⌄ Game Review" and the gear, last. Game Review runs no live engine.
+  const panel = page.getByRole("complementary", { name: "Review" });
+  await expect(panel.getByRole("button", { name: "Game Review", exact: true })).toHaveAttribute(
+    "aria-expanded",
+    "true"
+  );
+  await expect(panel.getByRole("switch", { name: "Analysis" })).toHaveCount(0);
+  expect(
+    await panel.evaluate((aside) => {
+      const gear = aside.querySelector('[aria-label="Review settings"]');
+      return gear?.parentElement?.lastElementChild === gear;
+    })
+  ).toBe(true);
+
+  // The tab labels never truncate: each tab is as wide as its label.
+  for (const tab of await reviewTabs(page).getByRole("tab").all())
+    expect(
+      await tab.evaluate((element) => {
+        const label = element.querySelector("span");
+        return label ? label.scrollWidth <= label.clientWidth : true;
+      })
+    ).toBe(true);
+  await page
+    .getByRole("complementary", { name: "Review" })
+    .getByRole("button", { name: "Review settings", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Review settings" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "AI settings" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Edit ratings" })).toBeVisible();
+  // The side reviewed, and under it the rating the review is made for.
+  await expect(
+    dialog.getByRole("radiogroup", { name: "Review as" }).getByRole("radio", { name: /^White/ })
+  ).toBeChecked();
+  await expect(dialog.getByText(/^Rating Rapid 1500 · from Settings/)).toBeVisible();
+  // Its groups fold too.
+  await expect(dialog.getByRole("button", { name: "Engine" })).toHaveAttribute(
+    "aria-expanded",
+    "true"
+  );
+
+  // Review as Black: the board turns, and the key moments are Black's (Qg5 and Qxg2).
+  await dialog
+    .getByRole("radiogroup", { name: "Review as" })
+    .getByRole("radio", { name: /^Black/ })
+    .click();
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await page
+    .getByRole("complementary", { name: "Review" })
+    .getByRole("button", { name: "Review settings", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("radiogroup", { name: "Review as" }).getByRole("radio", { name: /^Black/ })
+  ).toBeChecked();
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
+  await reviewTabs(page).getByRole("tab", { name: "Commentary", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "Move navigation" })
+    .getByRole("button", { name: "First move", exact: true })
+    .click();
+  const cards = page.getByRole("list", { name: "Key moments of the game" });
+  await expect(cards.getByRole("listitem")).toHaveCount(2);
+  await expect(cards.getByRole("button").nth(0)).toHaveAccessibleName("4… Qg5, Great");
+  await expect(cards.getByRole("button").nth(1)).toHaveAccessibleName("5… Qxg2, Good");
+  await expect(cards.getByRole("button")).toHaveCount(2);
+
+  // AI commentary is off in this profile (no OpenRouter key): a card is only its move and mark.
+  // It has no chevron and doesn't open, and no static explanation shows, before or after a click.
+  const card = cards.getByRole("button").first();
+  await expect(card).not.toHaveAttribute("aria-expanded", /.*/);
+  await expect(card).not.toHaveAttribute("aria-controls", /.*/);
+  await expect(cards).not.toContainText("A critical find");
+
+  await expect(cards).not.toContainText("Punishes");
+  await card.click();
+  await expect(page.getByRole("heading", { name: "4… Qg5", level: 2 })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Commentary" }).getByText(/A critical find/)
+  ).toHaveCount(0);
+
+  // "⌄ Game Review" folds the tabs and their content away; the charts stay.
+  const reviewToggle = panel.getByRole("button", { name: "Game Review", exact: true });
+  await reviewToggle.click();
+  await expect(reviewToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(reviewTabs(page)).toBeHidden();
+  // With the charts folded too, the two headers stack at the top and the move navigation stays at
+  // the panel's bottom.
+  const chartsToggle = panel.getByRole("button", { name: "Winning chances" });
+  await chartsToggle.click();
+  await expect(chartsToggle).toHaveAttribute("aria-expanded", "false");
+  const panelBox = await panel.boundingBox();
+  const navBox = await panel.getByRole("navigation", { name: "Move navigation" }).boundingBox();
+  if (!panelBox || !navBox) throw new Error("panel or navigation not visible");
+  expect(panelBox.y + panelBox.height - (navBox.y + navBox.height)).toBeLessThan(4);
+  // Start review stays, right above the navigation.
+  const startBox = await panel
+    .getByRole("button", { name: "Start review", exact: true })
+    .boundingBox();
+  if (!startBox) throw new Error("Start review not visible");
+  expect(navBox.y - (startBox.y + startBox.height)).toBeLessThan(12);
+  await chartsToggle.click();
+  await reviewToggle.click();
+  await expect(reviewTabs(page)).toBeVisible();
+});

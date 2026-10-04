@@ -20,6 +20,7 @@ import { BoardSection } from "./BoardSettings";
 import { EngineAssetsPanel } from "./EngineAssetsPanel";
 import { EnginesSection } from "./EngineSettings";
 import { OpenRouterSettingsCard } from "./OpenRouterSettingsCard";
+import { RatingsSection } from "./RatingsSection";
 import { LichessAccountSection } from "../lichess/LichessAccount";
 import { UpdatesSection } from "../updates/UpdatesSection";
 import { UsageDataSection } from "./UsageDataSection";
@@ -32,7 +33,8 @@ export type SettingsSectionId =
   | "sound"
   | "engines"
   | "downloads"
-  | "commentary"
+  | "ai"
+  | "ratings"
   | "lichess"
   | "updates"
   | "usage"
@@ -45,7 +47,7 @@ export const SettingsPage = memo(function SettingsPage({
   initialSection = null,
   onSectionChange
 }: {
-  /** Section to show when the page opens (e.g. Commentary from Game review's "Add API key"). */
+  /** Section to show when the page opens (e.g. AI from Game review's "Add API key"). */
   initialSection?: SettingsSectionId | null;
   /** The section being read changed (the scroll position): Back returns to it. */
   onSectionChange?: (section: SettingsSectionId) => void;
@@ -58,9 +60,10 @@ export const SettingsPage = memo(function SettingsPage({
     "board",
     "sound",
     ...(desktopApiAvailable ? (["lichess"] as const) : []),
+    "ratings",
     "engines",
     ...(desktopApiAvailable ? (["downloads"] as const) : []),
-    "commentary",
+    "ai",
     ...(desktopApiAvailable ? (["updates", "usage", "welcome"] as const) : [])
   ];
   const contentRef = useRef<HTMLDivElement>(null);
@@ -102,7 +105,13 @@ export const SettingsPage = memo(function SettingsPage({
           ) : null}
         </SettingsGroup>
 
-        <SettingsGroup title="Engines & commentary">
+        <SettingsGroup title="Ratings">
+          <SectionAnchor id="ratings" wide>
+            <RatingsSection appearance={appearance} />
+          </SectionAnchor>
+        </SettingsGroup>
+
+        <SettingsGroup title="Engines & AI">
           <SectionAnchor id="engines" wide>
             <EnginesSection appearance={appearance} />
           </SectionAnchor>
@@ -111,11 +120,11 @@ export const SettingsPage = memo(function SettingsPage({
               <EngineAssetsPanel />
             </SectionAnchor>
           ) : null}
-          <SectionAnchor id="commentary" wide>
+          <SectionAnchor id="ai" wide>
             <section className={cn(cardPadded, "grid content-start gap-4")}>
               <SectionHeader
-                title="Commentary"
-                description="Game review explains each move with an AI model, through your own OpenRouter account."
+                title="AI"
+                description="One model and key for every AI feature: Game review's commentary, puzzle explanations and the rest. Through your own OpenRouter account."
               />
               {/* A form reads best at a comfortable width, not stretched across the page. */}
               <div className="max-w-2xl">

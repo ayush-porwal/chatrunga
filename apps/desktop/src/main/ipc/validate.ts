@@ -73,8 +73,10 @@ import type { DialogFileFilter } from "@chaturanga/shared/ipc/chaturanga-api";
 import type {
   LichessAiChallengeInput,
   LichessChallengeInput,
-  LichessSeekInput
+  LichessSeekInput,
+  LichessSpeed
 } from "@chaturanga/shared/types/lichess";
+import type { ReviewRatingContext } from "@chaturanga/shared/chess/review-rating";
 import { isOneOf, isRecord } from "@chaturanga/shared/types/guards";
 
 const MAX_ID = 200;
@@ -349,6 +351,40 @@ function parseReviewMove(value: unknown, index: number): ReviewMoveInputItem {
   };
 }
 
+const LICHESS_SPEEDS: readonly LichessSpeed[] = [
+  "ultraBullet",
+  "bullet",
+  "blitz",
+  "rapid",
+  "classical",
+  "correspondence"
+];
+
+/** A game's own rating: a whole number a player could have (see chess/review-rating.ts). */
+function asGameRating(value: unknown, label: string): number | null {
+  if (value === null) return null;
+  const rating = asWholeNumber(value, label);
+  if (rating < 1 || rating > 4000) fail(label, "is out of range");
+  return rating;
+}
+
+/** What main resolves a review's rating from: the reviewed side, the game's ratings and speed. */
+export function parseReviewRatingContext(value: unknown): ReviewRatingContext {
+  const input = asObject(value, "review rating");
+  const { side, speed } = input;
+  return {
+    side: side === "white" || side === "black" ? side : fail("review rating", "unknown side"),
+    whiteElo: asGameRating(input.whiteElo ?? null, "white rating"),
+    blackElo: asGameRating(input.blackElo ?? null, "black rating"),
+    speed:
+      speed === null || speed === undefined
+        ? null
+        : isOneOf(LICHESS_SPEEDS, speed)
+          ? speed
+          : fail("review rating", "unknown speed")
+  };
+}
+
 /** `reviewId` falls back to a generated id; everything else must be well-formed. */
 export function parseReviewGameInput(value: unknown): ReviewGameInput {
   const input = asObject(value, "review");
@@ -363,6 +399,7 @@ export function parseReviewGameInput(value: unknown): ReviewGameInput {
       asStringArray(ids, "prediction engine ids", 32, MAX_ID).filter(Boolean)
     ),
     timeControl: nullable(input.timeControl, (tc) => asString(tc, "time control", 64)),
+    rating: nullable(input.rating, parseReviewRatingContext),
     rootFen: asFen(input.rootFen, "root FEN"),
     moves: input.moves.map(parseReviewMove),
     nodes: asOptionalPositive(input.nodes, "nodes", SEARCH_LIMITS.nodes, true),

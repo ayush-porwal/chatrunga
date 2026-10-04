@@ -24,13 +24,18 @@ const STRONG_WEIGHT = SEVERITY_THRESHOLDS.mistake;
 /** Marks that are a success worth leading with when the game has one. */
 const SUCCESSES: ReadonlySet<MoveAnnotation> = new Set(["brilliant", "great", "excellent"]);
 
-/** How much a marked move teaches; null for an unmarked one. */
+/**
+ * How much a marked move teaches; null for an unmarked one and for a book move (opening theory is
+ * no moment, and isn't listed with the marks).
+ */
 export function momentWeight(assessment: MoveAssessment | null | undefined): number | null {
   const annotation = assessment?.annotation;
   if (!assessment || !annotation) return null;
   const loss = assessment.winLoss ?? 0;
   const gap = Math.max(0, assessment.alternativeGap ?? 0);
   switch (annotation) {
+    case "book":
+      return null;
     case "brilliant":
       return 25 + gap;
     case "great":
@@ -87,11 +92,6 @@ export function keyMoments(
     chosen.push(success);
   }
   return chosen.sort((a, b) => a.ply - b.ply);
-}
-
-/** Every marked move in game order (the "all marks" view). */
-export function markedMoves(moves: readonly MoveReview[]): KeyMoment[] {
-  return rankedMoments(moves).sort((a, b) => a.ply - b.ply);
 }
 
 /**

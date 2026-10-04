@@ -124,7 +124,9 @@ export function useGameReviewCommentary({
   const white = headers.white ?? undefined;
   const black = headers.black ?? undefined;
   const event = headers.event ?? undefined;
-  const opening = headers.opening ?? undefined;
+  // The opening the opening book names for the game, else the PGN's own Opening tag.
+  const eco = review?.opening?.eco;
+  const opening = review?.opening?.name ?? headers.opening ?? undefined;
   const schemaVersion = review?.schemaVersion;
   const engineName = review?.engineName;
   const engineSettings = review?.engineSettings;
@@ -135,7 +137,7 @@ export function useGameReviewCommentary({
       reviewMoves
         ? {
             moves: reviewMoves,
-            headers: { white, black, event, opening },
+            headers: { white, black, event, eco, opening },
             review: {
               schemaVersion,
               engineName,
@@ -147,6 +149,7 @@ export function useGameReviewCommentary({
         : undefined,
     [
       black,
+      eco,
       engineName,
       engineSettings,
       event,

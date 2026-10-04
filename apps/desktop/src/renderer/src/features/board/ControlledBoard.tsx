@@ -267,8 +267,9 @@ export function ControlledBoard({
 
   return (
     <div className={cn("relative h-full w-full min-h-0 min-w-0", className)}>
-      {/* Fills the stage's frame edge to edge, like the other boards; the frame clips the corners.
-          Chessground's classes stay in className so React reconciliation never strips them. */}
+      {/* Fills the stage's frame edge to edge, like the other boards, rounded to the frame's corners
+          (board.css). Chessground's classes stay in className so React reconciliation never strips
+          them. */}
       <div
         ref={elementRef}
         className={cn(

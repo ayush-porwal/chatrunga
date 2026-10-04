@@ -102,6 +102,8 @@ const api: ChaturangaApi = {
     facets: (excludeId) => ipcRenderer.invoke("games:facets", excludeId),
     get: (id) => ipcRenderer.invoke("games:get", id),
     getReview: (gameId, reviewId) => ipcRenderer.invoke("games:getReview", gameId, reviewId),
+    removeReview: (gameId, reviewId) => ipcRenderer.invoke("games:removeReview", gameId, reviewId),
+    removeReviews: (gameId) => ipcRenderer.invoke("games:removeReviews", gameId),
     save: (input) => ipcRenderer.invoke("games:save", input),
     remove: (id) => ipcRenderer.invoke("games:remove", id),
     importPgn: (input) => ipcRenderer.invoke("games:importPgn", input),
@@ -163,7 +165,8 @@ const api: ChaturangaApi = {
       "database:downloadProgress"
     ),
     onUpdateState: subscribe<EventPayload<"onUpdateState">>("updates:state"),
-    onLichessEvent: subscribe<EventPayload<"onLichessEvent">>("lichess:event")
+    onLichessEvent: subscribe<EventPayload<"onLichessEvent">>("lichess:event"),
+    onSettingsChanged: subscribe<EventPayload<"onSettingsChanged">>("settings:changed")
   },
   // Lichess account, play and import (main/lichess).
   lichess: {

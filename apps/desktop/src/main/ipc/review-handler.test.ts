@@ -38,7 +38,7 @@ vi.mock("../engine/review", () => ({
   reviewGameWithEngine: (...args: unknown[]) => reviewGameWithEngine(...args)
 }));
 
-const { runGameReview } = await import("./review-handler");
+const { reviewRatingFor, runGameReview } = await import("./review-handler");
 const { initTelemetry } = await import("../telemetry");
 
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -160,5 +160,47 @@ describe("runGameReview analytics", () => {
     await expect(runGameReview(fakeManager() as never, input("r-ok", null))).resolves.toMatchObject(
       { reviewId: "r-ok" }
     );
+  });
+});
+
+describe("the rating a review is made for", () => {
+  it("is the game's own rating for the reviewed side, passed to the engine and saved with the review", async () => {
+    reviewGameWithEngine.mockResolvedValue(finished);
+    const review = await runGameReview(fakeManager() as never, {
+      ...input("r-rated"),
+      timeControl: "180+2",
+      rating: { side: "black", whiteElo: 2010, blackElo: 1533, speed: null }
+    });
+    expect(reviewGameWithEngine.mock.lastCall?.[4]).toMatchObject({ playerRating: 1533 });
+    // This profile runs no Maia (reviewUseMaia off), so no model is named.
+    expect(review.rating).toEqual({ rating: 1533, source: "game", mode: "blitz", maiaModel: null });
+    // The side it was made for is saved with it (Review as).
+    expect(review.side).toBe("black");
+  });
+
+  it("is the Settings rating for the game's mode without one, rapid without a time control", async () => {
+    reviewGameWithEngine.mockResolvedValue(finished);
+    const review = await runGameReview(fakeManager() as never, { ...input("r-unrated") });
+    expect(review.rating).toMatchObject({ rating: 1500, source: "settings", mode: "rapid" });
+    // Without a side from the renderer, the Settings side.
+    expect(review.side).toBe("white");
+  });
+});
+
+describe("reviewRatingFor", () => {
+  it("rounds to the nearest Maia level the review runs", () => {
+    const settings = {
+      reviewPlayerColor: "white" as const,
+      playerRatings: {
+        ...defaultSettings.playerRatings,
+        blitz: { source: "manual" as const, rating: 1000 }
+      }
+    };
+    expect(
+      reviewRatingFor({ timeControl: "300+0" }, settings, [
+        { maiaRating: 1100 },
+        { maiaRating: 1500 }
+      ])
+    ).toEqual({ rating: 1000, source: "settings", mode: "blitz", maiaModel: 1100 });
   });
 });

@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { KeyRound, Loader2, MessageSquareOff, RefreshCw, Settings2, Sparkles } from "lucide-react";
+import { KeyRound, Loader2, MessageSquareOff, RefreshCw, Settings, Sparkles } from "lucide-react";
 import type { PuzzleOutcomeKind } from "@chaturanga/shared/schemas/puzzle-insight";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
@@ -20,6 +20,7 @@ import type { PuzzleWrongMove } from "../../stores/puzzle-store";
 import { tokenizeCommentary } from "../game-review/commentary-moves";
 import { MoveLink } from "../game-review/MoveLinks";
 import { ReviewSettingsPanel } from "../game-review/ReviewSettingsPanel";
+import { useOpenSettings } from "../settings/settings-link";
 import { uciLineToSan } from "../game-review/review-utils";
 import { explainEngine, explanationKey } from "./puzzle-explanation";
 import {
@@ -29,7 +30,7 @@ import {
 } from "./puzzle-explanation-store";
 import { solutionIndexForToken, type PuzzleProseLine } from "./puzzle-prose";
 
-const settingsIcon = <Settings2 />;
+const settingsIcon = <Settings />;
 
 /**
  * "Explain with AI" in the puzzle card, once the puzzle is solved or failed: one button, then the
@@ -80,6 +81,7 @@ export function PuzzleExplanation({
   const explain = () =>
     void requestPuzzleExplanation({ key, puzzle, kind, wrong, engine, settings });
   const openSettings = () => setSettingsOpen(true);
+  const openAppSettings = useOpenSettings();
   const gear = (
     <IconButton
       label="Explanation settings"
@@ -155,7 +157,7 @@ export function PuzzleExplanation({
           action={
             view.needsSettings ? (
               <Button type="button" variant="outline" size="xs" onClick={openSettings}>
-                <Settings2 />
+                <Settings />
                 Settings
               </Button>
             ) : (
@@ -189,7 +191,13 @@ export function PuzzleExplanation({
               : "AI commentary is off."}
           </p>
           {view.kind === "no-key" ? (
-            <Button type="button" variant="outline" size="xs" onClick={openSettings}>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              // The key lives in app Settings → AI (every AI feature shares it).
+              onClick={openAppSettings ? () => openAppSettings("ai") : openSettings}
+            >
               Add API key
             </Button>
           ) : (

@@ -3,6 +3,7 @@ import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
 import { positionFromFen } from "@chaturanga/shared/chess/position";
 import { withCurrentAssessments } from "@chaturanga/shared/chess/move-assessment";
+import { openingBook } from "../engine/opening-book";
 import { getDb } from "./index";
 import { gameFingerprint } from "./game-fingerprint";
 import {
@@ -17,11 +18,14 @@ import {
   normalizeAppearanceSettings,
   normalizeOnboardingSettings,
   normalizePracticeSettings,
+  normalizeRatingSettings,
   normalizeReviewEngineSettings,
   normalizeUpdateSettings,
   settingKeys,
-  type AppSettings
+  type AppSettings,
+  type LegacySettingKey
 } from "@chaturanga/shared/types/settings";
+import { resolveGameReviewRating } from "@chaturanga/shared/chess/review-rating";
 import type {
   CreateEngineInput,
   EngineConfig,
@@ -474,6 +478,7 @@ function isHeaders(value: unknown): value is GameHeaders {
  */
 function parseStoredReview(
   json: string,
+  row: GameRow,
   moveTree: readonly MoveNode[],
   rebuilt: boolean
 ): GameReview | null {
@@ -491,12 +496,27 @@ function parseStoredReview(
   if (!placed) return null;
   try {
     return withCurrentAssessments(placed, {
-      playerRating: settingsRepository.getAll().reviewPlayerRating
+      openingBook: openingBook(),
+      playerRating: placed.rating?.rating ?? settingsRatingFor(row)
     });
   } catch {
     // Damaged moves are left unassessed one by one; anything worse still opens the review, unmarked.
     return placed;
   }
+}
+
+/**
+ * The rating a review saved before reviews recorded theirs is re-assessed for: the game's own
+ * rating for the reviewed side, else the Settings rating for its mode (chess/review-rating.ts).
+ */
+function settingsRatingFor(row: GameRow): number {
+  const settings = settingsRepository.getAll();
+  return resolveGameReviewRating({
+    headers: storedHeaders(row.headers_json) ?? { event: row.event, site: row.site },
+    source: row.source,
+    side: settings.reviewPlayerColor,
+    ratings: settings.playerRatings
+  }).rating;
 }
 
 /** The row's stored headers, or null when it has none (older rows) or they can't be read. */
@@ -524,7 +544,7 @@ function toSavedGame(row: GameRow): SavedGame {
         listed[0].review_id
       )
     : undefined;
-  const review = newest ? parseStoredReview(newest.review_json, moveTree, rebuilt) : null;
+  const review = newest ? parseStoredReview(newest.review_json, row, moveTree, rebuilt) : null;
 
   return {
     ...toGameSummary(row),
@@ -747,11 +767,19 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
 }
 
 /**
+ * Analyses the user deleted in this session. The renderer's autosave is debounced, so a save of
+ * the game can still carry one just deleted (a comment arrived for it a moment before); the upsert
+ * would bring it back. Review ids are never reused, so remembering them is enough.
+ */
+const deletedReviewIds = new Set<string>();
+
+/**
  * The analysis on the board, saved under its own id: a new one is added (re-analysing keeps the
  * earlier ones), and one already saved is updated (its AI commentary grows as moves are viewed).
  */
 function saveReview(gameId: string, review: GameReview): void {
   const reviewId = reviewRowId(review, gameId);
+  if (deletedReviewIds.has(reviewId)) return;
   const fields = reviewListingFields(review);
   run(
     `INSERT INTO game_reviews (
@@ -866,7 +894,33 @@ export const gameRepository = {
     );
     if (!row || !stored) return null;
     const { moveTree, rebuilt } = parseMoveTree(row);
-    return parseStoredReview(stored.review_json, moveTree, rebuilt);
+    return parseStoredReview(stored.review_json, row, moveTree, rebuilt);
+  },
+
+  /**
+   * Deletes one analysis of a game (its AI commentary goes with it); the game and its other
+   * analyses stay. Returns whether there was one to delete.
+   */
+  removeReview(gameId: string, reviewId: string): boolean {
+    const { changes } = getDb()
+      .prepare("DELETE FROM game_reviews WHERE game_id = ? AND review_id = ?")
+      .run(gameId, reviewId);
+    deletedReviewIds.add(reviewId);
+    return Number(changes) > 0;
+  },
+
+  /** Deletes every analysis of a game, never the game itself. Returns how many were deleted. */
+  removeReviews(gameId: string): number {
+    const ids = transaction(() => {
+      const listed = all<{ review_id: string }>(
+        "SELECT review_id FROM game_reviews WHERE game_id = ?",
+        gameId
+      );
+      run("DELETE FROM game_reviews WHERE game_id = ?", gameId);
+      return listed.map((row) => row.review_id);
+    });
+    for (const id of ids) deletedReviewIds.add(id);
+    return ids.length;
   },
 
   /** A library game that is the same game (see gameFingerprint), if any. */
@@ -969,10 +1023,12 @@ export const settingsRepository = {
       }
     }
     const merged = { ...defaultSettings, ...values } as AppSettings;
-    return normalizePracticeSettings(
-      normalizeOnboardingSettings(
-        normalizeUpdateSettings(
-          normalizeAppearanceSettings(normalizeReviewEngineSettings(hydratePieceSettings(merged)))
+    return normalizeRatingSettings(
+      normalizePracticeSettings(
+        normalizeOnboardingSettings(
+          normalizeUpdateSettings(
+            normalizeAppearanceSettings(normalizeReviewEngineSettings(hydratePieceSettings(merged)))
+          )
         )
       )
     );
@@ -984,7 +1040,7 @@ export const settingsRepository = {
   },
 
   /** The raw persisted value (before defaults/normalization), or undefined when never set. */
-  getStored(key: keyof AppSettings): unknown {
+  getStored(key: keyof AppSettings | LegacySettingKey): unknown {
     const row = get<SettingRow>("SELECT key, value FROM settings WHERE key = ?", key);
     if (!row) return undefined;
     try {

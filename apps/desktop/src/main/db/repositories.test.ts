@@ -119,7 +119,7 @@ describe("gameRepository (SQLite)", () => {
     expect(gameRepository.get(saved.id)?.review).toBeNull();
   });
 
-  it("opens an analysis saved before move assessments re-assessed from its evaluations, leaving the row as it was", () => {
+  it("opens an analysis saved before move assessments re-assessed from its evaluations, book moves and opening included, leaving the row as it was", () => {
     const { game } = importPgnText(
       `[Event "Trap"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bc4 Nd4 4. Nxe5 Qg5 5. Nxf7 Qxg2 6. Rf1 Qxe4+ 7. Be2 Nf3# 0-1`
     );
@@ -155,13 +155,14 @@ describe("gameRepository (SQLite)", () => {
       assessmentPolicy: MOVE_ASSESSMENT_POLICY,
       assessmentsRecomputed: true
     });
+    // The first six moves are opening theory (3… Nd4 included), from the bundled opening book.
     expect(opened.moves.map((move) => move.assessment?.annotation ?? null)).toEqual([
-      null,
-      null,
-      null,
-      null,
-      null,
-      "inaccuracy",
+      "book",
+      "book",
+      "book",
+      "book",
+      "book",
+      "book",
       "blunder",
       "good",
       "blunder",
@@ -171,7 +172,14 @@ describe("gameRepository (SQLite)", () => {
       "mistake",
       null
     ]);
-    expect(opened.summary).toMatchObject({ inaccuracies: 1, mistakes: 1, blunders: 2 });
+    expect(opened.summary).toMatchObject({ book: 6, inaccuracies: 0, mistakes: 1, blunders: 2 });
+    expect(opened.opening).toEqual({
+      eco: "C50",
+      name: "Italian Game: Blackburne-Kostić Gambit",
+      ply: 6,
+      bookEndPly: 6,
+      firstNonBookMove: { ply: 7, san: "Nxe5" }
+    });
     expect(gameRepository.getReview(saved.id, `test-${saved.id}`)?.assessmentsRecomputed).toBe(
       true
     );
@@ -190,9 +198,11 @@ describe("gameRepository (SQLite)", () => {
     const partly = gameRepository.get(saved.id)!.review!;
     expect(partly.assessmentsRecomputed).toBe(true);
     expect(partly.moves[8]?.assessment).toBeUndefined();
-    expect(partly.moves.map((move) => move.assessment?.annotation ?? null).filter(Boolean)).toEqual(
-      ["inaccuracy", "blunder", "good", "mistake"]
-    );
+    expect(
+      partly.moves
+        .map((move) => move.assessment?.annotation ?? null)
+        .filter((annotation) => annotation && annotation !== "book")
+    ).toEqual(["blunder", "good", "mistake"]);
   });
 
   it("moves the review of a game from a set-up position too, and puts the cursor on the rebuilt tree", () => {
@@ -623,6 +633,72 @@ describe("gameRepository (SQLite)", () => {
       saveWith(game, null);
       saveWith(game, undefined);
       expect(gameRepository.get(game.id)?.reviews.map((info) => info.reviewId)).toEqual(["kept"]);
+    });
+
+    const reviewIdsOf = (gameId: string) =>
+      getDb()
+        .prepare("SELECT review_id FROM game_reviews WHERE game_id = ? ORDER BY review_id")
+        .all(gameId)
+        .map((row) => row.review_id);
+    /**
+     * Two games with analyses: `game` (`${p}a`, `${p}b`, `${p}c`) and `other` (`${p}other`). Each
+     * test takes its own prefix: a deleted id stays deleted for the whole run (main remembers it).
+     */
+    const twoReviewedGames = (p: string) => {
+      const game = saveImported();
+      saveWith(game, reviewOf(game, `${p}a`, 10));
+      saveWith(game, reviewOf(game, `${p}b`, 20));
+      saveWith(game, reviewOf(game, `${p}c`, 30));
+      const { game: session } = importPgnText(PGN.replace("2. Nf3", "2. Nc3"));
+      const other = gameRepository.save(session);
+      saveWith(other, reviewOf(other, `${p}other`, 40));
+      return { game, other };
+    };
+
+    it("deleting one analysis deletes only that one: the game and every other analysis stay", () => {
+      const { game, other } = twoReviewedGames("one-");
+      const before = gameRepository.get(game.id)!;
+
+      expect(gameRepository.removeReview(game.id, "one-c")).toBe(true);
+
+      expect(reviewIdsOf(game.id)).toEqual(["one-a", "one-b"]);
+      expect(reviewIdsOf(other.id)).toEqual(["one-other"]);
+      const after = gameRepository.get(game.id)!;
+      expect(after).toMatchObject({ pgn: before.pgn, moveTree: before.moveTree, reviewCount: 2 });
+      // The newest left now opens with the game.
+      expect(after.review?.reviewId).toBe("one-b");
+      // An analysis of another game isn't deleted through this one's id.
+      expect(gameRepository.removeReview(game.id, "one-other")).toBe(false);
+      expect(reviewIdsOf(other.id)).toEqual(["one-other"]);
+    });
+
+    it("deleting all of a game's analyses keeps the game and other games' analyses", () => {
+      const { game, other } = twoReviewedGames("all-");
+
+      expect(gameRepository.removeReviews(game.id)).toBe(3);
+
+      expect(reviewIdsOf(game.id)).toEqual([]);
+      expect(reviewIdsOf(other.id)).toEqual(["all-other"]);
+      expect(gameRepository.get(game.id)).toMatchObject({
+        id: game.id,
+        review: null,
+        reviews: [],
+        reviewCount: 0
+      });
+      expect(gameRepository.removeReviews(game.id)).toBe(0);
+    });
+
+    it("a late save of the game carrying a deleted analysis doesn't bring it back", () => {
+      const { game } = twoReviewedGames("late-");
+      gameRepository.removeReview(game.id, "late-b");
+      gameRepository.removeReviews(game.id);
+      // The debounced autosave writes the game with the analysis that was shown.
+      saveWith(game, reviewOf(game, "late-b", 20));
+      saveWith(game, reviewOf(game, "late-a", 10));
+      expect(reviewIdsOf(game.id)).toEqual([]);
+      // A new analysis still saves.
+      saveWith(game, reviewOf(game, "late-new", 50));
+      expect(reviewIdsOf(game.id)).toEqual(["late-new"]);
     });
 
     it("deleting a game deletes its analyses", () => {

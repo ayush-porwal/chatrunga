@@ -251,13 +251,13 @@ test("Analyze runs the engine in study: its lines follow the selection, a picked
   await expect.poll(() => board.boundingBox()).toEqual(boardBox);
 
   // An unfolded line's move shows its position beside the side panel (over the board's edge,
-  // level with the lines), without the line repeated there.
+  // level with the lines): just the board, with no caption or score.
   await enginePanel(page).getByRole("button", { name: "Show the whole line" }).first().click();
   await addLine(page, "d3").first().hover();
   const preview = page.getByRole("group", { name: /^Position after / });
   await expect(preview).toBeVisible();
   await expect(preview.locator("cg-board")).toBeVisible();
-  await expect(preview).toContainText("Line score");
+  await expect(preview).not.toContainText("Line score");
   await expect(preview).not.toContainText("Nf6");
   await expect(preview).not.toContainText("d3");
   // It never grows the panel or covers the moves and their Undo / Redo under it.
@@ -368,8 +368,8 @@ test("leaving Study by any route stops the engine panel's search", async ({ laun
   await sidebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
   await expectStoppedSince(log, from);
   await page
-    .getByRole("tabpanel", { name: "Engine" })
-    .getByRole("button", { name: "Start analysis" })
+    .getByRole("complementary", { name: "Game" })
+    .getByRole("switch", { name: "Analysis" })
     .click();
   await expect.poll(() => engineCommands(log).slice(from).at(-1)).toBe("go infinite");
   expect(
@@ -434,9 +434,11 @@ test("Back from Study with the engine panel open to an analysis board analyses t
 
   // The board analysed at 3... a6.
   await page.getByRole("tab", { name: "Engine" }).click();
-  const engineTab = page.getByRole("tabpanel", { name: "Engine" });
-  await engineTab.getByRole("button", { name: "Start analysis" }).click();
-  await expect(engineTab.getByRole("button", { name: "Stop" })).toBeVisible();
+  const analysis = page
+    .getByRole("complementary", { name: "Game" })
+    .getByRole("switch", { name: "Analysis" });
+  await analysis.click();
+  await expect(analysis).toHaveAttribute("aria-checked", "true");
 
   // Its line goes into the repertoire (from the Moves tab), and the notice opens the new chapter's Study from here.
   await page.getByRole("tab", { name: "Moves" }).click();
@@ -459,7 +461,7 @@ test("Back from Study with the engine panel open to an analysis board analyses t
   await expect(gameMoves).toBeVisible();
   // The study's search stopped and the board's runs again, at its move.
   await page.getByRole("tab", { name: "Engine" }).click();
-  await expect(engineTab.getByRole("button", { name: "Stop" })).toBeVisible();
+  await expect(analysis).toHaveAttribute("aria-checked", "true");
   await expect.poll(() => engineCommands(log).slice(from).at(-1)).toBe("go infinite");
   const since = engineCommands(log).slice(from);
   expect(since).toContain("stop");

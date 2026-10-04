@@ -37,9 +37,12 @@ test("the Analyze board shows an imported castled game's depth, score and lines 
   const moves = page.getByRole("tree", { name: "Game moves" });
   await expect(moves.getByRole("button", { name: "O-O-O", exact: true })).toBeVisible();
 
-  await titlebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
-  await expect(titlebar(page).getByRole("button", { name: "Stop analysis" })).toBeVisible();
+  // Live analysis starts with the Engine tab's switch (the titlebar has no Analyze of its own).
   await page.getByRole("tab", { name: "Engine" }).click();
+  const analysis = page.getByRole("switch", { name: "Analysis" });
+  await analysis.click();
+  await expect(analysis).toHaveAttribute("aria-checked", "true");
+  await expect(titlebar(page).getByRole("button", { name: "Stop analysis" })).toHaveCount(0);
   const panel = page.getByRole("tabpanel", { name: "Engine" });
   await expect(panel.getByRole("heading", { name: "Fake UCI" })).toBeVisible();
   // White to move after 8... O-O-O: the fake's first line is its first legal move, Rb1.
@@ -75,15 +78,17 @@ test("an engine that dies during live analysis ends the search, and Restart sear
       .getByRole("button", { name: "O-O-O", exact: true })
   ).toBeVisible();
 
-  await titlebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
   await page.getByRole("tab", { name: "Engine" }).click();
+  await page.getByRole("switch", { name: "Analysis" }).click();
   const panel = page.getByRole("tabpanel", { name: "Engine" });
   // Its lines up to the crash stay; the search shows as ended, not running.
   await expect(panel.getByText(CRASHED)).toBeVisible({ timeout: 15_000 });
   await expect(panel).toContainText("The engine stopped with an error");
   await expect(panel.getByRole("button", { name: "Go to Rb1 position" })).toBeVisible();
-  // No search runs: no Stop, and Restart is offered.
-  await expect(panel.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
+  // No search runs: Restart is offered (the Analysis switch stays on: analysis is still wanted).
+  await expect(
+    page.getByRole("complementary", { name: "Game" }).getByRole("switch", { name: "Analysis" })
+  ).toHaveAttribute("aria-checked", "true");
   const spawns = () => engineCommands(log).filter((line) => line === "spawn").length;
   expect(spawns()).toBe(1);
 

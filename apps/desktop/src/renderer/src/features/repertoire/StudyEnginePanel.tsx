@@ -31,7 +31,6 @@ function useEngineHolder(): EngineHolder {
   return engineHolder(board, onlineGameLive);
 }
 
-const restartSearch = () => useAnalysisStore.getState().restartSearch();
 const addLineLabel = (san: string) => `Add the line to ${san} to the chapter`;
 
 /**
@@ -130,7 +129,6 @@ export function StudyEnginePanel({
       ) : (
         <EngineAnalysisPanel
           position={position}
-          onStartAnalysis={restartSearch}
           onOpenSettings={onOpenSettings}
           headerAction={closeButton}
           linesHint="Click a move to add its line to the chapter."

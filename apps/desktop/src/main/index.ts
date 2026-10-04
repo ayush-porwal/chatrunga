@@ -30,9 +30,10 @@ import {
 import { EngineManager } from "./engine/engine-manager";
 import { killAllEngineProcesses } from "./engine/uci-process";
 import { registerIpc } from "./ipc/register";
-import { shutdownLichess } from "./lichess";
+import { shutdownLichess, startLichessRatingSync } from "./lichess";
 import { errorMessage, logger } from "./logger";
 import { migrateOnboarding } from "./onboarding-migration";
+import { migratePlayerRatings } from "./rating-migration";
 import { updateService } from "./updater";
 import {
   isAppUrl,
@@ -65,6 +66,10 @@ app.setName(PRODUCT_NAME);
 // Dev/test hook: CHATURANGA_USER_DATA_DIR points the app at a throwaway profile (UI automation,
 // clean-install checks). Unset in normal use.
 const userDataOverride = process.env.CHATURANGA_USER_DATA_DIR;
+// Test hook: the e2e harness sets CHATURANGA_E2E_BACKGROUND so its windows never show on screen
+// (they still load, lay out and run; the harness drives them over the DevTools protocol) and the
+// developer keeps working undisturbed. Unset in normal use.
+const openInBackground = process.env.CHATURANGA_E2E_BACKGROUND === "1";
 app.setPath(
   "userData",
   userDataOverride ?? join(app.getPath("appData"), app.isPackaged ? "chaturanga" : "chaturanga-dev")
@@ -142,6 +147,16 @@ async function startup(): Promise<void> {
   } catch (error) {
     logger.error("settings", "onboarding migration failed:", error);
   }
+  try {
+    const result = migratePlayerRatings({
+      storedRatings: () => settingsRepository.getStored("playerRatings"),
+      legacyRating: () => settingsRepository.getStored("reviewPlayerRating"),
+      set: (ratings) => settingsRepository.set("playerRatings", ratings)
+    });
+    if (result === "migrated") logger.info("settings", "ratings: one rating per mode");
+  } catch (error) {
+    logger.error("settings", "ratings migration failed:", error);
+  }
   startTelemetry();
   session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) =>
     callback(isPermissionAllowed(permission))
@@ -152,9 +167,16 @@ async function startup(): Promise<void> {
   installWindowGlass();
   installWindowReveal();
   registerIpc(engineManager);
+  try {
+    startLichessRatingSync();
+  } catch (error) {
+    logger.error("lichess", "starting the ratings sync failed:", error);
+  }
   installApplicationMenu();
   const icon = createAppIcon();
   if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);
+  // No Dock icon and no activation.
+  if (openInBackground && process.platform === "darwin") app.setActivationPolicy("accessory");
   createWindow();
   // Quitting into an installer runs the same cleanup as a normal quit, first.
   void updateService.start({
@@ -283,7 +305,9 @@ function createWindow(): void {
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: true
+      webSecurity: true,
+      // A window kept off screen: its timers and frames keep full speed, as they would in front.
+      backgroundThrottling: !openInBackground
     }
   });
   mainWindow = window;
@@ -364,7 +388,8 @@ const revealedWindows = new WeakSet<BrowserWindow>();
 function revealWindow(window: BrowserWindow): void {
   if (window.isDestroyed() || revealedWindows.has(window)) return;
   revealedWindows.add(window);
-  window.show();
+  // In the background the window is never shown (see openInBackground).
+  if (!openInBackground) window.show();
 }
 
 function installWindowReveal(): void {

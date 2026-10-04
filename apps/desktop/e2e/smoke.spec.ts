@@ -222,12 +222,18 @@ test("works offline: library and engine analysis without a network", async ({
   await expect(moveCounter(page)).toHaveText("0 / 6");
   await page.getByRole("tab", { name: "Engine" }).click();
   const panel = page.getByRole("tabpanel", { name: "Engine" });
-  await panel.getByRole("button", { name: "Start analysis" }).click();
+  // The Analysis switch in the tab's header row starts the engine, and stops it.
+  const analysis = page
+    .getByRole("complementary", { name: "Game" })
+    .getByRole("switch", { name: "Analysis" });
+  await expect(analysis).toHaveAttribute("aria-checked", "false");
+  await analysis.click();
+  await expect(analysis).toHaveAttribute("aria-checked", "true");
   await expect(panel.getByRole("heading", { name: "Fake UCI" })).toBeVisible();
   await expect(panel.getByRole("button", { name: "Go to e4 position" })).toBeVisible({
     timeout: 15_000
   });
   await expect(panel).toContainText("+0.20");
-  await panel.getByRole("button", { name: "Stop" }).click();
-  await expect(panel.getByRole("button", { name: "Stop" })).toHaveCount(0);
+  await analysis.click();
+  await expect(analysis).toHaveAttribute("aria-checked", "false");
 });

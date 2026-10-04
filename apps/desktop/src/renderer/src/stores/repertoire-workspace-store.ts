@@ -3,6 +3,7 @@ import { makeFen } from "chessops/fen";
 import { makeSanAndPlay } from "chessops/san";
 import { parseUci } from "chessops/util";
 import { addMoveNode } from "@chaturanga/shared/chess/pgn";
+import { promoteChild, promotionTarget } from "@chaturanga/shared/chess/move-tree-promote";
 import { positionFromFen } from "@chaturanga/shared/chess/position";
 import { nodeMetaOf } from "@chaturanga/shared/chess/repertoire-index";
 import { trainableChapter, type AcceptedAt } from "@chaturanga/shared/chess/repertoire-training";
@@ -216,32 +217,6 @@ export function removeSubtree(
         : node
     );
   return { tree: next, removed, parentId: target.parentId };
-}
-
-/** Moves `nodeId` to the front of its parent's children (it becomes the main line). */
-export function promoteChild(tree: readonly MoveNode[], nodeId: string): MoveNode[] {
-  const node = tree.find((item) => item.id === nodeId);
-  if (!node?.parentId) return [...tree];
-  return tree.map((item) =>
-    item.id === node.parentId && item.children[0] !== nodeId
-      ? { ...item, children: [nodeId, ...item.children.filter((id) => id !== nodeId)] }
-      : item
-  );
-}
-
-/**
- * The move `promoteVariation` moves for `nodeId`: the node itself or its nearest ancestor that
- * isn't its parent's first child. Null on the main line (or for the root).
- */
-export function promotionTarget(tree: readonly MoveNode[], nodeId: string): string | null {
-  const byId = new Map(tree.map((node) => [node.id, node]));
-  let node = byId.get(nodeId);
-  while (node?.parentId) {
-    const parent = byId.get(node.parentId);
-    if (parent && parent.children[0] !== node.id) return node.id;
-    node = parent;
-  }
-  return null;
 }
 
 /**

@@ -21,7 +21,6 @@ import { SectionHeader } from "@/components/ui/page";
 import { Stat, StatGroup } from "@/components/ui/stat";
 import { divider } from "@/lib/ui";
 import { AnnotationBadge } from "@/components/ui/annotation-badge";
-import { MoveMarkNote } from "./KeyMoments";
 import { replyLineUcis } from "./commentary-moves";
 import { MoveLine, VariationAnchorNote, type GoToLine } from "./MoveLinks";
 import { cn } from "@/lib/utils";
@@ -109,8 +108,6 @@ export function ReviewEnginePanel({
         <h2 className="font-mono text-base font-semibold text-fg">{moveLabel(move)}</h2>
         <AnnotationBadge annotation={move.assessment?.annotation ?? null} />
       </header>
-
-      <MoveMarkNote assessment={move.assessment} className="-mt-2" />
 
       {variationAnchor ? (
         <VariationAnchorNote label={variationAnchor.label} onBack={variationAnchor.onBack} />

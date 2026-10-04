@@ -10,6 +10,7 @@ import {
   Undo2
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
+import { promotionTarget } from "@chaturanga/shared/chess/move-tree-promote";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import {
@@ -47,11 +48,7 @@ import {
   useRepertoirePausedKeysQuery,
   useRepertoireQuery
 } from "../../queries/repertoire";
-import {
-  playUci,
-  promotionTarget,
-  useRepertoireWorkspaceStore
-} from "../../stores/repertoire-workspace-store";
+import { playUci, useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
 import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
 import { BoardStage, BoardWorkspace, workspaceTabsClass } from "../board/BoardWorkspace";
 import { ControlledBoard } from "../board/ControlledBoard";

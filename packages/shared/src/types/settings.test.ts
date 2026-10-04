@@ -277,10 +277,8 @@ describe("normalizeOnboardingSettings", () => {
       ...defaultSettings,
       onboardingHintsSeen: ["maia-curve", "unknown", "maia-curve", 3, "commentary-links"]
     } as unknown as AppSettings;
-    expect(normalizeOnboardingSettings(stored).onboardingHintsSeen).toEqual([
-      "commentary-links",
-      "maia-curve"
-    ]);
+    // "commentary-links" was a tip that's gone: a stored one is dropped like any unknown id.
+    expect(normalizeOnboardingSettings(stored).onboardingHintsSeen).toEqual(["maia-curve"]);
     const notAList = {
       ...defaultSettings,
       onboardingHintsSeen: "maia-curve"

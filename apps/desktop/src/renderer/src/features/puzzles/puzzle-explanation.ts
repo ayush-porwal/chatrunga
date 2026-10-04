@@ -138,7 +138,7 @@ export type ExplainPayloadInput = {
   kind: PuzzleOutcomeKind;
   wrong: PuzzleWrongMove | null;
   analysis: ExplainAnalysis;
-  settings: Pick<AppSettings, "reviewPlayerRating" | "reviewCommentaryDetail">;
+  settings: Pick<AppSettings, "playerRatings" | "reviewCommentaryDetail">;
 };
 
 /**
@@ -192,7 +192,8 @@ export function buildPuzzleExplanationPayload({
 
   const parsed = puzzleInsightPayloadSchema.safeParse({
     schemaVersion: 1,
-    player: { rating: Math.round(Math.max(100, Math.min(3500, settings.reviewPlayerRating))) },
+    // A puzzle has no time control: the rapid rating, as a review of a game without one.
+    player: { rating: settings.playerRatings.rapid.rating },
     puzzle: {
       fen,
       sideToMove: solver,

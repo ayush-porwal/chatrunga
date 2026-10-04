@@ -5,14 +5,13 @@ import type { MoveReview } from "@chaturanga/shared/types/engine";
 import type { RepertoireColor } from "@chaturanga/shared/types/repertoire";
 import type { StudyOpenTarget } from "../repertoire/repertoire-chapters";
 import { useGameStore } from "../../stores/game-store";
+import { activeBestLine, bestLineStep } from "../game/best-line-cursor";
 import { reviewsByNode, useReviewStore } from "../../stores/review-store";
 import { useDisplayedReviewMoves, useOutdatedReviewMoves } from "../../stores/review-validity";
+import { boardClocksAt, sideToMove } from "../board/board-clocks";
 import {
-  averageLoss,
-  countBySeverity,
   mainlineReviewInput,
   moveLabel,
-  reviewAccuracy,
   reviewIdFromPath,
   uciSquares,
   type ReviewTab
@@ -21,10 +20,15 @@ import { ReviewBoard, type ReviewArrow } from "./ReviewBoard";
 import { ReviewCommentaryPanel } from "./ReviewCommentaryPanel";
 import { ReviewEnginePanel } from "./ReviewEnginePanel";
 import { ReviewMoveRail } from "./ReviewMoveRail";
-import { ReviewOpeningPanel } from "./ReviewOpeningPanel";
-import { ReviewSettingsPanel } from "./ReviewSettingsPanel";
-import { ReviewTape } from "./ReviewTape";
+import { RepertoireHeadline, ReviewOpeningPanel } from "./ReviewOpeningPanel";
+import { openReviewSettingsDialog, ReviewSettingsDialog } from "./ReviewSettingsDialog";
+import { ReviewSidePrompt, ReviewSummary } from "./ReviewSummary";
+import { CardCommentaryContext, type CardCommentaryOptions } from "./MomentCommentary";
+import { chooseReviewSide, reviewSideColor, useReviewSide } from "./review-side";
+import { moverOf } from "./review-summary";
+import { ReviewCharts } from "./ReviewCharts";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { cn } from "@/lib/utils";
 import { PlayerRow } from "../board/PlayerIdentity";
 import { BoardStage, BoardWorkspace, workspaceTabsClass } from "../board/BoardWorkspace";
 import { EvalBar } from "../board/EvalBar";
@@ -32,8 +36,11 @@ import { BoardMoveMarkBadge } from "../board/BoardMoveMarkBadge";
 import { boardMoveMark } from "../board/move-mark";
 import { MoveNavigation } from "../board/MoveNavigation";
 import { useGameReviewCommentary } from "./useGameReviewCommentary";
+import { reviewRatingLabel, useReviewRating } from "./use-review-rating";
 import { useStoreHintsOnLeave } from "../onboarding/Coachmark";
-import { useUpdateSettingMutation } from "../../queries/api";
+import { useOpenRouterConfigQuery, useUpdateSettingMutation } from "../../queries/api";
+import { useCollapsible } from "@/components/ui/collapsible-section";
+import { ReviewPanelHeader } from "./ReviewPanelHeader";
 import { openSavedGame } from "../game/saved-game";
 import {
   reviewAnchorFor,
@@ -41,11 +48,8 @@ import {
   type MoveNavigationTarget
 } from "./commentary-moves";
 import { openingSideFor, type OpeningSide } from "./opening-comparison";
-import { annotationTone } from "@/lib/ui";
-import { keyMoments, markedMoves } from "@chaturanga/shared/chess/key-moments";
-import type { ErrorSeverity } from "@chaturanga/shared/types/engine";
+import { keyMoments } from "@chaturanga/shared/chess/key-moments";
 import { KeyMomentNav } from "./KeyMoments";
-import type { MovesView } from "./ReviewMoveRail";
 import { Sparkles, Swords, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -55,23 +59,22 @@ import {
   tabPanelProps,
   type SegmentedOption
 } from "@/components/ui/segmented-control";
-import { Stat, StatGroup } from "@/components/ui/stat";
 import { useReviewUsage } from "../../app/useUsageTelemetry";
 
 const reviewTabOptions: readonly SegmentedOption<ReviewTab>[] = [
+  { value: "summary", label: "Summary" },
   { value: "commentary", label: "Commentary" },
   { value: "moves", label: "Moves" },
-  { value: "opening", label: "Opening" },
-  { value: "engine", label: "Engine" },
-  { value: "settings", label: "Settings" }
+  { value: "engine", label: "Engine" }
 ];
 
 /**
- * Five review tabs don't fit the workspace panel at its usual widths with the shared tab padding
- * and text size, so the labels truncated ("Comme…"): narrower panels tighten the padding, then the
- * text, so every label stays whole down to the panel's 20rem minimum.
+ * The five review tabs share the row's full width and never truncate a label: narrower panels
+ * tighten the padding, then the text, so every label stays whole down to the panel's 20rem
+ * minimum; narrower than that (or with larger text), the row scrolls sideways instead, the
+ * selected tab kept in view.
  */
-const reviewTabsClass = `${workspaceTabsClass} @max-[424px]/panel:[&>button]:px-1.5 @max-[384px]/panel:[&>button]:text-xs @max-[344px]/panel:[&>button]:px-0.5`;
+const reviewTabsClass = `${workspaceTabsClass} overflow-x-auto [scrollbar-width:none] [&>button]:shrink-0 [&>button>span]:overflow-visible @max-[424px]/panel:[&>button]:px-1.5 @max-[384px]/panel:[&>button]:text-xs @max-[344px]/panel:[&>button]:px-0.5`;
 
 type GameReviewPageProps = {
   activeTab: ReviewTab;
@@ -84,7 +87,7 @@ type GameReviewPageProps = {
   /** Offered when the game has no moves to review. */
   onImportPgn: () => void;
   onPlay: () => void;
-  /** Opens Settings → Commentary (offered when no OpenRouter key is saved). */
+  /** Opens Settings → AI (offered when no OpenRouter key is saved). */
   onOpenCommentarySettings?: () => void;
   /** Opening tab: study a repertoire chapter (Back returns to this review at the same move). */
   onOpenRepertoireStudy?: (target: StudyOpenTarget) => void;
@@ -95,6 +98,8 @@ type GameReviewPageProps = {
   /** Opening tab: the side picked for a game (App keeps it so Back restores it). */
   openingSide?: OpeningSide | null;
   onOpeningSideChange?: (side: OpeningSide) => void;
+  /** Summary: shows the Puzzles page (its filters set to the opening or a theme first). */
+  onOpenPuzzles?: () => void;
 };
 
 export const GameReviewPage = memo(function GameReviewPage(props: GameReviewPageProps) {
@@ -118,7 +123,8 @@ function GameReviewPageInner({
   onRefreshRepertoireDecision,
   onRepertoireHub,
   openingSide = null,
-  onOpeningSideChange
+  onOpeningSideChange,
+  onOpenPuzzles
 }: GameReviewPageProps) {
   const location = useLocation();
   const id = reviewIdFromPath(location.pathname);
@@ -158,6 +164,10 @@ function GameReviewPageInner({
   const reviewByNodeId = useMemo(() => reviewsByNode(moves), [moves]);
   const currentNode = moveTree.find((node) => node.id === selectedNodeId) ?? null;
   const selectedMove = reviewByNodeId.get(selectedNodeId) ?? null;
+  // A BEST line on the board: the panels stay on its error, the board shows the line's position
+  // (its move highlighted, none of the error's arrows or mark).
+  const bestLine = useGameStore(activeBestLine);
+  const boardMove = bestLine ? null : selectedMove;
   // On an unreviewed variation, commentary and engine evidence stay on the nearest reviewed ancestor.
   // The move whose commentary / engine line a link was clicked from keeps the anchor on its lines.
   const [linkOriginNodeId, setLinkOriginNodeId] = useState<string | null>(null);
@@ -211,29 +221,53 @@ function GameReviewPageInner({
   // Stats describe the finished review; while the pass runs they hold "—" instead of
   // re-computing (and re-flowing) on every analysed move.
   const statMoves = isRunning ? EMPTY_MOVES : moves;
-  const counts = useMemo(() => countBySeverity(statMoves), [statMoves]);
-  // The focused review: the game's few strongest lessons, and every mark for the Moves tab.
-  const moments = useMemo(() => keyMoments(statMoves), [statMoves]);
-  const marks = useMemo(() => markedMoves(statMoves), [statMoves]);
+  // Review as: the side the game is reviewed for (asked before an imported game's first review).
+  const reviewSide = useReviewSide(settings.reviewPlayerColor);
+  const side = reviewSideColor(reviewSide);
+  const sideKnown = reviewSide.status === "known";
+  // The board starts on the reviewed side (turning it by hand stays until the side changes).
+  useEffect(() => {
+    if (sideKnown) useGameStore.getState().setOrientation(side);
+  }, [board, side, sideKnown]);
+  // The focused review: the reviewed side's few strongest lessons (the key insights).
+  const moments = useMemo(
+    () => keyMoments(statMoves.filter((move) => moverOf(move) === side)),
+    [side, statMoves]
+  );
   const momentIds = useMemo(() => new Set(moments.map((moment) => moment.nodeId)), [moments]);
-  const [movesView, setMovesView] = useState<MovesView>("all");
-  const accuracy = useMemo(() => reviewAccuracy(statMoves), [statMoves]);
-  const average = useMemo(() => averageLoss(statMoves), [statMoves]);
   const { mutate: updateSetting } = useUpdateSettingMutation();
   const turnOnCommentary = useCallback(
     () => updateSetting({ key: "reviewCommentaryEnabled", value: true }),
     [updateSetting]
   );
-  const openReviewSettings = useCallback(() => onTabChange("settings"), [onTabChange]);
+  const openReviewSettings = useCallback(() => openReviewSettingsDialog(), []);
+  // The rating the shown review was made for (an older one: what a review now would use).
+  const currentRating = useReviewRating(settings, side);
+  const userRating = review?.rating?.rating ?? currentRating.rating;
   const selected = useGameReviewCommentary({
     enabled: settings.reviewCommentaryEnabled,
     detail: settings.reviewCommentaryDetail,
-    userRating: settings.reviewPlayerRating,
-    playerColor: settings.reviewPlayerColor,
+    userRating,
+    playerColor: side,
     settingsReady,
     move: panelMove,
     visible: activeTab === "commentary"
   });
+  // Key-insight cards expand to the same commentary while AI commentary is on (and keyed).
+  const openRouter = useOpenRouterConfigQuery();
+  const aiOn = settings.reviewCommentaryEnabled && Boolean(openRouter.data?.hasApiKey);
+  const cardCommentary = useMemo<CardCommentaryOptions | null>(
+    () =>
+      aiOn
+        ? {
+            detail: settings.reviewCommentaryDetail,
+            userRating,
+            playerColor: side,
+            settingsReady
+          }
+        : null,
+    [aiOn, settings.reviewCommentaryDetail, settingsReady, side, userRating]
+  );
 
   useEffect(() => {
     if (!id || id === "current" || id === gameId) return;
@@ -254,20 +288,25 @@ function GameReviewPageInner({
   }, [id, gameId]);
 
   const arrows = useMemo<ReviewArrow[]>(() => {
-    if (!selectedMove) return [];
+    if (!boardMove) return [];
     const result: ReviewArrow[] = [];
-    const best = uciSquares(selectedMove.bestMove);
+    const best = uciSquares(boardMove.bestMove);
     if (best) result.push({ ...best, brush: "green" });
-    const played = uciSquares(selectedMove.playedMove);
+    const played = uciSquares(boardMove.playedMove);
     // Red for a move that cost something (any error, marked or not), blue otherwise.
     if (played && played.orig !== best?.orig)
-      result.push({ ...played, brush: selectedMove.assessment?.severity ? "red" : "blue" });
+      result.push({ ...played, brush: boardMove.assessment?.severity ? "red" : "blue" });
     return result;
-  }, [selectedMove]);
-  const lastMove = uciSquares(selectedMove?.playedMove ?? currentNode?.uci ?? null);
+  }, [boardMove]);
+  const lastMove = uciSquares(
+    bestLine ? bestLineStep(bestLine).uci : (selectedMove?.playedMove ?? currentNode?.uci ?? null)
+  );
   const moveMark = useMemo(
-    () => boardMoveMark("review", { running: isRunning, moves, nodeId: selectedNodeId }),
-    [isRunning, moves, selectedNodeId]
+    () =>
+      bestLine
+        ? null
+        : boardMoveMark("review", { running: isRunning, moves, nodeId: selectedNodeId }),
+    [bestLine, isRunning, moves, selectedNodeId]
   );
   const whitePlayer = {
     name: headers.white || "White",
@@ -282,6 +321,12 @@ function GameReviewPageInner({
   // The side at the bottom of the board is the orientation; its opponent sits on top.
   const boardTop = orientation === "white" ? blackPlayer : whitePlayer;
   const boardBottom = orientation === "white" ? whitePlayer : blackPlayer;
+  // Each side's time left at the selected move, from the game's [%clk] (none without them).
+  const clocks = useMemo(
+    () => boardClocksAt(moveTree, selectedNodeId, headers.timeControl),
+    [headers.timeControl, moveTree, selectedNodeId]
+  );
+  const toMove = sideToMove(boardFen);
   const onMainline =
     selectedNodeId === "root" || reviewInput.some((move) => move.nodeId === selectedNodeId);
   // Key-moment steps count from the selected move (a variation counts from the move it leaves).
@@ -292,205 +337,327 @@ function GameReviewPageInner({
   );
   const recomputed = Boolean(review?.assessmentsRecomputed) && !isRunning;
   const hasMoves = moves.length > 0;
-  const hasStats = hasMoves && !isRunning;
   /** No main-line moves (and no saved review): nothing to analyse or explain. */
   const emptyGame = reviewInput.length === 0 && !hasMoves;
 
-  // Memoised: stepping through moves leaves the review stats (and their Stat tree) alone.
-  const summary = useMemo(
-    () => (
-      <StatGroup className="w-full">
-        <Stat label="Accuracy" value={hasStats && accuracy !== null ? accuracy : "—"} />
-        <Stat label="Avg loss" value={hasStats && average !== null ? `${average}cp` : "—"} mono />
-        <Stat label="Errors" value={hasStats ? <ErrorCounts counts={counts} /> : "—"} />
-      </StatGroup>
-    ),
-    [accuracy, average, counts, hasStats]
+  const changeSide = useCallback((next: "white" | "black") => chooseReviewSide(next), []);
+  const ratingLabel = reviewRatingLabel(review?.rating ?? currentRating);
+  // The review settings dialog (the titlebar's gear opens it): the side and its rating are in it.
+  const settingsDialog = (
+    <ReviewSettingsDialog
+      settings={settings}
+      reviewSide={{
+        side,
+        whiteName: whitePlayer.name,
+        blackName: blackPlayer.name,
+        ratingLabel,
+        onChange: changeSide
+      }}
+    />
+  );
+  // Start review: the first key moment, explained, then Next steps through the rest.
+  const startKeyMoments = useCallback(() => {
+    const first = moments[0];
+    if (!first) return;
+    selectNode(first.nodeId);
+    onTabChange("commentary");
+  }, [moments, onTabChange, selectNode]);
+  const startSideReview = useCallback(
+    (picked: "white" | "black") => {
+      chooseReviewSide(picked);
+      onAnalyze?.();
+    },
+    [onAnalyze]
   );
 
+  // The "Review" section (tabs and content) folds under its header; the charts take the space.
+  const reviewSection = useCollapsible("review-panel:review");
+  // The game against the user's repertoire, in the summary's OPENING section: compared as the side
+  // picked there, else the side reviewed.
+  const repertoireView = {
+    headline: (
+      <RepertoireHeadline
+        moveTree={moveTree}
+        color={openingColor ?? side}
+        remembered={rememberedRepertoires}
+        className="text-[12.5px] text-fg-muted"
+      />
+    ),
+    panel: (
+      <ReviewOpeningPanel
+        moveTree={moveTree}
+        selectedNodeId={selectedNodeId}
+        onSelectNode={selectNode}
+        color={openingColor ?? side}
+        onColorChange={changeOpeningColor}
+        remembered={rememberedRepertoires}
+        onStudy={onOpenRepertoireStudy}
+        onRefreshDecision={onRefreshRepertoireDecision}
+        onHub={onRepertoireHub}
+      />
+    )
+  };
   const panelId = useId();
   return (
-    <BoardWorkspace
-      tabPanel={tabPanelProps(panelId, activeTab)}
-      panelLabel="Review"
-      board={
-        <BoardStage
-          evalBar={<EvalBar orientation={orientation} />}
-          top={<PlayerRow name={boardTop.name} elo={boardTop.elo} color={boardTop.color} />}
-          bottom={
-            <PlayerRow name={boardBottom.name} elo={boardBottom.elo} color={boardBottom.color} />
-          }
-        >
-          <div className="relative h-full w-full">
-            {/* Square corners: the stage's frame clips the board to its own radius. */}
-            <ReviewBoard
-              fen={boardFen}
-              orientation={orientation}
-              arrows={arrows}
-              lastMove={lastMove ? [lastMove.orig, lastMove.dest] : undefined}
-              className="h-full w-full rounded-none"
-            />
-            <BoardMoveMarkBadge mark={moveMark} orientation={orientation} />
-          </div>
-        </BoardStage>
-      }
-      tabs={
-        <SegmentedControl
-          ariaLabel="Game review sections"
-          role="tablist"
-          panelId={panelId}
-          fullWidth
-          className={reviewTabsClass}
-          value={activeTab}
-          onChange={onTabChange}
-          options={reviewTabOptions}
-        />
-      }
-      summary={summary}
-      notices={
-        loadError || reviewError || outdatedMoves || recomputed ? (
-          <>
-            {loadError ? (
-              <Notice tone="warn" className="shrink-0">
-                {loadError}
-              </Notice>
-            ) : null}
-            {reviewError ? (
-              <Notice tone="danger" className="shrink-0">
-                {reviewError}
-              </Notice>
-            ) : null}
-            {recomputed ? (
-              <Notice tone="info" className="shrink-0">
-                This analysis predates the current move marks, so they were worked out again from
-                its saved evaluations. Great and Brilliant need a deeper search: analyse the game
-                again to see them.
-              </Notice>
-            ) : null}
-            {outdatedMoves ? (
-              <Notice tone="warn" className="shrink-0">
-                The moves changed after this analysis, so it no longer covers{" "}
-                {outdatedMoves === 1 ? "1 move" : `${outdatedMoves} moves`}. Analyse the game again
-                to update it.
-              </Notice>
-            ) : null}
-          </>
-        ) : null
-      }
-      footer={
-        <>
-          {(hasMoves || isRunning) && activeTab !== "settings" ? (
-            <div className="border-b border-line-subtle px-3 pb-1 pt-2">
-              <ReviewTape
-                moves={moves}
-                variationSelected={!onMainline}
-                selectedNodeId={selectedNodeId}
-                onSelectNode={selectNode}
+    <CardCommentaryContext.Provider value={cardCommentary}>
+      <BoardWorkspace
+        tabPanel={tabPanelProps(panelId, activeTab)}
+        header={<ReviewPanelHeader section={reviewSection} />}
+        bodyCollapsed={!reviewSection.open}
+        bodyId={reviewSection.contentId}
+        panelLabel="Review"
+        board={
+          <BoardStage
+            evalBar={<EvalBar orientation={orientation} />}
+            top={
+              <PlayerRow
+                name={boardTop.name}
+                elo={boardTop.elo}
+                color={boardTop.color}
+                clock={clocks?.[boardTop.color] ?? null}
+                clockActive={toMove === boardTop.color}
+              />
+            }
+            bottom={
+              <PlayerRow
+                name={boardBottom.name}
+                elo={boardBottom.elo}
+                color={boardBottom.color}
+                clock={clocks?.[boardBottom.color] ?? null}
+                clockActive={toMove === boardBottom.color}
+              />
+            }
+          >
+            {/* Its own stacking context: Chessground's layers and the move mark stack within the board. */}
+            <div className="relative isolate h-full w-full">
+              {/* Square corners: the stage's frame clips the board to its own radius. */}
+              <ReviewBoard
+                fen={boardFen}
                 orientation={orientation}
-                totalPlies={isRunning ? reviewInput.length : undefined}
-                keyMomentIds={momentIds}
-                actions={momentNav}
+                arrows={arrows}
+                lastMove={lastMove ? [lastMove.orig, lastMove.dest] : undefined}
+                className="h-full w-full rounded-none"
+              />
+              <BoardMoveMarkBadge mark={moveMark} orientation={orientation} />
+            </div>
+          </BoardStage>
+        }
+        tabs={
+          <SegmentedControl
+            ariaLabel="Game review sections"
+            role="tablist"
+            panelId={panelId}
+            fullWidth
+            className={reviewTabsClass}
+            value={activeTab}
+            onChange={onTabChange}
+            options={reviewTabOptions}
+          />
+        }
+        notices={
+          loadError || reviewError || outdatedMoves || recomputed ? (
+            <>
+              {loadError ? (
+                <Notice tone="warn" className="shrink-0">
+                  {loadError}
+                </Notice>
+              ) : null}
+              {reviewError ? (
+                <Notice tone="danger" className="shrink-0">
+                  {reviewError}
+                </Notice>
+              ) : null}
+              {recomputed ? (
+                <Notice tone="info" className="shrink-0">
+                  This analysis predates the current move marks, so they were worked out again from
+                  its saved evaluations. Great and Brilliant need a deeper search: analyse the game
+                  again to see them.
+                </Notice>
+              ) : null}
+              {outdatedMoves ? (
+                <Notice tone="warn" className="shrink-0">
+                  The moves changed after this analysis, so it no longer covers{" "}
+                  {outdatedMoves === 1 ? "1 move" : `${outdatedMoves} moves`}. Analyse the game
+                  again to update it.
+                </Notice>
+              ) : null}
+            </>
+          ) : null
+        }
+        footer={
+          <>
+            {hasMoves || isRunning ? (
+              <div
+                className={cn(
+                  "border-b border-line-subtle px-3 pb-1",
+                  // Review folded: the charts take the panel's height down to the navigation.
+                  !reviewSection.open && "flex min-h-0 flex-1 flex-col"
+                )}
+              >
+                {/* Its top edge is the charts' splitter, against the panel content above. */}
+                <ReviewCharts
+                  fill={!reviewSection.open}
+                  moves={moves}
+                  variationSelected={!onMainline}
+                  selectedNodeId={selectedNodeId}
+                  onSelectNode={selectNode}
+                  reviewedSide={side}
+                  totalPlies={isRunning ? reviewInput.length : undefined}
+                  keyMomentIds={momentIds}
+                  actions={momentNav}
+                  opening={isRunning ? undefined : review?.opening}
+                  mainline={reviewInput}
+                  timeControl={headers.timeControl}
+                  maia={{
+                    model: isRunning ? null : (review?.rating?.maiaModel ?? null),
+                    rating: userRating,
+                    // Reviews before schema 2 stored made-up Maia probabilities; a running one is new.
+                    trusted: isRunning || (review?.schemaVersion ?? 0) >= 2
+                  }}
+                />
+              </div>
+            ) : null}
+            {/* One last row: with the panel folded it's pinned to the bottom, Start review just
+                above the move navigation. */}
+            <div>
+              {hasMoves && !isRunning && moments.length ? (
+                // Always here, on every tab, whatever is folded: the key moments, one by one.
+                <div className="px-3 pt-2">
+                  <Button
+                    type="button"
+                    className="h-9 w-full border-transparent bg-accent-strong text-sm font-semibold text-fg hover:bg-accent-strong/85"
+                    onClick={startKeyMoments}
+                  >
+                    Start review
+                  </Button>
+                </div>
+              ) : null}
+              <MoveNavigation
+                caption={
+                  isRunning ? <ReviewProgressCaption fallbackTotal={reviewInput.length} /> : null
+                }
               />
             </div>
-          ) : null}
-          <MoveNavigation
-            caption={
-              isRunning ? <ReviewProgressCaption fallbackTotal={reviewInput.length} /> : null
-            }
+          </>
+        }
+      >
+        {emptyGame &&
+        (activeTab === "summary" || activeTab === "commentary" || activeTab === "engine") ? (
+          <div className="grid h-full place-items-center">
+            <EmptyState
+              icon={<Sparkles />}
+              title="Nothing to review yet"
+              description="This game has no moves. Import a PGN or play a game, then review it."
+              action={
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button variant="primary" size="sm" onClick={onImportPgn}>
+                    <Upload />
+                    Import PGN
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={onPlay}>
+                    <Swords />
+                    Play
+                  </Button>
+                </div>
+              }
+            />
+          </div>
+        ) : activeTab === "summary" ? (
+          isRunning ? (
+            <div className="grid h-full place-items-center">
+              <EmptyState
+                icon={<Sparkles />}
+                title="Analyzing…"
+                description="The summary is ready when the analysis finishes. Progress is shown below."
+              />
+            </div>
+          ) : hasMoves ? (
+            <ReviewSummary
+              moves={moves}
+              mainline={reviewInput}
+              opening={review?.opening}
+              side={side}
+              repertoire={repertoireView}
+              onOpenPuzzles={onOpenPuzzles}
+            />
+          ) : reviewSide.status === "ask" ? (
+            <ReviewSidePrompt
+              preselect={reviewSide.preselect}
+              whiteName={whitePlayer.name}
+              blackName={blackPlayer.name}
+              onStart={onAnalyze ? startSideReview : undefined}
+            />
+          ) : (
+            <div className="grid h-full place-items-center">
+              <EmptyState
+                icon={<Sparkles />}
+                title="No review yet"
+                description="Analyze the game to see each side's accuracy, marks and key insights."
+                action={
+                  onAnalyze ? (
+                    <Button variant="primary" size="sm" onClick={onAnalyze}>
+                      Analyze
+                    </Button>
+                  ) : undefined
+                }
+              />
+            </div>
+          )
+        ) : activeTab === "commentary" ? (
+          <ReviewCommentaryPanel
+            move={panelMove}
+            hasReview={hasMoves}
+            running={isRunning}
+            status={selected.status}
+            commentary={selected.commentary}
+            model={selected.model}
+            error={selected.error}
+            detail={settings.reviewCommentaryDetail}
+            userRating={userRating}
+            onRetry={selected.retry}
+            rewrite={selected.rewrite}
+            onAnalyze={onAnalyze}
+            onOpenCommentarySettings={onOpenCommentarySettings}
+            onOpenReviewSettings={openReviewSettings}
+            onTurnOnCommentary={turnOnCommentary}
+            moveContext={moveContext}
+            onGoToLine={goToLine}
+            variationAnchor={variationAnchor}
+            keyMoments={moments}
+            reviewMoves={moves}
+            onSelectNode={selectNode}
           />
-        </>
-      }
-    >
-      {emptyGame && (activeTab === "commentary" || activeTab === "engine") ? (
-        <div className="grid h-full place-items-center">
-          <EmptyState
-            icon={<Sparkles />}
-            title="Nothing to review yet"
-            description="This game has no moves. Import a PGN or play a game, then review it."
-            action={
-              <div className="flex flex-wrap justify-center gap-2">
-                <Button variant="primary" size="sm" onClick={onImportPgn}>
-                  <Upload />
-                  Import PGN
-                </Button>
-                <Button variant="outline" size="sm" onClick={onPlay}>
-                  <Swords />
-                  Play
-                </Button>
-              </div>
-            }
+        ) : null}
+        {activeTab === "moves" ? (
+          <ReviewMoveRail
+            nodes={moveTree}
+            selectedNodeId={selectedNodeId}
+            reviews={reviewByNodeId}
+            commentaryByNodeId={commentaryByNodeId}
+            onSelectNode={selectNode}
+            moves={moves}
+            keyMoments={moments}
+            opening={isRunning ? null : review?.opening}
+            orientation={orientation}
           />
-        </div>
-      ) : activeTab === "commentary" ? (
-        <ReviewCommentaryPanel
-          move={panelMove}
-          hasReview={hasMoves}
-          running={isRunning}
-          status={selected.status}
-          commentary={selected.commentary}
-          model={selected.model}
-          error={selected.error}
-          detail={settings.reviewCommentaryDetail}
-          userRating={settings.reviewPlayerRating}
-          onRetry={selected.retry}
-          rewrite={selected.rewrite}
-          onAnalyze={onAnalyze}
-          onOpenCommentarySettings={onOpenCommentarySettings}
-          onOpenReviewSettings={openReviewSettings}
-          onTurnOnCommentary={turnOnCommentary}
-          moveContext={moveContext}
-          onGoToLine={goToLine}
-          variationAnchor={variationAnchor}
-          keyMoments={moments}
-          reviewMoves={moves}
-          onSelectNode={selectNode}
-        />
-      ) : null}
-      {activeTab === "moves" ? (
-        <ReviewMoveRail
-          nodes={moveTree}
-          selectedNodeId={selectedNodeId}
-          reviews={reviewByNodeId}
-          commentaryByNodeId={commentaryByNodeId}
-          onSelectNode={selectNode}
-          view={movesView}
-          onViewChange={setMovesView}
-          moves={moves}
-          keyMoments={moments}
-          marks={marks}
-        />
-      ) : null}
-      {activeTab === "opening" ? (
-        <ReviewOpeningPanel
-          moveTree={moveTree}
-          selectedNodeId={selectedNodeId}
-          onSelectNode={selectNode}
-          color={openingColor}
-          onColorChange={changeOpeningColor}
-          remembered={rememberedRepertoires}
-          onStudy={onOpenRepertoireStudy}
-          onRefreshDecision={onRefreshRepertoireDecision}
-          onHub={onRepertoireHub}
-        />
-      ) : null}
-      {activeTab === "engine" && !emptyGame ? (
-        <ReviewEnginePanel
-          move={panelMove}
-          hasReview={hasMoves}
-          running={isRunning}
-          showTopLines={settings.reviewShowTopLines}
-          userRating={settings.reviewPlayerRating}
-          onAnalyze={onAnalyze}
-          moves={moves}
-          parentNodeId={panelParentId}
-          onGoToLine={goToLine}
-          variationAnchor={variationAnchor}
-        />
-      ) : null}
-      {activeTab === "settings" ? (
-        <ReviewSettingsPanel settings={settings} onClose={() => onTabChange("commentary")} />
-      ) : null}
-    </BoardWorkspace>
+        ) : null}
+        {activeTab === "engine" && !emptyGame ? (
+          <ReviewEnginePanel
+            move={panelMove}
+            hasReview={hasMoves}
+            running={isRunning}
+            showTopLines={settings.reviewShowTopLines}
+            userRating={userRating}
+            onAnalyze={onAnalyze}
+            moves={moves}
+            parentNodeId={panelParentId}
+            onGoToLine={goToLine}
+            variationAnchor={variationAnchor}
+          />
+        ) : null}
+      </BoardWorkspace>
+      {settingsDialog}
+    </CardCommentaryContext.Provider>
   );
 }
 
@@ -519,30 +686,6 @@ function ReviewProgressCaption({ fallbackTotal }: { fallbackTotal: number }) {
           style={{ width: `${percent}%` }}
         />
       </span>
-    </span>
-  );
-}
-
-function ErrorCounts({ counts }: { counts: Record<ErrorSeverity, number> }) {
-  const items = [
-    { key: "blunder", label: "blunders", glyph: "??" },
-    { key: "mistake", label: "mistakes", glyph: "?" },
-    { key: "inaccuracy", label: "inaccuracies", glyph: "?!" }
-  ] as const;
-  const summary = items.map((item) => `${counts[item.key]} ${item.label}`).join(", ");
-  return (
-    <span className="inline-flex items-baseline gap-2" aria-label={summary} title={summary}>
-      {items.map((item) => {
-        const count = counts[item.key];
-        return (
-          <span key={item.key} className="inline-flex items-baseline">
-            <span className={count ? annotationTone[item.key].text : "text-fg-subtle"}>
-              {count}
-            </span>
-            <span className="text-2xs font-normal text-fg-subtle">{item.glyph}</span>
-          </span>
-        );
-      })}
     </span>
   );
 }

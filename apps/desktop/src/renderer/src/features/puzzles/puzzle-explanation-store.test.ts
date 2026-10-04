@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExplainPuzzleResult } from "@chaturanga/shared/ipc/chaturanga-api";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
+import { uniformRatings } from "@chaturanga/shared/types/ratings";
 import type { AnalysePositionsResult, EngineConfig } from "@chaturanga/shared/types/engine";
 import { usePuzzleStore } from "../../stores/puzzle-store";
 import { explanationKey, puzzleIdentity } from "./puzzle-explanation";
@@ -36,7 +37,7 @@ const request: ExplainRequest = {
   settings: {
     reviewSearchTimeMs: 500,
     reviewMultiPv: 3,
-    reviewPlayerRating: 1500,
+    playerRatings: uniformRatings(1500),
     reviewCommentaryDetail: "balanced"
   }
 };

@@ -1,8 +1,10 @@
 import { useCallback } from "react";
+import { reviewRatingContext } from "@chaturanga/shared/chess/review-rating";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import { mainlineReviewInput } from "../features/game-review/review-utils";
 import { pickDefaultEngine } from "../features/game-review/review-engine-picker";
+import { currentReviewSide } from "../features/game-review/review-side";
 import { useGameStore } from "../stores/game-store";
 import { useReviewStore } from "../stores/review-store";
 import { ipcErrorMessage } from "@/lib/ipc-error";
@@ -28,7 +30,8 @@ export function useReviewRunner({
   engines,
   settings,
   gameLoading,
-  onEngineMissing
+  onEngineMissing,
+  onSideNeeded
 }: {
   engines: readonly EngineConfig[] | undefined;
   settings: AppSettings;
@@ -36,11 +39,13 @@ export function useReviewRunner({
   gameLoading: boolean;
   /** No usable evaluation engine: the user has to pick one in Review settings. */
   onEngineMissing: () => void;
+  /** The game's side isn't known (an imported game): the user picks it before the review starts. */
+  onSideNeeded: () => void;
 }): { startReview: () => Promise<void>; hasMoves: boolean } {
   // Only "is there a main line?" is rendered; the game itself is read when a review starts, so the
   // app shell does not re-render on every move.
   const hasMoves = useGameStore((state) => hasMainlineMove(state.moveTree));
-  const { defaultEngineId, reviewUseMaia, reviewSearchTimeMs } = settings;
+  const { defaultEngineId, reviewUseMaia, reviewSearchTimeMs, reviewPlayerColor } = settings;
 
   const startReview = useCallback(async () => {
     const review = useReviewStore.getState();
@@ -54,6 +59,12 @@ export function useReviewRunner({
     if (!reviewInput.length) return;
     if (gameLoading) {
       review.setError("Loading the selected game…");
+      return;
+    }
+    // Review as: reviewed for a known side only (the Summary asks for an imported game's).
+    const side = currentReviewSide(reviewPlayerColor);
+    if (side.status === "ask") {
+      onSideNeeded();
       return;
     }
     const engine = defaultEngineId
@@ -89,7 +100,9 @@ export function useReviewRunner({
         rootFen,
         moves: reviewInput,
         moveTimeMs: reviewSearchTimeMs,
-        timeControl: headers.timeControl ?? null
+        timeControl: headers.timeControl ?? null,
+        // Main rates the review from the game's own rating for this side, else Settings.
+        rating: reviewRatingContext(headers, game.source, side.side)
       });
     } catch (error) {
       // The invoke error wraps main's message; a cancelled review (or one replaced by another
@@ -99,7 +112,16 @@ export function useReviewRunner({
         useReviewStore.getState().setError(message);
       }
     }
-  }, [defaultEngineId, engines, gameLoading, onEngineMissing, reviewSearchTimeMs, reviewUseMaia]);
+  }, [
+    defaultEngineId,
+    engines,
+    gameLoading,
+    onEngineMissing,
+    onSideNeeded,
+    reviewPlayerColor,
+    reviewSearchTimeMs,
+    reviewUseMaia
+  ]);
 
   return { startReview, hasMoves };
 }

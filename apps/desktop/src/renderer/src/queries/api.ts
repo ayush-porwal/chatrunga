@@ -51,6 +51,21 @@ export function useEngineRegistrySubscription() {
   );
 }
 
+/**
+ * Reads the settings again when the main process changed some itself (the Lichess ratings sync).
+ * Mount once.
+ */
+export function useSettingsChangedSubscription() {
+  const queryClient = useQueryClient();
+  useEffect(
+    () =>
+      api()?.events.onSettingsChanged?.(
+        () => void queryClient.invalidateQueries({ queryKey: queryKeys.settings })
+      ),
+    [queryClient]
+  );
+}
+
 export function useEnginesQuery() {
   return useQuery({
     queryKey: queryKeys.engines,
@@ -153,6 +168,21 @@ export function useSaveGameMutation() {
 /** The save was refused on purpose: the game was just deleted (not a failure to report). */
 export function isSaveSuppressed(error: unknown): boolean {
   return ipcErrorMessage(error) === SAVE_SUPPRESSED_AFTER_DELETE;
+}
+
+/**
+ * Deletes one saved analysis of a game (`reviewId`), or every one (null); the game stays. The
+ * library lists each game's analysis count, so the games queries are read again.
+ */
+export function useDeleteAnalysesMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ gameId, reviewId }: { gameId: string; reviewId: string | null }) =>
+      reviewId === null
+        ? requireApi().games.removeReviews(gameId)
+        : requireApi().games.removeReview(gameId, reviewId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.games })
+  });
 }
 
 export function useDeleteGameMutation() {
