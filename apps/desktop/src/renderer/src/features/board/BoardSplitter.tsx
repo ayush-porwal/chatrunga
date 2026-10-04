@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { MIN_BOARD_EDGE, splitterBoardEdge } from "./board-frame";
 import { useBoardEdgeStore } from "./useBoardEdge";
 
-type Drag = { pointerId: number; x: number; start: number; max: number };
+type Drag = { pointerId: number; x: number; start: number; max: number; shift: number };
 
 const width = (ref: RefObject<HTMLElement | null>) =>
   ref.current?.getBoundingClientRect().width ?? 0;
@@ -48,15 +48,18 @@ function useMeasuredEdges(
  * width. A drag starts from the board's measured edge, so a board limited by the height moves
  * with the first pixel. The arrow keys step it (Shift: further), Home and End go to the smallest
  * and largest board; Enter or a double-click fills the space again. `edgeRef` measures the board's
- * current edge, `maxRef` the largest it can take.
+ * current edge, `maxRef` the largest it can take, and `shift` how far left the board moves as a
+ * drag switches it to the resized layout (resizeShift), which the drag makes up.
  */
 export function BoardSplitter({
   edgeRef,
   maxRef,
+  shift,
   className
 }: {
   edgeRef: RefObject<HTMLElement | null>;
   maxRef: RefObject<HTMLElement | null>;
+  shift: () => number;
   className?: string;
 }) {
   const resize = useBoardEdgeStore((state) => state.resize);
@@ -75,13 +78,19 @@ export function BoardSplitter({
     // No text selection while dragging.
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
-    drag.current = { pointerId: event.pointerId, x: event.clientX, start: from, max: limit };
+    drag.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      start: from,
+      max: limit,
+      shift: shift()
+    };
     setDragging(true);
   };
   const move = (event: PointerEvent<HTMLDivElement>) => {
     const current = drag.current;
     if (!current || current.pointerId !== event.pointerId) return;
-    resize(splitterBoardEdge(current.start, event.clientX - current.x, current.max));
+    resize(splitterBoardEdge(current.start, event.clientX - current.x, current.max, current.shift));
   };
   const end = (event: PointerEvent<HTMLDivElement>) => {
     if (drag.current?.pointerId !== event.pointerId) return;

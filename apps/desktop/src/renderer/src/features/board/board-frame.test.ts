@@ -5,6 +5,7 @@ import {
   clampBoardEdge,
   draggedBoardEdge,
   keyedBoardEdge,
+  resizeShift,
   restoredBoardEdge,
   snapBoardSize,
   splitterBoardEdge
@@ -105,6 +106,15 @@ describe("draggedBoardEdge", () => {
     expect(draggedBoardEdge(700, 300, 0, 820)).toBe(820);
   });
 
+  it("makes up the board's move to the left edge across, so the grip stays under the pointer", () => {
+    // A filled board 10px from the left edge: 140 left shrinks it by 130 as it moves 10 left.
+    expect(draggedBoardEdge(500, -140, -70, 900, 10)).toBe(370);
+    // The first pixel left keeps the grip where it was.
+    expect(draggedBoardEdge(500, -1, 0, 900, 10)).toBe(509);
+    // Down, the board's left edge doesn't move the grip: no shift.
+    expect(draggedBoardEdge(500, -10, -50, 900, 10)).toBe(400);
+  });
+
   it("never shrinks the board below the minimum edge", () => {
     expect(draggedBoardEdge(300, -400, -400, 900)).toBe(MIN_BOARD_EDGE);
   });
@@ -148,6 +158,19 @@ describe("splitterBoardEdge", () => {
   it("stops at the minimum edge, and where the panel reaches its minimum width", () => {
     expect(splitterBoardEdge(400, -300, 900)).toBe(MIN_BOARD_EDGE);
     expect(splitterBoardEdge(700, 400, 820)).toBe(820);
+  });
+
+  it("makes up the board's move to the left edge, so the splitter stays under the pointer", () => {
+    // A filled board 10px from the left edge: 160 left shrinks it by 150 as it moves 10 left.
+    expect(splitterBoardEdge(640, -160, 900, 10)).toBe(490);
+  });
+});
+
+describe("resizeShift", () => {
+  it("is the filled grid's centring margin, and nothing once the grid spans the workspace", () => {
+    expect(resizeShift(187.25, 177)).toBe(10.25);
+    expect(resizeShift(177, 177)).toBe(0);
+    expect(resizeShift(176.5, 177)).toBe(0);
   });
 });
 

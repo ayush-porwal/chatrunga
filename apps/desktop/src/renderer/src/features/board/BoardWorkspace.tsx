@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode
+} from "react";
 import { defaultSettings } from "@chaturanga/shared/types/settings";
 import { useSettingsQuery } from "../../queries/api";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { useBoardFocused } from "./board-focus";
 import { BoardResizeContext, BoardResizeGrip } from "./BoardResizeGrip";
 import { BoardSplitter } from "./BoardSplitter";
+import { resizeShift } from "./board-frame";
 import { useBoardEdgeStore } from "./useBoardEdge";
 import { useFocusCentring, useSnappedBoardFrame } from "./useBoardFrame";
 
@@ -108,7 +117,18 @@ export function BoardWorkspace({
   const resizedEdge = panelVisible ? storedEdge : null;
   const maxRef = useRef<HTMLDivElement>(null);
   const edgeRef = useRef<HTMLDivElement>(null);
-  const resizable = useMemo(() => (panelVisible ? { maxRef } : null), [panelVisible]);
+  const gridRef = useRef<HTMLDivElement>(null);
+  // How far left the board moves as a drag switches it to the resized layout (resizeShift): the
+  // grip and the splitter make it up, so they stay under the pointer.
+  const measureShift = useCallback(() => {
+    const grid = gridRef.current?.getBoundingClientRect();
+    const root = rootRef.current?.getBoundingClientRect();
+    return grid && root ? resizeShift(grid.left, root.left) : 0;
+  }, []);
+  const resizable = useMemo(
+    () => (panelVisible ? { maxRef, shift: measureShift } : null),
+    [measureShift, panelVisible]
+  );
   const rootStyle = useMemo<CSSProperties | undefined>(() => {
     if (evalBarShown && resizedEdge === null) return undefined;
     return {
@@ -153,6 +173,7 @@ export function BoardWorkspace({
         aria-hidden="true"
       />
       <div
+        ref={gridRef}
         className={cn(
           "mx-auto grid h-full min-h-0 w-full min-w-0 p-(--workspace-pad)",
           // Same track count in both states, so the column, the gap and the cap ease together — like the
@@ -187,6 +208,7 @@ export function BoardWorkspace({
           <BoardSplitter
             edgeRef={edgeRef}
             maxRef={maxRef}
+            shift={measureShift}
             className="col-start-2 row-start-1 ml-[calc(-0.5*var(--workspace-pad)_-_0.3125rem)] justify-self-start"
           />
         ) : null}

@@ -13,13 +13,15 @@ import "./board.css";
 /**
  * Provided by a <BoardWorkspace> while its side panel shows (never in focus mode, where the board
  * always fills): `maxRef` measures the largest edge the board can take beside the panel at its
- * minimum width (`--workspace-board-max`). Null elsewhere, and then the board has no grip.
+ * minimum width (`--workspace-board-max`), and `shift` how far left the board moves as a drag
+ * switches it to the resized layout (resizeShift). Null elsewhere, and then the board has no grip.
  */
 export const BoardResizeContext = createContext<{
   maxRef: RefObject<HTMLElement | null>;
+  shift: () => number;
 } | null>(null);
 
-type Drag = { pointerId: number; x: number; y: number; start: number; max: number };
+type Drag = { pointerId: number; x: number; y: number; start: number; max: number; shift: number };
 
 /**
  * The board's resize grip, in its frame's bottom-right corner: neutral diagonal lines that show
@@ -54,7 +56,8 @@ export function BoardResizeGrip({ availRef }: { availRef: RefObject<HTMLElement 
       x: event.clientX,
       y: event.clientY,
       start: edge,
-      max
+      max,
+      shift: resizable.shift()
     };
     setDragging(true);
   };
@@ -66,7 +69,8 @@ export function BoardResizeGrip({ availRef }: { availRef: RefObject<HTMLElement 
         current.start,
         event.clientX - current.x,
         event.clientY - current.y,
-        current.max
+        current.max,
+        current.shift
       )
     );
   };

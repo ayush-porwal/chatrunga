@@ -52,6 +52,19 @@ async function gripCentre(page: Page) {
 
 const gripOpacity = (page: Page) => grip(page).evaluate((el) => getComputedStyle(el).opacity);
 
+/** Whether a pointer at (x, y) reaches `target`: a view change's transition still covers the page. */
+const reaches = (target: ReturnType<Page["locator"]>, x: number, y: number) =>
+  target.evaluate((el, [px, py]) => el.contains(document.elementFromPoint(px, py)), [
+    x,
+    y
+  ] as const);
+
+/**
+ * How far a board edge can be from the edge a resize asked for: Chessground rounds it down to
+ * whole-pixel squares (8 device pixels at most, as many CSS pixels at a ratio of 1).
+ */
+const SQUARE_ROUNDING = 8;
+
 /** Steps the move navigation to the `ply`-th move of the main line (0: the starting position). */
 async function goToPly(page: Page, ply: number, total: number) {
   await navigation(page).getByRole("button", { name: "First move", exact: true }).click();
@@ -131,16 +144,21 @@ test("the board fills its space, and its corner grip resizes it for the side pan
   await page.mouse.down();
   // Along the corner's own path: 140 across, 70 up (the board is centred down its cell).
   await page.mouse.move(corner.x - 140, corner.y - 70, { steps: 10 });
-  // Still shown mid-drag, and still under the pointer.
+  // Still shown mid-drag, and still under the pointer across (the axis the drag follows); down, it
+  // rises half as far as the board shrank, the board centred down its cell.
   await expect.poll(() => gripOpacity(page)).toBe("1");
   const followed = await gripCentre(page);
+  const shrunk = filled - (await boardEdge(page));
   expect(Math.abs(followed.x - (corner.x - 140))).toBeLessThan(6);
-  expect(Math.abs(followed.y - (corner.y - 70))).toBeLessThan(6);
+  expect(Math.abs(followed.y - (corner.y - shrunk / 2))).toBeLessThan(6);
   await page.mouse.up();
   const resized = await boardEdge(page);
-  expect(resized).toBeGreaterThan(filled - 150);
-  expect(resized).toBeLessThan(filled - 130);
   const square = await box(board(page).locator("cg-board"));
+  // A filled board's grid is centred in the workspace, a resized one starts at its left edge: the
+  // drag made up the board's move left, so it shrank by the drag less that shift.
+  const shift = cg.x - square.x;
+  expect(shift).toBeGreaterThanOrEqual(0);
+  expect(Math.abs(resized - (filled - 140 + shift))).toBeLessThanOrEqual(SQUARE_ROUNDING);
   expect(square.height).toBeCloseTo(square.width, 0);
   expect((await box(panel)).width).toBeGreaterThan(panelBefore + 100);
   // No width is left over: the board's cell starts at the workspace's padding and is as wide as the
@@ -198,17 +216,23 @@ test("the line between the board and the panel is a splitter that resizes both",
   const filled = await boardEdge(page);
   const panelBefore = (await box(panel)).width;
 
-  // Dragged 160px left, the board shrinks by as much and the panel takes the width.
+  // Dragged 160px left, it stays under the pointer: the board shrinks by as much, less how far it
+  // moved left to the content's edge, and the panel takes the width.
   const line = await box(splitter(page));
   const x = line.x + line.width / 2;
   const y = line.y + line.height / 2;
+  const before = await box(board(page).locator("cg-board"));
+  await expect.poll(() => reaches(splitter(page), x, y)).toBe(true);
   await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.move(x - 160, y, { steps: 10 });
+  const dragged = await box(splitter(page));
+  expect(Math.abs(dragged.x + dragged.width / 2 - (x - 160))).toBeLessThan(2);
   await page.mouse.up();
   const resized = await boardEdge(page);
-  expect(resized).toBeGreaterThan(filled - 170);
-  expect(resized).toBeLessThan(filled - 150);
+  const shift = before.x - (await box(board(page).locator("cg-board"))).x;
+  expect(shift).toBeGreaterThanOrEqual(0);
+  expect(Math.abs(resized - (filled - 160 + shift))).toBeLessThanOrEqual(SQUARE_ROUNDING);
   expect((await box(panel)).width).toBeGreaterThan(panelBefore + 150);
   // Its value is the board's edge.
   const value = Number(await splitter(page).getAttribute("aria-valuenow"));
@@ -233,7 +257,9 @@ test("the line between the board and the panel is a splitter that resizes both",
 
   // A double-click fills the space again.
   const restore = await box(splitter(again.page));
-  await again.page.mouse.dblclick(restore.x + restore.width / 2, restore.y + restore.height / 2);
+  const [rx, ry] = [restore.x + restore.width / 2, restore.y + restore.height / 2];
+  await expect.poll(() => reaches(splitter(again.page), rx, ry)).toBe(true);
+  await again.page.mouse.dblclick(rx, ry);
   await expect.poll(() => boardEdge(again.page)).toBeGreaterThan(filled - 12);
 });
 

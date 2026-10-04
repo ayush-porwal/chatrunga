@@ -55,25 +55,43 @@ export function clampBoardEdge(edge: number, max: number): number {
 }
 
 /**
+ * How far left the board moves as a drag switches it from filling its space to the resized layout:
+ * a filled board's grid is capped and centred in the workspace (its left edge at `gridLeft`), a
+ * resized one spans the workspace from its left edge (`workspaceLeft`). Zero once resized.
+ */
+export function resizeShift(gridLeft: number, workspaceLeft: number): number {
+  return Math.max(0, gridLeft - workspaceLeft);
+}
+
+/**
  * The board's edge while its bottom-right grip is dragged `dx` across and `dy` down from where the
  * drag started at edge `start` (clampBoardEdge). The board is anchored at its cell's left edge and
  * centred down it, so an edge change of d moves the grip d across but only d/2 down. The edge
  * follows the axis the pointer moved most along, `dx` across or `2·dy` down, growing or shrinking
  * as a square: straight left or up shrinks it, straight right or down grows it, and the grip stays
- * under the pointer along that axis.
+ * under the pointer along that axis. Across, the edge makes up the `shift` the board's left edge
+ * moved as the drag began (resizeShift), so the grip doesn't jump from under the pointer.
  */
-export function draggedBoardEdge(start: number, dx: number, dy: number, max: number): number {
+export function draggedBoardEdge(
+  start: number,
+  dx: number,
+  dy: number,
+  max: number,
+  shift = 0
+): number {
   const down = 2 * dy;
-  return clampBoardEdge(start + (Math.abs(dx) >= Math.abs(down) ? dx : down), max);
+  return clampBoardEdge(start + (Math.abs(dx) >= Math.abs(down) ? dx + shift : down), max);
 }
 
 /**
  * The board's edge while the splitter between the board and the side panel is dragged `dx` across
  * from where the drag started at edge `start` (clampBoardEdge): left shrinks the board and widens
- * the panel by as much, right does the reverse.
+ * the panel, right does the reverse, the splitter staying under the pointer. The edge makes up the
+ * `shift` the board's left edge moved as the drag began (resizeShift); once resized, it changes by
+ * the drag.
  */
-export function splitterBoardEdge(start: number, dx: number, max: number): number {
-  return clampBoardEdge(start + dx, max);
+export function splitterBoardEdge(start: number, dx: number, max: number, shift = 0): number {
+  return clampBoardEdge(start + dx + shift, max);
 }
 
 /** The splitter's arrow-key step (CSS px), and with Shift held. */
