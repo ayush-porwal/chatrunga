@@ -4,6 +4,7 @@ import {
   COMMENTARY_DEBOUNCE_MS,
   CommentaryScheduler,
   commentarySettingsKey,
+  canRequestCommentary,
   decideCommentary,
   isCurrentCommentary,
   writtenForEarlierMarks
@@ -148,5 +149,14 @@ describe("commentary written before the current move marks", () => {
     expect(writtenForEarlierMarks(undefined)).toBe(false);
     // Paid-for text is never thrown away or re-requested automatically.
     expect(decideCommentary({ ...base, cached: ai(), settingsKey: key })).toBe("cached");
+  });
+
+  it("is written again by hand only when an automatic request could be made", () => {
+    expect(canRequestCommentary(base)).toBe(true);
+    // Switched off, configuration still loading, no key, or nothing to send: no paid request.
+    expect(canRequestCommentary({ ...base, enabled: false })).toBe(false);
+    expect(canRequestCommentary({ ...base, configLoading: true })).toBe(false);
+    expect(canRequestCommentary({ ...base, hasApiKey: false })).toBe(false);
+    expect(canRequestCommentary({ ...base, hasPayload: false })).toBe(false);
   });
 });

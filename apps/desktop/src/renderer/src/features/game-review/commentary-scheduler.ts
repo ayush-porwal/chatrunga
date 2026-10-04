@@ -50,6 +50,19 @@ export function writtenForEarlierMarks(item: ReviewCommentary | undefined): bool
   return Boolean(item) && (item?.payloadVersion ?? 1) < REVIEW_INSIGHT_PAYLOAD_VERSION;
 }
 
+/**
+ * A new explanation can be asked for by hand (Write again) only when an automatic request could be
+ * made: AI commentary is on, its configuration has loaded, a key is saved and the move has a payload.
+ */
+export function canRequestCommentary(input: {
+  enabled: boolean;
+  configLoading: boolean;
+  hasApiKey: boolean;
+  hasPayload: boolean;
+}): boolean {
+  return input.enabled && !input.configLoading && input.hasApiKey && input.hasPayload;
+}
+
 export type CommentaryDecision =
   /** Review not ready / panel not visible / no move: do nothing. */
   | "idle"

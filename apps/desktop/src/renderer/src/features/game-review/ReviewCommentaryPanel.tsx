@@ -98,7 +98,7 @@ export function ReviewCommentaryPanel({
   /** Goes to a move (a key moment's row). */
   onSelectNode?: (nodeId: string) => void;
   /** Set when the explanation was written before the current move marks (see useGameReviewCommentary). */
-  rewrite?: { run: () => void; pending: boolean; error: string | null } | null;
+  rewrite?: { run: (() => void) | null; pending: boolean; error: string | null } | null;
 }) {
   const loading = !running && Boolean(move) && status === "loading";
   // The placeholder stays for one fade after the text arrives, so the two cross-fade in place.
@@ -245,15 +245,17 @@ export function ReviewCommentaryPanel({
                 tone="info"
                 title="Written before the current move marks"
                 action={
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    disabled={rewrite.pending}
-                    onClick={rewrite.run}
-                  >
-                    <RefreshCw />
-                    {rewrite.pending ? "Writing…" : "Write again"}
-                  </Button>
+                  rewrite.run ? (
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      disabled={rewrite.pending}
+                      onClick={rewrite.run}
+                    >
+                      <RefreshCw />
+                      {rewrite.pending ? "Writing…" : "Write again"}
+                    </Button>
+                  ) : undefined
                 }
               >
                 {rewrite.error ??

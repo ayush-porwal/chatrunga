@@ -22,6 +22,7 @@ import {
 import {
   CommentaryScheduler,
   commentarySettingsKey,
+  canRequestCommentary,
   decideCommentary,
   isCurrentCommentary,
   writtenForEarlierMarks,
@@ -59,10 +60,11 @@ export type SelectedMoveCommentary = {
   retry: () => void;
   /**
    * Set when the explanation shown was written before the current move marks: asking for a new
-   * one (never automatic — explanations are paid for), whether that is under way, and why the last
+   * one (never automatic — explanations are paid for; null while a request can't be made: AI
+   * commentary off, no key, configuration loading), whether that is under way, and why the last
    * request failed.
    */
-  rewrite: { run: () => void; pending: boolean; error: string | null } | null;
+  rewrite: { run: (() => void) | null; pending: boolean; error: string | null } | null;
 };
 
 type Options = {
@@ -165,16 +167,20 @@ export function useGameReviewCommentary({
     : undefined;
   const jobKey =
     review && reviewedMove ? `${review.createdAt}:${reviewedMove.ply}:${settingsKey}` : "";
-  const decision = decideCommentary({
-    active,
+  const prerequisites = {
     enabled,
     configLoading: !settingsReady || openRouterConfig.isLoading,
     hasApiKey: Boolean(openRouterConfig.data?.hasApiKey),
-    hasPayload: Boolean(payload),
+    hasPayload: Boolean(payload)
+  };
+  const decision = decideCommentary({
+    active,
+    ...prerequisites,
     cached,
     settingsKey,
     failed: Boolean(jobKey && failures[jobKey])
   });
+  const canRequest = canRequestCommentary(prerequisites);
 
   const requestOne = useCallback(
     async (input: {
@@ -262,15 +268,17 @@ export function useGameReviewCommentary({
     () =>
       earlier && jobKey
         ? {
-            run: () => {
-              setRewriting(jobKey);
-              retry();
-            },
+            run: canRequest
+              ? () => {
+                  setRewriting(jobKey);
+                  retry();
+                }
+              : null,
             pending: rewriting === jobKey && !failures[jobKey],
             error: rewriting === jobKey ? (failures[jobKey] ?? null) : null
           }
         : null,
-    [earlier, failures, jobKey, retry, rewriting]
+    [canRequest, earlier, failures, jobKey, retry, rewriting]
   );
 
   const status = statusFor(decision, isCurrentCommentary(cached, settingsKey));

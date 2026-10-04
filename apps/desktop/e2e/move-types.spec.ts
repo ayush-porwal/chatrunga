@@ -278,13 +278,13 @@ test("an analysis saved before the current marks opens re-assessed from its eval
   );
   await screenshot(page, "recomputed");
 
-  // That explanation still shows, labelled as written before the current marks, with a way to
-  // have it written again (nothing is requested on its own).
+  // That explanation still shows, labelled as written before the current marks (nothing is
+  // requested on its own). This profile has no OpenRouter key, so it can't be written again here.
   await reviewTabs(page).getByRole("tab", { name: "Commentary", exact: true }).click();
   await treeMoveFromTape(page, "4… Qg5");
   await expect(page.getByText("Well spotted: Qg5 hits g2 and the knight on e5.")).toBeVisible();
   await expect(page.getByText("Written before the current move marks")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Write again" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Write again" })).toHaveCount(0);
   await screenshot(page, "earlier-commentary");
 });
 
