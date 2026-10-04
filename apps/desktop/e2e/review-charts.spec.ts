@@ -60,10 +60,14 @@ async function reviewTrap({ app, page }: LaunchedApp, profile: string, withClock
     .getByRole("dialog", { name: "Choose a game" })
     .getByRole("button", { name: /^Alpha vs Beta/ })
     .click();
-  // An imported game asks which side to review first.
-  const start = page.getByRole("button", { name: "Start review", exact: true });
-  if (await start.isVisible()) await start.click();
-  else await titlebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
+  await titlebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
+  // An imported game asks which side it's reviewed as before its review starts: White.
+  const reviewAs = page.getByRole("tabpanel", { name: "Summary" });
+  await reviewAs
+    .getByRole("radiogroup", { name: "Review this game as" })
+    .getByRole("radio", { name: "White (Alpha)" })
+    .click();
+  await reviewAs.getByRole("button", { name: "Start review", exact: true }).click();
   await expect(
     titlebar(page).getByRole("button", { name: "Analyze again", exact: true })
   ).toBeVisible({ timeout: 60_000 });
@@ -132,17 +136,38 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
   await page.keyboard.press("ArrowRight");
   await expect(counter(page)).toHaveText("8 / 14");
 
-  // Each strip folds on its own, remembered across a reload; folding hands its height to the others.
+  // Each strip folds on its own, remembered across a reload. Under a height set with the splitter,
+  // folding hands its height to the others (unset, the charts take the default for the views shown).
+  await splitter(page).focus();
+  await page.keyboard.press("ArrowUp");
   const winHeight = async () => (await view(page, "winning-chances").boundingBox())?.height ?? 0;
   const before = await winHeight();
   await charts(page).getByRole("button", { name: "Time per move" }).click();
   await expect(view(page, "times")).toHaveCount(0);
   await expect.poll(winHeight).toBeGreaterThan(before);
+  // A reloaded page starts without the game: it is opened again from the picker, once its review
+  // is saved.
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga;
+        const { items } = await api.games.listPage({ filter: "all" });
+        return items.map((item) => [item.white, item.reviewCount]);
+      })
+    )
+    .toEqual([["Alpha", 1]]);
   await page.reload();
+  await sidebar(page).getByRole("button", { name: "Game review", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Choose a game" })
+    .getByRole("button", { name: /^Alpha vs Beta/ })
+    .click();
   await expect(charts(page)).toBeVisible();
   await expect(view(page, "times")).toHaveCount(0);
   await charts(page).getByRole("button", { name: "Time per move" }).click();
   await expect(view(page, "times")).toBeVisible();
+  // Back to the default height.
+  await splitter(page).dblclick();
 
   // The whole Charts section folds to its header (the key insights stay), and the splitter goes.
   await charts(page).getByRole("button", { name: "Charts" }).click();
@@ -152,9 +177,11 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
   await charts(page).getByRole("button", { name: "Charts" }).click();
   await expect(view(page, "winning-chances")).toBeVisible();
 
-  // The splitter: dragging it up makes the charts taller; a double-click resets the height; the
-  // arrow keys step it.
+  // The splitter: dragging it up makes the charts taller, as far as the content above leaves room
+  // (its aria-valuemax); a double-click resets the height; the arrow keys step it.
   const initial = Number(await splitter(page).getAttribute("aria-valuenow"));
+  const max = Number(await splitter(page).getAttribute("aria-valuemax"));
+  expect(max).toBeGreaterThan(initial + 16);
   const box = await splitter(page).boundingBox();
   if (!box) throw new Error("no splitter");
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -163,7 +190,7 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
   await page.mouse.up();
   await expect
     .poll(async () => Number(await splitter(page).getAttribute("aria-valuenow")))
-    .toBeGreaterThan(initial + 60);
+    .toBeGreaterThanOrEqual(Math.min(initial + 60, max));
   await splitter(page).dblclick();
   await expect(splitter(page)).toHaveAttribute("aria-valuenow", String(initial));
   await splitter(page).focus();
