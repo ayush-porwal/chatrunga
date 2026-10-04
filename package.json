@@ -19,6 +19,7 @@
     "test:coverage": "pnpm --filter @chaturanga/shared test:coverage && pnpm --filter @chaturanga/desktop test:coverage",
     "lint": "oxlint --deny-warnings",
     "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "dist:mac": "pnpm --filter @chaturanga/desktop dist:mac",
     "generate:piece-css": "node scripts/generate-piece-theme-css.mjs",
     "bench:repertoire": "node scripts/bench-repertoire.mjs"
