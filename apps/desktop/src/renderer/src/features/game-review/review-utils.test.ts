@@ -15,7 +15,6 @@ import {
   countBySeverity,
   mainlineReviewInput,
   numberedLine,
-  reviewIdFromPath,
   uciLineSteps
 } from "./review-utils";
 
@@ -199,13 +198,6 @@ function move(overrides: Partial<MoveReview> = {}): MoveReview {
 }
 
 describe("game review utilities", () => {
-  it("extracts the saved game id from the hash-route pathname", () => {
-    expect(reviewIdFromPath("/games/game-123/review")).toBe("game-123");
-    expect(reviewIdFromPath("/games/game-123/review/")).toBe("game-123");
-    expect(reviewIdFromPath("/games/current/review")).toBe("current");
-    expect(reviewIdFromPath("/")).toBe("current");
-  });
-
   it("converts engine UCI into SAN before building the coach payload", () => {
     const payload = buildInsightPayload(move(), 1500);
     expect(payload?.engines.stockfish.bestMoveSan).toBe("e4");

@@ -10,6 +10,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { titlebarIconButton } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { UpdateButton } from "../features/updates/UpdateButton";
+import type { SidebarActive } from "./sidebar-active";
 import { BOARD_SHORTCUTS } from "./useBoardShortcuts";
 
 /**
@@ -48,16 +49,7 @@ export const AppSidebar = memo(function AppSidebar({
   onSettings
 }: {
   expanded: boolean;
-  active: {
-    home: boolean;
-    analyze: boolean;
-    play: boolean;
-    review: boolean;
-    repertoire: boolean;
-    puzzles: boolean;
-    databases: boolean;
-    settings: boolean;
-  };
+  active: SidebarActive;
   /** The current view has a board: offer Focus board (it has nothing to focus elsewhere). */
   boardView: boolean;
   focusMode: boolean;

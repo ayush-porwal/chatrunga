@@ -41,7 +41,13 @@ import { useReviewStore } from "../stores/review-store";
 import { selectLiveGameInProgress, useLichessStore } from "../stores/lichess-store";
 import { useHistoryStore, type HistoryEntry } from "../stores/history-store";
 import { captureEntry, recordHistory, type HistoryMode } from "./history-navigation";
-import { saveStudyDraftFirst, useHistoryRestore } from "./navigation-coordinator";
+import {
+  restoreReviewRoute,
+  reviewRouteToRestore,
+  savedReviewPath,
+  saveStudyDraftFirst,
+  useHistoryRestore
+} from "./navigation-coordinator";
 import {
   nextPuzzleInput,
   puzzleBoard,
@@ -49,6 +55,7 @@ import {
   type PuzzleSetStart
 } from "./puzzle-session-controller";
 import { AppSidebar } from "./AppSidebar";
+import { sidebarActiveFor } from "./sidebar-active";
 import {
   AppTitlebar,
   GameTitlebar,
@@ -271,10 +278,11 @@ export function App() {
   const windowControlsVisible = isElectronMac();
   // Narrow subscriptions: the shell must not re-render on every move (it would cascade into the
   // sidebar, titlebar and every tooltip). Handlers read the store directly via currentGame().
-  const { gameId, gameMode, gameDecided, gameBoard } = useGameStore(
+  const { gameId, gameMode, gameSource, gameDecided, gameBoard } = useGameStore(
     useShallow((state) => ({
       gameId: state.gameId,
       gameMode: state.mode,
+      gameSource: state.source,
       gameDecided: Boolean(state.gameOutcome),
       gameBoard: state.board
     }))
@@ -426,6 +434,39 @@ export function App() {
   });
 
   const clearPuzzleSession = puzzleSession.clear;
+
+  // A Game Review URL brings its saved game and review back: the one the window opened at (a
+  // reload), and one that changes to another saved game while the app is open.
+  const handledReviewRoute = useRef<string | null | undefined>(undefined);
+  const restoreOpenedReviewRoute = useEventCallback(() => {
+    const previous = handledReviewRoute.current;
+    handledReviewRoute.current = reviewRouteId;
+    if (!reviewRouteId) return;
+    if (!reviewRouteToRestore(previous, reviewRouteId, currentGame().gameId)) return;
+    const showHome = () => showView("home", "replace");
+    restoreReviewRoute(reviewRouteId, {
+      navigation: latestNavigation,
+      getSavedGame: (id) =>
+        window.chaturanga?.games.get(id) ??
+        Promise.reject(new Error("Saved games need the desktop app.")),
+      stopEngineWork: (options) => stopEngineWork(options),
+      clearPuzzleSession: () => clearPuzzleSession(),
+      showHome,
+      reviewShown: () => record("replace", historyEntry("game-review"))
+    }).catch((error: unknown) => {
+      useAppNoticeStore
+        .getState()
+        .show(`That game couldn't be opened: ${ipcErrorMessage(error) || "unknown error"}`);
+      showHome();
+    });
+  });
+  useEffect(restoreOpenedReviewRoute, [reviewRouteId, restoreOpenedReviewRoute]);
+  // A game first saved while on its review (starting the analysis saves it) moves the URL from
+  // "current" to its id, so a reload reopens it.
+  useEffect(() => {
+    const path = savedReviewPath(reviewRouteId, gameId);
+    if (path) void navigate(path, { replace: true });
+  }, [reviewRouteId, gameId, navigate]);
 
   /**
    * Before a different board replaces this one: the engine's search and review end, the review
@@ -632,6 +673,10 @@ export function App() {
       clearPuzzleSession();
       openSavedGame(saved);
     } else {
+      // Its pending changes are written first, so the URL below names a game a reload can find
+      // (a failed save keeps its own Retry; the review still opens).
+      await flushGameAutosave();
+      if (request !== latestNavigation.current) return;
       stopEngineWork();
       // Back from the review returns to a game played on from a puzzle with its Next puzzle.
       puzzleSession.release(currentGame().board);
@@ -642,7 +687,9 @@ export function App() {
     setFocusMode(false);
     setReviewTab(tab);
     setGameReviewPickerOpen(false);
-    setAppView("game-review", () => void navigate(`/games/${gameId}/review`, { replace: true }));
+    // A saved game's own id, so a reload can reopen it ("current" only for one never saved).
+    const routeId = currentGame().gameId ?? "current";
+    setAppView("game-review", () => void navigate(`/games/${routeId}/review`, { replace: true }));
     record("push", historyEntry("game-review"));
   }
 
@@ -1364,17 +1411,14 @@ export function App() {
   });
 
   const sidebarActive = useMemo(
-    () => ({
-      home: appView === "home",
-      analyze: appView === "game" && gameMode === "analysis",
-      review: appView === "game-review" || gameReviewPickerOpen,
-      repertoire: repertoireViews.has(appView),
-      play: appView === "play",
-      puzzles: appView === "puzzles",
-      databases: appView === "databases",
-      settings: appView === "settings"
-    }),
-    [appView, gameMode, gameReviewPickerOpen]
+    () =>
+      sidebarActiveFor({
+        view: appView,
+        gameMode,
+        gameSource,
+        reviewPickerOpen: gameReviewPickerOpen
+      }),
+    [appView, gameMode, gameSource, gameReviewPickerOpen]
   );
 
   const puzzlePanel = useMemo(

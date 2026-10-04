@@ -35,10 +35,6 @@ import { MAIA_BUCKETS, type MaiaRatingBucket } from "@chaturanga/shared/schemas/
 type ReviewMoveInput = ReviewGameInput["moves"][number];
 export type ReviewTab = "summary" | "commentary" | "moves" | "engine";
 
-export function reviewIdFromPath(pathname: string): string {
-  return pathname.match(/^\/games\/([^/]+)\/review\/?$/)?.[1] ?? "current";
-}
-
 export function mainlineReviewInput(moveTree: MoveNode[]): ReviewMoveInput[] {
   const moves: ReviewMoveInput[] = [];
   // One index for the walk (a find per step would be quadratic on long games).

@@ -1,5 +1,4 @@
 import { memo, useCallback, useDeferredValue, useEffect, useId, useMemo, useState } from "react";
-import { useLocation } from "react-router-dom";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
 import type { RepertoireColor } from "@chaturanga/shared/types/repertoire";
@@ -9,13 +8,7 @@ import { activeBestLine, bestLineStep } from "../game/best-line-cursor";
 import { reviewsByNode, useReviewStore } from "../../stores/review-store";
 import { useDisplayedReviewMoves, useOutdatedReviewMoves } from "../../stores/review-validity";
 import { boardClocksAt, sideToMove } from "../board/board-clocks";
-import {
-  mainlineReviewInput,
-  moveLabel,
-  reviewIdFromPath,
-  uciSquares,
-  type ReviewTab
-} from "./review-utils";
+import { mainlineReviewInput, moveLabel, uciSquares, type ReviewTab } from "./review-utils";
 import { ReviewBoard, type ReviewArrow } from "./ReviewBoard";
 import { ReviewCommentaryPanel } from "./ReviewCommentaryPanel";
 import { ReviewEnginePanel } from "./ReviewEnginePanel";
@@ -41,7 +34,6 @@ import { useStoreHintsOnLeave } from "../onboarding/Coachmark";
 import { useOpenRouterConfigQuery, useUpdateSettingMutation } from "../../queries/api";
 import { useCollapsible } from "@/components/ui/collapsible-section";
 import { ReviewPanelHeader } from "./ReviewPanelHeader";
-import { openSavedGame } from "../game/saved-game";
 import {
   reviewAnchorFor,
   type CommentaryMoveContext,
@@ -126,9 +118,6 @@ function GameReviewPageInner({
   onOpeningSideChange,
   onOpenPuzzles
 }: GameReviewPageProps) {
-  const location = useLocation();
-  const id = reviewIdFromPath(location.pathname);
-  const [loadError, setLoadError] = useState<string | null>(null);
   // Narrow selectors: this page must not re-render for unrelated game-store changes.
   const gameId = useGameStore((state) => state.gameId);
   useStoreHintsOnLeave(gameId);
@@ -268,24 +257,6 @@ function GameReviewPageInner({
         : null,
     [aiOn, settings.reviewCommentaryDetail, settingsReady, side, userRating]
   );
-
-  useEffect(() => {
-    if (!id || id === "current" || id === gameId) return;
-    let cancelled = false;
-    setLoadError(null);
-    void window.chaturanga?.games
-      .get(id)
-      .then((saved) => {
-        if (!cancelled && saved) openSavedGame(saved);
-      })
-      .catch((error) => {
-        if (!cancelled)
-          setLoadError(error instanceof Error ? error.message : "Could not load this game.");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [id, gameId]);
 
   const arrows = useMemo<ReviewArrow[]>(() => {
     if (!boardMove) return [];
@@ -455,13 +426,8 @@ function GameReviewPageInner({
           />
         }
         notices={
-          loadError || reviewError || outdatedMoves || recomputed ? (
+          reviewError || outdatedMoves || recomputed ? (
             <>
-              {loadError ? (
-                <Notice tone="warn" className="shrink-0">
-                  {loadError}
-                </Notice>
-              ) : null}
               {reviewError ? (
                 <Notice tone="danger" className="shrink-0">
                   {reviewError}
