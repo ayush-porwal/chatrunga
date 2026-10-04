@@ -31,7 +31,6 @@ export function BoardMoveMarkBadge({
           key={mark.nodeId}
           role="img"
           aria-label={mark.label}
-          title={mark.label}
           data-annotation={mark.annotation}
           data-square={mark.square}
           className={cn(
