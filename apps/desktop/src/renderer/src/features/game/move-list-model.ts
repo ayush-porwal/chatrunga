@@ -91,6 +91,26 @@ export function bestLineText(moves: readonly BestLineMove[]): string {
   return moves.map((move) => (move.number ? `${move.number} ${move.san}` : move.san)).join(" ");
 }
 
+/** The BEST-line preview board's edge bounds (CSS px). */
+export const PREVIEW_BOARD_MIN = 200;
+export const PREVIEW_BOARD_MAX = 340;
+/** The preview never outgrows this share of the main board. */
+const PREVIEW_BOARD_SHARE = 0.6;
+
+/**
+ * The edge of a BEST line's preview board: as wide as the panel allows, at most 340px and 60% of
+ * the main board (so a wide panel beside a shrunk board never shows a preview bigger than the
+ * board), at least 200px, and never wider than the room it has.
+ */
+export function previewBoardSize(available: number, mainBoard: number | null): number {
+  const cap = Math.min(
+    PREVIEW_BOARD_MAX,
+    mainBoard && mainBoard > 0 ? mainBoard * PREVIEW_BOARD_SHARE : PREVIEW_BOARD_MAX
+  );
+  const size = Math.min(available, Math.max(PREVIEW_BOARD_MIN, cap));
+  return Math.max(0, Math.floor(size));
+}
+
 /**
  * Which BEST lines are unfolded: every line follows the list-wide choice (`showAll`, which is
  * remembered) except the ones toggled one by one since (`toggled`).

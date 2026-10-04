@@ -1,4 +1,4 @@
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Color, MoveNode } from "@chaturanga/shared/types/chess";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
 import { annotationTone } from "@/lib/ui";
@@ -8,12 +8,17 @@ import { formatScore } from "../game-review/review-score";
 import type { MoveNavigationTarget } from "../game-review/commentary-moves";
 import { BoardThumbnail } from "../settings/board-thumbnail";
 import {
+  PREVIEW_BOARD_MIN,
+  previewBoardSize,
   bareSan,
   bestLineMoves,
   bestLineText,
   sanPiece,
   type BestLineMove
 } from "./move-list-model";
+
+/** The preview card's padding and border around its board (p-2 and 1px, each side). */
+const PREVIEW_CHROME = 18;
 
 /** How long the pointer rests on a suggested move before its position shows. */
 const PREVIEW_DELAY_MS = 250;
@@ -231,26 +236,48 @@ function LinePreview({
   score: string;
   orientation: Color;
 }) {
+  // Sized to the room under the line and to the main board (see previewBoardSize), left-aligned.
+  const slotRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const slot = slotRef.current;
+    if (!slot) return;
+    const measure = () => {
+      const board = document.querySelector('section[aria-label="Board"] cg-board');
+      const mainBoard = board ? board.getBoundingClientRect().width : null;
+      // The card's padding and border (p-2, 1px) sit around the board.
+      setSize(previewBoardSize(slot.clientWidth - PREVIEW_CHROME, mainBoard));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(slot);
+    return () => observer.disconnect();
+  }, []);
   return (
-    <div
-      role="img"
-      aria-label={`Position after ${moveNumber} ${move.san}`}
-      data-line-preview=""
-      className="pointer-events-none col-[2/-1] mb-2 grid animate-fade-in gap-1.5 rounded-lg border border-line bg-surface-raised p-2 shadow-[0_10px_28px_rgb(0_0_0/0.45)]"
-    >
-      <BoardThumbnail
-        fen={move.fenAfter}
-        orientation={orientation}
-        lastMove={move.uci}
-        rounded="md"
-      />
-      <p className="flex items-center gap-1.5 text-[0.8125rem] leading-none font-medium text-fg-secondary">
-        <span className="font-mono text-xs text-fg-subtle tabular-nums">{moveNumber}</span>
-        <span>
-          <FigureSan san={move.san} />
-        </span>
-        <span className="ml-auto font-mono text-xs text-fg-subtle tabular-nums">{score}</span>
-      </p>
+    <div ref={slotRef} className="pointer-events-none col-[2/-1] mb-2 min-w-0">
+      <div
+        role="img"
+        aria-label={`Position after ${moveNumber} ${move.san}`}
+        data-line-preview=""
+        className="grid w-fit animate-fade-in gap-1.5 rounded-lg border border-line bg-surface-raised p-2 shadow-[0_10px_28px_rgb(0_0_0/0.45)]"
+        style={size === null ? { visibility: "hidden" } : undefined}
+      >
+        <div style={{ width: size ?? PREVIEW_BOARD_MIN }}>
+          <BoardThumbnail
+            fen={move.fenAfter}
+            orientation={orientation}
+            lastMove={move.uci}
+            rounded="md"
+          />
+        </div>
+        <p className="flex items-center gap-1.5 text-[0.8125rem] leading-none font-medium text-fg-secondary">
+          <span className="font-mono text-xs text-fg-subtle tabular-nums">{moveNumber}</span>
+          <span>
+            <FigureSan san={move.san} />
+          </span>
+          <span className="ml-auto font-mono text-xs text-fg-subtle tabular-nums">{score}</span>
+        </p>
+      </div>
     </div>
   );
 }

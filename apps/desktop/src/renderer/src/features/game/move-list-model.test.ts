@@ -11,6 +11,7 @@ import {
   lineMoveNumber,
   lineUnfolded,
   mainlineItems,
+  previewBoardSize,
   sanPiece,
   setAllLineFolds,
   toggleLineFold,
@@ -219,5 +220,23 @@ describe("mainlineItems", () => {
       "1: … e5",
       "2: Nf3"
     ]);
+  });
+});
+
+describe("previewBoardSize", () => {
+  it("fills a narrow panel, down to its width", () => {
+    expect(previewBoardSize(260, 700)).toBe(260);
+    expect(previewBoardSize(180, 700)).toBe(180);
+  });
+
+  it("stops at 340px in a wide panel", () => {
+    expect(previewBoardSize(900, 900)).toBe(340);
+    expect(previewBoardSize(900, null)).toBe(340);
+  });
+
+  it("never outgrows 60% of the main board, nor shrinks below 200px for it", () => {
+    expect(previewBoardSize(900, 400)).toBe(240);
+    expect(previewBoardSize(900, 250)).toBe(200);
+    expect(previewBoardSize(150, 250)).toBe(150);
   });
 });
