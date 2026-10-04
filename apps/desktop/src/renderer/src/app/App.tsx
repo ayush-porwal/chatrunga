@@ -697,9 +697,11 @@ export function App() {
     if (history === "push") commitCurrent();
     const request = ++latestNavigation.current;
     const draft = useRepertoireWorkspaceStore.getState();
-    // Only the repertoire being left can hold this back (the one opened lists its own unsaved
-    // changes on its chapter).
-    const leaving = draft.repertoireId !== target.repertoireId ? draft.repertoireId : null;
+    // Only the study page being left can hold this back with its repertoire's unsaved decision
+    // changes (the one opened lists its own on its chapter). A study left earlier (for the hub,
+    // say) keeps its changes, with Retry and Discard, on its own page.
+    const studying = studyOnScreen();
+    const leaving = studying && studying !== target.repertoireId ? studying : null;
     const leftSaved = await saveStudyDraftFirst({
       request,
       navigation: latestNavigation,
@@ -756,17 +758,17 @@ export function App() {
   ): Promise<boolean> {
     if (history === "push") commitCurrent();
     const request = ++latestNavigation.current;
-    // Held back by the study draft being left and by this repertoire's unsaved changes (practice
-    // shows its prompts and hints), not by another repertoire's.
-    const leaving = useRepertoireWorkspaceStore.getState().repertoireId;
+    // Held back by the study page being left and by this repertoire's unsaved changes (practice
+    // shows its prompts and hints, and pauses), not by another repertoire's.
+    const studying = studyOnScreen();
+    const blockOn = studying && studying !== repertoireId ? [studying, repertoireId] : [repertoireId];
     const leftSaved = await saveStudyDraftFirst({
       request,
       navigation: latestNavigation,
-      flush: () =>
-        flushChapterDraft(queryClient, leaving ? [leaving, repertoireId] : [repertoireId]),
+      flush: () => flushChapterDraft(queryClient, blockOn),
       failure: () =>
         studyFailure(
-          leaving,
+          blockOn.find((id) => unsavedStudyCause(id) !== null) ?? null,
           "practice",
           "This chapter couldn't be saved; reopen it and retry the save before practising."
         )
@@ -872,6 +874,11 @@ export function App() {
    * A navigation's notice when the study draft it leaves stayed unsaved: the chapter's own
    * (`chapterMessage`), or the repertoire's prompt, hint or other decision change.
    */
+  /** The repertoire whose study page is on screen (null on any other screen). */
+  function studyOnScreen(): string | null {
+    return repertoireScreen?.view === "repertoire-study" ? repertoireScreen.repertoireId : null;
+  }
+
   function studyFailure(repertoireId: string | null, action: string, chapterMessage: string) {
     const cause = unsavedStudyCause(repertoireId);
     if (cause === "decision" || cause === "stale-decision") {

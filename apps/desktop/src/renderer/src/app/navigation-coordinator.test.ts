@@ -125,6 +125,7 @@ beforeEach(() => {
   useLichessStore.getState().setLive(null);
   useLichessStore.setState({ playOpponent: null });
   useRepertoireWorkspaceStore.getState().reset();
+  useRepertoireWorkspaceStore.setState({ decisionDrafts: {} });
   history([{ view: "home" }], 0);
 });
 
@@ -497,6 +498,35 @@ describe("leaving a study chapter's draft", () => {
     expect(await saveStudyDraftFirst({ request: 1, navigation, flush, failure })).toBe(false);
     expect(flush).toHaveBeenCalledTimes(1);
     expect(useAppNoticeStore.getState().message).toBe(failure);
+  });
+
+  it("saves a prompt or other decision change first though the chapter is saved, or none is open", async () => {
+    const decisionDrafts = {
+      "r1|k1|prompt": {
+        repertoireId: "r1",
+        positionKey: "k1",
+        field: "prompt" as const,
+        text: "Develop with tempo",
+        generation: 1,
+        status: "error" as const,
+        error: { message: "disk full", stale: false }
+      }
+    };
+    open({ dirty: false, saveState: { status: "idle" }, decisionDrafts });
+    const flush = vi.fn(async () => false);
+    expect(await saveStudyDraftFirst({ request: 1, navigation, flush, failure, keepChapterId: "c2" })).toBe(false);
+    expect(flush).toHaveBeenCalledTimes(1);
+    expect(useAppNoticeStore.getState().message).toBe(failure);
+
+    open({ chapterId: null, dirty: false, saveState: { status: "idle" }, decisionDrafts });
+    const saved = vi.fn(async () => true);
+    expect(await saveStudyDraftFirst({ request: 1, navigation, flush: saved, failure })).toBe(true);
+    expect(saved).toHaveBeenCalledTimes(1);
+
+    // Reopening the open chapter leaves nothing: its changes stay on it.
+    open({ dirty: false, saveState: { status: "idle" }, decisionDrafts });
+    expect(await saveStudyDraftFirst({ request: 1, navigation, flush, failure, keepChapterId: "c1" })).toBe(true);
+    expect(flush).toHaveBeenCalledTimes(1);
   });
 
   it("reads a notice given as a function once the flush settled", async () => {

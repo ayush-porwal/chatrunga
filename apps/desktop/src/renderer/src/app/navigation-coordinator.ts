@@ -250,11 +250,13 @@ async function loadSavedGame(
 }
 
 /**
- * Before another chapter or practice replaces the open study chapter: its draft is saved first.
- * True to go on (nothing to save, or saved). False to stay: the save failed (`failure` is shown;
- * the draft stays open with its error and Retry) or a newer navigation (`request` is no longer
- * the latest) took over meanwhile. `keepChapterId`: the chapter being opened (its own draft
- * stays open, nothing is left).
+ * Before another chapter or practice replaces the open study chapter: its draft is saved first,
+ * with the prompt, hint, feedback and pause changes still unsaved (pending, or failed) even when
+ * the chapter itself is saved or none is open. True to go on (nothing to save, or saved). False to
+ * stay: the save failed (`failure` is shown; the draft stays open with its error and Retry) or a
+ * newer navigation (`request` is no longer the latest) took over meanwhile. Which repertoires'
+ * decision changes hold it back is the flush's choice. `keepChapterId`: the chapter being opened
+ * (its own draft stays open, nothing is left).
  */
 export async function saveStudyDraftFirst({
   request,
@@ -271,8 +273,9 @@ export async function saveStudyDraftFirst({
   keepChapterId?: string | null;
 }): Promise<boolean> {
   const draft = useRepertoireWorkspaceStore.getState();
-  if (!draft.chapterId || draft.chapterId === keepChapterId) return true;
-  if (!draft.dirty && draft.saveState.status === "idle") return true;
+  if (draft.chapterId && draft.chapterId === keepChapterId) return true;
+  const chapterUnsaved = draft.chapterId !== null && (draft.dirty || draft.saveState.status !== "idle");
+  if (!chapterUnsaved && Object.keys(draft.decisionDrafts).length === 0) return true;
   const saved = await flush();
   if (request !== navigation.current) return false;
   if (!saved) {
