@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { loadBoardEdge, saveBoardEdge } from "@/lib/layout-prefs";
-import { MIN_BOARD_EDGE } from "./board-frame";
+import { restoredBoardEdge } from "./board-frame";
 
 /**
  * The board edge the user dragged the board to with its corner grip (BoardResizeGrip), shared by
@@ -16,13 +16,8 @@ type BoardEdgeStore = {
   fill: () => void;
 };
 
-function storedEdge(): number | null {
-  const edge = loadBoardEdge();
-  return edge === null ? null : Math.max(MIN_BOARD_EDGE, edge);
-}
-
 export const useBoardEdgeStore = create<BoardEdgeStore>((set, get) => ({
-  edge: storedEdge(),
+  edge: restoredBoardEdge(loadBoardEdge()),
   resize: (edge) => set({ edge }),
   commit: () => saveBoardEdge(get().edge),
   fill: () => {

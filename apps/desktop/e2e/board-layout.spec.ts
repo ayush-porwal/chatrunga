@@ -1,6 +1,7 @@
 // The board pages' layout through the built app: the sidebar collapses to an icon rail and opens
 // as it was left; the board fills its space, and a grip in its bottom-right corner (shown only on
-// hover) resizes it for the side panel, is remembered, and fills again on a double-click; the
+// hover) resizes it, the side panel taking all the width it frees (no empty column either side) and
+// the board centred down its cell, is remembered, and fills again on a double-click; the
 // review board shows each side's clock at the selected move from the game's [%clk], in a light
 // box for White and a dark one for Black, and no clocks for a game without them. How to run them:
 // playwright.config.ts.
@@ -21,6 +22,8 @@ const CLOCKED_PGN = `[Event "Clocks e2e"]
 const titlebar = (page: Page) => page.getByRole("banner", { name: "Titlebar" });
 const board = (page: Page) => page.getByRole("region", { name: "Board" });
 const grip = (page: Page) => board(page).locator(".board-resize-grip");
+/** The board block: the player rows, the eval column and the board (BoardStage). */
+const boardBlock = (page: Page) => board(page).locator(":scope > div").first();
 const navigation = (page: Page) => page.getByRole("navigation", { name: "Move navigation" });
 const counter = (page: Page) => navigation(page).getByRole("paragraph").first();
 const clock = (page: Page, side: "White" | "Black") =>
@@ -132,6 +135,27 @@ test("the board fills its space, and its corner grip resizes it for the side pan
   const square = await box(board(page).locator("cg-board"));
   expect(square.height).toBeCloseTo(square.width, 0);
   expect((await box(panel)).width).toBeGreaterThan(panelBefore + 100);
+  // No width is left over: the board's cell starts at the workspace's padding and is as wide as the
+  // board block (eval column + board), and the panel takes everything to the padding on the right.
+  const workspace = await box(page.locator(".board-workspace"));
+  const cellAfter = await box(board(page));
+  const panelAfter = await box(panel);
+  const block = await box(boardBlock(page));
+  const pad = cellAfter.x - workspace.x;
+  expect(pad).toBeLessThanOrEqual(40);
+  expect(
+    Math.abs(workspace.x + workspace.width - (panelAfter.x + panelAfter.width) - pad)
+  ).toBeLessThan(2);
+  expect(block.x - cellAfter.x).toBeLessThan(2);
+  expect(cellAfter.width - block.width).toBeLessThan(8);
+  expect(square.x - cellAfter.x).toBeLessThanOrEqual(32);
+  // Down, the board block is centred in its cell: the spare height splits above and below it,
+  // while the panel keeps the full height.
+  const above = block.y - cellAfter.y;
+  const below = cellAfter.y + cellAfter.height - (block.y + block.height);
+  expect(above).toBeGreaterThan(20);
+  expect(Math.abs(above - below)).toBeLessThan(2);
+  expect(Math.abs(panelAfter.height - cellAfter.height)).toBeLessThan(2);
   // Moves still play on the resized board's keys.
   await page.keyboard.press("ArrowLeft");
   await expect(counter(page)).toHaveText("5 / 6");

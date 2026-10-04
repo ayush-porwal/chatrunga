@@ -4,6 +4,7 @@ import {
   centringInsets,
   clampBoardEdge,
   draggedBoardEdge,
+  restoredBoardEdge,
   snapBoardSize
 } from "./board-frame";
 
@@ -102,8 +103,24 @@ describe("clampBoardEdge", () => {
     expect(clampBoardEdge(512.5, 900)).toBe(512.5);
   });
 
+  it("keeps a board of at least 280px, the smallest still playable", () => {
+    expect(clampBoardEdge(150, 900)).toBe(280);
+    expect(clampBoardEdge(280, 900)).toBe(280);
+  });
+
   it("gives way to a space smaller than the minimum edge", () => {
     expect(clampBoardEdge(400, MIN_BOARD_EDGE - 40)).toBe(MIN_BOARD_EDGE - 40);
     expect(clampBoardEdge(400, -5)).toBe(0);
+  });
+});
+
+describe("restoredBoardEdge", () => {
+  it("restores a remembered edge, and a filled board as filled", () => {
+    expect(restoredBoardEdge(490)).toBe(490);
+    expect(restoredBoardEdge(null)).toBeNull();
+  });
+
+  it("brings an edge remembered below the minimum up to it", () => {
+    expect(restoredBoardEdge(240)).toBe(MIN_BOARD_EDGE);
   });
 });

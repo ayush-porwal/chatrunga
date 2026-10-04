@@ -30,8 +30,20 @@ export function centringInsets(
   return { start: Math.max(0, centre - half - start), end: Math.max(0, end - centre - half) };
 }
 
-/** The smallest edge (CSS px) the corner grip resizes the board to. */
-export const MIN_BOARD_EDGE = 240;
+/**
+ * The smallest edge (CSS px) the corner grip resizes the board to: the side panel takes the rest,
+ * and below this the board's squares get too small to play on.
+ */
+export const MIN_BOARD_EDGE = 280;
+
+/**
+ * The edge a remembered resize restores (null: the board fills its space). An edge saved before
+ * the minimum was raised comes back at the minimum. How far the workspace lets it reach beside the
+ * panel is CSS's to clamp (`--workspace-board-max`), as the window can change size at any time.
+ */
+export function restoredBoardEdge(stored: number | null): number | null {
+  return stored === null ? null : Math.max(MIN_BOARD_EDGE, stored);
+}
 
 /**
  * A resized board's edge kept between MIN_BOARD_EDGE and `max`, the largest edge the workspace

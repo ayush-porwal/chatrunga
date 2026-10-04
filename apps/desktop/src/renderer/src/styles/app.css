@@ -241,7 +241,7 @@ html {
  * - Board workspace (BoardWorkspace): the board is as large as the window height allows (no fixed
  *   cap), the panel grows with the window (320px → ~34rem), padding and gap scale together, and the
  *   board + panel are centred as one group, so a wide window never strands the board far away from
- *   its panel.
+ *   its panel. A board resized with its grip leaves the panel all the width it frees.
  */
 @media (min-width: 1920px) and (min-height: 900px) {
   html {
@@ -273,6 +273,9 @@ html:has(.onb-root) {
     var(--workspace-panel-max)
   );
   --workspace-panel: var(--workspace-panel-fill);
+  /* The widest a panel block that reads as a line (tabs, summary, notices, move navigation) is
+     drawn: centred in a panel that is wider (beside a resized board). */
+  --workspace-panel-measure: var(--workspace-panel-max);
   /* Board edge from the workspace height: the two 2rem player rows and their 0.5rem gaps are 5rem. */
   --workspace-board: min(100cqh - 2 * var(--workspace-pad) - 5rem, 100rem);
   /* The eval bar's column left of the board (bar + gap), reserved on every board screen. */
@@ -300,22 +303,28 @@ html:has(.onb-root) {
 }
 
 /*
- * A board resized with its corner grip (BoardResizeGrip): its edge is capped at the chosen
- * `--workspace-board-user`, and the panel takes the width that frees beside the filled board (or
- * gives it up), within its bounds. So the board and panel keep the filled layout's width until the
- * panel reaches a bound; past its maximum the spare width goes to the outer margins again.
+ * A board resized with its corner grip (BoardResizeGrip): its edge is the chosen
+ * `--workspace-board-user`, within the largest edge the height allows beside the panel at its
+ * minimum (`--workspace-board-max`), and the panel takes ALL the width left beside it
+ * (no maximum). So the grid spans the whole workspace: the board column, exactly as wide as the
+ * eval column + board, starts at the content's left edge and the panel ends at its right edge,
+ * with no spare margin on either side. Blocks that read badly wide keep their own measure inside
+ * the panel (`--workspace-panel-measure`).
  */
 .board-workspace.board-resized {
-  --workspace-board: min(
-    100cqh - 2 * var(--workspace-pad) - 5rem,
-    100rem,
-    var(--workspace-board-user)
-  );
-  --workspace-panel: clamp(
+  --workspace-board: min(var(--workspace-board-user), var(--workspace-board-max));
+  --workspace-panel: max(
     var(--workspace-panel-min),
-    var(--workspace-panel-fill) + var(--workspace-board-fill) - var(--workspace-board),
-    var(--workspace-panel-max)
+    100cqw - 3 * var(--workspace-pad) - var(--workspace-eval) - var(--workspace-board)
   );
+}
+
+/* The workspace panel's notices (every child of its body but the tab panel, the last) keep the
+   panel's measure, centred, in a panel widened beside a resized board. */
+.workspace-panel-body > :not(:last-child) {
+  width: 100%;
+  max-width: var(--workspace-panel-measure);
+  margin-inline: auto;
 }
 
 body {

@@ -34,16 +34,19 @@ import { useFocusCentring, useSnappedBoardFrame } from "./useBoardFrame";
  *
  * Sizing (the `--workspace-*` variables in app.css, fluid from the 980px minimum to ultra-wide):
  * the panel grows with the window (320px → 34rem); padding and gap scale together; the board is
- * as large as the height allows (`--workspace-board`). The grid is capped at exactly board + gap +
+ * as large as the height allows (`--workspace-board`), and its block (player rows + board) is
+ * centred down its cell. The grid is capped at exactly board + gap +
  * panel and centred, so on a wide window the spare width goes to both outer margins and the board
  * stays next to its panel. On a narrow window the cap is not reached and the board takes the
  * width left beside the panel.
  *
  * Resizing (BoardResizeGrip, while the panel shows): the board fills its space by default; dragging
  * the grip in its bottom-right corner sets a smaller (or larger) edge, shared by every board
- * workspace and remembered, and the panel takes the width that frees within its own min and max
- * (`.board-resized` in app.css). A double-click on the grip fills the space again. Focus mode
- * always fills.
+ * workspace and remembered. The panel then takes all the width beside it, down to its minimum
+ * (`.board-resized` in app.css): the board column is exactly the board's width at the content's
+ * left edge and the panel reaches the right edge, so no width is left over; blocks that read
+ * badly wide keep their own measure, centred in the panel. A double-click on the grip fills the
+ * space again. Focus mode always fills.
  */
 
 export function BoardWorkspace({
@@ -139,11 +142,13 @@ export function BoardWorkspace({
             : "max-w-[calc(var(--workspace-board)+var(--workspace-eval)+2*var(--workspace-pad))] grid-cols-[minmax(0,1fr)_0px] gap-0"
         )}
       >
-        {/* A resized board sits at the top of its cell, level with the panel's top edge. */}
+        {/* The board block (player rows + board) is centred down its cell, so a board shorter than
+            the space splits the spare height above and below. A resized board's cell is exactly its
+            width (app.css), anchored at the content's left edge. */}
         <section
           className={cn(
-            "grid min-h-0 min-w-0 justify-items-center [container-type:size]",
-            resizedEdge === null ? "items-center" : "items-start"
+            "grid min-h-0 min-w-0 items-center [container-type:size]",
+            resizedEdge === null ? "justify-items-center" : "justify-items-start"
           )}
           aria-label="Board"
         >
@@ -165,11 +170,18 @@ export function BoardWorkspace({
             )}
             aria-label={panelLabel}
           >
-            {tabs ? <div className="shrink-0 px-3 pt-3">{tabs}</div> : null}
+            {/* Tabs, summary and notices read as lines: past `--workspace-panel-measure` (a panel
+                widened beside a resized board) they keep that width, centred (the notices by
+                `.workspace-panel-body` in app.css). */}
+            {tabs ? (
+              <div className="shrink-0 px-3 pt-3">
+                <div className={panelMeasure}>{tabs}</div>
+              </div>
+            ) : null}
             <div className="flex h-14 shrink-0 items-center border-b border-line-subtle px-3">
-              {summary}
+              <div className={cn(panelMeasure, "flex h-full items-center")}>{summary}</div>
             </div>
-            <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
+            <div className="workspace-panel-body flex min-h-0 flex-1 flex-col gap-3 p-3">
               {notices}
               <div className="min-h-0 flex-1" {...tabPanel}>
                 {children}
@@ -182,6 +194,9 @@ export function BoardWorkspace({
     </div>
   );
 }
+
+/** A panel block that reads as a line: the panel's width up to its measure, centred. */
+const panelMeasure = "mx-auto w-full min-w-0 max-w-(--workspace-panel-measure)";
 
 /**
  * True for one emphasis duration after `visible` changes: the window in which the workspace
@@ -262,11 +277,13 @@ export function BoardStage({
       ) : null}
       {/* The one board frame: hairline border + radius, no shadow, no card around it. Its content box
           is the board (the fallback edge is only for the first layout, before it's measured). The
-          resize grip sits in its bottom-right corner, over the board. */}
+          resize grip sits in its bottom-right corner, over the board. It doesn't clip: the board
+          inside rounds its own corners (board.css), so the move mark's badge can overhang an edge
+          square into the row above or the column beside it. */}
       <div
         ref={frameRef}
         className={cn(
-          "board-frame relative row-start-2 box-content size-[var(--board-size,calc(var(--board-avail)_-_2px))] overflow-hidden rounded-lg border border-line",
+          "board-frame relative row-start-2 box-content size-[var(--board-size,calc(var(--board-avail)_-_2px))] rounded-lg border border-line",
           boardColumn
         )}
       >
