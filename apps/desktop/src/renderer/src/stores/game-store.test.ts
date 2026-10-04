@@ -77,6 +77,40 @@ describe("game store", () => {
     expect(useGameStore.getState().currentFen).toBe(currentFen);
   });
 
+  it("promotes a variation to the main line and keeps the current move", () => {
+    useGameStore.getState().makeMove({ from: "e2", to: "e4" });
+    useGameStore.getState().makeMove({ from: "e7", to: "e5" });
+    useGameStore.getState().undo();
+    useGameStore.getState().makeMove({ from: "c7", to: "c5" });
+    const c5 = useGameStore.getState().currentNodeId;
+    const currentFen = useGameStore.getState().currentFen;
+
+    expect(useGameStore.getState().promoteVariation(c5)).toBe(true);
+    const state = useGameStore.getState();
+    const e4 = state.moveTree.find((node) => node.san === "e4")!;
+    expect(e4.children.map((id) => state.moveTree.find((node) => node.id === id)?.san)).toEqual([
+      "c5",
+      "e5"
+    ]);
+    expect(state.currentNodeId).toBe(c5);
+    expect(state.currentFen).toBe(currentFen);
+    // On the main line now: nothing more to promote.
+    expect(useGameStore.getState().promoteVariation(c5)).toBe(false);
+  });
+
+  it("does not promote a variation during a live match", () => {
+    useGameStore.getState().makeMove({ from: "e2", to: "e4" });
+    useGameStore.getState().makeMove({ from: "e7", to: "e5" });
+    useGameStore.getState().undo();
+    useGameStore.getState().makeMove({ from: "c7", to: "c5" });
+    const c5 = useGameStore.getState().currentNodeId;
+    useGameStore.getState().setMode("engine");
+    useGameStore.getState().setEngineSide("black");
+    const before = useGameStore.getState().moveTree;
+    expect(useGameStore.getState().promoteVariation(c5)).toBe(false);
+    expect(useGameStore.getState().moveTree).toBe(before);
+  });
+
   it("normalizes a mismatched loaded cursor to the requested node FEN", () => {
     useGameStore.getState().makeMove({ from: "e2", to: "e4" });
     const e4NodeId = useGameStore.getState().currentNodeId;

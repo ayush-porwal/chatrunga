@@ -9,9 +9,8 @@ import {
   rootNode
 } from "../features/repertoire/__fixtures__/repertoire";
 import { decisionDraftKey } from "../features/repertoire/repertoire-model";
+import { promoteChild, promotionTarget } from "@chaturanga/shared/chess/move-tree-promote";
 import {
-  promoteChild,
-  promotionTarget,
   removeSubtree,
   reuseUnchangedTree,
   UNDO_LIMIT,

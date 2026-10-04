@@ -10,6 +10,7 @@ export function MoveList() {
   const currentNodeId = useGameStore((state) => state.currentNodeId);
   const goToNode = useGameStore((state) => state.goToNode);
   const deleteLineFromNode = useGameStore((state) => state.deleteLineFromNode);
+  const promoteVariation = useGameStore((state) => state.promoteVariation);
   const orientation = useGameStore((state) => state.orientation);
   const showBestLine = useGameStore((state) => state.showBestLine);
   const bestLine = useGameStore(activeBestLine);
@@ -35,6 +36,7 @@ export function MoveList() {
       onSelectNode={goToNode}
       reviews={reviews}
       onDeleteLine={onDeleteLine}
+      onPromoteVariation={promoteVariation}
       opening={opening}
       onBrowseLine={showBestLine}
       activeBestLine={bestLine}

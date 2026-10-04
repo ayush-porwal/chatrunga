@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { promoteToMainline } from "@chaturanga/shared/chess/move-tree-promote";
 import { addMoveNode, createEmptyGame, exportGameToPgn } from "@chaturanga/shared/chess/pgn";
 import {
   applySan,
@@ -100,6 +101,12 @@ type GameStore = {
    */
   goToLine: (startNodeId: string, moves: readonly string[]) => boolean;
   deleteLineFromNode: (nodeId: string) => boolean;
+  /**
+   * Makes the line through `nodeId` the main line (the line it replaces becomes the first variation
+   * at each branch point); the current move stays. Refused (false) on the main line, for an unknown
+   * move, and during a live match.
+   */
+  promoteVariation: (nodeId: string) => boolean;
   undo: () => void;
   redo: () => void;
   reset: () => void;
@@ -443,29 +450,23 @@ export const useGameStore = create<GameStore>((set, get) => {
       const survivingCurrent = currentWasDeleted
         ? parent
         : nextTree.find((item) => item.id === state.currentNodeId);
-      // An outcome the final position decided (mate, stalemate, a draw by rule) goes with it once the
-      // main line no longer ends there; a resignation, flag or agreement stays.
-      const endFen =
-        nextTree.find((item) => item.id === mainlineEndId(nextTree))?.fenAfter ?? state.rootFen;
-      const boardOutcome =
-        state.gameOutcome && BOARD_TERMINATIONS.has(state.gameOutcome.termination);
-      const reopened = boardOutcome && !statusForFen(endFen).isEnd;
       set({
         moveTree: nextTree,
         currentNodeId: survivingCurrent?.id ?? parent.id,
         currentFen: survivingCurrent?.fenAfter ?? parent.fenAfter,
         lastError: null,
-        // The result the headers took from that position goes too (the titlebar reads it).
-        ...(reopened
-          ? {
-              gameOutcome: null,
-              headers:
-                state.headers.result === state.gameOutcome?.result
-                  ? { ...state.headers, result: "*" }
-                  : state.headers
-            }
-          : {})
+        ...outcomeAfterEdit(state, nextTree)
       });
+      return true;
+    },
+
+    promoteVariation: (nodeId) => {
+      const state = get();
+      // During a live match the main line is the game being played.
+      if (isMatchMode(state.mode) && state.engineSide && !state.gameOutcome) return false;
+      const nextTree = promoteToMainline(state.moveTree, nodeId);
+      if (!nextTree) return false;
+      set({ moveTree: nextTree, lastError: null, ...outcomeAfterEdit(state, nextTree) });
       return true;
     },
 
@@ -743,6 +744,28 @@ function boardOutcome(fen: string): GameOutcome | null {
   return {
     result: end.result,
     termination: end.isCheckmate ? "checkmate" : end.isStalemate ? "stalemate" : "draw"
+  };
+}
+
+/**
+ * An outcome the final position decided (mate, stalemate, a draw by rule) goes once an edit leaves
+ * the main line ending elsewhere, with the result the headers took from it (the titlebar reads
+ * it); a resignation, flag or agreement stays.
+ */
+function outcomeAfterEdit(
+  state: Pick<GameStore, "gameOutcome" | "headers" | "rootFen">,
+  nextTree: MoveNode[]
+): Partial<Pick<GameStore, "gameOutcome" | "headers">> {
+  const endFen =
+    nextTree.find((item) => item.id === mainlineEndId(nextTree))?.fenAfter ?? state.rootFen;
+  const fromBoard = state.gameOutcome && BOARD_TERMINATIONS.has(state.gameOutcome.termination);
+  if (!fromBoard || statusForFen(endFen).isEnd) return {};
+  return {
+    gameOutcome: null,
+    headers:
+      state.headers.result === state.gameOutcome?.result
+        ? { ...state.headers, result: "*" }
+        : state.headers
   };
 }
 

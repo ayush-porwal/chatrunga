@@ -16,7 +16,7 @@ import {
   skipWelcome,
   test
 } from "./app";
-import { writePgn } from "./fixtures";
+import { RUY_LOPEZ_PGN, writePgn } from "./fixtures";
 
 const TRAP_PGN = `[Event "Move list e2e"]
 [White "Alpha"]
@@ -265,4 +265,33 @@ test("variations are line rows under the move they replace: browsed, nested, fol
   await played.getByRole("button", { name: "Delete line from d4" }).click();
   await expect(played).toHaveCount(0);
   await expect(variations(tree)).toHaveCount(1);
+});
+
+test("on Analyze, a variation's row promotes it to the main line, and the old line becomes its variation", async ({
+  launch,
+  profile
+}) => {
+  const { app, page } = await launch();
+  await skipWelcome(page);
+  await importPgnFile(app, page, writePgn(profile, "ruy-lopez.pgn", RUY_LOPEZ_PGN));
+  const tree = page.getByRole("tree", { name: "Game moves" });
+  await expect(tree.getByRole("button", { name: "a6", exact: true })).toBeVisible();
+
+  // 3. d4 instead of 3. Bb5: a variation row.
+  await tree.getByRole("button", { name: "Nc6", exact: true }).click();
+  await clickSquare(page, "d2");
+  await clickSquare(page, "d4");
+  const played = tree.getByRole("group", { name: "Variation: 3. d4" });
+  await expect(played).toBeVisible();
+
+  await played.hover();
+  await played.getByRole("button", { name: "Promote the variation with d4" }).click();
+  // 3. d4 is on the main line now (still the current move), and 3. Bb5 a6 is the variation.
+  await expect(tree.getByRole("group", { name: "Variation: 3. Bb5 a6" })).toBeVisible();
+  await expect(variations(tree)).toHaveCount(1);
+  const d4 = tree.locator("[data-move-cell]").getByRole("button", { name: "d4", exact: true });
+  await expect(d4).toHaveAttribute("aria-current", "step");
+  await expect(
+    page.getByRole("navigation", { name: "Move navigation" }).getByRole("paragraph").first()
+  ).toHaveText("5 / 5");
 });
