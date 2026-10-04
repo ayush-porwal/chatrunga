@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import {
   CollapsibleBody,
   CollapsibleHeader,
-  CollapsibleToggle,
   useCollapsible
 } from "@/components/ui/collapsible-section";
 import { SideDot } from "@/components/ui/side-dot";
@@ -79,7 +78,6 @@ export const ReviewSummary = memo(function ReviewSummary({
   onOpenPuzzles?: () => void;
 }) {
   const rows = useMemo(() => scoreboardRows(moves), [moves]);
-  const marks = useCollapsible("review-summary:accuracy");
   const white = useMemo(() => sideAccuracy(moves, "white"), [moves]);
   const black = useMemo(() => sideAccuracy(moves, "black"), [moves]);
   const phases = useMemo(
@@ -104,35 +102,33 @@ export const ReviewSummary = memo(function ReviewSummary({
       role="region"
     >
       <div className={cn(TRACKS, "text-sm text-fg-secondary")}>
-        {/* ⌄ Accuracy: the boxes stay on the header row; folding hides the mark rows. */}
-        <div role="table" aria-label="Accuracy" className="col-span-full grid grid-cols-subgrid">
-          <div role="row" className="col-span-full grid min-h-10 grid-cols-subgrid items-center">
-            <span role="rowheader" className="min-w-0">
-              <CollapsibleToggle
-                open={marks.open}
-                onToggle={marks.toggle}
-                controls={marks.contentId}
-              >
+        {/* › Accuracy: its body is the accuracy boxes, then each side's marks. */}
+        <SummarySection id="accuracy" title="Accuracy">
+          <div role="table" aria-label="Accuracy" className="col-span-full grid grid-cols-subgrid">
+            <div role="row" className="col-span-full grid min-h-10 grid-cols-subgrid items-center">
+              <span role="rowheader" className="sr-only">
                 Accuracy
-              </CollapsibleToggle>
-            </span>
-            <AccuracyBox side="white" value={white} />
-            <span role="cell" className="grid place-items-center">
-              <Dartboard />
-            </span>
-            <AccuracyBox side="black" value={black} />
+              </span>
+              <AccuracyBox side="white" value={white} />
+              <span role="cell" className="grid place-items-center">
+                <Dartboard />
+              </span>
+              <AccuracyBox side="black" value={black} />
+            </div>
           </div>
-        </div>
-        <CollapsibleBody section={marks} className="col-span-full grid grid-cols-subgrid pt-1">
           {rows.length ? (
-            <div role="table" aria-label="Marks" className="col-span-full grid grid-cols-subgrid">
+            <div
+              role="table"
+              aria-label="Marks"
+              className="col-span-full grid grid-cols-subgrid pt-1"
+            >
               {rows.map((row) => (
                 <div
                   key={row.annotation}
                   role="row"
                   className="col-span-full grid min-h-[34px] grid-cols-subgrid items-center"
                 >
-                  <span role="rowheader" className="pl-[18px] font-medium text-fg">
+                  <span role="rowheader" className="font-medium text-fg">
                     {annotationLabel(row.annotation)}
                   </span>
                   <Count
@@ -152,7 +148,7 @@ export const ReviewSummary = memo(function ReviewSummary({
               ))}
             </div>
           ) : null}
-        </CollapsibleBody>
+        </SummarySection>
 
         {opening ? (
           <SummarySection id="opening" title="Opening">
