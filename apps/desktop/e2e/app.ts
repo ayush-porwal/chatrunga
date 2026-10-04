@@ -341,9 +341,22 @@ export async function clickSquare(page: Page, square: string, flipped = false): 
  * profile's files), and the test fails, so a quit that hangs is reported rather than waited out.
  */
 export async function closeApp(app: ElectronApplication, timeoutMs = 10_000): Promise<void> {
+  // An app closed before (by the test) has no process to ask about.
+  let child: ReturnType<ElectronApplication["process"]> | null = null;
+  try {
+    child = app.process();
+  } catch {
+    child = null;
+  }
+  const processExited = new Promise<true>((resolve) => {
+    if (!child || child.exitCode !== null || child.signalCode !== null) resolve(true);
+    else child.once("exit", () => resolve(true));
+  });
+  // A close that fails counts as exited only once the process has: a rejection with the app
+  // still running waits for the timeout (and the kill) like any other stuck quit.
   const closed = app.close().then(
-    () => true,
-    () => true
+    () => true as const,
+    () => processExited
   );
   let timer: NodeJS.Timeout | undefined;
   const timedOut = new Promise<false>(
