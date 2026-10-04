@@ -175,8 +175,9 @@ export function LineRow({
             ) : null}
             {entries.map((entry, index) => (
               <Fragment key={entry.key}>
-                {/* Lines wrap between moves, never between a number and its move. */}
-                {index ? <wbr /> : null}
+                {/* Unfolded, lines wrap between moves, never between a number and its move. Folded,
+                    there is no break at all: Chromium breaks at a <wbr> even under nowrap. */}
+                {index && !folded ? <wbr /> : null}
                 <span className="whitespace-nowrap">
                   {entry.number ? (
                     <span
