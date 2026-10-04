@@ -95,6 +95,10 @@ export async function launchApp(profile: string): Promise<LaunchedApp> {
     NO_PROXY: "localhost,127.0.0.1,::1"
   });
   const switches = [`--proxy-server=${BLACKHOLE}`];
+  // CHATURANGA_E2E_SMALL_SCREEN=1: the window GitHub's Windows runners give the app (a 1024×768
+  // screen at 1×, less the frame and menu bar), to check layout assumptions before CI does.
+  const smallScreen = process.env.CHATURANGA_E2E_SMALL_SCREEN === "1";
+  if (smallScreen) switches.push("--force-device-scale-factor=1");
   // Run locally on macOS, the window never shows on screen, so a run doesn't cover the developer's
   // work (CHATURANGA_E2E_FOREGROUND=1 to watch it); Chromium mustn't slow or skip frames for a window
   // it sees as hidden. On CI, and on Linux and Windows (where a never-shown window gets no frames and
@@ -122,6 +126,14 @@ export async function launchApp(profile: string): Promise<LaunchedApp> {
     timeout: 60_000
   });
   await installMainProcessGuards(app);
+  if (smallScreen) {
+    await app.firstWindow();
+    await app.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      window?.setMinimumSize(800, 600);
+      window?.setContentSize(1008, 677);
+    });
+  }
   const page = await app.firstWindow();
   // Without OS focus the page would see itself unfocused (focus events, :focus-visible); the
   // tests behave as in a focused window.

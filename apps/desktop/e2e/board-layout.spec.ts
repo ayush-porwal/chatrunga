@@ -245,12 +245,13 @@ test("the line between the board and the panel is a splitter that resizes both",
   // Less the whole-pixel squares Chessground rounds the board down to.
   expect(Math.abs(value - resized)).toBeLessThanOrEqual(SQUARE_ROUNDING);
 
-  // The arrow keys step it, without moving through the game.
+  // The arrow keys step it, without moving through the game. → grows the board: on a small screen
+  // the drag can leave it at its minimum, where ← has nowhere to go.
   await splitter(page).focus();
-  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowRight");
   await expect
     .poll(async () => Number(await splitter(page).getAttribute("aria-valuenow")))
-    .toBe(value - 16);
+    .toBe(value + 16);
   await expect(counter(page)).toHaveText("6 / 6");
   const stepped = await boardEdge(page);
 

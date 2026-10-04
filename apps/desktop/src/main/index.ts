@@ -311,6 +311,8 @@ function createWindow(): void {
     }
   });
   mainWindow = window;
+  // Off screen, the window is silent too: a test run plays no move sounds.
+  if (openInBackground) window.webContents.setAudioMuted(true);
   flushSavesBeforeClose(window);
   // Fallback reveal if the renderer never reports ready (a crash before React mounts).
   window.once("ready-to-show", () => setTimeout(() => revealWindow(window), REVEAL_FALLBACK_MS));

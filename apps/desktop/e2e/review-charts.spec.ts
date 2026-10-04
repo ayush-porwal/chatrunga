@@ -136,13 +136,14 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
   await page.keyboard.press("ArrowRight");
   await expect(counter(page)).toHaveText("8 / 14");
 
-  // Each strip folds on its own, remembered across a reload. Under a height set with the splitter,
-  // folding hands its height to the others (unset, the charts take the default for the views shown).
-  // As tall as the panel allows (End). The views still open take a folded strip's height between
-  // them: on a short window (Windows' frame leaves less height) one stays at its minimum and the
-  // other grows.
-  await splitter(page).focus();
-  await page.keyboard.press("End");
+  // Each strip folds on its own, remembered across a reload, and hands its height to the views
+  // still open. With Game Review folded the charts fill the panel, so they have height to share
+  // even on a small screen (at the splitter's height there, every view can sit at its minimum).
+  const reviewToggle = page
+    .getByRole("complementary", { name: "Review" })
+    .getByRole("button", { name: "Game Review", exact: true });
+  await reviewToggle.click();
+  await expect(reviewToggle).toHaveAttribute("aria-expanded", "false");
   const openHeight = async () => {
     const heights = await Promise.all(
       (["winning-chances", "difficulty"] as const).map(
@@ -155,6 +156,8 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
   await charts(page).getByRole("button", { name: "Time per move" }).click();
   await expect(view(page, "times")).toHaveCount(0);
   await expect.poll(openHeight).toBeGreaterThan(before);
+  await reviewToggle.click();
+  await expect(reviewToggle).toHaveAttribute("aria-expanded", "true");
   // A reloaded page starts without the game: it is opened again from the picker, once its review
   // is saved.
   await expect
@@ -188,10 +191,12 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
   await expect(view(page, "winning-chances")).toBeVisible();
 
   // The splitter: dragging it up makes the charts taller, as far as the content above leaves room
-  // (its aria-valuemax); a double-click resets the height; the arrow keys step it.
+  // (its aria-valuemax; on a small screen the default height may already be there); a double-click
+  // resets the height; the arrow keys step it.
   const initial = Number(await splitter(page).getAttribute("aria-valuenow"));
   const max = Number(await splitter(page).getAttribute("aria-valuemax"));
-  expect(max).toBeGreaterThan(initial + 16);
+  // (The height is whole pixels, the measured room isn't.)
+  expect(max).toBeGreaterThanOrEqual(initial - 1);
   const box = await splitter(page).boundingBox();
   if (!box) throw new Error("no splitter");
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -203,9 +208,10 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
     .toBeGreaterThanOrEqual(Math.min(initial + 60, max));
   await splitter(page).dblclick();
   await expect(splitter(page)).toHaveAttribute("aria-valuenow", String(initial));
+  // ↓ lowers it (↑ may have no room left on a small screen).
   await splitter(page).focus();
-  await page.keyboard.press("ArrowUp");
-  await expect(splitter(page)).toHaveAttribute("aria-valuenow", String(initial + 16));
+  await page.keyboard.press("ArrowDown");
+  await expect(splitter(page)).toHaveAttribute("aria-valuenow", String(initial - 16));
   await splitter(page).dblclick();
 });
 
