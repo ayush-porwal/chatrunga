@@ -13,7 +13,7 @@
  * from an older policy are re-assessed from their stored evaluations when they load.
  */
 import type { Square } from "chessops/types";
-import { parseSquare, parseUci } from "chessops/util";
+import { parseSquare, parseUci, squareRank } from "chessops/util";
 import type {
   AnalysisLine,
   AssessmentTag,
@@ -221,11 +221,18 @@ function evidenceFor(move: AssessableMove): Evidence | null {
   return after ? { lines, before, after, playedLine } : null;
 }
 
-/** Legal moves in a position (0 when it can't be read). */
+/**
+ * Legal moves in a position (0 when it can't be read). A pawn reaching the last rank is four moves,
+ * one for each piece it can promote to.
+ */
 function legalMoveCount(fen: string): number {
   try {
+    const pos = positionFromFen(fen);
     let count = 0;
-    for (const [, dests] of positionFromFen(fen).allDests()) count += dests.size();
+    for (const [from, dests] of pos.allDests()) {
+      const pawn = pos.board.get(from)?.role === "pawn";
+      for (const to of dests) count += pawn && [0, 7].includes(squareRank(to)) ? 4 : 1;
+    }
     return count;
   } catch {
     return 0;
@@ -269,10 +276,11 @@ function materialBalance(
  * Material (in pawns) the mover is down along `line` (the move first, then the engine's best
  * defence), net of anything the move itself took: after the reply, and still after the mover's
  * next move when the line has one (the smaller of the two, so material won straight back doesn't
- * count). A one-ply line counts what the move takes. Null when the line doesn't fit the position.
+ * count). Null when the line doesn't fit the position, or stops before the reply: what the move
+ * takes would count without the recapture the line doesn't show.
  */
 function materialGiven(fenBefore: string, line: readonly string[]): number | null {
-  if (!line.length) return null;
+  if (line.length < 2) return null;
   try {
     const pos = positionFromFen(fenBefore);
     const mover = pos.turn;
@@ -285,7 +293,7 @@ function materialGiven(fenBefore: string, line: readonly string[]): number | nul
       given.push(start - materialBalance(pos, mover));
     }
     if (given.length >= 3) return Math.min(given[1] ?? 0, given[2] ?? 0);
-    return given[given.length - 1] ?? null;
+    return given[1] ?? null;
   } catch {
     return null;
   }
@@ -295,7 +303,7 @@ function materialGiven(fenBefore: string, line: readonly string[]): number | nul
  * Material (in pawns) the played move gives up by choice: what its line loses (see materialGiven;
  * it needs the reply and the mover's next move to tell) beyond the other candidate that loses the
  * least. Material every candidate loses — a fork, a pinned or trapped piece — is a forced loss, not
- * a sacrifice; with no other candidate to compare, nothing counts.
+ * a sacrifice; with no other candidate to compare (none whose line shows the reply), nothing counts.
  */
 export function sacrificedMaterial(
   fenBefore: string,
@@ -517,7 +525,8 @@ export function assessMove(move: AssessableMove, context: AssessmentContext = {}
   const engineTop = lines[0]?.pv[0] === move.playedMove;
   if (engineTop) tags.add("engine_top");
   const otherWins = playedLine ? lines.filter((line) => line !== playedLine).map(lineWin) : [];
-  const alternativeGap =
+  // Replaced by the deeper search's gap when that search confirms a Great or Brilliant mark.
+  let alternativeGap =
     playedLine && otherWins.length ? lineWin(playedLine) - Math.max(...otherWins) : null;
   const result = (
     severity: ErrorSeverity | null,
@@ -589,6 +598,7 @@ export function assessMove(move: AssessableMove, context: AssessmentContext = {}
       tags.add("unverified");
     } else {
       const confirmed = candidateFor(deeper, move, gate);
+      if (confirmed.kind) alternativeGap = confirmed.gap;
       if (confirmed.kind === "brilliant") {
         tags.add("sacrifice");
         return result(null, "brilliant");

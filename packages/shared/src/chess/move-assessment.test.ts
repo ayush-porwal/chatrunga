@@ -28,6 +28,8 @@ const AFTER_E4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
 const GREEK_GIFT = "r1bq1rk1/pppn1ppp/4p3/3pP3/1b1P4/2NB1N2/PPP2PPP/R1BQK2R w KQ - 0 8";
 /** White's king on a1 is checked by the queen on b2; Kxb2 is the only legal move. */
 const ONE_LEGAL_MOVE = "k7/8/8/8/8/8/1q6/K7 w - - 0 1";
+/** White's only pawn move is a7-a8 (any of four pieces); the king and the h-pawn are stuck. */
+const ONLY_PROMOTION = "8/P7/8/8/8/7p/5k1P/7K w - - 0 1";
 /** Ne2+ forks White's king and queen: every king move loses the queen. */
 const ROYAL_FORK = "6k1/pp3ppp/8/8/8/2Q5/PP2nPPP/R5K1 w - - 0 30";
 /** The knight on c3 is pinned by the bishop on b4 and attacked by the pawn on d4. */
@@ -330,6 +332,17 @@ describe("assessMove: no praise for routine moves", () => {
     expect(assessMove(move)).toMatchObject({ annotation: null, tags: ["engine_top", "forced"] });
   });
 
+  it("counts each promotion piece as its own move, so an underpromotion can still be the find", () => {
+    const move = verified(
+      position(ONLY_PROMOTION, "a8=R", [
+        ["a7a8r", "cp 50"],
+        ["a7a8q", "cp -150"]
+      ])
+    );
+    expect(assessMove(move).tags).not.toContain("forced");
+    expect(assessMove(move).annotation).toBe("great");
+  });
+
   it("never praises a recapture, however critical", () => {
     const afterTake = "rnbqkbnr/ppp1pppp/8/3P4/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 2";
     const capture = position(
@@ -404,6 +417,19 @@ describe("assessMove: critical finds (Great)", () => {
   ])("marks a %s only move Great once a deeper search agrees", (_side, move) => {
     expect(assessMove(verified(move))).toMatchObject({ annotation: "great", alternativeGap: 18.1 });
     expect(assessMove(verified(move)).tags).toContain("only_move");
+  });
+
+  it("records the gap the deeper search found, not the first search's", () => {
+    const deeper = {
+      ...white,
+      verification: {
+        deeperLines: [
+          parseLine("cp 150 pv e2e4", 1, START_FEN),
+          parseLine("cp -150 pv d2d4", 2, START_FEN)
+        ]
+      }
+    };
+    expect(assessMove(deeper)).toMatchObject({ annotation: "great", alternativeGap: 26.9 });
   });
 
   it("abstains without a deeper search, or when the deeper search disagrees", () => {
@@ -551,6 +577,14 @@ describe("assessMove: sacrifices (Brilliant)", () => {
     ["the other candidate loses as much", "d3h7 g8h7 f3g5", [["d3h7", "g8h7", "d1d3"]], 0]
   ] as const)("sacrificedMaterial: %s", (_name, line, alternatives, expected) => {
     expect(sacrificedMaterial(GREEK_GIFT, line.split(" "), alternatives)).toBe(expected);
+  });
+
+  it("compares only other candidates whose line shows the reply", () => {
+    // 1. e4 d5 2. d4 dxe4 3. Nc3 gives a pawn; exd5 alone shows the pawn it takes, not Qxd5.
+    const scandinavian = "rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2";
+    const gambit = ["d2d4", "d5e4", "b1c3"];
+    expect(sacrificedMaterial(scandinavian, gambit, [["e4d5"]])).toBe(0);
+    expect(sacrificedMaterial(scandinavian, gambit, [["e4d5"], ["e4d5", "d8d5"]])).toBe(1);
   });
 
   it("counts a sacrifice won straight back as none", () => {
