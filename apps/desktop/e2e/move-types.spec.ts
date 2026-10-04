@@ -127,13 +127,13 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
   await expect(counter(page)).toHaveText("0 / 14");
   const leading = page.getByRole("list", { name: "Key moments of the game" });
   await expect(leading.getByRole("listitem")).toHaveCount(3);
-  await expect(leading.getByRole("listitem").nth(0)).toContainText("4. Nxe5");
-  await expect(leading.getByRole("listitem").nth(0)).toContainText("Blunder");
-  await expect(leading.getByRole("listitem").nth(1)).toContainText("5. Nxf7");
-  await expect(leading.getByRole("listitem").nth(2)).toContainText("7. Be2");
-  await expect(leading.getByRole("listitem").nth(2)).toContainText("Allows a forced mate.");
-  // The cards never say what an error cost.
+  // Each card is the move (with the board's piece) and its mark, and no text beyond them.
+  await expect(leading.getByRole("button").nth(0)).toHaveAccessibleName("4. Nxe5, Blunder");
+  await expect(leading.getByRole("button").nth(1)).toHaveAccessibleName("5. Nxf7, Blunder");
+  await expect(leading.getByRole("button").nth(2)).toHaveAccessibleName("7. Be2, Mistake");
+  await expect(leading.getByRole("button")).toHaveCount(3);
   await expect(leading).not.toContainText("of the winning chances");
+  await expect(leading).not.toContainText("Allows a forced mate.");
   await screenshot(page, "key-moments");
 
   // Key-moment navigation: from the start to each moment in turn, and back.
@@ -153,32 +153,33 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
   await keyMomentNav(page).getByRole("button", { name: "Previous key moment" }).click();
   await expect(counter(page)).toHaveText("9 / 14");
 
-  // The selected move's header names its mark and says why: 4… Qg5, the critical find.
+  // The selected move's header names its mark (no static explanation): 4… Qg5, the critical find.
   await page
     .getByRole("navigation", { name: "Move navigation" })
     .getByRole("button", { name: "Previous move", exact: true })
     .click();
   const header = page.getByRole("heading", { name: "4… Qg5", level: 2 });
   await expect(header).toBeVisible();
-  await expect(
-    page.getByText(/A critical find: every other move the engine checked was at least 18% worse/)
-  ).toBeVisible();
+  await expect(page.locator("header [data-annotation]")).toHaveAttribute(
+    "data-annotation",
+    "great"
+  );
+  await expect(page.getByText(/A critical find/)).toHaveCount(0);
   await screenshot(page, "great");
 
-  // A book move says it is opening theory, and nothing more.
+  // A book move carries the Book mark, and nothing more.
   const navigation = page.getByRole("navigation", { name: "Move navigation" });
   await navigation.getByRole("button", { name: "First move", exact: true }).click();
   await navigation.getByRole("button", { name: "Next move", exact: true }).click();
   await expect(page.getByRole("heading", { name: "1. e4", level: 2 })).toBeVisible();
   await expect(page.locator("header [data-annotation]")).toHaveAttribute("data-annotation", "book");
-  await expect(page.getByText("Opening theory: a move from the opening book.")).toBeVisible();
 
   // An ordinary move has no mark at all: no badge, and no praise for matching the engine.
   for (let ply = 2; ply <= 11; ply += 1)
     await navigation.getByRole("button", { name: "Next move", exact: true }).click();
   await expect(page.getByRole("heading", { name: "6. Rf1", level: 2 })).toBeVisible();
   await expect(page.locator("header [data-annotation]")).toHaveCount(0);
-  await expect(page.getByText("The engine's top choice.")).toBeVisible();
+  await expect(page.getByText("The engine's top choice.")).toHaveCount(0);
 
   // The move tree marks exactly the moves that matter.
   await reviewTabs(page).getByRole("tab", { name: "Moves", exact: true }).click();

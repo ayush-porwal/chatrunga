@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { AnnotationBadge } from "@/components/ui/annotation-badge";
 import { SectionHeader } from "@/components/ui/page";
 import type { KeyMoment } from "@chaturanga/shared/chess/key-moments";
-import { MomentList, MoveMarkNote } from "./KeyMoments";
+import { MomentList } from "./KeyMoments";
 import type { CommentaryMoveContext } from "./commentary-moves";
 import type { CommentaryStatus } from "./useGameReviewCommentary";
 import { CommentaryProse, MoveLink, VariationAnchorNote, type GoToLine } from "./MoveLinks";
@@ -196,8 +196,6 @@ export function ReviewCommentaryPanel({
           </span>
         ) : null}
       </header>
-
-      <MoveMarkNote assessment={move.assessment} className="-mt-2" />
 
       {variationAnchor ? (
         <VariationAnchorNote label={variationAnchor.label} onBack={variationAnchor.onBack} />

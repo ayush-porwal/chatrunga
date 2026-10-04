@@ -7,11 +7,9 @@ import {
   annotationOf,
   assessMove,
   assessMoves,
-  assessmentReason,
   sacrificedMaterial,
   severityFor,
   severityForLoss,
-  severityLabel,
   severityOf,
   summarizeMoves,
   verificationNeed,
@@ -1182,68 +1180,8 @@ describe("summary and labels", () => {
     expect(annotationGlyph("excellent")).not.toBe("!!");
   });
 
-  it("labels severities and reads them off moves", () => {
-    expect(
-      ["inaccuracy", "mistake", "blunder"].map((item) => severityLabel(item as "mistake"))
-    ).toEqual(["Inaccuracy", "Mistake", "Blunder"]);
+  it("reads severities and marks off moves", () => {
     expect(severityOf(null)).toBeNull();
     expect(annotationOf(undefined)).toBeNull();
-  });
-
-  const assessment = (overrides: Partial<MoveAssessment>): MoveAssessment => ({
-    policy: 1,
-    winBefore: 60,
-    winAfter: 40,
-    winLoss: 20.4,
-    alternativeGap: 12.6,
-    severity: null,
-    annotation: null,
-    tags: [],
-    ...overrides
-  });
-
-  it.each([
-    [assessment({ annotation: "brilliant" }), /sound sacrifice/],
-    [assessment({ annotation: "great" }), /at least 13% worse/],
-    [assessment({ annotation: "great", alternativeGap: null }), /at least 10% worse/],
-    [assessment({ annotation: "excellent", tags: ["tactic"] }), /Finds the tactic/],
-    [assessment({ annotation: "excellent", tags: ["hard_to_find"] }), /hard to find/],
-    [assessment({ annotation: "good" }), /Punishes/],
-    [assessment({ annotation: "miss", severity: "blunder" }), /cost 20% of the winning chances/],
-    [assessment({ annotation: "blunder", severity: "blunder", winLoss: 0.4 }), /cost <1%/],
-    [
-      assessment({ annotation: "mistake", severity: "mistake", tags: ["mate_created"] }),
-      /Allows a forced mate/
-    ],
-    [
-      assessment({ annotation: "blunder", severity: "blunder", tags: ["mate_lost"] }),
-      /Lets a forced mate slip/
-    ],
-    [assessment({ annotation: "inaccuracy", severity: "inaccuracy", winLoss: null }), /cost <1%/],
-    [assessment({ severity: "inaccuracy", tags: ["decided"] }), /already decided/],
-    [assessment({ annotation: "book", tags: ["book"] }), /opening book/]
-  ])("explains %o", (item, reason) => {
-    expect(assessmentReason(item)).toMatch(reason);
-  });
-
-  it("explains nothing for an unmarked move", () => {
-    expect(assessmentReason(assessment({ tags: ["engine_top"] }))).toBeNull();
-    expect(assessmentReason(undefined)).toBeNull();
-  });
-
-  it("leaves out what an error cost when asked to (the review's cards)", () => {
-    const noCost = { cost: false };
-    expect(
-      assessmentReason(assessment({ annotation: "blunder", severity: "blunder" }), noCost)
-    ).toBeNull();
-    expect(assessmentReason(assessment({ annotation: "miss", severity: "blunder" }), noCost)).toBe(
-      "Gives back the chance the opponent's error created."
-    );
-    expect(
-      assessmentReason(
-        assessment({ annotation: "mistake", severity: "mistake", tags: ["mate_created"] }),
-        noCost
-      )
-    ).toBe("Allows a forced mate.");
   });
 });

@@ -230,13 +230,20 @@ test("review settings are a dialog that switches sides; with AI off, cards don't
     .click();
   const cards = page.getByRole("list", { name: "Key moments of the game" });
   await expect(cards.getByRole("listitem")).toHaveCount(2);
-  await expect(cards.getByRole("listitem").nth(0)).toContainText("4… Qg5");
-  await expect(cards.getByRole("listitem").nth(1)).toContainText("5… Qxg2");
+  await expect(cards.getByRole("button").nth(0)).toHaveAccessibleName("4… Qg5, Great");
+  await expect(cards.getByRole("button").nth(1)).toHaveAccessibleName("5… Qxg2, Good");
+  await expect(cards.getByRole("button")).toHaveCount(2);
 
-  // AI commentary is off in this profile (no OpenRouter key): the cards neither expand nor show
-  // commentary, and never say what an error cost.
+  // AI commentary is off in this profile (no OpenRouter key): a card is only its move and mark.
+  // It has no chevron and doesn't open, and no static explanation shows, before or after a click.
   const card = cards.getByRole("button").first();
   await expect(card).not.toHaveAttribute("aria-expanded", /.*/);
-  await expect(cards.getByRole("region", { name: "Commentary" })).toHaveCount(0);
-  await expect(cards).not.toContainText("of the winning chances");
+  await expect(card).not.toHaveAttribute("aria-controls", /.*/);
+  await expect(cards).not.toContainText("A critical find");
+  await expect(cards).not.toContainText("Punishes");
+  await card.click();
+  await expect(page.getByRole("heading", { name: "4… Qg5", level: 2 })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Commentary" }).getByText(/A critical find/)
+  ).toHaveCount(0);
 });
