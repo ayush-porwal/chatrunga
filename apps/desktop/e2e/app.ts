@@ -95,9 +95,14 @@ export async function launchApp(profile: string): Promise<LaunchedApp> {
     NO_PROXY: "localhost,127.0.0.1,::1"
   });
   const switches = [`--proxy-server=${BLACKHOLE}`];
-  // The window never shows on screen (CHATURANGA_E2E_FOREGROUND=1 to watch a run): Chromium mustn't
-  // slow or skip frames for a window it sees as hidden.
-  const background = process.env.CHATURANGA_E2E_FOREGROUND !== "1";
+  // Run locally on macOS, the window never shows on screen, so a run doesn't cover the developer's
+  // work (CHATURANGA_E2E_FOREGROUND=1 to watch it); Chromium mustn't slow or skip frames for a window
+  // it sees as hidden. On CI, and on Linux and Windows (where a never-shown window gets no frames and
+  // every journey crawls), the window shows as in normal use.
+  const background =
+    process.platform === "darwin" &&
+    !process.env.CI &&
+    process.env.CHATURANGA_E2E_FOREGROUND !== "1";
   if (background) {
     env.CHATURANGA_E2E_BACKGROUND = "1";
     switches.push("--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding");

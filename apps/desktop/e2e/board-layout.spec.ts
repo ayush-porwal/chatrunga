@@ -197,8 +197,10 @@ test("the board fills its space, and its corner grip resizes it for the side pan
   await expect.poll(() => boardEdge(again.page)).toBeGreaterThan(resized - 10);
   expect(await boardEdge(again.page)).toBeLessThan(resized + 10);
 
-  // A double-click on the grip fills the space again.
+  // A double-click on the grip fills the space again (once the review's view transition has let
+  // the pointer through to it).
   const restore = await gripCentre(again.page);
+  await expect.poll(() => reaches(grip(again.page), restore.x, restore.y)).toBe(true);
   await again.page.mouse.move(restore.x, restore.y);
   await again.page.mouse.dblclick(restore.x, restore.y);
   await expect.poll(() => boardEdge(again.page)).toBeGreaterThan(filled - 12);
