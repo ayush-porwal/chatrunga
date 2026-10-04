@@ -113,6 +113,14 @@ export function TreeView({
     (nodeId: string) => setFolds((current) => toggleLineFold(current, nodeId)),
     []
   );
+  // A BEST line the board lands on (↑ ↓ switch to folded ones too) unfolds, as its disc would.
+  const browsedLine = activeBestLine?.markedNodeId ?? null;
+  const [unfoldedFor, setUnfoldedFor] = useState<string | null>(null);
+  if (browsedLine !== unfoldedFor) {
+    setUnfoldedFor(browsedLine);
+    if (browsedLine && !lineUnfolded(folds, browsedLine))
+      setFolds(toggleLineFold(folds, browsedLine));
+  }
   const setAllFolds = (showAll: boolean) => {
     saveShowAllLines(showAll);
     setFolds(setAllLineFolds(showAll));

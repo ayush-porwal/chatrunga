@@ -4,6 +4,7 @@ import { useEventCallback } from "@/lib/use-event-callback";
 import { isTyping, OVERLAY_SELECTOR } from "../../app/useBoardShortcuts";
 import { lastNodeOfLine, nodeAfterSteps } from "../../app/useMoveKeyboardShortcuts";
 import { markRapidNavigation } from "../board/board-motion";
+import { alternativeTarget } from "../game/move-alternatives";
 import { MoveNavigationBar } from "../board/MoveNavigationBar";
 
 const ROOT_ID = "root";
@@ -66,8 +67,9 @@ export const RepertoireMoveNavigation = memo(function RepertoireMoveNavigation({
 });
 
 /**
- * ← → step through the chapter's current line, Home / End jump to its start / end — the same keys
- * as the game board, for a store-free tree. Ignored while typing, in a dialog or menu, and in
+ * ← → step through the chapter's current line, Home / End jump to its start / end, ↑ ↓ switch
+ * between the alternatives to the current move — the same keys as the game board, for a store-free
+ * tree (which has no BEST lines). Ignored while typing, in a dialog or menu, and in
  * composite widgets that own their arrow keys.
  */
 export function useTreeKeyboardNavigation({
@@ -100,6 +102,19 @@ export function useTreeKeyboardNavigation({
       case "End":
         next = lastNodeOfLine(nodes, selectedNodeId);
         break;
+      case "ArrowUp":
+      case "ArrowDown": {
+        const target = alternativeTarget(
+          nodes,
+          { kind: "node", nodeId: selectedNodeId },
+          () => [],
+          event.key === "ArrowDown" ? 1 : -1
+        );
+        // Nothing to switch to: the key keeps its own use (scrolling).
+        if (target?.kind !== "node") return;
+        next = target.nodeId;
+        break;
+      }
       default:
         return;
     }

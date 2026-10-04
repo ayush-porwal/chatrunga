@@ -160,7 +160,61 @@ test("BEST lines fold under their errors, preview on hover and are browsed on th
   const bestRow = gameMoves.getByRole("group", { name: "Best line: 4. Nxd4 exd4" });
   await expect(bestRow).toBeVisible();
   expect(await top(played)).toBeGreaterThan(await top(bestRow));
+
+  // ↑ ↓ switch between the alternatives to 4. Nxe5, in the list's order: its BEST line (unfolded on
+  // landing, though folded now), the variation 4. Nxd4, and back around to the game's move.
+  const nxe5 = gameMoves
+    .locator("[data-move-cell]")
+    .getByRole("button", { name: "Nxe5", exact: true });
+  await nxe5.click();
+  await gameMoves.getByRole("button", { name: "Blunder: hide the best line" }).first().click();
+  await expect(bestRow).toHaveCount(0);
+  const bestNxd4 = bestRow.getByRole("button", { name: "Show 4. Nxd4 on the board" });
+  const playedNxd4 = played.getByRole("button", { name: "Nxd4", exact: true });
+  const onNxe5 = async () => {
+    await expect(nxe5).toHaveAttribute("aria-current", "step");
+    await expect.poll(() => pieceOn(page, "e5")).toBe("white knight");
+    await expect.poll(() => pieceOn(page, "d4")).toBe("black knight");
+  };
+  const onNxd4 = async (current: Locator) => {
+    await expect(current).toHaveAttribute("aria-current", "step");
+    await expect.poll(() => pieceOn(page, "d4")).toBe("white knight");
+    await expect.poll(() => pieceOn(page, "e5")).toBe("black pawn");
+  };
+  await onNxe5();
+  await page.keyboard.press("ArrowDown");
+  await expect(bestRow).toBeVisible();
+  await onNxd4(bestNxd4);
+  await page.keyboard.press("ArrowDown");
+  await onNxd4(playedNxd4);
+  await expect(bestNxd4).not.toHaveAttribute("aria-current", "step");
+  await page.keyboard.press("ArrowDown");
+  await onNxe5();
+  await page.keyboard.press("ArrowUp");
+  await onNxd4(playedNxd4);
+  await page.keyboard.press("ArrowUp");
+  await onNxd4(bestNxd4);
+  await page.keyboard.press("ArrowUp");
+  await onNxe5();
 });
+
+/** The piece on `square` of the main board (`white knight`), or null for an empty square. */
+function pieceOn(page: Page, square: string): Promise<string | null> {
+  return page.evaluate((square) => {
+    const board = document.querySelector('section[aria-label="Board"] cg-board');
+    if (!board) return null;
+    const box = board.getBoundingClientRect();
+    const size = box.width / 8;
+    const x = box.left + (square.charCodeAt(0) - 97 + 0.5) * size;
+    const y = box.top + (8 - Number(square[1]) + 0.5) * size;
+    for (const piece of board.querySelectorAll("piece:not(.ghost)")) {
+      const rect = piece.getBoundingClientRect();
+      if (x > rect.left && x < rect.right && y > rect.top && y < rect.bottom)
+        return piece.className;
+    }
+    return null;
+  }, square);
+}
 
 /** A locator's box (it must be on screen). */
 async function box(locator: Locator) {
