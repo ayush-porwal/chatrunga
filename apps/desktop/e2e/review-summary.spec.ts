@@ -124,7 +124,7 @@ test("the summary scores both sides, names the opening and phases, and its secti
   await expect(practice.getByRole("button", { name: /^Mate in 1/ })).toBeVisible();
 
   // Each section folds behind its header (⌄ Phases), and stays folded when the summary is shown
-  // again. Folding Accuracy hides the mark rows; its boxes stay on the header row.
+  // again. Folding Accuracy hides its whole body: the boxes (its first row) and the mark rows.
   const phasesToggle = summary(page).getByRole("button", { name: "Phases" });
   await expect(phasesToggle).toHaveAttribute("aria-expanded", "true");
   await phasesToggle.click();
@@ -134,7 +134,7 @@ test("the summary scores both sides, names the opening and phases, and its secti
   await accuracyToggle.click();
   await expect(accuracyToggle).toHaveAttribute("aria-expanded", "false");
   await expect(summary(page).getByRole("table", { name: "Marks" })).toHaveCount(0);
-  await expect(summary(page).getByLabel(/^White accuracy/)).toBeVisible();
+  await expect(summary(page).getByLabel(/^White accuracy/)).toBeHidden();
   await reviewTabs(page).getByRole("tab", { name: "Commentary", exact: true }).click();
   await reviewTabs(page).getByRole("tab", { name: "Summary", exact: true }).click();
   await expect(summary(page).getByRole("button", { name: "Phases" })).toHaveAttribute(
@@ -145,6 +145,7 @@ test("the summary scores both sides, names the opening and phases, and its secti
   await summary(page).getByRole("button", { name: "Phases" }).click();
   await summary(page).getByRole("button", { name: "Accuracy", exact: true }).click();
   await expect(summary(page).getByRole("table", { name: "Accuracy by phase" })).toBeVisible();
+  await expect(summary(page).getByLabel(/^White accuracy \d+\.\d$/)).toBeVisible();
 
   // Start review is in the panel's footer, on every tab, just above the move navigation; it
   // starts with the first of White's key moments, explained in the Commentary tab.
