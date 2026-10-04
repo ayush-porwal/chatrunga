@@ -36,12 +36,18 @@ test("the Analyze board shows an imported castled game's depth, score and lines 
   await importPgnFile(app, page, writePgn(profile, "castled.pgn", CASTLED_PGN));
   const moves = page.getByRole("tree", { name: "Game moves" });
   await expect(moves.getByRole("button", { name: "O-O-O", exact: true })).toBeVisible();
+  // The game shows on the Analyze page: the sidebar's Analyze is current with the switch off too.
+  const analyzeItem = sidebar(page).getByRole("button", { name: "Analyze", exact: true });
+  await expect(analyzeItem).toHaveAttribute("aria-pressed", "true");
 
   // Live analysis starts with the Engine tab's switch (the titlebar has no Analyze of its own).
   await page.getByRole("tab", { name: "Engine" }).click();
   const analysis = page.getByRole("switch", { name: "Analysis" });
+  await expect(analysis).toHaveAttribute("aria-checked", "false");
+  await expect(analyzeItem).toHaveAttribute("aria-pressed", "true");
   await analysis.click();
   await expect(analysis).toHaveAttribute("aria-checked", "true");
+  await expect(analyzeItem).toHaveAttribute("aria-pressed", "true");
   await expect(titlebar(page).getByRole("button", { name: "Stop analysis" })).toHaveCount(0);
   const panel = page.getByRole("tabpanel", { name: "Engine" });
   await expect(panel.getByRole("heading", { name: "Fake UCI" })).toBeVisible();
@@ -107,6 +113,13 @@ test("an engine that dies during an engine game stops its clock and says so", as
   await skipWelcome(page);
   await registerFakeEngine(page, log, "stockfish-crash");
   await sidebar(page).getByRole("button", { name: "Play", exact: true }).click();
+  // Play is current, not Analyze (nor once the game's board shows).
+  const analyzeItem = sidebar(page).getByRole("button", { name: "Analyze", exact: true });
+  await expect(sidebar(page).getByRole("button", { name: "Play", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  await expect(analyzeItem).not.toHaveAttribute("aria-pressed");
   await page
     .getByRole("radiogroup", { name: "Play as" })
     .getByRole("radio", { name: "Black" })
@@ -119,6 +132,7 @@ test("an engine that dies during an engine game stops its clock and says so", as
 
   // White (the engine) is to move: its search dies, and its clock stops instead of running out.
   await expect(page.getByText(CRASHED).first()).toBeVisible({ timeout: 15_000 });
+  await expect(analyzeItem).not.toHaveAttribute("aria-pressed");
   expect(engineCommands(log).some((line) => line.startsWith("go wtime"))).toBe(true);
   const whiteClock = page.getByRole("timer", { name: "White clock" });
   await expect(whiteClock).toBeVisible();

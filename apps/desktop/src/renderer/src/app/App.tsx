@@ -49,6 +49,7 @@ import {
   type PuzzleSetStart
 } from "./puzzle-session-controller";
 import { AppSidebar } from "./AppSidebar";
+import { sidebarActiveFor } from "./sidebar-active";
 import {
   AppTitlebar,
   GameTitlebar,
@@ -271,10 +272,11 @@ export function App() {
   const windowControlsVisible = isElectronMac();
   // Narrow subscriptions: the shell must not re-render on every move (it would cascade into the
   // sidebar, titlebar and every tooltip). Handlers read the store directly via currentGame().
-  const { gameId, gameMode, gameDecided, gameBoard } = useGameStore(
+  const { gameId, gameMode, gameSource, gameDecided, gameBoard } = useGameStore(
     useShallow((state) => ({
       gameId: state.gameId,
       gameMode: state.mode,
+      gameSource: state.source,
       gameDecided: Boolean(state.gameOutcome),
       gameBoard: state.board
     }))
@@ -1364,17 +1366,14 @@ export function App() {
   });
 
   const sidebarActive = useMemo(
-    () => ({
-      home: appView === "home",
-      analyze: appView === "game" && gameMode === "analysis",
-      review: appView === "game-review" || gameReviewPickerOpen,
-      repertoire: repertoireViews.has(appView),
-      play: appView === "play",
-      puzzles: appView === "puzzles",
-      databases: appView === "databases",
-      settings: appView === "settings"
-    }),
-    [appView, gameMode, gameReviewPickerOpen]
+    () =>
+      sidebarActiveFor({
+        view: appView,
+        gameMode,
+        gameSource,
+        reviewPickerOpen: gameReviewPickerOpen
+      }),
+    [appView, gameMode, gameSource, gameReviewPickerOpen]
   );
 
   const puzzlePanel = useMemo(
