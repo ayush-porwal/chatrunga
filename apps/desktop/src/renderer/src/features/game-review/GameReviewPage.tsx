@@ -7,6 +7,7 @@ import type { StudyOpenTarget } from "../repertoire/repertoire-chapters";
 import { useGameStore } from "../../stores/game-store";
 import { reviewsByNode, useReviewStore } from "../../stores/review-store";
 import { useDisplayedReviewMoves, useOutdatedReviewMoves } from "../../stores/review-validity";
+import { boardClocksAt, sideToMove } from "../board/board-clocks";
 import {
   averageLoss,
   countBySeverity,
@@ -282,6 +283,12 @@ function GameReviewPageInner({
   // The side at the bottom of the board is the orientation; its opponent sits on top.
   const boardTop = orientation === "white" ? blackPlayer : whitePlayer;
   const boardBottom = orientation === "white" ? whitePlayer : blackPlayer;
+  // Each side's time left at the selected move, from the game's [%clk] (none without them).
+  const clocks = useMemo(
+    () => boardClocksAt(moveTree, selectedNodeId, headers.timeControl),
+    [headers.timeControl, moveTree, selectedNodeId]
+  );
+  const toMove = sideToMove(boardFen);
   const onMainline =
     selectedNodeId === "root" || reviewInput.some((move) => move.nodeId === selectedNodeId);
   // Key-moment steps count from the selected move (a variation counts from the move it leaves).
@@ -316,9 +323,23 @@ function GameReviewPageInner({
       board={
         <BoardStage
           evalBar={<EvalBar orientation={orientation} />}
-          top={<PlayerRow name={boardTop.name} elo={boardTop.elo} color={boardTop.color} />}
+          top={
+            <PlayerRow
+              name={boardTop.name}
+              elo={boardTop.elo}
+              color={boardTop.color}
+              clock={clocks?.[boardTop.color] ?? null}
+              clockActive={toMove === boardTop.color}
+            />
+          }
           bottom={
-            <PlayerRow name={boardBottom.name} elo={boardBottom.elo} color={boardBottom.color} />
+            <PlayerRow
+              name={boardBottom.name}
+              elo={boardBottom.elo}
+              color={boardBottom.color}
+              clock={clocks?.[boardBottom.color] ?? null}
+              clockActive={toMove === boardBottom.color}
+            />
           }
         >
           {/* Its own stacking context: Chessground's layers and the move mark stack within the board. */}

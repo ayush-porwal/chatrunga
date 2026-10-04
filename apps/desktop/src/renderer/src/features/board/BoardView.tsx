@@ -3,8 +3,7 @@ import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key, MoveMetadata } from "@lichess-org/chessground/types";
-import { formatClockForDisplay } from "@chaturanga/shared/chess/clock-display";
-import { clocksOnPathToNode, nodeIdForBoardFen } from "@chaturanga/shared/chess/pgn";
+import { nodeIdForBoardFen } from "@chaturanga/shared/chess/pgn";
 import { legalDestsForFen, isPromotionMove, statusForFen } from "@chaturanga/shared/chess/position";
 import type {
   BoardArrow,
@@ -28,6 +27,7 @@ import { BoardMoveMarkBadge } from "./BoardMoveMarkBadge";
 import { boardMoveMark, mainBoardSurface } from "./move-mark";
 import { BoardStage } from "./BoardWorkspace";
 import { EngineClock } from "./EngineClock";
+import { boardClocksAt } from "./board-clocks";
 import { useBoardAppearance, useCgBoardBackground } from "./useBoardAppearance";
 import { useBoardPolish } from "./useBoardPolish";
 import { restoreBoardConfig } from "./board-config";
@@ -117,29 +117,27 @@ export function BoardView() {
       self?.fenAfter === currentFen
         ? currentNodeId
         : nodeIdForBoardFen(moveTree, currentFen, currentNodeId);
-    const { white: wClock, black: bClock } = clocksOnPathToNode(moveTree, clockAnchorId);
-    const hasMoveClocks = Boolean(wClock ?? bClock);
+    const tc = headers.timeControl?.trim() || null;
+    // Each side's time at this move from the game's [%clk]; no clock boxes for a game without them.
+    const clocks = boardClocksAt(moveTree, clockAnchorId, tc);
     const white = headers.white?.trim() || "White";
     const black = headers.black?.trim() || "Black";
     const wElo = headers.whiteElo?.trim() || null;
     const bElo = headers.blackElo?.trim() || null;
-    const tc = headers.timeControl?.trim() || null;
 
     const topIsBlack = orientation === "white";
-    // No clock box at all when the game has no clock data (e.g. PGN imports without %clk).
-    const fmt = (v: string | null) => (v ? formatClockForDisplay(v) : "");
     const liveClock = isMatchMode(mode) && hasLiveClock;
     return {
       topName: topIsBlack ? black : white,
       topElo: topIsBlack ? bElo : wElo,
-      topClock: fmt(topIsBlack ? bClock : wClock),
+      topClock: clocks ? clocks[topIsBlack ? "black" : "white"] : "",
       topColor: (topIsBlack ? "black" : "white") as Color,
       bottomName: topIsBlack ? white : black,
       bottomElo: topIsBlack ? wElo : bElo,
-      bottomClock: fmt(topIsBlack ? wClock : bClock),
+      bottomClock: clocks ? clocks[topIsBlack ? "white" : "black"] : "",
       bottomColor: (topIsBlack ? "white" : "black") as Color,
       // The live engine clock already shows the time control; only hint it for imported games.
-      showTcHint: Boolean(tc && tc !== "-" && !hasMoveClocks && !liveClock)
+      showTcHint: Boolean(tc && tc !== "-" && !clocks && !liveClock)
     };
   }, [moveTree, currentNodeId, currentFen, headers, orientation, mode, hasLiveClock]);
 
