@@ -63,7 +63,7 @@ describe("runMigrations", () => {
       { game_id: "g1", created_at: 42, engine_name: "Stockfish", move_time_ms: 500, move_count: 1, commentary_count: 1 }
     ]);
     const stored = db.prepare("SELECT review_json FROM game_reviews").get() as { review_json: string };
-    expect(JSON.parse(stored.review_json).reviewId).toMatch(/^legacy-g1-/);
+    expect(JSON.parse(stored.review_json)).toMatchObject({ reviewId: expect.stringMatching(/^legacy-g1-/) });
     const games = db.prepare("SELECT id, review_json, fingerprint FROM games ORDER BY id").all() as { id: string; review_json: null; fingerprint: string }[];
     expect(games[0]).toMatchObject({ review_json: null, fingerprint: expect.stringMatching(/^game:[0-9a-f]{64}$/) });
     expect(games[1]?.fingerprint).toBe("lichess:abcdEFGH");

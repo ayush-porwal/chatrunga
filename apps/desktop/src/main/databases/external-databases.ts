@@ -208,7 +208,7 @@ async function runDownload(sourceId: string, onProgress: ProgressSink, signal: A
     }
     throw new Error("The download couldn't be resumed. Try again later.");
   } catch (error) {
-    const reason = aborted.aborted ? aborted.reason : error;
+    const reason: unknown = aborted.aborted ? aborted.reason : error;
     onProgress({
       sourceId: source.id,
       downloadedBytes: 0,
@@ -585,7 +585,9 @@ function dropPool(key: string): void {
 }
 
 function dropPools(databaseId: string): void {
-  for (const key of [...pools.keys()]) if (JSON.parse(key)[0] === databaseId) dropPool(key);
+  // Pool keys are JSON arrays that start with the database id (see poolKey).
+  const prefix = `${JSON.stringify([databaseId]).slice(0, -1)},`;
+  for (const key of [...pools.keys()]) if (key.startsWith(prefix)) dropPool(key);
 }
 
 /** A request for other filters: earlier requests' quick scans stop (their whole-file scans go on). */

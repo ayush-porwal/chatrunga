@@ -75,6 +75,19 @@ export default defineConfig({
     "typescript/no-misused-promises": "error",
     "typescript/await-thenable": "error",
 
+    // Unhandled domain states: a switch over a union names every member (or has a default).
+    "typescript/switch-exhaustiveness-check": [
+      "error",
+      { considerDefaultExhaustiveForUnions: true, requireDefaultForNonUnion: false }
+    ],
+    // Unsafe data: external values are validated, not left `any`.
+    "typescript/no-explicit-any": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-return": "error",
+
     // Copying a collection before a loop that changes it (`for (const key of [...pools.keys()])`
     // with a body that deletes) is deliberate here; the rule reads every such copy as waste.
     "unicorn/no-useless-spread": "off",
@@ -224,17 +237,29 @@ export default defineConfig({
           "error",
           { assertFunctionNames: ["expect", "expect*", "assert", "assert*"] }
         ],
+        // vitest types its asymmetric matchers (expect.any(String), expect.objectContaining(…))
+        // as `any` so they fit any expected value; assigning or returning them is the point.
+        "typescript/no-unsafe-assignment": "off",
+        "typescript/no-unsafe-return": "off",
         // vi.fn() takes its types from its implementation or the method it spies on; restating
         // them as type parameters adds noise, not safety.
         "vitest/require-mock-type-parameters": "off"
       }
     },
-    // Plain JS (repo scripts, fake engines): Node globals. Undefined names are caught here, as the
-    // type checker does for TypeScript.
+    // Plain JS (repo scripts, fake engines): no tsconfig type-checks these files, so their values
+    // are inferred `any` and the unsafe-* checks would only restate that. Undefined names are
+    // caught here instead, as the type checker does for TypeScript.
     {
       files: ["**/*.{js,mjs,cjs}"],
       env: { node: true, es2024: true },
-      rules: { "no-undef": "error" }
+      rules: {
+        "no-undef": "error",
+        "typescript/no-unsafe-argument": "off",
+        "typescript/no-unsafe-assignment": "off",
+        "typescript/no-unsafe-call": "off",
+        "typescript/no-unsafe-member-access": "off",
+        "typescript/no-unsafe-return": "off"
+      }
     },
     {
       files: ["**/*.cjs"],

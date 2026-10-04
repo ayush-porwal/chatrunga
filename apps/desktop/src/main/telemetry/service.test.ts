@@ -269,10 +269,10 @@ describe("TelemetryService counting helpers", () => {
       payload_json: string;
     }[];
     expect(
-      rows.map((row) => [
-        row.event,
-        JSON.parse(row.payload_json).utc_day ?? JSON.parse(row.payload_json).milestone
-      ])
+      rows.map((row) => {
+        const payload = JSON.parse(row.payload_json) as { utc_day?: string; milestone?: string };
+        return [row.event, payload.utc_day ?? payload.milestone];
+      })
     ).toEqual([
       ["user_active", "2026-10-02"],
       ["activation_milestone", "review_completed"],

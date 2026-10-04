@@ -27,6 +27,7 @@ import {
   type RepertoireWorkspaceState
 } from "../types/repertoire";
 import { positionKey } from "./repertoire-position";
+import { nullPrototypeRecord } from "../types/record";
 
 /** Bounds a backup must stay within, and the versions this app reads (design §11). */
 export type BackupLimits = {
@@ -293,7 +294,7 @@ function parseNodeMeta(
   where: string
 ): Record<string, RepertoireNodeMeta> {
   const ids = new Set(tree.map((node) => node.id));
-  const meta: Record<string, RepertoireNodeMeta> = Object.create(null);
+  const meta: Record<string, RepertoireNodeMeta> = nullPrototypeRecord();
   if (value === undefined || value === null) return meta;
   for (const [nodeId, entry] of Object.entries(object(value, `${where} node metadata`))) {
     if (!ids.has(nodeId)) continue;

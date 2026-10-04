@@ -9,6 +9,8 @@ import {
   parsePuzzleExplanationPayload
 } from "./openrouter-commentary";
 
+type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
+
 function payload(): ReviewInsightPayload {
   return reviewInsightPayloadSchema.parse({
     schemaVersion: 1,
@@ -59,7 +61,7 @@ const GOOD_ANSWER = JSON.stringify({
 
 describe("generateOpenRouterCommentary", () => {
   it("calls OpenRouter from the supplied main-process client and validates grounded prose", async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(completion(GOOD_ANSWER));
+    const fetchImpl = vi.fn<FetchLike>().mockResolvedValue(completion(GOOD_ANSWER));
     const result = await generateOpenRouterCommentary([payload()], {
       apiKey: "unit-test-key",
       model: "openai/test-model",
@@ -70,9 +72,9 @@ describe("generateOpenRouterCommentary", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const [url, init] = fetchImpl.mock.calls[0]!;
     expect(url).toBe("https://openrouter.ai/api/v1/chat/completions");
-    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer unit-test-key");
-    expect(String(init.body)).toContain("FACTS:");
-    expect(String(init.body)).toContain("The facts are the only source of truth");
+    expect(init?.headers).toMatchObject({ Authorization: "Bearer unit-test-key" });
+    expect(init?.body).toContain("FACTS:");
+    expect(init?.body).toContain("The facts are the only source of truth");
     expect(result.commentary).toEqual([
       {
         ply: 1,
@@ -87,7 +89,7 @@ describe("generateOpenRouterCommentary", () => {
   });
 
   it("retries once, telling the model exactly what was wrong", async () => {
-    const fetchImpl = vi.fn()
+    const fetchImpl = vi.fn<FetchLike>()
       .mockResolvedValueOnce(completion("The move loses time after Qh5."))
       .mockResolvedValueOnce(completion(GOOD_ANSWER));
     const result = await generateOpenRouterCommentary([payload()], {
@@ -97,7 +99,8 @@ describe("generateOpenRouterCommentary", () => {
     });
 
     expect(fetchImpl).toHaveBeenCalledTimes(2);
-    const retryBody = JSON.parse(String(fetchImpl.mock.calls[1]![1].body)) as { messages: { role: string; content: string }[] };
+    const retryInit = fetchImpl.mock.calls[1]![1];
+    const retryBody = JSON.parse(typeof retryInit?.body === "string" ? retryInit.body : "") as { messages: { role: string; content: string }[] };
     expect(retryBody.messages.map((message) => message.role)).toEqual(["system", "user", "assistant", "user"]);
     expect(retryBody.messages[2]?.content).toBe("The move loses time after Qh5.");
     expect(retryBody.messages[3]?.content).toContain("You wrote the move Qh5, which is not in the facts");

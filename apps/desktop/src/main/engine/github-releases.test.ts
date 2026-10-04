@@ -138,7 +138,9 @@ describe("ReleaseCache", () => {
     // A new process (fresh instance) reads the cache file instead of calling the API.
     await makeCache().get("official-stockfish/Stockfish");
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(readFileSync(cacheFile(), "utf-8")).entries["official-stockfish/Stockfish"].release.tag_name).toBe("sf_19");
+    expect(JSON.parse(readFileSync(cacheFile(), "utf-8"))).toMatchObject({
+      entries: { "official-stockfish/Stockfish": { release: { tag_name: "sf_19" } } }
+    });
 
     now += 2;
     await cache.get("official-stockfish/Stockfish");

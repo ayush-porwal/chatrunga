@@ -395,10 +395,7 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
   async challenges(): Promise<LichessChallenge[]> {
     const myId = await this.accountId();
     const body = await this.client.json<{ in?: unknown; out?: unknown }>("/api/challenge");
-    const list = [
-      ...(Array.isArray(body.in) ? body.in : []),
-      ...(Array.isArray(body.out) ? body.out : [])
-    ];
+    const list = [body.in, body.out].flatMap((side): unknown[] => (Array.isArray(side) ? side : []));
     const challenges: LichessChallenge[] = [];
     for (const item of list) {
       try {

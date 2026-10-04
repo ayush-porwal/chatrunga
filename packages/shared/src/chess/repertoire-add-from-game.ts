@@ -24,6 +24,7 @@ import {
 } from "./repertoire-index";
 import { formatPath } from "./repertoire-pgn";
 import { playerToMove, positionKey } from "./repertoire-position";
+import { nullPrototypeRecord } from "../types/record";
 
 /** The material a scope selects, as a chapter-shaped tree with chapter-local ids. */
 export type ExtractedScope = {
@@ -116,8 +117,8 @@ function build(
   subtree: boolean
 ): Omit<ExtractedScope, "contextNodeIds" | "startNodeId"> {
   const tree: MoveNode[] = [];
-  const sourceToChapterIds: Record<string, string> = Object.create(null);
-  const chapterToSourceIds: Record<string, string> = Object.create(null);
+  const sourceToChapterIds: Record<string, string> = nullPrototypeRecord();
+  const chapterToSourceIds: Record<string, string> = nullPrototypeRecord();
   let next = 1;
 
   const root = copyNode(rootSource, REPERTOIRE_ROOT_NODE_ID, null, rootPly(rootFen));
@@ -264,7 +265,7 @@ export function applyPolicy(
   const included = new Set(policy.includedNodeIds);
   const covered = new Set(policy.coveredNodeIds);
   const context = new Set(extracted.contextNodeIds);
-  const meta: Record<string, RepertoireNodeMeta> = Object.create(null);
+  const meta: Record<string, RepertoireNodeMeta> = nullPrototypeRecord();
   for (const node of extracted.tree) {
     if (node.id === REPERTOIRE_ROOT_NODE_ID) continue;
     const sourceId = extracted.chapterToSourceIds[node.id];

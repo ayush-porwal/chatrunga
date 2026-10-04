@@ -22,6 +22,7 @@ import { rootPly } from "@chaturanga/shared/chess/pgn";
 import { fenAfterUci, positionFromFen } from "@chaturanga/shared/chess/position";
 import { standardCastlingUci } from "@chaturanga/shared/chess/review";
 import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
+import { nullPrototypeRecord } from "@chaturanga/shared/types/record";
 
 export const MAX_TREE_NODES = 100_000;
 const MAX_NAME = 200;
@@ -249,7 +250,7 @@ export function sanitizeNodeMeta(
   if (!isObject(value)) throw new Error("Invalid chapter metadata: expected an object");
   const ids = new Set(tree.map((node) => node.id));
   // A null prototype stores an id such as "__proto__" as a plain entry.
-  const meta: Record<string, RepertoireNodeMeta> = Object.create(null);
+  const meta: Record<string, RepertoireNodeMeta> = nullPrototypeRecord();
   for (const [id, entry] of Object.entries(value)) {
     if (!ids.has(id)) continue;
     if (!isObject(entry) || !EDGES.includes(entry.edge as RepertoireEdgeKind)) {

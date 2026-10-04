@@ -85,6 +85,8 @@ export function updateButtonView(state: UpdateState | null, feedback: CheckFeedb
     case "error":
       if (feedback === "error") return { ...base, visual: "error", label: status.message };
       return { ...base, visual: "idle", label: "Check for updates", detail: status.message };
+    case "idle":
+      break;
   }
   return { ...base, visual: "idle", label: "Check for updates", detail: formatLastChecked(state.lastCheckedAt, now) };
 }

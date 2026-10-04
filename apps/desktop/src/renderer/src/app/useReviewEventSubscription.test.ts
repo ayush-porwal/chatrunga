@@ -22,7 +22,7 @@ describe("review event buffer", () => {
   afterEach(() => vi.useRealTimers());
 
   it("coalesces a burst of engine events into one trailing flush", () => {
-    const flush = vi.fn();
+    const flush = vi.fn<Parameters<typeof createReviewEventBuffer>[0]>();
     const buffer = createReviewEventBuffer(flush);
     for (let depth = 1; depth <= 20; depth += 1) buffer.progress(progress("r1", 0, depth));
     buffer.move("r1", move("a"));
@@ -34,7 +34,7 @@ describe("review event buffer", () => {
   });
 
   it("flushes pending moves on demand and drops them on discard", () => {
-    const flush = vi.fn();
+    const flush = vi.fn<Parameters<typeof createReviewEventBuffer>[0]>();
     const buffer = createReviewEventBuffer(flush);
     buffer.move("r1", move("a"));
     buffer.flushNow();
@@ -46,7 +46,7 @@ describe("review event buffer", () => {
   });
 
   it("never mixes events from two reviews in one batch", () => {
-    const flush = vi.fn();
+    const flush = vi.fn<Parameters<typeof createReviewEventBuffer>[0]>();
     const buffer = createReviewEventBuffer(flush);
     buffer.move("r1", move("a"));
     buffer.move("r2", move("b"));

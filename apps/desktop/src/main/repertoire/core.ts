@@ -382,7 +382,7 @@ function supportedChoices(
   const nodesByChapter = new Map<string, Map<string, string>>();
   for (const row of positionIndexRepository.decisionOccurrences(record.id, keys, chapterId)) {
     let nodes = nodesByChapter.get(row.chapterId);
-    if (!nodes) nodesByChapter.set(row.chapterId, (nodes = new Map()));
+    if (!nodes) nodesByChapter.set(row.chapterId, (nodes = new Map<string, string>()));
     nodes.set(row.nodeId, row.positionKey);
   }
   const contributions = new Map<string, ReadonlyMap<string, string[]>>();
@@ -496,7 +496,7 @@ export function reindexChapter(
   if (!chapterId) return reindex(record, now);
 
   // The stored keys of the old tree also seed the new one: most of its positions are the same.
-  const storedKeys = before ? positionIndexRepository.chapterKeys(chapterId) : new Map();
+  const storedKeys = before ? positionIndexRepository.chapterKeys(chapterId) : new Map<string, string>();
   const seed = new Map<string, string>();
   for (const node of before?.tree ?? []) {
     const key = storedKeys.get(node.id);

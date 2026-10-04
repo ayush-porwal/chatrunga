@@ -3,7 +3,9 @@ import type { ChaturangaApi, Unsubscribe, WindowGlassState } from "@chaturanga/s
 import {
   IMPORT_CANCELLED_MESSAGE,
   IMPORT_CANCELLED_REPLY,
+  type ImportPreview,
   type ImportProgressEvent,
+  type PreviewImportInput,
   type RepertoireChangedEvent
 } from "@chaturanga/shared/types/repertoire";
 
@@ -16,6 +18,13 @@ function subscribe<T>(channel: string) {
     ipcRenderer.on(channel, listener);
     return () => ipcRenderer.off(channel, listener);
   };
+}
+
+/** The preview, or the marker main replies with when the import was cancelled. */
+function invokePreviewImport(
+  input: PreviewImportInput
+): Promise<ImportPreview | typeof IMPORT_CANCELLED_REPLY> {
+  return ipcRenderer.invoke("repertoires:previewImport", input);
 }
 
 type EventPayload<K extends keyof ChaturangaApi["events"]> = Parameters<Parameters<ChaturangaApi["events"][K]>[0]>[0];
@@ -181,13 +190,11 @@ const api: ChaturangaApi = {
     archive: (input) => ipcRenderer.invoke("repertoires:archive", input),
     remove: (input) => ipcRenderer.invoke("repertoires:remove", input),
     // A cancelled preview arrives as a marker (see IMPORT_CANCELLED_REPLY); it still rejects here.
-    previewImport: async (input) => {
-      const reply = await ipcRenderer.invoke("repertoires:previewImport", input);
-      if (reply?.importCancelled === IMPORT_CANCELLED_REPLY.importCancelled) {
-        throw new Error(IMPORT_CANCELLED_MESSAGE);
-      }
-      return reply;
-    },
+    previewImport: (input) =>
+      invokePreviewImport(input).then((reply) => {
+        if ("importCancelled" in reply) throw new Error(IMPORT_CANCELLED_MESSAGE);
+        return reply;
+      }),
     commitImport: (input) => ipcRenderer.invoke("repertoires:commitImport", input),
     cancelImport: (jobId) => ipcRenderer.invoke("repertoires:cancelImport", jobId),
     export: (input) => ipcRenderer.invoke("repertoires:export", input),

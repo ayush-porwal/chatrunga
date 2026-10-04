@@ -150,7 +150,7 @@ const now = () => Date.now();
 function parseArgs(args: string | null): string[] {
   if (!args) return [];
   try {
-    const parsed = JSON.parse(args);
+    const parsed: unknown = JSON.parse(args);
     return Array.isArray(parsed) ? parsed.map(String) : [];
   } catch {
     return [];

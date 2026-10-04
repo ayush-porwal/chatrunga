@@ -374,6 +374,20 @@ function toChapterSummary(row: ChapterSummaryRow): RepertoireChapterSummary {
   };
 }
 
+/** The fields every stored move-tree node has; the rest were validated when it was saved. */
+function isStoredNode(value: unknown): value is MoveNode {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "id" in value &&
+    typeof value.id === "string" &&
+    "fenAfter" in value &&
+    typeof value.fenAfter === "string" &&
+    "children" in value &&
+    Array.isArray(value.children)
+  );
+}
+
 /**
  * The chapter's tree, metadata and headers, checked structurally on load. Anything unreadable
  * throws RepertoireCorruptChapterError — never an empty tree in its place.
@@ -391,20 +405,8 @@ function toChapter(row: ChapterRow): RepertoireChapter {
     throw corrupt("its stored JSON is unreadable");
   }
   if (!Array.isArray(tree) || !tree.length) throw corrupt("the move tree is missing");
-  for (const node of tree) {
-    if (
-      !node ||
-      typeof node !== "object" ||
-      typeof node.id !== "string" ||
-      typeof node.fenAfter !== "string" ||
-      !Array.isArray(node.children)
-    ) {
-      throw corrupt("a move-tree node is malformed");
-    }
-  }
-  if (
-    !tree.some((node: MoveNode) => node.id === REPERTOIRE_ROOT_NODE_ID && node.parentId === null)
-  ) {
+  if (!tree.every(isStoredNode)) throw corrupt("a move-tree node is malformed");
+  if (!tree.some((node) => node.id === REPERTOIRE_ROOT_NODE_ID && node.parentId === null)) {
     throw corrupt("the move tree has no root");
   }
   if (!nodeMeta || typeof nodeMeta !== "object" || Array.isArray(nodeMeta)) {
@@ -416,7 +418,7 @@ function toChapter(row: ChapterRow): RepertoireChapter {
   return {
     ...toChapterSummary(row),
     headers: stringRecord(row.headers_json),
-    tree: tree as MoveNode[],
+    tree,
     nodeMeta: nodeMeta as Record<string, RepertoireNodeMeta>
   };
 }

@@ -11,6 +11,9 @@ import sf19 from "./__fixtures__/github/stockfish-latest-sf_19.json";
 import { AssetManager, type ProgressEvent } from "./asset-manager";
 import { ENGINE_MANIFEST, type EngineManifest } from "./engine-manifest";
 
+/** engine-assets.json as the manager writes it. */
+type SavedAssets = { records: { id: string; state: string; customPath?: string | null }[] };
+
 const SF_API = "https://api.github.com/repos/official-stockfish/Stockfish/releases/latest";
 const LC0_API = "https://api.github.com/repos/LeelaChessZero/lc0/releases/latest";
 const WEIGHT_URL = "https://raw.githubusercontent.com/test/maia-1100.pb.gz";
@@ -305,8 +308,8 @@ describe("AssetManager", () => {
     expect(installed["maia-1300"]).toMatchObject({ state: "installed", installedPath: kept });
     expect(installed.lc0).toMatchObject({ state: "missing", customPath: null });
     // The corrected state is persisted.
-    const saved = JSON.parse(readFileSync(path.join(userDataDir, "engine-assets.json"), "utf-8"));
-    expect(saved.records.find((r: { id: string }) => r.id === "maia-1100").state).toBe("missing");
+    const saved = JSON.parse(readFileSync(path.join(userDataDir, "engine-assets.json"), "utf-8")) as SavedAssets;
+    expect(saved.records.find((r) => r.id === "maia-1100")?.state).toBe("missing");
   });
 
   it("serializes concurrent state writes without temp-file collisions", async () => {
@@ -316,8 +319,8 @@ describe("AssetManager", () => {
     await manager.init();
     // Several completions persisting at once must all succeed and leave one consistent file.
     await Promise.all([manager.setCustomPath("lc0", own), manager.removeAsset("maia-1100"), manager.removeAsset("maia-1300")]);
-    const saved = JSON.parse(readFileSync(path.join(userDataDir, "engine-assets.json"), "utf-8"));
-    expect(saved.records.find((r: { id: string }) => r.id === "lc0")).toMatchObject({ state: "custom", customPath: own });
+    const saved = JSON.parse(readFileSync(path.join(userDataDir, "engine-assets.json"), "utf-8")) as SavedAssets;
+    expect(saved.records.find((r) => r.id === "lc0")).toMatchObject({ state: "custom", customPath: own });
     expect(readdirSync(userDataDir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 

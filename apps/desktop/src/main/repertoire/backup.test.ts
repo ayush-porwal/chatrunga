@@ -480,7 +480,7 @@ describe("native backup: preview", () => {
   it("ignores unknown fields such as an apiKey", async () => {
     seed();
     const { text } = await exportText(true);
-    const document = JSON.parse(text);
+    const document = JSON.parse(text) as { apiKey?: string; repertoires: { settings?: unknown }[] };
     document.apiKey = "sk-secret";
     document.repertoires[0].settings = { enginePath: "/usr/local/bin/stockfish" };
     const preview = (await service.previewBackupImport({ json: JSON.stringify(document) }))!;
@@ -667,7 +667,9 @@ describe("native backup: restore", () => {
     expect(restored.retainedBackupPath).toMatch(
       new RegExp(`repertoire-backups/${detail.id}-.*\\.json$`)
     );
-    const retained = JSON.parse(readFileSync(restored.retainedBackupPath!, "utf8"));
+    const retained = JSON.parse(readFileSync(restored.retainedBackupPath!, "utf8")) as {
+      repertoires: { repertoire: { revision: number }; chapters: unknown[] }[];
+    };
     expect(retained.repertoires[0].repertoire.revision).toBe(edited.revision);
     expect(retained.repertoires[0].chapters).toHaveLength(1);
     // Practice history is kept beside the retained backup only, as raw rows, so it can't make the
@@ -675,7 +677,7 @@ describe("native backup: restore", () => {
     expect(retained.repertoires[0]).not.toHaveProperty("history");
     const history = JSON.parse(
       readFileSync(restored.retainedBackupPath!.replace(/\.json$/, ".history.json"), "utf8")
-    );
+    ) as { sessions: unknown[]; attempts: unknown[] };
     expect(history).toMatchObject({
       format: "chaturanga-repertoire-practice-history",
       repertoireId: detail.id

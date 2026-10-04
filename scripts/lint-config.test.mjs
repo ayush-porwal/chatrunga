@@ -328,6 +328,56 @@ export async function run(list: number[]) {
 `
   },
 
+  {
+    name: "unhandled union members, any, and untyped data flowing into typed code",
+    file: "apps/desktop/src/main/unsafe.ts",
+    rules: [
+      "typescript(switch-exhaustiveness-check)",
+      "typescript(no-explicit-any)",
+      "typescript(no-unsafe-assignment)",
+      "typescript(no-unsafe-member-access)",
+      "typescript(no-unsafe-call)",
+      "typescript(no-unsafe-argument)",
+      "typescript(no-unsafe-return)"
+    ],
+    lines: [3, 9, 10, 11, 12, 12, 13, 15],
+    code: `type Phase = "idle" | "running" | "done";
+export function label(phase: Phase): string {
+  switch (phase) {
+    case "idle":
+      return "Idle";
+  }
+  return "";
+}
+export function read(text: string, take: (value: string) => void, loose: any) {
+  const parsed = JSON.parse(text);
+  JSON.parse(text).field;
+  JSON.parse(text).run();
+  take(JSON.parse(text));
+  void [parsed, loose];
+  return JSON.parse(text);
+}
+`
+  },
+  {
+    name: "parsed data typed as unknown, then narrowed, passes",
+    file: "apps/desktop/src/main/unsafe-ok.ts",
+    rules: [
+      "typescript(no-unsafe-assignment)",
+      "typescript(no-unsafe-member-access)",
+      "typescript(no-unsafe-return)"
+    ],
+    lines: [],
+    code: `export function read(text: string): string | null {
+  const parsed: unknown = JSON.parse(text);
+  if (typeof parsed === "object" && parsed !== null && "name" in parsed && typeof parsed.name === "string") {
+    return parsed.name;
+  }
+  return null;
+}
+`
+  },
+
   // Test hygiene in unit and e2e tests.
   {
     name: "tests can't be focused or skipped, and every expect is complete and specific",
