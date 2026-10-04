@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Lock } from "lucide-react";
 import {
   clampRating,
   isRatingLocked,
@@ -11,38 +10,32 @@ import {
   type RatingMode
 } from "@chaturanga/shared/types/ratings";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
-import { SettingRow } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { SectionHeader } from "@/components/ui/page";
-import { cardPadded } from "@/lib/ui";
-import { useMinuteClock } from "@/lib/use-minute-clock";
+import { cardPadded, fieldLabel, sectionDescription } from "@/lib/ui";
 import { cn } from "@/lib/utils";
-import { ratingSourceLabel } from "./rating-labels";
 import { useSetSetting } from "./use-set-setting";
 
 /**
- * Settings → Ratings: the player's rating per Lichess mode. Game review uses the one for a game's
- * mode when the game has no rating of its own. With Lichess connected the modes fill from the
- * account; a synced rating Lichess doesn't call provisional can't be edited here.
+ * Settings → Ratings: the player's rating per Lichess mode, in one row of five cells. Game review
+ * uses the one for a game's mode when the game has no rating of its own. With Lichess connected
+ * every mode comes from the account and reads as plain text; otherwise each is an input.
  */
 export function RatingsSection({ appearance }: { appearance: AppSettings }) {
   const setSetting = useSetSetting();
-  const now = useMinuteClock();
   const ratings = appearance.playerRatings;
   return (
-    <section className={cn(cardPadded, "grid gap-2")}>
-      <SectionHeader
-        title="Ratings"
-        description="Game review pitches Maia and the coach to your rating for the game's time control, when the game doesn't carry one. With Lichess connected, they come from your account."
-      />
-      <div className="grid divide-y divide-line-subtle">
+    <section className={cn(cardPadded, "grid gap-3")}>
+      <p className={sectionDescription}>
+        Reviews use the game&rsquo;s own rating, else these. With Lichess connected, they come from
+        your account.
+      </p>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3 @md:grid-cols-3 @2xl:grid-cols-5">
         {RATING_MODES.map((mode) => (
-          <RatingRow
+          <RatingCell
             // A new stored value (typed, synced, another screen) starts the field afresh.
             key={`${mode}:${ratings[mode].rating}`}
             mode={mode}
             rating={ratings[mode]}
-            now={now}
             onChange={(value) => setSetting("playerRatings", setManualRating(ratings, mode, value))}
           />
         ))}
@@ -51,20 +44,28 @@ export function RatingsSection({ appearance }: { appearance: AppSettings }) {
   );
 }
 
-function RatingRow({
+function RatingCell({
   mode,
   rating,
-  now,
   onChange
 }: {
   mode: RatingMode;
   rating: ModeRating;
-  now: number;
   onChange: (rating: number) => void;
 }) {
   const id = `setting-rating-${mode}`;
-  const locked = isRatingLocked(rating);
+  const label = RATING_MODE_LABELS[mode];
   const [text, setText] = useState(String(rating.rating));
+  if (isRatingLocked(rating)) {
+    return (
+      <div role="group" aria-labelledby={`${id}-label`} className="grid min-w-0 gap-1">
+        <span id={`${id}-label`} className={cn(fieldLabel, "truncate")}>
+          {label}
+        </span>
+        <span className="flex h-8 items-center text-sm text-fg tabular-nums">{rating.rating}</span>
+      </div>
+    );
+  }
   const commit = () => {
     const value = Number(text);
     if (text.trim() && Number.isFinite(value) && Math.round(value) !== rating.rating) {
@@ -74,35 +75,25 @@ function RatingRow({
     } else setText(String(rating.rating));
   };
   return (
-    <SettingRow
-      label={RATING_MODE_LABELS[mode]}
-      htmlFor={id}
-      description={ratingSourceLabel(rating, now)}
-      control={
-        <>
-          {locked ? (
-            <Lock className="size-3.5 text-fg-subtle" aria-label="Synced from Lichess" />
-          ) : null}
-          <Input
-            id={id}
-            type="number"
-            inputMode="numeric"
-            min={RATING_RANGE.min}
-            max={RATING_RANGE.max}
-            step={10}
-            className="h-8 w-24 tabular-nums"
-            value={text}
-            readOnly={locked}
-            disabled={locked}
-            title={locked ? "Synced from your Lichess account" : undefined}
-            onChange={(event) => setText(event.target.value)}
-            onBlur={commit}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") commit();
-            }}
-          />
-        </>
-      }
-    />
+    <div className="grid min-w-0 gap-1">
+      <label htmlFor={id} className={cn(fieldLabel, "truncate")}>
+        {label}
+      </label>
+      <Input
+        id={id}
+        type="number"
+        inputMode="numeric"
+        min={RATING_RANGE.min}
+        max={RATING_RANGE.max}
+        step={10}
+        className="h-8 max-w-28 px-2.5 tabular-nums"
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") commit();
+        }}
+      />
+    </div>
   );
 }

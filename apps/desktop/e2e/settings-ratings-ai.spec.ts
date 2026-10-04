@@ -10,6 +10,9 @@ const MODES = ["Bullet", "Blitz", "Rapid", "Classical", "Correspondence"] as con
 const ratingsGroup = (page: Page) => page.getByRole("region", { name: "Ratings", exact: true });
 const ratingField = (page: Page, mode: (typeof MODES)[number]) =>
   ratingsGroup(page).getByRole("spinbutton", { name: mode, exact: true });
+/** A synced mode's cell: its name and the number, as plain text. */
+const ratingCell = (page: Page, mode: (typeof MODES)[number]) =>
+  ratingsGroup(page).getByRole("group", { name: mode, exact: true });
 const reviewTabs = (page: Page) => page.getByRole("tablist", { name: "Game review sections" });
 
 /**
@@ -58,35 +61,45 @@ test("Settings has a rating per Lichess mode; one typed in is kept across a rest
   await expect(ratingField(second.page, "Classical")).toHaveValue("1500");
 });
 
-test("a rating synced from Lichess is read-only and says so; a provisional one stays editable", async ({
+test("ratings synced from Lichess are plain read-only text; disconnected, they're inputs again", async ({
   launch
 }) => {
   const { page } = await launch();
   await skipWelcome(page);
   // What a sync stores (the network is off in these runs, so no account can connect).
   const syncedAt = Date.now() - 2 * 60 * 60 * 1000;
-  const manual = { source: "manual", rating: 1500 } as const;
   await seedRatings(page, {
-    bullet: manual,
-    blitz: { source: "lichess", rating: 1720, syncedAt, provisional: false },
-    rapid: { source: "lichess", rating: 1810, syncedAt, provisional: true },
-    classical: manual,
-    correspondence: manual
+    bullet: { source: "lichess", rating: 1650, syncedAt },
+    blitz: { source: "lichess", rating: 1720, syncedAt },
+    rapid: { source: "lichess", rating: 1810, syncedAt },
+    classical: { source: "lichess", rating: 1500, syncedAt },
+    correspondence: { source: "lichess", rating: 1500, syncedAt }
   });
   await openSettings(page);
 
-  await expect(ratingField(page, "Blitz")).toHaveValue("1720");
-  await expect(ratingField(page, "Blitz")).not.toBeEditable();
-  await expect(ratingsGroup(page)).toContainText("from Lichess · updated 2h ago");
-  await expect(ratingField(page, "Rapid")).toHaveValue("1810");
-  await expect(ratingField(page, "Rapid")).toBeEditable();
-  await expect(ratingsGroup(page)).toContainText("provisional on Lichess · updated 2h ago");
+  await expect(ratingsGroup(page).getByRole("spinbutton")).toHaveCount(0);
+  await expect(ratingCell(page, "Blitz")).toHaveText(/1720/);
+  await expect(ratingCell(page, "Rapid")).toHaveText(/1810/);
+  // No per-mode status: the group's one line explains where the numbers come from.
+  await expect(ratingsGroup(page)).not.toContainText(/updated|provisional/i);
+  await expect(ratingsGroup(page)).toContainText("With Lichess connected, they come from");
 
-  // Typing over the provisional one makes it yours.
+  // Disconnecting keeps the last synced values, as typed-in ones (what the sync's release stores).
+  await seedRatings(page, {
+    bullet: { source: "manual", rating: 1650 },
+    blitz: { source: "manual", rating: 1720 },
+    rapid: { source: "manual", rating: 1810 },
+    classical: { source: "manual", rating: 1500 },
+    correspondence: { source: "manual", rating: 1500 }
+  });
+  // Settings reads them again when opened.
+  await sidebar(page).getByRole("button", { name: "Home", exact: true }).click();
+  await openSettings(page);
+  await expect(ratingField(page, "Blitz")).toHaveValue("1720");
+  await expect(ratingField(page, "Blitz")).toBeEditable();
   await ratingField(page, "Rapid").fill("1650");
   await ratingField(page, "Rapid").press("Enter");
   await expect(ratingField(page, "Rapid")).toHaveValue("1650");
-  await expect(ratingsGroup(page)).not.toContainText("provisional on Lichess");
 });
 
 test("the AI section holds the one model and key; Review settings link to it and to the ratings", async ({

@@ -23,8 +23,8 @@ describe("parseSettingValue", () => {
     expect(parseSettingValue("practiceAutoAdvanceMs", 3000)).toBe(3000);
     const ratings = {
       ...uniformRatings(1500),
-      blitz: { source: "lichess", rating: 1720, syncedAt: Date.now(), provisional: false },
-      rapid: { source: "manual", rating: 1650, edited: true }
+      blitz: { source: "lichess", rating: 1720, syncedAt: Date.now() },
+      rapid: { source: "manual", rating: 1650 }
     };
     expect(parseSettingValue("playerRatings", ratings)).toEqual(ratings);
   });

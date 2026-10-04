@@ -2,9 +2,9 @@
  * The player's rating per Lichess mode (Settings → Ratings). Game review reads the one for the
  * reviewed game's mode when the game has no rating of its own (see chess/review-rating.ts).
  *
- * A rating is typed in (manual) or synced from the connected Lichess account. A synced rating that
- * Lichess no longer calls provisional is the account's real rating and can't be edited; a
- * provisional one, or a mode Lichess has no rating for, stays editable.
+ * A rating is typed in (manual) or synced from the connected Lichess account. With Lichess
+ * connected every mode comes from the account and can't be edited; disconnecting keeps the last
+ * synced values as typed-in ones.
  */
 import { isOneOf, isRecord } from "./guards";
 import type { LichessPerf, LichessSpeed } from "./lichess";
@@ -31,23 +31,13 @@ export const RATING_MODE_LABELS: Record<RatingMode, string> = {
 export const RATING_RANGE = { min: 100, max: 3500 } as const;
 export const DEFAULT_PLAYER_RATING = 1500;
 
-export type ManualModeRating = {
-  source: "manual";
-  rating: number;
-  /**
-   * Typed for this mode in Settings. A provisional Lichess rating doesn't replace it (one from the
-   * welcome, a migration or a disconnect is only a starting point, and does get replaced).
-   */
-  edited?: boolean;
-};
+export type ManualModeRating = { source: "manual"; rating: number };
 
 export type LichessModeRating = {
   source: "lichess";
   rating: number;
   /** When it was read from Lichess (epoch ms). */
   syncedAt: number;
-  /** Lichess marks a rating provisional until enough games are played (its `prov` flag). */
-  provisional: boolean;
 };
 
 export type ModeRating = ManualModeRating | LichessModeRating;
@@ -78,18 +68,27 @@ function isRating(value: unknown): value is number {
   );
 }
 
-/** Whether a value is a well-formed mode rating (what may be stored). */
+/**
+ * Whether a value is a well-formed mode rating (what may be stored). Earlier builds of this branch
+ * also stored `edited` and `provisional` flags; they are ignored (`normalizePlayerRatings` drops
+ * them).
+ */
 export function isModeRating(value: unknown): value is ModeRating {
   if (!isRecord(value) || !isRating(value.rating)) return false;
-  if (value.source === "manual")
-    return value.edited === undefined || typeof value.edited === "boolean";
+  if (value.source === "manual") return true;
   return (
     value.source === "lichess" &&
     typeof value.syncedAt === "number" &&
     Number.isFinite(value.syncedAt) &&
-    value.syncedAt >= 0 &&
-    typeof value.provisional === "boolean"
+    value.syncedAt >= 0
   );
+}
+
+/** A well-formed mode rating with only the fields it has today. */
+function canonicalModeRating(rating: ModeRating): ModeRating {
+  return rating.source === "manual"
+    ? { source: "manual", rating: rating.rating }
+    : { source: "lichess", rating: rating.rating, syncedAt: rating.syncedAt };
 }
 
 /** Whether a value is a rating for each of the five modes and nothing else. */
@@ -104,8 +103,8 @@ export function isPlayerRatings(value: unknown): value is PlayerRatings {
 }
 
 /**
- * Stored ratings as they can be used: each mode's well-formed value, the default for a mode that is
- * missing or damaged. Idempotent.
+ * Stored ratings as they can be used: each mode's well-formed value (without fields older builds
+ * stored), the default for a mode that is missing or damaged. Idempotent.
  */
 export function normalizePlayerRatings(value: unknown): PlayerRatings {
   const fallback = uniformRatings();
@@ -113,14 +112,14 @@ export function normalizePlayerRatings(value: unknown): PlayerRatings {
   if (!isRecord(value)) return ratings;
   for (const mode of RATING_MODES) {
     const item = value[mode];
-    if (isModeRating(item)) ratings[mode] = item;
+    if (isModeRating(item)) ratings[mode] = canonicalModeRating(item);
   }
   return ratings;
 }
 
-/** A synced rating Lichess doesn't call provisional: the account's real one, read-only in Settings. */
+/** A rating synced from the connected Lichess account: read-only in Settings. */
 export function isRatingLocked(rating: ModeRating): rating is LichessModeRating {
-  return rating.source === "lichess" && !rating.provisional;
+  return rating.source === "lichess";
 }
 
 /** Any mode holds a rating from Lichess. */
@@ -129,9 +128,8 @@ export function hasLichessRatings(ratings: PlayerRatings): boolean {
 }
 
 /**
- * The account's ratings applied: a settled Lichess rating always replaces the mode's; a provisional
- * one replaces anything but a rating typed for that mode in Settings; a mode Lichess has no rating
- * for keeps its value.
+ * The account's ratings applied: each one Lichess has (provisional or not) replaces the mode's; a
+ * mode Lichess has no rating for keeps its value.
  */
 export function applyLichessPerfs(
   current: PlayerRatings,
@@ -142,14 +140,7 @@ export function applyLichessPerfs(
   for (const mode of RATING_MODES) {
     const perf = perfs[mode];
     if (!perf || !Number.isFinite(perf.rating)) continue;
-    const mine = current[mode];
-    if (perf.provisional && mine.source === "manual" && mine.edited) continue;
-    next[mode] = {
-      source: "lichess",
-      rating: clampRating(perf.rating),
-      syncedAt,
-      provisional: perf.provisional
-    };
+    next[mode] = { source: "lichess", rating: clampRating(perf.rating), syncedAt };
   }
   return next;
 }
@@ -171,7 +162,7 @@ export function setManualRating(
   rating: number
 ): PlayerRatings {
   if (isRatingLocked(current[mode])) return current;
-  return { ...current, [mode]: { source: "manual", rating: clampRating(rating), edited: true } };
+  return { ...current, [mode]: { source: "manual", rating: clampRating(rating) } };
 }
 
 /** The welcome's one rating, for every mode but the locked (synced) ones. */

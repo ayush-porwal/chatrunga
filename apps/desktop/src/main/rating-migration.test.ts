@@ -36,6 +36,24 @@ describe("migratePlayerRatings", () => {
     });
   });
 
+  it("drops the edited and provisional flags an earlier build stored, keeping the values", () => {
+    const stored = {
+      ...uniformRatings(1500),
+      blitz: { source: "lichess", rating: 1720, syncedAt: 5, provisional: true },
+      rapid: { source: "manual", rating: 1650, edited: true }
+    };
+    expect(run({ playerRatings: stored })).toEqual({
+      result: "migrated",
+      written: [
+        {
+          ...uniformRatings(1500),
+          blitz: { source: "lichess", rating: 1720, syncedAt: 5 },
+          rapid: { source: "manual", rating: 1650 }
+        }
+      ]
+    });
+  });
+
   it("keeps the defaults when no rating was ever stored, or it can't be read", () => {
     expect(run({})).toEqual({ result: "unchanged", written: [] });
     expect(run({ reviewPlayerRating: "strong" })).toEqual({ result: "unchanged", written: [] });

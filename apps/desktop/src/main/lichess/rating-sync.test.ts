@@ -84,16 +84,16 @@ describe("LichessRatingSync", () => {
     await sync.sync();
     expect(ratings()).toEqual({
       ...uniformRatings(1500),
-      blitz: { source: "lichess", rating: 1720, syncedAt: NOW, provisional: false },
-      rapid: { source: "lichess", rating: 1810, syncedAt: NOW, provisional: true }
+      blitz: { source: "lichess", rating: 1720, syncedAt: NOW },
+      rapid: { source: "lichess", rating: 1810, syncedAt: NOW }
     });
   });
 
-  it("keeps a rating typed for a provisional mode", async () => {
+  it("replaces a rating typed while disconnected, provisional on Lichess or not", async () => {
     const { sync, ratings } = setup(setManualRating(uniformRatings(1500), "rapid", 1650));
     await sync.sync();
-    expect(ratings().rapid).toEqual({ source: "manual", rating: 1650, edited: true });
-    expect(ratings().blitz).toMatchObject({ source: "lichess", rating: 1720 });
+    expect(ratings().rapid).toEqual({ source: "lichess", rating: 1810, syncedAt: NOW });
+    expect(ratings().blitz).toEqual({ source: "lichess", rating: 1720, syncedAt: NOW });
   });
 
   it("keeps the last values offline, and only logs", async () => {

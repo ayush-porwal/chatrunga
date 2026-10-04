@@ -15,7 +15,7 @@ const ratings: PlayerRatings = {
   bullet: { source: "manual", rating: 1100 },
   blitz: { source: "manual", rating: 1200 },
   rapid: { source: "manual", rating: 1300 },
-  classical: { source: "lichess", rating: 1400, syncedAt: 1, provisional: false },
+  classical: { source: "lichess", rating: 1400, syncedAt: 1 },
   correspondence: { source: "manual", rating: 1500 }
 };
 

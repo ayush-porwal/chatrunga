@@ -18,6 +18,13 @@ describe("isPlayerRatings", () => {
     expect(
       isPlayerRatings({
         ...uniformRatings(1500),
+        blitz: { source: "lichess", rating: 1720, syncedAt: NOW }
+      })
+    ).toBe(true);
+    // As an earlier build stored them, with flags since dropped.
+    expect(
+      isPlayerRatings({
+        ...uniformRatings(1500),
         blitz: { source: "lichess", rating: 1720, syncedAt: NOW, provisional: true },
         rapid: { source: "manual", rating: 1600, edited: true }
       })
@@ -35,8 +42,8 @@ describe("isPlayerRatings", () => {
       { source: "manual", rating: 50 },
       { source: "manual", rating: 4000 },
       { source: "manual", rating: "1500" },
-      { source: "lichess", rating: 1500, provisional: false },
-      { source: "lichess", rating: 1500, syncedAt: NOW, provisional: "no" },
+      { source: "lichess", rating: 1500 },
+      { source: "lichess", rating: 1500, syncedAt: -1 },
       { source: "chess.com", rating: 1500 },
       null
     ])
@@ -52,6 +59,20 @@ describe("normalizePlayerRatings", () => {
       normalizePlayerRatings({ blitz: { source: "manual", rating: 1800 }, rapid: "nope" })
     ).toEqual({ ...uniformRatings(1500), blitz: { source: "manual", rating: 1800 } });
     expect(normalizePlayerRatings(undefined)).toEqual(uniformRatings(1500));
+  });
+
+  it("drops the edited and provisional flags an earlier build stored", () => {
+    expect(
+      normalizePlayerRatings({
+        ...uniformRatings(1500),
+        blitz: { source: "lichess", rating: 1720, syncedAt: NOW, provisional: true },
+        rapid: { source: "manual", rating: 1600, edited: true }
+      })
+    ).toEqual({
+      ...uniformRatings(1500),
+      blitz: { source: "lichess", rating: 1720, syncedAt: NOW },
+      rapid: { source: "manual", rating: 1600 }
+    });
   });
 
   it("is idempotent", () => {
@@ -75,12 +96,12 @@ describe("applyLichessPerfs", () => {
     );
     expect(next).toEqual({
       ...start,
-      blitz: { source: "lichess", rating: 1720, syncedAt: NOW, provisional: false },
-      rapid: { source: "lichess", rating: 1810, syncedAt: NOW, provisional: true }
+      blitz: { source: "lichess", rating: 1720, syncedAt: NOW },
+      rapid: { source: "lichess", rating: 1810, syncedAt: NOW }
     });
   });
 
-  it("keeps a rating typed for the mode over a provisional one, never over a settled one", () => {
+  it("replaces a typed-in rating, provisional on Lichess or not", () => {
     const typed = setManualRating(setManualRating(start, "rapid", 1650), "blitz", 1400);
     const next = applyLichessPerfs(
       typed,
@@ -90,13 +111,8 @@ describe("applyLichessPerfs", () => {
       },
       NOW
     );
-    expect(next.rapid).toEqual({ source: "manual", rating: 1650, edited: true });
-    expect(next.blitz).toEqual({
-      source: "lichess",
-      rating: 1720,
-      syncedAt: NOW,
-      provisional: false
-    });
+    expect(next.rapid).toEqual({ source: "lichess", rating: 1900, syncedAt: NOW });
+    expect(next.blitz).toEqual({ source: "lichess", rating: 1720, syncedAt: NOW });
   });
 
   it("updates an earlier sync", () => {
@@ -111,7 +127,7 @@ describe("applyLichessPerfs", () => {
         { blitz: { rating: 1731, games: 301, provisional: false } },
         NOW + 1000
       ).blitz
-    ).toEqual({ source: "lichess", rating: 1731, syncedAt: NOW + 1000, provisional: false });
+    ).toEqual({ source: "lichess", rating: 1731, syncedAt: NOW + 1000 });
   });
 });
 
@@ -143,21 +159,21 @@ describe("setManualRating / applyRatingToAllModes", () => {
     NOW
   );
 
-  it("edits a typed-in or provisional mode, never a settled synced one", () => {
-    expect(setManualRating(synced, "rapid", 1700).rapid).toEqual({
+  it("edits a typed-in mode, never a synced one (provisional on Lichess or not)", () => {
+    expect(setManualRating(synced, "bullet", 1700).bullet).toEqual({
       source: "manual",
-      rating: 1700,
-      edited: true
+      rating: 1700
     });
     expect(setManualRating(synced, "blitz", 1000)).toBe(synced);
+    expect(setManualRating(synced, "rapid", 1000)).toBe(synced);
     expect(setManualRating(synced, "bullet", 9000).bullet.rating).toBe(3500);
   });
 
-  it("sets the welcome's rating on every mode but the settled synced ones", () => {
+  it("sets the welcome's rating on every mode but the synced ones", () => {
     expect(applyRatingToAllModes(synced, 1234)).toEqual({
       bullet: { source: "manual", rating: 1234 },
       blitz: synced.blitz,
-      rapid: { source: "manual", rating: 1234 },
+      rapid: synced.rapid,
       classical: { source: "manual", rating: 1234 },
       correspondence: { source: "manual", rating: 1234 }
     });
