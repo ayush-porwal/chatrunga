@@ -155,7 +155,7 @@ export const ReviewTape = memo(function ReviewTape({
               </Badge>
             ) : null}
             {actions}
-            <GraphHelp />
+            <GraphHelp keyMoments={keyMomentIds !== undefined} />
           </>
         }
       />
@@ -173,8 +173,11 @@ export const ReviewTape = memo(function ReviewTape({
   );
 });
 
-/** The graph's help tooltip; memoised so selecting moves does not re-render its tooltip tree. */
-const GraphHelp = memo(function GraphHelp() {
+/**
+ * The graph's help tooltip (rings are explained only where key moments are drawn); memoised so
+ * selecting moves does not re-render its tooltip tree.
+ */
+const GraphHelp = memo(function GraphHelp({ keyMoments }: { keyMoments: boolean }) {
   return (
     <UiTooltip>
       <TooltipTrigger asChild>
@@ -188,8 +191,8 @@ const GraphHelp = memo(function GraphHelp() {
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-60">
-        White&apos;s perspective: above zero means White is better. Coloured points are marked
-        moves; ringed ones are the key moments. Click a point to jump to that move.
+        White&apos;s perspective: above zero means White is better. Coloured points are marked moves
+        {keyMoments ? "; ringed ones are the key moments" : ""}. Click a point to jump to that move.
       </TooltipContent>
     </UiTooltip>
   );
@@ -287,13 +290,8 @@ const EvalChart = memo(function EvalChart({
           cy={props.cy}
           r={point?.key ? 4 : annotation ? 3.25 : 2.5}
           className="cursor-pointer outline-none focus-visible:[stroke:var(--color-accent)] focus-visible:[stroke-width:2]"
-          fill={
-            annotation
-              ? annotationTone[annotation].fill
-              : point?.move
-                ? "var(--color-info)"
-                : "var(--color-fg-subtle)"
-          }
+          // Only marked moves are coloured; every other point (the start included) is neutral.
+          fill={annotation ? annotationTone[annotation].fill : "var(--color-fg-subtle)"}
           stroke={point?.key ? "var(--color-fg)" : "var(--color-surface)"}
           strokeWidth={point?.key ? 1.5 : 1}
           data-annotation={annotation ?? undefined}
