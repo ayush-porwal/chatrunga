@@ -17,6 +17,7 @@ import { SideDot } from "@/components/ui/side-dot";
 import { Stat, StatGroup } from "@/components/ui/stat";
 import { positionStatus } from "@/lib/position-status";
 import { BoardView } from "../features/board/BoardView";
+import { mainBoardSurface } from "../features/board/move-mark";
 import { BoardWorkspace, workspaceTabsClass } from "../features/board/BoardWorkspace";
 import { MoveNavigation } from "../features/board/MoveNavigation";
 import { EngineStatusPanel } from "../features/analysis/EngineStatusPanel";
@@ -231,7 +232,10 @@ function GameFooter() {
   const moveTree = useGameStore((state) => state.moveTree);
   const orientation = useGameStore((state) => state.orientation);
   const timeControl = useGameStore((state) => state.headers.timeControl);
-  const analysisMode = useGameStore((state) => state.mode === "analysis");
+  // The Analyze board: live analysis, or the sidebar's Analyze before its engine is switched on.
+  const analyzeBoard = useGameStore(
+    (state) => mainBoardSurface(state.mode, state.source) === "analysis"
+  );
   const goToNode = useGameStore((state) => state.goToNode);
   const reviewStatus = useReviewStore((state) => state.status);
   const review = useReviewStore((state) => state.review);
@@ -262,7 +266,7 @@ function GameFooter() {
     <KeyMomentNav moments={moments} selectedPly={selectedPly} onSelectNode={goToNode} />
   ) : null;
   const finished = hasReview && !reviewRunning ? review : null;
-  const shown = hasReview || (analysisMode && mainline.length > 0);
+  const shown = hasReview || (analyzeBoard && mainline.length > 0);
 
   return (
     <>
