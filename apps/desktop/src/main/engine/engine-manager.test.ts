@@ -429,6 +429,66 @@ describe("EngineManager", () => {
     expect(events.infos.length).toBeGreaterThan(0);
     expect(events.infos.length).toBeLessThan(10);
   });
+
+  it("relays Stockfish's lines, not its info strings, and a progress report never hides a line", async () => {
+    fakeEngine("stockfish", ["stockfish"]);
+    const events = collect(manager);
+    await manager.startAnalysis({
+      engineId: "stockfish",
+      searchId: "castled",
+      fen: START,
+      moves: ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "g8f6", "e1g1"],
+      multipv: 3
+    });
+    // Each depth ends with a `currmove` report after its three lines: the last line of slot 1
+    // in every batch, unless it's kept from taking that line's place.
+    await expectEventually(() => events.infos.some((info) => (info.depth ?? 0) >= 30));
+    await manager.stop();
+
+    expect(events.errors).toEqual([]);
+    expect(events.infos.some((info) => info.raw.startsWith("info string"))).toBe(false);
+    expect(events.infos.every((info) => info.score && info.pv?.length)).toBe(true);
+    expect(new Set(events.infos.map((info) => info.multipv))).toEqual(new Set([1, 2, 3]));
+    expect(events.infos.find((info) => info.multipv === 1)).toMatchObject({
+      searchId: "castled",
+      seldepth: expect.any(Number),
+      nps: 1048576,
+      wdl: { win: 120, draw: 840, loss: 40 },
+      score: { type: "cp", value: 35 }
+    });
+  });
+
+  it("ends a search with the engine's reason when the engine quits during it", async () => {
+    fakeEngine("stockfish", ["stockfish"]);
+    const events = collect(manager);
+    // Castling as chessops writes it (the king taking its rook): Stockfish 19 quits on it.
+    await manager.startAnalysis({
+      engineId: "stockfish",
+      searchId: "refused",
+      fen: START,
+      moves: ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "g8f6", "e1h1"],
+      multipv: 1
+    });
+    await expectEventually(() => events.errors.length === 1);
+    expect(events.errors[0]).toEqual({
+      engineId: "stockfish",
+      searchId: "refused",
+      message: "stockfish quit during the search (exit 1): Illegal move: e1h1"
+    });
+    expect(events.infos).toEqual([]);
+
+    // The next search starts a new process.
+    await manager.startAnalysis({
+      engineId: "stockfish",
+      searchId: "next",
+      fen: START,
+      moves: ["e2e4"],
+      multipv: 1
+    });
+    await expectEventually(() => events.infos.some((info) => info.searchId === "next"));
+    expect(spawns()).toBe(2);
+    expect(events.errors).toHaveLength(1);
+  });
 });
 
 describe("EngineManager review cancels", () => {

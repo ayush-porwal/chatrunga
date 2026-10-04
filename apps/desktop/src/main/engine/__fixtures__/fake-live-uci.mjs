@@ -12,6 +12,12 @@
 // (REVIEW_UNSTABLE): 4. Nxe5's loss lands near a severity boundary unless the played move is
 // searched alone, and a deeper search of 4... Qg5 (a larger budget than the first `go`) disagrees.
 // "review-stuck-check": REVIEW, but a deeper search never answers until `stop` (a check that hangs).
+// "stockfish": output shaped like Stockfish 19's. `go infinite` starts with `info string` lines,
+// then streams, for each depth, one line per MultiPV of the position's legal moves (seldepth,
+// score with a bound now and then, wdl, nodes, nps, hashfull, tbhits, time, pv) and a `currmove`
+// progress report (as older releases send). A `position` with an illegal move (castling as the
+// king taking its rook, `e1h1`, included) is refused the way Stockfish 19 refuses it: a CRITICAL
+// ERROR `info string`, then the process quits (exit 1).
 import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -86,6 +92,68 @@ const REVIEW_UNSTABLE = {
   }
 };
 const mode = process.argv[3];
+/** "stockfish" mode: chessops, to play the `position` moves and list the legal ones. */
+const chess =
+  mode === "stockfish"
+    ? {
+        ...(await import("chessops/chess")),
+        ...(await import("chessops/fen")),
+        ...(await import("chessops/util"))
+      }
+    : null;
+/** "stockfish" mode: the position set by the last `position` command, and the MultiPV asked for. */
+let stockfishPosition = null;
+let stockfishMultipv = 1;
+
+/**
+ * Plays a `position` command as Stockfish does: null (after its CRITICAL ERROR line) when a move
+ * isn't one of the position's legal moves in standard UCI (castling is the king's two-square move).
+ */
+function stockfishPositionFor(line) {
+  const [setup, moves = ""] = line.slice("position ".length).split(" moves ");
+  const fen = setup === "startpos" ? chess.INITIAL_FEN : setup.replace(/^fen /, "");
+  const position = chess.Chess.fromSetup(chess.parseFen(fen).unwrap()).unwrap();
+  for (const uci of moves.split(" ").filter(Boolean)) {
+    const move = chess.parseUci(uci);
+    const target = move && position.board.get(move.to);
+    const kingOntoRook = target?.role === "rook" && position.board.get(move.from)?.role === "king";
+    if (!move || kingOntoRook || !position.isLegal(move)) {
+      out(`info string CRITICAL ERROR: Command \`${line}\` failed. Reason: Illegal move: ${uci}`);
+      return null;
+    }
+    position.play(move);
+  }
+  return position;
+}
+
+/** The position's legal moves in standard UCI, castling as the king's two-square move. */
+function legalUcis(position) {
+  const ucis = [];
+  for (const [from, dests] of position.allDests()) {
+    for (const to of dests) {
+      const target = position.board.get(to);
+      if (target?.role === "rook" && target.color === position.turn) continue;
+      const promotion =
+        position.board.get(from)?.role === "pawn" && (to >> 3 === 0 || to >> 3 === 7) ? "q" : "";
+      ucis.push(`${chess.makeSquare(from)}${chess.makeSquare(to)}${promotion}`);
+    }
+  }
+  return ucis.sort();
+}
+
+/** One depth of a Stockfish-shaped search: a line per MultiPV, then a `currmove` progress report. */
+function stockfishDepth(moves) {
+  const nodes = depth * 4096;
+  moves.slice(0, stockfishMultipv).forEach((move, index) => {
+    const bound = depth % 4 === 0 && index === 0 ? " lowerbound" : "";
+    out(
+      `info depth ${depth} seldepth ${depth + 4} multipv ${index + 1} score cp ${35 - index * 20}${bound} ` +
+        `wdl 120 840 40 nodes ${nodes} nps 1048576 hashfull ${Math.min(depth, 1000)} tbhits 0 ` +
+        `time ${depth * 5} pv ${move}`
+    );
+  });
+  if (moves[0]) out(`info depth ${depth + 1} currmove ${moves[0]} currmovenumber 1`);
+}
 const review =
   mode === "review" || mode === "review-stuck-check"
     ? REVIEW
@@ -135,6 +203,13 @@ createInterface({ input: process.stdin }).on("line", (raw) => {
   const line = raw.trim();
   log(line);
   if (line.startsWith("position ")) positionMoves = line.split(" moves ")[1] ?? "";
+  if (line.startsWith("position ") && chess) {
+    stockfishPosition = stockfishPositionFor(line);
+    // Quits once the error line is out (a pipe's writes may still be pending).
+    if (!stockfishPosition) process.stdout.write("", () => process.exit(1));
+  }
+  if (line.startsWith("setoption name MultiPV value "))
+    stockfishMultipv = Number(line.slice("setoption name MultiPV value ".length));
   if (line.startsWith("position fen "))
     positionFen = line.slice("position fen ".length).split(" moves ")[0];
   if (line === "uci") {
@@ -144,7 +219,17 @@ createInterface({ input: process.stdin }).on("line", (raw) => {
     if (mode === "slow-start") setTimeout(() => out("uciok"), 10_000);
     else out("uciok");
   } else if (line === "isready") out("readyok");
-  else if (line === "go infinite") {
+  else if (line === "go infinite" && chess) {
+    depth = 0;
+    out("info string Available processors: 0-7");
+    out("info string Using 1 thread");
+    out("info string NNUE evaluation using nn-fake.nnue (1MiB, (1, 1, 1, 1, 1))");
+    const moves = stockfishPosition ? legalUcis(stockfishPosition) : [];
+    timer = setInterval(() => {
+      depth += 1;
+      stockfishDepth(moves);
+    }, 5);
+  } else if (line === "go infinite") {
     depth = 0;
     const lines = mode === "lines" ? (LINES[positionMoves] ?? []) : null;
     timer = setInterval(() => {

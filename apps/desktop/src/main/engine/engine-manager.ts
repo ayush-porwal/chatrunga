@@ -84,6 +84,15 @@ function processExited(proc: ChildProcessWithoutNullStreams): Promise<void> {
   });
 }
 
+/**
+ * What an engine's error message says went wrong: Stockfish's `Reason:` (`Illegal move: e1h1`
+ * from "CRITICAL ERROR: Command `position …` failed. Reason: Illegal move: e1h1"), else the message.
+ */
+function errorReason(line: string): string {
+  const message = line.slice("info string ".length).trim();
+  return /\bReason: (.+)$/.exec(message)?.[1] ?? message;
+}
+
 function positionCommand(fen: string, moves: readonly string[]): string {
   return `position fen ${fen}${moves.length ? ` moves ${moves.join(" ")}` : ""}`;
 }
@@ -113,6 +122,8 @@ type EngineSession = {
   ready: Promise<void>;
   /** The search this process was started for (its handshake errors belong to it). */
   owner: string;
+  /** The engine's last error message (an `info string` saying ERROR): why it quit, if it does. */
+  lastError: string | null;
 };
 
 type GamePosition = { gameKey?: string; fen: string; moves: readonly string[] };
@@ -395,6 +406,7 @@ export class EngineManager extends EventEmitter<EngineEvents> {
       await this.untilSuperseded(this.waitForReady());
       current();
       this.discardInfos();
+      session.lastError = null;
       session.searchId = searchId;
       begin();
     } catch (error) {
@@ -447,7 +459,8 @@ export class EngineManager extends EventEmitter<EngineEvents> {
       lastGame: null,
       multipv: null,
       ready: Promise.resolve(),
-      owner: searchId
+      owner: searchId,
+      lastError: null
     };
     this.session = session;
     proc.stdout.on(
@@ -469,6 +482,20 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     proc.on("exit", (code) => {
       if (this.session !== session) return;
       this.session = null;
+      // The engine quit during a search (Stockfish 19 quits on an illegal move): the search ends
+      // with an error, with the engine's reason if it gave one. Its lines would never come.
+      const searchId = session.searchId;
+      if (searchId) {
+        session.searchId = null;
+        this.flushInfos();
+        const exit = code !== null ? ` (exit ${code})` : "";
+        const reason = session.lastError ? `: ${session.lastError}` : ".";
+        this.emit("error", {
+          engineId: config.id,
+          searchId,
+          message: `${config.name} quit during the search${exit}${reason}`
+        });
+      }
       this.rejectLineWaiter(
         `Engine exited${code !== null ? ` (exit ${code})` : ""}. For lc0 set the weights file in settings or add --weights=/path/to/net.pb.gz in args.`
       );
@@ -586,6 +613,11 @@ export class EngineManager extends EventEmitter<EngineEvents> {
       this.lineWaiter.resolve();
       return;
     }
+    // A message, not search output (Stockfish's processors, threads and network, or an error).
+    if (line.startsWith("info string ")) {
+      if (line.includes("ERROR")) session.lastError = errorReason(line);
+      return;
+    }
     const searchId = session.searchId;
     if (!searchId) return;
     const bestMove = parseBestMove(engine.id, line);
@@ -600,9 +632,15 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     if (info) this.queueInfo({ ...info, searchId });
   }
 
-  /** Keeps the newest line per MultiPV slot and relays them together, ~10 times a second. */
+  /**
+   * Keeps the newest line per MultiPV slot and relays them together, ~10 times a second. A
+   * progress report (`info depth 31 currmove e2e4 currmovenumber 1`, no score or moves) doesn't
+   * take the place of a line waiting in its slot: it would hide that line from the panel.
+   */
   private queueInfo(info: EngineInfo): void {
-    this.pendingInfos.set(info.multipv ?? 1, info);
+    const slot = info.multipv ?? 1;
+    const progress = !info.score && !info.pv?.length;
+    if (!progress || !this.pendingInfos.get(slot)?.score) this.pendingInfos.set(slot, info);
     if (this.infoTimer) return;
     this.infoTimer = setTimeout(() => this.flushInfos(), ENGINE_INFO_INTERVAL_MS);
   }
