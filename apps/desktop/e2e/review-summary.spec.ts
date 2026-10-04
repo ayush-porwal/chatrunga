@@ -195,11 +195,23 @@ test("review settings are a dialog that switches sides; with AI off, cards don't
 
   // No Settings tab, and no settings button in the panel: the titlebar's gear opens the dialog.
   await expect(reviewTabs(page).getByRole("tab", { name: "Settings", exact: true })).toHaveCount(0);
-  await expect(
-    page
-      .getByRole("complementary", { name: "Review" })
-      .getByRole("button", { name: "Review settings", exact: true })
-  ).toHaveCount(0);
+  // The panel's Review header: "⌄ Review", the Analysis switch, the engine, and the gear last.
+  const panel = page.getByRole("complementary", { name: "Review" });
+  await expect(panel.getByRole("button", { name: "Review", exact: true })).toHaveAttribute(
+    "aria-expanded",
+    "true"
+  );
+  await expect(panel.getByRole("switch", { name: "Analysis" })).toHaveAttribute(
+    "aria-checked",
+    "false"
+  );
+  expect(
+    await panel.evaluate((aside) => {
+      const gear = aside.querySelector('[aria-label="Review settings"]');
+      return gear?.parentElement?.lastElementChild === gear;
+    })
+  ).toBe(true);
+
   // The tab labels never truncate: each tab is as wide as its label.
   for (const tab of await reviewTabs(page).getByRole("tab").all())
     expect(
@@ -209,7 +221,7 @@ test("review settings are a dialog that switches sides; with AI off, cards don't
       })
     ).toBe(true);
   await page
-    .getByRole("banner", { name: "Titlebar" })
+    .getByRole("complementary", { name: "Review" })
     .getByRole("button", { name: "Review settings", exact: true })
     .click();
   const dialog = page.getByRole("dialog", { name: "Review settings" });
@@ -235,7 +247,7 @@ test("review settings are a dialog that switches sides; with AI off, cards don't
   await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await page
-    .getByRole("banner", { name: "Titlebar" })
+    .getByRole("complementary", { name: "Review" })
     .getByRole("button", { name: "Review settings", exact: true })
     .click();
   await expect(
@@ -259,10 +271,29 @@ test("review settings are a dialog that switches sides; with AI off, cards don't
   await expect(card).not.toHaveAttribute("aria-expanded", /.*/);
   await expect(card).not.toHaveAttribute("aria-controls", /.*/);
   await expect(cards).not.toContainText("A critical find");
+
   await expect(cards).not.toContainText("Punishes");
   await card.click();
   await expect(page.getByRole("heading", { name: "4… Qg5", level: 2 })).toBeVisible();
   await expect(
     page.getByRole("region", { name: "Commentary" }).getByText(/A critical find/)
   ).toHaveCount(0);
+
+  // The Analysis switch runs live analysis of the board (the Engine tab shows its lines), and
+  // stops it again.
+  const analysis = panel.getByRole("switch", { name: "Analysis" });
+  await analysis.click();
+  await expect(analysis).toHaveAttribute("aria-checked", "true");
+  await reviewTabs(page).getByRole("tab", { name: "Engine", exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Start", exact: true })).toHaveCount(0);
+  await analysis.click();
+  await expect(analysis).toHaveAttribute("aria-checked", "false");
+
+  // "⌄ Review" folds the tabs and their content away; the charts stay.
+  const reviewToggle = panel.getByRole("button", { name: "Review", exact: true });
+  await reviewToggle.click();
+  await expect(reviewToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(reviewTabs(page)).toBeHidden();
+  await reviewToggle.click();
+  await expect(reviewTabs(page)).toBeVisible();
 });

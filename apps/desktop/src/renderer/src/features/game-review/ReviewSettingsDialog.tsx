@@ -1,10 +1,8 @@
 import { useEffect } from "react";
-import { Settings } from "lucide-react";
 import { create } from "zustand";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { IconButton } from "@/components/ui/icon-button";
 import { ReviewSettingsPanel, type ReviewSideSetting } from "./ReviewSettingsPanel";
 
 /**
@@ -18,24 +16,6 @@ export const useReviewSettingsDialog = create<{ open: boolean; setOpen: (open: b
 /** Opens the review settings dialog (from outside the review page). */
 export function openReviewSettingsDialog(): void {
   useReviewSettingsDialog.getState().setOpen(true);
-}
-
-const SETTINGS_ICON = <Settings />;
-
-/**
- * The gear in the Game review titlebar that opens the review settings (the dialog itself is
- * hosted by the review page, which knows the game's side and rating).
- */
-export function ReviewSettingsButton({ className }: { className?: string }) {
-  const setOpen = useReviewSettingsDialog((state) => state.setOpen);
-  return (
-    <IconButton
-      label="Review settings"
-      icon={SETTINGS_ICON}
-      className={className}
-      onClick={() => setOpen(true)}
-    />
-  );
 }
 
 /**

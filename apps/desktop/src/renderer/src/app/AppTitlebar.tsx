@@ -16,7 +16,6 @@ import { useGameStore } from "../stores/game-store";
 import { useLichessStore } from "../stores/lichess-store";
 import { lichessGameLabel } from "../features/lichess/lichess-game";
 import { AnalysisSwitcher } from "../features/game-review/AnalysisSwitcher";
-import { ReviewSettingsButton } from "../features/game-review/ReviewSettingsDialog";
 import { selectCanGoBack, selectCanGoForward, useHistoryStore } from "../stores/history-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
 import { useReviewStore } from "../stores/review-store";
@@ -346,8 +345,6 @@ export const ReviewTitlebar = memo(function ReviewTitlebar({
               <TooltipContent side="bottom">Add or import moves to review</TooltipContent>
             </Tooltip>
           )}
-          {/* Settings always end the row. */}
-          <ReviewSettingsButton className={titlebarIconButton} />
         </>
       }
     />

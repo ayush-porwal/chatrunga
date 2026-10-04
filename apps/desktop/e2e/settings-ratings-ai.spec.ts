@@ -123,10 +123,10 @@ test("the AI section holds the one model and key; Review settings link to it and
     .getByRole("dialog", { name: "Choose a game" })
     .getByRole("button", { name: /^Alpha vs Beta/ })
     .click();
-  // Review settings are a dialog behind the titlebar's gear, not a tab.
+  // Review settings are a dialog behind the gear in the panel's Review header, not a tab.
   await expect(reviewTabs(page).getByRole("tab", { name: "Settings", exact: true })).toHaveCount(0);
   await page
-    .getByRole("banner", { name: "Titlebar" })
+    .getByRole("complementary", { name: "Review" })
     .getByRole("button", { name: "Review settings", exact: true })
     .click();
   await expect(page.getByRole("dialog", { name: "Review settings" })).toBeVisible();
@@ -145,7 +145,7 @@ test("the AI section holds the one model and key; Review settings link to it and
   if (await picker.isVisible())
     await picker.getByRole("button", { name: /^Alpha vs Beta/ }).click();
   await page
-    .getByRole("banner", { name: "Titlebar" })
+    .getByRole("complementary", { name: "Review" })
     .getByRole("button", { name: "Review settings", exact: true })
     .click();
   await page.getByRole("button", { name: "Edit ratings", exact: true }).click();

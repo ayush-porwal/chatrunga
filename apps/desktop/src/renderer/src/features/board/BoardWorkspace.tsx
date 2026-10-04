@@ -51,6 +51,9 @@ import { useFocusCentring, useSnappedBoardFrame } from "./useBoardFrame";
 
 export function BoardWorkspace({
   board,
+  header,
+  bodyCollapsed = false,
+  bodyId,
   tabs,
   summary,
   notices,
@@ -62,6 +65,14 @@ export function BoardWorkspace({
 }: {
   /** The board column content — always a <BoardStage>. */
   board: ReactNode;
+  /**
+   * A heading row above the tabs (Game review's "⌄ Review" with its controls), whose toggle folds
+   * the tabs and everything under them away: `bodyCollapsed`, with `bodyId` the folded block's id
+   * (the toggle's aria-controls). The footer then takes the panel's height.
+   */
+  header?: ReactNode;
+  bodyCollapsed?: boolean;
+  bodyId?: string;
   /** Panel tabs (one SegmentedControl role="tablist"). */
   tabs?: ReactNode;
   /**
@@ -176,19 +187,37 @@ export function BoardWorkspace({
             {/* The tabs and the summary strip span the panel at any width (as its controls do);
                 only reading text keeps `--workspace-panel-measure` (the notices, by
                 `.workspace-panel-body` in app.css). */}
-            {tabs ? <div className="shrink-0 px-3 pt-3">{tabs}</div> : null}
-            {summary === undefined ? null : (
-              <div className="flex h-14 shrink-0 items-center border-b border-line-subtle px-3">
-                <div className="flex h-full w-full min-w-0 items-center">{summary}</div>
-              </div>
-            )}
-            <div className="workspace-panel-body flex min-h-0 flex-1 flex-col gap-3 p-3">
-              {notices}
-              <div className="min-h-0 flex-1" {...tabPanel}>
-                {children}
+            {header ? <div className="shrink-0 px-3 pt-2">{header}</div> : null}
+            <div
+              id={bodyId}
+              hidden={bodyCollapsed}
+              className={cn("flex min-h-0 flex-col", bodyCollapsed ? "hidden" : "flex-1")}
+            >
+              {tabs ? (
+                <div className={cn("shrink-0 px-3", header ? "pt-1" : "pt-3")}>{tabs}</div>
+              ) : null}
+              {summary === undefined ? null : (
+                <div className="flex h-14 shrink-0 items-center border-b border-line-subtle px-3">
+                  <div className="flex h-full w-full min-w-0 items-center">{summary}</div>
+                </div>
+              )}
+              <div className="workspace-panel-body flex min-h-0 flex-1 flex-col gap-3 p-3">
+                {notices}
+                <div className="min-h-0 flex-1" {...tabPanel}>
+                  {children}
+                </div>
               </div>
             </div>
-            {footer ? <div className="shrink-0 border-t border-line-subtle">{footer}</div> : null}
+            {footer ? (
+              <div
+                className={cn(
+                  "border-t border-line-subtle",
+                  bodyCollapsed ? "flex min-h-0 flex-1 flex-col" : "shrink-0"
+                )}
+              >
+                {footer}
+              </div>
+            ) : null}
           </aside>
         </div>
       </div>
