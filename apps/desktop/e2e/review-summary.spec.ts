@@ -193,18 +193,15 @@ test("review settings are a dialog that switches sides; with AI off, cards don't
   await skipWelcome(page);
   await reviewTrapGameAs(page, app, profile, "White (Alpha)");
 
-  // No Settings tab, and no settings button in the panel: the titlebar's gear opens the dialog.
+  // No Settings tab: the gear in the panel's header opens the settings as a dialog.
   await expect(reviewTabs(page).getByRole("tab", { name: "Settings", exact: true })).toHaveCount(0);
-  // The panel's header: "⌄ Game Review", the Analysis switch and the gear, last.
+  // The panel's header: "⌄ Game Review" and the gear, last. Game Review runs no live engine.
   const panel = page.getByRole("complementary", { name: "Review" });
   await expect(panel.getByRole("button", { name: "Game Review", exact: true })).toHaveAttribute(
     "aria-expanded",
     "true"
   );
-  await expect(panel.getByRole("switch", { name: "Analysis" })).toHaveAttribute(
-    "aria-checked",
-    "false"
-  );
+  await expect(panel.getByRole("switch", { name: "Analysis" })).toHaveCount(0);
   expect(
     await panel.evaluate((aside) => {
       const gear = aside.querySelector('[aria-label="Review settings"]');
@@ -278,16 +275,6 @@ test("review settings are a dialog that switches sides; with AI off, cards don't
   await expect(
     page.getByRole("region", { name: "Commentary" }).getByText(/A critical find/)
   ).toHaveCount(0);
-
-  // The Analysis switch runs live analysis of the board (the Engine tab shows its lines), and
-  // stops it again.
-  const analysis = panel.getByRole("switch", { name: "Analysis" });
-  await analysis.click();
-  await expect(analysis).toHaveAttribute("aria-checked", "true");
-  await reviewTabs(page).getByRole("tab", { name: "Engine", exact: true }).click();
-  await expect(panel.getByRole("button", { name: "Start", exact: true })).toHaveCount(0);
-  await analysis.click();
-  await expect(analysis).toHaveAttribute("aria-checked", "false");
 
   // "⌄ Game Review" folds the tabs and their content away; the charts stay.
   const reviewToggle = panel.getByRole("button", { name: "Game Review", exact: true });

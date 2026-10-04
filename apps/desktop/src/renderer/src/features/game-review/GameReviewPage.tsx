@@ -38,16 +38,9 @@ import { MoveNavigation } from "../board/MoveNavigation";
 import { useGameReviewCommentary } from "./useGameReviewCommentary";
 import { reviewRatingLabel, useReviewRating } from "./use-review-rating";
 import { useStoreHintsOnLeave } from "../onboarding/Coachmark";
-import {
-  useEnginesQuery,
-  useOpenRouterConfigQuery,
-  useUpdateSettingMutation
-} from "../../queries/api";
+import { useOpenRouterConfigQuery, useUpdateSettingMutation } from "../../queries/api";
 import { useCollapsible } from "@/components/ui/collapsible-section";
-import { analysisEngineFor } from "../analysis/analysis-engine";
-import { EngineStatusPanel } from "../analysis/EngineStatusPanel";
 import { ReviewPanelHeader } from "./ReviewPanelHeader";
-import { useReviewLiveAnalysis } from "./review-live-analysis";
 import { openSavedGame } from "../game/saved-game";
 import {
   reviewAnchorFor,
@@ -380,22 +373,12 @@ function GameReviewPageInner({
 
   // The "Review" section (tabs and content) folds under its header; the charts take the space.
   const reviewSection = useCollapsible("review-panel:review");
-  // The Analysis switch: live analysis of the board with the Analyze page's engine.
-  const engines = useEnginesQuery();
-  const liveEngineId = analysisEngineFor(engines.data, settings.analysisEngineId);
-  useReviewLiveAnalysis(isRunning, liveEngineId);
-  const liveAnalysing = useGameStore((state) => state.mode === "analysis");
   const panelId = useId();
   return (
     <CardCommentaryContext.Provider value={cardCommentary}>
       <BoardWorkspace
         tabPanel={tabPanelProps(panelId, activeTab)}
-        header={
-          <ReviewPanelHeader
-            section={reviewSection}
-            analysisDisabled={isRunning || !liveEngineId}
-          />
-        }
+        header={<ReviewPanelHeader section={reviewSection} />}
         bodyCollapsed={!reviewSection.open}
         bodyId={reviewSection.contentId}
         panelLabel="Review"
@@ -633,10 +616,7 @@ function GameReviewPageInner({
             onHub={onRepertoireHub}
           />
         ) : null}
-        {activeTab === "engine" && !emptyGame && liveAnalysing ? (
-          // The Analysis switch is on: the engine's live lines for the board's position.
-          <EngineStatusPanel />
-        ) : activeTab === "engine" && !emptyGame ? (
+        {activeTab === "engine" && !emptyGame ? (
           <ReviewEnginePanel
             move={panelMove}
             hasReview={hasMoves}
