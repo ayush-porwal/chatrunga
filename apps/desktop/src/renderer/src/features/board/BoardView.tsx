@@ -16,6 +16,7 @@ import type {
 import { isMatchMode, useGameStore } from "../../stores/game-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
 import { useDisplayedReviewMoves } from "../../stores/review-validity";
+import { useReviewStore } from "../../stores/review-store";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { useEnginesQuery } from "../../queries/api";
 import { cn } from "@/lib/utils";
@@ -23,6 +24,8 @@ import { uciFromUserMove, userMoveBetween } from "@/lib/uci";
 import { submitPuzzleMove } from "../puzzles/puzzle-session";
 import { PlayerRow } from "./PlayerIdentity";
 import { EvalBar } from "./EvalBar";
+import { BoardMoveMarkBadge } from "./BoardMoveMarkBadge";
+import { boardMoveMark, mainBoardSurface } from "./move-mark";
 import { BoardStage } from "./BoardWorkspace";
 import { EngineClock } from "./EngineClock";
 import { useBoardAppearance, useCgBoardBackground } from "./useBoardAppearance";
@@ -67,6 +70,18 @@ export function BoardView() {
     (state) => state.feedbackKind === "complete" && state.outcome === "solved"
   );
   const reviewMoves = useDisplayedReviewMoves();
+  const reviewRunning = useReviewStore((state) => state.status === "running");
+  const source = useGameStore((state) => state.source);
+  // The reviewed move's mark on its square: on the Analyze board only (never in play or puzzles).
+  const moveMark = useMemo(
+    () =>
+      boardMoveMark(mainBoardSurface(mode, source), {
+        running: reviewRunning,
+        moves: reviewMoves,
+        nodeId: currentNodeId
+      }),
+    [currentNodeId, mode, reviewMoves, reviewRunning, source]
+  );
   const engines = useEnginesQuery();
   const activeEngineId = useAnalysisStore((state) => state.activeEngineId);
   const { appearance, squareBackground, squareColors, pieceClassName } = useBoardAppearance();
@@ -525,6 +540,7 @@ export function BoardView() {
             orientation === "white" ? "orientation-white" : "orientation-black"
           )}
         />
+        <BoardMoveMarkBadge mark={moveMark} orientation={orientation} />
       </div>
     </BoardStage>
   );
