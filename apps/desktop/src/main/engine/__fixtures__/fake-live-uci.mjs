@@ -20,6 +20,9 @@
 // ERROR `info string`, then the process quits (exit 1).
 // Its error line is written straight to the pipe and the process ends at once, as a C++ engine's
 // do: nothing waits for the line to be read, so the app may learn of the exit first.
+// "stockfish-crash": "stockfish", but the process dies without a word during every search (killed,
+// as by the system when memory runs out): at the fifth depth of `go infinite`, at once for a
+// bounded `go` (an engine game's).
 import { appendFileSync, writeSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -30,6 +33,7 @@ const quitWith = (line) => {
   writeSync(1, `${line}\n`);
   process.exit(1);
 };
+const crash = () => process.kill(process.pid, "SIGKILL");
 let timer = null;
 let depth = 0;
 /** The moves of the last `position` command (after `moves`). */
@@ -99,16 +103,16 @@ const REVIEW_UNSTABLE = {
   }
 };
 const mode = process.argv[3];
-/** "stockfish" mode: chessops, to play the `position` moves and list the legal ones. */
+/** "stockfish" modes: chessops, to play the `position` moves and list the legal ones. */
 const chess =
-  mode === "stockfish"
+  mode === "stockfish" || mode === "stockfish-crash"
     ? {
         ...(await import("chessops/chess")),
         ...(await import("chessops/fen")),
         ...(await import("chessops/util"))
       }
     : null;
-/** "stockfish" mode: the position set by the last `position` command, and the MultiPV asked for. */
+/** "stockfish" modes: the position set by the last `position` command, and the MultiPV asked for. */
 let stockfishPosition = null;
 let stockfishMultipv = 1;
 
@@ -235,9 +239,11 @@ createInterface({ input: process.stdin }).on("line", (raw) => {
     const moves = stockfishPosition ? legalUcis(stockfishPosition) : [];
     timer = setInterval(() => {
       depth += 1;
+      if (mode === "stockfish-crash" && depth === 5) crash();
       stockfishDepth(moves);
     }, 5);
-  } else if (line === "go infinite") {
+  } else if (line.startsWith("go") && mode === "stockfish-crash") crash();
+  else if (line === "go infinite") {
     depth = 0;
     const lines = mode === "lines" ? (LINES[positionMoves] ?? []) : null;
     timer = setInterval(() => {

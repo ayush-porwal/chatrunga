@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { EngineError, EngineInfo } from "@chaturanga/shared/types/engine";
 import type { AnalysisTarget } from "../features/analysis/live-analysis";
 
 // The hook's effects run once, outside React (as in useGameAutosave's tests); the engine calls
@@ -13,17 +14,32 @@ vi.mock("react", async (importOriginal) => ({
   useRef: <T>(current: T) => ({ current })
 }));
 const engines = {
-  startAnalysis: vi.fn<(request: { fen: string; moves: string[] }) => Promise<void>>(
-    async () => {}
-  ),
-  startGame: vi.fn(async () => {}),
+  startAnalysis: vi.fn<
+    (request: { searchId: string; fen: string; moves: string[] }) => Promise<void>
+  >(async () => {}),
+  startGame: vi.fn<(request: { searchId: string }) => Promise<void>>(async () => {}),
   stop: vi.fn(async () => {})
+};
+/** What main sends: the driver's own handlers, called as an engine event arrives. */
+const engineEvents = {
+  info: (_info: EngineInfo) => {},
+  error: (_error: EngineError) => {}
 };
 const unsubscribe = () => () => {};
 vi.stubGlobal("window", globalThis);
 vi.stubGlobal("chaturanga", {
   engines,
-  events: { onEngineInfo: unsubscribe, onEngineBestMove: unsubscribe, onEngineError: unsubscribe }
+  events: {
+    onEngineInfo: (handler: (info: EngineInfo) => void) => {
+      engineEvents.info = handler;
+      return () => {};
+    },
+    onEngineBestMove: unsubscribe,
+    onEngineError: (handler: (error: EngineError) => void) => {
+      engineEvents.error = handler;
+      return () => {};
+    }
+  }
 });
 
 const { useEngineDriver } = await import("./useEngineDriver");
@@ -125,5 +141,61 @@ describe("useEngineDriver with a study's analysis target", () => {
     useAnalysisStore.getState().setTarget(null);
     await settle();
     expect(engines.startAnalysis).not.toHaveBeenCalled();
+  });
+});
+
+describe("useEngineDriver when the engine quits during a search", () => {
+  const line = (searchId: string, depth: number): EngineInfo => ({
+    engineId: "sf",
+    searchId,
+    multipv: 1,
+    depth,
+    score: { type: "cp", value: 20 },
+    pv: ["e2e4"],
+    raw: "",
+    receivedAt: 0
+  });
+
+  it("shows the lines it sent before quitting, and its analysis stays ended with the error", async () => {
+    await settle();
+    const searchId = engines.startAnalysis.mock.calls.at(-1)![0].searchId;
+    // The first line shows at once; the next waits for the buffer's next flush.
+    engineEvents.info(line(searchId, 1));
+    engineEvents.info(line(searchId, 2));
+    engineEvents.error({
+      engineId: "sf",
+      searchId,
+      message: "sf quit during the search (exit 1)."
+    });
+
+    const analysis = useAnalysisStore.getState();
+    expect(analysis.topLines.map((info) => info.depth)).toEqual([2]);
+    expect(analysis.status).toBe("error");
+    expect(analysis.error).toBe("sf quit during the search (exit 1).");
+  });
+
+  it("stops the engine's clock in an engine game, without searching its position again", async () => {
+    useAnalysisStore.getState().setActiveEngine("sf");
+    const game = useGameStore.getState();
+    game.setEngineMatchClock({ initialMs: 60_000, incrementMs: 0 });
+    game.initEngineClockLive();
+    game.setEngineSide("white");
+    game.setMode("engine");
+    await settle();
+    expect(engines.startGame).toHaveBeenCalledTimes(1);
+    expect(useGameStore.getState().engineClockLive?.stoppedAt).toBeUndefined();
+
+    const searchId = engines.startGame.mock.calls[0]![0].searchId;
+    engineEvents.error({
+      engineId: "sf",
+      searchId,
+      message: "sf quit during the search (exit 1)."
+    });
+    await settle();
+    const state = useGameStore.getState();
+    expect(state.engineClockLive?.stoppedAt).toBeTypeOf("number");
+    expect(state.gameOutcome).toBeNull();
+    expect(useAnalysisStore.getState().error).toBe("sf quit during the search (exit 1).");
+    expect(engines.startGame).toHaveBeenCalledTimes(1);
   });
 });
