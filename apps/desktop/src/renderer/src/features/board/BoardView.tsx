@@ -525,7 +525,8 @@ export function BoardView() {
         />
       }
     >
-      <div className="relative h-full w-full">
+      {/* Its own stacking context: Chessground's layers and the move mark stack within the board. */}
+      <div className="relative isolate h-full w-full">
         {/*
           Chessground mutates the mount node’s classList (cg-wrap, orientation-*, manipulable).
           Keeping those classes in React-controlled className prevents reconciliation from stripping them,

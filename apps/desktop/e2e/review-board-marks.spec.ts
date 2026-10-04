@@ -77,6 +77,40 @@ async function badgeSquare(page: Page, flipped = false) {
   return { square: `${file}${rank}`, topRight: x - column > 0.5 && y - row < 0.5 };
 }
 
+/**
+ * What is drawn on top at the badge's centre: the badge, or the piece on its square. Hit testing
+ * follows paint order, so for this check alone the badge and the pieces take pointer events (both
+ * normally let them through to the board). `piece` puts Chessground's class for a sliding ("anim")
+ * or dragged ("dragging") piece on the piece there first.
+ */
+async function onTopAtBadge(page: Page, piece?: "anim" | "dragging") {
+  return board(page).evaluate((region, pieceClass) => {
+    const badge = region.querySelector<HTMLElement>("[data-square]");
+    if (!badge) throw new Error("no badge");
+    const box = badge.getBoundingClientRect();
+    const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+    const under = [...region.querySelectorAll<HTMLElement>("cg-board piece:not(.ghost)")].find(
+      (item) => {
+        const rect = item.getBoundingClientRect();
+        return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
+      }
+    );
+    if (!under) throw new Error("no piece under the badge");
+    const style = document.createElement("style");
+    style.textContent = "cg-board piece, [data-square] { pointer-events: auto !important; }";
+    document.head.append(style);
+    if (pieceClass) under.classList.add(pieceClass);
+    try {
+      const hit = document.elementFromPoint(x, y);
+      if (hit && badge.contains(hit)) return "badge";
+      return hit === under ? "piece" : (hit?.tagName.toLowerCase() ?? "nothing");
+    } finally {
+      if (pieceClass) under.classList.remove(pieceClass);
+      style.remove();
+    }
+  }, piece);
+}
+
 /** Imports the trap game and reviews it on the fake engine; ends on the review page. */
 async function reviewTrapGame({ app, page }: LaunchedApp, profile: string) {
   await skipWelcome(page);
@@ -121,6 +155,9 @@ test("game review prints the evaluation at the better side's end and marks the r
   await expect(blunder).toHaveAttribute("data-square", "e5");
   expect(await badgeSquare(page)).toEqual({ square: "e5", topRight: true });
   await screenshot(page, "blunder");
+  // Drawn over the knight on e5, standing or sliding in.
+  expect(await onTopAtBadge(page)).toBe("badge");
+  expect(await onTopAtBadge(page, "anim")).toBe("badge");
 
   // The badge follows navigation: 4… Qg5, the critical find, on g5.
   await navigation(page).getByRole("button", { name: "Next move", exact: true }).click();
@@ -181,6 +218,10 @@ test("the Analyze board marks the reviewed move, the game's own board does not",
     [box.x + box.width / 2, box.y + box.height / 2] as const
   );
   expect(hit).toBe(true);
+  // Over the knight standing or sliding in; a piece picked up and dragged goes over the badge.
+  expect(await onTopAtBadge(page)).toBe("badge");
+  expect(await onTopAtBadge(page, "anim")).toBe("badge");
+  expect(await onTopAtBadge(page, "dragging")).toBe("piece");
   await screenshot(page, "analyze-board");
 
   // An ordinary move there has none either.

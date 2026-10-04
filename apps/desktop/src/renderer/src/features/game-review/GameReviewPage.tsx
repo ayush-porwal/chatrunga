@@ -321,7 +321,8 @@ function GameReviewPageInner({
             <PlayerRow name={boardBottom.name} elo={boardBottom.elo} color={boardBottom.color} />
           }
         >
-          <div className="relative h-full w-full">
+          {/* Its own stacking context: Chessground's layers and the move mark stack within the board. */}
+          <div className="relative isolate h-full w-full">
             {/* Square corners: the stage's frame clips the board to its own radius. */}
             <ReviewBoard
               fen={boardFen}
