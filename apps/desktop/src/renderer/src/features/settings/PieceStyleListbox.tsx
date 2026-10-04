@@ -70,7 +70,7 @@ export function PieceStyleListbox({
           aria-expanded={open}
           role="combobox"
           aria-haspopup="listbox"
-          aria-controls={listboxDomId}
+          aria-controls={present ? listboxDomId : undefined}
           aria-labelledby={`${id}-label`}
           aria-activedescendant={open ? optionId(highlightedIndex) : undefined}
           onClick={() => setOpen((o) => !o)}
