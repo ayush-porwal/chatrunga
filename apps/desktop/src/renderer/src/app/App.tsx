@@ -41,7 +41,11 @@ import { useReviewStore } from "../stores/review-store";
 import { selectLiveGameInProgress, useLichessStore } from "../stores/lichess-store";
 import { useHistoryStore, type HistoryEntry } from "../stores/history-store";
 import { captureEntry, recordHistory, type HistoryMode } from "./history-navigation";
-import { saveStudyDraftFirst, useHistoryRestore } from "./navigation-coordinator";
+import {
+  restoreReviewRoute,
+  saveStudyDraftFirst,
+  useHistoryRestore
+} from "./navigation-coordinator";
 import {
   nextPuzzleInput,
   puzzleBoard,
@@ -429,6 +433,28 @@ export function App() {
 
   const clearPuzzleSession = puzzleSession.clear;
 
+  // The Game Review URL the window opened at (a reload) brings its saved game and review back.
+  const restoreOpenedReviewRoute = useEventCallback(() => {
+    if (!reviewRouteId) return;
+    const showHome = () => showView("home", "replace");
+    restoreReviewRoute(reviewRouteId, {
+      navigation: latestNavigation,
+      getSavedGame: (id) =>
+        window.chaturanga?.games.get(id) ??
+        Promise.reject(new Error("Saved games need the desktop app.")),
+      stopEngineWork: (options) => stopEngineWork(options),
+      clearPuzzleSession: () => clearPuzzleSession(),
+      showHome,
+      reviewShown: () => record("replace", historyEntry("game-review"))
+    }).catch((error: unknown) => {
+      useAppNoticeStore
+        .getState()
+        .show(`That game couldn't be opened: ${ipcErrorMessage(error) || "unknown error"}`);
+      showHome();
+    });
+  });
+  useEffect(restoreOpenedReviewRoute, [restoreOpenedReviewRoute]);
+
   /**
    * Before a different board replaces this one: the engine's search and review end, the review
    * and any puzzle set are cleared.
@@ -644,7 +670,9 @@ export function App() {
     setFocusMode(false);
     setReviewTab(tab);
     setGameReviewPickerOpen(false);
-    setAppView("game-review", () => void navigate(`/games/${gameId}/review`, { replace: true }));
+    // A saved game's own id, so a reload can reopen it ("current" only for one never saved).
+    const routeId = currentGame().gameId ?? "current";
+    setAppView("game-review", () => void navigate(`/games/${routeId}/review`, { replace: true }));
     record("push", historyEntry("game-review"));
   }
 

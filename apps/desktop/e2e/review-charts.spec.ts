@@ -158,8 +158,7 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
   await expect.poll(openHeight).toBeGreaterThan(before);
   await reviewToggle.click();
   await expect(reviewToggle).toHaveAttribute("aria-expanded", "true");
-  // A reloaded page starts without the game: it is opened again from the picker, once its review
-  // is saved.
+  // Reloaded (once its review is saved), the review page opens the same game with its review.
   await expect
     .poll(() =>
       page.evaluate(async () => {
@@ -169,13 +168,25 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
       })
     )
     .toEqual([["Alpha", 1]]);
+  const reviewUrl = page.url();
+  expect(reviewUrl).toMatch(/#\/games\/(?!current\/)[^/]+\/review$/);
   await page.reload();
-  await sidebar(page).getByRole("button", { name: "Game review", exact: true }).click();
-  await page
-    .getByRole("dialog", { name: "Choose a game" })
-    .getByRole("button", { name: /^Alpha vs Beta/ })
-    .click();
+  expect(page.url()).toBe(reviewUrl);
+  await expect(
+    titlebar(page).getByRole("button", { name: "Analyze again", exact: true })
+  ).toBeVisible();
+  await expect(
+    sidebar(page).getByRole("button", { name: "Game review", exact: true })
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    sidebar(page).getByRole("button", { name: "Analyze", exact: true })
+  ).not.toHaveAttribute("aria-pressed");
+  await expect(counter(page)).toHaveText(/ \/ 14$/);
   await expect(charts(page)).toBeVisible();
+  await expect(view(page, "winning-chances").locator('circle[data-ply="7"]')).toHaveAttribute(
+    "data-annotation",
+    "blunder"
+  );
   await expect(view(page, "times")).toHaveCount(0);
   await charts(page).getByRole("button", { name: "Time per move" }).click();
   await expect(view(page, "times")).toBeVisible();

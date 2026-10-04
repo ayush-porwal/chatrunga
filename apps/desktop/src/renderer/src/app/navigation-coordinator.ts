@@ -251,12 +251,61 @@ export async function restoreBoard(
   return "restored";
 }
 
+/** The shell's side of a Game Review URL the window opened at (see `restoreReviewRoute`). */
+export type ReviewRouteShell = Pick<
+  NavigationShell,
+  "navigation" | "getSavedGame" | "stopEngineWork" | "clearPuzzleSession" | "showHome"
+> & {
+  /** The review page shows the game now loaded: its history entry replaces the current one. */
+  reviewShown: () => void;
+};
+
+/**
+ * A Game Review URL the window opened at (a reload): its saved game comes back with its newest
+ * review, as opening it from the picker does. The route never stays on an empty board: an unsaved
+ * game ("current", gone with the window) lands on Home, and so does a game deleted since or one
+ * that couldn't be read, with why. A newer navigation while the game loads wins ("dropped").
+ */
+export async function restoreReviewRoute(
+  routeId: string,
+  shell: ReviewRouteShell
+): Promise<RestoreOutcome> {
+  const request = ++shell.navigation.current;
+  if (routeId === useGameStore.getState().gameId) {
+    shell.reviewShown();
+    return "shown";
+  }
+  if (routeId === "current") {
+    shell.showHome();
+    return "gone";
+  }
+  const loaded = await loadSavedGame(shell, routeId);
+  if (request !== shell.navigation.current) return "dropped";
+  if (loaded.kind !== "loaded") {
+    useAppNoticeStore
+      .getState()
+      .show(
+        loaded.kind === "gone"
+          ? "That game was deleted."
+          : `That game couldn't be opened: ${loaded.message}`
+      );
+    shell.showHome();
+    return loaded.kind;
+  }
+  shell.stopEngineWork();
+  shell.clearPuzzleSession();
+  openSavedGame(loaded.game);
+  useGameStore.getState().setMode("freeplay");
+  shell.reviewShown();
+  return "shown";
+}
+
 /**
  * A saved game for a restore. Only "not found" means it was deleted (its entry is dropped); any
  * other error keeps the entry, so a later Back can still reach it.
  */
 async function loadSavedGame(
-  shell: NavigationShell,
+  shell: Pick<NavigationShell, "getSavedGame">,
   gameId: string
 ): Promise<
   { kind: "loaded"; game: SavedGame } | { kind: "gone" } | { kind: "failed"; message: string }

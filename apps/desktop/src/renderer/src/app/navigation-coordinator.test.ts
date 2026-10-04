@@ -16,9 +16,11 @@ import {
   goHistory,
   restoreEntry,
   restoreLoading,
+  restoreReviewRoute,
   saveStudyDraftFirst,
   type NavigationShell,
-  type PendingRestore
+  type PendingRestore,
+  type ReviewRouteShell
 } from "./navigation-coordinator";
 import { isHeldUnchanged } from "./useGameAutosave";
 
@@ -461,6 +463,64 @@ describe("a target that can't come back", () => {
     expect(shell.openRepertoireStudy).toHaveBeenCalledWith(study);
     expect(useHistoryStore.getState().index).toBe(1);
     expect(useHistoryStore.getState().entries).toHaveLength(2);
+  });
+});
+
+describe("a Game Review URL the window opened at (a reload)", () => {
+  const reviewRouteShell = (overrides: Partial<ReviewRouteShell> = {}) => ({
+    ...fakeShell(),
+    reviewShown: vi.fn(),
+    ...overrides
+  });
+
+  it("loads its saved game with the newest review, then shows the review page", async () => {
+    const review = { reviewId: "rv2", moves: [] } as unknown as SavedGame["review"];
+    const shell = reviewRouteShell({
+      getSavedGame: vi.fn(async (id: string) => savedGame(id, { review }))
+    });
+    expect(await restoreReviewRoute("g1", shell)).toBe("shown");
+    expect(shell.getSavedGame).toHaveBeenCalledWith("g1");
+    expect(useGameStore.getState()).toMatchObject({ gameId: "g1", mode: "freeplay" });
+    expect(useReviewStore.getState().review?.reviewId).toBe("rv2");
+    expect(shell.reviewShown).toHaveBeenCalledTimes(1);
+    expect(shell.showHome).not.toHaveBeenCalled();
+  });
+
+  it("lands on Home, saying so, when the game was deleted or couldn't be read", async () => {
+    const deleted = reviewRouteShell({ getSavedGame: vi.fn(() => Promise.reject(notFound())) });
+    expect(await restoreReviewRoute("g1", deleted)).toBe("gone");
+    expect(useAppNoticeStore.getState().message).toBe("That game was deleted.");
+    expect(deleted.showHome).toHaveBeenCalledTimes(1);
+    expect(deleted.reviewShown).not.toHaveBeenCalled();
+    expect(useGameStore.getState().gameId).toBeNull();
+
+    const unreadable = reviewRouteShell({
+      getSavedGame: vi.fn(() => Promise.reject(new Error("database is locked")))
+    });
+    expect(await restoreReviewRoute("g1", unreadable)).toBe("failed");
+    expect(useAppNoticeStore.getState().message).toBe(
+      "That game couldn't be opened: database is locked"
+    );
+    expect(unreadable.showHome).toHaveBeenCalledTimes(1);
+  });
+
+  it("lands on Home for an unsaved game, which didn't outlive the window", async () => {
+    const shell = reviewRouteShell();
+    expect(await restoreReviewRoute("current", shell)).toBe("gone");
+    expect(shell.getSavedGame).not.toHaveBeenCalled();
+    expect(shell.showHome).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives way to a navigation made while the game loads", async () => {
+    const slow = deferred<SavedGame>();
+    const shell = reviewRouteShell({ getSavedGame: vi.fn(() => slow.promise) });
+    const restoring = restoreReviewRoute("g1", shell);
+    shell.navigation.current += 1;
+    slow.resolve(savedGame("g1"));
+    expect(await restoring).toBe("dropped");
+    expect(useGameStore.getState().gameId).toBeNull();
+    expect(shell.reviewShown).not.toHaveBeenCalled();
+    expect(shell.showHome).not.toHaveBeenCalled();
   });
 });
 
