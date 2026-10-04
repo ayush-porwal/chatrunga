@@ -138,15 +138,23 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
 
   // Each strip folds on its own, remembered across a reload. Under a height set with the splitter,
   // folding hands its height to the others (unset, the charts take the default for the views shown).
-  // As tall as the panel allows (End), so the views are above their minimums and a fold's height
-  // has somewhere to go, whatever the window's size (Windows' frame leaves less height).
+  // As tall as the panel allows (End). The views still open take a folded strip's height between
+  // them: on a short window (Windows' frame leaves less height) one stays at its minimum and the
+  // other grows.
   await splitter(page).focus();
   await page.keyboard.press("End");
-  const winHeight = async () => (await view(page, "winning-chances").boundingBox())?.height ?? 0;
-  const before = await winHeight();
+  const openHeight = async () => {
+    const heights = await Promise.all(
+      (["winning-chances", "difficulty"] as const).map(
+        async (name) => (await view(page, name).boundingBox())?.height ?? 0
+      )
+    );
+    return heights.reduce((sum, height) => sum + height, 0);
+  };
+  const before = await openHeight();
   await charts(page).getByRole("button", { name: "Time per move" }).click();
   await expect(view(page, "times")).toHaveCount(0);
-  await expect.poll(winHeight).toBeGreaterThan(before);
+  await expect.poll(openHeight).toBeGreaterThan(before);
   // A reloaded page starts without the game: it is opened again from the picker, once its review
   // is saved.
   await expect

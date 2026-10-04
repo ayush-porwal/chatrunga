@@ -242,7 +242,8 @@ test("the line between the board and the panel is a splitter that resizes both",
   expect((await box(panel)).width).toBeGreaterThan(panelBefore + 150);
   // Its value is the board's edge.
   const value = Number(await splitter(page).getAttribute("aria-valuenow"));
-  expect(Math.abs(value - resized)).toBeLessThan(8);
+  // Less the whole-pixel squares Chessground rounds the board down to.
+  expect(Math.abs(value - resized)).toBeLessThanOrEqual(SQUARE_ROUNDING);
 
   // The arrow keys step it, without moving through the game.
   await splitter(page).focus();
