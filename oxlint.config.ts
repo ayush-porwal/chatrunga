@@ -37,7 +37,10 @@ export default defineConfig({
   jsPlugins: [{ name: "@tanstack/query", specifier: "@tanstack/eslint-plugin-query" }],
   // Type-aware rules (oxlint-tsgolint) use each file's tsconfig.
   options: {
-    typeAware: true
+    typeAware: true,
+    // A disable comment whose rule no longer fires there is an error, so exceptions don't outlive
+    // the code they were for.
+    reportUnusedDisableDirectives: "error"
   },
   // Code that is outright wrong or useless. Rules below add to it (or switch one off, with why).
   categories: {
@@ -97,11 +100,11 @@ export default defineConfig({
     // two left off match the ESLint config: manual memoization the compiler can't preserve, and
     // effects that reset state when a prop changes, are both used deliberately.
     "react/rules-of-hooks": "error",
-    "react/exhaustive-deps": "warn",
+    "react/exhaustive-deps": "error",
     "react/static-components": "error",
     "react/use-memo": "error",
     "react/preserve-manual-memoization": "off",
-    "react/incompatible-library": "warn",
+    "react/incompatible-library": "error",
     "react/immutability": "error",
     "react/globals": "error",
     "react/refs": "error",
@@ -109,7 +112,7 @@ export default defineConfig({
     "react/error-boundaries": "error",
     "react/purity": "error",
     "react/set-state-in-render": "error",
-    "react/unsupported-syntax": "warn",
+    "react/unsupported-syntax": "error",
 
     // Accessibility (jsx-a11y's correctness rules). Two don't fit how the app is built: focus moves
     // into a dialog or inline editor the user just opened (the WAI-ARIA dialog pattern; nothing
@@ -122,7 +125,7 @@ export default defineConfig({
 
     // TanStack Query: query keys list every variable the query reads, and query options are stable.
     "@tanstack/query/exhaustive-deps": "error",
-    "@tanstack/query/no-rest-destructuring": "warn",
+    "@tanstack/query/no-rest-destructuring": "error",
     "@tanstack/query/stable-query-client": "error",
     "@tanstack/query/no-unstable-deps": "error",
     "@tanstack/query/infinite-query-property-order": "error",

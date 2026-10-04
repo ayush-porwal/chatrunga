@@ -497,6 +497,17 @@ it("helper", () => expectParsed(2));
 `
   },
 
+  // Exceptions.
+  {
+    name: "a disable comment for a rule that no longer fires there is an error",
+    file: "packages/shared/src/stale-disable.ts",
+    rules: ["unused-disable-directive"],
+    lines: [1],
+    code: `// oxlint-disable-next-line no-debugger -- left over from a removed breakpoint
+export const value = 1;
+`
+  },
+
   // eslint:recommended and typescript-eslint's recommended set (a sample of each kind).
   {
     name: "recommended rules: unused values, empty blocks, ts-ignore, debugger and const",
@@ -571,7 +582,10 @@ before(() => {
   assert.ok(result.stdout, `oxlint printed nothing:\n${result.stderr}`);
   findings = JSON.parse(result.stdout).diagnostics.map((diagnostic) => ({
     file: diagnostic.filename,
-    rule: diagnostic.code,
+    // An unused disable directive is reported without a rule code.
+    rule:
+      diagnostic.code ??
+      (diagnostic.message.startsWith("Unused") ? "unused-disable-directive" : ""),
     line: diagnostic.labels[0]?.span.line,
     message: diagnostic.message
   }));
@@ -580,6 +594,17 @@ before(() => {
 after(() => rmSync(workDir, { recursive: true, force: true }));
 
 describe("oxlint config", () => {
+  test("every rule is an error or off: warnings would be ignored until they pile up", () => {
+    const severities = [config.rules, ...config.overrides.map((override) => override.rules ?? {})]
+      .flatMap((rules) => Object.entries(rules))
+      .map(([rule, value]) => [rule, Array.isArray(value) ? value[0] : value]);
+    assert.deepEqual(
+      severities.filter(([, severity]) => severity !== "error" && severity !== "off"),
+      []
+    );
+    assert.equal(config.options.reportUnusedDisableDirectives, "error");
+  });
+
   for (const { name, file, rules, lines } of CASES) {
     test(name, () => {
       const flagged = findings.filter(

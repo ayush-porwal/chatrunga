@@ -30,6 +30,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Oxlint with type-aware rules: any error, warning or unused disable comment fails.
       - name: Lint
         run: pnpm lint
 
