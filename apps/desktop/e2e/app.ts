@@ -95,6 +95,13 @@ export async function launchApp(profile: string): Promise<LaunchedApp> {
     NO_PROXY: "localhost,127.0.0.1,::1"
   });
   const switches = [`--proxy-server=${BLACKHOLE}`];
+  // The window opens behind whatever is in front, without focus (CHATURANGA_E2E_FOREGROUND=1 to
+  // watch a run): Chromium mustn't slow a window it sees as hidden or covered.
+  const background = process.env.CHATURANGA_E2E_FOREGROUND !== "1";
+  if (background) {
+    env.CHATURANGA_E2E_BACKGROUND = "1";
+    switches.push("--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding");
+  }
   // macOS: Chromium keeps its cookie key in the login keychain under "Chaturanga Safe Storage". An
   // item an installed Chaturanga created belongs to that build's signature, so a freshly packaged
   // (ad-hoc signed) app reading it, as it does on quit, waits on a keychain password prompt and
@@ -111,6 +118,12 @@ export async function launchApp(profile: string): Promise<LaunchedApp> {
   });
   await installMainProcessGuards(app);
   const page = await app.firstWindow();
+  // Without OS focus the page would see itself unfocused (focus events, :focus-visible); the
+  // tests behave as in a focused window.
+  if (background) {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true });
+  }
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.waitForLoadState("domcontentloaded");
