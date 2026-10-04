@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useMemo, useState, type ReactNode } from "react";
+import { Fragment, memo, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Cpu, Lock, RotateCcw, Settings } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
@@ -29,6 +29,8 @@ import {
 import type { PreviewPieceRole } from "../settings/piece-style-preview";
 import { Figurine } from "../board/Figurine";
 import { useBoardAppearance } from "../board/useBoardAppearance";
+import { PREVIEW_BOARD_MIN } from "../game/move-list-model";
+import { usePreviewBoardSize } from "../game/usePreviewBoardSize";
 
 /** As many rows as lines asked for, from the first line on (arriving lines never push content down). */
 function linesWithPlaceholders(
@@ -266,22 +268,36 @@ function LinePreviewCard({
   orientation: Color;
   compact: boolean;
 }) {
+  // Under the lines it keeps a BEST line preview's bounds (usePreviewBoardSize), so a wide panel
+  // never shows a board that crowds the lines out; the floating (compact) one has its own width.
+  const slotRef = useRef<HTMLDivElement>(null);
+  const size = usePreviewBoardSize(slotRef);
   return (
     // Named only for assistive tech: the line is read above it.
     <div
+      ref={slotRef}
       role="group"
       aria-label={`Position after ${preview.label}`}
       className={cn("grid animate-fade-in", compact && "rounded-md shadow-popover")}
     >
-      <ReviewBoard
-        fen={preview.fenAfter}
-        orientation={orientation}
-        lastMove={[preview.uci.slice(0, 2), preview.uci.slice(2, 4)]}
-        className={cn(
-          "aspect-square w-full justify-self-center",
-          compact ? "max-w-48" : "max-w-md"
-        )}
-      />
+      <div
+        className={cn("w-full justify-self-center", compact && "max-w-48")}
+        style={
+          compact
+            ? undefined
+            : {
+                maxWidth: size ?? PREVIEW_BOARD_MIN,
+                visibility: size === null ? "hidden" : undefined
+              }
+        }
+      >
+        <ReviewBoard
+          fen={preview.fenAfter}
+          orientation={orientation}
+          lastMove={[preview.uci.slice(0, 2), preview.uci.slice(2, 4)]}
+          className="aspect-square w-full"
+        />
+      </div>
     </div>
   );
 }

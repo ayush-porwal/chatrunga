@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { Color, MoveNode } from "@chaturanga/shared/types/chess";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
 import { annotationTone } from "@/lib/ui";
@@ -8,11 +8,11 @@ import { openBestLine, type BestLineCursor } from "./best-line-cursor";
 import { FigureSan, keepFocusOnPress, LineRow, lineMoveClassName } from "./LineRow";
 import {
   PREVIEW_BOARD_MIN,
-  previewBoardSize,
   bestLineMoves,
   bestLineText,
   type BestLineMove
 } from "./move-list-model";
+import { usePreviewBoardSize } from "./usePreviewBoardSize";
 
 /** How long the pointer rests on a suggested move before its position shows. */
 const PREVIEW_DELAY_MS = 250;
@@ -219,20 +219,7 @@ function LinePreview({
 }) {
   // Sized to the room under the line and to the main board (see previewBoardSize), left-aligned.
   const slotRef = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState<number | null>(null);
-  useLayoutEffect(() => {
-    const slot = slotRef.current;
-    if (!slot) return;
-    const measure = () => {
-      const board = document.querySelector('section[aria-label="Board"] cg-board');
-      const mainBoard = board ? board.getBoundingClientRect().width : null;
-      setSize(previewBoardSize(slot.clientWidth, mainBoard));
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(slot);
-    return () => observer.disconnect();
-  }, []);
+  const size = usePreviewBoardSize(slotRef);
   return (
     <div
       ref={slotRef}
