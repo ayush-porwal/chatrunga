@@ -68,6 +68,8 @@ export type ReviewSideSetting = {
   side: "white" | "black";
   whiteName: string;
   blackName: string;
+  /** The rating the review is made for, and where it came from ("1533 · from the game"). */
+  ratingLabel: string;
   onChange: (side: "white" | "black") => void;
 };
 
@@ -303,6 +305,7 @@ export function ReviewSettingsPanel({
                 }
               ]}
             />
+            <p className={fieldHint}>Rating {reviewSide.ratingLabel}</p>
           </Field>
         ) : (
           <Field label="Reviewing side">

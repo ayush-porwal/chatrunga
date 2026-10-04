@@ -80,7 +80,8 @@ test("the summary scores both sides, names the opening and phases, and its secti
     "aria-selected",
     "true"
   );
-  await expect(page.getByText("Review as White", { exact: true })).toBeVisible();
+  // No row for the side and rating under the tabs: they're in the review settings dialog.
+  await expect(page.getByText("Review as White", { exact: true })).toHaveCount(0);
   await expect(summary(page).getByLabel(/^White accuracy \d+\.\d$/)).toBeVisible();
   await expect(summary(page).getByLabel(/^Black accuracy \d+\.\d$/)).toBeVisible();
   await expect(summary(page).getByRole("img", { name: "Accuracy" })).toBeVisible();
@@ -192,13 +193,18 @@ test("review settings are a dialog that switches sides; with AI off, cards don't
   await skipWelcome(page);
   await reviewTrapGameAs(page, app, profile, "White (Alpha)");
 
-  // No Settings tab: a sliders button in the panel's header opens the settings as a dialog.
+  // No Settings tab: a sliders button at the end of the tab row opens the settings as a dialog.
   await expect(reviewTabs(page).getByRole("tab", { name: "Settings", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Review settings", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Review settings" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("button", { name: "AI settings" })).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Edit ratings" })).toBeVisible();
+  // The side reviewed, and under it the rating the review is made for.
+  await expect(
+    dialog.getByRole("radiogroup", { name: "Review as" }).getByRole("radio", { name: /^White/ })
+  ).toBeChecked();
+  await expect(dialog.getByText(/^Rating Rapid 1500 · from Settings/)).toBeVisible();
   // Its groups fold too.
   await expect(dialog.getByRole("button", { name: "Engine" })).toHaveAttribute(
     "aria-expanded",
@@ -212,7 +218,11 @@ test("review settings are a dialog that switches sides; with AI off, cards don't
     .click();
   await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByText("Review as Black", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Review settings", exact: true }).click();
+  await expect(
+    dialog.getByRole("radiogroup", { name: "Review as" }).getByRole("radio", { name: /^Black/ })
+  ).toBeChecked();
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await reviewTabs(page).getByRole("tab", { name: "Commentary", exact: true }).click();
   await page
     .getByRole("navigation", { name: "Move navigation" })

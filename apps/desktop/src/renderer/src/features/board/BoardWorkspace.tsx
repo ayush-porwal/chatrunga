@@ -64,7 +64,10 @@ export function BoardWorkspace({
   board: ReactNode;
   /** Panel tabs (one SegmentedControl role="tablist"). */
   tabs?: ReactNode;
-  /** One-line summary strip under the tabs (fixed height, rendered even when empty). */
+  /**
+   * One-line summary strip under the tabs (fixed height, rendered even when empty: pass null for
+   * an empty strip); omitted, the panel has no strip.
+   */
   summary?: ReactNode;
   /** Errors/warnings shown at the top of the panel body (never above the board). */
   notices?: ReactNode;
@@ -170,17 +173,15 @@ export function BoardWorkspace({
             )}
             aria-label={panelLabel}
           >
-            {/* Tabs, summary and notices read as lines: past `--workspace-panel-measure` (a panel
-                widened beside a resized board) they keep that width, centred (the notices by
+            {/* The tabs and the summary strip span the panel at any width (as its controls do);
+                only reading text keeps `--workspace-panel-measure` (the notices, by
                 `.workspace-panel-body` in app.css). */}
-            {tabs ? (
-              <div className="shrink-0 px-3 pt-3">
-                <div className={panelMeasure}>{tabs}</div>
+            {tabs ? <div className="shrink-0 px-3 pt-3">{tabs}</div> : null}
+            {summary === undefined ? null : (
+              <div className="flex h-14 shrink-0 items-center border-b border-line-subtle px-3">
+                <div className="flex h-full w-full min-w-0 items-center">{summary}</div>
               </div>
-            ) : null}
-            <div className="flex h-14 shrink-0 items-center border-b border-line-subtle px-3">
-              <div className={cn(panelMeasure, "flex h-full items-center")}>{summary}</div>
-            </div>
+            )}
             <div className="workspace-panel-body flex min-h-0 flex-1 flex-col gap-3 p-3">
               {notices}
               <div className="min-h-0 flex-1" {...tabPanel}>
@@ -194,9 +195,6 @@ export function BoardWorkspace({
     </div>
   );
 }
-
-/** A panel block that reads as a line: the panel's width up to its measure, centred. */
-const panelMeasure = "mx-auto w-full min-w-0 max-w-(--workspace-panel-measure)";
 
 /**
  * True for one emphasis duration after `visible` changes: the window in which the workspace

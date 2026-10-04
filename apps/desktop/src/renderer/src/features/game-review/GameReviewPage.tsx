@@ -55,7 +55,6 @@ import {
   tabPanelProps,
   type SegmentedOption
 } from "@/components/ui/segmented-control";
-import { SideDot } from "@/components/ui/side-dot";
 import { useReviewUsage } from "../../app/useUsageTelemetry";
 
 const reviewTabOptions: readonly SegmentedOption<ReviewTab>[] = [
@@ -335,30 +334,18 @@ function GameReviewPageInner({
 
   const changeSide = useCallback((next: "white" | "black") => chooseReviewSide(next), []);
   const ratingLabel = reviewRatingLabel(review?.rating ?? currentRating);
-  // The panel's header row: the side reviewed and the rating it's rated at, and the settings.
-  const summary = (
-    <div className="flex w-full min-w-0 items-center gap-2">
-      <span className="inline-flex min-w-0 flex-1 items-center gap-1.5 text-xs text-fg-muted">
-        <SideDot color={side} />
-        <span className="shrink-0 font-medium text-fg-secondary">
-          {sideKnown ? `Review as ${side === "white" ? "White" : "Black"}` : "Review as…"}
-        </span>
-        {sideKnown ? (
-          <span className="truncate text-fg-subtle" title={ratingLabel}>
-            · {ratingLabel}
-          </span>
-        ) : null}
-      </span>
-      <ReviewSettingsButton
-        settings={settings}
-        reviewSide={{
-          side,
-          whiteName: whitePlayer.name,
-          blackName: blackPlayer.name,
-          onChange: changeSide
-        }}
-      />
-    </div>
+  // The review settings, at the right end of the tab row (the side and rating are in the dialog).
+  const settingsButton = (
+    <ReviewSettingsButton
+      settings={settings}
+      reviewSide={{
+        side,
+        whiteName: whitePlayer.name,
+        blackName: blackPlayer.name,
+        ratingLabel,
+        onChange: changeSide
+      }}
+    />
   );
   // Start review: the first key moment, explained, then Next steps through the rest.
   const startKeyMoments = useCallback(() => {
@@ -418,18 +405,22 @@ function GameReviewPageInner({
           </BoardStage>
         }
         tabs={
-          <SegmentedControl
-            ariaLabel="Game review sections"
-            role="tablist"
-            panelId={panelId}
-            fullWidth
-            className={reviewTabsClass}
-            value={activeTab}
-            onChange={onTabChange}
-            options={reviewTabOptions}
-          />
+          <div className="flex items-center gap-1">
+            <div className="min-w-0 flex-1">
+              <SegmentedControl
+                ariaLabel="Game review sections"
+                role="tablist"
+                panelId={panelId}
+                fullWidth
+                className={reviewTabsClass}
+                value={activeTab}
+                onChange={onTabChange}
+                options={reviewTabOptions}
+              />
+            </div>
+            {settingsButton}
+          </div>
         }
-        summary={summary}
         notices={
           loadError || reviewError || outdatedMoves || recomputed ? (
             <>

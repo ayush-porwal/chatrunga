@@ -40,10 +40,9 @@ export const MoveNavigationBar = memo(function MoveNavigationBar({
   onLast
 }: MoveNavigationBarProps) {
   return (
-    // In a panel widened beside a resized board, the row keeps the panel's measure (the tabs'
-    // width above it, plus its own padding), centred, rather than pushing its ends apart.
+    // The row spans the panel at any width, as the tabs above do.
     <nav
-      className="mx-auto flex w-full max-w-[calc(var(--workspace-panel-measure)+1.5rem)] items-center justify-between gap-2 px-3 py-2"
+      className="flex w-full items-center justify-between gap-2 px-3 py-2"
       aria-label="Move navigation"
     >
       <div className="flex items-center gap-1">
