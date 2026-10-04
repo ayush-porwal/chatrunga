@@ -31,7 +31,18 @@ import {
 } from "./review-summary";
 
 /** label | White | glyph | Black: every row of the scoreboard shares these four tracks. */
-const TRACKS = "grid grid-cols-[minmax(0,1fr)_72px_32px_72px] items-center gap-x-2";
+const TRACKS = "grid grid-cols-[minmax(0,1fr)_4.5rem_2rem_4.5rem] items-center gap-x-2";
+
+/**
+ * Each cell's track, placed explicitly and centred in it: a row whose label is visually hidden
+ * (taken out of the flow) must not slide its White box into the label track.
+ */
+const CELL = {
+  label: "col-start-1",
+  white: "col-start-2 justify-self-center text-center tabular-nums",
+  glyph: "col-start-3 grid place-items-center justify-self-center",
+  black: "col-start-4 justify-self-center text-center tabular-nums"
+} as const;
 
 const PHASE_LABELS: Record<GamePhase, string> = {
   opening: "Opening",
@@ -105,12 +116,12 @@ export const ReviewSummary = memo(function ReviewSummary({
         {/* › Accuracy: its body is the accuracy boxes, then each side's marks. */}
         <SummarySection id="accuracy" title="Accuracy">
           <div role="table" aria-label="Accuracy" className="col-span-full grid grid-cols-subgrid">
-            <div role="row" className="col-span-full grid min-h-10 grid-cols-subgrid items-center">
+            <div role="row" className="col-span-full grid min-h-9 grid-cols-subgrid items-center">
               <span role="rowheader" className="sr-only">
                 Accuracy
               </span>
               <AccuracyBox side="white" value={white} />
-              <span role="cell" className="grid place-items-center">
+              <span role="cell" className={CELL.glyph}>
                 <Dartboard />
               </span>
               <AccuracyBox side="black" value={black} />
@@ -128,7 +139,7 @@ export const ReviewSummary = memo(function ReviewSummary({
                   role="row"
                   className="col-span-full grid min-h-[34px] grid-cols-subgrid items-center"
                 >
-                  <span role="rowheader" className="font-medium text-fg">
+                  <span role="rowheader" className={cn(CELL.label, "font-medium text-fg")}>
                     {annotationLabel(row.annotation)}
                   </span>
                   <Count
@@ -136,7 +147,7 @@ export const ReviewSummary = memo(function ReviewSummary({
                     tone={annotationTone[row.annotation].text}
                     label="White"
                   />
-                  <span role="cell" className="grid place-items-center">
+                  <span role="cell" className={CELL.glyph}>
                     <MoveMarkDisc annotation={row.annotation} decorative />
                   </span>
                   <Count
@@ -174,11 +185,11 @@ export const ReviewSummary = memo(function ReviewSummary({
                   role="row"
                   className="col-span-full grid min-h-[34px] grid-cols-subgrid items-center"
                 >
-                  <span role="rowheader" className="font-medium text-fg">
+                  <span role="rowheader" className={cn(CELL.label, "font-medium text-fg")}>
                     {PHASE_LABELS[phase.phase]}
                   </span>
                   <Percent value={phase.white} label="White" />
-                  <span role="cell" className="grid place-items-center text-fg-muted">
+                  <span role="cell" className={cn(CELL.glyph, "text-fg-muted")}>
                     {PHASE_ICONS[phase.phase]}
                   </span>
                   <Percent value={phase.black} label="Black" />
@@ -264,11 +275,11 @@ function SummarySection({
 function AccuracyBox({ side, value }: { side: Color; value: number | null }) {
   const name = side === "white" ? "White" : "Black";
   return (
-    <span role="cell" className="grid place-items-center">
+    <span role="cell" className={side === "white" ? CELL.white : CELL.black}>
       <span
         aria-label={`${name} accuracy ${value === null ? "unknown" : value.toFixed(1)}`}
         className={cn(
-          "flex h-10 w-[72px] items-center justify-center rounded-[7px] font-mono text-[19px] font-semibold tabular-nums",
+          "flex h-8 w-16 items-center justify-center rounded-md font-mono text-lg font-semibold tabular-nums",
           side === "white"
             ? "bg-side-white text-side-white-fg"
             : "bg-side-black text-fg ring-1 ring-line ring-inset"
@@ -281,12 +292,16 @@ function AccuracyBox({ side, value }: { side: Color; value: number | null }) {
 }
 
 /** A mark's count for one side, in the mark's colour. */
-function Count({ value, tone, label }: { value: number; tone: string; label: string }) {
+function Count({ value, tone, label }: { value: number; tone: string; label: "White" | "Black" }) {
   return (
     <span
       role="cell"
       aria-label={`${label} ${value}`}
-      className={cn("text-center font-mono text-base font-semibold tabular-nums", tone)}
+      className={cn(
+        label === "White" ? CELL.white : CELL.black,
+        "font-mono text-base font-semibold",
+        tone
+      )}
     >
       {value}
     </span>
@@ -294,12 +309,15 @@ function Count({ value, tone, label }: { value: number; tone: string; label: str
 }
 
 /** A phase accuracy: the whole percent, then a small muted "%". */
-function Percent({ value, label }: { value: number | null; label: string }) {
+function Percent({ value, label }: { value: number | null; label: "White" | "Black" }) {
   return (
     <span
       role="cell"
       aria-label={`${label} ${value === null ? "unknown" : `${value}%`}`}
-      className="text-center font-mono text-[15px] font-semibold text-fg tabular-nums"
+      className={cn(
+        label === "White" ? CELL.white : CELL.black,
+        "font-mono text-[15px] font-semibold text-fg"
+      )}
     >
       {value === null ? (
         "—"
