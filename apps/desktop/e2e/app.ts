@@ -95,8 +95,8 @@ export async function launchApp(profile: string): Promise<LaunchedApp> {
     NO_PROXY: "localhost,127.0.0.1,::1"
   });
   const switches = [`--proxy-server=${BLACKHOLE}`];
-  // The window opens behind whatever is in front, without focus (CHATURANGA_E2E_FOREGROUND=1 to
-  // watch a run): Chromium mustn't slow a window it sees as hidden or covered.
+  // The window never shows on screen (CHATURANGA_E2E_FOREGROUND=1 to watch a run): Chromium mustn't
+  // slow or skip frames for a window it sees as hidden.
   const background = process.env.CHATURANGA_E2E_FOREGROUND !== "1";
   if (background) {
     env.CHATURANGA_E2E_BACKGROUND = "1";

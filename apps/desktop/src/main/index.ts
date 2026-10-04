@@ -66,8 +66,9 @@ app.setName(PRODUCT_NAME);
 // Dev/test hook: CHATURANGA_USER_DATA_DIR points the app at a throwaway profile (UI automation,
 // clean-install checks). Unset in normal use.
 const userDataOverride = process.env.CHATURANGA_USER_DATA_DIR;
-// Test hook: the e2e harness sets CHATURANGA_E2E_BACKGROUND so its windows open without taking
-// focus or coming to the front (the developer keeps working in another app). Unset in normal use.
+// Test hook: the e2e harness sets CHATURANGA_E2E_BACKGROUND so its windows never show on screen
+// (they still load, lay out and run; the harness drives them over the DevTools protocol) and the
+// developer keeps working undisturbed. Unset in normal use.
 const openInBackground = process.env.CHATURANGA_E2E_BACKGROUND === "1";
 app.setPath(
   "userData",
@@ -174,7 +175,7 @@ async function startup(): Promise<void> {
   installApplicationMenu();
   const icon = createAppIcon();
   if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);
-  // No Dock icon and no activation: its windows show without coming to the front.
+  // No Dock icon and no activation.
   if (openInBackground && process.platform === "darwin") app.setActivationPolicy("accessory");
   createWindow();
   // Quitting into an installer runs the same cleanup as a normal quit, first.
@@ -305,8 +306,7 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       webSecurity: true,
-      // A window opened in the background may sit behind others: its timers and frames keep
-      // full speed, as they would in front.
+      // A window kept off screen: its timers and frames keep full speed, as they would in front.
       backgroundThrottling: !openInBackground
     }
   });
@@ -388,8 +388,8 @@ const revealedWindows = new WeakSet<BrowserWindow>();
 function revealWindow(window: BrowserWindow): void {
   if (window.isDestroyed() || revealedWindows.has(window)) return;
   revealedWindows.add(window);
-  if (openInBackground) window.showInactive();
-  else window.show();
+  // In the background the window is never shown (see openInBackground).
+  if (!openInBackground) window.show();
 }
 
 function installWindowReveal(): void {
