@@ -232,7 +232,8 @@ test("the line between the board and the panel is a splitter that resizes both",
   await page.mouse.down();
   await page.mouse.move(x - 160, y, { steps: 10 });
   const dragged = await box(splitter(page));
-  expect(Math.abs(dragged.x + dragged.width / 2 - (x - 160))).toBeLessThan(2);
+  // It sits at the board's edge, which Chessground rounds to whole-pixel squares.
+  expect(Math.abs(dragged.x + dragged.width / 2 - (x - 160))).toBeLessThanOrEqual(SQUARE_ROUNDING);
   await page.mouse.up();
   const resized = await boardEdge(page);
   const shift = before.x - (await box(board(page).locator("cg-board"))).x;
