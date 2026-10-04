@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, statSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -126,8 +126,10 @@ function fakeServer(content: Buffer, etag: string, options: { failAfter?: number
           if (failAfter === undefined) controller.close();
           return;
         }
-        // The connection drops a little later, after the first chunk reached the disk.
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        // The connection drops once the first chunk reached the disk.
+        await vi.waitFor(() => expect(statSync(`${finalPath}.part`, { throwIfNoEntry: false })?.size).toBe(failAfter), {
+          interval: 1
+        });
         controller.error(new Error("connection reset"));
       }
     });
@@ -267,10 +269,16 @@ describe("download reliability", () => {
   });
 
   it("can be cancelled, keeping the partial file for a resume", async () => {
-    vi.stubGlobal("fetch", fakeServer(content, '"v1"', { failAfter: 3000 }).fetchMock);
+    // Sends the first part of the file, then nothing more until cancelled.
+    const stream = new ReadableStream<Uint8Array>({
+      start: (controller) => controller.enqueue(new Uint8Array(content.subarray(0, 3000))),
+      pull: () => new Promise(() => undefined)
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(stream, { headers: { "content-length": String(content.length), etag: '"v1"' } })));
     const events: DatabaseDownloadProgress[] = [];
     const download = downloadDatabase(SOURCE, (progress) => events.push(progress));
-    setTimeout(() => cancelDownload(SOURCE), 5);
+    await vi.waitFor(() => expect(events.some((event) => event.downloadedBytes > 0)).toBe(true), { interval: 1 });
+    cancelDownload(SOURCE);
     await expect(download).rejects.toThrow("Download cancelled.");
     expect(events.at(-1)?.state).toBe("cancelled");
     expect(await readdir(dir)).toContain("lichess-puzzles-lichess_db_puzzle.csv.zst.part");
@@ -732,8 +740,8 @@ describe("samplePuzzle", () => {
   it("serves a small match set again to a new session instead of reporting no match", async () => {
     await install([row("a", 2500), row("b", 2500)]);
     const filters = input({ ratingMin: 2000 });
+    // Two matches: the quick scan read the whole file, so it holds every match (no full scan).
     const first = await samplePuzzle(filters);
-    await new Promise((resolve) => setTimeout(resolve, 200)); // the full scan fills the pool
     const second = await samplePuzzle({ ...filters, excludeIds: [first.id] });
     expect(second.id).not.toBe(first.id);
     await expect(samplePuzzle({ ...filters, excludeIds: ["a", "b"] })).rejects.toThrow(/No puzzle matched/);
@@ -749,7 +757,7 @@ describe("samplePuzzle", () => {
     // No match at all: answered from the first scan from then on.
     await expect(samplePuzzle(input({ ratingMin: 2900 }))).rejects.toThrow(/No puzzle matched/);
     await expect(samplePuzzle(input({ ratingMin: 2900 }))).rejects.toThrow(/No puzzle matched/);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // A full scan starts within samplePuzzle (requestFullScan), so none started by now means none.
     expect(fullScans.count).toBe(0);
   });
 
@@ -758,7 +766,7 @@ describe("samplePuzzle", () => {
     const filters = input({ ratingMin: 2800 });
     expect((await samplePuzzle(filters)).id).toBe("rare");
     expect((await samplePuzzle(filters)).id).toBe("rare");
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // A full scan starts within samplePuzzle (requestFullScan), so none started by now means none.
     expect(fullScans.count).toBe(0);
   });
 
@@ -863,7 +871,8 @@ describe("samplePuzzle", () => {
     await install(Array.from({ length: 1000 }, (_, index) => row(`p${index}`, 1500)));
     await samplePuzzle(input());
     await vi.waitFor(() => expect(fullScans.count).toBe(1));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    // The failure is logged once it is recorded (the retry clock starts then).
+    await vi.waitFor(() => expect(logger.warn).toHaveBeenCalled());
     fullScans.fail = false;
     const now = Date.now();
     vi.spyOn(Date, "now").mockReturnValue(now + 60_000);
@@ -880,7 +889,7 @@ describe("samplePuzzle", () => {
     expect(String(warn.mock.calls[0])).toMatch(/corrupt block/);
     await samplePuzzle(input());
     await samplePuzzle(input());
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // A retry would start within samplePuzzle (requestFullScan): none did, inside the retry delay.
     expect(fullScans.count).toBe(1);
     expect(warn).toHaveBeenCalledTimes(1);
   });

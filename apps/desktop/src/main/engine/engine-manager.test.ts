@@ -136,7 +136,8 @@ describe("EngineManager", () => {
     await manager.startAnalysis({ engineId: "lc0", searchId: "a", fen: START, moves: [], multipv: 1 });
     await expectEventually(() => events.infos.length > 0);
     const replaced = manager.startAnalysis({ engineId: "sf", searchId: "b", fen: START, moves: [], multipv: 1 });
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // "b" now waits for the slow-exiting lc0, which has been told to quit.
+    await expectEventually(() => sent().includes("quit"));
     await Promise.all([replaced, manager.startAnalysis({ engineId: "sf", searchId: "c", fen: START, moves: [], multipv: 1 })]);
     await expectEventually(() => events.infos.some((info) => info.searchId === "c"));
     expect(spawns()).toBe(2);
@@ -159,6 +160,8 @@ describe("EngineManager", () => {
       return "score";
     });
     const search = manager.startAnalysis({ engineId: "sf", searchId: "b", fen: START, moves: [], multipv: 1 });
+    // The warm process is gone: a search that didn't wait for the probe would start one now.
+    await expectEventually(() => sent().includes("exit"));
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(spawns()).toBe(1);
     finishProbe();
@@ -230,7 +233,8 @@ describe("EngineManager", () => {
     const events = collect(manager);
     const started = Date.now();
     const slow = manager.startAnalysis({ engineId: "slow", searchId: "slow", fen: START, moves: [], multipv: 1 });
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // The slow engine is up and waiting for its uciok.
+    await expectEventually(() => sent().includes("uci"));
     await manager.stop();
     await slow;
     await manager.startAnalysis({ engineId: "sf", searchId: "fast", fen: START, moves: [], multipv: 1 });
@@ -242,9 +246,10 @@ describe("EngineManager", () => {
   it("coalesces info lines per MultiPV slot", async () => {
     const events = collect(manager);
     await manager.startAnalysis({ engineId: "sf", searchId: "p", fen: START, moves: [], multipv: 1 });
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    // Wait for 50 lines (one each depth): the fake prints one every 5 ms, so about 250 ms of them.
+    await expectEventually(() => events.infos.some((info) => (info.depth ?? 0) >= 50));
     await manager.stop();
-    // The fake prints a line every 5 ms; at most ~10 batches a second reach the renderer.
+    // At most ~10 batches a second reach the renderer.
     expect(events.infos.length).toBeGreaterThan(0);
     expect(events.infos.length).toBeLessThan(10);
   });

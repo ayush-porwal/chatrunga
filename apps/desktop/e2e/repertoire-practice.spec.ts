@@ -101,6 +101,8 @@ test("practice shows an answer's notes only after grading, waits for Next, and r
   await clickSquare(page, "e4");
   await expect(panel.getByText("You played e4.")).toBeVisible();
   await expect(panel.getByText("Control the centre", { exact: false })).toBeVisible();
+  // An absence check (nothing marks a card that didn't advance): well past the default 600 ms
+  // auto-advance, the answered card is still the first one.
   await page.waitForTimeout(1_500);
   await expect(panel).toContainText("1 of 3");
   // Space is Next (focus is on the board, not on a button).

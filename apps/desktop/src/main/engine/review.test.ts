@@ -202,15 +202,14 @@ describe("analysePositionsWithEngine", () => {
 describe("review cancellation", () => {
   it("is honoured while the engine is still starting up", async () => {
     const started = Date.now();
-    let cancelled = false;
-    setTimeout(() => {
-      cancelled = true;
-    }, 100);
+    // Cancelled from the second check on. Checks are polled while waiting for the engine, startup
+    // included, and the slow-start fake takes 10 s to answer: ending in time means startup heard it.
+    let checks = 0;
     await expect(
       reviewGameWithEngine(
         fakeEngine("slow", "sf", { args: [FAKE, "sf", "slow-start"] }),
         { reviewId: "r", engineId: "slow", rootFen: START, moves: foolsMate() },
-        { shouldCancel: () => cancelled }
+        { shouldCancel: () => ++checks > 1 }
       )
     ).rejects.toThrow("Review cancelled");
     expect(Date.now() - started).toBeLessThan(2_000);
