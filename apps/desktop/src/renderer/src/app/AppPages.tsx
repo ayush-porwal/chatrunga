@@ -265,6 +265,10 @@ export function AppPages({
           <PuzzlePage onDatabases={on.databases} onStart={on.startPuzzle} />
         ) : view === "databases" ? (
           <DatabasePage onTrain={on.trainWithDatabase} />
+        ) : view === "repertoire-study" || view === "repertoire-practice" ? (
+          // Its route is still catching up (the router applies a URL change in a transition, after
+          // the view): not the game's board meanwhile.
+          <PageLoading />
         ) : view === "game-review" ? (
           <GameReviewPage
             activeTab={reviewTab}
