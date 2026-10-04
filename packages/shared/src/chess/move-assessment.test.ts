@@ -1230,4 +1230,20 @@ describe("summary and labels", () => {
     expect(assessmentReason(assessment({ tags: ["engine_top"] }))).toBeNull();
     expect(assessmentReason(undefined)).toBeNull();
   });
+
+  it("leaves out what an error cost when asked to (the review's cards)", () => {
+    const noCost = { cost: false };
+    expect(
+      assessmentReason(assessment({ annotation: "blunder", severity: "blunder" }), noCost)
+    ).toBeNull();
+    expect(assessmentReason(assessment({ annotation: "miss", severity: "blunder" }), noCost)).toBe(
+      "Gives back the chance the opponent's error created."
+    );
+    expect(
+      assessmentReason(
+        assessment({ annotation: "mistake", severity: "mistake", tags: ["mate_created"] }),
+        noCost
+      )
+    ).toBe("Allows a forced mate.");
+  });
 });

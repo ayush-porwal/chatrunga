@@ -873,12 +873,17 @@ function points(value: number): string {
 /**
  * One plain sentence saying why a move carries its mark, built only from the assessment's own
  * facts. An unmarked move gets none, except an error left unmarked because the game was decided.
+ * `cost: false` leaves out what an error cost ("It cost 12% of the winning chances."): an error
+ * with nothing else to say then gets none.
  */
-export function assessmentReason(assessment: MoveAssessment | null | undefined): string | null {
+export function assessmentReason(
+  assessment: MoveAssessment | null | undefined,
+  { cost = true }: { cost?: boolean } = {}
+): string | null {
   if (!assessment) return null;
   const tags = new Set(assessment.tags);
   const loss = assessment.winLoss ?? 0;
-  const lost = `It cost ${points(loss)} of the winning chances.`;
+  const lost = cost ? `It cost ${points(loss)} of the winning chances.` : null;
   if (!assessment.annotation) {
     return assessment.severity && tags.has("decided")
       ? `${severityLabel(assessment.severity)} in a game that was already decided, so it isn't marked.`
@@ -898,7 +903,9 @@ export function assessmentReason(assessment: MoveAssessment | null | undefined):
     case "good":
       return "Punishes the opponent's error and keeps what it gave.";
     case "miss":
-      return `Gives back the chance the opponent's error created. ${lost}`;
+      return lost
+        ? `Gives back the chance the opponent's error created. ${lost}`
+        : "Gives back the chance the opponent's error created.";
     case "inaccuracy":
     case "mistake":
     case "blunder":

@@ -1,5 +1,5 @@
-import { memo, useMemo } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { memo, useMemo, useState } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import type { MoveAssessment, MoveReview } from "@chaturanga/shared/types/engine";
 import { adjacentMoment, type KeyMoment } from "@chaturanga/shared/chess/key-moments";
 import { assessmentReason } from "@chaturanga/shared/chess/move-assessment";
@@ -9,6 +9,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { listRowInteractive, listRowSelected } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { moveLabel } from "./review-utils";
+import { MomentCommentary, useCardCommentary } from "./MomentCommentary";
 
 /**
  * Why the selected move carries its mark, in one plain sentence — or, for an unmarked engine
@@ -29,8 +30,10 @@ export function MoveMarkNote({
 }
 
 /**
- * A list of marked moves (the key moments, or every mark): the move, its mark and why. Selecting
- * a row goes to that move.
+ * A list of marked moves (the key moments, or every mark): the move, its mark and why (never what
+ * an error cost). Selecting a row goes to that move. With AI commentary on, the selected card
+ * expands to the move's commentary (the Commentary tab's own); selecting it again folds it. With
+ * it off, cards show no commentary and don't expand.
  */
 export const MomentList = memo(function MomentList({
   moments,
@@ -51,6 +54,9 @@ export const MomentList = memo(function MomentList({
   className?: string;
 }) {
   const byNode = useMemo(() => new Map(moves.map((move) => [move.nodeId, move])), [moves]);
+  const commentary = useCardCommentary();
+  // The selected card a second click folded (it opens again when selected anew).
+  const [folded, setFolded] = useState<string | null>(null);
   if (!moments.length) return <EmptyState compact title={emptyTitle} />;
   return (
     <ol aria-label={label} className={cn("grid gap-1.5", className)}>
@@ -58,28 +64,48 @@ export const MomentList = memo(function MomentList({
         const move = byNode.get(moment.nodeId);
         if (!move) return null;
         const selected = moment.nodeId === selectedNodeId;
+        const expanded = Boolean(commentary) && selected && folded !== moment.nodeId;
+        const reason = assessmentReason(move.assessment, { cost: false });
         return (
-          <li key={moment.nodeId}>
+          <li key={moment.nodeId} className={cn(expanded && "grid gap-2 pb-1")}>
             <button
               type="button"
               aria-current={selected ? "step" : undefined}
+              aria-expanded={commentary ? expanded : undefined}
               className={cn(
                 listRowInteractive,
                 "min-h-0 items-start gap-2 py-1.5",
                 selected && listRowSelected
               )}
-              onClick={() => onSelectNode(moment.nodeId)}
+              onClick={() => {
+                if (selected && commentary)
+                  setFolded(folded === moment.nodeId ? null : moment.nodeId);
+                else setFolded(null);
+                onSelectNode(moment.nodeId);
+              }}
             >
               <span className="w-16 shrink-0 font-mono text-sm font-semibold text-fg">
                 {moveLabel(move)}
               </span>
               <span className="grid min-w-0 flex-1 gap-0.5">
                 <AnnotationBadge annotation={moment.annotation} className="justify-self-start" />
-                <span className="text-xs leading-4 text-fg-muted">
-                  {assessmentReason(move.assessment)}
-                </span>
+                {reason ? <span className="text-xs leading-4 text-fg-muted">{reason}</span> : null}
               </span>
+              {commentary ? (
+                <ChevronDown
+                  aria-hidden
+                  className={cn(
+                    "mt-1 size-3.5 shrink-0 text-fg-subtle transition-transform duration-micro",
+                    expanded && "rotate-180"
+                  )}
+                />
+              ) : null}
             </button>
+            {expanded && commentary ? (
+              <div className="pl-[4.5rem] pr-2">
+                <MomentCommentary move={move} moves={moves} options={commentary} />
+              </div>
+            ) : null}
           </li>
         );
       })}
@@ -91,8 +117,9 @@ const PREVIOUS_ICON = <ChevronLeft />;
 const NEXT_ICON = <ChevronRight />;
 
 /**
- * Steps through the key moments from the selected move: Previous / Next, and which moment the
- * board is on ("Key moment 2 of 4", or how many there are when it is on none).
+ * Steps through the key moments ("key insights" to the user) from the selected move: Previous /
+ * Next, and which one the board is on ("Key insight 2 of 4", or how many there are when it is on
+ * none).
  */
 export const KeyMomentNav = memo(function KeyMomentNav({
   moments,
@@ -110,12 +137,12 @@ export const KeyMomentNav = memo(function KeyMomentNav({
   const index = moments.findIndex((moment) => moment.ply === selectedPly);
   const status =
     index >= 0
-      ? `Key moment ${index + 1} of ${moments.length}`
-      : `${moments.length} key ${moments.length === 1 ? "moment" : "moments"}`;
+      ? `Key insight ${index + 1} of ${moments.length}`
+      : `${moments.length} key ${moments.length === 1 ? "insight" : "insights"}`;
   return (
-    <div role="group" aria-label="Key moments" className="flex items-center gap-0.5">
+    <div role="group" aria-label="Key insights" className="flex items-center gap-0.5">
       <IconButton
-        label="Previous key moment"
+        label="Previous key insight"
         icon={PREVIOUS_ICON}
         size="icon-xs"
         tooltipSide="top"
@@ -129,7 +156,7 @@ export const KeyMomentNav = memo(function KeyMomentNav({
         {status}
       </span>
       <IconButton
-        label="Next key moment"
+        label="Next key insight"
         icon={NEXT_ICON}
         size="icon-xs"
         tooltipSide="top"
