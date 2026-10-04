@@ -60,6 +60,17 @@ async function evalText(page: Page) {
   };
 }
 
+/** The bar's own fill (Black's share) and the printed number's colour. */
+async function evalColours(page: Page) {
+  return evalBar(page).evaluate((bar) => {
+    const label = bar.querySelector("[data-eval-side]");
+    return {
+      bar: getComputedStyle(bar).backgroundColor,
+      text: label ? getComputedStyle(label).color : null
+    };
+  });
+}
+
 /** The square under the badge on the visible board, and whether it is in that square's top-right corner. */
 async function badgeSquare(page: Page, flipped = false) {
   const [area, box] = await Promise.all([
@@ -143,6 +154,8 @@ test("game review prints the evaluation at the better side's end and marks the r
   await goToPly(page, 1);
   await expect(evalBar(page)).toHaveAccessibleName("Evaluation +0.3");
   expect(await evalText(page)).toEqual({ text: "0.3", side: "white", end: "bottom" });
+  // Drawn as chess.com draws it: white over a warm dark grey, the number dark on the white.
+  expect(await evalColours(page)).toEqual({ bar: "rgb(64, 61, 57)", text: "rgb(64, 61, 57)" });
   await expect(markBadge(page)).toHaveCount(0);
   await screenshot(page, "unmarked");
 
@@ -150,6 +163,8 @@ test("game review prints the evaluation at the better side's end and marks the r
   await goToPly(page, 7);
   await expect(evalBar(page)).toHaveAccessibleName("Evaluation -2.5");
   expect(await evalText(page)).toEqual({ text: "2.5", side: "black", end: "top" });
+  // Black's number is light on the grey.
+  expect((await evalColours(page)).text).toBe("rgb(255, 255, 255)");
   const blunder = board(page).getByRole("img", { name: "Blunder: Nxe5" });
   await expect(blunder).toHaveAttribute("data-annotation", "blunder");
   await expect(blunder).toHaveAttribute("data-square", "e5");
