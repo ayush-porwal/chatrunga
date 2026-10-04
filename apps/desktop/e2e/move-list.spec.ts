@@ -104,6 +104,8 @@ test("BEST lines fold under their errors, preview on hover and are browsed on th
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("ArrowRight");
   await expect(second).toHaveAttribute("aria-current", "step");
+  // The clicked move never took focus, so no focus ring stays on it while another move is current.
+  await expect(first).not.toBeFocused();
   await page.keyboard.press("ArrowLeft");
   await expect(first).toHaveAttribute("aria-current", "step");
   await page.keyboard.press("ArrowLeft");

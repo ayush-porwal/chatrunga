@@ -31,7 +31,7 @@ import {
   type LineFolds
 } from "./move-list-model";
 import { loadShowAllLines, saveShowAllLines } from "./move-list-prefs";
-import { BestLineRow, type BrowseLine } from "./BestLineRow";
+import { BestLineRow, keepFocusOnPress, type BrowseLine } from "./BestLineRow";
 import type { BestLineCursor } from "./best-line-cursor";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconButton } from "@/components/ui/icon-button";
@@ -477,6 +477,7 @@ const MoveCell = memo(function MoveCell({
           selected && "font-semibold"
         )}
         title={title}
+        onMouseDown={keepFocusOnPress}
         onClick={() => onSelectNode(node.id)}
       >
         {/* The mark's slot: its disc sits over it (beside the button, so it can be its own control). */}
@@ -515,6 +516,7 @@ const MoveCell = memo(function MoveCell({
               aria-label={`${annotationLabel(annotation)}: ${lineUnfolded ? "hide" : "show"} the best line`}
               title={`${annotationLabel(annotation)} · ${lineUnfolded ? "hide" : "show"} the best line`}
               className="pointer-events-auto flex cursor-pointer rounded-full outline-none transition-transform duration-micro ease-standard hover:scale-110 focus-visible:ring-2 focus-visible:ring-accent/50"
+              onMouseDown={keepFocusOnPress}
               onClick={() => onToggleLine?.(node.id)}
             >
               <MoveMarkDisc annotation={annotation} decorative />

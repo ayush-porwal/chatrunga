@@ -227,7 +227,7 @@ const EngineLineRow = memo(function EngineLineRow({
 });
 
 /** The move of an engine line being hovered or focused: the position after it, shown below the lines. */
-type LinePreview = { fenAfter: string; uci: string; label: string; score: string | null };
+type LinePreview = { fenAfter: string; uci: string; label: string };
 /** Which move is hovered: line (MultiPV number) and move index, so an updated line updates the preview. */
 type PreviewTarget = { multipv: number; moveIndex: number };
 
@@ -248,14 +248,13 @@ function previewFor(
     label: numberedLine(
       fen,
       steps.slice(0, target.moveIndex + 1).map((item) => item.san)
-    ),
-    score: line.score ? formatScore(whiteScore(line.score, fen), 2) : null
+    )
   };
 }
 
 /**
- * A roomy board under the lines with the position after the move being hovered (or focused) and
- * the line's score; the line itself is the one read above it, not repeated. Below the lines, it
+ * A roomy board under the lines with the position after the move being hovered (or focused): just
+ * the board, since the line is read above it (its move highlighted there). Below the lines, it
  * never covers the moves being read. Compact, see FloatingLinePreview.
  */
 function LinePreviewCard({
@@ -268,14 +267,11 @@ function LinePreviewCard({
   compact: boolean;
 }) {
   return (
-    // The line is read above (its move highlighted there), so the card names it only for assistive tech.
+    // Named only for assistive tech: the line is read above it.
     <div
       role="group"
       aria-label={`Position after ${preview.label}`}
-      className={cn(
-        "grid animate-fade-in gap-3 rounded-xl border border-line-subtle p-3",
-        compact ? "bg-surface-raised shadow-popover" : "bg-surface-raised/40"
-      )}
+      className={cn("grid animate-fade-in", compact && "rounded-md shadow-popover")}
     >
       <ReviewBoard
         fen={preview.fenAfter}
@@ -286,17 +282,12 @@ function LinePreviewCard({
           compact ? "max-w-48" : "max-w-md"
         )}
       />
-      {preview.score ? (
-        <p className="text-xs text-fg-muted">
-          Line score <span className="font-mono text-fg-secondary">{preview.score}</span>
-        </p>
-      ) : null}
     </div>
   );
 }
 
-/** The floating preview's width (a 192px board and its padding) and its gap from the panel. */
-const FLOATING_PREVIEW_WIDTH = 218;
+/** The floating preview's width (its 192px board) and its gap from the panel. */
+const FLOATING_PREVIEW_WIDTH = 192;
 const FLOATING_PREVIEW_GAP = 20;
 
 /**
@@ -321,7 +312,7 @@ function FloatingLinePreview({
     <div
       className="fixed z-50"
       style={{
-        top: Math.max(8, Math.min(box.top, window.innerHeight - FLOATING_PREVIEW_WIDTH - 60)),
+        top: Math.max(8, Math.min(box.top, window.innerHeight - FLOATING_PREVIEW_WIDTH - 8)),
         left: Math.max(8, panelLeft - FLOATING_PREVIEW_GAP - FLOATING_PREVIEW_WIDTH),
         width: FLOATING_PREVIEW_WIDTH
       }}

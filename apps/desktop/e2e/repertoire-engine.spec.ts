@@ -251,13 +251,13 @@ test("Analyze runs the engine in study: its lines follow the selection, a picked
   await expect.poll(() => board.boundingBox()).toEqual(boardBox);
 
   // An unfolded line's move shows its position beside the side panel (over the board's edge,
-  // level with the lines), without the line repeated there.
+  // level with the lines): just the board, with no caption or score.
   await enginePanel(page).getByRole("button", { name: "Show the whole line" }).first().click();
   await addLine(page, "d3").first().hover();
   const preview = page.getByRole("group", { name: /^Position after / });
   await expect(preview).toBeVisible();
   await expect(preview.locator("cg-board")).toBeVisible();
-  await expect(preview).toContainText("Line score");
+  await expect(preview).not.toContainText("Line score");
   await expect(preview).not.toContainText("Nf6");
   await expect(preview).not.toContainText("d3");
   // It never grows the panel or covers the moves and their Undo / Redo under it.

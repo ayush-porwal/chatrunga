@@ -1,10 +1,18 @@
-import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent
+} from "react";
 import type { Color, MoveNode } from "@chaturanga/shared/types/chess";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
 import { annotationTone } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { Figurine } from "../board/Figurine";
-import { formatScore } from "../game-review/review-score";
 import { BoardThumbnail } from "../settings/board-thumbnail";
 import { openBestLine, type BestLineCursor } from "./best-line-cursor";
 import {
@@ -17,11 +25,17 @@ import {
   type BestLineMove
 } from "./move-list-model";
 
-/** The preview card's padding and border around its board (p-2 and 1px, each side). */
-const PREVIEW_CHROME = 18;
-
 /** How long the pointer rests on a suggested move before its position shows. */
 const PREVIEW_DELAY_MS = 250;
+
+/**
+ * A move clicked in the move list doesn't take focus: the board and the list's highlight show where
+ * the game is, and the ← → that follow (global shortcuts) would otherwise draw a focus ring on the
+ * clicked move while another one is current. Tab still focuses moves, with their ring.
+ */
+export function keepFocusOnPress(event: MouseEvent) {
+  event.preventDefault();
+}
 
 /** Shows a position of a BEST line on the board (see the game store's showBestLine). */
 export type BrowseLine = (cursor: BestLineCursor) => void;
@@ -157,7 +171,6 @@ export const BestLineRow = memo(function BestLineRow({
           <LinePreview
             move={previewed}
             moveNumber={previewNumber(moves, previewIndex ?? 0)}
-            score={formatScore(review.bestEvalAfter ?? review.evalBefore)}
             orientation={orientation}
           />
         ) : null}
@@ -166,7 +179,7 @@ export const BestLineRow = memo(function BestLineRow({
   );
 });
 
-/** The number before a line's move in the preview's caption: `13.`, or `13…` for Black's. */
+/** The number before a line's move in the preview's name: `13.`, or `13…` for Black's. */
 function previewNumber(moves: readonly BestLineMove[], index: number): string {
   const own = moves[index]?.number;
   if (own) return own;
@@ -224,6 +237,7 @@ function LineMove({
       aria-current={current ? "step" : undefined}
       data-best-line-move={move.san}
       className={cn(className, "cursor-pointer")}
+      onMouseDown={keepFocusOnPress}
       onPointerEnter={onPreview}
       onFocus={onFocusPreview}
       onClick={onActivate}
@@ -234,19 +248,17 @@ function LineMove({
 }
 
 /**
- * The position after a suggested move: a board the panel's width in the board's own theme and
- * pieces, the move tinted, captioned `13. ♘d2 … −0.1` (the line's score). It lets the pointer
- * through, so it never takes a click meant for the list.
+ * The position after a suggested move: just a board, the panel's width, in the board's own theme
+ * and pieces, the move tinted (named for assistive tech only). It lets the pointer through, so it
+ * never takes a click meant for the list.
  */
 function LinePreview({
   move,
   moveNumber,
-  score,
   orientation
 }: {
   move: BestLineMove;
   moveNumber: string;
-  score: string;
   orientation: Color;
 }) {
   // Sized to the room under the line and to the main board (see previewBoardSize), left-aligned.
@@ -258,8 +270,7 @@ function LinePreview({
     const measure = () => {
       const board = document.querySelector('section[aria-label="Board"] cg-board');
       const mainBoard = board ? board.getBoundingClientRect().width : null;
-      // The card's padding and border (p-2, 1px) sit around the board.
-      setSize(previewBoardSize(slot.clientWidth - PREVIEW_CHROME, mainBoard));
+      setSize(previewBoardSize(slot.clientWidth, mainBoard));
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -275,24 +286,18 @@ function LinePreview({
         role="img"
         aria-label={`Position after ${moveNumber} ${move.san}`}
         data-line-preview=""
-        className="grid w-fit animate-fade-in gap-1.5 rounded-lg border border-line bg-surface-raised p-2 shadow-[0_10px_28px_rgb(0_0_0/0.45)]"
-        style={size === null ? { visibility: "hidden" } : undefined}
+        className="w-fit animate-fade-in rounded-md shadow-[0_10px_28px_rgb(0_0_0/0.45)]"
+        style={{
+          width: size ?? PREVIEW_BOARD_MIN,
+          visibility: size === null ? "hidden" : undefined
+        }}
       >
-        <div style={{ width: size ?? PREVIEW_BOARD_MIN }}>
-          <BoardThumbnail
-            fen={move.fenAfter}
-            orientation={orientation}
-            lastMove={move.uci}
-            rounded="md"
-          />
-        </div>
-        <p className="flex items-center gap-1.5 text-[0.8125rem] leading-none font-medium text-fg-secondary">
-          <span className="font-mono text-xs text-fg-subtle tabular-nums">{moveNumber}</span>
-          <span>
-            <FigureSan san={move.san} />
-          </span>
-          <span className="ml-auto font-mono text-xs text-fg-subtle tabular-nums">{score}</span>
-        </p>
+        <BoardThumbnail
+          fen={move.fenAfter}
+          orientation={orientation}
+          lastMove={move.uci}
+          rounded="md"
+        />
       </div>
     </div>
   );
