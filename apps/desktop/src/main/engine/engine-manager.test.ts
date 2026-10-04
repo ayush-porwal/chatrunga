@@ -1,6 +1,9 @@
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough, Writable } from "node:stream";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   EngineBestMove,
@@ -20,7 +23,73 @@ vi.mock("./engine-config", () => ({
   engineResourceOptions: () => ({ threads: 2, hashMb: 16 })
 }));
 
+/** The next engine process to start, scripted by a test (see scriptedEngine); else a real one. */
+let nextProcess: ChildProcessWithoutNullStreams | null = null;
+vi.mock("./uci-process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./uci-process")>();
+  return {
+    ...actual,
+    spawnUciProcess: (config: EngineConfig) => {
+      const proc = nextProcess;
+      nextProcess = null;
+      return proc ?? actual.spawnUciProcess(config);
+    }
+  };
+});
+
 const { EngineManager, continuesGame } = await import("./engine-manager");
+
+/**
+ * The next engine process started is scripted: `reply` answers each command it is sent, through
+ * `say` (a line of output), and decides when it exits and when its output has all been read.
+ */
+function scriptedEngine(
+  reply: (
+    command: string,
+    engine: { say: (line: string) => void; exit: (code: number) => void; close: () => void }
+  ) => void
+): void {
+  const proc = Object.assign(new EventEmitter(), {
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    pid: undefined,
+    exitCode: null as number | null,
+    signalCode: null,
+    killed: false,
+    kill: () => {
+      proc.killed = true;
+      return true;
+    }
+  });
+  const engine = {
+    say: (line: string) => proc.stdout.write(`${line}\n`),
+    exit: (code: number) => {
+      proc.exitCode = code;
+      proc.emit("exit", code, null);
+    },
+    // Its output read to the end, the process is closed (as Node reports it, after its exit).
+    close: () => {
+      proc.stdout.once("end", () => proc.emit("close", proc.exitCode, null));
+      proc.stdout.end();
+    }
+  };
+  const stdin = new Writable({
+    write: (chunk: Buffer, _encoding, done) => {
+      for (const command of chunk.toString("utf8").split("\n").filter(Boolean))
+        reply(command, engine);
+      done();
+    }
+  });
+  nextProcess = Object.assign(proc, { stdin }) as unknown as ChildProcessWithoutNullStreams;
+}
+
+/** A scripted engine's handshake. */
+function handshake(command: string, say: (line: string) => void): void {
+  if (command === "uci") {
+    say("id name Scripted");
+    say("uciok");
+  } else if (command === "isready") say("readyok");
+}
 
 function fakeEngine(id: string, extraArgs: string[] = []): EngineConfig {
   const config: EngineConfig = {
@@ -488,6 +557,53 @@ describe("EngineManager", () => {
     await expectEventually(() => events.infos.some((info) => info.searchId === "next"));
     expect(spawns()).toBe(2);
     expect(events.errors).toHaveLength(1);
+  });
+
+  it("gives the engine's first reason when its error lines are read after its exit is reported", async () => {
+    // Stockfish without its network file: it writes its ERROR lines and quits at `go`. Node can
+    // report the exit before those lines are read.
+    scriptedEngine((command, { say, exit, close }) => {
+      handshake(command, say);
+      if (command !== "go infinite") return;
+      exit(1);
+      say("info string ERROR: The network file nn-fake.nnue was not loaded successfully.");
+      say("info string ERROR: The engine will be terminated now.");
+      close();
+    });
+    const events = collect(manager);
+    await manager.startAnalysis({
+      engineId: "sf",
+      searchId: "no-network",
+      fen: START,
+      moves: [],
+      multipv: 1
+    });
+    await expectEventually(() => events.errors.length === 1);
+    expect(events.errors[0]).toEqual({
+      engineId: "sf",
+      searchId: "no-network",
+      message:
+        "sf quit during the search (exit 1): The network file nn-fake.nnue was not loaded successfully."
+    });
+  });
+
+  it("a progress report doesn't hide a line whose moves came without its score", async () => {
+    scriptedEngine((command, { say }) => {
+      handshake(command, say);
+      if (command !== "go infinite") return;
+      say("info depth 5 seldepth 7 multipv 1 nodes 4096 pv e2e4 e7e5");
+      say("info depth 6 currmove d2d4 currmovenumber 1");
+    });
+    const events = collect(manager);
+    await manager.startAnalysis({
+      engineId: "sf",
+      searchId: "split",
+      fen: START,
+      moves: [],
+      multipv: 1
+    });
+    await expectEventually(() => events.infos.length > 0);
+    expect(events.infos[0]).toMatchObject({ searchId: "split", depth: 5, pv: ["e2e4", "e7e5"] });
   });
 });
 

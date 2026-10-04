@@ -18,11 +18,18 @@
 // progress report (as older releases send). A `position` with an illegal move (castling as the
 // king taking its rook, `e1h1`, included) is refused the way Stockfish 19 refuses it: a CRITICAL
 // ERROR `info string`, then the process quits (exit 1).
-import { appendFileSync } from "node:fs";
+// Its error line is written straight to the pipe and the process ends at once, as a C++ engine's
+// do: nothing waits for the line to be read, so the app may learn of the exit first.
+import { appendFileSync, writeSync } from "node:fs";
 import { createInterface } from "node:readline";
 
 const log = (line) => appendFileSync(process.argv[2], `${line}\n`);
 const out = (line) => process.stdout.write(`${line}\n`);
+/** Writes an engine's last line straight to the pipe and quits (exit 1) at once. */
+const quitWith = (line) => {
+  writeSync(1, `${line}\n`);
+  process.exit(1);
+};
 let timer = null;
 let depth = 0;
 /** The moves of the last `position` command (after `moves`). */
@@ -106,8 +113,9 @@ let stockfishPosition = null;
 let stockfishMultipv = 1;
 
 /**
- * Plays a `position` command as Stockfish does: null (after its CRITICAL ERROR line) when a move
- * isn't one of the position's legal moves in standard UCI (castling is the king's two-square move).
+ * Plays a `position` command as Stockfish does: a move that isn't one of the position's legal
+ * moves in standard UCI (castling is the king's two-square move) gets its CRITICAL ERROR line,
+ * and the process quits.
  */
 function stockfishPositionFor(line) {
   const [setup, moves = ""] = line.slice("position ".length).split(" moves ");
@@ -117,25 +125,29 @@ function stockfishPositionFor(line) {
     const move = chess.parseUci(uci);
     const target = move && position.board.get(move.to);
     const kingOntoRook = target?.role === "rook" && position.board.get(move.from)?.role === "king";
-    if (!move || kingOntoRook || !position.isLegal(move)) {
-      out(`info string CRITICAL ERROR: Command \`${line}\` failed. Reason: Illegal move: ${uci}`);
-      return null;
-    }
+    if (!move || kingOntoRook || !position.isLegal(move))
+      quitWith(
+        `info string CRITICAL ERROR: Command \`${line}\` failed. Reason: Illegal move: ${uci}`
+      );
     position.play(move);
   }
   return position;
 }
 
-/** The position's legal moves in standard UCI, castling as the king's two-square move. */
+/**
+ * The position's legal moves in standard UCI, castling as the king's two-square move (chessops
+ * lists it as the king taking its rook).
+ */
 function legalUcis(position) {
   const ucis = [];
   for (const [from, dests] of position.allDests()) {
     for (const to of dests) {
       const target = position.board.get(to);
-      if (target?.role === "rook" && target.color === position.turn) continue;
+      const castling = target?.role === "rook" && target.color === position.turn;
+      const kingTo = castling ? (to > from ? from + 2 : from - 2) : to;
       const promotion =
         position.board.get(from)?.role === "pawn" && (to >> 3 === 0 || to >> 3 === 7) ? "q" : "";
-      ucis.push(`${chess.makeSquare(from)}${chess.makeSquare(to)}${promotion}`);
+      ucis.push(`${chess.makeSquare(from)}${chess.makeSquare(kingTo)}${promotion}`);
     }
   }
   return ucis.sort();
@@ -203,11 +215,7 @@ createInterface({ input: process.stdin }).on("line", (raw) => {
   const line = raw.trim();
   log(line);
   if (line.startsWith("position ")) positionMoves = line.split(" moves ")[1] ?? "";
-  if (line.startsWith("position ") && chess) {
-    stockfishPosition = stockfishPositionFor(line);
-    // Quits once the error line is out (a pipe's writes may still be pending).
-    if (!stockfishPosition) process.stdout.write("", () => process.exit(1));
-  }
+  if (line.startsWith("position ") && chess) stockfishPosition = stockfishPositionFor(line);
   if (line.startsWith("setoption name MultiPV value "))
     stockfishMultipv = Number(line.slice("setoption name MultiPV value ".length));
   if (line.startsWith("position fen "))
