@@ -7,6 +7,8 @@ import type { GameReview } from "@chaturanga/shared/types/engine";
 import { gameFingerprint } from "./game-fingerprint";
 import { reviewListingFields, reviewRowId } from "./review-rows";
 import { setRepertoireConnection } from "../repertoire/connection";
+import { allRows, getRow } from "./rows";
+import { parseStoredJson } from "../stored-json";
 
 let db: DatabaseSync | null = null;
 
@@ -92,7 +94,7 @@ export function getDb(): DatabaseSync {
 }
 
 function columnsOf(database: DatabaseSync, table: string): Set<string> {
-  return new Set((database.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((column) => column.name));
+  return new Set(allRows<{ name: string }>(database.prepare(`PRAGMA table_info(${table})`)).map((column) => column.name));
 }
 
 function addColumn(database: DatabaseSync, table: string, column: string, type: string): void {
@@ -171,9 +173,7 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
     const columns = columnsOf(database, "games");
     const pick = (name: string) => (columns.has(name) ? name : `NULL AS ${name}`);
     const wanted = ["site", "white", "black", "date", "initial_fen", "headers_json", "move_tree_json", "review_json"];
-    const rows = database
-      .prepare(`SELECT id, ${wanted.map(pick).join(", ")} FROM games`)
-      .all() as {
+    const rows = allRows<{
       id: string;
       site: string | null;
       white: string | null;
@@ -183,7 +183,7 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
       headers_json: string | null;
       move_tree_json: string | null;
       review_json: string | null;
-    }[];
+    }>(database.prepare(`SELECT id, ${wanted.map(pick).join(", ")} FROM games`));
     const insertReview = database.prepare(`INSERT OR IGNORE INTO game_reviews (
       review_id, game_id, created_at, engine_name, move_time_ms, depth, maia_levels_json, move_count, commentary_count, review_json
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -191,7 +191,7 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
     for (const row of rows) {
       if (row.review_json) {
         try {
-          const review = JSON.parse(row.review_json) as GameReview;
+          const review = parseStoredJson<GameReview | null>(row.review_json);
           if (review && Array.isArray(review.moves)) {
             const reviewId = reviewRowId(review, row.id);
             const fields = reviewListingFields(review);
@@ -416,9 +416,9 @@ function storedFingerprint(row: {
 }): string | null {
   try {
     if (!row.move_tree_json) return null;
-    const moveTree = JSON.parse(row.move_tree_json) as MoveNode[];
+    const moveTree = parseStoredJson<MoveNode[]>(row.move_tree_json);
     if (!Array.isArray(moveTree) || !moveTree.length) return null;
-    const stored = row.headers_json ? (JSON.parse(row.headers_json) as Partial<GameHeaders> | null) : null;
+    const stored = row.headers_json ? parseStoredJson<Partial<GameHeaders> | null>(row.headers_json) : null;
     const headers = { site: row.site, white: row.white, black: row.black, date: row.date, ...stored };
     const rootFen = row.initial_fen ?? moveTree.find((node) => node.parentId === null)?.fenAfter ?? "";
     return gameFingerprint({ headers, rootFen, moveTree });
@@ -428,7 +428,7 @@ function storedFingerprint(row: {
 }
 
 export function runMigrations(database: DatabaseSync, migrations = MIGRATIONS): void {
-  const { user_version: version } = database.prepare("PRAGMA user_version").get() as { user_version: number };
+  const version = getRow<{ user_version: number }>(database.prepare("PRAGMA user_version"))?.user_version ?? 0;
   for (let index = version; index < migrations.length; index += 1) {
     database.exec("BEGIN IMMEDIATE");
     try {

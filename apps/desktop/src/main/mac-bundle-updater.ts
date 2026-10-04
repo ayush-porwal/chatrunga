@@ -19,11 +19,11 @@ import { createHash } from "node:crypto";
 import { createWriteStream, writeFileSync } from "node:fs";
 import { access, constants, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { Readable, Transform } from "node:stream";
+import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { errorMessage, logger } from "./logger";
 import { BUNDLE_SWAP_SCRIPT, isSwappableBundlePath, swapResult } from "./updater-state";
+import { readableFromBody } from "./web-stream";
 
 /** The .app that contains the running executable (`…/Chaturanga.app/Contents/MacOS/Chaturanga`). */
 export function runningBundlePath(execPath: string): string {
@@ -122,7 +122,7 @@ export class MacBundleUpdater {
         done(null, chunk);
       }
     });
-    await pipeline(Readable.fromWeb(response.body as WebReadableStream<Uint8Array>), meter, createWriteStream(zipPath));
+    await pipeline(readableFromBody(response.body), meter, createWriteStream(zipPath));
     onProgress(transferred, total || transferred);
     if (hash.digest("base64") !== update.sha512) throw new Error("sha512 checksum mismatch");
 

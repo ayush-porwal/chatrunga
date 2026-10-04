@@ -122,6 +122,12 @@ export async function readFirstLine(filePath: string, compressed: boolean, maxCh
 }
 
 /** The file's bytes, zstd-decompressed when `compressed`; stopping early (a `break`) ends the reads. */
+/** A chunk of a binary stream (no encoding set, so every chunk is a Buffer). */
+function bytes(chunk: unknown): Buffer {
+  if (!Buffer.isBuffer(chunk)) throw new TypeError("Expected a binary chunk from the puzzle file");
+  return chunk;
+}
+
 async function* decompressedChunks(filePath: string, compressed: boolean): AsyncGenerator<Uint8Array> {
   if (compressed && typeof createZstdDecompress === "function") {
     yield* nativeZstdFrames(filePath);
@@ -130,13 +136,13 @@ async function* decompressedChunks(filePath: string, compressed: boolean): Async
   const file = createReadStream(filePath);
   try {
     if (!compressed) {
-      for await (const chunk of file) yield chunk as Buffer;
+      for await (const chunk of file) yield bytes(chunk);
       return;
     }
     const output: Uint8Array[] = [];
     const decompressor = new Decompress((chunk) => output.push(chunk));
     for await (const chunk of file) {
-      decompressor.push(chunk as Buffer, false);
+      decompressor.push(bytes(chunk), false);
       yield* output.splice(0);
     }
     decompressor.push(new Uint8Array(), true);
@@ -164,7 +170,7 @@ async function* nativeZstdFrames(filePath: string): AsyncGenerator<Buffer> {
       if (error && (error as NodeJS.ErrnoException).code !== "ERR_STREAM_PREMATURE_CLOSE") failure = error;
     });
     try {
-      for await (const chunk of frames) yield chunk as Buffer;
+      for await (const chunk of frames) yield bytes(chunk);
     } finally {
       file.destroy();
       decompress.destroy();

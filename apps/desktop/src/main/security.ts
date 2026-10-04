@@ -31,7 +31,7 @@ export function isAppUrl(url: string, appUrl: string): boolean {
 
 /** An IPC request comes from the app's own page (not another frame or a page navigated to). */
 export function isTrustedSenderUrl(url: string | null | undefined, appUrl: string): boolean {
-  return Boolean(url) && isAppUrl(url as string, appUrl);
+  return url ? isAppUrl(url, appUrl) : false;
 }
 
 /** Only these permission requests are granted to the renderer; everything else is denied. */

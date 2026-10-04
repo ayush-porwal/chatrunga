@@ -44,6 +44,8 @@ import { filterGames, PREVIEW_PAGE_SIZE, setGamesIncluded, setGamesKind } from "
 import { plural } from "./repertoire-chapters";
 import { nodeIdForPathLabel } from "./repertoire-model";
 import { IMPORT_KIND_HELP, importPracticeNote } from "./training-explanations";
+import { isOneOf } from "@chaturanga/shared/types/guards";
+import { CHAPTER_KINDS } from "@chaturanga/shared/types/repertoire";
 
 /** The default selection of each previewed game: included, its proposed title, opening kind. */
 export function defaultSelections(preview: ImportPreview): ImportSelection[] {
@@ -433,11 +435,11 @@ export function ImportPgnDialog({
                     className="h-7 text-xs"
                     value=""
                     disabled={busy || !found.length}
-                    onChange={(event) =>
-                      setSelections((current) =>
-                        setGamesKind(current, found, event.target.value as ChapterKind)
-                      )
-                    }
+                    onChange={(event) => {
+                      const kind = event.target.value;
+                      if (!isOneOf(CHAPTER_KINDS, kind)) return;
+                      setSelections((current) => setGamesKind(current, found, kind));
+                    }}
                   >
                     <option value="" disabled>
                       Set kind…
@@ -482,9 +484,10 @@ export function ImportPgnDialog({
                           aria-label={`Chapter kind for game ${game.index + 1}`}
                           className="h-8"
                           value={selection.kind}
-                          onChange={(event) =>
-                            update(index, { kind: event.target.value as ChapterKind })
-                          }
+                          onChange={(event) => {
+                            const kind = event.target.value;
+                            if (isOneOf(CHAPTER_KINDS, kind)) update(index, { kind });
+                          }}
                         >
                           <option value="opening">Opening (practised)</option>
                           <option value="reference">Reference (study only)</option>

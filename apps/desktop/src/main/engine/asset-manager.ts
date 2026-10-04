@@ -34,6 +34,9 @@ import {
   type FetchLike
 } from "./github-releases";
 import { downloadToFile } from "./http-download";
+import { isOneOf } from "@chaturanga/shared/types/guards";
+import { parseStoredJson } from "../stored-json";
+import { errorCode } from "../system-error";
 
 const exec = promisify(execFile);
 
@@ -134,7 +137,42 @@ export const ALL_ASSET_IDS: readonly AssetId[] = [
 ];
 
 export function isAssetId(value: unknown): value is AssetId {
-  return ALL_ASSET_IDS.includes(value as AssetId);
+  return isOneOf(ALL_ASSET_IDS, value);
+}
+
+/** A value for every asset (written out, so the compiler checks that none is missing). */
+function forEveryAsset<V>(value: (id: AssetId) => V): Record<AssetId, V> {
+  return {
+    stockfish: value("stockfish"),
+    lc0: value("lc0"),
+    "maia-1100": value("maia-1100"),
+    "maia-1300": value("maia-1300"),
+    "maia-1500": value("maia-1500"),
+    "maia-1700": value("maia-1700"),
+    "maia-1900": value("maia-1900")
+  };
+}
+
+/** {@link forEveryAsset} for values that take a while, all at once. */
+async function forEveryAssetAsync<V>(value: (id: AssetId) => Promise<V>): Promise<Record<AssetId, V>> {
+  const [stockfish, lc0, maia1100, maia1300, maia1500, maia1700, maia1900] = await Promise.all([
+    value("stockfish"),
+    value("lc0"),
+    value("maia-1100"),
+    value("maia-1300"),
+    value("maia-1500"),
+    value("maia-1700"),
+    value("maia-1900")
+  ]);
+  return {
+    stockfish,
+    lc0,
+    "maia-1100": maia1100,
+    "maia-1300": maia1300,
+    "maia-1500": maia1500,
+    "maia-1700": maia1700,
+    "maia-1900": maia1900
+  };
 }
 
 function isReleaseAsset(id: AssetId): id is ReleaseAssetId {
@@ -219,11 +257,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
   }
 
   getInstalled(): Record<AssetId, AssetRecord> {
-    const out = {} as Record<AssetId, AssetRecord>;
-    for (const id of ALL_ASSET_IDS) {
-      out[id] = this.state.get(id) ?? this.emptyRecord(id);
-    }
-    return out;
+    return forEveryAsset((id) => this.state.get(id) ?? this.emptyRecord(id));
   }
 
   /**
@@ -233,15 +267,13 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
    */
   async getStatus(opts: { refresh?: boolean } = {}): Promise<Record<AssetId, AssetStatus>> {
     const lookup = opts.refresh ? { maxAgeMs: CHECK_MAX_AGE_MS } : ("cache-only" as const);
-    const out = {} as Record<AssetId, AssetStatus>;
     const installed = this.getInstalled();
-    await Promise.all(
-      ALL_ASSET_IDS.map(async (id) => {
+    return forEveryAssetAsync(async (id): Promise<AssetStatus> => {
         const record = installed[id];
         const resolved = await this.resolveDownload(id, lookup).catch(() => null);
         const installedVersion = record.version ?? record.manifestVersion ?? null;
         const managed = record.state === "installed";
-        out[id] = {
+        return {
           ...record,
           installedVersion,
           latestVersion: resolved?.version ?? null,
@@ -256,9 +288,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
           checkedAt: resolved?.checkedAt ? new Date(resolved.checkedAt).toISOString() : null,
           checkError: resolved?.checkError ?? null
         };
-      })
-    );
-    return out;
+    });
   }
 
   /** Explicit "check for updates": refreshes the releases (rate-limit aware) and returns status. */
@@ -607,7 +637,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     if (!existsSync(this.statePath)) return;
     try {
       const raw = await readFile(this.statePath, "utf-8");
-      const parsed = JSON.parse(raw) as { records?: AssetRecord[] };
+      const parsed = parseStoredJson<{ records?: AssetRecord[] }>(raw);
       let changed = false;
       for (const record of parsed.records ?? []) {
         if (!isAssetId(record?.id)) continue;
@@ -696,7 +726,7 @@ async function swapIntoPlace(staged: string, finalPath: string): Promise<void> {
     await rename(staged, finalPath);
     return;
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
+    const code = errorCode(error);
     if (!existsSync(finalPath) || (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES")) throw error;
   }
   const aside = `${finalPath}.old-${Date.now()}`;

@@ -2,7 +2,7 @@ import { app } from "electron";
 import { constants, createWriteStream, existsSync } from "node:fs";
 import { copyFile, link, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { Readable, Transform } from "node:stream";
+import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import {
@@ -26,6 +26,8 @@ import {
   type ScanJob,
   type ScanResult
 } from "./puzzle-scan";
+import { errorCode } from "../system-error";
+import { readableFromBody } from "../web-stream";
 
 const PROGRESS_INTERVAL_MS = 120;
 /** A download with no data for this long is abandoned (its `.part` file stays for a resume). */
@@ -42,7 +44,7 @@ const MAX_POOLS = 6;
 type ProgressSink = (progress: DatabaseDownloadProgress) => void;
 
 function isMissingFile(error: unknown): boolean {
-  return (error as NodeJS.ErrnoException)?.code === "ENOENT";
+  return errorCode(error) === "ENOENT";
 }
 
 /**
@@ -300,7 +302,7 @@ async function runDownload(sourceId: string, onProgress: ProgressSink, signal: A
 
     // On failure the `.part` file stays, so the next attempt resumes instead of starting over.
     await pipeline(
-      Readable.fromWeb(response.body as never),
+      readableFromBody(response.body),
       meter,
       createWriteStream(partPath, { flags: resumed ? "a" : "w" }),
       { signal: aborted }

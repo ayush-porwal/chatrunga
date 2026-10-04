@@ -171,7 +171,7 @@ function useToggleEasing(visible: boolean): boolean {
  * comes and goes.
  */
 /** The eval column's width, zeroed while the bar is off. */
-const NO_EVAL_COLUMN = { "--workspace-eval": "0px" } as CSSProperties;
+const NO_EVAL_COLUMN: CSSProperties = { "--workspace-eval": "0px" };
 
 /** Whether the evaluation bar is shown, and on which side of the board. */
 function useEvalBarPlacement(): { shown: boolean; right: boolean } {

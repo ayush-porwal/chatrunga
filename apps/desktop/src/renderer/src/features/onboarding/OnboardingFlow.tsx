@@ -157,7 +157,7 @@ export function OnboardingFlow({
             <div
               key={step}
               className="onb-step-in scroll-area scroll-fade -mx-1 mt-10 min-h-0 overflow-y-auto px-1 pb-1"
-              style={{ "--onb-dir": direction } as React.CSSProperties}
+              style={{ "--onb-dir": direction }}
             >
               <div className="grid content-start gap-6">
                 {step === "welcome" ? (

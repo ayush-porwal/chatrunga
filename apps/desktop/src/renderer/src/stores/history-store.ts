@@ -2,6 +2,9 @@ import { create } from "zustand";
 import type { Color, GameMode, GameSession, GameSource } from "@chaturanga/shared/types/chess";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import type { RepertoireColor } from "@chaturanga/shared/types/repertoire";
+import type { ReviewTab } from "../features/game-review/review-utils";
+import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
+import type { SettingsSectionId } from "../features/settings/SettingsPage";
 import type { PlayOpponent } from "./lichess-store";
 
 /**
@@ -47,13 +50,13 @@ export type HistoryEntry =
   | { view: "home" }
   | { view: "puzzles" }
   | { view: "databases" }
-  | { view: "settings"; section: string | null }
+  | { view: "settings"; section: SettingsSectionId | null }
   | { view: "play"; opponent: PlayOpponent | null }
   | { view: "game"; board: BoardSnapshot }
   | {
       view: "game-review";
       board: BoardSnapshot;
-      tab: string;
+      tab: ReviewTab;
       /** The Opening tab's picked side for this game (null: not picked, the default applies). */
       compareColor?: RepertoireColor | null;
     }
@@ -65,7 +68,7 @@ export type HistoryEntry =
       /** The selected node; moving through the tree updates the entry, it never adds one. */
       nodeId: string | null;
       /** The study panel tab. */
-      tab: string;
+      tab: StudyTab;
       /** Board orientation (null: the repertoire's own colour). */
       orientation: Color | null;
     }

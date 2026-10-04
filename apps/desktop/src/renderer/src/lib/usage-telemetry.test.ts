@@ -12,18 +12,13 @@ import {
   ViewQualifier
 } from "./usage-telemetry";
 
-const timers = {
-  setTimeout: (callback: () => void, ms: number) => setTimeout(callback, ms),
-  clearTimeout: (handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>)
-};
-
 describe("ViewQualifier (commentary_viewed)", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
   it("counts an explanation kept in view for the qualifying time", () => {
     const viewed = vi.fn();
-    const qualifier = new ViewQualifier(COMMENTARY_VIEW_QUALIFY_MS, viewed, timers);
+    const qualifier = new ViewQualifier(COMMENTARY_VIEW_QUALIFY_MS, viewed);
     qualifier.update("r1:5", true);
     vi.advanceTimersByTime(COMMENTARY_VIEW_QUALIFY_MS - 1);
     expect(viewed).not.toHaveBeenCalled();
@@ -44,7 +39,7 @@ describe("ViewQualifier (commentary_viewed)", () => {
 
   it("moving on, hiding the tab or leaving the window first means it wasn't viewed", () => {
     const viewed = vi.fn();
-    const qualifier = new ViewQualifier(COMMENTARY_VIEW_QUALIFY_MS, viewed, timers);
+    const qualifier = new ViewQualifier(COMMENTARY_VIEW_QUALIFY_MS, viewed);
     // An answer arrives, but the user is already on the next move.
     qualifier.update("r1:5", true);
     vi.advanceTimersByTime(500);
@@ -68,7 +63,7 @@ describe("ViewQualifier (commentary_viewed)", () => {
 
   it("a repeated update for the same candidate doesn't restart the clock", () => {
     const viewed = vi.fn();
-    const qualifier = new ViewQualifier(COMMENTARY_VIEW_QUALIFY_MS, viewed, timers);
+    const qualifier = new ViewQualifier(COMMENTARY_VIEW_QUALIFY_MS, viewed);
     qualifier.update("r1:5", true);
     vi.advanceTimersByTime(1_500);
     qualifier.update("r1:5", true);

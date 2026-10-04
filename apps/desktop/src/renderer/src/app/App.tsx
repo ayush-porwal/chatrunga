@@ -352,8 +352,8 @@ export function App() {
     showLiveGame: () => showGame(sideTab, "none"),
     showHome: () => showView("home", "none"),
     showSettings: (section) => {
-      viewedSettingsSection.current = section as SettingsSectionId | null;
-      setSettingsSection(section as SettingsSectionId | null);
+      viewedSettingsSection.current = section;
+      setSettingsSection(section);
       showView("settings", "none");
     },
     openPlay: () => openPlayPage("none"),
@@ -364,7 +364,7 @@ export function App() {
     openRepertoirePractice: (repertoireId, sessionId) => openRepertoirePractice(repertoireId, { sessionId }, "none"),
     showGame: (tab) => showGame(tab, "none"),
     showGameReview: (entry) => {
-      setReviewTab(entry.tab as ReviewTab);
+      setReviewTab(entry.tab);
       setOpeningSide(entry.compareColor ? { board: currentGame().board, color: entry.compareColor } : null);
       const id = entry.board.gameId ?? "current";
       latestNavigation.current += 1;
@@ -691,7 +691,7 @@ export function App() {
    * fails the draft stays open with its error (false). A newer navigation meanwhile wins (false).
    */
   async function openRepertoireStudy(
-    target: Omit<StudyOpenTarget, "tab"> & { tab?: string; orientation?: Color | null },
+    target: Omit<StudyOpenTarget, "tab"> & { tab?: StudyTab; orientation?: Color | null },
     history: HistoryMode = "push"
   ): Promise<boolean> {
     if (history === "push") commitCurrent();
@@ -721,7 +721,7 @@ export function App() {
       draft.selectNode(target.nodeId ?? REPERTOIRE_ROOT_NODE_ID);
       if (target.orientation) draft.setOrientation(target.orientation);
     }
-    const tab = (target.tab as StudyTab | undefined) ?? repertoireExtras.tab;
+    const tab = target.tab ?? repertoireExtras.tab;
     // A staged move is applied once by the study page; history entries never carry it.
     setRepertoireExtras({
       nodeId: target.nodeId,

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef } from "react";
 import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
 import type { DrawShape } from "@lichess-org/chessground/draw";
-import type { Key } from "@lichess-org/chessground/types";
 import type { Color } from "@chaturanga/shared/types/chess";
 import { cn } from "@/lib/utils";
 import { useBoardAppearance, useCgBoardBackground } from "../board/useBoardAppearance";
@@ -16,6 +15,7 @@ import {
   usePrefersReducedMotion
 } from "../board/board-motion";
 import "../board/board.css";
+import { isSquare } from "@chaturanga/shared/chess/square";
 
 export type ReviewArrow = {
   orig: string;
@@ -42,11 +42,9 @@ export function ReviewBoard({ fen, orientation, arrows = NO_ARROWS, lastMove, cl
   const animationEnabled = appearance.boardAnimation && !reducedMotion;
   const shapes = useMemo<DrawShape[]>(
     () =>
-      arrows.map((arrow) => ({
-        orig: arrow.orig as Key,
-        dest: arrow.dest as Key,
-        brush: arrow.brush
-      })),
+      arrows.flatMap(({ orig, dest, brush }) =>
+        isSquare(orig) && isSquare(dest) ? [{ orig, dest, brush }] : []
+      ),
     [arrows]
   );
 
@@ -85,8 +83,8 @@ export function ReviewBoard({ fen, orientation, arrows = NO_ARROWS, lastMove, cl
   }, [appearance.showCoordinates]);
 
   // Slide pieces for a single move at a calm pace; snap for jumps and while scrubbing.
-  const lastFrom = lastMove?.[0];
-  const lastTo = lastMove?.[1];
+  const lastFrom = lastMove && isSquare(lastMove[0]) ? lastMove[0] : undefined;
+  const lastTo = lastMove && isSquare(lastMove[1]) ? lastMove[1] : undefined;
   useEffect(() => {
     const ground = groundRef.current;
     if (!ground) return;
@@ -101,7 +99,7 @@ export function ReviewBoard({ fen, orientation, arrows = NO_ARROWS, lastMove, cl
       fen,
       orientation,
       animation: { enabled: animate, duration: PIECE_MOVE_MS },
-      lastMove: lastFrom && lastTo ? [lastFrom as Key, lastTo as Key] : undefined,
+      lastMove: lastFrom && lastTo ? [lastFrom, lastTo] : undefined,
       drawable: { shapes }
     });
     if (changed && !isRapidNavigation(now)) window.requestAnimationFrame(() => fadeInSquares(elementRef.current, "square.last-move"));

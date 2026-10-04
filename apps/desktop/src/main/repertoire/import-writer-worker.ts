@@ -14,6 +14,7 @@ import type {
   ImportWriterRequest
 } from "./import-writer-protocol";
 
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runner starts this worker with a ImportWriterData
 const { dbPath, job } = workerData as ImportWriterData;
 const chapters: ImportCommitChapter[] = [];
 const reply = (message: ImportWriterReply) => parentPort?.postMessage(message);

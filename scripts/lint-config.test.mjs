@@ -378,6 +378,31 @@ export function read(text: string, take: (value: string) => void, loose: any) {
 `
   },
 
+  {
+    name: "production code can't narrow a value with a cast",
+    file: "apps/desktop/src/main/cast.ts",
+    rules: ["typescript(no-unsafe-type-assertion)"],
+    lines: [3, 4],
+    code: `type Kind = "opening" | "reference";
+export function kindOf(value: unknown, text: string): [Kind, Kind] {
+  const fromInput = value as Kind;
+  const fromText = text as Kind;
+  return [fromInput, fromText];
+}
+`
+  },
+  {
+    name: "tests may cast test doubles and malformed inputs",
+    file: "apps/desktop/src/main/cast.test.ts",
+    rules: ["typescript(no-unsafe-type-assertion)"],
+    lines: [],
+    code: `type Kind = "opening" | "reference";
+it("passes a malformed kind through", () => {
+  expect(("other" as string as Kind).length).toBe(5);
+});
+`
+  },
+
   // Test hygiene in unit and e2e tests.
   {
     name: "tests can't be focused or skipped, and every expect is complete and specific",

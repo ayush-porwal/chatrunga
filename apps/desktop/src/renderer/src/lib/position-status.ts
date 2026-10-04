@@ -13,7 +13,8 @@ export function positionStatus(fen: string): PositionStatus {
   const hit = cache.get(fen);
   if (hit) return hit;
   const status = statusForFen(fen);
-  if (cache.size >= CACHE_SIZE) cache.delete(cache.keys().next().value as string);
+  const oldest = cache.keys().next();
+  if (cache.size >= CACHE_SIZE && !oldest.done) cache.delete(oldest.value);
   cache.set(fen, status);
   return status;
 }

@@ -134,8 +134,9 @@ export function setupRows(assets: readonly EngineAssetStatus[], progress: AssetP
   const byKey = new Map<SetupRow["key"], SetupRow>();
   const hasMaia = assets.some((asset) => asset.id.startsWith("maia-"));
   for (const asset of assets) {
+    // Lc0 runs the Maia weights, so it joins their row when they are part of the setup.
     const key: SetupRow["key"] =
-      asset.id.startsWith("maia-") || (asset.id === "lc0" && hasMaia) ? "maia" : (asset.id as "stockfish" | "lc0");
+      asset.id === "stockfish" ? "stockfish" : asset.id === "lc0" && !hasMaia ? "lc0" : "maia";
     let row = byKey.get(key);
     if (!row) {
       row = { key, label: key === "maia" ? "Maia" : asset.id === "lc0" ? "Lc0" : "Stockfish", ids: [], bytesReceived: 0, bytesTotal: 0, status: "ready" };

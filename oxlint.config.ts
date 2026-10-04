@@ -87,6 +87,7 @@ export default defineConfig({
     "typescript/no-unsafe-call": "error",
     "typescript/no-unsafe-member-access": "error",
     "typescript/no-unsafe-return": "error",
+    "typescript/no-unsafe-type-assertion": "error",
 
     // Copying a collection before a loop that changes it (`for (const key of [...pools.keys()])`
     // with a body that deletes) is deliberate here; the rule reads every such copy as waste.
@@ -237,6 +238,9 @@ export default defineConfig({
           "error",
           { assertFunctionNames: ["expect", "expect*", "assert", "assert*"] }
         ],
+        // Test doubles and deliberately malformed inputs stand in for full types; the assertion
+        // check guards production data, where a cast hides a value nobody validated.
+        "typescript/no-unsafe-type-assertion": "off",
         // vitest types its asymmetric matchers (expect.any(String), expect.objectContaining(…))
         // as `any` so they fit any expected value; assigning or returning them is the point.
         "typescript/no-unsafe-assignment": "off",

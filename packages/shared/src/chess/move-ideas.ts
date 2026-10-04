@@ -17,8 +17,7 @@ import {
   pinnerOf,
   positionSnapshot,
   sideName,
-  snapshotChanges,
-  type PositionSnapshot
+  snapshotChanges
 } from "./position-features";
 
 /**
@@ -489,6 +488,15 @@ function lineFacts(
   return ordered.filter((fact): fact is string => fact !== null);
 }
 
+/** The fields of `before` whose values differ in `after`. */
+function changedFields<T extends object>(before: T, after: T): Partial<T> {
+  const diff: Partial<T> = {};
+  for (const key in before) {
+    if (before[key] !== after[key]) diff[key] = before[key];
+  }
+  return diff;
+}
+
 /**
  * Build the idea facts for one reviewed move. Returns null only when the move
  * cannot be replayed from `fenBefore`.
@@ -506,8 +514,8 @@ export function buildIdeaFacts(input: IdeaFactsInput): IdeaFacts | null {
     played: { san: played.san, facts: moveFacts(played) }
   };
 
-  if (!playedIsBest) {
-    const best = play(input.fenBefore, input.bestUci as string);
+  if (!playedIsBest && input.bestUci) {
+    const best = play(input.fenBefore, input.bestUci);
     if (best) {
       const facts = [
         ...moveFacts(best),
@@ -539,11 +547,7 @@ export function buildIdeaFacts(input: IdeaFactsInput): IdeaFacts | null {
   if (before && after) {
     const changes = snapshotChanges(before, after);
     // "before" carries only what differs from "after", to keep the payload small.
-    const beforeDiff = Object.fromEntries(
-      Object.entries(before.snapshot).filter(
-        ([key, value]) => after.snapshot[key as keyof PositionSnapshot] !== value
-      )
-    ) as Partial<PositionSnapshot>;
+    const beforeDiff = changedFields(before.snapshot, after.snapshot);
     result.position = {
       before: beforeDiff,
       after: after.snapshot,

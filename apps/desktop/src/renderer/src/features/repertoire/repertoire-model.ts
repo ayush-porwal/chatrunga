@@ -11,7 +11,7 @@ import { makeUci } from "chessops/util";
 import { applyUserMove, positionFromFen } from "@chaturanga/shared/chess/position";
 import { standardCastlingUci } from "@chaturanga/shared/chess/review";
 import { playerToMove } from "@chaturanga/shared/chess/repertoire-position";
-import type { BoardArrow, BoardHighlight, Square } from "@chaturanga/shared/types/chess";
+import type { BoardArrow, BoardHighlight } from "@chaturanga/shared/types/chess";
 import {
   CHAPTER_NOT_FOUND_ERROR,
   POSITION_NOT_FOUND_ERROR,
@@ -28,6 +28,7 @@ import {
   type RepertoireOccurrence,
   type UpdateDecisionInput
 } from "@chaturanga/shared/types/repertoire";
+import { uciSquares } from "@chaturanga/shared/chess/square";
 
 /*
  * Pure view logic for the repertoire study and practice screens: the choices panel, boundary
@@ -721,9 +722,9 @@ export function hintMarks(
   stage: number,
   preferredUci: string | null
 ): { arrows: BoardArrow[]; highlights: BoardHighlight[] } {
-  const squares = lastMoveOf(preferredUci);
+  const squares = preferredUci ? uciSquares(preferredUci) : null;
   if (!squares || stage < 2) return { arrows: [], highlights: [] };
-  const [from, to] = squares as [Square, Square];
+  const [from, to] = squares;
   if (stage === 2) return { arrows: [], highlights: [{ square: from, color: "green" }] };
   return { arrows: [{ orig: from, dest: to, color: "green" }], highlights: [] };
 }
@@ -731,9 +732,9 @@ export function hintMarks(
 /** Arrows for revealed moves (preferred in green, other accepted moves in blue). */
 export function revealArrows(ucis: readonly string[], preferredUci: string | null): BoardArrow[] {
   return ucis.flatMap((uci) => {
-    const squares = lastMoveOf(uci);
+    const squares = uciSquares(uci);
     if (!squares) return [];
-    const [orig, dest] = squares as [Square, Square];
+    const [orig, dest] = squares;
     return [{ orig, dest, color: uci === preferredUci ? "green" : "blue" } as BoardArrow];
   });
 }
@@ -825,9 +826,11 @@ export function pieceNameAt(fen: string, square: string): string | null {
 /** SAN of `uci` in `fen`, or the UCI itself when it isn't legal there. */
 export function sanOf(fen: string, uci: string): string {
   try {
+    const squares = uciSquares(uci);
+    if (!squares) return uci;
     const moved = applyUserMove(fen, {
-      from: uci.slice(0, 2) as Square,
-      to: uci.slice(2, 4) as Square,
+      from: squares[0],
+      to: squares[1],
       ...(uci[4] ? { promotion: PROMOTIONS[uci[4]] } : {})
     });
     return moved?.san ?? uci;

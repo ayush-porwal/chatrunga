@@ -51,7 +51,9 @@ export function initTour(root: Document = document): void {
   const observer = new IntersectionObserver(
     (entries) => {
       for (const entry of entries) {
-        if (entry.isIntersecting) activate((entry.target as HTMLElement).dataset.chapter ?? "");
+        if (entry.isIntersecting && entry.target instanceof HTMLElement) {
+          activate(entry.target.dataset.chapter ?? "");
+        }
       }
     },
     { rootMargin: "-50% 0px -50% 0px" }

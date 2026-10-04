@@ -27,6 +27,7 @@ import {
   type RepertoireWorkspaceState
 } from "../types/repertoire";
 import { positionKey } from "./repertoire-position";
+import { isOneOf } from "../types/guards";
 import { nullPrototypeRecord } from "../types/record";
 
 /** Bounds a backup must stay within, and the versions this app reads (design §11). */
@@ -298,10 +299,10 @@ function parseNodeMeta(
   if (value === undefined || value === null) return meta;
   for (const [nodeId, entry] of Object.entries(object(value, `${where} node metadata`))) {
     if (!ids.has(nodeId)) continue;
-    if (!isObject(entry) || !EDGES.includes(entry.edge as RepertoireEdgeKind)) {
+    if (!isObject(entry) || !isOneOf(EDGES, entry.edge)) {
       invalid(`${where} node "${nodeId}" has no valid edge kind`);
     }
-    const next: RepertoireNodeMeta = { edge: entry.edge as RepertoireEdgeKind };
+    const next: RepertoireNodeMeta = { edge: entry.edge };
     if (entry.trainingStart === true) next.trainingStart = true;
     if (entry.trainingStop === true) next.trainingStop = true;
     if (entry.disabled === true) next.disabled = true;
@@ -395,9 +396,8 @@ function parseGameLink(
   where: string
 ): RepertoireGameLink {
   const link = object(value, where);
-  if (!LINK_KINDS.includes(link.kind as RepertoireGameLink["kind"])) {
-    invalid(`${where} has no valid kind`);
-  }
+  const kind = link.kind;
+  if (!isOneOf(LINK_KINDS, kind)) invalid(`${where} has no valid kind`);
   const chapterId = nullableId(link.chapterId, `${where} chapter`);
   return {
     id: id(link.id, where),
@@ -407,7 +407,7 @@ function parseGameLink(
     // Missing in files written before the field: such a link wasn't marked as never saved.
     unsaved: link.unsaved === true,
     gameNodeId: nullableId(link.gameNodeId, `${where} game node`),
-    kind: link.kind as RepertoireGameLink["kind"],
+    kind,
     headers: link.headers === undefined ? {} : stringRecord(link.headers, `${where} headers`),
     capturedPath: link.capturedPath === undefined ? "" : text(link.capturedPath, `${where} path`),
     createdAt: finite(link.createdAt, `${where} creation time`)

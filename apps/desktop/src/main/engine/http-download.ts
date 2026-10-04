@@ -1,8 +1,9 @@
 import { createWriteStream, statSync } from "node:fs";
 import { unlink } from "node:fs/promises";
-import { Readable, Transform } from "node:stream";
+import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { isAllowedDownloadUrl, type FetchLike } from "./github-releases";
+import { readableFromBody } from "../web-stream";
 
 /**
  * Streams a URL to a file, resuming an existing partial file with an HTTP Range request.
@@ -97,7 +98,7 @@ export async function downloadToFile(opts: DownloadOptions): Promise<DownloadRes
     }
   });
   await pipeline(
-    Readable.fromWeb(res.body as never),
+    readableFromBody(res.body),
     meter,
     createWriteStream(opts.destPath, { flags: resumed ? "a" : "w" })
   );

@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { useSetSetting } from "./use-set-setting";
 import { splitEngineArgs } from "@/lib/engine-args";
 import { ipcErrorMessage } from "@/lib/ipc-error";
+import { isOneOf } from "@chaturanga/shared/types/guards";
 
 const nnWeightsDialogFilters: DialogFileFilter[] = [
   { name: "Network weights / models", extensions: ["pb", "gz", "onnx", "zip"] },
@@ -94,7 +95,7 @@ export function EnginePerformanceSettings({ appearance }: { appearance: AppSetti
   const cores = logicalCores();
   const autoThreads = defaultEngineThreads(cores);
   const threadOptions = Array.from({ length: cores }, (_, index) => index + 1);
-  const hashOptions: number[] = HASH_SIZE_OPTIONS_MB.includes(appearance.engineHashMb as (typeof HASH_SIZE_OPTIONS_MB)[number])
+  const hashOptions: number[] = isOneOf(HASH_SIZE_OPTIONS_MB, appearance.engineHashMb)
     ? [...HASH_SIZE_OPTIONS_MB]
     : [...HASH_SIZE_OPTIONS_MB, appearance.engineHashMb].sort((a, b) => a - b);
   return (

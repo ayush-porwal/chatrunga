@@ -14,6 +14,8 @@ import { SideDot } from "@/components/ui/side-dot";
 import { Switch } from "@/components/ui/switch";
 import { fetchAssetStatus, maiaNeedsLc0 } from "@/lib/engine-assets";
 import { divider, fieldHint, fieldLabel } from "@/lib/ui";
+import { isOneOf } from "@chaturanga/shared/types/guards";
+import { COMMENTARY_DETAILS } from "@chaturanga/shared/types/settings";
 
 const searchTimeOptions = [
   { value: 100, label: "Blitz · 0.1s" },
@@ -179,7 +181,10 @@ export function ReviewSettingsPanel({
           control={<Switch checked={settings.reviewCommentaryEnabled} onCheckedChange={(value) => set("reviewCommentaryEnabled", value)} aria-label="AI commentary" />}
         />
         <Field label="Detail" htmlFor="review-detail">
-          <Select id="review-detail" value={settings.reviewCommentaryDetail} onChange={(event) => set("reviewCommentaryDetail", event.target.value as AppSettings["reviewCommentaryDetail"])}>
+          <Select id="review-detail" value={settings.reviewCommentaryDetail} onChange={(event) => {
+            const detail = event.target.value;
+            if (isOneOf(COMMENTARY_DETAILS, detail)) set("reviewCommentaryDetail", detail);
+          }}>
             <option value="concise">Concise</option>
             <option value="balanced">Balanced</option>
             <option value="detailed">Detailed</option>

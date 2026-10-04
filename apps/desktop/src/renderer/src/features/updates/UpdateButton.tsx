@@ -103,7 +103,7 @@ export const UpdateButton = memo(function UpdateButton({
   useEffect(() => {
     if (!cardOpen) return;
     const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
+      const target = event.target instanceof Node ? event.target : null;
       if (!buttonRef.current?.contains(target) && !cardRef.current?.contains(target)) closeCard();
     };
     const onKeyDown = (event: KeyboardEvent) => {

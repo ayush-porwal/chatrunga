@@ -103,9 +103,9 @@ function findCliffBucket(playedProb: readonly number[]): MaiaRatingBucket | null
 export function buildRatingCurve(input: InterpretInput): RatingCurve {
   const interpretation = interpretRatingCurve(input);
   return {
-    ratings: [...MAIA_BUCKETS] as unknown as RatingCurve["ratings"],
-    playedProb: [...input.playedProb] as RatingCurve["playedProb"],
-    bestProb: [...input.bestProb] as RatingCurve["bestProb"],
+    ratings: [...MAIA_BUCKETS],
+    playedProb: [...input.playedProb],
+    bestProb: [...input.bestProb],
     interpretation,
     userRatingBucket: input.userBucket
   };

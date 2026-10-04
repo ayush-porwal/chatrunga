@@ -1,4 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
+import { allRows, getRow } from "../db/rows";
+import { isRecord } from "@chaturanga/shared/types/guards";
 
 /** One recorded event, as it is kept until PostHog has accepted it. */
 export type OutboxEvent = {
@@ -50,18 +52,23 @@ export class TelemetryOutbox {
 
   /** Up to `limit` events due for (another) attempt, oldest first. */
   due(now: number, limit: number): OutboxEvent[] {
-    const rows = this.database()
-      .prepare(
+    const rows = allRows<Row>(
+      this.database().prepare(
         "SELECT uuid, event, occurred_at, payload_json, attempts FROM telemetry_outbox WHERE next_attempt_at <= ? ORDER BY occurred_at, rowid LIMIT ?"
-      )
-      .all(now, limit) as Row[];
-    return rows.map((row) => ({
-      uuid: row.uuid,
-      event: row.event,
-      occurredAt: row.occurred_at,
-      properties: JSON.parse(row.payload_json) as Record<string, unknown>,
-      attempts: row.attempts
-    }));
+      ),
+      now,
+      limit
+    );
+    return rows.map((row) => {
+      const properties: unknown = JSON.parse(row.payload_json);
+      return {
+        uuid: row.uuid,
+        event: row.event,
+        occurredAt: row.occurred_at,
+        properties: isRecord(properties) ? properties : {},
+        attempts: row.attempts
+      };
+    });
   }
 
   /** Delivered (or given up): gone for good. */
@@ -105,9 +112,7 @@ export class TelemetryOutbox {
   }
 
   count(): number {
-    return (
-      this.database().prepare("SELECT COUNT(*) AS n FROM telemetry_outbox").get() as { n: number }
-    ).n;
+    return getRow<{ n: number }>(this.database().prepare("SELECT COUNT(*) AS n FROM telemetry_outbox"))?.n ?? 0;
   }
 
   /** Collection was turned off: nothing recorded so far is sent. */
@@ -134,9 +139,10 @@ export class TelemetryState {
   constructor(private readonly database: () => DatabaseSync) {}
 
   get(key: string): string | null {
-    const row = this.database()
-      .prepare("SELECT value FROM telemetry_state WHERE key = ?")
-      .get(key) as { value: string } | undefined;
+    const row = getRow<{ value: string }>(
+      this.database().prepare("SELECT value FROM telemetry_state WHERE key = ?"),
+      key
+    );
     return row?.value ?? null;
   }
 

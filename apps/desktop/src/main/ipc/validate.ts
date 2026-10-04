@@ -54,6 +54,7 @@ import type {
   AnalysePositionsInput,
   CreateEngineInput,
   EngineGoClock,
+  GameReview,
   MaiaRating,
   ProbeEvalInput,
   ReviewGameInput,
@@ -62,13 +63,14 @@ import type {
   StartLiveAnalysisInput,
   UpdateEngineInput
 } from "@chaturanga/shared/types/engine";
-import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
+import { defaultSettings, isSettingKey, type AppSettings } from "@chaturanga/shared/types/settings";
 import type { DialogFileFilter } from "@chaturanga/shared/ipc/chaturanga-api";
 import type {
   LichessAiChallengeInput,
   LichessChallengeInput,
   LichessSeekInput
 } from "@chaturanga/shared/types/lichess";
+import { isOneOf, isRecord } from "@chaturanga/shared/types/guards";
 
 const MAX_ID = 200;
 const MAX_PATH = 4096;
@@ -99,9 +101,8 @@ function fail(label: string, reason: string): never {
 }
 
 export function asObject(value: unknown, label: string): Fields {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    fail(label, "expected an object");
-  return value as Fields;
+  if (!isRecord(value)) fail(label, "expected an object");
+  return value;
 }
 
 export function asString(value: unknown, label: string, maxLength: number = MAX_PATH): string {
@@ -221,8 +222,8 @@ function asEngineArgs(value: unknown): string[] {
 }
 
 function asMaiaRating(value: unknown): MaiaRating {
-  if (!MAIA_RATINGS.includes(value as MaiaRating)) fail("Maia rating", "unsupported rating");
-  return value as MaiaRating;
+  if (!isOneOf(MAIA_RATINGS, value)) fail("Maia rating", "unsupported rating");
+  return value;
 }
 
 /** Fields shared by engine create / update, all optional. */
@@ -398,14 +399,13 @@ export function parseGameListQuery(value: unknown): GameListQuery {
     const fields = asObject(raw, "game list cursor");
     return { updatedAt: asFiniteNumber(fields.updatedAt, "cursor time"), id: asId(fields.id, "cursor id") };
   });
-  if (input.filter !== undefined && !GAME_LIST_FILTERS.includes(input.filter as GameListFilter)) {
-    fail("game list filter", "unknown filter");
-  }
+  const filter = input.filter ?? "all";
+  if (!isOneOf(GAME_LIST_FILTERS, filter)) fail("game list filter", "unknown filter");
   return {
     cursor: cursor ?? null,
     limit: optional(input.limit, (limit) => asWholeNumber(limit, "page size")),
     search: optional(input.search, (search) => asString(search, "search", GAME_SEARCH_MAX_LENGTH)),
-    filter: (input.filter as GameListFilter | undefined) ?? "all",
+    filter,
     excludeId: nullable(input.excludeId, (id) => asId(id, "game id")) ?? null
   };
 }
@@ -417,18 +417,23 @@ export function parseGameListQuery(value: unknown): GameListQuery {
  */
 export function parseSaveGameInput(value: unknown): SaveGameInput {
   const input = asObject(value, "game");
-  if (!GAME_SOURCES.includes(input.source as GameSource)) fail("game", "unknown source");
+  const source = input.source;
+  if (!isOneOf(GAME_SOURCES, source)) fail("game", "unknown source");
   if (!Array.isArray(input.moveTree)) fail("game", "moveTree must be an array");
   const headers = parseGameHeaders(input.headers ?? {});
   if (input.review !== undefined && input.review !== null) asObject(input.review, "game review");
-  asString(input.pgn, "PGN", MAX_PGN_BYTES);
-  asString(input.rootFen, "root FEN", 128);
-  asString(input.currentFen, "current FEN", 128);
   return {
-    ...(input as SaveGameInput),
     id: nullable(input.id, (id) => asId(id, "game id")),
+    source,
     headers,
-    currentNodeId: nullable(input.currentNodeId, (id) => asId(id, "node id"))
+    pgn: asString(input.pgn, "PGN", MAX_PGN_BYTES),
+    rootFen: asString(input.rootFen, "root FEN", 128),
+    currentFen: asString(input.currentFen, "current FEN", 128),
+    currentNodeId: nullable(input.currentNodeId, (id) => asId(id, "node id")),
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- stored as JSON and checked node by node when the game is loaded (repositories.ts), not on every autosave
+    moveTree: input.moveTree as MoveNode[],
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- stored as JSON and checked when loaded, like the tree
+    review: input.review as GameReview | null | undefined
   };
 }
 
@@ -472,8 +477,8 @@ export function parsePgnText(value: unknown): string {
 const SETTING_KEYS = new Set(Object.keys(defaultSettings));
 
 export function parseSettingKey(value: unknown): keyof AppSettings {
-  if (typeof value !== "string" || !SETTING_KEYS.has(value)) fail("setting", "unknown key");
-  return value as keyof AppSettings;
+  if (typeof value !== "string" || !isSettingKey(value)) fail("setting", "unknown key");
+  return value;
 }
 
 /** Several settings at once (known keys only; at least one). */
@@ -816,11 +821,10 @@ export function parseSaveChapterInput(value: unknown): SaveChapterInput {
       nodeCount: Math.max(chapter.tree.length - 1, 0),
       dueCount: 0,
       headers: asTextRecord(chapter.headers ?? {}, "chapter headers", 64, MAX_HEADER),
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the service replays and checks every node (chapter-validation.ts) before saving
       tree: chapter.tree as MoveNode[],
-      nodeMeta: asObject(chapter.nodeMeta ?? {}, "chapter nodeMeta") as Record<
-        string,
-        RepertoireNodeMeta
-      >
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- checked against the tree with it (chapter-validation.ts)
+      nodeMeta: asObject(chapter.nodeMeta ?? {}, "chapter nodeMeta") as Record<string, RepertoireNodeMeta>
     }
   };
 }
@@ -1137,6 +1141,7 @@ export function parseAddFromGameInput(value: unknown): AddFromGameInput {
       gameId: nullable(source.gameId, (id) => asId(id, "source gameId")) ?? null,
       headers: asTextRecord(source.headers ?? {}, "source headers", 200, MAX_HEADER),
       rootFen: asFen(source.rootFen, "source rootFen"),
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the service replays and checks every node before anything is copied
       tree: source.tree as MoveNode[],
       nodeId: nullable(source.nodeId, (id) => asId(id, "source nodeId")) ?? null
     },

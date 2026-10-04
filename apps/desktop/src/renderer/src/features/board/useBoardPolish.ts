@@ -42,7 +42,8 @@ export function useBoardPolish(elementRef: RefObject<HTMLElement | null>): void 
           if (!(removed instanceof SVGGElement) || removed.dataset.leaving) continue;
           // A stand-in keeps the old shape on screen while it fades; without a cgHash Chessground
           // treats it as stale and may drop it early on its next sync, which is fine.
-          const ghost = removed.cloneNode(true) as SVGGElement;
+          const ghost = removed.cloneNode(true);
+          if (!(ghost instanceof SVGGElement)) continue;
           ghost.removeAttribute("cgHash");
           ghost.dataset.leaving = "true";
           root.appendChild(ghost);

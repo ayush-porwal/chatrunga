@@ -47,7 +47,7 @@ const ROLE_LETTER: Record<Role, string> = {
 };
 const ROLE_ORDER: Role[] = ["king", "queen", "rook", "bishop", "knight", "pawn"];
 const FILES = "abcdefgh";
-const CENTER: Square[] = ["d4", "e4", "d5", "e5"].map((name) => parseSquare(name) as Square);
+const CENTER: Square[] = [parseSquare("d4"), parseSquare("e4"), parseSquare("d5"), parseSquare("e5")];
 
 export function sideName(color: Color): string {
   return color === "white" ? "White" : "Black";

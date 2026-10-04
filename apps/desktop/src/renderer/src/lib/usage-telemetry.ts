@@ -64,16 +64,6 @@ export function reportActivity(kind: TelemetryActivityKind, now = performance.no
   return true;
 }
 
-type Timers = {
-  setTimeout: (callback: () => void, ms: number) => unknown;
-  clearTimeout: (handle: unknown) => void;
-};
-
-const browserTimers: Timers = {
-  setTimeout: (callback, ms) => window.setTimeout(callback, ms),
-  clearTimeout: (handle) => window.clearTimeout(handle as number)
-};
-
 /**
  * Fires `onQualified(key)` once a key has stayed eligible (e.g. an explanation in view, window in
  * front) for `qualifyMs` without interruption. Changing the key or losing eligibility before then
@@ -83,14 +73,13 @@ const browserTimers: Timers = {
  */
 export class ViewQualifier {
   private pendingKey: string | null = null;
-  private timer: unknown = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
   /** The key that qualified last, while it is still the candidate. */
   private qualified: string | null = null;
 
   constructor(
     private readonly qualifyMs: number,
-    private readonly onQualified: (key: string) => void,
-    private readonly timers: Timers = browserTimers
+    private readonly onQualified: (key: string) => void
   ) {}
 
   /** The current candidate: `key` null or `eligible` false means nothing is being viewed now. */
@@ -101,7 +90,7 @@ export class ViewQualifier {
     this.cancel();
     if (!candidate) return;
     this.pendingKey = candidate;
-    this.timer = this.timers.setTimeout(() => {
+    this.timer = setTimeout(() => {
       this.timer = null;
       this.pendingKey = null;
       this.qualified = candidate;
@@ -114,7 +103,7 @@ export class ViewQualifier {
   }
 
   private cancel(): void {
-    if (this.timer !== null) this.timers.clearTimeout(this.timer);
+    if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
     this.pendingKey = null;
   }

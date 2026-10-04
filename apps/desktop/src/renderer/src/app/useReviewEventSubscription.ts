@@ -15,29 +15,18 @@ export const REVIEW_EVENT_FLUSH_MS = 250;
 
 type ReviewEventBatch = { reviewId: string; progress: ReviewProgress | null; moves: MoveReview[] };
 
-type Timers = {
-  set: (callback: () => void, ms: number) => unknown;
-  clear: (handle: unknown) => void;
-};
-
-const defaultTimers: Timers = {
-  set: (callback, ms) => setTimeout(callback, ms),
-  clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)
-};
-
 /**
  * Throttles the per-depth progress stream (several events per second per move) and the
  * per-move completions into one trailing flush every `intervalMs`.
  */
 export function createReviewEventBuffer(
   flush: (batch: ReviewEventBatch) => void,
-  intervalMs = REVIEW_EVENT_FLUSH_MS,
-  timers: Timers = defaultTimers
+  intervalMs = REVIEW_EVENT_FLUSH_MS
 ) {
   let batch: ReviewEventBatch | null = null;
-  let timer: unknown = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
   const clearTimer = () => {
-    if (timer !== null) timers.clear(timer);
+    if (timer !== null) clearTimeout(timer);
     timer = null;
   };
   const flushNow = () => {
@@ -49,7 +38,7 @@ export function createReviewEventBuffer(
   const target = (reviewId: string): ReviewEventBatch => {
     if (batch && batch.reviewId !== reviewId) flushNow();
     batch ??= { reviewId, progress: null, moves: [] };
-    if (timer === null) timer = timers.set(flushNow, intervalMs);
+    if (timer === null) timer = setTimeout(flushNow, intervalMs);
     return batch;
   };
   return {

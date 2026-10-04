@@ -18,7 +18,7 @@ import { sanOf } from "./repertoire-model";
 /* ------------------------------------------------------------------ source */
 
 /** PGN tag names for the camelCase header keys whose tag isn't the key capitalised. */
-const TAG_NAMES: Partial<Record<keyof GameHeaders, string>> = {
+const TAG_NAMES: Partial<Record<string, string>> = {
   eco: "ECO",
   utcDate: "UTCDate",
   utcTime: "UTCTime"
@@ -35,7 +35,7 @@ export function sourceHeaders(headers: GameHeaders | null | undefined): Record<s
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers ?? {})) {
     if (SKIPPED_HEADERS.has(key) || typeof value !== "string" || !value.trim()) continue;
-    const tag = TAG_NAMES[key as keyof GameHeaders] ?? key.charAt(0).toUpperCase() + key.slice(1);
+    const tag = TAG_NAMES[key] ?? key.charAt(0).toUpperCase() + key.slice(1);
     result[tag] = value;
   }
   return result;

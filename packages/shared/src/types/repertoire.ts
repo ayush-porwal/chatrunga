@@ -16,6 +16,7 @@ export const REPERTOIRE_SCHEDULER_VERSION = 1;
 export type RepertoireColor = "white" | "black";
 /** Reference chapters are study material only: they never create training cards. */
 export type ChapterKind = "opening" | "reference";
+export const CHAPTER_KINDS: readonly ChapterKind[] = ["opening", "reference"];
 
 /* ------------------------------------------------------------------ repertoires and chapters */
 

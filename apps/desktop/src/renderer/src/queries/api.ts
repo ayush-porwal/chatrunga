@@ -18,7 +18,7 @@ import type {
 } from "@chaturanga/shared/types/chess";
 import type { CreateEngineInput, UpdateEngineInput } from "@chaturanga/shared/types/engine";
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
-import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
+import { defaultSettings, settingKeys, type AppSettings } from "@chaturanga/shared/types/settings";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { settlePendingSettings, withPendingSettings } from "./settings-pending";
 
@@ -245,7 +245,7 @@ export function settingsWriteOptions(queryClient: QueryClient) {
 /** After a failed write: its keys go back to `before`, unless a newer value replaced them meanwhile. */
 export function revertFailedWrite(current: AppSettings, patch: SettingsPatch, before: SettingsPatch): AppSettings {
   const next = { ...current };
-  for (const key of Object.keys(patch) as (keyof AppSettings)[]) {
+  for (const key of settingKeys(patch)) {
     if (Object.is(current[key], patch[key])) Object.assign(next, { [key]: before[key] });
   }
   return next;
@@ -253,7 +253,7 @@ export function revertFailedWrite(current: AppSettings, patch: SettingsPatch, be
 
 function pickSettings(settings: AppSettings, patch: SettingsPatch): SettingsPatch {
   const picked: SettingsPatch = {};
-  for (const key of Object.keys(patch) as (keyof AppSettings)[]) Object.assign(picked, { [key]: settings[key] });
+  for (const key of settingKeys(patch)) Object.assign(picked, { [key]: settings[key] });
   return picked;
 }
 

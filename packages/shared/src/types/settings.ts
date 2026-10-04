@@ -1,4 +1,5 @@
 import type { MaiaRating } from "./engine";
+import { isOneOf } from "./guards";
 
 export type BoardTheme =
   | "brown"
@@ -175,6 +176,10 @@ export const piecePresentationOptions: Array<{
   }
 ];
 
+/** How much the AI commentary says about each move. */
+export type CommentaryDetail = "concise" | "balanced" | "detailed";
+export const COMMENTARY_DETAILS: readonly CommentaryDetail[] = ["concise", "balanced", "detailed"];
+
 export type AppSettings = {
   boardOrientation: "white" | "black";
   boardTheme: BoardTheme;
@@ -204,7 +209,7 @@ export type AppSettings = {
    * setting so rows stored by older builds ("local", "server") read and migrate cleanly.
    */
   reviewCommentaryProvider: ReviewCommentaryProvider;
-  reviewCommentaryDetail: "concise" | "balanced" | "detailed";
+  reviewCommentaryDetail: CommentaryDetail;
   reviewPlayerRating: number;
   reviewPlayerColor: "white" | "black";
   reviewShowTopLines: boolean;
@@ -355,20 +360,34 @@ export const defaultSettings: AppSettings = {
   onboardingHintsSeen: []
 };
 
+/** Whether `key` names a setting (every setting has a default). */
+export function isSettingKey(key: string): key is keyof AppSettings {
+  return Object.hasOwn(defaultSettings, key);
+}
+
+/** The settings a patch sets. */
+export function settingKeys(patch: Partial<Record<keyof AppSettings, unknown>>): (keyof AppSettings)[] {
+  return Object.keys(patch).filter(isSettingKey);
+}
+
+export function isPieceStyle(value: unknown): value is PieceStyle {
+  return isOneOf(ALL_PIECE_STYLES, value);
+}
+
+export function isBoardTheme(value: unknown): value is BoardTheme {
+  return typeof value === "string" && Object.hasOwn(boardThemeSquareColors, value);
+}
+
 /** Maps persisted settings from older builds onto current {@link PieceStyle} ids. */
 export function normalizePieceStyle(value: unknown): PieceStyle {
   if (typeof value !== "string") return defaultSettings.pieceStyle;
   if (legacyPieceStyleMap[value]) return legacyPieceStyleMap[value]!;
-  return ALL_PIECE_STYLES.includes(value as PieceStyle)
-    ? (value as PieceStyle)
-    : defaultSettings.pieceStyle;
+  return isOneOf(ALL_PIECE_STYLES, value) ? value : defaultSettings.pieceStyle;
 }
 
 export function normalizePiecePresentation(value: unknown): PiecePresentation {
   if (typeof value !== "string") return defaultSettings.piecePresentation;
-  return ALL_PIECE_PRESENTATIONS.includes(value as PiecePresentation)
-    ? (value as PiecePresentation)
-    : defaultSettings.piecePresentation;
+  return isOneOf(ALL_PIECE_PRESENTATIONS, value) ? value : defaultSettings.piecePresentation;
 }
 
 /**
@@ -403,8 +422,8 @@ export function normalizePracticeSettings(settings: AppSettings): AppSettings {
   const delay: unknown = settings.practiceAutoAdvanceMs;
   return {
     ...settings,
-    practiceAutoAdvanceMs: PRACTICE_AUTO_ADVANCE_MS.includes(delay as PracticeAutoAdvanceMs)
-      ? (delay as PracticeAutoAdvanceMs)
+    practiceAutoAdvanceMs: isOneOf(PRACTICE_AUTO_ADVANCE_MS, delay)
+      ? delay
       : defaultSettings.practiceAutoAdvanceMs
   };
 }

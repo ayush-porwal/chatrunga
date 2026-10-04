@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { logger } from "../logger";
 import type { ReleaseAssetInfo } from "./engine-manifest";
+import { isRecord } from "@chaturanga/shared/types/guards";
 
 /**
  * GitHub "latest release" lookups for engine downloads.
@@ -86,14 +87,14 @@ export async function fetchLatestRelease(
 
 /** Validates and trims a release payload to the fields we use. Throws on an unusable payload. */
 export function parseRelease(value: unknown): GitHubRelease {
-  const obj = value as Record<string, unknown> | null;
+  const obj = isRecord(value) ? value : null;
   if (!obj || typeof obj.tag_name !== "string" || !obj.tag_name || !Array.isArray(obj.assets)) {
     throw new GitHubApiError("Malformed GitHub release payload", null);
   }
   const assets: ReleaseAssetInfo[] = [];
-  for (const raw of obj.assets as unknown[]) {
-    const a = raw as Record<string, unknown> | null;
-    if (!a || typeof a.name !== "string" || typeof a.browser_download_url !== "string") continue;
+  const rawAssets: unknown[] = obj.assets;
+  for (const a of rawAssets) {
+    if (!isRecord(a) || typeof a.name !== "string" || typeof a.browser_download_url !== "string") continue;
     if (typeof a.size !== "number" || !Number.isFinite(a.size) || a.size <= 0) continue;
     if (a.state !== undefined && a.state !== "uploaded") continue;
     assets.push({
@@ -254,10 +255,11 @@ export class ReleaseCache {
     const file = this.opts.filePath;
     if (!file || !existsSync(file)) return;
     try {
-      const parsed = JSON.parse(await readFile(file, "utf-8")) as Partial<CacheFile>;
-      if (parsed.version !== 1 || !parsed.entries) return;
+      // A file in userData: anyone could have edited it, so each entry is checked.
+      const parsed: unknown = JSON.parse(await readFile(file, "utf-8"));
+      if (!isRecord(parsed) || parsed.version !== 1 || !isRecord(parsed.entries)) return;
       for (const [repo, entry] of Object.entries(parsed.entries)) {
-        if (!REPO_PATTERN.test(repo) || typeof entry?.fetchedAt !== "number") continue;
+        if (!REPO_PATTERN.test(repo) || !isRecord(entry) || typeof entry.fetchedAt !== "number") continue;
         // Never trust a timestamp from the future (clock changes): treat it as expired.
         const fetchedAt = entry.fetchedAt > this.now() ? 0 : entry.fetchedAt;
         this.entries.set(repo, { fetchedAt, release: parseRelease(entry.release) });

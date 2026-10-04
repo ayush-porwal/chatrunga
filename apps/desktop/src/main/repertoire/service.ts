@@ -200,6 +200,7 @@ import {
   type RepertoireRecord,
   type StoredDecision
 } from "./repository";
+import { parseStoredJson } from "../stored-json";
 
 const MAX_PGN_BYTES = 20 * 1024 * 1024;
 const IMPORT_JOB_TTL_MS = 30 * 60_000;
@@ -1540,29 +1541,34 @@ export function addFromGame(input: AddFromGameInput): AddFromGameResult {
 }
 
 /** PGN tag names for the saved game's header fields (orientationHint is not a tag). */
-const PGN_TAGS: Partial<Record<keyof GameHeaders, string>> = {
-  event: "Event",
-  site: "Site",
-  date: "Date",
-  round: "Round",
-  white: "White",
-  black: "Black",
-  whiteElo: "WhiteElo",
-  blackElo: "BlackElo",
-  timeControl: "TimeControl",
-  eco: "ECO",
-  opening: "Opening",
-  utcDate: "UTCDate",
-  utcTime: "UTCTime",
-  termination: "Termination",
-  result: "Result"
-};
+const PGN_TAGS: ReadonlyArray<readonly [keyof GameHeaders, string]> = [
+  ["event", "Event"],
+  ["site", "Site"],
+  ["date", "Date"],
+  ["round", "Round"],
+  ["white", "White"],
+  ["black", "Black"],
+  ["whiteElo", "WhiteElo"],
+  ["blackElo", "BlackElo"],
+  ["timeControl", "TimeControl"],
+  ["eco", "ECO"],
+  ["opening", "Opening"],
+  ["utcDate", "UTCDate"],
+  ["utcTime", "UTCTime"],
+  ["termination", "Termination"],
+  ["result", "Result"]
+];
+
+/** The next hint stage, up to the last (3). */
+function nextHintStage(stage: PracticeCard["hintStage"]): PracticeCard["hintStage"] {
+  return stage === 0 ? 1 : stage === 1 ? 2 : 3;
+}
 
 /** A saved game's headers as PGN tags (empty values dropped). */
 function headerTags(headers: GameHeaders): Record<string, string> {
   const tags: Record<string, string> = {};
-  for (const [field, tag] of Object.entries(PGN_TAGS)) {
-    const value = headers[field as keyof GameHeaders];
+  for (const [field, tag] of PGN_TAGS) {
+    const value = headers[field];
     if (typeof value === "string" && value) tags[tag] = value;
   }
   return sanitizeHeaders(tags);
@@ -2030,7 +2036,7 @@ export function recordAttempt(input: RecordAttemptInput): AttemptResult {
       ) {
         throw new Error("Invalid attemptId: already used for another card");
       }
-      return JSON.parse(prior.resultJson) as AttemptResult;
+      return parseStoredJson<AttemptResult>(prior.resultJson);
     }
     const session = requireActiveSession(input.sessionId);
     if (session.mode === "rehearse-lines") return rehearsalAttempt(session, input);
@@ -2165,7 +2171,7 @@ export function recordPracticeAction(input: PracticeActionInput): PracticeAction
     let revealed: PracticeActionResult["revealed"];
     if (kind === "hint") {
       persist(false, null);
-      card.hintStage = Math.min(card.hintStage + 1, 3) as PracticeCard["hintStage"];
+      card.hintStage = nextHintStage(card.hintStage);
       revealed = {
         ucis: [],
         preferredUci:
@@ -2765,7 +2771,7 @@ function rehearsalAction(
       return save({ card: session.cards[index], sessionEnded: true });
     }
     persist("hint", false, null);
-    card.hintStage = Math.min(card.hintStage + 1, 3) as PracticeCard["hintStage"];
+    card.hintStage = nextHintStage(card.hintStage);
     session.cards[index] = card;
     return save({
       card,
@@ -2818,7 +2824,7 @@ function rehearsalAction(
     return save({ card, rehearsal: { reply: null, next, lineComplete: false, endReason: null } });
   }
 
-  const other = (JSON.parse(lastAction!.resultJson!) as AttemptResult).otherLine;
+  const other = parseStoredJson<AttemptResult>(lastAction!.resultJson!).otherLine;
   if (!other) {
     throw new Error("Invalid action: follow-other-line needs an answer from another line first");
   }

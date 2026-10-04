@@ -27,6 +27,7 @@ import {
 } from "./board-shapes";
 import { resolveBoardMove, type ResolvedMove } from "./board-move-input";
 import "./board.css";
+import { isSquare } from "@chaturanga/shared/chess/square";
 
 export type ControlledBoardProps = {
   fen: string;
@@ -91,8 +92,9 @@ export function ControlledBoard({
   const animationEnabled = appearance.boardAnimation && !reducedMotion;
   const status = useMemo(() => safeStatus(fen), [fen]);
   const dests = useMemo(() => movableDests(fen, movable), [fen, movable]);
-  const lastFrom = lastMove?.[0];
-  const lastTo = lastMove?.[1];
+  // Only real squares reach Chessground (a stored move could be anything).
+  const lastFrom = lastMove && isSquare(lastMove[0]) ? lastMove[0] : undefined;
+  const lastTo = lastMove && isSquare(lastMove[1]) ? lastMove[1] : undefined;
   const shapes = useMemo(() => shapesFromAnnotations(arrows, highlights), [arrows, highlights]);
   const drawingEnabled = Boolean(onShapesChange);
   const interactive = movable !== "none";
@@ -149,7 +151,7 @@ export function ControlledBoard({
       orientation,
       turnColor: status.turn,
       check: showsCheck,
-      lastMove: lastFrom && lastTo ? [lastFrom as Key, lastTo as Key] : undefined,
+      lastMove: lastFrom && lastTo ? [lastFrom, lastTo] : undefined,
       animation: { enabled: animationEnabled, duration: PIECE_MOVE_MS },
       movable: { color: chessgroundMovableColor(movable), dests }
     });
@@ -221,7 +223,7 @@ export function ControlledBoard({
       animation: { enabled: animate, duration: PIECE_MOVE_MS },
       turnColor: status.turn,
       check: showsCheck,
-      lastMove: lastFrom && lastTo ? [lastFrom as Key, lastTo as Key] : undefined
+      lastMove: lastFrom && lastTo ? [lastFrom, lastTo] : undefined
     });
     if (changed && !isRapidNavigation(now)) {
       window.requestAnimationFrame(() =>

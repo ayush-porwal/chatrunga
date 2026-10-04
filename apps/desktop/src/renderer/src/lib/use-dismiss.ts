@@ -8,7 +8,8 @@ export function useDismiss(rootRef: RefObject<HTMLElement | null>, open: boolean
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) onDismiss();
+      const target = event.target instanceof Node ? event.target : null;
+      if (!rootRef.current?.contains(target)) onDismiss();
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onDismiss();

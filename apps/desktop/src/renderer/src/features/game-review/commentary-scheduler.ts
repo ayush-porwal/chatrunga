@@ -75,29 +75,16 @@ export type CommentaryJob = {
   run: () => Promise<void>;
 };
 
-type Timers = {
-  set: (callback: () => void, ms: number) => unknown;
-  clear: (handle: unknown) => void;
-};
-
-const defaultTimers: Timers = {
-  set: (callback, ms) => setTimeout(callback, ms),
-  clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)
-};
-
 /**
  * Debounces the "user is viewing this move" signal into at most one request per settled move
  * and never runs two requests with the same key at once.
  */
 export class CommentaryScheduler {
-  private timer: unknown = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
   private pendingKey: string | null = null;
   private readonly inFlight = new Set<string>();
 
-  constructor(
-    private readonly delayMs = COMMENTARY_DEBOUNCE_MS,
-    private readonly timers: Timers = defaultTimers
-  ) {}
+  constructor(private readonly delayMs = COMMENTARY_DEBOUNCE_MS) {}
 
   /** The move now in view (or null). Replaces any request that has not started yet. */
   schedule(job: CommentaryJob | null): void {
@@ -105,7 +92,7 @@ export class CommentaryScheduler {
     this.cancelPending();
     if (!job || this.inFlight.has(job.key)) return;
     this.pendingKey = job.key;
-    this.timer = this.timers.set(() => {
+    this.timer = setTimeout(() => {
       this.timer = null;
       this.pendingKey = null;
       this.start(job);
@@ -127,7 +114,7 @@ export class CommentaryScheduler {
   }
 
   private cancelPending(): void {
-    if (this.timer !== null) this.timers.clear(this.timer);
+    if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
     this.pendingKey = null;
   }

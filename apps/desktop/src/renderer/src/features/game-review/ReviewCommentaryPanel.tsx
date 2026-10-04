@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import { Bot, KeyRound, MessageSquareOff, RefreshCw, Sparkles } from "lucide-react";
 import type { MoveReview, ReviewCommentary } from "@chaturanga/shared/types/engine";
 import { buildRatingCurveForMove, hasUsableMaiaData, moveLabel, uciToSan, type CommentaryDetail } from "./review-utils";
@@ -164,7 +164,7 @@ export function ReviewCommentaryPanel({
           // Loading and loaded share a reserved height; the short states (error, no key, off) don't.
           (skeleton.present || ready) && "review-commentary"
         )}
-        style={{ "--review-commentary-lines": SKELETON_LINES[detail] } as CSSProperties}
+        style={{ "--review-commentary-lines": SKELETON_LINES[detail] }}
       >
         {skeleton.present ? (
           <CommentarySkeleton

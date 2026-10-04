@@ -50,6 +50,10 @@ const LINES: Record<LineId, Line> = {
   }
 };
 
+function isLineId(value: string | undefined): value is LineId {
+  return value !== undefined && Object.hasOwn(LINES, value);
+}
+
 /** Column and row on screen, White at the bottom. */
 function xy(square: Square): { x: number; y: number } {
   return { x: square.charCodeAt(0) - 97, y: 8 - Number(square[1]) };
@@ -161,7 +165,8 @@ export function initCoach(root: Document = document): void {
 
   for (const button of buttons) {
     button.addEventListener("click", () => {
-      const id = button.dataset.line as LineId;
+      const id = button.dataset.line;
+      if (!isLineId(id)) return;
       show(current === id ? "game" : id);
     });
   }

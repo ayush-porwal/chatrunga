@@ -14,14 +14,13 @@ function fakeTimers() {
   return {
     timers: {
       now: () => now,
-      set: (callback: () => void, ms: number) => {
+      start: (callback: () => void, ms: number) => {
         const id = nextId++;
         pending.push({ at: now + ms, callback, id });
-        return id;
-      },
-      clear: (handle: unknown) => {
-        const index = pending.findIndex((item) => item.id === handle);
-        if (index >= 0) pending.splice(index, 1);
+        return () => {
+          const index = pending.findIndex((item) => item.id === id);
+          if (index >= 0) pending.splice(index, 1);
+        };
       }
     },
     advance(ms: number) {

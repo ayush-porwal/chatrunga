@@ -85,9 +85,9 @@ export function detail(id: string, now: number): RepertoireDetail {
 
 /** The shared decision type, without the stored fingerprint. */
 export function stripFingerprint(stored: StoredDecision): RepertoireDecision {
-  const decision: Partial<StoredDecision> = { ...stored };
+  const decision: RepertoireDecision & Partial<StoredDecision> = { ...stored };
   delete decision.acceptanceFingerprint;
-  return decision as RepertoireDecision;
+  return decision;
 }
 
 /** `positionKey` remembering each FEN's key, optionally seeded with keys computed elsewhere. */

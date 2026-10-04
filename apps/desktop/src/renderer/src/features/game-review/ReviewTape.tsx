@@ -218,7 +218,7 @@ const EvalChart = memo(function EvalChart({
   const yTicks = useMemo(() => [-yDomain[1], 0, yDomain[1]], [yDomain]);
   const renderDot = useCallback(
     (props: { cx?: number; cy?: number; index?: number; payload?: unknown }) => {
-      const point = props.payload as ChartPoint | undefined;
+      const point = data.find((item) => item === props.payload);
       const interactive = Boolean(point?.move);
       const label = point?.move ? `${moveLabel(point.move)}, after ${formatMoveEval(point.move)}` : "Starting position";
       return (
@@ -246,11 +246,11 @@ const EvalChart = memo(function EvalChart({
         />
       );
     },
-    [selectPoint]
+    [data, selectPoint]
   );
   const renderTooltip = useCallback(
     ({ active, payload }: { active?: boolean; payload?: ReadonlyArray<{ payload?: unknown }> }) => {
-      const point = payload?.[0]?.payload as ChartPoint | undefined;
+      const point = data.find((item) => item === payload?.[0]?.payload);
       if (!active || !point) return null;
       if (!point.move) {
         return <div className="pointer-events-none rounded-lg border border-line bg-surface-raised px-2 py-1 text-xs text-fg shadow-popover">Starting position</div>;
@@ -267,7 +267,7 @@ const EvalChart = memo(function EvalChart({
         </div>
       );
     },
-    [orientation]
+    [data, orientation]
   );
 
   return (

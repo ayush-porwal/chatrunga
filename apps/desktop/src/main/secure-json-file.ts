@@ -1,6 +1,7 @@
 import type { safeStorage } from "electron";
 import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { isRecord } from "@chaturanga/shared/types/guards";
 
 /**
  * Helpers for small user-data JSON files that hold a secret (OpenRouter key, Lichess token): the
@@ -39,9 +40,7 @@ export function decryptSecret(storage: SecureStorageLike, encrypted: string | nu
 export async function readJsonObject(filePath: string): Promise<Record<string, unknown> | null> {
   try {
     const parsed: unknown = JSON.parse(await readFile(filePath, "utf8"));
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
+    return isRecord(parsed) ? parsed : null;
   } catch {
     return null;
   }

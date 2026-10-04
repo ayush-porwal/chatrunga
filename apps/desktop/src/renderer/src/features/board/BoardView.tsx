@@ -34,6 +34,7 @@ import {
   usePrefersReducedMotion
 } from "./board-motion";
 import "./board.css";
+import { isSquare, uciSquares } from "@chaturanga/shared/chess/square";
 
 const LOSING_CLASSIFICATIONS = new Set(["blunder", "mistake", "missed_tactic", "human_error"]);
 /** How long a puzzle right/wrong flash stays on its squares (matches the CSS keyframes). */
@@ -116,9 +117,12 @@ export function BoardView() {
   const showBestArrow = appearance.analysisBestMoveArrow;
   const bestArrow = useMemo<DrawShape | null>(() => {
     if (!showBestArrow || !liveBest) return null;
+    const squares = uciSquares(liveBest);
+    if (!squares) return null;
+    const [orig, dest] = squares;
     const dests = legalDestsForFen(currentFen) as Map<string, string[]>;
-    if (!dests.get(liveBest.slice(0, 2))?.includes(liveBest.slice(2, 4))) return null;
-    return { orig: liveBest.slice(0, 2) as Key, dest: liveBest.slice(2, 4) as Key, brush: "blue" };
+    if (!dests.get(orig)?.includes(dest)) return null;
+    return { orig, dest, brush: "blue" };
   }, [showBestArrow, liveBest, currentFen]);
 
   const autoShapes = useMemo<DrawShape[]>(() => {
@@ -126,14 +130,15 @@ export function BoardView() {
     // Only completed moves draw arrows (never the live lines of the move being searched, which
     // change several times a second and made the board flicker).
     const reviewMove = reviewMoves.find((item) => item.nodeId === currentNodeId);
-    if (!reviewMove?.bestMove) return NO_SHAPES;
-    const arrows: DrawShape[] = [
-      { orig: reviewMove.bestMove.slice(0, 2) as Key, dest: reviewMove.bestMove.slice(2, 4) as Key, brush: "paleGreen" }
-    ];
-    if (reviewMove.playedMove && reviewMove.playedMove !== reviewMove.bestMove) {
+    const best = reviewMove?.bestMove ? uciSquares(reviewMove.bestMove) : null;
+    if (!reviewMove || !best) return NO_SHAPES;
+    const arrows: DrawShape[] = [{ orig: best[0], dest: best[1], brush: "paleGreen" }];
+    const played =
+      reviewMove.playedMove && reviewMove.playedMove !== reviewMove.bestMove ? uciSquares(reviewMove.playedMove) : null;
+    if (played) {
       arrows.push({
-        orig: reviewMove.playedMove.slice(0, 2) as Key,
-        dest: reviewMove.playedMove.slice(2, 4) as Key,
+        orig: played[0],
+        dest: played[1],
         brush: LOSING_CLASSIFICATIONS.has(reviewMove.classification) ? "paleRed" : "paleBlue"
       });
     }
@@ -445,7 +450,7 @@ export function BoardView() {
 }
 
 function lastMoveOf(node: Pick<MoveNode, "uci"> | undefined): Key[] | undefined {
-  return node?.uci ? ([node.uci.slice(0, 2), node.uci.slice(2, 4)] as Key[]) : undefined;
+  return (node?.uci && uciSquares(node.uci)) || undefined;
 }
 
 const NO_SHAPES: DrawShape[] = [];

@@ -46,6 +46,7 @@ import {
   normalizeGameState
 } from "./normalize";
 import { authorizeInBrowser, OAuthCancelledError } from "./oauth";
+import { isRecord } from "@chaturanga/shared/types/guards";
 
 const BACKOFF_BASE_MS = 1000;
 const BACKOFF_MAX_MS = 30_000;
@@ -139,7 +140,7 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
         fetch: this.options.fetch,
         signal: controller.signal
       });
-      const accountJson = await this.client.json<unknown>("/api/account", {
+      const accountJson = await this.client.json("/api/account", {
         token,
         signal: controller.signal
       });
@@ -324,7 +325,7 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
             resolve(challenge);
             return;
           }
-          const reason = (line as { done?: unknown }).done;
+          const reason = isRecord(line) ? line.done : undefined;
           if (reason === "accepted" || reason === "declined" || reason === "canceled") {
             done = true;
             this.emitEvent({ type: "challengeGone", challengeId: challenge.id, reason });
@@ -355,7 +356,7 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
 
   async challengeAi(input: LichessAiChallengeInput): Promise<{ gameId: string }> {
     await this.ensureEventStream();
-    const body = await this.client.json<{ id?: unknown }>("/api/challenge/ai", {
+    const body = await this.client.json("/api/challenge/ai", {
       method: "POST",
       form: {
         level: input.level,
@@ -394,7 +395,7 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
 
   async challenges(): Promise<LichessChallenge[]> {
     const myId = await this.accountId();
-    const body = await this.client.json<{ in?: unknown; out?: unknown }>("/api/challenge");
+    const body = await this.client.json("/api/challenge");
     const list = [body.in, body.out].flatMap((side): unknown[] => (Array.isArray(side) ? side : []));
     const challenges: LichessChallenge[] = [];
     for (const item of list) {
@@ -408,10 +409,10 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
   }
 
   async ongoingGames(): Promise<string[]> {
-    const body = await this.client.json<{ nowPlaying?: unknown }>("/api/account/playing?nb=50");
+    const body = await this.client.json("/api/account/playing?nb=50");
     if (!Array.isArray(body.nowPlaying)) return [];
     return body.nowPlaying
-      .map((game) => (game as { gameId?: unknown }).gameId)
+      .map((game: unknown) => (isRecord(game) ? game.gameId : undefined))
       .filter((id): id is string => typeof id === "string" && id.length > 0);
   }
 
@@ -504,7 +505,7 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
   }
 
   private onGameLine(gameId: string, watch: GameWatch, line: unknown): void {
-    const type = (line as { type?: unknown } | null)?.type;
+    const type = isRecord(line) ? line.type : undefined;
     try {
       if (type === "gameFull") {
         watch.last = { ...normalizeGameFull(line), id: gameId };

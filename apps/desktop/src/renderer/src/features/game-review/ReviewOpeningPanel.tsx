@@ -50,6 +50,7 @@ import {
   type ComparisonTone,
   type RememberedRepertoires
 } from "./opening-comparison";
+import { isOneOf } from "@chaturanga/shared/types/guards";
 
 const colorOptions = [
   { value: "white" as const, label: "White" },
@@ -509,8 +510,8 @@ function MoveStrip({
 /** The statuses present in the strip, as icon + text (what the marks mean). */
 function Legend({ moves }: { moves: readonly ComparisonMove[] }) {
   const present = useMemo(() => {
-    const seen = new Set(moves.map((move) => move.status));
-    return (Object.keys(TOKEN_ICON) as ComparisonMoveStatus[]).filter((status) => seen.has(status));
+    const seen = [...new Set(moves.map((move) => move.status))];
+    return Object.keys(TOKEN_ICON).filter((status) => isOneOf(seen, status));
   }, [moves]);
   if (!present.length) return null;
   return (

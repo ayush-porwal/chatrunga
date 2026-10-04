@@ -33,7 +33,8 @@ export function useExitGhost(ref: RefObject<HTMLElement | null>, durationMs: num
     const node = ref.current;
     if (!node) return;
     return () => {
-      const ghost = node.cloneNode(true) as HTMLElement;
+      const ghost = node.cloneNode(true);
+      if (!(ghost instanceof HTMLElement)) return;
       const restoreScroll = captureScrollPositions(node, ghost);
       queueMicrotask(() => {
         if (node.isConnected) return;

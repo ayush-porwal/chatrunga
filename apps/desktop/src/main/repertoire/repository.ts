@@ -26,6 +26,8 @@ import {
   type StartPracticeInput
 } from "@chaturanga/shared/types/repertoire";
 import { repertoireDb } from "./connection";
+import { allRows, getRow, sqliteErrcode } from "../db/rows";
+import { parseStoredJson } from "../stored-json";
 
 /** A stored chapter whose JSON can't be read. Recoverable: the row is left untouched. */
 export class RepertoireCorruptChapterError extends Error {
@@ -125,7 +127,7 @@ type AttemptRow = {
   session_id: string;
   queue_item_id: string;
   sequence: number;
-  kind: string;
+  kind: AttemptKind;
   uci: string | null;
   legal: number;
   correct: number;
@@ -243,17 +245,11 @@ export type PositionIndexRow = {
 };
 
 function all<T>(sql: string, ...params: SQLInputValue[]): T[] {
-  return repertoireDb()
-    .prepare(sql)
-    .all(...params) as T[];
+  return allRows<T>(repertoireDb().prepare(sql), ...params);
 }
 
 function get<T>(sql: string, ...params: SQLInputValue[]): T | null {
-  return (
-    (repertoireDb()
-      .prepare(sql)
-      .get(...params) as T | undefined) ?? null
-  );
+  return getRow<T>(repertoireDb().prepare(sql), ...params) ?? null;
 }
 
 function run(sql: string, ...params: SQLInputValue[]): void {
@@ -270,8 +266,8 @@ export const REPERTOIRE_BUSY_MESSAGE = "The repertoire database is busy; try aga
 
 /** True for SQLite's BUSY error (any extended code), as node:sqlite reports it. */
 export function isBusyError(error: unknown): boolean {
-  const code = (error as { errcode?: unknown } | null)?.errcode;
-  return typeof code === "number" && (code & 0xff) === 5;
+  const code = sqliteErrcode(error);
+  return code !== undefined && (code & 0xff) === 5;
 }
 
 /** The actionable busy error for a BUSY failure; any other error unchanged. */
@@ -309,7 +305,7 @@ export function transaction<T>(work: () => T, mode: TransactionMode = "write"): 
 function parseJson<T>(text: string | null, fallback: T): T {
   if (text === null) return fallback;
   try {
-    return JSON.parse(text) as T;
+    return parseStoredJson<T>(text);
   } catch {
     return fallback;
   }
@@ -395,11 +391,12 @@ function isStoredNode(value: unknown): value is MoveNode {
 function toChapter(row: ChapterRow): RepertoireChapter {
   const corrupt = (reason: string) => new RepertoireCorruptChapterError(row.id, reason);
   let tree: unknown;
-  let nodeMeta: unknown;
+  let nodeMeta: Record<string, RepertoireNodeMeta> | null;
   let headers: unknown;
   try {
     tree = JSON.parse(row.tree_json);
-    nodeMeta = JSON.parse(row.node_metadata_json);
+    // Written by the chapter save after validation (chapter-validation.ts); checked below for shape.
+    nodeMeta = parseStoredJson<Record<string, RepertoireNodeMeta> | null>(row.node_metadata_json);
     headers = JSON.parse(row.headers_json);
   } catch {
     throw corrupt("its stored JSON is unreadable");
@@ -419,7 +416,7 @@ function toChapter(row: ChapterRow): RepertoireChapter {
     ...toChapterSummary(row),
     headers: stringRecord(row.headers_json),
     tree,
-    nodeMeta: nodeMeta as Record<string, RepertoireNodeMeta>
+    nodeMeta
   };
 }
 
@@ -482,7 +479,7 @@ function toAttempt(row: AttemptRow): AttemptRecord {
     sessionId: row.session_id,
     queueItemId: row.queue_item_id,
     sequence: row.sequence,
-    kind: row.kind as AttemptKind,
+    kind: row.kind,
     uci: row.uci,
     legal: row.legal === 1,
     correct: row.correct === 1,

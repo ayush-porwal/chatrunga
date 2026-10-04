@@ -1,4 +1,4 @@
-import type { AppSettings } from "@chaturanga/shared/types/settings";
+import { settingKeys, type AppSettings } from "@chaturanga/shared/types/settings";
 
 /**
  * Settings changed by a drag and not written yet (see SettingsBatch). A read of the settings
@@ -18,7 +18,7 @@ export function addPendingSettings(patch: Partial<AppSettings>): void {
 /** The batch holding `patch` settled: its values are on disk (or were rolled back). */
 export function settlePendingSettings(patch: Partial<AppSettings>): void {
   const next = { ...pending };
-  for (const key of Object.keys(patch) as (keyof AppSettings)[]) {
+  for (const key of settingKeys(patch)) {
     if (Object.is(next[key], patch[key])) delete next[key];
   }
   pending = next;

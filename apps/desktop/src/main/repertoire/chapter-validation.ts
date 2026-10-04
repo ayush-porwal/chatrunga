@@ -23,6 +23,7 @@ import { fenAfterUci, positionFromFen } from "@chaturanga/shared/chess/position"
 import { standardCastlingUci } from "@chaturanga/shared/chess/review";
 import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
 import { nullPrototypeRecord } from "@chaturanga/shared/types/record";
+import { isOneOf } from "@chaturanga/shared/types/guards";
 
 export const MAX_TREE_NODES = 100_000;
 const MAX_NAME = 200;
@@ -149,15 +150,16 @@ function sanitizeNode(value: unknown, index: number): MoveNode {
   if (typeof id !== "string" || !id || id.length > MAX_ID || CONTROL_CHARS.test(id)) {
     treeError(String(index), "has no valid id");
   }
-  if (value.parentId !== null && typeof value.parentId !== "string")
-    treeError(id, "has no valid parent");
-  if (!Array.isArray(value.children) || value.children.some((child) => typeof child !== "string")) {
+  const parentId = value.parentId;
+  if (parentId !== null && typeof parentId !== "string") treeError(id, "has no valid parent");
+  const children: unknown = value.children;
+  if (!Array.isArray(children) || !children.every((child) => typeof child === "string")) {
     treeError(id, "has no valid children list");
   }
   if (typeof value.fenAfter !== "string") treeError(id, "has no fenAfter");
   return {
     id,
-    parentId: value.parentId as string | null,
+    parentId,
     san: null,
     uci: typeof value.uci === "string" ? value.uci : null,
     fenBefore: typeof value.fenBefore === "string" ? value.fenBefore : value.fenAfter,
@@ -172,7 +174,7 @@ function sanitizeNode(value: unknown, index: number): MoveNode {
     clockAfter: optionalText(value.clockAfter, 32),
     arrows: sanitizeArrows(value.arrows),
     highlights: sanitizeHighlights(value.highlights),
-    children: [...(value.children as string[])]
+    children: children.filter((child) => typeof child === "string")
   };
 }
 
@@ -253,10 +255,10 @@ export function sanitizeNodeMeta(
   const meta: Record<string, RepertoireNodeMeta> = nullPrototypeRecord();
   for (const [id, entry] of Object.entries(value)) {
     if (!ids.has(id)) continue;
-    if (!isObject(entry) || !EDGES.includes(entry.edge as RepertoireEdgeKind)) {
+    if (!isObject(entry) || !isOneOf(EDGES, entry.edge)) {
       throw new Error(`Invalid chapter metadata: node "${id}" has no valid edge kind`);
     }
-    const next: RepertoireNodeMeta = { edge: entry.edge as RepertoireEdgeKind };
+    const next: RepertoireNodeMeta = { edge: entry.edge };
     if (entry.trainingStart === true) next.trainingStart = true;
     if (entry.trainingStop === true) next.trainingStop = true;
     if (entry.disabled === true) next.disabled = true;

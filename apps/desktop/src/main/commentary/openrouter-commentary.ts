@@ -16,6 +16,7 @@ import {
 } from "@chaturanga/shared/llm/puzzle-explanation";
 import type { PuzzleExplanation, ReviewCommentary } from "@chaturanga/shared/types/engine";
 import { DEFAULT_COMMENTARY_MODEL } from "@chaturanga/shared/llm/models";
+import { isRecord } from "@chaturanga/shared/types/guards";
 
 const OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_TIMEOUT_MS = 45_000;
@@ -389,15 +390,16 @@ async function requestCompletion(
       signal: controller.signal
     });
     if (!response.ok) throw httpFailure(response.status);
-    const body = (await response.json()) as {
-      choices?: Array<{ message?: { content?: unknown } }>;
-      usage?: unknown;
-    };
-    const content = body.choices?.[0]?.message?.content;
+    const body: unknown = await response.json();
+    const fields = isRecord(body) ? body : {};
+    const choices: unknown[] = Array.isArray(fields.choices) ? fields.choices : [];
+    const choice = choices[0];
+    const message = isRecord(choice) ? choice.message : undefined;
+    const content = isRecord(message) ? message.content : undefined;
     if (typeof content !== "string" || !content.trim()) {
       throw new CommentaryFailure(EMPTY_ANSWER_ERROR, "empty_response", response.status);
     }
-    return { content: content.trim(), usage: parseUsage(body.usage) };
+    return { content: content.trim(), usage: parseUsage(fields.usage) };
   } catch (error) {
     if (signal?.aborted) throw new CommentaryCancelled();
     if (timedOut) throw new CommentaryFailure(TIMEOUT_ERROR, "timeout");
@@ -414,8 +416,8 @@ async function requestCompletion(
  * numbers; anything missing or malformed stays unknown — never zero.
  */
 export function parseUsage(value: unknown): CommentaryUsage | null {
-  if (!value || typeof value !== "object") return null;
-  const usage = value as Record<string, unknown>;
+  if (!isRecord(value)) return null;
+  const usage = value;
   const count = (field: unknown) => (typeof field === "number" && Number.isFinite(field) && field >= 0 ? field : undefined);
   const parsed: CommentaryUsage = {
     promptTokens: count(usage.prompt_tokens),

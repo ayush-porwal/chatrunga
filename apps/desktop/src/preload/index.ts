@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webFrame, type IpcRendererEvent } from "electron";
 import type { ChaturangaApi, Unsubscribe, WindowGlassState } from "@chaturanga/shared/ipc/chaturanga-api";
+import { isRecord } from "@chaturanga/shared/types/guards";
 import {
   IMPORT_CANCELLED_MESSAGE,
   IMPORT_CANCELLED_REPLY,
@@ -29,9 +30,24 @@ function invokePreviewImport(
 
 type EventPayload<K extends keyof ChaturangaApi["events"]> = Parameters<Parameters<ChaturangaApi["events"][K]>[0]>[0];
 
+/** Main's glass state reply, checked; anything else reads as an opaque window. */
+function readGlassState(reply: unknown): WindowGlassState {
+  if (
+    isRecord(reply) &&
+    typeof reply.supported === "boolean" &&
+    typeof reply.enabled === "boolean" &&
+    typeof reply.reducedTransparency === "boolean" &&
+    typeof reply.active === "boolean"
+  ) {
+    const { supported, enabled, reducedTransparency, active } = reply;
+    return { supported, enabled, reducedTransparency, active };
+  }
+  return { supported: false, enabled: false, reducedTransparency: false, active: false };
+}
+
 // Read once, synchronously, so the renderer's first frame matches the native window (vibrancy or
 // opaque); kept current by the change events below.
-let glassState = ipcRenderer.sendSync("appearance:getGlassSync") as WindowGlassState;
+let glassState = readGlassState(ipcRenderer.sendSync("appearance:getGlassSync"));
 const onGlassChanged = subscribe<WindowGlassState>("appearance:glassChanged");
 onGlassChanged((state) => {
   glassState = state;

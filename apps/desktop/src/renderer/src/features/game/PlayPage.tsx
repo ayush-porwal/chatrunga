@@ -195,7 +195,8 @@ function useEngineGameSetup({ onOpenSettings, onBeforeStart, onStart }: EngineGa
   const humanColor: Color = initialSession?.playerColor ?? draft.humanColor ?? game.orientation;
   const moveTimeMs = draft.moveTimeMs ?? game.moveTimeMs;
   const depth = draft.depth === undefined ? game.depth : draft.depth;
-  const clockPreset = draft.clockPreset as ClockPresetId;
+  // The draft is persisted: an id from an older build falls back to no clock.
+  const clockPreset: ClockPresetId = clockPresets.find((item) => item.id === draft.clockPreset)?.id ?? "infinite";
   const { customMinutes, customIncrementSec } = draft;
   const setEngineId = (value: string) => updateDraft({ engineId: value });
   const setHumanColor = (value: Color) => updateDraft({ humanColor: value });
@@ -216,6 +217,7 @@ function useEngineGameSetup({ onOpenSettings, onBeforeStart, onStart }: EngineGa
   const [startFrom, setStartFrom] = useState<"new" | "position">("new");
   const fromPosition =
     !initialSession && startFrom === "position" && boardPosition ? boardPosition : null;
+  const shownStartFrom: "new" | "position" = fromPosition ? "position" : "new";
 
   function resolveClockMs(): { initialMs: number; incrementMs: number } | null {
     const preset = clockPresets.find((item) => item.id === clockPreset);
@@ -338,7 +340,7 @@ function useEngineGameSetup({ onOpenSettings, onBeforeStart, onStart }: EngineGa
       usePlayDraftStore.getState().clearInitialSession();
     },
     handoffError,
-    startFrom: fromPosition ? "position" : "new",
+    startFrom: shownStartFrom,
     setStartFrom,
     startGame,
     stop
@@ -389,7 +391,7 @@ function EngineGameSetupBody({
           <SegmentedControl
             ariaLabel="Start from"
             value={setup.startFrom}
-            onChange={(value) => setup.setStartFrom(value as "new" | "position")}
+            onChange={(value) => setup.setStartFrom(value)}
             options={[
               { value: "new", label: "New game" },
               {

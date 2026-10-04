@@ -10,6 +10,7 @@ import { parentPort, workerData } from "node:worker_threads";
 import { runRestoreJob, type BackupRestoreData, type BackupRestoreReply } from "./backup-restore";
 import { withOwnConnection } from "./connection";
 
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runner starts this worker with a BackupRestoreData
 const { dbPath, job } = workerData as BackupRestoreData;
 const reply = (message: BackupRestoreReply) => parentPort?.postMessage(message);
 

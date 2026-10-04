@@ -25,6 +25,7 @@ import {
   standardCastlingUci
 } from "@chaturanga/shared/chess/review";
 import { analyzeTacticsForPosition } from "@chaturanga/shared/chess/tactics";
+import { isOneOf } from "@chaturanga/shared/types/guards";
 
 export const MAIA_RATINGS: readonly MaiaRating[] = [1100, 1300, 1500, 1700, 1900];
 const MAIA_TOP_MOVES = 10;
@@ -42,7 +43,8 @@ export function maiaRatingForEngine(config: Pick<EngineConfig, "maiaRating" | "n
 /** Matches `maia-1500`, `Maia 1900`, `maia_1100.pb.gz` — never a bare number inside another net's name. */
 export function maiaRatingFromText(text: string): MaiaRating | undefined {
   const match = text.toLowerCase().match(/maia[\s_-]*(1100|1300|1500|1700|1900)(?!\d)/);
-  return match ? (Number(match[1]) as MaiaRating) : undefined;
+  const rating = match ? Number(match[1]) : null;
+  return isOneOf(MAIA_RATINGS, rating) ? rating : undefined;
 }
 
 /**
@@ -87,16 +89,15 @@ export function nearestRatingBucket(
  */
 export function linesFromInfoStream(fen: string, infos: readonly EngineInfo[]): AnalysisLine[] {
   const turn = statusForFen(fen).turn;
-  const latest = new Map<number, EngineInfo>();
+  const latest = new Map<number, { info: EngineInfo; score: EngineScore }>();
   for (const info of infos) {
     if (!info.score || !info.pv?.length) continue;
     if (/\b(lowerbound|upperbound)\b/.test(info.raw)) continue;
-    latest.set(info.multipv ?? 1, info);
+    latest.set(info.multipv ?? 1, { info, score: info.score });
   }
   return [...latest.entries()]
     .sort(([left], [right]) => left - right)
-    .map(([multipv, info]) => {
-      const score = info.score as EngineScore;
+    .map(([multipv, { info, score }]) => {
       const line: AnalysisLine = {
         multipv,
         depth: info.depth ?? 0,

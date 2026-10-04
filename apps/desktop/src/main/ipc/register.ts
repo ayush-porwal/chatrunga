@@ -1,5 +1,5 @@
 import { BrowserWindow, dialog, ipcMain, powerMonitor, type IpcMainInvokeEvent } from "electron";
-import type { AppSettings } from "@chaturanga/shared/types/settings";
+import { settingKeys, type AppSettings } from "@chaturanga/shared/types/settings";
 import { allowChosenFile } from "../image-access";
 import { parseSettingValue } from "./settings-values";
 import type { EventEmitter } from "node:events";
@@ -85,6 +85,7 @@ import {
 import { broadcast } from "./broadcast";
 import { registerRepertoireIpc } from "./repertoire-handler";
 import { registerPuzzleIpc } from "./puzzle-handler";
+import { isRecord } from "@chaturanga/shared/types/guards";
 
 const ENGINE_EVENT_CHANNELS: Record<keyof EngineEvents, string> = {
   info: "engine:info",
@@ -431,7 +432,7 @@ function registerLibraryIpc(): void {
   ipcMain.handle("settings:patch", async (_event, value: unknown) => {
     const patch = parseSettingsPatch(value);
     await retryOnceIfBusy(() => settingsRepository.setMany(patch));
-    settingsChanged(Object.keys(patch) as (keyof AppSettings)[]);
+    settingsChanged(settingKeys(patch));
   });
 }
 
@@ -450,7 +451,7 @@ function registerCommentaryIpc(): void {
     return getOpenRouterConfigStore().set({ model: input.model, apiKey: input.apiKey as string | null | undefined });
   });
   ipcMain.handle("commentary:generate", async (_event, input: unknown) => {
-    const fields = input as { payloads?: unknown; context?: unknown } | undefined;
+    const fields = isRecord(input) ? input : undefined;
     const payloads = parseCommentaryPayloads(fields?.payloads);
     const store = getOpenRouterConfigStore();
     const [config, apiKey] = await Promise.all([store.get(), store.getApiKey()]);

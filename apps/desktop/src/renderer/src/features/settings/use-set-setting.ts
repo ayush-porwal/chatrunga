@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
+import { defaultSettings, settingKeys, type AppSettings } from "@chaturanga/shared/types/settings";
 import { useUpdateSettingsMutation } from "../../queries/api";
 import { addPendingSettings, dropPendingSettings, settlePendingSettings } from "../../queries/settings-pending";
 import { trackSettingsSave } from "./settings-save-state";
@@ -58,7 +58,7 @@ export class SettingsBatch {
 
   /** Adds `patch` (whose keys held `current` values before this drag) and restarts the wait. */
   add(patch: Partial<AppSettings>, current: AppSettings): void {
-    for (const key of Object.keys(patch) as (keyof AppSettings)[]) {
+    for (const key of settingKeys(patch)) {
       if (!(key in this.previous)) Object.assign(this.previous, { [key]: current[key] });
     }
     Object.assign(this.patch, patch);
@@ -122,7 +122,7 @@ export function useSettingsWriter() {
     }
     batch.flush();
     // This value supersedes a drag's pending one for the same keys (Reset right after a drag).
-    dropPendingSettings(Object.keys(patch) as (keyof AppSettings)[]);
+    dropPendingSettings(settingKeys(patch));
     // mutateAsync: every write settles its own promise (mutate() callbacks only fire for the latest call).
     trackSettingsSave(mutateAsync({ patch }));
   }

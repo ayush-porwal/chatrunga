@@ -15,6 +15,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useSettingsQuery } from "../../queries/api";
 import { CgPieceGlyph, type PreviewPieceRole } from "./piece-style-preview";
+import { isSquare } from "@chaturanga/shared/chess/square";
 
 type Cell = { color: Color; role: PreviewPieceRole } | null;
 
@@ -40,7 +41,8 @@ function cellsForFen(fen: string, orientation: Color): { cells: Cell[][]; square
     const row: Cell[] = [];
     const names: SquareName[] = [];
     for (const file of files) {
-      const name = `${file}${rank}` as SquareName;
+      const name = `${file}${rank}`;
+      if (!isSquare(name)) continue;
       const square = parseSquare(name);
       const piece = board && square !== undefined ? board.get(square) : undefined;
       row.push(piece ? { color: piece.color, role: piece.role as PreviewPieceRole } : null);
@@ -92,7 +94,7 @@ export const BoardThumbnail = memo(function BoardThumbnail({
   const { cells, squares } = useMemo(() => cellsForFen(fen, orientation), [fen, orientation]);
   const highlighted = lastMove && lastMove.length >= 4 ? [lastMove.slice(0, 2), lastMove.slice(2, 4)] : [];
   // The checkerboard is drawn from a8 (light) in white orientation; flipped boards start on h1 (light) too.
-  const boardStyle = { "--thumb-light": squareLight, "--thumb-dark": squareDark } as CSSProperties;
+  const boardStyle: CSSProperties = { "--thumb-light": squareLight, "--thumb-dark": squareDark };
 
   return (
     <div

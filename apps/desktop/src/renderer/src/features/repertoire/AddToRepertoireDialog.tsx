@@ -46,6 +46,8 @@ import {
 import { COLOR_LABELS, plural, sortedChapters } from "./repertoire-chapters";
 import { isStaleRevisionError } from "./repertoire-model";
 import { flushChapterTree } from "./useChapterAutosave";
+import { isOneOf } from "@chaturanga/shared/types/guards";
+import { CHAPTER_KINDS } from "@chaturanga/shared/types/repertoire";
 
 /** Active repertoires of both colours: the game's colour is never used to guess. */
 const ALL_ACTIVE = { color: "all" } as const;
@@ -305,7 +307,10 @@ export function AddToRepertoireDialog({
             <Select
               id={ids.kind}
               value={chapterKind}
-              onChange={(event) => setPickedKind(event.target.value as ChapterKind)}
+              onChange={(event) => {
+                const kind = event.target.value;
+                if (isOneOf(CHAPTER_KINDS, kind)) setPickedKind(kind);
+              }}
             >
               <option value="opening">Opening</option>
               <option value="reference">Reference</option>

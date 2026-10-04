@@ -40,7 +40,7 @@ export type NavigationShell = {
   /** The board on its current tab: where a Lichess game being played brings you back. */
   showLiveGame: () => void;
   showHome: () => void;
-  showSettings: (section: string | null) => void;
+  showSettings: (section: Extract<HistoryEntry, { view: "settings" }>["section"]) => void;
   openPlay: () => void;
   openPuzzles: () => void;
   openDatabases: () => void;

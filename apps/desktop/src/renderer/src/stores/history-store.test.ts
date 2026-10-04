@@ -44,7 +44,7 @@ describe("history store", () => {
       repertoireId: "r1",
       chapterId: "c1",
       nodeId: null,
-      tab: "moves",
+      tab: "moves" as const,
       orientation: "white" as const
     };
     history().push(study);
@@ -68,7 +68,7 @@ describe("history store", () => {
       repertoireId: "r1",
       chapterId: "c1",
       nodeId: "n1",
-      tab: "moves",
+      tab: "moves" as const,
       orientation: "white" as const
     };
     history().push(study);
@@ -79,7 +79,7 @@ describe("history store", () => {
   });
 
   it("forgets the oldest screens past the limit", () => {
-    for (let index = 0; index < HISTORY_LIMIT + 10; index += 1) history().push({ view: "settings", section: String(index) });
+    for (let index = 0; index < HISTORY_LIMIT + 10; index += 1) history().push({ view: "repertoire-practice", repertoireId: String(index), sessionId: null });
     expect(history().entries).toHaveLength(HISTORY_LIMIT);
     expect(history().index).toBe(HISTORY_LIMIT - 1);
   });

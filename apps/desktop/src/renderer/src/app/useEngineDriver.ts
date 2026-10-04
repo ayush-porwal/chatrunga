@@ -50,16 +50,18 @@ function playEngineMove(move: string): void {
   if (!useGameStore.getState().makeUciMove(move)) useAnalysisStore.getState().setError(`Illegal engine move: ${move}`);
 }
 
+/** A clock and a timer whose start returns its cancel (tests pass fake ones). */
 type Timers = {
   now: () => number;
-  set: (callback: () => void, ms: number) => unknown;
-  clear: (handle: unknown) => void;
+  start: (callback: () => void, ms: number) => () => void;
 };
 
 const defaultTimers: Timers = {
   now: () => performance.now(),
-  set: (callback, ms) => setTimeout(callback, ms),
-  clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)
+  start: (callback, ms) => {
+    const timer = setTimeout(callback, ms);
+    return () => clearTimeout(timer);
+  }
 };
 
 /**
@@ -73,11 +75,11 @@ export function createEngineInfoBuffer(
   timers: Timers = defaultTimers
 ) {
   let pending: EngineInfo[] = [];
-  let timer: unknown = null;
+  let cancelTimer: (() => void) | null = null;
   let lastFlushAt = -Infinity;
   const flushNow = () => {
-    if (timer !== null) timers.clear(timer);
-    timer = null;
+    cancelTimer?.();
+    cancelTimer = null;
     const infos = pending;
     pending = [];
     if (!infos.length) return;
@@ -87,15 +89,15 @@ export function createEngineInfoBuffer(
   return {
     push(info: EngineInfo) {
       pending.push(info);
-      if (timer !== null) return;
+      if (cancelTimer) return;
       const wait = intervalMs - (timers.now() - lastFlushAt);
       if (wait <= 0) flushNow();
-      else timer = timers.set(flushNow, wait);
+      else cancelTimer = timers.start(flushNow, wait);
     },
     flushNow,
     discard() {
-      if (timer !== null) timers.clear(timer);
-      timer = null;
+      cancelTimer?.();
+      cancelTimer = null;
       pending = [];
     }
   };

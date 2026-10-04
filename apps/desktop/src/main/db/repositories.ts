@@ -13,6 +13,7 @@ import {
   normalizePracticeSettings,
   normalizeReviewEngineSettings,
   normalizeUpdateSettings,
+  settingKeys,
   type AppSettings
 } from "@chaturanga/shared/types/settings";
 import type {
@@ -40,6 +41,9 @@ import type {
   InstalledDatabase
 } from "@chaturanga/shared/types/database";
 import { MAIA_RATINGS, maiaRatingFromText } from "../engine/review-analysis";
+import { allRows, getRow, sqliteErrcode } from "./rows";
+import { parseStoredJson } from "../stored-json";
+import { isOneOf, isRecord } from "@chaturanga/shared/types/guards";
 
 type EngineRow = {
   id: string;
@@ -59,7 +63,7 @@ type EngineRow = {
 
 type GameRow = {
   id: string;
-  source: string;
+  source: GameSource;
   white: string | null;
   black: string | null;
   event: string | null;
@@ -133,8 +137,8 @@ type ExternalDatabaseRow = {
   source_id: string;
   name: string;
   provider: string;
-  kind: string;
-  format: string;
+  kind: ExternalDatabaseKind;
+  format: ExternalDatabaseFormat;
   file_path: string;
   file_size_bytes: number;
   record_count: number | null;
@@ -158,11 +162,11 @@ function parseArgs(args: string | null): string[] {
 }
 
 function all<T>(sql: string, ...params: SQLInputValue[]): T[] {
-  return getDb().prepare(sql).all(...params) as T[];
+  return allRows<T>(getDb().prepare(sql), ...params);
 }
 
 function get<T>(sql: string, ...params: SQLInputValue[]): T | null {
-  return (getDb().prepare(sql).get(...params) as T | undefined) ?? null;
+  return getRow<T>(getDb().prepare(sql), ...params) ?? null;
 }
 
 /**
@@ -203,8 +207,8 @@ export async function retryOnceIfBusy<T>(
   try {
     return work();
   } catch (error) {
-    const code = (error as { errcode?: unknown } | null)?.errcode;
-    if (typeof code !== "number" || (code & 0xff) !== 5) throw error;
+    const code = sqliteErrcode(error);
+    if (code === undefined || (code & 0xff) !== 5) throw error;
     await new Promise((resolve) => setTimeout(resolve, delayMs));
     return work();
   }
@@ -235,7 +239,7 @@ function run(sql: string, ...params: SQLInputValue[]): void {
 
 /** Explicit rating column, else a `maia-1500`-style engine name / weights file. */
 function inferMaiaRating(row: EngineRow): MaiaRating | undefined {
-  if (MAIA_RATINGS.includes(row.maia_rating as MaiaRating)) return row.maia_rating as MaiaRating;
+  if (isOneOf(MAIA_RATINGS, row.maia_rating)) return row.maia_rating;
   return maiaRatingFromText(`${row.name} ${row.weights_path ?? ""}`);
 }
 
@@ -262,7 +266,7 @@ function toEngine(row: EngineRow): EngineConfig {
 function toGameSummary(row: GameSummaryRow): GameSummary {
   return {
     id: row.id,
-    source: row.source as GameSummary["source"],
+    source: row.source,
     white: row.white,
     black: row.black,
     event: row.event,
@@ -304,14 +308,14 @@ export function remapReviewToTree(review: GameReview, moveTree: readonly MoveNod
   // By the node's own ply (absolute: a game from a set-up position starts past 0), not the index.
   const byPly = new Map(mainlineOf(moveTree).map((node) => [node.ply, node]));
   const moves = [];
-  for (const move of review.moves as unknown[]) {
-    // A damaged entry drops the review (it can't be placed), never the game.
-    if (!move || typeof move !== "object") return null;
-    const { ply, fenAfter } = move as Partial<GameReview["moves"][number]>;
-    if (!Number.isInteger(ply) || typeof fenAfter !== "string") return null;
-    const target = byPly.get(ply as number);
+  // The review is stored JSON: a damaged entry drops the review (it can't be placed), never the game.
+  for (const move of review.moves) {
+    if (!isRecord(move)) return null;
+    const { ply, fenAfter }: { ply: unknown; fenAfter: unknown } = move;
+    if (typeof ply !== "number" || !Number.isInteger(ply) || typeof fenAfter !== "string") return null;
+    const target = byPly.get(ply);
     if (!target || target.fenAfter !== fenAfter) return null;
-    moves.push({ ...(move as GameReview["moves"][number]), nodeId: target.id });
+    moves.push({ ...move, nodeId: target.id });
   }
   return { ...review, moves };
 }
@@ -352,15 +356,13 @@ const SQUARE = /^[a-h][1-8]$/;
 const ANNOTATION_COLORS: readonly unknown[] = ["green", "red", "yellow", "blue"];
 
 function isArrow(value: unknown): boolean {
-  const arrow = value as Record<string, unknown> | null;
-  return Boolean(
-    arrow && typeof arrow === "object" && SQUARE.test(String(arrow.orig)) && SQUARE.test(String(arrow.dest)) && ANNOTATION_COLORS.includes(arrow.color)
+  return (
+    isRecord(value) && SQUARE.test(String(value.orig)) && SQUARE.test(String(value.dest)) && ANNOTATION_COLORS.includes(value.color)
   );
 }
 
 function isHighlight(value: unknown): boolean {
-  const highlight = value as Record<string, unknown> | null;
-  return Boolean(highlight && typeof highlight === "object" && SQUARE.test(String(highlight.square)) && ANNOTATION_COLORS.includes(highlight.color));
+  return isRecord(value) && SQUARE.test(String(value.square)) && ANNOTATION_COLORS.includes(value.color);
 }
 
 /** A position the board can show (the board and move list read it as soon as the node is selected). */
@@ -380,8 +382,8 @@ function isPlayableFen(fen: unknown, checked: Map<string, boolean>): boolean {
 }
 
 function isMoveNodeLike(value: unknown, fens: Map<string, boolean> = new Map()): value is MoveNode {
-  if (!value || typeof value !== "object") return false;
-  const node = value as Record<keyof MoveNode, unknown>;
+  if (!isRecord(value)) return false;
+  const node = value;
   const root = node.id === ROOT_NODE_ID;
   return (
     isString(node.id) &&
@@ -446,7 +448,7 @@ function isHeaders(value: unknown): value is GameHeaders {
 function parseStoredReview(json: string, moveTree: readonly MoveNode[], rebuilt: boolean): GameReview | null {
   let review: GameReview | null = null;
   try {
-    const parsed = JSON.parse(json) as GameReview;
+    const parsed = parseStoredJson<GameReview | null>(json);
     // Reviews saved before real Maia policy was parsed have no schemaVersion;
     // mark them v1 so consumers ignore their (uniform) Maia probabilities.
     if (parsed && Array.isArray(parsed.moves)) review = { ...parsed, schemaVersion: parsed.schemaVersion ?? 1 };
@@ -767,12 +769,14 @@ export const gameRepository = {
       params.push(...SEARCH_COLUMNS.map(() => needle));
     }
     // One row past the page says whether there is a next one.
-    const rows = (needle ? searchDb() : getDb())
-      .prepare(
+    const rows = allRows<GameSummaryRow>(
+      (needle ? searchDb() : getDb()).prepare(
         `SELECT ${GAME_SUMMARY_COLUMNS}, ${REVIEW_COUNTS_SQL}
         FROM games WHERE ${where.join(" AND ")} ORDER BY updated_at DESC, id ASC LIMIT ?`
-      )
-      .all(...params, limit + 1) as GameSummaryRow[];
+      ),
+      ...params,
+      limit + 1
+    );
     const items = rows.slice(0, limit).map(toGameSummary);
     const last = items.at(-1);
     return {
@@ -931,7 +935,7 @@ export const settingsRepository = {
     const db = getDb();
     db.exec("BEGIN IMMEDIATE");
     try {
-      for (const [key, value] of Object.entries(patch)) this.set(key as keyof AppSettings, value);
+      for (const key of settingKeys(patch)) this.set(key, patch[key]);
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");

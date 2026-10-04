@@ -285,11 +285,10 @@ function sameValue(a: unknown, b: unknown): boolean {
   if (a === b || (a == null && b == null)) return true;
   if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
   if (Array.isArray(a) !== Array.isArray(b)) return false;
-  const left = a as Record<string, unknown>;
-  const right = b as Record<string, unknown>;
-  const keys = Object.keys(left).filter((key) => left[key] != null);
-  const otherKeys = Object.keys(right).filter((key) => right[key] != null);
-  return keys.length === otherKeys.length && keys.every((key) => sameValue(left[key], right[key]));
+  const field = (value: object, key: string): unknown => Reflect.get(value, key);
+  const keys = Object.keys(a).filter((key) => field(a, key) != null);
+  const otherKeys = Object.keys(b).filter((key) => field(b, key) != null);
+  return keys.length === otherKeys.length && keys.every((key) => sameValue(field(a, key), field(b, key)));
 }
 
 /**
