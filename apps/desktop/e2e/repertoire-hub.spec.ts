@@ -80,6 +80,24 @@ async function expectInWindow(page: Page, locator: Locator) {
   expect(box!.x + box!.width).toBeLessThanOrEqual(size.width);
 }
 
+/**
+ * Scrolls the virtualised `list` from its top until `row` (an element in one of its rows) is
+ * mounted. A window smaller than the app's default (a small CI display) mounts fewer rows.
+ */
+async function mountRow(list: Locator, row: Locator) {
+  await list.evaluate((element) => element.parentElement!.scrollTo({ top: 0 }));
+  await expect
+    .poll(async () => {
+      if ((await row.count()) > 0) return true;
+      await list.evaluate((element) => {
+        const scroller = element.parentElement!;
+        scroller.scrollBy({ top: scroller.clientHeight / 2 });
+      });
+      return false;
+    })
+    .toBe(true);
+}
+
 async function openHub(page: Page) {
   await sidebar(page).getByRole("button", { name: "Repertoire", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Repertoire", level: 1 })).toBeVisible();
@@ -224,8 +242,11 @@ test("filters the chapter list without losing the selection, then disables the s
   const chapters = page.getByRole("list", { name: "Chapters" });
 
   // The open chapter (Line 0) and two others.
+  const select = (title: string) =>
+    chapters.getByRole("checkbox", { name: `Select ${title}`, exact: true });
   for (const title of ["Line 0", "Line 3", "Line 12"]) {
-    await chapters.getByRole("checkbox", { name: `Select ${title}`, exact: true }).check();
+    await mountRow(chapters, select(title));
+    await select(title).check();
   }
   const search = page.getByRole("searchbox", { name: "Search chapters" });
   await search.pressSequentially("line 1");
@@ -261,10 +282,12 @@ test("filters the chapter list without losing the selection, then disables the s
   await page.getByRole("button", { name: "Selected chapters actions", exact: true }).click();
   await page.getByRole("menuitem", { name: "Disable for practice", exact: true }).click();
   for (const title of ["Line 0", "Line 3", "Line 12"]) {
+    await mountRow(chapters, select(title));
     await expect(
       chapters.getByRole("switch", { name: `Enable ${title} for practice`, exact: true })
     ).toBeVisible();
   }
+  await mountRow(chapters, select("Line 1"));
   await expect(
     chapters.getByRole("switch", { name: "Disable Line 1 for practice", exact: true })
   ).toBeVisible();
