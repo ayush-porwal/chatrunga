@@ -195,9 +195,9 @@ test("review settings are a dialog that switches sides; with AI off, cards don't
 
   // No Settings tab, and no settings button in the panel: the titlebar's gear opens the dialog.
   await expect(reviewTabs(page).getByRole("tab", { name: "Settings", exact: true })).toHaveCount(0);
-  // The panel's Review header: "⌄ Review", the Analysis switch, the engine, and the gear last.
+  // The panel's header: "⌄ Game Review", the Analysis switch and the gear, last.
   const panel = page.getByRole("complementary", { name: "Review" });
-  await expect(panel.getByRole("button", { name: "Review", exact: true })).toHaveAttribute(
+  await expect(panel.getByRole("button", { name: "Game Review", exact: true })).toHaveAttribute(
     "aria-expanded",
     "true"
   );
@@ -289,11 +289,21 @@ test("review settings are a dialog that switches sides; with AI off, cards don't
   await analysis.click();
   await expect(analysis).toHaveAttribute("aria-checked", "false");
 
-  // "⌄ Review" folds the tabs and their content away; the charts stay.
-  const reviewToggle = panel.getByRole("button", { name: "Review", exact: true });
+  // "⌄ Game Review" folds the tabs and their content away; the charts stay.
+  const reviewToggle = panel.getByRole("button", { name: "Game Review", exact: true });
   await reviewToggle.click();
   await expect(reviewToggle).toHaveAttribute("aria-expanded", "false");
   await expect(reviewTabs(page)).toBeHidden();
+  // With the charts folded too, the two headers stack at the top and the move navigation stays at
+  // the panel's bottom.
+  const chartsToggle = panel.getByRole("button", { name: "Winning chances" });
+  await chartsToggle.click();
+  await expect(chartsToggle).toHaveAttribute("aria-expanded", "false");
+  const panelBox = await panel.boundingBox();
+  const navBox = await panel.getByRole("navigation", { name: "Move navigation" }).boundingBox();
+  if (!panelBox || !navBox) throw new Error("panel or navigation not visible");
+  expect(panelBox.y + panelBox.height - (navBox.y + navBox.height)).toBeLessThan(4);
+  await chartsToggle.click();
   await reviewToggle.click();
   await expect(reviewTabs(page)).toBeVisible();
 });

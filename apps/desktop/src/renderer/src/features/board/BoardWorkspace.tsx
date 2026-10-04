@@ -212,7 +212,11 @@ export function BoardWorkspace({
               <div
                 className={cn(
                   "border-t border-line-subtle",
-                  bodyCollapsed ? "flex min-h-0 flex-1 flex-col" : "shrink-0"
+                  // With the body folded the footer takes the panel; its last row (the move
+                  // navigation) stays pinned to the panel's bottom, whatever else is folded.
+                  bodyCollapsed
+                    ? "flex min-h-0 flex-1 flex-col [&>:last-child]:mt-auto"
+                    : "shrink-0"
                 )}
               >
                 {footer}

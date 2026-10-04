@@ -8,7 +8,7 @@ import { openReviewSettingsDialog } from "./ReviewSettingsDialog";
 const SETTINGS_ICON = <Settings />;
 
 /**
- * The review panel's heading row, the twin of the charts' "Winning chances" header: "⌄ Review"
+ * The review panel's heading row, the twin of the charts' "Winning chances" header: "⌄ Game Review"
  * folds the tabs and their content away (the charts take the space), and at the right the
  * Analysis switch (live engine analysis of the board, see review-live-analysis.ts) and the
  * review settings gear, always last.
@@ -48,7 +48,7 @@ export function ReviewPanelHeader({
         </>
       }
     >
-      Review
+      Game Review
     </CollapsibleHeader>
   );
 }
