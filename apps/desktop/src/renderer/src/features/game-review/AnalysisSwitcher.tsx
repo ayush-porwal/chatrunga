@@ -167,23 +167,18 @@ export function AnalysisSwitcher() {
             // The list's width whatever the entry: it never jumps, and lines up with the list.
             className={cn(PICKER_WIDTH, "justify-between tabular-nums")}
           >
-            <span className="flex min-w-0 items-center gap-2">
-              {shown ? (
-                <>
-                  <span className="min-w-0 truncate">{reviewInfoWhen(shown)}</span>
-                  {shownIndex === 0 ? <LatestTag /> : null}
-                </>
-              ) : (
-                <span className="min-w-0 truncate">Analyses</span>
-              )}
+            <span className="min-w-0 truncate">{shown ? reviewInfoWhen(shown) : "Analyses"}</span>
+            {/* Latest at the right end, beside the chevron. */}
+            <span className="flex shrink-0 items-center gap-2">
+              {shown && shownIndex === 0 ? <LatestTag /> : null}
+              <ChevronDown
+                aria-hidden="true"
+                className={cn(
+                  "text-fg-subtle transition-transform duration-standard ease-standard",
+                  open && "rotate-180"
+                )}
+              />
             </span>
-            <ChevronDown
-              aria-hidden="true"
-              className={cn(
-                "text-fg-subtle transition-transform duration-standard ease-standard",
-                open && "rotate-180"
-              )}
-            />
           </Button>
         </TooltipTrigger>
         {open ? null : (
@@ -338,7 +333,8 @@ function AnalysisRow({
           className={cn("mt-0.5 size-4 shrink-0 text-accent-fg", !selected && "invisible")}
         />
         <span className="grid min-w-0 flex-1 gap-0.5">
-          <span className="flex min-w-0 items-center gap-1.5 text-sm text-fg tabular-nums">
+          {/* Latest at the right end, as on the button. */}
+          <span className="flex min-w-0 items-center justify-between gap-1.5 text-sm text-fg tabular-nums">
             <span className="truncate">{when}</span>
             {latest ? <LatestTag /> : null}
           </span>
