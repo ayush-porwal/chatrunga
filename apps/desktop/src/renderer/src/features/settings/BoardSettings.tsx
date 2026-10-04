@@ -77,16 +77,23 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
   const [liveBoardColors, setLiveBoardColors] = useState<{ light?: string; dark?: string }>({});
   const [hoverTheme, setHoverTheme] = useState<BoardTheme | null>(null);
   const presetBoardColors = boardThemeSquareColors[appearance.boardTheme];
-  const previewBoardLight = liveBoardColors.light ?? appearance.boardSquareLight ?? presetBoardColors.light;
-  const previewBoardDark = liveBoardColors.dark ?? appearance.boardSquareDark ?? presetBoardColors.dark;
+  const previewBoardLight =
+    liveBoardColors.light ?? appearance.boardSquareLight ?? presetBoardColors.light;
+  const previewBoardDark =
+    liveBoardColors.dark ?? appearance.boardSquareDark ?? presetBoardColors.dark;
   const customBoardSelected = Boolean(
-    liveBoardColors.light || liveBoardColors.dark || appearance.boardSquareLight || appearance.boardSquareDark
+    liveBoardColors.light ||
+    liveBoardColors.dark ||
+    appearance.boardSquareLight ||
+    appearance.boardSquareDark
   );
   const selectedPieceStyle = appearance.pieceStyle;
   const selectedThemeLabel = customBoardSelected
     ? "Custom colors"
     : boardThemes.find((theme) => theme.id === appearance.boardTheme)?.label;
-  const presentationDescription = piecePresentationOptions.find((o) => o.id === appearance.piecePresentation)?.description;
+  const presentationDescription = piecePresentationOptions.find(
+    (o) => o.id === appearance.piecePresentation
+  )?.description;
 
   // A theme and its square colors are one write (never half-applied); dragging a color or the hue
   // shows at once and is written when it pauses.
@@ -112,16 +119,22 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
     setSettings({ boardSquareLight: null, boardSquareDark: null });
   }
 
-  const pieceStyleLabel = pieceStyleOptions.find((option) => option.id === selectedPieceStyle)?.label ?? selectedPieceStyle;
+  const pieceStyleLabel =
+    pieceStyleOptions.find((option) => option.id === selectedPieceStyle)?.label ??
+    selectedPieceStyle;
   const hoverColors = hoverTheme ? boardThemeSquareColors[hoverTheme] : null;
 
   return (
     <section className={cn(cardPadded, "@container grid gap-5")}>
-      <SectionHeader title="Board" description="How the board and pieces look in every game, review and puzzle." />
+      <SectionHeader
+        title="Board"
+        description="How the board and pieces look in every game, review and puzzle."
+      />
 
       <div className="grid items-start gap-x-8 gap-y-6 @2xl:grid-cols-[minmax(0,1fr)_minmax(11rem,14rem)]">
         <div className="grid min-w-0 gap-5">
           <Field label="Board theme" hint={selectedThemeLabel}>
+            {/* oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- focus goes to the checked radio inside (roving tabindex), not to the group */}
             <div
               role="radiogroup"
               aria-label="Board theme"
@@ -159,7 +172,9 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
                     <span
                       className={cn(
                         "max-w-full truncate text-2xs transition-colors duration-micro",
-                        selected ? "font-medium text-fg" : "text-fg-subtle group-hover:text-fg-secondary"
+                        selected
+                          ? "font-medium text-fg"
+                          : "text-fg-subtle group-hover:text-fg-secondary"
                       )}
                     >
                       {theme.label}
@@ -201,7 +216,9 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
           />
           <figcaption className="flex min-w-0 items-baseline justify-between gap-2 text-2xs text-fg-subtle">
             <span className="truncate">
-              {hoverTheme ? boardThemes.find((theme) => theme.id === hoverTheme)?.label : selectedThemeLabel}
+              {hoverTheme
+                ? boardThemes.find((theme) => theme.id === hoverTheme)?.label
+                : selectedThemeLabel}
             </span>
             <span className="truncate">{pieceStyleLabel}</span>
           </figcaption>
@@ -212,7 +229,13 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
         <div className="grid gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <BoardHueMixer onChange={setBoardSquareColors} />
-            <Button type="button" variant="outline" size="sm" onClick={resetBoardSquareColors} disabled={!customBoardSelected}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={resetBoardSquareColors}
+              disabled={!customBoardSelected}
+            >
               <RotateCcw />
               Reset to theme
             </Button>
@@ -241,19 +264,37 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
           label="Coordinates"
           htmlFor="setting-coordinates"
           description="File letters and rank numbers along the board edge."
-          control={<Switch id="setting-coordinates" checked={appearance.showCoordinates} onCheckedChange={(v) => setSetting("showCoordinates", v)} />}
+          control={
+            <Switch
+              id="setting-coordinates"
+              checked={appearance.showCoordinates}
+              onCheckedChange={(v) => setSetting("showCoordinates", v)}
+            />
+          }
         />
         <SettingRow
           label="Legal move dots"
           htmlFor="setting-legal-moves"
           description="Dots on the squares a picked-up piece can move to."
-          control={<Switch id="setting-legal-moves" checked={appearance.showLegalMoves} onCheckedChange={(v) => setSetting("showLegalMoves", v)} />}
+          control={
+            <Switch
+              id="setting-legal-moves"
+              checked={appearance.showLegalMoves}
+              onCheckedChange={(v) => setSetting("showLegalMoves", v)}
+            />
+          }
         />
         <SettingRow
           label="Move animation"
           htmlFor="setting-animation"
           description="Pieces slide to their new square."
-          control={<Switch id="setting-animation" checked={appearance.boardAnimation} onCheckedChange={(v) => setSetting("boardAnimation", v)} />}
+          control={
+            <Switch
+              id="setting-animation"
+              checked={appearance.boardAnimation}
+              onCheckedChange={(v) => setSetting("boardAnimation", v)}
+            />
+          }
         />
       </div>
     </section>
@@ -320,7 +361,11 @@ function BoardSquareColorPicker({
   );
 }
 
-function BoardHueMixer({ onChange }: { onChange: (colors: { light: string; dark: string }) => void }) {
+function BoardHueMixer({
+  onChange
+}: {
+  onChange: (colors: { light: string; dark: string }) => void;
+}) {
   const [hue, setHue] = useState(350);
 
   function updateHue(nextHue: number) {

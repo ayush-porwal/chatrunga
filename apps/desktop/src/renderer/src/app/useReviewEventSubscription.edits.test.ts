@@ -36,20 +36,27 @@ const { useGameStore } = await import("../stores/game-store");
 const { useReviewStore } = await import("../stores/review-store");
 
 const emit = (name: string, event: unknown) => listeners[name](event as never);
-const nodeBySan = (san: string) => useGameStore.getState().moveTree.find((node) => node.san === san)!;
+const nodeBySan = (san: string) =>
+  useGameStore.getState().moveTree.find((node) => node.san === san)!;
 
 /** A review run of the board's main line, as useReviewRunner starts one. */
 function startRun(reviewId: string) {
   const input = mainlineReviewInput(useGameStore.getState().moveTree);
-  useReviewStore.getState().startReview(reviewId, input.map((move) => ({ nodeId: move.nodeId, uci: move.uci })));
-  const moves = input.map((move) => ({
-    nodeId: move.nodeId,
-    ply: move.ply,
-    san: move.san,
-    playedMove: move.uci,
-    fenBefore: move.fenBefore,
-    fenAfter: move.fenAfter
-  }) as MoveReview);
+  useReviewStore.getState().startReview(
+    reviewId,
+    input.map((move) => ({ nodeId: move.nodeId, uci: move.uci }))
+  );
+  const moves = input.map(
+    (move) =>
+      ({
+        nodeId: move.nodeId,
+        ply: move.ply,
+        san: move.san,
+        playedMove: move.uci,
+        fenBefore: move.fenBefore,
+        fenAfter: move.fenAfter
+      }) as MoveReview
+  );
   return { moves, review: { moves, createdAt: 1 } as unknown as GameReview };
 }
 
@@ -85,7 +92,10 @@ describe("a running review and edits to the game", () => {
     expect(useReviewStore.getState().status).toBe("running");
 
     emit("completed", { reviewId: "run-1", review });
-    expect(useReviewStore.getState()).toMatchObject({ status: "ready", review: { reviewId: "run-1" } });
+    expect(useReviewStore.getState()).toMatchObject({
+      status: "ready",
+      review: { reviewId: "run-1" }
+    });
   });
 
   it("rejects a result that arrives for a line the game no longer has", () => {

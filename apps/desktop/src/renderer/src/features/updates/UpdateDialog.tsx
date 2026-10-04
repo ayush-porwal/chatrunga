@@ -27,7 +27,10 @@ export function UpdateDialog({ state, onClose }: { state: UpdateState; onClose: 
         </Button>
       }
     >
-      <section aria-label="Release notes" className={cn(well, "scroll-area max-h-[min(360px,50vh)] overflow-y-auto px-4 py-3")}>
+      <section
+        aria-label="Release notes"
+        className={cn(well, "scroll-area max-h-[min(360px,50vh)] overflow-y-auto px-4 py-3")}
+      >
         <ReleaseNotes notes={notes} />
       </section>
     </Dialog>

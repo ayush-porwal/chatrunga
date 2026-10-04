@@ -1,7 +1,8 @@
 import type { SavedReviewInfo } from "../types/chess";
 import { savedReviewCommentary, type GameReview } from "../types/engine";
 
-const finiteOrNull = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
+const finiteOrNull = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
 
 /**
  * How a saved analysis is listed (main stores these columns; the renderer adds a new run's).
@@ -9,7 +10,9 @@ const finiteOrNull = (value: unknown): number | null => (typeof value === "numbe
  */
 export function savedReviewInfo(review: GameReview, reviewId: string): SavedReviewInfo {
   const maiaEngines = Array.isArray(review.maiaEngines) ? review.maiaEngines : [];
-  const ratings = maiaEngines.map((engine) => finiteOrNull(engine?.rating)).filter((rating): rating is number => rating !== null);
+  const ratings = maiaEngines
+    .map((engine) => finiteOrNull(engine?.rating))
+    .filter((rating): rating is number => rating !== null);
   return {
     reviewId,
     createdAt: finiteOrNull(review.createdAt) ?? Date.now(),
@@ -19,7 +22,9 @@ export function savedReviewInfo(review: GameReview, reviewId: string): SavedRevi
     maiaLevels: [...new Set(ratings)].sort((a, b) => a - b),
     moveCount: Array.isArray(review.moves) ? review.moves.length : 0,
     // The comments the app shows: older offline-template explanations are dropped on load.
-    commentaryCount: Array.isArray(review.commentary) ? (savedReviewCommentary(review.commentary)?.length ?? 0) : 0
+    commentaryCount: Array.isArray(review.commentary)
+      ? (savedReviewCommentary(review.commentary)?.length ?? 0)
+      : 0
   };
 }
 
@@ -43,6 +48,8 @@ export function reviewInfoLabel(info: SavedReviewInfo, locale?: string): string 
   const maia = info.maiaLevels.length
     ? `Maia ${info.maiaLevels.length > 1 ? `${info.maiaLevels[0]}–${info.maiaLevels[info.maiaLevels.length - 1]}` : info.maiaLevels[0]}`
     : null;
-  const comments = info.commentaryCount ? `${info.commentaryCount} AI comment${info.commentaryCount === 1 ? "" : "s"}` : null;
+  const comments = info.commentaryCount
+    ? `${info.commentaryCount} AI comment${info.commentaryCount === 1 ? "" : "s"}`
+    : null;
   return [when, info.engineName ?? "Engine", search, maia, comments].filter(Boolean).join(" · ");
 }

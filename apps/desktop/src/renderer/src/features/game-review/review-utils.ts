@@ -5,7 +5,11 @@ import { fenAfterUci, positionFromFen, statusForFen } from "@chaturanga/shared/c
 import { analyzeTacticsForPosition } from "@chaturanga/shared/chess/tactics";
 import { buildIdeaFacts } from "@chaturanga/shared/chess/move-ideas";
 import { buildRatingCurve, quantizeToBucket } from "@chaturanga/shared/chess/rating-curve";
-import { formatEngineScore, scoreFromWhitePerspective, scoreToCentipawns } from "@chaturanga/shared/chess/review";
+import {
+  formatEngineScore,
+  scoreFromWhitePerspective,
+  scoreToCentipawns
+} from "@chaturanga/shared/chess/review";
 import type {
   CuratorReason,
   EngineSignal,
@@ -199,7 +203,12 @@ export function buildEngineSignals(move: MoveReview): EngineSignal[] {
   return signals;
 }
 
-const MISTAKE_LIKE: readonly MoveClassification[] = ["blunder", "mistake", "missed_tactic", "human_error"];
+const MISTAKE_LIKE: readonly MoveClassification[] = [
+  "blunder",
+  "mistake",
+  "missed_tactic",
+  "human_error"
+];
 const SAN_TOKEN = /^(O-O(-O)?[+#]?|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](=[QRBN])?[+#]?)$/;
 const RECENT_PLIES = 6;
 const PIECE_VALUES: Record<string, number> = { q: 9, r: 5, b: 3, n: 3 };
@@ -311,7 +320,9 @@ function cleanHeader(value: string | null | undefined, max: number): string | un
 
 /** Drops undefined keys so optional fields are absent (not `undefined`) on the wire. */
 function defined<T extends Record<string, unknown>>(value: T): T {
-  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
+  const copy = { ...value };
+  for (const key of Object.keys(copy)) if (copy[key] === undefined) delete copy[key];
+  return copy;
 }
 
 function resolveEvalLoss(
@@ -329,7 +340,8 @@ function resolveEvalLoss(
 
 function buildAlternatives(move: MoveReview, mover: Side) {
   const lines = [...move.topLines].sort((a, b) => a.multipv - b.multipv).slice(0, 3);
-  const alternatives: NonNullable<ReviewInsightPayload["engines"]["stockfish"]["alternatives"]> = [];
+  const alternatives: NonNullable<ReviewInsightPayload["engines"]["stockfish"]["alternatives"]> =
+    [];
   lines.forEach((line, index) => {
     const san = uciToSan(move.fenBefore, line.pv[0]);
     if (!isSanToken(san)) return;
@@ -356,7 +368,10 @@ function buildHumanTopMoves(move: MoveReview, bucket: MaiaRatingBucket) {
   if (!prediction) return undefined;
   const moves = prediction.topMoves
     .slice(0, 3)
-    .map((item) => ({ san: uciToSan(move.fenBefore, item.uci), prob: Math.round(item.prob * 100) / 100 }))
+    .map((item) => ({
+      san: uciToSan(move.fenBefore, item.uci),
+      prob: Math.round(item.prob * 100) / 100
+    }))
     .filter((item): item is { san: string; prob: number } => isSanToken(item.san));
   // A flat distribution (e.g. every candidate at 0.2) carries no signal; omit it
   // rather than let the coach read meaning into it.
@@ -442,7 +457,9 @@ function buildGameContext(
           moveNumberSan: moveNumberSanForPly(next.ply),
           san: next.san,
           classification: next.classification,
-          matchesEngine: Boolean(next.bestMove && next.playedMove === next.bestMove) || next.classification === "best"
+          matchesEngine:
+            Boolean(next.bestMove && next.playedMove === next.bestMove) ||
+            next.classification === "best"
         })
       : undefined;
 
@@ -456,7 +473,8 @@ function buildGameContext(
   const last = ordered[ordered.length - 1];
   const finalResult = last ? safeStatus(last.fenAfter)?.result : undefined;
   const result = [headerResult, finalResult].find(
-    (value): value is "1-0" | "0-1" | "1/2-1/2" => value === "1-0" || value === "0-1" || value === "1/2-1/2"
+    (value): value is "1-0" | "0-1" | "1/2-1/2" =>
+      value === "1-0" || value === "0-1" || value === "1/2-1/2"
   );
 
   return defined({
@@ -478,7 +496,10 @@ function buildGameContext(
  * fenAfter search as `replyLines`; older ones only have it as the next ply's
  * best line.
  */
-function replyUciFor(move: MoveReview, context: InsightPayloadContext | undefined): string[] | undefined {
+function replyUciFor(
+  move: MoveReview,
+  context: InsightPayloadContext | undefined
+): string[] | undefined {
   const stored = move.replyLines?.find((line) => line.multipv === 1) ?? move.replyLines?.[0];
   if (stored?.pv.length) return stored.pv;
   if (!context) return undefined;
@@ -487,7 +508,10 @@ function replyUciFor(move: MoveReview, context: InsightPayloadContext | undefine
   return next.bestLine;
 }
 
-function replyLineFor(move: MoveReview, context: InsightPayloadContext | undefined): string[] | undefined {
+function replyLineFor(
+  move: MoveReview,
+  context: InsightPayloadContext | undefined
+): string[] | undefined {
   const uci = replyUciFor(move, context);
   if (!uci?.length) return undefined;
   const line = uciLineToSan(move.fenAfter, uci).slice(0, 8);
@@ -509,7 +533,8 @@ function toWinChance(wdl: Wdl | null | undefined, flip: boolean): WinChance | un
 
 function engineMeta(move: MoveReview, review: InsightReviewMeta | null | undefined) {
   const bestLine = [...move.topLines].sort((a, b) => a.multipv - b.multipv)[0];
-  const depth = bestLine?.depth && bestLine.depth > 0 ? Math.min(250, Math.round(bestLine.depth)) : undefined;
+  const depth =
+    bestLine?.depth && bestLine.depth > 0 ? Math.min(250, Math.round(bestLine.depth)) : undefined;
   const moveTimeMs = review?.engineSettings?.moveTimeMs ?? review?.moveTimeMs ?? undefined;
   const before = toWinChance(move.wdlBefore ?? bestLine?.wdl, false);
   // wdlAfter is from the opponent's side (to move after the played move).
@@ -524,7 +549,10 @@ function engineMeta(move: MoveReview, review: InsightReviewMeta | null | undefin
 
 type HumanLikelihood = "most_likely" | "common" | "plausible" | "unusual" | "rare";
 
-function likelihood(prob: number | undefined, rank: number | undefined): HumanLikelihood | undefined {
+function likelihood(
+  prob: number | undefined,
+  rank: number | undefined
+): HumanLikelihood | undefined {
   if (prob === undefined && rank === undefined) return undefined;
   if (rank === 1) return "most_likely";
   const p = prob ?? 0;
@@ -534,13 +562,21 @@ function likelihood(prob: number | undefined, rank: number | undefined): HumanLi
   return "rare";
 }
 
-function probOf(prediction: RatingPrediction, uci: string | null | undefined, stored: number | undefined): number | undefined {
+function probOf(
+  prediction: RatingPrediction,
+  uci: string | null | undefined,
+  stored: number | undefined
+): number | undefined {
   if (stored !== undefined && Number.isFinite(stored)) return Math.max(0, Math.min(1, stored));
   if (!uci) return undefined;
   return prediction.topMoves.find((item) => item.uci === uci)?.prob;
 }
 
-function rankOf(prediction: RatingPrediction, uci: string | null | undefined, stored: number | undefined): number | undefined {
+function rankOf(
+  prediction: RatingPrediction,
+  uci: string | null | undefined,
+  stored: number | undefined
+): number | undefined {
   if (stored !== undefined && stored >= 1) return Math.min(300, Math.round(stored));
   if (!uci) return undefined;
   const index = prediction.topMoves.findIndex((item) => item.uci === uci);
@@ -561,7 +597,9 @@ function buildMaiaEvidence(move: MoveReview, userRating: number, trusted: boolea
   if (!predictions.length) return undefined;
   const levels = predictions.map((prediction) => {
     const playedProb = probOf(prediction, move.playedMove, prediction.playedProb);
-    const bestProb = move.bestMove ? probOf(prediction, move.bestMove, prediction.bestProb) : undefined;
+    const bestProb = move.bestMove
+      ? probOf(prediction, move.bestMove, prediction.bestProb)
+      : undefined;
     const top = prediction.topMoves
       .slice(0, 3)
       .map((item) => ({ san: uciToSan(move.fenBefore, item.uci), prob: round2(item.prob) }))
@@ -576,7 +614,9 @@ function buildMaiaEvidence(move: MoveReview, userRating: number, trusted: boolea
     });
   });
   const nearest = predictions.reduce((closest, prediction) =>
-    Math.abs(prediction.rating - userRating) < Math.abs(closest.rating - userRating) ? prediction : closest
+    Math.abs(prediction.rating - userRating) < Math.abs(closest.rating - userRating)
+      ? prediction
+      : closest
   );
   const nearestLevel = levels.find((level) => level.rating === nearest.rating);
   return defined({
@@ -607,7 +647,8 @@ export function buildInsightPayload(
 ): ReviewInsightPayload | null {
   const bestMoveSan = uciToSan(move.fenBefore, move.bestMove);
   const bestLineSan = uciLineToSan(move.fenBefore, move.bestLine).slice(0, 8);
-  if (!bestMoveSan || bestLineSan.length === 0 || !move.evalBefore || !isSanToken(move.san)) return null;
+  if (!bestMoveSan || bestLineSan.length === 0 || !move.evalBefore || !isSanToken(move.san))
+    return null;
   const mover = statusForFen(move.fenBefore).turn;
   const afterStatus = safeStatus(move.fenAfter);
   const terminal = storedTerminal(move) ?? terminalFor(move.fenAfter);
@@ -616,7 +657,11 @@ export function buildInsightPayload(
   // dropping the move: M0 = side to move is mated, 0.00 = drawn.
   const evalAfter: EngineScore | null =
     move.evalAfter ??
-    (terminal === "checkmate" ? { type: "mate", value: 0 } : terminal ? { type: "cp", value: 0 } : null);
+    (terminal === "checkmate"
+      ? { type: "mate", value: 0 }
+      : terminal
+        ? { type: "cp", value: 0 }
+        : null);
   if (!evalAfter) return null;
   const evalLoss = resolveEvalLoss(move, evalAfter, terminal, mover);
   if (evalLoss === null) return null;
@@ -626,21 +671,25 @@ export function buildInsightPayload(
   const usableMaia = trustedMaia && hasUsableMaiaData(move);
   if (!usableMaia) curve.interpretation = { label: "neutral" };
   // Any mate-in-one is objectively best even if it was not the engine's first PV.
-  const classification: MoveClassification = terminal === "checkmate" ? "best" : move.classification;
+  const classification: MoveClassification =
+    terminal === "checkmate" ? "best" : move.classification;
   const reason: CuratorReason = MISTAKE_LIKE.includes(classification)
     ? "mistake"
     : move.playedMove === move.bestMove && usableMaia
       ? "difficult_find"
       : "move_review";
 
-  const bestTerminal = move.bestMove ? terminalFor(fenAfterUci(move.fenBefore, move.bestMove)) : undefined;
+  const bestTerminal = move.bestMove
+    ? terminalFor(fenAfterUci(move.fenBefore, move.bestMove))
+    : undefined;
   const assessmentBefore = assessScore(move.evalBefore);
   const assessmentAfter = terminal ? terminalAssessment(terminal, mover) : assessScore(evalAfter);
   const assessmentAfterBest = bestTerminal
     ? terminalAssessment(bestTerminal, mover)
     : assessScore(move.bestEvalAfter);
   const { alternatives, playedMoveRank } = buildAlternatives(move, mover);
-  const replyLineSan = move.playedMove !== move.bestMove && !terminal ? replyLineFor(move, context) : undefined;
+  const replyLineSan =
+    move.playedMove !== move.bestMove && !terminal ? replyLineFor(move, context) : undefined;
   const motifs = move.motifs.filter((motif) => motif.length > 0 && motif.length <= 30).slice(0, 6);
   const clock = buildClock(move, context);
   const phase = phaseFor(move.ply, move.fenBefore);
@@ -683,7 +732,11 @@ export function buildInsightPayload(
         bestEvalAfter: move.bestEvalAfter ? formatEngineScore(move.bestEvalAfter) : undefined,
         assessment:
           assessmentBefore && assessmentAfter
-            ? defined({ before: assessmentBefore, after: assessmentAfter, afterBest: assessmentAfterBest })
+            ? defined({
+                before: assessmentBefore,
+                after: assessmentAfter,
+                afterBest: assessmentAfterBest
+              })
             : undefined,
         alternatives,
         playedMoveRank: move.playedRank ?? playedMoveRank,
@@ -691,7 +744,9 @@ export function buildInsightPayload(
         ...engineMeta(move, context?.review)
       }),
       maiaCurve: curve,
-      humanTopMoves: trustedMaia ? buildHumanTopMoves(move, maia?.playerLevel ?? curve.userRatingBucket) : undefined,
+      humanTopMoves: trustedMaia
+        ? buildHumanTopMoves(move, maia?.playerLevel ?? curve.userRatingBucket)
+        : undefined,
       maia
     }),
     classification,
@@ -716,8 +771,12 @@ export function hasUsableMaiaData(move: MoveReview): boolean {
 }
 
 export function averageLoss(moves: readonly MoveReview[]): number | null {
-  const values = moves.map((move) => move.evalLoss).filter((value): value is number => value !== null);
-  return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : null;
+  const values = moves
+    .map((move) => move.evalLoss)
+    .filter((value): value is number => value !== null);
+  return values.length
+    ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
+    : null;
 }
 
 export function reviewAccuracy(moves: readonly MoveReview[]): number | null {

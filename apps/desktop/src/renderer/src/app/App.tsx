@@ -37,17 +37,30 @@ import { useGameStore } from "../stores/game-store";
 import { useReviewStore } from "../stores/review-store";
 import { selectLiveGameInProgress, useLichessStore } from "../stores/lichess-store";
 import { useHistoryStore, type HistoryEntry } from "../stores/history-store";
-import {
-  captureEntry,
-  recordHistory,
-  type HistoryMode
-} from "./history-navigation";
+import { captureEntry, recordHistory, type HistoryMode } from "./history-navigation";
 import { saveStudyDraftFirst, useHistoryRestore } from "./navigation-coordinator";
-import { nextPuzzleInput, puzzleBoard, usePuzzleSession, type PuzzleSetStart } from "./puzzle-session-controller";
+import {
+  nextPuzzleInput,
+  puzzleBoard,
+  usePuzzleSession,
+  type PuzzleSetStart
+} from "./puzzle-session-controller";
 import { AppSidebar } from "./AppSidebar";
-import { AppTitlebar, GameTitlebar, LiveGameButton, PageTitle, ReviewTitlebar } from "./AppTitlebar";
+import {
+  AppTitlebar,
+  GameTitlebar,
+  LiveGameButton,
+  PageTitle,
+  ReviewTitlebar
+} from "./AppTitlebar";
 import type { SideTab } from "./side-tabs";
-import { AddToRepertoireDialog, AppPages, GameReviewPicker, OnboardingFlow, type AppView } from "./AppPages";
+import {
+  AddToRepertoireDialog,
+  AppPages,
+  GameReviewPicker,
+  OnboardingFlow,
+  type AppView
+} from "./AppPages";
 import { PuzzleInfoPanel } from "./PuzzleInfoPanel";
 import { useBoardShortcuts } from "./useBoardShortcuts";
 import { useEngineDriver, type AnalysisOptions } from "./useEngineDriver";
@@ -77,7 +90,10 @@ import type { StudyOpenTarget, StudyStage } from "../features/repertoire/reperto
 import type { OpeningSide } from "../features/game-review/opening-comparison";
 import { presetForSetup, type PracticePreset } from "../features/repertoire/practice-setup";
 import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
-import { RepertoirePracticeTitlebar, RepertoireStudyTitlebar } from "../features/repertoire/RepertoireTitlebar";
+import {
+  RepertoirePracticeTitlebar,
+  RepertoireStudyTitlebar
+} from "../features/repertoire/RepertoireTitlebar";
 import {
   flushChapterDraft,
   unsavedDecisionMessage,
@@ -124,10 +140,19 @@ const initialRepertoireExtras: RepertoireExtras = {
   stage: null
 };
 
-const boardViews: ReadonlySet<AppView> = new Set(["game", "game-review", "repertoire-study", "repertoire-practice"]);
+const boardViews: ReadonlySet<AppView> = new Set([
+  "game",
+  "game-review",
+  "repertoire-study",
+  "repertoire-practice"
+]);
 /** Views whose board is the game store's (the game's move keys apply there). */
 const gameBoardViews: ReadonlySet<AppView> = new Set(["game", "game-review"]);
-const repertoireViews: ReadonlySet<AppView> = new Set(["repertoire-hub", "repertoire-study", "repertoire-practice"]);
+const repertoireViews: ReadonlySet<AppView> = new Set([
+  "repertoire-hub",
+  "repertoire-study",
+  "repertoire-practice"
+]);
 /** Board ↔ board cross-fades in place (the board must not slide); anything with a page rises in. */
 const viewTransitionKind = (previous: AppView, next: AppView): ViewTransitionKind =>
   boardViews.has(previous) && boardViews.has(next) ? "fade" : "lift";
@@ -174,7 +199,8 @@ export function App() {
         ? "repertoire-hub"
         : null;
   const onRepertoireRoute = Boolean(routeRepertoireView);
-  const [repertoireExtras, setRepertoireExtras] = useState<RepertoireExtras>(initialRepertoireExtras);
+  const [repertoireExtras, setRepertoireExtras] =
+    useState<RepertoireExtras>(initialRepertoireExtras);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const onReviewRoute = Boolean(gameReviewMatch);
@@ -213,7 +239,13 @@ export function App() {
       };
     }
     return null;
-  }, [studyRepertoireId, studyChapterId, practiceRepertoireId, practiceSessionId, repertoireExtras]);
+  }, [
+    studyRepertoireId,
+    studyChapterId,
+    practiceRepertoireId,
+    practiceSessionId,
+    repertoireExtras
+  ]);
 
   // Focus mode only exists on a board view; leaving one ends it (the stored flag resets below).
   const onBoardView = boardViews.has(appView);
@@ -247,13 +279,18 @@ export function App() {
   const puzzleSetContinues = puzzleSession.continues(gameBoard);
   const positionIsEnd = useGameStore((state) => positionStatus(state.currentFen).isEnd);
   // A puzzle opens to analysis once it's solved or failed (before that the engine would give it away).
-  const puzzleDecided = usePuzzleStore((state) => Boolean(state.activePuzzle) && state.outcome !== "pending");
+  const puzzleDecided = usePuzzleStore(
+    (state) => Boolean(state.activePuzzle) && state.outcome !== "pending"
+  );
   // A Lichess game on the board: nothing may replace it and the engine stays off until it ends.
   const onlineGameLive = useLichessStore(selectLiveGameInProgress);
   const engines = useEnginesQuery();
   const nextPuzzle = useSamplePuzzleMutation();
   const settingsQuery = useSettingsQuery();
-  const settings = useMemo(() => ({ ...defaultSettings, ...(settingsQuery.data ?? {}) }), [settingsQuery.data]);
+  const settings = useMemo(
+    () => ({ ...defaultSettings, ...settingsQuery.data }),
+    [settingsQuery.data]
+  );
   const defaultEngineId = useMemo(() => defaultEngineFor(engines.data), [engines.data]);
   // Live analysis as Settings / the Engine tab's settings say: engine, lines and how far to search.
   const analysisOptions = useMemo<AnalysisOptions>(
@@ -276,7 +313,9 @@ export function App() {
     ]
   );
   const reviewRouteId = gameReviewMatch?.params.id ?? null;
-  const reviewRouteLoading = Boolean(reviewRouteId && reviewRouteId !== "current" && reviewRouteId !== gameId);
+  const reviewRouteLoading = Boolean(
+    reviewRouteId && reviewRouteId !== "current" && reviewRouteId !== gameId
+  );
   const canAnalyzeGame =
     desktopApiAvailable &&
     !positionIsEnd &&
@@ -312,7 +351,7 @@ export function App() {
   function showView(view: AppView, history: HistoryMode = "push", tab: SideTab = sideTab) {
     latestNavigation.current += 1;
     // The route change belongs to the same view transition, so the old snapshot is the real old view.
-    setAppView(view, leavesRoute(view) ? () => navigate("/", { replace: true }) : undefined);
+    setAppView(view, leavesRoute(view) ? () => void navigate("/", { replace: true }) : undefined);
     record(history, historyEntry(view, tab));
   }
 
@@ -352,8 +391,8 @@ export function App() {
     showLiveGame: () => showGame(sideTab, "none"),
     showHome: () => showView("home", "none"),
     showSettings: (section) => {
-      viewedSettingsSection.current = section as SettingsSectionId | null;
-      setSettingsSection(section as SettingsSectionId | null);
+      viewedSettingsSection.current = section;
+      setSettingsSection(section);
       showView("settings", "none");
     },
     openPlay: () => openPlayPage("none"),
@@ -361,17 +400,22 @@ export function App() {
     openDatabases: () => openDatabasesPage("none"),
     openRepertoireHub: () => openRepertoireHub("none"),
     openRepertoireStudy: (entry) => openRepertoireStudy(entry, "none"),
-    openRepertoirePractice: (repertoireId, sessionId) => openRepertoirePractice(repertoireId, { sessionId }, "none"),
+    openRepertoirePractice: (repertoireId, sessionId) =>
+      openRepertoirePractice(repertoireId, { sessionId }, "none"),
     showGame: (tab) => showGame(tab, "none"),
     showGameReview: (entry) => {
-      setReviewTab(entry.tab as ReviewTab);
-      setOpeningSide(entry.compareColor ? { board: currentGame().board, color: entry.compareColor } : null);
+      setReviewTab(entry.tab);
+      setOpeningSide(
+        entry.compareColor ? { board: currentGame().board, color: entry.compareColor } : null
+      );
       const id = entry.board.gameId ?? "current";
       latestNavigation.current += 1;
-      setAppView("game-review", () => navigate(`/games/${id}/review`, { replace: true }));
+      setAppView("game-review", () => void navigate(`/games/${id}/review`, { replace: true }));
     },
     startPuzzle: ({ sample, set }) => startPuzzle(sample, set ?? undefined, "none"),
-    getSavedGame: (id) => window.chaturanga?.games.get(id) ?? Promise.reject(new Error("Saved games need the desktop app.")),
+    getSavedGame: (id) =>
+      window.chaturanga?.games.get(id) ??
+      Promise.reject(new Error("Saved games need the desktop app.")),
     stopEngineWork: (options) => stopEngineWork(options),
     clearPuzzleSession: () => clearPuzzleSession(),
     releasePuzzleSession: () => puzzleSession.release(currentGame().board),
@@ -426,9 +470,14 @@ export function App() {
   async function exportPgn() {
     if (!window.chaturanga) return;
     try {
-      await window.chaturanga.files.savePgnFile("chaturanga-game.pgn", currentGame().toSession().pgn);
+      await window.chaturanga.files.savePgnFile(
+        "chaturanga-game.pgn",
+        currentGame().toSession().pgn
+      );
     } catch (error) {
-      useAppNoticeStore.getState().show(`Couldn't export the PGN: ${ipcErrorMessage(error) || "unknown error"}`);
+      useAppNoticeStore
+        .getState()
+        .show(`Couldn't export the PGN: ${ipcErrorMessage(error) || "unknown error"}`);
     }
   }
 
@@ -441,7 +490,8 @@ export function App() {
       // Pending edits first: the library's check for a copy must see the board as it is. If they
       // couldn't be saved, importing could add a copy of this very game: stop and say so.
       if (!(await flushGameAutosave())) {
-        if (request === latestNavigation.current) useAppNoticeStore.getState().show(IMPORT_NEEDS_SAVE);
+        if (request === latestNavigation.current)
+          useAppNoticeStore.getState().show(IMPORT_NEEDS_SAVE);
         return;
       }
       const imported = await window.chaturanga.games.importPgn({ pgn: file.contents });
@@ -451,7 +501,9 @@ export function App() {
     } catch (error) {
       // Shown where you are (no navigation: the board didn't change).
       if (request === latestNavigation.current) {
-        useAppNoticeStore.getState().show(`Couldn't import that file: ${ipcErrorMessage(error) || "unknown error"}`);
+        useAppNoticeStore
+          .getState()
+          .show(`Couldn't import that file: ${ipcErrorMessage(error) || "unknown error"}`);
       }
     }
   }
@@ -462,7 +514,8 @@ export function App() {
     if (imported.existingGameId) {
       const existing = imported.existingGameId;
       void openSavedGameById(existing).then(() => {
-        if (currentGame().gameId === existing) currentGame().setMatchFeedback("Already in your library: opened your copy.");
+        if (currentGame().gameId === existing)
+          currentGame().setMatchFeedback("Already in your library: opened your copy.");
       });
       return;
     }
@@ -589,7 +642,7 @@ export function App() {
     setFocusMode(false);
     setReviewTab(tab);
     setGameReviewPickerOpen(false);
-    setAppView("game-review", () => navigate(`/games/${gameId}/review`, { replace: true }));
+    setAppView("game-review", () => void navigate(`/games/${gameId}/review`, { replace: true }));
     record("push", historyEntry("game-review"));
   }
 
@@ -660,7 +713,10 @@ export function App() {
     setSettingsSection(section);
     record("push", { view: "settings", section });
     latestNavigation.current += 1;
-    setAppView("settings", leavesRoute("settings") ? () => navigate("/", { replace: true }) : undefined);
+    setAppView(
+      "settings",
+      leavesRoute("settings") ? () => void navigate("/", { replace: true }) : undefined
+    );
   }
 
   // ---- Repertoire ------------------------------------------------------------------------------
@@ -674,9 +730,10 @@ export function App() {
     // open the engine already searches the study, not the board, and another visit to the same
     // chapter (Back, a transposition) keeps it running.
     const studyEngineOpen = useAnalysisStore.getState().target !== null;
-    if (useGameStore.getState().mode !== "engine" && !studyEngineOpen) stopEngineWork({ keepReview: true });
+    if (useGameStore.getState().mode !== "engine" && !studyEngineOpen)
+      stopEngineWork({ keepReview: true });
     if (!boardViews.has(view) || !repertoireViews.has(appView)) setFocusMode(false);
-    setAppView(view, () => navigate(path, { replace: true }));
+    setAppView(view, () => void navigate(path, { replace: true }));
   }
 
   function openRepertoireHub(history: HistoryMode = "push") {
@@ -691,7 +748,7 @@ export function App() {
    * fails the draft stays open with its error (false). A newer navigation meanwhile wins (false).
    */
   async function openRepertoireStudy(
-    target: Omit<StudyOpenTarget, "tab"> & { tab?: string; orientation?: Color | null },
+    target: Omit<StudyOpenTarget, "tab"> & { tab?: StudyTab; orientation?: Color | null },
     history: HistoryMode = "push"
   ): Promise<boolean> {
     if (history === "push") commitCurrent();
@@ -721,7 +778,7 @@ export function App() {
       draft.selectNode(target.nodeId ?? REPERTOIRE_ROOT_NODE_ID);
       if (target.orientation) draft.setOrientation(target.orientation);
     }
-    const tab = (target.tab as StudyTab | undefined) ?? repertoireExtras.tab;
+    const tab = target.tab ?? repertoireExtras.tab;
     // A staged move is applied once by the study page; history entries never carry it.
     setRepertoireExtras({
       nodeId: target.nodeId,
@@ -753,7 +810,10 @@ export function App() {
    */
   async function openRepertoirePractice(
     repertoireId: string,
-    { sessionId = null, preset = null }: { sessionId?: string | null; preset?: RepertoireExtras["preset"] } = {},
+    {
+      sessionId = null,
+      preset = null
+    }: { sessionId?: string | null; preset?: RepertoireExtras["preset"] } = {},
     history: HistoryMode = "push"
   ): Promise<boolean> {
     if (history === "push") commitCurrent();
@@ -761,7 +821,8 @@ export function App() {
     // Held back by the study page being left and by this repertoire's unsaved changes (practice
     // shows its prompts and hints, and pauses), not by another repertoire's.
     const studying = studyOnScreen();
-    const blockOn = studying && studying !== repertoireId ? [studying, repertoireId] : [repertoireId];
+    const blockOn =
+      studying && studying !== repertoireId ? [studying, repertoireId] : [repertoireId];
     const leftSaved = await saveStudyDraftFirst({
       request,
       navigation: latestNavigation,
@@ -784,7 +845,7 @@ export function App() {
   function practiceSessionStarted(sessionId: string) {
     if (repertoireScreen?.view !== "repertoire-practice") return;
     const { repertoireId } = repertoireScreen;
-    navigate(practicePath(repertoireId, sessionId), { replace: true });
+    void navigate(practicePath(repertoireId, sessionId), { replace: true });
     record("replace", { view: "repertoire-practice", repertoireId, sessionId });
   }
 
@@ -792,7 +853,9 @@ export function App() {
   function practiceSetup() {
     if (repertoireScreen?.view !== "repertoire-practice") return;
     useRepertoirePracticeStore.getState().reset();
-    openRepertoirePractice(repertoireScreen.repertoireId, { preset: presetForSetup(repertoireScreen.preset) });
+    void openRepertoirePractice(repertoireScreen.repertoireId, {
+      preset: presetForSetup(repertoireScreen.preset)
+    });
   }
 
   // ---- Repertoire handoffs (Study → Play from here) and the Lichess guard ----------------------
@@ -852,21 +915,23 @@ export function App() {
       useAppNoticeStore.getState().show(unsavedDecisionMessage(true, action));
       return false;
     }
-    useAppNoticeStore.getState().show(
-      cause === "decision"
-        ? unsavedDecisionMessage(false, action)
-        : `This chapter couldn't be saved, so ${action} didn't open. Your edits are kept: retry, ` +
-            "or dismiss to stay and keep editing.",
-      {
-        action: {
-          label: "Retry",
-          onSelect: () => {
-            useRepertoireWorkspaceStore.getState().clearSaveError();
-            retry();
+    useAppNoticeStore
+      .getState()
+      .show(
+        cause === "decision"
+          ? unsavedDecisionMessage(false, action)
+          : `This chapter couldn't be saved, so ${action} didn't open. Your edits are kept: retry, ` +
+              "or dismiss to stay and keep editing.",
+        {
+          action: {
+            label: "Retry",
+            onSelect: () => {
+              useRepertoireWorkspaceStore.getState().clearSaveError();
+              retry();
+            }
           }
         }
-      }
-    );
+      );
     return false;
   }
 
@@ -1054,7 +1119,11 @@ export function App() {
    * Loads a puzzle onto the board. `set` starts a puzzle set (a new one: a history step; or one
    * history brings back); without it the set continues (the next puzzle takes the current entry's place).
    */
-  function startPuzzle(puzzle: PuzzleSample, set?: PuzzleSetStart, history: HistoryMode = set ? "push" : "replace") {
+  function startPuzzle(
+    puzzle: PuzzleSample,
+    set?: PuzzleSetStart,
+    history: HistoryMode = set ? "push" : "replace"
+  ) {
     if (history === "push") commitCurrent();
     stopEngineWork();
     useReviewStore.getState().reset();
@@ -1080,12 +1149,15 @@ export function App() {
     const fromGame = puzzleSetContinues;
     nextPuzzle.mutate(input, {
       onSuccess: (puzzle) => {
-        if (request === latestNavigation.current) startPuzzle(puzzle, undefined, fromGame ? "push" : "replace");
+        if (request === latestNavigation.current)
+          startPuzzle(puzzle, undefined, fromGame ? "push" : "replace");
       },
       onError: (error) => {
         // The puzzle card shows the error on a puzzle; the game's titlebar does after a game.
         if (fromGame && request === latestNavigation.current) {
-          currentGame().setMatchFeedback(`Couldn't load the next puzzle: ${ipcErrorMessage(error) || "unknown error"}`);
+          currentGame().setMatchFeedback(
+            `Couldn't load the next puzzle: ${ipcErrorMessage(error) || "unknown error"}`
+          );
         }
       }
     });
@@ -1112,7 +1184,9 @@ export function App() {
     settingsSectionViewed: useEventCallback((section: SettingsSectionId) => {
       viewedSettingsSection.current = section;
     }),
-    importedGame: useEventCallback((imported: ImportedGame) => unlessOnlineGame(() => loadImportedGame(imported))),
+    importedGame: useEventCallback((imported: ImportedGame) =>
+      unlessOnlineGame(() => loadImportedGame(imported))
+    ),
     beforePlayStart: useEventCallback(beforeEngineGame),
     play: useEventCallback(() => openFreshPlayPage()),
     freeBoard: useEventCallback(() => unlessOnlineGame(startFreeBoard)),
@@ -1123,7 +1197,9 @@ export function App() {
     closeReviewPicker: useEventCallback(() => setGameReviewPickerOpen(false)),
     openImportDialog: useEventCallback(() => setImportOpen(true)),
     closeImportDialog: useEventCallback(() => setImportOpen(false)),
-    reviewGame: useEventCallback((id: string) => unlessOnlineGame(() => void openSelectedGameReview(id))),
+    reviewGame: useEventCallback((id: string) =>
+      unlessOnlineGame(() => void openSelectedGameReview(id))
+    ),
     // After a Lichess game: Play, on its Lichess tab.
     playLichess: useEventCallback(() => {
       useLichessStore.getState().setPlayOpponent("lichess");
@@ -1154,13 +1230,18 @@ export function App() {
     startReview: useEventCallback(() => void startReview()),
     stopReview: useEventCallback(() => void cancelActiveReview()),
     showGame: useEventCallback(() => showGame()),
-    startPuzzle: useEventCallback((config: PuzzleSessionConfig, puzzle: PuzzleSample) => startPuzzle(puzzle, { config })),
-    openGameFromLibrary: useEventCallback((id: string) => unlessOnlineGame(() => void openSavedGameById(id))),
+    startPuzzle: useEventCallback((config: PuzzleSessionConfig, puzzle: PuzzleSample) =>
+      startPuzzle(puzzle, { config })
+    ),
+    openGameFromLibrary: useEventCallback((id: string) =>
+      unlessOnlineGame(() => void openSavedGameById(id))
+    ),
     nextPuzzle: useEventCallback(loadNextPuzzle),
     playEngineFromPuzzle: useEventCallback(playEngineFromCurrentPuzzlePosition),
     // The puzzle card's "Edit set": the Puzzles page with the running set's filters, to start a new set.
     editPuzzleSet: useEventCallback(() => {
-      if (activePuzzleConfig) usePuzzleDraftStore.getState().update(draftFromSessionConfig(activePuzzleConfig));
+      if (activePuzzleConfig)
+        usePuzzleDraftStore.getState().update(draftFromSessionConfig(activePuzzleConfig));
       openPuzzlesPage();
     }),
     reviewCurrentGame: useEventCallback(() => void openSelectedGameReview("current")),
@@ -1175,25 +1256,37 @@ export function App() {
     // "Refresh this decision" (a game's opening comparison): a targeted queue that starts at once.
     // Back returns to the review left (its tab and move are committed first).
     refreshRepertoireDecision: useEventCallback((repertoireId: string, positionKey: string) =>
-      unlessRepertoireBlocked("refresh-decision", () =>
-        openRepertoirePractice(repertoireId, {
-          preset: { mode: "review-due", positionKeys: [positionKey], autoStart: true }
-        })
+      unlessRepertoireBlocked(
+        "refresh-decision",
+        () =>
+          void openRepertoirePractice(repertoireId, {
+            preset: { mode: "review-due", positionKeys: [positionKey], autoStart: true }
+          })
       )
     ),
-    repertoireStageApplied: useEventCallback(() => setRepertoireExtras((extras) => ({ ...extras, stage: null }))),
+    repertoireStageApplied: useEventCallback(() =>
+      setRepertoireExtras((extras) => ({ ...extras, stage: null }))
+    ),
     openRepertoirePractice: useEventCallback((repertoireId: string) =>
       unlessRepertoireBlocked("open-practice", () => void openRepertoirePractice(repertoireId))
     ),
     // "Review now" / "Review due": the setup in Review due over every chapter, whatever the last
     // session's draft was (a Learn new draft would otherwise hide the due decisions).
     reviewRepertoire: useEventCallback((repertoireId: string) =>
-      unlessRepertoireBlocked("open-practice", () =>
-        openRepertoirePractice(repertoireId, { preset: { mode: "review-due", chapterIds: [] } })
+      unlessRepertoireBlocked(
+        "open-practice",
+        () =>
+          void openRepertoirePractice(repertoireId, {
+            preset: { mode: "review-due", chapterIds: [] }
+          })
       )
     ),
-    resumeRepertoirePractice: useEventCallback(({ repertoireId, sessionId }: { repertoireId: string; sessionId: string }) =>
-      unlessRepertoireBlocked("resume-practice", () => void openRepertoirePractice(repertoireId, { sessionId }))
+    resumeRepertoirePractice: useEventCallback(
+      ({ repertoireId, sessionId }: { repertoireId: string; sessionId: string }) =>
+        unlessRepertoireBlocked(
+          "resume-practice",
+          () => void openRepertoirePractice(repertoireId, { sessionId })
+        )
     ),
     practiceRepertoireChapters: useEventCallback((repertoireId: string, chapterIds: string[]) =>
       unlessRepertoireBlocked(
@@ -1214,11 +1307,14 @@ export function App() {
       useAppNoticeStore.getState().show(message);
       openRepertoireHub("replace");
     }),
-    repertoireTabChange: useEventCallback((tab: StudyTab) => setRepertoireExtras((extras) => ({ ...extras, tab }))),
+    repertoireTabChange: useEventCallback((tab: StudyTab) =>
+      setRepertoireExtras((extras) => ({ ...extras, tab }))
+    ),
     // Moving through the tree, switching tabs or flipping updates the entry; it never adds one.
     // Not while Back / Forward is showing a screen: the current entry is still the one being left.
     repertoirePositionChanged: useEventCallback(() => {
-      if (appView === "repertoire-study" && !historyBusy.current) record("replace", historyEntry("repertoire-study"));
+      if (appView === "repertoire-study" && !historyBusy.current)
+        record("replace", historyEntry("repertoire-study"));
     }),
     // A repertoire source link: the saved game on the board at the linked move (no move: the
     // game's start, even when the game is already open at a later move).
@@ -1234,10 +1330,12 @@ export function App() {
         chapterId: result.chapter.id,
         nodeId: REPERTOIRE_ROOT_NODE_ID
       };
-      useAppNoticeStore.getState().show(`Added to ${result.repertoire.name} › ${result.chapter.title}`, {
-        tone: "success",
-        action: { label: "Open chapter", onSelect: () => on.openRepertoireStudy(target) }
-      });
+      useAppNoticeStore
+        .getState()
+        .show(`Added to ${result.repertoire.name} › ${result.chapter.title}`, {
+          tone: "success",
+          action: { label: "Open chapter", onSelect: () => on.openRepertoireStudy(target) }
+        });
     }),
     repertoirePracticeStarted: useEventCallback(practiceSessionStarted),
     repertoirePracticeSetup: useEventCallback(() =>
@@ -1287,7 +1385,14 @@ export function App() {
         puzzleConfig={activePuzzleConfig}
       />
     ),
-    [nextPuzzle.error, nextPuzzle.isPending, on.nextPuzzle, on.playEngineFromPuzzle, on.editPuzzleSet, activePuzzleConfig]
+    [
+      nextPuzzle.error,
+      nextPuzzle.isPending,
+      on.nextPuzzle,
+      on.playEngineFromPuzzle,
+      on.editPuzzleSet,
+      activePuzzleConfig
+    ]
   );
 
   const pageTitles: Partial<Record<AppView, string>> = {
@@ -1311,7 +1416,9 @@ export function App() {
           // The sidebar column eases open/closed; the content panel follows it frame by frame.
           "transition-[grid-template-columns] duration-emphasis ease-standard",
           // rem: the sidebar grows with the type step on big monitors (app.css), like the rest of the UI.
-          sidebarExpanded ? "[--sidebar-width:clamp(12.5rem,17vw,17rem)]" : "[--sidebar-width:3.25rem]"
+          sidebarExpanded
+            ? "[--sidebar-width:clamp(12.5rem,17vw,17rem)]"
+            : "[--sidebar-width:3.25rem]"
         )}
       >
         <AppTitlebar
@@ -1329,16 +1436,24 @@ export function App() {
               onStop={on.stopReview}
             />
           ) : appView === "repertoire-study" && repertoireScreen ? (
-            <RepertoireStudyTitlebar repertoireId={repertoireScreen.repertoireId} onHub={on.repertoireHub} />
+            <RepertoireStudyTitlebar
+              repertoireId={repertoireScreen.repertoireId}
+              onHub={on.repertoireHub}
+            />
           ) : appView === "repertoire-practice" && repertoireScreen ? (
-            <RepertoirePracticeTitlebar repertoireId={repertoireScreen.repertoireId} onHub={on.repertoireHub} />
+            <RepertoirePracticeTitlebar
+              repertoireId={repertoireScreen.repertoireId}
+              onHub={on.repertoireHub}
+            />
           ) : appView === "game" ? (
             <GameTitlebar
               engines={engines.data}
               showAnalysisError={sideTab !== "engine" || focused}
               canAnalyze={canAnalyzeGame}
               onAnalyze={on.analyzePosition}
-              onStopAnalysis={gameMode === "analysis" && desktopApiAvailable ? on.stopLiveAnalysis : null}
+              onStopAnalysis={
+                gameMode === "analysis" && desktopApiAvailable ? on.stopLiveAnalysis : null
+              }
               onReviewGame={on.reviewCurrentGame}
               onPlayAgain={on.playLichess}
               onReviewEngineGame={on.reviewEngineGame}
@@ -1374,7 +1489,9 @@ export function App() {
           onSettings={on.settings}
         />
 
-        <main className={cn(contentPanel, "col-start-2 row-start-2 [view-transition-name:app-content]")}>
+        <main
+          className={cn(contentPanel, "col-start-2 row-start-2 [view-transition-name:app-content]")}
+        >
           {appNotice ? (
             <Notice
               tone={appNoticeTone}
@@ -1404,34 +1521,46 @@ export function App() {
             </Notice>
           ) : null}
           {!desktopApiAvailable ? (
-            <Notice tone="warn" title="Web preview mode" className="mx-(--page-gutter) mt-(--page-gutter-y) w-auto shrink-0">
-              Engines, file dialogs, saved games, downloads and local databases need the desktop app.
+            <Notice
+              tone="warn"
+              title="Web preview mode"
+              className="mx-(--page-gutter) mt-(--page-gutter-y) w-auto shrink-0"
+            >
+              Engines, file dialogs, saved games, downloads and local databases need the desktop
+              app.
             </Notice>
           ) : null}
           <div className="grid min-h-0 flex-1">
             {/* A render error in one page shows a recoverable panel there, not a blank window; the
                 key resets it when you go elsewhere. */}
-            <ErrorBoundary key={appView} title="This page hit an unexpected error" scope={appView} layout="panel">
-            <AppPages
-              view={appView}
-              desktopApiAvailable={desktopApiAvailable}
-              settingsSection={settingsSection}
-              settings={settings}
-              settingsReady={settingsQuery.isSuccess}
-              reviewTab={reviewTab}
-              onReviewTabChange={setReviewTab}
-              openingSide={openingSide}
-              onOpeningSideChange={setOpeningSide}
-              reviewLoading={reviewRouteLoading}
-              sideTab={sideTab}
-              onSideTabChange={setSideTab}
-              canStartAnalysis={
-                desktopApiAvailable && (gameMode === "freeplay" || (gameMode === "puzzle" && puzzleDecided)) && !positionIsEnd
-              }
-              puzzlePanel={puzzlePanel}
-              repertoire={repertoireScreen}
-              on={on}
-            />
+            <ErrorBoundary
+              key={appView}
+              title="This page hit an unexpected error"
+              scope={appView}
+              layout="panel"
+            >
+              <AppPages
+                view={appView}
+                desktopApiAvailable={desktopApiAvailable}
+                settingsSection={settingsSection}
+                settings={settings}
+                settingsReady={settingsQuery.isSuccess}
+                reviewTab={reviewTab}
+                onReviewTabChange={setReviewTab}
+                openingSide={openingSide}
+                onOpeningSideChange={setOpeningSide}
+                reviewLoading={reviewRouteLoading}
+                sideTab={sideTab}
+                onSideTabChange={setSideTab}
+                canStartAnalysis={
+                  desktopApiAvailable &&
+                  (gameMode === "freeplay" || (gameMode === "puzzle" && puzzleDecided)) &&
+                  !positionIsEnd
+                }
+                puzzlePanel={puzzlePanel}
+                repertoire={repertoireScreen}
+                on={on}
+              />
             </ErrorBoundary>
           </div>
         </main>
@@ -1439,29 +1568,28 @@ export function App() {
 
       <PromotionDialog />
       <Suspense fallback={null}>
-      {onboarding.open ? (
-        <OnboardingFlow
-          onFinish={onboarding.finish}
-          onGoHome={on.home}
-        />
-      ) : null}
-      {importOpen ? <PgnImportDialog onClose={on.closeImportDialog} onImported={on.importedGame} /> : null}
-      {addToRepertoire ? (
-        <AddToRepertoireDialog
-          source={addToRepertoire.source}
-          initialScope={addToRepertoire.initialScope}
-          preselect={addToRepertoire.preselect}
-          onClose={on.closeAddToRepertoire}
-          onDone={on.addedToRepertoire}
-        />
-      ) : null}
-      {gameReviewPickerOpen ? (
-        <GameReviewPicker
-          onClose={on.closeReviewPicker}
-          onSelect={on.reviewGame}
-          onImport={on.openImportDialog}
-        />
-      ) : null}
+        {onboarding.open ? (
+          <OnboardingFlow onFinish={onboarding.finish} onGoHome={on.home} />
+        ) : null}
+        {importOpen ? (
+          <PgnImportDialog onClose={on.closeImportDialog} onImported={on.importedGame} />
+        ) : null}
+        {addToRepertoire ? (
+          <AddToRepertoireDialog
+            source={addToRepertoire.source}
+            initialScope={addToRepertoire.initialScope}
+            preselect={addToRepertoire.preselect}
+            onClose={on.closeAddToRepertoire}
+            onDone={on.addedToRepertoire}
+          />
+        ) : null}
+        {gameReviewPickerOpen ? (
+          <GameReviewPicker
+            onClose={on.closeReviewPicker}
+            onSelect={on.reviewGame}
+            onImport={on.openImportDialog}
+          />
+        ) : null}
       </Suspense>
     </BoardFocusContext.Provider>
   );

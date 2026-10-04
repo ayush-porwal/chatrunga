@@ -17,23 +17,20 @@
     "preview": "pnpm --filter @chaturanga/desktop preview",
     "test": "pnpm -r test",
     "test:coverage": "pnpm --filter @chaturanga/shared test:coverage && pnpm --filter @chaturanga/desktop test:coverage",
-    "lint": "eslint .",
+    "lint": "oxlint --deny-warnings",
     "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "dist:mac": "pnpm --filter @chaturanga/desktop dist:mac",
     "generate:piece-css": "node scripts/generate-piece-theme-css.mjs",
     "bench:repertoire": "node scripts/bench-repertoire.mjs"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@tanstack/eslint-plugin-query": "^5.104.0",
+    "@tanstack/eslint-plugin-query": "5.104.0",
     "@types/node": "^25.6.2",
     "@vitest/coverage-v8": "^4.1.5",
-    "eslint": "^10.3.0",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "globals": "^17.6.0",
+    "oxlint": "1.86.0",
+    "oxlint-tsgolint": "7.0.2003",
     "prettier": "^3.8.3",
-    "typescript": "^6.0.3",
-    "typescript-eslint": "^8.59.2"
+    "typescript": "^6.0.3"
   }
 }

@@ -16,6 +16,7 @@ export const REPERTOIRE_SCHEDULER_VERSION = 1;
 export type RepertoireColor = "white" | "black";
 /** Reference chapters are study material only: they never create training cards. */
 export type ChapterKind = "opening" | "reference";
+export const CHAPTER_KINDS: readonly ChapterKind[] = ["opening", "reference"];
 
 /* ------------------------------------------------------------------ repertoires and chapters */
 
@@ -686,7 +687,15 @@ export type RepertoireBackupHistory = {
 export type RepertoireBackupEntry = {
   repertoire: Pick<
     RepertoireSummary,
-    "id" | "name" | "color" | "description" | "tags" | "revision" | "archivedAt" | "createdAt" | "updatedAt"
+    | "id"
+    | "name"
+    | "color"
+    | "description"
+    | "tags"
+    | "revision"
+    | "archivedAt"
+    | "createdAt"
+    | "updatedAt"
   >;
   chapters: RepertoireBackupChapter[];
   decisions: RepertoireDecision[];

@@ -128,7 +128,9 @@ describe("runGameReview analytics", () => {
     reviewGameWithEngine.mockRejectedValueOnce(
       new Error("sf exited unexpectedly (code 9) at /Users/me/engines/sf")
     );
-    await expect(runGameReview(manager as never, input("r-fail"))).rejects.toThrow();
+    await expect(runGameReview(manager as never, input("r-fail"))).rejects.toThrow(
+      /sf exited unexpectedly/
+    );
 
     const terminal = events().filter((event) =>
       ["review_completed", "review_failed", "review_cancelled"].includes(String(event.event))

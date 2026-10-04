@@ -19,7 +19,13 @@ describe("live engine clock", () => {
   });
 
   it("freezes both clocks when the game has stopped", () => {
-    const live = { whiteMs: 60_000, blackMs: 50_000, turnStartedAt: 1_000, sideToMove: "white" as const, stoppedAt: 6_000 };
+    const live = {
+      whiteMs: 60_000,
+      blackMs: 50_000,
+      turnStartedAt: 1_000,
+      sideToMove: "white" as const,
+      stoppedAt: 6_000
+    };
     expect(remainingClockMs(live, "white", 100_000)).toBe(55_000);
     expect(remainingClockMs(live, "black", 100_000)).toBe(50_000);
     expect(remainingClockMs({ ...live, stoppedAt: undefined }, "white", 11_000)).toBe(50_000);

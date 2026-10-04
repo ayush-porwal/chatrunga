@@ -16,7 +16,11 @@ vi.mock("electron", () => ({
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
+  await Promise.all(
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true }))
+  );
 });
 
 async function storePath(): Promise<string> {
@@ -69,7 +73,10 @@ describe("OpenRouterConfigStore", () => {
       decryptString: (value) => value.toString().replace(/^cipher:/, "")
     });
 
-    await Promise.all([store.set({ model: "anthropic/test-model" }), store.set({ apiKey: "overlapping-secret" })]);
+    await Promise.all([
+      store.set({ model: "anthropic/test-model" }),
+      store.set({ apiKey: "overlapping-secret" })
+    ]);
     expect(await store.get()).toEqual({ model: "anthropic/test-model", hasApiKey: true });
     expect(await store.getApiKey()).toBe("overlapping-secret");
   });
@@ -82,7 +89,9 @@ describe("OpenRouterConfigStore", () => {
       decryptString: (value) => value.toString()
     });
 
-    await expect(store.set({ apiKey: "should-not-be-written" })).rejects.toThrow("Secure key storage");
+    await expect(store.set({ apiKey: "should-not-be-written" })).rejects.toThrow(
+      "Secure key storage"
+    );
     expect(await store.get()).toEqual({ model: "anthropic/claude-sonnet-4.6", hasApiKey: false });
   });
 
@@ -103,7 +112,10 @@ describe("OpenRouterConfigStore", () => {
     };
     const reader = new OpenRouterConfigStore(path, secureStorage);
     expect(await reader.get()).toMatchObject({ hasApiKey: true });
-    expect(await reader.set({ model: "model/changed" })).toMatchObject({ hasApiKey: true, model: "model/changed" });
+    expect(await reader.set({ model: "model/changed" })).toMatchObject({
+      hasApiKey: true,
+      model: "model/changed"
+    });
     expect(secureStorage.isEncryptionAvailable).not.toHaveBeenCalled();
     expect(secureStorage.decryptString).not.toHaveBeenCalled();
     expect(secureStorage.encryptString).not.toHaveBeenCalled();

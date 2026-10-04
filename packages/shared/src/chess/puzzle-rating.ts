@@ -6,7 +6,11 @@
 import { GLICKO2_SCALE, glicko2Update, type Glicko2Rating } from "./glicko2";
 
 /** A new solver, as Lichess starts one. */
-export const DEFAULT_PUZZLE_RATING: Glicko2Rating = { rating: 1500, deviation: 500, volatility: 0.09 };
+export const DEFAULT_PUZZLE_RATING: Glicko2Rating = {
+  rating: 1500,
+  deviation: 500,
+  volatility: 0.09
+};
 /** τ of the volatility update. */
 export const PUZZLE_RATING_TAU = 0.75;
 /** The deviation stays within these bounds, and the volatility at most MAX_VOLATILITY. */
@@ -29,7 +33,11 @@ export function isProvisional(rating: Pick<Glicko2Rating, "deviation">): boolean
  * (`lastRatedAt`): φ² + σ²·periods, periods counted in days × RATING_PERIODS_PER_DAY. Unchanged
  * without a previous attempt or when the clock went backwards.
  */
-export function ratingAfterIdle(rating: Glicko2Rating, lastRatedAt: number | null, at: number): Glicko2Rating {
+export function ratingAfterIdle(
+  rating: Glicko2Rating,
+  lastRatedAt: number | null,
+  at: number
+): Glicko2Rating {
   if (lastRatedAt === null || !(at > lastRatedAt)) return rating;
   const periods = ((at - lastRatedAt) / DAY_MS) * RATING_PERIODS_PER_DAY;
   // σ is in the Glicko-2 scale; the deviation in the Glicko one.
@@ -53,7 +61,15 @@ export function rateAttempt(
   const before = ratingAfterIdle(sanitize(rating), lastRatedAt, at);
   const after = glicko2Update(
     before,
-    [{ opponent: { rating: puzzle.rating, deviation: clamp(puzzle.deviation, MIN_DEVIATION, MAX_DEVIATION) }, score: solved ? 1 : 0 }],
+    [
+      {
+        opponent: {
+          rating: puzzle.rating,
+          deviation: clamp(puzzle.deviation, MIN_DEVIATION, MAX_DEVIATION)
+        },
+        score: solved ? 1 : 0
+      }
+    ],
     PUZZLE_RATING_TAU
   );
   return {
@@ -81,7 +97,11 @@ function sanitize(rating: Glicko2Rating): Glicko2Rating {
  * Performance over a group of puzzles, as Lichess's puzzle dashboard computes it: the puzzles'
  * average rating − 500, plus 1000 × the share solved (all solved: average + 500). Null without any.
  */
-export function puzzlePerformance(averagePuzzleRating: number, solved: number, attempts: number): number | null {
+export function puzzlePerformance(
+  averagePuzzleRating: number,
+  solved: number,
+  attempts: number
+): number | null {
   if (attempts <= 0 || !Number.isFinite(averagePuzzleRating)) return null;
   return Math.round(averagePuzzleRating - 500 + (1000 * solved) / attempts);
 }
@@ -111,7 +131,10 @@ const TARGET_MIN = 600;
 const TARGET_MAX = 3000;
 
 /** The rating range of a difficulty around the solver's rating (whole numbers). */
-export function ratingRangeFor(rating: number, difficulty: PuzzleDifficulty): { ratingMin: number; ratingMax: number } {
+export function ratingRangeFor(
+  rating: number,
+  difficulty: PuzzleDifficulty
+): { ratingMin: number; ratingMax: number } {
   const offset = PUZZLE_DIFFICULTIES.find((item) => item.id === difficulty)?.offset ?? 0;
   const base = Number.isFinite(rating) ? rating : DEFAULT_PUZZLE_RATING.rating;
   const target = Math.round(clamp(base + offset, TARGET_MIN, TARGET_MAX));

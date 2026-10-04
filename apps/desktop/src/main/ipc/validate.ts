@@ -3,7 +3,7 @@
  * every payload that reaches the file system, the database or an engine
  * process is checked here and rebuilt from known fields only.
  */
-import { parseSettingValue } from "./settings-values";
+import { parseSettingWrite } from "./settings-values";
 import { isAbsolute } from "node:path";
 import { positionFromFen } from "@chaturanga/shared/chess/position";
 import type {
@@ -54,6 +54,7 @@ import type {
   AnalysePositionsInput,
   CreateEngineInput,
   EngineGoClock,
+  GameReview,
   MaiaRating,
   ProbeEvalInput,
   ReviewGameInput,
@@ -62,13 +63,19 @@ import type {
   StartLiveAnalysisInput,
   UpdateEngineInput
 } from "@chaturanga/shared/types/engine";
-import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
+import {
+  defaultSettings,
+  isSettingKey,
+  settingKeys,
+  type AppSettings
+} from "@chaturanga/shared/types/settings";
 import type { DialogFileFilter } from "@chaturanga/shared/ipc/chaturanga-api";
 import type {
   LichessAiChallengeInput,
   LichessChallengeInput,
   LichessSeekInput
 } from "@chaturanga/shared/types/lichess";
+import { isOneOf, isRecord } from "@chaturanga/shared/types/guards";
 
 const MAX_ID = 200;
 const MAX_PATH = 4096;
@@ -89,7 +96,7 @@ const GAME_SOURCES: readonly GameSource[] = [
 ];
 /** UCI long algebraic move (castling may be king-takes-rook in Chess960 form). */
 const UCI_MOVE = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
-// eslint-disable-next-line no-control-regex
+// oxlint-disable-next-line no-control-regex -- it matches the control characters an input may not contain
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
 type Fields = Record<string, unknown>;
@@ -99,9 +106,8 @@ function fail(label: string, reason: string): never {
 }
 
 export function asObject(value: unknown, label: string): Fields {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    fail(label, "expected an object");
-  return value as Fields;
+  if (!isRecord(value)) fail(label, "expected an object");
+  return value;
 }
 
 export function asString(value: unknown, label: string, maxLength: number = MAX_PATH): string {
@@ -221,8 +227,8 @@ function asEngineArgs(value: unknown): string[] {
 }
 
 function asMaiaRating(value: unknown): MaiaRating {
-  if (!MAIA_RATINGS.includes(value as MaiaRating)) fail("Maia rating", "unsupported rating");
-  return value as MaiaRating;
+  if (!isOneOf(MAIA_RATINGS, value)) fail("Maia rating", "unsupported rating");
+  return value;
 }
 
 /** Fields shared by engine create / update, all optional. */
@@ -371,8 +377,10 @@ const MAX_ANALYSE_POSITIONS = 4;
 
 export function parseAnalysePositionsInput(value: unknown): AnalysePositionsInput {
   const input = asObject(value, "position analysis");
-  if (!Array.isArray(input.positions) || !input.positions.length) fail("position analysis", "positions must be a non-empty array");
-  if (input.positions.length > MAX_ANALYSE_POSITIONS) fail("position analysis", "too many positions");
+  if (!Array.isArray(input.positions) || !input.positions.length)
+    fail("position analysis", "positions must be a non-empty array");
+  if (input.positions.length > MAX_ANALYSE_POSITIONS)
+    fail("position analysis", "too many positions");
   // Clamped rather than refused, like a probe: one explanation never needs a minute per position.
   const moveTimeMs = Math.min(asOptionalPositive(input.moveTimeMs, "moveTimeMs") || 1000, 60_000);
   return {
@@ -383,7 +391,13 @@ export function parseAnalysePositionsInput(value: unknown): AnalysePositionsInpu
       const position = asObject(raw, `position ${index}`);
       return {
         fen: asFen(position.fen, `position ${index} FEN`),
-        multipv: asOptionalPositive(position.multipv, `position ${index} multipv`, SEARCH_LIMITS.multipv, true) || 1
+        multipv:
+          asOptionalPositive(
+            position.multipv,
+            `position ${index} multipv`,
+            SEARCH_LIMITS.multipv,
+            true
+          ) || 1
       };
     })
   };
@@ -396,16 +410,18 @@ export function parseGameListQuery(value: unknown): GameListQuery {
   const input = value === undefined ? {} : asObject(value, "game list query");
   const cursor = nullable(input.cursor, (raw) => {
     const fields = asObject(raw, "game list cursor");
-    return { updatedAt: asFiniteNumber(fields.updatedAt, "cursor time"), id: asId(fields.id, "cursor id") };
+    return {
+      updatedAt: asFiniteNumber(fields.updatedAt, "cursor time"),
+      id: asId(fields.id, "cursor id")
+    };
   });
-  if (input.filter !== undefined && !GAME_LIST_FILTERS.includes(input.filter as GameListFilter)) {
-    fail("game list filter", "unknown filter");
-  }
+  const filter = input.filter ?? "all";
+  if (!isOneOf(GAME_LIST_FILTERS, filter)) fail("game list filter", "unknown filter");
   return {
     cursor: cursor ?? null,
     limit: optional(input.limit, (limit) => asWholeNumber(limit, "page size")),
     search: optional(input.search, (search) => asString(search, "search", GAME_SEARCH_MAX_LENGTH)),
-    filter: (input.filter as GameListFilter | undefined) ?? "all",
+    filter,
     excludeId: nullable(input.excludeId, (id) => asId(id, "game id")) ?? null
   };
 }
@@ -417,18 +433,23 @@ export function parseGameListQuery(value: unknown): GameListQuery {
  */
 export function parseSaveGameInput(value: unknown): SaveGameInput {
   const input = asObject(value, "game");
-  if (!GAME_SOURCES.includes(input.source as GameSource)) fail("game", "unknown source");
+  const source = input.source;
+  if (!isOneOf(GAME_SOURCES, source)) fail("game", "unknown source");
   if (!Array.isArray(input.moveTree)) fail("game", "moveTree must be an array");
   const headers = parseGameHeaders(input.headers ?? {});
   if (input.review !== undefined && input.review !== null) asObject(input.review, "game review");
-  asString(input.pgn, "PGN", MAX_PGN_BYTES);
-  asString(input.rootFen, "root FEN", 128);
-  asString(input.currentFen, "current FEN", 128);
   return {
-    ...(input as SaveGameInput),
     id: nullable(input.id, (id) => asId(id, "game id")),
+    source,
     headers,
-    currentNodeId: nullable(input.currentNodeId, (id) => asId(id, "node id"))
+    pgn: asString(input.pgn, "PGN", MAX_PGN_BYTES),
+    rootFen: asString(input.rootFen, "root FEN", 128),
+    currentFen: asString(input.currentFen, "current FEN", 128),
+    currentNodeId: nullable(input.currentNodeId, (id) => asId(id, "node id")),
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- stored as JSON and checked node by node when the game is loaded (repositories.ts), not on every autosave
+    moveTree: input.moveTree as MoveNode[],
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- stored as JSON and checked when loaded, like the tree
+    review: input.review as GameReview | null | undefined
   };
 }
 
@@ -472,8 +493,8 @@ export function parsePgnText(value: unknown): string {
 const SETTING_KEYS = new Set(Object.keys(defaultSettings));
 
 export function parseSettingKey(value: unknown): keyof AppSettings {
-  if (typeof value !== "string" || !SETTING_KEYS.has(value)) fail("setting", "unknown key");
-  return value as keyof AppSettings;
+  if (typeof value !== "string" || !isSettingKey(value)) fail("setting", "unknown key");
+  return value;
 }
 
 /** Several settings at once (known keys only; at least one). */
@@ -484,7 +505,12 @@ export function parseSettingsPatch(value: unknown): Partial<Record<keyof AppSett
   const patch: Partial<Record<keyof AppSettings, unknown>> = {};
   for (const key of keys) {
     const settingKey = parseSettingKey(key);
-    patch[settingKey] = parseSettingValue(settingKey, input[key]);
+    const written = parseSettingWrite(settingKey, input[key]);
+    // A presentation named in the patch itself wins over one a legacy piece set id implies.
+    for (const writtenKey of settingKeys(written)) {
+      if (writtenKey === settingKey || !(writtenKey in input))
+        patch[writtenKey] = written[writtenKey];
+    }
   }
   return patch;
 }
@@ -550,11 +576,16 @@ function asTimestamp(value: unknown, label: string): number {
 export function parseRecordPuzzleAttemptInput(value: unknown): RecordPuzzleAttemptInput {
   const input = asObject(value, "puzzle attempt");
   const outcome = input.outcome;
-  if (outcome !== "solved" && outcome !== "failed") fail("puzzle outcome", "expected solved or failed");
+  if (outcome !== "solved" && outcome !== "failed")
+    fail("puzzle outcome", "expected solved or failed");
   // Lichess puzzle ratings and deviations: anything a real puzzle has, with room to spare.
-  const rating = nullable(input.puzzleRating, (rating) => asNumberInRange(rating, "puzzle rating", 0, 5000)) ?? null;
+  const rating =
+    nullable(input.puzzleRating, (rating) => asNumberInRange(rating, "puzzle rating", 0, 5000)) ??
+    null;
   const deviation =
-    nullable(input.puzzleRatingDeviation, (deviation) => asNumberInRange(deviation, "puzzle rating deviation", 0, 1000)) ?? null;
+    nullable(input.puzzleRatingDeviation, (deviation) =>
+      asNumberInRange(deviation, "puzzle rating deviation", 0, 1000)
+    ) ?? null;
   return {
     attemptId: asId(input.attemptId, "attempt id"),
     puzzleId: asId(input.puzzleId, "puzzle id"),
@@ -574,7 +605,9 @@ export function parseRecordPuzzleAttemptInput(value: unknown): RecordPuzzleAttem
 
 /** How many entries a puzzle statistics list returns (1–`max`, else `fallback`). */
 export function parseListLimit(value: unknown, fallback: number, max: number): number {
-  return value === undefined || value === null ? fallback : asIntegerInRange(value, "limit", 1, max);
+  return value === undefined || value === null
+    ? fallback
+    : asIntegerInRange(value, "limit", 1, max);
 }
 
 /** Lichess game and challenge ids: 8 characters (12 for a player's full game id). */
@@ -816,7 +849,9 @@ export function parseSaveChapterInput(value: unknown): SaveChapterInput {
       nodeCount: Math.max(chapter.tree.length - 1, 0),
       dueCount: 0,
       headers: asTextRecord(chapter.headers ?? {}, "chapter headers", 64, MAX_HEADER),
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the service replays and checks every node (chapter-validation.ts) before saving
       tree: chapter.tree as MoveNode[],
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- checked against the tree with it (chapter-validation.ts)
       nodeMeta: asObject(chapter.nodeMeta ?? {}, "chapter nodeMeta") as Record<
         string,
         RepertoireNodeMeta
@@ -1137,6 +1172,7 @@ export function parseAddFromGameInput(value: unknown): AddFromGameInput {
       gameId: nullable(source.gameId, (id) => asId(id, "source gameId")) ?? null,
       headers: asTextRecord(source.headers ?? {}, "source headers", 200, MAX_HEADER),
       rootFen: asFen(source.rootFen, "source rootFen"),
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the service replays and checks every node before anything is copied
       tree: source.tree as MoveNode[],
       nodeId: nullable(source.nodeId, (id) => asId(id, "source nodeId")) ?? null
     },

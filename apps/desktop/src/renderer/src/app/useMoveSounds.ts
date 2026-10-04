@@ -35,14 +35,22 @@ export function useMoveSounds({ enabled, volume }: { enabled: boolean; volume: n
  * forwards, the undone node when stepping back, else the first move below `fromNodeId` on the
  * path to `toNodeId`. Null when the two nodes are not on one line.
  */
-export function movedNodeBetween(moveTree: readonly MoveNode[], fromNodeId: string, toNodeId: string): MoveNode | null {
+export function movedNodeBetween(
+  moveTree: readonly MoveNode[],
+  fromNodeId: string,
+  toNodeId: string
+): MoveNode | null {
   const byId = new Map(moveTree.map((node) => [node.id, node]));
   const to = byId.get(toNodeId);
   if (to?.parentId === fromNodeId) return to;
   const from = byId.get(fromNodeId);
   if (from?.parentId === toNodeId) return from;
   const seen = new Set<string>();
-  for (let cursor = to; cursor && !seen.has(cursor.id); cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined) {
+  for (
+    let cursor = to;
+    cursor && !seen.has(cursor.id);
+    cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined
+  ) {
     seen.add(cursor.id);
     if (cursor.parentId === fromNodeId) return cursor;
   }
@@ -60,7 +68,11 @@ export function pickSound(input: {
     const winner = input.result === "1-0" ? "white" : input.result === "0-1" ? "black" : null;
     if (!winner) return "draw";
     // Against an engine the user plays the other side; otherwise the side at the bottom.
-    const userColor = input.engineSide ? (input.engineSide === "white" ? "black" : "white") : input.orientation;
+    const userColor = input.engineSide
+      ? input.engineSide === "white"
+        ? "black"
+        : "white"
+      : input.orientation;
     return winner === userColor ? "victory" : "defeat";
   }
   if (input.san.includes("+") || input.san.includes("#")) return "check";

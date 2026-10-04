@@ -66,7 +66,10 @@ function remember(key: string | null, lines: EngineInfo[]): void {
 }
 
 /** Only the remembered analysis search's own lines are kept (not an engine game's, under its key). */
-function rememberable(state: Pick<AnalysisStore, "resultKey" | "resultSearchId">, infos: readonly EngineInfo[]): boolean {
+function rememberable(
+  state: Pick<AnalysisStore, "resultKey" | "resultSearchId">,
+  infos: readonly EngineInfo[]
+): boolean {
   return Boolean(state.resultKey) && infos.every((info) => info.searchId === state.resultSearchId);
 }
 
@@ -93,7 +96,9 @@ function mergeInfos(
     if (earlier && (info.depth ?? 0) < (previous.depth ?? 0)) continue;
     byLine.set(key, previous ? { ...previous, ...info } : info);
   }
-  const next = [...byLine.values()].sort((left, right) => (left.multipv ?? 1) - (right.multipv ?? 1));
+  const next = [...byLine.values()].sort(
+    (left, right) => (left.multipv ?? 1) - (right.multipv ?? 1)
+  );
   return { latestInfo: infos[infos.length - 1] ?? null, topLines: next, status: "thinking" };
 }
 
@@ -121,7 +126,10 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
   restartSearch: () => set((state) => ({ searchEpoch: state.searchEpoch + 1 })),
   boardSearchEpoch: 0,
   restartBoardSearch: () =>
-    set((state) => ({ searchEpoch: state.searchEpoch + 1, boardSearchEpoch: state.searchEpoch + 1 })),
+    set((state) => ({
+      searchEpoch: state.searchEpoch + 1,
+      boardSearchEpoch: state.searchEpoch + 1
+    })),
   restartFresh: () =>
     set((state) => {
       if (state.resultKey) results.delete(state.resultKey);

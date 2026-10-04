@@ -2,7 +2,7 @@ import { app } from "electron";
 import { constants, createWriteStream, existsSync } from "node:fs";
 import { copyFile, link, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { Readable, Transform } from "node:stream";
+import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import {
@@ -16,7 +16,12 @@ import { externalDatabaseRepository } from "../db/repositories";
 import { errorMessage, logger } from "../logger";
 import { datasetDir, relocatedDatasetPath } from "./dataset-location";
 import { InvalidDatasetError, isHtmlContentType, validateDataset } from "./dataset-validation";
-import { rowKindForSource, sampleFromLichessRow, sampleFromPositionRow, type PuzzleRowKind } from "./puzzle-rows";
+import {
+  rowKindForSource,
+  sampleFromLichessRow,
+  sampleFromPositionRow,
+  type PuzzleRowKind
+} from "./puzzle-rows";
 import {
   ScanCancelledError,
   ScanWorkerError,
@@ -26,6 +31,8 @@ import {
   type ScanJob,
   type ScanResult
 } from "./puzzle-scan";
+import { errorCode } from "../system-error";
+import { readableFromBody } from "../web-stream";
 
 const PROGRESS_INTERVAL_MS = 120;
 /** A download with no data for this long is abandoned (its `.part` file stays for a resume). */
@@ -42,7 +49,7 @@ const MAX_POOLS = 6;
 type ProgressSink = (progress: DatabaseDownloadProgress) => void;
 
 function isMissingFile(error: unknown): boolean {
-  return (error as NodeJS.ErrnoException)?.code === "ENOENT";
+  return errorCode(error) === "ENOENT";
 }
 
 /**
@@ -53,7 +60,10 @@ async function onDisk(database: InstalledDatabase): Promise<InstalledDatabase | 
   // An install of a new copy that stopped before it was registered: the registered copy comes back
   // (the new one may be on disk in its place).
   const settled = existsSync(installMarkerFor(database.filePath))
-    ? await settleBackup(database.filePath, database).then(() => true, () => false)
+    ? await settleBackup(database.filePath, database).then(
+        () => true,
+        () => false
+      )
     : true;
   try {
     await stat(database.filePath);
@@ -62,11 +72,20 @@ async function onDisk(database: InstalledDatabase): Promise<InstalledDatabase | 
     if (!isMissingFile(error)) throw error;
   }
   // Missing because an install was interrupted mid-swap: the installed file is still in its `.bak`.
-  const restored = settled && (await settleBackup(database.filePath, database).then(() => true, () => false));
+  const restored =
+    settled &&
+    (await settleBackup(database.filePath, database).then(
+      () => true,
+      () => false
+    ));
   if (existsSync(database.filePath)) return database;
   // An interrupted install couldn't be settled now (in use, no permission): keep the entry, so a
   // later listing tries again rather than forgetting a dataset that is still on disk.
-  if (!restored && (existsSync(backupPathFor(database.filePath)) || existsSync(installMarkerFor(database.filePath)))) {
+  if (
+    !restored &&
+    (existsSync(backupPathFor(database.filePath)) ||
+      existsSync(installMarkerFor(database.filePath)))
+  ) {
     return null;
   }
   const moved = relocatedDatasetPath(database.filePath, app.getPath("userData"));
@@ -98,7 +117,10 @@ async function fileSize(path: string): Promise<number> {
 }
 
 /** Downloads in flight, per source: a second request for the same database joins the first. */
-const inFlight = new Map<string, { promise: Promise<InstalledDatabase>; controller: AbortController }>();
+const inFlight = new Map<
+  string,
+  { promise: Promise<InstalledDatabase>; controller: AbortController }
+>();
 /** Removals in progress, per source: a download of that source starts only once its removal is done. */
 const removals = new Map<string, Promise<void>>();
 /** The latest progress of each running download, for a page opened while it runs. */
@@ -147,7 +169,10 @@ class DownloadCancelledError extends Error {
  * quit, e.g. to install an update, or the network dropped) resumes from where it stopped — but only
  * a partial whose server version (ETag / Last-Modified) was recorded, so two versions never mix.
  */
-export function downloadDatabase(sourceId: string, onProgress: ProgressSink): Promise<InstalledDatabase> {
+export function downloadDatabase(
+  sourceId: string,
+  onProgress: ProgressSink
+): Promise<InstalledDatabase> {
   const running = inFlight.get(sourceId);
   if (running) return running.promise;
   const controller = new AbortController();
@@ -173,7 +198,11 @@ const IDENTITY = { "Accept-Encoding": "identity" };
 /** The server's file didn't match the partial download: start that source over. */
 const RESTART = Symbol("restart");
 
-async function runDownload(sourceId: string, onProgress: ProgressSink, signal: AbortSignal): Promise<InstalledDatabase> {
+async function runDownload(
+  sourceId: string,
+  onProgress: ProgressSink,
+  signal: AbortSignal
+): Promise<InstalledDatabase> {
   const source = externalDatabaseSources.find((item) => item.id === sourceId);
   if (!source) throw new Error("Database source not found");
   const dir = datasetDir(app.getPath("userData"));
@@ -197,7 +226,14 @@ async function runDownload(sourceId: string, onProgress: ProgressSink, signal: A
   };
   const aborted = AbortSignal.any([signal, stall.signal]);
   // Shown (with Cancel) right away, before the connection is even made.
-  onProgress({ sourceId: source.id, downloadedBytes: 0, totalBytes: null, percent: null, state: "downloading", message: "Connecting…" });
+  onProgress({
+    sourceId: source.id,
+    downloadedBytes: 0,
+    totalBytes: null,
+    percent: null,
+    state: "downloading",
+    message: "Connecting…"
+  });
 
   try {
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -208,7 +244,7 @@ async function runDownload(sourceId: string, onProgress: ProgressSink, signal: A
     }
     throw new Error("The download couldn't be resumed. Try again later.");
   } catch (error) {
-    const reason = aborted.aborted ? aborted.reason : error;
+    const reason: unknown = aborted.aborted ? aborted.reason : error;
     onProgress({
       sourceId: source.id,
       downloadedBytes: 0,
@@ -234,7 +270,10 @@ async function runDownload(sourceId: string, onProgress: ProgressSink, signal: A
     const response = await fetch(
       current.url,
       offset
-        ? { headers: { ...IDENTITY, Range: `bytes=${offset}-`, "If-Range": validator }, signal: aborted }
+        ? {
+            headers: { ...IDENTITY, Range: `bytes=${offset}-`, "If-Range": validator },
+            signal: aborted
+          }
         : { headers: IDENTITY, signal: aborted }
     );
     touch();
@@ -290,7 +329,9 @@ async function runDownload(sourceId: string, onProgress: ProgressSink, signal: A
             sourceId: current.id,
             downloadedBytes,
             totalBytes,
-            percent: totalBytes ? Math.min(99, Math.round((downloadedBytes / totalBytes) * 100)) : null,
+            percent: totalBytes
+              ? Math.min(99, Math.round((downloadedBytes / totalBytes) * 100))
+              : null,
             state: "downloading"
           });
         }
@@ -300,7 +341,7 @@ async function runDownload(sourceId: string, onProgress: ProgressSink, signal: A
 
     // On failure the `.part` file stays, so the next attempt resumes instead of starting over.
     await pipeline(
-      Readable.fromWeb(response.body as never),
+      readableFromBody(response.body),
       meter,
       createWriteStream(partPath, { flags: resumed ? "a" : "w" }),
       { signal: aborted }
@@ -394,7 +435,11 @@ async function finishDownload(
       await unlink(markerPath).catch(() => undefined);
     } catch (restoreError) {
       // The marker and `.bak` stay: the next download or listing undoes the swap (see `settleBackup`).
-      logger.warn("databases", `restoring ${source.name} after a failed install failed:`, errorMessage(restoreError));
+      logger.warn(
+        "databases",
+        `restoring ${source.name} after a failed install failed:`,
+        errorMessage(restoreError)
+      );
     }
     throw error;
   }
@@ -429,17 +474,25 @@ async function keepAside(filePath: string, backupPath: string): Promise<void> {
  * (deleted). Run before each download of that file (downloads of one source never overlap) and by
  * `onDisk`.
  */
-async function settleBackup(filePath: string, registered: Pick<InstalledDatabase, "fileSizeBytes"> | null): Promise<void> {
+async function settleBackup(
+  filePath: string,
+  registered: Pick<InstalledDatabase, "fileSizeBytes"> | null
+): Promise<void> {
   const backupPath = backupPathFor(filePath);
   const markerPath = installMarkerFor(filePath);
   const partPath = `${filePath}.part`;
   const marked = existsSync(markerPath);
   const newSize = marked ? Number(await readFile(markerPath, "utf8")) : NaN;
   const committed =
-    marked && registered !== null && registered.fileSizeBytes === newSize && !existsSync(partPath) && (await fileSize(filePath)) === newSize;
+    marked &&
+    registered !== null &&
+    registered.fileSizeBytes === newSize &&
+    !existsSync(partPath) &&
+    (await fileSize(filePath)) === newSize;
   const interrupted = marked && !committed;
   // Before the swap the new copy is the `.part`; after it, the `.part` is gone and the file is the new copy.
-  if (interrupted && !existsSync(partPath) && existsSync(filePath)) await rename(filePath, partPath);
+  if (interrupted && !existsSync(partPath) && existsSync(filePath))
+    await rename(filePath, partPath);
   if (existsSync(backupPath)) {
     if (existsSync(filePath)) await unlink(backupPath).catch(() => undefined);
     else await rename(backupPath, filePath);
@@ -466,7 +519,13 @@ export async function removeDatabase(id: string): Promise<void> {
     await previous?.catch(() => undefined);
     await running?.promise.catch(() => undefined);
     // The partial files first: if one can't go, the dataset itself (and its entry) are still intact.
-    const paths = [`${database.filePath}.part.validator`, `${database.filePath}.part`, backupPathFor(database.filePath), installMarkerFor(database.filePath), database.filePath];
+    const paths = [
+      `${database.filePath}.part.validator`,
+      `${database.filePath}.part`,
+      backupPathFor(database.filePath),
+      installMarkerFor(database.filePath),
+      database.filePath
+    ];
     for (const path of paths) {
       await unlink(path).catch((error: unknown) => {
         if (!isMissingFile(error)) throw error;
@@ -546,7 +605,9 @@ export function setPuzzleScanner(next: PuzzleScanner | null): void {
 function startScan(job: ScanJob): RunningScan {
   const running = scanner(job);
   let stop: () => void = () => undefined;
-  const stopped = new Promise<never>((_, reject) => (stop = () => reject(new ScanCancelledError())));
+  const stopped = new Promise<never>(
+    (_, reject) => (stop = () => reject(new ScanCancelledError()))
+  );
   return {
     result: Promise.race([running.result, stopped]),
     cancel: () => {
@@ -558,13 +619,29 @@ function startScan(job: ScanJob): RunningScan {
 
 /** Per database, file version (a replaced file is a new pool) and filters. */
 function poolKey(input: PuzzleSampleInput, fileVersion: string): string {
-  return JSON.stringify([input.databaseId, fileVersion, input.lichess ?? null, input.position ?? null, input.ids ?? null]);
+  return JSON.stringify([
+    input.databaseId,
+    fileVersion,
+    input.lichess ?? null,
+    input.position ?? null,
+    input.ids ?? null
+  ]);
 }
 
 function poolFor(key: string): SamplePool {
   const existing = pools.get(key);
   if (existing) return existing;
-  const pool: SamplePool = { key, rows: [], all: null, interim: [], quick: new Set(), fullJob: null, full: null, queued: false, fullFailedAt: null };
+  const pool: SamplePool = {
+    key,
+    rows: [],
+    all: null,
+    interim: [],
+    quick: new Set(),
+    fullJob: null,
+    full: null,
+    queued: false,
+    fullFailedAt: null
+  };
   pools.set(key, pool);
   // Oldest filter sets go first (their scans stop).
   for (const oldKey of [...pools.keys()]) {
@@ -585,7 +662,9 @@ function dropPool(key: string): void {
 }
 
 function dropPools(databaseId: string): void {
-  for (const key of [...pools.keys()]) if (JSON.parse(key)[0] === databaseId) dropPool(key);
+  // Pool keys are JSON arrays that start with the database id (see poolKey).
+  const prefix = `${JSON.stringify([databaseId]).slice(0, -1)},`;
+  for (const key of [...pools.keys()]) if (key.startsWith(prefix)) dropPool(key);
 }
 
 /** A request for other filters: earlier requests' quick scans stop (their whole-file scans go on). */
@@ -645,7 +724,10 @@ function pumpFullScans(): void {
 }
 
 /** Takes a row that makes a puzzle from the pool: its whole-file sample first, else the interim one. */
-function serveFromPool(pool: SamplePool, build: (row: string[]) => PuzzleSample | null): PuzzleSample | null {
+function serveFromPool(
+  pool: SamplePool,
+  build: (row: string[]) => PuzzleSample | null
+): PuzzleSample | null {
   let sample = takeFromPool(pool, build);
   if (!sample && pool.all) {
     // Every match is known: serve them again (the excluded ones are skipped).
@@ -657,11 +739,16 @@ function serveFromPool(pool: SamplePool, build: (row: string[]) => PuzzleSample 
 
 /** What a failed scan means for the person asking for a puzzle. */
 function sampleError(database: InstalledDatabase, error: unknown): Error {
-  if (error instanceof ScanCancelledError) return new Error("This puzzle search was replaced by a newer one.");
+  if (error instanceof ScanCancelledError)
+    return new Error("This puzzle search was replaced by a newer one.");
   if (error instanceof ScanWorkerError) {
-    return new Error(`Couldn't search ${database.name} for puzzles: ${error.message}. Try again, or restart Chaturanga if it keeps happening.`);
+    return new Error(
+      `Couldn't search ${database.name} for puzzles: ${error.message}. Try again, or restart Chaturanga if it keeps happening.`
+    );
   }
-  return new Error(`Couldn't read ${database.name}: ${errorMessage(error)}. Download the database again.`);
+  return new Error(
+    `Couldn't read ${database.name}: ${errorMessage(error)}. Download the database again.`
+  );
 }
 
 /**
@@ -694,7 +781,11 @@ export async function samplePuzzle(input: PuzzleSampleInput): Promise<PuzzleSamp
   };
   const build = (row: string[]) => {
     try {
-      const sample = (kind === "lichess" ? sampleFromLichessRow : sampleFromPositionRow)(database, row, input);
+      const sample = (kind === "lichess" ? sampleFromLichessRow : sampleFromPositionRow)(
+        database,
+        row,
+        input
+      );
       return sample && !excluded.has(sample.id) ? sample : null;
     } catch {
       return null; // Malformed row (e.g. an illegal FEN): skip it.
@@ -714,7 +805,11 @@ export async function samplePuzzle(input: PuzzleSampleInput): Promise<PuzzleSamp
       result = await quick.result;
     } catch (error) {
       if (!(error instanceof ScanCancelledError)) {
-        logger.warn("databases", `scanning ${database.name} for puzzles failed:`, errorMessage(error));
+        logger.warn(
+          "databases",
+          `scanning ${database.name} for puzzles failed:`,
+          errorMessage(error)
+        );
       }
       throw sampleError(database, error);
     }
@@ -744,7 +839,10 @@ function fillPool(pool: SamplePool, result: ScanResult): void {
 }
 
 /** Takes random rows out of the pool until one makes a puzzle (excluded or broken rows are dropped). */
-function takeFromPool(pool: Pick<SamplePool, "rows">, build: (row: string[]) => PuzzleSample | null): PuzzleSample | null {
+function takeFromPool(
+  pool: Pick<SamplePool, "rows">,
+  build: (row: string[]) => PuzzleSample | null
+): PuzzleSample | null {
   while (pool.rows.length) {
     const index = Math.floor(Math.random() * pool.rows.length);
     const [row] = pool.rows.splice(index, 1);

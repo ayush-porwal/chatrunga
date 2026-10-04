@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { historyShortcut } from "./useHistoryShortcuts";
 
-const key = (key: string, mods: Partial<Record<"metaKey" | "ctrlKey" | "altKey" | "shiftKey", boolean>> = {}) => ({
+const key = (
+  key: string,
+  mods: Partial<Record<"metaKey" | "ctrlKey" | "altKey" | "shiftKey", boolean>> = {}
+) => ({
   key,
   metaKey: false,
   ctrlKey: false,

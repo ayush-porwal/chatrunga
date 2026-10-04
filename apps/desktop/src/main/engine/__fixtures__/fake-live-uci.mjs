@@ -41,7 +41,8 @@ createInterface({ input: process.stdin }).on("line", (raw) => {
   if (line.startsWith("position ")) positionMoves = line.split(" moves ")[1] ?? "";
   if (line === "uci") {
     out("id name Fake live");
-    for (const name of ["Threads", "Hash", "MultiPV"]) out(`option name ${name} type spin default 1 min 1 max 512`);
+    for (const name of ["Threads", "Hash", "MultiPV"])
+      out(`option name ${name} type spin default 1 min 1 max 512`);
     if (mode === "slow-start") setTimeout(() => out("uciok"), 10_000);
     else out("uciok");
   } else if (line === "isready") out("readyok");
@@ -50,10 +51,13 @@ createInterface({ input: process.stdin }).on("line", (raw) => {
     const lines = mode === "lines" ? (LINES[positionMoves] ?? []) : null;
     timer = setInterval(() => {
       depth += 1;
-      if (!lines) out(`info depth ${depth} multipv 1 score cp 20 nodes ${depth * 100} pv e2e4 e7e5`);
+      if (!lines)
+        out(`info depth ${depth} multipv 1 score cp 20 nodes ${depth * 100} pv e2e4 e7e5`);
       else if (!lines.length) out(`info depth ${depth} multipv 1 score cp 0 nodes ${depth * 100}`);
       lines?.forEach((pv, index) =>
-        out(`info depth ${depth} multipv ${index + 1} score cp ${30 - index * 25} nodes ${depth * 100} pv ${pv}`)
+        out(
+          `info depth ${depth} multipv ${index + 1} score cp ${30 - index * 25} nodes ${depth * 100} pv ${pv}`
+        )
       );
     }, 5);
   } else if (line.startsWith("go")) {

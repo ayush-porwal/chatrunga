@@ -81,7 +81,8 @@ function puzzleTask(payload: PuzzleInsightPayload): string {
     return `${mistake.san} is checkmate too: say so, and explain the idea of the line the puzzle expected (${mistake.solutionSan}) now.`;
   }
   if (mistake.ends) {
-    const result = mistake.ends === "stalemate" ? "stalemates your opponent" : "draws the game at once";
+    const result =
+      mistake.ends === "stalemate" ? "stalemates your opponent" : "draws the game at once";
     return `${mistake.san} ${result}, throwing the win away: explain why, and the idea of the solution now.`;
   }
   return `Explain why ${mistake.san} does not work and the idea of the solution now.`;
@@ -90,13 +91,23 @@ function puzzleTask(payload: PuzzleInsightPayload): string {
 /** Every SAN move the explanation may mention. */
 export function puzzleGroundedSanTokens(payload: PuzzleInsightPayload): Set<string> {
   const { engine, mistake, puzzle } = payload;
-  const tokens = new Set<string>([...puzzle.solutionSan, engine.bestMoveSan, ...engine.bestLineSan]);
+  const tokens = new Set<string>([
+    ...puzzle.solutionSan,
+    engine.bestMoveSan,
+    ...engine.bestLineSan
+  ]);
   for (const alternative of engine.alternatives ?? []) {
     tokens.add(alternative.san);
     for (const san of alternative.lineSan) tokens.add(san);
   }
   if (mistake) {
-    for (const san of [mistake.san, mistake.solutionSan, ...mistake.playedBeforeSan, ...mistake.refutationSan]) tokens.add(san);
+    for (const san of [
+      mistake.san,
+      mistake.solutionSan,
+      ...mistake.playedBeforeSan,
+      ...mistake.refutationSan
+    ])
+      tokens.add(san);
   }
   for (const token of sanTokensInTexts(ideaFactTexts(payload.ideas))) tokens.add(token);
   return tokens;
@@ -105,10 +116,19 @@ export function puzzleGroundedSanTokens(payload: PuzzleInsightPayload): Set<stri
 function puzzleGrounding(payload: PuzzleInsightPayload): CommentaryGrounding {
   const fens = [payload.puzzle.fen];
   if (payload.mistake) fens.push(payload.mistake.fenBefore, payload.mistake.fenAfter);
-  return groundingFrom({ san: puzzleGroundedSanTokens(payload), texts: ideaFactTexts(payload.ideas), fens });
+  return groundingFrom({
+    san: puzzleGroundedSanTokens(payload),
+    texts: ideaFactTexts(payload.ideas),
+    fens
+  });
 }
 
 /** Parse + validate a raw provider answer against the puzzle's facts (same rules as review commentary). */
-export function validatePuzzleProse(raw: string, payload: PuzzleInsightPayload): CommentaryValidationResult {
-  return validateGroundedParts(parseCoachResponse(raw), payload.commentaryDetail, () => puzzleGrounding(payload));
+export function validatePuzzleProse(
+  raw: string,
+  payload: PuzzleInsightPayload
+): CommentaryValidationResult {
+  return validateGroundedParts(parseCoachResponse(raw), payload.commentaryDetail, () =>
+    puzzleGrounding(payload)
+  );
 }

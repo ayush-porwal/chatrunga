@@ -11,6 +11,7 @@ import {
 import { fenAfterUci } from "./position";
 import { nodeMetaOf } from "./repertoire-index";
 import { positionKey } from "./repertoire-position";
+import { nullPrototypeRecord } from "../types/record";
 
 export type MergeIncoming = {
   rootFen: string;
@@ -98,12 +99,12 @@ export function mergeIntoChapter(
   const root = byId.get(REPERTOIRE_ROOT_NODE_ID);
   if (!root) throw new Error(`Invalid chapter: node "${REPERTOIRE_ROOT_NODE_ID}" is missing`);
 
-  const nodeMeta: Record<string, RepertoireNodeMeta> = Object.create(null);
+  const nodeMeta: Record<string, RepertoireNodeMeta> = nullPrototypeRecord();
   for (const [id, meta] of Object.entries(existing.nodeMeta)) nodeMeta[id] = { ...meta };
   const chapterHasStart = Object.values(existing.nodeMeta).some((meta) => meta.trainingStart);
   const upgrades = incoming.upgradeNodeIds ? new Set(incoming.upgradeNodeIds) : null;
   const nextId = idGenerator(tree);
-  const idMap: Record<string, string> = Object.create(null);
+  const idMap: Record<string, string> = nullPrototypeRecord();
   let added = 0;
   let alreadyPresent = 0;
 

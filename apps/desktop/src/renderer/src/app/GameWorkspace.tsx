@@ -5,7 +5,11 @@ import { IconButton } from "@/components/ui/icon-button";
 import { AnalysisSettingsDialog } from "../features/analysis/AnalysisSettingsDialog";
 import { useShallow } from "zustand/react/shallow";
 import { QualityBadge } from "@/components/ui/quality-badge";
-import { SegmentedControl, tabPanelProps, type SegmentedOption } from "@/components/ui/segmented-control";
+import {
+  SegmentedControl,
+  tabPanelProps,
+  type SegmentedOption
+} from "@/components/ui/segmented-control";
 import { SideDot } from "@/components/ui/side-dot";
 import { Stat, StatGroup } from "@/components/ui/stat";
 import { positionStatus } from "@/lib/position-status";
@@ -28,7 +32,9 @@ import { useDisplayedReviewMoves } from "../stores/review-validity";
 import { availableSideTab, type PuzzleTabs, type SideTab } from "./side-tabs";
 
 // The eval chart (recharts) loads only once a reviewed game needs it.
-const ReviewTape = lazy(() => import("../features/game-review/ReviewTape").then((module) => ({ default: module.ReviewTape })));
+const ReviewTape = lazy(() =>
+  import("../features/game-review/ReviewTape").then((module) => ({ default: module.ReviewTape }))
+);
 
 const sideTabOptions: readonly SegmentedOption<SideTab>[] = [
   { value: "notation", label: "Moves" },
@@ -43,7 +49,12 @@ const puzzleTabOptions: readonly SegmentedOption<SideTab>[] = [
 ];
 const lockedPuzzleTabOptions: readonly SegmentedOption<SideTab>[] = [
   { value: "notation", label: "Moves" },
-  { value: "engine", label: "Engine", disabled: true, disabledReason: "Available after the puzzle is solved or failed" }
+  {
+    value: "engine",
+    label: "Engine",
+    disabled: true,
+    disabledReason: "Available after the puzzle is solved or failed"
+  }
 ];
 
 function usePuzzleTabs(): PuzzleTabs {
@@ -100,7 +111,13 @@ export const GameWorkspace = memo(function GameWorkspace({
           className={workspaceTabsClass}
           value={shownTab}
           onChange={onSideTabChange}
-          options={puzzleTabs === "none" ? sideTabOptions : puzzleTabs === "locked" ? lockedPuzzleTabOptions : puzzleTabOptions}
+          options={
+            puzzleTabs === "none"
+              ? sideTabOptions
+              : puzzleTabs === "locked"
+                ? lockedPuzzleTabOptions
+                : puzzleTabOptions
+          }
         />
       }
       summary={shownTab === "engine" ? engineTabSummary : gameSummary}
@@ -120,7 +137,11 @@ export const GameWorkspace = memo(function GameWorkspace({
       ) : null}
       {shownTab === "engine" ? (
         <div className="scroll-area -mr-3 h-full min-h-0 overflow-y-auto pr-3">
-          <EngineStatusPanel onStartAnalysis={onStartAnalysis} onStopAnalysis={onStopAnalysis} onOpenSettings={onOpenSettings} />
+          <EngineStatusPanel
+            onStartAnalysis={onStartAnalysis}
+            onStopAnalysis={onStopAnalysis}
+            onOpenSettings={onOpenSettings}
+          />
         </div>
       ) : null}
       {shownTab === "library" ? <RecentGames onOpenGame={onOpenGame} /> : null}
@@ -153,12 +174,16 @@ function GameSummary() {
   const ended = Boolean(gameOutcome) || position.isEnd;
   const result = gameOutcome?.result ?? position.result;
   const termination =
-    gameOutcome?.termination ?? (position.isCheckmate ? "checkmate" : position.isStalemate ? "stalemate" : null);
+    gameOutcome?.termination ??
+    (position.isCheckmate ? "checkmate" : position.isStalemate ? "stalemate" : null);
 
   return (
     <StatGroup className="w-full">
       {ended ? (
-        <Stat label="Result" value={termination ? `${result} · ${terminationLabel(termination)}` : result} />
+        <Stat
+          label="Result"
+          value={termination ? `${result} · ${terminationLabel(termination)}` : result}
+        />
       ) : (
         <Stat
           label="To move"
@@ -172,7 +197,10 @@ function GameSummary() {
       )}
       {currentMoveReview ? (
         <>
-          <Stat label="Move" value={<QualityBadge classification={currentMoveReview.classification} />} />
+          <Stat
+            label="Move"
+            value={<QualityBadge classification={currentMoveReview.classification} />}
+          />
           <Stat label="Eval" value={formatMoveEval(currentMoveReview)} mono />
         </>
       ) : null}
@@ -200,7 +228,10 @@ function GameFooter() {
   }, [moveTree, reviewMoves]);
   const reviewRunning = reviewStatus === "running";
   // While a review pass runs, pin the graph's x-axis to the whole game so it grows in place.
-  const mainlinePlies = useMemo(() => (reviewRunning ? mainlineReviewInput(moveTree).length : 0), [moveTree, reviewRunning]);
+  const mainlinePlies = useMemo(
+    () => (reviewRunning ? mainlineReviewInput(moveTree).length : 0),
+    [moveTree, reviewRunning]
+  );
 
   return (
     <>
@@ -239,13 +270,21 @@ function AddToRepertoireButton() {
     }
     useAddToRepertoireStore.getState().open({
       source,
-      initialScope: source.nodeId ? { kind: "path", toNodeId: source.nodeId } : { kind: "whole-game" },
+      initialScope: source.nodeId
+        ? { kind: "path", toNodeId: source.nodeId }
+        : { kind: "whole-game" },
       entry: "board"
     });
   };
   return (
     <div className="flex shrink-0 justify-end">
-      <Button type="button" variant="ghost" size="xs" disabled={!available} onClick={() => void open()}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="xs"
+        disabled={!available}
+        onClick={() => void open()}
+      >
         <BookPlus />
         Add to repertoire…
       </Button>
@@ -269,7 +308,12 @@ function AnalysisSettingsButton() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <IconButton label="Analysis settings" icon={<SlidersHorizontal />} onClick={() => setOpen(true)} className="shrink-0" />
+      <IconButton
+        label="Analysis settings"
+        icon={<SlidersHorizontal />}
+        onClick={() => setOpen(true)}
+        className="shrink-0"
+      />
       {open ? <AnalysisSettingsDialog onClose={() => setOpen(false)} /> : null}
     </>
   );

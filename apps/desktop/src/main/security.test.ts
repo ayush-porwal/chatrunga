@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { isAppUrl, isExternalHttpUrl, isPermissionAllowed, localImagePathFromUrl, PRODUCTION_CSP, isTrustedSenderUrl } from "./security";
+import {
+  isAppUrl,
+  isExternalHttpUrl,
+  isPermissionAllowed,
+  localImagePathFromUrl,
+  PRODUCTION_CSP,
+  isTrustedSenderUrl
+} from "./security";
 
 describe("isExternalHttpUrl", () => {
   it("accepts only http(s) links", () => {
@@ -22,7 +29,8 @@ describe("isAppUrl", () => {
   });
 
   it("matches only the bundled index.html in production", () => {
-    const prod = "file:///Applications/Chaturanga.app/Contents/Resources/app.asar/out/renderer/index.html";
+    const prod =
+      "file:///Applications/Chaturanga.app/Contents/Resources/app.asar/out/renderer/index.html";
     expect(isAppUrl(`${prod}#/settings`, prod)).toBe(true);
     expect(isAppUrl("file:///etc/passwd", prod)).toBe(false);
     expect(isAppUrl("https://example.com", prod)).toBe(false);
@@ -43,7 +51,9 @@ describe("localImagePathFromUrl", () => {
   const url = (path: string) => `chaturanga-image://local/${encodeURIComponent(path)}`;
 
   it("serves absolute image paths", () => {
-    expect(localImagePathFromUrl(url("/Users/me/engines/Stockfish Logo.PNG"))).toBe("/Users/me/engines/Stockfish Logo.PNG");
+    expect(localImagePathFromUrl(url("/Users/me/engines/Stockfish Logo.PNG"))).toBe(
+      "/Users/me/engines/Stockfish Logo.PNG"
+    );
     expect(localImagePathFromUrl(url("C:\\engines\\lc0.webp"))).toBe("C:\\engines\\lc0.webp");
   });
 
@@ -71,7 +81,8 @@ describe("PRODUCTION_CSP", () => {
 
 describe("isTrustedSenderUrl", () => {
   it("trusts only the app's own page", () => {
-    const packaged = "file:///Applications/Chaturanga.app/Contents/Resources/app.asar/out/renderer/index.html";
+    const packaged =
+      "file:///Applications/Chaturanga.app/Contents/Resources/app.asar/out/renderer/index.html";
     expect(isTrustedSenderUrl(`${packaged}#/games/1/review`, packaged)).toBe(true);
     expect(isTrustedSenderUrl("file:///tmp/evil.html", packaged)).toBe(false);
     expect(isTrustedSenderUrl("http://127.0.0.1:5173/#/", "http://127.0.0.1:5173")).toBe(true);

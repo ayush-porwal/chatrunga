@@ -16,7 +16,13 @@ export type UpdateStatus =
   | { kind: "idle" }
   | { kind: "checking" }
   | { kind: "up-to-date" }
-  | { kind: "available"; version: string; notes: string; sizeBytes: number | null; releaseDate: string | null }
+  | {
+      kind: "available";
+      version: string;
+      notes: string;
+      sizeBytes: number | null;
+      releaseDate: string | null;
+    }
   | {
       kind: "downloading";
       version: string;
@@ -28,7 +34,14 @@ export type UpdateStatus =
     }
   | { kind: "ready"; version: string; notes: string; releaseDate: string | null }
   /** `url`: the installer for this platform/arch, or the release page. Opened by `updates.openDownload()`. */
-  | { kind: "manual"; version: string; notes: string; sizeBytes: number | null; releaseDate: string | null; url: string }
+  | {
+      kind: "manual";
+      version: string;
+      notes: string;
+      sizeBytes: number | null;
+      releaseDate: string | null;
+      url: string;
+    }
   | { kind: "error"; message: string }
   | { kind: "disabled"; message: string };
 

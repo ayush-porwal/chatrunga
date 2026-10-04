@@ -1,7 +1,13 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import { Bot, KeyRound, MessageSquareOff, RefreshCw, Sparkles } from "lucide-react";
 import type { MoveReview, ReviewCommentary } from "@chaturanga/shared/types/engine";
-import { buildRatingCurveForMove, hasUsableMaiaData, moveLabel, uciToSan, type CommentaryDetail } from "./review-utils";
+import {
+  buildRatingCurveForMove,
+  hasUsableMaiaData,
+  moveLabel,
+  uciToSan,
+  type CommentaryDetail
+} from "./review-utils";
 import { formatMoveEval } from "./review-score";
 import { renderHeadline } from "@chaturanga/shared/chess/headline";
 import { Button } from "@/components/ui/button";
@@ -86,7 +92,10 @@ export function ReviewCommentaryPanel({
   // One-time tip for the first explanation whose moves are links.
   const linkHint = useOnboardingHint(
     "commentary-links",
-    !running && status === "ready" && Boolean(commentary && onGoToLine && moveContext) && hasMoveTokens(commentary)
+    !running &&
+      status === "ready" &&
+      Boolean(commentary && onGoToLine && moveContext) &&
+      hasMoveTokens(commentary)
   );
   const goToLineFromProse: GoToLine | undefined = onGoToLine
     ? (target) => {
@@ -113,7 +122,11 @@ export function ReviewCommentaryPanel({
         <EmptyState
           icon={<Sparkles />}
           title={hasReview ? "Select a move" : "No review yet"}
-          description={hasReview ? "Pick a move on the graph or in the move list." : "Analyze the game, then select a move to read its review."}
+          description={
+            hasReview
+              ? "Pick a move on the graph or in the move list."
+              : "Analyze the game, then select a move to read its review."
+          }
           action={
             !hasReview && onAnalyze ? (
               <Button variant="primary" size="sm" onClick={onAnalyze}>
@@ -128,10 +141,14 @@ export function ReviewCommentaryPanel({
 
   const played = uciToSan(move.fenBefore, move.playedMove) ?? move.playedMove;
   const best = uciToSan(move.fenBefore, move.bestMove);
-  const maiaNote = hasUsableMaiaData(move) ? renderHeadline(buildRatingCurveForMove(move, userRating)) : null;
+  const maiaNote = hasUsableMaiaData(move)
+    ? renderHeadline(buildRatingCurveForMove(move, userRating))
+    : null;
   const parentId = moveContext?.moveTree.find((node) => node.id === move.nodeId)?.parentId ?? null;
   const linkTo = (san: string | null) =>
-    san && parentId && onGoToLine ? () => onGoToLine({ startNodeId: parentId, moves: [san] }) : null;
+    san && parentId && onGoToLine
+      ? () => onGoToLine({ startNodeId: parentId, moves: [san] })
+      : null;
   const goToPlayed = linkTo(played);
   const goToBest = linkTo(best);
   // A new move settles in with a short partial fade — except while scrubbing through moves.
@@ -139,7 +156,13 @@ export function ReviewCommentaryPanel({
   const ready = status === "ready" && commentary;
 
   return (
-    <div key={move.nodeId} className={cn("scroll-area -mr-3 grid h-full min-h-0 content-start gap-4 overflow-y-auto pr-3", swap)}>
+    <div
+      key={move.nodeId}
+      className={cn(
+        "scroll-area -mr-3 grid h-full min-h-0 content-start gap-4 overflow-y-auto pr-3",
+        swap
+      )}
+    >
       <header className="flex min-h-8 flex-wrap items-center gap-2">
         <h2 className="font-mono text-base font-semibold text-fg">{moveLabel(move)}</h2>
         <QualityBadge classification={move.classification} />
@@ -154,7 +177,9 @@ export function ReviewCommentaryPanel({
         ) : null}
       </header>
 
-      {variationAnchor ? <VariationAnchorNote label={variationAnchor.label} onBack={variationAnchor.onBack} /> : null}
+      {variationAnchor ? (
+        <VariationAnchorNote label={variationAnchor.label} onBack={variationAnchor.onBack} />
+      ) : null}
 
       <section
         aria-label="Commentary"
@@ -164,7 +189,7 @@ export function ReviewCommentaryPanel({
           // Loading and loaded share a reserved height; the short states (error, no key, off) don't.
           (skeleton.present || ready) && "review-commentary"
         )}
-        style={{ "--review-commentary-lines": SKELETON_LINES[detail] } as CSSProperties}
+        style={{ "--review-commentary-lines": SKELETON_LINES[detail] }}
       >
         {skeleton.present ? (
           <CommentarySkeleton
@@ -179,11 +204,19 @@ export function ReviewCommentaryPanel({
           <div key="text" className="grid animate-fade-in gap-3 [grid-area:stack]">
             {commentary.headline ? (
               <h3 className="font-serif text-lg font-semibold leading-7 text-fg">
-                <CommentaryProse prose={commentary.headline} context={moveContext} onGoToLine={goToLineFromProse} />
+                <CommentaryProse
+                  prose={commentary.headline}
+                  context={moveContext}
+                  onGoToLine={goToLineFromProse}
+                />
               </h3>
             ) : null}
             <p className="font-serif text-base leading-7 text-fg-secondary">
-              <CommentaryProse prose={commentary.prose} context={moveContext} onGoToLine={goToLineFromProse} />
+              <CommentaryProse
+                prose={commentary.prose}
+                context={moveContext}
+                onGoToLine={goToLineFromProse}
+              />
             </p>
           </div>
         ) : loading ? null : status === "error" ? (
@@ -239,8 +272,12 @@ export function ReviewCommentaryPanel({
             }
           />
         ) : status === "no-payload" ? (
-          <p key="no-payload" className="animate-fade-in text-sm leading-6 text-fg-muted [grid-area:stack]">
-            The engine didn't return enough data about this move to explain it. The facts below still apply.
+          <p
+            key="no-payload"
+            className="animate-fade-in text-sm leading-6 text-fg-muted [grid-area:stack]"
+          >
+            The engine didn't return enough data about this move to explain it. The facts below
+            still apply.
           </p>
         ) : null}
       </section>
@@ -256,13 +293,19 @@ export function ReviewCommentaryPanel({
       <StatGroup>
         <Stat
           label="Played"
-          value={goToPlayed ? <MoveLink san={played} onActivate={goToPlayed} className="text-current" /> : played}
+          value={
+            goToPlayed ? (
+              <MoveLink san={played} onActivate={goToPlayed} className="text-current" />
+            ) : (
+              played
+            )
+          }
           mono
           valueClassName={qualityTone[move.classification].text}
         />
         <Stat
           label="Best"
-          value={best && goToBest ? <MoveLink san={best} onActivate={goToBest} /> : best ?? "—"}
+          value={best && goToBest ? <MoveLink san={best} onActivate={goToBest} /> : (best ?? "—")}
           mono
           valueClassName="text-accent"
         />
@@ -309,7 +352,10 @@ function CommentarySkeleton({
   return (
     <div className={cn("review-skeleton grid content-start gap-3", className)}>
       <div className="flex items-start gap-2.5" role="status">
-        <span className="review-glyph mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-accent-soft text-accent" aria-hidden>
+        <span
+          className="review-glyph mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-accent-soft text-accent"
+          aria-hidden
+        >
           <Sparkles className="size-3.5" />
         </span>
         <div className="grid min-w-0 gap-0.5">
@@ -322,7 +368,11 @@ function CommentarySkeleton({
               <span>.</span>
             </span>
           </p>
-          <p key={slow ? "slow" : "model"} className="animate-fade-in truncate text-2xs leading-4 text-fg-subtle" title={`${model} via OpenRouter`}>
+          <p
+            key={slow ? "slow" : "model"}
+            className="animate-fade-in truncate text-2xs leading-4 text-fg-subtle"
+            title={`${model} via OpenRouter`}
+          >
             {slow ? (
               "Larger models can take up to a minute."
             ) : (
@@ -341,7 +391,9 @@ function CommentarySkeleton({
           <div key={index} className="flex h-7 items-center">
             <Skeleton
               className="h-3 rounded"
-              style={{ width: index === lines - 1 ? "58%" : LINE_WIDTHS[index % LINE_WIDTHS.length] }}
+              style={{
+                width: index === lines - 1 ? "58%" : LINE_WIDTHS[index % LINE_WIDTHS.length]
+              }}
             />
           </div>
         ))}
@@ -353,7 +405,9 @@ function CommentarySkeleton({
 /** Whether the explanation mentions any move (those become links). */
 function hasMoveTokens(commentary: ReviewCommentary | undefined): boolean {
   if (!commentary) return false;
-  return [commentary.headline ?? "", commentary.prose].some((text) => tokenizeCommentary(text).some((segment) => segment.kind === "move"));
+  return [commentary.headline ?? "", commentary.prose].some((text) =>
+    tokenizeCommentary(text).some((segment) => segment.kind === "move")
+  );
 }
 
 /** "anthropic/claude-sonnet-4.6" → "claude-sonnet-4.6"; the full id is in the tooltip. */

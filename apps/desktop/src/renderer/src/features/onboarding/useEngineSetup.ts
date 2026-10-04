@@ -77,7 +77,8 @@ export function useEngineSetup(): EngineSetup {
   const engineReady = Boolean(evaluationEngine(engines.data));
   // With an evaluation engine already working (e.g. the user's own), Stockfish adds nothing.
   const recommended = useMemo(
-    () => recommendedDownloads(status).filter((asset) => !(engineReady && asset.id === "stockfish")),
+    () =>
+      recommendedDownloads(status).filter((asset) => !(engineReady && asset.id === "stockfish")),
     [engineReady, status]
   );
   const rows = useMemo(() => {

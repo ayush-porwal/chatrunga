@@ -19,11 +19,16 @@ import {
 const ITALIAN = "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3";
 
 function fixture(name: string): string[] {
-  return readFileSync(join(__dirname, "__fixtures__", name), "utf8").split(/\r?\n/).filter(Boolean);
+  return readFileSync(join(__dirname, "__fixtures__", name), "utf8")
+    .split(/\r?\n/)
+    .filter(Boolean);
 }
 
 /** Replays captured lc0 output through the same parsing path as UciReviewSession.analyzePolicy. */
-function policyFromFixture(name: string): { stats: Lc0MoveStat[]; wdl?: { win: number; draw: number; loss: number } } {
+function policyFromFixture(name: string): {
+  stats: Lc0MoveStat[];
+  wdl?: { win: number; draw: number; loss: number };
+} {
   const stats: Lc0MoveStat[] = [];
   let wdl: { win: number; draw: number; loss: number } | undefined;
   for (const line of fixture(name)) {
@@ -72,8 +77,20 @@ describe("Maia policy from real lc0 VerboseMoveStats output", () => {
     expect(sum).toBeLessThan(1.02);
     expect(low.wdl).toEqual({ win: 496, draw: 39, loss: 465 });
 
-    const p1100 = buildRatingPrediction({ rating: 1100, fen: ITALIAN, ...low, playedUci: "f1b5", bestUci: "f1b5" })!;
-    const p1900 = buildRatingPrediction({ rating: 1900, fen: ITALIAN, ...high, playedUci: "f1b5", bestUci: "f1b5" })!;
+    const p1100 = buildRatingPrediction({
+      rating: 1100,
+      fen: ITALIAN,
+      ...low,
+      playedUci: "f1b5",
+      bestUci: "f1b5"
+    })!;
+    const p1900 = buildRatingPrediction({
+      rating: 1900,
+      fen: ITALIAN,
+      ...high,
+      playedUci: "f1b5",
+      bestUci: "f1b5"
+    })!;
     expect(p1100.topMoves[0]).toEqual({ uci: "f1c4", prob: 0.2375 });
     expect(p1900.topMoves[0]).toEqual({ uci: "f1c4", prob: 0.3123 });
     expect(p1100.topMoves.length).toBe(10);
@@ -88,7 +105,13 @@ describe("Maia policy from real lc0 VerboseMoveStats output", () => {
 
   it("reports a legal-but-unlisted played move as probability 0 with no rank", () => {
     const low = policyFromFixture("maia-1100-italian.txt");
-    const prediction = buildRatingPrediction({ rating: 1100, fen: ITALIAN, ...low, playedUci: "a1a8", bestUci: null })!;
+    const prediction = buildRatingPrediction({
+      rating: 1100,
+      fen: ITALIAN,
+      ...low,
+      playedUci: "a1a8",
+      bestUci: null
+    })!;
     expect(prediction.playedProb).toBe(0);
     expect(prediction.playedRank).toBeUndefined();
     expect(prediction.bestRank).toBeUndefined();
@@ -96,8 +119,18 @@ describe("Maia policy from real lc0 VerboseMoveStats output", () => {
 
   it("normalizes lc0 king-takes-rook castling to standard UCI", () => {
     const fen = "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4";
-    const stats = [parseLc0MoveStat("info string e1h1  (103 ) N:       0 (+ 0) (P: 23.04%) (WL:  -.-----) (D: -.---) (M:  -.-) (Q: -0.00973) (U: 0.40209) (S:  0.39235) (V:  -.----)")!];
-    const prediction = buildRatingPrediction({ rating: 1500, fen, stats, playedUci: "e1g1", bestUci: "e1g1" })!;
+    const stats = [
+      parseLc0MoveStat(
+        "info string e1h1  (103 ) N:       0 (+ 0) (P: 23.04%) (WL:  -.-----) (D: -.---) (M:  -.-) (Q: -0.00973) (U: 0.40209) (S:  0.39235) (V:  -.----)"
+      )!
+    ];
+    const prediction = buildRatingPrediction({
+      rating: 1500,
+      fen,
+      stats,
+      playedUci: "e1g1",
+      bestUci: "e1g1"
+    })!;
     expect(prediction.topMoves[0].uci).toBe("e1g1");
     expect(prediction.playedRank).toBe(1);
   });
@@ -138,24 +171,57 @@ describe("computeEvalLoss", () => {
 
   it("uses the same-search score when the played move is in MultiPV", () => {
     // After-search disagrees (+10 for opponent → -10 mover) but must be ignored.
-    expect(computeEvalLoss({ topLines: top, playedRank: 2, afterScore: { type: "cp", value: 10 }, terminal: null })).toBe(50);
+    expect(
+      computeEvalLoss({
+        topLines: top,
+        playedRank: 2,
+        afterScore: { type: "cp", value: 10 },
+        terminal: null
+      })
+    ).toBe(50);
   });
 
   it("falls back to the after-search for moves outside MultiPV", () => {
-    expect(computeEvalLoss({ topLines: top, playedRank: null, afterScore: { type: "cp", value: 220 }, terminal: null })).toBe(300);
+    expect(
+      computeEvalLoss({
+        topLines: top,
+        playedRank: null,
+        afterScore: { type: "cp", value: 220 },
+        terminal: null
+      })
+    ).toBe(300);
   });
 
   it("gives a small loss for a slower mate instead of 0", () => {
     const mates = [line(1, 2, ["a1a8"], true), line(2, 5, ["b1b8"], true)];
-    const loss = computeEvalLoss({ topLines: mates, playedRank: 2, afterScore: null, terminal: null });
+    const loss = computeEvalLoss({
+      topLines: mates,
+      playedRank: 2,
+      afterScore: null,
+      terminal: null
+    });
     expect(loss).toBeGreaterThan(0);
     expect(loss).toBeLessThanOrEqual(35);
   });
 
   it("treats delivering mate as zero loss and stalemating a winning position as a big loss", () => {
-    expect(computeEvalLoss({ topLines: top, playedRank: null, afterScore: terminalScore("checkmate"), terminal: "checkmate" })).toBe(0);
+    expect(
+      computeEvalLoss({
+        topLines: top,
+        playedRank: null,
+        afterScore: terminalScore("checkmate"),
+        terminal: "checkmate"
+      })
+    ).toBe(0);
     const winning = [line(1, 900, ["a1a8"])];
-    expect(computeEvalLoss({ topLines: winning, playedRank: null, afterScore: terminalScore("stalemate"), terminal: "stalemate" })).toBe(900);
+    expect(
+      computeEvalLoss({
+        topLines: winning,
+        playedRank: null,
+        afterScore: terminalScore("stalemate"),
+        terminal: "stalemate"
+      })
+    ).toBe(900);
   });
 });
 
@@ -169,8 +235,12 @@ describe("tacticalMotifsForBestMove", () => {
   it("does not call a recapture on the last move's square 'hanging'", () => {
     // Black just played ...Bxf3; Qxf3 retakes the (undefended) bishop.
     const fen = "rn1qkbnr/ppp2ppp/3p4/4P3/4P3/5b2/PPP2PPP/RNBQKB1R w KQkq - 0 5";
-    expect(tacticalMotifsForBestMove(fen, "d1f3", { type: "cp", value: 60 }, "g4f3")).not.toContain("hanging");
-    expect(tacticalMotifsForBestMove(fen, "d1f3", { type: "cp", value: 60 }, null)).toContain("hanging");
+    expect(tacticalMotifsForBestMove(fen, "d1f3", { type: "cp", value: 60 }, "g4f3")).not.toContain(
+      "hanging"
+    );
+    expect(tacticalMotifsForBestMove(fen, "d1f3", { type: "cp", value: 60 }, null)).toContain(
+      "hanging"
+    );
   });
 
   it("detects a knight fork created by the best move", () => {
@@ -181,9 +251,13 @@ describe("tacticalMotifsForBestMove", () => {
 
   it("detects winning a hanging piece and mates", () => {
     const hanging = "4k3/8/8/3q4/8/8/8/3RK3 w - - 0 1";
-    expect(tacticalMotifsForBestMove(hanging, "d1d5", { type: "cp", value: 900 })).toContain("hanging");
+    expect(tacticalMotifsForBestMove(hanging, "d1d5", { type: "cp", value: 900 })).toContain(
+      "hanging"
+    );
     const backRank = "6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1";
-    expect(tacticalMotifsForBestMove(backRank, "d1d8", { type: "mate", value: 1 })).toContain("checkmate");
+    expect(tacticalMotifsForBestMove(backRank, "d1d8", { type: "mate", value: 1 })).toContain(
+      "checkmate"
+    );
   });
 });
 

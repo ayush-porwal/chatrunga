@@ -8,7 +8,12 @@ import {
   type PuzzleSwing
 } from "@chaturanga/shared/schemas/puzzle-insight";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
-import type { AnalysePositionInput, AnalysisLine, EngineConfig, EngineScore } from "@chaturanga/shared/types/engine";
+import type {
+  AnalysePositionInput,
+  AnalysisLine,
+  EngineConfig,
+  EngineScore
+} from "@chaturanga/shared/types/engine";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import type { PuzzleOutcome, PuzzleWrongMove } from "../../stores/puzzle-store";
 import { pickDefaultEngine } from "../game-review/review-engine-picker";
@@ -53,12 +58,19 @@ export function explanationKey(
   wrong: PuzzleWrongMove | null
 ): string {
   const identity = puzzleIdentity(puzzle);
-  return kind === "failed_wrong_move" && wrong ? `${identity}:${kind}:${wrong.solutionIndex}:${wrong.uci}` : `${identity}:${kind}`;
+  return kind === "failed_wrong_move" && wrong
+    ? `${identity}:${kind}:${wrong.solutionIndex}:${wrong.uci}`
+    : `${identity}:${kind}`;
 }
 
 /** The Game review evaluation engine: the chosen one, else the automatic pick; null when unusable. */
-export function explainEngine(engines: readonly EngineConfig[], defaultEngineId: string | null): EngineConfig | null {
-  const engine = defaultEngineId ? engines.find((item) => item.id === defaultEngineId) : pickDefaultEngine(engines);
+export function explainEngine(
+  engines: readonly EngineConfig[],
+  defaultEngineId: string | null
+): EngineConfig | null {
+  const engine = defaultEngineId
+    ? engines.find((item) => item.id === defaultEngineId)
+    : pickDefaultEngine(engines);
   return engine?.isAvailable && !engine.isHumanPrediction ? engine : null;
 }
 
@@ -75,8 +87,14 @@ export type ExplainSearchPlan = {
  * The start position with the review's line count; after a wrong move also the position it was
  * played from (when that isn't the start) and the one it left, one line each.
  */
-export function explainSearchPlan(puzzle: PuzzleSample, wrong: PuzzleWrongMove | null, multipv: number): ExplainSearchPlan {
-  const positions: AnalysePositionInput[] = [{ fen: puzzle.initialFen, multipv: Math.max(1, Math.min(multipv, 5)) }];
+export function explainSearchPlan(
+  puzzle: PuzzleSample,
+  wrong: PuzzleWrongMove | null,
+  multipv: number
+): ExplainSearchPlan {
+  const positions: AnalysePositionInput[] = [
+    { fen: puzzle.initialFen, multipv: Math.max(1, Math.min(multipv, 5)) }
+  ];
   const plan: ExplainSearchPlan = { positions, start: 0, beforeMistake: null, afterMistake: null };
   const after = wrong ? fenAfterUci(wrong.fen, wrong.uci) : null;
   if (!wrong || !after) return plan;
@@ -128,7 +146,13 @@ export type ExplainPayloadInput = {
  * doesn't replay, or the engine returned no line for the start position). Checked against the
  * schema main validates with, so what is returned is what main accepts.
  */
-export function buildPuzzleExplanationPayload({ puzzle, kind, wrong, analysis, settings }: ExplainPayloadInput): PuzzleInsightPayload | null {
+export function buildPuzzleExplanationPayload({
+  puzzle,
+  kind,
+  wrong,
+  analysis,
+  settings
+}: ExplainPayloadInput): PuzzleInsightPayload | null {
   const fen = puzzle.initialFen;
   const solver = puzzle.sideToMove;
   const solutionSan = uciLineToSan(fen, puzzle.solutionMoves);
@@ -140,10 +164,15 @@ export function buildPuzzleExplanationPayload({ puzzle, kind, wrong, analysis, s
 
   const alternatives = analysis.start.slice(1, 5).flatMap((line) => {
     const lineSan = uciLineToSan(fen, line.pv).slice(0, 8);
-    return lineSan.length ? [{ rank: line.multipv, san: lineSan[0], lineSan, assessment: assessScore(line.scoreWhite) }] : [];
+    return lineSan.length
+      ? [{ rank: line.multipv, san: lineSan[0], lineSan, assessment: assessScore(line.scoreWhite) }]
+      : [];
   });
 
-  const mistake = kind === "failed_wrong_move" && wrong ? buildMistake(puzzle, wrong, solutionSan, analysis) : undefined;
+  const mistake =
+    kind === "failed_wrong_move" && wrong
+      ? buildMistake(puzzle, wrong, solutionSan, analysis)
+      : undefined;
   if (kind === "failed_wrong_move" && !mistake) return null;
   const ideas =
     mistake && wrong
@@ -154,7 +183,12 @@ export function buildPuzzleExplanationPayload({ puzzle, kind, wrong, analysis, s
           bestLine: puzzle.solutionMoves.slice(wrong.solutionIndex),
           replyLine: mistake.ends ? undefined : analysis.afterMistake?.[0]?.pv
         })
-      : buildIdeaFacts({ fenBefore: fen, playedUci: puzzle.solutionMoves[0], bestUci: puzzle.solutionMoves[0], bestLine: puzzle.solutionMoves });
+      : buildIdeaFacts({
+          fenBefore: fen,
+          playedUci: puzzle.solutionMoves[0],
+          bestUci: puzzle.solutionMoves[0],
+          bestLine: puzzle.solutionMoves
+        });
 
   const parsed = puzzleInsightPayloadSchema.safeParse({
     schemaVersion: 1,
@@ -163,9 +197,17 @@ export function buildPuzzleExplanationPayload({ puzzle, kind, wrong, analysis, s
       fen,
       sideToMove: solver,
       moveNumberSan: moveNumberSan(fen),
-      rating: puzzle.rating && puzzle.rating >= 100 && puzzle.rating <= 4000 ? Math.round(puzzle.rating) : undefined,
-      themes: puzzle.themes.map(formatPuzzleTag).filter((theme) => theme.length <= 40).slice(0, 12),
-      opening: puzzle.openingTags[0] ? formatPuzzleTag(puzzle.openingTags[0]).slice(0, 100) : undefined,
+      rating:
+        puzzle.rating && puzzle.rating >= 100 && puzzle.rating <= 4000
+          ? Math.round(puzzle.rating)
+          : undefined,
+      themes: puzzle.themes
+        .map(formatPuzzleTag)
+        .filter((theme) => theme.length <= 40)
+        .slice(0, 12),
+      opening: puzzle.openingTags[0]
+        ? formatPuzzleTag(puzzle.openingTags[0]).slice(0, 100)
+        : undefined,
       solutionSan
     },
     outcome: kind,
@@ -208,7 +250,8 @@ function buildMistake(
   };
   // A wrong move that ends the game has no reply to refute it: a mate wins all the same (the
   // puzzle wanted its own line), a stalemate or draw throws the win away on the spot.
-  if (terminal === "checkmate") return { ...common, ends: terminal, refutationSan: [], assessmentAfter: `${solver}_won` };
+  if (terminal === "checkmate")
+    return { ...common, ends: terminal, refutationSan: [], assessmentAfter: `${solver}_won` };
   if (terminal) {
     return {
       ...common,

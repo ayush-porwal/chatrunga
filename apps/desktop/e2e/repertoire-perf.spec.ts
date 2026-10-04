@@ -14,22 +14,32 @@ const MAX_GAP_MS = 200;
 async function heartbeat(app: ElectronApplication) {
   await app.evaluate(() => {
     const state = globalThis as unknown as {
-      __beat?: { timer: unknown; last: number; max: number };
+      __beat?: { timer: unknown; last: number; max: number; onTick: (() => void) | null };
     };
-    const beat = { timer: null as unknown, last: performance.now(), max: 0 };
+    const beat = {
+      timer: null as unknown,
+      last: performance.now(),
+      max: 0,
+      onTick: null as (() => void) | null
+    };
     beat.timer = setInterval(() => {
       const now = performance.now();
       beat.max = Math.max(beat.max, now - beat.last);
       beat.last = now;
+      beat.onTick?.();
     }, 5);
     state.__beat = beat;
   });
   return {
     stop: () =>
       app.evaluate(async () => {
-        const beat = (globalThis as unknown as { __beat: { timer: unknown; max: number } }).__beat;
+        const beat = (
+          globalThis as unknown as {
+            __beat: { timer: unknown; max: number; onTick: (() => void) | null };
+          }
+        ).__beat;
         // One more tick, so a stall at the very end is counted.
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        await new Promise<void>((resolve) => (beat.onTick = resolve));
         clearInterval(beat.timer as ReturnType<typeof setInterval>);
         return beat.max;
       })
@@ -135,7 +145,7 @@ test(
     // The next save dialog writes the backup into the throwaway profile.
     const file = join(profile, "backup.json");
     await app.evaluate(({ dialog }, file) => {
-      const previous = dialog.showSaveDialog;
+      const previous = dialog.showSaveDialog.bind(dialog);
       dialog.showSaveDialog = (async () => {
         dialog.showSaveDialog = previous;
         return { canceled: false, filePath: file };
@@ -193,7 +203,7 @@ test(
     // Both restores ran in the bundled worker and answered.
     const record = await mainRecord(app);
     expect(
-      record.workers.filter((path) => /repertoire-backup-restore-worker\.js$/.test(path))
+      record.workers.filter((path) => path.endsWith("repertoire-backup-restore-worker.js"))
     ).toHaveLength(2);
     console.log(
       `R02 backup (50,000 moves): two previews' main-process gap ${previewGap.toFixed(1)} ms, two restores' ${restoreGap.toFixed(1)} ms`

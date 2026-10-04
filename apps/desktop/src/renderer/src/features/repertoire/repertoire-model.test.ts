@@ -21,7 +21,6 @@ import {
   pathLabel,
   revealArrows,
   saveStatusLabel,
-  shouldAdoptSaveResult,
   totalsOf,
   trainableDecisionCount,
   transpositionsOf,
@@ -235,11 +234,6 @@ describe("positions and labels", () => {
 });
 
 describe("autosave decisions", () => {
-  it("adopts a save result only when nothing was edited meanwhile", () => {
-    expect(shouldAdoptSaveResult(3, 3)).toBe(true);
-    expect(shouldAdoptSaveResult(3, 4)).toBe(false);
-  });
-
   it("recognises a stale-revision refusal", () => {
     expect(
       isStaleRevisionError("Invalid expectedRevision: repertoire changed (stored 5, expected 4)")
@@ -248,6 +242,18 @@ describe("autosave decisions", () => {
       isStaleRevisionError("Invalid chapter.revision: chapter changed (stored 3, expected 2)")
     ).toBe(true);
     expect(isStaleRevisionError("Invalid chapter: tree has no root")).toBe(false);
+  });
+
+  it("doesn't take another refusal of a revision for a stale one (reloading wouldn't help)", () => {
+    // A replace from a backup with no expected revision (backup-restore.ts).
+    expect(isStaleRevisionError("Invalid expectedRevision: required to replace a repertoire")).toBe(
+      false
+    );
+    // Malformed input, refused by the IPC validators.
+    expect(isStaleRevisionError("Invalid expectedRevision: must be a whole number")).toBe(false);
+    expect(isStaleRevisionError("Invalid backup: chapter revision is not a number")).toBe(false);
+    // The words alone, from some other message.
+    expect(isStaleRevisionError("The opponent's repertoire changed")).toBe(false);
   });
 
   it("schedules, waits or blocks", () => {
@@ -328,12 +334,9 @@ describe("decision text drafts", () => {
     expect(decisionTextValue("   ")).toBeNull();
   });
 
-  it("keys a draft by repertoire, position and field", () => {
+  it("keys a draft by repertoire, position and field, and feedback per wrong move", () => {
     expect(decisionDraftKey("r1", "k1", "prompt")).not.toBe(decisionDraftKey("r1", "k1", "hint"));
     expect(decisionDraftKey("r1", "k1", "hint")).not.toBe(decisionDraftKey("r2", "k1", "hint"));
-  });
-
-  it("keys feedback drafts per wrong move", () => {
     expect(decisionDraftKey("r1", "k1", "feedback", "d2d4")).not.toBe(
       decisionDraftKey("r1", "k1", "feedback", "c2c4")
     );

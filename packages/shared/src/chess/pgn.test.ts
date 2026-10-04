@@ -32,12 +32,20 @@ describe("PGN import/export", () => {
     expect(exportGameToPgn(imported.game)).toContain("[%cal Gg1f3]");
   });
 
-  it("parses clk with chessops when tags are packed (Lichess-style)", () => {
-    const imported = importPgnText(
+  it.each([
+    [
+      "packed tags (Lichess-style), eval before or after clk",
       '[White "W"][Black "B"][Result "*"]\n1. e4 {[%eval 0.10][%clk 0:01:00]} e5 {[%clk 0:00:59][%eval 0.12]} *'
-    );
-    expect(imported.game.moveTree.find((n) => n.uci === "e2e4")?.clockAfter).toBe("0:01:00");
-    expect(imported.game.moveTree.find((n) => n.uci === "e7e5")?.clockAfter).toBe("0:00:59");
+    ],
+    ["no space after the opening brace", "1. e4 {[%clk 0:01:00]} e5 { [%clk 0:00:59] } *"],
+    [
+      "eval and clk spaced in one comment",
+      '[White "W"][Black "B"][Result "*"]\n1. e4 { [%eval 0.17] [%clk 0:01:00] } e5 { [%clk 0:00:59] } 2. Nf3 *'
+    ]
+  ])("reads move clocks from comments: %s", (_shape, pgn) => {
+    const { moveTree } = importPgnText(pgn).game;
+    expect(moveTree.find((n) => n.uci === "e2e4")?.clockAfter).toBe("0:01:00");
+    expect(moveTree.find((n) => n.uci === "e7e5")?.clockAfter).toBe("0:00:59");
   });
 
   it("imports En Croissant export: root eval, fractional clk, Orientation", () => {
@@ -56,22 +64,6 @@ describe("PGN import/export", () => {
     expect(imported.game.headers.orientationHint).toBe("black");
     expect(imported.game.moveTree.find((n) => n.san === "e4")?.clockAfter).toBe("0:03:00");
     expect(imported.game.moveTree.find((n) => n.san === "c5")?.clockAfter).toBe("0:02:58.246");
-  });
-
-  it("parses clk in comment with no space after opening brace", () => {
-    const imported = importPgnText("1. e4 {[%clk 0:10:00]} e5 { [%clk 0:09:00] } *");
-    expect(imported.game.moveTree.find((n) => n.uci === "e2e4")?.clockAfter).toBe("0:10:00");
-    expect(imported.game.moveTree.find((n) => n.uci === "e7e5")?.clockAfter).toBe("0:09:00");
-  });
-
-  it("captures Lichess-style combined comment with eval and clk", () => {
-    const imported = importPgnText(
-      '[White "W"][Black "B"][Result "*"]\n1. e4 { [%eval 0.17] [%clk 0:01:00] } e5 { [%clk 0:00:59] } 2. Nf3 *'
-    );
-    const e4 = imported.game.moveTree.find((n) => n.uci === "e2e4");
-    const e5 = imported.game.moveTree.find((n) => n.uci === "e7e5");
-    expect(e4?.clockAfter).toBe("0:01:00");
-    expect(e5?.clockAfter).toBe("0:00:59");
   });
 
   it("captures extended headers and move clocks", () => {
@@ -143,7 +135,11 @@ describe("PGN import/export", () => {
 
   it("drops an unplayable move and what follows, unless strict", () => {
     const pgn = "1. e4 e5 2. Ke3 Nc6 *";
-    expect(importPgnText(pgn).game.moveTree.map((node) => node.san).filter(Boolean)).toEqual(["e4", "e5"]);
+    expect(
+      importPgnText(pgn)
+        .game.moveTree.map((node) => node.san)
+        .filter(Boolean)
+    ).toEqual(["e4", "e5"]);
     expect(() => importPgnText(pgn, { strict: true })).toThrow(/Illegal move/);
     expect(importPgnText("1. e4 (1. d4 d5) e5 *", { strict: true }).game.moveTree).toHaveLength(5);
   });
@@ -163,7 +159,10 @@ describe("PGN from a set-up position", () => {
 
     const again = importPgnText(pgn).game;
     expect(again.rootFen).toBe(fen);
-    expect(again.moveTree.filter((node) => node.san).map((node) => node.san)).toEqual(["Kf7", "Ke2"]);
+    expect(again.moveTree.filter((node) => node.san).map((node) => node.san)).toEqual([
+      "Kf7",
+      "Ke2"
+    ]);
   });
 
   it("attributes clocks to the side that moved", () => {
@@ -186,10 +185,12 @@ describe("PGN from a set-up position", () => {
   });
 
   it("renumbers trees saved with a ply-0 root", () => {
-    const legacy = importPgnText(`[SetUp "1"]\n[FEN "${fen}"]\n\n42... Kf7 *`).game.moveTree.map((node) => ({
-      ...node,
-      ply: node.ply - 83
-    }));
+    const legacy = importPgnText(`[SetUp "1"]\n[FEN "${fen}"]\n\n42... Kf7 *`).game.moveTree.map(
+      (node) => ({
+        ...node,
+        ply: node.ply - 83
+      })
+    );
     expect(withRealPlies(legacy).map((node) => node.ply)).toEqual([83, 84]);
     const standard = createEmptyGame().moveTree;
     expect(withRealPlies(standard)).toBe(standard);

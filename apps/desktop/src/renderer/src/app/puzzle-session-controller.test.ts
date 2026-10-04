@@ -33,12 +33,23 @@ describe("continuesPuzzleSet", () => {
 
 describe("nextPuzzleInput", () => {
   it("asks for the set's next puzzle, excluding the ones shown", () => {
-    expect(nextPuzzleInput(config, ["a", "b"])).toMatchObject({ databaseId: "lichess-puzzles", excludeIds: ["a", "b"] });
+    expect(nextPuzzleInput(config, ["a", "b"])).toMatchObject({
+      databaseId: "lichess-puzzles",
+      excludeIds: ["a", "b"]
+    });
   });
 
   it("asks a set of failed puzzles for those by id, without the filters", () => {
-    const retry = { ...config, retryIds: ["x", "y"], lichess: { ratingMin: 0 } } as PuzzleSessionConfig;
-    expect(nextPuzzleInput(retry, ["x"])).toEqual({ databaseId: "lichess-puzzles", excludeIds: ["x"], ids: ["x", "y"] });
+    const retry = {
+      ...config,
+      retryIds: ["x", "y"],
+      lichess: { ratingMin: 0 }
+    } as PuzzleSessionConfig;
+    expect(nextPuzzleInput(retry, ["x"])).toEqual({
+      databaseId: "lichess-puzzles",
+      excludeIds: ["x"],
+      ids: ["x", "y"]
+    });
   });
 
   it("is null without a dataset", () => {
@@ -49,7 +60,8 @@ describe("nextPuzzleInput", () => {
 describe("puzzle set state", () => {
   const other = { ...config, databaseId: "other" } as PuzzleSessionConfig;
   /** The request Next puzzle makes in `state`. */
-  const excluded = (state: PuzzleSessionState) => nextPuzzleInput(state.set?.config ?? null, shownInSet(state))?.excludeIds;
+  const excluded = (state: PuzzleSessionState) =>
+    nextPuzzleInput(state.set?.config ?? null, shownInSet(state))?.excludeIds;
 
   it("records the set's id, filters and the puzzles shown, and nothing without a set", () => {
     const state = joinPuzzleSet(startPuzzleSet(NO_PUZZLE_SET, "a", { id: "s", config }), "b");
@@ -63,7 +75,9 @@ describe("puzzle set state", () => {
     const game = snapshotPuzzleSet(continuePuzzleSet(state, 7))!;
     // Back to that game after the board was replaced (the set ended meanwhile).
     const resumed = resumePuzzleSet(endPuzzleSet(joinPuzzleSet(state, "b")), game, 9);
-    expect(continuesPuzzleSet(resumed.set?.config ?? null, resumed.continuationBoard, 9)).toBe(true);
+    expect(continuesPuzzleSet(resumed.set?.config ?? null, resumed.continuationBoard, 9)).toBe(
+      true
+    );
     expect(excluded(resumed)).toEqual(["a", "b"]);
   });
 

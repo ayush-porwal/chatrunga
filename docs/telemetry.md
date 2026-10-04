@@ -41,18 +41,18 @@ There is no Chaturanga account, so **a user is an installation profile**:
   opened later is attributable. Reviews saved before this change have none (`legacy_review: true`).
 
 "Observed" totals exclude everyone who turned it off, who is permanently offline, or whose events expired
-locally (see limits). Existing users' first event after this change is *first observed*, not a new install;
+locally (see limits). Existing users' first event after this change is _first observed_, not a new install;
 no historical library is uploaded. Lifetime totals are bounded by PostHog's data retention (1 year on the free
 plan, 7 years on pay-as-you-go).
 
 ## Collection controls
 
-| Control | Effect |
-| --- | --- |
-| Settings → Usage data (`usageAnalyticsEnabled`) | On by default (an installation that never touched the switch is on; one that turned it off stays off). Off: nothing is recorded or sent, and **events not sent yet are deleted**. On again: collection resumes; nothing old comes back. |
-| `CHATURANGA_TELEMETRY_ENABLED=false` (or `0`) | Hard disable, whatever the setting says. Queued events are deleted at startup. |
-| Development, tests, automation | Never delivered: unpackaged builds, Vitest/`NODE_ENV=test` and runs with `CHATURANGA_USER_DATA_DIR` (UI automation) report `development`. `CHATURANGA_TELEMETRY_DEV=1` opts such a run in (use a separate test project); its events carry `release_channel: "development"`. |
-| No project configured | A build without a token/host can't send anything (Settings says so). |
+| Control                                         | Effect                                                                                                                                                                                                                                                                      |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Settings → Usage data (`usageAnalyticsEnabled`) | On by default (an installation that never touched the switch is on; one that turned it off stays off). Off: nothing is recorded or sent, and **events not sent yet are deleted**. On again: collection resumes; nothing old comes back.                                     |
+| `CHATURANGA_TELEMETRY_ENABLED=false` (or `0`)   | Hard disable, whatever the setting says. Queued events are deleted at startup.                                                                                                                                                                                              |
+| Development, tests, automation                  | Never delivered: unpackaged builds, Vitest/`NODE_ENV=test` and runs with `CHATURANGA_USER_DATA_DIR` (UI automation) report `development`. `CHATURANGA_TELEMETRY_DEV=1` opts such a run in (use a separate test project); its events carry `release_channel: "development"`. |
+| No project configured                           | A build without a token/host can't send anything (Settings says so).                                                                                                                                                                                                        |
 
 To have already-collected data removed, delete the installation's person/events in PostHog by `distinct_id`
 (the id is in the profile's `chaturanga.sqlite`, table `telemetry_state`).
@@ -75,11 +75,11 @@ To have already-collected data removed, delete the installation's person/events 
 
 The build reads these **public** values (electron-vite `MAIN_VITE_*` build-time variables):
 
-| Variable | Value |
-| --- | --- |
-| `MAIN_VITE_POSTHOG_PROJECT_TOKEN` | The project's ingest token (`phc_…`, Project settings → General). It can only send events. **Never** use a personal API key. |
-| `MAIN_VITE_POSTHOG_HOST` | The project's region ingest host: `https://eu.i.posthog.com` (EU Cloud) or `https://us.i.posthog.com` (US Cloud). No region is assumed; it must be https. |
-| `MAIN_VITE_RELEASE_CHANNEL` | `nightly` for nightly builds. Unset for the production app (a version with a prerelease tag, e.g. `0.2.0-nightly.1`, also reports `nightly`). |
+| Variable                          | Value                                                                                                                                                     |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MAIN_VITE_POSTHOG_PROJECT_TOKEN` | The project's ingest token (`phc_…`, Project settings → General). It can only send events. **Never** use a personal API key.                              |
+| `MAIN_VITE_POSTHOG_HOST`          | The project's region ingest host: `https://eu.i.posthog.com` (EU Cloud) or `https://us.i.posthog.com` (US Cloud). No region is assumed; it must be https. |
+| `MAIN_VITE_RELEASE_CHANNEL`       | `nightly` for nightly builds. Unset for the production app (a version with a prerelease tag, e.g. `0.2.0-nightly.1`, also reports `nightly`).             |
 
 - **Releases**: `.github/workflows/release.yml` passes repository variables `POSTHOG_PROJECT_TOKEN` and
   `POSTHOG_HOST` to the build step (Settings → Secrets and variables → Actions → Variables). CI builds (`ci.yml`)
@@ -124,11 +124,11 @@ as 0 or null).
 
 ### Activity and activation
 
-| Event | When | Properties |
-| --- | --- | --- |
-| `user_active` | First meaningful foreground action of a UTC day (at most once per day per installation) | `kind` (`study` / `play` / `puzzle`), `utc_day` |
-| `activation_milestone` | Once per installation per step | `milestone` (`engine_ready`, `game_imported`, `review_completed`, `review_studied`, `commentary_viewed`), `existing` (found already set up at startup) |
-| `game_imported` | A PGN import (user action) or a Lichess sync that added games | `source` (`pgn` / `lichess`), `games` |
+| Event                  | When                                                                                    | Properties                                                                                                                                             |
+| ---------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `user_active`          | First meaningful foreground action of a UTC day (at most once per day per installation) | `kind` (`study` / `play` / `puzzle`), `utc_day`                                                                                                        |
+| `activation_milestone` | Once per installation per step                                                          | `milestone` (`engine_ready`, `game_imported`, `review_completed`, `review_studied`, `commentary_viewed`), `existing` (found already set up at startup) |
+| `game_imported`        | A PGN import (user action) or a Lichess sync that added games                           | `source` (`pgn` / `lichess`), `games`                                                                                                                  |
 
 **Meaningful activity** is: a move made or stepped through in a game, review, engine/online game or puzzle
 within 4 s of the user's own key or pointer press while the window is focused and visible; importing a PGN;
@@ -140,14 +140,14 @@ update checks, provider retries and anything that completes in the background.
 
 One `review_started` and exactly one terminal event per operation.
 
-| Event | When | Properties |
-| --- | --- | --- |
-| `review_started` | Analyze pressed (a new operation) | `review_id`, `game_ref`, `ply_count`, `ply_bucket`, `engine_family`, `search_ms`, `multipv`, `maia_levels` |
-| `review_completed` | The engine pass finished | same + `duration_ms` (monotonic) |
-| `review_cancelled` | Cancelled (by the user, navigation or quitting) | same + `duration_ms`, `moves_done` |
-| `review_failed` | Any other error | same + `duration_ms`, `moves_done`, `error_code` (`engine_not_found`, `engine_unavailable`, `engine_exited`, `timeout`, `unknown`) |
-| `review_opened` | A **saved** review is shown on the Game review page (once per session per review) | `review_id`, `game_ref`, `legacy_review` |
-| `review_studied` | The user selected **3 distinct reviewed moves** of a review in one session (once per session per review) | `review_id`, `game_ref`, `legacy_review` |
+| Event              | When                                                                                                     | Properties                                                                                                                         |
+| ------------------ | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `review_started`   | Analyze pressed (a new operation)                                                                        | `review_id`, `game_ref`, `ply_count`, `ply_bucket`, `engine_family`, `search_ms`, `multipv`, `maia_levels`                         |
+| `review_completed` | The engine pass finished                                                                                 | same + `duration_ms` (monotonic)                                                                                                   |
+| `review_cancelled` | Cancelled (by the user, navigation or quitting)                                                          | same + `duration_ms`, `moves_done`                                                                                                 |
+| `review_failed`    | Any other error                                                                                          | same + `duration_ms`, `moves_done`, `error_code` (`engine_not_found`, `engine_unavailable`, `engine_exited`, `timeout`, `unknown`) |
+| `review_opened`    | A **saved** review is shown on the Game review page (once per session per review)                        | `review_id`, `game_ref`, `legacy_review`                                                                                           |
+| `review_studied`   | The user selected **3 distinct reviewed moves** of a review in one session (once per session per review) | `review_id`, `game_ref`, `legacy_review`                                                                                           |
 
 Re-analyzing a game three times is three `review_started`/`review_completed` operations and one `game_ref`.
 Loading a saved review, autosaves, IPC broadcasts and React renders never produce a completion.
@@ -158,20 +158,20 @@ Commentary is on demand: once a review is ready and the Commentary tab is visibl
 is requested alone (debounced), cached per move in the review, and saved with the game. A failed prose
 validation triggers one corrective retry.
 
-| Event | When | Properties |
-| --- | --- | --- |
-| `commentary_requested` | One **logical** request for one move | `request_id`, `review_id`, `game_ref`, `ply`, `trigger` (`auto` / `user_retry`), `detail`, `model`, `model_vendor`, `model_is_default` |
-| `$ai_generation` | Each actual HTTP attempt (PostHog LLM analytics → Generations) | `$ai_trace_id` (= `request_id`), `$ai_span_id`, `$ai_span_name` (`commentary` / `commentary validation retry`), `$ai_provider` (`openrouter`), `$ai_model`, `$ai_input` (the messages sent), `$ai_output_choices` (the answer, when one arrived), `$ai_input_tokens`, `$ai_output_tokens`, `$ai_total_cost_usd` (when OpenRouter reported them), `$ai_latency` (s), `$ai_http_status`, `$ai_temperature`, `$ai_max_tokens`, `$ai_is_error` / `$ai_error` (no answer arrived: the failure code); plus `request_id`, `attempt`, `reason`, `result` (`accepted`, `validation_failed`, or a failure code), `review_id`, `game_ref`, `ply`, `trigger`, `detail` |
-| `$ai_trace` | A logical request that reached the provider ended (LLM analytics → Traces) | `$ai_trace_id`, `$ai_span_name`, `$ai_input_state` (the first attempt's messages), `$ai_output_state` (the accepted explanation), `$ai_latency`, `$ai_is_error`, `$ai_error` |
-| `commentary_completed` / `commentary_failed` | The single terminal outcome per logical request | `request_id`, `ply`, `attempts`, `validation_retried`, `first_attempt_valid`, `latency_ms`, `error_code` (failed), usage totals over **all answered attempts** (`prompt_tokens_total`, `completion_tokens_total`, `cost_usd_total`) and `tokens_complete` / `cost_complete` (false when any answered attempt didn't report them; missing totals are omitted, never 0) |
-| `commentary_viewed` | An explanation stayed in view **2 s** with the Commentary tab visible and the window focused (once per session, review and move) | `review_id`, `game_ref`, `ply`, `served_from_cache` |
-| `commentary_session_started` | The first qualified view for a game in a session | `review_id`, `game_ref`, `legacy_review` |
+| Event                                        | When                                                                                                                             | Properties                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `commentary_requested`                       | One **logical** request for one move                                                                                             | `request_id`, `review_id`, `game_ref`, `ply`, `trigger` (`auto` / `user_retry`), `detail`, `model`, `model_vendor`, `model_is_default`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `$ai_generation`                             | Each actual HTTP attempt (PostHog LLM analytics → Generations)                                                                   | `$ai_trace_id` (= `request_id`), `$ai_span_id`, `$ai_span_name` (`commentary` / `commentary validation retry`), `$ai_provider` (`openrouter`), `$ai_model`, `$ai_input` (the messages sent), `$ai_output_choices` (the answer, when one arrived), `$ai_input_tokens`, `$ai_output_tokens`, `$ai_total_cost_usd` (when OpenRouter reported them), `$ai_latency` (s), `$ai_http_status`, `$ai_temperature`, `$ai_max_tokens`, `$ai_is_error` / `$ai_error` (no answer arrived: the failure code); plus `request_id`, `attempt`, `reason`, `result` (`accepted`, `validation_failed`, or a failure code), `review_id`, `game_ref`, `ply`, `trigger`, `detail` |
+| `$ai_trace`                                  | A logical request that reached the provider ended (LLM analytics → Traces)                                                       | `$ai_trace_id`, `$ai_span_name`, `$ai_input_state` (the first attempt's messages), `$ai_output_state` (the accepted explanation), `$ai_latency`, `$ai_is_error`, `$ai_error`                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `commentary_completed` / `commentary_failed` | The single terminal outcome per logical request                                                                                  | `request_id`, `ply`, `attempts`, `validation_retried`, `first_attempt_valid`, `latency_ms`, `error_code` (failed), usage totals over **all answered attempts** (`prompt_tokens_total`, `completion_tokens_total`, `cost_usd_total`) and `tokens_complete` / `cost_complete` (false when any answered attempt didn't report them; missing totals are omitted, never 0)                                                                                                                                                                                                                                                                                      |
+| `commentary_viewed`                          | An explanation stayed in view **2 s** with the Commentary tab visible and the window focused (once per session, review and move) | `review_id`, `game_ref`, `ply`, `served_from_cache`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `commentary_session_started`                 | The first qualified view for a game in a session                                                                                 | `review_id`, `game_ref`, `legacy_review`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 Failure codes: `no_api_key`, `unreadable_key`, `invalid_key`, `insufficient_credits`, `invalid_model`,
 `rate_limited`, `provider_error`, `network`, `timeout`, `empty_response`, `validation_failed`.
 
 - A user's Retry is a new logical request with `trigger: user_retry`; the automatic validation retry is a second
-  *attempt* of the same request.
+  _attempt_ of the same request.
 - A batch with mixed results produces one terminal event per move.
 - Reading a cached explanation is a `commentary_viewed` with `served_from_cache: true` and **no** request or
   generation. A result that arrives after the user moved to another move (or hid the tab / left the window) is

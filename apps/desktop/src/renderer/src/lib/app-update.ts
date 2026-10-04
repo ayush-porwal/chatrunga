@@ -23,7 +23,9 @@ export const updateActionLabel: Record<UpdateAction, string> = {
 };
 
 /** The changelog card's primary button: its label, and the action (null = shown disabled). */
-export function updateCardAction(status: UpdateStatus): { label: string; action: UpdateAction | null } | null {
+export function updateCardAction(
+  status: UpdateStatus
+): { label: string; action: UpdateAction | null } | null {
   switch (status.kind) {
     case "ready":
       return { label: "Restart to update", action: "install" };
@@ -42,7 +44,15 @@ export function updateCardAction(status: UpdateStatus): { label: string; action:
 export type CheckFeedback = "up-to-date" | "error" | null;
 
 export type UpdateButtonView = {
-  visual: "idle" | "checking" | "up-to-date" | "error" | "update" | "downloading" | "ready" | "disabled";
+  visual:
+    | "idle"
+    | "checking"
+    | "up-to-date"
+    | "error"
+    | "update"
+    | "downloading"
+    | "ready"
+    | "disabled";
   /** Accessible name and the tooltip's first line. */
   label: string;
   /** Tooltip's quiet second line. */
@@ -57,7 +67,11 @@ export type UpdateButtonView = {
  * The sidebar update button: "Check for updates" (click checks) until an update exists, then the
  * update's state (hover shows its changelog card).
  */
-export function updateButtonView(state: UpdateState | null, feedback: CheckFeedback, now: number): UpdateButtonView {
+export function updateButtonView(
+  state: UpdateState | null,
+  feedback: CheckFeedback,
+  now: number
+): UpdateButtonView {
   const base = { detail: null, hasUpdate: false, percent: null };
   if (!state) return { ...base, visual: "idle", label: "Check for updates" };
   const status = state.status;
@@ -68,7 +82,12 @@ export function updateButtonView(state: UpdateState | null, feedback: CheckFeedb
       return { ...base, visual: "checking", label: "Checking for updates…" };
     case "available":
     case "manual":
-      return { ...base, visual: "update", label: `Chaturanga v${status.version} available`, hasUpdate: true };
+      return {
+        ...base,
+        visual: "update",
+        label: `Chaturanga v${status.version} available`,
+        hasUpdate: true
+      };
     case "downloading":
       return {
         ...base,
@@ -78,15 +97,32 @@ export function updateButtonView(state: UpdateState | null, feedback: CheckFeedb
         percent: status.percent
       };
     case "ready":
-      return { ...base, visual: "ready", label: `Update ready · v${status.version}`, hasUpdate: true };
+      return {
+        ...base,
+        visual: "ready",
+        label: `Update ready · v${status.version}`,
+        hasUpdate: true
+      };
     case "up-to-date":
-      if (feedback === "up-to-date") return { ...base, visual: "up-to-date", label: `You’re up to date · v${state.currentVersion}` };
+      if (feedback === "up-to-date")
+        return {
+          ...base,
+          visual: "up-to-date",
+          label: `You’re up to date · v${state.currentVersion}`
+        };
       break;
     case "error":
       if (feedback === "error") return { ...base, visual: "error", label: status.message };
       return { ...base, visual: "idle", label: "Check for updates", detail: status.message };
+    case "idle":
+      break;
   }
-  return { ...base, visual: "idle", label: "Check for updates", detail: formatLastChecked(state.lastCheckedAt, now) };
+  return {
+    ...base,
+    visual: "idle",
+    label: "Check for updates",
+    detail: formatLastChecked(state.lastCheckedAt, now)
+  };
 }
 
 /** The Settings status line. */
@@ -128,7 +164,9 @@ export function formatLastChecked(checkedAt: number | null, now: number): string
 export function formatReleaseDate(releaseDate: string | null | undefined): string | null {
   if (!releaseDate) return null;
   const date = new Date(releaseDate);
-  return Number.isNaN(date.getTime()) ? null : date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  return Number.isNaN(date.getTime())
+    ? null
+    : date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
 /* ------------------------------------------------------------------ release notes */
@@ -199,19 +237,26 @@ export function parseReleaseNotes(text: string): ReleaseNoteBlock[] {
       flush();
       const title = plainText(inlineParts(heading[1]));
       skipping = /^install\b/i.test(title);
-      if (!skipping && !/^chaturanga v?\d/i.test(title) && title) blocks.push({ type: "heading", text: title });
+      if (!skipping && !/^chaturanga v?\d/i.test(title) && title)
+        blocks.push({ type: "heading", text: title });
       continue;
     }
     const bullet = /^[-*+]\s+(.*)$/.exec(line);
     if (bullet) {
       flush();
       // Release-plan bullets end with the commit link, "([`abc1234`](…))": noise in the app.
-      const item = bullet[1].replace(/\s*\(\[`?[0-9a-f]{7,40}`?\]\([^)]*\)\)$/, "").replace(/\s*\(`?[0-9a-f]{7,40}`?\)$/, "");
+      const item = bullet[1]
+        .replace(/\s*\(\[`?[0-9a-f]{7,40}`?\]\([^)]*\)\)$/, "")
+        .replace(/\s*\(`?[0-9a-f]{7,40}`?\)$/, "");
       const parts = inlineParts(item);
       if (parts.length && !skipping) blocks.push({ type: "bullet", parts });
       continue;
     }
-    if (!line || /^full changelog/i.test(plainText(inlineParts(line))) || /^[-*_]{3,}$/.test(line)) {
+    if (
+      !line ||
+      /^full changelog/i.test(plainText(inlineParts(line))) ||
+      /^[-*_]{3,}$/.test(line)
+    ) {
       flush();
       continue;
     }

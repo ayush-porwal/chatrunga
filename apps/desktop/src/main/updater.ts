@@ -73,7 +73,9 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
   private started: Promise<void> | null = null;
 
   /** Resolves the mode, configures electron-updater and schedules checks. Safe to call once. */
-  start(options: { prepareForInstall: () => void | boolean | Promise<void | boolean> }): Promise<void> {
+  start(options: {
+    prepareForInstall: () => void | boolean | Promise<void | boolean>;
+  }): Promise<void> {
     this.prepareForInstall = options.prepareForInstall;
     this.started ??= this.init().catch((error) => {
       logger.error("updater", "init failed:", error);
@@ -105,20 +107,37 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
   async download(): Promise<UpdateState> {
     await this.started;
     const updater = this.updater;
-    if (!updater || this.state.mode !== "auto" || this.state.status.kind !== "available") return this.state;
+    if (!updater || this.state.mode !== "auto" || this.state.status.kind !== "available")
+      return this.state;
     this.dispatch({ type: "download-started" });
     if (this.bundleUpdater) void this.downloadBundle(this.bundleUpdater);
-    else updater.downloadUpdate().catch((error) => logger.warn("updater", "download failed:", errorMessage(error)));
+    else
+      updater
+        .downloadUpdate()
+        .catch((error) => logger.warn("updater", "download failed:", errorMessage(error)));
     return this.state;
   }
 
   private async downloadBundle(bundleUpdater: MacBundleUpdater): Promise<void> {
     const info = this.availableInfo;
-    const zip = info && this.feed ? macUpdateZip(this.feed, { version: info.version, files: info.files ?? [] }, downloadTarget().arch, this.feedOverride) : null;
+    const zip =
+      info && this.feed
+        ? macUpdateZip(
+            this.feed,
+            { version: info.version, files: info.files ?? [] },
+            downloadTarget().arch,
+            this.feedOverride
+          )
+        : null;
     try {
       if (!info || !zip) throw new Error("no update package for this Mac in the release");
       await bundleUpdater.download({ ...zip, version: info.version }, (transferred, total) =>
-        this.dispatch({ type: "progress", percent: total ? (transferred / total) * 100 : 0, transferred, total })
+        this.dispatch({
+          type: "progress",
+          percent: total ? (transferred / total) * 100 : 0,
+          transferred,
+          total
+        })
       );
       this.dispatch({ type: "downloaded", info });
     } catch (error) {
@@ -215,7 +234,8 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
     const before = this.state.allowPrerelease;
     this.configure(updater);
     if (this.state.allowPrerelease !== before) void this.check();
-    else if (this.state.autoDownload && this.state.status.kind === "available") void this.download();
+    else if (this.state.autoDownload && this.state.status.kind === "available")
+      void this.download();
   }
 
   private async init(): Promise<void> {
@@ -230,7 +250,10 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
       macBundleReplaceable: mac && !macSigned ? await canReplaceBundle(bundlePath) : false
     });
     this.state = { ...this.state, mode, modeReason: reason };
-    logger.info("updater", `mode ${mode} (version ${this.state.currentVersion}, ${process.platform}-${process.arch})`);
+    logger.info(
+      "updater",
+      `mode ${mode} (version ${this.state.currentVersion}, ${process.platform}-${process.arch})`
+    );
     if (mode === "disabled") {
       this.setStatus({ kind: "disabled", message: reason ?? "" });
       return;
@@ -256,12 +279,19 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
     updater.allowDowngrade = false;
     updater.autoInstallOnAppQuit = mode === "auto" && !bundleSwap;
     if (bundleSwap) {
-      const bundleUpdater = new MacBundleUpdater(bundlePath, join(app.getPath("userData"), "pending-update"));
+      const bundleUpdater = new MacBundleUpdater(
+        bundlePath,
+        join(app.getPath("userData"), "pending-update")
+      );
       const lastSwap = await bundleUpdater.lastSwapResult();
-      if (lastSwap?.installed) logger.info("updater", `last update installed (now ${this.state.currentVersion})`);
+      if (lastSwap?.installed)
+        logger.info("updater", `last update installed (now ${this.state.currentVersion})`);
       else if (lastSwap) {
         logger.warn("updater", `last update failed to install: ${lastSwap.detail}`);
-        this.setStatus({ kind: "error", message: "The last update couldn’t be installed. It will download again." });
+        this.setStatus({
+          kind: "error",
+          message: "The last update couldn’t be installed. It will download again."
+        });
       }
       await bundleUpdater.clearStaging();
       this.bundleUpdater = bundleUpdater;
@@ -296,10 +326,18 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
 
   private subscribe(updater: AppUpdater): void {
     updater.on("checking-for-update", () => this.dispatch({ type: "checking" }));
-    updater.on("update-not-available", () => this.dispatch({ type: "not-available" }, { checked: true }));
+    updater.on("update-not-available", () =>
+      this.dispatch({ type: "not-available" }, { checked: true })
+    );
     updater.on("update-available", (info: UpdateInfo) => {
-      const manualUrl = this.state.mode === "manual" && this.feed ? manualDownloadUrl(this.feed, info, downloadTarget(), this.feedOverride) : null;
-      logger.info("updater", `update available: ${info.version}${manualUrl ? ` (manual: ${manualUrl})` : ""}`);
+      const manualUrl =
+        this.state.mode === "manual" && this.feed
+          ? manualDownloadUrl(this.feed, info, downloadTarget(), this.feedOverride)
+          : null;
+      logger.info(
+        "updater",
+        `update available: ${info.version}${manualUrl ? ` (manual: ${manualUrl})` : ""}`
+      );
       this.availableInfo = info;
       this.dispatch({ type: "available", info, manualUrl }, { checked: true });
       if (this.bundleUpdater) {
@@ -307,7 +345,12 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
       } else if (!manualUrl && updater.autoDownload) this.dispatch({ type: "download-started" });
     });
     updater.on("download-progress", (progress: ProgressInfo) =>
-      this.dispatch({ type: "progress", percent: progress.percent, transferred: progress.transferred, total: progress.total })
+      this.dispatch({
+        type: "progress",
+        percent: progress.percent,
+        transferred: progress.transferred,
+        total: progress.total
+      })
     );
     updater.on("update-downloaded", (info: UpdateInfo) => {
       logger.info("updater", `update downloaded: ${info.version}`);
@@ -321,7 +364,11 @@ class UpdateService extends EventEmitter<UpdaterEvents> {
 
   private dispatch(event: UpdateEvent, options: { checked?: boolean } = {}): void {
     const status = reduceUpdateStatus(this.state.status, event);
-    this.state = { ...this.state, status, lastCheckedAt: options.checked ? Date.now() : this.state.lastCheckedAt };
+    this.state = {
+      ...this.state,
+      status,
+      lastCheckedAt: options.checked ? Date.now() : this.state.lastCheckedAt
+    };
     this.emit("state", this.state);
   }
 
@@ -335,7 +382,10 @@ export const updateService = new UpdateService();
 
 /** electron-updater, loaded only in packaged builds (it patches `fs` and constructs a platform updater). */
 async function loadAutoUpdater(): Promise<AppUpdater> {
-  const module = (await import("electron-updater")) as { autoUpdater?: AppUpdater; default?: { autoUpdater: AppUpdater } };
+  const module = (await import("electron-updater")) as {
+    autoUpdater?: AppUpdater;
+    default?: { autoUpdater: AppUpdater };
+  };
   const updater = module.autoUpdater ?? module.default?.autoUpdater;
   if (!updater) throw new Error("electron-updater did not load");
   return updater;
@@ -343,7 +393,10 @@ async function loadAutoUpdater(): Promise<AppUpdater> {
 
 /** Platform + CPU to pick an installer for; an x64 build under Rosetta gets the native arm64 one. */
 function downloadTarget(): { platform: NodeJS.Platform; arch: string } {
-  return { platform: process.platform, arch: app.runningUnderARM64Translation ? "arm64" : process.arch };
+  return {
+    platform: process.platform,
+    arch: app.runningUnderARM64Translation ? "arm64" : process.arch
+  };
 }
 
 function parseFeedOverride(value: string | undefined): string | null {
@@ -359,13 +412,18 @@ function parseFeedOverride(value: string | undefined): string | null {
 /** Whether the running .app carries a Developer ID signature (`codesign -dv` names a team). */
 function isRunningAppDeveloperIdSigned(bundle: string): Promise<boolean> {
   return new Promise((done) => {
-    execFile("/usr/bin/codesign", ["-dv", "--verbose=2", bundle], { timeout: 5000 }, (error, stdout, stderr) => {
-      if (error) {
-        logger.warn("updater", "codesign check failed:", errorMessage(error));
-        done(false);
-        return;
+    execFile(
+      "/usr/bin/codesign",
+      ["-dv", "--verbose=2", bundle],
+      { timeout: 5000 },
+      (error, stdout, stderr) => {
+        if (error) {
+          logger.warn("updater", "codesign check failed:", errorMessage(error));
+          done(false);
+          return;
+        }
+        done(isDeveloperIdSigned(`${stdout}\n${stderr}`));
       }
-      done(isDeveloperIdSigned(`${stdout}\n${stderr}`));
-    });
+    );
   });
 }

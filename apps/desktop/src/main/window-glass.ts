@@ -1,4 +1,10 @@
-import { app, BrowserWindow, ipcMain, nativeTheme, type BrowserWindowConstructorOptions } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  nativeTheme,
+  type BrowserWindowConstructorOptions
+} from "electron";
 import type { WindowGlassState } from "@chaturanga/shared/ipc/chaturanga-api";
 import { resolveWindowGlassState, sameGlassState, windowGlassOptions } from "./window-glass-state";
 

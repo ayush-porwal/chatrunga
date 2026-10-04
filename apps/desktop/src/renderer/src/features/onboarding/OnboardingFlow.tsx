@@ -1,11 +1,4 @@
-import {
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type ReactNode
-} from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft,
@@ -89,7 +82,7 @@ export function OnboardingFlow({
   const headingId = useId();
   const setup = useEngineSetup();
   const settingsQuery = useSettingsQuery();
-  const settings: AppSettings = { ...defaultSettings, ...(settingsQuery.data ?? {}) };
+  const settings: AppSettings = { ...defaultSettings, ...settingsQuery.data };
   const setSetting = useSetSetting();
 
   useExitGhost(rootRef, motion.ms.standard);
@@ -122,6 +115,7 @@ export function OnboardingFlow({
   const heading = { headingRef, headingId, footer };
 
   return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- the modal dialog handles Escape, keeps Tab inside and stops the app's shortcuts
     <div
       ref={rootRef}
       role="dialog"
@@ -157,7 +151,7 @@ export function OnboardingFlow({
             <div
               key={step}
               className="onb-step-in scroll-area scroll-fade -mx-1 mt-10 min-h-0 overflow-y-auto px-1 pb-1"
-              style={{ "--onb-dir": direction } as React.CSSProperties}
+              style={{ "--onb-dir": direction }}
             >
               <div className="grid content-start gap-6">
                 {step === "welcome" ? (
@@ -422,7 +416,12 @@ function StepFooter({
     <div className="grid h-10 grid-cols-[6rem_minmax(0,1fr)_12.5rem] items-center gap-2">
       {back ? (
         // Pulled left by its padding so the label lines up with the heading's left edge.
-        <Button variant="ghost" data-slot="onb-back" className="-ml-3 h-10 w-24 justify-start" onClick={back}>
+        <Button
+          variant="ghost"
+          data-slot="onb-back"
+          className="-ml-3 h-10 w-24 justify-start"
+          onClick={back}
+        >
           <ArrowLeft />
           Back
         </Button>
@@ -437,10 +436,7 @@ function StepFooter({
 }
 
 /** The footer's primary button: fills the fixed slot, so its box is the same on every step. */
-function PrimaryButton({
-  className,
-  ...props
-}: React.ComponentProps<typeof Button>) {
+function PrimaryButton({ className, ...props }: React.ComponentProps<typeof Button>) {
   return (
     <Button
       variant="primary"
@@ -466,7 +462,10 @@ function WelcomeStep({ onNext, footer, ...heading }: StepHeadingProps & { onNext
           any part of it.
         </p>
       </StepHeader>
-      <StepFooter footer={footer} primary={<PrimaryButton onClick={onNext}>Continue</PrimaryButton>} />
+      <StepFooter
+        footer={footer}
+        primary={<PrimaryButton onClick={onNext}>Continue</PrimaryButton>}
+      />
     </>
   );
 }
@@ -785,9 +784,7 @@ function LevelStep({
               if (event.target.value && value >= 400 && value <= 3500)
                 setSetting("reviewPlayerRating", Math.round(value));
             }}
-            onBlur={() =>
-              setRating(clampRating(Number(ratingText) || settings.reviewPlayerRating))
-            }
+            onBlur={() => setRating(clampRating(Number(ratingText) || settings.reviewPlayerRating))}
           />
           <span className={fieldHint}>Any rating system is fine; a guess works too.</span>
         </div>
@@ -797,24 +794,28 @@ function LevelStep({
         <div className="grid content-start gap-2">
           <span className={fieldLabel}>Side you usually review</span>
           <div className="flex h-10 items-center">
-          <SegmentedControl
-            ariaLabel="Side you usually review"
-            className="w-full"
-            fullWidth
-            value={settings.reviewPlayerColor}
-            onChange={(value) => setSetting("reviewPlayerColor", value)}
-            options={[
-              { value: "white", label: "White", icon: <SideDot color="white" /> },
-              { value: "black", label: "Black", icon: <SideDot color="black" /> }
-            ]}
-          />
+            <SegmentedControl
+              ariaLabel="Side you usually review"
+              className="w-full"
+              fullWidth
+              value={settings.reviewPlayerColor}
+              onChange={(value) => setSetting("reviewPlayerColor", value)}
+              options={[
+                { value: "white", label: "White", icon: <SideDot color="white" /> },
+                { value: "black", label: "Black", icon: <SideDot color="black" /> }
+              ]}
+            />
           </div>
           <p className={fieldHint}>Explanations are written for this side.</p>
         </div>
 
         <div className="grid content-start gap-2">
           <span className={fieldLabel}>Board</span>
-          <div role="radiogroup" aria-label="Board colours" className="flex h-10 items-center gap-2">
+          <div
+            role="radiogroup"
+            aria-label="Board colours"
+            className="flex h-10 items-center gap-2"
+          >
             {themeSwatches.map((theme) => {
               const checked = !customTheme && settings.boardTheme === theme.id;
               const colors = boardThemeSquareColors[theme.id];
@@ -1081,8 +1082,7 @@ function DoneStep({
   const coach = useOpenRouterConfigQuery();
   const hasKey = Boolean(coach.data?.hasApiKey);
   const failed = setup.rows.find((row) => row.status === "error");
-  const allInstalled =
-    setup.rows.length > 0 && setup.rows.every((row) => row.status === "ready");
+  const allInstalled = setup.rows.length > 0 && setup.rows.every((row) => row.status === "ready");
   const downloading = setup.phase === "downloading";
 
   const engines: { tone: SummaryTone; text: string } = downloading
@@ -1098,7 +1098,9 @@ function DoneStep({
     : setup.engineReady
       ? {
           tone: "done",
-          text: allInstalled ? "Stockfish and Maia are ready." : "An engine is ready for Game review."
+          text: allInstalled
+            ? "Stockfish and Maia are ready."
+            : "An engine is ready for Game review."
         }
       : failed
         ? { tone: "failed", text: `${failed.label} didn’t download. You can retry it from Home.` }

@@ -15,12 +15,27 @@ describe("puzzle rating text", () => {
 
   it("says what the attempt did to the rating", () => {
     const after = { rating: 1523, deviation: 80, volatility: 0.09 };
-    expect(ratingLine({ attemptId: "a", rated: true, unratedReason: null, before: after, after, delta: 12 })).toEqual({
+    expect(
+      ratingLine({
+        attemptId: "a",
+        rated: true,
+        unratedReason: null,
+        before: after,
+        after,
+        delta: 12
+      })
+    ).toEqual({
       text: "Your rating 1523",
       delta: 12
     });
     const unrated = { attemptId: "a", rated: false, before: null, after: null, delta: null };
-    expect(ratingLine({ ...unrated, unratedReason: "unrated-puzzle" })).toEqual({ text: "Unrated puzzle", delta: null });
-    expect(ratingLine({ ...unrated, unratedReason: "already-played" })).toEqual({ text: "Already played — not rated", delta: null });
+    expect(ratingLine({ ...unrated, unratedReason: "unrated-puzzle" })).toEqual({
+      text: "Unrated puzzle",
+      delta: null
+    });
+    expect(ratingLine({ ...unrated, unratedReason: "already-played" })).toEqual({
+      text: "Already played — not rated",
+      delta: null
+    });
   });
 });

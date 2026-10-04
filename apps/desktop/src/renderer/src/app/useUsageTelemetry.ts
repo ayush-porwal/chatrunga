@@ -38,7 +38,7 @@ type StudyTarget = { reviewId: string | null; gameId: string | null };
 const studyTargets = new Map<string, StudyTarget>();
 const studyCounter = new StudyCounter(REVIEW_STUDIED_MOVES, (key) => {
   const target = studyTargets.get(key);
-  if (target) trackUsage({ type: "review_studied", ...target });
+  if (target) void trackUsage({ type: "review_studied", ...target });
 });
 /**
  * Game review page analytics: `review_opened` when a saved review is shown (a review this session
@@ -58,7 +58,7 @@ export function useReviewUsage(): void {
 
   useEffect(() => {
     if (!reviewKey || origin !== "saved") return;
-    trackUsage({ type: "review_opened", reviewId, gameId: analyticsGameId(gameId) });
+    void trackUsage({ type: "review_opened", reviewId, gameId: analyticsGameId(gameId) });
   }, [gameId, origin, reviewId, reviewKey]);
 
   useEffect(() => {

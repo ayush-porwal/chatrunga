@@ -309,7 +309,7 @@ function practise(random: Random, repertoireId: string): void {
   });
 }
 
-function runSequence(seed: number, color: RepertoireColor, steps: number): void {
+function expectFixpointAcrossEdits(seed: number, color: RepertoireColor, steps: number): void {
   const random = seededRandom(seed);
   const created = service.createRepertoire({ name: `Seed ${seed}`, color });
   const id = created.id;
@@ -362,7 +362,7 @@ function runSequence(seed: number, color: RepertoireColor, steps: number): void 
           revision = update().repertoire.revision;
         } catch (error) {
           // Refused (e.g. a move with no occurrence left): nothing was written.
-          if (!(error instanceof Error) || !/^Invalid /.test(error.message)) throw error;
+          if (!(error instanceof Error) || !error.message.startsWith("Invalid ")) throw error;
         }
       }
     } else if (roll < 0.25 && chapters().length > 1) {
@@ -411,7 +411,7 @@ describe("reindexChapter", () => {
     [5, "white"],
     [6, "black"]
   ] as const)("matches a full reindex across random edits (seed %i, %s)", (seed, color) => {
-    runSequence(seed, color, 120);
+    expectFixpointAcrossEdits(seed, color, 120);
   });
 
   it("doesn't rebuild the whole repertoire for a comment-only or one-move save", () => {

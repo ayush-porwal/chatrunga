@@ -1,9 +1,21 @@
 import { useEffect } from "react";
 import { createGameFromFen } from "@chaturanga/shared/chess/pgn";
 import type { ChaturangaApi } from "@chaturanga/shared/ipc/chaturanga-api";
-import type { LichessEvent, LichessGameFull, LichessGameState, LichessStatus } from "@chaturanga/shared/types/lichess";
+import type {
+  LichessEvent,
+  LichessGameFull,
+  LichessGameState,
+  LichessStatus
+} from "@chaturanga/shared/types/lichess";
 import { useEventCallback } from "@/lib/use-event-callback";
-import { isGameOver, lichessErrorMessage, lichessHeaders, lichessOutcome, sideToMoveAfter, yourColor } from "../features/lichess/lichess-game";
+import {
+  isGameOver,
+  lichessErrorMessage,
+  lichessHeaders,
+  lichessOutcome,
+  sideToMoveAfter,
+  yourColor
+} from "../features/lichess/lichess-game";
 import { useRefreshGames } from "../queries/api";
 import { mainlineUcis, useGameStore } from "../stores/game-store";
 import { useLichessStore } from "../stores/lichess-store";
@@ -68,7 +80,10 @@ export function startLichessSync({
     const previousAccountId = lichess().status.account?.id ?? null;
     lichess().setStatus(status);
     const live = lichess().live;
-    const accountGone = !status.account || status.tokenRejected || (previousAccountId !== null && status.account.id !== previousAccountId);
+    const accountGone =
+      !status.account ||
+      status.tokenRejected ||
+      (previousAccountId !== null && status.account.id !== previousAccountId);
     if (accountGone && pendingGameId) {
       // A game still loading belongs to the account that's gone.
       void api.unwatchGame(pendingGameId);
@@ -126,14 +141,27 @@ export function startLichessSync({
     sending = null;
     openGame(() => {
       const board = game();
-      board.loadGame(createGameFromFen({ fen: full.initialFen, source: "lichess", headers: lichessHeaders(full) }));
+      board.loadGame(
+        createGameFromFen({
+          fen: full.initialFen,
+          source: "lichess",
+          headers: lichessHeaders(full)
+        })
+      );
       board.setOrientation(color);
       board.setGameSource("lichess");
       board.setMode("online");
       board.setEngineSide(color === "white" ? "black" : "white");
       board.setEngineMatchClock(full.clock);
       board.setMatchFeedback(null);
-      lichess().setLive({ id: full.id, yourColor: color, full, drawOffer: null, connected: true, over: false });
+      lichess().setLive({
+        id: full.id,
+        yourColor: color,
+        full,
+        drawOffer: null,
+        connected: true,
+        over: false
+      });
       applyState(full, full.state);
     });
   }
@@ -143,7 +171,8 @@ export function startLichessSync({
     serverMoves = state.moves;
     if (sending && state.moves.includes(sending)) sending = null;
     // Our move still on its way stays on the board; anything else follows the server.
-    const pending = sending && mainlineUcis(board.moveTree).join(" ") === [...state.moves, sending].join(" ");
+    const pending =
+      sending && mainlineUcis(board.moveTree).join(" ") === [...state.moves, sending].join(" ");
     if (!pending && !board.syncMainline(state.moves)) {
       board.setMatchFeedback("The game and the board disagree. Reopen it from Play.");
     }
@@ -200,7 +229,8 @@ export function startLichessSync({
         return;
       }
       case "gameConnection":
-        if (lichess().live?.id === event.gameId) lichess().patchLive({ connected: event.connected });
+        if (lichess().live?.id === event.gameId)
+          lichess().patchLive({ connected: event.connected });
         return;
       case "sync":
         lichess().setSync({ running: event.running, imported: event.imported, error: event.error });
@@ -214,11 +244,20 @@ export function startLichessSync({
   // Your moves: a new last move of yours that the server doesn't have yet goes to Lichess.
   const unsubscribeBoard = useGameStore.subscribe((state, previous) => {
     const live = lichess().live;
-    if (!live || live.over || state.mode !== "online" || state.moveTree === previous.moveTree) return;
+    if (!live || live.over || state.mode !== "online" || state.moveTree === previous.moveTree)
+      return;
     const line = mainlineUcis(state.moveTree);
-    if (line.length !== serverMoves.length + 1 || line.slice(0, -1).join(" ") !== serverMoves.join(" ")) return;
+    if (
+      line.length !== serverMoves.length + 1 ||
+      line.slice(0, -1).join(" ") !== serverMoves.join(" ")
+    )
+      return;
     const uci = line[line.length - 1];
-    if (sending === uci || sideToMoveAfter(live.full.initialFen, serverMoves.length) !== live.yourColor) return;
+    if (
+      sending === uci ||
+      sideToMoveAfter(live.full.initialFen, serverMoves.length) !== live.yourColor
+    )
+      return;
     sending = uci;
     api.move(live.id, uci).catch((error: unknown) => {
       if (sending !== uci) return;
@@ -230,9 +269,9 @@ export function startLichessSync({
 
   return () => {
     disposed = true;
-    if (lichess().resumeGame === startGame) useLichessStore.setState({ resumeGame: () => undefined });
+    if (lichess().resumeGame === startGame)
+      useLichessStore.setState({ resumeGame: () => undefined });
     unsubscribeEvents();
     unsubscribeBoard();
   };
 }
-

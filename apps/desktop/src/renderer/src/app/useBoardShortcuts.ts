@@ -5,15 +5,25 @@ import { useEventCallback } from "@/lib/use-event-callback";
 export const BOARD_SHORTCUTS = { focus: "F", flip: "X" } as const;
 
 /** An open dialog or menu owns Escape (it closes itself); focus mode must not also react to it. */
-export const OVERLAY_SELECTOR = '[role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="menu"], [role="listbox"]';
+export const OVERLAY_SELECTOR =
+  '[role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="menu"], [role="listbox"]';
 
 /** Text entry keeps its letters and its Escape (inputs, text areas, selects, editable text, comboboxes). */
 export function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) {
+  if (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  ) {
     return true;
   }
-  return target.isContentEditable || Boolean(target.closest('[role="combobox"], [role="textbox"], [role="searchbox"], [role="spinbutton"]'));
+  return (
+    target.isContentEditable ||
+    Boolean(
+      target.closest('[role="combobox"], [role="textbox"], [role="searchbox"], [role="spinbutton"]')
+    )
+  );
 }
 
 export type BoardShortcutAction = "toggle-focus" | "exit-focus" | "flip";
@@ -23,7 +33,15 @@ export function boardShortcutAction(
   event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "repeat">,
   { enabled, focused, overlayOpen }: { enabled: boolean; focused: boolean; overlayOpen: boolean }
 ): BoardShortcutAction | null {
-  if (!enabled || overlayOpen || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.repeat) {
+  if (
+    !enabled ||
+    overlayOpen ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.altKey ||
+    event.shiftKey ||
+    event.repeat
+  ) {
     return null;
   }
   const key = event.key.toUpperCase();

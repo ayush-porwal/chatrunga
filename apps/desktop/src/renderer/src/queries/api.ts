@@ -18,7 +18,7 @@ import type {
 } from "@chaturanga/shared/types/chess";
 import type { CreateEngineInput, UpdateEngineInput } from "@chaturanga/shared/types/engine";
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
-import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
+import { defaultSettings, settingKeys, type AppSettings } from "@chaturanga/shared/types/settings";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { settlePendingSettings, withPendingSettings } from "./settings-pending";
 
@@ -43,7 +43,10 @@ function requireApi() {
 export function useEngineRegistrySubscription() {
   const queryClient = useQueryClient();
   useEffect(
-    () => api()?.onEnginesChanged?.(() => void queryClient.invalidateQueries({ queryKey: queryKeys.engines })),
+    () =>
+      api()?.onEnginesChanged?.(
+        () => void queryClient.invalidateQueries({ queryKey: queryKeys.engines })
+      ),
     [queryClient]
   );
 }
@@ -102,7 +105,8 @@ export function useGamePagesQuery(params: GameListParams) {
   return useInfiniteQuery({
     queryKey: [...queryKeys.games, "pages", params] as const,
     queryFn: async ({ pageParam }): Promise<GameListPage> =>
-      (await api()?.games.listPage({ ...params, cursor: pageParam, limit: GAME_PAGE_SIZE })) ?? NO_GAMES,
+      (await api()?.games.listPage({ ...params, cursor: pageParam, limit: GAME_PAGE_SIZE })) ??
+      NO_GAMES,
     initialPageParam: null as GameListCursor | null,
     getNextPageParam: (page) => page.nextCursor,
     // A new search keeps the last results up while it runs (no skeleton flash per keystroke).
@@ -220,7 +224,10 @@ export function settingsWriteOptions(queryClient: QueryClient) {
     mutationFn: ({ patch }: SettingsWrite) => requireApi().settings.patch(patch),
     onMutate: async ({ patch, previous }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.settings });
-      const current = { ...defaultSettings, ...queryClient.getQueryData<AppSettings>(queryKeys.settings) };
+      const current = {
+        ...defaultSettings,
+        ...queryClient.getQueryData<AppSettings>(queryKeys.settings)
+      };
       const before: SettingsPatch = previous ?? pickSettings(current, patch);
       queryClient.setQueryData<AppSettings>(queryKeys.settings, { ...current, ...patch });
       return { before };
@@ -243,9 +250,13 @@ export function settingsWriteOptions(queryClient: QueryClient) {
 }
 
 /** After a failed write: its keys go back to `before`, unless a newer value replaced them meanwhile. */
-export function revertFailedWrite(current: AppSettings, patch: SettingsPatch, before: SettingsPatch): AppSettings {
+export function revertFailedWrite(
+  current: AppSettings,
+  patch: SettingsPatch,
+  before: SettingsPatch
+): AppSettings {
   const next = { ...current };
-  for (const key of Object.keys(patch) as (keyof AppSettings)[]) {
+  for (const key of settingKeys(patch)) {
     if (Object.is(current[key], patch[key])) Object.assign(next, { [key]: before[key] });
   }
   return next;
@@ -253,7 +264,7 @@ export function revertFailedWrite(current: AppSettings, patch: SettingsPatch, be
 
 function pickSettings(settings: AppSettings, patch: SettingsPatch): SettingsPatch {
   const picked: SettingsPatch = {};
-  for (const key of Object.keys(patch) as (keyof AppSettings)[]) Object.assign(picked, { [key]: settings[key] });
+  for (const key of settingKeys(patch)) Object.assign(picked, { [key]: settings[key] });
   return picked;
 }
 
@@ -263,13 +274,17 @@ export function useUpdateSettingMutation() {
   const { mutate: mutatePatch, mutateAsync: mutatePatchAsync } = update;
   // Per-call options (onSuccess, onError…) are passed on; their variables are the patch written.
   const mutate = useCallback(
-    ({ key, value }: { key: keyof AppSettings; value: unknown }, options?: Parameters<typeof mutatePatch>[1]) =>
-      mutatePatch({ patch: { [key]: value } as SettingsPatch }, options),
+    (
+      { key, value }: { key: keyof AppSettings; value: unknown },
+      options?: Parameters<typeof mutatePatch>[1]
+    ) => mutatePatch({ patch: { [key]: value } as SettingsPatch }, options),
     [mutatePatch]
   );
   const mutateAsync = useCallback(
-    ({ key, value }: { key: keyof AppSettings; value: unknown }, options?: Parameters<typeof mutatePatchAsync>[1]) =>
-      mutatePatchAsync({ patch: { [key]: value } as SettingsPatch }, options),
+    (
+      { key, value }: { key: keyof AppSettings; value: unknown },
+      options?: Parameters<typeof mutatePatchAsync>[1]
+    ) => mutatePatchAsync({ patch: { [key]: value } as SettingsPatch }, options),
     [mutatePatchAsync]
   );
   return { ...update, mutate, mutateAsync };

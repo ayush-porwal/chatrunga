@@ -19,11 +19,11 @@ import { createHash } from "node:crypto";
 import { createWriteStream, writeFileSync } from "node:fs";
 import { access, constants, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { Readable, Transform } from "node:stream";
+import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { errorMessage, logger } from "./logger";
 import { BUNDLE_SWAP_SCRIPT, isSwappableBundlePath, swapResult } from "./updater-state";
+import { readableFromBody } from "./web-stream";
 
 /** The .app that contains the running executable (`…/Chaturanga.app/Contents/MacOS/Chaturanga`). */
 export function runningBundlePath(execPath: string): string {
@@ -86,7 +86,9 @@ export class MacBundleUpdater {
   private async waitForPendingSwap(): Promise<void> {
     // A logged result means the script is done (and a pid from before a reboot may belong to anything).
     if (await this.readSwapResult()) return;
-    const pid = Number((await readFile(join(this.stagingRoot, "swap.pid"), "utf8").catch(() => "")).trim());
+    const pid = Number(
+      (await readFile(join(this.stagingRoot, "swap.pid"), "utf8").catch(() => "")).trim()
+    );
     if (!Number.isInteger(pid) || pid <= 0) return;
     // Only while that pid is still our swap script: a pid reused by another process (after a reboot
     // cut the script short) is not waited for. The script itself gives up after 60s.
@@ -97,7 +99,10 @@ export class MacBundleUpdater {
   }
 
   /** Downloads, verifies and unpacks `update`. Rejects with a readable-enough error on any failure. */
-  async download(update: BundleDownload, onProgress: (transferred: number, total: number) => void): Promise<void> {
+  async download(
+    update: BundleDownload,
+    onProgress: (transferred: number, total: number) => void
+  ): Promise<void> {
     this.staged = null;
     await this.clearStaging();
     const dir = join(this.stagingRoot, update.version);
@@ -122,7 +127,7 @@ export class MacBundleUpdater {
         done(null, chunk);
       }
     });
-    await pipeline(Readable.fromWeb(response.body as WebReadableStream<Uint8Array>), meter, createWriteStream(zipPath));
+    await pipeline(readableFromBody(response.body), meter, createWriteStream(zipPath));
     onProgress(transferred, total || transferred);
     if (hash.digest("base64") !== update.sha512) throw new Error("sha512 checksum mismatch");
 
@@ -130,7 +135,8 @@ export class MacBundleUpdater {
     await run("/usr/bin/ditto", ["-x", "-k", zipPath, unpacked]);
     await rm(zipPath, { force: true });
     const bundles = (await readdir(unpacked)).filter((name) => name.endsWith(".app"));
-    if (bundles.length !== 1) throw new Error(`expected one app in the update, found ${bundles.length}`);
+    if (bundles.length !== 1)
+      throw new Error(`expected one app in the update, found ${bundles.length}`);
     const bundle = join(unpacked, bundles[0]);
 
     const [identifier, runningIdentifier, version] = await Promise.all([
@@ -138,8 +144,10 @@ export class MacBundleUpdater {
       plistValue(this.bundlePath, "CFBundleIdentifier"),
       plistValue(bundle, "CFBundleShortVersionString")
     ]);
-    if (identifier !== runningIdentifier) throw new Error(`update is a different app (${identifier})`);
-    if (version !== update.version) throw new Error(`update is version ${version}, expected ${update.version}`);
+    if (identifier !== runningIdentifier)
+      throw new Error(`update is a different app (${identifier})`);
+    if (version !== update.version)
+      throw new Error(`update is version ${version}, expected ${update.version}`);
     await run("/usr/bin/codesign", ["--verify", "--deep", "--strict", bundle]).catch((error) => {
       throw new Error(`code signature invalid: ${errorMessage(error)}`);
     });
@@ -163,12 +171,23 @@ export class MacBundleUpdater {
     const log = join(this.stagingRoot, "swap.log");
     const child = spawn(
       "/bin/sh",
-      ["-c", 'exec /bin/sh "$0" "$@" >>"$LOG" 2>&1', script, String(process.pid), this.bundlePath, this.staged.bundle, options.relaunch ? "1" : "0"],
+      [
+        "-c",
+        'exec /bin/sh "$0" "$@" >>"$LOG" 2>&1',
+        script,
+        String(process.pid),
+        this.bundlePath,
+        this.staged.bundle,
+        options.relaunch ? "1" : "0"
+      ],
       { detached: true, stdio: "ignore", env: { PATH: "/usr/bin:/bin:/usr/sbin:/sbin", LOG: log } }
     );
     child.unref();
     if (child.pid) writeFileSync(join(this.stagingRoot, "swap.pid"), String(child.pid));
-    logger.info("updater", `swapping in ${this.staged.version} after quit (relaunch: ${options.relaunch})`);
+    logger.info(
+      "updater",
+      `swapping in ${this.staged.version} after quit (relaunch: ${options.relaunch})`
+    );
     return true;
   }
 }
@@ -182,12 +201,22 @@ async function isSwapScript(pid: number, script: string): Promise<boolean> {
 function run(file: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(file, args, { timeout: 120_000 }, (error, stdout, stderr) => {
-      if (error) reject(new Error(`${file.split("/").pop()} failed: ${(stderr || error.message).trim()}`));
+      if (error)
+        reject(new Error(`${file.split("/").pop()} failed: ${(stderr || error.message).trim()}`));
       else resolve(stdout);
     });
   });
 }
 
 async function plistValue(bundle: string, key: string): Promise<string> {
-  return (await run("/usr/bin/plutil", ["-extract", key, "raw", "-o", "-", join(bundle, "Contents", "Info.plist")])).trim();
+  return (
+    await run("/usr/bin/plutil", [
+      "-extract",
+      key,
+      "raw",
+      "-o",
+      "-",
+      join(bundle, "Contents", "Info.plist")
+    ])
+  ).trim();
 }

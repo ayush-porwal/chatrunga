@@ -37,17 +37,21 @@ export const useSaveStatusStore = create<SaveStatusStore>((set, get) => {
     settled.set(gameId, revision);
     return true;
   };
-  const setFailures = (failures: SaveFailure[]) => set({ failures, error: failures.at(-1)?.error ?? null });
-  const without = (gameId: string | null) => get().failures.filter((failure) => failure.gameId !== gameId);
+  const setFailures = (failures: SaveFailure[]) =>
+    set({ failures, error: failures.at(-1)?.error ?? null });
+  const without = (gameId: string | null) =>
+    get().failures.filter((failure) => failure.gameId !== gameId);
 
   return {
     failures: [],
     error: null,
     setFailed: (error, retry, gameId, revision) => {
-      if (settle(gameId, revision)) setFailures([...without(gameId), { gameId, error, retry, revision }]);
+      if (settle(gameId, revision))
+        setFailures([...without(gameId), { gameId, error, retry, revision }]);
     },
     saved: (gameId, revision) => {
-      if (!settle(gameId, revision) || !get().failures.some((failure) => failure.gameId === gameId)) return;
+      if (!settle(gameId, revision) || !get().failures.some((failure) => failure.gameId === gameId))
+        return;
       setFailures(without(gameId));
     },
     retry: () => get().failures.forEach((failure) => failure.retry()),

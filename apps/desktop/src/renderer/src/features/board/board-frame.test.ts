@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { centringInsets, snapBoardSize } from "./board-frame";
 
 /** Chessground's own rounding (render.ts `updateBounds`), which the frame must agree with. */
-const chessgroundEdge = (width: number, ratio: number) => (Math.floor((width * ratio) / 8) * 8) / ratio;
+const chessgroundEdge = (width: number, ratio: number) =>
+  (Math.floor((width * ratio) / 8) * 8) / ratio;
 
 describe("snapBoardSize", () => {
   it("rounds down to whole device pixels per square", () => {
@@ -45,7 +46,8 @@ describe("snapBoardSize", () => {
 });
 
 describe("centringInsets", () => {
-  const centre = (start: number, end: number, insets: { start: number; end: number }) => (start + insets.start + end - insets.end) / 2;
+  const centre = (start: number, end: number, insets: { start: number; end: number }) =>
+    (start + insets.start + end - insets.end) / 2;
 
   it("centres the workspace under the titlebar on the window", () => {
     // 800px tall window: 54px titlebar, the panel 8px above the bottom edge (1px borders).

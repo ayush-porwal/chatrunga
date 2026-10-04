@@ -1,4 +1,5 @@
-import type { AnnotationColor, BoardArrow, BoardHighlight, Square } from "../types/chess";
+import type { AnnotationColor, BoardArrow, BoardHighlight } from "../types/chess";
+import { isSquare } from "./square";
 
 const colorToTag: Record<AnnotationColor, string> = {
   green: "G",
@@ -18,7 +19,6 @@ const calPattern = /\[%cal\s+([^\]]+)\]/gi;
 const cslPattern = /\[%csl\s+([^\]]+)\]/gi;
 /** PGN clock tag; space after `clk` is optional (some exports omit it). */
 const clkPattern = /\[%clk\s*([^\]]+)\]/gi;
-const squarePattern = /^[a-h][1-8]$/;
 
 export function stripAnnotationTags(comment: string): string {
   return comment
@@ -52,8 +52,8 @@ export function parseAnnotationComment(comment: string): {
       const color = tagToColor[trimmed[0]];
       const orig = trimmed.slice(1, 3);
       const dest = trimmed.slice(3, 5);
-      if (color && squarePattern.test(orig) && squarePattern.test(dest)) {
-        arrows.push({ color, orig: orig as Square, dest: dest as Square });
+      if (color && isSquare(orig) && isSquare(dest)) {
+        arrows.push({ color, orig, dest });
       }
     }
   }
@@ -63,8 +63,8 @@ export function parseAnnotationComment(comment: string): {
       const trimmed = token.trim();
       const color = tagToColor[trimmed[0]];
       const square = trimmed.slice(1, 3);
-      if (color && squarePattern.test(square)) {
-        highlights.push({ color, square: square as Square });
+      if (color && isSquare(square)) {
+        highlights.push({ color, square });
       }
     }
   }

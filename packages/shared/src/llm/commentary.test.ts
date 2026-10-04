@@ -11,7 +11,6 @@ import {
   validateCommentary,
   validateProse
 } from "./commentary";
-import { isLightweightCommentaryModel } from "./models";
 
 /** Mid-game mistake (4.Nxe5? in the Blackburne Shilling trap) with full context. */
 function payload(overrides: Partial<ReviewInsightPayload> = {}): ReviewInsightPayload {
@@ -148,7 +147,7 @@ describe("review insight payload schema", () => {
           stockfish: { ...base.engines.stockfish, alternatives: tooManyAlternatives }
         }
       })
-    ).toThrow();
+    ).toThrow(/at most 3/);
     const recent = Array.from({ length: 9 }, () => ({
       moveNumberSan: "3.",
       san: "Bc4",
@@ -159,13 +158,13 @@ describe("review insight payload schema", () => {
         ...base,
         context: { ...base.context, recentMoves: recent }
       })
-    ).toThrow();
+    ).toThrow(/at most 8/);
     expect(() =>
       reviewInsightPayloadSchema.parse({
         ...base,
         context: { ...base.context, event: "x".repeat(81) }
       })
-    ).toThrow();
+    ).toThrow(/at most 80/);
   });
 
   it("accepts terminal checkmate payloads with an M0 evaluation", () => {
@@ -245,17 +244,10 @@ describe("coach prompt", () => {
     expect(retry).not.toContain("STRICTER");
     expect(retry).not.toContain("takeaway");
   });
-
-  it("flags lightweight model families", () => {
-    expect(isLightweightCommentaryModel("google/gemini-2.5-flash")).toBe(true);
-    expect(isLightweightCommentaryModel("openai/gpt-4o-mini")).toBe(true);
-    expect(isLightweightCommentaryModel("anthropic/claude-sonnet-4.6")).toBe(false);
-  });
 });
 
 describe("parseCoachResponse", () => {
-  const json =
-    '{"headline": "Knight grab walks into Qg5", "body": "Nxe5 looks like a free pawn."}';
+  const json = '{"headline": "Knight grab walks into Qg5", "body": "Nxe5 looks like a free pawn."}';
 
   it("parses the JSON object, fenced or surrounded by stray text", () => {
     expect(parseCoachResponse(json)).toEqual({
@@ -271,8 +263,15 @@ describe("parseCoachResponse", () => {
   });
 
   it("ignores a takeaway from models that still send one", () => {
-    const withTakeaway = JSON.stringify({ headline: "A free pawn", body: "Nxe5 wins it.", takeaway: "Look first." });
-    expect(parseCoachResponse(withTakeaway)).toEqual({ headline: "A free pawn", body: "Nxe5 wins it." });
+    const withTakeaway = JSON.stringify({
+      headline: "A free pawn",
+      body: "Nxe5 wins it.",
+      takeaway: "Look first."
+    });
+    expect(parseCoachResponse(withTakeaway)).toEqual({
+      headline: "A free pawn",
+      body: "Nxe5 wins it."
+    });
   });
 
   it("falls back to plain text as the body", () => {

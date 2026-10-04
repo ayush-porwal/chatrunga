@@ -142,8 +142,14 @@ describe("review engine settings", () => {
     expect(normalizeDefaultEngineId("")).toBeNull();
     expect(normalizeDefaultEngineId(42)).toBeNull();
     expect(normalizeDefaultEngineId("V1StGXR8_Z5jdHi6B-myT")).toBe("V1StGXR8_Z5jdHi6B-myT");
-    expect(normalizeReviewEngineSettings({ ...defaultSettings, defaultEngineId: "bundled-stockfish" }).defaultEngineId).toBeNull();
-    expect(normalizeReviewEngineSettings({ ...defaultSettings, defaultEngineId: "abc123" }).defaultEngineId).toBe("abc123");
+    expect(
+      normalizeReviewEngineSettings({ ...defaultSettings, defaultEngineId: "bundled-stockfish" })
+        .defaultEngineId
+    ).toBeNull();
+    expect(
+      normalizeReviewEngineSettings({ ...defaultSettings, defaultEngineId: "abc123" })
+        .defaultEngineId
+    ).toBe("abc123");
   });
 
   it("resolves auto threads to cpus - 1 capped at 8", () => {
@@ -185,9 +191,16 @@ describe("normalizeUpdateSettings", () => {
   });
 
   it("keeps a saved boolean, replaces anything else, and drops the old beta opt-in", () => {
-    expect(normalizeUpdateSettings({ ...defaultSettings, updatesAutoDownload: false }).updatesAutoDownload).toBe(false);
+    expect(
+      normalizeUpdateSettings({ ...defaultSettings, updatesAutoDownload: false })
+        .updatesAutoDownload
+    ).toBe(false);
     for (const bad of ["true", 1, null, undefined, {}]) {
-      const stored = { ...defaultSettings, updatesAutoDownload: bad, updatesIncludeBeta: true } as unknown as AppSettings;
+      const stored = {
+        ...defaultSettings,
+        updatesAutoDownload: bad,
+        updatesIncludeBeta: true
+      } as unknown as AppSettings;
       const normalized = normalizeUpdateSettings(stored);
       expect(normalized.updatesAutoDownload).toBe(true);
       expect(normalized).not.toHaveProperty("updatesIncludeBeta");
@@ -234,12 +247,26 @@ describe("normalizeOnboardingSettings", () => {
   });
 
   it("keeps a completion time, including 0 for installs that predate the welcome", () => {
-    expect(normalizeOnboardingSettings({ ...defaultSettings, onboardingCompletedAt: 1_700_000_000_123 }).onboardingCompletedAt).toBe(1_700_000_000_123);
-    expect(normalizeOnboardingSettings({ ...defaultSettings, onboardingCompletedAt: 0 }).onboardingCompletedAt).toBe(0);
+    expect(
+      normalizeOnboardingSettings({ ...defaultSettings, onboardingCompletedAt: 1_700_000_000_123 })
+        .onboardingCompletedAt
+    ).toBe(1_700_000_000_123);
+    expect(
+      normalizeOnboardingSettings({ ...defaultSettings, onboardingCompletedAt: 0 })
+        .onboardingCompletedAt
+    ).toBe(0);
   });
 
   it("reads anything that is not a finite, non-negative number as not completed", () => {
-    for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY, "1700000000000", true, {}, undefined]) {
+    for (const bad of [
+      -1,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      "1700000000000",
+      true,
+      {},
+      undefined
+    ]) {
       const stored = { ...defaultSettings, onboardingCompletedAt: bad } as unknown as AppSettings;
       expect(normalizeOnboardingSettings(stored).onboardingCompletedAt).toBeNull();
     }
@@ -250,13 +277,23 @@ describe("normalizeOnboardingSettings", () => {
       ...defaultSettings,
       onboardingHintsSeen: ["maia-curve", "unknown", "maia-curve", 3, "commentary-links"]
     } as unknown as AppSettings;
-    expect(normalizeOnboardingSettings(stored).onboardingHintsSeen).toEqual(["commentary-links", "maia-curve"]);
-    const notAList = { ...defaultSettings, onboardingHintsSeen: "maia-curve" } as unknown as AppSettings;
+    expect(normalizeOnboardingSettings(stored).onboardingHintsSeen).toEqual([
+      "commentary-links",
+      "maia-curve"
+    ]);
+    const notAList = {
+      ...defaultSettings,
+      onboardingHintsSeen: "maia-curve"
+    } as unknown as AppSettings;
     expect(normalizeOnboardingSettings(notAList).onboardingHintsSeen).toEqual([]);
   });
 
   it("is idempotent", () => {
-    const once = normalizeOnboardingSettings({ ...defaultSettings, onboardingCompletedAt: 5.7, onboardingHintsSeen: ["maia-curve"] });
+    const once = normalizeOnboardingSettings({
+      ...defaultSettings,
+      onboardingCompletedAt: 5.7,
+      onboardingHintsSeen: ["maia-curve"]
+    });
     expect(normalizeOnboardingSettings(once)).toEqual(once);
   });
 });

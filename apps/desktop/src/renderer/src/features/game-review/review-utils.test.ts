@@ -2,8 +2,19 @@ import { describe, expect, it } from "vitest";
 import { applySan, statusForFen } from "@chaturanga/shared/chess/position";
 import { reviewInsightPayloadSchema } from "@chaturanga/shared/schemas";
 import { validateProse } from "@chaturanga/shared/llm/commentary";
-import type { AnalysisLine, EngineScore, MoveClassification, MoveReview } from "@chaturanga/shared/types/engine";
-import { buildInsightPayload, mainlineReviewInput, numberedLine, reviewIdFromPath, uciLineSteps } from "./review-utils";
+import type {
+  AnalysisLine,
+  EngineScore,
+  MoveClassification,
+  MoveReview
+} from "@chaturanga/shared/types/engine";
+import {
+  buildInsightPayload,
+  mainlineReviewInput,
+  numberedLine,
+  reviewIdFromPath,
+  uciLineSteps
+} from "./review-utils";
 
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const cp = (value: number): EngineScore => ({ type: "cp", value });
@@ -30,7 +41,8 @@ function buildGame(plies: PlySpec[]): MoveReview[] {
       multipv: lineIndex + 1,
       depth: 18,
       scoreWhite: line.scoreWhite,
-      score: turn === "white" ? line.scoreWhite : { ...line.scoreWhite, value: -line.scoreWhite.value },
+      score:
+        turn === "white" ? line.scoreWhite : { ...line.scoreWhite, value: -line.scoreWhite.value },
       pv: line.pv
     }));
     const move: MoveReview = {
@@ -60,11 +72,46 @@ function buildGame(plies: PlySpec[]): MoveReview[] {
 function trapGame(): MoveReview[] {
   const ok = { classification: "best" as const, evalLoss: 5 };
   return buildGame([
-    { san: "e4", evalBefore: cp(20), evalAfter: cp(30), best: ["e2e4", "e7e5"], clockRemainingMs: 300_000, ...ok },
-    { san: "e5", evalBefore: cp(30), evalAfter: cp(30), best: ["e7e5", "g1f3"], clockRemainingMs: 300_000, ...ok },
-    { san: "Nf3", evalBefore: cp(30), evalAfter: cp(30), best: ["g1f3", "b8c6"], clockRemainingMs: 297_000, ...ok },
-    { san: "Nc6", evalBefore: cp(30), evalAfter: cp(30), best: ["b8c6", "f1b5"], clockRemainingMs: 296_000, ...ok },
-    { san: "Bc4", evalBefore: cp(30), evalAfter: cp(25), best: ["f1b5", "a7a6"], clockRemainingMs: 290_000, ...ok },
+    {
+      san: "e4",
+      evalBefore: cp(20),
+      evalAfter: cp(30),
+      best: ["e2e4", "e7e5"],
+      clockRemainingMs: 300_000,
+      ...ok
+    },
+    {
+      san: "e5",
+      evalBefore: cp(30),
+      evalAfter: cp(30),
+      best: ["e7e5", "g1f3"],
+      clockRemainingMs: 300_000,
+      ...ok
+    },
+    {
+      san: "Nf3",
+      evalBefore: cp(30),
+      evalAfter: cp(30),
+      best: ["g1f3", "b8c6"],
+      clockRemainingMs: 297_000,
+      ...ok
+    },
+    {
+      san: "Nc6",
+      evalBefore: cp(30),
+      evalAfter: cp(30),
+      best: ["b8c6", "f1b5"],
+      clockRemainingMs: 296_000,
+      ...ok
+    },
+    {
+      san: "Bc4",
+      evalBefore: cp(30),
+      evalAfter: cp(25),
+      best: ["f1b5", "a7a6"],
+      clockRemainingMs: 290_000,
+      ...ok
+    },
     {
       san: "Nd4",
       evalBefore: cp(25),
@@ -96,7 +143,14 @@ function trapGame(): MoveReview[] {
       clockRemainingMs: 275_000,
       ...ok
     },
-    { san: "Nxf7", evalBefore: cp(-190), evalAfter: cp(-600), best: ["c4f7", "e8e7"], classification: "blunder", evalLoss: 400 }
+    {
+      san: "Nxf7",
+      evalBefore: cp(-190),
+      evalAfter: cp(-600),
+      best: ["c4f7", "e8e7"],
+      classification: "blunder",
+      evalLoss: 400
+    }
   ]);
 }
 
@@ -147,35 +201,91 @@ describe("game review utilities", () => {
     const mistake = moves[6]!;
     const payload = buildInsightPayload(mistake, 1500, "detailed", "white", {
       moves,
-      headers: { white: "Alice", black: "Bob", event: "Club game", eco: "C50", opening: "Italian Game", timeControl: "300+2", result: null }
+      headers: {
+        white: "Alice",
+        black: "Bob",
+        event: "Club game",
+        eco: "C50",
+        opening: "Italian Game",
+        timeControl: "300+2",
+        result: null
+      }
     });
     expect(payload).not.toBeNull();
     expect(() => reviewInsightPayloadSchema.parse(payload)).not.toThrow();
     const stockfish = payload!.engines.stockfish;
-    expect(payload!.game).toMatchObject({ moveNumberSan: "4.", san: "Nxe5", mover: "white", phase: "opening" });
+    expect(payload!.game).toMatchObject({
+      moveNumberSan: "4.",
+      san: "Nxe5",
+      mover: "white",
+      phase: "opening"
+    });
     expect(stockfish.evalPerspective).toBe("white");
-    expect(stockfish.assessment).toEqual({ before: "white_slightly_better", after: "black_clearly_better", afterBest: "white_slightly_better" });
+    expect(stockfish.assessment).toEqual({
+      before: "white_slightly_better",
+      after: "black_clearly_better",
+      afterBest: "white_slightly_better"
+    });
     expect(stockfish.alternatives?.map((item) => item.san)).toEqual(["Nxd4", "O-O", "c3"]);
-    expect(stockfish.alternatives?.[0]).toMatchObject({ rank: 1, eval: "+0.90", lineSan: ["Nxd4", "exd4", "c3", "dxc3"] });
+    expect(stockfish.alternatives?.[0]).toMatchObject({
+      rank: 1,
+      eval: "+0.90",
+      lineSan: ["Nxd4", "exd4", "c3", "dxc3"]
+    });
     expect(stockfish.playedMoveRank).toBeUndefined();
     expect(stockfish.replyLineSan).toEqual(["Qg5", "Nxf7", "Qxg2", "Rf1", "Qxe4+", "Be2", "Nf3#"]);
-    expect(payload!.context?.recentMoves?.map((item) => item.san)).toEqual(["e4", "e5", "Nf3", "Nc6", "Bc4", "Nd4"]);
-    expect(payload!.context?.recentMoves?.at(-1)).toMatchObject({ moveNumberSan: "3...", mover: "black", classification: "inaccuracy", evalAfter: "+0.90" });
+    expect(payload!.context?.recentMoves?.map((item) => item.san)).toEqual([
+      "e4",
+      "e5",
+      "Nf3",
+      "Nc6",
+      "Bc4",
+      "Nd4"
+    ]);
+    expect(payload!.context?.recentMoves?.at(-1)).toMatchObject({
+      moveNumberSan: "3...",
+      mover: "black",
+      classification: "inaccuracy",
+      evalAfter: "+0.90"
+    });
     expect(payload!.context?.mistakesSoFar).toEqual({
       white: { inaccuracies: 0, mistakes: 0, blunders: 0 },
       black: { inaccuracies: 1, mistakes: 0, blunders: 0 }
     });
-    expect(payload!.context?.actualReply).toEqual({ moveNumberSan: "4...", san: "Qg5", classification: "best", matchesEngine: true });
-    expect(payload!.context).toMatchObject({ players: { white: "Alice", black: "Bob" }, opening: "C50 Italian Game", totalPlies: 9 });
+    expect(payload!.context?.actualReply).toEqual({
+      moveNumberSan: "4...",
+      san: "Qg5",
+      classification: "best",
+      matchesEngine: true
+    });
+    expect(payload!.context).toMatchObject({
+      players: { white: "Alice", black: "Bob" },
+      opening: "C50 Italian Game",
+      totalPlies: 9
+    });
     // Own clock went 290s -> 284s with a 2s increment: 8s spent.
-    expect(payload!.clock).toEqual({ moverRemainingSec: 284, moverSpentSec: 8, opponentRemainingSec: 280 });
+    expect(payload!.clock).toEqual({
+      moverRemainingSec: 284,
+      moverSpentSec: 8,
+      opponentRemainingSec: 280
+    });
     // The coach may cite the grounded reply line, history and alternatives.
-    expect(validateProse("4. Nxe5 walks into Qg5, hitting g2 while Nxf7 runs into Qxg2. Nxd4 or O-O kept White slightly better after 3...Nd4.", payload!).ok).toBe(true);
+    expect(
+      validateProse(
+        "4. Nxe5 walks into Qg5, hitting g2 while Nxf7 runs into Qxg2. Nxd4 or O-O kept White slightly better after 3...Nd4.",
+        payload!
+      ).ok
+    ).toBe(true);
   });
 
   it("prefers the stored reply search when the review has one", () => {
     const moves = trapGame();
-    const last = { ...moves[6]!, replyLines: [{ multipv: 1, depth: 18, score: cp(180), scoreWhite: cp(-180), pv: ["d8g5", "e5f7"] }] };
+    const last = {
+      ...moves[6]!,
+      replyLines: [
+        { multipv: 1, depth: 18, score: cp(180), scoreWhite: cp(-180), pv: ["d8g5", "e5f7"] }
+      ]
+    };
     const payload = buildInsightPayload(last, 1500);
     expect(payload?.engines.stockfish.replyLineSan).toEqual(["Qg5", "Nxf7"]);
   });
@@ -195,18 +305,44 @@ describe("game review utilities", () => {
     const predictions = (probs: number[]) =>
       ([1100, 1300, 1500, 1700, 1900] as const).map((rating) => ({
         rating,
-        topMoves: [{ uci: "f3e5", prob: probs[0]! }, { uci: "e1g1", prob: probs[1]! }, { uci: "f3d4", prob: probs[2]! }]
+        topMoves: [
+          { uci: "f3e5", prob: probs[0]! },
+          { uci: "e1g1", prob: probs[1]! },
+          { uci: "f3d4", prob: probs[2]! }
+        ]
       }));
     const trusted = { moves, review: { schemaVersion: 2 } };
-    const informative = buildInsightPayload({ ...moves[6]!, humanPredictions: predictions([0.6, 0.3, 0.1]) }, 1500, "balanced", "white", trusted);
+    const informative = buildInsightPayload(
+      { ...moves[6]!, humanPredictions: predictions([0.6, 0.3, 0.1]) },
+      1500,
+      "balanced",
+      "white",
+      trusted
+    );
     expect(informative?.engines.humanTopMoves).toEqual({
       rating: 1500,
-      moves: [{ san: "Nxe5", prob: 0.6 }, { san: "O-O", prob: 0.3 }, { san: "Nxd4", prob: 0.1 }]
+      moves: [
+        { san: "Nxe5", prob: 0.6 },
+        { san: "O-O", prob: 0.3 },
+        { san: "Nxd4", prob: 0.1 }
+      ]
     });
-    const flat = buildInsightPayload({ ...moves[6]!, humanPredictions: predictions([0.2, 0.2, 0.2]) }, 1500, "balanced", "white", trusted);
+    const flat = buildInsightPayload(
+      { ...moves[6]!, humanPredictions: predictions([0.2, 0.2, 0.2]) },
+      1500,
+      "balanced",
+      "white",
+      trusted
+    );
     expect(flat?.engines.humanTopMoves).toBeUndefined();
     // Reviews older than schemaVersion 2 stored fake policies: no Maia data at all.
-    const legacy = buildInsightPayload({ ...moves[6]!, humanPredictions: predictions([0.6, 0.3, 0.1]) }, 1500, "balanced", "white", { moves });
+    const legacy = buildInsightPayload(
+      { ...moves[6]!, humanPredictions: predictions([0.6, 0.3, 0.1]) },
+      1500,
+      "balanced",
+      "white",
+      { moves }
+    );
     expect(legacy?.engines.humanTopMoves).toBeUndefined();
     expect(legacy?.engines.maia).toBeUndefined();
   });
@@ -218,14 +354,48 @@ describe("game review utilities", () => {
       wdlBefore: { win: 450, draw: 400, loss: 150 },
       wdlAfter: { win: 700, draw: 200, loss: 100 },
       humanPredictions: [
-        { rating: 1100, topMoves: [{ uci: "f3e5", prob: 0.65 }, { uci: "e1g1", prob: 0.2 }], playedProb: 0.65, playedRank: 1, bestProb: 0.05, bestRank: 4 },
-        { rating: 1500, topMoves: [{ uci: "f3e5", prob: 0.5 }, { uci: "f3d4", prob: 0.3 }], playedProb: 0.5, playedRank: 1, bestProb: 0.3, bestRank: 2 },
-        { rating: 1900, topMoves: [{ uci: "f3d4", prob: 0.55 }, { uci: "f3e5", prob: 0.25 }], playedProb: 0.25, playedRank: 2, bestProb: 0.55, bestRank: 1 }
+        {
+          rating: 1100,
+          topMoves: [
+            { uci: "f3e5", prob: 0.65 },
+            { uci: "e1g1", prob: 0.2 }
+          ],
+          playedProb: 0.65,
+          playedRank: 1,
+          bestProb: 0.05,
+          bestRank: 4
+        },
+        {
+          rating: 1500,
+          topMoves: [
+            { uci: "f3e5", prob: 0.5 },
+            { uci: "f3d4", prob: 0.3 }
+          ],
+          playedProb: 0.5,
+          playedRank: 1,
+          bestProb: 0.3,
+          bestRank: 2
+        },
+        {
+          rating: 1900,
+          topMoves: [
+            { uci: "f3d4", prob: 0.55 },
+            { uci: "f3e5", prob: 0.25 }
+          ],
+          playedProb: 0.25,
+          playedRank: 2,
+          bestProb: 0.55,
+          bestRank: 1
+        }
       ]
     };
     const payload = buildInsightPayload(mistake, 1400, "balanced", "white", {
       moves,
-      review: { schemaVersion: 2, engineName: "Stockfish 17", engineSettings: { multipv: 3, moveTimeMs: 250, depth: null } }
+      review: {
+        schemaVersion: 2,
+        engineName: "Stockfish 17",
+        engineSettings: { multipv: 3, moveTimeMs: 250, depth: null }
+      }
     });
     expect(() => reviewInsightPayloadSchema.parse(payload)).not.toThrow();
     expect(payload!.engines.stockfish).toMatchObject({
@@ -239,7 +409,17 @@ describe("game review utilities", () => {
       playedAtPlayerLevel: "most_likely",
       bestAtPlayerLevel: "common",
       levels: [
-        { rating: 1100, playedProb: 0.65, playedRank: 1, bestProb: 0.05, bestRank: 4, top: [{ san: "Nxe5", prob: 0.65 }, { san: "O-O", prob: 0.2 }] },
+        {
+          rating: 1100,
+          playedProb: 0.65,
+          playedRank: 1,
+          bestProb: 0.05,
+          bestRank: 4,
+          top: [
+            { san: "Nxe5", prob: 0.65 },
+            { san: "O-O", prob: 0.2 }
+          ]
+        },
         { rating: 1500, playedProb: 0.5 },
         { rating: 1900, playedProb: 0.25, playedRank: 2 }
       ]
@@ -249,7 +429,10 @@ describe("game review utilities", () => {
 
   it("adds board-derived idea facts and keeps the payload compact", () => {
     const moves = trapGame();
-    const payload = buildInsightPayload(moves[6]!, 1500, "detailed", "white", { moves, review: { schemaVersion: 2 } })!;
+    const payload = buildInsightPayload(moves[6]!, 1500, "detailed", "white", {
+      moves,
+      review: { schemaVersion: 2 }
+    })!;
     expect(payload.ideas?.board.white).toContain("B c1 c4");
     expect(payload.ideas?.played.san).toBe("Nxe5");
     expect(payload.ideas?.played.facts[0]).toMatch(/^captures the pawn on e5/);
@@ -281,8 +464,16 @@ describe("game review utilities", () => {
     const payload = buildInsightPayload(mate, 1500, "balanced", "white", { moves: [mate] });
     expect(payload).not.toBeNull();
     expect(() => reviewInsightPayloadSchema.parse(payload)).not.toThrow();
-    expect(payload!.game).toMatchObject({ terminal: "checkmate", givesCheck: true, phase: "endgame" });
-    expect(payload!.engines.stockfish).toMatchObject({ evalAfter: "M0", evalLossCp: 0, assessment: { before: "white_has_forced_mate", after: "white_won" } });
+    expect(payload!.game).toMatchObject({
+      terminal: "checkmate",
+      givesCheck: true,
+      phase: "endgame"
+    });
+    expect(payload!.engines.stockfish).toMatchObject({
+      evalAfter: "M0",
+      evalLossCp: 0,
+      assessment: { before: "white_has_forced_mate", after: "white_won" }
+    });
     expect(payload!.context?.result).toBe("1-0");
   });
 
@@ -303,16 +494,74 @@ describe("game review utilities", () => {
     });
     const payload = buildInsightPayload(stalemate, 1500);
     expect(payload?.game.terminal).toBe("stalemate");
-    expect(payload?.engines.stockfish).toMatchObject({ evalAfter: "0.00", evalLossCp: 1000, assessment: { after: "draw", afterBest: "white_has_forced_mate" }, bestMoveSan: "Kg2" });
+    expect(payload?.engines.stockfish).toMatchObject({
+      evalAfter: "0.00",
+      evalLossCp: 1000,
+      assessment: { after: "draw", afterBest: "white_has_forced_mate" },
+      bestMoveSan: "Kg2"
+    });
   });
 
-  it("extracts the first-child review line", () => {
+  it("extracts the first-child review line, not a variation", () => {
     const tree = [
-      { id: "root", parentId: null, san: null, uci: null, fenBefore: "", fenAfter: "start", ply: 0, nags: [], comment: null, arrows: [], highlights: [], children: ["n1"] },
-      { id: "n1", parentId: "root", san: "e4", uci: "e2e4", fenBefore: "start", fenAfter: "after", ply: 1, nags: [], comment: null, arrows: [], highlights: [], children: [] }
+      {
+        id: "root",
+        parentId: null,
+        san: null,
+        uci: null,
+        fenBefore: "",
+        fenAfter: "start",
+        ply: 0,
+        nags: [],
+        comment: null,
+        arrows: [],
+        highlights: [],
+        children: ["n1", "v1"]
+      },
+      {
+        id: "n1",
+        parentId: "root",
+        san: "e4",
+        uci: "e2e4",
+        fenBefore: "start",
+        fenAfter: "after",
+        ply: 1,
+        nags: [],
+        comment: null,
+        arrows: [],
+        highlights: [],
+        children: ["n2"]
+      },
+      {
+        id: "v1",
+        parentId: "root",
+        san: "d4",
+        uci: "d2d4",
+        fenBefore: "start",
+        fenAfter: "after-d4",
+        ply: 1,
+        nags: [],
+        comment: null,
+        arrows: [],
+        highlights: [],
+        children: []
+      },
+      {
+        id: "n2",
+        parentId: "n1",
+        san: "e5",
+        uci: "e7e5",
+        fenBefore: "after",
+        fenAfter: "after-e5",
+        ply: 2,
+        nags: [],
+        comment: null,
+        arrows: [],
+        highlights: [],
+        children: []
+      }
     ];
-    expect(mainlineReviewInput(tree)).toHaveLength(1);
-    expect(mainlineReviewInput(tree)[0]?.uci).toBe("e2e4");
+    expect(mainlineReviewInput(tree).map((move) => move.uci)).toEqual(["e2e4", "e7e5"]);
   });
 });
 
@@ -327,6 +576,8 @@ describe("engine line steps", () => {
 
   it("numbers a line from either side to move", () => {
     expect(numberedLine(START, ["e4", "e5", "Nf3"])).toBe("1. e4 e5 2. Nf3");
-    expect(numberedLine("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 12", ["e5", "Nf3"])).toBe("12… e5 13. Nf3");
+    expect(
+      numberedLine("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 12", ["e5", "Nf3"])
+    ).toBe("12… e5 13. Nf3");
   });
 });

@@ -65,7 +65,10 @@ export type AnalysisSubject = {
  */
 export function liveAnalysisSubject(
   board: AnalysisBoard,
-  { target = null, onlineGameLive = false }: { target?: AnalysisTarget | null; onlineGameLive?: boolean } = {}
+  {
+    target = null,
+    onlineGameLive = false
+  }: { target?: AnalysisTarget | null; onlineGameLive?: boolean } = {}
 ): AnalysisSubject | null {
   if (target) {
     if (engineHolder(board, onlineGameLive) || statusForFen(target.fen).isEnd) return null;

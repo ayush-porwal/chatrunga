@@ -4,7 +4,15 @@ import { useAnalysisStore } from "../stores/analysis-store";
 import { applyEngineInfos, createEngineInfoBuffer, engineSearches } from "./useEngineDriver";
 
 function info(multipv: number, searchId?: string): EngineInfo {
-  return { engineId: "e", searchId, multipv, score: { type: "cp", value: multipv }, pv: [], raw: "", receivedAt: 0 };
+  return {
+    engineId: "e",
+    searchId,
+    multipv,
+    score: { type: "cp", value: multipv },
+    pv: [],
+    raw: "",
+    receivedAt: 0
+  };
 }
 
 function fakeTimers() {
@@ -14,14 +22,13 @@ function fakeTimers() {
   return {
     timers: {
       now: () => now,
-      set: (callback: () => void, ms: number) => {
+      start: (callback: () => void, ms: number) => {
         const id = nextId++;
         pending.push({ at: now + ms, callback, id });
-        return id;
-      },
-      clear: (handle: unknown) => {
-        const index = pending.findIndex((item) => item.id === handle);
-        if (index >= 0) pending.splice(index, 1);
+        return () => {
+          const index = pending.findIndex((item) => item.id === id);
+          if (index >= 0) pending.splice(index, 1);
+        };
       }
     },
     advance(ms: number) {
@@ -38,7 +45,11 @@ describe("createEngineInfoBuffer", () => {
   it("shows the first info at once, then batches the burst into one trailing flush", () => {
     const clock = fakeTimers();
     const flushed: number[][] = [];
-    const buffer = createEngineInfoBuffer((infos) => flushed.push(infos.map((item) => item.multipv ?? 1)), 150, clock.timers);
+    const buffer = createEngineInfoBuffer(
+      (infos) => flushed.push(infos.map((item) => item.multipv ?? 1)),
+      150,
+      clock.timers
+    );
     buffer.push(info(1));
     expect(flushed).toEqual([[1]]);
     clock.advance(20);
@@ -54,7 +65,11 @@ describe("createEngineInfoBuffer", () => {
   it("flushes on demand and drops pending infos on discard", () => {
     const clock = fakeTimers();
     const flushed: number[][] = [];
-    const buffer = createEngineInfoBuffer((infos) => flushed.push(infos.map((item) => item.multipv ?? 1)), 150, clock.timers);
+    const buffer = createEngineInfoBuffer(
+      (infos) => flushed.push(infos.map((item) => item.multipv ?? 1)),
+      150,
+      clock.timers
+    );
     buffer.push(info(1));
     buffer.push(info(2));
     buffer.flushNow();

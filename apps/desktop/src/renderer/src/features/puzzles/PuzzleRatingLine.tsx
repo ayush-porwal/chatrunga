@@ -21,7 +21,11 @@ export function ratingLine(result: PuzzleAttemptResult): { text: string; delta: 
   if (result.rated && result.after && result.delta !== null) {
     return { text: `Your rating ${formatPuzzleRating(result.after)}`, delta: result.delta };
   }
-  return { text: result.unratedReason === "already-played" ? "Already played — not rated" : "Unrated puzzle", delta: null };
+  return {
+    text:
+      result.unratedReason === "already-played" ? "Already played — not rated" : "Unrated puzzle",
+    delta: null
+  };
 }
 
 /**
@@ -29,18 +33,33 @@ export function ratingLine(result: PuzzleAttemptResult): { text: string; delta: 
  * 1523 (+12)", "Unrated puzzle", or "Already played — not rated". Nothing before that.
  */
 export function PuzzleRatingLine() {
-  const attemptId = usePuzzleStore((state) => (state.outcome !== "pending" && state.attempt ? attemptKey(state.attempt) : null));
-  const record = usePuzzleRecordStore((state) => (attemptId ? state.byAttempt[attemptId] : undefined));
+  const attemptId = usePuzzleStore((state) =>
+    state.outcome !== "pending" && state.attempt ? attemptKey(state.attempt) : null
+  );
+  const record = usePuzzleRecordStore((state) =>
+    attemptId ? state.byAttempt[attemptId] : undefined
+  );
   if (!record || record.status === "saving") return null;
   if (record.status === "failed") {
-    return <p className="animate-fade-in text-xs text-fg-muted">Couldn&apos;t save this attempt: {record.message}</p>;
+    return (
+      <p className="animate-fade-in text-xs text-fg-muted">
+        Couldn&apos;t save this attempt: {record.message}
+      </p>
+    );
   }
   const { text, delta } = ratingLine(record.result);
   return (
     <p className="flex animate-fade-in items-baseline gap-1.5 text-xs text-fg-muted">
-      <span className={cn(delta !== null && "font-medium tabular-nums text-fg-secondary")}>{text}</span>
+      <span className={cn(delta !== null && "font-medium tabular-nums text-fg-secondary")}>
+        {text}
+      </span>
       {delta !== null ? (
-        <span className={cn("font-semibold tabular-nums", delta > 0 ? "text-accent-fg" : delta < 0 ? "text-danger" : "text-fg-subtle")}>
+        <span
+          className={cn(
+            "font-semibold tabular-nums",
+            delta > 0 ? "text-accent-fg" : delta < 0 ? "text-danger" : "text-fg-subtle"
+          )}
+        >
           ({formatRatingDelta(delta)})
         </span>
       ) : null}

@@ -16,7 +16,9 @@ export function AnalysisSwitcher() {
   const gameId = useGameStore((state) => state.gameId);
   const [loading, setLoading] = useState(false);
   if (analyses.length < 2 || !gameId) return null;
-  const value = analyses.some((info) => info.reviewId === shownId) ? shownId! : analyses[0]!.reviewId;
+  const value = analyses.some((info) => info.reviewId === shownId)
+    ? shownId!
+    : analyses[0]!.reviewId;
   return (
     <Select
       aria-label="Analysis"

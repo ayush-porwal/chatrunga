@@ -1,6 +1,9 @@
 import { engineRepository } from "../db/repositories";
 import { getAssetManager, type AssetRecord } from "./asset-manager";
-import { isManagedEngine, MANAGED_ENGINE_SUFFIX as MANAGED_SUFFIX } from "@chaturanga/shared/engine/managed";
+import {
+  isManagedEngine,
+  MANAGED_ENGINE_SUFFIX as MANAGED_SUFFIX
+} from "@chaturanga/shared/engine/managed";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import { MAIA_RATINGS, maiaRatingForEngine } from "./review-analysis";
 
@@ -148,7 +151,11 @@ function upsertManagedMaia(
   const name = `Maia ${rating} ${MANAGED_SUFFIX}`;
   const existing = all.find((e) => e.name === name);
   if (existing) {
-    const patch: Partial<{ executablePath: string; weightsPath: string; maiaRating: NonNullable<EngineConfig["maiaRating"]> }> = {};
+    const patch: Partial<{
+      executablePath: string;
+      weightsPath: string;
+      maiaRating: NonNullable<EngineConfig["maiaRating"]>;
+    }> = {};
     if (existing.executablePath !== lc0Path) patch.executablePath = lc0Path;
     if (existing.weightsPath !== weightsPath) patch.weightsPath = weightsPath;
     if (existing.maiaRating !== rating) patch.maiaRating = rating;

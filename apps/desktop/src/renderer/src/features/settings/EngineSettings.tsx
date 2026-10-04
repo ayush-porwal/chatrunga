@@ -1,8 +1,16 @@
 import { useState, type ReactNode } from "react";
 import { Bot, File, FolderOpen, Image, Pencil, Play, Plus, Star, Trash2 } from "lucide-react";
-import type { DialogFileFilter } from "@chaturanga/shared/ipc/chaturanga-api";
-import type { CreateEngineInput, EngineConfig, UpdateEngineInput } from "@chaturanga/shared/types/engine";
-import { defaultEngineThreads, defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
+import type { ChaturangaApi, DialogFileFilter } from "@chaturanga/shared/ipc/chaturanga-api";
+import type {
+  CreateEngineInput,
+  EngineConfig,
+  UpdateEngineInput
+} from "@chaturanga/shared/types/engine";
+import {
+  defaultEngineThreads,
+  defaultSettings,
+  type AppSettings
+} from "@chaturanga/shared/types/settings";
 import {
   useCreateEngineMutation,
   useDeleteEngineMutation,
@@ -27,6 +35,7 @@ import { cn } from "@/lib/utils";
 import { useSetSetting } from "./use-set-setting";
 import { splitEngineArgs } from "@/lib/engine-args";
 import { ipcErrorMessage } from "@/lib/ipc-error";
+import { isOneOf } from "@chaturanga/shared/types/guards";
 
 const nnWeightsDialogFilters: DialogFileFilter[] = [
   { name: "Network weights / models", extensions: ["pb", "gz", "onnx", "zip"] },
@@ -71,9 +80,15 @@ function draftToInput(draft: EngineDraft): CreateEngineInput {
   };
 }
 
-function formatTestResult(result: { ok: boolean; name?: string; error?: string; isHumanPrediction?: boolean }, fallbackName: string): TestResult {
+function formatTestResult(
+  result: { ok: boolean; name?: string; error?: string; isHumanPrediction?: boolean },
+  fallbackName: string
+): TestResult {
   return result.ok
-    ? { ok: true, message: `${result.name || fallbackName} responded${result.isHumanPrediction ? " (Maia detected)" : ""}.` }
+    ? {
+        ok: true,
+        message: `${result.name || fallbackName} responded${result.isHumanPrediction ? " (Maia detected)" : ""}.`
+      }
     : { ok: false, message: result.error || "Engine failed to start." };
 }
 
@@ -94,12 +109,16 @@ export function EnginePerformanceSettings({ appearance }: { appearance: AppSetti
   const cores = logicalCores();
   const autoThreads = defaultEngineThreads(cores);
   const threadOptions = Array.from({ length: cores }, (_, index) => index + 1);
-  const hashOptions: number[] = HASH_SIZE_OPTIONS_MB.includes(appearance.engineHashMb as (typeof HASH_SIZE_OPTIONS_MB)[number])
+  const hashOptions: number[] = isOneOf(HASH_SIZE_OPTIONS_MB, appearance.engineHashMb)
     ? [...HASH_SIZE_OPTIONS_MB]
     : [...HASH_SIZE_OPTIONS_MB, appearance.engineHashMb].sort((a, b) => a - b);
   return (
     <div className="grid gap-1">
-      <SectionHeader as="h3" title="Performance" description="For the evaluation engine in Game review and live analysis." />
+      <SectionHeader
+        as="h3"
+        title="Performance"
+        description="For the evaluation engine in Game review and live analysis."
+      />
       <div className="grid divide-y divide-line-subtle">
         <SettingRow
           label="Threads"
@@ -109,8 +128,17 @@ export function EnginePerformanceSettings({ appearance }: { appearance: AppSetti
             <Select
               id="setting-engine-threads"
               className="w-36"
-              value={appearance.engineThreads === null ? "auto" : String(Math.min(appearance.engineThreads, cores))}
-              onChange={(event) => setSetting("engineThreads", event.target.value === "auto" ? null : Number(event.target.value))}
+              value={
+                appearance.engineThreads === null
+                  ? "auto"
+                  : String(Math.min(appearance.engineThreads, cores))
+              }
+              onChange={(event) =>
+                setSetting(
+                  "engineThreads",
+                  event.target.value === "auto" ? null : Number(event.target.value)
+                )
+              }
             >
               <option value="auto">Auto · {autoThreads}</option>
               {threadOptions.map((count) => (
@@ -165,7 +193,10 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
       setAdding(false);
       setTestResult({ ok: true, message: `Added ${engine.name}.` });
     } catch (error) {
-      setTestResult({ ok: false, message: `Couldn't add the engine: ${ipcErrorMessage(error) || "unknown error"}` });
+      setTestResult({
+        ok: false,
+        message: `Couldn't add the engine: ${ipcErrorMessage(error) || "unknown error"}`
+      });
     }
   }
 
@@ -173,7 +204,8 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
     if (!window.chaturanga) return;
     try {
       const result = await window.chaturanga.engines.test(draftToInput(draft));
-      if (result.ok && result.isHumanPrediction) setDraft((value) => ({ ...value, isHumanPrediction: true }));
+      if (result.ok && result.isHumanPrediction)
+        setDraft((value) => ({ ...value, isHumanPrediction: true }));
       setTestResult(formatTestResult(result, "UCI engine"));
     } catch (error) {
       setTestResult({ ok: false, message: ipcErrorMessage(error) || "The engine test failed." });
@@ -203,12 +235,22 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
       {adding ? (
         <div className={cn(well, "grid animate-rise-in gap-3 p-3")}>
           <p className="text-sm font-medium text-fg">New UCI engine</p>
-          <EngineForm idPrefix="new-engine" draft={draft} onChange={(patch) => setDraft((value) => ({ ...value, ...patch }))} />
+          <EngineForm
+            idPrefix="new-engine"
+            draft={draft}
+            onChange={(patch) => setDraft((value) => ({ ...value, ...patch }))}
+          />
           <div className="flex flex-wrap justify-end gap-2">
             <Button type="button" variant="ghost" size="sm" onClick={() => setAdding(false)}>
               Cancel
             </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => void testDraft()} disabled={!desktopApiAvailable || !draft.executablePath.trim()}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void testDraft()}
+              disabled={!desktopApiAvailable || !draft.executablePath.trim()}
+            >
               <Play />
               Test
             </Button>
@@ -217,7 +259,9 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
               variant="primary"
               size="sm"
               onClick={() => void addEngine()}
-              disabled={!desktopApiAvailable || !draft.executablePath.trim() || createEngine.isPending}
+              disabled={
+                !desktopApiAvailable || !draft.executablePath.trim() || createEngine.isPending
+              }
             >
               Add engine
             </Button>
@@ -243,7 +287,12 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
         <Notice
           tone="danger"
           action={
-            <Button type="button" variant="outline" size="xs" onClick={() => void engines.refetch()}>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={() => void engines.refetch()}
+            >
               Try again
             </Button>
           }
@@ -253,7 +302,10 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
       ) : null}
 
       {noEngines && !adding ? (
-        <EmptyState compact title="No engines yet. Download them below or add a UCI engine you already have." />
+        <EmptyState
+          compact
+          title="No engines yet. Download them below or add a UCI engine you already have."
+        />
       ) : null}
 
       {engineList.length ? (
@@ -292,7 +344,15 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
   );
 }
 
-function EngineRowText({ name, detail, badges }: { name: string; detail: string; badges?: ReactNode }) {
+function EngineRowText({
+  name,
+  detail,
+  badges
+}: {
+  name: string;
+  detail: string;
+  badges?: ReactNode;
+}) {
   return (
     <div className="grid min-w-0 flex-1 gap-0.5">
       <div className="flex min-w-0 items-center gap-2">
@@ -347,7 +407,8 @@ function SavedEngineRow({
   async function test() {
     if (!window.chaturanga) return;
     const result = await window.chaturanga.engines.test(engine.id);
-    if (result.ok && result.isHumanPrediction) setDraft((value) => ({ ...value, isHumanPrediction: true }));
+    if (result.ok && result.isHumanPrediction)
+      setDraft((value) => ({ ...value, isHumanPrediction: true }));
     onResult(formatTestResult(result, engine.name));
   }
 
@@ -373,21 +434,40 @@ function SavedEngineRow({
         <OverflowMenu
           label={`${engine.name} actions`}
           items={[
-            { label: "Test", icon: <Play />, onSelect: () => void test(), disabled: !desktopApiAvailable },
+            {
+              label: "Test",
+              icon: <Play />,
+              onSelect: () => void test(),
+              disabled: !desktopApiAvailable
+            },
             {
               label: engine.isDefault ? "Default engine" : "Set as default",
               icon: <Star />,
               onSelect: () => updateEngine.mutate({ id: engine.id, patch: { isDefault: true } }),
               disabled: !desktopApiAvailable || engine.isDefault
             },
-            { label: editing ? "Close editor" : "Edit", icon: <Pencil />, onSelect: () => (editing ? cancel() : onEditingChange(true)) },
-            { label: "Delete", icon: <Trash2 />, onSelect: onDelete, disabled: !desktopApiAvailable, destructive: true }
+            {
+              label: editing ? "Close editor" : "Edit",
+              icon: <Pencil />,
+              onSelect: () => (editing ? cancel() : onEditingChange(true))
+            },
+            {
+              label: "Delete",
+              icon: <Trash2 />,
+              onSelect: onDelete,
+              disabled: !desktopApiAvailable,
+              destructive: true
+            }
           ]}
         />
       </div>
       {editing ? (
         <div className={cn(well, "grid animate-rise-in gap-3 p-3")}>
-          <EngineForm idPrefix={`engine-${engine.id}`} draft={draft} onChange={(patch) => setDraft((value) => ({ ...value, ...patch }))} />
+          <EngineForm
+            idPrefix={`engine-${engine.id}`}
+            draft={draft}
+            onChange={(patch) => setDraft((value) => ({ ...value, ...patch }))}
+          />
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" size="sm" onClick={cancel}>
               Cancel
@@ -397,7 +477,9 @@ function SavedEngineRow({
               variant="primary"
               size="sm"
               onClick={save}
-              disabled={!desktopApiAvailable || !draft.executablePath.trim() || updateEngine.isPending}
+              disabled={
+                !desktopApiAvailable || !draft.executablePath.trim() || updateEngine.isPending
+              }
             >
               Save changes
             </Button>
@@ -420,34 +502,61 @@ function EngineForm({
 }) {
   const desktopApiAvailable = hasDesktopApi();
 
-  async function pickExecutable() {
-    if (!window.chaturanga) return;
-    const selected = await window.chaturanga.files.selectExecutable();
-    if (selected) onChange({ executablePath: selected });
+  /** Opens a native file dialog; a cancelled or failed one leaves the form as it was. */
+  function pick(
+    open: (files: ChaturangaApi["files"]) => Promise<string | null>,
+    apply: (path: string) => void
+  ) {
+    const files = window.chaturanga?.files;
+    if (!files) return;
+    open(files).then(
+      (selected) => {
+        if (selected) apply(selected);
+      },
+      (error: unknown) => console.warn("file dialog failed", error)
+    );
   }
-
-  async function pickWeightsFile() {
-    if (!window.chaturanga) return;
-    const selected = await window.chaturanga.files.selectOpenFile(nnWeightsDialogFilters);
-    if (selected) onChange({ weightsPath: selected });
-  }
-
-  async function pickImage() {
-    if (!window.chaturanga) return;
-    const selected = await window.chaturanga.files.selectOpenFile(engineImageDialogFilters);
-    if (selected) onChange({ imagePath: selected });
-  }
+  const pickExecutable = () =>
+    pick(
+      (files) => files.selectExecutable(),
+      (path) => onChange({ executablePath: path })
+    );
+  const pickWeightsFile = () =>
+    pick(
+      (files) => files.selectOpenFile(nnWeightsDialogFilters),
+      (path) => onChange({ weightsPath: path })
+    );
+  const pickImage = () =>
+    pick(
+      (files) => files.selectOpenFile(engineImageDialogFilters),
+      (path) => onChange({ imagePath: path })
+    );
 
   return (
     <div className="grid gap-3">
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Name" htmlFor={`${idPrefix}-name`}>
-          <Input id={`${idPrefix}-name`} value={draft.name} onChange={(event) => onChange({ name: event.target.value })} />
+          <Input
+            id={`${idPrefix}-name`}
+            value={draft.name}
+            onChange={(event) => onChange({ name: event.target.value })}
+          />
         </Field>
         <Field label="Executable" hint="starts in its own folder" htmlFor={`${idPrefix}-path`}>
           <div className="flex gap-2">
-            <Input id={`${idPrefix}-path`} value={draft.executablePath} onChange={(event) => onChange({ executablePath: event.target.value })} />
-            <IconButton label="Choose executable" icon={<FolderOpen />} variant="outline" size="icon" onClick={pickExecutable} disabled={!desktopApiAvailable} />
+            <Input
+              id={`${idPrefix}-path`}
+              value={draft.executablePath}
+              onChange={(event) => onChange({ executablePath: event.target.value })}
+            />
+            <IconButton
+              label="Choose executable"
+              icon={<FolderOpen />}
+              variant="outline"
+              size="icon"
+              onClick={pickExecutable}
+              disabled={!desktopApiAvailable}
+            />
           </div>
         </Field>
         <Field label="Weights file" hint="Lc0 network · optional" htmlFor={`${idPrefix}-weights`}>
@@ -458,7 +567,14 @@ function EngineForm({
               onChange={(event) => onChange({ weightsPath: event.target.value })}
               placeholder="e.g. network.pb.gz"
             />
-            <IconButton label="Choose weights file" icon={<File />} variant="outline" size="icon" onClick={pickWeightsFile} disabled={!desktopApiAvailable} />
+            <IconButton
+              label="Choose weights file"
+              icon={<File />}
+              variant="outline"
+              size="icon"
+              onClick={pickWeightsFile}
+              disabled={!desktopApiAvailable}
+            />
           </div>
         </Field>
         <Field label="Engine image" hint="optional" htmlFor={`${idPrefix}-image`}>
@@ -470,25 +586,53 @@ function EngineForm({
               onChange={(event) => onChange({ imagePath: event.target.value })}
               placeholder="PNG, JPG, WebP, GIF or SVG"
             />
-            <IconButton label="Choose image" icon={<Image />} variant="outline" size="icon" onClick={pickImage} disabled={!desktopApiAvailable} />
+            <IconButton
+              label="Choose image"
+              icon={<Image />}
+              variant="outline"
+              size="icon"
+              onClick={pickImage}
+              disabled={!desktopApiAvailable}
+            />
           </div>
         </Field>
       </div>
-      <Field label="Arguments" hint="weights file above overrides --weights" htmlFor={`${idPrefix}-args`}>
-        <Input id={`${idPrefix}-args`} value={draft.args} onChange={(event) => onChange({ args: event.target.value })} placeholder="Extra flags" />
+      <Field
+        label="Arguments"
+        hint="weights file above overrides --weights"
+        htmlFor={`${idPrefix}-args`}
+      >
+        <Input
+          id={`${idPrefix}-args`}
+          value={draft.args}
+          onChange={(event) => onChange({ args: event.target.value })}
+          placeholder="Extra flags"
+        />
       </Field>
       <SettingRow
         label="Human prediction engine (Maia)"
         htmlFor={`${idPrefix}-maia`}
         control={
-          <Switch id={`${idPrefix}-maia`} checked={draft.isHumanPrediction} onCheckedChange={(value) => onChange({ isHumanPrediction: value })} />
+          <Switch
+            id={`${idPrefix}-maia`}
+            checked={draft.isHumanPrediction}
+            onCheckedChange={(value) => onChange({ isHumanPrediction: value })}
+          />
         }
       />
     </div>
   );
 }
 
-function EngineImagePreview({ imagePath, name, size = "sm" }: { imagePath: string | null; name: string; size?: "sm" | "md" }) {
+function EngineImagePreview({
+  imagePath,
+  name,
+  size = "sm"
+}: {
+  imagePath: string | null;
+  name: string;
+  size?: "sm" | "md";
+}) {
   const src = localImageSrc(imagePath);
   return (
     <span
@@ -498,9 +642,12 @@ function EngineImagePreview({ imagePath, name, size = "sm" }: { imagePath: strin
         size === "md" ? "size-9" : "size-8"
       )}
     >
-      {src ? <img className="size-full object-cover" src={src} alt="" /> : <Bot className="size-4" />}
+      {src ? (
+        <img className="size-full object-cover" src={src} alt="" />
+      ) : (
+        <Bot className="size-4" />
+      )}
       <span className="sr-only">{name} engine image</span>
     </span>
   );
 }
-

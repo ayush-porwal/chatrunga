@@ -66,7 +66,13 @@ export function LichessConnectButton({ label = "Connect Lichess account" }: { la
 const RATING_SPEEDS: readonly LichessSpeed[] = ["rapid", "classical", "blitz", "bullet"];
 
 /** The account's ratings for the speeds it has played, most relevant first. */
-export function LichessRatings({ account, className }: { account: LichessAccount; className?: string }) {
+export function LichessRatings({
+  account,
+  className
+}: {
+  account: LichessAccount;
+  className?: string;
+}) {
   const perfs = RATING_SPEEDS.flatMap((speed) => {
     const perf = account.perfs[speed];
     return perf && perf.games > 0 ? [{ speed, perf }] : [];
@@ -114,7 +120,11 @@ export function LichessAccountSection() {
       ) : (
         <div className="grid max-w-xl gap-3">
           {status.tokenRejected ? (
-            <Notice tone="warn" title="Lichess signed Chaturanga out" action={<LichessConnectButton label="Reconnect" />}>
+            <Notice
+              tone="warn"
+              title="Lichess signed Chaturanga out"
+              action={<LichessConnectButton label="Reconnect" />}
+            >
               The access was revoked or has expired. Reconnect to keep playing and importing games.
             </Notice>
           ) : null}
@@ -135,22 +145,37 @@ export function LichessAccountSection() {
                   : "The first import brings in the last year of games."
             }
             control={
-              <Button type="button" variant="outline" size="sm" disabled={sync.running || status.tokenRejected} onClick={importGames}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={sync.running || status.tokenRejected}
+                onClick={importGames}
+              >
                 {sync.running ? <Loader2 className="animate-spin" /> : <RefreshCw />}
                 Import now
               </Button>
             }
           />
-          {syncError || sync.error ? <Notice tone="danger">{syncError ?? sync.error}</Notice> : null}
+          {syncError || sync.error ? (
+            <Notice tone="danger">{syncError ?? sync.error}</Notice>
+          ) : null}
           <div>
-            <Button type="button" variant="ghost-destructive" size="sm" onClick={() => setDisconnectOpen(true)}>
+            <Button
+              type="button"
+              variant="ghost-destructive"
+              size="sm"
+              onClick={() => setDisconnectOpen(true)}
+            >
               <LogOut />
               Disconnect
             </Button>
           </div>
         </div>
       )}
-      {disconnectOpen && account ? <DisconnectDialog username={account.username} onClose={() => setDisconnectOpen(false)} /> : null}
+      {disconnectOpen && account ? (
+        <DisconnectDialog username={account.username} onClose={() => setDisconnectOpen(false)} />
+      ) : null}
     </section>
   );
 }
@@ -205,7 +230,13 @@ function DisconnectDialog({ username, onClose }: { username: string; onClose: ()
       <SettingRow
         label="Also remove imported Lichess games"
         description="Games you played or imported stay in your library unless you remove them."
-        control={<Switch checked={removeGames} onCheckedChange={setRemoveGames} aria-label="Also remove imported Lichess games" />}
+        control={
+          <Switch
+            checked={removeGames}
+            onCheckedChange={setRemoveGames}
+            aria-label="Also remove imported Lichess games"
+          />
+        }
       />
       {error ? <Notice tone="danger">{error}</Notice> : null}
     </Dialog>

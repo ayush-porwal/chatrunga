@@ -9,7 +9,6 @@ import {
   buildRestoreInput,
   formatBytes,
   initialRestoreRows,
-  isStaleRevisionError,
   replacedDirtyDraftName,
   restoreDiffLine,
   restoreLossLines,
@@ -328,16 +327,6 @@ describe("formatting", () => {
       title: "This backup has 2 warnings",
       lines: ["a", "b"]
     });
-  });
-
-  it("recognises a stale-revision refusal", () => {
-    expect(
-      isStaleRevisionError("Invalid expectedRevision: repertoire changed (stored 8, expected 7)")
-    ).toBe(true);
-    expect(isStaleRevisionError("Invalid expectedRevision: required to replace a repertoire")).toBe(
-      false
-    );
-    expect(isStaleRevisionError("Invalid backup: chapter revision is not a number")).toBe(false);
   });
 
   it("lists restored names and retained backups", () => {

@@ -261,11 +261,13 @@ describe("commentary analytics", () => {
   });
 
   it("replaces player and engine names in what it records, not in what it sends", async () => {
-    const named = payload(1, { context: { players: { white: "MagnusFan", black: "kakashi__ofleaf" } } });
+    const named = payload(1, {
+      context: { players: { white: "MagnusFan", black: "kakashi__ofleaf" } }
+    });
     named.engines.stockfish.engineName = "My Secret Engine";
     const sent: string[] = [];
     const fetchImpl = vi.fn(async (_url: string | URL, init?: RequestInit) => {
-      sent.push(String(init?.body));
+      sent.push(typeof init?.body === "string" ? init.body : "");
       return completion(GOOD_ANSWER);
     });
     const { events, of } = await run(fetchImpl, [named]);
@@ -289,7 +291,9 @@ describe("commentary analytics", () => {
     expect(unicode("Ame\u0301lie vs \u03bf\u03c2")).toBe("[White] vs [Black]");
 
     // A one-letter name is replaced too, as a whole word only.
-    const short = analyticsRedactor(payload(1, { context: { players: { white: "A", black: "Bo" } } }));
+    const short = analyticsRedactor(
+      payload(1, { context: { players: { white: "A", black: "Bo" } } })
+    );
     expect(short('{"white":"A","black":"Bo"} A and Bo play a Bongcloud')).toBe(
       '{"white":"[White]","black":"[Black]"} [White] and [Black] play [White] Bongcloud'
     );

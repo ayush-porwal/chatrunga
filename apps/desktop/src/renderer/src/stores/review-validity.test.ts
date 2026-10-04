@@ -8,14 +8,17 @@ import { compatibleReviewMoves, lineStillOnMainline } from "./review-validity";
 
 /** The reviewed moves of the board's main line, as a finished review holds them. */
 function reviewOfMainline(): MoveReview[] {
-  return mainlineReviewInput(useGameStore.getState().moveTree).map((move) => ({
-    nodeId: move.nodeId,
-    ply: move.ply,
-    san: move.san,
-    playedMove: move.uci,
-    fenBefore: move.fenBefore,
-    fenAfter: move.fenAfter
-  }) as MoveReview);
+  return mainlineReviewInput(useGameStore.getState().moveTree).map(
+    (move) =>
+      ({
+        nodeId: move.nodeId,
+        ply: move.ply,
+        san: move.san,
+        playedMove: move.uci,
+        fenBefore: move.fenBefore,
+        fenAfter: move.fenAfter
+      }) as MoveReview
+  );
 }
 
 function nodeBySan(san: string): MoveNode {
@@ -70,7 +73,10 @@ describe("review validity", () => {
   });
 
   it("tells whether a running review's line is still the start of the main line", () => {
-    const line = mainlineReviewInput(tree()).map((move) => ({ nodeId: move.nodeId, uci: move.uci }));
+    const line = mainlineReviewInput(tree()).map((move) => ({
+      nodeId: move.nodeId,
+      uci: move.uci
+    }));
     useGameStore.getState().goToNode(nodeBySan("e5").id);
     useGameStore.getState().makeUciMove("g1f3");
     expect(lineStillOnMainline(line, tree())).toBe(true);

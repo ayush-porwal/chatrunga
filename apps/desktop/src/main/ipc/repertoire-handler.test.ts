@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
 vi.mock("electron", () => ({
@@ -80,10 +80,11 @@ const { IMPORT_CANCELLED_REPLY } = await import("@chaturanga/shared/types/repert
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 describe("registerRepertoireIpc", () => {
+  beforeAll(() => registerRepertoireIpc());
+  const invoke = (channel: string, ...args: unknown[]) =>
+    handlers.get(`repertoires:${channel}`)!({ sender: {} }, ...args);
+
   it("parses every input before calling the service", async () => {
-    registerRepertoireIpc();
-    const invoke = (channel: string, ...args: unknown[]) =>
-      handlers.get(`repertoires:${channel}`)!({ sender: {} }, ...args);
     const chapter = {
       id: "c1",
       title: "Main",
@@ -250,8 +251,6 @@ describe("registerRepertoireIpc", () => {
   });
 
   it("rejects malformed inputs with Invalid … messages", () => {
-    const invoke = (channel: string, ...args: unknown[]) =>
-      handlers.get(`repertoires:${channel}`)!({ sender: {} }, ...args);
     expect(() => invoke("create", { name: "x", color: "red" })).toThrow(
       "Invalid color: expected white or black"
     );
@@ -265,7 +264,12 @@ describe("registerRepertoireIpc", () => {
       /expectedRevision/
     );
     expect(() =>
-      invoke("updateChapters", { repertoireId: "r", chapterIds: ["c"], expectedRevision: 1, patch: {} })
+      invoke("updateChapters", {
+        repertoireId: "r",
+        chapterIds: ["c"],
+        expectedRevision: 1,
+        patch: {}
+      })
     ).toThrow("Invalid chapters patch: expected enabled or kind");
     expect(() =>
       invoke("updateChapters", {
@@ -399,8 +403,6 @@ describe("registerRepertoireIpc", () => {
   });
 
   it("answers a cancelled preview with the marker, and rejects any other failure", async () => {
-    const invoke = (channel: string, ...args: unknown[]) =>
-      handlers.get(`repertoires:${channel}`)!({ sender: {} }, ...args);
     try {
       previewOutcome = () => Promise.reject(new ImportCancelledError());
       await expect(invoke("previewImport", { pgn: "1. e4 *" })).resolves.toEqual(
@@ -416,8 +418,6 @@ describe("registerRepertoireIpc", () => {
   });
 
   it("parses backup inputs and never accepts a filesystem path", () => {
-    const invoke = (channel: string, ...args: unknown[]) =>
-      handlers.get(`repertoires:${channel}`)!({ sender: {} }, ...args);
     calls.length = 0;
     expect(invoke("exportBackup", { includeProgress: true, extra: "x" })).toBe("exportBackup");
     expect(calls.at(-1)?.[1][0]).toEqual({ repertoireIds: undefined, includeProgress: true });

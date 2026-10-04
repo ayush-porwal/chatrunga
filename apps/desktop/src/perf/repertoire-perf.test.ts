@@ -278,12 +278,13 @@ describe("repertoire performance (design §11)", { timeout: 600_000 }, () => {
 
   it("collects decisions over every chapter of the collection", () => {
     const all = [...chaptersByRepertoire.values()].flat();
-    const stat = measure(
+    measure(
       `collectDecisions over ${all.length} chapters`,
       () => collectDecisions("white", all),
       Math.max(3, Math.round(SIZE.runs / 3))
     );
-    expect(stat.p95).toBeGreaterThanOrEqual(0);
+    // What was timed did the work: the collection's chapters hold decisions.
+    expect(collectDecisions("white", all).size).toBeGreaterThan(0);
   });
 
   it("compares a long finished game against a repertoire", () => {
@@ -291,12 +292,14 @@ describe("repertoire performance (design §11)", { timeout: 600_000 }, () => {
     const chapters = chaptersByRepertoire.get(repertoireId)!;
     const moves = generateGame(random, bigChapter.tree, SIZE.gamePlies);
     facts["comparison game plies"] = moves.length;
-    measure(`compareGameToRepertoire (${moves.length} plies, pure)`, () =>
+    const compare = () =>
       compareGameToRepertoire(
         { color: "white", rootFen: START_FEN, moves },
         { id: repertoireId, name: "R", revision: 1, chapters, decisions: [] }
-      )
-    );
+      );
+    measure(`compareGameToRepertoire (${moves.length} plies, pure)`, compare);
+    // Every ply of the long game is judged, not just a prefix.
+    expect(compare().moves).toHaveLength(moves.length);
     // The service caches by game hash: drop a different number of final plies on every run.
     let trim = 0;
     measure(`compareGame via service (≤ ${moves.length} plies, SQLite + compare)`, () => {
@@ -306,8 +309,8 @@ describe("repertoire performance (design §11)", { timeout: 600_000 }, () => {
   });
 
   it("lists the hub summaries", () => {
-    const stat = measure("Hub: listRepertoires (summary query)", () => service.listRepertoires());
-    expect(stat.p95).toBeGreaterThanOrEqual(0);
+    measure("Hub: listRepertoires (summary query)", () => service.listRepertoires());
+    expect(service.listRepertoires()).toHaveLength(SIZE.repertoires);
   });
 
   it("parses a 100,000-move PGN import with bounded blocking", async () => {

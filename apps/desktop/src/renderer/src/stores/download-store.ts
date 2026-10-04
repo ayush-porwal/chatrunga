@@ -36,7 +36,8 @@ export const useDownloadStore = create<DownloadStore>((set) => ({
   applySnapshot: (running) =>
     set((state) => {
       const next = { ...state.progress };
-      for (const progress of running) if (!state.reported[progress.sourceId]) next[progress.sourceId] = progress;
+      for (const progress of running)
+        if (!state.reported[progress.sourceId]) next[progress.sourceId] = progress;
       return { progress: next };
     }),
   clear: (sourceId) =>

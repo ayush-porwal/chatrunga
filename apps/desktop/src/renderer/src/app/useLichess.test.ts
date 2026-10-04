@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChaturangaApi } from "@chaturanga/shared/ipc/chaturanga-api";
-import type { LichessEvent, LichessGameFull, LichessGameState, LichessStatus } from "@chaturanga/shared/types/lichess";
+import type {
+  LichessEvent,
+  LichessGameFull,
+  LichessGameState,
+  LichessStatus
+} from "@chaturanga/shared/types/lichess";
 import { mainlineUcis, useGameStore } from "../stores/game-store";
 import { useLichessStore } from "../stores/lichess-store";
 import { startLichessSync } from "./useLichess";
@@ -8,13 +13,30 @@ import { startLichessSync } from "./useLichess";
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 const status: LichessStatus = {
-  account: { id: "ayush", username: "Ayush", title: null, perfs: {}, connectedAt: 1, lastSyncAt: null },
+  account: {
+    id: "ayush",
+    username: "Ayush",
+    title: null,
+    perfs: {},
+    connectedAt: 1,
+    lastSyncAt: null
+  },
   connecting: false,
   tokenRejected: false
 };
 
 function state(moves: string[], patch: Partial<LichessGameState> = {}): LichessGameState {
-  return { moves, wtime: 600_000, btime: 600_000, winc: 0, binc: 0, status: "started", winner: null, drawOffer: null, ...patch };
+  return {
+    moves,
+    wtime: 600_000,
+    btime: 600_000,
+    winc: 0,
+    binc: 0,
+    status: "started",
+    winner: null,
+    drawOffer: null,
+    ...patch
+  };
 }
 
 function full(moves: string[] = []): LichessGameFull {
@@ -98,7 +120,11 @@ describe("startLichessSync", () => {
     expect(board.orientation).toBe("white");
     expect(board.engineSide).toBe("black");
     expect(board.headers.site).toBe("https://lichess.org/game1");
-    expect(useLichessStore.getState().live).toMatchObject({ id: "game1", yourColor: "white", over: false });
+    expect(useLichessStore.getState().live).toMatchObject({
+      id: "game1",
+      yourColor: "white",
+      over: false
+    });
   });
 
   it("sends your move and applies the opponent's", async () => {
@@ -120,7 +146,9 @@ describe("startLichessSync", () => {
   });
 
   it("takes back a move Lichess refused and says why", async () => {
-    bridge.api.move.mockRejectedValueOnce(new Error("Error invoking remote method 'lichess:move': Error: Not your turn"));
+    bridge.api.move.mockRejectedValueOnce(
+      new Error("Error invoking remote method 'lichess:move': Error: Not your turn")
+    );
     await startGame();
     useGameStore.getState().makeMove({ from: "e2", to: "e4" });
     await flush();
@@ -130,8 +158,15 @@ describe("startLichessSync", () => {
 
   it("ends the game with Lichess's result and stops watching", async () => {
     await startGame(["e2e4"]);
-    bridge.emit({ type: "gameState", gameId: "game1", state: state(["e2e4"], { status: "resign", winner: "white" }) });
-    expect(useGameStore.getState().gameOutcome).toEqual({ result: "1-0", termination: "Player resign" });
+    bridge.emit({
+      type: "gameState",
+      gameId: "game1",
+      state: state(["e2e4"], { status: "resign", winner: "white" })
+    });
+    expect(useGameStore.getState().gameOutcome).toEqual({
+      result: "1-0",
+      termination: "Player resign"
+    });
     expect(useGameStore.getState().headers.result).toBe("1-0");
     expect(useLichessStore.getState().live?.over).toBe(true);
     expect(bridge.api.unwatchGame).toHaveBeenCalledWith("game1");
@@ -157,7 +192,10 @@ describe("startLichessSync", () => {
 
   it("lets go of the board when you're signed out mid-game", async () => {
     await startGame();
-    bridge.emit({ type: "status", status: { account: null, connecting: false, tokenRejected: false } });
+    bridge.emit({
+      type: "status",
+      status: { account: null, connecting: false, tokenRejected: false }
+    });
     expect(useLichessStore.getState().live).toMatchObject({ over: true, connected: false });
     expect(useGameStore.getState().matchFeedback).toMatch(/Signed out/);
   });
@@ -173,7 +211,10 @@ describe("startLichessSync", () => {
 
   it("lets go of the board when another account connects mid-game", async () => {
     await startGame();
-    const other = { ...status, account: { ...status.account!, id: "someone", username: "Someone" } };
+    const other = {
+      ...status,
+      account: { ...status.account!, id: "someone", username: "Someone" }
+    };
     bridge.emit({ type: "status", status: other });
     expect(useLichessStore.getState().live?.over).toBe(true);
   });
@@ -189,7 +230,10 @@ describe("startLichessSync", () => {
 
   it("drops a game still loading when you're signed out", () => {
     bridge.emit({ type: "gameStart", gameId: "game1" });
-    bridge.emit({ type: "status", status: { account: null, connecting: false, tokenRejected: false } });
+    bridge.emit({
+      type: "status",
+      status: { account: null, connecting: false, tokenRejected: false }
+    });
     expect(bridge.api.unwatchGame).toHaveBeenCalledWith("game1");
     bridge.emit({ type: "gameFull", game: full() });
     expect(useLichessStore.getState().live).toBeNull();

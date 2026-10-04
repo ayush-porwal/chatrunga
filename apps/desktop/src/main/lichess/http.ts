@@ -1,4 +1,5 @@
 import { readNdjson } from "./ndjson";
+import { isRecord } from "@chaturanga/shared/types/guards";
 
 export const LICHESS_ORIGIN = "https://lichess.org";
 
@@ -22,7 +23,7 @@ export class LichessHttpError extends Error {
 }
 
 export function isAbortError(error: unknown): boolean {
-  return (error as { name?: unknown } | null)?.name === "AbortError";
+  return isRecord(error) && error.name === "AbortError";
 }
 
 /**
@@ -46,12 +47,12 @@ function errorDetail(bodyText: string): string | null {
   } catch {
     return null;
   }
-  if (!body || typeof body !== "object") return null;
-  const { error, error_description: description } = body as Record<string, unknown>;
+  if (!isRecord(body)) return null;
+  const { error, error_description: description } = body;
   if (typeof description === "string" && description.trim()) return description.trim();
   if (typeof error === "string" && error.trim()) return error.trim();
-  if (error && typeof error === "object") {
-    const messages = Object.values(error as Record<string, unknown>)
+  if (isRecord(error)) {
+    const messages = Object.values(error)
       .flat()
       .filter((item): item is string => typeof item === "string" && item.trim().length > 0);
     if (messages.length) return messages.join(" ");
@@ -126,13 +127,16 @@ export class LichessClient {
     }
     if (response.ok) return response;
     const text = await response.text().catch(() => "");
-    if (response.status === 401 && usesSavedToken && sentToken) this.options.onTokenRejected?.(sentToken);
+    if (response.status === 401 && usesSavedToken && sentToken)
+      this.options.onTokenRejected?.(sentToken);
     throw new LichessHttpError(lichessErrorMessage(response.status, text), response.status);
   }
 
-  async json<T>(path: string, request: LichessRequest = {}): Promise<T> {
+  /** The answer's fields, unchecked (an answer that isn't an object has none). */
+  async json(path: string, request: LichessRequest = {}): Promise<Record<string, unknown>> {
     const response = await this.request(path, request);
-    return (await response.json()) as T;
+    const body: unknown = await response.json();
+    return isRecord(body) ? body : {};
   }
 
   /** For actions whose answer carries nothing we need (`{ok: true}`). */

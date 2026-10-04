@@ -33,13 +33,33 @@ const request: ExplainRequest = {
   kind: "solved",
   wrong: null,
   engine: { id: "sf", name: "Stockfish" } as EngineConfig,
-  settings: { reviewSearchTimeMs: 500, reviewMultiPv: 3, reviewPlayerRating: 1500, reviewCommentaryDetail: "balanced" }
+  settings: {
+    reviewSearchTimeMs: 500,
+    reviewMultiPv: 3,
+    reviewPlayerRating: 1500,
+    reviewCommentaryDetail: "balanced"
+  }
 };
 const analysis: AnalysePositionsResult = {
   engineName: "Stockfish 17",
-  lines: [[{ multipv: 1, depth: 20, score: { type: "mate", value: 1 }, scoreWhite: { type: "mate", value: 1 }, pv: ["h5f7"] }]]
+  lines: [
+    [
+      {
+        multipv: 1,
+        depth: 20,
+        score: { type: "mate", value: 1 },
+        scoreWhite: { type: "mate", value: 1 },
+        pv: ["h5f7"]
+      }
+    ]
+  ]
 };
-const explanation = { headline: "Mate on f7", prose: "Qxf7# is mate.", providerModel: "m/x", generatedAt: 1 };
+const explanation = {
+  headline: "Mate on f7",
+  prose: "Qxf7# is mate.",
+  providerModel: "m/x",
+  generatedAt: 1
+};
 
 /** Each call's answer is released by the test (`resolve`), so phases can be observed in between. */
 function deferred<T>() {
@@ -74,7 +94,8 @@ function fakeDeps() {
   return { deps, searches, answers };
 }
 
-const entry = (key = request.key): ExplainEntry | undefined => usePuzzleExplanationStore.getState().entries[key];
+const entry = (key = request.key): ExplainEntry | undefined =>
+  usePuzzleExplanationStore.getState().entries[key];
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("requestPuzzleExplanation", () => {
@@ -87,13 +108,23 @@ describe("requestPuzzleExplanation", () => {
     const { deps, searches, answers } = fakeDeps();
     const running = requestPuzzleExplanation(request, deps);
     expect(entry()).toMatchObject({ phase: "analysing", requestId: "r1" });
-    expect(deps.analysePositions).toHaveBeenCalledWith({ requestId: "r1", engineId: "sf", moveTimeMs: 500, positions: [{ fen: START, multipv: 3 }] });
+    expect(deps.analysePositions).toHaveBeenCalledWith({
+      requestId: "r1",
+      engineId: "sf",
+      moveTimeMs: 500,
+      positions: [{ fen: START, multipv: 3 }]
+    });
 
     searches[0]!.resolve(analysis);
     await flush();
     expect(entry()?.phase).toBe("writing");
-    const sent = deps.explainPuzzle.mock.calls[0] as unknown as [{ requestId: string; payload: { outcome: string; commentaryDetail: string } }];
-    expect(sent[0]).toMatchObject({ requestId: "r1", payload: { outcome: "solved", commentaryDetail: "balanced" } });
+    const sent = deps.explainPuzzle.mock.calls[0] as unknown as [
+      { requestId: string; payload: { outcome: string; commentaryDetail: string } }
+    ];
+    expect(sent[0]).toMatchObject({
+      requestId: "r1",
+      payload: { outcome: "solved", commentaryDetail: "balanced" }
+    });
 
     answers[0]!.resolve({ explanation, error: null });
     await running;
@@ -141,7 +172,11 @@ describe("requestPuzzleExplanation", () => {
 
     const otherRequest = { ...request, puzzle: other, key: explanationKey(other, "solved", null) };
     const running = requestPuzzleExplanation(otherRequest, deps);
-    expect(entry(otherRequest.key)).toMatchObject({ phase: "analysing", requestId: "r2", puzzle: puzzleIdentity(other) });
+    expect(entry(otherRequest.key)).toMatchObject({
+      phase: "analysing",
+      requestId: "r2",
+      puzzle: puzzleIdentity(other)
+    });
     searches[1]!.resolve(analysis);
     await flush();
     answers[0]!.resolve({ explanation, error: null });
@@ -167,7 +202,16 @@ describe("requestPuzzleExplanation", () => {
     const { deps } = fakeDeps();
     usePuzzleExplanationStore.setState({
       entries: {
-        "old:solved": { phase: "ready", puzzle: "old", requestId: null, explanation, otherSan: [], error: null, needsSettings: false, cancel: null }
+        "old:solved": {
+          phase: "ready",
+          puzzle: "old",
+          requestId: null,
+          explanation,
+          otherSan: [],
+          error: null,
+          needsSettings: false,
+          cancel: null
+        }
       }
     });
     void requestPuzzleExplanation(request, deps);
@@ -180,9 +224,15 @@ describe("requestPuzzleExplanation", () => {
   it("reports an engine failure, a provider error and a missing engine, each with a way forward", async () => {
     const { deps, searches, answers } = fakeDeps();
     const failing = requestPuzzleExplanation(request, deps);
-    searches[0]!.reject(new Error("Error invoking remote method 'engines:analysePositions': Error: Engine not found"));
+    searches[0]!.reject(
+      new Error("Error invoking remote method 'engines:analysePositions': Error: Engine not found")
+    );
     await failing;
-    expect(entry()).toMatchObject({ phase: "error", error: "The engine couldn't analyse this puzzle: Engine not found.", needsSettings: false });
+    expect(entry()).toMatchObject({
+      phase: "error",
+      error: "The engine couldn't analyse this puzzle: Engine not found.",
+      needsSettings: false
+    });
 
     const refused = requestPuzzleExplanation(request, deps);
     searches[1]!.resolve(analysis);
@@ -206,7 +256,16 @@ describe("requestPuzzleExplanation", () => {
 });
 
 describe("explainView", () => {
-  const ready: ExplainEntry = { phase: "ready", puzzle: puzzleIdentity(puzzle), requestId: null, explanation, otherSan: [], error: null, needsSettings: false, cancel: null };
+  const ready: ExplainEntry = {
+    phase: "ready",
+    puzzle: puzzleIdentity(puzzle),
+    requestId: null,
+    explanation,
+    otherSan: [],
+    error: null,
+    needsSettings: false,
+    cancel: null
+  };
   const base = { entry: undefined, configReady: true, commentaryEnabled: true, hasApiKey: true };
 
   it("offers the button once the configuration is known", () => {
@@ -220,12 +279,31 @@ describe("explainView", () => {
   });
 
   it("keeps showing progress and a finished explanation whatever the settings", () => {
-    expect(explainView({ ...base, hasApiKey: false, entry: { ...ready, phase: "writing", explanation: null } })).toEqual({ kind: "writing" });
-    expect(explainView({ ...base, commentaryEnabled: false, entry: ready })).toEqual({ kind: "ready", explanation });
+    expect(
+      explainView({
+        ...base,
+        hasApiKey: false,
+        entry: { ...ready, phase: "writing", explanation: null }
+      })
+    ).toEqual({ kind: "writing" });
+    expect(explainView({ ...base, commentaryEnabled: false, entry: ready })).toEqual({
+      kind: "ready",
+      explanation
+    });
   });
 
   it("shows an error with its way forward", () => {
-    const error: ExplainEntry = { ...ready, phase: "error", explanation: null, error: NO_ENGINE_ERROR, needsSettings: true };
-    expect(explainView({ ...base, entry: error })).toEqual({ kind: "error", message: NO_ENGINE_ERROR, needsSettings: true });
+    const error: ExplainEntry = {
+      ...ready,
+      phase: "error",
+      explanation: null,
+      error: NO_ENGINE_ERROR,
+      needsSettings: true
+    };
+    expect(explainView({ ...base, entry: error })).toEqual({
+      kind: "error",
+      message: NO_ENGINE_ERROR,
+      needsSettings: true
+    });
   });
 });

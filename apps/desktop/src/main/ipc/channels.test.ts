@@ -12,39 +12,82 @@ const src = join(__dirname, "../..");
 function sources(dir: string): string {
   return readdirSync(dir)
     .map((name) => join(dir, name))
-    .flatMap((path) => (statSync(path).isDirectory() ? [sources(path)] : /\.ts$/.test(path) && !/\.test\.ts$/.test(path) ? [readFileSync(path, "utf8")] : []))
+    .flatMap((path) =>
+      statSync(path).isDirectory()
+        ? [sources(path)]
+        : path.endsWith(".ts") && !path.endsWith(".test.ts")
+          ? [readFileSync(path, "utf8")]
+          : []
+    )
     .join("\n");
 }
 
-const matches = (text: string, pattern: RegExp) => new Set([...text.matchAll(pattern)].map((match) => match[1]));
+const matches = (text: string, pattern: RegExp) =>
+  new Set([...text.matchAll(pattern)].map((match) => match[1]));
 
 const preload = sources(join(src, "preload"));
 const main = sources(join(src, "main"));
 
 describe("IPC channels", () => {
   it("every request the preload makes has a handler in main, and every handler is used", () => {
-    const requested = matches(preload, /ipcRenderer\.(?:invoke|sendSync|send)\("([\w:]+)"/g);
-    const handled = matches(main, /ipcMain\.(?:handle|on|once)\("([\w:]+)"/g);
+    const requested = matches(preload, /ipcRenderer\.(?:invoke|sendSync|send)\(\s*"([\w:]+)"/g);
+    const handled = matches(main, /ipcMain\.(?:handle|on|once)\(\s*"([\w:]+)"/g);
     expect([...requested].filter((channel) => !handled.has(channel))).toEqual([]);
     expect([...handled].filter((channel) => !requested.has(channel))).toEqual([]);
   });
 
   it("every event the preload listens to is sent by main", () => {
-    const listened = matches(preload, /(?:subscribe(?:<[^>]*>)?|ipcRenderer\.on)\("([\w:]+)"/g);
+    const listened = matches(preload, /(?:subscribe(?:<[^>]*>)?|ipcRenderer\.on)\(\s*"([\w:]+)"/g);
     const sent = new Set([
-      ...matches(main, /(?:broadcast|webContents\.send|contents\.send)\("([\w:]+)"/g),
+      ...matches(main, /(?:broadcast|webContents\.send|contents\.send)\(\s*"([\w:]+)"/g),
       // The engine events are relayed from a table (ENGINE_EVENT_CHANNELS in register.ts).
       ...matches(main, /:\s*"((?:engine|review):\w+)"/g)
     ]);
     expect([...listened].filter((channel) => !sent.has(channel))).toEqual([]);
   });
 
+  it("never gives the renderer a way to read a secret (API keys and tokens stay in main)", () => {
+    const requested = matches(preload, /ipcRenderer\.(?:invoke|sendSync|send)\(\s*"([\w:]+)"/g);
+    expect([...requested].filter((channel) => channel.startsWith("commentary:")).sort()).toEqual([
+      "commentary:cancelPuzzleExplanation",
+      "commentary:explainPuzzle",
+      "commentary:generate",
+      "commentary:getOpenRouterConfig",
+      "commentary:setOpenRouterConfig"
+    ]);
+    expect(
+      [...requested].filter((channel) => /api.?key|secret|token|password/i.test(channel))
+    ).toEqual([]);
+  });
+
   it("exposes the repertoire namespace, including its lookups and the change event", () => {
-    const requested = matches(preload, /ipcRenderer\.invoke\("(repertoires:\w+)"/g);
-    for (const lookup of ["getChapter", "getDecision", "getOccurrences", "getPractisedElsewhere", "compareGame"]) {
+    const requested = matches(preload, /ipcRenderer\.invoke\(\s*"(repertoires:\w+)"/g);
+    for (const lookup of [
+      "getChapter",
+      "getDecision",
+      "getOccurrences",
+      "getPractisedElsewhere",
+      "compareGame"
+    ]) {
       expect(requested.has(`repertoires:${lookup}`)).toBe(true);
     }
-    expect(requested.size).toBe(38);
-    expect(matches(preload, /subscribe(?:<[^>]*>)?\("(repertoires:\w+)"/g)).toEqual(new Set(["repertoires:changed", "repertoires:importProgress"]));
+    expect(matches(preload, /subscribe(?:<[^>]*>)?\(\s*"(repertoires:\w+)"/g)).toEqual(
+      new Set(["repertoires:changed", "repertoires:importProgress"])
+    );
+    // Every request the shared API declares has its channel (the subscriptions aside), so one
+    // dropped from both the preload and main still fails here.
+    const api = readFileSync(
+      join(src, "../../../packages/shared/src/ipc/chaturanga-api.ts"),
+      "utf8"
+    );
+    const declared = api.slice(
+      api.indexOf("\n  repertoires: {"),
+      api.indexOf("\n  };", api.indexOf("\n  repertoires: {"))
+    );
+    const methods = [...matches(declared, /^ {4}(\w+)[(<]/gm)].filter(
+      (name) => !name.startsWith("on")
+    );
+    expect(methods.length).toBeGreaterThan(30);
+    expect([...requested].sort()).toEqual(methods.map((name) => `repertoires:${name}`).sort());
   });
 });

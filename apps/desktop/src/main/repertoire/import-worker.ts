@@ -17,6 +17,7 @@ import {
   type ImportWorkerRequest
 } from "./import-job";
 
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the runner starts this worker with a ImportWorkerJob
 const job = workerData as ImportWorkerJob;
 let cancelled = false;
 let resume: (() => void) | null = null;

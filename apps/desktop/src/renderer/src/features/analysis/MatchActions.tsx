@@ -40,7 +40,8 @@ export function MatchActions({
 }) {
   const mode = useGameStore((s) => s.mode);
   const live = useLichessStore((s) => s.live);
-  if (mode === "online" && live) return <LichessMatchActions live={live} onReview={onReview} onPlayAgain={onPlayAgain} />;
+  if (mode === "online" && live)
+    return <LichessMatchActions live={live} onReview={onReview} onPlayAgain={onPlayAgain} />;
   return <EngineMatchActions postGame={postGame} />;
 }
 
@@ -78,7 +79,15 @@ function EngineMatchActions({ postGame }: { postGame: EnginePostGameHandlers }) 
   if (mode !== "engine" || !engineSide) return null;
   if (showPostGame) return <EnginePostGameActions {...postGame} />;
   // Ended, but played from a repertoire: its own actions show (nothing is left to offer or resign).
-  if (engineGameEnded({ mode, engineSide, gameOutcome, endFen: mainlineEnd(moveTree)?.fenAfter ?? currentFen })) return null;
+  if (
+    engineGameEnded({
+      mode,
+      engineSide,
+      gameOutcome,
+      endFen: mainlineEnd(moveTree)?.fenAfter ?? currentFen
+    })
+  )
+    return null;
 
   const humanColor = engineSide === "white" ? "black" : "white";
   const status = statusForFen(currentFen);
@@ -102,9 +111,9 @@ function EngineMatchActions({ postGame }: { postGame: EnginePostGameHandlers }) 
       if (accepted) useGameStore.getState().agreeDraw();
       useGameStore.getState().setMatchFeedback(message);
     } catch (error) {
-      useGameStore.getState().setMatchFeedback(
-        error instanceof Error ? error.message : "Draw offer failed."
-      );
+      useGameStore
+        .getState()
+        .setMatchFeedback(error instanceof Error ? error.message : "Draw offer failed.");
     } finally {
       setDrawBusy(false);
     }
@@ -146,11 +155,22 @@ function EngineMatchActions({ postGame }: { postGame: EnginePostGameHandlers }) 
  * After an engine game (one played on from a puzzle too): Review game (the main action), Analyze
  * and, after a puzzle, Next puzzle in the same set. Resign / Offer draw are gone with the game.
  */
-function EnginePostGameActions({ onReviewGame, onAnalyze, onNextPuzzle, nextPuzzlePending }: EnginePostGameHandlers) {
+function EnginePostGameActions({
+  onReviewGame,
+  onAnalyze,
+  onNextPuzzle,
+  nextPuzzlePending
+}: EnginePostGameHandlers) {
   return (
     <div className="flex flex-wrap items-center gap-2 [-webkit-app-region:no-drag]">
       {onNextPuzzle ? (
-        <Button type="button" variant="ghost" size="sm" disabled={nextPuzzlePending} onClick={onNextPuzzle}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={nextPuzzlePending}
+          onClick={onNextPuzzle}
+        >
           {nextPuzzlePending ? <Loader2 className="animate-spin" /> : <Puzzle />}
           Next puzzle
         </Button>
@@ -167,7 +187,15 @@ function EnginePostGameActions({ onReviewGame, onAnalyze, onNextPuzzle, nextPuzz
   );
 }
 
-function LichessMatchActions({ live, onReview, onPlayAgain }: { live: LiveLichessGame; onReview: () => void; onPlayAgain: () => void }) {
+function LichessMatchActions({
+  live,
+  onReview,
+  onPlayAgain
+}: {
+  live: LiveLichessGame;
+  onReview: () => void;
+  onPlayAgain: () => void;
+}) {
   const plies = useGameStore((s) => Math.max(0, s.moveTree.length - 1));
   const [busy, setBusy] = useState(false);
   const [confirmResign, setConfirmResign] = useState(false);
@@ -204,7 +232,9 @@ function LichessMatchActions({ live, onReview, onPlayAgain }: { live: LiveLiches
     if (!action || busy) return;
     setBusy(true);
     action()
-      .catch((error: unknown) => useGameStore.getState().setMatchFeedback(lichessErrorMessage(error, fallback)))
+      .catch((error: unknown) =>
+        useGameStore.getState().setMatchFeedback(lichessErrorMessage(error, fallback))
+      )
       .finally(() => setBusy(false));
   }
 
@@ -217,22 +247,48 @@ function LichessMatchActions({ live, onReview, onPlayAgain }: { live: LiveLiches
         </Badge>
       )}
       {canAbort ? (
-        <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => run(api && (() => api.abort(live.id)), "Couldn’t abort the game.")}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onClick={() => run(api && (() => api.abort(live.id)), "Couldn’t abort the game.")}
+        >
           <X />
           Abort
         </Button>
       ) : opponentOffers ? (
         <>
-          <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => run(api && (() => api.declineDraw(live.id)), "Couldn’t decline the draw.")}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() =>
+              run(api && (() => api.declineDraw(live.id)), "Couldn’t decline the draw.")
+            }
+          >
             Decline draw
           </Button>
-          <Button type="button" variant="primary" size="sm" disabled={busy} onClick={() => run(api && (() => api.offerDraw(live.id)), "Couldn’t accept the draw.")}>
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            disabled={busy}
+            onClick={() => run(api && (() => api.offerDraw(live.id)), "Couldn’t accept the draw.")}
+          >
             <Handshake />
             Accept draw
           </Button>
         </>
       ) : (
-        <Button type="button" variant="ghost" size="sm" disabled={busy || youOffered} onClick={() => run(api && (() => api.offerDraw(live.id)), "Couldn’t offer a draw.")}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={busy || youOffered}
+          onClick={() => run(api && (() => api.offerDraw(live.id)), "Couldn’t offer a draw.")}
+        >
           <Handshake />
           {youOffered ? "Draw offered" : "Offer draw"}
         </Button>

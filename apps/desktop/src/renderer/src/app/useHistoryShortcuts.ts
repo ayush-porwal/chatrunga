@@ -31,10 +31,20 @@ export function historyShortcut(
 
 /** Typing, or a dialog / menu open: history input would change the screen underneath it. */
 function historyInputBlocked(target: EventTarget | null): boolean {
-  return isTyping(target) || isTyping(document.activeElement) || Boolean(document.querySelector(OVERLAY_SELECTOR));
+  return (
+    isTyping(target) ||
+    isTyping(document.activeElement) ||
+    Boolean(document.querySelector(OVERLAY_SELECTOR))
+  );
 }
 
-export function useHistoryShortcuts({ onBack, onForward }: { onBack: () => void; onForward: () => void }): void {
+export function useHistoryShortcuts({
+  onBack,
+  onForward
+}: {
+  onBack: () => void;
+  onForward: () => void;
+}): void {
   const handleKeyDown = useEventCallback((event: KeyboardEvent) => {
     if (historyInputBlocked(event.target)) return;
     const action = historyShortcut(event, isElectronMac());

@@ -7,7 +7,10 @@ import { motion } from "@/lib/ui";
  * render `data-state={state}` and let CSS run the exit (`data-[state=closed]:animate-pop-out`).
  * A timer rather than `animationend`, so reduced motion and interrupted animations never strand it.
  */
-export function usePresence(open: boolean, exitMs: number = motion.ms.micro): { present: boolean; state: "open" | "closed" } {
+export function usePresence(
+  open: boolean,
+  exitMs: number = motion.ms.micro
+): { present: boolean; state: "open" | "closed" } {
   const [present, setPresent] = useState(open);
   // Adjust state while rendering (React's "storing information from previous renders" pattern):
   // opening mounts in the same render, no extra frame.
@@ -28,12 +31,16 @@ export function usePresence(open: boolean, exitMs: number = motion.ms.micro): { 
  *
  * StrictMode's simulated unmount keeps the real node attached, which is how it is told apart.
  */
-export function useExitGhost(ref: RefObject<HTMLElement | null>, durationMs: number = motion.ms.micro): void {
+export function useExitGhost(
+  ref: RefObject<HTMLElement | null>,
+  durationMs: number = motion.ms.micro
+): void {
   useLayoutEffect(() => {
     const node = ref.current;
     if (!node) return;
     return () => {
-      const ghost = node.cloneNode(true) as HTMLElement;
+      const ghost = node.cloneNode(true);
+      if (!(ghost instanceof HTMLElement)) return;
       const restoreScroll = captureScrollPositions(node, ghost);
       queueMicrotask(() => {
         if (node.isConnected) return;

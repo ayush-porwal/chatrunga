@@ -8,11 +8,18 @@ const BLACK_MATES = "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1
 const STALEMATE = "7k/5Q2/6K1/8/8/8/8/8 b - - 0 1";
 
 describe("engineGameEnded", () => {
-  const game = { mode: "engine" as const, engineSide: "black" as const, gameOutcome: null, endFen: START };
+  const game = {
+    mode: "engine" as const,
+    engineSide: "black" as const,
+    gameOutcome: null,
+    endFen: START
+  };
 
   it("is over once a result is decided (resignation, flag, agreement)", () => {
     expect(engineGameEnded(game)).toBe(false);
-    expect(engineGameEnded({ ...game, gameOutcome: { result: "0-1", termination: "Player resign" } })).toBe(true);
+    expect(
+      engineGameEnded({ ...game, gameOutcome: { result: "0-1", termination: "Player resign" } })
+    ).toBe(true);
   });
 
   it("is over when the main line ends in mate or stalemate, wherever the cursor is", () => {
@@ -52,15 +59,27 @@ describe("userSide / userWon", () => {
 
 describe("boardResultPatch", () => {
   it("adds the result of a game that ended on the board", () => {
-    expect(boardResultPatch({ gameOutcome: null, headers: { result: "*" }, endFen: BLACK_MATES })).toEqual({ result: "0-1" });
-    expect(boardResultPatch({ gameOutcome: null, headers: { result: "*" }, endFen: STALEMATE })).toEqual({ result: "1/2-1/2" });
+    expect(
+      boardResultPatch({ gameOutcome: null, headers: { result: "*" }, endFen: BLACK_MATES })
+    ).toEqual({ result: "0-1" });
+    expect(
+      boardResultPatch({ gameOutcome: null, headers: { result: "*" }, endFen: STALEMATE })
+    ).toEqual({ result: "1/2-1/2" });
   });
 
   it("leaves a recorded result, a decided outcome and an unfinished game alone", () => {
-    expect(boardResultPatch({ gameOutcome: null, headers: { result: "0-1" }, endFen: BLACK_MATES })).toBeNull();
     expect(
-      boardResultPatch({ gameOutcome: { result: "1-0" }, headers: { result: "*" }, endFen: BLACK_MATES })
+      boardResultPatch({ gameOutcome: null, headers: { result: "0-1" }, endFen: BLACK_MATES })
     ).toBeNull();
-    expect(boardResultPatch({ gameOutcome: null, headers: { result: "*" }, endFen: START })).toBeNull();
+    expect(
+      boardResultPatch({
+        gameOutcome: { result: "1-0" },
+        headers: { result: "*" },
+        endFen: BLACK_MATES
+      })
+    ).toBeNull();
+    expect(
+      boardResultPatch({ gameOutcome: null, headers: { result: "*" }, endFen: START })
+    ).toBeNull();
   });
 });

@@ -26,7 +26,11 @@ import { cn } from "@/lib/utils";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useDownloadStore } from "../../stores/download-store";
 
-export const DatabasePage = memo(function DatabasePage({ onTrain }: { onTrain: (databaseId: string) => void }) {
+export const DatabasePage = memo(function DatabasePage({
+  onTrain
+}: {
+  onTrain: (databaseId: string) => void;
+}) {
   const databases = useDatabasesQuery();
   const downloadDatabase = useDownloadDatabaseMutation();
   const deleteDatabase = useDeleteDatabaseMutation();
@@ -38,14 +42,18 @@ export const DatabasePage = memo(function DatabasePage({ onTrain }: { onTrain: (
 
   async function removeDatabase(database: InstalledDatabase) {
     if (!desktopApiAvailable) return;
-    if (!window.confirm(`Delete ${database.name}? The downloaded file will be removed from disk.`)) {
+    if (
+      !window.confirm(`Delete ${database.name}? The downloaded file will be removed from disk.`)
+    ) {
       return;
     }
     setDeleteError(null);
     try {
       await deleteDatabase.mutateAsync(database.id);
     } catch (error) {
-      setDeleteError(`Couldn't delete ${database.name}: ${ipcErrorMessage(error) || "unknown error"}`);
+      setDeleteError(
+        `Couldn't delete ${database.name}: ${ipcErrorMessage(error) || "unknown error"}`
+      );
     }
   }
 
@@ -56,20 +64,28 @@ export const DatabasePage = memo(function DatabasePage({ onTrain }: { onTrain: (
         description="Optional datasets for puzzle training, stored on this computer."
       />
       {!desktopApiAvailable ? (
-        <Notice tone="warn">Database downloads and local file management require the desktop app.</Notice>
+        <Notice tone="warn">
+          Database downloads and local file management require the desktop app.
+        </Notice>
       ) : null}
       {databases.isError ? (
         <Notice
           tone="danger"
           title="Couldn't read your databases"
           action={
-            <Button type="button" variant="outline" size="xs" onClick={() => void databases.refetch()}>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={() => void databases.refetch()}
+            >
               <RotateCcw />
               Try again
             </Button>
           }
         >
-          {ipcErrorMessage(databases.error) || "The list of installed databases couldn't be loaded."}
+          {ipcErrorMessage(databases.error) ||
+            "The list of installed databases couldn't be loaded."}
         </Notice>
       ) : null}
       {deleteError ? <Notice tone="danger">{deleteError}</Notice> : null}
@@ -78,25 +94,25 @@ export const DatabasePage = memo(function DatabasePage({ onTrain }: { onTrain: (
         {databases.isPending && desktopApiAvailable
           ? externalDatabaseSources.map((source) => <DatabaseCardSkeleton key={source.id} />)
           : externalDatabaseSources.map((source) => {
-          const progress = downloadProgress[source.id];
-          const isDownloading =
-            progress?.state === "downloading" ||
-            (downloadDatabase.isPending && downloadDatabase.variables === source.id);
-          return (
-            <DatabaseCard
-              key={source.id}
-              source={source}
-              installed={installedBySource.get(source.id)}
-              progress={progress}
-              isDownloading={isDownloading}
-              downloadDisabled={!desktopApiAvailable || downloadDatabase.isPending}
-              deleteDisabled={!desktopApiAvailable || deleteDatabase.isPending || isDownloading}
-              onDownload={() => downloadDatabase.mutate(source.id)}
-              onCancel={() => void window.chaturanga?.databases.cancelDownload(source.id)}
-              onDelete={(database) => void removeDatabase(database)}
-              onTrain={onTrain}
-            />
-          );
+              const progress = downloadProgress[source.id];
+              const isDownloading =
+                progress?.state === "downloading" ||
+                (downloadDatabase.isPending && downloadDatabase.variables === source.id);
+              return (
+                <DatabaseCard
+                  key={source.id}
+                  source={source}
+                  installed={installedBySource.get(source.id)}
+                  progress={progress}
+                  isDownloading={isDownloading}
+                  downloadDisabled={!desktopApiAvailable || downloadDatabase.isPending}
+                  deleteDisabled={!desktopApiAvailable || deleteDatabase.isPending || isDownloading}
+                  onDownload={() => downloadDatabase.mutate(source.id)}
+                  onCancel={() => void window.chaturanga?.databases.cancelDownload(source.id)}
+                  onDelete={(database) => void removeDatabase(database)}
+                  onTrain={onTrain}
+                />
+              );
             })}
       </div>
     </Page>
@@ -127,15 +143,27 @@ function DatabaseCard({
   onTrain: (databaseId: string) => void;
 }) {
   const records = installed?.recordCount ?? source.expectedRecords;
-  const unit = source.kind === "puzzle" ? "puzzles" : source.kind === "position" ? "positions" : "records";
+  const unit =
+    source.kind === "puzzle" ? "puzzles" : source.kind === "position" ? "positions" : "records";
   const allFacts = installed
     ? [
-        { label: unit[0].toUpperCase() + unit.slice(1), value: records ? records.toLocaleString() : "—" },
+        {
+          label: unit[0].toUpperCase() + unit.slice(1),
+          value: records ? records.toLocaleString() : "—"
+        },
         { label: "On disk", value: formatBytes(installed.fileSizeBytes) },
-        { label: "Downloaded", value: new Date(installed.downloadedAt).toLocaleDateString(undefined, { dateStyle: "medium" }) }
+        {
+          label: "Downloaded",
+          value: new Date(installed.downloadedAt).toLocaleDateString(undefined, {
+            dateStyle: "medium"
+          })
+        }
       ]
     : [
-        { label: unit[0].toUpperCase() + unit.slice(1), value: records ? `About ${compactCount(records)}` : "—" },
+        {
+          label: unit[0].toUpperCase() + unit.slice(1),
+          value: records ? `About ${compactCount(records)}` : "—"
+        },
         { label: "Format", value: source.format.toUpperCase() },
         { label: "Updated", value: source.updatedLabel ? formatIsoDate(source.updatedLabel) : "—" }
       ];
@@ -143,7 +171,13 @@ function DatabaseCard({
   const facts = allFacts.filter((fact) => fact.value !== "—");
 
   return (
-    <article className={cn(cardPadded, "grid gap-4 transition-colors duration-standard", installed && "border-accent/20")}>
+    <article
+      className={cn(
+        cardPadded,
+        "grid gap-4 transition-colors duration-standard",
+        installed && "border-accent/20"
+      )}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="grid min-w-0 gap-1">
           <div className="flex min-w-0 items-center gap-2">
@@ -193,7 +227,10 @@ function DatabaseCard({
         {facts.map((fact) => (
           <div key={fact.label} className="grid min-w-0 gap-0.5">
             <dt className="text-xs text-fg-subtle">{fact.label}</dt>
-            <dd className="truncate text-sm font-medium tabular-nums text-fg-secondary" title={fact.value}>
+            <dd
+              className="truncate text-sm font-medium tabular-nums text-fg-secondary"
+              title={fact.value}
+            >
               {fact.value}
             </dd>
           </div>
@@ -215,11 +252,22 @@ function DatabaseCard({
       </Disclosure>
 
       {progress ? (
-        <DownloadProgress progress={progress} onRetry={downloadDisabled ? undefined : onDownload} onCancel={onCancel} />
+        <DownloadProgress
+          progress={progress}
+          onRetry={downloadDisabled ? undefined : onDownload}
+          onCancel={onCancel}
+        />
       ) : null}
 
-      {installed && (source.kind === "puzzle" || source.kind === "position") && progress?.state !== "downloading" ? (
-        <Button type="button" variant="primary" className="justify-self-start" onClick={() => onTrain(installed.id)}>
+      {installed &&
+      (source.kind === "puzzle" || source.kind === "position") &&
+      progress?.state !== "downloading" ? (
+        <Button
+          type="button"
+          variant="primary"
+          className="justify-self-start"
+          onClick={() => onTrain(installed.id)}
+        >
           <Play />
           Train with this dataset
         </Button>
@@ -347,12 +395,17 @@ function DownloadProgress({
 function formatIsoDate(value: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) return value;
-  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).toLocaleDateString(undefined, { dateStyle: "medium" });
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).toLocaleDateString(
+    undefined,
+    { dateStyle: "medium" }
+  );
 }
 
 /** 5939980 → "5.9M". */
 function compactCount(value: number): string {
-  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
+  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(
+    value
+  );
 }
 
 function formatBytes(bytes: number): string {

@@ -49,7 +49,10 @@ export function formatMoveEval(move: MoveEvalAfter): string {
  * goes on. Use in place of the raw `M0` / `+0.0` that the synthesized score would print.
  */
 export function terminalEvalLabel(move: MoveEvalAfter): string | null {
-  if (move.terminal === "checkmate" || (move.evalAfter?.type === "mate" && move.evalAfter.value === 0)) {
+  if (
+    move.terminal === "checkmate" ||
+    (move.evalAfter?.type === "mate" && move.evalAfter.value === 0)
+  ) {
     return moverIsWhite(move) ? "1-0 #" : "0-1 #";
   }
   if (move.terminal === "stalemate" || move.terminal === "draw") return "½-½";

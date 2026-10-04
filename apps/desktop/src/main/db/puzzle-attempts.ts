@@ -5,17 +5,26 @@
  */
 import type { SQLInputValue } from "node:sqlite";
 import type { Glicko2Rating } from "@chaturanga/shared/chess/glicko2";
-import { DEFAULT_PUZZLE_RATING, isProvisional, puzzlePerformance, rateAttempt, ratingAfterIdle } from "@chaturanga/shared/chess/puzzle-rating";
-import type {
-  FailedPuzzle,
-  PuzzleAttemptResult,
-  PuzzleRatingPoint,
-  PuzzleRatingSummary,
-  PuzzleThemeStat,
-  PuzzleUnratedReason,
-  RecordPuzzleAttemptInput
+import {
+  DEFAULT_PUZZLE_RATING,
+  isProvisional,
+  puzzlePerformance,
+  rateAttempt,
+  ratingAfterIdle
+} from "@chaturanga/shared/chess/puzzle-rating";
+import { isOneOf } from "@chaturanga/shared/types/guards";
+import {
+  PUZZLE_UNRATED_REASONS,
+  type FailedPuzzle,
+  type PuzzleAttemptResult,
+  type PuzzleRatingPoint,
+  type PuzzleRatingSummary,
+  type PuzzleThemeStat,
+  type PuzzleUnratedReason,
+  type RecordPuzzleAttemptInput
 } from "@chaturanga/shared/types/puzzle-rating";
 import { getDb } from "./index";
+import { allRows, getRow } from "./rows";
 import { transaction } from "./repositories";
 
 /** Only the Lichess puzzle database carries Glicko-2 ratings; the position set is unrated. */
@@ -43,19 +52,27 @@ type RatingRow = {
 };
 
 function all<T>(sql: string, ...params: SQLInputValue[]): T[] {
-  return getDb().prepare(sql).all(...params) as T[];
+  return allRows<T>(getDb().prepare(sql), ...params);
 }
 
 function get<T>(sql: string, ...params: SQLInputValue[]): T | null {
-  return (getDb().prepare(sql).get(...params) as T | undefined) ?? null;
+  return getRow<T>(getDb().prepare(sql), ...params) ?? null;
 }
 
 function run(sql: string, ...params: SQLInputValue[]): void {
-  getDb().prepare(sql).run(...params);
+  getDb()
+    .prepare(sql)
+    .run(...params);
 }
 
-function ratingOf(rating: number | null, deviation: number | null, volatility: number | null): Glicko2Rating | null {
-  return rating === null || deviation === null || volatility === null ? null : { rating, deviation, volatility };
+function ratingOf(
+  rating: number | null,
+  deviation: number | null,
+  volatility: number | null
+): Glicko2Rating | null {
+  return rating === null || deviation === null || volatility === null
+    ? null
+    : { rating, deviation, volatility };
 }
 
 function toResult(row: AttemptRow): PuzzleAttemptResult {
@@ -64,7 +81,13 @@ function toResult(row: AttemptRow): PuzzleAttemptResult {
   return {
     attemptId: row.id,
     rated: row.rated === 1,
-    unratedReason: row.rated === 1 ? null : ((row.unrated_reason as PuzzleUnratedReason | null) ?? "unrated-puzzle"),
+    // A reason this build doesn't know (or none) reads as the plain one.
+    unratedReason:
+      row.rated === 1
+        ? null
+        : isOneOf(PUZZLE_UNRATED_REASONS, row.unrated_reason)
+          ? row.unrated_reason
+          : "unrated-puzzle",
     before,
     after,
     delta: before && after ? Math.round(after.rating) - Math.round(before.rating) : null
@@ -72,7 +95,9 @@ function toResult(row: AttemptRow): PuzzleAttemptResult {
 }
 
 function storedRating(): RatingRow | null {
-  return get<RatingRow>("SELECT rating, rd, volatility, rated_count, last_rated_at FROM puzzle_rating WHERE id = 1");
+  return get<RatingRow>(
+    "SELECT rating, rd, volatility, rated_count, last_rated_at FROM puzzle_rating WHERE id = 1"
+  );
 }
 
 export const puzzleAttemptRepository = {
@@ -85,7 +110,10 @@ export const puzzleAttemptRepository = {
    */
   record(input: RecordPuzzleAttemptInput, now: number = Date.now()): PuzzleAttemptResult {
     return transaction(() => {
-      const existing = get<AttemptRow>("SELECT * FROM puzzle_attempts WHERE id = ?", input.attemptId);
+      const existing = get<AttemptRow>(
+        "SELECT * FROM puzzle_attempts WHERE id = ?",
+        input.attemptId
+      );
       if (existing) {
         run(
           `UPDATE puzzle_attempts SET
@@ -102,13 +130,19 @@ export const puzzleAttemptRepository = {
       }
 
       const ratedPuzzle =
-        input.sourceId === RATED_SOURCE_ID && input.puzzleRating !== null && input.puzzleRatingDeviation !== null;
+        input.sourceId === RATED_SOURCE_ID &&
+        input.puzzleRating !== null &&
+        input.puzzleRatingDeviation !== null;
       const playedBefore = get<{ found: number }>(
         "SELECT 1 AS found FROM puzzle_attempts WHERE source_id = ? AND puzzle_id = ? LIMIT 1",
         input.sourceId,
         input.puzzleId
       );
-      const unratedReason: PuzzleUnratedReason | null = !ratedPuzzle ? "unrated-puzzle" : playedBefore ? "already-played" : null;
+      const unratedReason: PuzzleUnratedReason | null = !ratedPuzzle
+        ? "unrated-puzzle"
+        : playedBefore
+          ? "already-played"
+          : null;
 
       let before: Glicko2Rating | null = null;
       let after: Glicko2Rating | null = null;
@@ -124,9 +158,18 @@ export const puzzleAttemptRepository = {
         // The rating this attempt is played at: the stored one, its deviation widened for the idle
         // time since the last rated attempt (what the card and the attempt's row show as before).
         before = stored
-          ? ratingAfterIdle({ rating: stored.rating, deviation: stored.rd, volatility: stored.volatility }, lastRatedAt, ratedAt)
+          ? ratingAfterIdle(
+              { rating: stored.rating, deviation: stored.rd, volatility: stored.volatility },
+              lastRatedAt,
+              ratedAt
+            )
           : DEFAULT_PUZZLE_RATING;
-        after = rateAttempt(before, { rating: input.puzzleRating!, deviation: input.puzzleRatingDeviation! }, input.outcome === "solved", ratedAt);
+        after = rateAttempt(
+          before,
+          { rating: input.puzzleRating!, deviation: input.puzzleRatingDeviation! },
+          input.outcome === "solved",
+          ratedAt
+        );
         run(
           `INSERT INTO puzzle_rating (id, rating, rd, volatility, rated_count, last_rated_at, updated_at)
           VALUES (1, ?, ?, ?, 1, ?, ?)
@@ -183,7 +226,11 @@ export const puzzleAttemptRepository = {
   summary(now: number = Date.now()): PuzzleRatingSummary {
     const stored = storedRating();
     const rating = stored
-      ? ratingAfterIdle({ rating: stored.rating, deviation: stored.rd, volatility: stored.volatility }, stored.last_rated_at, now)
+      ? ratingAfterIdle(
+          { rating: stored.rating, deviation: stored.rd, volatility: stored.volatility },
+          stored.last_rated_at,
+          now
+        )
       : DEFAULT_PUZZLE_RATING;
     const counts = get<{ attempts: number; solved: number | null }>(
       "SELECT COUNT(*) AS attempts, SUM(outcome = 'solved') AS solved FROM puzzle_attempts"
@@ -221,7 +268,8 @@ export const puzzleAttemptRepository = {
       theme: row.theme,
       attempts: row.attempts,
       solved: row.solved,
-      performance: row.average === null ? null : puzzlePerformance(row.average, row.solved, row.attempts)
+      performance:
+        row.average === null ? null : puzzlePerformance(row.average, row.solved, row.attempts)
     }));
   },
 
@@ -230,7 +278,13 @@ export const puzzleAttemptRepository = {
    * failed, most recent failure first.
    */
   failed(sourceId: string | null, limit = 100): FailedPuzzle[] {
-    return all<{ puzzle_id: string; source_id: string; database_id: string; decided_at: number; puzzle_rating: number | null }>(
+    return all<{
+      puzzle_id: string;
+      source_id: string;
+      database_id: string;
+      decided_at: number;
+      puzzle_rating: number | null;
+    }>(
       `SELECT attempt.puzzle_id, attempt.source_id, attempt.database_id, attempt.decided_at, attempt.puzzle_rating
       FROM puzzle_attempts attempt
       WHERE attempt.outcome = 'failed'

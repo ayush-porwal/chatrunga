@@ -2,14 +2,22 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { EngineConfig, MaiaRating, ReviewMoveInputItem } from "@chaturanga/shared/types/engine";
+import type {
+  EngineConfig,
+  MaiaRating,
+  ReviewMoveInputItem
+} from "@chaturanga/shared/types/engine";
 import { fenAfterUci } from "@chaturanga/shared/chess/position";
 import { analysePositionsWithEngine, reviewGameWithEngine } from "./review";
 
 const FAKE = join(__dirname, "__fixtures__", "fake-uci.mjs");
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-function fakeEngine(id: string, mode: "sf" | "maia", extra: Partial<EngineConfig> = {}): EngineConfig {
+function fakeEngine(
+  id: string,
+  mode: "sf" | "maia",
+  extra: Partial<EngineConfig> = {}
+): EngineConfig {
   return {
     id,
     name: id,
@@ -34,7 +42,14 @@ function foolsMate(): ReviewMoveInputItem[] {
   let fen = START;
   return ucis.map((uci, index) => {
     const fenAfter = fenAfterUci(fen, uci)!;
-    const item = { nodeId: `n${index}`, ply: index + 1, san: sans[index], uci, fenBefore: fen, fenAfter };
+    const item = {
+      nodeId: `n${index}`,
+      ply: index + 1,
+      san: sans[index],
+      uci,
+      fenBefore: fen,
+      fenAfter
+    };
     fen = fenAfter;
     return item;
   });
@@ -51,7 +66,14 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
     const phases: string[] = [];
     const review = await reviewGameWithEngine(
       fakeEngine("sf", "sf"),
-      { reviewId: "t", engineId: "sf", rootFen: START, moves: foolsMate(), multipv: 3, moveTimeMs: 50 },
+      {
+        reviewId: "t",
+        engineId: "sf",
+        rootFen: START,
+        moves: foolsMate(),
+        multipv: 3,
+        moveTimeMs: 50
+      },
       { onPhaseProgress: (p) => phases.push(`${p.moveIndex}:${p.phase}`) },
       [maia1100, broken],
       { threads: 2, hashMb: 64, playerRating: 1200 }
@@ -59,10 +81,26 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
 
     expect(review.schemaVersion).toBe(2);
     expect(review.engineName).toBe("Fake sf");
-    expect(review.engineSettings).toEqual({ multipv: 3, moveTimeMs: 50, depth: null, threads: 2, hashMb: 64 });
-    expect(review.maiaEngines).toEqual([{ rating: 1100, engineId: "maia-1100", name: "maia-1100" }]);
+    expect(review.engineSettings).toEqual({
+      multipv: 3,
+      moveTimeMs: 50,
+      depth: null,
+      threads: 2,
+      hashMb: 64
+    });
+    expect(review.maiaEngines).toEqual([
+      { rating: 1100, engineId: "maia-1100", name: "maia-1100" }
+    ]);
     // One progress event per phase per move; no "after" phase for the mating move.
-    expect(phases).toEqual(["0:before", "0:after", "1:before", "1:after", "2:before", "2:after", "3:before"]);
+    expect(phases).toEqual([
+      "0:before",
+      "0:after",
+      "1:before",
+      "1:after",
+      "2:before",
+      "2:after",
+      "3:before"
+    ]);
 
     const first = review.moves[0];
     expect(first.topLines).toHaveLength(3);
@@ -94,7 +132,14 @@ describe("review reuse", () => {
       const phases: string[] = [];
       const review = await reviewGameWithEngine(
         fakeEngine("sf-cache", "sf"),
-        { reviewId: "c", engineId: "sf-cache", rootFen: START, moves: foolsMate(), multipv: 2, moveTimeMs },
+        {
+          reviewId: "c",
+          engineId: "sf-cache",
+          rootFen: START,
+          moves: foolsMate(),
+          multipv: 2,
+          moveTimeMs
+        },
         { onPhaseProgress: (p) => phases.push(`${p.moveIndex}:${p.phase}`) }
       );
       return { review, phases };
@@ -113,46 +158,74 @@ describe("review reuse", () => {
   });
 
   // A shell wrapper stands in for the engine binary, so it can be replaced at the same path.
-  it.skipIf(process.platform === "win32")("an engine binary replaced at the same path reviews again", async () => {
-    const executablePath = join(mkdtempSync(join(tmpdir(), "review-cache-")), "engine");
-    const install = (version: string) =>
-      writeFileSync(executablePath, `#!/bin/sh\n# ${version}\nexec "${process.execPath}" "${FAKE}" sf\n`, { mode: 0o755 });
-    install("v1");
-    const run = async () => {
-      const phases: string[] = [];
-      await reviewGameWithEngine(
-        fakeEngine("sf-binary", "sf", { executablePath, args: [] }),
-        { reviewId: "b", engineId: "sf-binary", rootFen: START, moves: foolsMate(), multipv: 2, moveTimeMs: 50 },
-        { onPhaseProgress: (p) => phases.push(`${p.moveIndex}:${p.phase}`) }
-      );
-      return phases;
-    };
-    const first = await run();
-    expect(first.length).toBeGreaterThan(0);
-    expect(await run()).toEqual([]);
+  it.skipIf(process.platform === "win32")(
+    "an engine binary replaced at the same path reviews again",
+    async () => {
+      const executablePath = join(mkdtempSync(join(tmpdir(), "review-cache-")), "engine");
+      const install = (version: string) =>
+        writeFileSync(
+          executablePath,
+          `#!/bin/sh\n# ${version}\nexec "${process.execPath}" "${FAKE}" sf\n`,
+          { mode: 0o755 }
+        );
+      install("v1");
+      const run = async () => {
+        const phases: string[] = [];
+        await reviewGameWithEngine(
+          fakeEngine("sf-binary", "sf", { executablePath, args: [] }),
+          {
+            reviewId: "b",
+            engineId: "sf-binary",
+            rootFen: START,
+            moves: foolsMate(),
+            multipv: 2,
+            moveTimeMs: 50
+          },
+          { onPhaseProgress: (p) => phases.push(`${p.moveIndex}:${p.phase}`) }
+        );
+        return phases;
+      };
+      const first = await run();
+      expect(first.length).toBeGreaterThan(0);
+      expect(await run()).toEqual([]);
 
-    install("v2 (updated)");
-    expect((await run()).length).toBe(first.length);
-  });
+      install("v2 (updated)");
+      expect((await run()).length).toBe(first.length);
+    }
+  );
 
-  it.skipIf(process.platform === "win32")("a binary replaced while the engine starts is not cached", async () => {
-    const executablePath = join(mkdtempSync(join(tmpdir(), "review-cache-")), "engine");
-    // Every start replaces the file it was launched from, as an update landing mid-startup would.
-    writeFileSync(executablePath, `#!/bin/sh\necho "# replaced" >> "$0"\nexec "${process.execPath}" "${FAKE}" sf\n`, {
-      mode: 0o755
-    });
-    const run = async () => {
-      const phases: string[] = [];
-      await reviewGameWithEngine(
-        fakeEngine("sf-racing", "sf", { executablePath, args: [] }),
-        { reviewId: "r", engineId: "sf-racing", rootFen: START, moves: foolsMate(), multipv: 2, moveTimeMs: 50 },
-        { onPhaseProgress: (p) => phases.push(`${p.moveIndex}:${p.phase}`) }
+  it.skipIf(process.platform === "win32")(
+    "a binary replaced while the engine starts is not cached",
+    async () => {
+      const executablePath = join(mkdtempSync(join(tmpdir(), "review-cache-")), "engine");
+      // Every start replaces the file it was launched from, as an update landing mid-startup would.
+      writeFileSync(
+        executablePath,
+        `#!/bin/sh\necho "# replaced" >> "$0"\nexec "${process.execPath}" "${FAKE}" sf\n`,
+        {
+          mode: 0o755
+        }
       );
-      return phases;
-    };
-    const first = await run();
-    expect((await run()).length).toBe(first.length);
-  });
+      const run = async () => {
+        const phases: string[] = [];
+        await reviewGameWithEngine(
+          fakeEngine("sf-racing", "sf", { executablePath, args: [] }),
+          {
+            reviewId: "r",
+            engineId: "sf-racing",
+            rootFen: START,
+            moves: foolsMate(),
+            multipv: 2,
+            moveTimeMs: 50
+          },
+          { onPhaseProgress: (p) => phases.push(`${p.moveIndex}:${p.phase}`) }
+        );
+        return phases;
+      };
+      const first = await run();
+      expect((await run()).length).toBe(first.length);
+    }
+  );
 });
 
 describe("analysePositionsWithEngine", () => {
@@ -160,12 +233,23 @@ describe("analysePositionsWithEngine", () => {
     const mated = foolsMate()[3]!.fenAfter;
     const result = await analysePositionsWithEngine(
       fakeEngine("sf", "sf"),
-      { positions: [{ fen: START, multipv: 3 }, { fen: mated, multipv: 2 }, { fen: START, multipv: 1 }], moveTimeMs: 50 },
+      {
+        positions: [
+          { fen: START, multipv: 3 },
+          { fen: mated, multipv: 2 },
+          { fen: START, multipv: 1 }
+        ],
+        moveTimeMs: 50
+      },
       { threads: 1, hashMb: 16 }
     );
     expect(result.engineName).toBe("Fake sf");
     expect(result.lines.map((lines) => lines.length)).toEqual([3, 0, 1]);
-    expect(result.lines[0]![0]).toMatchObject({ multipv: 1, pv: ["d1h5"], scoreWhite: { type: "cp", value: 40 } });
+    expect(result.lines[0]![0]).toMatchObject({
+      multipv: 1,
+      pv: ["d1h5"],
+      scoreWhite: { type: "cp", value: 40 }
+    });
   });
 
   it("is cancelled while the engine is still starting up", async () => {
@@ -186,7 +270,10 @@ describe("analysePositionsWithEngine", () => {
     const log = join(mkdtempSync(join(tmpdir(), "chaturanga-review-test-")), "commands.log");
     writeFileSync(log, "");
     // Cancelled once the engine is searching: it has printed its lines and answers the stop with a bestmove.
-    const searching = () => readFileSync(log, "utf8").split("\n").some((line) => line.startsWith("go "));
+    const searching = () =>
+      readFileSync(log, "utf8")
+        .split("\n")
+        .some((line) => line.startsWith("go "));
     await expect(
       analysePositionsWithEngine(
         fakeEngine("stoppable", "sf", { args: [FAKE, "sf", "wait-for-stop", log] }),
@@ -195,22 +282,23 @@ describe("analysePositionsWithEngine", () => {
       )
     ).rejects.toThrow("Review cancelled");
     const commands = readFileSync(log, "utf8").split("\n");
-    expect(commands.findIndex((line) => line.startsWith("go "))).toBeLessThan(commands.indexOf("stop"));
+    expect(commands.findIndex((line) => line.startsWith("go "))).toBeLessThan(
+      commands.indexOf("stop")
+    );
   });
 });
 
 describe("review cancellation", () => {
   it("is honoured while the engine is still starting up", async () => {
     const started = Date.now();
-    let cancelled = false;
-    setTimeout(() => {
-      cancelled = true;
-    }, 100);
+    // Cancelled from the second check on. Checks are polled while waiting for the engine, startup
+    // included, and the slow-start fake takes 10 s to answer: ending in time means startup heard it.
+    let checks = 0;
     await expect(
       reviewGameWithEngine(
         fakeEngine("slow", "sf", { args: [FAKE, "sf", "slow-start"] }),
         { reviewId: "r", engineId: "slow", rootFen: START, moves: foolsMate() },
-        { shouldCancel: () => cancelled }
+        { shouldCancel: () => ++checks > 1 }
       )
     ).rejects.toThrow("Review cancelled");
     expect(Date.now() - started).toBeLessThan(2_000);

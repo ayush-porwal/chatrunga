@@ -133,23 +133,44 @@ export const PuzzlePage = memo(function PuzzlePage({
   const databases = useDatabasesQuery();
   const samplePuzzle = useSamplePuzzleMutation();
   const puzzleDatabases = useMemo(
-    () => (databases.data ?? []).filter((item) => item.kind === "puzzle" || item.kind === "position"),
+    () =>
+      (databases.data ?? []).filter((item) => item.kind === "puzzle" || item.kind === "position"),
     [databases.data]
   );
-  const preferred = puzzleDatabases.find((item) => item.sourceId === "lichess-puzzles") ?? puzzleDatabases[0] ?? null;
+  const preferred =
+    puzzleDatabases.find((item) => item.sourceId === "lichess-puzzles") ??
+    puzzleDatabases[0] ??
+    null;
   const draft = usePuzzleDraftStore((state) => state.draft);
   const updateDraft = usePuzzleDraftStore((state) => state.update);
-  const { themes, lengths, openings, side, ratingMin, ratingMax, difficulty, popularityMin, difficultyMin, difficultyMax, positionTags } = draft;
-  const selectedDatabase = puzzleDatabases.find((item) => item.id === draft.databaseId) ?? preferred;
+  const {
+    themes,
+    lengths,
+    openings,
+    side,
+    ratingMin,
+    ratingMax,
+    difficulty,
+    popularityMin,
+    difficultyMin,
+    difficultyMax,
+    positionTags
+  } = draft;
+  const selectedDatabase =
+    puzzleDatabases.find((item) => item.id === draft.databaseId) ?? preferred;
   const isLichess = selectedDatabase?.sourceId === "lichess-puzzles";
   const ratingSummary = usePuzzleRatingSummaryQuery();
   const userRating = ratingSummary.data ?? { ...DEFAULT_PUZZLE_RATING };
   // "Around my rating": the range follows the solver's current rating (Lichess sets only).
-  const aroundRange = isLichess && difficulty ? ratingRangeFor(userRating.rating, difficulty) : null;
+  const aroundRange =
+    isLichess && difficulty ? ratingRangeFor(userRating.rating, difficulty) : null;
   const drawnRatingMin = aroundRange?.ratingMin ?? ratingMin;
   const drawnRatingMax = aroundRange?.ratingMax ?? ratingMax;
   const failedPuzzles = useFailedPuzzlesQuery(selectedDatabase?.sourceId ?? null);
-  const failedIds = useMemo(() => (failedPuzzles.data ?? []).map((puzzle) => puzzle.puzzleId), [failedPuzzles.data]);
+  const failedIds = useMemo(
+    () => (failedPuzzles.data ?? []).map((puzzle) => puzzle.puzzleId),
+    [failedPuzzles.data]
+  );
   const setDatabaseId = (value: string) => updateDraft({ databaseId: value });
   const setThemes = (value: string[]) => updateDraft({ themes: value });
   const setLengths = (value: string[]) => updateDraft({ lengths: value });
@@ -204,8 +225,14 @@ export const PuzzlePage = memo(function PuzzlePage({
   /** A set of the puzzles whose latest try failed (recorded unrated: they were played before). */
   function retryFailed() {
     if (!selectedDatabase || !failedIds.length) return;
-    const config: PuzzleSessionConfig = { ...sessionConfig(selectedDatabase.id), retryIds: failedIds };
-    samplePuzzle.mutate({ databaseId: selectedDatabase.id, ids: failedIds }, { onSuccess: (puzzle) => onStart(config, puzzle) });
+    const config: PuzzleSessionConfig = {
+      ...sessionConfig(selectedDatabase.id),
+      retryIds: failedIds
+    };
+    samplePuzzle.mutate(
+      { databaseId: selectedDatabase.id, ids: failedIds },
+      { onSuccess: (puzzle) => onStart(config, puzzle) }
+    );
   }
   const retrying = samplePuzzle.isPending && Boolean(samplePuzzle.variables?.ids);
 
@@ -218,7 +245,9 @@ export const PuzzlePage = memo(function PuzzlePage({
       ratingMax !== 2800 ||
       difficulty !== null ||
       popularityMin !== 0
-    : difficultyMin !== 1 || difficultyMax !== 4 || positionTags.join() !== "initiative,development";
+    : difficultyMin !== 1 ||
+      difficultyMax !== 4 ||
+      positionTags.join() !== "initiative,development";
 
   const resetFilters = usePuzzleDraftStore((state) => state.resetFilters);
 
@@ -232,14 +261,22 @@ export const PuzzlePage = memo(function PuzzlePage({
         ...lengths.map(formatTag),
         ...openings.map(formatTag)
       ]
-    : [`Difficulty ${difficultyMin}–${difficultyMax}`, ...(positionTags.length ? positionTags.map(formatTag) : ["Any tag"])];
+    : [
+        `Difficulty ${difficultyMin}–${difficultyMax}`,
+        ...(positionTags.length ? positionTags.map(formatTag) : ["Any tag"])
+      ];
 
   // The main process's message (no match, a scanner failure, a replaced search) without the IPC prefix.
-  const startError = samplePuzzle.error ? ipcErrorMessage(samplePuzzle.error) || String(samplePuzzle.error) : null;
+  const startError = samplePuzzle.error
+    ? ipcErrorMessage(samplePuzzle.error) || String(samplePuzzle.error)
+    : null;
 
   return (
     <Page>
-      <PageHeader title="Puzzles" description="Train on puzzles and positions from your downloaded databases." />
+      <PageHeader
+        title="Puzzles"
+        description="Train on puzzles and positions from your downloaded databases."
+      />
 
       {databases.isPending && window.chaturanga ? (
         <PuzzleSetupSkeleton />
@@ -249,13 +286,19 @@ export const PuzzlePage = memo(function PuzzlePage({
           tone="danger"
           title="Couldn't read your databases"
           action={
-            <Button type="button" variant="outline" size="xs" onClick={() => void databases.refetch()}>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={() => void databases.refetch()}
+            >
               <RotateCcw />
               Try again
             </Button>
           }
         >
-          {ipcErrorMessage(databases.error) || "The list of installed databases couldn't be loaded."}
+          {ipcErrorMessage(databases.error) ||
+            "The list of installed databases couldn't be loaded."}
         </Notice>
       ) : selectedDatabase ? (
         <div className="@container">
@@ -284,7 +327,13 @@ export const PuzzlePage = memo(function PuzzlePage({
                     ))}
                   </Select>
                 </Field>
-                <IconButton label="Manage databases" icon={<Database />} variant="outline" size="icon" onClick={onDatabases} />
+                <IconButton
+                  label="Manage databases"
+                  icon={<Database />}
+                  variant="outline"
+                  size="icon"
+                  onClick={onDatabases}
+                />
               </div>
               <div className={divider} />
               {isLichess ? (
@@ -344,7 +393,9 @@ export const PuzzlePage = memo(function PuzzlePage({
                 </ul>
                 {isLichess ? null : (
                   // The position set grades difficulty 1–4, with no rating to play against.
-                  <p className="text-xs leading-5 text-fg-muted">Unrated: these positions don&apos;t change your puzzle rating.</p>
+                  <p className="text-xs leading-5 text-fg-muted">
+                    Unrated: these positions don&apos;t change your puzzle rating.
+                  </p>
                 )}
                 {startError ? (
                   <Notice tone="danger" className="animate-rise-in">
@@ -352,8 +403,18 @@ export const PuzzlePage = memo(function PuzzlePage({
                   </Notice>
                 ) : null}
                 <div className="grid gap-2">
-                  <Button type="button" variant="primary" className="h-10" disabled={samplePuzzle.isPending} onClick={start}>
-                    {samplePuzzle.isPending && !retrying ? <Loader2 className="animate-spin" /> : <Play />}
+                  <Button
+                    type="button"
+                    variant="primary"
+                    className="h-10"
+                    disabled={samplePuzzle.isPending}
+                    onClick={start}
+                  >
+                    {samplePuzzle.isPending && !retrying ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <Play />
+                    )}
                     {samplePuzzle.isPending && !retrying ? "Finding a puzzle…" : "Start puzzle set"}
                   </Button>
                   {failedIds.length ? (
@@ -374,7 +435,10 @@ export const PuzzlePage = memo(function PuzzlePage({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className={cn("transition-opacity duration-standard", !filtersChanged && "pointer-events-none opacity-0")}
+                    className={cn(
+                      "transition-opacity duration-standard",
+                      !filtersChanged && "pointer-events-none opacity-0"
+                    )}
                     tabIndex={filtersChanged ? undefined : -1}
                     aria-hidden={filtersChanged ? undefined : true}
                     onClick={resetFilters}
@@ -435,9 +499,14 @@ function PuzzleSetupSkeleton() {
 
 /** No puzzle or position database yet: what each one offers, and the way to get it. */
 function NoPuzzleDatabase({ onDatabases }: { onDatabases: () => void }) {
-  const sources = externalDatabaseSources.filter((source) => source.kind === "puzzle" || source.kind === "position");
+  const sources = externalDatabaseSources.filter(
+    (source) => source.kind === "puzzle" || source.kind === "position"
+  );
   return (
-    <section className={cn(card, "grid animate-fade-in gap-6 px-6 py-8 sm:px-8")} aria-labelledby="no-puzzle-db-title">
+    <section
+      className={cn(card, "grid animate-fade-in gap-6 px-6 py-8 sm:px-8")}
+      aria-labelledby="no-puzzle-db-title"
+    >
       <div className="grid max-w-lg gap-2">
         <span className="mb-1 grid size-10 place-items-center rounded-xl bg-accent-soft text-accent-fg [&_svg]:size-5">
           <Puzzle aria-hidden="true" />
@@ -446,8 +515,8 @@ function NoPuzzleDatabase({ onDatabases }: { onDatabases: () => void }) {
           Download a database to start training
         </h2>
         <p className="text-sm leading-6 text-fg-muted">
-          Puzzles come from free datasets stored on this computer. Pick one on the Databases page; it only needs to be
-          downloaded once.
+          Puzzles come from free datasets stored on this computer. Pick one on the Databases page;
+          it only needs to be downloaded once.
         </p>
       </div>
       <ul className="grid gap-2 sm:grid-cols-2">
@@ -459,11 +528,14 @@ function NoPuzzleDatabase({ onDatabases }: { onDatabases: () => void }) {
               </span>
               {source.expectedRecords ? (
                 <span className="shrink-0 text-xs tabular-nums text-fg-subtle">
-                  {compactCount(source.expectedRecords)} {source.kind === "puzzle" ? "puzzles" : "positions"}
+                  {compactCount(source.expectedRecords)}{" "}
+                  {source.kind === "puzzle" ? "puzzles" : "positions"}
                 </span>
               ) : null}
             </span>
-            <span className="line-clamp-2 text-xs leading-5 text-fg-muted">{source.description}</span>
+            <span className="line-clamp-2 text-xs leading-5 text-fg-muted">
+              {source.description}
+            </span>
           </li>
         ))}
       </ul>
@@ -479,7 +551,9 @@ function NoPuzzleDatabase({ onDatabases }: { onDatabases: () => void }) {
 
 /** 5939980 → "5.9M", 12431 → "12K". */
 function compactCount(value: number): string {
-  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
+  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(
+    value
+  );
 }
 
 const sideOptions = [
@@ -541,7 +615,9 @@ function LichessPuzzleFilters({
           <Select
             id={difficultyId}
             value={difficulty ?? ""}
-            onChange={(event) => onDifficultyChange(isPuzzleDifficulty(event.target.value) ? event.target.value : null)}
+            onChange={(event) =>
+              onDifficultyChange(isPuzzleDifficulty(event.target.value) ? event.target.value : null)
+            }
           >
             <option value="">Custom range</option>
             {PUZZLE_DIFFICULTIES.map((item) => (
@@ -584,10 +660,19 @@ function LichessPuzzleFilters({
         </FilterGroup>
       </div>
       <FilterGroup label="Themes">
-        <ChipAutocomplete items={lichessThemes} placeholder="Search themes" selected={themes} onChange={onThemesChange} />
+        <ChipAutocomplete
+          items={lichessThemes}
+          placeholder="Search themes"
+          selected={themes}
+          onChange={onThemesChange}
+        />
       </FilterGroup>
       <FilterGroup label="Solution length">
-        <ChipToggleGroup items={["oneMove", "short", "long", "veryLong"]} selected={lengths} onChange={onLengthsChange} />
+        <ChipToggleGroup
+          items={["oneMove", "short", "long", "veryLong"]}
+          selected={lengths}
+          onChange={onLengthsChange}
+        />
       </FilterGroup>
       <Disclosure title="Openings" summary={selectionSummary(openings)}>
         <ChipAutocomplete
@@ -731,7 +816,9 @@ function ChipAutocomplete({
     const q = query.trim().toLowerCase();
     return items
       .filter((item) => !selected.includes(item))
-      .filter((item) => (q ? item.toLowerCase().includes(q) || formatTag(item).toLowerCase().includes(q) : true))
+      .filter((item) =>
+        q ? item.toLowerCase().includes(q) || formatTag(item).toLowerCase().includes(q) : true
+      )
       .slice(0, 8);
   }, [items, query, selected]);
 
@@ -749,7 +836,13 @@ function ChipAutocomplete({
     <div className="grid gap-2">
       <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-line bg-surface-sunken px-2 py-1 transition-[border-color,box-shadow] focus-within:border-accent/60 focus-within:ring-[3px] focus-within:ring-accent/15">
         {selected.map((item) => (
-          <Badge key={item} tone="accent" size="md" onRemove={() => remove(item)} removeLabel={`Remove ${formatTag(item)}`}>
+          <Badge
+            key={item}
+            tone="accent"
+            size="md"
+            onRemove={() => remove(item)}
+            removeLabel={`Remove ${formatTag(item)}`}
+          >
             {formatTag(item)}
           </Badge>
         ))}
@@ -799,7 +892,9 @@ function ChipToggleGroup({
           <ChipButton
             key={item}
             selected={active}
-            onClick={() => onChange(active ? selected.filter((value) => value !== item) : [...selected, item])}
+            onClick={() =>
+              onChange(active ? selected.filter((value) => value !== item) : [...selected, item])
+            }
           >
             {formatTag(item)}
           </ChipButton>

@@ -35,6 +35,7 @@ export function applyPlatform(root: Document = document): Platform | null {
   for (const el of root.querySelectorAll<HTMLElement>("[data-download-label]")) {
     el.textContent = `Download for ${platform.name}`;
   }
-  for (const el of root.querySelectorAll<HTMLAnchorElement>("a[data-download]")) el.href = platform.href;
+  for (const el of root.querySelectorAll<HTMLAnchorElement>("a[data-download]"))
+    el.href = platform.href;
   return platform;
 }

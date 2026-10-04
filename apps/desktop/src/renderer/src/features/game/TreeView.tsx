@@ -4,7 +4,12 @@ import { reviewLabel } from "@chaturanga/shared/chess/review";
 import { formatMoveEval } from "../game-review/review-score";
 import type { MoveReview, ReviewCommentary } from "@chaturanga/shared/types/engine";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
-import { buildTreeModel, movePrefix, type TreeVariationBlock, type TreeVariationRow } from "./move-tree-model";
+import {
+  buildTreeModel,
+  movePrefix,
+  type TreeVariationBlock,
+  type TreeVariationRow
+} from "./move-tree-model";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
@@ -63,7 +68,9 @@ export function TreeView({
   useEffect(() => {
     const list = listRef.current;
     if (!selectedNodeId || !list) return;
-    const active = list.querySelector<HTMLElement>(`[data-tree-node-id="${CSS.escape(selectedNodeId)}"]`);
+    const active = list.querySelector<HTMLElement>(
+      `[data-tree-node-id="${CSS.escape(selectedNodeId)}"]`
+    );
     if (!active) return;
     const listBox = list.getBoundingClientRect();
     const box = active.getBoundingClientRect();
@@ -73,11 +80,13 @@ export function TreeView({
     if (box.top < top) delta = box.top - top;
     else if (box.bottom > bottom) delta = box.bottom - bottom;
     if (!delta) return;
-    const smooth = !reducedMotion && !isRapidNavigation() && Math.abs(delta) < list.clientHeight * 2;
+    const smooth =
+      !reducedMotion && !isRapidNavigation() && Math.abs(delta) < list.clientHeight * 2;
     list.scrollTo({ top: list.scrollTop + delta, behavior: smooth ? "smooth" : "auto" });
   }, [selectedNodeId, model, reducedMotion]);
 
-  const hasMoves = model.mainline.length > 0 || model.rootVariations.some((block) => block.rows.length);
+  const hasMoves =
+    model.mainline.length > 0 || model.rootVariations.some((block) => block.rows.length);
   if (!hasMoves) {
     return <EmptyState compact title={emptyLabel} />;
   }
@@ -131,7 +140,12 @@ export function TreeView({
     );
 
   return (
-    <div ref={listRef} className={cn("scroll-area min-h-0 overflow-y-auto", className)} role="tree" aria-label={ariaLabel}>
+    <div
+      ref={listRef}
+      className={cn("scroll-area min-h-0 overflow-y-auto", className)}
+      role="tree"
+      aria-label={ariaLabel}
+    >
       <div
         ref={headerRef}
         className="sticky top-0 z-10 mb-1 grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)] gap-1 border-b border-line-subtle bg-surface py-1.5 text-xs text-fg-muted"
@@ -161,8 +175,14 @@ export function TreeView({
           const blackId = row.black?.id;
           return (
             <Fragment key={`main-${row.number}-${whiteId ?? "empty"}-${blackId ?? "empty"}`}>
-              <div className="grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)] items-stretch gap-1" role="row" aria-level={1}>
-                <span className="flex items-center justify-center font-mono text-2xs text-fg-subtle tabular-nums">{row.number}.</span>
+              <div
+                className="grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)] items-stretch gap-1"
+                role="row"
+                aria-level={1}
+              >
+                <span className="flex items-center justify-center font-mono text-2xs text-fg-subtle tabular-nums">
+                  {row.number}.
+                </span>
                 {cell(row.white)}
                 {cell(row.black)}
               </div>
@@ -209,7 +229,9 @@ const VariationRow = memo(function VariationRow({
       aria-level={row.depth + 1}
       title={hiddenDepth ? `Variation depth ${row.depth}` : undefined}
     >
-      <span className="flex items-center justify-center font-mono text-2xs text-fg-subtle tabular-nums">{movePrefix(row.node)}</span>
+      <span className="flex items-center justify-center font-mono text-2xs text-fg-subtle tabular-nums">
+        {movePrefix(row.node)}
+      </span>
       <div className="col-span-2 min-w-0">
         <TreeNodeButton node={row.node} variation {...button} />
       </div>
@@ -264,7 +286,7 @@ const TreeNodeButton = memo(function TreeNodeButton({
     ? `${reviewLabel(review.classification)} · ${formatMoveEval(review)}`
     : variation
       ? `Variation: ${node.san ?? "move"}`
-      : node.san ?? "Move";
+      : (node.san ?? "Move");
 
   const showDelete = selected && Boolean(onDeleteLine);
   const showPromote = selected && variation && Boolean(onPromoteVariation);
@@ -275,7 +297,6 @@ const TreeNodeButton = memo(function TreeNodeButton({
         type="button"
         data-tree-node-id={node.id}
         aria-current={selected ? "step" : undefined}
-        aria-selected={selected}
         className={cn(
           "flex h-8 w-full min-w-0 items-center gap-1.5 rounded-md px-2 text-left outline-none",
           "transition-[background-color,color,box-shadow] duration-micro ease-standard focus-visible:ring-2 focus-visible:ring-accent/50",
@@ -289,17 +310,33 @@ const TreeNodeButton = memo(function TreeNodeButton({
         title={title}
         onClick={() => onSelectNode(node.id)}
       >
-        <span className={cn("truncate font-mono text-sm", selected && "font-semibold")}>{node.san ?? "–"}</span>
+        <span className={cn("truncate font-mono text-sm", selected && "font-semibold")}>
+          {node.san ?? "–"}
+        </span>
         {variation ? <span className="shrink-0 text-fg-subtle">↳</span> : null}
-        {review ? <QualityBadge variant="glyph" classification={review.classification} selected={selected} /> : null}
+        {review ? (
+          <QualityBadge
+            variant="glyph"
+            classification={review.classification}
+            selected={selected}
+          />
+        ) : null}
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           {showScores && review ? (
-            <span className={cn("font-mono text-2xs tabular-nums", selected ? "text-fg/80" : "text-fg-subtle")}>
+            <span
+              className={cn(
+                "font-mono text-2xs tabular-nums",
+                selected ? "text-fg/80" : "text-fg-subtle"
+              )}
+            >
               {formatMoveEval(review)}
             </span>
           ) : null}
           {showCommentaryState && commentary ? (
-            <Check aria-label="Commentary ready" className={cn("size-3", selected ? "text-fg" : "text-accent")} />
+            <Check
+              aria-label="Commentary ready"
+              className={cn("size-3", selected ? "text-fg" : "text-accent")}
+            />
           ) : null}
         </span>
       </button>

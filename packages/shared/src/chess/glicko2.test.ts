@@ -47,7 +47,11 @@ describe("glicko2Update", () => {
 
   it("takes the large-Δ branch of the volatility iteration (Δ² > φ² + v)", () => {
     // A settled player who beats a far stronger, settled opponent: a big surprise.
-    const next = glicko2Update({ rating: 1500, deviation: 50, volatility: 0.06 }, [{ opponent: { rating: 2600, deviation: 50 }, score: 1 }], 0.5);
+    const next = glicko2Update(
+      { rating: 1500, deviation: 50, volatility: 0.06 },
+      [{ opponent: { rating: 2600, deviation: 50 }, score: 1 }],
+      0.5
+    );
     expect(next.volatility).toBeGreaterThan(0.06);
     expect(Number.isFinite(next.rating)).toBe(true);
     expect(next.rating).toBeGreaterThan(1500);

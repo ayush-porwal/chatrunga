@@ -40,7 +40,12 @@ describe("savedResult", () => {
 
 describe("mainlineEnd", () => {
   it("follows the first child from the root, ignoring side variations", () => {
-    const tree = [node("root", null, ["e4", "d4"]), node("e4", "root", ["e5"]), node("d4", "root", []), node("e5", "e4", [])];
+    const tree = [
+      node("root", null, ["e4", "d4"]),
+      node("e4", "root", ["e5"]),
+      node("d4", "root", []),
+      node("e5", "e4", [])
+    ];
     expect(mainlineEnd(tree)?.id).toBe("e5");
   });
 
@@ -52,7 +57,15 @@ describe("mainlineEnd", () => {
 describe("sameDocument", () => {
   const tree = [node("root", null, [])];
   const headers = { result: "*" };
-  const doc = { gameId: "g", source: "pgn-import" as const, moveTree: tree, headers, currentNodeId: "root", gameOutcome: null, review: null };
+  const doc = {
+    gameId: "g",
+    source: "pgn-import" as const,
+    moveTree: tree,
+    headers,
+    currentNodeId: "root",
+    gameOutcome: null,
+    review: null
+  };
 
   it("matches the document the library already holds", () => {
     expect(sameDocument(doc, { ...doc })).toBe(true);
@@ -64,6 +77,8 @@ describe("sameDocument", () => {
     expect(sameDocument(doc, { ...doc, source: "analysis" })).toBe(false);
     expect(sameDocument(doc, { ...doc, moveTree: [...tree] })).toBe(false);
     expect(sameDocument(doc, { ...doc, headers: { result: "1-0" } })).toBe(false);
-    expect(sameDocument(doc, { ...doc, gameOutcome: { result: "1-0", termination: "Resignation" } })).toBe(false);
+    expect(
+      sameDocument(doc, { ...doc, gameOutcome: { result: "1-0", termination: "Resignation" } })
+    ).toBe(false);
   });
 });

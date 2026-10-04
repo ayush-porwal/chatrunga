@@ -1,6 +1,13 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { pageContainer, pageDescription, pageShell, sectionDescription, sectionTitle, eyebrow } from "@/lib/ui";
+import {
+  pageContainer,
+  pageDescription,
+  pageShell,
+  sectionDescription,
+  sectionTitle,
+  eyebrow
+} from "@/lib/ui";
 
 /**
  * Full-page wrapper: scrolls, centers content in the fluid page column (`pageContainer`: the
@@ -37,7 +44,12 @@ function PageHeader({
   actions?: React.ReactNode;
 }) {
   return (
-    <header className={cn("flex min-h-9 flex-wrap items-center gap-4", !description && !actions && "sr-only")}>
+    <header
+      className={cn(
+        "flex min-h-9 flex-wrap items-center gap-4",
+        !description && !actions && "sr-only"
+      )}
+    >
       <h1 className="sr-only">{title}</h1>
       {description ? <p className={cn(pageDescription, "min-w-0 flex-1")}>{description}</p> : null}
       {actions ? <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div> : null}

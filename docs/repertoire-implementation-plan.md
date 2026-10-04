@@ -27,19 +27,19 @@ Library "Add to repertoire", import worker threads, large-collection profiling.
 
 ## Layering and ownership
 
-| Layer | Files | Owner agent |
-| --- | --- | --- |
-| Shared types + API contract | `packages/shared/src/types/repertoire.ts`, `ipc/chaturanga-api.ts` (`repertoires` namespace) | Phase 1 |
-| Shared pure domain | `packages/shared/src/chess/repertoire-position.ts`, `repertoire-index.ts`, `repertoire-scheduler.ts`, `repertoire-pgn.ts` + tests | Phase 1 |
-| Main process | migration 7 in `main/db/index.ts`, `main/repertoire/repository.ts`, `service.ts`, `main/ipc/repertoire-handler.ts`, validators in `main/ipc/validate.ts`, preload exposure | Phase 2a |
-| Renderer | `features/repertoire/*`, `features/board/ControlledBoard.tsx`, `stores/repertoire-*-store.ts`, `queries/repertoire.ts`, App/Router/Sidebar/History wiring | Phase 2b |
-| Integration + verification | run app, exercise the loop, fix seams | Phase 3 |
+| Layer                       | Files                                                                                                                                                                      | Owner agent |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| Shared types + API contract | `packages/shared/src/types/repertoire.ts`, `ipc/chaturanga-api.ts` (`repertoires` namespace)                                                                               | Phase 1     |
+| Shared pure domain          | `packages/shared/src/chess/repertoire-position.ts`, `repertoire-index.ts`, `repertoire-scheduler.ts`, `repertoire-pgn.ts` + tests                                          | Phase 1     |
+| Main process                | migration 7 in `main/db/index.ts`, `main/repertoire/repository.ts`, `service.ts`, `main/ipc/repertoire-handler.ts`, validators in `main/ipc/validate.ts`, preload exposure | Phase 2a    |
+| Renderer                    | `features/repertoire/*`, `features/board/ControlledBoard.tsx`, `stores/repertoire-*-store.ts`, `queries/repertoire.ts`, App/Router/Sidebar/History wiring                  | Phase 2b    |
+| Integration + verification  | run app, exercise the loop, fix seams                                                                                                                                      | Phase 3     |
 
 ## Rules every agent follows
 
 - `pnpm lint`, `pnpm -r --if-present typecheck`, `pnpm test` must stay green; coverage
   thresholds are never lowered.
-- Renderer never imports Electron/Node; main never imports renderer. ESLint enforces it.
+- Renderer never imports Electron/Node; main never imports renderer. Oxlint enforces it (oxlint.config.ts).
 - Nothing repertoire-related is loaded into `useGameStore` (autosave would create library games).
 - IPC channels are `repertoires:<method>`; the `channels.test.ts` contract test must pass.
 - Runtime validation follows `validate.ts` style (hand-written parsers, `Invalid <label>: …`).

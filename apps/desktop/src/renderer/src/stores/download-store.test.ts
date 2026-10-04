@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useDownloadStore } from "./download-store";
 
-const progress = (sourceId: string, state: "downloading" | "completed" | "failed" | "cancelled", downloadedBytes = 0) => ({
+const progress = (
+  sourceId: string,
+  state: "downloading" | "completed" | "failed" | "cancelled",
+  downloadedBytes = 0
+) => ({
   sourceId,
   downloadedBytes,
   totalBytes: 100,

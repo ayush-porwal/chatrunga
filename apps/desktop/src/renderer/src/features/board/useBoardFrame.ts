@@ -11,7 +11,10 @@ import { centringInsets, snapBoardSize } from "./board-frame";
  * the tree) runs in the same frame. A device-pixel-ratio change (window zoom, another display)
  * re-snaps even when the CSS size stays the same.
  */
-export function useSnappedBoardFrame(probeRef: RefObject<HTMLElement | null>, frameRef: RefObject<HTMLElement | null>): void {
+export function useSnappedBoardFrame(
+  probeRef: RefObject<HTMLElement | null>,
+  frameRef: RefObject<HTMLElement | null>
+): void {
   useLayoutEffect(() => {
     const probe = probeRef.current;
     const frame = frameRef.current;

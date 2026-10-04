@@ -87,7 +87,12 @@ export function reviewAnalysisTimeoutMs(params: {
   return Math.min(MAX_TIMER_MS, uncappedTimeoutMs(params));
 }
 
-function uncappedTimeoutMs(params: { moveTimeMs: number | null; depth: number; multipv: number; nodes?: number | null }): number {
+function uncappedTimeoutMs(params: {
+  moveTimeMs: number | null;
+  depth: number;
+  multipv: number;
+  nodes?: number | null;
+}): number {
   const mp = Math.max(1, Math.min(params.multipv, 5));
   // `nodes` mode (typically nodes=1 for Maia policy) returns near-instantly per move;
   // even multi-Maia parallelism finishes well under a second per position.

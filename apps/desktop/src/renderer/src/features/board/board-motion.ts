@@ -15,7 +15,9 @@ export const RAPID_STEP_MS = 90;
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
 function reducedMotionQuery(): MediaQueryList | null {
-  return typeof window !== "undefined" && typeof window.matchMedia === "function" ? window.matchMedia(REDUCED_MOTION_QUERY) : null;
+  return typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia(REDUCED_MOTION_QUERY)
+    : null;
 }
 
 export function prefersReducedMotion(): boolean {
@@ -52,7 +54,11 @@ type TreeLink = { id: string; parentId: string | null };
  * steps slide pieces; jumps (Home / End, a distant move, a variation elsewhere) snap so the board
  * never flies half the pieces across at once.
  */
-export function isSingleStep(moveTree: readonly TreeLink[], fromId: string | null, toId: string): boolean {
+export function isSingleStep(
+  moveTree: readonly TreeLink[],
+  fromId: string | null,
+  toId: string
+): boolean {
   if (!fromId || fromId === toId) return false;
   for (const node of moveTree) {
     if (node.id === toId && node.parentId === fromId) return true;
@@ -76,13 +82,13 @@ export function fadeInSquares(
   for (const square of wrap.querySelectorAll<HTMLElement>(selector)) {
     if (square.style.visibility === "hidden") continue;
     // Restart our own fade only; CSS keyframes on the square (puzzle flashes) keep running.
-    for (const animation of square.getAnimations()) if (!(animation instanceof CSSAnimation)) animation.cancel();
+    for (const animation of square.getAnimations())
+      if (!(animation instanceof CSSAnimation)) animation.cancel();
     square.animate(keyframes, { duration: durationMs, easing: "cubic-bezier(0.22, 1, 0.36, 1)" });
   }
 }
 
 const FADE_IN: Keyframe[] = [{ opacity: 0 }, { opacity: 1 }];
-
 
 function expandBoard(fen: string): string {
   return (fen.split(" ")[0] ?? "").replace(/\d/g, (digits) => ".".repeat(Number(digits)));

@@ -8,7 +8,10 @@ import { useOpenRouterConfigQuery } from "../../queries/api";
 import { rendererCommentaryError, requestRendererCommentary } from "../../ipc/commentary";
 import { DEFAULT_COMMENTARY_MODEL } from "@chaturanga/shared/llm/models";
 import { buildInsightPayload, type CommentaryDetail } from "./review-utils";
-import { COMMENTARY_VIEW_QUALIFY_MS, type CommentaryTrigger } from "@chaturanga/shared/types/telemetry";
+import {
+  COMMENTARY_VIEW_QUALIFY_MS,
+  type CommentaryTrigger
+} from "@chaturanga/shared/types/telemetry";
 import {
   analyticsGameId,
   analyticsReviewId,
@@ -36,7 +39,14 @@ const PROVIDER_FAILED = "OpenRouter didn't return commentary for this move.";
  * - `no-payload`: the engine data for this move is too thin to explain;
  * - `idle`: nothing to show (review running, no move, tab hidden).
  */
-export type CommentaryStatus = "idle" | "loading" | "ready" | "error" | "no-key" | "off" | "no-payload";
+export type CommentaryStatus =
+  | "idle"
+  | "loading"
+  | "ready"
+  | "error"
+  | "no-key"
+  | "off"
+  | "no-payload";
 
 /** Commentary for the move currently in view. */
 export type SelectedMoveCommentary = {
@@ -95,8 +105,12 @@ export function useGameReviewCommentary({
   // Only the analysed moves the game still has: a deleted or replaced move is neither explained
   // nor sent as context for another.
   const moveTree = useGameStore((state) => state.moveTree);
-  const reviewMoves = useMemo(() => (review ? compatibleReviewMoves(review.moves, moveTree) : undefined), [moveTree, review]);
-  const reviewedMove = reviewMoves && move && reviewMoves.some((item) => item.nodeId === move.nodeId) ? move : null;
+  const reviewMoves = useMemo(
+    () => (review ? compatibleReviewMoves(review.moves, moveTree) : undefined),
+    [moveTree, review]
+  );
+  const reviewedMove =
+    reviewMoves && move && reviewMoves.some((item) => item.nodeId === move.nodeId) ? move : null;
   const active = visible && reviewStatus === "ready" && Boolean(reviewedMove);
   const white = headers.white ?? undefined;
   const black = headers.black ?? undefined;
@@ -111,19 +125,39 @@ export function useGameReviewCommentary({
     () =>
       reviewMoves
         ? {
-          moves: reviewMoves,
-          headers: { white, black, event, opening },
-          review: { schemaVersion, engineName, engineSettings, depth: reviewDepth, moveTimeMs: reviewMoveTimeMs }
-        }
+            moves: reviewMoves,
+            headers: { white, black, event, opening },
+            review: {
+              schemaVersion,
+              engineName,
+              engineSettings,
+              depth: reviewDepth,
+              moveTimeMs: reviewMoveTimeMs
+            }
+          }
         : undefined,
-    [black, engineName, engineSettings, event, opening, reviewDepth, reviewMoveTimeMs, reviewMoves, schemaVersion, white]
+    [
+      black,
+      engineName,
+      engineSettings,
+      event,
+      opening,
+      reviewDepth,
+      reviewMoveTimeMs,
+      reviewMoves,
+      schemaVersion,
+      white
+    ]
   );
   const payload = useMemo(() => {
     if (!active || !reviewedMove || !payloadContext) return null;
     return buildInsightPayload(reviewedMove, userRating, detail, playerColor, payloadContext);
   }, [active, detail, payloadContext, playerColor, reviewedMove, userRating]);
-  const cached = reviewedMove ? review?.commentary?.find((item) => item.ply === reviewedMove.ply) : undefined;
-  const jobKey = review && reviewedMove ? `${review.createdAt}:${reviewedMove.ply}:${settingsKey}` : "";
+  const cached = reviewedMove
+    ? review?.commentary?.find((item) => item.ply === reviewedMove.ply)
+    : undefined;
+  const jobKey =
+    review && reviewedMove ? `${review.createdAt}:${reviewedMove.ply}:${settingsKey}` : "";
   const decision = decideCommentary({
     active,
     enabled,
@@ -135,51 +169,60 @@ export function useGameReviewCommentary({
     failed: Boolean(jobKey && failures[jobKey])
   });
 
-  const requestOne = useCallback(async (input: {
-    payload: ReviewInsightPayload;
-    target: GameReview;
-    key: string;
-    settingsKey: string;
-    trigger: CommentaryTrigger;
-  }) => {
-    const stale = () => !isCurrentReview(input.target) || settingsKeyRef.current !== input.settingsKey;
-    const fail = (message: string) => {
-      if (stale()) return;
-      setFailures((current) => ({ ...current, [input.key]: message }));
-    };
-    const store = (item: ReviewCommentary | undefined, error: string | null) => {
-      if (stale()) return;
-      if (item) {
-        freshCommentary.add(viewKey(input.target, item.ply));
-        useReviewStore.getState().addCommentary({ ...item, settingsKey: input.settingsKey });
-        return;
-      }
-      fail(error ?? PROVIDER_FAILED);
-    };
-
-    try {
-      const result = await requestRendererCommentary({
-        payloads: [input.payload],
-        context: {
-          reviewId: analyticsReviewId(input.target.reviewId),
-          gameId: analyticsGameId(useGameStore.getState().gameId),
-          trigger: input.trigger
+  const requestOne = useCallback(
+    async (input: {
+      payload: ReviewInsightPayload;
+      target: GameReview;
+      key: string;
+      settingsKey: string;
+      trigger: CommentaryTrigger;
+    }) => {
+      const stale = () =>
+        !isCurrentReview(input.target) || settingsKeyRef.current !== input.settingsKey;
+      const fail = (message: string) => {
+        if (stale()) return;
+        setFailures((current) => ({ ...current, [input.key]: message }));
+      };
+      const store = (item: ReviewCommentary | undefined, error: string | null) => {
+        if (stale()) return;
+        if (item) {
+          freshCommentary.add(viewKey(input.target, item.ply));
+          useReviewStore.getState().addCommentary({ ...item, settingsKey: input.settingsKey });
+          return;
         }
-      });
-      store(result.commentary.find((item) => item.ply === input.payload.game.ply), result.error);
-    } catch (error) {
-      fail(rendererCommentaryError(error));
-    }
-  }, []);
+        fail(error ?? PROVIDER_FAILED);
+      };
+
+      try {
+        const result = await requestRendererCommentary({
+          payloads: [input.payload],
+          context: {
+            reviewId: analyticsReviewId(input.target.reviewId),
+            gameId: analyticsGameId(useGameStore.getState().gameId),
+            trigger: input.trigger
+          }
+        });
+        store(
+          result.commentary.find((item) => item.ply === input.payload.game.ply),
+          result.error
+        );
+      } catch (error) {
+        fail(rendererCommentaryError(error));
+      }
+    },
+    []
+  );
 
   const jobInput = useMemo(() => {
     if (!payload || !review || !jobKey) return null;
     return { payload, target: review, key: jobKey, settingsKey };
-    // `review` changes whenever commentary is cached; the job only needs the review identity.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- `review` changes whenever commentary is cached; the job needs only the review's identity
   }, [jobKey, payload]);
   const job = useMemo<CommentaryJob | null>(
-    () => (jobInput ? { key: jobInput.key, run: () => requestOne({ ...jobInput, trigger: "auto" }) } : null),
+    () =>
+      jobInput
+        ? { key: jobInput.key, run: () => requestOne({ ...jobInput, trigger: "auto" }) }
+        : null,
     [jobInput, requestOne]
   );
 
@@ -195,13 +238,16 @@ export function useGameReviewCommentary({
       return next;
     });
     // The user asked again: counted apart from the automatic request (and its validation retry).
-    scheduler.runNow({ key: jobInput.key, run: () => requestOne({ ...jobInput, trigger: "user_retry" }) });
+    scheduler.runNow({
+      key: jobInput.key,
+      run: () => requestOne({ ...jobInput, trigger: "user_retry" })
+    });
   }, [jobInput, requestOne, scheduler]);
 
   const status = statusFor(decision, isCurrentCommentary(cached, settingsKey));
   useCommentaryViewTracking({
     review,
-    ply: status === "ready" && cached ? reviewedMove?.ply ?? null : null,
+    ply: status === "ready" && cached ? (reviewedMove?.ply ?? null) : null,
     visible: active
   });
 
@@ -209,7 +255,7 @@ export function useGameReviewCommentary({
     status,
     commentary: cached,
     model: model || DEFAULT_COMMENTARY_MODEL,
-    error: decision === "failed" ? failures[jobKey] ?? PROVIDER_FAILED : null,
+    error: decision === "failed" ? (failures[jobKey] ?? PROVIDER_FAILED) : null,
     retry
   };
 }
@@ -246,7 +292,15 @@ function viewKey(review: GameReview, ply: number): string {
  * or leaving the window before that cancels it, so an answer arriving after the user moved on is
  * generated but not viewed. Once per review and move per session.
  */
-function useCommentaryViewTracking({ review, ply, visible }: { review: GameReview | null; ply: number | null; visible: boolean }) {
+function useCommentaryViewTracking({
+  review,
+  ply,
+  visible
+}: {
+  review: GameReview | null;
+  ply: number | null;
+  visible: boolean;
+}) {
   // The review's identity, not the object: caching another move's explanation mustn't restart it.
   const key = review && ply !== null ? viewKey(review, ply) : null;
   const reviewId = analyticsReviewId(review?.reviewId);
@@ -254,14 +308,23 @@ function useCommentaryViewTracking({ review, ply, visible }: { review: GameRevie
     () =>
       new ViewQualifier(COMMENTARY_VIEW_QUALIFY_MS, (qualified) => {
         const target = viewTargets.get(qualified);
-        if (target) trackUsage({ type: "commentary_viewed", ...target, source: freshCommentary.has(qualified) ? "fresh" : "cached" });
+        if (target)
+          void trackUsage({
+            type: "commentary_viewed",
+            ...target,
+            source: freshCommentary.has(qualified) ? "fresh" : "cached"
+          });
       })
   );
   useEffect(() => () => qualifier.dispose(), [qualifier]);
 
   useEffect(() => {
     if (key && ply !== null) {
-      viewTargets.set(key, { reviewId, gameId: analyticsGameId(useGameStore.getState().gameId), ply });
+      viewTargets.set(key, {
+        reviewId,
+        gameId: analyticsGameId(useGameStore.getState().gameId),
+        ply
+      });
     }
     const check = () => qualifier.update(key, visible && isForeground());
     check();
@@ -277,7 +340,10 @@ function useCommentaryViewTracking({ review, ply, visible }: { review: GameRevie
   }, [key, ply, qualifier, reviewId, visible]);
 }
 
-const viewTargets = new Map<string, { reviewId: string | null; gameId: string | null; ply: number }>();
+const viewTargets = new Map<
+  string,
+  { reviewId: string | null; gameId: string | null; ply: number }
+>();
 
 function isCurrentReview(target: GameReview): boolean {
   return useReviewStore.getState().review?.createdAt === target.createdAt;

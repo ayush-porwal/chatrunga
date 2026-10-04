@@ -16,7 +16,11 @@ import { MoveLink } from "../features/game-review/MoveLinks";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import { PuzzleExplanation } from "../features/puzzles/PuzzleExplanation";
 import { explainOutcome } from "../features/puzzles/puzzle-explanation";
-import { formatPuzzleTag, puzzleDatasetLabel, puzzleSetSummary } from "../features/puzzles/puzzle-set";
+import {
+  formatPuzzleTag,
+  puzzleDatasetLabel,
+  puzzleSetSummary
+} from "../features/puzzles/puzzle-set";
 import { PuzzleRatingLine } from "../features/puzzles/PuzzleRatingLine";
 import { useGameStore } from "../stores/game-store";
 import {
@@ -143,11 +147,14 @@ function PuzzleCard({
   const solution = useMemo(() => solutionLine(puzzle), [puzzle]);
   // The wrong-move hint for screen readers names the expected move in SAN, like the rest of the UI.
   const expectedSan = lastExpectedMove
-    ? (solution.find((move, index) => index >= solutionIndex && move.uci === lastExpectedMove)?.san ?? lastExpectedMove)
+    ? (solution.find((move, index) => index >= solutionIndex && move.uci === lastExpectedMove)
+        ?.san ?? lastExpectedMove)
     : null;
   // Solved or failed: the AI explanation is offered (never while pending).
   const explainKind = explainOutcome(outcome, firstWrongMove, broken);
-  const setLine = puzzleConfig ? puzzleSetSummary(puzzleConfig, puzzleDatasetLabel(puzzle.sourceId, puzzle.sourceName)) : null;
+  const setLine = puzzleConfig
+    ? puzzleSetSummary(puzzleConfig, puzzleDatasetLabel(puzzle.sourceId, puzzle.sourceName))
+    : null;
 
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -186,7 +193,9 @@ function PuzzleCard({
       : feedbackKind === "idle"
         ? "Find the best move."
         : feedbackKind === "correct"
-          ? feedback && feedback !== "Correct." ? feedback : "Keep going."
+          ? feedback && feedback !== "Correct."
+            ? feedback
+            : "Keep going."
           : (feedback?.replace(/^Not quite\.\s*/, "") ?? "Try another move.");
   // Once failed it stays failed; while unfinished, say it can still be played out.
   const failedNote =
@@ -210,7 +219,9 @@ function PuzzleCard({
           {puzzle.difficulty ? (
             <span className="grid gap-0.5">
               <span className="text-2xs text-fg-subtle">Difficulty</span>
-              <span className="text-sm font-semibold tabular-nums text-fg">{puzzle.difficulty}</span>
+              <span className="text-sm font-semibold tabular-nums text-fg">
+                {puzzle.difficulty}
+              </span>
             </span>
           ) : null}
         </div>
@@ -226,18 +237,32 @@ function PuzzleCard({
         )}
       >
         <div className="flex items-center gap-2.5">
-          <FeedbackMark kind={settled && failed ? "wrong" : feedbackKind} sideToMove={puzzle.sideToMove} />
-          <div key={`${feedbackKind}-${feedback ?? ""}`} className="grid min-w-0 flex-1 animate-rise-in gap-0.5">
+          <FeedbackMark
+            kind={settled && failed ? "wrong" : feedbackKind}
+            sideToMove={puzzle.sideToMove}
+          />
+          <div
+            key={`${feedbackKind}-${feedback ?? ""}`}
+            className="grid min-w-0 flex-1 animate-rise-in gap-0.5"
+          >
             <p
               className={cn(
                 "text-sm font-semibold",
-                broken ? "text-fg" : wrong || (settled && failed) ? "text-danger" : feedbackKind === "idle" ? "text-fg" : "text-accent-fg"
+                broken
+                  ? "text-fg"
+                  : wrong || (settled && failed)
+                    ? "text-danger"
+                    : feedbackKind === "idle"
+                      ? "text-fg"
+                      : "text-accent-fg"
               )}
             >
               {headline}
             </p>
             <p className="text-xs leading-5 text-fg-secondary">{detail}</p>
-            {wrong && expectedSan ? <span className="sr-only"> Expected move: {expectedSan}.</span> : null}
+            {wrong && expectedSan ? (
+              <span className="sr-only"> Expected move: {expectedSan}.</span>
+            ) : null}
           </div>
         </div>
         {failedNote ? (
@@ -269,17 +294,30 @@ function PuzzleCard({
               variant="outline"
               disabled={terminal}
               onClick={onPlayEngineFromHere}
-              title={terminal ? "This position is already finished" : "Continue against the default engine"}
+              title={
+                terminal
+                  ? "This position is already finished"
+                  : "Continue against the default engine"
+              }
             >
               <Swords />
               Play engine from here
             </Button>
           ) : null}
-          {nextError ? <Notice tone="danger">{ipcErrorMessage(nextError) || nextError.message}</Notice> : null}
+          {nextError ? (
+            <Notice tone="danger">{ipcErrorMessage(nextError) || nextError.message}</Notice>
+          ) : null}
         </div>
       ) : null}
 
-      {explainKind ? <PuzzleExplanation puzzle={puzzle} kind={explainKind} wrong={firstWrongMove} linkMoves={complete} /> : null}
+      {explainKind ? (
+        <PuzzleExplanation
+          puzzle={puzzle}
+          kind={explainKind}
+          wrong={firstWrongMove}
+          linkMoves={complete}
+        />
+      ) : null}
 
       <Disclosure
         title={complete ? "Solution" : "Show solution"}
@@ -289,7 +327,10 @@ function PuzzleCard({
           if (open) usePuzzleStore.getState().revealSolution();
         }}
       >
-        <ol className="flex flex-wrap gap-x-2 gap-y-1 text-sm leading-6" aria-label="Solution moves">
+        <ol
+          className="flex flex-wrap gap-x-2 gap-y-1 text-sm leading-6"
+          aria-label="Solution moves"
+        >
           {solution.map((move, index) => (
             <li
               key={`${index}-${move.uci}`}
@@ -300,7 +341,12 @@ function PuzzleCard({
               {complete && move.valid ? (
                 <MoveLink
                   san={move.san}
-                  onActivate={() => useGameStore.getState().goToLine("root", solution.slice(0, index + 1).map((item) => item.san))}
+                  onActivate={() =>
+                    useGameStore.getState().goToLine(
+                      "root",
+                      solution.slice(0, index + 1).map((item) => item.san)
+                    )
+                  }
                 />
               ) : (
                 move.san
@@ -331,7 +377,13 @@ function PuzzleCard({
                 <span className="text-fg-subtle">Set: </span>
                 {setLine}
               </p>
-              <Button type="button" variant="link" size="xs" className="shrink-0" onClick={onEditSet}>
+              <Button
+                type="button"
+                variant="link"
+                size="xs"
+                className="shrink-0"
+                onClick={onEditSet}
+              >
                 Edit set
               </Button>
             </div>
@@ -353,7 +405,13 @@ function PuzzleCard({
   );
 }
 
-function FeedbackMark({ kind, sideToMove }: { kind: PuzzleFeedbackKind; sideToMove: "white" | "black" }) {
+function FeedbackMark({
+  kind,
+  sideToMove
+}: {
+  kind: PuzzleFeedbackKind;
+  sideToMove: "white" | "black";
+}) {
   if (kind === "idle") {
     return (
       <span className="grid size-7 shrink-0 place-items-center rounded-full bg-control">
@@ -368,10 +426,20 @@ function FeedbackMark({ kind, sideToMove }: { kind: PuzzleFeedbackKind; sideToMo
       key={kind}
       className={cn(
         "grid size-7 shrink-0 animate-pop-in place-items-center rounded-full",
-        wrong ? "bg-danger/20 text-danger" : broken ? "bg-control text-fg-muted" : kind === "complete" ? "bg-accent text-canvas" : "bg-accent/20 text-accent"
+        wrong
+          ? "bg-danger/20 text-danger"
+          : broken
+            ? "bg-control text-fg-muted"
+            : kind === "complete"
+              ? "bg-accent text-canvas"
+              : "bg-accent/20 text-accent"
       )}
     >
-      {wrong || broken ? <X className="size-4" strokeWidth={2.5} /> : <Check className="size-4" strokeWidth={kind === "complete" ? 3 : 2.5} />}
+      {wrong || broken ? (
+        <X className="size-4" strokeWidth={2.5} />
+      ) : (
+        <Check className="size-4" strokeWidth={kind === "complete" ? 3 : 2.5} />
+      )}
     </span>
   );
 }
@@ -389,11 +457,18 @@ function SolutionProgress({ done, total, wrong }: { done: number; total: number;
         aria-valuenow={done}
       >
         {Array.from({ length: total }, (_, index) => (
-          <span key={index} className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-control">
+          <span
+            key={index}
+            className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-control"
+          >
             <span
               className={cn(
                 "absolute inset-0 origin-left rounded-full transition-transform duration-emphasis ease-enter",
-                index < done ? "scale-x-100 bg-accent" : index === done && wrong ? "scale-x-100 bg-danger/70" : "scale-x-0 bg-accent"
+                index < done
+                  ? "scale-x-100 bg-accent"
+                  : index === done && wrong
+                    ? "scale-x-100 bg-danger/70"
+                    : "scale-x-0 bg-accent"
               )}
             />
           </span>

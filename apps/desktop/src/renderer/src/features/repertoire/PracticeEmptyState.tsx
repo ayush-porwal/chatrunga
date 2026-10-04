@@ -80,7 +80,7 @@ export function PracticeEmptyState({
     );
     // A chapter not read (an error, past the limit) may practise something: not the cause then.
     return { blocked, othersPractise: scopeLarger || blocked.length < queries.length };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `queries` changes with `readKey`.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- `queries` changes with `readKey`.
   }, [readKey, detail, scopeLarger]);
   const ref = useRef<HTMLDivElement | null>(null);
   // The setup's Start sits below: bring the answer into view where it appears.

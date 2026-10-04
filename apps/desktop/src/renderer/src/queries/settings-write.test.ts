@@ -2,13 +2,27 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MutationObserver, QueryClient, QueryObserver } from "@tanstack/react-query";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
 import { revertFailedWrite, settingsWriteOptions } from "./api";
-import { addPendingSettings, pendingSettings, withPendingSettings } from "./settings-pending";
+import {
+  addPendingSettings,
+  dropPendingSettings,
+  pendingSettings,
+  withPendingSettings
+} from "./settings-pending";
 import { flushSettingsBatches, SettingsBatch } from "../features/settings/use-set-setting";
 
 describe("revertFailedWrite", () => {
   it("reverts only the failed write's keys still showing its value", () => {
-    const current = { ...defaultSettings, soundVolume: 0.2, boardTheme: "green" as const, showCoordinates: false };
-    const reverted = revertFailedWrite(current, { soundVolume: 0.2, boardTheme: "blue" }, { soundVolume: 0.7, boardTheme: "brown" });
+    const current = {
+      ...defaultSettings,
+      soundVolume: 0.2,
+      boardTheme: "green" as const,
+      showCoordinates: false
+    };
+    const reverted = revertFailedWrite(
+      current,
+      { soundVolume: 0.2, boardTheme: "blue" },
+      { soundVolume: 0.7, boardTheme: "brown" }
+    );
     // soundVolume still shows the failed value: back to 0.7. boardTheme was changed since (green): kept.
     expect(reverted.soundVolume).toBe(0.7);
     expect(reverted.boardTheme).toBe("green");
@@ -33,7 +47,10 @@ describe("SettingsBatch", () => {
     expect(write).not.toHaveBeenCalled();
     vi.advanceTimersByTime(250);
     expect(write).toHaveBeenCalledTimes(1);
-    expect(write).toHaveBeenCalledWith({ patch: { soundVolume: 0.3 }, previous: { soundVolume: 0.7 } });
+    expect(write).toHaveBeenCalledWith({
+      patch: { soundVolume: 0.3 },
+      previous: { soundVolume: 0.7 }
+    });
   });
 
   it("flush writes what's pending now, and nothing when there is nothing", () => {
@@ -53,7 +70,6 @@ describe("SettingsBatch", () => {
 
 describe("settings not written yet", () => {
   it("stay on top of a read until their batch settles", async () => {
-    const { pendingSettings, withPendingSettings } = await import("./settings-pending");
     let finish: () => void = () => {};
     const write = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
     const batch = new SettingsBatch(250);
@@ -70,14 +86,19 @@ describe("settings not written yet", () => {
 });
 
 describe("an explicit write after a drag", () => {
-  it("replaces the drag's pending value for the same keys", async () => {
-    const { addPendingSettings, dropPendingSettings, withPendingSettings } = await import("./settings-pending");
+  // A pending value left behind would show over every later read in this file.
+  afterEach(() => dropPendingSettings(["boardSquareLight", "soundVolume"]));
+
+  it("replaces the drag's pending value for the same keys", () => {
     addPendingSettings({ boardSquareLight: "#123456", soundVolume: 0.4 });
     dropPendingSettings(["boardSquareLight"]);
-    const shown = withPendingSettings({ ...defaultSettings, boardSquareLight: null, soundVolume: 0.7 });
+    const shown = withPendingSettings({
+      ...defaultSettings,
+      boardSquareLight: null,
+      soundVolume: 0.7
+    });
     expect(shown.boardSquareLight).toBeNull();
     expect(shown.soundVolume).toBe(0.4);
-    dropPendingSettings(["soundVolume"]);
   });
 });
 
@@ -97,7 +118,9 @@ describe("flushSettingsBatches (the window closing)", () => {
     flushSettingsBatches(now);
     expect(now).toHaveBeenCalledTimes(2);
     expect(now).toHaveBeenCalledWith(expect.objectContaining({ patch: { soundVolume: 0.3 } }));
-    expect(now).toHaveBeenCalledWith(expect.objectContaining({ patch: { boardSquareLight: "#ffffff" } }));
+    expect(now).toHaveBeenCalledWith(
+      expect.objectContaining({ patch: { boardSquareLight: "#ffffff" } })
+    );
     // Written once: the pause that follows and a second flush have nothing left.
     vi.advanceTimersByTime(250);
     flushSettingsBatches(now);

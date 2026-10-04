@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
-import { buildEngineGoClock, clockNow, noteSystemResumed, remainingClockMs, setTimeAsleepSource, useGameStore } from "./game-store";
+import {
+  buildEngineGoClock,
+  clockNow,
+  noteSystemResumed,
+  remainingClockMs,
+  setTimeAsleepSource,
+  useGameStore
+} from "./game-store";
 
 /** Moves both time sources together (the clock treats a wall-only jump as time asleep). */
 function mockTime() {
@@ -126,7 +133,9 @@ describe("game store", () => {
 
     expect(useGameStore.getState().orientation).toBe("black");
     expect(useGameStore.getState().toSession().pgn).toContain("1. e4 e5");
-    expect(useGameStore.getState().moveTree.find((node) => node.id === e5NodeId)?.arrows).toHaveLength(1);
+    expect(
+      useGameStore.getState().moveTree.find((node) => node.id === e5NodeId)?.arrows
+    ).toHaveLength(1);
   });
 
   it("finishes engine matches through draw, resign, and timeout paths", () => {
@@ -153,7 +162,7 @@ describe("game store", () => {
     });
   });
 
-  it("builds UCI clock snapshots and advances live clocks after moves", () => {
+  it("starts the live clocks full and charges the mover's time after a move", () => {
     const at = mockTime();
     at(1_000);
     useGameStore.getState().setEngineMatchClock({ initialMs: 10_000, incrementMs: 500 });
@@ -171,7 +180,6 @@ describe("game store", () => {
       blackMs: 10_000,
       sideToMove: "black"
     });
-    vi.restoreAllMocks();
   });
 
   it("a move after the flag fell loses on time, and the increment can't revive the clock", () => {
@@ -189,7 +197,9 @@ describe("game store", () => {
     expect(state.gameOutcome).toEqual({ result: "0-1", termination: "Time forfeit" });
     expect(state.moveTree).toHaveLength(1);
     const live = state.engineClockLive;
-    expect(live && live.stoppedAt !== undefined ? live.stoppedAt - live.turnStartedAt : null).toBe(1_100);
+    expect(live && live.stoppedAt !== undefined ? live.stoppedAt - live.turnStartedAt : null).toBe(
+      1_100
+    );
     expect(state.rejectedMoves).toBe(rejectedBefore + 1);
   });
 
@@ -203,7 +213,10 @@ describe("game store", () => {
 
     at(900);
     expect(useGameStore.getState().makeMove({ from: "e2", to: "e4" })).toBe(true);
-    expect(useGameStore.getState().engineClockLive).toMatchObject({ whiteMs: 1_100, sideToMove: "black" });
+    expect(useGameStore.getState().engineClockLive).toMatchObject({
+      whiteMs: 1_100,
+      sideToMove: "black"
+    });
   });
 
   it("the match clock ignores wall-clock changes but counts time asleep", () => {
@@ -250,7 +263,8 @@ describe("game store", () => {
     const mainlineNode = (ply: number) => {
       const state = useGameStore.getState();
       let node = state.moveTree.find((item) => item.id === "root");
-      for (let index = 0; index < ply; index += 1) node = state.moveTree.find((item) => item.id === node?.children[0]);
+      for (let index = 0; index < ply; index += 1)
+        node = state.moveTree.find((item) => item.id === node?.children[0]);
       if (!node) throw new Error(`no mainline node at ply ${ply}`);
       return node;
     };
@@ -367,7 +381,9 @@ describe("game store", () => {
     });
 
     it("ends the match once, with the server's result, and freezes the clocks", () => {
-      useGameStore.getState().setMatchClock({ whiteMs: 60_000, blackMs: 55_000, sideToMove: "white", running: true });
+      useGameStore
+        .getState()
+        .setMatchClock({ whiteMs: 60_000, blackMs: 55_000, sideToMove: "white", running: true });
       useGameStore.getState().endMatch("0-1", "Resignation");
       useGameStore.getState().endMatch("1-0", "Time forfeit");
       const state = useGameStore.getState();
@@ -395,14 +411,29 @@ describe("game store", () => {
     });
 
     it("keeps an engine game that ended on the board (mate) as an engine game", () => {
-      for (const [from, to] of [["f2", "f3"], ["e7", "e5"], ["g2", "g4"], ["d8", "h4"]] as const) {
+      for (const [from, to] of [
+        ["f2", "f3"],
+        ["e7", "e5"],
+        ["g2", "g4"],
+        ["d8", "h4"]
+      ] as const) {
         useGameStore.getState().makeMove({ from, to });
       }
       const mate = useGameStore.getState().currentNodeId;
-      useGameStore.getState().restoreView({ currentNodeId: mate, mode: "engine", source: "engine-game", engineSide: "black", orientation: "white", gameOutcome: null });
+      useGameStore.getState().restoreView({
+        currentNodeId: mate,
+        mode: "engine",
+        source: "engine-game",
+        engineSide: "black",
+        orientation: "white",
+        gameOutcome: null
+      });
       expect(useGameStore.getState()).toMatchObject({ mode: "engine", engineSide: "black" });
       // Recorded as over: stepping back to an earlier move must not let the engine play on.
-      expect(useGameStore.getState().gameOutcome).toEqual({ result: "0-1", termination: "checkmate" });
+      expect(useGameStore.getState().gameOutcome).toEqual({
+        result: "0-1",
+        termination: "checkmate"
+      });
       // Deleting the mating move: the game isn't finished any more.
       useGameStore.getState().deleteLineFromNode(mate);
       expect(useGameStore.getState().gameOutcome).toBeNull();
@@ -411,13 +442,20 @@ describe("game store", () => {
     it("decides an engine game that ends on the board, so no variation is played after it", () => {
       useGameStore.getState().setMode("engine");
       useGameStore.getState().setEngineSide("white");
-      for (const [from, to] of [["f2", "f3"], ["e7", "e5"], ["g2", "g4"]] as const) {
+      for (const [from, to] of [
+        ["f2", "f3"],
+        ["e7", "e5"],
+        ["g2", "g4"]
+      ] as const) {
         useGameStore.getState().makeMove({ from, to });
       }
       const beforeMate = useGameStore.getState().currentNodeId;
       expect(useGameStore.getState().gameOutcome).toBeNull();
       useGameStore.getState().makeMove({ from: "d8", to: "h4" });
-      expect(useGameStore.getState().gameOutcome).toEqual({ result: "0-1", termination: "checkmate" });
+      expect(useGameStore.getState().gameOutcome).toEqual({
+        result: "0-1",
+        termination: "checkmate"
+      });
       expect(useGameStore.getState().headers.result).toBe("0-1");
       // As after a resignation: stepping back doesn't reopen the match.
       useGameStore.getState().goToNode(beforeMate);
@@ -425,7 +463,9 @@ describe("game store", () => {
       expect(useGameStore.getState().makeMove({ from: "a7", to: "a6" })).toBe(false);
       expect(useGameStore.getState().moveTree).toHaveLength(size);
       // Deleting the mating move reopens the game: the result leaves the headers with the outcome.
-      const mate = useGameStore.getState().moveTree.find((node) => node.parentId === beforeMate)!.id;
+      const mate = useGameStore
+        .getState()
+        .moveTree.find((node) => node.parentId === beforeMate)!.id;
       expect(useGameStore.getState().deleteLineFromNode(mate)).toBe(true);
       expect(useGameStore.getState().gameOutcome).toBeNull();
       expect(useGameStore.getState().headers.result).toBe("*");
@@ -433,7 +473,12 @@ describe("game store", () => {
 
     it("leaves a board that isn't an engine game undecided at mate", () => {
       useGameStore.getState().setMode("analysis");
-      for (const [from, to] of [["f2", "f3"], ["e7", "e5"], ["g2", "g4"], ["d8", "h4"]] as const) {
+      for (const [from, to] of [
+        ["f2", "f3"],
+        ["e7", "e5"],
+        ["g2", "g4"],
+        ["d8", "h4"]
+      ] as const) {
         useGameStore.getState().makeMove({ from, to });
       }
       expect(useGameStore.getState().gameOutcome).toBeNull();
@@ -441,21 +486,44 @@ describe("game store", () => {
 
     it("turns a match still being played (or a live online game) into a free board", () => {
       for (const mode of ["engine", "online"] as const) {
-        useGameStore.getState().restoreView({ currentNodeId: "root", mode, source: "new", engineSide: "black", orientation: "white", gameOutcome: null });
-        expect(useGameStore.getState()).toMatchObject({ mode: "freeplay", engineSide: null, engineClockLive: null });
+        useGameStore.getState().restoreView({
+          currentNodeId: "root",
+          mode,
+          source: "new",
+          engineSide: "black",
+          orientation: "white",
+          gameOutcome: null
+        });
+        expect(useGameStore.getState()).toMatchObject({
+          mode: "freeplay",
+          engineSide: null,
+          engineClockLive: null
+        });
       }
     });
 
     it("keeps the cursor where it is when the saved node no longer exists", () => {
       useGameStore.getState().makeMove({ from: "e2", to: "e4" });
       const node = useGameStore.getState().currentNodeId;
-      useGameStore.getState().restoreView({ currentNodeId: "gone", mode: "analysis", source: "analysis", engineSide: null, orientation: "black", gameOutcome: null });
-      expect(useGameStore.getState()).toMatchObject({ currentNodeId: node, mode: "analysis", orientation: "black" });
+      useGameStore.getState().restoreView({
+        currentNodeId: "gone",
+        mode: "analysis",
+        source: "analysis",
+        engineSide: null,
+        orientation: "black",
+        gameOutcome: null
+      });
+      expect(useGameStore.getState()).toMatchObject({
+        currentNodeId: node,
+        mode: "analysis",
+        orientation: "black"
+      });
     });
   });
 });
 
 describe("engine clock pause", () => {
+  afterEach(() => vi.restoreAllMocks());
   it("freezes the running clock and resumes it without charging the pause", () => {
     const at = mockTime();
     at(0);
@@ -468,14 +536,16 @@ describe("engine clock pause", () => {
 
     at(2_000);
     useGameStore.getState().pauseEngineClock();
-    expect(useGameStore.getState().engineClockLive).toMatchObject({ stoppedAt: 2_000, paused: true });
+    expect(useGameStore.getState().engineClockLive).toMatchObject({
+      stoppedAt: 2_000,
+      paused: true
+    });
 
     at(60_000);
     useGameStore.getState().resumeEngineClock();
     const live = useGameStore.getState().engineClockLive!;
     expect(live.stoppedAt).toBeUndefined();
     expect(remainingClockMs(live, "white", 61_000)).toBe(7_000);
-    vi.restoreAllMocks();
   });
 
   it("a move made while paused charges the side that moved, from the pause", () => {
@@ -501,16 +571,10 @@ describe("engine clock pause", () => {
     // White is charged the 3 s since the pause, Black keeps its time, and it's Black's turn.
     expect(live).toMatchObject({ whiteMs: 6_000, blackMs: 10_000, sideToMove: "black" });
     expect(live.paused).toBeUndefined();
-    vi.restoreAllMocks();
   });
 
   it("a move made after the pause used up the mover's time loses on time", () => {
-    const monotonic = vi.spyOn(performance, "now");
-    const wall = vi.spyOn(Date, "now");
-    const at = (ms: number) => {
-      monotonic.mockReturnValue(ms);
-      wall.mockReturnValue(1_700_000_000_000 + ms);
-    };
+    const at = mockTime();
     at(0);
     const game = useGameStore.getState();
     game.reset();
@@ -535,7 +599,6 @@ describe("engine clock pause", () => {
     expect(state.moveTree).toHaveLength(before);
     expect(remainingClockMs(state.engineClockLive!, "white", 1_700_000_020_000)).toBe(0);
     expect(remainingClockMs(state.engineClockLive!, "black", 1_700_000_020_000)).toBe(10_000);
-    vi.restoreAllMocks();
   });
 
   it("a replacement move earns its increment once, not on top of the replaced move's", () => {
@@ -550,14 +613,20 @@ describe("engine clock pause", () => {
     at(1_000);
     useGameStore.getState().makeMove({ from: "e2", to: "e4" }); // White: 10 - 1 + 2 = 11 s
     expect(useGameStore.getState().engineClockLive?.whiteMs).toBe(11_000);
-    for (const [from, to] of [["d2", "d4"], ["c2", "c4"], ["g1", "f3"]] as const) {
+    for (const [from, to] of [
+      ["d2", "d4"],
+      ["c2", "c4"],
+      ["g1", "f3"]
+    ] as const) {
       useGameStore.getState().pauseEngineClock();
       useGameStore.getState().goToNode("root");
       useGameStore.getState().makeMove({ from, to }); // replaced at once: no time spent
     }
     // Still 11 s: replacing the move again and again doesn't add time.
-    expect(useGameStore.getState().engineClockLive).toMatchObject({ whiteMs: 11_000, sideToMove: "black" });
-    vi.restoreAllMocks();
+    expect(useGameStore.getState().engineClockLive).toMatchObject({
+      whiteMs: 11_000,
+      sideToMove: "black"
+    });
   });
 });
 

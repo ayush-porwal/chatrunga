@@ -27,9 +27,13 @@ function expectValidEntry(entry: ManifestPlatformEntry | undefined, label: strin
   expect(parsed.protocol, `${label} url`).toBe("https:");
   expect(["github.com", "raw.githubusercontent.com"], `${label} host`).toContain(parsed.hostname);
   expect(Number.isInteger(sizeBytes) && sizeBytes > 0, `${label} sizeBytes`).toBe(true);
+  // Optional fields are checked when an entry has them (archives have extract and a pattern).
+  // oxlint-disable-next-line vitest/no-conditional-expect -- sha256 is optional per entry
   if (sha256 !== undefined) expect(sha256, `${label} sha256`).toMatch(/^[0-9a-f]{64}$/);
   if (extract !== undefined) {
+    // oxlint-disable-next-line vitest/no-conditional-expect -- only archives name an extract format
     expect(["tar", "tar.gz", "tar.xz", "zip"], `${label} extract`).toContain(extract);
+    // oxlint-disable-next-line vitest/no-conditional-expect -- only archives carry a pattern
     expect(() => new RegExp(executablePattern!), `${label} executablePattern`).not.toThrow();
   }
 }
@@ -37,7 +41,11 @@ function expectValidEntry(entry: ManifestPlatformEntry | undefined, label: strin
 const AVX2: ReadonlySet<CpuFeature> = new Set(["avx2", "bmi2", "sse41", "popcnt"]);
 const NO_AVX2: ReadonlySet<CpuFeature> = new Set(["sse41", "popcnt"]);
 
-const pick = (release: { assets: readonly ReleaseAssetInfo[] }, platform: PlatformKey, cpu: ReadonlySet<CpuFeature> | null = null) =>
+const pick = (
+  release: { assets: readonly ReleaseAssetInfo[] },
+  platform: PlatformKey,
+  cpu: ReadonlySet<CpuFeature> | null = null
+) =>
   selectReleaseAsset(release.assets, STOCKFISH_SOURCE.platforms[platform], cpu)?.asset.name ?? null;
 
 describe("Stockfish release asset selection", () => {
@@ -51,11 +59,19 @@ describe("Stockfish release asset selection", () => {
   });
 
   it("exposes the asset's size, digest and extraction info", () => {
-    const selected = selectReleaseAsset(sf19.assets, STOCKFISH_SOURCE.platforms["darwin-arm64"], null)!;
+    const selected = selectReleaseAsset(
+      sf19.assets,
+      STOCKFISH_SOURCE.platforms["darwin-arm64"],
+      null
+    )!;
     expect(selected.asset.size).toBe(82_323_876);
-    expect(selected.asset.digest).toBe("sha256:a1f0e3bcc5a6927a11fe6fc8e54a779754645f3c2bae2cf13420fd1957adaa77");
+    expect(selected.asset.digest).toBe(
+      "sha256:a1f0e3bcc5a6927a11fe6fc8e54a779754645f3c2bae2cf13420fd1957adaa77"
+    );
     expect(selected.extract).toBe("tar.gz");
-    expect(new RegExp(selected.executablePattern, "i").test("stockfish-macos-universal")).toBe(true);
+    expect(new RegExp(selected.executablePattern, "i").test("stockfish-macos-universal")).toBe(
+      true
+    );
   });
 
   it("falls back to per-ISA builds for releases without universal builds (sf_17.1 fixture)", () => {
@@ -80,10 +96,21 @@ describe("Stockfish release asset selection", () => {
 
   it("matches the executable inside the archive, not the docs", () => {
     const rx = new RegExp(STOCKFISH_SOURCE.platforms["linux-x64"]!.executablePattern, "i");
-    for (const name of ["stockfish", "stockfish-linux-x86-64-universal", "stockfish-windows-x86-64-universal.exe", "stockfish-macos-m1-apple-silicon"]) {
+    for (const name of [
+      "stockfish",
+      "stockfish-linux-x86-64-universal",
+      "stockfish-windows-x86-64-universal.exe",
+      "stockfish-macos-m1-apple-silicon"
+    ]) {
       expect(rx.test(name), name).toBe(true);
     }
-    for (const name of ["Copying.txt", "stockfish-readme.md", "stockfish-notes.txt", "Top CPU Contributors.txt", "AUTHORS"]) {
+    for (const name of [
+      "Copying.txt",
+      "stockfish-readme.md",
+      "stockfish-notes.txt",
+      "Top CPU Contributors.txt",
+      "AUTHORS"
+    ]) {
       expect(rx.test(name), name).toBe(false);
     }
   });
@@ -126,7 +153,11 @@ describe("bundled fallback manifest", () => {
       expect(entry.sizeBytes, platform).toBe(selected.asset.size);
     }
     const lc0 = ENGINE_MANIFEST.lc0.platforms["win32-x64"];
-    const lc0Selected = selectReleaseAsset(lc0Latest.assets, LC0_SOURCE.platforms["win32-x64"], null)!;
+    const lc0Selected = selectReleaseAsset(
+      lc0Latest.assets,
+      LC0_SOURCE.platforms["win32-x64"],
+      null
+    )!;
     expect(lc0.url).toBe(lc0Selected.asset.browser_download_url);
     expect(lc0.sizeBytes).toBe(lc0Selected.asset.size);
   });
@@ -144,7 +175,10 @@ describe("bundled fallback manifest", () => {
     for (const platform of SUPPORTED_PLATFORMS) {
       const entry = resolveManifestEntry(ENGINE_MANIFEST, "lc0", platform);
       if (entry) expectValidEntry(entry, `lc0 ${platform}`);
-      else expect(ENGINE_MANIFEST.lc0.installInstructions[platform], `lc0 ${platform}`).toBeTruthy();
+      else {
+        // oxlint-disable-next-line vitest/no-conditional-expect -- a platform has one or the other
+        expect(ENGINE_MANIFEST.lc0.installInstructions[platform], `lc0 ${platform}`).toBeTruthy();
+      }
     }
     expect(resolveManifestEntry(ENGINE_MANIFEST, "lc0", "win32-x64")).not.toBeNull();
     expect(resolveManifestEntry(ENGINE_MANIFEST, "lc0", "darwin-arm64")).toBeNull();

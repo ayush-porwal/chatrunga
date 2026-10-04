@@ -15,7 +15,10 @@ function fakeEnvironment() {
     resume: vi.fn(async () => void (context.state = "running")),
     close: vi.fn(async () => void (context.state = "closed"))
   };
-  const on = { addEventListener: (type: string, fn: () => void) => listeners.set(type, fn), removeEventListener: (type: string) => listeners.delete(type) };
+  const on = {
+    addEventListener: (type: string, fn: () => void) => listeners.set(type, fn),
+    removeEventListener: (type: string) => listeners.delete(type)
+  };
   return {
     context,
     listeners,

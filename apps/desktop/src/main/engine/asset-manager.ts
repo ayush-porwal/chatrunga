@@ -1,7 +1,17 @@
 import { app } from "electron";
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync, statSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, unlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  unlink,
+  writeFile
+} from "node:fs/promises";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { execFile } from "node:child_process";
@@ -34,6 +44,9 @@ import {
   type FetchLike
 } from "./github-releases";
 import { downloadToFile } from "./http-download";
+import { isOneOf } from "@chaturanga/shared/types/guards";
+import { parseStoredJson } from "../stored-json";
+import { errorCode } from "../system-error";
 
 const exec = promisify(execFile);
 
@@ -65,7 +78,14 @@ const RELEASE_CACHE_FILE = "engine-releases-cache.json";
 /** An explicit "check for updates" reuses a lookup this recent instead of asking GitHub again. */
 const CHECK_MAX_AGE_MS = 60 * 1000;
 
-export type AssetId = "stockfish" | "lc0" | "maia-1100" | "maia-1300" | "maia-1500" | "maia-1700" | "maia-1900";
+export type AssetId =
+  | "stockfish"
+  | "lc0"
+  | "maia-1100"
+  | "maia-1300"
+  | "maia-1500"
+  | "maia-1700"
+  | "maia-1900";
 
 export type AssetState = "missing" | "installed" | "custom";
 
@@ -134,7 +154,44 @@ export const ALL_ASSET_IDS: readonly AssetId[] = [
 ];
 
 export function isAssetId(value: unknown): value is AssetId {
-  return ALL_ASSET_IDS.includes(value as AssetId);
+  return isOneOf(ALL_ASSET_IDS, value);
+}
+
+/** A value for every asset (written out, so the compiler checks that none is missing). */
+function forEveryAsset<V>(value: (id: AssetId) => V): Record<AssetId, V> {
+  return {
+    stockfish: value("stockfish"),
+    lc0: value("lc0"),
+    "maia-1100": value("maia-1100"),
+    "maia-1300": value("maia-1300"),
+    "maia-1500": value("maia-1500"),
+    "maia-1700": value("maia-1700"),
+    "maia-1900": value("maia-1900")
+  };
+}
+
+/** {@link forEveryAsset} for values that take a while, all at once. */
+async function forEveryAssetAsync<V>(
+  value: (id: AssetId) => Promise<V>
+): Promise<Record<AssetId, V>> {
+  const [stockfish, lc0, maia1100, maia1300, maia1500, maia1700, maia1900] = await Promise.all([
+    value("stockfish"),
+    value("lc0"),
+    value("maia-1100"),
+    value("maia-1300"),
+    value("maia-1500"),
+    value("maia-1700"),
+    value("maia-1900")
+  ]);
+  return {
+    stockfish,
+    lc0,
+    "maia-1100": maia1100,
+    "maia-1300": maia1300,
+    "maia-1500": maia1500,
+    "maia-1700": maia1700,
+    "maia-1900": maia1900
+  };
 }
 
 function isReleaseAsset(id: AssetId): id is ReleaseAssetId {
@@ -219,11 +276,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
   }
 
   getInstalled(): Record<AssetId, AssetRecord> {
-    const out = {} as Record<AssetId, AssetRecord>;
-    for (const id of ALL_ASSET_IDS) {
-      out[id] = this.state.get(id) ?? this.emptyRecord(id);
-    }
-    return out;
+    return forEveryAsset((id) => this.state.get(id) ?? this.emptyRecord(id));
   }
 
   /**
@@ -233,32 +286,30 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
    */
   async getStatus(opts: { refresh?: boolean } = {}): Promise<Record<AssetId, AssetStatus>> {
     const lookup = opts.refresh ? { maxAgeMs: CHECK_MAX_AGE_MS } : ("cache-only" as const);
-    const out = {} as Record<AssetId, AssetStatus>;
     const installed = this.getInstalled();
-    await Promise.all(
-      ALL_ASSET_IDS.map(async (id) => {
-        const record = installed[id];
-        const resolved = await this.resolveDownload(id, lookup).catch(() => null);
-        const installedVersion = record.version ?? record.manifestVersion ?? null;
-        const managed = record.state === "installed";
-        out[id] = {
-          ...record,
-          installedVersion,
-          latestVersion: resolved?.version ?? null,
-          // Only a live (or cached) GitHub answer can say there is something newer: the
-          // fallback manifest may well be older than what is installed.
-          updateAvailable:
-            managed && resolved?.source === "github" && isDifferentVersion(installedVersion, resolved.version),
-          downloadSizeBytes: resolved?.sizeBytes ?? null,
-          latestSource: resolved?.source ?? null,
-          autoDownload: resolved !== null,
-          installInstructions: resolved ? null : this.installInstructionsFor(id),
-          checkedAt: resolved?.checkedAt ? new Date(resolved.checkedAt).toISOString() : null,
-          checkError: resolved?.checkError ?? null
-        };
-      })
-    );
-    return out;
+    return forEveryAssetAsync(async (id): Promise<AssetStatus> => {
+      const record = installed[id];
+      const resolved = await this.resolveDownload(id, lookup).catch(() => null);
+      const installedVersion = record.version ?? record.manifestVersion ?? null;
+      const managed = record.state === "installed";
+      return {
+        ...record,
+        installedVersion,
+        latestVersion: resolved?.version ?? null,
+        // Only a live (or cached) GitHub answer can say there is something newer: the
+        // fallback manifest may well be older than what is installed.
+        updateAvailable:
+          managed &&
+          resolved?.source === "github" &&
+          isDifferentVersion(installedVersion, resolved.version),
+        downloadSizeBytes: resolved?.sizeBytes ?? null,
+        latestSource: resolved?.source ?? null,
+        autoDownload: resolved !== null,
+        installInstructions: resolved ? null : this.installInstructionsFor(id),
+        checkedAt: resolved?.checkedAt ? new Date(resolved.checkedAt).toISOString() : null,
+        checkError: resolved?.checkError ?? null
+      };
+    });
   }
 
   /** Explicit "check for updates": refreshes the releases (rate-limit aware) and returns status. */
@@ -274,7 +325,9 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
    */
   async refreshReleasesInBackground(): Promise<void> {
     const repos = this.releaseReposForPlatform();
-    await Promise.all(repos.map((repo) => this.releases.get(repo, { maxAgeMs: RELEASE_CACHE_TTL_MS })));
+    await Promise.all(
+      repos.map((repo) => this.releases.get(repo, { maxAgeMs: RELEASE_CACHE_TTL_MS }))
+    );
     this.emit("statusChanged");
   }
 
@@ -307,7 +360,10 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     const matcher = this.platformKey ? source.platforms[this.platformKey] : undefined;
     if (!matcher) return null;
 
-    const cached = lookup === "cache-only" ? await this.releases.peek(source.repo) : await this.releases.get(source.repo, lookup);
+    const cached =
+      lookup === "cache-only"
+        ? await this.releases.peek(source.repo)
+        : await this.releases.get(source.repo, lookup);
     let checkError = this.releases.lastError(source.repo);
     if (cached) {
       const selected = selectReleaseAsset(cached.release.assets, matcher, await this.cpuFeatures());
@@ -415,7 +471,10 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     // splice bytes from two different releases together.
     const downloadsDir = path.join(this.enginesDir, ".downloads");
     await mkdir(downloadsDir, { recursive: true });
-    const partialPath = path.join(downloadsDir, `${id}--${safeName(resolved.version)}--${safeName(resolved.assetName)}.partial`);
+    const partialPath = path.join(
+      downloadsDir,
+      `${id}--${safeName(resolved.version)}--${safeName(resolved.assetName)}.partial`
+    );
 
     await downloadToFile({
       url: resolved.url,
@@ -427,7 +486,8 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
       onProgress: (bytesReceived, bytesTotal) =>
         this.emit("progress", { type: "download", assetId: id, bytesReceived, bytesTotal })
     }).catch((error: unknown) => {
-      if (error instanceof Error && error.name === "DisallowedUrlError") throw new DisallowedDownloadError(resolved.url);
+      if (error instanceof Error && error.name === "DisallowedUrlError")
+        throw new DisallowedDownloadError(resolved.url);
       throw error;
     });
 
@@ -439,7 +499,10 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
         throw new DigestMismatchError(id);
       }
     } else {
-      logger.info("asset-manager", `${id}: no upstream digest (${resolved.source}); verified by length only`);
+      logger.info(
+        "asset-manager",
+        `${id}: no upstream digest (${resolved.source}); verified by length only`
+      );
     }
 
     this.emit("progress", { type: "install", assetId: id });
@@ -468,7 +531,11 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     }
   }
 
-  private async extractArchive(archivePath: string, destDir: string, kind: ArchiveKind): Promise<void> {
+  private async extractArchive(
+    archivePath: string,
+    destDir: string,
+    kind: ArchiveKind
+  ): Promise<void> {
     // System tools only, no npm deps. `tar -xf` detects gzip/xz itself and, being bsdtar on
     // macOS and Windows 10+, also reads zip; GNU tar on Linux can't, so zip uses unzip there.
     // Both refuse absolute paths and `..` entries by default.
@@ -491,9 +558,9 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     const succeeded: AssetId[] = [];
     const failed: { id: AssetId; reason: string }[] = [];
     const queue = [...ids];
-    const running: Promise<void>[] = [];
-    while (queue.length > 0 || running.length > 0) {
-      while (running.length < concurrency && queue.length > 0) {
+    const running = new Set<Promise<void>>();
+    while (queue.length > 0 || running.size > 0) {
+      while (running.size < concurrency && queue.length > 0) {
         const id = queue.shift()!;
         const promise = this.downloadAsset(id)
           .then(() => {
@@ -503,11 +570,11 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
             failed.push({ id, reason: errorText(err) });
           })
           .finally(() => {
-            running.splice(running.indexOf(promise), 1);
+            running.delete(promise);
           });
-        running.push(promise);
+        running.add(promise);
       }
-      if (running.length > 0) await Promise.race(running.map((p) => p.catch(() => undefined)));
+      if (running.size > 0) await Promise.race([...running].map((p) => p.catch(() => undefined)));
     }
     return { succeeded, failed };
   }
@@ -552,7 +619,8 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
   }
 
   private installInstructionsFor(id: AssetId): string | null {
-    if (id === "lc0" && this.platformKey) return this.manifest.lc0.installInstructions[this.platformKey];
+    if (id === "lc0" && this.platformKey)
+      return this.manifest.lc0.installInstructions[this.platformKey];
     return null;
   }
 
@@ -589,7 +657,11 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     }
     if (process.platform === "win32") {
       const literal = filePath.replaceAll("'", "''");
-      await exec("powershell.exe", ["-NoProfile", "-Command", `Unblock-File -LiteralPath '${literal}'`]).catch(() => {});
+      await exec("powershell.exe", [
+        "-NoProfile",
+        "-Command",
+        `Unblock-File -LiteralPath '${literal}'`
+      ]).catch(() => {});
     }
   }
 
@@ -599,7 +671,9 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     await Promise.all(
       entries
         .filter((name) => name.startsWith(".staging-") || /\.old-\d+$/.test(name))
-        .map((name) => rm(path.join(this.enginesDir, name), { recursive: true, force: true }).catch(() => {}))
+        .map((name) =>
+          rm(path.join(this.enginesDir, name), { recursive: true, force: true }).catch(() => {})
+        )
     );
   }
 
@@ -607,7 +681,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     if (!existsSync(this.statePath)) return;
     try {
       const raw = await readFile(this.statePath, "utf-8");
-      const parsed = JSON.parse(raw) as { records?: AssetRecord[] };
+      const parsed = parseStoredJson<{ records?: AssetRecord[] }>(raw);
       let changed = false;
       for (const record of parsed.records ?? []) {
         if (!isAssetId(record?.id)) continue;
@@ -696,8 +770,9 @@ async function swapIntoPlace(staged: string, finalPath: string): Promise<void> {
     await rename(staged, finalPath);
     return;
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (!existsSync(finalPath) || (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES")) throw error;
+    const code = errorCode(error);
+    if (!existsSync(finalPath) || (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES"))
+      throw error;
   }
   const aside = `${finalPath}.old-${Date.now()}`;
   await rename(finalPath, aside);

@@ -17,7 +17,15 @@ import {
 } from "./history-navigation";
 import { nextPuzzleInput, puzzleBoard } from "./puzzle-session-controller";
 
-const context: HistoryContext = { tab: "engine", reviewTab: "moves", openingSide: null, settingsSection: "engines", puzzleSet: null, puzzleSetContinues: false, repertoireScreen: null };
+const context: HistoryContext = {
+  tab: "engine",
+  reviewTab: "moves",
+  openingSide: null,
+  settingsSection: "engines",
+  puzzleSet: null,
+  puzzleSetContinues: false,
+  repertoireScreen: null
+};
 const puzzle = {
   id: "p1",
   databaseId: "db",
@@ -29,7 +37,11 @@ const puzzle = {
   openingTags: [],
   sideToMove: "white"
 } as PuzzleSample;
-const config = { databaseId: "db", lichess: { ratingMin: 1000 }, position: {} } as unknown as PuzzleSessionConfig;
+const config = {
+  databaseId: "db",
+  lichess: { ratingMin: 1000 },
+  position: {}
+} as unknown as PuzzleSessionConfig;
 const set = { id: "s1", config, shownIds: ["p1"] };
 
 function loadSaved(id: string | null) {
@@ -38,7 +50,11 @@ function loadSaved(id: string | null) {
 }
 
 const live = (id: string, over = false) =>
-  useLichessStore.getState().setLive({ id, over } as unknown as Parameters<ReturnType<typeof useLichessStore.getState>["setLive"]>[0]);
+  useLichessStore
+    .getState()
+    .setLive({ id, over } as unknown as Parameters<
+      ReturnType<typeof useLichessStore.getState>["setLive"]
+    >[0]);
 
 describe("history capture", () => {
   beforeEach(() => {
@@ -50,7 +66,12 @@ describe("history capture", () => {
 
   it("keeps a saved game by id and an unsaved one whole", () => {
     loadSaved("g1");
-    expect(captureBoard("notation", null)).toMatchObject({ gameId: "g1", session: null, tab: "notation", puzzle: null });
+    expect(captureBoard("notation", null)).toMatchObject({
+      gameId: "g1",
+      session: null,
+      tab: "notation",
+      puzzle: null
+    });
     loadSaved(null);
     const board = captureBoard("library", null);
     expect(board.gameId).toBeNull();
@@ -64,7 +85,10 @@ describe("history capture", () => {
     expect(captureBoard("notation", set).puzzle).toBeNull();
     expect(captureBoard("notation", set).puzzleSet).toBeNull();
     useGameStore.getState().setMode("puzzle");
-    expect(captureBoard("notation", set)).toMatchObject({ puzzle: { sample: puzzle }, puzzleSet: set });
+    expect(captureBoard("notation", set)).toMatchObject({
+      puzzle: { sample: puzzle },
+      puzzleSet: set
+    });
   });
 
   it("records the set with a game played on from its puzzle, and with no other game", () => {
@@ -72,10 +96,14 @@ describe("history capture", () => {
     useGameStore.getState().setMode("engine");
     expect(captureBoard("notation", set, true)).toMatchObject({ puzzle: null, puzzleSet: set });
     expect(captureBoard("notation", set, false).puzzleSet).toBeNull();
-    expect(captureEntry("game", { ...context, puzzleSet: set, puzzleSetContinues: true })).toMatchObject({
+    expect(
+      captureEntry("game", { ...context, puzzleSet: set, puzzleSetContinues: true })
+    ).toMatchObject({
       board: { puzzleSet: set }
     });
-    expect(captureEntry("game-review", { ...context, puzzleSet: set, puzzleSetContinues: true })).toMatchObject({
+    expect(
+      captureEntry("game-review", { ...context, puzzleSet: set, puzzleSetContinues: true })
+    ).toMatchObject({
       board: { puzzleSet: set }
     });
   });
@@ -96,17 +124,31 @@ describe("history capture", () => {
     expect(captureEntry("play", context)).toEqual({ view: "play", opponent: "engine" });
     useLichessStore.getState().setPlayOpponent("lichess");
     expect(captureEntry("play", context)).toEqual({ view: "play", opponent: "lichess" });
-    expect(captureEntry("game", context)).toMatchObject({ view: "game", board: { gameId: "g1", tab: "engine" } });
+    expect(captureEntry("game", context)).toMatchObject({
+      view: "game",
+      board: { gameId: "g1", tab: "engine" }
+    });
     // The review's board is always on the notation tab; the review's own tab is kept beside it.
-    expect(captureEntry("game-review", context)).toMatchObject({ view: "game-review", tab: "moves", board: { tab: "notation" } });
+    expect(captureEntry("game-review", context)).toMatchObject({
+      view: "game-review",
+      tab: "moves",
+      board: { tab: "notation" }
+    });
     // A repertoire screen that isn't the one shown falls back to the hub.
     expect(captureEntry("repertoire-study", context)).toEqual({ view: "repertoire-hub" });
-    const practice = { view: "repertoire-practice", repertoireId: "r1", sessionId: "s1", preset: null } as const;
-    expect(captureEntry("repertoire-practice", { ...context, repertoireScreen: practice })).toEqual({
+    const practice = {
       view: "repertoire-practice",
       repertoireId: "r1",
-      sessionId: "s1"
-    });
+      sessionId: "s1",
+      preset: null
+    } as const;
+    expect(captureEntry("repertoire-practice", { ...context, repertoireScreen: practice })).toEqual(
+      {
+        view: "repertoire-practice",
+        repertoireId: "r1",
+        sessionId: "s1"
+      }
+    );
   });
 
   it("pushes, replaces or records nothing", () => {
@@ -114,7 +156,10 @@ describe("history capture", () => {
     recordHistory("push", { view: "puzzles" });
     recordHistory("replace", { view: "databases" });
     recordHistory("none", { view: "home" });
-    expect(useHistoryStore.getState()).toMatchObject({ entries: [{ view: "home" }, { view: "databases" }], index: 1 });
+    expect(useHistoryStore.getState()).toMatchObject({
+      entries: [{ view: "home" }, { view: "databases" }],
+      index: 1
+    });
   });
 });
 
@@ -138,8 +183,16 @@ describe("history restore", () => {
     expect(planBoardRestore(unsaved)).toMatchObject({ kind: "session", session: unsaved.session });
 
     // A puzzle starts again rather than its position coming back mid-solution.
-    expect(planBoardRestore({ ...same, puzzle: { sample: puzzle }, puzzleSet: set })).toEqual({ kind: "puzzle", sample: puzzle, set });
-    expect(planBoardRestore({ ...same, puzzle: { sample: puzzle } })).toEqual({ kind: "puzzle", sample: puzzle, set: null });
+    expect(planBoardRestore({ ...same, puzzle: { sample: puzzle }, puzzleSet: set })).toEqual({
+      kind: "puzzle",
+      sample: puzzle,
+      set
+    });
+    expect(planBoardRestore({ ...same, puzzle: { sample: puzzle } })).toEqual({
+      kind: "puzzle",
+      sample: puzzle,
+      set: null
+    });
   });
 
   it("brings a game played on from a puzzle back with its set, saved or not", () => {
@@ -176,7 +229,13 @@ describe("history restore", () => {
       { view: "game", board: { ...board, lichessGameId: "lx" } },
       { view: "game-review", board, tab: "moves" }
     ];
-    expect(entries.map((entry) => replacesLiveBoard(entry, "lx"))).toEqual([false, true, true, false, true]);
+    expect(entries.map((entry) => replacesLiveBoard(entry, "lx"))).toEqual([
+      false,
+      true,
+      true,
+      false,
+      true
+    ]);
   });
 });
 
@@ -184,7 +243,12 @@ describe("puzzle session", () => {
   it("sets up the puzzle's board from its position, the solver's side at the bottom", () => {
     const board = puzzleBoard(puzzle);
     expect(board).toMatchObject({ rootFen: puzzle.initialFen, source: "puzzle" });
-    expect(board.headers).toMatchObject({ event: "Lichess puzzles", site: "?", orientationHint: "white", result: "*" });
+    expect(board.headers).toMatchObject({
+      event: "Lichess puzzles",
+      site: "?",
+      orientationHint: "white",
+      result: "*"
+    });
   });
 
   it("asks for the set's next puzzle without those already shown, and nothing without a dataset", () => {

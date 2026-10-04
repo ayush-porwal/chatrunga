@@ -313,12 +313,14 @@ describe("repertoire practice store", () => {
 
   it("replays the lead-up and flips without touching grading", () => {
     store().setSession(session());
+    const graded = store().session;
     store().setLeadUpIndex(2);
     expect(store().leadUpIndex).toBe(2);
     store().flip();
     expect(store().orientation).toBe("white");
     store().clearMessage();
     expect(store().message).toBeNull();
+    expect(store().session).toBe(graded);
   });
 
   it("replaces a card by queue item", () => {

@@ -22,7 +22,8 @@ export function isAppUrl(url: string, appUrl: string): boolean {
   try {
     const target = new URL(url);
     const app = new URL(appUrl);
-    if (app.protocol === "file:") return target.protocol === "file:" && target.pathname === app.pathname;
+    if (app.protocol === "file:")
+      return target.protocol === "file:" && target.pathname === app.pathname;
     return target.origin === app.origin;
   } catch {
     return false;
@@ -31,7 +32,7 @@ export function isAppUrl(url: string, appUrl: string): boolean {
 
 /** An IPC request comes from the app's own page (not another frame or a page navigated to). */
 export function isTrustedSenderUrl(url: string | null | undefined, appUrl: string): boolean {
-  return Boolean(url) && isAppUrl(url as string, appUrl);
+  return url ? isAppUrl(url, appUrl) : false;
 }
 
 /** Only these permission requests are granted to the renderer; everything else is denied. */
@@ -56,7 +57,17 @@ export const PRODUCTION_CSP = [
   "frame-ancestors 'none'"
 ].join("; ");
 
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico", ".avif"]);
+const IMAGE_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".svg",
+  ".bmp",
+  ".ico",
+  ".avif"
+]);
 
 /**
  * Resolves a `chaturanga-image://local/<encoded absolute path>` URL to the

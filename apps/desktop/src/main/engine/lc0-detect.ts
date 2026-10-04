@@ -22,9 +22,17 @@ export function lc0Candidates(input: {
     input.platform === "darwin"
       ? ["/opt/homebrew/bin", "/usr/local/bin"]
       : input.platform === "linux"
-        ? ["/usr/bin", "/usr/local/bin", "/usr/games", "/snap/bin", path.join(input.home, ".local/bin")]
+        ? [
+            "/usr/bin",
+            "/usr/local/bin",
+            "/usr/games",
+            "/snap/bin",
+            path.join(input.home, ".local/bin")
+          ]
         : [];
-  const fromPath = (input.pathEnv ?? "").split(path.delimiter).filter((dir) => dir && path.isAbsolute(dir));
+  const fromPath = (input.pathEnv ?? "")
+    .split(path.delimiter)
+    .filter((dir) => dir && path.isAbsolute(dir));
   return [...new Set([...fixed, ...fromPath])].map((dir) => path.join(dir, name));
 }
 

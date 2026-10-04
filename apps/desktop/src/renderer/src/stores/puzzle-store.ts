@@ -57,7 +57,9 @@ export type PuzzleAttempt = {
 };
 
 /** An attempt whose outcome is known, as the attempt events carry it (a void one sends none). */
-export type DecidedPuzzleAttempt = PuzzleAttempt & { outcome: Exclude<PuzzleOutcome, "pending" | "void"> };
+export type DecidedPuzzleAttempt = PuzzleAttempt & {
+  outcome: Exclude<PuzzleOutcome, "pending" | "void">;
+};
 
 /**
  * `decided`: the outcome left `pending` (once per attempt — the first wrong move, the solution
@@ -103,7 +105,10 @@ export function onPuzzleAttempt(listener: (event: PuzzleAttemptEvent) => void): 
   };
 }
 
-function emit(kind: PuzzleAttemptEvent["kind"], state: Pick<PuzzleStore, "attempt" | "outcome">): void {
+function emit(
+  kind: PuzzleAttemptEvent["kind"],
+  state: Pick<PuzzleStore, "attempt" | "outcome">
+): void {
   if (!state.attempt || state.outcome === "pending" || state.outcome === "void") return;
   const event: PuzzleAttemptEvent = { kind, attempt: { ...state.attempt, outcome: state.outcome } };
   for (const listener of [...listeners]) listener(event);
@@ -174,7 +179,10 @@ export const usePuzzleStore = create<PuzzleStore>((set, get) => ({
             outcome: "failed",
             attempt: {
               ...attempt,
-              wrongMoves: [...attempt.wrongMoves, { solutionIndex, fen, uci, san, expectedUci: expected, at: now }],
+              wrongMoves: [
+                ...attempt.wrongMoves,
+                { solutionIndex, fen, uci, san, expectedUci: expected, at: now }
+              ],
               decidedAt: attempt.decidedAt ?? now
             }
           }
@@ -191,7 +199,8 @@ export const usePuzzleStore = create<PuzzleStore>((set, get) => ({
     })),
   revealSolution: () => {
     const { attempt, outcome } = get();
-    if (!attempt || attempt.completedAt !== null || attempt.solutionViewed || outcome === "void") return;
+    if (!attempt || attempt.completedAt !== null || attempt.solutionViewed || outcome === "void")
+      return;
     const deciding = outcome === "pending";
     set({
       outcome: "failed",
@@ -213,7 +222,11 @@ export const usePuzzleStore = create<PuzzleStore>((set, get) => ({
       ...(attempt
         ? {
             outcome: deciding ? "solved" : state.outcome,
-            attempt: { ...attempt, decidedAt: attempt.decidedAt ?? now, completedAt: attempt.completedAt ?? now }
+            attempt: {
+              ...attempt,
+              decidedAt: attempt.decidedAt ?? now,
+              completedAt: attempt.completedAt ?? now
+            }
           }
         : {})
     }));

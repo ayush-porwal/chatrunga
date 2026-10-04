@@ -9,7 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
 import { Notice } from "@/components/ui/notice";
-import { useEnginesQuery, useOpenRouterConfigQuery, useSettingsQuery, useUpdateSettingMutation } from "../../queries/api";
+import {
+  useEnginesQuery,
+  useOpenRouterConfigQuery,
+  useSettingsQuery,
+  useUpdateSettingMutation
+} from "../../queries/api";
 import { useGameStore } from "../../stores/game-store";
 import type { PuzzleWrongMove } from "../../stores/puzzle-store";
 import { tokenizeCommentary } from "../game-review/commentary-moves";
@@ -17,7 +22,11 @@ import { MoveLink } from "../game-review/MoveLinks";
 import { ReviewSettingsPanel } from "../game-review/ReviewSettingsPanel";
 import { uciLineToSan } from "../game-review/review-utils";
 import { explainEngine, explanationKey } from "./puzzle-explanation";
-import { explainView, requestPuzzleExplanation, usePuzzleExplanationStore } from "./puzzle-explanation-store";
+import {
+  explainView,
+  requestPuzzleExplanation,
+  usePuzzleExplanationStore
+} from "./puzzle-explanation-store";
 import { solutionIndexForToken, type PuzzleProseLine } from "./puzzle-prose";
 
 const settingsIcon = <Settings2 />;
@@ -41,7 +50,7 @@ export function PuzzleExplanation({
   linkMoves: boolean;
 }) {
   const settingsQuery = useSettingsQuery();
-  const settings: AppSettings = { ...defaultSettings, ...(settingsQuery.data ?? {}) };
+  const settings: AppSettings = { ...defaultSettings, ...settingsQuery.data };
   const engines = useEnginesQuery();
   const openRouter = useOpenRouterConfigQuery();
   const update = useUpdateSettingMutation();
@@ -58,30 +67,57 @@ export function PuzzleExplanation({
   const engine = explainEngine(engines.data ?? [], settings.defaultEngineId);
   const otherSan = entry?.otherSan;
   const proseLine = useMemo<PuzzleProseLine | null>(
-    () => (linkMoves ? { fen: puzzle.initialFen, solutionSan: uciLineToSan(puzzle.initialFen, puzzle.solutionMoves), otherSan: otherSan ?? [] } : null),
+    () =>
+      linkMoves
+        ? {
+            fen: puzzle.initialFen,
+            solutionSan: uciLineToSan(puzzle.initialFen, puzzle.solutionMoves),
+            otherSan: otherSan ?? []
+          }
+        : null,
     [linkMoves, puzzle, otherSan]
   );
-  const explain = () => void requestPuzzleExplanation({ key, puzzle, kind, wrong, engine, settings });
+  const explain = () =>
+    void requestPuzzleExplanation({ key, puzzle, kind, wrong, engine, settings });
   const openSettings = () => setSettingsOpen(true);
-  const gear = <IconButton label="Explanation settings" icon={settingsIcon} size="icon-sm" onClick={openSettings} />;
+  const gear = (
+    <IconButton
+      label="Explanation settings"
+      icon={settingsIcon}
+      size="icon-sm"
+      onClick={openSettings}
+    />
+  );
 
   return (
     <div className="grid gap-2" aria-label="AI explanation" role="group">
       {view.kind === "idle" ? (
         <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" className="flex-1" disabled={view.disabled} onClick={explain}>
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1"
+            disabled={view.disabled}
+            onClick={explain}
+          >
             <Sparkles />
             Explain with AI
           </Button>
           {gear}
         </div>
       ) : view.kind === "analysing" || view.kind === "writing" ? (
-        <div role="status" className="flex min-w-0 animate-fade-in items-center gap-2.5 rounded-lg border border-line bg-surface-sunken px-3 py-2">
+        <div
+          role="status"
+          className="flex min-w-0 animate-fade-in items-center gap-2.5 rounded-lg border border-line bg-surface-sunken px-3 py-2"
+        >
           <Loader2 className="size-4 shrink-0 animate-spin text-accent" aria-hidden />
           <span key={view.kind} className="animate-fade-in text-sm text-fg-secondary">
             {view.kind === "analysing" ? "Analysing…" : "Writing…"}
           </span>
-          <span className="ml-auto min-w-0 truncate text-2xs text-fg-subtle" title={view.kind === "writing" ? `${model} via OpenRouter` : undefined}>
+          <span
+            className="ml-auto min-w-0 truncate text-2xs text-fg-subtle"
+            title={view.kind === "writing" ? `${model} via OpenRouter` : undefined}
+          >
             {view.kind === "analysing" ? engine?.name : shortModelName(model)}
           </span>
         </div>
@@ -89,11 +125,19 @@ export function PuzzleExplanation({
         <article className="grid animate-rise-in gap-1.5 rounded-lg border border-line bg-surface-sunken px-3 py-2.5">
           <div className="flex min-w-0 items-center gap-1.5">
             <Sparkles className="size-3.5 shrink-0 text-accent" aria-hidden />
-            <span className="min-w-0 flex-1 truncate text-2xs text-fg-subtle" title={`Written by ${view.explanation.providerModel}`}>
+            <span
+              className="min-w-0 flex-1 truncate text-2xs text-fg-subtle"
+              title={`Written by ${view.explanation.providerModel}`}
+            >
               {shortModelName(view.explanation.providerModel)}
             </span>
             <IconButton label="Regenerate" icon={<RefreshCw />} size="icon-xs" onClick={explain} />
-            <IconButton label="Explanation settings" icon={settingsIcon} size="icon-xs" onClick={openSettings} />
+            <IconButton
+              label="Explanation settings"
+              icon={settingsIcon}
+              size="icon-xs"
+              onClick={openSettings}
+            />
           </div>
           {view.explanation.headline ? (
             <h3 className="font-serif text-base font-semibold leading-6 text-fg">
@@ -120,7 +164,12 @@ export function PuzzleExplanation({
                   <RefreshCw />
                   Retry
                 </Button>
-                <IconButton label="Explanation settings" icon={settingsIcon} size="icon-xs" onClick={openSettings} />
+                <IconButton
+                  label="Explanation settings"
+                  icon={settingsIcon}
+                  size="icon-xs"
+                  onClick={openSettings}
+                />
               </div>
             )
           }
@@ -135,7 +184,9 @@ export function PuzzleExplanation({
             <MessageSquareOff className="size-4 shrink-0 text-fg-subtle" aria-hidden />
           )}
           <p className="min-w-0 flex-1 text-xs leading-5 text-fg-muted">
-            {view.kind === "no-key" ? "Explain with AI needs your OpenRouter API key." : "AI commentary is off."}
+            {view.kind === "no-key"
+              ? "Explain with AI needs your OpenRouter API key."
+              : "AI commentary is off."}
           </p>
           {view.kind === "no-key" ? (
             <Button type="button" variant="outline" size="xs" onClick={openSettings}>
@@ -143,10 +194,20 @@ export function PuzzleExplanation({
             </Button>
           ) : (
             <>
-              <Button type="button" variant="outline" size="xs" onClick={() => update.mutate({ key: "reviewCommentaryEnabled", value: true })}>
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                onClick={() => update.mutate({ key: "reviewCommentaryEnabled", value: true })}
+              >
                 Turn on
               </Button>
-              <IconButton label="Explanation settings" icon={settingsIcon} size="icon-xs" onClick={openSettings} />
+              <IconButton
+                label="Explanation settings"
+                icon={settingsIcon}
+                size="icon-xs"
+                onClick={openSettings}
+              />
             </>
           )}
         </div>
@@ -158,12 +219,21 @@ export function PuzzleExplanation({
               description="Shared with Game review: the engine that analyses the puzzle and the AI that explains it."
               onClose={() => setSettingsOpen(false)}
               footer={
-                <Button type="button" variant="primary" size="sm" onClick={() => setSettingsOpen(false)}>
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setSettingsOpen(false)}
+                >
                   Done
                 </Button>
               }
             >
-              <ReviewSettingsPanel embedded settings={settings} onClose={() => setSettingsOpen(false)} />
+              <ReviewSettingsPanel
+                embedded
+                settings={settings}
+                onClose={() => setSettingsOpen(false)}
+              />
             </Dialog>,
             document.body
           )
@@ -187,7 +257,11 @@ function PuzzleProse({ text, line }: { text: string; line: PuzzleProseLine | nul
         if (!line || index === null) return <Fragment key={position}>{segment.text}</Fragment>;
         const moves = line.solutionSan.slice(0, index + 1);
         return (
-          <MoveLink key={position} san={line.solutionSan[index]!} onActivate={() => useGameStore.getState().goToLine("root", [...moves])}>
+          <MoveLink
+            key={position}
+            san={line.solutionSan[index]!}
+            onActivate={() => useGameStore.getState().goToLine("root", [...moves])}
+          >
             {segment.text}
           </MoveLink>
         );

@@ -14,3 +14,7 @@ stockfish
 .env.local
 .env.*.local
 test-results
+
+# Agent worktrees nested in this checkout.
+.claude/worktrees/
+.worktrees/

@@ -1,5 +1,13 @@
 import { useState } from "react";
-import { CircleAlert, CircleCheck, Download, ExternalLink, Loader2, RefreshCw, RotateCw } from "lucide-react";
+import {
+  CircleAlert,
+  CircleCheck,
+  Download,
+  ExternalLink,
+  Loader2,
+  RefreshCw,
+  RotateCw
+} from "lucide-react";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import type { UpdateState } from "@chaturanga/shared/types/updates";
 import { Button } from "@/components/ui/button";
@@ -9,7 +17,12 @@ import { SectionHeader } from "@/components/ui/page";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { formatLastChecked, updateAction, updateActionLabel, updateStatusText } from "@/lib/app-update";
+import {
+  formatLastChecked,
+  updateAction,
+  updateActionLabel,
+  updateStatusText
+} from "@/lib/app-update";
 import { checkForUpdates, runUpdateAction, useAppUpdate } from "@/lib/use-app-update";
 import { useMinuteClock } from "@/lib/use-minute-clock";
 import { cardPadded } from "@/lib/ui";
@@ -47,11 +60,20 @@ export function UpdatesSection({ appearance }: { appearance: AppSettings }) {
           <p className="text-sm text-fg-secondary">
             Chaturanga <span className="tabular-nums text-fg">{state.currentVersion}</span>
           </p>
-          <p role="status" aria-live="polite" className="flex items-center gap-1.5 text-xs leading-5 text-fg-muted">
+          <p
+            role="status"
+            aria-live="polite"
+            className="flex items-center gap-1.5 text-xs leading-5 text-fg-muted"
+          >
             <StatusIcon state={state} />
             <span key={status.kind} className="min-w-0 animate-fade-in">
               {updateStatusText(state)}
-              {!disabled && !checking ? <span className="text-fg-subtle"> · {formatLastChecked(state.lastCheckedAt, now)}</span> : null}
+              {!disabled && !checking ? (
+                <span className="text-fg-subtle">
+                  {" "}
+                  · {formatLastChecked(state.lastCheckedAt, now)}
+                </span>
+              ) : null}
             </span>
           </p>
         </div>
@@ -63,12 +85,23 @@ export function UpdatesSection({ appearance }: { appearance: AppSettings }) {
           ) : null}
           {action ? (
             <Button variant="primary" size="sm" onClick={() => void runUpdateAction(action)}>
-              {action === "install" ? <RotateCw /> : action === "open-download" ? <ExternalLink /> : <Download />}
+              {action === "install" ? (
+                <RotateCw />
+              ) : action === "open-download" ? (
+                <ExternalLink />
+              ) : (
+                <Download />
+              )}
               {updateActionLabel[action]}
             </Button>
           ) : null}
           {!disabled && status.kind !== "ready" && status.kind !== "downloading" ? (
-            <Button variant="outline" size="sm" disabled={checking} onClick={() => void checkForUpdates()}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={checking}
+              onClick={() => void checkForUpdates()}
+            >
               <RefreshCw className={cn(checking && "animate-spin motion-reduce:animate-none")} />
               Check for updates
             </Button>
@@ -100,7 +133,9 @@ export function UpdatesSection({ appearance }: { appearance: AppSettings }) {
               }
             />
           ) : null}
-          {state.mode === "manual" && state.modeReason ? <p className="pt-2.5 text-xs leading-5 text-fg-subtle">{state.modeReason}</p> : null}
+          {state.mode === "manual" && state.modeReason ? (
+            <p className="pt-2.5 text-xs leading-5 text-fg-subtle">{state.modeReason}</p>
+          ) : null}
         </div>
       )}
       {notesOpen ? <UpdateDialog state={state} onClose={() => setNotesOpen(false)} /> : null}
@@ -110,9 +145,18 @@ export function UpdatesSection({ appearance }: { appearance: AppSettings }) {
 
 function StatusIcon({ state }: { state: UpdateState }) {
   const kind = state.status.kind;
-  if (kind === "checking" || kind === "downloading") return <Loader2 className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none" aria-hidden="true" />;
-  if (kind === "up-to-date") return <CircleCheck className="size-3.5 shrink-0 text-accent" aria-hidden="true" />;
-  if (kind === "error") return <CircleAlert className="size-3.5 shrink-0 text-warn" aria-hidden="true" />;
-  if (kind === "available" || kind === "manual" || kind === "ready") return <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-hidden="true" />;
+  if (kind === "checking" || kind === "downloading")
+    return (
+      <Loader2
+        className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none"
+        aria-hidden="true"
+      />
+    );
+  if (kind === "up-to-date")
+    return <CircleCheck className="size-3.5 shrink-0 text-accent" aria-hidden="true" />;
+  if (kind === "error")
+    return <CircleAlert className="size-3.5 shrink-0 text-warn" aria-hidden="true" />;
+  if (kind === "available" || kind === "manual" || kind === "ready")
+    return <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-hidden="true" />;
   return null;
 }

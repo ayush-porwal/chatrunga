@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import { analysisEngineFor, defaultEngineFor } from "./analysis-engine";
 
-const engine = (id: string, patch: Partial<EngineConfig> = {}) => ({ id, name: id, isAvailable: true, isDefault: false, ...patch }) as EngineConfig;
+const engine = (id: string, patch: Partial<EngineConfig> = {}) =>
+  ({ id, name: id, isAvailable: true, isDefault: false, ...patch }) as EngineConfig;
 
 describe("analysis engine", () => {
-  const engines = [engine("maia"), engine("sf", { isDefault: true }), engine("gone", { isAvailable: false })];
+  const engines = [
+    engine("maia"),
+    engine("sf", { isDefault: true }),
+    engine("gone", { isAvailable: false })
+  ];
 
   it("falls back to the default engine, else the first", () => {
     expect(defaultEngineFor(engines)).toBe("sf");

@@ -231,11 +231,9 @@ describe("repertoire repository (SQLite)", () => {
     });
     // Summaries don't read trees, so the hub still lists the chapter.
     expect(chapterRepository.summaries("r1", 1)).toHaveLength(1);
-    try {
-      chapterRepository.get("c1");
-    } catch (error) {
-      expect((error as InstanceType<typeof RepertoireCorruptChapterError>).chapterId).toBe("c1");
-    }
+    expect(() => chapterRepository.get("c1")).toThrow(
+      expect.objectContaining({ name: "RepertoireCorruptChapterError", chapterId: "c1" })
+    );
   });
 
   it("lists chapters inserted together in compareChaptersAsListed's order", () => {

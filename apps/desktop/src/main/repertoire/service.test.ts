@@ -294,9 +294,9 @@ describe("repertoire service: chapters, decisions and index", () => {
       chapterId: second.chapter.id,
       meta: (tree) => ({ [nodeAt(tree, ["c2c4"]).id]: { edge: "reference" } })
     });
-    expect(service.getDecision({ repertoireId: id, positionKey: START_KEY })?.acceptedUcis).toContain(
-      "c2c4"
-    );
+    expect(
+      service.getDecision({ repertoireId: id, positionKey: START_KEY })?.acceptedUcis
+    ).toContain("c2c4");
     expect(elsewhere(firstId)[START_KEY]).toEqual([]);
   });
 

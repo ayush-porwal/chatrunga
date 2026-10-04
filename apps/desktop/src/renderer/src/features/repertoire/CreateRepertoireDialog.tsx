@@ -197,7 +197,7 @@ export function CreateRepertoireDialog({
             {fen.trim() && invalidFen ? <p className="text-2xs text-danger">{invalidFen}</p> : null}
           </Field>
         ) : null}
-        <button type="submit" hidden />
+        <button type="submit" hidden aria-label="Create repertoire" />
       </form>
       {saveError ? <Notice tone="danger">{saveError}</Notice> : null}
       {create.error ? (

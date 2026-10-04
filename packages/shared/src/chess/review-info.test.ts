@@ -20,11 +20,30 @@ const review = {
 describe("review info", () => {
   it("lists an analysis by its engine, search, Maia levels and comments", () => {
     const info = savedReviewInfo(review, "r1");
-    expect(info).toMatchObject({ reviewId: "r1", engineName: "Stockfish 17", moveTimeMs: 1000, maiaLevels: [1100, 1900], moveCount: 2, commentaryCount: 1 });
-    expect(reviewInfoLabel(info, "en-US")).toMatch(/^Oct 2, .* · Stockfish 17 · 1 s\/move · Maia 1100–1900 · 1 AI comment$/);
-    expect(reviewInfoLabel({ ...info, moveTimeMs: null, depth: 18, maiaLevels: [], commentaryCount: 0, engineName: null }, "en-US")).toMatch(
-      / · Engine · depth 18$/
+    expect(info).toMatchObject({
+      reviewId: "r1",
+      engineName: "Stockfish 17",
+      moveTimeMs: 1000,
+      maiaLevels: [1100, 1900],
+      moveCount: 2,
+      commentaryCount: 1
+    });
+    expect(reviewInfoLabel(info, "en-US")).toMatch(
+      /^Oct 2, .* · Stockfish 17 · 1 s\/move · Maia 1100–1900 · 1 AI comment$/
     );
+    expect(
+      reviewInfoLabel(
+        {
+          ...info,
+          moveTimeMs: null,
+          depth: 18,
+          maiaLevels: [],
+          commentaryCount: 0,
+          engineName: null
+        },
+        "en-US"
+      )
+    ).toMatch(/ · Engine · depth 18$/);
   });
 
   it("doesn't trust stored fields, and counts only the comments the app shows", () => {
@@ -39,6 +58,11 @@ describe("review info", () => {
         { ply: 3, prose: "template", generatedAt: 0, source: "local-fallback" }
       ]
     } as unknown as GameReview;
-    expect(savedReviewInfo(odd, "r")).toMatchObject({ engineName: null, moveTimeMs: null, maiaLevels: [1500], commentaryCount: 1 });
+    expect(savedReviewInfo(odd, "r")).toMatchObject({
+      engineName: null,
+      moveTimeMs: null,
+      maiaLevels: [1500],
+      commentaryCount: 1
+    });
   });
 });

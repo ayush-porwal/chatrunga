@@ -33,7 +33,11 @@ export function userSide(mode: GameMode, engineSide: Color | null): Color | null
 }
 
 /** Whether `result` ("1-0", "0-1", …) is a win for the user in an engine or Lichess game. */
-export function userWon(result: string | null | undefined, mode: GameMode, engineSide: Color | null): boolean {
+export function userWon(
+  result: string | null | undefined,
+  mode: GameMode,
+  engineSide: Color | null
+): boolean {
   const user = userSide(mode, engineSide);
   if (!user) return false;
   return (result === "1-0" && user === "white") || (result === "0-1" && user === "black");

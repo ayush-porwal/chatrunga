@@ -13,7 +13,8 @@ export function sessionFromSavedGame(saved: SavedGame): GameSession {
     rootFen: saved.initialFen ?? saved.moveTree[0]?.fenAfter,
     currentFen: saved.currentFen,
     // Older rows have no node cursor; find the node for the saved board position.
-    currentNodeId: saved.currentNodeId ?? nodeIdForBoardFen(saved.moveTree, saved.currentFen, "root"),
+    currentNodeId:
+      saved.currentNodeId ?? nodeIdForBoardFen(saved.moveTree, saved.currentFen, "root"),
     moveTree: withRealPlies(saved.moveTree),
     pgn: saved.pgn
   };

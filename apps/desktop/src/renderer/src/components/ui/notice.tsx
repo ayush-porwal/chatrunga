@@ -58,7 +58,9 @@ function Notice({
       {icon === undefined ? <Icon /> : icon}
       <div className="grid min-w-0 flex-1 gap-0.5">
         {title ? <strong className="font-semibold text-fg">{title}</strong> : null}
-        {children ? <div className="min-w-0 whitespace-pre-wrap break-words">{children}</div> : null}
+        {children ? (
+          <div className="min-w-0 whitespace-pre-wrap break-words">{children}</div>
+        ) : null}
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
     </div>

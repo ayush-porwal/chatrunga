@@ -27,7 +27,7 @@ export function useBoardAppearance(): {
   pieceClassName: string;
 } {
   const settings = useSettingsQuery();
-  const appearance = hydratePieceSettings({ ...defaultSettings, ...(settings.data ?? {}) });
+  const appearance = hydratePieceSettings({ ...defaultSettings, ...settings.data });
   const preset = boardThemeSquareColors[appearance.boardTheme];
   const light = appearance.boardSquareLight ?? preset.light;
   const dark = appearance.boardSquareDark ?? preset.dark;
@@ -37,7 +37,10 @@ export function useBoardAppearance(): {
     appearance,
     squareBackground,
     squareColors,
-    pieceClassName: cn(cgWrapPieceSetClass(appearance.pieceStyle), piecePresentationTailwindClass(appearance.piecePresentation))
+    pieceClassName: cn(
+      cgWrapPieceSetClass(appearance.pieceStyle),
+      piecePresentationTailwindClass(appearance.piecePresentation)
+    )
   };
 }
 

@@ -21,7 +21,10 @@ describe("rescueLegacyDatasets", () => {
     const legacy = join(root, "databases");
     mkdirSync(legacy);
     writeFileSync(join(legacy, "lichess-puzzles-lichess_db_puzzle.csv.zst"), "data");
-    writeFileSync(join(legacy, "chess-position-analysis-results-chess-positions.csv.part"), "partial");
+    writeFileSync(
+      join(legacy, "chess-position-analysis-results-chess-positions.csv.part"),
+      "partial"
+    );
     writeFileSync(join(legacy, "Databases.db"), "chromium");
 
     expect(rescueLegacyDatasets(root).sort()).toEqual([

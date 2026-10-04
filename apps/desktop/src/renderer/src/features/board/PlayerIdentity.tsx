@@ -26,24 +26,38 @@ export function PlayerIdentity({
 }) {
   return (
     <div className={cn("flex min-w-0 items-center gap-2 text-sm", className)}>
-      {engine ? <EngineSwatch color={color} imagePath={engine.imagePath} /> : <SideDot color={color} size="md" />}
+      {engine ? (
+        <EngineSwatch color={color} imagePath={engine.imagePath} />
+      ) : (
+        <SideDot color={color} size="md" />
+      )}
       <span className="truncate font-medium text-fg-secondary">{name}</span>
       {elo ? (
-        <span className="shrink-0 rounded-md border border-line px-1 font-mono text-2xs text-fg-muted tabular-nums">{elo}</span>
+        <span className="shrink-0 rounded-md border border-line px-1 font-mono text-2xs text-fg-muted tabular-nums">
+          {elo}
+        </span>
       ) : null}
       {hint ? <span className="shrink-0 truncate text-xs text-fg-subtle">{hint}</span> : null}
     </div>
   );
 }
 
-function EngineSwatch({ color, imagePath }: { color: "white" | "black"; imagePath: string | null }) {
+function EngineSwatch({
+  color,
+  imagePath
+}: {
+  color: "white" | "black";
+  imagePath: string | null;
+}) {
   const src = localImageSrc(imagePath);
   return (
     <span
       aria-hidden="true"
       className={cn(
         "flex size-4 shrink-0 items-center justify-center overflow-hidden rounded-full ring-1 [&_svg]:size-2.5",
-        color === "white" ? "bg-piece-white text-piece-black ring-black/40" : "bg-piece-black text-fg ring-white/20"
+        color === "white"
+          ? "bg-piece-white text-piece-black ring-black/40"
+          : "bg-piece-black text-fg ring-white/20"
       )}
     >
       {src ? <img className="h-full w-full object-cover" src={src} alt="" /> : <Cpu />}
@@ -77,7 +91,10 @@ export function ClockFace({
         "min-w-[4.75rem] rounded-md border px-2 py-0.5 text-right text-base font-semibold tabular-nums",
         "transition-[background-color,border-color,color] duration-standard ease-standard",
         low
-          ? cn("board-clock-low border-danger/60 text-danger", active ? "bg-danger-soft" : "bg-surface-sunken")
+          ? cn(
+              "board-clock-low border-danger/60 text-danger",
+              active ? "bg-danger-soft" : "bg-surface-sunken"
+            )
           : active
             ? "border-accent/50 bg-accent-soft text-fg"
             : "border-line bg-surface-sunken text-fg-muted"
@@ -113,7 +130,13 @@ export const PlayerRow = memo(function PlayerRow({
   return (
     <div className="flex h-8 w-full min-w-0 items-center justify-between gap-3 px-0.5">
       <PlayerIdentity color={color} name={name} elo={elo} engine={engine} hint={hint} />
-      {typeof clock === "string" ? clock ? <ClockFace color={color} text={clock} active={clockActive} /> : null : clock}
+      {typeof clock === "string" ? (
+        clock ? (
+          <ClockFace color={color} text={clock} active={clockActive} />
+        ) : null
+      ) : (
+        clock
+      )}
     </div>
   );
 });

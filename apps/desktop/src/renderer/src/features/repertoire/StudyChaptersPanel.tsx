@@ -240,6 +240,7 @@ export function StudyChaptersPanel({
             const position = ordered.indexOf(chapter);
             const current = chapter.id === currentChapterId;
             return (
+              // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- the row holding focus stays rendered while the virtualised list scrolls
               <li
                 key={chapter.id}
                 aria-posinset={index + 1}

@@ -1,5 +1,5 @@
 import { unlink } from "node:fs/promises";
-import type { LichessAccount, LichessPerf, LichessSpeed } from "@chaturanga/shared/types/lichess";
+import type { LichessAccount } from "@chaturanga/shared/types/lichess";
 import {
   createSerialQueue,
   decryptSecret,
@@ -8,6 +8,8 @@ import {
   writePrivateJsonFile,
   type SecureStorageLike
 } from "../secure-json-file";
+import { isOneOf, isRecord } from "@chaturanga/shared/types/guards";
+import { LICHESS_SPEEDS } from "./normalize";
 
 type StoredAccount = {
   account: LichessAccount | null;
@@ -32,14 +34,15 @@ function finite(value: unknown): number | null {
 }
 
 function readAccount(value: unknown): LichessAccount | null {
-  if (!value || typeof value !== "object") return null;
-  const json = value as Record<string, unknown>;
+  if (!isRecord(value)) return null;
+  const json = value;
   if (typeof json.id !== "string" || !json.id || typeof json.username !== "string") return null;
   const perfs: LichessAccount["perfs"] = {};
-  if (json.perfs && typeof json.perfs === "object") {
-    for (const [key, perf] of Object.entries(json.perfs as Record<string, Partial<LichessPerf>>)) {
-      if (typeof perf?.rating !== "number") continue;
-      perfs[key as LichessSpeed] = {
+  if (isRecord(json.perfs)) {
+    for (const [key, perf] of Object.entries(json.perfs)) {
+      if (!isOneOf(LICHESS_SPEEDS, key) || !isRecord(perf) || typeof perf.rating !== "number")
+        continue;
+      perfs[key] = {
         rating: perf.rating,
         games: finite(perf.games) ?? 0,
         provisional: perf.provisional === true

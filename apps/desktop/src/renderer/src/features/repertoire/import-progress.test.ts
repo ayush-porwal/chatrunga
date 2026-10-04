@@ -27,12 +27,9 @@ function event(patch: Partial<ImportProgressEvent> = {}): ImportProgressEvent {
 }
 
 describe("import preview progress", () => {
-  it("starts with the jobId the dialog generated and no progress yet", () => {
-    expect(startPreviewRun("job-1")).toEqual({ jobId: "job-1", latest: null });
-  });
-
-  it("follows only its own job's events", () => {
+  it("starts with the dialog's jobId and no progress, then follows only that job's events", () => {
     const run = startPreviewRun("job-1");
+    expect(run).toEqual({ jobId: "job-1", latest: null });
     // Any phase of another job (an earlier preview, another window) is ignored.
     for (const phase of ["reading", "parsing", "cancelled", "failed"] as const) {
       expect(stepPreviewRun(run, event({ jobId: "other", phase }))).toEqual({ kind: "ignore" });
@@ -103,23 +100,37 @@ describe("adoptCommittedRevision", () => {
 describe("import commit into the open repertoire", () => {
   it("flushes the draft first only when it belongs to the repertoire imported into", () => {
     const none = { decisionDrafts: {} };
-    expect(mustFlushDraftBeforeImport({ repertoireId: "r1", baseRevision: 3, ...none }, "r1")).toBe(true);
-    expect(mustFlushDraftBeforeImport({ repertoireId: "r2", baseRevision: 3, ...none }, "r1")).toBe(false);
-    expect(mustFlushDraftBeforeImport({ repertoireId: null, baseRevision: 0, ...none }, "r1")).toBe(false);
+    expect(mustFlushDraftBeforeImport({ repertoireId: "r1", baseRevision: 3, ...none }, "r1")).toBe(
+      true
+    );
+    expect(mustFlushDraftBeforeImport({ repertoireId: "r2", baseRevision: 3, ...none }, "r1")).toBe(
+      false
+    );
+    expect(mustFlushDraftBeforeImport({ repertoireId: null, baseRevision: 0, ...none }, "r1")).toBe(
+      false
+    );
   });
 
   it("also flushes first while a prompt or other decision change of that repertoire is unsaved", () => {
     const decisionDrafts = { "r1|k1|prompt": { repertoireId: "r1" } };
-    expect(mustFlushDraftBeforeImport({ repertoireId: "r2", baseRevision: 3, decisionDrafts }, "r1")).toBe(true);
-    expect(mustFlushDraftBeforeImport({ repertoireId: null, baseRevision: 0, decisionDrafts }, "r1")).toBe(true);
-    expect(mustFlushDraftBeforeImport({ repertoireId: "r2", baseRevision: 3, decisionDrafts }, "r3")).toBe(false);
+    expect(
+      mustFlushDraftBeforeImport({ repertoireId: "r2", baseRevision: 3, decisionDrafts }, "r1")
+    ).toBe(true);
+    expect(
+      mustFlushDraftBeforeImport({ repertoireId: null, baseRevision: 0, decisionDrafts }, "r1")
+    ).toBe(true);
+    expect(
+      mustFlushDraftBeforeImport({ repertoireId: "r2", baseRevision: 3, decisionDrafts }, "r3")
+    ).toBe(false);
   });
 
   it("expects the revision the flushed draft stored, else the cached detail's", () => {
     // The flush saved the draft at revision 5 while the cached detail still says 4.
     expect(importExpectedRevision({ repertoireId: "r1", baseRevision: 5 }, "r1", 4)).toBe(5);
     expect(importExpectedRevision({ repertoireId: "r1", baseRevision: 5 }, "r1", 6)).toBe(6);
-    expect(importExpectedRevision({ repertoireId: "r1", baseRevision: 5 }, "r1", undefined)).toBe(5);
+    expect(importExpectedRevision({ repertoireId: "r1", baseRevision: 5 }, "r1", undefined)).toBe(
+      5
+    );
     expect(importExpectedRevision({ repertoireId: "r2", baseRevision: 9 }, "r1", 4)).toBe(4);
     expect(
       importExpectedRevision({ repertoireId: null, baseRevision: 0 }, "r1", undefined)

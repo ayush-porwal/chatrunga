@@ -17,7 +17,15 @@ describe("lastNodeOfLine", () => {
   });
 
   it("stops on a cycle instead of looping forever", () => {
-    expect(lastNodeOfLine([{ id: "p", children: ["q"] }, { id: "q", children: ["p"] }], "p")).toBe("p");
+    expect(
+      lastNodeOfLine(
+        [
+          { id: "p", children: ["q"] },
+          { id: "q", children: ["p"] }
+        ],
+        "p"
+      )
+    ).toBe("p");
   });
 });
 

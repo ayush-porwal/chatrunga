@@ -91,11 +91,21 @@ describe("resolveTelemetryConfig", () => {
 
 describe("releaseChannel", () => {
   it("is development for dev/test runs, else the build's channel, else nightly for prereleases", () => {
-    expect(releaseChannel({ development: true, appVersion: "1.0.0", buildChannel: "nightly" })).toBe("development");
-    expect(releaseChannel({ development: false, appVersion: "1.0.0", buildChannel: " Nightly " })).toBe("nightly");
-    expect(releaseChannel({ development: false, appVersion: "1.0.0-nightly.1", buildChannel: undefined })).toBe("nightly");
-    expect(releaseChannel({ development: false, appVersion: "1.0.0", buildChannel: undefined })).toBe("production");
-    expect(releaseChannel({ development: false, appVersion: "1.0.0", buildChannel: "something" })).toBe("production");
+    expect(
+      releaseChannel({ development: true, appVersion: "1.0.0", buildChannel: "nightly" })
+    ).toBe("development");
+    expect(
+      releaseChannel({ development: false, appVersion: "1.0.0", buildChannel: " Nightly " })
+    ).toBe("nightly");
+    expect(
+      releaseChannel({ development: false, appVersion: "1.0.0-nightly.1", buildChannel: undefined })
+    ).toBe("nightly");
+    expect(
+      releaseChannel({ development: false, appVersion: "1.0.0", buildChannel: undefined })
+    ).toBe("production");
+    expect(
+      releaseChannel({ development: false, appVersion: "1.0.0", buildChannel: "something" })
+    ).toBe("production");
   });
 });
 

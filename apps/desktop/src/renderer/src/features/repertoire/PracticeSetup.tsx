@@ -44,6 +44,7 @@ import {
   rehearseStarts,
   type RehearseStart
 } from "./practice-setup";
+import { isOneOf } from "@chaturanga/shared/types/guards";
 
 export { initialPracticeInput } from "./practice-setup";
 
@@ -316,12 +317,11 @@ export function PracticeSetup({
                 id={ids.advance}
                 className="sm:max-w-56"
                 value={String(advanceMs)}
-                onChange={(event) =>
-                  setSetting(
-                    "practiceAutoAdvanceMs",
-                    Number(event.target.value) as PracticeAutoAdvanceMs
-                  )
-                }
+                onChange={(event) => {
+                  const delay = Number(event.target.value);
+                  if (isOneOf(PRACTICE_AUTO_ADVANCE_MS, delay))
+                    setSetting("practiceAutoAdvanceMs", delay);
+                }}
               >
                 {PRACTICE_AUTO_ADVANCE_MS.map((delay) => (
                   <option key={delay} value={delay}>

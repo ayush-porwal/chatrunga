@@ -11,7 +11,10 @@ export const FLUSH_TIMEOUT_MS = 2_000;
  * renderer can neither keep the window open nor have its unsaved changes dropped unasked. A
  * webContents already destroyed resolves true: nothing is left there to save.
  */
-export function requestRendererFlush(contents: WebContents, timeoutMs = FLUSH_TIMEOUT_MS): Promise<boolean> {
+export function requestRendererFlush(
+  contents: WebContents,
+  timeoutMs = FLUSH_TIMEOUT_MS
+): Promise<boolean> {
   return new Promise((resolve) => {
     if (contents.isDestroyed()) {
       resolve(true);

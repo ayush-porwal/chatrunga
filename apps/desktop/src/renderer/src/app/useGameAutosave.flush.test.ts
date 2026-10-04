@@ -70,7 +70,9 @@ describe("useGameAutosave flushes", () => {
     useReviewStore.getState().startReview("new");
     useReviewStore.getState().setReview({ moves: [], createdAt: 2 } as unknown as GameReview);
     // Switched to an older analysis before the autosave delay passed.
-    useReviewStore.getState().loadReview({ reviewId: "old", moves: [], createdAt: 1 } as unknown as GameReview);
+    useReviewStore
+      .getState()
+      .loadReview({ reviewId: "old", moves: [], createdAt: 1 } as unknown as GameReview);
     await vi.runAllTimersAsync();
     const saved = saveGame.mock.calls.map((call) => call[0].review?.reviewId);
     expect(saved).toEqual(["new", "old"]);
@@ -128,13 +130,18 @@ describe("useGameAutosave flushes", () => {
   });
 
   it("keeps a left game's failed save when the next game's save fails too, and retries both", async () => {
-    saveGame.mockRejectedValueOnce(new Error("disk full")).mockRejectedValueOnce(new Error("read-only"));
+    saveGame
+      .mockRejectedValueOnce(new Error("disk full"))
+      .mockRejectedValueOnce(new Error("read-only"));
     loadSaved("a");
     edit();
     loadSaved("b");
     edit();
     await vi.runAllTimersAsync();
-    expect(useSaveStatusStore.getState().failures.map((failure) => failure.gameId)).toEqual(["a", "b"]);
+    expect(useSaveStatusStore.getState().failures.map((failure) => failure.gameId)).toEqual([
+      "a",
+      "b"
+    ]);
     expect(useSaveStatusStore.getState().error).toBe("read-only");
 
     useSaveStatusStore.getState().retry();

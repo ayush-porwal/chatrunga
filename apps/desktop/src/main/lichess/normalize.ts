@@ -13,10 +13,11 @@ import type {
   LichessPlayer,
   LichessSpeed
 } from "@chaturanga/shared/types/lichess";
+import { isOneOf, isRecord } from "@chaturanga/shared/types/guards";
 
 type Json = Record<string, unknown>;
 
-const SPEEDS: readonly LichessSpeed[] = [
+export const LICHESS_SPEEDS: readonly LichessSpeed[] = [
   "ultraBullet",
   "bullet",
   "blitz",
@@ -34,7 +35,7 @@ const ACCOUNT_PERFS: readonly LichessSpeed[] = [
 ];
 
 function asJson(value: unknown): Json {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Json) : {};
+  return isRecord(value) ? value : {};
 }
 
 function text(value: unknown): string | null {
@@ -50,7 +51,7 @@ function color(value: unknown): "white" | "black" | null {
 }
 
 function speed(value: unknown, fallback: LichessSpeed): LichessSpeed {
-  return SPEEDS.includes(value as LichessSpeed) ? (value as LichessSpeed) : fallback;
+  return isOneOf(LICHESS_SPEEDS, value) ? value : fallback;
 }
 
 /** `GET /api/account`. `lastSyncAt` is ours, not Lichess's. */

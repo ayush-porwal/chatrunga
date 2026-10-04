@@ -66,6 +66,7 @@ import {
   type RepertoireRecord,
   type StoredDecision
 } from "./repository";
+import { errorCode } from "../system-error";
 
 /** The directory under userData that keeps replaced repertoires' own backups. */
 export const RETAINED_BACKUP_DIR = "repertoire-backups";
@@ -365,7 +366,7 @@ function retainBackup(
     try {
       descriptor = openSync(path, "wx");
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST" || attempt >= 5) throw error;
+      if (errorCode(error) !== "EEXIST" || attempt >= 5) throw error;
       path = join(directory, `${base}-${nanoid(8)}.json`);
     }
   }

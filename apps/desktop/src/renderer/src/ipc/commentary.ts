@@ -1,4 +1,7 @@
-import type { GenerateCommentaryInput, GenerateCommentaryResult } from "@chaturanga/shared/ipc/chaturanga-api";
+import type {
+  GenerateCommentaryInput,
+  GenerateCommentaryResult
+} from "@chaturanga/shared/ipc/chaturanga-api";
 
 export async function requestRendererCommentary(
   input: GenerateCommentaryInput

@@ -100,7 +100,7 @@ export function RepertoireHubPage({
   const desktop = Boolean(window.chaturanga?.repertoires);
   // Backups go through main-owned native dialogs, so they're hidden outside the desktop app.
   const backups =
-    desktop && hasDesktopApi() && Boolean(window.chaturanga?.repertoires.exportBackup);
+    desktop && hasDesktopApi() && typeof window.chaturanga?.repertoires.exportBackup === "function";
   const queryClient = useQueryClient();
   const [color, setColor] = useState<ColorFilter>("all");
   const [query, setQuery] = useState("");

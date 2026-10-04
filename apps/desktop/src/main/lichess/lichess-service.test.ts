@@ -160,7 +160,9 @@ describe("LichessService", () => {
       "GET /api/account/playing": () => json({ error: "No such token" }, 401)
     });
     await expect(service.ongoingGames()).rejects.toThrow(/Reconnect/);
-    await vi.waitFor(async () => expect(await store.status()).toEqual({ account: ACCOUNT, tokenRejected: true }));
+    await vi.waitFor(async () =>
+      expect(await store.status()).toEqual({ account: ACCOUNT, tokenRejected: true })
+    );
     // The status event follows its own read of the store: wait for it too.
     await vi.waitFor(() =>
       expect(events).toContainEqual({
@@ -216,7 +218,9 @@ describe("LichessService", () => {
     });
     await service.seek({ minutes: 15, incrementSec: 10, rated: true, ratingRange: null });
     seeks.opened[0]!.close();
-    await vi.waitFor(() => expect(events.at(-1)).toEqual({ type: "seek", searching: false, error: null }));
+    await vi.waitFor(() =>
+      expect(events.at(-1)).toEqual({ type: "seek", searching: false, error: null })
+    );
   });
 
   it("streams a game once for every watcher and reconnects with a fresh gameFull", async () => {
@@ -406,8 +410,12 @@ describe("LichessService", () => {
     const { service, events } = await setup({
       "POST /api/challenge/chal1234/cancel": () => json({ error: "Server error" }, 500)
     });
-    await expect(service.cancelChallenge("chal1234")).rejects.toThrow();
-    expect(events).toContainEqual({ type: "challengeGone", challengeId: "chal1234", reason: "canceled" });
+    await expect(service.cancelChallenge("chal1234")).rejects.toThrow(/Server error/);
+    expect(events).toContainEqual({
+      type: "challengeGone",
+      challengeId: "chal1234",
+      reason: "canceled"
+    });
   });
 
   it("signs in through the browser and saves the account", async () => {

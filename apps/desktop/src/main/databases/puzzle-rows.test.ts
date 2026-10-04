@@ -1,14 +1,34 @@
 import { describe, expect, it } from "vitest";
 import type { InstalledDatabase, PuzzleSampleInput } from "@chaturanga/shared/types/database";
-import { matchesCheapFilters, parseCsvLine, sampleFromLichessRow, sampleFromPositionRow } from "./puzzle-rows";
+import {
+  matchesCheapFilters,
+  parseCsvLine,
+  sampleFromLichessRow,
+  sampleFromPositionRow
+} from "./puzzle-rows";
 
-const database = { id: "db1", sourceId: "lichess-puzzles", name: "Lichess puzzles" } as InstalledDatabase;
+const database = {
+  id: "db1",
+  sourceId: "lichess-puzzles",
+  name: "Lichess puzzles"
+} as InstalledDatabase;
 // Real row shape from the Lichess puzzle CSV (FEN is before the opponent's move).
 const LICHESS_ROW =
-  '00sHx,q3k1nr/1pp1nQpp/3p4/1P2p3/4P3/B1PP1b2/B5PP/5K2 b k - 0 17,e8d7 a2e6 d7d8 f7f8,1760,80,83,72,mate mateIn2 middlegame short,https://lichess.org/yyznGmXs/black#34,Italian_Game Italian_Game_Classical_Variation';
-const lichessFilters = (overrides: Partial<NonNullable<PuzzleSampleInput["lichess"]>> = {}): PuzzleSampleInput => ({
+  "00sHx,q3k1nr/1pp1nQpp/3p4/1P2p3/4P3/B1PP1b2/B5PP/5K2 b k - 0 17,e8d7 a2e6 d7d8 f7f8,1760,80,83,72,mate mateIn2 middlegame short,https://lichess.org/yyznGmXs/black#34,Italian_Game Italian_Game_Classical_Variation";
+const lichessFilters = (
+  overrides: Partial<NonNullable<PuzzleSampleInput["lichess"]>> = {}
+): PuzzleSampleInput => ({
   databaseId: "db1",
-  lichess: { ratingMin: 1000, ratingMax: 2000, popularityMin: 50, lengths: [], themes: [], openings: [], side: "any", ...overrides }
+  lichess: {
+    ratingMin: 1000,
+    ratingMax: 2000,
+    popularityMin: 50,
+    lengths: [],
+    themes: [],
+    openings: [],
+    side: "any",
+    ...overrides
+  }
 });
 
 describe("parseCsvLine", () => {
@@ -38,10 +58,14 @@ describe("sampleFromLichessRow", () => {
     expect(sampleFromLichessRow(database, row, lichessFilters({ ratingMax: 1500 }))).toBeNull();
     expect(sampleFromLichessRow(database, row, lichessFilters({ popularityMin: 90 }))).toBeNull();
     expect(sampleFromLichessRow(database, row, lichessFilters({ themes: ["fork"] }))).toBeNull();
-    expect(sampleFromLichessRow(database, row, lichessFilters({ openings: ["Sicilian_Defense"] }))).toBeNull();
+    expect(
+      sampleFromLichessRow(database, row, lichessFilters({ openings: ["Sicilian_Defense"] }))
+    ).toBeNull();
     expect(sampleFromLichessRow(database, row, lichessFilters({ lengths: ["long"] }))).toBeNull();
     expect(sampleFromLichessRow(database, row, lichessFilters({ side: "black" }))).toBeNull();
-    expect(sampleFromLichessRow(database, row, lichessFilters({ themes: ["mateIn2"], side: "white" }))).not.toBeNull();
+    expect(
+      sampleFromLichessRow(database, row, lichessFilters({ themes: ["mateIn2"], side: "white" }))
+    ).not.toBeNull();
   });
 
   it("skips incomplete rows", () => {
@@ -57,7 +81,27 @@ describe("sampleFromLichessRow", () => {
 
 describe("sampleFromPositionRow", () => {
   const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-  const row = ["p1", "", "", "https://lichess.org/abc", fen, "e2e4", "3", "0", "1", "0", "0", "0", "0", "0", "0", "0", "0", "0", "1"];
+  const row = [
+    "p1",
+    "",
+    "",
+    "https://lichess.org/abc",
+    fen,
+    "e2e4",
+    "3",
+    "0",
+    "1",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "1"
+  ];
 
   it("reads the tag flags and difficulty", () => {
     expect(sampleFromPositionRow(database, row, { databaseId: "db1" })).toMatchObject({
@@ -70,11 +114,20 @@ describe("sampleFromPositionRow", () => {
   });
 
   it("skips a row whose best move can't be played", () => {
-    expect(sampleFromPositionRow(database, row.map((value) => (value === "e2e4" ? "e2e5" : value)), { databaseId: "db1" })).toBeNull();
+    expect(
+      sampleFromPositionRow(
+        database,
+        row.map((value) => (value === "e2e4" ? "e2e5" : value)),
+        { databaseId: "db1" }
+      )
+    ).toBeNull();
   });
 
   it("filters by difficulty and tags", () => {
-    const position = (difficultyMax: number, tags: string[]) => ({ databaseId: "db1", position: { difficultyMin: 0, difficultyMax, tags } });
+    const position = (difficultyMax: number, tags: string[]) => ({
+      databaseId: "db1",
+      position: { difficultyMin: 0, difficultyMax, tags }
+    });
     expect(sampleFromPositionRow(database, row, position(2, []))).toBeNull();
     expect(sampleFromPositionRow(database, row, position(5, ["endgame"]))).toBeNull();
     expect(sampleFromPositionRow(database, row, position(5, ["development"]))).not.toBeNull();
@@ -97,7 +150,9 @@ describe("matchesCheapFilters", () => {
     ];
     for (const overrides of cases) {
       const input = lichessFilters(overrides);
-      expect(matchesCheapFilters("lichess", row, input)).toBe(sampleFromLichessRow(database, row, input) !== null);
+      expect(matchesCheapFilters("lichess", row, input)).toBe(
+        sampleFromLichessRow(database, row, input) !== null
+      );
     }
   });
 

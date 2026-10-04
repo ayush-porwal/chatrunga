@@ -100,7 +100,10 @@ export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }
           {ipcErrorMessage(games.error) || "The library couldn't be read."}
         </Notice>
       ) : list.length ? (
-        <ul className="scroll-area -mr-1 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-1" aria-label="Saved games">
+        <ul
+          className="scroll-area -mr-1 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-1"
+          aria-label="Saved games"
+        >
           {list.map((game) => (
             <li
               key={game.id}

@@ -19,7 +19,10 @@ import { EnginePerformanceSettings } from "../settings/EngineSettings";
 import { useSetSetting } from "../settings/use-set-setting";
 import { analysisEngineFor } from "./analysis-engine";
 
-const lineOptions = [1, 2, 3, 4, 5].map((count) => ({ value: String(count), label: String(count) }));
+const lineOptions = [1, 2, 3, 4, 5].map((count) => ({
+  value: String(count),
+  label: String(count)
+}));
 
 const limitOptions: readonly { value: AnalysisLimit; label: string }[] = [
   { value: "infinite", label: "Until stopped" },
@@ -44,7 +47,7 @@ const TIME_OPTIONS_SEC = [1, 2, 3, 5, 10, 15, 30, 60, 120, 300];
 export function AnalysisSettingsDialog({ onClose }: { onClose: () => void }) {
   const ids = useId();
   const settingsQuery = useSettingsQuery();
-  const settings: AppSettings = { ...defaultSettings, ...(settingsQuery.data ?? {}) };
+  const settings: AppSettings = { ...defaultSettings, ...settingsQuery.data };
   const engines = useEnginesQuery();
   const usable = (engines.data ?? []).filter((engine) => engine.isAvailable);
   const engineId = analysisEngineFor(engines.data, settings.analysisEngineId);
@@ -113,9 +116,13 @@ export function AnalysisSettingsDialog({ onClose }: { onClose: () => void }) {
                   max={ANALYSIS_DEPTH_RANGE.max}
                   step={1}
                   value={settings.analysisDepth}
-                  onChange={(event) => setSetting("analysisDepth", Number(event.target.value), { batch: true })}
+                  onChange={(event) =>
+                    setSetting("analysisDepth", Number(event.target.value), { batch: true })
+                  }
                 />
-                <span className="w-16 text-right font-mono tabular-nums">depth {settings.analysisDepth}</span>
+                <span className="w-16 text-right font-mono tabular-nums">
+                  depth {settings.analysisDepth}
+                </span>
               </label>
             ) : settings.analysisLimit === "time" ? (
               <Select
@@ -156,7 +163,11 @@ export function AnalysisSettingsDialog({ onClose }: { onClose: () => void }) {
             htmlFor={`${ids}-bar`}
             description="Beside the board, here and in Game review."
             control={
-              <Switch id={`${ids}-bar`} checked={settings.analysisEvalBar} onCheckedChange={(value) => setSetting("analysisEvalBar", value)} />
+              <Switch
+                id={`${ids}-bar`}
+                checked={settings.analysisEvalBar}
+                onCheckedChange={(value) => setSetting("analysisEvalBar", value)}
+              />
             }
           />
           <SettingRow

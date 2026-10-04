@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
-import { DEFAULT_COMMENTARY_MODEL, isLightweightCommentaryModel } from "@chaturanga/shared/llm/models";
+import {
+  DEFAULT_COMMENTARY_MODEL,
+  isLightweightCommentaryModel
+} from "@chaturanga/shared/llm/models";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -78,7 +81,12 @@ export function OpenRouterSettingsCard() {
         />
         <p className={fieldHint}>
           Create one at{" "}
-          <a href={OPENROUTER_KEYS_URL} target="_blank" rel="noreferrer" className="text-fg-muted underline underline-offset-2 hover:text-fg">
+          <a
+            href={OPENROUTER_KEYS_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="text-fg-muted underline underline-offset-2 hover:text-fg"
+          >
             openrouter.ai/keys
           </a>
           . Encrypted with your system keychain and sent only to OpenRouter. Never shown again.
@@ -96,7 +104,13 @@ export function OpenRouterSettingsCard() {
           {saveState.kind === "saving" ? "Saving…" : "Save"}
         </Button>
         {hasApiKey ? (
-          <Button type="button" variant="ghost" size="sm" onClick={() => void clearOpenRouterKey()} disabled={saveState.kind === "saving"}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => void clearOpenRouterKey()}
+            disabled={saveState.kind === "saving"}
+          >
             Remove saved key
           </Button>
         ) : null}
@@ -108,7 +122,9 @@ export function OpenRouterSettingsCard() {
           )}
           role="status"
         >
-          {saveState.kind === "saved" ? <Check className="size-3.5 shrink-0" aria-hidden="true" /> : null}
+          {saveState.kind === "saved" ? (
+            <Check className="size-3.5 shrink-0" aria-hidden="true" />
+          ) : null}
           <span className="truncate">{status}</span>
         </span>
       </div>

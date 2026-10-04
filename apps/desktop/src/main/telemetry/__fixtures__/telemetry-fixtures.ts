@@ -39,7 +39,10 @@ export function fakeEndpoint(initial: number | "offline" = 200) {
   let status: number | "offline" = initial;
   const fetchImpl = vi.fn(async (url: string, init: RequestInit) => {
     if (status === "offline") throw new TypeError("fetch failed");
-    batches.push({ url, body: JSON.parse(String(init.body)) as CapturedBatch["body"] });
+    batches.push({
+      url,
+      body: JSON.parse(typeof init.body === "string" ? init.body : "") as CapturedBatch["body"]
+    });
     return new Response("{}", { status });
   });
   return {

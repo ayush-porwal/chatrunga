@@ -38,5 +38,7 @@ export function readHandshakeLine(identity: UciIdentity, line: string): boolean 
 
 /** Maia runs on lc0 and names itself (or its author) so. */
 export function isHumanPredictionEngine(identity: UciIdentity): boolean {
-  return Boolean(identity.name?.toLowerCase().includes("maia") || identity.author?.toLowerCase().includes("maia"));
+  return Boolean(
+    identity.name?.toLowerCase().includes("maia") || identity.author?.toLowerCase().includes("maia")
+  );
 }

@@ -16,12 +16,16 @@ import { HomePage } from "./HomePage";
 
 // Pages and panels load when first opened, so starting the app (Home, the board) doesn't parse the
 // review charts, settings, puzzles, databases or the welcome.
-const PlayPage = lazy(() => import("../features/game/PlayPage").then((module) => ({ default: module.PlayPage })));
+const PlayPage = lazy(() =>
+  import("../features/game/PlayPage").then((module) => ({ default: module.PlayPage }))
+);
 const DatabasePage = lazy(() =>
   import("../features/database/DatabasePage").then((module) => ({ default: module.DatabasePage }))
 );
 const GameReviewPage = lazy(() =>
-  import("../features/game-review/GameReviewPage").then((module) => ({ default: module.GameReviewPage }))
+  import("../features/game-review/GameReviewPage").then((module) => ({
+    default: module.GameReviewPage
+  }))
 );
 export const AddToRepertoireDialog = lazy(() =>
   import("../features/repertoire/AddToRepertoireDialog").then((module) => ({
@@ -29,17 +33,25 @@ export const AddToRepertoireDialog = lazy(() =>
   }))
 );
 export const GameReviewPicker = lazy(() =>
-  import("../features/game-review/GameReviewPicker").then((module) => ({ default: module.GameReviewPicker }))
+  import("../features/game-review/GameReviewPicker").then((module) => ({
+    default: module.GameReviewPicker
+  }))
 );
-const PuzzlePage = lazy(() => import("../features/puzzles/PuzzlePage").then((module) => ({ default: module.PuzzlePage })));
+const PuzzlePage = lazy(() =>
+  import("../features/puzzles/PuzzlePage").then((module) => ({ default: module.PuzzlePage }))
+);
 const SettingsPage = lazy(() =>
   import("../features/settings/SettingsPage").then((module) => ({ default: module.SettingsPage }))
 );
 const RepertoireHubPage = lazy(() =>
-  import("../features/repertoire/RepertoireHubPage").then((module) => ({ default: module.RepertoireHubPage }))
+  import("../features/repertoire/RepertoireHubPage").then((module) => ({
+    default: module.RepertoireHubPage
+  }))
 );
 const RepertoireStudyPage = lazy(() =>
-  import("../features/repertoire/RepertoireStudyPage").then((module) => ({ default: module.RepertoireStudyPage }))
+  import("../features/repertoire/RepertoireStudyPage").then((module) => ({
+    default: module.RepertoireStudyPage
+  }))
 );
 const RepertoirePracticePage = lazy(() =>
   import("../features/repertoire/RepertoirePracticePage").then((module) => ({
@@ -47,7 +59,9 @@ const RepertoirePracticePage = lazy(() =>
   }))
 );
 export const OnboardingFlow = lazy(() =>
-  import("../features/onboarding/OnboardingFlow").then((module) => ({ default: module.OnboardingFlow }))
+  import("../features/onboarding/OnboardingFlow").then((module) => ({
+    default: module.OnboardingFlow
+  }))
 );
 
 /** How a navigation enters Back / Forward (see showView). */
@@ -205,8 +219,12 @@ export function AppPages({
           onOpenChapter={(chapterId, nodeId = null) =>
             on.openRepertoireStudy({ repertoireId: repertoire.repertoireId, chapterId, nodeId })
           }
-          onPractice={(chapterIds) => on.practiceRepertoireChapters(repertoire.repertoireId, chapterIds)}
-          onRehearse={(target) => on.rehearseRepertoire(repertoire.repertoireId, rehearsePreset(target))}
+          onPractice={(chapterIds) =>
+            on.practiceRepertoireChapters(repertoire.repertoireId, chapterIds)
+          }
+          onRehearse={(target) =>
+            on.rehearseRepertoire(repertoire.repertoireId, rehearsePreset(target))
+          }
           onMissing={on.repertoireMissing}
           onHub={on.repertoireHub}
           onPositionChanged={on.repertoirePositionChanged}

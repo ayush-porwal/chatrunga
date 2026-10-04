@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import type { SetupRow } from "@/lib/engine-assets";
 import {
-  ONBOARDING_STEPS,
   clampRating,
   engineSetupPhase,
   evaluationEngine,
@@ -45,7 +44,6 @@ describe("shouldShowOnboarding", () => {
 
 describe("steps", () => {
   it("moves forward and back within the flow", () => {
-    expect(ONBOARDING_STEPS[0]).toBe("welcome");
     expect(stepOffset("welcome", 1)).toBe("engines");
     expect(stepOffset("engines", -1)).toBe("welcome");
     expect(stepOffset("welcome", -1)).toBe("welcome");

@@ -78,7 +78,8 @@ export class OpenRouterConfigStore {
 
   private async apply(input: SetOpenRouterConfigInput): Promise<OpenRouterConfigSummary> {
     const current = await this.read();
-    const model = input.model === undefined ? normalizeModel(current.model) : normalizeModel(input.model);
+    const model =
+      input.model === undefined ? normalizeModel(current.model) : normalizeModel(input.model);
     let encryptedApiKey = current.encryptedApiKey;
 
     if (input.apiKey === null) {

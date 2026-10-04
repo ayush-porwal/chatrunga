@@ -1,6 +1,10 @@
 import { useMemo, useState } from "react";
 import { ChevronRight, Search, Upload } from "lucide-react";
-import { GAME_SEARCH_MAX_LENGTH, type GameListFilter, type GameSummary } from "@chaturanga/shared/types/chess";
+import {
+  GAME_SEARCH_MAX_LENGTH,
+  type GameListFilter,
+  type GameSummary
+} from "@chaturanga/shared/types/chess";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useGameFacetsQuery, useGamePagesQuery } from "../../queries/api";
@@ -87,9 +91,12 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
   const filteredGames = useMemo(() => gamesOfPages(games.data?.pages), [games.data]);
 
   const currentCanReview = currentGame.moveCount > 0;
-  const currentLabel = currentGame.white || currentGame.black ? titleFor(currentGame) : "Current game";
+  const currentLabel =
+    currentGame.white || currentGame.black ? titleFor(currentGame) : "Current game";
   const currentSubtitle = currentCanReview
-    ? [currentGame.event, currentGame.result, `${currentGame.moveCount} plies`].filter(Boolean).join(" · ")
+    ? [currentGame.event, currentGame.result, `${currentGame.moveCount} plies`]
+        .filter(Boolean)
+        .join(" · ")
     : "";
 
   const hasSavedGames = facets.data?.hasGames ?? false;
@@ -101,8 +108,17 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
       onClose={onClose}
       bodyClassName="flex min-h-0 flex-1 flex-col gap-3"
       footer={
-        <Button type="button" variant="outline" size="sm" onClick={() => { onClose(); onImport(); }}>
-          <Upload />Import PGN
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            onClose();
+            onImport();
+          }}
+        >
+          <Upload />
+          Import PGN
         </Button>
       }
     >
@@ -135,16 +151,27 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
         {currentCanReview ? (
           <section className="grid gap-2">
             <Eyebrow>Current game</Eyebrow>
-            <GameRow title={currentLabel} meta={currentSubtitle} selected onClick={() => onSelect("current")} />
+            <GameRow
+              title={currentLabel}
+              meta={currentSubtitle}
+              selected
+              onClick={() => onSelect("current")}
+            />
           </section>
         ) : null}
 
         <section className="grid gap-2">
           <div className="flex items-center justify-between gap-2">
             <Eyebrow>Saved games</Eyebrow>
-            {games.isLoading || games.isPlaceholderData ? <span className="text-2xs text-fg-subtle">Loading…</span> : null}
+            {games.isLoading || games.isPlaceholderData ? (
+              <span className="text-2xs text-fg-subtle">Loading…</span>
+            ) : null}
           </div>
-          {games.isError ? <Notice tone="warn">Saved games could not be loaded. Try opening Game review again.</Notice> : null}
+          {games.isError ? (
+            <Notice tone="warn">
+              Saved games could not be loaded. Try opening Game review again.
+            </Notice>
+          ) : null}
           {filteredGames.length ? (
             <div className="grid gap-1.5">
               {filteredGames.map((game) => (
@@ -172,7 +199,13 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
           ) : games.isLoading ? null : (
             <EmptyState
               compact
-              title={query || source !== "all" ? "No saved games match this search." : currentCanReview ? "No other saved games." : "No saved games yet — import a PGN or play a game first."}
+              title={
+                query || source !== "all"
+                  ? "No saved games match this search."
+                  : currentCanReview
+                    ? "No other saved games."
+                    : "No saved games yet — import a PGN or play a game first."
+              }
             />
           )}
         </section>
@@ -196,7 +229,11 @@ function GameRow({
   onClick: () => void;
 }) {
   return (
-    <button type="button" className={cn(listRowInteractive, "group", selected && listRowSelected)} onClick={onClick}>
+    <button
+      type="button"
+      className={cn(listRowInteractive, "group", selected && listRowSelected)}
+      onClick={onClick}
+    >
       <span className="grid min-w-0 flex-1 gap-0.5">
         <span className="truncate font-medium text-fg">{title}</span>
         <span className="truncate text-xs text-fg-muted">{meta}</span>

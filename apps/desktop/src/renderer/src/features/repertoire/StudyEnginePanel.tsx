@@ -75,7 +75,9 @@ export function StudyEnginePanel({
     ({ startNodeId, moves }) => {
       const start = tree.find((item) => item.id === startNodeId);
       const ucis = start ? sanLineToUcis(start.fenAfter, moves) : null;
-      const added = ucis ? useRepertoireWorkspaceStore.getState().playLine(startNodeId, ucis) : null;
+      const added = ucis
+        ? useRepertoireWorkspaceStore.getState().playLine(startNodeId, ucis)
+        : null;
       setLineError(
         added ? null : { nodeId: startNodeId, message: "That line no longer fits this position." }
       );

@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, statSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,7 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const userData = mkdtempSync(join(tmpdir(), "chaturanga-databases-"));
 vi.mock("electron", () => ({ app: { getPath: () => userData } }));
 
-type Row = { id: string; sourceId: string; filePath: string; fileSizeBytes?: number; name?: string; format?: string };
+type Row = {
+  id: string;
+  sourceId: string;
+  filePath: string;
+  fileSizeBytes?: number;
+  name?: string;
+  format?: string;
+};
 const rows = new Map<string, Row>();
 const repository = vi.hoisted(() => ({ failSave: false }));
 vi.mock("../db/repositories", () => ({
@@ -21,9 +28,18 @@ vi.mock("../db/repositories", () => ({
     remove: (id: string) => {
       for (const [key, row] of rows) if (row.id === id) rows.delete(key);
     },
-    saveDownloaded: (input: { source: { id: string }; filePath: string; fileSizeBytes: number }) => {
+    saveDownloaded: (input: {
+      source: { id: string };
+      filePath: string;
+      fileSizeBytes: number;
+    }) => {
       if (repository.failSave) throw new Error("disk full");
-      const row = { id: input.source.id, sourceId: input.source.id, filePath: input.filePath, fileSizeBytes: input.fileSizeBytes };
+      const row = {
+        id: input.source.id,
+        sourceId: input.source.id,
+        filePath: input.filePath,
+        fileSizeBytes: input.fileSizeBytes
+      };
       rows.set(input.source.id, row);
       return row;
     }
@@ -39,7 +55,9 @@ vi.mock("./puzzle-scan", async (importOriginal) => {
     reservoirScan: (job: import("./puzzle-scan").ScanJob, isCancelled?: () => boolean) => {
       if (job.maxMatches !== undefined) return actual.reservoirScan(job, isCancelled);
       fullScans.count += 1;
-      return fullScans.fail ? Promise.reject(new Error("corrupt block")) : actual.reservoirScan(job, isCancelled);
+      return fullScans.fail
+        ? Promise.reject(new Error("corrupt block"))
+        : actual.reservoirScan(job, isCancelled);
     }
   };
 });
@@ -59,7 +77,10 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 
 import { randomBytes } from "node:crypto";
 import { zstdCompressSync } from "node:zlib";
-import type { DatabaseDownloadProgress, PuzzleSampleInput } from "@chaturanga/shared/types/database";
+import type {
+  DatabaseDownloadProgress,
+  PuzzleSampleInput
+} from "@chaturanga/shared/types/database";
 import { logger } from "../logger";
 import {
   cancelDownload,
@@ -105,13 +126,19 @@ const finalPath = join(dir, "lichess-puzzles-lichess_db_puzzle.csv.zst");
 function fakeServer(content: Buffer, etag: string, options: { failAfter?: number } = {}) {
   const requests: Array<Record<string, string>> = [];
   const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
-    const { "Accept-Encoding": encoding, ...headers } = (init?.headers ?? {}) as Record<string, string>;
+    const { "Accept-Encoding": encoding, ...headers } = (init?.headers ?? {}) as Record<
+      string,
+      string
+    >;
     expect(encoding).toBe("identity");
     requests.push(headers);
     const range = /^bytes=(\d+)-$/.exec(headers.Range ?? "");
     const rangeApplies = range && (!headers["If-Range"] || headers["If-Range"] === etag);
     if (range && rangeApplies && Number(range[1]) >= content.length) {
-      return new Response(null, { status: 416, headers: { "content-range": `bytes */${content.length}` } });
+      return new Response(null, {
+        status: 416,
+        headers: { "content-range": `bytes */${content.length}` }
+      });
     }
     const start = range && rangeApplies ? Number(range[1]) : 0;
     const body = content.subarray(start);
@@ -122,12 +149,20 @@ function fakeServer(content: Buffer, etag: string, options: { failAfter?: number
       async pull(controller) {
         if (!sent) {
           sent = true;
-          controller.enqueue(new Uint8Array(failAfter === undefined ? body : body.subarray(0, failAfter)));
+          controller.enqueue(
+            new Uint8Array(failAfter === undefined ? body : body.subarray(0, failAfter))
+          );
           if (failAfter === undefined) controller.close();
           return;
         }
-        // The connection drops a little later, after the first chunk reached the disk.
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        // The connection drops once the first chunk reached the disk.
+        await vi.waitFor(
+          () =>
+            expect(statSync(`${finalPath}.part`, { throwIfNoEntry: false })?.size).toBe(failAfter),
+          {
+            interval: 1
+          }
+        );
         controller.error(new Error("connection reset"));
       }
     });
@@ -136,17 +171,24 @@ function fakeServer(content: Buffer, etag: string, options: { failAfter?: number
       headers: {
         "content-length": String(body.length),
         etag,
-        ...(start ? { "content-range": `bytes ${start}-${content.length - 1}/${content.length}` } : {})
+        ...(start
+          ? { "content-range": `bytes ${start}-${content.length - 1}/${content.length}` }
+          : {})
       }
     });
   });
   return { fetchMock, requests };
 }
 
-const LICHESS_HEADER = "PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags";
+const LICHESS_HEADER =
+  "PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags";
 /** A valid compressed puzzle file; random ids keep it from compressing to a few bytes. */
 function dataset(rowCount: number): Buffer<ArrayBuffer> {
-  const rows = Array.from({ length: rowCount }, (_, index) => `${randomBytes(8).toString("hex")},fen,e2e4 e7e5,${1000 + index},80,90,100,short,,`);
+  const rows = Array.from(
+    { length: rowCount },
+    (_, index) =>
+      `${randomBytes(8).toString("hex")},fen,e2e4 e7e5,${1000 + index},80,90,100,short,,`
+  );
   return zstdCompressSync(Buffer.from([LICHESS_HEADER, ...rows].join("\n"))) as Buffer<ArrayBuffer>;
 }
 const content = dataset(800);
@@ -196,7 +238,7 @@ describe("downloadDatabase", () => {
 
   it("starts over when the file changed upstream since the interruption", async () => {
     vi.stubGlobal("fetch", fakeServer(content, '"v1"', { failAfter: 3000 }).fetchMock);
-    await expect(downloadDatabase(SOURCE, () => undefined)).rejects.toThrow();
+    await expect(downloadDatabase(SOURCE, () => undefined)).rejects.toThrow(/connection reset/);
     const updated = dataset(400);
     vi.stubGlobal("fetch", fakeServer(updated, '"v2"').fetchMock);
     await downloadDatabase(SOURCE, () => undefined);
@@ -222,7 +264,10 @@ describe("downloadDatabase", () => {
     const server = fakeServer(content, '"v1"');
     vi.stubGlobal("fetch", server.fetchMock);
     await downloadDatabase(SOURCE, () => undefined);
-    expect(server.requests).toEqual([{ Range: `bytes=${content.length + 10}-`, "If-Range": '"v1"' }, {}]);
+    expect(server.requests).toEqual([
+      { Range: `bytes=${content.length + 10}-`, "If-Range": '"v1"' },
+      {}
+    ]);
     expect(await readFile(finalPath)).toEqual(content);
   });
 
@@ -240,7 +285,7 @@ describe("downloadDatabase", () => {
     rows.set(SOURCE, { id: SOURCE, sourceId: SOURCE, filePath: finalPath });
     const server = fakeServer(content, '"v1"', { failAfter: 2000 });
     vi.stubGlobal("fetch", server.fetchMock);
-    await expect(downloadDatabase(SOURCE, () => undefined)).rejects.toThrow();
+    await expect(downloadDatabase(SOURCE, () => undefined)).rejects.toThrow(/connection reset/);
     await downloadDatabase(SOURCE, () => undefined);
     expect(server.requests[1]).toEqual({ Range: "bytes=2000-", "If-Range": '"v1"' });
     expect(await readFile(finalPath)).toEqual(content);
@@ -249,7 +294,10 @@ describe("downloadDatabase", () => {
   it("joins a second request for a database that is already downloading", async () => {
     const server = fakeServer(content, '"v1"');
     vi.stubGlobal("fetch", server.fetchMock);
-    const [first, second] = await Promise.all([downloadDatabase(SOURCE, () => undefined), downloadDatabase(SOURCE, () => undefined)]);
+    const [first, second] = await Promise.all([
+      downloadDatabase(SOURCE, () => undefined),
+      downloadDatabase(SOURCE, () => undefined)
+    ]);
     expect(first).toBe(second);
     expect(server.requests).toHaveLength(1);
     expect(await readFile(finalPath)).toEqual(content);
@@ -261,16 +309,34 @@ describe("download reliability", () => {
     repository.failSave = true;
     vi.stubGlobal("fetch", fakeServer(content, '"v1"').fetchMock);
     const events: DatabaseDownloadProgress[] = [];
-    await expect(downloadDatabase(SOURCE, (progress) => events.push(progress))).rejects.toThrow("disk full");
+    await expect(downloadDatabase(SOURCE, (progress) => events.push(progress))).rejects.toThrow(
+      "disk full"
+    );
     expect(events.map((event) => event.state)).not.toContain("completed");
     expect(events.at(-1)?.state).toBe("failed");
   });
 
   it("can be cancelled, keeping the partial file for a resume", async () => {
-    vi.stubGlobal("fetch", fakeServer(content, '"v1"', { failAfter: 3000 }).fetchMock);
+    // Sends the first part of the file, then nothing more until cancelled.
+    const stream = new ReadableStream<Uint8Array>({
+      start: (controller) => controller.enqueue(new Uint8Array(content.subarray(0, 3000))),
+      pull: () => new Promise(() => undefined)
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(stream, {
+            headers: { "content-length": String(content.length), etag: '"v1"' }
+          })
+      )
+    );
     const events: DatabaseDownloadProgress[] = [];
     const download = downloadDatabase(SOURCE, (progress) => events.push(progress));
-    setTimeout(() => cancelDownload(SOURCE), 5);
+    await vi.waitFor(() => expect(events.some((event) => event.downloadedBytes > 0)).toBe(true), {
+      interval: 1
+    });
+    cancelDownload(SOURCE);
     await expect(download).rejects.toThrow("Download cancelled.");
     expect(events.at(-1)?.state).toBe("cancelled");
     expect(await readdir(dir)).toContain("lichess-puzzles-lichess_db_puzzle.csv.zst.part");
@@ -283,10 +349,22 @@ describe("download reliability", () => {
       start: (controller) => controller.enqueue(new Uint8Array(content.subarray(0, 3000))),
       pull: () => new Promise(() => undefined)
     });
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(stream, { headers: { "content-length": String(content.length), etag: '"v1"' } })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(stream, {
+            headers: { "content-length": String(content.length), etag: '"v1"' }
+          })
+      )
+    );
     const events: DatabaseDownloadProgress[] = [];
-    const download = downloadDatabase(SOURCE, (progress) => events.push(progress)).catch(() => undefined);
-    await vi.waitFor(() => expect(events.some((event) => event.downloadedBytes > 0)).toBe(true), { interval: 1 });
+    const download = downloadDatabase(SOURCE, (progress) => events.push(progress)).catch(
+      () => undefined
+    );
+    await vi.waitFor(() => expect(events.some((event) => event.downloadedBytes > 0)).toBe(true), {
+      interval: 1
+    });
     await cancelAllDownloads();
     // Settled before the database closes: nothing is registered or reported after this.
     expect(events.at(-1)?.state).toBe("cancelled");
@@ -314,7 +392,10 @@ describe("download reliability", () => {
     expect(rows.has(SOURCE)).toBe(false);
     expect(events.map((event) => event.state)).not.toContain("completed");
     // The complete file went back to `.part` with its version, so Download again finishes at once.
-    expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst.part", "lichess-puzzles-lichess_db_puzzle.csv.zst.part.validator"]);
+    expect(await readdir(dir)).toEqual([
+      "lichess-puzzles-lichess_db_puzzle.csv.zst.part",
+      "lichess-puzzles-lichess_db_puzzle.csv.zst.part.validator"
+    ]);
     const server = fakeServer(content, '"v1"');
     vi.stubGlobal("fetch", server.fetchMock);
     await downloadDatabase(SOURCE, () => undefined);
@@ -359,10 +440,16 @@ describe("download reliability", () => {
           // Claims to resume, but from the wrong byte.
           return new Response(content.subarray(500), {
             status: 206,
-            headers: { "content-length": String(content.length - 500), "content-range": `bytes 500-${content.length - 1}/${content.length}` }
+            headers: {
+              "content-length": String(content.length - 500),
+              "content-range": `bytes 500-${content.length - 1}/${content.length}`
+            }
           });
         }
-        return new Response(content, { status: 200, headers: { "content-length": String(content.length), etag: '"v1"' } });
+        return new Response(content, {
+          status: 200,
+          headers: { "content-length": String(content.length), etag: '"v1"' }
+        });
       })
     );
     await downloadDatabase(SOURCE, () => undefined);
@@ -377,21 +464,40 @@ describe("installing a downloaded file", () => {
   async function installOld() {
     await mkdir(dir, { recursive: true });
     await writeFile(finalPath, oldContent);
-    rows.set(SOURCE, { id: SOURCE, sourceId: SOURCE, filePath: finalPath, fileSizeBytes: oldContent.length });
+    rows.set(SOURCE, {
+      id: SOURCE,
+      sourceId: SOURCE,
+      filePath: finalPath,
+      fileSizeBytes: oldContent.length
+    });
   }
 
   function serve(body: Buffer | string, contentType = "application/octet-stream") {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response(typeof body === "string" ? body : new Uint8Array(body), { headers: { "content-length": String(Buffer.byteLength(body)), "content-type": contentType, etag: '"v2"' } }))
+      vi.fn(
+        async () =>
+          new Response(typeof body === "string" ? body : new Uint8Array(body), {
+            headers: {
+              "content-length": String(Buffer.byteLength(body)),
+              "content-type": contentType,
+              etag: '"v2"'
+            }
+          })
+      )
     );
   }
 
   async function expectRejected(pattern: RegExp) {
     const events: DatabaseDownloadProgress[] = [];
-    await expect(downloadDatabase(SOURCE, (progress) => events.push(progress))).rejects.toThrow(pattern);
+    await expect(downloadDatabase(SOURCE, (progress) => events.push(progress))).rejects.toThrow(
+      pattern
+    );
     expect(events.map((event) => event.state)).not.toContain("completed");
-    expect(events.at(-1)).toMatchObject({ state: "failed", message: expect.stringMatching(/isn't a valid dataset/) });
+    expect(events.at(-1)).toMatchObject({
+      state: "failed",
+      message: expect.stringMatching(/isn't a valid dataset/)
+    });
     // The previous installation is untouched, and the bad bytes aren't kept for a resume.
     expect(await readFile(finalPath)).toEqual(oldContent);
     expect(rows.get(SOURCE)?.filePath).toBe(finalPath);
@@ -429,7 +535,15 @@ describe("installing a downloaded file", () => {
 
   /** A good first frame (the header and some rows) followed by `rest`, as pzstd writes many frames. */
   const framesAfterGoodStart = (rest: Buffer) => Buffer.concat([content, rest]);
-  const laterFrame = () => zstdCompressSync(Buffer.from(Array.from({ length: 800 }, () => `${randomBytes(8).toString("hex")},fen,e2e4,1500,80,90,100,short,,`).join("\n")));
+  const laterFrame = () =>
+    zstdCompressSync(
+      Buffer.from(
+        Array.from(
+          { length: 800 },
+          () => `${randomBytes(8).toString("hex")},fen,e2e4,1500,80,90,100,short,,`
+        ).join("\n")
+      )
+    );
 
   it("rejects a file whose later frame is cut short, though it starts well", async () => {
     await installOld();
@@ -443,7 +557,11 @@ describe("installing a downloaded file", () => {
     const later = Buffer.from(laterFrame());
     // The first block header (after the 4-byte magic and a small frame header): a reserved block type.
     const descriptor = later[4];
-    const headerSize = 1 + ((descriptor >> 5) & 1 ? 0 : 1) + [0, 1, 2, 4][descriptor & 3] + [(descriptor >> 5) & 1 ? 1 : 0, 2, 4, 8][descriptor >> 6];
+    const headerSize =
+      1 +
+      ((descriptor >> 5) & 1 ? 0 : 1) +
+      [0, 1, 2, 4][descriptor & 3] +
+      [(descriptor >> 5) & 1 ? 1 : 0, 2, 4, 8][descriptor >> 6];
     later[4 + headerSize] |= 0b110;
     serve(framesAfterGoodStart(later));
     await expectRejected(/damaged block/);
@@ -471,10 +589,16 @@ describe("installing a downloaded file", () => {
   });
 
   it("accepts the position set's header for the position source", async () => {
-    const header = "internal_id,lichess_game_id,move_number,lichess_url,fen,best_move,difficulty,initiative,development";
-    serve(`${header}\n1,g,13,https://lichess.org/g#13,8/8/8/8/8/8/8/K6k w - - 0 1,a1a2,1,0,1\n`, "text/csv");
+    const header =
+      "internal_id,lichess_game_id,move_number,lichess_url,fen,best_move,difficulty,initiative,development";
+    serve(
+      `${header}\n1,g,13,https://lichess.org/g#13,8/8/8/8/8/8/8/K6k w - - 0 1,a1a2,1,0,1\n`,
+      "text/csv"
+    );
     const installed = await downloadDatabase("chess-position-analysis-results", () => undefined);
-    expect(installed.filePath).toBe(join(dir, "chess-position-analysis-results-chess-positions.csv"));
+    expect(installed.filePath).toBe(
+      join(dir, "chess-position-analysis-results-chess-positions.csv")
+    );
   });
 
   it("replaces an installed file and leaves no backup behind", async () => {
@@ -497,7 +621,10 @@ describe("installing a downloaded file", () => {
 
     repository.failSave = false;
     await downloadDatabase(SOURCE, () => undefined);
-    expect(server.requests.at(-1)).toEqual({ Range: `bytes=${content.length}-`, "If-Range": '"v2"' });
+    expect(server.requests.at(-1)).toEqual({
+      Range: `bytes=${content.length}-`,
+      "If-Range": '"v2"'
+    });
     expect(await readFile(finalPath)).toEqual(content);
     expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst"]);
   });
@@ -549,7 +676,9 @@ describe("installing a downloaded file", () => {
     await mkdir(dir, { recursive: true });
     await writeFile(`${finalPath}.bak`, oldContent);
     rows.set(SOURCE, { id: SOURCE, sourceId: SOURCE, filePath: finalPath });
-    expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([finalPath]);
+    expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([
+      finalPath
+    ]);
     expect(await readFile(finalPath)).toEqual(oldContent);
     expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst"]);
   });
@@ -565,7 +694,9 @@ describe("installing a downloaded file", () => {
 
   it("undoes a swap that was never registered when the databases are listed", async () => {
     await crashAfterSwap();
-    expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([finalPath]);
+    expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([
+      finalPath
+    ]);
     expect(await readFile(finalPath)).toEqual(oldContent);
     expect(await readFile(`${finalPath}.part`)).toEqual(content);
     expect((await readdir(dir)).sort()).toEqual([
@@ -578,8 +709,15 @@ describe("installing a downloaded file", () => {
   it("keeps an install that was registered before the app died, clearing only its leftovers", async () => {
     await crashAfterSwap();
     // Registered: the registry already describes the new copy; only the marker's removal was missed.
-    rows.set(SOURCE, { id: SOURCE, sourceId: SOURCE, filePath: finalPath, fileSizeBytes: content.length });
-    expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([finalPath]);
+    rows.set(SOURCE, {
+      id: SOURCE,
+      sourceId: SOURCE,
+      filePath: finalPath,
+      fileSizeBytes: content.length
+    });
+    expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([
+      finalPath
+    ]);
     expect(await readFile(finalPath)).toEqual(content);
     expect(rows.get(SOURCE)?.fileSizeBytes).toBe(content.length);
     expect(await readdir(dir)).toEqual(["lichess-puzzles-lichess_db_puzzle.csv.zst"]);
@@ -594,7 +732,9 @@ describe("installing a downloaded file", () => {
     await listInstalledDatabases();
     expect(rows.has(SOURCE)).toBe(true);
     expect(await readdir(dir)).toContain("lichess-puzzles-lichess_db_puzzle.csv.zst.installing");
-    expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([finalPath]);
+    expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([
+      finalPath
+    ]);
     expect(await readFile(finalPath)).toEqual(oldContent);
   });
 
@@ -623,7 +763,9 @@ describe("installing a downloaded file", () => {
     };
     expect(await listInstalledDatabases()).toEqual([]);
     expect(rows.has(SOURCE)).toBe(true);
-    expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([finalPath]);
+    expect((await listInstalledDatabases()).map((database) => database.filePath)).toEqual([
+      finalPath
+    ]);
     expect(await readFile(finalPath)).toEqual(oldContent);
   });
 });
@@ -635,12 +777,13 @@ describe("resume without Content-Length", () => {
     await writeFile(`${finalPath}.part.validator`, '"v1"');
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        // Claims the rest of the file but sends only part of it, with no Content-Length.
-        new Response(content.subarray(1000, 2000), {
-          status: 206,
-          headers: { "content-range": `bytes 1000-${content.length - 1}/${content.length}` }
-        })
+      vi.fn(
+        async () =>
+          // Claims the rest of the file but sends only part of it, with no Content-Length.
+          new Response(content.subarray(1000, 2000), {
+            status: 206,
+            headers: { "content-range": `bytes 1000-${content.length - 1}/${content.length}` }
+          })
       )
     );
     await expect(downloadDatabase(SOURCE, () => undefined)).rejects.toThrow(/ended early/);
@@ -671,15 +814,23 @@ describe("removeDatabase", () => {
     const seenBySecond: Array<{ installed: boolean; files: string[] }> = [];
     const fetchMock = vi.fn(async () => {
       if (fetchMock.mock.calls.length === 1) {
-        return new Response(stalled, { headers: { "content-length": String(content.length), etag: '"v1"' } });
+        return new Response(stalled, {
+          headers: { "content-length": String(content.length), etag: '"v1"' }
+        });
       }
       seenBySecond.push({ installed: rows.has(SOURCE), files: await readdir(dir) });
-      return new Response(content, { headers: { "content-length": String(content.length), etag: '"v2"' } });
+      return new Response(content, {
+        headers: { "content-length": String(content.length), etag: '"v2"' }
+      });
     });
     vi.stubGlobal("fetch", fetchMock);
     const events: DatabaseDownloadProgress[] = [];
-    const refresh = downloadDatabase(SOURCE, (progress) => events.push(progress)).catch(() => undefined);
-    await vi.waitFor(() => expect(events.some((event) => event.downloadedBytes > 0)).toBe(true), { interval: 1 });
+    const refresh = downloadDatabase(SOURCE, (progress) => events.push(progress)).catch(
+      () => undefined
+    );
+    await vi.waitFor(() => expect(events.some((event) => event.downloadedBytes > 0)).toBe(true), {
+      interval: 1
+    });
 
     const removal = removeDatabase("db");
     // Asked for again the moment the cancelled refresh settles, while its files are being deleted.
@@ -696,47 +847,72 @@ describe("removeDatabase", () => {
     // A directory where the file should be: unlink fails with EISDIR/EPERM, not ENOENT.
     await mkdir(finalPath, { recursive: true });
     rows.set(SOURCE, { id: "db", sourceId: SOURCE, filePath: finalPath });
-    await expect(removeDatabase("db")).rejects.toThrow();
+    await expect(removeDatabase("db")).rejects.toMatchObject({
+      code: expect.stringMatching(/^(EISDIR|EPERM)$/)
+    });
     expect(rows.size).toBe(1);
   });
 });
 
 describe("samplePuzzle", () => {
-  const header = "PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags";
+  const header =
+    "PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags";
   // White to move before the opponent's (White's) e2e4; Black solves with e7e5.
   const row = (id: string, rating: number) =>
     `${id},rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1,e2e4 e7e5,${rating},80,90,100,short opening,,`;
-  const input = (overrides: Partial<NonNullable<PuzzleSampleInput["lichess"]>> = {}): PuzzleSampleInput => ({
+  const input = (
+    overrides: Partial<NonNullable<PuzzleSampleInput["lichess"]>> = {}
+  ): PuzzleSampleInput => ({
     databaseId: "puzzles",
-    lichess: { ratingMin: 0, ratingMax: 3000, popularityMin: 0, lengths: [], themes: [], openings: [], side: "any", ...overrides }
+    lichess: {
+      ratingMin: 0,
+      ratingMax: 3000,
+      popularityMin: 0,
+      lengths: [],
+      themes: [],
+      openings: [],
+      side: "any",
+      ...overrides
+    }
   });
 
   async function install(lines: string[]) {
     await mkdir(dir, { recursive: true });
     const file = join(dir, "puzzles.csv.zst");
     await writeFile(file, zstdCompressSync(Buffer.from([header, ...lines].join("\n"))));
-    rows.set(SOURCE, { id: "puzzles", sourceId: SOURCE, filePath: file, name: "Puzzles", format: "csv.zst" });
+    rows.set(SOURCE, {
+      id: "puzzles",
+      sourceId: SOURCE,
+      filePath: file,
+      name: "Puzzles",
+      format: "csv.zst"
+    });
   }
 
   it("reaches puzzles past the file's first matches once the whole-file pool is filled", async () => {
     await install(Array.from({ length: 3000 }, (_, index) => row(`p${index}`, 1500)));
     await samplePuzzle(input());
     const seen = new Set<number>();
-    await vi.waitFor(async () => {
-      const sample = await samplePuzzle(input());
-      seen.add(Number(sample.id.slice(1)));
-      expect([...seen].some((index) => index >= 500)).toBe(true);
-    }, { timeout: 5_000, interval: 1 });
+    await vi.waitFor(
+      async () => {
+        const sample = await samplePuzzle(input());
+        seen.add(Number(sample.id.slice(1)));
+        expect([...seen].some((index) => index >= 500)).toBe(true);
+      },
+      { timeout: 5_000, interval: 1 }
+    );
   });
 
   it("serves a small match set again to a new session instead of reporting no match", async () => {
     await install([row("a", 2500), row("b", 2500)]);
     const filters = input({ ratingMin: 2000 });
+    // Two matches: the quick scan read the whole file, so it holds every match (no full scan).
     const first = await samplePuzzle(filters);
-    await new Promise((resolve) => setTimeout(resolve, 200)); // the full scan fills the pool
     const second = await samplePuzzle({ ...filters, excludeIds: [first.id] });
     expect(second.id).not.toBe(first.id);
-    await expect(samplePuzzle({ ...filters, excludeIds: ["a", "b"] })).rejects.toThrow(/No puzzle matched/);
+    await expect(samplePuzzle({ ...filters, excludeIds: ["a", "b"] })).rejects.toThrow(
+      /No puzzle matched/
+    );
     // A new session (nothing excluded) still gets puzzles.
     expect(["a", "b"]).toContain((await samplePuzzle(filters)).id);
   });
@@ -749,16 +925,19 @@ describe("samplePuzzle", () => {
     // No match at all: answered from the first scan from then on.
     await expect(samplePuzzle(input({ ratingMin: 2900 }))).rejects.toThrow(/No puzzle matched/);
     await expect(samplePuzzle(input({ ratingMin: 2900 }))).rejects.toThrow(/No puzzle matched/);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // A full scan starts within samplePuzzle (requestFullScan), so none started by now means none.
     expect(fullScans.count).toBe(0);
   });
 
   it("answers a rare filter from one scan of the whole file", async () => {
-    await install([...Array.from({ length: 3000 }, (_, index) => row(`p${index}`, 1500)), row("rare", 2900)]);
+    await install([
+      ...Array.from({ length: 3000 }, (_, index) => row(`p${index}`, 1500)),
+      row("rare", 2900)
+    ]);
     const filters = input({ ratingMin: 2800 });
     expect((await samplePuzzle(filters)).id).toBe("rare");
     expect((await samplePuzzle(filters)).id).toBe("rare");
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // A full scan starts within samplePuzzle (requestFullScan), so none started by now means none.
     expect(fullScans.count).toBe(0);
   });
 
@@ -769,14 +948,18 @@ describe("samplePuzzle", () => {
     const second = await samplePuzzle({ ...retry, excludeIds: [first.id] });
     expect([first.id, second.id].sort()).toEqual(["b", "d"]);
     expect(second.ratingDeviation).toBe(80);
-    await expect(samplePuzzle({ ...retry, excludeIds: ["b", "d"] })).rejects.toThrow(/No puzzles left to try again/);
+    await expect(samplePuzzle({ ...retry, excludeIds: ["b", "d"] })).rejects.toThrow(
+      /No puzzles left to try again/
+    );
     // The ids are their own pool: the same file's other requests are unaffected.
     expect(["a", "b", "c", "d"]).toContain((await samplePuzzle(input())).id);
   });
 
   it("serves nothing for an empty id list, not any puzzle", async () => {
     await install([row("a", 1500), row("b", 2500)]);
-    await expect(samplePuzzle({ databaseId: "puzzles", ids: [] })).rejects.toThrow(/No puzzles left to try again/);
+    await expect(samplePuzzle({ databaseId: "puzzles", ids: [] })).rejects.toThrow(
+      /No puzzles left to try again/
+    );
   });
 
   it("reaches fresh puzzles past the excluded ones at the file's start", async () => {
@@ -800,6 +983,7 @@ describe("samplePuzzle", () => {
     const first = samplePuzzle(input());
     const second = samplePuzzle(input());
     await vi.waitFor(() => expect(gatedScans.length).toBe(1));
+    // oxlint-disable-next-line chaturanga/no-test-sleep -- an absence check: the second request joining shows no event, only no second scan
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(gatedScans.filter(isQuick)).toHaveLength(1);
     gatedScans[0]!.release();
@@ -838,7 +1022,9 @@ describe("samplePuzzle", () => {
     vi.spyOn(logger, "warn").mockImplementation(() => undefined);
     await install([row("a", 1500)]);
     setPuzzleScanner(workerScanner(join(userData, "no-such-worker.js")));
-    await expect(samplePuzzle(input())).rejects.toThrow(/Couldn't search Puzzles for puzzles: the puzzle scanner .* is missing/);
+    await expect(samplePuzzle(input())).rejects.toThrow(
+      /Couldn't search Puzzles for puzzles: the puzzle scanner .* is missing/
+    );
     setPuzzleScanner(inThreadScanner);
     expect((await samplePuzzle(input())).id).toBe("a");
   });
@@ -852,9 +1038,13 @@ describe("samplePuzzle", () => {
     await writeFile(crashing, 'throw new Error("boom");');
     await writeFile(silent, "");
     setPuzzleScanner(workerScanner(crashing));
-    await expect(samplePuzzle(input({ ratingMin: 1 }))).rejects.toThrow(/the puzzle scanner crashed \(boom\)/);
+    await expect(samplePuzzle(input({ ratingMin: 1 }))).rejects.toThrow(
+      /the puzzle scanner crashed \(boom\)/
+    );
     setPuzzleScanner(workerScanner(silent));
-    await expect(samplePuzzle(input({ ratingMin: 2 }))).rejects.toThrow(/stopped without an answer \(exit code 0\)/);
+    await expect(samplePuzzle(input({ ratingMin: 2 }))).rejects.toThrow(
+      /stopped without an answer \(exit code 0\)/
+    );
   });
 
   it("tries a failed whole-file scan again later", async () => {
@@ -863,7 +1053,8 @@ describe("samplePuzzle", () => {
     await install(Array.from({ length: 1000 }, (_, index) => row(`p${index}`, 1500)));
     await samplePuzzle(input());
     await vi.waitFor(() => expect(fullScans.count).toBe(1));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    // The failure is logged once it is recorded (the retry clock starts then).
+    await vi.waitFor(() => expect(logger.warn).toHaveBeenCalled());
     fullScans.fail = false;
     const now = Date.now();
     vi.spyOn(Date, "now").mockReturnValue(now + 60_000);
@@ -880,7 +1071,7 @@ describe("samplePuzzle", () => {
     expect(String(warn.mock.calls[0])).toMatch(/corrupt block/);
     await samplePuzzle(input());
     await samplePuzzle(input());
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // A retry would start within samplePuzzle (requestFullScan): none did, inside the retry delay.
     expect(fullScans.count).toBe(1);
     expect(warn).toHaveBeenCalledTimes(1);
   });
@@ -893,8 +1084,12 @@ describe("samplePuzzle", () => {
 
   it("doesn't let rows too short to make a puzzle fill the sample", async () => {
     // More one-move rows than a quick scan keeps, all before the only real puzzle.
-    const oneMove = (id: string) => `${id},rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1,e2e4,1500,80,90,100,short,,`;
-    await install([...Array.from({ length: 600 }, (_, index) => oneMove(`short${index}`)), row("good", 1500)]);
+    const oneMove = (id: string) =>
+      `${id},rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1,e2e4,1500,80,90,100,short,,`;
+    await install([
+      ...Array.from({ length: 600 }, (_, index) => oneMove(`short${index}`)),
+      row("good", 1500)
+    ]);
     expect((await samplePuzzle(input())).id).toBe("good");
   });
 
@@ -903,7 +1098,9 @@ describe("samplePuzzle", () => {
     const sample = await samplePuzzle({ ...input({ ratingMin: 2000 }), excludeIds: ["done"] });
     expect(sample.id).toBe("high");
     expect(sample.sideToMove).toBe("black");
-    await expect(samplePuzzle({ ...input({ ratingMin: 2000 }), excludeIds: ["done", "high"] })).rejects.toThrow(/No puzzle matched/);
+    await expect(
+      samplePuzzle({ ...input({ ratingMin: 2000 }), excludeIds: ["done", "high"] })
+    ).rejects.toThrow(/No puzzle matched/);
   });
 });
 
@@ -927,9 +1124,14 @@ describe("entries registered in the old folder", () => {
 
   it("follow their moved file when sampled", async () => {
     await mkdir(dir, { recursive: true });
-    const header = "PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags";
-    const puzzle = "p1,rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1,e2e4 e7e5,1500,80,90,100,short,,";
-    await writeFile(join(dir, "lichess-puzzles-lichess_db_puzzle.csv"), [header, puzzle].join("\n"));
+    const header =
+      "PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags";
+    const puzzle =
+      "p1,rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1,e2e4 e7e5,1500,80,90,100,short,,";
+    await writeFile(
+      join(dir, "lichess-puzzles-lichess_db_puzzle.csv"),
+      [header, puzzle].join("\n")
+    );
     rows.set(SOURCE, {
       id: "db",
       sourceId: SOURCE,

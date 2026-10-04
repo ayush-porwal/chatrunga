@@ -27,7 +27,9 @@ export function useBoardPolish(elementRef: RefObject<HTMLElement | null>): void 
     const quiet = () => pointerDown || resizing || prefersReducedMotion();
 
     const isShapeRoot = (node: Node | null): node is SVGGElement =>
-      node instanceof SVGGElement && node.parentElement instanceof SVGSVGElement && /\bcg-(shapes|shapes-below)\b/.test(node.parentElement.getAttribute("class") ?? "");
+      node instanceof SVGGElement &&
+      node.parentElement instanceof SVGSVGElement &&
+      /\bcg-(shapes|shapes-below)\b/.test(node.parentElement.getAttribute("class") ?? "");
 
     const observer = new MutationObserver((records) => {
       if (quiet()) return;
@@ -36,13 +38,17 @@ export function useBoardPolish(elementRef: RefObject<HTMLElement | null>): void 
         const root = record.target;
         for (const added of record.addedNodes) {
           if (!(added instanceof SVGGElement) || added.dataset.leaving) continue;
-          added.animate([{ opacity: 0 }, { opacity: 1 }], { duration: SHAPE_FADE_IN_MS, easing: "cubic-bezier(0.22, 1, 0.36, 1)" });
+          added.animate([{ opacity: 0 }, { opacity: 1 }], {
+            duration: SHAPE_FADE_IN_MS,
+            easing: "cubic-bezier(0.22, 1, 0.36, 1)"
+          });
         }
         for (const removed of record.removedNodes) {
           if (!(removed instanceof SVGGElement) || removed.dataset.leaving) continue;
           // A stand-in keeps the old shape on screen while it fades; without a cgHash Chessground
           // treats it as stale and may drop it early on its next sync, which is fine.
-          const ghost = removed.cloneNode(true) as SVGGElement;
+          const ghost = removed.cloneNode(true);
+          if (!(ghost instanceof SVGGElement)) continue;
           ghost.removeAttribute("cgHash");
           ghost.dataset.leaving = "true";
           root.appendChild(ghost);

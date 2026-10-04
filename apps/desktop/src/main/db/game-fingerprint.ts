@@ -16,7 +16,11 @@ export function gameFingerprint(input: {
 }): string | null {
   const lichess = lichessGameId(input.headers.site);
   if (lichess) return `lichess:${lichess}`;
-  const who = [normalized(input.headers.white), normalized(input.headers.black), normalized(input.headers.date)];
+  const who = [
+    normalized(input.headers.white),
+    normalized(input.headers.black),
+    normalized(input.headers.date)
+  ];
   if (who.every((part) => !part)) return null;
   const moves = mainlineUcis(input.moveTree);
   const parts = [input.rootFen.trim(), moves.join(" "), ...who];
@@ -25,7 +29,10 @@ export function gameFingerprint(input: {
 
 /** The Lichess game id in a game URL (`https://lichess.org/abcd1234`, also `/abcd1234/black`). */
 export function lichessGameId(site: string | null | undefined): string | null {
-  const match = /^https?:\/\/(?:www\.)?lichess\.org\/([A-Za-z0-9]{8})(?:[A-Za-z0-9]{4})?(?:[/?#].*)?$/.exec(site?.trim() ?? "");
+  const match =
+    /^https?:\/\/(?:www\.)?lichess\.org\/([A-Za-z0-9]{8})(?:[A-Za-z0-9]{4})?(?:[/?#].*)?$/.exec(
+      site?.trim() ?? ""
+    );
   return match?.[1] ?? null;
 }
 

@@ -1,4 +1,5 @@
 import type { IdeaFactsPayload, ReviewInsightPayload } from "../schemas/review-insight";
+import { isRecord } from "../types/guards";
 
 /**
  * Provider-neutral coach contract: the prompt, the response parser and the
@@ -393,7 +394,8 @@ export function parseCoachResponse(raw: string): CoachParts {
     const end = candidate.lastIndexOf("}");
     if (start < 0 || end <= start) continue;
     try {
-      const parsed = JSON.parse(candidate.slice(start, end + 1)) as Record<string, unknown>;
+      const parsed: unknown = JSON.parse(candidate.slice(start, end + 1));
+      if (!isRecord(parsed)) continue;
       const body = cleanText(parsed.body ?? parsed.prose ?? parsed.commentary ?? parsed.text);
       if (!body) continue;
       const headline = cleanText(parsed.headline ?? parsed.title)?.replace(/[.!]+$/, "");

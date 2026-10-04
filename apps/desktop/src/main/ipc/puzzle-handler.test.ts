@@ -5,7 +5,8 @@ const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown
 vi.mock("electron", () => ({
   app: { getPath: () => "/nonexistent" },
   ipcMain: {
-    handle: (channel: string, handler: (event: unknown, ...args: unknown[]) => unknown) => handlers.set(channel, handler)
+    handle: (channel: string, handler: (event: unknown, ...args: unknown[]) => unknown) =>
+      handlers.set(channel, handler)
   }
 }));
 
@@ -17,7 +18,8 @@ vi.mock("../db/puzzle-attempts", () => ({
   puzzleAttemptRepository: {
     record: (input: RecordPuzzleAttemptInput) => {
       recorded.push(input.attemptId);
-      if (busyOnce.delete(input.attemptId)) throw Object.assign(new Error("database is locked"), { errcode: 5 });
+      if (busyOnce.delete(input.attemptId))
+        throw Object.assign(new Error("database is locked"), { errcode: 5 });
       if (failing.has(input.attemptId)) throw new Error("disk I/O error");
       return { attemptId: input.attemptId };
     }
@@ -57,7 +59,10 @@ describe("puzzles:recordAttempt", () => {
     busyOnce.add("early");
     const early = recordAttempt("early");
     const later = recordAttempt("later");
-    await expect(Promise.all([early, later])).resolves.toEqual([{ attemptId: "early" }, { attemptId: "later" }]);
+    await expect(Promise.all([early, later])).resolves.toEqual([
+      { attemptId: "early" },
+      { attemptId: "later" }
+    ]);
     expect(recorded).toEqual(["early", "early", "later"]);
   });
 
@@ -71,7 +76,9 @@ describe("puzzles:recordAttempt", () => {
   });
 
   it("rejects an invalid attempt without recording it", async () => {
-    expect(() => handlers.get("puzzles:recordAttempt")!(null, { attemptId: "x" })).toThrow();
+    expect(() => handlers.get("puzzles:recordAttempt")!(null, { attemptId: "x" })).toThrow(
+      /Invalid puzzle outcome/
+    );
     expect(recorded).toEqual([]);
   });
 });

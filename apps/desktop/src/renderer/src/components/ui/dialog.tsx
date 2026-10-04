@@ -85,7 +85,12 @@ function Dialog({
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (panel && !panel.contains(document.activeElement)) panel.focus({ preventScroll: true });
     return () => {
-      if (previous?.isConnected && (!document.activeElement || document.activeElement === document.body || panel?.contains(document.activeElement))) {
+      if (
+        previous?.isConnected &&
+        (!document.activeElement ||
+          document.activeElement === document.body ||
+          panel?.contains(document.activeElement))
+      ) {
         previous.focus({ preventScroll: true });
       }
     };
@@ -125,6 +130,7 @@ function Dialog({
         if (onClose && event.target === event.currentTarget) onClose();
       }}
     >
+      {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- the dialog keeps Tab inside itself (focus trap) */}
       <section
         ref={panelRef}
         role="dialog"
@@ -150,7 +156,14 @@ function Dialog({
             ) : null}
           </div>
           {onClose ? (
-            <IconButton label="Close" icon={<X />} size="icon-sm" className="-mr-1.5 -mt-1" onClick={onClose} tooltip={false} />
+            <IconButton
+              label="Close"
+              icon={<X />}
+              size="icon-sm"
+              className="-mr-1.5 -mt-1"
+              onClick={onClose}
+              tooltip={false}
+            />
           ) : null}
         </header>
         {/* The body scrolls between the pinned header and footer, so a long body never pushes them

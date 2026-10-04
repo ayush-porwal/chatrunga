@@ -1,5 +1,8 @@
 import { reviewInsightPayloadSchema, type ReviewInsightPayload } from "@chaturanga/shared/schemas";
-import { puzzleInsightPayloadSchema, type PuzzleInsightPayload } from "@chaturanga/shared/schemas/puzzle-insight";
+import {
+  puzzleInsightPayloadSchema,
+  type PuzzleInsightPayload
+} from "@chaturanga/shared/schemas/puzzle-insight";
 import {
   COACH_SYSTEM_PROMPT,
   buildRetryMessage,
@@ -16,6 +19,7 @@ import {
 } from "@chaturanga/shared/llm/puzzle-explanation";
 import type { PuzzleExplanation, ReviewCommentary } from "@chaturanga/shared/types/engine";
 import { DEFAULT_COMMENTARY_MODEL } from "@chaturanga/shared/llm/models";
+import { isRecord } from "@chaturanga/shared/types/guards";
 
 const OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_TIMEOUT_MS = 45_000;
@@ -49,7 +53,11 @@ export type CommentaryFailureCode =
   | "validation_failed";
 
 /** Token counts and cost as OpenRouter reported them; a field it didn't report stays unknown. */
-export type CommentaryUsage = { promptTokens?: number; completionTokens?: number; costUsd?: number };
+export type CommentaryUsage = {
+  promptTokens?: number;
+  completionTokens?: number;
+  costUsd?: number;
+};
 
 /**
  * One logical request per move (`request`), each HTTP attempt it took (`attempt`: the first, and
@@ -93,14 +101,16 @@ export type OpenRouterCommentaryResult = {
   error: string | null;
 };
 
-export const NO_API_KEY_ERROR = "Add an OpenRouter API key in Settings → Commentary to get commentary.";
+export const NO_API_KEY_ERROR =
+  "Add an OpenRouter API key in Settings → Commentary to get commentary.";
 /** A key is saved but can't be decrypted on this computer (keychain access denied, copied profile). */
 export const UNREADABLE_API_KEY_ERROR =
   "Your saved OpenRouter key couldn't be read on this computer. Add it again in Settings → Commentary.";
 const UNREACHABLE_ERROR = "OpenRouter couldn't be reached. Check your connection and try again.";
 const TIMEOUT_ERROR = "OpenRouter took too long to answer. Try again in a moment.";
 const EMPTY_ANSWER_ERROR = "The model returned an empty answer. Try again, or pick another model.";
-const INVALID_ANSWER_ERROR = "The model's answer didn't match the engine facts, even after a retry.";
+const INVALID_ANSWER_ERROR =
+  "The model's answer didn't match the engine facts, even after a retry.";
 
 /**
  * A failure with a message that is safe to show. Provider response bodies and credential-bearing
@@ -121,9 +131,18 @@ class CommentaryCancelled extends Error {}
 
 function httpFailure(status: number): CommentaryFailure {
   if (status === 401 || status === 403) {
-    return new CommentaryFailure("OpenRouter rejected the API key. Check it in Settings → Commentary.", "invalid_key", status);
+    return new CommentaryFailure(
+      "OpenRouter rejected the API key. Check it in Settings → Commentary.",
+      "invalid_key",
+      status
+    );
   }
-  if (status === 402) return new CommentaryFailure("Your OpenRouter account is out of credits.", "insufficient_credits", status);
+  if (status === 402)
+    return new CommentaryFailure(
+      "Your OpenRouter account is out of credits.",
+      "insufficient_credits",
+      status
+    );
   if (status === 404) {
     return new CommentaryFailure(
       "OpenRouter doesn't know this model. Check the model name in Settings → Commentary.",
@@ -132,9 +151,17 @@ function httpFailure(status: number): CommentaryFailure {
     );
   }
   if (status === 429) {
-    return new CommentaryFailure("OpenRouter is rate limiting requests. Try again in a moment.", "rate_limited", status);
+    return new CommentaryFailure(
+      "OpenRouter is rate limiting requests. Try again in a moment.",
+      "rate_limited",
+      status
+    );
   }
-  return new CommentaryFailure(`OpenRouter returned an error (${status}). Try again in a moment.`, "provider_error", status);
+  return new CommentaryFailure(
+    `OpenRouter returned an error (${status}). Try again in a moment.`,
+    "provider_error",
+    status
+  );
 }
 
 /**
@@ -172,11 +199,18 @@ export async function generateOpenRouterCommentary(
     const trace: AttemptTrace = { attempts: 0, firstAttemptValid: false };
     report({ type: "request", ply });
     try {
-      const check = await generateOne(reviewTask(payload), apiKey, model, fetchImpl, options.timeoutMs ?? DEFAULT_TIMEOUT_MS, {
-        trace,
-        monotonic,
-        report
-      });
+      const check = await generateOne(
+        reviewTask(payload),
+        apiKey,
+        model,
+        fetchImpl,
+        options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        {
+          trace,
+          monotonic,
+          report
+        }
+      );
       const result = accepted(payload, model, check);
       report({
         type: "outcome",
@@ -191,7 +225,14 @@ export async function generateOpenRouterCommentary(
     } catch (failure) {
       const known = failure instanceof CommentaryFailure ? failure : null;
       error ??= known ? known.message : UNREACHABLE_ERROR;
-      report({ type: "outcome", ply, ok: false, code: known?.code ?? "network", ...trace, latencyMs: monotonic() - startedAt });
+      report({
+        type: "outcome",
+        ply,
+        ok: false,
+        code: known?.code ?? "network",
+        ...trace,
+        latencyMs: monotonic() - startedAt
+      });
       return null;
     }
   });
@@ -234,9 +275,21 @@ function escapeRegExp(value: string): string {
 }
 
 /** A move whose request never reached the provider (no key): one request, no attempts, a failure. */
-export function reportUnsent(report: (event: CommentaryReport) => void, ply: number, code: CommentaryFailureCode): void {
+export function reportUnsent(
+  report: (event: CommentaryReport) => void,
+  ply: number,
+  code: CommentaryFailureCode
+): void {
   report({ type: "request", ply });
-  report({ type: "outcome", ply, ok: false, code, attempts: 0, firstAttemptValid: false, latencyMs: 0 });
+  report({
+    type: "outcome",
+    ply,
+    ok: false,
+    code,
+    attempts: 0,
+    firstAttemptValid: false,
+    latencyMs: 0
+  });
 }
 
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
@@ -301,15 +354,28 @@ async function generateOne(
   const { trace, monotonic, report } = instrumentation;
   const { ply, redact } = task;
   /** One HTTP attempt, reported with its latency, outcome and (when known) usage. */
-  const attempt = async (reason: "initial" | "validation_retry", messages: ChatMessage[], temperature: number) => {
+  const attempt = async (
+    reason: "initial" | "validation_retry",
+    messages: ChatMessage[],
+    temperature: number
+  ) => {
     trace.attempts += 1;
     const startedAt = monotonic();
     const request = { messages, temperature, maxTokens: task.maxTokens };
     const reported = {
       ...request,
-      messages: messages.map((message) => ({ role: message.role, content: redact(message.content) }))
+      messages: messages.map((message) => ({
+        role: message.role,
+        content: redact(message.content)
+      }))
     };
-    const base = { type: "attempt" as const, ply, attempt: trace.attempts, reason, request: reported };
+    const base = {
+      type: "attempt" as const,
+      ply,
+      attempt: trace.attempts,
+      reason,
+      request: reported
+    };
     try {
       const answer = await requestCompletion(apiKey, model, request, fetchImpl, timeoutMs, signal);
       const check = task.validate(answer.content);
@@ -389,15 +455,16 @@ async function requestCompletion(
       signal: controller.signal
     });
     if (!response.ok) throw httpFailure(response.status);
-    const body = (await response.json()) as {
-      choices?: Array<{ message?: { content?: unknown } }>;
-      usage?: unknown;
-    };
-    const content = body.choices?.[0]?.message?.content;
+    const body: unknown = await response.json();
+    const fields = isRecord(body) ? body : {};
+    const choices: unknown[] = Array.isArray(fields.choices) ? fields.choices : [];
+    const choice = choices[0];
+    const message = isRecord(choice) ? choice.message : undefined;
+    const content = isRecord(message) ? message.content : undefined;
     if (typeof content !== "string" || !content.trim()) {
       throw new CommentaryFailure(EMPTY_ANSWER_ERROR, "empty_response", response.status);
     }
-    return { content: content.trim(), usage: parseUsage(body.usage) };
+    return { content: content.trim(), usage: parseUsage(fields.usage) };
   } catch (error) {
     if (signal?.aborted) throw new CommentaryCancelled();
     if (timedOut) throw new CommentaryFailure(TIMEOUT_ERROR, "timeout");
@@ -414,9 +481,10 @@ async function requestCompletion(
  * numbers; anything missing or malformed stays unknown — never zero.
  */
 export function parseUsage(value: unknown): CommentaryUsage | null {
-  if (!value || typeof value !== "object") return null;
-  const usage = value as Record<string, unknown>;
-  const count = (field: unknown) => (typeof field === "number" && Number.isFinite(field) && field >= 0 ? field : undefined);
+  if (!isRecord(value)) return null;
+  const usage = value;
+  const count = (field: unknown) =>
+    typeof field === "number" && Number.isFinite(field) && field >= 0 ? field : undefined;
   const parsed: CommentaryUsage = {
     promptTokens: count(usage.prompt_tokens),
     completionTokens: count(usage.completion_tokens),
@@ -430,7 +498,7 @@ async function mapWithConcurrency<T, R>(
   limit: number,
   task: (item: T) => Promise<R>
 ): Promise<R[]> {
-  const results = new Array<R>(items.length);
+  const results: R[] = [];
   let cursor = 0;
   async function worker() {
     while (cursor < items.length) {
@@ -487,7 +555,15 @@ export async function explainPuzzleWithOpenRouter(
   try {
     const fetchImpl = options.fetchImpl ?? fetch;
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    const check = await generateOne(task, apiKey, model, fetchImpl, timeoutMs, instrumentation, options.signal);
+    const check = await generateOne(
+      task,
+      apiKey,
+      model,
+      fetchImpl,
+      timeoutMs,
+      instrumentation,
+      options.signal
+    );
     return {
       explanation: {
         prose: check.prose,
@@ -498,8 +574,12 @@ export async function explainPuzzleWithOpenRouter(
       error: null
     };
   } catch (failure) {
-    if (failure instanceof CommentaryCancelled) return { explanation: null, error: null, cancelled: true };
-    return { explanation: null, error: failure instanceof CommentaryFailure ? failure.message : UNREACHABLE_ERROR };
+    if (failure instanceof CommentaryCancelled)
+      return { explanation: null, error: null, cancelled: true };
+    return {
+      explanation: null,
+      error: failure instanceof CommentaryFailure ? failure.message : UNREACHABLE_ERROR
+    };
   }
 }
 

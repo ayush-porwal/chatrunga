@@ -32,7 +32,9 @@ function EmptyState({
     <div className={cn("grid justify-items-center gap-2 px-6 py-10 text-center", className)}>
       {icon ? <div className="mb-1 text-fg-subtle [&_svg]:size-5">{icon}</div> : null}
       <p className="text-sm font-medium text-fg-secondary">{title}</p>
-      {description ? <p className="max-w-sm text-xs leading-5 text-fg-muted">{description}</p> : null}
+      {description ? (
+        <p className="max-w-sm text-xs leading-5 text-fg-muted">{description}</p>
+      ) : null}
       {action ? <div className="mt-2">{action}</div> : null}
     </div>
   );

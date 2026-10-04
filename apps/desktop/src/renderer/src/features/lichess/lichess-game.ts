@@ -1,10 +1,18 @@
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import type { Color, GameHeaders } from "@chaturanga/shared/types/chess";
-import type { LichessGameFull, LichessGameState, LichessPlayer, LichessSpeed } from "@chaturanga/shared/types/lichess";
+import type {
+  LichessGameFull,
+  LichessGameState,
+  LichessPlayer,
+  LichessSpeed
+} from "@chaturanga/shared/types/lichess";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 
 /** Your side in a Lichess game, from your account id; null when you aren't playing it. */
-export function yourColor(game: Pick<LichessGameFull, "white" | "black">, accountId: string): Color | null {
+export function yourColor(
+  game: Pick<LichessGameFull, "white" | "black">,
+  accountId: string
+): Color | null {
   if (game.white.id === accountId) return "white";
   if (game.black.id === accountId) return "black";
   return null;
@@ -19,7 +27,9 @@ export function isGameOver(state: Pick<LichessGameState, "status">): boolean {
  * forfeit", …) for a finished Lichess game; null while it's still being played. Aborted games have
  * no result ("*").
  */
-export function lichessOutcome(state: Pick<LichessGameState, "status" | "winner">): { result: string; termination: string } | null {
+export function lichessOutcome(
+  state: Pick<LichessGameState, "status" | "winner">
+): { result: string; termination: string } | null {
   if (!isGameOver(state)) return null;
   const result = state.winner === "white" ? "1-0" : state.winner === "black" ? "0-1" : "1/2-1/2";
   switch (state.status) {
@@ -71,13 +81,19 @@ export function speedLabel(speed: LichessSpeed): string {
 export function clockLabel(clock: { initialMs: number; incrementMs: number }): string {
   const minutes = clock.initialMs / 60_000;
   const fractions: Record<number, string> = { 0.25: "¼", 0.5: "½", 0.75: "¾" };
-  const shown = Number.isInteger(minutes) ? String(minutes) : (fractions[minutes] ?? minutes.toFixed(1));
+  const shown = Number.isInteger(minutes)
+    ? String(minutes)
+    : (fractions[minutes] ?? minutes.toFixed(1));
   return `${shown}+${Math.round(clock.incrementMs / 1000)}`;
 }
 
 /** What kind of Lichess game this is, for the titlebar: `Rated · Rapid · 10+5`. */
 export function lichessGameLabel(game: Pick<LichessGameFull, "rated" | "speed" | "clock">): string {
-  return [game.rated ? "Rated" : "Casual", speedLabel(game.speed), game.clock ? clockLabel(game.clock) : null]
+  return [
+    game.rated ? "Rated" : "Casual",
+    speedLabel(game.speed),
+    game.clock ? clockLabel(game.clock) : null
+  ]
     .filter(Boolean)
     .join(" · ");
 }
@@ -93,7 +109,9 @@ export function lichessHeaders(game: LichessGameFull): GameHeaders {
     black: playerLabel(game.black),
     whiteElo: game.white.rating ? String(game.white.rating) : null,
     blackElo: game.black.rating ? String(game.black.rating) : null,
-    timeControl: game.clock ? `${Math.round(game.clock.initialMs / 1000)}+${Math.round(game.clock.incrementMs / 1000)}` : "-",
+    timeControl: game.clock
+      ? `${Math.round(game.clock.initialMs / 1000)}+${Math.round(game.clock.incrementMs / 1000)}`
+      : "-",
     result: "*"
   };
 }
@@ -131,7 +149,8 @@ export const CHALLENGE_PRESETS: readonly LichessClockPreset[] = [
   { minutes: 15, incrementSec: 10 }
 ];
 
-export const presetLabel = (preset: LichessClockPreset) => `${preset.minutes}+${preset.incrementSec}`;
+export const presetLabel = (preset: LichessClockPreset) =>
+  `${preset.minutes}+${preset.incrementSec}`;
 
 /** Lichess (or the IPC bridge) refused a move or an action: its message, else `fallback`. */
 export function lichessErrorMessage(error: unknown, fallback: string): string {

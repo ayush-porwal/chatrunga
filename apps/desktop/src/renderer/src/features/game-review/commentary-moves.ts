@@ -77,11 +77,39 @@ const TOKEN_REGEX =
 const BARE_SQUARE = /^[a-h][1-8]$/;
 /** Words around a bare square that make it a square reference ("the knight on d5", "the e4 pawn"). */
 const SQUARE_WORD_BEFORE = new Set([
-  "on", "to", "from", "at", "onto", "into", "toward", "towards", "square", "squares", "of", "via",
-  "over", "near", "around", "the", "controls", "control", "covers", "covering"
+  "on",
+  "to",
+  "from",
+  "at",
+  "onto",
+  "into",
+  "toward",
+  "towards",
+  "square",
+  "squares",
+  "of",
+  "via",
+  "over",
+  "near",
+  "around",
+  "the",
+  "controls",
+  "control",
+  "covers",
+  "covering"
 ]);
 const SQUARE_WORD_AFTER = new Set([
-  "pawn", "pawns", "square", "squares", "knight", "bishop", "rook", "queen", "king", "file", "diagonal"
+  "pawn",
+  "pawns",
+  "square",
+  "squares",
+  "knight",
+  "bishop",
+  "rook",
+  "queen",
+  "king",
+  "file",
+  "diagonal"
 ]);
 /** How far back the grounded history reaches (the payload's recentMoves window) and forward (actual reply). */
 const HISTORY_BEFORE = 6;
@@ -103,7 +131,12 @@ export function tokenizeCommentary(prose: string): CommentarySegment[] {
     const start = match.index ?? 0;
     if (!body) continue;
     const plyHint = number ? Number(number) * 2 - (dots === "." ? 1 : 0) : null;
-    if (!number && BARE_SQUARE.test(body) && !suffix && looksLikeSquareReference(prose, start, start + full.length)) {
+    if (
+      !number &&
+      BARE_SQUARE.test(body) &&
+      !suffix &&
+      looksLikeSquareReference(prose, start, start + full.length)
+    ) {
       continue;
     }
     pushText(prose.slice(cursor, start));
@@ -116,9 +149,18 @@ export function tokenizeCommentary(prose: string): CommentarySegment[] {
 }
 
 function looksLikeSquareReference(prose: string, start: number, end: number): boolean {
-  const before = prose.slice(0, start).match(/([A-Za-z]+)\W*$/)?.[1]?.toLowerCase();
-  const after = prose.slice(end).match(/^\W*([A-Za-z]+)/)?.[1]?.toLowerCase();
-  return (before !== undefined && SQUARE_WORD_BEFORE.has(before)) || (after !== undefined && SQUARE_WORD_AFTER.has(after));
+  const before = prose
+    .slice(0, start)
+    .match(/([A-Za-z]+)\W*$/)?.[1]
+    ?.toLowerCase();
+  const after = prose
+    .slice(end)
+    .match(/^\W*([A-Za-z]+)/)?.[1]
+    ?.toLowerCase();
+  return (
+    (before !== undefined && SQUARE_WORD_BEFORE.has(before)) ||
+    (after !== undefined && SQUARE_WORD_AFTER.has(after))
+  );
 }
 
 /**
@@ -133,7 +175,12 @@ export function replyLineUcis(move: MoveReview, moves: readonly MoveReview[]): s
   return [];
 }
 
-function lineFromUcis(startNodeId: string, startPly: number, startFen: string, ucis: readonly string[]): CandidateLine {
+function lineFromUcis(
+  startNodeId: string,
+  startPly: number,
+  startFen: string,
+  ucis: readonly string[]
+): CandidateLine {
   const line: CandidateLine = { startNodeId, startPly, sans: [], ucis: [], fens: [startFen] };
   let fen = startFen;
   for (const uci of ucis) {
@@ -148,7 +195,12 @@ function lineFromUcis(startNodeId: string, startPly: number, startFen: string, u
   return line;
 }
 
-function lineFromSans(startNodeId: string, startPly: number, startFen: string, sans: readonly string[]): CandidateLine {
+function lineFromSans(
+  startNodeId: string,
+  startPly: number,
+  startFen: string,
+  sans: readonly string[]
+): CandidateLine {
   const line: CandidateLine = { startNodeId, startPly, sans: [], ucis: [], fens: [startFen] };
   let fen = startFen;
   for (const san of sans) {
@@ -189,11 +241,20 @@ function buildSearchPasses(ctx: CommentaryMoveContext): SearchPass[] {
   // Main line from the root, replayed for legality.
   const path: MoveNode[] = [];
   const seen = new Set<string>();
-  for (let cursor = byId.get(root.children[0] ?? ""); cursor && !seen.has(cursor.id); cursor = byId.get(cursor.children[0] ?? "")) {
+  for (
+    let cursor = byId.get(root.children[0] ?? "");
+    cursor && !seen.has(cursor.id);
+    cursor = byId.get(cursor.children[0] ?? "")
+  ) {
     seen.add(cursor.id);
     path.push(cursor);
   }
-  const mainline = lineFromSans(root.id, root.ply, root.fenAfter, path.map((node) => node.san ?? ""));
+  const mainline = lineFromSans(
+    root.id,
+    root.ply,
+    root.fenAfter,
+    path.map((node) => node.san ?? "")
+  );
   const playedIndex = path.findIndex((node) => node.id === move.nodeId);
   const node = byId.get(move.nodeId);
   const parentId = node?.parentId ?? null;
@@ -202,7 +263,12 @@ function buildSearchPasses(ctx: CommentaryMoveContext): SearchPass[] {
   if (playedIndex >= 0 && playedIndex < mainline.sans.length) {
     passes.push({ kind: "played", line: mainline, indices: [playedIndex] });
     const near = range(mainline.sans.length)
-      .filter((index) => index !== playedIndex && index >= playedIndex - HISTORY_BEFORE && index <= playedIndex + HISTORY_AFTER)
+      .filter(
+        (index) =>
+          index !== playedIndex &&
+          index >= playedIndex - HISTORY_BEFORE &&
+          index <= playedIndex + HISTORY_AFTER
+      )
       .sort((a, b) => Math.abs(a - playedIndex) - Math.abs(b - playedIndex) || b - a);
     passes.push({ kind: "history", line: mainline, indices: near });
   } else if (parentId) {
@@ -214,7 +280,8 @@ function buildSearchPasses(ctx: CommentaryMoveContext): SearchPass[] {
     if (line.sans.length) passes.push({ kind, line, indices: range(line.sans.length) });
   };
   const reply = replyLineUcis(move, ctx.moves);
-  if (node && reply.length) pushLine("reply", lineFromUcis(node.id, move.ply, move.fenAfter, reply));
+  if (node && reply.length)
+    pushLine("reply", lineFromUcis(node.id, move.ply, move.fenAfter, reply));
   if (parentId) {
     const best = move.bestLine.length ? move.bestLine : move.bestMove ? [move.bestMove] : [];
     pushLine("best", lineFromUcis(parentId, moveStartPly, move.fenBefore, best));
@@ -240,7 +307,9 @@ function buildSearchPasses(ctx: CommentaryMoveContext): SearchPass[] {
   }
   if (mainline.sans.length) {
     const center = playedIndex >= 0 ? playedIndex : 0;
-    const covered = new Set(passes.filter((pass) => pass.line === mainline).flatMap((pass) => pass.indices));
+    const covered = new Set(
+      passes.filter((pass) => pass.line === mainline).flatMap((pass) => pass.indices)
+    );
     const rest = range(mainline.sans.length)
       .filter((index) => !covered.has(index))
       .sort((a, b) => Math.abs(a - center) - Math.abs(b - center) || a - b);
@@ -250,7 +319,10 @@ function buildSearchPasses(ctx: CommentaryMoveContext): SearchPass[] {
 }
 
 function normalizeSan(san: string): string {
-  return san.replace(/[+#!?]+$/, "").replace(/^0-0-0$/, "O-O-O").replace(/^0-0$/, "O-O");
+  return san
+    .replace(/[+#!?]+$/, "")
+    .replace(/^0-0-0$/, "O-O-O")
+    .replace(/^0-0$/, "O-O");
 }
 
 function tokenMatches(token: CommentaryMoveToken, line: CandidateLine, index: number): boolean {
@@ -282,7 +354,8 @@ function findRunMatch(
           break;
         }
         ok = tokenMatches(token, pass.line, start + offset);
-        if (ok && strictHints && token.plyHint !== null) ok = token.plyHint === pass.line.startPly + start + offset + 1;
+        if (ok && strictHints && token.plyHint !== null)
+          ok = token.plyHint === pass.line.startPly + start + offset + 1;
       }
       if (ok) return { pass, start };
     }
@@ -317,7 +390,9 @@ function resolveRun(
         const slice = run.slice(position, position + length);
         const found = findRunMatch(slice, passes, strict);
         if (!found) continue;
-        slice.forEach((token, offset) => out.set(token.index, resolvedAt(found.pass, found.start + offset)));
+        slice.forEach((token, offset) =>
+          out.set(token.index, resolvedAt(found.pass, found.start + offset))
+        );
         position += length;
         matched = true;
       }
@@ -383,17 +458,31 @@ export function reviewAnchorFor(
   const byId = new Map(moveTree.map((node) => [node.id, node]));
   const root = moveTree.find((node) => node.parentId === null);
   const mainline = new Set<string>();
-  for (let cursor = root; cursor && !mainline.has(cursor.id); cursor = byId.get(cursor.children[0] ?? "")) mainline.add(cursor.id);
+  for (
+    let cursor = root;
+    cursor && !mainline.has(cursor.id);
+    cursor = byId.get(cursor.children[0] ?? "")
+  )
+    mainline.add(cursor.id);
   if (mainline.has(nodeId)) return null;
   const ancestors: string[] = [];
   const seen = new Set<string>();
-  for (let cursor = byId.get(nodeId); cursor?.parentId && !seen.has(cursor.id); cursor = byId.get(cursor.parentId)) {
+  for (
+    let cursor = byId.get(nodeId);
+    cursor?.parentId && !seen.has(cursor.id);
+    cursor = byId.get(cursor.parentId)
+  ) {
     seen.add(cursor.id);
     ancestors.push(cursor.parentId);
   }
   const preferred = preferredNodeId ? reviewByNodeId.get(preferredNodeId) : undefined;
-  const preferredParent = preferredNodeId ? byId.get(preferredNodeId)?.parentId ?? null : null;
-  if (preferred && preferredNodeId && (ancestors.includes(preferredNodeId) || (preferredParent !== null && ancestors.includes(preferredParent)))) {
+  const preferredParent = preferredNodeId ? (byId.get(preferredNodeId)?.parentId ?? null) : null;
+  if (
+    preferred &&
+    preferredNodeId &&
+    (ancestors.includes(preferredNodeId) ||
+      (preferredParent !== null && ancestors.includes(preferredParent)))
+  ) {
     return { move: preferred, variation: true };
   }
   for (const ancestorId of ancestors) {

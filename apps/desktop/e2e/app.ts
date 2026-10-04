@@ -258,7 +258,7 @@ export function routeToFile(app: ElectronApplication, url: string, file: string)
 /** The next native open dialog picks `file`. */
 export function stubOpenFile(app: ElectronApplication, file: string) {
   return app.evaluate(({ dialog }, file) => {
-    const previous = dialog.showOpenDialog;
+    const previous = dialog.showOpenDialog.bind(dialog);
     dialog.showOpenDialog = (async () => {
       dialog.showOpenDialog = previous;
       return { canceled: false, filePaths: [file] };
@@ -396,7 +396,7 @@ type Fixtures = {
 };
 
 export const test = base.extend<Fixtures>({
-  // eslint-disable-next-line no-empty-pattern
+  // oxlint-disable-next-line no-empty-pattern -- a Playwright fixture lists the fixtures it uses: none
   profile: async ({}, provide) => {
     // The long form of the path: Windows' temp folder can be a short 8.3 name (RUNNER~1).
     const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "chaturanga-e2e-")));

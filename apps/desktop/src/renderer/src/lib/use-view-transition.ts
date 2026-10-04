@@ -10,6 +10,11 @@ type ViewTransitionDocument = Document & {
 
 let activeTransition: { finished: Promise<void> } | null = null;
 
+/** A state update given as a function of the previous value (as React's setState takes it). */
+function isUpdater<T>(next: T | ((previous: T) => T)): next is (previous: T) => T {
+  return typeof next === "function";
+}
+
 /**
  * Runs a React state update inside a View Transition when the browser supports it (Electron's
  * Chromium does): the old view stays on screen until React has rendered the new one, then the
@@ -53,19 +58,25 @@ export function useViewTransitionState<T>(
   // Read once: the kind rule is a pure function of the two values.
   const kindForRef = useRef(kindFor);
 
-  const setWithTransition = useCallback((next: T | ((previous: T) => T), alongside?: () => void) => {
-    const previous = intended.current;
-    const resolved = typeof next === "function" ? (next as (previous: T) => T)(previous) : next;
-    if (Object.is(resolved, previous)) {
-      alongside?.();
-      return;
-    }
-    intended.current = resolved;
-    runViewTransition(() => {
-      alongside?.();
-      setValue(resolved);
-    }, kindForRef.current(previous, resolved));
-  }, []);
+  const setWithTransition = useCallback(
+    (next: T | ((previous: T) => T), alongside?: () => void) => {
+      const previous = intended.current;
+      const resolved = isUpdater(next) ? next(previous) : next;
+      if (Object.is(resolved, previous)) {
+        alongside?.();
+        return;
+      }
+      intended.current = resolved;
+      runViewTransition(
+        () => {
+          alongside?.();
+          setValue(resolved);
+        },
+        kindForRef.current(previous, resolved)
+      );
+    },
+    []
+  );
 
   return [value, setWithTransition];
 }

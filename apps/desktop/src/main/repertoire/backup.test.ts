@@ -388,16 +388,6 @@ describe("native backup: preview", () => {
     ]);
   });
 
-  it("reads a picked file that starts with a byte order mark", async () => {
-    seed();
-    const { text } = await exportText(true);
-    const path = join(files, "bom.json");
-    writeFileSync(path, `\uFEFF${text}`, "utf8");
-    showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [path] });
-    const preview = await service.previewBackupImport({ pickFile: true });
-    expect(preview?.repertoires).toHaveLength(1);
-  });
-
   it("says a repertoire has no progress when its progress list is empty", async () => {
     seed();
     const { text } = await exportText(true);
@@ -450,18 +440,26 @@ describe("native backup: preview", () => {
     expect(() => service.refreshBackupPreview(preview.jobId)).toThrow(/Invalid jobId/);
   });
 
-  it("reads a picked file, and returns null when the open dialog is cancelled", async () => {
-    seed();
-    const { path } = await exportText(false);
-    expect(await service.previewBackupImport({ pickFile: true })).toBeNull();
-    showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [path] });
-    const preview = await service.previewBackupImport({ pickFile: true });
-    expect(preview?.repertoires[0].hasProgress).toBe(false);
-    expect(showOpenDialog.mock.calls[1][0]).toMatchObject({
-      properties: ["openFile"],
-      filters: [{ name: "Chaturanga backup", extensions: ["json"] }]
-    });
-  });
+  it.each([
+    ["as exported", ""],
+    // Saved again by an editor that adds a byte order mark.
+    ["starting with a byte order mark", "\uFEFF"]
+  ])(
+    "reads a picked file (%s), and returns null when the open dialog is cancelled",
+    async (_kind, prefix) => {
+      seed();
+      const { path, text } = await exportText(false);
+      writeFileSync(path, `${prefix}${text}`, "utf8");
+      expect(await service.previewBackupImport({ pickFile: true })).toBeNull();
+      showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [path] });
+      const preview = await service.previewBackupImport({ pickFile: true });
+      expect(preview?.repertoires[0].hasProgress).toBe(false);
+      expect(showOpenDialog.mock.calls[1][0]).toMatchObject({
+        properties: ["openFile"],
+        filters: [{ name: "Chaturanga backup", extensions: ["json"] }]
+      });
+    }
+  );
 
   it("rejects a malformed document and a future format version before keeping a job", async () => {
     const detail = seed();
@@ -480,7 +478,7 @@ describe("native backup: preview", () => {
   it("ignores unknown fields such as an apiKey", async () => {
     seed();
     const { text } = await exportText(true);
-    const document = JSON.parse(text);
+    const document = JSON.parse(text) as { apiKey?: string; repertoires: { settings?: unknown }[] };
     document.apiKey = "sk-secret";
     document.repertoires[0].settings = { enginePath: "/usr/local/bin/stockfish" };
     const preview = (await service.previewBackupImport({ json: JSON.stringify(document) }))!;
@@ -667,7 +665,9 @@ describe("native backup: restore", () => {
     expect(restored.retainedBackupPath).toMatch(
       new RegExp(`repertoire-backups/${detail.id}-.*\\.json$`)
     );
-    const retained = JSON.parse(readFileSync(restored.retainedBackupPath!, "utf8"));
+    const retained = JSON.parse(readFileSync(restored.retainedBackupPath!, "utf8")) as {
+      repertoires: { repertoire: { revision: number }; chapters: unknown[] }[];
+    };
     expect(retained.repertoires[0].repertoire.revision).toBe(edited.revision);
     expect(retained.repertoires[0].chapters).toHaveLength(1);
     // Practice history is kept beside the retained backup only, as raw rows, so it can't make the
@@ -675,7 +675,7 @@ describe("native backup: restore", () => {
     expect(retained.repertoires[0]).not.toHaveProperty("history");
     const history = JSON.parse(
       readFileSync(restored.retainedBackupPath!.replace(/\.json$/, ".history.json"), "utf8")
-    );
+    ) as { sessions: unknown[]; attempts: unknown[] };
     expect(history).toMatchObject({
       format: "chaturanga-repertoire-practice-history",
       repertoireId: detail.id
@@ -866,7 +866,7 @@ describe("native backup: restore", () => {
       /can't be replaced because its own backup couldn't be restored \(it has 1,002 chapters/
     );
     expect(service.getRepertoire(detail.id).chapters).toHaveLength(1_002);
-    expect(() => readdirSync(join(userData, "repertoire-backups"))).toThrow();
+    expect(() => readdirSync(join(userData, "repertoire-backups"))).toThrow(/ENOENT/);
   });
 
   it("counts game links a replace adds or removes in the preview", async () => {

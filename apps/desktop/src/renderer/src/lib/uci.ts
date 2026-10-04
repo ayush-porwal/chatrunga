@@ -1,16 +1,20 @@
 import { promotionSuffix } from "@chaturanga/shared/chess/position";
 import type { Square, UserMove } from "@chaturanga/shared/types/chess";
+import { isSquare, uciSquares } from "@chaturanga/shared/chess/square";
 
 type Promotion = NonNullable<UserMove["promotion"]>;
 
-const PROMOTION_BY_LETTER: Record<string, Promotion> = { q: "queen", r: "rook", b: "bishop", n: "knight" };
+const PROMOTION_BY_LETTER: Record<string, Promotion> = {
+  q: "queen",
+  r: "rook",
+  b: "bishop",
+  n: "knight"
+};
 
 const UCI_MOVE = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
-const SQUARE = /^[a-h][1-8]$/;
-
 /** A board square name, checked (`"e4"`), or null for anything else (Chessground keys include "a0"). */
 export function asSquare(value: string): Square | null {
-  return SQUARE.test(value) ? (value as Square) : null;
+  return isSquare(value) ? value : null;
 }
 
 export function isUciMove(value: string): boolean {
@@ -19,10 +23,11 @@ export function isUciMove(value: string): boolean {
 
 /** `e7e8q` → `{ from: "e7", to: "e8", promotion: "queen" }`; null for text that isn't a UCI move. The caller checks legality. */
 export function userMoveFromUci(uci: string): UserMove | null {
-  if (!isUciMove(uci)) return null;
+  const squares = isUciMove(uci) ? uciSquares(uci) : null;
+  if (!squares) return null;
   return {
-    from: uci.slice(0, 2) as Square,
-    to: uci.slice(2, 4) as Square,
+    from: squares[0],
+    to: squares[1],
     promotion: PROMOTION_BY_LETTER[uci.slice(4, 5)]
   };
 }

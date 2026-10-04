@@ -4,7 +4,12 @@ import { importPgnText } from "@chaturanga/shared/chess/pgn";
 import { positionFromFen } from "@chaturanga/shared/chess/position";
 import { getDb } from "./index";
 import { gameFingerprint } from "./game-fingerprint";
-import { reviewListingFields, reviewRowId, toSavedReviewInfo, type GameReviewRow } from "./review-rows";
+import {
+  reviewListingFields,
+  reviewRowId,
+  toSavedReviewInfo,
+  type GameReviewRow
+} from "./review-rows";
 import {
   defaultSettings,
   hydratePieceSettings,
@@ -13,6 +18,7 @@ import {
   normalizePracticeSettings,
   normalizeReviewEngineSettings,
   normalizeUpdateSettings,
+  settingKeys,
   type AppSettings
 } from "@chaturanga/shared/types/settings";
 import type {
@@ -40,6 +46,9 @@ import type {
   InstalledDatabase
 } from "@chaturanga/shared/types/database";
 import { MAIA_RATINGS, maiaRatingFromText } from "../engine/review-analysis";
+import { allRows, getRow, sqliteErrcode } from "./rows";
+import { parseStoredJson } from "../stored-json";
+import { isOneOf, isRecord } from "@chaturanga/shared/types/guards";
 
 type EngineRow = {
   id: string;
@@ -59,7 +68,7 @@ type EngineRow = {
 
 type GameRow = {
   id: string;
-  source: string;
+  source: GameSource;
   white: string | null;
   black: string | null;
   event: string | null;
@@ -102,7 +111,9 @@ const lowerRegistered = new WeakSet<DatabaseSync>();
 function searchDb(): DatabaseSync {
   const db = getDb();
   if (!lowerRegistered.has(db)) {
-    db.function(LOWER_FN, { deterministic: true }, (value) => (typeof value === "string" ? value.toLowerCase() : null));
+    db.function(LOWER_FN, { deterministic: true }, (value) =>
+      typeof value === "string" ? value.toLowerCase() : null
+    );
     lowerRegistered.add(db);
   }
   return db;
@@ -133,8 +144,8 @@ type ExternalDatabaseRow = {
   source_id: string;
   name: string;
   provider: string;
-  kind: string;
-  format: string;
+  kind: ExternalDatabaseKind;
+  format: ExternalDatabaseFormat;
   file_path: string;
   file_size_bytes: number;
   record_count: number | null;
@@ -150,7 +161,7 @@ const now = () => Date.now();
 function parseArgs(args: string | null): string[] {
   if (!args) return [];
   try {
-    const parsed = JSON.parse(args);
+    const parsed: unknown = JSON.parse(args);
     return Array.isArray(parsed) ? parsed.map(String) : [];
   } catch {
     return [];
@@ -158,11 +169,11 @@ function parseArgs(args: string | null): string[] {
 }
 
 function all<T>(sql: string, ...params: SQLInputValue[]): T[] {
-  return getDb().prepare(sql).all(...params) as T[];
+  return allRows<T>(getDb().prepare(sql), ...params);
 }
 
 function get<T>(sql: string, ...params: SQLInputValue[]): T | null {
-  return (getDb().prepare(sql).get(...params) as T | undefined) ?? null;
+  return getRow<T>(getDb().prepare(sql), ...params) ?? null;
 }
 
 /**
@@ -203,8 +214,8 @@ export async function retryOnceIfBusy<T>(
   try {
     return work();
   } catch (error) {
-    const code = (error as { errcode?: unknown } | null)?.errcode;
-    if (typeof code !== "number" || (code & 0xff) !== 5) throw error;
+    const code = sqliteErrcode(error);
+    if (code === undefined || (code & 0xff) !== 5) throw error;
     await new Promise((resolve) => setTimeout(resolve, delayMs));
     return work();
   }
@@ -230,12 +241,14 @@ export function saveGameRetrying(
 }
 
 function run(sql: string, ...params: SQLInputValue[]): void {
-  getDb().prepare(sql).run(...params);
+  getDb()
+    .prepare(sql)
+    .run(...params);
 }
 
 /** Explicit rating column, else a `maia-1500`-style engine name / weights file. */
 function inferMaiaRating(row: EngineRow): MaiaRating | undefined {
-  if (MAIA_RATINGS.includes(row.maia_rating as MaiaRating)) return row.maia_rating as MaiaRating;
+  if (isOneOf(MAIA_RATINGS, row.maia_rating)) return row.maia_rating;
   return maiaRatingFromText(`${row.name} ${row.weights_path ?? ""}`);
 }
 
@@ -262,7 +275,7 @@ function toEngine(row: EngineRow): EngineConfig {
 function toGameSummary(row: GameSummaryRow): GameSummary {
   return {
     id: row.id,
-    source: row.source as GameSummary["source"],
+    source: row.source,
     white: row.white,
     black: row.black,
     event: row.event,
@@ -283,7 +296,8 @@ function toGameSummary(row: GameSummaryRow): GameSummary {
 function parseMoveTree(row: GameRow): { moveTree: MoveNode[]; rebuilt: boolean } {
   try {
     const parsed: unknown = JSON.parse(row.move_tree_json);
-    if (Array.isArray(parsed) && isConsistentTree(parsed)) return { moveTree: parsed, rebuilt: false };
+    if (Array.isArray(parsed) && isConsistentTree(parsed))
+      return { moveTree: parsed, rebuilt: false };
   } catch {
     // Fall through to the PGN.
   }
@@ -300,18 +314,22 @@ function parseMoveTree(row: GameRow): { moveTree: MoveNode[]; rebuilt: boolean }
  * are moved onto the rebuilt main line by ply (the position after each move must match). A review
  * that doesn't fit the rebuilt game is dropped rather than shown against the wrong moves.
  */
-export function remapReviewToTree(review: GameReview, moveTree: readonly MoveNode[]): GameReview | null {
+export function remapReviewToTree(
+  review: GameReview,
+  moveTree: readonly MoveNode[]
+): GameReview | null {
   // By the node's own ply (absolute: a game from a set-up position starts past 0), not the index.
   const byPly = new Map(mainlineOf(moveTree).map((node) => [node.ply, node]));
   const moves = [];
-  for (const move of review.moves as unknown[]) {
-    // A damaged entry drops the review (it can't be placed), never the game.
-    if (!move || typeof move !== "object") return null;
-    const { ply, fenAfter } = move as Partial<GameReview["moves"][number]>;
-    if (!Number.isInteger(ply) || typeof fenAfter !== "string") return null;
-    const target = byPly.get(ply as number);
+  // The review is stored JSON: a damaged entry drops the review (it can't be placed), never the game.
+  for (const move of review.moves) {
+    if (!isRecord(move)) return null;
+    const { ply, fenAfter }: { ply: unknown; fenAfter: unknown } = move;
+    if (typeof ply !== "number" || !Number.isInteger(ply) || typeof fenAfter !== "string")
+      return null;
+    const target = byPly.get(ply);
     if (!target || target.fenAfter !== fenAfter) return null;
-    moves.push({ ...(move as GameReview["moves"][number]), nodeId: target.id });
+    moves.push({ ...move, nodeId: target.id });
   }
   return { ...review, moves };
 }
@@ -345,22 +363,26 @@ export function rebuiltCursor(moveTree: readonly MoveNode[], currentFen: string)
 const ROOT_NODE_ID = "root";
 
 const isString = (value: unknown): value is string => typeof value === "string";
-const isStringOrNull = (value: unknown): value is string | null => value === null || typeof value === "string";
+const isStringOrNull = (value: unknown): value is string | null =>
+  value === null || typeof value === "string";
 
 /** Every field a move node needs, with its type. Only the root has no move (san/uci null). */
 const SQUARE = /^[a-h][1-8]$/;
 const ANNOTATION_COLORS: readonly unknown[] = ["green", "red", "yellow", "blue"];
 
 function isArrow(value: unknown): boolean {
-  const arrow = value as Record<string, unknown> | null;
-  return Boolean(
-    arrow && typeof arrow === "object" && SQUARE.test(String(arrow.orig)) && SQUARE.test(String(arrow.dest)) && ANNOTATION_COLORS.includes(arrow.color)
+  return (
+    isRecord(value) &&
+    SQUARE.test(String(value.orig)) &&
+    SQUARE.test(String(value.dest)) &&
+    ANNOTATION_COLORS.includes(value.color)
   );
 }
 
 function isHighlight(value: unknown): boolean {
-  const highlight = value as Record<string, unknown> | null;
-  return Boolean(highlight && typeof highlight === "object" && SQUARE.test(String(highlight.square)) && ANNOTATION_COLORS.includes(highlight.color));
+  return (
+    isRecord(value) && SQUARE.test(String(value.square)) && ANNOTATION_COLORS.includes(value.color)
+  );
 }
 
 /** A position the board can show (the board and move list read it as soon as the node is selected). */
@@ -380,13 +402,15 @@ function isPlayableFen(fen: unknown, checked: Map<string, boolean>): boolean {
 }
 
 function isMoveNodeLike(value: unknown, fens: Map<string, boolean> = new Map()): value is MoveNode {
-  if (!value || typeof value !== "object") return false;
-  const node = value as Record<keyof MoveNode, unknown>;
+  if (!isRecord(value)) return false;
+  const node = value;
   const root = node.id === ROOT_NODE_ID;
   return (
     isString(node.id) &&
     (root ? node.parentId === null : isString(node.parentId)) &&
-    (root ? isStringOrNull(node.san) && isStringOrNull(node.uci) : isString(node.san) && isString(node.uci)) &&
+    (root
+      ? isStringOrNull(node.san) && isStringOrNull(node.uci)
+      : isString(node.san) && isString(node.uci)) &&
     isPlayableFen(node.fenBefore, fens) &&
     isPlayableFen(node.fenAfter, fens) &&
     Number.isInteger(node.ply) &&
@@ -435,7 +459,9 @@ export function isConsistentTree(nodes: readonly unknown[]): nodes is MoveNode[]
 function isHeaders(value: unknown): value is GameHeaders {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   return Object.entries(value).every(([key, item]) =>
-    key === "orientationHint" ? item === null || item === "white" || item === "black" : isStringOrNull(item)
+    key === "orientationHint"
+      ? item === null || item === "white" || item === "black"
+      : isStringOrNull(item)
   );
 }
 
@@ -443,13 +469,18 @@ function isHeaders(value: unknown): value is GameHeaders {
  * A stored analysis as the renderer can use it: placed on the game's tree (rebuilt trees remap),
  * or null when it can't be read or doesn't fit the game.
  */
-function parseStoredReview(json: string, moveTree: readonly MoveNode[], rebuilt: boolean): GameReview | null {
+function parseStoredReview(
+  json: string,
+  moveTree: readonly MoveNode[],
+  rebuilt: boolean
+): GameReview | null {
   let review: GameReview | null = null;
   try {
-    const parsed = JSON.parse(json) as GameReview;
+    const parsed = parseStoredJson<GameReview | null>(json);
     // Reviews saved before real Maia policy was parsed have no schemaVersion;
     // mark them v1 so consumers ignore their (uniform) Maia probabilities.
-    if (parsed && Array.isArray(parsed.moves)) review = { ...parsed, schemaVersion: parsed.schemaVersion ?? 1 };
+    if (parsed && Array.isArray(parsed.moves))
+      review = { ...parsed, schemaVersion: parsed.schemaVersion ?? 1 };
   } catch {
     review = null;
   }
@@ -476,7 +507,10 @@ function toSavedGame(row: GameRow): SavedGame {
     row.id
   );
   const newest = listed[0]
-    ? get<{ review_json: string }>("SELECT review_json FROM game_reviews WHERE review_id = ?", listed[0].review_id)
+    ? get<{ review_json: string }>(
+        "SELECT review_json FROM game_reviews WHERE review_id = ?",
+        listed[0].review_id
+      )
     : undefined;
   const review = newest ? parseStoredReview(newest.review_json, moveTree, rebuilt) : null;
 
@@ -604,12 +638,14 @@ export const engineRepository = {
             : null,
         patch.args === undefined ? JSON.stringify(existing.args) : JSON.stringify(patch.args),
         (patch.isDefault === undefined ? existing.isDefault : patch.isDefault) ? 1 : 0,
-        (patch.isHumanPrediction === undefined
-          ? existing.isHumanPrediction
-          : patch.isHumanPrediction)
+        (
+          patch.isHumanPrediction === undefined
+            ? existing.isHumanPrediction
+            : patch.isHumanPrediction
+        )
           ? 1
           : 0,
-        patch.maiaRating === undefined ? existing.maiaRating ?? null : patch.maiaRating,
+        patch.maiaRating === undefined ? (existing.maiaRating ?? null) : patch.maiaRating,
         now(),
         id
       );
@@ -633,7 +669,11 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
   const id = input.id || nanoid();
   const existing = get<{ created_at: number }>("SELECT created_at FROM games WHERE id = ?", id);
   const createdAt = existing?.created_at ?? timestamp;
-  const fingerprint = gameFingerprint({ headers: input.headers, rootFen: input.rootFen, moveTree: input.moveTree });
+  const fingerprint = gameFingerprint({
+    headers: input.headers,
+    rootFen: input.rootFen,
+    moveTree: input.moveTree
+  });
 
   const requestedNode = input.moveTree.find((node) => node.id === input.currentNodeId);
   const currentNodeId =
@@ -763,16 +803,20 @@ export const gameRepository = {
     }
     const needle = query.search?.trim().toLowerCase() ?? "";
     if (needle) {
-      where.push(`(${SEARCH_COLUMNS.map((column) => `instr(${LOWER_FN}(${column}), ?) > 0`).join(" OR ")})`);
+      where.push(
+        `(${SEARCH_COLUMNS.map((column) => `instr(${LOWER_FN}(${column}), ?) > 0`).join(" OR ")})`
+      );
       params.push(...SEARCH_COLUMNS.map(() => needle));
     }
     // One row past the page says whether there is a next one.
-    const rows = (needle ? searchDb() : getDb())
-      .prepare(
+    const rows = allRows<GameSummaryRow>(
+      (needle ? searchDb() : getDb()).prepare(
         `SELECT ${GAME_SUMMARY_COLUMNS}, ${REVIEW_COUNTS_SQL}
         FROM games WHERE ${where.join(" AND ")} ORDER BY updated_at DESC, id ASC LIMIT ?`
-      )
-      .all(...params, limit + 1) as GameSummaryRow[];
+      ),
+      ...params,
+      limit + 1
+    );
     const items = rows.slice(0, limit).map(toGameSummary);
     const last = items.at(-1);
     return {
@@ -824,12 +868,17 @@ export const gameRepository = {
   },
 
   count(): number {
-    return get<{ total: number }>("SELECT COUNT(*) AS total FROM games WHERE source != 'puzzle'")?.total ?? 0;
+    return (
+      get<{ total: number }>("SELECT COUNT(*) AS total FROM games WHERE source != 'puzzle'")
+        ?.total ?? 0
+    );
   },
 
   /** Ids of the games from one source (e.g. Lichess imports). */
   idsBySource(source: GameSource): string[] {
-    return all<{ id: string }>("SELECT id FROM games WHERE source = ?", source).map((row) => row.id);
+    return all<{ id: string }>("SELECT id FROM games WHERE source = ?", source).map(
+      (row) => row.id
+    );
   },
 
   /**
@@ -837,7 +886,12 @@ export const gameRepository = {
    * summary columns. Null when the game is gone.
    */
   getHeaders(id: string): GameHeaders | null {
-    const row = get<Pick<GameRow, "event" | "site" | "date" | "round" | "white" | "black" | "result" | "headers_json">>(
+    const row = get<
+      Pick<
+        GameRow,
+        "event" | "site" | "date" | "round" | "white" | "black" | "result" | "headers_json"
+      >
+    >(
       "SELECT event, site, date, round, white, black, result, headers_json FROM games WHERE id = ?",
       id
     );
@@ -905,7 +959,9 @@ export const settingsRepository = {
     const merged = { ...defaultSettings, ...values } as AppSettings;
     return normalizePracticeSettings(
       normalizeOnboardingSettings(
-        normalizeUpdateSettings(normalizeAppearanceSettings(normalizeReviewEngineSettings(hydratePieceSettings(merged))))
+        normalizeUpdateSettings(
+          normalizeAppearanceSettings(normalizeReviewEngineSettings(hydratePieceSettings(merged)))
+        )
       )
     );
   },
@@ -931,7 +987,7 @@ export const settingsRepository = {
     const db = getDb();
     db.exec("BEGIN IMMEDIATE");
     try {
-      for (const [key, value] of Object.entries(patch)) this.set(key as keyof AppSettings, value);
+      for (const key of settingKeys(patch)) this.set(key, patch[key]);
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");

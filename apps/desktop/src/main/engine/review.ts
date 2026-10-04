@@ -43,9 +43,20 @@ import {
   terminalWdl,
   timeSpentForMove
 } from "./review-analysis";
-import { createLineSplitter, LOG_UCI, spawnUciProcess, stopUciProcess, writeUci } from "./uci-process";
+import {
+  createLineSplitter,
+  LOG_UCI,
+  spawnUciProcess,
+  stopUciProcess,
+  writeUci
+} from "./uci-process";
 import { fileStamp, moveKey, ReviewCache, type CachedMove } from "./review-cache";
-import { createUciIdentity, readHandshakeLine, UCIOK_TIMEOUT_MESSAGE, UCIOK_TIMEOUT_MS } from "./uci-handshake";
+import {
+  createUciIdentity,
+  readHandshakeLine,
+  UCIOK_TIMEOUT_MESSAGE,
+  UCIOK_TIMEOUT_MS
+} from "./uci-handshake";
 
 type LineEvents = {
   line: [string];
@@ -124,10 +135,15 @@ function reviewJobKey(
 
 /** The binary and weights stamps of every engine of a review (see fileStamp). */
 function engineFileStamps(configs: readonly EngineConfig[]): Map<EngineConfig, (string | null)[]> {
-  return new Map(configs.map((item) => [item, [fileStamp(item.executablePath), fileStamp(item.weightsPath)]]));
+  return new Map(
+    configs.map((item) => [item, [fileStamp(item.executablePath), fileStamp(item.weightsPath)]])
+  );
 }
 
-function sameStamps(a: ReadonlyMap<EngineConfig, readonly (string | null)[]>, b: typeof a): boolean {
+function sameStamps(
+  a: ReadonlyMap<EngineConfig, readonly (string | null)[]>,
+  b: typeof a
+): boolean {
   return [...a].every(([item, stamps]) => JSON.stringify(stamps) === JSON.stringify(b.get(item)));
 }
 
@@ -168,7 +184,11 @@ export async function reviewGameWithEngine(
     maiaSlots = maiaSlots.filter((slot, index) => {
       const result = maiaStarts[index];
       if (result.status === "fulfilled") return true;
-      logger.warn("review", `Maia ${slot.config.maiaRating} failed to start; continuing without it:`, result.reason);
+      logger.warn(
+        "review",
+        `Maia ${slot.config.maiaRating} failed to start; continuing without it:`,
+        result.reason
+      );
       slot.session.stop();
       return false;
     });
@@ -184,7 +204,14 @@ export async function reviewGameWithEngine(
     // version. Otherwise they are keyed by the stamps taken before the start (what was loaded).
     const cached = sameStamps(stampsBeforeStart, engineFileStamps([config, ...maiaConfigs]))
       ? reviewCache.job(
-          reviewJobKey(config, maiaSlots.map((slot) => slot.config), stampsBeforeStart, multipv, search, options)
+          reviewJobKey(
+            config,
+            maiaSlots.map((slot) => slot.config),
+            stampsBeforeStart,
+            multipv,
+            search,
+            options
+          )
         )
       : new Map<string, CachedMove>();
     for (let index = 0; index < input.moves.length; index += 1) {
@@ -199,7 +226,12 @@ export async function reviewGameWithEngine(
         ReviewCache.put(cached, cacheKey, done, reviewCache.maxMoves);
         // Already reviewed with this configuration: reuse it (only this game's notation and clock
         // facts differ).
-        const moveReview: MoveReview = { ...done.review, nodeId: move.nodeId, ply: move.ply, san: move.san };
+        const moveReview: MoveReview = {
+          ...done.review,
+          nodeId: move.nodeId,
+          ply: move.ply,
+          san: move.san
+        };
         delete moveReview.clockRemainingMs;
         delete moveReview.timeSpentMs;
         const reusedClock = parseClock(move.clockAfter);
@@ -231,10 +263,18 @@ export async function reviewGameWithEngine(
       emitPhase("before", previousReplyLines ?? []);
       const topLinesPromise: Promise<AnalysisLine[]> = previousReplyLines
         ? Promise.resolve(previousReplyLines)
-        : session.analyze({ fen: move.fenBefore, multipv, search, shouldCancel: sink.shouldCancel });
+        : session.analyze({
+            fen: move.fenBefore,
+            multipv,
+            search,
+            shouldCancel: sink.shouldCancel
+          });
       const activeMaia = maiaSlots.filter((slot) => slot.alive);
       const maiaPromise = Promise.allSettled(
-        activeMaia.map(async (slot) => ({ slot, policy: await slot.session.analyzePolicy(move.fenBefore, sink.shouldCancel) }))
+        activeMaia.map(async (slot) => ({
+          slot,
+          policy: await slot.session.analyzePolicy(move.fenBefore, sink.shouldCancel)
+        }))
       );
 
       const topLines = await topLinesPromise;
@@ -244,7 +284,12 @@ export async function reviewGameWithEngine(
       let replyLines: AnalysisLine[] = [];
       if (!terminal) {
         emitPhase("after", []);
-        replyLines = await session.analyze({ fen: move.fenAfter, multipv, search, shouldCancel: sink.shouldCancel });
+        replyLines = await session.analyze({
+          fen: move.fenAfter,
+          multipv,
+          search,
+          shouldCancel: sink.shouldCancel
+        });
       }
       previousReplyLines = terminal ? null : replyLines;
 
@@ -255,7 +300,11 @@ export async function reviewGameWithEngine(
           const slot = activeMaia[slotIndex];
           if (slot) {
             // Stop retrying a Maia that errored or timed out; the rest carry on.
-            logger.warn("review", `Maia ${slot.config.maiaRating} failed; dropping it:`, result.reason);
+            logger.warn(
+              "review",
+              `Maia ${slot.config.maiaRating} failed; dropping it:`,
+              result.reason
+            );
             slot.alive = false;
             slot.session.stop();
           }
@@ -338,14 +387,23 @@ export async function analysePositionsWithEngine(
   const clamp = (multipv: number) => Math.max(1, Math.min(Math.round(multipv), 5));
   const session = new UciReviewSession(config, options.shouldCancel);
   try {
-    await session.start({ multipv: clamp(input.positions[0]?.multipv ?? 1), threads: options.threads, hashMb: options.hashMb });
+    await session.start({
+      multipv: clamp(input.positions[0]?.multipv ?? 1),
+      threads: options.threads,
+      hashMb: options.hashMb
+    });
     const lines: AnalysisLine[][] = [];
     for (const position of input.positions) {
       if (options.shouldCancel?.()) throw new Error("Review cancelled");
       lines.push(
         terminalStateForFen(position.fen)
           ? []
-          : await session.analyze({ fen: position.fen, multipv: clamp(position.multipv), search, shouldCancel: options.shouldCancel })
+          : await session.analyze({
+              fen: position.fen,
+              multipv: clamp(position.multipv),
+              search,
+              shouldCancel: options.shouldCancel
+            })
       );
     }
     // A search stopped by the cancel ends with bestmove too: its partial lines are not an answer.
@@ -370,26 +428,44 @@ function buildMoveReview(input: {
   const best = topLines[0] ?? null;
   const moverAfter = statusForFen(move.fenAfter).turn;
   // Side-to-move score of fenAfter (opponent's perspective), synthesized when the game ended.
-  const afterScore = terminal ? terminalScore(terminal) : replyLines[0]?.score ?? null;
+  const afterScore = terminal ? terminalScore(terminal) : (replyLines[0]?.score ?? null);
   // White-perspective, except a checkmate stays `mate 0` (= side to move is mated; see `terminal`).
-  const evalAfter = terminal === "checkmate"
-    ? { type: "mate" as const, value: 0 }
-    : afterScore
-      ? scoreFromWhitePerspective(afterScore, moverAfter)
-      : null;
+  const evalAfter =
+    terminal === "checkmate"
+      ? { type: "mate" as const, value: 0 }
+      : afterScore
+        ? scoreFromWhitePerspective(afterScore, moverAfter)
+        : null;
   const playedLine = topLines.find((line) => line.pv[0] === playedUci) ?? null;
   const playedRank = playedLine?.multipv ?? null;
   const evalLoss = computeEvalLoss({ topLines, playedRank, afterScore, terminal });
   const bestMove = best?.pv[0] ?? null;
 
   // `human_error`: the top move of the Maia bucket nearest the player's rating.
-  const bucket = nearestRatingBucket(input.playerRating, humanPredictions.map((p) => p.rating));
-  const humanPrediction = humanPredictions.find((p) => p.rating === bucket)?.topMoves[0]?.uci ?? null;
-  const motifs = tacticalMotifsForBestMove(move.fenBefore, bestMove, best?.score ?? null, input.previousMove);
-  const hasMissedTactic = Boolean(bestMove && bestMove !== playedUci) && motifs.length > 0 && (evalLoss ?? 0) >= 150;
-  const classification = terminal === "checkmate"
-    ? "best"
-    : classifyMove({ playedMove: playedUci, bestMove, evalLoss, hasMissedTactic, humanPrediction });
+  const bucket = nearestRatingBucket(
+    input.playerRating,
+    humanPredictions.map((p) => p.rating)
+  );
+  const humanPrediction =
+    humanPredictions.find((p) => p.rating === bucket)?.topMoves[0]?.uci ?? null;
+  const motifs = tacticalMotifsForBestMove(
+    move.fenBefore,
+    bestMove,
+    best?.score ?? null,
+    input.previousMove
+  );
+  const hasMissedTactic =
+    Boolean(bestMove && bestMove !== playedUci) && motifs.length > 0 && (evalLoss ?? 0) >= 150;
+  const classification =
+    terminal === "checkmate"
+      ? "best"
+      : classifyMove({
+          playedMove: playedUci,
+          bestMove,
+          evalLoss,
+          hasMissedTactic,
+          humanPrediction
+        });
 
   return {
     nodeId: move.nodeId,
@@ -411,7 +487,7 @@ function buildMoveReview(input: {
     playedRank,
     playedLineScore: playedLine?.score ?? null,
     wdlBefore: best?.wdl ?? null,
-    wdlAfter: terminal ? terminalWdl(terminal) : replyLines[0]?.wdl ?? null,
+    wdlAfter: terminal ? terminalWdl(terminal) : (replyLines[0]?.wdl ?? null),
     terminal,
     humanPredictions: humanPredictions.length > 0 ? humanPredictions : undefined,
     motifs
@@ -441,12 +517,20 @@ class UciReviewSession {
     private shouldCancel?: () => boolean
   ) {}
 
-  async start(options: { multipv?: number; threads?: number; hashMb?: number; policyOnly?: boolean }): Promise<void> {
+  async start(options: {
+    multipv?: number;
+    threads?: number;
+    hashMb?: number;
+    policyOnly?: boolean;
+  }): Promise<void> {
     const tag = `uci:${this.config.name}`;
     if (LOG_UCI) logger.info(tag, "spawn", this.config.executablePath, this.config.args);
     this.process = spawnUciProcess(this.config);
 
-    this.process.stdout.on("data", createLineSplitter((line) => this.handleLine(line)));
+    this.process.stdout.on(
+      "data",
+      createLineSplitter((line) => this.handleLine(line))
+    );
     // Lc0 prints banners / progress to stderr; not a failure. Captured for diagnostics.
     this.process.stderr.on("data", (chunk: Buffer) => {
       for (const line of chunk.toString("utf8").split(/\r?\n/)) {
@@ -457,12 +541,17 @@ class UciReviewSession {
     });
     this.process.on("error", (error) => this.fail(error));
     this.process.on("exit", (code) => {
-      if (this.process) this.fail(new Error(`${this.config.name} exited unexpectedly (code ${code ?? "unknown"})`));
+      if (this.process)
+        this.fail(new Error(`${this.config.name} exited unexpectedly (code ${code ?? "unknown"})`));
     });
 
     const identity = createUciIdentity();
     identity.options = this.supportedOptions;
-    const uciReady = this.waitFor((line) => readHandshakeLine(identity, line), UCIOK_TIMEOUT_MS, UCIOK_TIMEOUT_MESSAGE);
+    const uciReady = this.waitFor(
+      (line) => readHandshakeLine(identity, line),
+      UCIOK_TIMEOUT_MS,
+      UCIOK_TIMEOUT_MESSAGE
+    );
     this.write("uci");
     await uciReady;
     this.engineName = identity.name ?? null;
@@ -478,8 +567,10 @@ class UciReviewSession {
       this.setOption("UCI_ShowWDL", "true");
       this.setOption("MultiPV", "1");
     } else {
-      if (options.threads && this.setOption("Threads", String(options.threads))) this.appliedThreads = options.threads;
-      if (options.hashMb && this.setOption("Hash", String(options.hashMb))) this.appliedHashMb = options.hashMb;
+      if (options.threads && this.setOption("Threads", String(options.threads)))
+        this.appliedThreads = options.threads;
+      if (options.hashMb && this.setOption("Hash", String(options.hashMb)))
+        this.appliedHashMb = options.hashMb;
       this.setOption("UCI_ShowWDL", "true");
       this.currentMultipv = options.multipv ?? 1;
       this.setOption("MultiPV", String(this.currentMultipv));
@@ -499,11 +590,12 @@ class UciReviewSession {
       this.currentMultipv = input.multipv;
       this.setOption("MultiPV", String(input.multipv));
     }
-    const go = input.search.nodes !== null && input.search.nodes > 0
-      ? `go nodes ${input.search.nodes}`
-      : input.search.moveTimeMs
-        ? `go movetime ${input.search.moveTimeMs}`
-        : `go depth ${input.search.depth}`;
+    const go =
+      input.search.nodes !== null && input.search.nodes > 0
+        ? `go nodes ${input.search.nodes}`
+        : input.search.moveTimeMs
+          ? `go movetime ${input.search.moveTimeMs}`
+          : `go depth ${input.search.depth}`;
     const infos: EngineInfo[] = [];
     await this.search({
       fen: input.fen,
@@ -564,7 +656,11 @@ class UciReviewSession {
   }
 
   private async ready(): Promise<void> {
-    const engineReady = this.waitFor((line) => line === "readyok", 25_000, "Timed out waiting for readyok");
+    const engineReady = this.waitFor(
+      (line) => line === "readyok",
+      25_000,
+      "Timed out waiting for readyok"
+    );
     this.write("isready");
     await engineReady;
   }
@@ -619,11 +715,15 @@ class UciReviewSession {
           `╠── last 10 stdout lines ────────────────────────────────────────────────`,
           ...snapshot.lines.slice(-10).map((l) => `║   ← ${l}`),
           `╠── last 10 stderr lines ────────────────────────────────────────────────`,
-          ...(snapshot.stderr.length > 0 ? snapshot.stderr.slice(-10).map((l) => `║   ⚠ ${l}`) : [`║   (none)`]),
+          ...(snapshot.stderr.length > 0
+            ? snapshot.stderr.slice(-10).map((l) => `║   ⚠ ${l}`)
+            : [`║   (none)`]),
           `╚════════════════════════════════════════════════════════════════════════`
         ].join("\n");
         logger.error("review", `engine timeout${diagnostics}`);
-        reject(new Error(`${this.config.name} did not answer "${input.go}" within ${elapsedSeconds}s.`));
+        reject(
+          new Error(`${this.config.name} did not answer "${input.go}" within ${elapsedSeconds}s.`)
+        );
       }, input.timeoutMs);
       let stopSent = false;
       const cancelInterval = setInterval(() => {
@@ -708,7 +808,10 @@ function pushTail(buffer: string[], line: string): void {
   if (buffer.length > 50) buffer.shift();
 }
 
-const SUMMARY_FIELD: Record<MoveClassification, Exclude<keyof GameReviewSummary, "totalMoves" | "averageCentipawnLoss">> = {
+const SUMMARY_FIELD: Record<
+  MoveClassification,
+  Exclude<keyof GameReviewSummary, "totalMoves" | "averageCentipawnLoss">
+> = {
   best: "best",
   excellent: "excellent",
   good: "good",
@@ -720,7 +823,16 @@ const SUMMARY_FIELD: Record<MoveClassification, Exclude<keyof GameReviewSummary,
 };
 
 function summarize(moves: MoveReview[]): GameReviewSummary {
-  const counts = { best: 0, excellent: 0, good: 0, inaccuracies: 0, mistakes: 0, blunders: 0, missedTactics: 0, humanErrors: 0 };
+  const counts = {
+    best: 0,
+    excellent: 0,
+    good: 0,
+    inaccuracies: 0,
+    mistakes: 0,
+    blunders: 0,
+    missedTactics: 0,
+    humanErrors: 0
+  };
   let evalLossSum = 0;
   let evalLossCount = 0;
   for (const move of moves) {

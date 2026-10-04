@@ -33,7 +33,10 @@ describe("liveAnalysisEval", () => {
 
   it("shows a finished position's result instead of a score", () => {
     const mated = "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3";
-    expect(liveAnalysisEval(mated, { type: "cp", value: 300 })).toEqual({ whiteShare: 0, label: "0-1 #" });
+    expect(liveAnalysisEval(mated, { type: "cp", value: 300 })).toEqual({
+      whiteShare: 0,
+      label: "0-1 #"
+    });
     const stalemate = "7k/5Q2/6K1/8/8/8/8/8 b - - 0 1";
     expect(liveAnalysisEval(stalemate, null)).toEqual({ whiteShare: 50, label: "½-½" });
   });

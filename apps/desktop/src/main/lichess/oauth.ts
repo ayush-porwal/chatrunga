@@ -5,7 +5,6 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import type { AddressInfo } from "node:net";
 import { LICHESS_ORIGIN, LichessClient, type FetchLike } from "./http";
 
 export const LICHESS_CLIENT_ID = "chaturanga-desktop";
@@ -149,7 +148,11 @@ export async function authorizeInBrowser(options: AuthorizeOptions): Promise<str
 function listen(server: ReturnType<typeof createServer>): Promise<number> {
   return new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => resolve((server.address() as AddressInfo).port));
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (address && typeof address === "object") resolve(address.port);
+      else reject(new Error("The sign-in callback server has no port."));
+    });
   });
 }
 
@@ -161,7 +164,7 @@ async function exchangeCode(input: {
   signal?: AbortSignal;
 }): Promise<string> {
   const client = new LichessClient({ fetch: input.fetch, getToken: async () => null });
-  const body = await client.json<{ access_token?: unknown }>("/api/token", {
+  const body = await client.json("/api/token", {
     method: "POST",
     auth: false,
     signal: input.signal,

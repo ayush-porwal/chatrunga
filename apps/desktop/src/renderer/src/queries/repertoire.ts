@@ -279,8 +279,7 @@ export function useRepertoireOccurrencesQuery(id: string | null, positionKey: st
  */
 export function useRepertoireComparisonQuery(input: CompareGameInput | null) {
   const gameHash = input ? gameContentHash(input.rootFen, input.moves) : "";
-  // The key names the input by its content hash (a long mainline doesn't belong in a key).
-  // eslint-disable-next-line @tanstack/query/exhaustive-deps
+  // oxlint-disable-next-line @tanstack/query/exhaustive-deps -- the key names the input by its content hash (a long mainline doesn't belong in a key)
   return useQuery({
     queryKey: repertoireKeys.comparison(input?.repertoireId ?? "", input?.color ?? "", gameHash),
     queryFn: () => requireRepertoires().compareGame(input!),
@@ -567,8 +566,7 @@ export function useAddFromGamePreviewQuery(input: AddFromGameInput | null) {
   }, [current, settle]);
   const settled = current ? settledInput : null;
   const hash = settled?.hash ?? null;
-  // The key names the input by its hash (a whole game tree doesn't belong in a key).
-  // eslint-disable-next-line @tanstack/query/exhaustive-deps
+  // oxlint-disable-next-line @tanstack/query/exhaustive-deps -- the key names the input by its hash (a whole game tree doesn't belong in a key)
   return useQuery({
     queryKey: repertoireKeys.addPreview(settled?.input.repertoireId ?? "", hash ?? ""),
     queryFn: async (): Promise<AddFromGamePreviewResult> => ({

@@ -12,7 +12,8 @@ function renderer(reply?: boolean) {
   const contents = Object.assign(new EventEmitter(), {
     isDestroyed: () => false,
     send: vi.fn((_channel: string, token: string) => {
-      if (reply !== undefined) queueMicrotask(() => ipcMain.emit("games:flushed", { sender: contents }, token, reply));
+      if (reply !== undefined)
+        queueMicrotask(() => ipcMain.emit("games:flushed", { sender: contents }, token, reply));
     })
   });
   return contents as typeof contents & WebContents;

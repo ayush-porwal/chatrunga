@@ -82,10 +82,11 @@ function storeShownHints(queryClient: QueryClient): void {
   const current = queryClient.getQueryData<AppSettings>(["settings"]);
   const value = [...new Set([...(current?.onboardingHintsSeen ?? []), ...shownThisReview])];
   shownThisReview.clear();
-  if (current) queryClient.setQueryData<AppSettings>(["settings"], { ...current, onboardingHintsSeen: value });
+  if (current)
+    queryClient.setQueryData<AppSettings>(["settings"], { ...current, onboardingHintsSeen: value });
   void window.chaturanga?.settings
     .set("onboardingHintsSeen", value)
-    .finally(() => queryClient.invalidateQueries({ queryKey: ["settings"] }));
+    .finally(() => void queryClient.invalidateQueries({ queryKey: ["settings"] }));
 }
 
 /** A small, dismissible inline tip. Not a popover: it sits in the flow next to what it explains. */

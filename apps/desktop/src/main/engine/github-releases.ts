@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { logger } from "../logger";
 import type { ReleaseAssetInfo } from "./engine-manifest";
+import { isRecord } from "@chaturanga/shared/types/guards";
 
 /**
  * GitHub "latest release" lookups for engine downloads.
@@ -66,18 +67,30 @@ export async function fetchLatestRelease(
       signal: AbortSignal.timeout(opts.timeoutMs ?? RELEASE_API_TIMEOUT_MS)
     });
   } catch (error) {
-    throw new GitHubApiError(`GitHub API unreachable: ${error instanceof Error ? error.message : String(error)}`, null);
+    throw new GitHubApiError(
+      `GitHub API unreachable: ${error instanceof Error ? error.message : String(error)}`,
+      null
+    );
   }
   if (res.status === 403 || res.status === 429) {
     const remaining = res.headers.get("x-ratelimit-remaining");
     const reset = Number(res.headers.get("x-ratelimit-reset"));
     const retryAfter = Number(res.headers.get("retry-after"));
-    if (remaining === "0" || res.status === 429 || (Number.isFinite(retryAfter) && retryAfter > 0)) {
+    if (
+      remaining === "0" ||
+      res.status === 429 ||
+      (Number.isFinite(retryAfter) && retryAfter > 0)
+    ) {
       const resetAt =
         Number.isFinite(reset) && reset > 0
           ? reset * 1000
-          : now() + (Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 60 * 60 * 1000);
-      throw new GitHubApiError(`GitHub API rate limit exceeded (resets ${new Date(resetAt).toISOString()})`, res.status, resetAt);
+          : now() +
+            (Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 60 * 60 * 1000);
+      throw new GitHubApiError(
+        `GitHub API rate limit exceeded (resets ${new Date(resetAt).toISOString()})`,
+        res.status,
+        resetAt
+      );
     }
   }
   if (!res.ok) throw new GitHubApiError(`GitHub API ${res.status} for ${repo}`, res.status);
@@ -86,14 +99,15 @@ export async function fetchLatestRelease(
 
 /** Validates and trims a release payload to the fields we use. Throws on an unusable payload. */
 export function parseRelease(value: unknown): GitHubRelease {
-  const obj = value as Record<string, unknown> | null;
+  const obj = isRecord(value) ? value : null;
   if (!obj || typeof obj.tag_name !== "string" || !obj.tag_name || !Array.isArray(obj.assets)) {
     throw new GitHubApiError("Malformed GitHub release payload", null);
   }
   const assets: ReleaseAssetInfo[] = [];
-  for (const raw of obj.assets as unknown[]) {
-    const a = raw as Record<string, unknown> | null;
-    if (!a || typeof a.name !== "string" || typeof a.browser_download_url !== "string") continue;
+  const rawAssets: unknown[] = obj.assets;
+  for (const a of rawAssets) {
+    if (!isRecord(a) || typeof a.name !== "string" || typeof a.browser_download_url !== "string")
+      continue;
     if (typeof a.size !== "number" || !Number.isFinite(a.size) || a.size <= 0) continue;
     if (a.state !== undefined && a.state !== "uploaded") continue;
     assets.push({
@@ -127,7 +141,10 @@ export const RELEASE_DOWNLOAD_HOSTS: readonly string[] = [
   "release-assets.githubusercontent.com"
 ];
 /** Maia weights and their LICENSE are raw repository files. */
-export const RAW_DOWNLOAD_HOSTS: readonly string[] = [...RELEASE_DOWNLOAD_HOSTS, "raw.githubusercontent.com"];
+export const RAW_DOWNLOAD_HOSTS: readonly string[] = [
+  ...RELEASE_DOWNLOAD_HOSTS,
+  "raw.githubusercontent.com"
+];
 
 /** HTTPS on the default port, no credentials, host exactly on the list. */
 export function isAllowedDownloadUrl(url: string, hosts: readonly string[]): boolean {
@@ -163,7 +180,10 @@ export type CachedRelease = {
   stale: boolean;
 };
 
-type CacheFile = { version: 1; entries: Record<string, { fetchedAt: number; release: GitHubRelease }> };
+type CacheFile = {
+  version: 1;
+  entries: Record<string, { fetchedAt: number; release: GitHubRelease }>;
+};
 
 export class ReleaseCache {
   private entries = new Map<string, { fetchedAt: number; release: GitHubRelease }>();
@@ -231,7 +251,9 @@ export class ReleaseCache {
       const entry = { fetchedAt: this.now(), release };
       this.entries.set(repo, entry);
       this.errors.delete(repo);
-      await this.save().catch((error: unknown) => logger.warn("github-releases", "cache write failed:", error));
+      await this.save().catch((error: unknown) =>
+        logger.warn("github-releases", "cache write failed:", error)
+      );
       return { ...entry, stale: false };
     } catch (error) {
       if (error instanceof GitHubApiError && error.rateLimitResetAt !== null) {
@@ -254,10 +276,12 @@ export class ReleaseCache {
     const file = this.opts.filePath;
     if (!file || !existsSync(file)) return;
     try {
-      const parsed = JSON.parse(await readFile(file, "utf-8")) as Partial<CacheFile>;
-      if (parsed.version !== 1 || !parsed.entries) return;
+      // A file in userData: anyone could have edited it, so each entry is checked.
+      const parsed: unknown = JSON.parse(await readFile(file, "utf-8"));
+      if (!isRecord(parsed) || parsed.version !== 1 || !isRecord(parsed.entries)) return;
       for (const [repo, entry] of Object.entries(parsed.entries)) {
-        if (!REPO_PATTERN.test(repo) || typeof entry?.fetchedAt !== "number") continue;
+        if (!REPO_PATTERN.test(repo) || !isRecord(entry) || typeof entry.fetchedAt !== "number")
+          continue;
         // Never trust a timestamp from the future (clock changes): treat it as expired.
         const fetchedAt = entry.fetchedAt > this.now() ? 0 : entry.fetchedAt;
         this.entries.set(repo, { fetchedAt, release: parseRelease(entry.release) });

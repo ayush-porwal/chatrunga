@@ -43,10 +43,15 @@ export function useBoardConfetti(): (board: HTMLElement | null, size: "game" | "
         zIndex: "60"
       });
       document.body.appendChild(canvas);
-      instance.current = { canvas, fire: confetti.create(canvas, { resize: true, disableForReducedMotion: true }) };
+      instance.current = {
+        canvas,
+        fire: confetti.create(canvas, { resize: true, disableForReducedMotion: true })
+      };
     }
     const styles = getComputedStyle(document.documentElement);
-    const colors = PALETTE.map(([token, fallback]) => styles.getPropertyValue(token).trim() || fallback);
+    const colors = PALETTE.map(
+      ([token, fallback]) => styles.getPropertyValue(token).trim() || fallback
+    );
     // From the board's centre, a little below it, so the pieces rise over the board and fall past it.
     // A bigger board gets a stronger throw so the burst stays in proportion.
     void instance.current.fire({

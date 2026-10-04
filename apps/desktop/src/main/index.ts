@@ -21,7 +21,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { normalizeCommentaryProvider } from "@chaturanga/shared/types/settings";
 import { closeDb, getDb } from "./db";
-import { engineRepository, externalDatabaseRepository, gameRepository, settingsRepository } from "./db/repositories";
+import {
+  engineRepository,
+  externalDatabaseRepository,
+  gameRepository,
+  settingsRepository
+} from "./db/repositories";
 import { EngineManager } from "./engine/engine-manager";
 import { killAllEngineProcesses } from "./engine/uci-process";
 import { registerIpc } from "./ipc/register";
@@ -60,7 +65,10 @@ app.setName(PRODUCT_NAME);
 // Dev/test hook: CHATURANGA_USER_DATA_DIR points the app at a throwaway profile (UI automation,
 // clean-install checks). Unset in normal use.
 const userDataOverride = process.env.CHATURANGA_USER_DATA_DIR;
-app.setPath("userData", userDataOverride ?? join(app.getPath("appData"), app.isPackaged ? "chaturanga" : "chaturanga-dev"));
+app.setPath(
+  "userData",
+  userDataOverride ?? join(app.getPath("appData"), app.isPackaged ? "chaturanga" : "chaturanga-dev")
+);
 if (userDataOverride) app.setAppLogsPath(join(userDataOverride, "logs"));
 protocol.registerSchemesAsPrivileged([
   { scheme: IMAGE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }
@@ -80,7 +88,8 @@ if (!app.requestSingleInstanceLock()) {
   // `<userData>/databases`, where datasets used to be kept.
   try {
     const moved = rescueLegacyDatasets(app.getPath("userData"));
-    if (moved.length) logger.info("databases", `moved ${moved.length} dataset file(s) out of Chromium's folder`);
+    if (moved.length)
+      logger.info("databases", `moved ${moved.length} dataset file(s) out of Chromium's folder`);
   } catch (error) {
     logger.error("databases", "moving datasets out of Chromium's folder failed:", error);
   }
@@ -91,7 +100,8 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.on("web-contents-created", (_event, contents) => hardenWebContents(contents));
   app.on("child-process-gone", (_event, details) => {
-    if (details.reason !== "clean-exit") logger.error("main", "child process gone:", details.type, details.reason);
+    if (details.reason !== "clean-exit")
+      logger.error("main", "child process gone:", details.type, details.reason);
   });
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();
@@ -183,7 +193,8 @@ function startTelemetry(): void {
       buildChannel: import.meta.env.MAIN_VITE_RELEASE_CHANNEL,
       platform: process.platform,
       arch: process.arch,
-      log: (message, error) => logger.warn("telemetry", message, error === undefined ? "" : errorMessage(error))
+      log: (message, error) =>
+        logger.warn("telemetry", message, error === undefined ? "" : errorMessage(error))
     });
     noteEngineReadiness(true);
   } catch (error) {
@@ -246,7 +257,8 @@ function hardenWebContents(contents: WebContents): void {
   contents.on("will-attach-webview", (event) => event.preventDefault());
   contents.on("render-process-gone", (_event, details) => {
     logger.error("main", "renderer process gone:", details.reason);
-    if (details.reason !== "clean-exit" && details.reason !== "killed" && !contents.isDestroyed()) contents.reload();
+    if (details.reason !== "clean-exit" && details.reason !== "killed" && !contents.isDestroyed())
+      contents.reload();
   });
 }
 
@@ -282,7 +294,7 @@ function createWindow(): void {
     if (mainWindow === window) mainWindow = null;
     // The engine work belongs to the window (macOS keeps the app alive): the interactive engine
     // shuts down and running reviews are cancelled.
-    engineManager.dispose();
+    void engineManager.dispose();
     engineManager.cancelAllReviews();
   });
 
@@ -290,7 +302,9 @@ function createWindow(): void {
     void window.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
     window.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-      callback({ responseHeaders: { ...details.responseHeaders, "Content-Security-Policy": [PRODUCTION_CSP] } });
+      callback({
+        responseHeaders: { ...details.responseHeaders, "Content-Security-Policy": [PRODUCTION_CSP] }
+      });
     });
     void window.loadFile(rendererIndex);
   }
@@ -366,7 +380,10 @@ function installLocalImageProtocol(): void {
     const requested = localImagePathFromUrl(request.url);
     // Fetch the canonical spelling: on Windows the request can arrive as `/C:/x.png`.
     const imagePath = requested && canonicalImagePath(requested);
-    if (!imagePath || !isServableImage(imagePath, () => engineRepository.list().map((engine) => engine.imagePath))) {
+    if (
+      !imagePath ||
+      !isServableImage(imagePath, () => engineRepository.list().map((engine) => engine.imagePath))
+    ) {
       return new Response(null, { status: 404 });
     }
     return net.fetch(pathToFileURL(imagePath).href);
@@ -401,8 +418,11 @@ function installApplicationMenu(): void {
 }
 
 function createAppIcon() {
-  const assetsDir = app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "src/main/assets");
-  const iconFiles = process.platform === "darwin" ? ["app-icon.icns", "app-icon.png"] : ["app-icon.png"];
+  const assetsDir = app.isPackaged
+    ? process.resourcesPath
+    : join(app.getAppPath(), "src/main/assets");
+  const iconFiles =
+    process.platform === "darwin" ? ["app-icon.icns", "app-icon.png"] : ["app-icon.png"];
   for (const file of iconFiles) {
     const icon = nativeImage.createFromPath(join(assetsDir, file));
     if (!icon.isEmpty()) return icon;

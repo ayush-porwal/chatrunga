@@ -2,6 +2,7 @@ import { exportGameToPgn, importPgnText } from "@chaturanga/shared/chess/pgn";
 import type { SaveGameInput } from "@chaturanga/shared/types/chess";
 import { logger } from "../logger";
 import type { LichessClient } from "./http";
+import { isRecord } from "@chaturanga/shared/types/guards";
 
 /** The first import reaches back a year. */
 export const FIRST_SYNC_WINDOW_MS = 365 * 24 * 60 * 60 * 1000;
@@ -56,14 +57,8 @@ export async function importLichessGames(input: {
     `/api/games/user/${encodeURIComponent(input.username)}?${params.toString()}`,
     { signal: input.signal },
     (line) => {
-      const game = line as {
-        id?: unknown;
-        pgn?: unknown;
-        variant?: unknown;
-        lastMoveAt?: unknown;
-        createdAt?: unknown;
-        moves?: unknown;
-      };
+      if (!isRecord(line)) return;
+      const game = line;
       if (typeof game.id !== "string" || !game.id) return;
       const playedAt =
         typeof game.lastMoveAt === "number"
@@ -74,7 +69,14 @@ export async function importLichessGames(input: {
       if (playedAt !== null) result.nextSince = Math.max(result.nextSince ?? 0, playedAt + 1);
       // The export lists the moves too: a game with moves whose PGN yields none didn't parse.
       const hasMoves = typeof game.moves === "string" && game.moves.trim().length > 0;
-      const outcome = importGame(input.repository, game.id, game.pgn, game.variant, hasMoves, playedAt ?? Date.now());
+      const outcome = importGame(
+        input.repository,
+        game.id,
+        game.pgn,
+        game.variant,
+        hasMoves,
+        playedAt ?? Date.now()
+      );
       if (outcome === "imported") result.imported += 1;
       else result.skipped += 1;
       if (outcome === "failed") {
@@ -88,7 +90,8 @@ export async function importLichessGames(input: {
       }
     }
   );
-  if (firstFailure !== null && result.nextSince !== null) result.nextSince = Math.min(result.nextSince, firstFailure);
+  if (firstFailure !== null && result.nextSince !== null)
+    result.nextSince = Math.min(result.nextSince, firstFailure);
   return result;
 }
 

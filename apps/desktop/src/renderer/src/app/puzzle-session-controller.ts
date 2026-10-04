@@ -25,10 +25,19 @@ export function puzzleBoard(puzzle: PuzzleSample): GameSession {
  * The request for the set's next puzzle (excluding those already shown), or null with no dataset
  * chosen. A set of failed puzzles tried again asks for those by id, without the filters.
  */
-export function nextPuzzleInput(config: PuzzleSessionConfig | null, shownIds: string[]): PuzzleSampleInput | null {
+export function nextPuzzleInput(
+  config: PuzzleSessionConfig | null,
+  shownIds: string[]
+): PuzzleSampleInput | null {
   if (!config?.databaseId) return null;
-  if (config.retryIds) return { databaseId: config.databaseId, excludeIds: shownIds, ids: config.retryIds };
-  return { databaseId: config.databaseId, excludeIds: shownIds, lichess: config.lichess, position: config.position };
+  if (config.retryIds)
+    return { databaseId: config.databaseId, excludeIds: shownIds, ids: config.retryIds };
+  return {
+    databaseId: config.databaseId,
+    excludeIds: shownIds,
+    lichess: config.lichess,
+    position: config.position
+  };
 }
 
 /**
@@ -73,7 +82,11 @@ function union(...lists: (readonly string[] | undefined)[]): string[] {
 }
 
 /** `state` with `ids` added to set `id`'s shown puzzles. */
-function withShown(state: PuzzleSessionState, id: string, ...ids: (readonly string[] | undefined)[]): Record<string, string[]> {
+function withShown(
+  state: PuzzleSessionState,
+  id: string,
+  ...ids: (readonly string[] | undefined)[]
+): Record<string, string[]> {
   return { ...state.shown, [id]: union(state.shown[id], ...ids) };
 }
 
@@ -121,7 +134,11 @@ export function continuePuzzleSet(state: PuzzleSessionState, board: number): Puz
  * The set again for `board`, a game played on from its puzzle that history brought back (Back from
  * the set's next puzzle): Next puzzle there resumes it, still excluding every puzzle it has shown.
  */
-export function resumePuzzleSet(state: PuzzleSessionState, set: PuzzleSetSnapshot, board: number): PuzzleSessionState {
+export function resumePuzzleSet(
+  state: PuzzleSessionState,
+  set: PuzzleSetSnapshot,
+  board: number
+): PuzzleSessionState {
   return {
     set: { id: set.id, config: set.config },
     shown: withShown(state, set.id, set.shownIds),
@@ -153,7 +170,9 @@ export function usePuzzleSession() {
     usePuzzleStore.getState().setActivePuzzle(puzzle);
     // Made here, not in the updater: it may run twice.
     const started = start && { ...start, id: start.id ?? crypto.randomUUID() };
-    setState((current) => (started ? startPuzzleSet(current, puzzle.id, started) : joinPuzzleSet(current, puzzle.id)));
+    setState((current) =>
+      started ? startPuzzleSet(current, puzzle.id, started) : joinPuzzleSet(current, puzzle.id)
+    );
   }, []);
 
   /**

@@ -1,5 +1,6 @@
 import {
-  boardThemeSquareColors,
+  isBoardTheme,
+  isPieceStyle,
   ANALYSIS_DEPTH_RANGE,
   ANALYSIS_LIMITS,
   ANALYSIS_LINES_RANGE,
@@ -7,48 +8,56 @@ import {
   ENGINE_HASH_MB_RANGE,
   EVAL_BAR_SIDES,
   normalizeBoardSquareHex,
+  legacyPieceStyle,
   ONBOARDING_HINTS,
   PRACTICE_AUTO_ADVANCE_MS,
   REVIEW_MAIA_LEVELS,
   type AppSettings
 } from "@chaturanga/shared/types/settings";
+import { isOneOf } from "@chaturanga/shared/types/guards";
 
-type Check = (value: unknown) => boolean;
+/** Whether a value fits a setting, narrowing it to the setting's type. */
+type Check<T> = (value: unknown) => value is T;
 
-const bool: Check = (value) => typeof value === "boolean";
+const bool: Check<boolean> = (value) => typeof value === "boolean";
 const oneOf =
-  (...allowed: readonly unknown[]): Check =>
-  (value) =>
-    allowed.includes(value);
+  <const T extends string | number>(...allowed: readonly T[]): Check<T> =>
+  (value): value is T =>
+    isOneOf(allowed, value);
 const number =
-  (min: number, max: number, integer = false): Check =>
-  (value) =>
-    typeof value === "number" && Number.isFinite(value) && value >= min && value <= max && (!integer || Number.isInteger(value));
+  (min: number, max: number, integer = false): Check<number> =>
+  (value): value is number =>
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= min &&
+    value <= max &&
+    (!integer || Number.isInteger(value));
 const text =
-  (maxLength: number): Check =>
-  (value) =>
+  (maxLength: number): Check<string> =>
+  (value): value is string =>
     typeof value === "string" && value.length <= maxLength;
 const nullable =
-  (check: Check): Check =>
-  (value) =>
+  <T>(check: Check<T>): Check<T | null> =>
+  (value): value is T | null =>
     value === null || check(value);
 const list =
-  (item: Check, maxItems: number): Check =>
-  (value) =>
+  <T>(item: Check<T>, maxItems: number): Check<T[]> =>
+  (value): value is T[] =>
     Array.isArray(value) && value.length <= maxItems && value.every(item);
-const hexColor: Check = (value) => typeof value === "string" && normalizeBoardSquareHex(value) !== null;
+const hexColor: Check<string> = (value): value is string =>
+  typeof value === "string" && normalizeBoardSquareHex(value) !== null;
 
 /**
  * What each setting may hold. Typed over every key, so a new setting doesn't compile until it has
  * a check. Values read back are normalized as well (settings.ts); this stops bad ones being stored.
  */
-const SETTING_CHECKS: { [K in keyof AppSettings]-?: Check } = {
+const SETTING_CHECKS: { [K in keyof AppSettings]: Check<AppSettings[K]> } = {
   boardOrientation: oneOf("white", "black"),
-  boardTheme: oneOf(...Object.keys(boardThemeSquareColors)),
+  boardTheme: isBoardTheme,
   boardSquareLight: nullable(hexColor),
   boardSquareDark: nullable(hexColor),
-  // Older ids are mapped on read (normalizePieceStyle).
-  pieceStyle: text(40),
+  // Older ids are mapped to current ones first (see NORMALIZE).
+  pieceStyle: isPieceStyle,
   piecePresentation: oneOf("default", "sharp", "soft", "contrast"),
   showCoordinates: bool,
   showLegalMoves: bool,
@@ -91,11 +100,38 @@ const SETTING_CHECKS: { [K in keyof AppSettings]-?: Check } = {
   onboardingHintsSeen: list(oneOf(...ONBOARDING_HINTS), ONBOARDING_HINTS.length)
 };
 
+/** Text some settings are stored in a canonical form of: `#rrggbb` colors, current piece set ids. */
+const NORMALIZE: Partial<Record<keyof AppSettings, (value: string) => string>> = {
+  boardSquareLight: (value) => normalizeBoardSquareHex(value) ?? value,
+  boardSquareDark: (value) => normalizeBoardSquareHex(value) ?? value,
+  // An older build's id becomes the current one; an unknown id stays as it is, and is refused.
+  pieceStyle: (value) => legacyPieceStyle(value)?.pieceStyle ?? value
+};
+
 /** `value` if it fits `key` (square colors stored as `#rrggbb`), else an error (nothing is stored). */
-export function parseSettingValue<K extends keyof AppSettings>(key: K, value: unknown): AppSettings[K] {
-  if (!SETTING_CHECKS[key](value)) throw new Error(`Invalid value for setting ${key}`);
-  if ((key === "boardSquareLight" || key === "boardSquareDark") && typeof value === "string") {
-    return normalizeBoardSquareHex(value) as AppSettings[K];
-  }
-  return value as AppSettings[K];
+export function parseSettingValue<K extends keyof AppSettings>(
+  key: K,
+  value: unknown
+): AppSettings[K] {
+  const normalize = NORMALIZE[key];
+  const normalized = normalize && typeof value === "string" ? normalize(value) : value;
+  const check: Check<AppSettings[K]> = SETTING_CHECKS[key];
+  if (!check(normalized)) throw new Error(`Invalid value for setting ${key}`);
+  return normalized;
+}
+
+/**
+ * What writing `value` to `key` stores: the setting itself, plus the presentation a legacy
+ * combined piece set id (`cburnettCrisp`) implied, so writing one keeps its look.
+ */
+export function parseSettingWrite<K extends keyof AppSettings>(
+  key: K,
+  value: unknown
+): Partial<Record<keyof AppSettings, unknown>> {
+  const parsed = parseSettingValue(key, value);
+  const presentation =
+    key === "pieceStyle" && typeof value === "string"
+      ? legacyPieceStyle(value)?.piecePresentation
+      : undefined;
+  return presentation ? { [key]: parsed, piecePresentation: presentation } : { [key]: parsed };
 }

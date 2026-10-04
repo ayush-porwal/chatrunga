@@ -47,7 +47,12 @@ const ROLE_LETTER: Record<Role, string> = {
 };
 const ROLE_ORDER: Role[] = ["king", "queen", "rook", "bishop", "knight", "pawn"];
 const FILES = "abcdefgh";
-const CENTER: Square[] = ["d4", "e4", "d5", "e5"].map((name) => parseSquare(name) as Square);
+const CENTER: Square[] = [
+  parseSquare("d4"),
+  parseSquare("e4"),
+  parseSquare("d5"),
+  parseSquare("e5")
+];
 
 export function sideName(color: Color): string {
   return color === "white" ? "White" : "Black";
@@ -188,7 +193,7 @@ function materialText(pos: Chess): string {
 }
 
 function pawnFiles(pos: Chess, color: Color): number[] {
-  const counts = new Array<number>(8).fill(0);
+  const counts = Array.from({ length: 8 }, () => 0);
   for (const sq of pos.board.pieces(color, "pawn"))
     counts[squareFile(sq)] = (counts[squareFile(sq)] ?? 0) + 1;
   return counts;

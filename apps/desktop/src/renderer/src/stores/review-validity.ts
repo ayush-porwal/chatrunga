@@ -24,7 +24,10 @@ function mainlineById(moveTree: readonly MoveNode[]): Map<string, MoveNode> {
  * variation are left out, so the stats, the board and the commentary never use them. Returns
  * `moves` itself when every move still matches.
  */
-export function compatibleReviewMoves(moves: MoveReview[], moveTree: readonly MoveNode[]): MoveReview[] {
+export function compatibleReviewMoves(
+  moves: MoveReview[],
+  moveTree: readonly MoveNode[]
+): MoveReview[] {
   if (!moves.length) return moves;
   const line = mainlineById(moveTree);
   const kept = moves.filter((move) => {
@@ -35,7 +38,10 @@ export function compatibleReviewMoves(moves: MoveReview[], moveTree: readonly Mo
 }
 
 /** Whether `line` (a running review's input) is still the start of the game's main line. */
-export function lineStillOnMainline(line: readonly ReviewLineMove[], moveTree: readonly MoveNode[]): boolean {
+export function lineStillOnMainline(
+  line: readonly ReviewLineMove[],
+  moveTree: readonly MoveNode[]
+): boolean {
   const mainline = mainlineById(moveTree);
   return line.every((move) => mainline.get(move.nodeId)?.uci === move.uci);
 }
