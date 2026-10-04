@@ -20,7 +20,7 @@ import { ReviewCommentaryPanel } from "./ReviewCommentaryPanel";
 import { ReviewEnginePanel } from "./ReviewEnginePanel";
 import { ReviewMoveRail } from "./ReviewMoveRail";
 import { ReviewOpeningPanel } from "./ReviewOpeningPanel";
-import { openReviewSettingsDialog, ReviewSettingsButton } from "./ReviewSettingsDialog";
+import { openReviewSettingsDialog, ReviewSettingsDialog } from "./ReviewSettingsDialog";
 import { ReviewSidePrompt, ReviewSummary } from "./ReviewSummary";
 import { CardCommentaryContext, type CardCommentaryOptions } from "./MomentCommentary";
 import { chooseReviewSide, reviewSideColor, useReviewSide } from "./review-side";
@@ -66,11 +66,12 @@ const reviewTabOptions: readonly SegmentedOption<ReviewTab>[] = [
 ];
 
 /**
- * Five review tabs don't fit the workspace panel at its usual widths with the shared tab padding
- * and text size, so the labels truncated ("Comme…"): narrower panels tighten the padding, then the
- * text, so every label stays whole down to the panel's 20rem minimum.
+ * The five review tabs share the row's full width and never truncate a label: narrower panels
+ * tighten the padding, then the text, so every label stays whole down to the panel's 20rem
+ * minimum; narrower than that (or with larger text), the row scrolls sideways instead, the
+ * selected tab kept in view.
  */
-const reviewTabsClass = `${workspaceTabsClass} @max-[424px]/panel:[&>button]:px-1.5 @max-[384px]/panel:[&>button]:text-xs @max-[344px]/panel:[&>button]:px-0.5`;
+const reviewTabsClass = `${workspaceTabsClass} overflow-x-auto [scrollbar-width:none] [&>button]:shrink-0 [&>button>span]:overflow-visible @max-[424px]/panel:[&>button]:px-1.5 @max-[384px]/panel:[&>button]:text-xs @max-[344px]/panel:[&>button]:px-0.5`;
 
 type GameReviewPageProps = {
   activeTab: ReviewTab;
@@ -334,9 +335,9 @@ function GameReviewPageInner({
 
   const changeSide = useCallback((next: "white" | "black") => chooseReviewSide(next), []);
   const ratingLabel = reviewRatingLabel(review?.rating ?? currentRating);
-  // The review settings, at the right end of the tab row (the side and rating are in the dialog).
-  const settingsButton = (
-    <ReviewSettingsButton
+  // The review settings dialog (the titlebar's gear opens it): the side and its rating are in it.
+  const settingsDialog = (
+    <ReviewSettingsDialog
       settings={settings}
       reviewSide={{
         side,
@@ -405,21 +406,16 @@ function GameReviewPageInner({
           </BoardStage>
         }
         tabs={
-          <div className="flex items-center gap-1">
-            <div className="min-w-0 flex-1">
-              <SegmentedControl
-                ariaLabel="Game review sections"
-                role="tablist"
-                panelId={panelId}
-                fullWidth
-                className={reviewTabsClass}
-                value={activeTab}
-                onChange={onTabChange}
-                options={reviewTabOptions}
-              />
-            </div>
-            {settingsButton}
-          </div>
+          <SegmentedControl
+            ariaLabel="Game review sections"
+            role="tablist"
+            panelId={panelId}
+            fullWidth
+            className={reviewTabsClass}
+            value={activeTab}
+            onChange={onTabChange}
+            options={reviewTabOptions}
+          />
         }
         notices={
           loadError || reviewError || outdatedMoves || recomputed ? (
@@ -606,6 +602,7 @@ function GameReviewPageInner({
           />
         ) : null}
       </BoardWorkspace>
+      {settingsDialog}
     </CardCommentaryContext.Provider>
   );
 }

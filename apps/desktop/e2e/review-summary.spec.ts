@@ -193,9 +193,25 @@ test("review settings are a dialog that switches sides; with AI off, cards don't
   await skipWelcome(page);
   await reviewTrapGameAs(page, app, profile, "White (Alpha)");
 
-  // No Settings tab: a sliders button at the end of the tab row opens the settings as a dialog.
+  // No Settings tab, and no settings button in the panel: the titlebar's gear opens the dialog.
   await expect(reviewTabs(page).getByRole("tab", { name: "Settings", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Review settings", exact: true }).click();
+  await expect(
+    page
+      .getByRole("complementary", { name: "Review" })
+      .getByRole("button", { name: "Review settings", exact: true })
+  ).toHaveCount(0);
+  // The tab labels never truncate: each tab is as wide as its label.
+  for (const tab of await reviewTabs(page).getByRole("tab").all())
+    expect(
+      await tab.evaluate((element) => {
+        const label = element.querySelector("span");
+        return label ? label.scrollWidth <= label.clientWidth : true;
+      })
+    ).toBe(true);
+  await page
+    .getByRole("banner", { name: "Titlebar" })
+    .getByRole("button", { name: "Review settings", exact: true })
+    .click();
   const dialog = page.getByRole("dialog", { name: "Review settings" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("button", { name: "AI settings" })).toBeVisible();
@@ -218,7 +234,10 @@ test("review settings are a dialog that switches sides; with AI off, cards don't
     .click();
   await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await page.getByRole("button", { name: "Review settings", exact: true }).click();
+  await page
+    .getByRole("banner", { name: "Titlebar" })
+    .getByRole("button", { name: "Review settings", exact: true })
+    .click();
   await expect(
     dialog.getByRole("radiogroup", { name: "Review as" }).getByRole("radio", { name: /^Black/ })
   ).toBeChecked();

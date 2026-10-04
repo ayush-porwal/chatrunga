@@ -94,6 +94,14 @@ function SegmentedControl<T extends string>({
       indicator.style.transform = `translateX(${segment.offsetLeft}px)`;
       indicator.style.width = `${segment.offsetWidth}px`;
       indicator.style.opacity = "1";
+      // A row that scrolls (labels that never truncate, in a narrow panel) keeps the selection in view.
+      if (container.scrollWidth > container.clientWidth) {
+        const left = segment.offsetLeft;
+        const right = left + segment.offsetWidth;
+        if (left < container.scrollLeft) container.scrollLeft = left;
+        else if (right > container.scrollLeft + container.clientWidth)
+          container.scrollLeft = right - container.clientWidth;
+      }
       if (snap) {
         void indicator.offsetWidth; // commit the snapped position before transitions return
         indicator.style.transition = "";
