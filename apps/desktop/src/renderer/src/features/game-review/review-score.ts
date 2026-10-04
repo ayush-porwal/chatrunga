@@ -14,7 +14,7 @@ export const CHART_SCORE_LIMIT = 1000;
 type MoveEvalAfter = Pick<MoveReview, "evalAfter" | "fenBefore" | "terminal">;
 
 /** Side that played the move (side to move in `fenBefore`). */
-function moverIsWhite(move: Pick<MoveReview, "fenBefore">): boolean {
+export function moverIsWhite(move: Pick<MoveReview, "fenBefore">): boolean {
   return move.fenBefore.split(" ")[1] !== "b";
 }
 

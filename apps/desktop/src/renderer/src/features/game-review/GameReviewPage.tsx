@@ -28,6 +28,8 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { PlayerRow } from "../board/PlayerIdentity";
 import { BoardStage, BoardWorkspace, workspaceTabsClass } from "../board/BoardWorkspace";
 import { EvalBar } from "../board/EvalBar";
+import { BoardMoveMarkBadge } from "../board/BoardMoveMarkBadge";
+import { boardMoveMark } from "../board/move-mark";
 import { MoveNavigation } from "../board/MoveNavigation";
 import { useGameReviewCommentary } from "./useGameReviewCommentary";
 import { useStoreHintsOnLeave } from "../onboarding/Coachmark";
@@ -263,6 +265,10 @@ function GameReviewPageInner({
     return result;
   }, [selectedMove]);
   const lastMove = uciSquares(selectedMove?.playedMove ?? currentNode?.uci ?? null);
+  const moveMark = useMemo(
+    () => boardMoveMark("review", { running: isRunning, moves, nodeId: selectedNodeId }),
+    [isRunning, moves, selectedNodeId]
+  );
   const whitePlayer = {
     name: headers.white || "White",
     elo: headers.whiteElo ?? null,
@@ -315,14 +321,17 @@ function GameReviewPageInner({
             <PlayerRow name={boardBottom.name} elo={boardBottom.elo} color={boardBottom.color} />
           }
         >
-          {/* Square corners: the stage's frame clips the board to its own radius. */}
-          <ReviewBoard
-            fen={boardFen}
-            orientation={orientation}
-            arrows={arrows}
-            lastMove={lastMove ? [lastMove.orig, lastMove.dest] : undefined}
-            className="h-full w-full rounded-none"
-          />
+          <div className="relative h-full w-full">
+            {/* Square corners: the stage's frame clips the board to its own radius. */}
+            <ReviewBoard
+              fen={boardFen}
+              orientation={orientation}
+              arrows={arrows}
+              lastMove={lastMove ? [lastMove.orig, lastMove.dest] : undefined}
+              className="h-full w-full rounded-none"
+            />
+            <BoardMoveMarkBadge mark={moveMark} orientation={orientation} />
+          </div>
         </BoardStage>
       }
       tabs={
