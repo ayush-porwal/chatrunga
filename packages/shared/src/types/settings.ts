@@ -278,7 +278,7 @@ export type AppSettings = {
 };
 
 /** The one-time Game review tips. */
-export const ONBOARDING_HINTS = ["commentary-links", "maia-curve"] as const;
+export const ONBOARDING_HINTS = ["maia-curve"] as const;
 export type OnboardingHintId = (typeof ONBOARDING_HINTS)[number];
 
 export type ReviewCommentaryProvider = "openrouter";

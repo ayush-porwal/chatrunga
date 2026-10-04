@@ -27,8 +27,6 @@ import type { CommentaryMoveContext } from "./commentary-moves";
 import type { CommentaryStatus } from "./useGameReviewCommentary";
 import { CommentaryProse, MoveLink, VariationAnchorNote, type GoToLine } from "./MoveLinks";
 import { isRapidNavigation } from "../board/board-motion";
-import { Coachmark, useOnboardingHint } from "../onboarding/Coachmark";
-import { tokenizeCommentary } from "./commentary-moves";
 import "./review.css";
 
 /**
@@ -104,20 +102,6 @@ export function ReviewCommentaryPanel({
   // The placeholder stays for one fade after the text arrives, so the two cross-fade in place.
   // (Hooks run before the early returns below.)
   const skeleton = usePresence(loading, motion.ms.standard);
-  // One-time tip for the first explanation whose moves are links.
-  const linkHint = useOnboardingHint(
-    "commentary-links",
-    !running &&
-      status === "ready" &&
-      Boolean(commentary && onGoToLine && moveContext) &&
-      hasMoveTokens(commentary)
-  );
-  const goToLineFromProse: GoToLine | undefined = onGoToLine
-    ? (target) => {
-        if (linkHint.visible) linkHint.dismiss();
-        onGoToLine(target);
-      }
-    : undefined;
 
   if (running) {
     return (
@@ -267,7 +251,7 @@ export function ReviewCommentaryPanel({
                 <CommentaryProse
                   prose={commentary.headline}
                   context={moveContext}
-                  onGoToLine={goToLineFromProse}
+                  onGoToLine={onGoToLine}
                 />
               </h3>
             ) : null}
@@ -275,7 +259,7 @@ export function ReviewCommentaryPanel({
               <CommentaryProse
                 prose={commentary.prose}
                 context={moveContext}
-                onGoToLine={goToLineFromProse}
+                onGoToLine={onGoToLine}
               />
             </p>
           </div>
@@ -341,12 +325,6 @@ export function ReviewCommentaryPanel({
           </p>
         ) : null}
       </section>
-
-      {ready && linkHint.visible ? (
-        <Coachmark onDismiss={linkHint.dismiss}>
-          Moves in the explanation are links. Click one to play the line on the board.
-        </Coachmark>
-      ) : null}
 
       {maiaNote ? <p className="text-xs leading-5 text-fg-subtle">{maiaNote}</p> : null}
 
@@ -462,14 +440,6 @@ function CommentarySkeleton({
         ))}
       </div>
     </div>
-  );
-}
-
-/** Whether the explanation mentions any move (those become links). */
-function hasMoveTokens(commentary: ReviewCommentary | undefined): boolean {
-  if (!commentary) return false;
-  return [commentary.headline ?? "", commentary.prose].some((text) =>
-    tokenizeCommentary(text).some((segment) => segment.kind === "move")
   );
 }
 
