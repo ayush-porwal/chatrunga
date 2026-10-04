@@ -181,6 +181,12 @@ async function reviewTrapGame({ app, page }: LaunchedApp, profile: string) {
     .click();
   await expect(page.getByRole("tablist", { name: "Game review sections" })).toBeVisible();
   await titlebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
+  // An imported game asks which side it's reviewed as first (White: the board stays as it is).
+  await page
+    .getByRole("radiogroup", { name: "Review this game as" })
+    .getByRole("radio", { name: "White (Alpha)" })
+    .click();
+  await page.getByRole("button", { name: "Start review", exact: true }).click();
   await expect(
     titlebar(page).getByRole("button", { name: "Analyze again", exact: true })
   ).toBeVisible({ timeout: 60_000 });

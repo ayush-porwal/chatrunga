@@ -123,7 +123,10 @@ test("the AI section holds the one model and key; Review settings link to it and
     .getByRole("dialog", { name: "Choose a game" })
     .getByRole("button", { name: /^Alpha vs Beta/ })
     .click();
-  await reviewTabs(page).getByRole("tab", { name: "Settings", exact: true }).click();
+  // Review settings are a dialog behind the sliders button in the panel's header, not a tab.
+  await expect(reviewTabs(page).getByRole("tab", { name: "Settings", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Review settings", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Review settings" })).toBeVisible();
   await expect(page.getByLabel("OpenRouter API key")).toHaveCount(0);
   // The game has no ratings or time control: the Settings rating for rapid.
   await expect(page.getByText("Rapid 1500 · from Settings")).toBeVisible();
@@ -138,7 +141,7 @@ test("the AI section holds the one model and key; Review settings link to it and
   await expect(reviewTabs(page).or(picker)).toBeVisible();
   if (await picker.isVisible())
     await picker.getByRole("button", { name: /^Alpha vs Beta/ }).click();
-  await reviewTabs(page).getByRole("tab", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Review settings", exact: true }).click();
   await page.getByRole("button", { name: "Edit ratings", exact: true }).click();
   await expect(ratingsGroup(page)).toBeInViewport();
 });
