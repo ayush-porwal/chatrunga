@@ -26,6 +26,7 @@ function input(moves: MoveReview[], overrides: Partial<ReviewChartInput> = {}): 
     mainline: moves.map((move, index) => ({
       nodeId: move.nodeId,
       ply: move.ply,
+      san: move.san,
       fenBefore: move.fenBefore,
       clockAfter: CLOCKS[index]
     })),
@@ -74,6 +75,28 @@ describe("review chart data", () => {
       input(trap, { mainline: input(trap).mainline.map((move) => ({ ...move, clockAfter: null })) })
     );
     expect(noClocks.hasTimes).toBe(false);
+  });
+
+  it("has a point per main-line move, with only the clocks' times for an unreviewed game", () => {
+    const unreviewed = buildReviewChartData({ ...input(trap), moves: [] });
+    expect(unreviewed.points).toHaveLength(15);
+    expect(unreviewed.points[7]).toMatchObject({
+      label: "4. Nxe5",
+      whiteWin: null,
+      annotation: null,
+      spentMs: 10_000,
+      mover: "white"
+    });
+    expect(unreviewed).toMatchObject({ hasEvals: false, hasDifficulty: false, hasTimes: true });
+    expect(chartTooltipLines(unreviewed.points[7], "white", null)).toEqual([
+      "4. Nxe5",
+      "0:10 spent"
+    ]);
+    // A review still running: the moves it has reached have evaluations, the rest wait.
+    const running = buildReviewChartData({ ...input(trap), moves: trap.slice(0, 4) });
+    expect(running.points[4].whiteWin).not.toBeNull();
+    expect(running.points[5].whiteWin).toBeNull();
+    expect(running.hasEvals).toBe(true);
   });
 
   it("reads difficulty at the review's Maia model, and none from untrusted or missing data", () => {

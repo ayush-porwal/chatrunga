@@ -6,7 +6,6 @@ import { bestMoveChance, difficultyModel } from "@chaturanga/shared/chess/maia-d
 import { annotationLabel, winPercent } from "@chaturanga/shared/chess/move-assessment";
 import { moveTimes } from "@chaturanga/shared/chess/move-times";
 import { CHART_SCORE_LIMIT, moverIsWhite, whiteChartScore } from "./review-score";
-import { moveLabel } from "./review-utils";
 
 /** The start position's id in the move tree (game-store's root). */
 const ROOT_NODE_ID = "root";
@@ -17,8 +16,8 @@ export type ChartPoint = {
   nodeId: string;
   /** "52. Ne4", "12… a5", "Start". */
   label: string;
-  /** White's winning chances (Lichess WinPercent), 0–100. */
-  whiteWin: number;
+  /** White's winning chances (Lichess WinPercent), 0–100; null for a move without an evaluation. */
+  whiteWin: number | null;
   /** The move's mark (Book included); null for an unmarked move and the start. */
   annotation: MoveAnnotation | null;
   /** One of the review's key moments. */
@@ -37,23 +36,28 @@ export type ReviewChartData = {
   phases: GamePhases;
   /** The Maia model the difficulty is read at; null when the review has no Maia data. */
   model: number | null;
+  /** Some move has an evaluation (the game was reviewed): the winning chances can be drawn. */
+  hasEvals: boolean;
   hasDifficulty: boolean;
   hasTimes: boolean;
 };
 
+export type ChartMainlineMove = {
+  nodeId: string;
+  ply: number;
+  san: string;
+  fenBefore: string;
+  clockAfter?: string | null;
+};
+
 export type ReviewChartInput = {
-  /** The review's main-line moves (as far as the review has gone). */
+  /** The review's main-line moves (as far as the review has gone; none for an unreviewed game). */
   moves: readonly MoveReview[];
   keyMomentIds?: ReadonlySet<string>;
   /** The review's opening (null: no named position; undefined: no book data). */
   opening: GameOpening | null | undefined;
-  /** The game's whole main line, with each move's `[%clk]`. */
-  mainline: readonly {
-    nodeId: string;
-    ply: number;
-    fenBefore: string;
-    clockAfter?: string | null;
-  }[];
+  /** The game's whole main line, with each move's `[%clk]`: one point per move. */
+  mainline: readonly ChartMainlineMove[];
   /** The PGN TimeControl tag (its increment counts in the move times). */
   timeControl: string | null | undefined;
   maia: {
@@ -77,23 +81,32 @@ function whiteWinAfter(move: MoveReview): number {
 }
 
 /** White's winning chances in the position before the first move (its `evalBefore`). */
-function whiteWinAtStart(first: MoveReview | undefined): number {
-  const score = first?.evalBefore;
+function whiteWinAtStart(first: MoveReview | undefined): number | null {
+  if (!first) return null;
+  const score = first.evalBefore;
   if (!score) return 50;
   if (score.type === "mate")
     return winPercent(score.value >= 0 ? CHART_SCORE_LIMIT : -CHART_SCORE_LIMIT);
   return winPercent(score.value);
 }
 
+/** "52. Ne4", "12… a5". */
+function plyLabel(ply: number, san: string): string {
+  const number = Math.ceil(ply / 2);
+  return ply % 2 === 1 ? `${number}. ${san}` : `${number}… ${san}`;
+}
+
 /**
- * The points of the review's linked charts: winning chances, Maia difficulty and time spent per
- * move, with the game's phases. Pure, so the charts redraw only when the review changes.
+ * The points of the review's linked charts, one per main-line move: winning chances, Maia
+ * difficulty and time spent, with the game's phases. A move the review hasn't reached (or a game
+ * with no review) has only what its clocks tell. Pure, so the charts redraw only when the review
+ * or the game changes.
  */
 export function buildReviewChartData(input: ReviewChartInput): ReviewChartData {
   const { moves, keyMomentIds, maia } = input;
   const model = maia.trusted ? difficultyModel(moves, maia.model, maia.rating) : null;
   const times = moveTimes(input.mainline, input.timeControl);
-  const spentByNode = new Map(input.mainline.map((move, index) => [move.nodeId, times[index]]));
+  const reviewByNode = new Map(moves.map((move) => [move.nodeId, move]));
   const points: ChartPoint[] = [
     {
       ply: 0,
@@ -107,23 +120,25 @@ export function buildReviewChartData(input: ReviewChartInput): ReviewChartData {
       mover: null
     }
   ];
-  for (const move of moves) {
+  input.mainline.forEach((item, index) => {
+    const move = reviewByNode.get(item.nodeId);
     points.push({
-      ply: move.ply,
-      nodeId: move.nodeId,
-      label: moveLabel(move),
-      whiteWin: whiteWinAfter(move),
-      annotation: move.assessment?.annotation ?? null,
-      key: keyMomentIds?.has(move.nodeId) ?? false,
-      bestChance: model === null ? null : bestMoveChance(move, model),
-      spentMs: spentByNode.get(move.nodeId) ?? null,
-      mover: moverIsWhite(move) ? "white" : "black"
+      ply: item.ply,
+      nodeId: item.nodeId,
+      label: plyLabel(item.ply, item.san),
+      whiteWin: move ? whiteWinAfter(move) : null,
+      annotation: move?.assessment?.annotation ?? null,
+      key: keyMomentIds?.has(item.nodeId) ?? false,
+      bestChance: move && model !== null ? bestMoveChance(move, model) : null,
+      spentMs: times[index] ?? null,
+      mover: moverIsWhite(item) ? "white" : "black"
     });
-  }
+  });
   return {
     points,
     phases: gamePhases(input.mainline, input.opening),
     model,
+    hasEvals: points.some((point) => point.whiteWin !== null),
     hasDifficulty: points.some((point) => point.bestChance !== null),
     hasTimes: points.some((point) => point.spentMs !== null)
   };
@@ -158,11 +173,13 @@ export function chartTooltipLines(
   reviewedSide: Color,
   model: number | null
 ): string[] {
-  const you = Math.round(reviewedSide === "white" ? point.whiteWin : 100 - point.whiteWin);
   const lines = [
-    point.annotation ? `${point.label} · ${annotationLabel(point.annotation)}` : point.label,
-    `You ${you}% · Opponent ${100 - you}%`
+    point.annotation ? `${point.label} · ${annotationLabel(point.annotation)}` : point.label
   ];
+  if (point.whiteWin !== null) {
+    const you = Math.round(reviewedSide === "white" ? point.whiteWin : 100 - point.whiteWin);
+    lines.push(`You ${you}% · Opponent ${100 - you}%`);
+  }
   if (point.bestChance !== null && model !== null)
     lines.push(`${Math.round(point.bestChance * 100)}% at ${model} find the best move`);
   if (point.spentMs !== null) lines.push(`${formatMillisecondsClock(point.spentMs)} spent`);

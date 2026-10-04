@@ -14,7 +14,7 @@ const HEADER_HEIGHT = 32;
 const GAP = 4;
 /** A folding strip's label row. */
 const TOGGLE_HEIGHT = 20;
-/** The one-line Maia prompt. */
+/** A one-line note in a strip's place (the Maia prompt, no evaluations yet). */
 const PROMPT_HEIGHT = 16;
 export const AXIS_HEIGHT = 13;
 
@@ -42,7 +42,8 @@ export const CONTENT_MIN_HEIGHT = 160;
 export const SPLITTER_STEP = 16;
 
 export type ChartsLayout = {
-  win: "open" | "folded";
+  /** "empty": open, but the game has no evaluations (unreviewed), so a one-line note shows. */
+  win: "open" | "folded" | "empty";
   difficulty: "open" | "folded" | "prompt" | "none";
   times: "open" | "folded" | "none";
 };
@@ -50,9 +51,9 @@ export type ChartsLayout = {
 /** The views' heights in pixels (null for one that isn't drawn: folded or absent). */
 export type ViewHeights = { win: number | null; difficulty: number | null; times: number | null };
 
-type OpenViews = { win: boolean; difficulty: boolean; times: boolean };
+export type OpenViews = { win: boolean; difficulty: boolean; times: boolean };
 
-function openViews(layout: ChartsLayout): OpenViews {
+export function openViews(layout: ChartsLayout): OpenViews {
   return {
     win: layout.win === "open",
     difficulty: layout.difficulty === "open",
@@ -71,6 +72,7 @@ function openCount(open: OpenViews): number {
 function fixedHeight(layout: ChartsLayout): number {
   const views = openCount(openViews(layout));
   const rows: number[] = [TOGGLE_HEIGHT];
+  if (layout.win === "empty") rows.push(PROMPT_HEIGHT);
   if (layout.difficulty === "open" || layout.difficulty === "folded") rows.push(TOGGLE_HEIGHT);
   else if (layout.difficulty === "prompt") rows.push(PROMPT_HEIGHT);
   if (layout.times !== "none") rows.push(TOGGLE_HEIGHT);
@@ -128,7 +130,27 @@ export function splitViewHeights(space: number, open: OpenViews): ViewHeights {
   };
 }
 
-/** The views' heights in a charts area `height` high: what the fixed rows leave, shared out. */
+/**
+ * The views' heights in the views area as laid out: `container` is its height, `chrome` the
+ * measured heights of its other rows (strip labels, notes, the move axis), `gap` the space between
+ * rows. The open views share exactly what is left, so views and chrome fill the container; only
+ * when that falls below the views' minimums do they overflow (and the area scrolls).
+ */
+export function fitViewHeights(input: {
+  container: number;
+  chrome: readonly number[];
+  open: OpenViews;
+  gap: number;
+}): ViewHeights {
+  const rows = input.chrome.length + openCount(input.open);
+  const chrome = input.chrome.reduce((sum, row) => sum + row, 0);
+  return splitViewHeights(input.container - chrome - Math.max(0, rows - 1) * input.gap, input.open);
+}
+
+/**
+ * The views' heights in a charts area `height` high, from the rows' usual sizes: an estimate
+ * until the views area is measured ({@link fitViewHeights}).
+ */
 export function viewHeights(height: number, layout: ChartsLayout): ViewHeights {
   return splitViewHeights(height - fixedHeight(layout), openViews(layout));
 }

@@ -5,6 +5,7 @@ import {
   clampChartsHeight,
   CONTENT_MIN_HEIGHT,
   defaultChartsHeight,
+  fitViewHeights,
   resolveChartsHeight,
   splitViewHeights,
   STRIP_MIN,
@@ -108,5 +109,25 @@ describe("review chart layout", () => {
     expect(
       resolveChartsHeight({ ...base, stored: null, max: null, fill: false, measured: null })
     ).toBe(defaultChartsHeight(ALL));
+  });
+
+  it("fits the open views and the measured rows into the views area exactly", () => {
+    const total = (heights: ReturnType<typeof fitViewHeights>) =>
+      (heights.win ?? 0) + (heights.difficulty ?? 0) + (heights.times ?? 0);
+    // Three strips: three labels and the axis around them, 7 rows and 6 gaps of 4.
+    const chrome3 = [20, 20, 20, 13];
+    const three = fitViewHeights({ container: 600, chrome: chrome3, open: BOTH, gap: 4 });
+    expect(total(three) + 73 + 6 * 4).toBe(600);
+    expect(three).toEqual({ win: 169, difficulty: 167, times: 167 });
+    // Two (Move times folded: its label stays), and one with the Maia note in its place.
+    const two = { win: true, difficulty: true, times: false };
+    const twoFit = fitViewHeights({ container: 600, chrome: chrome3, open: two, gap: 4 });
+    expect(total(twoFit) + 73 + 5 * 4).toBe(600);
+    const one = { win: true, difficulty: false, times: false };
+    const oneFit = fitViewHeights({ container: 500, chrome: [20, 16, 13], open: one, gap: 4 });
+    expect(oneFit).toEqual({ win: 500 - 49 - 3 * 4, difficulty: null, times: null });
+    // Below the minimums the views keep them and overflow; the area scrolls.
+    const tight = fitViewHeights({ container: 200, chrome: chrome3, open: BOTH, gap: 4 });
+    expect(total(tight)).toBe(WIN_MIN + 2 * STRIP_MIN);
   });
 });

@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { memo, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { BookPlus, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -23,6 +23,12 @@ import { EngineStatusPanel } from "../features/analysis/EngineStatusPanel";
 import { MoveList } from "../features/game/MoveList";
 import { RecentGames } from "../features/game/RecentGames";
 import { mainlineReviewInput } from "../features/game-review/review-utils";
+import { ReviewCharts } from "../features/game-review/ReviewCharts";
+import { KeyMomentNav } from "../features/game-review/KeyMoments";
+import { reviewSideColor, useReviewSide } from "../features/game-review/review-side";
+import { moverOf } from "../features/game-review/review-summary";
+import { keyMoments } from "@chaturanga/shared/chess/key-moments";
+import type { MoveReview } from "@chaturanga/shared/types/engine";
 import { formatMoveEval } from "../features/game-review/review-score";
 import { hasMoves } from "../features/repertoire/add-from-game";
 import { ADD_NEEDS_SAVE, captureBoardSource } from "../features/repertoire/board-source";
@@ -33,11 +39,6 @@ import { usePuzzleStore } from "../stores/puzzle-store";
 import { useReviewStore } from "../stores/review-store";
 import { useDisplayedReviewMoves } from "../stores/review-validity";
 import { availableSideTab, type PuzzleTabs, type SideTab } from "./side-tabs";
-
-// The eval chart (recharts) loads only once a reviewed game needs it.
-const ReviewTape = lazy(() =>
-  import("../features/game-review/ReviewTape").then((module) => ({ default: module.ReviewTape }))
-);
 
 const sideTabOptions: readonly SegmentedOption<SideTab>[] = [
   { value: "notation", label: "Moves" },
@@ -219,52 +220,84 @@ function GameSummary() {
   );
 }
 
-/** Eval graph when the loaded game has been reviewed, then move navigation. */
+/**
+ * The Charts section (as Game review's) for the loaded game, then move navigation. It shows what
+ * the game has: winning chances (and difficulty, when its review ran Maia) from a review of it,
+ * time per move from its clocks. On the Analyze board it shows for any game with moves; elsewhere
+ * (play, puzzles) only once the game has a review.
+ */
 function GameFooter() {
   const currentNodeId = useGameStore((state) => state.currentNodeId);
   const moveTree = useGameStore((state) => state.moveTree);
   const orientation = useGameStore((state) => state.orientation);
+  const timeControl = useGameStore((state) => state.headers.timeControl);
+  const analysisMode = useGameStore((state) => state.mode === "analysis");
   const goToNode = useGameStore((state) => state.goToNode);
   const reviewStatus = useReviewStore((state) => state.status);
+  const review = useReviewStore((state) => state.review);
   const reviewMoves = useDisplayedReviewMoves();
-  const onReviewedLine = useMemo(
-    () => currentNodeId === "root" || reviewMoves.some((move) => move.nodeId === currentNodeId),
-    [currentNodeId, reviewMoves]
+  const mainline = useMemo(() => mainlineReviewInput(moveTree), [moveTree]);
+  const onMainline = useMemo(
+    () => currentNodeId === "root" || mainline.some((move) => move.nodeId === currentNodeId),
+    [currentNodeId, mainline]
   );
-  // Only offer the graph when the review belongs to the loaded game.
+  // Only use the review when it belongs to the loaded game.
   const hasReview = useMemo(() => {
     if (!reviewMoves.length) return false;
     const nodeIds = new Set(moveTree.map((node) => node.id));
     return reviewMoves.every((move) => nodeIds.has(move.nodeId));
   }, [moveTree, reviewMoves]);
+  const moves = hasReview ? reviewMoves : EMPTY_REVIEW_MOVES;
   const reviewRunning = reviewStatus === "running";
-  // While a review pass runs, pin the graph's x-axis to the whole game so it grows in place.
-  const mainlinePlies = useMemo(
-    () => (reviewRunning ? mainlineReviewInput(moveTree).length : 0),
-    [moveTree, reviewRunning]
+  const side = reviewSideColor(useReviewSide(orientation));
+  // The reviewed side's key insights, once a finished review has them.
+  const moments = useMemo(
+    () =>
+      hasReview && !reviewRunning ? keyMoments(moves.filter((move) => moverOf(move) === side)) : [],
+    [hasReview, moves, reviewRunning, side]
   );
+  const momentIds = useMemo(() => new Set(moments.map((moment) => moment.nodeId)), [moments]);
+  const selectedPly = moveTree.find((node) => node.id === currentNodeId)?.ply ?? 0;
+  const momentNav = moments.length ? (
+    <KeyMomentNav moments={moments} selectedPly={selectedPly} onSelectNode={goToNode} />
+  ) : null;
+  const finished = hasReview && !reviewRunning ? review : null;
+  const shown = hasReview || (analysisMode && mainline.length > 0);
 
   return (
     <>
-      {hasReview ? (
-        <div className="border-b border-line-subtle px-3 pb-1 pt-2">
-          {/* Reserves the chart's height while its code loads (the first review only). */}
-          <Suspense fallback={<div className="h-36" aria-hidden="true" />}>
-            <ReviewTape
-              moves={reviewMoves}
-              variationSelected={!onReviewedLine}
-              selectedNodeId={currentNodeId}
-              onSelectNode={goToNode}
-              orientation={orientation}
-              totalPlies={reviewRunning ? mainlinePlies : undefined}
-            />
-          </Suspense>
+      {shown ? (
+        <div className="border-b border-line-subtle px-3 pb-1">
+          {/* Its top edge is the charts' splitter, against the panel content above. */}
+          <ReviewCharts
+            moves={moves}
+            variationSelected={!onMainline}
+            selectedNodeId={currentNodeId}
+            onSelectNode={goToNode}
+            reviewedSide={side}
+            totalPlies={reviewRunning ? mainline.length : undefined}
+            keyMomentIds={momentIds}
+            actions={momentNav}
+            opening={finished ? finished.opening : undefined}
+            mainline={mainline}
+            timeControl={timeControl}
+            maia={{
+              model: finished?.rating?.maiaModel ?? null,
+              rating: finished?.rating?.rating ?? 1500,
+              // Reviews before schema 2 stored made-up Maia probabilities; a running one is new.
+              trusted: reviewRunning || (finished?.schemaVersion ?? 0) >= 2
+            }}
+            // No Maia data here hides the strip: reviews (and Maia) live in Game review.
+            maiaPrompt={false}
+          />
         </div>
       ) : null}
       <MoveNavigation />
     </>
   );
 }
+
+const EMPTY_REVIEW_MOVES: MoveReview[] = [];
 
 /**
  * "Add to repertoire…" for the board's game: the line to the selected move (the whole game from

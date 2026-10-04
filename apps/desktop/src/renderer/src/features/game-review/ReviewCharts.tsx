@@ -21,6 +21,7 @@ import {
   chartMark,
   chartTooltipLines,
   nearestPointIndex,
+  type ChartMainlineMove,
   type ChartPoint,
   type ReviewChartData
 } from "./review-charts";
@@ -37,6 +38,8 @@ import {
   chartsMaxHeight,
   clampChartsHeight,
   SPLITTER_STEP,
+  fitViewHeights,
+  openViews,
   resolveChartsHeight,
   STRIP_INSET,
   stripPlotHeight,
@@ -82,7 +85,7 @@ function markFill(point: ChartPoint): string | null {
 }
 
 /** The element's laid-out width in CSS pixels (0 until measured), kept up to date. */
-function useWidth(): [(element: HTMLDivElement | null) => void, number] {
+function useWidth(): [(element: HTMLDivElement | null) => void, number, HTMLDivElement | null] {
   const [element, setElement] = useState<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
   useLayoutEffect(() => {
@@ -94,7 +97,53 @@ function useWidth(): [(element: HTMLDivElement | null) => void, number] {
     observer.observe(element);
     return () => observer.disconnect();
   }, [element]);
-  return [setElement, width];
+  return [setElement, width, element];
+}
+
+type ViewsBox = { container: number; chrome: number[]; gap: number };
+
+/**
+ * The views area's height and its rows that aren't views (strip labels, notes, the move axis),
+ * measured as laid out, so the views share exactly what is left (fitViewHeights). `layoutKey`
+ * changes whenever those rows do; the area's own resizes are observed.
+ */
+function useViewsBox(element: HTMLElement | null, layoutKey: string): ViewsBox | null {
+  const [box, setBox] = useState<ViewsBox | null>(null);
+  useLayoutEffect(() => {
+    if (!element) {
+      setBox(null);
+      return;
+    }
+    const update = () => {
+      const style = getComputedStyle(element);
+      const chrome: number[] = [];
+      for (const child of element.children) {
+        const childStyle = getComputedStyle(child);
+        // Out of the grid's rows: hidden placeholders, the tooltip and screen-reader text.
+        if (childStyle.display === "none" || childStyle.position === "absolute") continue;
+        if (child.hasAttribute("data-chart")) continue;
+        chrome.push(child.getBoundingClientRect().height);
+      }
+      const next = {
+        container: element.clientHeight,
+        chrome,
+        gap: Number.parseFloat(style.rowGap) || 0
+      };
+      setBox((current) =>
+        current &&
+        current.container === next.container &&
+        current.gap === next.gap &&
+        current.chrome.join() === next.chrome.join()
+          ? current
+          : next
+      );
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [element, layoutKey]);
+  return box;
 }
 
 /** A chart's fold state, remembered (review-chart-prefs.ts). */
@@ -236,7 +285,8 @@ export const ReviewCharts = memo(function ReviewCharts({
   mainline,
   timeControl,
   maia,
-  fill = false
+  fill = false,
+  maiaPrompt = true
 }: {
   moves: readonly MoveReview[];
   selectedNodeId: string | null;
@@ -257,12 +307,7 @@ export const ReviewCharts = memo(function ReviewCharts({
   /** The review's opening (it ends the Opening phase); undefined for a review without book data. */
   opening: GameOpening | null | undefined;
   /** The game's main line, with each move's `[%clk]`. */
-  mainline: readonly {
-    nodeId: string;
-    ply: number;
-    fenBefore: string;
-    clockAfter?: string | null;
-  }[];
+  mainline: readonly ChartMainlineMove[];
   timeControl: string | null | undefined;
   maia: { model: number | null; rating: number; trusted: boolean };
   /**
@@ -271,6 +316,11 @@ export const ReviewCharts = memo(function ReviewCharts({
    * charts out as a flex column.
    */
   fill?: boolean;
+  /**
+   * Without Maia data, put a one-line prompt in the difficulty strip's place (Game review, where
+   * a review can run Maia); false hides the strip instead (the Analyze page).
+   */
+  maiaPrompt?: boolean;
 }) {
   // The page passes `maia` as a fresh object each render; its fields are what the data uses.
   const { model: maiaModel, rating, trusted } = maia;
@@ -288,7 +338,7 @@ export const ReviewCharts = memo(function ReviewCharts({
   );
   const { points } = data;
   const lastPly = points[points.length - 1]?.ply ?? 0;
-  const [measure, width] = useWidth();
+  const [measure, width, viewsElement] = useWidth();
   const scale = useMemo(
     () => makeScale(width, totalPlies ? Math.max(totalPlies, lastPly) : lastPly),
     [lastPly, totalPlies, width]
@@ -357,12 +407,12 @@ export const ReviewCharts = memo(function ReviewCharts({
 
   const showDifficulty = data.hasDifficulty && data.model !== null;
   const layout: ChartsLayout = {
-    win: winCollapsed ? "folded" : "open",
+    win: winCollapsed ? "folded" : data.hasEvals ? "open" : "empty",
     difficulty: showDifficulty
       ? difficultyCollapsed
         ? "folded"
         : "open"
-      : maiaInstalled === null
+      : !maiaPrompt || maiaInstalled === null
         ? "none"
         : "prompt",
     times: data.hasTimes ? (timesCollapsed ? "folded" : "open") : "none"
@@ -375,7 +425,13 @@ export const ReviewCharts = memo(function ReviewCharts({
     separator
   } = useChartsHeight(layout, fill);
   // The open views share the height beyond the fixed rows equally, each above its minimum.
-  const views = viewHeights(chartsHeight, layout);
+  const viewsBox = useViewsBox(
+    viewsElement,
+    `${layout.win}|${layout.difficulty}|${layout.times}|${width > 0}`
+  );
+  const views = viewsBox
+    ? fitViewHeights({ ...viewsBox, open: openViews(layout) })
+    : viewHeights(chartsHeight, layout);
   const winPlot = winPlotHeight(views.win ?? 0);
   // The shared move axis sits under the last open view.
   const lastOpen =
@@ -489,6 +545,15 @@ export const ReviewCharts = memo(function ReviewCharts({
                 </FoldToggle>
                 {winCollapsed ? (
                   <div id={winId} hidden />
+                ) : !data.hasEvals ? (
+                  <p
+                    id={winId}
+                    className="text-2xs text-fg-subtle"
+                    style={{ paddingLeft: GUTTER }}
+                    data-no-evals
+                  >
+                    No evaluations yet: review the game to see its winning chances.
+                  </p>
                 ) : (
                   <svg
                     id={winId}
@@ -539,7 +604,7 @@ export const ReviewCharts = memo(function ReviewCharts({
                       </svg>
                     )}
                   </>
-                ) : maiaInstalled === null ? null : (
+                ) : !maiaPrompt || maiaInstalled === null ? null : (
                   <MaiaPrompt installed={maiaInstalled} />
                 )}
                 {lastOpen === "difficulty" ? axis : null}
@@ -751,11 +816,14 @@ const WinningChancesLayer = memo(function WinningChancesLayer({
   plot: number;
   reviewedSide: Color;
 }) {
-  const { points } = data;
+  // The moves the review has evaluated (every move but those a running review hasn't reached).
+  const points = data.points.flatMap((point) =>
+    point.whiteWin === null ? [] : [{ ...point, whiteWin: point.whiteWin }]
+  );
   const { x } = scale;
   const bottom = WIN_TOP + plot;
   // The reviewed side's winning chances, drawn up from the bottom.
-  const y = (point: ChartPoint) => {
+  const y = (point: { whiteWin: number }) => {
     const own = reviewedSide === "white" ? point.whiteWin : 100 - point.whiteWin;
     return WIN_TOP + (1 - own / 100) * plot;
   };

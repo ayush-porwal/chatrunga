@@ -193,3 +193,25 @@ test("without Maia the difficulty strip is an install prompt, and without clocks
   await charts(page).getByRole("button", { name: "Install Maia" }).click();
   await expect(page.getByRole("heading", { name: "Engine downloads" })).toBeVisible();
 });
+
+test("the Analyze page shows the Charts for an unreviewed game: its clocks, no evaluations, no Difficulty", async ({
+  launch,
+  profile
+}) => {
+  const { app, page } = await launch();
+  await skipWelcome(page);
+  await importPgnFile(app, page, writePgn(profile, "clocked.pgn", trapPgn(true)));
+  await sidebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
+  await expect(counter(page)).toHaveText("14 / 14");
+
+  await expect(charts(page).getByRole("button", { name: "Charts" })).toBeVisible();
+  // The Winning chances strip is there, waiting for a review; no Maia prompt on Analyze.
+  await expect(charts(page).getByRole("button", { name: "Winning chances" })).toBeVisible();
+  await expect(charts(page).getByText("No evaluations yet")).toBeVisible();
+  await expect(view(page, "difficulty")).toHaveCount(0);
+  await expect(charts(page).getByText("Difficulty needs")).toHaveCount(0);
+  // Time per move from the clocks, linked to the board.
+  await expect(view(page, "times")).toBeVisible();
+  await view(page, "times").locator('rect[data-ply="7"]').click();
+  await expect(counter(page)).toHaveText("7 / 14");
+});
