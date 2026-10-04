@@ -27,7 +27,7 @@ import {
 } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
 import { flushDecisionTexts } from "./decision-text-drafts";
-import { flushChapterTree } from "./useChapterAutosave";
+import { flushChapterTree, flushChapterTreeInWrite } from "./useChapterAutosave";
 import {
   adoptCommittedRevision,
   importExpectedRevision,
@@ -236,7 +236,7 @@ export function ImportPgnDialog({
         const ownDraft = useRepertoireWorkspaceStore.getState().repertoireId === repertoireId;
         saved = !ownDraft || (await flushChapterTree(queryClient));
         // Holds nothing back (no repertoire to block on): a refusal stays with its chapter.
-        if (saved) await flushDecisionTexts(queryClient, flushChapterTree, []);
+        if (saved) await flushDecisionTexts(queryClient, flushChapterTreeInWrite, []);
       } finally {
         if (open.current) setFlushing(false);
       }

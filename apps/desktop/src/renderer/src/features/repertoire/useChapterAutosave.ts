@@ -8,6 +8,7 @@ import {
   discardDecisionText,
   flushDecisionTexts,
   keepDecisionText,
+  queueRepertoireWrite,
   retryDecisionTexts,
   saveDecisionText
 } from "./decision-text-drafts";
@@ -57,8 +58,8 @@ async function saveOnce(queryClient: QueryClient): Promise<void> {
   }
 }
 
-/** Saves the draft now (joining a save already running). */
-export function saveChapterDraftNow(queryClient: QueryClient): Promise<void> {
+/** Saves the draft now, joining a save already running (not queued: see saveChapterDraftNow). */
+function saveJoined(queryClient: QueryClient): Promise<void> {
   if (!inFlight) {
     inFlight = saveOnce(queryClient).finally(() => {
       inFlight = null;
@@ -68,11 +69,19 @@ export function saveChapterDraftNow(queryClient: QueryClient): Promise<void> {
 }
 
 /**
- * The chapter draft only: waits for the running save and writes any unsaved edits. True when the
- * draft is saved; false when a save error (or a refusal now) keeps it unsaved. For writes that
- * need the chapter's tree stored first; leaving the study draft uses flushChapterDraft.
+ * Saves the draft now (joining a save already running), queued with the decision writes and the
+ * study commands (queueRepertoireWrite): it never goes out with the same revision as one of them
+ * still running, so the app's own writes don't refuse each other as stale.
  */
-export async function flushChapterTree(queryClient: QueryClient): Promise<boolean> {
+export function saveChapterDraftNow(queryClient: QueryClient): Promise<void> {
+  return queueRepertoireWrite(() => saveJoined(queryClient));
+}
+
+/** Waits for the running save, then writes any unsaved edits with `save`. */
+async function flushTree(
+  queryClient: QueryClient,
+  save: (queryClient: QueryClient) => Promise<void>
+): Promise<boolean> {
   if (inFlight) await inFlight;
   const { saveState } = workspace();
   if (saveState.status === "error") {
@@ -80,9 +89,27 @@ export async function flushChapterTree(queryClient: QueryClient): Promise<boolea
     workspace().reset();
     return true;
   }
-  if (workspace().dirty) await saveChapterDraftNow(queryClient);
+  if (workspace().dirty) await save(queryClient);
   const after = workspace();
   return !after.dirty && after.saveState.status !== "error";
+}
+
+/**
+ * The chapter draft only: waits for the running save and writes any unsaved edits (queued, as
+ * saveChapterDraftNow). True when the draft is saved; false when a save error (or a refusal now)
+ * keeps it unsaved. For writes that need the chapter's tree stored first; leaving the study
+ * draft uses flushChapterDraft. Inside a queued write, use flushChapterTreeInWrite.
+ */
+export function flushChapterTree(queryClient: QueryClient): Promise<boolean> {
+  return flushTree(queryClient, saveChapterDraftNow);
+}
+
+/**
+ * flushChapterTree for a write already running in the queue (queueRepertoireWrite): it saves at
+ * once, since a save queued behind that write would wait for it forever.
+ */
+export function flushChapterTreeInWrite(queryClient: QueryClient): Promise<boolean> {
+  return flushTree(queryClient, saveJoined);
 }
 
 /**
@@ -98,7 +125,7 @@ export async function flushChapterDraft(
   blockOn?: readonly string[]
 ): Promise<boolean> {
   const chapterSaved = await flushChapterTree(queryClient);
-  const textSaved = await flushDecisionTexts(queryClient, flushChapterTree, blockOn);
+  const textSaved = await flushDecisionTexts(queryClient, flushChapterTreeInWrite, blockOn);
   return chapterSaved && textSaved;
 }
 
@@ -131,7 +158,7 @@ export function unsavedDecisionMessage(stale: boolean, action: string): string {
 
 /** Writes a typed prompt or hint now (a failed one is retried). */
 export function saveDecisionTextNow(queryClient: QueryClient, key: string): Promise<boolean> {
-  return saveDecisionText(queryClient, key, { flushChapter: flushChapterTree, retry: true });
+  return saveDecisionText(queryClient, key, { flushChapter: flushChapterTreeInWrite, retry: true });
 }
 
 /** Retry for a repertoire's unsaved prompts and hints. */
@@ -139,12 +166,12 @@ export function retryDecisionTextsNow(
   queryClient: QueryClient,
   repertoireId: string
 ): Promise<boolean> {
-  return retryDecisionTexts(queryClient, repertoireId, flushChapterTree);
+  return retryDecisionTexts(queryClient, repertoireId, flushChapterTreeInWrite);
 }
 
 /** Keep mine, after a stale refusal: saved over the newer prompt or hint. */
 export function keepDecisionTextNow(queryClient: QueryClient, key: string): Promise<boolean> {
-  return keepDecisionText(queryClient, key, flushChapterTree);
+  return keepDecisionText(queryClient, key, flushChapterTreeInWrite);
 }
 
 export { discardDecisionText };
@@ -223,7 +250,7 @@ export function useChapterAutosave(): { flush: () => Promise<boolean> } {
       void flushChapterTree(queryClient).then((saved) => {
         if (saved) void rememberStudyPosition(queryClient);
       });
-      void flushDecisionTexts(queryClient, flushChapterTree);
+      void flushDecisionTexts(queryClient, flushChapterTreeInWrite);
     },
     [queryClient]
   );

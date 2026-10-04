@@ -18,7 +18,7 @@ import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-s
 import { queueRepertoireWrite } from "./decision-text-drafts";
 import type { ChapterBulkPatch } from "./long-lists";
 import { chapterOrderAfterMove, rootNodeFor } from "./repertoire-chapters";
-import { flushChapterTree } from "./useChapterAutosave";
+import { flushChapterTreeInWrite } from "./useChapterAutosave";
 
 type ChapterPatch = Partial<Pick<RepertoireChapter, "title" | "kind" | "enabled" | "sortOrder">>;
 
@@ -63,7 +63,7 @@ export function useStudyCommands(repertoireId: string) {
     setError(null);
     return queueRepertoireWrite(async () => {
       try {
-        if (!(await flushChapterTree(queryClient))) {
+        if (!(await flushChapterTreeInWrite(queryClient))) {
           setError("Save the chapter first (see the save status above).");
           return null;
         }
@@ -157,7 +157,7 @@ export function useStudyCommands(repertoireId: string) {
       for (const [id, sortOrder] of changes) {
         if (id === workspace().chapterId) {
           workspace().setChapterFields({ sortOrder });
-          if (!(await flushChapterTree(queryClient)))
+          if (!(await flushChapterTreeInWrite(queryClient)))
             throw new Error("The chapter couldn't be saved.");
         } else {
           await saveOtherChapter(id, { sortOrder });

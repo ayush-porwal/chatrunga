@@ -26,14 +26,19 @@ import {
 
 const workspace = () => useRepertoireWorkspaceStore.getState();
 
-/** Saves the open chapter draft (true once it is saved). */
+/**
+ * Saves the open chapter draft (true once it is saved). Called inside a queued write, so it saves
+ * at once rather than queueing behind that write (flushChapterTreeInWrite).
+ */
 export type FlushChapter = (queryClient: QueryClient) => Promise<boolean>;
 
 let writes: Promise<unknown> = Promise.resolve();
 
 /**
  * Runs repertoire writes one at a time, each once the previous one settled, so each sends the
- * revision the previous one returned. Shared by the study commands and the decision draft saves.
+ * revision the previous one returned. Shared by the study commands, the decision draft saves and
+ * the chapter draft's saves (saveChapterDraftNow). A write running here must not queue another
+ * and wait for it: that one would wait for this one.
  */
 export function queueRepertoireWrite<T>(write: () => Promise<T>): Promise<T> {
   const next = writes.then(write);

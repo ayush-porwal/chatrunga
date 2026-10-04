@@ -14,8 +14,9 @@ const updateDecision = vi.fn<(input: UpdateDecisionInput) => Promise<DecisionSav
 const getRepertoire = vi.fn<(id: string) => Promise<unknown>>();
 const getDecision =
   vi.fn<(input: { repertoireId: string; positionKey: string }) => Promise<unknown>>();
+const saveChapter = vi.fn<(input: { expectedRevision: number }) => Promise<unknown>>();
 (globalThis as unknown as { chaturanga: unknown }).chaturanga = {
-  repertoires: { updateDecision, get: getRepertoire, getDecision },
+  repertoires: { updateDecision, get: getRepertoire, getDecision, saveChapter },
   games: {}
 };
 
@@ -29,7 +30,8 @@ const {
   retryDecisionTexts,
   saveDecisionText
 } = await import("./decision-text-drafts");
-const { flushChapterDraft, unsavedStudyCause } = await import("./useChapterAutosave");
+const { flushChapterDraft, saveChapterDraftNow, unsavedStudyCause } =
+  await import("./useChapterAutosave");
 
 const store = () => useRepertoireWorkspaceStore.getState();
 const PROMPT = decisionDraftKey("r1", "k1", "prompt");
@@ -68,6 +70,7 @@ describe("decision text drafts", () => {
     updateDecision.mockReset();
     getRepertoire.mockReset();
     getDecision.mockReset();
+    saveChapter.mockReset();
     flushChapter.mockClear();
     chapterSaved = true;
     store().reset();
@@ -461,6 +464,27 @@ describe("decision text drafts", () => {
     await expect(failing).rejects.toThrow("refused");
     await third;
     expect(order).toEqual(["first started", "first done", "second", "third"]);
+  });
+
+  it("a chapter save waits for a running decision write and sends the revision it returned", async () => {
+    let finish!: () => void;
+    updateDecision.mockImplementationOnce(
+      (input) => new Promise((resolve) => (finish = () => resolve(saved(input, 5))))
+    );
+    saveChapter.mockRejectedValueOnce(new Error("disk full"));
+    store().setDecisionText("r1", "k1", "prompt", "Develop");
+    const decision = saveDecisionText(queryClient, PROMPT, { flushChapter });
+    await vi.waitFor(() => expect(updateDecision).toHaveBeenCalledTimes(1));
+    // The chapter is edited while the prompt's write runs: its save waits for that write.
+    store().setComment("root", "A plan");
+    const chapter = saveChapterDraftNow(queryClient);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(saveChapter).not.toHaveBeenCalled();
+    finish();
+    expect(await decision).toBe(true);
+    await chapter;
+    expect(saveChapter).toHaveBeenCalledTimes(1);
+    expect(saveChapter.mock.calls[0][0].expectedRevision).toBe(5);
   });
 
   it("leaving study (flushChapterDraft) saves the chapter and the typed text", async () => {
