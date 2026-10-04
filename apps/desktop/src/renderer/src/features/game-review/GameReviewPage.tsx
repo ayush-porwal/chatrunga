@@ -26,8 +26,9 @@ import { ReviewSidePrompt, ReviewSummary } from "./ReviewSummary";
 import { CardCommentaryContext, type CardCommentaryOptions } from "./MomentCommentary";
 import { chooseReviewSide, reviewSideColor, useReviewSide } from "./review-side";
 import { moverOf } from "./review-summary";
-import { ReviewTape } from "./ReviewTape";
+import { ReviewCharts } from "./ReviewCharts";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { cn } from "@/lib/utils";
 import { PlayerRow } from "../board/PlayerIdentity";
 import { BoardStage, BoardWorkspace, workspaceTabsClass } from "../board/BoardWorkspace";
 import { EvalBar } from "../board/EvalBar";
@@ -479,16 +480,33 @@ function GameReviewPageInner({
         footer={
           <>
             {hasMoves || isRunning ? (
-              <div className="border-b border-line-subtle px-3 pb-1 pt-2">
-                <ReviewTape
+              <div
+                className={cn(
+                  "border-b border-line-subtle px-3 pb-1",
+                  // Review folded: the charts take the panel's height down to the navigation.
+                  !reviewSection.open && "flex min-h-0 flex-1 flex-col"
+                )}
+              >
+                {/* Its top edge is the charts' splitter, against the panel content above. */}
+                <ReviewCharts
+                  fill={!reviewSection.open}
                   moves={moves}
                   variationSelected={!onMainline}
                   selectedNodeId={selectedNodeId}
                   onSelectNode={selectNode}
-                  orientation={orientation}
+                  reviewedSide={side}
                   totalPlies={isRunning ? reviewInput.length : undefined}
                   keyMomentIds={momentIds}
                   actions={momentNav}
+                  opening={isRunning ? undefined : review?.opening}
+                  mainline={reviewInput}
+                  timeControl={headers.timeControl}
+                  maia={{
+                    model: isRunning ? null : (review?.rating?.maiaModel ?? null),
+                    rating: userRating,
+                    // Reviews before schema 2 stored made-up Maia probabilities; a running one is new.
+                    trusted: isRunning || (review?.schemaVersion ?? 0) >= 2
+                  }}
                 />
               </div>
             ) : null}
