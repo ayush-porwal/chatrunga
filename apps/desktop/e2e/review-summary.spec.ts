@@ -59,6 +59,16 @@ async function reviewTrapGameAs(
   // The titlebar's Analyze asks too, instead of starting.
   await titlebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
   await expect(prompt).toBeVisible();
+  // A radio group: the arrow keys move the pick and focus between the two sides.
+  const white = prompt.getByRole("radio", { name: "White (Alpha)" });
+  const black = prompt.getByRole("radio", { name: "Black (Beta)" });
+  await white.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(black).toHaveAttribute("aria-checked", "true");
+  await expect(black).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(white).toHaveAttribute("aria-checked", "true");
+  await expect(white).toBeFocused();
   await prompt.getByRole("radio", { name: side }).click();
   await page.getByRole("button", { name: "Start review", exact: true }).click();
   await expect(

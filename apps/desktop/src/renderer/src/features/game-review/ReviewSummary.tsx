@@ -1,4 +1,13 @@
-import { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  memo,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode
+} from "react";
 import { BookOpen, Crown, Library, Loader2, Puzzle, Swords } from "lucide-react";
 import type { Color } from "@chaturanga/shared/types/chess";
 import type { GameOpening, MoveReview } from "@chaturanga/shared/types/engine";
@@ -471,6 +480,20 @@ export function ReviewSidePrompt({
     { color: "white", name: whiteName },
     { color: "black", name: blackName }
   ];
+  const pick = (color: Color) => {
+    setTouched(true);
+    setPicked(color);
+  };
+  // A radio group: Tab reaches the picked side only, and the arrow keys move the pick (and focus).
+  const onRadioKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+    event.preventDefault();
+    const next: Color = side === "white" ? "black" : "white";
+    pick(next);
+    event.currentTarget.parentElement
+      ?.querySelector<HTMLButtonElement>(`[data-side="${next}"]`)
+      ?.focus();
+  };
   return (
     <div className="grid h-full content-center gap-4 px-1">
       <h2 id={headingId} className="text-center text-base font-semibold text-fg">
@@ -487,16 +510,16 @@ export function ReviewSidePrompt({
               role="radio"
               aria-checked={checked}
               aria-label={`${label} (${option.name})`}
+              data-side={option.color}
+              tabIndex={checked ? 0 : -1}
+              onKeyDown={onRadioKeyDown}
               className={cn(
                 "grid min-w-0 justify-items-center gap-1 rounded-lg border px-3 py-3 text-sm transition-colors duration-micro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70",
                 checked
                   ? "border-accent/60 bg-accent-soft text-fg"
                   : "border-line bg-surface-raised text-fg-secondary hover:border-line-strong"
               )}
-              onClick={() => {
-                setTouched(true);
-                setPicked(option.color);
-              }}
+              onClick={() => pick(option.color)}
             >
               <span className="inline-flex items-center gap-1.5 font-medium">
                 <SideDot color={option.color} />
