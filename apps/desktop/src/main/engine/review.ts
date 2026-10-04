@@ -30,8 +30,10 @@ import {
   verificationNeed,
   type VerificationNeed
 } from "@chaturanga/shared/chess/move-assessment";
+import { classifyOpening } from "@chaturanga/shared/chess/opening-book";
 import { parseInfoLine, parseLc0MoveStat, type Lc0MoveStat } from "@chaturanga/shared/engine/uci";
 import { logger } from "../logger";
+import { openingBook } from "./opening-book";
 import {
   deeperReviewSearch,
   resolveReviewSearchParams,
@@ -212,12 +214,15 @@ export async function reviewGameWithEngine(
 
     const moves: MoveReview[] = [];
     let previousReplyLines: AnalysisLine[] | null = null;
+    // The game's book moves (opening theory) and its opening.
+    const theory = classifyOpening(openingBook(), input.moves);
     // Each move is assessed in the context of the one before it (the opponent's move into it).
     let previousAssessed: { move: MoveReview; assessment: MoveAssessment } | null = null;
     const assess = (review: MoveReview): MoveReview => {
       const assessment = assessMove(review, {
         previous: previousAssessed,
-        playerRating: options.playerRating ?? null
+        playerRating: options.playerRating ?? null,
+        book: theory.book[moves.length] ?? false
       });
       const assessed: MoveReview = { ...review, assessment };
       previousAssessed = { move: assessed, assessment };
@@ -367,7 +372,8 @@ export async function reviewGameWithEngine(
       // without it, so it stays unverified, and the review goes on. Cancelling still stops it.
       const need = verificationNeed(moveReview, {
         previous: previousAssessed,
-        playerRating: options.playerRating ?? null
+        playerRating: options.playerRating ?? null,
+        book: theory.book[index] ?? false
       });
       let checkFailed = false;
       if (need) {
@@ -420,7 +426,8 @@ export async function reviewGameWithEngine(
       multipv,
       createdAt: Date.now(),
       summary: summarizeMoves(moves),
-      moves
+      moves,
+      opening: theory.opening
     };
   } finally {
     session.stop();

@@ -73,9 +73,20 @@ describe("key moments", () => {
     [assessment("great", { alternativeGap: null }), 10],
     [assessment("excellent", { alternativeGap: 8 }), 6],
     [assessment("good"), 5],
+    [assessment("book", { winLoss: 30 }), null],
     [assessment(null), null]
   ])("weighs %o as %s", (item, weight) => {
     expect(momentWeight(item)).toBe(weight);
+  });
+
+  it("never makes a book move a moment, nor lists it with the marks", () => {
+    const game = moves([
+      [1, assessment("book")],
+      [2, assessment("book", { winLoss: 40 })],
+      [3, assessment("inaccuracy", { winLoss: 6 })]
+    ]);
+    expect(keyMoments(game).map((moment) => moment.ply)).toEqual([3]);
+    expect(markedMoves(game).map((moment) => moment.annotation)).toEqual(["inaccuracy"]);
   });
 
   it("leads the trap game with its blunders, the critical reply and the mate allowed", () => {

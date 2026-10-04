@@ -61,7 +61,10 @@
 
   /* Review marks (Lichess's glyph palette): the board badge's circle, the move list's and review
      headers' chips (white text), the graph's dots and the summary counts. `mark-fg` is the glyph
-     or text drawn on a mark's fill. */
+     or text drawn on a mark's fill. Book (opening theory) has a lighter tone for its SAN text,
+     `mark-book-text`, as its fill is too dark to read as text. */
+  --color-mark-book: #a88865;
+  --color-mark-book-text: #c9a27e;
   --color-mark-brilliant: #168226;
   --color-mark-great: #22ac38;
   --color-mark-excellent: #5fae4b;

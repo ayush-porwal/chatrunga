@@ -119,7 +119,7 @@ describe("gameRepository (SQLite)", () => {
     expect(gameRepository.get(saved.id)?.review).toBeNull();
   });
 
-  it("opens an analysis saved before move assessments re-assessed from its evaluations, leaving the row as it was", () => {
+  it("opens an analysis saved before move assessments re-assessed from its evaluations, book moves and opening included, leaving the row as it was", () => {
     const { game } = importPgnText(
       `[Event "Trap"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bc4 Nd4 4. Nxe5 Qg5 5. Nxf7 Qxg2 6. Rf1 Qxe4+ 7. Be2 Nf3# 0-1`
     );
@@ -155,13 +155,14 @@ describe("gameRepository (SQLite)", () => {
       assessmentPolicy: MOVE_ASSESSMENT_POLICY,
       assessmentsRecomputed: true
     });
+    // The first six moves are opening theory (3… Nd4 included), from the bundled opening book.
     expect(opened.moves.map((move) => move.assessment?.annotation ?? null)).toEqual([
-      null,
-      null,
-      null,
-      null,
-      null,
-      "inaccuracy",
+      "book",
+      "book",
+      "book",
+      "book",
+      "book",
+      "book",
       "blunder",
       "good",
       "blunder",
@@ -171,7 +172,14 @@ describe("gameRepository (SQLite)", () => {
       "mistake",
       null
     ]);
-    expect(opened.summary).toMatchObject({ inaccuracies: 1, mistakes: 1, blunders: 2 });
+    expect(opened.summary).toMatchObject({ book: 6, inaccuracies: 0, mistakes: 1, blunders: 2 });
+    expect(opened.opening).toEqual({
+      eco: "C50",
+      name: "Italian Game: Blackburne-Kostić Gambit",
+      ply: 6,
+      bookEndPly: 6,
+      firstNonBookMove: { ply: 7, san: "Nxe5" }
+    });
     expect(gameRepository.getReview(saved.id, `test-${saved.id}`)?.assessmentsRecomputed).toBe(
       true
     );
@@ -190,9 +198,11 @@ describe("gameRepository (SQLite)", () => {
     const partly = gameRepository.get(saved.id)!.review!;
     expect(partly.assessmentsRecomputed).toBe(true);
     expect(partly.moves[8]?.assessment).toBeUndefined();
-    expect(partly.moves.map((move) => move.assessment?.annotation ?? null).filter(Boolean)).toEqual(
-      ["inaccuracy", "blunder", "good", "mistake"]
-    );
+    expect(
+      partly.moves
+        .map((move) => move.assessment?.annotation ?? null)
+        .filter((annotation) => annotation && annotation !== "book")
+    ).toEqual(["blunder", "good", "mistake"]);
   });
 
   it("moves the review of a game from a set-up position too, and puts the cursor on the rebuilt tree", () => {

@@ -28,14 +28,17 @@ const TRAP_PGN = `[Event "Move marks e2e"]
 1. e4 e5 2. Nf3 Nc6 3. Bc4 Nd4 4. Nxe5 Qg5 5. Nxf7 Qxg2 6. Rf1 Qxe4+ 7. Be2 Nf3# 0-1
 `;
 
-/** Each move's mark (null: unmarked), in game order. */
+/**
+ * Each move's mark (null: unmarked), in game order. The first six are opening theory (3… Nd4 is
+ * the Blackburne–Kostić Gambit of the opening book).
+ */
 const MARKS: readonly [string, string | null][] = [
-  ["e4", null],
-  ["e5", null],
-  ["Nf3", null],
-  ["Nc6", null],
-  ["Bc4", null],
-  ["Nd4", "inaccuracy"],
+  ["e4", "book"],
+  ["e5", "book"],
+  ["Nf3", "book"],
+  ["Nc6", "book"],
+  ["Bc4", "book"],
+  ["Nd4", "book"],
   ["Nxe5", "blunder"],
   ["Qg5", "great"],
   ["Nxf7", "blunder"],
@@ -103,8 +106,8 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
     titlebar(page).getByRole("button", { name: "Analyze again", exact: true })
   ).toBeVisible({ timeout: 60_000 });
 
-  // The summary counts every error by severity: one inaccuracy, one mistake, two blunders.
-  await expect(page.getByLabel("2 blunders, 1 mistakes, 1 inaccuracies")).toBeVisible();
+  // The summary counts every error by severity: one mistake, two blunders (book moves are none).
+  await expect(page.getByLabel("2 blunders, 1 mistakes, 0 inaccuracies")).toBeVisible();
 
   // Before a move is picked, the commentary tab leads with the key moments.
   await page
@@ -148,16 +151,18 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
   await keyMomentNav(page).getByRole("button", { name: "Previous key moment" }).click();
   await expect(counter(page)).toHaveText("9 / 14");
 
-  // An ordinary move has no mark at all: no badge, and no praise for matching the engine.
-  await page
-    .getByRole("navigation", { name: "Move navigation" })
-    .getByRole("button", { name: "First move", exact: true })
-    .click();
-  await page
-    .getByRole("navigation", { name: "Move navigation" })
-    .getByRole("button", { name: "Next move", exact: true })
-    .click();
+  // A book move says it is opening theory, and nothing more.
+  const navigation = page.getByRole("navigation", { name: "Move navigation" });
+  await navigation.getByRole("button", { name: "First move", exact: true }).click();
+  await navigation.getByRole("button", { name: "Next move", exact: true }).click();
   await expect(page.getByRole("heading", { name: "1. e4", level: 2 })).toBeVisible();
+  await expect(page.locator("header [data-annotation]")).toHaveAttribute("data-annotation", "book");
+  await expect(page.getByText("Opening theory: a move from the opening book.")).toBeVisible();
+
+  // An ordinary move has no mark at all: no badge, and no praise for matching the engine.
+  for (let ply = 2; ply <= 11; ply += 1)
+    await navigation.getByRole("button", { name: "Next move", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "6. Rf1", level: 2 })).toBeVisible();
   await expect(page.locator("header [data-annotation]")).toHaveCount(0);
   await expect(page.getByText("The engine's top choice.")).toBeVisible();
 
@@ -169,7 +174,7 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
   await expect(treeMove(page, 6).getByRole("img", { name: "Blunder" })).toHaveText("??");
   await screenshot(page, "move-tree");
 
-  // The focused lists: the key moments, and every mark (errors included).
+  // The focused lists: the key moments, and every mark (errors included, book moves not).
   const views = page.getByRole("radiogroup", { name: "Moves shown" });
   await views.getByRole("radio", { name: "All marks" }).click();
   const marks = page.getByRole("list", { name: "Every marked move" });
@@ -184,7 +189,7 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
   await views.getByRole("radio", { name: "All moves" }).click();
   await expect(moveTree(page)).toBeVisible();
 
-  // The graph marks the same moves and rings the key moments.
+  // The graph marks the same moves (book moves stay neutral) and rings the key moments.
   const graph = page.getByRole("region", { name: "Game evaluation graph" });
   await expect(graph.locator("circle[data-annotation]")).toHaveCount(6);
   await expect(graph.locator("circle[data-key-moment]")).toHaveCount(4);

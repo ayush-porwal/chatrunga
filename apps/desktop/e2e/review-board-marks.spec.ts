@@ -149,8 +149,8 @@ test("game review prints the evaluation at the better side's end and marks the r
   const { page } = launched;
   await reviewTrapGame(launched, profile);
 
-  // 1. e4: White is better, so the number sits at White's end (the bottom); an ordinary move,
-  // so no badge.
+  // 1. e4: White is better, so the number sits at White's end (the bottom); a book move, which
+  // gets no badge on the board.
   await goToPly(page, 1);
   await expect(evalBar(page)).toHaveAccessibleName("Evaluation +0.3");
   expect(await evalText(page)).toEqual({ text: "0.3", side: "white", end: "bottom" });

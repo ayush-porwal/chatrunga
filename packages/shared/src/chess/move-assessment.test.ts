@@ -20,8 +20,17 @@ import {
   type AssessableMove,
   type MoverEval
 } from "./move-assessment";
+import { parseOpeningBook, type OpeningBook } from "./opening-book";
+import { OPENING_BOOK_DATA } from "./opening-book-data";
 import { applySan, START_FEN } from "./position";
 import { parseLine, trapReviewMoves } from "./__fixtures__/trap-game";
+
+let bundledBook: OpeningBook | null = null;
+/** The bundled opening book (read once for the file). */
+function openingBook(): OpeningBook {
+  bundledBook ??= parseOpeningBook(OPENING_BOOK_DATA);
+  return bundledBook;
+}
 
 const AFTER_E4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
 /** Greek gift: Bxh7+ Kxh7 Ng5+ gives a bishop for a pawn. */
@@ -363,27 +372,22 @@ describe("assessMove: no praise for routine moves", () => {
     expect(result.tags).toContain("recapture");
   });
 
-  it.each([
-    [8, "cp 10", null],
-    [16, "cp 10", null],
-    [17, "cp 10", "great"],
-    [8, "cp 400", "great"]
-  ] as const)(
-    "at ply %i with %s, a critical find is %s (early balanced positions count as opening theory)",
-    (ply, best, annotation) => {
+  it.each([2, 8, 16])(
+    "praises a critical find at ply %i of a balanced game: only the opening book rules early moves out",
+    (ply) => {
       const move = verified(
         position(
           START_FEN,
           "e4",
           [
-            ["e2e4", best],
+            ["e2e4", "cp 10"],
             ["d2d4", "cp -600"]
           ],
           { ply }
         )
       );
-      expect(assessMove(move).annotation).toBe(annotation);
-      expect(assessMove(move).tags.includes("opening")).toBe(annotation === null);
+      expect(assessMove(move).annotation).toBe("great");
+      expect(assessMove(move, { book: true }).annotation).toBe("book");
     }
   );
 
@@ -821,7 +825,7 @@ describe("verificationNeed", () => {
     expect(verificationNeed(recapture)).toBe("candidate");
     expect(verificationNeed(recapture, { previous })).toBeNull();
     expect(assessMove(verified(recapture), { previous }).annotation).toBeNull();
-    // Early in a balanced game (opening theory): no search either.
+    // A book move (opening theory): no search either, however early or late.
     const early = position(
       START_FEN,
       "e4",
@@ -831,8 +835,12 @@ describe("verificationNeed", () => {
       ],
       { ply: 4 }
     );
-    expect(verificationNeed(early)).toBeNull();
-    expect(verificationNeed({ ...early, ply: 20 })).toBe("candidate");
+    expect(verificationNeed(early, { book: true })).toBeNull();
+    expect(verificationNeed(early)).toBe("candidate");
+    // Nor a recheck for a book move whose loss sits on a severity boundary.
+    const near = position(START_FEN, "a3", [["e2e4", "cp 120"]], { reply: "cp 51 pv e7e5" });
+    expect(verificationNeed(near)).toBe("recheck");
+    expect(verificationNeed(near, { book: true })).toBeNull();
   });
 
   it.each([
@@ -864,6 +872,61 @@ describe("verificationNeed", () => {
     expect(
       verificationNeed(position(START_FEN, "a3", [["e2e4", "mate 3"]], { reply: "cp 51 pv e7e5" }))
     ).toBeNull();
+  });
+});
+
+describe("book moves", () => {
+  it("marks a book move Book and never an error, whatever the engine thinks of it", () => {
+    const dubious = position(START_FEN, "a3", [
+      ["e2e4", "cp 40"],
+      ["a2a3", "cp -400"]
+    ]);
+    expect(assessMove(dubious).severity).toBe("blunder");
+    const book = assessMove(dubious, { book: true });
+    expect(book).toMatchObject({ severity: null, annotation: "book", winLoss: expect.any(Number) });
+    expect(book.tags).toContain("book");
+  });
+
+  it("is never praised either, and stays Book without the evaluations to assess it", () => {
+    const find = verified(
+      position(START_FEN, "e4", [
+        ["e2e4", "cp 10"],
+        ["d2d4", "cp -600"]
+      ])
+    );
+    expect(assessMove(find, { book: true }).annotation).toBe("book");
+    expect(assessMove(position(START_FEN, "e4", []), { book: true })).toMatchObject({
+      annotation: "book",
+      severity: null,
+      tags: ["book", "incomplete"]
+    });
+  });
+
+  it("marks the trap game's moves Book while it is in the book, then judges the rest", () => {
+    const moves = trapReviewMoves().map((move, index) =>
+      index === 7 ? { ...move, verification: { deeperLines: move.topLines } } : move
+    );
+    const assessments = assessMoves(moves, { openingBook: openingBook() });
+    // 3… Nd4 is the Blackburne–Kostić Gambit: theory, no longer an inaccuracy.
+    expect(assessments.map((item) => item.annotation)).toEqual([
+      "book",
+      "book",
+      "book",
+      "book",
+      "book",
+      "book",
+      "blunder",
+      "great",
+      "blunder",
+      "good",
+      null,
+      null,
+      "mistake",
+      null
+    ]);
+    expect(
+      summarizeMoves(moves.map((move, index) => ({ ...move, assessment: assessments[index] })))
+    ).toMatchObject({ book: 6, inaccuracies: 0, mistakes: 1, blunders: 2 });
   });
 });
 
@@ -981,6 +1044,36 @@ describe("saved reviews", () => {
     expect(review.summary).toMatchObject({ inaccuracies: 1, mistakes: 1, blunders: 1 });
   });
 
+  it("classifies the book moves and the opening of a review it re-assesses", () => {
+    const review = withCurrentAssessments(storedReview(), { openingBook: openingBook() });
+    expect(review.moves.map((move) => annotationOf(move))).toEqual([
+      "book",
+      "book",
+      "book",
+      "book",
+      "book",
+      "book",
+      "blunder",
+      "good",
+      "blunder",
+      "good",
+      null,
+      null,
+      "mistake",
+      null
+    ]);
+    expect(review.opening).toEqual({
+      eco: "C50",
+      name: "Italian Game: Blackburne-Kostić Gambit",
+      ply: 6,
+      bookEndPly: 6,
+      firstNonBookMove: { ply: 7, san: "Nxe5" }
+    });
+    expect(review.summary).toMatchObject({ book: 6, inaccuracies: 0, mistakes: 1, blunders: 2 });
+    // Without a book, its opening stays as it was saved.
+    expect(withCurrentAssessments(storedReview())).not.toHaveProperty("opening");
+  });
+
   it("leaves a review on the current policy as it is", () => {
     const current = withCurrentAssessments(storedReview());
     const again = { ...current, assessmentsRecomputed: undefined };
@@ -1049,6 +1142,7 @@ describe("summary and labels", () => {
     });
     expect(review.summary).toEqual({
       totalMoves: 15,
+      book: 0,
       best: 10,
       brilliant: 0,
       great: 0,
@@ -1070,6 +1164,7 @@ describe("summary and labels", () => {
   });
 
   it.each([
+    ["book", "Book", "📖"],
     ["brilliant", "Brilliant", "!!"],
     ["great", "Great", "!"],
     ["excellent", "Excellent", "★"],
@@ -1125,7 +1220,8 @@ describe("summary and labels", () => {
       /Lets a forced mate slip/
     ],
     [assessment({ annotation: "inaccuracy", severity: "inaccuracy", winLoss: null }), /cost <1%/],
-    [assessment({ severity: "inaccuracy", tags: ["decided"] }), /already decided/]
+    [assessment({ severity: "inaccuracy", tags: ["decided"] }), /already decided/],
+    [assessment({ annotation: "book", tags: ["book"] }), /opening book/]
   ])("explains %o", (item, reason) => {
     expect(assessmentReason(item)).toMatch(reason);
   });

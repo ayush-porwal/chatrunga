@@ -272,7 +272,9 @@ const EvalChart = memo(function EvalChart({
     (props: { cx?: number; cy?: number; index?: number; payload?: unknown }) => {
       const point = data.find((item) => item === props.payload);
       const interactive = Boolean(point?.move);
-      const annotation = point?.move?.assessment?.annotation ?? null;
+      // Book moves (opening theory) stay neutral, like the moves the review doesn't mark.
+      const marked = point?.move?.assessment?.annotation ?? null;
+      const annotation = marked === "book" ? null : marked;
       const label = point?.move
         ? [
             moveLabel(point.move),

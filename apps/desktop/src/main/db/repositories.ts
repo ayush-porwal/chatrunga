@@ -3,6 +3,7 @@ import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
 import { positionFromFen } from "@chaturanga/shared/chess/position";
 import { withCurrentAssessments } from "@chaturanga/shared/chess/move-assessment";
+import { openingBook } from "../engine/opening-book";
 import { getDb } from "./index";
 import { gameFingerprint } from "./game-fingerprint";
 import {
@@ -491,6 +492,7 @@ function parseStoredReview(
   if (!placed) return null;
   try {
     return withCurrentAssessments(placed, {
+      openingBook: openingBook(),
       playerRating: settingsRepository.getAll().reviewPlayerRating
     });
   } catch {

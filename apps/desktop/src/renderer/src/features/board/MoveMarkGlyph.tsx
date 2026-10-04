@@ -1,4 +1,5 @@
 import type { MoveAnnotation } from "@chaturanga/shared/types/engine";
+import { BookOpen } from "lucide-react";
 
 /*
  * The glyphs of the board's mark badge, drawn in the badge circle's own 0–100 box: heavy white
@@ -94,6 +95,9 @@ const stroked = {
 /** The glyph shapes for `annotation`, to draw in white inside the badge's 0–100 circle. */
 export function MoveMarkGlyph({ annotation }: { annotation: MoveAnnotation }) {
   switch (annotation) {
+    case "book":
+      // Lucide's open book (24 units) over the central 60%, its stroke near the others' weight.
+      return <BookOpen x={20} y={20} width={60} height={60} strokeWidth={2.75} />;
     case "brilliant":
       return [bang(39), bang(61)];
     case "great":

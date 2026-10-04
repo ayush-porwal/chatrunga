@@ -32,6 +32,7 @@ export type CuratorReason = z.infer<typeof curatorReasonSchema>;
  * explains them without a verdict.
  */
 const moveAnnotationSchema = z.enum([
+  "book",
   "brilliant",
   "great",
   "excellent",
@@ -58,7 +59,7 @@ const assessmentTagSchema = z.enum([
   "natural_move",
   "forced",
   "recapture",
-  "opening",
+  "book",
   "decided",
   "mate_created",
   "mate_lost",

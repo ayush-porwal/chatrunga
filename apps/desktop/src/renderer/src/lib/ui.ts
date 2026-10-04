@@ -173,6 +173,11 @@ export const listRowSelected = "border-accent/50 bg-accent-soft text-fg";
  */
 export const annotationTone: Record<MoveAnnotation, { badge: string; text: string; fill: string }> =
   {
+    book: {
+      badge: "bg-mark-book text-mark-fg",
+      text: "text-mark-book-text",
+      fill: "var(--color-mark-book)"
+    },
     brilliant: {
       badge: "bg-mark-brilliant text-mark-fg",
       text: "text-mark-brilliant",

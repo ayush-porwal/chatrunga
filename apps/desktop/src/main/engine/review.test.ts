@@ -168,8 +168,22 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
     expect(last.replyLines).toEqual([]);
     expect(last.wdlAfter).toEqual({ win: 0, draw: 0, loss: 1000 });
     expect(last.evalLoss).toBe(0);
-    // Delivering mate is no error, and no mark either: the game was already decided.
-    expect(last.assessment).toMatchObject({ severity: null, annotation: null });
+    // Fool's mate is a named line of the opening book, mate and all: every move is Book, none an
+    // error, and the game's opening is its name.
+    expect(review.moves.map((move) => move.assessment?.annotation)).toEqual([
+      "book",
+      "book",
+      "book",
+      "book"
+    ]);
+    expect(last.assessment).toMatchObject({ severity: null, annotation: "book" });
+    expect(review.opening).toEqual({
+      eco: "A00",
+      name: "Barnes Opening: Fool's Mate",
+      ply: 4,
+      bookEndPly: 4,
+      firstNonBookMove: null
+    });
     expect(last.classification).toBeUndefined();
     expect(review.moves.every((move) => move.assessment?.policy === MOVE_ASSESSMENT_POLICY)).toBe(
       true
@@ -186,13 +200,14 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
       multipv: 3,
       moveTimeMs: 40
     });
+    // The first six moves are opening theory: 3… Nd4 is the Blackburne–Kostić Gambit, so Book.
     expect(review.moves.map((move) => [move.san, move.assessment?.annotation ?? null])).toEqual([
-      ["e4", null],
-      ["e5", null],
-      ["Nf3", null],
-      ["Nc6", null],
-      ["Bc4", null],
-      ["Nd4", "inaccuracy"],
+      ["e4", "book"],
+      ["e5", "book"],
+      ["Nf3", "book"],
+      ["Nc6", "book"],
+      ["Bc4", "book"],
+      ["Nd4", "book"],
       ["Nxe5", "blunder"],
       ["Qg5", "great"],
       ["Nxf7", "blunder"],
@@ -217,12 +232,18 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
       "Qg5"
     ]);
     expect(review.summary).toMatchObject({
-      inaccuracies: 1,
+      book: 6,
+      inaccuracies: 0,
       mistakes: 1,
       blunders: 2,
       great: 1,
       good: 1,
       brilliant: 0
+    });
+    expect(review.opening).toMatchObject({
+      eco: "C50",
+      name: "Italian Game: Blackburne-Kostić Gambit",
+      firstNonBookMove: { ply: 7, san: "Nxe5" }
     });
   }, 30_000);
 

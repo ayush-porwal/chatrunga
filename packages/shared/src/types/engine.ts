@@ -178,9 +178,12 @@ export type ErrorSeverity = "inaccuracy" | "mistake" | "blunder";
  * - `excellent`: near-best, with a tactic found or a move that is hard to find at the player's level;
  * - `good`: punishes the opponent's preceding mistake;
  * - `miss`: passes up the chance the opponent's preceding mistake gave (its severity is kept apart);
- * - `inaccuracy` / `mistake` / `blunder`: the error's severity.
+ * - `inaccuracy` / `mistake` / `blunder`: the error's severity;
+ * - `book`: opening theory (the position it reaches is in the opening book, chess/opening-book.ts),
+ *   never an error and never a key moment.
  */
 export type MoveAnnotation =
+  | "book"
   | "brilliant"
   | "great"
   | "excellent"
@@ -222,8 +225,8 @@ export type AssessmentTag =
   | "forced"
   /** Takes back on the square the opponent just captured on. */
   | "recapture"
-  /** Early and balanced: treated as opening theory, not praised. */
-  | "opening"
+  /** Opening theory: the position the move reaches is in the opening book. */
+  | "book"
   /** The game was already decided before the move (conversion or a lost cause). */
   | "decided"
   /** The move allowed a forced mate. */
@@ -364,6 +367,8 @@ export type MoveReview = {
  */
 export type GameReviewSummary = {
   totalMoves: number;
+  /** Book moves (opening theory). Absent on reviews counted before the opening book. */
+  book?: number;
   /** Moves that matched the engine's first choice (marked or not). */
   best: number;
   brilliant?: number;
@@ -468,6 +473,23 @@ export function savedReviewCommentary(
  */
 export const GAME_REVIEW_SCHEMA_VERSION = 3;
 
+/**
+ * The game's opening from the bundled opening book (chess/opening-book.ts): the deepest named
+ * position the game reached with a book move.
+ */
+export type GameOpening = {
+  /** ECO code, e.g. "A28". */
+  eco: string;
+  /** e.g. "English Opening: Four Knights System". */
+  name: string;
+  /** The ply that reached the named position. */
+  ply: number;
+  /** The last book move's ply ("book ends" after it). */
+  bookEndPly: number;
+  /** The move after the last book move (it left theory); null when the game ended in the book. */
+  firstNonBookMove: { ply: number; san: string } | null;
+};
+
 export type GameReview = {
   /**
    * The review operation that produced it (ReviewGameInput.reviewId). Correlates usage analytics
@@ -503,6 +525,11 @@ export type GameReview = {
   createdAt: number;
   summary: GameReviewSummary;
   moves: MoveReview[];
+  /**
+   * The game's opening (null: it reached no named position). Set with the assessments: by the
+   * review, and again when a saved review is re-assessed; absent on reviews from before the book.
+   */
+  opening?: GameOpening | null;
   /** AI commentary, keyed by ply; requested on demand as moves are viewed. */
   commentary?: ReviewCommentary[];
 };

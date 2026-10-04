@@ -1,5 +1,6 @@
 import type { MoveAnnotation } from "@chaturanga/shared/types/engine";
 import { annotationGlyph, annotationLabel } from "@chaturanga/shared/chess/move-assessment";
+import { BookOpen } from "lucide-react";
 import { annotationTone } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 
@@ -9,7 +10,7 @@ import { cn } from "@/lib/utils";
  * - `variant="label"` (default): pill with the mark's name ("Great", "Blunder") — review headers.
  * - `variant="glyph"`: tiny inline tag with the glyph ("!", "?!") — move lists. Its accessible
  *   name is the mark's name, so a screen reader never reads "question exclamation".
- * `selected` renders the glyph on a selected (accent-filled) row.
+ * `selected` renders the glyph on a selected (accent-filled) row. Book's glyph is an open book icon.
  */
 function AnnotationBadge({
   annotation,
@@ -24,6 +25,12 @@ function AnnotationBadge({
 }) {
   if (!annotation) return null;
   const label = annotationLabel(annotation);
+  const glyph =
+    annotation === "book" ? (
+      <BookOpen aria-hidden className="inline size-3 align-[-2px]" strokeWidth={2.25} />
+    ) : (
+      annotationGlyph(annotation)
+    );
   if (variant === "glyph") {
     return (
       <span
@@ -37,7 +44,7 @@ function AnnotationBadge({
           className
         )}
       >
-        {annotationGlyph(annotation)}
+        {glyph}
       </span>
     );
   }
@@ -51,7 +58,7 @@ function AnnotationBadge({
       )}
     >
       <span aria-hidden className="font-mono font-semibold">
-        {annotationGlyph(annotation)}
+        {glyph}
       </span>
       {label}
     </span>

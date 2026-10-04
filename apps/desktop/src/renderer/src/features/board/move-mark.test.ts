@@ -85,6 +85,14 @@ describe("boardMoveMark", () => {
     expect(boardMoveMark("review", { ...finished, nodeId: "variation-move" })).toBeNull();
   });
 
+  it("leaves book moves off the board (the move list shows them)", () => {
+    const book = { running: false, moves: reviewed({ e4: "book", Nxe5: "blunder" }) };
+    expect(boardMoveMark("review", { ...book, nodeId: nodeOf("e4") })).toBeNull();
+    expect(boardMoveMark("review", { ...book, nodeId: nodeOf("Nxe5") })?.annotation).toBe(
+      "blunder"
+    );
+  });
+
   it("waits for a running review to finish", () => {
     expect(boardMoveMark("review", { running: true, moves, nodeId: nodeOf("Nxe5") })).toBeNull();
   });
