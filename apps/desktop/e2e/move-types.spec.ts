@@ -210,7 +210,20 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
   // The winning-chances chart dots the same moves (book moves stay neutral) and rings the key
   // insights: 4. Nxe5's blunder among them.
   const graph = page.getByRole("region", { name: "Game charts" });
-  await expect(graph.locator("circle[data-annotation]")).toHaveCount(6);
+  const dotted = MARKS.flatMap(([, mark], index) =>
+    mark && mark !== "book" ? [`${index + 1} ${mark}`] : []
+  );
+  await expect
+    .poll(() =>
+      graph
+        .locator("circle[data-annotation]")
+        .evaluateAll((dots) =>
+          dots.map(
+            (dot) => `${dot.getAttribute("data-ply")} ${dot.getAttribute("data-annotation")}`
+          )
+        )
+    )
+    .toEqual(dotted);
   await expect(graph.locator("circle[data-key-moment]")).toHaveCount(3);
   const nxe5 = graph.locator('circle[data-ply="7"]');
   await expect(nxe5).toHaveAttribute("data-annotation", "blunder");
