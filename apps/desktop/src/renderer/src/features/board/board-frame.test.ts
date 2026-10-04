@@ -81,12 +81,21 @@ describe("centringInsets", () => {
 });
 
 describe("draggedBoardEdge", () => {
-  it("grows and shrinks the square by the pointer's larger move across or down", () => {
+  it("keeps the grip under the pointer across: the edge changes by the move", () => {
     expect(draggedBoardEdge(500, 40, 10, 900)).toBe(540);
-    expect(draggedBoardEdge(500, -10, 30, 900)).toBe(530);
-    expect(draggedBoardEdge(500, -60, -20, 900)).toBe(480);
-    // Straight left or up alone leaves it: the other move (none) is the larger.
+    expect(draggedBoardEdge(500, -60, -40, 900)).toBe(440);
+  });
+
+  it("keeps the grip under the pointer down: the edge changes by twice the move", () => {
+    // The corner moves half the edge change down: 60 more edge, 30px lower.
+    expect(draggedBoardEdge(500, 0, 30, 900)).toBe(560);
+    expect(draggedBoardEdge(500, -10, 30, 900)).toBe(560);
+    expect(draggedBoardEdge(500, -100, -40, 900)).toBe(420);
+  });
+
+  it("follows the move that asks for more, so straight left or up alone leaves it", () => {
     expect(draggedBoardEdge(500, -80, 0, 900)).toBe(500);
+    expect(draggedBoardEdge(500, 0, -50, 900)).toBe(500);
   });
 
   it("stops at the edge that leaves the side panel its minimum width", () => {
