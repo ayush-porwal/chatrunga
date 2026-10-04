@@ -15,8 +15,19 @@ const nodeBuiltinPaths = (message) =>
 
 export default tseslint.config(
   {
-    // Build output, coverage reports and the gitignored upstream Stockfish checkout.
-    ignores: ["**/node_modules/**", "**/dist/**", "**/out/**", "**/coverage/**", "stockfish/**"]
+    // Build output, coverage and test reports, the gitignored upstream Stockfish checkout, and
+    // agent worktrees nested in this checkout (each is a whole other copy of the repo).
+    ignores: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/out/**",
+      "**/coverage/**",
+      "**/test-results/**",
+      "**/playwright-report/**",
+      "stockfish/**",
+      ".claude/**",
+      ".worktrees/**"
+    ]
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

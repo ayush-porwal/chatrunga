@@ -2,3 +2,13 @@ pnpm-lock.yaml
 stockfish
 scripts/piece-svg-sources
 apps/desktop/src/renderer/src/styles/generated-piece-themes.css
+# Agent worktrees nested in this checkout: each is a whole other copy of the repo.
+.claude/
+.worktrees/
+# Build, coverage and test output (also gitignored; listed so a check never depends on that).
+**/node_modules/
+**/dist/
+**/out/
+**/coverage/
+**/test-results/
+**/playwright-report/
