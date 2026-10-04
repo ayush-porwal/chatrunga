@@ -244,6 +244,16 @@ describe("autosave decisions", () => {
     expect(isStaleRevisionError("Invalid chapter: tree has no root")).toBe(false);
   });
 
+  it("doesn't take another refusal of a revision for a stale one (reloading wouldn't help)", () => {
+    // A replace from a backup with no expected revision (backup-restore.ts).
+    expect(isStaleRevisionError("Invalid expectedRevision: required to replace a repertoire")).toBe(false);
+    // Malformed input, refused by the IPC validators.
+    expect(isStaleRevisionError("Invalid expectedRevision: must be a whole number")).toBe(false);
+    expect(isStaleRevisionError("Invalid backup: chapter revision is not a number")).toBe(false);
+    // The words alone, from some other message.
+    expect(isStaleRevisionError("The opponent's repertoire changed")).toBe(false);
+  });
+
   it("schedules, waits or blocks", () => {
     expect(autosaveStep({ dirty: false, saveState: { status: "idle" } })).toBe("idle");
     expect(autosaveStep({ dirty: true, saveState: { status: "idle" } })).toBe("schedule");

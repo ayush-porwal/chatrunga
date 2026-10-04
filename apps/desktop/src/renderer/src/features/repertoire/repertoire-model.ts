@@ -307,9 +307,14 @@ export function shouldAdoptSaveResult(
   return generationAtSave === currentGeneration;
 }
 
-/** The main process refused a save because the repertoire or chapter moved on (a stale draft). */
+/**
+ * The main process refused a write because the repertoire or the chapter moved on since it was
+ * read (a stale draft): "Invalid expectedRevision: repertoire changed (stored 5, expected 4)" or
+ * "Invalid chapter.revision: chapter changed (…)". A revision refused for any other reason (missing,
+ * malformed, a replace that needs one) isn't stale: reloading wouldn't fix it.
+ */
 export function isStaleRevisionError(message: string): boolean {
-  return /expectedRevision|chapter\.revision|(repertoire|chapter) changed/i.test(message);
+  return /^Invalid (?:expectedRevision: repertoire|chapter\.revision: chapter) changed\b/.test(message);
 }
 
 /** The main process can't find the repertoire (deleted): the draft has nowhere to go. */

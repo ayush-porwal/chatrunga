@@ -27,7 +27,6 @@ import {
   buildRestoreInput,
   canReplace,
   initialRestoreRows,
-  isStaleRevisionError,
   replacedDirtyDraftName,
   restoreDiffLine,
   restoreLossLines,
@@ -37,6 +36,7 @@ import {
   type RestoreRowState
 } from "./backup";
 import { COLOR_LABELS, plural } from "./repertoire-chapters";
+import { isStaleRevisionError } from "./repertoire-model";
 
 type ModeValue = RestoreRowState["mode"];
 
