@@ -248,7 +248,17 @@ test("an analysis saved before the current marks opens re-assessed from its eval
           missedTactics: 0,
           averageCentipawnLoss: 0
         },
-        moves: moves.map((move) => ({ ...move, nodeId: byPly.get(move.ply) ?? move.nodeId }))
+        moves: moves.map((move) => ({ ...move, nodeId: byPly.get(move.ply) ?? move.nodeId })),
+        // An explanation the AI coach wrote for that build, when every move came with a verdict.
+        commentary: [
+          {
+            ply: 8,
+            headline: "A brilliant queen sortie",
+            prose: "Well spotted: Qg5 hits g2 and the knight on e5.",
+            generatedAt: 1,
+            providerModel: "test/model"
+          }
+        ]
       };
       await api.games.save({ ...game, id: saved.id, review });
     },
@@ -267,4 +277,21 @@ test("an analysis saved before the current marks opens re-assessed from its eval
     MARKS.map(([san, mark]) => [san, san === "Qg5" ? "good" : mark])
   );
   await screenshot(page, "recomputed");
+
+  // That explanation still shows, labelled as written before the current marks, with a way to
+  // have it written again (nothing is requested on its own).
+  await reviewTabs(page).getByRole("tab", { name: "Commentary", exact: true }).click();
+  await treeMoveFromTape(page, "4… Qg5");
+  await expect(page.getByText("Well spotted: Qg5 hits g2 and the knight on e5.")).toBeVisible();
+  await expect(page.getByText("Written before the current move marks")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Write again" })).toBeEnabled();
+  await screenshot(page, "earlier-commentary");
 });
+
+/** Selects a move by its point on the evaluation graph. */
+async function treeMoveFromTape(page: Page, label: string) {
+  await page
+    .getByRole("region", { name: "Game evaluation graph" })
+    .getByRole("button", { name: new RegExp(`^${label},`) })
+    .click();
+}
