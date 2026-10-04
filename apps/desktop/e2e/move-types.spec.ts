@@ -64,21 +64,19 @@ const keyMomentNav = (page: Page) => page.getByRole("group", { name: "Key moment
 const counter = (page: Page) =>
   page.getByRole("navigation", { name: "Move navigation" }).getByRole("paragraph").first();
 
-/** The move tree's button for the `index`-th main-line move (SANs repeat: Nf3 is played twice). */
+/** The move list's cell (mark, piece, SAN) for the `index`-th main-line move (SANs repeat: Nf3 is played twice). */
 function treeMove(page: Page, index: number): Locator {
-  return moveTree(page)
-    .locator("[data-tree-node-id]")
-    .filter({ hasNotText: "Starting position" })
-    .nth(index);
+  return moveTree(page).locator("[data-move-cell]").nth(index);
 }
 
 /** The marks the move tree shows, in game order. */
 async function treeMarks(page: Page): Promise<[string, string | null][]> {
   const marks: [string, string | null][] = [];
   for (let index = 0; index < MARKS.length; index += 1) {
-    const button = treeMove(page, index);
-    const san = (await button.locator("span.font-mono").first().textContent())?.trim() ?? "";
-    const badge = button.locator("[data-annotation]");
+    const cell = treeMove(page, index);
+    // The move is named by its SAN (its piece is drawn as an icon).
+    const san = (await cell.locator("[data-tree-node-id]").getAttribute("aria-label")) ?? "";
+    const badge = cell.locator("[data-annotation]");
     marks.push([san, (await badge.count()) ? await badge.getAttribute("data-annotation") : null]);
   }
   return marks;
@@ -170,8 +168,11 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
   await reviewTabs(page).getByRole("tab", { name: "Moves", exact: true }).click();
   await expect(moveTree(page)).toBeVisible();
   expect(await treeMarks(page)).toEqual(MARKS);
-  await expect(treeMove(page, 7).getByRole("img", { name: "Great" })).toHaveText("!");
-  await expect(treeMove(page, 6).getByRole("img", { name: "Blunder" })).toHaveText("??");
+  await expect(treeMove(page, 7).getByRole("img", { name: "Great" })).toBeVisible();
+  // An error's disc unfolds its BEST line.
+  await expect(
+    treeMove(page, 6).getByRole("button", { name: "Blunder: show the best line" })
+  ).toBeVisible();
   await screenshot(page, "move-tree");
 
   // The focused lists: the key moments, and every mark (errors included, book moves not).

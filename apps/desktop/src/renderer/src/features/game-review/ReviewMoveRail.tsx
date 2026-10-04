@@ -1,8 +1,9 @@
-import type { MoveReview, ReviewCommentary } from "@chaturanga/shared/types/engine";
-import type { MoveNode } from "@chaturanga/shared/types/chess";
+import type { GameOpening, MoveReview, ReviewCommentary } from "@chaturanga/shared/types/engine";
+import type { Color, MoveNode } from "@chaturanga/shared/types/chess";
 import type { KeyMoment } from "@chaturanga/shared/chess/key-moments";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
 import { TreeView } from "../game/TreeView";
+import type { PlayLine } from "../game/BestLineRow";
 import { MomentList } from "./KeyMoments";
 
 /** What the Moves tab lists: the key moments, every marked move, or the whole move tree. */
@@ -31,7 +32,10 @@ export function ReviewMoveRail({
   onViewChange,
   moves = NO_MOVES,
   keyMoments = NO_MOMENTS,
-  marks = NO_MOMENTS
+  marks = NO_MOMENTS,
+  opening,
+  onPlayLine,
+  orientation
 }: {
   nodes: readonly MoveNode[];
   selectedNodeId: string | null;
@@ -45,6 +49,12 @@ export function ReviewMoveRail({
   keyMoments?: readonly KeyMoment[];
   /** Every marked move, in game order. */
   marks?: readonly KeyMoment[];
+  /** The game's opening, named after the last book move. */
+  opening?: GameOpening | null;
+  /** Plays a BEST line on the board as a variation. */
+  onPlayLine?: PlayLine;
+  /** The board's orientation, for the BEST lines' preview boards. */
+  orientation?: Color;
 }) {
   const tree = (
     <TreeView
@@ -53,8 +63,10 @@ export function ReviewMoveRail({
       onSelectNode={onSelectNode}
       reviews={reviews}
       commentaryByNodeId={commentaryByNodeId}
-      showScores
       showCommentaryState
+      opening={opening}
+      onPlayLine={onPlayLine}
+      orientation={orientation}
       emptyLabel="No moves to review."
       ariaLabel="Reviewed move tree"
       className="-mr-3 h-full pr-3"

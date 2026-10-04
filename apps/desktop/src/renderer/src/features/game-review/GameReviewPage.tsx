@@ -196,6 +196,11 @@ function GameReviewPageInner({
     },
     [panelNodeId]
   );
+  // A BEST line's move in the move list: its line from the error's parent, anchored on the error.
+  const playBestLine = useCallback((target: MoveNavigationTarget, markedNodeId: string) => {
+    setLinkOriginNodeId(markedNodeId);
+    useGameStore.getState().goToLine(target.startNodeId, target.moves);
+  }, []);
   const commentaryMap = useMemo(
     () => new Map((isRunning ? [] : (review?.commentary ?? [])).map((item) => [item.ply, item])),
     [review?.commentary, isRunning]
@@ -484,6 +489,9 @@ function GameReviewPageInner({
           moves={moves}
           keyMoments={moments}
           marks={marks}
+          opening={isRunning ? null : review?.opening}
+          onPlayLine={playBestLine}
+          orientation={orientation}
         />
       ) : null}
       {activeTab === "opening" ? (

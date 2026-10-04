@@ -19,7 +19,7 @@ type TreeMainlineRow = {
   black?: MoveNode;
 };
 
-type TreeModel = {
+export type TreeModel = {
   mainline: TreeMainlineRow[];
   rootVariations: TreeVariationBlock[];
   variationsByParent: Map<string, TreeVariationBlock[]>;

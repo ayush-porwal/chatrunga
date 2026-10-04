@@ -26,7 +26,8 @@ import {
   cgWrapPieceSetClass,
   piecePresentationTailwindClass
 } from "@chaturanga/shared/types/settings";
-import { CgPieceGlyph, type PreviewPieceRole } from "../settings/piece-style-preview";
+import type { PreviewPieceRole } from "../settings/piece-style-preview";
+import { Figurine } from "../board/Figurine";
 import { useBoardAppearance } from "../board/useBoardAppearance";
 
 /** As many rows as lines asked for, from the first line on (arriving lines never push content down). */
@@ -60,16 +61,6 @@ const FIGURINE_ROLES: Record<string, PreviewPieceRole> = {
   B: "bishop",
   N: "knight"
 };
-
-/** A piece of the board's own set, sized to the text (must sit inside the lines' piece-set wrapper). */
-function Figurine({ role }: { role: PreviewPieceRole }) {
-  return (
-    // The sprites carry their own padding: pulled in so the piece sits against its square (♘f6).
-    <span className="relative -mr-[0.14em] -ml-[0.06em] inline-block size-[1.35em] overflow-hidden align-[-0.32em]">
-      <CgPieceGlyph color="white" role={role} />
-    </span>
-  );
-}
 
 /** A SAN move with its piece drawn as the board's piece (`♘f3`, `exd5`, `O-O`, `e8=♕`). */
 function FigurineSan({ san }: { san: string }) {
