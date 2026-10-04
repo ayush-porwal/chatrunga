@@ -3,6 +3,8 @@ import { buildChapterLookup } from "@chaturanga/shared/chess/repertoire-index";
 import type { TrainingBlocker } from "@chaturanga/shared/chess/repertoire-training";
 import { addLine, rootNode } from "./__fixtures__/repertoire";
 import {
+  currentIncludePlan,
+  type IncludeSnapshot,
   blockerExplanation,
   blockerFocusNodeId,
   importPracticeNote,
@@ -329,5 +331,47 @@ describe("includeInPracticePlan", () => {
     expect(wideningQuestion(buildChapterLookup(chapter), [pick, { ...pick, childId: "s2" }])).toBe(
       "Your other chapters play a different move at the start. Including also accepts 1. e4 there (and 1 more)."
     );
+  });
+
+  it("plans again from a chapter edited while it read, and gives up once the chapter closed", async () => {
+    const mainLine = addLine([rootNode()], "root", ["e2e4", "c7c5", "g1f3", "d7d6"], "s").tree;
+    const before = {
+      ...chapter,
+      tree: mainLine,
+      nodeMeta: Object.fromEntries(
+        mainLine
+          .filter((node) => node.parentId)
+          .map((node) => [node.id, { edge: "reference" as const }])
+      )
+    };
+    let open: IncludeSnapshot<typeof chapter> = { chapter: before, generation: 1 };
+    const reads: string[][] = [];
+    const plan = await currentIncludePlan(
+      "white",
+      () => open,
+      async (asked) => {
+        reads.push(asked);
+        // 2. Nc3 Nc6 3. g3 is added while the first read runs.
+        if (reads.length === 1) open = { chapter, generation: 2 };
+        return { [keys.get("s1")!]: ["b1c3"] };
+      }
+    );
+    expect(plan?.chapter).toBe(chapter);
+    expect(plan?.generation).toBe(2);
+    // The edited chapter's positions are read, the one its new line reaches included.
+    expect(reads.at(-1)).toEqual([keys.get("v1")]);
+    expect(plan?.acceptedAt(keys.get("s1")!)).toEqual(["b1c3"]);
+    expect(plan?.widened).toEqual([]);
+
+    let shown: IncludeSnapshot<typeof chapter> = { chapter, generation: 1 };
+    const closed = await currentIncludePlan(
+      "white",
+      () => shown,
+      async () => {
+        shown = null;
+        return {};
+      }
+    );
+    expect(closed).toBeNull();
   });
 });

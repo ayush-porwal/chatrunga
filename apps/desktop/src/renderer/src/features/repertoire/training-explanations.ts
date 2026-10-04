@@ -186,6 +186,35 @@ export async function includeInPracticePlan(
   }
 }
 
+/** What the include plan reads of the open study: its chapter, and the generation of its edits. */
+export type IncludeSnapshot<C> = { chapter: C; generation: number } | null;
+
+/**
+ * includeInPracticePlan for the chapter as it is once the plan is ready: an edit while the plan
+ * reads (the board stays usable) plans again from the edited chapter, so a position the edit
+ * reached is read (and asked about) too. `snapshot` reads the open chapter (null once it is no
+ * longer open: then null). Returns the plan with the chapter and generation it holds for.
+ */
+export async function currentIncludePlan<C extends Parameters<typeof trainingPicks>[1]>(
+  color: RepertoireColor,
+  snapshot: () => IncludeSnapshot<C>,
+  read: (positionKeys: string[]) => Promise<Record<string, readonly string[]>>
+): Promise<{
+  chapter: C;
+  generation: number;
+  acceptedAt: AcceptedAt;
+  widened: TrainingPick[];
+} | null> {
+  for (;;) {
+    const before = snapshot();
+    if (!before) return null;
+    const plan = await includeInPracticePlan(color, before.chapter, read);
+    const after = snapshot();
+    if (!after) return null;
+    if (after.generation === before.generation) return { ...before, ...plan };
+  }
+}
+
 /** The question before "Include in practice" widens decisions other chapters share. */
 export function wideningQuestion(lookup: ChapterLookup, widened: readonly TrainingPick[]): string {
   const [first, ...rest] = widened;

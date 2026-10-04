@@ -87,7 +87,7 @@ import { StudyTrainingNotice } from "./StudyTrainingNotice";
 import { StudyTree } from "./StudyTree";
 import {
   blockerExplanation,
-  includeInPracticePlan,
+  currentIncludePlan,
   studyPracticeAvailability,
   wideningQuestion
 } from "./training-explanations";
@@ -341,30 +341,38 @@ export function RepertoireStudyPage({
 
   /**
    * "Include in practice" waiting on the player: it would add moves at positions other chapters
-   * answer differently (the question, for this chapter), with what it read of the repertoire.
+   * answer differently (the question, for this chapter), with what it read of the repertoire for
+   * the chapter as it was at `generation`.
    */
   const [widening, setWidening] = useState<{
     chapterId: string;
+    generation: number;
     question: string;
     acceptedAt: AcceptedAt;
   } | null>(null);
   const [including, setIncluding] = useState(false);
   // Reads what the other chapters practise where it accepts moves, so it accepts those moves
-  // there; asks first when it would still add one where they practise another.
+  // there; asks first when it would still add one where they practise another. The plan is for
+  // the chapter as it is when it applies (currentIncludePlan).
   const includeInPractice = useEventCallback(async () => {
-    const current = workspace().chapter;
-    if (!current || !lookup) return;
     setLocalError(null);
+    setWidening(null);
     setIncluding(true);
     try {
-      const plan = await includeInPracticePlan(color, current, (keys) =>
-        fetchPractisedElsewhere(repertoireId, chapterId, keys)
+      const plan = await currentIncludePlan(
+        color,
+        () => {
+          const { chapter, chapterId: open, generation } = workspace();
+          return chapter && open === chapterId ? { chapter, generation } : null;
+        },
+        (keys) => fetchPractisedElsewhere(repertoireId, chapterId, keys)
       );
-      if (workspace().chapterId !== chapterId) return;
+      if (!plan) return;
       if (plan.widened.length) {
         setWidening({
           chapterId,
-          question: wideningQuestion(lookup, plan.widened),
+          generation: plan.generation,
+          question: wideningQuestion(buildChapterLookup({ tree: plan.chapter.tree }), plan.widened),
           acceptedAt: plan.acceptedAt
         });
       } else {
@@ -376,9 +384,16 @@ export function RepertoireStudyPage({
       setIncluding(false);
     }
   });
+  // A chapter edited since the question was asked is planned (and asked about) again.
   const confirmWidening = useEventCallback(() => {
-    if (widening?.chapterId === chapterId) workspace().makeChapterTrainable(widening.acceptedAt);
+    const asked = widening;
     setWidening(null);
+    if (asked?.chapterId !== chapterId) return;
+    if (workspace().generation === asked.generation) {
+      workspace().makeChapterTrainable(asked.acceptedAt);
+    } else {
+      void includeInPractice();
+    }
   });
 
   const selectNode = useEventCallback((nodeId: string) => workspace().selectNode(nodeId));
