@@ -26,6 +26,7 @@ import {
   useRepertoireQuery
 } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
+import { flushDecisionTexts } from "./decision-text-drafts";
 import { flushChapterTree } from "./useChapterAutosave";
 import {
   adoptCommittedRevision,
@@ -222,14 +223,20 @@ export function ImportPgnDialog({
   async function commit() {
     if (!preview || flushing) return;
     setError(null);
-    // An import into the repertoire whose draft is open saves that draft first, so no autosave
-    // runs (or comes due) during the commit and races its revision bump; the commit then expects
-    // the revision that save stored. A draft that can't be saved keeps the dialog open.
+    // An import into the repertoire whose draft is open, or whose prompt, hint, feedback or pause
+    // change is unsaved, saves those first, so no autosave or decision write runs (or comes due)
+    // during the commit and races its revision bump; the commit then expects the revision those
+    // saves stored. A chapter draft that can't be saved keeps the dialog open. A decision change
+    // refused now stays on its chapter with Retry (nothing of it is written during the commit),
+    // so it doesn't hold the import back.
     if (mustFlushDraftBeforeImport(useRepertoireWorkspaceStore.getState(), repertoireId)) {
       setFlushing(true);
       let saved: boolean;
       try {
-        saved = await flushChapterTree(queryClient);
+        const ownDraft = useRepertoireWorkspaceStore.getState().repertoireId === repertoireId;
+        saved = !ownDraft || (await flushChapterTree(queryClient));
+        // Holds nothing back (no repertoire to block on): a refusal stays with its chapter.
+        if (saved) await flushDecisionTexts(queryClient, flushChapterTree, []);
       } finally {
         if (open.current) setFlushing(false);
       }
