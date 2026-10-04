@@ -35,7 +35,7 @@ export function compatibleReviewMoves(
     const node = line.get(move.nodeId);
     // The tree keeps a castle as imported (king takes rook, `e1h1`); a review stores it standard.
     return (
-      node !== undefined &&
+      node?.uci != null &&
       node.fenBefore === move.fenBefore &&
       standardCastlingUci(node.fenBefore, node.uci) === move.playedMove
     );
