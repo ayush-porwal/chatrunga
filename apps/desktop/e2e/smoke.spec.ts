@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   appTarget,
   clickSquare,
+  closeApp,
   expect,
   importPgnFile,
   mainRecord,
@@ -83,7 +84,7 @@ test("keeps an edited game across a restart", async ({ launch, profile }) => {
   await expect(moves.getByRole("button", { name: "a6", exact: true })).toHaveCount(0);
   await expect(moveCounter(first.page)).toHaveText("5 / 5");
   // Closing writes the pending autosave first (no "couldn't be saved" prompt).
-  await first.app.close();
+  await closeApp(first.app);
 
   const second = await launch(profile);
   await expect(sidebar(second.page)).toBeVisible();

@@ -95,6 +95,11 @@ export async function launchApp(profile: string): Promise<LaunchedApp> {
     NO_PROXY: "localhost,127.0.0.1,::1"
   });
   const switches = [`--proxy-server=${BLACKHOLE}`];
+  // macOS: Chromium keeps its cookie key in the login keychain under "Chaturanga Safe Storage". An
+  // item an installed Chaturanga created belongs to that build's signature, so a freshly packaged
+  // (ad-hoc signed) app reading it, as it does on quit, waits on a keychain password prompt and
+  // never exits. A throwaway profile needs no real key: the mock keychain never asks.
+  if (process.platform === "darwin") switches.push("--use-mock-keychain");
   // Escape hatch for Linux hosts without unprivileged user namespaces (no Chromium sandbox there).
   if (process.env.CHATURANGA_E2E_NO_SANDBOX === "1") switches.push("--no-sandbox");
   const app = await _electron.launch({
@@ -330,11 +335,12 @@ export async function clickSquare(page: Page, square: string, flipped = false): 
 }
 
 /**
- * Quits the app and waits for it to exit. One that hasn't exited after `timeoutMs` (stuck quitting)
- * is killed with its child processes, which on Windows takes `taskkill /T`: killing only the main
- * process there leaves its helpers running and holding the profile's files.
+ * Quits the app and waits for it to exit, which takes well under a second. One that hasn't exited
+ * after `timeoutMs` is stuck quitting: it is killed with its child processes (on Windows that takes
+ * `taskkill /T`: killing only the main process there leaves its helpers running and holding the
+ * profile's files), and the test fails, so a quit that hangs is reported rather than waited out.
  */
-export async function closeApp(app: ElectronApplication, timeoutMs = 20_000): Promise<void> {
+export async function closeApp(app: ElectronApplication, timeoutMs = 10_000): Promise<void> {
   const closed = app.close().then(
     () => true,
     () => true
@@ -353,6 +359,7 @@ export async function closeApp(app: ElectronApplication, timeoutMs = 20_000): Pr
     app.process().kill("SIGKILL");
   }
   await closed;
+  throw new Error(`The app hadn't exited ${timeoutMs / 1000} s after quitting, so it was killed.`);
 }
 
 /**
@@ -390,16 +397,20 @@ export const test = base.extend<Fixtures>({
       launched.push(app);
       return app;
     });
-    for (const [index, { app, page, pageErrors }] of launched.entries()) {
+    // Every launch is closed even when one fails to quit; the first failure is reported after.
+    let stuck: unknown;
+    for (const [index, { app, page }] of launched.entries()) {
       if (testInfo.status !== testInfo.expectedStatus && !page.isClosed()) {
         await testInfo.attach(`screen-${index}`, {
           body: await page.screenshot().catch(() => Buffer.alloc(0)),
           contentType: "image/png"
         });
       }
-      await closeApp(app);
-      expect(pageErrors, "uncaught errors in the window").toEqual([]);
+      await closeApp(app).catch((error: unknown) => (stuck ??= error));
     }
+    if (stuck) throw stuck;
+    for (const { pageErrors } of launched)
+      expect(pageErrors, "uncaught errors in the window").toEqual([]);
   }
 });
 
