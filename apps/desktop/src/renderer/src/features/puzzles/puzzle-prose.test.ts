@@ -32,7 +32,11 @@ describe("solutionIndexForToken", () => {
   });
 
   it("uses a move number to tell a repeated move apart", () => {
-    const repeated: PuzzleProseLine = { fen: "8/8/8/8/8/8/8/8 w - - 0 10", solutionSan: ["Nf7+", "Kg8", "Nh6+", "Kh8", "Nf7+"], otherSan: [] };
+    const repeated: PuzzleProseLine = {
+      fen: "8/8/8/8/8/8/8/8 w - - 0 10",
+      solutionSan: ["Nf7+", "Kg8", "Nh6+", "Kh8", "Nf7+"],
+      otherSan: []
+    };
     expect(links("Nf7+ keeps checking.", repeated)).toEqual([["Nf7+", null]]);
     expect(links("10. Nf7+ and 12. Nf7+ again, but 11. Nf7+ never.", repeated)).toEqual([
       ["10. Nf7+", 0],
@@ -65,7 +69,13 @@ describe("nonSolutionSan", () => {
     const payload = puzzleInsightPayloadSchema.parse({
       schemaVersion: 1,
       player: { rating: 1500 },
-      puzzle: { fen: backRank.fen, sideToMove: "black", moveNumberSan: "24...", themes: [], solutionSan: backRank.solutionSan },
+      puzzle: {
+        fen: backRank.fen,
+        sideToMove: "black",
+        moveNumberSan: "24...",
+        themes: [],
+        solutionSan: backRank.solutionSan
+      },
       outcome: "failed_wrong_move",
       engine: {
         assessment: "black_has_forced_mate",
@@ -84,6 +94,13 @@ describe("nonSolutionSan", () => {
       }
     });
     expect(nonSolutionSan(payload)).toEqual(["h6", "Rxe8+", "Qd8", "Qxe8"]);
-    expect(nonSolutionSan({ ...payload, outcome: "solved", mistake: undefined, engine: { ...payload.engine, alternatives: undefined } })).toEqual([]);
+    expect(
+      nonSolutionSan({
+        ...payload,
+        outcome: "solved",
+        mistake: undefined,
+        engine: { ...payload.engine, alternatives: undefined }
+      })
+    ).toEqual([]);
   });
 });

@@ -8,7 +8,10 @@ import { isTrustedSenderUrl } from "./security";
  */
 export function guardIpcSenders(appUrl: string): void {
   const handle = ipcMain.handle.bind(ipcMain);
-  ipcMain.handle = ((channel: string, listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown) =>
+  ipcMain.handle = ((
+    channel: string,
+    listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
+  ) =>
     handle(channel, (event, ...args: unknown[]) => {
       if (!isTrustedSenderUrl(event.senderFrame?.url, appUrl)) {
         throw new Error(`${channel} is only available to the app's own page.`);

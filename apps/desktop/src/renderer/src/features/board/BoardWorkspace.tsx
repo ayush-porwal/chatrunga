@@ -101,7 +101,8 @@ export function BoardWorkspace({
           // Same track count in both states, so the column, the gap and the cap ease together — like the
           // sidebar. Only while the panel is toggling: these sizes follow the window, and a transition
           // left on would make the board trail a live window resize.
-          easing && "transition-[grid-template-columns,column-gap,max-width,padding] duration-emphasis ease-standard",
+          easing &&
+            "transition-[grid-template-columns,column-gap,max-width,padding] duration-emphasis ease-standard",
           // Centred down (useFocusCentring): here rather than on the size container above, whose
           // height the width cap is computed from — changing it mid-ease would restart that transition.
           centred &&
@@ -111,11 +112,18 @@ export function BoardWorkspace({
             : "max-w-[calc(var(--workspace-board)+var(--workspace-eval)+2*var(--workspace-pad))] grid-cols-[minmax(0,1fr)_0px] gap-0"
         )}
       >
-        <section className="grid min-h-0 min-w-0 place-items-center [container-type:size]" aria-label="Board">
+        <section
+          className="grid min-h-0 min-w-0 place-items-center [container-type:size]"
+          aria-label="Board"
+        >
           {board}
         </section>
         {/* The cell clips; the panel keeps its full width and slides out with the column's left edge. */}
-        <div className="flex min-h-0 min-w-0 overflow-hidden" inert={!panelVisible} aria-hidden={!panelVisible || undefined}>
+        <div
+          className="flex min-h-0 min-w-0 overflow-hidden"
+          inert={!panelVisible}
+          aria-hidden={!panelVisible || undefined}
+        >
           <aside
             className={cn(
               card,
@@ -127,7 +135,9 @@ export function BoardWorkspace({
             aria-label={panelLabel}
           >
             {tabs ? <div className="shrink-0 px-3 pt-3">{tabs}</div> : null}
-            <div className="flex h-14 shrink-0 items-center border-b border-line-subtle px-3">{summary}</div>
+            <div className="flex h-14 shrink-0 items-center border-b border-line-subtle px-3">
+              {summary}
+            </div>
             <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
               {notices}
               <div className="min-h-0 flex-1" {...tabPanel}>
@@ -214,7 +224,11 @@ export function BoardStage({
       <div ref={probeRef} className="invisible absolute h-0 w-(--board-avail)" aria-hidden="true" />
       {/* The rows take the board's width and never widen it (no intrinsic width of their own). */}
       <div className={cn("min-w-0 contain-inline-size", boardColumn)}>{top}</div>
-      {shown ? <div className={cn("row-start-2", right ? "col-start-2 pl-1.5" : "col-start-1 pr-1.5")}>{evalBar}</div> : null}
+      {shown ? (
+        <div className={cn("row-start-2", right ? "col-start-2 pl-1.5" : "col-start-1 pr-1.5")}>
+          {evalBar}
+        </div>
+      ) : null}
       {/* The one board frame: hairline border + radius, no shadow, no card around it. Its content box
           is the board (the fallback edge is only for the first layout, before it's measured). */}
       <div
@@ -241,7 +255,10 @@ export const workspaceTabsClass =
 /** "White vs Black" game title for the titlebar. */
 export function PlayersTitle({ white, black }: { white: string; black: string }) {
   return (
-    <span className="flex min-w-0 items-center gap-1.5 font-medium text-fg" title={`${white} vs ${black}`}>
+    <span
+      className="flex min-w-0 items-center gap-1.5 font-medium text-fg"
+      title={`${white} vs ${black}`}
+    >
       <span className="truncate">{white}</span>
       <span className="shrink-0 font-normal text-fg-subtle">vs</span>
       <span className="truncate">{black}</span>
@@ -283,7 +300,11 @@ export function WorkspaceTitlebar({
           {status}
         </span>
       </div>
-      {actions ? <div className="flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">{actions}</div> : null}
+      {actions ? (
+        <div className="flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
+          {actions}
+        </div>
+      ) : null}
     </>
   );
 }

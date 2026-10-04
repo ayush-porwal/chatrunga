@@ -29,7 +29,14 @@ const puzzle: PuzzleSample = {
   openingTags: ["Italian_Game"],
   sideToMove: "white"
 };
-const wrong: PuzzleWrongMove = { solutionIndex: 0, fen: START, uci: "h5e5", san: "Qxe5+", expectedUci: "h5f7", at: 1 };
+const wrong: PuzzleWrongMove = {
+  solutionIndex: 0,
+  fen: START,
+  uci: "h5e5",
+  san: "Qxe5+",
+  expectedUci: "h5f7",
+  at: 1
+};
 const AFTER_WRONG = fenAfterUci(START, "h5e5")!;
 
 function line(multipv: number, pv: string[], scoreWhite: EngineScore): AnalysisLine {
@@ -38,7 +45,10 @@ function line(multipv: number, pv: string[], scoreWhite: EngineScore): AnalysisL
 
 const analysis: ExplainAnalysis = {
   engineName: "Stockfish 17",
-  start: [line(1, ["h5f7"], { type: "mate", value: 1 }), line(2, ["h5e2", "f8c5"], { type: "cp", value: 20 })],
+  start: [
+    line(1, ["h5f7"], { type: "mate", value: 1 }),
+    line(2, ["h5e2", "f8c5"], { type: "cp", value: 20 })
+  ],
   beforeMistake: [line(1, ["h5f7"], { type: "mate", value: 1 })],
   afterMistake: [line(1, ["c6e5", "c4b3"], { type: "cp", value: -650 })]
 };
@@ -56,22 +66,35 @@ describe("which case is explained", () => {
 
   it("caches per puzzle and outcome, and per wrong move", () => {
     expect(explanationKey(puzzle, "solved", null)).toBe('["db","qA0001"]:solved');
-    expect(explanationKey(puzzle, "failed_wrong_move", wrong)).toBe('["db","qA0001"]:failed_wrong_move:0:h5e5');
-    expect(explanationKey(puzzle, "failed_wrong_move", { ...wrong, uci: "c4f7" })).not.toBe(explanationKey(puzzle, "failed_wrong_move", wrong));
-    expect(explanationKey(puzzle, "failed_solution_viewed", null)).toBe('["db","qA0001"]:failed_solution_viewed');
+    expect(explanationKey(puzzle, "failed_wrong_move", wrong)).toBe(
+      '["db","qA0001"]:failed_wrong_move:0:h5e5'
+    );
+    expect(explanationKey(puzzle, "failed_wrong_move", { ...wrong, uci: "c4f7" })).not.toBe(
+      explanationKey(puzzle, "failed_wrong_move", wrong)
+    );
+    expect(explanationKey(puzzle, "failed_solution_viewed", null)).toBe(
+      '["db","qA0001"]:failed_solution_viewed'
+    );
   });
 
   it("tells apart puzzles with the same id in different databases", () => {
     const other = { ...puzzle, databaseId: "db2" };
     expect(puzzleIdentity(other)).not.toBe(puzzleIdentity(puzzle));
     expect(explanationKey(other, "solved", null)).not.toBe(explanationKey(puzzle, "solved", null));
-    expect(puzzleIdentity({ databaseId: "a:b", id: "c" })).not.toBe(puzzleIdentity({ databaseId: "a", id: "b:c" }));
+    expect(puzzleIdentity({ databaseId: "a:b", id: "c" })).not.toBe(
+      puzzleIdentity({ databaseId: "a", id: "b:c" })
+    );
   });
 });
 
 describe("explainSearchPlan", () => {
   it("searches the start with the review's lines, and the wrong move's result with one", () => {
-    expect(explainSearchPlan(puzzle, null, 3)).toEqual({ positions: [{ fen: START, multipv: 3 }], start: 0, beforeMistake: null, afterMistake: null });
+    expect(explainSearchPlan(puzzle, null, 3)).toEqual({
+      positions: [{ fen: START, multipv: 3 }],
+      start: 0,
+      beforeMistake: null,
+      afterMistake: null
+    });
     expect(explainSearchPlan(puzzle, wrong, 9)).toEqual({
       positions: [
         { fen: START, multipv: 5 },
@@ -84,7 +107,12 @@ describe("explainSearchPlan", () => {
   });
 
   it("also searches where a later wrong move was played from", () => {
-    const later = { ...wrong, solutionIndex: 2, fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2", uci: "d2d4" };
+    const later = {
+      ...wrong,
+      solutionIndex: 2,
+      fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+      uci: "d2d4"
+    };
     const plan = explainSearchPlan(puzzle, later, 2);
     expect(plan.positions.map((position) => position.multipv)).toEqual([2, 1, 1]);
     expect(plan).toMatchObject({ beforeMistake: 1, afterMistake: 2 });
@@ -92,9 +120,14 @@ describe("explainSearchPlan", () => {
 });
 
 describe("explainEngine", () => {
-  const engine = (id: string, extra: Partial<EngineConfig> = {}) => ({ id, name: id, isAvailable: true, isDefault: false, ...extra }) as EngineConfig;
+  const engine = (id: string, extra: Partial<EngineConfig> = {}) =>
+    ({ id, name: id, isAvailable: true, isDefault: false, ...extra }) as EngineConfig;
   it("uses the review engine, else the automatic pick, never a human-prediction or missing one", () => {
-    const engines = [engine("maia", { isHumanPrediction: true, isDefault: true }), engine("sf", { isDefault: true }), engine("other")];
+    const engines = [
+      engine("maia", { isHumanPrediction: true, isDefault: true }),
+      engine("sf", { isDefault: true }),
+      engine("other")
+    ];
     expect(explainEngine(engines, null)?.id).toBe("sf");
     expect(explainEngine(engines, "other")?.id).toBe("other");
     expect(explainEngine(engines, "maia")).toBeNull();
@@ -115,10 +148,24 @@ describe("swingFor", () => {
 
 describe("buildPuzzleExplanationPayload", () => {
   it("grounds a wrong move: the solution, the refutation, how much it gave away and the ideas", () => {
-    const payload = buildPuzzleExplanationPayload({ puzzle, kind: "failed_wrong_move", wrong, analysis, settings });
+    const payload = buildPuzzleExplanationPayload({
+      puzzle,
+      kind: "failed_wrong_move",
+      wrong,
+      analysis,
+      settings
+    });
     expect(payload).toMatchObject({
       player: { rating: 1320 },
-      puzzle: { fen: START, sideToMove: "white", moveNumberSan: "4.", rating: 1500, themes: ["mate", "mate in 1", "one move"], opening: "Italian Game", solutionSan: ["Qxf7#"] },
+      puzzle: {
+        fen: START,
+        sideToMove: "white",
+        moveNumberSan: "4.",
+        rating: 1500,
+        themes: ["mate", "mate in 1", "one move"],
+        opening: "Italian Game",
+        solutionSan: ["Qxf7#"]
+      },
       outcome: "failed_wrong_move",
       engine: {
         engineName: "Stockfish 17",
@@ -146,7 +193,13 @@ describe("buildPuzzleExplanationPayload", () => {
   });
 
   it("builds facts the coach validator grounds an answer against", () => {
-    const payload = buildPuzzleExplanationPayload({ puzzle, kind: "failed_wrong_move", wrong, analysis, settings })!;
+    const payload = buildPuzzleExplanationPayload({
+      puzzle,
+      kind: "failed_wrong_move",
+      wrong,
+      analysis,
+      settings
+    })!;
     const answer = JSON.stringify({
       headline: "The f7 pawn was the target",
       body: "Qxe5+ wins a pawn with check, but Nxe5 takes your queen. Only the king guarded f7, so Qxf7# was mate."
@@ -155,7 +208,13 @@ describe("buildPuzzleExplanationPayload", () => {
   });
 
   it("explains a solved puzzle from the start position, with no mistake", () => {
-    const payload = buildPuzzleExplanationPayload({ puzzle, kind: "solved", wrong: null, analysis: { ...analysis, beforeMistake: null, afterMistake: null }, settings });
+    const payload = buildPuzzleExplanationPayload({
+      puzzle,
+      kind: "solved",
+      wrong: null,
+      analysis: { ...analysis, beforeMistake: null, afterMistake: null },
+      settings
+    });
     expect(payload?.outcome).toBe("solved");
     expect(payload?.mistake).toBeUndefined();
     expect(payload?.ideas?.played.san).toBe("Qxf7#");
@@ -170,7 +229,14 @@ describe("buildPuzzleExplanationPayload", () => {
       sideToMove: "white"
     };
     const fen = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2";
-    const later: PuzzleWrongMove = { solutionIndex: 2, fen, uci: "d2d4", san: "d4", expectedUci: "g1f3", at: 1 };
+    const later: PuzzleWrongMove = {
+      solutionIndex: 2,
+      fen,
+      uci: "d2d4",
+      san: "d4",
+      expectedUci: "g1f3",
+      at: 1
+    };
     const payload = buildPuzzleExplanationPayload({
       puzzle: longer,
       kind: "failed_wrong_move",
@@ -183,14 +249,33 @@ describe("buildPuzzleExplanationPayload", () => {
       },
       settings
     });
-    expect(payload?.mistake).toMatchObject({ moveNumberSan: "2.", playedBeforeSan: ["e4", "e5"], solutionSan: "Nf3", swing: "moderate", stillWinning: true });
+    expect(payload?.mistake).toMatchObject({
+      moveNumberSan: "2.",
+      playedBeforeSan: ["e4", "e5"],
+      solutionSan: "Nf3",
+      swing: "moderate",
+      stillWinning: true
+    });
   });
 
   describe("a wrong move that ends the game", () => {
     /** White mates with Qc8#; Qh8# mates too, and Qc7 stalemates. */
     const MATE_START = "k7/8/1K6/8/8/2Q5/8/8 w - - 0 1";
-    const mating: PuzzleSample = { ...puzzle, initialFen: MATE_START, solutionMoves: ["c3c8"], themes: ["mateIn1"], openingTags: [] };
-    const ended = (uci: string): PuzzleWrongMove => ({ solutionIndex: 0, fen: MATE_START, uci, san: uci, expectedUci: "c3c8", at: 1 });
+    const mating: PuzzleSample = {
+      ...puzzle,
+      initialFen: MATE_START,
+      solutionMoves: ["c3c8"],
+      themes: ["mateIn1"],
+      openingTags: []
+    };
+    const ended = (uci: string): PuzzleWrongMove => ({
+      solutionIndex: 0,
+      fen: MATE_START,
+      uci,
+      san: uci,
+      expectedUci: "c3c8",
+      at: 1
+    });
     const mateAnalysis: ExplainAnalysis = {
       engineName: "SF",
       start: [line(1, ["c3c8"], { type: "mate", value: 1 })],
@@ -199,15 +284,33 @@ describe("buildPuzzleExplanationPayload", () => {
     };
 
     it("calls another mate a mate, with no refutation and nothing given away", () => {
-      const payload = buildPuzzleExplanationPayload({ puzzle: mating, kind: "failed_wrong_move", wrong: ended("c3h8"), analysis: mateAnalysis, settings });
-      expect(payload?.mistake).toMatchObject({ san: "Qh8#", solutionSan: "Qc8#", ends: "checkmate", refutationSan: [], assessmentAfter: "white_won" });
+      const payload = buildPuzzleExplanationPayload({
+        puzzle: mating,
+        kind: "failed_wrong_move",
+        wrong: ended("c3h8"),
+        analysis: mateAnalysis,
+        settings
+      });
+      expect(payload?.mistake).toMatchObject({
+        san: "Qh8#",
+        solutionSan: "Qc8#",
+        ends: "checkmate",
+        refutationSan: [],
+        assessmentAfter: "white_won"
+      });
       expect(payload?.mistake?.swing).toBeUndefined();
       expect(payload?.mistake?.stillWinning).toBeUndefined();
       expect(payload?.ideas?.reply).toBeUndefined();
     });
 
     it("says a stalemate throws the win away, with no reply to it", () => {
-      const payload = buildPuzzleExplanationPayload({ puzzle: mating, kind: "failed_wrong_move", wrong: ended("c3c7"), analysis: mateAnalysis, settings });
+      const payload = buildPuzzleExplanationPayload({
+        puzzle: mating,
+        kind: "failed_wrong_move",
+        wrong: ended("c3c7"),
+        analysis: mateAnalysis,
+        settings
+      });
       expect(payload?.mistake).toMatchObject({
         san: "Qc7",
         ends: "stalemate",
@@ -221,7 +324,23 @@ describe("buildPuzzleExplanationPayload", () => {
   });
 
   it("is null when the engine had nothing for the start, or the solution doesn't replay", () => {
-    expect(buildPuzzleExplanationPayload({ puzzle, kind: "solved", wrong: null, analysis: { ...analysis, start: [] }, settings })).toBeNull();
-    expect(buildPuzzleExplanationPayload({ puzzle: { ...puzzle, solutionMoves: ["a1a8"] }, kind: "solved", wrong: null, analysis, settings })).toBeNull();
+    expect(
+      buildPuzzleExplanationPayload({
+        puzzle,
+        kind: "solved",
+        wrong: null,
+        analysis: { ...analysis, start: [] },
+        settings
+      })
+    ).toBeNull();
+    expect(
+      buildPuzzleExplanationPayload({
+        puzzle: { ...puzzle, solutionMoves: ["a1a8"] },
+        kind: "solved",
+        wrong: null,
+        analysis,
+        settings
+      })
+    ).toBeNull();
   });
 });

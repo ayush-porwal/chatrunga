@@ -29,7 +29,9 @@ export function isAssetInstalled(status: Pick<EngineAssetStatus, "state"> | unde
  */
 export function maiaNeedsLc0(status: EngineAssetStatusMap | null): boolean {
   if (!status || isAssetInstalled(status.lc0)) return false;
-  return ENGINE_ASSETS.some((asset) => asset.id.startsWith("maia-") && isAssetInstalled(status[asset.id]));
+  return ENGINE_ASSETS.some(
+    (asset) => asset.id.startsWith("maia-") && isAssetInstalled(status[asset.id])
+  );
 }
 
 /** Installed state + latest known release per asset (no network call); null outside the desktop app. */
@@ -66,16 +68,27 @@ export type AssetProgressMap = Partial<Record<EngineAssetId, AssetProgress>>;
 /** "Queued" entries for `assets`, sized from the release each would download. */
 export function initialAssetProgress(assets: readonly EngineAssetStatus[]): AssetProgressMap {
   return Object.fromEntries(
-    assets.map((asset) => [asset.id, { bytesReceived: 0, bytesTotal: asset.downloadSizeBytes ?? 0, status: "pending" }])
+    assets.map((asset) => [
+      asset.id,
+      { bytesReceived: 0, bytesTotal: asset.downloadSizeBytes ?? 0, status: "pending" }
+    ])
   );
 }
 
 /** Folds one asset-manager progress event into the per-asset progress map. */
-export function applyAssetProgress(progress: AssetProgressMap, event: AssetProgressEvent): AssetProgressMap {
+export function applyAssetProgress(
+  progress: AssetProgressMap,
+  event: AssetProgressEvent
+): AssetProgressMap {
   const current = progress[event.assetId] ?? { bytesReceived: 0, bytesTotal: 0, status: "pending" };
   const next: AssetProgress =
     event.type === "download"
-      ? { ...current, status: "downloading", bytesReceived: event.bytesReceived, bytesTotal: event.bytesTotal }
+      ? {
+          ...current,
+          status: "downloading",
+          bytesReceived: event.bytesReceived,
+          bytesTotal: event.bytesTotal
+        }
       : event.type === "verify"
         ? { ...current, status: "verifying" }
         : event.type === "install"
@@ -88,7 +101,9 @@ export function applyAssetProgress(progress: AssetProgressMap, event: AssetProgr
 
 /** Whole-number download percentage (0 before the size is known). */
 export function progressPercent(progress: AssetProgress | undefined): number {
-  return progress?.bytesTotal ? Math.round((progress.bytesReceived / progress.bytesTotal) * 100) : 0;
+  return progress?.bytesTotal
+    ? Math.round((progress.bytesReceived / progress.bytesTotal) * 100)
+    : 0;
 }
 
 /* ------------------------------------------------------------------ first-run setup */
@@ -102,13 +117,19 @@ export function progressPercent(progress: AssetProgress | undefined): number {
 export function recommendedDownloads(status: EngineAssetStatusMap | null): EngineAssetStatus[] {
   if (!status) return [];
   const missing = missingDownloads(status);
-  const maiaInstalled = ENGINE_ASSETS.some((asset) => asset.id.startsWith("maia-") && isAssetInstalled(status[asset.id]));
+  const maiaInstalled = ENGINE_ASSETS.some(
+    (asset) => asset.id.startsWith("maia-") && isAssetInstalled(status[asset.id])
+  );
   const maiaMissing = missing.some((asset) => asset.id.startsWith("maia-"));
   const lc0Runs = isAssetInstalled(status.lc0);
   const lc0Download = missing.find((asset) => asset.id === "lc0");
   const withMaia = lc0Runs || Boolean(lc0Download);
   return missing.filter((asset) =>
-    asset.id === "lc0" ? maiaMissing || maiaInstalled : asset.id.startsWith("maia-") ? withMaia : true
+    asset.id === "lc0"
+      ? maiaMissing || maiaInstalled
+      : asset.id.startsWith("maia-")
+        ? withMaia
+        : true
   );
 }
 
@@ -122,14 +143,24 @@ export type SetupRow = {
   status: AssetStatus;
 };
 
-const ROW_STATUS_ORDER: readonly AssetStatus[] = ["error", "downloading", "verifying", "installing", "pending", "ready"];
+const ROW_STATUS_ORDER: readonly AssetStatus[] = [
+  "error",
+  "downloading",
+  "verifying",
+  "installing",
+  "pending",
+  "ready"
+];
 
 /**
  * Groups queued assets into setup rows with combined progress. A row's status is its most
  * pressing member's: any failure, then any work in progress, then waiting; ready only when all are.
  * Verifying / installing / ready members count as fully downloaded.
  */
-export function setupRows(assets: readonly EngineAssetStatus[], progress: AssetProgressMap): SetupRow[] {
+export function setupRows(
+  assets: readonly EngineAssetStatus[],
+  progress: AssetProgressMap
+): SetupRow[] {
   const rows: SetupRow[] = [];
   const byKey = new Map<SetupRow["key"], SetupRow>();
   const hasMaia = assets.some((asset) => asset.id.startsWith("maia-"));
@@ -139,7 +170,14 @@ export function setupRows(assets: readonly EngineAssetStatus[], progress: AssetP
       asset.id === "stockfish" ? "stockfish" : asset.id === "lc0" && !hasMaia ? "lc0" : "maia";
     let row = byKey.get(key);
     if (!row) {
-      row = { key, label: key === "maia" ? "Maia" : asset.id === "lc0" ? "Lc0" : "Stockfish", ids: [], bytesReceived: 0, bytesTotal: 0, status: "ready" };
+      row = {
+        key,
+        label: key === "maia" ? "Maia" : asset.id === "lc0" ? "Lc0" : "Stockfish",
+        ids: [],
+        bytesReceived: 0,
+        bytesTotal: 0,
+        status: "ready"
+      };
       byKey.set(key, row);
       rows.push(row);
     }
@@ -150,12 +188,18 @@ export function setupRows(assets: readonly EngineAssetStatus[], progress: AssetP
     row.ids.push(asset.id);
     row.bytesTotal += total;
     row.bytesReceived += done ? total : status === "error" ? 0 : (entry?.bytesReceived ?? 0);
-    if (ROW_STATUS_ORDER.indexOf(status) < ROW_STATUS_ORDER.indexOf(row.status)) row.status = status;
+    if (ROW_STATUS_ORDER.indexOf(status) < ROW_STATUS_ORDER.indexOf(row.status))
+      row.status = status;
   }
   for (const row of rows) {
     if (row.key !== "maia") continue;
-    const ratings = row.ids.filter((id) => id.startsWith("maia-")).map((id) => id.replace("maia-", ""));
-    const maia = ratings.length > 1 ? `Maia ${ratings[0]}–${ratings[ratings.length - 1]}` : `Maia ${ratings[0]}`;
+    const ratings = row.ids
+      .filter((id) => id.startsWith("maia-"))
+      .map((id) => id.replace("maia-", ""));
+    const maia =
+      ratings.length > 1
+        ? `Maia ${ratings[0]}–${ratings[ratings.length - 1]}`
+        : `Maia ${ratings[0]}`;
     // Name Lc0 too, so a failed Lc0 download isn't reported as a Maia one.
     row.label = row.ids.includes("lc0") ? `${maia} + Lc0` : maia;
   }

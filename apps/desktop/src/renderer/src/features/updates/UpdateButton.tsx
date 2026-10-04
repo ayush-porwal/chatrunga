@@ -1,6 +1,23 @@
-import { memo, useCallback, useEffect, useRef, useState, type FocusEvent, type MouseEvent } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FocusEvent,
+  type MouseEvent
+} from "react";
 import { createPortal } from "react-dom";
-import { ArrowDown, Check, CircleAlert, CircleArrowUp, Download, ExternalLink, RefreshCw, RotateCw } from "lucide-react";
+import {
+  ArrowDown,
+  Check,
+  CircleAlert,
+  CircleArrowUp,
+  Download,
+  ExternalLink,
+  RefreshCw,
+  RotateCw
+} from "lucide-react";
 import type { UpdateState } from "@chaturanga/shared/types/updates";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -75,7 +92,11 @@ export const UpdateButton = memo(function UpdateButton({
   /** Anchors the card beside the button (measured when it opens; a resize closes it). */
   const measure = () => {
     const rect = buttonRef.current?.getBoundingClientRect();
-    if (rect) setAnchor({ left: rect.right + CARD_GAP_PX, bottom: Math.max(8, window.innerHeight - rect.bottom) });
+    if (rect)
+      setAnchor({
+        left: rect.right + CARD_GAP_PX,
+        bottom: Math.max(8, window.innerHeight - rect.bottom)
+      });
   };
   const hoverIn = () => {
     if (!view.hasUpdate) return;
@@ -178,7 +199,10 @@ export const UpdateButton = memo(function UpdateButton({
 
   return (
     <>
-      <Tooltip open={!view.hasUpdate && (tipOpen || feedback !== null)} onOpenChange={(open) => setTipOpen(open && !view.hasUpdate)}>
+      <Tooltip
+        open={!view.hasUpdate && (tipOpen || feedback !== null)}
+        onOpenChange={(open) => setTipOpen(open && !view.hasUpdate)}
+      >
         <TooltipTrigger asChild>
           <Button
             ref={buttonRef}
@@ -197,7 +221,8 @@ export const UpdateButton = memo(function UpdateButton({
             className={cn(
               "relative text-fg-secondary [-webkit-app-region:no-drag] hover:bg-control hover:text-fg aria-expanded:bg-control",
               accent && "text-accent hover:text-accent aria-expanded:text-accent",
-              disabled && "cursor-default text-fg-subtle hover:bg-transparent hover:text-fg-subtle active:scale-100",
+              disabled &&
+                "cursor-default text-fg-subtle hover:bg-transparent hover:text-fg-subtle active:scale-100",
               className
             )}
           >
@@ -207,7 +232,9 @@ export const UpdateButton = memo(function UpdateButton({
         {view.hasUpdate ? null : (
           <TooltipContent side={tooltipSide} className="max-w-64">
             <span className="grid gap-0.5">
-              <span className={cn(view.visual === "up-to-date" && "text-accent-fg")}>{view.label}</span>
+              <span className={cn(view.visual === "up-to-date" && "text-accent-fg")}>
+                {view.label}
+              </span>
               {view.detail ? <span className="text-fg-muted">{view.detail}</span> : null}
             </span>
           </TooltipContent>
@@ -225,10 +252,20 @@ export const UpdateButton = memo(function UpdateButton({
               onPointerEnter={hoverIn}
               onPointerLeave={hoverOut}
               onBlur={onBlur}
-              className={cn("fixed z-[80] w-[min(21.25rem,calc(100vw-80px))] outline-none", presence === "closed" && "pointer-events-none")}
+              className={cn(
+                "fixed z-[80] w-[min(21.25rem,calc(100vw-80px))] outline-none",
+                presence === "closed" && "pointer-events-none"
+              )}
               style={{ left: anchor.left, bottom: anchor.bottom }}
             >
-              <span aria-hidden="true" data-state={presence} className={cn(frost, "rounded-xl animate-fade-in data-[state=closed]:animate-fade-out")} />
+              <span
+                aria-hidden="true"
+                data-state={presence}
+                className={cn(
+                  frost,
+                  "rounded-xl animate-fade-in data-[state=closed]:animate-fade-out"
+                )}
+              />
               <ChangelogCard state={state} presence={presence} onBrowserOpened={closeCard} />
             </div>,
             document.body
@@ -252,7 +289,14 @@ function UpdateIcon({ view }: { view: UpdateButtonView }) {
       return (
         <span className="relative grid size-5 place-items-center" aria-hidden="true">
           <svg viewBox="0 0 20 20" className="absolute inset-0 size-5! -rotate-90">
-            <circle cx="10" cy="10" r="8.5" fill="none" strokeWidth="1.75" className="stroke-line-strong" />
+            <circle
+              cx="10"
+              cy="10"
+              r="8.5"
+              fill="none"
+              strokeWidth="1.75"
+              className="stroke-line-strong"
+            />
             <circle
               cx="10"
               cy="10"
@@ -321,7 +365,9 @@ function ChangelogCard({
       <header className="flex items-start justify-between gap-3">
         <div className="grid min-w-0 gap-0.5">
           <h2 className="text-sm font-semibold text-fg">Chaturanga v{status.version}</h2>
-          <p className="text-xs text-fg-muted">{[date, `You have v${state.currentVersion}`].filter(Boolean).join(" · ")}</p>
+          <p className="text-xs text-fg-muted">
+            {[date, `You have v${state.currentVersion}`].filter(Boolean).join(" · ")}
+          </p>
         </div>
         <Badge tone="accent">{status.kind === "ready" ? "Ready" : "New"}</Badge>
       </header>
@@ -329,7 +375,9 @@ function ChangelogCard({
         <ReleaseNotes notes={notes} className="gap-1.5 text-xs leading-5" />
       </div>
       <div className="grid gap-2">
-        {status.kind === "downloading" ? <Progress value={status.percent} aria-label={`Downloading version ${status.version}`} /> : null}
+        {status.kind === "downloading" ? (
+          <Progress value={status.percent} aria-label={`Downloading version ${status.version}`} />
+        ) : null}
         <Button
           variant="primary"
           className="w-full"
@@ -340,7 +388,13 @@ function ChangelogCard({
             if (action === "open-download") onBrowserOpened();
           }}
         >
-          {action === "install" ? <RotateCw /> : action === "open-download" ? <ExternalLink /> : <Download />}
+          {action === "install" ? (
+            <RotateCw />
+          ) : action === "open-download" ? (
+            <ExternalLink />
+          ) : (
+            <Download />
+          )}
           {card.label}
         </Button>
         {hint ? <p className="text-center text-2xs leading-4 text-fg-subtle">{hint}</p> : null}

@@ -21,7 +21,11 @@ type ResolvedMoves = ReturnType<typeof resolveCommentaryMoves>;
  */
 const resolvedCache = new WeakMap<CommentaryMoveContext, Map<string, ResolvedMoves>>();
 
-function resolveCached(prose: string, segments: readonly CommentarySegment[], context: CommentaryMoveContext): ResolvedMoves {
+function resolveCached(
+  prose: string,
+  segments: readonly CommentarySegment[],
+  context: CommentaryMoveContext
+): ResolvedMoves {
   let byProse = resolvedCache.get(context);
   if (!byProse) {
     byProse = new Map();
@@ -95,7 +99,11 @@ export function CommentaryProse({
         const target = resolved.get(segment.index);
         if (!target || !onGoToLine) return <Fragment key={position}>{segment.text}</Fragment>;
         return (
-          <MoveLink key={position} san={target.san} onActivate={() => onGoToLine({ startNodeId: target.startNodeId, moves: target.moves })}>
+          <MoveLink
+            key={position}
+            san={target.san}
+            onActivate={() => onGoToLine({ startNodeId: target.startNodeId, moves: target.moves })}
+          >
             {segment.text}
           </MoveLink>
         );
@@ -125,7 +133,11 @@ export function MoveLine({
       {sans.map((san, index) => (
         <Fragment key={`${index}-${san}`}>
           {index ? " " : null}
-          <MoveLink san={san} className={linkClassName} onActivate={() => onGoToLine({ startNodeId, moves: sans.slice(0, index + 1) })} />
+          <MoveLink
+            san={san}
+            className={linkClassName}
+            onActivate={() => onGoToLine({ startNodeId, moves: sans.slice(0, index + 1) })}
+          />
         </Fragment>
       ))}
     </>
@@ -140,7 +152,9 @@ export function VariationAnchorNote({ label, onBack }: { label: string; onBack: 
       <span>
         Exploring a variation from <span className="font-mono text-fg-secondary">{label}</span>
       </span>
-      <span aria-hidden className="text-fg-subtle">·</span>
+      <span aria-hidden className="text-fg-subtle">
+        ·
+      </span>
       <button
         type="button"
         onClick={onBack}

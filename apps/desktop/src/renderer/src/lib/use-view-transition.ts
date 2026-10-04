@@ -58,19 +58,25 @@ export function useViewTransitionState<T>(
   // Read once: the kind rule is a pure function of the two values.
   const kindForRef = useRef(kindFor);
 
-  const setWithTransition = useCallback((next: T | ((previous: T) => T), alongside?: () => void) => {
-    const previous = intended.current;
-    const resolved = isUpdater(next) ? next(previous) : next;
-    if (Object.is(resolved, previous)) {
-      alongside?.();
-      return;
-    }
-    intended.current = resolved;
-    runViewTransition(() => {
-      alongside?.();
-      setValue(resolved);
-    }, kindForRef.current(previous, resolved));
-  }, []);
+  const setWithTransition = useCallback(
+    (next: T | ((previous: T) => T), alongside?: () => void) => {
+      const previous = intended.current;
+      const resolved = isUpdater(next) ? next(previous) : next;
+      if (Object.is(resolved, previous)) {
+        alongside?.();
+        return;
+      }
+      intended.current = resolved;
+      runViewTransition(
+        () => {
+          alongside?.();
+          setValue(resolved);
+        },
+        kindForRef.current(previous, resolved)
+      );
+    },
+    []
+  );
 
   return [value, setWithTransition];
 }

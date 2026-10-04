@@ -4,7 +4,13 @@ import type { SavedGame } from "@chaturanga/shared/types/chess";
 import type { GameReview } from "@chaturanga/shared/types/engine";
 import { useGameStore } from "../../stores/game-store";
 import { useReviewStore } from "../../stores/review-store";
-import { alignReviewToTree, openSavedGame, reviewWithRealPlies, sessionFromSavedGame, showSavedAnalysis } from "./saved-game";
+import {
+  alignReviewToTree,
+  openSavedGame,
+  reviewWithRealPlies,
+  sessionFromSavedGame,
+  showSavedAnalysis
+} from "./saved-game";
 
 function saved(overrides: Partial<SavedGame> = {}): SavedGame {
   const game = createEmptyGame();
@@ -33,7 +39,13 @@ describe("sessionFromSavedGame", () => {
     expect(session).toMatchObject({
       id: "g1",
       source: "pgn-import",
-      headers: { event: "Opera game", site: "Paris", white: "Morphy", black: "Duke", result: "1-0" },
+      headers: {
+        event: "Opera game",
+        site: "Paris",
+        white: "Morphy",
+        black: "Duke",
+        result: "1-0"
+      },
       currentNodeId: "root"
     });
     expect(session.rootFen).toBe(session.moveTree[0]?.fenAfter);
@@ -45,21 +57,44 @@ describe("sessionFromSavedGame", () => {
 
   it("uses the stored headers, so Elo, time control and termination survive reopening", () => {
     const session = sessionFromSavedGame(
-      saved({ headers: { white: "Morphy", whiteElo: "2690", timeControl: "-", termination: "Normal", result: "*" } })
+      saved({
+        headers: {
+          white: "Morphy",
+          whiteElo: "2690",
+          timeControl: "-",
+          termination: "Normal",
+          result: "*"
+        }
+      })
     );
-    expect(session.headers).toMatchObject({ whiteElo: "2690", timeControl: "-", termination: "Normal", result: "1-0" });
+    expect(session.headers).toMatchObject({
+      whiteElo: "2690",
+      timeControl: "-",
+      termination: "Normal",
+      result: "1-0"
+    });
   });
 
   it("recovers the headers of older rows from their PGN", () => {
-    const pgn = '[Event "Opera game"]\n[White "Morphy"]\n[WhiteElo "2690"]\n[ECO "C41"]\n[Result "1-0"]\n\n1-0';
+    const pgn =
+      '[Event "Opera game"]\n[White "Morphy"]\n[WhiteElo "2690"]\n[ECO "C41"]\n[Result "1-0"]\n\n1-0';
     const session = sessionFromSavedGame(saved({ pgn, headers: null }));
-    expect(session.headers).toMatchObject({ white: "Morphy", whiteElo: "2690", eco: "C41", site: "Paris", result: "1-0" });
+    expect(session.headers).toMatchObject({
+      white: "Morphy",
+      whiteElo: "2690",
+      eco: "C41",
+      site: "Paris",
+      result: "1-0"
+    });
   });
 });
 
 describe("reviewWithRealPlies", () => {
   it("renumbers a review saved with an older tree, commentary included", () => {
-    const review = { moves: [{ ply: 1 }, { ply: 2 }], commentary: [{ ply: 2 }] } as unknown as GameReview;
+    const review = {
+      moves: [{ ply: 1 }, { ply: 2 }],
+      commentary: [{ ply: 2 }]
+    } as unknown as GameReview;
     const shifted = reviewWithRealPlies(review, 83);
     expect(shifted?.moves.map((move) => move.ply)).toEqual([84, 85]);
     expect(shifted?.commentary?.map((item) => item.ply)).toEqual([85]);
@@ -78,7 +113,15 @@ describe("showSavedAnalysis", () => {
     useReviewStore.getState().reset();
   });
 
-  const older = { reviewId: "older", engineId: "sf", depth: null, moveTimeMs: 100, createdAt: 1, summary: {}, moves: [] } as unknown as GameReview;
+  const older = {
+    reviewId: "older",
+    engineId: "sf",
+    depth: null,
+    moveTimeMs: 100,
+    createdAt: 1,
+    summary: {},
+    moves: []
+  } as unknown as GameReview;
 
   it("shows the analysis asked for", async () => {
     vi.stubGlobal("window", { chaturanga: { games: { getReview: async () => older } } });
@@ -89,7 +132,11 @@ describe("showSavedAnalysis", () => {
 
   it("drops a switch that lands after a review started (the run's result must still be saved)", async () => {
     let answer: (review: GameReview) => void = () => undefined;
-    vi.stubGlobal("window", { chaturanga: { games: { getReview: () => new Promise<GameReview>((resolve) => (answer = resolve)) } } });
+    vi.stubGlobal("window", {
+      chaturanga: {
+        games: { getReview: () => new Promise<GameReview>((resolve) => (answer = resolve)) }
+      }
+    });
     useGameStore.setState({ gameId: "g1" });
     const switching = showSavedAnalysis("g1", "older");
     useReviewStore.getState().startReview("new-run");
@@ -100,7 +147,11 @@ describe("showSavedAnalysis", () => {
 
   it("drops a switch that lands after the game was opened again", async () => {
     let answer: (review: GameReview) => void = () => undefined;
-    vi.stubGlobal("window", { chaturanga: { games: { getReview: () => new Promise<GameReview>((resolve) => (answer = resolve)) } } });
+    vi.stubGlobal("window", {
+      chaturanga: {
+        games: { getReview: () => new Promise<GameReview>((resolve) => (answer = resolve)) }
+      }
+    });
     useGameStore.setState({ gameId: "g1" });
     const switching = showSavedAnalysis("g1", "older");
     openSavedGame(saved({ id: "g1", reviews: [] }));
@@ -115,7 +166,15 @@ describe("alignReviewToTree", () => {
     { id: "a", parentId: "root", children: [], ply: 5 }
   ] as unknown as SavedGame["moveTree"];
   const reviewAt = (ply: number) =>
-    ({ engineId: "sf", depth: null, moveTimeMs: 1, createdAt: 1, summary: {}, moves: [{ nodeId: "a", ply }], commentary: [{ ply, prose: "", generatedAt: 0, providerModel: "m" }] }) as unknown as GameReview;
+    ({
+      engineId: "sf",
+      depth: null,
+      moveTimeMs: 1,
+      createdAt: 1,
+      summary: {},
+      moves: [{ nodeId: "a", ply }],
+      commentary: [{ ply, prose: "", generatedAt: 0, providerModel: "m" }]
+    }) as unknown as GameReview;
 
   it("renumbers an analysis saved before real plies, and leaves one already renumbered alone", () => {
     const legacy = alignReviewToTree(reviewAt(1), tree);

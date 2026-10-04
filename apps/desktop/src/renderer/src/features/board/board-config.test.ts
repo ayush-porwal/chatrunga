@@ -6,7 +6,14 @@ describe("restoreBoardConfig", () => {
   const fen = "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1";
 
   it("gives the move back to the side to move, with its legal moves, after a rejected move", () => {
-    const config = restoreBoardConfig({ fen, orientation: "white", lastMove: undefined, movableColor: "white", showDests: true, animate: true });
+    const config = restoreBoardConfig({
+      fen,
+      orientation: "white",
+      lastMove: undefined,
+      movableColor: "white",
+      showDests: true,
+      animate: true
+    });
     expect(config.turnColor).toBe("white");
     expect(config.movable?.color).toBe("white");
     // The correct reply (Ra8#) must still be playable.
@@ -15,7 +22,16 @@ describe("restoreBoardConfig", () => {
   });
 
   it("respects the animation setting", () => {
-    expect(restoreBoardConfig({ fen, orientation: "black", lastMove: undefined, movableColor: undefined, showDests: false, animate: false }).animation?.enabled).toBe(false);
+    expect(
+      restoreBoardConfig({
+        fen,
+        orientation: "black",
+        lastMove: undefined,
+        movableColor: undefined,
+        showDests: false,
+        animate: false
+      }).animation?.enabled
+    ).toBe(false);
   });
 });
 

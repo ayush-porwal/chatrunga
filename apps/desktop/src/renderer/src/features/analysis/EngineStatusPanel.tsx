@@ -22,12 +22,18 @@ import { Eyebrow } from "@/components/ui/page";
 import { IconButton } from "@/components/ui/icon-button";
 import { Stat } from "@/components/ui/stat";
 import { cn } from "@/lib/utils";
-import { cgWrapPieceSetClass, piecePresentationTailwindClass } from "@chaturanga/shared/types/settings";
+import {
+  cgWrapPieceSetClass,
+  piecePresentationTailwindClass
+} from "@chaturanga/shared/types/settings";
 import { CgPieceGlyph, type PreviewPieceRole } from "../settings/piece-style-preview";
 import { useBoardAppearance } from "../board/useBoardAppearance";
 
 /** As many rows as lines asked for, from the first line on (arriving lines never push content down). */
-function linesWithPlaceholders(lines: readonly EngineInfo[], reserved: number): Array<EngineInfo | null> {
+function linesWithPlaceholders(
+  lines: readonly EngineInfo[],
+  reserved: number
+): Array<EngineInfo | null> {
   const shown: Array<EngineInfo | null> = lines.slice(0, Math.max(reserved, 1));
   while (shown.length < reserved) shown.push(null);
   return shown;
@@ -47,7 +53,13 @@ function moveNumberBefore(fen: string, index: number): string | null {
 }
 
 /** SAN piece letters → the board's piece (figurine notation, as Lichess shows lines). */
-const FIGURINE_ROLES: Record<string, PreviewPieceRole> = { K: "king", Q: "queen", R: "rook", B: "bishop", N: "knight" };
+const FIGURINE_ROLES: Record<string, PreviewPieceRole> = {
+  K: "king",
+  Q: "queen",
+  R: "rook",
+  B: "bishop",
+  N: "knight"
+};
 
 /** A piece of the board's own set, sized to the text (must sit inside the lines' piece-set wrapper). */
 function Figurine({ role }: { role: PreviewPieceRole }) {
@@ -139,7 +151,10 @@ const EngineLineRow = memo(function EngineLineRow({
   /** A move of this line is hovered or focused (its position shows below the lines). */
   onPreview?: (target: PreviewTarget) => void;
 }) {
-  const steps = useMemo(() => (line?.pv?.length ? uciLineSteps(fen, line.pv.slice(0, MAX_LINE_MOVES)) : []), [fen, line]);
+  const steps = useMemo(
+    () => (line?.pv?.length ? uciLineSteps(fen, line.pv.slice(0, MAX_LINE_MOVES)) : []),
+    [fen, line]
+  );
   const sans = useMemo(() => steps.map((step) => step.san), [steps]);
   const score = line?.score ? whiteScore(line.score, fen) : null;
   const multipv = line?.multipv ?? index + 1;
@@ -152,7 +167,12 @@ const EngineLineRow = memo(function EngineLineRow({
       )}
     >
       <ScorePill score={score} />
-      <span className={cn("min-w-0 text-fg-secondary", expanded ? "whitespace-normal break-words" : "truncate")}>
+      <span
+        className={cn(
+          "min-w-0 text-fg-secondary",
+          expanded ? "whitespace-normal break-words" : "truncate"
+        )}
+      >
         {steps.length
           ? steps.map((step, moveIndex) => {
               const number = moveNumberBefore(fen, moveIndex);
@@ -172,7 +192,9 @@ const EngineLineRow = memo(function EngineLineRow({
                         nativeTitle={false}
                         label={goToLineLabel?.(step.san)}
                         className="text-current hover:text-accent"
-                        onActivate={() => onGoToLine({ startNodeId: nodeId, moves: sans.slice(0, moveIndex + 1) })}
+                        onActivate={() =>
+                          onGoToLine({ startNodeId: nodeId, moves: sans.slice(0, moveIndex + 1) })
+                        }
                       >
                         <FigurineSan san={step.san} />
                       </MoveLink>
@@ -196,7 +218,11 @@ const EngineLineRow = memo(function EngineLineRow({
       {steps.length > 1 ? (
         <IconButton
           label={expanded ? "Fold the line" : "Show the whole line"}
-          icon={<ChevronDown className={cn("transition-transform duration-micro", expanded && "rotate-180")} />}
+          icon={
+            <ChevronDown
+              className={cn("transition-transform duration-micro", expanded && "rotate-180")}
+            />
+          }
           size="icon-xs"
           aria-expanded={expanded}
           onClick={() => onToggle(multipv)}
@@ -215,7 +241,11 @@ type LinePreview = { fenAfter: string; uci: string; label: string; score: string
 type PreviewTarget = { multipv: number; moveIndex: number };
 
 /** The preview for `target` from the lines as they are now; null once that move is gone. */
-function previewFor(fen: string, lines: readonly EngineInfo[], target: PreviewTarget): LinePreview | null {
+function previewFor(
+  fen: string,
+  lines: readonly EngineInfo[],
+  target: PreviewTarget
+): LinePreview | null {
   const line = lines.find((candidate) => (candidate.multipv ?? 1) === target.multipv);
   if (!line?.pv?.length) return null;
   const steps = uciLineSteps(fen, line.pv.slice(0, MAX_LINE_MOVES));
@@ -224,7 +254,10 @@ function previewFor(fen: string, lines: readonly EngineInfo[], target: PreviewTa
   return {
     fenAfter: step.fenAfter,
     uci: step.uci,
-    label: numberedLine(fen, steps.slice(0, target.moveIndex + 1).map((item) => item.san)),
+    label: numberedLine(
+      fen,
+      steps.slice(0, target.moveIndex + 1).map((item) => item.san)
+    ),
     score: line.score ? formatScore(whiteScore(line.score, fen), 2) : null
   };
 }
@@ -257,7 +290,10 @@ function LinePreviewCard({
         fen={preview.fenAfter}
         orientation={orientation}
         lastMove={[preview.uci.slice(0, 2), preview.uci.slice(2, 4)]}
-        className={cn("aspect-square w-full justify-self-center", compact ? "max-w-48" : "max-w-md")}
+        className={cn(
+          "aspect-square w-full justify-self-center",
+          compact ? "max-w-48" : "max-w-md"
+        )}
       />
       {preview.score ? (
         <p className="text-xs text-fg-muted">
@@ -332,12 +368,21 @@ function useBoardEnginePosition(): EnginePanelPosition {
   const nodeId = useGameStore((state) => state.currentNodeId);
   const orientation = useGameStore((state) => state.orientation);
   // During a live engine match lines are read-only (the game store refuses new branches then).
-  const linesNavigable = useGameStore((state) => state.mode !== "engine" || !state.engineSide || Boolean(state.gameOutcome));
+  const linesNavigable = useGameStore(
+    (state) => state.mode !== "engine" || !state.engineSide || Boolean(state.gameOutcome)
+  );
   // Live analysis (not an engine game's opponent): the engine can be switched from the header.
   const analysing = useGameStore((state) => state.mode === "analysis");
   const engineGame = useGameStore((state) => state.mode === "engine");
   return useMemo(
-    () => ({ fen, nodeId, orientation, analysing, engineGame, onGoToLine: linesNavigable ? goToLine : undefined }),
+    () => ({
+      fen,
+      nodeId,
+      orientation,
+      analysing,
+      engineGame,
+      onGoToLine: linesNavigable ? goToLine : undefined
+    }),
     [fen, nodeId, orientation, analysing, engineGame, linesNavigable]
   );
 }
@@ -384,8 +429,8 @@ export function EngineAnalysisPanel(
   if (onlineGame) {
     return (
       <Notice tone="info" icon={<Lock />} title="Engine off during your Lichess game">
-        Lichess doesn’t allow outside help while a game is on. The engine, Maia and the coach are back for the review
-        once it ends.
+        Lichess doesn’t allow outside help while a game is on. The engine, Maia and the coach are
+        back for the review once it ends.
       </Notice>
     );
   }
@@ -449,7 +494,10 @@ function EngineStatusPanelContent({
   // With MultiPV the latest info can be line 2/3 — read depth/score/best from the principal line.
   const primary = topLines.find((line) => (line.multipv ?? 1) === 1) ?? latestInfo;
   const best = bestMove ?? primary?.pv?.[0] ?? null;
-  const bestSan = useMemo(() => (best ? (uciLineToSan(fen, [best])[0] ?? null) : null), [best, fen]);
+  const bestSan = useMemo(
+    () => (best ? (uciLineToSan(fen, [best])[0] ?? null) : null),
+    [best, fen]
+  );
   const hasData = Boolean(latestInfo || topLines.length || best);
   const idle = status === "idle" || status === "error";
   // Nothing to analyse with: say so and point to Settings instead of an error with no way out.
@@ -525,8 +573,18 @@ function EngineStatusPanelContent({
             // Evenly across the panel: Depth on the left edge, Score centred, Best on the right edge.
             <div className="grid grid-cols-3 gap-4">
               <Stat label="Depth" value={primary?.depth ?? "–"} mono />
-              <Stat label="Score" value={primary?.score ? formatScore(whiteScore(primary.score, fen), 2) : "–"} mono className="justify-items-center text-center" />
-              <Stat label="Best" value={bestSan ?? "–"} mono className="justify-items-end text-right" />
+              <Stat
+                label="Score"
+                value={primary?.score ? formatScore(whiteScore(primary.score, fen), 2) : "–"}
+                mono
+                className="justify-items-center text-center"
+              />
+              <Stat
+                label="Best"
+                value={bestSan ?? "–"}
+                mono
+                className="justify-items-end text-right"
+              />
             </div>
           )}
           {topLines.length ? (
@@ -538,12 +596,17 @@ function EngineStatusPanelContent({
               {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- leaving the list (pointer or focus) ends the move preview */}
               <ol
                 ref={setLinesList}
-                className={cn("cg-wrap divide-y divide-line-subtle", cgWrapPieceSetClass(appearance.pieceStyle), piecePresentationTailwindClass(appearance.piecePresentation))}
+                className={cn(
+                  "cg-wrap divide-y divide-line-subtle",
+                  cgWrapPieceSetClass(appearance.pieceStyle),
+                  piecePresentationTailwindClass(appearance.piecePresentation)
+                )}
                 // Unlayered `.cg-wrap` rules (board.css inline-size containment) would size this list.
                 style={{ display: "block", containerType: "normal" }}
                 onPointerLeave={clearPreview}
                 onBlur={(event) => {
-                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) clearPreview();
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+                    clearPreview();
                 }}
               >
                 {linesWithPlaceholders(topLines, reservedLines).map((line, index) => (
@@ -563,7 +626,11 @@ function EngineStatusPanelContent({
                 ))}
               </ol>
               {preview && compact && linesList ? (
-                <FloatingLinePreview anchor={linesList} preview={preview} orientation={orientation} />
+                <FloatingLinePreview
+                  anchor={linesList}
+                  preview={preview}
+                  orientation={orientation}
+                />
               ) : preview && !compact ? (
                 <LinePreviewCard preview={preview} orientation={orientation} compact={false} />
               ) : null}
@@ -603,7 +670,13 @@ function EngineStatusPanelContent({
       ) : (
         <EmptyState
           compact
-          title={status === "starting" ? "Starting engine…" : status === "thinking" ? "Thinking…" : "No analysis yet."}
+          title={
+            status === "starting"
+              ? "Starting engine…"
+              : status === "thinking"
+                ? "Thinking…"
+                : "No analysis yet."
+          }
         />
       )}
       {error && !(idle && noEngines) ? <Notice tone="danger">{error}</Notice> : null}

@@ -14,7 +14,8 @@ export function MoveList() {
   // Stable so the memoised move rows skip re-rendering while stepping through the game.
   const onDeleteLine = useCallback(
     (nodeId: string) => {
-      if (window.confirm("Delete this move and all following moves in this line?")) deleteLineFromNode(nodeId);
+      if (window.confirm("Delete this move and all following moves in this line?"))
+        deleteLineFromNode(nodeId);
     },
     [deleteLineFromNode]
   );

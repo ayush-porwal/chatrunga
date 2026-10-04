@@ -22,7 +22,11 @@ export async function detectCpuFeatures(
       return parseFeatures(flags.map((flag) => flag.toLowerCase()));
     }
     if (platform === "darwin") {
-      const { stdout } = await exec("sysctl", ["-n", "machdep.cpu.features", "machdep.cpu.leaf7_features"]);
+      const { stdout } = await exec("sysctl", [
+        "-n",
+        "machdep.cpu.features",
+        "machdep.cpu.leaf7_features"
+      ]);
       return parseFeatures(stdout.toLowerCase().split(/\s+/));
     }
   } catch {

@@ -6,7 +6,13 @@ import type { Key, MoveMetadata } from "@lichess-org/chessground/types";
 import { formatClockForDisplay } from "@chaturanga/shared/chess/clock-display";
 import { clocksOnPathToNode, nodeIdForBoardFen } from "@chaturanga/shared/chess/pgn";
 import { legalDestsForFen, isPromotionMove, statusForFen } from "@chaturanga/shared/chess/position";
-import type { BoardArrow, BoardHighlight, Color, MoveNode, UserMove } from "@chaturanga/shared/types/chess";
+import type {
+  BoardArrow,
+  BoardHighlight,
+  Color,
+  MoveNode,
+  UserMove
+} from "@chaturanga/shared/types/chess";
 import { isMatchMode, useGameStore } from "../../stores/game-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
 import { useDisplayedReviewMoves } from "../../stores/review-validity";
@@ -58,14 +64,19 @@ export function BoardView() {
   const activePuzzle = usePuzzleStore((state) => state.activePuzzle);
   // Only a clean solve celebrates: a puzzle finished after a wrong move or a look at the solution
   // also reaches "complete", but it was failed.
-  const puzzleSolved = usePuzzleStore((state) => state.feedbackKind === "complete" && state.outcome === "solved");
+  const puzzleSolved = usePuzzleStore(
+    (state) => state.feedbackKind === "complete" && state.outcome === "solved"
+  );
   const reviewMoves = useDisplayedReviewMoves();
   const engines = useEnginesQuery();
   const activeEngineId = useAnalysisStore((state) => state.activeEngineId);
   const { appearance, squareBackground, squareColors, pieceClassName } = useBoardAppearance();
   const reducedMotion = usePrefersReducedMotion();
   const activeEngine = engines.data?.find((engine) => engine.id === activeEngineId) ?? null;
-  const currentNode = useMemo(() => moveTree.find((node) => node.id === currentNodeId), [moveTree, currentNodeId]);
+  const currentNode = useMemo(
+    () => moveTree.find((node) => node.id === currentNodeId),
+    [moveTree, currentNodeId]
+  );
   const status = useMemo(() => statusForFen(currentFen), [currentFen]);
   const animationEnabled = appearance.boardAnimation && !reducedMotion;
 
@@ -76,10 +87,22 @@ export function BoardView() {
     return status.turn;
   }, [engineSide, gameOutcome, mode, status.isEnd, status.turn]);
 
-  const { topName, topElo, topClock, topColor, bottomName, bottomElo, bottomClock, bottomColor, showTcHint } = useMemo(() => {
+  const {
+    topName,
+    topElo,
+    topClock,
+    topColor,
+    bottomName,
+    bottomElo,
+    bottomClock,
+    bottomColor,
+    showTcHint
+  } = useMemo(() => {
     const self = moveTree.find((n) => n.id === currentNodeId);
     const clockAnchorId =
-      self?.fenAfter === currentFen ? currentNodeId : nodeIdForBoardFen(moveTree, currentFen, currentNodeId);
+      self?.fenAfter === currentFen
+        ? currentNodeId
+        : nodeIdForBoardFen(moveTree, currentFen, currentNodeId);
     const { white: wClock, black: bClock } = clocksOnPathToNode(moveTree, clockAnchorId);
     const hasMoveClocks = Boolean(wClock ?? bClock);
     const white = headers.white?.trim() || "White";
@@ -111,7 +134,9 @@ export function BoardView() {
   // position are dropped as a search starts, but never trusted).
   const liveBest = useAnalysisStore((state) =>
     mode === "analysis"
-      ? (state.topLines.find((line) => (line.multipv ?? 1) === 1)?.pv?.[0] ?? state.bestMove ?? null)
+      ? (state.topLines.find((line) => (line.multipv ?? 1) === 1)?.pv?.[0] ??
+        state.bestMove ??
+        null)
       : null
   );
   const showBestArrow = appearance.analysisBestMoveArrow;
@@ -134,7 +159,9 @@ export function BoardView() {
     if (!reviewMove || !best) return NO_SHAPES;
     const arrows: DrawShape[] = [{ orig: best[0], dest: best[1], brush: "paleGreen" }];
     const played =
-      reviewMove.playedMove && reviewMove.playedMove !== reviewMove.bestMove ? uciSquares(reviewMove.playedMove) : null;
+      reviewMove.playedMove && reviewMove.playedMove !== reviewMove.bestMove
+        ? uciSquares(reviewMove.playedMove)
+        : null;
     if (played) {
       arrows.push({
         orig: played[0],
@@ -189,7 +216,11 @@ export function BoardView() {
   useBoardPolish(elementRef);
 
   // Custom square classes: puzzle right/wrong flashes.
-  const [flash, setFlash] = useState<{ squares: Key[]; kind: "correct" | "wrong"; key: number } | null>(null);
+  const [flash, setFlash] = useState<{
+    squares: Key[];
+    kind: "correct" | "wrong";
+    key: number;
+  } | null>(null);
   const flashSquares = useCallback((squares: Key[], kind: "correct" | "wrong") => {
     setFlash({ squares, kind, key: performance.now() });
   }, []);
@@ -207,7 +238,12 @@ export function BoardView() {
   const restoreGroundToCurrentPosition = useCallback(() => {
     const ground = groundRef.current;
     if (!ground) return;
-    const { currentFen: fen, orientation: boardOrientation, moveTree: tree, currentNodeId: nodeId } = useGameStore.getState();
+    const {
+      currentFen: fen,
+      orientation: boardOrientation,
+      moveTree: tree,
+      currentNodeId: nodeId
+    } = useGameStore.getState();
     ground.cancelPremove();
     ground.cancelMove();
     ground.selectSquare(null);
@@ -231,7 +267,13 @@ export function BoardView() {
         makeMove(move);
         return;
       }
-      if (submitPuzzleMove(uciFromUserMove(move), () => makeMove(move), useGameStore.getState().currentFen)) {
+      if (
+        submitPuzzleMove(
+          uciFromUserMove(move),
+          () => makeMove(move),
+          useGameStore.getState().currentFen
+        )
+      ) {
         flashSquares([dest], "correct");
         return;
       }
@@ -273,7 +315,11 @@ export function BoardView() {
 
   // Position: slide pieces only for a single step taken at a calm pace; snap for jumps (Home/End,
   // clicking a distant move) and while scrubbing with a held key, so the board never lags behind.
-  const lastPositionRef = useRef<{ nodeId: string | null; fen: string; at: number }>({ nodeId: null, fen: "", at: 0 });
+  const lastPositionRef = useRef<{ nodeId: string | null; fen: string; at: number }>({
+    nodeId: null,
+    fen: "",
+    at: 0
+  });
   useEffect(() => {
     const ground = groundRef.current;
     if (!ground) return;
@@ -286,7 +332,8 @@ export function BoardView() {
       isSingleStep(useGameStore.getState().moveTree, previous.nodeId, currentNodeId) &&
       now - previous.at > RAPID_STEP_MS &&
       !isRapidNavigation(now);
-    if (positionChanged) lastPositionRef.current = { nodeId: currentNodeId, fen: currentFen, at: now };
+    if (positionChanged)
+      lastPositionRef.current = { nodeId: currentNodeId, fen: currentFen, at: now };
     // Snapping mid-slide: drop the running slide so pieces land on the new position at once.
     if (!animate) ground.state.animation.current = undefined;
     ground.set({
@@ -299,9 +346,19 @@ export function BoardView() {
     });
     if (positionChanged && !isRapidNavigation(now)) {
       // Chessground paints on its next frame; fade the fresh highlights in right after.
-      window.requestAnimationFrame(() => fadeInSquares(elementRef.current, "square.last-move, square.check"));
+      window.requestAnimationFrame(() =>
+        fadeInSquares(elementRef.current, "square.last-move, square.check")
+      );
     }
-  }, [animationEnabled, currentFen, currentNode, currentNodeId, orientation, status.isCheck, status.turn]);
+  }, [
+    animationEnabled,
+    currentFen,
+    currentNode,
+    currentNodeId,
+    orientation,
+    status.isCheck,
+    status.turn
+  ]);
 
   // Interaction: who may move, legal destinations, premoves and the move handler.
   // Legal moves depend on the position only: computed once per FEN, not again whenever the move
@@ -336,7 +393,13 @@ export function BoardView() {
         }
       }
     });
-  }, [appearance.showLegalMoves, handleBoardMove, legalDests, movablePieceColor, setPendingPromotion]);
+  }, [
+    appearance.showLegalMoves,
+    handleBoardMove,
+    legalDests,
+    movablePieceColor,
+    setPendingPromotion
+  ]);
 
   // Drawn annotations (per node) and review arrows.
   useEffect(() => {
@@ -345,7 +408,10 @@ export function BoardView() {
         enabled: true,
         visible: true,
         defaultSnapToValidMove: true,
-        shapes: shapesFromAnnotations(currentNode?.arrows ?? NO_ARROWS, currentNode?.highlights ?? NO_HIGHLIGHTS),
+        shapes: shapesFromAnnotations(
+          currentNode?.arrows ?? NO_ARROWS,
+          currentNode?.highlights ?? NO_HIGHLIGHTS
+        ),
         autoShapes,
         onChange: (newShapes) => setNodeAnnotations(currentNodeId, annotationsFromShapes(newShapes))
       }
@@ -390,11 +456,26 @@ export function BoardView() {
     };
     endRef.current = next;
     const ending = liveEnding(previous, { ...next, mode, parentId: currentNode?.parentId });
-    if (!celebratesEnding(ending, { result: gameOutcome?.result ?? status.result, mode, engineSide })) return;
+    if (
+      !celebratesEnding(ending, { result: gameOutcome?.result ?? status.result, mode, engineSide })
+    )
+      return;
     // Deferred a frame so the final move's slide has started first.
-    const frame = window.requestAnimationFrame(() => fireConfetti(elementRef.current, ending === "puzzle" ? "puzzle" : "game"));
+    const frame = window.requestAnimationFrame(() =>
+      fireConfetti(elementRef.current, ending === "puzzle" ? "puzzle" : "game")
+    );
     return () => window.cancelAnimationFrame(frame);
-  }, [currentNode?.parentId, currentNodeId, engineSide, fireConfetti, gameOutcome, mode, moveTree.length, puzzleSolved, status]);
+  }, [
+    currentNode?.parentId,
+    currentNodeId,
+    engineSide,
+    fireConfetti,
+    gameOutcome,
+    mode,
+    moveTree.length,
+    puzzleSolved,
+    status
+  ]);
 
   // Player rows always render (fixed height) so the board never jumps between modes.
   const nameFor = (color: Color, name: string) => {

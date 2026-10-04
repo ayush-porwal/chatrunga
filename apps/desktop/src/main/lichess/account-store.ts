@@ -40,7 +40,8 @@ function readAccount(value: unknown): LichessAccount | null {
   const perfs: LichessAccount["perfs"] = {};
   if (isRecord(json.perfs)) {
     for (const [key, perf] of Object.entries(json.perfs)) {
-      if (!isOneOf(LICHESS_SPEEDS, key) || !isRecord(perf) || typeof perf.rating !== "number") continue;
+      if (!isOneOf(LICHESS_SPEEDS, key) || !isRecord(perf) || typeof perf.rating !== "number")
+        continue;
       perfs[key] = {
         rating: perf.rating,
         games: finite(perf.games) ?? 0,

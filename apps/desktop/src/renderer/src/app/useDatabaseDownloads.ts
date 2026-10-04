@@ -21,7 +21,8 @@ export function useDatabaseDownloads(): void {
       // Keep "Download complete" visible briefly, then drop that same entry (not a newer one).
       const timer = window.setTimeout(() => {
         timers.delete(progress.sourceId);
-        if (useDownloadStore.getState().progress[progress.sourceId] === progress) store.clear(progress.sourceId);
+        if (useDownloadStore.getState().progress[progress.sourceId] === progress)
+          store.clear(progress.sourceId);
       }, COMPLETED_PROGRESS_MS);
       timers.set(progress.sourceId, timer);
     });

@@ -10,7 +10,10 @@ describe("renderer commentary bridge", () => {
     const generate = vi.fn().mockResolvedValue({ commentary: [], error: null });
     vi.stubGlobal("window", { chaturanga: { commentary: { generate } } });
 
-    await expect(requestRendererCommentary({ payloads: [] })).resolves.toEqual({ commentary: [], error: null });
+    await expect(requestRendererCommentary({ payloads: [] })).resolves.toEqual({
+      commentary: [],
+      error: null
+    });
     expect(generate).toHaveBeenCalledWith({ payloads: [] });
   });
 
@@ -22,6 +25,8 @@ describe("renderer commentary bridge", () => {
 
   it("fails clearly when the desktop commentary bridge is absent", async () => {
     vi.stubGlobal("window", {});
-    await expect(requestRendererCommentary({ payloads: [] })).rejects.toThrow("Desktop commentary bridge");
+    await expect(requestRendererCommentary({ payloads: [] })).rejects.toThrow(
+      "Desktop commentary bridge"
+    );
   });
 });

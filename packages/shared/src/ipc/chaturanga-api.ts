@@ -1,4 +1,8 @@
-import type { CommentaryRequestContext, TelemetryRendererEvent, TelemetryStatus } from "../types/telemetry";
+import type {
+  CommentaryRequestContext,
+  TelemetryRendererEvent,
+  TelemetryStatus
+} from "../types/telemetry";
 import type {
   GameLibraryFacets,
   GameListPage,
@@ -169,7 +173,18 @@ export type WindowGlassState = {
 };
 
 /** `process.platform`, spelled out so the renderer (which has no Node types) can use it. */
-export type Platform = "aix" | "android" | "darwin" | "freebsd" | "haiku" | "linux" | "openbsd" | "sunos" | "win32" | "cygwin" | "netbsd";
+export type Platform =
+  | "aix"
+  | "android"
+  | "darwin"
+  | "freebsd"
+  | "haiku"
+  | "linux"
+  | "openbsd"
+  | "sunos"
+  | "win32"
+  | "cygwin"
+  | "netbsd";
 
 export type ChaturangaApi = {
   environment: {
@@ -364,7 +379,10 @@ export type ChaturangaApi = {
     /** Copies the selected material into a chapter with the confirmed policy and records provenance. */
     addFromGame(input: AddFromGameInput): Promise<AddFromGameResult>;
     /** Provenance links of a repertoire, optionally one chapter's. */
-    listGameLinks(input: { repertoireId: string; chapterId?: string }): Promise<RepertoireGameLink[]>;
+    listGameLinks(input: {
+      repertoireId: string;
+      chapterId?: string;
+    }): Promise<RepertoireGameLink[]>;
     removeGameLink(input: { repertoireId: string; linkId: string }): Promise<void>;
     /** Attaches a library game to a repertoire/chapter (model game, or one played from it); idempotent per (repertoire, game, kind). */
     linkGame(input: LinkGameInput): Promise<RepertoireGameLink>;
@@ -458,7 +476,14 @@ export type ChaturangaApi = {
   onEnginesChanged(callback: () => void): Unsubscribe;
 };
 
-export type EngineAssetId = "stockfish" | "lc0" | "maia-1100" | "maia-1300" | "maia-1500" | "maia-1700" | "maia-1900";
+export type EngineAssetId =
+  | "stockfish"
+  | "lc0"
+  | "maia-1100"
+  | "maia-1300"
+  | "maia-1500"
+  | "maia-1700"
+  | "maia-1900";
 
 export type EngineAssetActionResult = { ok: true } | { ok: false; error: string };
 

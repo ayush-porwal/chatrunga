@@ -16,7 +16,10 @@ type GameState = ReturnType<typeof useGameStore.getState>;
 type ReviewState = ReturnType<typeof useReviewStore.getState>;
 
 /** What a save writes. Two equal documents (same references) need no second write. */
-type SavedDocument = Pick<GameState, "gameId" | "source" | "moveTree" | "headers" | "currentNodeId" | "gameOutcome"> & {
+type SavedDocument = Pick<
+  GameState,
+  "gameId" | "source" | "moveTree" | "headers" | "currentNodeId" | "gameOutcome"
+> & {
   review: ReviewState["review"];
 };
 
@@ -78,7 +81,8 @@ function newGameId(): string {
  * rewrite it; and a pending save is written before the board is replaced or the window closes.
  */
 /** Shown when an import waits for the board's pending save and it fails. */
-export const IMPORT_NEEDS_SAVE = "Couldn't save the current game first, so nothing was imported. Try again.";
+export const IMPORT_NEEDS_SAVE =
+  "Couldn't save the current game first, so nothing was imported. Try again.";
 
 /**
  * A board loaded as an unsaved copy (Play from here's engine game): its tree and headers as
@@ -273,7 +277,8 @@ export function useGameAutosave(): void {
             const loaded = documentOf(state, useReviewStore.getState().review);
             stored = loaded;
             queueMicrotask(() => {
-              if (stored === loaded) stored = { ...loaded, review: useReviewStore.getState().review };
+              if (stored === loaded)
+                stored = { ...loaded, review: useReviewStore.getState().review };
             });
           }
         }

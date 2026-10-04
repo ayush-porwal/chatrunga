@@ -41,7 +41,12 @@ export class ErrorBoundary extends Component<Props, State> {
         title={this.props.title}
         description={`Renderer error: ${error.name}`}
         action={
-          <Button type="button" variant="outline" size={fullWindow ? "default" : "sm"} onClick={() => this.setState({ error: null })}>
+          <Button
+            type="button"
+            variant="outline"
+            size={fullWindow ? "default" : "sm"}
+            onClick={() => this.setState({ error: null })}
+          >
             Try again
           </Button>
         }
@@ -49,7 +54,9 @@ export class ErrorBoundary extends Component<Props, State> {
     );
     // The fallback rises in, so a crash reads as a deliberate state change rather than a flash.
     return fullWindow ? (
-      <main className="grid min-h-screen animate-rise-in place-items-center bg-canvas p-8 text-fg">{fallback}</main>
+      <main className="grid min-h-screen animate-rise-in place-items-center bg-canvas p-8 text-fg">
+        {fallback}
+      </main>
     ) : (
       <div className="grid h-full animate-rise-in place-items-center p-8">{fallback}</div>
     );

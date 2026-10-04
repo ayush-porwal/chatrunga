@@ -16,7 +16,13 @@ import type {
 import { parseBestMove, parseInfoLine } from "@chaturanga/shared/engine/uci";
 import { logger, errorMessage } from "../logger";
 import { engineConfigForId, engineResourceOptions } from "./engine-config";
-import { createLineSplitter, LOG_UCI, spawnUciProcess, stopUciProcess, writeUci } from "./uci-process";
+import {
+  createLineSplitter,
+  LOG_UCI,
+  spawnUciProcess,
+  stopUciProcess,
+  writeUci
+} from "./uci-process";
 import {
   createUciIdentity,
   isHumanPredictionEngine,
@@ -43,7 +49,6 @@ type LineWaiter = {
   reject: (error: Error) => void;
 };
 
-
 /** Throws when `config` can't be spawned as a native UCI process. */
 export function assertSpawnable(config: EngineConfig | null): asserts config is EngineConfig {
   if (!config) throw new Error("Engine not found");
@@ -62,7 +67,8 @@ const KILL_WAIT_MS = 2_000;
  */
 function processExited(proc: ChildProcessWithoutNullStreams): Promise<void> {
   // No pid: it never started (its spawn failed), so there is no exit to wait for.
-  if (proc.pid === undefined || proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve();
+  if (proc.pid === undefined || proc.exitCode !== null || proc.signalCode !== null)
+    return Promise.resolve();
   return new Promise((resolve) => {
     let timer = setTimeout(() => {
       proc.kill("SIGKILL");
@@ -211,7 +217,11 @@ export class EngineManager extends EventEmitter<EngineEvents> {
         resolve(result);
       };
       const timeout = setTimeout(
-        () => finish({ ok: false, error: "Timed out waiting for uciok (NN engines such as lc0 may need --weights)" }),
+        () =>
+          finish({
+            ok: false,
+            error: "Timed out waiting for uciok (NN engines such as lc0 may need --weights)"
+          }),
         TEST_UCIOK_TIMEOUT_MS
       );
 
@@ -400,7 +410,11 @@ export class EngineManager extends EventEmitter<EngineEvents> {
    * The warm process if it fits `config` and `kind`, else a fresh one (its handshake in `ready`),
    * started once the process it replaces has exited.
    */
-  private async ensureSession(config: EngineConfig, kind: SearchKind, searchId: string): Promise<EngineSession> {
+  private async ensureSession(
+    config: EngineConfig,
+    kind: SearchKind,
+    searchId: string
+  ): Promise<EngineSession> {
     const resources = kind === "analysis" ? engineResourceOptions() : null;
     const key = JSON.stringify([
       config.id,
@@ -412,7 +426,13 @@ export class EngineManager extends EventEmitter<EngineEvents> {
       resources
     ]);
     const existing = this.session;
-    if (existing && existing.key === key && existing.proc.exitCode === null && !existing.proc.killed) return existing;
+    if (
+      existing &&
+      existing.key === key &&
+      existing.proc.exitCode === null &&
+      !existing.proc.killed
+    )
+      return existing;
     await this.killSession();
     // A newer request (or a stop) came in while the old process was exiting: don't start this one.
     if (this.latestSearchId !== searchId) throw new SupersededError();
@@ -430,14 +450,21 @@ export class EngineManager extends EventEmitter<EngineEvents> {
       owner: searchId
     };
     this.session = session;
-    proc.stdout.on("data", createLineSplitter((line) => this.handleLine(session, line)));
+    proc.stdout.on(
+      "data",
+      createLineSplitter((line) => this.handleLine(session, line))
+    );
     proc.stderr.on("data", (chunk: Buffer) => {
       if (LOG_UCI) logger.info(`uci:${config.name}`, "[stderr]", chunk.toString("utf8").trim());
     });
     proc.on("error", (error) => {
       if (this.session !== session) return;
       // Tagged with the search it hurts: the running one, else the one this process was started for.
-      this.emit("error", { engineId: config.id, searchId: session.searchId ?? session.owner, message: error.message });
+      this.emit("error", {
+        engineId: config.id,
+        searchId: session.searchId ?? session.owner,
+        message: error.message
+      });
     });
     proc.on("exit", (code) => {
       if (this.session !== session) return;
@@ -450,13 +477,19 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     session.ready = (async () => {
       const identity = createUciIdentity();
       identity.options = session.supportedOptions;
-      const uciOk = this.waitForLine((line) => readHandshakeLine(identity, line), UCIOK_TIMEOUT_MS, UCIOK_TIMEOUT_MESSAGE);
+      const uciOk = this.waitForLine(
+        (line) => readHandshakeLine(identity, line),
+        UCIOK_TIMEOUT_MS,
+        UCIOK_TIMEOUT_MESSAGE
+      );
       this.write("uci");
       await uciOk;
       if (resources) {
         // Same Threads/Hash settings as Game Review; only for engines that advertise them.
-        if (session.supportedOptions.has("Threads")) this.write(`setoption name Threads value ${resources.threads}`);
-        if (session.supportedOptions.has("Hash")) this.write(`setoption name Hash value ${resources.hashMb}`);
+        if (session.supportedOptions.has("Threads"))
+          this.write(`setoption name Threads value ${resources.threads}`);
+        if (session.supportedOptions.has("Hash"))
+          this.write(`setoption name Hash value ${resources.hashMb}`);
       }
     })();
     // A failed startup nobody waits for any more (superseded) still ends that process.
@@ -474,7 +507,11 @@ export class EngineManager extends EventEmitter<EngineEvents> {
       return;
     }
     session.searchId = null;
-    const stopped = this.waitForLine((line) => line.startsWith("bestmove"), STOP_BESTMOVE_MS, "stop timed out");
+    const stopped = this.waitForLine(
+      (line) => line.startsWith("bestmove"),
+      STOP_BESTMOVE_MS,
+      "stop timed out"
+    );
     this.write("stop");
     try {
       await stopped;
@@ -486,7 +523,11 @@ export class EngineManager extends EventEmitter<EngineEvents> {
   }
 
   private async waitForReady(): Promise<void> {
-    const readyOk = this.waitForLine((line) => line === "readyok", READYOK_TIMEOUT_MS, "Timed out waiting for readyok after isready.");
+    const readyOk = this.waitForLine(
+      (line) => line === "readyok",
+      READYOK_TIMEOUT_MS,
+      "Timed out waiting for readyok after isready."
+    );
     this.write("isready");
     await readyOk;
   }
@@ -513,7 +554,11 @@ export class EngineManager extends EventEmitter<EngineEvents> {
     writeUci(session.proc, command);
   }
 
-  private waitForLine(predicate: (line: string) => boolean, timeoutMs: number, timeoutMessage: string): Promise<void> {
+  private waitForLine(
+    predicate: (line: string) => boolean,
+    timeoutMs: number,
+    timeoutMessage: string
+  ): Promise<void> {
     this.rejectLineWaiter("Superseded");
     return new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => settle(new Error(timeoutMessage)), timeoutMs);

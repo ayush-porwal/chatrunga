@@ -29,7 +29,9 @@ function engineFilesExist(config: EngineConfig): boolean {
 function maiaEnginesFor(input: ReviewGameInput, evaluationEngine: EngineConfig) {
   const settings = settingsRepository.getAll();
   const candidates = input.predictionEngineIds
-    ? input.predictionEngineIds.map(engineConfigForId).filter((cfg): cfg is EngineConfig => Boolean(cfg))
+    ? input.predictionEngineIds
+        .map(engineConfigForId)
+        .filter((cfg): cfg is EngineConfig => Boolean(cfg))
     : settings.reviewUseMaia
       ? listAllEngines()
       : [];
@@ -47,7 +49,10 @@ function maiaEnginesFor(input: ReviewGameInput, evaluationEngine: EngineConfig) 
  * cancelled or failed), keyed by the operation's `reviewId`. Re-reviewing a game is a new
  * operation on the same `game_ref`; opening a saved review is never a completion.
  */
-export async function runGameReview(engineManager: EngineManager, input: ReviewGameInput): Promise<GameReview> {
+export async function runGameReview(
+  engineManager: EngineManager,
+  input: ReviewGameInput
+): Promise<GameReview> {
   const config = engineConfigForId(input.engineId);
   if (!config) throw new Error("Engine not found");
   // Review knobs come from settings; an explicit `multipv` in the input wins.
@@ -99,7 +104,10 @@ export async function runGameReview(engineManager: EngineManager, input: ReviewG
     );
     // The operation id travels with the saved review, so opening it later is attributable.
     const finished: GameReview = { ...review, reviewId };
-    telemetry?.record("review_completed", { ...operation, duration_ms: Math.round(performance.now() - startedAt) });
+    telemetry?.record("review_completed", {
+      ...operation,
+      duration_ms: Math.round(performance.now() - startedAt)
+    });
     telemetry?.milestone("review_completed");
     engineManager.emit("reviewCompleted", { reviewId, review: finished });
     return finished;
@@ -108,7 +116,12 @@ export async function runGameReview(engineManager: EngineManager, input: ReviewG
     if (engineManager.isReviewCancelled(reviewId)) {
       telemetry?.record("review_cancelled", { ...operation, duration_ms, moves_done: movesDone });
     } else {
-      telemetry?.record("review_failed", { ...operation, duration_ms, moves_done: movesDone, error_code: reviewFailureCode(error) });
+      telemetry?.record("review_failed", {
+        ...operation,
+        duration_ms,
+        moves_done: movesDone,
+        error_code: reviewFailureCode(error)
+      });
     }
     engineManager.emit("reviewFailed", { reviewId, message: errorMessage(error) });
     throw error;

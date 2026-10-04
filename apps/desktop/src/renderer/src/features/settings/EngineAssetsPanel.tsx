@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Check, Copy, Download, FolderOpen, Loader2, RefreshCw, Trash2 } from "lucide-react";
-import type { EngineAssetId, EngineAssetStatus, EngineAssetStatusMap } from "@chaturanga/shared/ipc/chaturanga-api";
+import type {
+  EngineAssetId,
+  EngineAssetStatus,
+  EngineAssetStatusMap
+} from "@chaturanga/shared/ipc/chaturanga-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -97,7 +101,12 @@ export function EngineAssetsPanel() {
     try {
       const summary = await api?.downloadAll();
       const [first, ...rest] = summary?.failed ?? [];
-      if (first) setError(rest.length ? `${rest.length + 1} downloads failed. First: ${first.id} — ${first.reason}` : `${first.id}: ${first.reason}`);
+      if (first)
+        setError(
+          rest.length
+            ? `${rest.length + 1} downloads failed. First: ${first.id} — ${first.reason}`
+            : `${first.id}: ${first.reason}`
+        );
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -120,7 +129,9 @@ export function EngineAssetsPanel() {
     }
   };
 
-  const entries = status ? ENGINE_ASSETS.map((asset) => ({ ...asset, status: status[asset.id] })) : [];
+  const entries = status
+    ? ENGINE_ASSETS.map((asset) => ({ ...asset, status: status[asset.id] }))
+    : [];
   const checkError = entries.find((entry) => entry.status.checkError)?.status.checkError ?? null;
   const lastChecked = latestCheckedAt(entries.map((entry) => entry.status));
 
@@ -131,7 +142,12 @@ export function EngineAssetsPanel() {
         description="Stockfish, Lc0 and the five Maia networks Game review uses. Updates install only when you ask."
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => void checkForUpdates()} disabled={checking || !status}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void checkForUpdates()}
+              disabled={checking || !status}
+            >
               <RefreshCw className={cn(checking && "animate-spin")} />
               {checking ? "Checking…" : "Check for updates"}
             </Button>
@@ -147,9 +163,9 @@ export function EngineAssetsPanel() {
 
       {maiaNeedsLc0(status) ? (
         <Notice tone="warn" title="Maia needs Lc0">
-          The Maia networks are installed, but Maia runs inside Lc0, which isn't set up yet. Install Lc0
-          (the command is below), then choose its binary from the Lc0 row's menu. Until then Maia isn't
-          used in reviews and can't be played against.
+          The Maia networks are installed, but Maia runs inside Lc0, which isn't set up yet. Install
+          Lc0 (the command is below), then choose its binary from the Lc0 row's menu. Until then
+          Maia isn't used in reviews and can't be played against.
         </Notice>
       ) : null}
       {status ? (
@@ -192,7 +208,9 @@ export function EngineAssetsPanel() {
       {error ? <Notice tone="danger">{error}</Notice> : null}
 
       <p className={fieldHint}>
-        {checkError ? `Couldn't reach GitHub (${checkError}); showing the last known releases. ` : null}
+        {checkError
+          ? `Couldn't reach GitHub (${checkError}); showing the last known releases. `
+          : null}
         {lastChecked ? `Releases checked ${lastChecked}. ` : null}
         Maia networks by{" "}
         <a
@@ -223,13 +241,22 @@ function AssetRow(props: {
   const size = formatSize(installed ? status.sizeBytes : status.downloadSizeBytes);
   const downloading = props.busy && props.percent > 0 && props.percent < 100;
   return (
-    <div className={cn(listRow, "relative overflow-hidden transition-colors duration-standard", props.busy && "border-line-strong")}>
+    <div
+      className={cn(
+        listRow,
+        "relative overflow-hidden transition-colors duration-standard",
+        props.busy && "border-line-strong"
+      )}
+    >
       <span className="flex min-w-0 flex-1 items-baseline gap-2">
         <span className="truncate text-fg" title={props.label}>
           {props.label}
         </span>
         {installed && status.installedVersion ? (
-          <span className="truncate font-mono text-xs text-fg-subtle" title={status.installedVersion}>
+          <span
+            className="truncate font-mono text-xs text-fg-subtle"
+            title={status.installedVersion}
+          >
             {status.installedVersion}
           </span>
         ) : null}
@@ -247,7 +274,10 @@ function AssetRow(props: {
         <StatusBadge state={status.state} />
       )}
       {props.busy ? (
-        <span className="grid size-8 shrink-0 place-items-center text-fg-subtle" aria-label="Working">
+        <span
+          className="grid size-8 shrink-0 place-items-center text-fg-subtle"
+          aria-label="Working"
+        >
           <Loader2 className="size-4 animate-spin" />
         </span>
       ) : (
@@ -258,9 +288,17 @@ function AssetRow(props: {
             </Button>
           ) : null}
           {installed ? (
-            <IconButton label={`Remove ${props.label}`} icon={<Trash2 />} onClick={props.onRemove} />
+            <IconButton
+              label={`Remove ${props.label}`}
+              icon={<Trash2 />}
+              onClick={props.onRemove}
+            />
           ) : (
-            <IconButton label={`Download ${props.label}`} icon={<Download />} onClick={props.onDownload} />
+            <IconButton
+              label={`Download ${props.label}`}
+              icon={<Download />}
+              onClick={props.onDownload}
+            />
           )}
         </>
       )}
@@ -296,7 +334,8 @@ function ManualInstallRow(props: {
   onRemove: () => void;
 }) {
   const installed = isAssetInstalled(props.status);
-  const instruction = props.status.installInstructions ?? "Install Lc0 from https://lczero.org/play/download/";
+  const instruction =
+    props.status.installInstructions ?? "Install Lc0 from https://lczero.org/play/download/";
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -304,13 +343,19 @@ function ManualInstallRow(props: {
     return () => window.clearTimeout(timeout);
   }, [copied]);
   // A refused clipboard write leaves the command selectable in the row below.
-  const copy = () => navigator.clipboard.writeText(instruction).then(() => setCopied(true), () => undefined);
+  const copy = () =>
+    navigator.clipboard.writeText(instruction).then(
+      () => setCopied(true),
+      () => undefined
+    );
   const size = installed ? formatSize(props.status.sizeBytes) : null;
   return (
     <div className="grid gap-1.5">
       <div className={listRow}>
         <span className="min-w-0 flex-1 truncate text-fg">{props.label}</span>
-        {size ? <span className="shrink-0 font-mono text-xs text-fg-subtle tabular-nums">{size}</span> : null}
+        {size ? (
+          <span className="shrink-0 font-mono text-xs text-fg-subtle tabular-nums">{size}</span>
+        ) : null}
         <StatusBadge state={installed ? props.status.state : "manual"} />
         <OverflowMenu
           label={`${props.label} actions`}
@@ -321,13 +366,20 @@ function ManualInstallRow(props: {
               onSelect: props.onPickFile
             },
             { label: "Copy install command", icon: <Copy />, onSelect: () => void copy() },
-            installed && { label: "Forget path", icon: <Trash2 />, onSelect: props.onRemove, destructive: true }
+            installed && {
+              label: "Forget path",
+              icon: <Trash2 />,
+              onSelect: props.onRemove,
+              destructive: true
+            }
           ]}
         />
       </div>
       {!installed ? (
         <div className={cn(well, "flex items-center gap-2 py-1 pl-3 pr-1")}>
-          <code className="min-w-0 flex-1 truncate font-mono text-xs text-fg-secondary">{instruction}</code>
+          <code className="min-w-0 flex-1 truncate font-mono text-xs text-fg-secondary">
+            {instruction}
+          </code>
           <IconButton
             label={copied ? "Copied" : "Copy install command"}
             icon={copied ? <Check /> : <Copy />}
@@ -340,7 +392,10 @@ function ManualInstallRow(props: {
   );
 }
 
-const statusBadges: Record<EngineAssetStatus["state"] | "manual", { tone: "neutral" | "accent" | "info"; label: string }> = {
+const statusBadges: Record<
+  EngineAssetStatus["state"] | "manual",
+  { tone: "neutral" | "accent" | "info"; label: string }
+> = {
   installed: { tone: "accent", label: "Installed" },
   custom: { tone: "info", label: "Custom" },
   missing: { tone: "neutral", label: "Not installed" },
@@ -354,9 +409,14 @@ function StatusBadge({ state }: { state: EngineAssetStatus["state"] | "manual" }
 
 /** Most recent GitHub lookup across assets, as a short local time; null if never checked. */
 function latestCheckedAt(statuses: readonly EngineAssetStatus[]): string | null {
-  const times = statuses.map((entry) => (entry.checkedAt ? Date.parse(entry.checkedAt) : Number.NaN)).filter(Number.isFinite);
+  const times = statuses
+    .map((entry) => (entry.checkedAt ? Date.parse(entry.checkedAt) : Number.NaN))
+    .filter(Number.isFinite);
   if (times.length === 0) return null;
-  return new Date(Math.max(...times)).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return new Date(Math.max(...times)).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short"
+  });
 }
 
 function errorText(error: unknown): string {

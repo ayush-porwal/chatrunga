@@ -19,7 +19,11 @@ export function snapBoardSize(available: number, devicePixelRatio: number): numb
  * the titlebar (and any notice) with only a small gap above the window's bottom edge, so its own
  * centre is lower than the window's; padded by these insets, what it centres is centred on the window.
  */
-export function centringInsets(start: number, end: number, length: number): { start: number; end: number } {
+export function centringInsets(
+  start: number,
+  end: number,
+  length: number
+): { start: number; end: number } {
   const centre = length / 2;
   const half = Math.max(0, Math.min(centre - start, end - centre));
   return { start: Math.max(0, centre - half - start), end: Math.max(0, end - centre - half) };

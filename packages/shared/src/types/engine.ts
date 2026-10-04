@@ -272,7 +272,10 @@ export type ReviewCommentary = {
 };
 
 /** The AI coach's explanation of a finished puzzle (kept for the session only, never saved). */
-export type PuzzleExplanation = Pick<ReviewCommentary, "prose" | "headline" | "generatedAt" | "providerModel">;
+export type PuzzleExplanation = Pick<
+  ReviewCommentary,
+  "prose" | "headline" | "generatedAt" | "providerModel"
+>;
 
 /** One position for {@link AnalysePositionsInput}: searched with `multipv` lines (1–5). */
 export type AnalysePositionInput = { fen: string; multipv: number };

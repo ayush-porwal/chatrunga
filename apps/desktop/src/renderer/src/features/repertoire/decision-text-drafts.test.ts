@@ -188,7 +188,14 @@ describe("decision text drafts", () => {
     store().setDecisionText("r1", "k1", "prompt", "Develop");
     let refuse!: () => void;
     updateDecision.mockImplementationOnce(
-      () => new Promise((_, reject) => (refuse = () => reject(new Error("Invalid expectedRevision: repertoire changed (stored 6, expected 5)"))))
+      () =>
+        new Promise(
+          (_, reject) =>
+            (refuse = () =>
+              reject(
+                new Error("Invalid expectedRevision: repertoire changed (stored 6, expected 5)")
+              ))
+        )
     );
     const first = saveDecisionText(queryClient, PROMPT, { flushChapter });
     await vi.waitFor(() => expect(updateDecision).toHaveBeenCalled());

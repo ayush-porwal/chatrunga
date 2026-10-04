@@ -127,7 +127,8 @@ export class LichessClient {
     }
     if (response.ok) return response;
     const text = await response.text().catch(() => "");
-    if (response.status === 401 && usesSavedToken && sentToken) this.options.onTokenRejected?.(sentToken);
+    if (response.status === 401 && usesSavedToken && sentToken)
+      this.options.onTokenRejected?.(sentToken);
     throw new LichessHttpError(lichessErrorMessage(response.status, text), response.status);
   }
 

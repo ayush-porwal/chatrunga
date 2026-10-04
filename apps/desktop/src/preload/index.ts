@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer, webFrame, type IpcRendererEvent } from "electron";
-import type { ChaturangaApi, Unsubscribe, WindowGlassState } from "@chaturanga/shared/ipc/chaturanga-api";
+import type {
+  ChaturangaApi,
+  Unsubscribe,
+  WindowGlassState
+} from "@chaturanga/shared/ipc/chaturanga-api";
 import { isRecord } from "@chaturanga/shared/types/guards";
 import {
   IMPORT_CANCELLED_MESSAGE,
@@ -28,7 +32,9 @@ function invokePreviewImport(
   return ipcRenderer.invoke("repertoires:previewImport", input);
 }
 
-type EventPayload<K extends keyof ChaturangaApi["events"]> = Parameters<Parameters<ChaturangaApi["events"][K]>[0]>[0];
+type EventPayload<K extends keyof ChaturangaApi["events"]> = Parameters<
+  Parameters<ChaturangaApi["events"][K]>[0]
+>[0];
 
 /** Main's glass state reply, checked; anything else reads as an opaque window. */
 function readGlassState(reply: unknown): WindowGlassState {
@@ -57,8 +63,8 @@ onGlassChanged((state) => {
 // every registered flush runs, and it's saved only if all of them are. With none, it's done at once.
 const flushHandlers = new Set<() => Promise<boolean>>();
 ipcRenderer.on("games:flush", (_event, token: string) => {
-  void Promise.all([...flushHandlers].map((handler) => handler().catch(() => false))).then((results) =>
-    ipcRenderer.send("games:flushed", token, results.every(Boolean))
+  void Promise.all([...flushHandlers].map((handler) => handler().catch(() => false))).then(
+    (results) => ipcRenderer.send("games:flushed", token, results.every(Boolean))
   );
 });
 
@@ -123,7 +129,8 @@ const api: ChaturangaApi = {
   },
   files: {
     openPgnFile: () => ipcRenderer.invoke("files:openPgnFile"),
-    savePgnFile: (defaultName, contents) => ipcRenderer.invoke("files:savePgnFile", defaultName, contents),
+    savePgnFile: (defaultName, contents) =>
+      ipcRenderer.invoke("files:savePgnFile", defaultName, contents),
     selectExecutable: () => ipcRenderer.invoke("files:selectExecutable"),
     selectOpenFile: (filters) => ipcRenderer.invoke("files:selectOpenFile", filters)
   },
@@ -137,7 +144,8 @@ const api: ChaturangaApi = {
     setOpenRouterConfig: (input) => ipcRenderer.invoke("commentary:setOpenRouterConfig", input),
     generate: (input) => ipcRenderer.invoke("commentary:generate", input),
     explainPuzzle: (input) => ipcRenderer.invoke("commentary:explainPuzzle", input),
-    cancelPuzzleExplanation: (requestId) => ipcRenderer.invoke("commentary:cancelPuzzleExplanation", requestId)
+    cancelPuzzleExplanation: (requestId) =>
+      ipcRenderer.invoke("commentary:cancelPuzzleExplanation", requestId)
   },
   telemetry: {
     status: () => ipcRenderer.invoke("telemetry:status"),
@@ -151,10 +159,11 @@ const api: ChaturangaApi = {
     onReviewMoveCompleted: subscribe<EventPayload<"onReviewMoveCompleted">>("review:moveCompleted"),
     onReviewCompleted: subscribe<EventPayload<"onReviewCompleted">>("review:completed"),
     onReviewFailed: subscribe<EventPayload<"onReviewFailed">>("review:failed"),
-    onDatabaseDownloadProgress: subscribe<EventPayload<"onDatabaseDownloadProgress">>("database:downloadProgress"),
+    onDatabaseDownloadProgress: subscribe<EventPayload<"onDatabaseDownloadProgress">>(
+      "database:downloadProgress"
+    ),
     onUpdateState: subscribe<EventPayload<"onUpdateState">>("updates:state"),
-    onLichessEvent: subscribe<EventPayload<"onLichessEvent">>("lichess:event"),
-
+    onLichessEvent: subscribe<EventPayload<"onLichessEvent">>("lichess:event")
   },
   // Lichess account, play and import (main/lichess).
   lichess: {
@@ -217,8 +226,7 @@ const api: ChaturangaApi = {
     exportBackup: (input) => ipcRenderer.invoke("repertoires:exportBackup", input),
     previewBackupImport: (input) => ipcRenderer.invoke("repertoires:previewBackupImport", input),
     restoreBackup: (input) => ipcRenderer.invoke("repertoires:restoreBackup", input),
-    refreshBackupPreview: (jobId) =>
-      ipcRenderer.invoke("repertoires:refreshBackupPreview", jobId),
+    refreshBackupPreview: (jobId) => ipcRenderer.invoke("repertoires:refreshBackupPreview", jobId),
     cancelBackupImport: (jobId) => ipcRenderer.invoke("repertoires:cancelBackupImport", jobId),
     startPractice: (input) => ipcRenderer.invoke("repertoires:startPractice", input),
     resumePractice: (sessionId) => ipcRenderer.invoke("repertoires:resumePractice", sessionId),
@@ -242,7 +250,8 @@ const api: ChaturangaApi = {
     download: (assetId) => ipcRenderer.invoke("assets:download", assetId),
     downloadAll: () => ipcRenderer.invoke("assets:downloadAll"),
     remove: (assetId) => ipcRenderer.invoke("assets:remove", assetId),
-    setCustomPath: (assetId, customPath) => ipcRenderer.invoke("assets:setCustomPath", assetId, customPath),
+    setCustomPath: (assetId, customPath) =>
+      ipcRenderer.invoke("assets:setCustomPath", assetId, customPath),
     status: (options) => ipcRenderer.invoke("assets:status", options),
     checkForUpdates: () => ipcRenderer.invoke("assets:checkForUpdates"),
     update: (assetId) => ipcRenderer.invoke("assets:update", assetId)

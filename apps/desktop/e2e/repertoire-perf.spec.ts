@@ -16,7 +16,12 @@ async function heartbeat(app: ElectronApplication) {
     const state = globalThis as unknown as {
       __beat?: { timer: unknown; last: number; max: number; onTick: (() => void) | null };
     };
-    const beat = { timer: null as unknown, last: performance.now(), max: 0, onTick: null as (() => void) | null };
+    const beat = {
+      timer: null as unknown,
+      last: performance.now(),
+      max: 0,
+      onTick: null as (() => void) | null
+    };
     beat.timer = setInterval(() => {
       const now = performance.now();
       beat.max = Math.max(beat.max, now - beat.last);
@@ -28,8 +33,11 @@ async function heartbeat(app: ElectronApplication) {
   return {
     stop: () =>
       app.evaluate(async () => {
-        const beat = (globalThis as unknown as { __beat: { timer: unknown; max: number; onTick: (() => void) | null } })
-          .__beat;
+        const beat = (
+          globalThis as unknown as {
+            __beat: { timer: unknown; max: number; onTick: (() => void) | null };
+          }
+        ).__beat;
         // One more tick, so a stall at the very end is counted.
         await new Promise<void>((resolve) => (beat.onTick = resolve));
         clearInterval(beat.timer as ReturnType<typeof setInterval>);

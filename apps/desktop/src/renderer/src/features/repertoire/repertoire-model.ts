@@ -314,7 +314,9 @@ export function shouldAdoptSaveResult(
  * malformed, a replace that needs one) isn't stale: reloading wouldn't fix it.
  */
 export function isStaleRevisionError(message: string): boolean {
-  return /^Invalid (?:expectedRevision: repertoire|chapter\.revision: chapter) changed\b/.test(message);
+  return /^Invalid (?:expectedRevision: repertoire|chapter\.revision: chapter) changed\b/.test(
+    message
+  );
 }
 
 /** The main process can't find the repertoire (deleted): the draft has nowhere to go. */

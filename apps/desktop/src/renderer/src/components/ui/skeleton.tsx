@@ -14,5 +14,12 @@ type SkeletonProps = React.HTMLAttributes<HTMLElement> & {
  *   <Skeleton className="h-3 w-24" />
  */
 export function Skeleton({ as: Tag = "div", className, ...props }: SkeletonProps) {
-  return <Tag aria-hidden="true" data-slot="skeleton" className={cn("ui-skeleton block rounded-md bg-control", className)} {...props} />;
+  return (
+    <Tag
+      aria-hidden="true"
+      data-slot="skeleton"
+      className={cn("ui-skeleton block rounded-md bg-control", className)}
+      {...props}
+    />
+  );
 }

@@ -116,7 +116,9 @@ describe("import commit into the open repertoire", () => {
     // The flush saved the draft at revision 5 while the cached detail still says 4.
     expect(importExpectedRevision({ repertoireId: "r1", baseRevision: 5 }, "r1", 4)).toBe(5);
     expect(importExpectedRevision({ repertoireId: "r1", baseRevision: 5 }, "r1", 6)).toBe(6);
-    expect(importExpectedRevision({ repertoireId: "r1", baseRevision: 5 }, "r1", undefined)).toBe(5);
+    expect(importExpectedRevision({ repertoireId: "r1", baseRevision: 5 }, "r1", undefined)).toBe(
+      5
+    );
     expect(importExpectedRevision({ repertoireId: "r2", baseRevision: 9 }, "r1", 4)).toBe(4);
     expect(
       importExpectedRevision({ repertoireId: null, baseRevision: 0 }, "r1", undefined)

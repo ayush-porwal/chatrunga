@@ -22,7 +22,11 @@ function advancePuzzle(feedback: string): void {
  * the board's position) is where the move was played from: a wrong move is recorded with it, and
  * named in SAN in the feedback.
  */
-export function submitPuzzleMove(uci: string, play: () => boolean, fenBefore = useGameStore.getState().currentFen): boolean {
+export function submitPuzzleMove(
+  uci: string,
+  play: () => boolean,
+  fenBefore = useGameStore.getState().currentFen
+): boolean {
   const { activePuzzle, solutionIndex, markWrongMove, feedbackKind } = usePuzzleStore.getState();
   const expected = activePuzzle?.solutionMoves[solutionIndex];
   // A broken puzzle has ended: no move is checked against it any more.

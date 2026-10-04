@@ -3,7 +3,9 @@ import { ipcErrorMessage } from "./ipc-error";
 
 describe("ipcErrorMessage", () => {
   it("strips Electron's invoke wrapper", () => {
-    expect(ipcErrorMessage(new Error("Error invoking remote method 'games:save': Error: Disk full"))).toBe("Disk full");
+    expect(
+      ipcErrorMessage(new Error("Error invoking remote method 'games:save': Error: Disk full"))
+    ).toBe("Disk full");
     expect(ipcErrorMessage(new Error("Error invoking remote method 'x': plain"))).toBe("plain");
   });
 

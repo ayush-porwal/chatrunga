@@ -12,8 +12,12 @@ describe("game title helpers", () => {
 
   it("names players, using the engine name and 'You' in an engine game", () => {
     expect(gamePlayerNames({ headers: {}, mode: "freeplay", engineSide: null }, null)).toBeNull();
-    expect(gamePlayerNames({ headers: { white: "Morphy" }, mode: "freeplay", engineSide: null }, null)).toEqual({ white: "Morphy", black: "Black" });
-    expect(gamePlayerNames({ headers: {}, mode: "engine", engineSide: "black" }, "Stockfish")).toEqual({ white: "You", black: "Stockfish" });
+    expect(
+      gamePlayerNames({ headers: { white: "Morphy" }, mode: "freeplay", engineSide: null }, null)
+    ).toEqual({ white: "Morphy", black: "Black" });
+    expect(
+      gamePlayerNames({ headers: {}, mode: "engine", engineSide: "black" }, "Stockfish")
+    ).toEqual({ white: "You", black: "Stockfish" });
   });
 
   it("treats '*' as undecided", () => {

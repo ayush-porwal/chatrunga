@@ -23,9 +23,9 @@ function recorded(db: ReturnType<typeof telemetryDatabase>) {
 }
 
 function outboxTimes(db: ReturnType<typeof telemetryDatabase>): number[] {
-  return (db.prepare("SELECT occurred_at FROM telemetry_outbox").all() as { occurred_at: number }[]).map(
-    (row) => row.occurred_at
-  );
+  return (
+    db.prepare("SELECT occurred_at FROM telemetry_outbox").all() as { occurred_at: number }[]
+  ).map((row) => row.occurred_at);
 }
 
 describe("renderer telemetry events: validation", () => {
@@ -76,7 +76,10 @@ describe("renderer telemetry events: validation", () => {
       "activity",
       null
     ];
-    for (const value of bad) expect(() => parseRendererEvent(value)).toThrow(expect.objectContaining({ name: "ZodError" }));
+    for (const value of bad)
+      expect(() => parseRendererEvent(value)).toThrow(
+        expect.objectContaining({ name: "ZodError" })
+      );
   });
 
   it("drops a malformed commentary context instead of trusting it", () => {

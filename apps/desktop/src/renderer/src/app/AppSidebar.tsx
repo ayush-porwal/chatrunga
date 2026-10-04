@@ -73,8 +73,21 @@ export const AppSidebar = memo(function AppSidebar({
   onFlip: () => void;
   onSettings: () => void;
 }) {
-  const item = (icon: LucideIcon, label: string, onClick: () => void, isActive = false, shortcut?: string) => (
-    <SidebarCommand expanded={expanded} icon={icon} label={label} active={isActive} shortcut={shortcut} onClick={onClick} />
+  const item = (
+    icon: LucideIcon,
+    label: string,
+    onClick: () => void,
+    isActive = false,
+    shortcut?: string
+  ) => (
+    <SidebarCommand
+      expanded={expanded}
+      icon={icon}
+      label={label}
+      active={isActive}
+      shortcut={shortcut}
+      onClick={onClick}
+    />
   );
 
   return (
@@ -89,7 +102,10 @@ export const AppSidebar = memo(function AppSidebar({
         {item(icons.home, "Home", onHome, active.home)}
         {/* Same height in both states: the "Game" label expanded, a hairline collapsed. */}
         <div className="relative flex h-8 min-w-0 items-center overflow-hidden px-2.5">
-          <Eyebrow className={cn("whitespace-nowrap", labelFade(expanded))} aria-hidden={!expanded || undefined}>
+          <Eyebrow
+            className={cn("whitespace-nowrap", labelFade(expanded))}
+            aria-hidden={!expanded || undefined}
+          >
             Game
           </Eyebrow>
           <Separator
@@ -124,11 +140,19 @@ export const AppSidebar = memo(function AppSidebar({
         ) : null}
         {/* Settings with the update button on its row (expanded) or directly above it (rail), so
             Settings itself never moves. */}
-        <div className={cn("grid min-w-0 gap-0.5", expanded ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-[minmax(0,1fr)]")}>
+        <div
+          className={cn(
+            "grid min-w-0 gap-0.5",
+            expanded ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-[minmax(0,1fr)]"
+          )}
+        >
           <div className={cn("min-w-0", expanded ? "col-start-1 row-start-1" : "row-start-2")}>
             {item(icons.settings, "Settings", onSettings, active.settings)}
           </div>
-          <UpdateButton tooltipSide={expanded ? "top" : "right"} className={expanded ? "col-start-2 row-start-1" : "row-start-1"} />
+          <UpdateButton
+            tooltipSide={expanded ? "top" : "right"}
+            className={expanded ? "col-start-2 row-start-1" : "row-start-1"}
+          />
         </div>
       </div>
     </nav>
@@ -175,22 +199,33 @@ const SidebarCommand = memo(function SidebarCommand({
   // One element in both states: 36px tall, full column width (36px when collapsed), icon at 9px +
   // 1px border — the same x as the centred rail button. Only the label and the tooltip change.
   return (
-    <Tooltip open={tooltipOpen && !expanded} onOpenChange={(open) => setTooltipOpen(open && !expanded)}>
+    <Tooltip
+      open={tooltipOpen && !expanded}
+      onOpenChange={(open) => setTooltipOpen(open && !expanded)}
+    >
       <TooltipTrigger asChild>
         <Button
           type="button"
           variant="ghost"
-          className={cn(navItem, "w-full justify-start gap-3 overflow-hidden px-[9px] active:scale-[0.97]")}
+          className={cn(
+            navItem,
+            "w-full justify-start gap-3 overflow-hidden px-[9px] active:scale-[0.97]"
+          )}
           onClick={onClick}
           aria-label={label}
           aria-pressed={active || undefined}
           aria-keyshortcuts={shortcut}
         >
           <Icon />
-          <span className={cn("min-w-0 whitespace-nowrap", expanded && "truncate", labelFade(expanded))} aria-hidden="true">
+          <span
+            className={cn("min-w-0 whitespace-nowrap", expanded && "truncate", labelFade(expanded))}
+            aria-hidden="true"
+          >
             {label}
           </span>
-          {shortcut ? <ShortcutHint className={cn("ml-auto", labelFade(expanded))}>{shortcut}</ShortcutHint> : null}
+          {shortcut ? (
+            <ShortcutHint className={cn("ml-auto", labelFade(expanded))}>{shortcut}</ShortcutHint>
+          ) : null}
         </Button>
       </TooltipTrigger>
       {expanded ? null : (
@@ -228,7 +263,13 @@ function ShortcutHint({ className, children }: { className?: string; children: s
  * Titlebar button that shows/hides the sidebar: one static sidebar glyph (like SF Symbols
  * `sidebar.left`) in both states; only the label and the pressed/expanded state change.
  */
-export const SidebarToggle = memo(function SidebarToggle({ expanded, onClick }: { expanded: boolean; onClick: () => void }) {
+export const SidebarToggle = memo(function SidebarToggle({
+  expanded,
+  onClick
+}: {
+  expanded: boolean;
+  onClick: () => void;
+}) {
   return (
     <IconButton
       label={expanded ? "Hide sidebar" : "Show sidebar"}

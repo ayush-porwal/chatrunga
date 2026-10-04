@@ -82,7 +82,8 @@ function storeShownHints(queryClient: QueryClient): void {
   const current = queryClient.getQueryData<AppSettings>(["settings"]);
   const value = [...new Set([...(current?.onboardingHintsSeen ?? []), ...shownThisReview])];
   shownThisReview.clear();
-  if (current) queryClient.setQueryData<AppSettings>(["settings"], { ...current, onboardingHintsSeen: value });
+  if (current)
+    queryClient.setQueryData<AppSettings>(["settings"], { ...current, onboardingHintsSeen: value });
   void window.chaturanga?.settings
     .set("onboardingHintsSeen", value)
     .finally(() => void queryClient.invalidateQueries({ queryKey: ["settings"] }));

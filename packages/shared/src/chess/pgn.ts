@@ -46,7 +46,10 @@ export function createGameFromFen(input: {
  * `strict` refuses a game with a move that can't be played (rather than dropping that move and
  * everything after it), for restoring a stored game where a shorter tree would lose moves.
  */
-export function importPgnText(pgn: string, { strict = false }: { strict?: boolean } = {}): ImportedGame {
+export function importPgnText(
+  pgn: string,
+  { strict = false }: { strict?: boolean } = {}
+): ImportedGame {
   const games = parsePgn(pgn);
   if (!games.length) throw new Error("No PGN game found");
 
@@ -252,7 +255,12 @@ function pushMove(parts: string[], node: MoveNode, needsNumber: boolean): void {
   else if (needsNumber) parts.push(`${moveNumber}...`);
   parts.push(node.san ?? "");
   if (node.nags.length) parts.push(...node.nags);
-  const comment = serializeAnnotationComment(node.comment, node.arrows, node.highlights, node.clockAfter);
+  const comment = serializeAnnotationComment(
+    node.comment,
+    node.arrows,
+    node.highlights,
+    node.clockAfter
+  );
   if (comment) parts.push(`{ ${comment} }`);
 }
 

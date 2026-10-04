@@ -10,7 +10,13 @@ import { ipcErrorMessage } from "@/lib/ipc-error";
 import { flushGameAutosave, IMPORT_NEEDS_SAVE } from "../../app/useGameAutosave";
 
 /** Paste or open a PGN; the game goes to App (`onImported`), which puts it on the board. */
-export function PgnImportDialog({ onClose, onImported }: { onClose: () => void; onImported: (imported: ImportedGame) => void }) {
+export function PgnImportDialog({
+  onClose,
+  onImported
+}: {
+  onClose: () => void;
+  onImported: (imported: ImportedGame) => void;
+}) {
   const [pgn, setPgn] = useState("");
   const [error, setError] = useState<string | null>(null);
   // One import at a time (a second click while one runs would import twice).
@@ -70,11 +76,23 @@ export function PgnImportDialog({ onClose, onImported }: { onClose: () => void; 
       onClose={onClose}
       footer={
         <>
-          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void openFile()}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => void openFile()}
+          >
             <Upload />
             Open file
           </Button>
-          <Button type="button" variant="primary" size="sm" onClick={() => void importPgn(pgn)} disabled={busy || !pgn.trim()}>
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={() => void importPgn(pgn)}
+            disabled={busy || !pgn.trim()}
+          >
             Import
           </Button>
         </>

@@ -687,7 +687,15 @@ export type RepertoireBackupHistory = {
 export type RepertoireBackupEntry = {
   repertoire: Pick<
     RepertoireSummary,
-    "id" | "name" | "color" | "description" | "tags" | "revision" | "archivedAt" | "createdAt" | "updatedAt"
+    | "id"
+    | "name"
+    | "color"
+    | "description"
+    | "tags"
+    | "revision"
+    | "archivedAt"
+    | "createdAt"
+    | "updatedAt"
   >;
   chapters: RepertoireBackupChapter[];
   decisions: RepertoireDecision[];

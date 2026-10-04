@@ -3,7 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zstdCompressSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { readFirstLine, reservoirScan, ScanCancelledError, ScanWorkerError, scanCsvLines, workerScanner, type ScanJob } from "./puzzle-scan";
+import {
+  readFirstLine,
+  reservoirScan,
+  ScanCancelledError,
+  ScanWorkerError,
+  scanCsvLines,
+  workerScanner,
+  type ScanJob
+} from "./puzzle-scan";
 
 /** A zstd skippable frame (magic 0x184D2A50, little-endian length, payload), as pzstd writes. */
 function skippableFrame(payload: Buffer): Buffer {
@@ -27,14 +35,20 @@ async function readLines(path: string, compressed: boolean): Promise<string[]> {
   return lines;
 }
 
-const CSV = ["PuzzleId,FEN,Moves,Rating", ...Array.from({ length: 2000 }, (_, i) => `p${i},fen ${i},e2e4 e7e5,${1000 + i}`)].join("\n");
+const CSV = [
+  "PuzzleId,FEN,Moves,Rating",
+  ...Array.from({ length: 2000 }, (_, i) => `p${i},fen ${i},e2e4 e7e5,${1000 + i}`)
+].join("\n");
 
 describe("scanCsvLines", () => {
-  it.each([true, false])("fails instead of hanging when the file can't be read (compressed: %s)", async (compressed) => {
-    // A directory opens but every read fails (EISDIR).
-    const directory = mkdtempSync(join(tmpdir(), "chaturanga-scan-"));
-    await expect(scanCsvLines(directory, compressed, () => undefined)).rejects.toThrow(/EISDIR/);
-  });
+  it.each([true, false])(
+    "fails instead of hanging when the file can't be read (compressed: %s)",
+    async (compressed) => {
+      // A directory opens but every read fails (EISDIR).
+      const directory = mkdtempSync(join(tmpdir(), "chaturanga-scan-"));
+      await expect(scanCsvLines(directory, compressed, () => undefined)).rejects.toThrow(/EISDIR/);
+    }
+  );
 
   it("reads every frame of a multi-frame file that starts with a skippable frame (pzstd, Lichess)", async () => {
     // Frames cut mid-line, so a line spans a frame boundary too.
@@ -43,13 +57,24 @@ describe("scanCsvLines", () => {
     const frames = cuts.slice(1).map((end, i) => zstdCompressSync(text.subarray(cuts[i], end)));
     const path = tempFile(
       "multi.csv.zst",
-      Buffer.concat([skippableFrame(Buffer.from("pzstd index")), frames[0]!, skippableFrame(Buffer.alloc(4)), ...frames.slice(1)])
+      Buffer.concat([
+        skippableFrame(Buffer.from("pzstd index")),
+        frames[0]!,
+        skippableFrame(Buffer.alloc(4)),
+        ...frames.slice(1)
+      ])
     );
     expect(await readLines(path, true)).toEqual(CSV.split("\n"));
   });
 
   it("stops early without reading the rest", async () => {
-    const path = tempFile("one.csv.zst", Buffer.concat([zstdCompressSync(Buffer.from(CSV.slice(0, 5000))), zstdCompressSync(Buffer.from(CSV.slice(5000)))]));
+    const path = tempFile(
+      "one.csv.zst",
+      Buffer.concat([
+        zstdCompressSync(Buffer.from(CSV.slice(0, 5000))),
+        zstdCompressSync(Buffer.from(CSV.slice(5000)))
+      ])
+    );
     const seen: string[] = [];
     await scanCsvLines(path, true, (line) => {
       seen.push(line);
@@ -62,7 +87,10 @@ describe("scanCsvLines", () => {
     const good = zstdCompressSync(Buffer.from(CSV));
     const corrupt = Buffer.from(good);
     corrupt.fill(0x41, 20, 60);
-    const path = tempFile("bad.csv.zst", Buffer.concat([zstdCompressSync(Buffer.from("PuzzleId,FEN\n")), corrupt]));
+    const path = tempFile(
+      "bad.csv.zst",
+      Buffer.concat([zstdCompressSync(Buffer.from("PuzzleId,FEN\n")), corrupt])
+    );
     await expect(readLines(path, true)).rejects.toThrow(/Data corruption detected/);
   });
 });
@@ -91,7 +119,10 @@ function scripted(values: number[]): () => number {
 
 /** A Lichess-format CSV whose rows `p0`… all pass the cheap filters (no filters set). */
 function lichessCsv(count: number): string {
-  return ["PuzzleId,FEN,Moves,Rating", ...Array.from({ length: count }, (_, i) => `p${i},fen ${i},e2e4 e7e5,1500`)].join("\n");
+  return [
+    "PuzzleId,FEN,Moves,Rating",
+    ...Array.from({ length: count }, (_, i) => `p${i},fen ${i},e2e4 e7e5,1500`)
+  ].join("\n");
 }
 
 const scanJob = (filePath: string, size: number, extra: Partial<ScanJob> = {}): ScanJob => ({
@@ -124,10 +155,21 @@ describe("reservoirScan", () => {
   });
 
   it("excluded and filtered-out rows neither count as matches nor take a draw", async () => {
-    const csv = ["PuzzleId,FEN,Moves,Rating", "p0,fen,e2e4 e7e5,1500", "gone,fen,e2e4 e7e5,1500", "short,fen,e2e4,1500", "p1,fen,e2e4 e7e5,1500", "p2,fen,e2e4 e7e5,1500"].join("\n");
+    const csv = [
+      "PuzzleId,FEN,Moves,Rating",
+      "p0,fen,e2e4 e7e5,1500",
+      "gone,fen,e2e4 e7e5,1500",
+      "short,fen,e2e4,1500",
+      "p1,fen,e2e4 e7e5,1500",
+      "p2,fen,e2e4 e7e5,1500"
+    ].join("\n");
     const path = tempFile("skips.csv", csv);
     // Only p2 (the third match) draws: ⌊0.5·3⌋ = 1 takes p1's slot.
-    const result = await reservoirScan(scanJob(path, 2, { excludeIds: ["gone"] }), undefined, scripted([0.5]));
+    const result = await reservoirScan(
+      scanJob(path, 2, { excludeIds: ["gone"] }),
+      undefined,
+      scripted([0.5])
+    );
     expect(ids(result.rows)).toEqual(["p0", "p2"]);
     expect(result).toMatchObject({ matches: 3, complete: true });
   });
@@ -162,13 +204,27 @@ describe("reservoirScan", () => {
     // Only a skippable frame: a valid zstd file with no content.
     const path = tempFile("empty.csv.zst", skippableFrame(Buffer.from("nothing here")));
     await expect(
-      reservoirScan({ filePath: path, compressed: true, kind: "lichess", input: {} as never, excludeIds: [], size: 10 })
+      reservoirScan({
+        filePath: path,
+        compressed: true,
+        kind: "lichess",
+        input: {} as never,
+        excludeIds: [],
+        size: 10
+      })
     ).rejects.toThrow(/No lines could be read/);
   });
 
   it("keeps only the puzzles asked for by id, and stops once it has all of them", async () => {
     const path = tempFile("ids.csv", CSV);
-    const job = (ids: string[]): ScanJob => ({ filePath: path, compressed: false, kind: "lichess", input: { databaseId: "db", ids }, excludeIds: [], size: 10 });
+    const job = (ids: string[]): ScanJob => ({
+      filePath: path,
+      compressed: false,
+      kind: "lichess",
+      input: { databaseId: "db", ids },
+      excludeIds: [],
+      size: 10
+    });
     const found = await reservoirScan(job(["p1999", "p5", "missing"]));
     expect(found.rows.map((row) => row[0]).sort()).toEqual(["p1999", "p5"]);
     expect(found).toMatchObject({ matches: 2, complete: true });
@@ -185,7 +241,14 @@ describe("reservoirScan", () => {
   it("matches nothing for an empty id list (not every puzzle)", async () => {
     const path = tempFile("no-ids.csv", CSV);
     await expect(
-      reservoirScan({ filePath: path, compressed: false, kind: "lichess", input: { databaseId: "db", ids: [] }, excludeIds: [], size: 10 })
+      reservoirScan({
+        filePath: path,
+        compressed: false,
+        kind: "lichess",
+        input: { databaseId: "db", ids: [] },
+        excludeIds: [],
+        size: 10
+      })
     ).resolves.toEqual({ rows: [], matches: 0, complete: true });
   });
 });
@@ -203,7 +266,14 @@ describe("readFirstLine", () => {
 });
 
 describe("workerScanner", () => {
-  const job = { filePath: "unused", compressed: false, kind: "lichess", input: {} as never, excludeIds: [], size: 1 } satisfies ScanJob;
+  const job = {
+    filePath: "unused",
+    compressed: false,
+    kind: "lichess",
+    input: {} as never,
+    excludeIds: [],
+    size: 1
+  } satisfies ScanJob;
   const worker = (source: string) => tempFile("worker.mjs", source);
 
   it("resolves with the answer the worker posts before it exits", async () => {
@@ -211,11 +281,17 @@ describe("workerScanner", () => {
       'import { parentPort, workerData } from "node:worker_threads";\n' +
         "parentPort.postMessage({ ok: true, result: { rows: [[workerData.filePath]], matches: 1, complete: true } });"
     );
-    await expect(workerScanner(path)(job).result).resolves.toEqual({ rows: [["unused"]], matches: 1, complete: true });
+    await expect(workerScanner(path)(job).result).resolves.toEqual({
+      rows: [["unused"]],
+      matches: 1,
+      complete: true
+    });
   });
 
   it("rejects a failed scan as a file error, not a worker failure", async () => {
-    const path = worker('import { parentPort } from "node:worker_threads";\nparentPort.postMessage({ ok: false, message: "corrupt block" });');
+    const path = worker(
+      'import { parentPort } from "node:worker_threads";\nparentPort.postMessage({ ok: false, message: "corrupt block" });'
+    );
     const failure = await workerScanner(path)(job).result.catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(Error);
     expect(failure).not.toBeInstanceOf(ScanWorkerError);
@@ -227,13 +303,17 @@ describe("workerScanner", () => {
     ["exits without an answer", "", /without an answer \(exit code 0\)/],
     ["exits with an error code", "process.exit(3);", /without an answer \(exit code 3\)/]
   ])("rejects when the worker %s", async (_, source, message) => {
-    const failure = await workerScanner(worker(source))(job).result.catch((error: unknown) => error);
+    const failure = await workerScanner(worker(source))(job).result.catch(
+      (error: unknown) => error
+    );
     expect(failure).toBeInstanceOf(ScanWorkerError);
     expect((failure as Error).message).toMatch(message);
   });
 
   it("rejects when the worker file is missing", async () => {
-    await expect(workerScanner(join(tmpdir(), "no-such-puzzle-worker.js"))(job).result).rejects.toThrow(ScanWorkerError);
+    await expect(
+      workerScanner(join(tmpdir(), "no-such-puzzle-worker.js"))(job).result
+    ).rejects.toThrow(ScanWorkerError);
   });
 
   it("rejects a stuck worker after the timeout, and a cancelled one at once", async () => {

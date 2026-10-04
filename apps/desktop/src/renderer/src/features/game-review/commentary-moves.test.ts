@@ -22,7 +22,12 @@ function line(multipv: number, pv: string[]): AnalysisLine {
 function mainlineNodes(tree: MoveNode[]): MoveNode[] {
   const byId = new Map(tree.map((node) => [node.id, node]));
   const nodes: MoveNode[] = [];
-  for (let cursor = byId.get(byId.get("root")?.children[0] ?? ""); cursor; cursor = byId.get(cursor.children[0] ?? "")) nodes.push(cursor);
+  for (
+    let cursor = byId.get(byId.get("root")?.children[0] ?? "");
+    cursor;
+    cursor = byId.get(cursor.children[0] ?? "")
+  )
+    nodes.push(cursor);
   return nodes;
 }
 
@@ -64,7 +69,9 @@ function setup(overrides: Partial<MoveReview> = {}) {
 
 function resolveProse(prose: string, ctx: CommentaryMoveContext) {
   const segments = tokenizeCommentary(prose);
-  const tokens = segments.filter((segment): segment is CommentaryMoveToken => segment.kind === "move");
+  const tokens = segments.filter(
+    (segment): segment is CommentaryMoveToken => segment.kind === "move"
+  );
   const resolved = resolveCommentaryMoves(segments, ctx);
   return tokens.map((token) => ({ text: token.text, target: resolved.get(token.index) ?? null }));
 }
@@ -81,8 +88,12 @@ function fenAfter(startFen: string, sans: string[]): string {
 
 describe("tokenizeCommentary", () => {
   it("splits SAN tokens with move numbers, castling, promotions and check/mate suffixes", () => {
-    const segments = tokenizeCommentary("After 4. Nxe5 Qg5, 14...Nf6 and 6… Bc5 follow O-O-O, e8=Q+ and Bxf7#.");
-    const moves = segments.filter((segment): segment is CommentaryMoveToken => segment.kind === "move");
+    const segments = tokenizeCommentary(
+      "After 4. Nxe5 Qg5, 14...Nf6 and 6… Bc5 follow O-O-O, e8=Q+ and Bxf7#."
+    );
+    const moves = segments.filter(
+      (segment): segment is CommentaryMoveToken => segment.kind === "move"
+    );
     expect(moves.map((token) => [token.text, token.san, token.plyHint])).toEqual([
       ["4. Nxe5", "Nxe5", 7],
       ["Qg5", "Qg5", null],
@@ -98,7 +109,9 @@ describe("tokenizeCommentary", () => {
   });
 
   it("does not match inside words or bare squares used as squares", () => {
-    const moves = tokenizeCommentary("The knight on d5 eyes the e4 pawn; abc4 and Qa1s stay text, but c3 is a move.")
+    const moves = tokenizeCommentary(
+      "The knight on d5 eyes the e4 pawn; abc4 and Qa1s stay text, but c3 is a move."
+    )
       .filter((segment) => segment.kind === "move")
       .map((segment) => segment.text);
     expect(moves).toEqual(["c3"]);
@@ -166,7 +179,10 @@ describe("resolveCommentaryMoves", () => {
 
   it("accepts over-disambiguated SAN and leaves unknown or illegal moves as text", () => {
     const { ctx } = setup();
-    const [nfxe5, qh5, bxf7] = resolveProse("Nfxe5 was played; Qh5 never happened and Bb5 was impossible.", ctx);
+    const [nfxe5, qh5, bxf7] = resolveProse(
+      "Nfxe5 was played; Qh5 never happened and Bb5 was impossible.",
+      ctx
+    );
     expect(nfxe5?.target?.kind).toBe("played");
     expect(qh5?.target).toBeNull();
     expect(bxf7?.target).toBeNull();
@@ -174,8 +190,17 @@ describe("resolveCommentaryMoves", () => {
 
   it("resolves a single token without run context", () => {
     const { ctx } = setup();
-    const token: CommentaryMoveToken = { kind: "move", text: "O-O", san: "O-O", plyHint: null, index: 0 };
-    expect(resolveCommentaryMoves([token], ctx).get(0)).toMatchObject({ kind: "best", moves: ["Nxd4", "exd4", "O-O"] });
+    const token: CommentaryMoveToken = {
+      kind: "move",
+      text: "O-O",
+      san: "O-O",
+      plyHint: null,
+      index: 0
+    };
+    expect(resolveCommentaryMoves([token], ctx).get(0)).toMatchObject({
+      kind: "best",
+      moves: ["Nxd4", "exd4", "O-O"]
+    });
   });
 });
 
@@ -189,9 +214,19 @@ describe("reviewAnchorFor", () => {
       parentId: nodes[5]?.id ?? null,
       children: []
     };
-    const withVariation = tree.map((node) => (node.id === nodes[5]?.id ? { ...node, children: [...node.children, "var1"] } : node)).concat(variation);
-    expect(reviewAnchorFor(withVariation, "var1", reviews)).toMatchObject({ move: { ply: 6 }, variation: true });
-    expect(reviewAnchorFor(withVariation, nodes[6]?.id ?? "", reviews)).toMatchObject({ move: { ply: 7 }, variation: false });
+    const withVariation = tree
+      .map((node) =>
+        node.id === nodes[5]?.id ? { ...node, children: [...node.children, "var1"] } : node
+      )
+      .concat(variation);
+    expect(reviewAnchorFor(withVariation, "var1", reviews)).toMatchObject({
+      move: { ply: 6 },
+      variation: true
+    });
+    expect(reviewAnchorFor(withVariation, nodes[6]?.id ?? "", reviews)).toMatchObject({
+      move: { ply: 7 },
+      variation: false
+    });
     expect(reviewAnchorFor(withVariation, nodes[6]?.id ?? "", new Map())).toBeNull();
     expect(reviewAnchorFor(withVariation, "root", reviews)).toBeNull();
   });
@@ -201,10 +236,25 @@ describe("reviewAnchorFor", () => {
     const reviews = new Map(moves.map((move) => [move.nodeId, move]));
     const played = nodes[6] as MoveNode;
     // A best-line variation replacing ply 7: it hangs off ply 6's node.
-    const sibling: MoveNode = { ...played, id: "alt1", parentId: nodes[5]?.id ?? null, children: [] };
-    const withVariation = tree.map((node) => (node.id === nodes[5]?.id ? { ...node, children: [...node.children, "alt1"] } : node)).concat(sibling);
-    expect(reviewAnchorFor(withVariation, "alt1", reviews, played.id)).toMatchObject({ move: { ply: 7 }, variation: true });
+    const sibling: MoveNode = {
+      ...played,
+      id: "alt1",
+      parentId: nodes[5]?.id ?? null,
+      children: []
+    };
+    const withVariation = tree
+      .map((node) =>
+        node.id === nodes[5]?.id ? { ...node, children: [...node.children, "alt1"] } : node
+      )
+      .concat(sibling);
+    expect(reviewAnchorFor(withVariation, "alt1", reviews, played.id)).toMatchObject({
+      move: { ply: 7 },
+      variation: true
+    });
     // An unrelated preference (a later move) does not apply.
-    expect(reviewAnchorFor(withVariation, "alt1", reviews, nodes[10]?.id ?? null)).toMatchObject({ move: { ply: 6 }, variation: true });
+    expect(reviewAnchorFor(withVariation, "alt1", reviews, nodes[10]?.id ?? null)).toMatchObject({
+      move: { ply: 6 },
+      variation: true
+    });
   });
 });

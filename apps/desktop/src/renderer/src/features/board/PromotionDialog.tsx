@@ -26,7 +26,8 @@ export function PromotionDialog() {
     const move = userMoveBetween(pending.from, pending.to, promotion);
     setPendingPromotion(null);
     if (!move) return;
-    if (mode === "puzzle" && activePuzzle) submitPuzzleMove(uciFromUserMove(move), () => makeMove(move));
+    if (mode === "puzzle" && activePuzzle)
+      submitPuzzleMove(uciFromUserMove(move), () => makeMove(move));
     else makeMove(move);
   }
 

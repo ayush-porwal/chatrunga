@@ -1,6 +1,11 @@
 import { create } from "zustand";
 import { addMoveNode, createEmptyGame, exportGameToPgn } from "@chaturanga/shared/chess/pgn";
-import { applySan, applyUserMove, fenAfterUci, statusForFen } from "@chaturanga/shared/chess/position";
+import {
+  applySan,
+  applyUserMove,
+  fenAfterUci,
+  statusForFen
+} from "@chaturanga/shared/chess/position";
 import type { EngineGoClock } from "@chaturanga/shared/types/engine";
 import type {
   Color,
@@ -116,7 +121,12 @@ type GameStore = {
    */
   syncMainline: (ucis: readonly string[]) => boolean;
   /** Sets both clocks from the server; the side to move's clock runs from now unless `running` is false. */
-  setMatchClock: (clock: { whiteMs: number; blackMs: number; sideToMove: Color; running: boolean }) => void;
+  setMatchClock: (clock: {
+    whiteMs: number;
+    blackMs: number;
+    sideToMove: Color;
+    running: boolean;
+  }) => void;
   /**
    * Back / Forward: shows the loaded game the way it was (node, mode, sides). A match that was
    * still being played comes back as a free board (the engine must not resume by itself, clocks
@@ -289,7 +299,12 @@ export const useGameStore = create<GameStore>((set, get) => {
       // An engine game ended on the board is decided like a resignation (and as Back brings it
       // back): no more moves, so stepping back can't play on in a variation (Analyze can).
       const ended = boardOutcome(node.fenAfter);
-      if (state.mode === "engine" && state.engineSide && ended && mainlineEndId(moveTree) === node.id) {
+      if (
+        state.mode === "engine" &&
+        state.engineSide &&
+        ended &&
+        mainlineEndId(moveTree) === node.id
+      ) {
         // The headers take the result (the moves already say how it ended, no Termination tag).
         set((current) => ({
           gameOutcome: ended,
@@ -339,11 +354,24 @@ export const useGameStore = create<GameStore>((set, get) => {
           continue;
         }
         if (liveMatch) return false;
-        const added = addMoveNode(moveTree, parent.id, applied.san, applied.uci, parent.fenAfter, applied.fen);
+        const added = addMoveNode(
+          moveTree,
+          parent.id,
+          applied.san,
+          applied.uci,
+          parent.fenAfter,
+          applied.fen
+        );
         moveTree = added.moveTree;
         node = added.node;
       }
-      set({ moveTree, currentNodeId: node.id, currentFen: node.fenAfter, pendingPromotion: null, lastError: null });
+      set({
+        moveTree,
+        currentNodeId: node.id,
+        currentFen: node.fenAfter,
+        pendingPromotion: null,
+        lastError: null
+      });
       return true;
     },
 
@@ -364,11 +392,15 @@ export const useGameStore = create<GameStore>((set, get) => {
       const parent = nextTree.find((item) => item.id === node.parentId);
       if (!parent) return false;
       const currentWasDeleted = idsToDelete.has(state.currentNodeId);
-      const survivingCurrent = currentWasDeleted ? parent : nextTree.find((item) => item.id === state.currentNodeId);
+      const survivingCurrent = currentWasDeleted
+        ? parent
+        : nextTree.find((item) => item.id === state.currentNodeId);
       // An outcome the final position decided (mate, stalemate, a draw by rule) goes with it once the
       // main line no longer ends there; a resignation, flag or agreement stays.
-      const endFen = nextTree.find((item) => item.id === mainlineEndId(nextTree))?.fenAfter ?? state.rootFen;
-      const boardOutcome = state.gameOutcome && BOARD_TERMINATIONS.has(state.gameOutcome.termination);
+      const endFen =
+        nextTree.find((item) => item.id === mainlineEndId(nextTree))?.fenAfter ?? state.rootFen;
+      const boardOutcome =
+        state.gameOutcome && BOARD_TERMINATIONS.has(state.gameOutcome.termination);
       const reopened = boardOutcome && !statusForFen(endFen).isEnd;
       set({
         moveTree: nextTree,
@@ -379,7 +411,10 @@ export const useGameStore = create<GameStore>((set, get) => {
         ...(reopened
           ? {
               gameOutcome: null,
-              headers: state.headers.result === state.gameOutcome?.result ? { ...state.headers, result: "*" } : state.headers
+              headers:
+                state.headers.result === state.gameOutcome?.result
+                  ? { ...state.headers, result: "*" }
+                  : state.headers
             }
           : {})
       });
@@ -418,7 +453,8 @@ export const useGameStore = create<GameStore>((set, get) => {
       }));
     },
 
-    flip: () => set((state) => ({ orientation: state.orientation === "white" ? "black" : "white" })),
+    flip: () =>
+      set((state) => ({ orientation: state.orientation === "white" ? "black" : "white" })),
     setOrientation: (orientation) => set({ orientation }),
     setMode: (mode) => set({ mode }),
     setEngineSide: (side) => set({ engineSide: side }),
@@ -514,7 +550,12 @@ export const useGameStore = create<GameStore>((set, get) => {
       const line = mainlineNodes(state.moveTree);
       const followEnd = state.currentNodeId === (line[line.length - 1]?.id ?? "root");
       let shared = 0;
-      while (shared < line.length - 1 && shared < ucis.length && line[shared + 1].uci === ucis[shared]) shared += 1;
+      while (
+        shared < line.length - 1 &&
+        shared < ucis.length &&
+        line[shared + 1].uci === ucis[shared]
+      )
+        shared += 1;
       if (shared === line.length - 1 && shared === ucis.length) return true;
       // Keep the moves both agree on; drop the rest of our line (and anything hanging off it).
       let moveTree = state.moveTree;
@@ -524,18 +565,32 @@ export const useGameStore = create<GameStore>((set, get) => {
         const removed = collectSubtreeIds(moveTree, stale);
         moveTree = moveTree
           .filter((node) => !removed.has(node.id))
-          .map((node) => (node.id === keep.id ? { ...node, children: node.children.filter((id) => id !== stale) } : node));
+          .map((node) =>
+            node.id === keep.id
+              ? { ...node, children: node.children.filter((id) => id !== stale) }
+              : node
+          );
       }
       let node = moveTree.find((item) => item.id === keep.id) ?? keep;
       for (const uci of ucis.slice(shared)) {
         const applied = applyLineMove(node.fenAfter, uci);
         if (!applied) return false;
-        const added = addMoveNode(moveTree, node.id, applied.san, applied.uci, node.fenAfter, applied.fen);
+        const added = addMoveNode(
+          moveTree,
+          node.id,
+          applied.san,
+          applied.uci,
+          node.fenAfter,
+          applied.fen
+        );
         moveTree = added.moveTree;
         node = added.node;
       }
       const cursorGone = !moveTree.some((item) => item.id === state.currentNodeId);
-      const cursor = followEnd || cursorGone ? node : (moveTree.find((item) => item.id === state.currentNodeId) ?? node);
+      const cursor =
+        followEnd || cursorGone
+          ? node
+          : (moveTree.find((item) => item.id === state.currentNodeId) ?? node);
       set({ moveTree, currentNodeId: cursor.id, currentFen: cursor.fenAfter, lastError: null });
       return true;
     },
@@ -543,7 +598,13 @@ export const useGameStore = create<GameStore>((set, get) => {
     setMatchClock: ({ whiteMs, blackMs, sideToMove, running }) => {
       const at = clockNow();
       set({
-        engineClockLive: { whiteMs, blackMs, sideToMove, turnStartedAt: at, ...(running ? {} : { stoppedAt: at }) }
+        engineClockLive: {
+          whiteMs,
+          blackMs,
+          sideToMove,
+          turnStartedAt: at,
+          ...(running ? {} : { stoppedAt: at })
+        }
       });
     },
 
@@ -551,13 +612,22 @@ export const useGameStore = create<GameStore>((set, get) => {
       set((state) => {
         const node = state.moveTree.find((item) => item.id === view.currentNodeId);
         // Finished by a result (resignation, flag, agreement) or on the board (mate, stalemate, a draw by rule).
-        const endFen = state.moveTree.find((item) => item.id === mainlineEndId(state.moveTree))?.fenAfter ?? state.currentFen;
+        const endFen =
+          state.moveTree.find((item) => item.id === mainlineEndId(state.moveTree))?.fenAfter ??
+          state.currentFen;
         const end = boardOutcome(endFen);
-        const decidedEngineGame = view.mode === "engine" && Boolean(view.engineSide) && (Boolean(view.gameOutcome) || Boolean(end));
+        const decidedEngineGame =
+          view.mode === "engine" &&
+          Boolean(view.engineSide) &&
+          (Boolean(view.gameOutcome) || Boolean(end));
         // Ended on the board: record it as the outcome, so the engine doesn't play on from an earlier move.
         const outcome = view.gameOutcome ?? end;
         const mode: GameMode =
-          view.mode === "online" || view.mode === "puzzle" || (view.mode === "engine" && !decidedEngineGame) ? "freeplay" : view.mode;
+          view.mode === "online" ||
+          view.mode === "puzzle" ||
+          (view.mode === "engine" && !decidedEngineGame)
+            ? "freeplay"
+            : view.mode;
         return {
           mode,
           source: view.source,
@@ -622,7 +692,10 @@ const BOARD_TERMINATIONS = new Set(["checkmate", "stalemate", "draw"]);
 function boardOutcome(fen: string): GameOutcome | null {
   const end = statusForFen(fen);
   if (!end.isEnd) return null;
-  return { result: end.result, termination: end.isCheckmate ? "checkmate" : end.isStalemate ? "stalemate" : "draw" };
+  return {
+    result: end.result,
+    termination: end.isCheckmate ? "checkmate" : end.isStalemate ? "stalemate" : "draw"
+  };
 }
 
 /** Engine games and online games: the user against an opponent the app moves for. */
@@ -719,7 +792,10 @@ export function remainingClockMs(live: EngineClockLive, side: Color, now: number
   return Math.max(0, (side === "white" ? live.whiteMs : live.blackMs) - elapsed);
 }
 
-function applyLineMove(fen: string, move: string): { fen: string; san: string; uci: string } | null {
+function applyLineMove(
+  fen: string,
+  move: string
+): { fen: string; san: string; uci: string } | null {
   try {
     const userMove = userMoveFromUci(move);
     return userMove ? applyUserMove(fen, userMove) : applySan(fen, move);

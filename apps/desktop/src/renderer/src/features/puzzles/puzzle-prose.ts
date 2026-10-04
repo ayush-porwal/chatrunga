@@ -30,12 +30,18 @@ function firstPly(fen: string): number {
  * ply. An exact SAN (with its +/#) is preferred; otherwise the SAN without +/# must still name a
  * single move. A token that matches another known move as closely as a solution move is ambiguous.
  */
-export function solutionIndexForToken(token: Pick<CommentaryMoveToken, "san" | "plyHint">, line: PuzzleProseLine): number | null {
+export function solutionIndexForToken(
+  token: Pick<CommentaryMoveToken, "san" | "plyHint">,
+  line: PuzzleProseLine
+): number | null {
   const start = firstPly(line.fen);
   const plies = line.solutionSan
     .map((san, index) => ({ san, index }))
     .filter(({ index }) => token.plyHint === null || token.plyHint === start + index);
-  for (const same of [(san: string) => san === token.san, (san: string) => plain(san) === plain(token.san)]) {
+  for (const same of [
+    (san: string) => san === token.san,
+    (san: string) => plain(san) === plain(token.san)
+  ]) {
     const matches = plies.filter(({ san }) => same(san));
     const other = line.otherSan.some(same);
     if (matches.length === 1 && !other) return matches[0]!.index;

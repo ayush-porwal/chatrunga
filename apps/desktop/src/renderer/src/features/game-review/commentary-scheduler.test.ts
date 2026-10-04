@@ -8,7 +8,12 @@ import {
   isCurrentCommentary
 } from "./commentary-scheduler";
 
-const key = commentarySettingsKey({ model: "m", detail: "balanced", userRating: 1500, playerColor: "white" });
+const key = commentarySettingsKey({
+  model: "m",
+  detail: "balanced",
+  userRating: 1500,
+  playerColor: "white"
+});
 
 function ai(overrides: Partial<ReviewCommentary> = {}): ReviewCommentary {
   return { ply: 1, prose: "AI", generatedAt: 1, providerModel: "m", ...overrides };
@@ -52,7 +57,12 @@ describe("decideCommentary", () => {
 
   it("fingerprints every setting that changes the prose, compatible with keys saved by older builds", () => {
     expect(key).toBe("openrouter|m|balanced|1500|white");
-    const other = commentarySettingsKey({ model: "m", detail: "detailed", userRating: 1500, playerColor: "white" });
+    const other = commentarySettingsKey({
+      model: "m",
+      detail: "detailed",
+      userRating: 1500,
+      playerColor: "white"
+    });
     expect(other).not.toBe(key);
     expect(isCurrentCommentary(ai({ settingsKey: key }), other)).toBe(false);
   });
@@ -104,7 +114,9 @@ describe("CommentaryScheduler", () => {
   it("never runs the same request twice at once", async () => {
     const calls: string[] = [];
     let release!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const scheduler = new CommentaryScheduler();
     scheduler.runNow(job("p1", calls, gate));
     scheduler.schedule(job("p1", calls, gate));

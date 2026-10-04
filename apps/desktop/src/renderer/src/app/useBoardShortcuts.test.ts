@@ -27,7 +27,9 @@ describe("boardShortcutAction", () => {
 
   it("ignores views without a board, open dialogs/menus, modifiers and key repeat", () => {
     expect(boardShortcutAction(key("f"), { ...board, enabled: false })).toBeNull();
-    expect(boardShortcutAction(key("Escape"), { ...board, focused: true, overlayOpen: true })).toBeNull();
+    expect(
+      boardShortcutAction(key("Escape"), { ...board, focused: true, overlayOpen: true })
+    ).toBeNull();
     expect(boardShortcutAction(key("x"), { ...board, overlayOpen: true })).toBeNull();
     expect(boardShortcutAction(key("f", { metaKey: true }), board)).toBeNull();
     expect(boardShortcutAction(key("F", { shiftKey: true }), board)).toBeNull();

@@ -31,7 +31,9 @@ describe("parseSettingValue", () => {
     expect(() => parseSettingValue("reviewMaiaLevels", [1200])).toThrow(/setting reviewMaiaLevels/);
     expect(() => parseSettingValue("recentFilePaths", "path")).toThrow(/setting recentFilePaths/);
     expect(() => parseSettingValue("repertoireCompareWhite", 7)).toThrow(/repertoireCompareWhite/);
-    expect(() => parseSettingValue("repertoireCompareBlack", "x".repeat(201))).toThrow(/setting repertoireCompareBlack/);
+    expect(() => parseSettingValue("repertoireCompareBlack", "x".repeat(201))).toThrow(
+      /setting repertoireCompareBlack/
+    );
     expect(() => parseSettingValue("practiceAutoAdvanceMs", 1000)).toThrow(/practiceAutoAdvanceMs/);
   });
 });

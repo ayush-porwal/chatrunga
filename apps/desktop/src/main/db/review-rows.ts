@@ -30,11 +30,14 @@ export function reviewListingFields(review: GameReview) {
   };
 }
 
-export function toSavedReviewInfo(row: Omit<GameReviewRow, "game_id" | "review_json">): SavedReviewInfo {
+export function toSavedReviewInfo(
+  row: Omit<GameReviewRow, "game_id" | "review_json">
+): SavedReviewInfo {
   let maiaLevels: number[] = [];
   try {
     const parsed: unknown = JSON.parse(row.maia_levels_json);
-    if (Array.isArray(parsed)) maiaLevels = parsed.filter((value): value is number => Number.isInteger(value));
+    if (Array.isArray(parsed))
+      maiaLevels = parsed.filter((value): value is number => Number.isInteger(value));
   } catch {
     maiaLevels = [];
   }

@@ -52,8 +52,19 @@ describe("analysis store", () => {
   it("progress reports without a score or moves don't blank the lines (the last one before a stop)", () => {
     useAnalysisStore.getState().setInfos([info(1, 40), info(2, 25)]);
     useAnalysisStore.getState().setInfos([
-      { engineId: "engine-1", depth: 33, raw: "info depth 33 currmove e2e4 currmovenumber 1", receivedAt: 50 },
-      { engineId: "engine-1", nodes: 1_000_000, nps: 900_000, raw: "info nodes 1000000 nps 900000", receivedAt: 51 }
+      {
+        engineId: "engine-1",
+        depth: 33,
+        raw: "info depth 33 currmove e2e4 currmovenumber 1",
+        receivedAt: 50
+      },
+      {
+        engineId: "engine-1",
+        nodes: 1_000_000,
+        nps: 900_000,
+        raw: "info nodes 1000000 nps 900000",
+        receivedAt: 51
+      }
     ]);
     const { topLines } = useAnalysisStore.getState();
     expect(topLines.map((line) => line.score?.value)).toEqual([40, 25]);
@@ -61,11 +72,19 @@ describe("analysis store", () => {
 
   it("merges a line's score and moves sent in separate infos", () => {
     const base = { engineId: "engine-1", multipv: 1, raw: "info", receivedAt: 1 };
-    useAnalysisStore.getState().setInfos([{ ...base, score: { type: "cp", value: 30 }, pv: ["e2e4", "e7e5"] }]);
+    useAnalysisStore
+      .getState()
+      .setInfos([{ ...base, score: { type: "cp", value: 30 }, pv: ["e2e4", "e7e5"] }]);
     useAnalysisStore.getState().setInfos([{ ...base, pv: ["d2d4"] }]);
-    expect(useAnalysisStore.getState().topLines[0]).toMatchObject({ score: { value: 30 }, pv: ["d2d4"] });
+    expect(useAnalysisStore.getState().topLines[0]).toMatchObject({
+      score: { value: 30 },
+      pv: ["d2d4"]
+    });
     useAnalysisStore.getState().setInfos([{ ...base, score: { type: "cp", value: 12 } }]);
-    expect(useAnalysisStore.getState().topLines[0]).toMatchObject({ score: { value: 12 }, pv: ["d2d4"] });
+    expect(useAnalysisStore.getState().topLines[0]).toMatchObject({
+      score: { value: 12 },
+      pv: ["d2d4"]
+    });
   });
 
   it("starting a position's search again carries on from the deepest lines found for it", () => {
@@ -85,12 +104,18 @@ describe("analysis store", () => {
     store.setInfos([line("first", 28, 30)]);
     // Stopped, then started again: the depth-28 line shows at once, not an empty panel.
     useAnalysisStore.getState().startSearch("fen|sf|1", "second");
-    expect(useAnalysisStore.getState().topLines[0]).toMatchObject({ depth: 28, score: { value: 30 } });
+    expect(useAnalysisStore.getState().topLines[0]).toMatchObject({
+      depth: 28,
+      score: { value: 30 }
+    });
     // The new search's shallow lines don't replace it; one as deep does.
     useAnalysisStore.getState().setInfos([line("second", 5, -80)]);
     expect(useAnalysisStore.getState().topLines[0]?.depth).toBe(28);
     useAnalysisStore.getState().setInfos([line("second", 29, 25)]);
-    expect(useAnalysisStore.getState().topLines[0]).toMatchObject({ depth: 29, score: { value: 25 } });
+    expect(useAnalysisStore.getState().topLines[0]).toMatchObject({
+      depth: 29,
+      score: { value: 25 }
+    });
     // Another position starts empty; Restart forgets what was found.
     useAnalysisStore.getState().startSearch("other|sf|1");
     expect(useAnalysisStore.getState().topLines).toEqual([]);
@@ -102,7 +127,16 @@ describe("analysis store", () => {
 
   it("never remembers another search's lines under an analysis position (an engine game's)", () => {
     clearAnalysisResults();
-    const info = (searchId: string) => ({ engineId: "sf", searchId, multipv: 1, depth: 20, score: { type: "cp" as const, value: 5 }, pv: ["e2e4"], raw: "", receivedAt: 0 });
+    const info = (searchId: string) => ({
+      engineId: "sf",
+      searchId,
+      multipv: 1,
+      depth: 20,
+      score: { type: "cp" as const, value: 5 },
+      pv: ["e2e4"],
+      raw: "",
+      receivedAt: 0
+    });
     useAnalysisStore.getState().startSearch("pos|sf|1", "analysis");
     useAnalysisStore.getState().setInfos([info("engine-game-move")]);
     useAnalysisStore.getState().startSearch("pos|sf|1", "analysis-2");

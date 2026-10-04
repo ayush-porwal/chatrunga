@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PuzzleAttemptResult } from "@chaturanga/shared/types/puzzle-rating";
 import type { DecidedPuzzleAttempt } from "../stores/puzzle-store";
-import { attemptKey, isRecordable, recordAttemptEvent, recordInput, usePuzzleRecordStore } from "./puzzles";
+import {
+  attemptKey,
+  isRecordable,
+  recordAttemptEvent,
+  recordInput,
+  usePuzzleRecordStore
+} from "./puzzles";
 
 const attempt: DecidedPuzzleAttempt = {
   id: "a1",
@@ -68,7 +74,14 @@ describe("usePuzzleRecordStore", () => {
 });
 
 describe("recordAttemptEvent", () => {
-  const result: PuzzleAttemptResult = { attemptId: "a1", rated: true, unratedReason: null, before: null, after: null, delta: -12 };
+  const result: PuzzleAttemptResult = {
+    attemptId: "a1",
+    rated: true,
+    unratedReason: null,
+    before: null,
+    after: null,
+    delta: -12
+  };
   const stateOf = () => usePuzzleRecordStore.getState().byAttempt.a1;
 
   function recorder(...outcomes: ("ok" | "fail")[]) {
@@ -98,8 +111,13 @@ describe("recordAttemptEvent", () => {
     await recordAttemptEvent({ kind: "decided", attempt }, target);
     expect(stateOf()).toEqual({ status: "failed", message: "database is locked" });
     expect(target.onRecorded).not.toHaveBeenCalled();
-    await recordAttemptEvent({ kind: "completed", attempt: { ...attempt, completedAt: 3_000 } }, target);
-    expect(target.recordAttempt).toHaveBeenLastCalledWith(expect.objectContaining({ attemptId: "a1", completedAt: 3_000 }));
+    await recordAttemptEvent(
+      { kind: "completed", attempt: { ...attempt, completedAt: 3_000 } },
+      target
+    );
+    expect(target.recordAttempt).toHaveBeenLastCalledWith(
+      expect.objectContaining({ attemptId: "a1", completedAt: 3_000 })
+    );
     expect(stateOf()).toEqual({ status: "saved", result });
     expect(target.onRecorded).toHaveBeenCalledTimes(1);
   });
@@ -107,15 +125,27 @@ describe("recordAttemptEvent", () => {
   it("a completion that fails leaves what the decided write showed", async () => {
     const target = recorder("ok", "fail");
     await recordAttemptEvent({ kind: "decided", attempt }, target);
-    await recordAttemptEvent({ kind: "completed", attempt: { ...attempt, completedAt: 3_000 } }, target);
+    await recordAttemptEvent(
+      { kind: "completed", attempt: { ...attempt, completedAt: 3_000 } },
+      target
+    );
     expect(stateOf()).toEqual({ status: "saved", result });
     expect(target.onRecorded).toHaveBeenCalledTimes(1);
   });
 
   it("records nothing for a clean solve's completion or an attempt that isn't the solver's result", async () => {
     const target = recorder();
-    await recordAttemptEvent({ kind: "completed", attempt: { ...attempt, outcome: "solved", completedAt: 2_000 } }, target);
-    await recordAttemptEvent({ kind: "decided", attempt: { ...attempt, outcome: "void" } as unknown as DecidedPuzzleAttempt }, target);
+    await recordAttemptEvent(
+      { kind: "completed", attempt: { ...attempt, outcome: "solved", completedAt: 2_000 } },
+      target
+    );
+    await recordAttemptEvent(
+      {
+        kind: "decided",
+        attempt: { ...attempt, outcome: "void" } as unknown as DecidedPuzzleAttempt
+      },
+      target
+    );
     expect(target.recordAttempt).not.toHaveBeenCalled();
     expect(stateOf()).toBeUndefined();
   });

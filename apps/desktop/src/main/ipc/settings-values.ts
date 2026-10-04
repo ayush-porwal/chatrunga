@@ -27,7 +27,11 @@ const oneOf =
 const number =
   (min: number, max: number, integer = false): Check<number> =>
   (value): value is number =>
-    typeof value === "number" && Number.isFinite(value) && value >= min && value <= max && (!integer || Number.isInteger(value));
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= min &&
+    value <= max &&
+    (!integer || Number.isInteger(value));
 const text =
   (maxLength: number): Check<string> =>
   (value): value is string =>
@@ -104,7 +108,10 @@ const NORMALIZE: Partial<Record<keyof AppSettings, (value: string) => string>> =
   pieceStyle: (value) => (value.length <= 40 ? normalizePieceStyle(value) : value)
 };
 
-export function parseSettingValue<K extends keyof AppSettings>(key: K, value: unknown): AppSettings[K] {
+export function parseSettingValue<K extends keyof AppSettings>(
+  key: K,
+  value: unknown
+): AppSettings[K] {
   const normalize = NORMALIZE[key];
   const normalized = normalize && typeof value === "string" ? normalize(value) : value;
   const check: Check<AppSettings[K]> = SETTING_CHECKS[key];

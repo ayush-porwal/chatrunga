@@ -112,7 +112,10 @@ export class TelemetryOutbox {
   }
 
   count(): number {
-    return getRow<{ n: number }>(this.database().prepare("SELECT COUNT(*) AS n FROM telemetry_outbox"))?.n ?? 0;
+    return (
+      getRow<{ n: number }>(this.database().prepare("SELECT COUNT(*) AS n FROM telemetry_outbox"))
+        ?.n ?? 0
+    );
   }
 
   /** Collection was turned off: nothing recorded so far is sent. */

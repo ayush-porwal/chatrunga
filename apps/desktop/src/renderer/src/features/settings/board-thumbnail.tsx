@@ -31,7 +31,10 @@ function boardForFen(fen: string): ReturnType<typeof positionFromFen>["board"] |
 }
 
 /** 8×8 cells, top row first, for the given orientation. Unparseable FENs give an empty board. */
-function cellsForFen(fen: string, orientation: Color): { cells: Cell[][]; squares: SquareName[][] } {
+function cellsForFen(
+  fen: string,
+  orientation: Color
+): { cells: Cell[][]; squares: SquareName[][] } {
   const board = boardForFen(fen);
   const ranks = orientation === "white" ? [8, 7, 6, 5, 4, 3, 2, 1] : [1, 2, 3, 4, 5, 6, 7, 8];
   const files = orientation === "white" ? "abcdefgh" : "hgfedcba";
@@ -92,7 +95,8 @@ export const BoardThumbnail = memo(function BoardThumbnail({
   const style = pieceStyle ?? appearance.pieceStyle;
   const presentation = piecePresentation ?? appearance.piecePresentation;
   const { cells, squares } = useMemo(() => cellsForFen(fen, orientation), [fen, orientation]);
-  const highlighted = lastMove && lastMove.length >= 4 ? [lastMove.slice(0, 2), lastMove.slice(2, 4)] : [];
+  const highlighted =
+    lastMove && lastMove.length >= 4 ? [lastMove.slice(0, 2), lastMove.slice(2, 4)] : [];
   // The checkerboard is drawn from a8 (light) in white orientation; flipped boards start on h1 (light) too.
   const boardStyle: CSSProperties = { "--thumb-light": squareLight, "--thumb-dark": squareDark };
 
@@ -126,7 +130,9 @@ export const BoardThumbnail = memo(function BoardThumbnail({
                 <span
                   key={square}
                   className="relative block min-w-0 flex-1 overflow-hidden"
-                  style={highlighted.includes(square) ? { backgroundColor: LAST_MOVE_TINT } : undefined}
+                  style={
+                    highlighted.includes(square) ? { backgroundColor: LAST_MOVE_TINT } : undefined
+                  }
                 >
                   {cell ? <CgPieceGlyph color={cell.color} role={cell.role} /> : null}
                 </span>

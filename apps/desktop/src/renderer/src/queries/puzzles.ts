@@ -1,9 +1,16 @@
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { create } from "zustand";
-import type { PuzzleAttemptResult, RecordPuzzleAttemptInput } from "@chaturanga/shared/types/puzzle-rating";
+import type {
+  PuzzleAttemptResult,
+  RecordPuzzleAttemptInput
+} from "@chaturanga/shared/types/puzzle-rating";
 import { ipcErrorMessage } from "@/lib/ipc-error";
-import { onPuzzleAttempt, type DecidedPuzzleAttempt, type PuzzleAttemptEvent } from "../stores/puzzle-store";
+import {
+  onPuzzleAttempt,
+  type DecidedPuzzleAttempt,
+  type PuzzleAttemptEvent
+} from "../stores/puzzle-store";
 
 /**
  * The local puzzle rating through `window.chaturanga.puzzles` (main rates attempts and owns the
@@ -56,7 +63,9 @@ export function useFailedPuzzlesQuery(sourceId: string | null) {
  * The attempt's key for recording (main stores an attempt once per key): its own id, else the
  * puzzle and the moment it was shown.
  */
-export function attemptKey(attempt: Pick<DecidedPuzzleAttempt, "id" | "puzzleId" | "startedAt">): string {
+export function attemptKey(
+  attempt: Pick<DecidedPuzzleAttempt, "id" | "puzzleId" | "startedAt">
+): string {
   return attempt.id || `${attempt.puzzleId}:${attempt.startedAt}`;
 }
 
@@ -64,7 +73,9 @@ export function attemptKey(attempt: Pick<DecidedPuzzleAttempt, "id" | "puzzleId"
  * Only a solve or a failure by the solver is recorded (and maybe rated): any other end of an
  * attempt (a puzzle whose data broke, say) is not the solver's result.
  */
-export function isRecordable(attempt: { outcome: string }): attempt is { outcome: "solved" | "failed" } {
+export function isRecordable(attempt: {
+  outcome: string;
+}): attempt is { outcome: "solved" | "failed" } {
   return attempt.outcome === "solved" || attempt.outcome === "failed";
 }
 
@@ -123,7 +134,10 @@ export type AttemptRecorder = {
  * write failed is stored (and rated) by the later one, so the card no longer says it wasn't saved.
  * Settles once the write has; nothing to record settles at once.
  */
-export async function recordAttemptEvent({ kind, attempt }: PuzzleAttemptEvent, recorder: AttemptRecorder): Promise<void> {
+export async function recordAttemptEvent(
+  { kind, attempt }: PuzzleAttemptEvent,
+  recorder: AttemptRecorder
+): Promise<void> {
   if (!isRecordable(attempt)) return;
   // A clean solve was complete when decided (and recorded with its completion then).
   if (kind === "completed" && attempt.completedAt === attempt.decidedAt) return;
@@ -137,7 +151,8 @@ export async function recordAttemptEvent({ kind, attempt }: PuzzleAttemptEvent, 
   } catch (error) {
     console.warn(`puzzles.recordAttempt (${kind}) failed`, error);
     // A completion that failed leaves what the decided write showed.
-    if (kind === "decided") store.set(key, { status: "failed", message: ipcErrorMessage(error) || "unknown error" });
+    if (kind === "decided")
+      store.set(key, { status: "failed", message: ipcErrorMessage(error) || "unknown error" });
   }
 }
 

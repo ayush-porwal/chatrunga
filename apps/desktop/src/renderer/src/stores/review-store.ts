@@ -40,7 +40,10 @@ type ReviewStore = {
    */
   detachRun: () => void;
   /** Apply a throttled batch of engine events in one update (one render per batch). */
-  applyReviewEvents: (batch: { progress: ReviewProgress | null; moves: readonly MoveReview[] }) => void;
+  applyReviewEvents: (batch: {
+    progress: ReviewProgress | null;
+    moves: readonly MoveReview[];
+  }) => void;
   markCancelled: () => void;
   /** Shows `review`; `analyses` replaces the list (a newly opened game), else the list stays. */
   loadReview: (review: GameReview | null, analyses?: SavedReviewInfo[]) => void;
@@ -80,7 +83,10 @@ export const useReviewStore = create<ReviewStore>((set) => ({
         progress: null,
         partialMoves: [],
         runLine: null,
-        analyses: [savedReviewInfo(shown, id), ...state.analyses.filter((info) => info.reviewId !== id)]
+        analyses: [
+          savedReviewInfo(shown, id),
+          ...state.analyses.filter((info) => info.reviewId !== id)
+        ]
       };
     }),
   addCommentary: (commentary) =>
@@ -88,12 +94,17 @@ export const useReviewStore = create<ReviewStore>((set) => ({
       if (!state.review) return state;
       const existing = new Map((state.review.commentary ?? []).map((item) => [item.ply, item]));
       existing.set(commentary.ply, commentary);
-      const review = { ...state.review, commentary: [...existing.values()].sort((a, b) => a.ply - b.ply) };
+      const review = {
+        ...state.review,
+        commentary: [...existing.values()].sort((a, b) => a.ply - b.ply)
+      };
       return {
         review,
         // The comment belongs to the analysis shown: its count in the list follows.
         analyses: state.analyses.map((info) =>
-          info.reviewId === review.reviewId ? { ...info, commentaryCount: review.commentary.length } : info
+          info.reviewId === review.reviewId
+            ? { ...info, commentaryCount: review.commentary.length }
+            : info
         )
       };
     }),
@@ -101,7 +112,13 @@ export const useReviewStore = create<ReviewStore>((set) => ({
   detachRun: () =>
     set((state) =>
       state.status === "running"
-        ? { reviewId: null, runLine: null, status: state.review ? "ready" : "idle", progress: null, partialMoves: [] }
+        ? {
+            reviewId: null,
+            runLine: null,
+            status: state.review ? "ready" : "idle",
+            progress: null,
+            partialMoves: []
+          }
         : { reviewId: null, runLine: null }
     ),
   reset: () =>
@@ -134,7 +151,9 @@ export const useReviewStore = create<ReviewStore>((set) => ({
       status: review ? "ready" : "idle",
       // Saved reviews may hold explanations from the retired offline template; drop them so
       // the AI is asked when those moves are viewed.
-      review: review?.commentary ? { ...review, commentary: savedReviewCommentary(review.commentary) } : review,
+      review: review?.commentary
+        ? { ...review, commentary: savedReviewCommentary(review.commentary) }
+        : review,
       origin: review ? "saved" : null,
       error: null,
       reviewId: null,
@@ -161,7 +180,8 @@ function mergePartialMoves(current: MoveReview[], incoming: readonly MoveReview[
   let next = current;
   for (const move of incoming) {
     const index = next.findIndex((existing) => existing.nodeId === move.nodeId);
-    next = index >= 0 ? next.map((existing, i) => (i === index ? move : existing)) : [...next, move];
+    next =
+      index >= 0 ? next.map((existing, i) => (i === index ? move : existing)) : [...next, move];
   }
   return next;
 }
@@ -171,8 +191,12 @@ function mergePartialMoves(current: MoveReview[], incoming: readonly MoveReview[
  * review (or whatever a stopped pass produced). Returns store-owned arrays, so it is a stable
  * zustand selector.
  */
-export function selectDisplayedMoves(state: Pick<ReviewStore, "status" | "review" | "partialMoves">): MoveReview[] {
-  return state.status === "running" ? state.partialMoves : state.review?.moves ?? state.partialMoves;
+export function selectDisplayedMoves(
+  state: Pick<ReviewStore, "status" | "review" | "partialMoves">
+): MoveReview[] {
+  return state.status === "running"
+    ? state.partialMoves
+    : (state.review?.moves ?? state.partialMoves);
 }
 
 export function reviewsByNode(moves: readonly MoveReview[]): Map<string, MoveReview> {

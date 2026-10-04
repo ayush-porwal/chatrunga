@@ -35,7 +35,9 @@ const MAX_EVAL_LOSS = 1000;
 // ─── Maia engine selection ─────────────────────────────────────────────────
 
 /** Rating bucket for a Maia engine: explicit tag, else a `maia-1500`-style weights/name. */
-export function maiaRatingForEngine(config: Pick<EngineConfig, "maiaRating" | "name" | "weightsPath">): MaiaRating | undefined {
+export function maiaRatingForEngine(
+  config: Pick<EngineConfig, "maiaRating" | "name" | "weightsPath">
+): MaiaRating | undefined {
   if (config.maiaRating) return config.maiaRating;
   return maiaRatingFromText(`${config.name} ${config.weightsPath ?? ""}`);
 }
@@ -76,7 +78,8 @@ export function nearestRatingBucket(
   available: readonly MaiaRating[]
 ): MaiaRating | null {
   if (available.length === 0) return null;
-  const target = typeof playerRating === "number" && Number.isFinite(playerRating) ? playerRating : 1500;
+  const target =
+    typeof playerRating === "number" && Number.isFinite(playerRating) ? playerRating : 1500;
   return [...available].sort((a, b) => Math.abs(a - target) - Math.abs(b - target) || a - b)[0];
 }
 
@@ -136,7 +139,9 @@ export function buildRatingPrediction(input: {
   const bestIndex = input.bestUci ? moves.findIndex((move) => move.uci === input.bestUci) : -1;
   const prediction: RatingPrediction = {
     rating: input.rating,
-    topMoves: moves.slice(0, MAIA_TOP_MOVES).map((move) => ({ uci: move.uci, prob: round4(move.prob) })),
+    topMoves: moves
+      .slice(0, MAIA_TOP_MOVES)
+      .map((move) => ({ uci: move.uci, prob: round4(move.prob) })),
     playedProb: playedIndex >= 0 ? round4(moves[playedIndex].prob) : 0
   };
   if (playedIndex >= 0) prediction.playedRank = playedIndex + 1;
@@ -165,7 +170,9 @@ export function terminalScore(terminal: TerminalState): EngineScore {
 }
 
 export function terminalWdl(terminal: TerminalState): Wdl {
-  return terminal === "checkmate" ? { win: 0, draw: 0, loss: 1000 } : { win: 0, draw: 1000, loss: 0 };
+  return terminal === "checkmate"
+    ? { win: 0, draw: 0, loss: 1000 }
+    : { win: 0, draw: 1000, loss: 0 };
 }
 
 // ─── Move quality ──────────────────────────────────────────────────────────
@@ -240,7 +247,9 @@ export function tacticalMotifsForBestMove(
     if (fact.kind === "fork" && fact.attacker.square === to) {
       // A real fork hits two pieces that are each worth more than the forker (or the king).
       const attackerValue = PIECE_VALUE[fact.attacker.role];
-      const valuable = fact.targets.filter((t) => t.role === "king" || PIECE_VALUE[t.role] > attackerValue);
+      const valuable = fact.targets.filter(
+        (t) => t.role === "king" || PIECE_VALUE[t.role] > attackerValue
+      );
       if (valuable.length >= 2) motifs.add("fork");
     }
     if (fact.kind === "pin" && fact.pinner.square === to) motifs.add("pin");
@@ -249,7 +258,14 @@ export function tacticalMotifsForBestMove(
   return [...motifs];
 }
 
-const PIECE_VALUE: Record<string, number> = { pawn: 1, knight: 3, bishop: 3, rook: 5, queen: 9, king: 0 };
+const PIECE_VALUE: Record<string, number> = {
+  pawn: 1,
+  knight: 3,
+  bishop: 3,
+  rook: 5,
+  queen: 9,
+  king: 0
+};
 
 /**
  * "hanging" = the move captures an undefended piece; "winning" = it captures a
@@ -275,15 +291,21 @@ export function parseClock(value: string | null | undefined): number | null {
   const parts = value.trim().split(":").map(Number);
   if (parts.length < 2 || parts.some((part) => !Number.isFinite(part))) return null;
   if (parts.length === 2) return Math.round(parts[0] * 60_000 + parts[1] * 1000);
-  if (parts.length === 3) return Math.round(parts[0] * 3_600_000 + parts[1] * 60_000 + parts[2] * 1000);
+  if (parts.length === 3)
+    return Math.round(parts[0] * 3_600_000 + parts[1] * 60_000 + parts[2] * 1000);
   return null;
 }
 
 /** PGN TimeControl `base[+inc]` in seconds (e.g. "600+5"); null for "-", "?" or multi-period controls. */
-export function parseTimeControl(value: string | null | undefined): { baseMs: number; incrementMs: number } | null {
+export function parseTimeControl(
+  value: string | null | undefined
+): { baseMs: number; incrementMs: number } | null {
   const match = value?.trim().match(/^(\d+(?:\.\d+)?)(?:\+(\d+(?:\.\d+)?))?$/);
   if (!match) return null;
-  return { baseMs: Math.round(Number(match[1]) * 1000), incrementMs: Math.round(Number(match[2] ?? 0) * 1000) };
+  return {
+    baseMs: Math.round(Number(match[1]) * 1000),
+    incrementMs: Math.round(Number(match[2] ?? 0) * 1000)
+  };
 }
 
 /**
@@ -298,7 +320,8 @@ export function timeSpentForMove(
 ): number | undefined {
   const current = parseClock(moves[index]?.clockAfter);
   if (current === null) return undefined;
-  const previous = index >= 2 ? parseClock(moves[index - 2]?.clockAfter) : timeControl?.baseMs ?? null;
+  const previous =
+    index >= 2 ? parseClock(moves[index - 2]?.clockAfter) : (timeControl?.baseMs ?? null);
   if (previous === null) return undefined;
   return Math.max(0, previous - current + (timeControl?.incrementMs ?? 0));
 }

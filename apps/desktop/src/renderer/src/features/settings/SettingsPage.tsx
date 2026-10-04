@@ -1,6 +1,10 @@
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, CircleAlert, Loader2, Sparkles, Volume2 } from "lucide-react";
-import { defaultSettings, hydratePieceSettings, type AppSettings } from "@chaturanga/shared/types/settings";
+import {
+  defaultSettings,
+  hydratePieceSettings,
+  type AppSettings
+} from "@chaturanga/shared/types/settings";
 import { useSettingsQuery } from "../../queries/api";
 import { playSound } from "../../sounds/sounds";
 import { Button } from "@/components/ui/button";
@@ -78,7 +82,9 @@ export const SettingsPage = memo(function SettingsPage({
     <Page>
       <PageHeader title="Settings" actions={<SaveStatus />} />
       {!desktopApiAvailable ? (
-        <Notice tone="warn">Engines, files and saved settings need the desktop app. This preview uses defaults.</Notice>
+        <Notice tone="warn">
+          Engines, files and saved settings need the desktop app. This preview uses defaults.
+        </Notice>
       ) : null}
       {/* Full width: large cards span both columns; the smaller ones pair up on a wide window. */}
       <div ref={contentRef} className="@container grid gap-10">
@@ -107,7 +113,10 @@ export const SettingsPage = memo(function SettingsPage({
           ) : null}
           <SectionAnchor id="commentary" wide>
             <section className={cn(cardPadded, "grid content-start gap-4")}>
-              <SectionHeader title="Commentary" description="Game review explains each move with an AI model, through your own OpenRouter account." />
+              <SectionHeader
+                title="Commentary"
+                description="Game review explains each move with an AI model, through your own OpenRouter account."
+              />
               {/* A form reads best at a comfortable width, not stretched across the page. */}
               <div className="max-w-2xl">
                 <OpenRouterSettingsCard />
@@ -145,7 +154,15 @@ function SettingsGroup({ title, children }: { title: string; children: ReactNode
 }
 
 /** A card's anchor (deep links, Back to the section being read); `wide` spans both columns. */
-function SectionAnchor({ id, wide = false, children }: { id: SectionId; wide?: boolean; children: ReactNode }) {
+function SectionAnchor({
+  id,
+  wide = false,
+  children
+}: {
+  id: SectionId;
+  wide?: boolean;
+  children: ReactNode;
+}) {
   return (
     <div
       id={sectionDomId(id)}
@@ -162,7 +179,10 @@ function SectionAnchor({ id, wide = false, children }: { id: SectionId; wide?: b
  * The section whose top has passed the upper third of the page scroller (the first one at the top,
  * the last one once the page is scrolled to the end). Scroll-driven, one rAF per frame at most.
  */
-function useScrollSpy(anchorRef: React.RefObject<HTMLElement | null>, sections: readonly SectionId[]): SectionId {
+function useScrollSpy(
+  anchorRef: React.RefObject<HTMLElement | null>,
+  sections: readonly SectionId[]
+): SectionId {
   const [active, setActive] = useState<SectionId>(sections[0] ?? "board");
   const key = sections.join(",");
   const measure = useCallback(
@@ -174,7 +194,8 @@ function useScrollSpy(anchorRef: React.RefObject<HTMLElement | null>, sections: 
         const element = document.getElementById(sectionDomId(id));
         if (element && element.getBoundingClientRect().top <= threshold) current = id;
       }
-      if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4) current = sections[sections.length - 1];
+      if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4)
+        current = sections[sections.length - 1];
       // At the very top the first section is the one being read, even when a short first card lets
       // the second one's top cross the threshold.
       if (scroller.scrollTop <= 4) current = sections[0];
@@ -223,7 +244,11 @@ function SaveStatus({ className }: { className?: string }) {
   const kind = pending > 0 ? "saving" : failed && settledAt ? "failed" : recent ? "saved" : "idle";
 
   return (
-    <p role="status" aria-live="polite" className={cn("flex h-5 items-center gap-1.5 text-xs", className)}>
+    <p
+      role="status"
+      aria-live="polite"
+      className={cn("flex h-5 items-center gap-1.5 text-xs", className)}
+    >
       {kind === "saving" ? (
         <span key="saving" className="flex items-center gap-1.5 text-fg-muted">
           <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
@@ -258,12 +283,21 @@ function SoundSection({ appearance }: { appearance: AppSettings }) {
           label="Move sounds"
           htmlFor="setting-sound"
           description="Moves, captures and the end of a game."
-          control={<Switch id="setting-sound" checked={appearance.soundEnabled} onCheckedChange={(v) => setSetting("soundEnabled", v)} />}
+          control={
+            <Switch
+              id="setting-sound"
+              checked={appearance.soundEnabled}
+              onCheckedChange={(v) => setSetting("soundEnabled", v)}
+            />
+          }
         />
         <SettingRow
           label="Volume"
           htmlFor="setting-volume"
-          className={cn("transition-opacity duration-standard", !appearance.soundEnabled && "opacity-60")}
+          className={cn(
+            "transition-opacity duration-standard",
+            !appearance.soundEnabled && "opacity-60"
+          )}
           control={
             <>
               <input
@@ -275,9 +309,13 @@ function SoundSection({ appearance }: { appearance: AppSettings }) {
                 step={0.05}
                 value={appearance.soundVolume}
                 disabled={!appearance.soundEnabled}
-                onChange={(event) => setSetting("soundVolume", Number(event.target.value), { batch: true })}
+                onChange={(event) =>
+                  setSetting("soundVolume", Number(event.target.value), { batch: true })
+                }
               />
-              <span className="w-10 text-right text-xs tabular-nums text-fg-muted">{Math.round(appearance.soundVolume * 100)}%</span>
+              <span className="w-10 text-right text-xs tabular-nums text-fg-muted">
+                {Math.round(appearance.soundVolume * 100)}%
+              </span>
               <IconButton
                 label="Test move sound"
                 icon={<Volume2 />}

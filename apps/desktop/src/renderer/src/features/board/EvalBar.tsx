@@ -60,13 +60,18 @@ export function useBoardEval(): BoardEval | null {
       mode: state.mode,
       fen: state.currentFen,
       nodeId: state.currentNodeId,
-      matchOn: (state.mode === "engine" || state.mode === "online") && Boolean(state.engineSide) && !state.gameOutcome
+      matchOn:
+        (state.mode === "engine" || state.mode === "online") &&
+        Boolean(state.engineSide) &&
+        !state.gameOutcome
     }))
   );
   const onlineGameLive = useLichessStore(selectLiveGameInProgress);
   const liveScore = useLiveAnalysisScore();
   // A puzzle still being solved: any evaluation would give the answer away.
-  const puzzleOpen = usePuzzleStore((state) => Boolean(state.activePuzzle) && state.outcome === "pending");
+  const puzzleOpen = usePuzzleStore(
+    (state) => Boolean(state.activePuzzle) && state.outcome === "pending"
+  );
   const reviewMoves = useDisplayedReviewMoves();
   if (game.matchOn || onlineGameLive || (game.mode === "puzzle" && puzzleOpen)) return null;
 
@@ -75,7 +80,9 @@ export function useBoardEval(): BoardEval | null {
   if (!reviewMoves.length) return null;
   const move = reviewMoves.find((item) => item.nodeId === game.nodeId);
   if (move?.evalAfter) {
-    const mate = move.terminal === "checkmate" || (move.evalAfter.type === "mate" && move.evalAfter.value === 0);
+    const mate =
+      move.terminal === "checkmate" ||
+      (move.evalAfter.type === "mate" && move.evalAfter.value === 0);
     const whiteMoved = move.fenBefore.split(" ")[1] !== "b";
     const whiteShare = mate ? (whiteMoved ? 100 : 0) : evalShare(move.evalAfter);
     return { whiteShare, label: formatMoveEval(move) };
@@ -113,7 +120,8 @@ export function EvalBarFill({
   const searching = useAnalysisStore((state) => state.status === "thinking");
   // The last evaluation shown, held through the moment a new search has no score yet.
   const [held, setHeld] = useState<BoardEval | null>(current);
-  if (current && (current.whiteShare !== held?.whiteShare || current.label !== held.label)) setHeld(current);
+  if (current && (current.whiteShare !== held?.whiteShare || current.label !== held.label))
+    setHeld(current);
   else if (!current && held && !(live && searching)) setHeld(null);
   const shown = current ?? held;
   if (!shown) return null;

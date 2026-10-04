@@ -20,14 +20,23 @@ export function commentarySettingsKey(input: {
   userRating: number;
   playerColor: "white" | "black";
 }): string {
-  return ["openrouter", input.model || "default", input.detail, input.userRating, input.playerColor].join("|");
+  return [
+    "openrouter",
+    input.model || "default",
+    input.detail,
+    input.userRating,
+    input.playerColor
+  ].join("|");
 }
 
 /**
  * A cached explanation still matches the current settings. Explanations saved before settings
  * were fingerprinted count as current, so older saved reviews never re-query.
  */
-export function isCurrentCommentary(item: ReviewCommentary | undefined, settingsKey: string): item is ReviewCommentary {
+export function isCurrentCommentary(
+  item: ReviewCommentary | undefined,
+  settingsKey: string
+): item is ReviewCommentary {
   return Boolean(item && (!item.settingsKey || item.settingsKey === settingsKey));
 }
 
@@ -122,6 +131,9 @@ export class CommentaryScheduler {
   private start(job: CommentaryJob): void {
     if (this.inFlight.has(job.key)) return;
     this.inFlight.add(job.key);
-    void job.run().catch(() => undefined).finally(() => this.inFlight.delete(job.key));
+    void job
+      .run()
+      .catch(() => undefined)
+      .finally(() => this.inFlight.delete(job.key));
   }
 }

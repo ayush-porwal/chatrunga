@@ -120,6 +120,8 @@ describe("LichessAccountStore", () => {
     // A directory in the file's place can't be unlinked like a file.
     const directoryPath = `${path}.dir`;
     await mkdir(directoryPath);
-    await expect(new LichessAccountStore(directoryPath, secureStorage()).clear()).rejects.toMatchObject({ code: expect.stringMatching(/^(EISDIR|EPERM)$/) });
+    await expect(
+      new LichessAccountStore(directoryPath, secureStorage()).clear()
+    ).rejects.toMatchObject({ code: expect.stringMatching(/^(EISDIR|EPERM)$/) });
   });
 });

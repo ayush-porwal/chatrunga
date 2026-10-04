@@ -32,7 +32,8 @@ export const motion = {
   /** Durations in ms, for timers that wait for an exit animation (never for styling). */
   ms: { micro: 120, standard: 180, emphasis: 240 },
   /** Colour/background/border/shadow state changes (hover, selected, focus ring). */
-  colors: "transition-[color,background-color,border-color,box-shadow,opacity] duration-micro ease-standard",
+  colors:
+    "transition-[color,background-color,border-color,box-shadow,opacity] duration-micro ease-standard",
   /** Pressable surface: colour changes plus a 0.98 press (Button, chips, rows). */
   press:
     "transition-[color,background-color,border-color,box-shadow,opacity,scale] duration-micro ease-standard active:scale-[0.98] motion-reduce:active:scale-100",
@@ -97,7 +98,8 @@ export const titlebarIconButton =
 /* ------------------------------------------------------------------ page layout */
 
 /** Outer scroll container for a full page (fills the content area). */
-export const pageShell = "scroll-area scroll-fade h-full min-h-0 w-full overflow-y-auto [scrollbar-gutter:stable]";
+export const pageShell =
+  "scroll-area scroll-fade h-full min-h-0 w-full overflow-y-auto [scrollbar-gutter:stable]";
 
 /**
  * Centered content column: one max width + one gutter for every page, both fluid (the
@@ -131,7 +133,8 @@ export const fieldHint = "text-2xs leading-4 text-fg-subtle";
 
 /* ------------------------------------------------------------------ modals */
 
-export const modalBackdrop = "fixed inset-0 z-50 grid place-items-center bg-black/60 p-5 animate-fade-in";
+export const modalBackdrop =
+  "fixed inset-0 z-50 grid place-items-center bg-black/60 p-5 animate-fade-in";
 
 export const modalPanel =
   "scroll-area max-h-[calc(100vh-48px)] w-[min(45rem,calc(100vw-40px))] overflow-auto rounded-xl border border-line bg-surface-raised p-5 shadow-overlay animate-dialog-in";
@@ -167,13 +170,14 @@ export const listRowSelected = "border-accent/50 bg-accent-soft text-fg";
  * - `text`: foreground colour only — use for counts and inline labels.
  * - `dot`: solid background — use for small markers.
  */
-export const qualityTone: Record<MoveClassification, { badge: string; text: string; dot: string }> = {
-  best: { badge: "bg-accent/15 text-accent-fg", text: "text-accent", dot: "bg-accent" },
-  excellent: { badge: "bg-accent/15 text-accent-fg", text: "text-accent", dot: "bg-accent" },
-  good: { badge: "bg-info/15 text-info", text: "text-info", dot: "bg-info" },
-  inaccuracy: { badge: "bg-warn/15 text-warn", text: "text-warn", dot: "bg-warn" },
-  mistake: { badge: "bg-caution/15 text-caution", text: "text-caution", dot: "bg-caution" },
-  blunder: { badge: "bg-danger/15 text-danger", text: "text-danger", dot: "bg-danger" },
-  missed_tactic: { badge: "bg-danger/15 text-danger", text: "text-danger", dot: "bg-danger" },
-  human_error: { badge: "bg-danger/15 text-danger", text: "text-danger", dot: "bg-danger" }
-};
+export const qualityTone: Record<MoveClassification, { badge: string; text: string; dot: string }> =
+  {
+    best: { badge: "bg-accent/15 text-accent-fg", text: "text-accent", dot: "bg-accent" },
+    excellent: { badge: "bg-accent/15 text-accent-fg", text: "text-accent", dot: "bg-accent" },
+    good: { badge: "bg-info/15 text-info", text: "text-info", dot: "bg-info" },
+    inaccuracy: { badge: "bg-warn/15 text-warn", text: "text-warn", dot: "bg-warn" },
+    mistake: { badge: "bg-caution/15 text-caution", text: "text-caution", dot: "bg-caution" },
+    blunder: { badge: "bg-danger/15 text-danger", text: "text-danger", dot: "bg-danger" },
+    missed_tactic: { badge: "bg-danger/15 text-danger", text: "text-danger", dot: "bg-danger" },
+    human_error: { badge: "bg-danger/15 text-danger", text: "text-danger", dot: "bg-danger" }
+  };

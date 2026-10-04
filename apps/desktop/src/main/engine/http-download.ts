@@ -113,13 +113,19 @@ export async function downloadToFile(opts: DownloadOptions): Promise<DownloadRes
 }
 
 /** Fetches `opts.url`, following redirects only within the allow-list. */
-async function fetchAllowed(opts: DownloadOptions, headers: Record<string, string>): Promise<Response> {
+async function fetchAllowed(
+  opts: DownloadOptions,
+  headers: Record<string, string>
+): Promise<Response> {
   const fetchImpl = opts.fetchImpl ?? fetch;
   let url = opts.url;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
     if (!isAllowedDownloadUrl(url, opts.allowedHosts)) throw new DisallowedUrlError(url);
     // identity: byte ranges and Content-Length must refer to the file itself, not a gzip of it.
-    const res = await fetchImpl(url, { headers: { ...headers, "Accept-Encoding": "identity" }, redirect: "manual" });
+    const res = await fetchImpl(url, {
+      headers: { ...headers, "Accept-Encoding": "identity" },
+      redirect: "manual"
+    });
     if (!REDIRECT_STATUSES.has(res.status)) return res;
     const location = res.headers.get("location");
     await res.body?.cancel().catch(() => undefined);
@@ -130,7 +136,9 @@ async function fetchAllowed(opts: DownloadOptions, headers: Record<string, strin
 }
 
 // "bytes 100-199/1000" → {start: 100, total: 1000}; "bytes */1000" (a 416) → {start: null, total: 1000}.
-export function parseContentRange(header: string | null): { start: number | null; total: number | null } | null {
+export function parseContentRange(
+  header: string | null
+): { start: number | null; total: number | null } | null {
   if (!header) return null;
   const match = /^bytes\s+(?:(\d+)-\d+|\*)\/(\d+|\*)$/i.exec(header.trim());
   if (!match) return null;

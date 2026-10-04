@@ -19,10 +19,33 @@ type Line = {
 
 /** After 10.Nxb5 (the position before the move under review). Ids are stable across lines. */
 const BEFORE: Position = {
-  "wK-e1": "e1", "wQ-b3": "b3", "wR-a1": "a1", "wR-h1": "h1", "wB-c4": "c4", "wB-g5": "g5", "wN-b5": "b5",
-  "wP-a2": "a2", "wP-b2": "b2", "wP-c2": "c2", "wP-e4": "e4", "wP-f2": "f2", "wP-g2": "g2", "wP-h2": "h2",
-  "bK-e8": "e8", "bQ-e7": "e7", "bR-a8": "a8", "bR-h8": "h8", "bB-f8": "f8", "bN-b8": "b8", "bN-f6": "f6",
-  "bP-a7": "a7", "bP-c6": "c6", "bP-e5": "e5", "bP-f7": "f7", "bP-g7": "g7", "bP-h7": "h7"
+  "wK-e1": "e1",
+  "wQ-b3": "b3",
+  "wR-a1": "a1",
+  "wR-h1": "h1",
+  "wB-c4": "c4",
+  "wB-g5": "g5",
+  "wN-b5": "b5",
+  "wP-a2": "a2",
+  "wP-b2": "b2",
+  "wP-c2": "c2",
+  "wP-e4": "e4",
+  "wP-f2": "f2",
+  "wP-g2": "g2",
+  "wP-h2": "h2",
+  "bK-e8": "e8",
+  "bQ-e7": "e7",
+  "bR-a8": "a8",
+  "bR-h8": "h8",
+  "bB-f8": "f8",
+  "bN-b8": "b8",
+  "bN-f6": "f6",
+  "bP-a7": "a7",
+  "bP-c6": "c6",
+  "bP-e5": "e5",
+  "bP-f7": "f7",
+  "bP-g7": "g7",
+  "bP-h7": "h7"
 };
 
 function play(from: Position, moves: [string, Square][], captures: string[] = []): Position {
@@ -35,7 +58,12 @@ function play(from: Position, moves: [string, Square][], captures: string[] = []
 const GAME = play(BEFORE, [["bP-c6", "b5"]], ["wN-b5"]);
 
 const LINES: Record<LineId, Line> = {
-  game: { position: GAME, lastMove: ["c6", "b5"], label: "Board after 10…cxb5, the move under review", san: "" },
+  game: {
+    position: GAME,
+    lastMove: ["c6", "b5"],
+    label: "Board after 10…cxb5, the move under review",
+    san: ""
+  },
   bxb5: {
     position: play(GAME, [["wB-c4", "b5"]], ["bP-c6"]),
     lastMove: ["c4", "b5"],
@@ -154,7 +182,8 @@ export function initCoach(root: Document = document): void {
     place(lastSquares[1], line.lastMove[1]);
 
     board.setAttribute("aria-label", line.label);
-    for (const button of buttons) button.setAttribute("aria-pressed", String(button.dataset.line === id));
+    for (const button of buttons)
+      button.setAttribute("aria-pressed", String(button.dataset.line === id));
     if (variation && variationLine) {
       variation.hidden = id === "game";
       variationLine.textContent = line.san;

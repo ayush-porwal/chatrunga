@@ -17,11 +17,22 @@
 
 export type PlatformKey = "darwin-arm64" | "darwin-x64" | "linux-x64" | "win32-x64";
 
-export const SUPPORTED_PLATFORMS: readonly PlatformKey[] = ["darwin-arm64", "darwin-x64", "linux-x64", "win32-x64"];
+export const SUPPORTED_PLATFORMS: readonly PlatformKey[] = [
+  "darwin-arm64",
+  "darwin-x64",
+  "linux-x64",
+  "win32-x64"
+];
 
 export type MaiaAssetId = "maia-1100" | "maia-1300" | "maia-1500" | "maia-1700" | "maia-1900";
 
-export const MAIA_ASSET_IDS: readonly MaiaAssetId[] = ["maia-1100", "maia-1300", "maia-1500", "maia-1700", "maia-1900"];
+export const MAIA_ASSET_IDS: readonly MaiaAssetId[] = [
+  "maia-1100",
+  "maia-1300",
+  "maia-1500",
+  "maia-1700",
+  "maia-1900"
+];
 
 export type ReleaseAssetId = "stockfish" | "lc0";
 
@@ -132,7 +143,10 @@ export const STOCKFISH_SOURCE: ReleaseSource = {
       executablePattern: STOCKFISH_EXECUTABLE
     },
     "win32-x64": {
-      candidates: [{ pattern: /^stockfish-windows-x86-64-universal\.zip$/, extract: "zip" }, ...legacyX64("windows", "zip")],
+      candidates: [
+        { pattern: /^stockfish-windows-x86-64-universal\.zip$/, extract: "zip" },
+        ...legacyX64("windows", "zip")
+      ],
       executablePattern: STOCKFISH_EXECUTABLE
     }
   }
@@ -249,7 +263,10 @@ export const ENGINE_MANIFEST = {
 } as const satisfies EngineManifest;
 
 /** The manifest key for this machine, or null on an unsupported OS. */
-export function currentPlatformKey(platform: string = process.platform, arch: string = process.arch): PlatformKey | null {
+export function currentPlatformKey(
+  platform: string = process.platform,
+  arch: string = process.arch
+): PlatformKey | null {
   if (platform === "darwin") return arch === "arm64" ? "darwin-arm64" : "darwin-x64";
   if (platform === "linux") return arch === "x64" ? "linux-x64" : null;
   if (platform === "win32") return arch === "x64" ? "win32-x64" : null;
@@ -268,7 +285,10 @@ export function resolveManifestEntry(
 }
 
 /** Version string of the fallback entry (a release tag for engines). */
-export function manifestVersionFor(manifest: EngineManifest, id: ReleaseAssetId | MaiaAssetId): string {
+export function manifestVersionFor(
+  manifest: EngineManifest,
+  id: ReleaseAssetId | MaiaAssetId
+): string {
   if (id === "stockfish") return manifest.stockfish.version;
   if (id === "lc0") return manifest.lc0.version;
   return manifest.maiaWeights.version;
@@ -283,7 +303,10 @@ export function normalizeVersion(version: string): string {
 }
 
 /** True when `latest` names a different release than `installed`. */
-export function isDifferentVersion(installed: string | null | undefined, latest: string | null | undefined): boolean {
+export function isDifferentVersion(
+  installed: string | null | undefined,
+  latest: string | null | undefined
+): boolean {
   if (!installed || !latest) return false;
   return normalizeVersion(installed) !== normalizeVersion(latest);
 }
@@ -317,9 +340,11 @@ export function selectReleaseAsset(
 ): SelectedAsset | null {
   if (!matcher) return null;
   for (const candidate of matcher.candidates) {
-    if (candidate.requires && !candidate.requires.every((feature) => cpuFeatures?.has(feature))) continue;
+    if (candidate.requires && !candidate.requires.every((feature) => cpuFeatures?.has(feature)))
+      continue;
     const asset = assets.find((a) => candidate.pattern.test(a.name));
-    if (asset) return { asset, extract: candidate.extract, executablePattern: matcher.executablePattern };
+    if (asset)
+      return { asset, extract: candidate.extract, executablePattern: matcher.executablePattern };
   }
   return null;
 }

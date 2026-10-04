@@ -200,8 +200,12 @@ function registerEngineIpc(engineManager: EngineManager): void {
     const engineId = asId(id, "engine id");
     return retryOnceIfBusy(() => engineRepository.remove(engineId));
   });
-  ipcMain.handle("engines:test", (_event, idOrInput: unknown) => engineManager.testEngine(testConfigFor(idOrInput)));
-  ipcMain.handle("engines:startGame", (_event, input: unknown) => engineManager.start(parseStartGameInput(input)));
+  ipcMain.handle("engines:test", (_event, idOrInput: unknown) =>
+    engineManager.testEngine(testConfigFor(idOrInput))
+  );
+  ipcMain.handle("engines:startGame", (_event, input: unknown) =>
+    engineManager.start(parseStartGameInput(input))
+  );
   ipcMain.handle("engines:startAnalysis", (_event, input: unknown) =>
     engineManager.startAnalysis(parseStartAnalysisInput(input))
   );
@@ -210,7 +214,9 @@ function registerEngineIpc(engineManager: EngineManager): void {
     const config = engineConfigForId(input.engineId);
     if (!config) throw new Error("Engine not found");
     // The warm process (lc0's network) has exited first, and no search starts one during the probe.
-    return engineManager.runExclusive(() => probeEvalScore(config, input.fen, input.moves, input.movetimeMs));
+    return engineManager.runExclusive(() =>
+      probeEvalScore(config, input.fen, input.moves, input.movetimeMs)
+    );
   });
   ipcMain.handle("engines:reviewGame", (_event, input: unknown) =>
     runGameReview(engineManager, parseReviewGameInput(input))
@@ -286,11 +292,17 @@ function registerAssetIpc(): void {
     }
   };
 
-  ipcMain.handle("assets:status", async (_event, options: unknown): Promise<EngineAssetStatusMap> => {
-    await ready;
-    const refresh = typeof options === "object" && options !== null && (options as { refresh?: unknown }).refresh === true;
-    return assetManager.getStatus({ refresh });
-  });
+  ipcMain.handle(
+    "assets:status",
+    async (_event, options: unknown): Promise<EngineAssetStatusMap> => {
+      await ready;
+      const refresh =
+        typeof options === "object" &&
+        options !== null &&
+        (options as { refresh?: unknown }).refresh === true;
+      return assetManager.getStatus({ refresh });
+    }
+  );
   ipcMain.handle("assets:checkForUpdates", async (): Promise<EngineAssetStatusMap> => {
     await ready;
     return assetManager.checkForUpdates();
@@ -330,15 +342,23 @@ function findLibraryCopy(game: ImportedGame["game"]): string | null {
     const bySite = gameRepository.findIdBySite(`https://lichess.org/${lichess}`);
     if (bySite) return bySite;
   }
-  const fingerprint = gameFingerprint({ headers: game.headers, rootFen: game.rootFen, moveTree: game.moveTree });
+  const fingerprint = gameFingerprint({
+    headers: game.headers,
+    rootFen: game.rootFen,
+    moveTree: game.moveTree
+  });
   return fingerprint ? gameRepository.findIdByFingerprint(fingerprint) : null;
 }
 
 /** Saved games, PGN files, downloadable databases and settings. */
 function registerLibraryIpc(): void {
-  ipcMain.handle("games:listPage", (_event, query: unknown) => gameRepository.listPage(parseGameListQuery(query)));
+  ipcMain.handle("games:listPage", (_event, query: unknown) =>
+    gameRepository.listPage(parseGameListQuery(query))
+  );
   ipcMain.handle("games:facets", (_event, excludeId: unknown) =>
-    gameRepository.facets(excludeId === null || excludeId === undefined ? null : asId(excludeId, "game id"))
+    gameRepository.facets(
+      excludeId === null || excludeId === undefined ? null : asId(excludeId, "game id")
+    )
   );
   ipcMain.handle("games:get", (_event, id: unknown) => {
     const game = gameRepository.get(asId(id, "game id"));
@@ -375,12 +395,20 @@ function registerLibraryIpc(): void {
 
   ipcMain.handle("databases:list", () => listInstalledDatabases());
   ipcMain.handle("databases:download", (_event, sourceId: unknown) =>
-    downloadDatabase(asId(sourceId, "database source"), (progress) => broadcast("database:downloadProgress", progress))
+    downloadDatabase(asId(sourceId, "database source"), (progress) =>
+      broadcast("database:downloadProgress", progress)
+    )
   );
-  ipcMain.handle("databases:remove", (_event, id: unknown) => removeDatabase(asId(id, "database id")));
-  ipcMain.handle("databases:cancelDownload", (_event, sourceId: unknown) => cancelDownload(asId(sourceId, "database source")));
+  ipcMain.handle("databases:remove", (_event, id: unknown) =>
+    removeDatabase(asId(id, "database id"))
+  );
+  ipcMain.handle("databases:cancelDownload", (_event, sourceId: unknown) =>
+    cancelDownload(asId(sourceId, "database source"))
+  );
   ipcMain.handle("databases:activeDownloads", () => activeDownloads());
-  ipcMain.handle("databases:samplePuzzle", (_event, input: unknown) => samplePuzzle(parsePuzzleSampleInput(input)));
+  ipcMain.handle("databases:samplePuzzle", (_event, input: unknown) =>
+    samplePuzzle(parsePuzzleSampleInput(input))
+  );
 
   const pgnFilters = [{ name: "PGN files", extensions: ["pgn"] }];
   const maxPgnFileBytes = 20 * 1024 * 1024;
@@ -389,13 +417,17 @@ function registerLibraryIpc(): void {
     const path = result.canceled ? undefined : result.filePaths[0];
     if (!path) return null;
     // Checked before reading, so an oversized file is never loaded or sent over IPC.
-    if ((await stat(path)).size > maxPgnFileBytes) throw new Error("That PGN file is larger than 20 MiB.");
+    if ((await stat(path)).size > maxPgnFileBytes)
+      throw new Error("That PGN file is larger than 20 MiB.");
     return { path, contents: await readFile(path, "utf8") };
   });
   // Writes only to the path the user picked in the native save dialog.
   ipcMain.handle("files:savePgnFile", async (event, defaultName: unknown, contents: unknown) => {
     const text = asString(contents, "PGN", 20 * 1024 * 1024);
-    const result = await showSaveDialog(event, { defaultPath: parseDefaultFileName(defaultName), filters: pgnFilters });
+    const result = await showSaveDialog(event, {
+      defaultPath: parseDefaultFileName(defaultName),
+      filters: pgnFilters
+    });
     if (result.canceled || !result.filePath) return null;
     await writeFile(result.filePath, text, "utf8");
     return result.filePath;
@@ -407,7 +439,9 @@ function registerLibraryIpc(): void {
     allowChosenFile(path);
     return path;
   };
-  ipcMain.handle("files:selectExecutable", (event) => selectFile(event, [{ name: "All files", extensions: ["*"] }]));
+  ipcMain.handle("files:selectExecutable", (event) =>
+    selectFile(event, [{ name: "All files", extensions: ["*"] }])
+  );
   ipcMain.handle("files:selectOpenFile", (event, filters: unknown) => {
     const parsed = parseDialogFilters(filters);
     return selectFile(event, parsed.length ? parsed : [{ name: "All files", extensions: ["*"] }]);
@@ -447,8 +481,12 @@ function registerCommentaryIpc(): void {
     if (input.apiKey !== undefined && input.apiKey !== null && typeof input.apiKey !== "string") {
       throw new Error("Invalid OpenRouter API key");
     }
-    if (input.model !== undefined && typeof input.model !== "string") throw new Error("Invalid OpenRouter model");
-    return getOpenRouterConfigStore().set({ model: input.model, apiKey: input.apiKey as string | null | undefined });
+    if (input.model !== undefined && typeof input.model !== "string")
+      throw new Error("Invalid OpenRouter model");
+    return getOpenRouterConfigStore().set({
+      model: input.model,
+      apiKey: input.apiKey as string | null | undefined
+    });
   });
   ipcMain.handle("commentary:generate", async (_event, input: unknown) => {
     const fields = isRecord(input) ? input : undefined;
@@ -463,7 +501,8 @@ function registerCommentaryIpc(): void {
         })
       : undefined;
     if (config.hasApiKey && !apiKey) {
-      if (report) for (const payload of payloads) reportUnsent(report, payload.game.ply, "unreadable_key");
+      if (report)
+        for (const payload of payloads) reportUnsent(report, payload.game.ply, "unreadable_key");
       return { commentary: [], error: UNREADABLE_API_KEY_ERROR };
     }
     return generateOpenRouterCommentary(payloads, { apiKey, model: config.model, report });
@@ -480,8 +519,13 @@ function registerCommentaryIpc(): void {
     try {
       const store = getOpenRouterConfigStore();
       const [config, apiKey] = await Promise.all([store.get(), store.getApiKey()]);
-      if (config.hasApiKey && !apiKey) return { explanation: null, error: UNREADABLE_API_KEY_ERROR };
-      return await explainPuzzleWithOpenRouter(payload, { apiKey, model: config.model, signal: controller.signal });
+      if (config.hasApiKey && !apiKey)
+        return { explanation: null, error: UNREADABLE_API_KEY_ERROR };
+      return await explainPuzzleWithOpenRouter(payload, {
+        apiKey,
+        model: config.model,
+        signal: controller.signal
+      });
     } finally {
       if (puzzleRequests.get(requestId) === controller) puzzleRequests.delete(requestId);
     }
@@ -497,7 +541,12 @@ function registerTelemetryIpc(): void {
     const telemetry = getTelemetry();
     return telemetry
       ? telemetry.status()
-      : { available: false, reason: "not_configured", enabled: usageAnalyticsConsent(settingsRepository.getStored("usageAnalyticsEnabled")), pending: 0 };
+      : {
+          available: false,
+          reason: "not_configured",
+          enabled: usageAnalyticsConsent(settingsRepository.getStored("usageAnalyticsEnabled")),
+          pending: 0
+        };
   });
   ipcMain.handle("telemetry:track", (_event, value: unknown): boolean => {
     const telemetry = getTelemetry();
@@ -556,7 +605,9 @@ function registerLichessIpc(): void {
     }
     return result;
   });
-  ipcMain.handle("lichess:seek", (_event, input: unknown) => lichess.seek(parseLichessSeekInput(input)));
+  ipcMain.handle("lichess:seek", (_event, input: unknown) =>
+    lichess.seek(parseLichessSeekInput(input))
+  );
   ipcMain.handle("lichess:cancelSeek", () => lichess.cancelSeek());
   ipcMain.handle("lichess:challenge", (_event, input: unknown) =>
     lichess.challenge(parseLichessChallengeInput(input))
@@ -564,14 +615,22 @@ function registerLichessIpc(): void {
   ipcMain.handle("lichess:challengeAi", (_event, input: unknown) =>
     lichess.challengeAi(parseLichessAiChallengeInput(input))
   );
-  ipcMain.handle("lichess:acceptChallenge", (_event, id: unknown) => lichess.acceptChallenge(challengeId(id)));
-  ipcMain.handle("lichess:declineChallenge", (_event, id: unknown) => lichess.declineChallenge(challengeId(id)));
-  ipcMain.handle("lichess:cancelChallenge", (_event, id: unknown) => lichess.cancelChallenge(challengeId(id)));
+  ipcMain.handle("lichess:acceptChallenge", (_event, id: unknown) =>
+    lichess.acceptChallenge(challengeId(id))
+  );
+  ipcMain.handle("lichess:declineChallenge", (_event, id: unknown) =>
+    lichess.declineChallenge(challengeId(id))
+  );
+  ipcMain.handle("lichess:cancelChallenge", (_event, id: unknown) =>
+    lichess.cancelChallenge(challengeId(id))
+  );
   ipcMain.handle("lichess:challenges", () => lichess.challenges());
   ipcMain.handle("lichess:ongoingGames", () => lichess.ongoingGames());
   ipcMain.handle("lichess:watchGame", (_event, id: unknown) => lichess.watchGame(gameId(id)));
   ipcMain.handle("lichess:unwatchGame", (_event, id: unknown) => lichess.unwatchGame(gameId(id)));
-  ipcMain.handle("lichess:move", (_event, id: unknown, uci: unknown) => lichess.move(gameId(id), asLichessUci(uci)));
+  ipcMain.handle("lichess:move", (_event, id: unknown, uci: unknown) =>
+    lichess.move(gameId(id), asLichessUci(uci))
+  );
   ipcMain.handle("lichess:resign", (_event, id: unknown) => lichess.resign(gameId(id)));
   ipcMain.handle("lichess:abort", (_event, id: unknown) => lichess.abort(gameId(id)));
   ipcMain.handle("lichess:offerDraw", (_event, id: unknown) => lichess.offerDraw(gameId(id)));

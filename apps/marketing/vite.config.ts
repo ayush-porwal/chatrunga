@@ -24,7 +24,8 @@ function jpegSize(file: string): { width: number; height: number } {
 function siteUrl(): string | null {
   const raw = process.env.SITE_URL?.trim();
   if (!raw) return null;
-  if (!/^https?:\/\/[^/]+/.test(raw)) throw new Error(`SITE_URL must be an absolute http(s) URL, got "${raw}"`);
+  if (!/^https?:\/\/[^/]+/.test(raw))
+    throw new Error(`SITE_URL must be an absolute http(s) URL, got "${raw}"`);
   return raw.replace(/\/$/, "");
 }
 
@@ -34,7 +35,9 @@ function siteUrl(): string | null {
  */
 function withSiteUrl(html: string, site: string | null): string {
   if (site) return html.replaceAll("%SITE_URL%", site);
-  console.warn("[marketing] SITE_URL is not set: omitting og:image/twitter:image (set SITE_URL for link previews).");
+  console.warn(
+    "[marketing] SITE_URL is not set: omitting og:image/twitter:image (set SITE_URL for link previews)."
+  );
   return html.replace(/\s*<meta\b[^>]*(?:og:image|twitter:image)[^>]*\/>/g, "");
 }
 
@@ -58,13 +61,13 @@ function landingHtml(): Plugin {
     name: "chaturanga-landing-html",
     transformIndexHtml(html) {
       return withDownloadUrls(withSiteUrl(html, siteUrl())).replace(
-          /<img\b([^>]*?)\bsrc="(\/shots\/[^"]+\.jpg)"([^>]*)>/g,
-          (tag, before: string, src: string, after: string) => {
-            if (/\bwidth=/.test(tag)) return tag;
-            const { width, height } = jpegSize(`${publicDir}${src}`);
-            return `<img${before}src="${src}" width="${width}" height="${height}"${after}>`;
-          }
-        );
+        /<img\b([^>]*?)\bsrc="(\/shots\/[^"]+\.jpg)"([^>]*)>/g,
+        (tag, before: string, src: string, after: string) => {
+          if (/\bwidth=/.test(tag)) return tag;
+          const { width, height } = jpegSize(`${publicDir}${src}`);
+          return `<img${before}src="${src}" width="${width}" height="${height}"${after}>`;
+        }
+      );
     }
   };
 }

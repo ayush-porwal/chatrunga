@@ -4,7 +4,12 @@ import { isSquare, uciSquares } from "@chaturanga/shared/chess/square";
 
 type Promotion = NonNullable<UserMove["promotion"]>;
 
-const PROMOTION_BY_LETTER: Record<string, Promotion> = { q: "queen", r: "rook", b: "bishop", n: "knight" };
+const PROMOTION_BY_LETTER: Record<string, Promotion> = {
+  q: "queen",
+  r: "rook",
+  b: "bishop",
+  n: "knight"
+};
 
 const UCI_MOVE = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
 /** A board square name, checked (`"e4"`), or null for anything else (Chessground keys include "a0"). */

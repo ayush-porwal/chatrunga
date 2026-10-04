@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { HISTORY_LIMIT, selectCanGoBack, selectCanGoForward, useHistoryStore } from "./history-store";
+import {
+  HISTORY_LIMIT,
+  selectCanGoBack,
+  selectCanGoForward,
+  useHistoryStore
+} from "./history-store";
 
 const history = () => useHistoryStore.getState();
 
@@ -79,7 +84,8 @@ describe("history store", () => {
   });
 
   it("forgets the oldest screens past the limit", () => {
-    for (let index = 0; index < HISTORY_LIMIT + 10; index += 1) history().push({ view: "repertoire-practice", repertoireId: String(index), sessionId: null });
+    for (let index = 0; index < HISTORY_LIMIT + 10; index += 1)
+      history().push({ view: "repertoire-practice", repertoireId: String(index), sessionId: null });
     expect(history().entries).toHaveLength(HISTORY_LIMIT);
     expect(history().index).toBe(HISTORY_LIMIT - 1);
   });

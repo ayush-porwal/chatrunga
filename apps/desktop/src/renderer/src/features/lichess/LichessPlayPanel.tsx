@@ -69,7 +69,10 @@ export function useLichessSeekSetup() {
       minutes: preset.minutes,
       incrementSec: preset.incrementSec,
       rated,
-      ratingRange: range === "any" ? null : ([rating - Number(range), rating + Number(range)] as [number, number])
+      ratingRange:
+        range === "any"
+          ? null
+          : ([rating - Number(range), rating + Number(range)] as [number, number])
     };
     setError(null);
     useLichessStore.getState().setSeek({ input, startedAt: Date.now() });
@@ -122,7 +125,13 @@ export function LichessPlayActions({ setup }: { setup: LichessSeekSetup }) {
 }
 
 /** Play → Lichess: quick pairing, challenges (friend, Lichess AI), incoming challenges, games to resume. */
-export function LichessPlayPanel({ setup, onOpenGame }: { setup: LichessSeekSetup; onOpenGame: () => void }) {
+export function LichessPlayPanel({
+  setup,
+  onOpenGame
+}: {
+  setup: LichessSeekSetup;
+  onOpenGame: () => void;
+}) {
   const status = useLichessStore((state) => state.status);
   const loaded = useLichessStore((state) => state.loaded);
   const liveGame = useLichessStore(selectLiveGameInProgress);
@@ -173,7 +182,12 @@ export function LichessPlayPanel({ setup, onOpenGame }: { setup: LichessSeekSetu
           {ongoingGameIds.map((id) => (
             <li key={id} className={cn(listRow, "justify-between")}>
               <span className="truncate text-sm text-fg-secondary">Game {id}</span>
-              <Button type="button" variant="primary" size="sm" onClick={() => useLichessStore.getState().resumeGame(id)}>
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={() => useLichessStore.getState().resumeGame(id)}
+              >
                 Resume
               </Button>
             </li>
@@ -203,12 +217,21 @@ export function LichessPlayPanel({ setup, onOpenGame }: { setup: LichessSeekSetu
 function QuickPairing({ setup }: { setup: LichessSeekSetup }) {
   return (
     <section className={cn(cardPadded, "grid gap-4")}>
-      <SectionHeader as="h3" title="Quick pairing" description="Rapid and classical games against someone from the Lichess lobby." />
+      <SectionHeader
+        as="h3"
+        title="Quick pairing"
+        description="Rapid and classical games against someone from the Lichess lobby."
+      />
       {setup.seeking ? (
         <Seeking setup={setup} />
       ) : (
         <>
-          <ClockChoice presets={SEEK_PRESETS} value={setup.preset} onChange={setup.setPreset} label="Time control" />
+          <ClockChoice
+            presets={SEEK_PRESETS}
+            value={setup.preset}
+            onChange={setup.setPreset}
+            label="Time control"
+          />
           <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
             <Field label="Game">
               <SegmentedControl
@@ -230,9 +253,14 @@ function QuickPairing({ setup }: { setup: LichessSeekSetup }) {
             </Field>
           </div>
           <p className={fieldHint}>
-            Lichess only lets apps join rapid and slower lobby games. For blitz, challenge a friend or the Lichess AI below; bullet is
-            only on{" "}
-            <a href="https://lichess.org" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-fg">
+            Lichess only lets apps join rapid and slower lobby games. For blitz, challenge a friend
+            or the Lichess AI below; bullet is only on{" "}
+            <a
+              href="https://lichess.org"
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-2 hover:text-fg"
+            >
               lichess.org
             </a>
             .
@@ -253,7 +281,9 @@ function Seeking({ setup }: { setup: LichessSeekSetup }) {
   }, []);
   if (!seek) return null;
   const elapsed = Math.max(0, Math.floor((now - seek.startedAt) / 1000));
-  const range = seek.input.ratingRange ? ` · ${seek.input.ratingRange[0]}–${seek.input.ratingRange[1]}` : "";
+  const range = seek.input.ratingRange
+    ? ` · ${seek.input.ratingRange[0]}–${seek.input.ratingRange[1]}`
+    : "";
   return (
     <div className="flex flex-wrap items-center gap-3" role="status">
       <Loader2 className="size-5 animate-spin text-accent" aria-hidden="true" />
@@ -271,7 +301,13 @@ function Seeking({ setup }: { setup: LichessSeekSetup }) {
   );
 }
 
-function FriendChallenge({ outgoing, disabled }: { outgoing: LichessChallenge[]; disabled: boolean }) {
+function FriendChallenge({
+  outgoing,
+  disabled
+}: {
+  outgoing: LichessChallenge[];
+  disabled: boolean;
+}) {
   const [username, setUsername] = useState("");
   const [preset, setPreset] = useState<LichessClockPreset>(CHALLENGE_PRESETS[2]);
   const [rated, setRated] = useState(false);
@@ -286,18 +322,30 @@ function FriendChallenge({ outgoing, disabled }: { outgoing: LichessChallenge[];
     setBusy(true);
     setError(null);
     api
-      .challenge({ username: name, minutes: preset.minutes, incrementSec: preset.incrementSec, rated, color })
+      .challenge({
+        username: name,
+        minutes: preset.minutes,
+        incrementSec: preset.incrementSec,
+        rated,
+        color
+      })
       .then((challenge) => {
         useLichessStore.getState().upsertChallenge(challenge);
         setUsername("");
       })
-      .catch((reason: unknown) => setError(lichessErrorMessage(reason, "Couldn’t send the challenge.")))
+      .catch((reason: unknown) =>
+        setError(lichessErrorMessage(reason, "Couldn’t send the challenge."))
+      )
       .finally(() => setBusy(false));
   }
 
   return (
     <section className={cn(cardPadded, "grid content-start gap-4")}>
-      <SectionHeader as="h3" title="Challenge a friend" description="Any time control, blitz included." />
+      <SectionHeader
+        as="h3"
+        title="Challenge a friend"
+        description="Any time control, blitz included."
+      />
       <Field label="Lichess username" htmlFor="lichess-challenge-user">
         <Input
           id="lichess-challenge-user"
@@ -311,10 +359,21 @@ function FriendChallenge({ outgoing, disabled }: { outgoing: LichessChallenge[];
           spellCheck={false}
         />
       </Field>
-      <ClockChoice presets={CHALLENGE_PRESETS} value={preset} onChange={setPreset} label="Time control" />
+      <ClockChoice
+        presets={CHALLENGE_PRESETS}
+        value={preset}
+        onChange={setPreset}
+        label="Time control"
+      />
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
         <Field label="You play">
-          <SegmentedControl ariaLabel="You play" value={color} onChange={setColor} options={colorOptions} className="w-fit" />
+          <SegmentedControl
+            ariaLabel="You play"
+            value={color}
+            onChange={setColor}
+            options={colorOptions}
+            className="w-fit"
+          />
         </Field>
         <Field label="Game">
           <SegmentedControl
@@ -328,7 +387,12 @@ function FriendChallenge({ outgoing, disabled }: { outgoing: LichessChallenge[];
       </div>
       {error ? <Notice tone="danger">{error}</Notice> : null}
       <div>
-        <Button type="button" variant="outline" disabled={disabled || busy || !username.trim()} onClick={send}>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={disabled || busy || !username.trim()}
+          onClick={send}
+        >
           <Send />
           Send challenge
         </Button>
@@ -360,13 +424,19 @@ function AiChallenge({ disabled }: { disabled: boolean }) {
     api
       .challengeAi({ level, minutes: preset.minutes, incrementSec: preset.incrementSec, color })
       .then(({ gameId }) => useLichessStore.getState().resumeGame(gameId))
-      .catch((reason: unknown) => setError(lichessErrorMessage(reason, "Couldn’t start a game against the Lichess AI.")))
+      .catch((reason: unknown) =>
+        setError(lichessErrorMessage(reason, "Couldn’t start a game against the Lichess AI."))
+      )
       .finally(() => setBusy(false));
   }
 
   return (
     <section className={cn(cardPadded, "grid content-start gap-4")}>
-      <SectionHeader as="h3" title="Play the Lichess AI" description="Stockfish on Lichess’s servers. Saved like any Lichess game." />
+      <SectionHeader
+        as="h3"
+        title="Play the Lichess AI"
+        description="Stockfish on Lichess’s servers. Saved like any Lichess game."
+      />
       <div className="grid gap-1.5">
         <Eyebrow>Level</Eyebrow>
         <div role="radiogroup" aria-label="Lichess AI level" className="flex flex-wrap gap-1.5">
@@ -385,9 +455,20 @@ function AiChallenge({ disabled }: { disabled: boolean }) {
           ))}
         </div>
       </div>
-      <ClockChoice presets={CHALLENGE_PRESETS} value={preset} onChange={setPreset} label="Time control" />
+      <ClockChoice
+        presets={CHALLENGE_PRESETS}
+        value={preset}
+        onChange={setPreset}
+        label="Time control"
+      />
       <Field label="You play">
-        <SegmentedControl ariaLabel="You play against the AI" value={color} onChange={setColor} options={colorOptions} className="w-fit" />
+        <SegmentedControl
+          ariaLabel="You play against the AI"
+          value={color}
+          onChange={setColor}
+          options={colorOptions}
+          className="w-fit"
+        />
       </Field>
       {error ? <Notice tone="danger">{error}</Notice> : null}
       <div>
@@ -403,7 +484,9 @@ function AiChallenge({ disabled }: { disabled: boolean }) {
 function ChallengeRow({ challenge, disabled }: { challenge: LichessChallenge; disabled: boolean }) {
   const [busy, setBusy] = useState(false);
   const api = window.chaturanga?.lichess;
-  const clock = challenge.timeControl ? `${challenge.timeControl.minutes}+${challenge.timeControl.incrementSec}` : "Unlimited";
+  const clock = challenge.timeControl
+    ? `${challenge.timeControl.minutes}+${challenge.timeControl.incrementSec}`
+    : "Unlimited";
   const side = challenge.yourColor === "random" ? "random side" : `you play ${challenge.yourColor}`;
   const rating = challenge.opponent.rating ? ` (${challenge.opponent.rating})` : "";
 
@@ -418,7 +501,11 @@ function ChallengeRow({ challenge, disabled }: { challenge: LichessChallenge; di
   return (
     <li className={cn(listRow, "justify-between gap-3")}>
       <span className="flex min-w-0 items-center gap-2.5">
-        {challenge.direction === "in" ? <Swords className="size-4 shrink-0 text-accent" /> : <UserRound className="size-4 shrink-0 text-fg-muted" />}
+        {challenge.direction === "in" ? (
+          <Swords className="size-4 shrink-0 text-accent" />
+        ) : (
+          <UserRound className="size-4 shrink-0 text-fg-muted" />
+        )}
         <span className="grid min-w-0">
           <span className="truncate text-sm font-medium text-fg-secondary">
             {playerLabel(challenge.opponent)}
@@ -431,17 +518,35 @@ function ChallengeRow({ challenge, disabled }: { challenge: LichessChallenge; di
       </span>
       {challenge.direction === "in" ? (
         <span className="flex shrink-0 gap-1.5">
-          <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => run("declineChallenge")}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() => run("declineChallenge")}
+          >
             <X />
             Decline
           </Button>
-          <Button type="button" variant="primary" size="sm" disabled={busy || disabled} onClick={() => run("acceptChallenge")}>
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            disabled={busy || disabled}
+            onClick={() => run("acceptChallenge")}
+          >
             <Check />
             Accept
           </Button>
         </span>
       ) : (
-        <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => run("cancelChallenge")}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onClick={() => run("cancelChallenge")}
+        >
           Cancel
         </Button>
       )}
@@ -466,7 +571,8 @@ function ClockChoice({
       <Eyebrow>{label}</Eyebrow>
       <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1.5">
         {presets.map((preset) => {
-          const selected = preset.minutes === value.minutes && preset.incrementSec === value.incrementSec;
+          const selected =
+            preset.minutes === value.minutes && preset.incrementSec === value.incrementSec;
           return (
             <ChipButton
               key={presetLabel(preset)}
@@ -478,7 +584,9 @@ function ClockChoice({
               onClick={() => onChange(preset)}
             >
               {presetLabel(preset)}
-              <span className="text-fg-subtle">{speedLabel(speedForClock(preset.minutes, preset.incrementSec))}</span>
+              <span className="text-fg-subtle">
+                {speedLabel(speedForClock(preset.minutes, preset.incrementSec))}
+              </span>
             </ChipButton>
           );
         })}

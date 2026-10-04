@@ -55,7 +55,12 @@ export async function reservoirScan(
     if (lineIndex === 0 || !line.trim()) return;
     const row = parseCsvLine(line);
     const id = row[0] ?? "";
-    if (excluded.has(id) || (wanted && !wanted.has(id)) || !matchesCheapFilters(job.kind, row, job.input)) return;
+    if (
+      excluded.has(id) ||
+      (wanted && !wanted.has(id)) ||
+      !matchesCheapFilters(job.kind, row, job.input)
+    )
+      return;
     matches += 1;
     if (rows.length < job.size) rows.push(row);
     else {
@@ -103,7 +108,11 @@ export async function scanCsvLines(
  * however large or wrong the file is. Null when there is no line break within that much text (a CSV
  * header is far shorter). Rejects when the file can't be read or decompressed.
  */
-export async function readFirstLine(filePath: string, compressed: boolean, maxChars = 64 * 1024): Promise<string | null> {
+export async function readFirstLine(
+  filePath: string,
+  compressed: boolean,
+  maxChars = 64 * 1024
+): Promise<string | null> {
   const decoder = new TextDecoder();
   let text = "";
   let ended = true;
@@ -128,7 +137,10 @@ function bytes(chunk: unknown): Buffer {
   return chunk;
 }
 
-async function* decompressedChunks(filePath: string, compressed: boolean): AsyncGenerator<Uint8Array> {
+async function* decompressedChunks(
+  filePath: string,
+  compressed: boolean
+): AsyncGenerator<Uint8Array> {
   if (compressed && typeof createZstdDecompress === "function") {
     yield* nativeZstdFrames(filePath);
     return;
@@ -167,7 +179,8 @@ async function* nativeZstdFrames(filePath: string): AsyncGenerator<Buffer> {
     const decompress = createZstdDecompress();
     let failure: unknown = null;
     const frames = pipeline(file, decompress, (error) => {
-      if (error && (error as NodeJS.ErrnoException).code !== "ERR_STREAM_PREMATURE_CLOSE") failure = error;
+      if (error && (error as NodeJS.ErrnoException).code !== "ERR_STREAM_PREMATURE_CLOSE")
+        failure = error;
     });
     try {
       for await (const chunk of frames) yield bytes(chunk);
@@ -213,11 +226,18 @@ const WORKER_SCAN_TIMEOUT_MS = 5 * 60_000;
  * `ScanWorkerError` when the file is missing, the worker throws, or it exits or stalls without
  * answering — so no caller waits forever.
  */
-export function workerScanner(workerPath: string, timeoutMs = WORKER_SCAN_TIMEOUT_MS): PuzzleScanner {
+export function workerScanner(
+  workerPath: string,
+  timeoutMs = WORKER_SCAN_TIMEOUT_MS
+): PuzzleScanner {
   return (job) => {
     if (!existsSync(workerPath)) {
       return {
-        result: Promise.reject(new ScanWorkerError(`the puzzle scanner (${workerPath}) is missing from this installation`)),
+        result: Promise.reject(
+          new ScanWorkerError(
+            `the puzzle scanner (${workerPath}) is missing from this installation`
+          )
+        ),
         cancel: () => undefined
       };
     }
@@ -227,10 +247,17 @@ export function workerScanner(workerPath: string, timeoutMs = WORKER_SCAN_TIMEOU
       try {
         worker = new Worker(workerPath, { workerData: job });
       } catch (error) {
-        reject(new ScanWorkerError(`the puzzle scanner couldn't start (${error instanceof Error ? error.message : String(error)})`));
+        reject(
+          new ScanWorkerError(
+            `the puzzle scanner couldn't start (${error instanceof Error ? error.message : String(error)})`
+          )
+        );
         return;
       }
-      const timer = setTimeout(() => finish({ error: new ScanWorkerError("the puzzle scanner stopped responding") }), timeoutMs);
+      const timer = setTimeout(
+        () => finish({ error: new ScanWorkerError("the puzzle scanner stopped responding") }),
+        timeoutMs
+      );
       let settled = false;
       finish = (outcome) => {
         if (settled) return;
@@ -240,16 +267,28 @@ export function workerScanner(workerPath: string, timeoutMs = WORKER_SCAN_TIMEOU
         if ("result" in outcome) resolve(outcome.result);
         else reject(outcome.error);
       };
-      worker.once("message", (message: { ok: true; result: ScanResult } | { ok: false; message: string }) =>
-        // A failed scan inside a working worker: the file couldn't be read.
-        finish(message.ok ? { result: message.result } : { error: new Error(message.message) })
+      worker.once(
+        "message",
+        (message: { ok: true; result: ScanResult } | { ok: false; message: string }) =>
+          // A failed scan inside a working worker: the file couldn't be read.
+          finish(message.ok ? { result: message.result } : { error: new Error(message.message) })
       );
       worker.once("error", (error: unknown) =>
-        finish({ error: new ScanWorkerError(`the puzzle scanner crashed (${error instanceof Error ? error.message : String(error)})`) })
+        finish({
+          error: new ScanWorkerError(
+            `the puzzle scanner crashed (${error instanceof Error ? error.message : String(error)})`
+          )
+        })
       );
       worker.once("exit", (code) =>
         // After any message still queued from the worker, which wins if there is one.
-        setImmediate(() => finish({ error: new ScanWorkerError(`the puzzle scanner stopped without an answer (exit code ${code})`) }))
+        setImmediate(() =>
+          finish({
+            error: new ScanWorkerError(
+              `the puzzle scanner stopped without an answer (exit code ${code})`
+            )
+          })
+        )
       );
     });
     return { result, cancel: () => finish({ error: new ScanCancelledError() }) };

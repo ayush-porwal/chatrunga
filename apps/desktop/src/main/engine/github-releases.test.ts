@@ -24,22 +24,42 @@ import {
 const SF_API = "https://api.github.com/repos/official-stockfish/Stockfish/releases/latest";
 
 const json = (body: unknown, init: ResponseInit = {}) =>
-  new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" }, ...init });
+  new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+    ...init
+  });
 
 /** GitHub's unauthenticated rate-limit answer. */
 const rateLimited = (resetEpochSeconds: number) =>
   json(
-    { message: "API rate limit exceeded for 203.0.113.7.", documentation_url: "https://docs.github.com/rest" },
-    { status: 403, headers: { "x-ratelimit-limit": "60", "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(resetEpochSeconds) } }
+    {
+      message: "API rate limit exceeded for 203.0.113.7.",
+      documentation_url: "https://docs.github.com/rest"
+    },
+    {
+      status: 403,
+      headers: {
+        "x-ratelimit-limit": "60",
+        "x-ratelimit-remaining": "0",
+        "x-ratelimit-reset": String(resetEpochSeconds)
+      }
+    }
   );
 
 describe("fetchLatestRelease", () => {
   it("calls the releases/latest endpoint with GitHub headers and a timeout", async () => {
     const fetchImpl = vi.fn(async () => json(sf19));
-    const release = await fetchLatestRelease("official-stockfish/Stockfish", { fetchImpl, userAgent: "Test/1" });
+    const release = await fetchLatestRelease("official-stockfish/Stockfish", {
+      fetchImpl,
+      userAgent: "Test/1"
+    });
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(SF_API);
-    expect(init.headers).toMatchObject({ Accept: "application/vnd.github+json", "User-Agent": "Test/1" });
+    expect(init.headers).toMatchObject({
+      Accept: "application/vnd.github+json",
+      "User-Agent": "Test/1"
+    });
     expect(init.signal).toBeInstanceOf(AbortSignal);
     expect(release.tag_name).toBe("sf_19");
     expect(release.assets).toHaveLength(sf19.assets.length);
@@ -55,7 +75,9 @@ describe("fetchLatestRelease", () => {
   });
 
   it("treats other failures as plain errors", async () => {
-    const notFound = await fetchLatestRelease("a/b", { fetchImpl: async () => json({}, { status: 404 }) }).catch((e: unknown) => e);
+    const notFound = await fetchLatestRelease("a/b", {
+      fetchImpl: async () => json({}, { status: 404 })
+    }).catch((e: unknown) => e);
     expect((notFound as GitHubApiError).rateLimited).toBe(false);
     const offline = await fetchLatestRelease("a/b", {
       fetchImpl: async () => {
@@ -63,13 +85,18 @@ describe("fetchLatestRelease", () => {
       }
     }).catch((e: unknown) => e);
     expect((offline as Error).message).toMatch(/unreachable/);
-    await expect(fetchLatestRelease("../evil", { fetchImpl: async () => json(sf19) })).rejects.toThrow(/Invalid GitHub repo/);
+    await expect(
+      fetchLatestRelease("../evil", { fetchImpl: async () => json(sf19) })
+    ).rejects.toThrow(/Invalid GitHub repo/);
   });
 
   it("keeps only usable assets and tolerates missing digests (older releases)", () => {
     const parsed = parseRelease(sf171);
     expect(parsed.assets.every((a) => a.digest === null)).toBe(true);
-    const odd = parseRelease({ tag_name: "x", assets: [{ name: "a" }, { name: "b", size: 1, browser_download_url: "u", state: "starter" }] });
+    const odd = parseRelease({
+      tag_name: "x",
+      assets: [{ name: "a" }, { name: "b", size: 1, browser_download_url: "u", state: "starter" }]
+    });
     expect(odd.assets).toEqual([]);
     expect(() => parseRelease({ assets: [] })).toThrow(/Malformed/);
   });
@@ -77,9 +104,9 @@ describe("fetchLatestRelease", () => {
 
 describe("digest + host checks", () => {
   it("parses sha256 digests only", () => {
-    expect(parseSha256Digest("sha256:A1F0E3BCC5A6927A11FE6FC8E54A779754645F3C2BAE2CF13420FD1957ADAA77")).toBe(
-      "a1f0e3bcc5a6927a11fe6fc8e54a779754645f3c2bae2cf13420fd1957adaa77"
-    );
+    expect(
+      parseSha256Digest("sha256:A1F0E3BCC5A6927A11FE6FC8E54A779754645F3C2BAE2CF13420FD1957ADAA77")
+    ).toBe("a1f0e3bcc5a6927a11fe6fc8e54a779754645f3c2bae2cf13420fd1957adaa77");
     expect(parseSha256Digest("sha512:abcd")).toBeNull();
     expect(parseSha256Digest("sha256:1234")).toBeNull();
     expect(parseSha256Digest(null)).toBeNull();
@@ -101,7 +128,8 @@ describe("digest + host checks", () => {
       "https://raw.githubusercontent.com/CSSLab/maia-chess/master/maia_weights/maia-1100.pb.gz",
       "not a url"
     ];
-    for (const url of bad) expect(isAllowedDownloadUrl(url, RELEASE_DOWNLOAD_HOSTS), url).toBe(false);
+    for (const url of bad)
+      expect(isAllowedDownloadUrl(url, RELEASE_DOWNLOAD_HOSTS), url).toBe(false);
     expect(isAllowedDownloadUrl(bad[5], RAW_DOWNLOAD_HOSTS)).toBe(true);
   });
 
@@ -109,7 +137,12 @@ describe("digest + host checks", () => {
     const url = sf19.assets[0].browser_download_url;
     expect(isReleaseDownloadOf(url, "official-stockfish/Stockfish")).toBe(true);
     expect(isReleaseDownloadOf(url, "LeelaChessZero/lc0")).toBe(false);
-    expect(isReleaseDownloadOf("https://github.com/someone/Stockfish/releases/download/sf_19/x", "official-stockfish/Stockfish")).toBe(false);
+    expect(
+      isReleaseDownloadOf(
+        "https://github.com/someone/Stockfish/releases/download/sf_19/x",
+        "official-stockfish/Stockfish"
+      )
+    ).toBe(false);
   });
 });
 
@@ -149,7 +182,10 @@ describe("ReleaseCache", () => {
 
   it("honours a shorter max age for explicit checks and dedupes concurrent lookups", async () => {
     const cache = makeCache();
-    await Promise.all([cache.get("official-stockfish/Stockfish"), cache.get("official-stockfish/Stockfish")]);
+    await Promise.all([
+      cache.get("official-stockfish/Stockfish"),
+      cache.get("official-stockfish/Stockfish")
+    ]);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     now += 61_000;
     await cache.get("official-stockfish/Stockfish", { maxAgeMs: 60_000 });
@@ -195,7 +231,10 @@ describe("ReleaseCache", () => {
   it("ignores a corrupt cache file and future timestamps", async () => {
     writeFileSync(cacheFile(), "{not json");
     expect((await makeCache().get("official-stockfish/Stockfish"))?.release.tag_name).toBe("sf_19");
-    const future = { version: 1, entries: { "official-stockfish/Stockfish": { fetchedAt: now + 1e9, release: sf171 } } };
+    const future = {
+      version: 1,
+      entries: { "official-stockfish/Stockfish": { fetchedAt: now + 1e9, release: sf171 } }
+    };
     writeFileSync(cacheFile(), JSON.stringify(future));
     expect((await makeCache().get("official-stockfish/Stockfish"))?.release.tag_name).toBe("sf_19");
     expect(fetchImpl).toHaveBeenCalledTimes(2);

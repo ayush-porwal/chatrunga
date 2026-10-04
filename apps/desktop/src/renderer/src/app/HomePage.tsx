@@ -24,7 +24,6 @@ import type { ResumePracticeTarget, StudyTarget } from "../features/repertoire/r
 /** How many saved games the Recent list shows under the Continue card. */
 const RECENT_LIMIT = 6;
 
-
 /**
  * The start screen. The most recent saved game is the hero (its board, players and result, with
  * Resume / Review); below it the other recent games and the ways to start something new. With no
@@ -74,9 +73,30 @@ export const HomePage = memo(function HomePage({
   const reveal = mountedWhileLoading ? "animate-fade-in" : undefined;
 
   const actions: QuickAction[] = [
-    { id: "analyze", icon: DESTINATION_ICONS.analyze, title: "Analyze a position", hint: "Live engine lines", onClick: onAnalyze, desktopOnly: true },
-    { id: "puzzles", icon: DESTINATION_ICONS.puzzles, title: "Solve puzzles", hint: "From your databases", onClick: onPuzzles, desktopOnly: true },
-    { id: "import", icon: DESTINATION_ICONS.importPgn, title: "Import PGN", hint: "Open a .pgn file", onClick: onImportPgn, desktopOnly: true }
+    {
+      id: "analyze",
+      icon: DESTINATION_ICONS.analyze,
+      title: "Analyze a position",
+      hint: "Live engine lines",
+      onClick: onAnalyze,
+      desktopOnly: true
+    },
+    {
+      id: "puzzles",
+      icon: DESTINATION_ICONS.puzzles,
+      title: "Solve puzzles",
+      hint: "From your databases",
+      onClick: onPuzzles,
+      desktopOnly: true
+    },
+    {
+      id: "import",
+      icon: DESTINATION_ICONS.importPgn,
+      title: "Import PGN",
+      hint: "Open a .pgn file",
+      onClick: onImportPgn,
+      desktopOnly: true
+    }
   ];
 
   return (
@@ -111,7 +131,11 @@ export const HomePage = memo(function HomePage({
             summary={latest}
             onOpen={onOpenGame}
             onReview={onReviewGame}
-            footer={desktopApiAvailable ? <EngineSetupLine onOpenEngineSettings={onOpenEngineSettings} /> : null}
+            footer={
+              desktopApiAvailable ? (
+                <EngineSetupLine onOpenEngineSettings={onOpenEngineSettings} />
+              ) : null
+            }
           />
           <div className="grid items-start gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1fr)_clamp(17rem,16vw,22rem)]">
             <RecentGames
@@ -149,7 +173,8 @@ function useSavedGame(id: string) {
   return useQuery({
     // Under the "games" key so a save (which invalidates ["games"]) refreshes it too.
     queryKey: ["games", "detail", id],
-    queryFn: async (): Promise<SavedGame | null> => (await window.chaturanga?.games.get(id)) ?? null,
+    queryFn: async (): Promise<SavedGame | null> =>
+      (await window.chaturanga?.games.get(id)) ?? null,
     staleTime: 5_000
   });
 }
@@ -204,15 +229,28 @@ function ContinueGame({
           <h2 id="home-continue-title" className="sr-only">
             {playersTitle(summary)}
           </h2>
-          <Scoreboard summary={summary} sideToMove={decided || position?.isEnd ? null : (position?.turn ?? null)} />
+          <Scoreboard
+            summary={summary}
+            sideToMove={decided || position?.isEnd ? null : (position?.turn ?? null)}
+          />
         </div>
 
         <dl className="flex flex-wrap gap-x-6 gap-y-2 text-xs">
-          <Fact label="Event" value={summary.event && summary.event !== "?" ? summary.event : sourceLabel(summary.source)} />
-          {summary.date && !summary.date.startsWith("?") ? <Fact label="Date" value={formatPgnDate(summary.date)} /> : null}
+          <Fact
+            label="Event"
+            value={
+              summary.event && summary.event !== "?" ? summary.event : sourceLabel(summary.source)
+            }
+          />
+          {summary.date && !summary.date.startsWith("?") ? (
+            <Fact label="Date" value={formatPgnDate(summary.date)} />
+          ) : null}
           <Fact label="Moves" value={facts ? String(Math.ceil(facts.plies / 2)) : null} mono />
           {facts?.lastSan ? <Fact label="Last move" value={facts.lastSan} mono /> : null}
-          <Fact label="Review" value={saved ? (reviewed ? reviewSummary(saved) : "Not reviewed") : null} />
+          <Fact
+            label="Review"
+            value={saved ? (reviewed ? reviewSummary(saved) : "Not reviewed") : null}
+          />
         </dl>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -233,7 +271,12 @@ function ContinueGame({
                 <Play />
                 Resume
               </Button>
-              <Button type="button" variant="outline" disabled={!hasMoves} onClick={() => onReview(summary.id)}>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!hasMoves}
+                onClick={() => onReview(summary.id)}
+              >
                 <BarChart3 />
                 {reviewed ? "Open review" : "Review"}
               </Button>
@@ -260,17 +303,27 @@ function Scoreboard({ summary, sideToMove }: { summary: GameSummary; sideToMove:
       <div key={color} className="contents">
         <SideDot color={color} size="md" className="self-center" />
         <span
-          className={cn("min-w-0 truncate text-xl font-semibold tracking-tight", lost ? "text-fg-muted" : "text-fg")}
+          className={cn(
+            "min-w-0 truncate text-xl font-semibold tracking-tight",
+            lost ? "text-fg-muted" : "text-fg"
+          )}
           title={name}
         >
           {name}
         </span>
         {score ? (
-          <span className={cn("text-right text-lg font-semibold tabular-nums", lost ? "text-fg-subtle" : "text-fg")}>
+          <span
+            className={cn(
+              "text-right text-lg font-semibold tabular-nums",
+              lost ? "text-fg-subtle" : "text-fg"
+            )}
+          >
             {score}
           </span>
         ) : sideToMove === color ? (
-          <span className="self-center rounded-full bg-accent/15 px-2 py-0.5 text-2xs font-medium text-accent-fg">To move</span>
+          <span className="self-center rounded-full bg-accent/15 px-2 py-0.5 text-2xs font-medium text-accent-fg">
+            To move
+          </span>
         ) : (
           <span />
         )}
@@ -285,7 +338,15 @@ function Scoreboard({ summary, sideToMove }: { summary: GameSummary; sideToMove:
   );
 }
 
-function Fact({ label, value, mono = false }: { label: string; value: ReactNode | null; mono?: boolean }) {
+function Fact({
+  label,
+  value,
+  mono = false
+}: {
+  label: string;
+  value: ReactNode | null;
+  mono?: boolean;
+}) {
   return (
     <div className="grid min-w-0 gap-0.5">
       <dt className="text-fg-subtle">{label}</dt>
@@ -349,7 +410,10 @@ function RecentGameRow({
   onReview: (id: string) => void;
 }) {
   const title = playersTitle(game);
-  const subtitle = [game.event && game.event !== "?" ? game.event : sourceLabel(game.source), formatPgnDate(game.date)]
+  const subtitle = [
+    game.event && game.event !== "?" ? game.event : sourceLabel(game.source),
+    formatPgnDate(game.date)
+  ]
     .filter(Boolean)
     .join(", ");
   return (
@@ -362,12 +426,16 @@ function RecentGameRow({
       >
         <BoardThumbnail fen={game.currentFen} rounded="md" className="w-13 shrink-0" />
         <span className="grid min-w-0 flex-1 gap-0.5">
-          <span className="truncate text-sm font-medium text-fg-secondary group-hover:text-fg">{title}</span>
+          <span className="truncate text-sm font-medium text-fg-secondary group-hover:text-fg">
+            {title}
+          </span>
           <span className="truncate text-xs text-fg-subtle">{subtitle || " "}</span>
         </span>
         <span className="grid shrink-0 justify-items-end gap-0.5">
           <ResultMark result={game.result} />
-          <span className="text-2xs tabular-nums text-fg-subtle">{relativeTime(game.updatedAt)}</span>
+          <span className="text-2xs tabular-nums text-fg-subtle">
+            {relativeTime(game.updatedAt)}
+          </span>
         </span>
       </button>
       <IconButton
@@ -424,7 +492,9 @@ function QuickActions({
         </span>
         <span className="grid min-w-0 flex-1 gap-0.5">
           <span className="text-sm font-medium text-fg">Play</span>
-          <span className="truncate text-xs text-accent-fg/70">On Lichess, against an engine, or a free board</span>
+          <span className="truncate text-xs text-accent-fg/70">
+            On Lichess, against an engine, or a free board
+          </span>
         </span>
         <ChevronRight className="size-4 shrink-0 text-accent-fg/60 transition-transform duration-micro group-hover:translate-x-0.5" />
       </button>
@@ -448,9 +518,16 @@ function QuickActionRow({ action, disabled }: { action: QuickAction; disabled: b
       onClick={action.onClick}
       className="group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left outline-none transition-colors duration-micro hover:bg-control focus-visible:ring-2 focus-visible:ring-accent/50 disabled:pointer-events-none disabled:opacity-50"
     >
-      <Icon className="size-4 shrink-0 text-fg-subtle transition-colors group-hover:text-fg-secondary" aria-hidden="true" />
-      <span className="min-w-0 flex-1 truncate text-sm text-fg-secondary group-hover:text-fg">{action.title}</span>
-      <span className="shrink-0 truncate text-xs text-fg-subtle">{disabled ? "Desktop app" : action.hint}</span>
+      <Icon
+        className="size-4 shrink-0 text-fg-subtle transition-colors group-hover:text-fg-secondary"
+        aria-hidden="true"
+      />
+      <span className="min-w-0 flex-1 truncate text-sm text-fg-secondary group-hover:text-fg">
+        {action.title}
+      </span>
+      <span className="shrink-0 truncate text-xs text-fg-subtle">
+        {disabled ? "Desktop app" : action.hint}
+      </span>
     </button>
   );
 }
@@ -484,15 +561,20 @@ function FirstRun({
         className
       )}
     >
-      <BoardThumbnail fen={START_FEN} rounded="xl" className="max-w-[clamp(20rem,24vw,30rem)]" label="Starting position in your board theme" />
+      <BoardThumbnail
+        fen={START_FEN}
+        rounded="xl"
+        className="max-w-[clamp(20rem,24vw,30rem)]"
+        label="Starting position in your board theme"
+      />
       <div className="grid max-w-md content-center gap-6">
         <div className="grid gap-2">
           <h2 id="home-first-run-title" className="text-2xl font-semibold tracking-tight text-fg">
             The board is set
           </h2>
           <p className="text-sm leading-6 text-fg-muted">
-            Play a game, or import a PGN of one you want to study. Every game is saved here, so you can pick it up again
-            or review it move by move.
+            Play a game, or import a PGN of one you want to study. Every game is saved here, so you
+            can pick it up again or review it move by move.
           </p>
         </div>
         <div className="grid gap-3">
@@ -501,17 +583,28 @@ function FirstRun({
               <Swords />
               Play
             </Button>
-            <Button type="button" variant="ghost" className="h-10" disabled={!desktopApiAvailable} onClick={onImportPgn}>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-10"
+              disabled={!desktopApiAvailable}
+              onClick={onImportPgn}
+            >
               <Upload />
               Import PGN
             </Button>
           </div>
-          {desktopApiAvailable ? <EngineSetupLine onOpenEngineSettings={onOpenEngineSettings} /> : null}
+          {desktopApiAvailable ? (
+            <EngineSetupLine onOpenEngineSettings={onOpenEngineSettings} />
+          ) : null}
         </div>
         <ul className="grid gap-0.5 border-t border-line-subtle pt-4">
           {secondary.map((action) => (
             <li key={action.id}>
-              <QuickActionRow action={action} disabled={action.desktopOnly && !desktopApiAvailable} />
+              <QuickActionRow
+                action={action}
+                disabled={action.desktopOnly && !desktopApiAvailable}
+              />
             </li>
           ))}
         </ul>
@@ -602,7 +695,9 @@ function sourceLabel(source: GameSummary["source"]): string {
 }
 
 /** Main-line length, the move on the board and its UCI (for the last-move tint). */
-function gameFacts(saved: SavedGame | null): { plies: number; lastSan: string | null; lastMoveUci: string | null } | null {
+function gameFacts(
+  saved: SavedGame | null
+): { plies: number; lastSan: string | null; lastMoveUci: string | null } | null {
   if (!saved) return null;
   const byId = new Map<string, MoveNode>(saved.moveTree.map((node) => [node.id, node]));
   let node = saved.moveTree.find((item) => item.parentId === null);
@@ -611,7 +706,9 @@ function gameFacts(saved: SavedGame | null): { plies: number; lastSan: string | 
     node = byId.get(node.children[0]);
     if (node) plies += 1;
   }
-  const current = saved.currentNodeId ? byId.get(saved.currentNodeId) : saved.moveTree.find((item) => item.fenAfter === saved.currentFen);
+  const current = saved.currentNodeId
+    ? byId.get(saved.currentNodeId)
+    : saved.moveTree.find((item) => item.fenAfter === saved.currentFen);
   return { plies, lastSan: current?.san ?? null, lastMoveUci: current?.uci ?? null };
 }
 
@@ -621,7 +718,9 @@ function reviewSummary(saved: SavedGame): string {
   const errors = summary.blunders + summary.mistakes;
   if (errors) return `${errors} ${errors === 1 ? "error" : "errors"} found`;
   const { inaccuracies } = summary;
-  return inaccuracies ? `${inaccuracies} ${inaccuracies === 1 ? "inaccuracy" : "inaccuracies"}, no errors` : "No errors found";
+  return inaccuracies
+    ? `${inaccuracies} ${inaccuracies === 1 ? "inaccuracy" : "inaccuracies"}, no errors`
+    : "No errors found";
 }
 
 /** "2023.10.14" → "Oct 14, 2023"; partial dates ("1858.??.??") keep what is known. */
@@ -629,9 +728,16 @@ function formatPgnDate(date: string | null): string | null {
   if (!date || date.startsWith("?")) return null;
   const [year, month, day] = date.split(".");
   if (!month || month.startsWith("?")) return year;
-  const parsed = new Date(Number(year), Number(month) - 1, day && !day.startsWith("?") ? Number(day) : 1);
+  const parsed = new Date(
+    Number(year),
+    Number(month) - 1,
+    day && !day.startsWith("?") ? Number(day) : 1
+  );
   if (Number.isNaN(parsed.getTime())) return date;
-  return parsed.toLocaleDateString(undefined, day && !day.startsWith("?") ? { dateStyle: "medium" } : { month: "short", year: "numeric" });
+  return parsed.toLocaleDateString(
+    undefined,
+    day && !day.startsWith("?") ? { dateStyle: "medium" } : { month: "short", year: "numeric" }
+  );
 }
 
 const relativeFormat = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });

@@ -4,7 +4,13 @@
  * `events.onLichessEvent`.
  */
 
-export type LichessSpeed = "ultraBullet" | "bullet" | "blitz" | "rapid" | "classical" | "correspondence";
+export type LichessSpeed =
+  | "ultraBullet"
+  | "bullet"
+  | "blitz"
+  | "rapid"
+  | "classical"
+  | "correspondence";
 
 export type LichessPerf = { rating: number; games: number; provisional: boolean };
 

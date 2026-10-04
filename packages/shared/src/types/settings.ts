@@ -366,7 +366,9 @@ export function isSettingKey(key: string): key is keyof AppSettings {
 }
 
 /** The settings a patch sets. */
-export function settingKeys(patch: Partial<Record<keyof AppSettings, unknown>>): (keyof AppSettings)[] {
+export function settingKeys(
+  patch: Partial<Record<keyof AppSettings, unknown>>
+): (keyof AppSettings)[] {
   return Object.keys(patch).filter(isSettingKey);
 }
 

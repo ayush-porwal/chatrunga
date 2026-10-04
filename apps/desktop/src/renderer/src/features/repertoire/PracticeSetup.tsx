@@ -319,7 +319,8 @@ export function PracticeSetup({
                 value={String(advanceMs)}
                 onChange={(event) => {
                   const delay = Number(event.target.value);
-                  if (isOneOf(PRACTICE_AUTO_ADVANCE_MS, delay)) setSetting("practiceAutoAdvanceMs", delay);
+                  if (isOneOf(PRACTICE_AUTO_ADVANCE_MS, delay))
+                    setSetting("practiceAutoAdvanceMs", delay);
                 }}
               >
                 {PRACTICE_AUTO_ADVANCE_MS.map((delay) => (

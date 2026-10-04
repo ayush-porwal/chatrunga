@@ -94,11 +94,16 @@ export function getDb(): DatabaseSync {
 }
 
 function columnsOf(database: DatabaseSync, table: string): Set<string> {
-  return new Set(allRows<{ name: string }>(database.prepare(`PRAGMA table_info(${table})`)).map((column) => column.name));
+  return new Set(
+    allRows<{ name: string }>(database.prepare(`PRAGMA table_info(${table})`)).map(
+      (column) => column.name
+    )
+  );
 }
 
 function addColumn(database: DatabaseSync, table: string, column: string, type: string): void {
-  if (!columnsOf(database, table).has(column)) database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  if (!columnsOf(database, table).has(column))
+    database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
 }
 
 /**
@@ -116,7 +121,9 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
     addColumn(database, "engines", "image_path", "TEXT");
     addColumn(database, "engines", "is_human_prediction", "INTEGER DEFAULT 0");
     addColumn(database, "engines", "maia_rating", "INTEGER");
-    database.exec("CREATE UNIQUE INDEX IF NOT EXISTS external_databases_source_idx ON external_databases(source_id)");
+    database.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS external_databases_source_idx ON external_databases(source_id)"
+    );
     // Lichess imports are deduplicated by their game URL (Site header).
     database.exec("CREATE INDEX IF NOT EXISTS games_site_idx ON games(site)");
     // Puzzle sessions were once autosaved; they are not library games.
@@ -128,11 +135,15 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
   (database) => {
     database.exec(`UPDATE engines SET is_default = 0 WHERE is_default = 1 AND id NOT IN (
       SELECT id FROM engines WHERE is_default = 1 ORDER BY updated_at DESC LIMIT 1)`);
-    database.exec("CREATE UNIQUE INDEX IF NOT EXISTS engines_one_default ON engines(is_default) WHERE is_default = 1");
+    database.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS engines_one_default ON engines(is_default) WHERE is_default = 1"
+    );
   },
   // 4: the library lists games newest first (F15): an index for that order, without puzzles.
   (database) =>
-    database.exec("CREATE INDEX IF NOT EXISTS games_recent_idx ON games(updated_at DESC, id) WHERE source != 'puzzle'"),
+    database.exec(
+      "CREATE INDEX IF NOT EXISTS games_recent_idx ON games(updated_at DESC, id) WHERE source != 'puzzle'"
+    ),
   // 5: usage analytics (telemetry/): events waiting to be sent, and the installation's own state
   // (random id, milestones reached, last active day). Nothing in them is game content.
   (database) => {
@@ -144,7 +155,9 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
       attempts INTEGER NOT NULL DEFAULT 0,
       next_attempt_at INTEGER NOT NULL DEFAULT 0
     )`);
-    database.exec("CREATE INDEX IF NOT EXISTS telemetry_outbox_due_idx ON telemetry_outbox(next_attempt_at, occurred_at)");
+    database.exec(
+      "CREATE INDEX IF NOT EXISTS telemetry_outbox_due_idx ON telemetry_outbox(next_attempt_at, occurred_at)"
+    );
     database.exec(`CREATE TABLE IF NOT EXISTS telemetry_state (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -165,14 +178,25 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
       commentary_count INTEGER NOT NULL DEFAULT 0,
       review_json TEXT NOT NULL
     )`);
-    database.exec("CREATE INDEX IF NOT EXISTS game_reviews_game_idx ON game_reviews(game_id, created_at DESC)");
+    database.exec(
+      "CREATE INDEX IF NOT EXISTS game_reviews_game_idx ON game_reviews(game_id, created_at DESC)"
+    );
     addColumn(database, "games", "fingerprint", "TEXT");
     database.exec("CREATE INDEX IF NOT EXISTS games_fingerprint_idx ON games(fingerprint)");
 
     // A database old enough may lack some of these columns: they read as null.
     const columns = columnsOf(database, "games");
     const pick = (name: string) => (columns.has(name) ? name : `NULL AS ${name}`);
-    const wanted = ["site", "white", "black", "date", "initial_fen", "headers_json", "move_tree_json", "review_json"];
+    const wanted = [
+      "site",
+      "white",
+      "black",
+      "date",
+      "initial_fen",
+      "headers_json",
+      "move_tree_json",
+      "review_json"
+    ];
     const rows = allRows<{
       id: string;
       site: string | null;
@@ -187,7 +211,9 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
     const insertReview = database.prepare(`INSERT OR IGNORE INTO game_reviews (
       review_id, game_id, created_at, engine_name, move_time_ms, depth, maia_levels_json, move_count, commentary_count, review_json
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-    const setFingerprint = database.prepare("UPDATE games SET fingerprint = ?, review_json = NULL WHERE id = ?");
+    const setFingerprint = database.prepare(
+      "UPDATE games SET fingerprint = ?, review_json = NULL WHERE id = ?"
+    );
     for (const row of rows) {
       if (row.review_json) {
         try {
@@ -390,8 +416,12 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
       decided_at INTEGER NOT NULL,
       completed_at INTEGER
     )`);
-    database.exec("CREATE INDEX IF NOT EXISTS puzzle_attempts_puzzle_idx ON puzzle_attempts(source_id, puzzle_id)");
-    database.exec("CREATE INDEX IF NOT EXISTS puzzle_attempts_rated_idx ON puzzle_attempts(rated, decided_at)");
+    database.exec(
+      "CREATE INDEX IF NOT EXISTS puzzle_attempts_puzzle_idx ON puzzle_attempts(source_id, puzzle_id)"
+    );
+    database.exec(
+      "CREATE INDEX IF NOT EXISTS puzzle_attempts_rated_idx ON puzzle_attempts(rated, decided_at)"
+    );
     database.exec(`CREATE TABLE IF NOT EXISTS puzzle_rating (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       rating REAL NOT NULL,
@@ -418,9 +448,18 @@ function storedFingerprint(row: {
     if (!row.move_tree_json) return null;
     const moveTree = parseStoredJson<MoveNode[]>(row.move_tree_json);
     if (!Array.isArray(moveTree) || !moveTree.length) return null;
-    const stored = row.headers_json ? parseStoredJson<Partial<GameHeaders> | null>(row.headers_json) : null;
-    const headers = { site: row.site, white: row.white, black: row.black, date: row.date, ...stored };
-    const rootFen = row.initial_fen ?? moveTree.find((node) => node.parentId === null)?.fenAfter ?? "";
+    const stored = row.headers_json
+      ? parseStoredJson<Partial<GameHeaders> | null>(row.headers_json)
+      : null;
+    const headers = {
+      site: row.site,
+      white: row.white,
+      black: row.black,
+      date: row.date,
+      ...stored
+    };
+    const rootFen =
+      row.initial_fen ?? moveTree.find((node) => node.parentId === null)?.fenAfter ?? "";
     return gameFingerprint({ headers, rootFen, moveTree });
   } catch {
     return null;
@@ -428,7 +467,8 @@ function storedFingerprint(row: {
 }
 
 export function runMigrations(database: DatabaseSync, migrations = MIGRATIONS): void {
-  const version = getRow<{ user_version: number }>(database.prepare("PRAGMA user_version"))?.user_version ?? 0;
+  const version =
+    getRow<{ user_version: number }>(database.prepare("PRAGMA user_version"))?.user_version ?? 0;
   for (let index = version; index < migrations.length; index += 1) {
     database.exec("BEGIN IMMEDIATE");
     try {

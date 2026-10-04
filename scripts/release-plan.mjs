@@ -20,7 +20,8 @@ function parseArgs(argv) {
     if (!(key in args)) throw new Error(`Unknown argument: ${argv[i]}`);
     args[key] = argv[i + 1] ?? "";
   }
-  if (!["patch", "minor", "major"].includes(args.bump)) throw new Error(`Invalid bump: ${args.bump}`);
+  if (!["patch", "minor", "major"].includes(args.bump))
+    throw new Error(`Invalid bump: ${args.bump}`);
   return args;
 }
 
@@ -48,13 +49,17 @@ function compare(a, b) {
  */
 export function bumpVersion(current, bump) {
   const v = parse(current);
-  if (bump === "major") return v.pre && v.minor === 0 && v.patch === 0 ? `${v.major}.0.0` : `${v.major + 1}.0.0`;
-  if (bump === "minor") return v.pre && v.patch === 0 ? `${v.major}.${v.minor}.0` : `${v.major}.${v.minor + 1}.0`;
+  if (bump === "major")
+    return v.pre && v.minor === 0 && v.patch === 0 ? `${v.major}.0.0` : `${v.major + 1}.0.0`;
+  if (bump === "minor")
+    return v.pre && v.patch === 0 ? `${v.major}.${v.minor}.0` : `${v.major}.${v.minor + 1}.0`;
   return v.pre ? `${v.major}.${v.minor}.${v.patch}` : `${v.major}.${v.minor}.${v.patch + 1}`;
 }
 
 function latestVersionTag() {
-  const tags = git("tag", "--list", "v*").split("\n").filter((tag) => SEMVER.test(tag.slice(1)));
+  const tags = git("tag", "--list", "v*")
+    .split("\n")
+    .filter((tag) => SEMVER.test(tag.slice(1)));
   tags.sort((a, b) => compare(parse(a.slice(1)), parse(b.slice(1))));
   return tags.at(-1) ?? "";
 }
@@ -80,7 +85,9 @@ export function releaseNotes({ commits, version, previousTag, repo }) {
     const scope = match?.[2] ? `**${match[2]}:** ` : "";
     const text = match ? match[4] : subject;
     const breaking = match?.[3] ? " ⚠️ breaking" : "";
-    const link = repo ? `[\`${sha.slice(0, 7)}\`](https://github.com/${repo}/commit/${sha})` : `\`${sha.slice(0, 7)}\``;
+    const link = repo
+      ? `[\`${sha.slice(0, 7)}\`](https://github.com/${repo}/commit/${sha})`
+      : `\`${sha.slice(0, 7)}\``;
     if (!groups.has(title)) groups.set(title, []);
     groups.get(title).push(`- ${scope}${text}${breaking} (${link})`);
   }
@@ -90,7 +97,9 @@ export function releaseNotes({ commits, version, previousTag, repo }) {
     .map((title) => `### ${title}\n\n${groups.get(title).join("\n")}`)
     .join("\n\n");
   const compareLink =
-    repo && previousTag ? `\n\n**Full changelog:** https://github.com/${repo}/compare/${previousTag}...v${version}` : "";
+    repo && previousTag
+      ? `\n\n**Full changelog:** https://github.com/${repo}/compare/${previousTag}...v${version}`
+      : "";
   return `## Chaturanga v${version}\n\n${body || "_No changes since the previous release._"}${compareLink}\n`;
 }
 
@@ -108,7 +117,9 @@ function commitsSince(previousTag) {
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const previousTag = latestVersionTag();
-  const packageVersion = JSON.parse(readFileSync(new URL("../apps/desktop/package.json", import.meta.url))).version;
+  const packageVersion = JSON.parse(
+    readFileSync(new URL("../apps/desktop/package.json", import.meta.url))
+  ).version;
 
   let version = args.version.replace(/^v/, "");
   if (version) parse(version);
@@ -119,8 +130,13 @@ function main() {
   }
   if (git("tag", "--list", `v${version}`)) throw new Error(`Tag v${version} already exists.`);
 
-  writeFileSync(args.notes, releaseNotes({ commits: commitsSince(previousTag), version, previousTag, repo: args.repo }));
-  process.stdout.write(`version=${version}\ntag=v${version}\nprevious_tag=${previousTag}\nprerelease=${parse(version).pre ? "true" : "false"}\n`);
+  writeFileSync(
+    args.notes,
+    releaseNotes({ commits: commitsSince(previousTag), version, previousTag, repo: args.repo })
+  );
+  process.stdout.write(
+    `version=${version}\ntag=v${version}\nprevious_tag=${previousTag}\nprerelease=${parse(version).pre ? "true" : "false"}\n`
+  );
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

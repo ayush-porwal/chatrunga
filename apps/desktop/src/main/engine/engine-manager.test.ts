@@ -2,7 +2,12 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { EngineBestMove, EngineConfig, EngineError, EngineInfo } from "@chaturanga/shared/types/engine";
+import type {
+  EngineBestMove,
+  EngineConfig,
+  EngineError,
+  EngineInfo
+} from "@chaturanga/shared/types/engine";
 
 const FAKE = join(__dirname, "__fixtures__", "fake-live-uci.mjs");
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -39,7 +44,8 @@ function fakeEngine(id: string, extraArgs: string[] = []): EngineConfig {
 
 const sent = () => readFileSync(logFile, "utf8").split("\n").filter(Boolean);
 const spawns = () => sent().filter((line) => line === "spawn").length;
-const pids = () => sent().flatMap((line) => (line.startsWith("pid ") ? [Number(line.slice(4))] : []));
+const pids = () =>
+  sent().flatMap((line) => (line.startsWith("pid ") ? [Number(line.slice(4))] : []));
 
 function isRunning(pid: number): boolean {
   try {
@@ -60,7 +66,8 @@ function collect(manager: InstanceType<typeof EngineManager>) {
   return { bestMoves, infos, errors };
 }
 
-const expectEventually = (check: () => boolean) => vi.waitFor(() => expect(check()).toBe(true), { timeout: 3_000, interval: 10 });
+const expectEventually = (check: () => boolean) =>
+  vi.waitFor(() => expect(check()).toBe(true), { timeout: 3_000, interval: 10 });
 
 describe("EngineManager", () => {
   let manager: InstanceType<typeof EngineManager>;
@@ -80,7 +87,14 @@ describe("EngineManager", () => {
     const events = collect(manager);
     const moves = ["e2e4", "e7e5", "g1f3", "b8c6"];
     for (let ply = 0; ply < moves.length; ply += 2) {
-      await manager.start({ engineId: "sf", searchId: `m${ply}`, side: "black", fen: START, moves: moves.slice(0, ply + 1), moveTimeMs: 10 });
+      await manager.start({
+        engineId: "sf",
+        searchId: `m${ply}`,
+        side: "black",
+        fen: START,
+        moves: moves.slice(0, ply + 1),
+        moveTimeMs: 10
+      });
       await expectEventually(() => events.bestMoves.length === ply / 2 + 1);
     }
     expect(spawns()).toBe(1);
@@ -91,17 +105,43 @@ describe("EngineManager", () => {
 
   it("live analysis searches until stopped, or to the depth / for the time asked for", async () => {
     collect(manager);
-    await manager.startAnalysis({ engineId: "sf", searchId: "a", fen: START, moves: [], multipv: 2 });
+    await manager.startAnalysis({
+      engineId: "sf",
+      searchId: "a",
+      fen: START,
+      moves: [],
+      multipv: 2
+    });
     await expectEventually(() => sent().includes("go infinite"));
-    await manager.startAnalysis({ engineId: "sf", searchId: "b", fen: START, moves: [], multipv: 2, depth: 18 });
+    await manager.startAnalysis({
+      engineId: "sf",
+      searchId: "b",
+      fen: START,
+      moves: [],
+      multipv: 2,
+      depth: 18
+    });
     await expectEventually(() => sent().includes("go depth 18"));
-    await manager.startAnalysis({ engineId: "sf", searchId: "c", fen: START, moves: [], multipv: 2, moveTimeMs: 5000 });
+    await manager.startAnalysis({
+      engineId: "sf",
+      searchId: "c",
+      fen: START,
+      moves: [],
+      multipv: 2,
+      moveTimeMs: 5000
+    });
     await expectEventually(() => sent().includes("go movetime 5000"));
   });
 
   it("dispose resolves once the warm process has exited (a draw probe then runs alone)", async () => {
     const events = collect(manager);
-    await manager.startAnalysis({ engineId: "sf", searchId: "a", fen: START, moves: [], multipv: 1 });
+    await manager.startAnalysis({
+      engineId: "sf",
+      searchId: "a",
+      fen: START,
+      moves: [],
+      multipv: 1
+    });
     await expectEventually(() => events.infos.length > 0);
     await manager.dispose();
     expect(sent()).toContain("exit");
@@ -110,7 +150,13 @@ describe("EngineManager", () => {
   it("dispose kills an engine that ignores quit and SIGTERM, and resolves once it has exited", async () => {
     fakeEngine("stubborn", ["stubborn"]);
     const events = collect(manager);
-    await manager.startAnalysis({ engineId: "stubborn", searchId: "a", fen: START, moves: [], multipv: 1 });
+    await manager.startAnalysis({
+      engineId: "stubborn",
+      searchId: "a",
+      fen: START,
+      moves: [],
+      multipv: 1
+    });
     await expectEventually(() => events.infos.length > 0);
     const [pid] = pids();
     await manager.dispose();
@@ -120,9 +166,21 @@ describe("EngineManager", () => {
   it("switching engines starts the new process only after the old one has exited", async () => {
     fakeEngine("lc0", ["slow-exit"]);
     const events = collect(manager);
-    await manager.startAnalysis({ engineId: "lc0", searchId: "a", fen: START, moves: [], multipv: 1 });
+    await manager.startAnalysis({
+      engineId: "lc0",
+      searchId: "a",
+      fen: START,
+      moves: [],
+      multipv: 1
+    });
     await expectEventually(() => events.infos.length > 0);
-    await manager.startAnalysis({ engineId: "sf", searchId: "b", fen: START, moves: [], multipv: 1 });
+    await manager.startAnalysis({
+      engineId: "sf",
+      searchId: "b",
+      fen: START,
+      moves: [],
+      multipv: 1
+    });
     await expectEventually(() => events.infos.some((info) => info.searchId === "b"));
     const log = sent();
     expect(spawns()).toBe(2);
@@ -133,12 +191,27 @@ describe("EngineManager", () => {
   it("a search superseded while the old process exits never starts one", async () => {
     fakeEngine("lc0", ["slow-exit"]);
     const events = collect(manager);
-    await manager.startAnalysis({ engineId: "lc0", searchId: "a", fen: START, moves: [], multipv: 1 });
+    await manager.startAnalysis({
+      engineId: "lc0",
+      searchId: "a",
+      fen: START,
+      moves: [],
+      multipv: 1
+    });
     await expectEventually(() => events.infos.length > 0);
-    const replaced = manager.startAnalysis({ engineId: "sf", searchId: "b", fen: START, moves: [], multipv: 1 });
+    const replaced = manager.startAnalysis({
+      engineId: "sf",
+      searchId: "b",
+      fen: START,
+      moves: [],
+      multipv: 1
+    });
     // "b" now waits for the slow-exiting lc0, which has been told to quit.
     await expectEventually(() => sent().includes("quit"));
-    await Promise.all([replaced, manager.startAnalysis({ engineId: "sf", searchId: "c", fen: START, moves: [], multipv: 1 })]);
+    await Promise.all([
+      replaced,
+      manager.startAnalysis({ engineId: "sf", searchId: "c", fen: START, moves: [], multipv: 1 })
+    ]);
     await expectEventually(() => events.infos.some((info) => info.searchId === "c"));
     expect(spawns()).toBe(2);
     expect(events.infos.some((info) => info.searchId === "b")).toBe(false);
@@ -147,7 +220,13 @@ describe("EngineManager", () => {
 
   it("a search requested during a draw probe starts only after the probe finished", async () => {
     const events = collect(manager);
-    await manager.startAnalysis({ engineId: "sf", searchId: "a", fen: START, moves: [], multipv: 1 });
+    await manager.startAnalysis({
+      engineId: "sf",
+      searchId: "a",
+      fen: START,
+      moves: [],
+      multipv: 1
+    });
     await expectEventually(() => events.infos.length > 0);
     let finishProbe = () => {};
     const probeDone = new Promise<void>((resolve) => {
@@ -159,7 +238,13 @@ describe("EngineManager", () => {
       await probeDone;
       return "score";
     });
-    const search = manager.startAnalysis({ engineId: "sf", searchId: "b", fen: START, moves: [], multipv: 1 });
+    const search = manager.startAnalysis({
+      engineId: "sf",
+      searchId: "b",
+      fen: START,
+      moves: [],
+      multipv: 1
+    });
     // The warm process is gone: a search that didn't wait for the probe would start one now.
     await expectEventually(() => sent().includes("exit"));
     // oxlint-disable-next-line chaturanga/no-test-sleep -- an absence check: no event marks a spawn that didn't happen
@@ -176,18 +261,44 @@ describe("EngineManager", () => {
 
   it("starts a new game when the position doesn't continue the last one", async () => {
     const events = collect(manager);
-    await manager.start({ engineId: "sf", searchId: "a", side: "black", fen: START, moves: ["e2e4"], moveTimeMs: 10 });
+    await manager.start({
+      engineId: "sf",
+      searchId: "a",
+      side: "black",
+      fen: START,
+      moves: ["e2e4"],
+      moveTimeMs: 10
+    });
     await expectEventually(() => events.bestMoves.length === 1);
-    await manager.start({ engineId: "sf", searchId: "b", side: "black", fen: START, moves: ["d2d4"], moveTimeMs: 10 });
+    await manager.start({
+      engineId: "sf",
+      searchId: "b",
+      side: "black",
+      fen: START,
+      moves: ["d2d4"],
+      moveTimeMs: 10
+    });
     await expectEventually(() => events.bestMoves.length === 2);
     expect(sent().filter((line) => line === "ucinewgame")).toHaveLength(2);
   });
 
   it("moving through analysis positions reuses the process and drops the old search's output", async () => {
     const events = collect(manager);
-    await manager.startAnalysis({ engineId: "sf", searchId: "p1", fen: START, moves: [], multipv: 1 });
+    await manager.startAnalysis({
+      engineId: "sf",
+      searchId: "p1",
+      fen: START,
+      moves: [],
+      multipv: 1
+    });
     await expectEventually(() => events.infos.some((info) => info.searchId === "p1"));
-    await manager.startAnalysis({ engineId: "sf", searchId: "p2", fen: START, moves: ["e2e4"], multipv: 1 });
+    await manager.startAnalysis({
+      engineId: "sf",
+      searchId: "p2",
+      fen: START,
+      moves: ["e2e4"],
+      multipv: 1
+    });
     const seen = events.infos.length;
     await expectEventually(() => events.infos.slice(seen).some((info) => info.searchId === "p2"));
     expect(spawns()).toBe(1);
@@ -199,8 +310,20 @@ describe("EngineManager", () => {
 
   it("drops a search superseded while it waits, without reporting an error", async () => {
     const events = collect(manager);
-    const first = manager.startAnalysis({ engineId: "sf", searchId: "old", fen: START, moves: [], multipv: 1 });
-    const second = manager.startAnalysis({ engineId: "sf", searchId: "new", fen: START, moves: ["d2d4"], multipv: 1 });
+    const first = manager.startAnalysis({
+      engineId: "sf",
+      searchId: "old",
+      fen: START,
+      moves: [],
+      multipv: 1
+    });
+    const second = manager.startAnalysis({
+      engineId: "sf",
+      searchId: "new",
+      fen: START,
+      moves: ["d2d4"],
+      multipv: 1
+    });
     await Promise.all([first, second]);
     await expectEventually(() => events.infos.some((info) => info.searchId === "new"));
     expect(events.infos.some((info) => info.searchId === "old")).toBe(false);
@@ -210,21 +333,55 @@ describe("EngineManager", () => {
 
   it("stop ends the search but keeps the engine warm; a new engine config respawns", async () => {
     const events = collect(manager);
-    await manager.startAnalysis({ engineId: "sf", searchId: "p1", fen: START, moves: [], multipv: 1 });
+    await manager.startAnalysis({
+      engineId: "sf",
+      searchId: "p1",
+      fen: START,
+      moves: [],
+      multipv: 1
+    });
     await expectEventually(() => events.infos.length > 0);
     await manager.stop();
-    await manager.startAnalysis({ engineId: "sf", searchId: "p2", fen: START, moves: [], multipv: 1 });
+    await manager.startAnalysis({
+      engineId: "sf",
+      searchId: "p2",
+      fen: START,
+      moves: [],
+      multipv: 1
+    });
     expect(spawns()).toBe(1);
     fakeEngine("other", ["variant"]);
-    await manager.startAnalysis({ engineId: "other", searchId: "p3", fen: START, moves: [], multipv: 1 });
+    await manager.startAnalysis({
+      engineId: "other",
+      searchId: "p3",
+      fen: START,
+      moves: [],
+      multipv: 1
+    });
     expect(spawns()).toBe(2);
   });
 
   it("a new game resets the engine even when it starts from the same position", async () => {
     const events = collect(manager);
-    await manager.start({ engineId: "sf", searchId: "a", gameKey: "g1", side: "white", fen: START, moves: [], moveTimeMs: 10 });
+    await manager.start({
+      engineId: "sf",
+      searchId: "a",
+      gameKey: "g1",
+      side: "white",
+      fen: START,
+      moves: [],
+      moveTimeMs: 10
+    });
     await expectEventually(() => events.bestMoves.length === 1);
-    await manager.start({ engineId: "sf", searchId: "b", gameKey: "g2", side: "white", fen: START, moves: [], moveTimeMs: 10 });
+    await manager.start({
+      engineId: "sf",
+      searchId: "b",
+      gameKey: "g2",
+      side: "white",
+      fen: START,
+      moves: [],
+      moveTimeMs: 10
+    });
     await expectEventually(() => events.bestMoves.length === 2);
     expect(sent().filter((line) => line === "ucinewgame")).toHaveLength(2);
   });
@@ -233,12 +390,24 @@ describe("EngineManager", () => {
     fakeEngine("slow", ["slow-start"]);
     const events = collect(manager);
     const started = Date.now();
-    const slow = manager.startAnalysis({ engineId: "slow", searchId: "slow", fen: START, moves: [], multipv: 1 });
+    const slow = manager.startAnalysis({
+      engineId: "slow",
+      searchId: "slow",
+      fen: START,
+      moves: [],
+      multipv: 1
+    });
     // The slow engine is up and waiting for its uciok.
     await expectEventually(() => sent().includes("uci"));
     await manager.stop();
     await slow;
-    await manager.startAnalysis({ engineId: "sf", searchId: "fast", fen: START, moves: [], multipv: 1 });
+    await manager.startAnalysis({
+      engineId: "sf",
+      searchId: "fast",
+      fen: START,
+      moves: [],
+      multipv: 1
+    });
     await expectEventually(() => events.infos.some((info) => info.searchId === "fast"));
     expect(Date.now() - started).toBeLessThan(3_000);
     expect(events.errors).toEqual([]);
@@ -246,7 +415,13 @@ describe("EngineManager", () => {
 
   it("coalesces info lines per MultiPV slot", async () => {
     const events = collect(manager);
-    await manager.startAnalysis({ engineId: "sf", searchId: "p", fen: START, moves: [], multipv: 1 });
+    await manager.startAnalysis({
+      engineId: "sf",
+      searchId: "p",
+      fen: START,
+      moves: [],
+      multipv: 1
+    });
     // Wait for 50 lines (one each depth): the fake prints one every 5 ms, so about 250 ms of them.
     await expectEventually(() => events.infos.some((info) => (info.depth ?? 0) >= 50));
     await manager.stop();
@@ -302,9 +477,18 @@ describe("EngineManager review cancels", () => {
 
 describe("continuesGame", () => {
   it("is true only for the same start with earlier moves unchanged", () => {
-    expect(continuesGame({ fen: START, moves: ["e2e4"] }, { fen: START, moves: ["e2e4", "e7e5", "g1f3"] })).toBe(true);
-    expect(continuesGame({ fen: START, moves: ["e2e4"] }, { fen: START, moves: ["d2d4"] })).toBe(false);
-    expect(continuesGame({ fen: START, moves: ["e2e4", "e7e5"] }, { fen: START, moves: ["e2e4"] })).toBe(false);
+    expect(
+      continuesGame(
+        { fen: START, moves: ["e2e4"] },
+        { fen: START, moves: ["e2e4", "e7e5", "g1f3"] }
+      )
+    ).toBe(true);
+    expect(continuesGame({ fen: START, moves: ["e2e4"] }, { fen: START, moves: ["d2d4"] })).toBe(
+      false
+    );
+    expect(
+      continuesGame({ fen: START, moves: ["e2e4", "e7e5"] }, { fen: START, moves: ["e2e4"] })
+    ).toBe(false);
     expect(continuesGame(null, { fen: START, moves: [] })).toBe(false);
   });
 });

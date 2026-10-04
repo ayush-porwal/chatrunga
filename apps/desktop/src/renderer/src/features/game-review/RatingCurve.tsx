@@ -11,8 +11,14 @@ export function RatingCurve({ curve }: { curve: RatingCurveType }) {
         title="Human prediction"
         description={
           <span className="flex flex-wrap items-center gap-x-2.5">
-            <span className="inline-flex items-center gap-1"><i className="size-1.5 rounded-full bg-danger" />Played</span>
-            <span className="inline-flex items-center gap-1"><i className="size-1.5 rounded-full bg-accent" />Best</span>
+            <span className="inline-flex items-center gap-1">
+              <i className="size-1.5 rounded-full bg-danger" />
+              Played
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <i className="size-1.5 rounded-full bg-accent" />
+              Best
+            </span>
             <span>Maia model estimate, not a claim about every player</span>
           </span>
         }
@@ -28,7 +34,14 @@ export function RatingCurve({ curve }: { curve: RatingCurveType }) {
               className="grid grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center gap-2 text-2xs"
               aria-label={`${rating}${user ? " (your rating)" : ""}: played ${played}%, best ${best}%`}
             >
-              <span className={cn("font-mono", user ? "font-semibold text-accent-fg" : "text-fg-subtle")}>{rating}</span>
+              <span
+                className={cn(
+                  "font-mono",
+                  user ? "font-semibold text-accent-fg" : "text-fg-subtle"
+                )}
+              >
+                {rating}
+              </span>
               <div className="grid gap-1">
                 <MiniBar value={curve.playedProb[index]} color="bg-danger" />
                 <MiniBar value={curve.bestProb[index]} color="bg-accent" />
@@ -45,7 +58,10 @@ export function RatingCurve({ curve }: { curve: RatingCurveType }) {
 function MiniBar({ value, color }: { value: number; color: string }) {
   return (
     <div className="h-1 overflow-hidden rounded-full bg-control">
-      <div className={cn("h-full rounded-full", color)} style={{ width: `${Math.max(0, Math.min(1, value)) * 100}%` }} />
+      <div
+        className={cn("h-full rounded-full", color)}
+        style={{ width: `${Math.max(0, Math.min(1, value)) * 100}%` }}
+      />
     </div>
   );
 }

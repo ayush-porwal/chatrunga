@@ -33,7 +33,13 @@ type ReviewBoardProps = {
 
 const NO_ARROWS: ReviewArrow[] = [];
 
-export function ReviewBoard({ fen, orientation, arrows = NO_ARROWS, lastMove, className }: ReviewBoardProps) {
+export function ReviewBoard({
+  fen,
+  orientation,
+  arrows = NO_ARROWS,
+  lastMove,
+  className
+}: ReviewBoardProps) {
   const elementRef = useRef<HTMLDivElement | null>(null);
   const groundRef = useRef<Api | null>(null);
   const lastRef = useRef({ fen: "", at: 0 });
@@ -90,7 +96,12 @@ export function ReviewBoard({ fen, orientation, arrows = NO_ARROWS, lastMove, cl
     const now = performance.now();
     const previous = lastRef.current;
     const changed = previous.fen !== fen;
-    const animate = animationEnabled && changed && now - previous.at > RAPID_STEP_MS && !isRapidNavigation(now) && isOneMoveApart(previous.fen, fen);
+    const animate =
+      animationEnabled &&
+      changed &&
+      now - previous.at > RAPID_STEP_MS &&
+      !isRapidNavigation(now) &&
+      isOneMoveApart(previous.fen, fen);
     if (changed) lastRef.current = { fen, at: now };
     // Snapping mid-slide: drop the running slide so pieces land on the new position at once.
     if (!animate) ground.state.animation.current = undefined;
@@ -101,7 +112,8 @@ export function ReviewBoard({ fen, orientation, arrows = NO_ARROWS, lastMove, cl
       lastMove: lastFrom && lastTo ? [lastFrom, lastTo] : undefined,
       drawable: { shapes }
     });
-    if (changed && !isRapidNavigation(now)) window.requestAnimationFrame(() => fadeInSquares(elementRef.current, "square.last-move"));
+    if (changed && !isRapidNavigation(now))
+      window.requestAnimationFrame(() => fadeInSquares(elementRef.current, "square.last-move"));
   }, [animationEnabled, fen, orientation, lastFrom, lastTo, shapes]);
 
   useCgBoardBackground(elementRef, squareBackground, squareColors);
@@ -110,7 +122,11 @@ export function ReviewBoard({ fen, orientation, arrows = NO_ARROWS, lastMove, cl
   return (
     <div
       ref={elementRef}
-      className={cn("cg-wrap board-surface min-h-0 min-w-0 overflow-hidden rounded-lg", pieceClassName, className)}
+      className={cn(
+        "cg-wrap board-surface min-h-0 min-w-0 overflow-hidden rounded-lg",
+        pieceClassName,
+        className
+      )}
       aria-label="Review board"
     />
   );

@@ -74,7 +74,10 @@ export function useReviewRunner({
       useGameStore.getState().setGameId(gameId);
     }
     // The line analysed: an edit that takes any of it off the main line stops this run.
-    review.startReview(reviewId, reviewInput.map((move) => ({ nodeId: move.nodeId, uci: move.uci })));
+    review.startReview(
+      reviewId,
+      reviewInput.map((move) => ({ nodeId: move.nodeId, uci: move.uci }))
+    );
     try {
       await window.chaturanga.engines.reviewGame({
         reviewId,
@@ -102,7 +105,9 @@ export function useReviewRunner({
 }
 
 /** Whether the game has at least one main-line move (the root has a child). */
-function hasMainlineMove(moveTree: readonly { parentId: string | null; children: string[] }[]): boolean {
+function hasMainlineMove(
+  moveTree: readonly { parentId: string | null; children: string[] }[]
+): boolean {
   const root = moveTree.find((node) => node.parentId === null);
   return Boolean(root?.children.length);
 }

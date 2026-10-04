@@ -70,7 +70,13 @@ export function references(file, source) {
     collect(/new URL\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url/g);
     if (file.startsWith("out/renderer/")) collect(/["'](\.\/[^"'\s]+\.(?:m?js|css))["']/g);
   }
-  return [...new Set(found.map((reference) => reference.split(/[?#]/)[0]).filter((reference) => reference && isLocal(reference)))];
+  return [
+    ...new Set(
+      found
+        .map((reference) => reference.split(/[?#]/)[0])
+        .filter((reference) => reference && isLocal(reference))
+    )
+  ];
 }
 
 /**

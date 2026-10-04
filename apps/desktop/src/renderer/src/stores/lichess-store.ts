@@ -1,6 +1,11 @@
 import { create } from "zustand";
 import type { Color } from "@chaturanga/shared/types/chess";
-import type { LichessChallenge, LichessGameFull, LichessSeekInput, LichessStatus } from "@chaturanga/shared/types/lichess";
+import type {
+  LichessChallenge,
+  LichessGameFull,
+  LichessSeekInput,
+  LichessStatus
+} from "@chaturanga/shared/types/lichess";
 
 export type PlayOpponent = "lichess" | "engine" | "board";
 
@@ -66,8 +71,11 @@ export const useLichessStore = create<LichessStore>((set) => ({
   setSeek: (seek, error = null) => set({ seek, seekError: error }),
   setChallenges: (challenges) => set({ challenges }),
   upsertChallenge: (challenge) =>
-    set((state) => ({ challenges: [...state.challenges.filter((item) => item.id !== challenge.id), challenge] })),
-  removeChallenge: (challengeId) => set((state) => ({ challenges: state.challenges.filter((item) => item.id !== challengeId) })),
+    set((state) => ({
+      challenges: [...state.challenges.filter((item) => item.id !== challenge.id), challenge]
+    })),
+  removeChallenge: (challengeId) =>
+    set((state) => ({ challenges: state.challenges.filter((item) => item.id !== challengeId) })),
   setOngoingGameIds: (ids) => set({ ongoingGameIds: ids }),
   setLive: (live) => set({ live }),
   patchLive: (patch) => set((state) => (state.live ? { live: { ...state.live, ...patch } } : {})),
@@ -75,4 +83,5 @@ export const useLichessStore = create<LichessStore>((set) => ({
 }));
 
 /** A Lichess game is being played on the board: engines stay off and the board can't be swapped. */
-export const selectLiveGameInProgress = (state: LichessStore) => Boolean(state.live && !state.live.over);
+export const selectLiveGameInProgress = (state: LichessStore) =>
+  Boolean(state.live && !state.live.over);

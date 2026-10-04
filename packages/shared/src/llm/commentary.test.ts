@@ -247,8 +247,7 @@ describe("coach prompt", () => {
 });
 
 describe("parseCoachResponse", () => {
-  const json =
-    '{"headline": "Knight grab walks into Qg5", "body": "Nxe5 looks like a free pawn."}';
+  const json = '{"headline": "Knight grab walks into Qg5", "body": "Nxe5 looks like a free pawn."}';
 
   it("parses the JSON object, fenced or surrounded by stray text", () => {
     expect(parseCoachResponse(json)).toEqual({
@@ -264,8 +263,15 @@ describe("parseCoachResponse", () => {
   });
 
   it("ignores a takeaway from models that still send one", () => {
-    const withTakeaway = JSON.stringify({ headline: "A free pawn", body: "Nxe5 wins it.", takeaway: "Look first." });
-    expect(parseCoachResponse(withTakeaway)).toEqual({ headline: "A free pawn", body: "Nxe5 wins it." });
+    const withTakeaway = JSON.stringify({
+      headline: "A free pawn",
+      body: "Nxe5 wins it.",
+      takeaway: "Look first."
+    });
+    expect(parseCoachResponse(withTakeaway)).toEqual({
+      headline: "A free pawn",
+      body: "Nxe5 wins it."
+    });
   });
 
   it("falls back to plain text as the body", () => {

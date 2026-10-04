@@ -22,11 +22,15 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "border border-line bg-control text-fg hover:bg-control-hover",
-        primary: "border border-accent/35 bg-accent-soft text-accent-fg hover:border-accent/50 hover:bg-accent/25 hover:text-fg",
-        outline: "border border-line bg-transparent text-fg-secondary hover:bg-control hover:text-fg",
-        ghost: "border border-transparent bg-transparent text-fg-muted hover:bg-control hover:text-fg",
+        primary:
+          "border border-accent/35 bg-accent-soft text-accent-fg hover:border-accent/50 hover:bg-accent/25 hover:text-fg",
+        outline:
+          "border border-line bg-transparent text-fg-secondary hover:bg-control hover:text-fg",
+        ghost:
+          "border border-transparent bg-transparent text-fg-muted hover:bg-control hover:text-fg",
         link: "h-auto border-0 bg-transparent p-0 text-fg-muted underline-offset-4 hover:text-fg hover:underline focus-visible:ring-0 focus-visible:underline",
-        "ghost-destructive": "border border-transparent bg-transparent text-danger/80 hover:bg-danger-soft hover:text-danger"
+        "ghost-destructive":
+          "border border-transparent bg-transparent text-danger/80 hover:bg-danger-soft hover:text-danger"
       },
       size: {
         default: "h-9 px-3",

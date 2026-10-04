@@ -372,8 +372,10 @@ const MAX_ANALYSE_POSITIONS = 4;
 
 export function parseAnalysePositionsInput(value: unknown): AnalysePositionsInput {
   const input = asObject(value, "position analysis");
-  if (!Array.isArray(input.positions) || !input.positions.length) fail("position analysis", "positions must be a non-empty array");
-  if (input.positions.length > MAX_ANALYSE_POSITIONS) fail("position analysis", "too many positions");
+  if (!Array.isArray(input.positions) || !input.positions.length)
+    fail("position analysis", "positions must be a non-empty array");
+  if (input.positions.length > MAX_ANALYSE_POSITIONS)
+    fail("position analysis", "too many positions");
   // Clamped rather than refused, like a probe: one explanation never needs a minute per position.
   const moveTimeMs = Math.min(asOptionalPositive(input.moveTimeMs, "moveTimeMs") || 1000, 60_000);
   return {
@@ -384,7 +386,13 @@ export function parseAnalysePositionsInput(value: unknown): AnalysePositionsInpu
       const position = asObject(raw, `position ${index}`);
       return {
         fen: asFen(position.fen, `position ${index} FEN`),
-        multipv: asOptionalPositive(position.multipv, `position ${index} multipv`, SEARCH_LIMITS.multipv, true) || 1
+        multipv:
+          asOptionalPositive(
+            position.multipv,
+            `position ${index} multipv`,
+            SEARCH_LIMITS.multipv,
+            true
+          ) || 1
       };
     })
   };
@@ -397,7 +405,10 @@ export function parseGameListQuery(value: unknown): GameListQuery {
   const input = value === undefined ? {} : asObject(value, "game list query");
   const cursor = nullable(input.cursor, (raw) => {
     const fields = asObject(raw, "game list cursor");
-    return { updatedAt: asFiniteNumber(fields.updatedAt, "cursor time"), id: asId(fields.id, "cursor id") };
+    return {
+      updatedAt: asFiniteNumber(fields.updatedAt, "cursor time"),
+      id: asId(fields.id, "cursor id")
+    };
   });
   const filter = input.filter ?? "all";
   if (!isOneOf(GAME_LIST_FILTERS, filter)) fail("game list filter", "unknown filter");
@@ -555,11 +566,16 @@ function asTimestamp(value: unknown, label: string): number {
 export function parseRecordPuzzleAttemptInput(value: unknown): RecordPuzzleAttemptInput {
   const input = asObject(value, "puzzle attempt");
   const outcome = input.outcome;
-  if (outcome !== "solved" && outcome !== "failed") fail("puzzle outcome", "expected solved or failed");
+  if (outcome !== "solved" && outcome !== "failed")
+    fail("puzzle outcome", "expected solved or failed");
   // Lichess puzzle ratings and deviations: anything a real puzzle has, with room to spare.
-  const rating = nullable(input.puzzleRating, (rating) => asNumberInRange(rating, "puzzle rating", 0, 5000)) ?? null;
+  const rating =
+    nullable(input.puzzleRating, (rating) => asNumberInRange(rating, "puzzle rating", 0, 5000)) ??
+    null;
   const deviation =
-    nullable(input.puzzleRatingDeviation, (deviation) => asNumberInRange(deviation, "puzzle rating deviation", 0, 1000)) ?? null;
+    nullable(input.puzzleRatingDeviation, (deviation) =>
+      asNumberInRange(deviation, "puzzle rating deviation", 0, 1000)
+    ) ?? null;
   return {
     attemptId: asId(input.attemptId, "attempt id"),
     puzzleId: asId(input.puzzleId, "puzzle id"),
@@ -579,7 +595,9 @@ export function parseRecordPuzzleAttemptInput(value: unknown): RecordPuzzleAttem
 
 /** How many entries a puzzle statistics list returns (1–`max`, else `fallback`). */
 export function parseListLimit(value: unknown, fallback: number, max: number): number {
-  return value === undefined || value === null ? fallback : asIntegerInRange(value, "limit", 1, max);
+  return value === undefined || value === null
+    ? fallback
+    : asIntegerInRange(value, "limit", 1, max);
 }
 
 /** Lichess game and challenge ids: 8 characters (12 for a player's full game id). */
@@ -824,7 +842,10 @@ export function parseSaveChapterInput(value: unknown): SaveChapterInput {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the service replays and checks every node (chapter-validation.ts) before saving
       tree: chapter.tree as MoveNode[],
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- checked against the tree with it (chapter-validation.ts)
-      nodeMeta: asObject(chapter.nodeMeta ?? {}, "chapter nodeMeta") as Record<string, RepertoireNodeMeta>
+      nodeMeta: asObject(chapter.nodeMeta ?? {}, "chapter nodeMeta") as Record<
+        string,
+        RepertoireNodeMeta
+      >
     }
   };
 }

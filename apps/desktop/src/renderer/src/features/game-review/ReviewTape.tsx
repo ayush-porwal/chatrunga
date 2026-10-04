@@ -36,13 +36,16 @@ function chartScore(score: MoveReview["evalBefore"]): number {
 }
 
 function resolveDataIndex(value: unknown, data: readonly ChartPoint[]): number | null {
-  if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value < data.length) return value;
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value < data.length)
+    return value;
   if (typeof value === "string") {
     if (/^\d+$/.test(value)) {
       const index = Number(value);
       if (index >= 0 && index < data.length) return index;
     }
-    const matchingIndex = data.findIndex((point) => point.label === value || String(point.ply) === value);
+    const matchingIndex = data.findIndex(
+      (point) => point.label === value || String(point.ply) === value
+    );
     if (matchingIndex >= 0) return matchingIndex;
   }
   return null;
@@ -62,7 +65,12 @@ const PLOT_TOP = MARGIN.top;
 const PLOT_HEIGHT = CHART_HEIGHT - MARGIN.top - MARGIN.bottom - X_AXIS_HEIGHT;
 const TICK_STYLE = { fill: "var(--color-fg-subtle)", fontSize: 11 };
 const TOOLTIP_CURSOR = { stroke: "var(--color-line-strong)" };
-const ACTIVE_DOT = { r: 4.5, fill: "var(--color-accent)", stroke: "var(--color-accent-fg)", strokeWidth: 1.5 };
+const ACTIVE_DOT = {
+  r: 4.5,
+  fill: "var(--color-accent)",
+  stroke: "var(--color-accent-fg)",
+  strokeWidth: 1.5
+};
 
 /**
  * The review's evaluation graph. The chart itself is memoised on the data and only redraws when a
@@ -117,7 +125,9 @@ export const ReviewTape = memo(function ReviewTape({
   const xMax = totalPlies ? Math.max(totalPlies, lastPly) : lastPly;
   const xDomain = useMemo<[number, number]>(() => [0, xMax], [xMax]);
 
-  const selectedPoint = variationSelected ? null : data.find((point) => point.move?.nodeId === selectedNodeId) ?? null;
+  const selectedPoint = variationSelected
+    ? null
+    : (data.find((point) => point.move?.nodeId === selectedNodeId) ?? null);
 
   return (
     <section className="min-w-0" aria-label="Game evaluation graph">
@@ -127,13 +137,23 @@ export const ReviewTape = memo(function ReviewTape({
         className="min-h-6"
         actions={
           <>
-            {variationSelected ? <Badge tone="warn" className="animate-fade-in">Variation</Badge> : null}
+            {variationSelected ? (
+              <Badge tone="warn" className="animate-fade-in">
+                Variation
+              </Badge>
+            ) : null}
             <GraphHelp />
           </>
         }
       />
       <div className="relative min-w-0 w-full" style={{ height: CHART_HEIGHT }}>
-        <EvalChart data={data} xDomain={xDomain} yDomain={yDomain} orientation={orientation} onSelectNode={onSelectNode} />
+        <EvalChart
+          data={data}
+          xDomain={xDomain}
+          yDomain={yDomain}
+          orientation={orientation}
+          onSelectNode={onSelectNode}
+        />
         <SelectionMarker point={selectedPoint} xDomain={xDomain} yDomain={yDomain} />
       </div>
     </section>
@@ -145,13 +165,18 @@ const GraphHelp = memo(function GraphHelp() {
   return (
     <UiTooltip>
       <TooltipTrigger asChild>
-        {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the info icon takes focus so keyboard users can open its tooltip */}
-        <span tabIndex={0} aria-label="About the graph" className="grid size-6 place-items-center rounded-md text-fg-subtle outline-none transition-colors duration-micro ease-standard hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/50">
+        <span
+          // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the info icon takes focus so keyboard users can open its tooltip
+          tabIndex={0}
+          aria-label="About the graph"
+          className="grid size-6 place-items-center rounded-md text-fg-subtle outline-none transition-colors duration-micro ease-standard hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/50"
+        >
           <Info className="size-3.5" />
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-60">
-        White&apos;s perspective: above zero means White is better. Click a point to jump to that move.
+        White&apos;s perspective: above zero means White is better. Click a point to jump to that
+        move.
       </TooltipContent>
     </UiTooltip>
   );
@@ -170,7 +195,10 @@ function SelectionMarker({
   const xSpan = xDomain[1] - xDomain[0];
   const ySpan = yDomain[1] - yDomain[0];
   const next = point
-    ? { x: xSpan > 0 ? (point.ply - xDomain[0]) / xSpan : 0, y: ySpan > 0 ? 1 - (point.score - yDomain[0]) / ySpan : 0.5 }
+    ? {
+        x: xSpan > 0 ? (point.ply - xDomain[0]) / xSpan : 0,
+        y: ySpan > 0 ? 1 - (point.score - yDomain[0]) / ySpan : 0.5
+      }
     : null;
   // Keep the last position while hidden so the marker fades out in place instead of jumping.
   const [last, setLast] = useState({ x: 0, y: 0.5 });
@@ -180,7 +208,14 @@ function SelectionMarker({
   const top = `calc(${PLOT_TOP}px + ${PLOT_HEIGHT}px * ${y.toFixed(4)})`;
   const glide = "transition-[translate,opacity] duration-standard ease-enter";
   return (
-    <div className={cn("pointer-events-none absolute inset-0 [container-type:size]", glide, point ? "opacity-100" : "opacity-0")} aria-hidden>
+    <div
+      className={cn(
+        "pointer-events-none absolute inset-0 [container-type:size]",
+        glide,
+        point ? "opacity-100" : "opacity-0"
+      )}
+      aria-hidden
+    >
       <span
         className={cn("absolute left-0 w-0 border-l border-dashed border-accent/80", glide)}
         style={{ top: PLOT_TOP, height: PLOT_HEIGHT, translate: `${left} 0` }}
@@ -221,7 +256,9 @@ const EvalChart = memo(function EvalChart({
     (props: { cx?: number; cy?: number; index?: number; payload?: unknown }) => {
       const point = data.find((item) => item === props.payload);
       const interactive = Boolean(point?.move);
-      const label = point?.move ? `${moveLabel(point.move)}, after ${formatMoveEval(point.move)}` : "Starting position";
+      const label = point?.move
+        ? `${moveLabel(point.move)}, after ${formatMoveEval(point.move)}`
+        : "Starting position";
       return (
         <circle
           key={`dot-${point?.ply ?? props.index}`}
@@ -254,7 +291,11 @@ const EvalChart = memo(function EvalChart({
       const point = data.find((item) => item === payload?.[0]?.payload);
       if (!active || !point) return null;
       if (!point.move) {
-        return <div className="pointer-events-none rounded-lg border border-line bg-surface-raised px-2 py-1 text-xs text-fg shadow-popover">Starting position</div>;
+        return (
+          <div className="pointer-events-none rounded-lg border border-line bg-surface-raised px-2 py-1 text-xs text-fg shadow-popover">
+            Starting position
+          </div>
+        );
       }
       const move = point.move;
       return (
@@ -263,7 +304,9 @@ const EvalChart = memo(function EvalChart({
           <div className="grid min-w-0 content-start gap-1 py-0.5">
             <p className="font-mono font-semibold text-fg">{moveLabel(move)}</p>
             <QualityBadge classification={move.classification} className="justify-self-start" />
-            <p className="font-mono text-fg-muted tabular-nums">{formatMoveEval(move)} · {move.evalLoss ?? "—"}cp</p>
+            <p className="font-mono text-fg-muted tabular-nums">
+              {formatMoveEval(move)} · {move.evalLoss ?? "—"}cp
+            </p>
           </div>
         </div>
       );
@@ -272,7 +315,11 @@ const EvalChart = memo(function EvalChart({
   );
 
   return (
-    <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: CHART_HEIGHT }}>
+    <ResponsiveContainer
+      width="100%"
+      height="100%"
+      initialDimension={{ width: 320, height: CHART_HEIGHT }}
+    >
       <LineChart
         data={data}
         margin={MARGIN}

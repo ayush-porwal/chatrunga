@@ -3,12 +3,7 @@ import type { MoveNode } from "@chaturanga/shared/types/chess";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
 import { buildTreeModel } from "./move-tree-model";
 
-function node(
-  id: string,
-  parentId: string | null,
-  ply: number,
-  children: string[] = []
-): MoveNode {
+function node(id: string, parentId: string | null, ply: number, children: string[] = []): MoveNode {
   return {
     id,
     parentId,
@@ -42,13 +37,21 @@ describe("buildTreeModel", () => {
     expect(model.mainline).toHaveLength(1);
     expect(model.mainline[0].white?.id).toBe("main");
     expect(model.mainline[0].black?.id).toBe("reply");
-    expect(model.rootVariations[0].rows.map((row) => row.node.id)).toEqual(["alt", "altReply", "nestedAlt", "deep"]);
+    expect(model.rootVariations[0].rows.map((row) => row.node.id)).toEqual([
+      "alt",
+      "altReply",
+      "nestedAlt",
+      "deep"
+    ]);
     expect(model.rootVariations[0].rows.at(-1)?.depth).toBe(1);
   });
 
   it("traverses very deep variation chains iteratively", () => {
     const depth = 1_200;
-    const nodes: MoveNode[] = [node("root", null, 0, ["main", "alt"]), node("alt", "root", 1, ["alt-0"])];
+    const nodes: MoveNode[] = [
+      node("root", null, 0, ["main", "alt"]),
+      node("alt", "root", 1, ["alt-0"])
+    ];
     nodes.push(node("main", "root", 1));
     let parentId = "alt";
     for (let index = 0; index < depth; index += 1) {
@@ -66,7 +69,9 @@ describe("buildTreeModel", () => {
   });
 
   it("pairs rows by move number when the game starts with Black", () => {
-    const { game } = importPgnText('[SetUp "1"]\n[FEN "4k3/8/8/8/8/8/8/4K3 b - - 0 42"]\n\n42... Kf7 43. Ke2 Ke6 *');
+    const { game } = importPgnText(
+      '[SetUp "1"]\n[FEN "4k3/8/8/8/8/8/8/4K3 b - - 0 42"]\n\n42... Kf7 43. Ke2 Ke6 *'
+    );
     const rows = buildTreeModel(game.moveTree).mainline.map((row) => ({
       number: row.number,
       white: row.white?.san,

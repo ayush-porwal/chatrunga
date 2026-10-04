@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
-import { REVIEW_MAIA_LEVELS, type AppSettings, type ReviewMaiaLevel } from "@chaturanga/shared/types/settings";
-import { useEnginesQuery, useOpenRouterConfigQuery, useUpdateSettingMutation } from "../../queries/api";
+import {
+  REVIEW_MAIA_LEVELS,
+  type AppSettings,
+  type ReviewMaiaLevel
+} from "@chaturanga/shared/types/settings";
+import {
+  useEnginesQuery,
+  useOpenRouterConfigQuery,
+  useUpdateSettingMutation
+} from "../../queries/api";
 import { pickDefaultEngine, pickMaiaEngines } from "./review-engine-picker";
 import { OpenRouterSettingsCard } from "../settings/OpenRouterSettingsCard";
 import { Badge, ChipButton } from "@/components/ui/badge";
@@ -78,40 +86,78 @@ export function ReviewSettingsPanel({
     ? installedMaiaLevels.filter((level) => settings.reviewMaiaLevels?.includes(level))
     : installedMaiaLevels;
   const needsLc0 = useMaiaNeedsLc0();
-  const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => update.mutate({ key, value });
+  const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) =>
+    update.mutate({ key, value });
   const toggleMaiaLevel = (level: ReviewMaiaLevel) => {
     const next = selectedMaiaLevels.includes(level)
       ? selectedMaiaLevels.filter((value) => value !== level)
-      : installedMaiaLevels.filter((value) => value === level || selectedMaiaLevels.includes(value));
+      : installedMaiaLevels.filter(
+          (value) => value === level || selectedMaiaLevels.includes(value)
+        );
     set("reviewMaiaLevels", next.length === installedMaiaLevels.length ? null : next);
   };
 
   return (
-    <div className={embedded ? "grid content-start gap-4" : "scroll-area -mr-3 grid h-full min-h-0 content-start gap-4 overflow-y-auto pr-3"}>
+    <div
+      className={
+        embedded
+          ? "grid content-start gap-4"
+          : "scroll-area -mr-3 grid h-full min-h-0 content-start gap-4 overflow-y-auto pr-3"
+      }
+    >
       {embedded ? null : (
         <SectionHeader
           title="Review settings"
-          actions={<Button variant="link" size="sm" onClick={onClose}>Done</Button>}
+          actions={
+            <Button variant="link" size="sm" onClick={onClose}>
+              Done
+            </Button>
+          }
         />
       )}
 
       <section className="grid gap-3">
         <SectionHeader as="h3" title="Engine" />
         <Field label="Evaluation engine" htmlFor="review-engine">
-          <Select id="review-engine" value={settings.defaultEngineId ?? ""} onChange={(event) => set("defaultEngineId", event.target.value || null)}>
-            <option value="">{automaticEngine ? `Automatic · ${automaticEngine.name}` : "Choose an engine"}</option>
-            {availableEngines.filter((engine) => !engine.isHumanPrediction).map((engine) => <option key={engine.id} value={engine.id}>{engine.name}</option>)}
+          <Select
+            id="review-engine"
+            value={settings.defaultEngineId ?? ""}
+            onChange={(event) => set("defaultEngineId", event.target.value || null)}
+          >
+            <option value="">
+              {automaticEngine ? `Automatic · ${automaticEngine.name}` : "Choose an engine"}
+            </option>
+            {availableEngines
+              .filter((engine) => !engine.isHumanPrediction)
+              .map((engine) => (
+                <option key={engine.id} value={engine.id}>
+                  {engine.name}
+                </option>
+              ))}
           </Select>
         </Field>
         <Field label="Search time" hint="per move" htmlFor="review-time">
-          <Select id="review-time" value={settings.reviewSearchTimeMs} onChange={(event) => set("reviewSearchTimeMs", Number(event.target.value))}>
-            {searchTimeOptions.some((option) => option.value === settings.reviewSearchTimeMs) ? null : (
-              <option value={settings.reviewSearchTimeMs}>Custom · {settings.reviewSearchTimeMs}ms</option>
+          <Select
+            id="review-time"
+            value={settings.reviewSearchTimeMs}
+            onChange={(event) => set("reviewSearchTimeMs", Number(event.target.value))}
+          >
+            {searchTimeOptions.some(
+              (option) => option.value === settings.reviewSearchTimeMs
+            ) ? null : (
+              <option value={settings.reviewSearchTimeMs}>
+                Custom · {settings.reviewSearchTimeMs}ms
+              </option>
             )}
-            {searchTimeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            {searchTimeOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </Select>
           <p className={fieldHint}>
-            {estimateReviewTime(settings.reviewSearchTimeMs)} for a 40-move game. Longer searches give steadier evals and move grades.
+            {estimateReviewTime(settings.reviewSearchTimeMs)} for a 40-move game. Longer searches
+            give steadier evals and move grades.
           </p>
         </Field>
         <Field label="Engine lines" hint="alternatives per move">
@@ -127,7 +173,13 @@ export function ReviewSettingsPanel({
         <SettingRow
           label="Show engine alternatives"
           description="List the extra lines in the Engine tab."
-          control={<Switch checked={settings.reviewShowTopLines} onCheckedChange={(value) => set("reviewShowTopLines", value)} aria-label="Show engine alternatives" />}
+          control={
+            <Switch
+              checked={settings.reviewShowTopLines}
+              onCheckedChange={(value) => set("reviewShowTopLines", value)}
+              aria-label="Show engine alternatives"
+            />
+          }
         />
         <div className="grid gap-2">
           <SettingRow
@@ -136,8 +188,14 @@ export function ReviewSettingsPanel({
             className="py-0"
             control={
               <>
-                {installedMaiaLevels.length ? null : <Badge tone="warn">{needsLc0 ? "Needs Lc0" : "None installed"}</Badge>}
-                <Switch checked={settings.reviewUseMaia} onCheckedChange={(value) => set("reviewUseMaia", value)} aria-label="Use Maia models" />
+                {installedMaiaLevels.length ? null : (
+                  <Badge tone="warn">{needsLc0 ? "Needs Lc0" : "None installed"}</Badge>
+                )}
+                <Switch
+                  checked={settings.reviewUseMaia}
+                  onCheckedChange={(value) => set("reviewUseMaia", value)}
+                  aria-label="Use Maia models"
+                />
               </>
             }
           />
@@ -154,7 +212,11 @@ export function ReviewSettingsPanel({
                       selected={settings.reviewUseMaia && selected}
                       disabled={!settings.reviewUseMaia}
                       aria-disabled={onlyOne || undefined}
-                      title={onlyOne ? "At least one level runs. Turn Maia off instead." : `Maia ${level}`}
+                      title={
+                        onlyOne
+                          ? "At least one level runs. Turn Maia off instead."
+                          : `Maia ${level}`
+                      }
                       aria-label={`Maia ${level}`}
                       onClick={() => {
                         if (!onlyOne) toggleMaiaLevel(level);
@@ -178,13 +240,23 @@ export function ReviewSettingsPanel({
         <SettingRow
           label="AI commentary"
           description="Explain each move from the engine evidence."
-          control={<Switch checked={settings.reviewCommentaryEnabled} onCheckedChange={(value) => set("reviewCommentaryEnabled", value)} aria-label="AI commentary" />}
+          control={
+            <Switch
+              checked={settings.reviewCommentaryEnabled}
+              onCheckedChange={(value) => set("reviewCommentaryEnabled", value)}
+              aria-label="AI commentary"
+            />
+          }
         />
         <Field label="Detail" htmlFor="review-detail">
-          <Select id="review-detail" value={settings.reviewCommentaryDetail} onChange={(event) => {
-            const detail = event.target.value;
-            if (isOneOf(COMMENTARY_DETAILS, detail)) set("reviewCommentaryDetail", detail);
-          }}>
+          <Select
+            id="review-detail"
+            value={settings.reviewCommentaryDetail}
+            onChange={(event) => {
+              const detail = event.target.value;
+              if (isOneOf(COMMENTARY_DETAILS, detail)) set("reviewCommentaryDetail", detail);
+            }}
+          >
             <option value="concise">Concise</option>
             <option value="balanced">Balanced</option>
             <option value="detailed">Detailed</option>
@@ -203,7 +275,20 @@ export function ReviewSettingsPanel({
           />
         </Field>
         <Field label="Your rating" hint="400–3500" htmlFor="review-rating">
-          <Input id="review-rating" type="number" min={400} max={3500} step={10} value={settings.reviewPlayerRating} onChange={(event) => set("reviewPlayerRating", Math.round(Math.max(400, Math.min(3500, Number(event.target.value) || 1500))))} />
+          <Input
+            id="review-rating"
+            type="number"
+            min={400}
+            max={3500}
+            step={10}
+            value={settings.reviewPlayerRating}
+            onChange={(event) =>
+              set(
+                "reviewPlayerRating",
+                Math.round(Math.max(400, Math.min(3500, Number(event.target.value) || 1500)))
+              )
+            }
+          />
         </Field>
         <Disclosure
           // defaultOpen is read on mount only: remount once the config has loaded so a missing

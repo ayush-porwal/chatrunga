@@ -2,7 +2,11 @@ import { useEffect, useState } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { defaultSettings, settingKeys, type AppSettings } from "@chaturanga/shared/types/settings";
 import { useUpdateSettingsMutation } from "../../queries/api";
-import { addPendingSettings, dropPendingSettings, settlePendingSettings } from "../../queries/settings-pending";
+import {
+  addPendingSettings,
+  dropPendingSettings,
+  settlePendingSettings
+} from "../../queries/settings-pending";
 import { trackSettingsSave } from "./settings-save-state";
 
 /** A drag (slider, color picker) is written once it pauses this long. */
@@ -16,7 +20,10 @@ type Options = {
   batch?: boolean;
 };
 
-type Write = (write: { patch: Partial<AppSettings>; previous?: Partial<AppSettings> }) => Promise<unknown>;
+type Write = (write: {
+  patch: Partial<AppSettings>;
+  previous?: Partial<AppSettings>;
+}) => Promise<unknown>;
 
 /** Batches holding changes not written yet. */
 const unwritten = new Set<SettingsBatch>();
@@ -37,7 +44,9 @@ function flushOnPageHide(): void {
   if (flushesOnPageHide || typeof window === "undefined") return;
   flushesOnPageHide = true;
   window.addEventListener("pagehide", () =>
-    flushSettingsBatches(({ patch }) => window.chaturanga?.settings.patch(patch) ?? Promise.resolve())
+    flushSettingsBatches(
+      ({ patch }) => window.chaturanga?.settings.patch(patch) ?? Promise.resolve()
+    )
   );
 }
 
@@ -48,7 +57,8 @@ export class SettingsBatch {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private write: Write | null = null;
   /** Settles when this batch's write does: the Saved indicator shows Saving… meanwhile. */
-  private done: { promise: Promise<unknown>; settle: (result: Promise<unknown>) => void } | null = null;
+  private done: { promise: Promise<unknown>; settle: (result: Promise<unknown>) => void } | null =
+    null;
 
   constructor(private readonly delayMs = SETTINGS_WRITE_DELAY_MS) {}
 

@@ -11,7 +11,11 @@ function ownsKeyboard(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   // A menu or listbox trigger opens with the arrow keys.
   if (target.closest("[aria-haspopup]")) return true;
-  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) {
+  if (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  ) {
     return true;
   }
   if (target.isContentEditable) return true;
@@ -19,7 +23,10 @@ function ownsKeyboard(target: EventTarget | null): boolean {
   return Boolean(target.closest(KEYBOARD_WIDGET_SELECTOR));
 }
 
-type FrameScheduler = { request: (callback: () => void) => number; cancel: (handle: number) => void };
+type FrameScheduler = {
+  request: (callback: () => void) => number;
+  cancel: (handle: number) => void;
+};
 
 const animationFrames: FrameScheduler = {
   request: (callback) => window.requestAnimationFrame(callback),
@@ -31,7 +38,10 @@ const animationFrames: FrameScheduler = {
  * mashing it) never queues a backlog of positions: steps that arrive within one frame are summed
  * and applied as a single jump on the next frame.
  */
-export function createStepScheduler(apply: (delta: number) => void, frames: FrameScheduler = animationFrames) {
+export function createStepScheduler(
+  apply: (delta: number) => void,
+  frames: FrameScheduler = animationFrames
+) {
   let pending = 0;
   let handle: number | null = null;
   return {
@@ -106,7 +116,11 @@ export function useMoveKeyboardShortcuts({ enabled }: { enabled: boolean }): voi
 type LineNode = { id: string; parentId?: string | null; children: string[] };
 
 /** The node `delta` plies away along the current line (negative: back towards the root; positive: first children). */
-export function nodeAfterSteps(moveTree: readonly LineNode[], nodeId: string, delta: number): string {
+export function nodeAfterSteps(
+  moveTree: readonly LineNode[],
+  nodeId: string,
+  delta: number
+): string {
   const byId = new Map(moveTree.map((node) => [node.id, node]));
   let current = nodeId;
   for (let remaining = Math.abs(delta); remaining > 0; remaining -= 1) {
@@ -119,11 +133,18 @@ export function nodeAfterSteps(moveTree: readonly LineNode[], nodeId: string, de
 }
 
 /** Follows first children from `nodeId` to the end of its line. */
-export function lastNodeOfLine(moveTree: readonly { id: string; children: string[] }[], nodeId: string): string {
+export function lastNodeOfLine(
+  moveTree: readonly { id: string; children: string[] }[],
+  nodeId: string
+): string {
   const byId = new Map(moveTree.map((node) => [node.id, node]));
   let current = nodeId;
   const seen = new Set<string>();
-  for (let next = byId.get(current)?.children[0]; next && !seen.has(next); next = byId.get(current)?.children[0]) {
+  for (
+    let next = byId.get(current)?.children[0];
+    next && !seen.has(next);
+    next = byId.get(current)?.children[0]
+  ) {
     seen.add(next);
     current = next;
   }

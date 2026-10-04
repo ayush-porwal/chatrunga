@@ -27,7 +27,9 @@ const PGN = `[Event "Rapid"]
 function storeReview(gameId: string, review: object) {
   getDb().prepare("DELETE FROM game_reviews WHERE game_id = ?").run(gameId);
   getDb()
-    .prepare("INSERT INTO game_reviews (review_id, game_id, created_at, review_json) VALUES (?, ?, ?, ?)")
+    .prepare(
+      "INSERT INTO game_reviews (review_id, game_id, created_at, review_json) VALUES (?, ?, ?, ?)"
+    )
     .run(`test-${gameId}`, gameId, 1, JSON.stringify(review));
 }
 
@@ -70,7 +72,11 @@ describe("gameRepository (SQLite)", () => {
     const saved = saveImported();
     getDb().prepare("UPDATE games SET move_tree_json = ? WHERE id = ?").run("{not json", saved.id);
     const reopened = gameRepository.get(saved.id);
-    expect(reopened?.moveTree.filter((node) => node.san).map((node) => node.san)).toEqual(["e4", "e5", "Nf3"]);
+    expect(reopened?.moveTree.filter((node) => node.san).map((node) => node.san)).toEqual([
+      "e4",
+      "e5",
+      "Nf3"
+    ]);
   });
 
   it("moves a saved review onto the rebuilt tree, or drops one that doesn't fit", () => {
@@ -82,7 +88,12 @@ describe("gameRepository (SQLite)", () => {
       moveTimeMs: 100,
       createdAt: 1,
       summary: {},
-      moves: mainline.map((node, index) => ({ nodeId: node.id, ply: index + 1, san: node.san, fenAfter: node.fenAfter }))
+      moves: mainline.map((node, index) => ({
+        nodeId: node.id,
+        ply: index + 1,
+        san: node.san,
+        fenAfter: node.fenAfter
+      }))
     };
     getDb().prepare("UPDATE games SET move_tree_json = ? WHERE id = ?").run("{not json", saved.id);
     storeReview(saved.id, review);
@@ -98,7 +109,10 @@ describe("gameRepository (SQLite)", () => {
     expect(gameRepository.get(saved.id)?.moveTree.length).toBeGreaterThan(1);
 
     // A review of other moves than the PGN's: dropped, not attached to the wrong ones.
-    const wrong = { ...review, moves: review.moves.map((move) => ({ ...move, fenAfter: "8/8/8/8/8/8/8/8 w - - 0 1" })) };
+    const wrong = {
+      ...review,
+      moves: review.moves.map((move) => ({ ...move, fenAfter: "8/8/8/8/8/8/8/8 w - - 0 1" }))
+    };
     storeReview(saved.id, wrong);
     expect(gameRepository.get(saved.id)?.review).toBeNull();
   });
@@ -115,11 +129,18 @@ describe("gameRepository (SQLite)", () => {
       moveTimeMs: 100,
       createdAt: 1,
       summary: {},
-      moves: mainline.map((node) => ({ nodeId: node.id, ply: node.ply, san: node.san, fenAfter: node.fenAfter }))
+      moves: mainline.map((node) => ({
+        nodeId: node.id,
+        ply: node.ply,
+        san: node.san,
+        fenAfter: node.fenAfter
+      }))
     };
     const cursor = mainline[1];
     getDb()
-      .prepare("UPDATE games SET move_tree_json = ?, current_node_id = ?, current_fen = ? WHERE id = ?")
+      .prepare(
+        "UPDATE games SET move_tree_json = ?, current_node_id = ?, current_fen = ? WHERE id = ?"
+      )
       .run("{not json", cursor.id, cursor.fenAfter, saved.id);
     storeReview(saved.id, review);
     const reopened = gameRepository.get(saved.id)!;
@@ -131,7 +152,9 @@ describe("gameRepository (SQLite)", () => {
   it("rebuilds a tree whose links point at missing moves", () => {
     const saved = saveImported();
     const broken = saved.moveTree.slice(0, -1);
-    getDb().prepare("UPDATE games SET move_tree_json = ? WHERE id = ?").run(JSON.stringify(broken), saved.id);
+    getDb()
+      .prepare("UPDATE games SET move_tree_json = ? WHERE id = ?")
+      .run(JSON.stringify(broken), saved.id);
     expect(gameRepository.get(saved.id)?.moveTree).toHaveLength(saved.moveTree.length);
   });
 
@@ -142,7 +165,12 @@ describe("gameRepository (SQLite)", () => {
       // e4 listed twice under the root.
       [{ ...root, children: [e4.id, e4.id] }, e4, e5, nf3],
       // e5 and Nf3 point at each other, apart from the root's line.
-      [{ ...root, children: [e4.id] }, { ...e4, children: [] }, { ...e5, parentId: nf3.id }, { ...nf3, children: [e5.id] }],
+      [
+        { ...root, children: [e4.id] },
+        { ...e4, children: [] },
+        { ...e5, parentId: nf3.id },
+        { ...nf3, children: [e5.id] }
+      ],
       // Nf3 isn't anyone's child.
       [root, e4, { ...e5, children: [] }, nf3],
       // e5 has no SAN.
@@ -156,10 +184,18 @@ describe("gameRepository (SQLite)", () => {
       [root, e4, { ...e5, highlights: [{ square: "z9", color: "green" }] }, nf3]
     ];
     for (const tree of damaged) {
-      getDb().prepare("UPDATE games SET move_tree_json = ? WHERE id = ?").run(JSON.stringify(tree), saved.id);
+      getDb()
+        .prepare("UPDATE games SET move_tree_json = ? WHERE id = ?")
+        .run(JSON.stringify(tree), saved.id);
       const reopened = gameRepository.get(saved.id)!;
-      expect(reopened.moveTree.filter((node) => node.san).map((node) => node.san)).toEqual(["e4", "e5", "Nf3"]);
-      expect(reopened.moveTree.map((node) => node.id)).not.toEqual(saved.moveTree.map((node) => node.id));
+      expect(reopened.moveTree.filter((node) => node.san).map((node) => node.san)).toEqual([
+        "e4",
+        "e5",
+        "Nf3"
+      ]);
+      expect(reopened.moveTree.map((node) => node.id)).not.toEqual(
+        saved.moveTree.map((node) => node.id)
+      );
     }
   });
 
@@ -168,20 +204,34 @@ describe("gameRepository (SQLite)", () => {
     expect(gameRepository.get(saved.id)?.moveTree).toEqual(saved.moveTree);
     // Annotations are part of a well-formed tree.
     const annotated = saved.moveTree.map((node, index) =>
-      index === 1 ? { ...node, arrows: [{ orig: "e2", dest: "e4", color: "green" }], highlights: [{ square: "e4", color: "red" }] } : node
+      index === 1
+        ? {
+            ...node,
+            arrows: [{ orig: "e2", dest: "e4", color: "green" }],
+            highlights: [{ square: "e4", color: "red" }]
+          }
+        : node
     );
-    getDb().prepare("UPDATE games SET move_tree_json = ? WHERE id = ?").run(JSON.stringify(annotated), saved.id);
+    getDb()
+      .prepare("UPDATE games SET move_tree_json = ? WHERE id = ?")
+      .run(JSON.stringify(annotated), saved.id);
     expect(gameRepository.get(saved.id)?.moveTree).toEqual(annotated);
   });
 
   it("drops stored headers with a value that isn't text, for the PGN's", () => {
     const saved = saveImported();
-    getDb().prepare("UPDATE games SET headers_json = ? WHERE id = ?").run(JSON.stringify({ white: 1 }), saved.id);
+    getDb()
+      .prepare("UPDATE games SET headers_json = ? WHERE id = ?")
+      .run(JSON.stringify({ white: 1 }), saved.id);
     expect(gameRepository.get(saved.id)?.headers).toBeNull();
     getDb()
       .prepare("UPDATE games SET headers_json = ? WHERE id = ?")
       .run(JSON.stringify({ white: "Carlsen", eco: null, orientationHint: "black" }), saved.id);
-    expect(gameRepository.get(saved.id)?.headers).toEqual({ white: "Carlsen", eco: null, orientationHint: "black" });
+    expect(gameRepository.get(saved.id)?.headers).toEqual({
+      white: "Carlsen",
+      eco: null,
+      orientationHint: "black"
+    });
   });
 
   it("refuses to open a game whose PGN would rebuild only part of the tree", () => {
@@ -201,7 +251,9 @@ describe("gameRepository (SQLite)", () => {
   it("lists summaries through the recent-games index and counts without reading rows", () => {
     saveImported();
     const plan = getDb()
-      .prepare("EXPLAIN QUERY PLAN SELECT id FROM games WHERE source != 'puzzle' ORDER BY updated_at DESC, id")
+      .prepare(
+        "EXPLAIN QUERY PLAN SELECT id FROM games WHERE source != 'puzzle' ORDER BY updated_at DESC, id"
+      )
       .all() as { detail: string }[];
     expect(plan.map((row) => row.detail).join(" ")).toContain("games_recent_idx");
     expect(gameRepository.count()).toBe(1);
@@ -209,7 +261,14 @@ describe("gameRepository (SQLite)", () => {
   });
 
   describe("library pages", () => {
-    type Row = { id: string; source?: string; white?: string | null; black?: string | null; event?: string | null; updatedAt: number };
+    type Row = {
+      id: string;
+      source?: string;
+      white?: string | null;
+      black?: string | null;
+      event?: string | null;
+      updatedAt: number;
+    };
 
     /** Test-only: library rows straight into the table (thousands, without parsing PGN). */
     function insertGames(rows: Row[]) {
@@ -219,7 +278,15 @@ describe("gameRepository (SQLite)", () => {
       );
       getDb().exec("BEGIN");
       for (const row of rows) {
-        insert.run(row.id, row.source ?? "pgn-import", row.white ?? "A", row.black ?? "B", row.event ?? null, row.updatedAt, row.updatedAt);
+        insert.run(
+          row.id,
+          row.source ?? "pgn-import",
+          row.white ?? "A",
+          row.black ?? "B",
+          row.event ?? null,
+          row.updatedAt,
+          row.updatedAt
+        );
       }
       getDb().exec("COMMIT");
     }
@@ -251,7 +318,10 @@ describe("gameRepository (SQLite)", () => {
       // 125 games share one timestamp, across page boundaries, between newer and older ones.
       const rows: Row[] = [
         { id: "newest", updatedAt: 3_000 },
-        ...Array.from({ length: 125 }, (_, index) => ({ id: `tie-${String(index).padStart(3, "0")}`, updatedAt: 2_000 })),
+        ...Array.from({ length: 125 }, (_, index) => ({
+          id: `tie-${String(index).padStart(3, "0")}`,
+          updatedAt: 2_000
+        })),
         { id: "oldest", updatedAt: 1_000 }
       ];
       insertGames(rows);
@@ -272,12 +342,17 @@ describe("gameRepository (SQLite)", () => {
       const { ids, pages } = readAll({}, 200);
       expect(ids).toEqual(ordered(rows));
       expect(pages).toBe(10);
-      const last = gameRepository.listPage({ limit: 200, cursor: { updatedAt: 1_000_000 - 199, id: "g1999" } });
+      const last = gameRepository.listPage({
+        limit: 200,
+        cursor: { updatedAt: 1_000_000 - 199, id: "g1999" }
+      });
       expect(last).toEqual({ items: [], nextCursor: null });
     });
 
     it("keeps a page within the limit, clamped to 1..200", () => {
-      insertGames(Array.from({ length: 450 }, (_, index) => ({ id: `g${index}`, updatedAt: index })));
+      insertGames(
+        Array.from({ length: 450 }, (_, index) => ({ id: `g${index}`, updatedAt: index }))
+      );
       expect(gameRepository.listPage().items).toHaveLength(50);
       expect(gameRepository.listPage({ limit: 10 }).items).toHaveLength(10);
       expect(gameRepository.listPage({ limit: 10_000 }).items).toHaveLength(200);
@@ -288,15 +363,37 @@ describe("gameRepository (SQLite)", () => {
       expect(page.items.map((game) => game.id)).toEqual(["g449", "g448", "g447"]);
       expect(page.nextCursor).toEqual({ updatedAt: 447, id: "g447" });
       // A summary only: no PGN, move tree or review.
-      expect(Object.keys(page.items[0]!).sort()).toEqual(
-        ["black", "currentFen", "date", "event", "id", "lastReviewedAt", "result", "reviewCount", "source", "updatedAt", "white"]
-      );
+      expect(Object.keys(page.items[0]!).sort()).toEqual([
+        "black",
+        "currentFen",
+        "date",
+        "event",
+        "id",
+        "lastReviewedAt",
+        "result",
+        "reviewCount",
+        "source",
+        "updatedAt",
+        "white"
+      ]);
     });
 
     it("filters and searches before the limit: a rare match deep in the library is on page 1", () => {
       insertGames([
-        ...Array.from({ length: 1_000 }, (_, index) => ({ id: `g${index}`, updatedAt: 10_000 + index, white: "Anon", black: "Anon" })),
-        { id: "deep-lichess", source: "lichess", white: "Ånand", black: "Topalov", event: "Sofia", updatedAt: 1 },
+        ...Array.from({ length: 1_000 }, (_, index) => ({
+          id: `g${index}`,
+          updatedAt: 10_000 + index,
+          white: "Anon",
+          black: "Anon"
+        })),
+        {
+          id: "deep-lichess",
+          source: "lichess",
+          white: "Ånand",
+          black: "Topalov",
+          event: "Sofia",
+          updatedAt: 1
+        },
         { id: "deep-puzzle", source: "puzzle", white: "Ånand", updatedAt: 2 }
       ]);
       // Case folded as JavaScript does (SQLite's lower() would miss "Å").
@@ -304,17 +401,27 @@ describe("gameRepository (SQLite)", () => {
         items: [expect.objectContaining({ id: "deep-lichess" })],
         nextCursor: null
       });
-      expect(gameRepository.listPage({ search: "sofia", limit: 5 }).items.map((game) => game.id)).toEqual(["deep-lichess"]);
-      expect(gameRepository.listPage({ filter: "lichess", limit: 5 }).items.map((game) => game.id)).toEqual(["deep-lichess"]);
-      expect(gameRepository.listPage({ filter: "other", limit: 5 }).items.map((game) => game.id)).not.toContain("deep-lichess");
+      expect(
+        gameRepository.listPage({ search: "sofia", limit: 5 }).items.map((game) => game.id)
+      ).toEqual(["deep-lichess"]);
+      expect(
+        gameRepository.listPage({ filter: "lichess", limit: 5 }).items.map((game) => game.id)
+      ).toEqual(["deep-lichess"]);
+      expect(
+        gameRepository.listPage({ filter: "other", limit: 5 }).items.map((game) => game.id)
+      ).not.toContain("deep-lichess");
       // A search with wildcards is plain text.
       expect(gameRepository.listPage({ search: "%", limit: 5 }).items).toEqual([]);
       // The game on the board is left out; puzzle sessions never list.
-      expect(gameRepository.listPage({ search: "ånand", excludeId: "deep-lichess" }).items).toEqual([]);
+      expect(gameRepository.listPage({ search: "ånand", excludeId: "deep-lichess" }).items).toEqual(
+        []
+      );
       expect(readAll({}, 200).ids).not.toContain("deep-puzzle");
 
       getDb()
-        .prepare("INSERT INTO game_reviews (review_id, game_id, created_at, review_json) VALUES ('r', 'g3', 5, '{}')")
+        .prepare(
+          "INSERT INTO game_reviews (review_id, game_id, created_at, review_json) VALUES ('r', 'g3', 5, '{}')"
+        )
         .run();
       expect(gameRepository.listPage({ filter: "reviewed", limit: 5 }).items).toEqual([
         expect.objectContaining({ id: "g3", reviewCount: 1, lastReviewedAt: 5 })
@@ -330,28 +437,50 @@ describe("gameRepository (SQLite)", () => {
         }))
       );
       const expected = ordered(
-        Array.from({ length: 300 }, (_, index) => ({ id: `g${String(index).padStart(3, "0")}`, updatedAt: Math.floor(index / 4) }))
+        Array.from({ length: 300 }, (_, index) => ({
+          id: `g${String(index).padStart(3, "0")}`,
+          updatedAt: Math.floor(index / 4)
+        }))
       ).filter((id) => Number(id.slice(1)) % 3 === 0);
       expect(readAll({ search: "match" }, 7).ids).toEqual(expected);
     });
 
     it("says which filters the library has games for", () => {
-      expect(gameRepository.facets(null)).toEqual({ hasGames: false, hasLichess: false, hasReviewed: false });
+      expect(gameRepository.facets(null)).toEqual({
+        hasGames: false,
+        hasLichess: false,
+        hasReviewed: false
+      });
       insertGames([
         { id: "board", source: "lichess", updatedAt: 1 },
         { id: "puzzle", source: "puzzle", updatedAt: 2 }
       ]);
       getDb()
-        .prepare("INSERT INTO game_reviews (review_id, game_id, created_at, review_json) VALUES ('r', 'board', 5, '{}')")
+        .prepare(
+          "INSERT INTO game_reviews (review_id, game_id, created_at, review_json) VALUES ('r', 'board', 5, '{}')"
+        )
         .run();
-      expect(gameRepository.facets(null)).toEqual({ hasGames: true, hasLichess: true, hasReviewed: true });
+      expect(gameRepository.facets(null)).toEqual({
+        hasGames: true,
+        hasLichess: true,
+        hasReviewed: true
+      });
       // Leaving out the game on the board: Lichess still counts it (as the picker always did).
-      expect(gameRepository.facets("board")).toEqual({ hasGames: false, hasLichess: true, hasReviewed: false });
+      expect(gameRepository.facets("board")).toEqual({
+        hasGames: false,
+        hasLichess: true,
+        hasReviewed: false
+      });
     });
   });
 
   describe("analyses", () => {
-    const reviewOf = (game: ReturnType<typeof saveImported>, reviewId: string, createdAt: number, extra: object = {}) => ({
+    const reviewOf = (
+      game: ReturnType<typeof saveImported>,
+      reviewId: string,
+      createdAt: number,
+      extra: object = {}
+    ) => ({
       reviewId,
       engineId: "sf",
       engineName: "Stockfish 17",
@@ -359,7 +488,14 @@ describe("gameRepository (SQLite)", () => {
       moveTimeMs: 1000,
       createdAt,
       summary: {},
-      moves: game.moveTree.filter((node) => node.san).map((node) => ({ nodeId: node.id, ply: node.ply, san: node.san, fenAfter: node.fenAfter })),
+      moves: game.moveTree
+        .filter((node) => node.san)
+        .map((node) => ({
+          nodeId: node.id,
+          ply: node.ply,
+          san: node.san,
+          fenAfter: node.fenAfter
+        })),
       ...extra
     });
     const saveWith = (game: ReturnType<typeof saveImported>, review: object | null | undefined) => {
@@ -369,21 +505,38 @@ describe("gameRepository (SQLite)", () => {
 
     it("re-analysing adds an analysis; each keeps its own commentary; the newest opens with the game", () => {
       const game = saveImported();
-      saveWith(game, reviewOf(game, "first", 10, { maiaEngines: [{ rating: 1500, engineId: "m", name: "Maia" }] }));
+      saveWith(
+        game,
+        reviewOf(game, "first", 10, {
+          maiaEngines: [{ rating: 1500, engineId: "m", name: "Maia" }]
+        })
+      );
       saveWith(game, reviewOf(game, "second", 20, { engineName: "Lc0" }));
       // Commentary arriving for the older one (shown again) updates that one only.
-      saveWith(game, reviewOf(game, "first", 10, { commentary: [{ ply: 1, prose: "Good start.", generatedAt: 11 }] }));
+      saveWith(
+        game,
+        reviewOf(game, "first", 10, {
+          commentary: [{ ply: 1, prose: "Good start.", generatedAt: 11 }]
+        })
+      );
 
       const opened = gameRepository.get(game.id)!;
       expect(opened.review?.reviewId).toBe("second");
-      expect(opened.reviews.map((info) => [info.reviewId, info.engineName, info.commentaryCount])).toEqual([
+      expect(
+        opened.reviews.map((info) => [info.reviewId, info.engineName, info.commentaryCount])
+      ).toEqual([
         ["second", "Lc0", 0],
         ["first", "Stockfish 17", 1]
       ]);
       expect(opened.reviews[1]?.maiaLevels).toEqual([]);
-      expect(gameRepository.getReview(game.id, "first")?.commentary?.[0]?.prose).toBe("Good start.");
+      expect(gameRepository.getReview(game.id, "first")?.commentary?.[0]?.prose).toBe(
+        "Good start."
+      );
       expect(gameRepository.getReview(game.id, "missing")).toBeNull();
-      expect(gameRepository.listPage().items[0]).toMatchObject({ reviewCount: 2, lastReviewedAt: 20 });
+      expect(gameRepository.listPage().items[0]).toMatchObject({
+        reviewCount: 2,
+        lastReviewedAt: 20
+      });
     });
 
     it("saving without a review (or with none) never removes the saved ones", () => {
@@ -437,42 +590,50 @@ describe("retryOnceIfBusy (a game save while another connection holds the write 
     }
   });
 
-  it("retries once after the delay and saves when the lock was released meanwhile", async () => {
-    getDb();
-    const other = new DatabaseSync(databasePath());
-    try {
-      other.exec("BEGIN IMMEDIATE");
-      // Runs once the first attempt has failed (its busy wait blocks this thread).
-      setTimeout(() => other.exec("ROLLBACK"), 10);
-      const saved = await retryOnceIfBusy(() => saveImported(), 300);
-      expect(gameRepository.get(saved.id)).not.toBeNull();
-    } finally {
-      if (other.isTransaction) other.exec("ROLLBACK");
-      other.close();
-    }
-  }, BUSY_WAIT_MS);
+  it(
+    "retries once after the delay and saves when the lock was released meanwhile",
+    async () => {
+      getDb();
+      const other = new DatabaseSync(databasePath());
+      try {
+        other.exec("BEGIN IMMEDIATE");
+        // Runs once the first attempt has failed (its busy wait blocks this thread).
+        setTimeout(() => other.exec("ROLLBACK"), 10);
+        const saved = await retryOnceIfBusy(() => saveImported(), 300);
+        expect(gameRepository.get(saved.id)).not.toBeNull();
+      } finally {
+        if (other.isTransaction) other.exec("ROLLBACK");
+        other.close();
+      }
+    },
+    BUSY_WAIT_MS
+  );
 
-  it("rejects with the busy error when the lock is still held, and passes other errors at once", async () => {
-    getDb();
-    const other = new DatabaseSync(databasePath());
-    try {
-      other.exec("BEGIN IMMEDIATE");
-      await expect(retryOnceIfBusy(() => saveImported(), 10)).rejects.toMatchObject({
-        errcode: 5
-      });
-    } finally {
-      if (other.isTransaction) other.exec("ROLLBACK");
-      other.close();
-    }
-    let calls = 0;
-    await expect(
-      retryOnceIfBusy(() => {
-        calls += 1;
-        throw new Error("Game not found");
-      }, 10)
-    ).rejects.toThrow("Game not found");
-    expect(calls).toBe(1);
-  }, BUSY_WAIT_MS);
+  it(
+    "rejects with the busy error when the lock is still held, and passes other errors at once",
+    async () => {
+      getDb();
+      const other = new DatabaseSync(databasePath());
+      try {
+        other.exec("BEGIN IMMEDIATE");
+        await expect(retryOnceIfBusy(() => saveImported(), 10)).rejects.toMatchObject({
+          errcode: 5
+        });
+      } finally {
+        if (other.isTransaction) other.exec("ROLLBACK");
+        other.close();
+      }
+      let calls = 0;
+      await expect(
+        retryOnceIfBusy(() => {
+          calls += 1;
+          throw new Error("Game not found");
+        }, 10)
+      ).rejects.toThrow("Game not found");
+      expect(calls).toBe(1);
+    },
+    BUSY_WAIT_MS
+  );
 });
 
 describe("saveGameRetrying (games:save)", () => {
@@ -488,30 +649,41 @@ describe("saveGameRetrying (games:save)", () => {
     }
   };
 
-  it("keeps a new game's id across the retry, so it is saved once", async () => {
-    const { game } = importPgnText(PGN);
-    const count = () => (getDb().prepare("SELECT COUNT(*) AS n FROM games").get() as { n: number }).n;
-    const before = count();
-    await busyWhile(async (release) => {
-      setTimeout(release, 10);
-      const saved = await saveGameRetrying({ ...game, id: null }, () => null, 300);
-      expect(gameRepository.get(saved.id)).not.toBeNull();
-    });
-    expect(count()).toBe(before + 1);
-  }, BUSY_WAIT_MS);
+  it(
+    "keeps a new game's id across the retry, so it is saved once",
+    async () => {
+      const { game } = importPgnText(PGN);
+      const count = () =>
+        (getDb().prepare("SELECT COUNT(*) AS n FROM games").get() as { n: number }).n;
+      const before = count();
+      await busyWhile(async (release) => {
+        setTimeout(release, 10);
+        const saved = await saveGameRetrying({ ...game, id: null }, () => null, 300);
+        expect(gameRepository.get(saved.id)).not.toBeNull();
+      });
+      expect(count()).toBe(before + 1);
+    },
+    BUSY_WAIT_MS
+  );
 
-  it("checks the delete guard again before the retry", async () => {
-    const { game } = importPgnText(PGN);
-    let deleted = false;
-    await busyWhile(async (release) => {
-      // The game is deleted while the retry waits.
-      setTimeout(() => {
-        deleted = true;
-        release();
-      }, 10);
-      const suppressed = () => (deleted ? new Error("suppressed") : null);
-      await expect(saveGameRetrying({ ...game, id: "g-deleted" }, suppressed, 300)).rejects.toThrow("suppressed");
-    });
-    expect(gameRepository.get("g-deleted")).toBeNull();
-  }, BUSY_WAIT_MS);
+  it(
+    "checks the delete guard again before the retry",
+    async () => {
+      const { game } = importPgnText(PGN);
+      let deleted = false;
+      await busyWhile(async (release) => {
+        // The game is deleted while the retry waits.
+        setTimeout(() => {
+          deleted = true;
+          release();
+        }, 10);
+        const suppressed = () => (deleted ? new Error("suppressed") : null);
+        await expect(
+          saveGameRetrying({ ...game, id: "g-deleted" }, suppressed, 300)
+        ).rejects.toThrow("suppressed");
+      });
+      expect(gameRepository.get("g-deleted")).toBeNull();
+    },
+    BUSY_WAIT_MS
+  );
 });

@@ -50,7 +50,11 @@ describe("TelemetryService delivery", () => {
     const endpoint = fakeEndpoint();
     const service = makeService({ db, fetchImpl: endpoint.fetchImpl });
     service.start();
-    service.record("review_opened", { review_id: "r1", game_ref: undefined, distinct_id: "someone-else" });
+    service.record("review_opened", {
+      review_id: "r1",
+      game_ref: undefined,
+      distinct_id: "someone-else"
+    });
     await service.drain();
     service.record("review_studied");
     await service.drain();
@@ -66,7 +70,9 @@ describe("TelemetryService delivery", () => {
       schema_version: 2
     });
     // PostHog sessions: a UUIDv7 shared by events close together; launch_id is per launch.
-    expect(a.properties.$session_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(a.properties.$session_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
     expect(b.properties.$session_id).toBe(a.properties.$session_id);
     expect(a.properties.launch_id).toMatch(/^[0-9a-f-]{36}$/);
     // The distinct id is also inside properties, and a recorded property can't replace it.
@@ -227,7 +233,13 @@ describe("TelemetryService opt-out deletion", () => {
     } as unknown as typeof db;
     const endpoint = fakeEndpoint();
     let consent = true;
-    const service = makeService({ db, database: () => flaky, fetchImpl: endpoint.fetchImpl, consent: () => consent, log: () => undefined });
+    const service = makeService({
+      db,
+      database: () => flaky,
+      fetchImpl: endpoint.fetchImpl,
+      consent: () => consent,
+      log: () => undefined
+    });
     service.start();
     service.record("review_started");
 
@@ -283,7 +295,8 @@ describe("TelemetryService counting helpers", () => {
     let failInserts = true;
     const flaky = {
       prepare: (sql: string) => {
-        if (failInserts && sql.startsWith("INSERT OR IGNORE INTO telemetry_outbox")) throw new Error("SQLITE_FULL");
+        if (failInserts && sql.startsWith("INSERT OR IGNORE INTO telemetry_outbox"))
+          throw new Error("SQLITE_FULL");
         return db.prepare(sql);
       },
       exec: (sql: string) => db.exec(sql)

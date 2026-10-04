@@ -31,7 +31,12 @@ describe("rateAttempt", () => {
     const first = rateAttempt(DEFAULT_PUZZLE_RATING, PUZZLE, true, NOW);
     expect(first.rating - 1500).toBeGreaterThan(150);
     expect(first.deviation).toBeLessThan(DEFAULT_PUZZLE_RATING.deviation);
-    const settled = rateAttempt({ rating: 1500, deviation: 60, volatility: 0.06 }, PUZZLE, true, NOW);
+    const settled = rateAttempt(
+      { rating: 1500, deviation: 60, volatility: 0.06 },
+      PUZZLE,
+      true,
+      NOW
+    );
     expect(settled.rating - 1500).toBeGreaterThan(0);
     expect(settled.rating - 1500).toBeLessThan(15);
   });
@@ -42,16 +47,24 @@ describe("rateAttempt", () => {
     const easy = rateAttempt(player, { rating: 1100, deviation: 75 }, true, NOW);
     expect(hard.rating - 1500).toBeGreaterThan(easy.rating - 1500);
     expect(easy.rating).toBeGreaterThan(1500);
-    expect(rateAttempt(player, { rating: 1100, deviation: 75 }, false, NOW).rating).toBeLessThan(1500);
+    expect(rateAttempt(player, { rating: 1100, deviation: 75 }, false, NOW).rating).toBeLessThan(
+      1500
+    );
   });
 
   it("keeps the deviation within its bounds and the volatility under its cap", () => {
     let rating = DEFAULT_PUZZLE_RATING;
-    for (let index = 0; index < 400; index += 1) rating = rateAttempt(rating, PUZZLE, index % 2 === 0, NOW);
+    for (let index = 0; index < 400; index += 1)
+      rating = rateAttempt(rating, PUZZLE, index % 2 === 0, NOW);
     expect(rating.deviation).toBeGreaterThanOrEqual(MIN_DEVIATION);
     expect(rating.volatility).toBeLessThanOrEqual(MAX_VOLATILITY);
     // A wildly uncertain puzzle doesn't push the solver's deviation above the ceiling.
-    const wild = rateAttempt({ rating: 1500, deviation: MAX_DEVIATION, volatility: MAX_VOLATILITY }, { rating: 1500, deviation: 5000 }, true, NOW);
+    const wild = rateAttempt(
+      { rating: 1500, deviation: MAX_DEVIATION, volatility: MAX_VOLATILITY },
+      { rating: 1500, deviation: 5000 },
+      true,
+      NOW
+    );
     expect(wild.deviation).toBeLessThanOrEqual(MAX_DEVIATION);
   });
 
@@ -65,7 +78,9 @@ describe("rateAttempt", () => {
 
   it("falls back to the defaults for an unusable stored rating", () => {
     const broken = { rating: Number.NaN, deviation: Number.NaN, volatility: 0 };
-    expect(rateAttempt(broken, PUZZLE, true, NOW)).toEqual(rateAttempt(DEFAULT_PUZZLE_RATING, PUZZLE, true, NOW));
+    expect(rateAttempt(broken, PUZZLE, true, NOW)).toEqual(
+      rateAttempt(DEFAULT_PUZZLE_RATING, PUZZLE, true, NOW)
+    );
   });
 });
 
@@ -106,7 +121,10 @@ describe("puzzlePerformance", () => {
 
 describe("ratingRangeFor", () => {
   it("centres a window on the rating plus Lichess's difficulty offsets", () => {
-    expect(ratingRangeFor(1500, "normal")).toEqual({ ratingMin: 1500 - AROUND_RATING_WINDOW, ratingMax: 1500 + AROUND_RATING_WINDOW });
+    expect(ratingRangeFor(1500, "normal")).toEqual({
+      ratingMin: 1500 - AROUND_RATING_WINDOW,
+      ratingMax: 1500 + AROUND_RATING_WINDOW
+    });
     expect(ratingRangeFor(1500, "easiest").ratingMin).toBe(900 - AROUND_RATING_WINDOW);
     expect(ratingRangeFor(1500, "easier").ratingMax).toBe(1200 + AROUND_RATING_WINDOW);
     expect(ratingRangeFor(1500, "harder").ratingMin).toBe(1800 - AROUND_RATING_WINDOW);

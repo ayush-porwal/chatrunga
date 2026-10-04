@@ -264,7 +264,12 @@ describe("registerRepertoireIpc", () => {
       /expectedRevision/
     );
     expect(() =>
-      invoke("updateChapters", { repertoireId: "r", chapterIds: ["c"], expectedRevision: 1, patch: {} })
+      invoke("updateChapters", {
+        repertoireId: "r",
+        chapterIds: ["c"],
+        expectedRevision: 1,
+        patch: {}
+      })
     ).toThrow("Invalid chapters patch: expected enabled or kind");
     expect(() =>
       invoke("updateChapters", {

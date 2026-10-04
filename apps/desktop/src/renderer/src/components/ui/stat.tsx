@@ -22,7 +22,13 @@ function Stat({
   return (
     <div className={cn("grid min-w-0 gap-0.5", className)}>
       <span className={eyebrow}>{label}</span>
-      <span className={cn("truncate text-sm font-semibold text-fg tabular-nums", mono && "font-mono font-medium", valueClassName)}>
+      <span
+        className={cn(
+          "truncate text-sm font-semibold text-fg tabular-nums",
+          mono && "font-mono font-medium",
+          valueClassName
+        )}
+      >
         {value}
       </span>
     </div>
@@ -35,11 +41,7 @@ function Stat({
  *   <StatGroup><Stat label="Accuracy" value="92" /><Stat label="Avg loss" value="61cp" /></StatGroup>
  */
 function StatGroup({ className, children }: { className?: string; children: React.ReactNode }) {
-  return (
-    <div className={cn("grid auto-cols-fr grid-flow-col gap-4", className)}>
-      {children}
-    </div>
-  );
+  return <div className={cn("grid auto-cols-fr grid-flow-col gap-4", className)}>{children}</div>;
 }
 
 export { Stat, StatGroup };

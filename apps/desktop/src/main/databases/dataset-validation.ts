@@ -13,7 +13,9 @@ import { readFirstLine } from "./puzzle-scan";
 /** The download finished but isn't usable data; whatever was installed before stays. */
 export class InvalidDatasetError extends Error {
   constructor(source: Pick<ExternalDatabaseSource, "name">, reason: string) {
-    super(`The downloaded ${source.name} isn't a valid dataset: ${reason}. Your installed copy, if any, is unchanged.`);
+    super(
+      `The downloaded ${source.name} isn't a valid dataset: ${reason}. Your installed copy, if any, is unchanged.`
+    );
     this.name = "InvalidDatasetError";
   }
 }
@@ -63,11 +65,17 @@ export async function validateDataset(
   try {
     firstLine = await readFirstLine(filePath, compressed);
   } catch (error) {
-    throw new InvalidDatasetError(source, `it couldn't be read (${error instanceof Error ? error.message : String(error)})`);
+    throw new InvalidDatasetError(
+      source,
+      `it couldn't be read (${error instanceof Error ? error.message : String(error)})`
+    );
   }
   const kind = rowKindForSource(source.id);
   if (firstLine === null || !headerMatches(kind, firstLine)) {
-    throw new InvalidDatasetError(source, `it doesn't start with the expected columns (${expectedHeader(kind)})`);
+    throw new InvalidDatasetError(
+      source,
+      `it doesn't start with the expected columns (${expectedHeader(kind)})`
+    );
   }
 }
 
@@ -90,7 +98,8 @@ export async function zstdStructureProblem(filePath: string): Promise<string | n
       const { bytesRead } = await file.read(header, 0, length, position);
       return bytesRead === length ? header : null;
     };
-    const cutShort = (offset: number) => `it ends in the middle of the compressed data (byte ${offset} of ${size})`;
+    const cutShort = (offset: number) =>
+      `it ends in the middle of the compressed data (byte ${offset} of ${size})`;
     let offset = 0;
     while (offset < size) {
       const start = await read(offset, 4);
@@ -118,7 +127,8 @@ export async function zstdStructureProblem(filePath: string): Promise<string | n
         const value = block.readUIntLE(0, 3);
         const type = (value >> 1) & 3;
         const blockSize = value >>> 3;
-        if (type === 3 || blockSize > MAX_BLOCK_SIZE) return `it has a damaged block at byte ${position}`;
+        if (type === 3 || blockSize > MAX_BLOCK_SIZE)
+          return `it has a damaged block at byte ${position}`;
         position += 3 + (type === 1 ? 1 : blockSize);
         if (position > size) return cutShort(size);
         if (value & 1) break;

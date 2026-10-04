@@ -228,7 +228,8 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
         }
       });
       // The cursor belongs to the account that ran the import (another may have connected since).
-      if ((await this.options.store.status()).account?.id !== accountId) throw new Error("The account changed.");
+      if ((await this.options.store.status()).account?.id !== accountId)
+        throw new Error("The account changed.");
       await this.options.store.recordSync(Date.now(), result.nextSince ?? previousSince);
       this.emitEvent({ type: "sync", running: false, imported: result.imported, error: null });
       this.emitStatus();
@@ -396,7 +397,9 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
   async challenges(): Promise<LichessChallenge[]> {
     const myId = await this.accountId();
     const body = await this.client.json("/api/challenge");
-    const list = [body.in, body.out].flatMap((side): unknown[] => (Array.isArray(side) ? side : []));
+    const list = [body.in, body.out].flatMap((side): unknown[] =>
+      Array.isArray(side) ? side : []
+    );
     const challenges: LichessChallenge[] = [];
     for (const item of list) {
       try {

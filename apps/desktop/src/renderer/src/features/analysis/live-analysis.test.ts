@@ -69,7 +69,10 @@ describe("engineHolder", () => {
 
   it("is nobody once the engine game is decided, or outside a game", () => {
     expect(
-      engineHolder(board({ mode: "engine", engineSide: "black", gameOutcome: { result: "1-0" } }), false)
+      engineHolder(
+        board({ mode: "engine", engineSide: "black", gameOutcome: { result: "1-0" } }),
+        false
+      )
     ).toBeNull();
     // An engine game set up without the engine's side yet (nothing asks it for a move).
     expect(engineHolder(board({ mode: "engine", engineSide: null }), false)).toBeNull();
@@ -105,7 +108,9 @@ describe("liveAnalysisSubject with a target", () => {
   });
 
   it("waits while a game holds the engine, and searches no finished position", () => {
-    expect(liveAnalysisSubject(board({ mode: "engine", engineSide: "white" }), { target })).toBeNull();
+    expect(
+      liveAnalysisSubject(board({ mode: "engine", engineSide: "white" }), { target })
+    ).toBeNull();
     expect(liveAnalysisSubject(board(), { target, onlineGameLive: true })).toBeNull();
     expect(liveAnalysisSubject(board(), { target: { ...target, fen: MATED } })).toBeNull();
   });

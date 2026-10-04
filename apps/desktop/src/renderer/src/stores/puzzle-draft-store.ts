@@ -67,5 +67,6 @@ type PuzzleDraftStore = {
 export const usePuzzleDraftStore = create<PuzzleDraftStore>((set) => ({
   draft: { databaseId: "", ...DEFAULT_PUZZLE_FILTERS },
   update: (patch) => set((state) => ({ draft: { ...state.draft, ...patch } })),
-  resetFilters: () => set((state) => ({ draft: { databaseId: state.draft.databaseId, ...DEFAULT_PUZZLE_FILTERS } }))
+  resetFilters: () =>
+    set((state) => ({ draft: { databaseId: state.draft.databaseId, ...DEFAULT_PUZZLE_FILTERS } }))
 }));

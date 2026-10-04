@@ -9,7 +9,11 @@ import { cn } from "@/lib/utils";
  */
 export function ReleaseNotes({ notes, className }: { notes: string; className?: string }) {
   const groups = useMemo(() => {
-    const result: Array<{ type: "list"; items: InlinePart[][] } | { type: "heading"; text: string } | { type: "paragraph"; parts: InlinePart[] }> = [];
+    const result: Array<
+      | { type: "list"; items: InlinePart[][] }
+      | { type: "heading"; text: string }
+      | { type: "paragraph"; parts: InlinePart[] }
+    > = [];
     for (const block of parseReleaseNotes(notes)) {
       const last = result[result.length - 1];
       if (block.type === "bullet") {
@@ -20,12 +24,18 @@ export function ReleaseNotes({ notes, className }: { notes: string; className?: 
     return result;
   }, [notes]);
 
-  if (!groups.length) return <p className={cn("text-sm text-fg-muted", className)}>No release notes for this version.</p>;
+  if (!groups.length)
+    return (
+      <p className={cn("text-sm text-fg-muted", className)}>No release notes for this version.</p>
+    );
   return (
     <div className={cn("grid gap-2 text-sm leading-6 text-fg-secondary", className)}>
       {groups.map((group, index) =>
         group.type === "heading" ? (
-          <h3 key={index} className="pt-1 text-2xs font-semibold uppercase tracking-wide text-fg-muted first:pt-0">
+          <h3
+            key={index}
+            className="pt-1 text-2xs font-semibold uppercase tracking-wide text-fg-muted first:pt-0"
+          >
             {group.text}
           </h3>
         ) : group.type === "list" ? (

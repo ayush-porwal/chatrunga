@@ -39,7 +39,11 @@ export type HistoryContext = {
 };
 
 /** The board as it is now, for a history entry. */
-export function captureBoard(tab: SideTab, puzzleSet: PuzzleSetSnapshot | null, continuesSet = false): BoardSnapshot {
+export function captureBoard(
+  tab: SideTab,
+  puzzleSet: PuzzleSetSnapshot | null,
+  continuesSet = false
+): BoardSnapshot {
   const game = useGameStore.getState();
   const puzzle = game.mode === "puzzle" ? usePuzzleStore.getState().activePuzzle : null;
   return {
@@ -74,7 +78,10 @@ export function captureEntry(view: AppView, context: HistoryContext): HistoryEnt
       return { view, opponent: lichess.playOpponent ?? (connected ? "lichess" : "engine") };
     }
     case "game":
-      return { view, board: captureBoard(context.tab, context.puzzleSet, context.puzzleSetContinues) };
+      return {
+        view,
+        board: captureBoard(context.tab, context.puzzleSet, context.puzzleSetContinues)
+      };
     case "game-review":
       return {
         view,
@@ -86,7 +93,8 @@ export function captureEntry(view: AppView, context: HistoryContext): HistoryEnt
       const screen = context.repertoireScreen;
       if (screen?.view !== "repertoire-study") return { view: "repertoire-hub" };
       const draft = useRepertoireWorkspaceStore.getState();
-      const open = draft.repertoireId === screen.repertoireId && draft.chapterId === screen.chapterId;
+      const open =
+        draft.repertoireId === screen.repertoireId && draft.chapterId === screen.chapterId;
       return {
         view,
         repertoireId: screen.repertoireId,
@@ -117,10 +125,12 @@ const LIVE = { live: { over: false } };
 /** Whether showing `entry` would take the board from the Lichess game being played. */
 export function replacesLiveBoard(entry: HistoryEntry, liveGameId: string): boolean {
   if (entry.view === "puzzles") return true; // opening Puzzles puts the board in puzzle mode
-  if (entry.view === "game" || entry.view === "game-review") return entry.board.lichessGameId !== liveGameId;
+  if (entry.view === "game" || entry.view === "game-review")
+    return entry.board.lichessGameId !== liveGameId;
   // Study and practice take the screen's board (and train or suggest moves); the hub is a list.
   if (entry.view === "repertoire-study") return repertoireCommandBlocked(LIVE, "open-study");
-  if (entry.view === "repertoire-practice") return repertoireCommandBlocked(LIVE, "resume-practice");
+  if (entry.view === "repertoire-practice")
+    return repertoireCommandBlocked(LIVE, "resume-practice");
   return false;
 }
 
@@ -134,7 +144,11 @@ export function replacesLiveBoard(entry: HistoryEntry, liveGameId: string): bool
  */
 export type BoardRestore =
   | { kind: "live" }
-  | { kind: "puzzle"; sample: NonNullable<BoardSnapshot["puzzle"]>["sample"]; set: PuzzleSetSnapshot | null }
+  | {
+      kind: "puzzle";
+      sample: NonNullable<BoardSnapshot["puzzle"]>["sample"];
+      set: PuzzleSetSnapshot | null;
+    }
   | { kind: "saved"; gameId: string }
   | { kind: "session"; session: NonNullable<BoardSnapshot["session"]> }
   | { kind: "same" };
@@ -142,11 +156,13 @@ export type BoardRestore =
 export function planBoardRestore(snapshot: BoardSnapshot): BoardRestore {
   // A Lichess game still being played can only be the one on the board now (Back checked that).
   const live = useLichessStore.getState().live;
-  if (snapshot.lichessGameId && live && !live.over && snapshot.lichessGameId === live.id) return { kind: "live" };
+  if (snapshot.lichessGameId && live && !live.over && snapshot.lichessGameId === live.id)
+    return { kind: "live" };
   if (snapshot.puzzle) {
     return { kind: "puzzle", sample: snapshot.puzzle.sample, set: snapshotPuzzleSet(snapshot) };
   }
-  if (snapshot.gameId && snapshot.gameId !== useGameStore.getState().gameId) return { kind: "saved", gameId: snapshot.gameId };
+  if (snapshot.gameId && snapshot.gameId !== useGameStore.getState().gameId)
+    return { kind: "saved", gameId: snapshot.gameId };
   if (!snapshot.gameId && snapshot.session) return { kind: "session", session: snapshot.session };
   return { kind: "same" };
 }

@@ -20,7 +20,11 @@ export const MoveNavigation = memo(function MoveNavigation({ caption }: { captio
     const current = byId.get(currentNodeId) ?? null;
     let ply = 0;
     const seen = new Set<string>();
-    for (let cursor = current; cursor?.parentId && !seen.has(cursor.id); cursor = byId.get(cursor.parentId) ?? null) {
+    for (
+      let cursor = current;
+      cursor?.parentId && !seen.has(cursor.id);
+      cursor = byId.get(cursor.parentId) ?? null
+    ) {
       seen.add(cursor.id);
       ply += 1;
     }

@@ -88,7 +88,10 @@ export function AppTitlebar({
         />
       </div>
       {/* Named for the view transition: the title cross-fades when the view changes (app.css). */}
-      <div className="flex min-w-0 flex-1 items-center gap-2 [view-transition-name:app-title]" data-titlebar-title>
+      <div
+        className="flex min-w-0 flex-1 items-center gap-2 [view-transition-name:app-title]"
+        data-titlebar-title
+      >
         {children}
       </div>
       <SaveFailedButton />
@@ -99,8 +102,17 @@ export function AppTitlebar({
 /** On a page while a Lichess game is on: the way back to the board (the clock keeps running there). */
 export function LiveGameButton({ onClick }: { onClick: () => void }) {
   return (
-    <Button type="button" variant="outline" size="xs" className="ml-auto [-webkit-app-region:no-drag]" onClick={onClick}>
-      <span className="size-1.5 rounded-full bg-danger motion-safe:animate-pulse" aria-hidden="true" />
+    <Button
+      type="button"
+      variant="outline"
+      size="xs"
+      className="ml-auto [-webkit-app-region:no-drag]"
+      onClick={onClick}
+    >
+      <span
+        className="size-1.5 rounded-full bg-danger motion-safe:animate-pulse"
+        aria-hidden="true"
+      />
       Lichess game in progress
     </Button>
   );
@@ -133,7 +145,13 @@ const SaveFailedButton = memo(function SaveFailedButton() {
 });
 
 /** Back / Forward between screens (like a browser's), right of the sidebar toggle. */
-const HistoryButtons = memo(function HistoryButtons({ onBack, onForward }: { onBack: () => void; onForward: () => void }) {
+const HistoryButtons = memo(function HistoryButtons({
+  onBack,
+  onForward
+}: {
+  onBack: () => void;
+  onForward: () => void;
+}) {
   const canGoBack = useHistoryStore(selectCanGoBack);
   const canGoForward = useHistoryStore(selectCanGoForward);
   const keys = historyShortcutLabels();
@@ -217,7 +235,9 @@ export const GameTitlebar = memo(function GameTitlebar({
   );
   const analysisError = useAnalysisStore((state) => state.error);
   // The Lichess game on the board (a string, so moves don't re-render the titlebar).
-  const lichessLabel = useLichessStore((state) => (state.live ? lichessGameLabel(state.live.full) : null));
+  const lichessLabel = useLichessStore((state) =>
+    state.live ? lichessGameLabel(state.live.full) : null
+  );
   const activeEngineId = useAnalysisStore((state) => state.activeEngineId);
   const activePuzzle = usePuzzleStore((state) => state.activePuzzle);
   // A finished engine game's own row (MatchActions) has Analyze: the button here would repeat it.
@@ -257,7 +277,12 @@ export const GameTitlebar = memo(function GameTitlebar({
           <MatchActions
             onReview={onReviewGame}
             onPlayAgain={onPlayAgain}
-            postGame={{ onReviewGame: onReviewEngineGame, onAnalyze, onNextPuzzle, nextPuzzlePending }}
+            postGame={{
+              onReviewGame: onReviewEngineGame,
+              onAnalyze,
+              onNextPuzzle,
+              nextPuzzlePending
+            }}
           />
           <RepertoireHandoffActions
             onReviewOpening={onReviewOpening}
@@ -307,8 +332,11 @@ export const ReviewTitlebar = memo(function ReviewTitlebar({
             // A disabled button gets no pointer events, so the tooltip hangs off a focusable wrapper.
             <Tooltip>
               <TooltipTrigger asChild>
-                {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a disabled button can't take focus, so its wrapper does, to show why it's disabled */}
-                <span tabIndex={0} className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent/50">
+                <span
+                  // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a disabled button can't take focus, so its wrapper does, to show why it's disabled
+                  tabIndex={0}
+                  className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+                >
                   <Button type="button" variant="primary" size="sm" disabled>
                     Analyze
                   </Button>

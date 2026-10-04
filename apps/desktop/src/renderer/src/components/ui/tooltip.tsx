@@ -16,7 +16,11 @@ function TooltipProvider({
 }: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
   return (
     <SharedProvider.Provider value={true}>
-      <TooltipPrimitive.Provider data-slot="tooltip-provider" delayDuration={delayDuration} {...props} />
+      <TooltipPrimitive.Provider
+        data-slot="tooltip-provider"
+        delayDuration={delayDuration}
+        {...props}
+      />
     </SharedProvider.Provider>
   );
 }
@@ -53,7 +57,10 @@ function TooltipContent({
       >
         <span
           aria-hidden="true"
-          className={cn(frost, "rounded-md animate-fade-in group-data-[state=closed]/tooltip:animate-fade-out")}
+          className={cn(
+            frost,
+            "rounded-md animate-fade-in group-data-[state=closed]/tooltip:animate-fade-out"
+          )}
         />
         <div
           className={cn(

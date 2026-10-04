@@ -72,11 +72,19 @@ describe("review store", () => {
     useReviewStore.getState().startReview("r1");
     useReviewStore.getState().applyReviewEvents({ progress: progress(0), moves: [] });
     let updates = 0;
-    const unsubscribe = useReviewStore.subscribe(() => { updates += 1; });
-    useReviewStore.getState().applyReviewEvents({ progress: progress(0, { depth: 12, phase: "after" }), moves: [] });
-    useReviewStore.getState().applyReviewEvents({ progress: progress(0, { depth: 18 }), moves: [] });
+    const unsubscribe = useReviewStore.subscribe(() => {
+      updates += 1;
+    });
+    useReviewStore
+      .getState()
+      .applyReviewEvents({ progress: progress(0, { depth: 12, phase: "after" }), moves: [] });
+    useReviewStore
+      .getState()
+      .applyReviewEvents({ progress: progress(0, { depth: 18 }), moves: [] });
     expect(updates).toBe(0);
-    useReviewStore.getState().applyReviewEvents({ progress: progress(1), moves: [move("a", "good"), move("b", "best")] });
+    useReviewStore
+      .getState()
+      .applyReviewEvents({ progress: progress(1), moves: [move("a", "good"), move("b", "best")] });
     unsubscribe();
     expect(updates).toBe(1);
     expect(useReviewStore.getState().progress?.moveIndex).toBe(1);
@@ -103,7 +111,11 @@ describe("review store", () => {
     useReviewStore.getState().loadReview(saved);
     useReviewStore.getState().startReview("r2");
     useReviewStore.getState().detachRun();
-    expect(useReviewStore.getState()).toMatchObject({ status: "ready", reviewId: null, partialMoves: [] });
+    expect(useReviewStore.getState()).toMatchObject({
+      status: "ready",
+      reviewId: null,
+      partialMoves: []
+    });
     expect(useReviewStore.getState().review?.moves).toHaveLength(1);
     // The cancelled run's completion no longer matches the store, so it's dropped.
     expect(acceptsReviewEvent(useReviewStore.getState().reviewId, "r2")).toBe(false);
@@ -111,14 +123,25 @@ describe("review store", () => {
 
   it("a finished run is a new analysis next to the saved ones; comments count for their own", () => {
     const saved = { ...review([move("a", "good")]), reviewId: "old", createdAt: 1 };
-    const listed = { reviewId: "old", createdAt: 1, engineName: "Stockfish", moveTimeMs: 1000, depth: null, maiaLevels: [], moveCount: 1, commentaryCount: 2 };
+    const listed = {
+      reviewId: "old",
+      createdAt: 1,
+      engineName: "Stockfish",
+      moveTimeMs: 1000,
+      depth: null,
+      maiaLevels: [],
+      moveCount: 1,
+      commentaryCount: 2
+    };
     useReviewStore.getState().loadReview(saved, [listed]);
     useReviewStore.getState().startReview("new");
     useReviewStore.getState().setReview({ ...review([move("a", "best")]), createdAt: 2 });
     expect(useReviewStore.getState().review?.reviewId).toBe("new");
     expect(useReviewStore.getState().analyses.map((info) => info.reviewId)).toEqual(["new", "old"]);
 
-    useReviewStore.getState().addCommentary({ ply: 1, prose: "Fine.", generatedAt: 3, providerModel: "test/model" });
+    useReviewStore
+      .getState()
+      .addCommentary({ ply: 1, prose: "Fine.", generatedAt: 3, providerModel: "test/model" });
     expect(useReviewStore.getState().analyses.map((info) => info.commentaryCount)).toEqual([1, 2]);
 
     // Showing the older one again keeps the list.
@@ -149,9 +172,15 @@ describe("review store", () => {
     const partial = [move("a", "good")];
     const done = review([move("a", "best"), move("b", "good")]);
 
-    expect(selectDisplayedMoves({ status: "running", review: done, partialMoves: partial })).toBe(partial);
-    expect(selectDisplayedMoves({ status: "ready", review: done, partialMoves: [] })).toBe(done.moves);
-    expect(selectDisplayedMoves({ status: "cancelled", review: null, partialMoves: partial })).toBe(partial);
+    expect(selectDisplayedMoves({ status: "running", review: done, partialMoves: partial })).toBe(
+      partial
+    );
+    expect(selectDisplayedMoves({ status: "ready", review: done, partialMoves: [] })).toBe(
+      done.moves
+    );
+    expect(selectDisplayedMoves({ status: "cancelled", review: null, partialMoves: partial })).toBe(
+      partial
+    );
   });
 
   it("handles cancellation, errors, and loaded reviews", () => {
@@ -168,12 +197,26 @@ describe("review store", () => {
   });
 
   it("drops saved offline-template commentary and legacy fields when loading a review", () => {
-    const ai = { ply: 1, prose: "AI", headline: "Idea", generatedAt: 1, providerModel: "m", settingsKey: "k" };
+    const ai = {
+      ply: 1,
+      prose: "AI",
+      headline: "Idea",
+      generatedAt: 1,
+      providerModel: "m",
+      settingsKey: "k"
+    };
     const saved = {
       ...review([move("loaded", "excellent")]),
       commentary: [
         { ...ai, takeaway: "Old tip", fallback: false, source: "openrouter" },
-        { ply: 2, prose: "Template", generatedAt: 1, providerModel: "local-template", fallback: true, source: "local-fallback" }
+        {
+          ply: 2,
+          prose: "Template",
+          generatedAt: 1,
+          providerModel: "local-template",
+          fallback: true,
+          source: "local-fallback"
+        }
       ]
     } as unknown as GameReview;
 

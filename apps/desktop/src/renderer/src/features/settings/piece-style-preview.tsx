@@ -19,7 +19,13 @@ const previewCellPieceClass =
  * without an "unrecognized tag" warning, so the element is created directly inside a
  * `display: contents` span. Must sit inside a `.cg-wrap` with the piece-set class.
  */
-export function CgPieceGlyph({ color, role }: { color: "white" | "black"; role: PreviewPieceRole }) {
+export function CgPieceGlyph({
+  color,
+  role
+}: {
+  color: "white" | "black";
+  role: PreviewPieceRole;
+}) {
   const hostRef = useRef<HTMLSpanElement>(null);
   useLayoutEffect(() => {
     const host = hostRef.current;
@@ -68,7 +74,13 @@ export function PieceStylePreviewStrip({
           key={`${color}-${role}`}
           className={cn(
             "relative inline-block shrink-0 overflow-hidden",
-            color === "black" ? (isCompact ? "size-5.5" : "size-6.5") : isCompact ? "size-6" : "size-7"
+            color === "black"
+              ? isCompact
+                ? "size-5.5"
+                : "size-6.5"
+              : isCompact
+                ? "size-6"
+                : "size-7"
           )}
         >
           <CgPieceGlyph color={color} role={role} />

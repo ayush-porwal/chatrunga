@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MoveReview, ReviewProgress } from "@chaturanga/shared/types/engine";
-import { acceptsReviewEvent, createReviewEventBuffer, REVIEW_EVENT_FLUSH_MS } from "./useReviewEventSubscription";
+import {
+  acceptsReviewEvent,
+  createReviewEventBuffer,
+  REVIEW_EVENT_FLUSH_MS
+} from "./useReviewEventSubscription";
 
 const progress = (reviewId: string, moveIndex: number, depth: number) =>
   ({ reviewId, moveIndex, depth, totalMoves: 10 }) as unknown as ReviewProgress;
@@ -30,7 +34,11 @@ describe("review event buffer", () => {
     expect(flush).not.toHaveBeenCalled();
     vi.advanceTimersByTime(REVIEW_EVENT_FLUSH_MS);
     expect(flush).toHaveBeenCalledTimes(1);
-    expect(flush.mock.calls[0][0]).toMatchObject({ reviewId: "r1", progress: { moveIndex: 1 }, moves: [{ nodeId: "a" }] });
+    expect(flush.mock.calls[0][0]).toMatchObject({
+      reviewId: "r1",
+      progress: { moveIndex: 1 },
+      moves: [{ nodeId: "a" }]
+    });
   });
 
   it("flushes pending moves on demand and drops them on discard", () => {

@@ -496,7 +496,9 @@ export function reindexChapter(
   if (!chapterId) return reindex(record, now);
 
   // The stored keys of the old tree also seed the new one: most of its positions are the same.
-  const storedKeys = before ? positionIndexRepository.chapterKeys(chapterId) : new Map<string, string>();
+  const storedKeys = before
+    ? positionIndexRepository.chapterKeys(chapterId)
+    : new Map<string, string>();
   const seed = new Map<string, string>();
   for (const node of before?.tree ?? []) {
     const key = storedKeys.get(node.id);

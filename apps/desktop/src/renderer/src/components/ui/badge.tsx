@@ -36,9 +36,26 @@ type BadgeProps = React.ComponentProps<"span"> &
     appear?: boolean;
   };
 
-function Badge({ className, tone, size, onRemove, removeLabel, appear = false, children, ...props }: BadgeProps) {
+function Badge({
+  className,
+  tone,
+  size,
+  onRemove,
+  removeLabel,
+  appear = false,
+  children,
+  ...props
+}: BadgeProps) {
   return (
-    <span className={cn(badgeVariants({ tone, size }), onRemove && "pr-1", appear && "animate-rise-in", className)} {...props}>
+    <span
+      className={cn(
+        badgeVariants({ tone, size }),
+        onRemove && "pr-1",
+        appear && "animate-rise-in",
+        className
+      )}
+      {...props}
+    >
       {children}
       {onRemove ? (
         <button

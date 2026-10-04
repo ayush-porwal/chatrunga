@@ -37,7 +37,10 @@ export function useBoardAppearance(): {
     appearance,
     squareBackground,
     squareColors,
-    pieceClassName: cn(cgWrapPieceSetClass(appearance.pieceStyle), piecePresentationTailwindClass(appearance.piecePresentation))
+    pieceClassName: cn(
+      cgWrapPieceSetClass(appearance.pieceStyle),
+      piecePresentationTailwindClass(appearance.piecePresentation)
+    )
   };
 }
 

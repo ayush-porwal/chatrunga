@@ -11,7 +11,8 @@ const TENTHS_BELOW_MS = 10_000;
 /** `M:SS`, or `S.t` tenths in the last ten seconds (rounded up, like the flag check). */
 export function formatLiveClock(ms: number): string {
   const tenths = Math.ceil(ms / 100);
-  if (ms > 0 && tenths < TENTHS_BELOW_MS / 100) return `0:0${Math.floor(tenths / 10)}.${tenths % 10}`;
+  if (ms > 0 && tenths < TENTHS_BELOW_MS / 100)
+    return `0:0${Math.floor(tenths / 10)}.${tenths % 10}`;
   return formatMillisecondsClock(ms);
 }
 

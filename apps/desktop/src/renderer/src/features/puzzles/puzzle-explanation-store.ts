@@ -1,5 +1,8 @@
 import { create } from "zustand";
-import type { ExplainPuzzleInput, ExplainPuzzleResult } from "@chaturanga/shared/ipc/chaturanga-api";
+import type {
+  ExplainPuzzleInput,
+  ExplainPuzzleResult
+} from "@chaturanga/shared/ipc/chaturanga-api";
 import type { PuzzleOutcomeKind } from "@chaturanga/shared/schemas/puzzle-insight";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import type {
@@ -11,7 +14,11 @@ import type {
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { usePuzzleStore, type PuzzleWrongMove } from "../../stores/puzzle-store";
-import { buildPuzzleExplanationPayload, explainSearchPlan, puzzleIdentity } from "./puzzle-explanation";
+import {
+  buildPuzzleExplanationPayload,
+  explainSearchPlan,
+  puzzleIdentity
+} from "./puzzle-explanation";
 import { nonSolutionSan } from "./puzzle-prose";
 
 /**
@@ -39,7 +46,9 @@ export type ExplainEntry = {
   cancel: (() => void) | null;
 };
 
-export const usePuzzleExplanationStore = create<{ entries: Record<string, ExplainEntry> }>(() => ({ entries: {} }));
+export const usePuzzleExplanationStore = create<{ entries: Record<string, ExplainEntry> }>(() => ({
+  entries: {}
+}));
 
 /** What a request talks to: the desktop bridge, or a test double. */
 export type ExplainDeps = {
@@ -59,11 +68,15 @@ export type ExplainRequest = {
   wrong: PuzzleWrongMove | null;
   /** The Game review evaluation engine (null: none usable). */
   engine: EngineConfig | null;
-  settings: Pick<AppSettings, "reviewSearchTimeMs" | "reviewMultiPv" | "reviewPlayerRating" | "reviewCommentaryDetail">;
+  settings: Pick<
+    AppSettings,
+    "reviewSearchTimeMs" | "reviewMultiPv" | "reviewPlayerRating" | "reviewCommentaryDetail"
+  >;
 };
 
 export const NO_ENGINE_ERROR = "Choose an evaluation engine in the explanation settings first.";
-const THIN_FACTS_ERROR = "The engine didn't return enough about this puzzle to explain it. Try again, or give it more search time.";
+const THIN_FACTS_ERROR =
+  "The engine didn't return enough about this puzzle to explain it. Try again, or give it more search time.";
 const NO_ANSWER_ERROR = "OpenRouter didn't return an explanation for this puzzle.";
 const REQUEST_ERROR = "The explanation couldn't be requested. Try again in a moment.";
 
@@ -90,7 +103,8 @@ function desktopDeps(): ExplainDeps | null {
     analysePositions: (input) => api.engines.analysePositions(input),
     explainPuzzle: (input) => api.commentary.explainPuzzle(input),
     cancelSearch: (requestId) => void api.engines.cancelReview(requestId).catch(() => undefined),
-    cancelWriting: (requestId) => void api.commentary.cancelPuzzleExplanation(requestId).catch(() => undefined),
+    cancelWriting: (requestId) =>
+      void api.commentary.cancelPuzzleExplanation(requestId).catch(() => undefined),
     newId: () => crypto.randomUUID()
   };
 }
@@ -100,28 +114,51 @@ function desktopDeps(): ExplainDeps | null {
  * then the coach writes the explanation ("writing"). A request already running for the same key
  * is left to finish; a finished one is replaced (Regenerate).
  */
-export async function requestPuzzleExplanation(request: ExplainRequest, deps: ExplainDeps | null = desktopDeps()): Promise<void> {
+export async function requestPuzzleExplanation(
+  request: ExplainRequest,
+  deps: ExplainDeps | null = desktopDeps()
+): Promise<void> {
   const { key, puzzle } = request;
   const current = usePuzzleExplanationStore.getState().entries[key];
   if (current?.phase === "analysing" || current?.phase === "writing") return;
-  const base = { puzzle: puzzleIdentity(puzzle), explanation: null, otherSan: [], error: null, needsSettings: false, cancel: null };
+  const base = {
+    puzzle: puzzleIdentity(puzzle),
+    explanation: null,
+    otherSan: [],
+    error: null,
+    needsSettings: false,
+    cancel: null
+  };
   if (!deps) {
-    setEntry(key, { ...base, phase: "error", requestId: null, error: "Explanations need the desktop app." });
+    setEntry(key, {
+      ...base,
+      phase: "error",
+      requestId: null,
+      error: "Explanations need the desktop app."
+    });
     return;
   }
   if (!request.engine) {
-    setEntry(key, { ...base, phase: "error", requestId: null, error: NO_ENGINE_ERROR, needsSettings: true });
+    setEntry(key, {
+      ...base,
+      phase: "error",
+      requestId: null,
+      error: NO_ENGINE_ERROR,
+      needsSettings: true
+    });
     return;
   }
   watchActivePuzzle();
   const requestId = deps.newId();
   // Each phase cancels what it runs: the search while analysing, then the provider call.
   const cancel = () => {
-    if (usePuzzleExplanationStore.getState().entries[key]?.phase === "analysing") deps.cancelSearch(requestId);
+    if (usePuzzleExplanationStore.getState().entries[key]?.phase === "analysing")
+      deps.cancelSearch(requestId);
     else deps.cancelWriting(requestId);
   };
   setEntry(key, { ...base, phase: "analysing", requestId, cancel });
-  const fail = (error: string) => patchEntry(key, requestId, { phase: "error", requestId: null, error, cancel: null });
+  const fail = (error: string) =>
+    patchEntry(key, requestId, { phase: "error", requestId: null, error, cancel: null });
 
   const plan = explainSearchPlan(puzzle, request.wrong, request.settings.reviewMultiPv);
   let analysis: AnalysePositionsResult;
@@ -133,10 +170,12 @@ export async function requestPuzzleExplanation(request: ExplainRequest, deps: Ex
       positions: plan.positions
     });
   } catch (error) {
-    fail(`The engine couldn't analyse this puzzle: ${ipcErrorMessage(error) || "it stopped unexpectedly"}.`);
+    fail(
+      `The engine couldn't analyse this puzzle: ${ipcErrorMessage(error) || "it stopped unexpectedly"}.`
+    );
     return;
   }
-  const at = (index: number | null) => (index === null ? null : analysis.lines[index] ?? []);
+  const at = (index: number | null) => (index === null ? null : (analysis.lines[index] ?? []));
   const payload = buildPuzzleExplanationPayload({
     puzzle,
     kind: request.kind,
@@ -162,7 +201,12 @@ export async function requestPuzzleExplanation(request: ExplainRequest, deps: Ex
       fail(answer.error ?? NO_ANSWER_ERROR);
       return;
     }
-    patchEntry(key, requestId, { phase: "ready", requestId: null, explanation: answer.explanation, cancel: null });
+    patchEntry(key, requestId, {
+      phase: "ready",
+      requestId: null,
+      explanation: answer.explanation,
+      cancel: null
+    });
   } catch {
     fail(REQUEST_ERROR);
   }
@@ -189,7 +233,8 @@ function watchActivePuzzle(): void {
   watching = true;
   usePuzzleStore.subscribe((state, previous) => {
     const active = state.activePuzzle ? puzzleIdentity(state.activePuzzle) : null;
-    if (active !== (previous.activePuzzle ? puzzleIdentity(previous.activePuzzle) : null)) cancelPuzzleExplanations(active);
+    if (active !== (previous.activePuzzle ? puzzleIdentity(previous.activePuzzle) : null))
+      cancelPuzzleExplanations(active);
   });
 }
 
@@ -216,10 +261,16 @@ export function explainView(input: {
 }): ExplainView {
   const { entry } = input;
   if (entry?.phase === "analysing" || entry?.phase === "writing") return { kind: entry.phase };
-  if (entry?.phase === "ready" && entry.explanation) return { kind: "ready", explanation: entry.explanation };
+  if (entry?.phase === "ready" && entry.explanation)
+    return { kind: "ready", explanation: entry.explanation };
   if (!input.configReady) return { kind: "idle", disabled: true };
   if (!input.commentaryEnabled) return { kind: "off" };
   if (!input.hasApiKey) return { kind: "no-key" };
-  if (entry?.phase === "error") return { kind: "error", message: entry.error ?? NO_ANSWER_ERROR, needsSettings: entry.needsSettings };
+  if (entry?.phase === "error")
+    return {
+      kind: "error",
+      message: entry.error ?? NO_ANSWER_ERROR,
+      needsSettings: entry.needsSettings
+    };
   return { kind: "idle", disabled: false };
 }

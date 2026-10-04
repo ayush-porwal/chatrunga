@@ -33,14 +33,22 @@ import { useGameReviewCommentary } from "./useGameReviewCommentary";
 import { useStoreHintsOnLeave } from "../onboarding/Coachmark";
 import { useUpdateSettingMutation } from "../../queries/api";
 import { openSavedGame } from "../game/saved-game";
-import { reviewAnchorFor, type CommentaryMoveContext, type MoveNavigationTarget } from "./commentary-moves";
+import {
+  reviewAnchorFor,
+  type CommentaryMoveContext,
+  type MoveNavigationTarget
+} from "./commentary-moves";
 import { openingSideFor, type OpeningSide } from "./opening-comparison";
 import { qualityTone } from "@/lib/ui";
 import { Sparkles, Swords, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Notice } from "@/components/ui/notice";
-import { SegmentedControl, tabPanelProps, type SegmentedOption } from "@/components/ui/segmented-control";
+import {
+  SegmentedControl,
+  tabPanelProps,
+  type SegmentedOption
+} from "@/components/ui/segmented-control";
 import { Stat, StatGroup } from "@/components/ui/stat";
 import { useReviewUsage } from "../../app/useUsageTelemetry";
 
@@ -134,7 +142,10 @@ function GameReviewPageInner({
     [board, onOpeningSideChange]
   );
   const rememberedRepertoires = useMemo(
-    () => ({ white: settings.repertoireCompareWhite ?? null, black: settings.repertoireCompareBlack ?? null }),
+    () => ({
+      white: settings.repertoireCompareWhite ?? null,
+      black: settings.repertoireCompareBlack ?? null
+    }),
     [settings.repertoireCompareWhite, settings.repertoireCompareBlack]
   );
   const isRunning = reviewStatus === "running";
@@ -154,11 +165,15 @@ function GameReviewPageInner({
   const anchor = useDeferredValue(currentAnchor);
   const panelMove = anchor?.move ?? null;
   const panelParentId = useMemo(
-    () => (panelMove ? moveTree.find((node) => node.id === panelMove.nodeId)?.parentId ?? null : null),
+    () =>
+      panelMove ? (moveTree.find((node) => node.id === panelMove.nodeId)?.parentId ?? null) : null,
     [moveTree, panelMove]
   );
   const variationAnchor = useMemo(
-    () => (anchor?.variation ? { label: moveLabel(anchor.move), onBack: () => selectNode(anchor.move.nodeId) } : null),
+    () =>
+      anchor?.variation
+        ? { label: moveLabel(anchor.move), onBack: () => selectNode(anchor.move.nodeId) }
+        : null,
     [anchor, selectNode]
   );
   const moveContext = useMemo<CommentaryMoveContext | null>(
@@ -166,19 +181,25 @@ function GameReviewPageInner({
     [moveTree, moves, panelMove]
   );
   const panelNodeId = panelMove?.nodeId ?? null;
-  const goToLine = useCallback((target: MoveNavigationTarget) => {
-    setLinkOriginNodeId(panelNodeId);
-    useGameStore.getState().goToLine(target.startNodeId, target.moves);
-  }, [panelNodeId]);
+  const goToLine = useCallback(
+    (target: MoveNavigationTarget) => {
+      setLinkOriginNodeId(panelNodeId);
+      useGameStore.getState().goToLine(target.startNodeId, target.moves);
+    },
+    [panelNodeId]
+  );
   const commentaryMap = useMemo(
-    () => new Map((isRunning ? [] : review?.commentary ?? []).map((item) => [item.ply, item])),
+    () => new Map((isRunning ? [] : (review?.commentary ?? [])).map((item) => [item.ply, item])),
     [review?.commentary, isRunning]
   );
   const commentaryByNodeId = useMemo(
-    () => new Map(moves.flatMap((move) => {
-      const item = commentaryMap.get(move.ply);
-      return item ? [[move.nodeId, item] as const] : [];
-    })),
+    () =>
+      new Map(
+        moves.flatMap((move) => {
+          const item = commentaryMap.get(move.ply);
+          return item ? [[move.nodeId, item] as const] : [];
+        })
+      ),
     [commentaryMap, moves]
   );
   // Stats describe the finished review; while the pass runs they hold "—" instead of
@@ -207,12 +228,18 @@ function GameReviewPageInner({
     if (!id || id === "current" || id === gameId) return;
     let cancelled = false;
     setLoadError(null);
-    void window.chaturanga?.games.get(id).then((saved) => {
-      if (!cancelled && saved) openSavedGame(saved);
-    }).catch((error) => {
-      if (!cancelled) setLoadError(error instanceof Error ? error.message : "Could not load this game.");
-    });
-    return () => { cancelled = true; };
+    void window.chaturanga?.games
+      .get(id)
+      .then((saved) => {
+        if (!cancelled && saved) openSavedGame(saved);
+      })
+      .catch((error) => {
+        if (!cancelled)
+          setLoadError(error instanceof Error ? error.message : "Could not load this game.");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [id, gameId]);
 
   const arrows = useMemo<ReviewArrow[]>(() => {
@@ -221,16 +248,32 @@ function GameReviewPageInner({
     const best = uciSquares(selectedMove.bestMove);
     if (best) result.push({ ...best, brush: "green" });
     const played = uciSquares(selectedMove.playedMove);
-    if (played && played.orig !== best?.orig) result.push({ ...played, brush: selectedMove.classification === "best" || selectedMove.classification === "excellent" ? "blue" : "red" });
+    if (played && played.orig !== best?.orig)
+      result.push({
+        ...played,
+        brush:
+          selectedMove.classification === "best" || selectedMove.classification === "excellent"
+            ? "blue"
+            : "red"
+      });
     return result;
   }, [selectedMove]);
   const lastMove = uciSquares(selectedMove?.playedMove ?? currentNode?.uci ?? null);
-  const whitePlayer = { name: headers.white || "White", elo: headers.whiteElo ?? null, color: "white" as const };
-  const blackPlayer = { name: headers.black || "Black", elo: headers.blackElo ?? null, color: "black" as const };
+  const whitePlayer = {
+    name: headers.white || "White",
+    elo: headers.whiteElo ?? null,
+    color: "white" as const
+  };
+  const blackPlayer = {
+    name: headers.black || "Black",
+    elo: headers.blackElo ?? null,
+    color: "black" as const
+  };
   // The side at the bottom of the board is the orientation; its opponent sits on top.
   const boardTop = orientation === "white" ? blackPlayer : whitePlayer;
   const boardBottom = orientation === "white" ? whitePlayer : blackPlayer;
-  const onMainline = selectedNodeId === "root" || reviewInput.some((move) => move.nodeId === selectedNodeId);
+  const onMainline =
+    selectedNodeId === "root" || reviewInput.some((move) => move.nodeId === selectedNodeId);
   const hasMoves = moves.length > 0;
   const hasStats = hasMoves && !isRunning;
   /** No main-line moves (and no saved review): nothing to analyse or explain. */
@@ -257,10 +300,18 @@ function GameReviewPageInner({
         <BoardStage
           evalBar={<EvalBar orientation={orientation} />}
           top={<PlayerRow name={boardTop.name} elo={boardTop.elo} color={boardTop.color} />}
-          bottom={<PlayerRow name={boardBottom.name} elo={boardBottom.elo} color={boardBottom.color} />}
+          bottom={
+            <PlayerRow name={boardBottom.name} elo={boardBottom.elo} color={boardBottom.color} />
+          }
         >
           {/* Square corners: the stage's frame clips the board to its own radius. */}
-          <ReviewBoard fen={boardFen} orientation={orientation} arrows={arrows} lastMove={lastMove ? [lastMove.orig, lastMove.dest] : undefined} className="h-full w-full rounded-none" />
+          <ReviewBoard
+            fen={boardFen}
+            orientation={orientation}
+            arrows={arrows}
+            lastMove={lastMove ? [lastMove.orig, lastMove.dest] : undefined}
+            className="h-full w-full rounded-none"
+          />
         </BoardStage>
       }
       tabs={
@@ -279,11 +330,21 @@ function GameReviewPageInner({
       notices={
         loadError || reviewError || outdatedMoves ? (
           <>
-            {loadError ? <Notice tone="warn" className="shrink-0">{loadError}</Notice> : null}
-            {reviewError ? <Notice tone="danger" className="shrink-0">{reviewError}</Notice> : null}
+            {loadError ? (
+              <Notice tone="warn" className="shrink-0">
+                {loadError}
+              </Notice>
+            ) : null}
+            {reviewError ? (
+              <Notice tone="danger" className="shrink-0">
+                {reviewError}
+              </Notice>
+            ) : null}
             {outdatedMoves ? (
               <Notice tone="warn" className="shrink-0">
-                The moves changed after this analysis, so it no longer covers {outdatedMoves === 1 ? "1 move" : `${outdatedMoves} moves`}. Analyse the game again to update it.
+                The moves changed after this analysis, so it no longer covers{" "}
+                {outdatedMoves === 1 ? "1 move" : `${outdatedMoves} moves`}. Analyse the game again
+                to update it.
               </Notice>
             ) : null}
           </>
@@ -303,7 +364,11 @@ function GameReviewPageInner({
               />
             </div>
           ) : null}
-          <MoveNavigation caption={isRunning ? <ReviewProgressCaption fallbackTotal={reviewInput.length} /> : null} />
+          <MoveNavigation
+            caption={
+              isRunning ? <ReviewProgressCaption fallbackTotal={reviewInput.length} /> : null
+            }
+          />
         </>
       }
     >
@@ -348,7 +413,15 @@ function GameReviewPageInner({
           variationAnchor={variationAnchor}
         />
       ) : null}
-      {activeTab === "moves" ? <ReviewMoveRail nodes={moveTree} selectedNodeId={selectedNodeId} reviews={reviewByNodeId} commentaryByNodeId={commentaryByNodeId} onSelectNode={selectNode} /> : null}
+      {activeTab === "moves" ? (
+        <ReviewMoveRail
+          nodes={moveTree}
+          selectedNodeId={selectedNodeId}
+          reviews={reviewByNodeId}
+          commentaryByNodeId={commentaryByNodeId}
+          onSelectNode={selectNode}
+        />
+      ) : null}
       {activeTab === "opening" ? (
         <ReviewOpeningPanel
           moveTree={moveTree}
@@ -376,7 +449,9 @@ function GameReviewPageInner({
           variationAnchor={variationAnchor}
         />
       ) : null}
-      {activeTab === "settings" ? <ReviewSettingsPanel settings={settings} onClose={() => onTabChange("commentary")} /> : null}
+      {activeTab === "settings" ? (
+        <ReviewSettingsPanel settings={settings} onClose={() => onTabChange("commentary")} />
+      ) : null}
     </BoardWorkspace>
   );
 }
@@ -394,10 +469,17 @@ function ReviewProgressCaption({ fallbackTotal }: { fallbackTotal: number }) {
   const current = moveIndex === null ? 0 : Math.min(moveIndex + 1, total);
   const percent = total ? Math.round((Math.max(current - 1, 0) / total) * 100) : 0;
   return (
-    <span className="inline-grid justify-items-center gap-1" role="status" aria-label={current ? `Analyzing move ${current} of ${total}` : "Starting analysis"}>
+    <span
+      className="inline-grid justify-items-center gap-1"
+      role="status"
+      aria-label={current ? `Analyzing move ${current} of ${total}` : "Starting analysis"}
+    >
       <span>{current ? `Analyzing move ${current} of ${total}` : "Starting analysis…"}</span>
       <span className="block h-0.5 w-28 overflow-hidden rounded-full bg-control" aria-hidden>
-        <span className="block h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${percent}%` }} />
+        <span
+          className="block h-full rounded-full bg-accent transition-[width] duration-300"
+          style={{ width: `${percent}%` }}
+        />
       </span>
     </span>
   );

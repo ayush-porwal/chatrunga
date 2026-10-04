@@ -27,10 +27,13 @@ export function puzzleSetSummary(config: PuzzleSessionConfig, dataset: string): 
   } else if (config.mode === "lichess-puzzle") {
     const { ratingMin, ratingMax, popularityMin, side, themes, lengths, openings } = config.lichess;
     const difficulty = PUZZLE_DIFFICULTIES.find((item) => item.id === config.difficulty);
-    parts.push(`Rating ${ratingMin}–${ratingMax}${difficulty ? ` (${difficulty.label.toLowerCase()}, around yours)` : ""}`);
+    parts.push(
+      `Rating ${ratingMin}–${ratingMax}${difficulty ? ` (${difficulty.label.toLowerCase()}, around yours)` : ""}`
+    );
     if (side !== "any") parts.push(`${side === "white" ? "White" : "Black"} to move`);
     if (popularityMin !== 0) parts.push(`Popularity ${popularityMin}+`);
-    for (const tags of [themes, lengths, openings]) if (tags.length) parts.push(tags.map(formatPuzzleTag).join(", "));
+    for (const tags of [themes, lengths, openings])
+      if (tags.length) parts.push(tags.map(formatPuzzleTag).join(", "));
   } else {
     const { difficultyMin, difficultyMax, tags } = config.position;
     parts.push(`Difficulty ${difficultyMin}–${difficultyMax}`);

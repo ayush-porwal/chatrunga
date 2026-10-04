@@ -42,12 +42,15 @@ function newSearchId(): string {
  * must not refill the cleared analysis.
  */
 export function applyEngineInfos(batch: readonly EngineInfo[]): void {
-  useAnalysisStore.getState().setInfos(batch.filter((info) => engineSearches.isCurrent(info.searchId)));
+  useAnalysisStore
+    .getState()
+    .setInfos(batch.filter((info) => engineSearches.isCurrent(info.searchId)));
 }
 
 function playEngineMove(move: string): void {
   useAnalysisStore.getState().setBestMove(move);
-  if (!useGameStore.getState().makeUciMove(move)) useAnalysisStore.getState().setError(`Illegal engine move: ${move}`);
+  if (!useGameStore.getState().makeUciMove(move))
+    useAnalysisStore.getState().setError(`Illegal engine move: ${move}`);
 }
 
 /** A clock and a timer whose start returns its cancel (tests pass fake ones). */
@@ -136,7 +139,8 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
       previous.depth !== depth ||
       previous.moveTimeMs !== moveTimeMs ||
       previous.resources !== resources;
-    const analysing = useGameStore.getState().mode === "analysis" || useAnalysisStore.getState().target !== null;
+    const analysing =
+      useGameStore.getState().mode === "analysis" || useAnalysisStore.getState().target !== null;
     if (changed && analysing) useAnalysisStore.getState().restartSearch();
   }, [analysisEngineId, multipv, depth, moveTimeMs, resources]);
   // Engine search output from main.
@@ -146,7 +150,8 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
     const infos = createEngineInfoBuffer(applyEngineInfos);
     // A new position discards lines still buffered for the previous one.
     const unsubscribePosition = useGameStore.subscribe((state, previous) => {
-      if (state.currentNodeId !== previous.currentNodeId || state.mode !== previous.mode) infos.discard();
+      if (state.currentNodeId !== previous.currentNodeId || state.mode !== previous.mode)
+        infos.discard();
     });
     // So does another analysis target (the study's next move, or none).
     const unsubscribeTarget = useAnalysisStore.subscribe((state, previous) => {
@@ -161,7 +166,11 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
         if (!engineSearches.isCurrent(bestMove.searchId)) return;
         infos.flushNow();
         const game = useGameStore.getState();
-        if (bestMove.searchId !== engineSearches.move || game.mode !== "engine" || game.gameOutcome) {
+        if (
+          bestMove.searchId !== engineSearches.move ||
+          game.mode !== "engine" ||
+          game.gameOutcome
+        ) {
           useAnalysisStore.getState().setBestMove(bestMove.move);
           return;
         }
@@ -204,7 +213,8 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
       const game = useGameStore.getState();
       const live = game.engineClockLive;
       if (!live || game.gameOutcome || live.stoppedAt !== undefined) return;
-      if (remainingClockMs(live, live.sideToMove, clockNow()) <= 0) game.resolveTimeout(live.sideToMove);
+      if (remainingClockMs(live, live.sideToMove, clockNow()) <= 0)
+        game.resolveTimeout(live.sideToMove);
     };
 
     const stopAnalysis = () => {
@@ -290,7 +300,11 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
 
       // Engine game: ask for a move whenever it is the engine's turn (once per position).
       const enginesTurn =
-        game.mode === "engine" && game.engineSide && status.turn === game.engineSide && !status.isEnd && !game.gameOutcome;
+        game.mode === "engine" &&
+        game.engineSide &&
+        status.turn === game.engineSide &&
+        !status.isEnd &&
+        !game.gameOutcome;
       if (engines && enginesTurn && game.engineSide) {
         // The match too: a new game from the same position (and side) still needs its first move.
         const key = `${gameKey}|${game.rootFen}|${game.currentNodeId}|${game.currentFen}|${game.engineSide}`;
@@ -384,14 +398,16 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
     };
     const unsubscribe = useGameStore.subscribe((state, previous) => {
       // A new board (reset / load replaces headers and tree together) is a new match.
-      if (state.headers !== previous.headers && state.moveTree !== previous.moveTree) gameKey = newSearchId();
+      if (state.headers !== previous.headers && state.moveTree !== previous.moveTree)
+        gameKey = newSearchId();
       schedule();
     });
     // A requested restart (restartSearch) re-runs the analysis for the same position; a target set,
     // moved or cleared changes what it searches.
     const unsubscribeRestart = useAnalysisStore.subscribe((state, previous) => {
       if (state.target && !previous.target) targetSetAt = state.searchEpoch;
-      if (state.searchEpoch !== previous.searchEpoch || state.target !== previous.target) schedule();
+      if (state.searchEpoch !== previous.searchEpoch || state.target !== previous.target)
+        schedule();
     });
     sync();
     return () => {

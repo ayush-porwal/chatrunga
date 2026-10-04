@@ -14,7 +14,9 @@ initTour();
  * `transform`. Off for reduced motion and on narrow screens, where the panels simply stack.
  */
 function initDepth(): void {
-  const motion = window.matchMedia("(prefers-reduced-motion: no-preference) and (min-width: 768px)");
+  const motion = window.matchMedia(
+    "(prefers-reduced-motion: no-preference) and (min-width: 768px)"
+  );
   const hero = document.querySelector<HTMLElement>(".hero");
   const layers = [...document.querySelectorAll<HTMLElement>(".hero [data-depth]")];
   if (!hero || layers.length === 0) return;
@@ -24,7 +26,9 @@ function initDepth(): void {
     queued = false;
     const y = Math.min(window.scrollY, hero!.offsetHeight);
     for (const layer of layers) {
-      layer.style.translate = motion.matches ? `0 ${(y * Number(layer.dataset.depth)).toFixed(1)}px` : "";
+      layer.style.translate = motion.matches
+        ? `0 ${(y * Number(layer.dataset.depth)).toFixed(1)}px`
+        : "";
     }
   }
   function queue(): void {

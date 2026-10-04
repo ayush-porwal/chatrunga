@@ -16,7 +16,11 @@ import { useEnginesQuery } from "../../queries/api";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { useGameStore } from "../../stores/game-store";
 import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
-import { LichessPlayActions, LichessPlayPanel, useLichessSeekSetup } from "../lichess/LichessPlayPanel";
+import {
+  LichessPlayActions,
+  LichessPlayPanel,
+  useLichessSeekSetup
+} from "../lichess/LichessPlayPanel";
 import type { Color } from "@chaturanga/shared/types/chess";
 import { ChipButton } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -99,7 +103,6 @@ const opponentOptions = [
   { value: "board", label: "Free board", icon: <SquareDashed /> }
 ] as const;
 
-
 /** Free board: what it is, with the starting position (opened from the header's Open board, or here). */
 function FreeBoardPanel({ disabled, onOpen }: { disabled: boolean; onOpen: () => void }) {
   return (
@@ -134,7 +137,9 @@ export const PlayPage = memo(function PlayPage(
   const setup = useEngineGameSetup(props);
   const lichess = useLichessSeekSetup();
   const chosen = useLichessStore((state) => state.playOpponent);
-  const connected = useLichessStore((state) => Boolean(state.status.account) && !state.status.tokenRejected);
+  const connected = useLichessStore(
+    (state) => Boolean(state.status.account) && !state.status.tokenRejected
+  );
   const setOpponent = useLichessStore((state) => state.setPlayOpponent);
   const opponent = chosen ?? (connected ? "lichess" : "engine");
   const onlineGameLive = useLichessStore(selectLiveGameInProgress);
@@ -154,7 +159,13 @@ export const PlayPage = memo(function PlayPage(
       {/* The kind of game and its start action on one row (Start is the page's primary action). */}
       <header className="flex min-h-9 flex-wrap items-center gap-3">
         <h1 className="sr-only">Play</h1>
-        <SegmentedControl ariaLabel="Opponent" value={opponent} onChange={setOpponent} options={opponentOptions} className="w-fit" />
+        <SegmentedControl
+          ariaLabel="Opponent"
+          value={opponent}
+          onChange={setOpponent}
+          options={opponentOptions}
+          className="w-fit"
+        />
         {actions ? <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div> : null}
       </header>
       {opponent === "lichess" ? (
@@ -176,7 +187,9 @@ function useEngineGameSetup({ onOpenSettings, onBeforeStart, onStart }: EngineGa
   const engines = useEnginesQuery();
   // Actions and initial values only; `matchRunning` is the one live value the page renders.
   const game = useGameStore.getState();
-  const matchRunning = useGameStore((state) => state.mode === "engine" && Boolean(state.engineSide) && !state.gameOutcome);
+  const matchRunning = useGameStore(
+    (state) => state.mode === "engine" && Boolean(state.engineSide) && !state.gameOutcome
+  );
   // A Lichess game owns the board until it ends.
   const onlineGameLive = useLichessStore(selectLiveGameInProgress);
   const defaultEngine = useMemo(
@@ -190,13 +203,15 @@ function useEngineGameSetup({ onOpenSettings, onBeforeStart, onStart }: EngineGa
   const initialSession = draft.initialSession ?? null;
   const [handoffError, setHandoffError] = useState<string | null>(null);
   // A chosen engine that was deleted since falls back to the default — and so does the id used.
-  const selectedEngine = engines.data?.find((engine) => engine.id === draft.engineId) ?? defaultEngine;
+  const selectedEngine =
+    engines.data?.find((engine) => engine.id === draft.engineId) ?? defaultEngine;
   const engineId = selectedEngine?.id ?? "";
   const humanColor: Color = initialSession?.playerColor ?? draft.humanColor ?? game.orientation;
   const moveTimeMs = draft.moveTimeMs ?? game.moveTimeMs;
   const depth = draft.depth === undefined ? game.depth : draft.depth;
   // The draft is persisted: an id from an older build falls back to no clock.
-  const clockPreset: ClockPresetId = clockPresets.find((item) => item.id === draft.clockPreset)?.id ?? "infinite";
+  const clockPreset: ClockPresetId =
+    clockPresets.find((item) => item.id === draft.clockPreset)?.id ?? "infinite";
   const { customMinutes, customIncrementSec } = draft;
   const setEngineId = (value: string) => updateDraft({ engineId: value });
   const setHumanColor = (value: Color) => updateDraft({ humanColor: value });
@@ -210,7 +225,11 @@ function useEngineGameSetup({ onOpenSettings, onBeforeStart, onStart }: EngineGa
     useShallow((state) => {
       const status = positionStatus(state.currentFen);
       return state.currentFen !== START_FEN && !status.isEnd
-        ? { fen: state.currentFen, turn: status.turn, moveNumber: Number(state.currentFen.split(" ")[5]) || 1 }
+        ? {
+            fen: state.currentFen,
+            turn: status.turn,
+            moveNumber: Number(state.currentFen.split(" ")[5]) || 1
+          }
         : null;
     })
   );
@@ -258,8 +277,7 @@ function useEngineGameSetup({ onOpenSettings, onBeforeStart, onStart }: EngineGa
     if (handoffGame) game.loadGame(handoffGame);
     else if (fromPosition) {
       game.loadGame(createGameFromFen({ fen: fromPosition.fen, source: "engine-game" }));
-    }
-    else game.reset();
+    } else game.reset();
     game.setOrientation(humanColor);
     game.setGameSource("engine-game");
     const tcTag =
@@ -368,15 +386,15 @@ function EngineGameSetupBody({
       <div className="grid gap-5">
         {startingFrom}
         <EmptyState
-        icon={<Bot />}
-        title="No engine installed"
-        description="Download Stockfish or add a UCI engine in Settings."
-        action={
-          <Button type="button" variant="primary" onClick={onOpenSettings}>
-            Open settings
-          </Button>
-        }
-      />
+          icon={<Bot />}
+          title="No engine installed"
+          description="Download Stockfish or add a UCI engine in Settings."
+          action={
+            <Button type="button" variant="primary" onClick={onOpenSettings}>
+              Open settings
+            </Button>
+          }
+        />
       </div>
     );
   }
@@ -412,7 +430,12 @@ function EngineGameSetupBody({
               onChange={setup.setEngineId}
             />
           </div>
-          <IconButton label="Engine settings" icon={<Settings />} size="icon" onClick={onOpenSettings} />
+          <IconButton
+            label="Engine settings"
+            icon={<Settings />}
+            size="icon"
+            onClick={onOpenSettings}
+          />
         </div>
       </Field>
 
@@ -506,7 +529,9 @@ function EngineGameSetupBody({
                 value={setup.moveTimeMs}
                 // Typed freely; held to the accepted range when the field is left (and at Start).
                 onChange={(event) => setup.setMoveTimeMs(Number(event.target.value))}
-                onBlur={() => setup.setMoveTimeMs(clampLimit(setup.moveTimeMs, 100, ENGINE_LIMITS.moveTimeMs))}
+                onBlur={() =>
+                  setup.setMoveTimeMs(clampLimit(setup.moveTimeMs, 100, ENGINE_LIMITS.moveTimeMs))
+                }
               />
             </Field>
             <Field label="Depth" hint="optional" htmlFor="engine-game-depth">
@@ -517,7 +542,9 @@ function EngineGameSetupBody({
                 max={ENGINE_LIMITS.depth}
                 value={setup.depth ?? ""}
                 placeholder="No cap"
-                onChange={(event) => setup.setDepth(event.target.value ? Number(event.target.value) : null)}
+                onChange={(event) =>
+                  setup.setDepth(event.target.value ? Number(event.target.value) : null)
+                }
                 onBlur={() => setup.setDepth(clampDepth(setup.depth))}
               />
             </Field>
@@ -555,18 +582,19 @@ function EngineDropdown({
   const selected = engines.find((engine) => engine.id === value) ?? engines[0];
   const fallbackId = useId();
   const listId = id ?? fallbackId;
-  const { triggerRef, highlightedIndex, setHighlightedIndex, optionId, commit, onTriggerKeyDown } = useListboxKeyboard({
-    id: listId,
-    count: engines.length,
-    selectedIndex: engines.findIndex((engine) => engine.id === selected?.id),
-    isDisabled: (index) => !engines[index]?.isAvailable,
-    open,
-    setOpen,
-    onCommit: (index) => {
-      const engine = engines[index];
-      if (engine) onChange(engine.id);
-    }
-  });
+  const { triggerRef, highlightedIndex, setHighlightedIndex, optionId, commit, onTriggerKeyDown } =
+    useListboxKeyboard({
+      id: listId,
+      count: engines.length,
+      selectedIndex: engines.findIndex((engine) => engine.id === selected?.id),
+      isDisabled: (index) => !engines[index]?.isAvailable,
+      open,
+      setOpen,
+      onCommit: (index) => {
+        const engine = engines[index];
+        if (engine) onChange(engine.id);
+      }
+    });
 
   const close = useCallback(() => setOpen(false), []);
   useDismiss(rootRef, open, close);
@@ -589,14 +617,24 @@ function EngineDropdown({
         <span className="flex min-w-0 items-center gap-2.5">
           <EngineLogo engine={selected} />
           <span className="grid min-w-0">
-            <span className="truncate text-sm font-medium">{selected?.name ?? "Select engine"}</span>
-            {selected ? <span className="truncate text-2xs text-fg-subtle">{engineSubtitle(selected)}</span> : null}
+            <span className="truncate text-sm font-medium">
+              {selected?.name ?? "Select engine"}
+            </span>
+            {selected ? (
+              <span className="truncate text-2xs text-fg-subtle">{engineSubtitle(selected)}</span>
+            ) : null}
           </span>
         </span>
-        <ChevronDown className={cn("size-4 shrink-0 text-fg-muted transition-transform", open && "rotate-180")} />
+        <ChevronDown
+          className={cn("size-4 shrink-0 text-fg-muted transition-transform", open && "rotate-180")}
+        />
       </button>
       {open ? (
-        <div id={`${listId}-listbox`} className={cn(settingsListboxPopoverClass, "left-0 right-0")} role="listbox">
+        <div
+          id={`${listId}-listbox`}
+          className={cn(settingsListboxPopoverClass, "left-0 right-0")}
+          role="listbox"
+        >
           {engines.map((engine, index) => {
             const active = engine.id === selected?.id;
             const highlighted = index === highlightedIndex;
@@ -623,7 +661,9 @@ function EngineDropdown({
                   <EngineLogo engine={engine} />
                   <span className="grid min-w-0">
                     <span className="truncate font-medium">{engine.name}</span>
-                    <span className="truncate text-2xs text-fg-subtle">{engineSubtitle(engine)}</span>
+                    <span className="truncate text-2xs text-fg-subtle">
+                      {engineSubtitle(engine)}
+                    </span>
                   </span>
                 </span>
                 {active ? <Check className="size-4 shrink-0 text-accent-fg" /> : null}
@@ -646,7 +686,11 @@ function EngineLogo({ engine }: { engine: EngineConfig | undefined }) {
   const src = localImageSrc(engine?.imagePath);
   return (
     <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-md border border-line bg-accent-soft text-accent-fg">
-      {src ? <img className="h-full w-full object-cover" src={src} alt="" /> : <Bot className="size-3.5" />}
+      {src ? (
+        <img className="h-full w-full object-cover" src={src} alt="" />
+      ) : (
+        <Bot className="size-3.5" />
+      )}
     </span>
   );
 }

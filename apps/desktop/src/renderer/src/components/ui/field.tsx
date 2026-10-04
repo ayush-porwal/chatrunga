@@ -25,7 +25,10 @@ function Field({
 }) {
   return (
     <div className={cn("grid min-w-0 gap-1.5", className)}>
-      <label htmlFor={htmlFor} className={cn(fieldLabel, "flex items-baseline justify-between gap-2")}>
+      <label
+        htmlFor={htmlFor}
+        className={cn(fieldLabel, "flex items-baseline justify-between gap-2")}
+      >
         <span>{label}</span>
         {hint ? <span className={cn(fieldHint, "font-normal")}>{hint}</span> : null}
       </label>

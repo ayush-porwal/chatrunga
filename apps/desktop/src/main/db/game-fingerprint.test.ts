@@ -13,7 +13,9 @@ describe("gameFingerprint", () => {
 
   it("differs for other moves, players or date", () => {
     expect(fingerprintOf(OPERA.replace("2. Nf3", "2. Nc3"))).not.toBe(fingerprintOf(OPERA));
-    expect(fingerprintOf(OPERA.replace("Duke Karl", "Count Isouard"))).not.toBe(fingerprintOf(OPERA));
+    expect(fingerprintOf(OPERA.replace("Duke Karl", "Count Isouard"))).not.toBe(
+      fingerprintOf(OPERA)
+    );
     expect(fingerprintOf(OPERA.replace("1858.11.02", "1858.11.03"))).not.toBe(fingerprintOf(OPERA));
     // Unknown values are the same as missing ones.
     expect(fingerprintOf(OPERA.replace('[Date "1858.11.02"]', '[Date "????.??.??"]'))).toBe(
@@ -27,7 +29,9 @@ describe("gameFingerprint", () => {
   });
 
   it("is the Lichess game for a game from lichess.org", () => {
-    expect(fingerprintOf(`[Site "https://lichess.org/abcdEFGH"]\n\n1. d4 *`)).toBe("lichess:abcdEFGH");
+    expect(fingerprintOf(`[Site "https://lichess.org/abcdEFGH"]\n\n1. d4 *`)).toBe(
+      "lichess:abcdEFGH"
+    );
     expect(lichessGameId("https://lichess.org/abcdEFGHwxyz")).toBe("abcdEFGH");
     expect(lichessGameId("https://lichess.org/abcdEFGH/black")).toBe("abcdEFGH");
     expect(lichessGameId("Paris FRA")).toBeNull();

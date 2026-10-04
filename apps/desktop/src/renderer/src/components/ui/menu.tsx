@@ -95,8 +95,19 @@ function OverflowMenu({
             state === "closed" && "pointer-events-none"
           )}
         >
-          <span aria-hidden="true" className={cn(frost, "rounded-lg animate-fade-in data-[state=closed]:animate-fade-out")} data-state={state} />
-          <div data-state={state} className={cn(popover, "relative grid gap-0.5", above ? "origin-bottom-right" : "origin-top-right")}>
+          <span
+            aria-hidden="true"
+            className={cn(frost, "rounded-lg animate-fade-in data-[state=closed]:animate-fade-out")}
+            data-state={state}
+          />
+          <div
+            data-state={state}
+            className={cn(
+              popover,
+              "relative grid gap-0.5",
+              above ? "origin-bottom-right" : "origin-top-right"
+            )}
+          >
             {visibleItems.map((item) => (
               <button
                 key={item.label}
@@ -110,7 +121,9 @@ function OverflowMenu({
                 }}
                 className={cn(
                   "flex h-8 items-center gap-2 whitespace-nowrap rounded-md px-2 text-left text-sm outline-none transition-colors focus-visible:bg-control disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
-                  item.destructive ? "text-danger hover:bg-danger-soft" : "text-fg-secondary hover:bg-control hover:text-fg"
+                  item.destructive
+                    ? "text-danger hover:bg-danger-soft"
+                    : "text-fg-secondary hover:bg-control hover:text-fg"
                 )}
               >
                 {item.icon}

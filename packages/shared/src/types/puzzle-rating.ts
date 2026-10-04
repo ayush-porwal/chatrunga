@@ -25,7 +25,10 @@ export type RecordPuzzleAttemptInput = {
  * or it was tried before (only the first try at a puzzle counts, as on Lichess).
  */
 export type PuzzleUnratedReason = "unrated-puzzle" | "already-played";
-export const PUZZLE_UNRATED_REASONS: readonly PuzzleUnratedReason[] = ["unrated-puzzle", "already-played"];
+export const PUZZLE_UNRATED_REASONS: readonly PuzzleUnratedReason[] = [
+  "unrated-puzzle",
+  "already-played"
+];
 
 export type PuzzleAttemptResult = {
   attemptId: string;

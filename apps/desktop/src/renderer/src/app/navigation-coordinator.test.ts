@@ -103,7 +103,10 @@ function fakeShell(overrides: Partial<NavigationShell> = {}): NavigationShell {
 
 const notFound = () => new Error("Error invoking remote method 'games:get': Error: Game not found");
 
-function gameEntry(gameId: string | null, board: Partial<BoardSnapshot> = {}): Extract<HistoryEntry, { view: "game" }> {
+function gameEntry(
+  gameId: string | null,
+  board: Partial<BoardSnapshot> = {}
+): Extract<HistoryEntry, { view: "game" }> {
   loadSaved(gameId);
   return { view: "game", board: { ...captureBoard("notation", null), ...board } };
 }
@@ -116,7 +119,9 @@ function history(entries: HistoryEntry[], index = entries.length - 1) {
 const live = (id: string, over = false) =>
   useLichessStore
     .getState()
-    .setLive({ id, over } as unknown as Parameters<ReturnType<typeof useLichessStore.getState>["setLive"]>[0]);
+    .setLive({ id, over } as unknown as Parameters<
+      ReturnType<typeof useLichessStore.getState>["setLive"]
+    >[0]);
 
 beforeEach(() => {
   useGameStore.getState().reset();
@@ -161,7 +166,12 @@ describe("Back / Forward", () => {
     expect(await restoreEntry({ view: "repertoire-hub" }, shell)).toBe("shown");
     expect(shell.openPuzzles).toHaveBeenCalled();
     expect(shell.openRepertoireHub).toHaveBeenCalled();
-    expect(await restoreEntry({ view: "repertoire-practice", repertoireId: "r1", sessionId: "s1" }, shell)).toBe("shown");
+    expect(
+      await restoreEntry(
+        { view: "repertoire-practice", repertoireId: "r1", sessionId: "s1" },
+        shell
+      )
+    ).toBe("shown");
     expect(shell.openRepertoirePractice).toHaveBeenCalledWith("r1", "s1");
   });
 
@@ -208,7 +218,15 @@ describe("Back / Forward", () => {
   const puzzleConfig: PuzzleSessionConfig = {
     databaseId: "db",
     mode: "lichess-puzzle",
-    lichess: { ratingMin: 1000, ratingMax: 2000, popularityMin: 0, lengths: [], themes: [], openings: [], side: "any" },
+    lichess: {
+      ratingMin: 1000,
+      ratingMax: 2000,
+      popularityMin: 0,
+      lengths: [],
+      themes: [],
+      openings: [],
+      side: "any"
+    },
     position: { difficultyMin: 0, difficultyMax: 100, tags: [] }
   };
 
@@ -218,7 +236,9 @@ describe("Back / Forward", () => {
     const entry = gameEntry("g1", { puzzle: { sample }, puzzleSet: set });
     const shell = fakeShell();
     expect(await restoreEntry(entry, shell)).toBe("shown");
-    expect(shell.startPuzzle).toHaveBeenCalledWith(expect.objectContaining({ kind: "puzzle", sample, set }));
+    expect(shell.startPuzzle).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "puzzle", sample, set })
+    );
     expect(shell.showGame).not.toHaveBeenCalled();
     expect(shell.resumePuzzleSet).not.toHaveBeenCalled();
   });
@@ -243,8 +263,15 @@ describe("Back / Forward", () => {
 
   it("brings a review back with its saved analysis when the board lost it", async () => {
     const review = { reviewId: "rv1", moves: [] } as unknown as SavedGame["review"];
-    const entry: HistoryEntry = { view: "game-review", board: gameEntry("g1").board, tab: "moves", compareColor: "white" };
-    const shell = fakeShell({ getSavedGame: vi.fn(async (id: string) => savedGame(id, { review })) });
+    const entry: HistoryEntry = {
+      view: "game-review",
+      board: gameEntry("g1").board,
+      tab: "moves",
+      compareColor: "white"
+    };
+    const shell = fakeShell({
+      getSavedGame: vi.fn(async (id: string) => savedGame(id, { review }))
+    });
     expect(await restoreEntry(entry, shell)).toBe("shown");
     expect(shell.stopEngineWork).toHaveBeenCalledWith({ stopSearch: true, keepReview: true });
     expect(useReviewStore.getState().review).not.toBeNull();
@@ -302,7 +329,9 @@ describe("a restore still loading", () => {
     const newer = gameEntry("g3");
     loadSaved("g2");
     const shell = fakeShell({
-      getSavedGame: vi.fn((id: string) => (id === "g1" ? slow.promise : Promise.resolve(savedGame(id))))
+      getSavedGame: vi.fn((id: string) =>
+        id === "g1" ? slow.promise : Promise.resolve(savedGame(id))
+      )
     });
     const first = restoreEntry(older, shell);
     expect(await restoreEntry(newer, shell)).toBe("shown");
@@ -388,9 +417,13 @@ describe("a target that can't come back", () => {
     const entry = gameEntry("g1");
     loadSaved("g2");
     history([entry, { view: "databases" }]);
-    const shell = fakeShell({ getSavedGame: vi.fn(() => Promise.reject(new Error("database is locked"))) });
+    const shell = fakeShell({
+      getSavedGame: vi.fn(() => Promise.reject(new Error("database is locked")))
+    });
     await goHistory(-1, shell, { current: null });
-    expect(useAppNoticeStore.getState().message).toBe("That game couldn't be opened: database is locked");
+    expect(useAppNoticeStore.getState().message).toBe(
+      "That game couldn't be opened: database is locked"
+    );
     expect(useHistoryStore.getState().entries).toHaveLength(2);
     expect(useHistoryStore.getState().index).toBe(1);
   });
@@ -412,7 +445,17 @@ describe("a target that can't come back", () => {
       tab: "moves",
       orientation: null
     };
-    history([study, { view: "repertoire-study", repertoireId: "r1", chapterId: "c2", nodeId: null, tab: "moves", orientation: null }]);
+    history([
+      study,
+      {
+        view: "repertoire-study",
+        repertoireId: "r1",
+        chapterId: "c2",
+        nodeId: null,
+        tab: "moves",
+        orientation: null
+      }
+    ]);
     const shell = fakeShell({ openRepertoireStudy: vi.fn(async () => false) });
     await goHistory(-1, shell, { current: null });
     expect(shell.openRepertoireStudy).toHaveBeenCalledWith(study);
@@ -440,7 +483,10 @@ describe("a Lichess game being played", () => {
   it("blocks a repertoire screen but not a page without a board", async () => {
     live("lx");
     const shell = fakeShell();
-    history([{ view: "repertoire-practice", repertoireId: "r1", sessionId: null }, { view: "home" }]);
+    history([
+      { view: "repertoire-practice", repertoireId: "r1", sessionId: null },
+      { view: "home" }
+    ]);
     await goHistory(-1, shell, { current: null });
     expect(shell.openRepertoirePractice).not.toHaveBeenCalled();
     expect(shell.showLiveGame).toHaveBeenCalled();
@@ -489,14 +535,18 @@ describe("leaving a study chapter's draft", () => {
     open({ dirty: false, saveState: { status: "idle" } });
     expect(await saveStudyDraftFirst({ request: 1, navigation, flush, failure })).toBe(true);
     open({ dirty: true });
-    expect(await saveStudyDraftFirst({ request: 1, navigation, flush, failure, keepChapterId: "c1" })).toBe(true);
+    expect(
+      await saveStudyDraftFirst({ request: 1, navigation, flush, failure, keepChapterId: "c1" })
+    ).toBe(true);
     expect(flush).not.toHaveBeenCalled();
   });
 
   it("saves unsaved edits first, then goes on", async () => {
     open({ dirty: true });
     const flush = vi.fn(async () => true);
-    expect(await saveStudyDraftFirst({ request: 1, navigation, flush, failure, keepChapterId: "c2" })).toBe(true);
+    expect(
+      await saveStudyDraftFirst({ request: 1, navigation, flush, failure, keepChapterId: "c2" })
+    ).toBe(true);
     expect(flush).toHaveBeenCalledTimes(1);
   });
 
@@ -545,7 +595,12 @@ describe("leaving a study chapter's draft", () => {
       return false;
     });
     expect(
-      await saveStudyDraftFirst({ request: 1, navigation, flush, failure: () => `Unsaved: ${cause}` })
+      await saveStudyDraftFirst({
+        request: 1,
+        navigation,
+        flush,
+        failure: () => `Unsaved: ${cause}`
+      })
     ).toBe(false);
     expect(useAppNoticeStore.getState().message).toBe("Unsaved: the prompt");
   });
@@ -554,7 +609,12 @@ describe("leaving a study chapter's draft", () => {
     open({ dirty: true });
     const save = deferred<boolean>();
     const moving = { current: 1 };
-    const leaving = saveStudyDraftFirst({ request: 1, navigation: moving, flush: () => save.promise, failure });
+    const leaving = saveStudyDraftFirst({
+      request: 1,
+      navigation: moving,
+      flush: () => save.promise,
+      failure
+    });
     moving.current += 1;
     save.resolve(false);
     expect(await leaving).toBe(false);

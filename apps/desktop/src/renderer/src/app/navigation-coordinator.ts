@@ -12,7 +12,12 @@ import { useHistoryStore, type BoardSnapshot, type HistoryEntry } from "../store
 import { useLichessStore } from "../stores/lichess-store";
 import { useRepertoireWorkspaceStore } from "../stores/repertoire-workspace-store";
 import { useReviewStore } from "../stores/review-store";
-import { continuedPuzzleSet, planBoardRestore, replacesLiveBoard, type BoardRestore } from "./history-navigation";
+import {
+  continuedPuzzleSet,
+  planBoardRestore,
+  replacesLiveBoard,
+  type BoardRestore
+} from "./history-navigation";
 import type { PuzzleSetSnapshot } from "./puzzle-session-controller";
 import type { SideTab } from "./side-tabs";
 import { holdUntilChanged } from "./useGameAutosave";
@@ -50,7 +55,9 @@ export type NavigationShell = {
    * notice says so) or a newer navigation won meanwhile. A chapter deleted since opens and then
    * hands back to the hub from the page (with a notice).
    */
-  openRepertoireStudy: (entry: Extract<HistoryEntry, { view: "repertoire-study" }>) => Promise<boolean>;
+  openRepertoireStudy: (
+    entry: Extract<HistoryEntry, { view: "repertoire-study" }>
+  ) => Promise<boolean>;
   /** Opens practice (a session, or the setup); false as for `openRepertoireStudy`. */
   openRepertoirePractice: (repertoireId: string, sessionId: string | null) => Promise<boolean>;
   showGame: (tab: SideTab) => void;
@@ -91,7 +98,11 @@ export function restoreLoading(pending: PendingRestore, navigation: { current: n
 }
 
 /** Back (-1) / Forward (+1). */
-export async function goHistory(delta: -1 | 1, shell: NavigationShell, pending: PendingRestore): Promise<void> {
+export async function goHistory(
+  delta: -1 | 1,
+  shell: NavigationShell,
+  pending: PendingRestore
+): Promise<void> {
   if (restoreLoading(pending, shell.navigation)) return;
   const history = useHistoryStore.getState();
   const targetIndex = history.index + delta;
@@ -123,7 +134,10 @@ export async function goHistory(delta: -1 | 1, shell: NavigationShell, pending: 
 }
 
 /** Shows a history entry's screen (see RestoreOutcome). */
-export async function restoreEntry(entry: HistoryEntry, shell: NavigationShell): Promise<RestoreOutcome> {
+export async function restoreEntry(
+  entry: HistoryEntry,
+  shell: NavigationShell
+): Promise<RestoreOutcome> {
   switch (entry.view) {
     case "home":
       shell.showHome();
@@ -155,7 +169,8 @@ export async function restoreEntry(entry: HistoryEntry, shell: NavigationShell):
       if (entry.board.gameId && !useReviewStore.getState().review) {
         const saved = await shell.getSavedGame(entry.board.gameId).catch(() => null);
         if (request !== shell.navigation.current) return "dropped";
-        if (saved?.review) useReviewStore.getState().loadReview(savedReview(saved), saved.reviews ?? []);
+        if (saved?.review)
+          useReviewStore.getState().loadReview(savedReview(saved), saved.reviews ?? []);
       }
       useGameStore.getState().setMode("freeplay");
       shell.showGameReview(entry);
@@ -169,7 +184,9 @@ export async function restoreEntry(entry: HistoryEntry, shell: NavigationShell):
       return (await shell.openRepertoireStudy(entry)) ? "shown" : "dropped";
     case "repertoire-practice":
       // A session that can't resume offers a new one on the page; nothing is graded on restore.
-      return (await shell.openRepertoirePractice(entry.repertoireId, entry.sessionId)) ? "shown" : "dropped";
+      return (await shell.openRepertoirePractice(entry.repertoireId, entry.sessionId))
+        ? "shown"
+        : "dropped";
   }
 }
 
@@ -224,7 +241,8 @@ export async function restoreBoard(
   useGameStore.getState().restoreView(snapshot);
   if (snapshot.mode === "analysis") {
     const analysis = useAnalysisStore.getState();
-    if (shell.defaultEngineId && !analysis.activeEngineId) analysis.setActiveEngine(shell.defaultEngineId);
+    if (shell.defaultEngineId && !analysis.activeEngineId)
+      analysis.setActiveEngine(shell.defaultEngineId);
     // The search was stopped while away; the position may be the same, so ask for it again (the
     // board's own search: a study's engine panel left on the way hands the engine back to it).
     useAnalysisStore.getState().restartBoardSearch();
@@ -240,12 +258,16 @@ export async function restoreBoard(
 async function loadSavedGame(
   shell: NavigationShell,
   gameId: string
-): Promise<{ kind: "loaded"; game: SavedGame } | { kind: "gone" } | { kind: "failed"; message: string }> {
+): Promise<
+  { kind: "loaded"; game: SavedGame } | { kind: "gone" } | { kind: "failed"; message: string }
+> {
   try {
     return { kind: "loaded", game: await shell.getSavedGame(gameId) };
   } catch (error) {
     const message = ipcErrorMessage(error);
-    return isMissingTargetError(message) ? { kind: "gone" } : { kind: "failed", message: message || "unknown error" };
+    return isMissingTargetError(message)
+      ? { kind: "gone" }
+      : { kind: "failed", message: message || "unknown error" };
   }
 }
 
@@ -290,7 +312,10 @@ export async function saveStudyDraftFirst({
  * latest render's commands), and `busy` while a restore is still loading (the current entry is
  * still the one being left, so nothing may replace it).
  */
-export function useHistoryRestore(shell: NavigationShell): { go: (delta: -1 | 1) => Promise<void>; busy: { readonly current: boolean } } {
+export function useHistoryRestore(shell: NavigationShell): {
+  go: (delta: -1 | 1) => Promise<void>;
+  busy: { readonly current: boolean };
+} {
   const pending = useRef<PendingRestore["current"]>(null);
   const go = useEventCallback((delta: -1 | 1) => goHistory(delta, shell, pending));
   return {

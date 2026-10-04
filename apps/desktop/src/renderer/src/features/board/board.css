@@ -41,7 +41,11 @@ cg-board square.move-dest {
 }
 
 cg-board square.oc.move-dest {
-  background: radial-gradient(transparent 0%, transparent 77%, rgb(22 26 20 / 0.26) calc(77% + 1px));
+  background: radial-gradient(
+    transparent 0%,
+    transparent 77%,
+    rgb(22 26 20 / 0.26) calc(77% + 1px)
+  );
 }
 
 cg-board square.move-dest:hover,
@@ -55,7 +59,11 @@ cg-board square.premove-dest {
 }
 
 cg-board square.oc.premove-dest {
-  background: radial-gradient(transparent 0%, transparent 77%, rgb(44 78 128 / 0.34) calc(77% + 1px));
+  background: radial-gradient(
+    transparent 0%,
+    transparent 77%,
+    rgb(44 78 128 / 0.34) calc(77% + 1px)
+  );
 }
 
 cg-board square.premove-dest:hover,

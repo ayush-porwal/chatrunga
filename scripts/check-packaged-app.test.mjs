@@ -45,7 +45,8 @@ const completeApp = () => ({
   "out/renderer/assets/Page-Ef3.js": "export default 1;\n",
   "out/renderer/assets/Page-Gh4.css": ".a{}\n",
   "out/renderer/assets/Move-Ij5.mp3": "ID3",
-  "out/renderer/assets/index-Cd2.css": '@font-face{src:url("./Font-Kl6.woff2")}.b{background:url(data:image/png;base64,x)}\n',
+  "out/renderer/assets/index-Cd2.css":
+    '@font-face{src:url("./Font-Kl6.woff2")}.b{background:url(data:image/png;base64,x)}\n',
   "out/renderer/assets/Font-Kl6.woff2": "wOF2"
 });
 
@@ -177,14 +178,23 @@ test("an empty dist fails", () => {
 
 test("finds the files a page, a stylesheet and a renderer script refer to", () => {
   assert.deepEqual(
-    references("out/renderer/index.html", '<a href="#top"></a><img src="https://x.test/a.png"><script src="./assets/a.js?v=1"></script>'),
+    references(
+      "out/renderer/index.html",
+      '<a href="#top"></a><img src="https://x.test/a.png"><script src="./assets/a.js?v=1"></script>'
+    ),
     ["./assets/a.js"]
   );
-  assert.deepEqual(references("out/renderer/assets/a.css", 'url(./f.woff2) url("data:x") url(\'./g.png#h\')'), ["./f.woff2", "./g.png"]);
-  const script = 'import("./b.js"); const d = ["./c.css"]; new URL("s.mp3", import.meta.url); const label = "./not-an-asset";';
+  assert.deepEqual(
+    references("out/renderer/assets/a.css", "url(./f.woff2) url(\"data:x\") url('./g.png#h')"),
+    ["./f.woff2", "./g.png"]
+  );
+  const script =
+    'import("./b.js"); const d = ["./c.css"]; new URL("s.mp3", import.meta.url); const label = "./not-an-asset";';
   assert.deepEqual(references("out/renderer/assets/a.js", script), ["./b.js", "s.mp3", "./c.css"]);
   // Outside the renderer only imports and asset URLs count (a quoted "./x.js" may be anything).
-  assert.deepEqual(references("out/main/index.js", 'const name = "./x.js"; import("./y.js");'), ["./y.js"]);
+  assert.deepEqual(references("out/main/index.js", 'const name = "./x.js"; import("./y.js");'), [
+    "./y.js"
+  ]);
 });
 
 test("the renderer's scripts, styles, lazy chunks and assets must be packaged", async () => {

@@ -93,7 +93,10 @@ type Actions = {
    * a board move's edge. Selects the last move. Null, changing nothing, when the node is unknown,
    * the line is empty or a move is illegal where it's played.
    */
-  playLine: (fromNodeId: string, ucis: readonly string[]) => { nodeId: string; created: boolean } | null;
+  playLine: (
+    fromNodeId: string,
+    ucis: readonly string[]
+  ) => { nodeId: string; created: boolean } | null;
   /**
    * Stages a move from another screen (a game's opening comparison) under `parentNodeId`: an
    * existing child is only selected; a new one is added with `edge` and selected, unsaved until
@@ -288,7 +291,9 @@ function sameValue(a: unknown, b: unknown): boolean {
   const field = (value: object, key: string): unknown => Reflect.get(value, key);
   const keys = Object.keys(a).filter((key) => field(a, key) != null);
   const otherKeys = Object.keys(b).filter((key) => field(b, key) != null);
-  return keys.length === otherKeys.length && keys.every((key) => sameValue(field(a, key), field(b, key)));
+  return (
+    keys.length === otherKeys.length && keys.every((key) => sameValue(field(a, key), field(b, key)))
+  );
 }
 
 /**

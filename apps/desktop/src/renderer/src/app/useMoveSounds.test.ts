@@ -20,7 +20,13 @@ function node(id: string, parentId: string | null, children: string[] = []): Mov
 }
 
 // root → a → b → c, with a side line a → x
-const tree = [node("root", null, ["a"]), node("a", "root", ["b", "x"]), node("b", "a", ["c"]), node("c", "b"), node("x", "a")];
+const tree = [
+  node("root", null, ["a"]),
+  node("a", "root", ["b", "x"]),
+  node("b", "a", ["c"]),
+  node("c", "b"),
+  node("x", "a")
+];
 
 describe("movedNodeBetween", () => {
   it("finds the move for forward and backward steps", () => {
@@ -49,7 +55,9 @@ describe("pickSound", () => {
   it("judges the result from the user's side", () => {
     expect(pickSound({ ...base, san: "Qh7#", isEnd: true, result: "1-0" })).toBe("victory");
     expect(pickSound({ ...base, san: "Qh2#", isEnd: true, result: "0-1" })).toBe("defeat");
-    expect(pickSound({ ...base, san: "Qh2#", isEnd: true, result: "0-1", engineSide: "white" })).toBe("victory");
+    expect(
+      pickSound({ ...base, san: "Qh2#", isEnd: true, result: "0-1", engineSide: "white" })
+    ).toBe("victory");
     expect(pickSound({ ...base, san: "Kh1", isEnd: true, result: "1/2-1/2" })).toBe("draw");
   });
 });

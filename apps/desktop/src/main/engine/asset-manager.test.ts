@@ -1,6 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,15 +29,21 @@ const WEIGHT_URL = "https://raw.githubusercontent.com/test/maia-1100.pb.gz";
 const LICENSE_URL = "https://raw.githubusercontent.com/test/LICENSE";
 const SF_ASSET = "stockfish-macos-universal.tar.gz";
 const SF_URL = `https://github.com/official-stockfish/Stockfish/releases/download/sf_19/${SF_ASSET}`;
-const SF_CDN = "https://release-assets.githubusercontent.com/github-production-release-asset/20976138/abc?sig=x";
+const SF_CDN =
+  "https://release-assets.githubusercontent.com/github-production-release-asset/20976138/abc?sig=x";
 
 const weightBytes = Buffer.from("fake maia weights");
 const sha256 = (data: Buffer) => createHash("sha256").update(data).digest("hex");
 
-function manifestWithWeight(entry: EngineManifest["maiaWeights"]["files"]["maia-1100"]): EngineManifest {
+function manifestWithWeight(
+  entry: EngineManifest["maiaWeights"]["files"]["maia-1100"]
+): EngineManifest {
   return {
     ...ENGINE_MANIFEST,
-    maiaWeights: { ...ENGINE_MANIFEST.maiaWeights, files: { ...ENGINE_MANIFEST.maiaWeights.files, "maia-1100": entry } },
+    maiaWeights: {
+      ...ENGINE_MANIFEST.maiaWeights,
+      files: { ...ENGINE_MANIFEST.maiaWeights.files, "maia-1100": entry }
+    },
     licenses: { maia: { ...ENGINE_MANIFEST.licenses.maia, noticeUrl: LICENSE_URL } }
   };
 }
@@ -46,14 +61,21 @@ function buildStockfishArchive(workDir: string, binaryContent: string): Buffer {
 }
 
 /** The recorded sf_19 release with the macOS asset swapped for `archive`. */
-function releaseServing(archive: Buffer, digest: string | null = `sha256:${sha256(archive)}`, url = SF_URL) {
+function releaseServing(
+  archive: Buffer,
+  digest: string | null = `sha256:${sha256(archive)}`,
+  url = SF_URL
+) {
   return {
     ...sf19,
-    assets: sf19.assets.map((a) => (a.name === SF_ASSET ? { ...a, size: archive.length, digest, browser_download_url: url } : a))
+    assets: sf19.assets.map((a) =>
+      a.name === SF_ASSET ? { ...a, size: archive.length, digest, browser_download_url: url } : a
+    )
   };
 }
 
-const json = (body: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(body), { status: 200, ...init });
+const json = (body: unknown, init: ResponseInit = {}) =>
+  new Response(JSON.stringify(body), { status: 200, ...init });
 
 describe("AssetManager", () => {
   let userDataDir: string;
@@ -78,7 +100,9 @@ describe("AssetManager", () => {
       [WEIGHT_URL]: () => new Response(weightBytes),
       [LICENSE_URL]: () => new Response("license text")
     };
-    fetchMock = vi.fn(async (url: string) => routes[url]?.() ?? new Response("not found", { status: 404 }));
+    fetchMock = vi.fn(
+      async (url: string) => routes[url]?.() ?? new Response("not found", { status: 404 })
+    );
   });
 
   afterEach(() => {
@@ -89,17 +113,38 @@ describe("AssetManager", () => {
   it("makes no network request on init or when reading status", async () => {
     const manager = makeManager();
     await manager.init();
-    expect(Object.values(manager.getInstalled()).map((record) => record.state)).toEqual(Array(7).fill("missing"));
+    expect(Object.values(manager.getInstalled()).map((record) => record.state)).toEqual(
+      Array(7).fill("missing")
+    );
     const status = await manager.getStatus();
     expect(fetchMock).not.toHaveBeenCalled();
     // Nothing cached yet: the fallback manifest answers, with real sizes.
-    expect(status.stockfish).toMatchObject({ latestVersion: "sf_19", latestSource: "fallback", downloadSizeBytes: 82_323_876, updateAvailable: false });
-    expect(status["maia-1100"]).toMatchObject({ latestSource: "fixed", downloadSizeBytes: 1_313_193, autoDownload: true });
-    expect(status.lc0).toMatchObject({ autoDownload: false, latestVersion: null, installInstructions: "brew install lc0" });
+    expect(status.stockfish).toMatchObject({
+      latestVersion: "sf_19",
+      latestSource: "fallback",
+      downloadSizeBytes: 82_323_876,
+      updateAvailable: false
+    });
+    expect(status["maia-1100"]).toMatchObject({
+      latestSource: "fixed",
+      downloadSizeBytes: 1_313_193,
+      autoDownload: true
+    });
+    expect(status.lc0).toMatchObject({
+      autoDownload: false,
+      latestVersion: null,
+      installInstructions: "brew install lc0"
+    });
   });
 
   it("downloads, verifies and records a Maia weight, fetching only the asset and its license", async () => {
-    const manager = makeManager(manifestWithWeight({ url: WEIGHT_URL, sizeBytes: weightBytes.length, sha256: sha256(weightBytes) }));
+    const manager = makeManager(
+      manifestWithWeight({
+        url: WEIGHT_URL,
+        sizeBytes: weightBytes.length,
+        sha256: sha256(weightBytes)
+      })
+    );
     await manager.init();
     const events: ProgressEvent["type"][] = [];
     manager.on("progress", (event) => events.push(event.type));
@@ -108,7 +153,13 @@ describe("AssetManager", () => {
 
     expect(calledUrls().sort()).toEqual([LICENSE_URL, WEIGHT_URL].sort());
     const record = manager.getInstalled()["maia-1100"];
-    expect(record).toMatchObject({ state: "installed", sha256: sha256(weightBytes), manifestVersion: "v1.0", version: "v1.0", source: "fixed" });
+    expect(record).toMatchObject({
+      state: "installed",
+      sha256: sha256(weightBytes),
+      manifestVersion: "v1.0",
+      version: "v1.0",
+      source: "fixed"
+    });
     expect(readFileSync(record.installedPath!)).toEqual(weightBytes);
     expect(events).toContain("verify");
     expect(events.at(-1)).toBe("ready");
@@ -118,7 +169,10 @@ describe("AssetManager", () => {
     const archive = buildStockfishArchive(workDir, "#!/bin/sh\necho stockfish 19\n");
     routes[SF_API] = () => json(releaseServing(archive));
     routes[SF_URL] = () => new Response(null, { status: 302, headers: { location: SF_CDN } });
-    routes[SF_CDN] = () => new Response(new Uint8Array(archive), { headers: { "content-length": String(archive.length) } });
+    routes[SF_CDN] = () =>
+      new Response(new Uint8Array(archive), {
+        headers: { "content-length": String(archive.length) }
+      });
     const manager = makeManager();
     await manager.init();
     const downloads: ProgressEvent[] = [];
@@ -127,13 +181,23 @@ describe("AssetManager", () => {
     await manager.downloadAsset("stockfish");
 
     const record = manager.getInstalled().stockfish;
-    expect(record).toMatchObject({ state: "installed", version: "sf_19", manifestVersion: "sf_19", source: "github" });
+    expect(record).toMatchObject({
+      state: "installed",
+      version: "sf_19",
+      manifestVersion: "sf_19",
+      source: "github"
+    });
     expect(record.installedPath).toBe(path.join(userDataDir, "engines", "stockfish"));
     expect(readFileSync(record.installedPath!, "utf-8")).toContain("echo stockfish 19");
     expect(statSync(record.installedPath!).mode & 0o111).not.toBe(0);
-    expect(downloads.at(-1)).toMatchObject({ bytesReceived: archive.length, bytesTotal: archive.length });
+    expect(downloads.at(-1)).toMatchObject({
+      bytesReceived: archive.length,
+      bytesTotal: archive.length
+    });
     // No staging dirs, archives or partials left behind.
-    expect(readdirSync(path.join(userDataDir, "engines")).filter((n) => n !== ".downloads")).toEqual(["stockfish"]);
+    expect(
+      readdirSync(path.join(userDataDir, "engines")).filter((n) => n !== ".downloads")
+    ).toEqual(["stockfish"]);
     expect(readdirSync(path.join(userDataDir, "engines", ".downloads"))).toEqual([]);
     expect(calledUrls()).toEqual([SF_API, SF_URL, SF_CDN]);
   });
@@ -147,7 +211,9 @@ describe("AssetManager", () => {
     const errors: string[] = [];
     manager.on("progress", (event) => event.type === "error" && errors.push(event.message));
 
-    await expect(manager.downloadAsset("stockfish")).rejects.toThrow("sha256 mismatch for stockfish");
+    await expect(manager.downloadAsset("stockfish")).rejects.toThrow(
+      "sha256 mismatch for stockfish"
+    );
 
     expect(calledUrls().filter((url) => url === SF_URL)).toHaveLength(2);
     expect(errors).toEqual(["sha256 mismatch for stockfish"]);
@@ -157,16 +223,26 @@ describe("AssetManager", () => {
   });
 
   it("rejects a Maia weight whose digest does not match", async () => {
-    const manager = makeManager(manifestWithWeight({ url: WEIGHT_URL, sizeBytes: weightBytes.length, sha256: "0".repeat(64) }));
+    const manager = makeManager(
+      manifestWithWeight({ url: WEIGHT_URL, sizeBytes: weightBytes.length, sha256: "0".repeat(64) })
+    );
     await manager.init();
-    await expect(manager.downloadAsset("maia-1100")).rejects.toThrow("sha256 mismatch for maia-1100");
+    await expect(manager.downloadAsset("maia-1100")).rejects.toThrow(
+      "sha256 mismatch for maia-1100"
+    );
     expect(calledUrls().filter((url) => url === WEIGHT_URL)).toHaveLength(2);
     expect(manager.getInstalled()["maia-1100"].state).toBe("missing");
   });
 
   it("falls back to the bundled manifest when GitHub rate-limits the lookup", async () => {
     routes[SF_API] = () =>
-      json({ message: "API rate limit exceeded" }, { status: 403, headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "4102444800" } });
+      json(
+        { message: "API rate limit exceeded" },
+        {
+          status: 403,
+          headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "4102444800" }
+        }
+      );
     const manager = makeManager();
     await manager.init();
 
@@ -187,7 +263,8 @@ describe("AssetManager", () => {
 
   it("falls back when the release asset URL is not a GitHub download of the expected repo", async () => {
     const archive = Buffer.from("x");
-    routes[SF_API] = () => json(releaseServing(archive, null, "https://evil.example/stockfish.tar.gz"));
+    routes[SF_API] = () =>
+      json(releaseServing(archive, null, "https://evil.example/stockfish.tar.gz"));
     const manager = makeManager();
     await manager.init();
     expect(await manager.resolveDownload("stockfish")).toMatchObject({ source: "fallback" });
@@ -208,7 +285,10 @@ describe("AssetManager", () => {
       sizeBytes: 18,
       installedAt: "2026-01-01T00:00:00.000Z"
     };
-    writeFileSync(path.join(userDataDir, "engine-assets.json"), JSON.stringify({ records: [legacy] }));
+    writeFileSync(
+      path.join(userDataDir, "engine-assets.json"),
+      JSON.stringify({ records: [legacy] })
+    );
     const archive = buildStockfishArchive(workDir, "new stockfish 19");
     routes[SF_API] = () => json(releaseServing(archive));
     routes[SF_URL] = () => new Response(new Uint8Array(archive));
@@ -216,7 +296,10 @@ describe("AssetManager", () => {
     await manager.init();
 
     // Without a lookup there is no GitHub answer, so no update claim from the fallback.
-    expect((await manager.getStatus()).stockfish).toMatchObject({ installedVersion: "17.1", updateAvailable: false });
+    expect((await manager.getStatus()).stockfish).toMatchObject({
+      installedVersion: "17.1",
+      updateAvailable: false
+    });
     const checked = await manager.checkForUpdates();
     expect(checked.stockfish).toMatchObject({
       installedVersion: "17.1",
@@ -231,7 +314,11 @@ describe("AssetManager", () => {
     await manager.downloadAsset("stockfish");
     expect(readFileSync(installedPath, "utf-8")).toBe("new stockfish 19");
     const after = await manager.getStatus();
-    expect(after.stockfish).toMatchObject({ installedPath, installedVersion: "sf_19", updateAvailable: false });
+    expect(after.stockfish).toMatchObject({
+      installedPath,
+      installedVersion: "sf_19",
+      updateAvailable: false
+    });
     // The API was called once: the download reused the fresh lookup.
     expect(calledUrls().filter((url) => url === SF_API)).toHaveLength(1);
   });
@@ -239,8 +326,20 @@ describe("AssetManager", () => {
   it("does not flag an update when the installed bare version equals the latest tag", async () => {
     const installedPath = path.join(workDir, "stockfish");
     writeFileSync(installedPath, "stockfish 19");
-    const legacy = { id: "stockfish", state: "installed", installedPath, customPath: null, sha256: null, manifestVersion: "19", sizeBytes: 1, installedAt: null };
-    writeFileSync(path.join(userDataDir, "engine-assets.json"), JSON.stringify({ records: [legacy] }));
+    const legacy = {
+      id: "stockfish",
+      state: "installed",
+      installedPath,
+      customPath: null,
+      sha256: null,
+      manifestVersion: "19",
+      sizeBytes: 1,
+      installedAt: null
+    };
+    writeFileSync(
+      path.join(userDataDir, "engine-assets.json"),
+      JSON.stringify({ records: [legacy] })
+    );
     routes[SF_API] = () => json(sf19);
     const manager = makeManager();
     await manager.init();
@@ -261,7 +360,10 @@ describe("AssetManager", () => {
     const second = makeManager();
     await second.init();
     await second.refreshReleasesInBackground();
-    expect((await second.getStatus()).stockfish).toMatchObject({ latestSource: "github", latestVersion: "sf_19" });
+    expect((await second.getStatus()).stockfish).toMatchObject({
+      latestSource: "github",
+      latestVersion: "sf_19"
+    });
     expect(calledUrls()).toEqual([SF_API]);
     expect(calledUrls()).not.toContain(LC0_API);
   });
@@ -272,7 +374,10 @@ describe("AssetManager", () => {
     const manager = makeManager();
     await manager.init();
     await manager.setCustomPath("lc0", own);
-    expect((await manager.getStatus()).lc0).toMatchObject({ state: "custom", updateAvailable: false });
+    expect((await manager.getStatus()).lc0).toMatchObject({
+      state: "custom",
+      updateAvailable: false
+    });
     await manager.removeAsset("lc0");
     expect(existsSync(own)).toBe(true);
     expect(manager.getInstalled().lc0.state).toBe("missing");
@@ -308,7 +413,9 @@ describe("AssetManager", () => {
     expect(installed["maia-1300"]).toMatchObject({ state: "installed", installedPath: kept });
     expect(installed.lc0).toMatchObject({ state: "missing", customPath: null });
     // The corrected state is persisted.
-    const saved = JSON.parse(readFileSync(path.join(userDataDir, "engine-assets.json"), "utf-8")) as SavedAssets;
+    const saved = JSON.parse(
+      readFileSync(path.join(userDataDir, "engine-assets.json"), "utf-8")
+    ) as SavedAssets;
     expect(saved.records.find((r) => r.id === "maia-1100")?.state).toBe("missing");
   });
 
@@ -318,9 +425,18 @@ describe("AssetManager", () => {
     const manager = makeManager();
     await manager.init();
     // Several completions persisting at once must all succeed and leave one consistent file.
-    await Promise.all([manager.setCustomPath("lc0", own), manager.removeAsset("maia-1100"), manager.removeAsset("maia-1300")]);
-    const saved = JSON.parse(readFileSync(path.join(userDataDir, "engine-assets.json"), "utf-8")) as SavedAssets;
-    expect(saved.records.find((r) => r.id === "lc0")).toMatchObject({ state: "custom", customPath: own });
+    await Promise.all([
+      manager.setCustomPath("lc0", own),
+      manager.removeAsset("maia-1100"),
+      manager.removeAsset("maia-1300")
+    ]);
+    const saved = JSON.parse(
+      readFileSync(path.join(userDataDir, "engine-assets.json"), "utf-8")
+    ) as SavedAssets;
+    expect(saved.records.find((r) => r.id === "lc0")).toMatchObject({
+      state: "custom",
+      customPath: own
+    });
     expect(readdirSync(userDataDir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 

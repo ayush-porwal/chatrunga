@@ -111,12 +111,17 @@ function SegmentedControl<T extends string>({
   // screen-reader users) but isn't selected.
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const focusable = options.filter((option) => !option.disabled || option.disabledReason);
-    const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
+    const buttons = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")
+    );
     const focused = buttons.findIndex((button) => button === document.activeElement);
-    const current = focused !== -1 ? focused : focusable.findIndex((option) => option.value === value);
+    const current =
+      focused !== -1 ? focused : focusable.findIndex((option) => option.value === value);
     let next: number | null = null;
-    if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (current + 1) % focusable.length;
-    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = (current - 1 + focusable.length) % focusable.length;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown")
+      next = (current + 1) % focusable.length;
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp")
+      next = (current - 1 + focusable.length) % focusable.length;
     else if (event.key === "Home") next = 0;
     else if (event.key === "End") next = focusable.length - 1;
     const option = next === null ? undefined : focusable[next];
@@ -164,7 +169,9 @@ function SegmentedControl<T extends string>({
             }}
             className={cn(
               "relative inline-flex min-w-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md font-medium text-fg-muted outline-none transition-[color,box-shadow,scale] duration-micro ease-standard hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/70 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:text-fg-muted aria-disabled:active:scale-100 motion-reduce:active:scale-100 [&_svg]:shrink-0",
-              size === "sm" ? "h-7 px-2 text-xs [&_svg]:size-3.5" : "h-8 px-3 text-sm [&_svg]:size-4",
+              size === "sm"
+                ? "h-7 px-2 text-xs [&_svg]:size-3.5"
+                : "h-8 px-3 text-sm [&_svg]:size-4",
               fullWidth && "flex-1",
               selected && "text-fg"
             )}

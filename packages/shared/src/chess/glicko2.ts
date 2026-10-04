@@ -38,7 +38,10 @@ function expectedScore(mu: number, muOpponent: number, phiOpponent: number): num
 }
 
 /** The player's expected score against an opponent, in the Glicko scale (0–1). */
-export function glicko2ExpectedScore(player: Pick<Glicko2Rating, "rating">, opponent: Glicko2Game["opponent"]): number {
+export function glicko2ExpectedScore(
+  player: Pick<Glicko2Rating, "rating">,
+  opponent: Glicko2Game["opponent"]
+): number {
   return expectedScore(toMu(player.rating), toMu(opponent.rating), toPhi(opponent.deviation));
 }
 
@@ -47,7 +50,11 @@ export function glicko2ExpectedScore(player: Pick<Glicko2Rating, "rating">, oppo
  * volatility changes (Glickman suggests 0.3–1.2). A period without games only widens the deviation
  * (step 6 alone), as the paper says.
  */
-export function glicko2Update(player: Glicko2Rating, games: readonly Glicko2Game[], tau: number): Glicko2Rating {
+export function glicko2Update(
+  player: Glicko2Rating,
+  games: readonly Glicko2Game[],
+  tau: number
+): Glicko2Rating {
   const mu = toMu(player.rating);
   const phi = toPhi(player.deviation);
   const sigma = player.volatility;
@@ -89,7 +96,10 @@ function newVolatility(phi: number, sigma: number, v: number, delta: number, tau
   const f = (x: number) => {
     const ex = Math.exp(x);
     const denominator = phiSquared + v + ex;
-    return (ex * (deltaSquared - phiSquared - v - ex)) / (2 * denominator * denominator) - (x - a) / (tau * tau);
+    return (
+      (ex * (deltaSquared - phiSquared - v - ex)) / (2 * denominator * denominator) -
+      (x - a) / (tau * tau)
+    );
   };
 
   let A = a;

@@ -3,7 +3,11 @@
  * applying the user's filters. No file system access.
  */
 import { fenAfterUci, statusForFen } from "@chaturanga/shared/chess/position";
-import type { InstalledDatabase, PuzzleSample, PuzzleSampleInput } from "@chaturanga/shared/types/database";
+import type {
+  InstalledDatabase,
+  PuzzleSample,
+  PuzzleSampleInput
+} from "@chaturanga/shared/types/database";
 
 /** Column order of the 0/1 tag flags in the position-training CSV. */
 const POSITION_TAGS = [
@@ -34,8 +38,27 @@ export function rowKindForSource(sourceId: string): PuzzleRowKind {
  * position set's tag columns after `difficulty` aren't required, so a new tag doesn't break it).
  */
 const HEADER_COLUMNS: Record<PuzzleRowKind, readonly string[]> = {
-  lichess: ["PuzzleId", "FEN", "Moves", "Rating", "RatingDeviation", "Popularity", "NbPlays", "Themes", "GameUrl", "OpeningTags"],
-  position: ["internal_id", "lichess_game_id", "move_number", "lichess_url", "fen", "best_move", "difficulty"]
+  lichess: [
+    "PuzzleId",
+    "FEN",
+    "Moves",
+    "Rating",
+    "RatingDeviation",
+    "Popularity",
+    "NbPlays",
+    "Themes",
+    "GameUrl",
+    "OpeningTags"
+  ],
+  position: [
+    "internal_id",
+    "lichess_game_id",
+    "move_number",
+    "lichess_url",
+    "fen",
+    "best_move",
+    "difficulty"
+  ]
 };
 
 /** The header columns a file of this layout must start with, for error messages. */
@@ -45,14 +68,17 @@ export function expectedHeader(kind: PuzzleRowKind): string {
 
 /** Whether a file's first line is the header of this layout (case and a leading BOM ignored). */
 export function headerMatches(kind: PuzzleRowKind, line: string): boolean {
-  const columns = parseCsvLine(line.replace(/^\uFEFF/, "").trim()).map((column) => column.trim().toLowerCase());
+  const columns = parseCsvLine(line.replace(/^\uFEFF/, "").trim()).map((column) =>
+    column.trim().toLowerCase()
+  );
   return HEADER_COLUMNS[kind].every((column, index) => columns[index] === column.toLowerCase());
 }
 
 const words = (value: string | undefined) => (value ? value.split(/\s+/).filter(Boolean) : []);
 const finiteOrNull = (value: number) => (Number.isFinite(value) ? value : null);
 /** A numeric CSV field; null when empty or not a number (`Number("")` would be 0). */
-const numberOrNull = (value: string | undefined) => (value?.trim() ? finiteOrNull(Number(value)) : null);
+const numberOrNull = (value: string | undefined) =>
+  value?.trim() ? finiteOrNull(Number(value)) : null;
 
 /** Splits one CSV line, honouring double-quoted fields and `""` escapes. */
 export function parseCsvLine(line: string): string[] {
@@ -84,7 +110,11 @@ export function parseCsvLine(line: string): string[] {
  * tags), checked on the raw row before any position is computed. A row that passes still goes
  * through `sampleFromLichessRow` / `sampleFromPositionRow`, which also validate its moves.
  */
-export function matchesCheapFilters(kind: PuzzleRowKind, row: string[], input: PuzzleSampleInput): boolean {
+export function matchesCheapFilters(
+  kind: PuzzleRowKind,
+  row: string[],
+  input: PuzzleSampleInput
+): boolean {
   if (kind === "lichess") {
     const [id, fenBefore, movesRaw, ratingRaw, , popularityRaw, , themesRaw, , openingsRaw] = row;
     // The opponent's move and at least one reply, as `sampleFromLichessRow` needs: a row that can't
@@ -93,12 +123,15 @@ export function matchesCheapFilters(kind: PuzzleRowKind, row: string[], input: P
     const filters = input.lichess;
     if (!filters) return true;
     const rating = Number(ratingRaw);
-    if (Number.isFinite(rating) && (rating < filters.ratingMin || rating > filters.ratingMax)) return false;
+    if (Number.isFinite(rating) && (rating < filters.ratingMin || rating > filters.ratingMax))
+      return false;
     const popularity = Number(popularityRaw);
     if (Number.isFinite(popularity) && popularity < filters.popularityMin) return false;
     const themes = words(themesRaw);
-    if (filters.themes.length && !filters.themes.every((theme) => themes.includes(theme))) return false;
-    if (filters.lengths.length && !filters.lengths.some((length) => themes.includes(length))) return false;
+    if (filters.themes.length && !filters.themes.every((theme) => themes.includes(theme)))
+      return false;
+    if (filters.lengths.length && !filters.lengths.some((length) => themes.includes(length)))
+      return false;
     if (filters.openings.length) {
       const openingTags = words(openingsRaw);
       if (!filters.openings.some((opening) => openingTags.includes(opening))) return false;
@@ -115,7 +148,11 @@ export function matchesCheapFilters(kind: PuzzleRowKind, row: string[], input: P
   const filters = input.position;
   if (!filters) return true;
   const difficulty = Number(difficultyRaw);
-  if (Number.isFinite(difficulty) && (difficulty < filters.difficultyMin || difficulty > filters.difficultyMax)) return false;
+  if (
+    Number.isFinite(difficulty) &&
+    (difficulty < filters.difficultyMin || difficulty > filters.difficultyMax)
+  )
+    return false;
   if (filters.tags.length) {
     const activeTags = POSITION_TAGS.filter((_, index) => tagValues[index] === "1");
     if (!filters.tags.every((tag) => activeTags.includes(tag))) return false;
@@ -145,7 +182,18 @@ export function sampleFromLichessRow(
   row: string[],
   input: PuzzleSampleInput
 ): PuzzleSample | null {
-  const [id, fenBefore, movesRaw, ratingRaw, deviationRaw, popularityRaw, playsRaw, themesRaw, gameUrl, openingsRaw] = row;
+  const [
+    id,
+    fenBefore,
+    movesRaw,
+    ratingRaw,
+    deviationRaw,
+    popularityRaw,
+    playsRaw,
+    themesRaw,
+    gameUrl,
+    openingsRaw
+  ] = row;
   if (!id || !fenBefore || !movesRaw) return null;
   const moves = words(movesRaw);
   if (moves.length < 2) return null;
@@ -161,11 +209,18 @@ export function sampleFromLichessRow(
 
   const filters = input.lichess;
   if (filters) {
-    if (Number.isFinite(rating) && (rating < filters.ratingMin || rating > filters.ratingMax)) return null;
+    if (Number.isFinite(rating) && (rating < filters.ratingMin || rating > filters.ratingMax))
+      return null;
     if (Number.isFinite(popularity) && popularity < filters.popularityMin) return null;
-    if (filters.themes.length && !filters.themes.every((theme) => themes.includes(theme))) return null;
-    if (filters.openings.length && !filters.openings.some((opening) => openingTags.includes(opening))) return null;
-    if (filters.lengths.length && !filters.lengths.some((length) => themes.includes(length))) return null;
+    if (filters.themes.length && !filters.themes.every((theme) => themes.includes(theme)))
+      return null;
+    if (
+      filters.openings.length &&
+      !filters.openings.some((opening) => openingTags.includes(opening))
+    )
+      return null;
+    if (filters.lengths.length && !filters.lengths.some((length) => themes.includes(length)))
+      return null;
     if (filters.side !== "any" && filters.side !== sideToMove) return null;
   }
   return {
@@ -203,7 +258,10 @@ export function sampleFromPositionRow(
 
   const filters = input.position;
   if (filters) {
-    if (Number.isFinite(difficulty) && (difficulty < filters.difficultyMin || difficulty > filters.difficultyMax)) {
+    if (
+      Number.isFinite(difficulty) &&
+      (difficulty < filters.difficultyMin || difficulty > filters.difficultyMax)
+    ) {
       return null;
     }
     if (filters.tags.length && !filters.tags.every((tag) => activeTags.includes(tag))) return null;
