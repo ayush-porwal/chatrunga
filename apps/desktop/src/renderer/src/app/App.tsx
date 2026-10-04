@@ -43,6 +43,7 @@ import { useHistoryStore, type HistoryEntry } from "../stores/history-store";
 import { captureEntry, recordHistory, type HistoryMode } from "./history-navigation";
 import {
   restoreReviewRoute,
+  savedReviewPath,
   saveStudyDraftFirst,
   useHistoryRestore
 } from "./navigation-coordinator";
@@ -454,6 +455,12 @@ export function App() {
     });
   });
   useEffect(restoreOpenedReviewRoute, [restoreOpenedReviewRoute]);
+  // A game first saved while on its review (starting the analysis saves it) moves the URL from
+  // "current" to its id, so a reload reopens it.
+  useEffect(() => {
+    const path = savedReviewPath(reviewRouteId, gameId);
+    if (path) void navigate(path, { replace: true });
+  }, [reviewRouteId, gameId, navigate]);
 
   /**
    * Before a different board replaces this one: the engine's search and review end, the review

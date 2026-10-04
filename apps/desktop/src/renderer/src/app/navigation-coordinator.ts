@@ -261,6 +261,15 @@ export type ReviewRouteShell = Pick<
 };
 
 /**
+ * The Game Review URL to switch to once the game on it is saved: a game that reached its review
+ * before its first save sits on `/games/current/review`, and starting the analysis gives it an id;
+ * the URL then names that id, so a reload reopens it. Null when the URL needs no change.
+ */
+export function savedReviewPath(routeId: string | null, gameId: string | null): string | null {
+  return routeId === "current" && gameId ? `/games/${gameId}/review` : null;
+}
+
+/**
  * A Game Review URL the window opened at (a reload): its saved game comes back with its newest
  * review, as opening it from the picker does. The route never stays on an empty board: an unsaved
  * game ("current", gone with the window) lands on Home, and so does a game deleted since or one

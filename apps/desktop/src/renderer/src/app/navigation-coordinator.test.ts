@@ -17,6 +17,7 @@ import {
   restoreEntry,
   restoreLoading,
   restoreReviewRoute,
+  savedReviewPath,
   saveStudyDraftFirst,
   type NavigationShell,
   type PendingRestore,
@@ -484,6 +485,14 @@ describe("a Game Review URL the window opened at (a reload)", () => {
     expect(useReviewStore.getState().review?.reviewId).toBe("rv2");
     expect(shell.reviewShown).toHaveBeenCalledTimes(1);
     expect(shell.showHome).not.toHaveBeenCalled();
+  });
+
+  it("names a game first saved on its review in the URL, so a reload reopens it", () => {
+    expect(savedReviewPath("current", "g7")).toBe("/games/g7/review");
+    // Not saved yet, or already named: no change.
+    expect(savedReviewPath("current", null)).toBeNull();
+    expect(savedReviewPath("g7", "g7")).toBeNull();
+    expect(savedReviewPath(null, "g7")).toBeNull();
   });
 
   it("lands on Home, saying so, when the game was deleted or couldn't be read", async () => {
