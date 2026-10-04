@@ -512,6 +512,17 @@ describe("parseSettingsPatch", () => {
       boardTheme: "green",
       boardSquareLight: null
     });
+    // A legacy combined piece set id keeps its look, unless the patch names a presentation itself.
+    expect(parseSettingsPatch({ pieceStyle: "cburnettSoft" })).toEqual({
+      pieceStyle: "cburnett",
+      piecePresentation: "soft"
+    });
+    expect(
+      parseSettingsPatch({ piecePresentation: "contrast", pieceStyle: "cburnettSoft" })
+    ).toEqual({
+      pieceStyle: "cburnett",
+      piecePresentation: "contrast"
+    });
     expect(() => parseSettingsPatch({ nope: 1 })).toThrow(/Invalid setting: unknown key/);
     expect(() => parseSettingsPatch({})).toThrow(/expected a few settings/);
     expect(() => parseSettingsPatch({ soundVolume: 9 })).toThrow(/soundVolume/);

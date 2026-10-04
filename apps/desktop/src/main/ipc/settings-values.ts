@@ -8,7 +8,7 @@ import {
   ENGINE_HASH_MB_RANGE,
   EVAL_BAR_SIDES,
   normalizeBoardSquareHex,
-  normalizePieceStyle,
+  legacyPieceStyle,
   ONBOARDING_HINTS,
   PRACTICE_AUTO_ADVANCE_MS,
   REVIEW_MAIA_LEVELS,
@@ -100,14 +100,15 @@ const SETTING_CHECKS: { [K in keyof AppSettings]: Check<AppSettings[K]> } = {
   onboardingHintsSeen: list(oneOf(...ONBOARDING_HINTS), ONBOARDING_HINTS.length)
 };
 
-/** `value` if it fits `key` (square colors stored as `#rrggbb`), else an error (nothing is stored). */
 /** Text some settings are stored in a canonical form of: `#rrggbb` colors, current piece set ids. */
 const NORMALIZE: Partial<Record<keyof AppSettings, (value: string) => string>> = {
   boardSquareLight: (value) => normalizeBoardSquareHex(value) ?? value,
   boardSquareDark: (value) => normalizeBoardSquareHex(value) ?? value,
-  pieceStyle: (value) => (value.length <= 40 ? normalizePieceStyle(value) : value)
+  // An older build's id becomes the current one; an unknown id stays as it is, and is refused.
+  pieceStyle: (value) => legacyPieceStyle(value)?.pieceStyle ?? value
 };
 
+/** `value` if it fits `key` (square colors stored as `#rrggbb`), else an error (nothing is stored). */
 export function parseSettingValue<K extends keyof AppSettings>(
   key: K,
   value: unknown
@@ -117,4 +118,20 @@ export function parseSettingValue<K extends keyof AppSettings>(
   const check: Check<AppSettings[K]> = SETTING_CHECKS[key];
   if (!check(normalized)) throw new Error(`Invalid value for setting ${key}`);
   return normalized;
+}
+
+/**
+ * What writing `value` to `key` stores: the setting itself, plus the presentation a legacy
+ * combined piece set id (`cburnettCrisp`) implied, so writing one keeps its look.
+ */
+export function parseSettingWrite<K extends keyof AppSettings>(
+  key: K,
+  value: unknown
+): Partial<Record<keyof AppSettings, unknown>> {
+  const parsed = parseSettingValue(key, value);
+  const presentation =
+    key === "pieceStyle" && typeof value === "string"
+      ? legacyPieceStyle(value)?.piecePresentation
+      : undefined;
+  return presentation ? { [key]: parsed, piecePresentation: presentation } : { [key]: parsed };
 }

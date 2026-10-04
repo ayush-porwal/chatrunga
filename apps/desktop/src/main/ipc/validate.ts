@@ -3,7 +3,7 @@
  * every payload that reaches the file system, the database or an engine
  * process is checked here and rebuilt from known fields only.
  */
-import { parseSettingValue } from "./settings-values";
+import { parseSettingWrite } from "./settings-values";
 import { isAbsolute } from "node:path";
 import { positionFromFen } from "@chaturanga/shared/chess/position";
 import type {
@@ -63,7 +63,12 @@ import type {
   StartLiveAnalysisInput,
   UpdateEngineInput
 } from "@chaturanga/shared/types/engine";
-import { defaultSettings, isSettingKey, type AppSettings } from "@chaturanga/shared/types/settings";
+import {
+  defaultSettings,
+  isSettingKey,
+  settingKeys,
+  type AppSettings
+} from "@chaturanga/shared/types/settings";
 import type { DialogFileFilter } from "@chaturanga/shared/ipc/chaturanga-api";
 import type {
   LichessAiChallengeInput,
@@ -500,7 +505,12 @@ export function parseSettingsPatch(value: unknown): Partial<Record<keyof AppSett
   const patch: Partial<Record<keyof AppSettings, unknown>> = {};
   for (const key of keys) {
     const settingKey = parseSettingKey(key);
-    patch[settingKey] = parseSettingValue(settingKey, input[key]);
+    const written = parseSettingWrite(settingKey, input[key]);
+    // A presentation named in the patch itself wins over one a legacy piece set id implies.
+    for (const writtenKey of settingKeys(written)) {
+      if (writtenKey === settingKey || !(writtenKey in input))
+        patch[writtenKey] = written[writtenKey];
+    }
   }
   return patch;
 }

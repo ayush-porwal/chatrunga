@@ -1,7 +1,7 @@
 import { BrowserWindow, dialog, ipcMain, powerMonitor, type IpcMainInvokeEvent } from "electron";
 import { settingKeys, type AppSettings } from "@chaturanga/shared/types/settings";
 import { allowChosenFile } from "../image-access";
-import { parseSettingValue } from "./settings-values";
+import { parseSettingWrite } from "./settings-values";
 import type { EventEmitter } from "node:events";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
@@ -459,9 +459,9 @@ function registerLibraryIpc(): void {
   };
   ipcMain.handle("settings:set", async (_event, key: unknown, value: unknown) => {
     const settingKey = parseSettingKey(key);
-    const parsed = parseSettingValue(settingKey, value);
-    await retryOnceIfBusy(() => settingsRepository.set(settingKey, parsed));
-    settingsChanged([settingKey]);
+    const written = parseSettingWrite(settingKey, value);
+    await retryOnceIfBusy(() => settingsRepository.setMany(written));
+    settingsChanged(settingKeys(written));
   });
   ipcMain.handle("settings:patch", async (_event, value: unknown) => {
     const patch = parseSettingsPatch(value);

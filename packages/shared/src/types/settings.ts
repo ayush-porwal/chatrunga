@@ -387,6 +387,19 @@ export function normalizePieceStyle(value: unknown): PieceStyle {
   return isOneOf(ALL_PIECE_STYLES, value) ? value : defaultSettings.pieceStyle;
 }
 
+/**
+ * An id older builds stored for a piece set, as the current set and, for a combined id
+ * (`cburnettCrisp`), the presentation it implied; null for anything else.
+ */
+export function legacyPieceStyle(
+  value: string
+): { pieceStyle: PieceStyle; piecePresentation?: PiecePresentation } | null {
+  const pieceStyle = legacyPieceStyleMap[value];
+  if (!pieceStyle) return null;
+  const piecePresentation = legacyPieceStyleIdToPresentation[value];
+  return piecePresentation ? { pieceStyle, piecePresentation } : { pieceStyle };
+}
+
 export function normalizePiecePresentation(value: unknown): PiecePresentation {
   if (typeof value !== "string") return defaultSettings.piecePresentation;
   return isOneOf(ALL_PIECE_PRESENTATIONS, value) ? value : defaultSettings.piecePresentation;

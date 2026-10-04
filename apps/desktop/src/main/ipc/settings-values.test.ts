@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
-import { parseSettingValue } from "./settings-values";
+import { parseSettingValue, parseSettingWrite } from "./settings-values";
 
 describe("parseSettingValue", () => {
   it("accepts every default", () => {
@@ -35,5 +35,24 @@ describe("parseSettingValue", () => {
       /setting repertoireCompareBlack/
     );
     expect(() => parseSettingValue("practiceAutoAdvanceMs", 1000)).toThrow(/practiceAutoAdvanceMs/);
+  });
+});
+
+describe("piece set ids", () => {
+  it("accepts current ids, maps an older build's to the current one, and refuses unknown ones", () => {
+    expect(parseSettingValue("pieceStyle", "kosal")).toBe("kosal");
+    expect(parseSettingValue("pieceStyle", "kosalo")).toBe("kosal");
+    expect(parseSettingValue("pieceStyle", "cburnettCrisp")).toBe("cburnett");
+    expect(() => parseSettingValue("pieceStyle", "neon")).toThrow(/setting pieceStyle/);
+    expect(() => parseSettingValue("pieceStyle", 7)).toThrow(/setting pieceStyle/);
+  });
+
+  it("writes a legacy combined id as the set plus the presentation it implied", () => {
+    expect(parseSettingWrite("pieceStyle", "cburnettCrisp")).toEqual({
+      pieceStyle: "cburnett",
+      piecePresentation: "sharp"
+    });
+    expect(parseSettingWrite("pieceStyle", "kosal")).toEqual({ pieceStyle: "kosal" });
+    expect(parseSettingWrite("soundVolume", 0.5)).toEqual({ soundVolume: 0.5 });
   });
 });
