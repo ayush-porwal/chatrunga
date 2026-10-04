@@ -8,7 +8,6 @@ import {
   computeEvalLoss,
   linesFromInfoStream,
   maiaRatingFromText,
-  nearestRatingBucket,
   parseTimeControl,
   selectMaiaEnginesForReview,
   tacticalMotifsForBestMove,
@@ -299,11 +298,8 @@ describe("Maia engine selection", () => {
     ]);
   });
 
-  it("only infers ratings from Maia-named text and picks the nearest bucket", () => {
+  it("only infers ratings from Maia-named text", () => {
     expect(maiaRatingFromText("maia-1900.pb.gz")).toBe(1900);
     expect(maiaRatingFromText("t1-256x10-1500k.pb.gz")).toBeUndefined();
-    expect(nearestRatingBucket(1620, [1100, 1500, 1900])).toBe(1500);
-    expect(nearestRatingBucket(null, [1100, 1900])).toBe(1100);
-    expect(nearestRatingBucket(1500, [])).toBeNull();
   });
 });

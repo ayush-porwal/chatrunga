@@ -1,6 +1,6 @@
 import { Fragment, memo, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { ArrowUpToLine, Check, Trash2 } from "lucide-react";
-import { reviewLabel } from "@chaturanga/shared/chess/review";
+import { annotationLabel } from "@chaturanga/shared/chess/move-assessment";
 import { formatMoveEval } from "../game-review/review-score";
 import type { MoveReview, ReviewCommentary } from "@chaturanga/shared/types/engine";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
@@ -13,7 +13,7 @@ import {
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
-import { QualityBadge } from "@/components/ui/quality-badge";
+import { AnnotationBadge } from "@/components/ui/annotation-badge";
 import { isRapidNavigation, usePrefersReducedMotion } from "../board/board-motion";
 
 const ROOT_ID = "root";
@@ -282,8 +282,9 @@ const TreeNodeButton = memo(function TreeNodeButton({
   onDeleteLine,
   onPromoteVariation
 }: NodeButtonProps) {
+  const annotation = review?.assessment?.annotation ?? null;
   const title = review
-    ? `${reviewLabel(review.classification)} · ${formatMoveEval(review)}`
+    ? `${annotation ? `${annotationLabel(annotation)} · ` : ""}${formatMoveEval(review)}`
     : variation
       ? `Variation: ${node.san ?? "move"}`
       : (node.san ?? "Move");
@@ -314,13 +315,7 @@ const TreeNodeButton = memo(function TreeNodeButton({
           {node.san ?? "–"}
         </span>
         {variation ? <span className="shrink-0 text-fg-subtle">↳</span> : null}
-        {review ? (
-          <QualityBadge
-            variant="glyph"
-            classification={review.classification}
-            selected={selected}
-          />
-        ) : null}
+        <AnnotationBadge variant="glyph" annotation={annotation} selected={selected} />
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           {showScores && review ? (
             <span

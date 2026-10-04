@@ -6,10 +6,10 @@ import {
   type EngineConfig,
   type EngineInfo,
   type GameReview,
-  type GameReviewSummary,
   type MaiaRating,
-  type MoveClassification,
+  type MoveAssessment,
   type MoveReview,
+  type MoveVerification,
   type RatingPrediction,
   type ReviewGameInput,
   type ReviewMoveInputItem,
@@ -19,14 +19,21 @@ import {
 } from "@chaturanga/shared/types/engine";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import {
-  classifyMove,
   scoreFromWhitePerspective,
   standardCastlingUci,
   terminalStateForFen
 } from "@chaturanga/shared/chess/review";
+import {
+  MOVE_ASSESSMENT_POLICY,
+  assessMove,
+  summarizeMoves,
+  verificationNeed,
+  type VerificationNeed
+} from "@chaturanga/shared/chess/move-assessment";
 import { parseInfoLine, parseLc0MoveStat, type Lc0MoveStat } from "@chaturanga/shared/engine/uci";
 import { logger } from "../logger";
 import {
+  deeperReviewSearch,
   resolveReviewSearchParams,
   reviewAnalysisTimeoutMs,
   type ResolvedReviewSearch
@@ -35,7 +42,6 @@ import {
   buildRatingPrediction,
   computeEvalLoss,
   linesFromInfoStream,
-  nearestRatingBucket,
   parseClock,
   parseTimeControl,
   tacticalMotifsForBestMove,
@@ -94,7 +100,7 @@ export type ReviewEngineOptions = {
   threads?: number;
   /** UCI Hash (MB) for the evaluation engine. */
   hashMb?: number;
-  /** Player rating; picks the Maia bucket behind the `human_error` classification. */
+  /** Player rating; picks the Maia level whose difficulty the move assessment reads. */
   playerRating?: number | null;
 };
 
@@ -123,6 +129,7 @@ function reviewJobKey(
   ];
   return JSON.stringify([
     GAME_REVIEW_SCHEMA_VERSION,
+    MOVE_ASSESSMENT_POLICY,
     engine(config),
     maiaConfigs.map((item) => [...engine(item), item.maiaRating]),
     multipv,
@@ -200,6 +207,17 @@ export async function reviewGameWithEngine(
 
     const moves: MoveReview[] = [];
     let previousReplyLines: AnalysisLine[] | null = null;
+    // Each move is assessed in the context of the one before it (the opponent's move into it).
+    let previousAssessed: { move: MoveReview; assessment: MoveAssessment } | null = null;
+    const assess = (review: MoveReview): MoveReview => {
+      const assessment = assessMove(review, {
+        previous: previousAssessed,
+        playerRating: options.playerRating ?? null
+      });
+      const assessed: MoveReview = { ...review, assessment };
+      previousAssessed = { move: assessed, assessment };
+      return assessed;
+    };
     // An engine file replaced during startup: this review's results are not cached under either
     // version. Otherwise they are keyed by the stamps taken before the start (what was loaded).
     const cached = sameStamps(stampsBeforeStart, engineFileStamps([config, ...maiaConfigs]))
@@ -239,8 +257,9 @@ export async function reviewGameWithEngine(
         const reusedSpent = timeSpentForMove(input.moves, index, timeControl);
         if (reusedSpent !== undefined) moveReview.timeSpentMs = reusedSpent;
         previousReplyLines = terminalStateForFen(move.fenAfter) ? null : done.replyLines;
-        moves.push(moveReview);
-        sink.onMoveCompleted?.({ moveIndex: index, move: moveReview });
+        const assessed = assess(moveReview);
+        moves.push(assessed);
+        sink.onMoveCompleted?.({ moveIndex: index, move: assessed });
         continue;
       }
       const emitPhase = (phase: ReviewProgressPhase, lines: AnalysisLine[]) =>
@@ -331,24 +350,37 @@ export async function reviewGameWithEngine(
         replyLines,
         terminal,
         humanPredictions,
-        playerRating: options.playerRating ?? null,
         previousMove: input.moves[index - 1]?.uci ?? null
       });
       const currentClock = parseClock(move.clockAfter);
       if (currentClock !== null) moveReview.clockRemainingMs = currentClock;
       const spent = timeSpentForMove(input.moves, index, timeControl);
       if (spent !== undefined) moveReview.timeSpentMs = spent;
-      moves.push(moveReview);
+      // A Great / Brilliant candidate gets a deeper search before it can be marked; an error near
+      // a severity boundary, judged from a separate search, is searched again on the same budget.
+      const need = verificationNeed(moveReview);
+      if (need) {
+        moveReview.verification = await verifyMove(session, moveReview, need, {
+          multipv,
+          search,
+          shouldCancel: sink.shouldCancel
+        });
+        if (sink.shouldCancel?.()) throw new Error("Review cancelled");
+      }
       // Only complete results are kept: after a Maia level failed, this review's moves lack its
-      // prediction, and a later review (with Maia working again) must search them afresh.
+      // prediction, and a later review (with Maia working again) must search them afresh. Kept
+      // unassessed: the assessment depends on the move before, which another game may differ in.
       if (maiaSlots.every((slot) => slot.alive)) {
         ReviewCache.put(cached, cacheKey, { review: moveReview, replyLines }, reviewCache.maxMoves);
       }
-      sink.onMoveCompleted?.({ moveIndex: index, move: moveReview });
+      const assessed = assess(moveReview);
+      moves.push(assessed);
+      sink.onMoveCompleted?.({ moveIndex: index, move: assessed });
     }
 
     return {
       schemaVersion: GAME_REVIEW_SCHEMA_VERSION,
+      assessmentPolicy: MOVE_ASSESSMENT_POLICY,
       engineId: config.id,
       engineName: session.engineName ?? config.name,
       engineSettings: {
@@ -364,7 +396,7 @@ export async function reviewGameWithEngine(
       moveTimeMs: search.recordMoveTimeMs,
       multipv,
       createdAt: Date.now(),
-      summary: summarize(moves),
+      summary: summarizeMoves(moves),
       moves
     };
   } finally {
@@ -421,7 +453,6 @@ function buildMoveReview(input: {
   replyLines: AnalysisLine[];
   terminal: TerminalState | null;
   humanPredictions: RatingPrediction[];
-  playerRating: number | null;
   previousMove: string | null;
 }): MoveReview {
   const { move, playedUci, topLines, replyLines, terminal, humanPredictions } = input;
@@ -441,31 +472,12 @@ function buildMoveReview(input: {
   const evalLoss = computeEvalLoss({ topLines, playedRank, afterScore, terminal });
   const bestMove = best?.pv[0] ?? null;
 
-  // `human_error`: the top move of the Maia bucket nearest the player's rating.
-  const bucket = nearestRatingBucket(
-    input.playerRating,
-    humanPredictions.map((p) => p.rating)
-  );
-  const humanPrediction =
-    humanPredictions.find((p) => p.rating === bucket)?.topMoves[0]?.uci ?? null;
   const motifs = tacticalMotifsForBestMove(
     move.fenBefore,
     bestMove,
     best?.score ?? null,
     input.previousMove
   );
-  const hasMissedTactic =
-    Boolean(bestMove && bestMove !== playedUci) && motifs.length > 0 && (evalLoss ?? 0) >= 150;
-  const classification =
-    terminal === "checkmate"
-      ? "best"
-      : classifyMove({
-          playedMove: playedUci,
-          bestMove,
-          evalLoss,
-          hasMissedTactic,
-          humanPrediction
-        });
 
   return {
     nodeId: move.nodeId,
@@ -479,7 +491,6 @@ function buildMoveReview(input: {
     // Eval after the engine's choice = its best line from the same search.
     bestEvalAfter: best?.scoreWhite ?? null,
     evalLoss,
-    classification,
     bestMove,
     bestLine: best?.pv ?? [],
     topLines,
@@ -492,6 +503,40 @@ function buildMoveReview(input: {
     humanPredictions: humanPredictions.length > 0 ? humanPredictions : undefined,
     motifs
   };
+}
+
+/**
+ * The extra search a move needs before it is assessed (see verificationNeed): a deeper MultiPV
+ * search of the position for a Great / Brilliant candidate, or a search of only the played move
+ * on the review's own budget for an error near a severity boundary.
+ */
+async function verifyMove(
+  session: UciReviewSession,
+  move: MoveReview,
+  need: VerificationNeed,
+  input: { multipv: number; search: ResolvedReviewSearch; shouldCancel?: () => boolean }
+): Promise<MoveVerification> {
+  switch (need) {
+    case "candidate":
+      return {
+        deeperLines: await session.analyze({
+          fen: move.fenBefore,
+          multipv: Math.max(2, input.multipv),
+          search: deeperReviewSearch(input.search),
+          shouldCancel: input.shouldCancel
+        })
+      };
+    case "recheck": {
+      const lines = await session.analyze({
+        fen: move.fenBefore,
+        multipv: 1,
+        search: input.search,
+        searchMoves: [move.playedMove],
+        shouldCancel: input.shouldCancel
+      });
+      return { playedLine: lines.find((line) => line.pv[0] === move.playedMove) ?? null };
+    }
+  }
 }
 
 type PolicyResult = { stats: Lc0MoveStat[]; wdl?: Wdl };
@@ -584,18 +629,23 @@ class UciReviewSession {
     fen: string;
     multipv: number;
     search: ResolvedReviewSearch;
+    /** Restricts the search to these moves (UCI `searchmoves`, sent last). */
+    searchMoves?: readonly string[];
     shouldCancel?: () => boolean;
   }): Promise<AnalysisLine[]> {
     if (input.multipv !== this.currentMultipv) {
       this.currentMultipv = input.multipv;
       this.setOption("MultiPV", String(input.multipv));
     }
-    const go =
+    const bound =
       input.search.nodes !== null && input.search.nodes > 0
         ? `go nodes ${input.search.nodes}`
         : input.search.moveTimeMs
           ? `go movetime ${input.search.moveTimeMs}`
           : `go depth ${input.search.depth}`;
+    const go = input.searchMoves?.length
+      ? `${bound} searchmoves ${input.searchMoves.join(" ")}`
+      : bound;
     const infos: EngineInfo[] = [];
     await this.search({
       fen: input.fen,
@@ -806,45 +856,4 @@ const CANCEL_POLL_MS = 100;
 function pushTail(buffer: string[], line: string): void {
   buffer.push(line);
   if (buffer.length > 50) buffer.shift();
-}
-
-const SUMMARY_FIELD: Record<
-  MoveClassification,
-  Exclude<keyof GameReviewSummary, "totalMoves" | "averageCentipawnLoss">
-> = {
-  best: "best",
-  excellent: "excellent",
-  good: "good",
-  inaccuracy: "inaccuracies",
-  mistake: "mistakes",
-  blunder: "blunders",
-  missed_tactic: "missedTactics",
-  human_error: "humanErrors"
-};
-
-function summarize(moves: MoveReview[]): GameReviewSummary {
-  const counts = {
-    best: 0,
-    excellent: 0,
-    good: 0,
-    inaccuracies: 0,
-    mistakes: 0,
-    blunders: 0,
-    missedTactics: 0,
-    humanErrors: 0
-  };
-  let evalLossSum = 0;
-  let evalLossCount = 0;
-  for (const move of moves) {
-    counts[SUMMARY_FIELD[move.classification]] += 1;
-    if (move.evalLoss !== null) {
-      evalLossSum += move.evalLoss;
-      evalLossCount += 1;
-    }
-  }
-  return {
-    totalMoves: moves.length,
-    ...counts,
-    averageCentipawnLoss: evalLossCount ? Math.round(evalLossSum / evalLossCount) : null
-  };
 }

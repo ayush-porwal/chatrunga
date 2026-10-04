@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { AnalysisSettingsDialog } from "../features/analysis/AnalysisSettingsDialog";
 import { useShallow } from "zustand/react/shallow";
-import { QualityBadge } from "@/components/ui/quality-badge";
+import { AnnotationBadge } from "@/components/ui/annotation-badge";
 import {
   SegmentedControl,
   tabPanelProps,
@@ -199,7 +199,13 @@ function GameSummary() {
         <>
           <Stat
             label="Move"
-            value={<QualityBadge classification={currentMoveReview.classification} />}
+            value={
+              currentMoveReview.assessment?.annotation ? (
+                <AnnotationBadge annotation={currentMoveReview.assessment.annotation} />
+              ) : (
+                <span className="text-fg-subtle">No mark</span>
+              )
+            }
           />
           <Stat label="Eval" value={formatMoveEval(currentMoveReview)} mono />
         </>

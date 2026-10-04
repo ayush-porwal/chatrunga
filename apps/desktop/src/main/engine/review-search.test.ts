@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_REVIEW_MOVETIME_MS,
+  deeperReviewSearch,
   resolveReviewSearchParams,
   reviewAnalysisTimeoutMs
 } from "./review-search";
@@ -39,5 +40,22 @@ describe("reviewAnalysisTimeoutMs", () => {
   it("scales with movetime and multipv", () => {
     const ms = reviewAnalysisTimeoutMs({ moveTimeMs: 5000, depth: 14, multipv: 3 });
     expect(ms).toBeGreaterThanOrEqual(90_000);
+  });
+});
+
+describe("deeperReviewSearch", () => {
+  it("doubles the nodes or time, or searches four plies deeper, and records the review's own budget", () => {
+    expect(deeperReviewSearch(resolveReviewSearchParams({ nodes: 800 }))).toMatchObject({
+      nodes: 1600,
+      moveTimeMs: null
+    });
+    expect(deeperReviewSearch(resolveReviewSearchParams({ moveTimeMs: 250 }))).toMatchObject({
+      moveTimeMs: 500,
+      recordMoveTimeMs: 250
+    });
+    expect(deeperReviewSearch(resolveReviewSearchParams({ depth: 14 }))).toMatchObject({
+      depth: 18,
+      recordDepth: 14
+    });
   });
 });

@@ -45,8 +45,9 @@ export class ReviewCache {
 }
 
 /**
- * A move's cache key: the position, the move and the move before it (the review's classification
- * reads the previous move), so the same move in the same position reuses its analysis.
+ * A move's cache key: the position, the move and the move before it (the best move's tactical
+ * motifs read it), so the same move in the same position reuses its analysis. Cached moves are
+ * unassessed: the assessment is made afresh in each game's context.
  */
 export function moveKey(fenBefore: string, uci: string, previousUci: string | null): string {
   return `${fenBefore}|${uci}|${previousUci ?? ""}`;

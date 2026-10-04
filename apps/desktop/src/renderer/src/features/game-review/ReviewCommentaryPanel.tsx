@@ -17,9 +17,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { usePresence } from "@/components/ui/use-presence";
 import { motion } from "@/lib/ui";
 import { Stat, StatGroup } from "@/components/ui/stat";
-import { qualityTone } from "@/lib/ui";
+import { annotationTone } from "@/lib/ui";
 import { cn } from "@/lib/utils";
-import { QualityBadge } from "@/components/ui/quality-badge";
+import { AnnotationBadge } from "@/components/ui/annotation-badge";
+import { SectionHeader } from "@/components/ui/page";
+import type { KeyMoment } from "@chaturanga/shared/chess/key-moments";
+import { MomentList, MoveMarkNote } from "./KeyMoments";
 import type { CommentaryMoveContext } from "./commentary-moves";
 import type { CommentaryStatus } from "./useGameReviewCommentary";
 import { CommentaryProse, MoveLink, VariationAnchorNote, type GoToLine } from "./MoveLinks";
@@ -50,7 +53,10 @@ export function ReviewCommentaryPanel({
   onTurnOnCommentary,
   moveContext = null,
   onGoToLine,
-  variationAnchor = null
+  variationAnchor = null,
+  keyMoments = NO_MOMENTS,
+  reviewMoves = NO_MOVES,
+  onSelectNode
 }: {
   move: MoveReview | null;
   /** True once at least one move has been reviewed (picks the right empty state). */
@@ -84,6 +90,12 @@ export function ReviewCommentaryPanel({
   onGoToLine?: GoToLine;
   /** Set while the board shows an unreviewed variation; `move` is then its nearest reviewed ancestor. */
   variationAnchor?: { label: string; onBack: () => void } | null;
+  /** The review's key moments: what the panel leads with before a move is selected. */
+  keyMoments?: readonly KeyMoment[];
+  /** The reviewed moves the key moments point at. */
+  reviewMoves?: readonly MoveReview[];
+  /** Goes to a move (a key moment's row). */
+  onSelectNode?: (nodeId: string) => void;
 }) {
   const loading = !running && Boolean(move) && status === "loading";
   // The placeholder stays for one fade after the text arrives, so the two cross-fade in place.
@@ -111,6 +123,26 @@ export function ReviewCommentaryPanel({
           icon={<Sparkles />}
           title="Analyzing…"
           description="Commentary is available when the analysis finishes. Progress is shown below."
+        />
+      </div>
+    );
+  }
+
+  if (!move && hasReview && keyMoments.length && onSelectNode) {
+    return (
+      <div className="scroll-area -mr-3 grid h-full min-h-0 content-start gap-3 overflow-y-auto pr-3">
+        <SectionHeader as="h2" title="Key moments" />
+        <p className="text-sm leading-6 text-fg-muted">
+          The moments that decided this game. Select one to read about it; every move stays in the
+          Moves tab.
+        </p>
+        <MomentList
+          moments={keyMoments}
+          moves={reviewMoves}
+          selectedNodeId={null}
+          onSelectNode={onSelectNode}
+          label="Key moments of the game"
+          emptyTitle="No key moments"
         />
       </div>
     );
@@ -154,6 +186,7 @@ export function ReviewCommentaryPanel({
   // A new move settles in with a short partial fade — except while scrubbing through moves.
   const swap = isRapidNavigation() ? undefined : "review-swap";
   const ready = status === "ready" && commentary;
+  const annotation = move.assessment?.annotation ?? null;
 
   return (
     <div
@@ -165,7 +198,7 @@ export function ReviewCommentaryPanel({
     >
       <header className="flex min-h-8 flex-wrap items-center gap-2">
         <h2 className="font-mono text-base font-semibold text-fg">{moveLabel(move)}</h2>
-        <QualityBadge classification={move.classification} />
+        <AnnotationBadge annotation={annotation} />
         {ready ? (
           <span
             className="ml-auto inline-flex min-w-0 animate-fade-in items-center gap-1 text-2xs text-fg-subtle"
@@ -176,6 +209,8 @@ export function ReviewCommentaryPanel({
           </span>
         ) : null}
       </header>
+
+      <MoveMarkNote assessment={move.assessment} className="-mt-2" />
 
       {variationAnchor ? (
         <VariationAnchorNote label={variationAnchor.label} onBack={variationAnchor.onBack} />
@@ -301,7 +336,7 @@ export function ReviewCommentaryPanel({
             )
           }
           mono
-          valueClassName={qualityTone[move.classification].text}
+          valueClassName={annotation ? annotationTone[annotation].text : undefined}
         />
         <Stat
           label="Best"
@@ -315,6 +350,9 @@ export function ReviewCommentaryPanel({
     </div>
   );
 }
+
+const NO_MOMENTS: readonly KeyMoment[] = [];
+const NO_MOVES: readonly MoveReview[] = [];
 
 /** Body lines of the loading placeholder per requested length (the real text is usually longer). */
 const SKELETON_LINES: Record<CommentaryDetail, number> = { concise: 3, balanced: 4, detailed: 6 };

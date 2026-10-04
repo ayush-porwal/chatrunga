@@ -74,6 +74,17 @@ export function resolveReviewSearchParams(
   };
 }
 
+/**
+ * A longer search than `search`, for verifying a candidate move: twice the nodes or time, or four
+ * more plies of depth. What the review records as its budget is unchanged.
+ */
+export function deeperReviewSearch(search: ResolvedReviewSearch): ResolvedReviewSearch {
+  if (search.nodes !== null && search.nodes > 0) return { ...search, nodes: search.nodes * 2 };
+  if (search.moveTimeMs !== null && search.moveTimeMs > 0)
+    return { ...search, moveTimeMs: search.moveTimeMs * 2 };
+  return { ...search, depth: search.depth + 4 };
+}
+
 /** Wall-clock budget: NN + MultiPV needs far more than 15s for depth-based search. */
 /** setTimeout's largest delay: anything above fires at once (Node clamps it to 1 ms). */
 const MAX_TIMER_MS = 2_147_483_647;

@@ -13,7 +13,7 @@ type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
 function payload(): ReviewInsightPayload {
   return reviewInsightPayloadSchema.parse({
-    schemaVersion: 1,
+    schemaVersion: 2,
     player: { rating: 1500, color: "white", ratingBucket: 1500 },
     game: {
       ply: 1,
@@ -40,7 +40,7 @@ function payload(): ReviewInsightPayload {
         userRatingBucket: 1500
       }
     },
-    classification: "best",
+    annotation: null,
     curatorReason: "move_review",
     tacticalFacts: [],
     engineSignals: []

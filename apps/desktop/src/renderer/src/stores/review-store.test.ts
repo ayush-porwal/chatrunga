@@ -1,7 +1,12 @@
 import { acceptsReviewEvent } from "../app/useReviewEventSubscription";
 import { beforeEach, describe, expect, it } from "vitest";
 import { reviewsByNode, selectDisplayedMoves, useReviewStore } from "./review-store";
-import type { GameReview, MoveReview, ReviewProgress } from "@chaturanga/shared/types/engine";
+import type {
+  GameReview,
+  MoveAnnotation,
+  MoveReview,
+  ReviewProgress
+} from "@chaturanga/shared/types/engine";
 
 function progress(moveIndex: number, overrides: Partial<ReviewProgress> = {}): ReviewProgress {
   return {
@@ -23,7 +28,7 @@ function progress(moveIndex: number, overrides: Partial<ReviewProgress> = {}): R
   };
 }
 
-function move(nodeId: string, classification: MoveReview["classification"]): MoveReview {
+function move(nodeId: string, annotation: MoveAnnotation | null): MoveReview {
   return {
     nodeId,
     ply: 1,
@@ -34,7 +39,16 @@ function move(nodeId: string, classification: MoveReview["classification"]): Mov
     evalBefore: null,
     evalAfter: null,
     evalLoss: null,
-    classification,
+    assessment: {
+      policy: 1,
+      winBefore: null,
+      winAfter: null,
+      winLoss: null,
+      alternativeGap: null,
+      severity: null,
+      annotation,
+      tags: []
+    },
     bestMove: null,
     bestLine: [],
     topLines: [],
@@ -84,7 +98,7 @@ describe("review store", () => {
     expect(updates).toBe(0);
     useReviewStore
       .getState()
-      .applyReviewEvents({ progress: progress(1), moves: [move("a", "good"), move("b", "best")] });
+      .applyReviewEvents({ progress: progress(1), moves: [move("a", "good"), move("b", null)] });
     unsubscribe();
     expect(updates).toBe(1);
     expect(useReviewStore.getState().progress?.moveIndex).toBe(1);
@@ -92,7 +106,7 @@ describe("review store", () => {
   });
 
   it("stores a completed review and clears partial progress", () => {
-    const done = review([move("a", "good"), move("b", "missed_tactic")]);
+    const done = review([move("a", "good"), move("b", "miss")]);
 
     useReviewStore.getState().startReview("r1");
     useReviewStore.getState().setReview(done);
@@ -135,7 +149,7 @@ describe("review store", () => {
     };
     useReviewStore.getState().loadReview(saved, [listed]);
     useReviewStore.getState().startReview("new");
-    useReviewStore.getState().setReview({ ...review([move("a", "best")]), createdAt: 2 });
+    useReviewStore.getState().setReview({ ...review([move("a", null)]), createdAt: 2 });
     expect(useReviewStore.getState().review?.reviewId).toBe("new");
     expect(useReviewStore.getState().analyses.map((info) => info.reviewId)).toEqual(["new", "old"]);
 
@@ -154,15 +168,15 @@ describe("review store", () => {
 
   it("replaces partial moves for the same node", () => {
     useReviewStore.getState().startReview("r1");
-    useReviewStore.getState().applyReviewEvents({ progress: null, moves: [move("a", "good")] });
+    useReviewStore.getState().applyReviewEvents({ progress: null, moves: [move("a", null)] });
     useReviewStore.getState().applyReviewEvents({ progress: null, moves: [move("a", "blunder")] });
 
     expect(useReviewStore.getState().partialMoves).toHaveLength(1);
-    expect(useReviewStore.getState().partialMoves[0]?.classification).toBe("blunder");
+    expect(useReviewStore.getState().partialMoves[0]?.assessment?.annotation).toBe("blunder");
   });
 
   it("indexes reviewed moves by node", () => {
-    const first = move("a", "best");
+    const first = move("a", null);
     const second = move("b", "mistake");
 
     expect(reviewsByNode([first, second]).get("b")).toBe(second);
@@ -170,7 +184,7 @@ describe("review store", () => {
 
   it("displays live moves while running and the finished review otherwise", () => {
     const partial = [move("a", "good")];
-    const done = review([move("a", "best"), move("b", "good")]);
+    const done = review([move("a", null), move("b", "good")]);
 
     expect(selectDisplayedMoves({ status: "running", review: done, partialMoves: partial })).toBe(
       partial

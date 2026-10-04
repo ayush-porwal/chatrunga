@@ -20,8 +20,9 @@ import type {
 import type {
   AnalysisLine,
   EngineScore,
+  ErrorSeverity,
   GameReview,
-  MoveClassification,
+  MoveAnnotation,
   MoveReview,
   RatingPrediction,
   ReviewGameInput,
@@ -203,12 +204,8 @@ export function buildEngineSignals(move: MoveReview): EngineSignal[] {
   return signals;
 }
 
-const MISTAKE_LIKE: readonly MoveClassification[] = [
-  "blunder",
-  "mistake",
-  "missed_tactic",
-  "human_error"
-];
+/** Marks of a verified find: the coach is told the move was hard to find. */
+const VERIFIED_FINDS: ReadonlySet<MoveAnnotation> = new Set(["brilliant", "great", "excellent"]);
 const SAN_TOKEN = /^(O-O(-O)?[+#]?|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](=[QRBN])?[+#]?)$/;
 const RECENT_PLIES = 6;
 const PIECE_VALUES: Record<string, number> = { q: 9, r: 5, b: 3, n: 3 };
@@ -431,7 +428,7 @@ function buildGameContext(
         moveNumberSan: moveNumberSanForPly(item.ply),
         san: item.san,
         mover: sideForPly(item.ply),
-        classification: item.classification,
+        annotation: item.assessment?.annotation ?? undefined,
         evalAfter: item.evalAfter ? formatEngineScore(item.evalAfter) : undefined
       })
     );
@@ -445,9 +442,19 @@ function buildGameContext(
   const mistakesSoFar = { white: emptyCount(), black: emptyCount() };
   for (const item of previous) {
     const bucket = mistakesSoFar[sideForPly(item.ply)];
-    if (item.classification === "inaccuracy") bucket.inaccuracies += 1;
-    else if (item.classification === "blunder") bucket.blunders += 1;
-    else if (MISTAKE_LIKE.includes(item.classification)) bucket.mistakes += 1;
+    switch (item.assessment?.severity ?? null) {
+      case "inaccuracy":
+        bucket.inaccuracies += 1;
+        break;
+      case "mistake":
+        bucket.mistakes += 1;
+        break;
+      case "blunder":
+        bucket.blunders += 1;
+        break;
+      case null:
+        break;
+    }
   }
 
   const next = findPly(ordered, move.ply + 1);
@@ -456,10 +463,8 @@ function buildGameContext(
       ? defined({
           moveNumberSan: moveNumberSanForPly(next.ply),
           san: next.san,
-          classification: next.classification,
-          matchesEngine:
-            Boolean(next.bestMove && next.playedMove === next.bestMove) ||
-            next.classification === "best"
+          annotation: next.assessment?.annotation ?? undefined,
+          matchesEngine: Boolean(next.bestMove && next.playedMove === next.bestMove)
         })
       : undefined;
 
@@ -670,12 +675,13 @@ export function buildInsightPayload(
   const trustedMaia = (context?.review?.schemaVersion ?? 0) >= 2;
   const usableMaia = trustedMaia && hasUsableMaiaData(move);
   if (!usableMaia) curve.interpretation = { label: "neutral" };
-  // Any mate-in-one is objectively best even if it was not the engine's first PV.
-  const classification: MoveClassification =
-    terminal === "checkmate" ? "best" : move.classification;
-  const reason: CuratorReason = MISTAKE_LIKE.includes(classification)
+  // The coach explains the review's own verdict and never invents one: an unmarked move is sent
+  // with no mark, an error with its severity, a verified find as one.
+  const annotation = move.assessment?.annotation ?? null;
+  const severity = move.assessment?.severity ?? undefined;
+  const reason: CuratorReason = severity
     ? "mistake"
-    : move.playedMove === move.bestMove && usableMaia
+    : annotation && VERIFIED_FINDS.has(annotation)
       ? "difficult_find"
       : "move_review";
 
@@ -704,7 +710,7 @@ export function buildInsightPayload(
   const maia = buildMaiaEvidence(move, userRating, trustedMaia);
 
   return defined({
-    schemaVersion: 1 as const,
+    schemaVersion: 2 as const,
     player: {
       rating: userRating,
       color: playerColor,
@@ -749,7 +755,9 @@ export function buildInsightPayload(
         : undefined,
       maia
     }),
-    classification,
+    annotation,
+    severity,
+    assessmentTags: move.assessment?.tags.length ? move.assessment.tags : undefined,
     curatorReason: reason,
     tacticalFacts: buildTacticalFacts(move),
     engineSignals: buildEngineSignals(move),
@@ -784,9 +792,13 @@ export function reviewAccuracy(moves: readonly MoveReview[]): number | null {
   return loss === null ? null : Math.max(0, Math.min(100, Math.round(100 - loss / 8)));
 }
 
-export function countByClassification(moves: readonly MoveReview[]): Record<string, number> {
-  const counts: Record<string, number> = {};
-  for (const move of moves) counts[move.classification] = (counts[move.classification] ?? 0) + 1;
+/** Errors by severity, marked or not (a shortened summary never changes these). */
+export function countBySeverity(moves: readonly MoveReview[]): Record<ErrorSeverity, number> {
+  const counts: Record<ErrorSeverity, number> = { inaccuracy: 0, mistake: 0, blunder: 0 };
+  for (const move of moves) {
+    const severity = move.assessment?.severity;
+    if (severity) counts[severity] += 1;
+  }
   return counts;
 }
 

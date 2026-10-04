@@ -27,15 +27,43 @@ const curatorReasonSchema = z.enum(["mistake", "move_review", "difficult_find"])
 
 export type CuratorReason = z.infer<typeof curatorReasonSchema>;
 
-const moveClassificationSchema = z.enum([
-  "best",
+/**
+ * The review's mark for a move (chess/move-assessment.ts). Most moves have none (null): the coach
+ * explains them without a verdict.
+ */
+const moveAnnotationSchema = z.enum([
+  "brilliant",
+  "great",
   "excellent",
   "good",
+  "miss",
   "inaccuracy",
   "mistake",
-  "blunder",
+  "blunder"
+]);
+
+const errorSeveritySchema = z.enum(["inaccuracy", "mistake", "blunder"]);
+
+/** The assessment's evidence (AssessmentTag): the only grounds for calling a move special. */
+const assessmentTagSchema = z.enum([
+  "engine_top",
+  "only_move",
+  "sacrifice",
+  "punishes_error",
+  "missed_chance",
   "missed_tactic",
-  "human_error"
+  "tactic",
+  "hard_to_find",
+  "natural_move",
+  "forced",
+  "recapture",
+  "opening",
+  "decided",
+  "mate_created",
+  "mate_lost",
+  "unverified",
+  "unstable",
+  "incomplete"
 ]);
 
 export const sideSchema = z.enum(["white", "black"]);
@@ -148,7 +176,7 @@ const recentMoveSchema = z.object({
   moveNumberSan: moveNumberSanSchema,
   san: sanTokenSchema,
   mover: sideSchema,
-  classification: moveClassificationSchema.optional(),
+  annotation: moveAnnotationSchema.optional(),
   evalAfter: evalScoreSchema.optional()
 });
 
@@ -182,14 +210,15 @@ const reviewInsightContextSchema = z.object({
     .object({
       moveNumberSan: moveNumberSanSchema,
       san: sanTokenSchema,
-      classification: moveClassificationSchema.optional(),
+      annotation: moveAnnotationSchema.optional(),
       matchesEngine: z.boolean()
     })
     .optional()
 });
 
 export const reviewInsightPayloadSchema = z.object({
-  schemaVersion: z.literal(1),
+  /** 2: `annotation` (nullable) and its evidence replaced the one-label `classification`. */
+  schemaVersion: z.literal(2),
   player: z.object({
     rating: z.number().int().min(100).max(3500),
     color: sideSchema,
@@ -251,7 +280,12 @@ export const reviewInsightPayloadSchema = z.object({
       .optional(),
     maia: maiaEvidenceSchema.optional()
   }),
-  classification: moveClassificationSchema,
+  /** The review's mark for the move; null for an ordinary, unmarked move. */
+  annotation: moveAnnotationSchema.nullable(),
+  /** How damaging the move was, when it was an error (marked or not). */
+  severity: errorSeveritySchema.optional(),
+  /** The facts behind the mark (or the absence of one). */
+  assessmentTags: z.array(assessmentTagSchema).max(18).optional(),
   curatorReason: curatorReasonSchema,
   tacticalFacts: z.array(tacticalFactSchema),
   engineSignals: z.array(engineSignalSchema),

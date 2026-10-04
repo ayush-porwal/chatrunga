@@ -58,6 +58,8 @@
   --color-caution: #f0a868; /* review "mistake" — between warn and danger */
   --color-danger: #ff9a8d;
   --color-danger-soft: #3a201d;
+  --color-brilliant: #5fd3c6; /* review "brilliant" mark (teal: apart from every status hue) */
+  --color-miss: #c9a2f5; /* review "miss" mark (violet: a passed-up chance, apart from error severity) */
 
   /* Chess piece swatches (side-to-move dots, player badges). */
   --color-piece-white: #efe7d2;

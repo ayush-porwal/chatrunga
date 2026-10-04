@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
+import { MOVE_ASSESSMENT_POLICY } from "@chaturanga/shared/chess/move-assessment";
+import { trapReviewMoves } from "@chaturanga/shared/chess/__fixtures__/trap-game";
 
 const userData = mkdtempSync(join(tmpdir(), "chaturanga-repo-test-"));
 vi.mock("electron", () => ({ app: { getPath: () => userData } }));
@@ -115,6 +117,69 @@ describe("gameRepository (SQLite)", () => {
     };
     storeReview(saved.id, wrong);
     expect(gameRepository.get(saved.id)?.review).toBeNull();
+  });
+
+  it("opens an analysis saved before move assessments re-assessed from its evaluations, leaving the row as it was", () => {
+    const { game } = importPgnText(
+      `[Event "Trap"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bc4 Nd4 4. Nxe5 Qg5 5. Nxf7 Qxg2 6. Rf1 Qxe4+ 7. Be2 Nf3# 0-1`
+    );
+    const saved = gameRepository.save({ ...game, id: "trap" });
+    const mainline = saved.moveTree.filter((node) => node.san);
+    const stored = {
+      schemaVersion: 2,
+      engineId: "sf",
+      depth: null,
+      moveTimeMs: 100,
+      createdAt: 1,
+      summary: {
+        totalMoves: 14,
+        best: 14,
+        excellent: 0,
+        good: 0,
+        inaccuracies: 0,
+        mistakes: 0,
+        blunders: 0,
+        missedTactics: 0,
+        averageCentipawnLoss: 0
+      },
+      moves: trapReviewMoves().map((move, index) => ({
+        ...move,
+        nodeId: mainline[index]!.id,
+        classification: "best"
+      }))
+    };
+    storeReview(saved.id, stored);
+
+    const opened = gameRepository.get(saved.id)!.review!;
+    expect(opened).toMatchObject({
+      assessmentPolicy: MOVE_ASSESSMENT_POLICY,
+      assessmentsRecomputed: true
+    });
+    expect(opened.moves.map((move) => move.assessment?.annotation ?? null)).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
+      "inaccuracy",
+      "blunder",
+      "good",
+      "blunder",
+      "good",
+      null,
+      null,
+      "mistake",
+      null
+    ]);
+    expect(opened.summary).toMatchObject({ inaccuracies: 1, mistakes: 1, blunders: 2 });
+    expect(gameRepository.getReview(saved.id, `test-${saved.id}`)?.assessmentsRecomputed).toBe(
+      true
+    );
+    // Nothing is written back: the saved analysis is exactly what was stored.
+    const row = getDb()
+      .prepare("SELECT review_json FROM game_reviews WHERE game_id = ?")
+      .get(saved.id) as { review_json: string };
+    expect(row.review_json).toBe(JSON.stringify(stored));
   });
 
   it("moves the review of a game from a set-up position too, and puts the cursor on the rebuilt tree", () => {

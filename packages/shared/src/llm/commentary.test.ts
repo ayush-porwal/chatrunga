@@ -15,7 +15,7 @@ import {
 /** Mid-game mistake (4.Nxe5? in the Blackburne Shilling trap) with full context. */
 function payload(overrides: Partial<ReviewInsightPayload> = {}): ReviewInsightPayload {
   return reviewInsightPayloadSchema.parse({
-    schemaVersion: 1,
+    schemaVersion: 2,
     player: { rating: 1500, color: "white", ratingBucket: 1500 },
     game: {
       ply: 7,
@@ -61,7 +61,8 @@ function payload(overrides: Partial<ReviewInsightPayload> = {}): ReviewInsightPa
         ]
       }
     },
-    classification: "mistake",
+    annotation: "blunder",
+    severity: "blunder",
     curatorReason: "mistake",
     tacticalFacts: [],
     engineSignals: [],
@@ -76,14 +77,13 @@ function payload(overrides: Partial<ReviewInsightPayload> = {}): ReviewInsightPa
           moveNumberSan: "3.",
           san: "Bc4",
           mover: "white",
-          classification: "best",
           evalAfter: "+0.25"
         },
         {
           moveNumberSan: "3...",
           san: "Nd4",
           mover: "black",
-          classification: "inaccuracy",
+          annotation: "inaccuracy",
           evalAfter: "+0.90"
         }
       ],
@@ -95,7 +95,7 @@ function payload(overrides: Partial<ReviewInsightPayload> = {}): ReviewInsightPa
       actualReply: {
         moveNumberSan: "4...",
         san: "Qg5",
-        classification: "best",
+        annotation: "great",
         matchesEngine: true
       }
     },
