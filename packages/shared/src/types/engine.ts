@@ -397,6 +397,12 @@ export type ReviewCommentary = {
    * older saved reviews, which are treated as current.
    */
   settingsKey?: string;
+  /**
+   * The coach payload version it was written from (REVIEW_INSIGHT_PAYLOAD_VERSION). Absent: before
+   * move marks (version 1), when every move was sent with a one-label verdict, so the text may
+   * praise or judge a move its current mark doesn't.
+   */
+  payloadVersion?: number;
 };
 
 /** The AI coach's explanation of a finished puzzle (kept for the session only, never saved). */

@@ -56,7 +56,8 @@ export function ReviewCommentaryPanel({
   variationAnchor = null,
   keyMoments = NO_MOMENTS,
   reviewMoves = NO_MOVES,
-  onSelectNode
+  onSelectNode,
+  rewrite = null
 }: {
   move: MoveReview | null;
   /** True once at least one move has been reviewed (picks the right empty state). */
@@ -96,6 +97,8 @@ export function ReviewCommentaryPanel({
   reviewMoves?: readonly MoveReview[];
   /** Goes to a move (a key moment's row). */
   onSelectNode?: (nodeId: string) => void;
+  /** Set when the explanation was written before the current move marks (see useGameReviewCommentary). */
+  rewrite?: { run: () => void; pending: boolean; error: string | null } | null;
 }) {
   const loading = !running && Boolean(move) && status === "loading";
   // The placeholder stays for one fade after the text arrives, so the two cross-fade in place.
@@ -237,6 +240,26 @@ export function ReviewCommentaryPanel({
         ) : null}
         {ready ? (
           <div key="text" className="grid animate-fade-in gap-3 [grid-area:stack]">
+            {rewrite ? (
+              <Notice
+                tone="info"
+                title="Written before the current move marks"
+                action={
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    disabled={rewrite.pending}
+                    onClick={rewrite.run}
+                  >
+                    <RefreshCw />
+                    {rewrite.pending ? "Writing…" : "Write again"}
+                  </Button>
+                }
+              >
+                {rewrite.error ??
+                  "It may praise or judge this move differently from its mark above."}
+              </Notice>
+            ) : null}
             {commentary.headline ? (
               <h3 className="font-serif text-lg font-semibold leading-7 text-fg">
                 <CommentaryProse

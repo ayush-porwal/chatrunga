@@ -217,9 +217,15 @@ const reviewInsightContextSchema = z.object({
     .optional()
 });
 
+/**
+ * The coach payload's version. 2: `annotation` (nullable) and its evidence replaced the one-label
+ * `classification` every move used to get. Saved commentary records the version it was written
+ * from (ReviewCommentary.payloadVersion).
+ */
+export const REVIEW_INSIGHT_PAYLOAD_VERSION = 2 as const;
+
 export const reviewInsightPayloadSchema = z.object({
-  /** 2: `annotation` (nullable) and its evidence replaced the one-label `classification`. */
-  schemaVersion: z.literal(2),
+  schemaVersion: z.literal(REVIEW_INSIGHT_PAYLOAD_VERSION),
   player: z.object({
     rating: z.number().int().min(100).max(3500),
     color: sideSchema,

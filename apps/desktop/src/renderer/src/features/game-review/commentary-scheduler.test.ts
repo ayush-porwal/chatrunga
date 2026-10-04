@@ -5,7 +5,8 @@ import {
   CommentaryScheduler,
   commentarySettingsKey,
   decideCommentary,
-  isCurrentCommentary
+  isCurrentCommentary,
+  writtenForEarlierMarks
 } from "./commentary-scheduler";
 
 const key = commentarySettingsKey({
@@ -136,5 +137,16 @@ describe("CommentaryScheduler", () => {
     scheduler.dispose();
     await vi.advanceTimersByTimeAsync(COMMENTARY_DEBOUNCE_MS * 2);
     expect(calls).toEqual([]);
+  });
+});
+
+describe("commentary written before the current move marks", () => {
+  it("is told apart by the coach payload it was written from, and still shows rather than being requested again", () => {
+    expect(writtenForEarlierMarks(ai())).toBe(true);
+    expect(writtenForEarlierMarks(ai({ payloadVersion: 1 }))).toBe(true);
+    expect(writtenForEarlierMarks(ai({ payloadVersion: 2 }))).toBe(false);
+    expect(writtenForEarlierMarks(undefined)).toBe(false);
+    // Paid-for text is never thrown away or re-requested automatically.
+    expect(decideCommentary({ ...base, cached: ai(), settingsKey: key })).toBe("cached");
   });
 });

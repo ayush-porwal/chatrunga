@@ -424,6 +424,7 @@ function GameReviewPageInner({
           detail={settings.reviewCommentaryDetail}
           userRating={settings.reviewPlayerRating}
           onRetry={selected.retry}
+          rewrite={selected.rewrite}
           onAnalyze={onAnalyze}
           onOpenCommentarySettings={onOpenCommentarySettings}
           onOpenReviewSettings={openReviewSettings}

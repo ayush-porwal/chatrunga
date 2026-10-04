@@ -10,6 +10,7 @@ import {
   scoreFromWhitePerspective,
   scoreToCentipawns
 } from "@chaturanga/shared/chess/review";
+import { REVIEW_INSIGHT_PAYLOAD_VERSION } from "@chaturanga/shared/schemas/review-insight";
 import type {
   CuratorReason,
   EngineSignal,
@@ -710,7 +711,7 @@ export function buildInsightPayload(
   const maia = buildMaiaEvidence(move, userRating, trustedMaia);
 
   return defined({
-    schemaVersion: 2 as const,
+    schemaVersion: REVIEW_INSIGHT_PAYLOAD_VERSION,
     player: {
       rating: userRating,
       color: playerColor,

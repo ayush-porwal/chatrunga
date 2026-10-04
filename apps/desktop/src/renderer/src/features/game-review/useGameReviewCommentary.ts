@@ -24,6 +24,7 @@ import {
   commentarySettingsKey,
   decideCommentary,
   isCurrentCommentary,
+  writtenForEarlierMarks,
   type CommentaryDecision,
   type CommentaryJob
 } from "./commentary-scheduler";
@@ -56,6 +57,12 @@ export type SelectedMoveCommentary = {
   model: string;
   error: string | null;
   retry: () => void;
+  /**
+   * Set when the explanation shown was written before the current move marks: asking for a new
+   * one (never automatic — explanations are paid for), whether that is under way, and why the last
+   * request failed.
+   */
+  rewrite: { run: () => void; pending: boolean; error: string | null } | null;
 };
 
 type Options = {
@@ -187,7 +194,11 @@ export function useGameReviewCommentary({
         if (stale()) return;
         if (item) {
           freshCommentary.add(viewKey(input.target, item.ply));
-          useReviewStore.getState().addCommentary({ ...item, settingsKey: input.settingsKey });
+          useReviewStore.getState().addCommentary({
+            ...item,
+            settingsKey: input.settingsKey,
+            payloadVersion: input.payload.schemaVersion
+          });
           return;
         }
         fail(error ?? PROVIDER_FAILED);
@@ -244,6 +255,24 @@ export function useGameReviewCommentary({
     });
   }, [jobInput, requestOne, scheduler]);
 
+  // An explanation from before the current marks: rewritten only when the user asks.
+  const [rewriting, setRewriting] = useState<string | null>(null);
+  const earlier = writtenForEarlierMarks(cached);
+  const rewrite = useMemo(
+    () =>
+      earlier && jobKey
+        ? {
+            run: () => {
+              setRewriting(jobKey);
+              retry();
+            },
+            pending: rewriting === jobKey && !failures[jobKey],
+            error: rewriting === jobKey ? (failures[jobKey] ?? null) : null
+          }
+        : null,
+    [earlier, failures, jobKey, retry, rewriting]
+  );
+
   const status = statusFor(decision, isCurrentCommentary(cached, settingsKey));
   useCommentaryViewTracking({
     review,
@@ -256,7 +285,8 @@ export function useGameReviewCommentary({
     commentary: cached,
     model: model || DEFAULT_COMMENTARY_MODEL,
     error: decision === "failed" ? (failures[jobKey] ?? PROVIDER_FAILED) : null,
-    retry
+    retry,
+    rewrite
   };
 }
 
