@@ -493,11 +493,27 @@ function GameReviewPageInner({
                 />
               </div>
             ) : null}
-            <MoveNavigation
-              caption={
-                isRunning ? <ReviewProgressCaption fallbackTotal={reviewInput.length} /> : null
-              }
-            />
+            {/* One last row: with the panel folded it's pinned to the bottom, Start review just
+                above the move navigation. */}
+            <div>
+              {hasMoves && !isRunning && moments.length ? (
+                // Always here, on every tab, whatever is folded: the key moments, one by one.
+                <div className="px-3 pt-2">
+                  <Button
+                    type="button"
+                    className="h-9 w-full border-transparent bg-accent-strong text-sm font-semibold text-fg hover:bg-accent-strong/85"
+                    onClick={startKeyMoments}
+                  >
+                    Start review
+                  </Button>
+                </div>
+              ) : null}
+              <MoveNavigation
+                caption={
+                  isRunning ? <ReviewProgressCaption fallbackTotal={reviewInput.length} /> : null
+                }
+              />
+            </div>
           </>
         }
       >
@@ -537,8 +553,6 @@ function GameReviewPageInner({
               mainline={reviewInput}
               opening={review?.opening}
               side={side}
-              hasKeyMoments={moments.length > 0}
-              onStartReview={startKeyMoments}
               onOpenRepertoire={() => onTabChange("opening")}
               onOpenPuzzles={onOpenPuzzles}
             />

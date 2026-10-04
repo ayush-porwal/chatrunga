@@ -130,8 +130,18 @@ test("the summary scores both sides, names the opening and phases, and its secti
   await summary(page).getByRole("button", { name: "Accuracy", exact: true }).click();
   await expect(summary(page).getByRole("table", { name: "Accuracy by phase" })).toBeVisible();
 
-  // Start review: the first of White's key moments, explained in the Commentary tab.
-  await summary(page).getByRole("button", { name: "Start review", exact: true }).click();
+  // Start review is in the panel's footer, on every tab, just above the move navigation; it
+  // starts with the first of White's key moments, explained in the Commentary tab.
+  const panel = page.getByRole("complementary", { name: "Review" });
+  const start = panel.getByRole("button", { name: "Start review", exact: true });
+  await expect(summary(page).getByRole("button", { name: "Start review" })).toHaveCount(0);
+  await reviewTabs(page).getByRole("tab", { name: "Moves", exact: true }).click();
+  await expect(start).toBeVisible();
+  const startBox = await start.boundingBox();
+  const navBox = await panel.getByRole("navigation", { name: "Move navigation" }).boundingBox();
+  if (!startBox || !navBox) throw new Error("Start review or the navigation not visible");
+  expect(startBox.y + startBox.height).toBeLessThanOrEqual(navBox.y + 1);
+  await start.click();
   await expect(reviewTabs(page).getByRole("tab", { name: "Commentary" })).toHaveAttribute(
     "aria-selected",
     "true"
@@ -290,6 +300,12 @@ test("review settings are a dialog that switches sides; with AI off, cards don't
   const navBox = await panel.getByRole("navigation", { name: "Move navigation" }).boundingBox();
   if (!panelBox || !navBox) throw new Error("panel or navigation not visible");
   expect(panelBox.y + panelBox.height - (navBox.y + navBox.height)).toBeLessThan(4);
+  // Start review stays, right above the navigation.
+  const startBox = await panel
+    .getByRole("button", { name: "Start review", exact: true })
+    .boundingBox();
+  if (!startBox) throw new Error("Start review not visible");
+  expect(navBox.y - (startBox.y + startBox.height)).toBeLessThan(12);
   await chartsToggle.click();
   await reviewToggle.click();
   await expect(reviewTabs(page)).toBeVisible();

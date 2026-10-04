@@ -59,17 +59,15 @@ const PHASE_ICONS: Record<GamePhase, ReactNode> = {
 /**
  * The review summary, the side panel's first screen after a review: each side's accuracy and
  * marks on one scoreboard (label | White | glyph | Black), then the opening with its puzzles and
- * the repertoire comparison, accuracy by phase, puzzle themes behind the reviewed side's errors,
- * and Start review (the key moments, one by one). No centipawn loss and no player names (the
- * board shows them).
+ * the repertoire comparison, accuracy by phase, and puzzle themes behind the reviewed side's
+ * errors (Start review, the key moments one by one, is in the panel's footer). No centipawn loss
+ * and no player names (the board shows them).
  */
 export const ReviewSummary = memo(function ReviewSummary({
   moves,
   mainline,
   opening,
   side,
-  hasKeyMoments,
-  onStartReview,
   onOpenRepertoire,
   onOpenPuzzles
 }: {
@@ -80,9 +78,6 @@ export const ReviewSummary = memo(function ReviewSummary({
   opening: GameOpening | null | undefined;
   /** The side reviewed: its errors make the practice chips. */
   side: Color;
-  hasKeyMoments: boolean;
-  /** Goes to the first key moment and steps through them. */
-  onStartReview: () => void;
   /** The opening comparison with the user's repertoire (the Opening tab). */
   onOpenRepertoire: () => void;
   /** Shows the Puzzles page (its filters are set first); absent: no puzzle shortcuts. */
@@ -223,15 +218,6 @@ export const ReviewSummary = memo(function ReviewSummary({
             </div>
           </SummarySection>
         ) : null}
-
-        <Button
-          type="button"
-          className="col-span-full mt-3 h-[42px] border-transparent bg-accent-strong text-sm font-semibold text-fg hover:bg-accent-strong/85"
-          disabled={!hasKeyMoments}
-          onClick={onStartReview}
-        >
-          Start review
-        </Button>
       </div>
     </div>
   );
