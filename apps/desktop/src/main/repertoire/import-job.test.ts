@@ -84,13 +84,15 @@ describe("runImport", () => {
   it("reports progress at most once per interval per phase, every phase once at least", async () => {
     let clock = 0;
     const events: ImportProgress[] = [];
-    await runImport({ kind: "text", text: MANY }, DEFAULT_IMPORT_LIMITS, {
+    // FEW in 100-character chunks gives as many chunks as MANY in 1000-character ones, without
+    // parsing 400 games (this test timed out under CI coverage with MANY).
+    await runImport({ kind: "text", text: FEW }, DEFAULT_IMPORT_LIMITS, {
       onProgress: (event) => events.push(event),
-      chunkChars: 1000,
+      chunkChars: 100,
       // Each reading of the clock advances it 30 ms: one report in four passes the 100 ms gap.
       now: () => (clock += 30)
     });
-    const chunks = Math.ceil(MANY.length / 1000);
+    const chunks = Math.ceil(FEW.length / 100);
     const phases = events.map((event) => event.phase);
     expect(phases[0]).toBe("reading");
     expect(phases.at(-1)).toBe("validating");
@@ -104,10 +106,10 @@ describe("runImport", () => {
     }
     expect(events.at(-1)).toEqual({
       phase: "validating",
-      bytesRead: Buffer.byteLength(MANY),
-      totalBytes: Buffer.byteLength(MANY),
-      gamesSeen: 400,
-      nodesSeen: 400 * 18
+      bytesRead: Buffer.byteLength(FEW),
+      totalBytes: Buffer.byteLength(FEW),
+      gamesSeen: 40,
+      nodesSeen: 40 * 18
     });
   });
 
