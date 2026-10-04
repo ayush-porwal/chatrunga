@@ -71,7 +71,7 @@ describe("puzzles:recordAttempt", () => {
   });
 
   it("rejects an invalid attempt without recording it", async () => {
-    expect(() => handlers.get("puzzles:recordAttempt")!(null, { attemptId: "x" })).toThrow();
+    expect(() => handlers.get("puzzles:recordAttempt")!(null, { attemptId: "x" })).toThrow(/Invalid puzzle outcome/);
     expect(recorded).toEqual([]);
   });
 });

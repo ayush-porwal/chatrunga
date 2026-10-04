@@ -6,16 +6,19 @@
 import type { SQLInputValue } from "node:sqlite";
 import type { Glicko2Rating } from "@chaturanga/shared/chess/glicko2";
 import { DEFAULT_PUZZLE_RATING, isProvisional, puzzlePerformance, rateAttempt, ratingAfterIdle } from "@chaturanga/shared/chess/puzzle-rating";
-import type {
-  FailedPuzzle,
-  PuzzleAttemptResult,
-  PuzzleRatingPoint,
-  PuzzleRatingSummary,
-  PuzzleThemeStat,
-  PuzzleUnratedReason,
-  RecordPuzzleAttemptInput
+import { isOneOf } from "@chaturanga/shared/types/guards";
+import {
+  PUZZLE_UNRATED_REASONS,
+  type FailedPuzzle,
+  type PuzzleAttemptResult,
+  type PuzzleRatingPoint,
+  type PuzzleRatingSummary,
+  type PuzzleThemeStat,
+  type PuzzleUnratedReason,
+  type RecordPuzzleAttemptInput
 } from "@chaturanga/shared/types/puzzle-rating";
 import { getDb } from "./index";
+import { allRows, getRow } from "./rows";
 import { transaction } from "./repositories";
 
 /** Only the Lichess puzzle database carries Glicko-2 ratings; the position set is unrated. */
@@ -43,11 +46,11 @@ type RatingRow = {
 };
 
 function all<T>(sql: string, ...params: SQLInputValue[]): T[] {
-  return getDb().prepare(sql).all(...params) as T[];
+  return allRows<T>(getDb().prepare(sql), ...params);
 }
 
 function get<T>(sql: string, ...params: SQLInputValue[]): T | null {
-  return (getDb().prepare(sql).get(...params) as T | undefined) ?? null;
+  return getRow<T>(getDb().prepare(sql), ...params) ?? null;
 }
 
 function run(sql: string, ...params: SQLInputValue[]): void {
@@ -64,7 +67,9 @@ function toResult(row: AttemptRow): PuzzleAttemptResult {
   return {
     attemptId: row.id,
     rated: row.rated === 1,
-    unratedReason: row.rated === 1 ? null : ((row.unrated_reason as PuzzleUnratedReason | null) ?? "unrated-puzzle"),
+    // A reason this build doesn't know (or none) reads as the plain one.
+    unratedReason:
+      row.rated === 1 ? null : isOneOf(PUZZLE_UNRATED_REASONS, row.unrated_reason) ? row.unrated_reason : "unrated-puzzle",
     before,
     after,
     delta: before && after ? Math.round(after.rating) - Math.round(before.rating) : null

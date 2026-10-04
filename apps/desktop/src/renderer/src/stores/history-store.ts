@@ -3,6 +3,7 @@ import type { Color, GameMode, GameSession, GameSource } from "@chaturanga/share
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import type { RepertoireColor } from "@chaturanga/shared/types/repertoire";
 import type { ReviewTab } from "../features/game-review/review-utils";
+import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import type { StudyTab } from "../features/repertoire/RepertoireStudyPage";
 import type { SettingsSectionId } from "../features/settings/SettingsPage";
 import type { PlayOpponent } from "./lichess-store";
@@ -18,7 +19,7 @@ import type { PlayOpponent } from "./lichess-store";
  * A puzzle set as a board's entry keeps it: which set (its id), its filters (the Puzzles page's
  * config) and the puzzles shown by then.
  */
-export type PuzzleSetRecord = { id: string; config: unknown; shownIds: string[] };
+export type PuzzleSetRecord = { id: string; config: PuzzleSessionConfig; shownIds: string[] };
 
 /** A board as it was: the game (saved id, or the whole session when it was never saved) and how it was shown. */
 export type BoardSnapshot = {

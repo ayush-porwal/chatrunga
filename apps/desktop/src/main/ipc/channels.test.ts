@@ -42,6 +42,8 @@ describe("IPC channels", () => {
   it("never gives the renderer a way to read a secret (API keys and tokens stay in main)", () => {
     const requested = matches(preload, /ipcRenderer\.(?:invoke|sendSync|send)\("([\w:]+)"/g);
     expect([...requested].filter((channel) => channel.startsWith("commentary:")).sort()).toEqual([
+      "commentary:cancelPuzzleExplanation",
+      "commentary:explainPuzzle",
       "commentary:generate",
       "commentary:getOpenRouterConfig",
       "commentary:setOpenRouterConfig"

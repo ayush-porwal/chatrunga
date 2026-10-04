@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
 import type { SavedGame } from "@chaturanga/shared/types/chess";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
+import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
 import { LIVE_GAME_NOTICE } from "../features/repertoire/handoffs";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { useAppNoticeStore } from "../stores/app-notice-store";
@@ -204,9 +205,16 @@ describe("Back / Forward", () => {
     expect(searchEpoch).toBeGreaterThan(0);
   });
 
+  const puzzleConfig: PuzzleSessionConfig = {
+    databaseId: "db",
+    mode: "lichess-puzzle",
+    lichess: { ratingMin: 1000, ratingMax: 2000, popularityMin: 0, lengths: [], themes: [], openings: [], side: "any" },
+    position: { difficultyMin: 0, difficultyMax: 100, tags: [] }
+  };
+
   it("starts a puzzle again rather than restoring it mid-solution", async () => {
     const sample = { id: "p1", initialFen: "8/8/8/8/8/8/8/K6k w - - 0 1" } as PuzzleSample;
-    const set = { id: "set1", config: { databaseId: "db" }, shownIds: ["p0", "p1"] };
+    const set = { id: "set1", config: puzzleConfig, shownIds: ["p0", "p1"] };
     const entry = gameEntry("g1", { puzzle: { sample }, puzzleSet: set });
     const shell = fakeShell();
     expect(await restoreEntry(entry, shell)).toBe("shown");
@@ -216,7 +224,7 @@ describe("Back / Forward", () => {
   });
 
   it("brings a game played on from a puzzle back with its set, so Next puzzle goes on", async () => {
-    const set = { id: "set1", config: { databaseId: "db" }, shownIds: ["p1"] };
+    const set = { id: "set1", config: puzzleConfig, shownIds: ["p1"] };
     const entry = gameEntry("g1", { puzzleSet: set });
     const shell = fakeShell();
     expect(await restoreEntry(entry, shell)).toBe("shown");

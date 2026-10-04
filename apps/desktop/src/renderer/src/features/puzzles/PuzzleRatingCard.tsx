@@ -79,7 +79,7 @@ const RatingSparkline = memo(function RatingSparkline({ points }: { points: Puzz
   const data = useMemo(() => points.map((point, index) => ({ index, rating: Math.round(point.rating), at: point.at })), [points]);
   const renderTooltip = useCallback(
     ({ active, payload }: { active?: boolean; payload?: ReadonlyArray<{ payload?: unknown }> }) => {
-      const point = payload?.[0]?.payload as (typeof data)[number] | undefined;
+      const point = data.find((item) => item === payload?.[0]?.payload);
       if (!active || !point) return null;
       return (
         <div className="pointer-events-none rounded-lg border border-line bg-surface-raised px-2 py-1 text-xs text-fg shadow-popover">
@@ -88,7 +88,7 @@ const RatingSparkline = memo(function RatingSparkline({ points }: { points: Puzz
         </div>
       );
     },
-    []
+    [data]
   );
   return (
     <div className="min-w-0" style={{ height: SPARK_HEIGHT }} role="img" aria-label={`Rating over the last ${points.length} rated puzzles`}>

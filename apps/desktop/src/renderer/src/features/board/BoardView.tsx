@@ -34,7 +34,7 @@ import {
   usePrefersReducedMotion
 } from "./board-motion";
 import "./board.css";
-import { isSquare, uciSquares } from "@chaturanga/shared/chess/square";
+import { uciSquares } from "@chaturanga/shared/chess/square";
 
 const LOSING_CLASSIFICATIONS = new Set(["blunder", "mistake", "missed_tactic", "human_error"]);
 /** How long a puzzle right/wrong flash stays on its squares (matches the CSS keyframes). */

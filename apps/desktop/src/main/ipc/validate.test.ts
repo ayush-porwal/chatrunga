@@ -252,16 +252,16 @@ describe("library inputs", () => {
     ).toMatchObject({ puzzleRating: null, puzzleRatingDeviation: null, themes: [] });
     expect(() => parseRecordPuzzleAttemptInput({ ...attempt, outcome: "pending" })).toThrow(/outcome/);
     expect(() => parseRecordPuzzleAttemptInput({ ...attempt, puzzleRating: -5 })).toThrow(/rating/);
-    expect(() => parseRecordPuzzleAttemptInput({ ...attempt, wrongMoveCount: 1.5 })).toThrow();
-    expect(() => parseRecordPuzzleAttemptInput({ ...attempt, solutionViewed: "no" })).toThrow();
+    expect(() => parseRecordPuzzleAttemptInput({ ...attempt, wrongMoveCount: 1.5 })).toThrow(/Invalid wrong move count/);
+    expect(() => parseRecordPuzzleAttemptInput({ ...attempt, solutionViewed: "no" })).toThrow(/Invalid solution viewed/);
     expect(() => parseRecordPuzzleAttemptInput({ ...attempt, attemptId: "" })).toThrow(/attempt id/);
   });
 
   it("bounds list limits", () => {
     expect(parseListLimit(undefined, 50, 100)).toBe(50);
     expect(parseListLimit(20, 50, 100)).toBe(20);
-    expect(() => parseListLimit(0, 50, 100)).toThrow();
-    expect(() => parseListLimit(101, 50, 100)).toThrow();
+    expect(() => parseListLimit(0, 50, 100)).toThrow(/Invalid limit/);
+    expect(() => parseListLimit(101, 50, 100)).toThrow(/Invalid limit/);
   });
 });
 

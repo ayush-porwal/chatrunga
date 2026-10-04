@@ -138,7 +138,7 @@ describe("puzzleAttemptRepository (SQLite)", () => {
   it("rolls the rating back with the attempt when storing it fails", () => {
     const input = attempt();
     // A CHECK violation on the attempt row, after the rating row was written in the transaction.
-    expect(() => repository.record({ ...input, outcome: "abandoned" as "solved" })).toThrow();
+    expect(() => repository.record({ ...input, outcome: "abandoned" as "solved" })).toThrow(/CHECK constraint failed: outcome/);
     expect(repository.summary()).toMatchObject({ ...DEFAULT_PUZZLE_RATING, ratedCount: 0, attemptCount: 0 });
   });
 

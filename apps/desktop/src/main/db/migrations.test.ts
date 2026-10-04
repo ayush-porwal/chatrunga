@@ -148,7 +148,7 @@ describe("runMigrations", () => {
         VALUES ('${id}', 'p', 'd', 'lichess-puzzles', '${outcome}', 1, 2)`);
     insertAttempt("a1", "solved");
     insertAttempt("a2", "failed");
-    expect(() => insertAttempt("a3", "abandoned")).toThrow();
+    expect(() => insertAttempt("a3", "abandoned")).toThrow(/CHECK constraint failed: outcome/);
     expect(db.prepare("SELECT rated, wrong_move_count, solution_viewed, themes_json, completed_at FROM puzzle_attempts WHERE id = 'a1'").get()).toEqual({
       rated: 0,
       wrong_move_count: 0,
@@ -158,6 +158,6 @@ describe("runMigrations", () => {
     });
 
     db.exec("INSERT INTO puzzle_rating (id, rating, rd, volatility, updated_at) VALUES (1, 1500, 500, 0.09, 1)");
-    expect(() => db.exec("INSERT INTO puzzle_rating (id, rating, rd, volatility, updated_at) VALUES (2, 1500, 500, 0.09, 1)")).toThrow();
+    expect(() => db.exec("INSERT INTO puzzle_rating (id, rating, rd, volatility, updated_at) VALUES (2, 1500, 500, 0.09, 1)")).toThrow(/CHECK constraint failed: id = 1/);
   });
 });

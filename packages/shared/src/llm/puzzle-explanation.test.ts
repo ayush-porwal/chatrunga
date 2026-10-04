@@ -110,8 +110,8 @@ describe("puzzle explanation contract", () => {
   });
 
   it("needs the mistake exactly when a wrong move failed the puzzle", () => {
-    expect(() => payload({ outcome: "solved" })).toThrow();
-    expect(() => payload({ mistake: undefined })).toThrow();
+    expect(() => payload({ outcome: "solved" })).toThrow(/mistake is required for failed_wrong_move/);
+    expect(() => payload({ mistake: undefined })).toThrow(/mistake is required for failed_wrong_move/);
     expect(() => payload({ outcome: "failed_solution_viewed", mistake: undefined })).not.toThrow();
   });
 

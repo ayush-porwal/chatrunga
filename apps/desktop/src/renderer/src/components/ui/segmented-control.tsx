@@ -112,7 +112,7 @@ function SegmentedControl<T extends string>({
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const focusable = options.filter((option) => !option.disabled || option.disabledReason);
     const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
-    const focused = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    const focused = buttons.findIndex((button) => button === document.activeElement);
     const current = focused !== -1 ? focused : focusable.findIndex((option) => option.value === value);
     let next: number | null = null;
     if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (current + 1) % focusable.length;

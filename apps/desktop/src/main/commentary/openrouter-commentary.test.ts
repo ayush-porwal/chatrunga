@@ -200,7 +200,7 @@ const PUZZLE_ANSWER = JSON.stringify({
 
 describe("explainPuzzleWithOpenRouter", () => {
   it("sends the puzzle prompt and returns the validated explanation", async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(completion(PUZZLE_ANSWER));
+    const fetchImpl = vi.fn<FetchLike>().mockResolvedValue(completion(PUZZLE_ANSWER));
     const result = await explainPuzzleWithOpenRouter(puzzlePayload(), {
       apiKey: "unit-test-key",
       model: "openai/test-model",
@@ -209,7 +209,8 @@ describe("explainPuzzleWithOpenRouter", () => {
     });
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const body = JSON.parse(String(fetchImpl.mock.calls[0]![1].body)) as { messages: { content: string }[]; max_tokens: number };
+    const init = fetchImpl.mock.calls[0]![1];
+    const body = JSON.parse(typeof init?.body === "string" ? init.body : "") as { messages: { content: string }[]; max_tokens: number };
     expect(body.messages[0]!.content).toContain("tactics puzzle");
     expect(body.messages[1]!.content).toContain('"solutionSan"');
     expect(body.max_tokens).toBe(350);
@@ -226,10 +227,10 @@ describe("explainPuzzleWithOpenRouter", () => {
 
   it("retries once with the correction, then reports an ungrounded answer", async () => {
     const bad = JSON.stringify({ headline: "Mate", body: "Bxf7+ first, then Qxf7# mates." });
-    const fetchImpl = vi.fn().mockResolvedValueOnce(completion(bad)).mockResolvedValueOnce(completion(PUZZLE_ANSWER));
+    const fetchImpl = vi.fn<FetchLike>().mockResolvedValueOnce(completion(bad)).mockResolvedValueOnce(completion(PUZZLE_ANSWER));
     const retried = await explainPuzzleWithOpenRouter(puzzlePayload(), { apiKey: "unit-test-key", fetchImpl });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(String(fetchImpl.mock.calls[1]![1].body)).toContain("You wrote the move Bxf7+");
+    expect(fetchImpl.mock.calls[1]![1]?.body).toContain("You wrote the move Bxf7+");
     expect(retried.explanation?.headline).toBe("The f7 pawn had one defender");
 
     const always = vi.fn().mockImplementation(async () => completion(bad));
@@ -254,6 +255,6 @@ describe("explainPuzzleWithOpenRouter", () => {
     const fetchImpl = vi.fn();
     expect(await explainPuzzleWithOpenRouter(puzzlePayload(), { apiKey: " ", fetchImpl })).toEqual({ explanation: null, error: NO_API_KEY_ERROR });
     expect(fetchImpl).not.toHaveBeenCalled();
-    expect(() => parsePuzzleExplanationPayload({ ...puzzlePayload(), outcome: "failed_wrong_move" })).toThrow();
+    expect(() => parsePuzzleExplanationPayload({ ...puzzlePayload(), outcome: "failed_wrong_move" })).toThrow(/mistake is required for failed_wrong_move/);
   });
 });

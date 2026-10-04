@@ -41,7 +41,7 @@ export function PuzzleExplanation({
   linkMoves: boolean;
 }) {
   const settingsQuery = useSettingsQuery();
-  const settings: AppSettings = { ...defaultSettings, ...(settingsQuery.data ?? {}) };
+  const settings: AppSettings = { ...defaultSettings, ...settingsQuery.data };
   const engines = useEnginesQuery();
   const openRouter = useOpenRouterConfigQuery();
   const update = useUpdateSettingMutation();
