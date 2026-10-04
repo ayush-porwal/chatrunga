@@ -76,6 +76,11 @@
   --color-piece-white: #efe7d2;
   --color-piece-black: #2b3036;
 
+  /* The eval bar's fills, as chess.com draws them: White's share in white over Black's warm dark
+     grey. The review charts use the same two. */
+  --color-eval-white: #fff;
+  --color-eval-black: #403d39;
+
   /* 11px caption size — the only addition to Tailwind's type scale. */
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1rem;
