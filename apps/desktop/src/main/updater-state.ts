@@ -2,6 +2,7 @@
  * Pure decisions for in-app updates (no Electron imports, so they are unit-testable). The Electron
  * glue that feeds electron-updater events through these lives in `updater.ts`.
  */
+import { isRecord } from "@chaturanga/shared/types/guards";
 import type { UpdateMode, UpdateStatus } from "@chaturanga/shared/types/updates";
 
 /* ------------------------------------------------------------------ platform */
@@ -327,6 +328,15 @@ export function releaseNotesToText(notes: ReleaseNotesInput): string {
 
 export const CHECK_FAILED_MESSAGE = "Couldn’t check for updates";
 
+/** The text of an updater rejection: an Error's or error-like object's message, a string or number as written. */
+function updateErrorText(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (typeof error === "number" || typeof error === "bigint" || typeof error === "boolean")
+    return String(error);
+  return isRecord(error) && typeof error.message === "string" ? error.message : "";
+}
+
 /**
  * One readable sentence for an updater failure. Offline, DNS, timeouts and a missing/private
  * release feed (404/403) all read as "Couldn't check for updates" with a short reason; raw
@@ -336,7 +346,7 @@ export function readableUpdateError(
   error: unknown,
   phase: "check" | "download" | "install"
 ): string {
-  const raw = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  const raw = updateErrorText(error);
   const text = raw.toLowerCase();
   const prefix =
     phase === "check"

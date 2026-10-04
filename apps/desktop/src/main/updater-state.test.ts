@@ -284,6 +284,15 @@ describe("releaseNotesToText", () => {
 });
 
 describe("readableUpdateError", () => {
+  it("reads the reason from a rejection that isn't an Error", () => {
+    expect(readableUpdateError({ message: "net::ERR_INTERNET_DISCONNECTED" }, "check")).toBe(
+      `${CHECK_FAILED_MESSAGE}: you appear to be offline.`
+    );
+    expect(readableUpdateError("getaddrinfo ENOTFOUND github.com", "check")).toMatch(/offline/);
+    expect(readableUpdateError(404, "check")).toMatch(/no published release was found/);
+    expect(readableUpdateError(null, "download")).toBe("Couldn’t download the update.");
+  });
+
   it("reads offline failures as a quiet check failure", () => {
     expect(readableUpdateError(new Error("net::ERR_INTERNET_DISCONNECTED"), "check")).toBe(
       `${CHECK_FAILED_MESSAGE}: you appear to be offline.`
