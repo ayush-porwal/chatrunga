@@ -11,6 +11,7 @@
 // lines of those moves. "review-unstable": the same with two changes for the verification tests
 // (REVIEW_UNSTABLE): 4. Nxe5's loss lands near a severity boundary unless the played move is
 // searched alone, and a deeper search of 4... Qg5 (a larger budget than the first `go`) disagrees.
+// "review-stuck-check": REVIEW, but a deeper search never answers until `stop` (a check that hangs).
 import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -86,11 +87,13 @@ const REVIEW_UNSTABLE = {
 };
 const mode = process.argv[3];
 const review =
-  mode === "review"
+  mode === "review" || mode === "review-stuck-check"
     ? REVIEW
     : mode === "review-unstable"
       ? { ...REVIEW, ...REVIEW_UNSTABLE }
       : null;
+/** "review-stuck-check": a deeper search is hanging (it answers `stop` with a bestmove). */
+let stuck = false;
 /** The FEN of the last `position fen` command. */
 let positionFen = "";
 /** The first bounded search's budget (`movetime` / `depth` / `nodes`): a larger one is "deeper". */
@@ -101,6 +104,10 @@ function answerReview(go) {
   const entry = review[positionFen.split(" ").slice(0, 4).join(" ")];
   const budget = Number(go.match(/\b(?:movetime|depth|nodes) (\d+)/)?.[1] ?? 0);
   baseBudget ??= budget;
+  if (mode === "review-stuck-check" && budget > baseBudget) {
+    stuck = true;
+    return;
+  }
   const only = go.match(/ searchmoves (.+)$/)?.[1].split(" ") ?? null;
   let lines = (budget > baseBudget && entry?.deeper) || entry?.lines || [];
   if (only) {
@@ -159,6 +166,9 @@ createInterface({ input: process.stdin }).on("line", (raw) => {
       out("info depth 5 multipv 1 score cp 30 pv g1f3");
       out("bestmove g1f3");
     }, 30);
+  } else if (line === "stop" && stuck) {
+    stuck = false;
+    out("bestmove 0000");
   } else if (line === "stop") {
     if (timer) {
       clearInterval(timer);

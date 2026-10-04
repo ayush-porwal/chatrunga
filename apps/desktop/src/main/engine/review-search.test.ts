@@ -44,18 +44,17 @@ describe("reviewAnalysisTimeoutMs", () => {
 });
 
 describe("deeperReviewSearch", () => {
-  it("doubles the nodes or time, or searches four plies deeper, and records the review's own budget", () => {
-    expect(deeperReviewSearch(resolveReviewSearchParams({ nodes: 800 }))).toMatchObject({
-      nodes: 1600,
-      moveTimeMs: null
+  it("searches longer than the review itself, whatever bounds it, and records the review's own budget", () => {
+    const nodes = resolveReviewSearchParams({ nodes: 800 });
+    expect(deeperReviewSearch(nodes).nodes).toBeGreaterThan(nodes.nodes ?? 0);
+    const time = resolveReviewSearchParams({ moveTimeMs: 250 });
+    expect(deeperReviewSearch(time).moveTimeMs).toBeGreaterThan(time.moveTimeMs ?? 0);
+    expect(deeperReviewSearch(time)).toMatchObject({
+      recordMoveTimeMs: time.recordMoveTimeMs,
+      recordDepth: time.recordDepth
     });
-    expect(deeperReviewSearch(resolveReviewSearchParams({ moveTimeMs: 250 }))).toMatchObject({
-      moveTimeMs: 500,
-      recordMoveTimeMs: 250
-    });
-    expect(deeperReviewSearch(resolveReviewSearchParams({ depth: 14 }))).toMatchObject({
-      depth: 18,
-      recordDepth: 14
-    });
+    const depth = resolveReviewSearchParams({ depth: 14 });
+    expect(deeperReviewSearch(depth).depth).toBeGreaterThan(depth.depth);
+    expect(deeperReviewSearch(depth).recordDepth).toBe(depth.recordDepth);
   });
 });

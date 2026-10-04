@@ -102,6 +102,11 @@ export type ReviewEngineOptions = {
   hashMb?: number;
   /** Player rating; picks the Maia level whose difficulty the move assessment reads. */
   playerRating?: number | null;
+  /**
+   * How long an optional check search (see verifyMove) may take before the move is left unverified
+   * and the review goes on. Defaults to the search's own timeout.
+   */
+  checkTimeoutMs?: number;
 };
 
 /** Finished moves of earlier reviews (see ReviewCache). */
@@ -358,19 +363,37 @@ export async function reviewGameWithEngine(
       if (spent !== undefined) moveReview.timeSpentMs = spent;
       // A Great / Brilliant candidate gets a deeper search before it can be marked; an error near
       // a severity boundary, judged from a separate search, is searched again on the same budget.
-      const need = verificationNeed(moveReview);
+      // The check is optional: when it fails (a timeout, an engine error) the move is assessed
+      // without it, so it stays unverified, and the review goes on. Cancelling still stops it.
+      const need = verificationNeed(moveReview, {
+        previous: previousAssessed,
+        playerRating: options.playerRating ?? null
+      });
+      let checkFailed = false;
       if (need) {
-        moveReview.verification = await verifyMove(session, moveReview, need, {
-          multipv,
-          search,
-          shouldCancel: sink.shouldCancel
-        });
+        try {
+          moveReview.verification = await verifyMove(session, moveReview, need, {
+            multipv,
+            search,
+            shouldCancel: sink.shouldCancel,
+            timeoutMs: options.checkTimeoutMs
+          });
+        } catch (error) {
+          if (sink.shouldCancel?.()) throw new Error("Review cancelled", { cause: error });
+          checkFailed = true;
+          logger.warn(
+            "review",
+            `Checking ${move.san} failed; it is assessed without the check:`,
+            error
+          );
+        }
         if (sink.shouldCancel?.()) throw new Error("Review cancelled");
       }
       // Only complete results are kept: after a Maia level failed, this review's moves lack its
-      // prediction, and a later review (with Maia working again) must search them afresh. Kept
-      // unassessed: the assessment depends on the move before, which another game may differ in.
-      if (maiaSlots.every((slot) => slot.alive)) {
+      // prediction, and a later review (with Maia working again) must search them afresh; a move
+      // whose check failed is checked again next time. Kept unassessed: the assessment depends on
+      // the move before, which another game may differ in.
+      if (!checkFailed && maiaSlots.every((slot) => slot.alive)) {
         ReviewCache.put(cached, cacheKey, { review: moveReview, replyLines }, reviewCache.maxMoves);
       }
       const assessed = assess(moveReview);
@@ -514,7 +537,12 @@ async function verifyMove(
   session: UciReviewSession,
   move: MoveReview,
   need: VerificationNeed,
-  input: { multipv: number; search: ResolvedReviewSearch; shouldCancel?: () => boolean }
+  input: {
+    multipv: number;
+    search: ResolvedReviewSearch;
+    shouldCancel?: () => boolean;
+    timeoutMs?: number;
+  }
 ): Promise<MoveVerification> {
   switch (need) {
     case "candidate":
@@ -523,7 +551,8 @@ async function verifyMove(
           fen: move.fenBefore,
           multipv: Math.max(2, input.multipv),
           search: deeperReviewSearch(input.search),
-          shouldCancel: input.shouldCancel
+          shouldCancel: input.shouldCancel,
+          timeoutMs: input.timeoutMs
         })
       };
     case "recheck": {
@@ -532,7 +561,8 @@ async function verifyMove(
         multipv: 1,
         search: input.search,
         searchMoves: [move.playedMove],
-        shouldCancel: input.shouldCancel
+        shouldCancel: input.shouldCancel,
+        timeoutMs: input.timeoutMs
       });
       return { playedLine: lines.find((line) => line.pv[0] === move.playedMove) ?? null };
     }
@@ -632,6 +662,8 @@ class UciReviewSession {
     /** Restricts the search to these moves (UCI `searchmoves`, sent last). */
     searchMoves?: readonly string[];
     shouldCancel?: () => boolean;
+    /** Overrides the budget's own timeout. */
+    timeoutMs?: number;
   }): Promise<AnalysisLine[]> {
     if (input.multipv !== this.currentMultipv) {
       this.currentMultipv = input.multipv;
@@ -650,12 +682,14 @@ class UciReviewSession {
     await this.search({
       fen: input.fen,
       go,
-      timeoutMs: reviewAnalysisTimeoutMs({
-        moveTimeMs: input.search.moveTimeMs,
-        depth: input.search.depth,
-        multipv: input.multipv,
-        nodes: input.search.nodes
-      }),
+      timeoutMs:
+        input.timeoutMs ??
+        reviewAnalysisTimeoutMs({
+          moveTimeMs: input.search.moveTimeMs,
+          depth: input.search.depth,
+          multipv: input.multipv,
+          nodes: input.search.nodes
+        }),
       shouldCancel: input.shouldCancel,
       onLine: (line) => {
         const info = parseInfoLine(this.config.id, line);
@@ -771,8 +805,22 @@ class UciReviewSession {
           `╚════════════════════════════════════════════════════════════════════════`
         ].join("\n");
         logger.error("review", `engine timeout${diagnostics}`);
-        reject(
-          new Error(`${this.config.name} did not answer "${input.go}" within ${elapsedSeconds}s.`)
+        const error = new Error(
+          `${this.config.name} did not answer "${input.go}" within ${elapsedSeconds}s.`
+        );
+        // Stop the search and take its bestmove, so the next search doesn't read it as its own. An
+        // engine that won't stop is broken: every later wait fails at once.
+        this.write("stop");
+        this.waitFor(
+          (line) => line.startsWith("bestmove"),
+          STOP_DRAIN_MS,
+          "No bestmove after stop"
+        ).then(
+          () => reject(error),
+          () => {
+            this.fail(error);
+            reject(error);
+          }
         );
       }, input.timeoutMs);
       let stopSent = false;
@@ -849,6 +897,9 @@ class UciReviewSession {
     this.events.emit("line", line);
   }
 }
+
+/** How long a timed-out search may take to stop before the engine counts as broken. */
+const STOP_DRAIN_MS = 5_000;
 
 /** How often a wait for the engine checks whether the review was cancelled. */
 const CANCEL_POLL_MS = 100;

@@ -92,7 +92,11 @@ function trapGame(plies = 14): ReviewMoveInputItem[] {
   });
 }
 
-function scriptedEngine(id: string, log: string, mode: "review" | "review-unstable"): EngineConfig {
+function scriptedEngine(
+  id: string,
+  log: string,
+  mode: "review" | "review-unstable" | "review-stuck-check"
+): EngineConfig {
   return fakeEngine(id, "sf", { args: [SCRIPTED, log, mode] });
 }
 
@@ -208,10 +212,10 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
       expect.arrayContaining(["engine_top", "punishes_error", "only_move"])
     );
     expect(review.moves[12].assessment?.tags).toContain("mate_created");
-    // Only the candidate got an extra search: twice the budget, with at least two lines.
-    const commands = readFileSync(log, "utf8").split("\n");
-    expect(commands.filter((line) => line === "go movetime 80")).toHaveLength(1);
-    expect(commands.some((line) => line.includes("searchmoves"))).toBe(false);
+    // Only the critical find needed a check; the routine moves and the clear errors didn't.
+    expect(review.moves.filter((move) => move.verification).map((move) => move.san)).toEqual([
+      "Qg5"
+    ]);
     expect(review.summary).toMatchObject({
       inaccuracies: 1,
       mistakes: 1,
@@ -236,17 +240,83 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
       }
     );
     const [nxe5, qg5] = review.moves.slice(6);
-    // From the reply search Nxe5 lost 15.4 points (a blunder by a hair); searched alone, 13.6.
-    expect(nxe5.verification?.playedLine?.score).toEqual({ type: "cp", value: -30 });
+    // From the reply search Nxe5 lost 15.4 points (a blunder by a hair); the played move searched
+    // on its own, from the same position, shows it lost 13.6.
+    expect(nxe5.verification?.playedLine).toMatchObject({
+      pv: ["f3e5", "d8g5"],
+      score: { type: "cp", value: -30 }
+    });
     expect(nxe5.assessment).toMatchObject({
       severity: "mistake",
       annotation: "mistake",
       winLoss: 13.6
     });
-    expect(readFileSync(log, "utf8")).toContain("go movetime 40 searchmoves f3e5");
     // Qg5 looked like the only move; the deeper search preferred Qe7, so it is not marked Great.
     expect(qg5.assessment?.annotation).toBe("good");
     expect(qg5.assessment?.tags).toContain("unstable");
+  }, 30_000);
+});
+
+describe("review checks", () => {
+  it("a check search that hangs leaves the move unverified and the review goes on", async () => {
+    const log = join(mkdtempSync(join(tmpdir(), "review-stuck-")), "uci.log");
+    const review = await reviewGameWithEngine(
+      scriptedEngine("scripted-stuck", log, "review-stuck-check"),
+      {
+        reviewId: "s",
+        engineId: "scripted-stuck",
+        rootFen: START,
+        moves: trapGame(),
+        multipv: 3,
+        moveTimeMs: 40
+      },
+      {},
+      [],
+      { checkTimeoutMs: 300 }
+    );
+    const qg5 = review.moves[7];
+    expect(qg5.verification).toBeUndefined();
+    // Not Great without the check; it still punished Nxe5.
+    expect(qg5.assessment?.annotation).toBe("good");
+    expect(qg5.assessment?.tags).toContain("unverified");
+    // The searches after it read their own answers.
+    expect(review.moves.slice(8).map((move) => move.assessment?.annotation ?? null)).toEqual([
+      "blunder",
+      "good",
+      null,
+      null,
+      "mistake",
+      null
+    ]);
+  }, 30_000);
+
+  it("cancelling during a check still cancels the review", async () => {
+    const log = join(mkdtempSync(join(tmpdir(), "review-stuck-cancel-")), "uci.log");
+    let cancelled = false;
+    const started = Date.now();
+    await expect(
+      reviewGameWithEngine(
+        scriptedEngine("scripted-stuck-cancel", log, "review-stuck-check"),
+        {
+          reviewId: "sc",
+          engineId: "scripted-stuck-cancel",
+          rootFen: START,
+          moves: trapGame(),
+          multipv: 3,
+          moveTimeMs: 40
+        },
+        {
+          onMoveCompleted: ({ moveIndex }) => {
+            // Qg5 (move 8) is checked right after Nxe5 completes: cancel while it hangs.
+            if (moveIndex === 6) setTimeout(() => (cancelled = true), 200);
+          },
+          shouldCancel: () => cancelled
+        },
+        [],
+        { checkTimeoutMs: 20_000 }
+      )
+    ).rejects.toThrow("Review cancelled");
+    expect(Date.now() - started).toBeLessThan(10_000);
   }, 30_000);
 });
 
