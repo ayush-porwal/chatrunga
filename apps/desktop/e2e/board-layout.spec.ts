@@ -67,7 +67,10 @@ const SQUARE_ROUNDING = 8;
 
 /** Steps the move navigation to the `ply`-th move of the main line (0: the starting position). */
 async function goToPly(page: Page, ply: number, total: number) {
-  await navigation(page).getByRole("button", { name: "First move", exact: true }).click();
+  // At the starting position already, First move is disabled.
+  const first = navigation(page).getByRole("button", { name: "First move", exact: true });
+  if (await first.isEnabled()) await first.click();
+  await expect(counter(page)).toHaveText(`0 / ${total}`);
   for (let step = 0; step < ply; step += 1)
     await navigation(page).getByRole("button", { name: "Next move", exact: true }).click();
   await expect(counter(page)).toHaveText(`${ply} / ${total}`);
