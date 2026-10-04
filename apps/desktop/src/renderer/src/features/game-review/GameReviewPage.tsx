@@ -251,7 +251,7 @@ function GameReviewPageInner({
     move: panelMove,
     visible: activeTab === "commentary"
   });
-  // Key-moment and mark cards expand to the same commentary while AI commentary is on (and keyed).
+  // Key-insight cards expand to the same commentary while AI commentary is on (and keyed).
   const openRouter = useOpenRouterConfigQuery();
   const aiOn = settings.reviewCommentaryEnabled && Boolean(openRouter.data?.hasApiKey);
   const cardCommentary = useMemo<CardCommentaryOptions | null>(
