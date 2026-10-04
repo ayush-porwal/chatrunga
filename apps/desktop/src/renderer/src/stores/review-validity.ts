@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { standardCastlingUci } from "@chaturanga/shared/chess/review";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
 import { useGameStore } from "./game-store";
@@ -32,7 +33,12 @@ export function compatibleReviewMoves(
   const line = mainlineById(moveTree);
   const kept = moves.filter((move) => {
     const node = line.get(move.nodeId);
-    return node !== undefined && node.uci === move.playedMove && node.fenBefore === move.fenBefore;
+    // The tree keeps a castle as imported (king takes rook, `e1h1`); a review stores it standard.
+    return (
+      node !== undefined &&
+      node.fenBefore === move.fenBefore &&
+      standardCastlingUci(node.fenBefore, node.uci) === move.playedMove
+    );
   });
   return kept.length === moves.length ? moves : kept;
 }
