@@ -209,7 +209,7 @@ export function BoardWorkspace({
             {/* The tabs and the summary strip span the panel at any width (as its controls do);
                 only reading text keeps `--workspace-panel-measure` (the notices, by
                 `.workspace-panel-body` in app.css). */}
-            {header ? <div className="shrink-0 px-3 pt-2">{header}</div> : null}
+            {header ? <div className="shrink-0 px-3">{header}</div> : null}
             <div
               id={bodyId}
               hidden={bodyCollapsed}

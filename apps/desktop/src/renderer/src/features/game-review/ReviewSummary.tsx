@@ -257,6 +257,7 @@ function SummarySection({
         open={section.open}
         onToggle={section.toggle}
         controls={section.contentId}
+        size="sub"
         className="col-span-full mt-2"
       >
         {title}

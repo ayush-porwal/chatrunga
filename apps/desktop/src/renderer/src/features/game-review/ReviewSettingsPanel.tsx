@@ -134,6 +134,7 @@ export function ReviewSettingsPanel({
       )}
 
       <CollapsibleSection
+        size="sub"
         storageKey="review-settings:engine"
         title="Engine"
         bodyClassName="grid gap-3 pt-2"
@@ -256,6 +257,7 @@ export function ReviewSettingsPanel({
       <div className={divider} />
 
       <CollapsibleSection
+        size="sub"
         storageKey="review-settings:commentary"
         title="Commentary"
         bodyClassName="grid gap-3 pt-2"

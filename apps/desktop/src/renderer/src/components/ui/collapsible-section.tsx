@@ -1,6 +1,5 @@
 import * as React from "react";
 import { ChevronDown } from "lucide-react";
-import { sectionTitle } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 
 /**
@@ -68,14 +67,36 @@ export function useCollapsible(storageKey: string, defaultOpen = true): Collapsi
 }
 
 /**
- * The section's toggle: a small heading whose button is a chevron at its LEFT and the title
- * (⌄ Opening while open, › Opening folded), as the review charts' "Winning chances" header. Use it
- * alone where the row holds more (the summary's Accuracy row keeps its boxes beside it).
+ * The two header sizes. `section`: a panel's own sections (Game Review, the charts): a roomy 48px
+ * row, the title at 15px medium, a 15px muted chevron, controls 10px apart. `sub`: sections inside
+ * one (the summary's Accuracy / Opening / …, a dialog's groups): the same chevron and weight,
+ * scaled down.
+ */
+export type CollapsibleSize = "section" | "sub";
+
+const TOGGLE_TITLE: Record<CollapsibleSize, string> = {
+  section: "text-[15px] leading-6 font-medium text-fg",
+  sub: "text-sm leading-5 font-medium text-fg"
+};
+const TOGGLE_CHEVRON: Record<CollapsibleSize, string> = {
+  section: "size-[15px]",
+  sub: "size-3.5"
+};
+const HEADER_ROW: Record<CollapsibleSize, string> = {
+  section: "min-h-12 gap-2.5 pl-1",
+  sub: "min-h-7 gap-2"
+};
+const ACTIONS_GAP: Record<CollapsibleSize, string> = { section: "gap-2.5", sub: "gap-2" };
+
+/**
+ * The section's toggle: a heading whose button is a muted chevron at its LEFT and the title
+ * (⌄ Opening while open, › Opening folded). Use it alone where the row holds more.
  */
 export function CollapsibleToggle({
   open,
   onToggle,
   controls,
+  size = "sub",
   className,
   children
 }: {
@@ -83,22 +104,24 @@ export function CollapsibleToggle({
   onToggle: () => void;
   /** The body's id (aria-controls). */
   controls: string;
+  size?: CollapsibleSize;
   className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <h3 className={cn(sectionTitle, "min-w-0", className)}>
+    <h3 className={cn(TOGGLE_TITLE[size], "min-w-0", className)}>
       <button
         type="button"
         aria-expanded={open}
         aria-controls={controls}
         onClick={onToggle}
-        className="flex min-w-0 items-center gap-1 rounded-sm outline-none transition-colors duration-micro ease-standard hover:text-fg-secondary focus-visible:ring-2 focus-visible:ring-accent/50"
+        className="flex min-w-0 items-center gap-1.5 rounded-sm outline-none transition-colors duration-micro ease-standard hover:text-fg-secondary focus-visible:ring-2 focus-visible:ring-accent/50"
       >
         <ChevronDown
           aria-hidden
           className={cn(
-            "size-3.5 shrink-0 text-fg-subtle transition-transform duration-micro ease-standard",
+            TOGGLE_CHEVRON[size],
+            "shrink-0 text-fg-subtle transition-transform duration-micro ease-standard",
             !open && "-rotate-90"
           )}
         />
@@ -109,13 +132,15 @@ export function CollapsibleToggle({
 }
 
 /**
- * A section's header row: the toggle at the left, `actions` (outside the button) at the right.
- * Every folding section of the review panel uses this one row, so they share height and spacing.
+ * A section's header row: the toggle at the left, `actions` (outside the button) at the right,
+ * vertically centred and 10px apart (a settings gear, when there is one, last). Every folding
+ * section uses this one row, so they share height and spacing.
  */
 export function CollapsibleHeader({
   open,
   onToggle,
   controls,
+  size = "section",
   actions,
   className,
   children
@@ -123,22 +148,25 @@ export function CollapsibleHeader({
   open: boolean;
   onToggle: () => void;
   controls: string;
+  size?: CollapsibleSize;
   actions?: React.ReactNode;
   className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className={cn(collapsibleHeaderRow, className)}>
-      <CollapsibleToggle open={open} onToggle={onToggle} controls={controls}>
+    <div className={cn(collapsibleHeaderRow, HEADER_ROW[size], className)}>
+      <CollapsibleToggle open={open} onToggle={onToggle} controls={controls} size={size}>
         {children}
       </CollapsibleToggle>
-      {actions ? <div className="flex min-w-0 items-center gap-1.5">{actions}</div> : null}
+      {actions ? (
+        <div className={cn("flex min-w-0 items-center", ACTIONS_GAP[size])}>{actions}</div>
+      ) : null}
     </div>
   );
 }
 
-/** The header row's box (height and spacing), for a row laid out by its owner. */
-export const collapsibleHeaderRow = "flex min-h-6 shrink-0 items-center justify-between gap-3";
+/** The header row's box (its height and spacing come with its size), for a row laid out by its owner. */
+export const collapsibleHeaderRow = "flex shrink-0 items-center justify-between";
 
 /** The section's body: rendered only while open. */
 export function CollapsibleBody({
@@ -162,6 +190,7 @@ export function CollapsibleBody({
 export function CollapsibleSection({
   storageKey,
   title,
+  size = "section",
   defaultOpen = true,
   actions,
   className,
@@ -171,6 +200,7 @@ export function CollapsibleSection({
 }: {
   storageKey: string;
   title: React.ReactNode;
+  size?: CollapsibleSize;
   defaultOpen?: boolean;
   actions?: React.ReactNode;
   className?: string;
@@ -185,6 +215,7 @@ export function CollapsibleSection({
         open={section.open}
         onToggle={section.toggle}
         controls={section.contentId}
+        size={size}
         actions={actions}
         className={headerClassName}
       >
