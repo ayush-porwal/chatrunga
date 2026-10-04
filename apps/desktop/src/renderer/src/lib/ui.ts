@@ -164,63 +164,53 @@ export const listRowSelected = "border-accent/50 bg-accent-soft text-fg";
 /* ------------------------------------------------------------------ review marks */
 
 /**
- * One colour language for move marks, shared by the move tree, review graph, headers and summary
- * counts. Colour is never the only signal: every mark also has its glyph and label.
- * - `badge`: tinted pill (bg + text) — use for "?!", "Blunder", etc.
+ * One colour language for move marks, shared by the board badge, move tree, review graph, headers
+ * and summary counts (the `mark-*` tokens in app.css). Colour is never the only signal: every mark
+ * also has its glyph and label.
+ * - `badge`: solid chip (the mark's fill, white text) — use for "?!", "Blunder", etc.
  * - `text`: foreground colour only — use for counts and inline labels.
- * - `dot`: solid background — use for small markers.
- * - `fill`: CSS colour for SVG marks (the graph's dots).
+ * - `fill`: CSS colour for SVG marks (the board badge, the graph's dots).
  */
-export const annotationTone: Record<
-  MoveAnnotation,
-  { badge: string; text: string; dot: string; fill: string }
-> = {
-  brilliant: {
-    badge: "bg-brilliant/15 text-brilliant",
-    text: "text-brilliant",
-    dot: "bg-brilliant",
-    fill: "var(--color-brilliant)"
-  },
-  great: {
-    badge: "bg-info/15 text-info",
-    text: "text-info",
-    dot: "bg-info",
-    fill: "var(--color-info)"
-  },
-  excellent: {
-    badge: "bg-accent/15 text-accent-fg",
-    text: "text-accent",
-    dot: "bg-accent",
-    fill: "var(--color-accent)"
-  },
-  good: {
-    badge: "bg-accent/10 text-accent-fg",
-    text: "text-accent",
-    dot: "bg-accent",
-    fill: "var(--color-accent)"
-  },
-  miss: {
-    badge: "bg-miss/15 text-miss",
-    text: "text-miss",
-    dot: "bg-miss",
-    fill: "var(--color-miss)"
-  },
-  inaccuracy: {
-    badge: "bg-warn/15 text-warn",
-    text: "text-warn",
-    dot: "bg-warn",
-    fill: "var(--color-warn)"
-  },
-  mistake: {
-    badge: "bg-caution/15 text-caution",
-    text: "text-caution",
-    dot: "bg-caution",
-    fill: "var(--color-caution)"
-  },
-  blunder: {
-    badge: "bg-danger/15 text-danger",
-    text: "text-danger",
-    dot: "bg-danger",
-    fill: "var(--color-danger)"
-  }
-};
+export const annotationTone: Record<MoveAnnotation, { badge: string; text: string; fill: string }> =
+  {
+    brilliant: {
+      badge: "bg-mark-brilliant text-mark-fg",
+      text: "text-mark-brilliant",
+      fill: "var(--color-mark-brilliant)"
+    },
+    great: {
+      badge: "bg-mark-great text-mark-fg",
+      text: "text-mark-great",
+      fill: "var(--color-mark-great)"
+    },
+    excellent: {
+      badge: "bg-mark-excellent text-mark-fg",
+      text: "text-mark-excellent",
+      fill: "var(--color-mark-excellent)"
+    },
+    good: {
+      badge: "bg-mark-good text-mark-fg",
+      text: "text-mark-good",
+      fill: "var(--color-mark-good)"
+    },
+    miss: {
+      badge: "bg-mark-miss text-mark-fg",
+      text: "text-mark-miss",
+      fill: "var(--color-mark-miss)"
+    },
+    inaccuracy: {
+      badge: "bg-mark-inaccuracy text-mark-fg",
+      text: "text-mark-inaccuracy",
+      fill: "var(--color-mark-inaccuracy)"
+    },
+    mistake: {
+      badge: "bg-mark-mistake text-mark-fg",
+      text: "text-mark-mistake",
+      fill: "var(--color-mark-mistake)"
+    },
+    blunder: {
+      badge: "bg-mark-blunder text-mark-fg",
+      text: "text-mark-blunder",
+      fill: "var(--color-mark-blunder)"
+    }
+  };

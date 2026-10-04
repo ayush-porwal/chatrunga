@@ -151,7 +151,7 @@ test("game review prints the evaluation at the better side's end and marks the r
   await expect(evalBar(page)).toHaveAccessibleName("Evaluation -2.5");
   expect(await evalText(page)).toEqual({ text: "2.5", side: "black", end: "top" });
   const blunder = board(page).getByRole("img", { name: "Blunder: Nxe5" });
-  await expect(blunder).toHaveText("??");
+  await expect(blunder).toHaveAttribute("data-annotation", "blunder");
   await expect(blunder).toHaveAttribute("data-square", "e5");
   expect(await badgeSquare(page)).toEqual({ square: "e5", topRight: true });
   await screenshot(page, "blunder");
@@ -161,7 +161,10 @@ test("game review prints the evaluation at the better side's end and marks the r
 
   // The badge follows navigation: 4… Qg5, the critical find, on g5.
   await navigation(page).getByRole("button", { name: "Next move", exact: true }).click();
-  await expect(board(page).getByRole("img", { name: "Great: Qg5" })).toHaveText("!");
+  await expect(board(page).getByRole("img", { name: "Great: Qg5" })).toHaveAttribute(
+    "data-annotation",
+    "great"
+  );
   expect(await badgeSquare(page)).toEqual({ square: "g5", topRight: true });
 
   // Flipped (Black at the bottom): Black's end of the bar is the bottom now, White's the top, and

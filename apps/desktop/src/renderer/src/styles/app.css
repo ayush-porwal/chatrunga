@@ -55,11 +55,22 @@
   --color-info-soft: #1f2731;
   --color-warn: #d8ad5a;
   --color-warn-soft: #2b2418;
-  --color-caution: #f0a868; /* review "mistake" — between warn and danger */
+  --color-caution: #f0a868; /* between warn and danger */
   --color-danger: #ff9a8d;
   --color-danger-soft: #3a201d;
-  --color-brilliant: #5fd3c6; /* review "brilliant" mark (teal: apart from every status hue) */
-  --color-miss: #c9a2f5; /* review "miss" mark (violet: a passed-up chance, apart from error severity) */
+
+  /* Review marks (Lichess's glyph palette): the board badge's circle, the move list's and review
+     headers' chips (white text), the graph's dots and the summary counts. `mark-fg` is the glyph
+     or text drawn on a mark's fill. */
+  --color-mark-brilliant: #168226;
+  --color-mark-great: #22ac38;
+  --color-mark-excellent: #5fae4b;
+  --color-mark-good: #22ac38;
+  --color-mark-inaccuracy: #56b4e9;
+  --color-mark-mistake: #e69f00;
+  --color-mark-blunder: #df5353;
+  --color-mark-miss: #df5353;
+  --color-mark-fg: #fff;
 
   /* Chess piece swatches (side-to-move dots, player badges). */
   --color-piece-white: #efe7d2;
