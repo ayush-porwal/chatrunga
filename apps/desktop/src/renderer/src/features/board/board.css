@@ -25,11 +25,21 @@
   height: 100% !important;
 }
 
+/* The frame itself doesn't clip (so the move mark's badge, a sibling of the board, can overhang an
+   edge square past it): the board clips its own layers (a dragged piece included) to the frame's
+   inner corners, its radius less the hairline border. Unlayered, so it wins over a board's own
+   `rounded-*` utility. */
+.board-frame .cg-wrap {
+  position: relative;
+  overflow: hidden;
+  border-radius: calc(var(--radius-lg, 0.5rem) - 1px);
+}
+
 /* ---------------------------------------------------------------- resize grip */
 
 /* The board's resize grip (BoardResizeGrip): three neutral diagonal lines in the frame's
    bottom-right corner, shown only while the pointer is over that corner or dragging it. Over the
-   board's layers (the move mark included), inside the frame's rounded clip. */
+   board's layers (the move mark included), rounded like the board's corner beneath it. */
 .board-resize-grip {
   position: absolute;
   right: 0;
@@ -37,6 +47,7 @@
   z-index: 1;
   width: 1.375rem;
   height: 1.375rem;
+  border-bottom-right-radius: calc(var(--radius-lg, 0.5rem) - 1px);
   cursor: nwse-resize;
   touch-action: none;
   opacity: 0;

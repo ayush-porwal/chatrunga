@@ -12,6 +12,8 @@ import { squareOffset, type BoardMoveMark } from "./move-mark";
  * scales with the square; the square is placed in percentages of the board, so it follows the
  * orientation and any resize. It lets every click and drag through to the board. Render it over
  * the board's own box: a `relative isolate` parent holding the Chessground element and the badge.
+ * Only the Chessground element clips (to the frame's rounded corners, board.css); neither that
+ * parent nor the stage's frame does, so on an edge square the badge overhangs the board's edge.
  *
  * Chessground's elements set no stacking context of their own, so its pieces (z-index 2), arrows
  * (2, custom shapes 9), sliding pieces (8) and the dragged piece (11) are stacked in the nearest

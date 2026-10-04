@@ -122,6 +122,52 @@ async function onTopAtBadge(page: Page, piece?: "anim" | "dragging") {
   }, piece);
 }
 
+/**
+ * The badge moved onto the square at `at` (percentages of the board from its top left, as
+ * squareOffset places it: `{ left: 87.5, top: 0 }` is the top-right corner square, h8 on a board
+ * seen from White), since none of the trap game's marks lands on an edge square. Says whether its
+ * box then reaches past the board's top and right edges, and whether the badge itself is what is
+ * drawn just inside the middle of each side of that box (the disc touches all four), so nothing
+ * (the board's rounded frame, the stage, the panel) clips it. Pointer events are on for the check
+ * alone, as in onTopAtBadge.
+ */
+async function badgeOnEdgeSquare(page: Page, at: { left: number; top: number }) {
+  return board(page).evaluate(async (region, { left, top }) => {
+    const badge = region.querySelector<SVGSVGElement>("svg[data-square]");
+    const square = badge?.parentElement;
+    const area = region.querySelector("cg-board")?.getBoundingClientRect();
+    if (!badge || !square || !area) throw new Error("no badge");
+    // Measured at its full size, after it has popped in.
+    await Promise.all(badge.getAnimations().map((animation) => animation.finished));
+    const placed = { left: square.style.left, top: square.style.top };
+    const style = document.createElement("style");
+    style.textContent = "[data-square] { pointer-events: auto !important; }";
+    document.head.append(style);
+    Object.assign(square.style, { left: `${left}%`, top: `${top}%` });
+    try {
+      const box = badge.getBoundingClientRect();
+      const shows = (x: number, y: number) => {
+        const hit = document.elementFromPoint(x, y);
+        return Boolean(hit && badge.contains(hit));
+      };
+      const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+      return {
+        overhangs: box.top < area.top && box.right > area.right,
+        top: shows(x, box.top + 1),
+        right: shows(box.right - 1, y),
+        bottom: shows(x, box.bottom - 1),
+        left: shows(box.left + 1, y)
+      };
+    } finally {
+      Object.assign(square.style, placed);
+      style.remove();
+    }
+  }, at);
+}
+
+/** A badge on the top-right corner square: past the board's top and right edges, and all of it drawn. */
+const WHOLE_OVERHANG = { overhangs: true, top: true, right: true, bottom: true, left: true };
+
 /** Imports the trap game and reviews it on the fake engine; ends on the review page. */
 async function reviewTrapGame({ app, page }: LaunchedApp, profile: string) {
   await skipWelcome(page);
@@ -173,6 +219,9 @@ test("game review prints the evaluation at the better side's end and marks the r
   // Drawn over the knight on e5, standing or sliding in.
   expect(await onTopAtBadge(page)).toBe("badge");
   expect(await onTopAtBadge(page, "anim")).toBe("badge");
+  // On the top-right corner square (h8) it overhangs the board's top and right edges, and shows
+  // whole: nothing around the board clips it.
+  expect(await badgeOnEdgeSquare(page, { left: 87.5, top: 0 })).toEqual(WHOLE_OVERHANG);
 
   // The badge follows navigation: 4… Qg5, the critical find, on g5.
   await navigation(page).getByRole("button", { name: "Next move", exact: true }).click();
@@ -188,6 +237,8 @@ test("game review prints the evaluation at the better side's end and marks the r
   await goToPly(page, 7);
   expect(await evalText(page)).toEqual({ text: "2.5", side: "black", end: "bottom" });
   expect(await badgeSquare(page, true)).toEqual({ square: "e5", topRight: true });
+  // Flipped, the top-right corner square is a1: the badge shows whole there too.
+  expect(await badgeOnEdgeSquare(page, { left: 87.5, top: 0 })).toEqual(WHOLE_OVERHANG);
   await screenshot(page, "flipped");
   await goToPly(page, 1);
   expect(await evalText(page)).toEqual({ text: "0.3", side: "white", end: "top" });
@@ -240,6 +291,8 @@ test("the Analyze board marks the reviewed move, the game's own board does not",
   expect(await onTopAtBadge(page)).toBe("badge");
   expect(await onTopAtBadge(page, "anim")).toBe("badge");
   expect(await onTopAtBadge(page, "dragging")).toBe("piece");
+  // Whole on the top-right corner square (h8) of this board too.
+  expect(await badgeOnEdgeSquare(page, { left: 87.5, top: 0 })).toEqual(WHOLE_OVERHANG);
   await screenshot(page, "analyze-board");
 
   // An ordinary move there has none either.
