@@ -132,7 +132,7 @@ describe("study tree collapsing", () => {
     expect(placeholderParent("v1")).toBeNull();
   });
 
-  it("feeds the tree view a placeholder as a variation row", () => {
+  it("feeds the tree view a placeholder as a variation row's move", () => {
     const tree = sampleTree();
     const result = collapseStudyTree(lookupOf(tree), {
       expanded: new Set(),
@@ -140,9 +140,12 @@ describe("study tree collapsing", () => {
       minMoves: 0
     });
     const model = buildTreeModel(result.nodes);
-    const block = model.variationsByParent.get("m0")!;
-    expect(block).toHaveLength(1);
-    expect(block[0].rows.map((row) => row.node.id)).toEqual([placeholderId("m0")]);
+    // The cut branches of 1. e4 were played instead of 1… e5: their row stands under it.
+    const rows = model.variationsByMove.get("m1")!;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].moves.map((move) => [move.node.id, move.number])).toEqual([
+      [placeholderId("m0"), null]
+    ]);
     expect(model.mainline.map((row) => row.white?.id)).toEqual(["m0", "m2", "m4"]);
   });
 });

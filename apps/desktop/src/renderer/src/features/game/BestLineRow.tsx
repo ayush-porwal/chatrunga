@@ -1,61 +1,31 @@
-import {
-  Fragment,
-  memo,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type MouseEvent
-} from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Color, MoveNode } from "@chaturanga/shared/types/chess";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
 import { annotationTone } from "@/lib/ui";
 import { cn } from "@/lib/utils";
-import { Figurine } from "../board/Figurine";
 import { BoardThumbnail } from "../settings/board-thumbnail";
 import { openBestLine, type BestLineCursor } from "./best-line-cursor";
+import { FigureSan, keepFocusOnPress, LineRow, lineMoveClassName } from "./LineRow";
 import {
   PREVIEW_BOARD_MIN,
   previewBoardSize,
-  bareSan,
   bestLineMoves,
   bestLineText,
-  sanPiece,
   type BestLineMove
 } from "./move-list-model";
 
 /** How long the pointer rests on a suggested move before its position shows. */
 const PREVIEW_DELAY_MS = 250;
 
-/**
- * A move clicked in the move list doesn't take focus: the board and the list's highlight show where
- * the game is, and the ← → that follow (global shortcuts) would otherwise draw a focus ring on the
- * clicked move while another one is current. Tab still focuses moves, with their ring.
- */
-export function keepFocusOnPress(event: MouseEvent) {
-  event.preventDefault();
-}
-
 /** Shows a position of a BEST line on the board (see the game store's showBestLine). */
 export type BrowseLine = (cursor: BestLineCursor) => void;
 
-/** A move of a line drawn with the board's piece, as the move list draws moves (`♘d2`, `♙a4`). */
-function FigureSan({ san }: { san: string }) {
-  return (
-    <>
-      <Figurine role={sanPiece(san)} />
-      {bareSan(san)}
-    </>
-  );
-}
-
 /**
- * The BEST row under a marked error: `BEST 12… ♘c5 13. ♘d2 a4 14. f4`, from the move column to the
- * end, ruled on the left in the mark's colour, the best move itself in that colour. Resting on a
- * move of the line shows its position below (the only moves that preview: the game's own moves are
- * on the board already). Clicking one shows its position on the board and makes it the current
- * move here, without adding it to the game; ←/→ then step along the line.
+ * The BEST row under a marked error: `BEST 12… ♘c5 13. ♘d2 a4 14. f4`, a line row (see LineRow)
+ * ruled in the mark's colour, the best move itself in that colour. Resting on a move of the line
+ * shows its position below (the only moves that preview: the game's own moves are on the board
+ * already). Clicking one shows its position on the board and makes it the current move here,
+ * without adding it to the game; ←/→ then step along the line.
  */
 export const BestLineRow = memo(function BestLineRow({
   id,
@@ -116,66 +86,53 @@ export const BestLineRow = memo(function BestLineRow({
         }
       : undefined;
 
+  const entries = moves.map((move, index) => ({
+    key: `${index}-${move.uci}`,
+    number: move.number,
+    move: (
+      <LineMove
+        move={move}
+        best={index === 0}
+        bestClassName={tone?.text}
+        previewed={previewIndex === index}
+        current={currentIndex === index}
+        label={`Show ${bestLineText(moves.slice(0, index + 1))} on the board`}
+        onPreview={() => showSoon(index)}
+        onFocusPreview={() => {
+          cancelTimer();
+          setPreviewIndex(index);
+        }}
+        onActivate={browse ? () => browse(index) : undefined}
+      />
+    )
+  }));
+
   return (
-    <div
+    <LineRow
       id={id}
-      className={cn("grid", gridClassName)}
-      role="group"
-      aria-label={`Best line: ${lineLabel}`}
-    >
-      {/* The line, and its preview floating under it (over the rows below, which it never moves). */}
-      <div className="relative col-[2/-1] min-w-0">
-        {/* Leaving the line (pointer or focus) ends its move preview. */}
-        <div
-          className="mb-1.5 rounded-r-md border-l-2 bg-fg/[0.03] px-2.5 py-1.5 text-[0.8125rem] leading-[1.75]"
-          style={{ borderLeftColor: tone?.fill }}
-          onPointerLeave={hide}
-          onBlur={(event) => {
-            const next = event.relatedTarget;
-            if (!(next instanceof Node) || !event.currentTarget.contains(next)) hide();
-          }}
-        >
-          <span className="mr-0.5 font-mono text-[0.6875rem] font-medium tracking-[0.08em] text-fg-subtle uppercase">
-            Best
-          </span>
-          {moves.map((move, index) => (
-            <Fragment key={`${index}-${move.uci}`}>
-              {move.number ? (
-                <span
-                  className={cn(
-                    "mr-[3px] font-mono text-xs text-fg-subtle tabular-nums",
-                    index === 0 ? "ml-2.5" : "ml-1.5"
-                  )}
-                >
-                  {move.number}
-                </span>
-              ) : null}
-              <LineMove
-                move={move}
-                best={index === 0}
-                bestClassName={tone?.text}
-                previewed={previewIndex === index}
-                current={currentIndex === index}
-                label={`Show ${bestLineText(moves.slice(0, index + 1))} on the board`}
-                onPreview={() => showSoon(index)}
-                onFocusPreview={() => {
-                  cancelTimer();
-                  setPreviewIndex(index);
-                }}
-                onActivate={browse ? () => browse(index) : undefined}
-              />
-            </Fragment>
-          ))}
-        </div>
-        {previewed ? (
+      ariaLabel={`Best line: ${lineLabel}`}
+      gridClassName={gridClassName}
+      ruleColor={tone?.fill ?? "currentColor"}
+      label="Best"
+      entries={entries}
+      currentKey={currentIndex === null ? null : (entries[currentIndex]?.key ?? null)}
+      // Leaving the line (pointer or focus) ends its move preview.
+      onPointerLeave={hide}
+      onBlur={(event) => {
+        const next = event.relatedTarget;
+        if (!(next instanceof Node) || !event.currentTarget.contains(next)) hide();
+      }}
+      // Its preview floats under it (over the rows below, which it never moves).
+      after={
+        previewed ? (
           <LinePreview
             move={previewed}
             moveNumber={previewNumber(moves, previewIndex ?? 0)}
             orientation={orientation}
           />
-        ) : null}
-      </div>
-    </div>
+        ) : null
+      }
+    />
   );
 });
 
@@ -210,12 +167,11 @@ function LineMove({
   onFocusPreview: () => void;
   onActivate?: () => void;
 }) {
-  const className = cn(
-    "rounded-[4px] px-1 font-semibold whitespace-nowrap outline-none",
-    "transition-colors duration-micro ease-standard focus-visible:ring-2 focus-visible:ring-accent/50",
-    best && !current ? bestClassName : current ? "text-fg" : "text-fg-secondary",
-    current ? "bg-accent-soft" : previewed ? "bg-fg/10" : "hover:bg-fg/10"
-  );
+  const className = lineMoveClassName({
+    current,
+    toneClassName: best ? bestClassName : undefined,
+    previewed
+  });
   if (!onActivate) {
     return (
       <span

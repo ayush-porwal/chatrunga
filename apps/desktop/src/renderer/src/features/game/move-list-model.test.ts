@@ -17,7 +17,7 @@ import {
   toggleLineFold,
   type MoveListItem
 } from "./move-list-model";
-import { buildTreeModel } from "./move-tree-model";
+import { buildTreeModel, variationText } from "./move-tree-model";
 
 /** A reviewed move with the engine's best line (UCI) from before it, and its mark. */
 function reviewed(
@@ -171,8 +171,8 @@ describe("mainlineItems", () => {
         return "opening";
       case "best":
         return `best ${item.node.san}`;
-      case "variations":
-        return `variations ${item.blocks.map((block) => block.rows.map((row) => row.node.san).join(" ")).join(" | ")}`;
+      case "variation":
+        return `variation ${item.row.depth}: ${variationText(item.row.moves)}`;
     }
   };
 
@@ -187,9 +187,9 @@ describe("mainlineItems", () => {
     ]);
   });
 
-  it("follows a row with the opening after the last book move, its unfolded BEST lines, then the variations off its moves", () => {
+  it("follows a row with the opening after the last book move, its unfolded BEST lines, then the variations played instead of its moves", () => {
     const { game: branched } = importPgnText(
-      "1. e4 e5 2. Nf3 (2. Bc4 Nf6) 2… Nc6 3. Bc4 Nd4 4. Nxe5 (4. c3) 4… Qg5 *"
+      "1. e4 e5 2. Nf3 (2. Bc4 Nf6) 2… Nc6 3. Bc4 Nd4 4. Nxe5 (4. c3 (4. Nc3 Nxf3+) c6) 4… Qg5 (4… Nxc2+ 5. Qxc2) *"
     );
     const model = buildTreeModel(branched.moveTree);
     const node = (san: string): MoveNode =>
@@ -200,15 +200,19 @@ describe("mainlineItems", () => {
     });
     expect(items.map(describeItem)).toEqual([
       "1: e4 e5",
-      "variations Bc4 Nf6",
       "2: Nf3 Nc6",
       "opening",
+      // 2. Bc4 was played instead of 2. Nf3, so it follows that row.
+      "variation 0: 2. Bc4 Nf6",
       "3: Bc4 Nd4",
-      // 4. c3 branches off 3… Nd4, so it follows that row.
-      "variations c3",
       "4: Nxe5 Qg5",
+      // Under the pair: its BEST lines, then the variations of White's move (each followed by the
+      // ones nested in it), then Black's.
       "best Nxe5",
-      "best Qg5"
+      "best Qg5",
+      "variation 0: 4. c3 c6",
+      "variation 0: 4. Nc3 Nxf3+",
+      "variation 0: 4… Nxc2+ 5. Qxc2"
     ]);
   });
 

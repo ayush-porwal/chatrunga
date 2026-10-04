@@ -1,7 +1,7 @@
 import type { MoveNode } from "@chaturanga/shared/types/chess";
 import type { MoveAnnotation, MoveReview } from "@chaturanga/shared/types/engine";
 import { uciLineSteps, type LineStep } from "../game-review/review-utils";
-import type { TreeModel, TreeVariationBlock } from "./move-tree-model";
+import type { TreeModel, VariationRow } from "./move-tree-model";
 
 /*
  * The move list's pure parts: each move's piece and bare SAN, the BEST line under a marked error,
@@ -140,12 +140,13 @@ export type MoveListItem =
   | { kind: "opening"; afterNodeId: string }
   /** The BEST line under a marked error (only while it is unfolded). */
   | { kind: "best"; node: MoveNode }
-  | { kind: "variations"; parentId: string; blocks: TreeVariationBlock[] };
+  /** A variation's line row (one per line; nested lines follow their parent, one deeper). */
+  | { kind: "variation"; row: VariationRow };
 
 /**
  * The main line's rows: each move pair, then the opening row when the pair holds the last book
- * move, then the unfolded BEST lines of its moves (White's, Black's), then the variations that
- * branch off its moves.
+ * move, then the unfolded BEST lines of its moves (White's, Black's), then the variations played
+ * instead of its moves (White's, Black's), each followed by the variations nested in it.
  */
 export function mainlineItems(
   model: TreeModel,
@@ -165,10 +166,9 @@ export function mainlineItems(
     const bookEnd = moves.find((node) => node.id === bookEndNodeId);
     if (bookEnd) items.push({ kind: "opening", afterNodeId: bookEnd.id });
     for (const node of moves) if (showsBestLine(node)) items.push({ kind: "best", node });
-    for (const node of moves) {
-      const blocks = model.variationsByParent.get(node.id);
-      if (blocks?.length) items.push({ kind: "variations", parentId: node.id, blocks });
-    }
+    for (const node of moves)
+      for (const variation of model.variationsByMove.get(node.id) ?? [])
+        items.push({ kind: "variation", row: variation });
   }
   return items;
 }

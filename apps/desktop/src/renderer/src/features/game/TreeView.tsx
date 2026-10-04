@@ -1,5 +1,4 @@
 import {
-  Fragment,
   memo,
   useCallback,
   useEffect,
@@ -9,17 +8,12 @@ import {
   useState,
   type ReactNode
 } from "react";
-import { ArrowUpToLine, Check, Trash2 } from "lucide-react";
+import { Check, Trash2 } from "lucide-react";
 import { annotationLabel } from "@chaturanga/shared/chess/move-assessment";
 import { formatMoveEval } from "../game-review/review-score";
 import type { GameOpening, MoveReview, ReviewCommentary } from "@chaturanga/shared/types/engine";
 import type { Color, MoveNode } from "@chaturanga/shared/types/chess";
-import {
-  buildTreeModel,
-  movePrefix,
-  type TreeVariationBlock,
-  type TreeVariationRow
-} from "./move-tree-model";
+import { buildTreeModel, type VariationRow } from "./move-tree-model";
 import {
   bareSan,
   hasBestLine,
@@ -31,7 +25,9 @@ import {
   type LineFolds
 } from "./move-list-model";
 import { loadShowAllLines, saveShowAllLines } from "./move-list-prefs";
-import { BestLineRow, keepFocusOnPress, type BrowseLine } from "./BestLineRow";
+import { BestLineRow, type BrowseLine } from "./BestLineRow";
+import { keepFocusOnPress } from "./LineRow";
+import { VariationLineRow } from "./VariationLineRow";
 import type { BestLineCursor } from "./best-line-cursor";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconButton } from "@/components/ui/icon-button";
@@ -43,13 +39,9 @@ import { useBoardAppearance } from "../board/useBoardAppearance";
 import { isRapidNavigation, usePrefersReducedMotion } from "../board/board-motion";
 
 const ROOT_ID = "root";
-/** Deeper variations stop indenting (the depth is still in the row's title). */
-const MAX_VISUAL_DEPTH = 8;
 
 /** Number · White's move · Black's move: two equal blocks, each holding its move's eval. */
 const ROW_GRID = "grid-cols-[1.625rem_minmax(0,1fr)_minmax(0,1fr)]";
-/** A variation's row: its number (`12…`) and the move. */
-const VARIATION_ROW_GRID = "grid-cols-[2rem_minmax(0,1fr)]";
 
 type TreeViewProps = {
   nodes: readonly MoveNode[];
@@ -60,7 +52,7 @@ type TreeViewProps = {
   commentaryByNodeId?: ReadonlyMap<string, ReviewCommentary>;
   showCommentaryState?: boolean;
   onDeleteLine?: (nodeId: string) => void;
-  /** Offered on a selected move inside a variation: moves that variation up (see its owner). */
+  /** A variation row's action: moves that variation up (see its owner). */
   onPromoteVariation?: (nodeId: string) => void;
   /** The game's opening: its row follows the last book move. */
   opening?: GameOpening | null;
@@ -74,8 +66,8 @@ type TreeViewProps = {
   className?: string;
   ariaLabel?: string;
   /**
-   * Rows standing for collapsed branches (node id → moves hidden behind it): drawn as one
-   * "… N more moves" row that calls `onExpandRow` instead of selecting a move.
+   * Moves standing for collapsed branches (node id → moves hidden behind it): drawn in their line
+   * as "… N more moves", which calls `onExpandRow` instead of selecting a move.
    */
   collapsedRows?: ReadonlyMap<string, number>;
   onExpandRow?: (nodeId: string) => void;
@@ -86,7 +78,8 @@ type TreeViewProps = {
  * board, Study): two moves to a row, each with its mark's disc, its piece in the board's own set
  * and its SAN (coloured by its mark), and its eval when there is review data. The opening's row
  * follows the last book move; a marked error's BEST line unfolds under it from its disc (or all of
- * them from the header). Variations nest under the move they branch from.
+ * them from the header). Each variation is a line row under the pair of the move it was played
+ * instead of, after its BEST lines, with the variations inside it nested under it.
  */
 export function TreeView({
   nodes,
@@ -161,9 +154,7 @@ export function TreeView({
     list.scrollTo({ top: list.scrollTop + delta, behavior: smooth ? "smooth" : "auto" });
   }, [selectedNodeId, model, reducedMotion]);
 
-  const hasMoves =
-    model.mainline.length > 0 || model.rootVariations.some((block) => block.rows.length);
-  if (!hasMoves) {
+  if (!model.mainline.length) {
     return <EmptyState compact title={emptyLabel} />;
   }
 
@@ -197,31 +188,17 @@ export function TreeView({
       showCommentaryState,
       onSelectNode,
       onDeleteLine,
-      onPromoteVariation,
       lineUnfolded: foldable ? lineUnfolded(folds, node.id) : undefined,
       lineId: foldable ? bestLineId(node.id) : undefined,
       onToggleLine: foldable ? toggleFold : undefined
     };
   };
 
-  const renderVariationBlocks = (blocks: TreeVariationBlock[] | undefined) =>
-    blocks?.map((block, blockIndex) =>
-      block.rows.map((row, rowIndex) => {
-        const key = `${row.node.id}-${blockIndex}-${rowIndex}`;
-        const hiddenMoves = collapsedRows?.get(row.node.id);
-        if (hiddenMoves !== undefined) {
-          return (
-            <CollapsedRow key={key} row={row} hiddenMoves={hiddenMoves} onExpand={onExpandRow} />
-          );
-        }
-        return (
-          <Fragment key={key}>
-            <VariationRow row={row} {...cellProps(row.node)} />
-            {showsBestLine(row.node) ? bestLine(row.node) : null}
-          </Fragment>
-        );
-      })
-    );
+  // The current move, for the variation row holding it (other rows skip re-rendering).
+  const currentIn = (row: VariationRow) =>
+    !activeBestLine && row.moves.some((move) => move.node.id === selectedNodeId)
+      ? selectedNodeId
+      : null;
 
   const cell = (node: MoveNode | undefined) =>
     node ? <MoveCell {...cellProps(node)} /> : <span aria-hidden="true" />;
@@ -278,7 +255,6 @@ export function TreeView({
             Starting position
           </button>
         ) : null}
-        {renderVariationBlocks(model.rootVariations)}
         {items.map((item) => {
           switch (item.kind) {
             case "moves":
@@ -306,11 +282,20 @@ export function TreeView({
               ) : null;
             case "best":
               return bestLine(item.node);
-            case "variations":
+            case "variation":
               return (
-                <Fragment key={`variations-${item.parentId}`}>
-                  {renderVariationBlocks(item.blocks)}
-                </Fragment>
+                <VariationLineRow
+                  key={`variation-${item.row.id}`}
+                  row={item.row}
+                  gridClassName={ROW_GRID}
+                  currentNodeId={currentIn(item.row)}
+                  reviews={reviews}
+                  collapsedRows={collapsedRows}
+                  onSelectNode={onSelectNode}
+                  onDeleteLine={onDeleteLine}
+                  onPromoteVariation={onPromoteVariation}
+                  onExpandRow={onExpandRow}
+                />
               );
           }
         })}
@@ -350,73 +335,14 @@ type MoveCellProps = {
   commentary?: ReviewCommentary;
   showScores: boolean;
   showCommentaryState: boolean;
-  variation?: boolean;
   onSelectNode: (nodeId: string) => void;
   onDeleteLine?: (nodeId: string) => void;
-  onPromoteVariation?: (nodeId: string) => void;
   /** A marked error with a BEST line: whether it is unfolded (undefined: the move has none). */
   lineUnfolded?: boolean;
   /** The BEST row's element id, which the disc unfolds. */
   lineId?: string;
   onToggleLine?: (nodeId: string) => void;
 };
-
-/** Memoised: stepping through a game re-renders only the two rows whose selection changed. */
-const VariationRow = memo(function VariationRow({
-  row,
-  ...cell
-}: Omit<MoveCellProps, "variation"> & { row: TreeVariationRow }) {
-  const visualDepth = Math.min(row.depth, MAX_VISUAL_DEPTH);
-  const hiddenDepth = Math.max(0, row.depth - MAX_VISUAL_DEPTH);
-  return (
-    <div
-      className={cn(
-        "grid min-h-8 items-center gap-x-1 border-l border-line-strong",
-        VARIATION_ROW_GRID
-      )}
-      style={{ paddingInlineStart: `${visualDepth * 12 + 4}px` }}
-      data-tree-depth={row.depth}
-      data-branch-start={row.branchStart ? "true" : undefined}
-      role="treeitem"
-      aria-level={row.depth + 1}
-      title={hiddenDepth ? `Variation depth ${row.depth}` : undefined}
-    >
-      <span className="font-mono text-2xs text-fg-subtle tabular-nums">{movePrefix(row.node)}</span>
-      <MoveCell {...cell} variation />
-    </div>
-  );
-});
-
-/** A collapsed branch: one row that expands the moves hidden behind it. */
-const CollapsedRow = memo(function CollapsedRow({
-  row,
-  hiddenMoves,
-  onExpand
-}: {
-  row: TreeVariationRow;
-  hiddenMoves: number;
-  onExpand?: (nodeId: string) => void;
-}) {
-  const visualDepth = Math.min(row.depth, MAX_VISUAL_DEPTH);
-  return (
-    <div
-      className="border-l border-line-strong"
-      style={{ paddingInlineStart: `${visualDepth * 12 + 4}px` }}
-      data-tree-depth={row.depth}
-      role="treeitem"
-      aria-level={row.depth + 1}
-      aria-expanded={false}
-    >
-      <button
-        type="button"
-        className="flex h-7 w-full items-center rounded-md px-2 text-left text-xs text-fg-subtle outline-none transition-colors duration-micro ease-standard hover:bg-control hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/50"
-        onClick={() => onExpand?.(row.node.id)}
-      >
-        … {hiddenMoves} more {hiddenMoves === 1 ? "move" : "moves"}
-      </button>
-    </div>
-  );
-});
 
 /**
  * One move: a fixed slot for its mark's disc (a marked error's disc folds its BEST line), a fixed
@@ -430,10 +356,8 @@ const MoveCell = memo(function MoveCell({
   commentary,
   showScores,
   showCommentaryState,
-  variation = false,
   onSelectNode,
   onDeleteLine,
-  onPromoteVariation,
   lineUnfolded,
   lineId,
   onToggleLine
@@ -442,12 +366,9 @@ const MoveCell = memo(function MoveCell({
   const san = node.san ?? "–";
   const title = review
     ? `${annotation ? `${annotationLabel(annotation)} · ` : ""}${formatMoveEval(review)}`
-    : variation
-      ? `Variation: ${node.san ?? "move"}`
-      : (node.san ?? "Move");
+    : (node.san ?? "Move");
 
   const showDelete = selected && Boolean(onDeleteLine);
-  const showPromote = selected && variation && Boolean(onPromoteVariation);
   const foldable = lineUnfolded !== undefined && Boolean(onToggleLine);
 
   return (
@@ -467,13 +388,7 @@ const MoveCell = memo(function MoveCell({
         className={cn(
           "flex h-8 w-full min-w-0 items-center gap-[0.4375rem] rounded-[0.3125rem] px-1.5 text-left text-[0.90625rem] font-medium tracking-[0.01em] outline-none",
           "focus-visible:ring-2 focus-visible:ring-accent/50",
-          annotation
-            ? annotationTone[annotation].text
-            : selected
-              ? "text-fg"
-              : variation
-                ? "text-fg-muted"
-                : "text-fg-secondary",
+          annotation ? annotationTone[annotation].text : selected ? "text-fg" : "text-fg-secondary",
           selected && "font-semibold"
         )}
         title={title}
@@ -490,7 +405,6 @@ const MoveCell = memo(function MoveCell({
           ) : null}
           <span className="truncate">{node.san ? bareSan(node.san) : san}</span>
         </span>
-        {variation ? <span className="shrink-0 text-fg-subtle">↳</span> : null}
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           {showCommentaryState && commentary ? (
             <Check
@@ -525,24 +439,6 @@ const MoveCell = memo(function MoveCell({
             <MoveMarkDisc annotation={annotation} />
           )}
         </span>
-      ) : null}
-      {showPromote ? (
-        <IconButton
-          label={`Promote the variation with ${node.san ?? "the selected move"}`}
-          icon={<ArrowUpToLine />}
-          variant="ghost"
-          size="icon-xs"
-          tooltipSide="left"
-          // Over the eval while the move is hovered, on the selected block's own colour.
-          className={cn(
-            "absolute top-1/2 -translate-y-1/2 bg-accent-soft opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
-            showDelete ? "right-8" : "right-0.5"
-          )}
-          onClick={(event) => {
-            event.stopPropagation();
-            onPromoteVariation?.(node.id);
-          }}
-        />
       ) : null}
       {showDelete ? (
         <IconButton

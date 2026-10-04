@@ -3,14 +3,19 @@ import type { MoveNode } from "@chaturanga/shared/types/chess";
 
 const DEFAULT_ROOT_ID = "root";
 
-export type TreeVariationRow = {
-  node: MoveNode;
-  depth: number;
-  branchStart: boolean;
-};
+/** One move of a variation's row, with the number written before it (`9.`, `9…` or none). */
+export type VariationMove = { node: MoveNode; number: string | null };
 
-export type TreeVariationBlock = {
-  rows: TreeVariationRow[];
+/**
+ * A variation drawn as one line row: its moves inline (`9. a4 h6 10. e4`), from the move that
+ * leaves its parent line to the end of its own first-child chain. `depth` 0 branches off the main
+ * line; a variation that branches off a variation is one deeper.
+ */
+export type VariationRow = {
+  /** The line's first move: a stable key for the row. */
+  id: string;
+  depth: number;
+  moves: VariationMove[];
 };
 
 type TreeMainlineRow = {
@@ -21,8 +26,11 @@ type TreeMainlineRow = {
 
 export type TreeModel = {
   mainline: TreeMainlineRow[];
-  rootVariations: TreeVariationBlock[];
-  variationsByParent: Map<string, TreeVariationBlock[]>;
+  /**
+   * The variation rows drawn under a main-line move's pair, by that move's id: the lines played
+   * instead of it, each followed by the rows nested in it (pre-order, depth first).
+   */
+  variationsByMove: Map<string, VariationRow[]>;
 };
 
 function nodeColor(node: MoveNode): "white" | "black" {
@@ -41,64 +49,90 @@ function moveNumber(node: MoveNode): number {
     : Math.floor(Math.max(0, node.ply - 1) / 2) + 1;
 }
 
-function movePrefix(node: MoveNode): string {
-  const number = moveNumber(node);
-  return nodeColor(node) === "black" ? `${number}…` : `${number}.`;
+/**
+ * The number before the `index`-th move of a line: `9.` before White's moves, `9…` before Black's
+ * when it opens the line, none before Black's others, and none for a row that isn't a move (Study's
+ * "… N more moves" placeholder has no SAN).
+ */
+export function variationMoveNumber(node: MoveNode, index: number): string | null {
+  if (!node.san) return null;
+  if (nodeColor(node) === "white") return `${moveNumber(node)}.`;
+  return index === 0 ? `${moveNumber(node)}…` : null;
 }
 
-function buildVariationBlock(
-  startId: string,
-  nodeMap: ReadonlyMap<string, MoveNode>,
-  initialDepth: number
-): TreeVariationBlock {
-  const rows: TreeVariationRow[] = [];
-  const stack: Array<{ id: string; depth: number }> = [{ id: startId, depth: initialDepth }];
-  const seen = new Set<string>();
-
-  while (stack.length) {
-    const next = stack.pop();
-    if (!next || seen.has(next.id)) continue;
-    const node = nodeMap.get(next.id);
-    if (!node) continue;
-    seen.add(next.id);
-    rows.push({ node, depth: next.depth, branchStart: rows.length === 0 });
-
-    // Process the continuation first, then sibling variations, without recursion.
-    for (let index = node.children.length - 1; index >= 1; index -= 1) {
-      const childId = node.children[index];
-      if (childId) stack.push({ id: childId, depth: next.depth + 1 });
-    }
-    const continuation = node.children[0];
-    if (continuation) stack.push({ id: continuation, depth: next.depth });
-  }
-
-  return { rows };
+/** The line as it reads on screen: `9. a4 h6 10. e4` (moves without SAN are left out). */
+export function variationText(moves: readonly VariationMove[]): string {
+  return moves
+    .filter((move) => move.node.san)
+    .map((move) => (move.number ? `${move.number} ${move.node.san}` : move.node.san))
+    .join(" ");
 }
 
 /**
- * Flattens the game tree into a stable display model. The first child remains
- * the canonical mainline; later children are variations at the point where
- * they diverge. Variation traversal is iterative so unusually deep analysis
- * lines do not overflow the React call stack.
+ * The rows of the lines starting at `startIds` (alternatives at one point, in order), each followed
+ * by the rows that branch off it along the way, one level deeper. Iterative, so unusually deep or
+ * long analysis lines do not overflow the call stack.
+ */
+function variationRows(
+  startIds: readonly string[],
+  nodeMap: ReadonlyMap<string, MoveNode>,
+  seen: Set<string>
+): VariationRow[] {
+  const rows: VariationRow[] = [];
+  const stack = startIds.map((id) => ({ id, depth: 0 })).reverse();
+  while (stack.length) {
+    const start = stack.pop()!;
+    const moves: VariationMove[] = [];
+    const nested: Array<{ id: string; depth: number }> = [];
+    let id: string | undefined = start.id;
+    while (id && !seen.has(id)) {
+      const node = nodeMap.get(id);
+      if (!node) break;
+      seen.add(id);
+      moves.push({ node, number: variationMoveNumber(node, moves.length) });
+      for (const alternative of node.children.slice(1))
+        nested.push({ id: alternative, depth: start.depth + 1 });
+      id = node.children[0];
+    }
+    if (moves.length) rows.push({ id: start.id, depth: start.depth, moves });
+    // Pre-order: this row's nested rows come next, in the order they branch along it.
+    for (let index = nested.length - 1; index >= 0; index -= 1) stack.push(nested[index]!);
+  }
+  return rows;
+}
+
+/**
+ * Flattens the game tree into a stable display model. The first child remains the canonical main
+ * line, paired two moves to a row; every other child starts a variation, drawn as a line row under
+ * the pair of the main-line move it was played instead of, with the variations inside it nested
+ * under it.
  */
 export function buildTreeModel(nodes: readonly MoveNode[], rootId = DEFAULT_ROOT_ID): TreeModel {
   const nodeMap = new Map(nodes.map((node) => [node.id, node]));
   const root = nodeMap.get(rootId) ?? nodes.find((node) => node.parentId === null);
-  if (!root) {
-    return { mainline: [], rootVariations: [], variationsByParent: new Map() };
-  }
+  if (!root) return { mainline: [], variationsByMove: new Map() };
 
   const mainlineNodes: MoveNode[] = [];
-  const mainlineSeen = new Set<string>();
-  let cursor: MoveNode | undefined = root;
-  while (cursor) {
+  const seen = new Set<string>([root.id]);
+  let cursor: MoveNode = root;
+  for (;;) {
     const childId = cursor.children[0];
-    if (!childId || mainlineSeen.has(childId)) break;
+    if (!childId || seen.has(childId)) break;
     const child = nodeMap.get(childId);
     if (!child) break;
-    mainlineSeen.add(child.id);
+    seen.add(child.id);
     mainlineNodes.push(child);
     cursor = child;
+  }
+
+  // The moves played instead of each main-line move: its parent's other children.
+  const variationsByMove = new Map<string, VariationRow[]>();
+  let parent = root;
+  for (const node of mainlineNodes) {
+    const alternatives = parent.children.slice(1);
+    if (alternatives.length)
+      variationsByMove.set(node.id, variationRows(alternatives, nodeMap, seen));
+    parent = node;
   }
 
   // One row per move number: a White move starts a row, Black's reply fills it. A line that starts
@@ -111,21 +145,5 @@ export function buildTreeModel(nodes: readonly MoveNode[], rootId = DEFAULT_ROOT
     else mainline.push({ number: moveNumber(node), black: node });
   }
 
-  const variationsByParent = new Map<string, TreeVariationBlock[]>();
-  for (const node of nodes) {
-    const variationIds = node.children.slice(1);
-    if (!variationIds.length) continue;
-    variationsByParent.set(
-      node.id,
-      variationIds.map((id) => buildVariationBlock(id, nodeMap, 0))
-    );
-  }
-
-  return {
-    mainline,
-    rootVariations: variationsByParent.get(root.id) ?? [],
-    variationsByParent
-  };
+  return { mainline, variationsByMove };
 }
-
-export { movePrefix };
