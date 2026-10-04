@@ -97,7 +97,23 @@ test("the summary scores both sides, names the opening and phases, and its secti
 
   // The opening: where the book ended and the move that left it.
   await expect(summary(page)).toContainText("Book until move 3 · left theory with 4. Nxe5");
-  await expect(summary(page).getByRole("button", { name: "My repertoire" })).toBeVisible();
+  // The repertoire comparison is here, not in a tab of its own: "My repertoire" unfolds it inside
+  // the OPENING section. This profile has no repertoire: no headline, and the way to create one.
+  await expect(reviewTabs(page).getByRole("tab", { name: "Opening", exact: true })).toHaveCount(0);
+  const myRepertoire = summary(page).getByRole("button", { name: "My repertoire" });
+  await expect(myRepertoire).toHaveAttribute("aria-expanded", "false");
+  await myRepertoire.click();
+  await expect(myRepertoire).toHaveAttribute("aria-expanded", "true");
+  const comparison = summary(page).getByRole("region", { name: "Your repertoire" });
+  await expect(comparison).toContainText("No White repertoire yet");
+  await expect(comparison.getByRole("button", { name: "Create" })).toBeVisible();
+  await expect(
+    comparison.getByRole("radiogroup", { name: "Your side in this game" }).getByRole("radio", {
+      name: "White"
+    })
+  ).toBeChecked();
+  await myRepertoire.click();
+  await expect(comparison).toBeHidden();
 
   // Phases: the opening (the book) and the middlegame; the game never reached an endgame.
   const phases = summary(page).getByRole("table", { name: "Accuracy by phase" });

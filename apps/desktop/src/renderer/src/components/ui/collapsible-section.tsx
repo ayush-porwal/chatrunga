@@ -38,6 +38,14 @@ function writeOpen(storageKey: string, open: boolean): void {
   }
 }
 
+/**
+ * Opens (or folds) a section ahead of its showing, as if the user had: a link that leads to it
+ * (the review's opening handoff unfolding the repertoire comparison).
+ */
+export function rememberCollapsibleOpen(storageKey: string, open: boolean): void {
+  writeOpen(storageKey, open);
+}
+
 export type Collapsible = {
   open: boolean;
   toggle: () => void;

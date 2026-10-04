@@ -68,7 +68,7 @@ export const ReviewSummary = memo(function ReviewSummary({
   mainline,
   opening,
   side,
-  onOpenRepertoire,
+  repertoire,
   onOpenPuzzles
 }: {
   moves: readonly MoveReview[];
@@ -78,8 +78,11 @@ export const ReviewSummary = memo(function ReviewSummary({
   opening: GameOpening | null | undefined;
   /** The side reviewed: its errors make the practice chips. */
   side: Color;
-  /** The opening comparison with the user's repertoire (the Opening tab). */
-  onOpenRepertoire: () => void;
+  /**
+   * The game against the user's repertoire: a one-line headline (nothing without a repertoire
+   * for the side), and the comparison "My repertoire" unfolds in the OPENING section.
+   */
+  repertoire: { headline: ReactNode; panel: ReactNode };
   /** Shows the Puzzles page (its filters are set first); absent: no puzzle shortcuts. */
   onOpenPuzzles?: () => void;
 }) {
@@ -156,16 +159,14 @@ export const ReviewSummary = memo(function ReviewSummary({
           ) : null}
         </SummarySection>
 
-        {opening ? (
-          <SummarySection id="opening" title="Opening">
-            <OpeningBlock
-              opening={opening}
-              lichessDatabaseId={lichessDatabaseId}
-              onOpenRepertoire={onOpenRepertoire}
-              onOpenPuzzles={onOpenPuzzles}
-            />
-          </SummarySection>
-        ) : null}
+        <SummarySection id="opening" title="Opening">
+          <OpeningBlock
+            opening={opening ?? null}
+            lichessDatabaseId={lichessDatabaseId}
+            repertoire={repertoire}
+            onOpenPuzzles={onOpenPuzzles}
+          />
+        </SummarySection>
 
         {phases.length ? (
           <SummarySection id="phases" title="Phases">
@@ -343,14 +344,17 @@ function Dartboard() {
 function OpeningBlock({
   opening,
   lichessDatabaseId,
-  onOpenRepertoire,
+  repertoire,
   onOpenPuzzles
 }: {
-  opening: GameOpening;
+  /** The game's named opening (null: it reached none; then only the repertoire is offered). */
+  opening: GameOpening | null;
   lichessDatabaseId: string | null;
-  onOpenRepertoire: () => void;
+  repertoire: { headline: ReactNode; panel: ReactNode };
   onOpenPuzzles?: () => void;
 }) {
+  // "My repertoire" unfolds the comparison here (folded at first, then as last left).
+  const comparison = useCollapsible("review-summary:repertoire", false);
   // "idle", searching the puzzle file ("finding"), or nothing found even for the family ("none").
   const [search, setSearch] = useState<"idle" | "finding" | "none">("idle");
   // Leaving the summary gives the search up: its answer can't take the user to Puzzles any more.
@@ -358,7 +362,7 @@ function OpeningBlock({
   useEffect(() => () => leave.current?.abort(), []);
 
   const openPuzzles = async () => {
-    if (!onOpenPuzzles || search === "finding") return;
+    if (!onOpenPuzzles || !opening || search === "finding") return;
     const controller = new AbortController();
     leave.current = controller;
     setSearch("finding");
@@ -377,17 +381,23 @@ function OpeningBlock({
 
   return (
     <div className="col-span-full flex items-start gap-2.5">
-      <MoveMarkDisc annotation="book" decorative className="mt-px" />
+      {opening ? <MoveMarkDisc annotation="book" decorative className="mt-px" /> : null}
       <div className="grid min-w-0 flex-1 gap-0.5">
-        <p className="font-medium text-fg">
-          <span className="mr-1 font-mono text-xs font-semibold text-mark-book-text">
-            {opening.eco}
-          </span>
-          {opening.name}
-        </p>
-        <p className="text-[12.5px] text-fg-muted">{openingBookLine(opening)}</p>
+        {opening ? (
+          <>
+            <p className="font-medium text-fg">
+              <span className="mr-1 font-mono text-xs font-semibold text-mark-book-text">
+                {opening.eco}
+              </span>
+              {opening.name}
+            </p>
+            <p className="text-[12.5px] text-fg-muted">{openingBookLine(opening)}</p>
+          </>
+        ) : null}
+        {/* The game against the user's repertoire, in one muted line (none without one). */}
+        {repertoire.headline}
         <div className="mt-2 grid grid-cols-2 gap-1.5">
-          {onOpenPuzzles ? (
+          {onOpenPuzzles && opening ? (
             <Button
               type="button"
               variant="default"
@@ -405,8 +415,14 @@ function OpeningBlock({
             type="button"
             variant="default"
             size="sm"
-            className={cn("bg-surface-raised", !onOpenPuzzles && "col-span-2")}
-            onClick={onOpenRepertoire}
+            className={cn(
+              "bg-surface-raised",
+              (!onOpenPuzzles || !opening) && "col-span-2",
+              comparison.open && "border-accent/40 text-fg"
+            )}
+            aria-expanded={comparison.open}
+            aria-controls={comparison.contentId}
+            onClick={comparison.toggle}
           >
             <Library />
             My repertoire
@@ -417,6 +433,14 @@ function OpeningBlock({
             No puzzles for this opening yet.
           </p>
         ) : null}
+        <CollapsibleBody
+          section={comparison}
+          role="region"
+          aria-label="Your repertoire"
+          className="mt-2.5 rounded-lg border border-line-subtle p-2.5"
+        >
+          {repertoire.panel}
+        </CollapsibleBody>
       </div>
     </div>
   );

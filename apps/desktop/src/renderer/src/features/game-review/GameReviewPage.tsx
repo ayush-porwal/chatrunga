@@ -20,7 +20,7 @@ import { ReviewBoard, type ReviewArrow } from "./ReviewBoard";
 import { ReviewCommentaryPanel } from "./ReviewCommentaryPanel";
 import { ReviewEnginePanel } from "./ReviewEnginePanel";
 import { ReviewMoveRail } from "./ReviewMoveRail";
-import { ReviewOpeningPanel } from "./ReviewOpeningPanel";
+import { RepertoireHeadline, ReviewOpeningPanel } from "./ReviewOpeningPanel";
 import { openReviewSettingsDialog, ReviewSettingsDialog } from "./ReviewSettingsDialog";
 import { ReviewSidePrompt, ReviewSummary } from "./ReviewSummary";
 import { CardCommentaryContext, type CardCommentaryOptions } from "./MomentCommentary";
@@ -65,7 +65,6 @@ const reviewTabOptions: readonly SegmentedOption<ReviewTab>[] = [
   { value: "summary", label: "Summary" },
   { value: "commentary", label: "Commentary" },
   { value: "moves", label: "Moves" },
-  { value: "opening", label: "Opening" },
   { value: "engine", label: "Engine" }
 ];
 
@@ -373,6 +372,31 @@ function GameReviewPageInner({
 
   // The "Review" section (tabs and content) folds under its header; the charts take the space.
   const reviewSection = useCollapsible("review-panel:review");
+  // The game against the user's repertoire, in the summary's OPENING section: compared as the side
+  // picked there, else the side reviewed.
+  const repertoireView = {
+    headline: (
+      <RepertoireHeadline
+        moveTree={moveTree}
+        color={openingColor ?? side}
+        remembered={rememberedRepertoires}
+        className="text-[12.5px] text-fg-muted"
+      />
+    ),
+    panel: (
+      <ReviewOpeningPanel
+        moveTree={moveTree}
+        selectedNodeId={selectedNodeId}
+        onSelectNode={selectNode}
+        color={openingColor ?? side}
+        onColorChange={changeOpeningColor}
+        remembered={rememberedRepertoires}
+        onStudy={onOpenRepertoireStudy}
+        onRefreshDecision={onRefreshRepertoireDecision}
+        onHub={onRepertoireHub}
+      />
+    )
+  };
   const panelId = useId();
   return (
     <CardCommentaryContext.Provider value={cardCommentary}>
@@ -553,7 +577,7 @@ function GameReviewPageInner({
               mainline={reviewInput}
               opening={review?.opening}
               side={side}
-              onOpenRepertoire={() => onTabChange("opening")}
+              repertoire={repertoireView}
               onOpenPuzzles={onOpenPuzzles}
             />
           ) : reviewSide.status === "ask" ? (
@@ -615,19 +639,6 @@ function GameReviewPageInner({
             keyMoments={moments}
             opening={isRunning ? null : review?.opening}
             orientation={orientation}
-          />
-        ) : null}
-        {activeTab === "opening" ? (
-          <ReviewOpeningPanel
-            moveTree={moveTree}
-            selectedNodeId={selectedNodeId}
-            onSelectNode={selectNode}
-            color={openingColor}
-            onColorChange={changeOpeningColor}
-            remembered={rememberedRepertoires}
-            onStudy={onOpenRepertoireStudy}
-            onRefreshDecision={onRefreshRepertoireDecision}
-            onHub={onRepertoireHub}
           />
         ) : null}
         {activeTab === "engine" && !emptyGame ? (

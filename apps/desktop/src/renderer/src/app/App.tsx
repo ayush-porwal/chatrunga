@@ -19,6 +19,7 @@ import { BoardFocusContext } from "../features/board/board-focus";
 import { PromotionDialog } from "../features/board/PromotionDialog";
 import type { ReviewTab } from "../features/game-review/review-utils";
 import { openReviewSettingsDialog } from "../features/game-review/ReviewSettingsDialog";
+import { rememberCollapsibleOpen } from "@/components/ui/collapsible-section";
 import { PgnImportDialog } from "../features/game/PgnImportDialog";
 import { openSavedGame } from "../features/game/saved-game";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
@@ -1031,7 +1032,9 @@ export function App() {
       value: played.repertoireId
     });
     setOpeningSide({ board: currentGame().board, color: played.color });
-    await openSelectedGameReview("current", "opening");
+    // The comparison is in the summary's OPENING section: shown unfolded.
+    rememberCollapsibleOpen("review-summary:repertoire", true);
+    await openSelectedGameReview("current", "summary");
   }
 
   /**
