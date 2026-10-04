@@ -60,7 +60,7 @@ async function screenshot(page: Page, name: string) {
 const titlebar = (page: Page) => page.getByRole("banner", { name: "Titlebar" });
 const reviewTabs = (page: Page) => page.getByRole("tablist", { name: "Game review sections" });
 const moveTree = (page: Page) => page.getByRole("tree", { name: "Reviewed move tree" });
-const keyMomentNav = (page: Page) => page.getByRole("group", { name: "Key moments" });
+const keyMomentNav = (page: Page) => page.getByRole("group", { name: "Key insights" });
 const counter = (page: Page) =>
   page.getByRole("navigation", { name: "Move navigation" }).getByRole("paragraph").first();
 
@@ -136,21 +136,21 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
   await expect(leading).not.toContainText("Allows a forced mate.");
   await screenshot(page, "key-moments");
 
-  // Key-moment navigation: from the start to each moment in turn, and back.
-  await expect(keyMomentNav(page)).toContainText("3 key moments");
+  // Key-insight navigation (the charts' header): from the start to each in turn, and back.
+  await expect(keyMomentNav(page)).toContainText("3 key insights");
   await expect(
-    keyMomentNav(page).getByRole("button", { name: "Previous key moment" })
+    keyMomentNav(page).getByRole("button", { name: "Previous key insight" })
   ).toBeDisabled();
-  await keyMomentNav(page).getByRole("button", { name: "Next key moment" }).click();
+  await keyMomentNav(page).getByRole("button", { name: "Next key insight" }).click();
   await expect(counter(page)).toHaveText("7 / 14");
-  await expect(keyMomentNav(page)).toContainText("Key moment 1 of 3");
-  await keyMomentNav(page).getByRole("button", { name: "Next key moment" }).click();
+  await expect(keyMomentNav(page)).toContainText("Key insight 1 of 3");
+  await keyMomentNav(page).getByRole("button", { name: "Next key insight" }).click();
   await expect(counter(page)).toHaveText("9 / 14");
-  await expect(keyMomentNav(page)).toContainText("Key moment 2 of 3");
-  await keyMomentNav(page).getByRole("button", { name: "Next key moment" }).click();
+  await expect(keyMomentNav(page)).toContainText("Key insight 2 of 3");
+  await keyMomentNav(page).getByRole("button", { name: "Next key insight" }).click();
   await expect(counter(page)).toHaveText("13 / 14");
-  await expect(keyMomentNav(page).getByRole("button", { name: "Next key moment" })).toBeDisabled();
-  await keyMomentNav(page).getByRole("button", { name: "Previous key moment" }).click();
+  await expect(keyMomentNav(page).getByRole("button", { name: "Next key insight" })).toBeDisabled();
+  await keyMomentNav(page).getByRole("button", { name: "Previous key insight" }).click();
   await expect(counter(page)).toHaveText("9 / 14");
 
   // The selected move's header names its mark (no static explanation): 4… Qg5, the critical find.
@@ -207,13 +207,14 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
   await views.getByRole("radio", { name: "Moves", exact: true }).click();
   await expect(moveTree(page)).toBeVisible();
 
-  // The graph marks the same moves (book moves stay neutral) and rings the key moments.
-  const graph = page.getByRole("region", { name: "Game evaluation graph" });
+  // The winning-chances chart dots the same moves (book moves stay neutral) and rings the key
+  // insights: 4. Nxe5's blunder among them.
+  const graph = page.getByRole("region", { name: "Game charts" });
   await expect(graph.locator("circle[data-annotation]")).toHaveCount(6);
   await expect(graph.locator("circle[data-key-moment]")).toHaveCount(3);
-  await expect(
-    graph.getByRole("button", { name: "4. Nxe5, Blunder, key moment, after -2.5" })
-  ).toBeVisible();
+  const nxe5 = graph.locator('circle[data-ply="7"]');
+  await expect(nxe5).toHaveAttribute("data-annotation", "blunder");
+  await expect(nxe5).toHaveAttribute("data-key-moment", "true");
 
   // The saved analysis reopens with the same marks (the Great included) after a restart.
   await expect
@@ -305,17 +306,17 @@ test("an analysis saved before the current marks opens re-assessed from its eval
   // That explanation still shows, labelled as written before the current marks (nothing is
   // requested on its own). This profile has no OpenRouter key, so it can't be written again here.
   await reviewTabs(page).getByRole("tab", { name: "Commentary", exact: true }).click();
-  await treeMoveFromTape(page, "4… Qg5");
+  await moveFromChart(page, 8); // 4… Qg5
   await expect(page.getByText("Well spotted: Qg5 hits g2 and the knight on e5.")).toBeVisible();
   await expect(page.getByText("Written before the current move marks")).toBeVisible();
   await expect(page.getByRole("button", { name: "Write again" })).toHaveCount(0);
   await screenshot(page, "earlier-commentary");
 });
 
-/** Selects a move by its point on the evaluation graph. */
-async function treeMoveFromTape(page: Page, label: string) {
+/** Selects a marked move by clicking its dot on the winning-chances chart. */
+async function moveFromChart(page: Page, ply: number) {
   await page
-    .getByRole("region", { name: "Game evaluation graph" })
-    .getByRole("button", { name: new RegExp(`^${label},`) })
+    .getByRole("region", { name: "Game charts" })
+    .locator(`circle[data-ply="${ply}"]`)
     .click();
 }
