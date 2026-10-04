@@ -96,7 +96,8 @@ export async function launchApp(profile: string): Promise<LaunchedApp> {
   });
   const switches = [`--proxy-server=${BLACKHOLE}`];
   // CHATURANGA_E2E_SMALL_SCREEN=1: the window GitHub's Windows runners give the app (a 1024×768
-  // screen at 1×, less the frame and menu bar), to check layout assumptions before CI does.
+  // screen at 1×, less the title bar, the resize borders and the taskbar), to check layout
+  // assumptions before CI does.
   const smallScreen = process.env.CHATURANGA_E2E_SMALL_SCREEN === "1";
   if (smallScreen) switches.push("--force-device-scale-factor=1");
   // Run locally on macOS, the window never shows on screen, so a run doesn't cover the developer's
@@ -133,6 +134,13 @@ export async function launchApp(profile: string): Promise<LaunchedApp> {
       window?.setMinimumSize(800, 600);
       window?.setContentSize(1008, 677);
     });
+    // Some Linux window managers (Wayland) refuse programmatic resizes silently; asserting the
+    // result keeps such a host from running the journeys against the full-size layout.
+    await expect
+      .poll(() =>
+        app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.getContentSize())
+      )
+      .toEqual([1008, 677]);
   }
   const page = await app.firstWindow();
   // Without OS focus the page would see itself unfocused (focus events, :focus-visible); the
