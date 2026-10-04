@@ -272,6 +272,7 @@ test("variations are line rows under the move they replace: browsed, nested, fol
   await tree.getByRole("button", { name: "Nc6", exact: true }).click();
   await clickSquare(page, "d2");
   await clickSquare(page, "d4");
+  await expect(tree.getByRole("group", { name: "Variation: 3. d4" })).toBeVisible();
   await clickSquare(page, "e5");
   await clickSquare(page, "d4");
   const played = tree.getByRole("group", { name: "Variation: 3. d4 exd4" });
@@ -301,7 +302,10 @@ test("variations are line rows under the move they replace: browsed, nested, fol
     "aria-current",
     "step"
   );
-  expect(await left(nested)).toBeGreaterThan(await left(played));
+  // (Each row spans the list; its ruled line is what is indented.)
+  expect(await left(nested.getByRole("button", { name: "d6", exact: true }))).toBeGreaterThan(
+    await left(d4)
+  );
   expect(await top(nested)).toBeGreaterThan(await top(played));
 
   // The row's delete icon (shown on hover) deletes the line from its current move (the app asks
