@@ -191,6 +191,18 @@ test("searches a long import preview, excludes the games found and imports the r
   const games = dialog.getByRole("list", { name: "Games in the PGN" });
   await expect(games.getByRole("listitem")).toHaveCount(50);
   await expect(dialog.getByText("120 of 120 games included")).toBeVisible();
+  // However long the list, the dialog fits the window: heading, search and Import stay in view
+  // while only the list scrolls.
+  const heading = dialog.getByRole("heading", { name: "Import PGN" });
+  const importButton = dialog.getByRole("button", { name: "Import 120 chapters", exact: true });
+  await expectInWindow(page, dialog);
+  await expectInWindow(page, heading);
+  await expectInWindow(page, importButton);
+  await games.evaluate((list) => list.parentElement!.scrollTo({ top: 1e6 }));
+  await expect(dialog.getByRole("button", { name: /^Show 50 more/ })).toBeInViewport();
+  await expectInWindow(page, heading);
+  await expectInWindow(page, dialog.getByRole("searchbox", { name: "Search games" }));
+  await expectInWindow(page, importButton);
   await dialog.getByRole("button", { name: "Show 50 more (70 not shown)" }).click();
   await expect(games.getByRole("listitem")).toHaveCount(100);
   await expect(dialog.getByRole("checkbox", { name: "Import game 51", exact: true })).toBeFocused();
