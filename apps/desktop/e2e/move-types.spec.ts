@@ -8,6 +8,7 @@ import type { Locator, Page } from "@playwright/test";
 import type { ChaturangaApi } from "../../../packages/shared/src/ipc/chaturanga-api";
 import type { GameReview } from "../../../packages/shared/src/types/engine";
 import { trapReviewMoves } from "../../../packages/shared/src/chess/__fixtures__/trap-game";
+import { MOVE_ASSESSMENT_POLICY } from "../../../packages/shared/src/chess/move-assessment";
 import {
   closeApp,
   expect,
@@ -200,7 +201,7 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
         return game ? ((await api.games.get(game.id)).review?.assessmentPolicy ?? null) : null;
       })
     )
-    .toBe(1);
+    .toBe(MOVE_ASSESSMENT_POLICY);
   await closeApp(app);
   const again = await launch();
   await sidebar(again.page).getByRole("button", { name: "Home", exact: true }).click();

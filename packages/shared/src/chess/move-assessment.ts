@@ -34,7 +34,7 @@ import { scoreFromWhitePerspective, terminalStateForFen } from "./review";
  * Version of the rules below. Bump it whenever a threshold or rule changes: saved reviews from
  * another version are re-assessed (and say so) when they load.
  */
-export const MOVE_ASSESSMENT_POLICY = 1;
+export const MOVE_ASSESSMENT_POLICY = 2;
 
 /** Lichess's WinPercent slope (scalachess eval.scala). */
 const WIN_MULTIPLIER = 0.00368208;
