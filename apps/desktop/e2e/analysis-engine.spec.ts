@@ -17,8 +17,12 @@ const CASTLED_PGN = `[Event "E2E castled"]
 
 const titlebar = (page: Page) => page.getByRole("banner", { name: "Titlebar" });
 const engineCommands = (log: string) => readFileSync(log, "utf8").split("\n").filter(Boolean);
-/** What the app reports when the engine (the fake in "stockfish-crash" mode) dies during a search. */
-const CRASHED = "Fake UCI quit during the search.";
+/**
+ * What the app reports when the engine (the fake in "stockfish-crash" mode) dies during a search.
+ * Killed, it ends by a signal on macOS and Linux (no exit code to name) and with exit code 1 on
+ * Windows, which the message names.
+ */
+const CRASHED = /Fake UCI quit during the search( \(exit \d+\))?\./;
 
 test("the Analyze board shows an imported castled game's depth, score and lines from Stockfish-shaped output", async ({
   launch,
