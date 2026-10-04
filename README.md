@@ -43,7 +43,3 @@ served over HTTP that holds a `latest-mac.yml` / `latest.yml` / `latest-linux.ym
 
 Usage analytics (PostHog) is configured at build time with `MAIN_VITE_POSTHOG_PROJECT_TOKEN` and
 `MAIN_VITE_POSTHOG_HOST`; development and test runs never send. See [docs/telemetry.md](docs/telemetry.md).
-
-Architecture proposals and implementation handoffs:
-
-- [Engine catalog, profiles, pictures, and downloads](docs/engine-catalog-architecture.md)
