@@ -6,6 +6,7 @@ import { card, motion } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useBoardFocused } from "./board-focus";
 import { BoardResizeContext, BoardResizeGrip } from "./BoardResizeGrip";
+import { BoardSplitter } from "./BoardSplitter";
 import { useBoardEdgeStore } from "./useBoardEdge";
 import { useFocusCentring, useSnappedBoardFrame } from "./useBoardFrame";
 
@@ -40,13 +41,15 @@ import { useFocusCentring, useSnappedBoardFrame } from "./useBoardFrame";
  * stays next to its panel. On a narrow window the cap is not reached and the board takes the
  * width left beside the panel.
  *
- * Resizing (BoardResizeGrip, while the panel shows): the board fills its space by default; dragging
- * the grip in its bottom-right corner sets a smaller (or larger) edge, shared by every board
- * workspace and remembered. The panel then takes all the width beside it, down to its minimum
- * (`.board-resized` in app.css): the board column is exactly the board's width at the content's
- * left edge and the panel reaches the right edge, so no width is left over; blocks that read
- * badly wide keep their own measure, centred in the panel. A double-click on the grip fills the
- * space again. Focus mode always fills.
+ * Resizing (while the panel shows): the board fills its space by default. Two affordances set a
+ * smaller (or larger) edge, shared by every board workspace and remembered (useBoardEdge): the grip
+ * in the board's bottom-right corner (BoardResizeGrip), dragged as a square, and the splitter in
+ * the gap between the board and the panel (BoardSplitter), dragged across or stepped with the
+ * keys. The panel then takes all the width beside it, down to its minimum (`.board-resized` in
+ * app.css): the board column is exactly the board's width at the content's left edge and the
+ * panel reaches the right edge, so no width is left over; blocks that read badly wide keep their
+ * own measure, centred in the panel. A double-click on either (or Enter on the splitter) fills the
+ * space again. Focus mode always fills, with neither shown.
  */
 
 export function BoardWorkspace({
@@ -104,6 +107,7 @@ export function BoardWorkspace({
   const storedEdge = useBoardEdgeStore((state) => state.edge);
   const resizedEdge = panelVisible ? storedEdge : null;
   const maxRef = useRef<HTMLDivElement>(null);
+  const edgeRef = useRef<HTMLDivElement>(null);
   const resizable = useMemo(() => (panelVisible ? { maxRef } : null), [panelVisible]);
   const rootStyle = useMemo<CSSProperties | undefined>(() => {
     if (evalBarShown && resizedEdge === null) return undefined;
@@ -139,6 +143,15 @@ export function BoardWorkspace({
         className="invisible pointer-events-none absolute h-0 w-(--workspace-board-max)"
         aria-hidden="true"
       />
+      {/* Measures the board's current edge (the splitter's start and value): filled, or resized. */}
+      <div
+        ref={edgeRef}
+        className={cn(
+          "invisible pointer-events-none absolute h-0",
+          resizedEdge === null ? "w-(--workspace-board-fill)" : "w-(--workspace-board)"
+        )}
+        aria-hidden="true"
+      />
       <div
         className={cn(
           "mx-auto grid h-full min-h-0 w-full min-w-0 p-(--workspace-pad)",
@@ -161,16 +174,25 @@ export function BoardWorkspace({
             width (app.css), anchored at the content's left edge. */}
         <section
           className={cn(
-            "grid min-h-0 min-w-0 items-center [container-type:size]",
+            "col-start-1 row-start-1 grid min-h-0 min-w-0 items-center [container-type:size]",
             resizedEdge === null ? "justify-items-center" : "justify-items-start"
           )}
           aria-label="Board"
         >
           <BoardResizeContext.Provider value={resizable}>{board}</BoardResizeContext.Provider>
         </section>
+        {/* The splitter, centred in the gap before the panel's cell (its hit area stays inside the
+            gap, which is never narrower than 0.75rem). Not while the panel eases in or out. */}
+        {panelVisible && !easing ? (
+          <BoardSplitter
+            edgeRef={edgeRef}
+            maxRef={maxRef}
+            className="col-start-2 row-start-1 ml-[calc(-0.5*var(--workspace-pad)_-_0.3125rem)] justify-self-start"
+          />
+        ) : null}
         {/* The cell clips; the panel keeps its full width and slides out with the column's left edge. */}
         <div
-          className="flex min-h-0 min-w-0 overflow-hidden"
+          className="col-start-2 row-start-1 flex min-h-0 min-w-0 overflow-hidden"
           inert={!panelVisible}
           aria-hidden={!panelVisible || undefined}
         >

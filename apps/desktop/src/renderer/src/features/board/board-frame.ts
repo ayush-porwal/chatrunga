@@ -1,5 +1,6 @@
 // Board frame geometry for BoardStage and BoardWorkspace (applied by the hooks in useBoardFrame and
-// the corner grip in BoardResizeGrip).
+// the board's two resize affordances: the corner grip in BoardResizeGrip and the splitter in
+// BoardSplitter).
 
 /**
  * Chessground draws whole-device-pixel squares: it sizes its <cg-container> to
@@ -31,8 +32,8 @@ export function centringInsets(
 }
 
 /**
- * The smallest edge (CSS px) the corner grip resizes the board to: the side panel takes the rest,
- * and below this the board's squares get too small to play on.
+ * The smallest edge (CSS px) the corner grip or the splitter resizes the board to: the side panel
+ * takes the rest, and below this the board's squares get too small to play on.
  */
 export const MIN_BOARD_EDGE = 280;
 
@@ -64,4 +65,46 @@ export function clampBoardEdge(edge: number, max: number): number {
 export function draggedBoardEdge(start: number, dx: number, dy: number, max: number): number {
   const down = 2 * dy;
   return clampBoardEdge(start + (Math.abs(dx) >= Math.abs(down) ? dx : down), max);
+}
+
+/**
+ * The board's edge while the splitter between the board and the side panel is dragged `dx` across
+ * from where the drag started at edge `start` (clampBoardEdge): left shrinks the board and widens
+ * the panel by as much, right does the reverse.
+ */
+export function splitterBoardEdge(start: number, dx: number, max: number): number {
+  return clampBoardEdge(start + dx, max);
+}
+
+/** The splitter's arrow-key step (CSS px), and with Shift held. */
+export const BOARD_SPLITTER_STEP = 16;
+export const BOARD_SPLITTER_STEP_LARGE = 64;
+
+/**
+ * What a key does on the splitter between the board and the side panel, from the board's current
+ * `edge`: ArrowLeft / ArrowRight step the board's edge down / up (by BOARD_SPLITTER_STEP, or
+ * BOARD_SPLITTER_STEP_LARGE with Shift), Home and End go to the smallest and largest edge
+ * (clampBoardEdge), and Enter goes back to filling the space ("fill"). Null for any other key.
+ */
+export function keyedBoardEdge(
+  key: string,
+  shift: boolean,
+  edge: number,
+  max: number
+): number | "fill" | null {
+  const step = shift ? BOARD_SPLITTER_STEP_LARGE : BOARD_SPLITTER_STEP;
+  switch (key) {
+    case "ArrowLeft":
+      return clampBoardEdge(edge - step, max);
+    case "ArrowRight":
+      return clampBoardEdge(edge + step, max);
+    case "Home":
+      return clampBoardEdge(MIN_BOARD_EDGE, max);
+    case "End":
+      return clampBoardEdge(max, max);
+    case "Enter":
+      return "fill";
+    default:
+      return null;
+  }
 }

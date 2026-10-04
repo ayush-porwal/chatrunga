@@ -25,9 +25,11 @@ type Drag = { pointerId: number; x: number; y: number; start: number; max: numbe
  * The board's resize grip, in its frame's bottom-right corner: neutral diagonal lines that show
  * only while the pointer is over that corner or dragging it (board.css). Dragging resizes the
  * board as a square (draggedBoardEdge) and the side panel takes the width it frees; a
- * double-click goes back to filling the space. A pointer affordance only: the default board
- * already fills the space, so it takes no focus and adds no keys next to the board's own.
- * `availRef` measures the board's current edge (BoardStage's `--board-avail`).
+ * double-click goes back to filling the space. One of the board's two resize affordances, with
+ * the splitter in the gap beside the panel (BoardSplitter): both drive the same edge
+ * (useBoardEdge), so either picks up where the other left it. A pointer affordance only: the
+ * splitter is the one that takes focus and steps with the keys, so the grip adds no keys next to
+ * the board's own. `availRef` measures the board's current edge (BoardStage's `--board-avail`).
  */
 export function BoardResizeGrip({ availRef }: { availRef: RefObject<HTMLElement | null> }) {
   const resizable = useContext(BoardResizeContext);

@@ -2,6 +2,8 @@
 // as it was left; the board fills its space, and a grip in its bottom-right corner (shown only on
 // hover) resizes it, the side panel taking all the width it frees (no empty column either side) and
 // the board centred down its cell, is remembered, and fills again on a double-click; the
+// splitter in the gap between the board and the panel drives the same size (dragged across,
+// stepped with the arrow keys, remembered, filled again on a double-click); the
 // review board shows each side's clock at the selected move from the game's [%clk], in a light
 // box for White and a dark one for Black, and no clocks for a game without them. How to run them:
 // playwright.config.ts.
@@ -22,6 +24,8 @@ const CLOCKED_PGN = `[Event "Clocks e2e"]
 const titlebar = (page: Page) => page.getByRole("banner", { name: "Titlebar" });
 const board = (page: Page) => page.getByRole("region", { name: "Board" });
 const grip = (page: Page) => board(page).locator(".board-resize-grip");
+const splitter = (page: Page) =>
+  page.getByRole("separator", { name: "Resize board and panel", exact: true });
 /** The board block: the player rows, the eval column and the board (BoardStage). */
 const boardBlock = (page: Page) => board(page).locator(":scope > div").first();
 const navigation = (page: Page) => page.getByRole("navigation", { name: "Move navigation" });
@@ -180,6 +184,57 @@ test("the board fills its space, and its corner grip resizes it for the side pan
   // Away from the corner the grip hides again.
   await again.page.mouse.move(restore.x - 200, restore.y - 200);
   await expect.poll(() => gripOpacity(again.page)).toBe("0");
+});
+
+test("the line between the board and the panel is a splitter that resizes both", async ({
+  launch,
+  profile
+}) => {
+  const { app, page } = await launch();
+  await skipWelcome(page);
+  await importPgnFile(app, page, writePgn(profile, "ruy-lopez.pgn", RUY_LOPEZ_PGN));
+  await expect(counter(page)).toHaveText("6 / 6");
+  const panel = page.getByRole("complementary", { name: "Game" });
+  const filled = await boardEdge(page);
+  const panelBefore = (await box(panel)).width;
+
+  // Dragged 160px left, the board shrinks by as much and the panel takes the width.
+  const line = await box(splitter(page));
+  const x = line.x + line.width / 2;
+  const y = line.y + line.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x - 160, y, { steps: 10 });
+  await page.mouse.up();
+  const resized = await boardEdge(page);
+  expect(resized).toBeGreaterThan(filled - 170);
+  expect(resized).toBeLessThan(filled - 150);
+  expect((await box(panel)).width).toBeGreaterThan(panelBefore + 150);
+  // Its value is the board's edge.
+  const value = Number(await splitter(page).getAttribute("aria-valuenow"));
+  expect(Math.abs(value - resized)).toBeLessThan(8);
+
+  // The arrow keys step it, without moving through the game.
+  await splitter(page).focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect
+    .poll(async () => Number(await splitter(page).getAttribute("aria-valuenow")))
+    .toBe(value - 16);
+  await expect(counter(page)).toHaveText("6 / 6");
+  const stepped = await boardEdge(page);
+
+  // The size is remembered.
+  await closeApp(app);
+  const again = await launch();
+  await openReview(again.page, /^Alpha vs Beta/);
+  await expect(board(again.page).locator("cg-board")).toBeVisible();
+  await expect.poll(() => boardEdge(again.page)).toBeGreaterThan(stepped - 10);
+  expect(await boardEdge(again.page)).toBeLessThan(stepped + 10);
+
+  // A double-click fills the space again.
+  const restore = await box(splitter(again.page));
+  await again.page.mouse.dblclick(restore.x + restore.width / 2, restore.y + restore.height / 2);
+  await expect.poll(() => boardEdge(again.page)).toBeGreaterThan(filled - 12);
 });
 
 test("the review board shows each side's clock at the move from [%clk], and none without", async ({

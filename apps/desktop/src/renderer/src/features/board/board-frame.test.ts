@@ -4,8 +4,10 @@ import {
   centringInsets,
   clampBoardEdge,
   draggedBoardEdge,
+  keyedBoardEdge,
   restoredBoardEdge,
-  snapBoardSize
+  snapBoardSize,
+  splitterBoardEdge
 } from "./board-frame";
 
 /** Chessground's own rounding (render.ts `updateBounds`), which the frame must agree with. */
@@ -132,5 +134,44 @@ describe("restoredBoardEdge", () => {
 
   it("brings an edge remembered below the minimum up to it", () => {
     expect(restoredBoardEdge(240)).toBe(MIN_BOARD_EDGE);
+  });
+});
+
+describe("splitterBoardEdge", () => {
+  it("shrinks the board as the splitter moves left and grows it as it moves right", () => {
+    expect(splitterBoardEdge(600, -120, 900)).toBe(480);
+    expect(splitterBoardEdge(600, 90, 900)).toBe(690);
+    // A board limited by the height starts from its measured edge: the first pixel moves it one.
+    expect(splitterBoardEdge(612.5, -1, 612.5)).toBe(611.5);
+  });
+
+  it("stops at the minimum edge, and where the panel reaches its minimum width", () => {
+    expect(splitterBoardEdge(400, -300, 900)).toBe(MIN_BOARD_EDGE);
+    expect(splitterBoardEdge(700, 400, 820)).toBe(820);
+  });
+});
+
+describe("keyedBoardEdge", () => {
+  it("steps the edge with the arrow keys, further with Shift", () => {
+    expect(keyedBoardEdge("ArrowLeft", false, 600, 900)).toBe(584);
+    expect(keyedBoardEdge("ArrowRight", false, 600, 900)).toBe(616);
+    expect(keyedBoardEdge("ArrowLeft", true, 600, 900)).toBe(536);
+    expect(keyedBoardEdge("ArrowRight", true, 600, 900)).toBe(664);
+  });
+
+  it("stays within the bounds", () => {
+    expect(keyedBoardEdge("ArrowLeft", true, MIN_BOARD_EDGE + 10, 900)).toBe(MIN_BOARD_EDGE);
+    expect(keyedBoardEdge("ArrowRight", true, 880, 900)).toBe(900);
+  });
+
+  it("goes to the smallest and largest edge with Home and End, and back to fill with Enter", () => {
+    expect(keyedBoardEdge("Home", false, 600, 900)).toBe(MIN_BOARD_EDGE);
+    expect(keyedBoardEdge("End", false, 600, 900)).toBe(900);
+    expect(keyedBoardEdge("Enter", false, 600, 900)).toBe("fill");
+  });
+
+  it("leaves every other key to the page", () => {
+    for (const key of ["ArrowUp", "ArrowDown", " ", "a", "Escape"])
+      expect(keyedBoardEdge(key, false, 600, 900)).toBeNull();
   });
 });
