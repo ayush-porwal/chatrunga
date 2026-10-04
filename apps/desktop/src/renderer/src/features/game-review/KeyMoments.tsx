@@ -30,8 +30,8 @@ export function MoveMarkNote({
 }
 
 /**
- * A list of marked moves (the key moments, or every mark): the move, its mark and why (never what
- * an error cost). Selecting a row goes to that move. With AI commentary on, the selected card
+ * The key insights as cards (the key moments: the reviewed side's strongest marked moves): the
+ * move, its mark and why (never what an error cost). Selecting a card goes to that move. With AI commentary on, the selected card
  * expands to the move's commentary (the Commentary tab's own); selecting it again folds it. With
  * it off, cards show no commentary and don't expand.
  */

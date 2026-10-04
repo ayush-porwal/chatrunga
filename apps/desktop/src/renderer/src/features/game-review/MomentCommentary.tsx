@@ -10,7 +10,7 @@ import type { CommentaryDetail } from "./review-utils";
 import { useGameReviewCommentary } from "./useGameReviewCommentary";
 
 /**
- * What a key-moment or mark card needs to show a move's AI commentary: the Commentary tab's own
+ * What a key-insight card needs to show a move's AI commentary: the Commentary tab's own
  * request options. Null while AI commentary is off (switched off, or no OpenRouter key): cards
  * then show no commentary and don't expand.
  */
