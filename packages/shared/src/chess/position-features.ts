@@ -188,7 +188,7 @@ function materialText(pos: Chess): string {
 }
 
 function pawnFiles(pos: Chess, color: Color): number[] {
-  const counts = new Array<number>(8).fill(0);
+  const counts = Array.from({ length: 8 }, () => 0);
   for (const sq of pos.board.pieces(color, "pawn"))
     counts[squareFile(sq)] = (counts[squareFile(sq)] ?? 0) + 1;
   return counts;

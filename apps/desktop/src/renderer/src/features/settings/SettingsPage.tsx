@@ -48,7 +48,7 @@ export const SettingsPage = memo(function SettingsPage({
 }) {
   const settings = useSettingsQuery();
   const desktopApiAvailable = hasDesktopApi();
-  const appearance = hydratePieceSettings({ ...defaultSettings, ...(settings.data ?? {}) });
+  const appearance = hydratePieceSettings({ ...defaultSettings, ...settings.data });
   // In page order (the scroll spy reports the one being read).
   const sections: SectionId[] = [
     "board",

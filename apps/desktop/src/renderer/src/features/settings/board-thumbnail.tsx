@@ -83,7 +83,7 @@ export const BoardThumbnail = memo(function BoardThumbnail({
   className?: string;
 }) {
   const settings = useSettingsQuery();
-  const appearance = hydratePieceSettings({ ...defaultSettings, ...(settings.data ?? {}) });
+  const appearance = hydratePieceSettings({ ...defaultSettings, ...settings.data });
   const preset = boardThemeSquareColors[appearance.boardTheme];
   const squareLight = light ?? appearance.boardSquareLight ?? preset.light;
   const squareDark = dark ?? appearance.boardSquareDark ?? preset.dark;

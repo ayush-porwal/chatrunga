@@ -193,7 +193,7 @@ test(
     // Both restores ran in the bundled worker and answered.
     const record = await mainRecord(app);
     expect(
-      record.workers.filter((path) => /repertoire-backup-restore-worker\.js$/.test(path))
+      record.workers.filter((path) => path.endsWith("repertoire-backup-restore-worker.js"))
     ).toHaveLength(2);
     console.log(
       `R02 backup (50,000 moves): two previews' main-process gap ${previewGap.toFixed(1)} ms, two restores' ${restoreGap.toFixed(1)} ms`

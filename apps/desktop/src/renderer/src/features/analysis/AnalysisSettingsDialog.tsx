@@ -44,7 +44,7 @@ const TIME_OPTIONS_SEC = [1, 2, 3, 5, 10, 15, 30, 60, 120, 300];
 export function AnalysisSettingsDialog({ onClose }: { onClose: () => void }) {
   const ids = useId();
   const settingsQuery = useSettingsQuery();
-  const settings: AppSettings = { ...defaultSettings, ...(settingsQuery.data ?? {}) };
+  const settings: AppSettings = { ...defaultSettings, ...settingsQuery.data };
   const engines = useEnginesQuery();
   const usable = (engines.data ?? []).filter((engine) => engine.isAvailable);
   const engineId = analysisEngineFor(engines.data, settings.analysisEngineId);

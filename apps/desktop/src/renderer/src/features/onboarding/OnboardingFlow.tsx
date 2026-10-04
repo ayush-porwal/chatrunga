@@ -89,7 +89,7 @@ export function OnboardingFlow({
   const headingId = useId();
   const setup = useEngineSetup();
   const settingsQuery = useSettingsQuery();
-  const settings: AppSettings = { ...defaultSettings, ...(settingsQuery.data ?? {}) };
+  const settings: AppSettings = { ...defaultSettings, ...settingsQuery.data };
   const setSetting = useSetSetting();
 
   useExitGhost(rootRef, motion.ms.standard);

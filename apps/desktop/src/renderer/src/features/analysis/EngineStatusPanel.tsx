@@ -413,7 +413,7 @@ function EngineStatusPanelContent({
   );
   const { fen, nodeId, orientation, analysing, engineGame, onGoToLine, goToLineLabel } = position;
   const settings = useSettingsQuery();
-  const analysisSettings = { ...defaultSettings, ...(settings.data ?? {}) };
+  const analysisSettings = { ...defaultSettings, ...settings.data };
   const searchLimit = analysisLimitLabel(analysisSettings);
   // An engine game asks for one line; live analysis (running or stopped) for as many as its settings say.
   const reservedLines = engineGame ? 1 : analysisSettings.analysisLines;

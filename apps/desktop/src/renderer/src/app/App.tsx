@@ -253,7 +253,7 @@ export function App() {
   const engines = useEnginesQuery();
   const nextPuzzle = useSamplePuzzleMutation();
   const settingsQuery = useSettingsQuery();
-  const settings = useMemo(() => ({ ...defaultSettings, ...(settingsQuery.data ?? {}) }), [settingsQuery.data]);
+  const settings = useMemo(() => ({ ...defaultSettings, ...settingsQuery.data }), [settingsQuery.data]);
   const defaultEngineId = useMemo(() => defaultEngineFor(engines.data), [engines.data]);
   // Live analysis as Settings / the Engine tab's settings say: engine, lines and how far to search.
   const analysisOptions = useMemo<AnalysisOptions>(

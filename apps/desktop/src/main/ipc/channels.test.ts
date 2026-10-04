@@ -12,7 +12,7 @@ const src = join(__dirname, "../..");
 function sources(dir: string): string {
   return readdirSync(dir)
     .map((name) => join(dir, name))
-    .flatMap((path) => (statSync(path).isDirectory() ? [sources(path)] : /\.ts$/.test(path) && !/\.test\.ts$/.test(path) ? [readFileSync(path, "utf8")] : []))
+    .flatMap((path) => (statSync(path).isDirectory() ? [sources(path)] : path.endsWith(".ts") && !path.endsWith(".test.ts") ? [readFileSync(path, "utf8")] : []))
     .join("\n");
 }
 

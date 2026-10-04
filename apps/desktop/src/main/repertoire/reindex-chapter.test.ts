@@ -362,7 +362,7 @@ function runSequence(seed: number, color: RepertoireColor, steps: number): void 
           revision = update().repertoire.revision;
         } catch (error) {
           // Refused (e.g. a move with no occurrence left): nothing was written.
-          if (!(error instanceof Error) || !/^Invalid /.test(error.message)) throw error;
+          if (!(error instanceof Error) || !error.message.startsWith("Invalid ")) throw error;
         }
       }
     } else if (roll < 0.25 && chapters().length > 1) {

@@ -419,7 +419,7 @@ function storedFingerprint(row: {
     const moveTree = JSON.parse(row.move_tree_json) as MoveNode[];
     if (!Array.isArray(moveTree) || !moveTree.length) return null;
     const stored = row.headers_json ? (JSON.parse(row.headers_json) as Partial<GameHeaders> | null) : null;
-    const headers = { site: row.site, white: row.white, black: row.black, date: row.date, ...(stored ?? {}) };
+    const headers = { site: row.site, white: row.white, black: row.black, date: row.date, ...stored };
     const rootFen = row.initial_fen ?? moveTree.find((node) => node.parentId === null)?.fenAfter ?? "";
     return gameFingerprint({ headers, rootFen, moveTree });
   } catch {

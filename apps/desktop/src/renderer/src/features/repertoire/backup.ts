@@ -267,7 +267,7 @@ export function backupWarningsNotice(
 
 /** True for the main process's refusal of a replace whose expected revision is out of date. */
 export function isStaleRevisionError(message: string): boolean {
-  return /^Invalid expectedRevision: repertoire changed/.test(message);
+  return message.startsWith("Invalid expectedRevision: repertoire changed");
 }
 
 /** "“A”", "“A” and “B”", "“A”, “B” and “C”". */
