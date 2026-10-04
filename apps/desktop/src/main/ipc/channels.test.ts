@@ -74,5 +74,20 @@ describe("IPC channels", () => {
     expect(matches(preload, /subscribe(?:<[^>]*>)?\(\s*"(repertoires:\w+)"/g)).toEqual(
       new Set(["repertoires:changed", "repertoires:importProgress"])
     );
+    // Every request the shared API declares has its channel (the subscriptions aside), so one
+    // dropped from both the preload and main still fails here.
+    const api = readFileSync(
+      join(src, "../../../packages/shared/src/ipc/chaturanga-api.ts"),
+      "utf8"
+    );
+    const declared = api.slice(
+      api.indexOf("\n  repertoires: {"),
+      api.indexOf("\n  };", api.indexOf("\n  repertoires: {"))
+    );
+    const methods = [...matches(declared, /^ {4}(\w+)[(<]/gm)].filter(
+      (name) => !name.startsWith("on")
+    );
+    expect(methods.length).toBeGreaterThan(30);
+    expect([...requested].sort()).toEqual(methods.map((name) => `repertoires:${name}`).sort());
   });
 });

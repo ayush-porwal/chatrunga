@@ -440,20 +440,26 @@ describe("native backup: preview", () => {
     expect(() => service.refreshBackupPreview(preview.jobId)).toThrow(/Invalid jobId/);
   });
 
-  it("reads a picked file (one starting with a byte order mark too), and returns null when the open dialog is cancelled", async () => {
-    seed();
-    const { path, text } = await exportText(false);
-    // Saved by an editor that adds a BOM.
-    writeFileSync(path, `\uFEFF${text}`, "utf8");
-    expect(await service.previewBackupImport({ pickFile: true })).toBeNull();
-    showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [path] });
-    const preview = await service.previewBackupImport({ pickFile: true });
-    expect(preview?.repertoires[0].hasProgress).toBe(false);
-    expect(showOpenDialog.mock.calls[1][0]).toMatchObject({
-      properties: ["openFile"],
-      filters: [{ name: "Chaturanga backup", extensions: ["json"] }]
-    });
-  });
+  it.each([
+    ["as exported", ""],
+    // Saved again by an editor that adds a byte order mark.
+    ["starting with a byte order mark", "\uFEFF"]
+  ])(
+    "reads a picked file (%s), and returns null when the open dialog is cancelled",
+    async (_kind, prefix) => {
+      seed();
+      const { path, text } = await exportText(false);
+      writeFileSync(path, `${prefix}${text}`, "utf8");
+      expect(await service.previewBackupImport({ pickFile: true })).toBeNull();
+      showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [path] });
+      const preview = await service.previewBackupImport({ pickFile: true });
+      expect(preview?.repertoires[0].hasProgress).toBe(false);
+      expect(showOpenDialog.mock.calls[1][0]).toMatchObject({
+        properties: ["openFile"],
+        filters: [{ name: "Chaturanga backup", extensions: ["json"] }]
+      });
+    }
+  );
 
   it("rejects a malformed document and a future format version before keeping a job", async () => {
     const detail = seed();

@@ -27,7 +27,7 @@ file is **keep**. The changes are small and listed below; fewer tests was not th
 | repertoire-model › the two draft-key tests                                       | merge   | draft key collisions (field, repertoire, wrong move, `paused` vs feedback) | the merged test, every assertion kept                                                                                                                                    |
 | import-progress › "starts with the jobId … no progress yet"                      | merge   | a new run with the wrong jobId or leftover progress                        | the merged "follows only that job's events" test                                                                                                                         |
 | renderer ipc/commentary › "does not expose a secret-read method"                 | replace | nothing: it checked its own stub                                           | main/ipc/channels › "never gives the renderer a way to read a secret": the preload's real `commentary:*` channels, and no key/secret/token channel at all                |
-| backup › "reads a picked file that starts with a byte order mark"                | merge   | a BOM not stripped from a picked backup                                    | the picked-file test, now writing its file with a BOM                                                                                                                    |
+| backup › "reads a picked file that starts with a byte order mark"                | merge   | a BOM not stripped from a picked backup                                    | the picked-file test, one `it.each` row with a BOM and one without                                                                                                       |
 | tactics › "returns an array of all detected motifs without duplication"          | merge   | a fork reported twice                                                      | the king-and-queen fork test, now asserting exactly one fork                                                                                                             |
 | rating-curve › "preserves probability values exactly"; the second `probFor` test | merge   | rounded probabilities; the wrong bucket                                    | the merged tests, every assertion kept                                                                                                                                   |
 | pgn › three `[%clk]` comment-shape tests                                         | merge   | a clock missed for a comment shape                                         | one `it.each`, one row per shape                                                                                                                                         |
@@ -42,7 +42,9 @@ file is **keep**. The changes are small and listed below; fewer tests was not th
 - repertoire-scheduler › interval and retry expectations are the spec's numbers
   (`[1, 3, 7, 14, 30, 60, 60, 60]` days, 10 minutes), not the implementation's constants.
 - onboarding-state › a constant compared to its own literal is gone (the step test implies it).
-- channels › no hard-coded channel count; migrations › no hard-coded schema version.
+- channels › the repertoire channel count is derived from the shared API's declared requests
+  (a channel dropped from both the preload and main still fails); migrations › no hard-coded
+  schema version.
 - repertoire-handler › handlers are registered in `beforeAll`, so a test no longer depends on the
   first one running; telemetry/service › dead fake-timer cleanup removed.
 - game-store, settings-write, saved-game › mocks, pending settings and stubbed globals are cleaned
