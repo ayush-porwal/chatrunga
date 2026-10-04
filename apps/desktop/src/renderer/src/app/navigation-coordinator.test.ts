@@ -18,6 +18,7 @@ import {
   restoreLoading,
   restoreReviewRoute,
   savedReviewPath,
+  reviewRouteToRestore,
   saveStudyDraftFirst,
   type NavigationShell,
   type PendingRestore,
@@ -487,6 +488,21 @@ describe("a Game Review URL the window opened at (a reload)", () => {
     expect(shell.showHome).not.toHaveBeenCalled();
   });
 
+  it("loads a review URL's game on a reload, or when the URL changes to another saved game", () => {
+    // The URL the window opened at: always, "current" too (it then lands on Home).
+    expect(reviewRouteToRestore(undefined, "g1", null)).toBe(true);
+    expect(reviewRouteToRestore(undefined, "current", null)).toBe(true);
+    // Changed while the app is open: another saved game's review loads it...
+    expect(reviewRouteToRestore("g1", "g2", "g1")).toBe(true);
+    // ...but the app's own moves there already show the game.
+    expect(reviewRouteToRestore(null, "g2", "g2")).toBe(false);
+    expect(reviewRouteToRestore(null, "current", null)).toBe(false);
+    expect(reviewRouteToRestore("current", "g7", "g7")).toBe(false);
+    // Unchanged, or off the review page.
+    expect(reviewRouteToRestore("g1", "g1", "g1")).toBe(false);
+    expect(reviewRouteToRestore("g1", null, "g1")).toBe(false);
+  });
+
   it("names a game first saved on its review in the URL, so a reload reopens it", () => {
     expect(savedReviewPath("current", "g7")).toBe("/games/g7/review");
     // Not saved yet, or already named: no change.
@@ -513,10 +529,13 @@ describe("a Game Review URL the window opened at (a reload)", () => {
     expect(unreadable.showHome).toHaveBeenCalledTimes(1);
   });
 
-  it("lands on Home for an unsaved game, which didn't outlive the window", async () => {
+  it("lands on Home for an unsaved game, which didn't outlive the window, saying why", async () => {
     const shell = reviewRouteShell();
     expect(await restoreReviewRoute("current", shell)).toBe("gone");
     expect(shell.getSavedGame).not.toHaveBeenCalled();
+    expect(useAppNoticeStore.getState().message).toBe(
+      "That game wasn't saved, so its review couldn't be reopened."
+    );
     expect(shell.showHome).toHaveBeenCalledTimes(1);
   });
 

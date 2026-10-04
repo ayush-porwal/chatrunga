@@ -270,6 +270,22 @@ export function savedReviewPath(routeId: string | null, gameId: string | null): 
 }
 
 /**
+ * Whether a Game Review URL needs its game loaded: the one the window opened at (`previous`
+ * undefined: a reload) always does, "current" included (it then lands on Home); a later change of
+ * the URL only when it names a saved game other than the one shown. The app's own moves to a
+ * review (a picked game, "current" becoming the game's id) already show its game.
+ */
+export function reviewRouteToRestore(
+  previous: string | null | undefined,
+  routeId: string | null,
+  gameId: string | null
+): boolean {
+  if (!routeId || routeId === previous) return false;
+  if (previous === undefined) return true;
+  return routeId !== "current" && routeId !== gameId;
+}
+
+/**
  * A Game Review URL the window opened at (a reload): its saved game comes back with its newest
  * review, as opening it from the picker does. The route never stays on an empty board: an unsaved
  * game ("current", gone with the window) lands on Home, and so does a game deleted since or one
@@ -285,6 +301,9 @@ export async function restoreReviewRoute(
     return "shown";
   }
   if (routeId === "current") {
+    useAppNoticeStore
+      .getState()
+      .show("That game wasn't saved, so its review couldn't be reopened.");
     shell.showHome();
     return "gone";
   }

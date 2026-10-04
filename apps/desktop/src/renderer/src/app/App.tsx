@@ -43,6 +43,7 @@ import { useHistoryStore, type HistoryEntry } from "../stores/history-store";
 import { captureEntry, recordHistory, type HistoryMode } from "./history-navigation";
 import {
   restoreReviewRoute,
+  reviewRouteToRestore,
   savedReviewPath,
   saveStudyDraftFirst,
   useHistoryRestore
@@ -434,9 +435,14 @@ export function App() {
 
   const clearPuzzleSession = puzzleSession.clear;
 
-  // The Game Review URL the window opened at (a reload) brings its saved game and review back.
+  // A Game Review URL brings its saved game and review back: the one the window opened at (a
+  // reload), and one that changes to another saved game while the app is open.
+  const handledReviewRoute = useRef<string | null | undefined>(undefined);
   const restoreOpenedReviewRoute = useEventCallback(() => {
+    const previous = handledReviewRoute.current;
+    handledReviewRoute.current = reviewRouteId;
     if (!reviewRouteId) return;
+    if (!reviewRouteToRestore(previous, reviewRouteId, currentGame().gameId)) return;
     const showHome = () => showView("home", "replace");
     restoreReviewRoute(reviewRouteId, {
       navigation: latestNavigation,
@@ -454,7 +460,7 @@ export function App() {
       showHome();
     });
   });
-  useEffect(restoreOpenedReviewRoute, [restoreOpenedReviewRoute]);
+  useEffect(restoreOpenedReviewRoute, [reviewRouteId, restoreOpenedReviewRoute]);
   // A game first saved while on its review (starting the analysis saves it) moves the URL from
   // "current" to its id, so a reload reopens it.
   useEffect(() => {
@@ -667,6 +673,10 @@ export function App() {
       clearPuzzleSession();
       openSavedGame(saved);
     } else {
+      // Its pending changes are written first, so the URL below names a game a reload can find
+      // (a failed save keeps its own Retry; the review still opens).
+      await flushGameAutosave();
+      if (request !== latestNavigation.current) return;
       stopEngineWork();
       // Back from the review returns to a game played on from a puzzle with its Next puzzle.
       puzzleSession.release(currentGame().board);
