@@ -1,11 +1,20 @@
 // The move list through the built app: a short game reviewed on the fake UCI engine in its
 // "review" mode (scripted lines for the Blackburne Shilling trap, see the script). Every move shows
 // its piece, the book moves end in the opening's row, and each marked error's BEST line folds under
-// it: its moves preview their position on hover (the game's own moves don't) and play as a
-// variation when clicked. How to run them: playwright.config.ts.
+// it: its moves preview their position on hover (the game's own moves don't), and clicking one
+// browses the line on the board without adding it to the game; only a new move played from it does.
+// How to run them: playwright.config.ts.
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
-import { expect, importPgnFile, registerFakeEngine, sidebar, skipWelcome, test } from "./app";
+import {
+  clickSquare,
+  expect,
+  importPgnFile,
+  registerFakeEngine,
+  sidebar,
+  skipWelcome,
+  test
+} from "./app";
 import { writePgn } from "./fixtures";
 
 const TRAP_PGN = `[Event "Move list e2e"]
@@ -23,7 +32,7 @@ const previews = (page: Page) => moveTree(page).locator("[data-line-preview]");
 const counter = (page: Page) =>
   page.getByRole("navigation", { name: "Move navigation" }).getByRole("paragraph").first();
 
-test("BEST lines fold under their errors, preview on hover and play on the board as variations", async ({
+test("BEST lines fold under their errors, preview on hover and are browsed on the board, not added to the game", async ({
   launch,
   profile
 }) => {
@@ -55,7 +64,7 @@ test("BEST lines fold under their errors, preview on hover and play on the board
 
   // Every move shows its piece (a pawn for pawn moves), and is still named by its SAN.
   const knightTakes = tree.locator("[data-move-cell]").nth(6);
-  await expect(knightTakes.getByRole("button", { name: "Nxe5", exact: true })).toHaveText("xe5");
+  await expect(knightTakes.getByRole("button", { name: "Nxe5", exact: true })).toHaveText(/^xe5/);
   await expect(knightTakes.locator("piece.white.knight")).toHaveCount(1);
   await expect(tree.locator("[data-move-cell]").nth(0).locator("piece.white.pawn")).toHaveCount(1);
   // The opening's row follows the last book move (3… Nd4).
@@ -75,22 +84,41 @@ test("BEST lines fold under their errors, preview on hover and play on the board
 
   // Resting on a suggested move shows its position under the line; the game's moves have no preview.
   await tree.getByRole("button", { name: "Qg5", exact: true }).hover();
-  await line.getByRole("button", { name: "Play the best line to 4. Nxd4 exd4" }).hover();
+  await line.getByRole("button", { name: "Show 4. Nxd4 exd4 on the board" }).hover();
   await expect(previews(page)).toHaveCount(1);
   await expect(tree.getByRole("img", { name: "Position after 4… exd4" })).toBeVisible();
   await tree.getByRole("button", { name: "Qg5", exact: true }).hover();
   await expect(previews(page)).toHaveCount(0);
 
-  // Clicking a suggested move plays the line up to it on the board, as a variation.
-  await line.getByRole("button", { name: "Play the best line to 4. Nxd4 exd4" }).click();
-  await expect(tree.getByRole("button", { name: "exd4", exact: true })).toHaveAttribute(
+  // Clicking a suggested move shows it on the board and makes it the current move of the line;
+  // the game's moves don't change (no variation is added) and no game move is current.
+  const first = line.getByRole("button", { name: "Show 4. Nxd4 on the board" });
+  const second = line.getByRole("button", { name: "Show 4. Nxd4 exd4 on the board" });
+  await first.click();
+  await expect(first).toHaveAttribute("aria-current", "step");
+  await expect(tree.getByRole("treeitem")).toHaveCount(0);
+  await expect(tree.locator('[data-tree-node-id][aria-current="step"]')).toHaveCount(0);
+  // → steps along the line and stays on its last move; ← steps back, then before its first move
+  // returns to the game move it branches from (3… Nd4).
+  // (Two steps from the first move: the second one finds the line's end.)
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await expect(second).toHaveAttribute("aria-current", "step");
+  await page.keyboard.press("ArrowLeft");
+  await expect(first).toHaveAttribute("aria-current", "step");
+  await page.keyboard.press("ArrowLeft");
+  await expect(counter(page)).toHaveText("6 / 14");
+  await expect(tree.getByRole("button", { name: "Nd4", exact: true })).toHaveAttribute(
     "aria-current",
     "step"
   );
-  await expect(tree.getByRole("treeitem").filter({ hasText: "xd4" })).toHaveCount(2);
-  // Clicking a game move jumps to it.
+  await expect(line.locator('[aria-current="step"]')).toHaveCount(0);
+  // Clicking a game move leaves the line for it.
+  await second.click();
   await tree.getByRole("button", { name: "Nxf7", exact: true }).click();
   await expect(counter(page)).toHaveText("9 / 14");
+  await expect(line.locator('[aria-current="step"]')).toHaveCount(0);
+  await expect(tree.getByRole("treeitem")).toHaveCount(0);
 
   // The disc folds the line again.
   await tree.getByRole("button", { name: "Blunder: hide the best line" }).click();
@@ -104,4 +132,23 @@ test("BEST lines fold under their errors, preview on hover and play on the board
   await expect(bestLines(page)).toHaveCount(3);
   await tree.getByRole("button", { name: "Hide all lines" }).click();
   await expect(bestLines(page)).toHaveCount(0);
+
+  // On the Analyze board, a new move played from a line's position makes the line up to it a real
+  // variation: 4. Nxd4 exd4, then 5. d3.
+  await sidebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
+  await page
+    .getByRole("tablist", { name: "Workspace panels" })
+    .getByRole("tab", { name: "Moves", exact: true })
+    .click();
+  const gameMoves = page.getByRole("tree", { name: "Game moves" });
+  await gameMoves.getByRole("button", { name: "Blunder: show the best line" }).first().click();
+  await gameMoves.getByRole("button", { name: "Show 4. Nxd4 exd4 on the board" }).click();
+  await expect(gameMoves.getByRole("treeitem")).toHaveCount(0);
+  await clickSquare(page, "d2");
+  await clickSquare(page, "d3");
+  await expect(gameMoves.getByRole("treeitem")).toHaveCount(3);
+  await expect(gameMoves.getByRole("button", { name: "d3", exact: true })).toHaveAttribute(
+    "aria-current",
+    "step"
+  );
 });
