@@ -1,0 +1,131 @@
+// Settings → Ratings (one rating per Lichess mode) and Settings → AI (the one OpenRouter model and
+// key every AI feature uses), through the built app; how to run them: playwright.config.ts.
+import type { Page } from "@playwright/test";
+import type { PlayerRatings } from "../../../packages/shared/src/types/ratings";
+import { closeApp, expect, importPgnFile, sidebar, skipWelcome, test } from "./app";
+import { RUY_LOPEZ_PGN, writePgn } from "./fixtures";
+
+const MODES = ["Bullet", "Blitz", "Rapid", "Classical", "Correspondence"] as const;
+
+const ratingsGroup = (page: Page) => page.getByRole("region", { name: "Ratings", exact: true });
+const ratingField = (page: Page, mode: (typeof MODES)[number]) =>
+  ratingsGroup(page).getByRole("spinbutton", { name: mode, exact: true });
+const reviewTabs = (page: Page) => page.getByRole("tablist", { name: "Game review sections" });
+
+/**
+ * Stores ratings as the main process's Lichess sync would (set-up, not the journey). Sent as
+ * source: the page's CSP forbids building functions from strings there.
+ */
+async function seedRatings(page: Page, ratings: PlayerRatings): Promise<void> {
+  await page.evaluate(
+    `window.chaturanga.settings.set("playerRatings", ${JSON.stringify(ratings)})`
+  );
+}
+
+async function openSettings(page: Page): Promise<void> {
+  await sidebar(page).getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
+}
+
+test("Settings has a rating per Lichess mode; one typed in is kept across a restart", async ({
+  launch,
+  profile
+}) => {
+  const first = await launch();
+  await skipWelcome(first.page);
+  await openSettings(first.page);
+  for (const mode of MODES) {
+    await expect(ratingField(first.page, mode)).toHaveValue("1500");
+    await expect(ratingField(first.page, mode)).toBeEditable();
+  }
+
+  await ratingField(first.page, "Blitz").fill("1720");
+  await ratingField(first.page, "Blitz").press("Enter");
+  await expect(ratingField(first.page, "Blitz")).toHaveValue("1720");
+  // Only that mode changed.
+  await expect(ratingField(first.page, "Rapid")).toHaveValue("1500");
+  // Out of range is held to the range.
+  await ratingField(first.page, "Bullet").fill("9000");
+  await ratingField(first.page, "Bullet").blur();
+  await expect(ratingField(first.page, "Bullet")).toHaveValue("3500");
+  await closeApp(first.app);
+
+  const second = await launch(profile);
+  await expect(sidebar(second.page)).toBeVisible();
+  await openSettings(second.page);
+  await expect(ratingField(second.page, "Blitz")).toHaveValue("1720");
+  await expect(ratingField(second.page, "Bullet")).toHaveValue("3500");
+  await expect(ratingField(second.page, "Classical")).toHaveValue("1500");
+});
+
+test("a rating synced from Lichess is read-only and says so; a provisional one stays editable", async ({
+  launch
+}) => {
+  const { page } = await launch();
+  await skipWelcome(page);
+  // What a sync stores (the network is off in these runs, so no account can connect).
+  const syncedAt = Date.now() - 2 * 60 * 60 * 1000;
+  const manual = { source: "manual", rating: 1500 } as const;
+  await seedRatings(page, {
+    bullet: manual,
+    blitz: { source: "lichess", rating: 1720, syncedAt, provisional: false },
+    rapid: { source: "lichess", rating: 1810, syncedAt, provisional: true },
+    classical: manual,
+    correspondence: manual
+  });
+  await openSettings(page);
+
+  await expect(ratingField(page, "Blitz")).toHaveValue("1720");
+  await expect(ratingField(page, "Blitz")).not.toBeEditable();
+  await expect(ratingsGroup(page)).toContainText("from Lichess · updated 2h ago");
+  await expect(ratingField(page, "Rapid")).toHaveValue("1810");
+  await expect(ratingField(page, "Rapid")).toBeEditable();
+  await expect(ratingsGroup(page)).toContainText("provisional on Lichess · updated 2h ago");
+
+  // Typing over the provisional one makes it yours.
+  await ratingField(page, "Rapid").fill("1650");
+  await ratingField(page, "Rapid").press("Enter");
+  await expect(ratingField(page, "Rapid")).toHaveValue("1650");
+  await expect(ratingsGroup(page)).not.toContainText("provisional on Lichess");
+});
+
+test("the AI section holds the one model and key; Review settings link to it and to the ratings", async ({
+  launch,
+  profile
+}) => {
+  const { app, page } = await launch();
+  await skipWelcome(page);
+  await openSettings(page);
+  const ai = page.locator("#settings-ai");
+  await expect(ai.getByRole("heading", { name: "AI", exact: true })).toBeVisible();
+  await expect(ai.getByLabel("OpenRouter model")).toBeVisible();
+  await expect(ai.getByLabel("OpenRouter API key")).toBeVisible();
+  await expect(ai).toContainText("No key saved. AI features need one.");
+
+  // Review settings no longer hold the key: they name the rating used and link to app Settings.
+  await importPgnFile(app, page, writePgn(profile, "ruy-lopez.pgn", RUY_LOPEZ_PGN));
+  await expect(page.getByRole("region", { name: "Board" })).toBeVisible();
+  await sidebar(page).getByRole("button", { name: "Game review", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Choose a game" })
+    .getByRole("button", { name: /^Alpha vs Beta/ })
+    .click();
+  await reviewTabs(page).getByRole("tab", { name: "Settings", exact: true }).click();
+  await expect(page.getByLabel("OpenRouter API key")).toHaveCount(0);
+  // The game has no ratings or time control: the Settings rating for rapid.
+  await expect(page.getByText("Rapid 1500 · from Settings")).toBeVisible();
+
+  await page.getByRole("button", { name: "AI settings", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
+  await expect(ai.getByRole("heading", { name: "AI", exact: true })).toBeInViewport();
+
+  // Back to the review (the game is still loaded), then to the ratings.
+  await sidebar(page).getByRole("button", { name: "Game review", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Choose a game" });
+  await expect(reviewTabs(page).or(picker)).toBeVisible();
+  if (await picker.isVisible())
+    await picker.getByRole("button", { name: /^Alpha vs Beta/ }).click();
+  await reviewTabs(page).getByRole("tab", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Edit ratings", exact: true }).click();
+  await expect(ratingsGroup(page)).toBeInViewport();
+});
