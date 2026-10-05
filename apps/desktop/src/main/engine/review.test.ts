@@ -192,14 +192,19 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
 
   it("marks only the moves that matter, verifying the critical find with a deeper search", async () => {
     const log = join(mkdtempSync(join(tmpdir(), "review-marks-")), "uci.log");
-    const review = await reviewGameWithEngine(scriptedEngine("scripted", log, "review"), {
-      reviewId: "m",
-      engineId: "scripted",
-      rootFen: START,
-      moves: trapGame(),
-      multipv: 3,
-      moveTimeMs: 40
-    });
+    const streamed: { moveIndex: number; opening: unknown }[] = [];
+    const review = await reviewGameWithEngine(
+      scriptedEngine("scripted", log, "review"),
+      {
+        reviewId: "m",
+        engineId: "scripted",
+        rootFen: START,
+        moves: trapGame(),
+        multipv: 3,
+        moveTimeMs: 40
+      },
+      { onMoveCompleted: ({ moveIndex, opening }) => streamed.push({ moveIndex, opening }) }
+    );
     // The first six moves are opening theory: 3… Nd4 is the Blackburne–Kostić Gambit, so Book.
     expect(review.moves.map((move) => [move.san, move.assessment?.annotation ?? null])).toEqual([
       ["e4", "book"],
@@ -245,6 +250,10 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
       name: "Italian Game: Blackburne-Kostić Gambit",
       firstNonBookMove: { ply: 7, san: "Nxe5" }
     });
+    // Each finished move carries the opening, so a running review can name it from the first.
+    expect(streamed).toEqual(
+      review.moves.map((_, moveIndex) => ({ moveIndex, opening: review.opening }))
+    );
   }, 30_000);
 
   it("withholds a mark a deeper search disagrees with, and searches a borderline error's move alone", async () => {

@@ -5,7 +5,7 @@ import type { RepertoireColor } from "@chaturanga/shared/types/repertoire";
 import type { StudyOpenTarget } from "../repertoire/repertoire-chapters";
 import { useGameStore } from "../../stores/game-store";
 import { activeBestLine, bestLineStep } from "../game/best-line-cursor";
-import { reviewsByNode, useReviewStore } from "../../stores/review-store";
+import { reviewsByNode, selectDisplayedOpening, useReviewStore } from "../../stores/review-store";
 import { useDisplayedReviewMoves, useOutdatedReviewMoves } from "../../stores/review-validity";
 import { boardClocksAt, sideToMove } from "../board/board-clocks";
 import { mainlineReviewInput, moveLabel, uciSquares, type ReviewTab } from "./review-utils";
@@ -133,6 +133,8 @@ function GameReviewPageInner({
   // Moves of the shown analysis the game no longer has (deleted or replaced since): left out above.
   const outdatedMoves = useOutdatedReviewMoves();
   const reviewError = useReviewStore((state) => state.error);
+  // The move list's opening row: a running review's too, as soon as its moves name the opening.
+  const opening = useReviewStore(selectDisplayedOpening);
   const reviewInput = useMemo(() => mainlineReviewInput(moveTree), [moveTree]);
   // The Opening tab's side, picked for this game (kept across tab switches and Back, not across games).
   const board = useGameStore((state) => state.board);
@@ -272,11 +274,8 @@ function GameReviewPageInner({
     bestLine ? bestLineStep(bestLine).uci : (selectedMove?.playedMove ?? currentNode?.uci ?? null)
   );
   const moveMark = useMemo(
-    () =>
-      bestLine
-        ? null
-        : boardMoveMark("review", { running: isRunning, moves, nodeId: selectedNodeId }),
-    [bestLine, isRunning, moves, selectedNodeId]
+    () => (bestLine ? null : boardMoveMark("review", { moves, nodeId: selectedNodeId })),
+    [bestLine, moves, selectedNodeId]
   );
   const whitePlayer = {
     name: headers.white || "White",
@@ -595,7 +594,7 @@ function GameReviewPageInner({
             onSelectNode={selectNode}
             moves={moves}
             keyMoments={moments}
-            opening={isRunning ? null : review?.opening}
+            opening={opening}
             orientation={orientation}
           />
         ) : null}

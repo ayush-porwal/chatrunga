@@ -5,6 +5,7 @@ import {
   type AnalysisLine,
   type EngineConfig,
   type EngineInfo,
+  type GameOpening,
   type GameReview,
   type MaiaRating,
   type MoveAssessment,
@@ -94,8 +95,15 @@ export type ReviewProgressSink = {
     depth: number;
     lines: AnalysisLine[];
   }) => void;
-  /** Fires once per move, after the evaluation engine and every Maia level have reported. */
-  onMoveCompleted?: (input: { moveIndex: number; move: MoveReview }) => void;
+  /**
+   * Fires once per move, after the evaluation engine and every Maia level have reported. `opening`
+   * is the game's (known before the first move: it comes from the opening book).
+   */
+  onMoveCompleted?: (input: {
+    moveIndex: number;
+    move: MoveReview;
+    opening: GameOpening | null;
+  }) => void;
   shouldCancel?: () => boolean;
 };
 
@@ -271,7 +279,7 @@ export async function reviewGameWithEngine(
         previousReplyLines = terminalStateForFen(move.fenAfter) ? null : done.replyLines;
         const assessed = assess(moveReview);
         moves.push(assessed);
-        sink.onMoveCompleted?.({ moveIndex: index, move: assessed });
+        sink.onMoveCompleted?.({ moveIndex: index, move: assessed, opening: theory.opening });
         continue;
       }
       const emitPhase = (phase: ReviewProgressPhase, lines: AnalysisLine[]) =>
@@ -406,7 +414,7 @@ export async function reviewGameWithEngine(
       }
       const assessed = assess(moveReview);
       moves.push(assessed);
-      sink.onMoveCompleted?.({ moveIndex: index, move: assessed });
+      sink.onMoveCompleted?.({ moveIndex: index, move: assessed, opening: theory.opening });
     }
 
     return {

@@ -117,9 +117,15 @@ export async function runGameReview(
             playedUci: input.moves[progress.moveIndex]?.uci ?? "",
             ...progress
           }),
-        onMoveCompleted: ({ moveIndex, move }) => {
+        onMoveCompleted: ({ moveIndex, move, opening }) => {
           movesDone += 1;
-          engineManager.emit("reviewMoveCompleted", { reviewId, moveIndex, totalMoves, move });
+          engineManager.emit("reviewMoveCompleted", {
+            reviewId,
+            moveIndex,
+            totalMoves,
+            move,
+            opening
+          });
         },
         shouldCancel: () => engineManager.isReviewCancelled(reviewId)
       },

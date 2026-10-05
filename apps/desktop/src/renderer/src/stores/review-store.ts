@@ -3,6 +3,7 @@ import { savedReviewInfo } from "@chaturanga/shared/chess/review-info";
 import type { SavedReviewInfo } from "@chaturanga/shared/types/chess";
 import {
   savedReviewCommentary,
+  type GameOpening,
   type GameReview,
   type MoveReview,
   type ReviewCommentary,
@@ -23,6 +24,11 @@ type ReviewStore = {
   reviewId: string | null;
   progress: ReviewProgress | null;
   partialMoves: MoveReview[];
+  /**
+   * The running review's opening, as its analysed moves carry it: null until the first arrives (or
+   * when the game reached no named position).
+   */
+  partialOpening: GameOpening | null;
   /** The line the running review analyses (null when none runs, or it was started without one). */
   runLine: ReviewLineMove[] | null;
   /**
@@ -43,6 +49,7 @@ type ReviewStore = {
   applyReviewEvents: (batch: {
     progress: ReviewProgress | null;
     moves: readonly MoveReview[];
+    opening?: GameOpening | null;
   }) => void;
   markCancelled: () => void;
   /** Shows `review`; `analyses` replaces the list (a newly opened game), else the list stays. */
@@ -62,6 +69,7 @@ export const useReviewStore = create<ReviewStore>((set) => ({
   reviewId: null,
   progress: null,
   partialMoves: [],
+  partialOpening: null,
   runLine: null,
   analyses: [],
   startReview: (reviewId, line) =>
@@ -72,6 +80,7 @@ export const useReviewStore = create<ReviewStore>((set) => ({
       runLine: line ?? null,
       progress: null,
       partialMoves: [],
+      partialOpening: null,
       review: state.review
     })),
   setReview: (review) =>
@@ -86,6 +95,7 @@ export const useReviewStore = create<ReviewStore>((set) => ({
         error: null,
         progress: null,
         partialMoves: [],
+        partialOpening: null,
         runLine: null,
         analyses: [
           savedReviewInfo(shown, id),
@@ -126,7 +136,8 @@ export const useReviewStore = create<ReviewStore>((set) => ({
             runLine: null,
             status: state.review ? "ready" : "idle",
             progress: null,
-            partialMoves: []
+            partialMoves: [],
+            partialOpening: null
           }
         : { reviewId: null, runLine: null }
     ),
@@ -139,14 +150,16 @@ export const useReviewStore = create<ReviewStore>((set) => ({
       reviewId: null,
       progress: null,
       partialMoves: [],
+      partialOpening: null,
       runLine: null,
       analyses: []
     }),
-  applyReviewEvents: ({ progress, moves }) =>
+  applyReviewEvents: ({ progress, moves, opening }) =>
     set((state) => {
       const next: Partial<ReviewStore> = {};
       if (progress && !sameProgressStep(state.progress, progress)) next.progress = progress;
       if (moves.length) next.partialMoves = mergePartialMoves(state.partialMoves, moves);
+      if (opening !== undefined) next.partialOpening = opening;
       return Object.keys(next).length ? next : state;
     }),
   markCancelled: () =>
@@ -168,7 +181,8 @@ export const useReviewStore = create<ReviewStore>((set) => ({
       reviewId: null,
       runLine: null,
       progress: null,
-      partialMoves: []
+      partialMoves: [],
+      partialOpening: null
     }))
 }));
 
@@ -206,6 +220,13 @@ export function selectDisplayedMoves(
   return state.status === "running"
     ? state.partialMoves
     : (state.review?.moves ?? state.partialMoves);
+}
+
+/** The opening of selectDisplayedMoves' moves: the running review's as soon as its moves name it. */
+export function selectDisplayedOpening(
+  state: Pick<ReviewStore, "status" | "review" | "partialOpening">
+): GameOpening | null | undefined {
+  return state.status === "running" || !state.review ? state.partialOpening : state.review.opening;
 }
 
 export function reviewsByNode(moves: readonly MoveReview[]): Map<string, MoveReview> {

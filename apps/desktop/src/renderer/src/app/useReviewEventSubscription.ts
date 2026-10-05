@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { MoveReview, ReviewProgress } from "@chaturanga/shared/types/engine";
+import type { GameOpening, MoveReview, ReviewProgress } from "@chaturanga/shared/types/engine";
 import { useGameStore } from "../stores/game-store";
 import { useReviewStore } from "../stores/review-store";
 import { lineStillOnMainline } from "../stores/review-validity";
@@ -13,7 +13,13 @@ export function acceptsReviewEvent(reviewId: string | null, eventReviewId: strin
 /** Engine progress/move events are coalesced so the review UI updates at most this often. */
 export const REVIEW_EVENT_FLUSH_MS = 250;
 
-type ReviewEventBatch = { reviewId: string; progress: ReviewProgress | null; moves: MoveReview[] };
+type ReviewEventBatch = {
+  reviewId: string;
+  progress: ReviewProgress | null;
+  moves: MoveReview[];
+  /** The game's opening, as the batch's moves carried it (undefined: no move in the batch). */
+  opening?: GameOpening | null;
+};
 
 /**
  * Throttles the per-depth progress stream (several events per second per move) and the
@@ -45,8 +51,10 @@ export function createReviewEventBuffer(
     progress(progress: ReviewProgress) {
       target(progress.reviewId).progress = progress;
     },
-    move(reviewId: string, move: MoveReview) {
-      target(reviewId).moves.push(move);
+    move(reviewId: string, move: MoveReview, opening: GameOpening | null = null) {
+      const batch = target(reviewId);
+      batch.moves.push(move);
+      batch.opening = opening;
     },
     flushNow,
     discard() {
@@ -75,7 +83,7 @@ export function useReviewEventSubscription(): void {
     });
     const unsubMoveCompleted = window.chaturanga.events.onReviewMoveCompleted((event) => {
       if (!acceptsReviewEvent(useReviewStore.getState().reviewId, event.reviewId)) return;
-      buffer.move(event.reviewId, event.move);
+      buffer.move(event.reviewId, event.move, event.opening);
     });
     const unsubCompleted = window.chaturanga.events.onReviewCompleted((event) => {
       const store = useReviewStore.getState();

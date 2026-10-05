@@ -615,6 +615,8 @@ export type ReviewMoveCompleted = {
   moveIndex: number;
   totalMoves: number;
   move: MoveReview;
+  /** The game's opening (GameReview.opening), known from the run's first analysed move. */
+  opening: GameOpening | null;
 };
 
 export type ReviewCompleted = {
