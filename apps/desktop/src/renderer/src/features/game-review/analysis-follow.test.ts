@@ -3,6 +3,7 @@ import {
   createAnalysisFollower,
   FOLLOW_STEP_MS,
   followTargetIndex,
+  runEnding,
   type FollowStep
 } from "./analysis-follow";
 
@@ -101,6 +102,18 @@ describe("analysis follower", () => {
     expect(steps.at(-1)).toEqual({ nodeId: "m4", quiet: false });
   });
 
+  it("pauses when the user picks the move already shown, so the board holds there", () => {
+    const { follower, steps } = follow();
+    follower.update(line, 1);
+    expect(steps).toEqual([{ nodeId: "m1", quiet: false }]);
+    // A click on m1, where the board already is: no board change, but the user means "hold here".
+    follower.pause();
+    expect(follower.isPaused()).toBe(true);
+    follower.update(line, 2);
+    vi.advanceTimersByTime(FOLLOW_STEP_MS * 3);
+    expect(steps).toHaveLength(1);
+  });
+
   it("pauses for a BEST line on the move it shows, and resuming leaves the line", () => {
     const { follower, steps } = follow();
     follower.update(line, 1);
@@ -174,5 +187,31 @@ describe("analysis follower", () => {
     follower.update(line, line.length);
     follower.update([], 0);
     expect(steps).toEqual([]);
+  });
+});
+
+describe("runEnding", () => {
+  const oldReview = { moves: [] };
+  const running = { status: "running", reviewId: "run-2", review: oldReview };
+
+  it("is finished only when the run's own result arrives", () => {
+    const result = { moves: [] };
+    expect(
+      runEnding(running, { status: "ready", reviewId: "run-2", review: result }, "run-2")
+    ).toBe("finished");
+    expect(runEnding(running, running, "run-2")).toBe("running");
+  });
+
+  it("is stopped when the run is detached back to the earlier review, cancelled or failed", () => {
+    // detachRun: the earlier review is shown again ("ready") and the run's id is cleared.
+    expect(
+      runEnding(running, { status: "ready", reviewId: null, review: oldReview }, "run-2")
+    ).toBe("stopped");
+    expect(
+      runEnding(running, { status: "idle", reviewId: "run-2", review: oldReview }, "run-2")
+    ).toBe("stopped");
+    expect(
+      runEnding(running, { status: "error", reviewId: "run-2", review: oldReview }, "run-2")
+    ).toBe("stopped");
   });
 });

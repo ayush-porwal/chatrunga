@@ -8,18 +8,19 @@ import { activeBestLine } from "../game/best-line-cursor";
 import {
   createAnalysisFollower,
   followTargetIndex,
+  runEnding,
   type AnalysisFollower
 } from "./analysis-follow";
 
 /**
  * While a review runs on this page, the board follows its analysis (analysis-follow.ts): `line`
  * is the main line's node ids from the start, `moves` the reviewed moves shown. `paused`: the user
- * navigated away; `resume` follows again.
+ * navigated away (or `pause`, a move the user picked, even the one shown); `resume` follows again.
  */
 export function useAnalysisFollow(
   line: readonly string[],
   moves: readonly MoveReview[]
-): { paused: boolean; resume: () => void } {
+): { paused: boolean; pause: () => void; resume: () => void } {
   const runId = useReviewStore((state) => (state.status === "running" ? state.reviewId : null));
   // The run following was paused in (a new run starts unpaused).
   const [pausedRun, setPausedRun] = useState<string | null>(null);
@@ -48,11 +49,12 @@ export function useAnalysisFollow(
         return;
       follower.noteBoard(state.currentNodeId, Boolean(activeBestLine(state)));
     });
-    // The run finished (not stopped): the board ends on its last move.
+    // The run finished (its own result, not a stop or a detach): the board ends on its last move.
     const unsubscribeReview = useReviewStore.subscribe((state, previous) => {
       if (previous.status !== "running" || previous.reviewId !== runId) return;
-      if (state.status === "running" && state.reviewId === runId) return;
-      const last = state.status === "ready" ? state.review?.moves.at(-1) : undefined;
+      const ending = runEnding(previous, state, runId);
+      if (ending === "running") return;
+      const last = ending === "finished" ? state.review?.moves.at(-1) : undefined;
       if (last) follower.finish(last.nodeId);
       else follower.dispose();
     });
@@ -69,6 +71,7 @@ export function useAnalysisFollow(
     followerRef.current?.update(line, targetIndex);
   }, [line, runId, targetIndex]);
 
+  const pause = useCallback(() => followerRef.current?.pause(), []);
   const resume = useCallback(() => followerRef.current?.resume(), []);
-  return { paused: runId !== null && pausedRun === runId, resume };
+  return { paused: runId !== null && pausedRun === runId, pause, resume };
 }

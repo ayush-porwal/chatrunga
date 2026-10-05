@@ -128,7 +128,7 @@ function GameReviewPageInner({
   const boardFen = useGameStore((state) => state.currentFen);
   const orientation = useGameStore((state) => state.orientation);
   const headers = useGameStore((state) => state.headers);
-  const selectNode = useGameStore((state) => state.goToNode);
+  const goToNode = useGameStore((state) => state.goToNode);
   const reviewStatus = useReviewStore((state) => state.status);
   const review = useReviewStore((state) => state.review);
   const moves = useDisplayedReviewMoves();
@@ -145,6 +145,16 @@ function GameReviewPageInner({
     [reviewInput]
   );
   const follow = useAnalysisFollow(followLine, moves);
+  // A move the user picks (the tree, a card, the charts, Start review) pauses following, even the
+  // move already shown.
+  const { pause: pauseFollow } = follow;
+  const selectNode = useCallback(
+    (nodeId: string) => {
+      pauseFollow();
+      goToNode(nodeId);
+    },
+    [goToNode, pauseFollow]
+  );
   // The Opening tab's side, picked for this game (kept across tab switches and Back, not across games).
   const board = useGameStore((state) => state.board);
   const openingColor = openingSideFor(openingSide, board);

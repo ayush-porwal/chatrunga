@@ -26,6 +26,26 @@ export function followTargetIndex(
   return 0;
 }
 
+/**
+ * How a review-store update ends the run being followed (`runId`): "running" while it goes on,
+ * "finished" when its own result arrived (setReview keeps the run's id and replaces the review),
+ * "stopped" otherwise: cancelled, failed, or detached (an edit took its line off the main line;
+ * the store then shows the earlier review again, which must not move the board).
+ */
+export function runEnding(
+  previous: { status: string; reviewId: string | null; review: unknown },
+  state: { status: string; reviewId: string | null; review: unknown },
+  runId: string
+): "running" | "finished" | "stopped" {
+  if (state.status === "running" && state.reviewId === runId) return "running";
+  const finished =
+    previous.status === "running" &&
+    state.status === "ready" &&
+    state.reviewId === runId &&
+    state.review !== previous.review;
+  return finished ? "finished" : "stopped";
+}
+
 export type AnalysisFollower = {
   /** The run's line and its latest analysed move (followTargetIndex): the board heads there. */
   update: (line: readonly string[], targetIndex: number) => void;
@@ -34,6 +54,11 @@ export type AnalysisFollower = {
    * follower's own step is the user navigating: following pauses.
    */
   noteBoard: (nodeId: string, browsingLine: boolean) => void;
+  /**
+   * The user picked a move: following pauses even when the board stays where it is (a click on the
+   * move already shown means "hold here").
+   */
+  pause: () => void;
   /** Follows again, jumping to the latest analysed move. */
   resume: () => void;
   /** The run finished: unless paused, the board goes to its last move. Then it stops following. */
@@ -119,6 +144,11 @@ export function createAnalysisFollower({
     noteBoard(nodeId, browsingLine) {
       if (disposed || (nodeId === board && !browsingLine)) return;
       board = browsingLine ? null : nodeId;
+      cancel();
+      setPaused(true);
+    },
+    pause() {
+      if (disposed) return;
       cancel();
       setPaused(true);
     },

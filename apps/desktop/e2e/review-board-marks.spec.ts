@@ -418,6 +418,17 @@ test("a running review fills in as it goes: the board follows the analysis until
   await expect(follow).toHaveCount(0);
   await expect(board(page).getByRole("img", { name: "Great: Qg5" })).toBeVisible();
 
+  // Clicking the move already shown pauses too: the board holds there as the next one finishes.
+  await tree.getByRole("button", { name: "Qg5", exact: true }).click();
+  await expect(follow).toBeVisible();
+  gate(9);
+  await expect(navigation(page).getByRole("status")).toHaveAccessibleName(
+    "Analyzing move 10 of 14"
+  );
+  await expect(counter(page)).toHaveText("8 / 14");
+  await follow.click();
+  await expect(counter(page)).toHaveText("9 / 14");
+
   // The run ends with the board on its last move.
   gate(13);
   await expect(
