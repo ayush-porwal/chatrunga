@@ -60,7 +60,6 @@ async function screenshot(page: Page, name: string) {
 const titlebar = (page: Page) => page.getByRole("banner", { name: "Titlebar" });
 const reviewTabs = (page: Page) => page.getByRole("tablist", { name: "Game review sections" });
 const moveTree = (page: Page) => page.getByRole("tree", { name: "Reviewed move tree" });
-const keyMomentNav = (page: Page) => page.getByRole("group", { name: "Key insights" });
 const counter = (page: Page) =>
   page.getByRole("navigation", { name: "Move navigation" }).getByRole("paragraph").first();
 
@@ -82,7 +81,7 @@ async function treeMarks(page: Page): Promise<[string, string | null][]> {
   return marks;
 }
 
-test("a reviewed game marks only the moves that matter, leads with its key moments and steps through them", async ({
+test("a reviewed game marks only the moves that matter, leads with its key moments and goes to them", async ({
   launch,
   profile
 }) => {
@@ -136,22 +135,13 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
   await expect(leading).not.toContainText("Allows a forced mate.");
   await screenshot(page, "key-moments");
 
-  // Key-insight navigation (the charts' header): from the start to each in turn, and back.
-  await expect(keyMomentNav(page)).toContainText("3 key insights");
+  // A card goes to its move: 5. Nxf7. The key insights live there and in the Moves tab, not in
+  // the charts' header.
+  await leading.getByRole("button", { name: "5. Nxf7, Blunder" }).click();
+  await expect(counter(page)).toHaveText("9 / 14");
   await expect(
-    keyMomentNav(page).getByRole("button", { name: "Previous key insight" })
-  ).toBeDisabled();
-  await keyMomentNav(page).getByRole("button", { name: "Next key insight" }).click();
-  await expect(counter(page)).toHaveText("7 / 14");
-  await expect(keyMomentNav(page)).toContainText("Key insight 1 of 3");
-  await keyMomentNav(page).getByRole("button", { name: "Next key insight" }).click();
-  await expect(counter(page)).toHaveText("9 / 14");
-  await expect(keyMomentNav(page)).toContainText("Key insight 2 of 3");
-  await keyMomentNav(page).getByRole("button", { name: "Next key insight" }).click();
-  await expect(counter(page)).toHaveText("13 / 14");
-  await expect(keyMomentNav(page).getByRole("button", { name: "Next key insight" })).toBeDisabled();
-  await keyMomentNav(page).getByRole("button", { name: "Previous key insight" }).click();
-  await expect(counter(page)).toHaveText("9 / 14");
+    page.getByRole("region", { name: "Game charts" }).getByRole("button", { name: /key insight/i })
+  ).toHaveCount(0);
 
   // The selected move's header names its mark (no static explanation): 4… Qg5, the critical find.
   await page

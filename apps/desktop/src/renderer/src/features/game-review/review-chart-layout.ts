@@ -1,15 +1,16 @@
 /**
- * The review charts' vertical layout: the fixed rows (splitter, header, fold labels, axis), the
+ * The review charts' vertical layout: the fixed rows (header, fold labels, axis), the
  * charts area's default height for the views shown, the clamp on the height the user drags the
  * splitter to, and how the rest of that height is shared by the views: equally among winning
  * chances and the open strips (Difficulty, Move times), an absent or folded strip's share going to
  * the others, every view keeping its minimum.
  */
 
-/** The splitter's hit area along the top edge of the charts. */
-export const SPLITTER_HEIGHT = 8;
-/** The header (title and key-insight controls, 28 px buttons) and the space under it. */
-const HEADER_HEIGHT = 32;
+/**
+ * The header: CollapsibleHeader's 48 px "section" row, as Game Review's. The splitter overlays the
+ * divider line above it, so it adds no row of its own.
+ */
+export const HEADER_HEIGHT = 48;
 /** Space between two rows of the views. */
 const GAP = 4;
 /** A folding strip's label row. */
@@ -66,7 +67,7 @@ function openCount(open: OpenViews): number {
 }
 
 /**
- * The rows that don't grow: splitter, header, each strip's label (or the Maia prompt), the move
+ * The rows that don't grow: the header, each strip's label (or the Maia prompt), the move
  * axis under the last open strip, and the gaps between rows.
  */
 function fixedHeight(layout: ChartsLayout): number {
@@ -78,7 +79,7 @@ function fixedHeight(layout: ChartsLayout): number {
   if (layout.times !== "none") rows.push(TOGGLE_HEIGHT);
   if (views) rows.push(AXIS_HEIGHT);
   const gaps = (rows.length + views - 1) * GAP;
-  return SPLITTER_HEIGHT + HEADER_HEIGHT + rows.reduce((sum, row) => sum + row, 0) + gaps;
+  return HEADER_HEIGHT + rows.reduce((sum, row) => sum + row, 0) + gaps;
 }
 
 /** The charts area's height with nothing set: every open view at its usual size. */

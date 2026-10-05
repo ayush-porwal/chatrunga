@@ -41,7 +41,6 @@ import {
 } from "./commentary-moves";
 import { openingSideFor, type OpeningSide } from "./opening-comparison";
 import { keyMoments } from "@chaturanga/shared/chess/key-moments";
-import { KeyMomentNav } from "./KeyMoments";
 import { Sparkles, Swords, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -300,12 +299,6 @@ function GameReviewPageInner({
   const toMove = sideToMove(boardFen);
   const onMainline =
     selectedNodeId === "root" || reviewInput.some((move) => move.nodeId === selectedNodeId);
-  // Key-moment steps count from the selected move (a variation counts from the move it leaves).
-  const selectedPly = currentAnchor?.move.ply ?? currentNode?.ply ?? 0;
-  const momentNav = useMemo(
-    () => <KeyMomentNav moments={moments} selectedPly={selectedPly} onSelectNode={selectNode} />,
-    [moments, selectNode, selectedPly]
-  );
   const recomputed = Boolean(review?.assessmentsRecomputed) && !isRunning;
   const hasMoves = moves.length > 0;
   /** No main-line moves (and no saved review): nothing to analyse or explain. */
@@ -470,7 +463,6 @@ function GameReviewPageInner({
                   reviewedSide={side}
                   totalPlies={isRunning ? reviewInput.length : undefined}
                   keyMomentIds={momentIds}
-                  actions={momentNav}
                   opening={isRunning ? undefined : review?.opening}
                   mainline={reviewInput}
                   timeControl={headers.timeControl}

@@ -268,9 +268,11 @@ function useChartsHeight(layout: ChartsLayout, fill: boolean) {
  * focused the arrow keys step through the moves. The drawn layers redraw only when the review or
  * the size changes; moving the selection or the hover only moves the lines.
  *
- * A splitter along the top edge (the boundary with the panel content above) sets the charts'
- * height: dragged, with the arrow keys, or reset by a double-click; the winning-chances view takes
- * the height beyond the other views. It spans the panel footer's padding (`-mx-3` of its `px-3`).
+ * Their header is the Game Review header's twin (CollapsibleHeader's "section" row), right under
+ * the divider line between the panel content and the charts. A splitter over that line sets the
+ * charts' height: dragged, with the arrow keys, or reset by a double-click; the winning-chances
+ * view takes the height beyond the other views. It overlays the line (an 8 px hit area centred on
+ * it, adding no height) and spans the panel footer's padding (`-inset-x-3` of its `px-3`).
  */
 export const ReviewCharts = memo(function ReviewCharts({
   moves,
@@ -280,7 +282,6 @@ export const ReviewCharts = memo(function ReviewCharts({
   variationSelected = false,
   totalPlies,
   keyMomentIds,
-  actions,
   opening,
   mainline,
   timeControl,
@@ -302,8 +303,6 @@ export const ReviewCharts = memo(function ReviewCharts({
   totalPlies?: number;
   /** Node ids of the review's key moments: their dots are ringed. */
   keyMomentIds?: ReadonlySet<string>;
-  /** Controls in the charts' header (key-moment navigation). */
-  actions?: ReactNode;
   /** The review's opening (it ends the Opening phase); undefined for a review without book data. */
   opening: GameOpening | null | undefined;
   /** The game's main line, with each move's `[%clk]`. */
@@ -463,11 +462,7 @@ export const ReviewCharts = memo(function ReviewCharts({
     <section
       ref={measureSection}
       id={sectionId}
-      className={cn(
-        "flex min-w-0 flex-col",
-        (chartsCollapsed || fill) && "pt-2",
-        fill && !chartsCollapsed && "min-h-0 flex-1"
-      )}
+      className={cn("relative flex min-w-0 flex-col", fill && !chartsCollapsed && "min-h-0 flex-1")}
       style={chartsCollapsed || fill ? undefined : { height: chartsHeight }}
       aria-label="Game charts"
     >
@@ -483,13 +478,14 @@ export const ReviewCharts = memo(function ReviewCharts({
           tabIndex={0}
           title="Drag to resize the charts · double-click to reset"
           data-dragging={dragging || undefined}
-          className="group/splitter relative -mx-3 h-2 shrink-0 cursor-row-resize touch-none outline-none"
+          // Over the divider line just above the section (the footer's top border), centred on it.
+          className="group/splitter absolute -inset-x-3 -top-1 z-10 h-2 cursor-row-resize touch-none outline-none"
           {...separator}
         >
           {/* A neutral highlight over the boundary line while hovered, focused or dragged. */}
           <span
             aria-hidden
-            className="pointer-events-none absolute inset-x-0 -top-px h-[3px] transition-colors duration-micro ease-standard group-hover/splitter:bg-fg/15 group-focus-visible/splitter:bg-fg/25 group-data-[dragging]/splitter:bg-fg/20"
+            className="pointer-events-none absolute inset-x-0 top-0.5 h-[3px] transition-colors duration-micro ease-standard group-hover/splitter:bg-fg/15 group-focus-visible/splitter:bg-fg/25 group-data-[dragging]/splitter:bg-fg/20"
           />
         </div>
       )}
@@ -497,16 +493,12 @@ export const ReviewCharts = memo(function ReviewCharts({
         open={!chartsCollapsed}
         onToggle={toggleCharts}
         controls={viewsId}
-        className="mb-1"
         actions={
-          <>
-            {variationSelected ? (
-              <Badge tone="warn" className="animate-fade-in">
-                Variation
-              </Badge>
-            ) : null}
-            {actions}
-          </>
+          variationSelected ? (
+            <Badge tone="warn" className="animate-fade-in">
+              Variation
+            </Badge>
+          ) : null
         }
       >
         Charts
