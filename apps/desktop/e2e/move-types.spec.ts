@@ -167,12 +167,15 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
   await expect(page.getByText(/A critical find/)).toHaveCount(0);
   await screenshot(page, "great");
 
-  // A book move carries the Book mark, and nothing more.
+  // A book move carries the Book mark, in its header and on the board, and nothing more.
   const navigation = page.getByRole("navigation", { name: "Move navigation" });
   await navigation.getByRole("button", { name: "First move", exact: true }).click();
   await navigation.getByRole("button", { name: "Next move", exact: true }).click();
   await expect(page.getByRole("heading", { name: "1. e4", level: 2 })).toBeVisible();
   await expect(page.locator("header [data-annotation]")).toHaveAttribute("data-annotation", "book");
+  await expect(
+    page.getByRole("region", { name: "Board" }).getByRole("img", { name: "Book: e4" })
+  ).toHaveAttribute("data-square", "e4");
 
   // An ordinary move has no mark at all: no badge, and no praise for matching the engine.
   for (let ply = 2; ply <= 11; ply += 1)

@@ -202,12 +202,21 @@ test("game review prints the evaluation at the better side's end and marks the r
   await reviewTrapGame(launched, profile);
 
   // 1. e4: White is better, so the number sits at White's end (the bottom); a book move, which
-  // gets no badge on the board.
+  // gets its badge on e4 like any other mark.
   await goToPly(page, 1);
   await expect(evalBar(page)).toHaveAccessibleName("Evaluation +0.3");
   expect(await evalText(page)).toEqual({ text: "0.3", side: "white", end: "bottom" });
   // Drawn as chess.com draws it: white over a warm dark grey, the number dark on the white.
   expect(await evalColours(page)).toEqual({ bar: "rgb(64, 61, 57)", text: "rgb(64, 61, 57)" });
+  await expect(board(page).getByRole("img", { name: "Book: e4" })).toHaveAttribute(
+    "data-annotation",
+    "book"
+  );
+  expect(await badgeSquare(page)).toEqual({ square: "e4", topRight: true });
+  await screenshot(page, "book");
+
+  // 6. Rf1, an ordinary move: no badge.
+  await goToPly(page, 11);
   await expect(markBadge(page)).toHaveCount(0);
   await screenshot(page, "unmarked");
 
@@ -301,8 +310,8 @@ test("the Analyze board marks the reviewed move, the game's own board does not",
   expect(await badgeOnEdgeSquare(page, { left: 87.5, top: 0 })).toEqual(WHOLE_OVERHANG);
   await screenshot(page, "analyze-board");
 
-  // An ordinary move there has none either.
-  await goToPly(page, 3);
+  // An ordinary move there (6. Rf1) has none either.
+  await goToPly(page, 11);
   await expect(markBadge(page)).toHaveCount(0);
 
   // With live analysis started on it, the mark stays.
