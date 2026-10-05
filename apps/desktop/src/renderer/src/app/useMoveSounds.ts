@@ -4,6 +4,22 @@ import type { Color, MoveNode } from "@chaturanga/shared/types/chess";
 import { keepAudioAwake, playSound, type SoundKind } from "../sounds/sounds";
 import { useGameStore } from "../stores/game-store";
 
+/** Board steps being made without their sound (withoutMoveSounds). */
+let silentSteps = 0;
+
+/**
+ * Makes the board step `step` takes (a store update) without its move sound: a running review's
+ * board catching up on moves analysed faster than it can step through them.
+ */
+export function withoutMoveSounds(step: () => void): void {
+  silentSteps += 1;
+  try {
+    step();
+  } finally {
+    silentSteps -= 1;
+  }
+}
+
 /**
  * Plays a move / capture / check sound (or the game-over sound) whenever the board steps one
  * move — forwards or backwards — and the sound setting is on.
@@ -14,7 +30,7 @@ export function useMoveSounds({ enabled, volume }: { enabled: boolean; volume: n
   useEffect(() => {
     if (!enabled) return;
     return useGameStore.subscribe((state, previous) => {
-      if (state.currentNodeId === previous.currentNodeId) return;
+      if (state.currentNodeId === previous.currentNodeId || silentSteps) return;
       const moved = movedNodeBetween(state.moveTree, previous.currentNodeId, state.currentNodeId);
       if (!moved) return;
       const status = statusForFen(state.currentFen);

@@ -30,6 +30,7 @@ export function ReviewMoveRail({
   moves = NO_MOVES,
   keyMoments = NO_MOMENTS,
   opening,
+  runId = null,
   orientation
 }: {
   nodes: readonly MoveNode[];
@@ -42,10 +43,17 @@ export function ReviewMoveRail({
   keyMoments?: readonly KeyMoment[];
   /** The game's opening, named after the last book move. */
   opening?: GameOpening | null;
+  /** The running review's id: a run starting shows the move list (its key insights come at the end). */
+  runId?: string | null;
   /** The board's orientation, for the BEST lines' preview boards. */
   orientation?: Color;
 }) {
-  const [view, setView] = useState<MovesView>(loadMovesView);
+  const [view, setView] = useState<MovesView>(() => (runId ? "moves" : loadMovesView()));
+  const [viewedRun, setViewedRun] = useState(runId);
+  if (runId !== viewedRun) {
+    setViewedRun(runId);
+    if (runId) setView("moves");
+  }
   const changeView = (next: MovesView) => {
     saveMovesView(next);
     setView(next);

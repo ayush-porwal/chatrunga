@@ -74,6 +74,12 @@ async function reviewTrapGameAs(
   await expect(
     titlebar(page).getByRole("button", { name: "Analyze again", exact: true })
   ).toBeVisible({ timeout: 60_000 });
+  // The run filled the move list in on the Moves tab; the summary is a tab away.
+  await expect(reviewTabs(page).getByRole("tab", { name: "Moves" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  await reviewTabs(page).getByRole("tab", { name: "Summary" }).click();
 }
 
 test("the summary scores both sides, names the opening and phases, and its sections fold", async ({
@@ -85,11 +91,7 @@ test("the summary scores both sides, names the opening and phases, and its secti
   await skipWelcome(page);
   await reviewTrapGameAs(page, app, profile, "White (Alpha)");
 
-  // The first screen after the review: the summary, the board turned to White.
-  await expect(reviewTabs(page).getByRole("tab", { name: "Summary" })).toHaveAttribute(
-    "aria-selected",
-    "true"
-  );
+  // The summary, the board turned to White.
   // No row for the side and rating under the tabs: they're in the review settings dialog.
   await expect(page.getByText("Review as White", { exact: true })).toHaveCount(0);
   await expect(summary(page).getByLabel(/^White accuracy \d+\.\d$/)).toBeVisible();

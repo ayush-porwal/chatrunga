@@ -12,6 +12,9 @@
 // (REVIEW_UNSTABLE): 4. Nxe5's loss lands near a severity boundary unless the played move is
 // searched alone, and a deeper search of 4... Qg5 (a larger budget than the first `go`) disagrees.
 // "review-stuck-check": REVIEW, but a deeper search never answers until `stop` (a check that hangs).
+// "review-gated": REVIEW, but a search of a position N plies into the game answers only once the
+// file `<argv[2]>.gate` holds a number ≥ N (missing: 0), so a journey releases a running review
+// move by move: with the gate at N, moves 1…N finish and move N + 1 is being analysed.
 // "stockfish": output shaped like Stockfish 19's. `go infinite` starts with `info string` lines,
 // then streams, for each depth, one line per MultiPV of the position's legal moves (seldepth,
 // score with a bound now and then, wdl, nodes, nps, hashfull, tbhits, time, pv) and a `currmove`
@@ -23,7 +26,7 @@
 // "stockfish-crash": "stockfish", but the process dies without a word during every search (killed,
 // as by the system when memory runs out): at the fifth depth of `go infinite`, at once for a
 // bounded `go` (an engine game's).
-import { appendFileSync, writeSync } from "node:fs";
+import { appendFileSync, readFileSync, writeSync } from "node:fs";
 import { createInterface } from "node:readline";
 
 const log = (line) => appendFileSync(process.argv[2], `${line}\n`);
@@ -171,7 +174,7 @@ function stockfishDepth(moves) {
   if (moves[0]) out(`info depth ${depth + 1} currmove ${moves[0]} currmovenumber 1`);
 }
 const review =
-  mode === "review" || mode === "review-stuck-check"
+  mode === "review" || mode === "review-stuck-check" || mode === "review-gated"
     ? REVIEW
     : mode === "review-unstable"
       ? { ...REVIEW, ...REVIEW_UNSTABLE }
@@ -182,6 +185,17 @@ let stuck = false;
 let positionFen = "";
 /** The first bounded search's budget (`movetime` / `depth` / `nodes`): a larger one is "deeper". */
 let baseBudget = null;
+
+/** "review-gated": the plies the gate file lets searches reach. */
+function gatePly() {
+  try {
+    return Number(readFileSync(`${process.argv[2]}.gate`, "utf8")) || 0;
+  } catch {
+    return 0;
+  }
+}
+/** "review-gated": the search waiting for its gate (cleared by `stop`). */
+let gated = null;
 
 /** Answers a bounded `go` with the scripted lines of the current position. */
 function answerReview(go) {
@@ -257,6 +271,15 @@ createInterface({ input: process.stdin }).on("line", (raw) => {
         )
       );
     }, 5);
+  } else if (line.startsWith("go") && mode === "review-gated") {
+    const [, side, , , , fullmove] = positionFen.split(" ");
+    const ply = (Number(fullmove) - 1) * 2 + (side === "b" ? 1 : 0);
+    gated = setInterval(() => {
+      if (gatePly() < ply) return;
+      clearInterval(gated);
+      gated = null;
+      answerReview(line);
+    }, 20);
   } else if (line.startsWith("go") && review) {
     answerReview(line);
   } else if (line.startsWith("go")) {
@@ -265,6 +288,10 @@ createInterface({ input: process.stdin }).on("line", (raw) => {
       out("info depth 5 multipv 1 score cp 30 pv g1f3");
       out("bestmove g1f3");
     }, 30);
+  } else if (line === "stop" && gated) {
+    clearInterval(gated);
+    gated = null;
+    out("bestmove 0000");
   } else if (line === "stop" && stuck) {
     stuck = false;
     out("bestmove 0000");

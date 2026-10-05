@@ -20,6 +20,7 @@ import { CardCommentaryContext, type CardCommentaryOptions } from "./MomentComme
 import { chooseReviewSide, reviewSideColor, useReviewSide } from "./review-side";
 import { moverOf } from "./review-summary";
 import { ReviewCharts } from "./ReviewCharts";
+import { useAnalysisFollow } from "./useAnalysisFollow";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { cn } from "@/lib/utils";
 import { PlayerRow } from "../board/PlayerIdentity";
@@ -135,7 +136,14 @@ function GameReviewPageInner({
   const reviewError = useReviewStore((state) => state.error);
   // The move list's opening row: a running review's too, as soon as its moves name the opening.
   const opening = useReviewStore(selectDisplayedOpening);
+  const runId = useReviewStore((state) => (state.status === "running" ? state.reviewId : null));
   const reviewInput = useMemo(() => mainlineReviewInput(moveTree), [moveTree]);
+  // While a review runs, the board follows its analysis until the user navigates themselves.
+  const followLine = useMemo(
+    () => ["root", ...reviewInput.map((move) => move.nodeId)],
+    [reviewInput]
+  );
+  const follow = useAnalysisFollow(followLine, moves);
   // The Opening tab's side, picked for this game (kept across tab switches and Back, not across games).
   const board = useGameStore((state) => state.board);
   const openingColor = openingSideFor(openingSide, board);
@@ -491,7 +499,12 @@ function GameReviewPageInner({
               ) : null}
               <MoveNavigation
                 caption={
-                  isRunning ? <ReviewProgressCaption fallbackTotal={reviewInput.length} /> : null
+                  isRunning ? (
+                    <ReviewProgressCaption
+                      fallbackTotal={reviewInput.length}
+                      onFollow={follow.paused ? follow.resume : undefined}
+                    />
+                  ) : null
                 }
               />
             </div>
@@ -595,6 +608,7 @@ function GameReviewPageInner({
             moves={moves}
             keyMoments={moments}
             opening={opening}
+            runId={runId}
             orientation={orientation}
           />
         ) : null}
@@ -624,24 +638,46 @@ const EMPTY_MOVES: MoveReview[] = [];
  * The single place review progress is shown. It subscribes to the progress step itself so a
  * tick re-renders only this caption, not the page, graph or panel.
  */
-function ReviewProgressCaption({ fallbackTotal }: { fallbackTotal: number }) {
+function ReviewProgressCaption({
+  fallbackTotal,
+  onFollow
+}: {
+  fallbackTotal: number;
+  /** Following the analysis is paused: offered to resume it. */
+  onFollow?: () => void;
+}) {
   const moveIndex = useReviewStore((state) => state.progress?.moveIndex ?? null);
   const totalMoves = useReviewStore((state) => state.progress?.totalMoves ?? null);
   const total = totalMoves ?? fallbackTotal;
   const current = moveIndex === null ? 0 : Math.min(moveIndex + 1, total);
   const percent = total ? Math.round((Math.max(current - 1, 0) / total) * 100) : 0;
   return (
-    <span
-      className="inline-grid justify-items-center gap-1"
-      role="status"
-      aria-label={current ? `Analyzing move ${current} of ${total}` : "Starting analysis"}
-    >
-      <span>{current ? `Analyzing move ${current} of ${total}` : "Starting analysis…"}</span>
-      <span className="block h-0.5 w-28 overflow-hidden rounded-full bg-control" aria-hidden>
-        <span
-          className="block h-full rounded-full bg-accent transition-[width] duration-300"
-          style={{ width: `${percent}%` }}
-        />
+    <span className="inline-grid justify-items-center gap-0.5">
+      <span
+        role="status"
+        aria-label={current ? `Analyzing move ${current} of ${total}` : "Starting analysis"}
+      >
+        {current ? `Analyzing move ${current} of ${total}` : "Starting analysis…"}
+      </span>
+      {/* One slot under the caption, so pausing never moves the panel: the progress bar, or the
+          button that follows the analysis again. */}
+      <span className="grid h-4 place-items-center">
+        {onFollow ? (
+          <button
+            type="button"
+            className="font-medium text-accent underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+            onClick={onFollow}
+          >
+            Follow analysis
+          </button>
+        ) : (
+          <span className="block h-0.5 w-28 overflow-hidden rounded-full bg-control" aria-hidden>
+            <span
+              className="block h-full rounded-full bg-accent transition-[width] duration-300"
+              style={{ width: `${percent}%` }}
+            />
+          </span>
+        )}
       </span>
     </span>
   );

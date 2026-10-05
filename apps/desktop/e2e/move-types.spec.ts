@@ -109,6 +109,12 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
     titlebar(page).getByRole("button", { name: "Analyze again", exact: true })
   ).toBeVisible({ timeout: 60_000 });
 
+  // The run filled the move list in on the Moves tab; the summary is a tab away.
+  await expect(reviewTabs(page).getByRole("tab", { name: "Moves", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  await reviewTabs(page).getByRole("tab", { name: "Summary", exact: true }).click();
   // The summary counts each side's marks: White's two blunders and mistake, Black's Great and Good.
   const markRow = (name: string) =>
     page.getByRole("table", { name: "Marks" }).getByRole("row").filter({ hasText: name });

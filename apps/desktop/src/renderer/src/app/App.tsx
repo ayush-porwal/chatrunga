@@ -343,12 +343,15 @@ export function App() {
   usePuzzleAttemptRecording();
   // Review as: a game whose side isn't known yet asks on the Summary before its review starts.
   const askReviewSide = useCallback(() => setReviewTab("summary"), []);
+  // A run fills the move list as it goes: it opens on the Moves tab.
+  const showReviewMoves = useCallback(() => setReviewTab("moves"), []);
   const { startReview, hasMoves: gameHasMoves } = useReviewRunner({
     engines: engines.data,
     settings,
     gameLoading: reviewRouteLoading,
     onEngineMissing: openReviewSettingsDialog,
-    onSideNeeded: askReviewSide
+    onSideNeeded: askReviewSide,
+    onStarted: showReviewMoves
   });
 
   /**
