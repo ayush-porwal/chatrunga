@@ -176,6 +176,34 @@ test("the summary scores both sides, names the opening and phases, and its secti
     "true"
   );
   await expect(page.getByRole("heading", { name: "4. Nxe5", level: 2 })).toBeVisible();
+
+  // Then it steps on through White's three insights (4. Nxe5, 5. Nxf7, 7. Be2), counting the one
+  // it goes to next.
+  await expect(start).toHaveCount(0);
+  const next = panel.getByRole("button", { name: "Next insight · 2 of 3", exact: true });
+  await next.click();
+  await expect(page.getByRole("heading", { name: "5. Nxf7", level: 2 })).toBeVisible();
+  await expect(
+    panel.getByRole("button", { name: "Next insight · 3 of 3", exact: true })
+  ).toBeVisible();
+  // It follows the move the user is on: on the last insight, it finishes back on the summary.
+  await reviewTabs(page).getByRole("tab", { name: "Moves", exact: true }).click();
+  await page
+    .getByRole("tree", { name: "Reviewed move tree" })
+    .locator("[data-move-cell]")
+    .nth(12)
+    .getByRole("button", { name: "Be2", exact: true })
+    .click();
+  const finish = panel.getByRole("button", { name: "Finish review", exact: true });
+  await finish.click();
+  await expect(reviewTabs(page).getByRole("tab", { name: "Summary" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  // Back on the summary, it starts over at the first insight.
+  await expect(start).toBeVisible();
+  await start.click();
+  await expect(page.getByRole("heading", { name: "4. Nxe5", level: 2 })).toBeVisible();
 });
 
 test("the summary's opening and practice shortcuts open Puzzles with that filter", async ({

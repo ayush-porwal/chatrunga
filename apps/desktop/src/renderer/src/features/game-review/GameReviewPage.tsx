@@ -21,6 +21,7 @@ import { chooseReviewSide, reviewSideColor, useReviewSide } from "./review-side"
 import { moverOf } from "./review-summary";
 import { ReviewCharts } from "./ReviewCharts";
 import { useAnalysisFollow } from "./useAnalysisFollow";
+import { reviewStepAction } from "./review-steps";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { cn } from "@/lib/utils";
 import { PlayerRow } from "../board/PlayerIdentity";
@@ -326,13 +327,32 @@ function GameReviewPageInner({
       }}
     />
   );
-  // Start review: the first key moment, explained, then Next steps through the rest.
-  const startKeyMoments = useCallback(() => {
-    const first = moments[0];
-    if (!first) return;
-    selectNode(first.nodeId);
+  // The footer's review button: Start review (the first key moment, explained), Next insight
+  // through the rest after the current move, then Finish review back to the summary (rule:
+  // review-steps.ts). Started belongs to this review session: another game, analysis or side
+  // starts over.
+  const reviewSessionKey = `${gameId ?? ""}|${review?.reviewId ?? ""}|${side}`;
+  const [startedSessionKey, setStartedSessionKey] = useState<string | null>(null);
+  const momentPlies = useMemo(() => moments.map((moment) => moment.ply), [moments]);
+  const reviewStep = reviewStepAction(
+    momentPlies,
+    currentNode?.ply ?? 0,
+    startedSessionKey === reviewSessionKey
+  );
+  const stepTarget = reviewStep?.target ?? null;
+  const stepThroughKeyMoments = useCallback(() => {
+    if (!stepTarget) return;
+    if (stepTarget.kind === "summary") {
+      setStartedSessionKey(null);
+      onTabChange("summary");
+      return;
+    }
+    const moment = moments[stepTarget.index];
+    if (!moment) return;
+    setStartedSessionKey(reviewSessionKey);
+    selectNode(moment.nodeId);
     onTabChange("commentary");
-  }, [moments, onTabChange, selectNode]);
+  }, [moments, onTabChange, reviewSessionKey, selectNode, stepTarget]);
   const startSideReview = useCallback(
     (picked: "white" | "black") => {
       chooseReviewSide(picked);
@@ -485,15 +505,15 @@ function GameReviewPageInner({
             {/* One last row: with the panel folded it's pinned to the bottom, Start review just
                 above the move navigation. */}
             <div>
-              {hasMoves && !isRunning && moments.length ? (
+              {hasMoves && !isRunning && reviewStep ? (
                 // Always here, on every tab, whatever is folded: the key moments, one by one.
                 <div className="px-3 pt-2">
                   <Button
                     type="button"
                     className="h-9 w-full border-transparent bg-accent-strong text-sm font-semibold text-fg hover:bg-accent-strong/85"
-                    onClick={startKeyMoments}
+                    onClick={stepThroughKeyMoments}
                   >
-                    Start review
+                    {reviewStep.label}
                   </Button>
                 </div>
               ) : null}
