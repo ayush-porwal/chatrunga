@@ -4,6 +4,8 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
+    // Locally, half the cores: a full run leaves the machine usable. CI keeps them all.
+    maxWorkers: process.env.CI ? undefined : "50%",
     include: ["src/**/*.test.ts"],
     coverage: {
       provider: "v8",

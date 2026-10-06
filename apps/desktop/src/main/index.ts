@@ -43,7 +43,7 @@ import {
   PRODUCTION_CSP
 } from "./security";
 import { installWindowGlass, windowGlassConstructorOptions } from "./window-glass";
-import { requestRendererFlush } from "./renderer-flush";
+import { requestRendererFlush, type FlushResult } from "./renderer-flush";
 import { getTelemetry, initTelemetry } from "./telemetry";
 import { resolveTelemetryConfig, usageAnalyticsConsent } from "./telemetry/config";
 import { noteEngineReadiness } from "./telemetry/engine-readiness";
@@ -115,6 +115,7 @@ if (!app.requestSingleInstanceLock()) {
     if (app.isReady() && BrowserWindow.getAllWindows().length === 0) createWindow();
   });
   app.on("before-quit", () => {
+    if (!quitRequested) logger.info("main", "quit requested");
     quitRequested = true;
   });
   app.on("will-quit", (event) => {
@@ -127,6 +128,7 @@ if (!app.requestSingleInstanceLock()) {
       // with nothing to wait for, shutdown settles that soon.
       .finally(() => setImmediate(() => app.quit()));
   });
+  app.on("quit", (_event, exitCode) => logger.info("main", `exiting (code ${exitCode})`));
   app.whenReady().then(startup, (error) => {
     logger.error("main", "startup failed:", error);
     app.quit();
@@ -185,7 +187,7 @@ async function startup(): Promise<void> {
       // failed (or the renderer didn't answer), ask before losing it (Cancel keeps the app open to
       // retry; no install then). Only this part can fail: shutdown() doesn't throw.
       for (const window of BrowserWindow.getAllWindows()) {
-        const saved = await requestRendererFlush(window.webContents);
+        const saved = (await flushLogged(window, "install")) === "saved";
         if (!saved && !window.isDestroyed() && !confirmCloseUnsaved(window)) return false;
       }
       await shutdown();
@@ -249,11 +251,14 @@ function shutdown(): Promise<void> {
       ["database", closeDb]
     ];
     for (const [name, step] of steps) {
+      const started = Date.now();
+      logger.info("main", `shutdown: closing ${name}`);
       try {
         await step();
       } catch (error) {
         logger.error("main", `shutdown: closing ${name} failed:`, error);
       }
+      logger.info("main", `shutdown: closed ${name} (${Date.now() - started} ms)`);
     }
     // The held `will-quit` goes through now.
     shutdownDone = true;
@@ -350,8 +355,8 @@ function flushSavesBeforeClose(window: BrowserWindow): void {
     event.preventDefault();
     if (phase === "flushing") return;
     phase = "flushing";
-    void requestRendererFlush(window.webContents).then((saved) => {
-      if (!saved && !window.isDestroyed() && !confirmCloseUnsaved(window)) {
+    void flushLogged(window, "close").then((result) => {
+      if (result !== "saved" && !window.isDestroyed() && !confirmCloseUnsaved(window)) {
         // Stay open so the titlebar's Retry can save it.
         phase = "open";
         quitRequested = false;
@@ -362,6 +367,14 @@ function flushSavesBeforeClose(window: BrowserWindow): void {
       else if (!window.isDestroyed()) window.close();
     });
   });
+}
+
+/** Writes the window's pending saves (requestRendererFlush), logging how it ended and how long it took. */
+async function flushLogged(window: BrowserWindow, reason: string): Promise<FlushResult> {
+  const started = Date.now();
+  const result = await requestRendererFlush(window.webContents);
+  logger.info("main", `${reason}: pending saves ${result} (${Date.now() - started} ms)`);
+  return result;
 }
 
 /**
@@ -380,6 +393,10 @@ function confirmCloseUnsaved(window: BrowserWindow): boolean {
       "Retry, and a repertoire's chapter lists the practice prompts, hints and other changes " +
       "that weren't saved."
   });
+  logger.warn(
+    "main",
+    `unsaved changes on closing: ${choice === 0 ? "closed anyway" : "kept open"}`
+  );
   return choice === 0;
 }
 

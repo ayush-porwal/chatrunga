@@ -2,16 +2,38 @@ name: e2e
 
 # Electron smoke journeys (apps/desktop/e2e): launch the real app and drive it — boot, PGN import,
 # persistence across a restart, positions, puzzles (scan worker), offline analysis — on Linux and
-# Windows, from out/ and as the packaged app. Too slow and windowed for every PR: nightly, on
-# demand, and (release.yml) against every packaged release build. The timing benchmarks (tagged
-# @perf) run last, in a step of their own that reports but doesn't fail the run.
+# Windows, from out/ and as the packaged app. On every pull request to main (so a Windows-only
+# failure shows before the merge, not in the release), nightly, on demand, and (release.yml)
+# against every packaged release build. The timing benchmarks (tagged @perf) run nightly and on a
+# full dispatch, last, in a step of their own that reports but doesn't fail the run.
+#
+# A dispatch can chase a flaky journey: `spec` narrows the run to the spec files it matches and
+# `repeat` runs each of their tests that many times, and `load` busy processes slow the runner down
+# meanwhile (as a release build's busy runner is), e.g.
+#   gh workflow run e2e.yml --ref <branch> -f spec=repertoire-hub -f repeat=15 -f load=4
 on:
+  pull_request:
+    branches: [main]
   schedule:
     - cron: "30 3 * * *"
   workflow_dispatch:
+    inputs:
+      spec:
+        description: Spec files to run (a Playwright file filter, e.g. repertoire-hub); empty runs all
+        type: string
+        default: ""
+      repeat:
+        description: Times to run each test (Playwright --repeat-each)
+        type: number
+        default: 1
+      load:
+        description: Busy-loop processes competing for the CPU while the journeys run (a busy runner)
+        type: number
+        default: 0
 
 concurrency:
-  group: e2e-${{ github.ref }}
+  # A newer push to the same pull request or branch replaces its run; dispatches each run in full.
+  group: e2e-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -35,6 +57,9 @@ jobs:
             target: --win
     env:
       CI: "true"
+      E2E_SPEC: ${{ inputs.spec }}
+      E2E_REPEAT: ${{ inputs.repeat || 1 }}
+      E2E_LOAD: ${{ inputs.load || 0 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -65,10 +90,14 @@ jobs:
         working-directory: apps/desktop
         shell: bash
         run: |
+          trap 'kill $(jobs -p) 2>/dev/null || true' EXIT
+          for _ in $(seq "$E2E_LOAD"); do node -e 'for (;;);' > /dev/null 2>&1 & done
+          args=(--grep-invert @perf --repeat-each "$E2E_REPEAT")
+          if [[ -n "$E2E_SPEC" ]]; then args+=("$E2E_SPEC"); fi
           if [[ "$RUNNER_OS" == "Linux" ]]; then
-            xvfb-run -a pnpm test:e2e:run --grep-invert @perf
+            xvfb-run -a pnpm test:e2e:run "${args[@]}"
           else
-            pnpm test:e2e:run --grep-invert @perf
+            pnpm test:e2e:run "${args[@]}"
           fi
 
       # The same journeys against the unpacked app electron-builder makes (asar, packaged paths).
@@ -88,10 +117,14 @@ jobs:
         env:
           CHATURANGA_E2E_PACKAGED: "1"
         run: |
+          trap 'kill $(jobs -p) 2>/dev/null || true' EXIT
+          for _ in $(seq "$E2E_LOAD"); do node -e 'for (;;);' > /dev/null 2>&1 & done
+          args=(--grep-invert @perf --repeat-each "$E2E_REPEAT")
+          if [[ -n "$E2E_SPEC" ]]; then args+=("$E2E_SPEC"); fi
           if [[ "$RUNNER_OS" == "Linux" ]]; then
-            xvfb-run -a pnpm test:e2e:run --grep-invert @perf
+            xvfb-run -a pnpm test:e2e:run "${args[@]}"
           else
-            pnpm test:e2e:run --grep-invert @perf
+            pnpm test:e2e:run "${args[@]}"
           fi
 
       - name: Upload test results
@@ -103,10 +136,12 @@ jobs:
           if-no-files-found: ignore
 
       # The timing benchmarks (@perf) against the packaged app, once the required journeys have
-      # passed. Their bounds depend on the runner, so a miss is reported (the step shows as failed
-      # and its results are uploaded) without failing the run. The timings are in the step's log.
+      # passed: nightly and on a full dispatch (not on pull requests, nor on a narrowed dispatch).
+      # Their bounds depend on the runner, so a miss is reported (the step shows as failed and its
+      # results are uploaded) without failing the run. The timings are in the step's log.
       - name: Timing benchmarks (packaged app, non-blocking)
         id: perf
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.spec == '')
         continue-on-error: true
         timeout-minutes: 20
         working-directory: apps/desktop

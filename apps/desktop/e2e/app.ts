@@ -8,7 +8,15 @@ import {
   type Page
 } from "@playwright/test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync
+} from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -72,6 +80,14 @@ export function findPackagedExecutable(distDir = join(desktopDir, "dist")): stri
 
 export type LaunchedApp = { app: ElectronApplication; page: Page; pageErrors: string[] };
 
+/** What a launch leaves behind to explain a quit that hangs: its profile and its console's tail. */
+const launches = new WeakMap<
+  ElectronApplication,
+  { profile: string; output: string[]; logStart: number }
+>();
+/** Lines of the app's stdout and stderr kept per launch. */
+const OUTPUT_LINES = 200;
+
 /**
  * Starts the app on `profile` and makes it safe to drive: network refused (Chromium through a dead
  * proxy, Node's fetch through the same proxy and a guard that only serves `routeToFile` URLs),
@@ -79,6 +95,8 @@ export type LaunchedApp = { app: ElectronApplication; page: Page; pageErrors: st
  */
 export async function launchApp(profile: string): Promise<LaunchedApp> {
   const target = appTarget();
+  // Where this launch's lines start in main.log (a profile launched before has some already).
+  const logStart = readMainLog(profile).length;
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
   // A dev-server URL or run-as-node from the caller's shell would change what launches.
@@ -126,6 +144,14 @@ export async function launchApp(profile: string): Promise<LaunchedApp> {
     env,
     timeout: 60_000
   });
+  const output: string[] = [];
+  launches.set(app, { profile, output, logStart });
+  for (const stream of [app.process().stdout, app.process().stderr]) {
+    stream?.on("data", (chunk: Buffer) => {
+      output.push(...chunk.toString("utf8").split(/\r?\n/).filter(Boolean));
+      output.splice(0, output.length - OUTPUT_LINES);
+    });
+  }
   await installMainProcessGuards(app);
   if (smallScreen) {
     await app.firstWindow();
@@ -157,7 +183,7 @@ export async function launchApp(profile: string): Promise<LaunchedApp> {
 
 /** Test doubles inside the main process; their records live on `globalThis.__e2e`. */
 async function installMainProcessGuards(app: ElectronApplication): Promise<void> {
-  await app.evaluate(({ dialog, shell }) => {
+  await app.evaluate(({ app, dialog, shell }, dialogLogName) => {
     type Record = {
       fetches: string[];
       workers: string[];
@@ -175,15 +201,29 @@ async function installMainProcessGuards(app: ElectronApplication): Promise<void>
       routes: {}
     };
     (globalThis as unknown as { __e2e: Record }).__e2e = state;
+    const fs = process.getBuiltinModule("node:fs");
+    const path = process.getBuiltinModule("node:path");
+    // Also written down in the profile's logs: once a quit starts, Playwright no longer reaches the
+    // main process, and a quit that hangs is explained by the dialogs it showed (see closeApp).
+    const dialogLog = path.join(app.getPath("logs"), dialogLogName);
+    const recordDialog = (entry: string) => {
+      state.dialogs.push(entry);
+      try {
+        fs.mkdirSync(path.dirname(dialogLog), { recursive: true });
+        fs.appendFileSync(dialogLog, `${new Date().toISOString()} ${entry}\n`);
+      } catch {
+        // The record in memory is enough for the tests that read it.
+      }
+    };
 
     // Native dialogs would block the run: open/save are cancelled unless a test stubs a file;
     // message boxes answer their default button and are recorded.
     dialog.showOpenDialog = (async () => {
-      state.dialogs.push("open");
+      recordDialog("open");
       return { canceled: true, filePaths: [] };
     }) as typeof dialog.showOpenDialog;
     dialog.showSaveDialog = (async () => {
-      state.dialogs.push("save");
+      recordDialog("save");
       return { canceled: true, filePath: "" };
     }) as typeof dialog.showSaveDialog;
     dialog.showMessageBoxSync = ((...args: unknown[]) => {
@@ -191,7 +231,7 @@ async function installMainProcessGuards(app: ElectronApplication): Promise<void>
         message?: string;
         defaultId?: number;
       };
-      state.dialogs.push(`message: ${options.message ?? ""}`);
+      recordDialog(`message: ${options.message ?? ""}`);
       return options.defaultId ?? 0;
     }) as typeof dialog.showMessageBoxSync;
     dialog.showMessageBox = (async (...args: unknown[]) => {
@@ -199,15 +239,14 @@ async function installMainProcessGuards(app: ElectronApplication): Promise<void>
         message?: string;
         defaultId?: number;
       };
-      state.dialogs.push(`message: ${options.message ?? ""}`);
+      recordDialog(`message: ${options.message ?? ""}`);
       return { response: options.defaultId ?? 0, checkboxChecked: false };
     }) as typeof dialog.showMessageBox;
     shell.openExternal = async (url: string) => {
-      state.dialogs.push(`openExternal: ${url}`);
+      recordDialog(`openExternal: ${url}`);
     };
 
     // Node's fetch (Lichess, GitHub, dataset downloads): only routed URLs answer, from a local file.
-    const fs = process.getBuiltinModule("node:fs");
     globalThis.fetch = async (input: string | URL | Request) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       state.fetches.push(url);
@@ -246,8 +285,11 @@ async function installMainProcessGuards(app: ElectronApplication): Promise<void>
       }
     };
     process.getBuiltinModule("node:module").syncBuiltinESMExports();
-  });
+  }, DIALOG_LOG);
 }
+
+/** The dialogs the main-process doubles answered, one per line, in the profile's logs folder. */
+const DIALOG_LOG = "e2e-dialogs.log";
 
 /** A worker thread's answer, as recorded: a puzzle scan's is `{ ok, complete, matches, ids }`. */
 export type WorkerAnswer = {
@@ -373,12 +415,24 @@ export async function clickSquare(page: Page, square: string, flipped = false): 
 }
 
 /**
- * Quits the app and waits for it to exit, which takes well under a second. One that hasn't exited
- * after `timeoutMs` is stuck quitting: it is killed with its child processes (on Windows that takes
- * `taskkill /T`: killing only the main process there leaves its helpers running and holding the
- * profile's files), and the test fails, so a quit that hangs is reported rather than waited out.
+ * Quits the app and waits for it to exit. Two deadlines, for two different things:
+ * - `quitTimeoutMs`: the app's own quit (writing pending saves, the shutdown steps) ends with
+ *   main.log's "exiting" line, well under a second after quitting. An app that hasn't got there
+ *   by then is stuck quitting (a dialog it is waiting on, a step that hangs): the test fails.
+ * - `exitTimeoutMs`: the process then exits once Electron has torn Chromium down. That takes a
+ *   fraction of a second too, but on a Windows runner whose CPUs are all busy (a release build's,
+ *   while antivirus scans the installers it just made) it has been measured at 8 to 23 s, outside
+ *   Playwright too, with the app's own quit done in a quarter of a second. That wait isn't a hang;
+ *   one past this longer deadline, counted from the end of the quit, is.
+ * An app past a deadline is killed with its child processes (on Windows that takes `taskkill /T`:
+ * killing only the main process there leaves its helpers running and holding the profile's files),
+ * and the failure says why: its processes still running, the dialogs it showed and the end of its
+ * log (main.log times each step of quitting), with the whole log and its console attached.
  */
-export async function closeApp(app: ElectronApplication, timeoutMs = 10_000): Promise<void> {
+export async function closeApp(
+  app: ElectronApplication,
+  { quitTimeoutMs = 10_000, exitTimeoutMs = 45_000 } = {}
+): Promise<void> {
   // An app closed before (by the test) has no process to ask about.
   let child: ReturnType<ElectronApplication["process"]> | null = null;
   try {
@@ -390,27 +444,166 @@ export async function closeApp(app: ElectronApplication, timeoutMs = 10_000): Pr
     if (!child || child.exitCode !== null || child.signalCode !== null) resolve(true);
     else child.once("exit", () => resolve(true));
   });
+  // This launch's "exiting" line, even if it quit before (a journey that closes its window).
+  const launch = launches.get(app);
   // A close that fails counts as exited only once the process has: a rejection with the app
-  // still running waits for the timeout (and the kill) like any other stuck quit.
+  // still running waits for the deadlines (and the kill) like any other stuck quit.
   const closed = app.close().then(
-    () => true as const,
-    () => processExited
+    () => "exited" as const,
+    () => processExited.then(() => "exited" as const)
   );
-  let timer: NodeJS.Timeout | undefined;
-  const timedOut = new Promise<false>(
-    (resolve) => (timer = setTimeout(() => resolve(false), timeoutMs))
+  let quitTimer: NodeJS.Timeout | undefined;
+  let exitTimer: NodeJS.Timeout | undefined;
+  let pollTimer: NodeJS.Timeout | undefined;
+  const quitLate = new Promise<"late">(
+    (resolve) => (quitTimer = setTimeout(() => resolve("late"), quitTimeoutMs))
   );
-  const exited = await Promise.race([closed, timedOut]);
-  clearTimeout(timer);
-  if (exited) return;
+  let quitDone = false;
+  let stopPolling = false;
+  const quit = new Promise<"quit">((resolve) => {
+    const poll = () => {
+      if (stopPolling) return;
+      if (launch && quitLogged(launch)) {
+        quitDone = true;
+        resolve("quit");
+      } else pollTimer = setTimeout(poll, 100);
+    };
+    if (launch) poll();
+  });
+  let outcome = await Promise.race([closed, quit, quitLate]);
+  // The exit's deadline runs from the end of the quit: a slow quit doesn't shorten it.
+  if (outcome === "quit")
+    outcome = await Promise.race([
+      closed,
+      new Promise<"late">(
+        (resolve) => (exitTimer = setTimeout(() => resolve("late"), exitTimeoutMs))
+      )
+    ]);
+  stopPolling = true;
+  for (const timer of [quitTimer, exitTimer, pollTimer]) clearTimeout(timer);
+  if (outcome === "exited") return;
+
   const pid = app.process().pid;
+  // Playwright counts the app closed once every process holding its output pipes has gone (on
+  // Windows `app.process()` is the shell that started Electron): all of them are listed, then
+  // killed.
+  const processes = pid === undefined ? [] : processTree(pid);
   if (process.platform === "win32" && pid !== undefined) {
-    spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
+    for (const id of [pid, ...processes.map((entry) => entry.pid)])
+      spawnSync("taskkill", ["/pid", String(id), "/T", "/F"], { stdio: "ignore" });
   } else {
-    app.process().kill("SIGKILL");
+    for (const id of [pid, ...processes.map((entry) => entry.pid)]) {
+      try {
+        if (id !== undefined) process.kill(id, "SIGKILL");
+      } catch {
+        // Gone already.
+      }
+    }
   }
   await closed;
-  throw new Error(`The app hadn't exited ${timeoutMs / 1000} s after quitting, so it was killed.`);
+  const listed = processes
+    .map((entry) => `${entry.pid} (parent ${entry.parent}) ${entry.command}`)
+    .join("\n");
+  const what = quitDone
+    ? `The app quit, but its process hadn't exited ${exitTimeoutMs / 1000} s later`
+    : `The app hadn't finished quitting ${quitTimeoutMs / 1000} s after it was asked to`;
+  throw new Error(
+    `${what}, so it was killed.\nIts processes then:\n${listed || "(none)"}` +
+      (await quitDiagnostics(app))
+  );
+}
+
+/** The profile's main.log ("" until the app writes it). */
+function readMainLog(profile: string): string {
+  try {
+    return readFileSync(join(profile, "logs", "main.log"), "utf8");
+  } catch {
+    return "";
+  }
+}
+
+/** Whether the launch has logged the end of its quit ("exiting", main's `quit` event). */
+function quitLogged(launch: { profile: string; logStart: number }): boolean {
+  const log = readMainLog(launch.profile);
+  // A log rotated at launch starts over.
+  return log
+    .slice(log.length < launch.logStart ? 0 : launch.logStart)
+    .includes("[main] exiting (code");
+}
+
+/** `root` and the processes descended from it, with their parents and command lines. */
+function processTree(root: number): { pid: number; parent: number; command: string }[] {
+  const rows: { pid: number; parent: number; command: string }[] = [];
+  if (process.platform === "win32") {
+    const listed = spawnSync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-Command",
+        "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress"
+      ],
+      { encoding: "utf8", timeout: 15_000 }
+    );
+    try {
+      const parsed = JSON.parse(listed.stdout) as {
+        ProcessId: number;
+        ParentProcessId: number;
+        CommandLine: string | null;
+      }[];
+      for (const row of parsed)
+        rows.push({
+          pid: row.ProcessId,
+          parent: row.ParentProcessId,
+          command: row.CommandLine ?? ""
+        });
+    } catch {
+      return [];
+    }
+  } else {
+    const listed = spawnSync("ps", ["-A", "-o", "pid=,ppid=,command="], { encoding: "utf8" });
+    for (const line of listed.stdout.split("\n")) {
+      const match = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line);
+      if (match) rows.push({ pid: Number(match[1]), parent: Number(match[2]), command: match[3] });
+    }
+  }
+  const found = rows.filter((row) => row.pid === root);
+  const parents = [root];
+  while (parents.length) {
+    const parent = parents.pop();
+    for (const row of rows) {
+      if (row.parent !== parent || found.some((entry) => entry.pid === row.pid)) continue;
+      found.push(row);
+      parents.push(row.pid);
+    }
+  }
+  return found.map((row) => ({ ...row, command: row.command.slice(0, 300) }));
+}
+
+/** The dialogs and the log of a launch that hung quitting, attached to the running test. */
+async function quitDiagnostics(app: ElectronApplication): Promise<string> {
+  const launch = launches.get(app);
+  if (!launch) return "";
+  const read = (name: string) => {
+    try {
+      return readFileSync(join(launch.profile, "logs", name), "utf8");
+    } catch {
+      return "";
+    }
+  };
+  const log = read("main.log");
+  const dialogs = read(DIALOG_LOG).trim();
+  const attachments: [string, string][] = [
+    ["main.log", log],
+    ["console", launch.output.join("\n")]
+  ];
+  try {
+    for (const [name, body] of attachments)
+      if (body) await test.info().attach(name, { body, contentType: "text/plain" });
+  } catch {
+    // Not inside a test: the message below still says it.
+  }
+  const tail = log.trimEnd().split("\n").slice(-30).join("\n");
+  return `\nDialogs shown:\n${dialogs || "(none)"}\nThe end of main.log:\n${tail || "(empty)"}`;
 }
 
 /**

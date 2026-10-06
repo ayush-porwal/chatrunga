@@ -616,7 +616,7 @@ class UciReviewSession {
     policyOnly?: boolean;
   }): Promise<void> {
     const tag = `uci:${this.config.name}`;
-    if (LOG_UCI) logger.info(tag, "spawn", this.config.executablePath, this.config.args);
+    if (LOG_UCI) logger.trace(tag, "spawn", this.config.executablePath, this.config.args);
     this.process = spawnUciProcess(this.config);
 
     this.process.stdout.on(
@@ -627,7 +627,7 @@ class UciReviewSession {
     this.process.stderr.on("data", (chunk: Buffer) => {
       for (const line of chunk.toString("utf8").split(/\r?\n/)) {
         if (!line.trim()) continue;
-        if (LOG_UCI) logger.info(tag, "[stderr]", line);
+        if (LOG_UCI) logger.trace(tag, "[stderr]", line);
         pushTail(this.recentStderr, line);
       }
     });
@@ -856,7 +856,7 @@ class UciReviewSession {
   }
 
   private write(command: string): void {
-    if (LOG_UCI) logger.info(`uci:${this.config.name}`, "→", command);
+    if (LOG_UCI) logger.trace(`uci:${this.config.name}`, "→", command);
     pushTail(this.recentCommands, command);
     writeUci(this.process, command);
   }
@@ -909,7 +909,7 @@ class UciReviewSession {
   }
 
   private handleLine(line: string): void {
-    if (LOG_UCI) logger.info(`uci:${this.config.name}`, "←", line);
+    if (LOG_UCI) logger.trace(`uci:${this.config.name}`, "←", line);
     pushTail(this.recentLines, line);
     this.events.emit("line", line);
   }
