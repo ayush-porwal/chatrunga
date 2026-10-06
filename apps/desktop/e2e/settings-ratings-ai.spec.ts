@@ -82,7 +82,7 @@ test("ratings synced from Lichess are plain read-only text; disconnected, they'r
   await expect(ratingCell(page, "Rapid")).toHaveText(/1810/);
   // No per-mode status: the group's one line explains where the numbers come from.
   await expect(ratingsGroup(page)).not.toContainText(/updated|provisional/i);
-  await expect(ratingsGroup(page)).toContainText("With Lichess connected, they come from");
+  await expect(ratingsGroup(page)).toContainText("Chess.com connected, they come from");
 
   // Disconnecting keeps the last synced values, as typed-in ones (what the sync's release stores).
   await seedRatings(page, {
