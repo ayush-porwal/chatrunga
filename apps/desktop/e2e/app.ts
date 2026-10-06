@@ -474,16 +474,18 @@ export async function closeApp(app: ElectronApplication, timeoutMs = 10_000): Pr
   const main = exit
     ? `The main process had exited (code ${exit.code}) ${exit.at - quitAt} ms after quitting.`
     : "The main process was still running.";
-  const listed = processes.map((entry) => `${entry.pid} ${entry.command}`).join("\n");
+  const listed = processes
+    .map((entry) => `${entry.pid} (parent ${entry.parent}) ${entry.command}`)
+    .join("\n");
   throw new Error(
     `The app hadn't exited ${timeoutMs / 1000} s after quitting, so it was killed.\n${main}\n` +
-      `Its other processes:\n${listed || "(none)"}` +
+      `Its processes then:\n${listed || "(none)"}` +
       (await quitDiagnostics(app))
   );
 }
 
-/** The processes descended from `root` (its children, and theirs), with their command lines. */
-function processTree(root: number): { pid: number; command: string }[] {
+/** `root` and the processes descended from it, with their parents and command lines. */
+function processTree(root: number): { pid: number; parent: number; command: string }[] {
   const rows: { pid: number; parent: number; command: string }[] = [];
   if (process.platform === "win32") {
     const listed = spawnSync(
@@ -517,18 +519,17 @@ function processTree(root: number): { pid: number; command: string }[] {
       if (match) rows.push({ pid: Number(match[1]), parent: Number(match[2]), command: match[3] });
     }
   }
-  const found: { pid: number; command: string }[] = [];
+  const found = rows.filter((row) => row.pid === root);
   const parents = [root];
   while (parents.length) {
     const parent = parents.pop();
     for (const row of rows) {
-      if (row.parent !== parent || row.pid === root || found.some((entry) => entry.pid === row.pid))
-        continue;
-      found.push({ pid: row.pid, command: row.command.slice(0, 300) });
+      if (row.parent !== parent || found.some((entry) => entry.pid === row.pid)) continue;
+      found.push(row);
       parents.push(row.pid);
     }
   }
-  return found;
+  return found.map((row) => ({ ...row, command: row.command.slice(0, 300) }));
 }
 
 /** The dialogs and the log of a launch that hung quitting, attached to the running test. */
