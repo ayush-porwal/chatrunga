@@ -325,6 +325,22 @@ describe("game store", () => {
       expect(useGameStore.getState().source).toBe("analysis");
     });
 
+    it("reopens a game on the Analyze board it was left on, and saves that with it", () => {
+      const { game } = importPgnText(pgn);
+      useGameStore.getState().loadGame({ ...game, id: "saved", source: "chesscom" });
+      useGameStore.getState().startAnalysisBoard();
+      const session = useGameStore.getState().toSession();
+      expect(session).toMatchObject({ source: "chesscom", analysisBoard: true });
+      useGameStore.getState().reset();
+      useGameStore.getState().loadGame(session);
+      expect(useGameStore.getState()).toMatchObject({ source: "chesscom", analysisBoard: true });
+      // Saved before the flag was kept: an analysis was on the Analyze board, nothing else was.
+      useGameStore.getState().loadGame({ ...game, id: "old", source: "analysis" });
+      expect(useGameStore.getState().analysisBoard).toBe(true);
+      useGameStore.getState().loadGame({ ...game, id: "old", source: "pgn-import" });
+      expect(useGameStore.getState().analysisBoard).toBe(false);
+    });
+
     it("leaves the Analyze board when another game loads, and comes back to it for an analysis", () => {
       loadFrom("pgn-import");
       useGameStore.getState().startAnalysisBoard();

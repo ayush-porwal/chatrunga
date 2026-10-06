@@ -480,6 +480,9 @@ export function parseSaveGameInput(value: unknown): SaveGameInput {
     currentNodeId: nullable(input.currentNodeId, (id) => asId(id, "node id")),
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- stored as JSON and checked node by node when the game is loaded (repositories.ts), not on every autosave
     moveTree: input.moveTree as MoveNode[],
+    ...(input.analysisBoard === undefined
+      ? {}
+      : { analysisBoard: asBoolean(input.analysisBoard, "analysisBoard") }),
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- stored as JSON and checked when loaded, like the tree
     review: input.review as GameReview | null | undefined
   };

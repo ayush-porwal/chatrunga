@@ -63,6 +63,23 @@ describe("gameRepository (SQLite)", () => {
     });
   });
 
+  it("keeps whether a game was left on the Analyze board, apart from its source", () => {
+    const { game } = importPgnText(PGN);
+    const saved = gameRepository.save({ ...game, id: "imported", analysisBoard: true });
+    expect(gameRepository.get(saved.id)).toMatchObject({
+      source: "pgn-import",
+      analysisBoard: true
+    });
+    // A save that doesn't say (an older caller) keeps it; one that does changes it.
+    gameRepository.save({ ...game, id: "imported" });
+    expect(gameRepository.get("imported")?.analysisBoard).toBe(true);
+    gameRepository.save({ ...game, id: "imported", analysisBoard: false });
+    expect(gameRepository.get("imported")?.analysisBoard).toBe(false);
+    // Saved before it was kept: not said at all (the renderer falls back to the source).
+    getDb().exec("UPDATE games SET analysis_board = NULL");
+    expect(gameRepository.get("imported")).not.toHaveProperty("analysisBoard");
+  });
+
   it("stores the id the renderer chose for a new game", () => {
     const { game } = importPgnText(PGN);
     const saved = gameRepository.save({ ...game, id: "chosen-id" });

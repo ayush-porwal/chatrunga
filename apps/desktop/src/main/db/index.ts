@@ -431,7 +431,10 @@ export const MIGRATIONS: readonly ((database: DatabaseSync) => void)[] = [
       last_rated_at INTEGER,
       updated_at INTEGER NOT NULL
     )`);
-  }
+  },
+  // 10: whether a game was left on the Analyze page's board (it reopens there). Kept apart from
+  // its source, which says where the game came from. Null for games saved before.
+  (database) => addColumn(database, "games", "analysis_board", "INTEGER")
 ];
 
 /** A stored game's fingerprint (null when its tree can't be read; the next save sets it). */

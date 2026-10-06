@@ -18,7 +18,7 @@ type ReviewState = ReturnType<typeof useReviewStore.getState>;
 /** What a save writes. Two equal documents (same references) need no second write. */
 type SavedDocument = Pick<
   GameState,
-  "gameId" | "source" | "moveTree" | "headers" | "currentNodeId" | "gameOutcome"
+  "gameId" | "source" | "analysisBoard" | "moveTree" | "headers" | "currentNodeId" | "gameOutcome"
 > & {
   review: ReviewState["review"];
 };
@@ -27,6 +27,7 @@ function documentOf(game: GameState, review: ReviewState["review"]): SavedDocume
   return {
     gameId: game.gameId,
     source: game.source,
+    analysisBoard: game.analysisBoard,
     moveTree: game.moveTree,
     headers: game.headers,
     currentNodeId: game.currentNodeId,
@@ -40,6 +41,7 @@ export function sameDocument(a: SavedDocument | null, b: SavedDocument): boolean
     a !== null &&
     a.gameId === b.gameId &&
     a.source === b.source &&
+    a.analysisBoard === b.analysisBoard &&
     a.moveTree === b.moveTree &&
     a.headers === b.headers &&
     a.currentNodeId === b.currentNodeId &&
@@ -289,6 +291,7 @@ export function useGameAutosave(): void {
           state.moveTree !== previous.moveTree ||
           state.headers !== previous.headers ||
           state.source !== previous.source ||
+          state.analysisBoard !== previous.analysisBoard ||
           state.mode !== previous.mode ||
           state.gameOutcome !== previous.gameOutcome
         ) {
@@ -352,6 +355,7 @@ function saveInput(
   return {
     id: game.gameId,
     source: game.source,
+    analysisBoard: game.analysisBoard,
     headers,
     rootFen: game.rootFen,
     currentFen: game.currentFen,

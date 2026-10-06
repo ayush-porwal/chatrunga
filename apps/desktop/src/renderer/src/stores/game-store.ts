@@ -257,8 +257,9 @@ export const useGameStore = create<GameStore>((set, get) => {
         board: state.board + 1,
         gameId: game.id,
         source: game.source,
-        // A saved analysis reopens on the Analyze board, as it was left.
-        analysisBoard: game.source === "analysis",
+        // Reopens on the Analyze board if it was left there (sessions from before the flag was
+        // kept: an analysis was on it).
+        analysisBoard: game.analysisBoard ?? game.source === "analysis",
         headers: game.headers,
         rootFen: game.rootFen,
         currentFen: currentNode?.fenAfter ?? game.currentFen,
@@ -738,7 +739,8 @@ export const useGameStore = create<GameStore>((set, get) => {
         currentFen: state.currentFen,
         currentNodeId: state.currentNodeId,
         moveTree: state.moveTree,
-        pgn: exportGameToPgn({ headers: state.headers, moveTree: state.moveTree })
+        pgn: exportGameToPgn({ headers: state.headers, moveTree: state.moveTree }),
+        analysisBoard: state.analysisBoard
       };
     }
   };

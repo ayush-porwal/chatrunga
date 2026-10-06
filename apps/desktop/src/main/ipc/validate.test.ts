@@ -316,6 +316,12 @@ describe("library inputs", () => {
     expect(parseSaveGameInput({ ...game, source: "chesscom" })).toMatchObject({
       source: "chesscom"
     });
+    // Whether it was left on the Analyze board: optional (older callers don't send it).
+    expect(parseSaveGameInput({ ...game, analysisBoard: true })).toMatchObject({
+      analysisBoard: true
+    });
+    expect(parseSaveGameInput(game)).not.toHaveProperty("analysisBoard");
+    expect(() => parseSaveGameInput({ ...game, analysisBoard: "yes" })).toThrow(/analysisBoard/);
     expect(() => parseSaveGameInput({ ...game, moveTree: {} })).toThrow(/moveTree/);
     expect(() => parseSaveGameInput({ ...game, pgn: 1 })).toThrow(/PGN/);
     expect(() => parseSaveGameInput({ ...game, review: "x" })).toThrow(/review/);

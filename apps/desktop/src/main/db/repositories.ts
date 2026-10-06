@@ -94,6 +94,8 @@ type GameRow = {
   headers_json: string | null;
   move_tree_json: string;
   review_json: string | null;
+  /** 1 / 0 once saved with it; null for games saved before it was kept. */
+  analysis_board: number | null;
   created_at: number;
   updated_at: number;
 };
@@ -564,7 +566,10 @@ function toSavedGame(row: GameRow): SavedGame {
     review,
     reviews: listed.map(toSavedReviewInfo),
     reviewCount: listed.length,
-    lastReviewedAt: listed[0]?.created_at ?? null
+    lastReviewedAt: listed[0]?.created_at ?? null,
+    ...(row.analysis_board === null || row.analysis_board === undefined
+      ? {}
+      : { analysisBoard: row.analysis_board === 1 })
   };
 }
 
@@ -726,8 +731,8 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
       `INSERT INTO games (
         id, source, white, black, event, site, round, result, date,
         initial_fen, pgn, current_fen, current_node_id, headers_json, move_tree_json, fingerprint,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        analysis_board, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         source = excluded.source,
         white = excluded.white,
@@ -744,6 +749,7 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
         headers_json = excluded.headers_json,
         move_tree_json = excluded.move_tree_json,
         fingerprint = excluded.fingerprint,
+        analysis_board = COALESCE(excluded.analysis_board, games.analysis_board),
         updated_at = excluded.updated_at`,
       id,
       input.source,
@@ -761,6 +767,7 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
       JSON.stringify(input.headers),
       JSON.stringify(input.moveTree),
       fingerprint,
+      input.analysisBoard === undefined ? null : Number(input.analysisBoard),
       createdAt,
       timestamp
     );

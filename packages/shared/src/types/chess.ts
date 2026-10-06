@@ -79,6 +79,11 @@ export type GameSession = {
   currentNodeId: string;
   moveTree: MoveNode[];
   pgn: string;
+  /**
+   * The game was left on the Analyze page's board (it reopens there). Absent in sessions saved
+   * before it was kept: an `analysis` game was on it then.
+   */
+  analysisBoard?: boolean;
 };
 
 export type ImportedGame = {
@@ -171,6 +176,8 @@ export type SavedGame = GameSummary & {
   review: GameReview | null;
   /** Every saved analysis of the game, newest first. */
   reviews: SavedReviewInfo[];
+  /** Left on the Analyze page's board (absent for games saved before it was kept). */
+  analysisBoard?: boolean;
 };
 
 export type SaveGameInput = {
@@ -182,6 +189,8 @@ export type SaveGameInput = {
   currentNodeId?: string | null;
   pgn: string;
   moveTree: MoveNode[];
+  /** Left on the Analyze page's board; absent keeps what was stored. */
+  analysisBoard?: boolean;
   /**
    * The analysis on the board, saved under its `reviewId` (added, or updated with new commentary).
    * Other saved analyses of the game are never touched; omitted or null saves no analysis.
