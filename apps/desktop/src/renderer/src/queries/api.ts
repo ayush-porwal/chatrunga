@@ -12,10 +12,10 @@ import { SAVE_SUPPRESSED_AFTER_DELETE } from "@chaturanga/shared/ipc/game-handli
 import type {
   GameLibraryFacets,
   GameListCursor,
-  GameListFilter,
   GameListPage,
   SaveGameInput
 } from "@chaturanga/shared/types/chess";
+import { emptyTabCounts, type LibraryTab } from "@chaturanga/shared/types/library";
 import type { CreateEngineInput, UpdateEngineInput } from "@chaturanga/shared/types/engine";
 import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
 import { defaultSettings, settingKeys, type AppSettings } from "@chaturanga/shared/types/settings";
@@ -102,12 +102,15 @@ export function useDeleteEngineMutation() {
 export const GAME_PAGE_SIZE = 50;
 
 const NO_GAMES: GameListPage = { items: [], nextCursor: null };
-const NO_FACETS: GameLibraryFacets = { hasGames: false, hasLichess: false, hasReviewed: false };
+const NO_FACETS: GameLibraryFacets = { hasGames: false, tabs: emptyTabCounts() };
 
 export type GameListParams = {
   /** Already trimmed / debounced by the caller (each distinct value is its own cached list). */
   search: string;
-  filter: GameListFilter;
+  /** The source tab (null: every game). */
+  tab: LibraryTab | null;
+  /** Only games with a saved analysis. */
+  reviewed: boolean;
   excludeId: string | null;
 };
 
@@ -116,8 +119,9 @@ export type GameListParams = {
  * "games" key, so a save, delete or import (which invalidate ["games"]) re-reads it: only the
  * pages already shown, and only for a list on screen (others refetch when shown again).
  */
-export function useGamePagesQuery(params: GameListParams) {
+export function useGamePagesQuery(params: GameListParams, { enabled = true } = {}) {
   return useInfiniteQuery({
+    enabled,
     queryKey: [...queryKeys.games, "pages", params] as const,
     queryFn: async ({ pageParam }): Promise<GameListPage> =>
       (await api()?.games.listPage({ ...params, cursor: pageParam, limit: GAME_PAGE_SIZE })) ??
@@ -137,7 +141,7 @@ export function useLatestGamesQuery(count: number) {
   });
 }
 
-/** Which filters the library has games for (leaving out `excludeId`). */
+/** The library's source tabs and their counts, and whether it has games other than `excludeId`. */
 export function useGameFacetsQuery(excludeId: string | null) {
   return useQuery({
     queryKey: [...queryKeys.games, "facets", excludeId] as const,

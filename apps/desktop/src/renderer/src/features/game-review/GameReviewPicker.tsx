@@ -2,12 +2,14 @@ import { useMemo, useState } from "react";
 import { ChevronRight, Search, Upload } from "lucide-react";
 import {
   GAME_SEARCH_MAX_LENGTH,
-  type GameListFilter,
+  type GameSource,
   type GameSummary
 } from "@chaturanga/shared/types/chess";
-import { Badge } from "@/components/ui/badge";
+import { LIBRARY_TAB_LABELS } from "@chaturanga/shared/types/library";
+import { Badge, ChipButton } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useGameFacetsQuery, useGamePagesQuery } from "../../queries/api";
+import { useGamePagesQuery } from "../../queries/api";
+import { sourceLabel, useLibraryTabs } from "../game/library-tab";
 import { useGameStore } from "../../stores/game-store";
 import { cn } from "@/lib/utils";
 import { listRowInteractive, listRowSelected } from "@/lib/ui";
@@ -29,10 +31,9 @@ type GameReviewPickerProps = {
   onImport: () => void;
 };
 
-type SourceFilter = GameListFilter;
-
 type CurrentGame = {
   id: string | null;
+  source: GameSource;
   white: string | null;
   black: string | null;
   result: string | null;
@@ -44,12 +45,16 @@ function titleFor(game: Pick<GameSummary, "white" | "black">): string {
   return `${game.white || "White"} vs ${game.black || "Black"}`;
 }
 
-function subtitleFor(game: Pick<GameSummary, "event" | "result" | "date">): string {
-  return [game.event || "Imported game", game.result || "*", game.date].filter(Boolean).join(" · ");
+/** The row's second line: where the game came from, then its event, result and date. */
+function subtitleFor(game: Pick<GameSummary, "source" | "event" | "result" | "date">): string {
+  return [sourceLabel(game.source), game.event, game.result || "*", game.date]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPickerProps) {
   const currentGameId = useGameStore((state) => state.gameId);
+  const currentSource = useGameStore((state) => state.source);
   const currentWhite = useGameStore((state) => state.headers.white);
   const currentBlack = useGameStore((state) => state.headers.black);
   const currentResult = useGameStore((state) => state.headers.result);
@@ -57,6 +62,7 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
   const currentMoveCount = useGameStore((state) => Math.max(0, state.moveTree.length - 1));
   const currentGame: CurrentGame = {
     id: currentGameId,
+    source: currentSource,
     white: currentWhite ?? null,
     black: currentBlack ?? null,
     result: currentResult ?? null,
@@ -64,37 +70,37 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
     moveCount: currentMoveCount
   };
   const [query, setQuery] = useState("");
-  const [source, setSource] = useState<SourceFilter>("all");
-  const facets = useGameFacetsQuery(currentGameId);
-  const hasLichessGames = facets.data?.hasLichess ?? false;
-  const hasReviewedGames = facets.data?.hasReviewed ?? false;
-  const sourceFilterOptions: { value: SourceFilter; label: string }[] = [
-    { value: "all", label: "All" },
-    ...(hasReviewedGames ? [{ value: "reviewed" as const, label: "Reviewed" }] : []),
-    ...(hasLichessGames
-      ? [
-          { value: "lichess" as const, label: "Lichess" },
-          { value: "other" as const, label: "Other" }
-        ]
-      : [])
-  ];
+  const [reviewedOnly, setReviewedOnly] = useState(false);
+  // One source at a time (its tab), and Reviewed on top of it; the current game stays pinned.
+  const { facets, counts, tabs, tab, choose } = useLibraryTabs(currentSource, currentGameId);
+  const reviewedCount = tab ? counts[tab].reviewed : 0;
   // Searched and filtered in the database, a page at a time. Clearing the box applies at once;
-  // typing waits for a pause. Lichess / Other only split a library that has Lichess games.
-  // The box stops at the longest search the library takes (main refuses longer).
+  // typing waits for a pause. The box stops at the longest search the library takes (main
+  // refuses longer).
   const needle = query.trim().slice(0, GAME_SEARCH_MAX_LENGTH);
   const debouncedNeedle = useDebouncedValue(needle, SEARCH_DEBOUNCE_MS);
-  const games = useGamePagesQuery({
-    search: needle ? debouncedNeedle : "",
-    filter: source === "reviewed" || hasLichessGames ? source : "all",
-    excludeId: currentGameId
-  });
+  const games = useGamePagesQuery(
+    {
+      search: needle ? debouncedNeedle : "",
+      tab,
+      reviewed: reviewedOnly,
+      excludeId: currentGameId
+    },
+    // The tab is known once the counts are.
+    { enabled: !facets.isPending }
+  );
   const filteredGames = useMemo(() => gamesOfPages(games.data?.pages), [games.data]);
 
   const currentCanReview = currentGame.moveCount > 0;
   const currentLabel =
     currentGame.white || currentGame.black ? titleFor(currentGame) : "Current game";
   const currentSubtitle = currentCanReview
-    ? [currentGame.event, currentGame.result, `${currentGame.moveCount} plies`]
+    ? [
+        sourceLabel(currentGame.source),
+        currentGame.event,
+        currentGame.result,
+        `${currentGame.moveCount} plies`
+      ]
         .filter(Boolean)
         .join(" · ")
     : "";
@@ -122,15 +128,37 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
         </Button>
       }
     >
-      {sourceFilterOptions.length > 1 ? (
-        <SegmentedControl
-          ariaLabel="Game source"
-          size="sm"
-          value={source}
-          onChange={setSource}
-          options={sourceFilterOptions}
-          className="w-fit shrink-0"
-        />
+      {tab && (tabs.length > 1 || reviewedCount > 0 || reviewedOnly) ? (
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+          {tabs.length > 1 ? (
+            <SegmentedControl
+              ariaLabel="Game source"
+              size="sm"
+              value={tab}
+              onChange={choose}
+              options={tabs.map((value) => ({
+                value,
+                label: LIBRARY_TAB_LABELS[value],
+                count: counts[value].games
+              }))}
+              className="w-fit max-w-full shrink-0"
+            />
+          ) : (
+            <span />
+          )}
+          {reviewedCount > 0 || reviewedOnly ? (
+            <ChipButton
+              selected={reviewedOnly}
+              onClick={() => setReviewedOnly((on) => !on)}
+              className="ml-auto"
+            >
+              Reviewed
+              <span className={cn("tabular-nums", !reviewedOnly && "text-fg-subtle")}>
+                {reviewedCount}
+              </span>
+            </ChipButton>
+          ) : null}
+        </div>
       ) : null}
       {hasSavedGames || query ? (
         <div className="relative shrink-0">
@@ -196,11 +224,11 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
                 </Button>
               ) : null}
             </div>
-          ) : games.isLoading ? null : (
+          ) : games.isPending ? null : (
             <EmptyState
               compact
               title={
-                query || source !== "all"
+                query || reviewedOnly
                   ? "No saved games match this search."
                   : currentCanReview
                     ? "No other saved games."

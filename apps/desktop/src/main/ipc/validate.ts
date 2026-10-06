@@ -9,13 +9,17 @@ import { positionFromFen } from "@chaturanga/shared/chess/position";
 import type {
   Color,
   GameHeaders,
-  GameListFilter,
   GameListQuery,
-  GameSource,
   MoveNode,
   SaveGameInput
 } from "@chaturanga/shared/types/chess";
 import { GAME_SEARCH_MAX_LENGTH } from "@chaturanga/shared/types/chess";
+import { isGameSource, LIBRARY_TABS } from "@chaturanga/shared/types/library";
+import {
+  CHESSCOM_IMPORT_WINDOWS,
+  CHESSCOM_USERNAME,
+  type ChesscomConnectInput
+} from "@chaturanga/shared/types/chesscom";
 import type {
   AddFromGameDestination,
   AddFromGameInput,
@@ -88,14 +92,6 @@ const MAX_ARGS = 64;
 const MAX_MOVES = 2000;
 const MAX_PGN_BYTES = 20 * 1024 * 1024;
 const MAIA_RATINGS: readonly MaiaRating[] = [1100, 1300, 1500, 1700, 1900];
-const GAME_SOURCES: readonly GameSource[] = [
-  "new",
-  "pgn-import",
-  "engine-game",
-  "analysis",
-  "puzzle",
-  "lichess"
-];
 /** UCI long algebraic move (castling may be king-takes-rook in Chess960 form). */
 const UCI_MOVE = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
 // oxlint-disable-next-line no-control-regex -- it matches the control characters an input may not contain
@@ -440,8 +436,6 @@ export function parseAnalysePositionsInput(value: unknown): AnalysePositionsInpu
   };
 }
 
-const GAME_LIST_FILTERS: readonly GameListFilter[] = ["all", "reviewed", "lichess", "other"];
-
 /** A library page request (the repository clamps the limit). */
 export function parseGameListQuery(value: unknown): GameListQuery {
   const input = value === undefined ? {} : asObject(value, "game list query");
@@ -452,13 +446,14 @@ export function parseGameListQuery(value: unknown): GameListQuery {
       id: asId(fields.id, "cursor id")
     };
   });
-  const filter = input.filter ?? "all";
-  if (!isOneOf(GAME_LIST_FILTERS, filter)) fail("game list filter", "unknown filter");
+  const tab = input.tab ?? null;
+  if (tab !== null && !isOneOf(LIBRARY_TABS, tab)) fail("game list source", "unknown source");
   return {
     cursor: cursor ?? null,
     limit: optional(input.limit, (limit) => asWholeNumber(limit, "page size")),
     search: optional(input.search, (search) => asString(search, "search", GAME_SEARCH_MAX_LENGTH)),
-    filter,
+    tab,
+    reviewed: optional(input.reviewed, (reviewed) => asBoolean(reviewed, "reviewed")) ?? false,
     excludeId: nullable(input.excludeId, (id) => asId(id, "game id")) ?? null
   };
 }
@@ -471,7 +466,7 @@ export function parseGameListQuery(value: unknown): GameListQuery {
 export function parseSaveGameInput(value: unknown): SaveGameInput {
   const input = asObject(value, "game");
   const source = input.source;
-  if (!isOneOf(GAME_SOURCES, source)) fail("game", "unknown source");
+  if (!isGameSource(source)) fail("game", "unknown source");
   if (!Array.isArray(input.moveTree)) fail("game", "moveTree must be an array");
   const headers = parseGameHeaders(input.headers ?? {});
   if (input.review !== undefined && input.review !== null) asObject(input.review, "game review");
@@ -732,9 +727,23 @@ export function parseLichessAiChallengeInput(value: unknown): LichessAiChallenge
   };
 }
 
-export function parseLichessDisconnectInput(value: unknown): { removeGames: boolean } {
+/** Disconnecting an account (Lichess, Chess.com): whether its imported games go too. */
+export function parseDisconnectInput(value: unknown): { removeGames: boolean } {
   const input = asObject(value, "disconnect options");
   return { removeGames: asBoolean(input.removeGames, "removeGames") };
+}
+
+/* ------------------------------------------------------------------ chess.com */
+
+export function parseChesscomConnectInput(value: unknown): ChesscomConnectInput {
+  const input = asObject(value, "chess.com account");
+  const username = asString(input.username, "chess.com username", 100).trim();
+  if (!CHESSCOM_USERNAME.test(username))
+    fail("chess.com username", "letters, digits, _ and - only");
+  const firstImport = input.firstImport;
+  if (!isOneOf(CHESSCOM_IMPORT_WINDOWS, firstImport))
+    fail("first import", "expected 3months, year or all");
+  return { username, firstImport };
 }
 
 /* ------------------------------------------------------------------ repertoires */

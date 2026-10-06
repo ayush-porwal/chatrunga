@@ -1,6 +1,7 @@
 import { useMemo, useState, type MouseEvent } from "react";
 import { BookPlus, FolderOpen, RotateCcw, Trash2 } from "lucide-react";
-import { useDeleteGameMutation, useGamePagesQuery, type GameListParams } from "../../queries/api";
+import { LIBRARY_TAB_LABELS } from "@chaturanga/shared/types/library";
+import { useDeleteGameMutation, useGamePagesQuery } from "../../queries/api";
 import { useGameStore } from "../../stores/game-store";
 import { useReviewStore } from "../../stores/review-store";
 import { cn } from "@/lib/utils";
@@ -8,6 +9,8 @@ import { listRow } from "@/lib/ui";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconButton } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
+import { ChipButton } from "@/components/ui/badge";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { OverflowMenu } from "@/components/ui/menu";
 import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,16 +19,24 @@ import { cancelActiveReview } from "../../app/useReviewRunner";
 import { gamesOfPages } from "@/lib/game-pages";
 import { useAddToRepertoireStore } from "../../stores/add-to-repertoire-store";
 import { hasMoves, sourceFromSavedGame } from "../repertoire/add-from-game";
-
-/** The Library tab lists every game, newest first. */
-const LIBRARY: GameListParams = { search: "", filter: "all", excludeId: null };
+import { sourceLabel, useLibraryTabs } from "./library-tab";
 
 /**
- * The workspace's Library tab. Opening a game goes through App (`onOpenGame`: history, engine
- * teardown); "Add to repertoire…" reads the saved game and opens the dialog without loading it.
+ * The workspace's Library tab: the games of one source at a time (its tab), newest first, and
+ * optionally only the reviewed ones. Opening a game goes through App (`onOpenGame`: history,
+ * engine teardown); "Add to repertoire…" reads the saved game and opens the dialog without
+ * loading it.
  */
 export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }) {
-  const games = useGamePagesQuery(LIBRARY);
+  const currentSource = useGameStore((state) => state.source);
+  const [reviewedOnly, setReviewedOnly] = useState(false);
+  const { facets, counts, tabs, tab, choose } = useLibraryTabs(currentSource, null);
+  const shown = tab ? counts[tab] : null;
+  const games = useGamePagesQuery(
+    { search: "", tab, reviewed: reviewedOnly, excludeId: null },
+    // The tab is known once the counts are.
+    { enabled: !facets.isPending }
+  );
   const list = useMemo(() => gamesOfPages(games.data?.pages), [games.data]);
   const removeGame = useDeleteGameMutation();
   const resetBoard = useGameStore((state) => state.reset);
@@ -78,6 +89,37 @@ export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }
 
   return (
     <section className="flex h-full min-h-0 w-full min-w-0 flex-col gap-2" aria-label="Library">
+      {tab && shown ? (
+        <div className="grid shrink-0 gap-2">
+          {tabs.length > 1 ? (
+            <SegmentedControl
+              ariaLabel="Game source"
+              size="sm"
+              value={tab}
+              onChange={choose}
+              options={tabs.map((value) => ({
+                value,
+                label: LIBRARY_TAB_LABELS[value],
+                count: counts[value].games
+              }))}
+              className="w-fit max-w-full overflow-x-auto [scrollbar-width:none] [&>button]:shrink-0"
+            />
+          ) : null}
+          <div className="flex min-h-7 items-center justify-between gap-2">
+            <span className="text-xs text-fg-muted tabular-nums">
+              {gamesLabel(reviewedOnly ? shown.reviewed : shown.games)}
+            </span>
+            {shown.reviewed > 0 || reviewedOnly ? (
+              <ChipButton selected={reviewedOnly} onClick={() => setReviewedOnly((on) => !on)}>
+                Reviewed
+                <span className={cn("tabular-nums", !reviewedOnly && "text-fg-subtle")}>
+                  {shown.reviewed}
+                </span>
+              </ChipButton>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
       {deleteError ? <Notice tone="danger">{deleteError}</Notice> : null}
       {games.isPending ? (
         <div className="grid gap-1.5" aria-hidden="true">
@@ -121,7 +163,9 @@ export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }
                   {game.white || "White"} vs {game.black || "Black"}
                 </span>
                 <span className="truncate text-xs text-fg-muted">
-                  {game.event || game.source} · {game.result || "*"}
+                  {[sourceLabel(game.source), game.event, game.result || "*"]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </span>
               </button>
               <OverflowMenu
@@ -165,4 +209,8 @@ export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }
       )}
     </section>
   );
+}
+
+function gamesLabel(count: number): string {
+  return `${count} ${count === 1 ? "game" : "games"}`;
 }

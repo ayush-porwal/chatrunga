@@ -493,10 +493,10 @@ describe("gameRepository (SQLite)", () => {
         gameRepository.listPage({ search: "sofia", limit: 5 }).items.map((game) => game.id)
       ).toEqual(["deep-lichess"]);
       expect(
-        gameRepository.listPage({ filter: "lichess", limit: 5 }).items.map((game) => game.id)
+        gameRepository.listPage({ tab: "lichess", limit: 5 }).items.map((game) => game.id)
       ).toEqual(["deep-lichess"]);
       expect(
-        gameRepository.listPage({ filter: "other", limit: 5 }).items.map((game) => game.id)
+        gameRepository.listPage({ tab: "imported", limit: 5 }).items.map((game) => game.id)
       ).not.toContain("deep-lichess");
       // A search with wildcards is plain text.
       expect(gameRepository.listPage({ search: "%", limit: 5 }).items).toEqual([]);
@@ -511,9 +511,39 @@ describe("gameRepository (SQLite)", () => {
           "INSERT INTO game_reviews (review_id, game_id, created_at, review_json) VALUES ('r', 'g3', 5, '{}')"
         )
         .run();
-      expect(gameRepository.listPage({ filter: "reviewed", limit: 5 }).items).toEqual([
+      expect(gameRepository.listPage({ reviewed: true, limit: 5 }).items).toEqual([
         expect.objectContaining({ id: "g3", reviewCount: 1, lastReviewedAt: 5 })
       ]);
+    });
+
+    it("lists one source tab at a time, and Reviewed within it", () => {
+      insertGames([
+        { id: "li", source: "lichess", updatedAt: 1 },
+        { id: "cc-old", source: "chesscom", updatedAt: 2 },
+        { id: "cc-new", source: "chesscom", updatedAt: 9 },
+        { id: "pgn", source: "pgn-import", updatedAt: 3 },
+        { id: "engine", source: "engine-game", updatedAt: 4 },
+        { id: "free", source: "new", updatedAt: 5 },
+        { id: "study", source: "analysis", updatedAt: 6 },
+        { id: "puzzle", source: "puzzle", updatedAt: 7 }
+      ]);
+      const ids = (query: Parameters<typeof gameRepository.listPage>[0]) =>
+        gameRepository.listPage(query).items.map((game) => game.id);
+      expect(ids({ tab: "chesscom" })).toEqual(["cc-new", "cc-old"]);
+      expect(ids({ tab: "imported" })).toEqual(["pgn"]);
+      expect(ids({ tab: "engine" })).toEqual(["engine"]);
+      // Games made in the app; puzzle sessions never list.
+      expect(ids({ tab: "chaturanga" })).toEqual(["study", "free"]);
+      expect(ids({ tab: null })).toHaveLength(7);
+      getDb()
+        .prepare(
+          "INSERT INTO game_reviews (review_id, game_id, created_at, review_json) VALUES ('r', 'cc-old', 5, '{}')"
+        )
+        .run();
+      expect(ids({ tab: "chesscom", reviewed: true })).toEqual(["cc-old"]);
+      expect(ids({ tab: "lichess", reviewed: true })).toEqual([]);
+      expect(ids({ tab: "chesscom", reviewed: true, search: "nobody" })).toEqual([]);
+      expect(ids({ tab: "chesscom", excludeId: "cc-new" })).toEqual(["cc-old"]);
     });
 
     it("searches a filtered list across pages with the cursor", () => {
@@ -533,32 +563,49 @@ describe("gameRepository (SQLite)", () => {
       expect(readAll({ search: "match" }, 7).ids).toEqual(expected);
     });
 
-    it("says which filters the library has games for", () => {
+    it("counts the games of each source tab, and the reviewed ones among them", () => {
+      const counts = (games: number, reviewed: number) => ({ games, reviewed });
       expect(gameRepository.facets(null)).toEqual({
         hasGames: false,
-        hasLichess: false,
-        hasReviewed: false
+        tabs: {
+          lichess: counts(0, 0),
+          chesscom: counts(0, 0),
+          imported: counts(0, 0),
+          engine: counts(0, 0),
+          chaturanga: counts(0, 0)
+        }
       });
       insertGames([
         { id: "board", source: "lichess", updatedAt: 1 },
-        { id: "puzzle", source: "puzzle", updatedAt: 2 }
+        { id: "cc1", source: "chesscom", updatedAt: 2 },
+        { id: "cc2", source: "chesscom", updatedAt: 3 },
+        { id: "free", source: "new", updatedAt: 4 },
+        { id: "study", source: "analysis", updatedAt: 5 },
+        { id: "puzzle", source: "puzzle", updatedAt: 6 }
       ]);
       getDb()
         .prepare(
-          "INSERT INTO game_reviews (review_id, game_id, created_at, review_json) VALUES ('r', 'board', 5, '{}')"
+          `INSERT INTO game_reviews (review_id, game_id, created_at, review_json) VALUES
+            ('r1', 'board', 5, '{}'), ('r2', 'cc2', 5, '{}'), ('r3', 'cc2', 6, '{}')`
         )
         .run();
       expect(gameRepository.facets(null)).toEqual({
         hasGames: true,
-        hasLichess: true,
-        hasReviewed: true
+        tabs: {
+          lichess: counts(1, 1),
+          // A game with two analyses is one reviewed game.
+          chesscom: counts(2, 1),
+          imported: counts(0, 0),
+          engine: counts(0, 0),
+          // New and analysis games are the app's own; puzzle sessions aren't library games.
+          chaturanga: counts(2, 0)
+        }
       });
-      // Leaving out the game on the board: Lichess still counts it (as the picker always did).
-      expect(gameRepository.facets("board")).toEqual({
-        hasGames: false,
-        hasLichess: true,
-        hasReviewed: false
-      });
+      // The game on the board still counts in its tab (the picker pins it on top of any tab).
+      expect(gameRepository.facets("board").tabs.lichess).toEqual(counts(1, 1));
+      getDb().exec("DELETE FROM games WHERE id != 'board'");
+      expect(gameRepository.facets("board").hasGames).toBe(false);
+      expect(gameRepository.facets(null).hasGames).toBe(true);
     });
   });
 

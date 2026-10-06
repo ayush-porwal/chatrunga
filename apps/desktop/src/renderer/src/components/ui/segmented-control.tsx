@@ -6,6 +6,8 @@ type SegmentedOption<T extends string> = {
   value: T;
   label: string;
   icon?: React.ReactNode;
+  /** A count after the label (e.g. how many games a source tab holds). */
+  count?: number;
   disabled?: boolean;
   /**
    * Why a disabled segment is unavailable, shown as its tooltip. The segment then stays hoverable
@@ -71,7 +73,7 @@ function SegmentedControl<T extends string>({
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const indicatorRef = React.useRef<HTMLSpanElement | null>(null);
   const placedRef = React.useRef(false);
-  const labelsKey = options.map((option) => option.label).join("\u0000");
+  const labelsKey = options.map((option) => `${option.label}:${option.count ?? ""}`).join("\u0000");
 
   React.useLayoutEffect(() => {
     const container = containerRef.current;
@@ -186,6 +188,11 @@ function SegmentedControl<T extends string>({
           >
             {option.icon}
             <span className="truncate">{option.label}</span>
+            {option.count === undefined ? null : (
+              <span className={cn("tabular-nums", selected ? "text-fg-muted" : "text-fg-subtle")}>
+                {option.count}
+              </span>
+            )}
           </button>
         );
         if (!explained) return segment;

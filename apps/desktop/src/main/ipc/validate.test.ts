@@ -18,7 +18,8 @@ import {
   parseGameListQuery,
   parseLichessAiChallengeInput,
   parseLichessChallengeInput,
-  parseLichessDisconnectInput,
+  parseChesscomConnectInput,
+  parseDisconnectInput,
   parseLichessSeekInput,
   parsePgnText,
   parsePractisedElsewhereInput,
@@ -312,6 +313,9 @@ describe("library inputs", () => {
     });
     expect(() => parseSaveGameInput({ ...game, source: "hosted" })).toThrow(/source/);
     expect(parseSaveGameInput({ ...game, source: "lichess" })).toMatchObject({ source: "lichess" });
+    expect(parseSaveGameInput({ ...game, source: "chesscom" })).toMatchObject({
+      source: "chesscom"
+    });
     expect(() => parseSaveGameInput({ ...game, moveTree: {} })).toThrow(/moveTree/);
     expect(() => parseSaveGameInput({ ...game, pgn: 1 })).toThrow(/PGN/);
     expect(() => parseSaveGameInput({ ...game, review: "x" })).toThrow(/review/);
@@ -495,8 +499,26 @@ describe("Lichess inputs", () => {
     expect(() =>
       parseLichessAiChallengeInput({ level: 9, minutes: 10, incrementSec: 0, color: "white" })
     ).toThrow(/level/);
-    expect(parseLichessDisconnectInput({ removeGames: true })).toEqual({ removeGames: true });
-    expect(() => parseLichessDisconnectInput({})).toThrow(/removeGames/);
+    expect(parseDisconnectInput({ removeGames: true })).toEqual({ removeGames: true });
+    expect(() => parseDisconnectInput({})).toThrow(/removeGames/);
+  });
+
+  it("parses a chess.com username and the first import's reach", () => {
+    expect(
+      parseChesscomConnectInput({ username: " Ayush_p64 ", firstImport: "year", extra: 1 })
+    ).toEqual({ username: "Ayush_p64", firstImport: "year" });
+    expect(parseChesscomConnectInput({ username: "a-b", firstImport: "all" })).toEqual({
+      username: "a-b",
+      firstImport: "all"
+    });
+    // Anything that could leave the player's path (or isn't a username) is refused.
+    for (const username of ["", "x", "../stats", "name with space", "ü", "a".repeat(51), 5])
+      expect(() => parseChesscomConnectInput({ username, firstImport: "year" })).toThrow(
+        /chess\.com username/
+      );
+    expect(() => parseChesscomConnectInput({ username: "erik", firstImport: "decade" })).toThrow(
+      /first import/
+    );
   });
 });
 
@@ -559,7 +581,8 @@ describe("parseSettingsPatch", () => {
       cursor: null,
       limit: undefined,
       search: undefined,
-      filter: "all",
+      tab: null,
+      reviewed: false,
       excludeId: null
     });
     expect(
@@ -567,7 +590,8 @@ describe("parseSettingsPatch", () => {
         cursor: { updatedAt: 5, id: " g1 ", extra: 1 },
         limit: 50,
         search: "carlsen",
-        filter: "lichess",
+        tab: "chesscom",
+        reviewed: true,
         excludeId: "board",
         sql: "DROP TABLE games"
       })
@@ -575,10 +599,14 @@ describe("parseSettingsPatch", () => {
       cursor: { updatedAt: 5, id: "g1" },
       limit: 50,
       search: "carlsen",
-      filter: "lichess",
+      tab: "chesscom",
+      reviewed: true,
       excludeId: "board"
     });
-    expect(() => parseGameListQuery({ filter: "puzzle" })).toThrow(/filter/);
+    // The old filters are gone: a source is a tab, Reviewed a flag of its own.
+    expect(() => parseGameListQuery({ tab: "puzzle" })).toThrow(/source/);
+    expect(() => parseGameListQuery({ tab: "other" })).toThrow(/source/);
+    expect(() => parseGameListQuery({ reviewed: "yes" })).toThrow(/reviewed/);
     expect(() => parseGameListQuery({ limit: -1 })).toThrow(/page size/);
     expect(() => parseGameListQuery({ limit: 1.5 })).toThrow(/page size/);
     expect(() => parseGameListQuery({ cursor: { updatedAt: "5", id: "g1" } })).toThrow(/cursor/);
