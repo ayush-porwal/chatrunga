@@ -472,7 +472,7 @@ export class EngineManager extends EventEmitter<EngineEvents> {
       createLineSplitter((line) => this.handleLine(session, line))
     );
     proc.stderr.on("data", (chunk: Buffer) => {
-      if (LOG_UCI) logger.info(`uci:${config.name}`, "[stderr]", chunk.toString("utf8").trim());
+      if (LOG_UCI) logger.trace(`uci:${config.name}`, "[stderr]", chunk.toString("utf8").trim());
     });
     proc.on("error", (error) => {
       if (this.session !== session) return;
@@ -583,7 +583,7 @@ export class EngineManager extends EventEmitter<EngineEvents> {
   private write(command: string): void {
     const session = this.session;
     if (!session) return;
-    if (LOG_UCI) logger.info(`uci:${session.config.name}`, "→", command);
+    if (LOG_UCI) logger.trace(`uci:${session.config.name}`, "→", command);
     writeUci(session.proc, command);
   }
 
@@ -613,7 +613,7 @@ export class EngineManager extends EventEmitter<EngineEvents> {
   private handleLine(session: EngineSession, line: string): void {
     if (this.session !== session) return;
     const engine = session.config;
-    if (LOG_UCI) logger.info(`uci:${engine.name}`, "←", line);
+    if (LOG_UCI) logger.trace(`uci:${engine.name}`, "←", line);
 
     if (this.lineWaiter?.predicate(line)) {
       this.lineWaiter.resolve();

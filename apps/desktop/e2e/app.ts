@@ -81,7 +81,10 @@ export function findPackagedExecutable(distDir = join(desktopDir, "dist")): stri
 export type LaunchedApp = { app: ElectronApplication; page: Page; pageErrors: string[] };
 
 /** What a launch leaves behind to explain a quit that hangs: its profile and its console's tail. */
-const launches = new WeakMap<ElectronApplication, { profile: string; output: string[] }>();
+const launches = new WeakMap<
+  ElectronApplication,
+  { profile: string; output: string[]; logStart: number }
+>();
 /** Lines of the app's stdout and stderr kept per launch. */
 const OUTPUT_LINES = 200;
 
@@ -92,6 +95,8 @@ const OUTPUT_LINES = 200;
  */
 export async function launchApp(profile: string): Promise<LaunchedApp> {
   const target = appTarget();
+  // Where this launch's lines start in main.log (a profile launched before has some already).
+  const logStart = readMainLog(profile).length;
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
   // A dev-server URL or run-as-node from the caller's shell would change what launches.
@@ -140,7 +145,7 @@ export async function launchApp(profile: string): Promise<LaunchedApp> {
     timeout: 60_000
   });
   const output: string[] = [];
-  launches.set(app, { profile, output });
+  launches.set(app, { profile, output, logStart });
   for (const stream of [app.process().stdout, app.process().stderr]) {
     stream?.on("data", (chunk: Buffer) => {
       output.push(...chunk.toString("utf8").split(/\r?\n/).filter(Boolean));
@@ -418,7 +423,7 @@ export async function clickSquare(page: Page, square: string, flipped = false): 
  *   fraction of a second too, but on a Windows runner whose CPUs are all busy (a release build's,
  *   while antivirus scans the installers it just made) it has been measured at 8 to 23 s, outside
  *   Playwright too, with the app's own quit done in a quarter of a second. That wait isn't a hang;
- *   one past this longer deadline is.
+ *   one past this longer deadline, counted from the end of the quit, is.
  * An app past a deadline is killed with its child processes (on Windows that takes `taskkill /T`:
  * killing only the main process there leaves its helpers running and holding the profile's files),
  * and the failure says why: its processes still running, the dialogs it showed and the end of its
@@ -439,9 +444,8 @@ export async function closeApp(
     if (!child || child.exitCode !== null || child.signalCode !== null) resolve(true);
     else child.once("exit", () => resolve(true));
   });
-  // Only this quit's "exiting" line counts: a profile launched before has one already.
-  const log = launchLog(app);
-  const logStart = log?.read().length ?? 0;
+  // This launch's "exiting" line, even if it quit before (a journey that closes its window).
+  const launch = launches.get(app);
   // A close that fails counts as exited only once the process has: a rejection with the app
   // still running waits for the deadlines (and the kill) like any other stuck quit.
   const closed = app.close().then(
@@ -454,23 +458,27 @@ export async function closeApp(
   const quitLate = new Promise<"late">(
     (resolve) => (quitTimer = setTimeout(() => resolve("late"), quitTimeoutMs))
   );
-  const exitLate = new Promise<"late">(
-    (resolve) => (exitTimer = setTimeout(() => resolve("late"), exitTimeoutMs))
-  );
   let quitDone = false;
   let stopPolling = false;
   const quit = new Promise<"quit">((resolve) => {
     const poll = () => {
       if (stopPolling) return;
-      if (log?.read().slice(logStart).includes("[main] exiting (code")) {
+      if (launch && quitLogged(launch)) {
         quitDone = true;
         resolve("quit");
       } else pollTimer = setTimeout(poll, 100);
     };
-    if (log) poll();
+    if (launch) poll();
   });
   let outcome = await Promise.race([closed, quit, quitLate]);
-  if (outcome === "quit") outcome = await Promise.race([closed, exitLate]);
+  // The exit's deadline runs from the end of the quit: a slow quit doesn't shorten it.
+  if (outcome === "quit")
+    outcome = await Promise.race([
+      closed,
+      new Promise<"late">(
+        (resolve) => (exitTimer = setTimeout(() => resolve("late"), exitTimeoutMs))
+      )
+    ]);
   stopPolling = true;
   for (const timer of [quitTimer, exitTimer, pollTimer]) clearTimeout(timer);
   if (outcome === "exited") return;
@@ -497,7 +505,7 @@ export async function closeApp(
     .map((entry) => `${entry.pid} (parent ${entry.parent}) ${entry.command}`)
     .join("\n");
   const what = quitDone
-    ? `The app quit, but its process hadn't exited ${exitTimeoutMs / 1000} s after quitting`
+    ? `The app quit, but its process hadn't exited ${exitTimeoutMs / 1000} s later`
     : `The app hadn't finished quitting ${quitTimeoutMs / 1000} s after it was asked to`;
   throw new Error(
     `${what}, so it was killed.\nIts processes then:\n${listed || "(none)"}` +
@@ -505,19 +513,22 @@ export async function closeApp(
   );
 }
 
-/** Reads the launch's main.log ("" until the app writes it); undefined for an unknown launch. */
-function launchLog(app: ElectronApplication): { read: () => string } | undefined {
-  const launch = launches.get(app);
-  if (!launch) return undefined;
-  return {
-    read: () => {
-      try {
-        return readFileSync(join(launch.profile, "logs", "main.log"), "utf8");
-      } catch {
-        return "";
-      }
-    }
-  };
+/** The profile's main.log ("" until the app writes it). */
+function readMainLog(profile: string): string {
+  try {
+    return readFileSync(join(profile, "logs", "main.log"), "utf8");
+  } catch {
+    return "";
+  }
+}
+
+/** Whether the launch has logged the end of its quit ("exiting", main's `quit` event). */
+function quitLogged(launch: { profile: string; logStart: number }): boolean {
+  const log = readMainLog(launch.profile);
+  // A log rotated at launch starts over.
+  return log
+    .slice(log.length < launch.logStart ? 0 : launch.logStart)
+    .includes("[main] exiting (code");
 }
 
 /** `root` and the processes descended from it, with their parents and command lines. */
