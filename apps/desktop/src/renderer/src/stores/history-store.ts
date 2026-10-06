@@ -31,6 +31,8 @@ export type BoardSnapshot = {
   currentNodeId: string;
   mode: GameMode;
   source: GameSource;
+  /** The Analyze page's board (absent in entries from before it was kept). */
+  analysisBoard?: boolean;
   engineSide: Color | null;
   orientation: Color;
   gameOutcome: { result: string; termination: string } | null;

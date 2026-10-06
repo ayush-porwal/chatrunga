@@ -48,15 +48,15 @@ describe("showsMoveMarks", () => {
 
 describe("mainBoardSurface", () => {
   it("is the Analyze board for live analysis and for the free board Analyze opens", () => {
-    expect(showsMoveMarks(mainBoardSurface("analysis", "pgn-import"))).toBe(true);
-    expect(showsMoveMarks(mainBoardSurface("freeplay", "analysis"))).toBe(true);
+    expect(showsMoveMarks(mainBoardSurface("analysis", false))).toBe(true);
+    expect(showsMoveMarks(mainBoardSurface("freeplay", true))).toBe(true);
   });
 
   it("is play for a free board of a game, and an engine or Lichess game", () => {
-    expect(showsMoveMarks(mainBoardSurface("freeplay", "pgn-import"))).toBe(false);
-    expect(showsMoveMarks(mainBoardSurface("engine", "engine-game"))).toBe(false);
-    expect(showsMoveMarks(mainBoardSurface("online", "lichess"))).toBe(false);
-    expect(showsMoveMarks(mainBoardSurface("puzzle", "puzzle"))).toBe(false);
+    expect(showsMoveMarks(mainBoardSurface("freeplay", false))).toBe(false);
+    expect(showsMoveMarks(mainBoardSurface("engine", false))).toBe(false);
+    expect(showsMoveMarks(mainBoardSurface("online", false))).toBe(false);
+    expect(showsMoveMarks(mainBoardSurface("puzzle", false))).toBe(false);
   });
 });
 

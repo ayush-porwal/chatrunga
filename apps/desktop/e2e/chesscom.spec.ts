@@ -8,7 +8,16 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ChaturangaApi } from "../../../packages/shared/src/ipc/chaturanga-api";
 import type { GameReview } from "../../../packages/shared/src/types/engine";
-import { desktopDir, expect, importPgnFile, routeToFile, sidebar, skipWelcome, test } from "./app";
+import {
+  desktopDir,
+  expect,
+  importPgnFile,
+  registerFakeEngine,
+  routeToFile,
+  sidebar,
+  skipWelcome,
+  test
+} from "./app";
 import { RUY_LOPEZ_PGN, writePgn } from "./fixtures";
 
 const API = "https://api.chess.com/pub/player/ayush_p64";
@@ -105,10 +114,22 @@ test("a chess.com account imports its games under their own source, in the libra
   const { app, page } = await launch();
   await skipWelcome(page);
   await serveChesscom(app, profile);
+  await registerFakeEngine(page, join(profile, "fake-engine.log"), "stockfish");
   await importPgnFile(app, page, writePgn(profile, "ruy-lopez.pgn", RUY_LOPEZ_PGN));
   await expect(
     page.getByRole("tree", { name: "Game moves" }).getByRole("button", { name: "a6", exact: true })
   ).toBeVisible();
+  // Analysing a game doesn't change where it came from: it stays an imported game.
+  await page.getByRole("tab", { name: "Engine" }).click();
+  const analysis = page.getByRole("switch", { name: "Analysis" });
+  await analysis.click();
+  await expect(analysis).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("tab", { name: "Library" }).click();
+  await expect(savedGames(page).getByRole("listitem")).toHaveCount(1);
+  await expect(savedGames(page)).toContainText("Imported · E2E smoke · *");
+  await page.getByRole("tab", { name: "Engine" }).click();
+  await analysis.click();
+  await expect(analysis).toHaveAttribute("aria-checked", "false");
 
   await connect(page);
   const card = chesscomCard(page);
@@ -125,13 +146,12 @@ test("a chess.com account imports its games under their own source, in the libra
   await expect(ratings.getByRole("radiogroup", { name: "Ratings from" })).toHaveCount(0);
   await reviewNewestChesscomGame(page);
 
-  // The library has a tab per source it holds, with its count, and lists one at a time. (Which
-  // it opens on is unit-tested: Analyze makes the board an analysis, whose tab has no games yet.)
+  // The library has a tab per source it holds, with its count, and lists one at a time. It opens
+  // on the board's game's tab: the sidebar's Analyze keeps it an imported game.
   await sidebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
   await page.getByRole("tab", { name: "Library" }).click();
   const tabs = sourceTabs(library(page));
   await expect(tabs.getByRole("radio")).toHaveText(["Chess.com3", "Imported1"]);
-  await tabs.getByRole("radio", { name: /^Imported/ }).click();
   await expect(tabs.getByRole("radio", { name: /^Imported/ })).toHaveAttribute(
     "aria-checked",
     "true"
@@ -163,9 +183,9 @@ test("a chess.com account imports its games under their own source, in the libra
     "aria-checked",
     "true"
   );
-  // Pinned whatever the tab (an analysis board now, so Chaturanga's).
+  // Pinned whatever the tab, still an imported game.
   await expect(picker.getByRole("button", { name: /^Alpha vs Beta/ })).toContainText(
-    "Chaturanga · E2E smoke"
+    "Imported · E2E smoke"
   );
   const saved = picker.getByRole("button", { name: / vs / }).filter({ hasNotText: "Alpha" });
   await expect(saved).toHaveCount(3);
@@ -177,8 +197,9 @@ test("a chess.com account imports its games under their own source, in the libra
   await picker.getByRole("button", { name: /^Reviewed/ }).click();
   await expect(saved).toHaveCount(1);
   await expect(saved.first()).toContainText("Reviewed");
-  // Another source (the board's game, saved since as an analysis, may have changed tabs).
-  await sourceTabs(picker).getByRole("radio").filter({ hasNotText: "Chess.com" }).first().click();
+  await sourceTabs(picker)
+    .getByRole("radio", { name: /^Imported/ })
+    .click();
   await expect(saved).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(picker).toBeHidden();

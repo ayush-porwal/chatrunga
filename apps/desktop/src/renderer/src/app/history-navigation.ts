@@ -55,6 +55,7 @@ export function captureBoard(
     currentNodeId: game.currentNodeId,
     mode: game.mode,
     source: game.source,
+    analysisBoard: game.analysisBoard,
     engineSide: game.engineSide,
     orientation: game.orientation,
     gameOutcome: game.gameOutcome,

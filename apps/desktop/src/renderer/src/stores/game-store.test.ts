@@ -294,6 +294,50 @@ describe("game store", () => {
     setTimeAsleepSource(() => 0);
   });
 
+  describe("where a game came from", () => {
+    const pgn = `[White "Alpha"]\n[Black "Beta"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 *`;
+    const loadFrom = (source: "pgn-import" | "chesscom" | "lichess" | "engine-game" | "new") => {
+      const { game } = importPgnText(pgn);
+      useGameStore.getState().loadGame({ ...game, id: "saved", source });
+    };
+
+    it("stays the origin of an imported or online game through Analyze, analysis and play on", () => {
+      for (const source of ["pgn-import", "chesscom", "lichess", "engine-game"] as const) {
+        loadFrom(source);
+        const board = useGameStore.getState();
+        board.setMode("freeplay");
+        board.startAnalysisBoard();
+        board.setMode("analysis");
+        board.makeMove({ from: "b8", to: "c6" });
+        board.setMode("freeplay");
+        // What autosave writes: the game is still saved under its own source.
+        expect(useGameStore.getState().toSession().source).toBe(source);
+        expect(useGameStore.getState().analysisBoard).toBe(true);
+      }
+    });
+
+    it("makes a game made in the app (a free board) an analysis", () => {
+      loadFrom("new");
+      useGameStore.getState().startAnalysisBoard();
+      expect(useGameStore.getState().toSession().source).toBe("analysis");
+      useGameStore.getState().reset();
+      useGameStore.getState().startAnalysisBoard();
+      expect(useGameStore.getState().source).toBe("analysis");
+    });
+
+    it("leaves the Analyze board when another game loads, and comes back to it for an analysis", () => {
+      loadFrom("pgn-import");
+      useGameStore.getState().startAnalysisBoard();
+      loadFrom("chesscom");
+      expect(useGameStore.getState().analysisBoard).toBe(false);
+      const { game } = importPgnText(pgn);
+      useGameStore.getState().loadGame({ ...game, id: "study", source: "analysis" });
+      expect(useGameStore.getState().analysisBoard).toBe(true);
+      useGameStore.getState().setGameSource("engine-game");
+      expect(useGameStore.getState().analysisBoard).toBe(false);
+    });
+  });
+
   describe("goToLine", () => {
     const pgn = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Nd4 4. Nxe5 Qg5 *";
     const mainlineNode = (ply: number) => {

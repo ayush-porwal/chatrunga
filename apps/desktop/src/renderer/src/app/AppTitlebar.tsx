@@ -221,6 +221,7 @@ export const GameTitlebar = memo(function GameTitlebar({
       return {
         mode: state.mode,
         source: state.source,
+        analysisBoard: state.analysisBoard,
         headers: state.headers,
         engineSide: state.engineSide,
         lastError: state.lastError,

@@ -622,7 +622,8 @@ export function App() {
     clearPuzzleSession();
     // An analysis board, engine off: the Engine tab offers the engine to use and Start analysis.
     currentGame().setMode("freeplay");
-    currentGame().setGameSource("analysis");
+    // Where the game came from stays (an imported or online game keeps its library tab).
+    currentGame().startAnalysisBoard();
     currentGame().setEngineSide(null);
     currentGame().clearEngineMatchExtras();
     setFocusMode(false);

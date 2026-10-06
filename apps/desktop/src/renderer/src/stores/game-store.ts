@@ -8,6 +8,7 @@ import {
   statusForFen
 } from "@chaturanga/shared/chess/position";
 import type { EngineGoClock } from "@chaturanga/shared/types/engine";
+import { libraryTabOf } from "@chaturanga/shared/types/library";
 import type {
   Color,
   GameHeaders,
@@ -50,7 +51,16 @@ type GameOutcome = {
 
 type GameStore = {
   gameId: string | null;
+  /**
+   * Where the game came from (its library tab): a Lichess, Chess.com or imported game keeps its
+   * origin whatever is done with it on the board. Only a game made in the app becomes `analysis`.
+   */
   source: GameSession["source"];
+  /**
+   * The board is the Analyze page's: live analysis, or the sidebar's Analyze before its engine is
+   * switched on. What the board is used for, apart from where the game came from (`source`).
+   */
+  analysisBoard: boolean;
   headers: GameSession["headers"];
   rootFen: string;
   currentFen: string;
@@ -114,7 +124,13 @@ type GameStore = {
   setOrientation: (orientation: Color) => void;
   setMode: (mode: GameMode) => void;
   setEngineSide: (side: Color | null) => void;
+  /** A new game's origin (an engine game, a puzzle, a Lichess game): not the Analyze board. */
   setGameSource: (source: GameSource) => void;
+  /**
+   * The sidebar's Analyze: the board becomes the Analyze page's. A game made in the app counts as
+   * an analysis from now on; any other keeps its origin (and so its library tab).
+   */
+  startAnalysisBoard: () => void;
   setEngineLimits: (moveTimeMs: number, depth: number | null) => void;
   setGameId: (gameId: string | null) => void;
   setPendingPromotion: (pending: PendingPromotion) => void;
@@ -159,6 +175,8 @@ type GameStore = {
     currentNodeId: string;
     mode: GameMode;
     source: GameSource;
+    /** Absent in history entries from before it was kept: the analysis source said it then. */
+    analysisBoard?: boolean;
     engineSide: Color | null;
     orientation: Color;
     gameOutcome: GameOutcome | null;
@@ -209,6 +227,7 @@ export const useGameStore = create<GameStore>((set, get) => {
   return {
     gameId: empty.id,
     source: empty.source,
+    analysisBoard: false,
     headers: empty.headers,
     rootFen: empty.rootFen,
     currentFen: empty.currentFen,
@@ -238,6 +257,8 @@ export const useGameStore = create<GameStore>((set, get) => {
         board: state.board + 1,
         gameId: game.id,
         source: game.source,
+        // A saved analysis reopens on the Analyze board, as it was left.
+        analysisBoard: game.source === "analysis",
         headers: game.headers,
         rootFen: game.rootFen,
         currentFen: currentNode?.fenAfter ?? game.currentFen,
@@ -486,6 +507,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         board: state.board + 1,
         gameId: null,
         source: next.source,
+        analysisBoard: false,
         headers: next.headers,
         rootFen: next.rootFen,
         currentFen: next.currentFen,
@@ -507,7 +529,12 @@ export const useGameStore = create<GameStore>((set, get) => {
     setOrientation: (orientation) => set({ orientation }),
     setMode: (mode) => set({ mode }),
     setEngineSide: (side) => set({ engineSide: side }),
-    setGameSource: (source) => set({ source }),
+    setGameSource: (source) => set({ source, analysisBoard: source === "analysis" }),
+    startAnalysisBoard: () =>
+      set((state) => ({
+        analysisBoard: true,
+        source: libraryTabOf(state.source) === "chaturanga" ? "analysis" : state.source
+      })),
     setEngineLimits: (moveTimeMs, depth) => set({ moveTimeMs, depth }),
     setGameId: (gameId) => set({ gameId }),
     setPendingPromotion: (pending) => set({ pendingPromotion: pending }),
@@ -680,6 +707,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         return {
           mode,
           source: view.source,
+          analysisBoard: view.analysisBoard ?? view.source === "analysis",
           orientation: view.orientation,
           engineSide: decidedEngineGame ? view.engineSide : null,
           gameOutcome: decidedEngineGame ? outcome : null,

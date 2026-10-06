@@ -233,7 +233,7 @@ function GameFooter() {
   const timeControl = useGameStore((state) => state.headers.timeControl);
   // The Analyze board: live analysis, or the sidebar's Analyze before its engine is switched on.
   const analyzeBoard = useGameStore(
-    (state) => mainBoardSurface(state.mode, state.source) === "analysis"
+    (state) => mainBoardSurface(state.mode, state.analysisBoard) === "analysis"
   );
   const goToNode = useGameStore((state) => state.goToNode);
   const reviewStatus = useReviewStore((state) => state.status);
