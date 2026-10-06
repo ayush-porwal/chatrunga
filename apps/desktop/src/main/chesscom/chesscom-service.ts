@@ -88,6 +88,7 @@ export class ChesscomService extends EventEmitter<{ event: [ChesscomEvent] }> {
       const previous = await this.options.store.account();
       // Another account's import must not carry over.
       if (previous && previous.id !== profile.id) await this.stopSync();
+      controller.signal.throwIfAborted();
       await this.options.store.save(
         { ...profile, ratings, connectedAt: this.now(), lastSyncAt: null },
         input.firstImport
