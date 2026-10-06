@@ -24,15 +24,15 @@ describe("requestRendererFlush", () => {
   afterEach(() => vi.useRealTimers());
 
   it("resolves with the renderer's answer", async () => {
-    await expect(requestRendererFlush(renderer(true))).resolves.toBe(true);
-    await expect(requestRendererFlush(renderer(false))).resolves.toBe(false);
+    await expect(requestRendererFlush(renderer(true))).resolves.toBe("saved");
+    await expect(requestRendererFlush(renderer(false))).resolves.toBe("unsaved");
     expect(ipcMain.listenerCount("games:flushed")).toBe(0);
   });
 
   it("doesn't count a renderer that never answers as saved", async () => {
     const flushed = requestRendererFlush(renderer());
     await vi.advanceTimersByTimeAsync(FLUSH_TIMEOUT_MS);
-    await expect(flushed).resolves.toBe(false);
+    await expect(flushed).resolves.toBe("no-answer");
     expect(ipcMain.listenerCount("games:flushed")).toBe(0);
   });
 
@@ -40,13 +40,13 @@ describe("requestRendererFlush", () => {
     const contents = renderer();
     const flushed = requestRendererFlush(contents);
     contents.emit("render-process-gone");
-    await expect(flushed).resolves.toBe(false);
+    await expect(flushed).resolves.toBe("renderer-gone");
     expect(contents.listenerCount("destroyed")).toBe(0);
   });
 
   it("has nothing to wait for once the webContents is destroyed", async () => {
     const contents = Object.assign(renderer(), { isDestroyed: () => true });
-    await expect(requestRendererFlush(contents)).resolves.toBe(true);
+    await expect(requestRendererFlush(contents)).resolves.toBe("saved");
     expect(contents.send).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,5 @@
-// Electron smoke journeys (e2e/*.spec.ts) against the built app. Not part of the PR checks: they
-// run nightly (.github/workflows/e2e.yml) and against each packaged release build (release.yml).
+// Electron smoke journeys (e2e/*.spec.ts) against the built app. They run on pull requests to main,
+// nightly (.github/workflows/e2e.yml) and against each packaged release build (release.yml).
 //
 //   pnpm --filter @chaturanga/desktop test:e2e         build, then run against out/ on node_modules' Electron
 //   pnpm --filter @chaturanga/desktop test:e2e:run     run only (out/ already built)

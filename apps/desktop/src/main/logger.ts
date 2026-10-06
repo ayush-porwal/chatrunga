@@ -29,8 +29,8 @@ function write(level: Level, scope: string, args: unknown[]): void {
   if (level === "error") console.error(line);
   else if (level === "warn") console.warn(line);
   else console.log(line);
-  // Packaged builds have no visible console: persist warnings and errors.
-  if (level === "info") return;
+  // Packaged builds have no visible console: every line is persisted, timestamped (info lines are
+  // few: lifecycle steps such as quitting; the UCI trace only with CHATURANGA_UCI_LOG=1).
   const file = resolveLogFile();
   if (!file) return;
   try {
