@@ -128,7 +128,7 @@ as 0 or null).
 | ---------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `user_active`          | First meaningful foreground action of a UTC day (at most once per day per installation) | `kind` (`study` / `play` / `puzzle`), `utc_day`                                                                                                        |
 | `activation_milestone` | Once per installation per step                                                          | `milestone` (`engine_ready`, `game_imported`, `review_completed`, `review_studied`, `commentary_viewed`), `existing` (found already set up at startup) |
-| `game_imported`        | A PGN import (user action) or a Lichess sync that added games                           | `source` (`pgn` / `lichess`), `games`                                                                                                                  |
+| `game_imported`        | A PGN import (user action) or a Lichess or chess.com sync that added games              | `source` (`pgn` / `lichess` / `chesscom`), `games`                                                                                                     |
 
 **Meaningful activity** is: a move made or stepped through in a game, review, engine/online game or puzzle
 within 4 s of the user's own key or pointer press while the window is focused and visible; importing a PGN;

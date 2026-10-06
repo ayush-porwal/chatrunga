@@ -1,0 +1,39 @@
+{
+  "games": [
+    {
+      "url": "https://www.chess.com/game/live/150000001",
+      "pgn": "[Event \"Live Chess\"]\n[Site \"Chess.com\"]\n[Date \"2026.09.30\"]\n[Round \"-\"]\n[White \"ayush_p64\"]\n[Black \"pawnstorm99\"]\n[Result \"0-1\"]\n[CurrentPosition \"rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3\"]\n[Timezone \"UTC\"]\n[ECO \"C00\"]\n[ECOUrl \"https://www.chess.com/openings/Fools-Mate\"]\n[UTCDate \"2026.09.30\"]\n[UTCTime \"18:01:02\"]\n[WhiteElo \"1671\"]\n[BlackElo \"1684\"]\n[TimeControl \"600\"]\n[Termination \"pawnstorm99 won by checkmate\"]\n[StartTime \"18:01:02\"]\n[EndDate \"2026.09.30\"]\n[EndTime \"18:02:10\"]\n[Link \"https://www.chess.com/game/live/150000001\"]\n\n1. f3 {[%clk 0:09:58.1]} 1... e5 {[%clk 0:09:59]} 2. g4 {[%clk 0:09:55.4]} 2... Qh4# {[%clk 0:09:57.6]} 0-1\n",
+      "time_control": "600",
+      "end_time": 1790791330,
+      "rated": true,
+      "time_class": "rapid",
+      "rules": "chess",
+      "white": { "rating": 1671, "result": "checkmated", "username": "ayush_p64" },
+      "black": { "rating": 1684, "result": "win", "username": "pawnstorm99" }
+    },
+    {
+      "url": "https://www.chess.com/game/daily/150000002",
+      "pgn": "[Event \"Let's Play!\"]\n[Site \"Chess.com\"]\n[Date \"2026.09.20\"]\n[White \"castle_queen\"]\n[Black \"ayush_p64\"]\n[Result \"1-0\"]\n[FEN \"rbbqnnkr/pppppppp/8/8/8/8/PPPPPPPP/RBBQNNKR w HFhf - 0 1\"]\n[SetUp \"1\"]\n[TimeControl \"1/86400\"]\n\n1. e4 e5 2. Ng3 1-0\n",
+      "time_control": "1/86400",
+      "end_time": 1790000000,
+      "rated": true,
+      "time_class": "daily",
+      "rules": "chess960",
+      "white": { "rating": 1500, "result": "win", "username": "castle_queen" },
+      "black": { "rating": 1550, "result": "resigned", "username": "ayush_p64" }
+    },
+    {
+      "url": "https://www.chess.com/game/live/150000003",
+      "pgn": "[Event \"Live Chess\"]\n[Site \"Chess.com\"]\n[Date \"2026.09.24\"]\n[White \"ayush_p64\"]\n[Black \"castle_queen\"]\n[Result \"1-0\"]\n[WhiteElo \"1650\"]\n[BlackElo \"1640\"]\n[TimeControl \"180+2\"]\n\n1. e4 {[%clk 0:03:01.9]} 1... e5 {[%clk 0:03:01]} 2. Qh5 {[%clk 0:03:02]} 2... Nc6 {[%clk 0:02:59]} 3. Bc4 {[%clk 0:03:03]} 3... Nf6 {[%clk 0:02:58]} 4. Qxf7# {[%clk 0:03:04]} 1-0\n",
+      "time_control": "180+2",
+      "end_time": 1790300000,
+      "rated": true,
+      "time_class": "blitz",
+      "rules": "chess",
+      "white": { "rating": 1650, "result": "win", "username": "ayush_p64" },
+      "black": { "rating": 1640, "result": "checkmated", "username": "castle_queen" }
+    },
+    { "url": "javascript:alert(1)", "pgn": "1. e4 *", "end_time": 1790300001, "rules": "chess" },
+    { "url": "https://www.chess.com/game/live/150000004", "rules": "chess" }
+  ]
+}

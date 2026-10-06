@@ -22,7 +22,7 @@ const ACCOUNT: LichessAccount = {
 };
 
 /** A fake Lichess client and the stored ratings it syncs into. */
-function setup(start: PlayerRatings = uniformRatings(1500)) {
+function setup(start: PlayerRatings = uniformRatings(1500), inCharge?: () => Promise<boolean>) {
   let stored = start;
   const state = {
     /** What `/api/account` answers: an account, none connected, or a network failure. */
@@ -44,6 +44,7 @@ function setup(start: PlayerRatings = uniformRatings(1500)) {
       stored = ratings;
       writes.push(ratings);
     },
+    inCharge,
     now: () => NOW,
     log
   });
@@ -93,6 +94,19 @@ describe("LichessRatingSync", () => {
     const { sync, ratings } = setup(setManualRating(uniformRatings(1500), "rapid", 1650));
     await sync.sync();
     expect(ratings().rapid).toEqual({ source: "lichess", rating: 1810, syncedAt: NOW });
+    expect(ratings().blitz).toEqual({ source: "lichess", rating: 1720, syncedAt: NOW });
+  });
+
+  it("only refreshes the account while Chess.com fills the ratings", async () => {
+    let lichessInCharge = false;
+    const { sync, refreshAccount, writes, ratings } = setup(uniformRatings(1500), async () => {
+      return lichessInCharge;
+    });
+    await sync.sync();
+    expect(refreshAccount).toHaveBeenCalledTimes(1);
+    expect(writes).toEqual([]);
+    lichessInCharge = true;
+    await sync.sync();
     expect(ratings().blitz).toEqual({ source: "lichess", rating: 1720, syncedAt: NOW });
   });
 

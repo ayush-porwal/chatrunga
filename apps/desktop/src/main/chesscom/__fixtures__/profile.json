@@ -1,0 +1,16 @@
+{
+  "avatar": "https://images.chesscomfiles.com/uploads/v1/user/1.png",
+  "player_id": 41,
+  "@id": "https://api.chess.com/pub/player/ayush_p64",
+  "url": "https://www.chess.com/member/Ayush_P64",
+  "name": "Ayush",
+  "username": "ayush_p64",
+  "followers": 12,
+  "country": "https://api.chess.com/pub/country/IN",
+  "last_online": 1790000000,
+  "joined": 1500000000,
+  "status": "basic",
+  "is_streamer": false,
+  "verified": false,
+  "league": "Wood"
+}

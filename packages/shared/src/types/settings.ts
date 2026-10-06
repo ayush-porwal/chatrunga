@@ -1,6 +1,12 @@
 import type { MaiaRating } from "./engine";
 import { isOneOf } from "./guards";
-import { normalizePlayerRatings, uniformRatings, type PlayerRatings } from "./ratings";
+import {
+  normalizePlayerRatings,
+  RATINGS_ACCOUNTS,
+  uniformRatings,
+  type PlayerRatings,
+  type RatingsAccount
+} from "./ratings";
 
 export type BoardTheme =
   | "brown"
@@ -216,6 +222,11 @@ export type AppSettings = {
    * connected Lichess account. A review without the game's own rating reads its mode's.
    */
   playerRatings: PlayerRatings;
+  /**
+   * Which connected account fills `playerRatings` while both Lichess and Chess.com are connected
+   * (Settings → Ratings). With one connected, that one does.
+   */
+  ratingsAccount: RatingsAccount;
   reviewPlayerColor: "white" | "black";
   reviewShowTopLines: boolean;
   /** MultiPV lines per reviewed position (1-5). */
@@ -337,6 +348,7 @@ export const defaultSettings: AppSettings = {
   reviewCommentaryProvider: "openrouter",
   reviewCommentaryDetail: "balanced",
   playerRatings: uniformRatings(),
+  ratingsAccount: "lichess",
   reviewPlayerColor: "white",
   reviewShowTopLines: true,
   reviewMultiPv: 3,
@@ -488,13 +500,19 @@ export function normalizeOnboardingSettings(settings: AppSettings): AppSettings 
 }
 
 /**
- * Validates the per-mode ratings (a damaged mode falls back to the default) and drops the single
- * rating older builds stored, which startup migrated into them. Idempotent.
+ * Validates the per-mode ratings (a damaged mode falls back to the default) and the account picked
+ * to fill them, and drops the single rating older builds stored, which startup migrated into them.
+ * Idempotent.
  */
 export function normalizeRatingSettings(settings: AppSettings): AppSettings {
   const rest: AppSettings & { reviewPlayerRating?: unknown } = { ...settings };
   delete rest.reviewPlayerRating;
-  return { ...rest, playerRatings: normalizePlayerRatings(settings.playerRatings) };
+  const account: unknown = settings.ratingsAccount;
+  return {
+    ...rest,
+    playerRatings: normalizePlayerRatings(settings.playerRatings),
+    ratingsAccount: isOneOf(RATINGS_ACCOUNTS, account) ? account : defaultSettings.ratingsAccount
+  };
 }
 
 /** Returns normalized `#rrggbb` or null if invalid / empty. */

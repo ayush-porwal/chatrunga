@@ -7,16 +7,23 @@ import { LichessAccountStore } from "./account-store";
 import { LichessService } from "./lichess-service";
 import { LichessRatingSync } from "./rating-sync";
 
+let store: LichessAccountStore | null = null;
 let service: LichessService | null = null;
 let ratingSync: LichessRatingSync | null = null;
+
+/** The saved account and token (userData/lichess-account.json). */
+export function getLichessAccountStore(): LichessAccountStore {
+  store ??= new LichessAccountStore(
+    join(app.getPath("userData"), "lichess-account.json"),
+    safeStorage
+  );
+  return store;
+}
 
 export function getLichessService(): LichessService {
   if (!service) {
     service = new LichessService({
-      store: new LichessAccountStore(
-        join(app.getPath("userData"), "lichess-account.json"),
-        safeStorage
-      ),
+      store: getLichessAccountStore(),
       games: gameRepository,
       openExternal: (url) => shell.openExternal(url)
     });
@@ -25,14 +32,21 @@ export function getLichessService(): LichessService {
 }
 
 /**
- * App open: Settings → Ratings follow the connected Lichess account from now on (see
- * rating-sync.ts). A write is announced on `settings:changed`, so open screens read it again.
+ * App open: Settings → Ratings follow the connected Lichess account from now on, while it is the
+ * account in charge of them (see rating-sync.ts). A write is announced on `settings:changed`, so
+ * open screens read it again.
  */
-export function startLichessRatingSync(): void {
+export function startLichessRatingSync(accounts: {
+  /** Whether Lichess fills the ratings now (Chess.com may instead, see account-ratings.ts). */
+  inCharge: () => Promise<boolean>;
+  /** An account connected or disconnected: the ratings are handed over to the one in charge. */
+  onAccountChange: () => void;
+}): void {
   if (ratingSync) return;
   const lichess = getLichessService();
   const sync = new LichessRatingSync({
     refreshAccount: () => lichess.refreshAccount(),
+    inCharge: accounts.inCharge,
     readRatings: () => settingsRepository.getAll().playerRatings,
     writeRatings: (ratings) => {
       settingsRepository.set("playerRatings", ratings);
@@ -41,7 +55,15 @@ export function startLichessRatingSync(): void {
     log: (message, error) =>
       logger.info("lichess", message, error === undefined ? "" : errorMessage(error))
   });
-  lichess.on("event", (event) => sync.handleEvent(event));
+  let accountId: string | null | undefined;
+  lichess.on("event", (event) => {
+    sync.handleEvent(event);
+    if (event.type !== "status") return;
+    const id = event.status.account?.id ?? null;
+    if (id === accountId) return;
+    accountId = id;
+    accounts.onAccountChange();
+  });
   ratingSync = sync;
   sync.start();
 }

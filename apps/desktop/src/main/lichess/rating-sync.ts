@@ -1,8 +1,9 @@
 /**
- * Keeps Settings → Ratings in step with the connected Lichess account: the modes fill from the
- * account's ratings on app open, when an account connects, after a Lichess game played in the app
- * ends, and hourly while the app is open. Offline, the last values stay (the failure is only
- * logged). Disconnecting keeps the synced values, as typed-in ones.
+ * Keeps Settings → Ratings in step with the connected Lichess account (while it is the one that
+ * fills them, see main/account-ratings.ts): the modes fill from the account's ratings on app open,
+ * when an account connects, after a Lichess game played in the app ends, and hourly while the app
+ * is open. Offline, the last values stay (the failure is only logged). Disconnecting keeps the
+ * synced values, as typed-in ones.
  */
 import type { LichessAccount, LichessEvent } from "@chaturanga/shared/types/lichess";
 import {
@@ -25,6 +26,11 @@ export type LichessRatingSyncDeps = {
   readRatings: () => PlayerRatings;
   /** Stores the ratings and tells the renderer. */
   writeRatings: (ratings: PlayerRatings) => void;
+  /**
+   * Whether Lichess fills the ratings now (Chess.com may, see main/account-ratings.ts); when it
+   * doesn't, a sync only refreshes the account. Always, when absent.
+   */
+  inCharge?: () => Promise<boolean>;
   now?: () => number;
   log?: (message: string, error?: unknown) => void;
 };
@@ -107,6 +113,16 @@ export class LichessRatingSync {
     // Disconnected while Lichess answered: its ratings are no longer the account's.
     if (!account || disconnects !== this.disconnects) return;
     this.accountId = account.id;
+    if (this.deps.inCharge) {
+      let inCharge: boolean;
+      try {
+        inCharge = await this.deps.inCharge();
+      } catch (error) {
+        this.deps.log?.("couldn't tell which account fills the ratings:", error);
+        return;
+      }
+      if (!inCharge || disconnects !== this.disconnects) return;
+    }
     const syncedAt = this.deps.now?.() ?? Date.now();
     this.update((current) => applyLichessPerfs(current, account.perfs, syncedAt));
   }

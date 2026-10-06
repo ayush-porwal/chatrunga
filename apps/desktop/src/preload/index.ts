@@ -166,7 +166,15 @@ const api: ChaturangaApi = {
     ),
     onUpdateState: subscribe<EventPayload<"onUpdateState">>("updates:state"),
     onLichessEvent: subscribe<EventPayload<"onLichessEvent">>("lichess:event"),
+    onChesscomEvent: subscribe<EventPayload<"onChesscomEvent">>("chesscom:event"),
     onSettingsChanged: subscribe<EventPayload<"onSettingsChanged">>("settings:changed")
+  },
+  // Chess.com account and import (main/chesscom).
+  chesscom: {
+    status: () => ipcRenderer.invoke("chesscom:status"),
+    connect: (input) => ipcRenderer.invoke("chesscom:connect", input),
+    disconnect: (options) => ipcRenderer.invoke("chesscom:disconnect", options),
+    syncGames: () => ipcRenderer.invoke("chesscom:syncGames")
   },
   // Lichess account, play and import (main/lichess).
   lichess: {

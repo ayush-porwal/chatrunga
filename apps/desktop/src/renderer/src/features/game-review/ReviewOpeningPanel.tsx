@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 import { useUpdateSettingMutation } from "../../queries/api";
 import { useRepertoireComparisonQuery, useRepertoiresQuery } from "../../queries/repertoire";
 import { useGameStore } from "../../stores/game-store";
+import { useChesscomStore } from "../../stores/chesscom-store";
 import { useLichessStore } from "../../stores/lichess-store";
 import type { StudyOpenTarget } from "../repertoire/repertoire-chapters";
 import {
@@ -86,6 +87,7 @@ function useOpeningComparison(
   const headers = useGameStore((state) => state.headers);
   const engineSide = useGameStore((state) => state.engineSide);
   const lichessUsername = useLichessStore((state) => state.status.account?.username ?? null);
+  const chesscomUsername = useChesscomStore((state) => state.status.account?.username ?? null);
   const list = useRepertoiresQuery(ALL_ACTIVE);
   const repertoires = useMemo(() => list.data ?? [], [list.data]);
 
@@ -95,9 +97,10 @@ function useOpeningComparison(
         source,
         headers,
         lichessUsername,
+        chesscomUsername,
         engineSide
       }),
-    [source, headers, lichessUsername, engineSide]
+    [source, headers, lichessUsername, chesscomUsername, engineSide]
   );
   const color =
     chosenColor ?? defaultCompareColor(remembered, repertoires, suggestion?.color ?? null);
