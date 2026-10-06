@@ -81,7 +81,10 @@ export function findPackagedExecutable(distDir = join(desktopDir, "dist")): stri
 export type LaunchedApp = { app: ElectronApplication; page: Page; pageErrors: string[] };
 
 /** What a launch leaves behind to explain a quit that hangs: its profile and its console's tail. */
-const launches = new WeakMap<ElectronApplication, { profile: string; output: string[] }>();
+const launches = new WeakMap<
+  ElectronApplication,
+  { profile: string; output: string[]; exited?: { at: number; code: number | null } }
+>();
 /** Lines of the app's stdout and stderr kept per launch. */
 const OUTPUT_LINES = 200;
 
@@ -140,7 +143,13 @@ export async function launchApp(profile: string): Promise<LaunchedApp> {
     timeout: 60_000
   });
   const output: string[] = [];
-  launches.set(app, { profile, output });
+  const launch: {
+    profile: string;
+    output: string[];
+    exited?: { at: number; code: number | null };
+  } = { profile, output };
+  launches.set(app, launch);
+  app.process().once("exit", (code) => (launch.exited = { at: Date.now(), code }));
   for (const stream of [app.process().stdout, app.process().stderr]) {
     stream?.on("data", (chunk: Buffer) => {
       output.push(...chunk.toString("utf8").split(/\r?\n/).filter(Boolean));
@@ -439,20 +448,87 @@ export async function closeApp(app: ElectronApplication, timeoutMs = 10_000): Pr
   const timedOut = new Promise<false>(
     (resolve) => (timer = setTimeout(() => resolve(false), timeoutMs))
   );
+  const quitAt = Date.now();
   const exited = await Promise.race([closed, timedOut]);
   clearTimeout(timer);
   if (exited) return;
   const pid = app.process().pid;
+  // Playwright counts the app closed once every process holding its output pipes has gone: a
+  // helper or child process can outlive the main process. They are listed, then killed too.
+  const processes = pid === undefined ? [] : processTree(pid);
   if (process.platform === "win32" && pid !== undefined) {
-    spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
+    for (const id of [pid, ...processes.map((entry) => entry.pid)])
+      spawnSync("taskkill", ["/pid", String(id), "/T", "/F"], { stdio: "ignore" });
   } else {
     app.process().kill("SIGKILL");
+    for (const { pid } of processes) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Gone already.
+      }
+    }
   }
   await closed;
+  const exit = launches.get(app)?.exited;
+  const main = exit
+    ? `The main process had exited (code ${exit.code}) ${exit.at - quitAt} ms after quitting.`
+    : "The main process was still running.";
+  const listed = processes.map((entry) => `${entry.pid} ${entry.command}`).join("\n");
   throw new Error(
-    `The app hadn't exited ${timeoutMs / 1000} s after quitting, so it was killed.` +
+    `The app hadn't exited ${timeoutMs / 1000} s after quitting, so it was killed.\n${main}\n` +
+      `Its other processes:\n${listed || "(none)"}` +
       (await quitDiagnostics(app))
   );
+}
+
+/** The processes descended from `root` (its children, and theirs), with their command lines. */
+function processTree(root: number): { pid: number; command: string }[] {
+  const rows: { pid: number; parent: number; command: string }[] = [];
+  if (process.platform === "win32") {
+    const listed = spawnSync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-Command",
+        "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress"
+      ],
+      { encoding: "utf8", timeout: 15_000 }
+    );
+    try {
+      const parsed = JSON.parse(listed.stdout) as {
+        ProcessId: number;
+        ParentProcessId: number;
+        CommandLine: string | null;
+      }[];
+      for (const row of parsed)
+        rows.push({
+          pid: row.ProcessId,
+          parent: row.ParentProcessId,
+          command: row.CommandLine ?? ""
+        });
+    } catch {
+      return [];
+    }
+  } else {
+    const listed = spawnSync("ps", ["-A", "-o", "pid=,ppid=,command="], { encoding: "utf8" });
+    for (const line of listed.stdout.split("\n")) {
+      const match = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line);
+      if (match) rows.push({ pid: Number(match[1]), parent: Number(match[2]), command: match[3] });
+    }
+  }
+  const found: { pid: number; command: string }[] = [];
+  const parents = [root];
+  while (parents.length) {
+    const parent = parents.pop();
+    for (const row of rows) {
+      if (row.parent !== parent || row.pid === root || found.some((entry) => entry.pid === row.pid))
+        continue;
+      found.push({ pid: row.pid, command: row.command.slice(0, 300) });
+      parents.push(row.pid);
+    }
+  }
+  return found;
 }
 
 /** The dialogs and the log of a launch that hung quitting, attached to the running test. */
