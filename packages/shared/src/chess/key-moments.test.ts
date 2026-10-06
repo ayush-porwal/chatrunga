@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MoveAnnotation, MoveAssessment, MoveReview } from "../types/engine";
-import { adjacentMoment, keyMoments, momentWeight, rankedMoments } from "./key-moments";
+import { keyMoments, momentWeight, rankedMoments } from "./key-moments";
 import { assessMoves } from "./move-assessment";
 import { trapReviewMoves } from "./__fixtures__/trap-game";
 
@@ -138,15 +138,5 @@ describe("key moments", () => {
       [9, assessment("blunder", { winLoss: 40 })]
     ]);
     expect(rankedMoments(game).map((moment) => moment.ply)).toEqual([9, 3, 5]);
-  });
-
-  it("steps to the next or previous moment from any ply", () => {
-    const moments = keyMoments(trapGame());
-    expect(adjacentMoment(moments, 0, "next")?.ply).toBe(7);
-    expect(adjacentMoment(moments, 7, "next")?.ply).toBe(8);
-    expect(adjacentMoment(moments, 10, "next")?.ply).toBe(13);
-    expect(adjacentMoment(moments, 13, "next")).toBeNull();
-    expect(adjacentMoment(moments, 13, "previous")?.ply).toBe(9);
-    expect(adjacentMoment(moments, 7, "previous")).toBeNull();
   });
 });

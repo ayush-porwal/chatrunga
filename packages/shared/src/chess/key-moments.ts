@@ -93,16 +93,3 @@ export function keyMoments(
   }
   return chosen.sort((a, b) => a.ply - b.ply);
 }
-
-/**
- * The moment to go to from `ply` (0 = the start), forwards or backwards; null when there is none
- * that way.
- */
-export function adjacentMoment(
-  moments: readonly KeyMoment[],
-  ply: number,
-  direction: "next" | "previous"
-): KeyMoment | null {
-  if (direction === "next") return moments.find((moment) => moment.ply > ply) ?? null;
-  return [...moments].reverse().find((moment) => moment.ply < ply) ?? null;
-}

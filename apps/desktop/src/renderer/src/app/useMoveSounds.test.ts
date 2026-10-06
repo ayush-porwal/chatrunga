@@ -1,6 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { importPgnText } from "@chaturanga/shared/chess/pgn";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
-import { movedNodeBetween, pickSound } from "./useMoveSounds";
+import { useGameStore } from "../stores/game-store";
+import { movedNodeBetween, pickSound, useMoveSounds, withoutMoveSounds } from "./useMoveSounds";
+
+// The hook's effects run at once, outside React; the sounds are recorded instead of played.
+const cleanups: (() => void)[] = [];
+vi.mock("react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("react")>()),
+  useEffect: (effect: () => (() => void) | void) => {
+    const cleanup = effect();
+    if (cleanup) cleanups.push(cleanup);
+  }
+}));
+const played = vi.hoisted(() => [] as string[]);
+vi.mock("../sounds/sounds", () => ({
+  keepAudioAwake: () => () => undefined,
+  playSound: (kind: string) => played.push(kind)
+}));
 
 function node(id: string, parentId: string | null, children: string[] = []): MoveNode {
   return {
@@ -59,5 +76,20 @@ describe("pickSound", () => {
       pickSound({ ...base, san: "Qh2#", isEnd: true, result: "0-1", engineSide: "white" })
     ).toBe("victory");
     expect(pickSound({ ...base, san: "Kh1", isEnd: true, result: "1/2-1/2" })).toBe("draw");
+  });
+});
+
+describe("useMoveSounds", () => {
+  it("sounds each board step, except the steps made without their sound", () => {
+    const { game } = importPgnText("1. e4 e5 2. Nf3 Nc6 *");
+    useGameStore.getState().loadGame(game);
+    const mainline = game.moveTree.filter((item) => item.san).map((item) => item.id);
+    useGameStore.getState().goToNode("root");
+    useMoveSounds({ enabled: true, volume: 1 });
+    useGameStore.getState().goToNode(mainline[0]!);
+    withoutMoveSounds(() => useGameStore.getState().goToNode(mainline[3]!));
+    useGameStore.getState().goToNode(mainline[2]!);
+    expect(played).toEqual(["move", "move"]);
+    for (const cleanup of cleanups.splice(0)) cleanup();
   });
 });

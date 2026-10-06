@@ -6,6 +6,7 @@ import {
   CONTENT_MIN_HEIGHT,
   defaultChartsHeight,
   fitViewHeights,
+  HEADER_HEIGHT,
   resolveChartsHeight,
   splitViewHeights,
   STRIP_MIN,
@@ -89,6 +90,9 @@ describe("review chart layout", () => {
     expect(folded).toBeGreaterThan(prompt);
     expect(prompt).toBeGreaterThan(winOnly);
     expect(winOnly).toBeGreaterThanOrEqual(CHARTS_MIN_HEIGHT);
+    // Winning chances alone: the header's row (the splitter over the line above it adds none), the
+    // view's label, the view at its usual 112, the axis, and the gaps between the last three.
+    expect(winOnly).toBe(HEADER_HEIGHT + 20 + 112 + 13 + 2 * 4);
     // At the default winning chances keeps its minimum; taller, the views grow alike.
     expect(viewHeights(all, ALL)).toEqual({ win: 100, difficulty: 70, times: 70 });
     expect(viewHeights(all + 150, ALL)).toEqual({ win: 130, difficulty: 130, times: 130 });

@@ -5,7 +5,7 @@ import type { RepertoireColor } from "@chaturanga/shared/types/repertoire";
 import type { StudyOpenTarget } from "../repertoire/repertoire-chapters";
 import { useGameStore } from "../../stores/game-store";
 import { activeBestLine, bestLineStep } from "../game/best-line-cursor";
-import { reviewsByNode, useReviewStore } from "../../stores/review-store";
+import { reviewsByNode, selectDisplayedOpening, useReviewStore } from "../../stores/review-store";
 import { useDisplayedReviewMoves, useOutdatedReviewMoves } from "../../stores/review-validity";
 import { boardClocksAt, sideToMove } from "../board/board-clocks";
 import { mainlineReviewInput, moveLabel, uciSquares, type ReviewTab } from "./review-utils";
@@ -20,6 +20,8 @@ import { CardCommentaryContext, type CardCommentaryOptions } from "./MomentComme
 import { chooseReviewSide, reviewSideColor, useReviewSide } from "./review-side";
 import { moverOf } from "./review-summary";
 import { ReviewCharts } from "./ReviewCharts";
+import { useAnalysisFollow } from "./useAnalysisFollow";
+import { reviewStepAction } from "./review-steps";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { cn } from "@/lib/utils";
 import { PlayerRow } from "../board/PlayerIdentity";
@@ -41,7 +43,6 @@ import {
 } from "./commentary-moves";
 import { openingSideFor, type OpeningSide } from "./opening-comparison";
 import { keyMoments } from "@chaturanga/shared/chess/key-moments";
-import { KeyMomentNav } from "./KeyMoments";
 import { Sparkles, Swords, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -127,14 +128,33 @@ function GameReviewPageInner({
   const boardFen = useGameStore((state) => state.currentFen);
   const orientation = useGameStore((state) => state.orientation);
   const headers = useGameStore((state) => state.headers);
-  const selectNode = useGameStore((state) => state.goToNode);
+  const goToNode = useGameStore((state) => state.goToNode);
   const reviewStatus = useReviewStore((state) => state.status);
   const review = useReviewStore((state) => state.review);
   const moves = useDisplayedReviewMoves();
   // Moves of the shown analysis the game no longer has (deleted or replaced since): left out above.
   const outdatedMoves = useOutdatedReviewMoves();
   const reviewError = useReviewStore((state) => state.error);
+  // The move list's opening row: a running review's too, as soon as its moves name the opening.
+  const opening = useReviewStore(selectDisplayedOpening);
+  const runId = useReviewStore((state) => (state.status === "running" ? state.reviewId : null));
   const reviewInput = useMemo(() => mainlineReviewInput(moveTree), [moveTree]);
+  // While a review runs, the board follows its analysis until the user navigates themselves.
+  const followLine = useMemo(
+    () => ["root", ...reviewInput.map((move) => move.nodeId)],
+    [reviewInput]
+  );
+  const follow = useAnalysisFollow(followLine, moves);
+  // A move the user picks (the tree, a card, the charts, Start review) pauses following, even the
+  // move already shown.
+  const { pause: pauseFollow } = follow;
+  const selectNode = useCallback(
+    (nodeId: string) => {
+      pauseFollow();
+      goToNode(nodeId);
+    },
+    [goToNode, pauseFollow]
+  );
   // The Opening tab's side, picked for this game (kept across tab switches and Back, not across games).
   const board = useGameStore((state) => state.board);
   const openingColor = openingSideFor(openingSide, board);
@@ -273,11 +293,8 @@ function GameReviewPageInner({
     bestLine ? bestLineStep(bestLine).uci : (selectedMove?.playedMove ?? currentNode?.uci ?? null)
   );
   const moveMark = useMemo(
-    () =>
-      bestLine
-        ? null
-        : boardMoveMark("review", { running: isRunning, moves, nodeId: selectedNodeId }),
-    [bestLine, isRunning, moves, selectedNodeId]
+    () => (bestLine ? null : boardMoveMark("review", { moves, nodeId: selectedNodeId })),
+    [bestLine, moves, selectedNodeId]
   );
   const whitePlayer = {
     name: headers.white || "White",
@@ -300,12 +317,6 @@ function GameReviewPageInner({
   const toMove = sideToMove(boardFen);
   const onMainline =
     selectedNodeId === "root" || reviewInput.some((move) => move.nodeId === selectedNodeId);
-  // Key-moment steps count from the selected move (a variation counts from the move it leaves).
-  const selectedPly = currentAnchor?.move.ply ?? currentNode?.ply ?? 0;
-  const momentNav = useMemo(
-    () => <KeyMomentNav moments={moments} selectedPly={selectedPly} onSelectNode={selectNode} />,
-    [moments, selectNode, selectedPly]
-  );
   const recomputed = Boolean(review?.assessmentsRecomputed) && !isRunning;
   const hasMoves = moves.length > 0;
   /** No main-line moves (and no saved review): nothing to analyse or explain. */
@@ -326,13 +337,32 @@ function GameReviewPageInner({
       }}
     />
   );
-  // Start review: the first key moment, explained, then Next steps through the rest.
-  const startKeyMoments = useCallback(() => {
-    const first = moments[0];
-    if (!first) return;
-    selectNode(first.nodeId);
+  // The footer's review button: Start review (the first key moment, explained), Next insight
+  // through the rest after the current move, then Finish review back to the summary (rule:
+  // review-steps.ts). Started belongs to this review session: another game, analysis or side
+  // starts over.
+  const reviewSessionKey = `${gameId ?? ""}|${review?.reviewId ?? ""}|${side}`;
+  const [startedSessionKey, setStartedSessionKey] = useState<string | null>(null);
+  const momentPlies = useMemo(() => moments.map((moment) => moment.ply), [moments]);
+  const reviewStep = reviewStepAction(
+    momentPlies,
+    currentNode?.ply ?? 0,
+    startedSessionKey === reviewSessionKey
+  );
+  const stepTarget = reviewStep?.target ?? null;
+  const stepThroughKeyMoments = useCallback(() => {
+    if (!stepTarget) return;
+    if (stepTarget.kind === "summary") {
+      setStartedSessionKey(null);
+      onTabChange("summary");
+      return;
+    }
+    const moment = moments[stepTarget.index];
+    if (!moment) return;
+    setStartedSessionKey(reviewSessionKey);
+    selectNode(moment.nodeId);
     onTabChange("commentary");
-  }, [moments, onTabChange, selectNode]);
+  }, [moments, onTabChange, reviewSessionKey, selectNode, stepTarget]);
   const startSideReview = useCallback(
     (picked: "white" | "black") => {
       chooseReviewSide(picked);
@@ -470,7 +500,6 @@ function GameReviewPageInner({
                   reviewedSide={side}
                   totalPlies={isRunning ? reviewInput.length : undefined}
                   keyMomentIds={momentIds}
-                  actions={momentNav}
                   opening={isRunning ? undefined : review?.opening}
                   mainline={reviewInput}
                   timeControl={headers.timeControl}
@@ -486,21 +515,26 @@ function GameReviewPageInner({
             {/* One last row: with the panel folded it's pinned to the bottom, Start review just
                 above the move navigation. */}
             <div>
-              {hasMoves && !isRunning && moments.length ? (
+              {hasMoves && !isRunning && reviewStep ? (
                 // Always here, on every tab, whatever is folded: the key moments, one by one.
                 <div className="px-3 pt-2">
                   <Button
                     type="button"
                     className="h-9 w-full border-transparent bg-accent-strong text-sm font-semibold text-fg hover:bg-accent-strong/85"
-                    onClick={startKeyMoments}
+                    onClick={stepThroughKeyMoments}
                   >
-                    Start review
+                    {reviewStep.label}
                   </Button>
                 </div>
               ) : null}
               <MoveNavigation
                 caption={
-                  isRunning ? <ReviewProgressCaption fallbackTotal={reviewInput.length} /> : null
+                  isRunning ? (
+                    <ReviewProgressCaption
+                      fallbackTotal={reviewInput.length}
+                      onFollow={follow.paused ? follow.resume : undefined}
+                    />
+                  ) : null
                 }
               />
             </div>
@@ -603,7 +637,8 @@ function GameReviewPageInner({
             onSelectNode={selectNode}
             moves={moves}
             keyMoments={moments}
-            opening={isRunning ? null : review?.opening}
+            opening={opening}
+            runId={runId}
             orientation={orientation}
           />
         ) : null}
@@ -633,24 +668,46 @@ const EMPTY_MOVES: MoveReview[] = [];
  * The single place review progress is shown. It subscribes to the progress step itself so a
  * tick re-renders only this caption, not the page, graph or panel.
  */
-function ReviewProgressCaption({ fallbackTotal }: { fallbackTotal: number }) {
+function ReviewProgressCaption({
+  fallbackTotal,
+  onFollow
+}: {
+  fallbackTotal: number;
+  /** Following the analysis is paused: offered to resume it. */
+  onFollow?: () => void;
+}) {
   const moveIndex = useReviewStore((state) => state.progress?.moveIndex ?? null);
   const totalMoves = useReviewStore((state) => state.progress?.totalMoves ?? null);
   const total = totalMoves ?? fallbackTotal;
   const current = moveIndex === null ? 0 : Math.min(moveIndex + 1, total);
   const percent = total ? Math.round((Math.max(current - 1, 0) / total) * 100) : 0;
   return (
-    <span
-      className="inline-grid justify-items-center gap-1"
-      role="status"
-      aria-label={current ? `Analyzing move ${current} of ${total}` : "Starting analysis"}
-    >
-      <span>{current ? `Analyzing move ${current} of ${total}` : "Starting analysis…"}</span>
-      <span className="block h-0.5 w-28 overflow-hidden rounded-full bg-control" aria-hidden>
-        <span
-          className="block h-full rounded-full bg-accent transition-[width] duration-300"
-          style={{ width: `${percent}%` }}
-        />
+    <span className="inline-grid justify-items-center gap-0.5">
+      <span
+        role="status"
+        aria-label={current ? `Analyzing move ${current} of ${total}` : "Starting analysis"}
+      >
+        {current ? `Analyzing move ${current} of ${total}` : "Starting analysis…"}
+      </span>
+      {/* One slot under the caption, so pausing never moves the panel: the progress bar, or the
+          button that follows the analysis again. */}
+      <span className="grid h-4 place-items-center">
+        {onFollow ? (
+          <button
+            type="button"
+            className="font-medium text-accent underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+            onClick={onFollow}
+          >
+            Follow analysis
+          </button>
+        ) : (
+          <span className="block h-0.5 w-28 overflow-hidden rounded-full bg-control" aria-hidden>
+            <span
+              className="block h-full rounded-full bg-accent transition-[width] duration-300"
+              style={{ width: `${percent}%` }}
+            />
+          </span>
+        )}
       </span>
     </span>
   );

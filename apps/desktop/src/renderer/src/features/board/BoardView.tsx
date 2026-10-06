@@ -15,7 +15,6 @@ import type {
 import { isMatchMode, useGameStore } from "../../stores/game-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
 import { useDisplayedReviewMoves } from "../../stores/review-validity";
-import { useReviewStore } from "../../stores/review-store";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { useEnginesQuery } from "../../queries/api";
 import { cn } from "@/lib/utils";
@@ -71,7 +70,6 @@ export function BoardView() {
     (state) => state.feedbackKind === "complete" && state.outcome === "solved"
   );
   const reviewMoves = useDisplayedReviewMoves();
-  const reviewRunning = useReviewStore((state) => state.status === "running");
   const source = useGameStore((state) => state.source);
   // A BEST line on the board: its position isn't a game move, so the error it answers lends it
   // no mark, arrows or drawings; its own move is the one highlighted.
@@ -82,11 +80,10 @@ export function BoardView() {
       bestLine
         ? null
         : boardMoveMark(mainBoardSurface(mode, source), {
-            running: reviewRunning,
             moves: reviewMoves,
             nodeId: currentNodeId
           }),
-    [bestLine, currentNodeId, mode, reviewMoves, reviewRunning, source]
+    [bestLine, currentNodeId, mode, reviewMoves, source]
   );
   const engines = useEnginesQuery();
   const activeEngineId = useAnalysisStore((state) => state.activeEngineId);

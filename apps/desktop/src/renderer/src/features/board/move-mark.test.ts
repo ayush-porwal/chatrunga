@@ -31,7 +31,7 @@ function reviewed(marks: Record<string, MoveAnnotation>): MoveReview[] {
 
 const moves = reviewed({ Nd4: "inaccuracy", Nxe5: "blunder" });
 const nodeOf = (san: string) => moves.find((move) => move.san === san)?.nodeId ?? "";
-const finished = { running: false, moves };
+const finished = { moves };
 
 describe("showsMoveMarks", () => {
   it.each<[MarkSurface, boolean]>([
@@ -85,16 +85,28 @@ describe("boardMoveMark", () => {
     expect(boardMoveMark("review", { ...finished, nodeId: "variation-move" })).toBeNull();
   });
 
-  it("leaves book moves off the board (the move list shows them)", () => {
-    const book = { running: false, moves: reviewed({ e4: "book", Nxe5: "blunder" }) };
-    expect(boardMoveMark("review", { ...book, nodeId: nodeOf("e4") })).toBeNull();
+  it("marks a book move like any other", () => {
+    const book = { moves: reviewed({ e4: "book", Nxe5: "blunder" }) };
+    expect(boardMoveMark("review", { ...book, nodeId: nodeOf("e4") })).toEqual({
+      nodeId: nodeOf("e4"),
+      square: "e4",
+      annotation: "book",
+      label: "Book: e4"
+    });
     expect(boardMoveMark("review", { ...book, nodeId: nodeOf("Nxe5") })?.annotation).toBe(
       "blunder"
     );
   });
 
-  it("waits for a running review to finish", () => {
-    expect(boardMoveMark("review", { running: true, moves, nodeId: nodeOf("Nxe5") })).toBeNull();
+  it("marks a running review's move as soon as its result arrives, not before", () => {
+    // Analysed so far: up to 3… Nd4; 4. Nxe5 is being analysed.
+    const analysed = moves.slice(0, 6);
+    expect(boardMoveMark("review", { moves: analysed, nodeId: nodeOf("Nd4") })).toMatchObject({
+      annotation: "inaccuracy",
+      label: "Inaccuracy: Nd4"
+    });
+    expect(boardMoveMark("review", { moves: analysed, nodeId: nodeOf("Nxe5") })).toBeNull();
+    expect(boardMoveMark("review", { moves, nodeId: nodeOf("Nxe5") })?.label).toBe("Blunder: Nxe5");
   });
 
   it("drops the mark of a move the game no longer has (a stale review)", () => {
@@ -103,12 +115,8 @@ describe("boardMoveMark", () => {
       node.san === "Nxe5" ? { ...node, san: "c3", uci: "c2c3" } : node
     );
     const still = compatibleReviewMoves(moves, edited);
-    expect(
-      boardMoveMark("review", { running: false, moves: still, nodeId: nodeOf("Nxe5") })
-    ).toBeNull();
-    expect(
-      boardMoveMark("review", { running: false, moves: still, nodeId: nodeOf("Nd4") })
-    ).toMatchObject({
+    expect(boardMoveMark("review", { moves: still, nodeId: nodeOf("Nxe5") })).toBeNull();
+    expect(boardMoveMark("review", { moves: still, nodeId: nodeOf("Nd4") })).toMatchObject({
       label: "Inaccuracy: Nd4"
     });
   });

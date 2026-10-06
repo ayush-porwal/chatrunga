@@ -1,5 +1,4 @@
 import type { MoveAnnotation } from "@chaturanga/shared/types/engine";
-import { BookOpen } from "lucide-react";
 
 /*
  * The glyphs of the board's mark badge, drawn in the badge circle's own 0–100 box: heavy white
@@ -84,6 +83,26 @@ function star() {
   );
 }
 
+/**
+ * An open book: two filled pages either side of a gap for the spine, their top and bottom edges
+ * curving down into it, the corners softened by a round stroke (as the star's) so the pages carry
+ * the hooks' weight.
+ */
+function book() {
+  const page = (spine: number, edge: number) => {
+    const middle = (spine + edge) / 2;
+    return `M${spine} 35Q${middle} 26 ${edge} 30V70Q${middle} 66 ${spine} 76Z`;
+  };
+  return (
+    <path
+      d={`${page(45, 21)}${page(55, 79)}`}
+      stroke="currentColor"
+      strokeWidth={7}
+      strokeLinejoin="round"
+    />
+  );
+}
+
 const stroked = {
   fill: "none",
   stroke: "currentColor",
@@ -96,8 +115,7 @@ const stroked = {
 export function MoveMarkGlyph({ annotation }: { annotation: MoveAnnotation }) {
   switch (annotation) {
     case "book":
-      // Lucide's open book (24 units) over the central 60%, its stroke near the others' weight.
-      return <BookOpen x={20} y={20} width={60} height={60} strokeWidth={2.75} />;
+      return book();
     case "brilliant":
       return [bang(39), bang(61)];
     case "great":

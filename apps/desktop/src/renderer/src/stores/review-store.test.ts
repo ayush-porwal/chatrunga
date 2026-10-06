@@ -1,7 +1,13 @@
 import { acceptsReviewEvent } from "../app/useReviewEventSubscription";
 import { beforeEach, describe, expect, it } from "vitest";
-import { reviewsByNode, selectDisplayedMoves, useReviewStore } from "./review-store";
+import {
+  reviewsByNode,
+  selectDisplayedMoves,
+  selectDisplayedOpening,
+  useReviewStore
+} from "./review-store";
 import type {
+  GameOpening,
   GameReview,
   MoveAnnotation,
   MoveReview,
@@ -195,6 +201,37 @@ describe("review store", () => {
     expect(selectDisplayedMoves({ status: "cancelled", review: null, partialMoves: partial })).toBe(
       partial
     );
+  });
+
+  it("names the running review's opening once its moves carry it, until the run ends", () => {
+    const opening: GameOpening = {
+      eco: "C50",
+      name: "Italian Game",
+      ply: 5,
+      bookEndPly: 6,
+      firstNonBookMove: { ply: 7, san: "Nxe5" }
+    };
+    const store = () => useReviewStore.getState();
+    store().loadReview({ ...review([move("a", null)]), opening: null });
+    store().startReview("r1");
+    expect(selectDisplayedOpening(store())).toBeNull();
+    store().applyReviewEvents({ progress: progress(0), moves: [] });
+    expect(selectDisplayedOpening(store())).toBeNull();
+    store().applyReviewEvents({ progress: null, moves: [move("a", "book")], opening });
+    expect(selectDisplayedOpening(store())).toBe(opening);
+    // A batch without moves leaves it as it is.
+    store().applyReviewEvents({ progress: progress(1), moves: [] });
+    expect(selectDisplayedOpening(store())).toBe(opening);
+
+    // Finished: the review's own; stopped before one: what the run had named.
+    store().setReview({ ...review([move("a", "book")]), opening });
+    expect(store().partialOpening).toBeNull();
+    expect(selectDisplayedOpening(store())).toBe(opening);
+    store().reset();
+    store().startReview("r2");
+    store().applyReviewEvents({ progress: null, moves: [move("a", "book")], opening });
+    store().markCancelled();
+    expect(selectDisplayedOpening(store())).toBe(opening);
   });
 
   it("handles cancellation, errors, and loaded reviews", () => {

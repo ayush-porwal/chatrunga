@@ -31,7 +31,8 @@ export function useReviewRunner({
   settings,
   gameLoading,
   onEngineMissing,
-  onSideNeeded
+  onSideNeeded,
+  onStarted
 }: {
   engines: readonly EngineConfig[] | undefined;
   settings: AppSettings;
@@ -41,6 +42,8 @@ export function useReviewRunner({
   onEngineMissing: () => void;
   /** The game's side isn't known (an imported game): the user picks it before the review starts. */
   onSideNeeded: () => void;
+  /** A run has started (its progress streams into the review store from now on). */
+  onStarted?: () => void;
 }): { startReview: () => Promise<void>; hasMoves: boolean } {
   // Only "is there a main line?" is rendered; the game itself is read when a review starts, so the
   // app shell does not re-render on every move.
@@ -89,6 +92,7 @@ export function useReviewRunner({
       reviewId,
       reviewInput.map((move) => ({ nodeId: move.nodeId, uci: move.uci }))
     );
+    onStarted?.();
     try {
       await window.chaturanga.engines.reviewGame({
         reviewId,
@@ -118,6 +122,7 @@ export function useReviewRunner({
     gameLoading,
     onEngineMissing,
     onSideNeeded,
+    onStarted,
     reviewPlayerColor,
     reviewSearchTimeMs,
     reviewUseMaia

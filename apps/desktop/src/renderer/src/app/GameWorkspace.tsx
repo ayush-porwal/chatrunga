@@ -25,7 +25,6 @@ import { MoveList } from "../features/game/MoveList";
 import { RecentGames } from "../features/game/RecentGames";
 import { mainlineReviewInput } from "../features/game-review/review-utils";
 import { ReviewCharts } from "../features/game-review/ReviewCharts";
-import { KeyMomentNav } from "../features/game-review/KeyMoments";
 import { reviewSideColor, useReviewSide } from "../features/game-review/review-side";
 import { moverOf } from "../features/game-review/review-summary";
 import { keyMoments } from "@chaturanga/shared/chess/key-moments";
@@ -261,10 +260,6 @@ function GameFooter() {
     [hasReview, moves, reviewRunning, side]
   );
   const momentIds = useMemo(() => new Set(moments.map((moment) => moment.nodeId)), [moments]);
-  const selectedPly = moveTree.find((node) => node.id === currentNodeId)?.ply ?? 0;
-  const momentNav = moments.length ? (
-    <KeyMomentNav moments={moments} selectedPly={selectedPly} onSelectNode={goToNode} />
-  ) : null;
   const finished = hasReview && !reviewRunning ? review : null;
   const shown = hasReview || (analyzeBoard && mainline.length > 0);
 
@@ -281,7 +276,6 @@ function GameFooter() {
             reviewedSide={side}
             totalPlies={reviewRunning ? mainline.length : undefined}
             keyMomentIds={momentIds}
-            actions={momentNav}
             opening={finished ? finished.opening : undefined}
             mainline={mainline}
             timeControl={timeControl}

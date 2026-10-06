@@ -2,8 +2,10 @@
 // better side's end (and follows a flipped board), and the reviewed move's mark sits on its
 // destination square in Game review and on the Analyze board, never on the board of the game
 // itself, and never for an ordinary move. The game is reviewed on the fake UCI engine's "review"
-// mode (scripted lines for the Blackburne Shilling trap, as move-types.spec.ts). How to run them:
-// playwright.config.ts.
+// mode (scripted lines for the Blackburne Shilling trap, as move-types.spec.ts). While a review
+// runs (the "review-gated" mode releases it move by move), the board follows the analysis, each
+// finished move showing its mark, until the user navigates. How to run them: playwright.config.ts.
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import {
@@ -202,12 +204,21 @@ test("game review prints the evaluation at the better side's end and marks the r
   await reviewTrapGame(launched, profile);
 
   // 1. e4: White is better, so the number sits at White's end (the bottom); a book move, which
-  // gets no badge on the board.
+  // gets its badge on e4 like any other mark.
   await goToPly(page, 1);
   await expect(evalBar(page)).toHaveAccessibleName("Evaluation +0.3");
   expect(await evalText(page)).toEqual({ text: "0.3", side: "white", end: "bottom" });
   // Drawn as chess.com draws it: white over a warm dark grey, the number dark on the white.
   expect(await evalColours(page)).toEqual({ bar: "rgb(64, 61, 57)", text: "rgb(64, 61, 57)" });
+  await expect(board(page).getByRole("img", { name: "Book: e4" })).toHaveAttribute(
+    "data-annotation",
+    "book"
+  );
+  expect(await badgeSquare(page)).toEqual({ square: "e4", topRight: true });
+  await screenshot(page, "book");
+
+  // 6. Rf1, an ordinary move: no badge.
+  await goToPly(page, 11);
   await expect(markBadge(page)).toHaveCount(0);
   await screenshot(page, "unmarked");
 
@@ -301,8 +312,8 @@ test("the Analyze board marks the reviewed move, the game's own board does not",
   expect(await badgeOnEdgeSquare(page, { left: 87.5, top: 0 })).toEqual(WHOLE_OVERHANG);
   await screenshot(page, "analyze-board");
 
-  // An ordinary move there has none either.
-  await goToPly(page, 3);
+  // An ordinary move there (6. Rf1) has none either.
+  await goToPly(page, 11);
   await expect(markBadge(page)).toHaveCount(0);
 
   // With live analysis started on it, the mark stays.
@@ -312,4 +323,116 @@ test("the Analyze board marks the reviewed move, the game's own board does not",
   await analysis.click();
   await expect(analysis).toHaveAttribute("aria-checked", "true");
   await expect(board(page).getByRole("img", { name: "Blunder: Nxe5" })).toBeVisible();
+});
+
+test("a running review fills in as it goes: the board follows the analysis until the user navigates", async ({
+  launch,
+  profile
+}) => {
+  test.setTimeout(120_000);
+  const { app, page } = await launch();
+  // The engine's "review-gated" mode: with the gate at N, moves 1…N are analysed, N + 1 is going.
+  const log = join(profile, "uci.log");
+  const gate = (ply: number) => writeFileSync(`${log}.gate`, String(ply));
+  gate(0);
+  await skipWelcome(page);
+  await registerFakeEngine(page, log, "review-gated");
+  await importPgnFile(app, page, writePgn(profile, "trap.pgn", TRAP_PGN));
+  await expect(board(page)).toBeVisible();
+  await sidebar(page).getByRole("button", { name: "Game review", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Choose a game" })
+    .getByRole("button", { name: /^Alpha vs Beta/ })
+    .click();
+  await titlebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
+  await page
+    .getByRole("radiogroup", { name: "Review this game as" })
+    .getByRole("radio", { name: "White (Alpha)" })
+    .click();
+  await page.getByRole("button", { name: "Start review", exact: true }).click();
+
+  // The run opens the Moves tab on its move list, and the board on the start position.
+  const tabs = page.getByRole("tablist", { name: "Game review sections" });
+  await expect(tabs.getByRole("tab", { name: "Moves", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  await expect(
+    page
+      .getByRole("radiogroup", { name: "Moves shown" })
+      .getByRole("radio", { name: "Moves", exact: true })
+  ).toHaveAttribute("aria-checked", "true");
+  const tree = page.getByRole("tree", { name: "Reviewed move tree" });
+  const stop = titlebar(page).getByRole("button", { name: "Stop", exact: true });
+  await expect(stop).toBeVisible();
+  await expect(counter(page)).toHaveText("0 / 14");
+  const follow = navigation(page).getByRole("button", { name: "Follow analysis" });
+  await expect(follow).toHaveCount(0);
+
+  // The board steps to each move as its analysis finishes; the tree selects it.
+  gate(1);
+  await expect(counter(page)).toHaveText("1 / 14");
+  gate(2);
+  await expect(counter(page)).toHaveText("2 / 14");
+  await expect(tree.getByRole("button", { name: "e5", exact: true })).toHaveAttribute(
+    "aria-current",
+    "step"
+  );
+  // The opening is named as soon as its last book move is analysed.
+  gate(6);
+  await expect(counter(page)).toHaveText("6 / 14");
+  await expect(tree.getByLabel(/Italian Game.*: book ends$/)).toBeVisible();
+  // A finished move's mark is final: on the board at once, while the run goes on.
+  gate(7);
+  await expect(counter(page)).toHaveText("7 / 14");
+  await expect(board(page).getByRole("img", { name: "Blunder: Nxe5" })).toBeVisible();
+  await expect(navigation(page).getByRole("status")).toHaveAccessibleName("Analyzing move 8 of 14");
+  await expect(stop).toBeVisible();
+  await screenshot(page, "live");
+
+  // Clicking a move pauses following: the board stays there while the run goes on.
+  await tree.getByRole("button", { name: "Nf3", exact: true }).click();
+  await expect(counter(page)).toHaveText("3 / 14");
+  await expect(follow).toBeVisible();
+  gate(8);
+  await expect(navigation(page).getByRole("status")).toHaveAccessibleName("Analyzing move 9 of 14");
+  await expect(counter(page)).toHaveText("3 / 14");
+
+  // The board takes no moves while the run goes on: a piece dragged adds none.
+  const area = await board(page).locator("cg-board").boundingBox();
+  if (!area) throw new Error("board not visible");
+  const size = area.width / 8;
+  const centre = (column: number, row: number) =>
+    [area.x + (column + 0.5) * size, area.y + (row + 0.5) * size] as const;
+  await page.mouse.move(...centre(6, 0));
+  await page.mouse.down();
+  await page.mouse.move(...centre(5, 2), { steps: 5 });
+  await page.mouse.up();
+  await expect(counter(page)).toHaveText("3 / 14");
+  await expect(tree.getByRole("group", { name: /^Variation: / })).toHaveCount(0);
+  await expect(tree.getByRole("button", { name: "Nf6", exact: true })).toHaveCount(0);
+
+  // Follow analysis jumps back to the latest analysed move and follows again.
+  await follow.click();
+  await expect(counter(page)).toHaveText("8 / 14");
+  await expect(follow).toHaveCount(0);
+  await expect(board(page).getByRole("img", { name: "Great: Qg5" })).toBeVisible();
+
+  // Clicking the move already shown pauses too: the board holds there as the next one finishes.
+  await tree.getByRole("button", { name: "Qg5", exact: true }).click();
+  await expect(follow).toBeVisible();
+  gate(9);
+  await expect(navigation(page).getByRole("status")).toHaveAccessibleName(
+    "Analyzing move 10 of 14"
+  );
+  await expect(counter(page)).toHaveText("8 / 14");
+  await follow.click();
+  await expect(counter(page)).toHaveText("9 / 14");
+
+  // The run ends with the board on its last move.
+  gate(13);
+  await expect(
+    titlebar(page).getByRole("button", { name: "Analyze again", exact: true })
+  ).toBeVisible();
+  await expect(counter(page)).toHaveText("14 / 14");
 });

@@ -1,11 +1,10 @@
 import { memo, useId, useMemo, useState } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
-import { adjacentMoment, type KeyMoment } from "@chaturanga/shared/chess/key-moments";
+import type { KeyMoment } from "@chaturanga/shared/chess/key-moments";
 import { annotationLabel } from "@chaturanga/shared/chess/move-assessment";
 import { AnnotationBadge } from "@/components/ui/annotation-badge";
 import { EmptyState } from "@/components/ui/empty-state";
-import { IconButton } from "@/components/ui/icon-button";
 import { listRowSelected } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { moveLabel } from "./review-utils";
@@ -115,57 +114,3 @@ function moveNumberLabel(ply: number): string {
   const number = Math.ceil(ply / 2);
   return ply % 2 === 1 ? `${number}.` : `${number}…`;
 }
-
-const PREVIOUS_ICON = <ChevronLeft />;
-const NEXT_ICON = <ChevronRight />;
-
-/**
- * Steps through the key moments ("key insights" to the user) from the selected move: Previous /
- * Next, and which one the board is on ("Key insight 2 of 4", or how many there are when it is on
- * none).
- */
-export const KeyMomentNav = memo(function KeyMomentNav({
-  moments,
-  selectedPly,
-  onSelectNode
-}: {
-  moments: readonly KeyMoment[];
-  /** Ply of the selected move (0 at the start; the anchor's ply on a variation). */
-  selectedPly: number;
-  onSelectNode: (nodeId: string) => void;
-}) {
-  if (!moments.length) return null;
-  const previous = adjacentMoment(moments, selectedPly, "previous");
-  const next = adjacentMoment(moments, selectedPly, "next");
-  const index = moments.findIndex((moment) => moment.ply === selectedPly);
-  const status =
-    index >= 0
-      ? `Key insight ${index + 1} of ${moments.length}`
-      : `${moments.length} key ${moments.length === 1 ? "insight" : "insights"}`;
-  return (
-    <div role="group" aria-label="Key insights" className="flex items-center gap-0.5">
-      <IconButton
-        label="Previous key insight"
-        icon={PREVIOUS_ICON}
-        size="icon-xs"
-        tooltipSide="top"
-        disabled={!previous}
-        onClick={() => previous && onSelectNode(previous.nodeId)}
-      />
-      <span
-        className="min-w-0 truncate px-0.5 text-2xs text-fg-muted tabular-nums"
-        aria-live="polite"
-      >
-        {status}
-      </span>
-      <IconButton
-        label="Next key insight"
-        icon={NEXT_ICON}
-        size="icon-xs"
-        tooltipSide="top"
-        disabled={!next}
-        onClick={() => next && onSelectNode(next.nodeId)}
-      />
-    </div>
-  );
-});

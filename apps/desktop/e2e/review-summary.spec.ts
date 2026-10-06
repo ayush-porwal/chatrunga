@@ -74,6 +74,12 @@ async function reviewTrapGameAs(
   await expect(
     titlebar(page).getByRole("button", { name: "Analyze again", exact: true })
   ).toBeVisible({ timeout: 60_000 });
+  // The run filled the move list in on the Moves tab; the summary is a tab away.
+  await expect(reviewTabs(page).getByRole("tab", { name: "Moves" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  await reviewTabs(page).getByRole("tab", { name: "Summary" }).click();
 }
 
 test("the summary scores both sides, names the opening and phases, and its sections fold", async ({
@@ -85,11 +91,7 @@ test("the summary scores both sides, names the opening and phases, and its secti
   await skipWelcome(page);
   await reviewTrapGameAs(page, app, profile, "White (Alpha)");
 
-  // The first screen after the review: the summary, the board turned to White.
-  await expect(reviewTabs(page).getByRole("tab", { name: "Summary" })).toHaveAttribute(
-    "aria-selected",
-    "true"
-  );
+  // The summary, the board turned to White.
   // No row for the side and rating under the tabs: they're in the review settings dialog.
   await expect(page.getByText("Review as White", { exact: true })).toHaveCount(0);
   await expect(summary(page).getByLabel(/^White accuracy \d+\.\d$/)).toBeVisible();
@@ -173,6 +175,34 @@ test("the summary scores both sides, names the opening and phases, and its secti
     "aria-selected",
     "true"
   );
+  await expect(page.getByRole("heading", { name: "4. Nxe5", level: 2 })).toBeVisible();
+
+  // Then it steps on through White's three insights (4. Nxe5, 5. Nxf7, 7. Be2), counting the one
+  // it goes to next.
+  await expect(start).toHaveCount(0);
+  const next = panel.getByRole("button", { name: "Next insight · 2 of 3", exact: true });
+  await next.click();
+  await expect(page.getByRole("heading", { name: "5. Nxf7", level: 2 })).toBeVisible();
+  await expect(
+    panel.getByRole("button", { name: "Next insight · 3 of 3", exact: true })
+  ).toBeVisible();
+  // It follows the move the user is on: on the last insight, it finishes back on the summary.
+  await reviewTabs(page).getByRole("tab", { name: "Moves", exact: true }).click();
+  await page
+    .getByRole("tree", { name: "Reviewed move tree" })
+    .locator("[data-move-cell]")
+    .nth(12)
+    .getByRole("button", { name: "Be2", exact: true })
+    .click();
+  const finish = panel.getByRole("button", { name: "Finish review", exact: true });
+  await finish.click();
+  await expect(reviewTabs(page).getByRole("tab", { name: "Summary" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  // Back on the summary, it starts over at the first insight.
+  await expect(start).toBeVisible();
+  await start.click();
   await expect(page.getByRole("heading", { name: "4. Nxe5", level: 2 })).toBeVisible();
 });
 

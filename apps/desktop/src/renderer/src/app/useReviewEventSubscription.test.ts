@@ -29,7 +29,8 @@ describe("review event buffer", () => {
     const flush = vi.fn<Parameters<typeof createReviewEventBuffer>[0]>();
     const buffer = createReviewEventBuffer(flush);
     for (let depth = 1; depth <= 20; depth += 1) buffer.progress(progress("r1", 0, depth));
-    buffer.move("r1", move("a"));
+    const opening = { eco: "C50", name: "Italian Game", ply: 5, bookEndPly: 6 };
+    buffer.move("r1", move("a"), { ...opening, firstNonBookMove: null });
     buffer.progress(progress("r1", 1, 1));
     expect(flush).not.toHaveBeenCalled();
     vi.advanceTimersByTime(REVIEW_EVENT_FLUSH_MS);
@@ -37,8 +38,13 @@ describe("review event buffer", () => {
     expect(flush.mock.calls[0][0]).toMatchObject({
       reviewId: "r1",
       progress: { moveIndex: 1 },
-      moves: [{ nodeId: "a" }]
+      moves: [{ nodeId: "a" }],
+      opening
     });
+    // Progress alone says nothing of the opening.
+    buffer.progress(progress("r1", 2, 1));
+    vi.advanceTimersByTime(REVIEW_EVENT_FLUSH_MS);
+    expect(flush.mock.calls[1][0].opening).toBeUndefined();
   });
 
   it("flushes pending moves on demand and drops them on discard", () => {
