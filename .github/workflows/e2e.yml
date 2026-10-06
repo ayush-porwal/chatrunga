@@ -8,8 +8,9 @@ name: e2e
 # full dispatch, last, in a step of their own that reports but doesn't fail the run.
 #
 # A dispatch can chase a flaky journey: `spec` narrows the run to the spec files it matches and
-# `repeat` runs each of their tests that many times, e.g.
-#   gh workflow run e2e.yml --ref <branch> -f spec=repertoire-hub -f repeat=15
+# `repeat` runs each of their tests that many times, and `load` busy processes slow the runner down
+# meanwhile (as a release build's busy runner is), e.g.
+#   gh workflow run e2e.yml --ref <branch> -f spec=repertoire-hub -f repeat=15 -f load=4
 on:
   pull_request:
     branches: [main]
@@ -25,6 +26,10 @@ on:
         description: Times to run each test (Playwright --repeat-each)
         type: number
         default: 1
+      load:
+        description: Busy-loop processes competing for the CPU while the journeys run (a busy runner)
+        type: number
+        default: 0
 
 concurrency:
   # A newer push to the same pull request or branch replaces its run; dispatches each run in full.
@@ -54,6 +59,7 @@ jobs:
       CI: "true"
       E2E_SPEC: ${{ inputs.spec }}
       E2E_REPEAT: ${{ inputs.repeat || 1 }}
+      E2E_LOAD: ${{ inputs.load || 0 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -84,6 +90,8 @@ jobs:
         working-directory: apps/desktop
         shell: bash
         run: |
+          trap 'kill $(jobs -p) 2>/dev/null || true' EXIT
+          for _ in $(seq "$E2E_LOAD"); do node -e 'for (;;);' > /dev/null 2>&1 & done
           args=(--grep-invert @perf --repeat-each "$E2E_REPEAT")
           if [[ -n "$E2E_SPEC" ]]; then args+=("$E2E_SPEC"); fi
           if [[ "$RUNNER_OS" == "Linux" ]]; then
@@ -109,6 +117,8 @@ jobs:
         env:
           CHATURANGA_E2E_PACKAGED: "1"
         run: |
+          trap 'kill $(jobs -p) 2>/dev/null || true' EXIT
+          for _ in $(seq "$E2E_LOAD"); do node -e 'for (;;);' > /dev/null 2>&1 & done
           args=(--grep-invert @perf --repeat-each "$E2E_REPEAT")
           if [[ -n "$E2E_SPEC" ]]; then args+=("$E2E_SPEC"); fi
           if [[ "$RUNNER_OS" == "Linux" ]]; then
