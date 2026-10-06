@@ -104,7 +104,7 @@ describe("ChesscomService", () => {
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
       account: expect.objectContaining({ id: "ayush_p64" }),
       firstImport: "all",
-      cursor: { month: "2026/10", endTime: 1790950000 }
+      cursor: { month: "2026/10", floor: 0 }
     });
   });
 
@@ -125,10 +125,12 @@ describe("ChesscomService", () => {
     // Joins the import the connect started.
     expect(await service.syncGames()).toEqual({ imported: 3, skipped: 1 });
     fake.requests.length = 0;
-    expect(await service.syncGames()).toEqual({ imported: 0, skipped: 0 });
-    // From the cursor's month only.
+    // The two months read again hold only games it has (and the Chess960 one).
+    expect(await service.syncGames()).toEqual({ imported: 0, skipped: 4 });
+    // From the cursor's month and the one before it.
     expect(fake.requests.map((request) => request.path)).toEqual([
       "/pub/player/ayush_p64/games/archives",
+      "/pub/player/ayush_p64/games/2026/09",
       "/pub/player/ayush_p64/games/2026/10"
     ]);
   });
@@ -166,6 +168,32 @@ describe("ChesscomService", () => {
     expect((await service.refreshAccount())?.ratings).toEqual({ blitz: 1712 });
     await service.disconnect({ removeGames: false });
     expect(await service.refreshAccount()).toBeNull();
+  });
+
+  it("disconnecting while a connect is under way leaves no account", async () => {
+    const pending: { disconnect?: Promise<unknown> } = {};
+    const { service } = await setup({
+      ...ROUTES,
+      "/pub/player/ayush_p64/stats": new Live(() => {
+        pending.disconnect = service.disconnect({ removeGames: false });
+        return fixture("stats");
+      })
+    });
+    expect(await service.connect({ username: "ayush_p64", firstImport: "year" })).toEqual({
+      account: null,
+      connecting: false
+    });
+    await pending.disconnect;
+    expect(await service.status()).toEqual({ account: null, connecting: false });
+  });
+
+  it("on quit, stops the import and waits for it; none starts after", async () => {
+    const { service } = await setup();
+    await service.connect({ username: "ayush_p64", firstImport: "all" });
+    const running = service.syncGames();
+    await service.shutdown();
+    await expect(running).rejects.toThrow("The import was stopped.");
+    await expect(service.syncGames()).rejects.toThrow(/quitting/);
   });
 
   it("can't import without an account", async () => {

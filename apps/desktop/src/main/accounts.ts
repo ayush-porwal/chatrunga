@@ -15,7 +15,7 @@ export function getAccountRatings(): AccountRatings {
   accountRatings ??= new AccountRatings({
     picked: () => settingsRepository.getAll().ratingsAccount,
     // The store, not the service: reading it doesn't open Lichess's event stream.
-    lichess: async () => (await getLichessAccountStore().status()).account,
+    lichess: () => getLichessAccountStore().status(),
     chesscom: () => getChesscomAccountStore().account(),
     readRatings: () => settingsRepository.getAll().playerRatings,
     writeRatings: (ratings) => {

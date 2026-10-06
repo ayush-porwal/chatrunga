@@ -39,7 +39,10 @@ export function getLichessService(): LichessService {
 export function startLichessRatingSync(accounts: {
   /** Whether Lichess fills the ratings now (Chess.com may instead, see account-ratings.ts). */
   inCharge: () => Promise<boolean>;
-  /** An account connected or disconnected: the ratings are handed over to the one in charge. */
+  /**
+   * An account connected, disconnected or was signed out: the ratings are handed over to the one
+   * in charge.
+   */
   onAccountChange: () => void;
 }): void {
   if (ratingSync) return;
@@ -55,13 +58,15 @@ export function startLichessRatingSync(accounts: {
     log: (message, error) =>
       logger.info("lichess", message, error === undefined ? "" : errorMessage(error))
   });
-  let accountId: string | null | undefined;
+  // The account (and whether Lichess still accepts it) last handed over for.
+  let handedOver: string | undefined;
   lichess.on("event", (event) => {
     sync.handleEvent(event);
     if (event.type !== "status") return;
-    const id = event.status.account?.id ?? null;
-    if (id === accountId) return;
-    accountId = id;
+    const { account, tokenRejected } = event.status;
+    const key = account ? `${account.id}:${tokenRejected}` : "";
+    if (key === handedOver) return;
+    handedOver = key;
     accounts.onAccountChange();
   });
   ratingSync = sync;

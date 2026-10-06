@@ -44,8 +44,8 @@ export function startChesscomRatingSync(applyRatings: () => Promise<void>): void
   sync.start();
 }
 
-/** App quit: stops a connect or an import, if the service was ever used. */
-export function shutdownChesscom(): void {
+/** App quit: stops a connect or an import (waiting for it to end), if the service was ever used. */
+export async function shutdownChesscom(): Promise<void> {
   ratingSync?.stop();
-  service?.shutdown();
+  await service?.shutdown();
 }

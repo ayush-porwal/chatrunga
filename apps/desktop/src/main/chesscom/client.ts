@@ -142,10 +142,13 @@ export function archiveMonthOf(epochMs: number): ArchiveMonth {
 
 /**
  * The months the player has games in (`/games/archives` lists their URLs), oldest first. Only
- * well-formed months are kept; the paths are rebuilt from them, never followed as given.
+ * well-formed months are kept; the paths are rebuilt from them, never followed as given. An answer
+ * without the list is refused.
  */
 export function parseArchiveMonths(json: unknown): ArchiveMonth[] {
-  if (!isRecord(json) || !Array.isArray(json.archives)) return [];
+  // Not a list: refused, rather than read as "no games" (the import would move on without them).
+  if (!isRecord(json) || !Array.isArray(json.archives))
+    throw new Error("Chess.com sent a list of games the app couldn't read.");
   const months = new Set<ArchiveMonth>();
   for (const url of json.archives) {
     if (typeof url !== "string") continue;
@@ -170,9 +173,13 @@ export type ChesscomGame = {
 
 const GAME_URL = /^https:\/\/www\.chess\.com\/[\w/-]{1,200}$/;
 
-/** A monthly archive's games (`/games/{YYYY}/{MM}`); entries that don't fit are left out. */
+/**
+ * A monthly archive's games (`/games/{YYYY}/{MM}`); entries that don't fit are left out. An answer
+ * without a list of games is refused, so the import doesn't move past a month it couldn't read.
+ */
 export function parseArchiveGames(json: unknown): ChesscomGame[] {
-  if (!isRecord(json) || !Array.isArray(json.games)) return [];
+  if (!isRecord(json) || !Array.isArray(json.games))
+    throw new Error("Chess.com sent a month of games the app couldn't read.");
   const games: ChesscomGame[] = [];
   for (const item of json.games) {
     if (!isRecord(item)) continue;

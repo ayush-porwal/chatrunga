@@ -1,6 +1,5 @@
 import { useCallback, useEffect } from "react";
 import {
-  keepPreviousData,
   mutationOptions,
   useInfiniteQuery,
   useMutation,
@@ -129,7 +128,16 @@ export function useGamePagesQuery(params: GameListParams, { enabled = true } = {
     initialPageParam: null as GameListCursor | null,
     getNextPageParam: (page) => page.nextCursor,
     // A new search keeps the last results up while it runs (no skeleton flash per keystroke).
-    placeholderData: keepPreviousData
+    // Another tab or Reviewed doesn't: its rows would show, and could be opened, under the new one.
+    placeholderData: (previous, previousQuery) => {
+      const before = previousQuery?.queryKey[2];
+      return before &&
+        before.tab === params.tab &&
+        before.reviewed === params.reviewed &&
+        before.excludeId === params.excludeId
+        ? previous
+        : undefined;
+    }
   });
 }
 

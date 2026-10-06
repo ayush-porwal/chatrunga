@@ -27,10 +27,11 @@ export type ImportRepository = {
 };
 
 /**
- * Where the next import starts: the archive month last read (it may get more games) and the end
- * time (epoch seconds) of the newest game seen in it; games that ended at or before it were seen.
+ * Where the next import starts: the last archive month read (the next import reads it again, and
+ * the month before it, since chess.com may still have served a cached, incomplete month), and the
+ * first import's window (epoch seconds): games that ended before it are never taken.
  */
-export type ImportCursor = { month: ArchiveMonth; endTime: number };
+export type ImportCursor = { month: ArchiveMonth; floor: number };
 
 export type ImportResult = {
   imported: number;
@@ -44,11 +45,17 @@ export function firstImportSince(window: ChesscomImportWindow, now: number): num
   return Math.max(0, now - IMPORT_WINDOW_MS[window]);
 }
 
+/** The archive month before `month` (`2026/01` → `2025/12`). */
+export function previousMonth(month: ArchiveMonth): ArchiveMonth {
+  const [year = 0, number = 1] = month.split("/").map(Number);
+  return archiveMonthOf(Date.UTC(year, number - 2, 1));
+}
+
 /**
  * Imports the player's finished standard games into the library, a monthly archive at a time
  * (oldest first, one request at a time). The first import reaches back to `since`; later ones
  * continue from `cursor`. A game already there (same chess.com URL in its Site header) is skipped,
- * so re-running an import is harmless; variants (`rules` other than `chess`) are skipped too.
+ * so reading a month again is harmless; variants (`rules` other than `chess`) are skipped too.
  */
 export async function importChesscomGames(input: {
   client: Pick<ChesscomClient, "json">;
@@ -66,13 +73,10 @@ export async function importChesscomGames(input: {
   const months = parseArchiveMonths(
     await client.json(playerPath(username, "/games/archives"), signal)
   );
-  const firstMonth = cursor ? cursor.month : archiveMonthOf(input.since);
-  // Seen before: at or before the cursor; on a first import, before the window.
-  const seen = (game: ChesscomGame) =>
-    cursor ? game.endTime <= cursor.endTime : game.endTime * 1000 < input.since;
-  let newest = cursor?.endTime ?? 0;
-  // The earliest game that failed to import: the cursor stays before it, so it's tried again.
-  const failure: { first: ImportCursor | null } = { first: null };
+  const floor = cursor ? cursor.floor : Math.ceil(input.since / 1000);
+  const firstMonth = cursor ? previousMonth(cursor.month) : archiveMonthOf(floor * 1000);
+  // The first month with a game that couldn't be saved: the next import starts there again.
+  let failedMonth: ArchiveMonth | null = null;
   let lastProgressAt = 0;
   for (const month of months.filter((month) => month >= firstMonth)) {
     signal?.throwIfAborted();
@@ -80,54 +84,57 @@ export async function importChesscomGames(input: {
       await client.json(playerPath(username, `/games/${month}`), signal)
     );
     for (const game of games) {
-      if (seen(game)) continue;
-      newest = Math.max(newest, game.endTime);
+      if (game.endTime < floor) continue;
       const outcome = importGame(repository, game);
       if (outcome === "imported") result.imported += 1;
       else result.skipped += 1;
-      const first = failure.first;
-      if (outcome === "failed" && (!first || first.month === month))
-        failure.first = { month, endTime: Math.min(first?.endTime ?? game.endTime, game.endTime) };
+      if (outcome === "failed") failedMonth ??= month;
       const now = Date.now();
       if (now - lastProgressAt >= PROGRESS_INTERVAL_MS) {
         lastProgressAt = now;
         input.onProgress?.(result.imported);
       }
     }
-    result.nextCursor = { month, endTime: newest };
+    result.nextCursor = { month: failedMonth ?? month, floor };
   }
-  if (failure.first)
-    result.nextCursor = { month: failure.first.month, endTime: failure.first.endTime - 1 };
   return result;
 }
 
+/**
+ * One game into the library. A game that can't be read (no PGN, a move that can't be played) is
+ * skipped for good (logged): chess.com won't send it differently next time. Only a game the
+ * library failed to save is `failed`, to be tried again.
+ */
 function importGame(
   repository: ImportRepository,
   game: ChesscomGame
 ): "imported" | "skipped" | "failed" {
-  // Skipped for good: variants, games already in the library, games without a move.
   if (game.rules !== "chess") return "skipped";
   if (repository.findIdBySite(game.url)) return "skipped";
-  if (!game.pgn) return "failed";
+  let input: SaveGameInput;
   try {
-    // Strict: a move that can't be played fails the game (to be tried again), not cut it short.
+    if (!game.pgn) throw new Error("no PGN");
+    // Strict: a move that can't be played refuses the game, rather than cutting it short.
     const { game: parsed } = importPgnText(game.pgn, { strict: true });
     if (parsed.moveTree.length < 2) return "skipped";
     // The game's page is its identity (chess.com's PGN names only "Chess.com" as the site).
     const headers = { ...parsed.headers, site: game.url };
-    repository.saveImported(
-      {
-        ...parsed,
-        id: null,
-        source: "chesscom",
-        headers,
-        pgn: exportGameToPgn({ headers, moveTree: parsed.moveTree })
-      },
-      game.endTime * 1000
-    );
+    input = {
+      ...parsed,
+      id: null,
+      source: "chesscom",
+      headers,
+      pgn: exportGameToPgn({ headers, moveTree: parsed.moveTree })
+    };
+  } catch (error) {
+    logger.warn("chesscom", `skipped game ${game.url}, which can't be read:`, error);
+    return "skipped";
+  }
+  try {
+    repository.saveImported(input, game.endTime * 1000);
     return "imported";
   } catch (error) {
-    logger.warn("chesscom", `couldn't import game ${game.url}:`, error);
+    logger.warn("chesscom", `couldn't save game ${game.url}:`, error);
     return "failed";
   }
 }

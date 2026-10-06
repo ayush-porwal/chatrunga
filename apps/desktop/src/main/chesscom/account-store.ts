@@ -56,8 +56,8 @@ function readAccount(value: unknown): ChesscomAccount | null {
 function readCursor(value: unknown): ImportCursor | null {
   if (!isRecord(value) || typeof value.month !== "string") return null;
   if (!/^\d{4}\/(0[1-9]|1[0-2])$/.test(value.month)) return null;
-  const endTime = finite(value.endTime);
-  return endTime === null || endTime < 0 ? null : { month: value.month, endTime };
+  const floor = finite(value.floor);
+  return floor === null || floor < 0 ? null : { month: value.month, floor };
 }
 
 /**

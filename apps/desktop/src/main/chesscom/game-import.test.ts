@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { isRecord } from "@chaturanga/shared/types/guards";
 import type { SaveGameInput } from "@chaturanga/shared/types/chess";
 import { fakeChesscom, fixture, Refusal } from "./__fixtures__/fake-chesscom";
 import { ChesscomClient } from "./client";
@@ -72,7 +73,7 @@ describe("importChesscomGames", () => {
     expect(result).toEqual({
       imported: 3,
       skipped: 1,
-      nextCursor: { month: "2026/10", endTime: 1790950000 }
+      nextCursor: { month: "2026/10", floor: 0 }
     });
     const first = saved[0]!;
     expect(first.playedAt).toBe(1790791330 * 1000);
@@ -131,11 +132,12 @@ describe("importChesscomGames", () => {
     ]);
   });
 
-  it("continues from the cursor: its month again (for new games), then later ones", async () => {
+  it("continues from the cursor: its month and the one before again, for games that came late", async () => {
+    const october = fixture("archive-2026-10");
     const { client, requests } = chesscom({
       [OCTOBER]: {
         games: [
-          ...(fixture("archive-2026-10") as { games: unknown[] }).games,
+          ...(isRecord(october) && Array.isArray(october.games) ? october.games : []),
           {
             url: "https://www.chess.com/game/live/150000011",
             pgn: '[White "a"]\n[Black "b"]\n[Result "*"]\n\n1. d4 d5 *',
@@ -145,25 +147,47 @@ describe("importChesscomGames", () => {
         ]
       }
     });
-    const { repository, saved } = memoryRepository();
+    // September's 150000003 wasn't in the (cached) archive the last import read.
+    const { repository, saved } = memoryRepository([
+      "https://www.chess.com/game/live/150000001",
+      "https://www.chess.com/game/live/150000010"
+    ]);
     const result = await importChesscomGames({
       client,
       repository,
       username: "ayush_p64",
-      cursor: { month: "2026/10", endTime: 1790950000 },
+      cursor: { month: "2026/10", floor: 0 },
       since: 0
     });
-    expect(requests.map((request) => request.path)).toEqual([ARCHIVES, OCTOBER]);
-    // The game at the cursor was seen; only the newer one comes in.
+    expect(requests.map((request) => request.path)).toEqual([ARCHIVES, SEPTEMBER, OCTOBER]);
     expect(saved.map((item) => item.input.headers.site)).toEqual([
+      "https://www.chess.com/game/live/150000003",
       "https://www.chess.com/game/live/150000011"
     ]);
-    expect(result.nextCursor).toEqual({ month: "2026/10", endTime: 1790960000 });
+    expect(result.nextCursor).toEqual({ month: "2026/10", floor: 0 });
+  });
+
+  it("keeps to the first import's window on later imports", async () => {
+    const { client } = chesscom();
+    const { repository, saved } = memoryRepository();
+    // The window starts after September's blitz game (it ended at 1790300000).
+    const result = await importChesscomGames({
+      client,
+      repository,
+      username: "ayush_p64",
+      cursor: { month: "2026/10", floor: 1790300001 },
+      since: 0
+    });
+    expect(saved.map((item) => item.input.headers.site)).toEqual([
+      "https://www.chess.com/game/live/150000001",
+      "https://www.chess.com/game/live/150000010"
+    ]);
+    expect(result.nextCursor).toEqual({ month: "2026/10", floor: 1790300001 });
   });
 
   it("keeps the cursor when there's nothing new to read", async () => {
     const { client } = chesscom({ [ARCHIVES]: { archives: [] } });
-    const cursor = { month: "2026/10", endTime: 1790950000 };
+    const cursor = { month: "2026/10", floor: 0 };
     const result = await importChesscomGames({
       client,
       repository: memoryRepository().repository,
@@ -174,7 +198,7 @@ describe("importChesscomGames", () => {
     expect(result).toEqual({ imported: 0, skipped: 0, nextCursor: cursor });
   });
 
-  it("keeps the cursor before a game that failed to import, so the next import retries it", async () => {
+  it("skips a game it can't read for good, and retries one the library couldn't save", async () => {
     const { client } = chesscom({
       [SEPTEMBER]: {
         games: [
@@ -184,27 +208,55 @@ describe("importChesscomGames", () => {
             end_time: 1790000100,
             rules: "chess"
           },
-          {
-            url: "https://www.chess.com/game/live/8",
-            end_time: 1790000200,
-            rules: "chess"
-          }
+          { url: "https://www.chess.com/game/live/8", end_time: 1790000200, rules: "chess" }
         ]
       }
     });
-    const { repository, saved } = memoryRepository();
-    const result = await importChesscomGames({
+    const readable = memoryRepository();
+    const first = await importChesscomGames({
       client,
-      repository,
+      repository: readable.repository,
       username: "ayush_p64",
       cursor: null,
       since: 0
     });
-    // October's game came in; the unreadable September one is tried again next time.
-    expect(saved.map((item) => item.input.headers.site)).toEqual([
+    // Neither September game can be read (an illegal move, no PGN): they don't hold the cursor.
+    expect(readable.saved.map((item) => item.input.headers.site)).toEqual([
       "https://www.chess.com/game/live/150000010"
     ]);
-    expect(result.nextCursor).toEqual({ month: "2026/09", endTime: 1790000099 });
+    expect(first).toEqual({ imported: 1, skipped: 2, nextCursor: { month: "2026/10", floor: 0 } });
+
+    const { repository } = memoryRepository();
+    const failing: ImportRepository = {
+      findIdBySite: (site) => repository.findIdBySite(site),
+      saveImported: (input, playedAt) => {
+        if (input.headers.site === "https://www.chess.com/game/live/150000003")
+          throw new Error("database is locked");
+        return repository.saveImported(input, playedAt);
+      }
+    };
+    const second = await importChesscomGames({
+      client: chesscom().client,
+      repository: failing,
+      username: "ayush_p64",
+      cursor: null,
+      since: 0
+    });
+    // The game that couldn't be saved is in September: the next import starts there again.
+    expect(second).toMatchObject({ imported: 2, nextCursor: { month: "2026/09", floor: 0 } });
+  });
+
+  it("refuses an answer that isn't a month of games, rather than moving past it", async () => {
+    const { client } = chesscom({ [SEPTEMBER]: { code: 0, message: "busy" } });
+    await expect(
+      importChesscomGames({
+        client,
+        repository: memoryRepository().repository,
+        username: "ayush_p64",
+        cursor: null,
+        since: 0
+      })
+    ).rejects.toThrow(/couldn't read/);
   });
 
   it("stops when aborted, and rejects when chess.com refuses", async () => {

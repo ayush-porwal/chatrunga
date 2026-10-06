@@ -7,7 +7,6 @@ import {
   isPlayerRatings,
   isRatingLocked,
   ratingsAccountInCharge,
-  ratingsFromAccount,
   releaseAccountRatings,
   normalizePlayerRatings,
   releaseLichessRatings,
@@ -240,7 +239,7 @@ describe("the account in charge of the ratings", () => {
       ...mixed,
       rapid: { source: "manual", rating: 1684 }
     });
-    expect(ratingsFromAccount(mixed, null, NOW)).toEqual({
+    expect(releaseAccountRatings(releaseAccountRatings(mixed, "chesscom"), "lichess")).toEqual({
       ...uniformRatings(1500),
       blitz: { source: "manual", rating: 1720 },
       rapid: { source: "manual", rating: 1684 }

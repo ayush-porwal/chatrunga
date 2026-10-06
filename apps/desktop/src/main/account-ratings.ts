@@ -8,21 +8,24 @@
 import type { ChesscomAccount } from "@chaturanga/shared/types/chesscom";
 import type { LichessAccount } from "@chaturanga/shared/types/lichess";
 import {
+  applyAccountRatings,
   chesscomRatingsByMode,
   lichessRatingsByMode,
   RATING_MODES,
   ratingsAccountInCharge,
-  ratingsFromAccount,
+  releaseAccountRatings,
   type PlayerRatings,
-  type RatingMode,
   type RatingsAccount
 } from "@chaturanga/shared/types/ratings";
 
 export type AccountRatingsDeps = {
   /** The account picked in Settings (it applies while both are connected). */
   picked: () => RatingsAccount;
-  /** The saved Lichess account (null: none connected). */
-  lichess: () => Promise<LichessAccount | null>;
+  /**
+   * The saved Lichess account (null: none connected), and whether Lichess signed it out (its token
+   * was refused: it can't fill the ratings, but they stay until it reconnects or disconnects).
+   */
+  lichess: () => Promise<{ account: LichessAccount | null; tokenRejected: boolean }>;
   /** The saved chess.com account (null: none connected). */
   chesscom: () => Promise<ChesscomAccount | null>;
   readRatings: () => PlayerRatings;
@@ -44,13 +47,28 @@ export class AccountRatings {
 
   constructor(private readonly deps: AccountRatingsDeps) {}
 
-  /** The account that fills the ratings now (null: none is connected). */
+  private now(): number {
+    return this.deps.now?.() ?? Date.now();
+  }
+
+  /** The account that fills the ratings now (null: none is connected and signed in). */
   async inCharge(): Promise<RatingsAccount | null> {
+    return (await this.accounts()).inCharge;
+  }
+
+  private async accounts() {
     const [lichess, chesscom] = await Promise.all([this.deps.lichess(), this.deps.chesscom()]);
-    return ratingsAccountInCharge(this.deps.picked(), {
-      lichess: Boolean(lichess),
-      chesscom: Boolean(chesscom)
-    });
+    const usableLichess = lichess.tokenRejected ? null : lichess.account;
+    return {
+      lichess: usableLichess,
+      /** A signed-out Lichess account: its ratings stay put while no other account takes over. */
+      lichessSignedOut: Boolean(lichess.account && lichess.tokenRejected),
+      chesscom,
+      inCharge: ratingsAccountInCharge(this.deps.picked(), {
+        lichess: Boolean(usableLichess),
+        chesscom: Boolean(chesscom)
+      })
+    };
   }
 
   /**
@@ -65,20 +83,29 @@ export class AccountRatings {
 
   private async run(): Promise<void> {
     try {
-      const [lichess, chesscom] = await Promise.all([this.deps.lichess(), this.deps.chesscom()]);
-      const account = ratingsAccountInCharge(this.deps.picked(), {
-        lichess: Boolean(lichess),
-        chesscom: Boolean(chesscom)
-      });
-      let byMode: Partial<Record<RatingMode, number>> = {};
-      if (account === "lichess" && lichess) byMode = lichessRatingsByMode(lichess.perfs);
-      else if (account === "chesscom" && chesscom) byMode = chesscomRatingsByMode(chesscom.ratings);
+      const { lichess, lichessSignedOut, chesscom, inCharge } = await this.accounts();
       const current = this.deps.readRatings();
-      const next = ratingsFromAccount(
-        current,
-        account ? { account, byMode } : null,
-        this.deps.now?.() ?? Date.now()
-      );
+      let next: PlayerRatings;
+      if (inCharge === "lichess" && lichess) {
+        next = applyAccountRatings(
+          current,
+          "lichess",
+          lichessRatingsByMode(lichess.perfs),
+          this.now()
+        );
+      } else if (inCharge === "chesscom" && chesscom) {
+        next = applyAccountRatings(
+          current,
+          "chesscom",
+          chesscomRatingsByMode(chesscom.ratings),
+          this.now()
+        );
+      } else {
+        // None in charge: synced values stay, typed-in, but a signed-out Lichess account keeps its
+        // own (as before Chess.com: they stay read-only until it reconnects or disconnects).
+        next = releaseAccountRatings(current, "chesscom");
+        if (!lichessSignedOut) next = releaseAccountRatings(next, "lichess");
+      }
       if (!sameRatings(current, next)) this.deps.writeRatings(next);
     } catch (error) {
       this.deps.log?.("ratings couldn't be brought in step with the accounts:", error);

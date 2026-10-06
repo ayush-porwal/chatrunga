@@ -43,8 +43,9 @@ describe("chess.com API answers", () => {
 
   it("lists the archive months oldest first, from well-formed URLs only", () => {
     expect(parseArchiveMonths(fixture("archives"))).toEqual(["2026/08", "2026/09", "2026/10"]);
-    expect(parseArchiveMonths({ archives: "nope" })).toEqual([]);
-    expect(parseArchiveMonths(undefined)).toEqual([]);
+    // An answer without the list is refused, not read as "no games".
+    expect(() => parseArchiveMonths({ archives: "nope" })).toThrow(/couldn't read/);
+    expect(() => parseArchiveMonths(undefined)).toThrow(/couldn't read/);
     expect(archiveMonthOf(Date.UTC(2026, 0, 31, 23, 59))).toBe("2026/01");
     expect(archiveMonthOf(Date.UTC(2026, 9, 1))).toBe("2026/10");
   });
@@ -65,7 +66,7 @@ describe("chess.com API answers", () => {
     ).toEqual([
       { url: "https://www.chess.com/game/live/9", pgn: "1. e4 *", rules: "", endTime: 5 }
     ]);
-    expect(parseArchiveGames({ games: {} })).toEqual([]);
+    expect(() => parseArchiveGames({ games: {} })).toThrow(/couldn't read/);
   });
 
   it("builds player paths from the lowercased username, escaped", () => {

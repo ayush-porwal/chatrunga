@@ -38,13 +38,14 @@ function harness(start: PlayerRatings = uniformRatings(1500)) {
   const state = {
     picked: "lichess" as RatingsAccount,
     lichess: null as LichessAccount | null,
+    lichessSignedOut: false,
     chesscom: null as ChesscomAccount | null,
     ratings: start,
     writes: 0
   };
   const accounts = new AccountRatings({
     picked: () => state.picked,
-    lichess: async () => state.lichess,
+    lichess: async () => ({ account: state.lichess, tokenRejected: state.lichessSignedOut }),
     chesscom: async () => state.chesscom,
     readRatings: () => state.ratings,
     writeRatings: (ratings) => {
@@ -106,6 +107,23 @@ describe("AccountRatings", () => {
     await accounts.apply();
     expect(state.ratings.rapid).toEqual({ source: "manual", rating: 1684 });
     expect(state.ratings.correspondence).toEqual({ source: "manual", rating: 1550 });
+  });
+
+  it("hands a signed-out Lichess account's ratings to chess.com, else keeps them", async () => {
+    const { state, accounts } = harness();
+    state.lichess = LICHESS;
+    await accounts.apply();
+    // Lichess refused its token: with nothing else connected, its values stay as they were.
+    state.lichessSignedOut = true;
+    expect(await accounts.inCharge()).toBeNull();
+    await accounts.apply();
+    expect(state.ratings.rapid).toEqual({ source: "lichess", rating: 1820, syncedAt: NOW });
+    // Chess.com connected meanwhile: it takes over, though Lichess is the one picked.
+    state.chesscom = CHESSCOM;
+    expect(await accounts.inCharge()).toBe("chesscom");
+    await accounts.apply();
+    expect(state.ratings.rapid).toEqual({ source: "chesscom", rating: 1684, syncedAt: NOW });
+    expect(state.ratings.classical).toEqual({ source: "manual", rating: 1900 });
   });
 
   it("doesn't write when nothing changes", async () => {

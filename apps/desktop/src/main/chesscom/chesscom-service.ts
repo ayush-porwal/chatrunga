@@ -43,6 +43,10 @@ export class ChesscomService extends EventEmitter<{ event: [ChesscomEvent] }> {
   private connectController: AbortController | null = null;
   private sync: Promise<ChesscomSyncResult> | null = null;
   private syncController: AbortController | null = null;
+  /** Counts disconnects: a connect that was saving during one undoes its save. */
+  private disconnects = 0;
+  /** The app is quitting: no import starts. */
+  private closed = false;
 
   constructor(private readonly options: ChesscomServiceOptions) {
     super();
@@ -62,6 +66,7 @@ export class ChesscomService extends EventEmitter<{ event: [ChesscomEvent] }> {
     this.connectController?.abort();
     const controller = new AbortController();
     this.connectController = controller;
+    const disconnects = this.disconnects;
     this.emitStatus();
     try {
       const profile = parseProfile(
@@ -87,6 +92,11 @@ export class ChesscomService extends EventEmitter<{ event: [ChesscomEvent] }> {
         { ...profile, ratings, connectedAt: this.now(), lastSyncAt: null },
         input.firstImport
       );
+      // Disconnected while it was being saved: the account mustn't come back.
+      if (this.disconnects !== disconnects) {
+        await this.options.store.clear();
+        return this.status();
+      }
     } catch (error) {
       if (isAbortError(error)) return this.status();
       logger.warn("chesscom", "connect failed:", error);
@@ -102,6 +112,7 @@ export class ChesscomService extends EventEmitter<{ event: [ChesscomEvent] }> {
 
   /** Stops importing and forgets the account; optionally deletes its imported games. */
   async disconnect(options: { removeGames: boolean }): Promise<ChesscomStatus> {
+    this.disconnects += 1;
     this.connectController?.abort();
     await this.stopSync();
     await this.options.store.clear();
@@ -133,17 +144,25 @@ export class ChesscomService extends EventEmitter<{ event: [ChesscomEvent] }> {
     return this.sync;
   }
 
-  /** App quit: stops a connect or an import. Idempotent. */
-  shutdown(): void {
+  /**
+   * App quit: stops a connect or an import and waits for the import to end (so nothing is written
+   * once the database closes); none starts after. Idempotent.
+   */
+  async shutdown(): Promise<void> {
+    this.closed = true;
     this.connectController?.abort();
-    this.syncController?.abort();
+    await this.stopSync();
   }
 
   private async runSync(): Promise<ChesscomSyncResult> {
-    const account = await this.options.store.account();
-    if (!account) throw new Error(NOT_CONNECTED_ERROR);
+    if (this.closed) throw new Error("The app is quitting.");
     const controller = new AbortController();
     this.syncController = controller;
+    const account = await this.options.store.account();
+    if (!account) {
+      if (this.syncController === controller) this.syncController = null;
+      throw new Error(NOT_CONNECTED_ERROR);
+    }
     let imported = 0;
     this.emitEvent({ type: "sync", running: true, imported, error: null });
     try {

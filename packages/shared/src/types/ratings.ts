@@ -235,23 +235,6 @@ export function releaseLichessRatings(current: PlayerRatings): PlayerRatings {
   return releaseAccountRatings(current, "lichess");
 }
 
-/**
- * The ratings the account in charge fills (its saved ratings; `null` when no account is
- * connected, which keeps every synced rating as a typed-in one).
- */
-export function ratingsFromAccount(
-  current: PlayerRatings,
-  inCharge: { account: RatingsAccount; byMode: Partial<Record<RatingMode, number>> } | null,
-  syncedAt: number
-): PlayerRatings {
-  if (!inCharge)
-    return RATINGS_ACCOUNTS.reduce(
-      (ratings, account) => releaseAccountRatings(ratings, account),
-      current
-    );
-  return applyAccountRatings(current, inCharge.account, inCharge.byMode, syncedAt);
-}
-
 /** A rating typed for one mode in Settings; a locked (synced) mode is left as it is. */
 export function setManualRating(
   current: PlayerRatings,

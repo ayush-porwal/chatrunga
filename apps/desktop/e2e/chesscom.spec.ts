@@ -125,11 +125,13 @@ test("a chess.com account imports its games under their own source, in the libra
   await expect(ratings.getByRole("radiogroup", { name: "Ratings from" })).toHaveCount(0);
   await reviewNewestChesscomGame(page);
 
-  // The library opens on the board's game's source (the imported PGN), and lists one at a time.
+  // The library has a tab per source it holds, with its count, and lists one at a time. (Which
+  // it opens on is unit-tested: Analyze makes the board an analysis, whose tab has no games yet.)
   await sidebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
   await page.getByRole("tab", { name: "Library" }).click();
   const tabs = sourceTabs(library(page));
   await expect(tabs.getByRole("radio")).toHaveText(["Chess.com3", "Imported1"]);
+  await tabs.getByRole("radio", { name: /^Imported/ }).click();
   await expect(tabs.getByRole("radio", { name: /^Imported/ })).toHaveAttribute(
     "aria-checked",
     "true"
@@ -161,8 +163,9 @@ test("a chess.com account imports its games under their own source, in the libra
     "aria-checked",
     "true"
   );
+  // Pinned whatever the tab (an analysis board now, so Chaturanga's).
   await expect(picker.getByRole("button", { name: /^Alpha vs Beta/ })).toContainText(
-    "Imported · E2E smoke"
+    "Chaturanga · E2E smoke"
   );
   const saved = picker.getByRole("button", { name: / vs / }).filter({ hasNotText: "Alpha" });
   await expect(saved).toHaveCount(3);
