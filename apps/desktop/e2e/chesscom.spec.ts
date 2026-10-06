@@ -177,9 +177,8 @@ test("a chess.com account imports its games under their own source, in the libra
   await picker.getByRole("button", { name: /^Reviewed/ }).click();
   await expect(saved).toHaveCount(1);
   await expect(saved.first()).toContainText("Reviewed");
-  await sourceTabs(picker)
-    .getByRole("radio", { name: /^Imported/ })
-    .click();
+  // Another source (the board's game, saved since as an analysis, may have changed tabs).
+  await sourceTabs(picker).getByRole("radio").filter({ hasNotText: "Chess.com" }).first().click();
   await expect(saved).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(picker).toBeHidden();
