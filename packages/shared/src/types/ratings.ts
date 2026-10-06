@@ -2,10 +2,12 @@
  * The player's rating per Lichess mode (Settings → Ratings). Game review reads the one for the
  * reviewed game's mode when the game has no rating of its own (see chess/review-rating.ts).
  *
- * A rating is typed in (manual) or synced from the connected Lichess account. With Lichess
- * connected every mode comes from the account and can't be edited; disconnecting keeps the last
- * synced values as typed-in ones.
+ * A rating is typed in (manual) or synced from a connected account: Lichess or Chess.com. One
+ * account fills the ratings at a time (the one picked when both are connected, see
+ * {@link ratingsAccountInCharge}); each mode it has a rating for comes from it and can't be
+ * edited. Disconnecting keeps the last synced values as typed-in ones.
  */
+import type { ChesscomRatings } from "./chesscom";
 import { isOneOf, isRecord } from "./guards";
 import type { LichessPerf, LichessSpeed } from "./lichess";
 
@@ -31,16 +33,27 @@ export const RATING_MODE_LABELS: Record<RatingMode, string> = {
 export const RATING_RANGE = { min: 100, max: 3500 } as const;
 export const DEFAULT_PLAYER_RATING = 1500;
 
+/** The accounts that can fill the ratings. */
+export const RATINGS_ACCOUNTS = ["lichess", "chesscom"] as const;
+export type RatingsAccount = (typeof RATINGS_ACCOUNTS)[number];
+
+export const RATINGS_ACCOUNT_LABELS: Record<RatingsAccount, string> = {
+  lichess: "Lichess",
+  chesscom: "Chess.com"
+};
+
 export type ManualModeRating = { source: "manual"; rating: number };
 
-export type LichessModeRating = {
-  source: "lichess";
+export type SyncedModeRating = {
+  source: RatingsAccount;
   rating: number;
-  /** When it was read from Lichess (epoch ms). */
+  /** When it was read from the account (epoch ms). */
   syncedAt: number;
 };
 
-export type ModeRating = ManualModeRating | LichessModeRating;
+export type LichessModeRating = SyncedModeRating & { source: "lichess" };
+
+export type ModeRating = ManualModeRating | SyncedModeRating;
 export type PlayerRatings = Record<RatingMode, ModeRating>;
 
 export function clampRating(value: number): number {
@@ -77,7 +90,7 @@ export function isModeRating(value: unknown): value is ModeRating {
   if (!isRecord(value) || !isRating(value.rating)) return false;
   if (value.source === "manual") return true;
   return (
-    value.source === "lichess" &&
+    isOneOf(RATINGS_ACCOUNTS, value.source) &&
     typeof value.syncedAt === "number" &&
     Number.isFinite(value.syncedAt) &&
     value.syncedAt >= 0
@@ -88,7 +101,7 @@ export function isModeRating(value: unknown): value is ModeRating {
 function canonicalModeRating(rating: ModeRating): ModeRating {
   return rating.source === "manual"
     ? { source: "manual", rating: rating.rating }
-    : { source: "lichess", rating: rating.rating, syncedAt: rating.syncedAt };
+    : { source: rating.source, rating: rating.rating, syncedAt: rating.syncedAt };
 }
 
 /** Whether a value is a rating for each of the five modes and nothing else. */
@@ -117,14 +130,92 @@ export function normalizePlayerRatings(value: unknown): PlayerRatings {
   return ratings;
 }
 
-/** A rating synced from the connected Lichess account: read-only in Settings. */
-export function isRatingLocked(rating: ModeRating): rating is LichessModeRating {
-  return rating.source === "lichess";
+/** A rating synced from a connected account: read-only in Settings. */
+export function isRatingLocked(rating: ModeRating): rating is SyncedModeRating {
+  return rating.source !== "manual";
 }
 
 /** Any mode holds a rating from Lichess. */
 export function hasLichessRatings(ratings: PlayerRatings): boolean {
   return RATING_MODES.some((mode) => ratings[mode].source === "lichess");
+}
+
+/**
+ * The account that fills the ratings: the one picked while both are connected, else the one
+ * connected; null when none is.
+ */
+export function ratingsAccountInCharge(
+  picked: RatingsAccount,
+  connected: Record<RatingsAccount, boolean>
+): RatingsAccount | null {
+  if (connected[picked]) return picked;
+  return RATINGS_ACCOUNTS.find((account) => connected[account]) ?? null;
+}
+
+/** A rating per mode from Lichess's perfs (every perf it has, provisional or not). */
+export function lichessRatingsByMode(
+  perfs: Partial<Record<LichessSpeed, LichessPerf>>
+): Partial<Record<RatingMode, number>> {
+  const byMode: Partial<Record<RatingMode, number>> = {};
+  for (const mode of RATING_MODES) {
+    const perf = perfs[mode];
+    if (perf && Number.isFinite(perf.rating)) byMode[mode] = perf.rating;
+  }
+  return byMode;
+}
+
+/**
+ * A rating per mode from chess.com's: Rapid, Blitz and Bullet are the same modes, Daily is
+ * correspondence; chess.com has no classical rating.
+ */
+export function chesscomRatingsByMode(
+  ratings: ChesscomRatings
+): Partial<Record<RatingMode, number>> {
+  const byMode: Partial<Record<RatingMode, number>> = {};
+  const set = (mode: RatingMode, value: number | undefined) => {
+    if (value !== undefined && Number.isFinite(value)) byMode[mode] = value;
+  };
+  set("bullet", ratings.bullet);
+  set("blitz", ratings.blitz);
+  set("rapid", ratings.rapid);
+  set("correspondence", ratings.daily);
+  return byMode;
+}
+
+/**
+ * An account's ratings applied: each mode it has a rating for takes it; a mode synced from the
+ * other account becomes typed-in (one account fills the ratings at a time); any other mode keeps
+ * its value.
+ */
+export function applyAccountRatings(
+  current: PlayerRatings,
+  account: RatingsAccount,
+  byMode: Partial<Record<RatingMode, number>>,
+  syncedAt: number
+): PlayerRatings {
+  const next = { ...current };
+  for (const mode of RATING_MODES) {
+    const rating = byMode[mode];
+    const item = current[mode];
+    if (rating !== undefined && Number.isFinite(rating))
+      next[mode] = { source: account, rating: clampRating(rating), syncedAt };
+    else if (item.source !== "manual" && item.source !== account)
+      next[mode] = { source: "manual", rating: item.rating };
+  }
+  return next;
+}
+
+/** An account disconnected (or no longer in charge): each rating synced from it stays, typed-in. */
+export function releaseAccountRatings(
+  current: PlayerRatings,
+  account: RatingsAccount
+): PlayerRatings {
+  const next = { ...current };
+  for (const mode of RATING_MODES) {
+    const item = current[mode];
+    if (item.source === account) next[mode] = { source: "manual", rating: item.rating };
+  }
+  return next;
 }
 
 /**
@@ -136,23 +227,12 @@ export function applyLichessPerfs(
   perfs: Partial<Record<LichessSpeed, LichessPerf>>,
   syncedAt: number
 ): PlayerRatings {
-  const next = { ...current };
-  for (const mode of RATING_MODES) {
-    const perf = perfs[mode];
-    if (!perf || !Number.isFinite(perf.rating)) continue;
-    next[mode] = { source: "lichess", rating: clampRating(perf.rating), syncedAt };
-  }
-  return next;
+  return applyAccountRatings(current, "lichess", lichessRatingsByMode(perfs), syncedAt);
 }
 
 /** Lichess disconnected: each synced rating stays, as a typed-in one. */
 export function releaseLichessRatings(current: PlayerRatings): PlayerRatings {
-  const next = { ...current };
-  for (const mode of RATING_MODES) {
-    const item = current[mode];
-    if (item.source === "lichess") next[mode] = { source: "manual", rating: item.rating };
-  }
-  return next;
+  return releaseAccountRatings(current, "lichess");
 }
 
 /** A rating typed for one mode in Settings; a locked (synced) mode is left as it is. */

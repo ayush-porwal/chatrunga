@@ -16,6 +16,7 @@ import { sectionTitle } from "@/lib/ui";
 import { BoardThumbnail } from "../features/settings/board-thumbnail";
 import { EngineSetupLine } from "../features/onboarding/EngineSetupStatus";
 import { useLatestGamesQuery } from "../queries/api";
+import { sourceLabel as librarySourceLabel } from "../features/game/library-tab";
 import { decidedResult } from "./game-title";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { RepertoireHomeCard } from "../features/repertoire/RepertoireHomeCard";
@@ -236,6 +237,7 @@ function ContinueGame({
         </div>
 
         <dl className="flex flex-wrap gap-x-6 gap-y-2 text-xs">
+          <Fact label="Source" value={librarySourceLabel(summary.source)} />
           <Fact
             label="Event"
             value={
@@ -410,12 +412,15 @@ function RecentGameRow({
   onReview: (id: string) => void;
 }) {
   const title = playersTitle(game);
+  // Where it came from first ("Chess.com · Live Chess, Oct 5, 2026"), as in the library.
   const subtitle = [
-    game.event && game.event !== "?" ? game.event : sourceLabel(game.source),
-    formatPgnDate(game.date)
+    librarySourceLabel(game.source),
+    [game.event && game.event !== "?" ? game.event : null, formatPgnDate(game.date)]
+      .filter(Boolean)
+      .join(", ")
   ]
     .filter(Boolean)
-    .join(", ");
+    .join(" · ");
   return (
     <li className="group relative flex items-center gap-3 bg-surface pr-2 transition-colors duration-micro hover:bg-control focus-within:bg-control">
       <button
@@ -687,7 +692,8 @@ const sourceLabels: Record<GameSummary["source"], string> = {
   "engine-game": "Engine game",
   analysis: "Analysis",
   puzzle: "Puzzle",
-  lichess: "Lichess game"
+  lichess: "Lichess game",
+  chesscom: "Chess.com game"
 };
 
 function sourceLabel(source: GameSummary["source"]): string {

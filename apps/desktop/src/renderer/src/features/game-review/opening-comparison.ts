@@ -171,26 +171,34 @@ export function openingSideFor(side: OpeningSide | null, board: number): Reperto
 }
 
 /**
- * The side the saved game's provenance suggests the player had, or null: a Lichess game whose
- * White/Black header is the connected account, or a local game against the engine. Only a
- * suggestion; the colour control stays visible.
+ * The side the saved game's provenance suggests the player had, or null: a Lichess (or Chess.com)
+ * game whose White/Black header is the connected account, or a local game against the engine.
+ * Only a suggestion; the colour control stays visible.
  */
 export function suggestedSide(input: {
   source: GameSource;
   headers: Pick<GameHeaders, "white" | "black">;
   lichessUsername: string | null;
+  /** The connected chess.com account's username. */
+  chesscomUsername?: string | null;
   engineSide: RepertoireColor | null;
 }): { color: RepertoireColor; hint: string } | null {
   const { source, headers, lichessUsername, engineSide } = input;
-  if (source === "lichess" && lichessUsername) {
-    const name = lichessUsername.toLowerCase();
+  const account =
+    source === "lichess"
+      ? { username: lichessUsername, site: "Lichess" }
+      : source === "chesscom"
+        ? { username: input.chesscomUsername ?? null, site: "Chess.com" }
+        : null;
+  if (account?.username) {
+    const name = account.username.toLowerCase();
     const white = headers.white?.toLowerCase() === name;
     const black = headers.black?.toLowerCase() === name;
     if (white !== black) {
       const color = white ? "white" : "black";
       return {
         color,
-        hint: `You played ${color === "white" ? "White" : "Black"} in this Lichess game`
+        hint: `You played ${color === "white" ? "White" : "Black"} in this ${account.site} game`
       };
     }
   }

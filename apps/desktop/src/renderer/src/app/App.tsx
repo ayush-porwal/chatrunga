@@ -83,6 +83,7 @@ import {
 import { boardResultPatch } from "../features/analysis/post-game";
 import { useUsageActivity } from "./useUsageTelemetry";
 import { useLichess } from "./useLichess";
+import { useChesscom } from "./useChesscom";
 import { useHistoryShortcuts } from "./useHistoryShortcuts";
 import { useMoveKeyboardShortcuts } from "./useMoveKeyboardShortcuts";
 import { useMoveSounds } from "./useMoveSounds";
@@ -330,6 +331,7 @@ export function App() {
   );
 
   useLichess({ onGameStart: (load) => startOnlineGame(load) });
+  useChesscom();
   // The repertoire board has its own move keys (they must not step the game behind it).
   useMoveKeyboardShortcuts({ enabled: gameBoardViews.has(appView) });
   useDatabaseDownloads();
@@ -620,7 +622,8 @@ export function App() {
     clearPuzzleSession();
     // An analysis board, engine off: the Engine tab offers the engine to use and Start analysis.
     currentGame().setMode("freeplay");
-    currentGame().setGameSource("analysis");
+    // Where the game came from stays (an imported or online game keeps its library tab).
+    currentGame().startAnalysisBoard();
     currentGame().setEngineSide(null);
     currentGame().clearEngineMatchExtras();
     setFocusMode(false);

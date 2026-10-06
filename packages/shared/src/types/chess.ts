@@ -1,10 +1,18 @@
 import type { GameReview } from "./engine";
+import type { LibraryTab, LibraryTabCounts } from "./library";
 
 export type Color = "white" | "black";
 export type Square =
   `${"a" | "b" | "c" | "d" | "e" | "f" | "g" | "h"}${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8}`;
 export type AnnotationColor = "green" | "red" | "yellow" | "blue";
-export type GameSource = "new" | "pgn-import" | "engine-game" | "analysis" | "puzzle" | "lichess";
+export type GameSource =
+  | "new"
+  | "pgn-import"
+  | "engine-game"
+  | "analysis"
+  | "puzzle"
+  | "lichess"
+  | "chesscom";
 /** `online`: a live Lichess game (the opponent's side is `engineSide` in the game store). */
 export type GameMode = "freeplay" | "engine" | "analysis" | "puzzle" | "online";
 
@@ -71,6 +79,11 @@ export type GameSession = {
   currentNodeId: string;
   moveTree: MoveNode[];
   pgn: string;
+  /**
+   * The game was left on the Analyze page's board (it reopens there). Absent in sessions saved
+   * before it was kept: an `analysis` game was on it then.
+   */
+  analysisBoard?: boolean;
 };
 
 export type ImportedGame = {
@@ -102,12 +115,6 @@ export type GameSummary = {
 /** Where a library page starts: just after this game in the list's order (newest first, then id). */
 export type GameListCursor = { updatedAt: number; id: string };
 
-/**
- * Which library games a list shows: "reviewed" those with a saved analysis, "lichess" the Lichess
- * imports, "other" everything else.
- */
-export type GameListFilter = "all" | "reviewed" | "lichess" | "other";
-
 /** One page of the library, filtered and searched in the database before it is cut to `limit`. */
 /** The longest library search text (the search box stops there; IPC refuses longer). */
 export const GAME_SEARCH_MAX_LENGTH = 200;
@@ -119,7 +126,10 @@ export type GameListQuery = {
   limit?: number;
   /** Case-insensitive text in the players, event, date or result. */
   search?: string;
-  filter?: GameListFilter;
+  /** Only the games of this source tab (types/library.ts); null or absent for every game. */
+  tab?: LibraryTab | null;
+  /** Only the games with a saved analysis. */
+  reviewed?: boolean;
   /** A game left out (the one on the board, which the review picker lists on its own). */
   excludeId?: string | null;
 };
@@ -134,10 +144,8 @@ export type GameListPage = {
 export type GameLibraryFacets = {
   /** Any game other than `excludeId`. */
   hasGames: boolean;
-  /** Any Lichess import (counting `excludeId`). */
-  hasLichess: boolean;
-  /** Any game other than `excludeId` with a saved analysis. */
-  hasReviewed: boolean;
+  /** Games per source tab, and how many have a saved analysis (every game, `excludeId` included). */
+  tabs: LibraryTabCounts;
 };
 
 /** One saved analysis of a game, as listed for choosing between them (the review itself loads on demand). */
@@ -168,6 +176,8 @@ export type SavedGame = GameSummary & {
   review: GameReview | null;
   /** Every saved analysis of the game, newest first. */
   reviews: SavedReviewInfo[];
+  /** Left on the Analyze page's board (absent for games saved before it was kept). */
+  analysisBoard?: boolean;
 };
 
 export type SaveGameInput = {
@@ -179,6 +189,8 @@ export type SaveGameInput = {
   currentNodeId?: string | null;
   pgn: string;
   moveTree: MoveNode[];
+  /** Left on the Analyze page's board; absent keeps what was stored. */
+  analysisBoard?: boolean;
   /**
    * The analysis on the board, saved under its `reviewId` (added, or updated with new commentary).
    * Other saved analyses of the game are never touched; omitted or null saves no analysis.

@@ -15,7 +15,7 @@ import {
   type AppSettings
 } from "@chaturanga/shared/types/settings";
 import { isOneOf } from "@chaturanga/shared/types/guards";
-import { isPlayerRatings } from "@chaturanga/shared/types/ratings";
+import { isPlayerRatings, RATINGS_ACCOUNTS } from "@chaturanga/shared/types/ratings";
 
 /** Whether a value fits a setting, narrowing it to the setting's type. */
 type Check<T> = (value: unknown) => value is T;
@@ -74,6 +74,7 @@ const SETTING_CHECKS: { [K in keyof AppSettings]: Check<AppSettings[K]> } = {
   reviewCommentaryProvider: oneOf("openrouter"),
   reviewCommentaryDetail: oneOf("concise", "balanced", "detailed"),
   playerRatings: isPlayerRatings,
+  ratingsAccount: oneOf(...RATINGS_ACCOUNTS),
   reviewPlayerColor: oneOf("white", "black"),
   reviewShowTopLines: bool,
   reviewMultiPv: number(1, 5, true),

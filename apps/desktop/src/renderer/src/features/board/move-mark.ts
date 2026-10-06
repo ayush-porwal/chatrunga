@@ -1,6 +1,6 @@
 import { annotationLabel, annotationOf } from "@chaturanga/shared/chess/move-assessment";
 import { uciSquares } from "@chaturanga/shared/chess/square";
-import type { Color, GameMode, GameSource, Square } from "@chaturanga/shared/types/chess";
+import type { Color, GameMode, Square } from "@chaturanga/shared/types/chess";
 import type { MoveAnnotation, MoveReview } from "@chaturanga/shared/types/engine";
 
 /*
@@ -25,8 +25,8 @@ export type BoardMoveMark = {
  * The main board's surface: the Analyze board is live analysis, or the board the sidebar's Analyze
  * opens (a free board of the game, engine not started yet); any other mode is itself.
  */
-export function mainBoardSurface(mode: GameMode, source: GameSource): MarkSurface {
-  return mode === "freeplay" && source === "analysis" ? "analysis" : mode;
+export function mainBoardSurface(mode: GameMode, analysisBoard: boolean): MarkSurface {
+  return mode === "freeplay" && analysisBoard ? "analysis" : mode;
 }
 
 /**

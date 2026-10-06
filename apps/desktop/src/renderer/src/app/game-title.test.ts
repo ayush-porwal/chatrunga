@@ -5,7 +5,16 @@ describe("game title helpers", () => {
   it("labels the game by mode, then by source", () => {
     expect(gameModeLabel({ mode: "engine", source: "new" })).toBe("Engine game");
     expect(gameModeLabel({ mode: "freeplay", source: "puzzle" })).toBe("Puzzle");
-    expect(gameModeLabel({ mode: "analysis", source: "pgn-import" })).toBe("Analysis");
+    // The origin names a game being analysed; one made for analysis reads "Analysis".
+    expect(gameModeLabel({ mode: "analysis", source: "pgn-import" })).toBe("Imported game");
+    expect(gameModeLabel({ mode: "freeplay", source: "chesscom", analysisBoard: true })).toBe(
+      "Chess.com game"
+    );
+    expect(gameModeLabel({ mode: "analysis", source: "new" })).toBe("Analysis");
+    expect(gameModeLabel({ mode: "freeplay", source: "new", analysisBoard: true })).toBe(
+      "Analysis"
+    );
+    expect(gameModeLabel({ mode: "freeplay", source: "analysis" })).toBe("Analysis");
     expect(gameModeLabel({ mode: "freeplay", source: "pgn-import" })).toBe("Imported game");
     expect(gameModeLabel({ mode: "freeplay", source: "new" })).toBe("Free board");
   });

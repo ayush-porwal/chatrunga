@@ -54,6 +54,12 @@ import { MAIA_RATINGS, maiaRatingFromText } from "../engine/review-analysis";
 import { allRows, getRow, sqliteErrcode } from "./rows";
 import { parseStoredJson } from "../stored-json";
 import { isOneOf, isRecord } from "@chaturanga/shared/types/guards";
+import {
+  emptyTabCounts,
+  isGameSource,
+  libraryTabOf,
+  sourcesOfTab
+} from "@chaturanga/shared/types/library";
 
 type EngineRow = {
   id: string;
@@ -88,6 +94,8 @@ type GameRow = {
   headers_json: string | null;
   move_tree_json: string;
   review_json: string | null;
+  /** 1 / 0 once saved with it; null for games saved before it was kept. */
+  analysis_board: number | null;
   created_at: number;
   updated_at: number;
 };
@@ -558,7 +566,10 @@ function toSavedGame(row: GameRow): SavedGame {
     review,
     reviews: listed.map(toSavedReviewInfo),
     reviewCount: listed.length,
-    lastReviewedAt: listed[0]?.created_at ?? null
+    lastReviewedAt: listed[0]?.created_at ?? null,
+    ...(row.analysis_board === null || row.analysis_board === undefined
+      ? {}
+      : { analysisBoard: row.analysis_board === 1 })
   };
 }
 
@@ -720,8 +731,8 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
       `INSERT INTO games (
         id, source, white, black, event, site, round, result, date,
         initial_fen, pgn, current_fen, current_node_id, headers_json, move_tree_json, fingerprint,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        analysis_board, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         source = excluded.source,
         white = excluded.white,
@@ -738,6 +749,7 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
         headers_json = excluded.headers_json,
         move_tree_json = excluded.move_tree_json,
         fingerprint = excluded.fingerprint,
+        analysis_board = COALESCE(excluded.analysis_board, games.analysis_board),
         updated_at = excluded.updated_at`,
       id,
       input.source,
@@ -755,6 +767,7 @@ function upsertGame(input: SaveGameInput, timestamp: number): SavedGame {
       JSON.stringify(input.headers),
       JSON.stringify(input.moveTree),
       fingerprint,
+      input.analysisBoard === undefined ? null : Number(input.analysisBoard),
       createdAt,
       timestamp
     );
@@ -828,19 +841,13 @@ export const gameRepository = {
       where.push("id != ?");
       params.push(query.excludeId);
     }
-    switch (query.filter) {
-      case "reviewed":
-        where.push("EXISTS (SELECT 1 FROM game_reviews r WHERE r.game_id = games.id)");
-        break;
-      case "lichess":
-        where.push("source = 'lichess'");
-        break;
-      case "other":
-        where.push("source != 'lichess'");
-        break;
-      default:
-        break;
+    if (query.tab) {
+      const sources = sourcesOfTab(query.tab);
+      where.push(`source IN (${sources.map(() => "?").join(", ")})`);
+      params.push(...sources);
     }
+    if (query.reviewed)
+      where.push("EXISTS (SELECT 1 FROM game_reviews r WHERE r.game_id = games.id)");
     const needle = query.search?.trim().toLowerCase() ?? "";
     if (needle) {
       where.push(
@@ -865,23 +872,30 @@ export const gameRepository = {
     };
   },
 
-  /** Which filters the library has games for (each an indexed or early-exit EXISTS). */
+  /**
+   * Which source tabs the library has games for, with their counts and how many of those have a
+   * saved analysis (every library game counted, `excludeId` too), and whether it holds any game
+   * other than `excludeId`.
+   */
   facets(excludeId: string | null = null): GameLibraryFacets {
-    const row = get<{ has_games: number; has_lichess: number; has_reviewed: number }>(
-      `SELECT
-        EXISTS (SELECT 1 FROM games WHERE source != 'puzzle' AND (?1 IS NULL OR id != ?1)) AS has_games,
-        EXISTS (SELECT 1 FROM games WHERE source = 'lichess') AS has_lichess,
-        EXISTS (
-          SELECT 1 FROM game_reviews r JOIN games g ON g.id = r.game_id
-          WHERE g.source != 'puzzle' AND (?1 IS NULL OR r.game_id != ?1)
-        ) AS has_reviewed`,
+    const hasGames = get<{ has_games: number }>(
+      "SELECT EXISTS (SELECT 1 FROM games WHERE source != 'puzzle' AND (?1 IS NULL OR id != ?1)) AS has_games",
       excludeId
     );
-    return {
-      hasGames: Boolean(row?.has_games),
-      hasLichess: Boolean(row?.has_lichess),
-      hasReviewed: Boolean(row?.has_reviewed)
-    };
+    const rows = all<{ source: string; games: number; reviewed: number }>(
+      `SELECT source, COUNT(*) AS games,
+        SUM(EXISTS (SELECT 1 FROM game_reviews r WHERE r.game_id = games.id)) AS reviewed
+      FROM games WHERE source != 'puzzle' GROUP BY source`
+    );
+    const tabs = emptyTabCounts();
+    for (const row of rows) {
+      // A source this build doesn't know (a newer build's) has no tab.
+      if (!isGameSource(row.source)) continue;
+      const count = tabs[libraryTabOf(row.source)];
+      count.games += Number(row.games);
+      count.reviewed += Number(row.reviewed);
+    }
+    return { hasGames: Boolean(hasGames?.has_games), tabs };
   },
 
   /** One saved analysis of a game, placed on its tree (null when it's gone or doesn't fit). */

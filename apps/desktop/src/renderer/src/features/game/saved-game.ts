@@ -22,7 +22,8 @@ export function sessionFromSavedGame(saved: SavedGame): GameSession {
     currentNodeId:
       saved.currentNodeId ?? nodeIdForBoardFen(saved.moveTree, saved.currentFen, "root"),
     moveTree: withRealPlies(saved.moveTree),
-    pgn: saved.pgn
+    pgn: saved.pgn,
+    ...(saved.analysisBoard === undefined ? {} : { analysisBoard: saved.analysisBoard })
   };
 }
 

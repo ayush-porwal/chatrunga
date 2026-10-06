@@ -1,0 +1,15 @@
+{
+  "games": [
+    {
+      "url": "https://www.chess.com/game/live/150000010",
+      "pgn": "[Event \"Live Chess\"]\n[Site \"Chess.com\"]\n[Date \"2026.10.02\"]\n[White \"rook_n_roll\"]\n[Black \"ayush_p64\"]\n[Result \"0-1\"]\n[WhiteElo \"1702\"]\n[BlackElo \"1680\"]\n[TimeControl \"900+10\"]\n\n1. e4 {[%clk 0:15:08]} 1... e5 {[%clk 0:15:05]} 2. f4 {[%clk 0:15:10]} 2... Qh4+ {[%clk 0:15:01]} 3. g3 {[%clk 0:15:12]} 3... Qxg3+ {[%clk 0:14:58]} 4. hxg3 {[%clk 0:15:15]} 0-1\n",
+      "time_control": "900+10",
+      "end_time": 1790950000,
+      "rated": true,
+      "time_class": "rapid",
+      "rules": "chess",
+      "white": { "rating": 1702, "result": "resigned", "username": "rook_n_roll" },
+      "black": { "rating": 1680, "result": "win", "username": "ayush_p64" }
+    }
+  ]
+}

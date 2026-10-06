@@ -4,8 +4,8 @@
  * (chess/review-rating.ts).
  *
  * - The shown analysis says which side it was made for (`GameReview.side`, saved with it).
- * - Engine games and Lichess games know the user's side: the side played against the engine, or the
- *   one whose name is the connected Lichess account.
+ * - Engine games and Lichess (and Chess.com) games know the user's side: the side played against
+ *   the engine, or the one whose name is the connected account.
  * - Any other game asks before its first review, the side whose name is the Lichess username
  *   preselected (else the Settings side); the choice is saved with the review it starts.
  * - The review settings can switch sides: the shown analysis is then the other side's.
@@ -14,6 +14,7 @@ import { useMemo } from "react";
 import { create } from "zustand";
 import type { Color, GameHeaders, GameSource } from "@chaturanga/shared/types/chess";
 import { useGameStore } from "../../stores/game-store";
+import { useChesscomStore } from "../../stores/chesscom-store";
 import { useLichessStore } from "../../stores/lichess-store";
 import { useReviewStore } from "../../stores/review-store";
 import { suggestedSide } from "./opening-comparison";
@@ -34,6 +35,8 @@ export type ReviewSideInput = {
   source: GameSource;
   headers: Pick<GameHeaders, "white" | "black">;
   lichessUsername: string | null;
+  /** The connected chess.com account's username. */
+  chesscomUsername?: string | null;
   /** The engine's side in a game being played against it. */
   engineSide: Color | null;
   /** The Settings side: the last resort, and the preselection when no name matches. */
@@ -60,13 +63,17 @@ export function resolveReviewSide(input: ReviewSideInput): ReviewSide {
     source: input.source,
     headers: input.headers,
     lichessUsername: input.lichessUsername,
+    chesscomUsername: input.chesscomUsername,
     engineSide: input.engineSide
   });
   if (known) return { status: "known", side: known.color };
   if (input.hasReview) return { status: "known", side: input.fallback };
   return {
     status: "ask",
-    preselect: sideNamed(input.headers, input.lichessUsername) ?? input.fallback
+    preselect:
+      sideNamed(input.headers, input.lichessUsername) ??
+      sideNamed(input.headers, input.chesscomUsername ?? null) ??
+      input.fallback
   };
 }
 
@@ -94,6 +101,7 @@ type SideStores = {
   review: ReturnType<typeof useReviewStore.getState>["review"];
   chosen: ChosenSide | null;
   lichessUsername: string | null;
+  chesscomUsername: string | null;
 };
 
 function sideFromStores(stores: SideStores, fallback: Color): ReviewSide {
@@ -105,6 +113,7 @@ function sideFromStores(stores: SideStores, fallback: Color): ReviewSide {
     source: game.source,
     headers: game.headers,
     lichessUsername: stores.lichessUsername,
+    chesscomUsername: stores.chesscomUsername,
     engineSide: game.engineSide,
     fallback
   });
@@ -117,7 +126,8 @@ export function currentReviewSide(fallback: Color): ReviewSide {
       game: useGameStore.getState(),
       review: useReviewStore.getState().review,
       chosen: useReviewSideStore.getState().chosen,
-      lichessUsername: useLichessStore.getState().status.account?.username ?? null
+      lichessUsername: useLichessStore.getState().status.account?.username ?? null,
+      chesscomUsername: useChesscomStore.getState().status.account?.username ?? null
     },
     fallback
   );
@@ -132,13 +142,30 @@ export function useReviewSide(fallback: Color): ReviewSide {
   const review = useReviewStore((state) => state.review);
   const chosen = useReviewSideStore((state) => state.chosen);
   const lichessUsername = useLichessStore((state) => state.status.account?.username ?? null);
+  const chesscomUsername = useChesscomStore((state) => state.status.account?.username ?? null);
   return useMemo(
     () =>
       sideFromStores(
-        { game: { board, source, headers, engineSide }, review, chosen, lichessUsername },
+        {
+          game: { board, source, headers, engineSide },
+          review,
+          chosen,
+          lichessUsername,
+          chesscomUsername
+        },
         fallback
       ),
-    [board, chosen, engineSide, fallback, headers, lichessUsername, review, source]
+    [
+      board,
+      chesscomUsername,
+      chosen,
+      engineSide,
+      fallback,
+      headers,
+      lichessUsername,
+      review,
+      source
+    ]
   );
 }
 

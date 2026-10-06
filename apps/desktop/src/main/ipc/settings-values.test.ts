@@ -27,6 +27,7 @@ describe("parseSettingValue", () => {
       rapid: { source: "manual", rating: 1650 }
     };
     expect(parseSettingValue("playerRatings", ratings)).toEqual(ratings);
+    expect(parseSettingValue("ratingsAccount", "chesscom")).toBe("chesscom");
   });
 
   it("rejects values of the wrong type or out of range", () => {
@@ -42,6 +43,7 @@ describe("parseSettingValue", () => {
       /setting repertoireCompareBlack/
     );
     expect(() => parseSettingValue("practiceAutoAdvanceMs", 1000)).toThrow(/practiceAutoAdvanceMs/);
+    expect(() => parseSettingValue("ratingsAccount", "fide")).toThrow(/setting ratingsAccount/);
     // One rating per mode: not the single number older builds stored, nor a mode short or damaged.
     expect(() => parseSettingValue("playerRatings", 1500)).toThrow(/setting playerRatings/);
     const { correspondence: _missing, ...fourModes } = uniformRatings(1500);

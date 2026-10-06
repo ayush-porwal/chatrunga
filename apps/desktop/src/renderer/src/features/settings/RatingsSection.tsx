@@ -5,30 +5,59 @@ import {
   RATING_MODE_LABELS,
   RATING_MODES,
   RATING_RANGE,
+  RATINGS_ACCOUNT_LABELS,
+  RATINGS_ACCOUNTS,
   setManualRating,
   type ModeRating,
   type RatingMode
 } from "@chaturanga/shared/types/ratings";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import { Input } from "@/components/ui/input";
+import { SegmentedControl } from "@/components/ui/segmented-control";
+import { useChesscomStore } from "../../stores/chesscom-store";
+import { useLichessStore } from "../../stores/lichess-store";
 import { cardPadded, fieldLabel, sectionDescription } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useSetSetting } from "./use-set-setting";
 
 /**
  * Settings → Ratings: the player's rating per Lichess mode, in one row of five cells. Game review
- * uses the one for a game's mode when the game has no rating of its own. With Lichess connected
- * every mode comes from the account and reads as plain text; otherwise each is an input.
+ * uses the one for a game's mode when the game has no rating of its own. With an account connected
+ * (Lichess or Chess.com; the one picked here when both are) each mode it has a rating for comes
+ * from it and reads as plain text; the others are inputs.
  */
 export function RatingsSection({ appearance }: { appearance: AppSettings }) {
   const setSetting = useSetSetting();
   const ratings = appearance.playerRatings;
+  const lichessConnected = useLichessStore((state) => Boolean(state.status.account));
+  const chesscomConnected = useChesscomStore((state) => Boolean(state.status.account));
+  const both = lichessConnected && chesscomConnected;
   return (
     <section className={cn(cardPadded, "grid gap-3")}>
-      <p className={sectionDescription}>
-        Reviews use the game&rsquo;s own rating, else these. With Lichess connected, they come from
-        your account.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className={sectionDescription}>
+          Reviews use the game&rsquo;s own rating, else these.{" "}
+          {both
+            ? "With an account connected, they come from the one picked here."
+            : chesscomConnected
+              ? "With Chess.com connected, they come from your account (Daily is Correspondence; Classical stays as typed)."
+              : lichessConnected
+                ? "With Lichess connected, they come from your account."
+                : "With Lichess or Chess.com connected, they come from your account."}
+        </p>
+        {both ? (
+          <SegmentedControl
+            ariaLabel="Ratings from"
+            size="sm"
+            value={appearance.ratingsAccount}
+            onChange={(account) => setSetting("ratingsAccount", account)}
+            options={RATINGS_ACCOUNTS.map((account) => ({
+              value: account,
+              label: RATINGS_ACCOUNT_LABELS[account]
+            }))}
+          />
+        ) : null}
+      </div>
       <div className="grid grid-cols-2 gap-x-4 gap-y-3 @md:grid-cols-3 @2xl:grid-cols-5">
         {RATING_MODES.map((mode) => (
           <RatingCell

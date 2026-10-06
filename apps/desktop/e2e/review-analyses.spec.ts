@@ -163,7 +163,7 @@ test("the saved-analysis picker is compact, details each analysis, and deletes o
   await page.reload();
   const left = await page.evaluate(async () => {
     const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga;
-    const { items } = await api.games.listPage({ filter: "all" });
+    const { items } = await api.games.listPage({});
     return items.map((item) => [item.white, item.reviewCount]);
   });
   expect(left).toEqual([["Alpha", 0]]);

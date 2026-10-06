@@ -110,7 +110,7 @@ export function LichessAccountSection() {
   }
 
   return (
-    <section className={cn(cardPadded, "grid gap-4")}>
+    <section className={cn(cardPadded, "grid content-start gap-4")}>
       <SectionHeader
         title="Lichess"
         description="Play on lichess.org from the Play page, and review your Lichess games here."

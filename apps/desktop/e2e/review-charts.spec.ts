@@ -219,7 +219,7 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
     .poll(() =>
       page.evaluate(async () => {
         const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga;
-        const { items } = await api.games.listPage({ filter: "all" });
+        const { items } = await api.games.listPage({});
         return items.map((item) => [item.white, item.reviewCount]);
       })
     )

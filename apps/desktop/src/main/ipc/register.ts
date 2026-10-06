@@ -45,6 +45,8 @@ import {
   reportUnsent
 } from "../commentary/openrouter-commentary";
 import { getLichessService } from "../lichess";
+import { getChesscomService } from "../chesscom";
+import { getAccountRatings } from "../accounts";
 import { errorMessage, logger } from "../logger";
 import { updateService } from "../updater";
 import { runGameReview, runPositionAnalysis } from "./review-handler";
@@ -70,7 +72,8 @@ import {
   parseGameListQuery,
   parseLichessAiChallengeInput,
   parseLichessChallengeInput,
-  parseLichessDisconnectInput,
+  parseChesscomConnectInput,
+  parseDisconnectInput,
   parseLichessSeekInput,
   parsePgnText,
   parseProbeEvalInput,
@@ -155,6 +158,7 @@ export function registerIpc(engineManager: EngineManager): void {
   registerCommentaryIpc();
   registerUpdateIpc();
   registerLichessIpc();
+  registerChesscomIpc();
   registerTelemetryIpc();
   registerRepertoireIpc();
   registerPuzzleIpc();
@@ -466,6 +470,8 @@ function registerLibraryIpc(): void {
       noteEngineReadiness(true);
     }
     if (keys.includes("updatesAutoDownload")) updateService.applySettings();
+    // Another account picked to fill the ratings: they follow it now.
+    if (keys.includes("ratingsAccount")) void getAccountRatings().apply();
   };
   ipcMain.handle("settings:set", async (_event, key: unknown, value: unknown) => {
     const settingKey = parseSettingKey(key);
@@ -575,6 +581,48 @@ function registerUpdateIpc(): void {
   ipcMain.handle("updates:openDownload", () => updateService.openDownload());
 }
 
+/**
+ * The chess.com account and its import (main/chesscom). Every request to chess.com is made here;
+ * the renderer only names the username.
+ */
+function registerChesscomIpc(): void {
+  const chesscom = getChesscomService();
+  chesscom.on("event", (event) => broadcast("chesscom:event", event));
+  ipcMain.handle("chesscom:status", () => chesscom.status());
+  ipcMain.handle("chesscom:connect", (_event, input: unknown) =>
+    chesscom.connect(parseChesscomConnectInput(input))
+  );
+  ipcMain.handle("chesscom:disconnect", async (_event, options: unknown) => {
+    const input = parseDisconnectInput(options);
+    // Removed games stay removed: a save already on its way (autosave) is refused, as after a
+    // single delete. Marked first, so no save can slip in between the delete and the marking.
+    const removed = input.removeGames ? gameRepository.idsBySource("chesscom") : [];
+    const deletedAt = Date.now();
+    for (const id of removed) recentlyDeletedGames.set(id, deletedAt);
+    try {
+      return await chesscom.disconnect(input);
+    } catch (error) {
+      for (const id of removed) recentlyDeletedGames.delete(id);
+      throw error;
+    }
+  });
+  // As for Lichess: callers joining a running sync share its promise; only the first records it.
+  let recordedSync: Promise<unknown> | null = null;
+  ipcMain.handle("chesscom:syncGames", async () => {
+    const sync = chesscom.syncGames();
+    if (sync === recordedSync) return sync;
+    recordedSync = sync;
+    const result = await sync.finally(() => {
+      if (recordedSync === sync) recordedSync = null;
+    });
+    if (result.imported > 0) {
+      getTelemetry()?.record("game_imported", { source: "chesscom", games: result.imported });
+      getTelemetry()?.milestone("game_imported");
+    }
+    return result;
+  });
+}
+
 /** Lichess account, play and import (main/lichess). The OAuth token never leaves the main process. */
 function registerLichessIpc(): void {
   const lichess = getLichessService();
@@ -585,7 +633,7 @@ function registerLichessIpc(): void {
   ipcMain.handle("lichess:connect", () => lichess.connect());
   ipcMain.handle("lichess:cancelConnect", () => lichess.cancelConnect());
   ipcMain.handle("lichess:disconnect", async (_event, options: unknown) => {
-    const input = parseLichessDisconnectInput(options);
+    const input = parseDisconnectInput(options);
     // Removed games must stay removed: a save already on its way (autosave) is refused like after
     // a single delete. Marked first, so no save can slip in between the delete and the marking.
     const removed = input.removeGames ? gameRepository.idsBySource("lichess") : [];

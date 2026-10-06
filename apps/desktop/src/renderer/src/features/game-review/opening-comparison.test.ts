@@ -290,6 +290,25 @@ describe("colour and repertoire defaults", () => {
     ).toEqual({ color: "black", hint: "You played Black against the engine" });
   });
 
+  it("suggests the side of a Chess.com game from the connected chess.com account", () => {
+    const headers = { white: "Ayush_P64", black: "rook_n_roll" };
+    const chesscom = { source: "chesscom" as const, headers, engineSide: null };
+    expect(
+      suggestedSide({ ...chesscom, lichessUsername: null, chesscomUsername: "ayush_p64" })
+    ).toEqual({ color: "white", hint: "You played White in this Chess.com game" });
+    // The Lichess name doesn't speak for a chess.com game, nor the chess.com one for an import.
+    expect(suggestedSide({ ...chesscom, lichessUsername: "ayush_p64" })).toBeNull();
+    expect(
+      suggestedSide({
+        source: "pgn-import",
+        headers,
+        lichessUsername: null,
+        chesscomUsername: "ayush_p64",
+        engineSide: null
+      })
+    ).toBeNull();
+  });
+
   it("suggests a saved engine game's side from its You header, not a stale match side", () => {
     const saved = { white: "Stockfish", black: "You" };
     expect(

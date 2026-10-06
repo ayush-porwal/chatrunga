@@ -188,7 +188,7 @@ describe("runMigrations", () => {
   it("9: adds puzzle attempts and a single-row puzzle rating", () => {
     const db = new DatabaseSync(":memory:");
     db.exec("PRAGMA user_version = 8");
-    runMigrations(db, MIGRATIONS);
+    runMigrations(db, MIGRATIONS.slice(0, 9));
     expect(version(db)).toBe(9);
 
     const insertAttempt = (id: string, outcome: string) =>
@@ -219,5 +219,17 @@ describe("runMigrations", () => {
         "INSERT INTO puzzle_rating (id, rating, rd, volatility, updated_at) VALUES (2, 1500, 500, 0.09, 1)"
       )
     ).toThrow(/CHECK constraint failed: id = 1/);
+  });
+
+  it("10: games keep whether they were left on the Analyze board (null for older ones)", () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec("CREATE TABLE games (id TEXT PRIMARY KEY)");
+    db.exec("INSERT INTO games (id) VALUES ('old')");
+    db.exec("PRAGMA user_version = 9");
+    runMigrations(db, MIGRATIONS);
+    expect(version(db)).toBe(10);
+    expect(db.prepare("SELECT analysis_board FROM games WHERE id = 'old'").get()).toEqual({
+      analysis_board: null
+    });
   });
 });

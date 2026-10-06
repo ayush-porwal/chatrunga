@@ -22,6 +22,7 @@ import { EnginesSection } from "./EngineSettings";
 import { OpenRouterSettingsCard } from "./OpenRouterSettingsCard";
 import { RatingsSection } from "./RatingsSection";
 import { LichessAccountSection } from "../lichess/LichessAccount";
+import { ChesscomAccountSection } from "../chesscom/ChesscomAccount";
 import { UpdatesSection } from "../updates/UpdatesSection";
 import { UsageDataSection } from "./UsageDataSection";
 import { useOnboardingSession } from "../onboarding/useOnboarding";
@@ -36,6 +37,7 @@ export type SettingsSectionId =
   | "ai"
   | "ratings"
   | "lichess"
+  | "chesscom"
   | "updates"
   | "usage"
   | "welcome";
@@ -59,7 +61,7 @@ export const SettingsPage = memo(function SettingsPage({
   const sections: SectionId[] = [
     "board",
     "sound",
-    ...(desktopApiAvailable ? (["lichess"] as const) : []),
+    ...(desktopApiAvailable ? (["lichess", "chesscom"] as const) : []),
     "ratings",
     "engines",
     ...(desktopApiAvailable ? (["downloads"] as const) : []),
@@ -95,15 +97,21 @@ export const SettingsPage = memo(function SettingsPage({
           <SectionAnchor id="board" wide>
             <BoardSection appearance={appearance} />
           </SectionAnchor>
-          <SectionAnchor id="sound">
+          <SectionAnchor id="sound" wide>
             <SoundSection appearance={appearance} />
           </SectionAnchor>
-          {desktopApiAvailable ? (
+        </SettingsGroup>
+
+        {desktopApiAvailable ? (
+          <SettingsGroup title="Accounts">
             <SectionAnchor id="lichess">
               <LichessAccountSection />
             </SectionAnchor>
-          ) : null}
-        </SettingsGroup>
+            <SectionAnchor id="chesscom">
+              <ChesscomAccountSection />
+            </SectionAnchor>
+          </SettingsGroup>
+        ) : null}
 
         <SettingsGroup title="Ratings">
           <SectionAnchor id="ratings" wide>

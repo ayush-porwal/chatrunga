@@ -47,6 +47,12 @@ import type {
   LichessStatus,
   LichessSyncResult
 } from "../types/lichess";
+import type {
+  ChesscomConnectInput,
+  ChesscomEvent,
+  ChesscomStatus,
+  ChesscomSyncResult
+} from "../types/chesscom";
 import type { ReviewInsightPayload } from "../schemas/review-insight";
 import type {
   DatabaseDownloadProgress,
@@ -311,7 +317,9 @@ export type ChaturangaApi = {
     onUpdateState(callback: (state: UpdateState) => void): Unsubscribe;
     /** Lichess account, seek, challenge, game and import events (main/lichess). */
     onLichessEvent(callback: (event: LichessEvent) => void): Unsubscribe;
-    /** Settings the main process changed itself (the Lichess ratings sync): read them again. */
+    /** Chess.com account and import events (main/chesscom). */
+    onChesscomEvent(callback: (event: ChesscomEvent) => void): Unsubscribe;
+    /** Settings the main process changed itself (the accounts' ratings sync): read them again. */
     onSettingsChanged(callback: (keys: (keyof AppSettings)[]) => void): Unsubscribe;
   };
 
@@ -349,6 +357,21 @@ export type ChaturangaApi = {
     /** Offers a draw, or accepts the opponent's offer. */
     offerDraw(gameId: string): Promise<void>;
     declineDraw(gameId: string): Promise<void>;
+  };
+
+  /**
+   * Chess.com account and game import (main/chesscom). Chess.com's API is public and read-only:
+   * the account is a username (no password), and its games can't be played from the app. Actions
+   * reject with a readable message when chess.com refuses them (no such player, rate limit, …).
+   */
+  chesscom: {
+    status(): Promise<ChesscomStatus>;
+    /** Looks the username up on chess.com and saves it; the first import then starts on its own. */
+    connect(input: ChesscomConnectInput): Promise<ChesscomStatus>;
+    /** Forgets the account; optionally deletes its imported games. Nothing changes on chess.com. */
+    disconnect(options: { removeGames: boolean }): Promise<ChesscomStatus>;
+    /** Imports new finished games; progress arrives as `sync` events. */
+    syncGames(): Promise<ChesscomSyncResult>;
   };
 
   /**

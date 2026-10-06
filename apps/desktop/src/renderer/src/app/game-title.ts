@@ -8,12 +8,18 @@ export function decidedResult(result: string | null | undefined): string | null 
   return result && result !== "*" ? result : null;
 }
 
-export function gameModeLabel(game: Pick<GameState, "mode" | "source">): string {
+export function gameModeLabel(
+  game: Pick<GameState, "mode" | "source"> & Partial<Pick<GameState, "analysisBoard">>
+): string {
   if (game.mode === "online" || game.source === "lichess") return "Lichess game";
+  if (game.source === "chesscom") return "Chess.com game";
   if (game.mode === "engine" || game.source === "engine-game") return "Engine game";
   if (game.mode === "puzzle" || game.source === "puzzle") return "Puzzle";
-  if (game.mode === "analysis" || game.source === "analysis") return "Analysis";
+  // Where a game came from names it, whatever the board does with it; "Analysis" is for one
+  // made on the Analyze board.
   if (game.source === "pgn-import") return "Imported game";
+  if (game.mode === "analysis" || game.analysisBoard || game.source === "analysis")
+    return "Analysis";
   return "Free board";
 }
 

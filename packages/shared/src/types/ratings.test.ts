@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyAccountRatings,
   applyLichessPerfs,
   applyRatingToAllModes,
+  chesscomRatingsByMode,
   isPlayerRatings,
+  isRatingLocked,
+  ratingsAccountInCharge,
+  releaseAccountRatings,
   normalizePlayerRatings,
   releaseLichessRatings,
   setManualRating,
@@ -18,7 +23,8 @@ describe("isPlayerRatings", () => {
     expect(
       isPlayerRatings({
         ...uniformRatings(1500),
-        blitz: { source: "lichess", rating: 1720, syncedAt: NOW }
+        blitz: { source: "lichess", rating: 1720, syncedAt: NOW },
+        rapid: { source: "chesscom", rating: 1684, syncedAt: NOW }
       })
     ).toBe(true);
     // As an earlier build stored them, with flags since dropped.
@@ -176,6 +182,67 @@ describe("setManualRating / applyRatingToAllModes", () => {
       rapid: synced.rapid,
       classical: { source: "manual", rating: 1234 },
       correspondence: { source: "manual", rating: 1234 }
+    });
+  });
+});
+
+describe("the account in charge of the ratings", () => {
+  it("is the one picked while both are connected, else the one connected", () => {
+    const both = { lichess: true, chesscom: true };
+    expect(ratingsAccountInCharge("lichess", both)).toBe("lichess");
+    expect(ratingsAccountInCharge("chesscom", both)).toBe("chesscom");
+    expect(ratingsAccountInCharge("lichess", { lichess: false, chesscom: true })).toBe("chesscom");
+    expect(ratingsAccountInCharge("chesscom", { lichess: true, chesscom: false })).toBe("lichess");
+    expect(ratingsAccountInCharge("lichess", { lichess: false, chesscom: false })).toBeNull();
+  });
+
+  it("maps chess.com's ratings onto the modes: Daily is Correspondence, no Classical", () => {
+    expect(chesscomRatingsByMode({ rapid: 1684, blitz: 1662, bullet: 1490, daily: 1550 })).toEqual({
+      rapid: 1684,
+      blitz: 1662,
+      bullet: 1490,
+      correspondence: 1550
+    });
+    expect(chesscomRatingsByMode({ blitz: Number.NaN })).toEqual({});
+  });
+
+  it("fills each mode the account has, read-only; gives the other account's up, typed-in", () => {
+    const lichess = applyLichessPerfs(
+      setManualRating(uniformRatings(1500), "classical", 1600),
+      {
+        blitz: { rating: 1720, games: 300, provisional: false },
+        correspondence: { rating: 1900, games: 3, provisional: false }
+      },
+      NOW
+    );
+    const next = applyAccountRatings(lichess, "chesscom", { rapid: 1684, blitz: 1662 }, NOW + 1);
+    expect(next).toEqual({
+      bullet: { source: "manual", rating: 1500 },
+      blitz: { source: "chesscom", rating: 1662, syncedAt: NOW + 1 },
+      rapid: { source: "chesscom", rating: 1684, syncedAt: NOW + 1 },
+      classical: { source: "manual", rating: 1600 },
+      correspondence: { source: "manual", rating: 1900 }
+    });
+    expect(isRatingLocked(next.rapid)).toBe(true);
+    expect(isRatingLocked(next.classical)).toBe(false);
+    // A typed rating can't overwrite a synced one, whichever account synced it.
+    expect(setManualRating(next, "rapid", 1000)).toBe(next);
+  });
+
+  it("keeps a released account's values, typed-in, and leaves the other's alone", () => {
+    const mixed: PlayerRatings = {
+      ...uniformRatings(1500),
+      blitz: { source: "lichess", rating: 1720, syncedAt: NOW },
+      rapid: { source: "chesscom", rating: 1684, syncedAt: NOW }
+    };
+    expect(releaseAccountRatings(mixed, "chesscom")).toEqual({
+      ...mixed,
+      rapid: { source: "manual", rating: 1684 }
+    });
+    expect(releaseAccountRatings(releaseAccountRatings(mixed, "chesscom"), "lichess")).toEqual({
+      ...uniformRatings(1500),
+      blitz: { source: "manual", rating: 1720 },
+      rapid: { source: "manual", rating: 1684 }
     });
   });
 });

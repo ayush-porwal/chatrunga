@@ -60,6 +60,7 @@ describe("sameDocument", () => {
   const doc = {
     gameId: "g",
     source: "pgn-import" as const,
+    analysisBoard: false,
     moveTree: tree,
     headers,
     currentNodeId: "root",
@@ -75,6 +76,7 @@ describe("sameDocument", () => {
     expect(sameDocument(null, doc)).toBe(false);
     expect(sameDocument(doc, { ...doc, currentNodeId: "e4" })).toBe(false);
     expect(sameDocument(doc, { ...doc, source: "analysis" })).toBe(false);
+    expect(sameDocument(doc, { ...doc, analysisBoard: true })).toBe(false);
     expect(sameDocument(doc, { ...doc, moveTree: [...tree] })).toBe(false);
     expect(sameDocument(doc, { ...doc, headers: { result: "1-0" } })).toBe(false);
     expect(

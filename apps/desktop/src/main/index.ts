@@ -30,7 +30,9 @@ import {
 import { EngineManager } from "./engine/engine-manager";
 import { killAllEngineProcesses } from "./engine/uci-process";
 import { registerIpc } from "./ipc/register";
-import { shutdownLichess, startLichessRatingSync } from "./lichess";
+import { shutdownLichess } from "./lichess";
+import { shutdownChesscom } from "./chesscom";
+import { startAccountRatingSyncs } from "./accounts";
 import { errorMessage, logger } from "./logger";
 import { migrateOnboarding } from "./onboarding-migration";
 import { migratePlayerRatings } from "./rating-migration";
@@ -170,9 +172,9 @@ async function startup(): Promise<void> {
   installWindowReveal();
   registerIpc(engineManager);
   try {
-    startLichessRatingSync();
+    startAccountRatingSyncs();
   } catch (error) {
-    logger.error("lichess", "starting the ratings sync failed:", error);
+    logger.error("settings", "starting the ratings sync failed:", error);
   }
   installApplicationMenu();
   const icon = createAppIcon();
@@ -231,7 +233,8 @@ let shuttingDown: Promise<void> | null = null;
 let shutdownDone = false;
 
 /**
- * Stops engines, closes Lichess connections (streams, seek, sign-in server) and the database.
+ * Stops engines, closes Lichess connections (streams, seek, sign-in server), stops a chess.com
+ * import, and closes the database.
  * Idempotent: an update install runs it before `will-quit` does. Never throws, and a failed step
  * doesn't skip the rest: once it has started, the app is on its way out (an install that follows
  * must not stop at a half-closed app).
@@ -241,6 +244,7 @@ function shutdown(): Promise<void> {
     shutDown = true;
     const steps: [string, () => void | Promise<void>][] = [
       ["lichess", shutdownLichess],
+      ["chess.com", shutdownChesscom],
       ["reviews", () => engineManager.cancelAllReviews()],
       ["engines", () => void engineManager.dispose()],
       ["engine processes", killAllEngineProcesses],

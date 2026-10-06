@@ -70,7 +70,7 @@ export function BoardView() {
     (state) => state.feedbackKind === "complete" && state.outcome === "solved"
   );
   const reviewMoves = useDisplayedReviewMoves();
-  const source = useGameStore((state) => state.source);
+  const analysisBoard = useGameStore((state) => state.analysisBoard);
   // A BEST line on the board: its position isn't a game move, so the error it answers lends it
   // no mark, arrows or drawings; its own move is the one highlighted.
   const bestLine = useGameStore(activeBestLine);
@@ -79,11 +79,11 @@ export function BoardView() {
     () =>
       bestLine
         ? null
-        : boardMoveMark(mainBoardSurface(mode, source), {
+        : boardMoveMark(mainBoardSurface(mode, analysisBoard), {
             moves: reviewMoves,
             nodeId: currentNodeId
           }),
-    [bestLine, currentNodeId, mode, reviewMoves, source]
+    [analysisBoard, bestLine, currentNodeId, mode, reviewMoves]
   );
   const engines = useEnginesQuery();
   const activeEngineId = useAnalysisStore((state) => state.activeEngineId);
