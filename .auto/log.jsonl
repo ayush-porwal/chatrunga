@@ -1,0 +1,2 @@
+{"type":"config","name":"Shrink Chaturanga package, drop dead code, raise Lighthouse","metricName":"package_bytes","metricUnit":"b","bestDirection":"lower"}
+{"type":"config","name":"Shrink Chaturanga installers, drop dead code and images, raise Lighthouse","metricName":"score","metricUnit":"\"\"","bestDirection":"lower"}

@@ -1,0 +1,114 @@
+name: Package size (throwaway)
+
+# Builds the Windows, macOS and Linux installers so their sizes can be compared.
+# Nothing here is a release: contents is read-only (a release cannot be created),
+# electron-builder is --publish never, GH_TOKEN is unset, and the update feed
+# (latest*.yml, blockmaps) is deleted before any artifact upload. In-app updates
+# read GitHub releases, not Actions artifacts. Artifacts expire after a day.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: package-size-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-14
+            target: --mac
+          - name: Windows
+            os: windows-latest
+            target: --win
+          - name: Linux
+            os: ubuntu-latest
+            target: --linux
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.0.9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build desktop app
+        run: pnpm --filter @chaturanga/desktop build
+
+      - name: Package installers (no publish)
+        working-directory: apps/desktop
+        shell: bash
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          # electron-builder publishes if GH_TOKEN is set, even with a release workflow
+          # elsewhere. Unset it. --publish never is the second lock.
+          unset GH_TOKEN
+          pnpm exec electron-builder ${{ matrix.target }} --publish never
+
+      - name: Check packaged app contents
+        run: node scripts/check-packaged-app.mjs
+
+      - name: Record installer sizes
+        shell: bash
+        run: |
+          node scripts/measure-installer-sizes.mjs apps/desktop/dist | tee sizes.txt
+          # Drop the update feed so an artifact can never be copied onto a release by mistake.
+          rm -f apps/desktop/dist/latest*.yml apps/desktop/dist/*.blockmap
+
+      - name: Upload throwaway installers
+        uses: actions/upload-artifact@v7
+        with:
+          name: throwaway-${{ runner.os }}
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            apps/desktop/dist/*.dmg
+            apps/desktop/dist/*.zip
+            apps/desktop/dist/*.exe
+            apps/desktop/dist/*.AppImage
+            sizes.txt
+
+  report:
+    name: Size report
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download size reports
+        uses: actions/download-artifact@v8
+        with:
+          pattern: throwaway-*
+          path: artifacts
+
+      - name: Summarize
+        run: |
+          {
+            echo "### Throwaway installer sizes"
+            echo
+            echo "Not a release. These files are Actions artifacts and expire in one day."
+            echo
+            echo '```'
+            find artifacts -name sizes.txt -print -exec cat {} \;
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          find artifacts -name sizes.txt -exec cat {} \;

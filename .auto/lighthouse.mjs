@@ -24,18 +24,27 @@ const DESKTOP_ROUTES = [
 ];
 
 function run(cmd, args, opts = {}) {
+  const { timeoutMs = 180_000, ...spawnOpts } = opts;
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"], ...opts });
+    const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"], ...spawnOpts });
     let stdout = "";
     let stderr = "";
-    child.stdout.on("data", (chunk) => {
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error(`${cmd} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    child.stdout?.on("data", (chunk) => {
       stdout += chunk;
     });
-    child.stderr.on("data", (chunk) => {
+    child.stderr?.on("data", (chunk) => {
       stderr += chunk;
     });
-    child.on("error", reject);
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
     child.on("close", (code) => {
+      clearTimeout(timer);
       if (code !== 0) reject(new Error(`${cmd} exited ${code}\n${stderr.slice(-2000)}`));
       else resolve({ stdout, stderr });
     });
@@ -125,6 +134,12 @@ try {
 const electron = require("electron");
 const port = 9229;
 const profile = join(root, "apps/desktop/dist/.lh-profile");
+const electronEnv = { ...process.env };
+// A set ELECTRON_RUN_AS_NODE, even empty, makes the binary run as Node.
+delete electronEnv.ELECTRON_RUN_AS_NODE;
+electronEnv.CHATURANGA_USER_DATA_DIR = profile;
+electronEnv.CHATURANGA_TELEMETRY_ENABLED = "false";
+electronEnv.CHATURANGA_UPDATE_FEED_URL = "http://127.0.0.1:9/";
 const child = spawn(
   electron,
   [
@@ -133,19 +148,8 @@ const child = spawn(
     "--use-mock-keychain",
     "--disable-backgrounding-occluded-windows"
   ],
-  {
-    cwd: desktopDir,
-    env: {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: "",
-      CHATURANGA_USER_DATA_DIR: profile,
-      CHATURANGA_TELEMETRY_ENABLED: "false",
-      CHATURANGA_UPDATE_FEED_URL: "http://127.0.0.1:9/"
-    },
-    stdio: "ignore"
-  }
+  { cwd: desktopDir, env: electronEnv, stdio: "ignore" }
 );
-delete child.env;
 
 async function debuggerUrl() {
   for (let attempt = 0; attempt < 40; attempt++) {

@@ -11,15 +11,14 @@ pnpm --filter @chaturanga/desktop exec electron-vite build
 pnpm --filter @chaturanga/marketing exec vite build
 
 export CSC_IDENTITY_AUTO_DISCOVERY=false
-# Dir + zip for the host arch only. package.json still lists the other targets;
-# this command does not delete them from the release config.
-pnpm --filter @chaturanga/desktop exec electron-builder --mac arm64 --dir --publish never
-pnpm --filter @chaturanga/desktop exec electron-builder --mac arm64 --publish never -c.mac.target=zip
+# Zip build leaves the unpacked app in dist/mac-arm64 and writes the downloadable zip.
+# Host arch only. package.json still lists the other release targets.
+pnpm --filter @chaturanga/desktop exec electron-builder --mac --arm64 --publish never -c.mac.target=zip
 
-node .auto/measure-package.mjs
+node .auto/measure-package.mjs | tee /tmp/chaturanga-package-metrics.txt
 node scripts/check-packaged-app.mjs >/tmp/chaturanga-package-check.txt
 
-node .auto/lighthouse.mjs
+node .auto/lighthouse.mjs | tee /tmp/chaturanga-lh-metrics.txt
 
 # Knip exits 1 when it finds issues. The count is the metric; the build still succeeded.
 knip_out="$(mktemp)"
@@ -40,4 +39,6 @@ const add = (value) => {
 };
 add(report);
 console.log(`METRIC knip_issues=${issues}`);
-' "$knip_out"
+' "$knip_out" | tee /tmp/chaturanga-knip-metrics.txt
+
+node .auto/score.mjs

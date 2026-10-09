@@ -13,10 +13,17 @@ raise Lighthouse performance, accessibility, best-practices, and SEO for every a
 The app must keep working: checks.sh is the gate.
 
 ## Metrics
-- **Primary**: `package_bytes` (bytes, lower is better) — exact byte size of the unpacked
-  macOS arm64 app `electron-builder --mac --arm64 --dir` writes. This is the shippable app
-  for the host we can actually package. It moves when locales, bundles, or extra resources
-  shrink, and it does not move if we only drop another OS target.
+- **Primary**: `score` (lower is better). One integer so a size win always beats Lighthouse,
+  and a Lighthouse win always beats a dead-code win, without either being discarded when
+  the coarser number is unchanged:
+
+  `size_bytes = package_bytes + marketing_bytes`
+  `lh_deficit = (100-lh_perf) + (100-lh_a11y) + (100-lh_bp) + (100-lh_seo)`
+  `dead_units = knip_issues + unreferenced_image_files` (capped at 999)
+  `score = floor(size_bytes / 100) * 1_000_000 + lh_deficit * 1_000 + dead_units`
+
+  `package_bytes` is the unpacked macOS arm64 app. `marketing_bytes` is the built site, so
+  deleting a referenced image that the site ships counts. 100 bytes is the size resolution.
 - **Secondary**:
   - `zip_bytes` — the matching `--arm64 zip` artifact (what a macOS arm64 user downloads)
   - `locale_bytes` — `.lproj` still inside the packaged app
@@ -24,8 +31,9 @@ The app must keep working: checks.sh is the gate.
   - `renderer_js_bytes`, `main_js_bytes` — JS inside the asar
   - `stockfish_bytes` — packaged files that are a Stockfish binary (must stay 0; measure.sh
     exits 1 if this is non-zero, so a bundle of the engine cannot be kept)
-  - `marketing_bytes` — `apps/marketing/dist` (not in the Electron package; tracked so image
-    work is visible)
+  - `marketing_bytes` — `apps/marketing/dist`
+  - `unreferenced_images` — image files under `apps/` and `packages/` whose basename appears
+    in no source, html, css, or json file. Deleting these is dead-asset removal.
   - `knip_issues` — unused files + unused exports + unused dependencies knip reports
   - `lh_perf`, `lh_a11y`, `lh_bp`, `lh_seo` — minimum category score (0–100) across every
     audited page and form factor
@@ -33,11 +41,28 @@ The app must keep working: checks.sh is the gate.
     is cheating)
 
 ## How to Run
-`./.auto/measure.sh` — builds the desktop app, packages the macOS arm64 dir + zip, audits
-Lighthouse, runs knip, prints `METRIC name=value` lines.
+`./.auto/measure.sh` — builds the desktop app, packages the macOS arm64 zip (and the unpacked
+app it leaves behind), audits Lighthouse, runs knip, prints `METRIC name=value` lines.
+This is the iteration metric. It is macOS arm64 only, because that is the machine the loop
+runs on.
 
-Packaging is slow (copies Electron). Do not "speed it up" by summing a hand-maintained file
-list instead of the real `dist/mac-arm64` app. That list can drift from what ships.
+Final installer sizes, for every OS the release ships, come from the throwaway workflow
+`.github/workflows/package-size.yml` (`workflow_dispatch` only):
+
+`gh workflow run package-size.yml --ref <branch>`
+
+That workflow builds macOS (arm64 + x64), Windows, and Linux with `electron-builder --publish never`,
+unsets `GH_TOKEN`, and has `contents: read` so it cannot create a release or an update. It deletes
+`latest*.yml` and blockmaps before upload. Artifacts are named `throwaway-*` and expire in one day.
+In-app updates read GitHub releases, not Actions artifacts, so a run cannot ship an update.
+Do not point this workflow at the release workflow, and do not add a publish job.
+
+Run it after a size change that should show up on every OS (locale stripping, asar contents),
+and before claiming the package cannot get smaller. The iteration metric stays local; waiting
+on three CI runners every experiment would hide the signal in queue time.
+
+Packaging is slow (copies Electron). Do not replace the real `dist/mac-arm64` app with a
+hand-maintained file list. That list can drift from what ships.
 
 ## Audited pages
 Lighthouse must cover every page a person can open:
@@ -62,6 +87,8 @@ Do not remove a page from the audit to improve a score.
 - `scripts/**` — packaging checks, generators
 - `pnpm-workspace.yaml`, root `package.json` — only if a dependency is truly unused
 - `.auto/**` — measurement and this playbook (update "What's Been Tried")
+- `.github/workflows/package-size.yml` — throwaway cross-platform size check only. Do not add a publish step.
+- `scripts/measure-installer-sizes.mjs` — installer byte counts for that workflow
 
 ## Off Limits
 - Images may be deleted even when code references or renders them. Remove the reference in the same change so the build does not point at a missing file. Prefer deleting an image that is unused, duplicated, or only there as weight. Do not delete sounds or piece-theme glyphs the board still draws, and do not remove a non-image feature.
