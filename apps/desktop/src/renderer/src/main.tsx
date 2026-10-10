@@ -25,8 +25,16 @@ const queryClient = new QueryClient({
 });
 
 const pieceStyles = document.createElement("style");
-pieceStyles.textContent = await pieceThemeCss();
 document.head.appendChild(pieceStyles);
+// Pieces load off the startup path: the default cburnett set ships in the bundled CSS, so the
+// optional sets arriving late (or failing) must never delay or block the first render.
+pieceThemeCss()
+  .then((css) => {
+    pieceStyles.textContent = css;
+  })
+  .catch((error) => {
+    console.error("piece theme drawings failed to load:", error);
+  });
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

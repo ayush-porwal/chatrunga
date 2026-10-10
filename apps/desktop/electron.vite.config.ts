@@ -35,6 +35,9 @@ function minifyIndexHtml() {
 export default defineConfig({
   main: {
     plugins: [copyOpeningBook()],
+    // keepNames survives function/class names through minification, so production stack
+    // traces in logs stay attributable (error.name comparisons are explicit strings either way).
+    esbuild: { keepNames: true },
     build: {
       // electron-vite leaves minify off. The packaged main bundle is otherwise the
       // readable build, which is most of the asar.
@@ -63,6 +66,8 @@ export default defineConfig({
     }
   },
   preload: {
+    // Same keepNames rationale as main: sandboxed preload stack traces stay attributable.
+    esbuild: { keepNames: true },
     build: {
       minify: true,
       externalizeDeps: false,

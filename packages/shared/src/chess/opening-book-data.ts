@@ -12,12 +12,12 @@ import { readFileSync } from "node:fs";
 import { zstdDecompressSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 
-const compressed = readFileSync(fileURLToPath(new URL("./opening-book.txt.zst", import.meta.url)));
-
 let text: string | null = null;
 
 /** The book's move tree, inflated once. */
 export function openingBookText(): string {
-  text ??= zstdDecompressSync(compressed).toString("utf8");
+  text ??= zstdDecompressSync(
+    readFileSync(fileURLToPath(new URL("./opening-book.txt.zst", import.meta.url)))
+  ).toString("utf8");
   return text;
 }

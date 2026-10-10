@@ -8,8 +8,15 @@ name: Package size (throwaway)
 on:
   workflow_dispatch:
   # Also on pull requests so the size check can run before this file is on the
-  # default branch. workflow_dispatch alone cannot be started until then.
+  # default branch. workflow_dispatch alone cannot be started until then. Path
+  # filtered: a 3-OS electron-builder matrix is too expensive for docs-only PRs.
   pull_request:
+    paths:
+      - "apps/desktop/**"
+      - "packages/**"
+      - "scripts/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/package-size.yml"
 
 permissions:
   contents: read

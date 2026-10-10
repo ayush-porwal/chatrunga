@@ -136,13 +136,14 @@ const RatingSparkline = memo(function RatingSparkline({ points }: { points: Puzz
           />
         ) : null}
         {hover !== null ? (
-          <circle
-            cx={x(hover)}
-            cy={y(data[hover].rating)}
-            r="3"
-            fill="var(--color-accent)"
-            stroke="var(--color-surface)"
-            strokeWidth="1"
+          /* A zero-length round-capped stroke stays circular under preserveAspectRatio="none",
+             where a circle would stretch into an oval on any card that isn't exactly 220px wide. */
+          <path
+            d={`M${x(hover)} ${y(data[hover].rating)}h0`}
+            stroke="var(--color-accent)"
+            strokeWidth="6"
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
           />
         ) : null}
       </svg>

@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
- * Builds scoped Chessground-compatible piece CSS from SVG files vendored under
- * scripts/piece-svg-sources/<theme>/ (same filenames as lichess-org/lila public/piece).
+ * Packs the vendored piece SVGs (scripts/piece-svg-sources/<theme>/, same filenames as
+ * lichess-org/lila public/piece) into the gzip the renderer inflates before first paint:
+ * apps/desktop/src/renderer/src/styles/generated-piece-themes.css.gz.
  *
- * Output: apps/desktop/src/renderer/src/styles/generated-piece-themes.css
- *
- * Selectors use `.cg-wrap.piece-set-<theme>` so they override the default
- * `chessground.cburnett.css` rules without conflicting across themes.
+ * generated-piece-themes.ts turns those SVGs into scoped `.cg-wrap.piece-set-<theme>` rules at
+ * startup, so they override the default `chessground.cburnett.css` without conflicting across
+ * themes. No stylesheet is emitted here — the CSS is built at runtime from this exact payload.
  */
 
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
@@ -43,21 +43,6 @@ const FILES = [
   ["king", "black", "bK"]
 ];
 
-/** Percent-encode only characters that would break a CSS url(). Smaller than base64. */
-function toDataUrl(svgText) {
-  const compact = svgText
-    .trim()
-    .replace(/\s+/g, " ")
-    .replace(/%/g, "%25")
-    .replace(/#/g, "%23")
-    .replace(/"/g, "'")
-    .replace(/'/g, "%27")
-    .replace(/\(/g, "%28")
-    .replace(/\)/g, "%29")
-    .replace(/ /g, "%20");
-  return `url("data:image/svg+xml,${compact}")`;
-}
-
 /** Drop drawing-neutral attributes and sub-pixel path noise. The board still sizes the piece. */
 function compactSvg(svgText) {
   return svgText
@@ -72,28 +57,7 @@ function themeSvgs(theme) {
   return FILES.map(([, , fn]) => compactSvg(readFileSync(join(dir, `${fn}.svg`), "utf8")));
 }
 
-function buildThemeCss(theme, svgs) {
-  return FILES.map(([role, color], index) => {
-    return `.cg-wrap.piece-set-${theme} piece.${role}.${color} {\n  background-image: ${toDataUrl(svgs[index])};\n}`;
-  }).join("\n\n");
-}
-
-const header = `/**
- * AUTO-GENERATED — do not edit by hand.
- * Regenerate: node scripts/generate-piece-theme-css.mjs
- *
- * Piece SVG sources: scripts/piece-svg-sources/<theme>/ (from lichess-org/lila
- * https://github.com/lichess-org/lila/tree/master/public/piece — AGPL-3.0).
- * Individual sets may carry additional credits in upstream Lichess docs.
- */
-
-`;
-
-const packed = THEMES.map((theme) => themeSvgs(theme));
-const body = THEMES.map((theme, index) => buildThemeCss(theme, packed[index])).join("\n\n");
-const outPath = join(repoRoot, "apps/desktop/src/renderer/src/styles/generated-piece-themes.css");
-mkdirSync(dirname(outPath), { recursive: true });
-writeFileSync(outPath, `${header}${body}\n`, "utf8");
 const gzPath = join(repoRoot, "apps/desktop/src/renderer/src/styles/generated-piece-themes.css.gz");
+const packed = THEMES.map((theme) => themeSvgs(theme));
 writeFileSync(gzPath, gzipSync(Buffer.from(packed.flat().join("\0")), { level: 9 }));
-console.log(`Wrote ${outPath} and ${gzPath}`);
+console.log(`Wrote ${gzPath}`);
