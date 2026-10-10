@@ -58,17 +58,24 @@ function toDataUrl(svgText) {
   return `url("data:image/svg+xml,${compact}")`;
 }
 
-function buildThemeCss(theme) {
+/** Drop drawing-neutral attributes and sub-pixel path noise. The board still sizes the piece. */
+function compactSvg(svgText) {
+  return svgText
+    .trim()
+    .replace(/ (image-rendering|shape-rendering|text-rendering)="[^"]*"/g, "")
+    .replace(/ (width|height)="[^"]*"/g, "")
+    .replace(/(\d+\.\d{3,})/g, (n) => String(Math.round(Number(n) * 100) / 100));
+}
+
+function themeSvgs(theme) {
   const dir = join(repoRoot, "scripts/piece-svg-sources", theme);
-  const rules = [];
-  for (const [role, color, fn] of FILES) {
-    const path = join(dir, `${fn}.svg`);
-    const svg = readFileSync(path, "utf8");
-    rules.push(
-      `.cg-wrap.piece-set-${theme} piece.${role}.${color} {\n  background-image: ${toDataUrl(svg)};\n}`
-    );
-  }
-  return rules.join("\n\n");
+  return FILES.map(([, , fn]) => compactSvg(readFileSync(join(dir, `${fn}.svg`), "utf8")));
+}
+
+function buildThemeCss(theme, svgs) {
+  return FILES.map(([role, color], index) => {
+    return `.cg-wrap.piece-set-${theme} piece.${role}.${color} {\n  background-image: ${toDataUrl(svgs[index])};\n}`;
+  }).join("\n\n");
 }
 
 const header = `/**
@@ -82,14 +89,14 @@ const header = `/**
 
 `;
 
-const body = THEMES.map((t) => buildThemeCss(t)).join("\n\n");
+const packed = THEMES.map((theme) => themeSvgs(theme));
+const body = THEMES.map((theme, index) => buildThemeCss(theme, packed[index])).join("\n\n");
 const outPath = join(repoRoot, "apps/desktop/src/renderer/src/styles/generated-piece-themes.css");
 mkdirSync(dirname(outPath), { recursive: true });
-const css = `${header}${body}\n`;
-writeFileSync(outPath, css, "utf8");
+writeFileSync(outPath, `${header}${body}\n`, "utf8");
 const gzPath = join(
   repoRoot,
   "apps/desktop/src/renderer/src/styles/generated-piece-themes.css.gz"
 );
-writeFileSync(gzPath, gzipSync(Buffer.from(css), { level: 9 }));
+writeFileSync(gzPath, gzipSync(Buffer.from(packed.flat().join("\0")), { level: 9 }));
 console.log(`Wrote ${outPath} and ${gzPath}`);
