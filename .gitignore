@@ -20,4 +20,3 @@ test-results
 .worktrees/
 
 # Local autoresearch harness. Not part of the app.
-.auto/
