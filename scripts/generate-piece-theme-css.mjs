@@ -42,9 +42,19 @@ const FILES = [
   ["king", "black", "bK"]
 ];
 
+/** Percent-encode only characters that would break a CSS url(). Smaller than base64. */
 function toDataUrl(svgText) {
-  const b64 = Buffer.from(svgText.trim(), "utf8").toString("base64");
-  return `url('data:image/svg+xml;base64,${b64}')`;
+  const compact = svgText
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/%/g, "%25")
+    .replace(/#/g, "%23")
+    .replace(/"/g, "'")
+    .replace(/'/g, "%27")
+    .replace(/\(/g, "%28")
+    .replace(/\)/g, "%29")
+    .replace(/ /g, "%20");
+  return `url("data:image/svg+xml,${compact}")`;
 }
 
 function buildThemeCss(theme) {
