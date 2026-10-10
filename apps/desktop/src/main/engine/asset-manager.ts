@@ -97,7 +97,7 @@ export type AssetRecord = {
   state: AssetState;
   /** Local path to the installed binary or weight file. */
   installedPath: string | null;
-  /** The user's own file, chosen in Settings → Engine downloads. */
+  /** The user's own file, chosen in Settings → Engines. */
   customPath: string | null;
   /** sha256 of the installed file. */
   sha256: string | null;
@@ -628,7 +628,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     // Lc0 is the known case: upstream publishes no macOS / Linux binaries.
     const instruction = this.installInstructionsFor(id);
     if (instruction) {
-      return `Lc0 doesn't ship Mac/Linux binaries on GitHub. Install it yourself: ${instruction}. Then choose the lc0 binary in Settings → Engine downloads.`;
+      return `Lc0 doesn't ship Mac/Linux binaries on GitHub. Install it yourself: ${instruction}. Then choose the lc0 binary in Settings → Engines.`;
     }
     return `No download available for ${id} on ${process.platform}-${process.arch}.`;
   }

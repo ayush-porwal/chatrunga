@@ -683,12 +683,12 @@ function MaiaPrompt({ installed }: { installed: boolean }) {
         <button
           type="button"
           className="text-accent underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
-          onClick={() => openSettings("downloads")}
+          onClick={() => openSettings("engines")}
         >
           Install Maia
         </button>
       ) : (
-        "Install Maia in Settings → Engine downloads."
+        "Install Maia in Settings → Engines."
       )}
     </p>
   );

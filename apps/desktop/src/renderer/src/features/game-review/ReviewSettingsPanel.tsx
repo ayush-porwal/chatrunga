@@ -42,7 +42,7 @@ function estimateReviewTime(searchTimeMs: number): string {
   return seconds < 90 ? `~${Math.round(seconds)}s` : `~${Math.round(seconds / 60)} min`;
 }
 
-/** Maia networks are installed but Lc0 isn't (Settings → Engine downloads says what to do). */
+/** Maia networks are installed but Lc0 isn't (Settings → Engines says what to do). */
 function useMaiaNeedsLc0(): boolean {
   const [needsLc0, setNeedsLc0] = useState(false);
   useEffect(() => {

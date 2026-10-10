@@ -299,9 +299,10 @@ test("without Maia the difficulty strip is an install prompt, and without clocks
   await expect(view(page, "times")).toHaveCount(0);
   await expect(charts(page).getByRole("button", { name: "Time per move" })).toHaveCount(0);
 
-  // The prompt's link opens Settings at the engine downloads, where Maia is installed.
+  // The prompt's link opens Settings at the Engines card, whose Maia rows install the networks.
   await charts(page).getByRole("button", { name: "Install Maia" }).click();
-  await expect(page.getByRole("heading", { name: "Engine downloads" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Engines", exact: true })).toBeInViewport();
+  await expect(page.getByRole("button", { name: "Download Maia 1500" })).toBeVisible();
 });
 
 test("the Analyze page shows the Charts for an unreviewed game: its clocks, no evaluations, no Difficulty", async ({

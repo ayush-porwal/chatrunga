@@ -153,4 +153,4 @@ function clippingBounds(element: HTMLElement): { top: number; bottom: number } {
   return { top, bottom };
 }
 
-export { OverflowMenu };
+export { OverflowMenu, type MenuItem };

@@ -17,7 +17,6 @@ import { hasDesktopApi } from "@/lib/environment";
 import { cardPadded } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { BoardSection } from "./BoardSettings";
-import { EngineAssetsPanel } from "./EngineAssetsPanel";
 import { EnginesSection } from "./EngineSettings";
 import { OpenRouterSettingsCard } from "./OpenRouterSettingsCard";
 import { RatingsSection } from "./RatingsSection";
@@ -33,7 +32,6 @@ export type SettingsSectionId =
   | "board"
   | "sound"
   | "engines"
-  | "downloads"
   | "ai"
   | "ratings"
   | "lichess"
@@ -64,7 +62,6 @@ export const SettingsPage = memo(function SettingsPage({
     ...(desktopApiAvailable ? (["lichess", "chesscom"] as const) : []),
     "ratings",
     "engines",
-    ...(desktopApiAvailable ? (["downloads"] as const) : []),
     "ai",
     ...(desktopApiAvailable ? (["updates", "usage", "welcome"] as const) : [])
   ];
@@ -123,11 +120,6 @@ export const SettingsPage = memo(function SettingsPage({
           <SectionAnchor id="engines" wide>
             <EnginesSection appearance={appearance} />
           </SectionAnchor>
-          {desktopApiAvailable ? (
-            <SectionAnchor id="downloads" wide>
-              <EngineAssetsPanel />
-            </SectionAnchor>
-          ) : null}
           <SectionAnchor id="ai" wide>
             <section className={cn(cardPadded, "grid content-start gap-4")}>
               <SectionHeader

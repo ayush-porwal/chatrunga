@@ -4,9 +4,11 @@ import type {
   EngineAssetStatus,
   EngineAssetStatusMap
 } from "@chaturanga/shared/ipc/chaturanga-api";
+import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import {
   ENGINE_ASSETS,
   applyAssetProgress,
+  engineListRows,
   formatSize,
   initialAssetProgress,
   isAssetInstalled,
@@ -118,6 +120,60 @@ describe("engine assets", () => {
 
     progress = applyAssetProgress(progress, { type: "error", assetId: "lc0", message: "offline" });
     expect(progress.lc0).toMatchObject({ status: "error", errorMessage: "offline" });
+  });
+});
+
+function engine(id: string, name: string): EngineConfig {
+  return {
+    id,
+    name,
+    executablePath: `/engines/${id}`,
+    workingDirectory: null,
+    weightsPath: null,
+    imagePath: null,
+    args: [],
+    protocol: "uci",
+    runtime: "custom-uci",
+    isAvailable: true,
+    isDefault: false,
+    createdAt: 0,
+    updatedAt: 0
+  };
+}
+
+describe("Settings engines list", () => {
+  it("lists Stockfish, the Maia networks, Lc0, then the user's engines, joining managed engines to their downloads", () => {
+    const stockfish = engine("sf", "Stockfish (managed)");
+    const maia = engine("m15", "Maia 1500 (managed)");
+    const own = engine("own", "Komodo");
+    const rows = engineListRows(statusMap({}), [own, maia, stockfish]);
+    expect(rows.map((row) => (row.kind === "asset" ? row.id : row.engine.id))).toEqual([
+      "stockfish",
+      "maia-1100",
+      "maia-1300",
+      "maia-1500",
+      "maia-1700",
+      "maia-1900",
+      "lc0",
+      "own"
+    ]);
+    const engineOf = (id: EngineAssetId) =>
+      rows.find((row) => row.kind === "asset" && row.id === id)?.engine;
+    expect(engineOf("stockfish")).toBe(stockfish);
+    expect(engineOf("maia-1500")).toBe(maia);
+    expect(engineOf("maia-1100")).toBeNull();
+    expect(engineOf("lc0")).toBeNull();
+  });
+
+  it("lists a managed engine with no matching download as a plain engine", () => {
+    const stray = engine("x", "Maia 2200 (managed)");
+    const rows = engineListRows(statusMap({}), [stray]);
+    expect(rows.at(-1)).toEqual({ kind: "engine", engine: stray });
+  });
+
+  it("lists only the engines without download status", () => {
+    const stockfish = engine("sf", "Stockfish (managed)");
+    expect(engineListRows(null, [stockfish])).toEqual([{ kind: "engine", engine: stockfish }]);
   });
 });
 
