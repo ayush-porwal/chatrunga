@@ -3,7 +3,7 @@ const path = require("node:path");
 const { gunzipSync } = require("node:zlib");
 
 const CRASHPAD = new Set(["chrome_crashpad_handler", "chrome_crashpad_handler.exe"]);
-const TRACING_MARKER = Buffer.from("about_tracing");
+const TRACING_MARKERS = [Buffer.from("about_tracing"), Buffer.from("chrome://tracing"), Buffer.from("d3js.org")];
 
 function walk(dir, hits, names) {
   let entries;
@@ -40,7 +40,7 @@ function stripTracingResource(file) {
     entries.push([data.readUInt16LE(at), data.readUInt32LE(at + 2)]);
   }
   if (entries[0][1] !== dataStart) return false;
-  let target = -1;
+  const targets = new Set();
   for (let i = 0; i < resourceCount; i++) {
     const start = entries[i][1];
     const end = entries[i + 1][1];
@@ -51,18 +51,15 @@ function stripTracingResource(file) {
     } catch {
       continue;
     }
-    if (text.includes(TRACING_MARKER)) {
-      target = i;
-      break;
-    }
+    if (TRACING_MARKERS.some((marker) => text.includes(marker))) targets.add(i);
   }
-  if (target < 0) return false;
+  if (targets.size === 0) return false;
   const blobs = [];
   let cursor = dataStart;
   const table = Buffer.from(data.subarray(0, dataStart));
   for (let i = 0; i < resourceCount; i++) {
     table.writeUInt32LE(cursor, 14 + i * 6);
-    const blob = i === target ? Buffer.alloc(0) : data.subarray(entries[i][1], entries[i + 1][1]);
+    const blob = targets.has(i) ? Buffer.alloc(0) : data.subarray(entries[i][1], entries[i + 1][1]);
     blobs.push(blob);
     cursor += blob.length;
   }
