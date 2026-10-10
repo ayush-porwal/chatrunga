@@ -208,7 +208,11 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
         </figure>
       </div>
 
-      <Disclosure title="Custom colors" summary={customBoardSelected ? "In use" : undefined}>
+      <Disclosure
+        variant="panel"
+        title="Custom colors"
+        summary={customBoardSelected ? "In use" : undefined}
+      >
         <div className="grid gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <BoardHueMixer onChange={setBoardSquareColors} />
