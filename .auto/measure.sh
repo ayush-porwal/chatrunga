@@ -8,7 +8,9 @@ node --check .auto/measure-package.mjs
 node --check .auto/lighthouse.mjs
 
 pnpm --filter @chaturanga/desktop exec electron-vite build
-pnpm --filter @chaturanga/marketing exec vite build
+if [[ ! -d .auto/node_modules/lighthouse ]]; then
+  npm install --prefix .auto --no-package-lock --silent lighthouse@12.8.2 puppeteer-core@24.23.0
+fi
 
 export CSC_IDENTITY_AUTO_DISCOVERY=false
 # Zip build leaves the unpacked app in dist/mac-arm64 and writes the downloadable zip.

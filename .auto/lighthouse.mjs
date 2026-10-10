@@ -1,21 +1,27 @@
 #!/usr/bin/env node
 /**
- * Lighthouse for every audited page. Prints METRIC lh_* lines.
- * Marketing is served from its production build. Desktop routes run in Electron.
+ * Lighthouse against the packaged desktop app only.
+ * Electron loads file://, which Lighthouse will not navigate to itself, so each
+ * route is a reload of that same packaged page driven from inside the app.
  */
 import { spawn } from "node:child_process";
-import { createServer } from "node:http";
-import { readFileSync, statSync } from "node:fs";
-import { extname, join, normalize } from "node:path";
+import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
+import puppeteer from "puppeteer-core";
+import desktopConfig from "lighthouse/core/config/desktop-config.js";
+import { navigation } from "lighthouse";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const desktopDir = join(root, "apps/desktop");
-const require = createRequire(join(desktopDir, "package.json"));
+const appBin = join(
+  root,
+  "apps/desktop/dist/mac-arm64/Chaturanga.app/Contents/MacOS/Chaturanga"
+);
+statSync(appBin);
 
-const DESKTOP_ROUTES = [
+const ROUTES = [
   "#/",
   "#/repertoires",
   "#/repertoires/demo/chapters/demo",
@@ -23,161 +29,117 @@ const DESKTOP_ROUTES = [
   "#/games/current/review"
 ];
 
-function run(cmd, args, opts = {}) {
-  const { timeoutMs = 180_000, ...spawnOpts } = opts;
-  return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"], ...spawnOpts });
-    let stdout = "";
-    let stderr = "";
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      reject(new Error(`${cmd} timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-    child.stdout?.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr?.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      if (code !== 0) reject(new Error(`${cmd} exited ${code}\n${stderr.slice(-2000)}`));
-      else resolve({ stdout, stderr });
-    });
-  });
+const flags = {
+  logLevel: "error",
+  onlyCategories: ["performance", "accessibility", "best-practices", "seo"],
+  disableStorageReset: true
+};
+
+async function auditNavigation(page, hash, label) {
+  const result = await navigation(
+    page,
+    async () => {
+      await page.evaluate(`location.hash = ${JSON.stringify(hash)}`);
+      await page.reload({ waitUntil: "load", timeout: 30_000 });
+    },
+    { config: desktopConfig, flags }
+  );
+  if (!result) throw new Error(`lighthouse returned no result for ${label}`);
+  return scores(result.lhr, label);
 }
 
-async function lighthouse(url, preset, extraArgs = []) {
-  const args = [
-    "--yes",
-    "lighthouse",
-    url,
-    "--quiet",
-    "--chrome-flags=--headless=new --no-first-run",
-    "--only-categories=performance,accessibility,best-practices,seo",
-    "--output=json",
-    "--output-path=stdout",
-    `--preset=${preset}`,
-    ...extraArgs
-  ];
-  const { stdout } = await run("npx", args, { cwd: root });
-  const start = stdout.indexOf("{");
-  const report = JSON.parse(stdout.slice(start));
-  const score = (id) => Math.round((report.categories[id]?.score ?? 0) * 100);
-  return {
-    performance: score("performance"),
-    accessibility: score("accessibility"),
-    "best-practices": score("best-practices"),
-    seo: score("seo")
-  };
-}
-
-function staticServer(dir, port) {
-  const types = {
-    ".html": "text/html",
-    ".js": "text/javascript",
-    ".css": "text/css",
-    ".jpg": "image/jpeg",
-    ".png": "image/png",
-    ".svg": "image/svg+xml",
-    ".json": "application/json"
-  };
-  const server = createServer((req, res) => {
-    const url = new URL(req.url ?? "/", "http://127.0.0.1");
-    const rel = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.(\/|\\|$))+/, "");
-    const path = join(dir, rel === "/" ? "index.html" : rel);
-    if (!path.startsWith(dir)) {
-      res.writeHead(403);
-      res.end();
-      return;
+function scores(lhr, label) {
+  const round = (id) => Math.round((lhr.categories[id]?.score ?? 0) * 100);
+  const failed = [];
+  for (const category of Object.values(lhr.categories)) {
+    for (const ref of category.auditRefs ?? []) {
+      const audit = lhr.audits[ref.id];
+      if (audit && audit.score !== null && audit.score < 1) failed.push(ref.id);
     }
+  }
+  const row = {
+    performance: round("performance"),
+    accessibility: round("accessibility"),
+    "best-practices": round("best-practices"),
+    seo: round("seo")
+  };
+  console.error(
+    `LH ${label} perf=${row.performance} a11y=${row.accessibility} bp=${row["best-practices"]} seo=${row.seo} url=${lhr.finalUrl} failed=${failed.join(",")}`
+  );
+  return row;
+}
+
+const port = 9333;
+const profile = mkdtempSync(join(tmpdir(), "chaturanga-lh-"));
+const env = { ...process.env };
+delete env.ELECTRON_RUN_AS_NODE;
+env.CHATURANGA_USER_DATA_DIR = profile;
+env.CHATURANGA_TELEMETRY_ENABLED = "false";
+env.CHATURANGA_UPDATE_FEED_URL = "http://127.0.0.1:9/";
+// Same hook the packaged e2e uses so an unfocused window still paints at full speed.
+env.CHATURANGA_E2E_BACKGROUND = "1";
+
+const child = spawn(
+  appBin,
+  [
+    `--remote-debugging-port=${port}`,
+    "--remote-allow-origins=*",
+    "--use-mock-keychain",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+    `--user-data-dir=${profile}`
+  ],
+  { env, stdio: "ignore" }
+);
+
+async function waitForDebugger() {
+  for (let attempt = 0; attempt < 80; attempt++) {
     try {
-      const body = readFileSync(path);
-      res.writeHead(200, { "content-type": types[extname(path)] ?? "application/octet-stream" });
-      res.end(body);
+      const response = await fetch(`http://127.0.0.1:${port}/json/version`);
+      if (response.ok) return;
     } catch {
-      res.writeHead(404);
-      res.end();
+      // App still starting.
     }
-  });
-  return new Promise((resolve) => {
-    server.listen(port, "127.0.0.1", () => resolve(server));
-  });
+    await delay(250);
+  }
+  throw new Error("packaged app did not open a debugging port");
 }
 
 const mins = { performance: 100, accessibility: 100, "best-practices": 100, seo: 100 };
 const pages = [];
 
-function take(label, scores) {
-  pages.push(label);
-  for (const key of Object.keys(mins)) mins[key] = Math.min(mins[key], scores[key]);
-  console.error(`LH ${label} ${JSON.stringify(scores)}`);
-}
-
-const marketingDir = join(root, "apps/marketing/dist");
-statSync(join(marketingDir, "index.html"));
-const marketing = await staticServer(marketingDir, 5181);
-try {
-  for (const preset of ["desktop", "mobile"]) {
-    take(`marketing/${preset}`, await lighthouse("http://127.0.0.1:5181/", preset));
-  }
-} finally {
-  marketing.close();
-}
-
-// Desktop routes in the real Electron renderer. Lighthouse attaches to the app's
-// debugging port so the scores are the packaged UI, not a fixture.
-const electron = require("electron");
-const port = 9229;
-const profile = join(root, "apps/desktop/dist/.lh-profile");
-const electronEnv = { ...process.env };
-// A set ELECTRON_RUN_AS_NODE, even empty, makes the binary run as Node.
-delete electronEnv.ELECTRON_RUN_AS_NODE;
-electronEnv.CHATURANGA_USER_DATA_DIR = profile;
-electronEnv.CHATURANGA_TELEMETRY_ENABLED = "false";
-electronEnv.CHATURANGA_UPDATE_FEED_URL = "http://127.0.0.1:9/";
-const child = spawn(
-  electron,
-  [
-    join(desktopDir, "out/main/index.js"),
-    `--remote-debugging-port=${port}`,
-    "--use-mock-keychain",
-    "--disable-backgrounding-occluded-windows"
-  ],
-  { cwd: desktopDir, env: electronEnv, stdio: "ignore" }
-);
-
-async function debuggerUrl() {
-  for (let attempt = 0; attempt < 40; attempt++) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/json`);
-      const targets = await response.json();
-      const page = targets.find((target) => target.type === "page" && target.webSocketDebuggerUrl);
-      if (page) return page;
-    } catch {
-      /* app still starting */
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error("Electron debugging port did not open");
+function take(row) {
+  pages.push(row);
+  for (const key of Object.keys(mins)) mins[key] = Math.min(mins[key], row[key]);
 }
 
 try {
-  const target = await debuggerUrl();
-  const base = target.url.split("#")[0];
-  for (const route of DESKTOP_ROUTES) {
-    const url = `${base}${route}`;
-    take(
-      `desktop${route}`,
-      await lighthouse(url, "desktop", [`--port=${port}`, "--skip-audits=is-on-https"])
-    );
+  await waitForDebugger();
+  const browser = await puppeteer.connect({
+    browserURL: `http://127.0.0.1:${port}`,
+    defaultViewport: null
+  });
+  const targets = await browser.pages();
+  const page = targets.find((candidate) => candidate.url().startsWith("file:"));
+  if (!page) throw new Error(`no file:// page in packaged app: ${targets.map((t) => t.url()).join(" ")}`);
+  const session = await page.createCDPSession();
+  await session.send("Emulation.setFocusEmulationEnabled", { enabled: true });
+  await page.waitForSelector("#root", { timeout: 20_000 });
+  await page.waitForSelector("xpath/.//button[contains(., 'Skip setup')]", { timeout: 20_000 });
+  take(await auditNavigation(page, "#/", "desktop-onboarding"));
+  const skip = await page.waitForSelector("xpath/.//button[contains(., 'Skip setup')]", {
+    timeout: 20_000
+  });
+  await skip.click();
+  await page.waitForSelector("[role=dialog]", { hidden: true, timeout: 15_000 });
+
+  for (const route of ROUTES) {
+    take(await auditNavigation(page, route, `desktop${route}`));
   }
+  await browser.disconnect();
 } finally {
   child.kill("SIGTERM");
+  rmSync(profile, { recursive: true, force: true });
 }
 
 console.log(`METRIC lh_perf=${mins.performance}`);

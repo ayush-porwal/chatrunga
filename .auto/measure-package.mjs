@@ -5,12 +5,19 @@ import { join, basename } from "node:path";
 
 const dist = new URL("../apps/desktop/dist/", import.meta.url);
 
-function walk(dir, visit) {
-  for (const name of readdirSync(dir)) {
-    const path = join(dir, name);
-    const stat = statSync(path);
-    if (stat.isDirectory()) walk(path, visit);
-    else if (stat.isFile()) visit(path, stat.size);
+/** Regular files only, each inode once. Framework symlinks would otherwise triple the count. */
+function walk(dir, visit, seen = new Set()) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isSymbolicLink()) continue;
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) walk(path, visit, seen);
+    else if (entry.isFile()) {
+      const stat = statSync(path);
+      const id = `${stat.dev}:${stat.ino}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      visit(path, stat.size);
+    }
   }
 }
 
@@ -40,20 +47,21 @@ const stockfishHits = [];
 walk(app, (path, size) => {
   packageBytes += size;
   const base = basename(path);
-  if (path.endsWith(".lproj") || path.includes(".lproj/")) localeBytes += size;
+  if (path.includes(".lproj/")) localeBytes += size;
   if (base === "app.asar") asarBytes = size;
-  if (path.includes("/app.asar.unpacked/")) {
-    /* unpacked payload counted in packageBytes already */
-  }
-  if (/\/out\/renderer\/.*\.js$/.test(path) || /\/renderer\/assets\/.*\.js$/.test(path)) {
-    rendererJs += size;
-  }
-  if (/\/out\/main\/.*\.js$/.test(path)) mainJs += size;
   // A Stockfish binary is large and named stockfish. Docs and fixtures are not.
-  if (/stockfish/i.test(base) && size > 1_000_000) {
+  if (/stockfish/i.test(base) && size > 1_000_000 && !/\.(txt|md|json)$/i.test(base)) {
     stockfishBytes += size;
     stockfishHits.push(path);
   }
+});
+
+// JS lives inside app.asar, so count the build output the asar was packed from.
+const outDir = new URL("../apps/desktop/out/", import.meta.url).pathname;
+walk(outDir, (path, size) => {
+  if (!path.endsWith(".js") && !path.endsWith(".cjs")) return;
+  if (path.includes(`${join("out", "renderer")}`) || path.includes("/renderer/")) rendererJs += size;
+  else if (path.includes("/main/")) mainJs += size;
 });
 
 const zips = readdirSync(dist.pathname).filter((name) => name.endsWith("-arm64.zip"));

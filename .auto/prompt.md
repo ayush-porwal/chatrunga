@@ -17,7 +17,7 @@ The app must keep working: checks.sh is the gate.
   and a Lighthouse win always beats a dead-code win, without either being discarded when
   the coarser number is unchanged:
 
-  `size_bytes = package_bytes + marketing_bytes`
+  `size_bytes = package_bytes` (the unpacked packaged desktop app, not a browser build)
   `lh_deficit = (100-lh_perf) + (100-lh_a11y) + (100-lh_bp) + (100-lh_seo)`
   `dead_units = knip_issues + unreferenced_image_files` (capped at 999)
   `score = floor(size_bytes / 100) * 1_000_000 + lh_deficit * 1_000 + dead_units`
@@ -65,20 +65,24 @@ Packaging is slow (copies Electron). Do not replace the real `dist/mac-arm64` ap
 hand-maintained file list. That list can drift from what ships.
 
 ## Audited pages
-Lighthouse must cover every page a person can open:
+Lighthouse runs only against the packaged desktop app (`dist/mac-arm64/Chaturanga.app`),
+attached to that process. Do not serve the renderer in a browser. Many features do not
+exist there, and a browser score is not a result.
 
-1. Marketing site `/` — the only public HTML page (mobile and desktop form factors).
-2. Desktop renderer routes, loaded in the real Electron app (desktop form factor), not a
-   stripped fixture:
-   - `#/` (home)
-   - `#/repertoires` (repertoire hub)
-   - `#/repertoires/demo/chapters/demo` (study)
-   - `#/repertoires/demo/practice` (practice)
-   - `#/games/current/review` (game review)
+Lighthouse cannot navigate to `file://` itself. Each route is a reload of the packaged
+page, driven from inside the app. On macOS an unfocused window does not paint
+(`backgroundThrottling`), so the audit uses the same packaged-app hook as e2e
+(`CHATURANGA_E2E_BACKGROUND=1`, occluded-window flags, CDP focus emulation). That is still
+the packaged binary, not a browser. Pages:
 
-In-app views that are not routes (Settings, Play, Puzzles, Databases) are reached from Home.
-If you add a real route for one, add it to `.auto/lighthouse.mjs` in the same change.
-Do not remove a page from the audit to improve a score.
+- first-launch onboarding (snapshot of the packaged window before Skip setup)
+- `#/` home, after Skip setup is clicked in the app
+- `#/repertoires`
+- `#/repertoires/demo/chapters/demo`
+- `#/repertoires/demo/practice`
+- `#/games/current/review`
+
+`lh_pages` must stay 6. Do not drop a page to raise the minimum.
 
 ## Files in Scope
 - `apps/desktop/**` — Electron app, builder config, renderer, main, preload
