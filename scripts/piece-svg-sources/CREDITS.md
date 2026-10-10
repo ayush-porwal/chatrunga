@@ -13,11 +13,10 @@ repository); the Creative Commons licences are linked. Chaturanga itself is GPL-
 | --- | --- | --- |
 | cburnett | Colin M.L. Burnett | [GPLv2+](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html) |
 | merida | Armando Hernandez Marroquin | [GPLv2+](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html) |
-| alpha | Eric Bentzen | [Free for personal non-commercial use](http://www.enpassant.dk/chess/downl/alpha.zip) |
 | california | Jerry S. | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
 | cardinal | sadsnake1 | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
 | chessnut | Alexis Luengas | [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) |
-| kosal | Kosal Sen | [AGPLv3+](https://www.gnu.org/licenses/agpl-3.0.html) |
+| kosal | Kosal Sen, the lila authors | [AGPLv3+](https://www.gnu.org/licenses/agpl-3.0.html) |
 | maestro | sadsnake1 | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
 | pirouetti | pirouetti | [AGPLv3+](https://www.gnu.org/licenses/agpl-3.0.html) |
 | classic | Colin M.L. Burnett (adapted) | [GPLv2+](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html) |
@@ -47,8 +46,8 @@ repository); the Creative Commons licences are linked. Chaturanga itself is GPL-
 | totoy | Kosal Sen | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | xkcd | Randall Munroe | [CC BY-NC-SA 2.5](https://xkcd.com/license.html) |
 
-Kosal states no licence of its own; it is listed under AGPLv3+, the licence of the project it
-was published with, until its author confirms.
+Kosal is licensed as part of the lila project it was published in: AGPLv3+, copyright the lila
+authors.
 
 ## Changes
 

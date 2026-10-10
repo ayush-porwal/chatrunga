@@ -26,7 +26,6 @@ export const sourcesDir = join(repoRoot, "scripts/piece-svg-sources");
 export const THEMES = [
   "cburnett",
   "merida",
-  "alpha",
   "california",
   "cardinal",
   "chessnut",

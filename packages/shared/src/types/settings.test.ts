@@ -51,6 +51,12 @@ describe("normalizePieceStyle", () => {
   });
 });
 
+describe("removed piece sets", () => {
+  it("reads a stored Alpha (dropped: its terms allow personal use only) as the default set", () => {
+    expect(normalizePieceStyle("alpha")).toBe(defaultSettings.pieceStyle);
+  });
+});
+
 describe("normalizePieceSizes", () => {
   it("accepts the two modes and falls back for anything else", () => {
     expect(normalizePieceSizes("uniform")).toBe("uniform");
@@ -82,7 +88,7 @@ describe("hydratePieceSettings", () => {
   });
 
   it("is idempotent for new-shape settings", () => {
-    const once = hydratePieceSettings({ ...defaultSettings, pieceStyle: "alpha" });
+    const once = hydratePieceSettings({ ...defaultSettings, pieceStyle: "cardinal" });
     expect(hydratePieceSettings(once)).toEqual(once);
   });
 });

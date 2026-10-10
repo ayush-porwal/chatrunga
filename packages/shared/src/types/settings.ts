@@ -30,7 +30,6 @@ export type PieceStyle = "cburnett" | VendoredPieceSet;
  */
 export type VendoredPieceSet =
   | "merida"
-  | "alpha"
   | "california"
   | "cardinal"
   | "chessnut"
@@ -72,7 +71,6 @@ export type PieceSizes = "ladder" | "uniform";
 
 export const VENDORED_PIECE_SETS: readonly VendoredPieceSet[] = [
   "merida",
-  "alpha",
   "california",
   "cardinal",
   "chessnut",
@@ -154,11 +152,7 @@ const PIECE_LICENCES = {
   ccBy4: { name: "CC BY 4.0", url: "https://creativecommons.org/licenses/by/4.0/" },
   ccBySa4: { name: "CC BY-SA 4.0", url: "https://creativecommons.org/licenses/by-sa/4.0/" },
   ccByNcSa4: { name: "CC BY-NC-SA 4.0", url: "https://creativecommons.org/licenses/by-nc-sa/4.0/" },
-  ccByNcSa25: { name: "CC BY-NC-SA 2.5", url: "https://xkcd.com/license.html" },
-  alpha: {
-    name: "Free for personal non-commercial use",
-    url: "http://www.enpassant.dk/chess/downl/alpha.zip"
-  }
+  ccByNcSa25: { name: "CC BY-NC-SA 2.5", url: "https://xkcd.com/license.html" }
 } satisfies Record<string, PieceLicence>;
 
 export const pieceStyleOptions: Array<{
@@ -179,12 +173,6 @@ export const pieceStyleOptions: Array<{
     label: "Merida",
     description: "By Armando Hernandez Marroquin.",
     licence: PIECE_LICENCES.gpl2
-  },
-  {
-    id: "alpha",
-    label: "Alpha",
-    description: "By Eric Bentzen.",
-    licence: PIECE_LICENCES.alpha
   },
   {
     id: "california",
