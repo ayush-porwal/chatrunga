@@ -18,7 +18,7 @@ function minifyIndexHtml() {
   };
 }
 
-/** Vite rewrites the book URL but does not emit the file. The main bundle reads it beside itself. */function copyOpeningBook() {
+/** Vite rewrites the book URL but does not emit the file. The main bundle reads it beside itself. */ function copyOpeningBook() {
   const from = resolve(rootDir, "../../packages/shared/src/chess/opening-book.txt.zst");
   return {
     name: "copy-opening-book",

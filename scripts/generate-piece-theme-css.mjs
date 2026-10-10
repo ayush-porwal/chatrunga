@@ -94,9 +94,6 @@ const body = THEMES.map((theme, index) => buildThemeCss(theme, packed[index])).j
 const outPath = join(repoRoot, "apps/desktop/src/renderer/src/styles/generated-piece-themes.css");
 mkdirSync(dirname(outPath), { recursive: true });
 writeFileSync(outPath, `${header}${body}\n`, "utf8");
-const gzPath = join(
-  repoRoot,
-  "apps/desktop/src/renderer/src/styles/generated-piece-themes.css.gz"
-);
+const gzPath = join(repoRoot, "apps/desktop/src/renderer/src/styles/generated-piece-themes.css.gz");
 writeFileSync(gzPath, gzipSync(Buffer.from(packed.flat().join("\0")), { level: 9 }));
 console.log(`Wrote ${outPath} and ${gzPath}`);

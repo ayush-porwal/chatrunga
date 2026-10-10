@@ -42,21 +42,32 @@ function walkDirs(dir, hits, suffix) {
 
 /**
  * Chromium web-ui extras this app never shows: the about:tracing debug page (script, html,
- * its d3 copy), the whats-new animation library, and the whats-new banner art. Gzip
- * resources are matched by payload markers; PNGs only by signature plus IHDR shape, so a
- * shifted id cannot delete something else.
+ * its d3 copy), the whats-new animation library, and the whats-new banner art. Gzip resources
+ * are matched by payload markers; PNGs only by exact IHDR dimensions pinned to the observed
+ * whats-new art, so a different large image in a future Electron cannot be silently dropped —
+ * the strip would simply stop matching and lose the savings instead.
  *
  * Pak v5 header: uint32 version, uint8 encoding, 3 pad bytes, uint16 resource count, uint16 alias count.
  */
+const DEAD_PNG_SHAPES = new Set([
+  "1537x669", // whats-new banner, 1x
+  "768x334", // whats-new banner, 2x
+  "1224x300", // whats-new wordmark banner
+  "404x34" // Google Developer Program wordmark
+]);
+
 function isDeadPng(blob) {
-  if (blob.length < 24 || blob[0] !== 0x89 || blob[1] !== 0x50 || blob[12] !== 0x49 || blob[13] !== 0x48) {
+  if (
+    blob.length < 24 ||
+    blob[0] !== 0x89 ||
+    blob[1] !== 0x50 ||
+    blob[12] !== 0x49 ||
+    blob[13] !== 0x48
+  ) {
     return false;
   }
   if (blob[14] !== 0x44 || blob[15] !== 0x52) return false;
-  const width = blob.readUInt32BE(16);
-  const height = blob.readUInt32BE(20);
-  if (width >= 700 && height <= 700) return true; // full-width banner art
-  return width >= 400 && width < 700 && height <= 40; // landscape program wordmarks
+  return DEAD_PNG_SHAPES.has(`${blob.readUInt32BE(16)}x${blob.readUInt32BE(20)}`);
 }
 
 function stripDeadPakResources(file) {
@@ -113,7 +124,8 @@ module.exports = async function afterPack(context) {
   const paks = [];
   walk(context.appOutDir, paks, new Set(["resources.pak"]));
   for (const file of paks) stripDeadPakResources(file);
-  // The Plugin helper only hosts PPAPI plugins (PDF). The app embeds neither.
+  // Electron 42 dropped PPAPI plugin support entirely, so the Plugin helper has no runtime
+  // trigger (its only spawn path is a Pepper plugin). Restore it if a plugin ever comes back.
   const pluginHelpers = [];
   walkDirs(context.appOutDir, pluginHelpers, "Helper (Plugin).app");
   for (const dir of pluginHelpers) rmSync(dir, { recursive: true, force: true });
