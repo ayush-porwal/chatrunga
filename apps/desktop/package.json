@@ -6,6 +6,7 @@
   "main": "out/main/index.js",
   "type": "module",
   "private": true,
+  "license": "GPL-3.0-or-later",
   "scripts": {
     "dev": "node ../../scripts/ensure-electron.cjs && electron-vite dev",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p e2e/tsconfig.json",
@@ -40,8 +41,16 @@
     ],
     "extraResources": [
       {
+        "from": "../../LICENSE",
+        "to": "LICENSE"
+      },
+      {
         "from": "../../scripts/piece-svg-sources/CREDITS.md",
         "to": "piece-set-credits.md"
+      },
+      {
+        "from": "../../scripts/piece-svg-sources/licenses",
+        "to": "piece-set-licenses"
       }
     ],
     "mac": {

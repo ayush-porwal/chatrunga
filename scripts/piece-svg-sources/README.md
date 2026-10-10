@@ -19,5 +19,7 @@ size mode.
 
 ## Authors, licences and changes
 
-In [CREDITS.md](CREDITS.md), which ships inside every packaged build (`extraResources` in
-`apps/desktop/package.json`), and each set's author and licence show in Settings → Board.
+In [CREDITS.md](CREDITS.md), with the licence texts the sets need in [licenses/](licenses/); both
+ship inside every packaged build (`extraResources` in `apps/desktop/package.json`), and each set's
+author and licence show in Settings → Board. A new set under a licence not in `licenses/` needs
+its text added there.

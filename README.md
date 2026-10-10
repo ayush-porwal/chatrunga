@@ -43,3 +43,10 @@ served over HTTP that holds a `latest-mac.yml` / `latest.yml` / `latest-linux.ym
 
 Usage analytics (PostHog) is configured at build time with `MAIN_VITE_POSTHOG_PROJECT_TOKEN` and
 `MAIN_VITE_POSTHOG_HOST`; development and test runs never send. See [docs/telemetry.md](docs/telemetry.md).
+
+## License
+
+Chaturanga is free software under the [GNU General Public License v3.0 or later](LICENSE). The
+piece sets are their authors' work under their own licences, listed in
+[scripts/piece-svg-sources/CREDITS.md](scripts/piece-svg-sources/CREDITS.md); both ship inside
+every packaged build.

@@ -5,7 +5,9 @@ The piece sets in Chaturanga are the work of the authors below, under the licenc
 ## Authors and licences
 
 Each set is its author's work under the licence below; our changes to a set are shared under that
-same licence.
+same licence. The full texts of the GPL, AGPL and Apache licences, and the MIT notice for Maurizio
+Monge's sets, are in `piece-set-licenses` beside this file in the app (`licenses/` in the
+repository); the Creative Commons licences are linked. Chaturanga itself is GPL-3.0-or-later.
 
 | Set | Author | Licence |
 | --- | --- | --- |
