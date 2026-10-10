@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isFirstRun, playEngineOrder, resolvePlayMode, topRowSlots } from "./play-layout";
+import {
+  isFirstRun,
+  playEngineOrder,
+  resolvePlayMode,
+  topRowSlots,
+  widePreviewBoardSize
+} from "./play-layout";
 
 describe("topRowSlots", () => {
   it("keeps the Play card narrow beside a game in progress, then the cards in order", () => {
@@ -19,24 +25,31 @@ describe("topRowSlots", () => {
     ]);
   });
 
-  it("fills the columns left over with the Your move card", () => {
+  it("fills the columns left over with the filler card", () => {
     expect(topRowSlots({ inProgress: true, repertoire: false, puzzle: true })).toEqual([
       { kind: "play", span: 1 },
       { kind: "in-progress" },
       { kind: "puzzle" },
-      { kind: "your-move", span: 1 }
+      { kind: "filler", span: 1 }
     ]);
     expect(topRowSlots({ inProgress: false, repertoire: false, puzzle: true })).toEqual([
       { kind: "play", span: 2 },
       { kind: "puzzle" },
-      { kind: "your-move", span: 1 }
+      { kind: "filler", span: 1 }
     ]);
   });
 
-  it("first run is the wide Play card and Your move across the other two columns", () => {
+  it("gives the Play card one of the filler's columns when it would take two or more", () => {
+    // First run, or nothing to show beside it: Play across three columns, the filler in one.
     expect(topRowSlots({ inProgress: false, repertoire: false, puzzle: false })).toEqual([
+      { kind: "play", span: 3 },
+      { kind: "filler", span: 1 }
+    ]);
+    // A game in progress and no other card: the Play card widens (to its preview-board layout).
+    expect(topRowSlots({ inProgress: true, repertoire: false, puzzle: false })).toEqual([
       { kind: "play", span: 2 },
-      { kind: "your-move", span: 2 }
+      { kind: "in-progress" },
+      { kind: "filler", span: 1 }
     ]);
   });
 });
@@ -100,5 +113,22 @@ describe("playEngineOrder", () => {
       "Maia 1700 (managed)",
       "Maia 1900 (managed)"
     ]);
+  });
+});
+
+describe("widePreviewBoardSize", () => {
+  it("fills the card's height when the controls keep their 300px", () => {
+    expect(widePreviewBoardSize(900, 340)).toBe(340);
+  });
+
+  it("gives the controls their room first", () => {
+    // 1440×900, two columns: the mock's 300px board.
+    expect(widePreviewBoardSize(630, 300)).toBe(300);
+    expect(widePreviewBoardSize(630, 340)).toBe(306);
+    expect(widePreviewBoardSize(500, 300)).toBe(176);
+  });
+
+  it("never goes under 120px", () => {
+    expect(widePreviewBoardSize(300, 400)).toBe(120);
   });
 });

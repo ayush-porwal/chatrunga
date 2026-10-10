@@ -1,4 +1,4 @@
-import { memo, useId, useMemo, useState, type ReactNode } from "react";
+import { memo, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   BookOpen,
   Bot,
@@ -59,7 +59,8 @@ import {
   playSegClass,
   wayButton
 } from "./play-card-parts";
-import { resolvePlayMode } from "./play-layout";
+import { WIDE_GAP, resolvePlayMode } from "./play-layout";
+import { useWidePreviewSize } from "./use-wide-preview-size";
 import { PiecePair } from "./piece-art";
 import { ENGINE_CLOCK_PRESETS, clockText, engineClockText } from "./time-control";
 import { useEngineGameSetup, type EngineGameSetup } from "./use-engine-game-setup";
@@ -83,8 +84,8 @@ const FRIEND_SWAP: Record<ColorChoice, ColorChoice> = {
 };
 
 export type PlayCardProps = {
-  /** Two columns, with the preview board on the left (nothing in progress). */
-  wide: boolean;
+  /** Columns the card spans; two or more: wide, with the preview board on the left. */
+  span: 1 | 2 | 3;
   /** No engine and no Lichess account yet: the two ways to get an opponent. */
   firstRun: boolean;
   desktopApiAvailable: boolean;
@@ -119,7 +120,7 @@ type CardView = {
  * row's height. Wide, a preview board sits on the left.
  */
 export const PlayCard = memo(function PlayCard({
-  wide,
+  span,
   firstRun,
   desktopApiAvailable,
   onOpenEngineSettings,
@@ -127,6 +128,9 @@ export const PlayCard = memo(function PlayCard({
   onEngineGameStarted,
   onFreeBoard
 }: PlayCardProps) {
+  const wide = span > 1;
+  const wideBodyRef = useRef<HTMLDivElement | null>(null);
+  const boardSize = useWidePreviewSize(wideBodyRef, wide);
   const settings = useSettingsQuery();
   const status = useLichessStore((state) => state.status);
   const session = useLichessStore((state) => state.playOpponent);
@@ -168,6 +172,15 @@ export const PlayCard = memo(function PlayCard({
     <EnginesWay disabled={!desktopApiAvailable} onOpenEngineSettings={onOpenEngineSettings} />
   );
   const lichessLocked = !connected;
+  // A repertoire handoff (Play from here) stays in view while an opponent is set up, too.
+  const handoffStrip = engine.initialSession ? (
+    <HandoffStrip
+      fen={handoffFen ?? engine.initialSession.rootFen}
+      color={engine.initialSession.playerColor}
+      label={engine.initialSession.label}
+      onClear={engine.clearInitialSession}
+    />
+  ) : null;
 
   let view: CardView;
   if (firstRun) {
@@ -180,6 +193,7 @@ export const PlayCard = memo(function PlayCard({
       },
       body: (
         <div className="grid gap-2.5">
+          {handoffStrip}
           {enginesWay}
           {onlineWay}
         </div>
@@ -190,7 +204,7 @@ export const PlayCard = memo(function PlayCard({
       previewFen: START_FEN
     };
   } else if (mode === "engine") {
-    view = engineView({ engine, handoffFen, enginesWay });
+    view = engineView({ engine, handoffFen, handoffStrip, enginesWay });
   } else if (mode === "pool") {
     const index = presetIndex(SEEK_PRESETS, seek.preset);
     view = {
@@ -432,22 +446,38 @@ export const PlayCard = memo(function PlayCard({
     <section
       aria-label="Play"
       className={cn(cardShell, "play-card relative flex flex-col")}
-      style={wide ? { gridColumn: "span 2" } : undefined}
+      style={wide ? { gridColumn: `span ${span}` } : undefined}
     >
       {gear}
       {wide ? (
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,47.7%)_minmax(0,1fr)] gap-6 py-3 pl-3 pr-4">
-          <div className="grid content-center">
-            <BoardThumbnail
-              fen={view.previewFen}
-              orientation={view.orientation}
-              rounded="md"
-              label={
-                view.previewFen === START_FEN
-                  ? "The starting position"
-                  : "The position the game starts from"
-              }
-            />
+        <div
+          ref={wideBodyRef}
+          // At least the mock's 300px board tall; the board itself never sets the height (it is
+          // sized to the body), so the row can shrink back when the window does.
+          className="grid min-h-[324px] flex-1 py-3 pl-3 pr-4"
+          style={{
+            columnGap: WIDE_GAP,
+            gridTemplateColumns: boardSize
+              ? `${boardSize}px minmax(0, 1fr)`
+              : "minmax(0, 47.7%) minmax(0, 1fr)"
+          }}
+        >
+          <div className="relative min-h-0">
+            <div
+              className="absolute inset-y-0 left-0 grid content-center"
+              style={{ width: boardSize ?? "100%" }}
+            >
+              <BoardThumbnail
+                fen={view.previewFen}
+                orientation={view.orientation}
+                rounded="md"
+                label={
+                  view.previewFen === START_FEN
+                    ? "The starting position"
+                    : "The position the game starts from"
+                }
+              />
+            </div>
           </div>
           <div className="flex min-h-0 min-w-0 flex-col gap-4">
             {header}
@@ -475,9 +505,20 @@ export const PlayCard = memo(function PlayCard({
           onClose={() => setSettingsOpen(false)}
           onSave={({ opponent, engineId }) => {
             setSettingsOpen(false);
-            useLichessStore.getState().setPlayOpponent(opponent);
-            // Optimistic: the card switches now; a failed write puts the saved value back.
-            updateSettings.mutate({ patch: { playOpponent: opponent, playEngineId: engineId } });
+            const lichess = useLichessStore.getState();
+            const before = lichess.playOpponent;
+            lichess.setPlayOpponent(opponent);
+            // Optimistic: the card switches now; a failed write puts the saved value back, and the
+            // session's choice too (unless another one was made while it was being written).
+            updateSettings.mutate(
+              { patch: { playOpponent: opponent, playEngineId: engineId } },
+              {
+                onError: () => {
+                  const store = useLichessStore.getState();
+                  if (store.playOpponent === opponent) store.setPlayOpponent(before);
+                }
+              }
+            );
           }}
         />
       ) : null}
@@ -490,10 +531,12 @@ export const PlayCard = memo(function PlayCard({
 function engineView({
   engine,
   handoffFen,
+  handoffStrip,
   enginesWay
 }: {
   engine: EngineGameSetup;
   handoffFen: string | null;
+  handoffStrip: ReactNode;
   enginesWay: ReactNode;
 }): CardView {
   const you = <MatchSide tile={<KingTile color={engine.humanColor} />} name="You" />;
@@ -506,7 +549,12 @@ function engineView({
         onSwap: null,
         bare: false
       },
-      body: enginesWay,
+      body: (
+        <div className="grid gap-2.5">
+          {handoffStrip}
+          {enginesWay}
+        </div>
+      ),
       foot: null,
       error: engine.handoffError,
       orientation: engine.humanColor,
@@ -557,14 +605,7 @@ function engineView({
     },
     body: (
       <>
-        {engine.initialSession ? (
-          <HandoffStrip
-            fen={handoffFen ?? engine.initialSession.rootFen}
-            color={engine.initialSession.playerColor}
-            label={engine.initialSession.label}
-            onClear={engine.clearInitialSession}
-          />
-        ) : null}
+        {handoffStrip}
         {position ? (
           <SegmentedControl
             ariaLabel="Start from"

@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { Minus, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -38,7 +38,6 @@ export function TimeControlSlider({
   /** Under the slider (Custom's steppers). */
   children?: ReactNode;
 }) {
-  const labelId = useId();
   const trackRef = useRef<HTMLDivElement | null>(null);
   // The thumb's fractional place while it is dragged; null at rest (it sits on `value`).
   const [drag, setDrag] = useState<number | null>(null);
@@ -62,13 +61,11 @@ export function TimeControlSlider({
 
   return (
     <div className="grid gap-2">
-      <span id={labelId} className="text-xs font-medium text-fg-muted">
-        Time control
-      </span>
+      {/* No visible label: the presets say what it is; screen readers get the name. */}
       <div
         role="slider"
         tabIndex={0}
-        aria-labelledby={labelId}
+        aria-label="Time control"
         aria-valuemin={0}
         aria-valuemax={Math.max(0, count - 1)}
         aria-valuenow={index}

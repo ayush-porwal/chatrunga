@@ -12,7 +12,7 @@ import {
   PlayCardSkeleton,
   PuzzleOfTheDayCard,
   RepertoireBoardCard,
-  YourMoveCard
+  FillerCard
 } from "./BoardCards";
 import { PlayCard } from "./PlayCard";
 import { ChallengesCard, StartSomethingNewCard } from "./PlaySideCards";
@@ -41,6 +41,8 @@ export type PlayPageProps = {
   onAnalyze: () => void;
   onPuzzles: () => void;
   onImportPgn: () => void;
+  /** Databases (the filler card's way to get a puzzle database). */
+  onOpenDatabases: () => void;
 };
 
 /** The top row: the Play card's column, then three (play.css: `.play-columns`). */
@@ -52,7 +54,7 @@ const bottomColumns = "play-columns-bottom grid items-stretch gap-4";
  * Play, where the app opens: the Play card (you against the opponent from Play settings), the
  * board cards with something to pick up (the game in progress, the repertoire positions due, the
  * puzzle of the day), then Recent games and the side cards. The Play card takes two columns when
- * nothing is in progress; columns nothing else takes go to the "Your move" card.
+ * nothing is in progress; columns nothing else takes go to the filler card.
  */
 export const PlayPage = memo(function PlayPage(props: PlayPageProps) {
   const { desktopApiAvailable } = props;
@@ -111,7 +113,7 @@ export const PlayPage = memo(function PlayPage(props: PlayPageProps) {
                   return (
                     <PlayCard
                       key="play"
-                      wide={slot.span === 2}
+                      span={slot.span}
                       firstRun={firstRun}
                       desktopApiAvailable={desktopApiAvailable}
                       onOpenEngineSettings={props.onOpenEngineSettings}
@@ -146,8 +148,16 @@ export const PlayPage = memo(function PlayPage(props: PlayPageProps) {
                       onSolve={props.onSolvePuzzleOfTheDay}
                     />
                   ) : null;
-                case "your-move":
-                  return <YourMoveCard key="your-move" span={slot.span} />;
+                case "filler":
+                  return (
+                    <FillerCard
+                      key="filler"
+                      span={slot.span}
+                      firstRun={firstRun}
+                      puzzleDatabase={puzzle.installed}
+                      onOpenDatabases={props.onOpenDatabases}
+                    />
+                  );
                 default:
                   return null;
               }

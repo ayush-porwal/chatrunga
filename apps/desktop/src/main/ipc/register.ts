@@ -375,6 +375,9 @@ function registerLibraryIpc(): void {
     if (!game) throw new Error("Game not found");
     return game;
   });
+  ipcMain.handle("games:latestUnfinishedEngineGame", () =>
+    gameRepository.latestUnfinishedEngineGame()
+  );
   ipcMain.handle("games:getReview", (_event, gameId: unknown, reviewId: unknown) =>
     gameRepository.getReview(asId(gameId, "game id"), asId(reviewId, "review id"))
   );

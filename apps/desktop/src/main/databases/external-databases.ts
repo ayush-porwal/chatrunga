@@ -848,8 +848,11 @@ export async function samplePuzzle(input: PuzzleSampleInput): Promise<PuzzleSamp
  * puzzle, another date (almost always) another one. No network.
  */
 
-/** Candidates read from the file's start: enough variety, a short scan. */
-const DAILY_CANDIDATES = 20_000;
+/**
+ * Candidates read from the file's start: years of different days, and a short scan (the first call
+ * of the day, after each start, reads only until this many rows matched).
+ */
+const DAILY_CANDIDATES = 2_000;
 /** Plays a Lichess candidate needs, when the file says (rows below it are kept only if none pass). */
 const DAILY_MIN_PLAYS = 1000;
 /** Lichess: mid-strength, well-liked puzzles. */
@@ -906,25 +909,40 @@ function stableHash(text: string): number {
  * installed or none of them has a puzzle to give. Answered from memory after the first call.
  */
 export async function puzzleOfTheDay(input: PuzzleOfTheDayInput): Promise<PuzzleSample | null> {
+  // A database that can't be read is skipped, so a broken file doesn't hide a healthy one; the
+  // error comes back only when every installed database failed.
+  let failure: unknown = null;
+  let answered = false;
   for (const registered of dailySources()) {
-    const database = await onDisk(registered);
-    if (!database) continue;
-    const file = await stat(database.filePath);
-    const key = JSON.stringify([input.date, database.id, `${file.size}:${file.mtimeMs}`]);
-    let daily = dailyPuzzles.get(key);
-    if (!daily) {
-      daily = pickDailyPuzzle(database, input.date);
-      dailyPuzzles.set(key, daily);
-      // A failure isn't remembered: the next call scans again.
-      daily.catch(() => dailyPuzzles.delete(key));
-      for (const oldKey of [...dailyPuzzles.keys()]) {
-        if (dailyPuzzles.size <= DAILY_CACHE_SIZE) break;
-        dailyPuzzles.delete(oldKey);
+    try {
+      const database = await onDisk(registered);
+      if (!database) continue;
+      const file = await stat(database.filePath);
+      const key = JSON.stringify([input.date, database.id, `${file.size}:${file.mtimeMs}`]);
+      let daily = dailyPuzzles.get(key);
+      if (!daily) {
+        daily = pickDailyPuzzle(database, input.date);
+        dailyPuzzles.set(key, daily);
+        // A failure isn't remembered: the next call scans again.
+        daily.catch(() => dailyPuzzles.delete(key));
+        for (const oldKey of [...dailyPuzzles.keys()]) {
+          if (dailyPuzzles.size <= DAILY_CACHE_SIZE) break;
+          dailyPuzzles.delete(oldKey);
+        }
       }
+      const sample = await daily;
+      answered = true;
+      if (sample) return sample;
+    } catch (error) {
+      logger.warn(
+        "databases",
+        `puzzle of the day from ${registered.name} failed:`,
+        errorMessage(error)
+      );
+      failure = error;
     }
-    const sample = await daily;
-    if (sample) return sample;
   }
+  if (failure && !answered) throw failure;
   return null;
 }
 

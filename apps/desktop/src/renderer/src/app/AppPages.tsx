@@ -200,6 +200,7 @@ export function AppPages({
             onRepertoireResume={on.resumeRepertoirePractice}
             onRepertoireStudy={on.openRepertoireStudy}
             onSolvePuzzleOfTheDay={on.solvePuzzleOfTheDay}
+            onOpenDatabases={on.databases}
             onOpenGame={on.openGame}
             onReviewGame={on.reviewGame}
             onAnalyze={on.liveAnalysis}

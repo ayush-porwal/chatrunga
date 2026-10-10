@@ -1,6 +1,7 @@
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import type { Color, MoveNode } from "@chaturanga/shared/types/chess";
 import type { LichessPlayingGame, LichessSpeed } from "@chaturanga/shared/types/lichess";
+import { yourSide } from "../../app/rejoin-saved-game";
 import { speedLabel } from "../lichess/lichess-game";
 
 /** The Lichess game on the board, as the In progress card needs it. */
@@ -54,8 +55,9 @@ export type InProgressCard = {
 
 /**
  * The game the In progress card offers to rejoin, first match wins: the Lichess game on the board,
- * a Lichess game of yours in progress elsewhere, the engine match on the board, then the newest saved
- * unfinished engine game with at least one move. Null when there is none.
+ * a Lichess game of yours in progress elsewhere (one where it's your move first), the engine match
+ * on the board, then the newest saved unfinished engine game with at least one move and "You" on
+ * exactly one side. Null when there is none.
  */
 export function pickInProgress({
   live,
@@ -88,7 +90,7 @@ export function pickInProgress({
       orientation: live.yourColor
     };
   }
-  const online = playing[0];
+  const online = playing.find((game) => game.isMyTurn) ?? playing[0];
   if (online) {
     return {
       source: "lichess",
@@ -123,8 +125,8 @@ export function pickInProgress({
       orientation: boardMatch.humanColor
     };
   }
-  if (saved && saved.plies > 0) {
-    const sides = savedEngineGameSides(saved.white, saved.black);
+  const sides = saved ? savedEngineGameSides(saved.white, saved.black) : null;
+  if (saved && saved.plies > 0 && sides) {
     return {
       source: "saved",
       targetId: saved.id,
@@ -155,20 +157,18 @@ function engineDetail(fen: string, human: Color, engine: string) {
 }
 
 /**
- * Which side you played in a saved engine game: the side named "You" (as Play writes it), else
- * White; the other side is the engine, shown by its display name.
+ * Which side you played in a saved engine game: the one side named "You" (as Play writes it; see
+ * yourSide, which rejoining uses too); the other side is the engine, shown by its display name.
+ * Null when neither or both sides are "You".
  */
 export function savedEngineGameSides(
   white: string | null,
   black: string | null
-): { human: Color; engine: string } {
-  const human: Color = isYou(black) && !isYou(white) ? "black" : "white";
+): { human: Color; engine: string } | null {
+  const human = yourSide(white, black);
+  if (!human) return null;
   const engine = (human === "white" ? black : white)?.trim();
   return { human, engine: engine ? engineDisplayName(engine) : "Engine" };
-}
-
-function isYou(name: string | null): boolean {
-  return name?.trim().toLowerCase() === "you";
 }
 
 function sideToMove(fen: string): Color {

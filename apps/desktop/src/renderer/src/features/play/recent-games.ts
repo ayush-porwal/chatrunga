@@ -1,11 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import type { Color, GameSummary, MoveNode, SavedGame } from "@chaturanga/shared/types/chess";
+import {
+  LIBRARY_TAB_LABELS,
+  LIBRARY_TABS,
+  type LibraryTab,
+  type LibraryTabCounts
+} from "@chaturanga/shared/types/library";
 import { useLatestGamesQuery } from "../../queries/api";
 import { sideNamed } from "../game-review/review-side";
 import { RECENT_GAMES_FETCH } from "./play-layout";
 
-/** Rows the Recent games table shows at most. */
+/** Rows the Recent games table shows at first, and adds on each "Load more games". */
 export const RECENT_GAMES_ROWS = 10;
 
 /** The newest games, read once for the table and the page (one query key, see play-layout.ts). */
@@ -20,6 +26,38 @@ export function recentRows(
   limit = RECENT_GAMES_ROWS
 ): GameSummary[] {
   return games.filter((game) => game.id !== excludeGameId).slice(0, limit);
+}
+
+/** One choice of the Recent games filter: every game (`tab` null) or one source's. */
+export type RecentGamesFilterOption = { tab: LibraryTab | null; label: string; count: number };
+
+/**
+ * The filter's choices: "All games", then each source with games, in tab order. The counts leave
+ * out the game the In progress card shows (`excludedTab` is its source's tab; null when there is
+ * none, or it isn't known yet), as the table does.
+ */
+export function recentGamesFilterOptions(
+  counts: LibraryTabCounts,
+  excludedTab: LibraryTab | null
+): RecentGamesFilterOption[] {
+  const sources = LIBRARY_TABS.map((tab) => ({
+    tab,
+    label: LIBRARY_TAB_LABELS[tab],
+    count: Math.max(0, counts[tab].games - (tab === excludedTab ? 1 : 0))
+  })).filter((option) => option.count > 0);
+  const all = sources.reduce((total, option) => total + option.count, 0);
+  return [{ tab: null, label: "All games", count: all }, ...sources];
+}
+
+/**
+ * The source the table lists: the one chosen while the filter offers it (it is offered while the
+ * library holds games of two sources or more), else every game.
+ */
+export function recentGamesFilterTab(
+  options: readonly RecentGamesFilterOption[],
+  chosen: LibraryTab | null
+): LibraryTab | null {
+  return options.length > 2 && options.some((option) => option.tab === chosen) ? chosen : null;
 }
 
 export type Score = "1" | "0" | "½";
@@ -93,12 +131,16 @@ export function reviewSummary(saved: Pick<SavedGame, "review">): string {
     : "No errors found";
 }
 
-/** One saved game with its moves (move count, last move); under ["games"], so a save refreshes it. */
-export function useSavedGameDetail(id: string) {
+/**
+ * One saved game with its moves (move count, last move), none for a null `id`; under ["games"], so
+ * a save refreshes it.
+ */
+export function useSavedGameDetail(id: string | null) {
   return useQuery({
-    queryKey: ["games", "detail", id],
+    queryKey: ["games", "detail", id ?? ""],
     queryFn: async (): Promise<SavedGame | null> =>
-      (await window.chaturanga?.games.get(id)) ?? null,
+      id ? ((await window.chaturanga?.games.get(id)) ?? null) : null,
+    enabled: id !== null,
     staleTime: 5_000
   });
 }

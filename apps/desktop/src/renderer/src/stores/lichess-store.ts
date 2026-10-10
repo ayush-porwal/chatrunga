@@ -41,7 +41,7 @@ type LichessStore = {
    * until chosen (then Play settings' saved choice, Quick pairing when connected, else the engine).
    */
   playOpponent: PlayOpponent | null;
-  setPlayOpponent: (opponent: PlayOpponent) => void;
+  setPlayOpponent: (opponent: PlayOpponent | null) => void;
   setStatus: (status: LichessStatus) => void;
   setSeek: (seek: LichessStore["seek"], error?: string | null) => void;
   setChallenges: (challenges: LichessChallenge[]) => void;

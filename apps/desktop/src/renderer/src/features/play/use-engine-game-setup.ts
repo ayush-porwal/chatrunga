@@ -100,7 +100,9 @@ export function useEngineGameSetup({
         : "-",
       // Named sides: the titlebar, board labels and saved game keep the engine's name after the game ends.
       white: engineColor === "white" ? name : "You",
-      black: engineColor === "black" ? name : "You"
+      black: engineColor === "black" ? name : "You",
+      // Which engine it was, so rejoining finds it again even when two share a name.
+      engineId: engine.id
     });
     game.setMode("engine");
     game.setEngineSide(engineColor);

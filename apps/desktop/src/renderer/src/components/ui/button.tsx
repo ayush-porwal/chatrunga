@@ -22,8 +22,10 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "border border-line bg-control text-fg hover:bg-control-hover",
+        // Opaque on hover (accent mixed into the surface, as accent/25 over it looked): a primary
+        // button over a pattern (the Play card's checks) must not show it through.
         primary:
-          "border border-accent/35 bg-accent-soft text-accent-fg hover:border-accent/50 hover:bg-accent/25 hover:text-fg",
+          "border border-accent/35 bg-accent-soft text-accent-fg hover:border-accent/50 hover:bg-[color-mix(in_srgb,var(--color-accent)_25%,var(--color-surface))] hover:text-fg",
         outline:
           "border border-line bg-transparent text-fg-secondary hover:bg-control hover:text-fg",
         ghost:

@@ -498,7 +498,8 @@ const HEADER_KEYS = [
   "utcDate",
   "utcTime",
   "termination",
-  "result"
+  "result",
+  "engineId"
 ] as const satisfies readonly (keyof GameHeaders)[];
 
 /** Only the known headers, each a short string or null (they are stored as JSON). */

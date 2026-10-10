@@ -24,6 +24,19 @@ export function startingClock(timeControl: string | null | undefined): string | 
 }
 
 /**
+ * A PGN TimeControl as players write it: minutes + increment seconds ("120+1" → "2+1", "600" →
+ * "10+0", "90+0" → "1.5+0"). The raw text for any other form ("40/7200:3600"); null for none.
+ */
+export function timeControlLabel(timeControl: string | null | undefined): string | null {
+  const text = timeControl?.trim() ?? "";
+  if (!text || text === "-" || text === "?") return null;
+  const match = /^(\d+)(?:\+(\d+))?$/.exec(text);
+  if (!match) return text;
+  const minutes = Math.round((Number(match[1]) / 60) * 10) / 10;
+  return `${minutes}+${match[2] ?? "0"}`;
+}
+
+/**
  * Each side's remaining time at `nodeId`: the last `[%clk]` that side recorded on the path from the
  * start to that move (so at Black's move, White's clock is the one White left after its own move
  * before it). Before a side's first move it shows the time control's starting time. Null for a

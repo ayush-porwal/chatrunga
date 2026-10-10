@@ -80,7 +80,13 @@ export function AppTitlebar({
         )}
       >
         <SidebarToggle expanded={sidebarExpanded} onClick={onToggleSidebar} />
-        <HistoryButtons onBack={onBack} onForward={onForward} />
+        {/* Without the traffic lights (full screen, Windows/Linux) the toggle sits over the sidebar's
+            icons and Back / Forward stay by the title, at the lead's right end. */}
+        <HistoryButtons
+          onBack={onBack}
+          onForward={onForward}
+          className={windowControlsInset ? "ml-2" : "ml-auto pl-2"}
+        />
         <span
           aria-hidden="true"
           className={cn(
@@ -149,16 +155,18 @@ const SaveFailedButton = memo(function SaveFailedButton() {
 /** Back / Forward between screens (like a browser's), right of the sidebar toggle. */
 const HistoryButtons = memo(function HistoryButtons({
   onBack,
-  onForward
+  onForward,
+  className
 }: {
   onBack: () => void;
   onForward: () => void;
+  className: string;
 }) {
   const canGoBack = useHistoryStore(selectCanGoBack);
   const canGoForward = useHistoryStore(selectCanGoForward);
   const keys = historyShortcutLabels();
   return (
-    <div className="ml-2 flex items-center gap-0.5">
+    <div className={cn("flex items-center gap-0.5", className)}>
       <IconButton
         label={`Back (${keys.back})`}
         icon={<ChevronLeft />}

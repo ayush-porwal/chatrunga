@@ -82,6 +82,7 @@ const api: ChaturangaApi = {
     getZoomFactor: () => webFrame.getZoomFactor(),
     onGlassChanged,
     onFullScreenChanged: subscribe<boolean>("appearance:fullScreen"),
+    isFullScreen: () => ipcRenderer.invoke("appearance:isFullScreen"),
     rendererReady: () => ipcRenderer.send("appearance:rendererReady")
   },
   engines: {
@@ -102,6 +103,7 @@ const api: ChaturangaApi = {
     listPage: (query) => ipcRenderer.invoke("games:listPage", query),
     facets: (excludeId) => ipcRenderer.invoke("games:facets", excludeId),
     get: (id) => ipcRenderer.invoke("games:get", id),
+    latestUnfinishedEngineGame: () => ipcRenderer.invoke("games:latestUnfinishedEngineGame"),
     getReview: (gameId, reviewId) => ipcRenderer.invoke("games:getReview", gameId, reviewId),
     removeReview: (gameId, reviewId) => ipcRenderer.invoke("games:removeReview", gameId, reviewId),
     removeReviews: (gameId) => ipcRenderer.invoke("games:removeReviews", gameId),

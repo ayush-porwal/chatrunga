@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
 import type { GameSummary } from "@chaturanga/shared/types/chess";
+import { emptyTabCounts, type LibraryTabCounts } from "@chaturanga/shared/types/library";
 import {
   playerName,
+  recentGamesFilterOptions,
+  recentGamesFilterTab,
   recentRows,
   reviewSummary,
   savedGameFacts,
@@ -79,5 +82,46 @@ describe("Recent games rows", () => {
     expect(reviewSummary(review(0, 0, 1))).toBe("1 inaccuracy, no errors");
     expect(reviewSummary(review(0, 0, 0))).toBe("No errors found");
     expect(reviewSummary({ review: null })).toBe("Reviewed");
+  });
+
+  describe("source filter", () => {
+    const counts = (games: Partial<Record<keyof LibraryTabCounts, number>>): LibraryTabCounts => {
+      const all = emptyTabCounts();
+      for (const [tab, count] of Object.entries(games)) {
+        all[tab as keyof LibraryTabCounts] = { games: count, reviewed: 0 };
+      }
+      return all;
+    };
+
+    it("offers All games, then each source with games in tab order, with their counts", () => {
+      expect(recentGamesFilterOptions(counts({ engine: 2, lichess: 5 }), null)).toEqual([
+        { tab: null, label: "All games", count: 7 },
+        { tab: "lichess", label: "Lichess", count: 5 },
+        { tab: "engine", label: "Engine", count: 2 }
+      ]);
+    });
+
+    it("leaves the In progress card's game out of its source and the total", () => {
+      const options = recentGamesFilterOptions(counts({ engine: 1, chesscom: 3 }), "engine");
+      // Its source's only game: the source isn't offered.
+      expect(options).toEqual([
+        { tab: null, label: "All games", count: 3 },
+        { tab: "chesscom", label: "Chess.com", count: 3 }
+      ]);
+      expect(recentGamesFilterOptions(counts({}), null)).toEqual([
+        { tab: null, label: "All games", count: 0 }
+      ]);
+    });
+
+    it("keeps the chosen source while it is offered, else lists every game", () => {
+      const two = recentGamesFilterOptions(counts({ lichess: 2, imported: 1 }), null);
+      expect(recentGamesFilterTab(two, "imported")).toBe("imported");
+      expect(recentGamesFilterTab(two, null)).toBeNull();
+      // Its games were deleted.
+      expect(recentGamesFilterTab(two, "engine")).toBeNull();
+      // One source left: the filter isn't offered, so it no longer applies.
+      const one = recentGamesFilterOptions(counts({ lichess: 2 }), null);
+      expect(recentGamesFilterTab(one, "lichess")).toBeNull();
+    });
   });
 });

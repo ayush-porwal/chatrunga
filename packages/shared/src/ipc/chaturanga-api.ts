@@ -220,6 +220,8 @@ export type ChaturangaApi = {
      * to the menu bar that slides in, so the titlebar stops reserving room for them.
      */
     onFullScreenChanged(callback: (fullScreen: boolean) => void): Unsubscribe;
+    /** Whether the window is full screen now (read on mount; changes come by onFullScreenChanged). */
+    isFullScreen(): Promise<boolean>;
     /** The first frame with real content has been committed: the main process may show the window. */
     rendererReady(): void;
   };
@@ -244,6 +246,11 @@ export type ChaturangaApi = {
     /** Which filters the library has games for, leaving out `excludeId`. */
     facets(excludeId: string | null): Promise<GameLibraryFacets>;
     get(id: string): Promise<SavedGame>;
+    /**
+     * The newest saved engine game still in progress (Play's In progress card): no result, at least
+     * one main-line move, not a puzzle played on. Null when there is none.
+     */
+    latestUnfinishedEngineGame(): Promise<SavedGame | null>;
     /** One saved analysis of a game (null when it's gone), to show instead of the newest. */
     getReview(gameId: string, reviewId: string): Promise<GameReview | null>;
     /** Deletes one saved analysis of a game (with its AI commentary); the game stays. */

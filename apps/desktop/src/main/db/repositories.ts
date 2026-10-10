@@ -34,6 +34,7 @@ import type {
   MaiaRating,
   UpdateEngineInput
 } from "@chaturanga/shared/types/engine";
+import { PUZZLE_CONTINUATION_EVENT } from "@chaturanga/shared/types/chess";
 import type {
   GameHeaders,
   GameLibraryFacets,
@@ -432,6 +433,8 @@ function isMoveNodeLike(value: unknown, fens: Map<string, boolean> = new Map()):
     node.nags.every(isString) &&
     isStringOrNull(node.comment) &&
     (node.clockAfter === undefined || isStringOrNull(node.clockAfter)) &&
+    (node.playedAt === undefined ||
+      (typeof node.playedAt === "number" && Number.isFinite(node.playedAt))) &&
     Array.isArray(node.arrows) &&
     node.arrows.every(isArrow) &&
     Array.isArray(node.highlights) &&
@@ -993,6 +996,39 @@ export const gameRepository = {
   get(id: string): SavedGame | null {
     const row = get<GameRow>("SELECT * FROM games WHERE id = ?", id);
     return row ? toSavedGame(row) : null;
+  },
+
+  /**
+   * The newest engine game still in progress: no result, not a puzzle played on, "You" on exactly
+   * one side (so the engine's side is known), and at least one main-line move (read newest first,
+   * a few rows at a time, until one has a move).
+   */
+  latestUnfinishedEngineGame(): SavedGame | null {
+    const batch = 20;
+    for (let offset = 0; ; offset += batch) {
+      const rows = all<GameRow>(
+        `SELECT * FROM games
+        WHERE source = 'engine-game' AND (result IS NULL OR result IN ('*', ''))
+          AND (event IS NULL OR event != ?)
+          AND (lower(trim(COALESCE(white, ''))) = 'you') + (lower(trim(COALESCE(black, ''))) = 'you') = 1
+        ORDER BY updated_at DESC, id ASC LIMIT ? OFFSET ?`,
+        PUZZLE_CONTINUATION_EVENT,
+        batch,
+        offset
+      );
+      for (const row of rows) {
+        let game: SavedGame;
+        try {
+          game = toSavedGame(row);
+        } catch {
+          // A damaged game can't be rejoined; the next one may be.
+          continue;
+        }
+        const root = game.moveTree.find((node) => node.parentId === null);
+        if (root?.children.length) return game;
+      }
+      if (rows.length < batch) return null;
+    }
   },
 
   save(input: SaveGameInput): SavedGame {

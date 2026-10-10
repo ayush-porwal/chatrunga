@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { BookOpen, GraduationCap, Library, LogIn, Play, Puzzle } from "lucide-react";
+import { BookOpen, Download, GraduationCap, Library, LogIn, Play, Puzzle } from "lucide-react";
 import { START_FEN } from "@chaturanga/shared/chess/position";
 import type { Color } from "@chaturanga/shared/types/chess";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
@@ -13,6 +13,7 @@ import {
 } from "../repertoire/repertoire-chapters";
 import { BoardThumbnail } from "../settings/board-thumbnail";
 import {
+  fillerCaption,
   positionsDue,
   puzzleDetail,
   puzzleTitle,
@@ -292,18 +293,41 @@ export function PuzzleOfTheDayCard({
   );
 }
 
-/** The columns nothing else takes: a white and a black knight, facing each other. */
-export function YourMoveCard({ span }: { span: number }) {
+/**
+ * The columns nothing else takes: a white and a black knight facing each other, and what would show
+ * there (fillerCaption). The knights scale down with the card (one column in a small window).
+ */
+export function FillerCard({
+  span,
+  firstRun,
+  puzzleDatabase,
+  onOpenDatabases
+}: {
+  span: number;
+  firstRun: boolean;
+  puzzleDatabase: boolean;
+  onOpenDatabases: () => void;
+}) {
+  const caption = fillerCaption({ firstRun, puzzleDatabase });
   return (
     <div
-      className={cn(cardShell, "flex items-center justify-center px-6 py-4")}
+      className={cn(
+        cardShell,
+        "flex items-center justify-center px-6 py-4 [container-type:inline-size]"
+      )}
       style={{ gridColumn: `span ${span}` }}
     >
-      <div className="flex flex-col items-center gap-3.5">
-        <PiecePair piece="knight" pieceClassName="size-33" gapClassName="gap-2" />
-        <span className="text-[0.9375rem] font-medium tracking-[-0.005em] text-fg-secondary">
-          Your move
+      <div className="flex flex-col items-center gap-3.5 text-center">
+        <PiecePair piece="knight" pieceClassName="size-[min(8.25rem,44cqw)]" gapClassName="gap-2" />
+        <span className="max-w-64 text-balance text-[0.9375rem] font-medium tracking-[-0.005em] text-fg-secondary">
+          {caption.text}
         </span>
+        {caption.downloadPuzzles ? (
+          <Button type="button" variant="ghost" size="xs" onClick={onOpenDatabases}>
+            <Download />
+            Download
+          </Button>
+        ) : null}
       </div>
     </div>
   );

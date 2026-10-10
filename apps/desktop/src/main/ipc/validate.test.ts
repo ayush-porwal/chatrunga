@@ -326,6 +326,11 @@ describe("library inputs", () => {
     expect(() => parseSaveGameInput({ ...game, moveTree: {} })).toThrow(/moveTree/);
     expect(() => parseSaveGameInput({ ...game, pgn: 1 })).toThrow(/PGN/);
     expect(() => parseSaveGameInput({ ...game, review: "x" })).toThrow(/review/);
+    // An engine game keeps its engine's id; unknown headers are dropped.
+    expect(
+      parseSaveGameInput({ ...game, headers: { engineId: "sf-1", rogue: "x" } }).headers
+    ).toEqual({ engineId: "sf-1" });
+    expect(() => parseSaveGameInput({ ...game, headers: { engineId: 7 } })).toThrow(/engineId/);
   });
 
   it("parses PGN imports and settings keys", () => {

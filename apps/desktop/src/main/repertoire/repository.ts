@@ -791,8 +791,9 @@ export const chapterRepository = {
   },
 
   /**
-   * One node of a chapter's tree, read in SQLite without loading the whole tree; null when the
-   * chapter or node is gone or the stored tree is unreadable.
+   * One node of a chapter's tree, picked out in SQLite: only that node crosses into JavaScript
+   * (SQLite's json_each still parses the stored tree). Null when the chapter or node is gone or
+   * the stored tree is unreadable.
    */
   node(
     chapterId: string,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  fillerCaption,
   localDateKey,
   msUntilNextDay,
   positionsDue,
@@ -57,20 +58,19 @@ describe("repertoireCardContent", () => {
     chapterTitle: "Advance",
     fen: "study-fen"
   });
-  const empty = { dueCount: 0, next: null, alsoDue: null, resume: null, continue: null };
+  const empty = { next: null, alsoDue: null, resume: null, continue: null };
 
-  it("offers the next due position first, with every position due", () => {
+  it("offers the next due position first, counting its own repertoire's due positions", () => {
     const alsoDue = { repertoireId: "caro", name: "Caro-Kann", dueCount: 3 };
     expect(
       repertoireCardContent({
         ...empty,
-        dueCount: 12,
         next,
         alsoDue,
         resume,
         continue: study("caro")
       })
-    ).toEqual({ kind: "review", next, dueCount: 12, alsoDue });
+    ).toEqual({ kind: "review", next, dueCount: 9, alsoDue });
   });
 
   it("then an unfinished session, on its study position only when it is the same repertoire", () => {
@@ -109,5 +109,22 @@ describe("Puzzle of the day text", () => {
     expect(localDateKey(evening)).toBe("2026-10-09");
     expect(localDateKey(new Date(2026, 0, 2, 0, 0, 1))).toBe("2026-01-02");
     expect(msUntilNextDay(evening)).toBe(30_000);
+  });
+});
+
+describe("fillerCaption", () => {
+  it("names what would show there, first run first", () => {
+    expect(fillerCaption({ firstRun: true, puzzleDatabase: false })).toEqual({
+      text: "Set up an opponent to start",
+      downloadPuzzles: false
+    });
+    expect(fillerCaption({ firstRun: false, puzzleDatabase: false })).toEqual({
+      text: "Puzzle of the day needs a puzzle database",
+      downloadPuzzles: true
+    });
+    expect(fillerCaption({ firstRun: false, puzzleDatabase: true })).toEqual({
+      text: "Nothing in progress",
+      downloadPuzzles: false
+    });
   });
 });

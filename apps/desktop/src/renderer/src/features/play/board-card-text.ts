@@ -41,17 +41,14 @@ export type RepertoireCardContent =
   | { kind: "study"; target: NonNullable<RepertoireDueSummary["continue"]> };
 
 export function repertoireCardContent(
-  due:
-    | Pick<RepertoireDueSummary, "dueCount" | "next" | "alsoDue" | "resume" | "continue">
-    | null
-    | undefined
+  due: Pick<RepertoireDueSummary, "next" | "alsoDue" | "resume" | "continue"> | null | undefined
 ): RepertoireCardContent | null {
   if (!due) return null;
   if (due.next) {
     return {
       kind: "review",
       next: due.next,
-      dueCount: Math.max(due.dueCount, due.next.dueCount),
+      dueCount: due.next.dueCount,
       alsoDue: due.alsoDue
     };
   }
@@ -65,6 +62,24 @@ export function repertoireCardContent(
   }
   if (due.continue) return { kind: "study", target: due.continue };
   return null;
+}
+
+/**
+ * The filler card's caption: what would show in its place. First run: an opponent to set up; no
+ * puzzle database: the puzzle of the day needs one (with a way to get it); else nothing is on.
+ */
+export function fillerCaption({
+  firstRun,
+  puzzleDatabase
+}: {
+  firstRun: boolean;
+  puzzleDatabase: boolean;
+}): { text: string; downloadPuzzles: boolean } {
+  if (firstRun) return { text: "Set up an opponent to start", downloadPuzzles: false };
+  if (!puzzleDatabase) {
+    return { text: "Puzzle of the day needs a puzzle database", downloadPuzzles: true };
+  }
+  return { text: "Nothing in progress", downloadPuzzles: false };
 }
 
 /** "12 positions due" (singular for one). */

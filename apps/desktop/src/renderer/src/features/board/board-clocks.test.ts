@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { addMoveNode, importPgnText } from "@chaturanga/shared/chess/pgn";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
-import { boardClocksAt, sideToMove, startingClock } from "./board-clocks";
+import { boardClocksAt, sideToMove, startingClock, timeControlLabel } from "./board-clocks";
 
 // The opening of a 3+0 Lichess blitz game, with the clocks Lichess recorded after every move.
 const BLITZ = `[White "tdguerreiro"]
@@ -79,6 +79,20 @@ describe("boardClocksAt", () => {
   it("shows no clocks for a game whose moves record none", () => {
     const { game: plain } = importPgnText('[TimeControl "180+0"]\n\n1. e4 e5 2. Nf3 *');
     expect(boardClocksAt(plain.moveTree, plain.currentNodeId, "180+0")).toBeNull();
+  });
+});
+
+describe("timeControlLabel", () => {
+  it("writes base seconds as minutes, with the increment", () => {
+    expect(timeControlLabel("120+1")).toBe("2+1");
+    expect(timeControlLabel("600")).toBe("10+0");
+    expect(timeControlLabel("90+0")).toBe("1.5+0");
+  });
+
+  it("keeps other forms as written and has nothing for no control", () => {
+    expect(timeControlLabel("40/7200:3600")).toBe("40/7200:3600");
+    for (const control of [null, undefined, "", "-", "?"])
+      expect(timeControlLabel(control)).toBeNull();
   });
 });
 

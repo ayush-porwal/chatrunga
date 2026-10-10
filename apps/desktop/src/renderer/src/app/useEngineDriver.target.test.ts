@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { EngineError, EngineInfo } from "@chaturanga/shared/types/engine";
+import type { EngineBestMove, EngineError, EngineInfo } from "@chaturanga/shared/types/engine";
 import type { AnalysisTarget } from "../features/analysis/live-analysis";
 
 // The hook's effects run once, outside React (as in useGameAutosave's tests); the engine calls
@@ -23,9 +23,9 @@ const engines = {
 /** What main sends: the driver's own handlers, called as an engine event arrives. */
 const engineEvents = {
   info: (_info: EngineInfo) => {},
+  bestMove: (_bestMove: EngineBestMove) => {},
   error: (_error: EngineError) => {}
 };
-const unsubscribe = () => () => {};
 vi.stubGlobal("window", globalThis);
 vi.stubGlobal("chaturanga", {
   engines,
@@ -34,7 +34,10 @@ vi.stubGlobal("chaturanga", {
       engineEvents.info = handler;
       return () => {};
     },
-    onEngineBestMove: unsubscribe,
+    onEngineBestMove: (handler: (bestMove: EngineBestMove) => void) => {
+      engineEvents.bestMove = handler;
+      return () => {};
+    },
     onEngineError: (handler: (error: EngineError) => void) => {
       engineEvents.error = handler;
       return () => {};
@@ -196,6 +199,38 @@ describe("useEngineDriver when the engine quits during a search", () => {
     expect(state.engineClockLive?.stoppedAt).toBeTypeOf("number");
     expect(state.gameOutcome).toBeNull();
     expect(useAnalysisStore.getState().error).toBe("sf quit during the search (exit 1).");
+    expect(engines.startGame).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useEngineDriver in a timed engine game", () => {
+  it("keeps thinking when you step back, its clock running, and plays its move where it thought", async () => {
+    useAnalysisStore.getState().setActiveEngine("sf");
+    const game = useGameStore.getState();
+    game.setMode("engine");
+    game.setEngineSide("black");
+    game.setEngineMatchClock({ initialMs: 60_000, incrementMs: 0 });
+    game.initEngineClockLive();
+    expect(useGameStore.getState().makeMove({ from: "e2", to: "e4" })).toBe(true);
+    const e4 = useGameStore.getState().currentNodeId;
+    await settle();
+    expect(engines.startGame).toHaveBeenCalledTimes(1);
+    const searchId = engines.startGame.mock.calls[0]![0].searchId;
+
+    engines.stop.mockClear();
+    useGameStore.getState().goToNode("root");
+    await settle();
+    expect(engines.stop).not.toHaveBeenCalled();
+    expect(useGameStore.getState().engineClockLive).toMatchObject({ sideToMove: "black" });
+    expect(useGameStore.getState().engineClockLive?.stoppedAt).toBeUndefined();
+
+    engineEvents.bestMove({ engineId: "sf", searchId, move: "e7e5" });
+    await settle();
+    const state = useGameStore.getState();
+    expect(state.currentNodeId).toBe("root");
+    expect(state.moveTree.find((node) => node.parentId === e4)?.san).toBe("e5");
+    expect(state.engineClockLive?.sideToMove).toBe("white");
+    // Nothing is searched in the position looked at: the game goes on at its latest move.
     expect(engines.startGame).toHaveBeenCalledTimes(1);
   });
 });

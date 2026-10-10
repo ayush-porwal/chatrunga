@@ -13,6 +13,9 @@ export type GameSource =
   | "puzzle"
   | "lichess"
   | "chesscom";
+/** The Event of the engine game Play starts from a puzzle's end: not a game to rejoin. */
+export const PUZZLE_CONTINUATION_EVENT = "Puzzle continuation";
+
 /** `online`: a live Lichess game (the opponent's side is `engineSide` in the game store). */
 export type GameMode = "freeplay" | "engine" | "analysis" | "puzzle" | "online";
 
@@ -45,6 +48,11 @@ export type MoveNode = {
   comment: string | null;
   /** Remaining time after this move, from PGN tag `[%clk h:mm:ss]`. */
   clockAfter?: string | null;
+  /**
+   * When this move was played (epoch ms; on the start node: when the clock started), in a timed
+   * engine game: the other side's clock has run since, also while the app was closed.
+   */
+  playedAt?: number;
   arrows: BoardArrow[];
   highlights: BoardHighlight[];
   children: string[];
@@ -66,6 +74,8 @@ export type GameHeaders = {
   utcTime?: string | null;
   termination?: string | null;
   result?: string | null;
+  /** An engine game's opponent: the id of the engine that played it (not written to the PGN). */
+  engineId?: string | null;
   /** Non-standard tags like En Croissant's [Orientation "black"] — applied on load. */
   orientationHint?: Color | null;
 };

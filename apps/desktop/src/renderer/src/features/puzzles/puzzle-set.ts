@@ -12,6 +12,20 @@ export function puzzleDatabasesOf<T extends Pick<InstalledDatabase, "kind">>(
   return databases.filter((item) => item.kind === "puzzle" || item.kind === "position");
 }
 
+/**
+ * Which puzzle databases are installed, as they are now (each one's id, size and update time):
+ * a key that changes when one is added, removed or replaced, so what was read from them is read
+ * again (Play's Puzzle of the day). Order-independent.
+ */
+export function puzzleDatabasesKey(
+  databases: readonly Pick<InstalledDatabase, "id" | "kind" | "fileSizeBytes" | "updatedAt">[]
+): string {
+  return puzzleDatabasesOf(databases)
+    .map((item) => `${item.id}:${item.fileSizeBytes}:${item.updatedAt}`)
+    .sort()
+    .join("|");
+}
+
 /** The set Puzzles draws from: the draft's database, else Lichess puzzles, else the first one. */
 export function selectedPuzzleDatabase<T extends DatabaseRef>(
   databases: readonly T[],

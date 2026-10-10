@@ -5,9 +5,12 @@ import { uciLineSteps } from "../features/game-review/review-utils";
 import {
   buildEngineGoClock,
   clockNow,
+  clockTag,
+  latestPlayedNode,
   noteSystemResumed,
   remainingClockMs,
   setTimeAsleepSource,
+  timeForfeitOutcome,
   useGameStore
 } from "./game-store";
 
@@ -773,6 +776,115 @@ describe("engine clock pause", () => {
     expect(useGameStore.getState().engineClockLive).toMatchObject({
       whiteMs: 11_000,
       sideToMove: "black"
+    });
+  });
+});
+
+describe("timed engine game record", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  /** A 10+2 game against the engine as Black, its clock started at `start`. */
+  function timedGame(at: (ms: number) => void, start = 0) {
+    at(start);
+    const game = useGameStore.getState();
+    game.reset();
+    game.setMode("engine");
+    game.setEngineSide("black");
+    game.setEngineMatchClock({ initialMs: 10_000, incrementMs: 2_000 });
+    game.initEngineClockLive();
+  }
+
+  it("keeps when the clock started, and each move's clock and play time", () => {
+    const at = mockTime();
+    timedGame(at, 500);
+    expect(useGameStore.getState().moveTree[0]?.playedAt).toBe(1_700_000_000_500);
+    at(1_500);
+    useGameStore.getState().makeMove({ from: "e2", to: "e4" }); // White: 10 - 1 + 2 = 11 s
+    at(4_250);
+    useGameStore.getState().makeMove({ from: "e7", to: "e5" }); // Black: 10 - 2.75 + 2 = 9.25 s
+    const moves = useGameStore.getState().moveTree.filter((node) => node.san);
+    expect(moves.map(({ clockAfter, playedAt }) => ({ clockAfter, playedAt }))).toEqual([
+      { clockAfter: "0:00:11", playedAt: 1_700_000_001_500 },
+      { clockAfter: "0:00:09.2", playedAt: 1_700_000_004_250 }
+    ]);
+    expect(latestPlayedNode(useGameStore.getState().moveTree)?.san).toBe("e5");
+  });
+
+  it("records no clock in an untimed game", () => {
+    const game = useGameStore.getState();
+    game.reset();
+    game.setMode("engine");
+    game.setEngineSide("black");
+    game.makeMove({ from: "e2", to: "e4" });
+    const node = useGameStore.getState().moveTree.find((item) => item.san === "e4");
+    expect(node?.clockAfter).toBeNull();
+    expect(node?.playedAt).toBeUndefined();
+  });
+
+  it("writes clocks as PGN [%clk] times, to the tenth below", () => {
+    expect(clockTag(180_000)).toBe("0:03:00");
+    expect(clockTag(3_725_490)).toBe("1:02:05.4");
+    expect(clockTag(-5)).toBe("0:00:00");
+  });
+
+  it("a takeback while the engine's clock runs gives the engine its time back", () => {
+    const at = mockTime();
+    timedGame(at);
+    at(1_000);
+    useGameStore.getState().makeMove({ from: "e2", to: "e4" }); // White: 10 - 1 + 2 = 11 s
+    // The engine thinks for 3 s while you step back and play another first move.
+    at(4_000);
+    useGameStore.getState().goToNode("root");
+    expect(useGameStore.getState().makeMove({ from: "d2", to: "d4" })).toBe(true);
+    // 11 s less e4's increment, less the 3 s since the engine's turn began, plus d4's increment.
+    expect(useGameStore.getState().engineClockLive).toMatchObject({
+      whiteMs: 8_000,
+      blackMs: 10_000,
+      sideToMove: "black",
+      turnStartedAt: 4_000
+    });
+  });
+
+  it("playing the latest move again from the move before only goes back to it", () => {
+    const at = mockTime();
+    timedGame(at);
+    at(1_000);
+    useGameStore.getState().makeMove({ from: "e2", to: "e4" });
+    const before = useGameStore.getState();
+    at(3_000);
+    useGameStore.getState().goToNode("root");
+    expect(useGameStore.getState().makeMove({ from: "e2", to: "e4" })).toBe(true);
+    const state = useGameStore.getState();
+    expect(state.currentNodeId).toBe(before.currentNodeId);
+    expect(state.moveTree).toBe(before.moveTree);
+    expect(state.engineClockLive).toBe(before.engineClockLive);
+  });
+
+  it("plays the engine's move where it thought, leaving the cursor where you look", () => {
+    const at = mockTime();
+    timedGame(at);
+    at(1_000);
+    useGameStore.getState().makeMove({ from: "e2", to: "e4" });
+    const e4 = useGameStore.getState().currentNodeId;
+    useGameStore.getState().goToNode("root");
+    at(2_000);
+    expect(useGameStore.getState().makeUciMove("e7e5", e4)).toBe(true);
+    const state = useGameStore.getState();
+    expect(state.currentNodeId).toBe("root");
+    expect(state.moveTree.find((node) => node.parentId === e4)?.san).toBe("e5");
+    expect(state.engineClockLive).toMatchObject({ blackMs: 11_000, sideToMove: "white" });
+  });
+
+  it("a flag against a side that can't mate is a draw", () => {
+    // White: king and queen; Black: a bare king.
+    const fen = "8/8/4k3/8/8/8/3Q4/4K3 w - - 0 60";
+    expect(timeForfeitOutcome(fen, "white")).toEqual({
+      result: "1/2-1/2",
+      termination: "Time forfeit"
+    });
+    expect(timeForfeitOutcome(fen, "black")).toEqual({
+      result: "1-0",
+      termination: "Time forfeit"
     });
   });
 });

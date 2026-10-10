@@ -10,29 +10,36 @@ export const PLAY_COLUMNS = 4;
 export const RECENT_GAMES_FETCH = 11;
 
 export type TopSlot =
-  | { kind: "play"; span: 1 | 2 }
+  | { kind: "play"; span: 1 | 2 | 3 }
   | { kind: "in-progress" }
   | { kind: "repertoire" }
   | { kind: "puzzle" }
-  /** The "Your move" illustration, filling the columns nothing else takes. */
-  | { kind: "your-move"; span: number };
+  /** The knights illustration, filling the columns nothing else takes. */
+  | { kind: "filler"; span: number };
 
 /**
  * The top row, left to right: the Play card (two columns, with its preview board, when nothing is in
- * progress), then the board cards that have something to show, in a fixed order, then the "Your
- * move" card across whatever columns are left.
+ * progress), then the board cards that have something to show, in a fixed order, then the filler
+ * card across whatever columns are left. When the filler would take two columns or more, the Play
+ * card takes one of them: its preview board then has room to fill the card's height.
  */
 export function topRowSlots(cards: {
   inProgress: boolean;
   repertoire: boolean;
   puzzle: boolean;
 }): TopSlot[] {
-  const slots: TopSlot[] = [{ kind: "play", span: cards.inProgress ? 1 : 2 }];
-  if (cards.inProgress) slots.push({ kind: "in-progress" });
-  if (cards.repertoire) slots.push({ kind: "repertoire" });
-  if (cards.puzzle) slots.push({ kind: "puzzle" });
-  const used = slots.reduce((sum, slot) => sum + ("span" in slot ? slot.span : 1), 0);
-  if (used < PLAY_COLUMNS) slots.push({ kind: "your-move", span: PLAY_COLUMNS - used });
+  const boardCards: TopSlot[] = [];
+  if (cards.inProgress) boardCards.push({ kind: "in-progress" });
+  if (cards.repertoire) boardCards.push({ kind: "repertoire" });
+  if (cards.puzzle) boardCards.push({ kind: "puzzle" });
+  let play: 1 | 2 | 3 = cards.inProgress ? 1 : 2;
+  let left = PLAY_COLUMNS - play - boardCards.length;
+  if (left >= 2) {
+    play = play === 1 ? 2 : 3;
+    left -= 1;
+  }
+  const slots: TopSlot[] = [{ kind: "play", span: play }, ...boardCards];
+  if (left > 0) slots.push({ kind: "filler", span: left });
   return slots;
 }
 
@@ -87,4 +94,17 @@ export function playEngineOrder<T extends { name: string }>(engines: readonly T[
       Number(maia(a)) - Number(maia(b)) ||
       a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })
   );
+}
+
+/** The wide Play card's gap between the preview board and the controls (px). */
+export const WIDE_GAP = 24;
+/** The controls column never gets narrower than this (the slider's labels must fit). */
+const WIDE_CONTROLS_MIN = 300;
+
+/**
+ * The wide Play card's preview board edge: as tall as the card's inside, as long as the controls
+ * keep their room; never under 120px. 300px at 1440×900 (the mock), more where the card has it.
+ */
+export function widePreviewBoardSize(width: number, height: number): number {
+  return Math.floor(Math.max(120, Math.min(height, width - WIDE_GAP - WIDE_CONTROLS_MIN)));
 }

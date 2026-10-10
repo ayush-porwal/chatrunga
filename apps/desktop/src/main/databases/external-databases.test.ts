@@ -1167,6 +1167,15 @@ describe("puzzleOfTheDay", () => {
     await installLichess([lichessRow("lichess", 1600)]);
     expect((await puzzleOfTheDay({ date: "2026-10-10" }))?.id).toBe("lichess");
   });
+
+  it("skips a puzzle database that can't be read, and fails only when every one does", async () => {
+    // A Lichess file that claims to be compressed but isn't: its scan fails.
+    await installLichess([lichessRow("broken", 1600)]);
+    rows.set("lichess-puzzles", { ...rows.get("lichess-puzzles")!, format: "csv.zst" });
+    await expect(puzzleOfTheDay({ date: "2026-10-10" })).rejects.toThrow(/Lichess puzzles/);
+    await installPositions([positionRow("mid", 2)]);
+    expect((await puzzleOfTheDay({ date: "2026-10-10" }))?.id).toBe("mid");
+  });
 });
 
 describe("entries registered in the old folder", () => {

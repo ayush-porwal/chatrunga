@@ -423,6 +423,11 @@ function installWindowReveal(): void {
     const window = BrowserWindow.fromWebContents(event.sender);
     if (window) revealWindow(window);
   });
+  // A page loaded (or reloaded) while the window is already full screen asks once on mount.
+  ipcMain.handle(
+    "appearance:isFullScreen",
+    (event) => BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false
+  );
 }
 
 /** Serves engine pictures from disk; see `localImagePathFromUrl` for what is allowed. */

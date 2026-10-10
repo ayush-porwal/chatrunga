@@ -4,6 +4,7 @@ import { ratingRangeFor } from "@chaturanga/shared/chess/puzzle-rating";
 import { DEFAULT_PUZZLE_FILTERS } from "../../stores/puzzle-draft-store";
 import {
   formatPuzzleTag,
+  puzzleDatabasesKey,
   puzzleDatabasesOf,
   puzzleDatasetLabel,
   puzzleSetConfig,
@@ -135,5 +136,25 @@ describe("puzzle set", () => {
       difficulty: null,
       position: { difficultyMin: 1 }
     });
+  });
+});
+
+describe("puzzleDatabasesKey", () => {
+  const db = (id: string, kind: "puzzle" | "game-library", fileSizeBytes = 10, updatedAt = 1) => ({
+    id,
+    kind,
+    fileSizeBytes,
+    updatedAt
+  });
+
+  it("changes when a puzzle database is added, removed or replaced, not for other databases", () => {
+    const key = puzzleDatabasesKey([db("a", "puzzle"), db("b", "puzzle")]);
+    expect(
+      puzzleDatabasesKey([db("b", "puzzle"), db("a", "puzzle"), db("g", "game-library")])
+    ).toBe(key);
+    expect(puzzleDatabasesKey([db("a", "puzzle")])).not.toBe(key);
+    expect(puzzleDatabasesKey([db("a", "puzzle"), db("b", "puzzle", 10, 2)])).not.toBe(key);
+    expect(puzzleDatabasesKey([db("a", "puzzle"), db("b", "puzzle", 11)])).not.toBe(key);
+    expect(puzzleDatabasesKey([])).toBe("");
   });
 });

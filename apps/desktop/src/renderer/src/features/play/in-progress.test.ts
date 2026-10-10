@@ -89,6 +89,13 @@ describe("pickInProgress", () => {
     });
   });
 
+  it("prefers a Lichess game where it's your move", () => {
+    const waiting = { ...playing, id: "waiting1", isMyTurn: false };
+    const card = pickInProgress({ ...none, playing: [waiting, playing] });
+    expect(card).toMatchObject({ source: "lichess", targetId: "abcd1234" });
+    expect(pickInProgress({ ...none, playing: [waiting] })?.targetId).toBe("waiting1");
+  });
+
   it("then the engine match on the board, by the engine's display name", () => {
     const card = pickInProgress({ ...none, boardMatch, saved });
     expect(card).toMatchObject({
@@ -113,14 +120,16 @@ describe("pickInProgress", () => {
     });
   });
 
-  it("skips a saved game without a move, and is null with nothing in progress", () => {
+  it("skips a saved game without a move or without you on one side, and is null with nothing in progress", () => {
     expect(pickInProgress({ ...none, saved: { ...saved, plies: 0 } })).toBeNull();
+    expect(pickInProgress({ ...none, saved: { ...saved, black: "Maia 1500" } })).toBeNull();
+    expect(pickInProgress({ ...none, saved: { ...saved, white: "You" } })).toBeNull();
     expect(pickInProgress(none)).toBeNull();
   });
 });
 
 describe("savedEngineGameSides", () => {
-  it("finds you by the name Play writes, else takes White", () => {
+  it("finds you by the name Play writes, on exactly one side", () => {
     expect(savedEngineGameSides("You", "Maia 1500 (managed)")).toEqual({
       human: "white",
       engine: "Maia 1500"
@@ -129,7 +138,9 @@ describe("savedEngineGameSides", () => {
       human: "black",
       engine: "Stockfish"
     });
-    expect(savedEngineGameSides("Alice", null)).toEqual({ human: "white", engine: "Engine" });
+    expect(savedEngineGameSides("You", null)).toEqual({ human: "white", engine: "Engine" });
+    expect(savedEngineGameSides("Alice", null)).toBeNull();
+    expect(savedEngineGameSides("You", "you")).toBeNull();
   });
 });
 

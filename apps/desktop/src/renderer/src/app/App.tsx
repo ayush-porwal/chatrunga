@@ -6,7 +6,7 @@ import { createGameFromFen } from "@chaturanga/shared/chess/pgn";
 import { DEFAULT_PUZZLE_RATING } from "@chaturanga/shared/chess/puzzle-rating";
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
-import type { ImportedGame } from "@chaturanga/shared/types/chess";
+import { PUZZLE_CONTINUATION_EVENT, type ImportedGame } from "@chaturanga/shared/types/chess";
 import { defaultSettings } from "@chaturanga/shared/types/settings";
 import { Notice } from "@/components/ui/notice";
 import { hasDesktopApi, isElectronMac } from "@/lib/environment";
@@ -88,7 +88,12 @@ import {
   mainlineEnd,
   useGameAutosave
 } from "./useGameAutosave";
-import { ENGINE_MOVE_TIME_MS, savedEngineMatch } from "./rejoin-saved-game";
+import {
+  ENGINE_MOVE_TIME_MS,
+  rejoinNotice,
+  savedEngineClock,
+  savedEngineMatch
+} from "./rejoin-saved-game";
 import { boardResultPatch } from "../features/analysis/post-game";
 import { useUsageActivity } from "./useUsageTelemetry";
 import { useLichess } from "./useLichess";
@@ -287,7 +292,27 @@ export function App() {
   const desktopApiAvailable = hasDesktopApi();
   // macOS full screen hides the traffic lights (they come with the menu bar on hover).
   const [fullScreen, setFullScreen] = useState(false);
-  useEffect(() => window.chaturanga?.appearance.onFullScreenChanged?.(setFullScreen), []);
+  useEffect(() => {
+    const appearance = window.chaturanga?.appearance;
+    if (!appearance) return;
+    let current = true;
+    let changed = false;
+    const unsubscribe = appearance.onFullScreenChanged((value) => {
+      changed = true;
+      setFullScreen(value);
+    });
+    // A reload while full screen: the state now, unless a change has arrived since.
+    appearance
+      .isFullScreen()
+      .then((value) => {
+        if (current && !changed) setFullScreen(value);
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+      unsubscribe();
+    };
+  }, []);
   const windowControlsVisible = isElectronMac() && !fullScreen;
   // Narrow subscriptions: the shell must not re-render on every move (it would cascade into the
   // sidebar, titlebar and every tooltip). Handlers read the store directly via currentGame().
@@ -741,16 +766,24 @@ export function App() {
   }
 
   /**
-   * Play's In progress card on a saved engine game: the game opens and, when its engine (by name)
-   * is installed and available, the match goes on from the end of its main line against it, untimed
-   * (the clocks' remaining time isn't saved) at the no-clock think time. Otherwise it is only opened.
+   * Play's In progress card on a saved engine game: the game opens and, when its engine is
+   * installed and available, the match goes on from its latest move against it. A timed game goes
+   * on with the time each side has now (the side to move's clock ran while it was away), and one
+   * whose time ran out meanwhile opens lost on time; a game saved without its clocks goes on
+   * untimed, at the no-clock think time. Otherwise it is only opened, with a notice saying why.
    */
   async function rejoinSavedGame(gameId: string) {
     if (!(await openSavedGameById(gameId))) return;
     const game = currentGame();
-    const match = savedEngineMatch(game.headers, engines.data ?? []);
-    if (!match) return;
-    const end = mainlineEnd(game.moveTree);
+    const installed = engines.data ?? [];
+    const match = savedEngineMatch(game.headers, installed);
+    if (!match) {
+      const notice = rejoinNotice(game.headers, installed);
+      if (notice) useAppNoticeStore.getState().show(notice, { tone: "info" });
+      return;
+    }
+    const clock = savedEngineClock(game.moveTree, game.headers.timeControl, Date.now());
+    const end = clock ? { id: clock.nodeId } : mainlineEnd(game.moveTree);
     if (end) game.goToNode(end.id);
     if (positionStatus(currentGame().currentFen).isEnd) return;
     stopEngineWork();
@@ -762,6 +795,17 @@ export function App() {
     game.setEngineMatchClock(null);
     game.clearEngineMatchExtras();
     game.setMatchFeedback(null);
+    if (clock) {
+      game.setEngineMatchClock(clock.config);
+      game.setMatchClock({
+        whiteMs: clock.whiteMs,
+        blackMs: clock.blackMs,
+        sideToMove: clock.sideToMove,
+        running: true
+      });
+      // Out of time while away: the game ends on time now (and is saved with its result).
+      if (clock.flagged) game.resolveTimeout(clock.sideToMove);
+    }
     const analysis = useAnalysisStore.getState();
     analysis.setActiveEngine(match.engine.id);
     analysis.setError(null);
@@ -818,7 +862,9 @@ export function App() {
   function openPuzzlesPage(history: HistoryMode = "push") {
     if (!desktopApiAvailable) return;
     if (history === "push") commitCurrent();
-    stopEngineWork();
+    // An engine game still being played goes on behind the page (its engine keeps thinking, its
+    // clock running); a puzzle replacing the board ends it.
+    if (useGameStore.getState().mode !== "engine") stopEngineWork();
     // The loaded game stays as it is until a puzzle replaces it (marking it a puzzle would save it
     // as one, which hides it from the library).
     setFocusMode(false);
@@ -1180,7 +1226,8 @@ export function App() {
   function openDatabasesPage(history: HistoryMode = "push") {
     if (!desktopApiAvailable) return;
     if (history === "push") commitCurrent();
-    stopEngineWork();
+    // An engine game still being played goes on behind the page, as behind Play.
+    if (useGameStore.getState().mode !== "engine") stopEngineWork();
     setFocusMode(false);
     showView("databases", history);
   }
@@ -1211,7 +1258,7 @@ export function App() {
         fen,
         source: "engine-game",
         headers: {
-          event: "Puzzle continuation",
+          event: PUZZLE_CONTINUATION_EVENT,
           site: "?",
           result: "*",
           white: engineSide === "white" ? engineDisplayName(engine.name) : "You",
