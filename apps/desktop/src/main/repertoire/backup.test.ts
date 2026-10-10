@@ -61,8 +61,8 @@ vi.mock("./backup-restore-runner", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./backup-restore-runner")>();
   return {
     ...actual,
-    runBackupRestore: (...[job, dbPath, workerPath]: Parameters<typeof actual.runBackupRestore>) =>
-      actual.runBackupRestore(job, dbPath, workerPath, false)
+    runBackupRestore: (...[job, dbPath, options]: Parameters<typeof actual.runBackupRestore>) =>
+      actual.runBackupRestore(job, dbPath, { ...options, requireWorker: false })
   };
 });
 

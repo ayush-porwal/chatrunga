@@ -85,11 +85,9 @@ function job(repertoireId: string, sizes: number[]): ImportCommitJob {
 describe("runImportCommit (writer worker)", () => {
   it("sends every chapter in bounded slices, then resolves with the worker's result", async () => {
     const dbPath = join(dir, "ok.sqlite");
-    const result = (await runImportCommit(
-      job("ok", [5, 4500, 1]),
-      () => dbPath,
-      FAKE_WRITER
-    )) as unknown as {
+    const result = (await runImportCommit(job("ok", [5, 4500, 1]), () => dbPath, {
+      workerPath: FAKE_WRITER
+    })) as unknown as {
       received: { chapters: string[]; nodeMessages: number; nodes: number; keys: number };
       job: Record<string, unknown>;
     };
@@ -109,15 +107,15 @@ describe("runImportCommit (writer worker)", () => {
 
   it("refuses to commit in this thread when the worker is required (packaged app)", async () => {
     const missing = join(dir, "missing-writer.js");
-    await expect(runImportCommit(job("ok", [3]), () => "", missing, true)).rejects.toThrow(
-      `a file of this installation is missing (${missing})`
-    );
+    await expect(
+      runImportCommit(job("ok", [3]), () => "", { requireWorker: true, workerPath: missing })
+    ).rejects.toThrow(`a file of this installation is missing (${missing})`);
   });
 
   it("rejects with the worker's error", async () => {
-    await expect(runImportCommit(job("fail", [3]), () => "", FAKE_WRITER)).rejects.toThrow(
-      "Invalid expectedRevision: repertoire changed"
-    );
+    await expect(
+      runImportCommit(job("fail", [3]), () => "", { workerPath: FAKE_WRITER })
+    ).rejects.toThrow("Invalid expectedRevision: repertoire changed");
   });
 
   it("a crash before commit leaves nothing written and rejects with an actionable error", async () => {
@@ -125,7 +123,9 @@ describe("runImportCommit (writer worker)", () => {
     const db = new DatabaseSync(dbPath);
     db.exec("PRAGMA journal_mode = WAL");
     db.exec("CREATE TABLE rows (name TEXT)");
-    await expect(runImportCommit(job("crash", [3]), () => dbPath, FAKE_WRITER)).rejects.toThrow(
+    await expect(
+      runImportCommit(job("crash", [3]), () => dbPath, { workerPath: FAKE_WRITER })
+    ).rejects.toThrow(
       "The import couldn't be saved: the writer stopped unexpectedly (exit 7); nothing was imported. Try again."
     );
     expect(db.prepare("SELECT COUNT(*) AS n FROM rows").get()).toEqual({ n: 0 });

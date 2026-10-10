@@ -958,8 +958,7 @@ export async function previewImport(input: PreviewImportInput): Promise<ImportPr
       last = progress;
       importProgress(jobId, progress.phase, progress);
     },
-    undefined,
-    app.isPackaged === true
+    { requireWorker: app.isPackaged === true }
   );
   runningImports.set(jobId, run);
   let games: ImportedGame[];
@@ -1085,8 +1084,7 @@ async function storeImport(input: ImportCommitInput): Promise<ImportResult> {
       chapters
     },
     databasePath,
-    undefined,
-    app.isPackaged === true
+    { requireWorker: app.isPackaged === true }
   );
   importJobs.delete(input.jobId);
   changed({
@@ -3209,8 +3207,7 @@ export async function restoreBackup(input: RestoreBackupInput): Promise<RestoreB
       app: backupApp()
     },
     databasePath,
-    undefined,
-    app.isPackaged === true
+    { requireWorker: app.isPackaged === true }
   );
   backupJobs.delete(input.jobId);
   for (const item of restored) {

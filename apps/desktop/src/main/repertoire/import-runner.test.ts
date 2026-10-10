@@ -52,7 +52,9 @@ const job = (text: string) => ({
 describe("startImportParse (worker thread)", () => {
   it("relays progress and resolves with the worker's result", async () => {
     const events: ImportProgress[] = [];
-    const run = startImportParse(job("ok"), (event) => events.push(event), FAKE_WORKER);
+    const run = startImportParse(job("ok"), (event) => events.push(event), {
+      workerPath: FAKE_WORKER
+    });
     await expect(run.result).resolves.toEqual({
       games: [
         {
@@ -70,18 +72,18 @@ describe("startImportParse (worker thread)", () => {
   });
 
   it("rejects with the worker's message, or when it stops unexpectedly", async () => {
-    await expect(startImportParse(job("fail"), () => {}, FAKE_WORKER).result).rejects.toThrow(
-      "This PGN has more than 1 games"
-    );
-    await expect(startImportParse(job("crash"), () => {}, FAKE_WORKER).result).rejects.toThrow(
-      /stopped unexpectedly \(exit 3\)/
-    );
+    await expect(
+      startImportParse(job("fail"), () => {}, { workerPath: FAKE_WORKER }).result
+    ).rejects.toThrow("This PGN has more than 1 games");
+    await expect(
+      startImportParse(job("crash"), () => {}, { workerPath: FAKE_WORKER }).result
+    ).rejects.toThrow(/stopped unexpectedly \(exit 3\)/);
   });
 
   it("cancels at once, and no progress follows", async () => {
     for (const mode of ["polite", "stuck"]) {
       let events = 0;
-      const run = startImportParse(job(mode), () => (events += 1), FAKE_WORKER);
+      const run = startImportParse(job(mode), () => (events += 1), { workerPath: FAKE_WORKER });
       // Both modes post progress as they start.
       await vi.waitFor(() => expect(events).toBeGreaterThan(0));
       const before = events;
@@ -113,7 +115,7 @@ describe("startImportParse (in this thread, without the bundled worker)", () => 
   it("parses the text with the import limits", async () => {
     const text = generateRepertoirePgn({ games: 5, movesPerGame: 6 });
     const events: ImportProgress[] = [];
-    const run = startImportParse(job(text), (event) => events.push(event), missing);
+    const run = startImportParse(job(text), (event) => events.push(event), { workerPath: missing });
     const { games } = await run.result;
     expect(games).toHaveLength(5);
     expect(Object.keys(games[0].positionKeys)).toHaveLength(7);
@@ -122,14 +124,17 @@ describe("startImportParse (in this thread, without the bundled worker)", () => 
 
   it("cancels at once", async () => {
     const text = generateRepertoirePgn({ games: 2000, movesPerGame: 8 });
-    const run = startImportParse(job(text), () => {}, missing);
+    const run = startImportParse(job(text), () => {}, { workerPath: missing });
     run.cancel();
     await expect(run.result).rejects.toBeInstanceOf(ImportCancelledError);
   });
 
   it("refuses to parse in this thread when the worker is required (packaged app)", async () => {
     const events: ImportProgress[] = [];
-    const run = startImportParse(job("1. e4 *"), (event) => events.push(event), missing, true);
+    const run = startImportParse(job("1. e4 *"), (event) => events.push(event), {
+      requireWorker: true,
+      workerPath: missing
+    });
     await expect(run.result).rejects.toThrow(
       `The PGN import can't run: a file of this installation is missing (${missing}). ` +
         "Reinstall Chaturanga and try again."

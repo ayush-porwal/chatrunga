@@ -51,7 +51,9 @@ function job(text: string): RestoreJob {
 
 describe("runBackupRestore (restore worker)", () => {
   it("hands the job to the worker, starts it and resolves with what it restored", async () => {
-    const restored = await runBackupRestore(job("ok"), () => join(dir, "ok.sqlite"), FAKE_RESTORE);
+    const restored = await runBackupRestore(job("ok"), () => join(dir, "ok.sqlite"), {
+      workerPath: FAKE_RESTORE
+    });
     expect(restored).toEqual([
       {
         sourceId: "r1",
@@ -72,15 +74,17 @@ describe("runBackupRestore (restore worker)", () => {
 
   it("refuses to restore in this thread when the worker is required (packaged app)", async () => {
     const missing = join(dir, "missing-restore.js");
-    await expect(runBackupRestore(job("ok"), () => "", missing, true)).rejects.toThrow(
+    await expect(
+      runBackupRestore(job("ok"), () => "", { requireWorker: true, workerPath: missing })
+    ).rejects.toThrow(
       `The backup restore can't run: a file of this installation is missing (${missing})`
     );
   });
 
   it("rejects with the worker's error", async () => {
-    await expect(runBackupRestore(job("fail"), () => "", FAKE_RESTORE)).rejects.toThrow(
-      "Invalid selections: refused"
-    );
+    await expect(
+      runBackupRestore(job("fail"), () => "", { workerPath: FAKE_RESTORE })
+    ).rejects.toThrow("Invalid selections: refused");
   });
 
   it("a crash before commit leaves nothing restored and rejects with an actionable error", async () => {
@@ -88,7 +92,9 @@ describe("runBackupRestore (restore worker)", () => {
     const db = new DatabaseSync(dbPath);
     db.exec("PRAGMA journal_mode = WAL");
     db.exec("CREATE TABLE rows (name TEXT)");
-    await expect(runBackupRestore(job("crash"), () => dbPath, FAKE_RESTORE)).rejects.toThrow(
+    await expect(
+      runBackupRestore(job("crash"), () => dbPath, { workerPath: FAKE_RESTORE })
+    ).rejects.toThrow(
       "The backup couldn't be restored: the restore stopped unexpectedly (exit 3); nothing was restored. Try again."
     );
     expect(db.prepare("SELECT COUNT(*) AS n FROM rows").get()).toEqual({ n: 0 });
