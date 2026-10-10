@@ -25,6 +25,21 @@ function walk(dir, hits, names) {
   }
 }
 
+function walkDirs(dir, hits, suffix) {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.isSymbolicLink() || !entry.isDirectory()) continue;
+    const full = path.join(dir, entry.name);
+    if (entry.name.endsWith(suffix)) hits.push(full);
+    else walkDirs(full, hits, suffix);
+  }
+}
+
 /**
  * Chromium web-ui extras this app never shows: the about:tracing debug page (script, html,
  * its d3 copy), the whats-new animation library, and the whats-new banner art. Gzip
@@ -98,4 +113,8 @@ module.exports = async function afterPack(context) {
   const paks = [];
   walk(context.appOutDir, paks, new Set(["resources.pak"]));
   for (const file of paks) stripDeadPakResources(file);
+  // The Plugin helper only hosts PPAPI plugins (PDF). The app embeds neither.
+  const pluginHelpers = [];
+  walkDirs(context.appOutDir, pluginHelpers, "Helper (Plugin).app");
+  for (const dir of pluginHelpers) rmSync(dir, { recursive: true, force: true });
 };
