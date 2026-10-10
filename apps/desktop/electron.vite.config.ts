@@ -1,3 +1,4 @@
+import { copyFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "electron-vite";
@@ -6,11 +7,24 @@ import tailwindcss from "@tailwindcss/vite";
 
 const rootDir = fileURLToPath(new URL(".", import.meta.url));
 
+/** Vite rewrites the book URL but does not emit the gzip. The main bundle reads it beside itself. */
+function copyOpeningBook() {
+  const from = resolve(rootDir, "../../packages/shared/src/chess/opening-book.txt.gz");
+  return {
+    name: "copy-opening-book",
+    apply: "build" as const,
+    closeBundle() {
+      copyFileSync(from, resolve(rootDir, "out/main/opening-book.txt.gz"));
+    }
+  };
+}
+
 // Main and preload are fully self-contained bundles (only Node built-ins and
 // `electron` stay external), so the packaged app ships no node_modules and
 // every package lives in devDependencies.
 export default defineConfig({
   main: {
+    plugins: [copyOpeningBook()],
     build: {
       // electron-vite leaves minify off. The packaged main bundle is otherwise the
       // readable build, which is most of the asar.
