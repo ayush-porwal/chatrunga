@@ -60,7 +60,8 @@ walk(app, (path, size) => {
 const outDir = new URL("../apps/desktop/out/", import.meta.url).pathname;
 walk(outDir, (path, size) => {
   if (!path.endsWith(".js") && !path.endsWith(".cjs")) return;
-  if (path.includes(`${join("out", "renderer")}`) || path.includes("/renderer/")) rendererJs += size;
+  if (path.includes(`${join("out", "renderer")}`) || path.includes("/renderer/"))
+    rendererJs += size;
   else if (path.includes("/main/")) mainJs += size;
 });
 

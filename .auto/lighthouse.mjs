@@ -15,10 +15,7 @@ import desktopConfig from "lighthouse/core/config/desktop-config.js";
 import { navigation } from "lighthouse";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const appBin = join(
-  root,
-  "apps/desktop/dist/mac-arm64/Chaturanga.app/Contents/MacOS/Chaturanga"
-);
+const appBin = join(root, "apps/desktop/dist/mac-arm64/Chaturanga.app/Contents/MacOS/Chaturanga");
 statSync(appBin);
 
 const ROUTES = [
@@ -121,7 +118,8 @@ try {
   });
   const targets = await browser.pages();
   const page = targets.find((candidate) => candidate.url().startsWith("file:"));
-  if (!page) throw new Error(`no file:// page in packaged app: ${targets.map((t) => t.url()).join(" ")}`);
+  if (!page)
+    throw new Error(`no file:// page in packaged app: ${targets.map((t) => t.url()).join(" ")}`);
   const session = await page.createCDPSession();
   await session.send("Emulation.setFocusEmulationEnabled", { enabled: true });
   await page.waitForSelector("#root", { timeout: 20_000 });

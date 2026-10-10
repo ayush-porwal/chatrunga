@@ -1,6 +1,7 @@
 # Autoresearch: shrink the shipped package, drop dead code, raise Lighthouse
 
 ## Objective
+
 Make the desktop app users download smaller, without changing how it works. The v0.2.4
 release artifacts (https://github.com/ayush-porwal/chatrunga/releases/tag/v0.2.4) are
 ~102–125 MB installers. Almost all of that is the Electron runtime plus `out/` (the
@@ -13,6 +14,7 @@ raise Lighthouse performance, accessibility, best-practices, and SEO for every a
 The app must keep working: checks.sh is the gate.
 
 ## Metrics
+
 - **Primary**: `score` (lower is better). One integer so a size win always beats Lighthouse,
   and a Lighthouse win always beats a dead-code win, without either being discarded when
   the coarser number is unchanged:
@@ -24,6 +26,7 @@ The app must keep working: checks.sh is the gate.
 
   `package_bytes` is the unpacked macOS arm64 app. `marketing_bytes` is the built site, so
   deleting a referenced image that the site ships counts. 100 bytes is the size resolution.
+
 - **Secondary**:
   - `zip_bytes` — the matching `--arm64 zip` artifact (what a macOS arm64 user downloads)
   - `locale_bytes` — `.lproj` still inside the packaged app
@@ -41,6 +44,7 @@ The app must keep working: checks.sh is the gate.
     is cheating)
 
 ## How to Run
+
 `./.auto/measure.sh` — builds the desktop app, packages the macOS arm64 zip (and the unpacked
 app it leaves behind), audits Lighthouse, runs knip, prints `METRIC name=value` lines.
 This is the iteration metric. It is macOS arm64 only, because that is the machine the loop
@@ -65,6 +69,7 @@ Packaging is slow (copies Electron). Do not replace the real `dist/mac-arm64` ap
 hand-maintained file list. That list can drift from what ships.
 
 ## Audited pages
+
 Lighthouse runs only against the packaged desktop app (`dist/mac-arm64/Chaturanga.app`),
 attached to that process. Do not serve the renderer in a browser. Many features do not
 exist there, and a browser score is not a result.
@@ -85,6 +90,7 @@ the packaged binary, not a browser. Pages:
 `lh_pages` must stay 6. Do not drop a page to raise the minimum.
 
 ## Files in Scope
+
 - `apps/desktop/**` — Electron app, builder config, renderer, main, preload
 - `apps/marketing/**` — public site (Lighthouse + its own dist size)
 - `packages/shared/**` — shared code pulled into the bundles
@@ -95,6 +101,7 @@ the packaged binary, not a browser. Pages:
 - `scripts/measure-installer-sizes.mjs` — installer byte counts for that workflow
 
 ## Off Limits
+
 - Images may be deleted even when code references or renders them. Remove the reference in the same change so the build does not point at a missing file. Prefer deleting an image that is unused, duplicated, or only there as weight. Do not delete sounds or piece-theme glyphs the board still draws, and do not remove a non-image feature.
 - Do not drop macOS x64, Windows, or Linux targets. This metric is arm64-only because that
   is the machine we can package; the release still builds the others.
@@ -106,6 +113,7 @@ the packaged binary, not a browser. Pages:
 - Do not commit secrets or the untracked audit markdown files (`AUDIT.md`, `FEEDBACK.md`, …).
 
 ## Constraints
+
 - Behavior stays the same. English UI is fine; stripping non-English Electron locale packs
   is allowed (native dialogs fall back to English). Do not break engine download, review,
   import, or the packaged-app check.
@@ -120,6 +128,7 @@ the packaged binary, not a browser. Pages:
   that are real (workers, preload, e2e, scripts).
 
 ## End conditions
+
 Stop only when all three are true, and say so:
 
 1. Further package-size cuts would remove behavior, a platform, or a file the package check
@@ -132,6 +141,7 @@ Stop only when all three are true, and say so:
    still removable when dropping them (and the reference) shrinks the package or the page.
 
 ## What's Been Tried
+
 - Baseline keep: unpacked app 285,364,805 bytes, zip 112,446,644, locales 49,229,173, stockfish 0.
   Lighthouse on the packaged binary (file://) scores perf 0 / bp 0 because there is no paint
   metric and `is-on-https` fails. Those are protocol limits, not a reason to audit in Chrome.

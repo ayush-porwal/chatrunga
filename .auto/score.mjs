@@ -16,7 +16,12 @@ function readMetrics(file) {
 
 function walk(dir, visit) {
   for (const name of readdirSync(dir, { withFileTypes: true })) {
-    if (name.name === "node_modules" || name.name === "dist" || name.name === "out" || name.name === "coverage") {
+    if (
+      name.name === "node_modules" ||
+      name.name === "dist" ||
+      name.name === "out" ||
+      name.name === "coverage"
+    ) {
       continue;
     }
     const path = join(dir, name.name);
@@ -45,7 +50,9 @@ const unreferenced = images.filter(
 );
 console.log(`METRIC unreferenced_images=${unreferenced.length}`);
 if (unreferenced.length) {
-  console.error(`unreferenced images:\n${unreferenced.map((path) => path.slice(root.length)).join("\n")}`);
+  console.error(
+    `unreferenced images:\n${unreferenced.map((path) => path.slice(root.length)).join("\n")}`
+  );
 }
 
 const pkg = readMetrics("/tmp/chaturanga-package-metrics.txt");
