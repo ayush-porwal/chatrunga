@@ -35,10 +35,7 @@
       {
         "from": "src/main/assets",
         "to": ".",
-        "filter": [
-          "app-icon.icns",
-          "app-icon.png"
-        ]
+        "filter": ["app-icon.png"]
       }
     ],
     "mac": {

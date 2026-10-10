@@ -469,8 +469,11 @@ function createAppIcon() {
   const assetsDir = app.isPackaged
     ? process.resourcesPath
     : join(app.getAppPath(), "src/main/assets");
+  // macOS already ships the bundle icon as Resources/icon.icns. Don't copy a second icns.
   const iconFiles =
-    process.platform === "darwin" ? ["app-icon.icns", "app-icon.png"] : ["app-icon.png"];
+    process.platform === "darwin"
+      ? ["icon.icns", "app-icon.png"]
+      : ["app-icon.png"];
   for (const file of iconFiles) {
     const icon = nativeImage.createFromPath(join(assetsDir, file));
     if (!icon.isEmpty()) return icon;
