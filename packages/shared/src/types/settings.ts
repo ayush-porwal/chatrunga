@@ -368,13 +368,9 @@ export const pieceStyleOptions: Array<{
   }
 ];
 
-export const pieceSizesOptions: Array<{
-  id: PieceSizes;
-  label: string;
-  description: string;
-}> = [
-  { id: "ladder", label: "By rank", description: "The king stands tallest, pawns shortest." },
-  { id: "uniform", label: "Uniform", description: "Every piece is as tall as the king." }
+export const pieceSizesOptions: Array<{ id: PieceSizes; label: string }> = [
+  { id: "ladder", label: "By rank" },
+  { id: "uniform", label: "Uniform" }
 ];
 
 /** How much the AI commentary says about each move. */

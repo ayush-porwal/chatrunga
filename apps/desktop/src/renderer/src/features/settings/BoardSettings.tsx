@@ -92,9 +92,6 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
   const selectedThemeLabel = customBoardSelected
     ? "Custom colors"
     : boardThemes.find((theme) => theme.id === appearance.boardTheme)?.label;
-  const sizesDescription = pieceSizesOptions.find(
-    (o) => o.id === appearance.pieceSizes
-  )?.description;
 
   // A theme and its square colors are one write (never half-applied); dragging a color or the hue
   // shows at once and is written when it pauses.
@@ -192,7 +189,7 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
             pieceSizes={appearance.pieceSizes}
             onChange={(next) => setSetting("pieceStyle", next)}
           />
-          <Field label="Piece sizes" hint={sizesDescription}>
+          <Field label="Piece sizes">
             <SegmentedControl
               ariaLabel="Piece sizes"
               fullWidth
