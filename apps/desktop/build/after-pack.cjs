@@ -3,7 +3,12 @@ const path = require("node:path");
 const { gunzipSync } = require("node:zlib");
 
 const CRASHPAD = new Set(["chrome_crashpad_handler", "chrome_crashpad_handler.exe"]);
-const TRACING_MARKERS = [Buffer.from("about_tracing"), Buffer.from("chrome://tracing"), Buffer.from("d3js.org")];
+const DEAD_MARKERS = [
+  Buffer.from("about_tracing"),
+  Buffer.from("chrome://tracing"),
+  Buffer.from("d3js.org"),
+  Buffer.from("lottiejs")
+];
 
 function walk(dir, hits, names) {
   let entries;
@@ -21,21 +26,22 @@ function walk(dir, hits, names) {
 }
 
 /**
- * Chromium dev-facing extras this app never shows: the about:tracing debug page (script,
- * html, its d3 copy) and the DevTools what's-new banner art. Gzip resources are matched by
- * payload markers; PNGs only by signature plus IHDR size (wide banners), so a shifted id
- * cannot delete something else.
+ * Chromium web-ui extras this app never shows: the about:tracing debug page (script, html,
+ * its d3 copy), the whats-new animation library, and the whats-new banner art. Gzip
+ * resources are matched by payload markers; PNGs only by signature plus IHDR shape, so a
+ * shifted id cannot delete something else.
  *
  * Pak v5 header: uint32 version, uint8 encoding, 3 pad bytes, uint16 resource count, uint16 alias count.
  */
-function isWideBannerPng(blob) {
+function isDeadPng(blob) {
   if (blob.length < 24 || blob[0] !== 0x89 || blob[1] !== 0x50 || blob[12] !== 0x49 || blob[13] !== 0x48) {
     return false;
   }
   if (blob[14] !== 0x44 || blob[15] !== 0x52) return false;
   const width = blob.readUInt32BE(16);
   const height = blob.readUInt32BE(20);
-  return width >= 700 && height <= 700;
+  if (width >= 700 && height <= 700) return true; // full-width banner art
+  return width >= 400 && width < 700 && height <= 40; // landscape program wordmarks
 }
 
 function stripDeadPakResources(file) {
@@ -64,8 +70,8 @@ function stripDeadPakResources(file) {
       } catch {
         continue;
       }
-      if (TRACING_MARKERS.some((marker) => text.includes(marker))) targets.add(i);
-    } else if (isWideBannerPng(blob)) {
+      if (DEAD_MARKERS.some((marker) => text.includes(marker))) targets.add(i);
+    } else if (isDeadPng(blob)) {
       targets.add(i);
     }
   }
