@@ -34,15 +34,7 @@
       "out/**/*",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": "src/main/assets",
-        "to": ".",
-        "filter": [
-          "app-icon.png"
-        ]
-      }
-    ],
+    "extraResources": [],
     "mac": {
       "icon": "src/main/assets/app-icon.icns",
       "category": "public.app-category.board-games",
@@ -77,6 +69,15 @@
       }
     ],
     "win": {
+      "extraResources": [
+        {
+          "from": "src/main/assets",
+          "to": ".",
+          "filter": [
+            "app-icon.png"
+          ]
+        }
+      ],
       "icon": "src/main/assets/app-icon.png",
       "target": [
         {
@@ -96,6 +97,15 @@
       "artifactName": "Chaturanga-${version}-win-${arch}-setup.${ext}"
     },
     "linux": {
+      "extraResources": [
+        {
+          "from": "src/main/assets",
+          "to": ".",
+          "filter": [
+            "app-icon.png"
+          ]
+        }
+      ],
       "icon": "src/main/assets/app-icon.png",
       "category": "Game",
       "synopsis": "Chess game review with engine analysis and an AI coach",
