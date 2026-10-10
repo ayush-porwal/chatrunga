@@ -7,16 +7,9 @@ name: Package size (throwaway)
 # read GitHub releases, not Actions artifacts. Artifacts expire after a day.
 on:
   workflow_dispatch:
-  # Also on pull requests so the size check can run before this file is on the
-  # default branch. workflow_dispatch alone cannot be started until then. Path
-  # filtered: a 3-OS electron-builder matrix is too expensive for docs-only PRs.
-  pull_request:
-    paths:
-      - "apps/desktop/**"
-      - "packages/**"
-      - "scripts/**"
-      - "pnpm-lock.yaml"
-      - ".github/workflows/package-size.yml"
+    # A 3-OS electron-builder matrix is too heavy to run automatically, so this only runs when
+    # dispatched (from main once merged: gh workflow run package-size.yml). Used to verify that
+    # size cuts land on real Windows/macOS/Linux installers; not a PR gate.
 
 permissions:
   contents: read
