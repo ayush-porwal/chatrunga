@@ -5,19 +5,19 @@
 // files a.tsv, b.tsv, c.tsv, d.tsv, e.tsv. That data is dedicated to the public domain under CC0 1.0
 // (https://creativecommons.org/publicdomain/zero/1.0/).
 //
-// Gzip of the move tree, one row per move, depth-first: "<depth>\t<uci>[\t<eco>\t<name>]".
-// openingBookText() inflates the sibling .txt.gz for parseOpeningBook.
+// Zstd of the move tree, one row per move, depth-first: "<depth>\t<uci>[\t<eco>\t<name>]".
+// openingBookText() inflates the sibling .txt.zst for parseOpeningBook.
 
 import { readFileSync } from "node:fs";
-import { gunzipSync } from "node:zlib";
+import { zstdDecompressSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 
-const gzip = readFileSync(fileURLToPath(new URL("./opening-book.txt.gz", import.meta.url)));
+const compressed = readFileSync(fileURLToPath(new URL("./opening-book.txt.zst", import.meta.url)));
 
 let text: string | null = null;
 
 /** The book's move tree, inflated once. */
 export function openingBookText(): string {
-  text ??= gunzipSync(gzip).toString("utf8");
+  text ??= zstdDecompressSync(compressed).toString("utf8");
   return text;
 }

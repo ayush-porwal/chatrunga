@@ -7,14 +7,14 @@ import tailwindcss from "@tailwindcss/vite";
 
 const rootDir = fileURLToPath(new URL(".", import.meta.url));
 
-/** Vite rewrites the book URL but does not emit the gzip. The main bundle reads it beside itself. */
+/** Vite rewrites the book URL but does not emit the file. The main bundle reads it beside itself. */
 function copyOpeningBook() {
-  const from = resolve(rootDir, "../../packages/shared/src/chess/opening-book.txt.gz");
+  const from = resolve(rootDir, "../../packages/shared/src/chess/opening-book.txt.zst");
   return {
     name: "copy-opening-book",
     apply: "build" as const,
     closeBundle() {
-      copyFileSync(from, resolve(rootDir, "out/main/opening-book.txt.gz"));
+      copyFileSync(from, resolve(rootDir, "out/main/opening-book.txt.zst"));
     }
   };
 }

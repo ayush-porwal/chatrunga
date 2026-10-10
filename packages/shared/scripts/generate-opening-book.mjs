@@ -23,7 +23,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { gzipSync } from "node:zlib";
+import { constants, zstdCompressSync } from "node:zlib";
 import { Chess } from "chessops/chess";
 import { makeFen } from "chessops/fen";
 import { parseSan } from "chessops/san";
@@ -45,20 +45,20 @@ function openingBookModule(openings) {
 // files ${FILES.join(", ")}. That data is dedicated to the public domain under CC0 1.0
 // (https://creativecommons.org/publicdomain/zero/1.0/).
 //
-// Gzip of the move tree, one row per move, depth-first: "<depth>\t<uci>[\t<eco>\t<name>]".
-// openingBookText() inflates the sibling .txt.gz for parseOpeningBook.
+// Zstd of the move tree, one row per move, depth-first: "<depth>\t<uci>[\t<eco>\t<name>]".
+// openingBookText() inflates the sibling .txt.zst for parseOpeningBook.
 
 import { readFileSync } from "node:fs";
-import { gunzipSync } from "node:zlib";
+import { zstdDecompressSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 
-const gzip = readFileSync(fileURLToPath(new URL("./opening-book.txt.gz", import.meta.url)));
+const compressed = readFileSync(fileURLToPath(new URL("./opening-book.txt.zst", import.meta.url)));
 
 let text: string | null = null;
 
 /** The book's move tree, inflated once. */
 export function openingBookText(): string {
-  text ??= gunzipSync(gzip).toString("utf8");
+  text ??= zstdDecompressSync(compressed).toString("utf8");
   return text;
 }
 `;
@@ -121,6 +121,11 @@ function write(at, depth) {
 write(root, 1);
 
 const text = `${lines.join("\n")}\n`;
-writeFileSync(output.replace(/\.ts$/, ".txt.gz"), gzipSync(Buffer.from(text), { level: 9 }));
+writeFileSync(
+  output.replace(/\.ts$/, ".txt.zst"),
+  zstdCompressSync(Buffer.from(text), {
+    params: { [constants.ZSTD_c_compressionLevel]: 19 }
+  })
+);
 writeFileSync(output, openingBookModule(openings));
 console.log(`${openings} openings, ${lines.length} moves -> ${output}`);
