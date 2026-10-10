@@ -9,6 +9,7 @@ import {
   externalDatabaseSources,
   type DatabaseDownloadProgress,
   type InstalledDatabase,
+  type PuzzleOfTheDayInput,
   type PuzzleSample,
   type PuzzleSampleInput
 } from "@chaturanga/shared/types/database";
@@ -838,6 +839,149 @@ export async function samplePuzzle(input: PuzzleSampleInput): Promise<PuzzleSamp
     );
   }
   return sample;
+}
+
+/*
+ * Puzzle of the day. The first DAILY_CANDIDATES rows of the file that make a good daily puzzle
+ * (one scan in the scanner, stopping there; samplePuzzle's pools are left alone) are the
+ * candidates, and the date picks one by a stable hash: the same date and file give the same
+ * puzzle, another date (almost always) another one. No network.
+ */
+
+/** Candidates read from the file's start: enough variety, a short scan. */
+const DAILY_CANDIDATES = 20_000;
+/** Plays a Lichess candidate needs, when the file says (rows below it are kept only if none pass). */
+const DAILY_MIN_PLAYS = 1000;
+/** Lichess: mid-strength, well-liked puzzles. */
+const DAILY_LICHESS_FILTERS: NonNullable<PuzzleSampleInput["lichess"]> = {
+  ratingMin: 1400,
+  ratingMax: 2100,
+  popularityMin: 85,
+  lengths: [],
+  themes: [],
+  openings: [],
+  side: "any"
+};
+/** Position sets: the middle of their 1–4 difficulty scale. */
+const DAILY_POSITION_FILTERS: NonNullable<PuzzleSampleInput["position"]> = {
+  difficultyMin: 2,
+  difficultyMax: 3,
+  tags: []
+};
+const DAILY_CACHE_SIZE = 4;
+
+/** Per date, database and file version: the day's puzzle (or the scan finding it). */
+const dailyPuzzles = new Map<string, Promise<PuzzleSample | null>>();
+
+/** The installed puzzle databases to take the day's puzzle from: the Lichess set first. */
+function dailySources(): InstalledDatabase[] {
+  const kinds = new Map<string, string>(
+    externalDatabaseSources.map((source) => [source.id, source.kind])
+  );
+  return externalDatabaseRepository
+    .list()
+    .filter((database) => {
+      const kind = kinds.get(database.sourceId);
+      return kind === "puzzle" || kind === "position";
+    })
+    .sort(
+      (a, b) =>
+        Number(rowKindForSource(b.sourceId) === "lichess") -
+        Number(rowKindForSource(a.sourceId) === "lichess")
+    );
+}
+
+/** FNV-1a: a hash of the date that is the same on every run and platform. */
+function stableHash(text: string): number {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash;
+}
+
+/**
+ * The day's puzzle from the installed puzzle databases (the Lichess set first); null when none is
+ * installed or none of them has a puzzle to give. Answered from memory after the first call.
+ */
+export async function puzzleOfTheDay(input: PuzzleOfTheDayInput): Promise<PuzzleSample | null> {
+  for (const registered of dailySources()) {
+    const database = await onDisk(registered);
+    if (!database) continue;
+    const file = await stat(database.filePath);
+    const key = JSON.stringify([input.date, database.id, `${file.size}:${file.mtimeMs}`]);
+    let daily = dailyPuzzles.get(key);
+    if (!daily) {
+      daily = pickDailyPuzzle(database, input.date);
+      dailyPuzzles.set(key, daily);
+      // A failure isn't remembered: the next call scans again.
+      daily.catch(() => dailyPuzzles.delete(key));
+      for (const oldKey of [...dailyPuzzles.keys()]) {
+        if (dailyPuzzles.size <= DAILY_CACHE_SIZE) break;
+        dailyPuzzles.delete(oldKey);
+      }
+    }
+    const sample = await daily;
+    if (sample) return sample;
+  }
+  return null;
+}
+
+async function pickDailyPuzzle(
+  database: InstalledDatabase,
+  date: string
+): Promise<PuzzleSample | null> {
+  const kind = rowKindForSource(database.sourceId);
+  const filtered: PuzzleSampleInput =
+    kind === "lichess"
+      ? { databaseId: database.id, lichess: DAILY_LICHESS_FILTERS }
+      : { databaseId: database.id, position: DAILY_POSITION_FILTERS };
+  // A file with no puzzle in that band (a small or unusual set) still has a puzzle of the day.
+  for (const input of [filtered, { databaseId: database.id }]) {
+    let result: ScanResult;
+    try {
+      result = await startScan({
+        filePath: database.filePath,
+        compressed: database.format.endsWith(".zst"),
+        kind,
+        input,
+        excludeIds: [],
+        // As many kept as matched: the file's first matches, in file order (no random sampling).
+        size: DAILY_CANDIDATES,
+        maxMatches: DAILY_CANDIDATES
+      }).result;
+    } catch (error) {
+      logger.warn(
+        "databases",
+        `finding the puzzle of the day in ${database.name} failed:`,
+        errorMessage(error)
+      );
+      throw sampleError(database, error);
+    }
+    const played =
+      kind === "lichess"
+        ? result.rows.filter((row) => Number(row[6]) >= DAILY_MIN_PLAYS)
+        : result.rows;
+    const candidates = played.length ? played : result.rows;
+    const start = stableHash(date) % Math.max(candidates.length, 1);
+    // The picked row may not make a puzzle (an illegal move): the next one does instead.
+    for (let offset = 0; offset < candidates.length; offset += 1) {
+      const row = candidates[(start + offset) % candidates.length];
+      if (!row) continue;
+      try {
+        const sample = (kind === "lichess" ? sampleFromLichessRow : sampleFromPositionRow)(
+          database,
+          row,
+          input
+        );
+        if (sample) return sample;
+      } catch {
+        // Malformed row: skip it.
+      }
+    }
+  }
+  return null;
 }
 
 /** A scan's rows become the pool; a complete scan that kept every match holds all of them. */

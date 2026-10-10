@@ -2,7 +2,7 @@
  * Lichess JSON → the shapes the renderer sees (shared/types/lichess). Everything from the network
  * is treated as untrusted: unknown fields are dropped and missing ones get safe defaults.
  */
-import { START_FEN } from "@chaturanga/shared/chess/position";
+import { positionFromFen, START_FEN } from "@chaturanga/shared/chess/position";
 import type {
   LichessAccount,
   LichessChallenge,
@@ -11,6 +11,7 @@ import type {
   LichessGameState,
   LichessPerf,
   LichessPlayer,
+  LichessPlayingGame,
   LichessSpeed
 } from "@chaturanga/shared/types/lichess";
 import { isOneOf, isRecord } from "@chaturanga/shared/types/guards";
@@ -129,6 +130,45 @@ export function normalizeGameFull(value: unknown): LichessGameFull {
     initialFen: !initialFen || initialFen === "startpos" ? START_FEN : initialFen,
     state: normalizeGameState(json.state),
     createdAt: int(json.createdAt) ?? Date.now()
+  };
+}
+
+/** UCI as Lichess writes it (castling as king-to-square); anything else isn't a last move. */
+const UCI_MOVE = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
+
+/**
+ * One `nowPlaying` entry of `GET /api/account/playing`. Its `fen` is the board alone: the side to
+ * move comes from `isMyTurn` (castling and en passant aren't given, and a board doesn't need them).
+ * Throws on an entry without an id, colour or readable position.
+ */
+export function normalizePlayingGame(value: unknown): LichessPlayingGame {
+  const json = asJson(value);
+  const id = text(json.gameId);
+  const yourColor = color(json.color);
+  const board = text(json.fen);
+  if (!id || !yourColor || !board) throw new Error("Lichess sent a game without its position.");
+  const isMyTurn = json.isMyTurn === true;
+  const turn = isMyTurn === (yourColor === "white") ? "w" : "b";
+  const fen = board.trim().split(/\s+/).length === 1 ? `${board.trim()} ${turn} - - 0 1` : board;
+  positionFromFen(fen); // Throws for a position that can't be shown.
+  const opponent = asJson(json.opponent);
+  const aiLevel = int(opponent.ai);
+  const lastMove = text(json.lastMove);
+  return {
+    id,
+    fen,
+    lastMove: lastMove && UCI_MOVE.test(lastMove) ? lastMove : null,
+    yourColor,
+    opponent: {
+      name:
+        aiLevel !== null
+          ? `Lichess AI level ${aiLevel}`
+          : (text(opponent.username) ?? text(opponent.id) ?? "Anonymous"),
+      rating: aiLevel !== null ? null : int(opponent.rating)
+    },
+    speed: speed(json.speed, "correspondence"),
+    rated: json.rated === true,
+    isMyTurn
   };
 }
 

@@ -14,6 +14,7 @@ import type {
   StartEngineGameInput
 } from "@chaturanga/shared/types/engine";
 import { parseBestMove, parseInfoLine } from "@chaturanga/shared/engine/uci";
+import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import { logger, errorMessage } from "../logger";
 import { engineConfigForId, engineResourceOptions } from "./engine-config";
 import {
@@ -499,7 +500,7 @@ export class EngineManager extends EventEmitter<EngineEvents> {
         this.emit("error", {
           engineId: config.id,
           searchId,
-          message: `${config.name} quit during the search${exit}${reason}`
+          message: `${engineDisplayName(config.name)} quit during the search${exit}${reason}`
         });
       }
       this.rejectLineWaiter(

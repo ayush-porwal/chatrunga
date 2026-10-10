@@ -33,6 +33,7 @@ import {
 } from "@chaturanga/shared/chess/move-assessment";
 import { classifyOpening } from "@chaturanga/shared/chess/opening-book";
 import { parseInfoLine, parseLc0MoveStat, type Lc0MoveStat } from "@chaturanga/shared/engine/uci";
+import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import { logger } from "../logger";
 import { openingBook } from "./opening-book";
 import {
@@ -219,7 +220,7 @@ export async function reviewGameWithEngine(
     const maiaEngines = maiaSlots.map((slot) => ({
       rating: slot.config.maiaRating,
       engineId: slot.config.id,
-      name: slot.config.name
+      name: engineDisplayName(slot.config.name)
     }));
 
     const moves: MoveReview[] = [];
@@ -421,7 +422,7 @@ export async function reviewGameWithEngine(
       schemaVersion: GAME_REVIEW_SCHEMA_VERSION,
       assessmentPolicy: MOVE_ASSESSMENT_POLICY,
       engineId: config.id,
-      engineName: session.engineName ?? config.name,
+      engineName: engineDisplayName(session.engineName ?? config.name),
       engineSettings: {
         multipv,
         moveTimeMs: search.recordMoveTimeMs,
@@ -480,7 +481,7 @@ export async function analysePositionsWithEngine(
     }
     // A search stopped by the cancel ends with bestmove too: its partial lines are not an answer.
     if (options.shouldCancel?.()) throw new Error("Review cancelled");
-    return { engineName: session.engineName ?? config.name, lines };
+    return { engineName: engineDisplayName(session.engineName ?? config.name), lines };
   } finally {
     session.stop();
   }
@@ -634,7 +635,11 @@ class UciReviewSession {
     this.process.on("error", (error) => this.fail(error));
     this.process.on("exit", (code) => {
       if (this.process)
-        this.fail(new Error(`${this.config.name} exited unexpectedly (code ${code ?? "unknown"})`));
+        this.fail(
+          new Error(
+            `${engineDisplayName(this.config.name)} exited unexpectedly (code ${code ?? "unknown"})`
+          )
+        );
     });
 
     const identity = createUciIdentity();
@@ -823,7 +828,7 @@ class UciReviewSession {
         ].join("\n");
         logger.error("review", `engine timeout${diagnostics}`);
         const error = new Error(
-          `${this.config.name} did not answer "${input.go}" within ${elapsedSeconds}s.`
+          `${engineDisplayName(this.config.name)} did not answer "${input.go}" within ${elapsedSeconds}s.`
         );
         // Stop the search and take its bestmove, so the next search doesn't read it as its own. An
         // engine that won't stop is broken: every later wait fails at once.

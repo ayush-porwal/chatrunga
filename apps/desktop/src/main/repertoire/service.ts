@@ -62,6 +62,7 @@ import {
   type RepertoireDecision,
   type RepertoireDetail,
   type RepertoireDueSummary,
+  type RepertoireNextDue,
   type LinkGameInput,
   type RepertoireGameLink,
   type RepertoireListFilters,
@@ -379,12 +380,13 @@ export function compareGame(input: CompareGameInput): RepertoireComparison {
 }
 
 /**
- * Due decisions across active repertoires, the most recent study place, and the practice session
- * to resume (Home card and hub).
+ * Due decisions across active repertoires, the next one to review, the most recent study place,
+ * and the practice session to resume (Play's Repertoire card and the hub).
  */
 export function getDueSummary(): RepertoireDueSummary {
   const now = clock();
   const totals = repertoireRepository.dueTotals(now);
+  const [top, second] = repertoireRepository.dueRanking(now, 2);
   const place = repertoireRepository.lastStudyPlace();
   const session = sessionRepository.lastActive();
   return {
@@ -393,12 +395,63 @@ export function getDueSummary(): RepertoireDueSummary {
       ? {
           repertoireId: place.repertoireId,
           chapterId: place.chapterId,
-          nodeId: place.nodeId ?? REPERTOIRE_ROOT_NODE_ID
+          nodeId: place.nodeId ?? REPERTOIRE_ROOT_NODE_ID,
+          repertoireName: place.repertoireName,
+          color: place.color,
+          chapterTitle: place.chapterTitle,
+          fen:
+            (place.nodeId && chapterRepository.node(place.chapterId, place.nodeId)?.fenAfter) ||
+            place.rootFen
         }
       : null,
     resume: session
-      ? { repertoireId: session.repertoireId, sessionId: session.id, mode: session.mode }
+      ? {
+          repertoireId: session.repertoireId,
+          sessionId: session.id,
+          mode: session.mode,
+          repertoireName: session.repertoireName,
+          color: session.color
+        }
+      : null,
+    next: top ? nextDue(top, now) : null,
+    alsoDue: second
+      ? { repertoireId: second.id, name: second.name, dueCount: second.dueCount }
       : null
+  };
+}
+
+/** The next due position of a repertoire with due decisions, and the move that reached it. */
+function nextDue(
+  repertoire: { id: string; name: string; color: RepertoireColor; dueCount: number },
+  now: number
+): RepertoireNextDue | null {
+  const due = repertoireRepository.nextDue(repertoire.id, now);
+  if (!due) return null;
+  const node = chapterRepository.node(due.chapterId, due.nodeId);
+  return {
+    repertoireId: repertoire.id,
+    repertoireName: repertoire.name,
+    color: repertoire.color,
+    dueCount: repertoire.dueCount,
+    chapterId: due.chapterId,
+    nodeId: due.nodeId,
+    fen: node?.fenAfter ?? due.rootFen,
+    lastMove: node ? moveInto(node) : null
+  };
+}
+
+/** The move into a node ("3…Nf6": number 3, Black), from the position before it; null at a root. */
+function moveInto(
+  node: Pick<MoveNode, "san" | "uci" | "fenBefore">
+): RepertoireNextDue["lastMove"] {
+  if (!node.san || !node.uci) return null;
+  const [, turn, , , , fullmove] = node.fenBefore.trim().split(/\s+/);
+  const moveNumber = Number(fullmove);
+  return {
+    uci: node.uci,
+    san: node.san,
+    moveNumber: Number.isInteger(moveNumber) && moveNumber > 0 ? moveNumber : 1,
+    color: turn === "b" ? "black" : "white"
   };
 }
 

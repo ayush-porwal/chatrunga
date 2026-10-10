@@ -811,7 +811,18 @@ describe("repertoire service: chapters, decisions and index", () => {
       lastNodeId: null
     });
     service.saveWorkspace({ repertoireId: first.id, workspace: workspace(own.id, "n1") });
-    expect(service.getDueSummary().continue).toMatchObject({ chapterId: own.id, nodeId: "n1" });
+    expect(service.getDueSummary().continue).toEqual({
+      repertoireId: first.id,
+      chapterId: own.id,
+      nodeId: "n1",
+      repertoireName: "My white repertoire",
+      color: "white",
+      chapterTitle: "Chapter",
+      fen: nodeAt(own.tree, ["e2e4"]).fenAfter
+    });
+    // The node was deleted since: the chapter's root position.
+    save(first.id, []);
+    expect(service.getDueSummary().continue).toMatchObject({ nodeId: "n1", fen: START_FEN });
   });
 
   it("offers the most recently updated unfinished session of an active repertoire to resume", () => {
@@ -823,7 +834,9 @@ describe("repertoire service: chapters, decisions and index", () => {
     expect(service.getDueSummary().resume).toEqual({
       repertoireId: id,
       sessionId: learn.sessionId,
-      mode: "learn-new"
+      mode: "learn-new",
+      repertoireName: "My white repertoire",
+      color: "white"
     });
     now += 1000;
     const rehearsal = service.startPractice({
@@ -834,7 +847,9 @@ describe("repertoire service: chapters, decisions and index", () => {
     expect(service.getDueSummary().resume).toEqual({
       repertoireId: other,
       sessionId: rehearsal.sessionId,
-      mode: "rehearse-lines"
+      mode: "rehearse-lines",
+      repertoireName: "My black repertoire",
+      color: "black"
     });
     // An answer makes a session the latest again; an ended one isn't offered.
     now += 1000;
@@ -858,7 +873,9 @@ describe("repertoire service: chapters, decisions and index", () => {
       dueCount: 0,
       repertoireCount: 0,
       continue: null,
-      resume: null
+      resume: null,
+      next: null,
+      alsoDue: null
     });
     const { session, card } = learnFirst(id);
     attempt(session.sessionId, card.queueItemId, "e2e4");
@@ -875,8 +892,33 @@ describe("repertoire service: chapters, decisions and index", () => {
     expect(service.getDueSummary()).toEqual({
       dueCount: 1,
       repertoireCount: 1,
-      continue: { repertoireId: id, chapterId: saved.chapter.id, nodeId: "root" },
-      resume: { repertoireId: id, sessionId: session.sessionId, mode: "learn-new" }
+      continue: {
+        repertoireId: id,
+        chapterId: saved.chapter.id,
+        nodeId: "root",
+        repertoireName: "My white repertoire",
+        color: "white",
+        chapterTitle: "Chapter",
+        fen: START_FEN
+      },
+      resume: {
+        repertoireId: id,
+        sessionId: session.sessionId,
+        mode: "learn-new",
+        repertoireName: "My white repertoire",
+        color: "white"
+      },
+      next: {
+        repertoireId: id,
+        repertoireName: "My white repertoire",
+        color: "white",
+        dueCount: 1,
+        chapterId: saved.chapter.id,
+        nodeId: "root",
+        fen: START_FEN,
+        lastMove: null
+      },
+      alsoDue: null
     });
     const detail = service.getRepertoire(id);
     expect(detail.dueCount).toBe(1);
@@ -906,6 +948,87 @@ describe("repertoire service: chapters, decisions and index", () => {
     }).repertoire;
     expect(paused.dueCount).toBe(0);
     expect(paused.chapters[0].dueCount).toBe(0);
+  });
+
+  it("offers the earliest due position of the repertoire with the most due, and the runner-up", () => {
+    const white = create();
+    const chapter = save(white.id, [
+      ["e2e4", "e7e5", "g1f3"],
+      ["e2e4", "c7c5", "g1f3"]
+    ]).chapter;
+    const sicilian = nodeAt(chapter.tree, ["e2e4", "c7c5"]);
+    // The same position at a disabled chapter's root: shallower, but the enabled chapter's is shown.
+    save(white.id, [["g1f3"]], {
+      chapterId: "disabled",
+      rootFen: sicilian.fenAfter,
+      enabled: false
+    });
+    const black = create("black");
+    save(black.id, [["e2e4", "c7c5"]]);
+    const due = (repertoireId: string, fen: string, dueAt: number) =>
+      progressRepository.upsert({
+        repertoireId,
+        positionKey: positionKey(fen),
+        stage: 1,
+        dueAt,
+        lastAttemptAt: null,
+        lapses: 0,
+        unaidedSuccesses: 0,
+        acceptanceFingerprint: "",
+        schedulerVersion: 1,
+        suspended: false
+      });
+    due(white.id, nodeAt(chapter.tree, ["e2e4", "e7e5"]).fenAfter, now - 50);
+    due(white.id, sicilian.fenAfter, now - 100);
+    due(black.id, nodeAt(chapter.tree, ["e2e4"]).fenAfter, now - 200);
+    // Not due yet: neither counted nor offered.
+    due(white.id, START_FEN, now + DAY);
+
+    const summary = service.getDueSummary();
+    expect(summary).toMatchObject({ dueCount: 3, repertoireCount: 2 });
+    expect(summary.next).toEqual({
+      repertoireId: white.id,
+      repertoireName: "My white repertoire",
+      color: "white",
+      dueCount: 2,
+      chapterId: chapter.id,
+      nodeId: sicilian.id,
+      fen: sicilian.fenAfter,
+      lastMove: { uci: "c7c5", san: "c5", moveNumber: 1, color: "black" }
+    });
+    expect(summary.alsoDue).toEqual({
+      repertoireId: black.id,
+      name: "My black repertoire",
+      dueCount: 1
+    });
+
+    // Due at the same time: the shallower position comes first.
+    due(white.id, START_FEN, now - 100);
+    expect(service.getDueSummary().next).toMatchObject({
+      dueCount: 3,
+      nodeId: "root",
+      fen: START_FEN,
+      lastMove: null
+    });
+
+    // Equally many due: the repertoire studied most recently leads.
+    getDb().exec("DELETE FROM repertoire_progress");
+    due(white.id, START_FEN, now - 100);
+    due(black.id, nodeAt(chapter.tree, ["e2e4"]).fenAfter, now - 100);
+    now += 1000;
+    service.saveWorkspace({
+      repertoireId: black.id,
+      workspace: {
+        lastChapterId: null,
+        lastNodeId: null,
+        orientation: "black",
+        practiceDraft: null
+      }
+    });
+    expect(service.getDueSummary()).toMatchObject({
+      next: { repertoireId: black.id, dueCount: 1 },
+      alsoDue: { repertoireId: white.id, dueCount: 1 }
+    });
   });
 
   it("lists every occurrence of a position with its chapter title and SAN path", () => {

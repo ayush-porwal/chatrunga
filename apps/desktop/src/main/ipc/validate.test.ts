@@ -26,6 +26,7 @@ import {
   parsePreviewImportInput,
   parseProbeEvalInput,
   parseListLimit,
+  parsePuzzleOfTheDayInput,
   parsePuzzleSampleInput,
   parseRecordPuzzleAttemptInput,
   parseRemoveGameLink,
@@ -409,6 +410,24 @@ describe("library inputs", () => {
     );
   });
 
+  it("accepts a real calendar day for the puzzle of the day", () => {
+    expect(parsePuzzleOfTheDayInput({ date: "2026-10-10" })).toEqual({ date: "2026-10-10" });
+    expect(parsePuzzleOfTheDayInput({ date: "2028-02-29", extra: 1 })).toEqual({
+      date: "2028-02-29"
+    });
+    for (const date of [
+      "2026-02-29",
+      "2026-13-01",
+      "2026-04-31",
+      "2026-1-5",
+      " 2026-10-10",
+      20261010
+    ]) {
+      expect(() => parsePuzzleOfTheDayInput({ date })).toThrow(/Invalid date/);
+    }
+    expect(() => parsePuzzleOfTheDayInput(null)).toThrow(/Invalid puzzle of the day/);
+  });
+
   it("bounds list limits", () => {
     expect(parseListLimit(undefined, 50, 100)).toBe(50);
     expect(parseListLimit(20, 50, 100)).toBe(20);
@@ -430,6 +449,7 @@ describe("Lichess inputs", () => {
   });
 
   it("parses seeks", () => {
+    // A rating range from an older renderer is dropped: seeks never send one.
     expect(
       parseLichessSeekInput({
         minutes: 10,
@@ -437,16 +457,12 @@ describe("Lichess inputs", () => {
         rated: true,
         ratingRange: [1400, 1800]
       })
-    ).toEqual({
-      minutes: 10,
-      incrementSec: 5,
-      rated: true,
-      ratingRange: [1400, 1800]
+    ).toEqual({ minutes: 10, incrementSec: 5, rated: true });
+    expect(parseLichessSeekInput({ minutes: 1.5, incrementSec: 0, rated: false })).toEqual({
+      minutes: 1.5,
+      incrementSec: 0,
+      rated: false
     });
-    expect(
-      parseLichessSeekInput({ minutes: 1.5, incrementSec: 0, rated: false, ratingRange: null })
-        .ratingRange
-    ).toBeNull();
     expect(() => parseLichessSeekInput({ minutes: 200, incrementSec: 0, rated: true })).toThrow(
       /minutes/
     );
@@ -456,17 +472,6 @@ describe("Lichess inputs", () => {
     expect(() => parseLichessSeekInput({ minutes: 10, incrementSec: 0, rated: "yes" })).toThrow(
       /rated/
     );
-    expect(() =>
-      parseLichessSeekInput({
-        minutes: 10,
-        incrementSec: 0,
-        rated: true,
-        ratingRange: [1800, 1400]
-      })
-    ).toThrow(/rating range/);
-    expect(() =>
-      parseLichessSeekInput({ minutes: 10, incrementSec: 0, rated: true, ratingRange: [1] })
-    ).toThrow(/Invalid rating range/);
   });
 
   it("parses challenges", () => {

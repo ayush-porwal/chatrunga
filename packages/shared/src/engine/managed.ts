@@ -11,3 +11,11 @@ export const MANAGED_ENGINE_SUFFIX = "(managed)";
 export function isManagedEngine(engine: Pick<EngineConfig, "name">): boolean {
   return engine.name.includes(MANAGED_ENGINE_SUFFIX);
 }
+
+/**
+ * An engine's name as the UI shows it: the "(managed)" suffix is an internal marker, never shown
+ * ("Stockfish (managed)" → "Stockfish"). Also cleans player names saved by older builds.
+ */
+export function engineDisplayName(name: string): string {
+  return name.replace(/\s*\(managed\)\s*/g, " ").trim();
+}

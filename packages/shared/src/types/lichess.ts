@@ -98,8 +98,6 @@ export type LichessSeekInput = {
   minutes: number;
   incrementSec: number;
   rated: boolean;
-  /** Opponent rating range, absolute (e.g. [1600, 2000]); null for any. */
-  ratingRange: [number, number] | null;
 };
 
 export type LichessChallengeInput = {
@@ -131,3 +129,16 @@ export type LichessEvent =
   /** The game stream closed before the game ended (network); the main process retries on its own. */
   | { type: "gameConnection"; gameId: string; connected: boolean }
   | { type: "sync"; running: boolean; imported: number; error: string | null };
+
+/** A game of yours in progress on Lichess (account/playing), for Play's In progress card. */
+export type LichessPlayingGame = {
+  id: string;
+  fen: string;
+  /** UCI of the last move, if any. */
+  lastMove: string | null;
+  yourColor: "white" | "black";
+  opponent: { name: string; rating: number | null };
+  speed: LichessSpeed;
+  rated: boolean;
+  isMyTurn: boolean;
+};

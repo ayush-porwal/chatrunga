@@ -25,6 +25,7 @@ import {
   cancelDownload,
   downloadDatabase,
   listInstalledDatabases,
+  puzzleOfTheDay,
   removeDatabase,
   samplePuzzle
 } from "../databases/external-databases";
@@ -77,6 +78,7 @@ import {
   parseLichessSeekInput,
   parsePgnText,
   parseProbeEvalInput,
+  parsePuzzleOfTheDayInput,
   parsePuzzleSampleInput,
   parseReviewGameInput,
   parseSaveGameInput,
@@ -187,10 +189,12 @@ function registerEngineIpc(engineManager: EngineManager): void {
   ipcMain.handle("engines:list", () => listAllEngines());
   // These writes (like the settings and game ones below) get one more try when another
   // connection holds the write lock past the busy timeout: a repertoire import or backup restore.
+  // Each change is announced, so views already showing the engines (Play) read them again.
   ipcMain.handle("engines:create", async (_event, input: unknown) => {
     const parsed = parseEngineInput(input);
     const engine = await retryOnceIfBusy(() => engineRepository.create(parsed));
     noteEngineReadiness(false);
+    broadcast("engines:changed", undefined);
     return engine;
   });
   ipcMain.handle("engines:update", async (_event, id: unknown, patch: unknown) => {
@@ -198,11 +202,13 @@ function registerEngineIpc(engineManager: EngineManager): void {
     const parsed = parseEnginePatch(patch);
     const engine = await retryOnceIfBusy(() => engineRepository.update(engineId, parsed));
     noteEngineReadiness(false);
+    broadcast("engines:changed", undefined);
     return engine;
   });
-  ipcMain.handle("engines:remove", (_event, id: unknown) => {
+  ipcMain.handle("engines:remove", async (_event, id: unknown) => {
     const engineId = asId(id, "engine id");
-    return retryOnceIfBusy(() => engineRepository.remove(engineId));
+    await retryOnceIfBusy(() => engineRepository.remove(engineId));
+    broadcast("engines:changed", undefined);
   });
   ipcMain.handle("engines:test", (_event, idOrInput: unknown) =>
     engineManager.testEngine(testConfigFor(idOrInput))
@@ -422,6 +428,9 @@ function registerLibraryIpc(): void {
   ipcMain.handle("databases:activeDownloads", () => activeDownloads());
   ipcMain.handle("databases:samplePuzzle", (_event, input: unknown) =>
     samplePuzzle(parsePuzzleSampleInput(input))
+  );
+  ipcMain.handle("databases:puzzleOfTheDay", (_event, input: unknown) =>
+    puzzleOfTheDay(parsePuzzleOfTheDayInput(input))
   );
 
   const pgnFilters = [{ name: "PGN files", extensions: ["pgn"] }];
@@ -684,6 +693,7 @@ function registerLichessIpc(): void {
   );
   ipcMain.handle("lichess:challenges", () => lichess.challenges());
   ipcMain.handle("lichess:ongoingGames", () => lichess.ongoingGames());
+  ipcMain.handle("lichess:playing", () => lichess.playing());
   ipcMain.handle("lichess:watchGame", (_event, id: unknown) => lichess.watchGame(gameId(id)));
   ipcMain.handle("lichess:unwatchGame", (_event, id: unknown) => lichess.unwatchGame(gameId(id)));
   ipcMain.handle("lichess:move", (_event, id: unknown, uci: unknown) =>
