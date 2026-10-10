@@ -95,7 +95,7 @@ test("ratings synced from Lichess are plain read-only text; disconnected, they'r
     correspondence: { source: "manual", rating: 1500 }
   });
   // Settings reads them again when opened.
-  await sidebar(page).getByRole("button", { name: "Home", exact: true }).click();
+  await sidebar(page).getByRole("button", { name: "Play", exact: true }).click();
   await openSettings(page);
   await expect(ratingField(page, "Blitz")).toHaveValue("1720");
   await expect(ratingField(page, "Blitz")).toBeEditable();

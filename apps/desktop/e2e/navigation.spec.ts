@@ -2,7 +2,15 @@
 // screens deleted since. How to run them: playwright.config.ts.
 import type { Page } from "@playwright/test";
 import type { ChaturangaApi } from "../../../packages/shared/src/ipc/chaturanga-api";
-import { clickSquare, expect, importPgnFile, sidebar, skipWelcome, test } from "./app";
+import {
+  clickSquare,
+  expect,
+  expectPlayPage,
+  importPgnFile,
+  sidebar,
+  skipWelcome,
+  test
+} from "./app";
 import { RUY_LOPEZ_PGN, writePgn } from "./fixtures";
 
 const SICILIAN_PGN = `[Event "E2E navigation"]
@@ -110,11 +118,25 @@ test("Back to a deleted chapter or game says why and lands somewhere that exists
   const repertoire = await seedRepertoire(page);
   await importPgnFile(app, page, writePgn(profile, "ruy-lopez.pgn", RUY_LOPEZ_PGN));
   await expectBoard(page, ALPHA);
+  // Saved before the board is left for Play (the next import), so its history entry names the
+  // library game; an entry left before the first save keeps the board itself.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        async () =>
+          (
+            await (window as unknown as { chaturanga: ChaturangaApi }).chaturanga.games.listPage({
+              search: "Alpha"
+            })
+          ).items.length
+      )
+    )
+    .toBe(1);
   await importPgnFile(app, page, writePgn(profile, "sicilian.pgn", SICILIAN_PGN));
   await expectBoard(page, GAMMA);
   await openStudy(page);
-  await sidebar(page).getByRole("button", { name: "Home", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Home", level: 1 })).toBeVisible();
+  await sidebar(page).getByRole("button", { name: "Play", exact: true }).click();
+  await expectPlayPage(page);
 
   // Both go while you're away: the repertoire and the first game.
   await page.evaluate(async (repertoireId) => {
@@ -138,12 +160,16 @@ test("Back to a deleted chapter or game says why and lands somewhere that exists
   await expect(page.getByText("No repertoires yet")).toBeVisible();
   await back(page).click();
   await expectBoard(page, GAMMA);
-  // The deleted game: you stay on this board, told why, and its step is gone.
+  // Play, where the second import started.
+  await back(page).click();
+  await expectPlayPage(page);
+  // The deleted game: you stay on Play, told why, and its step is gone.
   await back(page).click();
   await expect(page.getByRole("main")).toContainText("That game was deleted.");
-  await expectBoard(page, GAMMA);
+  await expectPlayPage(page);
+  // Play as the app opened, where the first import started.
   await back(page).click();
-  await expect(page.getByRole("heading", { name: "Home", level: 1 })).toBeVisible();
+  await expectPlayPage(page);
   await expect(back(page)).toBeDisabled();
 });
 

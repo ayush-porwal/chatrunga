@@ -1,0 +1,450 @@
+/*
+ * The Play page's own drawing: what utilities can't say well (container-sized tiles, the slanted
+ * "VS", the time control slider, the search bar that turns into Cancel, the board cards' lift).
+ * Colours are the app's tokens (styles/app.css).
+ */
+
+/* The Play card: a faint checkerboard over the whole card. */
+.play-card {
+  background-image: repeating-conic-gradient(rgb(255 255 255 / 0.03) 0 25%, transparent 0 50%);
+  background-size: 28px 28px;
+}
+
+/*
+ * You vs opponent. The header takes the height the controls leave (a size container) and the tiles
+ * size to it, so the card doesn't grow. In a small window it stops shrinking where 84px tiles and
+ * their names fit (smaller tiles read as icons, not players): the row grows a little instead.
+ */
+.play-match-wrap {
+  container-type: size;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 160px;
+}
+
+.play-match-wrap[data-bare] {
+  min-height: 140px;
+}
+
+.play-match {
+  --tile: clamp(44px, min(calc(100cqh - 76px), 28cqw), 124px);
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) calc(var(--tile) * 0.6 + 12px) minmax(0, 1fr);
+  align-content: center;
+  align-items: start;
+  padding: 10px 14px 8px;
+}
+
+/* Neither side has a subtitle: the tiles may take that line's height too. */
+.play-match-wrap[data-bare] .play-match {
+  --tile: clamp(44px, min(calc(100cqh - 56px), 28cqw), 124px);
+}
+
+.play-tile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--tile);
+  height: var(--tile);
+  border-radius: calc(var(--tile) * 0.23);
+  box-shadow: 0 6px 16px -8px rgb(0 0 0 / 0.7);
+}
+
+.play-tile-piece {
+  width: calc(var(--tile) * 0.81);
+  height: calc(var(--tile) * 0.81);
+}
+
+.play-tile > svg {
+  width: calc(var(--tile) * 0.44);
+  height: calc(var(--tile) * 0.44);
+  stroke-width: 1.5;
+}
+
+.play-tile > img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.play-tile[data-kind="split"] {
+  overflow: hidden;
+}
+
+.play-tile[data-kind="split"] .play-tile-piece {
+  position: absolute;
+  inset: calc(var(--tile) * 0.09);
+  width: auto;
+  height: auto;
+}
+
+.play-tile[data-kind="split"] .play-tile-piece:first-child {
+  clip-path: inset(0 50% 0 0);
+}
+
+.play-tile[data-kind="split"] .play-tile-piece:last-child {
+  clip-path: inset(0 0 0 50%);
+}
+
+.play-tile[data-kind="engine"] {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-fg);
+}
+
+.play-tile[data-kind="online"] {
+  background: var(--color-control);
+  color: var(--color-fg-secondary);
+}
+
+.play-tile[data-kind="empty"] {
+  border: 1.5px dashed var(--color-line-strong);
+  color: var(--color-fg-subtle);
+  box-shadow: none;
+}
+
+/* The opponent's colour, on the tile's corner. */
+.play-tile-dot {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid var(--color-surface);
+  border-radius: 9999px;
+}
+
+.play-swap,
+.play-vs {
+  align-self: start;
+  justify-self: center;
+  margin-top: calc(var(--tile) * 0.24);
+}
+
+.play-swap {
+  display: grid;
+  place-items: center;
+  width: calc(var(--tile) * 0.52);
+  height: calc(var(--tile) * 0.52);
+  border-radius: 9999px;
+  background: var(--color-control);
+  color: var(--color-fg-secondary);
+  box-shadow:
+    inset 0 0 0 1px var(--color-line-strong),
+    0 2px 6px rgb(0 0 0 / 0.35);
+  transition:
+    color var(--transition-duration-micro) var(--ease-standard),
+    background-color var(--transition-duration-micro) var(--ease-standard);
+}
+
+.play-swap:hover:not(:disabled) {
+  background: var(--color-control-hover);
+  color: var(--color-fg);
+}
+
+.play-swap:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.play-swap:disabled {
+  opacity: 0.5;
+}
+
+.play-swap > svg {
+  width: calc(var(--tile) * 0.24);
+  height: calc(var(--tile) * 0.24);
+  stroke-width: 2;
+}
+
+/* A slanted, two-tone "VS" over a thin accent slash: static, no motion. */
+.play-vs {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: max(40px, calc(var(--tile) * 0.6));
+  height: calc(var(--tile) * 0.52);
+}
+
+.play-vs > b {
+  position: relative;
+  font-size: max(20px, calc(var(--tile) * 0.3));
+  font-style: italic;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: transparent;
+  background: linear-gradient(
+    180deg,
+    var(--color-fg) 0%,
+    var(--color-fg) 48%,
+    var(--color-accent) 52%,
+    var(--color-accent-strong) 100%
+  );
+  background-clip: text;
+  filter: drop-shadow(0 2px 0 rgb(0 0 0 / 0.55)) drop-shadow(0 0 10px rgb(143 182 111 / 0.35));
+  transform: skewX(-8deg);
+}
+
+.play-vs > i {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: calc(var(--tile) * 0.62);
+  border-radius: 2px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    var(--color-accent) 30%,
+    var(--color-accent) 70%,
+    transparent
+  );
+  opacity: 0.55;
+  transform: translate(-50%, -50%) rotate(22deg);
+}
+
+/* Time control: a track with one stop per preset and a thumb that snaps to the nearest. */
+.play-slider {
+  position: relative;
+  /* 34px at the Play card's full width; less in a narrow card, so the labels keep their room. */
+  padding: 22px clamp(24px, 9%, 34px) 8px;
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+  background: var(--color-surface-sunken);
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+
+.play-slider:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.play-slider-track {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-control-hover);
+}
+
+.play-slider-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--color-accent-strong), var(--color-accent));
+  transition: width 200ms var(--ease-enter);
+}
+
+.play-slider-tick {
+  position: absolute;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
+  border-radius: 9999px;
+  background: var(--color-line-strong);
+}
+
+.play-slider-tick[data-in] {
+  background: rgb(255 255 255 / 0.55);
+}
+
+/* The track's own rounded ends mark the first and last stops; a dot there sits half outside it. */
+.play-slider-tick:first-of-type,
+.play-slider-tick:last-of-type {
+  display: none;
+}
+
+.play-slider-thumb {
+  position: absolute;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 9999px;
+  background: var(--color-fg);
+  box-shadow:
+    0 0 0 5px rgb(143 182 111 / 0.22),
+    0 2px 8px rgb(0 0 0 / 0.5);
+  cursor: grab;
+  transition:
+    left 200ms var(--ease-enter),
+    box-shadow 150ms var(--ease-standard);
+}
+
+.play-slider:hover .play-slider-thumb {
+  box-shadow:
+    0 0 0 7px rgb(143 182 111 / 0.28),
+    0 2px 8px rgb(0 0 0 / 0.5);
+}
+
+.play-slider[data-dragging] .play-slider-thumb,
+.play-slider[data-dragging] .play-slider-fill {
+  transition: none;
+}
+
+.play-slider[data-dragging] .play-slider-thumb {
+  cursor: grabbing;
+}
+
+.play-slider-labels {
+  position: relative;
+  height: 30px;
+  margin-top: 14px;
+}
+
+.play-slider-label {
+  position: absolute;
+  top: 0;
+  display: inline-flex;
+  color: var(--color-fg-subtle);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  transition: color var(--transition-duration-micro) var(--ease-standard);
+}
+
+.play-slider-label > svg {
+  width: 16px;
+  height: 16px;
+}
+
+.play-slider-label[data-on] {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+/* Finding an opponent / waiting for a friend: the whole bar is the Cancel button. */
+.play-wait {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 34px;
+  border: 1px solid rgb(143 182 111 / 0.35);
+  border-radius: 8px;
+  background: rgb(143 182 111 / 0.1);
+  color: var(--color-accent-fg);
+  font-size: 13.5px;
+  transition:
+    background-color var(--transition-duration-micro) var(--ease-standard),
+    border-color var(--transition-duration-micro) var(--ease-standard),
+    color var(--transition-duration-micro) var(--ease-standard);
+}
+
+.play-wait > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.play-wait b {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.play-wait > .play-wait-off {
+  display: none;
+}
+
+.play-wait:hover,
+.play-wait:focus-visible {
+  border-color: rgb(255 154 141 / 0.4);
+  background: rgb(255 154 141 / 0.1);
+  color: var(--color-danger);
+  outline: none;
+}
+
+.play-wait:hover > .play-wait-on,
+.play-wait:focus-visible > .play-wait-on {
+  display: none;
+}
+
+.play-wait:hover > .play-wait-off,
+.play-wait:focus-visible > .play-wait-off {
+  display: inline-flex;
+}
+
+/* First run's way rows: the download badge nods now and then. */
+.play-way-badge-bob > svg {
+  animation: play-way-bob 2.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+
+@keyframes play-way-bob {
+  0%,
+  60%,
+  100% {
+    transform: none;
+  }
+  75% {
+    transform: translateY(2px);
+  }
+}
+
+/* Board cards: a 2px lift, a brighter edge and a slightly lighter board on hover. */
+.play-bcard {
+  transition:
+    transform var(--transition-duration-emphasis) var(--ease-enter),
+    border-color var(--transition-duration-standard) var(--ease-standard),
+    background-color var(--transition-duration-standard) var(--ease-standard),
+    box-shadow var(--transition-duration-emphasis) var(--ease-enter);
+}
+
+.play-bcard-board {
+  transition: filter var(--transition-duration-standard) var(--ease-standard);
+}
+
+.play-bcard:hover,
+.play-bcard:has(:focus-visible) {
+  border-color: var(--color-line-strong);
+  background-color: #1b1d21;
+  box-shadow: 0 10px 24px -14px rgb(0 0 0 / 0.8);
+  transform: translateY(-2px);
+}
+
+.play-bcard:hover .play-bcard-board,
+.play-bcard:has(:focus-visible) .play-bcard-board {
+  filter: brightness(1.04) saturate(1.04);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .play-slider-fill,
+  .play-slider-thumb,
+  .play-slider-label {
+    transition: none;
+  }
+  .play-way-badge-bob > svg {
+    animation: none;
+  }
+  .play-bcard:hover,
+  .play-bcard:has(:focus-visible) {
+    transform: none;
+  }
+}
+
+/*
+ * The page's columns. At 1440×900 the Play card is 392px and the three board cards share the rest.
+ * In a smaller window the Play card gives up some width first, down to 320px (where the
+ * time-control labels still fit), and the side cards' column under the last board card never gets
+ * narrower than 15rem (their labels must fit).
+ */
+.play-columns,
+.play-columns-bottom {
+  --play-column: clamp(320px, 32.8%, 392px);
+}
+
+.play-columns {
+  grid-template-columns: var(--play-column) repeat(3, minmax(0, 1fr));
+}
+
+.play-columns-bottom {
+  grid-template-columns: minmax(0, 1fr) max(15rem, calc((100% - var(--play-column) - 3rem) / 3));
+}

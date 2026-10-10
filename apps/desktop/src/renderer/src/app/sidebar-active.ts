@@ -3,7 +3,6 @@ import type { AppView } from "./AppPages";
 
 /** Which sidebar destinations show as the current one (pressed). */
 export type SidebarActive = {
-  home: boolean;
   analyze: boolean;
   play: boolean;
   review: boolean;
@@ -40,7 +39,6 @@ export function sidebarActiveFor({
   reviewPickerOpen: boolean;
 }): SidebarActive {
   return {
-    home: view === "home",
     analyze: onAnalyzePage(view, gameMode, gameSource),
     review: view === "game-review" || reviewPickerOpen,
     repertoire: repertoireViews.has(view),

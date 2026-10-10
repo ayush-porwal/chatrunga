@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Color } from "@chaturanga/shared/types/chess";
+import type { PlayOpponent } from "@chaturanga/shared/types/settings";
 import type {
   LichessChallenge,
   LichessGameFull,
@@ -7,7 +8,7 @@ import type {
   LichessStatus
 } from "@chaturanga/shared/types/lichess";
 
-export type PlayOpponent = "lichess" | "engine" | "board";
+export type { PlayOpponent };
 
 /** The Lichess game on the board: what the board and titlebar need beyond the moves and clocks. */
 export type LiveLichessGame = {
@@ -35,7 +36,10 @@ type LichessStore = {
   sync: { running: boolean; imported: number; error: string | null };
   /** Opens a game of yours in progress on the board (set by the Lichess sync while it runs). */
   resumeGame: (gameId: string) => void;
-  /** Play's opponent tab, kept for the session; null until chosen (Lichess when connected, else the engine). */
+  /**
+   * The Play card's opponent, kept for the session (Back/Forward and detours return to it); null
+   * until chosen (then Play settings' saved choice, Quick pairing when connected, else the engine).
+   */
   playOpponent: PlayOpponent | null;
   setPlayOpponent: (opponent: PlayOpponent) => void;
   setStatus: (status: LichessStatus) => void;

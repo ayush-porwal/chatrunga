@@ -1,3 +1,4 @@
+import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
@@ -123,8 +124,9 @@ export function BoardView() {
     const tc = headers.timeControl?.trim() || null;
     // Each side's time at this move from the game's [%clk]; no clock boxes for a game without them.
     const clocks = boardClocksAt(moveTree, clockAnchorId, tc);
-    const white = headers.white?.trim() || "White";
-    const black = headers.black?.trim() || "Black";
+    // Engines by their plain name (older builds saved "Stockfish (managed)").
+    const white = engineDisplayName(headers.white?.trim() ?? "") || "White";
+    const black = engineDisplayName(headers.black?.trim() ?? "") || "Black";
     const wElo = headers.whiteElo?.trim() || null;
     const bElo = headers.blackElo?.trim() || null;
 

@@ -1,6 +1,6 @@
 // A chess.com account through the built app: connecting a username imports its games, which the
 // library and Game review's Choose a game list under their own source tab (with Reviewed on top of
-// any tab), Home names each game's source, the ratings follow the account, and disconnecting can
+// any tab), Play's Recent games lists them, the ratings follow the account, and disconnecting can
 // take the games away. Chess.com's API is served from the unit tests' fixtures (the network is off
 // in these runs); how to run them: playwright.config.ts.
 import type { ElectronApplication, Page } from "@playwright/test";
@@ -106,7 +106,7 @@ async function reviewNewestChesscomGame(page: Page): Promise<void> {
   });
 }
 
-test("a chess.com account imports its games under their own source, in the library, Choose a game and Home", async ({
+test("a chess.com account imports its games under their own source, in the library, Choose a game and Play", async ({
   launch,
   profile
 }) => {
@@ -204,12 +204,11 @@ test("a chess.com account imports its games under their own source, in the libra
   await page.keyboard.press("Escape");
   await expect(picker).toBeHidden();
 
-  // Home names where each game came from.
-  await sidebar(page).getByRole("button", { name: "Home", exact: true }).click();
-  const continueCard = page.getByRole("region", { name: /vs/ }).first();
-  await expect(continueCard.getByText("Source", { exact: true })).toBeVisible();
+  // Play's Recent games lists them with the imported one.
+  await sidebar(page).getByRole("button", { name: "Play", exact: true }).click();
   const recent = page.getByRole("region", { name: "Recent games" });
-  await expect(recent).toContainText("Chess.com · Live Chess");
+  await expect(recent.getByRole("button", { name: /^Alpha vs Beta$/ })).toBeVisible();
+  await expect(recent.getByRole("button", { name: /^rook_n_roll vs ayush_p64$/ })).toBeVisible();
 });
 
 test("disconnecting chess.com can remove its games; the ratings stay, typed-in", async ({

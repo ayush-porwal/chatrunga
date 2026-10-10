@@ -3,6 +3,8 @@ import { useMatch, useNavigate } from "react-router-dom";
 import { useShallow } from "zustand/react/shallow";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import { createGameFromFen } from "@chaturanga/shared/chess/pgn";
+import { DEFAULT_PUZZLE_RATING } from "@chaturanga/shared/chess/puzzle-rating";
+import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import type { ImportedGame } from "@chaturanga/shared/types/chess";
 import { defaultSettings } from "@chaturanga/shared/types/settings";
@@ -23,6 +25,12 @@ import { rememberCollapsibleOpen } from "@/components/ui/collapsible-section";
 import { PgnImportDialog } from "../features/game/PgnImportDialog";
 import { openSavedGame } from "../features/game/saved-game";
 import type { PuzzleSessionConfig } from "../features/puzzles/PuzzlePage";
+import {
+  puzzleDatabasesOf,
+  puzzleSetConfig,
+  selectedPuzzleDatabase
+} from "../features/puzzles/puzzle-set";
+import { isLichessMode } from "../features/play/play-layout";
 import { usePuzzleAutoReply } from "../features/puzzles/puzzle-session";
 import { usePuzzleAttemptRecording } from "../queries/puzzles";
 import type { SettingsSectionId } from "../features/settings/SettingsPage";
@@ -80,6 +88,7 @@ import {
   mainlineEnd,
   useGameAutosave
 } from "./useGameAutosave";
+import { ENGINE_MOVE_TIME_MS, savedEngineMatch } from "./rejoin-saved-game";
 import { boardResultPatch } from "../features/analysis/post-game";
 import { useUsageActivity } from "./useUsageTelemetry";
 import { useLichess } from "./useLichess";
@@ -175,7 +184,7 @@ const viewTransitionKind = (previous: AppView, next: AppView): ViewTransitionKin
  */
 export function App() {
   // View changes animate the content panel and titlebar title (View Transitions; see app.css).
-  const [appView, setAppView] = useViewTransitionState<AppView>("home", viewTransitionKind);
+  const [appView, setAppView] = useViewTransitionState<AppView>("play", viewTransitionKind);
   const [importOpen, setImportOpen] = useState(false);
   const [gameReviewPickerOpen, setGameReviewPickerOpen] = useState(false);
   const [sideTab, setSideTab] = useState<SideTab>("notation");
@@ -276,7 +285,10 @@ export function App() {
   }, [onBoardView]);
 
   const desktopApiAvailable = hasDesktopApi();
-  const windowControlsVisible = isElectronMac();
+  // macOS full screen hides the traffic lights (they come with the menu bar on hover).
+  const [fullScreen, setFullScreen] = useState(false);
+  useEffect(() => window.chaturanga?.appearance.onFullScreenChanged?.(setFullScreen), []);
+  const windowControlsVisible = isElectronMac() && !fullScreen;
   // Narrow subscriptions: the shell must not re-render on every move (it would cascade into the
   // sidebar, titlebar and every tooltip). Handlers read the store directly via currentGame().
   const { gameId, gameMode, gameSource, gameDecided, gameBoard } = useGameStore(
@@ -383,7 +395,8 @@ export function App() {
       settingsSection: viewedSettingsSection.current ?? settingsSection,
       puzzleSet: puzzleSession.snapshot,
       puzzleSetContinues: puzzleSession.continues(currentGame().board),
-      repertoireScreen
+      repertoireScreen,
+      savedPlayOpponent: settings.playOpponent
     });
   }
 
@@ -402,7 +415,6 @@ export function App() {
     navigation: latestNavigation,
     commitCurrent: () => commitCurrent(),
     showLiveGame: () => showGame(sideTab, "none"),
-    showHome: () => showView("home", "none"),
     showSettings: (section) => {
       viewedSettingsSection.current = section;
       setSettingsSection(section);
@@ -448,7 +460,7 @@ export function App() {
     handledReviewRoute.current = reviewRouteId;
     if (!reviewRouteId) return;
     if (!reviewRouteToRestore(previous, reviewRouteId, currentGame().gameId)) return;
-    const showHome = () => showView("home", "replace");
+    const showPlay = () => openPlayPage("replace");
     restoreReviewRoute(reviewRouteId, {
       navigation: latestNavigation,
       getSavedGame: (id) =>
@@ -456,13 +468,13 @@ export function App() {
         Promise.reject(new Error("Saved games need the desktop app.")),
       stopEngineWork: (options) => stopEngineWork(options),
       clearPuzzleSession: () => clearPuzzleSession(),
-      showHome,
+      showPlay,
       reviewShown: () => record("replace", historyEntry("game-review"))
     }).catch((error: unknown) => {
       useAppNoticeStore
         .getState()
         .show(`That game couldn't be opened: ${ipcErrorMessage(error) || "unknown error"}`);
-      showHome();
+      showPlay();
     });
   });
   useEffect(restoreOpenedReviewRoute, [reviewRouteId, restoreOpenedReviewRoute]);
@@ -700,19 +712,20 @@ export function App() {
   }
 
   /**
-   * Home → Resume / a recent game: the board with that saved game (the loaded game is kept as is).
-   * With `nodeId` (a repertoire source link), the board then shows that move when the game has it.
+   * Play's Recent games / the library: the board with that saved game (the loaded game is kept as
+   * is). With `nodeId` (a repertoire source link), the board then shows that move when the game has
+   * it. True once the game is shown; false when it couldn't be read or a newer navigation won.
    */
-  async function openSavedGameById(gameId: string, nodeId: string | null = null) {
+  async function openSavedGameById(gameId: string, nodeId: string | null = null): Promise<boolean> {
     commitCurrent();
     const request = ++latestNavigation.current;
     if (gameId !== currentGame().gameId) {
-      if (!window.chaturanga) return;
+      if (!window.chaturanga) return false;
       const saved = await window.chaturanga.games.get(gameId).catch(() => null);
-      if (request !== latestNavigation.current) return;
+      if (request !== latestNavigation.current) return false;
       if (!saved) {
         useGameStore.setState({ lastError: "Couldn't open that game." });
-        return;
+        return false;
       }
       stopEngineWork();
       clearPuzzleSession();
@@ -724,14 +737,66 @@ export function App() {
     if (nodeId) currentGame().goToNode(nodeId);
     setFocusMode(false);
     showGame();
+    return true;
+  }
+
+  /**
+   * Play's In progress card on a saved engine game: the game opens and, when its engine (by name)
+   * is installed and available, the match goes on from the end of its main line against it, untimed
+   * (the clocks' remaining time isn't saved) at the no-clock think time. Otherwise it is only opened.
+   */
+  async function rejoinSavedGame(gameId: string) {
+    if (!(await openSavedGameById(gameId))) return;
+    const game = currentGame();
+    const match = savedEngineMatch(game.headers, engines.data ?? []);
+    if (!match) return;
+    const end = mainlineEnd(game.moveTree);
+    if (end) game.goToNode(end.id);
+    if (positionStatus(currentGame().currentFen).isEnd) return;
+    stopEngineWork();
+    game.setOrientation(match.humanSide);
+    game.setGameSource("engine-game");
+    game.setMode("engine");
+    game.setEngineSide(match.engineSide);
+    game.setEngineLimits(ENGINE_MOVE_TIME_MS, null);
+    game.setEngineMatchClock(null);
+    game.clearEngineMatchExtras();
+    game.setMatchFeedback(null);
+    const analysis = useAnalysisStore.getState();
+    analysis.setActiveEngine(match.engine.id);
+    analysis.setError(null);
+    analysis.setStatus("ready");
+    // The entry pushed when the game opened now names the match.
+    record("replace", historyEntry("game"));
+  }
+
+  /**
+   * Play's Puzzle of the day: Puzzles with that puzzle first, then the set the Puzzles page's
+   * choices draw (its Next puzzle), on the database they use (this puzzle's when none is found).
+   */
+  async function solvePuzzleOfTheDay(puzzle: PuzzleSample) {
+    const api = window.chaturanga;
+    if (!api) return;
+    const request = ++latestNavigation.current;
+    const [databases, rating] = await Promise.all([
+      api.databases.list().catch(() => []),
+      api.puzzles.ratingSummary().catch(() => null)
+    ]);
+    if (request !== latestNavigation.current) return;
+    const draft = usePuzzleDraftStore.getState().draft;
+    const database = selectedPuzzleDatabase(puzzleDatabasesOf(databases), draft.databaseId) ?? {
+      id: puzzle.databaseId,
+      sourceId: puzzle.sourceId
+    };
+    const config: PuzzleSessionConfig = {
+      ...puzzleSetConfig(draft, database, rating?.rating ?? DEFAULT_PUZZLE_RATING.rating),
+      puzzleOfTheDayId: puzzle.id
+    };
+    startPuzzle(puzzle, { config });
   }
 
   /** Play: the page with every way to start a game (Lichess, an engine, a free board). */
   function openPlayPage(history: HistoryMode = "push") {
-    if (!desktopApiAvailable) {
-      startFreeBoard();
-      return;
-    }
     if (history === "push") commitCurrent();
     // The engine keeps searching for a game still being played vs the engine; the page can end it.
     if (useGameStore.getState().mode !== "engine") stopEngineWork();
@@ -741,7 +806,7 @@ export function App() {
   }
 
   /**
-   * Play opened by anything but Play from here (the sidebar, Home, after a game): a repertoire
+   * Play opened by anything but Play from here (the sidebar, after a game): a repertoire
    * handoff left from earlier is dropped, so its position doesn't start a game unasked. Back and
    * an Engine settings detour return through `openPlayPage` and keep it.
    */
@@ -1149,8 +1214,8 @@ export function App() {
           event: "Puzzle continuation",
           site: "?",
           result: "*",
-          white: engineSide === "white" ? engine.name : "You",
-          black: engineSide === "black" ? engine.name : "You",
+          white: engineSide === "white" ? engineDisplayName(engine.name) : "You",
+          black: engineSide === "black" ? engineDisplayName(engine.name) : "You",
           orientationHint: humanSide
         }
       })
@@ -1227,10 +1292,6 @@ export function App() {
         setActionRailOpen(true);
       } else setActionRailOpen((open) => !open);
     }),
-    home: useEventCallback(() => {
-      commitCurrent();
-      showView("home");
-    }),
     settings: useEventCallback(() => openSettings(null)),
     commentarySettings: useEventCallback(() => openSettings("ai")),
     openSettings: useEventCallback((section: SettingsSectionId) => openSettings(section)),
@@ -1256,9 +1317,11 @@ export function App() {
     reviewGame: useEventCallback((id: string) =>
       unlessOnlineGame(() => void openSelectedGameReview(id))
     ),
-    // After a Lichess game: Play, on its Lichess tab.
+    // After a Lichess game: Play, in the Lichess mode it was played in (else Quick pairing).
     playLichess: useEventCallback(() => {
-      useLichessStore.getState().setPlayOpponent("lichess");
+      const lichess = useLichessStore.getState();
+      const mode = lichess.playOpponent;
+      lichess.setPlayOpponent(mode && isLichessMode(mode) ? mode : "pool");
       openFreshPlayPage();
     }),
     puzzles: useEventCallback(() => unlessOnlineGame(() => openPuzzlesPage())),
@@ -1283,6 +1346,12 @@ export function App() {
       else currentGame().flip();
     }),
     openGame: useEventCallback((id: string) => unlessOnlineGame(() => void openSavedGameById(id))),
+    rejoinSavedGame: useEventCallback((id: string) =>
+      unlessOnlineGame(() => void rejoinSavedGame(id))
+    ),
+    solvePuzzleOfTheDay: useEventCallback((puzzle: PuzzleSample) =>
+      unlessOnlineGame(() => void solvePuzzleOfTheDay(puzzle))
+    ),
     startReview: useEventCallback(() => void startReview()),
     stopReview: useEventCallback(() => void cancelActiveReview()),
     showGame: useEventCallback(() => showGame()),
@@ -1449,7 +1518,6 @@ export function App() {
   );
 
   const pageTitles: Partial<Record<AppView, string>> = {
-    home: "Home",
     settings: "Settings",
     play: "Play",
     puzzles: "Puzzles",
@@ -1488,6 +1556,7 @@ export function App() {
               hasMoves={gameHasMoves}
               onAnalyze={on.startReview}
               onStop={on.stopReview}
+              onExportPgn={on.exportPgn}
             />
           ) : appView === "repertoire-study" && repertoireScreen ? (
             <RepertoireStudyTitlebar
@@ -1511,6 +1580,7 @@ export function App() {
               nextPuzzlePending={nextPuzzle.isPending}
               onReviewOpening={on.reviewHandoffOpening}
               onReturnToRepertoire={on.returnToRepertoire}
+              onExportPgn={on.exportPgn}
             />
           ) : (
             <>
@@ -1525,15 +1595,12 @@ export function App() {
           active={sidebarActive}
           boardView={onBoardView}
           focusMode={focused}
-          onHome={on.home}
           onPlay={on.play}
           onAnalyze={on.liveAnalysis}
           onReview={on.openReviewPicker}
           onRepertoire={on.repertoireHub}
           onPuzzles={on.puzzles}
           onDatabases={on.databases}
-          onImport={on.importPgn}
-          onExport={on.exportPgn}
           onFocusToggle={on.toggleFocus}
           onFlip={on.flipBoard}
           onSettings={on.settings}
@@ -1623,7 +1690,7 @@ export function App() {
       <PromotionDialog />
       <Suspense fallback={null}>
         {onboarding.open ? (
-          <OnboardingFlow onFinish={onboarding.finish} onGoHome={on.home} />
+          <OnboardingFlow onFinish={onboarding.finish} onGoPlay={on.play} />
         ) : null}
         {importOpen ? (
           <PgnImportDialog onClose={on.closeImportDialog} onImported={on.importedGame} />

@@ -358,7 +358,7 @@ test("leaving Study by any route stops the engine panel's search", async ({ laun
   // The sidebar, to a screen without a board.
   await studyWithEngine(page);
   from = engineCommands(log).length;
-  await sidebar(page).getByRole("button", { name: "Home", exact: true }).click();
+  await sidebar(page).getByRole("button", { name: "Play", exact: true }).click();
   await expect(studyPanel(page)).toHaveCount(0);
   await expectStoppedSince(log, from);
 

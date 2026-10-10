@@ -28,7 +28,7 @@ describe("sidebarActiveFor", () => {
   });
 
   it("highlights only the current page's item off the game view", () => {
-    for (const view of ["play", "game-review", "puzzles", "home", "settings"] as const) {
+    for (const view of ["play", "game-review", "puzzles", "databases", "settings"] as const) {
       const items = active({ view });
       expect(items.analyze).toBe(false);
       expect(Object.values(items).filter(Boolean)).toHaveLength(1);
@@ -39,8 +39,8 @@ describe("sidebarActiveFor", () => {
   });
 
   it("highlights Game review while its picker is open over another page", () => {
-    expect(active({ view: "home", reviewPickerOpen: true })).toMatchObject({
-      home: true,
+    expect(active({ view: "play", reviewPickerOpen: true })).toMatchObject({
+      play: true,
       review: true
     });
   });

@@ -22,7 +22,8 @@ export const puzzleKeys = {
   summary: ["puzzles", "summary"] as const,
   history: ["puzzles", "history"] as const,
   themes: ["puzzles", "themes"] as const,
-  failed: (sourceId: string | null) => ["puzzles", "failed", sourceId] as const
+  failed: (sourceId: string | null) => ["puzzles", "failed", sourceId] as const,
+  ofTheDay: (date: string) => ["puzzles", "of-the-day", date] as const
 };
 
 function api() {
@@ -47,6 +48,20 @@ export function usePuzzleThemeStatsQuery() {
   return useQuery({
     queryKey: puzzleKeys.themes,
     queryFn: async () => (await api()?.puzzles.themeStats()) ?? []
+  });
+}
+
+/**
+ * Play's Puzzle of the day for a local date ("2026-10-10"): the same puzzle all day, null without a
+ * puzzle database. Only asked for when one is installed (`enabled`).
+ */
+export function usePuzzleOfTheDayQuery(date: string, { enabled }: { enabled: boolean }) {
+  return useQuery({
+    queryKey: puzzleKeys.ofTheDay(date),
+    queryFn: async () => (await api()?.databases.puzzleOfTheDay({ date })) ?? null,
+    enabled,
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: false
   });
 }
 

@@ -110,7 +110,9 @@ const EMPTY_DUE: RepertoireDueSummary = {
   dueCount: 0,
   repertoireCount: 0,
   continue: null,
-  resume: null
+  resume: null,
+  next: null,
+  alsoDue: null
 };
 
 /** Re-reads the hub lists and the due summary (last studied, where to continue, due counts). */

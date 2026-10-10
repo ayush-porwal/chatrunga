@@ -44,7 +44,6 @@ export type NavigationShell = {
   commitCurrent: () => void;
   /** The board on its current tab: where a Lichess game being played brings you back. */
   showLiveGame: () => void;
-  showHome: () => void;
   showSettings: (section: Extract<HistoryEntry, { view: "settings" }>["section"]) => void;
   openPlay: () => void;
   openPuzzles: () => void;
@@ -139,9 +138,6 @@ export async function restoreEntry(
   shell: NavigationShell
 ): Promise<RestoreOutcome> {
   switch (entry.view) {
-    case "home":
-      shell.showHome();
-      return "shown";
     case "settings":
       shell.showSettings(entry.section);
       return "shown";
@@ -254,8 +250,10 @@ export async function restoreBoard(
 /** The shell's side of a Game Review URL the window opened at (see `restoreReviewRoute`). */
 export type ReviewRouteShell = Pick<
   NavigationShell,
-  "navigation" | "getSavedGame" | "stopEngineWork" | "clearPuzzleSession" | "showHome"
+  "navigation" | "getSavedGame" | "stopEngineWork" | "clearPuzzleSession"
 > & {
+  /** Play, in place of the review that couldn't be reopened (replaces the current entry). */
+  showPlay: () => void;
   /** The review page shows the game now loaded: its history entry replaces the current one. */
   reviewShown: () => void;
 };
@@ -271,7 +269,7 @@ export function savedReviewPath(routeId: string | null, gameId: string | null): 
 
 /**
  * Whether a Game Review URL needs its game loaded: the one the window opened at (`previous`
- * undefined: a reload) always does, "current" included (it then lands on Home); a later change of
+ * undefined: a reload) always does, "current" included (it then lands on Play); a later change of
  * the URL only when it names a saved game other than the one shown. The app's own moves to a
  * review (a picked game, "current" becoming the game's id) already show its game.
  */
@@ -288,7 +286,7 @@ export function reviewRouteToRestore(
 /**
  * A Game Review URL the window opened at (a reload): its saved game comes back with its newest
  * review, as opening it from the picker does. The route never stays on an empty board: an unsaved
- * game ("current", gone with the window) lands on Home, and so does a game deleted since or one
+ * game ("current", gone with the window) lands on Play, and so does a game deleted since or one
  * that couldn't be read, with why. A newer navigation while the game loads wins ("dropped").
  */
 export async function restoreReviewRoute(
@@ -304,7 +302,7 @@ export async function restoreReviewRoute(
     useAppNoticeStore
       .getState()
       .show("That game wasn't saved, so its review couldn't be reopened.");
-    shell.showHome();
+    shell.showPlay();
     return "gone";
   }
   const loaded = await loadSavedGame(shell, routeId);
@@ -317,7 +315,7 @@ export async function restoreReviewRoute(
           ? "That game was deleted."
           : `That game couldn't be opened: ${loaded.message}`
       );
-    shell.showHome();
+    shell.showPlay();
     return loaded.kind;
   }
   shell.stopEngineWork();

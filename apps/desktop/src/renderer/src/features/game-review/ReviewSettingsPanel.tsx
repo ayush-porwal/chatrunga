@@ -1,3 +1,4 @@
+import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import { useEffect, useState } from "react";
 import {
   REVIEW_MAIA_LEVELS,
@@ -146,13 +147,15 @@ export function ReviewSettingsPanel({
             onChange={(event) => set("defaultEngineId", event.target.value || null)}
           >
             <option value="">
-              {automaticEngine ? `Automatic · ${automaticEngine.name}` : "Choose an engine"}
+              {automaticEngine
+                ? `Automatic · ${engineDisplayName(automaticEngine.name)}`
+                : "Choose an engine"}
             </option>
             {availableEngines
               .filter((engine) => !engine.isHumanPrediction)
               .map((engine) => (
                 <option key={engine.id} value={engine.id}>
-                  {engine.name}
+                  {engineDisplayName(engine.name)}
                 </option>
               ))}
           </Select>

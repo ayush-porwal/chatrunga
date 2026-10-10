@@ -152,8 +152,12 @@ function PuzzleCard({
     : null;
   // Solved or failed: the AI explanation is offered (never while pending).
   const explainKind = explainOutcome(outcome, firstWrongMove, broken);
+  // Play's Puzzle of the day says so where the set is named (the set's filters draw the next ones).
+  const ofTheDay = puzzleConfig?.puzzleOfTheDayId === puzzle.id;
   const setLine = puzzleConfig
-    ? puzzleSetSummary(puzzleConfig, puzzleDatasetLabel(puzzle.sourceId, puzzle.sourceName))
+    ? ofTheDay
+      ? "Puzzle of the day"
+      : puzzleSetSummary(puzzleConfig, puzzleDatasetLabel(puzzle.sourceId, puzzle.sourceName))
     : null;
 
   const cardRef = useRef<HTMLDivElement>(null);
@@ -374,7 +378,7 @@ function PuzzleCard({
           {setLine ? (
             <div className="flex min-w-0 items-baseline justify-between gap-3">
               <p className="min-w-0 text-xs leading-5 text-fg-muted">
-                <span className="text-fg-subtle">Set: </span>
+                {ofTheDay ? null : <span className="text-fg-subtle">Set: </span>}
                 {setLine}
               </p>
               <Button

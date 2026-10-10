@@ -5,6 +5,7 @@ import {
   clickSquare,
   closeApp,
   expect,
+  expectPlayPage,
   importPgnFile,
   mainRecord,
   registerFakeEngine,
@@ -25,12 +26,13 @@ import {
 const moveCounter = (page: import("@playwright/test").Page) =>
   page.getByRole("navigation", { name: "Move navigation" }).getByRole("paragraph");
 
-test("boots past the welcome to a board", async ({ launch }) => {
+test("boots past the welcome to Play, then a board", async ({ launch }) => {
   const { app, page } = await launch();
   // The run drives what it was asked to: the packaged app, or the build in out/.
   expect(await app.evaluate(({ app }) => app.isPackaged)).toBe(appTarget().packaged);
   await skipWelcome(page);
-  await expect(page.getByRole("heading", { name: "Home", level: 1 })).toBeVisible();
+  // The app opens on Play.
+  await expectPlayPage(page);
   await sidebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
   const board = page.getByRole("region", { name: "Board" });
   await expect(board.locator("cg-board")).toBeVisible();
@@ -89,8 +91,8 @@ test("keeps an edited game across a restart", async ({ launch, profile }) => {
   const second = await launch(profile);
   await expect(sidebar(second.page)).toBeVisible();
   await expect(second.page.getByRole("dialog", { name: "Welcome to Chaturanga" })).toHaveCount(0);
-  // Back to Home, then open the game from the library.
-  await sidebar(second.page).getByRole("button", { name: "Home", exact: true }).click();
+  // The app opens on Play again; open the game from the library.
+  await expectPlayPage(second.page);
   await sidebar(second.page).getByRole("button", { name: "Analyze", exact: true }).click();
   await second.page.getByRole("tab", { name: "Library" }).click();
   const library = second.page.getByRole("list", { name: "Saved games" });

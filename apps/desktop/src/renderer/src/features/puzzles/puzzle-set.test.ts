@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { PuzzleSessionConfig } from "./PuzzlePage";
-import { formatPuzzleTag, puzzleDatasetLabel, puzzleSetSummary } from "./puzzle-set";
+import { ratingRangeFor } from "@chaturanga/shared/chess/puzzle-rating";
+import { DEFAULT_PUZZLE_FILTERS } from "../../stores/puzzle-draft-store";
+import {
+  formatPuzzleTag,
+  puzzleDatabasesOf,
+  puzzleDatasetLabel,
+  puzzleSetConfig,
+  puzzleSetSummary,
+  selectedPuzzleDatabase
+} from "./puzzle-set";
 
 const config: PuzzleSessionConfig = {
   databaseId: "db1",
@@ -85,5 +94,46 @@ describe("puzzle set", () => {
         "Chess positions"
       )
     ).toBe("Chess positions · Difficulty 2–3");
+  });
+
+  it("draws from the chosen database, else Lichess puzzles, else the first puzzle set", () => {
+    const installed = puzzleDatabasesOf([
+      { id: "games", sourceId: "lichess-games", kind: "game-library" as const },
+      { id: "pos", sourceId: "chess-positions", kind: "position" as const },
+      { id: "lp", sourceId: "lichess-puzzles", kind: "puzzle" as const }
+    ]);
+    expect(installed.map((item) => item.id)).toEqual(["pos", "lp"]);
+    expect(selectedPuzzleDatabase(installed, "pos")?.id).toBe("pos");
+    // Not chosen, or chosen and removed since.
+    expect(selectedPuzzleDatabase(installed, "")?.id).toBe("lp");
+    expect(selectedPuzzleDatabase(installed, "gone")?.id).toBe("lp");
+    expect(selectedPuzzleDatabase(installed.slice(0, 1), "")?.id).toBe("pos");
+    expect(selectedPuzzleDatabase([], "")).toBeNull();
+  });
+
+  it("starts the Puzzles page's set: its filters, the range around the rating now when asked", () => {
+    const draft = { databaseId: "", ...DEFAULT_PUZZLE_FILTERS, themes: ["fork"] };
+    const lichess = { id: "lp", sourceId: "lichess-puzzles" };
+    expect(puzzleSetConfig(draft, lichess, 1700)).toMatchObject({
+      databaseId: "lp",
+      mode: "lichess-puzzle",
+      difficulty: null,
+      lichess: { ratingMin: 600, ratingMax: 2800, themes: ["fork"] }
+    });
+    expect(
+      puzzleSetConfig({ ...draft, difficulty: "harder" }, lichess, 1700).lichess
+    ).toMatchObject(ratingRangeFor(1700, "harder"));
+    // Position sets have no rating: their difficulty range applies, never "around my rating".
+    expect(
+      puzzleSetConfig(
+        { ...draft, difficulty: "harder" },
+        { id: "pos", sourceId: "chess-positions" },
+        1700
+      )
+    ).toMatchObject({
+      mode: "position-training",
+      difficulty: null,
+      position: { difficultyMin: 1 }
+    });
   });
 });

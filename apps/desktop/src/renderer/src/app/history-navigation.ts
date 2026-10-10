@@ -1,5 +1,7 @@
+import type { PlayOpponent } from "@chaturanga/shared/types/settings";
 import { openingSideFor, type OpeningSide } from "../features/game-review/opening-comparison";
 import type { ReviewTab } from "../features/game-review/review-utils";
+import { resolvePlayMode } from "../features/play/play-layout";
 import { repertoireCommandBlocked } from "../features/repertoire/handoffs";
 import type { SettingsSectionId } from "../features/settings/SettingsPage";
 import { useGameStore } from "../stores/game-store";
@@ -36,6 +38,8 @@ export type HistoryContext = {
   puzzleSetContinues: boolean;
   /** The repertoire screen shown (from the route and App's extras). */
   repertoireScreen: RepertoireScreen | null;
+  /** Play settings' saved opponent (what the Play card opens with before one is chosen). */
+  savedPlayOpponent: PlayOpponent | null;
 };
 
 /** The board as it is now, for a history entry. */
@@ -73,10 +77,19 @@ export function captureEntry(view: AppView, context: HistoryContext): HistoryEnt
     case "settings":
       return { view, section: context.settingsSection };
     case "play": {
-      // The tab actually shown (an unchosen tab follows the account, which may change later).
+      // The mode actually shown (an unchosen one follows the settings and the account, which may
+      // change later).
       const lichess = useLichessStore.getState();
-      const connected = Boolean(lichess.status.account) && !lichess.status.tokenRejected;
-      return { view, opponent: lichess.playOpponent ?? (connected ? "lichess" : "engine") };
+      const account = lichess.status.account;
+      return {
+        view,
+        opponent: resolvePlayMode({
+          session: lichess.playOpponent,
+          saved: context.savedPlayOpponent,
+          hasAccount: Boolean(account),
+          connected: Boolean(account) && !lichess.status.tokenRejected
+        })
+      };
     }
     case "game":
       return {

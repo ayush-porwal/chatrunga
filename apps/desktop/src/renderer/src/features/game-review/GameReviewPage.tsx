@@ -1,3 +1,4 @@
+import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import { memo, useCallback, useDeferredValue, useEffect, useId, useMemo, useState } from "react";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
@@ -297,12 +298,12 @@ function GameReviewPageInner({
     [bestLine, moves, selectedNodeId]
   );
   const whitePlayer = {
-    name: headers.white || "White",
+    name: engineDisplayName(headers.white ?? "") || "White",
     elo: headers.whiteElo ?? null,
     color: "white" as const
   };
   const blackPlayer = {
-    name: headers.black || "Black",
+    name: engineDisplayName(headers.black ?? "") || "Black",
     elo: headers.blackElo ?? null,
     color: "black" as const
   };

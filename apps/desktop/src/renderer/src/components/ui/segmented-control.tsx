@@ -14,6 +14,8 @@ type SegmentedOption<T extends string> = {
    * (aria-disabled instead of disabled) so the reason can be read; it still can't be chosen.
    */
   disabledReason?: string;
+  /** A tooltip for an enabled segment (more than its label says, e.g. which position). */
+  hint?: string;
 };
 
 type SegmentedControlProps<T extends string> = {
@@ -195,11 +197,12 @@ function SegmentedControl<T extends string>({
             )}
           </button>
         );
-        if (!explained) return segment;
+        const tooltip = explained ? option.disabledReason : option.hint;
+        if (!tooltip) return segment;
         return (
           <Tooltip key={option.value}>
             <TooltipTrigger asChild>{segment}</TooltipTrigger>
-            <TooltipContent side="bottom">{option.disabledReason}</TooltipContent>
+            <TooltipContent side="bottom">{tooltip}</TooltipContent>
           </Tooltip>
         );
       })}

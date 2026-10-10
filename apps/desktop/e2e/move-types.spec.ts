@@ -240,9 +240,12 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
     .toBe(MOVE_ASSESSMENT_POLICY);
   await closeApp(app);
   const again = await launch();
-  await sidebar(again.page).getByRole("button", { name: "Home", exact: true }).click();
-  await expect(again.page.getByText("3 errors found")).toBeVisible();
-  await again.page.getByRole("button", { name: "Open review", exact: true }).click();
+  // Play's Recent games names what the review found (the row's Open review button).
+  await sidebar(again.page).getByRole("button", { name: "Play", exact: true }).click();
+  await again.page
+    .getByRole("region", { name: "Recent games" })
+    .getByRole("button", { name: "Open review · 3 errors found", exact: true })
+    .click();
   await reviewTabs(again.page).getByRole("tab", { name: "Moves", exact: true }).click();
   expect(await treeMarks(again.page)).toEqual(MARKS);
   await expect(again.page.getByText(/This analysis predates the current move marks/)).toHaveCount(
@@ -302,11 +305,14 @@ test("an analysis saved before the current marks opens re-assessed from its eval
     [TRAP_PGN, legacy] as const
   );
 
-  // Home counts its errors again from the stored evaluations (its own summary said none).
+  // Play's Recent games counts its errors again from the stored evaluations (its own summary said
+  // none).
   await page.reload();
-  await sidebar(page).getByRole("button", { name: "Home", exact: true }).click();
-  await expect(page.getByText("3 errors found")).toBeVisible();
-  await page.getByRole("button", { name: "Open review", exact: true }).click();
+  await sidebar(page).getByRole("button", { name: "Play", exact: true }).click();
+  await page
+    .getByRole("region", { name: "Recent games" })
+    .getByRole("button", { name: "Open review · 3 errors found", exact: true })
+    .click();
   await expect(page.getByText(/This analysis predates the current move marks/)).toBeVisible();
   await reviewTabs(page).getByRole("tab", { name: "Moves", exact: true }).click();
   // The errors come back; Qg5 had no deeper search, so it is only Good (it punished Nxe5).

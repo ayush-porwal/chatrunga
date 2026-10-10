@@ -1,5 +1,6 @@
 import { memo, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import { useShallow } from "zustand/react/shallow";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import { useReviewStore } from "../stores/review-store";
 import { useSaveStatusStore } from "../stores/save-status-store";
 import { SidebarToggle } from "./AppSidebar";
 import { historyShortcutLabels } from "./useHistoryShortcuts";
+import { DESTINATION_ICONS } from "./destination-icons";
 import { decidedResult, gameModeLabel, gamePlayerNames } from "./game-title";
 
 /**
@@ -175,7 +177,21 @@ const HistoryButtons = memo(function HistoryButtons({
   );
 });
 
-/** Titlebar title for page views (Home, Settings, …). */
+/** Board views' Export PGN: the game on the board as a .pgn file (an icon at the end of the actions). */
+const ExportPgnButton = memo(function ExportPgnButton({ onClick }: { onClick: () => void }) {
+  const Icon = DESTINATION_ICONS.exportPgn;
+  return (
+    <IconButton
+      label="Export PGN"
+      icon={<Icon />}
+      className={titlebarIconButton}
+      disabled={!window.chaturanga}
+      onClick={onClick}
+    />
+  );
+});
+
+/** Titlebar title for page views (Play, Settings, …). */
 export function PageTitle({ children }: { children: ReactNode }) {
   return <span className="truncate font-medium text-fg">{children}</span>;
 }
@@ -195,7 +211,8 @@ export const GameTitlebar = memo(function GameTitlebar({
   onNextPuzzle,
   nextPuzzlePending,
   onReviewOpening,
-  onReturnToRepertoire
+  onReturnToRepertoire,
+  onExportPgn
 }: {
   engines: readonly EngineConfig[] | undefined;
   /** Engine errors show here unless the Engine tab (which shows them itself) is visible. */
@@ -213,6 +230,7 @@ export const GameTitlebar = memo(function GameTitlebar({
   /** A finished game played from a repertoire: its Opening review / the chapter it came from. */
   onReviewOpening: () => void;
   onReturnToRepertoire: () => void;
+  onExportPgn: () => void;
 }) {
   // Only what the title shows: stepping through moves must not re-render the titlebar.
   const game = useGameStore(
@@ -238,7 +256,8 @@ export const GameTitlebar = memo(function GameTitlebar({
   );
   const activeEngineId = useAnalysisStore((state) => state.activeEngineId);
   const activePuzzle = usePuzzleStore((state) => state.activePuzzle);
-  const engineName = engines?.find((engine) => engine.id === activeEngineId)?.name ?? null;
+  const engine = engines?.find((item) => item.id === activeEngineId);
+  const engineName = engine ? engineDisplayName(engine.name) : null;
 
   const error = game.lastError || (showAnalysisError ? analysisError : null);
   const players = gamePlayerNames(game, engineName);
@@ -275,6 +294,7 @@ export const GameTitlebar = memo(function GameTitlebar({
             onReviewOpening={onReviewOpening}
             onReturnToRepertoire={onReturnToRepertoire}
           />
+          <ExportPgnButton onClick={onExportPgn} />
         </>
       }
     />
@@ -286,13 +306,15 @@ export const ReviewTitlebar = memo(function ReviewTitlebar({
   gameLoading,
   hasMoves,
   onAnalyze,
-  onStop
+  onStop,
+  onExportPgn
 }: {
   gameLoading: boolean;
   /** The game has main-line moves to review. */
   hasMoves: boolean;
   onAnalyze: () => void;
   onStop: () => void;
+  onExportPgn: () => void;
 }) {
   const headers = useGameStore((state) => state.headers);
   const running = useReviewStore((state) => state.status === "running");
@@ -300,7 +322,12 @@ export const ReviewTitlebar = memo(function ReviewTitlebar({
 
   return (
     <WorkspaceTitlebar
-      title={<PlayersTitle white={headers.white || "White"} black={headers.black || "Black"} />}
+      title={
+        <PlayersTitle
+          white={engineDisplayName(headers.white ?? "") || "White"}
+          black={engineDisplayName(headers.black ?? "") || "Black"}
+        />
+      }
       result={decidedResult(headers.result)}
       actions={
         <>
@@ -332,6 +359,7 @@ export const ReviewTitlebar = memo(function ReviewTitlebar({
               <TooltipContent side="bottom">Add or import moves to review</TooltipContent>
             </Tooltip>
           )}
+          <ExportPgnButton onClick={onExportPgn} />
         </>
       }
     />

@@ -25,7 +25,12 @@ import { useDatabasesQuery, useSamplePuzzleMutation } from "../../queries/api";
 import { useFailedPuzzlesQuery, usePuzzleRatingSummaryQuery } from "../../queries/puzzles";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { usePuzzleDraftStore } from "../../stores/puzzle-draft-store";
-import { formatPuzzleTag as formatTag } from "./puzzle-set";
+import {
+  formatPuzzleTag as formatTag,
+  puzzleDatabasesOf,
+  puzzleSetConfig,
+  selectedPuzzleDatabase
+} from "./puzzle-set";
 import { PuzzleRatingCard } from "./PuzzleRatingCard";
 import { formatPuzzleRating, formatRatingDelta } from "./PuzzleRatingLine";
 
@@ -107,6 +112,11 @@ export type PuzzleSessionConfig = {
   difficulty?: PuzzleDifficulty | null;
   /** Failed puzzles tried again: only these are drawn (the filters below are kept for Edit set). */
   retryIds?: string[];
+  /**
+   * The set began with Play's Puzzle of the day (this puzzle id); the filters below draw the puzzles
+   * after it.
+   */
+  puzzleOfTheDayId?: string;
   lichess: {
     ratingMin: number;
     ratingMax: number;
@@ -132,15 +142,7 @@ export const PuzzlePage = memo(function PuzzlePage({
 }) {
   const databases = useDatabasesQuery();
   const samplePuzzle = useSamplePuzzleMutation();
-  const puzzleDatabases = useMemo(
-    () =>
-      (databases.data ?? []).filter((item) => item.kind === "puzzle" || item.kind === "position"),
-    [databases.data]
-  );
-  const preferred =
-    puzzleDatabases.find((item) => item.sourceId === "lichess-puzzles") ??
-    puzzleDatabases[0] ??
-    null;
+  const puzzleDatabases = useMemo(() => puzzleDatabasesOf(databases.data ?? []), [databases.data]);
   const draft = usePuzzleDraftStore((state) => state.draft);
   const updateDraft = usePuzzleDraftStore((state) => state.update);
   const {
@@ -156,8 +158,7 @@ export const PuzzlePage = memo(function PuzzlePage({
     difficultyMax,
     positionTags
   } = draft;
-  const selectedDatabase =
-    puzzleDatabases.find((item) => item.id === draft.databaseId) ?? preferred;
+  const selectedDatabase = selectedPuzzleDatabase(puzzleDatabases, draft.databaseId);
   const isLichess = selectedDatabase?.sourceId === "lichess-puzzles";
   const ratingSummary = usePuzzleRatingSummaryQuery();
   const userRating = ratingSummary.data ?? { ...DEFAULT_PUZZLE_RATING };
@@ -185,31 +186,13 @@ export const PuzzlePage = memo(function PuzzlePage({
   const setPositionTags = (value: string[]) => updateDraft({ positionTags: value });
   const databaseFieldId = useId();
 
-  function sessionConfig(databaseId: string): PuzzleSessionConfig {
-    return {
-      databaseId,
-      mode: isLichess ? "lichess-puzzle" : "position-training",
-      difficulty: isLichess ? difficulty : null,
-      lichess: {
-        ratingMin: drawnRatingMin,
-        ratingMax: drawnRatingMax,
-        popularityMin,
-        lengths,
-        themes,
-        openings,
-        side
-      },
-      position: {
-        difficultyMin,
-        difficultyMax,
-        tags: positionTags
-      }
-    };
+  function sessionConfig(database: NonNullable<typeof selectedDatabase>): PuzzleSessionConfig {
+    return puzzleSetConfig(draft, database, userRating.rating);
   }
 
   function start() {
     if (!selectedDatabase) return;
-    const config = sessionConfig(selectedDatabase.id);
+    const config = sessionConfig(selectedDatabase);
     samplePuzzle.mutate(
       {
         databaseId: selectedDatabase.id,
@@ -226,7 +209,7 @@ export const PuzzlePage = memo(function PuzzlePage({
   function retryFailed() {
     if (!selectedDatabase || !failedIds.length) return;
     const config: PuzzleSessionConfig = {
-      ...sessionConfig(selectedDatabase.id),
+      ...sessionConfig(selectedDatabase),
       retryIds: failedIds
     };
     samplePuzzle.mutate(
