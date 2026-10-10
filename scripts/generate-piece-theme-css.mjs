@@ -96,9 +96,10 @@ function roundNumbers(text, decimals) {
 }
 
 /**
- * Decimal places that keep rounding under 1/50000 of the drawing (3 at least). Path data is often
- * relative, so each point's rounding error carries into the next: 2 places visibly warped long
- * outlines (Tatiana's queen), and a set drawn in a 10-unit box (MPChess) needs 4.
+ * Decimal places that keep rounding under 1/500000 of the drawing (3 at least). Path data is often
+ * relative, so each point's rounding error carries into the next: coarser rounding visibly warped
+ * long outlines (Tatiana's queen, Firi's king), and a set drawn in a 10-unit box (MPChess) needs 5.
+ * measure-piece-fit.mjs fails if packing changes a single pixel of any drawing.
  */
 function decimalsFor(svgText) {
   const box = svgText
@@ -107,7 +108,7 @@ function decimalsFor(svgText) {
     .split(/[\s,]+/)
     .map(Number);
   const size = box ? Math.max(box[2], box[3]) : 0;
-  return size > 0 ? Math.max(3, Math.ceil(Math.log10(50000 / size))) : 3;
+  return size > 0 ? Math.max(3, Math.ceil(Math.log10(500000 / size))) : 3;
 }
 
 /** Drop drawing-neutral attributes and sub-pixel path noise. The board still sizes the piece. */
@@ -150,18 +151,20 @@ export function fitSvg(svgText, viewBox) {
  * it in a `filter` attribute or in its inline style (Papercut).
  */
 export function dropBakedShadows(svgText) {
-  const shadowIds = [
-    ...svgText.matchAll(/<filter id="([^"]+)"[^>]*>((?:(?!<\/filter>).)*)<\/filter>/gs)
-  ]
+  const shadowIds = [...svgText.matchAll(/<filter\b([^>]*)>((?:(?!<\/filter>).)*)<\/filter>/gs)]
     .filter(([, , body]) => body.includes("<feOffset"))
-    .map(([, id]) => id);
-  return shadowIds.reduce(
-    (svg, id) =>
-      svg
-        .replaceAll(` filter="url(#${id})"`, "")
-        .replace(new RegExp(`filter:\\s*url\\(#${id}\\);?`, "g"), ""),
-    svgText
-  );
+    .map(([, attributes]) => attributes.match(/\sid="([^"]+)"/)?.[1])
+    .filter(Boolean);
+  return shadowIds.reduce((svg, id) => {
+    const ref = `url\\(#${escapeRegExp(id)}\\)`;
+    return svg
+      .replace(new RegExp(` filter="${ref}"`, "g"), "")
+      .replace(new RegExp(`filter:\\s*${ref};?`, "g"), "");
+  }, svgText);
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** The drawing as it stands on the board, before fitting: baked shadows gone. */

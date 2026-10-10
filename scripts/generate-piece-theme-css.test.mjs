@@ -18,7 +18,7 @@ import {
 test("a drawing in a small box keeps more digits", () => {
   assert.equal(
     compactSvg('<svg viewBox="0 0 10 10"><path d="M1.234567 0"/></svg>'),
-    '<svg viewBox="0 0 10 10"><path d="M1.2346 0"/></svg>'
+    '<svg viewBox="0 0 10 10"><path d="M1.23457 0"/></svg>'
   );
 });
 
@@ -97,6 +97,11 @@ test("a baked-in drop shadow is detached; other filters stay", () => {
     '<svg><filter id="s"><feOffset dx="1"/></filter><path style="fill:red;filter:url(#s);opacity:1"/></svg>'
   );
   assert.match(styled, /style="fill:red;opacity:1"/);
+  // Whatever the filter's attribute order, and an id with regex characters in it.
+  const ordered = dropBakedShadows(
+    '<svg><filter x="0" id="a.b"><feOffset dx="1"/></filter><path filter="url(#a.b)"/><path filter="url(#aXb)"/></svg>'
+  );
+  assert.match(ordered, /<path\/><path filter="url\(#aXb\)"\/>/);
 });
 
 test("the committed payload is what the sources pack to", () => {
@@ -125,4 +130,39 @@ test("every set the app lists is packed", () => {
     .match(/"[^"]+"/g)
     .map((s) => JSON.parse(s));
   assert.deepEqual(new Set(THEMES), new Set(["cburnett", ...listed]));
+});
+
+test("CREDITS.md lists every set with the licence the app shows for it", () => {
+  const settings = readFileSync(
+    new URL("../packages/shared/src/types/settings.ts", import.meta.url),
+    "utf8"
+  );
+  const licenceBlock = settings.slice(
+    settings.indexOf("const PIECE_LICENCES"),
+    settings.indexOf("} satisfies")
+  );
+  const licences = Object.fromEntries(
+    [...licenceBlock.matchAll(/(\w+): \{\s*name: "([^"]+)",\s*url: "([^"]+)"/g)].map(
+      ([, key, name, url]) => [key, `[${name}](${url})`]
+    )
+  );
+  const options = settings.slice(settings.indexOf("export const pieceStyleOptions"));
+  const shown = Object.fromEntries(
+    options
+      .slice(0, options.indexOf("\n];"))
+      .split("\n  {")
+      .slice(1)
+      .map((entry) => [
+        entry.match(/id: "([^"]+)"/)[1],
+        licences[entry.match(/licence: PIECE_LICENCES\.(\w+)/)[1]]
+      ])
+  );
+  const credits = readFileSync(new URL("./piece-svg-sources/CREDITS.md", import.meta.url), "utf8");
+  const listed = Object.fromEntries(
+    [...credits.matchAll(/^\| ([a-z][a-z0-9-]*) \| [^|]+ \| (.+) \|$/gm)].map(
+      ([, set, licence]) => [set, licence]
+    )
+  );
+  assert.deepEqual(listed, shown);
+  assert.deepEqual(new Set(Object.keys(shown)), new Set(THEMES));
 });

@@ -38,9 +38,11 @@ export function parsePieceDrawings(text: string): Map<PieceStyle, PieceSetDrawin
   names.forEach((name, i) => {
     const ladder = entries.slice(i * PIECES.length, (i + 1) * PIECES.length);
     const boxes = entries.slice(count + i * PIECES.length, count + (i + 1) * PIECES.length);
-    const uniform = ladder.map((svg, p) =>
-      svg.replace(/^<svg viewBox="[^"]*"/, `<svg viewBox="${boxes[p]}"`)
-    );
+    const uniform = ladder.map((svg, p) => {
+      const root = /^<svg viewBox="[^"]*"/;
+      if (!root.test(svg)) throw new Error("Piece drawings are malformed");
+      return svg.replace(root, `<svg viewBox="${boxes[p]}"`);
+    });
     sets.set(name, { ladder, uniform });
   });
   return sets;
@@ -99,11 +101,15 @@ export function loadPieceDrawings(): Promise<Map<PieceStyle, PieceSetDrawings>> 
 
 const added = new Set<PieceStyle>();
 
+/** Waits before each retry of a set that failed to load; after the last, it stays unloaded. */
+export const PIECE_SET_RETRY_MS = [1000, 2000, 4000];
+
 /**
  * Adds a piece set's CSS to the page, once. Until it lands (or if it can't), boards show
- * Chessground's bundled cburnett, so a missing set never blanks a board.
+ * Chessground's bundled cburnett, so a missing set never blanks a board. A failed load retries
+ * on its own (PIECE_SET_RETRY_MS) rather than waiting for the next component to ask.
  */
-export async function ensurePieceSet(style: PieceStyle): Promise<void> {
+export async function ensurePieceSet(style: PieceStyle, attempt = 0): Promise<void> {
   if (added.has(style)) return;
   added.add(style);
   try {
@@ -116,6 +122,8 @@ export async function ensurePieceSet(style: PieceStyle): Promise<void> {
   } catch (error) {
     added.delete(style);
     console.error(`piece set ${style} failed to load:`, error);
+    const wait = PIECE_SET_RETRY_MS[attempt];
+    if (wait !== undefined) setTimeout(() => void ensurePieceSet(style, attempt + 1), wait);
   }
 }
 

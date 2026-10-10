@@ -7,43 +7,46 @@ The piece sets in Chaturanga are the work of the authors below, under the licenc
 Each set is its author's work under the licence below; our changes to a set are shared under that
 same licence.
 
-| Set        | Author                         | Licence                                                                                              |
-| ---------- | ------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| cburnett   | Colin M.L. Burnett             | [GPLv2+](https://www.gnu.org/licenses/gpl-2.0.txt)                                                   |
-| merida     | Armando Hernandez Marroquin    | [GPLv2+](https://www.gnu.org/licenses/gpl-2.0.txt)                                                   |
-| alpha      | Eric Bentzen                   | Free for personal non-commercial use ([alpha.zip](http://www.enpassant.dk/chess/downl/alpha.zip))    |
-| california | Jerry S.                       | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)                                |
-| cardinal   | sadsnake1                      | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)                                |
-| chessnut   | Alexis Luengas                 | [Apache 2.0](https://github.com/LexLuengas/chessnut-pieces/blob/master/LICENSE.txt)                  |
-| kosal      | Kosal Sen                      | AGPLv3+ (no separate licence stated)                                                                 |
-| maestro    | sadsnake1                      | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)                                |
-| pirouetti  | pirouetti                      | [AGPLv3+](https://www.gnu.org/licenses/agpl-3.0.txt)                                                 |
-| classic    | Colin M.L. Burnett (adapted)   | [GPLv2+](https://www.gnu.org/licenses/gpl-2.0.txt)                                                   |
+| Set | Author | Licence |
+| --- | --- | --- |
+| cburnett | Colin M.L. Burnett | [GPLv2+](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html) |
+| merida | Armando Hernandez Marroquin | [GPLv2+](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html) |
+| alpha | Eric Bentzen | [Free for personal non-commercial use](http://www.enpassant.dk/chess/downl/alpha.zip) |
+| california | Jerry S. | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
+| cardinal | sadsnake1 | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
+| chessnut | Alexis Luengas | [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) |
+| kosal | Kosal Sen | [AGPLv3+](https://www.gnu.org/licenses/agpl-3.0.html) |
+| maestro | sadsnake1 | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
+| pirouetti | pirouetti | [AGPLv3+](https://www.gnu.org/licenses/agpl-3.0.html) |
+| classic | Colin M.L. Burnett (adapted) | [GPLv2+](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html) |
 | anarcandy | caderek | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
 | caliente | avi | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
-| celtic | Maurizio Monge | MIT |
+| celtic | Maurizio Monge | [MIT](https://opensource.org/license/mit) |
 | cooke | fejfar | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
 | disguised | danegraphics | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
 | dubrovny | sadsnake1 | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
-| fantasy | Maurizio Monge | MIT |
+| fantasy | Maurizio Monge | [MIT](https://opensource.org/license/mit) |
 | firi | James Faure | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | fresca | sadsnake1 | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
 | gioco | sadsnake1 | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
 | horsey | cham and michael1241 | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
 | icpieces | sadsnake1 | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
 | kiwen-suwi | neverRare | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
-| letter | usolando | [AGPLv3+](https://www.gnu.org/licenses/agpl-3.0.txt) |
+| letter | usolando | [AGPLv3+](https://www.gnu.org/licenses/agpl-3.0.html) |
 | minimal-warmth | blunder_reign | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
-| mpchess | Maxime Chupin | [GPLv3+](https://www.gnu.org/licenses/gpl-3.0.txt) |
+| mpchess | Maxime Chupin | [GPLv3+](https://www.gnu.org/licenses/gpl-3.0.html) |
 | papercut | Nikolay Anzarov | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
-| pixel | therealqtpi | [AGPLv3+](https://www.gnu.org/licenses/agpl-3.0.txt) |
+| pixel | therealqtpi | [AGPLv3+](https://www.gnu.org/licenses/agpl-3.0.html) |
 | rhosgfx | RhosGFX | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
 | shapes | flugsio | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
-| spatial | Maurizio Monge | MIT |
+| spatial | Maurizio Monge | [MIT](https://opensource.org/license/mit) |
 | staunty | sadsnake1 | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
 | tatiana | sadsnake1 | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
 | totoy | Kosal Sen | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | xkcd | Randall Munroe | [CC BY-NC-SA 2.5](https://xkcd.com/license.html) |
+
+Kosal states no licence of its own; it is listed under AGPLv3+, the licence of the project it
+was published with, until its author confirms.
 
 ## Changes
 

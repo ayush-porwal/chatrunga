@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { parsePieceDrawings, pieceSetCss } from "./generated-piece-themes";
 
 const drawing = (name: string) => `<svg viewBox="0 0 10 10"><path id="${name}"/></svg>`;
@@ -22,6 +22,9 @@ describe("parsePieceDrawings", () => {
     expect(() => parsePieceDrawings(payload(["neon"]))).toThrow(/malformed/);
     const short = payload(["merida"]).split("\0").slice(0, -1).join("\0");
     expect(() => parsePieceDrawings(short)).toThrow(/malformed/);
+    // A drawing whose root viewBox can't be swapped would silently stay ranked.
+    const unboxed = payload(["merida"]).replace('<svg viewBox="0 0 10 10">', "<svg>");
+    expect(() => parsePieceDrawings(unboxed)).toThrow(/malformed/);
   });
 });
 
@@ -31,5 +34,37 @@ describe("pieceSetCss", () => {
     expect(css).toContain(".cg-wrap.piece-set-merida piece.king.white{background-image:url(");
     expect(css).toContain(".cg-wrap.piece-set-merida.piece-sizes-uniform piece.king.white{");
     expect(css).toContain("viewBox=%271%202%2030%2030%27");
+  });
+});
+
+describe("ensurePieceSet", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("retries a set that failed to load, and adds its CSS once it does", async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const sheets: { textContent: string; dataset: Record<string, string> }[] = [];
+    vi.stubGlobal("document", {
+      createElement: () => ({ textContent: "", dataset: {} }),
+      head: { append: (sheet: (typeof sheets)[number]) => sheets.push(sheet) }
+    });
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue(new Response(payload(["merida"])));
+    vi.stubGlobal("fetch", fetch);
+    const { ensurePieceSet, PIECE_SET_RETRY_MS } = await import("./generated-piece-themes");
+
+    await ensurePieceSet("merida");
+    expect(sheets).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(PIECE_SET_RETRY_MS[0]!);
+    await vi.waitFor(() => expect(sheets).toHaveLength(1));
+    expect(sheets[0]?.dataset.pieceSet).toBe("merida");
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 });

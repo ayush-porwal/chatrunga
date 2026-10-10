@@ -156,8 +156,8 @@ const PIECE_LICENCES = {
   ccByNcSa4: { name: "CC BY-NC-SA 4.0", url: "https://creativecommons.org/licenses/by-nc-sa/4.0/" },
   ccByNcSa25: { name: "CC BY-NC-SA 2.5", url: "https://xkcd.com/license.html" },
   alpha: {
-    name: "Free for non-commercial use",
-    url: "http://www.enpassant.dk/chess/fonteng.htm"
+    name: "Free for personal non-commercial use",
+    url: "http://www.enpassant.dk/chess/downl/alpha.zip"
   }
 } satisfies Record<string, PieceLicence>;
 

@@ -60,7 +60,8 @@ function framed(svg, box) {
 /**
  * Ink bounds of the finished drawing (as it stands on the board) in its own units, measured over a
  * box padded past its viewBox. The raw and compacted drawings are rendered alongside: compaction
- * must not change a single pixel's coverage by more than a hair, or it has corrupted the drawing.
+ * must not visibly change a single pixel (coverage off by more than 96/255), or it has corrupted
+ * the drawing.
  */
 async function inkBounds(page, raw, compact, finished) {
   const [x, y, w, h] = viewBoxOf(compact);
@@ -105,7 +106,7 @@ async function inkBounds(page, raw, compact, finished) {
     }
   );
   if (px.bottom <= px.top) throw new Error("drawing paints nothing");
-  if (px.changed > 0.0005 * RASTER * RASTER) {
+  if (px.changed > 0) {
     throw new Error(`compaction changed ${px.changed} pixels`);
   }
   const unit = side / RASTER;
