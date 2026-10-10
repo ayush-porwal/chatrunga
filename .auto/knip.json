@@ -1,6 +1,7 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "ignoreBinaries": ["electron-builder", "electron-vite", "xvfb-run"],
+  "ignoreBinaries": ["electron-builder", "electron-vite", "xvfb-run", "typecheck"],
+  "ignoreExportsUsedInFile": true,
   "workspaces": {
     ".": {
       "entry": ["scripts/*.{mjs,cjs,js,ts}", "oxlint.config.ts"],
@@ -32,5 +33,11 @@
       "project": ["src/**/*.ts", "scripts/**/*.mjs"]
     }
   },
-  "ignoreDependencies": ["@chaturanga/shared", "oxlint-tsgolint"]
+  "ignoreDependencies": [
+    "@chaturanga/shared",
+    "oxlint-tsgolint",
+    "@electron/asar",
+    "tailwindcss",
+    "@tanstack/eslint-plugin-query"
+  ]
 }

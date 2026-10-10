@@ -884,14 +884,7 @@ const runningImports = new Map<string, ImportRun>();
 let importLimits: ImportLimits = DEFAULT_IMPORT_LIMITS;
 
 /** Worker files the import and the backup restore use; unset: the bundled ones next to the main entry. */
-let importWorkers: { parse?: string; writer?: string; restore?: string } = {};
-
-/** Points the import and restore at other worker files (tests and benchmarks only). */
-export function setImportWorkers(
-  next: { parse?: string; writer?: string; restore?: string } = {}
-): void {
-  importWorkers = next;
-}
+const importWorkers: { parse?: string; writer?: string; restore?: string } = {};
 
 /** Replaces the import limits (tests only); pass nothing to restore the defaults. */
 export function setImportLimits(next?: Partial<ImportLimits>): void {

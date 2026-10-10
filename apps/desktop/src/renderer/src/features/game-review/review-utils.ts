@@ -775,20 +775,6 @@ export function hasUsableMaiaData(move: MoveReview): boolean {
   return ratings.size === MAIA_BUCKETS.length;
 }
 
-export function averageLoss(moves: readonly MoveReview[]): number | null {
-  const values = moves
-    .map((move) => move.evalLoss)
-    .filter((value): value is number => value !== null);
-  return values.length
-    ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
-    : null;
-}
-
-export function reviewAccuracy(moves: readonly MoveReview[]): number | null {
-  const loss = averageLoss(moves);
-  return loss === null ? null : Math.max(0, Math.min(100, Math.round(100 - loss / 8)));
-}
-
 /** Errors by severity, marked or not (a shortened summary never changes these). */
 export function countBySeverity(moves: readonly MoveReview[]): Record<ErrorSeverity, number> {
   const counts: Record<ErrorSeverity, number> = { inaccuracy: 0, mistake: 0, blunder: 0 };

@@ -137,8 +137,16 @@ Stop only when all three are true, and say so:
   metric and `is-on-https` fails. Those are protocol limits, not a reason to audit in Chrome.
   Fixable audit failures: color-contrast, meta-description, label-content-name-mismatch,
   errors-in-console. robots-txt and is-on-https will not pass on file://.
-- Next: `electronLanguages: ["en", "en-US"]`. Mac folders are `en.lproj`; Windows/Linux paks
-  are `en-US.pak`. Listing only `en` would delete the Windows English pak.
+- Kept `electronLanguages: ["en", "en-US"]`. Unpacked 285MB → 237MB, zip 112MB → 101MB.
+  Do not drop `en-US` or Windows loses its English pak.
+- Kept dropping the duplicate extraResources icns (bundle already has icon.icns): −423KB.
+- Kept deleting the unreferenced iconset and white-on-black png. `unreferenced_images` is 0.
+- Kept removing exports nothing imports. Knip ignores in-file exports and three deps that
+  are used outside static imports (`@electron/asar`, `tailwindcss`, query eslint plugin).
+  `knip_issues` is 0.
+- Discarded a meta description (SEO 82 → 91, +196 bytes lost the score step) and brightening
+  `--color-fg-subtle` (contrast score did not move).
+- file:// cannot pass performance, `is-on-https`, `bf-cache`, or `robots-txt`. Do not audit in Chrome.
 - Known before any run (verify, do not assume):
   - electron-builder `files` is only `out/**` + `package.json`; extraResources are the two
     icons. The 109 MB `stockfish/stockfish-macos-m1-apple-silicon` binary is gitignored and

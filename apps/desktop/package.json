@@ -26,7 +26,10 @@
       "output": "dist",
       "buildResources": "src/main/assets"
     },
-    "electronLanguages": ["en", "en-US"],
+    "electronLanguages": [
+      "en",
+      "en-US"
+    ],
     "files": [
       "out/**/*",
       "package.json"
@@ -35,7 +38,9 @@
       {
         "from": "src/main/assets",
         "to": ".",
-        "filter": ["app-icon.png"]
+        "filter": [
+          "app-icon.png"
+        ]
       }
     ],
     "mac": {
