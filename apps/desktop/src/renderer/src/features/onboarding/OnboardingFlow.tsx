@@ -66,12 +66,12 @@ import { useEngineSetup, type EngineSetup } from "./useEngineSetup";
  */
 export function OnboardingFlow({
   onFinish,
-  onGoHome
+  onGoPlay
 }: {
   /** Marks the welcome done (stored) and closes it. */
   onFinish: () => void;
-  /** Shows Home (the last step's "Start using Chaturanga"). */
-  onGoHome: () => void;
+  /** Shows Play (the last step's "Start using Chaturanga"). */
+  onGoPlay: () => void;
 }) {
   const [step, setStep] = useState<OnboardingStep>("welcome");
   // +1 moving forward, -1 back: the step content slides in from that side.
@@ -185,7 +185,7 @@ export function OnboardingFlow({
                     ownEngine={ownEngine}
                     settings={settings}
                     onBack={() => go("coach")}
-                    onDone={() => finishWith(onGoHome)}
+                    onDone={() => finishWith(onGoPlay)}
                   />
                 )}
               </div>
@@ -1095,10 +1095,10 @@ function DoneStep({
         tone: "busy",
         text:
           setup.stockfishPercent !== null
-            ? `Downloading Stockfish (${setup.stockfishPercent}%). It carries on in the background, and Home shows the progress.`
+            ? `Downloading Stockfish (${setup.stockfishPercent}%). It carries on in the background, and Play shows the progress.`
             : setup.engineReady
-              ? "Stockfish is ready. Maia is still downloading in the background; Home shows the progress."
-              : "Installing Stockfish. Home shows the progress."
+              ? "Stockfish is ready. Maia is still downloading in the background; Play shows the progress."
+              : "Installing Stockfish. Play shows the progress."
       }
     : setup.engineReady
       ? {
@@ -1108,14 +1108,14 @@ function DoneStep({
             : "An engine is ready for Game review."
         }
       : failed
-        ? { tone: "failed", text: `${failed.label} didn’t download. You can retry it from Home.` }
+        ? { tone: "failed", text: `${failed.label} didn’t download. You can retry it from Play.` }
         : setup.phase === "checking"
           ? { tone: "busy", text: "Checking…" }
           : {
               tone: "skipped",
               text: ownEngine
                 ? "Add your own engine in Settings, Engines."
-                : "Skipped. Home offers the download whenever you want it."
+                : "Skipped. Play offers the download whenever you want it."
             };
 
   const yourRating = headlineRating(settings.playerRatings);

@@ -369,14 +369,34 @@ export function registerFakeEngine(page: Page, logFile: string, mode?: string) {
   );
 }
 
-/** Imports a PGN file through the sidebar's Import PGN (its native picker stubbed to `file`). */
+/**
+ * Imports a PGN file through Play's "Start something new" → Import PGN (its native picker stubbed
+ * to `file`), opening Play from the sidebar first when another screen is shown (a Back step).
+ */
 export async function importPgnFile(
   app: ElectronApplication,
   page: Page,
   file: string
 ): Promise<void> {
   await stubOpenFile(app, file);
-  await sidebar(page).getByRole("button", { name: "Import PGN", exact: true }).click();
+  const play = sidebar(page).getByRole("button", { name: "Play", exact: true });
+  if ((await play.getAttribute("aria-pressed")) !== "true") await play.click();
+  await playPage(page).startNew.getByRole("button", { name: "Import PGN", exact: true }).click();
+}
+
+/** The Play page's bottom row: Recent games and Start something new (Play has no page heading). */
+export const playPage = (page: Page) => ({
+  recentGames: page.getByRole("region", { name: "Recent games" }),
+  startNew: page.getByRole("region", { name: "Start something new" })
+});
+
+/** Play is on screen: its sidebar item is the current one and its Recent games table shows. */
+export async function expectPlayPage(page: Page): Promise<void> {
+  await expect(sidebar(page).getByRole("button", { name: "Play", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  await expect(playPage(page).recentGames).toBeVisible();
 }
 
 /** Leaves the first-run welcome through "Skip setup". */

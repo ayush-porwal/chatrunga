@@ -67,6 +67,9 @@ export type PuzzleSampleInput = {
   };
 };
 
+/** Puzzle of the day: the local calendar day it is for ("2026-10-10"). */
+export type PuzzleOfTheDayInput = { date: string };
+
 export type PuzzleSample = {
   id: string;
   databaseId: string;

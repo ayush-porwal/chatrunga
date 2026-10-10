@@ -1,11 +1,18 @@
 import { useEffect, useRef } from "react";
 import { statusForFen } from "@chaturanga/shared/chess/position";
+import type { MoveNode } from "@chaturanga/shared/types/chess";
 import type { EngineInfo } from "@chaturanga/shared/types/engine";
 import { currentLineUcis } from "../features/analysis/engine-game-helpers";
 import { liveAnalysisSubject, type AnalysisTarget } from "../features/analysis/live-analysis";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { useAnalysisStore } from "../stores/analysis-store";
-import { clockNow, noteSystemResumed, remainingClockMs, useGameStore } from "../stores/game-store";
+import {
+  clockNow,
+  latestPlayedNode,
+  noteSystemResumed,
+  remainingClockMs,
+  useGameStore
+} from "../stores/game-store";
 import { selectLiveGameInProgress, useLichessStore } from "../stores/lichess-store";
 
 /** Live analysis always asks for the top three lines. */
@@ -26,6 +33,8 @@ function reportEngineError(error: unknown): void {
  */
 export const engineSearches = {
   move: null as string | null,
+  /** The position (node) the engine's move search is for: its move is played there. */
+  moveNodeId: null as string | null,
   analysis: null as string | null,
   isCurrent(searchId: string | undefined): boolean {
     return searchId !== undefined && (searchId === this.move || searchId === this.analysis);
@@ -54,14 +63,30 @@ export function applyEngineInfos(batch: readonly EngineInfo[]): void {
  */
 function endFailedEngineMove(): void {
   engineSearches.move = null;
+  engineSearches.moveNodeId = null;
+  pauseEnginesClock();
+}
+
+/** No search for the engine's move is running (it failed): its clock stops with it. */
+function pauseEnginesClock(): void {
   const game = useGameStore.getState();
   if (game.engineClockLive?.sideToMove === game.engineSide) game.pauseEngineClock();
 }
 
-function playEngineMove(move: string): void {
+/** The engine's move, played where it was asked for (the user may be looking at an earlier move). */
+function playEngineMove(move: string, nodeId: string | null): void {
   useAnalysisStore.getState().setBestMove(move);
-  if (!useGameStore.getState().makeUciMove(move))
+  if (!useGameStore.getState().makeUciMove(move, nodeId ?? undefined))
     useAnalysisStore.getState().setError(`Illegal engine move: ${move}`);
+}
+
+/** Whether `nodeId` is `descendantId` or one of the moves before it (a step back along the game). */
+function isOnPathTo(moveTree: readonly MoveNode[], nodeId: string, descendantId: string): boolean {
+  const byId = new Map(moveTree.map((node) => [node.id, node]));
+  for (let node = byId.get(descendantId); node; node = byId.get(node.parentId ?? "")) {
+    if (node.id === nodeId) return true;
+  }
+  return false;
 }
 
 /** A clock and a timer whose start returns its cancel (tests pass fake ones). */
@@ -185,8 +210,10 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
           useAnalysisStore.getState().setBestMove(bestMove.move);
           return;
         }
+        const nodeId = engineSearches.moveNodeId;
         engineSearches.move = null;
-        playEngineMove(bestMove.move);
+        engineSearches.moveNodeId = null;
+        playEngineMove(bestMove.move, nodeId);
       }),
       events.onEngineError((error) => {
         if (error.searchId && !engineSearches.isCurrent(error.searchId)) return;
@@ -239,19 +266,21 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
       void engines?.stop();
     };
     /**
-     * The engine was thinking about a position that is no longer the one on the board (the user
-     * stepped back). Its search stops, and so does its clock until it's asked to move again.
+     * The engine was thinking about a position that is no longer the game's (a takeback, another
+     * board, the match over): its search stops. Its clock is the game's business (it runs on).
      */
     const abandonEngineMove = () => {
       engineMoveKey = null;
+      engineMoveGameKey = null;
       if (engineSearches.move === null) return;
       engineSearches.move = null;
+      engineSearches.moveNodeId = null;
       void engines?.stop();
-      const game = useGameStore.getState();
-      if (game.engineClockLive?.sideToMove === game.engineSide) game.pauseEngineClock();
     };
     /** Identifies the match, so the engine resets for a new one even from the same position. */
     let gameKey = newSearchId();
+    /** The match the running move search belongs to. */
+    let engineMoveGameKey: string | null = null;
 
     const optionsKey = (options: AnalysisOptions) =>
       `${options.engineId ?? ""}|${options.multipv}|${options.depth ?? ""}|${options.moveTimeMs ?? ""}|${useAnalysisStore.getState().searchEpoch}`;
@@ -290,6 +319,7 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
       if (game.gameOutcome && game.gameOutcome !== lastOutcome) {
         analysisKey = null;
         engineSearches.move = null;
+        engineSearches.moveNodeId = null;
         engineSearches.analysis = null;
         void engines?.stop();
         useAnalysisStore.getState().reset();
@@ -313,21 +343,45 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
       // search goes on whatever the board's mode (it only runs while no game holds the engine).
       if (game.mode !== "analysis" && !(target && subject)) stopAnalysis();
 
+      // A timed game is played at its latest move: another one looked at isn't a position to move in.
+      const gameNodeId = game.engineClock ? latestPlayedNode(game.moveTree)?.id : undefined;
+      // The user looks at another move while the engine thinks (stepped back through the game, or
+      // a timed game's earlier line): it goes on thinking about the game's position, the clock
+      // runs on, and its move is played there (playEngineMove). A move of the user's elsewhere (a
+      // takeback) makes that the game's position instead.
+      const searchNodeId = engineSearches.moveNodeId;
+      const thinkingAhead =
+        game.mode === "engine" &&
+        Boolean(game.engineSide) &&
+        !game.gameOutcome &&
+        engineSearches.move !== null &&
+        searchNodeId !== null &&
+        engineMoveGameKey === gameKey &&
+        game.currentNodeId !== searchNodeId &&
+        (gameNodeId === undefined
+          ? isOnPathTo(game.moveTree, game.currentNodeId, searchNodeId)
+          : gameNodeId === searchNodeId);
+
       // Engine game: ask for a move whenever it is the engine's turn (once per position).
       const enginesTurn =
         game.mode === "engine" &&
         game.engineSide &&
         status.turn === game.engineSide &&
         !status.isEnd &&
-        !game.gameOutcome;
-      if (engines && enginesTurn && game.engineSide) {
+        !game.gameOutcome &&
+        (gameNodeId === undefined || gameNodeId === game.currentNodeId);
+      if (thinkingAhead) {
+        // Its search stays as it is.
+      } else if (engines && enginesTurn && game.engineSide) {
         // The match too: a new game from the same position (and side) still needs its first move.
         const key = `${gameKey}|${game.rootFen}|${game.currentNodeId}|${game.currentFen}|${game.engineSide}`;
         const engineId = useAnalysisStore.getState().activeEngineId;
         if (key !== engineMoveKey && engineId) {
           engineMoveKey = key;
+          engineMoveGameKey = gameKey;
           const searchId = newSearchId();
           engineSearches.move = searchId;
+          engineSearches.moveNodeId = game.currentNodeId;
           game.resumeEngineClock();
           const clock = useGameStore.getState().getClockForEngineGo();
           useAnalysisStore.getState().setStatus("thinking");
@@ -347,6 +401,7 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
               if (engineSearches.move !== searchId) return;
               // No search is running: the engine's clock stops with it (no flag for a failed start).
               abandonEngineMove();
+              pauseEnginesClock();
               reportEngineError(error);
             });
         }

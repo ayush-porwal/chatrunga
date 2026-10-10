@@ -174,9 +174,9 @@ describe("LichessService", () => {
 
   it("rejects a blitz seek without asking Lichess", async () => {
     const { service, requests } = await setup({});
-    await expect(
-      service.seek({ minutes: 3, incrementSec: 2, rated: true, ratingRange: null })
-    ).rejects.toThrow(/Rapid or slower/);
+    await expect(service.seek({ minutes: 3, incrementSec: 2, rated: true })).rejects.toThrow(
+      /Rapid or slower/
+    );
     expect(requests).toHaveLength(0);
   });
 
@@ -186,15 +186,14 @@ describe("LichessService", () => {
       "GET /api/stream/event": streams().handler,
       "POST /api/board/seek": seeks.handler
     });
-    await service.seek({ minutes: 10, incrementSec: 5, rated: false, ratingRange: [1400, 1800] });
+    await service.seek({ minutes: 10, incrementSec: 5, rated: false });
     const seekRequest = requests.find((request) => request.url.endsWith("/api/board/seek"))!;
     expect(Object.fromEntries(new URLSearchParams(seekRequest.body))).toEqual({
       rated: "false",
       time: "10",
       increment: "5",
       variant: "standard",
-      color: "random",
-      ratingRange: "1400-1800"
+      color: "random"
     });
     // The event stream is opened first, so an instant pairing isn't missed.
     expect(requests[0]!.url).toContain("/api/stream/event");
@@ -216,7 +215,7 @@ describe("LichessService", () => {
       "GET /api/stream/event": streams().handler,
       "POST /api/board/seek": seeks.handler
     });
-    await service.seek({ minutes: 15, incrementSec: 10, rated: true, ratingRange: null });
+    await service.seek({ minutes: 15, incrementSec: 10, rated: true });
     seeks.opened[0]!.close();
     await vi.waitFor(() =>
       expect(events.at(-1)).toEqual({ type: "seek", searching: false, error: null })
@@ -357,6 +356,70 @@ describe("LichessService", () => {
       }
     ]);
     expect(await service.ongoingGames()).toEqual(["abcd1234"]);
+  });
+
+  it("lists your games in progress with their positions, skipping malformed entries", async () => {
+    const board = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR";
+    const { service, requests } = await setup({
+      "GET /api/account/playing": () =>
+        json({
+          nowPlaying: [
+            {
+              gameId: "abcd1234",
+              fullId: "abcd1234wxyz",
+              color: "white",
+              fen: board,
+              isMyTurn: true,
+              lastMove: "e7e5",
+              opponent: { id: "salma", username: "Salma", rating: 1510 },
+              speed: "rapid",
+              rated: true
+            },
+            {
+              gameId: "efgh5678",
+              color: "black",
+              fen: board,
+              isMyTurn: false,
+              lastMove: "",
+              opponent: { id: null, username: "A.I. level 3", ai: 3 },
+              speed: "classical",
+              rated: false
+            },
+            { gameId: "nofen123", color: "white", isMyTurn: true },
+            { gameId: "badfen12", color: "white", fen: "not a board", isMyTurn: true },
+            "broken"
+          ]
+        })
+    });
+    // Asked for together (as Play does): one request.
+    const [games, ids] = await Promise.all([service.playing(), service.ongoingGames()]);
+    expect(requests.filter((request) => request.url.includes("/api/account/playing"))).toHaveLength(
+      1
+    );
+    expect(ids).toEqual(["abcd1234", "efgh5678", "nofen123", "badfen12"]);
+    expect(games).toEqual([
+      {
+        id: "abcd1234",
+        fen: `${board} w - - 0 1`,
+        lastMove: "e7e5",
+        yourColor: "white",
+        opponent: { name: "Salma", rating: 1510 },
+        speed: "rapid",
+        rated: true,
+        isMyTurn: true
+      },
+      {
+        id: "efgh5678",
+        // Not your move, as Black: White is to move.
+        fen: `${board} w - - 0 1`,
+        lastMove: null,
+        yourColor: "black",
+        opponent: { name: "Lichess AI level 3", rating: null },
+        speed: "classical",
+        rated: false,
+        isMyTurn: false
+      }
+    ]);
   });
 
   it("keeps an outgoing challenge alive and reports how it ended", async () => {

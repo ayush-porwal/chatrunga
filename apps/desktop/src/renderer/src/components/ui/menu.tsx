@@ -32,12 +32,15 @@ type MenuItem = {
 function OverflowMenu({
   label,
   items,
-  trigger
+  trigger,
+  size = "icon-sm"
 }: {
   label: string;
   items: readonly (MenuItem | false | null | undefined)[];
   /** A labelled outline button ("Backup") instead of the "⋯" icon, for a page header's menu. */
   trigger?: { text: string; icon?: React.ReactNode };
+  /** The "⋯" button's size (a dense row's 28px `icon-xs`). */
+  size?: "icon-sm" | "icon-xs";
 }) {
   const [open, setOpen] = React.useState(false);
   const rootRef = React.useRef<HTMLDivElement | null>(null);
@@ -77,6 +80,7 @@ function OverflowMenu({
         <IconButton
           label={label}
           icon={<MoreHorizontal />}
+          size={size}
           aria-haspopup="menu"
           aria-expanded={open}
           tooltip={!open}

@@ -98,6 +98,61 @@ describe("gameRepository (SQLite)", () => {
     ]);
   });
 
+  it("finds the newest engine game still in progress, skipping ones that can't be rejoined", () => {
+    const engineGame = (id: string, pgn: string, headers: Record<string, string> = {}) => {
+      const { game } = importPgnText(pgn);
+      gameRepository.save({
+        ...game,
+        id,
+        source: "engine-game",
+        headers: { ...game.headers, white: "You", black: "Stockfish", ...headers }
+      });
+    };
+    expect(gameRepository.latestUnfinishedEngineGame()).toBeNull();
+    engineGame("older", "1. e4 e5 *");
+    engineGame("finished", "1. e4 e5 1-0", { result: "1-0" });
+    engineGame("continuation", "1. d4 *", { event: "Puzzle continuation" });
+    engineGame("no-moves", "*");
+    engineGame("no-you", "1. e4 *", { white: "Stockfish", black: "Maia 1500" });
+    engineGame("both-you", "1. e4 *", { black: "you" });
+    gameRepository.save({ ...importPgnText("1. c4 *").game, id: "imported" });
+    // Newest first: every game but "older" is newer and none of them counts.
+    const order = [
+      "older",
+      "finished",
+      "continuation",
+      "no-moves",
+      "no-you",
+      "both-you",
+      "imported"
+    ];
+    order.forEach((id, index) =>
+      getDb()
+        .prepare("UPDATE games SET updated_at = ? WHERE id = ?")
+        .run(index + 1, id)
+    );
+    expect(gameRepository.latestUnfinishedEngineGame()?.id).toBe("older");
+  });
+
+  it("keeps a timed move's play time, and rebuilds a tree whose play time is damaged", () => {
+    const { game } = importPgnText("1. e4 *");
+    const moveTree = game.moveTree.map((node) =>
+      node.san ? { ...node, clockAfter: "0:01:59", playedAt: 1_700_000_000_000 } : node
+    );
+    const saved = gameRepository.save({ ...game, id: "timed", moveTree });
+    expect(gameRepository.get(saved.id)?.moveTree.find((node) => node.san)).toMatchObject({
+      clockAfter: "0:01:59",
+      playedAt: 1_700_000_000_000
+    });
+    const damaged = moveTree.map((node) => (node.san ? { ...node, playedAt: "soon" } : node));
+    getDb()
+      .prepare("UPDATE games SET move_tree_json = ? WHERE id = ?")
+      .run(JSON.stringify(damaged), saved.id);
+    expect(gameRepository.get(saved.id)?.moveTree.find((node) => node.san)?.playedAt).toBe(
+      undefined
+    );
+  });
+
   it("moves a saved review onto the rebuilt tree, or drops one that doesn't fit", () => {
     const saved = saveImported();
     const mainline = saved.moveTree.filter((node) => node.san);

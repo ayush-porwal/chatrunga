@@ -24,7 +24,8 @@ const context: HistoryContext = {
   settingsSection: "engines",
   puzzleSet: null,
   puzzleSetContinues: false,
-  repertoireScreen: null
+  repertoireScreen: null,
+  savedPlayOpponent: null
 };
 const puzzle = {
   id: "p1",
@@ -43,6 +44,14 @@ const config = {
   position: {}
 } as unknown as PuzzleSessionConfig;
 const set = { id: "s1", config, shownIds: ["p1"] };
+const lichessAccount = {
+  id: "kakashi",
+  username: "kakashi",
+  title: null,
+  perfs: {},
+  connectedAt: 1,
+  lastSyncAt: null
+};
 
 function loadSaved(id: string | null) {
   const { game } = importPgnText("1. e4 e5 2. Nf3 *");
@@ -61,7 +70,10 @@ describe("history capture", () => {
     useGameStore.getState().reset();
     usePuzzleStore.getState().reset();
     useLichessStore.getState().setLive(null);
-    useLichessStore.setState({ playOpponent: null });
+    useLichessStore.setState({
+      playOpponent: null,
+      status: { account: null, connecting: false, tokenRejected: false }
+    });
   });
 
   it("keeps a saved game by id and an unsaved one whole", () => {
@@ -118,12 +130,8 @@ describe("history capture", () => {
 
   it("captures each view with the shell state it needs", () => {
     loadSaved("g1");
-    expect(captureEntry("home", context)).toEqual({ view: "home" });
     expect(captureEntry("settings", context)).toEqual({ view: "settings", section: "engines" });
-    // An unchosen Play tab follows the account.
     expect(captureEntry("play", context)).toEqual({ view: "play", opponent: "engine" });
-    useLichessStore.getState().setPlayOpponent("lichess");
-    expect(captureEntry("play", context)).toEqual({ view: "play", opponent: "lichess" });
     expect(captureEntry("game", context)).toMatchObject({
       view: "game",
       board: { gameId: "g1", tab: "engine" }
@@ -151,13 +159,32 @@ describe("history capture", () => {
     );
   });
 
+  it("records the Play mode shown: the session's, else Play settings', else the account's", () => {
+    const play = (savedPlayOpponent: HistoryContext["savedPlayOpponent"]) =>
+      captureEntry("play", { ...context, savedPlayOpponent });
+    // Nothing chosen and no Lichess account: the engine.
+    expect(play(null)).toEqual({ view: "play", opponent: "engine" });
+    expect(play("board")).toEqual({ view: "play", opponent: "board" });
+    // A saved Lichess mode needs an account; without one the engine shows.
+    expect(play("friend")).toEqual({ view: "play", opponent: "engine" });
+    useLichessStore.setState({
+      status: { account: lichessAccount, connecting: false, tokenRejected: false }
+    });
+    expect(play(null)).toEqual({ view: "play", opponent: "pool" });
+    expect(play("friend")).toEqual({ view: "play", opponent: "friend" });
+    // Chosen this session: kept whatever the settings say.
+    useLichessStore.getState().setPlayOpponent("ai");
+    expect(play("board")).toEqual({ view: "play", opponent: "ai" });
+  });
+
   it("pushes, replaces or records nothing", () => {
-    useHistoryStore.setState({ entries: [{ view: "home" }], index: 0 });
+    const start = { view: "play", opponent: null } as const;
+    useHistoryStore.setState({ entries: [start], index: 0 });
     recordHistory("push", { view: "puzzles" });
     recordHistory("replace", { view: "databases" });
-    recordHistory("none", { view: "home" });
+    recordHistory("none", start);
     expect(useHistoryStore.getState()).toMatchObject({
-      entries: [{ view: "home" }, { view: "databases" }],
+      entries: [start, { view: "databases" }],
       index: 1
     });
   });
@@ -223,7 +250,7 @@ describe("history restore", () => {
     loadSaved("g1");
     const board = captureBoard("notation", null);
     const entries: HistoryEntry[] = [
-      { view: "home" },
+      { view: "play", opponent: "pool" },
       { view: "puzzles" },
       { view: "game", board },
       { view: "game", board: { ...board, lichessGameId: "lx" } },

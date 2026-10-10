@@ -43,6 +43,7 @@ import type {
   LichessChallenge,
   LichessChallengeInput,
   LichessEvent,
+  LichessPlayingGame,
   LichessSeekInput,
   LichessStatus,
   LichessSyncResult
@@ -57,6 +58,7 @@ import type { ReviewInsightPayload } from "../schemas/review-insight";
 import type {
   DatabaseDownloadProgress,
   InstalledDatabase,
+  PuzzleOfTheDayInput,
   PuzzleSample,
   PuzzleSampleInput
 } from "../types/database";
@@ -213,6 +215,13 @@ export type ChaturangaApi = {
     getZoomFactor(): number;
     /** Fired when the setting or the system Reduce transparency preference changes. */
     onGlassChanged(callback: (state: WindowGlassState) => void): Unsubscribe;
+    /**
+     * The window entered (true) or left (false) full screen. On macOS the traffic lights then move
+     * to the menu bar that slides in, so the titlebar stops reserving room for them.
+     */
+    onFullScreenChanged(callback: (fullScreen: boolean) => void): Unsubscribe;
+    /** Whether the window is full screen now (read on mount; changes come by onFullScreenChanged). */
+    isFullScreen(): Promise<boolean>;
     /** The first frame with real content has been committed: the main process may show the window. */
     rendererReady(): void;
   };
@@ -237,6 +246,11 @@ export type ChaturangaApi = {
     /** Which filters the library has games for, leaving out `excludeId`. */
     facets(excludeId: string | null): Promise<GameLibraryFacets>;
     get(id: string): Promise<SavedGame>;
+    /**
+     * The newest saved engine game still in progress (Play's In progress card): no result, at least
+     * one main-line move, not a puzzle played on. Null when there is none.
+     */
+    latestUnfinishedEngineGame(): Promise<SavedGame | null>;
     /** One saved analysis of a game (null when it's gone), to show instead of the newest. */
     getReview(gameId: string, reviewId: string): Promise<GameReview | null>;
     /** Deletes one saved analysis of a game (with its AI commentary); the game stays. */
@@ -258,6 +272,11 @@ export type ChaturangaApi = {
     list(): Promise<InstalledDatabase[]>;
     download(sourceId: string): Promise<InstalledDatabase>;
     samplePuzzle(input: PuzzleSampleInput): Promise<PuzzleSample>;
+    /**
+     * One puzzle for the day from the installed puzzle databases (the Lichess set first), the same
+     * for every call with that date; null when no puzzle database is installed. Local only.
+     */
+    puzzleOfTheDay(input: PuzzleOfTheDayInput): Promise<PuzzleSample | null>;
     remove(id: string): Promise<void>;
     /** Stops a running download (its partial file stays, so downloading again resumes). */
     cancelDownload(sourceId: string): Promise<void>;
@@ -348,6 +367,8 @@ export type ChaturangaApi = {
     challenges(): Promise<LichessChallenge[]>;
     /** Ids of your games in progress (to resume one after a restart). */
     ongoingGames(): Promise<string[]>;
+    /** Your games in progress with their positions (Play's In progress card). */
+    playing(): Promise<LichessPlayingGame[]>;
     /** Streams a game (`gameFull`, then `gameState` events) until it ends or `unwatchGame`. */
     watchGame(gameId: string): Promise<void>;
     unwatchGame(gameId: string): Promise<void>;

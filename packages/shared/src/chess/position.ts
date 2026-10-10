@@ -84,6 +84,14 @@ export function statusForFen(fen: string): {
   };
 }
 
+/**
+ * Whether `color` still has the material to mate in some line of play (FIDE): a side that flags
+ * against an opponent without it draws instead of losing.
+ */
+export function hasMatingMaterial(fen: string, color: Color): boolean {
+  return !positionFromFen(fen).hasInsufficientMaterial(color);
+}
+
 /** UCI promotion letter for a promotion piece (`queen` → `q`); empty for a non-promotion. */
 export function promotionSuffix(promotion: UserMove["promotion"]): string {
   switch (promotion) {

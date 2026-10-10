@@ -10,6 +10,7 @@ import {
   normalizeBoardSquareHex,
   legacyPieceStyle,
   ONBOARDING_HINTS,
+  PLAY_OPPONENTS,
   PRACTICE_AUTO_ADVANCE_MS,
   REVIEW_MAIA_LEVELS,
   type AppSettings
@@ -53,6 +54,8 @@ const hexColor: Check<string> = (value): value is string =>
  * a check. Values read back are normalized as well (settings.ts); this stops bad ones being stored.
  */
 const SETTING_CHECKS: { [K in keyof AppSettings]: Check<AppSettings[K]> } = {
+  playOpponent: nullable(oneOf(...PLAY_OPPONENTS)),
+  playEngineId: nullable(text(200)),
   boardOrientation: oneOf("white", "black"),
   boardTheme: isBoardTheme,
   boardSquareLight: nullable(hexColor),

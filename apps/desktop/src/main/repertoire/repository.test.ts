@@ -129,9 +129,20 @@ describe("repertoire repository (SQLite)", () => {
     });
     expect(repertoireRepository.lastStudyPlace()).toEqual({
       repertoireId: "r1",
+      repertoireName: "50% Sicilian",
+      color: "black",
       chapterId: "c1",
+      chapterTitle: "Main",
+      rootFen: START_FEN,
       nodeId: null
     });
+    expect(chapterRepository.node("c1", "root")).toEqual({
+      san: null,
+      uci: null,
+      fenBefore: START_FEN,
+      fenAfter: START_FEN
+    });
+    expect(chapterRepository.node("c1", "missing")).toBeNull();
 
     const session = {
       id: "s1",
@@ -219,6 +230,8 @@ describe("repertoire repository (SQLite)", () => {
     const db = getDb();
     db.prepare("UPDATE repertoire_chapters SET tree_json = ? WHERE id = 'c1'").run("{not json");
     expect(() => chapterRepository.get("c1")).toThrow(RepertoireCorruptChapterError);
+    // Reading one node (the due summary) gives nothing instead of throwing.
+    expect(chapterRepository.node("c1", "root")).toBeNull();
     expect(() => chapterRepository.list("r1")).toThrow(
       "Repertoire chapter c1 is damaged and can't be opened: its stored JSON is unreadable"
     );
@@ -226,6 +239,7 @@ describe("repertoire repository (SQLite)", () => {
     expect(() => chapterRepository.get("c1")).toThrow(/the move tree is missing/);
     db.prepare("UPDATE repertoire_chapters SET tree_json = ? WHERE id = 'c1'").run('[{"id":"x"}]');
     expect(() => chapterRepository.get("c1")).toThrow(/malformed/);
+    expect(chapterRepository.node("c1", "x")).toBeNull();
     expect(db.prepare("SELECT tree_json FROM repertoire_chapters WHERE id = 'c1'").get()).toEqual({
       tree_json: '[{"id":"x"}]'
     });

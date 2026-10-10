@@ -11,8 +11,6 @@ import {
 const draft: PlayDraft = {
   engineId: "sf",
   humanColor: "white",
-  moveTimeMs: 500,
-  depth: null,
   clockPreset: "blitz5_3",
   customMinutes: 10,
   customIncrementSec: 5
@@ -32,7 +30,7 @@ describe("withInitialSession", () => {
     expect(next.initialSession).toBe(initial);
     expect(next.humanColor).toBe("black");
     expect(next.clockPreset).toBe("infinite");
-    expect(next).toMatchObject({ engineId: "sf", moveTimeMs: 500, depth: null, customMinutes: 10 });
+    expect(next).toMatchObject({ engineId: "sf", customMinutes: 10, customIncrementSec: 5 });
     expect(draft.initialSession).toBeUndefined();
   });
 
@@ -53,10 +51,10 @@ describe("withInitialSession", () => {
 describe("withoutInitialSession", () => {
   it("drops the handoff, restores the colour and clock and keeps everything else", () => {
     const handoff = withInitialSession(draft, initial);
-    const next = withoutInitialSession({ ...handoff, clockPreset: "rapid10_0", moveTimeMs: 900 });
+    const next = withoutInitialSession({ ...handoff, clockPreset: "rapid10_0", customMinutes: 20 });
     expect("initialSession" in next).toBe(false);
     expect("beforeHandoff" in next).toBe(false);
-    expect(next).toEqual({ ...draft, moveTimeMs: 900 });
+    expect(next).toEqual({ ...draft, customMinutes: 20 });
   });
 
   it("returns the same draft when there is nothing to clear", () => {
@@ -71,13 +69,13 @@ describe("usePlayDraftStore", () => {
     usePlayDraftStore
       .getState()
       .update({ engineId: "lc0", humanColor: "black", clockPreset: "rapid15_10" });
-    usePlayDraftStore.getState().update({ depth: 12 });
+    usePlayDraftStore.getState().update({ customMinutes: 25 });
     expect(usePlayDraftStore.getState().draft).toMatchObject({
       engineId: "lc0",
       humanColor: "black",
       clockPreset: "rapid15_10",
-      depth: 12,
-      moveTimeMs: 500
+      customMinutes: 25,
+      customIncrementSec: 5
     });
   });
 

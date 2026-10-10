@@ -22,6 +22,7 @@ import type {
   LichessChallengeInput,
   LichessEvent,
   LichessGameFull,
+  LichessPlayingGame,
   LichessSeekInput,
   LichessStatus,
   LichessSyncResult
@@ -44,7 +45,8 @@ import {
   normalizeAccount,
   normalizeChallenge,
   normalizeGameFull,
-  normalizeGameState
+  normalizeGameState,
+  normalizePlayingGame
 } from "./normalize";
 import { authorizeInBrowser, OAuthCancelledError } from "./oauth";
 import { isRecord } from "@chaturanga/shared/types/guards";
@@ -110,6 +112,8 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
   private readonly gameWatches = new Map<string, GameWatch>();
   private sync: Promise<LichessSyncResult> | null = null;
   private syncController: AbortController | null = null;
+  /** The account/playing request in flight (see `nowPlaying`). */
+  private nowPlayingRequest: Promise<unknown[]> | null = null;
 
   constructor(private readonly options: LichessServiceOptions) {
     super();
@@ -279,8 +283,7 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
       time: input.minutes,
       increment: input.incrementSec,
       variant: "standard",
-      color: "random",
-      ratingRange: input.ratingRange ? `${input.ratingRange[0]}-${input.ratingRange[1]}` : undefined
+      color: "random"
     };
     await new Promise<void>((resolve, reject) => {
       // The response only carries keep-alives; it ends when paired or when the seek expires.
@@ -430,12 +433,40 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
     return challenges;
   }
 
+  /**
+   * `nowPlaying` of `GET /api/account/playing`, the entries unchecked. Callers at the same time
+   * (Play asks for the ids and the games together) share one request.
+   */
+  private nowPlaying(): Promise<unknown[]> {
+    this.nowPlayingRequest ??= this.client
+      .json("/api/account/playing?nb=50")
+      .then((body): unknown[] => {
+        const games: unknown = body.nowPlaying;
+        return Array.isArray(games) ? (games as unknown[]) : [];
+      })
+      .finally(() => {
+        this.nowPlayingRequest = null;
+      });
+    return this.nowPlayingRequest;
+  }
+
   async ongoingGames(): Promise<string[]> {
-    const body = await this.client.json("/api/account/playing?nb=50");
-    if (!Array.isArray(body.nowPlaying)) return [];
-    return body.nowPlaying
+    return (await this.nowPlaying())
       .map((game: unknown) => (isRecord(game) ? game.gameId : undefined))
       .filter((id): id is string => typeof id === "string" && id.length > 0);
+  }
+
+  /** Your games in progress with their positions; a malformed entry is left out. */
+  async playing(): Promise<LichessPlayingGame[]> {
+    const games: LichessPlayingGame[] = [];
+    for (const item of await this.nowPlaying()) {
+      try {
+        games.push(normalizePlayingGame(item));
+      } catch {
+        // Skip a malformed entry rather than failing the list.
+      }
+    }
+    return games;
   }
 
   // --- Games -----------------------------------------------------------------------------------

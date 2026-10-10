@@ -547,9 +547,46 @@ export type RepertoireListFilters = {
 export type RepertoireDueSummary = {
   dueCount: number;
   repertoireCount: number;
-  continue: { repertoireId: string; chapterId: string; nodeId: string } | null;
+  continue: {
+    repertoireId: string;
+    chapterId: string;
+    nodeId: string;
+    /** For Play's Repertoire card: the repertoire, its colour, the chapter and the node's position. */
+    repertoireName: string;
+    color: RepertoireColor;
+    chapterTitle: string;
+    fen: string;
+  } | null;
   /** The most recently updated unfinished practice session of an active repertoire. */
-  resume: { repertoireId: string; sessionId: string; mode: PracticeMode } | null;
+  resume: {
+    repertoireId: string;
+    sessionId: string;
+    mode: PracticeMode;
+    repertoireName: string;
+    color: RepertoireColor;
+  } | null;
+  /**
+   * The next due position of the repertoire with the most due decisions (Play's Repertoire card):
+   * null when nothing is due.
+   */
+  next: RepertoireNextDue | null;
+  /** The repertoire with the second most due decisions, when another one has any. */
+  alsoDue: { repertoireId: string; name: string; dueCount: number } | null;
+};
+
+/** A due decision as Play's Repertoire card shows it: the position, and the move that reached it. */
+export type RepertoireNextDue = {
+  repertoireId: string;
+  repertoireName: string;
+  color: RepertoireColor;
+  /** Due decisions in this repertoire. */
+  dueCount: number;
+  chapterId: string;
+  nodeId: string;
+  /** The position the player answers (their move). */
+  fen: string;
+  /** The opponent's move into `fen` ("3…Nf6": moveNumber 3, color black); null at a chapter root. */
+  lastMove: { uci: string; san: string; moveNumber: number; color: RepertoireColor } | null;
 };
 
 /* ------------------------------------------------------------------ add from a game (§6.2) */

@@ -1,3 +1,4 @@
+import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import { Fragment, memo, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Cpu, Lock, RotateCcw, Settings } from "lucide-react";
@@ -479,7 +480,8 @@ function EngineStatusPanelContent({
     [hovered, fen, topLines]
   );
   const engines = useEnginesQuery();
-  const engineName = engines.data?.find((engine) => engine.id === activeEngineId)?.name ?? null;
+  const activeEngine = engines.data?.find((engine) => engine.id === activeEngineId);
+  const engineName = activeEngine ? engineDisplayName(activeEngine.name) : null;
   // With MultiPV the latest info can be line 2/3 — read depth/score/best from the principal line.
   const primary = topLines.find((line) => (line.multipv ?? 1) === 1) ?? latestInfo;
   const best = bestMove ?? primary?.pv?.[0] ?? null;

@@ -3,7 +3,6 @@ import {
   Database,
   Download,
   FileSearch,
-  Home,
   Library,
   Puzzle,
   Settings,
@@ -13,11 +12,10 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 /**
- * One icon per place or command, shared by every way to reach it (sidebar, Home, page actions),
+ * One icon per place or command, shared by every way to reach it (sidebar, Play, page actions),
  * so the same destination always looks the same.
  */
 export const DESTINATION_ICONS = {
-  home: Home,
   play: Swords,
   analyze: FileSearch,
   review: BarChart3,

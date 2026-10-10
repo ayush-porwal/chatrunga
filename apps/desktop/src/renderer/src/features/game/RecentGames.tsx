@@ -1,9 +1,9 @@
+import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import { useMemo, useState, type MouseEvent } from "react";
 import { BookPlus, FolderOpen, RotateCcw, Trash2 } from "lucide-react";
 import { LIBRARY_TAB_LABELS } from "@chaturanga/shared/types/library";
-import { useDeleteGameMutation, useGamePagesQuery } from "../../queries/api";
+import { useGamePagesQuery } from "../../queries/api";
 import { useGameStore } from "../../stores/game-store";
-import { useReviewStore } from "../../stores/review-store";
 import { cn } from "@/lib/utils";
 import { listRow } from "@/lib/ui";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -15,10 +15,8 @@ import { OverflowMenu } from "@/components/ui/menu";
 import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ipcErrorMessage } from "@/lib/ipc-error";
-import { cancelActiveReview } from "../../app/useReviewRunner";
 import { gamesOfPages } from "@/lib/game-pages";
-import { useAddToRepertoireStore } from "../../stores/add-to-repertoire-store";
-import { hasMoves, sourceFromSavedGame } from "../repertoire/add-from-game";
+import { useSavedGameActions } from "./saved-game-actions";
 import { sourceLabel, useLibraryTabs } from "./library-tab";
 
 /**
@@ -38,53 +36,12 @@ export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }
     { enabled: !facets.isPending }
   );
   const list = useMemo(() => gamesOfPages(games.data?.pages), [games.data]);
-  const removeGame = useDeleteGameMutation();
-  const resetBoard = useGameStore((state) => state.reset);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const repertoiresAvailable = Boolean(window.chaturanga?.repertoires);
+  const actions = useSavedGameActions();
 
-  async function deleteGame(id: string, event: MouseEvent<HTMLButtonElement>) {
+  function deleteGame(id: string, event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
-    if (!window.chaturanga) return;
-    if (
-      !window.confirm(
-        "Remove this saved game? All moves, PGN, and any stored engine review for it will be deleted."
-      )
-    )
-      return;
-    setDeleteError(null);
-    try {
-      await removeGame.mutateAsync(id);
-    } catch (error) {
-      // Still saved: the board keeps it.
-      setDeleteError(`Couldn't delete that game: ${ipcErrorMessage(error) || "unknown error"}`);
-      return;
-    }
-    // Deleted while open: the board (and its review) go with it.
-    if (useGameStore.getState().gameId === id) {
-      void cancelActiveReview();
-      resetBoard();
-      useReviewStore.getState().reset();
-    }
-  }
-
-  /** Reads the saved game (the board keeps its own) and asks to add the whole game. */
-  async function addToRepertoire(id: string) {
-    setDeleteError(null);
-    const saved = await window.chaturanga?.games.get(id).catch(() => null);
-    if (!saved) {
-      setDeleteError("Couldn't read that game.");
-      return;
-    }
-    const source = sourceFromSavedGame(saved);
-    if (!hasMoves(source.tree)) {
-      setDeleteError("That game has no moves to add.");
-      return;
-    }
-    useAddToRepertoireStore
-      .getState()
-      .open({ source, initialScope: { kind: "whole-game" }, entry: "library" });
+    void actions.remove(id);
   }
 
   return (
@@ -120,7 +77,7 @@ export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }
           </div>
         </div>
       ) : null}
-      {deleteError ? <Notice tone="danger">{deleteError}</Notice> : null}
+      {actions.error ? <Notice tone="danger">{actions.error}</Notice> : null}
       {games.isPending ? (
         <div className="grid gap-1.5" aria-hidden="true">
           {[0, 1, 2].map((index) => (
@@ -160,7 +117,8 @@ export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }
                 onClick={() => onOpenGame(game.id)}
               >
                 <span className="truncate font-medium text-fg-secondary">
-                  {game.white || "White"} vs {game.black || "Black"}
+                  {engineDisplayName(game.white ?? "") || "White"} vs{" "}
+                  {engineDisplayName(game.black ?? "") || "Black"}
                 </span>
                 <span className="truncate text-xs text-fg-muted">
                   {[sourceLabel(game.source), game.event, game.result || "*"]
@@ -172,10 +130,10 @@ export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }
                 label="Game actions"
                 items={[
                   { label: "Open", icon: <FolderOpen />, onSelect: () => onOpenGame(game.id) },
-                  repertoiresAvailable && {
+                  actions.repertoiresAvailable && {
                     label: "Add to repertoire…",
                     icon: <BookPlus />,
-                    onSelect: () => void addToRepertoire(game.id)
+                    onSelect: () => void actions.addToRepertoire(game.id)
                   }
                 ]}
               />
@@ -185,8 +143,8 @@ export function RecentGames({ onOpenGame }: { onOpenGame: (id: string) => void }
                 variant="ghost-destructive"
                 size="icon-xs"
                 tooltipSide="left"
-                disabled={!window.chaturanga || removeGame.isPending}
-                onClick={(e) => void deleteGame(game.id, e)}
+                disabled={!window.chaturanga || actions.removing}
+                onClick={(e) => deleteGame(game.id, e)}
               />
             </li>
           ))}

@@ -76,7 +76,6 @@ function fakeShell(overrides: Partial<NavigationShell> = {}): NavigationShell {
     navigation,
     commitCurrent: vi.fn(),
     showLiveGame: shows(),
-    showHome: shows(),
     showSettings: shows(),
     openPlay: shows(),
     openPuzzles: shows(),
@@ -115,6 +114,9 @@ function gameEntry(
   return { view: "game", board: { ...captureBoard("notation", null), ...board } };
 }
 
+/** Play, where the app opens (an entry records the mode it showed). */
+const PLAY = { view: "play", opponent: "engine" } as const;
+
 /** History at `index` of `entries`. */
 function history(entries: HistoryEntry[], index = entries.length - 1) {
   useHistoryStore.setState({ entries, index });
@@ -136,16 +138,16 @@ beforeEach(() => {
   useLichessStore.setState({ playOpponent: null });
   useRepertoireWorkspaceStore.getState().reset();
   useRepertoireWorkspaceStore.setState({ decisionDrafts: {} });
-  history([{ view: "home" }], 0);
+  history([PLAY], 0);
 });
 
 describe("Back / Forward", () => {
   it("commits the screen being left, shows the entry, then moves the index", async () => {
-    history([{ view: "home" }, { view: "databases" }]);
+    history([PLAY, { view: "databases" }]);
     const shell = fakeShell();
     await goHistory(-1, shell, { current: null });
     expect(shell.commitCurrent).toHaveBeenCalledTimes(1);
-    expect(shell.showHome).toHaveBeenCalledTimes(1);
+    expect(shell.openPlay).toHaveBeenCalledTimes(1);
     expect(useHistoryStore.getState().index).toBe(0);
 
     await goHistory(1, shell, { current: null });
@@ -164,8 +166,9 @@ describe("Back / Forward", () => {
     const shell = fakeShell();
     expect(await restoreEntry({ view: "settings", section: "engines" }, shell)).toBe("shown");
     expect(shell.showSettings).toHaveBeenCalledWith("engines");
-    expect(await restoreEntry({ view: "play", opponent: "lichess" }, shell)).toBe("shown");
-    expect(useLichessStore.getState().playOpponent).toBe("lichess");
+    expect(await restoreEntry({ view: "play", opponent: "pool" }, shell)).toBe("shown");
+    expect(useLichessStore.getState().playOpponent).toBe("pool");
+    expect(shell.openPlay).toHaveBeenCalledTimes(1);
     expect(await restoreEntry({ view: "puzzles" }, shell)).toBe("shown");
     expect(await restoreEntry({ view: "repertoire-hub" }, shell)).toBe("shown");
     expect(shell.openPuzzles).toHaveBeenCalled();
@@ -182,7 +185,7 @@ describe("Back / Forward", () => {
   it("brings a saved game back on its tab, ending the board's other activity", async () => {
     const entry = gameEntry("g1", { tab: "engine" });
     loadSaved("g2");
-    history([entry, { view: "home" }]);
+    history([entry, PLAY]);
     const shell = fakeShell();
     await goHistory(-1, shell, { current: null });
     expect(shell.getSavedGame).toHaveBeenCalledWith("g1");
@@ -289,7 +292,7 @@ describe("a restore still loading", () => {
     const slow = deferred<SavedGame>();
     const entry = gameEntry("g1");
     loadSaved("g2");
-    history([{ view: "home" }, entry, { view: "databases" }]);
+    history([PLAY, entry, { view: "databases" }]);
     const shell = fakeShell({ getSavedGame: vi.fn(() => slow.promise) });
     const pending: PendingRestore = { current: null };
 
@@ -349,7 +352,7 @@ describe("a restore still loading", () => {
     const loads = [deferred<SavedGame>(), deferred<SavedGame>()];
     const g3 = gameEntry("g3");
     loadSaved("g2");
-    history([{ view: "home" }, g3, { view: "databases" }]);
+    history([PLAY, g3, { view: "databases" }]);
     let call = 0;
     const shell = fakeShell({ getSavedGame: vi.fn(() => loads[call++]!.promise) });
     const pending: PendingRestore = { current: null };
@@ -390,13 +393,13 @@ describe("a target that can't come back", () => {
   it("drops a deleted game's entry, says so on any page, and stays put", async () => {
     const deleted = gameEntry("g1");
     loadSaved("g2");
-    history([{ view: "home" }, deleted, { view: "databases" }]);
+    history([PLAY, deleted, { view: "databases" }]);
     const shell = fakeShell({ getSavedGame: vi.fn(() => Promise.reject(notFound())) });
 
     await expect(goHistory(-1, shell, { current: null })).resolves.toBeUndefined();
     expect(useAppNoticeStore.getState().message).toBe("That game was deleted.");
-    // Still on Databases; the next Back goes past the deleted game, to Home.
-    expect(useHistoryStore.getState().entries).toEqual([{ view: "home" }, { view: "databases" }]);
+    // Still on Databases; the next Back goes past the deleted game, to Play.
+    expect(useHistoryStore.getState().entries).toEqual([PLAY, { view: "databases" }]);
     expect(useHistoryStore.getState().index).toBe(1);
     expect(useGameStore.getState().gameId).toBe("g2");
     expect(shell.showGame).not.toHaveBeenCalled();
@@ -404,17 +407,17 @@ describe("a target that can't come back", () => {
     expect(useGameStore.getState().matchFeedback).toBeNull();
 
     await goHistory(-1, shell, { current: null });
-    expect(shell.showHome).toHaveBeenCalled();
+    expect(shell.openPlay).toHaveBeenCalled();
     expect(useHistoryStore.getState().index).toBe(0);
   });
 
   it("drops a deleted game ahead too (Forward)", async () => {
     const deleted = gameEntry("g1");
     loadSaved("g2");
-    history([{ view: "home" }, deleted], 0);
+    history([PLAY, deleted], 0);
     const shell = fakeShell({ getSavedGame: vi.fn(() => Promise.reject(notFound())) });
     await goHistory(1, shell, { current: null });
-    expect(useHistoryStore.getState()).toMatchObject({ entries: [{ view: "home" }], index: 0 });
+    expect(useHistoryStore.getState()).toMatchObject({ entries: [PLAY], index: 0 });
   });
 
   it("keeps the entry of a game that couldn't be read now, with the reason", async () => {
@@ -471,6 +474,7 @@ describe("a target that can't come back", () => {
 describe("a Game Review URL the window opened at (a reload)", () => {
   const reviewRouteShell = (overrides: Partial<ReviewRouteShell> = {}) => ({
     ...fakeShell(),
+    showPlay: vi.fn(),
     reviewShown: vi.fn(),
     ...overrides
   });
@@ -485,11 +489,11 @@ describe("a Game Review URL the window opened at (a reload)", () => {
     expect(useGameStore.getState()).toMatchObject({ gameId: "g1", mode: "freeplay" });
     expect(useReviewStore.getState().review?.reviewId).toBe("rv2");
     expect(shell.reviewShown).toHaveBeenCalledTimes(1);
-    expect(shell.showHome).not.toHaveBeenCalled();
+    expect(shell.showPlay).not.toHaveBeenCalled();
   });
 
   it("loads a review URL's game on a reload, or when the URL changes to another saved game", () => {
-    // The URL the window opened at: always, "current" too (it then lands on Home).
+    // The URL the window opened at: always, "current" too (it then lands on Play).
     expect(reviewRouteToRestore(undefined, "g1", null)).toBe(true);
     expect(reviewRouteToRestore(undefined, "current", null)).toBe(true);
     // Changed while the app is open: another saved game's review loads it...
@@ -511,11 +515,11 @@ describe("a Game Review URL the window opened at (a reload)", () => {
     expect(savedReviewPath(null, "g7")).toBeNull();
   });
 
-  it("lands on Home, saying so, when the game was deleted or couldn't be read", async () => {
+  it("lands on Play, saying so, when the game was deleted or couldn't be read", async () => {
     const deleted = reviewRouteShell({ getSavedGame: vi.fn(() => Promise.reject(notFound())) });
     expect(await restoreReviewRoute("g1", deleted)).toBe("gone");
     expect(useAppNoticeStore.getState().message).toBe("That game was deleted.");
-    expect(deleted.showHome).toHaveBeenCalledTimes(1);
+    expect(deleted.showPlay).toHaveBeenCalledTimes(1);
     expect(deleted.reviewShown).not.toHaveBeenCalled();
     expect(useGameStore.getState().gameId).toBeNull();
 
@@ -526,17 +530,17 @@ describe("a Game Review URL the window opened at (a reload)", () => {
     expect(useAppNoticeStore.getState().message).toBe(
       "That game couldn't be opened: database is locked"
     );
-    expect(unreadable.showHome).toHaveBeenCalledTimes(1);
+    expect(unreadable.showPlay).toHaveBeenCalledTimes(1);
   });
 
-  it("lands on Home for an unsaved game, which didn't outlive the window, saying why", async () => {
+  it("lands on Play for an unsaved game, which didn't outlive the window, saying why", async () => {
     const shell = reviewRouteShell();
     expect(await restoreReviewRoute("current", shell)).toBe("gone");
     expect(shell.getSavedGame).not.toHaveBeenCalled();
     expect(useAppNoticeStore.getState().message).toBe(
       "That game wasn't saved, so its review couldn't be reopened."
     );
-    expect(shell.showHome).toHaveBeenCalledTimes(1);
+    expect(shell.showPlay).toHaveBeenCalledTimes(1);
   });
 
   it("gives way to a navigation made while the game loads", async () => {
@@ -548,7 +552,7 @@ describe("a Game Review URL the window opened at (a reload)", () => {
     expect(await restoring).toBe("dropped");
     expect(useGameStore.getState().gameId).toBeNull();
     expect(shell.reviewShown).not.toHaveBeenCalled();
-    expect(shell.showHome).not.toHaveBeenCalled();
+    expect(shell.showPlay).not.toHaveBeenCalled();
   });
 });
 
@@ -558,7 +562,7 @@ describe("a Lichess game being played", () => {
     loadSaved("g2");
     useGameStore.getState().setMode("online");
     live("lx");
-    history([other, { view: "home" }]);
+    history([other, PLAY]);
     const shell = fakeShell();
     await goHistory(-1, shell, { current: null });
     expect(shell.showLiveGame).toHaveBeenCalled();
@@ -571,15 +575,12 @@ describe("a Lichess game being played", () => {
   it("blocks a repertoire screen but not a page without a board", async () => {
     live("lx");
     const shell = fakeShell();
-    history([
-      { view: "repertoire-practice", repertoireId: "r1", sessionId: null },
-      { view: "home" }
-    ]);
+    history([{ view: "repertoire-practice", repertoireId: "r1", sessionId: null }, PLAY]);
     await goHistory(-1, shell, { current: null });
     expect(shell.openRepertoirePractice).not.toHaveBeenCalled();
     expect(shell.showLiveGame).toHaveBeenCalled();
 
-    history([{ view: "databases" }, { view: "home" }]);
+    history([{ view: "databases" }, PLAY]);
     await goHistory(-1, shell, { current: null });
     expect(shell.openDatabases).toHaveBeenCalled();
     expect(useHistoryStore.getState().index).toBe(0);
@@ -591,7 +592,7 @@ describe("a Lichess game being played", () => {
     live("lx");
     const entry = gameEntry("g2", { lichessGameId: "lx", tab: "engine" });
     useGameStore.getState().setMode("online");
-    history([entry, { view: "home" }]);
+    history([entry, PLAY]);
     const shell = fakeShell();
     await goHistory(-1, shell, { current: null });
     expect(shell.getSavedGame).not.toHaveBeenCalled();
@@ -603,7 +604,7 @@ describe("a Lichess game being played", () => {
     const other = gameEntry("g1");
     loadSaved("g2");
     live("lx", true);
-    history([other, { view: "home" }]);
+    history([other, PLAY]);
     const shell = fakeShell();
     await goHistory(-1, shell, { current: null });
     expect(shell.showLiveGame).not.toHaveBeenCalled();

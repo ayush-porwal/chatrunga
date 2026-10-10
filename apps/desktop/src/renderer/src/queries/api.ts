@@ -141,6 +141,31 @@ export function useGamePagesQuery(params: GameListParams, { enabled = true } = {
   });
 }
 
+/**
+ * Play's Recent games: the newest games `pageSize` at a time, of one source tab (null: every game),
+ * matching `search` (already trimmed / debounced), without `excludeId`. Under "games", so a save,
+ * delete or import re-reads the pages shown. A new search keeps the last rows up while it runs;
+ * another source doesn't (its rows would show, and could be opened, under the new filter).
+ */
+export function useRecentGamePagesQuery(
+  params: { search: string; tab: LibraryTab | null; excludeId: string | null },
+  pageSize: number
+) {
+  return useInfiniteQuery({
+    queryKey: [...queryKeys.games, "recent", params, pageSize] as const,
+    queryFn: async ({ pageParam }): Promise<GameListPage> =>
+      (await api()?.games.listPage({ ...params, cursor: pageParam, limit: pageSize })) ?? NO_GAMES,
+    initialPageParam: null as GameListCursor | null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: (previous, previousQuery) => {
+      const before = previousQuery?.queryKey[2];
+      return before && before.tab === params.tab && before.excludeId === params.excludeId
+        ? previous
+        : undefined;
+    }
+  });
+}
+
 /** The newest `count` library games (Home). */
 export function useLatestGamesQuery(count: number) {
   return useQuery({

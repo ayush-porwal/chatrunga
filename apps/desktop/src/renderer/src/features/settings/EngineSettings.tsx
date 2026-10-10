@@ -1,3 +1,4 @@
+import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import { useState } from "react";
 import {
   Download,
@@ -473,12 +474,15 @@ function SavedEngineRow({
     onEditingChange(false);
   }
 
+  // A row the app no longer manages (its download went away) never shows its "(managed)" marker.
+  const shownName = engineDisplayName(engine.name);
+
   return (
     <div className="grid gap-1.5">
       <div className={cn(listRow, editing && "border-line-strong")}>
-        <EngineImagePreview imagePath={engine.imagePath} name={engine.name} />
+        <EngineImagePreview imagePath={engine.imagePath} name={shownName} />
         <EngineRowText
-          name={engine.name}
+          name={shownName}
           detail={engine.executablePath}
           badges={
             <>
@@ -488,7 +492,7 @@ function SavedEngineRow({
           }
         />
         <OverflowMenu
-          label={`${engine.name} actions`}
+          label={`${shownName} actions`}
           items={[
             ...savedEngineMenuItems({
               engine,

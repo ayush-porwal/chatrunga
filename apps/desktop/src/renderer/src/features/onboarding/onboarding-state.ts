@@ -46,7 +46,7 @@ export function evaluationEngine(
 }
 
 /**
- * Where the engine setup stands, for the Engines step, Home and Game review:
+ * Where the engine setup stands, for the Engines step, Play and Game review:
  * - `checking`: status not loaded yet
  * - `ready`: an evaluation engine is usable (nothing else is being downloaded)
  * - `downloading`: first-run downloads are running

@@ -38,7 +38,7 @@ export type EngineSetup = {
 };
 
 /**
- * The state of the first-run engine setup, shared by the welcome, Home and Game review: what is
+ * The state of the first-run engine setup, shared by the welcome, Play and Game review: what is
  * installed, what the welcome recommends, and the downloads it started (useEngineSetupStore).
  */
 export function useEngineSetup(): EngineSetup {

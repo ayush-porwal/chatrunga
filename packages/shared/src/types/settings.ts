@@ -326,7 +326,15 @@ export const pieceSizesOptions: Array<{ id: PieceSizes; label: string }> = [
 export type CommentaryDetail = "concise" | "balanced" | "detailed";
 export const COMMENTARY_DETAILS: readonly CommentaryDetail[] = ["concise", "balanced", "detailed"];
 
+/** The opponent the Play card opens with (Play settings): an engine, a Lichess mode, or a free board. */
+export type PlayOpponent = "engine" | "pool" | "friend" | "ai" | "board";
+export const PLAY_OPPONENTS: readonly PlayOpponent[] = ["engine", "pool", "friend", "ai", "board"];
+
 export type AppSettings = {
+  /** Play settings → Open Play with; null until chosen (Quick pairing when Lichess is connected, else the engine). */
+  playOpponent: PlayOpponent | null;
+  /** Play settings: the engine the Play card opens with (null: the default engine). */
+  playEngineId: string | null;
   boardOrientation: "white" | "black";
   boardTheme: BoardTheme;
   /** `#RRGGBB`; when both this and `boardSquareDark` are set, they override the preset theme square colors. */
@@ -468,6 +476,8 @@ export const boardThemeSquareColors: Record<BoardTheme, { light: string; dark: s
 };
 
 export const defaultSettings: AppSettings = {
+  playOpponent: null,
+  playEngineId: null,
   boardOrientation: "white",
   boardTheme: "brown",
   boardSquareLight: null,
@@ -585,6 +595,17 @@ export function normalizeAppearanceSettings(settings: AppSettings): AppSettings 
   const rest: AppSettings & { glassEffect?: unknown } = { ...settings };
   delete rest.glassEffect;
   return rest;
+}
+
+/** Validates Play's opponent and engine choice (a bad value: not chosen yet). Idempotent. */
+export function normalizePlaySettings(settings: AppSettings): AppSettings {
+  const opponent: unknown = settings.playOpponent;
+  const engineId: unknown = settings.playEngineId;
+  return {
+    ...settings,
+    playOpponent: isOneOf(PLAY_OPPONENTS, opponent) ? opponent : null,
+    playEngineId: typeof engineId === "string" && engineId.length > 0 ? engineId : null
+  };
 }
 
 /** Validates the practice settings, falling back to defaults for bad values. Idempotent. */

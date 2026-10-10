@@ -1,3 +1,4 @@
+import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import { useId } from "react";
 import {
   ANALYSIS_DEPTH_RANGE,
@@ -80,7 +81,7 @@ export function AnalysisSettingsDialog({ onClose }: { onClose: () => void }) {
             {usable.length ? null : <option value="">No engine installed</option>}
             {usable.map((engine) => (
               <option key={engine.id} value={engine.id}>
-                {engine.name}
+                {engineDisplayName(engine.name)}
                 {engine.isHumanPrediction ? " · human-like" : ""}
               </option>
             ))}

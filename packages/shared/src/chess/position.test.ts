@@ -4,6 +4,7 @@ import {
   applySan,
   applyUserMove,
   fenAfterUci,
+  hasMatingMaterial,
   isPromotionMove,
   legalDestsForFen,
   promotionSuffix,
@@ -56,5 +57,13 @@ describe("position helpers", () => {
   it("maps promotion pieces to UCI letters", () => {
     expect(promotionSuffix("knight")).toBe("n");
     expect(promotionSuffix(undefined)).toBe("");
+  });
+
+  it("tells whether a side still has the material to mate", () => {
+    // White: king and queen; Black: a bare king.
+    const fen = "8/8/4k3/8/8/8/3Q4/4K3 w - - 0 60";
+    expect(hasMatingMaterial(fen, "white")).toBe(true);
+    expect(hasMatingMaterial(fen, "black")).toBe(false);
+    expect(hasMatingMaterial(START_FEN, "white")).toBe(true);
   });
 });

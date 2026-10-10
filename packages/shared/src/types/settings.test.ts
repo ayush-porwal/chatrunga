@@ -11,6 +11,7 @@ import {
   normalizePieceStyle,
   normalizeReviewEngineSettings,
   normalizeOnboardingSettings,
+  normalizePlaySettings,
   normalizePracticeSettings,
   normalizeUpdateSettings,
   resolveEngineThreads
@@ -214,6 +215,26 @@ describe("normalizeAppearanceSettings", () => {
     const stored = { ...defaultSettings, glassEffect: false } as unknown as AppSettings;
     expect(normalizeAppearanceSettings(stored)).not.toHaveProperty("glassEffect");
     expect(normalizeAppearanceSettings(defaultSettings)).toBe(defaultSettings);
+  });
+});
+
+describe("normalizePlaySettings", () => {
+  it("keeps a chosen opponent and engine, and forgets a damaged choice", () => {
+    expect(normalizePlaySettings(defaultSettings)).toMatchObject({
+      playOpponent: null,
+      playEngineId: null
+    });
+    const chosen = { ...defaultSettings, playOpponent: "pool", playEngineId: "sf" } as AppSettings;
+    expect(normalizePlaySettings(chosen)).toMatchObject({
+      playOpponent: "pool",
+      playEngineId: "sf"
+    });
+    const bad = {
+      ...defaultSettings,
+      playOpponent: "home",
+      playEngineId: 7
+    } as unknown as AppSettings;
+    expect(normalizePlaySettings(bad)).toMatchObject({ playOpponent: null, playEngineId: null });
   });
 });
 

@@ -1,3 +1,4 @@
+import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import { useMemo, useState } from "react";
 import { ChevronRight, Search, Upload } from "lucide-react";
 import {
@@ -42,7 +43,7 @@ type CurrentGame = {
 };
 
 function titleFor(game: Pick<GameSummary, "white" | "black">): string {
-  return `${game.white || "White"} vs ${game.black || "Black"}`;
+  return `${engineDisplayName(game.white ?? "") || "White"} vs ${engineDisplayName(game.black ?? "") || "Black"}`;
 }
 
 /** The row's second line: where the game came from, then its event, result and date. */

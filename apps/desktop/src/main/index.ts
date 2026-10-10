@@ -323,6 +323,9 @@ function createWindow(): void {
   // Off screen, the window is silent too: a test run plays no move sounds.
   if (openInBackground) window.webContents.setAudioMuted(true);
   flushSavesBeforeClose(window);
+  // Full screen moves the macOS traffic lights out of the titlebar: the renderer drops their room.
+  window.on("enter-full-screen", () => window.webContents.send("appearance:fullScreen", true));
+  window.on("leave-full-screen", () => window.webContents.send("appearance:fullScreen", false));
   // Fallback reveal if the renderer never reports ready (a crash before React mounts).
   window.once("ready-to-show", () => setTimeout(() => revealWindow(window), REVEAL_FALLBACK_MS));
   window.on("closed", () => {
@@ -420,6 +423,11 @@ function installWindowReveal(): void {
     const window = BrowserWindow.fromWebContents(event.sender);
     if (window) revealWindow(window);
   });
+  // A page loaded (or reloaded) while the window is already full screen asks once on mount.
+  ipcMain.handle(
+    "appearance:isFullScreen",
+    (event) => BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false
+  );
 }
 
 /** Serves engine pictures from disk; see `localImagePathFromUrl` for what is allowed. */

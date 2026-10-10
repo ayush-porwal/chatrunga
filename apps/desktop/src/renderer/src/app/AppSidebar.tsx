@@ -35,15 +35,12 @@ export const AppSidebar = memo(function AppSidebar({
   active,
   boardView,
   focusMode,
-  onHome,
   onPlay,
   onAnalyze,
   onReview,
   onRepertoire,
   onPuzzles,
   onDatabases,
-  onImport,
-  onExport,
   onFocusToggle,
   onFlip,
   onSettings
@@ -53,15 +50,12 @@ export const AppSidebar = memo(function AppSidebar({
   /** The current view has a board: offer Focus board (it has nothing to focus elsewhere). */
   boardView: boolean;
   focusMode: boolean;
-  onHome: () => void;
   onPlay: () => void;
   onAnalyze: () => void;
   onReview: () => void;
   onRepertoire: () => void;
   onPuzzles: () => void;
   onDatabases: () => void;
-  onImport: () => void;
-  onExport: () => void;
   onFocusToggle: () => void;
   onFlip: () => void;
   onSettings: () => void;
@@ -92,7 +86,6 @@ export const AppSidebar = memo(function AppSidebar({
       {/* minmax(0,1fr): the track never grows past the rail — a wider item (the "Game" label) would
           make the collapsed nav scrollable and a click would scroll every icon 8px left. */}
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-0.5">
-        {item(icons.home, "Home", onHome, active.home)}
         {/* Same height in both states: the "Game" label expanded, a hairline collapsed. */}
         <div className="relative flex h-8 min-w-0 items-center overflow-hidden px-2.5">
           <Eyebrow
@@ -114,8 +107,6 @@ export const AppSidebar = memo(function AppSidebar({
         {item(icons.repertoire, "Repertoire", onRepertoire, active.repertoire)}
         {item(icons.puzzles, "Puzzles", onPuzzles, active.puzzles)}
         {item(icons.databases, "Databases", onDatabases, active.databases)}
-        {item(icons.importPgn, "Import PGN", onImport)}
-        {item(icons.exportPgn, "Export PGN", onExport)}
       </div>
 
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-0.5">

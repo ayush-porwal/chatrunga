@@ -50,7 +50,6 @@ export type BoardSnapshot = {
 };
 
 export type HistoryEntry =
-  | { view: "home" }
   | { view: "puzzles" }
   | { view: "databases" }
   | { view: "settings"; section: SettingsSectionId | null }
@@ -100,7 +99,8 @@ type HistoryStore = {
 };
 
 export const useHistoryStore = create<HistoryStore>((set) => ({
-  entries: [{ view: "home" }],
+  // The app opens on Play (its mode is the one it resolves to; restoring a null one keeps the current).
+  entries: [{ view: "play", opponent: null }],
   index: 0,
   commitCurrent: (entry) =>
     set((state) => {

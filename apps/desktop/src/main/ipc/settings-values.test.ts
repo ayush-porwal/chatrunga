@@ -28,6 +28,10 @@ describe("parseSettingValue", () => {
     };
     expect(parseSettingValue("playerRatings", ratings)).toEqual(ratings);
     expect(parseSettingValue("ratingsAccount", "chesscom")).toBe("chesscom");
+    expect(parseSettingValue("playOpponent", "pool")).toBe("pool");
+    expect(parseSettingValue("playOpponent", null)).toBeNull();
+    expect(parseSettingValue("playEngineId", "engine-1")).toBe("engine-1");
+    expect(parseSettingValue("playEngineId", null)).toBeNull();
   });
 
   it("rejects values of the wrong type or out of range", () => {
@@ -44,6 +48,8 @@ describe("parseSettingValue", () => {
     );
     expect(() => parseSettingValue("practiceAutoAdvanceMs", 1000)).toThrow(/practiceAutoAdvanceMs/);
     expect(() => parseSettingValue("ratingsAccount", "fide")).toThrow(/setting ratingsAccount/);
+    expect(() => parseSettingValue("playOpponent", "home")).toThrow(/setting playOpponent/);
+    expect(() => parseSettingValue("playEngineId", 7)).toThrow(/setting playEngineId/);
     // One rating per mode: not the single number older builds stored, nor a mode short or damaged.
     expect(() => parseSettingValue("playerRatings", 1500)).toThrow(/setting playerRatings/);
     const { correspondence: _missing, ...fourModes } = uniformRatings(1500);

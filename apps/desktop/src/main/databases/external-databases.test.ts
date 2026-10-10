@@ -86,6 +86,7 @@ import {
   cancelDownload,
   downloadDatabase,
   listInstalledDatabases,
+  puzzleOfTheDay,
   removeDatabase,
   samplePuzzle,
   setPuzzleScanner
@@ -1103,6 +1104,77 @@ describe("samplePuzzle", () => {
     await expect(
       samplePuzzle({ ...input({ ratingMin: 2000 }), excludeIds: ["done", "high"] })
     ).rejects.toThrow(/No puzzle matched/);
+  });
+});
+
+describe("puzzleOfTheDay", () => {
+  const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  const lichessRow = (id: string, rating: number, popularity = 90, plays = 2000) =>
+    `${id},${START},e2e4 e7e5,${rating},80,${popularity},${plays},short,,`;
+  const positionRow = (id: string, difficulty: number) =>
+    `${id},game,1,https://lichess.org/game,${START},e2e4,${difficulty}`;
+
+  async function installFile(sourceId: string, name: string, lines: string[]) {
+    await mkdir(dir, { recursive: true });
+    const file = join(dir, `${sourceId}.csv`);
+    await writeFile(file, lines.join("\n"));
+    rows.set(sourceId, { id: sourceId, sourceId, filePath: file, name, format: "csv" });
+  }
+  const installLichess = (lines: string[]) =>
+    installFile("lichess-puzzles", "Lichess puzzles", [LICHESS_HEADER, ...lines]);
+  const installPositions = (lines: string[]) =>
+    installFile("chess-position-analysis-results", "Chess positions", [
+      "internal_id,lichess_game_id,move_number,lichess_url,fen,best_move,difficulty",
+      ...lines
+    ]);
+
+  it("is null when no puzzle database is installed", async () => {
+    expect(await puzzleOfTheDay({ date: "2026-10-10" })).toBeNull();
+  });
+
+  it("gives the same puzzle for a date, and another one on another day", async () => {
+    await installLichess(Array.from({ length: 50 }, (_, index) => lichessRow(`p${index}`, 1600)));
+    const today = await puzzleOfTheDay({ date: "2026-10-10" });
+    expect(today).toMatchObject({ databaseId: "lichess-puzzles", sideToMove: "black" });
+    expect((await puzzleOfTheDay({ date: "2026-10-10" }))?.id).toBe(today?.id);
+    expect((await puzzleOfTheDay({ date: "2026-10-11" }))?.id).not.toBe(today?.id);
+    // Not just remembered: a fresh start picks the same one from the file.
+    const fresh = await freshModule();
+    fresh.setPuzzleScanner(inThreadScanner);
+    expect((await fresh.puzzleOfTheDay({ date: "2026-10-10" }))?.id).toBe(today?.id);
+  });
+
+  it("picks a mid-rated, popular, often played Lichess puzzle when the file has one", async () => {
+    await installLichess([
+      ...Array.from({ length: 20 }, (_, index) => lichessRow(`easy${index}`, 900)),
+      ...Array.from({ length: 20 }, (_, index) => lichessRow(`unpopular${index}`, 1600, 40)),
+      ...Array.from({ length: 20 }, (_, index) => lichessRow(`rare${index}`, 1600, 90, 10)),
+      lichessRow("good", 1700)
+    ]);
+    expect((await puzzleOfTheDay({ date: "2026-10-10" }))?.id).toBe("good");
+    // Nothing in that band: still a puzzle.
+    await installLichess([lichessRow("hard", 2800)]);
+    expect((await puzzleOfTheDay({ date: "2026-10-10" }))?.id).toBe("hard");
+  });
+
+  it("takes the Lichess set before a position set, and the position set alone otherwise", async () => {
+    await installPositions([positionRow("easy", 1), positionRow("mid", 2)]);
+    expect(await puzzleOfTheDay({ date: "2026-10-10" })).toMatchObject({
+      id: "mid",
+      databaseId: "chess-position-analysis-results",
+      difficulty: 2
+    });
+    await installLichess([lichessRow("lichess", 1600)]);
+    expect((await puzzleOfTheDay({ date: "2026-10-10" }))?.id).toBe("lichess");
+  });
+
+  it("skips a puzzle database that can't be read, and fails only when every one does", async () => {
+    // A Lichess file that claims to be compressed but isn't: its scan fails.
+    await installLichess([lichessRow("broken", 1600)]);
+    rows.set("lichess-puzzles", { ...rows.get("lichess-puzzles")!, format: "csv.zst" });
+    await expect(puzzleOfTheDay({ date: "2026-10-10" })).rejects.toThrow(/Lichess puzzles/);
+    await installPositions([positionRow("mid", 2)]);
+    expect((await puzzleOfTheDay({ date: "2026-10-10" }))?.id).toBe("mid");
   });
 });
 

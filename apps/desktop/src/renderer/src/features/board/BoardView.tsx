@@ -1,3 +1,4 @@
+import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
@@ -27,7 +28,7 @@ import { boardMoveMark, mainBoardSurface } from "./move-mark";
 import { activeBestLine, bestLineStep } from "../game/best-line-cursor";
 import { BoardStage } from "./BoardWorkspace";
 import { EngineClock } from "./EngineClock";
-import { boardClocksAt } from "./board-clocks";
+import { boardClocksAt, timeControlLabel } from "./board-clocks";
 import { useBoardAppearance, useCgBoardBackground } from "./useBoardAppearance";
 import { useBoardPolish } from "./useBoardPolish";
 import { restoreBoardConfig } from "./board-config";
@@ -113,7 +114,8 @@ export function BoardView() {
     bottomElo,
     bottomClock,
     bottomColor,
-    showTcHint
+    showTcHint,
+    resumedUntimed
   } = useMemo(() => {
     const self = moveTree.find((n) => n.id === currentNodeId);
     const clockAnchorId =
@@ -123,8 +125,9 @@ export function BoardView() {
     const tc = headers.timeControl?.trim() || null;
     // Each side's time at this move from the game's [%clk]; no clock boxes for a game without them.
     const clocks = boardClocksAt(moveTree, clockAnchorId, tc);
-    const white = headers.white?.trim() || "White";
-    const black = headers.black?.trim() || "Black";
+    // Engines by their plain name (older builds saved "Stockfish (managed)").
+    const white = engineDisplayName(headers.white?.trim() ?? "") || "White";
+    const black = engineDisplayName(headers.black?.trim() ?? "") || "Black";
     const wElo = headers.whiteElo?.trim() || null;
     const bElo = headers.blackElo?.trim() || null;
 
@@ -140,9 +143,11 @@ export function BoardView() {
       bottomClock: clocks ? clocks[topIsBlack ? "white" : "black"] : "",
       bottomColor: (topIsBlack ? "white" : "black") as Color,
       // The live engine clock already shows the time control; only hint it for imported games.
-      showTcHint: Boolean(tc && tc !== "-" && !clocks && !liveClock)
+      showTcHint: Boolean(tc && tc !== "-" && !clocks && !liveClock),
+      // A timed engine game saved before its clocks were kept, played on: without a clock.
+      resumedUntimed: mode === "engine" && Boolean(engineSide) && !liveClock
     };
-  }, [moveTree, currentNodeId, currentFen, headers, orientation, mode, hasLiveClock]);
+  }, [moveTree, currentNodeId, currentFen, headers, orientation, mode, engineSide, hasLiveClock]);
 
   // Live analysis: the engine's best move from this position (a string, so the board only redraws
   // when it changes, not on every engine update). Only a move legal here (lines of the previous
@@ -504,7 +509,7 @@ export function BoardView() {
   // Player rows always render (fixed height) so the board never jumps between modes.
   const nameFor = (color: Color, name: string) => {
     if (mode !== "engine" || !engineSide) return name;
-    if (engineSide === color) return activeEngine?.name ?? name;
+    if (engineSide === color) return activeEngine ? engineDisplayName(activeEngine.name) : name;
     return name === (color === "white" ? "White" : "Black") ? "You" : name;
   };
   const liveClocks = isMatchMode(mode) && hasLiveClock;
@@ -520,7 +525,13 @@ export function BoardView() {
           clock={liveClocks ? <EngineClock color={topColor} /> : topClock}
           clockActive={status.turn === topColor && !status.isEnd}
           engine={mode === "engine" && engineSide === topColor ? activeEngine : null}
-          hint={showTcHint ? `Time control ${headers.timeControl}` : null}
+          hint={
+            showTcHint
+              ? resumedUntimed
+                ? "Resumed without a clock"
+                : `Time control ${timeControlLabel(headers.timeControl)}`
+              : null
+          }
         />
       }
       bottom={

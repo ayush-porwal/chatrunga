@@ -13,13 +13,10 @@ import type { SettingsSectionId } from "../features/settings/SettingsPage";
 import { OpenSettingsContext } from "../features/settings/settings-link";
 import { GameWorkspace } from "./GameWorkspace";
 import type { SideTab } from "./side-tabs";
-import { HomePage } from "./HomePage";
+import { PlayPage } from "../features/play/PlayPage";
 
-// Pages and panels load when first opened, so starting the app (Home, the board) doesn't parse the
+// Pages and panels load when first opened, so starting the app (Play, the board) doesn't parse the
 // review charts, settings, puzzles, databases or the welcome.
-const PlayPage = lazy(() =>
-  import("../features/game/PlayPage").then((module) => ({ default: module.PlayPage }))
-);
 const DatabasePage = lazy(() =>
   import("../features/database/DatabasePage").then((module) => ({ default: module.DatabasePage }))
 );
@@ -67,7 +64,6 @@ export const OnboardingFlow = lazy(() =>
 
 /** How a navigation enters Back / Forward (see showView). */
 export type AppView =
-  | "home"
   | "game"
   | "settings"
   | "play"
@@ -141,11 +137,15 @@ export type PageCommands = {
   repertoirePracticeSetup: () => void;
   /** Study → Play from here: Play's engine setup starting at the selected node. */
   playFromStudy: () => void;
+  /** Play's In progress card on a saved engine game: open it and play on against its engine. */
+  rejoinSavedGame: (gameId: string) => void;
+  /** Play's Puzzle of the day: Puzzles, starting with it (then the usual set). */
+  solvePuzzleOfTheDay: (puzzle: PuzzleSample) => void;
 };
 
 /**
  * The page for the current view. App owns navigation and the board's activity; the pages only
- * render and call back (`on`). Pages other than Home and the board load on first use.
+ * render and call back (`on`). Pages other than Play and the board load on first use.
  */
 export function AppPages({
   view,
@@ -187,21 +187,25 @@ export function AppPages({
   return (
     <OpenSettingsContext.Provider value={on.openSettings}>
       <Suspense fallback={<PageLoading />}>
-        {view === "home" ? (
-          <HomePage
+        {view === "play" ? (
+          <PlayPage
             desktopApiAvailable={desktopApiAvailable}
-            onAnalyze={on.liveAnalysis}
-            onImportPgn={on.importPgn}
-            onPlay={on.play}
-            onOpenGame={on.openGame}
-            onPuzzles={on.puzzles}
-            onReview={on.openReviewPicker}
-            onReviewGame={on.reviewGame}
             onOpenEngineSettings={on.engineSettings}
-            onRepertoireHub={on.repertoireHub}
+            onBeforeEngineGame={on.beforePlayStart}
+            onEngineGameStarted={on.showGame}
+            onFreeBoard={on.freeBoard}
+            onOpenLichessGame={on.showGame}
+            onRejoinSavedGame={on.rejoinSavedGame}
             onRepertoireReview={on.reviewRepertoire}
             onRepertoireResume={on.resumeRepertoirePractice}
             onRepertoireStudy={on.openRepertoireStudy}
+            onSolvePuzzleOfTheDay={on.solvePuzzleOfTheDay}
+            onOpenDatabases={on.databases}
+            onOpenGame={on.openGame}
+            onReviewGame={on.reviewGame}
+            onAnalyze={on.liveAnalysis}
+            onPuzzles={on.puzzles}
+            onImportPgn={on.importPgn}
           />
         ) : view === "repertoire-hub" ? (
           <RepertoireHubPage
@@ -252,14 +256,6 @@ export function AppPages({
           <SettingsPage
             initialSection={settingsSection}
             onSectionChange={on.settingsSectionViewed}
-          />
-        ) : view === "play" ? (
-          <PlayPage
-            onOpenSettings={on.engineSettings}
-            onBeforeStart={on.beforePlayStart}
-            onStart={on.showGame}
-            onOpenLichessGame={on.showGame}
-            onFreeBoard={on.freeBoard}
           />
         ) : view === "puzzles" ? (
           <PuzzlePage onDatabases={on.databases} onStart={on.startPuzzle} />

@@ -81,6 +81,8 @@ const api: ChaturangaApi = {
     getGlass: () => glassState,
     getZoomFactor: () => webFrame.getZoomFactor(),
     onGlassChanged,
+    onFullScreenChanged: subscribe<boolean>("appearance:fullScreen"),
+    isFullScreen: () => ipcRenderer.invoke("appearance:isFullScreen"),
     rendererReady: () => ipcRenderer.send("appearance:rendererReady")
   },
   engines: {
@@ -101,6 +103,7 @@ const api: ChaturangaApi = {
     listPage: (query) => ipcRenderer.invoke("games:listPage", query),
     facets: (excludeId) => ipcRenderer.invoke("games:facets", excludeId),
     get: (id) => ipcRenderer.invoke("games:get", id),
+    latestUnfinishedEngineGame: () => ipcRenderer.invoke("games:latestUnfinishedEngineGame"),
     getReview: (gameId, reviewId) => ipcRenderer.invoke("games:getReview", gameId, reviewId),
     removeReview: (gameId, reviewId) => ipcRenderer.invoke("games:removeReview", gameId, reviewId),
     removeReviews: (gameId) => ipcRenderer.invoke("games:removeReviews", gameId),
@@ -118,6 +121,7 @@ const api: ChaturangaApi = {
     list: () => ipcRenderer.invoke("databases:list"),
     download: (sourceId) => ipcRenderer.invoke("databases:download", sourceId),
     samplePuzzle: (input) => ipcRenderer.invoke("databases:samplePuzzle", input),
+    puzzleOfTheDay: (input) => ipcRenderer.invoke("databases:puzzleOfTheDay", input),
     remove: (id) => ipcRenderer.invoke("databases:remove", id),
     cancelDownload: (sourceId) => ipcRenderer.invoke("databases:cancelDownload", sourceId),
     activeDownloads: () => ipcRenderer.invoke("databases:activeDownloads")
@@ -192,6 +196,7 @@ const api: ChaturangaApi = {
     cancelChallenge: (challengeId) => ipcRenderer.invoke("lichess:cancelChallenge", challengeId),
     challenges: () => ipcRenderer.invoke("lichess:challenges"),
     ongoingGames: () => ipcRenderer.invoke("lichess:ongoingGames"),
+    playing: () => ipcRenderer.invoke("lichess:playing"),
     watchGame: (gameId) => ipcRenderer.invoke("lichess:watchGame", gameId),
     unwatchGame: (gameId) => ipcRenderer.invoke("lichess:unwatchGame", gameId),
     move: (gameId, uci) => ipcRenderer.invoke("lichess:move", gameId, uci),

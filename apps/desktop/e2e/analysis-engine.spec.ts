@@ -3,7 +3,15 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
-import { expect, importPgnFile, registerFakeEngine, sidebar, skipWelcome, test } from "./app";
+import {
+  clickSquare,
+  expect,
+  importPgnFile,
+  registerFakeEngine,
+  sidebar,
+  skipWelcome,
+  test
+} from "./app";
 import { writePgn } from "./fixtures";
 
 /** Both sides castled (White short, Black long): a PGN stores castling as the king taking its rook. */
@@ -120,24 +128,23 @@ test("an engine that dies during an engine game stops its clock and says so", as
     "true"
   );
   await expect(analyzeItem).not.toHaveAttribute("aria-pressed");
-  await page
-    .getByRole("radiogroup", { name: "Play as" })
-    .getByRole("radio", { name: "Black" })
-    .click();
-  await page
-    .getByRole("radiogroup", { name: "Time control" })
-    .getByRole("radio", { name: "5+0" })
-    .click();
+  // A clock (the time control slider's first timed stop, from no clock), then Start as White.
+  const timeControl = page.getByRole("slider");
+  await timeControl.focus();
+  await timeControl.press("ArrowRight");
   await page.getByRole("button", { name: "Start game", exact: true }).click();
 
-  // White (the engine) is to move: its search dies, and its clock stops instead of running out.
+  // 1. e4, then Black (the engine) is to move: its search dies, and its clock stops instead of
+  // running out.
+  await clickSquare(page, "e2");
+  await clickSquare(page, "e4");
   await expect(page.getByText(CRASHED).first()).toBeVisible({ timeout: 15_000 });
   await expect(analyzeItem).not.toHaveAttribute("aria-pressed");
   expect(engineCommands(log).some((line) => line.startsWith("go wtime"))).toBe(true);
-  const whiteClock = page.getByRole("timer", { name: "White clock" });
-  await expect(whiteClock).toBeVisible();
-  await expect(whiteClock).not.toHaveAttribute("data-running", "true");
-  await expect(page.getByRole("timer", { name: "Black clock" })).not.toHaveAttribute(
+  const blackClock = page.getByRole("timer", { name: "Black clock" });
+  await expect(blackClock).toBeVisible();
+  await expect(blackClock).not.toHaveAttribute("data-running", "true");
+  await expect(page.getByRole("timer", { name: "White clock" })).not.toHaveAttribute(
     "data-running",
     "true"
   );

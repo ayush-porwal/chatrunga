@@ -1,3 +1,4 @@
+import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import type { Color } from "@chaturanga/shared/types/chess";
 import type { useGameStore } from "../stores/game-store";
 
@@ -25,7 +26,8 @@ export function gameModeLabel(
 
 /**
  * Player names for the titlebar. In an engine game the engine's side shows the engine's name and
- * an unnamed human side shows "You". Null while both sides are unnamed.
+ * an unnamed human side shows "You". Engines show their plain name ("Stockfish", also for a name
+ * saved by an older build as "Stockfish (managed)"). Null while both sides are unnamed.
  */
 export function gamePlayerNames(
   game: Pick<GameState, "headers" | "mode" | "engineSide">,
@@ -33,9 +35,9 @@ export function gamePlayerNames(
 ): { white: string; black: string } | null {
   const nameFor = (color: Color) => {
     const fallback = color === "white" ? "White" : "Black";
-    const name = game.headers[color]?.trim() || fallback;
+    const name = engineDisplayName(game.headers[color]?.trim() ?? "") || fallback;
     if (game.mode !== "engine" || !game.engineSide) return name;
-    if (game.engineSide === color) return engineName ?? name;
+    if (game.engineSide === color) return engineName ? engineDisplayName(engineName) : name;
     return name === fallback ? "You" : name;
   };
   const white = nameFor("white");

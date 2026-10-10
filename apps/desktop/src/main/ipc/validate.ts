@@ -52,7 +52,7 @@ import type {
   UpdateRepertoireMetadataInput
 } from "@chaturanga/shared/types/repertoire";
 import { COMPARE_GAME_MAX_PLIES } from "@chaturanga/shared/types/repertoire";
-import type { PuzzleSampleInput } from "@chaturanga/shared/types/database";
+import type { PuzzleOfTheDayInput, PuzzleSampleInput } from "@chaturanga/shared/types/database";
 import type { RecordPuzzleAttemptInput } from "@chaturanga/shared/types/puzzle-rating";
 import type {
   AnalysePositionsInput,
@@ -498,7 +498,8 @@ const HEADER_KEYS = [
   "utcDate",
   "utcTime",
   "termination",
-  "result"
+  "result",
+  "engineId"
 ] as const satisfies readonly (keyof GameHeaders)[];
 
 /** Only the known headers, each a short string or null (they are stored as JSON). */
@@ -591,6 +592,27 @@ export function parsePuzzleSampleInput(value: unknown): PuzzleSampleInput {
   return result;
 }
 
+/** A calendar day, "YYYY-MM-DD", that exists (no 2026-02-30). */
+const CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+export function parsePuzzleOfTheDayInput(value: unknown): PuzzleOfTheDayInput {
+  const input = asObject(value, "puzzle of the day");
+  const date = asString(input.date, "date", 10);
+  const match = CALENDAR_DATE.exec(date);
+  const [year, month, day] = match ? match.slice(1).map(Number) : [0, 0, 0];
+  // Date.UTC rolls an impossible day over (2026-02-30 → March 2): a real day reads back the same.
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    !match ||
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    fail("date", "expected a calendar day (YYYY-MM-DD)");
+  }
+  return { date };
+}
+
 /** A timestamp in ms (any time from 1970 to well past this century). */
 function asTimestamp(value: unknown, label: string): number {
   return asIntegerInRange(value, label, 0, 8.64e15);
@@ -672,22 +694,11 @@ export function asLichessUci(value: unknown): string {
 
 export function parseLichessSeekInput(value: unknown): LichessSeekInput {
   const input = asObject(value, "seek");
-  let ratingRange: [number, number] | null = null;
-  if (input.ratingRange !== undefined && input.ratingRange !== null) {
-    if (!Array.isArray(input.ratingRange) || input.ratingRange.length !== 2) {
-      fail("rating range", "expected [min, max]");
-    }
-    const min = asIntegerInRange(input.ratingRange[0], "rating range min", 0, 4000);
-    const max = asIntegerInRange(input.ratingRange[1], "rating range max", 0, 4000);
-    if (min > max) fail("rating range", "min is above max");
-    ratingRange = [min, max];
-  }
   return {
     // Lichess seeks take fractional minutes (e.g. 1.5) up to 3 hours.
     minutes: asNumberInRange(input.minutes, "minutes", 0, 180),
     incrementSec: asIntegerInRange(input.incrementSec, "increment", 0, 180),
-    rated: asBoolean(input.rated, "rated"),
-    ratingRange
+    rated: asBoolean(input.rated, "rated")
   };
 }
 

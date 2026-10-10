@@ -510,16 +510,19 @@ const DUE_PROGRESS = `p.suspended = 0 AND p.due_at IS NOT NULL AND p.due_at <= ?
   SELECT 1 FROM repertoire_decisions d WHERE d.repertoire_id = p.repertoire_id
   AND d.position_key = p.position_key AND ${COUNTED_DECISION})`;
 
+/** When repertoire `r` was last studied: its workspace or chapter edits, whichever is later. */
+const LAST_STUDIED_AT = `MAX(
+    COALESCE((SELECT w.updated_at FROM repertoire_workspace_state w WHERE w.repertoire_id = r.id), 0),
+    COALESCE((SELECT MAX(c.updated_at) FROM repertoire_chapters c WHERE c.repertoire_id = r.id), 0)
+  )`;
+
 const SUMMARY_SELECT = `SELECT r.*,
   (SELECT COUNT(*) FROM repertoire_chapters c WHERE c.repertoire_id = r.id) AS chapter_count,
   (SELECT COUNT(*) FROM repertoire_decisions d WHERE d.repertoire_id = r.id AND ${COUNTED_DECISION})
     AS decision_count,
   (SELECT COUNT(*) FROM repertoire_progress p WHERE p.repertoire_id = r.id AND ${DUE_PROGRESS})
     AS due_count,
-  MAX(
-    COALESCE((SELECT w.updated_at FROM repertoire_workspace_state w WHERE w.repertoire_id = r.id), 0),
-    COALESCE((SELECT MAX(c.updated_at) FROM repertoire_chapters c WHERE c.repertoire_id = r.id), 0)
-  ) AS last_studied_at
+  ${LAST_STUDIED_AT} AS last_studied_at
   FROM repertoires r`;
 
 const CHAPTER_SUMMARY_COLUMNS = `c.id, c.repertoire_id, c.title, c.sort_order, c.kind, c.enabled,
@@ -614,14 +617,87 @@ export const repertoireRepository = {
     return { dueCount: row?.due ?? 0, repertoireCount: row?.repertoires ?? 0 };
   },
 
+  /**
+   * Active repertoires with due decisions (bound: now), the most due first; ties go to the most
+   * recently studied, then by name. At most `limit` of them.
+   */
+  dueRanking(
+    now: number,
+    limit: number
+  ): { id: string; name: string; color: RepertoireColor; dueCount: number }[] {
+    return all<{ id: string; name: string; color: string; due_count: number }>(
+      `SELECT r.id, r.name, r.color, COUNT(*) AS due_count, ${LAST_STUDIED_AT} AS last_studied_at
+        FROM repertoire_progress p JOIN repertoires r ON r.id = p.repertoire_id
+        WHERE r.archived_at IS NULL AND ${DUE_PROGRESS}
+        GROUP BY r.id ORDER BY due_count DESC, last_studied_at DESC, r.name, r.id LIMIT ?`,
+      now,
+      limit
+    ).map((row) => ({
+      id: row.id,
+      name: row.name,
+      color: asColor(row.color),
+      dueCount: row.due_count
+    }));
+  },
+
+  /**
+   * A repertoire's due decision due earliest (bound: now; then the shallowest), and the node to
+   * show it at: its shallowest occurrence, in an enabled chapter when one has it.
+   */
+  nextDue(
+    repertoireId: string,
+    now: number
+  ): { positionKey: string; chapterId: string; nodeId: string; rootFen: string } | null {
+    const due = get<{ position_key: string }>(
+      `SELECT p.position_key FROM repertoire_progress p
+        JOIN repertoire_position_index i ON i.repertoire_id = p.repertoire_id
+          AND i.position_key = p.position_key AND i.is_decision = 1
+        WHERE p.repertoire_id = ? AND ${DUE_PROGRESS}
+        GROUP BY p.position_key ORDER BY p.due_at, MIN(i.ply), p.position_key LIMIT 1`,
+      repertoireId,
+      now
+    );
+    if (!due) return null;
+    const occurrence = get<{ chapter_id: string; node_id: string; root_fen: string }>(
+      `SELECT i.chapter_id, i.node_id, c.root_fen FROM repertoire_position_index i
+        JOIN repertoire_chapters c ON c.id = i.chapter_id
+        WHERE i.repertoire_id = ? AND i.position_key = ?
+        ORDER BY c.enabled DESC, i.is_decision DESC, i.ply, c.sort_order, c.created_at, c.id,
+          i.node_id LIMIT 1`,
+      repertoireId,
+      due.position_key
+    );
+    return occurrence
+      ? {
+          positionKey: due.position_key,
+          chapterId: occurrence.chapter_id,
+          nodeId: occurrence.node_id,
+          rootFen: occurrence.root_fen
+        }
+      : null;
+  },
+
   /** The most recently saved study place of an active repertoire whose chapter still exists. */
-  lastStudyPlace(): { repertoireId: string; chapterId: string; nodeId: string | null } | null {
+  lastStudyPlace(): {
+    repertoireId: string;
+    repertoireName: string;
+    color: RepertoireColor;
+    chapterId: string;
+    chapterTitle: string;
+    rootFen: string;
+    nodeId: string | null;
+  } | null {
     const row = get<{
       repertoire_id: string;
+      name: string;
+      color: string;
       last_chapter_id: string;
+      title: string;
+      root_fen: string;
       last_node_id: string | null;
     }>(
-      `SELECT w.repertoire_id, w.last_chapter_id, w.last_node_id FROM repertoire_workspace_state w
+      `SELECT w.repertoire_id, r.name, r.color, w.last_chapter_id, c.title, c.root_fen,
+        w.last_node_id FROM repertoire_workspace_state w
         JOIN repertoires r ON r.id = w.repertoire_id
         JOIN repertoire_chapters c ON c.id = w.last_chapter_id AND c.repertoire_id = w.repertoire_id
         WHERE r.archived_at IS NULL ORDER BY w.updated_at DESC LIMIT 1`
@@ -629,7 +705,11 @@ export const repertoireRepository = {
     return row
       ? {
           repertoireId: row.repertoire_id,
+          repertoireName: row.name,
+          color: asColor(row.color),
           chapterId: row.last_chapter_id,
+          chapterTitle: row.title,
+          rootFen: row.root_fen,
           nodeId: row.last_node_id
         }
       : null;
@@ -708,6 +788,35 @@ export const chapterRepository = {
   get(id: string): RepertoireChapter | null {
     const row = get<ChapterRow>("SELECT * FROM repertoire_chapters WHERE id = ?", id);
     return row ? toChapter(row) : null;
+  },
+
+  /**
+   * One node of a chapter's tree, picked out in SQLite: only that node crosses into JavaScript
+   * (SQLite's json_each still parses the stored tree). Null when the chapter or node is gone or
+   * the stored tree is unreadable.
+   */
+  node(
+    chapterId: string,
+    nodeId: string
+  ): Pick<MoveNode, "san" | "uci" | "fenBefore" | "fenAfter"> | null {
+    const row = get<{ node: string }>(
+      `SELECT e.value AS node FROM repertoire_chapters c,
+        json_each(CASE WHEN json_valid(c.tree_json) THEN c.tree_json ELSE '[]' END) e
+        WHERE c.id = ? AND json_extract(e.value, '$.id') = ? LIMIT 1`,
+      chapterId,
+      nodeId
+    );
+    const node = parseJson<unknown>(row?.node ?? null, null);
+    if (typeof node !== "object" || node === null) return null;
+    const field = (key: string): unknown => Reflect.get(node, key);
+    const [san, uci, fenBefore, fenAfter] = ["san", "uci", "fenBefore", "fenAfter"].map(field);
+    if (typeof fenBefore !== "string" || typeof fenAfter !== "string") return null;
+    return {
+      san: typeof san === "string" ? san : null,
+      uci: typeof uci === "string" ? uci : null,
+      fenBefore,
+      fenAfter
+    };
   },
 
   /** The repertoire a chapter id belongs to and its revision (without reading its tree). */
@@ -1074,15 +1183,33 @@ export const sessionRepository = {
   },
 
   /** The most recently updated active session of a repertoire that isn't archived. */
-  lastActive(): { id: string; repertoireId: string; mode: PracticeMode } | null {
-    const row = get<{ id: string; repertoire_id: string; mode: string }>(
-      `SELECT s.id, s.repertoire_id, s.mode FROM repertoire_practice_sessions s
+  lastActive(): {
+    id: string;
+    repertoireId: string;
+    mode: PracticeMode;
+    repertoireName: string;
+    color: RepertoireColor;
+  } | null {
+    const row = get<{
+      id: string;
+      repertoire_id: string;
+      mode: string;
+      name: string;
+      color: string;
+    }>(
+      `SELECT s.id, s.repertoire_id, s.mode, r.name, r.color FROM repertoire_practice_sessions s
         JOIN repertoires r ON r.id = s.repertoire_id
         WHERE s.status = 'active' AND r.archived_at IS NULL
         ORDER BY s.updated_at DESC, s.created_at DESC LIMIT 1`
     );
     return row
-      ? { id: row.id, repertoireId: row.repertoire_id, mode: sessionMode(row.mode) }
+      ? {
+          id: row.id,
+          repertoireId: row.repertoire_id,
+          mode: sessionMode(row.mode),
+          repertoireName: row.name,
+          color: asColor(row.color)
+        }
       : null;
   },
 
