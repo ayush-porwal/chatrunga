@@ -132,7 +132,13 @@ Stop only when all three are true, and say so:
    still removable when dropping them (and the reference) shrinks the package or the page.
 
 ## What's Been Tried
-- Not yet. Baseline is the first run.
+- Baseline keep: unpacked app 285,364,805 bytes, zip 112,446,644, locales 49,229,173, stockfish 0.
+  Lighthouse on the packaged binary (file://) scores perf 0 / bp 0 because there is no paint
+  metric and `is-on-https` fails. Those are protocol limits, not a reason to audit in Chrome.
+  Fixable audit failures: color-contrast, meta-description, label-content-name-mismatch,
+  errors-in-console. robots-txt and is-on-https will not pass on file://.
+- Next: `electronLanguages: ["en", "en-US"]`. Mac folders are `en.lproj`; Windows/Linux paks
+  are `en-US.pak`. Listing only `en` would delete the Windows English pak.
 - Known before any run (verify, do not assume):
   - electron-builder `files` is only `out/**` + `package.json`; extraResources are the two
     icons. The 109 MB `stockfish/stockfish-macos-m1-apple-silicon` binary is gitignored and

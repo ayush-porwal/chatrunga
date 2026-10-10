@@ -26,6 +26,7 @@
       "output": "dist",
       "buildResources": "src/main/assets"
     },
+    "electronLanguages": ["en", "en-US"],
     "files": [
       "out/**/*",
       "package.json"

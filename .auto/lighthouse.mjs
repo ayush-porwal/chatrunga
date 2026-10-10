@@ -139,7 +139,13 @@ try {
   await browser.disconnect();
 } finally {
   child.kill("SIGTERM");
-  rmSync(profile, { recursive: true, force: true });
+  await delay(300);
+  child.kill("SIGKILL");
+  try {
+    rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  } catch {
+    // A profile the app has not released yet must not fail the score.
+  }
 }
 
 console.log(`METRIC lh_perf=${mins.performance}`);
