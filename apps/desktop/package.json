@@ -26,6 +26,7 @@
       "output": "dist",
       "buildResources": "src/main/assets"
     },
+    "afterPack": "build/after-pack.cjs",
     "electronLanguages": [
       "en",
       "en-US"
