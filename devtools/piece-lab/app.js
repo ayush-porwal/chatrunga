@@ -326,8 +326,8 @@ function renderBoards() {
 /* ---------------------------------------------------------------- measurements */
 
 /** The set's twelve pieces in one size mode, each with its ink box, the floor and crown, and its numbers. */
-async function pieceMetrics(heights) {
-  const svgs = drawings(heights);
+async function pieceMetrics(snapshot, set, heights) {
+  const svgs = snapshot.working[heights][set];
   const m = await measureSet(svgs);
   const floor = 100 - m.wP.foot;
   const crown = m.wK.top;
@@ -371,18 +371,20 @@ async function pieceMetrics(heights) {
 }
 
 /** One row per set: each piece's height in both modes, how they sit, and anything broken. */
-async function renderSetMetrics() {
+async function setMetricsTable(snapshot, selected) {
   const body = [];
-  for (const set of data.sets) {
+  for (const set of snapshot.sets) {
     const modes = [];
-    for (const heights of data.heights) modes.push(await measureSet(drawings(heights, set)));
+    for (const heights of snapshot.heights) {
+      modes.push(await measureSet(snapshot.working[heights][set]));
+    }
     const all = modes.flatMap((mode) => Object.values(mode));
     const ok = all.filter((g) => !g.broken);
     const feet = ok.map((g) => g.foot);
     const problems = all.filter((g) => g.broken || g.clipped).length;
 
     body.push(
-      `<tr class="${set === state.set ? "on" : ""}"><td>${capital(set)}</td>` +
+      `<tr class="${set === selected ? "on" : ""}"><td>${capital(set)}</td>` +
         modes
           .map((mode) =>
             ORDER.map(
@@ -392,31 +394,43 @@ async function renderSetMetrics() {
           .join("") +
         `<td class="start">${f1(Math.min(...feet))}–${f1(Math.max(...feet))}</td>` +
         `<td>${f1(Math.max(...ok.map((g) => g.w)))}</td>` +
-        `<td class="start palette">${palette(drawings(data.heights[0], set)).map(swatch).join("")}</td>` +
+        `<td class="start palette">${palette(snapshot.working[snapshot.heights[0]][set]).map(swatch).join("")}</td>` +
         `<td class="start">${problems || "None"}</td></tr>`
     );
   }
-  const groups = data.heights
+  const groups = snapshot.heights
     .map(
       (heights) => `<th colspan="${ORDER.length}" class="start">${heightLabel(heights)} height</th>`
     )
     .join("");
-  const kinds = data.heights
+  const kinds = snapshot.heights
     .map(() => ORDER.map((k, i) => `<th${i === 0 ? ' class="start"' : ""}>${k}</th>`).join(""))
     .join("");
-  $("#sets-metrics").innerHTML =
+  return (
     `<table class="sets-table"><caption>Every set</caption>` +
     `<thead><tr><th></th>${groups}<th colspan="2" class="start"></th><th colspan="2" class="start"></th></tr>` +
     `<tr><th>Set</th>${kinds}<th class="start">Under</th><th>Widest</th><th class="start">Palette</th><th class="start">Problems</th></tr></thead>` +
-    `<tbody>${body.join("")}</tbody></table>`;
+    `<tbody>${body.join("")}</tbody></table>`
+  );
 }
 
+let measureRun = 0;
+
+/**
+ * Measures from one snapshot of the data and the selected set, and shows the result only if no
+ * newer render (another set, a reload) started while the drawings were being measured.
+ */
 async function renderMeasurements() {
   if (!state.open.measure) return;
+  const run = ++measureRun;
+  const snapshot = data;
+  const set = state.set;
   const figures = [];
-  for (const heights of data.heights) figures.push(await pieceMetrics(heights));
+  for (const heights of snapshot.heights) figures.push(await pieceMetrics(snapshot, set, heights));
+  const table = await setMetricsTable(snapshot, set);
+  if (run !== measureRun) return;
   $("#pieces-metrics").replaceChildren(...figures);
-  await renderSetMetrics();
+  $("#sets-metrics").innerHTML = table;
 }
 
 /* ---------------------------------------------------------------- wiring */
@@ -449,10 +463,16 @@ for (const el of document.querySelectorAll("[data-open]")) {
   });
 }
 
+let loadRun = 0;
+
+/** Fetches the drawings; a response that a newer load has overtaken is dropped. */
 async function load() {
+  const run = ++loadRun;
   const res = await fetch("/api/data");
   if (!res.ok) throw new Error(await res.text());
-  data = await res.json();
+  const next = await res.json();
+  if (run !== loadRun) return;
+  data = next;
   if (!data.sets.includes(state.set)) state.set = data.sets[0];
   if (!data.boards[state.theme]) state.theme = Object.keys(data.boards)[0];
   if (!POSITIONS[state.pos]) state.pos = "middlegame";

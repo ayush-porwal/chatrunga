@@ -29,10 +29,19 @@ const PATHS = {
   settings: "packages/shared/src/types/settings.ts"
 };
 
-/** The working tree's generator, re-imported each time so edits to it show without a restart. */
-async function generator() {
-  const url = pathToFileURL(join(repo, PATHS.generator)).href;
-  return import(`${url}?v=${Date.now()}`);
+/**
+ * The working tree's generator. Node never unloads a module, so it is imported again only after
+ * the file itself changes (generatorVersion, bumped by the watcher); it reads the drawings and
+ * fit.json fresh on every call anyway.
+ */
+let generatorVersion = 0;
+let loaded;
+function generator() {
+  if (loaded?.version !== generatorVersion) {
+    const url = pathToFileURL(join(repo, PATHS.generator)).href;
+    loaded = { version: generatorVersion, module: import(`${url}?v=${generatorVersion}`) };
+  }
+  return loaded.module;
 }
 
 /** Board colours, read from the settings source. */
@@ -87,7 +96,9 @@ for (const [dir, kind] of [
   [here, "page"]
 ]) {
   watch(dir, { recursive: true }, (_, file) => {
-    if (file && !/node_modules|\.test\./.test(file)) changed(kind);
+    if (!file || /node_modules|\.test\./.test(file)) return;
+    if (join(dir, file) === join(repo, PATHS.generator)) generatorVersion++;
+    changed(kind);
   });
 }
 

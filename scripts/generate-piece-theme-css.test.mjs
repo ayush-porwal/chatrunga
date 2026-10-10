@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
 import { test } from "node:test";
 import {
   compactSvg,
@@ -9,6 +10,7 @@ import {
   HEIGHTS,
   loadFit,
   packedPayload,
+  payloadPath,
   prepareSvg,
   THEMES
 } from "./generate-piece-theme-css.mjs";
@@ -42,6 +44,13 @@ test("a drawing sized only by width/height keeps that box as its viewBox", () =>
   assert.equal(
     compactSvg('<svg width="368" height="368"><path/></svg>'),
     '<svg viewBox="0 0 368 368"><path/></svg>'
+  );
+});
+
+test("the published color-scheme marker is dropped", () => {
+  assert.equal(
+    compactSvg('<svg style="color-scheme:light only" viewBox="0 0 9 9"><path/></svg>'),
+    '<svg viewBox="0 0 9 9"><path/></svg>'
   );
 });
 
@@ -83,6 +92,19 @@ test("a baked-in drop shadow is detached; other filters stay", () => {
   const out = dropBakedShadows(svg);
   assert.doesNotMatch(out, /filter="url\(#b\)"/);
   assert.match(out, /<path filter="url\(#c\)"\/>/);
+  // Named in an inline style too.
+  const styled = dropBakedShadows(
+    '<svg><filter id="s"><feOffset dx="1"/></filter><path style="fill:red;filter:url(#s);opacity:1"/></svg>'
+  );
+  assert.match(styled, /style="fill:red;opacity:1"/);
+});
+
+test("the committed payload is what the sources pack to", () => {
+  const committed = gunzipSync(readFileSync(payloadPath)).toString("utf8");
+  assert.ok(
+    committed === packedPayload(loadFit()),
+    "generated-piece-themes.css.gz is stale: run `node scripts/measure-piece-fit.mjs && pnpm generate:piece-css`"
+  );
 });
 
 test("the payload names its sets, then holds every drawing and every uniform box", () => {

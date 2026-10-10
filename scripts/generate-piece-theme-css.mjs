@@ -115,6 +115,9 @@ export function compactSvg(svgText) {
   const boxed = svgText
     .trim()
     .replace(/ (image-rendering|shape-rendering|text-rendering)="[^"]*"/g, "")
+    // The published files mark their root `color-scheme:light only`; an image never takes the
+    // page's scheme, so it does nothing here.
+    .replace(/^<svg[^>]*>/, (tag) => tag.replace(/ style="color-scheme:light only"/, ""))
     // Only the root's size goes (the board sizes the piece); filters and masks keep their regions.
     // A drawing sized only by width/height keeps that box as its viewBox.
     .replace(/^<svg[^>]*>/, (tag) => {
@@ -142,14 +145,23 @@ export function fitSvg(svgText, viewBox) {
   });
 }
 
-/** Detaches every filter that offsets its result: a baked-in drop shadow. */
+/**
+ * Detaches every filter that offsets its result — a baked-in drop shadow — whether a shape names
+ * it in a `filter` attribute or in its inline style (Papercut).
+ */
 export function dropBakedShadows(svgText) {
   const shadowIds = [
     ...svgText.matchAll(/<filter id="([^"]+)"[^>]*>((?:(?!<\/filter>).)*)<\/filter>/gs)
   ]
     .filter(([, , body]) => body.includes("<feOffset"))
     .map(([, id]) => id);
-  return shadowIds.reduce((svg, id) => svg.replaceAll(` filter="url(#${id})"`, ""), svgText);
+  return shadowIds.reduce(
+    (svg, id) =>
+      svg
+        .replaceAll(` filter="url(#${id})"`, "")
+        .replace(new RegExp(`filter:\\s*url\\(#${id}\\);?`, "g"), ""),
+    svgText
+  );
 }
 
 /** The drawing as it stands on the board, before fitting: baked shadows gone. */

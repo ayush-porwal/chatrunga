@@ -141,185 +141,242 @@ export function pieceSizesClass(sizes: PieceSizes): string {
   return sizes === "uniform" ? "piece-sizes-uniform" : "";
 }
 
+export type PieceLicence = { name: string; url: string };
+
+/** The licences the piece sets are published under (scripts/piece-svg-sources/README.md). */
+const PIECE_LICENCES = {
+  gpl2: { name: "GPLv2+", url: "https://www.gnu.org/licenses/old-licenses/gpl-2.0.html" },
+  gpl3: { name: "GPLv3+", url: "https://www.gnu.org/licenses/gpl-3.0.html" },
+  agpl3: { name: "AGPLv3+", url: "https://www.gnu.org/licenses/agpl-3.0.html" },
+  apache2: { name: "Apache 2.0", url: "https://www.apache.org/licenses/LICENSE-2.0" },
+  mit: { name: "MIT", url: "https://opensource.org/license/mit" },
+  cc0: { name: "CC0 1.0", url: "https://creativecommons.org/publicdomain/zero/1.0/" },
+  ccBy4: { name: "CC BY 4.0", url: "https://creativecommons.org/licenses/by/4.0/" },
+  ccBySa4: { name: "CC BY-SA 4.0", url: "https://creativecommons.org/licenses/by-sa/4.0/" },
+  ccByNcSa4: { name: "CC BY-NC-SA 4.0", url: "https://creativecommons.org/licenses/by-nc-sa/4.0/" },
+  ccByNcSa25: { name: "CC BY-NC-SA 2.5", url: "https://xkcd.com/license.html" },
+  alpha: {
+    name: "Free for non-commercial use",
+    url: "http://www.enpassant.dk/chess/fonteng.htm"
+  }
+} satisfies Record<string, PieceLicence>;
+
 export const pieceStyleOptions: Array<{
   id: PieceStyle;
   label: string;
+  /** Who drew the set, shown in Settings beside its licence. */
   description: string;
+  licence: PieceLicence;
 }> = [
   {
     id: "cburnett",
     label: "Cburnett",
-    description: "By Colin M.L. Burnett."
+    description: "By Colin M.L. Burnett.",
+    licence: PIECE_LICENCES.gpl2
   },
   {
     id: "merida",
     label: "Merida",
-    description: "By Armando Hernandez Marroquin."
+    description: "By Armando Hernandez Marroquin.",
+    licence: PIECE_LICENCES.gpl2
   },
   {
     id: "alpha",
     label: "Alpha",
-    description: "By Eric Bentzen."
+    description: "By Eric Bentzen.",
+    licence: PIECE_LICENCES.alpha
   },
   {
     id: "california",
     label: "California",
-    description: "By Jerry S."
+    description: "By Jerry S.",
+    licence: PIECE_LICENCES.ccByNcSa4
   },
   {
     id: "cardinal",
     label: "Cardinal",
-    description: "By sadsnake1."
+    description: "By sadsnake1.",
+    licence: PIECE_LICENCES.ccByNcSa4
   },
   {
     id: "chessnut",
     label: "Chessnut",
-    description: "By Alexis Luengas."
+    description: "By Alexis Luengas.",
+    licence: PIECE_LICENCES.apache2
   },
   {
     id: "kosal",
     label: "Kosal",
-    description: "By Kosal Sen."
+    description: "By Kosal Sen.",
+    licence: PIECE_LICENCES.agpl3
   },
   {
     id: "maestro",
     label: "Maestro",
-    description: "By sadsnake1."
+    description: "By sadsnake1.",
+    licence: PIECE_LICENCES.ccByNcSa4
   },
   {
     id: "pirouetti",
     label: "Pirouetti",
-    description: "By pirouetti."
+    description: "By pirouetti.",
+    licence: PIECE_LICENCES.agpl3
   },
   {
     id: "classic",
     label: "Classic",
-    description: "Cburnett by Colin M.L. Burnett, with warm gradients."
+    description: "Cburnett by Colin M.L. Burnett, with warm gradients.",
+    licence: PIECE_LICENCES.gpl2
   },
   {
     id: "anarcandy",
     label: "Anarcandy",
-    description: "By caderek."
+    description: "By caderek.",
+    licence: PIECE_LICENCES.ccByNcSa4
   },
   {
     id: "caliente",
     label: "Caliente",
-    description: "By avi."
+    description: "By avi.",
+    licence: PIECE_LICENCES.ccByNcSa4
   },
   {
     id: "celtic",
     label: "Celtic",
-    description: "By Maurizio Monge."
+    description: "By Maurizio Monge.",
+    licence: PIECE_LICENCES.mit
   },
   {
     id: "cooke",
     label: "Cooke",
-    description: "By fejfar."
+    description: "By fejfar.",
+    licence: PIECE_LICENCES.ccByNcSa4
   },
   {
     id: "disguised",
     label: "Disguised",
-    description: "By danegraphics."
+    description: "By danegraphics.",
+    licence: PIECE_LICENCES.ccByNcSa4
   },
   {
     id: "dubrovny",
     label: "Dubrovny",
-    description: "By sadsnake1."
+    description: "By sadsnake1.",
+    licence: PIECE_LICENCES.ccByNcSa4
   },
   {
     id: "fantasy",
     label: "Fantasy",
-    description: "By Maurizio Monge."
+    description: "By Maurizio Monge.",
+    licence: PIECE_LICENCES.mit
   },
   {
     id: "firi",
     label: "Firi",
-    description: "By James Faure."
+    description: "By James Faure.",
+    licence: PIECE_LICENCES.ccBy4
   },
   {
     id: "fresca",
     label: "Fresca",
-    description: "By sadsnake1."
+    description: "By sadsnake1.",
+    licence: PIECE_LICENCES.ccByNcSa4
   },
   {
     id: "gioco",
     label: "Gioco",
-    description: "By sadsnake1."
+    description: "By sadsnake1.",
+    licence: PIECE_LICENCES.ccByNcSa4
   },
   {
     id: "horsey",
     label: "Horsey",
-    description: "By cham and michael1241."
+    description: "By cham and michael1241.",
+    licence: PIECE_LICENCES.ccByNcSa4
   },
   {
     id: "icpieces",
     label: "IC Pieces",
-    description: "By sadsnake1."
+    description: "By sadsnake1.",
+    licence: PIECE_LICENCES.ccByNcSa4
   },
   {
     id: "kiwen-suwi",
     label: "Kiwen-suwi",
-    description: "By neverRare."
+    description: "By neverRare.",
+    licence: PIECE_LICENCES.ccBy4
   },
   {
     id: "letter",
     label: "Letter",
-    description: "By usolando."
+    description: "By usolando.",
+    licence: PIECE_LICENCES.agpl3
   },
   {
     id: "minimal-warmth",
     label: "Minimal Warmth",
-    description: "By blunder_reign."
+    description: "By blunder_reign.",
+    licence: PIECE_LICENCES.ccByNcSa4
   },
   {
     id: "mpchess",
     label: "MPChess",
-    description: "By Maxime Chupin."
+    description: "By Maxime Chupin.",
+    licence: PIECE_LICENCES.gpl3
   },
   {
     id: "papercut",
     label: "Papercut",
-    description: "By Nikolay Anzarov."
+    description: "By Nikolay Anzarov.",
+    licence: PIECE_LICENCES.ccBy4
   },
   {
     id: "pixel",
     label: "Pixel",
-    description: "By therealqtpi."
+    description: "By therealqtpi.",
+    licence: PIECE_LICENCES.agpl3
   },
   {
     id: "rhosgfx",
     label: "RhosGFX",
-    description: "By RhosGFX."
+    description: "By RhosGFX.",
+    licence: PIECE_LICENCES.cc0
   },
   {
     id: "shapes",
     label: "Shapes",
-    description: "By flugsio."
+    description: "By flugsio.",
+    licence: PIECE_LICENCES.ccBySa4
   },
   {
     id: "spatial",
     label: "Spatial",
-    description: "By Maurizio Monge."
+    description: "By Maurizio Monge.",
+    licence: PIECE_LICENCES.mit
   },
   {
     id: "staunty",
     label: "Staunty",
-    description: "By sadsnake1."
+    description: "By sadsnake1.",
+    licence: PIECE_LICENCES.ccByNcSa4
   },
   {
     id: "tatiana",
     label: "Tatiana",
-    description: "By sadsnake1."
+    description: "By sadsnake1.",
+    licence: PIECE_LICENCES.ccByNcSa4
   },
   {
     id: "totoy",
     label: "Totoy",
-    description: "By Kosal Sen."
+    description: "By Kosal Sen.",
+    licence: PIECE_LICENCES.ccBy4
   },
   {
     id: "xkcd",
     label: "xkcd",
-    description: "By Randall Munroe."
+    description: "By Randall Munroe.",
+    licence: PIECE_LICENCES.ccByNcSa25
   }
 ];
 

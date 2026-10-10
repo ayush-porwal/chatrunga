@@ -38,7 +38,12 @@
       "out/**/*",
       "package.json"
     ],
-    "extraResources": [],
+    "extraResources": [
+      {
+        "from": "../../scripts/piece-svg-sources/CREDITS.md",
+        "to": "piece-set-credits.md"
+      }
+    ],
     "mac": {
       "icon": "src/main/assets/app-icon.icns",
       "category": "public.app-category.board-games",
