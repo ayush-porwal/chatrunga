@@ -18,5 +18,3 @@ test-results
 # Agent worktrees nested in this checkout.
 .claude/worktrees/
 .worktrees/
-
-# Local autoresearch harness. Not part of the app.
