@@ -540,7 +540,7 @@ export function BoardView() {
           Chessground mutates the mount node’s classList (cg-wrap, orientation-*, manipulable).
           Keeping those classes in React-controlled className prevents reconciliation from stripping them,
           which would break piece sprites that target `.cg-wrap piece.*` in chessground.cburnett.css.
-          Non-default sets also apply `piece-set-*` here so scoped rules built by generated-piece-themes.ts override those sprites.
+          The `piece-set-*` class here lets scoped rules built by generated-piece-themes.ts override those sprites.
         */}
         <div
           ref={elementRef}

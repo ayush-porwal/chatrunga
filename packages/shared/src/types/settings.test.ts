@@ -7,7 +7,7 @@ import {
   normalizeCommentaryProvider,
   normalizeDefaultEngineId,
   normalizeBoardSquareHex,
-  normalizePiecePresentation,
+  normalizePieceSizes,
   normalizePieceStyle,
   normalizeReviewEngineSettings,
   normalizeOnboardingSettings,
@@ -40,7 +40,7 @@ describe("normalizePieceStyle", () => {
     expect(normalizePieceStyle("kosalo")).toBe("kosal");
   });
 
-  it("accepts vendored Lichess set ids", () => {
+  it("accepts the packed set ids", () => {
     expect(normalizePieceStyle("merida")).toBe("merida");
     expect(normalizePieceStyle("chessnut")).toBe("chessnut");
   });
@@ -51,49 +51,38 @@ describe("normalizePieceStyle", () => {
   });
 });
 
-describe("normalizePiecePresentation", () => {
-  it("accepts known ids", () => {
-    expect(normalizePiecePresentation("sharp")).toBe("sharp");
-    expect(normalizePiecePresentation("default")).toBe("default");
-  });
-
-  it("falls back for unknown strings", () => {
-    expect(normalizePiecePresentation("wide")).toBe(defaultSettings.piecePresentation);
-    expect(normalizePiecePresentation(null)).toBe(defaultSettings.piecePresentation);
+describe("normalizePieceSizes", () => {
+  it("accepts the two modes and falls back for anything else", () => {
+    expect(normalizePieceSizes("uniform")).toBe("uniform");
+    expect(normalizePieceSizes("ladder")).toBe("ladder");
+    expect(normalizePieceSizes("tall")).toBe(defaultSettings.pieceSizes);
+    expect(normalizePieceSizes(undefined)).toBe(defaultSettings.pieceSizes);
   });
 });
 
 describe("hydratePieceSettings", () => {
-  it("derives presentation from legacy combined piece style ids", () => {
-    expect(hydratePieceSettings(legacyPieceStyleSettings("cburnettCrisp")).piecePresentation).toBe(
-      "sharp"
-    );
-    expect(hydratePieceSettings(legacyPieceStyleSettings("stauntonSoft")).piecePresentation).toBe(
-      "soft"
-    );
-    expect(
-      hydratePieceSettings(
-        legacyPieceStyleSettings("cburnettContrast", { piecePresentation: "default" })
-      ).piecePresentation
-    ).toBe("contrast");
+  it("maps older piece set ids and drops the removed piece look", () => {
+    const stored = {
+      ...legacyPieceStyleSettings("stauntonSoft"),
+      piecePresentation: "soft"
+    } as AppSettings;
+    const hydrated = hydratePieceSettings(stored);
+    expect(hydrated.pieceStyle).toBe("cburnett");
+    expect(hydrated).not.toHaveProperty("piecePresentation");
   });
 
-  it("keeps explicit presentation when piece style is not a legacy combo id", () => {
-    const h = hydratePieceSettings({
+  it("keeps the chosen set and sizes", () => {
+    const hydrated = hydratePieceSettings({
       ...defaultSettings,
       pieceStyle: "merida",
-      piecePresentation: "sharp"
+      pieceSizes: "uniform"
     });
-    expect(h.pieceStyle).toBe("merida");
-    expect(h.piecePresentation).toBe("sharp");
+    expect(hydrated.pieceStyle).toBe("merida");
+    expect(hydrated.pieceSizes).toBe("uniform");
   });
 
   it("is idempotent for new-shape settings", () => {
-    const once = hydratePieceSettings({
-      ...defaultSettings,
-      pieceStyle: "alpha",
-      piecePresentation: "soft"
-    });
+    const once = hydratePieceSettings({ ...defaultSettings, pieceStyle: "alpha" });
     expect(hydratePieceSettings(once)).toEqual(once);
   });
 });

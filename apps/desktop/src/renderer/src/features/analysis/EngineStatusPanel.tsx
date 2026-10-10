@@ -22,10 +22,7 @@ import { Eyebrow } from "@/components/ui/page";
 import { IconButton } from "@/components/ui/icon-button";
 import { Stat } from "@/components/ui/stat";
 import { cn } from "@/lib/utils";
-import {
-  cgWrapPieceSetClass,
-  piecePresentationTailwindClass
-} from "@chaturanga/shared/types/settings";
+import { cgWrapPieceSetClass, pieceSizesClass } from "@chaturanga/shared/types/settings";
 import type { PreviewPieceRole } from "../settings/piece-style-preview";
 import { Figurine } from "../board/Figurine";
 import { useBoardAppearance } from "../board/useBoardAppearance";
@@ -579,7 +576,7 @@ function EngineStatusPanelContent({
                 className={cn(
                   "cg-wrap divide-y divide-line-subtle",
                   cgWrapPieceSetClass(appearance.pieceStyle),
-                  piecePresentationTailwindClass(appearance.piecePresentation)
+                  pieceSizesClass(appearance.pieceSizes)
                 )}
                 // Unlayered `.cg-wrap` rules (board.css inline-size containment) would size this list.
                 style={{ display: "block", containerType: "normal" }}

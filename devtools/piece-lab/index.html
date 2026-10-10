@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Piece Lab</title>
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <header class="toolbar">
+      <div class="brand">Piece Lab</div>
+
+      <div class="group" aria-label="Pieces and board">
+        <div class="picker" data-picker="set"></div>
+        <div class="picker" data-picker="theme"></div>
+        <div class="seg" data-ctl="pos" aria-label="Position"></div>
+      </div>
+
+      <div class="status" id="status" role="status"></div>
+    </header>
+
+    <main>
+      <details class="panel" data-open="board">
+        <summary>
+          <span class="panel-title">Board</span>
+        </summary>
+        <div class="panel-body"><div class="pair" id="boards"></div></div>
+      </details>
+
+      <details class="panel" data-open="measure">
+        <summary>
+          <span class="panel-title">Measurements</span>
+        </summary>
+        <div class="panel-body">
+          <div class="pair" id="pieces-metrics"></div>
+          <div id="sets-metrics"></div>
+        </div>
+      </details>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

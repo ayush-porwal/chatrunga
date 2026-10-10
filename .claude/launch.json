@@ -31,6 +31,14 @@
         "--strictPort"
       ],
       "port": 5199
+    },
+    {
+      "name": "piece-lab",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "devtools:pieces"
+      ],
+      "port": 5210
     }
   ]
 }

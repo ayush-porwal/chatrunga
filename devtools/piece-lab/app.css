@@ -1,0 +1,511 @@
+/* The app's own tokens (apps/desktop/src/renderer/src/styles/app.css): pieces are judged in the
+   surroundings they'll be seen in. */
+:root {
+  --canvas: #111315;
+  --chrome: #1b1c1f;
+  --surface: #181a1d;
+  --sunken: #141619;
+  --raised: #1e2125;
+  --control: #25282d;
+  --control-hover: #2d3238;
+  --line-subtle: #23262a;
+  --line: #2d3238;
+  --line-strong: #3a3f45;
+  --fg: #f4f1ea;
+  --fg-2: #d8dbe0;
+  --muted: #a9adb4;
+  --subtle: #7d838d;
+  --accent: #8fb66f;
+  --accent-soft: #263527;
+  --accent-fg: #d7e8c5;
+  --warn: #d8ad5a;
+  --warn-soft: #2b2418;
+  --danger: #ff9a8d;
+  --danger-soft: #3a201d;
+  /* One metric colour for every guide, as in a font editor. */
+  --guide: rgb(96 165 250);
+  --sq-light: #f0d9b5;
+  --sq-dark: #b58863;
+  --radius: 10px;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--fg-2);
+  font:
+    13px/1.45 -apple-system,
+    BlinkMacSystemFont,
+    "Inter",
+    "Segoe UI",
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- toolbar */
+
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 20px;
+  padding: 10px 20px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--line-subtle);
+}
+
+.brand {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-left: 20px;
+  border-left: 1px solid var(--line);
+}
+
+.seg {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.seg button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.seg button:hover {
+  color: var(--fg);
+  background: var(--control);
+}
+
+.seg button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-fg);
+}
+
+.status {
+  margin-left: auto;
+  padding: 4px 10px;
+  border-radius: 6px;
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.status[hidden] {
+  display: none;
+}
+
+.status code {
+  color: var(--fg);
+}
+
+/* ---------------------------------------------------------------- pickers */
+
+.picker {
+  position: relative;
+}
+
+.picker-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px 0 6px;
+  background: var(--control);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.picker-button:hover {
+  background: var(--control-hover);
+}
+
+.picker-button .chev {
+  color: var(--subtle);
+  font-size: 10px;
+}
+
+.picker-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  min-width: 220px;
+  max-height: min(420px, 70vh);
+  overflow: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.4);
+}
+
+.picker-list[hidden] {
+  display: none;
+}
+
+.picker-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--fg-2);
+}
+
+.picker-list li[aria-selected="true"] {
+  color: var(--fg);
+}
+
+.picker-list li[aria-selected="true"]::after {
+  content: "✓";
+  margin-left: auto;
+  color: var(--accent);
+}
+
+.picker-list li.active {
+  background: var(--control-hover);
+}
+
+/* Previews: a set as its two kings, a board as a 2×2 of its squares. */
+.preview {
+  display: inline-grid;
+  flex: none;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.preview.set {
+  grid-template-columns: repeat(2, 20px);
+  height: 20px;
+}
+
+.preview.theme {
+  grid-template-columns: repeat(2, 10px);
+  grid-template-rows: repeat(2, 10px);
+}
+
+.preview span {
+  position: relative;
+}
+
+/* ---------------------------------------------------------------- squares and pieces */
+
+.sq {
+  position: relative;
+  background: var(--sq-light);
+}
+
+.sq.d {
+  background: var(--sq-dark);
+}
+
+piece {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  z-index: 2;
+}
+
+/* ---------------------------------------------------------------- main */
+
+main {
+  padding: 20px 20px 40px;
+  display: grid;
+  gap: 16px;
+}
+
+/* Measurement guides: the piece's ink box, the set's floor and its crown. */
+.ink {
+  position: absolute;
+  z-index: 3;
+  border: 1px dashed color-mix(in srgb, var(--guide) 80%, transparent);
+  pointer-events: none;
+}
+
+.rule {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  border-top: 1px solid color-mix(in srgb, var(--guide) 70%, transparent);
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- panels */
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius);
+}
+
+.panel summary {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.panel summary::before {
+  content: "";
+  align-self: center;
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 120ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.panel[open] summary::before {
+  transform: rotate(45deg);
+}
+
+.panel-title {
+  color: var(--fg);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.panel-body {
+  padding: 4px 16px 18px;
+}
+
+/* At most 96px squares, smaller when two boards don't fit side by side at that size. */
+.board {
+  width: min(100%, var(--board));
+  aspect-ratio: 1;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.board .sq.lm::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgb(205 210 106 / 0.5);
+}
+
+.coord {
+  position: absolute;
+  z-index: 1;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--sq-dark);
+}
+
+.sq.d .coord {
+  color: var(--sq-light);
+}
+
+.coord.r {
+  top: 4px;
+  left: 4px;
+}
+
+.coord.f {
+  right: 4px;
+  bottom: 4px;
+}
+
+/* Ladder on the left, Uniform on the right, at equal widths; stacked when narrow. */
+.pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+figure {
+  margin: 0;
+  min-width: 0;
+}
+
+figcaption {
+  margin-bottom: 8px;
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 14px 10px;
+}
+
+.metric .sq {
+  aspect-ratio: 1;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.metric dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 6px;
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--subtle);
+}
+
+.metric dd {
+  margin: 0;
+  color: var(--fg-2);
+  text-align: right;
+}
+
+.flag {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.flag.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+main > * {
+  min-width: 0;
+}
+
+#sets-metrics {
+  margin-top: 28px;
+  overflow-x: auto;
+}
+
+.sets-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sets-table caption {
+  text-align: left;
+  color: var(--fg);
+  font-weight: 600;
+  padding: 0 0 10px;
+}
+
+.sets-table th,
+.sets-table td {
+  white-space: nowrap;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-subtle);
+  text-align: right;
+}
+
+.sets-table th {
+  color: var(--subtle);
+  font-weight: 500;
+}
+
+.sets-table th:first-child,
+.sets-table td:first-child {
+  text-align: left;
+  color: var(--fg);
+}
+
+.palette {
+  white-space: normal;
+  text-align: left !important;
+}
+
+.swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin: 1px 3px 1px 0;
+  vertical-align: -1px;
+  border-radius: 2px;
+  background: var(--c);
+  box-shadow: 0 0 0 1px var(--line-strong);
+}
+
+.sets-table .start {
+  border-left: 1px solid var(--line);
+}
+
+.sets-table thead tr:first-child th {
+  border-bottom: 0;
+  padding-bottom: 0;
+  text-align: left;
+  color: var(--fg-2);
+}
+
+.sets-table tr.on td {
+  background: var(--raised);
+}
+
+@media (max-width: 760px) {
+  .group {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .metric-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel summary::before {
+    transition: none;
+  }
+}

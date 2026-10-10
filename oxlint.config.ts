@@ -194,6 +194,11 @@ export default defineConfig({
         ]
       }
     },
+    // Dev tools: each has a Node server and a plain page script that runs in the browser.
+    {
+      files: ["devtools/**/app.js"],
+      env: { browser: true }
+    },
     {
       files: ["apps/desktop/src/main/**/*.ts"],
       env: { node: true },

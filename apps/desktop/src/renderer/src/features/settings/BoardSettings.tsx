@@ -5,10 +5,10 @@ import {
   boardThemeSquareColors,
   normalizeBoardSquareHex,
   pieceStyleOptions,
-  piecePresentationOptions,
+  pieceSizesOptions,
   type AppSettings,
   type BoardTheme,
-  type PiecePresentation
+  type PieceSizes
 } from "@chaturanga/shared/types/settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,8 @@ const boardThemes: Array<{ id: BoardTheme; label: string }> = [
   { id: "newspaper", label: "Paper" },
   { id: "wood", label: "Wood" },
   { id: "walnut", label: "Walnut" },
-  { id: "slate", label: "Slate" }
+  { id: "slate", label: "Slate" },
+  { id: "sapphire", label: "Sapphire" }
 ];
 
 /** Italian Game after 4…Bc5: pieces on both sides, a last move to show the highlight. */
@@ -91,8 +92,8 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
   const selectedThemeLabel = customBoardSelected
     ? "Custom colors"
     : boardThemes.find((theme) => theme.id === appearance.boardTheme)?.label;
-  const presentationDescription = piecePresentationOptions.find(
-    (o) => o.id === appearance.piecePresentation
+  const sizesDescription = pieceSizesOptions.find(
+    (o) => o.id === appearance.pieceSizes
   )?.description;
 
   // A theme and its square colors are one write (never half-applied); dragging a color or the hue
@@ -188,17 +189,17 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
           <PieceStyleListbox
             id="piece-style-select"
             value={selectedPieceStyle}
-            piecePresentation={appearance.piecePresentation}
+            pieceSizes={appearance.pieceSizes}
             onChange={(next) => setSetting("pieceStyle", next)}
           />
-          <Field label="Piece look" hint={presentationDescription}>
+          <Field label="Piece sizes" hint={sizesDescription}>
             <SegmentedControl
-              ariaLabel="Piece look"
+              ariaLabel="Piece sizes"
               fullWidth
               size="sm"
-              value={appearance.piecePresentation}
-              onChange={(next: PiecePresentation) => setSetting("piecePresentation", next)}
-              options={piecePresentationOptions.map((opt) => ({ value: opt.id, label: opt.label }))}
+              value={appearance.pieceSizes}
+              onChange={(next: PieceSizes) => setSetting("pieceSizes", next)}
+              options={pieceSizesOptions.map((opt) => ({ value: opt.id, label: opt.label }))}
             />
           </Field>
         </div>
@@ -211,7 +212,7 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
             light={hoverColors?.light ?? previewBoardLight}
             dark={hoverColors?.dark ?? previewBoardDark}
             pieceStyle={selectedPieceStyle}
-            piecePresentation={appearance.piecePresentation}
+            pieceSizes={appearance.pieceSizes}
             label="Preview of the board with your theme and pieces"
           />
           <figcaption className="flex min-w-0 items-baseline justify-between gap-2 text-2xs text-fg-subtle">

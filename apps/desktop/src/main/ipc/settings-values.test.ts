@@ -66,12 +66,10 @@ describe("piece set ids", () => {
     expect(() => parseSettingValue("pieceStyle", 7)).toThrow(/setting pieceStyle/);
   });
 
-  it("writes a legacy combined id as the set plus the presentation it implied", () => {
-    expect(parseSettingWrite("pieceStyle", "cburnettCrisp")).toEqual({
-      pieceStyle: "cburnett",
-      piecePresentation: "sharp"
-    });
-    expect(parseSettingWrite("pieceStyle", "kosal")).toEqual({ pieceStyle: "kosal" });
+  it("writes a setting alone: an older combined set id as just its set", () => {
+    expect(parseSettingWrite("pieceStyle", "cburnettSoft")).toEqual({ pieceStyle: "cburnett" });
+    expect(parseSettingWrite("pieceSizes", "uniform")).toEqual({ pieceSizes: "uniform" });
+    expect(() => parseSettingValue("pieceSizes", "tall")).toThrow(/setting pieceSizes/);
     expect(parseSettingWrite("soundVolume", 0.5)).toEqual({ soundVolume: 0.5 });
   });
 });

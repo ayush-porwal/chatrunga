@@ -5,7 +5,7 @@ import "@lichess-org/chessground/assets/chessground.base.css";
 import "@lichess-org/chessground/assets/chessground.brown.css";
 import "@lichess-org/chessground/assets/chessground.cburnett.css";
 import "./styles/app.css";
-import { pieceThemeCss } from "./styles/generated-piece-themes";
+import { loadPieceDrawings } from "./styles/generated-piece-themes";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { Router } from "./app/Router";
 import { initWindowGlass, initWindowZoom } from "./lib/window-glass";
@@ -24,17 +24,12 @@ const queryClient = new QueryClient({
   }
 });
 
-const pieceStyles = document.createElement("style");
-document.head.appendChild(pieceStyles);
-// Pieces load off the startup path: the default cburnett set ships in the bundled CSS, so the
-// optional sets arriving late (or failing) must never delay or block the first render.
-pieceThemeCss()
-  .then((css) => {
-    pieceStyles.textContent = css;
-  })
-  .catch((error) => {
-    console.error("piece theme drawings failed to load:", error);
-  });
+// Pieces load off the startup path: Chessground's bundled cburnett CSS draws the first paint, so the
+// drawings arriving late (or failing) must never delay or block the first render. Inflating starts
+// now; each set's CSS is added when a board first shows it (usePieceSet).
+loadPieceDrawings().catch((error: unknown) => {
+  console.error("piece drawings failed to load:", error);
+});
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
