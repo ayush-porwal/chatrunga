@@ -30,7 +30,6 @@ import type {
   RepertoireDueSummary,
   RepertoireListFilters,
   RestoreBackupInput,
-  SaveChapterInput,
   SaveWorkspaceInput,
   StartPracticeInput,
   UpdateChaptersInput,
@@ -321,15 +320,6 @@ export function adoptChapterSave(queryClient: QueryClient, result: ChapterSaveRe
   );
   invalidateDecisions(queryClient, result.repertoire.id);
   adoptDetail(queryClient, result.repertoire);
-}
-
-export function useSaveChapterMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: SaveChapterInput) => requireRepertoires().saveChapter(input),
-    retry: false,
-    onSuccess: (result) => adoptChapterSave(queryClient, result)
-  });
 }
 
 /** Writes a saved decision into the cache. */

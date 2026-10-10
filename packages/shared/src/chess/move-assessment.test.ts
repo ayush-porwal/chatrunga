@@ -19,14 +19,14 @@ import {
   type MoverEval
 } from "./move-assessment";
 import { parseOpeningBook, type OpeningBook } from "./opening-book";
-import { OPENING_BOOK_DATA } from "./opening-book-data";
+import { openingBookText } from "./opening-book-data";
 import { applySan, START_FEN } from "./position";
 import { parseLine, trapReviewMoves } from "./__fixtures__/trap-game";
 
 let bundledBook: OpeningBook | null = null;
 /** The bundled opening book (read once for the file). */
 function openingBook(): OpeningBook {
-  bundledBook ??= parseOpeningBook(OPENING_BOOK_DATA);
+  bundledBook ??= parseOpeningBook(openingBookText());
   return bundledBook;
 }
 

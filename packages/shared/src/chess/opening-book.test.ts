@@ -8,13 +8,13 @@ import {
   type BookLineMove,
   type OpeningBook
 } from "./opening-book";
-import { OPENING_BOOK_DATA } from "./opening-book-data";
+import { openingBookText } from "./opening-book-data";
 import { applySan, START_FEN } from "./position";
 
 let bundled: OpeningBook | null = null;
 /** The bundled book (read once for the file). */
 function book(): OpeningBook {
-  bundled ??= parseOpeningBook(OPENING_BOOK_DATA);
+  bundled ??= parseOpeningBook(openingBookText());
   return bundled;
 }
 

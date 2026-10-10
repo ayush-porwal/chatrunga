@@ -4,7 +4,7 @@
 // prereleases too (unlike /releases/latest, which skips them and is empty until a stable release
 // exists). index.html references these as %DOWNLOAD_URL% and %DOWNLOAD_URL_<PLATFORM>%
 // (substituted in vite.config.ts).
-export const RELEASES_URL = "https://github.com/ayush-porwal/chatrunga/releases";
+const RELEASES_URL = "https://github.com/ayush-porwal/chatrunga/releases";
 export const DOWNLOAD_URL = RELEASES_URL;
 
 export type PlatformId = "mac" | "windows" | "linux";

@@ -54,9 +54,9 @@ export function missingWorkerError(workerPath: string, task = "The PGN import"):
 export function startImportParse(
   job: ImportWorkerJob,
   onProgress: (progress: ImportProgress) => void,
-  workerPath: string = IMPORT_WORKER,
-  requireWorker = false
+  options: { requireWorker?: boolean; workerPath?: string } = {}
 ): ImportRun {
+  const { requireWorker = false, workerPath = IMPORT_WORKER } = options;
   let settled = false;
   let settle!: (outcome: { result: ImportedPgn } | { error: unknown }) => void;
   const result = new Promise<ImportedPgn>((resolve, reject) => {

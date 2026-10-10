@@ -33,9 +33,9 @@ const yieldToEventLoop = () => new Promise<void>((resolve) => setImmediate(resol
 export async function runBackupRestore(
   job: RestoreJob,
   dbPath: () => string,
-  workerPath: string = BACKUP_RESTORE_WORKER,
-  requireWorker = false
+  options: { requireWorker?: boolean; workerPath?: string } = {}
 ): Promise<RestoredRepertoire[]> {
+  const { requireWorker = false, workerPath = BACKUP_RESTORE_WORKER } = options;
   if (!existsSync(workerPath)) {
     if (requireWorker) throw missingWorkerError(workerPath, "The backup restore");
     await yieldToEventLoop();

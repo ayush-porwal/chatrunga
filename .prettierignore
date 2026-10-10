@@ -1,7 +1,6 @@
 pnpm-lock.yaml
 stockfish
 scripts/piece-svg-sources
-apps/desktop/src/renderer/src/styles/generated-piece-themes.css
 # Agent worktrees nested in this checkout: each is a whole other copy of the repo.
 .claude/
 .worktrees/

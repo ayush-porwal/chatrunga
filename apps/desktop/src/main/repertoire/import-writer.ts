@@ -36,9 +36,9 @@ const yieldToEventLoop = () => new Promise<void>((resolve) => setImmediate(resol
 export async function runImportCommit(
   job: ImportCommitJob,
   dbPath: () => string,
-  workerPath: string = IMPORT_WRITER_WORKER,
-  requireWorker = false
+  options: { requireWorker?: boolean; workerPath?: string } = {}
 ): Promise<ImportResult> {
+  const { requireWorker = false, workerPath = IMPORT_WRITER_WORKER } = options;
   if (!existsSync(workerPath)) {
     if (requireWorker) throw missingWorkerError(workerPath);
     await yieldToEventLoop();

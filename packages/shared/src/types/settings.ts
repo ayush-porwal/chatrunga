@@ -24,7 +24,8 @@ export type BoardTheme =
 export type PieceStyle = "cburnett" | VendoredPieceSet;
 
 /**
- * Extra sets vendored as scoped CSS (`generated-piece-themes.css`), SVGs from Lichess lila `public/piece`.
+ * Extra sets vendored as scoped CSS built at startup by `generated-piece-themes.ts` (from the
+ * committed `.css.gz`), SVGs from Lichess lila `public/piece`.
  * Not shipped by the Chessground npm package itself (only cburnett CSS is bundled there).
  */
 export type VendoredPieceSet =
@@ -85,8 +86,9 @@ const ALL_PIECE_STYLES: PieceStyle[] = ["cburnett", ...VENDORED_PIECE_SETS];
 const ALL_PIECE_PRESENTATIONS: PiecePresentation[] = ["default", "sharp", "soft", "contrast"];
 
 /**
- * Class applied on the Chessground mount node (`cg-wrap`) so scoped rules in `generated-piece-themes.css`
- * override default cburnett sprites. Undefined when the built-in cburnett sheet alone should apply.
+ * Class applied on the Chessground mount node (`cg-wrap`) so scoped rules built by
+ * `generated-piece-themes.ts` override default cburnett sprites. Undefined when the built-in
+ * cburnett sheet alone should apply.
  */
 export function cgWrapPieceSetClass(style: PieceStyle): string | undefined {
   return style === "cburnett" ? undefined : `piece-set-${style}`;

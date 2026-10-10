@@ -28,7 +28,7 @@
   /* Surfaces — darkest to lightest. */
   --color-chrome: #1b1c1f; /* window chrome: the titlebar and the sidebar share it */
   /* Glass window chrome: the same colour as a smoke tint over the macOS sidebar material. */
-  --color-chrome-glass: rgb(27 28 31 / 0.55);
+  --color-chrome-glass: rgb(27 28 31 / 0.94);
   --color-canvas: #111315; /* the inset content panel every view sits in (page background) */
   --color-surface-sunken: #141619; /* inputs, wells, code blocks, scroll lists inside a card */
   --color-surface: #181a1d; /* cards, panels, list rows */
@@ -45,7 +45,7 @@
   --color-fg: #f4f1ea; /* primary text, headings, values */
   --color-fg-secondary: #d8dbe0; /* body text inside panels, list-row titles */
   --color-fg-muted: #a9adb4; /* descriptions, secondary metadata */
-  --color-fg-subtle: #727982; /* captions, eyebrows, placeholders, disabled */
+  --color-fg-subtle: #7d838d; /* captions, eyebrows, placeholders, disabled */
 
   /* Brand accent (green). */
   --color-accent: #8fb66f; /* focus rings, selected borders, chart lines, accent icons/text */

@@ -883,16 +883,6 @@ const runningImports = new Map<string, ImportRun>();
 /** The limits previews enforce (replaced in tests). */
 let importLimits: ImportLimits = DEFAULT_IMPORT_LIMITS;
 
-/** Worker files the import and the backup restore use; unset: the bundled ones next to the main entry. */
-let importWorkers: { parse?: string; writer?: string; restore?: string } = {};
-
-/** Points the import and restore at other worker files (tests and benchmarks only). */
-export function setImportWorkers(
-  next: { parse?: string; writer?: string; restore?: string } = {}
-): void {
-  importWorkers = next;
-}
-
 /** Replaces the import limits (tests only); pass nothing to restore the defaults. */
 export function setImportLimits(next?: Partial<ImportLimits>): void {
   importLimits = { ...DEFAULT_IMPORT_LIMITS, ...next };
@@ -968,8 +958,7 @@ export async function previewImport(input: PreviewImportInput): Promise<ImportPr
       last = progress;
       importProgress(jobId, progress.phase, progress);
     },
-    importWorkers.parse,
-    app.isPackaged === true
+    { requireWorker: app.isPackaged === true }
   );
   runningImports.set(jobId, run);
   let games: ImportedGame[];
@@ -1095,8 +1084,7 @@ async function storeImport(input: ImportCommitInput): Promise<ImportResult> {
       chapters
     },
     databasePath,
-    importWorkers.writer,
-    app.isPackaged === true
+    { requireWorker: app.isPackaged === true }
   );
   importJobs.delete(input.jobId);
   changed({
@@ -3219,8 +3207,7 @@ export async function restoreBackup(input: RestoreBackupInput): Promise<RestoreB
       app: backupApp()
     },
     databasePath,
-    importWorkers.restore,
-    app.isPackaged === true
+    { requireWorker: app.isPackaged === true }
   );
   backupJobs.delete(input.jobId);
   for (const item of restored) {

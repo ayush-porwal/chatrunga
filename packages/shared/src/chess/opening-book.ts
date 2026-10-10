@@ -35,7 +35,7 @@ export function positionKey(fen: string): string | null {
 }
 
 /**
- * Reads the book's move tree (OPENING_BOOK_DATA: one "<depth>\t<uci>[\t<eco>\t<name>]" row per
+ * Reads the book's move tree (one "<depth>\t<uci>[\t<eco>\t<name>]" row per
  * move, depth-first). The start position is in the book, unnamed. Throws on a malformed row.
  */
 export function parseOpeningBook(data: string): OpeningBook {
