@@ -53,6 +53,7 @@ export default defineConfig({
   renderer: {
     root: resolve(rootDir, "src/renderer"),
     plugins: [react(), tailwindcss()],
+    assetsInclude: ["**/*.css.gz"],
     build: {
       // electron-vite's renderer preset sets minify: false, so the shipped JS is the
       // readable build. Minify it; the sounds exception below is unchanged.
