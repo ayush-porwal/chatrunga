@@ -21,13 +21,24 @@ function walk(dir, hits, names) {
 }
 
 /**
- * about:tracing is a Chromium debug page this app never opens. Its script is one gzip
- * resource in resources.pak. Drop it only when the payload is that page, so a shifted id
+ * Chromium dev-facing extras this app never shows: the about:tracing debug page (script,
+ * html, its d3 copy) and the DevTools what's-new banner art. Gzip resources are matched by
+ * payload markers; PNGs only by signature plus IHDR size (wide banners), so a shifted id
  * cannot delete something else.
  *
  * Pak v5 header: uint32 version, uint8 encoding, 3 pad bytes, uint16 resource count, uint16 alias count.
  */
-function stripTracingResource(file) {
+function isWideBannerPng(blob) {
+  if (blob.length < 24 || blob[0] !== 0x89 || blob[1] !== 0x50 || blob[12] !== 0x49 || blob[13] !== 0x48) {
+    return false;
+  }
+  if (blob[14] !== 0x44 || blob[15] !== 0x52) return false;
+  const width = blob.readUInt32BE(16);
+  const height = blob.readUInt32BE(20);
+  return width >= 700 && height <= 700;
+}
+
+function stripDeadPakResources(file) {
   const data = readFileSync(file);
   if (data.length < 12 || data.readUInt32LE(0) !== 5) return false;
   const resourceCount = data.readUInt16LE(8);
@@ -44,14 +55,19 @@ function stripTracingResource(file) {
   for (let i = 0; i < resourceCount; i++) {
     const start = entries[i][1];
     const end = entries[i + 1][1];
-    if (end <= start || end > data.length || data[start] !== 0x1f || data[start + 1] !== 0x8b) continue;
-    let text;
-    try {
-      text = gunzipSync(data.subarray(start, end));
-    } catch {
-      continue;
+    if (end <= start || end > data.length) continue;
+    const blob = data.subarray(start, end);
+    if (blob[0] === 0x1f && blob[1] === 0x8b) {
+      let text;
+      try {
+        text = gunzipSync(blob);
+      } catch {
+        continue;
+      }
+      if (TRACING_MARKERS.some((marker) => text.includes(marker))) targets.add(i);
+    } else if (isWideBannerPng(blob)) {
+      targets.add(i);
     }
-    if (TRACING_MARKERS.some((marker) => text.includes(marker))) targets.add(i);
   }
   if (targets.size === 0) return false;
   const blobs = [];
@@ -75,5 +91,5 @@ module.exports = async function afterPack(context) {
   for (const file of crashpad) rmSync(file, { force: true });
   const paks = [];
   walk(context.appOutDir, paks, new Set(["resources.pak"]));
-  for (const file of paks) stripTracingResource(file);
+  for (const file of paks) stripDeadPakResources(file);
 };
