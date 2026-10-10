@@ -4,8 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "@lichess-org/chessground/assets/chessground.base.css";
 import "@lichess-org/chessground/assets/chessground.brown.css";
 import "@lichess-org/chessground/assets/chessground.cburnett.css";
-import "./styles/generated-piece-themes.css";
 import "./styles/app.css";
+import { pieceThemeCss } from "./styles/generated-piece-themes";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { Router } from "./app/Router";
 import { initWindowGlass, initWindowZoom } from "./lib/window-glass";
@@ -23,6 +23,10 @@ const queryClient = new QueryClient({
     mutations: { networkMode: "always" }
   }
 });
+
+const pieceStyles = document.createElement("style");
+pieceStyles.textContent = await pieceThemeCss();
+document.head.appendChild(pieceStyles);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
