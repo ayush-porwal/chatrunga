@@ -1,5 +1,5 @@
 import { parseOpeningBook, type OpeningBook } from "@chaturanga/shared/chess/opening-book";
-import { OPENING_BOOK_DATA } from "@chaturanga/shared/chess/opening-book-data";
+import { openingBookText } from "@chaturanga/shared/chess/opening-book-data";
 
 let book: OpeningBook | null = null;
 
@@ -8,6 +8,6 @@ let book: OpeningBook | null = null;
  * one re-assessed when it opens — and kept for the session.
  */
 export function openingBook(): OpeningBook {
-  book ??= parseOpeningBook(OPENING_BOOK_DATA);
+  book ??= parseOpeningBook(openingBookText());
   return book;
 }
