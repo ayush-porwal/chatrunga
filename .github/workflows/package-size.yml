@@ -13,9 +13,6 @@ on:
 
 permissions:
   contents: read
-  # Required once any permission is set: upload-artifact needs it, and the
-  # default token would otherwise have none.
-  actions: write
 
 concurrency:
   group: package-size-${{ github.ref }}
