@@ -9,7 +9,7 @@ node --check .auto/lighthouse.mjs
 
 pnpm --filter @chaturanga/desktop exec electron-vite build
 if [[ ! -d .auto/node_modules/lighthouse ]]; then
-  npm install --prefix .auto --no-package-lock --silent lighthouse@12.8.2 puppeteer-core@24.23.0
+  npm install --prefix .auto --no-package-lock --silent
 fi
 
 export CSC_IDENTITY_AUTO_DISCOVERY=false

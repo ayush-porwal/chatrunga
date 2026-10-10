@@ -2,8 +2,9 @@
 // Byte size of the unpacked app electron-builder just wrote, plus a Stockfish guard.
 import { readdirSync, statSync } from "node:fs";
 import { join, basename } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const dist = new URL("../apps/desktop/dist/", import.meta.url);
+const dist = fileURLToPath(new URL("../apps/desktop/dist/", import.meta.url));
 
 /** Regular files only, each inode once. Framework symlinks would otherwise triple the count. */
 function walk(dir, visit, seen = new Set()) {
@@ -29,7 +30,7 @@ function sum(dir) {
   return bytes;
 }
 
-const macDir = join(dist.pathname, "mac-arm64");
+const macDir = join(dist, "mac-arm64");
 const app = join(macDir, "Chaturanga.app");
 if (!statSync(app).isDirectory()) {
   console.error(`missing packaged app: ${app}`);
@@ -57,7 +58,7 @@ walk(app, (path, size) => {
 });
 
 // JS lives inside app.asar, so count the build output the asar was packed from.
-const outDir = new URL("../apps/desktop/out/", import.meta.url).pathname;
+const outDir = fileURLToPath(new URL("../apps/desktop/out/", import.meta.url));
 walk(outDir, (path, size) => {
   if (!path.endsWith(".js") && !path.endsWith(".cjs")) return;
   if (path.includes(`${join("out", "renderer")}`) || path.includes("/renderer/"))
@@ -65,13 +66,13 @@ walk(outDir, (path, size) => {
   else if (path.includes("/main/")) mainJs += size;
 });
 
-const zips = readdirSync(dist.pathname).filter((name) => name.endsWith("-arm64.zip"));
-const zipBytes = zips.reduce((total, name) => total + statSync(join(dist.pathname, name)).size, 0);
+const zips = readdirSync(dist).filter((name) => name.endsWith("-arm64.zip"));
+const zipBytes = zips.reduce((total, name) => total + statSync(join(dist, name)).size, 0);
 
 let marketingBytes = 0;
-const marketing = new URL("../apps/marketing/dist/", import.meta.url);
+const marketing = fileURLToPath(new URL("../apps/marketing/dist/", import.meta.url));
 try {
-  marketingBytes = sum(marketing.pathname);
+  marketingBytes = sum(marketing);
 } catch {
   marketingBytes = 0;
 }

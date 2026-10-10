@@ -883,9 +883,6 @@ const runningImports = new Map<string, ImportRun>();
 /** The limits previews enforce (replaced in tests). */
 let importLimits: ImportLimits = DEFAULT_IMPORT_LIMITS;
 
-/** Worker files the import and the backup restore use; unset: the bundled ones next to the main entry. */
-const importWorkers: { parse?: string; writer?: string; restore?: string } = {};
-
 /** Replaces the import limits (tests only); pass nothing to restore the defaults. */
 export function setImportLimits(next?: Partial<ImportLimits>): void {
   importLimits = { ...DEFAULT_IMPORT_LIMITS, ...next };
@@ -961,7 +958,7 @@ export async function previewImport(input: PreviewImportInput): Promise<ImportPr
       last = progress;
       importProgress(jobId, progress.phase, progress);
     },
-    importWorkers.parse,
+    undefined,
     app.isPackaged === true
   );
   runningImports.set(jobId, run);
@@ -1088,7 +1085,7 @@ async function storeImport(input: ImportCommitInput): Promise<ImportResult> {
       chapters
     },
     databasePath,
-    importWorkers.writer,
+    undefined,
     app.isPackaged === true
   );
   importJobs.delete(input.jobId);
@@ -3212,7 +3209,7 @@ export async function restoreBackup(input: RestoreBackupInput): Promise<RestoreB
       app: backupApp()
     },
     databasePath,
-    importWorkers.restore,
+    undefined,
     app.isPackaged === true
   );
   backupJobs.delete(input.jobId);

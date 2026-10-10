@@ -7,9 +7,14 @@ name: Package size (throwaway)
 # read GitHub releases, not Actions artifacts. Artifacts expire after a day.
 on:
   workflow_dispatch:
+  # Also on pull requests so the size check can run before this file is on the
+  # default branch. workflow_dispatch alone cannot be started until then.
+  pull_request:
 
 permissions:
   contents: read
+  # Required once any permission is set: upload-artifact needs it, and the
+  # default token would otherwise have none.
   actions: write
 
 concurrency:

@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "lighthouse": "^12.8.2",
-    "puppeteer-core": "^24.23.0"
+    "lighthouse": "12.8.2",
+    "puppeteer-core": "24.23.0"
   }
 }

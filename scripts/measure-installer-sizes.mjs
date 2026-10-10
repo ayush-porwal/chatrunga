@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Sizes of electron-builder output. Used by the throwaway package-size workflow.
 // Prints METRIC lines. Exits 1 if a Stockfish binary was packaged.
+import { createRequire } from "node:module";
 import { readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const INSTALLER = /\.(dmg|zip|exe|AppImage)$/i;
 
@@ -14,6 +16,19 @@ export function isInstaller(name) {
 /** A packaged Stockfish engine binary, not a fixture, doc, or test name. */
 export function isStockfishBinary(name, size) {
   return /stockfish/i.test(name) && size > 1_000_000 && !/\.(txt|md|json|yml)$/i.test(name);
+}
+
+/** A Stockfish engine name inside an asar, where we cannot trust a size check. */
+export function isStockfishAsarEntry(name) {
+  return /stockfish/i.test(basename(name)) && !/\.(txt|md|json|yml)$/i.test(name);
+}
+
+function asarStockfish(archive) {
+  const require = createRequire(
+    fileURLToPath(new URL("../apps/desktop/package.json", import.meta.url))
+  );
+  const asar = require("@electron/asar");
+  return asar.listPackage(archive).filter(isStockfishAsarEntry);
 }
 
 function walk(dir, visit) {
@@ -41,9 +56,12 @@ export function measureDist(dir) {
   for (const name of readdirSync(dir)) {
     const path = join(dir, name);
     if (!statSync(path).isDirectory()) continue;
+    let asarPath;
     walk(path, (file, size) => {
+      if (basename(file) === "app.asar") asarPath = file;
       if (isStockfishBinary(basename(file), size)) stockfish.push(file);
     });
+    if (asarPath) stockfish.push(...asarStockfish(asarPath).map((entry) => `${asarPath}:${entry}`));
   }
   return { installers, stockfish };
 }

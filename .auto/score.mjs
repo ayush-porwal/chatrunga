@@ -2,8 +2,9 @@
 // Combines package, lighthouse, and dead-code metrics into the primary score.
 import { readFileSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 
 function readMetrics(file) {
   const text = readFileSync(file, "utf8");

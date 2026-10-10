@@ -9,13 +9,8 @@ function appearanceApi() {
   return window.chaturanga?.appearance;
 }
 
-// Cached here: every read through the context bridge returns a fresh copy, and
-// useSyncExternalStore needs a stable snapshot.
-const listeners = new Set<() => void>();
-
 function setGlassState(state: WindowGlassState): void {
   document.documentElement.classList.toggle("glass", state.active);
-  for (const listener of listeners) listener();
 }
 
 /** Call once before the first render so the first frame already matches the native window. */

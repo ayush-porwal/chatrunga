@@ -3,7 +3,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { isInstaller, isStockfishBinary, measureDist } from "./measure-installer-sizes.mjs";
+import {
+  isInstaller,
+  isStockfishAsarEntry,
+  isStockfishBinary,
+  measureDist
+} from "./measure-installer-sizes.mjs";
 
 const scratch = mkdtempSync(join(tmpdir(), "installer-sizes-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -14,6 +19,11 @@ test("installers are the downloadable packages, not update-feed files", () => {
   assert.equal(isInstaller("Chaturanga-0.1.0-win-x64-setup.exe"), true);
   assert.equal(isInstaller("latest-mac.yml"), false);
   assert.equal(isInstaller("Chaturanga-0.1.0-mac-arm64.zip.blockmap"), false);
+});
+
+test("an asar entry named stockfish is an engine even without a size", () => {
+  assert.equal(isStockfishAsarEntry("out/stockfish"), true);
+  assert.equal(isStockfishAsarEntry("fixtures/stockfish-wdl.txt"), false);
 });
 
 test("a large stockfish file is an engine binary; fixtures and tiny names are not", () => {
