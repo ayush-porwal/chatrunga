@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import {
   pieceStyleOptions,
-  type PiecePresentation,
+  type PieceSizes,
   type PieceStyle
 } from "@chaturanga/shared/types/settings";
 import { cn } from "@/lib/utils";
@@ -23,16 +23,11 @@ import { useListboxKeyboard } from "@/lib/use-listbox-keyboard";
 type PieceStyleListboxProps = {
   id: string;
   value: PieceStyle;
-  piecePresentation: PiecePresentation;
+  pieceSizes: PieceSizes;
   onChange: (next: PieceStyle) => void;
 };
 
-export function PieceStyleListbox({
-  id,
-  value,
-  piecePresentation,
-  onChange
-}: PieceStyleListboxProps) {
+export function PieceStyleListbox({ id, value, pieceSizes, onChange }: PieceStyleListboxProps) {
   const listboxDomId = `${id}-listbox`;
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -77,11 +72,7 @@ export function PieceStyleListbox({
           onKeyDown={onTriggerKeyDown}
         >
           <span className="flex min-w-0 flex-1 items-center gap-2.5">
-            <PieceStylePreviewStrip
-              pieceStyle={value}
-              piecePresentation={piecePresentation}
-              density="default"
-            />
+            <PieceStylePreviewStrip pieceStyle={value} pieceSizes={pieceSizes} density="default" />
             <span className="min-w-0 truncate text-left text-sm font-medium">
               {selectedMeta.label}
             </span>
@@ -140,7 +131,7 @@ export function PieceStyleListbox({
                     <span className="flex min-w-0 flex-1 items-center gap-2.5">
                       <PieceStylePreviewStrip
                         pieceStyle={opt.id}
-                        piecePresentation={piecePresentation}
+                        pieceSizes={pieceSizes}
                         density="compact"
                       />
                       <strong className="min-w-0 truncate font-medium">{opt.label}</strong>

@@ -1,11 +1,12 @@
 import { useLayoutEffect, useRef } from "react";
 import {
   cgWrapPieceSetClass,
-  piecePresentationTailwindClass,
-  type PiecePresentation,
+  pieceSizesClass,
+  type PieceSizes,
   type PieceStyle
 } from "@chaturanga/shared/types/settings";
 import { cn } from "@/lib/utils";
+import { usePieceSet } from "@/styles/generated-piece-themes";
 
 export type PreviewPieceRole = "pawn" | "rook" | "knight" | "bishop" | "queen" | "king";
 
@@ -48,21 +49,22 @@ const STRIP_PIECES = [
 /** Inline preview for a piece set (compact row for settings / listbox options). */
 export function PieceStylePreviewStrip({
   pieceStyle,
-  piecePresentation,
+  pieceSizes,
   density = "default"
 }: {
   pieceStyle: PieceStyle;
-  piecePresentation: PiecePresentation;
+  pieceSizes: PieceSizes;
   density?: "default" | "compact";
 }) {
   const isCompact = density === "compact";
+  usePieceSet(pieceStyle);
   return (
     <div
       className={cn(
         "cg-wrap inline-flex shrink-0 items-center gap-0.5 rounded-md border border-line bg-surface-sunken px-1.5",
         isCompact ? "h-8" : "h-9",
         cgWrapPieceSetClass(pieceStyle),
-        piecePresentationTailwindClass(piecePresentation)
+        pieceSizesClass(pieceSizes)
       )}
       // Unlayered `.cg-wrap` rules (chessground display:block, board.css inline-size containment) beat
       // utilities and would collapse this shrink-to-fit strip to zero width; inline style wins.

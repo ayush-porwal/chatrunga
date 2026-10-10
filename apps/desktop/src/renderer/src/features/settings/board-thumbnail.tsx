@@ -8,11 +8,12 @@ import {
   cgWrapPieceSetClass,
   defaultSettings,
   hydratePieceSettings,
-  piecePresentationTailwindClass,
-  type PiecePresentation,
+  pieceSizesClass,
+  type PieceSizes,
   type PieceStyle
 } from "@chaturanga/shared/types/settings";
 import { cn } from "@/lib/utils";
+import { usePieceSet } from "@/styles/generated-piece-themes";
 import { useSettingsQuery } from "../../queries/api";
 import { CgPieceGlyph, type PreviewPieceRole } from "./piece-style-preview";
 import { isSquare } from "@chaturanga/shared/chess/square";
@@ -69,7 +70,7 @@ export const BoardThumbnail = memo(function BoardThumbnail({
   light,
   dark,
   pieceStyle,
-  piecePresentation,
+  pieceSizes,
   label,
   rounded = "lg",
   className
@@ -81,7 +82,7 @@ export const BoardThumbnail = memo(function BoardThumbnail({
   light?: string;
   dark?: string;
   pieceStyle?: PieceStyle;
-  piecePresentation?: PiecePresentation;
+  pieceSizes?: PieceSizes;
   /** Accessible description; omit for decorative thumbnails next to a visible title. */
   label?: string;
   rounded?: "md" | "lg" | "xl";
@@ -93,7 +94,8 @@ export const BoardThumbnail = memo(function BoardThumbnail({
   const squareLight = light ?? appearance.boardSquareLight ?? preset.light;
   const squareDark = dark ?? appearance.boardSquareDark ?? preset.dark;
   const style = pieceStyle ?? appearance.pieceStyle;
-  const presentation = piecePresentation ?? appearance.piecePresentation;
+  const sizes = pieceSizes ?? appearance.pieceSizes;
+  usePieceSet(style);
   const { cells, squares } = useMemo(() => cellsForFen(fen, orientation), [fen, orientation]);
   const highlighted =
     lastMove && lastMove.length >= 4 ? [lastMove.slice(0, 2), lastMove.slice(2, 4)] : [];
@@ -106,7 +108,7 @@ export const BoardThumbnail = memo(function BoardThumbnail({
         // `.cg-wrap` is display:block in chessground.base.css — keep it on the outer wrapper.
         "cg-wrap relative isolate aspect-square w-full min-w-0 select-none",
         cgWrapPieceSetClass(style),
-        piecePresentationTailwindClass(presentation),
+        pieceSizesClass(sizes),
         className
       )}
       // board.css gives every .cg-wrap inline-size containment (for the real board's coordinates); not needed here.

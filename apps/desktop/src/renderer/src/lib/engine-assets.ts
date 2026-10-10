@@ -4,6 +4,8 @@ import type {
   EngineAssetStatus,
   EngineAssetStatusMap
 } from "@chaturanga/shared/ipc/chaturanga-api";
+import { MANAGED_ENGINE_SUFFIX } from "@chaturanga/shared/engine/managed";
+import type { EngineConfig } from "@chaturanga/shared/types/engine";
 
 /**
  * The downloadable engine assets (engines + Maia networks), in display order. Versions and
@@ -50,6 +52,61 @@ export function missingDownloads(status: EngineAssetStatusMap | null): EngineAss
 /** `24 MB` (never below 1 MB); null when the size is unknown. */
 export function formatSize(bytes: number | null | undefined): string | null {
   return bytes ? `${Math.max(1, Math.round(bytes / 1_000_000))} MB` : null;
+}
+
+/* ------------------------------------------------------------------ Settings → Engines list */
+
+/** One row of Settings → Engines: a managed download, or an engine the user added. */
+export type EngineListRow =
+  | {
+      kind: "asset";
+      id: EngineAssetId;
+      label: string;
+      status: EngineAssetStatus;
+      /**
+       * The "(managed)" engine the app keeps for this download (it is what gets picked and
+       * tested); null until the download is usable, and always for Lc0, which only runs Maia.
+       */
+      engine: EngineConfig | null;
+    }
+  | { kind: "engine"; engine: EngineConfig };
+
+/**
+ * Settings → Engines, in order: Stockfish, the Maia networks, Lc0 (the runtime Maia needs), then
+ * the engines the user added. A managed engine joins its download's row by name, as the registry
+ * sync names it; one with no known download (unexpected) is listed as a plain engine. Without the
+ * download status (web preview, still loading) the list is just the engines.
+ */
+export function engineListRows(
+  status: EngineAssetStatusMap | null,
+  engines: readonly EngineConfig[]
+): EngineListRow[] {
+  if (!status) return engines.map((engine) => ({ kind: "engine", engine }));
+  const ordered = [
+    ...ENGINE_ASSETS.filter((asset) => asset.id !== "lc0"),
+    ...ENGINE_ASSETS.filter((asset) => asset.id === "lc0")
+  ];
+  const assetRows: EngineListRow[] = [];
+  const joined = new Set<string>();
+  for (const asset of ordered) {
+    const managedName = `${asset.label} ${MANAGED_ENGINE_SUFFIX}`;
+    const engine =
+      asset.id === "lc0" ? null : (engines.find((item) => item.name === managedName) ?? null);
+    if (engine) joined.add(engine.id);
+    assetRows.push({
+      kind: "asset",
+      id: asset.id,
+      label: asset.label,
+      status: status[asset.id],
+      engine
+    });
+  }
+  return [
+    ...assetRows,
+    ...engines
+      .filter((engine) => !joined.has(engine.id))
+      .map((engine): EngineListRow => ({ kind: "engine", engine }))
+  ];
 }
 
 /* ------------------------------------------------------------------ download progress */

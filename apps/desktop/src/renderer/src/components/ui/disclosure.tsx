@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion } from "@/lib/ui";
 import { usePresence } from "@/components/ui/use-presence";
@@ -12,6 +12,9 @@ import { usePresence } from "@/components/ui/use-presence";
  *     ...fields
  *   </Disclosure>
  *
+ * `variant="panel"` frames it as an accordion — a bordered box with a padded header (title left,
+ * summary and chevron right) and a divider above the body — for a section that sits among cards.
+ *
  * Motion: the chevron turns and the body grows open (grid rows 0fr → 1fr, content fades in);
  * closing plays it back, then unmounts the body — collapsed content is never kept mounted.
  */
@@ -20,6 +23,7 @@ function Disclosure({
   summary,
   defaultOpen = false,
   onOpenChange,
+  variant = "inline",
   children
 }: {
   title: React.ReactNode;
@@ -29,8 +33,11 @@ function Disclosure({
   defaultOpen?: boolean;
   /** Told each time the user opens or closes it. */
   onOpenChange?: (open: boolean) => void;
+  /** `inline`: a text toggle with the body indented under it; `panel`: a bordered accordion. */
+  variant?: "inline" | "panel";
   children: React.ReactNode;
 }) {
+  const panel = variant === "panel";
   const [isOpen, setIsOpen] = React.useState(defaultOpen);
   const contentId = React.useId();
   const { present } = usePresence(isOpen, motion.ms.standard);
@@ -46,7 +53,7 @@ function Disclosure({
   }, [isOpen]);
 
   return (
-    <div className="min-w-0">
+    <div className={cn("min-w-0", panel && "rounded-lg border border-line")}>
       <button
         type="button"
         aria-expanded={isOpen}
@@ -55,14 +62,19 @@ function Disclosure({
           setIsOpen(!isOpen);
           onOpenChange?.(!isOpen);
         }}
-        className="group flex min-h-8 w-full items-center gap-1.5 rounded-md text-left text-sm font-medium text-fg-secondary outline-none transition-colors hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/70"
+        className={cn(
+          "group flex min-h-8 w-full items-center gap-1.5 rounded-md text-left text-sm font-medium text-fg-secondary outline-none transition-colors hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/70",
+          panel && "min-h-11 gap-3 rounded-lg px-4"
+        )}
       >
-        <ChevronRight
-          className={cn(
-            "size-4 shrink-0 text-fg-subtle transition-transform duration-standard ease-enter",
-            isOpen && "rotate-90"
-          )}
-        />
+        {panel ? null : (
+          <ChevronRight
+            className={cn(
+              "size-4 shrink-0 text-fg-subtle transition-transform duration-standard ease-enter",
+              isOpen && "rotate-90"
+            )}
+          />
+        )}
         <span className="min-w-0 flex-1 truncate">{title}</span>
         {summary ? (
           <span
@@ -74,6 +86,14 @@ function Disclosure({
           >
             {summary}
           </span>
+        ) : null}
+        {panel ? (
+          <ChevronDown
+            className={cn(
+              "size-4 shrink-0 text-fg-subtle transition-transform duration-standard ease-enter",
+              isOpen && "rotate-180"
+            )}
+          />
         ) : null}
       </button>
       {present ? (
@@ -88,7 +108,8 @@ function Disclosure({
           <div className="-mx-1 -mb-1 min-h-0 overflow-hidden px-1 pb-1">
             <div
               className={cn(
-                "pl-5.5 pt-2 transition-opacity duration-standard ease-standard",
+                "transition-opacity duration-standard ease-standard",
+                panel ? "border-t border-line-subtle p-4" : "pl-5.5 pt-2",
                 expanded ? "opacity-100" : "opacity-0"
               )}
             >

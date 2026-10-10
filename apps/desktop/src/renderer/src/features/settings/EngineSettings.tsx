@@ -1,5 +1,15 @@
-import { useState, type ReactNode } from "react";
-import { Bot, File, FolderOpen, Image, Pencil, Play, Plus, Star, Trash2 } from "lucide-react";
+import { useState } from "react";
+import {
+  Download,
+  File,
+  FolderOpen,
+  Image,
+  Pencil,
+  Play,
+  Plus,
+  RefreshCw,
+  Trash2
+} from "lucide-react";
 import type { ChaturangaApi, DialogFileFilter } from "@chaturanga/shared/ipc/chaturanga-api";
 import type {
   CreateEngineInput,
@@ -29,13 +39,23 @@ import { SectionHeader } from "@/components/ui/page";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { hasDesktopApi } from "@/lib/environment";
-import { localImageSrc } from "@/lib/local-image";
-import { cardPadded, divider, listRow, well } from "@/lib/ui";
+import { engineListRows, maiaNeedsLc0, progressPercent } from "@/lib/engine-assets";
+import { cardPadded, divider, fieldHint, listRow, well } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useSetSetting } from "./use-set-setting";
 import { splitEngineArgs } from "@/lib/engine-args";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { isOneOf } from "@chaturanga/shared/types/guards";
+import {
+  EngineImagePreview,
+  EngineRowText,
+  formatTestResult,
+  savedEngineMenuItems,
+  testSavedEngine,
+  type TestResult
+} from "./engine-row";
+import { latestCheckedAt, ManagedEngineRow } from "./ManagedEngineRow";
+import { useEngineAssets } from "./use-engine-assets";
 
 const nnWeightsDialogFilters: DialogFileFilter[] = [
   { name: "Network weights / models", extensions: ["pb", "gz", "onnx", "zip"] },
@@ -46,8 +66,6 @@ const engineImageDialogFilters: DialogFileFilter[] = [
   { name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif", "svg"] },
   { name: "All files", extensions: ["*"] }
 ];
-
-type TestResult = { ok: boolean; message: string } | null;
 
 type EngineDraft = {
   name: string;
@@ -78,18 +96,6 @@ function draftToInput(draft: EngineDraft): CreateEngineInput {
     args: splitEngineArgs(draft.args),
     isHumanPrediction: draft.isHumanPrediction
   };
-}
-
-function formatTestResult(
-  result: { ok: boolean; name?: string; error?: string; isHumanPrediction?: boolean },
-  fallbackName: string
-): TestResult {
-  return result.ok
-    ? {
-        ok: true,
-        message: `${result.name || fallbackName} responded${result.isHumanPrediction ? " (Maia detected)" : ""}.`
-      }
-    : { ok: false, message: result.error || "Engine failed to start." };
 }
 
 const HASH_SIZE_OPTIONS_MB = [64, 128, 256, 512, 1024] as const;
@@ -177,13 +183,20 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
   const engines = useEnginesQuery();
   const createEngine = useCreateEngineMutation();
   const deleteEngine = useDeleteEngineMutation();
+  const assets = useEngineAssets();
   const desktopApiAvailable = hasDesktopApi();
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<EngineDraft>(emptyEngineDraft);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<TestResult>(null);
   const engineList = engines.data ?? [];
-  const noEngines = engines.isSuccess && engineList.length === 0;
+  const rows = engineListRows(assets.status, engineList);
+  // Downloads join the list once their status is read; a failed read leaves just the engines.
+  const loading = desktopApiAvailable && (engines.isPending || (!assets.status && !assets.error));
+  const noEngines = !loading && engines.isSuccess && rows.length === 0;
+  const statuses = assets.status ? Object.values(assets.status) : [];
+  const checkError = statuses.find((entry) => entry.checkError)?.checkError ?? null;
+  const lastChecked = latestCheckedAt(statuses);
 
   async function addEngine() {
     if (!desktopApiAvailable) return;
@@ -216,19 +229,44 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
     <section className={cn(cardPadded, "grid gap-3")}>
       <SectionHeader
         title="Engines"
-        description="UCI engines for analysis, review and engine games. The default one is used when you don’t pick."
+        description="Engines for analysis, review and engine games. Downloaded ones stay up to date when you ask."
         actions={
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-expanded={adding}
-            disabled={!desktopApiAvailable}
-            onClick={() => setAdding((value) => !value)}
-          >
-            <Plus />
-            Add engine
-          </Button>
+          <>
+            {desktopApiAvailable ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void assets.checkForUpdates()}
+                disabled={assets.checking || !assets.status}
+              >
+                <RefreshCw className={cn(assets.checking && "animate-spin")} />
+                {assets.checking ? "Checking…" : "Check for updates"}
+              </Button>
+            ) : null}
+            {assets.missing.length > 0 ? (
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={() => void assets.downloadMissing()}
+              >
+                <Download />
+                Download missing ({assets.missing.length})
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-expanded={adding}
+              disabled={!desktopApiAvailable}
+              onClick={() => setAdding((value) => !value)}
+            >
+              <Plus />
+              Add engine
+            </Button>
+          </>
         }
       />
 
@@ -269,7 +307,15 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
         </div>
       ) : null}
 
-      {engines.isPending && hasDesktopApi() ? (
+      {maiaNeedsLc0(assets.status) ? (
+        <Notice tone="warn" title="Maia needs Lc0">
+          The Maia networks are installed, but Maia runs inside Lc0, which isn't set up yet. Install
+          Lc0 (the command is below), then choose its binary from the Lc0 row's menu. Until then
+          Maia isn't used in reviews and can't be played against.
+        </Notice>
+      ) : null}
+
+      {loading ? (
         <div className="grid gap-1.5" aria-busy="true" aria-label="Loading engines">
           {[0, 1, 2].map((index) => (
             <div key={index} className={listRow}>
@@ -302,24 +348,35 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
       ) : null}
 
       {noEngines && !adding ? (
-        <EmptyState
-          compact
-          title="No engines yet. Download them below or add a UCI engine you already have."
-        />
+        <EmptyState compact title="No engines yet. Add a UCI engine you already have." />
       ) : null}
 
-      {engineList.length ? (
+      {!loading && rows.length ? (
         <div className="grid gap-1.5">
-          {engineList.map((engine) => (
-            <SavedEngineRow
-              engine={engine}
-              key={`${engine.id}-${engine.updatedAt}`}
-              editing={editingId === engine.id}
-              onEditingChange={(editing) => setEditingId(editing ? engine.id : null)}
-              onDelete={() => deleteEngine.mutate(engine.id)}
-              onResult={setTestResult}
-            />
-          ))}
+          {rows.map((row) =>
+            row.kind === "asset" ? (
+              <ManagedEngineRow
+                key={row.id}
+                row={row}
+                busy={assets.busy[row.id] ?? false}
+                percent={progressPercent(assets.progress[row.id])}
+                onDownload={() => void assets.install(row.id, "download")}
+                onUpdate={() => void assets.install(row.id, "update")}
+                onRemove={() => void assets.remove(row.id)}
+                onPickFile={() => void assets.pickCustomFile(row.id)}
+                onResult={setTestResult}
+              />
+            ) : (
+              <SavedEngineRow
+                engine={row.engine}
+                key={`${row.engine.id}-${row.engine.updatedAt}`}
+                editing={editingId === row.engine.id}
+                onEditingChange={(editing) => setEditingId(editing ? row.engine.id : null)}
+                onDelete={() => deleteEngine.mutate(row.engine.id)}
+                onResult={setTestResult}
+              />
+            )
+          )}
         </div>
       ) : null}
 
@@ -338,34 +395,34 @@ export function EnginesSection({ appearance }: { appearance: AppSettings }) {
         </Notice>
       ) : null}
 
+      {assets.error ? <Notice tone="danger">{assets.error}</Notice> : null}
+
+      {desktopApiAvailable ? (
+        <p className={fieldHint}>
+          {checkError
+            ? `Couldn't reach GitHub (${checkError}); showing the last known releases. `
+            : null}
+          {lastChecked ? `Releases checked ${lastChecked}. ` : null}
+          Maia networks by{" "}
+          <a
+            href="https://github.com/CSSLab/maia-chess"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-info hover:underline"
+          >
+            CSSLab
+          </a>{" "}
+          (CC BY). Stockfish is GPL-3.0.
+        </p>
+      ) : null}
+
       <div className={divider} />
       <EnginePerformanceSettings appearance={appearance} />
     </section>
   );
 }
 
-function EngineRowText({
-  name,
-  detail,
-  badges
-}: {
-  name: string;
-  detail: string;
-  badges?: ReactNode;
-}) {
-  return (
-    <div className="grid min-w-0 flex-1 gap-0.5">
-      <div className="flex min-w-0 items-center gap-2">
-        <span className="truncate font-medium text-fg">{name}</span>
-        {badges}
-      </div>
-      <span className="truncate font-mono text-2xs text-fg-subtle" title={detail}>
-        {detail}
-      </span>
-    </div>
-  );
-}
-
+/** An engine the user added: Set as default, Test, Edit (inline form) and Delete. */
 function SavedEngineRow({
   engine,
   editing,
@@ -405,11 +462,10 @@ function SavedEngineRow({
   }
 
   async function test() {
-    if (!window.chaturanga) return;
-    const result = await window.chaturanga.engines.test(engine.id);
-    if (result.ok && result.isHumanPrediction)
-      setDraft((value) => ({ ...value, isHumanPrediction: true }));
-    onResult(formatTestResult(result, engine.name));
+    const outcome = await testSavedEngine(engine);
+    if (!outcome) return;
+    if (outcome.maiaDetected) setDraft((value) => ({ ...value, isHumanPrediction: true }));
+    onResult(outcome.result);
   }
 
   function cancel() {
@@ -434,18 +490,13 @@ function SavedEngineRow({
         <OverflowMenu
           label={`${engine.name} actions`}
           items={[
-            {
-              label: "Test",
-              icon: <Play />,
-              onSelect: () => void test(),
-              disabled: !desktopApiAvailable
-            },
-            {
-              label: engine.isDefault ? "Default engine" : "Set as default",
-              icon: <Star />,
-              onSelect: () => updateEngine.mutate({ id: engine.id, patch: { isDefault: true } }),
-              disabled: !desktopApiAvailable || engine.isDefault
-            },
+            ...savedEngineMenuItems({
+              engine,
+              disabled: !desktopApiAvailable,
+              onSetDefault: () =>
+                updateEngine.mutate({ id: engine.id, patch: { isDefault: true } }),
+              onTest: () => void test()
+            }),
             {
               label: editing ? "Close editor" : "Edit",
               icon: <Pencil />,
@@ -621,33 +672,5 @@ function EngineForm({
         }
       />
     </div>
-  );
-}
-
-function EngineImagePreview({
-  imagePath,
-  name,
-  size = "sm"
-}: {
-  imagePath: string | null;
-  name: string;
-  size?: "sm" | "md";
-}) {
-  const src = localImageSrc(imagePath);
-  return (
-    <span
-      className={cn(
-        // `relative`: contains the sr-only label (absolute), which otherwise stretches the page scroll height.
-        "relative flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-surface-sunken text-fg-subtle",
-        size === "md" ? "size-9" : "size-8"
-      )}
-    >
-      {src ? (
-        <img className="size-full object-cover" src={src} alt="" />
-      ) : (
-        <Bot className="size-4" />
-      )}
-      <span className="sr-only">{name} engine image</span>
-    </span>
   );
 }

@@ -568,7 +568,7 @@ function EnginesStep({
           ) : setup.lc0.missing ? (
             <p className={fieldHint}>
               {setup.lc0.autoDownload
-                ? "Lc0, an optional neural-network engine, can be added later in Settings, Engine downloads."
+                ? "Lc0, an optional neural-network engine, can be added later in Settings → Engines."
                 : "Lc0, the neural-network engine Maia runs in, has no automatic download for this computer. Install it yourself later and add it in Settings to use Maia."}
             </p>
           ) : null}

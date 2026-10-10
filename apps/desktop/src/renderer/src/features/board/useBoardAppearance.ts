@@ -4,10 +4,11 @@ import {
   cgWrapPieceSetClass,
   defaultSettings,
   hydratePieceSettings,
-  piecePresentationTailwindClass,
+  pieceSizesClass,
   type AppSettings
 } from "@chaturanga/shared/types/settings";
 import { useSettingsQuery } from "../../queries/api";
+import { usePieceSet } from "@/styles/generated-piece-themes";
 import { cn } from "@/lib/utils";
 
 /** 8×8 checkerboard as a CSS background (use with `background-size: 25% 25%`). */
@@ -17,7 +18,7 @@ export function boardSquareGradient(light: string, dark: string): string {
 
 /**
  * Board look from the saved settings: the hydrated appearance, the square background and the
- * classes for the Chessground mount node (piece set + piece presentation).
+ * classes for the Chessground mount node (piece set + piece sizes), with the set's CSS loaded.
  */
 export function useBoardAppearance(): {
   appearance: AppSettings;
@@ -33,13 +34,14 @@ export function useBoardAppearance(): {
   const dark = appearance.boardSquareDark ?? preset.dark;
   const squareBackground = useMemo(() => boardSquareGradient(light, dark), [light, dark]);
   const squareColors = useMemo(() => ({ light, dark }), [light, dark]);
+  usePieceSet(appearance.pieceStyle);
   return {
     appearance,
     squareBackground,
     squareColors,
     pieceClassName: cn(
       cgWrapPieceSetClass(appearance.pieceStyle),
-      piecePresentationTailwindClass(appearance.piecePresentation)
+      pieceSizesClass(appearance.pieceSizes)
     )
   };
 }

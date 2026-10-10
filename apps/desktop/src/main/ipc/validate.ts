@@ -67,12 +67,7 @@ import type {
   StartLiveAnalysisInput,
   UpdateEngineInput
 } from "@chaturanga/shared/types/engine";
-import {
-  defaultSettings,
-  isSettingKey,
-  settingKeys,
-  type AppSettings
-} from "@chaturanga/shared/types/settings";
+import { defaultSettings, isSettingKey, type AppSettings } from "@chaturanga/shared/types/settings";
 import type { DialogFileFilter } from "@chaturanga/shared/ipc/chaturanga-api";
 import type {
   LichessAiChallengeInput,
@@ -539,13 +534,7 @@ export function parseSettingsPatch(value: unknown): Partial<Record<keyof AppSett
   if (!keys.length || keys.length > SETTING_KEYS.size) fail("settings", "expected a few settings");
   const patch: Partial<Record<keyof AppSettings, unknown>> = {};
   for (const key of keys) {
-    const settingKey = parseSettingKey(key);
-    const written = parseSettingWrite(settingKey, input[key]);
-    // A presentation named in the patch itself wins over one a legacy piece set id implies.
-    for (const writtenKey of settingKeys(written)) {
-      if (writtenKey === settingKey || !(writtenKey in input))
-        patch[writtenKey] = written[writtenKey];
-    }
+    Object.assign(patch, parseSettingWrite(parseSettingKey(key), input[key]));
   }
   return patch;
 }

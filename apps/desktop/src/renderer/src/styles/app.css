@@ -1,7 +1,4 @@
 @import "tailwindcss";
-/* The piece-look filter classes live in the shared settings types, outside the renderer tree that
-   Tailwind scans by default: without this they were never generated, so "Piece look" did nothing. */
-@source "../../../../../../packages/shared/src/types/settings.ts";
 
 /*
  * `glass:` — applies while the window is translucent (macOS vibrancy; `html.glass`, set from

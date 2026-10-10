@@ -18,38 +18,91 @@ export type BoardTheme =
   | "newspaper"
   | "wood"
   | "walnut"
-  | "slate";
+  | "slate"
+  | "sapphire";
 
-/** Cburnett sprites ship inside `@lichess-org/chessground` (`chessground.cburnett.css`). */
+/** Cburnett is also bundled with Chessground (`chessground.cburnett.css`), which draws the first paint. */
 export type PieceStyle = "cburnett" | VendoredPieceSet;
 
 /**
- * Extra sets vendored as scoped CSS built at startup by `generated-piece-themes.ts` (from the
- * committed `.css.gz`), SVGs from Lichess lila `public/piece`.
- * Not shipped by the Chessground npm package itself (only cburnett CSS is bundled there).
+ * Sets packed from our copies in `scripts/piece-svg-sources` into the committed `.css.gz`, which
+ * `generated-piece-themes.ts` turns into scoped CSS at startup.
  */
 export type VendoredPieceSet =
   | "merida"
-  | "alpha"
   | "california"
   | "cardinal"
   | "chessnut"
   | "kosal"
   | "maestro"
-  | "pirouetti";
+  | "pirouetti"
+  | "classic"
+  | "anarcandy"
+  | "caliente"
+  | "celtic"
+  | "cooke"
+  | "disguised"
+  | "dubrovny"
+  | "fantasy"
+  | "firi"
+  | "fresca"
+  | "gioco"
+  | "horsey"
+  | "icpieces"
+  | "kiwen-suwi"
+  | "letter"
+  | "minimal-warmth"
+  | "mpchess"
+  | "papercut"
+  | "pixel"
+  | "rhosgfx"
+  | "shapes"
+  | "spatial"
+  | "staunty"
+  | "tatiana"
+  | "totoy"
+  | "xkcd";
 
-/** Visual tuning applied on the board wrapper for all piece sets (Tailwind filters on `piece` descendants). */
-export type PiecePresentation = "default" | "sharp" | "soft" | "contrast";
+/**
+ * How tall pieces stand (Settings → Board → Piece sizes): `ladder` ranks them, king tallest and
+ * pawn shortest; `uniform` makes every piece as tall as the king. Both are packed for every set.
+ */
+export type PieceSizes = "ladder" | "uniform";
 
 export const VENDORED_PIECE_SETS: readonly VendoredPieceSet[] = [
   "merida",
-  "alpha",
   "california",
   "cardinal",
   "chessnut",
   "kosal",
   "maestro",
-  "pirouetti"
+  "pirouetti",
+  "classic",
+  "anarcandy",
+  "caliente",
+  "celtic",
+  "cooke",
+  "disguised",
+  "dubrovny",
+  "fantasy",
+  "firi",
+  "fresca",
+  "gioco",
+  "horsey",
+  "icpieces",
+  "kiwen-suwi",
+  "letter",
+  "minimal-warmth",
+  "mpchess",
+  "papercut",
+  "pixel",
+  "rhosgfx",
+  "shapes",
+  "spatial",
+  "staunty",
+  "tatiana",
+  "totoy",
+  "xkcd"
 ] as const;
 
 const legacyPieceStyleMap: Record<string, PieceStyle | undefined> = {
@@ -64,125 +117,209 @@ const legacyPieceStyleMap: Record<string, PieceStyle | undefined> = {
   "cburnett-crisp": "cburnett",
   "cburnett-soft": "cburnett",
   "cburnett-contrast": "cburnett",
-  /** Common misspelling vs Lichess folder `kosal` */
+  /** Common misspelling of `kosal` */
   kosalo: "kosal"
-};
-
-/** Raw persisted style ids that implied a presentation before `piecePresentation` existed. */
-const legacyPieceStyleIdToPresentation: Record<string, PiecePresentation> = {
-  cburnettCrisp: "sharp",
-  cburnettSoft: "soft",
-  cburnettContrast: "contrast",
-  stauntonCrisp: "sharp",
-  stauntonSoft: "soft",
-  stauntonContrast: "contrast",
-  "cburnett-crisp": "sharp",
-  "cburnett-soft": "soft",
-  "cburnett-contrast": "contrast"
 };
 
 const ALL_PIECE_STYLES: PieceStyle[] = ["cburnett", ...VENDORED_PIECE_SETS];
 
-const ALL_PIECE_PRESENTATIONS: PiecePresentation[] = ["default", "sharp", "soft", "contrast"];
+const ALL_PIECE_SIZES: PieceSizes[] = ["ladder", "uniform"];
 
 /**
  * Class applied on the Chessground mount node (`cg-wrap`) so scoped rules built by
- * `generated-piece-themes.ts` override default cburnett sprites. Undefined when the built-in
- * cburnett sheet alone should apply.
+ * `generated-piece-themes.ts` override Chessground's bundled cburnett sprites, which only show
+ * until those finished drawings load (cburnett included).
  */
-export function cgWrapPieceSetClass(style: PieceStyle): string | undefined {
-  return style === "cburnett" ? undefined : `piece-set-${style}`;
+export function cgWrapPieceSetClass(style: PieceStyle): string {
+  return `piece-set-${style}`;
 }
 
-const presentationTailwindClass: Record<PiecePresentation, string> = {
-  default: "",
-  sharp:
-    "[&_piece]:contrast-125 [&_piece]:drop-shadow-[0_2px_1px_rgb(0_0_0/0.42)] [&_piece.black]:brightness-90 [&_piece.white]:brightness-105",
-  soft: "[&_piece]:contrast-90 [&_piece]:opacity-95 [&_piece]:drop-shadow-[0_1px_1px_rgb(0_0_0/0.28)] [&_piece.black]:brightness-95",
-  contrast:
-    "[&_piece]:contrast-150 [&_piece]:drop-shadow-[0_2px_2px_rgb(0_0_0/0.55)] [&_piece.black]:brightness-75 [&_piece.white]:brightness-110"
-};
-
-/** Tailwind filters applied on the board wrapper (targets `piece` descendants). Applies to every piece set. */
-export function piecePresentationTailwindClass(presentation: PiecePresentation): string {
-  return presentationTailwindClass[presentation];
+/** Class beside the piece set's on the mount node: picks the set's uniform drawings. */
+export function pieceSizesClass(sizes: PieceSizes): string {
+  return sizes === "uniform" ? "piece-sizes-uniform" : "";
 }
 
 export const pieceStyleOptions: Array<{
   id: PieceStyle;
   label: string;
+  /** Who drew the set; its licence is in scripts/piece-svg-sources/CREDITS.md. */
   description: string;
 }> = [
   {
     id: "cburnett",
     label: "Cburnett",
-    description:
-      "Default sprites bundled with Chessground (`chessground.cburnett.css`, SVG data URLs — offline / file:// safe)."
+    description: "By Colin M.L. Burnett."
   },
   {
     id: "merida",
     label: "Merida",
-    description:
-      "Classic Merida-style set from Lichess (`public/piece/merida`), inlined for offline use."
-  },
-  {
-    id: "alpha",
-    label: "Alpha",
-    description: "Lichess Alpha set (`public/piece/alpha`)."
+    description: "By Armando Hernandez Marroquin."
   },
   {
     id: "california",
     label: "California",
-    description: "Lichess California set (`public/piece/california`)."
+    description: "By Jerry S."
   },
   {
     id: "cardinal",
     label: "Cardinal",
-    description: "Lichess Cardinal set (`public/piece/cardinal`)."
+    description: "By sadsnake1."
   },
   {
     id: "chessnut",
     label: "Chessnut",
-    description: "Lichess Chessnut set (`public/piece/chessnut`)."
+    description: "By Alexis Luengas."
   },
   {
     id: "kosal",
     label: "Kosal",
-    description: "Lichess Kosal set (`public/piece/kosal`)."
+    description: "By Kosal Sen."
   },
   {
     id: "maestro",
     label: "Maestro",
-    description: "Lichess Maestro set (`public/piece/maestro`)."
+    description: "By sadsnake1."
   },
   {
     id: "pirouetti",
     label: "Pirouetti",
-    description: "Lichess Pirouetti set (`public/piece/pirouetti`)."
+    description: "By pirouetti."
+  },
+  {
+    id: "classic",
+    label: "Classic",
+    description: "Cburnett by Colin M.L. Burnett, with warm gradients."
+  },
+  {
+    id: "anarcandy",
+    label: "Anarcandy",
+    description: "By caderek."
+  },
+  {
+    id: "caliente",
+    label: "Caliente",
+    description: "By avi."
+  },
+  {
+    id: "celtic",
+    label: "Celtic",
+    description: "By Maurizio Monge."
+  },
+  {
+    id: "cooke",
+    label: "Cooke",
+    description: "By fejfar."
+  },
+  {
+    id: "disguised",
+    label: "Disguised",
+    description: "By danegraphics."
+  },
+  {
+    id: "dubrovny",
+    label: "Dubrovny",
+    description: "By sadsnake1."
+  },
+  {
+    id: "fantasy",
+    label: "Fantasy",
+    description: "By Maurizio Monge."
+  },
+  {
+    id: "firi",
+    label: "Firi",
+    description: "By James Faure."
+  },
+  {
+    id: "fresca",
+    label: "Fresca",
+    description: "By sadsnake1."
+  },
+  {
+    id: "gioco",
+    label: "Gioco",
+    description: "By sadsnake1."
+  },
+  {
+    id: "horsey",
+    label: "Horsey",
+    description: "By cham and michael1241."
+  },
+  {
+    id: "icpieces",
+    label: "IC Pieces",
+    description: "By sadsnake1."
+  },
+  {
+    id: "kiwen-suwi",
+    label: "Kiwen-suwi",
+    description: "By neverRare."
+  },
+  {
+    id: "letter",
+    label: "Letter",
+    description: "By usolando."
+  },
+  {
+    id: "minimal-warmth",
+    label: "Minimal Warmth",
+    description: "By blunder_reign."
+  },
+  {
+    id: "mpchess",
+    label: "MPChess",
+    description: "By Maxime Chupin."
+  },
+  {
+    id: "papercut",
+    label: "Papercut",
+    description: "By Nikolay Anzarov."
+  },
+  {
+    id: "pixel",
+    label: "Pixel",
+    description: "By therealqtpi."
+  },
+  {
+    id: "rhosgfx",
+    label: "RhosGFX",
+    description: "By RhosGFX."
+  },
+  {
+    id: "shapes",
+    label: "Shapes",
+    description: "By flugsio."
+  },
+  {
+    id: "spatial",
+    label: "Spatial",
+    description: "By Maurizio Monge."
+  },
+  {
+    id: "staunty",
+    label: "Staunty",
+    description: "By sadsnake1."
+  },
+  {
+    id: "tatiana",
+    label: "Tatiana",
+    description: "By sadsnake1."
+  },
+  {
+    id: "totoy",
+    label: "Totoy",
+    description: "By Kosal Sen."
+  },
+  {
+    id: "xkcd",
+    label: "xkcd",
+    description: "By Randall Munroe."
   }
 ];
 
-export const piecePresentationOptions: Array<{
-  id: PiecePresentation;
-  label: string;
-  description: string;
-}> = [
-  { id: "default", label: "Default", description: "No extra filters." },
-  {
-    id: "sharp",
-    label: "Sharpen",
-    description: "Stronger contrast and shadow on piece sprites."
-  },
-  {
-    id: "soft",
-    label: "Soften",
-    description: "Tuned down for long sessions."
-  },
-  {
-    id: "contrast",
-    label: "High contrast",
-    description: "Maximum separation from the board."
-  }
+export const pieceSizesOptions: Array<{ id: PieceSizes; label: string }> = [
+  { id: "ladder", label: "Ladder" },
+  { id: "uniform", label: "Uniform" }
 ];
 
 /** How much the AI commentary says about each move. */
@@ -196,7 +333,7 @@ export type AppSettings = {
   boardSquareLight: string | null;
   boardSquareDark: string | null;
   pieceStyle: PieceStyle;
-  piecePresentation: PiecePresentation;
+  pieceSizes: PieceSizes;
   showCoordinates: boolean;
   showLegalMoves: boolean;
   boardAnimation: boolean;
@@ -326,7 +463,8 @@ export const boardThemeSquareColors: Record<BoardTheme, { light: string; dark: s
   newspaper: { light: "#f6f0df", dark: "#9b927d" },
   wood: { light: "#e4bf83", dark: "#9c6235" },
   walnut: { light: "#d0a56f", dark: "#6f452c" },
-  slate: { light: "#c9d1d9", dark: "#59636f" }
+  slate: { light: "#c9d1d9", dark: "#59636f" },
+  sapphire: { light: "#5188ca", dark: "#2a63aa" }
 };
 
 export const defaultSettings: AppSettings = {
@@ -335,7 +473,7 @@ export const defaultSettings: AppSettings = {
   boardSquareLight: null,
   boardSquareDark: null,
   pieceStyle: "cburnett",
-  piecePresentation: "default",
+  pieceSizes: "ladder",
   showCoordinates: true,
   showLegalMoves: true,
   boardAnimation: true,
@@ -412,37 +550,29 @@ export function normalizePieceStyle(value: unknown): PieceStyle {
   return isOneOf(ALL_PIECE_STYLES, value) ? value : defaultSettings.pieceStyle;
 }
 
-/**
- * An id older builds stored for a piece set, as the current set and, for a combined id
- * (`cburnettCrisp`), the presentation it implied; null for anything else.
- */
-export function legacyPieceStyle(
-  value: string
-): { pieceStyle: PieceStyle; piecePresentation?: PiecePresentation } | null {
-  const pieceStyle = legacyPieceStyleMap[value];
-  if (!pieceStyle) return null;
-  const piecePresentation = legacyPieceStyleIdToPresentation[value];
-  return piecePresentation ? { pieceStyle, piecePresentation } : { pieceStyle };
+/** The current set for an id older builds stored (`staunton`, `cburnettSoft`, …); null for anything else. */
+export function legacyPieceStyle(value: string): PieceStyle | null {
+  return legacyPieceStyleMap[value] ?? null;
 }
 
-export function normalizePiecePresentation(value: unknown): PiecePresentation {
-  if (typeof value !== "string") return defaultSettings.piecePresentation;
-  return isOneOf(ALL_PIECE_PRESENTATIONS, value) ? value : defaultSettings.piecePresentation;
+export function normalizePieceSizes(value: unknown): PieceSizes {
+  return typeof value === "string" && isOneOf(ALL_PIECE_SIZES, value)
+    ? value
+    : defaultSettings.pieceSizes;
 }
 
 /**
- * Applies piece style normalization and maps legacy combined ids (e.g. `cburnettCrisp`) onto
- * `pieceStyle` + `piecePresentation`. Idempotent for settings already on the new shape.
+ * Normalizes the piece settings (older set ids, unknown sizes) and drops `piecePresentation`,
+ * the piece look older builds stored. Idempotent.
  */
 export function hydratePieceSettings(settings: AppSettings): AppSettings {
-  const rawStyleStr = typeof settings.pieceStyle === "string" ? settings.pieceStyle : "";
-  let presentation = normalizePiecePresentation(settings.piecePresentation);
-  const fromLegacy = legacyPieceStyleIdToPresentation[rawStyleStr];
-  if (fromLegacy) presentation = fromLegacy;
+  const { piecePresentation: _removed, ...rest } = settings as AppSettings & {
+    piecePresentation?: unknown;
+  };
   return {
-    ...settings,
+    ...rest,
     pieceStyle: normalizePieceStyle(settings.pieceStyle),
-    piecePresentation: presentation
+    pieceSizes: normalizePieceSizes(settings.pieceSizes)
   };
 }
 
