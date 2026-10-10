@@ -132,37 +132,10 @@ test("every set the app lists is packed", () => {
   assert.deepEqual(new Set(THEMES), new Set(["cburnett", ...listed]));
 });
 
-test("CREDITS.md lists every set with the licence the app shows for it", () => {
-  const settings = readFileSync(
-    new URL("../packages/shared/src/types/settings.ts", import.meta.url),
-    "utf8"
-  );
-  const licenceBlock = settings.slice(
-    settings.indexOf("const PIECE_LICENCES"),
-    settings.indexOf("} satisfies")
-  );
-  const licences = Object.fromEntries(
-    [...licenceBlock.matchAll(/(\w+): \{\s*name: "([^"]+)",\s*url: "([^"]+)"/g)].map(
-      ([, key, name, url]) => [key, `[${name}](${url})`]
-    )
-  );
-  const options = settings.slice(settings.indexOf("export const pieceStyleOptions"));
-  const shown = Object.fromEntries(
-    options
-      .slice(0, options.indexOf("\n];"))
-      .split("\n  {")
-      .slice(1)
-      .map((entry) => [
-        entry.match(/id: "([^"]+)"/)[1],
-        licences[entry.match(/licence: PIECE_LICENCES\.(\w+)/)[1]]
-      ])
-  );
+test("CREDITS.md credits every packed set", () => {
   const credits = readFileSync(new URL("./piece-svg-sources/CREDITS.md", import.meta.url), "utf8");
-  const listed = Object.fromEntries(
-    [...credits.matchAll(/^\| ([a-z][a-z0-9-]*) \| [^|]+ \| (.+) \|$/gm)].map(
-      ([, set, licence]) => [set, licence]
-    )
+  const listed = [...credits.matchAll(/^\| ([a-z][a-z0-9-]*) \| [^|]+ \| .+ \|$/gm)].map(
+    ([, set]) => set
   );
-  assert.deepEqual(listed, shown);
-  assert.deepEqual(new Set(Object.keys(shown)), new Set(THEMES));
+  assert.deepEqual(new Set(listed), new Set(THEMES));
 });

@@ -31,7 +31,7 @@ test("Uniform piece sizes redraw the board's pieces and are kept across a restar
   const ranked = await pawnDrawing(first.page);
 
   await openSettings(first.page);
-  await expect(pieceSizes(first.page).getByRole("radio", { name: "By rank" })).toBeChecked();
+  await expect(pieceSizes(first.page).getByRole("radio", { name: "Ladder" })).toBeChecked();
   await pieceSizes(first.page).getByRole("radio", { name: "Uniform" }).click();
   await expect(pieceSizes(first.page).getByRole("radio", { name: "Uniform" })).toBeChecked();
   const uniform = await pawnDrawing(first.page);

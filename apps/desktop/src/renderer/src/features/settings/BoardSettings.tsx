@@ -4,7 +4,6 @@ import { Check, RotateCcw } from "lucide-react";
 import {
   boardThemeSquareColors,
   normalizeBoardSquareHex,
-  pieceStyleOptions,
   pieceSizesOptions,
   type AppSettings,
   type BoardTheme,
@@ -89,9 +88,6 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
     appearance.boardSquareDark
   );
   const selectedPieceStyle = appearance.pieceStyle;
-  const selectedThemeLabel = customBoardSelected
-    ? "Custom colors"
-    : boardThemes.find((theme) => theme.id === appearance.boardTheme)?.label;
 
   // A theme and its square colors are one write (never half-applied); dragging a color or the hue
   // shows at once and is written when it pauses.
@@ -117,9 +113,6 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
     setSettings({ boardSquareLight: null, boardSquareDark: null });
   }
 
-  const pieceStyleLabel =
-    pieceStyleOptions.find((option) => option.id === selectedPieceStyle)?.label ??
-    selectedPieceStyle;
   const hoverColors = hoverTheme ? boardThemeSquareColors[hoverTheme] : null;
 
   return (
@@ -131,7 +124,7 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
 
       <div className="grid items-start gap-x-8 gap-y-6 @2xl:grid-cols-[minmax(0,1fr)_minmax(11rem,14rem)]">
         <div className="grid min-w-0 gap-5">
-          <Field label="Board theme" hint={selectedThemeLabel}>
+          <Field label="Board theme">
             {/* oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- focus goes to the checked radio inside (roving tabindex), not to the group */}
             <div
               role="radiogroup"
@@ -212,14 +205,6 @@ export function BoardSection({ appearance }: { appearance: AppSettings }) {
             pieceSizes={appearance.pieceSizes}
             label="Preview of the board with your theme and pieces"
           />
-          <figcaption className="flex min-w-0 items-baseline justify-between gap-2 text-2xs text-fg-subtle">
-            <span className="truncate">
-              {hoverTheme
-                ? boardThemes.find((theme) => theme.id === hoverTheme)?.label
-                : selectedThemeLabel}
-            </span>
-            <span className="truncate">{pieceStyleLabel}</span>
-          </figcaption>
         </figure>
       </div>
 

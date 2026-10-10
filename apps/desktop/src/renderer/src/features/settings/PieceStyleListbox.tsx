@@ -7,7 +7,7 @@ import {
 } from "@chaturanga/shared/types/settings";
 import { cn } from "@/lib/utils";
 import { useDismiss } from "@/lib/use-dismiss";
-import { fieldHint, fieldLabel, frost } from "@/lib/ui";
+import { fieldLabel, frost } from "@/lib/ui";
 import { usePresence } from "@/components/ui/use-presence";
 import {
   settingsListboxOptionActiveClass,
@@ -53,23 +53,9 @@ export function PieceStyleListbox({ id, value, pieceSizes, onChange }: PieceStyl
 
   return (
     <div className="grid min-w-0 max-w-full gap-1.5">
-      {/* Each set's author and licence, which its licence asks to be shown with it. */}
-      <div className={cn(fieldLabel, "flex items-baseline justify-between gap-2")}>
-        <label id={`${id}-label`} htmlFor={id}>
-          Piece set
-        </label>
-        <span className={cn(fieldHint, "font-normal")}>
-          {selectedMeta.description.replace(/\.$/, "")} ·{" "}
-          <a
-            href={selectedMeta.licence.url}
-            target="_blank"
-            rel="noreferrer"
-            className="underline underline-offset-2 hover:text-fg"
-          >
-            {selectedMeta.licence.name}
-          </a>
-        </span>
-      </div>
+      <label id={`${id}-label`} htmlFor={id} className={fieldLabel}>
+        Piece set
+      </label>
       <div ref={rootRef} className="relative w-full min-w-0">
         <button
           ref={triggerRef}
