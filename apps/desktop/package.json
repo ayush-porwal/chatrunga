@@ -21,6 +21,10 @@
   },
   "build": {
     "appId": "com.chaturanga.desktop",
+    "extraMetadata": {
+      "description": "",
+      "homepage": ""
+    },
     "productName": "Chaturanga",
     "directories": {
       "output": "dist",
