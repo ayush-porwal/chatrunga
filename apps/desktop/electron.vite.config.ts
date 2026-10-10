@@ -12,6 +12,9 @@ const rootDir = fileURLToPath(new URL(".", import.meta.url));
 export default defineConfig({
   main: {
     build: {
+      // electron-vite leaves minify off. The packaged main bundle is otherwise the
+      // readable build, which is most of the asar.
+      minify: true,
       externalizeDeps: false,
       rollupOptions: {
         external: ["electron"],
@@ -37,6 +40,7 @@ export default defineConfig({
   },
   preload: {
     build: {
+      minify: true,
       externalizeDeps: false,
       rollupOptions: {
         external: ["electron"],
@@ -50,6 +54,9 @@ export default defineConfig({
     root: resolve(rootDir, "src/renderer"),
     plugins: [react(), tailwindcss()],
     build: {
+      // electron-vite's renderer preset sets minify: false, so the shipped JS is the
+      // readable build. Minify it; the sounds exception below is unchanged.
+      minify: true,
       // Sounds stay files: Vite would inline the small ones as data: URLs, which the packaged app's
       // CSP (media-src 'self') blocks, silencing them.
       assetsInlineLimit: (filePath) => (/\.(mp3|wav|ogg)$/i.test(filePath) ? false : undefined)
