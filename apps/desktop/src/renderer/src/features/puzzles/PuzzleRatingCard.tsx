@@ -1,5 +1,4 @@
-import { memo, useCallback, useMemo } from "react";
-import { Line, LineChart, ResponsiveContainer, Tooltip, YAxis } from "recharts";
+import { memo, useMemo, useState } from "react";
 import type { PuzzleRatingPoint, PuzzleThemeStat } from "@chaturanga/shared/types/puzzle-rating";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -90,57 +89,74 @@ export const PuzzleRatingCard = memo(function PuzzleRatingCard() {
 /** The rating after each recent rated puzzle: a bare line (hover for the value). */
 const RatingSparkline = memo(function RatingSparkline({ points }: { points: PuzzleRatingPoint[] }) {
   const data = useMemo(
-    () => points.map((point, index) => ({ index, rating: Math.round(point.rating), at: point.at })),
+    () => points.map((point) => ({ rating: Math.round(point.rating), at: point.at })),
     [points]
   );
-  const renderTooltip = useCallback(
-    ({ active, payload }: { active?: boolean; payload?: ReadonlyArray<{ payload?: unknown }> }) => {
-      const point = data.find((item) => item === payload?.[0]?.payload);
-      if (!active || !point) return null;
-      return (
-        <div className="pointer-events-none rounded-lg border border-line bg-surface-raised px-2 py-1 text-xs text-fg shadow-popover">
-          <span className="font-semibold tabular-nums">{point.rating}</span>
-          <span className="ml-1.5 text-fg-muted">{new Date(point.at).toLocaleDateString()}</span>
-        </div>
-      );
-    },
-    [data]
-  );
+  const [hover, setHover] = useState<number | null>(null);
+  const min = Math.min(...data.map((point) => point.rating)) - 10;
+  const max = Math.max(...data.map((point) => point.rating)) + 10;
+  const span = Math.max(1, max - min);
+  const x = (index: number) => (data.length === 1 ? 110 : 2 + (index / (data.length - 1)) * 216);
+  const y = (rating: number) => 4 + (1 - (rating - min) / span) * (SPARK_HEIGHT - 8);
+  const path = data
+    .map(
+      (point, index) => `${index ? "L" : "M"}${x(index).toFixed(1)} ${y(point.rating).toFixed(1)}`
+    )
+    .join(" ");
+  const active = hover === null ? null : data[hover];
   return (
     <div
-      className="min-w-0"
+      className="relative min-w-0"
       style={{ height: SPARK_HEIGHT }}
-      role="img"
-      aria-label={`Rating over the last ${points.length} rated puzzles`}
+      onMouseLeave={() => setHover(null)}
     >
-      <ResponsiveContainer
-        width="100%"
-        height="100%"
-        initialDimension={{ width: 220, height: SPARK_HEIGHT }}
+      <svg
+        viewBox={`0 0 220 ${SPARK_HEIGHT}`}
+        className="h-full w-full"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label={`Rating over the last ${points.length} rated puzzles`}
       >
-        <LineChart data={data} margin={{ top: 4, right: 2, bottom: 4, left: 2 }}>
-          <YAxis hide domain={["dataMin - 10", "dataMax + 10"]} />
-          <Tooltip
-            content={renderTooltip}
-            cursor={{ stroke: "var(--color-line-strong)" }}
-            isAnimationActive={false}
+        <path
+          d={path}
+          fill="none"
+          stroke="var(--color-accent)"
+          strokeWidth="1.5"
+          vectorEffect="non-scaling-stroke"
+        />
+        {hover !== null ? (
+          <line
+            x1={x(hover)}
+            x2={x(hover)}
+            y1={4}
+            y2={SPARK_HEIGHT - 4}
+            stroke="var(--color-line-strong)"
+            strokeWidth="1"
+            vectorEffect="non-scaling-stroke"
           />
-          <Line
-            type="monotone"
-            dataKey="rating"
-            stroke="var(--color-accent)"
-            strokeWidth={1.5}
-            dot={false}
-            activeDot={{
-              r: 3,
-              fill: "var(--color-accent)",
-              stroke: "var(--color-surface)",
-              strokeWidth: 1
-            }}
-            isAnimationActive={false}
+        ) : null}
+        {hover !== null ? (
+          <circle
+            cx={x(hover)}
+            cy={y(data[hover].rating)}
+            r="3"
+            fill="var(--color-accent)"
+            stroke="var(--color-surface)"
+            strokeWidth="1"
           />
-        </LineChart>
-      </ResponsiveContainer>
+        ) : null}
+      </svg>
+      <div className="absolute inset-0 flex">
+        {data.map((point, index) => (
+          <div key={point.at} className="h-full flex-1" onMouseEnter={() => setHover(index)} />
+        ))}
+      </div>
+      {active ? (
+        <div className="pointer-events-none absolute top-0 right-0 rounded-lg border border-line bg-surface-raised px-2 py-1 text-xs text-fg shadow-popover">
+          <span className="font-semibold tabular-nums">{active.rating}</span>
+          <span className="ml-1.5 text-fg-muted">{new Date(active.at).toLocaleDateString()}</span>
+        </div>
+      ) : null}
     </div>
   );
 });
