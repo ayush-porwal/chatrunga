@@ -7,8 +7,18 @@ import tailwindcss from "@tailwindcss/vite";
 
 const rootDir = fileURLToPath(new URL(".", import.meta.url));
 
-/** Vite rewrites the book URL but does not emit the file. The main bundle reads it beside itself. */
-function copyOpeningBook() {
+/** The renderer ships the page as-is; drop the source indentation so the asar carries no dead whitespace. */
+function minifyIndexHtml() {
+  return {
+    name: "minify-index-html",
+    order: "post" as const,
+    transformIndexHtml(html: string) {
+      return html.replace(/^[ \t]+/gm, "").replace(/\n{2,}/g, "\n");
+    }
+  };
+}
+
+/** Vite rewrites the book URL but does not emit the file. The main bundle reads it beside itself. */function copyOpeningBook() {
   const from = resolve(rootDir, "../../packages/shared/src/chess/opening-book.txt.zst");
   return {
     name: "copy-opening-book",
@@ -66,7 +76,7 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(rootDir, "src/renderer"),
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), minifyIndexHtml()],
     assetsInclude: ["**/*.css.gz"],
     build: {
       // electron-vite's renderer preset sets minify: false, so the shipped JS is the
