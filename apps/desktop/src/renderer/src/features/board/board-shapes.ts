@@ -1,4 +1,4 @@
-import type { DrawBrush, DrawShape } from "@lichess-org/chessground/draw";
+import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import { fenAfterUci, legalDestsForFen, statusForFen } from "@chaturanga/shared/chess/position";
 import { uciSquares } from "@chaturanga/shared/chess/square";
@@ -89,18 +89,6 @@ export function chessgroundMovableColor(movable: BoardMovable): Color | "both" |
 /** The most moves of the engine's top line plan arrows draw (Analysis settings offer 2–4). */
 const PLAN_ARROWS_MAX = 4;
 
-/**
- * Plan arrow brushes, one per move of the line: the side to move's moves in the best-move green,
- * the replies in blue, each a little fainter than the one before (Chessground draws every arrow at
- * 0.6 on top of its brush's opacity). Registered on the board alongside Chessground's own brushes.
- */
-export const PLAN_ARROW_BRUSHES: Readonly<Record<string, DrawBrush>> = {
-  plan1: { key: "plan1", color: "#15781B", opacity: 1, lineWidth: 10 },
-  plan2: { key: "plan2", color: "#003088", opacity: 0.85, lineWidth: 10 },
-  plan3: { key: "plan3", color: "#15781B", opacity: 0.7, lineWidth: 10 },
-  plan4: { key: "plan4", color: "#003088", opacity: 0.55, lineWidth: 10 }
-};
-
 /** The squares of the moves of `line` that are legal one after another from `fen`, at most `count`. */
 function legalLineSquares(
   fen: string,
@@ -126,9 +114,9 @@ function legalLineSquares(
 
 /**
  * Live analysis arrows in `fen` from the engine's top line (UCI moves), none while engine arrows
- * (`bestMoveArrow`) are off. With a plan count, that many of its moves as numbered arrows (see
- * {@link PLAN_ARROW_BRUSHES}); without, its first move as the single best-move arrow. Only moves
- * legal in turn are drawn, so a line left over from another position draws nothing.
+ * (`bestMoveArrow`) are off. With a plan count, that many of its moves as numbered arrows;
+ * without, its first move as the single best-move arrow. Every one in Chessground's default blue.
+ * Only moves legal in turn are drawn, so a line left over from another position draws nothing.
  */
 export function liveAnalysisShapes(
   fen: string,
@@ -145,7 +133,7 @@ export function liveAnalysisShapes(
   return legalLineSquares(fen, line, plan).map(([orig, dest], index) => ({
     orig,
     dest,
-    brush: `plan${index + 1}`,
+    brush: "blue",
     label: { text: String(index + 1) }
   }));
 }

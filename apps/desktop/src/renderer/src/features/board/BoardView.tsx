@@ -34,12 +34,7 @@ import { useBoardPolish } from "./useBoardPolish";
 import { restoreBoardConfig } from "./board-config";
 import { celebratesEnding, liveEnding, type BoardEndState } from "./game-end";
 import { useBoardConfetti } from "./useBoardConfetti";
-import {
-  annotationsFromShapes,
-  liveAnalysisShapes,
-  PLAN_ARROW_BRUSHES,
-  shapesFromAnnotations
-} from "./board-shapes";
+import { annotationsFromShapes, liveAnalysisShapes, shapesFromAnnotations } from "./board-shapes";
 import {
   PIECE_MOVE_MS,
   RAPID_STEP_MS,
@@ -215,8 +210,6 @@ export function BoardView() {
       movable: { free: false, rookCastle: true },
       premovable: { enabled: true, showDests: true, castle: true }
     });
-    // Plan arrows' brushes join Chessground's own (its config type wants the whole set).
-    Object.assign(ground.state.drawable.brushes, PLAN_ARROW_BRUSHES);
     groundRef.current = ground;
     // Chessground caches the board's screen position and refreshes it only on resize and scroll;
     // collapsing the sidebar (or Focus board) moves the board without resizing it, so clicks,
