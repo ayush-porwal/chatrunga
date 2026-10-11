@@ -498,7 +498,7 @@ function MoveStrip({
   // The cursor's token stays in view (scrolling only; focus stays where it is).
   useEffect(() => {
     const token = listRef.current?.querySelector<HTMLElement>('[aria-current="step"]');
-    token?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    token?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [selectedNodeId]);
 
   return (

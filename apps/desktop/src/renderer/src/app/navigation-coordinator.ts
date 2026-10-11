@@ -8,7 +8,13 @@ import { isMissingTargetError } from "../features/repertoire/repertoire-model";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { useAppNoticeStore } from "../stores/app-notice-store";
 import { useGameStore } from "../stores/game-store";
-import { useHistoryStore, type BoardSnapshot, type HistoryEntry } from "../stores/history-store";
+import {
+  selectCanGoBack,
+  selectCanGoForward,
+  useHistoryStore,
+  type BoardSnapshot,
+  type HistoryEntry
+} from "../stores/history-store";
 import { useLichessStore } from "../stores/lichess-store";
 import { useRepertoireWorkspaceStore } from "../stores/repertoire-workspace-store";
 import { useReviewStore } from "../stores/review-store";
@@ -104,9 +110,9 @@ export async function goHistory(
 ): Promise<void> {
   if (restoreLoading(pending, shell.navigation)) return;
   const history = useHistoryStore.getState();
+  if (!(delta < 0 ? selectCanGoBack(history) : selectCanGoForward(history))) return;
   const targetIndex = history.index + delta;
   const target = history.entries[targetIndex];
-  if (!target) return;
   // A Lichess game being played keeps the board: back to it, with why, and the index stays.
   const live = useLichessStore.getState().live;
   if (live && !live.over && replacesLiveBoard(target, live.id)) {
@@ -165,8 +171,7 @@ export async function restoreEntry(
       if (entry.board.gameId && !useReviewStore.getState().review) {
         const saved = await shell.getSavedGame(entry.board.gameId).catch(() => null);
         if (request !== shell.navigation.current) return "dropped";
-        if (saved?.review)
-          useReviewStore.getState().loadReview(savedReview(saved), saved.reviews ?? []);
+        if (saved?.review) useReviewStore.getState().loadReview(savedReview(saved), saved.reviews);
       }
       useGameStore.getState().setMode("freeplay");
       shell.showGameReview(entry);
@@ -192,7 +197,7 @@ export async function restoreEntry(
  * come back says why above whichever page is open (the board's own status line is only on the
  * board). `keepReview`: a running review of the same game isn't cancelled.
  */
-export async function restoreBoard(
+async function restoreBoard(
   snapshot: BoardSnapshot,
   shell: NavigationShell,
   { keepReview = false }: { keepReview?: boolean } = {}

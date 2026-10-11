@@ -58,12 +58,12 @@ export function chapterPath(chapter: Pick<RepertoireChapter, "tree">, nodeId: st
 }
 
 /** "<repertoire> › <chapter>", the start of the Play card's label. */
-export function handoffTitle(origin: Pick<HandoffOrigin, "repertoireName" | "chapter">): string {
+function handoffTitle(origin: Pick<HandoffOrigin, "repertoireName" | "chapter">): string {
   return `${origin.repertoireName} › ${origin.chapter.title}`;
 }
 
 /** The handoff's SAN route ("1. e4 e5 2. Nf3"), or "Start" at the chapter's root. */
-export function handoffPathLabel(origin: Pick<HandoffOrigin, "chapter" | "nodeId">): string {
+function handoffPathLabel(origin: Pick<HandoffOrigin, "chapter" | "nodeId">): string {
   return pathLabel(buildChapterLookup(origin.chapter), origin.nodeId);
 }
 
@@ -230,7 +230,9 @@ export function reviewOpeningAfterFlush(input: {
  */
 export function createLinkOnce(
   link: (input: LinkGameInput) => Promise<unknown>,
-  onError: (message: string) => void = () => {}
+  onError: (message: string) => void = () => {
+    // Unreported unless the caller shows link failures.
+  }
 ) {
   const linked = new Map<string, string>();
   const running = new Map<string, { stamp: string; attempt: Promise<boolean> }>();

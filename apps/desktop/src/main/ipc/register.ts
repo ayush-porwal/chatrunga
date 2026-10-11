@@ -227,7 +227,7 @@ async function adoptInstalledLc0(assetManager: ReturnType<typeof getAssetManager
   try {
     if (settingsRepository.getStored("lc0AutoDetect") === false) return;
     const current = assetManager.getInstalled().lc0;
-    if (current && current.state !== "missing") return;
+    if (current.state !== "missing") return;
     const found = await detectLc0();
     if (!found) return;
     await assetManager.setCustomPath("lc0", found);

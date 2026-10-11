@@ -18,7 +18,7 @@ import { selectLiveGameInProgress, useLichessStore } from "../stores/lichess-sto
 /** Live analysis always asks for the top three lines. */
 const CLOCK_TICK_MS = 200;
 /** Engine lines update the UI at most this often (~6–7 Hz): readable, and cheap to render. */
-export const ENGINE_INFO_FLUSH_MS = 150;
+const ENGINE_INFO_FLUSH_MS = 150;
 
 function reportEngineError(error: unknown): void {
   const analysis = useAnalysisStore.getState();
@@ -194,7 +194,7 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
       if (state.target !== previous.target) infos.discard();
     });
     const unsubscribers = [
-      window.chaturanga?.system?.onResumed?.(noteSystemResumed) ?? (() => {}),
+      window.chaturanga?.system.onResumed(noteSystemResumed),
       events.onEngineInfo((info) => {
         if (engineSearches.isCurrent(info.searchId)) infos.push(info);
       }),
@@ -228,7 +228,7 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
       infos.discard();
       unsubscribePosition();
       unsubscribeTarget();
-      unsubscribers.forEach((unsubscribe) => unsubscribe());
+      unsubscribers.forEach((unsubscribe) => unsubscribe?.());
     };
   }, []);
 

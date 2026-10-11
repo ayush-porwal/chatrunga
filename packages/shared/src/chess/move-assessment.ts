@@ -202,14 +202,14 @@ function moverOf(fen: string): "white" | "black" | null {
  */
 function evidenceFor(move: AssessableMove): Evidence | null {
   const lines = sortedLines(move.topLines);
-  const best = lines[0];
+  const best = lines.at(0);
   const mover = moverOf(move.fenBefore);
   if (!best || !mover) return null;
   const before = moverEval(best.score, true);
   const playedLine = lines.find((line) => line.pv[0] === move.playedMove) ?? null;
   const terminal = terminalOf(move);
   const checkedLine = move.verification?.playedLine;
-  const reply = sortedLines(move.replyLines)[0];
+  const reply = sortedLines(move.replyLines).at(0);
   let after: MoverEval | null = null;
   if (terminal === "checkmate") after = { kind: "mate", moverMates: true };
   else if (terminal) after = { kind: "cp", cp: 0 };
@@ -335,7 +335,7 @@ type Candidate = {
  */
 function candidateFrom(lines: readonly AnalysisLine[], move: AssessableMove): Candidate {
   const sorted = sortedLines(lines);
-  const best = sorted[0];
+  const best = sorted.at(0);
   const played = sorted.find((line) => line.pv[0] === move.playedMove);
   if (!best || !played) return { kind: null, gap: null, savesMaterial: false };
   const playedWin = lineWin(played);
@@ -638,16 +638,11 @@ export function assessMoves(
   const book = openingBook ? classifyOpening(openingBook, moves).book : [];
   const assessments: MoveAssessment[] = [];
   moves.forEach((move, index) => {
-    const previousMove = moves[index - 1];
-    const previousAssessment = assessments[index - 1];
     assessments.push(
       assessMove(move, {
         ...context,
         book: book[index] ?? false,
-        previous:
-          previousMove && previousAssessment
-            ? { move: previousMove, assessment: previousAssessment }
-            : null
+        previous: index > 0 ? { move: moves[index - 1], assessment: assessments[index - 1] } : null
       })
     );
   });

@@ -79,7 +79,7 @@ export function describeComparison(comparison: RepertoireComparison): Comparison
     if (!recognized) {
       if (!moves.length) return { tone: "neutral", text: "This game has no moves to compare" };
       // Nothing judged yet, but the final position is where a chapter begins.
-      const chapter = comparison.chaptersUsed[0];
+      const chapter = comparison.chaptersUsed.at(0);
       return chapter
         ? { tone: "info", text: `This game ends where ${chapter.title} begins` }
         : { tone: "neutral", text: "No chapter of this repertoire applies to this game" };
@@ -245,7 +245,7 @@ export function pickRepertoire<T extends Pick<RepertoireSummary, "id" | "color">
   rememberedId: string | null
 ): T | null {
   const ofColor = repertoires.filter((item) => item.color === color);
-  return ofColor.find((item) => item.id === rememberedId) ?? ofColor[0] ?? null;
+  return ofColor.find((item) => item.id === rememberedId) ?? ofColor.at(0) ?? null;
 }
 
 /* ------------------------------------------------------------------ actions */

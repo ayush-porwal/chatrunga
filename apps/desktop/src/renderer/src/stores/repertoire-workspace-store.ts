@@ -223,7 +223,7 @@ export function removeSubtree(
  * `snapshot`'s tree shape and metadata with `current`'s chapter fields, and the current comments,
  * shapes and NAGs of the moves both have: what Undo and Redo restore.
  */
-export function withStructureOf(
+function withStructureOf(
   snapshot: RepertoireChapter,
   current: RepertoireChapter
 ): RepertoireChapter {
@@ -356,7 +356,7 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
     /** Undo / Redo: moves the draft to the top of `from`, keeping the current one on `to`. */
     const step = (from: "undoStack" | "redoStack", to: "undoStack" | "redoStack") => {
       const state = get();
-      const target = state[from][state[from].length - 1];
+      const target = state[from].at(-1);
       if (!target || !state.chapter) return false;
       const structure = withStructureOf(target, state.chapter);
       const fields = practiceFieldSteps.has(target);
@@ -648,18 +648,23 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
 
       discardDecisionText: (key) =>
         set((state) => {
-          if (!state.decisionDrafts[key]) return {};
+          if (!Object.hasOwn(state.decisionDrafts, key)) return {};
           const decisionDrafts = { ...state.decisionDrafts };
           delete decisionDrafts[key];
           return { decisionDrafts };
         }),
 
       requestDecisionTextSaveAgain: (key) => {
-        if (get().decisionDrafts[key]) transitionDraft(key, { type: "commit" });
+        if (Object.hasOwn(get().decisionDrafts, key)) transitionDraft(key, { type: "commit" });
       },
 
       updateDecisionDraft: (key, event) =>
-        get().decisionDrafts[key] ? transitionDraft(key, event) : false
+        Object.hasOwn(get().decisionDrafts, key) ? transitionDraft(key, event) : false
     };
   }
 );
+
+/** The decision change waiting under `key`: none once it is saved or dropped. */
+export function pendingDecisionDraft(key: string): DecisionTextDraft | undefined {
+  return useRepertoireWorkspaceStore.getState().decisionDrafts[key];
+}

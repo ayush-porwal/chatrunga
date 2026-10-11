@@ -531,6 +531,7 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
             (line) => this.onGameLine(gameId, watch, line)
           );
         } catch (error) {
+          // oxlint-disable-next-line typescript/no-unnecessary-condition -- the signal can abort while the stream is awaited; TS keeps the loop condition's narrowing
           if (signal.aborted) return;
           if (firstAttempt && !openedAt) {
             failed(error);
@@ -543,6 +544,7 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
           dropError = error;
         }
         firstAttempt = false;
+        // oxlint-disable-next-line typescript/no-unnecessary-condition -- the signal can abort while the stream is awaited; TS keeps the loop condition's narrowing
         if (signal.aborted || (watch.last && isFinalStatus(watch.last.state.status))) return;
         if (connected) {
           connected = false;
@@ -712,6 +714,7 @@ export class LichessService extends EventEmitter<{ event: [LichessEvent] }> {
           }
         );
       } catch (error) {
+        // oxlint-disable-next-line typescript/no-unnecessary-condition -- the signal can abort while the stream is awaited; TS keeps the loop condition's narrowing
         if (signal.aborted) return;
         // 401: handleTokenRejected already stopped everything.
         if (error instanceof LichessHttpError && error.status === 401) return;

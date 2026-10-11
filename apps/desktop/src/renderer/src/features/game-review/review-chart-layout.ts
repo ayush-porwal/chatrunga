@@ -119,7 +119,7 @@ export function splitViewHeights(space: number, open: OpenViews): ViewHeights {
     free = free.filter((view) => !short.includes(view));
   }
   // Rounding leftovers go to the first open view, so the views fill the space exactly.
-  const first = views[0];
+  const first = views.at(0);
   if (first) {
     const used = [...sizes.values()].reduce((sum, size) => sum + size, 0);
     sizes.set(first.key, (sizes.get(first.key) ?? 0) + Math.max(0, Math.floor(space) - used));

@@ -48,7 +48,7 @@ import { isOneOf } from "@chaturanga/shared/types/guards";
 import { CHAPTER_KINDS } from "@chaturanga/shared/types/repertoire";
 
 /** The default selection of each previewed game: included, its proposed title, opening kind. */
-export function defaultSelections(preview: ImportPreview): ImportSelection[] {
+function defaultSelections(preview: ImportPreview): ImportSelection[] {
   return preview.games.map((game) => ({
     gameIndex: game.index,
     title: game.proposedTitle,
@@ -454,8 +454,8 @@ export function ImportPgnDialog({
           <div className="scroll-area -mx-1 grid min-h-0 content-start gap-2 overflow-y-auto px-1">
             <ul ref={gameList} className="grid gap-2" aria-label="Games in the PGN">
               {shown.map((index) => {
-                const game = preview.games[index];
-                const selection = selections[index];
+                const game = preview.games.at(index);
+                const selection = selections.at(index);
                 const lookup = lookups[index];
                 if (!game || !selection) return null;
                 return (

@@ -12,9 +12,10 @@ const BOARD_EDGE_KEY = "chaturanga.layout.boardEdge";
 const MAX_STORED_BOARD_EDGE = 10_000;
 
 function storage(): Storage | null {
-  // Storage access throws where it is blocked (a sandboxed or opaque origin).
+  // Storage access throws where it is blocked (a sandboxed or opaque origin); outside a browser
+  // (Node) there is none.
   try {
-    return globalThis.localStorage ?? null;
+    return "localStorage" in globalThis ? globalThis.localStorage : null;
   } catch {
     return null;
   }

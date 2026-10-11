@@ -243,7 +243,7 @@ export function compareGameToRepertoire(
     const ply = firstPly + index;
     const fenAfter = played.fenAfter;
     const ranked = rankedAt(fen, current);
-    const anchor = ranked[0] ?? null;
+    const anchor = ranked.at(0) ?? null;
     /** The occurrence the move is credited to. */
     let credited: OccurrenceRef | null = anchor;
     let status: ComparisonMoveStatus;
@@ -267,11 +267,6 @@ export function compareGameToRepertoire(
       chapterTitle: anchor?.title ?? null,
       nodeId: anchor?.nodeId ?? null
     });
-    const endHere = () => {
-      if (end) return;
-      end = issueAt("preparation-ends", [], null);
-      matchedAtEnd = matchedPlies;
-    };
 
     if (issue) {
       if (anchor) {
@@ -297,7 +292,6 @@ export function compareGameToRepertoire(
         // Defensive: a matched move always reaches an active position (its supporting child is
         // active), so the route ended here (it continues only as context, or not at all).
         status = "after-end";
-        endHere();
       }
     } else {
       matchedAny = true;
@@ -310,7 +304,6 @@ export function compareGameToRepertoire(
         ).map((uci) => standardCastlingUci(fen, uci));
         if (!accepted.length) {
           status = "after-end";
-          endHere();
         } else if (accepted.includes(played.uci)) {
           status = "player-choice";
           matchedPlies += 1;
@@ -326,7 +319,7 @@ export function compareGameToRepertoire(
           status = "deviation";
           const preferred = decision
             ? effectivePreferredUci(decision, supported)
-            : (accepted[0] ?? null);
+            : (accepted.at(0) ?? null);
           issue = issueAt(
             "player-deviation",
             accepted,
@@ -346,7 +339,7 @@ export function compareGameToRepertoire(
         }
         // A reply that isn't a covered edge here still lands in prepared material when its
         // position has an active occurrence (a transposition); credit the one it lands on.
-        const landing = supplied ? null : (rankedAt(fenAfter, null)[0] ?? null);
+        const landing = supplied ? null : (rankedAt(fenAfter, null).at(0) ?? null);
         if (supplied || landing) {
           status = "covered-reply";
           matchedPlies += 1;
@@ -358,7 +351,6 @@ export function compareGameToRepertoire(
           const replies = coveredReplies(ranked);
           if (!replies.length) {
             status = "after-end";
-            endHere();
           } else {
             status = "uncovered";
             issue = issueAt("uncovered-opponent", replies, null);
@@ -366,6 +358,11 @@ export function compareGameToRepertoire(
         }
       }
       if (credited) noteChapterUsed(credited.chapterId);
+    }
+    // The first move past the prepared route marks where preparation ended.
+    if (status === "after-end" && !end) {
+      end = issueAt("preparation-ends", [], null);
+      matchedAtEnd = matchedPlies;
     }
 
     moves.push({
@@ -391,11 +388,11 @@ export function compareGameToRepertoire(
   }
   if (!issue && !matchedAny) {
     // A game that ends exactly where a chapter begins has nothing judged yet, but it applies.
-    const final = rankedAt(fen, null)[0];
+    const final = rankedAt(fen, null).at(0);
     if (final) {
       noteChapterUsed(final.chapterId);
     } else {
-      const first = moves[0];
+      const first = moves.at(0);
       issue = {
         status: "no-applicable-chapter",
         ply: firstPly,

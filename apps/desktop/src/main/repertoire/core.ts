@@ -307,10 +307,10 @@ export function sameIndexInputs(a: RepertoireChapter, b: RepertoireChapter): boo
   const ids = Object.keys(a.nodeMeta);
   if (ids.length !== Object.keys(b.nodeMeta).length) return false;
   return ids.every((id) => {
+    if (!Object.hasOwn(b.nodeMeta, id)) return false;
     const x = a.nodeMeta[id];
     const y = b.nodeMeta[id];
     return (
-      y !== undefined &&
       x.edge === y.edge &&
       Boolean(x.trainingStart) === Boolean(y.trainingStart) &&
       Boolean(x.trainingStop) === Boolean(y.trainingStop) &&
@@ -577,10 +577,7 @@ function reconcilePositions(
 /* ------------------------------------------------------------------ import commit */
 
 /** The tree without the excluded nodes and their subtrees. */
-export function pruneTree(
-  tree: readonly MoveNode[],
-  excludeNodeIds: readonly string[]
-): MoveNode[] {
+function pruneTree(tree: readonly MoveNode[], excludeNodeIds: readonly string[]): MoveNode[] {
   if (excludeNodeIds.includes(REPERTOIRE_ROOT_NODE_ID)) {
     throw new Error("Invalid excludeNodeIds: the root can't be excluded");
   }
@@ -609,7 +606,7 @@ export type ImportCommitChapter = {
   tree: MoveNode[];
   excludeNodeIds: string[];
   /** Position keys the parse worker computed, by node id. */
-  positionKeys: Record<string, string>;
+  positionKeys: Partial<Record<string, string>>;
 };
 
 export type ImportCommitJob = {

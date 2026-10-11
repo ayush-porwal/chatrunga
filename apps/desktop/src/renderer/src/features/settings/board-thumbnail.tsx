@@ -48,7 +48,7 @@ function cellsForFen(
       const name = `${file}${rank}`;
       if (!isSquare(name)) continue;
       const square = parseSquare(name);
-      const piece = board && square !== undefined ? board.get(square) : undefined;
+      const piece = board?.get(square);
       row.push(piece ? { color: piece.color, role: piece.role } : null);
       names.push(name);
     }

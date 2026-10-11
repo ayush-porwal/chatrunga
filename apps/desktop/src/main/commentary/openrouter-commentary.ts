@@ -430,11 +430,7 @@ async function requestCompletion(
 ): Promise<{ content: string; usage: CommentaryUsage | null }> {
   if (signal?.aborted) throw new CommentaryCancelled();
   const controller = new AbortController();
-  let timedOut = false;
-  const timeout = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, timeoutMs);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const cancel = () => controller.abort();
   signal?.addEventListener("abort", cancel, { once: true });
   try {
@@ -467,7 +463,8 @@ async function requestCompletion(
     return { content: content.trim(), usage: parseUsage(fields.usage) };
   } catch (error) {
     if (signal?.aborted) throw new CommentaryCancelled();
-    if (timedOut) throw new CommentaryFailure(TIMEOUT_ERROR, "timeout");
+    // Not the caller's cancel, so the controller's other abort: the timeout.
+    if (controller.signal.aborted) throw new CommentaryFailure(TIMEOUT_ERROR, "timeout");
     if (error instanceof CommentaryFailure) throw error;
     throw new CommentaryFailure(UNREACHABLE_ERROR, "network");
   } finally {
@@ -490,7 +487,9 @@ export function parseUsage(value: unknown): CommentaryUsage | null {
     completionTokens: count(usage.completion_tokens),
     costUsd: count(usage.cost)
   };
-  return Object.values(parsed).some((field) => field !== undefined) ? parsed : null;
+  // Object.values types the optional fields as present; any of them may be unset.
+  const fields: (number | undefined)[] = Object.values(parsed);
+  return fields.some((field) => field !== undefined) ? parsed : null;
 }
 
 async function mapWithConcurrency<T, R>(

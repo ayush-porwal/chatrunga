@@ -28,7 +28,8 @@ import { validateTree } from "./chapter-validation";
  * (empty and none when rejected).
  */
 export type ImportedGame = ParsedRepertoireGame & {
-  positionKeys: Record<string, string>;
+  /** Empty for a rejected game. */
+  positionKeys: Partial<Record<string, string>>;
   /** What the game practises as an opening chapter, per repertoire colour (the preview's). */
   decisions: Record<RepertoireColor, number>;
 };
@@ -60,9 +61,9 @@ export const DEFAULT_IMPORT_LIMITS: ImportLimits = {
 };
 
 /** Shortest gap between two progress reports of the same phase. */
-export const IMPORT_PROGRESS_INTERVAL_MS = 100;
+const IMPORT_PROGRESS_INTERVAL_MS = 100;
 /** Characters of in-memory text parsed between two yields to the event loop. */
-export const IMPORT_CHUNK_CHARS = 32 * 1024;
+const IMPORT_CHUNK_CHARS = 32 * 1024;
 /** Longest stretch of tree validation between two yields to the event loop. */
 const VALIDATION_SLICE_MS = 20;
 

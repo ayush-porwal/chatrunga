@@ -91,7 +91,7 @@ export function pickInProgress({
       orientation: live.yourColor
     };
   }
-  const online = playing.find((game) => game.isMyTurn) ?? playing[0];
+  const online = playing.find((game) => game.isMyTurn) ?? playing.at(0);
   if (online) {
     return {
       source: "lichess",

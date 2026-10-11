@@ -122,7 +122,7 @@ export async function ensurePieceSet(style: PieceStyle, attempt = 0): Promise<vo
   } catch (error) {
     added.delete(style);
     console.error(`piece set ${style} failed to load:`, error);
-    const wait = PIECE_SET_RETRY_MS[attempt];
+    const wait = PIECE_SET_RETRY_MS.at(attempt);
     if (wait !== undefined) setTimeout(() => void ensurePieceSet(style, attempt + 1), wait);
   }
 }

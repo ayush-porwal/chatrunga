@@ -17,8 +17,8 @@ export type MergeIncoming = {
   rootFen: string;
   /** Root id `"root"`; moves in the stored UCI form (castling as `e1g1`). */
   tree: readonly MoveNode[];
-  /** Metadata of the incoming tree, keyed by incoming id. */
-  nodeMeta: Record<string, RepertoireNodeMeta>;
+  /** Metadata of the incoming tree, keyed by incoming id (a node without any is a reference). */
+  nodeMeta: Partial<Record<string, RepertoireNodeMeta>>;
   /**
    * Incoming ids whose edge may upgrade a matched existing edge (the confirmed policy and its
    * context). Omitted = every incoming node.

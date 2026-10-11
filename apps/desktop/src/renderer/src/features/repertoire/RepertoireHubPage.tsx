@@ -172,7 +172,7 @@ export function RepertoireHubPage({
       });
       const last = detail.workspace?.lastChapterId;
       const chapter =
-        detail.chapters.find((item) => item.id === last) ?? sortedChapters(detail.chapters)[0];
+        detail.chapters.find((item) => item.id === last) ?? sortedChapters(detail.chapters).at(0);
       if (!chapter) {
         setNotice({
           tone: "info",
@@ -527,7 +527,7 @@ export function RepertoireHubPage({
           onClose={() => setCreating(false)}
           onCreated={(detail, next) => {
             setCreating(false);
-            const first = sortedChapters(detail.chapters)[0];
+            const first = sortedChapters(detail.chapters).at(0);
             if (next === "import") {
               setImportTarget(detail.id);
               setPlaceholder(first ? { repertoireId: detail.id, chapterId: first.id } : null);

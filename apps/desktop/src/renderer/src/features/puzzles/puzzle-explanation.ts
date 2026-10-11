@@ -157,7 +157,7 @@ export function buildPuzzleExplanationPayload({
   const solver = puzzle.sideToMove;
   const solutionSan = uciLineToSan(fen, puzzle.solutionMoves);
   if (solutionSan.length !== puzzle.solutionMoves.length || !solutionSan.length) return null;
-  const best = analysis.start[0];
+  const best = analysis.start.at(0);
   const bestLineSan = best ? uciLineToSan(fen, best.pv).slice(0, 10) : [];
   const assessment = assessScore(best?.scoreWhite);
   if (!best || !bestLineSan.length || !assessment) return null;

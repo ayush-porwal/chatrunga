@@ -182,7 +182,7 @@ export function planBoardRestore(snapshot: BoardSnapshot): BoardRestore {
 }
 
 /** The puzzle set a snapshot's board belongs to (its puzzle's, or a game played on from one), or null. */
-export function snapshotPuzzleSet(snapshot: BoardSnapshot): PuzzleSetSnapshot | null {
+function snapshotPuzzleSet(snapshot: BoardSnapshot): PuzzleSetSnapshot | null {
   return snapshot.puzzleSet ?? null;
 }
 

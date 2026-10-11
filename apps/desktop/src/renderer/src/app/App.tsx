@@ -1130,7 +1130,9 @@ export function App() {
     action: string
   ): HandoffOrigin | null {
     if (repertoireCommandBlocked(useLichessStore.getState(), command)) {
-      unlessOnlineGame(() => {});
+      unlessOnlineGame(() => {
+        // Never runs: the live game blocks the command; this shows it, with its notice.
+      });
       return null;
     }
     const origin = studyHandoffOrigin();
@@ -1188,7 +1190,11 @@ export function App() {
       played,
       gameId: currentGame().gameId
     });
-    if (decision === "blocked") unlessOnlineGame(() => {});
+    if (decision === "blocked") {
+      unlessOnlineGame(() => {
+        // Never runs: the live game blocks the review; this shows it, with its notice.
+      });
+    }
     if (decision === "gone") {
       useAppNoticeStore
         .getState()

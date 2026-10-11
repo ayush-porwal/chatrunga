@@ -22,7 +22,7 @@ const repertoireViews: ReadonlySet<AppView> = new Set([
  * The game view is the Analyze page unless its board is a game being played (an engine or a
  * Lichess game) or a puzzle, whether or not the Engine tab's Analysis switch is on.
  */
-export function onAnalyzePage(view: AppView, mode: GameMode, source: GameSource): boolean {
+function onAnalyzePage(view: AppView, mode: GameMode, source: GameSource): boolean {
   return view === "game" && (mode === "freeplay" || mode === "analysis") && source !== "puzzle";
 }
 

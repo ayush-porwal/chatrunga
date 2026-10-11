@@ -48,7 +48,11 @@ import {
   useRepertoirePausedKeysQuery,
   useRepertoireQuery
 } from "../../queries/repertoire";
-import { playUci, useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
+import {
+  pendingDecisionDraft,
+  playUci,
+  useRepertoireWorkspaceStore
+} from "../../stores/repertoire-workspace-store";
 import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
 import { BoardStage, BoardWorkspace, workspaceTabsClass } from "../board/BoardWorkspace";
 import { ControlledBoard } from "../board/ControlledBoard";
@@ -471,7 +475,7 @@ export function RepertoireStudyPage({
   // once that write settles (with what was typed meanwhile). A stale one waits for Discard /
   // Keep mine.
   const commitDecisionDraft = useEventCallback((key: string) => {
-    const draft = workspace().decisionDrafts[key];
+    const draft = pendingDecisionDraft(key);
     if (!draft) return;
     if (draft.status === "saving") {
       workspace().requestDecisionTextSaveAgain(key);
@@ -593,7 +597,7 @@ export function RepertoireStudyPage({
     }
     // The removed chapter's draft must never be saved again (that would recreate it).
     workspace().reset();
-    const next = sortedChapters(repertoire.chapters)[0];
+    const next = sortedChapters(repertoire.chapters).at(0);
     if (next) onOpenChapter(next.id);
     else onMissing("The chapter was removed.");
   };

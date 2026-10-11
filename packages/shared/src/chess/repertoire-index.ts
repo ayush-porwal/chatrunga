@@ -300,7 +300,7 @@ export function reconcileDecisions(
       continue;
     }
     const added = supported.filter((uci) => !previous.acceptedUcis.includes(uci));
-    const preferredUci = previous.preferredUci ?? supported[0] ?? null;
+    const preferredUci = previous.preferredUci ?? supported.at(0) ?? null;
     if (added.length || preferredUci !== previous.preferredUci) {
       upserts.push({
         ...previous,

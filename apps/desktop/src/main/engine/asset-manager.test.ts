@@ -80,7 +80,7 @@ const json = (body: unknown, init: ResponseInit = {}) =>
 describe("AssetManager", () => {
   let userDataDir: string;
   let workDir: string;
-  let routes: Record<string, () => Response | Promise<Response>>;
+  let routes: Partial<Record<string, () => Response | Promise<Response>>>;
   let fetchMock: ReturnType<typeof vi.fn>;
 
   const makeManager = (manifest?: EngineManifest) =>

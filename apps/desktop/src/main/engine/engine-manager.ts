@@ -51,7 +51,7 @@ type LineWaiter = {
 };
 
 /** Throws when `config` can't be spawned as a native UCI process. */
-export function assertSpawnable(config: EngineConfig | null): asserts config is EngineConfig {
+function assertSpawnable(config: EngineConfig | null): asserts config is EngineConfig {
   if (!config) throw new Error("Engine not found");
   if (!config.isAvailable) throw new Error("Engine binary is not available.");
 }
@@ -104,7 +104,7 @@ const IDLE_ENGINE_MS = 5 * 60_000;
 /** How long a stopped search may take to report its bestmove before the process is replaced. */
 const STOP_BESTMOVE_MS = 3_000;
 /** Engine lines reach the renderer at most this often (~10 Hz); a bestmove flushes them first. */
-export const ENGINE_INFO_INTERVAL_MS = 100;
+const ENGINE_INFO_INTERVAL_MS = 100;
 
 type SearchKind = "game" | "analysis";
 
@@ -576,7 +576,7 @@ export class EngineManager extends EventEmitter<EngineEvents> {
       this.idleTimer = null;
       if (!this.session?.searchId) void this.killSession();
     }, IDLE_ENGINE_MS);
-    this.idleTimer.unref?.();
+    this.idleTimer.unref();
   }
 
   private clearIdleTimer(): void {

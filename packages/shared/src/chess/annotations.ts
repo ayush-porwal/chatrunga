@@ -8,7 +8,7 @@ const colorToTag: Record<AnnotationColor, string> = {
   blue: "B"
 };
 
-const tagToColor: Record<string, AnnotationColor> = {
+const tagToColor: Partial<Record<string, AnnotationColor>> = {
   G: "green",
   R: "red",
   Y: "yellow",

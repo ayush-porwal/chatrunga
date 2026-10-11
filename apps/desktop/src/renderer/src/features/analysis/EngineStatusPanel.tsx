@@ -58,7 +58,7 @@ function moveNumberBefore(fen: string, index: number): string | null {
 }
 
 /** SAN piece letters → the board's piece (figurine notation, as Lichess shows lines). */
-const FIGURINE_ROLES: Record<string, PreviewPieceRole> = {
+const FIGURINE_ROLES: Partial<Record<string, PreviewPieceRole>> = {
   K: "king",
   Q: "queen",
   R: "rook",
@@ -68,10 +68,11 @@ const FIGURINE_ROLES: Record<string, PreviewPieceRole> = {
 
 /** A SAN move with its piece drawn as the board's piece (`♘f3`, `exd5`, `O-O`, `e8=♕`). */
 function FigurineSan({ san }: { san: string }) {
-  const role = FIGURINE_ROLES[san[0] ?? ""];
+  const role = FIGURINE_ROLES[san.charAt(0)];
   const body = role ? san.slice(1) : san;
   const promotion = /=([QRBN])/.exec(body);
-  if (!promotion) {
+  const promoted = promotion ? FIGURINE_ROLES[promotion[1]] : undefined;
+  if (!promotion || !promoted) {
     return (
       <>
         {role ? <Figurine role={role} /> : null}
@@ -83,7 +84,7 @@ function FigurineSan({ san }: { san: string }) {
     <>
       {role ? <Figurine role={role} /> : null}
       {body.slice(0, promotion.index + 1)}
-      <Figurine role={FIGURINE_ROLES[promotion[1]]} />
+      <Figurine role={promoted} />
       {body.slice(promotion.index + 2)}
     </>
   );
@@ -254,7 +255,7 @@ function previewFor(
   const line = lines.find((candidate) => (candidate.multipv ?? 1) === target.multipv);
   if (!line?.pv?.length) return null;
   const steps = uciLineSteps(fen, line.pv.slice(0, MAX_LINE_MOVES));
-  const step = steps[target.moveIndex];
+  const step = steps.at(target.moveIndex);
   if (!step) return null;
   return {
     fenAfter: step.fenAfter,

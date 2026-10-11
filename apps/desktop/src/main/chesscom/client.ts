@@ -8,7 +8,7 @@ import { CHESSCOM_RATING_KEYS, type ChesscomRatings } from "@chaturanga/shared/t
 import { isRecord } from "@chaturanga/shared/types/guards";
 import { createSerialQueue } from "../secure-json-file";
 
-export const CHESSCOM_API_ORIGIN = "https://api.chess.com";
+const CHESSCOM_API_ORIGIN = "https://api.chess.com";
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -32,7 +32,7 @@ export function isAbortError(error: unknown): boolean {
 }
 
 /** One readable sentence for a refused request. */
-export function chesscomErrorMessage(status: number): string {
+function chesscomErrorMessage(status: number): string {
   if (status === 429) return CHESSCOM_RATE_LIMITED_ERROR;
   if (status === 404) return "Chess.com couldn't find that.";
   if (status >= 500) return `Chess.com is having trouble right now (${status}). Try again later.`;

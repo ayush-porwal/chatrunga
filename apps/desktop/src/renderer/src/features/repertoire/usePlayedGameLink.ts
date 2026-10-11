@@ -52,7 +52,7 @@ export function usePlayedGameLink(): void {
       onGameSaved((saved) => {
         const played = handoffForSave(handoff(), saved);
         if (!played) return;
-        if (typeof window.chaturanga?.repertoires?.linkGame !== "function") return;
+        if (typeof window.chaturanga?.repertoires.linkGame !== "function") return;
         handoff().bindGame(saved.gameId, played.board);
         const attempt = linkOnce(
           {
@@ -73,8 +73,8 @@ export function usePlayedGameLink(): void {
         await flushGameAutosave();
         await Promise.all(pending);
         return true;
-      }) ?? (() => {})
+      })
     ];
-    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe?.());
   }, [linkOnce]);
 }

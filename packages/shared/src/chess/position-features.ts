@@ -102,7 +102,7 @@ export function exchangeGain(pos: Chess, square: Square): number {
       .sort((a, b) => a - b);
   const attackers = values(attackersOf(pos, square, opposite(victimColor)));
   const defenders = values(attackersOf(pos, square, victimColor));
-  const first = attackers[0];
+  const first = attackers.at(0);
   if (first === undefined) return 0;
   // Classic swap list: gain[d] is the attacker's balance if the sequence stops
   // after capture d; resolve backwards so either side may stop when continuing loses.
@@ -111,9 +111,8 @@ export function exchangeGain(pos: Chess, square: Square): number {
   let ai = 1;
   let di = 0;
   let defenderTurn = true;
-  while (true) {
-    const taker = defenderTurn ? defenders[di++] : attackers[ai++];
-    if (taker === undefined) break;
+  const nextTaker = () => (defenderTurn ? defenders.at(di++) : attackers.at(ai++));
+  for (let taker = nextTaker(); taker !== undefined; taker = nextTaker()) {
     gain.push(lastCapturer - (gain[gain.length - 1] ?? 0));
     lastCapturer = taker;
     defenderTurn = !defenderTurn;

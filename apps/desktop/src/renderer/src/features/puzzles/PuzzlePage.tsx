@@ -7,7 +7,11 @@ import {
   ratingRangeFor,
   type PuzzleDifficulty
 } from "@chaturanga/shared/chess/puzzle-rating";
-import { externalDatabaseSources, type PuzzleSample } from "@chaturanga/shared/types/database";
+import {
+  externalDatabaseSources,
+  type ExternalDatabaseSource,
+  type PuzzleSample
+} from "@chaturanga/shared/types/database";
 import { Badge, ChipButton } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Disclosure } from "@/components/ui/disclosure";
@@ -217,7 +221,7 @@ export const PuzzlePage = memo(function PuzzlePage({
       { onSuccess: (puzzle) => onStart(config, puzzle) }
     );
   }
-  const retrying = samplePuzzle.isPending && Boolean(samplePuzzle.variables?.ids);
+  const retrying = samplePuzzle.isPending && Boolean(samplePuzzle.variables.ids);
 
   const filtersChanged = isLichess
     ? themes.length ||
@@ -482,7 +486,9 @@ function PuzzleSetupSkeleton() {
 
 /** No puzzle or position database yet: what each one offers, and the way to get it. */
 function NoPuzzleDatabase({ onDatabases }: { onDatabases: () => void }) {
-  const sources = externalDatabaseSources.filter(
+  // Read as any catalogue source, not just today's: a game library has no place here.
+  const catalogue: readonly ExternalDatabaseSource[] = externalDatabaseSources;
+  const sources = catalogue.filter(
     (source) => source.kind === "puzzle" || source.kind === "position"
   );
   return (

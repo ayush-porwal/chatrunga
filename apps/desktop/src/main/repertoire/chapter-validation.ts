@@ -25,7 +25,7 @@ import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
 import { nullPrototypeRecord } from "@chaturanga/shared/types/record";
 import { isOneOf } from "@chaturanga/shared/types/guards";
 
-export const MAX_TREE_NODES = 100_000;
+const MAX_TREE_NODES = 100_000;
 const MAX_NAME = 200;
 export const MAX_DESCRIPTION = 5_000;
 const MAX_TAGS = 32;
@@ -245,7 +245,7 @@ export function validateTree(nodes: readonly unknown[], rootFen: string): MoveNo
 }
 
 /** Metadata for nodes of `tree` only (entries for removed nodes are dropped). */
-export function sanitizeNodeMeta(
+function sanitizeNodeMeta(
   value: unknown,
   tree: readonly MoveNode[]
 ): Record<string, RepertoireNodeMeta> {
@@ -302,9 +302,6 @@ export function sanitizeChapter(chapter: RepertoireChapter, revision: number): R
   const rootFen = typeof chapter.rootFen === "string" ? chapter.rootFen.trim() : "";
   if (!rootFen || !isValidFen(rootFen))
     throw new Error("Invalid chapter rootFen: not a legal position");
-  if (chapter.kind !== "opening" && chapter.kind !== "reference") {
-    throw new Error("Invalid chapter kind: expected opening or reference");
-  }
   if (!Array.isArray(chapter.tree)) throw new Error("Invalid chapter tree: expected an array");
   const tree = validateTree(chapter.tree, rootFen);
   return {
@@ -319,7 +316,7 @@ export function sanitizeChapter(chapter: RepertoireChapter, revision: number): R
     dueCount: 0,
     headers: sanitizeHeaders(chapter.headers),
     tree,
-    nodeMeta: sanitizeNodeMeta(chapter.nodeMeta ?? {}, tree)
+    nodeMeta: sanitizeNodeMeta(chapter.nodeMeta, tree)
   };
 }
 

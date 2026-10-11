@@ -69,7 +69,7 @@ export function useEngineSetup(): EngineSetup {
     return window.chaturanga?.onAssetStatusChanged(refresh);
   }, [refresh]);
   // Installs finishing change what is missing.
-  const readyCount = Object.values(progress).filter((entry) => entry?.status === "ready").length;
+  const readyCount = Object.values(progress).filter((entry) => entry.status === "ready").length;
   useEffect(() => {
     if (readyCount) refresh();
   }, [readyCount, refresh]);
@@ -93,7 +93,7 @@ export function useEngineSetup(): EngineSetup {
           status["maia-1500"],
           status["maia-1700"],
           status["maia-1900"]
-        ].filter((asset) => asset && isAssetInstalled(asset))
+        ].filter((asset) => isAssetInstalled(asset))
       : [];
     const done: AssetProgressMap = Object.fromEntries(
       installed.map((asset) => [
@@ -124,7 +124,7 @@ export function useEngineSetup(): EngineSetup {
       rows: queued.length ? rows : []
     }),
     engineReady,
-    stockfishPercent: stockfishBusy && stockfishRow ? setupRowPercent(stockfishRow) : null,
+    stockfishPercent: stockfishBusy ? setupRowPercent(stockfishRow) : null,
     lc0: {
       missing: status?.lc0.state === "missing" && !rows.some((row) => row.ids.includes("lc0")),
       autoDownload: Boolean(status?.lc0.autoDownload)

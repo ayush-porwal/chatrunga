@@ -1,5 +1,6 @@
 import type { SavedReviewInfo } from "../types/chess";
 import { savedReviewCommentary, type GameReview } from "../types/engine";
+import { isRecord } from "../types/guards";
 
 const finiteOrNull = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -9,9 +10,11 @@ const finiteOrNull = (value: unknown): number | null =>
  * Stored reviews come from older builds too, so every field is checked rather than trusted.
  */
 export function savedReviewInfo(review: GameReview, reviewId: string): SavedReviewInfo {
-  const maiaEngines = Array.isArray(review.maiaEngines) ? review.maiaEngines : [];
+  const maiaEngines: readonly unknown[] = Array.isArray(review.maiaEngines)
+    ? review.maiaEngines
+    : [];
   const ratings = maiaEngines
-    .map((engine) => finiteOrNull(engine?.rating))
+    .map((engine) => finiteOrNull(isRecord(engine) ? engine.rating : null))
     .filter((rating): rating is number => rating !== null);
   return {
     reviewId,

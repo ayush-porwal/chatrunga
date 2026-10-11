@@ -53,7 +53,7 @@ import type {
   InstalledDatabase
 } from "@chaturanga/shared/types/database";
 import { MAIA_RATINGS, maiaRatingFromText } from "../engine/review-analysis";
-import { allRows, getRow, sqliteErrcode } from "./rows";
+import { allRows, getRow, rollbackIfOpen, sqliteErrcode } from "./rows";
 import { parseStoredJson } from "../stored-json";
 import { isOneOf, isRecord } from "@chaturanga/shared/types/guards";
 import {
@@ -108,8 +108,8 @@ type GameSummaryRow = Pick<
 > & { review_count?: number | null; last_reviewed_at?: number | null };
 
 /** Library pages: `limit` when absent, and the most one page may hold. */
-export const GAME_PAGE_DEFAULT = 50;
-export const GAME_PAGE_MAX = 200;
+const GAME_PAGE_DEFAULT = 50;
+const GAME_PAGE_MAX = 200;
 
 const GAME_SUMMARY_COLUMNS = `id, source, white, black, event, result, date, current_fen, updated_at`;
 
@@ -187,6 +187,7 @@ function all<T>(sql: string, ...params: SQLInputValue[]): T[] {
   return allRows<T>(getDb().prepare(sql), ...params);
 }
 
+// oxlint-disable-next-line typescript/no-unnecessary-type-parameters -- T is the query's row shape, fixed by the schema (see db/rows.ts)
 function get<T>(sql: string, ...params: SQLInputValue[]): T | null {
   return getRow<T>(getDb().prepare(sql), ...params) ?? null;
 }
@@ -206,16 +207,14 @@ export function transaction<T>(work: () => T): T {
     db.exec("COMMIT");
     return result;
   } catch (error) {
-    // SQLite may already have ended the transaction (a failed COMMIT, or an error that rolls back
-    // by itself); a ROLLBACK then throws "no transaction is active" and would hide `error`, such
-    // as the BUSY that retryOnceIfBusy retries on.
-    if (db.isTransaction) db.exec("ROLLBACK");
+    // Rethrown unchanged: a BUSY here is what retryOnceIfBusy retries on.
+    rollbackIfOpen(db);
     throw error;
   }
 }
 
 /** Pause before retrying a write that found the database busy. */
-export const BUSY_RETRY_DELAY_MS = 300;
+const BUSY_RETRY_DELAY_MS = 300;
 
 /**
  * Runs a write; if SQLite reports BUSY (another connection, such as the repertoire import writer,
@@ -329,10 +328,7 @@ function parseMoveTree(row: GameRow): { moveTree: MoveNode[]; rebuilt: boolean }
  * are moved onto the rebuilt main line by ply (the position after each move must match). A review
  * that doesn't fit the rebuilt game is dropped rather than shown against the wrong moves.
  */
-export function remapReviewToTree(
-  review: GameReview,
-  moveTree: readonly MoveNode[]
-): GameReview | null {
+function remapReviewToTree(review: GameReview, moveTree: readonly MoveNode[]): GameReview | null {
   // By the node's own ply (absolute: a game from a set-up position starts past 0), not the index.
   const byPly = new Map(mainlineOf(moveTree).map((node) => [node.ply, node]));
   const moves = [];
@@ -366,7 +362,7 @@ function mainlineOf(moveTree: readonly MoveNode[]): MoveNode[] {
  * repeated position it was can't be told from a damaged tree. The main-line node showing the saved
  * position (its last occurrence), else the end of the main line.
  */
-export function rebuiltCursor(moveTree: readonly MoveNode[], currentFen: string): string | null {
+function rebuiltCursor(moveTree: readonly MoveNode[], currentFen: string): string | null {
   const line = mainlineOf(moveTree);
   for (let index = line.length - 1; index >= 0; index -= 1) {
     if (line[index].fenAfter === currentFen) return line[index].id;
@@ -449,7 +445,7 @@ function isMoveNodeLike(value: unknown, fens: Map<string, boolean> = new Map()):
  * node reached from it exactly once by following children whose parent links point back — so no
  * duplicate child, cycle or stray node, and walks up through parents always end at the root.
  */
-export function isConsistentTree(nodes: readonly unknown[]): nodes is MoveNode[] {
+function isConsistentTree(nodes: readonly unknown[]): nodes is MoveNode[] {
   // FENs repeat (each node's fenBefore is its parent's fenAfter): each is parsed once.
   const fens = new Map<string, boolean>();
   if (!nodes.every((node) => isMoveNodeLike(node, fens))) return false;
@@ -571,9 +567,7 @@ function toSavedGame(row: GameRow): SavedGame {
     reviews: listed.map(toSavedReviewInfo),
     reviewCount: listed.length,
     lastReviewedAt: listed[0]?.created_at ?? null,
-    ...(row.analysis_board === null || row.analysis_board === undefined
-      ? {}
-      : { analysisBoard: row.analysis_board === 1 })
+    ...(row.analysis_board === null ? {} : { analysisBoard: row.analysis_board === 1 })
   };
 }
 

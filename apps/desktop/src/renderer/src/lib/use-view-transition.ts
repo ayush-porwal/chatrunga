@@ -4,9 +4,9 @@ import { flushSync } from "react-dom";
 /** `lift`: the new view rises in (a page is involved). `fade`: plain cross-fade (board ↔ board). */
 export type ViewTransitionKind = "lift" | "fade";
 
-type ViewTransitionDocument = Document & {
-  startViewTransition?: (update: () => void) => { finished: Promise<void> };
-};
+/** Without the View Transitions API (jsdom, older engines) `startViewTransition` is missing. */
+type ViewTransitionDocument = Omit<Document, "startViewTransition"> &
+  Partial<Pick<Document, "startViewTransition">>;
 
 let activeTransition: { finished: Promise<void> } | null = null;
 
@@ -22,8 +22,8 @@ function isUpdater<T>(next: T | ((previous: T) => T)): next is (previous: T) => 
  * Falls back to a plain synchronous update. The update always runs, even if a newer transition
  * interrupts this one.
  */
-export function runViewTransition(update: () => void, kind: ViewTransitionKind = "lift"): void {
-  const doc = document as ViewTransitionDocument;
+function runViewTransition(update: () => void, kind: ViewTransitionKind = "lift"): void {
+  const doc: ViewTransitionDocument = document;
   if (!doc.startViewTransition || document.visibilityState !== "visible") {
     update();
     return;

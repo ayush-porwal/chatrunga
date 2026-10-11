@@ -26,7 +26,7 @@ export function isForeground(): boolean {
 }
 
 /** Input this recent makes a board change the user's own doing (not a restore or engine reply). */
-export const USER_INPUT_WINDOW_MS = 4_000;
+const USER_INPUT_WINDOW_MS = 4_000;
 
 let lastUserInputAt = Number.NEGATIVE_INFINITY;
 let inputListening = false;

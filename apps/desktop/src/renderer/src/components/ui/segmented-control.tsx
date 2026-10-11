@@ -83,7 +83,10 @@ function SegmentedControl<T extends string>({
     if (!container || !indicator) return;
     let applied = "";
     const place = (animate: boolean) => {
-      const segment = container.querySelectorAll<HTMLElement>("[data-segment]")[selectedIndex];
+      const segment =
+        selectedIndex === -1
+          ? undefined
+          : container.querySelectorAll<HTMLElement>("[data-segment]")[selectedIndex];
       if (!segment || segment.offsetWidth === 0) {
         indicator.style.opacity = "0";
         applied = "";

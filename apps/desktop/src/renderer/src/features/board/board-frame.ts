@@ -95,8 +95,8 @@ export function splitterBoardEdge(start: number, dx: number, max: number, shift 
 }
 
 /** The splitter's arrow-key step (CSS px), and with Shift held. */
-export const BOARD_SPLITTER_STEP = 16;
-export const BOARD_SPLITTER_STEP_LARGE = 64;
+const BOARD_SPLITTER_STEP = 16;
+const BOARD_SPLITTER_STEP_LARGE = 64;
 
 /**
  * What a key does on the splitter between the board and the side panel, from the board's current

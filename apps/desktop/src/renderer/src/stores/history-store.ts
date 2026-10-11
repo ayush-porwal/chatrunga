@@ -19,7 +19,7 @@ import type { PlayOpponent } from "./lichess-store";
  * A puzzle set as a board's entry keeps it: which set (its id), its filters (the Puzzles page's
  * config) and the puzzles shown by then.
  */
-export type PuzzleSetRecord = { id: string; config: PuzzleSessionConfig; shownIds: string[] };
+type PuzzleSetRecord = { id: string; config: PuzzleSessionConfig; shownIds: string[] };
 
 /** A board as it was: the game (saved id, or the whole session when it was never saved) and how it was shown. */
 export type BoardSnapshot = {
@@ -130,7 +130,7 @@ export const useHistoryStore = create<HistoryStore>((set) => ({
 }));
 
 /** Same screen in the same state (a repeated click on where you already are adds nothing). */
-export function sameEntry(left: HistoryEntry | undefined, right: HistoryEntry): boolean {
+function sameEntry(left: HistoryEntry | undefined, right: HistoryEntry): boolean {
   return Boolean(left) && JSON.stringify(left) === JSON.stringify(right);
 }
 

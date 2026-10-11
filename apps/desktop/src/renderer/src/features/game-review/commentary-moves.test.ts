@@ -50,7 +50,7 @@ function setup(overrides: Partial<MoveReview> = {}) {
     motifs: []
   }));
   const index = 6;
-  const base = moves[index];
+  const base = moves.at(index);
   if (!base) throw new Error("missing ply 7");
   const move: MoveReview = {
     ...base,
@@ -120,10 +120,10 @@ describe("resolveCommentaryMoves", () => {
   it("resolves the played move to its own node through the main line", () => {
     const { ctx, nodes } = setup();
     const [played] = resolveProse("Nxe5 grabs a pawn.", ctx);
-    expect(played?.target?.kind).toBe("played");
-    expect(played?.target?.startNodeId).toBe("root");
-    expect(played?.target?.moves).toHaveLength(7);
-    expect(played?.target?.fenAfter).toBe(nodes[6]?.fenAfter);
+    expect(played.target?.kind).toBe("played");
+    expect(played.target?.startNodeId).toBe("root");
+    expect(played.target?.moves).toHaveLength(7);
+    expect(played.target?.fenAfter).toBe(nodes[6]?.fenAfter);
   });
 
   it("keeps a consecutive best-line run together from the move's parent", () => {
@@ -138,10 +138,10 @@ describe("resolveCommentaryMoves", () => {
   it("resolves history nearest to the commented move and the actual reply", () => {
     const { ctx } = setup();
     const [nc6, qg5] = resolveProse("Earlier Nc6 developed; after it Qg5 hit two pieces.", ctx);
-    expect(nc6?.target).toMatchObject({ kind: "history", startNodeId: "root" });
-    expect(nc6?.target?.moves).toHaveLength(4);
-    expect(qg5?.target?.kind).toBe("history");
-    expect(qg5?.target?.moves).toHaveLength(8);
+    expect(nc6.target).toMatchObject({ kind: "history", startNodeId: "root" });
+    expect(nc6.target?.moves).toHaveLength(4);
+    expect(qg5.target?.kind).toBe("history");
+    expect(qg5.target?.moves).toHaveLength(8);
   });
 
   it("resolves the stored reply line from the move's own node", () => {
@@ -154,25 +154,25 @@ describe("resolveCommentaryMoves", () => {
 
   it("falls back to the next ply's best line when replyLines are missing", () => {
     const { ctx, moves, move } = setup({ replyLines: undefined });
-    const next = moves[7];
+    const next = moves.at(7);
     if (!next) throw new Error("missing ply 8");
     moves[7] = { ...next, bestLine: ["d8e7", "e5f7"] };
     const [qe7] = resolveProse("It allowed Qe7.", { ...ctx, moves });
-    expect(qe7?.target).toMatchObject({ kind: "reply", startNodeId: move.nodeId, moves: ["Qe7"] });
+    expect(qe7.target).toMatchObject({ kind: "reply", startNodeId: move.nodeId, moves: ["Qe7"] });
   });
 
   it("resolves alternatives", () => {
     const { ctx } = setup();
     const [c3] = resolveProse("The engine also liked c3.", ctx);
-    expect(c3?.target).toMatchObject({ kind: "alternative", moves: ["c3"] });
+    expect(c3.target).toMatchObject({ kind: "alternative", moves: ["c3"] });
   });
 
   it("uses move-number prefixes to pick the right occurrence", () => {
     const { ctx } = setup();
     const [plain, numbered] = resolveProse("Nf3 early, and 7...Nf3# at the end.", ctx);
-    expect(plain?.target?.moves).toHaveLength(3);
-    expect(numbered?.target?.kind).toBe("game");
-    expect(numbered?.target?.moves).toHaveLength(14);
+    expect(plain.target?.moves).toHaveLength(3);
+    expect(numbered.target?.kind).toBe("game");
+    expect(numbered.target?.moves).toHaveLength(14);
   });
 
   it("accepts over-disambiguated SAN and leaves unknown or illegal moves as text", () => {
@@ -181,9 +181,9 @@ describe("resolveCommentaryMoves", () => {
       "Nfxe5 was played; Qh5 never happened and Bb5 was impossible.",
       ctx
     );
-    expect(nfxe5?.target?.kind).toBe("played");
-    expect(qh5?.target).toBeNull();
-    expect(bxf7?.target).toBeNull();
+    expect(nfxe5.target?.kind).toBe("played");
+    expect(qh5.target).toBeNull();
+    expect(bxf7.target).toBeNull();
   });
 
   it("resolves a single token without run context", () => {

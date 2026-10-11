@@ -126,11 +126,10 @@ const dailyRecord = join(userData, "puzzle-of-the-day.json");
 
 /** A server for one file with ETag, Range and If-Range, like database.lichess.org. */
 function fakeServer(content: Buffer, etag: string, options: { failAfter?: number } = {}) {
-  const requests: Array<Record<string, string>> = [];
+  const requests: Array<Partial<Record<string, string>>> = [];
   const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
-    const { "Accept-Encoding": encoding, ...headers } = (init?.headers ?? {}) as Record<
-      string,
-      string
+    const { "Accept-Encoding": encoding, ...headers } = (init?.headers ?? {}) as Partial<
+      Record<string, string>
     >;
     expect(encoding).toBe("identity");
     requests.push(headers);

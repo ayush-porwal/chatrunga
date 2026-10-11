@@ -21,6 +21,7 @@ vi.stubGlobal("window", {
   ...globalThis,
   chaturanga: {
     engines: { cancelReview },
+    system: { timeAsleepMs: () => 0 },
     events: {
       onReviewProgress: on("progress"),
       onReviewMoveCompleted: on("move"),

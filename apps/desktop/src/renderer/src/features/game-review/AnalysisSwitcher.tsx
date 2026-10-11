@@ -90,9 +90,9 @@ export function AnalysisSwitcher() {
   useEffect(() => {
     if (!open || !placed) return;
     const options = [...(listRef.current?.querySelectorAll<HTMLElement>(OPTION_SELECTOR) ?? [])];
-    (options.find((option) => option.getAttribute("aria-current") === "true") ?? options[0])?.focus(
-      { preventScroll: true }
-    );
+    (
+      options.find((option) => option.getAttribute("aria-current") === "true") ?? options.at(0)
+    )?.focus({ preventScroll: true });
   }, [open, placed]);
 
   const locked = running || loading || deleteAnalyses.isPending;
@@ -100,7 +100,7 @@ export function AnalysisSwitcher() {
 
   const shownId = shownAnalysisId(analyses, review);
   const shownIndex = analyses.findIndex((info) => info.reviewId === shownId);
-  const shown = analyses[shownIndex];
+  const shown = shownIndex >= 0 ? analyses[shownIndex] : null;
 
   const choose = (reviewId: string) => {
     close();

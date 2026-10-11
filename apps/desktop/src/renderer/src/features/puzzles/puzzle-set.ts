@@ -34,7 +34,7 @@ export function selectedPuzzleDatabase<T extends DatabaseRef>(
   return (
     databases.find((item) => item.id === draftDatabaseId) ??
     databases.find((item) => item.sourceId === "lichess-puzzles") ??
-    databases[0] ??
+    databases.at(0) ??
     null
   );
 }

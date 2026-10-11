@@ -122,7 +122,7 @@ export function invalidateSummaries(queryClient: QueryClient) {
 }
 
 /** Re-reads summaries and the detail of a repertoire (not its chapter trees). */
-export function invalidateRepertoire(queryClient: QueryClient, id: string | null) {
+function invalidateRepertoire(queryClient: QueryClient, id: string | null) {
   void queryClient.invalidateQueries({ queryKey: repertoireKeys.lists });
   void queryClient.invalidateQueries({ queryKey: repertoireKeys.due });
   if (id) {
@@ -165,7 +165,7 @@ function adoptDetail(queryClient: QueryClient, detail: RepertoireDetail) {
  * Re-reads the chapter trees of a repertoire (every repertoire when null): a decision change can
  * rewrite edges in chapters other than the one saved.
  */
-export function invalidateChapters(queryClient: QueryClient, id: string | null) {
+function invalidateChapters(queryClient: QueryClient, id: string | null) {
   void queryClient.invalidateQueries(
     id
       ? { queryKey: ["repertoires", id, "chapter"] }
@@ -181,7 +181,7 @@ export function useRepertoireChangedSubscription() {
   const queryClient = useQueryClient();
   useEffect(
     () =>
-      repertoires()?.onChanged?.((event) => {
+      repertoires()?.onChanged((event) => {
         if (event.kind === "workspace") {
           invalidateSummaries(queryClient);
           return;

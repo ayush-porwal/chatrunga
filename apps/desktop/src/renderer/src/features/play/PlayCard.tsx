@@ -607,7 +607,7 @@ function engineView({
           stops={stops}
           value={index}
           onChange={(next) => {
-            const preset = ENGINE_CLOCK_PRESETS[next];
+            const preset = ENGINE_CLOCK_PRESETS.at(next);
             if (preset) engine.setClockPreset(preset.id);
           }}
         >

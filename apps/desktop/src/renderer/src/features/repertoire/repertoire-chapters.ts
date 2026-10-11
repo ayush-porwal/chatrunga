@@ -51,9 +51,11 @@ export function chapterOrderAfterMove(
 ): Array<[string, number]> {
   const ordered = sortedChapters(chapters);
   const index = ordered.findIndex((chapter) => chapter.id === chapterId);
+  const neighbourIndex = index + direction;
+  // No such chapter, or none beyond it that way.
+  if (index === -1 || neighbourIndex < 0 || neighbourIndex >= ordered.length) return [];
   const chapter = ordered[index];
-  const neighbour = ordered[index + direction];
-  if (!chapter || !neighbour) return [];
+  const neighbour = ordered[neighbourIndex];
   const orders = new Set(ordered.map((item) => item.sortOrder));
   if (orders.size === ordered.length) {
     return [

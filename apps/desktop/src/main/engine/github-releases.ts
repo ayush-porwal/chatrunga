@@ -15,8 +15,8 @@ import { isRecord } from "@chaturanga/shared/types/guards";
  * if old) release, or the bundled fallback manifest when nothing is cached.
  */
 
-export const GITHUB_API = "https://api.github.com";
-export const RELEASE_API_TIMEOUT_MS = 10_000;
+const GITHUB_API = "https://api.github.com";
+const RELEASE_API_TIMEOUT_MS = 10_000;
 /** How long a resolved release is trusted before downloads/background checks ask GitHub again. */
 export const RELEASE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 

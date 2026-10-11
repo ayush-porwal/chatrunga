@@ -13,7 +13,7 @@
  *   from the first insight after that.
  */
 
-export type ReviewStepTarget = { kind: "insight"; index: number } | { kind: "summary" };
+type ReviewStepTarget = { kind: "insight"; index: number } | { kind: "summary" };
 
 export type ReviewStepAction = { label: string; target: ReviewStepTarget };
 

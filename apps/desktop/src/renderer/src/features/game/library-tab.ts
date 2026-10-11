@@ -24,9 +24,9 @@ import { recentGamesFilterOptions, type RecentGamesFilterOption } from "../play/
 const TAB_KEY = "chaturanga.library.tab";
 
 function storage(): Storage | null {
-  // Storage access throws where it is blocked (a sandboxed or opaque origin).
+  // Storage access throws where it is blocked (a sandboxed or opaque origin); Node has none.
   try {
-    return globalThis.localStorage ?? null;
+    return "localStorage" in globalThis ? globalThis.localStorage : null;
   } catch {
     return null;
   }

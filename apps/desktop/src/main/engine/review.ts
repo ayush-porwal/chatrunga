@@ -337,17 +337,16 @@ export async function reviewGameWithEngine(
       const humanPredictions: RatingPrediction[] = [];
       for (const [slotIndex, result] of (await maiaPromise).entries()) {
         if (result.status === "rejected") {
+          // Settled in the order activeMaia was mapped, so this is the slot that failed.
           const slot = activeMaia[slotIndex];
-          if (slot) {
-            // Stop retrying a Maia that errored or timed out; the rest carry on.
-            logger.warn(
-              "review",
-              `Maia ${slot.config.maiaRating} failed; dropping it:`,
-              result.reason
-            );
-            slot.alive = false;
-            slot.session.stop();
-          }
+          // Stop retrying a Maia that errored or timed out; the rest carry on.
+          logger.warn(
+            "review",
+            `Maia ${slot.config.maiaRating} failed; dropping it:`,
+            result.reason
+          );
+          slot.alive = false;
+          slot.session.stop();
           continue;
         }
         const { slot, policy } = result.value;
@@ -497,10 +496,10 @@ function buildMoveReview(input: {
   previousMove: string | null;
 }): MoveReview {
   const { move, playedUci, topLines, replyLines, terminal, humanPredictions } = input;
-  const best = topLines[0] ?? null;
+  const best = topLines.at(0) ?? null;
   const moverAfter = statusForFen(move.fenAfter).turn;
   // Side-to-move score of fenAfter (opponent's perspective), synthesized when the game ended.
-  const afterScore = terminal ? terminalScore(terminal) : (replyLines[0]?.score ?? null);
+  const afterScore = terminal ? terminalScore(terminal) : (replyLines.at(0)?.score ?? null);
   // White-perspective, except a checkmate stays `mate 0` (= side to move is mated; see `terminal`).
   const evalAfter =
     terminal === "checkmate"
@@ -539,7 +538,7 @@ function buildMoveReview(input: {
     playedRank,
     playedLineScore: playedLine?.score ?? null,
     wdlBefore: best?.wdl ?? null,
-    wdlAfter: terminal ? terminalWdl(terminal) : (replyLines[0]?.wdl ?? null),
+    wdlAfter: terminal ? terminalWdl(terminal) : (replyLines.at(0)?.wdl ?? null),
     terminal,
     humanPredictions: humanPredictions.length > 0 ? humanPredictions : undefined,
     motifs

@@ -1,4 +1,4 @@
-import type { SQLInputValue, StatementSync } from "node:sqlite";
+import type { DatabaseSync, SQLInputValue, StatementSync } from "node:sqlite";
 
 /*
  * Rows typed as their query selects them. node:sqlite types every row as a record of SQL values;
@@ -13,6 +13,7 @@ export function allRows<Row>(statement: StatementSync, ...params: SQLInputValue[
   return statement.all(...params) as Row[];
 }
 
+// oxlint-disable-next-line typescript/no-unnecessary-type-parameters -- Row is the query's row shape, fixed by the schema (see above)
 export function getRow<Row>(statement: StatementSync, ...params: SQLInputValue[]): Row | undefined {
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the schema fixes each query's row shape (see above)
   return statement.get(...params) as Row | undefined;
@@ -23,4 +24,13 @@ export function sqliteErrcode(error: unknown): number | undefined {
   return error instanceof Error && "errcode" in error && typeof error.errcode === "number"
     ? error.errcode
     : undefined;
+}
+
+/**
+ * Rolls back the open transaction after a failure. SQLite may already have ended it (a failed
+ * COMMIT, or an error that rolls back by itself); a ROLLBACK then throws "no transaction is
+ * active" and would hide the error that ended it.
+ */
+export function rollbackIfOpen(db: DatabaseSync): void {
+  if (db.isTransaction) db.exec("ROLLBACK");
 }

@@ -5,11 +5,7 @@ import { fenAfterUci, positionFromFen, statusForFen } from "@chaturanga/shared/c
 import { analyzeTacticsForPosition } from "@chaturanga/shared/chess/tactics";
 import { buildIdeaFacts } from "@chaturanga/shared/chess/move-ideas";
 import { buildRatingCurve, quantizeToBucket } from "@chaturanga/shared/chess/rating-curve";
-import {
-  formatEngineScore,
-  scoreFromWhitePerspective,
-  scoreToCentipawns
-} from "@chaturanga/shared/chess/review";
+import { formatEngineScore, scoreToCentipawns } from "@chaturanga/shared/chess/review";
 import { REVIEW_INSIGHT_PAYLOAD_VERSION } from "@chaturanga/shared/schemas/review-insight";
 import type {
   CuratorReason,
@@ -182,9 +178,8 @@ export function buildTacticalFacts(move: MoveReview): TacticalFact[] {
 
 export function buildEngineSignals(move: MoveReview): EngineSignal[] {
   const lines = [...move.topLines].sort((a, b) => a.multipv - b.multipv);
-  if (lines.length < 2) return [];
-  const best = lines[0];
-  const second = lines[1];
+  const best = lines.at(0);
+  const second = lines.at(1);
   if (!best || !second) return [];
   const gap = Math.abs(scoreToCentipawns(best.score) - scoreToCentipawns(second.score));
   const signals: EngineSignal[] = [];
@@ -332,19 +327,18 @@ function resolveEvalLoss(
   return Math.max(0, Math.min(1000, moverCp(reference, mover) - moverCp(evalAfter, mover)));
 }
 
-function buildAlternatives(move: MoveReview, mover: Side) {
+function buildAlternatives(move: MoveReview) {
   const lines = [...move.topLines].sort((a, b) => a.multipv - b.multipv).slice(0, 3);
   const alternatives: NonNullable<ReviewInsightPayload["engines"]["stockfish"]["alternatives"]> =
     [];
   lines.forEach((line, index) => {
     const san = uciToSan(move.fenBefore, line.pv[0]);
     if (!isSanToken(san)) return;
-    const score = line.scoreWhite ?? scoreFromWhitePerspective(line.score, mover);
     alternatives.push(
       defined({
         rank: index + 1,
         san,
-        eval: formatEngineScore(score),
+        eval: formatEngineScore(line.scoreWhite),
         lineSan: uciLineToSan(move.fenBefore, line.pv).slice(0, 6),
         isPlayed: line.pv[0] === move.playedMove ? true : undefined
       })
@@ -472,7 +466,7 @@ function buildGameContext(
   const openingName = cleanHeader(headers.opening, 90);
   const opening = [eco, openingName].filter(Boolean).join(" ").slice(0, 100) || undefined;
   const headerResult = cleanHeader(headers.result, 10);
-  const last = ordered[ordered.length - 1];
+  const last = ordered.at(-1);
   const finalResult = last ? safeStatus(last.fenAfter)?.result : undefined;
   const result = [headerResult, finalResult].find(
     (value): value is "1-0" | "0-1" | "1/2-1/2" =>
@@ -534,7 +528,7 @@ function toWinChance(wdl: Wdl | null | undefined, flip: boolean): WinChance | un
 }
 
 function engineMeta(move: MoveReview, review: InsightReviewMeta | null | undefined) {
-  const bestLine = [...move.topLines].sort((a, b) => a.multipv - b.multipv)[0];
+  const bestLine = [...move.topLines].sort((a, b) => a.multipv - b.multipv).at(0);
   const depth =
     bestLine?.depth && bestLine.depth > 0 ? Math.min(250, Math.round(bestLine.depth)) : undefined;
   const moveTimeMs = review?.engineSettings?.moveTimeMs ?? review?.moveTimeMs ?? undefined;
@@ -690,7 +684,7 @@ export function buildInsightPayload(
   const assessmentAfterBest = bestTerminal
     ? terminalAssessment(bestTerminal, mover)
     : assessScore(move.bestEvalAfter);
-  const { alternatives, playedMoveRank } = buildAlternatives(move, mover);
+  const { alternatives, playedMoveRank } = buildAlternatives(move);
   const replyLineSan =
     move.playedMove !== move.bestMove && !terminal ? replyLineFor(move, context) : undefined;
   const motifs = move.motifs.filter((motif) => motif.length > 0 && motif.length <= 30).slice(0, 6);

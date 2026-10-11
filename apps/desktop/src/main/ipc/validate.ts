@@ -361,7 +361,7 @@ function asGameRating(value: unknown, label: string): number | null {
 }
 
 /** What main resolves a review's rating from: the reviewed side, the game's ratings and speed. */
-export function parseReviewRatingContext(value: unknown): ReviewRatingContext {
+function parseReviewRatingContext(value: unknown): ReviewRatingContext {
   const input = asObject(value, "review rating");
   const { side, speed } = input;
   return {

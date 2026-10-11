@@ -75,7 +75,7 @@ describe("review validity", () => {
     );
     useGameStore.getState().loadGame({ ...game, id: "g" });
     const moves = reviewOfMainline();
-    // 2… Nc6 3. Bb5 go: plies 3 and 4, which are moves 2 and 3 when Black moves first.
+    // 2… Nc6 3. Bb5 go: plies 4 and 5 (1. e4 is ply 1, in the FEN), which are moves 2 and 3.
     useGameStore.getState().deleteLineFromNode(nodeBySan("Nc6").id);
     expect(outdatedFullMoves(moves, tree())).toBe(2);
   });

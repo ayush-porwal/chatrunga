@@ -328,9 +328,6 @@ const compareCache = new Map<string, RepertoireComparison>();
  */
 export function compareGame(input: CompareGameInput): RepertoireComparison {
   const record = requireRepertoire(input.repertoireId);
-  if (input.color !== "white" && input.color !== "black") {
-    throw new Error("Invalid color: expected white or black");
-  }
   if (input.color !== record.color) {
     throw new Error(`Invalid color: this repertoire is for ${record.color}`);
   }
@@ -386,7 +383,9 @@ export function compareGame(input: CompareGameInput): RepertoireComparison {
 export function getDueSummary(): RepertoireDueSummary {
   const now = clock();
   const totals = repertoireRepository.dueTotals(now);
-  const [top, second] = repertoireRepository.dueRanking(now, 2);
+  const ranking = repertoireRepository.dueRanking(now, 2);
+  const top = ranking.at(0);
+  const second = ranking.at(1);
   const place = repertoireRepository.lastStudyPlace();
   const session = sessionRepository.lastActive();
   return {
@@ -461,9 +460,6 @@ function moveInto(
 export function createRepertoire(input: CreateRepertoireInput): RepertoireDetail {
   const now = clock();
   const name = cleanName(input.name);
-  if (input.color !== "white" && input.color !== "black") {
-    throw new Error("Invalid color: expected white or black");
-  }
   const rootFen = input.rootFen?.trim() || START_FEN;
   if (!isValidFen(rootFen)) throw new Error("Invalid rootFen: not a legal position");
   const id = nanoid();
@@ -534,7 +530,7 @@ export function saveChapter(input: SaveChapterInput): ChapterSaveResult {
   const result = transaction(() => {
     const record = requireRepertoire(input.repertoireId);
     checkRevision(record, input.expectedRevision);
-    if (!input.chapter || typeof input.chapter.id !== "string" || !input.chapter.id) {
+    if (!input.chapter.id) {
       throw new Error("Invalid chapter: expected a chapter with an id");
     }
     const owner = chapterRepository.ownerOf(input.chapter.id);
@@ -676,7 +672,8 @@ export function updateDecision(input: UpdateDecisionInput): DecisionSaveResult {
         }
         for (const occurrence of candidates) {
           const child = childPlaying(occurrence, uci)!;
-          const before = occurrence.chapter.nodeMeta[child.id];
+          const meta: Partial<Record<string, RepertoireNodeMeta>> = occurrence.chapter.nodeMeta;
+          const before = meta[child.id];
           setEdge(occurrence, child, "included");
           if (isActiveIncluded(occurrence, child)) break;
           // This occurrence can't train (disabled, reference chapter, outside its boundaries).
@@ -952,7 +949,7 @@ function pruneImportJobs(now: number): void {
  */
 function makeRoomForImport(): void {
   while (importJobs.size + runningImports.size >= MAX_IMPORT_JOBS) {
-    const [pending] = importJobs.keys();
+    const pending = importJobs.keys().next().value;
     if (pending === undefined) {
       throw new Error("Another import is still parsing; wait or cancel it.");
     }
@@ -1114,9 +1111,6 @@ async function storeImport(input: ImportCommitInput): Promise<ImportResult> {
         `Invalid selections: game ${selection.gameIndex + 1} can't be imported (${game.rejected})`
       );
     }
-    if (selection.kind !== "opening" && selection.kind !== "reference") {
-      throw new Error("Invalid selections: kind must be opening or reference");
-    }
     return {
       title: selection.title,
       proposedTitle: game.proposedTitle,
@@ -1225,7 +1219,7 @@ type AddFromGamePlan = {
 };
 
 /** A title from the game's tags when the dialog gives none. */
-function gameTitle(headers: Record<string, string>): string {
+function gameTitle(headers: Partial<Record<string, string>>): string {
   const known = (value: string | undefined) => {
     const trimmed = value?.trim();
     return trimmed && trimmed !== "?" ? trimmed : null;
@@ -1267,8 +1261,10 @@ function checkPolicy(
 ): void {
   const byId = new Map(extracted.tree.map((node) => [node.id, node]));
   const context = new Set(extracted.contextNodeIds);
+  // A policy may name ids the extraction never copied.
+  const chapterIds: Partial<Record<string, string>> = extracted.sourceToChapterIds;
   const moveOf = (sourceId: string): MoveNode => {
-    const chapterId = extracted.sourceToChapterIds[sourceId];
+    const chapterId = chapterIds[sourceId];
     const node = chapterId === undefined ? undefined : byId.get(chapterId);
     if (!node || node.id === REPERTOIRE_ROOT_NODE_ID || context.has(sourceId)) {
       throw new Error(`Invalid policy: node "${sourceId}" is not part of the selected material`);
@@ -1342,13 +1338,8 @@ function planAddFromGame(
   if (destination.kind === "existing-chapter") {
     existing = loadChapter(record.id, destination.chapterId, now);
     kind = existing.kind;
-  } else if (destination.kind === "new-chapter") {
-    if (destination.chapterKind !== "opening" && destination.chapterKind !== "reference") {
-      throw new Error("Invalid destination: chapter kind must be opening or reference");
-    }
-    kind = destination.chapterKind;
   } else {
-    throw new Error("Invalid destination: expected a new or an existing chapter");
+    kind = destination.chapterKind;
   }
 
   const defaultPolicy = proposePolicy(record.color, extracted, scope, kind);
@@ -1363,7 +1354,7 @@ function planAddFromGame(
   let draft: RepertoireChapter;
   let alreadyPresent = 0;
   // Copied id → stored chapter id (the same ids for a new chapter).
-  let chapterIds: Record<string, string> = extracted.sourceToChapterIds;
+  let chapterIds: Partial<Record<string, string>> = extracted.sourceToChapterIds;
   if (existing) {
     // Opponent context moves may cover a matched reference edge; the player's context moves stay
     // as they are (they can't be accepted here), and moves below them are reported untrained.
@@ -1462,13 +1453,12 @@ function planAddFromGame(
     kind === "opening"
       ? untrainedMoveWarnings(
           chapter,
-          ownMoves
-            .filter((move) => chosen.has(move.nodeId) && chapterIds[move.nodeId] !== undefined)
-            .map((move) => ({
-              chapterNodeId: chapterIds[move.nodeId],
-              san: move.san,
-              path: move.path
-            }))
+          ownMoves.flatMap((move) => {
+            const chapterNodeId = chapterIds[move.nodeId];
+            return chosen.has(move.nodeId) && chapterNodeId !== undefined
+              ? [{ chapterNodeId, san: move.san, path: move.path }]
+              : [];
+          })
         )
       : { trained: 0, warnings: [] };
 
@@ -1738,7 +1728,8 @@ function snapshotOf(session: PracticeSessionRecord): PracticeSessionSnapshot {
     cards: session.cards,
     totals: totalsOf(session.cards)
   };
-  const card = session.cards[session.cursor];
+  // No card when the queue is empty.
+  const card = session.cards.at(session.cursor);
   const policy = card ? session.policies[card.queueItemId] : undefined;
   if (!card || !policy) return snapshot;
   // A reveal after a wrong answer leaves the card answered-wrong; its recorded action says so.
@@ -1754,7 +1745,8 @@ function snapshotOf(session: PracticeSessionRecord): PracticeSessionSnapshot {
     ...snapshot,
     shown: {
       hint: card.hintStage >= 1 ? policy.hint : null,
-      hintUci: card.hintStage >= 2 ? (policy.preferredUci ?? policy.acceptedUcis[0] ?? null) : null,
+      hintUci:
+        card.hintStage >= 2 ? (policy.preferredUci ?? policy.acceptedUcis.at(0) ?? null) : null,
       revealed: revealed ? answerOf(policy) : null
     }
   };
@@ -2065,8 +2057,8 @@ function progressChanged(repertoireId: string): void {
  * on only after a correct answer: a wrongly answered card stays current for its retries.
  */
 export function recordAttempt(input: RecordAttemptInput): AttemptResult {
-  let scheduled = false;
-  let repertoireId = "";
+  // The repertoire whose schedule this changed: its progress is announced after the commit.
+  let rescheduled: string | undefined;
   const result = transaction((): AttemptResult => {
     const prior = attemptRepository.get(input.attemptId);
     if (prior) {
@@ -2081,7 +2073,6 @@ export function recordAttempt(input: RecordAttemptInput): AttemptResult {
     }
     const session = requireActiveSession(input.sessionId);
     if (session.mode === "rehearse-lines") return rehearsalAttempt(session, input);
-    repertoireId = session.repertoireId;
     const index = cardIndex(session, input.queueItemId);
     const card = { ...session.cards[index] };
     const policy = session.policies[card.queueItemId];
@@ -2119,7 +2110,8 @@ export function recordAttempt(input: RecordAttemptInput): AttemptResult {
         ]);
         finalGrade = true;
         card.state = correct ? "answered-correct" : "answered-wrong";
-        scheduled = applySchedule(session, card, policy, gradeOutcome, now);
+        if (applySchedule(session, card, policy, gradeOutcome, now))
+          rescheduled = session.repertoireId;
       }
     }
 
@@ -2165,7 +2157,7 @@ export function recordAttempt(input: RecordAttemptInput): AttemptResult {
     sessionRepository.save(session);
     return result;
   });
-  if (scheduled) progressChanged(repertoireId);
+  if (rescheduled !== undefined) progressChanged(rescheduled);
   return result;
 }
 
@@ -2176,12 +2168,11 @@ export function recordAttempt(input: RecordAttemptInput): AttemptResult {
  * schedule unchanged.
  */
 export function recordPracticeAction(input: PracticeActionInput): PracticeActionResult {
-  let scheduled = false;
-  let repertoireId = "";
+  // The repertoire whose schedule this changed: its progress is announced after the commit.
+  let rescheduled: string | undefined;
   const result = transaction((): PracticeActionResult => {
     const session = requireActiveSession(input.sessionId);
     if (session.mode === "rehearse-lines") return rehearsalAction(session, input);
-    repertoireId = session.repertoireId;
     const index = cardIndex(session, input.queueItemId);
     const card = { ...session.cards[index] };
     const policy = session.policies[card.queueItemId];
@@ -2216,7 +2207,7 @@ export function recordPracticeAction(input: PracticeActionInput): PracticeAction
       revealed = {
         ucis: [],
         preferredUci:
-          card.hintStage >= 2 ? (policy.preferredUci ?? policy.acceptedUcis[0] ?? null) : null,
+          card.hintStage >= 2 ? (policy.preferredUci ?? policy.acceptedUcis.at(0) ?? null) : null,
         explanation: policy.hint
       };
     } else if (kind === "reveal") {
@@ -2232,7 +2223,7 @@ export function recordPracticeAction(input: PracticeActionInput): PracticeAction
         const outcome = firstAnswerOutcome([...history.map(historyAction), { kind: "reveal" }]);
         persist(true, outcome);
         card.state = "revealed";
-        scheduled = applySchedule(session, card, policy, outcome, now);
+        if (applySchedule(session, card, policy, outcome, now)) rescheduled = session.repertoireId;
         session.cursor = nextCursor(session.cards, index);
       } else if (card.state === "answered-wrong") {
         persist(false, null);
@@ -2249,7 +2240,7 @@ export function recordPracticeAction(input: PracticeActionInput): PracticeAction
     sessionRepository.save(session);
     return revealed ? { card, revealed } : { card };
   });
-  if (scheduled) progressChanged(repertoireId);
+  if (rescheduled !== undefined) progressChanged(rescheduled);
   return result;
 }
 

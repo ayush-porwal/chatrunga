@@ -1065,7 +1065,6 @@ async function pickDailyPuzzle(
     // The picked row may not make a puzzle (an illegal move): the next one does instead.
     for (let offset = 0; offset < candidates.length; offset += 1) {
       const row = candidates[(start + offset) % candidates.length];
-      if (!row) continue;
       try {
         const sample = (kind === "lichess" ? sampleFromLichessRow : sampleFromPositionRow)(
           database,
@@ -1096,7 +1095,7 @@ function takeFromPool(
   while (pool.rows.length) {
     const index = Math.floor(Math.random() * pool.rows.length);
     const [row] = pool.rows.splice(index, 1);
-    const sample = row ? build(row) : null;
+    const sample = build(row);
     if (sample) return sample;
   }
   return null;

@@ -38,7 +38,7 @@ export function useLichessConnect() {
 }
 
 /** "Connect Lichess account", or the waiting-for-the-browser state with Cancel. */
-export function LichessConnectButton({ label = "Connect Lichess account" }: { label?: string }) {
+function LichessConnectButton({ label = "Connect Lichess account" }: { label?: string }) {
   const { available, connecting, error, connect, cancel } = useLichessConnect();
   return (
     <div className="grid justify-items-start gap-2">
@@ -66,13 +66,7 @@ export function LichessConnectButton({ label = "Connect Lichess account" }: { la
 const RATING_SPEEDS: readonly LichessSpeed[] = ["rapid", "classical", "blitz", "bullet"];
 
 /** The account's ratings for the speeds it has played, most relevant first. */
-export function LichessRatings({
-  account,
-  className
-}: {
-  account: LichessAccount;
-  className?: string;
-}) {
+function LichessRatings({ account, className }: { account: LichessAccount; className?: string }) {
   const perfs = RATING_SPEEDS.flatMap((speed) => {
     const perf = account.perfs[speed];
     return perf && perf.games > 0 ? [{ speed, perf }] : [];

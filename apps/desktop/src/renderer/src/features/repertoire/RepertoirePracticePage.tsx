@@ -157,7 +157,7 @@ export function RepertoirePracticePage({
   // is taken from the promise: a per-call callback would be lost if this page's mutation observer
   // were resubscribed meanwhile (React's StrictMode remount does that).
   useEffect(() => {
-    if (!finishedWithoutSummary || !shownSession) return;
+    if (!finishedWithoutSummary) return;
     if (summaryRequested.current === shownSession.sessionId) return;
     summaryRequested.current = shownSession.sessionId;
     endFinishedSession(shownSession.sessionId).then(
@@ -592,7 +592,7 @@ function PracticeSession({
   const chapterTitles = new Map(detail.chapters.map((chapter) => [chapter.id, chapter.title]));
   const rehearsedChapterId = session.scope.rehearse?.chapterId ?? card.chapterId;
   const chapterTitle = chapterTitles.get(card.chapterId) ?? "Chapter";
-  const nextHintLabel = ["Hint", "Show piece", "Show move"][card.hintStage] ?? null;
+  const nextHintLabel = ["Hint", "Show piece", "Show move"].at(card.hintStage) ?? null;
   // Words for what the board shows (arrows and highlights alone aren't accessible).
   const boardHintText = reveal ? null : hintStageText(card.fen, card.hintStage, hintUci);
   // Every card is final: the next step is the summary.

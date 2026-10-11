@@ -188,7 +188,7 @@ export function computeEvalLoss(input: {
   terminal: TerminalState | null;
 }): number | null {
   if (input.terminal === "checkmate") return 0;
-  const best = input.topLines[0];
+  const best = input.topLines.at(0);
   if (!best) return null;
   const bestCp = scoreToCentipawns(best.score);
   let playedCp: number | null = null;

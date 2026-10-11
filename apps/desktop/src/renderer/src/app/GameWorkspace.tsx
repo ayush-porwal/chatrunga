@@ -244,9 +244,9 @@ function useMainlineMoveCount(): number {
 }
 
 function mainlineMoveCount(moveTree: readonly MoveNode[]): number {
-  // The path starts at the root: its moves are the rest.
-  const [root, ...moves] = mainlinePath(moveTree);
-  return fullMoveCount(moves.length, blackToMove(root?.fenBefore));
+  // The path starts at the root (none in an empty tree): its moves are the rest.
+  const path = mainlinePath(moveTree);
+  return fullMoveCount(path.slice(1).length, blackToMove(path.at(0)?.fenBefore));
 }
 
 /** Export PGN: the game on the board, with its analysis, as a .pgn file. */

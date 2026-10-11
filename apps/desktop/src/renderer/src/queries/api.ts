@@ -43,7 +43,7 @@ export function useEngineRegistrySubscription() {
   const queryClient = useQueryClient();
   useEffect(
     () =>
-      api()?.onEnginesChanged?.(
+      api()?.onEnginesChanged(
         () => void queryClient.invalidateQueries({ queryKey: queryKeys.engines })
       ),
     [queryClient]
@@ -98,7 +98,7 @@ export function useDeleteEngineMutation() {
 }
 
 /** Games a library list fetches at a time (and adds on "Show more"). */
-export const GAME_PAGE_SIZE = 50;
+const GAME_PAGE_SIZE = 50;
 
 const NO_GAMES: GameListPage = { items: [], nextCursor: null };
 const NO_FACETS: GameLibraryFacets = { hasGames: false, tabs: emptyTabCounts() };

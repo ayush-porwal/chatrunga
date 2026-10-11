@@ -33,20 +33,20 @@ export type PracticeOutcomeMessage = {
 };
 
 /** A revealed answer: its accepted moves are drawn on the board. */
-export type PracticeReveal = PracticeAnswer;
+type PracticeReveal = PracticeAnswer;
 
 /** Why a rehearsed line ended. */
 export type RehearsalEndReason = NonNullable<RehearsalStep["endReason"]>;
 
 /** Where an accepted move from another line lives (an `other-line` answer). */
-export type PracticeOtherLine = NonNullable<AttemptResult["otherLine"]>;
+type PracticeOtherLine = NonNullable<AttemptResult["otherLine"]>;
 
 /**
  * A rehearsal step the main process returned and the page hasn't finished presenting: the reply is
  * shown on the board once `replyShown`, then the next decision (or the line's end) is presented.
  * `auto` is false after a reveal, until the player chooses to continue the line.
  */
-export type PendingRehearsalStep = { step: RehearsalStep; replyShown: boolean; auto: boolean };
+type PendingRehearsalStep = { step: RehearsalStep; replyShown: boolean; auto: boolean };
 
 export type RepertoirePracticeState = {
   session: PracticeSessionSnapshot | null;
@@ -215,7 +215,7 @@ export function openingReplyMessage(
 ): PracticeOutcomeMessage | null {
   if (session.mode !== "rehearse-lines" || card.rehearsal?.stepIndex !== 0) return null;
   const from = session.scope.rehearse?.fromNodeId ?? REPERTOIRE_ROOT_NODE_ID;
-  const reply = card.leadUp[card.leadUp.length - 1];
+  const reply = card.leadUp.at(-1);
   if (card.nodeId === from || !reply) return null;
   return { tone: "info", text: `The reply: ${reply.san}.` };
 }
@@ -260,8 +260,7 @@ export function lineCompleteText(reason: RehearsalEndReason | null): string {
 
 export const OTHER_LINE_TEXT = "That is a repertoire choice in another line.";
 
-export const SESSION_ENDED_TEXT =
-  "This chapter changed since the session started, so the session ended.";
+const SESSION_ENDED_TEXT = "This chapter changed since the session started, so the session ended.";
 
 export const useRepertoirePracticeStore = create<RepertoirePracticeState & Actions>((set, get) => ({
   ...initialState,

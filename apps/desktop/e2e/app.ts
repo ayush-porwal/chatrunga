@@ -46,7 +46,7 @@ export function appTarget(): { executablePath: string; args: string[]; packaged:
 }
 
 /** The unpacked app electron-builder wrote for this OS and CPU (`--dir`, or any target's staging folder). */
-export function findPackagedExecutable(distDir = join(desktopDir, "dist")): string {
+function findPackagedExecutable(distDir = join(desktopDir, "dist")): string {
   const folders = existsSync(distDir)
     ? readdirSync(distDir).filter((name) => statSync(join(distDir, name)).isDirectory())
     : [];
@@ -93,7 +93,7 @@ const OUTPUT_LINES = 200;
  * proxy, Node's fetch through the same proxy and a guard that only serves `routeToFile` URLs),
  * analytics and updates off, native open/save/message dialogs and external links stubbed.
  */
-export async function launchApp(profile: string): Promise<LaunchedApp> {
+async function launchApp(profile: string): Promise<LaunchedApp> {
   const target = appTarget();
   // Where this launch's lines start in main.log (a profile launched before has some already).
   const logStart = readMainLog(profile).length;
@@ -156,7 +156,7 @@ export async function launchApp(profile: string): Promise<LaunchedApp> {
   if (smallScreen) {
     await app.firstWindow();
     await app.evaluate(({ BrowserWindow }) => {
-      const window = BrowserWindow.getAllWindows()[0];
+      const window = BrowserWindow.getAllWindows().at(0);
       window?.setMinimumSize(800, 600);
       window?.setContentSize(1008, 677);
     });
@@ -292,7 +292,7 @@ async function installMainProcessGuards(app: ElectronApplication): Promise<void>
 const DIALOG_LOG = "e2e-dialogs.log";
 
 /** A worker thread's answer, as recorded: a puzzle scan's is `{ ok, complete, matches, ids }`. */
-export type WorkerAnswer = {
+type WorkerAnswer = {
   ok: boolean;
   complete: boolean | null;
   matches: number | null;
@@ -336,7 +336,7 @@ export function routeToFile(app: ElectronApplication, url: string, file: string)
 }
 
 /** The next native open dialog picks `file`. */
-export function stubOpenFile(app: ElectronApplication, file: string) {
+function stubOpenFile(app: ElectronApplication, file: string) {
   return app.evaluate(({ dialog }, file) => {
     const previous = dialog.showOpenDialog.bind(dialog);
     dialog.showOpenDialog = async () => {
@@ -347,7 +347,7 @@ export function stubOpenFile(app: ElectronApplication, file: string) {
 }
 
 /** The repo's scripted UCI engine (streams `info` lines on `go infinite`), run by this Node. */
-export const FAKE_ENGINE = join(desktopDir, "src/main/engine/__fixtures__/fake-live-uci.mjs");
+const FAKE_ENGINE = join(desktopDir, "src/main/engine/__fixtures__/fake-live-uci.mjs");
 
 /**
  * Registers the fake engine as the default, through the preload bridge (the Settings form needs a
@@ -385,7 +385,7 @@ export async function importPgnFile(
 }
 
 /** The Play page's bottom row: Recent games and Start something new (Play has no page heading). */
-export const playPage = (page: Page) => ({
+const playPage = (page: Page) => ({
   recentGames: page.getByRole("region", { name: "Recent games" }),
   startNew: page.getByRole("region", { name: "Start something new" })
 });
@@ -478,21 +478,19 @@ export async function closeApp(
   const quitLate = new Promise<"late">(
     (resolve) => (quitTimer = setTimeout(() => resolve("late"), quitTimeoutMs))
   );
-  let quitDone = false;
   let stopPolling = false;
   const quit = new Promise<"quit">((resolve) => {
     const poll = () => {
       if (stopPolling) return;
-      if (launch && quitLogged(launch)) {
-        quitDone = true;
-        resolve("quit");
-      } else pollTimer = setTimeout(poll, 100);
+      if (launch && quitLogged(launch)) resolve("quit");
+      else pollTimer = setTimeout(poll, 100);
     };
     if (launch) poll();
   });
   let outcome = await Promise.race([closed, quit, quitLate]);
+  const quitDone = outcome === "quit";
   // The exit's deadline runs from the end of the quit: a slow quit doesn't shorten it.
-  if (outcome === "quit")
+  if (quitDone)
     outcome = await Promise.race([
       closed,
       new Promise<"late">(

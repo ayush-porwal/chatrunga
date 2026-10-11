@@ -359,7 +359,7 @@ function GameReviewPageInner({
       onTabChange("summary");
       return;
     }
-    const moment = moments[stepTarget.index];
+    const moment = moments.at(stepTarget.index);
     if (!moment) return;
     setStartedSessionKey(reviewSessionKey);
     selectNode(moment.nodeId);

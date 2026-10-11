@@ -33,7 +33,8 @@ export function timeControlLabel(timeControl: string | null | undefined): string
   const match = /^(\d+)(?:\+(\d+))?$/.exec(text);
   if (!match) return text;
   const minutes = Math.round((Number(match[1]) / 60) * 10) / 10;
-  return `${minutes}+${match[2] ?? "0"}`;
+  // The increment is an optional group: absent in a bare "600".
+  return `${minutes}+${match.at(2) ?? "0"}`;
 }
 
 /**

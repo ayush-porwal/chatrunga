@@ -386,7 +386,8 @@ function serializeChildren(
   needsNumber = true
 ): string {
   const parts: string[] = [];
-  for (let from: MoveNode | undefined = parent; from; ) {
+  // Ends at the first node without a main move (the `break` below).
+  for (let from: MoveNode = parent; ; ) {
     const [mainId, ...alternativeIds]: string[] = from.children;
     const main: MoveNode | undefined = mainId ? byId.get(mainId) : undefined;
     if (!main?.san) break;

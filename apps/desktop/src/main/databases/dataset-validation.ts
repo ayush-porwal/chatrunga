@@ -88,7 +88,7 @@ const MAX_BLOCK_SIZE = 128 * 1024;
  * bytes per 128 KiB block) and decompresses nothing. Returns what is wrong, or null when every
  * frame is whole and the file ends exactly after the last one.
  */
-export async function zstdStructureProblem(filePath: string): Promise<string | null> {
+async function zstdStructureProblem(filePath: string): Promise<string | null> {
   const file = await open(filePath, "r");
   try {
     const { size } = await file.stat();

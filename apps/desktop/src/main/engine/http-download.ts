@@ -21,7 +21,7 @@ import { readableFromBody } from "../web-stream";
 const MAX_REDIRECTS = 5;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
-export class DisallowedUrlError extends Error {
+class DisallowedUrlError extends Error {
   constructor(url: string) {
     super(`Refusing to download from ${safeOrigin(url)}: not an allowed GitHub host`);
     this.name = "DisallowedUrlError";
@@ -142,8 +142,10 @@ export function parseContentRange(
   if (!header) return null;
   const match = /^bytes\s+(?:(\d+)-\d+|\*)\/(\d+|\*)$/i.exec(header.trim());
   if (!match) return null;
+  // No start group in "bytes */N".
+  const start = match.at(1);
   return {
-    start: match[1] !== undefined ? Number(match[1]) : null,
+    start: start !== undefined ? Number(start) : null,
     total: match[2] !== "*" ? Number(match[2]) : null
   };
 }

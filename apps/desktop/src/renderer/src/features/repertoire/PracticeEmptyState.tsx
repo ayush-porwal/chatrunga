@@ -85,7 +85,7 @@ export function PracticeEmptyState({
   const ref = useRef<HTMLDivElement | null>(null);
   // The setup's Start sits below: bring the answer into view where it appears.
   useEffect(() => {
-    if (settled) ref.current?.scrollIntoView?.({ block: "nearest" });
+    if (settled) ref.current?.scrollIntoView({ block: "nearest" });
   }, [settled, mode, chapterIds]);
   if (!settled) return null;
 
@@ -94,7 +94,7 @@ export function PracticeEmptyState({
     scope.blocked.map(({ chapter, explanation }) => ({ title: chapter.title, explanation })),
     scope.othersPractise
   );
-  const [first] = scope.blocked;
+  const first = scope.blocked.at(0);
   const cause = first && !scope.othersPractise ? first : null;
   const fix = cause ? trainingFix(cause.blocker) : null;
   const study = (blocked: Blocked) =>

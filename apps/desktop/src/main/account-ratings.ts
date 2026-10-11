@@ -36,7 +36,7 @@ export type AccountRatingsDeps = {
 };
 
 /** Whether two sets of ratings say the same (each mode's source and rating; not when synced). */
-export function sameRatings(a: PlayerRatings, b: PlayerRatings): boolean {
+function sameRatings(a: PlayerRatings, b: PlayerRatings): boolean {
   return RATING_MODES.every(
     (mode) => a[mode].source === b[mode].source && a[mode].rating === b[mode].rating
   );

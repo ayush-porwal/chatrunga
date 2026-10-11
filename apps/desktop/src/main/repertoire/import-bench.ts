@@ -12,8 +12,6 @@ import {
   type ImportProgress
 } from "./import-job";
 
-export { importPreviewFromText };
-
 export type BenchPgnOptions = {
   games: number;
   /** Main-line moves per game (each a node). */

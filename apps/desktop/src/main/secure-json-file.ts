@@ -18,7 +18,7 @@ export type SecureStorageLike = Pick<
   "isEncryptionAvailable" | "encryptString" | "decryptString"
 >;
 
-export const SECURE_STORAGE_UNAVAILABLE = "Secure key storage is unavailable on this system.";
+const SECURE_STORAGE_UNAVAILABLE = "Secure key storage is unavailable on this system.";
 
 /** Base64 ciphertext of `secret`. Throws rather than ever writing it in plain text. */
 export function encryptSecret(storage: SecureStorageLike, secret: string): string {

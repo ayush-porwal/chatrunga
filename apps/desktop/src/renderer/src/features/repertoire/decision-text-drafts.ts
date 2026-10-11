@@ -2,7 +2,10 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { RepertoireDecision, RepertoireDetail } from "@chaturanga/shared/types/repertoire";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { adoptDecisionSave, invalidateDecisions, repertoireKeys } from "../../queries/repertoire";
-import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
+import {
+  pendingDecisionDraft,
+  useRepertoireWorkspaceStore
+} from "../../stores/repertoire-workspace-store";
 import {
   decisionDraftHoldsBack,
   decisionDraftPatch,
@@ -99,7 +102,7 @@ async function writeDecisionText(
   { flushChapter, retry = false }: { flushChapter: FlushChapter; retry?: boolean }
 ): Promise<WriteOutcome> {
   const unsaved = { saved: false, writeAgain: false };
-  const draft = workspace().decisionDrafts[key];
+  const draft = pendingDecisionDraft(key);
   if (!draft) return { saved: true, writeAgain: false };
   if (!decisionDraftWritable(draft, retry)) return unsaved;
   const api = window.chaturanga?.repertoires;
@@ -112,7 +115,7 @@ async function writeDecisionText(
   if (workspace().repertoireId === draft.repertoireId && !(await flushChapter(queryClient))) {
     return unsaved;
   }
-  const current = workspace().decisionDrafts[key];
+  const current = pendingDecisionDraft(key);
   if (!current) return { saved: true, writeAgain: false };
   workspace().updateDecisionDraft(key, { type: "saving" });
   try {
@@ -137,7 +140,7 @@ async function writeDecisionText(
       type: "saved",
       generation: current.generation
     });
-    return { saved: !workspace().decisionDrafts[key], writeAgain };
+    return { saved: !pendingDecisionDraft(key), writeAgain };
   } catch (error) {
     return refuse(key, ipcErrorMessage(error) || "That change couldn't be saved.");
   }
@@ -152,7 +155,7 @@ async function writeDecisionText(
 function refuse(key: string, message: string, options?: { stale?: boolean }): WriteOutcome {
   const failure = decisionWriteFailure(message, options);
   if (failure === "repertoire-gone") {
-    const draft = workspace().decisionDrafts[key];
+    const draft = pendingDecisionDraft(key);
     if (draft) discardRepertoireTexts(draft.repertoireId);
     return { saved: true, writeAgain: false };
   }
@@ -183,7 +186,7 @@ export async function flushDecisionTexts(
     drafts.map(async ([key, draft]) => {
       if (await saveDecisionText(queryClient, key, { flushChapter })) return true;
       if (blockOn === undefined) return false;
-      const left = workspace().decisionDrafts[key];
+      const left = pendingDecisionDraft(key);
       return !blockOn.includes(draft.repertoireId) || !left || !decisionDraftHoldsBack(left);
     })
   );
@@ -240,7 +243,7 @@ export async function keepDecisionText(
   key: string,
   flushChapter: FlushChapter
 ): Promise<boolean> {
-  const draft = workspace().decisionDrafts[key];
+  const draft = pendingDecisionDraft(key);
   if (!draft) return true;
   if (workspace().repertoireId === draft.repertoireId) {
     try {
@@ -256,7 +259,7 @@ export async function keepDecisionText(
 
 /** Drops the change; the stored value shows again (re-read, in case it changed). */
 export function discardDecisionText(queryClient: QueryClient, key: string): void {
-  const draft = workspace().decisionDrafts[key];
+  const draft = pendingDecisionDraft(key);
   if (!draft) return;
   workspace().discardDecisionText(key);
   invalidateDecisions(queryClient, draft.repertoireId);

@@ -68,7 +68,7 @@ function captureScrollPositions(source: HTMLElement, clone: HTMLElement): () => 
   const to = [clone, ...clone.querySelectorAll<HTMLElement>(".scroll-area")];
   const scrolled: { target: HTMLElement; top: number; left: number }[] = [];
   from.forEach((element, index) => {
-    const target = to[index];
+    const target = to.at(index);
     if (target && (element.scrollTop || element.scrollLeft)) {
       scrolled.push({ target, top: element.scrollTop, left: element.scrollLeft });
     }

@@ -25,7 +25,9 @@ function connect() {
     (state) => {
       if (!current) publish(state);
     },
-    () => {}
+    () => {
+      // Unknown until main sends the next state (onUpdateState).
+    }
   );
 }
 
@@ -40,7 +42,7 @@ const getSnapshot = () => current;
 /** Checks now; resolves with the state after the check (null outside the desktop app or on failure). */
 export async function checkForUpdates(): Promise<UpdateState | null> {
   try {
-    const next = (await window.chaturanga?.updates?.check()) ?? null;
+    const next = (await window.chaturanga?.updates.check()) ?? null;
     if (next) publish(next);
     return next;
   } catch {

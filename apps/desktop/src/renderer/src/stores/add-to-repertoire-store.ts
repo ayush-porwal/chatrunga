@@ -3,7 +3,7 @@ import type { AddFromGameScope, AddFromGameSource } from "@chaturanga/shared/typ
 import type { AddEntryPoint } from "../features/repertoire/add-from-game";
 
 /** An "Add to repertoire" dialog to show: the game, the scope hint and where it was asked from. */
-export type AddToRepertoireRequest = {
+type AddToRepertoireRequest = {
   source: AddFromGameSource;
   initialScope: AddFromGameScope;
   entry: AddEntryPoint;

@@ -28,7 +28,7 @@ import { nonSolutionSan } from "./puzzle-prose";
  * previous one.
  */
 
-export type ExplainPhase = "analysing" | "writing" | "ready" | "error";
+type ExplainPhase = "analysing" | "writing" | "ready" | "error";
 
 export type ExplainEntry = {
   phase: ExplainPhase;
@@ -46,9 +46,11 @@ export type ExplainEntry = {
   cancel: (() => void) | null;
 };
 
-export const usePuzzleExplanationStore = create<{ entries: Record<string, ExplainEntry> }>(() => ({
-  entries: {}
-}));
+export const usePuzzleExplanationStore = create<{ entries: Partial<Record<string, ExplainEntry>> }>(
+  () => ({
+    entries: {}
+  })
+);
 
 /** What a request talks to: the desktop bridge, or a test double. */
 export type ExplainDeps = {
@@ -98,7 +100,7 @@ function patchEntry(key: string, requestId: string, patch: Partial<ExplainEntry>
 
 function desktopDeps(): ExplainDeps | null {
   const api = window.chaturanga;
-  if (!api?.engines.analysePositions || !api.commentary.explainPuzzle) return null;
+  if (!api) return null;
   return {
     analysePositions: (input) => api.engines.analysePositions(input),
     explainPuzzle: (input) => api.commentary.explainPuzzle(input),
@@ -219,7 +221,7 @@ export async function requestPuzzleExplanation(
  */
 export function cancelPuzzleExplanations(puzzle: string | null): void {
   for (const [key, entry] of Object.entries(usePuzzleExplanationStore.getState().entries)) {
-    if (entry.puzzle === puzzle || !entry.requestId) continue;
+    if (!entry || entry.puzzle === puzzle || !entry.requestId) continue;
     entry.cancel?.();
     setEntry(key, null);
   }

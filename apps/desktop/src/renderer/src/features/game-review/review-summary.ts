@@ -17,7 +17,7 @@ import { phaseOfPly, type GamePhase, type GamePhases } from "@chaturanga/shared/
 const GAME_PHASES: readonly GamePhase[] = ["opening", "middlegame", "endgame"];
 
 /** The scoreboard's mark rows, best to worst (Book first). */
-export const SCOREBOARD_MARKS: readonly MoveAnnotation[] = [
+const SCOREBOARD_MARKS: readonly MoveAnnotation[] = [
   "book",
   "brilliant",
   "great",
@@ -108,7 +108,7 @@ export function openingBookLine(opening: GameOpening): string {
  * An opening name as a Lichess puzzle OpeningTags key: accents dropped, spaces as underscores,
  * anything but letters, digits, `_` and `-` removed ("King's Gambit" → "Kings_Gambit").
  */
-export function lichessOpeningKey(name: string): string {
+function lichessOpeningKey(name: string): string {
   return name
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
@@ -123,9 +123,9 @@ export function lichessOpeningKey(name: string): string {
  * Variation, English Attack"). Lichess tags a puzzle with both.
  */
 export function lichessOpeningTags(name: string): { family: string; variation: string | null } {
-  const [familyName = "", rest] = name.split(":");
+  const [familyName = "", rest = ""] = name.split(":");
   const family = lichessOpeningKey(familyName);
-  const variationName = rest?.split(",")[0]?.trim();
+  const variationName = rest.split(",")[0].trim();
   return {
     family,
     variation: variationName ? lichessOpeningKey(`${familyName} ${variationName}`) : null
@@ -158,7 +158,7 @@ const THEME_LABELS: Record<PracticeTheme, string> = {
   mate: "Mate"
 };
 
-export function practiceThemeLabel(theme: PracticeTheme): string {
+function practiceThemeLabel(theme: PracticeTheme): string {
   return THEME_LABELS[theme];
 }
 
@@ -172,8 +172,8 @@ const MATE_IN: readonly PracticeTheme[] = ["mateIn1", "mateIn2", "mateIn3", "mat
  * review has no reply line for it): only motifs the tactics detector finds for certain count.
  */
 export function errorTheme(move: MoveReview): PracticeTheme | null {
-  const reply = [...(move.replyLines ?? [])].sort((a, b) => a.multipv - b.multipv)[0];
-  const replyUci = reply?.pv[0];
+  const reply = [...(move.replyLines ?? [])].sort((a, b) => a.multipv - b.multipv).at(0);
+  const replyUci = reply?.pv.at(0);
   if (!reply || !replyUci) return null;
   if (reply.score.type === "mate" && reply.score.value > 0)
     return MATE_IN[reply.score.value - 1] ?? "mate";

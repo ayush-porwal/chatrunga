@@ -43,7 +43,7 @@ export function useEngineGameSetup({
     list.find((engine) => engine.id === settings.data?.playEngineId) ??
     list.find((engine) => engine.id === draft.engineId) ??
     list.find((engine) => engine.isDefault) ??
-    list[0];
+    list.at(0);
   // A repertoire handoff (Study → Play from here): the game starts there, as its colour.
   const initialSession = draft.initialSession ?? null;
   const [handoffError, setHandoffError] = useState<string | null>(null);

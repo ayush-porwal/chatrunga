@@ -8,7 +8,7 @@
 /** At most one board step this often: a re-run's cached moves finish almost at once. */
 export const FOLLOW_STEP_MS = 250;
 /** Further behind than this many moves, the board catches up in one quiet jump. */
-export const FOLLOW_MAX_LAG = 2;
+const FOLLOW_MAX_LAG = 2;
 
 /** A board step: `quiet` is a catch-up jump, made without move sounds or sliding pieces. */
 export type FollowStep = { nodeId: string; quiet: boolean };

@@ -46,7 +46,7 @@ function errorText(reason: unknown, fallback: string): string {
 }
 
 /** The account's ratings, one badge per kind of game it has a rating for. */
-export function ChesscomRatings({ account }: { account: ChesscomAccount }) {
+function ChesscomRatings({ account }: { account: ChesscomAccount }) {
   const ratings = RATING_ORDER.flatMap((key) => {
     const rating = account.ratings[key];
     return rating === undefined ? [] : [{ key, rating }];

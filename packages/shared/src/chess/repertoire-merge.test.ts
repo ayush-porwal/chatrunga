@@ -3,7 +3,7 @@ import type { MoveNode } from "../types/chess";
 import type { RepertoireChapter, RepertoireNodeMeta } from "../types/repertoire";
 import { fenAfterUci, START_FEN } from "./position";
 import { rootPly } from "./pgn";
-import { collectDecisions } from "./repertoire-index";
+import { collectDecisions, nodeMetaOf } from "./repertoire-index";
 import { mergeIntoChapter } from "./repertoire-merge";
 
 /** A tree from UCI lines; shared prefixes share nodes; ids `prefix` + counter in creation order. */
@@ -336,7 +336,7 @@ describe("mergeIntoChapter", () => {
       nodeMeta: { x1: { edge: "included" } }
     });
     expect(result.chapter.nodeMeta.n5).toEqual({ edge: "included" });
-    expect(result.chapter.nodeMeta.root?.trainingStart).toBeUndefined();
+    expect(nodeMetaOf(result.chapter.nodeMeta, "root").trainingStart).toBeUndefined();
     const decisions = collectDecisions("white", [result.chapter]);
     expect([...decisions.values()].some((decision) => decision.fen === START_FEN)).toBe(false);
   });
@@ -358,13 +358,13 @@ describe("mergeIntoChapter", () => {
       }
     );
     expect(upgraded.chapter.nodeMeta.n4).toEqual({ edge: "included" });
-    expect(upgraded.chapter.nodeMeta.root?.trainingStart).toBeUndefined();
+    expect(nodeMetaOf(upgraded.chapter.nodeMeta, "root").trainingStart).toBeUndefined();
     const fresh = mergeIntoChapter(chapterOf(treeOf([["e2e4", "e7e5", "g1f3"]], "n"), meta), {
       rootFen: START_FEN,
       tree: treeOf([["c2c4", "e7e5", "b1c3"]], "x"),
       nodeMeta: { x1: { edge: "included" }, x2: { edge: "covered" }, x3: { edge: "included" } }
     });
-    expect(fresh.chapter.nodeMeta.root?.trainingStart).toBeUndefined();
+    expect(nodeMetaOf(fresh.chapter.nodeMeta, "root").trainingStart).toBeUndefined();
     expect(fresh.chapter.nodeMeta[fresh.idMap.x1]).toEqual({
       edge: "included",
       trainingStart: true

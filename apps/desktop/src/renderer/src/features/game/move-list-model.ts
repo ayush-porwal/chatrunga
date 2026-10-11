@@ -11,7 +11,7 @@ import type { TreeModel, VariationRow } from "./move-tree-model";
 /** The pieces a move list draws (Chessground's role names, so the board's sprites draw them). */
 export type MovePieceRole = "pawn" | "knight" | "bishop" | "rook" | "queen" | "king";
 
-const SAN_ROLES: Record<string, MovePieceRole> = {
+const SAN_ROLES: Partial<Record<string, MovePieceRole>> = {
   K: "king",
   Q: "queen",
   R: "rook",
@@ -22,12 +22,12 @@ const SAN_ROLES: Record<string, MovePieceRole> = {
 /** The piece a SAN move moves: its leading letter, the king for castling, else a pawn. */
 export function sanPiece(san: string): MovePieceRole {
   if (san.startsWith("O-O")) return "king";
-  return SAN_ROLES[san[0] ?? ""] ?? "pawn";
+  return SAN_ROLES[san.charAt(0)] ?? "pawn";
 }
 
 /** The SAN without its piece letter (`Nxe5` → `xe5`), drawn after the piece's icon. */
 export function bareSan(san: string): string {
-  return SAN_ROLES[san[0] ?? ""] ? san.slice(1) : san;
+  return SAN_ROLES[san.charAt(0)] ? san.slice(1) : san;
 }
 
 /** The engine's best line from before a reviewed move (UCI), or just its best move. */
@@ -48,7 +48,7 @@ export function hasBestLine(review: MoveReview | undefined): review is MoveRevie
 }
 
 /** The most moves of a BEST line shown (the decided look: the best move and three more). */
-export const BEST_LINE_PLIES = 4;
+const BEST_LINE_PLIES = 4;
 
 /** One move of a BEST line, with the number written before it (`12…`, `13.` or none). */
 export type BestLineMove = LineStep & { number: string | null };
@@ -85,7 +85,7 @@ export function bestLineText(moves: readonly BestLineMove[]): string {
 
 /** The BEST-line preview board's edge bounds (CSS px). */
 export const PREVIEW_BOARD_MIN = 200;
-export const PREVIEW_BOARD_MAX = 340;
+const PREVIEW_BOARD_MAX = 340;
 /** The preview never outgrows this share of the main board. */
 const PREVIEW_BOARD_SHARE = 0.6;
 

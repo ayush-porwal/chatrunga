@@ -20,7 +20,7 @@ import {
 } from "./repertoire-model";
 
 /** Quiet time after the last edit before the draft is saved. */
-export const AUTOSAVE_DELAY_MS = 800;
+const AUTOSAVE_DELAY_MS = 800;
 
 let inFlight: Promise<void> | null = null;
 
@@ -180,7 +180,7 @@ export { discardDecisionText };
  * Stores the open chapter, node and orientation as the repertoire's workspace (Home's and the
  * hub's "Continue studying"), keeping its practice draft. Best effort: a failure only loses that.
  */
-export async function rememberStudyPosition(queryClient: QueryClient): Promise<void> {
+async function rememberStudyPosition(queryClient: QueryClient): Promise<void> {
   const state = workspace();
   const api = window.chaturanga?.repertoires;
   if (!api || !state.repertoireId || !state.chapterId) return;

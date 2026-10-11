@@ -248,7 +248,7 @@ export function groundedSanTokens(payload: ReviewInsightPayload): Set<string> {
   for (const level of payload.engines.maia?.levels ?? []) {
     for (const top of level.top) tokens.add(top.san);
   }
-  for (const signal of payload.engineSignals ?? []) {
+  for (const signal of payload.engineSignals) {
     if (signal.kind === "quiet_threat") tokens.add(signal.threatSan);
   }
   for (const token of sanTokensInTexts(ideaFactTexts(payload.ideas))) tokens.add(token);
@@ -260,7 +260,7 @@ export function sanTokensInTexts(texts: Iterable<string>): string[] {
   const tokens: string[] = [];
   for (const text of texts) {
     for (const match of text.matchAll(SAN_TOKEN_REGEX)) {
-      const token = stripPunctuation(match[1] ?? match[0]);
+      const token = stripPunctuation(match[1]);
       if (/[KQRBN]|O-O|x|=/.test(token)) tokens.push(token);
     }
   }
@@ -327,7 +327,7 @@ function grounding(payload: ReviewInsightPayload): CommentaryGrounding {
   return groundingFrom({
     san: groundedSanTokens(payload),
     texts: ideaFactTexts(payload.ideas),
-    squares: (payload.tacticalFacts ?? []).flatMap(extractFactSquares),
+    squares: payload.tacticalFacts.flatMap(extractFactSquares),
     fens: [payload.game.fenBefore, payload.game.fenAfter]
   });
 }
@@ -337,7 +337,7 @@ function isPieceReference(token: string, boards: Map<string, string>[]): boolean
   const match = /^([KQRBN])([a-h][1-8])$/.exec(token);
   if (!match) return false;
   const [, letter, square] = match;
-  return boards.some((board) => board.get(square ?? "")?.toUpperCase() === letter);
+  return boards.some((board) => board.get(square)?.toUpperCase() === letter);
 }
 
 function sentenceCount(text: string): number {
@@ -360,7 +360,7 @@ function checkText(
     const match = pattern.exec(text);
     if (match) return { ok: false, reason: "RAW_EVAL", details: match[0], part };
   }
-  const sanMatches = Array.from(text.matchAll(SAN_TOKEN_REGEX), (match) => match[1] ?? match[0]);
+  const sanMatches = Array.from(text.matchAll(SAN_TOKEN_REGEX), (match) => match[1]);
   const sanTokens = sanMatches
     .map(stripPunctuation)
     .filter((token) => /[KQRBN]|O-O|x|=/.test(token));

@@ -232,7 +232,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     loadGame: (game) => {
       const requestedNode = game.moveTree.find((node) => node.id === game.currentNodeId);
       const fallbackNode = game.moveTree.find((node) => node.fenAfter === game.currentFen);
-      const rootNode = game.moveTree.find((node) => node.parentId === null) ?? game.moveTree[0];
+      const rootNode = game.moveTree.find((node) => node.parentId === null) ?? game.moveTree.at(0);
       const currentNode = requestedNode ?? fallbackNode ?? rootNode;
       set((state) => ({
         board: state.board + 1,
@@ -327,7 +327,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         mover !== state.engineSide &&
         current?.sideToMove !== mover &&
         current?.stoppedAt === undefined;
-      if (current && (paused || takeback) && !state.gameOutcome) {
+      if (current && (paused || takeback)) {
         const takeBack = current.sideToMove !== mover ? (state.engineClock?.incrementMs ?? 0) : 0;
         const running: EngineClockLive = {
           whiteMs: mover === "white" ? Math.max(0, current.whiteMs - takeBack) : current.whiteMs,
@@ -896,7 +896,7 @@ export function isMatchMode(mode: GameMode): boolean {
 /** Root, then the main line (first child at every step). */
 function mainlineNodes(moveTree: MoveNode[]): MoveNode[] {
   const byId = new Map(moveTree.map((node) => [node.id, node]));
-  const root = moveTree.find((node) => node.parentId === null) ?? moveTree[0];
+  const root = moveTree.find((node) => node.parentId === null) ?? moveTree.at(0);
   const line: MoveNode[] = root ? [root] : [];
   let next = root?.children[0];
   while (next) {
@@ -927,7 +927,7 @@ function stopClock(live: EngineClockLive | null): EngineClockLive | null {
 
 /** Where the time asleep comes from (the main process; tests swap it). */
 let readTimeAsleep: () => number = () =>
-  typeof window === "undefined" ? 0 : (window.chaturanga?.system?.timeAsleepMs?.() ?? 0);
+  typeof window === "undefined" ? 0 : (window.chaturanga?.system.timeAsleepMs() ?? 0);
 
 /**
  * A wall-clock step this far past the monotonic one means the computer may have slept. Small, so

@@ -121,7 +121,7 @@ export function useLiveAnalysisScore(): EngineScore | null {
  * move. Null when there is none, and always during a match that is still being played (an engine
  * game or a live Lichess game) or a puzzle not yet solved or failed.
  */
-export function useBoardEval(): BoardEval | null {
+function useBoardEval(): BoardEval | null {
   const game = useGameStore(
     useShallow((state) => ({
       mode: state.mode,
@@ -159,7 +159,7 @@ export function useBoardEval(): BoardEval | null {
   if (evaluation) return evaluation;
   // The starting position: the first reviewed move's evaluation before it.
   const first = reviewMoves[0];
-  if (game.nodeId === "root" && first?.evalBefore) return scoreEval(first.evalBefore);
+  if (game.nodeId === "root" && first.evalBefore) return scoreEval(first.evalBefore);
   return null;
 }
 

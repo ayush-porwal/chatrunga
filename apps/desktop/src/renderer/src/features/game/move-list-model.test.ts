@@ -129,8 +129,8 @@ describe("bestLineMoves", () => {
 
   it("carries each move's position for its preview and its UCI for the highlight", () => {
     const [first] = bestLineMoves(blunder);
-    expect(first?.uci).toBe("c2c3");
-    expect(first?.fenAfter.split(" ")[0]).toBe(
+    expect(first.uci).toBe("c2c3");
+    expect(first.fenAfter.split(" ")[0]).toBe(
       "r1bqkbnr/pppp1ppp/8/4p3/2BnP3/2P2N2/PP1P1PPP/RNBQK2R"
     );
   });

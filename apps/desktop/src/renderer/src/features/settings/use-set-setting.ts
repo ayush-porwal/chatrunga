@@ -10,7 +10,7 @@ import {
 import { trackSettingsSave } from "./settings-save-state";
 
 /** A drag (slider, color picker) is written once it pauses this long. */
-export const SETTINGS_WRITE_DELAY_MS = 250;
+const SETTINGS_WRITE_DELAY_MS = 250;
 
 type Options = {
   /**
@@ -76,7 +76,9 @@ export class SettingsBatch {
     unwritten.add(this);
     flushOnPageHide();
     if (!this.done) {
-      let settle: (result: Promise<unknown>) => void = () => {};
+      let settle: (result: Promise<unknown>) => void = () => {
+        // Replaced at once: the promise executor below runs synchronously.
+      };
       const promise = new Promise<unknown>((resolve, reject) => {
         settle = (result) => {
           result.then(resolve, reject);

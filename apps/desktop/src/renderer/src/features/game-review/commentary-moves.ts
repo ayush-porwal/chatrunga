@@ -122,13 +122,15 @@ export function tokenizeCommentary(prose: string): CommentarySegment[] {
   let index = 0;
   const pushText = (text: string) => {
     if (!text) return;
-    const last = segments[segments.length - 1];
+    const last = segments.at(-1);
     if (last?.kind === "text") last.text += text;
     else segments.push({ kind: "text", text });
   };
   for (const match of prose.matchAll(TOKEN_REGEX)) {
-    const [full, number, dots, body, suffix] = match;
-    const start = match.index ?? 0;
+    const [full, number, dots, body] = match;
+    // The check/mate suffix is an optional group: absent when the move has none.
+    const suffix = match.at(4) ?? "";
+    const start = match.index;
     if (!body) continue;
     const plyHint = number ? Number(number) * 2 - (dots === "." ? 1 : 0) : null;
     if (
@@ -140,7 +142,7 @@ export function tokenizeCommentary(prose: string): CommentarySegment[] {
       continue;
     }
     pushText(prose.slice(cursor, start));
-    segments.push({ kind: "move", text: full, san: body + (suffix ?? ""), plyHint, index });
+    segments.push({ kind: "move", text: full, san: body + suffix, plyHint, index });
     index += 1;
     cursor = start + full.length;
   }
@@ -234,7 +236,7 @@ function range(length: number): number[] {
 function buildSearchPasses(ctx: CommentaryMoveContext): SearchPass[] {
   const { move, moveTree } = ctx;
   const byId = new Map(moveTree.map((node) => [node.id, node]));
-  const root = moveTree.find((node) => node.parentId === null) ?? moveTree[0];
+  const root = moveTree.find((node) => node.parentId === null) ?? moveTree.at(0);
   const passes: SearchPass[] = [];
   if (!root) return passes;
 
@@ -346,18 +348,14 @@ function findRunMatch(
   for (const pass of passes) {
     for (const start of pass.indices) {
       if (start + tokens.length > pass.line.sans.length) continue;
-      let ok = true;
-      for (let offset = 0; offset < tokens.length && ok; offset += 1) {
-        const token = tokens[offset];
-        if (!token) {
-          ok = false;
-          break;
-        }
-        ok = tokenMatches(token, pass.line, start + offset);
-        if (ok && strictHints && token.plyHint !== null)
-          ok = token.plyHint === pass.line.startPly + start + offset + 1;
-      }
-      if (ok) return { pass, start };
+      const matches = tokens.every(
+        (token, offset) =>
+          tokenMatches(token, pass.line, start + offset) &&
+          (!strictHints ||
+            token.plyHint === null ||
+            token.plyHint === pass.line.startPly + start + offset + 1)
+      );
+      if (matches) return { pass, start };
     }
   }
   return null;

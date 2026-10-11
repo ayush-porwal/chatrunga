@@ -91,8 +91,8 @@ function useWidth(): [(element: HTMLDivElement | null) => void, number, HTMLDivE
   useLayoutEffect(() => {
     if (!element) return;
     setWidth(Math.round(element.getBoundingClientRect().width));
-    const observer = new ResizeObserver(([entry]) => {
-      if (entry) setWidth(Math.round(entry.contentRect.width));
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) setWidth(Math.round(entry.contentRect.width));
     });
     observer.observe(element);
     return () => observer.disconnect();
@@ -374,8 +374,8 @@ export const ReviewCharts = memo(function ReviewCharts({
       onPointerMove: (event: MouseEvent<SVGSVGElement>) => setHoverIndex(indexAt(event)),
       onPointerLeave: () => setHoverIndex(-1),
       onClick: (event: MouseEvent<SVGSVGElement>) => {
-        const point = points[indexAt(event)];
-        if (point) onSelectNode(point.nodeId);
+        const index = indexAt(event);
+        if (index >= 0) onSelectNode(points[index].nodeId);
       }
     }),
     [indexAt, onSelectNode, points]
@@ -400,8 +400,7 @@ export const ReviewCharts = memo(function ReviewCharts({
     if (next === null) return;
     // Handled here: the page's own ← → shortcuts must not step a second time.
     event.preventDefault();
-    const point = points[next];
-    if (point && next !== selectedIndex) onSelectNode(point.nodeId);
+    if (next !== selectedIndex) onSelectNode(points[next].nodeId);
   };
 
   const showDifficulty = data.hasDifficulty && data.model !== null;
@@ -450,9 +449,9 @@ export const ReviewCharts = memo(function ReviewCharts({
   const difficultyPlot = stripPlotHeight(views.difficulty ?? 0);
   const timesPlot = stripPlotHeight(views.times ?? 0);
   const sectionId = useId();
-  const shownIndex = hoverIndex >= 0 ? hoverIndex : -1;
-  const hovered = points[shownIndex] ?? null;
-  const selected = points[selectedIndex] ?? null;
+  // The hovered index can outlive a shorter set of points; the selected one is looked up in them.
+  const hovered = hoverIndex >= 0 ? (points.at(hoverIndex) ?? null) : null;
+  const selected = selectedIndex >= 0 ? points[selectedIndex] : null;
   const cursor = {
     selectedX: selected ? scale.x(selected.ply) : null,
     hoverX: hovered ? scale.x(hovered.ply) : null
@@ -790,10 +789,11 @@ function labelRoom(label: string): number {
  * axis start: no divider hugging the left edge, and the middlegame's label starts there.
  */
 function tidyBands(bands: ReturnType<typeof phaseBands>, x: (ply: number) => number) {
-  const [first, second, ...rest] = bands;
+  const first = bands.at(0);
+  const second = bands.at(1);
   if (first?.label !== PHASE_LABELS.opening || !second) return bands;
   if (x(first.to) - x(first.from) >= labelRoom(first.label)) return bands;
-  return [{ ...second, from: 0 }, ...rest];
+  return [{ ...second, from: 0 }, ...bands.slice(2)];
 }
 
 const WinningChancesLayer = memo(function WinningChancesLayer({
@@ -819,7 +819,7 @@ const WinningChancesLayer = memo(function WinningChancesLayer({
     const own = reviewedSide === "white" ? point.whiteWin : 100 - point.whiteWin;
     return WIN_TOP + (1 - own / 100) * plot;
   };
-  const last = points[points.length - 1];
+  const last = points.at(-1);
   const area = last
     ? `${points.map((point, index) => `${index ? "L" : "M"}${x(point.ply).toFixed(1)} ${y(point).toFixed(1)}`).join("")}L${x(last.ply).toFixed(1)} ${bottom}L${x(0)} ${bottom}Z`
     : "";

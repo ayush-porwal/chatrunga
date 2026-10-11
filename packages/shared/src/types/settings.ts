@@ -738,9 +738,7 @@ export function normalizeReviewEngineSettings(settings: AppSettings): AppSetting
       ? REVIEW_MAIA_LEVELS.filter((level) => levels.map(Number).includes(level))
       : null,
     engineThreads:
-      settings.engineThreads === null || settings.engineThreads === undefined
-        ? null
-        : clampInt(settings.engineThreads, 1, 256, 1),
+      settings.engineThreads === null ? null : clampInt(settings.engineThreads, 1, 256, 1),
     engineHashMb: clampInt(
       settings.engineHashMb,
       ENGINE_HASH_MB_RANGE.min,

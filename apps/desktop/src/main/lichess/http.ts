@@ -82,7 +82,7 @@ export type LichessClientOptions = {
   onTokenRejected?: (token: string) => void;
 };
 
-export function formBody(form: Record<string, FormValue>): URLSearchParams {
+function formBody(form: Record<string, FormValue>): URLSearchParams {
   const body = new URLSearchParams();
   for (const [key, value] of Object.entries(form)) {
     if (value !== null && value !== undefined) body.set(key, String(value));
@@ -160,15 +160,11 @@ export class LichessClient {
     const abortFromOuter = () => controller.abort(outer?.reason);
     if (outer?.aborted) controller.abort(outer.reason);
     outer?.addEventListener("abort", abortFromOuter, { once: true });
-    let idleTimer: ReturnType<typeof setTimeout> | null = null;
-    let idled = false;
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
     const touch = () => {
       if (!request.idleTimeoutMs) return;
-      if (idleTimer) clearTimeout(idleTimer);
-      idleTimer = setTimeout(() => {
-        idled = true;
-        controller.abort();
-      }, request.idleTimeoutMs);
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => controller.abort(), request.idleTimeoutMs);
     };
     try {
       touch();
@@ -182,11 +178,12 @@ export class LichessClient {
       if (!response.body) return;
       for await (const line of readNdjson(response.body, touch)) onLine(line);
     } catch (error) {
-      if (idled && !outer?.aborted)
+      // Aborted, but not by the caller: the idle timer did it.
+      if (controller.signal.aborted && !outer?.aborted)
         throw new LichessHttpError("The Lichess stream went silent.", 0);
       throw error;
     } finally {
-      if (idleTimer) clearTimeout(idleTimer);
+      clearTimeout(idleTimer);
       outer?.removeEventListener("abort", abortFromOuter);
     }
   }

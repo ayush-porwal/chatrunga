@@ -381,7 +381,7 @@ describe("repertoire workspace store", () => {
       paused: false
     });
     load();
-    expect(store().decisions.k?.preferredUci).toBe("e2e4");
+    expect(store().decisions.k.preferredUci).toBe("e2e4");
     store().loadChapter(detailOf({ id: "r2" }), chapterOf(sampleTree()));
     expect(store().decisions).toEqual({});
   });

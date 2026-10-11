@@ -315,6 +315,6 @@ export function explainedChapterIds(
   if (detail.decisionCount > 0) return [];
   const last = detail.workspace?.lastChapterId;
   if (last && known.has(last)) return [last];
-  const first = sortedChapters(detail.chapters)[0];
+  const first = sortedChapters(detail.chapters).at(0);
   return first ? [first.id] : [];
 }

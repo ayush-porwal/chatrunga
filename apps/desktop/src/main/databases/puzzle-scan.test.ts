@@ -179,7 +179,7 @@ describe("reservoirScan", () => {
     const result = await reservoirScan(scanJob(path, 4, { maxMatches: 10 }), undefined, seeded(7));
     expect(result).toMatchObject({ matches: 10, complete: false });
     expect(result.rows).toHaveLength(4);
-    for (const id of ids(result.rows)) expect(Number(id?.slice(1))).toBeLessThan(10);
+    for (const id of ids(result.rows)) expect(Number(id.slice(1))).toBeLessThan(10);
   });
 
   it("a seeded scan keeps the same rows on every run, and gives every row an equal chance", async () => {

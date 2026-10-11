@@ -29,6 +29,7 @@ const engineEvents = {
 vi.stubGlobal("window", globalThis);
 vi.stubGlobal("chaturanga", {
   engines,
+  system: { timeAsleepMs: () => 0, onResumed: () => () => {} },
   events: {
     onEngineInfo: (handler: (info: EngineInfo) => void) => {
       engineEvents.info = handler;

@@ -118,7 +118,7 @@ export function PracticeSetup({
   );
   const rehearsing = mode === "rehearse-lines";
   const [rehearseChapterId, setRehearseChapterId] = useState(
-    initial.rehearse?.chapterId ?? initial.chapterIds?.[0] ?? trainable[0]?.id ?? ""
+    initial.rehearse?.chapterId ?? initial.chapterIds?.[0] ?? trainable.at(0)?.id ?? ""
   );
   const [fromNodeId, setFromNodeId] = useState(initial.rehearse?.fromNodeId ?? "");
   const branch = useRehearseStarts(

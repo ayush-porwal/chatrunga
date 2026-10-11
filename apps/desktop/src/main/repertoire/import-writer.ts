@@ -18,7 +18,7 @@ import {
 } from "./import-writer-protocol";
 
 /** The worker bundled next to the main entry (electron.vite.config.ts). */
-export const IMPORT_WRITER_WORKER = join(
+const IMPORT_WRITER_WORKER = join(
   dirname(fileURLToPath(import.meta.url)),
   "repertoire-import-writer-worker.js"
 );
@@ -67,7 +67,7 @@ export async function runImportCommit(
     );
   });
   // A failure while sending (the worker died) still settles through `reply`.
-  reply.catch(() => {});
+  reply.catch(() => undefined);
   try {
     const post = (request: ImportWriterRequest) => worker.postMessage(request);
     let sliceStart = performance.now();

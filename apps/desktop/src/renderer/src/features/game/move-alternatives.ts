@@ -16,7 +16,7 @@ export type MovePosition =
   | { kind: "best"; cursor: BestLineCursor };
 
 /** One alternative at a branch point: a line of the tree from its first move, or a BEST line. */
-export type Alternative =
+type Alternative =
   | { kind: "line"; startId: string }
   | { kind: "best"; markedNodeId: string; anchorNodeId: string; moves: readonly BestLineStep[] };
 

@@ -26,7 +26,7 @@ export function sinceForSync(syncSince: number | null, now: number): number {
   return syncSince ?? now - FIRST_SYNC_WINDOW_MS;
 }
 
-export function lichessGameUrl(gameId: string): string {
+function lichessGameUrl(gameId: string): string {
   return `https://lichess.org/${gameId}`;
 }
 
@@ -50,8 +50,9 @@ export async function importLichessGames(input: {
     finished: "true"
   });
   const result: ImportResult = { imported: 0, skipped: 0, nextSince: null };
-  // The earliest game that failed to import: the cursor stays at or before it, so it's tried again.
-  let firstFailure: number | null = null;
+  // The earliest game that failed to import (Infinity: none did): the cursor stays at or before
+  // it, so it's tried again.
+  let firstFailure = Infinity;
   let lastProgressAt = 0;
   await input.client.stream(
     `/api/games/user/${encodeURIComponent(input.username)}?${params.toString()}`,
@@ -81,7 +82,7 @@ export async function importLichessGames(input: {
       else result.skipped += 1;
       if (outcome === "failed") {
         const startedAt = typeof game.createdAt === "number" ? game.createdAt : playedAt;
-        if (startedAt !== null) firstFailure = Math.min(firstFailure ?? startedAt, startedAt);
+        if (startedAt !== null) firstFailure = Math.min(firstFailure, startedAt);
       }
       const now = Date.now();
       if (now - lastProgressAt >= PROGRESS_INTERVAL_MS) {
@@ -90,7 +91,7 @@ export async function importLichessGames(input: {
       }
     }
   );
-  if (firstFailure !== null && result.nextSince !== null)
+  if (Number.isFinite(firstFailure) && result.nextSince !== null)
     result.nextSince = Math.min(result.nextSince, firstFailure);
   return result;
 }

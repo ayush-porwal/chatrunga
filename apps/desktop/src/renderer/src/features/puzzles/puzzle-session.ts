@@ -5,7 +5,7 @@ import { useGameStore } from "../../stores/game-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
 
 /** Delay before the puzzle plays the opponent's reply, so the user sees their own move land. */
-export const PUZZLE_REPLY_DELAY_MS = 320;
+const PUZZLE_REPLY_DELAY_MS = 320;
 
 /** Moves the active puzzle one solution move forward, completing it after the last one. */
 function advancePuzzle(feedback: string): void {

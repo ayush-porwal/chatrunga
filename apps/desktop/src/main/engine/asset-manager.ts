@@ -87,10 +87,10 @@ export type AssetId =
   | "maia-1700"
   | "maia-1900";
 
-export type AssetState = "missing" | "installed" | "custom";
+type AssetState = "missing" | "installed" | "custom";
 
 /** Where a download (or install) came from. */
-export type AssetSource = "github" | "fallback" | "fixed";
+type AssetSource = "github" | "fallback" | "fixed";
 
 export type AssetRecord = {
   id: AssetId;
@@ -216,7 +216,7 @@ export type ResolvedDownload = {
   checkError: string | null;
 };
 
-export class DigestMismatchError extends Error {
+class DigestMismatchError extends Error {
   constructor(id: AssetId) {
     super(`sha256 mismatch for ${id}`);
     this.name = "DigestMismatchError";
@@ -495,7 +495,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     if (resolved.sha256) {
       const actual = await sha256File(partialPath);
       if (actual !== resolved.sha256) {
-        await unlink(partialPath).catch(() => {});
+        await unlink(partialPath).catch(() => undefined);
         throw new DigestMismatchError(id);
       }
     } else {
@@ -518,7 +518,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
         if (!found) throw new Error(`Executable not found in ${resolved.assetName} for ${id}`);
         staged = path.join(stagingDir, path.basename(finalPath));
         await rename(found, staged);
-        await unlink(partialPath).catch(() => {});
+        await unlink(partialPath).catch(() => undefined);
       } else {
         staged = path.join(stagingDir, path.basename(finalPath));
         await rename(partialPath, staged);
@@ -527,7 +527,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
       await this.stripQuarantine(staged);
       await swapIntoPlace(staged, finalPath);
     } finally {
-      await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+      await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
     }
   }
 
@@ -583,7 +583,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     const record = this.state.get(id);
     // Only delete files we installed; a custom path is the user's own file.
     if (record?.installedPath && record.state !== "custom") {
-      await unlink(record.installedPath).catch(() => {});
+      await unlink(record.installedPath).catch(() => undefined);
     }
     this.state.delete(id);
     await this.saveState();
@@ -652,7 +652,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
    */
   private async stripQuarantine(filePath: string): Promise<void> {
     if (process.platform === "darwin") {
-      await exec("xattr", ["-d", "com.apple.quarantine", filePath]).catch(() => {});
+      await exec("xattr", ["-d", "com.apple.quarantine", filePath]).catch(() => undefined);
       return;
     }
     if (process.platform === "win32") {
@@ -661,7 +661,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
         "-NoProfile",
         "-Command",
         `Unblock-File -LiteralPath '${literal}'`
-      ]).catch(() => {});
+      ]).catch(() => undefined);
     }
   }
 
@@ -672,7 +672,9 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
       entries
         .filter((name) => name.startsWith(".staging-") || /\.old-\d+$/.test(name))
         .map((name) =>
-          rm(path.join(this.enginesDir, name), { recursive: true, force: true }).catch(() => {})
+          rm(path.join(this.enginesDir, name), { recursive: true, force: true }).catch(
+            () => undefined
+          )
         )
     );
   }
@@ -681,7 +683,8 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     if (!existsSync(this.statePath)) return;
     try {
       const raw = await readFile(this.statePath, "utf-8");
-      const parsed = parseStoredJson<{ records?: AssetRecord[] }>(raw);
+      // A damaged file may hold null entries.
+      const parsed = parseStoredJson<{ records?: (AssetRecord | null)[] }>(raw);
       let changed = false;
       for (const record of parsed.records ?? []) {
         if (!isAssetId(record?.id)) continue;
@@ -719,7 +722,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
       await rename(tmp, this.statePath);
     };
     const next = this.stateWrites.then(write, write);
-    this.stateWrites = next.catch(() => {});
+    this.stateWrites = next.catch(() => undefined);
     return next;
   }
 
@@ -747,7 +750,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
   }
 }
 
-export class DisallowedDownloadError extends Error {
+class DisallowedDownloadError extends Error {
   constructor(url: string) {
     let host = "an invalid URL";
     try {
@@ -779,14 +782,14 @@ async function swapIntoPlace(staged: string, finalPath: string): Promise<void> {
   try {
     await rename(staged, finalPath);
   } catch (error) {
-    await rename(aside, finalPath).catch(() => {});
+    await rename(aside, finalPath).catch(() => undefined);
     throw error;
   }
-  await unlink(aside).catch(() => {});
+  await unlink(aside).catch(() => undefined);
 }
 
 /** Largest regular file under `rootDir` whose basename matches `pattern`. */
-export async function findExecutable(rootDir: string, pattern: RegExp): Promise<string | null> {
+async function findExecutable(rootDir: string, pattern: RegExp): Promise<string | null> {
   const best = { file: null as string | null, size: -1 };
   const walk = async (dir: string, depth: number): Promise<void> => {
     if (depth > 4) return;

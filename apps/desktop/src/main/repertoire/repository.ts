@@ -26,7 +26,7 @@ import {
   type StartPracticeInput
 } from "@chaturanga/shared/types/repertoire";
 import { repertoireDb } from "./connection";
-import { allRows, getRow, sqliteErrcode } from "../db/rows";
+import { allRows, getRow, rollbackIfOpen, sqliteErrcode } from "../db/rows";
 import { parseStoredJson } from "../stored-json";
 
 /** A stored chapter whose JSON can't be read. Recoverable: the row is left untouched. */
@@ -248,6 +248,7 @@ function all<T>(sql: string, ...params: SQLInputValue[]): T[] {
   return allRows<T>(repertoireDb().prepare(sql), ...params);
 }
 
+// oxlint-disable-next-line typescript/no-unnecessary-type-parameters -- T is the query's row shape, fixed by the schema (see db/rows.ts)
 function get<T>(sql: string, ...params: SQLInputValue[]): T | null {
   return getRow<T>(repertoireDb().prepare(sql), ...params) ?? null;
 }
@@ -262,10 +263,10 @@ function run(sql: string, ...params: SQLInputValue[]): void {
 export type TransactionMode = "read" | "write";
 
 /** The message a busy database gives the user (the write lock stayed held past the timeout). */
-export const REPERTOIRE_BUSY_MESSAGE = "The repertoire database is busy; try again.";
+const REPERTOIRE_BUSY_MESSAGE = "The repertoire database is busy; try again.";
 
 /** True for SQLite's BUSY error (any extended code), as node:sqlite reports it. */
-export function isBusyError(error: unknown): boolean {
+function isBusyError(error: unknown): boolean {
   const code = sqliteErrcode(error);
   return code !== undefined && (code & 0xff) === 5;
 }
@@ -296,7 +297,7 @@ export function transaction<T>(work: () => T, mode: TransactionMode = "write"): 
     db.exec("COMMIT");
     return result;
   } catch (error) {
-    if (db.isTransaction) db.exec("ROLLBACK");
+    rollbackIfOpen(db);
     throw actionableBusyError(error);
   }
 }

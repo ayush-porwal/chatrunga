@@ -8,8 +8,8 @@ import { createServer, type ServerResponse } from "node:http";
 import { LICHESS_ORIGIN, LichessClient, type FetchLike } from "./http";
 
 export const LICHESS_CLIENT_ID = "chaturanga-desktop";
-export const LICHESS_SCOPES = ["board:play", "challenge:read", "challenge:write"] as const;
-export const OAUTH_TIMEOUT_MS = 5 * 60_000;
+const LICHESS_SCOPES = ["board:play", "challenge:read", "challenge:write"] as const;
+const OAUTH_TIMEOUT_MS = 5 * 60_000;
 
 /** The flow ended without a token and without an error worth showing (cancelled, timed out). */
 export class OAuthCancelledError extends Error {

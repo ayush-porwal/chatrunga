@@ -17,7 +17,7 @@ import {
  * history). Everything sits under ["puzzles"], which recording an attempt invalidates. Empty in the
  * web preview (no `window.chaturanga`).
  */
-export const puzzleKeys = {
+const puzzleKeys = {
   all: ["puzzles"] as const,
   summary: ["puzzles", "summary"] as const,
   history: ["puzzles", "history"] as const,
@@ -118,7 +118,7 @@ export function recordInput(attempt: DecidedPuzzleAttempt): RecordPuzzleAttemptI
   };
 }
 
-export type PuzzleRecordState =
+type PuzzleRecordState =
   | { status: "saving" }
   | { status: "saved"; result: PuzzleAttemptResult }
   | { status: "failed"; message: string };

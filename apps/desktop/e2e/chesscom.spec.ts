@@ -66,7 +66,7 @@ async function connect(page: Page): Promise<void> {
 async function reviewNewestChesscomGame(page: Page): Promise<void> {
   await page.evaluate(async () => {
     const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga;
-    const [summary] = (await api.games.listPage({ tab: "chesscom", limit: 1 })).items;
+    const summary = (await api.games.listPage({ tab: "chesscom", limit: 1 })).items.at(0);
     if (!summary) throw new Error("no chess.com game");
     const saved = await api.games.get(summary.id);
     const review: GameReview = {

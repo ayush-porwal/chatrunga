@@ -143,7 +143,7 @@ export function deriveChoices(
   );
   const preferred = preferredElsewhere
     ? null
-    : ((decision ? effectivePreferredUci(decision, supported) : null) ?? included[0] ?? null);
+    : ((decision ? effectivePreferredUci(decision, supported) : null) ?? included.at(0) ?? null);
   return {
     side,
     rows: children.map((child) => {
@@ -343,7 +343,7 @@ export function isNotFoundError(
 }
 
 /** A decision change whose position left the repertoire (its move undone or line deleted). */
-export const POSITION_GONE_MESSAGE = "This position is no longer in the repertoire.";
+const POSITION_GONE_MESSAGE = "This position is no longer in the repertoire.";
 
 export type AutosaveSaveState =
   | { status: "idle" }
@@ -711,7 +711,7 @@ export function totalsOf(cards: readonly PracticeCard[]): PracticeTotals {
 }
 
 /** A card whose grade is final (nothing more to submit on it). */
-export function isCardFinished(card: Pick<PracticeCard, "state">): boolean {
+function isCardFinished(card: Pick<PracticeCard, "state">): boolean {
   return card.state !== "unanswered";
 }
 

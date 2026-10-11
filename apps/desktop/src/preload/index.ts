@@ -17,6 +17,7 @@ import {
 // Runs sandboxed: only `electron`'s renderer modules are available here, no Node APIs.
 
 /** Subscribes to a main → renderer event channel; returns the unsubscribe function. */
+// oxlint-disable-next-line typescript/no-unnecessary-type-parameters -- T is the payload main sends on `channel`, per the ChaturangaApi contract
 function subscribe<T>(channel: string) {
   return (callback: (payload: T) => void): Unsubscribe => {
     const listener = (_event: IpcRendererEvent, payload: T) => callback(payload);

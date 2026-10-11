@@ -57,7 +57,7 @@ export function openSavedGame(saved: SavedGame): void {
   // A switch still loading belongs to the board being replaced (even if it's this same game).
   analysisRequest += 1;
   useGameStore.getState().loadGame(sessionFromSavedGame(saved));
-  useReviewStore.getState().loadReview(savedReview(saved), saved.reviews ?? []);
+  useReviewStore.getState().loadReview(savedReview(saved), saved.reviews);
 }
 
 /**
@@ -115,7 +115,7 @@ export async function showAfterAnalysesDeleted(
   store.setAnalyses(left);
   const shown = store.review;
   if (!shown || shownId === null || !gone(shownId) || store.status === "running") return;
-  const next = left[0];
+  const next = left.at(0);
   if (next && (await showSavedAnalysis(gameId, next.reviewId).catch(() => false))) return;
   const now = useReviewStore.getState();
   if (

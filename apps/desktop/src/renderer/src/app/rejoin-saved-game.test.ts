@@ -70,7 +70,7 @@ function timedTree(times: { clock: string; playedAt?: number }[]): MoveNode[] {
   let move = 0;
   return moveTree.map((node) => {
     if (!node.san) return node;
-    const time = times[move++];
+    const time = times.at(move++);
     return time ? { ...node, clockAfter: time.clock, playedAt: time.playedAt } : node;
   });
 }

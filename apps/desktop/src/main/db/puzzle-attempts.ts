@@ -55,6 +55,7 @@ function all<T>(sql: string, ...params: SQLInputValue[]): T[] {
   return allRows<T>(getDb().prepare(sql), ...params);
 }
 
+// oxlint-disable-next-line typescript/no-unnecessary-type-parameters -- T is the query's row shape, fixed by the schema (see db/rows.ts)
 function get<T>(sql: string, ...params: SQLInputValue[]): T | null {
   return getRow<T>(getDb().prepare(sql), ...params) ?? null;
 }

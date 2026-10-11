@@ -27,7 +27,7 @@ export function useDatabaseDownloads(): void {
       timers.set(progress.sourceId, timer);
     });
     void api.databases
-      .activeDownloads?.()
+      .activeDownloads()
       .then((running) => store.applySnapshot(running))
       .catch(() => undefined);
     return () => {

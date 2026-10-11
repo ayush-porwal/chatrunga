@@ -260,7 +260,7 @@ export function proposePolicy(
 export function applyPolicy(
   extracted: ExtractedScope,
   policy: AddFromGamePolicy,
-  sourceToChapterIds: Record<string, string> = extracted.sourceToChapterIds
+  sourceToChapterIds: Partial<Record<string, string>> = extracted.sourceToChapterIds
 ): Record<string, RepertoireNodeMeta> {
   const included = new Set(policy.includedNodeIds);
   const covered = new Set(policy.coveredNodeIds);

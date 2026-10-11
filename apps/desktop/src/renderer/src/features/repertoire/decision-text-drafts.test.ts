@@ -17,7 +17,8 @@ const getDecision =
 const saveChapter = vi.fn<(input: { expectedRevision: number }) => Promise<unknown>>();
 (globalThis as unknown as { chaturanga: unknown }).chaturanga = {
   repertoires: { updateDecision, get: getRepertoire, getDecision, saveChapter },
-  games: {}
+  games: {},
+  system: { timeAsleepMs: () => 0 }
 };
 
 const { useRepertoireWorkspaceStore } = await import("../../stores/repertoire-workspace-store");

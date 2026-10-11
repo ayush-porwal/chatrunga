@@ -134,7 +134,7 @@ function parseGame(game: Game<PgnNodeData>, index: number, budget: Budget): Pars
     rejected: reason
   });
 
-  const variant = headers.Variant?.trim();
+  const variant = game.headers.get("Variant")?.trim();
   if (variant && !SUPPORTED_VARIANTS.has(variant.toLowerCase())) {
     return rejectedGame(`Unsupported variant "${variant}": only standard chess can be imported.`);
   }
@@ -389,10 +389,13 @@ export function exportRepertoirePgn(chapters: readonly ExportableChapter[]): str
 function exportChapter(chapter: ExportableChapter): string {
   const tag = (name: string, value: string) => `[${name} "${escapeHeader(value)}"]`;
   const lines = [tag("Event", chapter.title)];
+  // A chapter holds only the tags its PGN had: any of these may be missing.
+  const headers: Partial<Record<string, string>> = chapter.headers;
   for (const name of ROSTER_TAGS) {
-    if (chapter.headers[name] !== undefined) lines.push(tag(name, chapter.headers[name]));
+    const value = headers[name];
+    if (value !== undefined) lines.push(tag(name, value));
   }
-  const result = chapter.headers.Result?.trim() || "*";
+  const result = headers.Result?.trim() || "*";
   lines.push(tag("Result", result));
   for (const [name, value] of Object.entries(chapter.headers)) {
     if (OWNED_TAGS.has(name) || ROSTER_TAGS.includes(name)) continue;

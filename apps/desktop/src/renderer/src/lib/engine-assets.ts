@@ -45,7 +45,7 @@ export async function fetchAssetStatus(): Promise<EngineAssetStatusMap | null> {
 export function missingDownloads(status: EngineAssetStatusMap | null): EngineAssetStatus[] {
   if (!status) return [];
   return ENGINE_ASSETS.map((asset) => status[asset.id]).filter(
-    (entry): entry is EngineAssetStatus => entry?.state === "missing" && entry.autoDownload
+    (entry) => entry.state === "missing" && entry.autoDownload
   );
 }
 

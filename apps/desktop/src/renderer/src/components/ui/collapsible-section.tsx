@@ -173,8 +173,8 @@ export function CollapsibleHeader({
   );
 }
 
-/** The header row's box (its height and spacing come with its size), for a row laid out by its owner. */
-export const collapsibleHeaderRow = "flex shrink-0 items-center justify-between";
+/** The header row's box (its height and spacing come with its size). */
+const collapsibleHeaderRow = "flex shrink-0 items-center justify-between";
 
 /** The section's body: rendered only while open. */
 export function CollapsibleBody({

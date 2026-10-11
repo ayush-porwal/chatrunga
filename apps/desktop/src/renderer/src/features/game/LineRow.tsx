@@ -36,7 +36,7 @@ export function FigureSan({ san }: { san: string }) {
 }
 
 /** Nested variation rows indent one step per level, up to this many (deeper ones line up). */
-export const MAX_LINE_INDENT = 4;
+const MAX_LINE_INDENT = 4;
 const INDENT_REM = 0.875;
 
 /**
