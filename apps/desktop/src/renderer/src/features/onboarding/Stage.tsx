@@ -1,99 +1,119 @@
-import { useState } from "react";
-import { Sparkles } from "lucide-react";
-import { BoardThumbnail } from "../settings/board-thumbnail";
-import type { OnboardingStep } from "./onboarding-state";
-import { operaGameMoment } from "./opera-game";
-
-type StageSpec = { ply: number; note: string };
-
-/** The game's title, under the board on every step. */
-const GAME_CAPTION = "Morphy vs Duke Karl and Count Isouard, Paris 1858";
-
-/** The Opera game moment the board shows on each step, with the coach's note on that move. */
-const stages: Record<OnboardingStep, StageSpec> = {
-  welcome: {
-    ply: 31,
-    note: "Morphy gives up his queen. After Nxb8, Rd8 is mate: the rook checks and the bishop on g5 covers e7."
-  },
-  engines: {
-    ply: 13,
-    note: "A double attack. With the bishop on c4 the queen hits f7, and it eyes the loose pawn on b7 as well."
-  },
-  level: {
-    ply: 23,
-    note: "Castling long puts the rook on the open d-file at once, lined up against the pinned knight on d7."
-  },
-  coach: {
-    ply: 19,
-    note: "A knight for two pawns, to get at the black king while it is still in the centre. Every white piece joins in."
-  },
-  done: {
-    ply: 33,
-    note: "Checkmate. The bishop on g5 guards the rook and covers e7; Black’s own pieces take every other square."
-  }
-};
+import { useEffect, useState, type CSSProperties } from "react";
+import type { Square } from "@chaturanga/shared/types/chess";
+import {
+  cgWrapPieceSetClass,
+  defaultSettings,
+  hydratePieceSettings,
+  pieceSizesClass
+} from "@chaturanga/shared/types/settings";
+import { cn } from "@/lib/utils";
+import { usePieceSet } from "@/styles/generated-piece-themes";
+import { useSettingsQuery } from "../../queries/api";
+import { usePrefersReducedMotion } from "../board/board-motion";
+import { useBoardSquareColors } from "../play/piece-art";
+import { CgPieceGlyph } from "../settings/piece-style-preview";
+import {
+  OPERA_LOOP_MATED_SQUARE,
+  OPERA_LOOP_TICK_MS,
+  operaLoopFinalView,
+  operaLoopFrames,
+  operaLoopView
+} from "./opera-loop";
 
 /**
- * The illustration: board, caption, coach note. One column wide: the board, the caption and the
- * note card share both edges. A new position fades in over the previous one (the board never
- * blinks empty); reduced motion swaps it at once.
+ * The welcome's board: Morphy's finish from the Opera game on a loop (opera-loop.ts has the
+ * sequence), in the user's board colours and piece set. Pieces slide, captures fade, the last move
+ * is highlighted and the mated king's square glows. It is mounted once for the whole welcome, so it
+ * keeps going across steps. Reduced motion: the final mate position, still. Illustration only.
  */
-export function Stage({ step }: { step: OnboardingStep }) {
-  const { ply, note } = stages[step];
-  const moment = operaGameMoment(ply);
-  const [previousPly, setPreviousPly] = useState(ply);
-  const [shownPly, setShownPly] = useState(ply);
-  if (ply !== shownPly) {
-    setPreviousPly(shownPly);
-    setShownPly(ply);
-  }
-  const previous = operaGameMoment(previousPly);
+export function Stage() {
+  const reducedMotion = usePrefersReducedMotion();
+  const tick = useLoopTick(!reducedMotion);
+  const view = reducedMotion ? operaLoopFinalView() : operaLoopView(tick);
+  const frame = operaLoopFrames()[view.frame];
+  const settings = useSettingsQuery();
+  const { pieceStyle, pieceSizes } = hydratePieceSettings({ ...defaultSettings, ...settings.data });
+  usePieceSet(pieceStyle);
+  const { light, dark } = useBoardSquareColors();
+  const squares: CSSProperties = { "--thumb-light": light, "--thumb-dark": dark };
 
   return (
-    <figure
-      aria-label="Illustration: Morphy’s Opera game"
-      className="grid min-h-0 min-w-0 grid-rows-[424px_auto_minmax(0,1fr)]"
+    <div
+      role="img"
+      aria-label="Morphy’s Opera game, played on a loop"
+      data-slot="onb-board"
+      data-fading={view.fading || undefined}
+      className={cn(
+        "onb-board onb-board-in cg-wrap relative size-[808px] select-none overflow-hidden rounded-[14px] shadow-[0_0_0_1px_#000,0_40px_80px_-30px_#000]",
+        cgWrapPieceSetClass(pieceStyle),
+        pieceSizesClass(pieceSizes)
+      )}
+      // Unlayered `.cg-wrap` rules (display:block, board.css inline-size containment) beat utilities.
+      style={{ containerType: "normal" }}
     >
-      <div data-slot="onb-board" className="relative size-[424px]">
-        {previousPly !== ply ? (
-          <BoardThumbnail
-            fen={previous.fen}
-            lastMove={previous.uci}
-            rounded="xl"
-            className="absolute inset-0"
-          />
-        ) : null}
-        <div key={ply} className="onb-board-in absolute inset-0">
-          <BoardThumbnail
-            fen={moment.fen}
-            lastMove={moment.uci}
-            rounded="xl"
-            label={`Board after ${moment.label}`}
-          />
-        </div>
-      </div>
-      <figcaption
-        data-slot="onb-caption"
-        className="mt-3 truncate text-xs leading-5 text-fg-subtle"
-      >
-        {GAME_CAPTION}
-      </figcaption>
       <div
-        data-slot="onb-note"
         aria-hidden
-        className="mt-4 grid min-h-0 content-start gap-2 overflow-hidden rounded-xl border border-line bg-surface p-4"
-      >
-        <div key={step} className="onb-note-in grid gap-2">
-          <div className="flex h-6 items-center gap-2">
-            <span className="grid size-6 shrink-0 place-items-center rounded-full bg-accent-soft text-accent">
-              <Sparkles className="size-3.5" />
-            </span>
-            <span className="font-mono text-sm font-semibold text-fg">{moment.label}</span>
-            <span className="ml-auto text-2xs text-fg-subtle">Coach</span>
-          </div>
-          <p className="font-serif text-[0.9375rem] leading-6 text-fg-secondary">{note}</p>
-        </div>
+        className="absolute inset-0 bg-[conic-gradient(var(--thumb-dark)_25%,var(--thumb-light)_0_50%,var(--thumb-dark)_0_75%,var(--thumb-light)_0)] bg-[length:25%_25%]"
+        style={squares}
+      />
+      {/* The last move and the mate glow; they fade out with the pieces before a replay. */}
+      <div aria-hidden className="onb-fade absolute inset-0">
+        {frame.lastMove?.map((square) => (
+          <span
+            key={`${view.cycle}-${view.frame}-${square}`}
+            className="onb-highlight absolute size-[12.5%]"
+            style={place(square)}
+          />
+        ))}
+        {view.mate ? (
+          <span className="onb-mate absolute size-[12.5%]" style={place(OPERA_LOOP_MATED_SQUARE)} />
+        ) : null}
       </div>
-    </figure>
+      {/* A new run draws fresh pieces (faded in) rather than sliding the old ones back. */}
+      <div
+        key={view.cycle}
+        aria-hidden
+        className={cn("onb-fade absolute inset-0", view.cycle > 0 && "onb-replay-in")}
+      >
+        {frame.pieces.map((piece) => (
+          <span
+            key={piece.id}
+            data-captured={piece.captured || undefined}
+            className="onb-piece absolute left-0 top-0 size-[12.5%]"
+            style={at(piece.square)}
+          >
+            <CgPieceGlyph color={piece.color} role={piece.role} />
+          </span>
+        ))}
+      </div>
+    </div>
   );
+}
+
+/** A square's column and row from the top left (white at the bottom). */
+function cell(square: Square): { file: number; row: number } {
+  return { file: square.charCodeAt(0) - 97, row: 8 - Number(square[1]) };
+}
+
+/** A piece's place, as a transform of its 1/8-size box, so a move slides. */
+function at(square: Square): CSSProperties {
+  const { file, row } = cell(square);
+  return { transform: `translate(${file * 100}%, ${row * 100}%)` };
+}
+
+/** A square overlay's place (left/top, leaving `transform` to its animation). */
+function place(square: Square): CSSProperties {
+  const { file, row } = cell(square);
+  return { left: `${file * 12.5}%`, top: `${row * 12.5}%` };
+}
+
+/** Counts ticks while `running`; the count survives pauses, so the loop resumes where it was. */
+function useLoopTick(running: boolean): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!running) return;
+    const timer = window.setInterval(() => setTick((value) => value + 1), OPERA_LOOP_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, [running]);
+  return tick;
 }

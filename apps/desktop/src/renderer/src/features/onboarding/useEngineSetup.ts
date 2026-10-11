@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { EngineAssetStatusMap } from "@chaturanga/shared/ipc/chaturanga-api";
+import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import {
   fetchAssetStatus,
   isAssetInstalled,
@@ -15,8 +16,9 @@ import { selectSetupRunning, useEngineSetupStore } from "../../stores/engine-set
 import { engineSetupPhase, evaluationEngine, type EngineSetupPhase } from "./onboarding-state";
 
 export type EngineSetup = {
-  status: EngineAssetStatusMap | null;
   statusLoaded: boolean;
+  /** The download status couldn't be read (the check failed, or no desktop bridge). */
+  statusFailed: boolean;
   /** Stockfish + Maia as the setup list shows them (sizes before, progress during, done after). */
   rows: SetupRow[];
   /** Nothing downloaded or queued yet, and something to offer. */
@@ -26,15 +28,14 @@ export type EngineSetup = {
   phase: EngineSetupPhase;
   /** A usable evaluation engine exists (Game review can run). */
   engineReady: boolean;
+  /** That engine (the user's own, or the installed Stockfish), else null. */
+  engine: EngineConfig | null;
   /** Stockfish's download percentage while it is being fetched, else null. */
   stockfishPercent: number | null;
-  /**
-   * Lc0: missing here and not part of the setup list (it joins the Maia row when Maia needs it),
-   * and whether it can be downloaded automatically on this platform (Maia is skipped when not).
-   */
-  lc0: { missing: boolean; autoDownload: boolean };
   start: () => void;
   retry: (row: SetupRow) => void;
+  /** Reads the download status again (after a failed check). */
+  recheck: () => void;
 };
 
 /**
@@ -74,7 +75,8 @@ export function useEngineSetup(): EngineSetup {
     if (readyCount) refresh();
   }, [readyCount, refresh]);
 
-  const engineReady = Boolean(evaluationEngine(engines.data));
+  const engine = evaluationEngine(engines.data);
+  const engineReady = Boolean(engine);
   // With an evaluation engine already working (e.g. the user's own), Stockfish adds nothing.
   const recommended = useMemo(
     () =>
@@ -112,8 +114,8 @@ export function useEngineSetup(): EngineSetup {
     stockfishRow.status !== "error";
 
   return {
-    status,
     statusLoaded,
+    statusFailed: statusLoaded && status === null,
     rows,
     offer: !queued.length && recommended.length > 0,
     offerBytes: recommended.reduce((sum, asset) => sum + (asset.downloadSizeBytes ?? 0), 0),
@@ -124,12 +126,13 @@ export function useEngineSetup(): EngineSetup {
       rows: queued.length ? rows : []
     }),
     engineReady,
+    engine,
     stockfishPercent: stockfishBusy ? setupRowPercent(stockfishRow) : null,
-    lc0: {
-      missing: status?.lc0.state === "missing" && !rows.some((row) => row.ids.includes("lc0")),
-      autoDownload: Boolean(status?.lc0.autoDownload)
-    },
     start: () => void startDownloads(recommended),
-    retry: (row) => void retryDownloads(row.ids.filter((id) => progress[id]?.status === "error"))
+    retry: (row) => void retryDownloads(row.ids.filter((id) => progress[id]?.status === "error")),
+    recheck: () => {
+      setStatusLoaded(false);
+      refresh();
+    }
   };
 }

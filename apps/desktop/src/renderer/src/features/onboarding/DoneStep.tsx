@@ -1,98 +1,57 @@
-import type { ReactNode } from "react";
-import { CheckCircle2, CircleAlert, Loader2, Minus } from "lucide-react";
+import {
+  Check,
+  CircleAlert,
+  Download,
+  Minus,
+  RotateCcw,
+  Swords,
+  type LucideIcon
+} from "lucide-react";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import { headlineRating } from "@chaturanga/shared/types/ratings";
-import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useOpenRouterConfigQuery } from "../../queries/api";
-import { nearestLevelPreset } from "./onboarding-state";
+import { engineSummary, levelSummary, type EngineSummary } from "./onboarding-state";
+import { ProgressRing } from "./ProgressRing";
+import { StepIconButton, StepRow, StepRows } from "./step-parts";
 import { PrimaryButton, StepFooter, StepHeader, type StepHeadingProps } from "./StepChrome";
 import type { EngineSetup } from "./useEngineSetup";
 
-type SummaryTone = "done" | "busy" | "skipped" | "failed";
+type SummaryTone = EngineSummary["tone"];
 
-function SummaryRow({
-  tone,
-  title,
-  children,
-  extra
-}: {
-  tone: SummaryTone;
-  title: string;
-  children: ReactNode;
-  extra?: ReactNode;
-}) {
+const toneIcon: Record<SummaryTone, { className: string; Icon: LucideIcon }> = {
+  done: { className: "bg-[rgb(143_182_111/0.16)] text-accent", Icon: Check },
+  busy: { className: "bg-[rgb(143_182_111/0.14)] text-accent", Icon: Download },
+  failed: { className: "bg-[rgb(255_154_141/0.14)] text-danger", Icon: CircleAlert },
+  skipped: { className: "bg-control text-fg-subtle", Icon: Minus }
+};
+
+/**
+ * The row's status glyph in a small round tile. A check pops in, one row after another
+ * (`onb-pop`, staggered by `order`); a download in progress keeps a still glyph and lets its ring
+ * move.
+ */
+function SummaryIcon({ tone, order }: { tone: SummaryTone; order: number }) {
+  const { className, Icon } = toneIcon[tone];
+  const done = tone === "done";
   return (
-    <li className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-3 gap-y-2 bg-surface px-4 py-3.5">
-      <span className="grid h-5 place-items-center" aria-hidden>
-        {tone === "done" ? (
-          <CheckCircle2 className="size-4 text-accent" />
-        ) : tone === "busy" ? (
-          <Loader2 className="size-4 animate-spin text-fg-muted motion-reduce:animate-none" />
-        ) : tone === "failed" ? (
-          <CircleAlert className="size-4 text-danger" />
-        ) : (
-          <Minus className="size-4 text-fg-subtle" />
-        )}
-      </span>
-      <span className="grid min-w-0 gap-0.5">
-        <span className="text-sm font-medium leading-5 text-fg-secondary">{title}</span>
-        <span className="text-xs leading-5 text-fg-muted">{children}</span>
-      </span>
-      {extra ? <span className="col-start-2">{extra}</span> : null}
-    </li>
+    <span
+      aria-hidden
+      className={cn("grid size-[22px] shrink-0 place-items-center rounded-full", className)}
+    >
+      <Icon
+        strokeWidth={2.6}
+        className={cn("size-[13px]", done && "onb-pop")}
+        style={done ? { animationDelay: `${200 + order * 120}ms` } : undefined}
+      />
+    </span>
   );
 }
 
-/** The summary's Engines line: downloading, ready, failed, still checking, or skipped. */
-function engineSummary(
-  setup: EngineSetup,
-  ownEngine: boolean
-): { tone: SummaryTone; text: string } {
-  if (setup.phase === "downloading") {
-    return {
-      tone: "busy",
-      text:
-        setup.stockfishPercent !== null
-          ? `Downloading Stockfish (${setup.stockfishPercent}%). It carries on in the background, and Play shows the progress.`
-          : setup.engineReady
-            ? "Stockfish is ready. Maia is still downloading in the background; Play shows the progress."
-            : "Installing Stockfish. Play shows the progress."
-    };
-  }
-  if (setup.engineReady) {
-    const allInstalled = setup.rows.length > 0 && setup.rows.every((row) => row.status === "ready");
-    return {
-      tone: "done",
-      text: allInstalled ? "Stockfish and Maia are ready." : "An engine is ready for Game review."
-    };
-  }
-  const failed = setup.rows.find((row) => row.status === "error");
-  if (failed) {
-    return { tone: "failed", text: `${failed.label} didn’t download. You can retry it from Play.` };
-  }
-  if (setup.phase === "checking") return { tone: "busy", text: "Checking…" };
-  return {
-    tone: "skipped",
-    text: ownEngine
-      ? "Add your own engine in Settings, Engines."
-      : "Skipped. Play offers the download whenever you want it."
-  };
-}
-
-/** The summary's level line: the rating (named when it is a preset) and the side reviewed. */
-function levelSummary(settings: AppSettings): string {
-  const yourRating = headlineRating(settings.playerRatings);
-  const preset = nearestLevelPreset(yourRating);
-  const side = settings.reviewPlayerColor === "black" ? "Black" : "White";
-  return preset.rating === yourRating
-    ? `${preset.rating}, ${preset.label.toLowerCase()}. Explanations are written for ${side}.`
-    : `${yourRating}. Explanations are written for ${side}.`;
-}
-
-/** The last step: what was set up, and one way into the app. */
+/** The last step: what was set up (with a way to fix what wasn't), and one way into the app. */
 export function DoneStep({
   setup,
-  ownEngine,
   settings,
   onBack,
   onDone,
@@ -100,51 +59,97 @@ export function DoneStep({
   ...heading
 }: StepHeadingProps & {
   setup: EngineSetup;
-  ownEngine: boolean;
   settings: AppSettings;
+  /** Back to the AI coach step (also "Add key"). */
   onBack: () => void;
   onDone: () => void;
 }) {
   const coach = useOpenRouterConfigQuery();
   const hasKey = Boolean(coach.data?.hasApiKey);
-  const engines = engineSummary(setup, ownEngine);
+  const engines = engineSummary(setup);
 
   return (
     <>
-      <StepHeader {...heading} title="You’re all set">
-        <p>Here’s what is set up. You can change any of it later in Settings.</p>
-      </StepHeader>
+      <StepHeader {...heading} title="You’re all set" />
 
-      <ul
-        aria-label="Setup summary"
-        className="grid gap-px overflow-hidden rounded-xl border border-line bg-line-subtle"
-      >
-        <SummaryRow
-          tone={engines.tone}
+      <StepRows label="Setup summary">
+        <StepRow
+          lead={<SummaryIcon tone={engines.tone} order={0} />}
           title="Engines"
-          extra={
-            setup.phase === "downloading" && setup.stockfishPercent !== null ? (
-              <Progress value={setup.stockfishPercent} aria-label="Stockfish download" />
-            ) : null
+          detail={<span role="status">{engines.text}</span>}
+          end={<EngineAction summary={engines} setup={setup} />}
+        />
+        <StepRow
+          lead={<SummaryIcon tone="done" order={1} />}
+          title="Your level"
+          detail={levelSummary(headlineRating(settings.playerRatings), settings.reviewPlayerColor)}
+        />
+        <StepRow
+          lead={<SummaryIcon tone={hasKey ? "done" : "skipped"} order={2} />}
+          title="AI coach"
+          detail={hasKey ? "Key saved" : "Skipped"}
+          end={
+            hasKey ? null : (
+              <Button
+                variant="ghost"
+                size="xs"
+                className="h-[26px] rounded-[7px] px-[9px] text-[12.5px]"
+                onClick={onBack}
+              >
+                Add key
+              </Button>
+            )
           }
-        >
-          <span role="status">{engines.text}</span>
-        </SummaryRow>
-        <SummaryRow tone="done" title="Your level">
-          {levelSummary(settings)}
-        </SummaryRow>
-        <SummaryRow tone={hasKey ? "done" : "skipped"} title="AI coach">
-          {hasKey
-            ? "Your OpenRouter key is saved. Reviews come with explanations."
-            : "Skipped. Reviews show the engine’s findings; add a key in Settings, AI."}
-        </SummaryRow>
-      </ul>
+        />
+      </StepRows>
 
       <StepFooter
         footer={footer}
         back={onBack}
-        primary={<PrimaryButton onClick={onDone}>Start using Chaturanga</PrimaryButton>}
+        primary={
+          <PrimaryButton onClick={onDone}>
+            <Swords />
+            Start playing
+          </PrimaryButton>
+        }
       />
     </>
   );
+}
+
+/** What the Engines row offers: its progress ring, Retry, Try again, or Download. */
+function EngineAction({ summary, setup }: { summary: EngineSummary; setup: EngineSetup }) {
+  if (summary.tone === "busy") {
+    return <ProgressRing value={summary.percent} label="Engine downloads" />;
+  }
+  if (summary.tone === "failed") {
+    return "retry" in summary ? (
+      <StepIconButton
+        label="Retry the download"
+        tooltip="Retry"
+        icon={<RotateCcw />}
+        onClick={() => setup.retry(summary.retry)}
+      />
+    ) : (
+      <StepIconButton
+        label="Check the engines again"
+        tooltip="Try again"
+        icon={<RotateCcw />}
+        onClick={setup.recheck}
+      />
+    );
+  }
+  if (summary.tone === "skipped" && summary.download) {
+    return (
+      <Button
+        variant="ghost"
+        size="xs"
+        className="h-[26px] rounded-[7px] px-[9px] text-[12.5px]"
+        onClick={setup.start}
+      >
+        Download
+      </Button>
+    );
+  }
+  return null;
 }

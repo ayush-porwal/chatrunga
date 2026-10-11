@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 export type StepHeadingProps = {
   headingRef: React.RefObject<HTMLHeadingElement | null>;
   headingId: string;
-  /** The frame's footer row, where StepFooter renders the step's buttons. */
+  /** The card's footer row, where StepFooter renders the step's buttons. */
   footer: HTMLDivElement | null;
 };
 
@@ -18,27 +18,27 @@ export function StepHeader({
   children
 }: Omit<StepHeadingProps, "footer"> & { title: string; children?: ReactNode }) {
   return (
-    <header className="grid gap-3">
+    <header className="grid gap-[18px]">
       <h1
         ref={headingRef}
         id={headingId}
         tabIndex={-1}
         data-slot="onb-heading"
-        className="text-[1.875rem] font-semibold leading-9 tracking-tight text-fg outline-none"
+        className="text-[40px] font-bold leading-[1.2] tracking-[-0.02em] text-fg outline-none"
       >
         {title}
       </h1>
       {children ? (
-        <div className="grid gap-2 text-sm leading-6 text-fg-muted">{children}</div>
+        <div className="grid gap-2 text-[16.5px] leading-[1.55] text-fg-muted">{children}</div>
       ) : null}
     </header>
   );
 }
 
 /**
- * The step's buttons, rendered into the frame's footer row. The geometry never changes: Back on
- * the left (its slot kept on the first step), the primary action in a fixed-width slot on the
- * right, an optional secondary action just left of it.
+ * The step's buttons, rendered into the card's footer row: three equal slots, `[Back] [secondary]
+ * [primary]`, every button filling its slot, so the buttons are one size on every step and never
+ * move. An empty slot keeps its space.
  */
 export function StepFooter({
   footer,
@@ -53,36 +53,39 @@ export function StepFooter({
 }) {
   if (!footer) return null;
   return createPortal(
-    <div className="grid h-10 grid-cols-[6rem_minmax(0,1fr)_12.5rem] items-center gap-2">
-      {back ? (
-        // Pulled left by its padding so the label lines up with the heading's left edge.
-        <Button
-          variant="ghost"
-          data-slot="onb-back"
-          className="-ml-3 h-10 w-24 justify-start"
-          onClick={back}
-        >
-          <ArrowLeft />
-          Back
-        </Button>
-      ) : (
-        <span aria-hidden className="h-10 w-24" />
-      )}
-      <div className="flex min-w-0 justify-end">{secondary}</div>
-      {primary}
+    <div className="grid grid-cols-3 gap-[10px]">
+      <div className="flex min-w-0">
+        {back ? (
+          <SecondaryButton data-slot="onb-back" onClick={back}>
+            <ArrowLeft />
+            Back
+          </SecondaryButton>
+        ) : null}
+      </div>
+      <div className="flex min-w-0">{secondary}</div>
+      <div className="flex min-w-0">{primary}</div>
     </div>,
     footer
   );
 }
 
-/** The footer's primary button: fills the fixed slot, so its box is the same on every step. */
+/** One box for every footer button; hover changes colour only (no lift, no press scale). */
+const footerButton =
+  "h-[48px] w-full min-w-0 rounded-[12px] px-3 text-[15px] font-semibold active:scale-100 [&_svg]:size-[15px]";
+
+/** The footer's primary button (accent): fills its slot. Icons go before the label. */
 export function PrimaryButton({ className, ...props }: React.ComponentProps<typeof Button>) {
   return (
     <Button
       variant="primary"
       data-slot="onb-primary"
-      className={cn("h-10 w-full px-4", className)}
+      className={cn(footerButton, className)}
       {...props}
     />
   );
+}
+
+/** The footer's outlined button (Back, Skip): fills its slot, the same box as the primary. */
+export function SecondaryButton({ className, ...props }: React.ComponentProps<typeof Button>) {
+  return <Button variant="outline" className={cn(footerButton, className)} {...props} />;
 }

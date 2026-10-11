@@ -275,6 +275,21 @@ describe("first-run setup", () => {
     expect(setupRowPercent(rows[1])).toBe(50);
   });
 
+  it("keeps the failed member's error message on its row", () => {
+    const queued = [status("maia-1100"), status("maia-1300")];
+    expect(
+      setupRows(queued, {
+        "maia-1100": { bytesReceived: 5, bytesTotal: 5, status: "ready" },
+        "maia-1300": {
+          bytesReceived: 0,
+          bytesTotal: 5,
+          status: "error",
+          errorMessage: "fetch failed"
+        }
+      })[0].errorMessage
+    ).toBe("fetch failed");
+  });
+
   it("shows a failure over progress, and ready only when every member is ready", () => {
     const queued = [status("maia-1100"), status("maia-1300")];
     expect(

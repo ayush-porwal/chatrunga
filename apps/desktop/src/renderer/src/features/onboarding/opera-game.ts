@@ -3,8 +3,8 @@ import type { MoveNode } from "@chaturanga/shared/types/chess";
 
 /**
  * Paul Morphy vs Duke Karl of Brunswick and Count Isouard, Paris 1858: the "Opera game".
- * Public domain. The welcome's board follows it from step to step as illustration: short
- * (17 moves), decisive, and famous for 16.Qb8+!, a queen sacrifice that forces mate.
+ * Public domain. The welcome's board loops its finish (opera-loop.ts): short, decisive, and famous
+ * for 16.Qb8+!, a queen sacrifice that forces mate.
  */
 const OPERA_GAME_PGN = `[Event "Paris Opera"]
 [Site "Paris FRA"]
@@ -31,24 +31,4 @@ export function operaGameMainline(): MoveNode[] {
   }
   mainline = nodes;
   return nodes;
-}
-
-/** Moments of the game the welcome's board shows, one per step. */
-export type OperaMoment = {
-  ply: number;
-  /** "10.Nxb5" */
-  label: string;
-  /** A coach-style note on the move, or null for a quiet caption only. */
-  note: string | null;
-};
-
-export function operaGameMoment(
-  ply: number,
-  note: string | null = null
-): OperaMoment & { fen: string; uci: string | null } {
-  const nodes = operaGameMainline();
-  const node = nodes[Math.max(0, Math.min(nodes.length - 1, ply))];
-  const moveNumber = Math.ceil(node.ply / 2);
-  const label = node.san ? `${moveNumber}${node.ply % 2 === 1 ? "." : "…"}${node.san}` : "Start";
-  return { ply: node.ply, label, note, fen: node.fenAfter, uci: node.uci };
 }

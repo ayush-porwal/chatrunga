@@ -198,6 +198,8 @@ export type SetupRow = {
   bytesReceived: number;
   bytesTotal: number;
   status: AssetStatus;
+  /** The first failed member's error message, as main reported it. */
+  errorMessage?: string;
 };
 
 const ROW_STATUS_ORDER: readonly AssetStatus[] = [
@@ -278,6 +280,9 @@ export function setupRows(
     row.bytesReceived += member.bytesReceived;
     if (ROW_STATUS_ORDER.indexOf(member.status) < ROW_STATUS_ORDER.indexOf(row.status))
       row.status = member.status;
+    const errorMessage = progress[asset.id]?.errorMessage;
+    if (member.status === "error" && errorMessage && !row.errorMessage)
+      row.errorMessage = errorMessage;
   }
   for (const row of rows) {
     if (row.key === "maia") row.label = maiaRowLabel(row.ids);
