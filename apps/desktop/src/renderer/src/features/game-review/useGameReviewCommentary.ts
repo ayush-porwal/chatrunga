@@ -112,7 +112,9 @@ export function useGameReviewCommentary({
 
   const payloadContext = usePayloadContext(review);
   const reviewedMove = stillReviewed(move, payloadContext?.moves);
-  const active = visible && reviewStatus === "ready" && Boolean(reviewedMove);
+  // Not while a pass runs; otherwise the review shown is explained, also after a stopped or failed
+  // run (which leaves the earlier review on screen).
+  const active = visible && reviewStatus !== "running" && Boolean(reviewedMove);
   const payload = useMemo(() => {
     if (!active || !reviewedMove || !payloadContext) return null;
     return buildInsightPayload(reviewedMove, {

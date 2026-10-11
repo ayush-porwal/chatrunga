@@ -210,8 +210,8 @@ test("game review prints the evaluation at the better side's end and marks the r
   await goToPly(page, 1);
   await expect(evalBar(page)).toHaveAccessibleName("Evaluation +0.3");
   expect(await evalText(page)).toEqual({ text: "0.3", side: "white", end: "bottom" });
-  // The white side's colour over the black side's dark grey, the number dark on the white.
-  expect(await evalColours(page)).toEqual({ bar: "rgb(43, 48, 54)", text: "rgb(21, 23, 26)" });
+  // Drawn as chess.com draws it: white over a warm dark grey, the number dark on the white.
+  expect(await evalColours(page)).toEqual({ bar: "rgb(64, 61, 57)", text: "rgb(64, 61, 57)" });
   await expect(board(page).getByRole("img", { name: "Book: e4" })).toHaveAttribute(
     "data-annotation",
     "book"
@@ -229,7 +229,7 @@ test("game review prints the evaluation at the better side's end and marks the r
   await expect(evalBar(page)).toHaveAccessibleName("Evaluation -2.5");
   expect(await evalText(page)).toEqual({ text: "2.5", side: "black", end: "top" });
   // Black's number is light on the grey.
-  expect((await evalColours(page)).text).toBe("rgb(244, 241, 234)");
+  expect((await evalColours(page)).text).toBe("rgb(255, 255, 255)");
   const blunder = board(page).getByRole("img", { name: "Blunder: Nxe5" });
   await expect(blunder).toHaveAttribute("data-annotation", "blunder");
   await expect(blunder).toHaveAttribute("data-square", "e5");
@@ -358,11 +358,6 @@ test("a running review fills in as it goes: the board follows the analysis until
     "aria-selected",
     "true"
   );
-  await expect(
-    page
-      .getByRole("radiogroup", { name: "Moves shown" })
-      .getByRole("radio", { name: "Moves", exact: true })
-  ).toHaveAttribute("aria-checked", "true");
   const tree = page.getByRole("tree", { name: "Reviewed move tree" });
   const stop = titlebar(page).getByRole("button", { name: "Stop", exact: true });
   await expect(stop).toBeVisible();
@@ -434,4 +429,47 @@ test("a running review fills in as it goes: the board follows the analysis until
     titlebar(page).getByRole("button", { name: "Analyze again", exact: true })
   ).toBeVisible();
   await expect(counter(page)).toHaveText("7 / 7");
+});
+
+test("a stopped review says where it got to and offers Analyze again", async ({
+  launch,
+  profile
+}) => {
+  test.setTimeout(120_000);
+  const { app, page } = await launch();
+  // The engine's "review-gated" mode: with the gate at N, moves 1…N are analysed, N + 1 is going.
+  const log = join(profile, "uci.log");
+  writeFileSync(`${log}.gate`, "4");
+  await skipWelcome(page);
+  await registerFakeEngine(page, log, "review-gated");
+  await importPgnFile(app, page, writePgn(profile, "trap.pgn", TRAP_PGN));
+  await expect(board(page)).toBeVisible();
+  await sidebar(page).getByRole("button", { name: "Game review", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Choose a game" })
+    .getByRole("button", { name: /^Alpha vs Beta/ })
+    .click();
+  await titlebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
+  await page
+    .getByRole("radiogroup", { name: "Review this game as" })
+    .getByRole("radio", { name: "White (Alpha)" })
+    .click();
+  await page.getByRole("button", { name: "Start review", exact: true }).click();
+  // Four plies analysed, the fifth (White's third move) going.
+  await expect(navigation(page).getByRole("status")).toHaveAccessibleName("Analyzing move 3 of 7");
+  await titlebar(page).getByRole("button", { name: "Stop", exact: true }).click();
+
+  // The panel says where the run stopped, on every tab, with the way to run it again.
+  const panel = page.getByRole("complementary", { name: "Review" });
+  const stopped = panel.getByRole("status").filter({ hasText: /^Analysis stopped at/ });
+  await expect(stopped).toContainText("Analysis stopped at move 3 of 7.");
+  const tabs = page.getByRole("tablist", { name: "Game review sections" });
+  await tabs.getByRole("tab", { name: "Summary", exact: true }).click();
+  await expect(stopped).toBeVisible();
+  // The moves it reached are reviewed: the review button shows, with no key moment among them.
+  await expect(panel.getByRole("button", { name: "No key moments", exact: true })).toBeDisabled();
+
+  await stopped.getByRole("button", { name: "Analyze again", exact: true }).click();
+  await expect(titlebar(page).getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+  await expect(stopped).toHaveCount(0);
 });

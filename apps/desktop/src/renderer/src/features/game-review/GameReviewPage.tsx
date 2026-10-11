@@ -5,7 +5,7 @@ import type { RepertoireColor } from "@chaturanga/shared/types/repertoire";
 import type { StudyOpenTarget } from "../repertoire/repertoire-chapters";
 import { useGameStore } from "../../stores/game-store";
 import { reviewsByNode, selectDisplayedOpening, useReviewStore } from "../../stores/review-store";
-import { useDisplayedReviewMoves, useOutdatedReviewMoves } from "../../stores/review-validity";
+import { useDisplayedReviewMoves } from "../../stores/review-validity";
 import { mainlineReviewInput, type ReviewTab } from "./review-utils";
 import { ReviewBoardStage, reviewPlayers } from "./ReviewBoardStage";
 import { ReviewCommentaryPanel } from "./ReviewCommentaryPanel";
@@ -13,53 +13,33 @@ import { ReviewEnginePanel } from "./ReviewEnginePanel";
 import { ReviewMoveRail } from "./ReviewMoveRail";
 import { RepertoireHeadline, ReviewOpeningPanel } from "./ReviewOpeningPanel";
 import { openReviewSettingsDialog, ReviewSettingsDialog } from "./ReviewSettingsDialog";
-import { ReviewSidePrompt, ReviewSummary } from "./ReviewSummary";
+import { ReviewSummary } from "./ReviewSummary";
+import { ReviewSummaryTab } from "./ReviewSummaryTab";
 import { CardCommentaryContext, type CardCommentaryOptions } from "./MomentCommentary";
-import { chooseReviewSide, reviewSideColor, useReviewSide, type ReviewSide } from "./review-side";
+import { chooseReviewSide, reviewSideColor, useReviewSide } from "./review-side";
 import { moverOf } from "./review-summary";
 import { ReviewCharts } from "./ReviewCharts";
 import { useAnalysisFollow } from "./useAnalysisFollow";
-import type { ReviewStepAction } from "./review-steps";
 import { useReviewPanelAnchor } from "./useReviewPanelAnchor";
 import { useReviewStepper } from "./useReviewStepper";
 import { ErrorBoundary } from "@/components/error-boundary";
-import { cn } from "@/lib/utils";
-import { BoardWorkspace, workspaceTabsClass } from "../board/BoardWorkspace";
-import { MoveNavigation } from "../board/MoveNavigation";
-import { blackToMove, fullMoveCount } from "../board/move-counter";
+import { BoardWorkspace } from "../board/BoardWorkspace";
+import { useMainlineMoveCount, WorkspaceTabBar, type WorkspaceTab } from "../board/WorkspaceTabBar";
 import { useGameReviewCommentary } from "./useGameReviewCommentary";
 import { reviewRatingLabel, useReviewRating } from "./use-review-rating";
 import { useStoreHintsOnLeave } from "../onboarding/Coachmark";
 import { useOpenRouterConfigQuery, useUpdateSettingMutation } from "../../queries/api";
-import { useCollapsible } from "@/components/ui/collapsible-section";
-import { ReviewPanelHeader } from "./ReviewPanelHeader";
 import { openingSideFor, type OpeningSide } from "./opening-comparison";
 import { keyMoments } from "@chaturanga/shared/chess/key-moments";
-import { Sparkles, Swords, Upload } from "lucide-react";
+import { Settings, Sparkles, Swords, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Notice } from "@/components/ui/notice";
-import {
-  SegmentedControl,
-  tabPanelProps,
-  type SegmentedOption
-} from "@/components/ui/segmented-control";
+import { IconButton } from "@/components/ui/icon-button";
+import { tabPanelProps } from "@/components/ui/segmented-control";
 import { useReviewUsage } from "../../app/useUsageTelemetry";
-
-const reviewTabOptions: readonly SegmentedOption<ReviewTab>[] = [
-  { value: "summary", label: "Summary" },
-  { value: "commentary", label: "Commentary" },
-  { value: "moves", label: "Moves" },
-  { value: "engine", label: "Engine" }
-];
-
-/**
- * The five review tabs share the row's full width and never truncate a label: narrower panels
- * tighten the padding, then the text, so every label stays whole down to the panel's 20rem
- * minimum; narrower than that (or with larger text), the row scrolls sideways instead, the
- * selected tab kept in view.
- */
-const reviewTabsClass = `${workspaceTabsClass} overflow-x-auto [scrollbar-width:none] [&>button]:shrink-0 [&>button>span]:overflow-visible @max-[424px]/panel:[&>button]:px-1.5 @max-[384px]/panel:[&>button]:text-xs @max-[344px]/panel:[&>button]:px-0.5`;
+import { DESTINATION_ICONS } from "../../app/destination-icons";
+import { ReviewNavigationRow } from "./ReviewNavigationRow";
+import { ReviewNotices, useReviewNotices } from "./ReviewNotices";
 
 type GameReviewPageProps = {
   activeTab: ReviewTab;
@@ -72,6 +52,8 @@ type GameReviewPageProps = {
   /** Offered when the game has no moves to review. */
   onImportPgn: () => void;
   onPlay: () => void;
+  /** The tab bar's Export PGN: the game with its analysis (as on Analyze). */
+  onExportPgn: () => void;
   /** Opens Settings → AI (offered when no OpenRouter key is saved). */
   onOpenCommentarySettings?: () => void;
   /** Opening tab: study a repertoire chapter (Back returns to this review at the same move). */
@@ -103,6 +85,7 @@ function GameReviewPageInner({
   onAnalyze,
   onImportPgn,
   onPlay,
+  onExportPgn,
   onOpenCommentarySettings,
   onOpenRepertoireStudy,
   onRefreshRepertoireDecision,
@@ -190,7 +173,6 @@ function GameReviewPageInner({
     () => updateSetting({ key: "reviewCommentaryEnabled", value: true }),
     [updateSetting]
   );
-  const openReviewSettings = useCallback(() => openReviewSettingsDialog(), []);
   // The rating the shown review was made for (an older one: what a review now would use).
   const currentRating = useReviewRating(settings, side);
   const shownRating = review?.rating ?? currentRating;
@@ -217,9 +199,12 @@ function GameReviewPageInner({
     selectedNodeId === "root" || reviewInput.some((move) => move.nodeId === selectedNodeId);
   /** No main-line moves (and no saved review): nothing to analyse or explain. */
   const emptyGame = reviewInput.length === 0 && !hasMoves;
+  // Between the tab bar and the content, on every tab: a stopped or failed run, an analysis the
+  // moves outgrew or whose marks were worked out again.
+  const notices = useReviewNotices(reviewInput.length, onAnalyze);
 
   const changeSide = useCallback((next: "white" | "black") => chooseReviewSide(next), []);
-  // The review settings dialog (the titlebar's gear opens it): the side and its rating are in it.
+  // The review settings dialog (the tab bar's gear opens it): the side and its rating are in it.
   const settingsDialog = (
     <ReviewSettingsDialog
       settings={settings}
@@ -241,8 +226,6 @@ function GameReviewPageInner({
     onTabChange
   });
 
-  // The "Review" section (tabs and content) folds under its header; the charts take the space.
-  const reviewSection = useCollapsible("review-panel:review");
   // The game against the user's repertoire, in the summary's OPENING section: compared as the side
   // picked there, else the side reviewed.
   const repertoireColor = openingColor ?? side;
@@ -281,8 +264,11 @@ function GameReviewPageInner({
             mainline={reviewInput}
             opening={review?.opening}
             side={side}
+            moments={moments}
+            onSelectNode={selectNode}
             repertoire={repertoireView}
             onOpenPuzzles={onOpenPuzzles}
+            onAddCommentaryKey={onOpenCommentarySettings}
           />
         }
         reviewSide={reviewSide}
@@ -305,14 +291,10 @@ function GameReviewPageInner({
         rewrite={selected.rewrite}
         onAnalyze={onAnalyze}
         onOpenCommentarySettings={onOpenCommentarySettings}
-        onOpenReviewSettings={openReviewSettings}
         onTurnOnCommentary={turnOnCommentary}
         moveContext={moveContext}
         onGoToLine={goToLine}
         variationAnchor={variationAnchor}
-        keyMoments={moments}
-        reviewMoves={moves}
-        onSelectNode={selectNode}
       />
     ),
     moves: (
@@ -322,10 +304,7 @@ function GameReviewPageInner({
         reviews={reviewByNodeId}
         commentaryByNodeId={commentaryByNodeId}
         onSelectNode={selectNode}
-        moves={moves}
-        keyMoments={moments}
         opening={shown.opening}
-        runId={shown.runId}
         orientation={orientation}
       />
     ),
@@ -349,43 +328,24 @@ function GameReviewPageInner({
     <CardCommentaryContext.Provider value={cardCommentary}>
       <BoardWorkspace
         tabPanel={tabPanelProps(panelId, activeTab)}
-        header={<ReviewPanelHeader section={reviewSection} />}
-        bodyCollapsed={!reviewSection.open}
-        bodyId={reviewSection.contentId}
         panelLabel="Review"
         board={<ReviewBoardStage moves={moves} selectedMove={reviewByNodeId.get(selectedNodeId)} />}
-        tabs={
-          <SegmentedControl
-            ariaLabel="Game review sections"
-            role="tablist"
+        tabBar={
+          <ReviewTabBar
             panelId={panelId}
-            fullWidth
-            className={reviewTabsClass}
-            value={activeTab}
+            tab={activeTab}
             onChange={onTabChange}
-            options={reviewTabOptions}
+            onExportPgn={onExportPgn}
           />
         }
-        notices={
-          <ReviewNotices
-            error={shown.error}
-            recomputed={shown.recomputed}
-            outdatedMoves={shown.outdatedMoves}
-          />
-        }
+        flushBody
+        notices={<ReviewNotices notices={notices} onAnalyze={onAnalyze} />}
         footer={
           <>
             {hasMoves || isRunning ? (
-              <div
-                className={cn(
-                  "border-b border-line-subtle px-3 pb-1",
-                  // Review folded: the charts take the panel's height down to the navigation.
-                  !reviewSection.open && "flex min-h-0 flex-1 flex-col"
-                )}
-              >
+              <div className="border-b border-line-subtle px-3 pb-1">
                 {/* Its top edge is the charts' splitter, against the panel content above. */}
                 <ReviewCharts
-                  fill={!reviewSection.open}
                   moves={moves}
                   variationSelected={!onMainline}
                   selectedNodeId={selectedNodeId}
@@ -401,6 +361,7 @@ function GameReviewPageInner({
             <ReviewNavigationRow
               step={stepper.step}
               onStep={stepper.stepThrough}
+              hasReview={hasMoves}
               running={isRunning}
               fallbackTotal={reviewInput.length}
               follow={follow}
@@ -408,87 +369,89 @@ function GameReviewPageInner({
           </>
         }
       >
-        {emptyGame && activeTab !== "moves" ? (
-          <NothingToReview onImportPgn={onImportPgn} onPlay={onPlay} />
-        ) : (
-          tabPanels[activeTab]
-        )}
+        {/* The tab's content keeps the panel's padding (the notices above span its full width). */}
+        <div className="h-full p-3">
+          {emptyGame && activeTab !== "moves" ? (
+            <NothingToReview onImportPgn={onImportPgn} onPlay={onPlay} />
+          ) : (
+            tabPanels[activeTab]
+          )}
+        </div>
       </BoardWorkspace>
       {settingsDialog}
     </CardCommentaryContext.Provider>
   );
 }
 
+const REVIEW_SETTINGS_ICON = <Settings />;
+const ExportIcon = DESTINATION_ICONS.exportPgn;
+const EXPORT_ICON = <ExportIcon />;
+
+/**
+ * The panel's title bar: Summary · Commentary · Moves (the game's length) · Engine, then Export
+ * PGN (the game with its analysis, as on Analyze) and the review settings, last.
+ */
+const ReviewTabBar = memo(function ReviewTabBar({
+  panelId,
+  tab,
+  onChange,
+  onExportPgn
+}: {
+  panelId: string;
+  tab: ReviewTab;
+  onChange: (tab: ReviewTab) => void;
+  onExportPgn: () => void;
+}) {
+  const moveCount = useMainlineMoveCount();
+  const tabs: WorkspaceTab<ReviewTab>[] = [
+    { value: "summary", label: "Summary" },
+    { value: "commentary", label: "Commentary" },
+    { value: "moves", label: "Moves", count: moveCount },
+    { value: "engine", label: "Engine" }
+  ];
+  return (
+    <WorkspaceTabBar
+      panelId={panelId}
+      ariaLabel="Game review sections"
+      fitNarrow
+      tabs={tabs}
+      value={tab}
+      onChange={onChange}
+      actions={
+        <>
+          <IconButton
+            label="Export PGN with analysis"
+            icon={EXPORT_ICON}
+            size="icon-xs"
+            disabled={!window.chaturanga}
+            onClick={onExportPgn}
+          />
+          <IconButton
+            label="Review settings"
+            icon={REVIEW_SETTINGS_ICON}
+            size="icon-xs"
+            onClick={openReviewSettingsDialog}
+          />
+        </>
+      }
+    />
+  );
+});
+
 const EMPTY_MOVES: MoveReview[] = [];
 
-/** The analysis shown (a running review's, as it comes in) and what the panel says about it. */
+/** The analysis shown (a running review's, as it comes in). */
 function useShownReview() {
-  const status = useReviewStore((state) => state.status);
   const review = useReviewStore((state) => state.review);
   const moves = useDisplayedReviewMoves();
-  const running = status === "running";
   return {
     review,
     moves,
-    running,
+    running: useReviewStore((state) => state.status === "running"),
     hasMoves: moves.length > 0,
-    error: useReviewStore((state) => state.error),
-    // Moves of the shown analysis the game no longer has (deleted or replaced since): left out of
-    // `moves`.
-    outdatedMoves: useOutdatedReviewMoves(),
-    recomputed: Boolean(review?.assessmentsRecomputed) && !running,
     // The move list's opening row: a running review's too, as soon as its moves name the opening.
-    opening: useReviewStore(selectDisplayedOpening),
-    runId: useReviewStore((state) => (state.status === "running" ? state.reviewId : null))
+    opening: useReviewStore(selectDisplayedOpening)
   };
-}
-
-type AnalysisFollow = ReturnType<typeof useAnalysisFollow>;
-
-/**
- * The footer's last row: with the panel folded it's pinned to the bottom, the review button just
- * above the move navigation (captioned with a running review's progress).
- */
-function ReviewNavigationRow({
-  step,
-  onStep,
-  running,
-  fallbackTotal,
-  follow
-}: {
-  step: ReviewStepAction | null;
-  onStep: () => void;
-  running: boolean;
-  /** The progress's total until the review reports its own: the main line's moves. */
-  fallbackTotal: number;
-  follow: AnalysisFollow;
-}) {
-  return (
-    <div>
-      {step ? (
-        // Always here, on every tab, whatever is folded: the key moments, one by one.
-        <div className="px-3 pt-2">
-          <Button
-            type="button"
-            className="h-9 w-full border-transparent bg-accent-strong text-sm font-semibold text-fg hover:bg-accent-strong/85"
-            onClick={onStep}
-          >
-            {step.label}
-          </Button>
-        </div>
-      ) : null}
-      <MoveNavigation
-        caption={
-          running ? (
-            <ReviewProgressCaption
-              fallbackTotal={fallbackTotal}
-              onFollow={follow.paused ? follow.resume : undefined}
-            />
-          ) : null
-        }
-      />
-    </div>
-  );
 }
 
 /**
@@ -535,179 +498,32 @@ function chartsReview(
   };
 }
 
-/** The panel's notices: a failed review, re-derived move marks, and moves the analysis misses. */
-function ReviewNotices({
-  error,
-  recomputed,
-  outdatedMoves
-}: {
-  error: string | null;
-  recomputed: boolean;
-  outdatedMoves: number;
-}) {
-  return (
-    <>
-      {error ? (
-        <Notice tone="danger" className="shrink-0">
-          {error}
-        </Notice>
-      ) : null}
-      {recomputed ? (
-        <Notice tone="info" className="shrink-0">
-          This analysis predates the current move marks, so they were worked out again from its
-          saved evaluations. Great and Brilliant need a deeper search: analyse the game again to see
-          them.
-        </Notice>
-      ) : null}
-      {outdatedMoves ? (
-        <Notice tone="warn" className="shrink-0">
-          The moves changed after this analysis, so it no longer covers{" "}
-          {outdatedMoves === 1 ? "1 move" : `${outdatedMoves} moves`}. Analyse the game again to
-          update it.
-        </Notice>
-      ) : null}
-    </>
-  );
-}
-
-/** A game without moves: every tab but the move list offers a game to review instead. */
+/**
+ * A game without moves: every tab but the move list says so, with Play (the main way to get one)
+ * and Import PGN beside it.
+ */
 function NothingToReview({ onImportPgn, onPlay }: { onImportPgn: () => void; onPlay: () => void }) {
   return (
     <div className="grid h-full place-items-center">
       <EmptyState
         icon={<Sparkles />}
         title="Nothing to review yet"
-        description="This game has no moves. Import a PGN or play a game, then review it."
+        description="This game has no moves."
         action={
-          <div className="flex flex-wrap justify-center gap-2">
-            <Button variant="primary" size="sm" onClick={onImportPgn}>
-              <Upload />
-              Import PGN
-            </Button>
-            <Button variant="outline" size="sm" onClick={onPlay}>
+          <div className="flex justify-center gap-2">
+            <Button variant="primary" size="sm" className="w-44" onClick={onPlay}>
               <Swords />
               Play
             </Button>
+            <IconButton
+              label="Import PGN"
+              icon={<Upload />}
+              variant="outline"
+              onClick={onImportPgn}
+            />
           </div>
         }
       />
     </div>
-  );
-}
-
-/**
- * The Summary tab: the finished review's `summary`; while one runs, a wait; without one, the side
- * to review the game for (asked first) or the way to analyse it.
- */
-function ReviewSummaryTab({
-  running,
-  hasReview,
-  summary,
-  reviewSide,
-  players,
-  onAnalyze
-}: {
-  running: boolean;
-  hasReview: boolean;
-  summary: ReactNode;
-  reviewSide: ReviewSide;
-  players: ReturnType<typeof reviewPlayers>;
-  onAnalyze?: () => void;
-}) {
-  const startSideReview = useCallback(
-    (picked: "white" | "black") => {
-      chooseReviewSide(picked);
-      onAnalyze?.();
-    },
-    [onAnalyze]
-  );
-  if (running)
-    return (
-      <div className="grid h-full place-items-center">
-        <EmptyState
-          icon={<Sparkles />}
-          title="Analyzing…"
-          description="The summary is ready when the analysis finishes. Progress is shown below."
-        />
-      </div>
-    );
-  if (hasReview) return summary;
-  if (reviewSide.status === "ask")
-    return (
-      <ReviewSidePrompt
-        preselect={reviewSide.preselect}
-        whiteName={players.white.name}
-        blackName={players.black.name}
-        onStart={onAnalyze ? startSideReview : undefined}
-      />
-    );
-  return (
-    <div className="grid h-full place-items-center">
-      <EmptyState
-        icon={<Sparkles />}
-        title="No review yet"
-        description="Analyze the game to see each side's accuracy, marks and key insights."
-        action={
-          onAnalyze ? (
-            <Button variant="primary" size="sm" onClick={onAnalyze}>
-              Analyze
-            </Button>
-          ) : undefined
-        }
-      />
-    </div>
-  );
-}
-
-/**
- * The single place review progress is shown. It subscribes to the progress step itself so a
- * tick re-renders only this caption, not the page, graph or panel.
- */
-function ReviewProgressCaption({
-  fallbackTotal,
-  onFollow
-}: {
-  fallbackTotal: number;
-  /** Following the analysis is paused: offered to resume it. */
-  onFollow?: () => void;
-}) {
-  const moveIndex = useReviewStore((state) => state.progress?.moveIndex ?? null);
-  const totalMoves = useReviewStore((state) => state.progress?.totalMoves ?? null);
-  const blackFirst = useGameStore((state) =>
-    blackToMove(state.moveTree.find((node) => !node.parentId)?.fenBefore)
-  );
-  const total = totalMoves ?? fallbackTotal;
-  const current = moveIndex === null ? 0 : Math.min(moveIndex + 1, total);
-  const percent = total ? Math.round((Math.max(current - 1, 0) / total) * 100) : 0;
-  // The progress is in plies; the caption counts full moves, as the move counter does.
-  const progress = current
-    ? `Analyzing move ${fullMoveCount(current, blackFirst)} of ${fullMoveCount(total, blackFirst)}`
-    : null;
-  return (
-    <span className="inline-grid justify-items-center gap-0.5">
-      <span role="status" aria-label={progress ?? "Starting analysis"}>
-        {progress ?? "Starting analysis…"}
-      </span>
-      {/* One slot under the caption, so pausing never moves the panel: the progress bar, or the
-          button that follows the analysis again. */}
-      <span className="grid h-4 place-items-center">
-        {onFollow ? (
-          <button
-            type="button"
-            className="font-medium text-accent underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
-            onClick={onFollow}
-          >
-            Follow analysis
-          </button>
-        ) : (
-          <span className="block h-0.5 w-28 overflow-hidden rounded-full bg-control" aria-hidden>
-            <span
-              className="block h-full rounded-full bg-accent transition-[width] duration-300"
-              style={{ width: `${percent}%` }}
-            />
-          </span>
-        )}
-      </span>
-    </span>
   );
 }

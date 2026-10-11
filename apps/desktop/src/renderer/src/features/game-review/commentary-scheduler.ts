@@ -64,7 +64,7 @@ export function canRequestCommentary(input: {
 }
 
 export type CommentaryDecision =
-  /** Review not ready / panel not visible / no move: do nothing. */
+  /** A review pass running / panel not visible / no reviewed move: do nothing. */
   | "idle"
   /** AI commentary is switched off in Review settings. */
   | "off"

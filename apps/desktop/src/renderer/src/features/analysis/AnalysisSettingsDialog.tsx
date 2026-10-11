@@ -1,22 +1,20 @@
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
-import { useId, type ComponentProps, type ReactNode } from "react";
+import { useId } from "react";
 import {
   ANALYSIS_DEPTH_RANGE,
-  ANALYSIS_PLAN_ARROWS,
   defaultSettings,
   type AnalysisLimit,
-  type AppSettings,
-  type EvalBarSide
+  type AppSettings
 } from "@chaturanga/shared/types/settings";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import type { SettingRow } from "@/components/ui/field";
 import { Select } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { Switch } from "@/components/ui/switch";
+import { SettingsGroup, SettingsGroupRow, settingsRowSelect } from "@/components/ui/settings-group";
 import { fieldHint } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useEnginesQuery, useSettingsQuery } from "../../queries/api";
+import { BoardSettingsGroup } from "../board/BoardSettingsGroup";
 import { ENGINE_PERFORMANCE_DESCRIPTION, EnginePerformanceRows } from "../settings/EngineSettings";
 import { useSetSetting } from "../settings/use-set-setting";
 import { analysisEngineFor } from "./analysis-engine";
@@ -33,27 +31,14 @@ const limitOptions: readonly { value: AnalysisLimit; label: string }[] = [
   { value: "time", label: "Time" }
 ];
 
-const planOptions = ANALYSIS_PLAN_ARROWS.map((count) => ({
-  value: String(count),
-  label: count ? String(count) : "Best move"
-}));
-
-const sideOptions: readonly { value: EvalBarSide; label: string }[] = [
-  { value: "left", label: "Left" },
-  { value: "right", label: "Right" }
-];
-
 /** Seconds per position offered for a timed search (Lichess and Chess.com offer similar steps). */
 const TIME_OPTIONS_SEC = [1, 2, 3, 5, 10, 15, 30, 60, 120, 300];
-
-/** The selects in the rows: as tall as the segmented controls beside them, as wide as their text. */
-const rowSelect = "h-8 w-auto text-[0.8125rem] border-line-strong";
 
 /**
  * Live analysis settings, as Lichess and Chess.com offer them, in three groups of rows: Engine
  * (which engine, how many lines, how far to search: until stopped, a depth, or a time per
- * position), Board (best-move arrow, plan arrows, evaluation bar and its side) and Performance
- * (threads and memory). Changes apply at once: a running analysis restarts with them.
+ * position), Board (the engine arrows and the evaluation bar, shared with Review settings) and
+ * Performance (threads and memory). Changes apply at once: a running analysis restarts with them.
  */
 export function AnalysisSettingsDialog({ onClose }: { onClose: () => void }) {
   const ids = useId();
@@ -83,8 +68,8 @@ export function AnalysisSettingsDialog({ onClose }: { onClose: () => void }) {
         </div>
       }
     >
-      <Group title="Engine">
-        <Row
+      <SettingsGroup title="Engine">
+        <SettingsGroupRow
           label="Engine"
           htmlFor={`${ids}-engine`}
           control={
@@ -98,7 +83,7 @@ export function AnalysisSettingsDialog({ onClose }: { onClose: () => void }) {
               ) : null}
               <Select
                 id={`${ids}-engine`}
-                className={cn(rowSelect, "max-w-60", engine && "pl-9")}
+                className={cn(settingsRowSelect, "max-w-60", engine && "pl-9")}
                 value={engineId ?? ""}
                 disabled={!usable.length}
                 onChange={(event) => setSetting("analysisEngineId", event.target.value || null)}
@@ -114,7 +99,7 @@ export function AnalysisSettingsDialog({ onClose }: { onClose: () => void }) {
             </div>
           }
         />
-        <Row
+        <SettingsGroupRow
           label="Lines"
           description="best moves shown at once"
           control={
@@ -127,7 +112,7 @@ export function AnalysisSettingsDialog({ onClose }: { onClose: () => void }) {
             />
           }
         />
-        <Row
+        <SettingsGroupRow
           label="Search"
           description="per position"
           control={
@@ -163,7 +148,7 @@ export function AnalysisSettingsDialog({ onClose }: { onClose: () => void }) {
           ) : settings.analysisLimit === "time" ? (
             <Select
               aria-label="Time per position"
-              className={cn(rowSelect, "w-full")}
+              className={cn(settingsRowSelect, "w-full")}
               value={settings.analysisTimeSec}
               onChange={(event) => setSetting("analysisTimeSec", Number(event.target.value))}
             >
@@ -176,151 +161,18 @@ export function AnalysisSettingsDialog({ onClose }: { onClose: () => void }) {
           ) : (
             <p className={fieldHint}>The engine keeps thinking until you stop it or move on.</p>
           )}
-        </Row>
-      </Group>
+        </SettingsGroupRow>
+      </SettingsGroup>
 
-      <Group title="Board">
-        <Row
-          label="Engine arrows"
-          htmlFor={`${ids}-arrow`}
-          description="Arrows for the engine's top line while analysing."
-          control={
-            <Switch
-              id={`${ids}-arrow`}
-              checked={settings.analysisBestMoveArrow}
-              onCheckedChange={(value) => setSetting("analysisBestMoveArrow", value)}
-            />
-          }
-        >
-          <NestedRow
-            label="Show"
-            description="Numbered arrows for the next moves of the engine's idea."
-            disabled={!settings.analysisBestMoveArrow}
-            control={
-              <SegmentedControl
-                ariaLabel="Engine arrows shown"
-                size="sm"
-                value={String(settings.analysisPlanArrows)}
-                onChange={(value) => {
-                  const count = ANALYSIS_PLAN_ARROWS.find((option) => String(option) === value);
-                  if (count !== undefined) setSetting("analysisPlanArrows", count);
-                }}
-                options={withDisabled(planOptions, !settings.analysisBestMoveArrow)}
-              />
-            }
-          />
-        </Row>
-        <Row
-          label="Evaluation bar"
-          htmlFor={`${ids}-bar`}
-          description="Beside the board, here and in Game review."
-          control={
-            <Switch
-              id={`${ids}-bar`}
-              checked={settings.analysisEvalBar}
-              onCheckedChange={(value) => setSetting("analysisEvalBar", value)}
-            />
-          }
-        >
-          <NestedRow
-            label="Bar position"
-            disabled={!settings.analysisEvalBar}
-            control={
-              <SegmentedControl
-                ariaLabel="Evaluation bar position"
-                size="sm"
-                value={settings.analysisEvalBarSide}
-                onChange={(value) => setSetting("analysisEvalBarSide", value)}
-                options={withDisabled(sideOptions, !settings.analysisEvalBar)}
-              />
-            }
-          />
-        </Row>
-      </Group>
+      <BoardSettingsGroup settings={settings} />
 
-      <Group title={`Performance · ${ENGINE_PERFORMANCE_DESCRIPTION}`}>
-        <EnginePerformanceRows appearance={settings} Row={Row} selectClassName={rowSelect} />
-      </Group>
+      <SettingsGroup title={`Performance · ${ENGINE_PERFORMANCE_DESCRIPTION}`}>
+        <EnginePerformanceRows
+          appearance={settings}
+          Row={SettingsGroupRow}
+          selectClassName={settingsRowSelect}
+        />
+      </SettingsGroup>
     </Dialog>
-  );
-}
-
-/** A titled group of rows in one bordered box. */
-function Group({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section>
-      <h3 className="px-1 pb-1.5 text-2xs text-fg-subtle">{title}</h3>
-      <div className="grid divide-y divide-line-subtle rounded-[10px] border border-line bg-surface">
-        {children}
-      </div>
-    </section>
-  );
-}
-
-/** A segmented control's options, every one unavailable while its parent setting is off. */
-function withDisabled<T extends { value: string; label: string }>(
-  options: readonly T[],
-  disabled: boolean
-): (T & { disabled: boolean })[] {
-  return options.map((option) => ({ ...option, disabled }));
-}
-
-/**
- * A setting that refines the one above it (the arrows to show, the bar's side): indented under
- * it, and dimmed and unavailable while that one is off. It keeps its place so the dialog never
- * jumps.
- */
-function NestedRow({
-  label,
-  description,
-  control,
-  disabled
-}: {
-  label: string;
-  description?: string;
-  control: ReactNode;
-  disabled: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "ml-1 grid gap-px border-l border-line pl-3 transition-opacity duration-micro",
-        disabled && "opacity-60"
-      )}
-    >
-      <div className="flex min-h-8 items-center gap-3">
-        <span className="min-w-0 flex-1 text-[0.8125rem] text-fg-secondary">{label}</span>
-        <div className="flex shrink-0 items-center gap-2">{control}</div>
-      </div>
-      {description ? <p className="text-xs text-fg-subtle">{description}</p> : null}
-    </div>
-  );
-}
-
-/**
- * One setting: its label (and hint) on the left, its control on the right, and anything that
- * belongs to it (the search's depth, time or note) underneath.
- */
-function Row({
-  label,
-  description,
-  control,
-  htmlFor,
-  className,
-  children
-}: ComponentProps<typeof SettingRow> & { children?: ReactNode }) {
-  return (
-    <div className={cn("grid gap-2 px-3 py-2", className)}>
-      <div className="flex min-h-8 items-center gap-3">
-        <div className="grid min-w-0 flex-1 gap-px">
-          <label htmlFor={htmlFor} className="text-[0.84375rem] font-medium text-fg">
-            {label}
-          </label>
-          {description ? <p className="text-xs text-fg-subtle">{description}</p> : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">{control}</div>
-      </div>
-      {children ? <div className="pb-1">{children}</div> : null}
-    </div>
   );
 }

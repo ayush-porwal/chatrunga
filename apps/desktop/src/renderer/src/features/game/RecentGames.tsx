@@ -1,36 +1,35 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from "react";
-import { BookPlus, FolderOpen, RotateCcw, Search, Trash2, X } from "lucide-react";
+import { BookPlus, FolderOpen, Search, Trash2, X } from "lucide-react";
 import {
   GAME_SEARCH_MAX_LENGTH,
   type Color,
   type GameSummary
 } from "@chaturanga/shared/types/chess";
-import { emptyTabCounts, LIBRARY_TAB_LABELS } from "@chaturanga/shared/types/library";
+import { emptyTabCounts } from "@chaturanga/shared/types/library";
 import { useGameFacetsQuery, useGamePagesQuery } from "../../queries/api";
 import { useChesscomStore } from "../../stores/chesscom-store";
 import { useLichessStore } from "../../stores/lichess-store";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { OverflowMenu } from "@/components/ui/menu";
 import { Notice } from "@/components/ui/notice";
-import { SideDot } from "@/components/ui/side-dot";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ipcErrorMessage } from "@/lib/ipc-error";
 import { gamesOfPages } from "@/lib/game-pages";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
-import { BoardThumbnail } from "../settings/board-thumbnail";
-import { PiecePair } from "../play/piece-art";
 import {
   ChessboardIcon,
   dimmedUntilRowHover,
   LoadMoreGamesButton,
-  RecentGamesFilter,
-  SourceBadge
+  RecentGamesFilter
 } from "../play/recent-games-controls";
-import { GAME_SEARCH_DEBOUNCE_MS, playerName, scoresFor, userSide } from "../play/recent-games";
+import { GAME_SEARCH_DEBOUNCE_MS, userSide } from "../play/recent-games";
 import { useSavedGameActions } from "./saved-game-actions";
+import {
+  LibraryGameRow,
+  LibraryLoadError,
+  LibrarySkeletonRow,
+  NoLibraryGames
+} from "./library-rows";
 import {
   DEFAULT_LIBRARY_FILTER,
   libraryFilterApplies,
@@ -249,17 +248,19 @@ export function RecentGames({
         {listState === "loading" ? (
           <div aria-busy="true" aria-label="Loading games">
             {Array.from({ length: skeletonRows }, (_, index) => (
-              <SkeletonRow key={index} />
+              <LibrarySkeletonRow key={index} />
             ))}
           </div>
         ) : listState !== "ready" ? (
           // A failed read is not an empty library.
-          <LibraryLoadError
-            error={listState === "counts-error" ? view.countsError : games.error}
-            onRetry={() =>
-              listState === "counts-error" ? view.retryCounts() : void games.refetch()
-            }
-          />
+          <div className="p-3">
+            <LibraryLoadError
+              error={listState === "counts-error" ? view.countsError : games.error}
+              onRetry={() =>
+                listState === "counts-error" ? view.retryCounts() : void games.refetch()
+              }
+            />
+          </div>
         ) : list.length ? (
           <ul aria-label="Saved games">
             {list.map((game) => (
@@ -276,7 +277,7 @@ export function RecentGames({
             ))}
             {games.isFetchingNextPage ? (
               <li aria-busy="true" aria-label="Loading more games">
-                <SkeletonRow />
+                <LibrarySkeletonRow />
               </li>
             ) : null}
             {games.hasNextPage ? (
@@ -299,80 +300,9 @@ export function RecentGames({
   );
 }
 
-/** The library couldn't be read (its counts or its games): why, and Try again. */
-function LibraryLoadError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  return (
-    <div className="p-3">
-      <Notice
-        tone="danger"
-        title="Couldn't load your games"
-        action={
-          <Button type="button" variant="outline" size="xs" onClick={onRetry}>
-            <RotateCcw />
-            Try again
-          </Button>
-        }
-      >
-        {ipcErrorMessage(error) || "The library couldn't be read."}
-      </Notice>
-    </div>
-  );
-}
-
-/** Nothing listed: no match for the search, none the filter lets through, or no games at all. */
-function NoLibraryGames({
-  needle,
-  hasGames,
-  filter
-}: {
-  needle: string;
-  hasGames: boolean;
-  filter: LibraryView["applied"]["filter"];
-}) {
-  if (needle)
-    return (
-      <p className="px-4 py-6 text-center text-[0.8125rem] text-fg-muted">
-        No games match “{needle}”
-      </p>
-    );
-  if (hasGames) {
-    const label = filter.tab ? `${LIBRARY_TAB_LABELS[filter.tab]} ` : "";
-    return (
-      <p className="px-4 py-6 text-center text-[0.8125rem] text-fg-muted">
-        No {filter.reviewed ? "reviewed " : ""}
-        {label}games
-      </p>
-    );
-  }
-  return (
-    <div className="flex min-h-full items-center justify-center p-6">
-      <div className="flex flex-col items-center gap-3">
-        <PiecePair piece="pawn" pieceClassName="size-24" gapClassName="[&>*+*]:-ml-4.5" />
-        <span className="text-[0.9375rem] font-medium text-fg-secondary">
-          Saved games will appear here.
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/** A row's placeholder: the thumbnail and the two player lines. */
-function SkeletonRow() {
-  return (
-    <div className="mx-1.5 flex h-17 items-center gap-3 pl-2.5 pr-2">
-      <Skeleton className="size-13 rounded-[5px]" />
-      <span className="grid flex-1 gap-1">
-        <Skeleton className="h-2.75 w-[70%]" />
-        <Skeleton className="h-2.75 w-1/2" />
-      </span>
-    </div>
-  );
-}
-
 /**
- * One saved game: its board (turned to the side you played) with its source badge, the players
- * (the loser muted), the reviewed mark, the score, then ⋯ and Delete, dimmed until the row is
- * hovered but always in place.
+ * One saved game in the Library: the shared row with the reviewed mark, then ⋯ and Delete, dimmed
+ * until the row is hovered but always in place.
  */
 function GameRow({
   game,
@@ -391,72 +321,21 @@ function GameRow({
   onAddToRepertoire: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
-  const scores = scoresFor(game.result);
-  const white = playerName(game, "white");
-  const black = playerName(game, "black");
-
-  const player = (color: Color, name: string) => (
-    <span className="flex min-w-0 items-center gap-1.75">
-      <SideDot color={color} className="size-2" />
-      <span
-        className={cn(
-          "truncate font-medium",
-          scores?.[color] === "0" ? "text-fg-subtle" : "text-fg-secondary"
-        )}
-      >
-        {name}
-      </span>
-    </span>
-  );
-
   return (
-    <li
-      className={cn(
-        // A row with its ⋯ menu open is lifted, so the rows below don't paint over the menu.
-        "group/row relative mx-1.5 flex h-17 cursor-pointer items-center gap-3 rounded-[10px] border border-transparent pl-2.5 pr-2 transition-colors duration-micro hover:border-line-strong hover:bg-control focus-within:border-line-strong focus-within:bg-control has-[[aria-expanded=true]]:z-20"
-      )}
-    >
-      {/* Isolated: the source badge stays above the thumbnail, under the row's open overlay. */}
-      <span className="relative isolate shrink-0">
-        <BoardThumbnail
-          fen={game.currentFen}
-          orientation={orientation}
-          rounded="md"
-          className="w-13"
-        />
-        <SourceBadge source={game.source} className="-bottom-1 -right-1 size-4.5" />
-      </span>
-      {/* The row's own action: the button covers the whole row (other controls sit above it). */}
-      <button
-        type="button"
-        onClick={() => onOpen(game.id)}
-        aria-label={`${white} vs ${black}`}
-        className="grid min-w-0 flex-1 gap-0.75 text-left text-[0.8125rem] outline-none after:absolute after:inset-0 after:rounded-[9px] after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-accent/50"
-      >
-        {player("white", white)}
-        {player("black", black)}
-      </button>
-      <span className="grid w-4 shrink-0 place-items-center text-accent">
-        {game.reviewCount > 0 ? (
-          <span role="img" aria-label="Reviewed" title="Reviewed">
-            <ChessboardIcon className="size-3.5" />
-          </span>
-        ) : null}
-      </span>
-      <span className="grid w-3.5 shrink-0 gap-0.75 text-center text-[0.8125rem] font-semibold tabular-nums">
-        {scores ? (
-          (["white", "black"] as const).map((color) => (
-            <span
-              key={color}
-              className={scores[color] === "0" ? "font-medium text-fg-subtle" : "text-fg"}
-            >
-              {scores[color]}
+    <LibraryGameRow
+      game={game}
+      orientation={orientation}
+      onOpen={() => onOpen(game.id)}
+      marker={
+        <span className="grid w-4 shrink-0 place-items-center text-accent">
+          {game.reviewCount > 0 ? (
+            <span role="img" aria-label="Reviewed" title="Reviewed">
+              <ChessboardIcon className="size-3.5" />
             </span>
-          ))
-        ) : (
-          <span className="sr-only">In progress</span>
-        )}
-      </span>
+          ) : null}
+        </span>
+      }
+    >
       <span className="relative z-10 flex shrink-0 items-center">
         <span className={dimmedUntilRowHover}>
           <OverflowMenu
@@ -484,6 +363,6 @@ function GameRow({
           />
         </span>
       </span>
-    </li>
+    </LibraryGameRow>
   );
 }

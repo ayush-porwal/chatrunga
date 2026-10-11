@@ -873,9 +873,3 @@ export function countBySeverity(moves: readonly MoveReview[]): Record<ErrorSever
   }
   return counts;
 }
-
-export function lineDelta(line: AnalysisLine, best: AnalysisLine | undefined): string {
-  if (!best) return "—";
-  const delta = scoreToCentipawns(line.score) - scoreToCentipawns(best.score);
-  return `${delta > 0 ? "+" : ""}${(delta / 100).toFixed(1)}`;
-}

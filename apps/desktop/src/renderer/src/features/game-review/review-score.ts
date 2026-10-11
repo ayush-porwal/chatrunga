@@ -37,7 +37,10 @@ export function formatScore(score: EngineScore | null | undefined, digits = 1): 
   if (!score) return "—";
   if (score.type === "mate") return `M${score.value > 0 ? "+" : ""}${score.value}`;
   const pawns = score.value / 100;
-  return `${pawns > 0 ? "+" : ""}${pawns.toFixed(digits)}`;
+  const shown = pawns.toFixed(digits);
+  // A score that rounds to nothing is level: "0.0", never "+0.0" or "-0.0".
+  if (Number(shown) === 0) return (0).toFixed(digits);
+  return `${pawns > 0 ? "+" : ""}${shown}`;
 }
 
 export function formatMoveEval(move: MoveEvalAfter): string {

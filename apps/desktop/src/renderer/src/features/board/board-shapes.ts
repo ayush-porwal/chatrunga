@@ -9,6 +9,7 @@ import type {
   Color,
   Square
 } from "@chaturanga/shared/types/chess";
+import type { MoveReview } from "@chaturanga/shared/types/engine";
 import { asSquare } from "@/lib/uci";
 
 /** Which side(s) may move pieces on an interactive board; `none` makes it view only. */
@@ -86,6 +87,9 @@ export function chessgroundMovableColor(movable: BoardMovable): Color | "both" |
   return movable === "none" ? undefined : movable;
 }
 
+/** The board's engine arrows setting (on or off) and how many plan arrows it shows (0: the best move alone). */
+type EngineArrowOptions = { bestMoveArrow: boolean; planArrows: number };
+
 /** The most moves of the engine's top line plan arrows draw (Analysis settings offer 2–4). */
 const PLAN_ARROWS_MAX = 4;
 
@@ -121,7 +125,7 @@ function legalLineSquares(
 export function liveAnalysisShapes(
   fen: string,
   line: readonly string[],
-  options: { bestMoveArrow: boolean; planArrows: number }
+  options: EngineArrowOptions
 ): DrawShape[] {
   // Engine arrows off: none at all, whatever the plan count says.
   if (!options.bestMoveArrow) return [];
@@ -137,3 +141,54 @@ export function liveAnalysisShapes(
     label: { text: String(index + 1) }
   }));
 }
+
+/**
+ * The review arrows' options: the engine arrows setting, and `pale` for Chessground's pale brushes
+ * (Analyze's board draws a review's best and played arrows pale; the plan's numbered arrows stay
+ * the live analysis blue).
+ */
+type ReviewArrowOptions = EngineArrowOptions & { pale?: boolean };
+
+/**
+ * A reviewed move's arrows, on the board after it. The engine's, while engine arrows are on: its
+ * best move in green or, with a plan count, that many moves of its best line from the position
+ * before the move, numbered in blue as live analysis draws them. Then the move played, unless it
+ * was the best one: red when it cost something (any error, marked or not), blue otherwise.
+ */
+export function reviewMoveShapes(
+  move: MoveReview | null,
+  options: ReviewArrowOptions
+): DrawShape[] {
+  if (!move) return [];
+  const best = move.bestMove ? uciSquares(move.bestMove) : null;
+  const shapes = reviewEngineShapes(move, best, options);
+  const played = uciSquares(move.playedMove);
+  if (played && (played[0] !== best?.[0] || played[1] !== best[1])) {
+    const brush = move.assessment?.severity ? "red" : "blue";
+    shapes.push({ orig: played[0], dest: played[1], brush: paleBrush(brush, options) });
+  }
+  return shapes;
+}
+
+/** The engine's arrows for a reviewed move (see {@link reviewMoveShapes}). */
+function reviewEngineShapes(
+  move: MoveReview,
+  best: [from: Square, to: Square] | null,
+  options: ReviewArrowOptions
+): DrawShape[] {
+  if (!options.bestMoveArrow) return [];
+  if (options.planArrows > 0) {
+    const line = move.bestLine.length ? move.bestLine : move.bestMove ? [move.bestMove] : [];
+    const plan = liveAnalysisShapes(move.fenBefore, line, options);
+    // A line that isn't legal from the position before (never trusted) falls back to the best move.
+    if (plan.length) return plan;
+  }
+  return best ? [{ orig: best[0], dest: best[1], brush: paleBrush("green", options) }] : [];
+}
+
+/** Chessground's pale variant of a brush when the arrows are drawn pale (Analyze's board). */
+function paleBrush(brush: "green" | "red" | "blue", options: ReviewArrowOptions): string {
+  return options.pale ? PALE_BRUSHES[brush] : brush;
+}
+
+const PALE_BRUSHES = { green: "paleGreen", red: "paleRed", blue: "paleBlue" } as const;

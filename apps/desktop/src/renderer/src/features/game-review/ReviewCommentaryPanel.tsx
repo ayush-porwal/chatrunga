@@ -1,37 +1,45 @@
-import { useEffect, useState } from "react";
-import { Bot, KeyRound, MessageSquareOff, RefreshCw, Sparkles } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import {
+  ArrowRight,
+  Bot,
+  KeyRound,
+  MessageSquareOff,
+  RefreshCw,
+  Sparkles,
+  Users
+} from "lucide-react";
 import type { MoveReview, ReviewCommentary } from "@chaturanga/shared/types/engine";
 import {
   buildRatingCurveForMove,
   hasUsableMaiaData,
   moveLabel,
-  uciToSan,
   type CommentaryDetail
 } from "./review-utils";
-import { formatMoveEval } from "./review-score";
+import { formatScore, terminalEvalLabel } from "./review-score";
 import { renderHeadline } from "@chaturanga/shared/chess/headline";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePresence } from "@/components/ui/use-presence";
-import { motion, annotationTone } from "@/lib/ui";
-import { Stat, StatGroup } from "@/components/ui/stat";
+import { motion } from "@/lib/ui";
 import { cn } from "@/lib/utils";
-import { AnnotationBadge } from "@/components/ui/annotation-badge";
-import { SectionHeader } from "@/components/ui/page";
-import type { KeyMoment } from "@chaturanga/shared/chess/key-moments";
-import { MomentList } from "./KeyMoments";
+import { useGameStore } from "../../stores/game-store";
+import { activeBestLine } from "../game/best-line-cursor";
+import { BestLineRow } from "../game/BestLineRow";
+import { ScorePill } from "../analysis/EngineLines";
 import type { CommentaryMoveContext } from "./commentary-moves";
 import type { CommentaryStatus } from "./useGameReviewCommentary";
-import { CommentaryProse, MoveLink, VariationAnchorNote, type GoToLine } from "./MoveLinks";
+import { CommentaryProse, VariationAnchorNote, type GoToLine } from "./MoveLinks";
+import { ReviewMoveHeader, usePiecePanel } from "./ReviewMoveParts";
 import { isRapidNavigation } from "../board/board-motion";
 import "./review.css";
 
 /**
- * The selected move's coaching view: the AI coach's headline and explanation (or the state of
- * the request for it), the Maia rating note, and one row of engine facts.
- * Detailed engine numbers (before/after evals, alternatives, evidence) live in the Engine tab.
+ * The selected move's coaching view: the move and its mark, how the evaluation changed, the
+ * engine's BEST line for a marked error, the AI coach's explanation (or the state of the request
+ * for it) and the Maia note. The engine's numbers (facts, lines, candidate moves, evidence) are in
+ * the Engine tab.
  */
 export function ReviewCommentaryPanel({
   move,
@@ -46,14 +54,10 @@ export function ReviewCommentaryPanel({
   onRetry,
   onAnalyze,
   onOpenCommentarySettings,
-  onOpenReviewSettings,
   onTurnOnCommentary,
   moveContext,
   onGoToLine,
   variationAnchor,
-  keyMoments,
-  reviewMoves,
-  onSelectNode,
   rewrite
 }: {
   move: MoveReview | null;
@@ -78,8 +82,6 @@ export function ReviewCommentaryPanel({
   onAnalyze?: () => void;
   /** Opens Settings → AI (where the OpenRouter key is saved). */
   onOpenCommentarySettings?: () => void;
-  /** Switches to the review's own Settings tab. */
-  onOpenReviewSettings?: () => void;
   /** Switches AI commentary back on (offered while it is off). */
   onTurnOnCommentary?: () => void;
   /** Grounded lines for `move`: SAN tokens in the prose resolve against them and become links. */
@@ -88,12 +90,6 @@ export function ReviewCommentaryPanel({
   onGoToLine?: GoToLine;
   /** Set while the board shows an unreviewed variation; `move` is then its nearest reviewed ancestor. */
   variationAnchor: { label: string; onBack: () => void } | null;
-  /** The review's key moments: what the panel leads with before a move is selected. */
-  keyMoments: readonly KeyMoment[];
-  /** The reviewed moves the key moments point at. */
-  reviewMoves: readonly MoveReview[];
-  /** Goes to a move (a key moment's row). */
-  onSelectNode?: (nodeId: string) => void;
   /** Set when the explanation was written before the current move marks (see useGameReviewCommentary). */
   rewrite: Rewrite | null;
 }) {
@@ -101,6 +97,13 @@ export function ReviewCommentaryPanel({
   // The placeholder stays for one fade after the text arrives, so the two cross-fade in place.
   // (Hooks run before the early returns below.)
   const skeleton = usePresence(loading, motion.ms.standard);
+  // A new move settles in with a short partial fade — except while scrubbing through moves.
+  const panel = usePiecePanel(
+    cn(
+      "scroll-area -mr-3 h-full min-h-0 content-start gap-3.5 overflow-y-auto pr-3",
+      !isRapidNavigation() && "review-swap"
+    )
+  );
 
   if (running) {
     return (
@@ -108,40 +111,26 @@ export function ReviewCommentaryPanel({
         <EmptyState
           icon={<Sparkles />}
           title="Analyzing…"
-          description="Commentary is available when the analysis finishes. Progress is shown below."
+          description="Commentary is written once the analysis finishes."
         />
       </div>
     );
   }
 
-  if (!move)
-    return (
-      <NoMoveSelected
-        hasReview={hasReview}
-        keyMoments={keyMoments}
-        reviewMoves={reviewMoves}
-        onSelectNode={onSelectNode}
-        onAnalyze={onAnalyze}
-      />
-    );
+  if (!move) return <NoMoveSelected hasReview={hasReview} onAnalyze={onAnalyze} />;
 
-  // A new move settles in with a short partial fade — except while scrubbing through moves.
-  const swap = isRapidNavigation() ? undefined : "review-swap";
   const ready = status === "ready" && commentary;
 
   return (
-    <div
-      key={move.nodeId}
-      className={cn(
-        "scroll-area -mr-3 grid h-full min-h-0 content-start gap-4 overflow-y-auto pr-3",
-        swap
-      )}
-    >
-      <CommentaryHeader move={move} writtenBy={ready ? commentary.providerModel : null} />
+    <div key={move.nodeId} className={panel.className} style={panel.style}>
+      <ReviewMoveHeader move={move} />
 
       {variationAnchor ? (
         <VariationAnchorNote label={variationAnchor.label} onBack={variationAnchor.onBack} />
       ) : null}
+
+      <EvalChange move={move} />
+      <BestLine move={move} />
 
       <section
         aria-label="Commentary"
@@ -176,35 +165,80 @@ export function ReviewCommentaryPanel({
             error={error}
             onRetry={onRetry}
             onOpenCommentarySettings={onOpenCommentarySettings}
-            onOpenReviewSettings={onOpenReviewSettings}
             onTurnOnCommentary={onTurnOnCommentary}
           />
         )}
       </section>
 
       <MaiaNote move={move} userRating={userRating} />
-
-      <MoveFacts move={move} moveContext={moveContext} onGoToLine={onGoToLine} />
     </div>
   );
 }
 
-/** The move, its mark, and (once written) the model that wrote its commentary (`writtenBy`). */
-function CommentaryHeader({ move, writtenBy }: { move: MoveReview; writtenBy: string | null }) {
+/** The evaluation pills' size here: a step up from the engine lines'. */
+const EVAL_PILL = "h-7 min-w-16 px-2.5 text-sm";
+
+/**
+ * How the move changed the evaluation, as Analyze's score pills (light while White is better, dark
+ * while Black is): before → after, then the loss (as the Engine tab's Loss reads, `138 cp`; none
+ * for a move that lost nothing). A game-ending move reads as its result. The header's disc and
+ * pill carry the mark, so the pills stay neutral.
+ */
+function EvalChange({ move }: { move: MoveReview }) {
+  const loss = move.evalLoss ?? 0;
+  const ending = terminalEvalLabel(move);
+  const after = ending ?? formatScore(move.evalAfter, 2);
+  const spoken = move.evalBefore
+    ? `Evaluation ${formatScore(move.evalBefore, 2)} to ${after}`
+    : `Evaluation ${after}`;
   return (
-    <header className="flex min-h-8 flex-wrap items-center gap-2">
-      <h2 className="font-mono text-base font-semibold text-fg">{moveLabel(move)}</h2>
-      <AnnotationBadge annotation={move.assessment?.annotation ?? null} />
-      {writtenBy ? (
-        <span
-          className="ml-auto inline-flex min-w-0 animate-fade-in items-center gap-1 text-2xs text-fg-subtle"
-          title={`Written by ${writtenBy}`}
-        >
-          <Bot className="size-3.5 shrink-0" aria-hidden />
-          <span className="truncate">{shortModelName(writtenBy)}</span>
-        </span>
-      ) : null}
-    </header>
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <span className="sr-only">{loss > 0 ? `${spoken}, loss ${loss} centipawns` : spoken}</span>
+      <span aria-hidden className="contents">
+        {move.evalBefore ? (
+          <>
+            <ScorePill score={move.evalBefore} className={EVAL_PILL} />
+            <ArrowRight className="size-3.5 text-fg-subtle" />
+          </>
+        ) : null}
+        {ending ? (
+          <span className="inline-flex h-7 items-center rounded-md bg-control px-2.5 font-mono text-sm font-semibold text-fg">
+            {ending}
+          </span>
+        ) : (
+          <ScorePill score={move.evalAfter} className={EVAL_PILL} />
+        )}
+        {loss > 0 ? (
+          <span className="ml-1 text-xs text-fg-subtle">
+            Loss <span className="font-mono font-medium text-fg-muted tabular-nums">{loss}</span> cp
+          </span>
+        ) : null}
+      </span>
+    </p>
+  );
+}
+
+/**
+ * A marked error's BEST line, as the move list shows it under the move (BestLineRow): resting on
+ * a move previews its position, clicking one shows it on the board (← → step along the line).
+ */
+function BestLine({ move }: { move: MoveReview }) {
+  const node = useGameStore((state) => state.moveTree.find((item) => item.id === move.nodeId));
+  const orientation = useGameStore((state) => state.orientation);
+  const showBestLine = useGameStore((state) => state.showBestLine);
+  const browsed = useGameStore(activeBestLine);
+  if (!node) return null;
+  return (
+    <BestLineRow
+      id={`commentary-best-${move.nodeId}`}
+      node={node}
+      review={move}
+      // The row starts at the list's move column: here, the panel's left edge.
+      gridClassName="grid-cols-[0_minmax(0,1fr)] -mb-1.5"
+      orientation={orientation}
+      currentIndex={browsed?.markedNodeId === move.nodeId ? browsed.index : null}
+      onBrowse={showBestLine}
+    />
   );
 }
 
@@ -212,55 +246,22 @@ function CommentaryHeader({ move, writtenBy }: { move: MoveReview; writtenBy: st
 function MaiaNote({ move, userRating }: { move: MoveReview; userRating: number }) {
   if (!hasUsableMaiaData(move)) return null;
   const note = renderHeadline(buildRatingCurveForMove(move, userRating));
-  return note ? <p className="text-xs leading-5 text-fg-subtle">{note}</p> : null;
+  if (!note) return null;
+  return (
+    <p className="flex gap-2 text-xs leading-5 text-fg-muted">
+      <Users className="mt-0.5 size-3.5 shrink-0 text-fg-subtle" aria-hidden />
+      {note}
+    </p>
+  );
 }
 
-/**
- * No move to explain: the review's key moments to pick from, else what to do first (select a move,
- * or analyse the game).
- */
-function NoMoveSelected({
-  hasReview,
-  keyMoments,
-  reviewMoves,
-  onSelectNode,
-  onAnalyze
-}: {
-  hasReview: boolean;
-  keyMoments: readonly KeyMoment[];
-  reviewMoves: readonly MoveReview[];
-  onSelectNode?: (nodeId: string) => void;
-  onAnalyze?: () => void;
-}) {
-  if (hasReview && keyMoments.length && onSelectNode) {
-    return (
-      <div className="scroll-area -mr-3 grid h-full min-h-0 content-start gap-3 overflow-y-auto pr-3">
-        <SectionHeader as="h2" title="Key moments" />
-        <p className="text-sm leading-6 text-fg-muted">
-          The moments that decided this game. Select one to read about it; every move stays in the
-          Moves tab.
-        </p>
-        <MomentList
-          moments={keyMoments}
-          moves={reviewMoves}
-          selectedNodeId={null}
-          onSelectNode={onSelectNode}
-          label="Key moments of the game"
-          emptyTitle="No key moments"
-        />
-      </div>
-    );
-  }
+/** No move to explain: select one, or analyse the game first. */
+function NoMoveSelected({ hasReview, onAnalyze }: { hasReview: boolean; onAnalyze?: () => void }) {
   return (
     <div className="grid h-full place-items-center">
       <EmptyState
         icon={<Sparkles />}
         title={hasReview ? "Select a move" : "No review yet"}
-        description={
-          hasReview
-            ? "Pick a move on the graph or in the move list."
-            : "Analyze the game, then select a move to read its review."
-        }
         action={
           !hasReview && onAnalyze ? (
             <Button variant="primary" size="sm" onClick={onAnalyze}>
@@ -275,7 +276,10 @@ function NoMoveSelected({
 
 type Rewrite = { run: (() => void) | null; pending: boolean; error: string | null };
 
-/** The coach's headline and explanation, under a note when it predates the move marks. */
+/**
+ * The coach's headline and explanation, under a note when it predates the move marks, then the
+ * model that wrote it.
+ */
 function CommentaryText({
   commentary,
   rewrite,
@@ -288,7 +292,7 @@ function CommentaryText({
   onGoToLine?: GoToLine;
 }) {
   return (
-    <div className="grid animate-fade-in gap-3 [grid-area:stack]">
+    <div className="grid animate-fade-in content-start gap-3 [grid-area:stack]">
       {rewrite ? (
         <Notice
           tone="info"
@@ -317,27 +321,36 @@ function CommentaryText({
       <p className="font-serif text-base leading-7 text-fg-secondary">
         <CommentaryProse prose={commentary.prose} context={moveContext} onGoToLine={onGoToLine} />
       </p>
+      {commentary.providerModel ? (
+        <span
+          className="inline-flex h-6 w-fit max-w-full items-center gap-1.5 rounded-md bg-fg/[0.05] px-2 text-2xs text-fg-muted"
+          title={`Written by ${commentary.providerModel}`}
+        >
+          <Bot className="size-3.5 shrink-0" aria-hidden />
+          <span className="sr-only">Written by </span>
+          <span className="truncate">{shortModelName(commentary.providerModel)}</span>
+        </span>
+      ) : null}
     </div>
   );
 }
 
 /**
- * Why there is no commentary to read (nothing while it loads): the request failed, there is no
- * OpenRouter key, commentary is off, or the engine gave too little to explain.
+ * Why there is no commentary to read (nothing while it loads, or while the review can't be
+ * explained — the notices above the tab say why): the request failed, there is no OpenRouter key,
+ * commentary is off, or the engine gave too little to explain.
  */
 function CommentaryState({
   status,
   error,
   onRetry,
   onOpenCommentarySettings,
-  onOpenReviewSettings,
   onTurnOnCommentary
 }: {
   status: CommentaryStatus;
   error: string | null | undefined;
   onRetry: () => void;
   onOpenCommentarySettings?: () => void;
-  onOpenReviewSettings?: () => void;
   onTurnOnCommentary?: () => void;
 }) {
   switch (status) {
@@ -360,42 +373,33 @@ function CommentaryState({
       );
     case "no-key":
       return (
-        <EmptyState
+        <CommentaryOffer
           key="no-key"
-          className="py-6 [grid-area:stack]"
           icon={<KeyRound />}
           title="Commentary needs an OpenRouter key"
           description="Each move is explained by an AI model through your own OpenRouter account. Add your API key to start."
           action={
-            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
-              {onOpenCommentarySettings ? (
-                <Button variant="primary" size="sm" onClick={onOpenCommentarySettings}>
-                  Add API key
-                </Button>
-              ) : null}
-              {onOpenReviewSettings ? (
-                <Button variant="link" size="sm" onClick={onOpenReviewSettings}>
-                  Review settings
-                </Button>
-              ) : null}
-            </div>
+            onOpenCommentarySettings ? (
+              <Button variant="primary" size="xs" onClick={onOpenCommentarySettings}>
+                Add API key
+              </Button>
+            ) : null
           }
         />
       );
     case "off":
       return (
-        <EmptyState
+        <CommentaryOffer
           key="off"
-          className="py-6 [grid-area:stack]"
           icon={<MessageSquareOff />}
           title="AI commentary is off"
           description="Turn it on to have each move you select explained."
           action={
             onTurnOnCommentary ? (
-              <Button variant="outline" size="sm" onClick={onTurnOnCommentary}>
+              <Button variant="outline" size="xs" onClick={onTurnOnCommentary}>
                 Turn on
               </Button>
-            ) : undefined
+            ) : null
           }
         />
       );
@@ -405,8 +409,8 @@ function CommentaryState({
           key="no-payload"
           className="animate-fade-in text-sm leading-6 text-fg-muted [grid-area:stack]"
         >
-          The engine didn't return enough data about this move to explain it. The facts below still
-          apply.
+          The engine didn&apos;t return enough data about this move to explain it. Its facts are in
+          the Engine tab.
         </p>
       );
     default:
@@ -414,51 +418,27 @@ function CommentaryState({
   }
 }
 
-/**
- * One row of the move's engine facts: the move played and the best (each going there), eval, loss.
- */
-function MoveFacts({
-  move,
-  moveContext,
-  onGoToLine
+/** A compact row where the commentary would be: why there is none and the one step to get it. */
+function CommentaryOffer({
+  icon,
+  title,
+  description,
+  action
 }: {
-  move: MoveReview;
-  moveContext: CommentaryMoveContext | null;
-  onGoToLine?: GoToLine;
+  icon: ReactNode;
+  title: string;
+  description: string;
+  action: ReactNode;
 }) {
-  const played = uciToSan(move.fenBefore, move.playedMove) ?? move.playedMove;
-  const best = uciToSan(move.fenBefore, move.bestMove);
-  const annotation = move.assessment?.annotation ?? null;
-  const parentId = moveContext?.moveTree.find((node) => node.id === move.nodeId)?.parentId ?? null;
-  const linkTo = (san: string | null) =>
-    san && parentId && onGoToLine
-      ? () => onGoToLine({ startNodeId: parentId, moves: [san] })
-      : null;
-  const goToPlayed = linkTo(played);
-  const goToBest = linkTo(best);
   return (
-    <StatGroup>
-      <Stat
-        label="Played"
-        value={
-          goToPlayed ? (
-            <MoveLink san={played} onActivate={goToPlayed} className="text-current" />
-          ) : (
-            played
-          )
-        }
-        mono
-        valueClassName={annotation ? annotationTone[annotation].text : undefined}
-      />
-      <Stat
-        label="Best"
-        value={best && goToBest ? <MoveLink san={best} onActivate={goToBest} /> : (best ?? "—")}
-        mono
-        valueClassName="text-accent"
-      />
-      <Stat label="Eval" value={formatMoveEval(move)} mono />
-      <Stat label="Loss" value={move.evalLoss === null ? "—" : `${move.evalLoss}cp`} mono />
-    </StatGroup>
+    <div className="flex animate-fade-in items-center gap-3 self-start rounded-lg bg-fg/[0.03] px-3 py-2.5 [grid-area:stack] [&>svg]:size-4.5 [&>svg]:shrink-0 [&>svg]:text-fg-muted">
+      {icon}
+      <div className="grid min-w-0 flex-1 gap-0.5">
+        <p className="text-[0.8125rem] font-semibold text-fg">{title}</p>
+        <p className="text-xs leading-5 text-fg-muted">{description}</p>
+      </div>
+      {action ? <div className="shrink-0">{action}</div> : null}
+    </div>
   );
 }
 

@@ -1,5 +1,5 @@
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import {
   REVIEW_MAIA_LEVELS,
   type AppSettings,
@@ -14,17 +14,21 @@ import {
 import { pickDefaultEngine, pickMaiaEngines } from "./review-engine-picker";
 import { useOpenSettings } from "../settings/settings-link";
 import { reviewRatingLabel, useReviewRating } from "./use-review-rating";
+import { EngineAvatar } from "../analysis/EngineAvatar";
 import { Badge, ChipButton } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Field, SettingRow } from "@/components/ui/field";
 import { Select } from "@/components/ui/input";
-import { SectionHeader } from "@/components/ui/page";
-import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import {
+  NestedSettingRow,
+  SettingsGroup,
+  SettingsGroupRow,
+  settingsRowSelect
+} from "@/components/ui/settings-group";
 import { SideDot } from "@/components/ui/side-dot";
 import { Switch } from "@/components/ui/switch";
 import { fetchAssetStatus, maiaNeedsLc0 } from "@/lib/engine-assets";
-import { divider, fieldHint, fieldLabel } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { isOneOf } from "@chaturanga/shared/types/guards";
 
 const searchTimeOptions = [
@@ -74,38 +78,55 @@ export type ReviewSideSetting = {
   onChange: (side: "white" | "black") => void;
 };
 
+/**
+ * The review's settings as groups of rows, for a Dialog (the game review's and the puzzle
+ * explanation's): Engine, then `board` when given, then Commentary.
+ */
 export function ReviewSettingsPanel({
   settings,
-  onClose,
-  embedded = false,
-  reviewSide
+  reviewSide,
+  board
 }: {
   settings: AppSettings;
-  onClose: () => void;
-  /** Inside a Dialog (the review's and the puzzle explanation's settings): the dialog has the title, Done and scrolling. */
-  embedded?: boolean;
   /** The loaded game's side; without it the side control sets the Settings side. */
   reviewSide?: ReviewSideSetting;
+  /** A group between Engine and Commentary (Game review's Board settings). */
+  board?: ReactNode;
 }) {
-  const engines = useEnginesQuery();
-  const openRouter = useOpenRouterConfigQuery();
-  const hasApiKey = Boolean(openRouter.data?.hasApiKey);
   const update = useUpdateSettingMutation();
+  const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) =>
+    update.mutate({ key, value });
+  return (
+    <div className="grid content-start gap-3.5">
+      <ReviewEngineGroup settings={settings} set={set} />
+      {board}
+      <ReviewCommentaryGroup settings={settings} reviewSide={reviewSide} set={set} />
+    </div>
+  );
+}
+
+type SetSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void;
+
+/**
+ * The review's engine: which engine (automatic by default), how long it searches each move, how
+ * many lines, whether the Engine tab lists them, and the Maia levels that predict human moves.
+ */
+function ReviewEngineGroup({ settings, set }: { settings: AppSettings; set: SetSetting }) {
+  const ids = useId();
+  const engines = useEnginesQuery();
   const availableEngines = engines.data ?? [];
   const automaticEngine = pickDefaultEngine(availableEngines);
+  const evaluationEngines = availableEngines.filter((engine) => !engine.isHumanPrediction);
+  const engine =
+    evaluationEngines.find((item) => item.id === settings.defaultEngineId) ?? automaticEngine;
   const installedMaiaLevels = REVIEW_MAIA_LEVELS.filter((level) =>
-    pickMaiaEngines(availableEngines).some((engine) => engine.maiaRating === level)
+    pickMaiaEngines(availableEngines).some((item) => item.maiaRating === level)
   );
   // null = every installed level (including ones downloaded later).
   const selectedMaiaLevels = settings.reviewMaiaLevels
     ? installedMaiaLevels.filter((level) => settings.reviewMaiaLevels?.includes(level))
     : installedMaiaLevels;
   const needsLc0 = useMaiaNeedsLc0();
-  // The rating a review of this game uses; edited (per mode) in app Settings.
-  const rating = useReviewRating(settings, reviewSide?.side);
-  const openSettings = useOpenSettings();
-  const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) =>
-    update.mutate({ key, value });
   const toggleMaiaLevel = (level: ReviewMaiaLevel) => {
     const next = selectedMaiaLevels.includes(level)
       ? selectedMaiaLevels.filter((value) => value !== level)
@@ -116,53 +137,47 @@ export function ReviewSettingsPanel({
   };
 
   return (
-    <div
-      className={
-        embedded
-          ? "grid content-start gap-4"
-          : "scroll-area -mr-3 grid h-full min-h-0 content-start gap-4 overflow-y-auto pr-3"
-      }
-    >
-      {embedded ? null : (
-        <SectionHeader
-          title="Review settings"
-          actions={
-            <Button variant="link" size="sm" onClick={onClose}>
-              Done
-            </Button>
-          }
-        />
-      )}
-
-      <CollapsibleSection
-        size="sub"
-        storageKey="review-settings:engine"
-        title="Engine"
-        bodyClassName="grid gap-3 pt-2"
-      >
-        <Field label="Evaluation engine" htmlFor="review-engine">
-          <Select
-            id="review-engine"
-            value={settings.defaultEngineId ?? ""}
-            onChange={(event) => set("defaultEngineId", event.target.value || null)}
-          >
-            <option value="">
-              {automaticEngine
-                ? `Automatic · ${engineDisplayName(automaticEngine.name)}`
-                : "Choose an engine"}
-            </option>
-            {availableEngines
-              .filter((engine) => !engine.isHumanPrediction)
-              .map((engine) => (
-                <option key={engine.id} value={engine.id}>
-                  {engineDisplayName(engine.name)}
+    <SettingsGroup title="Engine">
+      <SettingsGroupRow
+        label="Evaluation engine"
+        htmlFor={`${ids}-engine`}
+        control={
+          <div className="relative">
+            {engine ? (
+              <EngineAvatar
+                imagePath={engine.imagePath}
+                size="sm"
+                className="pointer-events-none absolute left-1 top-1/2 z-10 -translate-y-1/2"
+              />
+            ) : null}
+            <Select
+              id={`${ids}-engine`}
+              className={cn(settingsRowSelect, "max-w-60", engine && "pl-9")}
+              value={settings.defaultEngineId ?? ""}
+              onChange={(event) => set("defaultEngineId", event.target.value || null)}
+            >
+              <option value="">
+                {automaticEngine
+                  ? `Automatic · ${engineDisplayName(automaticEngine.name)}`
+                  : "Choose an engine"}
+              </option>
+              {evaluationEngines.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {engineDisplayName(item.name)}
                 </option>
               ))}
-          </Select>
-        </Field>
-        <Field label="Search time" hint="per move" htmlFor="review-time">
+            </Select>
+          </div>
+        }
+      />
+      <SettingsGroupRow
+        label="Search time"
+        htmlFor={`${ids}-time`}
+        description={`${estimateReviewTime(settings.reviewSearchTimeMs)} for a 40-move game`}
+        control={
           <Select
-            id="review-time"
+            id={`${ids}-time`}
+            className={settingsRowSelect}
             value={settings.reviewSearchTimeMs}
             onChange={(event) => set("reviewSearchTimeMs", Number(event.target.value))}
           >
@@ -179,114 +194,137 @@ export function ReviewSettingsPanel({
               </option>
             ))}
           </Select>
-          <p className={fieldHint}>
-            {estimateReviewTime(settings.reviewSearchTimeMs)} for a 40-move game. Longer searches
-            give steadier evals and move grades.
-          </p>
-        </Field>
-        <Field label="Engine lines" hint="alternatives per move">
+        }
+      />
+      <SettingsGroupRow
+        label="Engine lines"
+        control={
           <SegmentedControl
             ariaLabel="Engine lines"
             size="sm"
-            fullWidth
             value={String(settings.reviewMultiPv)}
             onChange={(value) => set("reviewMultiPv", Number(value))}
             options={multiPvOptions}
           />
-        </Field>
-        <SettingRow
-          label="Show engine alternatives"
-          description="List the extra lines in the Engine tab."
-          control={
-            <Switch
-              checked={settings.reviewShowTopLines}
-              onCheckedChange={(value) => set("reviewShowTopLines", value)}
-              aria-label="Show engine alternatives"
-            />
-          }
-        />
-        <MaiaSetting
-          enabled={settings.reviewUseMaia}
-          installedLevels={installedMaiaLevels}
-          selectedLevels={selectedMaiaLevels}
-          needsLc0={needsLc0}
-          onEnabledChange={(value) => set("reviewUseMaia", value)}
-          onToggleLevel={toggleMaiaLevel}
-        />
-      </CollapsibleSection>
-
-      <div className={divider} />
-
-      <CollapsibleSection
-        size="sub"
-        storageKey="review-settings:commentary"
-        title="Commentary"
-        bodyClassName="grid gap-3 pt-2"
-      >
-        <SettingRow
-          label="AI commentary"
-          description="Explain each move from the engine evidence."
-          control={
-            <Switch
-              checked={settings.reviewCommentaryEnabled}
-              onCheckedChange={(value) => set("reviewCommentaryEnabled", value)}
-              aria-label="AI commentary"
-            />
-          }
-        />
-        <Field label="Detail" htmlFor="review-detail">
-          <Select
-            id="review-detail"
-            value={settings.reviewCommentaryDetail}
-            onChange={(event) => {
-              const detail = event.target.value;
-              if (isOneOf(COMMENTARY_DETAILS, detail)) set("reviewCommentaryDetail", detail);
-            }}
-          >
-            <option value="concise">Concise</option>
-            <option value="balanced">Balanced</option>
-            <option value="detailed">Detailed</option>
-          </Select>
-        </Field>
-        <ReviewSideField
-          reviewSide={reviewSide}
-          settingsSide={settings.reviewPlayerColor}
-          onSettingsSideChange={(value) => set("reviewPlayerColor", value)}
-        />
-        <SettingRow
-          label="Rating"
-          // A game's dialog already says it under Review as (the rating its review is made for).
-          description={reviewSide ? undefined : reviewRatingLabel(rating)}
-          control={
-            openSettings ? (
-              <Button variant="link" size="sm" onClick={() => openSettings("ratings")}>
-                Edit ratings
-              </Button>
-            ) : null
-          }
-        />
-        <SettingRow
-          label="Model and API key"
-          description={aiSettingsDescription(openRouter.isLoading, hasApiKey)}
-          control={
-            openSettings ? (
-              <Button variant="link" size="sm" onClick={() => openSettings("ai")}>
-                AI settings
-              </Button>
-            ) : null
-          }
-        />
-      </CollapsibleSection>
-    </div>
+        }
+      />
+      <SettingsGroupRow
+        label="Show alternatives in the Engine tab"
+        htmlFor={`${ids}-alternatives`}
+        control={
+          <Switch
+            id={`${ids}-alternatives`}
+            checked={settings.reviewShowTopLines}
+            onCheckedChange={(value) => set("reviewShowTopLines", value)}
+          />
+        }
+      />
+      <MaiaSetting
+        enabled={settings.reviewUseMaia}
+        installedLevels={installedMaiaLevels}
+        selectedLevels={selectedMaiaLevels}
+        needsLc0={needsLc0}
+        onEnabledChange={(value) => set("reviewUseMaia", value)}
+        onToggleLevel={toggleMaiaLevel}
+      />
+    </SettingsGroup>
   );
 }
 
-/** Whether an OpenRouter key is saved for every AI feature (nothing while that is read). */
-function aiSettingsDescription(loading: boolean, hasApiKey: boolean): string | undefined {
+/**
+ * The review's AI commentary: on or off (with the link to the one model and key in Settings → AI),
+ * its detail, and the side it's written for (with the rating and the link to the ratings).
+ */
+function ReviewCommentaryGroup({
+  settings,
+  reviewSide,
+  set
+}: {
+  settings: AppSettings;
+  reviewSide: ReviewSideSetting | undefined;
+  set: SetSetting;
+}) {
+  const ids = useId();
+  const openRouter = useOpenRouterConfigQuery();
+  // The rating a review of this game uses; edited (per mode) in app Settings.
+  const rating = useReviewRating(settings, reviewSide?.side);
+  const openSettings = useOpenSettings();
+  const editRatings = openSettings ? (
+    <Button variant="link" size="sm" onClick={() => openSettings("ratings")}>
+      Edit ratings
+    </Button>
+  ) : null;
+  return (
+    <SettingsGroup title="Commentary">
+      <SettingsGroupRow
+        label="AI commentary"
+        htmlFor={`${ids}-ai`}
+        description={aiCommentaryDescription(
+          openRouter.isLoading,
+          Boolean(openRouter.data?.hasApiKey)
+        )}
+        control={
+          <>
+            {openSettings ? (
+              <Button variant="link" size="sm" onClick={() => openSettings("ai")}>
+                AI settings
+              </Button>
+            ) : null}
+            <Switch
+              id={`${ids}-ai`}
+              checked={settings.reviewCommentaryEnabled}
+              onCheckedChange={(value) => set("reviewCommentaryEnabled", value)}
+            />
+          </>
+        }
+      >
+        <NestedSettingRow
+          label="Detail"
+          disabled={!settings.reviewCommentaryEnabled}
+          control={
+            <Select
+              aria-label="Detail"
+              className={settingsRowSelect}
+              value={settings.reviewCommentaryDetail}
+              onChange={(event) => {
+                const detail = event.target.value;
+                if (isOneOf(COMMENTARY_DETAILS, detail)) set("reviewCommentaryDetail", detail);
+              }}
+            >
+              <option value="concise">Concise</option>
+              <option value="balanced">Balanced</option>
+              <option value="detailed">Detailed</option>
+            </Select>
+          }
+        />
+      </SettingsGroupRow>
+      <ReviewSideRow
+        reviewSide={reviewSide}
+        settingsSide={settings.reviewPlayerColor}
+        onSettingsSideChange={(value) => set("reviewPlayerColor", value)}
+        editRatings={editRatings}
+      />
+      {/* A game's dialog says the rating under Review as (the rating its review is made for). */}
+      {reviewSide ? null : (
+        <SettingsGroupRow
+          label="Rating"
+          description={reviewRatingLabel(rating)}
+          control={editRatings}
+        />
+      )}
+    </SettingsGroup>
+  );
+}
+
+/**
+ * What AI commentary does, and whether the OpenRouter key every AI feature shares is saved
+ * (nothing while that is read).
+ */
+function aiCommentaryDescription(loading: boolean, hasApiKey: boolean): string | undefined {
   if (loading) return undefined;
   return hasApiKey
-    ? "Shared by every AI feature. A key is saved."
-    : "Shared by every AI feature. No key saved yet.";
+    ? "Explains each move. A key is saved."
+    : "Explains each move. No key saved yet.";
 }
 
 /**
@@ -308,90 +346,101 @@ function MaiaSetting({
   onEnabledChange: (enabled: boolean) => void;
   onToggleLevel: (level: ReviewMaiaLevel) => void;
 }) {
+  const ids = useId();
   return (
-    <div className="grid gap-2">
-      <SettingRow
-        label="Use Maia models"
-        description="Rating-aware human move predictions."
-        className="py-0"
-        control={
-          <>
-            {installedLevels.length ? null : (
-              <Badge tone="warn">{needsLc0 ? "Needs Lc0" : "None installed"}</Badge>
-            )}
-            <Switch
-              checked={enabled}
-              onCheckedChange={onEnabledChange}
-              aria-label="Use Maia models"
-            />
-          </>
-        }
-      />
+    <SettingsGroupRow
+      label="Use Maia models"
+      htmlFor={`${ids}-maia`}
+      description="Human move predictions by rating."
+      control={
+        <>
+          {installedLevels.length ? null : (
+            <Badge tone="warn">{needsLc0 ? "Needs Lc0" : "None installed"}</Badge>
+          )}
+          <Switch id={`${ids}-maia`} checked={enabled} onCheckedChange={onEnabledChange} />
+        </>
+      }
+    >
       {installedLevels.length ? (
-        <div role="group" aria-label="Maia rating levels" className="grid gap-1.5">
-          <span className={fieldLabel}>Rating levels</span>
-          <div className="flex flex-wrap gap-1.5">
-            {installedLevels.map((level) => {
-              const selected = selectedLevels.includes(level);
-              const onlyOne = selected && selectedLevels.length === 1;
-              return (
-                <ChipButton
-                  key={level}
-                  selected={enabled && selected}
-                  disabled={!enabled}
-                  aria-disabled={onlyOne || undefined}
-                  title={
-                    onlyOne ? "At least one level runs. Turn Maia off instead." : `Maia ${level}`
-                  }
-                  aria-label={`Maia ${level}`}
-                  onClick={() => {
-                    if (!onlyOne) onToggleLevel(level);
-                  }}
-                  className="tabular-nums"
-                >
-                  {level}
-                </ChipButton>
-              );
-            })}
-          </div>
-        </div>
+        <NestedSettingRow
+          label="Rating levels"
+          disabled={!enabled}
+          control={
+            <div role="group" aria-label="Maia rating levels" className="flex flex-wrap gap-1.5">
+              {installedLevels.map((level) => {
+                const selected = selectedLevels.includes(level);
+                const onlyOne = selected && selectedLevels.length === 1;
+                return (
+                  <ChipButton
+                    key={level}
+                    selected={enabled && selected}
+                    disabled={!enabled}
+                    aria-disabled={onlyOne || undefined}
+                    title={
+                      onlyOne ? "At least one level runs. Turn Maia off instead." : `Maia ${level}`
+                    }
+                    aria-label={`Maia ${level}`}
+                    onClick={() => {
+                      if (!onlyOne) onToggleLevel(level);
+                    }}
+                    className="h-6 tabular-nums"
+                  >
+                    {level}
+                  </ChipButton>
+                );
+              })}
+            </div>
+          }
+        />
       ) : null}
-    </div>
+    </SettingsGroupRow>
   );
 }
 
 /**
- * The side reviewed: in a game's dialog, the game's own (Review as, with the players' names and
- * the rating its review is made for); elsewhere, the Settings side.
+ * The side reviewed: in a game's dialog, the game's own (Review as, with the players' names under
+ * it and the rating its review is made for); elsewhere, the Settings side.
  */
-function ReviewSideField({
+function ReviewSideRow({
   reviewSide,
   settingsSide,
-  onSettingsSideChange
+  onSettingsSideChange,
+  editRatings
 }: {
   reviewSide: ReviewSideSetting | undefined;
   settingsSide: "white" | "black";
   onSettingsSideChange: (side: "white" | "black") => void;
+  /** The link to the ratings in Settings, at the end of a game's Review as row. */
+  editRatings: ReactNode;
 }) {
   if (!reviewSide)
     return (
-      <Field label="Reviewing side">
-        <SegmentedControl
-          ariaLabel="Reviewing side"
-          fullWidth
-          value={settingsSide}
-          onChange={onSettingsSideChange}
-          options={[
-            { value: "white", label: "White", icon: <SideDot color="white" /> },
-            { value: "black", label: "Black", icon: <SideDot color="black" /> }
-          ]}
-        />
-      </Field>
+      <SettingsGroupRow
+        label="Reviewing side"
+        control={
+          <SegmentedControl
+            ariaLabel="Reviewing side"
+            size="sm"
+            value={settingsSide}
+            onChange={onSettingsSideChange}
+            options={[
+              { value: "white", label: "White", icon: <SideDot color="white" /> },
+              { value: "black", label: "Black", icon: <SideDot color="black" /> }
+            ]}
+          />
+        }
+      />
     );
+  // The players' names make the control too wide for the row's right side: it goes under it.
   return (
-    <Field label="Review as">
+    <SettingsGroupRow
+      label="Review as"
+      description={`Rating ${reviewSide.ratingLabel}`}
+      control={editRatings}
+    >
       <SegmentedControl
         ariaLabel="Review as"
+        size="sm"
         fullWidth
         value={reviewSide.side}
         onChange={reviewSide.onChange}
@@ -408,7 +457,6 @@ function ReviewSideField({
           }
         ]}
       />
-      <p className={fieldHint}>Rating {reviewSide.ratingLabel}</p>
-    </Field>
+    </SettingsGroupRow>
   );
 }

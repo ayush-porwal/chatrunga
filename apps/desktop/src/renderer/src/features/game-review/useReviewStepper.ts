@@ -8,9 +8,9 @@ import { reviewStepAction } from "./review-steps";
 
 /**
  * The footer's review button: Start review (the first key moment, explained), Next insight
- * through the rest after the current move, then Finish review back to the summary (rule:
- * review-steps.ts). Started belongs to this review session: another game, analysis or side
- * starts over. Null when there are no key moments to step through.
+ * through the rest after the current move, then Finish review back to the summary; disabled
+ * without key moments (rule: review-steps.ts). Started belongs to this review session: another
+ * game, analysis or side starts over.
  */
 export function useReviewStepper({
   moments,
@@ -35,7 +35,7 @@ export function useReviewStepper({
     currentPly,
     startedSessionKey === sessionKey
   );
-  const stepTarget = step?.target ?? null;
+  const stepTarget = step.target;
   const stepThrough = useCallback(() => {
     if (!stepTarget) return;
     if (stepTarget.kind === "summary") {

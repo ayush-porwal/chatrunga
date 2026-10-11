@@ -41,8 +41,6 @@ async function serveChesscom(app: ElectronApplication, profile: string): Promise
 const chesscomCard = (page: Page) => page.locator("#settings-chesscom");
 const ratingsGroup = (page: Page) => page.getByRole("region", { name: "Ratings", exact: true });
 const library = (page: Page) => page.getByRole("region", { name: "Library" });
-const sourceTabs = (scope: Page | ReturnType<Page["locator"]>) =>
-  scope.getByRole("radiogroup", { name: "Game source" });
 const savedGames = (page: Page) => page.getByRole("list", { name: "Saved games" });
 
 async function openSettings(page: Page): Promise<void> {
@@ -176,31 +174,37 @@ test("a chess.com account imports its games under their own source, in the libra
   await filterMenu.getByRole("menuitemcheckbox", { name: /^Reviewed/ }).click();
   await expect(rows).toHaveCount(3);
 
-  // Choose a game opens on the tab chosen last; the board's game stays pinned on top.
+  // Choose a game opens on the source chosen last; the board's game stays pinned on top.
   await sidebar(page).getByRole("button", { name: "Game review", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "Choose a game" });
-  await expect(sourceTabs(picker).getByRole("radio", { name: /^Chess\.com/ })).toHaveAttribute(
-    "aria-checked",
-    "true"
-  );
-  // Pinned whatever the tab, still an imported game.
-  await expect(picker.getByRole("button", { name: /^Alpha vs Beta/ })).toContainText(
-    "Imported · E2E smoke"
-  );
-  const saved = picker.getByRole("button", { name: / vs / }).filter({ hasNotText: "Alpha" });
+  await expect(
+    picker.getByRole("button", { name: "Filter: Chess.com", exact: true })
+  ).toBeVisible();
+  // Pinned whatever the source, still an imported game.
+  const current = picker.getByRole("list", { name: "Current game" });
+  await expect(current.getByRole("button", { name: /^Alpha vs Beta/ })).toBeVisible();
+  await expect(current.getByRole("img", { name: "Imported" })).toBeVisible();
+  const saved = picker.getByRole("list", { name: "Saved games" }).getByRole("listitem");
   await expect(saved).toHaveCount(3);
-  await expect(saved.first()).toContainText("Chess.com · Live Chess");
-  // Search stays within the tab.
+  await expect(saved.first().getByRole("img", { name: "Chess.com" })).toBeVisible();
+  // Search stays within the source.
   await picker.getByRole("textbox", { name: "Search saved games" }).fill("castle_queen");
   await expect(saved).toHaveCount(1);
   await picker.getByRole("textbox", { name: "Search saved games" }).fill("");
-  await picker.getByRole("button", { name: /^Reviewed/ }).click();
+  const pickerMenu = picker.getByRole("menu", { name: "Show games from" });
+  await picker.getByRole("button", { name: "Filter: Chess.com", exact: true }).click();
+  await pickerMenu.getByRole("menuitemcheckbox", { name: /^Reviewed/ }).click();
   await expect(saved).toHaveCount(1);
   await expect(saved.first()).toContainText("Reviewed");
-  await sourceTabs(picker)
-    .getByRole("radio", { name: /^Imported/ })
-    .click();
+  await picker.getByRole("button", { name: "Filter: Chess.com · Reviewed", exact: true }).click();
+  await pickerMenu.getByRole("menuitemradio", { name: /^Imported/ }).click();
   await expect(saved).toHaveCount(0);
+  // Escape closes the filter menu first, the dialog only on a second press.
+  await picker.getByRole("button", { name: /^Filter/ }).click();
+  await expect(pickerMenu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(pickerMenu).toBeHidden();
+  await expect(picker).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(picker).toBeHidden();
 

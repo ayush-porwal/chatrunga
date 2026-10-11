@@ -1,25 +1,18 @@
 /**
- * The source tab Game review's Choose a game lists: the last one chosen there or in the workspace
+ * The source Game review's Choose a game opens on: the last one chosen there or in the workspace
  * Library's filter, remembered on this machine (localStorage) like the move list's reading
- * choices; until one is chosen, the current game's tab, else the first with games. A tab shows
- * only while the library has games from that source. Also the Library tab's filter (every source,
- * or one, and Reviewed), which starts from every game each time.
+ * choices; every game until one is chosen, and again after All games is chosen in Choose a game. A
+ * source applies only while the library has games from it. Also the Library tab's filter (every
+ * source, or one, and Reviewed), which starts from every game each time.
  */
 import { create } from "zustand";
-import type { GameSource } from "@chaturanga/shared/types/chess";
 import {
-  defaultLibraryTab,
-  emptyTabCounts,
-  LIBRARY_TAB_LABELS,
   LIBRARY_TABS,
-  libraryTabOf,
-  visibleLibraryTabs,
   type LibraryTab,
   type LibraryTabCounts
 } from "@chaturanga/shared/types/library";
 import { isOneOf } from "@chaturanga/shared/types/guards";
 import { readLocalPref, writeLocalPref } from "@/lib/local-prefs";
-import { useGameFacetsQuery } from "../../queries/api";
 import { recentGamesFilterOptions, type RecentGamesFilterOption } from "../play/recent-games";
 
 const TAB_KEY = "chaturanga.library.tab";
@@ -30,14 +23,15 @@ export function loadLibraryTab(): LibraryTab | null {
   return isOneOf(LIBRARY_TABS, value) ? value : null;
 }
 
-export function saveLibraryTab(tab: LibraryTab): void {
+/** Remembers `tab`; null (every game) forgets the one remembered. */
+export function saveLibraryTab(tab: LibraryTab | null): void {
   writeLocalPref(TAB_KEY, tab);
 }
 
 /** The tab chosen last (null until one is), shared by every library list on screen. */
 export const useLibraryTabStore = create<{
   remembered: LibraryTab | null;
-  choose: (tab: LibraryTab) => void;
+  choose: (tab: LibraryTab | null) => void;
 }>((set) => ({
   remembered: loadLibraryTab(),
   choose: (tab) => {
@@ -45,29 +39,6 @@ export const useLibraryTabStore = create<{
     set({ remembered: tab });
   }
 }));
-
-/** A game's source as the row's lead word ("Chess.com", "Imported", …). */
-export function sourceLabel(source: GameSource): string {
-  return LIBRARY_TAB_LABELS[libraryTabOf(source)];
-}
-
-/**
- * The library's tabs (with their counts) and the one listed. `tab` is null while the counts load
- * and when the library is empty.
- */
-export function useLibraryTabs(currentSource: GameSource | null, excludeId: string | null) {
-  const facets = useGameFacetsQuery(excludeId);
-  const remembered = useLibraryTabStore((state) => state.remembered);
-  const choose = useLibraryTabStore((state) => state.choose);
-  const counts = facets.data?.tabs ?? emptyTabCounts();
-  return {
-    facets,
-    counts,
-    tabs: visibleLibraryTabs(counts),
-    tab: defaultLibraryTab({ remembered, currentSource, counts }),
-    choose
-  };
-}
 
 /** What the Library tab lists: one source's games (`tab`; null for every game), only the reviewed ones or all. */
 export type LibraryFilter = { tab: LibraryTab | null; reviewed: boolean };

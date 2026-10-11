@@ -218,3 +218,25 @@ export function practiceChips(moves: readonly MoveReview[], side: Color): Practi
     .sort((a, b) => b.chip.count - a.chip.count || a.order - b.order)
     .map(({ chip }) => chip);
 }
+
+/** What the key moments ask for while their cards can't explain a move. */
+export type MomentCommentaryPrompt = "off" | "no-key";
+
+/**
+ * The step that lets key-moment cards explain each moment: switch AI commentary on ("off"), or add
+ * an OpenRouter key ("no-key"). Null while the cards already can (`cardsOn`), or while the setting
+ * or the key's state is still loading (undefined): no prompt flashes before they are known.
+ */
+export function momentCommentaryPrompt({
+  cardsOn,
+  enabled,
+  hasApiKey
+}: {
+  cardsOn: boolean;
+  enabled: boolean | undefined;
+  hasApiKey: boolean | undefined;
+}): MomentCommentaryPrompt | null {
+  if (cardsOn || enabled === undefined) return null;
+  if (!enabled) return "off";
+  return hasApiKey === false ? "no-key" : null;
+}

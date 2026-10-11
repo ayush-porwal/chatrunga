@@ -6,8 +6,7 @@ import {
   libraryFilterState,
   libraryListState,
   loadLibraryTab,
-  saveLibraryTab,
-  sourceLabel
+  saveLibraryTab
 } from "./library-tab";
 
 function memoryStorage(): Storage {
@@ -51,12 +50,11 @@ describe("library tab", () => {
     expect(loadLibraryTab()).toBeNull();
   });
 
-  it("names each row's source as its tab does", () => {
-    expect(sourceLabel("chesscom")).toBe("Chess.com");
-    expect(sourceLabel("lichess")).toBe("Lichess");
-    expect(sourceLabel("pgn-import")).toBe("Imported");
-    expect(sourceLabel("engine-game")).toBe("Engine");
-    expect(sourceLabel("analysis")).toBe("Chaturanga");
+  it("forgets the tab once every game is chosen", () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    saveLibraryTab("chesscom");
+    saveLibraryTab(null);
+    expect(loadLibraryTab()).toBeNull();
   });
 
   describe("the Library's filter", () => {

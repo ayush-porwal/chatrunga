@@ -63,9 +63,6 @@ import { useFocusCentring, useSnappedBoardFrame } from "./useBoardFrame";
 
 export function BoardWorkspace({
   board,
-  header,
-  bodyCollapsed = false,
-  bodyId,
   tabBar,
   tabs,
   summary,
@@ -79,14 +76,6 @@ export function BoardWorkspace({
 }: {
   /** The board column content — always a <BoardStage>. */
   board: ReactNode;
-  /**
-   * A heading row above the tabs (Game review's "⌄ Review" with its controls), whose toggle folds
-   * the tabs and everything under them away: `bodyCollapsed`, with `bodyId` the folded block's id
-   * (the toggle's aria-controls). The footer then takes the panel's height.
-   */
-  header?: ReactNode;
-  bodyCollapsed?: boolean;
-  bodyId?: string;
   /**
    * Title-bar tabs across the top of the panel (the game view's Moves · Library), drawn whole by
    * the caller: the full width, edge to edge.
@@ -217,13 +206,9 @@ export function BoardWorkspace({
             {/* The tabs and the summary strip span the panel at any width (as its controls do);
                 only reading text keeps `--workspace-panel-measure` (the notices, by
                 `.workspace-panel-body` in app.css). */}
-            {header ? <div className="shrink-0 px-3">{header}</div> : null}
             <PanelBody
-              id={bodyId}
-              collapsed={bodyCollapsed}
               tabBar={tabBar}
               tabs={tabs}
-              underHeader={Boolean(header)}
               summary={summary}
               flush={flushBody}
               notices={notices}
@@ -231,20 +216,7 @@ export function BoardWorkspace({
             >
               {children}
             </PanelBody>
-            {footer ? (
-              <div
-                className={cn(
-                  "border-t border-line-subtle",
-                  // With the body folded the footer takes the panel; its last row (the move
-                  // navigation) stays pinned to the panel's bottom, whatever else is folded.
-                  bodyCollapsed
-                    ? "flex min-h-0 flex-1 flex-col [&>:last-child]:mt-auto"
-                    : "shrink-0"
-                )}
-              >
-                {footer}
-              </div>
-            ) : null}
+            {footer ? <div className="shrink-0 border-t border-line-subtle">{footer}</div> : null}
           </aside>
         </div>
       </div>
@@ -308,27 +280,20 @@ function workspaceGridClass({
 }
 
 /**
- * The panel's body, folded away with the header's toggle (`collapsed`): the title-bar tabs, the
- * panel tabs (`underHeader`: tucked under a header row), the summary strip, then the notices over
+ * The panel's body: the title-bar tabs, the panel tabs, the summary strip, then the notices over
  * the active tab's content (`flush`: no padding of its own).
  */
 function PanelBody({
-  id,
-  collapsed,
   tabBar,
   tabs,
-  underHeader,
   summary,
   flush,
   notices,
   tabPanel,
   children
 }: {
-  id: string | undefined;
-  collapsed: boolean;
   tabBar: ReactNode;
   tabs: ReactNode;
-  underHeader: boolean;
   summary: ReactNode;
   flush: boolean;
   notices: ReactNode;
@@ -336,15 +301,9 @@ function PanelBody({
   children: ReactNode;
 }) {
   return (
-    <div
-      id={id}
-      hidden={collapsed}
-      className={cn("flex min-h-0 flex-col", collapsed ? "hidden" : "flex-1")}
-    >
+    <div className="flex min-h-0 flex-1 flex-col">
       {tabBar ? <div className="shrink-0">{tabBar}</div> : null}
-      {tabs ? (
-        <div className={cn("shrink-0 px-3", underHeader ? "pt-1" : "pt-3")}>{tabs}</div>
-      ) : null}
+      {tabs ? <div className="shrink-0 px-3 pt-3">{tabs}</div> : null}
       {summary === undefined ? null : (
         <div className="flex h-14 shrink-0 items-center border-b border-line-subtle px-3">
           <div className="flex h-full w-full min-w-0 items-center">{summary}</div>

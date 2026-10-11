@@ -1,16 +1,19 @@
 import { useMemo } from "react";
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import type { GameHeaders } from "@chaturanga/shared/types/chess";
+import { defaultSettings } from "@chaturanga/shared/types/settings";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
+import { useSettingsQuery } from "../../queries/api";
 import { useGameStore } from "../../stores/game-store";
 import { activeBestLine, bestLineStep } from "../game/best-line-cursor";
 import { boardClocksAt, sideToMove } from "../board/board-clocks";
 import { BoardStage } from "../board/BoardWorkspace";
 import { BoardMoveMarkBadge } from "../board/BoardMoveMarkBadge";
 import { EvalBar } from "../board/EvalBar";
+import { reviewMoveShapes } from "../board/board-shapes";
 import { boardMoveMark } from "../board/move-mark";
 import { PlayerRow } from "../board/PlayerIdentity";
-import { ReviewBoard, type ReviewArrow } from "./ReviewBoard";
+import { ReviewBoard } from "./ReviewBoard";
 import { uciSquares } from "./review-utils";
 
 /** The game's two players as the review names them (an engine by its display name). */
@@ -27,19 +30,6 @@ export function reviewPlayers(headers: GameHeaders) {
       color: "black" as const
     }
   };
-}
-
-/** The reviewed move's arrows: the best move green, the played one red for an error, else blue. */
-function reviewArrows(move: MoveReview | null): ReviewArrow[] {
-  if (!move) return [];
-  const result: ReviewArrow[] = [];
-  const best = uciSquares(move.bestMove);
-  if (best) result.push({ ...best, brush: "green" });
-  const played = uciSquares(move.playedMove);
-  // Red for a move that cost something (any error, marked or not), blue otherwise.
-  if (played && played.orig !== best?.orig)
-    result.push({ ...played, brush: move.assessment?.severity ? "red" : "blue" });
-  return result;
 }
 
 /**
@@ -62,7 +52,16 @@ export function ReviewBoardStage({
   // (its move highlighted, none of the error's arrows or mark).
   const bestLine = useGameStore(activeBestLine);
   const boardMove = bestLine ? null : (selectedMove ?? null);
-  const arrows = useMemo(() => reviewArrows(boardMove), [boardMove]);
+  // The engine's arrows follow the board settings shared with Analyze (its best move, or its line
+  // numbered); the played move's arrow always shows.
+  const settings = useSettingsQuery();
+  const bestMoveArrow =
+    settings.data?.analysisBestMoveArrow ?? defaultSettings.analysisBestMoveArrow;
+  const planArrows = settings.data?.analysisPlanArrows ?? defaultSettings.analysisPlanArrows;
+  const arrows = useMemo(
+    () => reviewMoveShapes(boardMove, { bestMoveArrow, planArrows }),
+    [boardMove, bestMoveArrow, planArrows]
+  );
   const lastMove = uciSquares(
     bestLine
       ? bestLineStep(bestLine).uci
@@ -105,7 +104,7 @@ export function ReviewBoardStage({
         <ReviewBoard
           fen={boardFen}
           orientation={orientation}
-          arrows={arrows}
+          shapes={arrows}
           lastMove={lastMove ? [lastMove.orig, lastMove.dest] : undefined}
           className="h-full w-full rounded-none"
         />

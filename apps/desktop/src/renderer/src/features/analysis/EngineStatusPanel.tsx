@@ -27,6 +27,7 @@ import {
 import { Notice } from "@/components/ui/notice";
 import { IconButton } from "@/components/ui/icon-button";
 import { Switch } from "@/components/ui/switch";
+import { StatCell, StatStrip } from "@/components/ui/stat-strip";
 import { cn } from "@/lib/utils";
 
 const goToLine: GoToLine = (target) => {
@@ -641,13 +642,7 @@ function EngineStats({
   const pieceSet = usePieceSetClass();
   return (
     // The board's piece set, so the best move's figurine is the board's piece.
-    <dl
-      className={cn(
-        "grid grid-cols-3 rounded-[10px] border border-line bg-surface-sunken",
-        pieceSet
-      )}
-      style={FIGURINE_GRID_STYLE}
-    >
+    <StatStrip className={cn("grid-cols-3", pieceSet)} style={FIGURINE_GRID_STYLE}>
       <StatCell label="Depth">
         {primary?.depth ?? "–"}
         {depthTarget ? (
@@ -670,22 +665,10 @@ function EngineStats({
           "–"
         )}
       </StatCell>
-    </dl>
+    </StatStrip>
   );
 }
 const FIGURINE_GRID_STYLE = { display: "grid", containerType: "normal" } as const;
-
-/** One cell of the engine's Depth / Score / Best strip. */
-function StatCell({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="grid min-w-0 gap-0.5 px-3 py-2.5 [&+&]:border-l [&+&]:border-line-subtle">
-      <dt className="text-2xs text-fg-subtle">{label}</dt>
-      <dd className="truncate font-mono text-[1.0625rem] leading-tight font-semibold text-fg tabular-nums">
-        {children}
-      </dd>
-    </div>
-  );
-}
 
 /**
  * The Analysis switch: on while live analysis runs (the game store's analysis mode, which the

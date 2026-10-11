@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 /**
  * A section the user can fold away, remembered per section (localStorage, per viewer: a blocked or
  * empty store just starts at `defaultOpen`). The panel's multi-part screens use it: the review
- * summary's sections, the review charts, the review settings' groups. One header for all of them:
+ * summary's sections and the review charts. One header for all of them:
  * a left chevron and the title (⌄ Opening), as the charts' "Winning chances".
  *
  *   const section = useCollapsible("review-summary:opening");
@@ -14,7 +14,6 @@ import { cn } from "@/lib/utils";
  *   </CollapsibleHeader>
  *   <CollapsibleBody section={section} className="grid gap-2">…</CollapsibleBody>
  *
- * Or both at once: <CollapsibleSection storageKey=… title="Opening">…</CollapsibleSection>.
  * The header is a button with aria-expanded / aria-controls; a folded body isn't rendered (its
  * element stays, `hidden`, so aria-controls always points at it).
  */
@@ -190,48 +189,6 @@ export function CollapsibleBody({
   return (
     <div {...props} id={section.contentId} hidden={!section.open} className={className}>
       {section.open ? children : null}
-    </div>
-  );
-}
-
-/** A header and its body, remembered under `storageKey` (see the file comment). */
-export function CollapsibleSection({
-  storageKey,
-  title,
-  size = "section",
-  defaultOpen = true,
-  actions,
-  className,
-  headerClassName,
-  bodyClassName,
-  children
-}: {
-  storageKey: string;
-  title: React.ReactNode;
-  size?: CollapsibleSize;
-  defaultOpen?: boolean;
-  actions?: React.ReactNode;
-  className?: string;
-  headerClassName?: string;
-  bodyClassName?: string;
-  children: React.ReactNode;
-}) {
-  const section = useCollapsible(storageKey, defaultOpen);
-  return (
-    <div className={className}>
-      <CollapsibleHeader
-        open={section.open}
-        onToggle={section.toggle}
-        controls={section.contentId}
-        size={size}
-        actions={actions}
-        className={headerClassName}
-      >
-        {title}
-      </CollapsibleHeader>
-      <CollapsibleBody section={section} className={bodyClassName}>
-        {children}
-      </CollapsibleBody>
     </div>
   );
 }

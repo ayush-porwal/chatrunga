@@ -3,6 +3,7 @@ import { create } from "zustand";
 import type { AppSettings } from "@chaturanga/shared/types/settings";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { BoardSettingsGroup } from "../board/BoardSettingsGroup";
 import { ReviewSettingsPanel, type ReviewSideSetting } from "./ReviewSettingsPanel";
 
 /**
@@ -19,9 +20,10 @@ export function openReviewSettingsDialog(): void {
 }
 
 /**
- * The review's settings as a dialog, open while the store says so: the engine, Maia, AI
- * commentary, the side the game is reviewed as (with its rating), and links to Settings → AI and
- * the ratings. Rendered by the review page; closed when it goes.
+ * The review's settings as a dialog, open while the store says so: the engine and Maia, the board
+ * (the engine arrows and evaluation bar, shared with Analysis settings), AI commentary, the side
+ * the game is reviewed as (with its rating), and links to Settings → AI and the ratings. Rendered
+ * by the review page; closed when it goes.
  */
 export function ReviewSettingsDialog({
   settings,
@@ -39,15 +41,21 @@ export function ReviewSettingsDialog({
   return (
     <Dialog
       title="Review settings"
-      description="The engine and models a review runs, the side it's for, and its AI commentary."
+      size="sm"
       onClose={close}
       footer={
-        <Button type="button" variant="primary" size="sm" onClick={close}>
-          Done
-        </Button>
+        <div className="-mx-5 -mb-5 flex flex-1 items-center justify-end gap-2 border-t border-line-subtle px-4 py-3">
+          <Button type="button" variant="primary" size="sm" onClick={close}>
+            Done
+          </Button>
+        </div>
       }
     >
-      <ReviewSettingsPanel embedded settings={settings} onClose={close} reviewSide={reviewSide} />
+      <ReviewSettingsPanel
+        settings={settings}
+        reviewSide={reviewSide}
+        board={<BoardSettingsGroup settings={settings} />}
+      />
     </Dialog>
   );
 }

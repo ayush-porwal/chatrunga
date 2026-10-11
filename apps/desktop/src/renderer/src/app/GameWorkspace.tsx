@@ -1,25 +1,21 @@
-import {
-  memo,
-  useEffect,
-  useId,
-  useMemo,
-  useState,
-  type KeyboardEvent,
-  type ReactNode
-} from "react";
+import { memo, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { BookPlus, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { tabPanelProps } from "@/components/ui/segmented-control";
 import { cn } from "@/lib/utils";
 import { AnalysisSettingsDialog } from "../features/analysis/AnalysisSettingsDialog";
 import { BoardView } from "../features/board/BoardView";
 import { mainBoardSurface } from "../features/board/move-mark";
 import { BoardWorkspace } from "../features/board/BoardWorkspace";
+import {
+  useMainlineMoveCount,
+  WorkspaceTabBar,
+  type WorkspaceTab
+} from "../features/board/WorkspaceTabBar";
 import { MoveNavigation } from "../features/board/MoveNavigation";
-import { blackToMove, fullMoveCount } from "../features/board/move-counter";
 import { EngineStatusPanel } from "../features/analysis/EngineStatusPanel";
 import { MoveList } from "../features/game/MoveList";
-import { mainlinePath } from "../features/game/move-tree-model";
 import {
   LibraryActions,
   RecentGames,
@@ -86,7 +82,7 @@ export const GameWorkspace = memo(function GameWorkspace({
   const engineShown = showsEngine(puzzleTabs);
   return (
     <BoardWorkspace
-      tabPanel={{ id: panelId, role: "tabpanel", "aria-labelledby": tabId(panelId, shownTab) }}
+      tabPanel={tabPanelProps(panelId, shownTab)}
       panelLabel="Game"
       board={boardView}
       tabBar={
@@ -135,15 +131,10 @@ export const GameWorkspace = memo(function GameWorkspace({
   );
 });
 
-/** The tab element's id for `tab` in the tab bar that controls `panelId`. */
-function tabId(panelId: string, tab: SideTab): string {
-  return `${panelId}-tab-${tab}`;
-}
-
 /**
- * The panel's title bar: text tabs (an accent underline on the active one; count pills, the
- * game's moves and the Library's games) and, at the right end, the tab's own actions: on Moves,
- * Export PGN and the analysis settings (last); on Library, its search and filter.
+ * The panel's title bar: Moves (the game's length) · Library (its games), and at the right end the
+ * tab's own actions: on Moves, Export PGN and the analysis settings (last); on Library, its search
+ * and filter.
  */
 const PanelTabBar = memo(function PanelTabBar({
   panelId,
@@ -162,92 +153,32 @@ const PanelTabBar = memo(function PanelTabBar({
   onExportPgn: () => void;
 }) {
   const moveCount = useMainlineMoveCount();
-  const tabs: { value: SideTab; label: string; count: number | null }[] = [
+  const tabs: WorkspaceTab<SideTab>[] = [
     { value: "notation", label: "Moves", count: moveCount },
     ...(withLibrary
       ? [{ value: "library" as const, label: "Library", count: libraryView.total }]
       : [])
   ];
-  // Arrow keys / Home / End move between the tabs (WAI-ARIA tabs pattern), selecting them.
-  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    const current = tabs.findIndex((item) => item.value === tab);
-    let next: number | null = null;
-    if (event.key === "ArrowRight") next = (current + 1) % tabs.length;
-    else if (event.key === "ArrowLeft") next = (current - 1 + tabs.length) % tabs.length;
-    else if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = tabs.length - 1;
-    const target = next === null ? undefined : tabs[next];
-    if (!target) return;
-    event.preventDefault();
-    onChange(target.value);
-    document.getElementById(tabId(panelId, target.value))?.focus();
-  };
   return (
-    <div className="flex h-12 items-stretch gap-0.5 border-b border-line-subtle pr-2 pl-1.5">
-      <div role="tablist" aria-label="Workspace panels" className="flex items-stretch gap-0.5">
-        {tabs.map((item) => {
-          const selected = item.value === tab;
-          return (
-            <button
-              key={item.value}
-              type="button"
-              role="tab"
-              id={tabId(panelId, item.value)}
-              aria-controls={panelId}
-              aria-selected={selected}
-              tabIndex={selected ? 0 : -1}
-              onClick={() => onChange(item.value)}
-              onKeyDown={onKeyDown}
-              className={cn(
-                "relative flex items-center gap-1.75 px-2.5 text-[0.84375rem] font-medium outline-none transition-colors duration-micro ease-standard focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-inset",
-                selected ? "text-fg" : "text-fg-muted hover:text-fg"
-              )}
-            >
-              {item.label}
-              {item.count ? (
-                // Decorative: the tab is named by its label alone.
-                <span
-                  aria-hidden="true"
-                  className="inline-grid h-4.5 min-w-5 place-items-center rounded-full bg-control px-1.5 text-2xs font-semibold text-fg-muted tabular-nums"
-                >
-                  {item.count}
-                </span>
-              ) : null}
-              {selected ? (
-                <span
-                  aria-hidden="true"
-                  className="absolute inset-x-2.5 -bottom-px h-0.5 rounded-full bg-accent"
-                />
-              ) : null}
-            </button>
-          );
-        })}
-      </div>
-      <div className="ml-auto flex items-center gap-0.5">
-        {tab === "notation" ? (
+    <WorkspaceTabBar
+      panelId={panelId}
+      ariaLabel="Workspace panels"
+      tabs={tabs}
+      value={tab}
+      onChange={onChange}
+      actions={
+        tab === "notation" ? (
           <>
             <ExportPgnButton onClick={onExportPgn} />
             <AnalysisSettingsButton />
           </>
         ) : (
           <LibraryActions view={libraryView} />
-        )}
-      </div>
-    </div>
+        )
+      }
+    />
   );
 });
-
-/** The game's length in full moves along its main line (the Moves tab's count). */
-function useMainlineMoveCount(): number {
-  const moveTree = useGameStore((state) => state.moveTree);
-  return useMemo(() => mainlineMoveCount(moveTree), [moveTree]);
-}
-
-function mainlineMoveCount(moveTree: readonly MoveNode[]): number {
-  // The path starts at the root (none in an empty tree): its moves are the rest.
-  const path = mainlinePath(moveTree);
-  return fullMoveCount(path.slice(1).length, blackToMove(path.at(0)?.fenBefore));
-}
 
 /** Export PGN: the game on the board, with its analysis, as a .pgn file. */
 function ExportPgnButton({ onClick }: { onClick: () => void }) {

@@ -1,7 +1,7 @@
 // The review's linked charts through the built app: winning chances, Maia difficulty and move times
 // share one move axis, one hover tooltip and one current-move line, and a click jumps the board;
-// each strip folds (remembered) and so does the whole Charts section, under a header that is the
-// Game Review header's twin; a splitter over the line above them sets their height (double-click
+// each strip folds (remembered) and so does the whole Charts section, under its header row right
+// under the line above it; a splitter over the line above them sets their height (double-click
 // resets it); without Maia the difficulty strip is a one-line
 // install prompt, and without [%clk] there is no move-times strip. Reviewed on the fake UCI
 // engine's "review" mode (the Blackburne Shilling trap, as move-types.spec.ts), with a fake Maia
@@ -52,10 +52,6 @@ const view = (page: Page, name: "winning-chances" | "difficulty" | "times") =>
 const counter = (page: Page) =>
   page.getByRole("navigation", { name: "Move navigation" }).getByRole("paragraph").first();
 const splitter = (page: Page) => page.getByRole("separator", { name: "Resize the charts" });
-const reviewToggle = (page: Page) =>
-  page
-    .getByRole("complementary", { name: "Review" })
-    .getByRole("button", { name: "Game Review", exact: true });
 const chartsToggle = (page: Page) => charts(page).getByRole("button", { name: "Charts" });
 
 /**
@@ -94,13 +90,11 @@ async function headerBox(toggle: Locator) {
 }
 
 /**
- * The Charts header is the same box as Game Review's, each right under its line (the splitter
- * adds no height); returns the charts' splitter, from {@link headerBox}.
+ * The Charts header row sits right under its line (the splitter adds no height); returns the
+ * charts' splitter, from {@link headerBox}.
  */
-async function expectTwinHeaders(page: Page) {
-  const review = await headerBox(reviewToggle(page));
+async function expectChartsHeader(page: Page) {
   const chartsHeader = await headerBox(chartsToggle(page));
-  expect(chartsHeader.row).toEqual(review.row);
   expect(chartsHeader.row.belowLine).toBe(0);
   return chartsHeader.splitter;
 }
@@ -163,9 +157,9 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
     charts(page).getByRole("button", { name: "Difficulty at 1500 · Maia" })
   ).toBeVisible();
   await expect(charts(page).getByRole("button", { name: "Time per move" })).toBeVisible();
-  // The header is Game Review's twin, and holds no key-insight navigation (the Moves tab has the
-  // key insights). The splitter overlays the line above it: centred on it, an 8 px hit area.
-  const overLine = await expectTwinHeaders(page);
+  // The header holds no key-insight navigation (the review button above the move navigation
+  // steps through them). The splitter overlays the line above it: centred on it, an 8 px hit area.
+  const overLine = await expectChartsHeader(page);
   expect(overLine?.height).toBe(8);
   expect(Math.abs(overLine?.centre ?? Infinity)).toBeLessThanOrEqual(1);
   await expect(charts(page).getByRole("group", { name: "Key insights" })).toHaveCount(0);
@@ -194,12 +188,14 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
   await expect(counter(page)).toHaveText("4 / 7");
 
   // Each strip folds on its own, remembered across a reload, and hands its height to the views
-  // still open. With Game Review folded the charts fill the panel, so they have height to share
-  // even on a small screen (at the splitter's height there, every view can sit at its minimum).
-  await reviewToggle(page).click();
-  await expect(reviewToggle(page)).toHaveAttribute("aria-expanded", "false");
-  // Filling the panel, the charts' header is still the twin of the folded Game Review's.
-  expect(await expectTwinHeaders(page)).toBeNull();
+  // still open. That needs a height of the user's: at the default one the charts are as tall as
+  // their open views need, so they'd shrink instead. Dragged up (as far as there is room).
+  const handle = await splitter(page).boundingBox();
+  if (!handle) throw new Error("no splitter");
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2, handle.y - 100, { steps: 5 });
+  await page.mouse.up();
   const openHeight = async () => {
     const heights = await Promise.all(
       (["winning-chances", "difficulty"] as const).map(
@@ -212,8 +208,7 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
   await charts(page).getByRole("button", { name: "Time per move" }).click();
   await expect(view(page, "times")).toHaveCount(0);
   await expect.poll(openHeight).toBeGreaterThan(before);
-  await reviewToggle(page).click();
-  await expect(reviewToggle(page)).toHaveAttribute("aria-expanded", "true");
+  await splitter(page).dblclick();
   // Reloaded (once its review is saved), the review page opens the same game with its review.
   await expect
     .poll(() =>
@@ -249,11 +244,11 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
   // Back to the default height.
   await splitter(page).dblclick();
 
-  // The whole Charts section folds to its header, the same box, and the splitter goes.
+  // The whole Charts section folds to its header, and the splitter goes.
   await chartsToggle(page).click();
   await expect(view(page, "winning-chances")).toHaveCount(0);
   await expect(splitter(page)).toHaveCount(0);
-  expect(await expectTwinHeaders(page)).toBeNull();
+  expect(await expectChartsHeader(page)).toBeNull();
   await chartsToggle(page).click();
   await expect(view(page, "winning-chances")).toBeVisible();
 

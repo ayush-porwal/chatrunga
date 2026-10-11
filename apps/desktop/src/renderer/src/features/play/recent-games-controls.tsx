@@ -104,6 +104,7 @@ export function RecentGamesFilter({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const close = useCallback(() => setOpen(false), []);
   useDismiss(rootRef, open, close);
+  useMenuEscape(open, close);
   const { present, state } = usePresence(open);
   const applied = [value ? LIBRARY_TAB_LABELS[value] : null, toggle?.checked ? toggle.label : null]
     .filter(Boolean)
@@ -183,6 +184,23 @@ export function RecentGamesFilter({
       ) : null}
     </div>
   );
+}
+
+/**
+ * While `open`, Escape closes the menu alone: caught on the way down (capture) and marked handled,
+ * so a dialog around the menu (which ignores a handled Escape) stays open for the next one.
+ */
+function useMenuEscape(open: boolean, close: () => void) {
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      close();
+    };
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
+  }, [open, close]);
 }
 
 /** One of the filter menu's choices: a tick while it applies, its label and its game count. */

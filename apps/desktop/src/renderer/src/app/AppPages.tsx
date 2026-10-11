@@ -241,6 +241,7 @@ export function AppPages({
             onAnalyze={reviewLoading ? undefined : on.startReview}
             onImportPgn={on.importPgn}
             onPlay={on.play}
+            onExportPgn={on.exportPgn}
             onOpenCommentarySettings={on.commentarySettings}
             onOpenRepertoireStudy={on.openRepertoireStudy}
             onRefreshRepertoireDecision={on.refreshRepertoireDecision}

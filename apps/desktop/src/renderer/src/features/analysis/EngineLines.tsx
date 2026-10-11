@@ -103,9 +103,9 @@ export function whiteScore(score: EngineScore, fen: string): EngineScore {
 
 /**
  * The line's score (White's side) as a pill: light while White is better, dark while Black is (like
- * the bar).
+ * the bar). `className` sizes it elsewhere (the review's evaluation change).
  */
-function ScorePill({ score }: { score: EngineScore | null }) {
+export function ScorePill({ score, className }: { score: EngineScore | null; className?: string }) {
   const blackBetter = Boolean(score && score.value < 0);
   const label = score ? formatScore(score, 2) : null;
   return (
@@ -116,7 +116,8 @@ function ScorePill({ score }: { score: EngineScore | null }) {
           ? "bg-control text-fg-subtle"
           : blackBetter
             ? "bg-side-black text-fg inset-ring inset-ring-line-strong"
-            : "bg-piece-white text-side-white-fg"
+            : "bg-piece-white text-side-white-fg",
+        className
       )}
     >
       {label ?? "–"}

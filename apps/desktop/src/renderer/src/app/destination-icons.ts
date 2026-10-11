@@ -1,9 +1,9 @@
 import {
-  BarChart3,
+  BookMarked,
+  ChartSpline,
   Database,
   Download,
-  FileSearch,
-  Library,
+  Microscope,
   Puzzle,
   Settings,
   Swords,
@@ -17,9 +17,9 @@ import type { LucideIcon } from "lucide-react";
  */
 export const DESTINATION_ICONS = {
   play: Swords,
-  analyze: FileSearch,
-  review: BarChart3,
-  repertoire: Library,
+  analyze: Microscope,
+  review: ChartSpline,
+  repertoire: BookMarked,
   puzzles: Puzzle,
   databases: Database,
   importPgn: Upload,

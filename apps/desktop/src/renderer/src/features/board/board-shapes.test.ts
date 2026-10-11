@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import { START_FEN } from "@chaturanga/shared/chess/position";
+import type { MoveAssessment, MoveReview } from "@chaturanga/shared/types/engine";
 import {
   annotationsFromShapes,
   chessgroundMovableColor,
   liveAnalysisShapes,
   movableDests,
+  reviewMoveShapes,
   shapesFromAnnotations,
   sideToMoveIsMovable
 } from "./board-shapes";
@@ -141,5 +143,104 @@ describe("liveAnalysisShapes", () => {
     expect(liveAnalysisShapes(START_FEN, ["e7e5"], white)).toStrictEqual([]);
     expect(liveAnalysisShapes(START_FEN, ["zz"], plan)).toStrictEqual([]);
     expect(liveAnalysisShapes("not a fen", RUY, plan)).toStrictEqual([]);
+  });
+});
+
+describe("reviewMoveShapes", () => {
+  // 1. e4 e5 2. Nf3 Nc6, White to move: the review's best line is 3. Bb5 a6 4. Ba4 Nf6.
+  const RUY = "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3";
+  const ERROR: MoveAssessment = {
+    policy: 1,
+    winBefore: 55,
+    winAfter: 40,
+    winLoss: 15,
+    alternativeGap: -15,
+    severity: "mistake",
+    annotation: "mistake",
+    tags: []
+  };
+  const move = (overrides: Partial<MoveReview> = {}): MoveReview => ({
+    nodeId: "n5",
+    ply: 5,
+    san: "Bc4",
+    playedMove: "f1c4",
+    fenBefore: RUY,
+    fenAfter: RUY,
+    evalBefore: null,
+    evalAfter: null,
+    evalLoss: null,
+    bestMove: "f1b5",
+    bestLine: ["f1b5", "a7a6", "b5a4", "g8f6"],
+    topLines: [],
+    motifs: [],
+    ...overrides
+  });
+  const bestOnly = { bestMoveArrow: true, planArrows: 0 } as const;
+  const arrows = (shapes: DrawShape[]) =>
+    shapes.map(({ orig, dest, brush, label }) =>
+      [`${orig}${dest ?? ""}:${brush}`, label?.text].filter(Boolean).join(":")
+    );
+
+  it("draws the best move green and the played move blue, or red when it cost something", () => {
+    expect(arrows(reviewMoveShapes(move(), bestOnly))).toStrictEqual(["f1b5:green", "f1c4:blue"]);
+    expect(arrows(reviewMoveShapes(move({ assessment: ERROR }), bestOnly))).toStrictEqual([
+      "f1b5:green",
+      "f1c4:red"
+    ]);
+  });
+
+  it("leaves out the played arrow only when it was the best move itself", () => {
+    expect(arrows(reviewMoveShapes(move({ playedMove: "f1b5" }), bestOnly))).toStrictEqual([
+      "f1b5:green"
+    ]);
+    // Same piece, another square (it used to be dropped for sharing the best move's square).
+    expect(arrows(reviewMoveShapes(move({ playedMove: "f1e2" }), bestOnly))).toStrictEqual([
+      "f1b5:green",
+      "f1e2:blue"
+    ]);
+  });
+
+  it("draws that many moves of the best line numbered in blue, in place of the best-move arrow", () => {
+    expect(
+      arrows(reviewMoveShapes(move({ assessment: ERROR }), { ...bestOnly, planArrows: 3 }))
+    ).toStrictEqual(["f1b5:blue:1", "a7a6:blue:2", "b5a4:blue:3", "f1c4:red"]);
+  });
+
+  it("keeps only the played arrow with engine arrows off, whatever the plan count", () => {
+    expect(arrows(reviewMoveShapes(move(), { bestMoveArrow: false, planArrows: 4 }))).toStrictEqual(
+      ["f1c4:blue"]
+    );
+  });
+
+  it("numbers the best move alone without a stored line, and falls back to it for a line of another position", () => {
+    const plan = { ...bestOnly, planArrows: 2 };
+    expect(arrows(reviewMoveShapes(move({ bestLine: [] }), plan))).toStrictEqual([
+      "f1b5:blue:1",
+      "f1c4:blue"
+    ]);
+    expect(arrows(reviewMoveShapes(move({ bestLine: ["e7e5", "g1f3"] }), plan))).toStrictEqual([
+      "f1b5:green",
+      "f1c4:blue"
+    ]);
+  });
+
+  it("draws the best and played arrows pale on request, and the plan's numbers in the live blue", () => {
+    const error = move({ assessment: ERROR });
+    expect(arrows(reviewMoveShapes(error, { ...bestOnly, pale: true }))).toStrictEqual([
+      "f1b5:paleGreen",
+      "f1c4:paleRed"
+    ]);
+    expect(
+      arrows(reviewMoveShapes(move(), { ...bestOnly, planArrows: 2, pale: true }))
+    ).toStrictEqual(["f1b5:blue:1", "a7a6:blue:2", "f1c4:paleBlue"]);
+  });
+
+  it("draws nothing without a reviewed move, and no engine arrow without a best move", () => {
+    expect(reviewMoveShapes(null, bestOnly)).toStrictEqual([]);
+    expect(
+      arrows(
+        reviewMoveShapes(move({ bestMove: null, bestLine: [] }), { ...bestOnly, planArrows: 3 })
+      )
+    ).toStrictEqual(["f1c4:blue"]);
   });
 });
