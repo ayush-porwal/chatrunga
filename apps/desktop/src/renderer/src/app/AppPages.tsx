@@ -118,6 +118,8 @@ export type PageCommands = {
   openGameFromLibrary: (id: string) => void;
   analyzePosition: () => void;
   stopLiveAnalysis: () => void;
+  /** The board's game (with its analysis) as a .pgn file. */
+  exportPgn: () => void;
   repertoireHub: () => void;
   openRepertoireStudy: (target: StudyOpenTarget) => void;
   refreshRepertoireDecision: (repertoireId: string, positionKey: string) => void;
@@ -289,6 +291,7 @@ export function AppPages({
             onSideTabChange={onSideTabChange}
             onStartAnalysis={canStartAnalysis ? on.analyzePosition : undefined}
             onStopAnalysis={on.stopLiveAnalysis}
+            onExportPgn={on.exportPgn}
             puzzlePanel={puzzlePanel}
             onOpenSettings={on.engineSettings}
           />

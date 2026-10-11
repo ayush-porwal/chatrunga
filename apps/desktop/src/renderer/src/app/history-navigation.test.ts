@@ -18,7 +18,7 @@ import {
 import { nextPuzzleInput, puzzleBoard } from "./puzzle-session-controller";
 
 const context: HistoryContext = {
-  tab: "engine",
+  tab: "library",
   reviewTab: "moves",
   openingSide: null,
   settingsSection: "engines",
@@ -134,7 +134,7 @@ describe("history capture", () => {
     expect(captureEntry("play", context)).toEqual({ view: "play", opponent: "engine" });
     expect(captureEntry("game", context)).toMatchObject({
       view: "game",
-      board: { gameId: "g1", tab: "engine" }
+      board: { gameId: "g1", tab: "library" }
     });
     // The review's board is always on the notation tab; the review's own tab is kept beside it.
     expect(captureEntry("game-review", context)).toMatchObject({

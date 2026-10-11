@@ -9,6 +9,35 @@ export function decidedResult(result: string | null | undefined): string | null 
   return result && result !== "*" ? result : null;
 }
 
+/** The store's and the PGN's termination strings in the words the result badge uses. */
+const TERMINATION_LABELS: Record<string, string> = {
+  "player resign": "Resignation",
+  "time forfeit": "On time",
+  "draw by agreement": "Agreement"
+};
+
+/**
+ * Terminations that don't say how the game ended (Lichess writes "Normal" for mate, resignation
+ * and agreed draws alike): the badge shows the result alone.
+ */
+const UNINFORMATIVE_TERMINATIONS = new Set(["normal", "unterminated"]);
+
+/**
+ * The titlebar's result badge: the result with how the game ended ("1-0 · Resignation"), the
+ * result alone when that isn't known; null for an undecided game.
+ */
+export function resultBadgeLabel(
+  result: string | null | undefined,
+  termination: string | null | undefined
+): string | null {
+  const decided = decidedResult(result);
+  if (!decided) return null;
+  const how = termination?.trim() ?? "";
+  if (!how || UNINFORMATIVE_TERMINATIONS.has(how.toLowerCase())) return decided;
+  const label = TERMINATION_LABELS[how.toLowerCase()] ?? how[0]!.toUpperCase() + how.slice(1);
+  return `${decided} · ${label}`;
+}
+
 export function gameModeLabel(
   game: Pick<GameState, "mode" | "source"> & Partial<Pick<GameState, "analysisBoard">>
 ): string {

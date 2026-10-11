@@ -18,7 +18,7 @@ export function useDatabaseDownloads(): void {
       timers.delete(progress.sourceId);
       if (progress.state !== "completed") return;
       void queryClient.invalidateQueries({ queryKey: ["databases"] });
-      // Keep "Download complete" visible briefly, then drop that same entry (not a newer one).
+      // Kept briefly while the list is read again, then that same entry (not a newer one) is dropped.
       const timer = window.setTimeout(() => {
         timers.delete(progress.sourceId);
         if (useDownloadStore.getState().progress[progress.sourceId] === progress)

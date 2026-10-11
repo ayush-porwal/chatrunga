@@ -5,7 +5,9 @@ import { START_FEN } from "@chaturanga/shared/chess/position";
 import {
   annotationsFromShapes,
   chessgroundMovableColor,
+  liveAnalysisShapes,
   movableDests,
+  PLAN_ARROW_BRUSHES,
   shapesFromAnnotations,
   sideToMoveIsMovable
 } from "./board-shapes";
@@ -93,5 +95,63 @@ describe("chessgroundMovableColor", () => {
     expect(chessgroundMovableColor("none")).toBeUndefined();
     expect(chessgroundMovableColor("both")).toBe("both");
     expect(chessgroundMovableColor("black")).toBe("black");
+  });
+});
+
+describe("liveAnalysisShapes", () => {
+  const RUY = ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"];
+  const white = { bestMoveArrow: true, planArrows: 0 } as const;
+  const arrows = (shapes: DrawShape[]) =>
+    shapes.map(({ orig, dest, brush }) => `${orig}${dest}:${brush}`);
+
+  it("draws the single best-move arrow with plan arrows off, and nothing with it off too", () => {
+    expect(liveAnalysisShapes(START_FEN, RUY, white)).toEqual([
+      { orig: "e2", dest: "e4", brush: "blue" }
+    ]);
+    expect(liveAnalysisShapes(START_FEN, RUY, { ...white, bestMoveArrow: false })).toEqual([]);
+  });
+
+  it("draws that many moves of the line, the side to move green and the replies blue", () => {
+    const shapes = liveAnalysisShapes(START_FEN, RUY, { ...white, planArrows: 3 });
+    expect(arrows(shapes)).toEqual(["e2e4:plan1", "e7e5:plan2", "g1f3:plan3"]);
+    expect(shapes.map((shape) => shape.label?.text)).toEqual(["1", "2", "3"]);
+    expect(PLAN_ARROW_BRUSHES.plan1?.color).toBe(PLAN_ARROW_BRUSHES.plan3?.color);
+    expect(PLAN_ARROW_BRUSHES.plan2?.color).toBe(PLAN_ARROW_BRUSHES.plan4?.color);
+    expect(PLAN_ARROW_BRUSHES.plan1?.color).not.toBe(PLAN_ARROW_BRUSHES.plan2?.color);
+    // Each a little fainter than the one before.
+    const opacities = ["plan1", "plan2", "plan3", "plan4"].map(
+      (key) => PLAN_ARROW_BRUSHES[key]?.opacity ?? 0
+    );
+    expect([...opacities].sort((a, b) => b - a)).toEqual(opacities);
+    expect(new Set(opacities).size).toBe(4);
+    // The best-move arrow switch doesn't hide them.
+    expect(
+      liveAnalysisShapes(START_FEN, RUY, { ...white, planArrows: 2, bestMoveArrow: false })
+    ).toHaveLength(2);
+  });
+
+  it("starts green with Black to move, and draws castling and at most four moves", () => {
+    const line = ["e7e5", "g1f3", "b8c6", "f1c4", "g8f6"];
+    expect(arrows(liveAnalysisShapes(BLACK_TO_MOVE, line, { ...white, planArrows: 4 }))).toEqual([
+      "e7e5:plan1",
+      "g1f3:plan2",
+      "b8c6:plan3",
+      "f1c4:plan4"
+    ]);
+    const castles = "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4";
+    expect(
+      arrows(liveAnalysisShapes(castles, ["e1g1", "g8f6"], { ...white, planArrows: 9 }))
+    ).toEqual(["e1g1:plan1", "g8f6:plan2"]);
+  });
+
+  it("stops at the first move that isn't legal in turn (a line of another position)", () => {
+    const plan = { ...white, planArrows: 4 };
+    expect(arrows(liveAnalysisShapes(START_FEN, ["e2e4", "e2e4", "g1f3"], plan))).toEqual([
+      "e2e4:plan1"
+    ]);
+    expect(liveAnalysisShapes(START_FEN, ["e7e5", "g1f3"], plan)).toEqual([]);
+    expect(liveAnalysisShapes(START_FEN, ["e7e5"], white)).toEqual([]);
+    expect(liveAnalysisShapes(START_FEN, ["zz"], plan)).toEqual([]);
+    expect(liveAnalysisShapes("not a fen", RUY, plan)).toEqual([]);
   });
 });

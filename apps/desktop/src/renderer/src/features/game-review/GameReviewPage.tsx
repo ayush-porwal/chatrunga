@@ -31,6 +31,7 @@ import { EvalBar } from "../board/EvalBar";
 import { BoardMoveMarkBadge } from "../board/BoardMoveMarkBadge";
 import { boardMoveMark } from "../board/move-mark";
 import { MoveNavigation } from "../board/MoveNavigation";
+import { blackToMove, fullMoveCount } from "../board/move-counter";
 import { useGameReviewCommentary } from "./useGameReviewCommentary";
 import { reviewRatingLabel, useReviewRating } from "./use-review-rating";
 import { useStoreHintsOnLeave } from "../onboarding/Coachmark";
@@ -679,16 +680,20 @@ function ReviewProgressCaption({
 }) {
   const moveIndex = useReviewStore((state) => state.progress?.moveIndex ?? null);
   const totalMoves = useReviewStore((state) => state.progress?.totalMoves ?? null);
+  const blackFirst = useGameStore((state) =>
+    blackToMove(state.moveTree.find((node) => !node.parentId)?.fenBefore)
+  );
   const total = totalMoves ?? fallbackTotal;
   const current = moveIndex === null ? 0 : Math.min(moveIndex + 1, total);
   const percent = total ? Math.round((Math.max(current - 1, 0) / total) * 100) : 0;
+  // The progress is in plies; the caption counts full moves, as the move counter does.
+  const progress = current
+    ? `Analyzing move ${fullMoveCount(current, blackFirst)} of ${fullMoveCount(total, blackFirst)}`
+    : null;
   return (
     <span className="inline-grid justify-items-center gap-0.5">
-      <span
-        role="status"
-        aria-label={current ? `Analyzing move ${current} of ${total}` : "Starting analysis"}
-      >
-        {current ? `Analyzing move ${current} of ${total}` : "Starting analysis…"}
+      <span role="status" aria-label={progress ?? "Starting analysis"}>
+        {progress ?? "Starting analysis…"}
       </span>
       {/* One slot under the caption, so pausing never moves the panel: the progress bar, or the
           button that follows the analysis again. */}

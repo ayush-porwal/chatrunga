@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decidedResult, gameModeLabel, gamePlayerNames } from "./game-title";
+import { decidedResult, gameModeLabel, gamePlayerNames, resultBadgeLabel } from "./game-title";
 
 describe("game title helpers", () => {
   it("labels the game by mode, then by source", () => {
@@ -51,5 +51,18 @@ describe("game title helpers", () => {
     expect(decidedResult("1-0")).toBe("1-0");
     expect(decidedResult("*")).toBeNull();
     expect(decidedResult(null)).toBeNull();
+  });
+
+  it("labels the result badge with how the game ended, when that is known", () => {
+    expect(resultBadgeLabel("1-0", "Player resign")).toBe("1-0 · Resignation");
+    expect(resultBadgeLabel("0-1", "Time forfeit")).toBe("0-1 · On time");
+    expect(resultBadgeLabel("1/2-1/2", "Draw by agreement")).toBe("1/2-1/2 · Agreement");
+    expect(resultBadgeLabel("1-0", "checkmate")).toBe("1-0 · Checkmate");
+    // Unknown, or a tag that doesn't say how (Lichess's "Normal"): the result alone.
+    expect(resultBadgeLabel("1-0", null)).toBe("1-0");
+    expect(resultBadgeLabel("1-0", "Normal")).toBe("1-0");
+    // Undecided: no badge.
+    expect(resultBadgeLabel("*", "Player resign")).toBeNull();
+    expect(resultBadgeLabel(null, null)).toBeNull();
   });
 });

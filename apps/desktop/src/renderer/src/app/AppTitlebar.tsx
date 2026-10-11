@@ -24,7 +24,7 @@ import { useSaveStatusStore } from "../stores/save-status-store";
 import { SidebarToggle } from "./AppSidebar";
 import { historyShortcutLabels } from "./useHistoryShortcuts";
 import { DESTINATION_ICONS } from "./destination-icons";
-import { decidedResult, gameModeLabel, gamePlayerNames } from "./game-title";
+import { decidedResult, gameModeLabel, gamePlayerNames, resultBadgeLabel } from "./game-title";
 
 /**
  * The one titlebar row across the full window width (window drag region, chrome colour):
@@ -185,7 +185,7 @@ const HistoryButtons = memo(function HistoryButtons({
   );
 });
 
-/** Board views' Export PGN: the game on the board as a .pgn file (an icon at the end of the actions). */
+/** Game review's Export PGN: the game on the board as a .pgn file (an icon at the end of the actions). */
 const ExportPgnButton = memo(function ExportPgnButton({ onClick }: { onClick: () => void }) {
   const Icon = DESTINATION_ICONS.exportPgn;
   return (
@@ -207,7 +207,8 @@ export function PageTitle({ children }: { children: ReactNode }) {
 /**
  * Titlebar for the game view: players (or the puzzle, or the mode name while both sides are
  * unnamed) · result · transient status … match actions (Offer draw, Resign; once the game ends,
- * Review game / Analyze / Next puzzle). Live analysis starts and stops with the Engine tab's switch.
+ * Review game / Analyze / Next puzzle). Live analysis starts and stops with the Moves tab's switch;
+ * Export PGN is on the Moves tab's bar.
  */
 export const GameTitlebar = memo(function GameTitlebar({
   engines,
@@ -219,13 +220,12 @@ export const GameTitlebar = memo(function GameTitlebar({
   onNextPuzzle,
   nextPuzzlePending,
   onReviewOpening,
-  onReturnToRepertoire,
-  onExportPgn
+  onReturnToRepertoire
 }: {
   engines: readonly EngineConfig[] | undefined;
-  /** Engine errors show here unless the Engine tab (which shows them itself) is visible. */
+  /** Engine errors show here unless the Moves tab's engine (which shows them itself) is visible. */
   showAnalysisError: boolean;
-  /** A finished engine game's Analyze (its post-game row); live analysis is the Engine tab's switch. */
+  /** A finished engine game's Analyze (its post-game row); live analysis is the Moves tab's switch. */
   onAnalyze: () => void;
   /** A finished online game: open it in Game review / find another game. */
   onReviewGame: () => void;
@@ -238,7 +238,6 @@ export const GameTitlebar = memo(function GameTitlebar({
   /** A finished game played from a repertoire: its Opening review / the chapter it came from. */
   onReviewOpening: () => void;
   onReturnToRepertoire: () => void;
-  onExportPgn: () => void;
 }) {
   // Only what the title shows: stepping through moves must not re-render the titlebar.
   const game = useGameStore(
@@ -253,7 +252,13 @@ export const GameTitlebar = memo(function GameTitlebar({
         lastError: state.lastError,
         matchFeedback: state.matchFeedback,
         outcomeResult: state.gameOutcome?.result ?? null,
-        positionResult: position.isEnd ? position.result : null
+        outcomeTermination: state.gameOutcome?.termination ?? null,
+        positionResult: position.isEnd ? position.result : null,
+        positionTermination: position.isCheckmate
+          ? "checkmate"
+          : position.isStalemate
+            ? "stalemate"
+            : null
       };
     })
   );
@@ -283,7 +288,15 @@ export const GameTitlebar = memo(function GameTitlebar({
     <WorkspaceTitlebar
       title={title}
       meta={game.mode === "online" ? lichessLabel : null}
-      result={game.outcomeResult ?? game.positionResult ?? decidedResult(game.headers.result)}
+      // How the game ended comes with the result that says it: the match's outcome, the final
+      // position's, else the game's Termination tag.
+      result={
+        game.outcomeResult
+          ? resultBadgeLabel(game.outcomeResult, game.outcomeTermination)
+          : game.positionResult
+            ? resultBadgeLabel(game.positionResult, game.positionTermination)
+            : resultBadgeLabel(game.headers.result, game.headers.termination)
+      }
       status={game.matchFeedback || error || null}
       statusIsError={!game.matchFeedback && Boolean(error)}
       actions={
@@ -302,7 +315,6 @@ export const GameTitlebar = memo(function GameTitlebar({
             onReviewOpening={onReviewOpening}
             onReturnToRepertoire={onReturnToRepertoire}
           />
-          <ExportPgnButton onClick={onExportPgn} />
         </>
       }
     />

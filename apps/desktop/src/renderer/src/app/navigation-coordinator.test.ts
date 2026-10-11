@@ -183,7 +183,7 @@ describe("Back / Forward", () => {
   });
 
   it("brings a saved game back on its tab, ending the board's other activity", async () => {
-    const entry = gameEntry("g1", { tab: "engine" });
+    const entry = gameEntry("g1", { tab: "library" });
     loadSaved("g2");
     history([entry, PLAY]);
     const shell = fakeShell();
@@ -192,7 +192,7 @@ describe("Back / Forward", () => {
     expect(useGameStore.getState().gameId).toBe("g1");
     expect(shell.stopEngineWork).toHaveBeenCalled();
     expect(shell.clearPuzzleSession).toHaveBeenCalled();
-    expect(shell.showGame).toHaveBeenCalledWith("engine");
+    expect(shell.showGame).toHaveBeenCalledWith("library");
     expect(shell.exitFocus).toHaveBeenCalled();
     expect(useHistoryStore.getState().index).toBe(0);
   });
@@ -590,13 +590,13 @@ describe("a Lichess game being played", () => {
     loadSaved("g2");
     useGameStore.getState().setMode("online");
     live("lx");
-    const entry = gameEntry("g2", { lichessGameId: "lx", tab: "engine" });
+    const entry = gameEntry("g2", { lichessGameId: "lx", tab: "library" });
     useGameStore.getState().setMode("online");
     history([entry, PLAY]);
     const shell = fakeShell();
     await goHistory(-1, shell, { current: null });
     expect(shell.getSavedGame).not.toHaveBeenCalled();
-    expect(shell.showGame).toHaveBeenCalledWith("engine");
+    expect(shell.showGame).toHaveBeenCalledWith("library");
     expect(useHistoryStore.getState().index).toBe(0);
   });
 

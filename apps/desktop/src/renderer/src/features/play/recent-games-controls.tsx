@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bot, Check, Globe, ListFilter, Search, SquareDashed, X } from "lucide-react";
+import {
+  Bot,
+  Check,
+  ChevronDown,
+  Globe,
+  ListFilter,
+  Loader2,
+  Search,
+  SquareDashed,
+  X
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { GAME_SEARCH_MAX_LENGTH, type GameSource } from "@chaturanga/shared/types/chess";
 import {
@@ -7,6 +17,7 @@ import {
   libraryTabOf,
   type LibraryTab
 } from "@chaturanga/shared/types/library";
+import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { usePresence } from "@/components/ui/use-presence";
@@ -27,9 +38,10 @@ const SOURCE_ICONS: Record<LibraryTab, LucideIcon> = {
 
 /**
  * Where a game came from, as a small round badge in its thumbnail's bottom-right corner. Its ring
- * takes the row's colour (hovered or not), so it reads as cut out of the board.
+ * takes the row's colour (hovered or not), so it reads as cut out of the board. `className` moves
+ * or sizes it (the Library's badge hangs off the thumbnail's corner).
  */
-export function SourceBadge({ source }: { source: GameSource }) {
+export function SourceBadge({ source, className }: { source: GameSource; className?: string }) {
   const tab = libraryTabOf(source);
   const label = LIBRARY_TAB_LABELS[tab];
   const Icon = SOURCE_ICONS[tab];
@@ -39,7 +51,10 @@ export function SourceBadge({ source }: { source: GameSource }) {
       role="img"
       aria-label={label}
       title={label}
-      className="absolute bottom-1 right-1 z-10 grid size-4 place-items-center rounded-full bg-control text-fg-muted ring-2 ring-surface transition-colors duration-micro group-hover/row:bg-control-hover group-hover/row:ring-control group-focus-within/row:bg-control-hover group-focus-within/row:ring-control"
+      className={cn(
+        "absolute bottom-1 right-1 z-10 grid size-4 place-items-center rounded-full bg-control text-fg-muted ring-2 ring-surface transition-colors duration-micro group-hover/row:bg-control-hover group-hover/row:ring-control group-focus-within/row:bg-control-hover group-focus-within/row:ring-control",
+        className
+      )}
     >
       <Icon aria-hidden="true" className="size-2.5" strokeWidth={2.25} />
     </span>
@@ -56,25 +71,73 @@ function ActiveDot() {
   );
 }
 
+/** An on/off row under the filter's sources (the Library's Reviewed), with its count. */
+export type RecentGamesFilterToggle = {
+  label: string;
+  count: number;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+};
+
 /**
  * The source filter: a funnel opening a menu of "All games" and each source with games (with its
- * count), the chosen one checked. The funnel carries a dot while a source is chosen.
+ * count), the chosen one checked, then (when given) `toggle` under a divider. The funnel carries a
+ * dot while a source is chosen or the toggle is on. `heading` titles the menu's sources;
+ * `className` styles the funnel.
  */
 export function RecentGamesFilter({
   options,
   value,
-  onChange
+  onChange,
+  toggle,
+  heading,
+  className
 }: {
   options: readonly RecentGamesFilterOption[];
   value: LibraryTab | null;
   onChange: (tab: LibraryTab | null) => void;
+  toggle?: RecentGamesFilterToggle;
+  heading?: string;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const close = useCallback(() => setOpen(false), []);
   useDismiss(rootRef, open, close);
   const { present, state } = usePresence(open);
-  const label = value ? `Filter: ${LIBRARY_TAB_LABELS[value]}` : "Filter games";
+  const applied = [value ? LIBRARY_TAB_LABELS[value] : null, toggle?.checked ? toggle.label : null]
+    .filter(Boolean)
+    .join(" · ");
+  const label = applied ? `Filter: ${applied}` : "Filter games";
+  const itemClass =
+    "flex h-8 items-center gap-2 whitespace-nowrap rounded-md px-2 text-left text-sm text-fg-secondary outline-none transition-colors hover:bg-control hover:text-fg focus-visible:bg-control";
+  const item = (
+    key: string,
+    checked: boolean,
+    text: string,
+    count: number,
+    onSelect: () => void,
+    role: "menuitemradio" | "menuitemcheckbox"
+  ) => (
+    <button
+      key={key}
+      type="button"
+      role={role}
+      aria-checked={checked}
+      tabIndex={state === "closed" ? -1 : undefined}
+      onClick={() => {
+        setOpen(false);
+        onSelect();
+      }}
+      className={itemClass}
+    >
+      <span className="grid size-4 shrink-0 place-items-center text-accent">
+        {checked ? <Check aria-hidden="true" className="size-4" /> : null}
+      </span>
+      <span className="flex-1">{text}</span>
+      <span className="pl-4 text-xs tabular-nums text-fg-subtle">{count}</span>
+    </button>
+  );
 
   return (
     <div ref={rootRef} className="relative inline-flex">
@@ -83,10 +146,10 @@ export function RecentGamesFilter({
         icon={
           <>
             <ListFilter />
-            {value ? <ActiveDot /> : null}
+            {applied ? <ActiveDot /> : null}
           </>
         }
-        className="group/dot relative"
+        className={cn("group/dot relative", className)}
         aria-haspopup="menu"
         aria-expanded={open}
         tooltip={!open}
@@ -108,29 +171,34 @@ export function RecentGamesFilter({
             className={cn(frost, "rounded-lg animate-fade-in data-[state=closed]:animate-fade-out")}
           />
           <div data-state={state} className={cn(popover, "relative grid gap-0.5 origin-top-right")}>
-            {options.map((option) => {
-              const checked = option.tab === value;
-              return (
-                <button
-                  key={option.tab ?? "all"}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={checked}
-                  tabIndex={state === "closed" ? -1 : undefined}
-                  onClick={() => {
-                    setOpen(false);
-                    onChange(option.tab);
-                  }}
-                  className="flex h-8 items-center gap-2 whitespace-nowrap rounded-md px-2 text-left text-sm text-fg-secondary outline-none transition-colors hover:bg-control hover:text-fg focus-visible:bg-control"
-                >
-                  <span className="grid size-4 shrink-0 place-items-center text-accent">
-                    {checked ? <Check aria-hidden="true" className="size-4" /> : null}
-                  </span>
-                  <span className="flex-1">{option.label}</span>
-                  <span className="pl-4 text-xs tabular-nums text-fg-subtle">{option.count}</span>
-                </button>
-              );
-            })}
+            {heading ? (
+              <span aria-hidden="true" className="px-2 pb-1 pt-2 text-[0.6875rem] text-fg-subtle">
+                {heading}
+              </span>
+            ) : null}
+            {options.map((option) =>
+              item(
+                option.tab ?? "all",
+                option.tab === value,
+                option.label,
+                option.count,
+                () => onChange(option.tab),
+                "menuitemradio"
+              )
+            )}
+            {toggle ? (
+              <>
+                <span aria-hidden="true" className="mx-1.5 my-1 h-px bg-line-subtle" />
+                {item(
+                  "toggle",
+                  toggle.checked,
+                  toggle.label,
+                  toggle.count,
+                  () => toggle.onChange(!toggle.checked),
+                  "menuitemcheckbox"
+                )}
+              </>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -221,5 +289,50 @@ export function RecentGamesSearch({
         onClick={clearAndClose}
       />
     </div>
+  );
+}
+
+/** Row actions: quiet until the row is hovered or holds focus (an open menu counts as both). */
+export const dimmedUntilRowHover =
+  "inline-flex opacity-55 transition-opacity duration-micro group-hover/row:opacity-100 group-focus-within/row:opacity-100 has-[[aria-expanded=true]]:opacity-100";
+
+/**
+ * The "Load more games" pill at a list's end: a spinner while the next page loads (`loading`).
+ */
+export function LoadMoreGamesButton({
+  loading,
+  disabled,
+  onClick
+}: {
+  loading: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button type="button" size="sm" className="rounded-full" disabled={disabled} onClick={onClick}>
+      {loading ? <Loader2 className="animate-spin motion-reduce:animate-none" /> : <ChevronDown />}
+      Load more games
+    </Button>
+  );
+}
+
+/** Reviewed: a board with two filled squares (the analysis is there to open). */
+export function ChessboardIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M3 12h18M12 3v18" />
+      <rect x="3" y="3" width="9" height="9" rx="1.5" fill="currentColor" stroke="none" />
+      <rect x="12" y="12" width="9" height="9" rx="1.5" fill="currentColor" stroke="none" />
+    </svg>
   );
 }

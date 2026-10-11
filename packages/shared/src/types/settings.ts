@@ -392,6 +392,11 @@ export type AppSettings = {
   analysisTimeSec: number;
   /** Live analysis: an arrow for the engine's best move on the board. */
   analysisBestMoveArrow: boolean;
+  /**
+   * Live analysis: how many moves of the engine's top line the board draws as numbered arrows
+   * (one of {@link ANALYSIS_PLAN_ARROWS}); 0 is off, leaving the single best-move arrow.
+   */
+  analysisPlanArrows: AnalysisPlanArrows;
   /** The evaluation bar beside the board (every board: analysis, review). */
   analysisEvalBar: boolean;
   /** Which side of the board the evaluation bar sits on. */
@@ -455,6 +460,9 @@ export const MAX_ENGINE_THREADS = 8;
 export const ANALYSIS_LIMITS = ["infinite", "depth", "time"] as const;
 export type AnalysisLimit = (typeof ANALYSIS_LIMITS)[number];
 export const ANALYSIS_LINES_RANGE = { min: 1, max: 5 } as const;
+/** Plan arrows' choices: off, or that many moves of the engine's top line. */
+export const ANALYSIS_PLAN_ARROWS = [0, 2, 3, 4] as const;
+export type AnalysisPlanArrows = (typeof ANALYSIS_PLAN_ARROWS)[number];
 export const EVAL_BAR_SIDES = ["left", "right"] as const;
 export type EvalBarSide = (typeof EVAL_BAR_SIDES)[number];
 export const ANALYSIS_DEPTH_RANGE = { min: 8, max: 60 } as const;
@@ -509,6 +517,7 @@ export const defaultSettings: AppSettings = {
   analysisDepth: 24,
   analysisTimeSec: 10,
   analysisBestMoveArrow: true,
+  analysisPlanArrows: 0,
   analysisEvalBar: true,
   analysisEvalBarSide: "left",
   engineThreads: null,

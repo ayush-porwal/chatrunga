@@ -65,15 +65,19 @@ const reaches = (target: ReturnType<Page["locator"]>, x: number, y: number) =>
  */
 const SQUARE_ROUNDING = 8;
 
-/** Steps the move navigation to the `ply`-th move of the main line (0: the starting position). */
+/**
+ * Steps the move navigation to the `ply`-th move of the main line (0: the starting position) of
+ * `total` plies. The counter reads full moves (White's move and Black's reply are one).
+ */
 async function goToPly(page: Page, ply: number, total: number) {
+  const moves = (count: number) => Math.ceil(count / 2);
   // At the starting position already, First move is disabled.
   const first = navigation(page).getByRole("button", { name: "First move", exact: true });
   if (await first.isEnabled()) await first.click();
-  await expect(counter(page)).toHaveText(`0 / ${total}`);
+  await expect(counter(page)).toHaveText(`0 / ${moves(total)}`);
   for (let step = 0; step < ply; step += 1)
     await navigation(page).getByRole("button", { name: "Next move", exact: true }).click();
-  await expect(counter(page)).toHaveText(`${ply} / ${total}`);
+  await expect(counter(page)).toHaveText(`${moves(ply)} / ${moves(total)}`);
 }
 
 async function openReview(page: Page, title: RegExp) {
@@ -123,7 +127,7 @@ test("the board fills its space, and its corner grip resizes it for the side pan
   const { app, page } = await launch();
   await skipWelcome(page);
   await importPgnFile(app, page, writePgn(profile, "ruy-lopez.pgn", RUY_LOPEZ_PGN));
-  await expect(counter(page)).toHaveText("6 / 6");
+  await expect(counter(page)).toHaveText("3 / 3");
   const panel = page.getByRole("complementary", { name: "Game" });
 
   // Filled: as large as the board cell allows beside the eval column and under the player rows
@@ -185,9 +189,12 @@ test("the board fills its space, and its corner grip resizes it for the side pan
   expect(above).toBeGreaterThan(20);
   expect(Math.abs(above - below)).toBeLessThan(2);
   expect(Math.abs(panelAfter.height - cellAfter.height)).toBeLessThan(2);
-  // Moves still play on the resized board's keys.
+  // Moves still play on the resized board's keys (a ply back: 3. Bb5 is the current move).
   await page.keyboard.press("ArrowLeft");
-  await expect(counter(page)).toHaveText("5 / 6");
+  await expect(
+    page.getByRole("tree", { name: "Game moves" }).getByRole("button", { name: "Bb5", exact: true })
+  ).toHaveAttribute("aria-current", "step");
+  await expect(counter(page)).toHaveText("3 / 3");
 
   // The size is remembered, and shared by the other board pages (the game's review here).
   await closeApp(app);
@@ -216,7 +223,7 @@ test("the line between the board and the panel is a splitter that resizes both",
   const { app, page } = await launch();
   await skipWelcome(page);
   await importPgnFile(app, page, writePgn(profile, "ruy-lopez.pgn", RUY_LOPEZ_PGN));
-  await expect(counter(page)).toHaveText("6 / 6");
+  await expect(counter(page)).toHaveText("3 / 3");
   const panel = page.getByRole("complementary", { name: "Game" });
   const filled = await boardEdge(page);
   const panelBefore = (await box(panel)).width;
@@ -252,7 +259,7 @@ test("the line between the board and the panel is a splitter that resizes both",
   await expect
     .poll(async () => Number(await splitter(page).getAttribute("aria-valuenow")))
     .toBe(value + 16);
-  await expect(counter(page)).toHaveText("6 / 6");
+  await expect(counter(page)).toHaveText("3 / 3");
   const stepped = await boardEdge(page);
 
   // The size is remembered.
@@ -278,7 +285,7 @@ test("the review board shows each side's clock at the move from [%clk], and none
   const { app, page } = await launch();
   await skipWelcome(page);
   await importPgnFile(app, page, writePgn(profile, "clocked.pgn", CLOCKED_PGN));
-  await expect(counter(page)).toHaveText("5 / 5");
+  await expect(counter(page)).toHaveText("3 / 3");
   await openReview(page, /^Clock White vs Clock Black/);
 
   // The start: both sides have the time control's three minutes.
@@ -294,15 +301,13 @@ test("the review board shows each side's clock at the move from [%clk], and none
   await expect(clock(page, "White")).toHaveText("02:41");
   await expect(clock(page, "Black")).toHaveText("02:50");
 
-  // A light box for White, a dark one for Black.
-  const background = (side: "White" | "Black") =>
-    clock(page, side).evaluate((el) => getComputedStyle(el).backgroundColor);
-  expect(await background("White")).toBe("rgb(233, 228, 216)");
-  expect(await background("Black")).toBe("rgb(12, 13, 15)");
+  // White is to move: its clock is lit (the light side box), Black's stays a sunken box.
+  await expect(clock(page, "White")).toHaveCSS("background-color", "rgb(233, 228, 216)");
+  await expect(clock(page, "Black")).toHaveCSS("background-color", "rgb(20, 22, 25)");
 
   // A game whose moves record no clock shows no clocks at all.
   await importPgnFile(app, page, writePgn(profile, "plain.pgn", RUY_LOPEZ_PGN));
-  await expect(counter(page)).toHaveText("6 / 6");
+  await expect(counter(page)).toHaveText("3 / 3");
   await openReview(page, /^Alpha vs Beta/);
   await expect(board(page).getByRole("timer")).toHaveCount(0);
 });

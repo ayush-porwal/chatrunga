@@ -21,6 +21,8 @@ describe("parseSettingValue", () => {
     expect(parseSettingValue("repertoireCompareBlack", null)).toBeNull();
     expect(parseSettingValue("practiceAutoAdvanceMs", 0)).toBe(0);
     expect(parseSettingValue("practiceAutoAdvanceMs", 3000)).toBe(3000);
+    expect(parseSettingValue("analysisPlanArrows", 0)).toBe(0);
+    expect(parseSettingValue("analysisPlanArrows", 4)).toBe(4);
     const ratings = {
       ...uniformRatings(1500),
       blitz: { source: "lichess", rating: 1720, syncedAt: Date.now() },
@@ -47,6 +49,10 @@ describe("parseSettingValue", () => {
       /setting repertoireCompareBlack/
     );
     expect(() => parseSettingValue("practiceAutoAdvanceMs", 1000)).toThrow(/practiceAutoAdvanceMs/);
+    // Off, 2, 3 or 4 moves: never one (that's the best-move arrow), more, or a numeric string.
+    expect(() => parseSettingValue("analysisPlanArrows", 1)).toThrow(/analysisPlanArrows/);
+    expect(() => parseSettingValue("analysisPlanArrows", 5)).toThrow(/analysisPlanArrows/);
+    expect(() => parseSettingValue("analysisPlanArrows", "3")).toThrow(/analysisPlanArrows/);
     expect(() => parseSettingValue("ratingsAccount", "fide")).toThrow(/setting ratingsAccount/);
     expect(() => parseSettingValue("playOpponent", "home")).toThrow(/setting playOpponent/);
     expect(() => parseSettingValue("playEngineId", 7)).toThrow(/setting playEngineId/);

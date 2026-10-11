@@ -111,7 +111,7 @@ test("BEST lines fold under their errors, preview on hover and are browsed on th
   await page.keyboard.press("ArrowLeft");
   await expect(first).toHaveAttribute("aria-current", "step");
   await page.keyboard.press("ArrowLeft");
-  await expect(counter(page)).toHaveText("6 / 14");
+  await expect(counter(page)).toHaveText("3 / 7");
   await expect(tree.getByRole("button", { name: "Nd4", exact: true })).toHaveAttribute(
     "aria-current",
     "step"
@@ -120,7 +120,7 @@ test("BEST lines fold under their errors, preview on hover and are browsed on th
   // Clicking a game move leaves the line for it.
   await second.click();
   await tree.getByRole("button", { name: "Nxf7", exact: true }).click();
-  await expect(counter(page)).toHaveText("9 / 14");
+  await expect(counter(page)).toHaveText("5 / 7");
   await expect(line.locator('[aria-current="step"]')).toHaveCount(0);
   await expect(variations(tree)).toHaveCount(0);
 
@@ -351,5 +351,5 @@ test("on Analyze, a variation's row promotes it to the main line, and the old li
   await expect(d4).toHaveAttribute("aria-current", "step");
   await expect(
     page.getByRole("navigation", { name: "Move navigation" }).getByRole("paragraph").first()
-  ).toHaveText("5 / 5");
+  ).toHaveText("3 / 3");
 });

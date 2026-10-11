@@ -1,35 +1,37 @@
-import { memo, useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import {
+  memo,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+  type KeyboardEvent,
+  type ReactNode
+} from "react";
 import { BookPlus, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
-import { Switch } from "@/components/ui/switch";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useEnginesQuery } from "../queries/api";
+import { cn } from "@/lib/utils";
 import { AnalysisSettingsDialog } from "../features/analysis/AnalysisSettingsDialog";
-import { useShallow } from "zustand/react/shallow";
-import { AnnotationBadge } from "@/components/ui/annotation-badge";
-import {
-  SegmentedControl,
-  tabPanelProps,
-  type SegmentedOption
-} from "@/components/ui/segmented-control";
-import { SideDot } from "@/components/ui/side-dot";
-import { Stat, StatGroup } from "@/components/ui/stat";
-import { positionStatus } from "@/lib/position-status";
 import { BoardView } from "../features/board/BoardView";
 import { mainBoardSurface } from "../features/board/move-mark";
-import { BoardWorkspace, workspaceTabsClass } from "../features/board/BoardWorkspace";
+import { BoardWorkspace } from "../features/board/BoardWorkspace";
 import { MoveNavigation } from "../features/board/MoveNavigation";
+import { blackToMove, fullMoveCount } from "../features/board/move-counter";
 import { EngineStatusPanel } from "../features/analysis/EngineStatusPanel";
 import { MoveList } from "../features/game/MoveList";
-import { RecentGames } from "../features/game/RecentGames";
+import {
+  LibraryActions,
+  RecentGames,
+  useLibraryView,
+  type LibraryView
+} from "../features/game/RecentGames";
 import { mainlineReviewInput } from "../features/game-review/review-utils";
 import { ReviewCharts } from "../features/game-review/ReviewCharts";
 import { reviewSideColor, useReviewSide } from "../features/game-review/review-side";
 import { moverOf } from "../features/game-review/review-summary";
 import { keyMoments } from "@chaturanga/shared/chess/key-moments";
+import type { MoveNode } from "@chaturanga/shared/types/chess";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
-import { formatMoveEval } from "../features/game-review/review-score";
 import { hasMoves } from "../features/repertoire/add-from-game";
 import { ADD_NEEDS_SAVE, captureBoardSource } from "../features/repertoire/board-source";
 import { useAddToRepertoireStore } from "../stores/add-to-repertoire-store";
@@ -38,28 +40,8 @@ import { useGameStore } from "../stores/game-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
 import { useReviewStore } from "../stores/review-store";
 import { useDisplayedReviewMoves } from "../stores/review-validity";
-import { availableSideTab, type PuzzleTabs, type SideTab } from "./side-tabs";
-
-const sideTabOptions: readonly SegmentedOption<SideTab>[] = [
-  { value: "notation", label: "Moves" },
-  { value: "engine", label: "Engine" },
-  { value: "library", label: "Library" }
-];
-
-/** A puzzle has no Library; its Engine tab is locked until the puzzle is solved or failed (it would give the answer away). */
-const puzzleTabOptions: readonly SegmentedOption<SideTab>[] = [
-  { value: "notation", label: "Moves" },
-  { value: "engine", label: "Engine" }
-];
-const lockedPuzzleTabOptions: readonly SegmentedOption<SideTab>[] = [
-  { value: "notation", label: "Moves" },
-  {
-    value: "engine",
-    label: "Engine",
-    disabled: true,
-    disabledReason: "Available after the puzzle is solved or failed"
-  }
-];
+import { DESTINATION_ICONS } from "./destination-icons";
+import { availableSideTab, showsEngine, type PuzzleTabs, type SideTab } from "./side-tabs";
 
 function usePuzzleTabs(): PuzzleTabs {
   const puzzleBoard = useGameStore((state) => state.source === "puzzle");
@@ -70,9 +52,10 @@ function usePuzzleTabs(): PuzzleTabs {
 
 /**
  * The game view (free board, Analysis, engine and Lichess games, Puzzle) rendered through the shared board
- * workspace — same geometry as Game review. Tabs: Moves · Engine · Library (the puzzle card sits
- * atop Moves; a puzzle has no Library, and its Engine tab opens once it's solved or failed).
- * Footer: eval graph when the game has been reviewed, then move navigation.
+ * workspace — same geometry as Game review. Title-bar tabs: Moves · Library (a puzzle has only
+ * Moves, its card atop the moves). Moves: the engine block fixed on top (not while a puzzle is
+ * being solved: it would give the answer away), then the move tree, scrolling on its own.
+ * Footer: the charts, then move navigation.
  */
 export const GameWorkspace = memo(function GameWorkspace({
   onOpenGame,
@@ -81,7 +64,8 @@ export const GameWorkspace = memo(function GameWorkspace({
   puzzlePanel,
   onStartAnalysis,
   onStopAnalysis,
-  onOpenSettings
+  onOpenSettings,
+  onExportPgn
 }: {
   /** Library tab: open a saved game on the board. */
   onOpenGame: (id: string) => void;
@@ -91,132 +75,200 @@ export const GameWorkspace = memo(function GameWorkspace({
   onStartAnalysis?: () => void;
   onStopAnalysis?: () => void;
   onOpenSettings?: () => void;
+  /** The Moves tab's Export PGN: the game with its analysis. */
+  onExportPgn: () => void;
 }) {
-  // The per-move parts (board, summary, footer) subscribe on their own, so stepping through the
-  // game re-renders them and not the whole workspace (tabs, panel, puzzle card).
+  // The per-move parts (board, footer) subscribe on their own, so stepping through the game
+  // re-renders them and not the whole workspace (tabs, panel, puzzle card).
   const panelId = useId();
   const puzzleTabs = usePuzzleTabs();
   const shownTab = availableSideTab(sideTab, puzzleTabs);
-  // A tab the puzzle doesn't offer (Library, or Engine while locked) is never kept as the stored one.
+  // Kept here so the Library's filter and search outlive a visit to Moves.
+  const libraryView = useLibraryView();
+  // A tab the puzzle doesn't offer (Library) is never kept as the stored one.
   useEffect(() => {
     if (shownTab !== sideTab) onSideTabChange(shownTab);
   }, [onSideTabChange, shownTab, sideTab]);
+  const engineShown = showsEngine(puzzleTabs);
   return (
     <BoardWorkspace
-      tabPanel={tabPanelProps(panelId, shownTab)}
+      tabPanel={{ id: panelId, role: "tabpanel", "aria-labelledby": tabId(panelId, shownTab) }}
       panelLabel="Game"
       board={boardView}
-      tabs={
-        <SegmentedControl
-          ariaLabel="Workspace panels"
-          role="tablist"
+      tabBar={
+        <PanelTabBar
           panelId={panelId}
-          fullWidth
-          className={workspaceTabsClass}
-          value={shownTab}
+          tab={shownTab}
+          withLibrary={puzzleTabs === "none"}
+          libraryView={libraryView}
           onChange={onSideTabChange}
-          options={
-            puzzleTabs === "none"
-              ? sideTabOptions
-              : puzzleTabs === "locked"
-                ? lockedPuzzleTabOptions
-                : puzzleTabOptions
-          }
+          onExportPgn={onExportPgn}
         />
       }
-      summary={
-        shownTab === "engine" ? (
-          <EngineTabSummary onStartAnalysis={onStartAnalysis} onStopAnalysis={onStopAnalysis} />
-        ) : (
-          gameSummary
-        )
-      }
+      flushBody
       footer={gameFooter}
     >
       {shownTab === "notation" ? (
-        // A puzzle card taller than the panel (a short window, an explanation) scrolls with the
-        // moves rather than running under the footer.
-        <div className="scroll-area -mr-3 flex h-full min-h-0 flex-col gap-3 overflow-y-auto pr-3">
-          {puzzlePanel}
-          <section className="flex min-h-40 flex-1 flex-col" aria-label="Moves">
-            <MoveList />
-          </section>
-          {/* A puzzle isn't saved, so it can't be added to a repertoire. */}
-          {puzzleTabs === "none" ? addToRepertoireButton : null}
+        <div className="flex h-full min-h-0 flex-col">
+          {engineShown ? (
+            <EngineStatusPanel
+              onOpenSettings={onOpenSettings}
+              onStartAnalysis={onStartAnalysis}
+              onStopAnalysis={onStopAnalysis}
+            />
+          ) : null}
+          {/* A puzzle card taller than the panel (a short window, an explanation) scrolls with the
+              moves rather than running under the footer. The tree's header sits right under the
+              engine block. */}
+          <div
+            className={cn(
+              "scroll-area flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 pb-3",
+              (!engineShown || puzzlePanel) && "pt-3"
+            )}
+          >
+            {puzzlePanel}
+            <section className="flex min-h-40 flex-1 flex-col" aria-label="Moves">
+              <MoveList />
+            </section>
+            {/* A puzzle isn't saved, so it can't be added to a repertoire. */}
+            {puzzleTabs === "none" ? addToRepertoireButton : null}
+          </div>
         </div>
-      ) : null}
-      {shownTab === "engine" ? (
-        <div className="scroll-area -mr-3 h-full min-h-0 overflow-y-auto pr-3">
-          <EngineStatusPanel onOpenSettings={onOpenSettings} />
-        </div>
-      ) : null}
-      {shownTab === "library" ? <RecentGames onOpenGame={onOpenGame} /> : null}
+      ) : (
+        <RecentGames view={libraryView} onOpenGame={onOpenGame} />
+      )}
     </BoardWorkspace>
   );
 });
 
-/** Result or side to move, plus the review verdict for the current move once the game is reviewed. */
-function GameSummary() {
-  const position = useGameStore(
-    useShallow((state) => {
-      const status = positionStatus(state.currentFen);
-      return {
-        turn: status.turn,
-        isEnd: status.isEnd,
-        result: status.result,
-        isCheckmate: status.isCheckmate,
-        isStalemate: status.isStalemate
-      };
-    })
-  );
-  const gameOutcome = useGameStore((state) => state.gameOutcome);
-  const currentNodeId = useGameStore((state) => state.currentNodeId);
-  const reviewMoves = useDisplayedReviewMoves();
-  const currentMoveReview = useMemo(
-    () => reviewMoves.find((move) => move.nodeId === currentNodeId) ?? null,
-    [currentNodeId, reviewMoves]
-  );
+/** The tab element's id for `tab` in the tab bar that controls `panelId`. */
+function tabId(panelId: string, tab: SideTab): string {
+  return `${panelId}-tab-${tab}`;
+}
 
-  const ended = Boolean(gameOutcome) || position.isEnd;
-  const result = gameOutcome?.result ?? position.result;
-  const termination =
-    gameOutcome?.termination ??
-    (position.isCheckmate ? "checkmate" : position.isStalemate ? "stalemate" : null);
-
+/**
+ * The panel's title bar: text tabs (an accent underline on the active one; count pills, the
+ * game's moves and the Library's games) and, at the right end, the tab's own actions: on Moves,
+ * Export PGN and the analysis settings (last); on Library, its search and filter.
+ */
+const PanelTabBar = memo(function PanelTabBar({
+  panelId,
+  tab,
+  withLibrary,
+  libraryView,
+  onChange,
+  onExportPgn
+}: {
+  panelId: string;
+  tab: SideTab;
+  /** A puzzle has no Library. */
+  withLibrary: boolean;
+  libraryView: LibraryView;
+  onChange: (tab: SideTab) => void;
+  onExportPgn: () => void;
+}) {
+  const moveCount = useMainlineMoveCount();
+  const tabs: { value: SideTab; label: string; count: number | null }[] = [
+    { value: "notation", label: "Moves", count: moveCount },
+    ...(withLibrary
+      ? [{ value: "library" as const, label: "Library", count: libraryView.total }]
+      : [])
+  ];
+  // Arrow keys / Home / End move between the tabs (WAI-ARIA tabs pattern), selecting them.
+  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    const current = tabs.findIndex((item) => item.value === tab);
+    let next: number | null = null;
+    if (event.key === "ArrowRight") next = (current + 1) % tabs.length;
+    else if (event.key === "ArrowLeft") next = (current - 1 + tabs.length) % tabs.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = tabs.length - 1;
+    const target = next === null ? undefined : tabs[next];
+    if (!target) return;
+    event.preventDefault();
+    onChange(target.value);
+    document.getElementById(tabId(panelId, target.value))?.focus();
+  };
   return (
-    <StatGroup className="w-full">
-      {ended ? (
-        <Stat
-          label="Result"
-          value={termination ? `${result} · ${terminationLabel(termination)}` : result}
-        />
-      ) : (
-        <Stat
-          label="To move"
-          value={
-            <span className="inline-flex items-center gap-2">
-              <SideDot color={position.turn} />
-              {position.turn === "white" ? "White" : "Black"}
-            </span>
-          }
-        />
-      )}
-      {currentMoveReview ? (
-        <>
-          <Stat
-            label="Move"
-            value={
-              currentMoveReview.assessment?.annotation ? (
-                <AnnotationBadge annotation={currentMoveReview.assessment.annotation} />
-              ) : (
-                <span className="text-fg-subtle">No mark</span>
-              )
-            }
-          />
-          <Stat label="Eval" value={formatMoveEval(currentMoveReview)} mono />
-        </>
-      ) : null}
-    </StatGroup>
+    <div className="flex h-12 items-stretch gap-0.5 border-b border-line-subtle pr-2 pl-1.5">
+      <div role="tablist" aria-label="Workspace panels" className="flex items-stretch gap-0.5">
+        {tabs.map((item) => {
+          const selected = item.value === tab;
+          return (
+            <button
+              key={item.value}
+              type="button"
+              role="tab"
+              id={tabId(panelId, item.value)}
+              aria-controls={panelId}
+              aria-selected={selected}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => onChange(item.value)}
+              onKeyDown={onKeyDown}
+              className={cn(
+                "relative flex items-center gap-1.75 px-2.5 text-[0.84375rem] font-medium outline-none transition-colors duration-micro ease-standard focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-inset",
+                selected ? "text-fg" : "text-fg-muted hover:text-fg"
+              )}
+            >
+              {item.label}
+              {item.count ? (
+                // Decorative: the tab is named by its label alone.
+                <span
+                  aria-hidden="true"
+                  className="inline-grid h-4.5 min-w-5 place-items-center rounded-full bg-control px-1.5 text-2xs font-semibold text-fg-muted tabular-nums"
+                >
+                  {item.count}
+                </span>
+              ) : null}
+              {selected ? (
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-x-2.5 -bottom-px h-0.5 rounded-full bg-accent"
+                />
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+      <div className="ml-auto flex items-center gap-0.5">
+        {tab === "notation" ? (
+          <>
+            <ExportPgnButton onClick={onExportPgn} />
+            <AnalysisSettingsButton />
+          </>
+        ) : (
+          <LibraryActions view={libraryView} />
+        )}
+      </div>
+    </div>
+  );
+});
+
+/** The game's length in full moves along its main line (the Moves tab's count). */
+function useMainlineMoveCount(): number {
+  const moveTree = useGameStore((state) => state.moveTree);
+  return useMemo(() => mainlineMoveCount(moveTree), [moveTree]);
+}
+
+function mainlineMoveCount(moveTree: readonly MoveNode[]): number {
+  const byId = new Map(moveTree.map((node) => [node.id, node]));
+  const root = moveTree.find((node) => !node.parentId);
+  let plies = 0;
+  for (let cursor = root; cursor?.children[0] && plies < moveTree.length; plies += 1)
+    cursor = byId.get(cursor.children[0]);
+  return fullMoveCount(plies, blackToMove(root?.fenBefore));
+}
+
+/** Export PGN: the game on the board, with its analysis, as a .pgn file. */
+function ExportPgnButton({ onClick }: { onClick: () => void }) {
+  const Icon = DESTINATION_ICONS.exportPgn;
+  return (
+    <IconButton
+      label="Export PGN with analysis"
+      icon={<Icon />}
+      size="icon-xs"
+      disabled={!window.chaturanga}
+      onClick={onClick}
+    />
   );
 }
 
@@ -336,67 +388,6 @@ function AddToRepertoireButton() {
 
 const addToRepertoireButton = <AddToRepertoireButton />;
 const boardView = <BoardView />;
-const gameSummary = <GameSummary />;
-/**
- * On the Engine tab the summary row also holds the Analysis switch (live analysis on and off: the
- * only Start / Stop for the panel's engine) and the analysis settings, last.
- */
-const EngineTabSummary = memo(function EngineTabSummary({
-  onStartAnalysis,
-  onStopAnalysis
-}: {
-  onStartAnalysis?: () => void;
-  onStopAnalysis?: () => void;
-}) {
-  return (
-    <div className="flex w-full items-center justify-between gap-2">
-      <GameSummary />
-      <div className="flex shrink-0 items-center gap-2.5">
-        <AnalysisSwitch onStart={onStartAnalysis} onStop={onStopAnalysis} />
-        <AnalysisSettingsButton />
-      </div>
-    </div>
-  );
-});
-
-/**
- * The Analysis switch: on while live analysis runs (the game store's analysis mode, which the
- * engine driver searches), so it always says what the engine is doing. Off without an engine
- * installed (it says why), or while the board can't be analysed (a game being played).
- */
-function AnalysisSwitch({ onStart, onStop }: { onStart?: () => void; onStop?: () => void }) {
-  const on = useGameStore((state) => state.mode === "analysis");
-  const engines = useEnginesQuery();
-  const noEngine = engines.isSuccess && !engines.data.some((engine) => engine.isAvailable);
-  const disabled = noEngine || (on ? !onStop : !onStart);
-  const control = (
-    <label className="flex items-center gap-1.5 text-xs text-fg-secondary">
-      <Switch
-        checked={on}
-        disabled={disabled}
-        aria-label="Analysis"
-        onCheckedChange={(next) => (next ? onStart?.() : onStop?.())}
-      />
-      <span aria-hidden>Analysis</span>
-    </label>
-  );
-  if (!noEngine) return control;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a disabled switch can't take focus, so its wrapper does, to say why it's off
-          tabIndex={0}
-          className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
-        >
-          {control}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">Install an engine in Settings to analyse</TooltipContent>
-    </Tooltip>
-  );
-}
-
 /** Opens the live analysis settings (engine, lines, search limit, board display). */
 function AnalysisSettingsButton() {
   const [open, setOpen] = useState(false);
@@ -405,6 +396,7 @@ function AnalysisSettingsButton() {
       <IconButton
         label="Analysis settings"
         icon={<Settings />}
+        size="icon-xs"
         onClick={() => setOpen(true)}
         className="shrink-0"
       />
@@ -413,18 +405,3 @@ function AnalysisSettingsButton() {
   );
 }
 const gameFooter = <GameFooter />;
-
-/** The store's termination strings in the words the board's result card uses. */
-const TERMINATION_LABELS: Record<string, string> = {
-  "Player resign": "Resignation",
-  "Time forfeit": "On time",
-  "Draw by agreement": "Agreement"
-};
-
-function terminationLabel(termination: string): string {
-  return TERMINATION_LABELS[termination] ?? capitalize(termination);
-}
-
-function capitalize(value: string): string {
-  return value ? value[0].toUpperCase() + value.slice(1) : value;
-}

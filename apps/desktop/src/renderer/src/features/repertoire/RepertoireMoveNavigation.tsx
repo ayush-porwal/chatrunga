@@ -5,6 +5,7 @@ import { isTyping, OVERLAY_SELECTOR } from "../../app/useBoardShortcuts";
 import { lastNodeOfLine, nodeAfterSteps } from "../../app/useMoveKeyboardShortcuts";
 import { markRapidNavigation } from "../board/board-motion";
 import { alternativeTarget } from "../game/move-alternatives";
+import { blackToMove } from "../board/move-counter";
 import { MoveNavigationBar } from "../board/MoveNavigationBar";
 
 const ROOT_ID = "root";
@@ -26,22 +27,24 @@ export const RepertoireMoveNavigation = memo(function RepertoireMoveNavigation({
   selectedNodeId: string;
   onSelect: (nodeId: string) => void;
 }) {
-  const { depth, total, canPrevious, canNext, lastId, parentId, nextId } = useMemo(() => {
-    const byId = new Map(nodes.map((node) => [node.id, node]));
-    const current = byId.get(selectedNodeId) ?? null;
-    const last = lastNodeOfLine(nodes, selectedNodeId);
-    const lastPly = byId.get(last)?.ply ?? 0;
-    const rootPly = byId.get(ROOT_ID)?.ply ?? 0;
-    return {
-      depth: (current?.ply ?? rootPly) - rootPly,
-      total: lastPly - rootPly,
-      canPrevious: Boolean(current?.parentId),
-      canNext: Boolean(current?.children[0]),
-      lastId: last,
-      parentId: current?.parentId ?? null,
-      nextId: current?.children[0] ?? null
-    };
-  }, [nodes, selectedNodeId]);
+  const { depth, total, blackFirst, canPrevious, canNext, lastId, parentId, nextId } =
+    useMemo(() => {
+      const byId = new Map(nodes.map((node) => [node.id, node]));
+      const current = byId.get(selectedNodeId) ?? null;
+      const last = lastNodeOfLine(nodes, selectedNodeId);
+      const lastPly = byId.get(last)?.ply ?? 0;
+      const rootPly = byId.get(ROOT_ID)?.ply ?? 0;
+      return {
+        depth: (current?.ply ?? rootPly) - rootPly,
+        total: lastPly - rootPly,
+        blackFirst: blackToMove(byId.get(ROOT_ID)?.fenBefore),
+        canPrevious: Boolean(current?.parentId),
+        canNext: Boolean(current?.children[0]),
+        lastId: last,
+        parentId: current?.parentId ?? null,
+        nextId: current?.children[0] ?? null
+      };
+    }, [nodes, selectedNodeId]);
 
   const goFirst = useEventCallback(() => onSelect(ROOT_ID));
   const goPrevious = useEventCallback(() => {
@@ -56,6 +59,7 @@ export const RepertoireMoveNavigation = memo(function RepertoireMoveNavigation({
     <MoveNavigationBar
       depth={depth}
       total={total}
+      blackFirst={blackFirst}
       canPrevious={canPrevious}
       canNext={canNext}
       onFirst={goFirst}

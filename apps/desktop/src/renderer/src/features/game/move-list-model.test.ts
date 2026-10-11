@@ -11,6 +11,7 @@ import {
   lineMoveNumber,
   lineUnfolded,
   mainlineItems,
+  ENGINE_LINE_PREVIEW,
   previewBoardSize,
   sanPiece,
   setAllLineFolds,
@@ -242,5 +243,12 @@ describe("previewBoardSize", () => {
     expect(previewBoardSize(900, 400)).toBe(240);
     expect(previewBoardSize(900, 250)).toBe(200);
     expect(previewBoardSize(150, 250)).toBe(150);
+  });
+
+  it("keeps an engine line's preview to its own, smaller bounds", () => {
+    expect(previewBoardSize(900, 900, ENGINE_LINE_PREVIEW)).toBe(255);
+    expect(previewBoardSize(900, 400, ENGINE_LINE_PREVIEW)).toBe(180);
+    expect(previewBoardSize(900, 250, ENGINE_LINE_PREVIEW)).toBe(150);
+    expect(previewBoardSize(120, 900, ENGINE_LINE_PREVIEW)).toBe(120);
   });
 });

@@ -1,5 +1,5 @@
 import { memo, useMemo, useState, type JSX } from "react";
-import { BookPlus, ChevronDown, FolderOpen, Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { BookPlus, FolderOpen, Plus, RotateCcw, Trash2 } from "lucide-react";
 import {
   GAME_SEARCH_MAX_LENGTH,
   type Color,
@@ -28,8 +28,16 @@ import { useSavedGameActions } from "../game/saved-game-actions";
 import { BoardThumbnail } from "../settings/board-thumbnail";
 import { CardTitleBar } from "./card-title";
 import { PiecePair } from "./piece-art";
-import { RecentGamesFilter, RecentGamesSearch, SourceBadge } from "./recent-games-controls";
 import {
+  ChessboardIcon,
+  dimmedUntilRowHover,
+  LoadMoreGamesButton,
+  RecentGamesFilter,
+  RecentGamesSearch,
+  SourceBadge
+} from "./recent-games-controls";
+import {
+  GAME_SEARCH_DEBOUNCE_MS,
   playerName,
   RECENT_GAMES_ROWS,
   recentGamesFilterOptions,
@@ -46,9 +54,6 @@ const columns =
   "grid grid-cols-[5.5rem_minmax(0,1.6fr)_repeat(4,minmax(0,1fr))] gap-x-4 pr-2 [&>*:nth-child(n+3)]:justify-self-center";
 
 const TITLE_ID = "play-recent-games-title";
-
-/** How long typing pauses before the library is searched. */
-const SEARCH_DEBOUNCE_MS = 200;
 
 /**
  * Play's Recent games: one bordered table of the saved games, newest first (title bar with their
@@ -83,7 +88,7 @@ export const RecentGamesTable = memo(function RecentGamesTable({
   const [query, setQuery] = useState("");
   // Clearing the box applies at once; typing waits for a pause.
   const needle = query.trim().slice(0, GAME_SEARCH_MAX_LENGTH);
-  const debouncedNeedle = useDebouncedValue(needle, SEARCH_DEBOUNCE_MS);
+  const debouncedNeedle = useDebouncedValue(needle, GAME_SEARCH_DEBOUNCE_MS);
   const search = needle ? debouncedNeedle : "";
 
   const games = useRecentGamePagesQuery(
@@ -194,22 +199,13 @@ export const RecentGamesTable = memo(function RecentGamesTable({
           {games.hasNextPage ? (
             // The list's last row: reached by scrolling to the end of the table, never over the rows.
             <li className="flex justify-center py-3">
-              <Button
-                type="button"
-                size="sm"
-                className="rounded-full"
+              <LoadMoreGamesButton
+                loading={games.isFetchingNextPage}
                 // Not while any read runs (a next page would cancel a refresh), nor over a
                 // previous search's rows.
                 disabled={games.isFetching || games.isPlaceholderData}
                 onClick={() => void games.fetchNextPage()}
-              >
-                {games.isFetchingNextPage ? (
-                  <Loader2 className="animate-spin motion-reduce:animate-none" />
-                ) : (
-                  <ChevronDown />
-                )}
-                Load more games
-              </Button>
+              />
             </li>
           ) : null}
         </ul>
@@ -386,30 +382,6 @@ function GameRow({
         </span>
       </span>
     </li>
-  );
-}
-
-/** Row actions: quiet until the row is hovered or holds focus (an open menu counts as both). */
-const dimmedUntilRowHover =
-  "inline-flex opacity-55 transition-opacity duration-micro group-hover/row:opacity-100 group-focus-within/row:opacity-100 has-[[aria-expanded=true]]:opacity-100";
-
-/** Reviewed: a board with two filled squares (the analysis is there to open). */
-function ChessboardIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <path d="M3 12h18M12 3v18" />
-      <rect x="3" y="3" width="9" height="9" rx="1.5" fill="currentColor" stroke="none" />
-      <rect x="12" y="12" width="9" height="9" rx="1.5" fill="currentColor" stroke="none" />
-    </svg>
   );
 }
 

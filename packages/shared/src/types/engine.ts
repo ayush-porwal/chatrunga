@@ -194,6 +194,14 @@ export type MoveAnnotation =
   | "mistake"
   | "blunder";
 
+/** The marks that are the mover's errors (a better move was there): their best line teaches it. */
+export const ERROR_MARKS: ReadonlySet<MoveAnnotation> = new Set([
+  "inaccuracy",
+  "mistake",
+  "blunder",
+  "miss"
+]);
+
 /**
  * Evidence behind an assessment, shown with the move and given to the AI coach so it explains
  * facts rather than inventing them.

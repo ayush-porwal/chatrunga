@@ -362,7 +362,7 @@ test("leaving Study by any route stops the engine panel's search", async ({ laun
   await expect(studyPanel(page)).toHaveCount(0);
   await expectStoppedSince(log, from);
 
-  // The sidebar's Analyze: the board's own engine tab analyses the board, not the study.
+  // The sidebar's Analyze: the board's own engine analyses the board, not the study.
   await studyWithEngine(page);
   from = engineCommands(log).length;
   await sidebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
@@ -432,8 +432,7 @@ test("Back from Study with the engine panel open to an analysis board analyses t
   const gameMoves = page.getByRole("tree", { name: "Game moves" });
   await gameMoves.getByRole("button", { name: "a6", exact: true }).click();
 
-  // The board analysed at 3... a6.
-  await page.getByRole("tab", { name: "Engine" }).click();
+  // The board analysed at 3... a6 (the switch in the Moves tab's engine row).
   const analysis = page
     .getByRole("complementary", { name: "Game" })
     .getByRole("switch", { name: "Analysis" });
@@ -441,7 +440,6 @@ test("Back from Study with the engine panel open to an analysis board analyses t
   await expect(analysis).toHaveAttribute("aria-checked", "true");
 
   // Its line goes into the repertoire (from the Moves tab), and the notice opens the new chapter's Study from here.
-  await page.getByRole("tab", { name: "Moves" }).click();
   await page.getByRole("button", { name: "Add to repertoire…" }).click();
   const dialog = page.getByRole("dialog", { name: "Add to repertoire" });
   await dialog.getByLabel("Repertoire").selectOption({ label: `${REPERTOIRE} (White)` });
@@ -460,7 +458,6 @@ test("Back from Study with the engine panel open to an analysis board analyses t
     .click();
   await expect(gameMoves).toBeVisible();
   // The study's search stopped and the board's runs again, at its move.
-  await page.getByRole("tab", { name: "Engine" }).click();
   await expect(analysis).toHaveAttribute("aria-checked", "true");
   await expect.poll(() => engineCommands(log).slice(from).at(-1)).toBe("go infinite");
   const since = engineCommands(log).slice(from);

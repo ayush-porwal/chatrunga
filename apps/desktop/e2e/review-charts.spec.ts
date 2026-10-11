@@ -184,14 +184,14 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
 
   // A click jumps the board there; the current-move line follows in every view.
   await nxe5.click();
-  await expect(counter(page)).toHaveText("7 / 14");
+  await expect(counter(page)).toHaveText("4 / 7");
   await expect(charts(page).locator("[data-current-move]")).toHaveCount(3);
   // Focused, the charts step through the moves with the arrow keys.
   await charts(page)
     .getByRole("group", { name: /Winning chances, difficulty/ })
     .focus();
   await page.keyboard.press("ArrowRight");
-  await expect(counter(page)).toHaveText("8 / 14");
+  await expect(counter(page)).toHaveText("4 / 7");
 
   // Each strip folds on its own, remembered across a reload, and hands its height to the views
   // still open. With Game Review folded the charts fill the panel, so they have height to share
@@ -237,7 +237,7 @@ test("the three charts share a tooltip, jump the board, fold and resize", async 
   await expect(
     sidebar(page).getByRole("button", { name: "Analyze", exact: true })
   ).not.toHaveAttribute("aria-pressed");
-  await expect(counter(page)).toHaveText(/ \/ 14$/);
+  await expect(counter(page)).toHaveText(/ \/ 7$/);
   await expect(charts(page)).toBeVisible();
   await expect(view(page, "winning-chances").locator('circle[data-ply="7"]')).toHaveAttribute(
     "data-annotation",
@@ -313,7 +313,7 @@ test("the Analyze page shows the Charts for an unreviewed game: its clocks, no e
   await skipWelcome(page);
   await importPgnFile(app, page, writePgn(profile, "clocked.pgn", trapPgn(true)));
   await sidebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
-  await expect(counter(page)).toHaveText("14 / 14");
+  await expect(counter(page)).toHaveText("7 / 7");
 
   await expect(charts(page).getByRole("button", { name: "Charts" })).toBeVisible();
   // The Winning chances strip is there, waiting for a review; no Maia prompt on Analyze.
@@ -324,5 +324,5 @@ test("the Analyze page shows the Charts for an unreviewed game: its clocks, no e
   // Time per move from the clocks, linked to the board.
   await expect(view(page, "times")).toBeVisible();
   await view(page, "times").locator('rect[data-ply="7"]').click();
-  await expect(counter(page)).toHaveText("7 / 14");
+  await expect(counter(page)).toHaveText("4 / 7");
 });
