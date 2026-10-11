@@ -16,4 +16,4 @@ Use the Node/pnpm versions in package.json.
 - Verify affected Electron journeys (`pnpm --filter @chaturanga/desktop build`, then `test:e2e:run`); CI runs full checks before merge.
 - Preserve unrelated edits; report results and unverified checks.
 
-Checks: `pnpm lint` (Oxlint, type-aware; `oxlint.config.ts`), `pnpm format:check` (`pnpm format` writes), `pnpm -r typecheck`, `pnpm --filter @chaturanga/desktop exec vitest run <file>` (focused), `pnpm test:coverage`, `node --test scripts/*.test.mjs`. A lint exception is `// oxlint-disable-next-line <rule> -- <why it is safe>`.
+Checks: `pnpm lint` (Oxlint, type-aware, `oxlint.config.ts`; then knip for unused files, exports and dependencies, `knip.json`), `pnpm format:check` (`pnpm format` writes), `pnpm -r typecheck`, `pnpm --filter @chaturanga/desktop exec vitest run <file>` (focused), `pnpm test:coverage`, `node --test scripts/*.test.mjs`. A lint exception is `// oxlint-disable-next-line <rule> -- <why it is safe>`.

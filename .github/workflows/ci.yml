@@ -30,7 +30,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Oxlint with type-aware rules: any error, warning or unused disable comment fails.
+      # Oxlint with type-aware rules (any error, warning or unused disable comment fails), then
+      # knip: unused files, exports, types and dependencies.
       - name: Lint
         run: pnpm lint
 

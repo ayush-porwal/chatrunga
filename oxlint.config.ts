@@ -31,7 +31,7 @@ export default defineConfig({
     ".claude/**",
     ".worktrees/**"
   ],
-  plugins: ["eslint", "typescript", "unicorn", "oxc", "react", "jsx-a11y"],
+  plugins: ["eslint", "typescript", "unicorn", "oxc", "react", "jsx-a11y", "import"],
   // TanStack Query's rules have no native port. The plugin is pinned (JS plugins are alpha) and
   // scripts/lint-config.test.mjs proves its rules still fire.
   jsPlugins: [
@@ -136,7 +136,61 @@ export default defineConfig({
     "@tanstack/query/mutation-property-order": "error",
 
     // A lint-disable comment names its rule and says, after `--`, why the exception is safe.
-    "chaturanga/disable-needs-reason": "error"
+    "chaturanga/disable-needs-reason": "error",
+
+    // Size and branching: a function that does one thing reads (and tests) as one thing. The
+    // "modified" count takes a switch as one branch, since switches over unions are exhaustive
+    // (switch-exhaustiveness-check) and read as one decision.
+    complexity: ["error", { max: 15, variant: "modified" }],
+    "max-depth": ["error", { max: 4 }],
+    "max-nested-callbacks": ["error", { max: 4 }],
+    "max-params": ["error", { max: 4 }],
+    "max-lines": ["error", { max: 800, skipBlankLines: true, skipComments: true }],
+
+    // Dead code: branches the types prove never run, casts and arguments that change nothing,
+    // and code with no effect.
+    "typescript/no-unnecessary-condition": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/no-unnecessary-type-arguments": "error",
+    "typescript/no-unnecessary-type-parameters": "error",
+    "typescript/no-unnecessary-boolean-literal-compare": "error",
+    "typescript/no-unnecessary-template-expression": "error",
+    "typescript/no-unnecessary-parameter-property-assignment": "error",
+    "typescript/no-redundant-type-constituents": "error",
+    "typescript/no-duplicate-type-constituents": "error",
+    "typescript/no-useless-empty-export": "error",
+    "typescript/no-meaningless-void-operator": "error",
+    "typescript/no-extraneous-class": "error",
+    "no-unused-expressions": "error",
+    "no-unused-private-class-members": "error",
+    "no-unused-labels": "error",
+    "no-constant-condition": "error",
+    "no-constant-binary-expression": "error",
+    "no-self-assign": "error",
+    "no-empty-pattern": "error",
+    "no-empty-function": "error",
+    "no-lone-blocks": "error",
+    "no-unneeded-ternary": "error",
+    "no-useless-call": "error",
+    "no-useless-catch": "error",
+    "no-useless-computed-key": "error",
+    "no-useless-concat": "error",
+    "no-useless-constructor": "error",
+    "no-useless-escape": "error",
+    "no-useless-rename": "error",
+    "no-useless-return": "error",
+    "unicorn/no-useless-fallback-in-spread": "error",
+    "unicorn/no-useless-length-check": "error",
+    "unicorn/no-useless-promise-resolve-reject": "error",
+    "unicorn/no-useless-switch-case": "error",
+    "unicorn/no-useless-collection-argument": "error",
+    "unicorn/no-unnecessary-await": "error",
+    "unicorn/no-unnecessary-array-flat-depth": "error",
+    "unicorn/no-unnecessary-slice-end": "error",
+    "import/no-duplicates": "error",
+    "import/no-cycle": "error",
+    "import/no-self-import": "error",
+    "import/no-empty-named-blocks": "error"
   },
   overrides: [
     // The TypeScript compiler already rejects these in .ts files (typescript-eslint's
@@ -271,8 +325,37 @@ export default defineConfig({
         // vi.fn() takes its types from its implementation or the method it spies on; restating
         // them as type parameters adds noise, not safety.
         "vitest/require-mock-type-parameters": "off",
+        // Stubbed callbacks and listeners in tests are no-ops on purpose.
+        "no-empty-function": "off",
         // Await the milestone (or use fake timers), never a real sleep.
         "chaturanga/no-test-sleep": "error"
+      }
+    },
+    // Vitest's unit tests (not the repo scripts' node:test files, nor Playwright's e2e specs).
+    {
+      files: [
+        "apps/desktop/src/**/*.test.{ts,tsx}",
+        "apps/marketing/src/**/*.test.ts",
+        "packages/shared/src/**/*.test.ts"
+      ],
+      plugins: ["vitest"],
+      rules: {
+        // A test states one case: no branching inside it, every test under a describe, hooks in
+        // the order they run, and vitest's own API (imported, never node:test's).
+        "vitest/no-conditional-in-test": "error",
+        "vitest/prefer-importing-vitest-globals": "error",
+        "vitest/require-top-level-describe": "error",
+        "vitest/prefer-hooks-in-order": "error",
+        "vitest/no-import-node-test": "error",
+        // The matcher that says what is checked (and fails with the clearest message).
+        "vitest/prefer-strict-equal": "error",
+        "vitest/prefer-to-be": "error",
+        "vitest/prefer-to-have-length": "error",
+        "vitest/prefer-called-with": "error",
+        "vitest/prefer-called-times": "error",
+        "vitest/prefer-spy-on": "error",
+        "vitest/prefer-each": "error",
+        "vitest/prefer-mock-return-shorthand": "error"
       }
     },
     // Plain JS (repo scripts, fake engines): no tsconfig type-checks these files, so their values
@@ -287,7 +370,10 @@ export default defineConfig({
         "typescript/no-unsafe-assignment": "off",
         "typescript/no-unsafe-call": "off",
         "typescript/no-unsafe-member-access": "off",
-        "typescript/no-unsafe-return": "off"
+        "typescript/no-unsafe-return": "off",
+        // Likewise the dead-branch checks: an inferred type says nothing about what can happen.
+        "typescript/no-unnecessary-condition": "off",
+        "typescript/no-unnecessary-type-assertion": "off"
       }
     },
     {
