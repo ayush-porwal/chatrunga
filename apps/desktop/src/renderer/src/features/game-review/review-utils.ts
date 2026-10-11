@@ -133,8 +133,16 @@ export function moveLabel(move: MoveReview): string {
 
 export function buildRatingCurveForMove(move: MoveReview, userRating: number) {
   const predictions = move.humanPredictions ?? [];
-  const played = readPredictionProbabilities(predictions, move.playedMove);
-  const best = readPredictionProbabilities(predictions, move.bestMove ?? "");
+  const played = readPredictionProbabilities(
+    predictions,
+    move.playedMove,
+    (prediction) => prediction.playedProb
+  );
+  const best = readPredictionProbabilities(
+    predictions,
+    move.bestMove ?? "",
+    (prediction) => prediction.bestProb
+  );
   return buildRatingCurve({
     playedProb: played,
     bestProb: best,
@@ -143,16 +151,22 @@ export function buildRatingCurveForMove(move: MoveReview, userRating: number) {
   });
 }
 
+/**
+ * `uci`'s probability at each Maia level: the full policy's (`fromFull`, stored for the played and
+ * best moves), else its share among the level's top moves (older reviews), else 0.
+ */
 function readPredictionProbabilities(
   predictions: readonly RatingPrediction[],
-  uci: string
+  uci: string,
+  fromFull: (prediction: RatingPrediction) => number | undefined
 ): [number, number, number, number, number] {
   const result: [number, number, number, number, number] = [0, 0, 0, 0, 0];
   if (!uci) return result;
   predictions.forEach((prediction) => {
     const index = MAIA_BUCKETS.indexOf(prediction.rating);
     if (index < 0) return;
-    result[index] = prediction.topMoves.find((item) => item.uci === uci)?.prob ?? 0;
+    result[index] =
+      fromFull(prediction) ?? prediction.topMoves.find((item) => item.uci === uci)?.prob ?? 0;
   });
   return result;
 }

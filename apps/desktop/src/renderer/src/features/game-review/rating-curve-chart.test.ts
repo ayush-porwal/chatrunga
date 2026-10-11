@@ -86,6 +86,15 @@ describe("predictionLines", () => {
     expect(linesOf(move())[2].probs).toStrictEqual(PROBS.d2d4);
   });
 
+  it("reads the played move from the full policy, outside the top moves too", () => {
+    const outside = move({
+      playedMove: "h2h4",
+      san: "h4",
+      humanPredictions: predictions().map((prediction) => ({ ...prediction, playedProb: 0.003 }))
+    });
+    expect(linesOf(outside)[0].probs).toStrictEqual([0.003, 0.003, 0.003, 0.003, 0.003]);
+  });
+
   it("draws one line for a move played that is the best", () => {
     const best = move({ playedMove: "e2e4", san: "e4" });
     expect(linesOf(best).map((line) => line.role)).toStrictEqual(["played", "maia"]);
