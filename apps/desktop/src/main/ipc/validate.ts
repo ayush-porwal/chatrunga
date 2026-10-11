@@ -308,7 +308,8 @@ export function parseStartAnalysisInput(value: unknown): StartLiveAnalysisInput 
     moves: asUciMoves(input.moves ?? []),
     multipv: asOptionalPositive(input.multipv, "multipv", SEARCH_LIMITS.multipv, true),
     depth: asOptionalPositive(input.depth, "depth", SEARCH_LIMITS.depth, true),
-    moveTimeMs: asOptionalPositive(input.moveTimeMs, "moveTimeMs", SEARCH_LIMITS.moveTimeMs)
+    moveTimeMs: asOptionalPositive(input.moveTimeMs, "moveTimeMs", SEARCH_LIMITS.moveTimeMs),
+    fresh: optional(input.fresh, (fresh) => asBoolean(fresh, "fresh")) ?? false
   };
 }
 

@@ -4,6 +4,7 @@ import type { Color } from "@chaturanga/shared/types/chess";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { PreviewPieceRole } from "../settings/piece-style-preview";
+import { EngineAvatar } from "../analysis/EngineAvatar";
 import { PieceArt, useBoardSquareColors } from "./piece-art";
 import { formatElapsed } from "./time-control";
 
@@ -35,23 +36,26 @@ export function KingTile({ color }: { color: Color | "random" }) {
 }
 
 /**
- * The opponent: an engine (accent tile, its picture when it has one), a Lichess opponent (neutral
- * tile with an icon), or nobody yet (dashed). `side` puts the opponent's colour on the corner.
+ * The opponent: an engine (its image slot: its picture, or a knight on the board's dark square), a
+ * Lichess opponent (neutral tile with an icon), or nobody yet (dashed). `side` puts the
+ * opponent's colour on the corner.
  */
 export function OpponentTile({
   kind,
   icon,
-  imageSrc,
+  imagePath,
   side
 }: {
   kind: "engine" | "online" | "empty";
-  icon: ReactNode;
-  imageSrc?: string | null;
+  /** The online and empty tiles' icon. */
+  icon?: ReactNode;
+  /** The engine's picture. */
+  imagePath?: string | null;
   side?: Color | null;
 }) {
   return (
     <span className="play-tile" data-kind={kind}>
-      {imageSrc ? <img src={imageSrc} alt="" /> : icon}
+      {kind === "engine" ? <EngineAvatar imagePath={imagePath} size="fill" /> : icon}
       {side ? (
         <i
           className={cn("play-tile-dot", side === "white" ? "bg-piece-white" : "bg-piece-black")}

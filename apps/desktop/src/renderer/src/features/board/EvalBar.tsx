@@ -7,6 +7,7 @@ import type { EngineScore, MoveReview } from "@chaturanga/shared/types/engine";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { useGameStore } from "../../stores/game-store";
 import { activeBestLine } from "../game/best-line-cursor";
+import { boardShowsLiveAnalysis } from "../analysis/live-analysis";
 import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
 import { usePuzzleStore } from "../../stores/puzzle-store";
 import { useDisplayedReviewMoves } from "../../stores/review-validity";
@@ -115,9 +116,10 @@ export function useLiveAnalysisScore(): EngineScore | null {
 }
 
 /**
- * The evaluation for the position on the board: live analysis while the engine runs, else the
- * game review's evaluation of this move. Null when there is none, and always during a match that
- * is still being played (an engine game or a live Lichess game) or a puzzle not yet solved or failed.
+ * The evaluation for the position on the board: live analysis while the engine runs (or its
+ * frozen score while it's paused on this position), else the game review's evaluation of this
+ * move. Null when there is none, and always during a match that is still being played (an engine
+ * game or a live Lichess game) or a puzzle not yet solved or failed.
  */
 export function useBoardEval(): BoardEval | null {
   const game = useGameStore(
@@ -135,6 +137,7 @@ export function useBoardEval(): BoardEval | null {
   );
   const onlineGameLive = useLichessStore(selectLiveGameInProgress);
   const liveScore = useLiveAnalysisScore();
+  const paused = useAnalysisStore((state) => state.paused);
   // A puzzle still being solved: any evaluation would give the answer away.
   const puzzleOpen = usePuzzleStore(
     (state) => Boolean(state.activePuzzle) && state.outcome === "pending"
@@ -142,7 +145,13 @@ export function useBoardEval(): BoardEval | null {
   const reviewMoves = useDisplayedReviewMoves();
   if (game.matchOn || onlineGameLive || (game.mode === "puzzle" && puzzleOpen)) return null;
 
-  if (game.mode === "analysis") return liveAnalysisEval(game.fen, liveScore);
+  if (
+    boardShowsLiveAnalysis(
+      { mode: game.mode, currentNodeId: game.nodeId, currentFen: game.fen },
+      paused
+    )
+  )
+    return liveAnalysisEval(game.fen, liveScore);
 
   if (!reviewMoves.length || game.bestLine) return null;
   const move = reviewMoves.find((item) => item.nodeId === game.nodeId);
@@ -183,9 +192,9 @@ export const EvalBar = memo(function EvalBar({ orientation }: { orientation: Col
 });
 
 /**
- * The vertical eval bar beside a board, drawn as chess.com draws it: White's share in white grows
- * from White's side of the board over Black's warm dark grey, and the evaluation is printed small
- * and bold at the better side's end (evalBarLabel), dark on the white fill and light on the grey.
+ * The vertical eval bar beside a board: White's share in the white side's colour grows from White's
+ * side of the board over the black side's dark grey, and the evaluation is printed small and bold
+ * at the better side's end (evalBarLabel), dark on the white fill and light on the grey.
  * With `live` analysis it keeps its last value while a new search starts, so it glides instead of
  * blinking.
  */
@@ -220,11 +229,11 @@ export function EvalBarFill({
       role="img"
       aria-label={`Evaluation ${shown.label}`}
       title={shown.label}
-      className="relative h-full w-full overflow-hidden rounded-[3px] bg-eval-black animate-fade-in"
+      className="relative h-full w-full overflow-hidden rounded-md bg-piece-black shadow-[inset_0_0_0_1px_#000] animate-fade-in"
     >
       <div
         className={cn(
-          "absolute inset-x-0 bg-eval-white transition-[height] duration-emphasis ease-standard motion-reduce:transition-none",
+          "absolute inset-x-0 bg-piece-white transition-[height] duration-emphasis ease-standard motion-reduce:transition-none",
           whiteAtBottom ? "bottom-0" : "top-0"
         )}
         style={{ height: `${shown.whiteShare}%` }}
@@ -234,9 +243,9 @@ export function EvalBarFill({
         aria-hidden="true"
         data-eval-side={text.side}
         className={cn(
-          "absolute inset-x-0 overflow-hidden text-center text-[10px] font-bold leading-none tracking-tighter tabular-nums whitespace-nowrap select-none",
-          text.atTop ? "top-[5px]" : "bottom-[5px]",
-          text.side === "white" ? "text-eval-black" : "text-eval-white"
+          "absolute inset-x-0 overflow-hidden text-center font-mono text-[9px] font-bold leading-none tracking-[-0.04em] tabular-nums whitespace-nowrap select-none",
+          text.atTop ? "top-1.5" : "bottom-1.5",
+          text.side === "white" ? "text-side-white-fg" : "text-fg"
         )}
       >
         {text.text}

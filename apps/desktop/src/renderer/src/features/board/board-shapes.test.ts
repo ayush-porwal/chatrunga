@@ -5,6 +5,7 @@ import { START_FEN } from "@chaturanga/shared/chess/position";
 import {
   annotationsFromShapes,
   chessgroundMovableColor,
+  liveAnalysisShapes,
   movableDests,
   shapesFromAnnotations,
   sideToMoveIsMovable
@@ -93,5 +94,54 @@ describe("chessgroundMovableColor", () => {
     expect(chessgroundMovableColor("none")).toBeUndefined();
     expect(chessgroundMovableColor("both")).toBe("both");
     expect(chessgroundMovableColor("black")).toBe("black");
+  });
+});
+
+describe("liveAnalysisShapes", () => {
+  const RUY = ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"];
+  const white = { bestMoveArrow: true, planArrows: 0 } as const;
+  const arrows = (shapes: DrawShape[]) =>
+    shapes.map(({ orig, dest, brush }) => `${orig}${dest}:${brush}`);
+
+  it("draws the single best-move arrow with plan arrows off, and nothing with it off too", () => {
+    expect(liveAnalysisShapes(START_FEN, RUY, white)).toEqual([
+      { orig: "e2", dest: "e4", brush: "blue" }
+    ]);
+    expect(liveAnalysisShapes(START_FEN, RUY, { ...white, bestMoveArrow: false })).toEqual([]);
+  });
+
+  it("draws that many moves of the line, numbered, in the default arrow colour", () => {
+    const shapes = liveAnalysisShapes(START_FEN, RUY, { ...white, planArrows: 3 });
+    expect(arrows(shapes)).toEqual(["e2e4:blue", "e7e5:blue", "g1f3:blue"]);
+    expect(shapes.map((shape) => shape.label?.text)).toEqual(["1", "2", "3"]);
+    // Engine arrows off hides them too: the plan count only says which arrows show.
+    expect(
+      liveAnalysisShapes(START_FEN, RUY, { ...white, planArrows: 2, bestMoveArrow: false })
+    ).toEqual([]);
+  });
+
+  it("starts with Black's move when Black is to move, and draws castling and at most four moves", () => {
+    const line = ["e7e5", "g1f3", "b8c6", "f1c4", "g8f6"];
+    expect(arrows(liveAnalysisShapes(BLACK_TO_MOVE, line, { ...white, planArrows: 4 }))).toEqual([
+      "e7e5:blue",
+      "g1f3:blue",
+      "b8c6:blue",
+      "f1c4:blue"
+    ]);
+    const castles = "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4";
+    expect(
+      arrows(liveAnalysisShapes(castles, ["e1g1", "g8f6"], { ...white, planArrows: 9 }))
+    ).toEqual(["e1g1:blue", "g8f6:blue"]);
+  });
+
+  it("stops at the first move that isn't legal in turn (a line of another position)", () => {
+    const plan = { ...white, planArrows: 4 };
+    expect(arrows(liveAnalysisShapes(START_FEN, ["e2e4", "e2e4", "g1f3"], plan))).toEqual([
+      "e2e4:blue"
+    ]);
+    expect(liveAnalysisShapes(START_FEN, ["e7e5", "g1f3"], plan)).toEqual([]);
+    expect(liveAnalysisShapes(START_FEN, ["e7e5"], white)).toEqual([]);
+    expect(liveAnalysisShapes(START_FEN, ["zz"], plan)).toEqual([]);
+    expect(liveAnalysisShapes("not a fen", RUY, plan)).toEqual([]);
   });
 });

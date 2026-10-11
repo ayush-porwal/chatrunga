@@ -14,6 +14,9 @@ import { RECENT_GAMES_FETCH } from "./play-layout";
 /** Rows the Recent games table shows at first, and adds on each "Load more games". */
 export const RECENT_GAMES_ROWS = 10;
 
+/** How long typing pauses before the library is searched (Recent games, the Library tab). */
+export const GAME_SEARCH_DEBOUNCE_MS = 200;
+
 /** The newest games, read once for the table and the page (one query key, see play-layout.ts). */
 export function useRecentGamesQuery() {
   return useLatestGamesQuery(RECENT_GAMES_FETCH);

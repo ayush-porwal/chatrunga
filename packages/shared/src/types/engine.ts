@@ -79,6 +79,8 @@ export type StartLiveAnalysisInput = {
   depth?: number | null;
   /** Search for this long (ms), then stop. */
   moveTimeMs?: number | null;
+  /** Restart from scratch: the engine forgets what it found (`ucinewgame`, its hash) before searching. */
+  fresh?: boolean;
 };
 
 /** Clock snapshot passed to UCI `go` for timed games. */
@@ -193,6 +195,14 @@ export type MoveAnnotation =
   | "inaccuracy"
   | "mistake"
   | "blunder";
+
+/** The marks that are the mover's errors (a better move was there): their best line teaches it. */
+export const ERROR_MARKS: ReadonlySet<MoveAnnotation> = new Set([
+  "inaccuracy",
+  "mistake",
+  "blunder",
+  "miss"
+]);
 
 /**
  * Evidence behind an assessment, shown with the move and given to the AI coach so it explains

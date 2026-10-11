@@ -1,5 +1,6 @@
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import type { Color, GameMode, MoveNode } from "@chaturanga/shared/types/chess";
+import { numberedLine } from "../game-review/review-utils";
 import { currentLineUcis } from "./engine-game-helpers";
 
 /** The game board as live analysis reads it. */
@@ -88,4 +89,59 @@ export function liveAnalysisSubject(
     fen: board.currentFen,
     moves: () => currentLineUcis(board.moveTree, board.currentNodeId)
   };
+}
+
+/**
+ * Live analysis switched off with lines to keep (paused): the position they belong to. They stay
+ * shown, frozen, until analysis resumes or the board's engine work ends (see the analysis store).
+ */
+export type PausedAnalysis = {
+  nodeId: string;
+  fen: string;
+  /** The move that reached the position ("12… Nf6"), or null at the start position. */
+  move: string | null;
+};
+
+/** The board's position `nodeId` (with `fen`) as a paused analysis's. */
+export function pausedAnalysisAt(
+  moveTree: readonly MoveNode[],
+  nodeId: string,
+  fen: string
+): PausedAnalysis {
+  const node = moveTree.find((item) => item.id === nodeId);
+  return { nodeId, fen, move: node?.san ? numberedLine(node.fenBefore, [node.san]) : null };
+}
+
+/** The board is on the paused analysis's position: its arrows and score apply there. */
+export function onPausedPosition(
+  paused: PausedAnalysis | null,
+  board: Pick<AnalysisBoard, "currentNodeId" | "currentFen">
+): boolean {
+  return Boolean(
+    paused && paused.nodeId === board.currentNodeId && paused.fen === board.currentFen
+  );
+}
+
+/**
+ * The board shows the live analysis's arrows and score: while it runs, and while it is paused on
+ * the paused position (elsewhere they would belong to another position).
+ */
+export function boardShowsLiveAnalysis(
+  board: Pick<AnalysisBoard, "mode" | "currentNodeId" | "currentFen">,
+  paused: PausedAnalysis | null
+): boolean {
+  return board.mode === "analysis" || onPausedPosition(paused, board);
+}
+
+/**
+ * The engine row's status while paused: the depth its lines reached on the paused position, else
+ * the move that reached it (the lines shown are that position's).
+ */
+export function pausedStatusLabel(
+  paused: PausedAnalysis,
+  onPosition: boolean,
+  depth: number | null | undefined
+): string {
+  if (onPosition) return depth ? `Paused at depth ${depth}` : "Paused";
+  return `Paused · ${paused.move ? `after ${paused.move}` : "starting position"}`;
 }

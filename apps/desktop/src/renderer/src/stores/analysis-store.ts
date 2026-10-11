@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { EngineInfo, EngineStatus } from "@chaturanga/shared/types/engine";
-import type { AnalysisTarget } from "../features/analysis/live-analysis";
+import type { AnalysisTarget, PausedAnalysis } from "../features/analysis/live-analysis";
 
 type AnalysisStore = {
   /** The engine running now (live analysis, or the opponent in an engine game). */
@@ -18,13 +18,36 @@ type AnalysisStore = {
    * search replaces each one only when it gets as deep (stopping and starting again, or coming back
    * to a position, carries on from there instead of counting up from depth 1).
    */
-  startSearch: (resultKey?: string | null, searchId?: string | null) => void;
+  startSearch: (resultKey?: string | null, searchId?: string | null, fen?: string | null) => void;
   /** The key the running search's lines are remembered under (see startSearch). */
   resultKey: string | null;
+  /** The position (FEN) the running search's lines belong to; null when not known. */
+  resultFen: string | null;
   /** The analysis search whose lines are remembered (an engine game's never are). */
   resultSearchId: string | null;
-  /** Search the current position again from scratch, forgetting what was found for it. */
+  /**
+   * Search the current position again from scratch: its lines go now, and the next search
+   * forgets what was found for its position and has the engine clear its hash (see freshSearch).
+   */
   restartFresh: () => void;
+  /** The next search starts from scratch (Restart; see restartFresh), until one starts. */
+  freshSearch: boolean;
+  /**
+   * Live analysis switched off with lines to keep (null otherwise): the position they belong to.
+   * Its lines, best move and score stay as they were (its search was stopped and its late output
+   * is dropped) until a search starts again (the switch on, Restart), the board's engine work
+   * ends (reset) or the engine reports an error.
+   */
+  paused: PausedAnalysis | null;
+  /**
+   * The Analysis switch turned off on `position`: no search runs now. Paused (see paused) when
+   * the lines shown are that position's.
+   */
+  pause: (position: PausedAnalysis) => void;
+  /** The pause ends with its lines left as they are (its board replaced, its move gone, no engine). */
+  endPause: () => void;
+  /** A Restart no search followed (analysis off, or no engine to search with) is dropped. */
+  cancelFreshSearch: () => void;
   /**
    * Bumped to make live analysis search again even though the position didn't change (the
    * search was stopped while away, e.g. Back to an analysis board, or Analyze on the same position).
@@ -111,16 +134,23 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
   error: null,
   setActiveEngine: (activeEngineId) => set({ activeEngineId }),
   setStatus: (status) => set({ status }),
-  startSearch: (resultKey = null, searchId = null) =>
-    set({
-      status: "thinking",
-      latestInfo: null,
-      topLines: resultKey ? (results.get(resultKey) ?? []) : [],
-      bestMove: null,
-      resultKey,
-      resultSearchId: searchId
+  startSearch: (resultKey = null, searchId = null, fen = null) =>
+    set((state) => {
+      if (state.freshSearch && resultKey) results.delete(resultKey);
+      return {
+        status: "thinking",
+        latestInfo: null,
+        topLines: resultKey ? (results.get(resultKey) ?? []) : [],
+        bestMove: null,
+        resultKey,
+        resultFen: fen,
+        resultSearchId: searchId,
+        freshSearch: false,
+        paused: null
+      };
     }),
   resultKey: null,
+  resultFen: null,
   resultSearchId: null,
   searchEpoch: 0,
   restartSearch: () => set((state) => ({ searchEpoch: state.searchEpoch + 1 })),
@@ -131,10 +161,28 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
       boardSearchEpoch: state.searchEpoch + 1
     })),
   restartFresh: () =>
-    set((state) => {
-      if (state.resultKey) results.delete(state.resultKey);
-      return { topLines: [], latestInfo: null, bestMove: null, searchEpoch: state.searchEpoch + 1 };
-    }),
+    set((state) => ({
+      topLines: [],
+      latestInfo: null,
+      bestMove: null,
+      paused: null,
+      freshSearch: true,
+      searchEpoch: state.searchEpoch + 1
+    })),
+  freshSearch: false,
+  paused: null,
+  pause: (position) =>
+    set((state) => ({
+      status: "idle",
+      // Only lines of that position are kept: not ones left over from another position (a
+      // finished position isn't searched).
+      paused:
+        state.topLines.length && state.status !== "error" && state.resultFen === position.fen
+          ? position
+          : null
+    })),
+  endPause: () => set({ paused: null }),
+  cancelFreshSearch: () => set({ freshSearch: false }),
   setInfo: (latestInfo) =>
     set((state) => {
       const next = mergeInfos(state.topLines, [latestInfo]);
@@ -150,7 +198,8 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
     });
   },
   setBestMove: (bestMove) => set({ bestMove, status: "ready" }),
-  setError: (error) => set({ error, status: "error" }),
+  // An error ends a pause; clearing one (a search starting) leaves that to startSearch.
+  setError: (error) => set({ error, status: "error", ...(error ? { paused: null } : {}) }),
   target: null,
   setTarget: (target) => set({ target }),
   reset: () =>
@@ -162,6 +211,9 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
       bestMove: null,
       error: null,
       resultKey: null,
-      resultSearchId: null
+      resultFen: null,
+      resultSearchId: null,
+      freshSearch: false,
+      paused: null
     })
 }));

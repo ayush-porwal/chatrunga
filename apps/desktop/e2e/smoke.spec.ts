@@ -52,16 +52,25 @@ test("imports a PGN, steps through it with the keyboard, and closes a dialog wit
     await expect(moves.getByRole("button", { name: san, exact: true })).toBeVisible();
   }
   await expect(page.getByRole("banner", { name: "Titlebar" })).toContainText(/Alpha\s*vs\s*Beta/);
-  await expect(moveCounter(page)).toHaveText("6 / 6");
+  await expect(moveCounter(page)).toHaveText("3 / 3");
 
   // The arrows step through the game once the board has focus (not a sidebar button).
   await page.getByRole("region", { name: "Board" }).click({ position: { x: 3, y: 3 } });
+  // The counter counts full moves; the keys step a ply at a time (the tree's current move says which).
+  const current = (san: string) =>
+    expect(moves.getByRole("button", { name: san, exact: true })).toHaveAttribute(
+      "aria-current",
+      "step"
+    );
   await page.keyboard.press("ArrowLeft");
-  await expect(moveCounter(page)).toHaveText("5 / 6");
+  await current("Bb5");
+  await expect(moveCounter(page)).toHaveText("3 / 3");
   await page.keyboard.press("ArrowLeft");
-  await expect(moveCounter(page)).toHaveText("4 / 6");
+  await current("Nc6");
+  await expect(moveCounter(page)).toHaveText("2 / 3");
   await page.keyboard.press("ArrowRight");
-  await expect(moveCounter(page)).toHaveText("5 / 6");
+  await current("Bb5");
+  await expect(moveCounter(page)).toHaveText("3 / 3");
 
   await sidebar(page).getByRole("button", { name: "Game review", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "Choose a game" });
@@ -84,7 +93,7 @@ test("keeps an edited game across a restart", async ({ launch, profile }) => {
   await moves.getByRole("button", { name: "a6", exact: true }).click();
   await moves.getByRole("button", { name: "Delete line from a6" }).click();
   await expect(moves.getByRole("button", { name: "a6", exact: true })).toHaveCount(0);
-  await expect(moveCounter(first.page)).toHaveText("5 / 5");
+  await expect(moveCounter(first.page)).toHaveText("3 / 3");
   // Closing writes the pending autosave first (no "couldn't be saved" prompt).
   await closeApp(first.app);
 
@@ -102,7 +111,7 @@ test("keeps an edited game across a restart", async ({ launch, profile }) => {
   const reopened = second.page.getByRole("tree", { name: "Game moves" });
   await expect(reopened.getByRole("button", { name: "Bb5", exact: true })).toBeVisible();
   await expect(reopened.getByRole("button", { name: "a6", exact: true })).toHaveCount(0);
-  await expect(moveCounter(second.page)).toHaveText(/\/ 5$/);
+  await expect(moveCounter(second.page)).toHaveText(/\/ 3$/);
 });
 
 test("loads a position from a FEN and plays a move from it", async ({ launch }) => {
@@ -221,10 +230,10 @@ test("works offline: library and engine analysis without a network", async ({
 
   // Analysis of the start position (the fake engine's line, 1.e4 e5, is legal there).
   await page.getByRole("button", { name: "First move" }).click();
-  await expect(moveCounter(page)).toHaveText("0 / 6");
-  await page.getByRole("tab", { name: "Engine" }).click();
-  const panel = page.getByRole("tabpanel", { name: "Engine" });
-  // The Analysis switch in the tab's header row starts the engine, and stops it.
+  await expect(moveCounter(page)).toHaveText("0 / 3");
+  await page.getByRole("tab", { name: "Moves" }).click();
+  const panel = page.getByRole("region", { name: "Engine" });
+  // The Analysis switch in the Moves tab's engine row starts the engine, and stops it.
   const analysis = page
     .getByRole("complementary", { name: "Game" })
     .getByRole("switch", { name: "Analysis" });

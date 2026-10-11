@@ -59,12 +59,26 @@ export function useDisplayedReviewMoves(): MoveReview[] {
   return useMemo(() => compatibleReviewMoves(moves, moveTree), [moveTree, moves]);
 }
 
-/** How many of the shown analysis's moves the game no longer has (0: it still matches). */
+/**
+ * How many full moves of the analysis the game no longer has, counted as the move numbers they
+ * touch (White's move and Black's reply are one move), so a changed reply and the moves after it
+ * read as moves, not plies. 0: it still matches.
+ */
+export function outdatedFullMoves(moves: MoveReview[], moveTree: readonly MoveNode[]): number {
+  const kept = new Set(compatibleReviewMoves(moves, moveTree));
+  const numbers = new Set<number>();
+  // A ply counts from the game's real start (a Black-to-move position opens on an even ply), so
+  // half of it, rounded up, is the move's own number.
+  for (const move of moves) if (!kept.has(move)) numbers.add(Math.ceil(move.ply / 2));
+  return numbers.size;
+}
+
+/** How many full moves of the shown analysis the game no longer has (outdatedFullMoves). */
 export function useOutdatedReviewMoves(): number {
   const review = useReviewStore((state) => (state.status === "running" ? null : state.review));
   const moveTree = useGameStore((state) => state.moveTree);
   return useMemo(
-    () => (review ? review.moves.length - compatibleReviewMoves(review.moves, moveTree).length : 0),
+    () => (review ? outdatedFullMoves(review.moves, moveTree) : 0),
     [moveTree, review]
   );
 }

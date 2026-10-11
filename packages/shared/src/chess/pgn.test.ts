@@ -7,9 +7,13 @@ import {
   exportGameToPgn,
   importPgnText,
   nodeIdForBoardFen,
-  withRealPlies
+  withRealPlies,
+  type PgnAnalysis,
+  type PgnAnalysisMove
 } from "./pgn";
 import { applyUserMove, START_FEN } from "./position";
+import type { MoveNode } from "../types/chess";
+import type { EngineScore, MoveAnnotation } from "../types/engine";
 
 describe("PGN import/export", () => {
   it("imports a simple PGN and builds a move tree", () => {
@@ -205,5 +209,117 @@ describe("PGN variations", () => {
   ])("places each variation after the move it replaces: %s", (movetext) => {
     const exported = exportGameToPgn(importPgnText(movetext).game).split("\n").pop();
     expect(exported).toBe(movetext);
+  });
+});
+
+describe("PGN with the analysis", () => {
+  const game = importPgnText(
+    '[Event "Demo"]\n[Result "1-0"]\n\n1. e4 e5 2. Qh5 (2. Nf3 Nc6 3. Bb5) 2... Nc6 { [%eval 0.50] } 3. Bc4 $1 Nf6 4. Qxf7# 1-0'
+  ).game;
+  const byId = new Map(game.moveTree.map((node) => [node.id, node]));
+  const mainline: MoveNode[] = [];
+  for (let id = byId.get("root")?.children[0]; id; id = byId.get(id)?.children[0]) {
+    const node = byId.get(id);
+    if (node) mainline.push(node);
+  }
+  const cp = (value: number): EngineScore => ({ type: "cp", value });
+  /** A reviewed main-line move (by index): its mark, eval after it, and the best line before it. */
+  const reviewed = (
+    index: number,
+    annotation: MoveAnnotation | null,
+    evalAfter: EngineScore | null,
+    bestLine: string[] = [],
+    bestEvalAfter: EngineScore | null = null
+  ): PgnAnalysisMove => ({
+    nodeId: mainline[index]!.id,
+    fenBefore: mainline[index]!.fenBefore,
+    evalAfter,
+    bestEvalAfter,
+    bestMove: bestLine[0] ?? null,
+    bestLine,
+    assessment: { annotation }
+  });
+  const analysis: PgnAnalysis = {
+    opening: { eco: "C23", name: "Bishop's Opening" },
+    moves: [
+      reviewed(0, "book", cp(30)),
+      reviewed(1, null, cp(32)),
+      // A best line already explored by hand: only its new move is added.
+      reviewed(2, "inaccuracy", cp(0), ["g1f3", "b8c6", "f1c4"], cp(35)),
+      // Replaces the eval the imported game brought.
+      reviewed(3, "excellent", cp(60)),
+      // Replaces the imported $1; its best line starts with the move played, so it adds nothing.
+      reviewed(4, "mistake", cp(20), ["f1c4", "f8c5"], cp(25)),
+      reviewed(5, "blunder", { type: "mate", value: 1 }, ["d8e7", "g1f3"], cp(40)),
+      // Checkmate (`mate 0`): no eval.
+      reviewed(6, "great", { type: "mate", value: 0 })
+    ]
+  };
+
+  it("writes marks as NAGs, evals, the opening and best lines as variations", () => {
+    const pgn = exportGameToPgn({ ...game, analysis });
+    expect(pgn).toContain('[ECO "C23"]\n[Opening "Bishop\'s Opening"]');
+    expect(pgn.split("\n").pop()).toBe(
+      "1. e4 { [%eval 0.30] } e5 { [%eval 0.32] } 2. Qh5 $6 { [%eval 0.00] } " +
+        "(2. Nf3 { [%eval 0.35] } Nc6 3. Bb5 (3. Bc4)) 2... Nc6 { [%eval 0.60] } " +
+        "3. Bc4 $2 { [%eval 0.20] } Nf6 $4 { [%eval #1] } (3... Qe7 { [%eval 0.40] } 4. Nf3) " +
+        "4. Qxf7# $1 1-0"
+    );
+  });
+
+  it("drops an imported quality NAG the review marks without a glyph", () => {
+    // 3. Bc4 came with $1; reviewed as excellent (no standard glyph), it carries no NAG.
+    const pgn = exportGameToPgn({ ...game, analysis: { moves: [reviewed(4, "excellent", null)] } });
+    expect(pgn).toContain("3. Bc4 Nf6");
+    expect(pgn).not.toContain("$1");
+  });
+
+  it("keeps every node when a best line's new id is already taken", () => {
+    // 3. Bb5 (in the 2. Nf3 line) gets the id 3... Nf6's best line would take for Qe7.
+    const taken = `${mainline[5]!.id}~best-0`;
+    const bb5 = game.moveTree.find((node) => node.san === "Bb5")!;
+    const rename = (id: string) => (id === bb5.id ? taken : id);
+    const moveTree = game.moveTree.map((node) => ({
+      ...node,
+      id: rename(node.id),
+      parentId: node.parentId === null ? null : rename(node.parentId),
+      children: node.children.map(rename)
+    }));
+    const pgn = exportGameToPgn({ ...game, moveTree, analysis });
+    expect(pgn.split("\n").pop()).toBe(
+      "1. e4 { [%eval 0.30] } e5 { [%eval 0.32] } 2. Qh5 $6 { [%eval 0.00] } " +
+        "(2. Nf3 { [%eval 0.35] } Nc6 3. Bb5 (3. Bc4)) 2... Nc6 { [%eval 0.60] } " +
+        "3. Bc4 $2 { [%eval 0.20] } Nf6 $4 { [%eval #1] } (3... Qe7 { [%eval 0.40] } 4. Nf3) " +
+        "4. Qxf7# $1 1-0"
+    );
+  });
+
+  it("re-imports with every move, NAG and header, and exports the same again", () => {
+    const pgn = exportGameToPgn({ ...game, analysis });
+    const again = importPgnText(pgn, { strict: true }).game;
+    expect(again.headers).toMatchObject({ eco: "C23", opening: "Bishop's Opening", result: "1-0" });
+    expect(again.moveTree.find((node) => node.san === "Qh5")?.nags).toEqual(["$6"]);
+    expect(again.moveTree.find((node) => node.san === "Qe7")?.fenBefore).toBe(
+      mainline[5]!.fenBefore
+    );
+    expect(exportGameToPgn(again)).toBe(pgn);
+  });
+
+  it("keeps the game's own opening headers and its moves without a review", () => {
+    const headers = { ...game.headers, eco: "C20", opening: "King's Pawn Game" };
+    const pgn = exportGameToPgn({ headers, moveTree: game.moveTree, analysis });
+    expect(pgn).toContain('[ECO "C20"]');
+    expect(pgn).not.toContain("C23");
+    expect(exportGameToPgn({ ...game, analysis: { moves: [] } })).toBe(exportGameToPgn(game));
+  });
+
+  it.each([
+    [cp(-125), "-1.25"],
+    [cp(7), "0.07"],
+    [{ type: "mate", value: 3 } as const, "#3"],
+    [{ type: "mate", value: -2 } as const, "#-2"]
+  ])("writes %o as [%%eval %s]", (score, text) => {
+    const pgn = exportGameToPgn({ ...game, analysis: { moves: [reviewed(0, null, score)] } });
+    expect(pgn).toContain(`1. e4 { [%eval ${text}] } e5`);
   });
 });

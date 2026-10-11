@@ -5,7 +5,7 @@ import type { MoveNode } from "@chaturanga/shared/types/chess";
 import type { MoveReview } from "@chaturanga/shared/types/engine";
 import { mainlineReviewInput } from "../features/game-review/review-utils";
 import { useGameStore } from "./game-store";
-import { compatibleReviewMoves, lineStillOnMainline } from "./review-validity";
+import { compatibleReviewMoves, lineStillOnMainline, outdatedFullMoves } from "./review-validity";
 
 /**
  * The reviewed moves of the board's main line, as a finished review holds them (the review stores
@@ -57,6 +57,27 @@ describe("review validity", () => {
     useGameStore.getState().deleteLineFromNode(nodeBySan("e4").id);
     // d4 d5 is the main line now; nothing of the analysis describes it.
     expect(compatibleReviewMoves(moves, tree())).toEqual([]);
+  });
+
+  it("counts the moves the analysis no longer covers in full moves, not plies", () => {
+    const { game } = importPgnText("1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 *");
+    useGameStore.getState().loadGame({ ...game, id: "g" });
+    const moves = reviewOfMainline();
+    expect(outdatedFullMoves(moves, tree())).toBe(0);
+    // 2… Nc6 3. Bb5 a6 go: three plies over moves 2 and 3.
+    useGameStore.getState().deleteLineFromNode(nodeBySan("Nc6").id);
+    expect(outdatedFullMoves(moves, tree())).toBe(2);
+  });
+
+  it("numbers the outdated moves like the counter in a game from a Black-to-move position", () => {
+    const { game } = importPgnText(
+      '[FEN "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"]\n[SetUp "1"]\n\n1... e5 2. Nf3 Nc6 3. Bb5 *'
+    );
+    useGameStore.getState().loadGame({ ...game, id: "g" });
+    const moves = reviewOfMainline();
+    // 2… Nc6 3. Bb5 go: plies 3 and 4, which are moves 2 and 3 when Black moves first.
+    useGameStore.getState().deleteLineFromNode(nodeBySan("Nc6").id);
+    expect(outdatedFullMoves(moves, tree())).toBe(2);
   });
 
   it("drops a reviewed move replaced by another one", () => {

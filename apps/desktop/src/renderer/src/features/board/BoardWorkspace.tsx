@@ -25,7 +25,7 @@ import { useFocusCentring, useSnappedBoardFrame } from "./useBoardFrame";
  * what goes into the slots, so the board never moves or resizes when switching modes.
  *
  *   ┌ board cell (container) ──────────────┬ panel (card, fixed width) ─┐
- *   │   <BoardStage top board bottom>      │ tabs                       │
+ *   │   <BoardStage top board bottom>      │ tab bar, or tabs           │
  *   │                                      │ summary strip (fixed h)    │
  *   │                                      │ notices + body (scrolls)   │
  *   │                                      │ footer (graph + move nav)  │
@@ -66,8 +66,10 @@ export function BoardWorkspace({
   header,
   bodyCollapsed = false,
   bodyId,
+  tabBar,
   tabs,
   summary,
+  flushBody = false,
   notices,
   footer,
   children,
@@ -85,6 +87,11 @@ export function BoardWorkspace({
   header?: ReactNode;
   bodyCollapsed?: boolean;
   bodyId?: string;
+  /**
+   * Title-bar tabs across the top of the panel (the game view's Moves · Library), drawn whole by
+   * the caller: the full width, edge to edge.
+   */
+  tabBar?: ReactNode;
   /** Panel tabs (one SegmentedControl role="tablist"). */
   tabs?: ReactNode;
   /**
@@ -94,6 +101,8 @@ export function BoardWorkspace({
   summary?: ReactNode;
   /** Errors/warnings shown at the top of the panel body (never above the board). */
   notices?: ReactNode;
+  /** The body has no padding of its own: its content sets its own edges (the game view's tabs). */
+  flushBody?: boolean;
   /** Panel footer: optional eval graph + move navigation. */
   footer?: ReactNode;
   /** Panel body for the active tab. Children should fill it (`h-full`) and scroll themselves. */
@@ -239,6 +248,7 @@ export function BoardWorkspace({
               hidden={bodyCollapsed}
               className={cn("flex min-h-0 flex-col", bodyCollapsed ? "hidden" : "flex-1")}
             >
+              {tabBar ? <div className="shrink-0">{tabBar}</div> : null}
               {tabs ? (
                 <div className={cn("shrink-0 px-3", header ? "pt-1" : "pt-3")}>{tabs}</div>
               ) : null}
@@ -247,7 +257,12 @@ export function BoardWorkspace({
                   <div className="flex h-full w-full min-w-0 items-center">{summary}</div>
                 </div>
               )}
-              <div className="workspace-panel-body flex min-h-0 flex-1 flex-col gap-3 p-3">
+              <div
+                className={cn(
+                  "flex min-h-0 flex-1 flex-col",
+                  !flushBody && "workspace-panel-body gap-3 p-3"
+                )}
+              >
                 {notices}
                 <div className="min-h-0 flex-1" {...tabPanel}>
                   {children}

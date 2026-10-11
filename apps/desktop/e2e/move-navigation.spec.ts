@@ -46,14 +46,20 @@ const counter = (page: Page) => navigation(page).getByRole("paragraph").first();
 const navButton = (page: Page, name: string) =>
   navigation(page).getByRole("button", { name, exact: true });
 
-/** Clicks each navigation button and checks the counter and which buttons are enabled. */
-async function walkTheRow(page: Page, total: number) {
+/**
+ * Clicks each navigation button and checks the counter and which buttons are enabled. `plies` is
+ * the line's length; the counter reads full moves (White's move and Black's reply are one).
+ */
+async function walkTheRow(page: Page, plies: number) {
+  const moves = (count: number) => Math.ceil(count / 2);
+  const total = moves(plies);
   if (await navButton(page, "Last move").isEnabled()) await navButton(page, "Last move").click();
   await expect(counter(page)).toHaveText(`${total} / ${total}`);
   await expect(navButton(page, "Next move")).toBeDisabled();
   await expect(navButton(page, "Last move")).toBeDisabled();
   await navButton(page, "Previous move").click();
-  await expect(counter(page)).toHaveText(`${total - 1} / ${total}`);
+  await expect(counter(page)).toHaveText(`${moves(plies - 1)} / ${total}`);
+  await expect(navButton(page, "Next move")).toBeEnabled();
   await navButton(page, "First move").click();
   await expect(counter(page)).toHaveText(`0 / ${total}`);
   await expect(navButton(page, "First move")).toBeDisabled();
@@ -104,12 +110,12 @@ test("the game board's navigation row steps through a game on one line, with no 
   const { app, page } = await launch();
   await skipWelcome(page);
   await importPgnFile(app, page, writePgn(profile, "ruy-lopez.pgn", RUY_LOPEZ_PGN));
-  await expect(counter(page)).toHaveText("6 / 6");
+  await expect(counter(page)).toHaveText("3 / 3");
 
   await walkTheRow(page, 6);
   await expectOneLine(page);
   await expectNoTypedMoves(page, page.getByRole("region", { name: "Board" }));
-  await expect(counter(page)).toHaveText("1 / 6");
+  await expect(counter(page)).toHaveText("1 / 3");
 });
 
 test("the repertoire study row steps through a chapter on one line, with no typed moves", async ({
@@ -120,12 +126,12 @@ test("the repertoire study row steps through a chapter on one line, with no type
   await seedRepertoire(page);
   await sidebar(page).getByRole("button", { name: "Repertoire", exact: true }).click();
   await page.getByRole("button", { name: `Study ${REPERTOIRE}`, exact: true }).click();
-  await expect(counter(page)).toHaveText("0 / 5");
+  await expect(counter(page)).toHaveText("0 / 3");
 
   await walkTheRow(page, 5);
   await expectOneLine(page);
   await expectNoTypedMoves(page, page.locator("cg-board").first());
-  await expect(counter(page)).toHaveText("1 / 5");
+  await expect(counter(page)).toHaveText("1 / 3");
 
   // Practice's footer ends the session and offers nothing for typing a move.
   const study = page.getByRole("complementary", { name: "Repertoire study" });

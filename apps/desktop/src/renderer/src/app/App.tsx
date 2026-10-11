@@ -2,7 +2,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useMatch, useNavigate } from "react-router-dom";
 import { useShallow } from "zustand/react/shallow";
 import { statusForFen } from "@chaturanga/shared/chess/position";
-import { createGameFromFen } from "@chaturanga/shared/chess/pgn";
+import { createGameFromFen, exportGameToPgn } from "@chaturanga/shared/chess/pgn";
 import { DEFAULT_PUZZLE_RATING } from "@chaturanga/shared/chess/puzzle-rating";
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
@@ -44,8 +44,14 @@ import {
 import { repertoireKeys } from "../queries/repertoire";
 import { useAnalysisStore } from "../stores/analysis-store";
 import { analysisEngineFor, defaultEngineFor } from "../features/analysis/analysis-engine";
+import { pausedAnalysisAt } from "../features/analysis/live-analysis";
 import { useGameStore } from "../stores/game-store";
-import { useReviewStore } from "../stores/review-store";
+import {
+  selectDisplayedMoves,
+  selectDisplayedOpening,
+  useReviewStore
+} from "../stores/review-store";
+import { compatibleReviewMoves } from "../stores/review-validity";
 import { selectLiveGameInProgress, useLichessStore } from "../stores/lichess-store";
 import { useHistoryStore, type HistoryEntry } from "../stores/history-store";
 import { captureEntry, recordHistory, type HistoryMode } from "./history-navigation";
@@ -72,7 +78,8 @@ import {
   PageTitle,
   ReviewTitlebar
 } from "./AppTitlebar";
-import type { SideTab } from "./side-tabs";
+import { showsEngine, type SideTab } from "./side-tabs";
+import { usePuzzleTabs } from "./use-puzzle-tabs";
 import {
   AddToRepertoireDialog,
   AppPages,
@@ -275,6 +282,9 @@ export function App() {
   const addToRepertoire = useAddToRepertoireStore((state) => state.request);
   const closeAddToRepertoire = useAddToRepertoireStore((state) => state.close);
   const focused = focusMode && onBoardView;
+  // The Moves tab's engine block shows an analysis error itself; while a puzzle hides the block,
+  // the titlebar shows it instead.
+  const engineBlockShown = showsEngine(usePuzzleTabs());
   // Focus mode collapses the sidebar to its rail without forgetting the user's own choice.
   const sidebarExpanded = actionRailOpen && !focused;
   useEffect(() => {
@@ -311,6 +321,12 @@ export function App() {
   // A Lichess game on the board: nothing may replace it and the engine stays off until it ends.
   const onlineGameLive = useLichessStore(selectLiveGameInProgress);
   const engines = useEnginesQuery();
+  // No engine left (the last one removed in Settings): a paused analysis can't resume, so it ends
+  // rather than coming back with a later engine.
+  const noEngines = engines.isSuccess && !engines.data.some((engine) => engine.isAvailable);
+  useEffect(() => {
+    if (noEngines) useAnalysisStore.getState().endPause();
+  }, [noEngines]);
   const nextPuzzle = useSamplePuzzleMutation();
   const settingsQuery = useSettingsQuery();
   const settings = useMemo(
@@ -318,7 +334,7 @@ export function App() {
     [settingsQuery.data]
   );
   const defaultEngineId = useMemo(() => defaultEngineFor(engines.data), [engines.data]);
-  // Live analysis as Settings / the Engine tab's settings say: engine, lines and how far to search.
+  // Live analysis as Settings / the Moves tab's settings say: engine, lines and how far to search.
   const analysisOptions = useMemo<AnalysisOptions>(
     () => ({
       engineId: analysisEngineFor(engines.data, settings.analysisEngineId),
@@ -529,10 +545,19 @@ export function App() {
   async function exportPgn() {
     if (!window.chaturanga) return;
     try {
-      await window.chaturanga.files.savePgnFile(
-        "chaturanga-game.pgn",
-        currentGame().toSession().pgn
-      );
+      // With the analysis as the move list shows it (marks, evals, best lines, the opening).
+      const { headers, moveTree } = currentGame();
+      const review = useReviewStore.getState();
+      const moves = compatibleReviewMoves(selectDisplayedMoves(review), moveTree);
+      const opening = selectDisplayedOpening(review);
+      // The opening only while the game still plays the move that reached it.
+      const reached = moves.some((move) => move.ply === opening?.ply);
+      const pgn = exportGameToPgn({
+        headers,
+        moveTree,
+        analysis: { moves, opening: reached ? opening : null }
+      });
+      await window.chaturanga.files.savePgnFile("chaturanga-game.pgn", pgn);
     } catch (error) {
       useAppNoticeStore
         .getState()
@@ -633,26 +658,30 @@ export function App() {
     // is left (cancelled above): its late result must not replace the saved review.
     useReviewStore.getState().detachRun();
     clearPuzzleSession();
-    // An analysis board, engine off: the Engine tab offers the engine to use and Start analysis.
+    // An analysis board, engine off: the Moves tab's engine row offers the Analysis switch.
     currentGame().setMode("freeplay");
     // Where the game came from stays (an imported or online game keeps its library tab).
     currentGame().startAnalysisBoard();
     currentGame().setEngineSide(null);
     currentGame().clearEngineMatchExtras();
     setFocusMode(false);
-    showGame("engine");
+    showGame("notation");
   }
 
-  /** The Analysis switch turned off: leave live analysis but keep the position and moves (not a step of its own). */
+  /**
+   * The Analysis switch turned off: leave live analysis but keep the position and moves (not a step
+   * of its own). Its search stops, paused: the lines found stay (the switch on again resumes).
+   */
   function stopLiveAnalysis() {
     latestNavigation.current += 1;
+    const { moveTree, currentNodeId, currentFen } = currentGame();
+    useAnalysisStore.getState().pause(pausedAnalysisAt(moveTree, currentNodeId, currentFen));
     currentGame().setMode("freeplay");
-    useAnalysisStore.getState().setStatus("idle");
     record("replace", historyEntry("game"));
   }
 
   /**
-   * "Analyze" in the titlebar / Engine tab: analyse the loaded game in place (keeps moves and
+   * "Analyze" in the titlebar / Moves tab: analyse the loaded game in place (keeps moves and
    * review). A finished match's result and clocks are cleared (the headers keep the result): with
    * them the board refuses moves and the engine won't search. Back returns to the game as it was.
    * From a finished position (after mate or stalemate), analysis starts at the move that ended it.
@@ -1590,7 +1619,7 @@ export function App() {
           ) : appView === "game" ? (
             <GameTitlebar
               engines={engines.data}
-              showAnalysisError={sideTab !== "engine" || focused}
+              showAnalysisError={!engineBlockShown || sideTab !== "notation" || focused}
               onAnalyze={on.analyzePosition}
               onReviewGame={on.reviewCurrentGame}
               onPlayAgain={on.playLichess}
@@ -1599,7 +1628,6 @@ export function App() {
               nextPuzzlePending={nextPuzzle.isPending}
               onReviewOpening={on.reviewHandoffOpening}
               onReturnToRepertoire={on.returnToRepertoire}
-              onExportPgn={on.exportPgn}
             />
           ) : (
             <>
@@ -1688,7 +1716,7 @@ export function App() {
                 reviewLoading={reviewRouteLoading}
                 sideTab={sideTab}
                 onSideTabChange={setSideTab}
-                // The Engine tab's Analysis switch is the only Start: a free board, a solved
+                // The Moves tab's Analysis switch is the only Start: a free board, a solved
                 // puzzle, or a finished engine or Lichess game (analysed in place).
                 canStartAnalysis={
                   desktopApiAvailable &&

@@ -47,7 +47,8 @@ async function goToPly(page: Page, ply: number, total = 14) {
   await navigation(page).getByRole("button", { name: "First move", exact: true }).click();
   for (let step = 0; step < ply; step += 1)
     await navigation(page).getByRole("button", { name: "Next move", exact: true }).click();
-  await expect(counter(page)).toHaveText(`${ply} / ${total}`);
+  // The counter counts full moves (White's move and Black's reply are one).
+  await expect(counter(page)).toHaveText(`${Math.ceil(ply / 2)} / ${Math.ceil(total / 2)}`);
 }
 
 /** The bar's printed evaluation, the side it is drawn for, and which end of the bar it sits at. */
@@ -208,8 +209,8 @@ test("game review prints the evaluation at the better side's end and marks the r
   await goToPly(page, 1);
   await expect(evalBar(page)).toHaveAccessibleName("Evaluation +0.3");
   expect(await evalText(page)).toEqual({ text: "0.3", side: "white", end: "bottom" });
-  // Drawn as chess.com draws it: white over a warm dark grey, the number dark on the white.
-  expect(await evalColours(page)).toEqual({ bar: "rgb(64, 61, 57)", text: "rgb(64, 61, 57)" });
+  // The white side's colour over the black side's dark grey, the number dark on the white.
+  expect(await evalColours(page)).toEqual({ bar: "rgb(43, 48, 54)", text: "rgb(21, 23, 26)" });
   await expect(board(page).getByRole("img", { name: "Book: e4" })).toHaveAttribute(
     "data-annotation",
     "book"
@@ -227,7 +228,7 @@ test("game review prints the evaluation at the better side's end and marks the r
   await expect(evalBar(page)).toHaveAccessibleName("Evaluation -2.5");
   expect(await evalText(page)).toEqual({ text: "2.5", side: "black", end: "top" });
   // Black's number is light on the grey.
-  expect((await evalColours(page)).text).toBe("rgb(255, 255, 255)");
+  expect((await evalColours(page)).text).toBe("rgb(244, 241, 234)");
   const blunder = board(page).getByRole("img", { name: "Blunder: Nxe5" });
   await expect(blunder).toHaveAttribute("data-annotation", "blunder");
   await expect(blunder).toHaveAttribute("data-square", "e5");
@@ -294,7 +295,7 @@ test("the Analyze board marks the reviewed move, the game's own board does not",
   // The Analyze board of the same game shows it, and lets clicks through to the board.
   await sidebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
   const blunder = board(page).getByRole("img", { name: "Blunder: Nxe5" });
-  await expect(counter(page)).toHaveText("7 / 14");
+  await expect(counter(page)).toHaveText("4 / 7");
   await expect(blunder).toBeVisible();
   expect(await badgeSquare(page)).toEqual({ square: "e5", topRight: true });
   const box = await blunder.boundingBox();
@@ -318,7 +319,6 @@ test("the Analyze board marks the reviewed move, the game's own board does not",
 
   // With live analysis started on it, the mark stays.
   await goToPly(page, 7);
-  await page.getByRole("tab", { name: "Engine" }).click();
   const analysis = page.getByRole("switch", { name: "Analysis" });
   await analysis.click();
   await expect(analysis).toHaveAttribute("aria-checked", "true");
@@ -365,38 +365,38 @@ test("a running review fills in as it goes: the board follows the analysis until
   const tree = page.getByRole("tree", { name: "Reviewed move tree" });
   const stop = titlebar(page).getByRole("button", { name: "Stop", exact: true });
   await expect(stop).toBeVisible();
-  await expect(counter(page)).toHaveText("0 / 14");
+  await expect(counter(page)).toHaveText("0 / 7");
   const follow = navigation(page).getByRole("button", { name: "Follow analysis" });
   await expect(follow).toHaveCount(0);
 
   // The board steps to each move as its analysis finishes; the tree selects it.
   gate(1);
-  await expect(counter(page)).toHaveText("1 / 14");
+  await expect(counter(page)).toHaveText("1 / 7");
   gate(2);
-  await expect(counter(page)).toHaveText("2 / 14");
+  await expect(counter(page)).toHaveText("1 / 7");
   await expect(tree.getByRole("button", { name: "e5", exact: true })).toHaveAttribute(
     "aria-current",
     "step"
   );
   // The opening is named as soon as its last book move is analysed.
   gate(6);
-  await expect(counter(page)).toHaveText("6 / 14");
+  await expect(counter(page)).toHaveText("3 / 7");
   await expect(tree.getByLabel(/Italian Game.*: book ends$/)).toBeVisible();
   // A finished move's mark is final: on the board at once, while the run goes on.
   gate(7);
-  await expect(counter(page)).toHaveText("7 / 14");
+  await expect(counter(page)).toHaveText("4 / 7");
   await expect(board(page).getByRole("img", { name: "Blunder: Nxe5" })).toBeVisible();
-  await expect(navigation(page).getByRole("status")).toHaveAccessibleName("Analyzing move 8 of 14");
+  await expect(navigation(page).getByRole("status")).toHaveAccessibleName("Analyzing move 4 of 7");
   await expect(stop).toBeVisible();
   await screenshot(page, "live");
 
   // Clicking a move pauses following: the board stays there while the run goes on.
   await tree.getByRole("button", { name: "Nf3", exact: true }).click();
-  await expect(counter(page)).toHaveText("3 / 14");
+  await expect(counter(page)).toHaveText("2 / 7");
   await expect(follow).toBeVisible();
   gate(8);
-  await expect(navigation(page).getByRole("status")).toHaveAccessibleName("Analyzing move 9 of 14");
-  await expect(counter(page)).toHaveText("3 / 14");
+  await expect(navigation(page).getByRole("status")).toHaveAccessibleName("Analyzing move 5 of 7");
+  await expect(counter(page)).toHaveText("2 / 7");
 
   // The board takes no moves while the run goes on: a piece dragged adds none.
   const area = await board(page).locator("cg-board").boundingBox();
@@ -408,13 +408,13 @@ test("a running review fills in as it goes: the board follows the analysis until
   await page.mouse.down();
   await page.mouse.move(...centre(5, 2), { steps: 5 });
   await page.mouse.up();
-  await expect(counter(page)).toHaveText("3 / 14");
+  await expect(counter(page)).toHaveText("2 / 7");
   await expect(tree.getByRole("group", { name: /^Variation: / })).toHaveCount(0);
   await expect(tree.getByRole("button", { name: "Nf6", exact: true })).toHaveCount(0);
 
   // Follow analysis jumps back to the latest analysed move and follows again.
   await follow.click();
-  await expect(counter(page)).toHaveText("8 / 14");
+  await expect(counter(page)).toHaveText("4 / 7");
   await expect(follow).toHaveCount(0);
   await expect(board(page).getByRole("img", { name: "Great: Qg5" })).toBeVisible();
 
@@ -422,17 +422,15 @@ test("a running review fills in as it goes: the board follows the analysis until
   await tree.getByRole("button", { name: "Qg5", exact: true }).click();
   await expect(follow).toBeVisible();
   gate(9);
-  await expect(navigation(page).getByRole("status")).toHaveAccessibleName(
-    "Analyzing move 10 of 14"
-  );
-  await expect(counter(page)).toHaveText("8 / 14");
+  await expect(navigation(page).getByRole("status")).toHaveAccessibleName("Analyzing move 5 of 7");
+  await expect(counter(page)).toHaveText("4 / 7");
   await follow.click();
-  await expect(counter(page)).toHaveText("9 / 14");
+  await expect(counter(page)).toHaveText("5 / 7");
 
   // The run ends with the board on its last move.
   gate(13);
   await expect(
     titlebar(page).getByRole("button", { name: "Analyze again", exact: true })
   ).toBeVisible();
-  await expect(counter(page)).toHaveText("14 / 14");
+  await expect(counter(page)).toHaveText("7 / 7");
 });
