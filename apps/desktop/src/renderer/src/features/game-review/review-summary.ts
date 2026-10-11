@@ -4,7 +4,12 @@
  * behind the reviewed side's errors. Pure; ReviewSummary.tsx draws them.
  */
 import type { Color } from "@chaturanga/shared/types/chess";
-import type { GameOpening, MoveAnnotation, MoveReview } from "@chaturanga/shared/types/engine";
+import {
+  ERROR_MARKS,
+  type GameOpening,
+  type MoveAnnotation,
+  type MoveReview
+} from "@chaturanga/shared/types/engine";
 import { fenAfterUci } from "@chaturanga/shared/chess/position";
 import { analyzeTacticsForPosition } from "@chaturanga/shared/chess/tactics";
 import { phaseOfPly, type GamePhase, type GamePhases } from "@chaturanga/shared/chess/game-phases";
@@ -159,14 +164,6 @@ export function practiceThemeLabel(theme: PracticeTheme): string {
 
 /** Lichess's mate-in-N themes (N = index + 1); a longer mate is "mate". */
 const MATE_IN: readonly PracticeTheme[] = ["mateIn1", "mateIn2", "mateIn3", "mateIn4", "mateIn5"];
-
-/** The marks that are the mover's errors. */
-const ERROR_MARKS: ReadonlySet<MoveAnnotation> = new Set([
-  "inaccuracy",
-  "mistake",
-  "blunder",
-  "miss"
-]);
 
 /**
  * The puzzle theme an error gave the opponent, read from the position after it and the engine's

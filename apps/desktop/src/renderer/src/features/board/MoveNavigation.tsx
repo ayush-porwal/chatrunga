@@ -1,10 +1,11 @@
 import { memo, useMemo, type ReactNode } from "react";
 import { useEventCallback } from "@/lib/use-event-callback";
 import { useGameStore } from "../../stores/game-store";
+import { blackToMove } from "./move-counter";
 import { MoveNavigationBar } from "./MoveNavigationBar";
 
 /**
- * Workspace panel footer: First / Previous · "n / N" · Next / Last, wired to the game store
+ * Workspace panel footer: First / Previous · "n / N" (full moves) · Next / Last, wired to the game store
  * (the same navigation as the ← → Home End shortcuts). Shared by the game view and Game review.
  */
 export const MoveNavigation = memo(function MoveNavigation({ caption }: { caption?: ReactNode }) {
@@ -14,7 +15,7 @@ export const MoveNavigation = memo(function MoveNavigation({ caption }: { captio
   const undo = useGameStore((state) => state.undo);
   const redo = useGameStore((state) => state.redo);
 
-  const { rootId, depth, total, canPrevious, canNext, lastId } = useMemo(() => {
+  const { rootId, depth, total, blackFirst, canPrevious, canNext, lastId } = useMemo(() => {
     const byId = new Map(moveTree.map((node) => [node.id, node]));
     const root = moveTree.find((node) => !node.parentId) ?? null;
     const current = byId.get(currentNodeId) ?? null;
@@ -42,6 +43,7 @@ export const MoveNavigation = memo(function MoveNavigation({ caption }: { captio
       depth: ply,
       // Position within the game: the main line's length, or the line's depth inside a longer variation.
       total: Math.max(ply, mainline),
+      blackFirst: blackToMove(root?.fenBefore),
       canPrevious: Boolean(current?.parentId),
       canNext: Boolean(current?.children[0]),
       lastId: last?.id ?? null
@@ -57,6 +59,7 @@ export const MoveNavigation = memo(function MoveNavigation({ caption }: { captio
     <MoveNavigationBar
       depth={depth}
       total={total}
+      blackFirst={blackFirst}
       caption={caption}
       canPrevious={canPrevious}
       canNext={canNext}

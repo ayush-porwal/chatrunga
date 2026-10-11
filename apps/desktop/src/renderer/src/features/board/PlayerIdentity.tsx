@@ -1,12 +1,12 @@
 import { memo, type ReactNode } from "react";
-import { Cpu } from "lucide-react";
 import { SideDot } from "@/components/ui/side-dot";
 import { cn } from "@/lib/utils";
-import { localImageSrc } from "@/lib/local-image";
+import { EngineAvatar } from "../analysis/EngineAvatar";
 
 /**
- * Player label next to a board: side swatch (or the engine's logo), name, optional Elo tag and hint.
- * Shared by the game board (BoardView) and the game review board via <PlayerRow> so both read the same.
+ * Player label next to a board: the side's tile (a side dot on a rounded square, or the engine's
+ * image slot), name, optional Elo and hint. Shared by the game board (BoardView) and the game
+ * review board via <PlayerRow> so both read the same.
  */
 export function PlayerIdentity({
   color,
@@ -19,57 +19,36 @@ export function PlayerIdentity({
   color: "white" | "black";
   name: string;
   elo?: string | null;
-  /** When the side is played by an engine: shows its logo (or a CPU glyph) instead of the plain side dot. */
+  /** When the side is played by an engine: its image slot (EngineAvatar) instead of the side dot. */
   engine?: { imagePath: string | null } | null;
   hint?: ReactNode;
   className?: string;
 }) {
   return (
-    <div className={cn("flex min-w-0 items-center gap-2 text-sm", className)}>
+    <div className={cn("flex min-w-0 items-center gap-2.5 text-sm", className)}>
       {engine ? (
-        <EngineSwatch color={color} imagePath={engine.imagePath} />
+        <EngineAvatar imagePath={engine.imagePath} size="sm" />
       ) : (
-        <SideDot color={color} size="md" />
-      )}
-      <span className="truncate font-medium text-fg-secondary">{name}</span>
-      {elo ? (
-        <span className="shrink-0 rounded-md border border-line px-1 font-mono text-2xs text-fg-muted tabular-nums">
-          {elo}
+        <span
+          aria-hidden="true"
+          className="grid size-6 shrink-0 place-items-center rounded-[7px] bg-control"
+        >
+          <SideDot color={color} className="size-[11px]" />
         </span>
+      )}
+      <span className="truncate font-semibold text-fg">{name}</span>
+      {elo ? (
+        <span className="shrink-0 text-[0.8125rem] text-fg-subtle tabular-nums">{elo}</span>
       ) : null}
       {hint ? <span className="shrink-0 truncate text-xs text-fg-subtle">{hint}</span> : null}
     </div>
   );
 }
 
-function EngineSwatch({
-  color,
-  imagePath
-}: {
-  color: "white" | "black";
-  imagePath: string | null;
-}) {
-  const src = localImageSrc(imagePath);
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "flex size-4 shrink-0 items-center justify-center overflow-hidden rounded-full ring-1 [&_svg]:size-2.5",
-        color === "white"
-          ? "bg-piece-white text-piece-black ring-black/40"
-          : "bg-piece-black text-fg ring-white/20"
-      )}
-    >
-      {src ? <img className="h-full w-full object-cover" src={src} alt="" /> : <Cpu />}
-    </span>
-  );
-}
-
 /**
- * The clock box beside a player row: a light box for White and a dark one for Black, with a subtle
- * accent ring on the side to move (`active`). Fixed minimum width and tabular digits so the text
- * never shifts as it counts; `low` (little time left) turns the time red and, while it runs, pulses
- * gently.
+ * The clock box beside a player row: a quiet sunken box, lit (the light side box) for the side to
+ * move (`active`). Fixed minimum width and tabular digits so the text never shifts as it counts;
+ * `low` (little time left) turns the time red and, while it runs, pulses gently.
  */
 export function ClockFace({
   color,
@@ -90,13 +69,12 @@ export function ClockFace({
       aria-label={`${color === "white" ? "White" : "Black"} clock`}
       data-running={running ? "true" : undefined}
       className={cn(
-        "min-w-[4.75rem] rounded-md px-2 py-0.5 text-right text-base font-semibold tabular-nums",
-        "transition-[box-shadow,color] duration-standard ease-standard",
-        color === "white"
-          ? "bg-side-white text-side-white-fg"
-          : "bg-side-black text-fg inset-ring inset-ring-line",
-        low && cn("board-clock-low", color === "white" ? "text-mark-blunder" : "text-danger"),
-        active && (low ? "ring-2 ring-danger/60" : "ring-2 ring-accent/60")
+        "grid h-7.5 min-w-[4.75rem] place-items-center rounded-lg border px-2.5 font-mono text-[0.9375rem] leading-none font-semibold tabular-nums",
+        "transition-[background-color,border-color,color] duration-standard ease-standard",
+        active
+          ? "border-transparent bg-side-white text-side-white-fg"
+          : "border-line bg-surface-sunken text-fg-muted",
+        low && cn("board-clock-low", active ? "text-mark-blunder" : "text-danger")
       )}
     >
       {text}

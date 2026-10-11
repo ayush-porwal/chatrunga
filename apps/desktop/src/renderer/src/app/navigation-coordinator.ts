@@ -19,7 +19,7 @@ import {
   type BoardRestore
 } from "./history-navigation";
 import type { PuzzleSetSnapshot } from "./puzzle-session-controller";
-import type { SideTab } from "./side-tabs";
+import { sideTabFrom, type SideTab } from "./side-tabs";
 import { holdUntilChanged } from "./useGameAutosave";
 
 /**
@@ -153,7 +153,7 @@ export async function restoreEntry(
       return "shown";
     case "game": {
       const outcome = await restoreBoard(entry.board, shell);
-      if (outcome === "restored") shell.showGame(entry.board.tab);
+      if (outcome === "restored") shell.showGame(sideTabFrom(entry.board.tab));
       return outcome === "restored" ? "shown" : outcome;
     }
     case "game-review": {
@@ -200,7 +200,7 @@ export async function restoreBoard(
   const request = ++shell.navigation.current;
   const plan = planBoardRestore(snapshot);
   if (plan.kind === "live") {
-    shell.showGame(snapshot.tab);
+    shell.showGame(sideTabFrom(snapshot.tab));
     return "shown";
   }
   if (plan.kind === "puzzle") {

@@ -129,7 +129,7 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
     .getByRole("navigation", { name: "Move navigation" })
     .getByRole("button", { name: "First move", exact: true })
     .click();
-  await expect(counter(page)).toHaveText("0 / 14");
+  await expect(counter(page)).toHaveText("0 / 7");
   const leading = page.getByRole("list", { name: "Key moments of the game" });
   await expect(leading.getByRole("listitem")).toHaveCount(3);
   // Each card is the move (with the board's piece) and its mark, and no text beyond them.
@@ -144,7 +144,7 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
   // A card goes to its move: 5. Nxf7. The key insights live there and in the Moves tab, not in
   // the charts' header.
   await leading.getByRole("button", { name: "5. Nxf7, Blunder" }).click();
-  await expect(counter(page)).toHaveText("9 / 14");
+  await expect(counter(page)).toHaveText("5 / 7");
   await expect(
     page.getByRole("region", { name: "Game charts" }).getByRole("button", { name: /key insight/i })
   ).toHaveCount(0);
@@ -199,7 +199,7 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
   await expect(insights.getByRole("listitem")).toHaveCount(3);
   await screenshot(page, "key-insights");
   await insights.getByRole("button", { name: /Nxf7/ }).click();
-  await expect(counter(page)).toHaveText("9 / 14");
+  await expect(counter(page)).toHaveText("5 / 7");
   await reviewTabs(page).getByRole("tab", { name: "Commentary", exact: true }).click();
   await reviewTabs(page).getByRole("tab", { name: "Moves", exact: true }).click();
   await expect(insights).toBeVisible();

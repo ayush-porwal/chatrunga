@@ -63,13 +63,6 @@
   stroke-width: 1.5;
 }
 
-.play-tile > img {
-  width: 100%;
-  height: 100%;
-  border-radius: inherit;
-  object-fit: cover;
-}
-
 .play-tile[data-kind="split"] {
   overflow: hidden;
 }
@@ -87,11 +80,6 @@
 
 .play-tile[data-kind="split"] .play-tile-piece:last-child {
   clip-path: inset(0 0 0 50%);
-}
-
-.play-tile[data-kind="engine"] {
-  background: var(--color-accent-soft);
-  color: var(--color-accent-fg);
 }
 
 .play-tile[data-kind="online"] {

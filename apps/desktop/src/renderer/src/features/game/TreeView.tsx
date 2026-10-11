@@ -145,6 +145,11 @@ export function TreeView({
   useEffect(() => {
     const list = listRef.current;
     if (!selectedNodeId || !list) return;
+    // The start (First / Home) has no row of its own: the list goes back to its top.
+    if (selectedNodeId === ROOT_ID) {
+      list.scrollTo({ top: 0, behavior: reducedMotion || isRapidNavigation() ? "auto" : "smooth" });
+      return;
+    }
     const active = list.querySelector<HTMLElement>(
       `[data-tree-node-id="${CSS.escape(selectedNodeId)}"]`
     );
@@ -249,20 +254,6 @@ export function TreeView({
         // Unlayered `.cg-wrap` rules (display: block, board.css inline-size containment) would lay this out.
         style={{ display: "grid", containerType: "normal" }}
       >
-        {selectedNodeId === ROOT_ID ? (
-          <button
-            type="button"
-            data-tree-node-id={ROOT_ID}
-            aria-current="step"
-            aria-selected="true"
-            role="treeitem"
-            aria-level={1}
-            className="flex h-8 items-center rounded-md bg-accent-soft px-2 text-left text-sm text-fg outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
-            onClick={() => onSelectNode(ROOT_ID)}
-          >
-            Starting position
-          </button>
-        ) : null}
         {items.map((item) => {
           switch (item.kind) {
             case "moves":

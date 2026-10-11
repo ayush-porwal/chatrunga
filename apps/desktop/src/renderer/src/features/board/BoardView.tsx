@@ -34,7 +34,12 @@ import { useBoardPolish } from "./useBoardPolish";
 import { restoreBoardConfig } from "./board-config";
 import { celebratesEnding, liveEnding, type BoardEndState } from "./game-end";
 import { useBoardConfetti } from "./useBoardConfetti";
-import { annotationsFromShapes, shapesFromAnnotations } from "./board-shapes";
+import {
+  annotationsFromShapes,
+  liveAnalysisShapes,
+  PLAN_ARROW_BRUSHES,
+  shapesFromAnnotations
+} from "./board-shapes";
 import {
   PIECE_MOVE_MS,
   RAPID_STEP_MS,
@@ -149,29 +154,29 @@ export function BoardView() {
     };
   }, [moveTree, currentNodeId, currentFen, headers, orientation, mode, engineSide, hasLiveClock]);
 
-  // Live analysis: the engine's best move from this position (a string, so the board only redraws
-  // when it changes, not on every engine update). Only a move legal here (lines of the previous
+  // Live analysis (never an engine or Lichess game): the start of the engine's top line from this
+  // position, as many moves as the arrows draw (a string, so the board only redraws when they
+  // change, not on every engine update). Only moves legal here are drawn (lines of the previous
   // position are dropped as a search starts, but never trusted).
-  const liveBest = useAnalysisStore((state) =>
-    mode === "analysis"
-      ? (state.topLines.find((line) => (line.multipv ?? 1) === 1)?.pv?.[0] ??
-        state.bestMove ??
-        null)
-      : null
-  );
   const showBestArrow = appearance.analysisBestMoveArrow;
-  const bestArrow = useMemo<DrawShape | null>(() => {
-    if (!showBestArrow || !liveBest) return null;
-    const squares = uciSquares(liveBest);
-    if (!squares) return null;
-    const [orig, dest] = squares;
-    const dests = legalDestsForFen(currentFen) as Map<string, string[]>;
-    if (!dests.get(orig)?.includes(dest)) return null;
-    return { orig, dest, brush: "blue" };
-  }, [showBestArrow, liveBest, currentFen]);
+  const planArrows = appearance.analysisPlanArrows;
+  const liveLine = useAnalysisStore((state) => {
+    if (mode !== "analysis") return "";
+    const pv = state.topLines.find((line) => (line.multipv ?? 1) === 1)?.pv;
+    const line = pv?.length ? pv : state.bestMove ? [state.bestMove] : [];
+    return line.slice(0, Math.max(1, planArrows)).join(" ");
+  });
+  const liveShapes = useMemo(
+    () =>
+      liveAnalysisShapes(currentFen, liveLine ? liveLine.split(" ") : [], {
+        bestMoveArrow: showBestArrow,
+        planArrows
+      }),
+    [currentFen, liveLine, planArrows, showBestArrow]
+  );
 
   const autoShapes = useMemo<DrawShape[]>(() => {
-    if (bestArrow) return [bestArrow];
+    if (liveShapes.length) return liveShapes;
     // Only completed moves draw arrows (never the live lines of the move being searched, which
     // change several times a second and made the board flicker).
     const reviewMove = currentNode
@@ -193,7 +198,7 @@ export function BoardView() {
       });
     }
     return arrows;
-  }, [bestArrow, reviewMoves, currentNode]);
+  }, [liveShapes, reviewMoves, currentNode]);
 
   // Chessground owns its DOM and keeps it sized itself (its own ResizeObserver repositions pieces
   // on resize) — rebuilding the board on every resize frame is what used to flicker.
@@ -210,6 +215,8 @@ export function BoardView() {
       movable: { free: false, rookCastle: true },
       premovable: { enabled: true, showDests: true, castle: true }
     });
+    // Plan arrows' brushes join Chessground's own (its config type wants the whole set).
+    Object.assign(ground.state.drawable.brushes, PLAN_ARROW_BRUSHES);
     groundRef.current = ground;
     // Chessground caches the board's screen position and refreshes it only on resize and scroll;
     // collapsing the sidebar (or Focus board) moves the board without resizing it, so clicks,

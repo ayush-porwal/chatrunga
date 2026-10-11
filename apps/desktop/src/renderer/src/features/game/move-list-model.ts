@@ -1,5 +1,5 @@
 import type { MoveNode } from "@chaturanga/shared/types/chess";
-import type { MoveAnnotation, MoveReview } from "@chaturanga/shared/types/engine";
+import { ERROR_MARKS, type MoveReview } from "@chaturanga/shared/types/engine";
 import { uciLineSteps, type LineStep } from "../game-review/review-utils";
 import type { TreeModel, VariationRow } from "./move-tree-model";
 
@@ -29,14 +29,6 @@ export function sanPiece(san: string): MovePieceRole {
 export function bareSan(san: string): string {
   return SAN_ROLES[san[0] ?? ""] ? san.slice(1) : san;
 }
-
-/** The marks that say a better move was there: their BEST line shows what it was. */
-const ERROR_MARKS: ReadonlySet<MoveAnnotation> = new Set([
-  "inaccuracy",
-  "mistake",
-  "blunder",
-  "miss"
-]);
 
 /** The engine's best line from before a reviewed move (UCI), or just its best move. */
 function bestUcis(review: MoveReview): readonly string[] {
@@ -97,17 +89,35 @@ export const PREVIEW_BOARD_MAX = 340;
 /** The preview never outgrows this share of the main board. */
 const PREVIEW_BOARD_SHARE = 0.6;
 
+/** A preview board's bounds: its edge in CSS px, and the share of the main board it stays under. */
+export type PreviewBoardBounds = { min: number; max: number; share: number };
+
+/** The BEST line's preview (the move tree's). */
+export const BEST_LINE_PREVIEW: PreviewBoardBounds = {
+  min: PREVIEW_BOARD_MIN,
+  max: PREVIEW_BOARD_MAX,
+  share: PREVIEW_BOARD_SHARE
+};
+
+/** An engine line's preview (the Moves tab's engine): about three quarters of the BEST line's. */
+export const ENGINE_LINE_PREVIEW: PreviewBoardBounds = { min: 150, max: 255, share: 0.45 };
+
 /**
- * The edge of a BEST line's preview board: as wide as the panel allows, at most 340px and 60% of
+ * The edge of a line's preview board: as wide as the panel allows, at most `max` and `share` of
  * the main board (so a wide panel beside a shrunk board never shows a preview bigger than the
- * board), at least 200px, and never wider than the room it has.
+ * board), at least `min`, and never wider than the room it has. By default a BEST line's: 340px,
+ * 60%, 200px.
  */
-export function previewBoardSize(available: number, mainBoard: number | null): number {
+export function previewBoardSize(
+  available: number,
+  mainBoard: number | null,
+  bounds: PreviewBoardBounds = BEST_LINE_PREVIEW
+): number {
   const cap = Math.min(
-    PREVIEW_BOARD_MAX,
-    mainBoard && mainBoard > 0 ? mainBoard * PREVIEW_BOARD_SHARE : PREVIEW_BOARD_MAX
+    bounds.max,
+    mainBoard && mainBoard > 0 ? mainBoard * bounds.share : bounds.max
   );
-  const size = Math.min(available, Math.max(PREVIEW_BOARD_MIN, cap));
+  const size = Math.min(available, Math.max(bounds.min, cap));
   return Math.max(0, Math.floor(size));
 }
 

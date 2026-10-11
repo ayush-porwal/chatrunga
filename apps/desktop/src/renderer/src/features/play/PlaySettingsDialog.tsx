@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { settingsListboxPositionClass, settingsListboxSurfaceClass } from "@/lib/settings-listbox";
 import { frost } from "@/lib/ui";
+import { EngineAvatar } from "../analysis/EngineAvatar";
 import { playEngineOrder } from "./play-layout";
 import { useDismiss } from "@/lib/use-dismiss";
 import { useListboxKeyboard } from "@/lib/use-listbox-keyboard";
@@ -218,15 +219,12 @@ function Group({
 const optionRow =
   "flex w-full items-center gap-3 rounded-[10px] border border-line bg-surface px-3 py-2.25 text-left outline-none transition-colors duration-micro hover:border-line-strong focus-visible:ring-2 focus-visible:ring-accent/70 aria-checked:border-accent-strong aria-checked:bg-accent-soft/50 disabled:pointer-events-none disabled:opacity-50";
 
-/** The row's small logo tile (accent for the engine). */
-function Logo({ engine = false, children }: { engine?: boolean; children: ReactNode }) {
+/** The row's small logo tile (an engine row shows the engine's image slot instead). */
+function Logo({ children }: { children: ReactNode }) {
   return (
     <span
       aria-hidden="true"
-      className={cn(
-        "grid size-6.5 shrink-0 place-items-center rounded-[7px] [&>svg]:size-3.5",
-        engine ? "bg-accent-soft text-accent-fg" : "bg-control text-fg-secondary"
-      )}
+      className="grid size-6.5 shrink-0 place-items-center rounded-[7px] bg-control text-fg-secondary [&>svg]:size-3.5"
     >
       {children}
     </span>
@@ -333,9 +331,7 @@ function EngineRow({
   if (!engines.length) {
     return (
       <button type="button" role="radio" aria-checked={false} disabled className={optionRow}>
-        <Logo engine>
-          <Bot />
-        </Logo>
+        <EngineAvatar size="sm" />
         <b className="min-w-0 flex-1 truncate text-[0.84375rem] font-medium text-fg">
           No engine installed
         </b>
@@ -353,9 +349,7 @@ function EngineRow({
         checked && "border-accent-strong bg-accent-soft/50"
       )}
     >
-      <Logo engine>
-        <Bot />
-      </Logo>
+      <EngineAvatar imagePath={selected?.imagePath} size="sm" />
       <button
         ref={triggerRef}
         type="button"
@@ -427,9 +421,7 @@ function EngineRow({
                   onMouseEnter={() => setHighlightedIndex(index)}
                   onClick={() => commit(index)}
                 >
-                  <Logo engine>
-                    <Bot />
-                  </Logo>
+                  <EngineAvatar imagePath={engine.imagePath} size="sm" />
                   <b className="min-w-0 flex-1 truncate text-[0.84375rem] font-medium text-fg">
                     {engineDisplayName(engine.name)}
                   </b>

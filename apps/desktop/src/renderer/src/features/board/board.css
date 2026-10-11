@@ -139,6 +139,15 @@ cg-board square.check {
   cursor: default;
 }
 
+/* ---------------------------------------------------------------- arrow labels */
+
+/* Plan arrows' numbers (Chessground labels) ask for Noto Sans, which the app doesn't ship: use
+   the app's face instead of the browser's serif fallback. */
+.cg-wrap svg text {
+  font-family: inherit;
+  font-weight: 600;
+}
+
 /* ---------------------------------------------------------------- coordinates */
 
 /* Ranks down the a-file (top-left of each square), files along the first rank (bottom-right),

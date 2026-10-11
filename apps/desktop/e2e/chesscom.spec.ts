@@ -1,6 +1,6 @@
 // A chess.com account through the built app: connecting a username imports its games, which the
-// library and Game review's Choose a game list under their own source tab (with Reviewed on top of
-// any tab), Play's Recent games lists them, the ratings follow the account, and disconnecting can
+// library's filter and Game review's Choose a game list under their own source (with Reviewed on
+// top of it), Play's Recent games lists them, the ratings follow the account, and disconnecting can
 // take the games away. Chess.com's API is served from the unit tests' fixtures (the network is off
 // in these runs); how to run them: playwright.config.ts.
 import type { ElectronApplication, Page } from "@playwright/test";
@@ -120,14 +120,13 @@ test("a chess.com account imports its games under their own source, in the libra
     page.getByRole("tree", { name: "Game moves" }).getByRole("button", { name: "a6", exact: true })
   ).toBeVisible();
   // Analysing a game doesn't change where it came from: it stays an imported game.
-  await page.getByRole("tab", { name: "Engine" }).click();
   const analysis = page.getByRole("switch", { name: "Analysis" });
   await analysis.click();
   await expect(analysis).toHaveAttribute("aria-checked", "true");
   await page.getByRole("tab", { name: "Library" }).click();
   await expect(savedGames(page).getByRole("listitem")).toHaveCount(1);
-  await expect(savedGames(page)).toContainText("Imported · E2E smoke · *");
-  await page.getByRole("tab", { name: "Engine" }).click();
+  await expect(savedGames(page).getByRole("img", { name: "Imported" })).toBeVisible();
+  await page.getByRole("tab", { name: "Moves" }).click();
   await analysis.click();
   await expect(analysis).toHaveAttribute("aria-checked", "false");
 
@@ -146,34 +145,35 @@ test("a chess.com account imports its games under their own source, in the libra
   await expect(ratings.getByRole("radiogroup", { name: "Ratings from" })).toHaveCount(0);
   await reviewNewestChesscomGame(page);
 
-  // The library has a tab per source it holds, with its count, and lists one at a time. It opens
-  // on the board's game's tab: the sidebar's Analyze keeps it an imported game.
+  // The library lists every game; its filter offers each source it holds, with its count, and
+  // lists one at a time. The sidebar's Analyze keeps the board's game an imported one.
   await sidebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
   await page.getByRole("tab", { name: "Library" }).click();
-  const tabs = sourceTabs(library(page));
-  await expect(tabs.getByRole("radio")).toHaveText(["Chess.com3", "Imported1"]);
-  await expect(tabs.getByRole("radio", { name: /^Imported/ })).toHaveAttribute(
+  const rows = savedGames(page).getByRole("listitem");
+  await expect(rows).toHaveCount(4);
+  await page.getByRole("button", { name: "Filter games" }).click();
+  const filterMenu = page.getByRole("menu", { name: "Show games from" });
+  await expect(filterMenu.getByRole("menuitemradio")).toHaveText([
+    "All games4",
+    "Chess.com3",
+    "Imported1"
+  ]);
+  await expect(filterMenu.getByRole("menuitemradio", { name: /^All games/ })).toHaveAttribute(
     "aria-checked",
     "true"
   );
-  await expect(savedGames(page).getByRole("listitem")).toHaveCount(1);
-  await expect(savedGames(page)).toContainText("Imported · E2E smoke · *");
-
-  await tabs.getByRole("radio", { name: /^Chess\.com/ }).click();
-  const rows = savedGames(page).getByRole("listitem");
+  await filterMenu.getByRole("menuitemradio", { name: /^Chess\.com/ }).click();
   await expect(rows).toHaveCount(3);
-  await expect(rows.first()).toContainText("rook_n_roll vs ayush_p64");
-  await expect(rows.first()).toContainText("Chess.com · Live Chess · 0-1");
-  await expect(library(page)).toContainText("3 games");
-  // Reviewed works on top of the tab.
-  await library(page)
-    .getByRole("button", { name: /^Reviewed/ })
-    .click();
+  await expect(
+    rows.first().getByRole("button", { name: "rook_n_roll vs ayush_p64", exact: true })
+  ).toBeVisible();
+  await expect(rows.first().getByRole("img", { name: "Chess.com" })).toBeVisible();
+  // Reviewed works on top of the source.
+  await page.getByRole("button", { name: "Filter: Chess.com", exact: true }).click();
+  await filterMenu.getByRole("menuitemcheckbox", { name: /^Reviewed/ }).click();
   await expect(rows).toHaveCount(1);
-  await expect(library(page)).toContainText("1 game");
-  await library(page)
-    .getByRole("button", { name: /^Reviewed/ })
-    .click();
+  await page.getByRole("button", { name: "Filter: Chess.com · Reviewed", exact: true }).click();
+  await filterMenu.getByRole("menuitemcheckbox", { name: /^Reviewed/ }).click();
   await expect(rows).toHaveCount(3);
 
   // Choose a game opens on the tab chosen last; the board's game stays pinned on top.
@@ -239,5 +239,5 @@ test("disconnecting chess.com can remove its games; the ratings stay, typed-in",
   await sidebar(page).getByRole("button", { name: "Analyze", exact: true }).click();
   await page.getByRole("tab", { name: "Library" }).click();
   await expect(library(page)).toContainText("Saved games will appear here.");
-  await expect(sourceTabs(library(page))).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Filter/ })).toHaveCount(0);
 });

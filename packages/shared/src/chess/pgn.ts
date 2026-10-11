@@ -2,9 +2,19 @@ import { nanoid } from "nanoid";
 import { parseComment, parsePgn, startingPosition } from "chessops/pgn";
 import type { ChildNode, PgnNodeData } from "chessops/pgn";
 import { makeFen } from "chessops/fen";
+import { makeSanAndPlay } from "chessops/san";
+import { makeUci, parseUci } from "chessops/util";
 import { parseAnnotationComment, serializeAnnotationComment } from "./annotations";
-import { applySan, START_FEN } from "./position";
+import { applySan, positionFromFen, START_FEN } from "./position";
 import type { Color, GameHeaders, GameSession, ImportedGame, MoveNode } from "../types/chess";
+import {
+  ERROR_MARKS,
+  type EngineScore,
+  type GameOpening,
+  type MoveAnnotation,
+  type MoveAssessment,
+  type MoveReview
+} from "../types/engine";
 
 const ROOT_ID = "root";
 
@@ -89,14 +99,155 @@ export function importPgnText(
   };
 }
 
-export function exportGameToPgn(input: { headers: GameHeaders; moveTree: MoveNode[] }): string {
+/** A reviewed move as {@link exportGameToPgn} writes it: its mark, its eval and the engine's best line. */
+export type PgnAnalysisMove = Pick<
+  MoveReview,
+  "nodeId" | "fenBefore" | "evalAfter" | "bestEvalAfter" | "bestMove" | "bestLine"
+> & { assessment?: Pick<MoveAssessment, "annotation"> };
+
+/** A review of the game's main line, for the PGN to carry (see {@link exportGameToPgn}). */
+export type PgnAnalysis = {
+  moves: readonly PgnAnalysisMove[];
+  /** The opening the review named; written as ECO / Opening when the game's headers have neither. */
+  opening?: Pick<GameOpening, "eco" | "name"> | null;
+};
+
+/**
+ * The game as PGN: every line of the move tree with its comments, arrows and clocks. With
+ * `analysis` it also carries the review: each mark with a standard NAG as that NAG (in place of
+ * any move-quality NAG the move had), each eval after a move as `[%eval …]` (White's view), the
+ * opening in the headers, and the engine's best line under each marked error as a variation
+ * (merged into the moves already there, so a line explored by hand isn't written twice).
+ */
+export function exportGameToPgn(input: {
+  headers: GameHeaders;
+  moveTree: MoveNode[];
+  analysis?: PgnAnalysis | null;
+}): string {
   const root = input.moveTree.find((node) => node.id === ROOT_ID);
-  const lines = headersToPgn(input.headers, root?.fenBefore);
-  const body = serializeMoveTreeMoves(input.moveTree);
+  const analysis = input.analysis;
+  const headers =
+    analysis?.opening && !input.headers.eco && !input.headers.opening
+      ? { ...input.headers, eco: analysis.opening.eco, opening: analysis.opening.name }
+      : input.headers;
+  const lines = headersToPgn(headers, root?.fenBefore);
+  const body = serializeMoveTreeMoves(
+    analysis?.moves.length ? withAnalysis(input.moveTree, analysis.moves) : input.moveTree
+  );
   const result = input.headers.result || "*";
   lines.push("");
   lines.push(`${body ? `${body} ` : ""}${result}`.trim());
   return lines.join("\n");
+}
+
+/** The review marks with a standard NAG; Excellent, Good, Miss and Book have none (see annotationGlyph). */
+const ANNOTATION_NAGS: Partial<Record<MoveAnnotation, string>> = {
+  brilliant: "$3",
+  great: "$1",
+  inaccuracy: "$6",
+  mistake: "$2",
+  blunder: "$4"
+};
+
+/** NAGs $1–$6: how good the move was (!, ?, !!, ??, !?, ?!), of which a move carries one. */
+const MOVE_QUALITY_NAGS = new Set(["$1", "$2", "$3", "$4", "$5", "$6"]);
+
+const EVAL_TAG = /\[%eval\s[^\]]*\]/gi;
+
+/**
+ * A copy of `moveTree` with the review written onto its moves: marks as NAGs and evals in the
+ * comments, and each marked error's best line merged in from the position before it.
+ */
+function withAnalysis(
+  moveTree: readonly MoveNode[],
+  moves: readonly PgnAnalysisMove[]
+): MoveNode[] {
+  const byId = new Map(
+    moveTree.map((node) => [node.id, { ...node, children: [...node.children] }])
+  );
+  const evals = new Map<string, string>();
+  for (const move of moves) {
+    const node = byId.get(move.nodeId);
+    if (!node) continue;
+    const annotation = move.assessment?.annotation ?? null;
+    const nag = annotation ? ANNOTATION_NAGS[annotation] : undefined;
+    if (nag) node.nags = [nag, ...node.nags.filter((item) => !MOVE_QUALITY_NAGS.has(item))];
+    const evaluation = pgnEval(move.evalAfter);
+    if (evaluation) evals.set(node.id, evaluation);
+
+    const parent = node.parentId ? byId.get(node.parentId) : undefined;
+    if (!annotation || !ERROR_MARKS.has(annotation) || parent?.fenAfter !== move.fenBefore)
+      continue;
+    const best = move.bestLine.length ? move.bestLine : move.bestMove ? [move.bestMove] : [];
+    const first = mergeLine(byId, parent, best, node);
+    const bestEval = pgnEval(move.bestEvalAfter);
+    if (first && bestEval && !evals.has(first.id)) evals.set(first.id, bestEval);
+  }
+  for (const [id, evaluation] of evals) {
+    const node = byId.get(id);
+    if (!node) continue;
+    // The review's eval replaces one the move brought along (an imported Lichess analysis).
+    const text = node.comment?.replace(EVAL_TAG, "").replace(/\s+/g, " ").trim();
+    node.comment = text ? `${text} [%eval ${evaluation}]` : `[%eval ${evaluation}]`;
+  }
+  return [...byId.values()];
+}
+
+/**
+ * Walks `line` (UCI) from `parent`, following the moves the tree already has and adding the rest
+ * after them (so it reads as a variation), up to the first move that can't be played. Returns the
+ * line's first move, or null (nothing added) when there is none or it is `played`: a best line
+ * starting with the move played is the game itself.
+ */
+function mergeLine(
+  byId: Map<string, MoveNode>,
+  parent: MoveNode,
+  line: readonly string[],
+  played: MoveNode
+): MoveNode | null {
+  const position = positionFromFen(parent.fenAfter);
+  let first: MoveNode | null = null;
+  let at = parent;
+  for (const [index, uci] of line.entries()) {
+    const move = parseUci(uci);
+    if (!move || !position.isLegal(move)) break;
+    const fenBefore = makeFen(position.toSetup());
+    const san = makeSanAndPlay(position, move);
+    let next = at.children.map((id) => byId.get(id)).find((child) => child?.san === san);
+    if (!first && next === played) return null;
+    if (!next) {
+      next = {
+        id: `${played.id}~best-${index}`,
+        parentId: at.id,
+        san,
+        uci: makeUci(move),
+        fenBefore,
+        fenAfter: makeFen(position.toSetup()),
+        ply: at.ply + 1,
+        nags: [],
+        comment: null,
+        clockAfter: null,
+        arrows: [],
+        highlights: [],
+        children: []
+      };
+      byId.set(next.id, next);
+      at.children.push(next.id);
+    }
+    first ??= next;
+    at = next;
+  }
+  return first;
+}
+
+/**
+ * A `[%eval]` value: pawns with two decimals, `#N` / `#-N` for a mate, from White's view. None for
+ * a checkmate (`mate 0`): the result says it.
+ */
+function pgnEval(score: EngineScore | null | undefined): string | null {
+  if (!score) return null;
+  if (score.type === "mate") return score.value ? `#${score.value}` : null;
+  return (score.value / 100).toFixed(2);
 }
 
 export function addMoveNode(

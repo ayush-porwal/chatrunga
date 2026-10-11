@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { DatabaseDownloadProgress } from "@chaturanga/shared/types/database";
 
-/** How long a finished download keeps showing "Download complete". */
+/** How long a finished download stays in the store (its card meanwhile reads the list again). */
 export const COMPLETED_PROGRESS_MS = 1800;
 
 type DownloadStore = {

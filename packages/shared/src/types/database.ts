@@ -17,7 +17,6 @@ export type ExternalDatabaseSource = {
   expectedRecords?: number;
   updatedLabel?: string;
   fields: string[];
-  supportedFilters: string[];
 };
 
 export type InstalledDatabase = {
@@ -118,14 +117,6 @@ export const externalDatabaseSources = [
       "Themes",
       "GameUrl",
       "OpeningTags"
-    ],
-    supportedFilters: [
-      "rating",
-      "popularity",
-      "themes",
-      "solution length",
-      "side to move",
-      "opening"
     ]
   },
   {
@@ -141,7 +132,6 @@ export const externalDatabaseSources = [
     description:
       "Curated chess positions with FEN, best move, difficulty, side to move, source game URL, and strategic labels.",
     license: "Repository dataset",
-    fields: ["fen", "best_move", "difficulty", "side_to_move", "lichess_url", "strategic labels"],
-    supportedFilters: ["difficulty", "side to move", "strategic labels"]
+    fields: ["fen", "best_move", "difficulty", "side_to_move", "lichess_url", "strategic labels"]
   }
 ] satisfies ExternalDatabaseSource[];

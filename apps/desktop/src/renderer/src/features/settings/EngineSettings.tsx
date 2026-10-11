@@ -1,5 +1,5 @@
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
-import { useState } from "react";
+import { useState, type ComponentProps, type ComponentType } from "react";
 import {
   Download,
   File,
@@ -111,7 +111,34 @@ function formatHashSize(mb: number): string {
   return mb >= 1024 && mb % 1024 === 0 ? `${mb / 1024} GB` : `${mb} MB`;
 }
 
-export function EnginePerformanceSettings({ appearance }: { appearance: AppSettings }) {
+function EnginePerformanceSettings({ appearance }: { appearance: AppSettings }) {
+  return (
+    <div className="grid gap-1">
+      <SectionHeader as="h3" title="Performance" description={ENGINE_PERFORMANCE_DESCRIPTION} />
+      <div className="grid divide-y divide-line-subtle">
+        <EnginePerformanceRows appearance={appearance} />
+      </div>
+    </div>
+  );
+}
+
+/** What the Performance settings are for (Settings → Engines and Analysis settings). */
+export const ENGINE_PERFORMANCE_DESCRIPTION =
+  "For the evaluation engine in Game review and live analysis.";
+
+/**
+ * The evaluation engine's Threads and Hash, as two rows: Settings' own rows by default, or the
+ * `Row` (same props as SettingRow) and select look of the dialog they sit in.
+ */
+export function EnginePerformanceRows({
+  appearance,
+  Row = SettingRow,
+  selectClassName = "w-36"
+}: {
+  appearance: AppSettings;
+  Row?: ComponentType<ComponentProps<typeof SettingRow>>;
+  selectClassName?: string;
+}) {
   const setSetting = useSetSetting();
   const cores = logicalCores();
   const autoThreads = defaultEngineThreads(cores);
@@ -120,63 +147,56 @@ export function EnginePerformanceSettings({ appearance }: { appearance: AppSetti
     ? [...HASH_SIZE_OPTIONS_MB]
     : [...HASH_SIZE_OPTIONS_MB, appearance.engineHashMb].sort((a, b) => a - b);
   return (
-    <div className="grid gap-1">
-      <SectionHeader
-        as="h3"
-        title="Performance"
-        description="For the evaluation engine in Game review and live analysis."
+    <>
+      <Row
+        label="Threads"
+        htmlFor="setting-engine-threads"
+        description={`CPU cores the evaluation engine may use. Auto keeps one of your ${cores} free for the app.`}
+        control={
+          <Select
+            id="setting-engine-threads"
+            className={selectClassName}
+            value={
+              appearance.engineThreads === null
+                ? "auto"
+                : String(Math.min(appearance.engineThreads, cores))
+            }
+            onChange={(event) =>
+              setSetting(
+                "engineThreads",
+                event.target.value === "auto" ? null : Number(event.target.value)
+              )
+            }
+          >
+            <option value="auto">Auto · {autoThreads}</option>
+            {threadOptions.map((count) => (
+              <option key={count} value={count}>
+                {count} {count === 1 ? "thread" : "threads"}
+              </option>
+            ))}
+          </Select>
+        }
       />
-      <div className="grid divide-y divide-line-subtle">
-        <SettingRow
-          label="Threads"
-          htmlFor="setting-engine-threads"
-          description={`CPU cores the evaluation engine may use. Auto keeps one of your ${cores} free for the app.`}
-          control={
-            <Select
-              id="setting-engine-threads"
-              className="w-36"
-              value={
-                appearance.engineThreads === null
-                  ? "auto"
-                  : String(Math.min(appearance.engineThreads, cores))
-              }
-              onChange={(event) =>
-                setSetting(
-                  "engineThreads",
-                  event.target.value === "auto" ? null : Number(event.target.value)
-                )
-              }
-            >
-              <option value="auto">Auto · {autoThreads}</option>
-              {threadOptions.map((count) => (
-                <option key={count} value={count}>
-                  {count} {count === 1 ? "thread" : "threads"}
-                </option>
-              ))}
-            </Select>
-          }
-        />
-        <SettingRow
-          label="Hash"
-          htmlFor="setting-engine-hash"
-          description={`Memory for the engine's position cache. More helps long searches. Default ${formatHashSize(defaultSettings.engineHashMb)}.`}
-          control={
-            <Select
-              id="setting-engine-hash"
-              className="w-36"
-              value={appearance.engineHashMb}
-              onChange={(event) => setSetting("engineHashMb", Number(event.target.value))}
-            >
-              {hashOptions.map((mb) => (
-                <option key={mb} value={mb}>
-                  {formatHashSize(mb)}
-                </option>
-              ))}
-            </Select>
-          }
-        />
-      </div>
-    </div>
+      <Row
+        label="Hash"
+        htmlFor="setting-engine-hash"
+        description={`Memory for the engine's position cache. More helps long searches. Default ${formatHashSize(defaultSettings.engineHashMb)}.`}
+        control={
+          <Select
+            id="setting-engine-hash"
+            className={selectClassName}
+            value={appearance.engineHashMb}
+            onChange={(event) => setSetting("engineHashMb", Number(event.target.value))}
+          >
+            {hashOptions.map((mb) => (
+              <option key={mb} value={mb}>
+                {formatHashSize(mb)}
+              </option>
+            ))}
+          </Select>
+        }
+      />
+    </>
   );
 }
 

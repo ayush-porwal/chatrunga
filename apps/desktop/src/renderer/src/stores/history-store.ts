@@ -36,8 +36,8 @@ export type BoardSnapshot = {
   engineSide: Color | null;
   orientation: Color;
   gameOutcome: { result: string; termination: string } | null;
-  /** The workspace's side tab. */
-  tab: "notation" | "engine" | "library";
+  /** The workspace's side tab (an older build's "engine" reads as Moves: sideTabFrom). */
+  tab: "notation" | "library";
   /** A puzzle on the board: restored by starting it again (never mid-solution). */
   puzzle: { sample: PuzzleSample } | null;
   /**

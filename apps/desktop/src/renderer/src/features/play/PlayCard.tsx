@@ -20,7 +20,6 @@ import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Progress } from "@/components/ui/progress";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { localImageSrc } from "@/lib/local-image";
 import { cn } from "@/lib/utils";
 import { useSettingsQuery, useUpdateSettingsMutation } from "../../queries/api";
 import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-store";
@@ -587,14 +586,7 @@ function engineView({
       you,
       opponent: (
         <MatchSide
-          tile={
-            <OpponentTile
-              kind="engine"
-              icon={<Bot aria-hidden="true" />}
-              imageSrc={localImageSrc(selected?.imagePath)}
-              side={engineSide}
-            />
-          }
+          tile={<OpponentTile kind="engine" imagePath={selected?.imagePath} side={engineSide} />}
           name={selected ? engineDisplayName(selected.name) : "Engine"}
         />
       ),

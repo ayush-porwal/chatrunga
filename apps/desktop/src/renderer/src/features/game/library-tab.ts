@@ -1,8 +1,9 @@
 /**
- * The source tab the library lists (the workspace's Library tab and Game review's Choose a game
- * share it): the last one chosen, remembered on this machine (localStorage) like the move list's
- * reading choices; until one is chosen, the current game's tab, else the first with games. A tab
- * shows only while the library has games from that source.
+ * The source tab Game review's Choose a game lists: the last one chosen there or in the workspace
+ * Library's filter, remembered on this machine (localStorage) like the move list's reading
+ * choices; until one is chosen, the current game's tab, else the first with games. A tab shows
+ * only while the library has games from that source. Also the Library tab's filter (every source,
+ * or one, and Reviewed), which starts from every game each time.
  */
 import { create } from "zustand";
 import type { GameSource } from "@chaturanga/shared/types/chess";
@@ -13,10 +14,12 @@ import {
   LIBRARY_TABS,
   libraryTabOf,
   visibleLibraryTabs,
-  type LibraryTab
+  type LibraryTab,
+  type LibraryTabCounts
 } from "@chaturanga/shared/types/library";
 import { isOneOf } from "@chaturanga/shared/types/guards";
 import { useGameFacetsQuery } from "../../queries/api";
+import { recentGamesFilterOptions, type RecentGamesFilterOption } from "../play/recent-games";
 
 const TAB_KEY = "chaturanga.library.tab";
 
@@ -79,5 +82,48 @@ export function useLibraryTabs(currentSource: GameSource | null, excludeId: stri
     tabs: visibleLibraryTabs(counts),
     tab: defaultLibraryTab({ remembered, currentSource, counts }),
     choose
+  };
+}
+
+/** What the Library tab lists: one source's games (`tab`; null for every game), only the reviewed ones or all. */
+export type LibraryFilter = { tab: LibraryTab | null; reviewed: boolean };
+
+export const DEFAULT_LIBRARY_FILTER: LibraryFilter = { tab: null, reviewed: false };
+
+/**
+ * Whether the filter narrows the list (anything but every source with Reviewed off): the filter
+ * button's dot, shown whether its menu is open or not.
+ */
+export function libraryFilterApplies(filter: LibraryFilter): boolean {
+  return (
+    filter.tab !== DEFAULT_LIBRARY_FILTER.tab || filter.reviewed !== DEFAULT_LIBRARY_FILTER.reviewed
+  );
+}
+
+/**
+ * The Library's filter as it applies: the source chosen while the library still has games from it
+ * (else every game), its menu's choices (All games, then each source with games, with counts), how
+ * many games of the chosen source(s) are reviewed (Reviewed's count), and how many games it lists
+ * (`total`, before any search: the Library tab's count).
+ */
+export function libraryFilterState(
+  counts: LibraryTabCounts,
+  chosen: LibraryFilter
+): {
+  filter: LibraryFilter;
+  options: RecentGamesFilterOption[];
+  reviewed: number;
+  total: number;
+} {
+  const options = recentGamesFilterOptions(counts, null);
+  const tab = chosen.tab && options.some((option) => option.tab === chosen.tab) ? chosen.tab : null;
+  const tabs: readonly LibraryTab[] = tab ? [tab] : LIBRARY_TABS;
+  const games = tabs.reduce((sum, each) => sum + counts[each].games, 0);
+  const reviewed = tabs.reduce((sum, each) => sum + counts[each].reviewed, 0);
+  return {
+    filter: { tab, reviewed: chosen.reviewed },
+    options,
+    reviewed,
+    total: chosen.reviewed ? reviewed : games
   };
 }

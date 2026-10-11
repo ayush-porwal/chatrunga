@@ -35,7 +35,7 @@ const addLineLabel = (san: string) => `Add the line to ${san} to the chapter`;
 
 /**
  * Study's engine panel (opened by Analyze): live analysis of the selected move, following the
- * selection through the tree, with the Engine tab's lines. Picking a move of a line adds the line
+ * selection through the tree, with the board engine's lines. Picking a move of a line adds the line
  * up to it to the chapter at the selected move (one undo step; autosave saves it). While it is
  * mounted the selected move is live analysis's target; unmounting it (closing it, leaving Study,
  * another chapter) clears the target, which stops the search. A game holding the engine (an
@@ -132,7 +132,6 @@ export function StudyEnginePanel({
           onOpenSettings={onOpenSettings}
           headerAction={closeButton}
           linesHint="Click a move to add its line to the chapter."
-          compact
         />
       )}
       {lineError?.nodeId === node.id ? <Notice tone="danger">{lineError.message}</Notice> : null}
