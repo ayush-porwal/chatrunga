@@ -86,13 +86,13 @@ const sans = (tree: MoveNode[]) => tree.map((node) => node.san);
 describe("extractScope", () => {
   it("path: the route to the node only, with fresh pre-order ids and plies from the root", () => {
     const extracted = extractScope(SOURCE, { kind: "path", toNodeId: "e4/e5/Nf3/Nc6" });
-    expect(extracted.tree.map((node) => node.id)).toEqual(["root", "n1", "n2", "n3", "n4"]);
-    expect(sans(extracted.tree)).toEqual([null, "e4", "e5", "Nf3", "Nc6"]);
-    expect(extracted.tree.map((node) => node.ply)).toEqual([0, 1, 2, 3, 4]);
+    expect(extracted.tree.map((node) => node.id)).toStrictEqual(["root", "n1", "n2", "n3", "n4"]);
+    expect(sans(extracted.tree)).toStrictEqual([null, "e4", "e5", "Nf3", "Nc6"]);
+    expect(extracted.tree.map((node) => node.ply)).toStrictEqual([0, 1, 2, 3, 4]);
     expect(extracted.tree.every((node) => node.children.length <= 1)).toBe(true);
     expect(extracted.sourceToChapterIds["e4/e5/Nf3"]).toBe("n3");
     expect(extracted.chapterToSourceIds.n3).toBe("e4/e5/Nf3");
-    expect(extracted.contextNodeIds).toEqual([]);
+    expect(extracted.contextNodeIds).toStrictEqual([]);
     expect(extracted.startNodeId).toBeNull();
     const nf3 = extracted.tree[3];
     expect(nf3).toMatchObject({
@@ -101,7 +101,7 @@ describe("extractScope", () => {
       arrows: [{ orig: "g1", dest: "f3", color: "green" }],
       clockAfter: null
     });
-    expect(extracted.tree[4].highlights).toEqual([{ square: "c6", color: "red" }]);
+    expect(extracted.tree[4].highlights).toStrictEqual([{ square: "c6", color: "red" }]);
     expect(extracted.tree[0]).toMatchObject({ comment: "game intro", parentId: null, uci: null });
   });
 
@@ -111,8 +111,18 @@ describe("extractScope", () => {
       fromNodeId: "e4/e5/Nf3",
       root: "original"
     });
-    expect(sans(extracted.tree)).toEqual([null, "e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "d6", "d4"]);
-    expect(extracted.contextNodeIds).toEqual(["e4", "e4/e5", "e4/e5/Nf3"]);
+    expect(sans(extracted.tree)).toStrictEqual([
+      null,
+      "e4",
+      "e5",
+      "Nf3",
+      "Nc6",
+      "Bb5",
+      "a6",
+      "d6",
+      "d4"
+    ]);
+    expect(extracted.contextNodeIds).toStrictEqual(["e4", "e4/e5", "e4/e5/Nf3"]);
     expect(extracted.startNodeId).toBe(extracted.sourceToChapterIds["e4/e5/Nf3"]);
     // The sibling line 1... c5 isn't copied.
     expect(extracted.sourceToChapterIds["e4/c5"]).toBeUndefined();
@@ -127,7 +137,7 @@ describe("extractScope", () => {
       root: "original"
     });
     expect(extracted.tree).toHaveLength(GAME.length);
-    expect(extracted.contextNodeIds).toEqual([]);
+    expect(extracted.contextNodeIds).toStrictEqual([]);
     expect(extracted.startNodeId).toBeNull();
   });
 
@@ -152,11 +162,11 @@ describe("extractScope", () => {
     });
     // 2. Nf3 was ply 3, so the root is ply 3 (Black to move) and 2... Nc6 is ply 4.
     expect(root.ply).toBe(3);
-    expect(sans(extracted.tree)).toEqual([null, "Nc6", "Bb5", "a6", "d6", "d4"]);
-    expect(extracted.tree.slice(1).map((node) => node.ply)).toEqual([4, 5, 6, 4, 5]);
+    expect(sans(extracted.tree)).toStrictEqual([null, "Nc6", "Bb5", "a6", "d6", "d4"]);
+    expect(extracted.tree.slice(1).map((node) => node.ply)).toStrictEqual([4, 5, 6, 4, 5]);
     expect(extracted.sourceToChapterIds["e4/e5/Nf3"]).toBe("root");
-    expect(extracted.contextNodeIds).toEqual([]);
-    expect(listOwnMoves("black", extracted).map((move) => move.path)).toEqual([
+    expect(extracted.contextNodeIds).toStrictEqual([]);
+    expect(listOwnMoves("black", extracted).map((move) => move.path)).toStrictEqual([
       "2... Nc6",
       "2... Nc6 3. Bb5 a6",
       "2... d6"
@@ -170,7 +180,7 @@ describe("extractScope", () => {
       { rootFen: fen, tree: game },
       { kind: "subtree", fromNodeId: "Bb5", root: "standalone" }
     );
-    expect(extracted.tree.map((node) => node.ply)).toEqual([5, 6, 7]);
+    expect(extracted.tree.map((node) => node.ply)).toStrictEqual([5, 6, 7]);
   });
 
   it("whole-game copies every node", () => {
@@ -198,14 +208,14 @@ describe("proposePolicy / applyPolicy", () => {
     const scope: AddFromGameScope = { kind: "subtree", fromNodeId: "root", root: "original" };
     const extracted = extractScope(SOURCE, scope);
     const policy = proposePolicy("white", extracted, scope, "opening");
-    expect(policy.includedNodeIds).toEqual([
+    expect(policy.includedNodeIds).toStrictEqual([
       "e4",
       "e4/e5/Nf3",
       "e4/e5/Nf3/Nc6/Bb5",
       "e4/e5/Nf3/d6/d4",
       "e4/c5/Nf3"
     ]);
-    expect(policy.coveredNodeIds).toEqual([
+    expect(policy.coveredNodeIds).toStrictEqual([
       "e4/e5",
       "e4/e5/Nf3/Nc6",
       "e4/e5/Nf3/Nc6/Bb5/a6",
@@ -225,9 +235,9 @@ describe("proposePolicy / applyPolicy", () => {
       { kind: "subtree", fromNodeId: "root", root: "original" }
     );
     const policy = proposePolicy("white", extracted, { kind: "path", toNodeId: "e4" }, "opening");
-    expect(policy.includedNodeIds).toEqual(["e4", "e4/e5/Nf3"]);
-    expect(policy.coveredNodeIds).toEqual(["e4/e5"]);
-    expect(proposePolicy("white", extracted, scope, "opening")).toEqual({
+    expect(policy.includedNodeIds).toStrictEqual(["e4", "e4/e5/Nf3"]);
+    expect(policy.coveredNodeIds).toStrictEqual(["e4/e5"]);
+    expect(proposePolicy("white", extracted, scope, "opening")).toStrictEqual({
       includedNodeIds: [],
       coveredNodeIds: []
     });
@@ -236,12 +246,12 @@ describe("proposePolicy / applyPolicy", () => {
   it("a reference chapter or the whole game proposes nothing", () => {
     const scope: AddFromGameScope = { kind: "path", toNodeId: "e4/e5/Nf3" };
     const extracted = extractScope(SOURCE, scope);
-    expect(proposePolicy("white", extracted, scope, "reference")).toEqual({
+    expect(proposePolicy("white", extracted, scope, "reference")).toStrictEqual({
       includedNodeIds: [],
       coveredNodeIds: []
     });
     const whole = extractScope(SOURCE, { kind: "whole-game" });
-    expect(proposePolicy("white", whole, { kind: "whole-game" }, "opening")).toEqual({
+    expect(proposePolicy("white", whole, { kind: "whole-game" }, "opening")).toStrictEqual({
       includedNodeIds: [],
       coveredNodeIds: []
     });
@@ -251,16 +261,16 @@ describe("proposePolicy / applyPolicy", () => {
     const scope: AddFromGameScope = { kind: "subtree", fromNodeId: "e4/e5/Nf3", root: "original" };
     const extracted = extractScope(SOURCE, scope);
     const policy = proposePolicy("black", extracted, scope, "opening");
-    expect(policy.includedNodeIds).toEqual(["e4/e5/Nf3/Nc6", "e4/e5/Nf3/Nc6/Bb5/a6"]);
-    expect(policy.coveredNodeIds).toEqual(["e4/e5/Nf3/Nc6/Bb5"]);
+    expect(policy.includedNodeIds).toStrictEqual(["e4/e5/Nf3/Nc6", "e4/e5/Nf3/Nc6/Bb5/a6"]);
+    expect(policy.coveredNodeIds).toStrictEqual(["e4/e5/Nf3/Nc6/Bb5"]);
     const meta = applyPolicy(extracted, policy);
     const id = (source: string) => extracted.sourceToChapterIds[source];
-    expect(meta[id("e4")]).toEqual({ edge: "covered" });
-    expect(meta[id("e4/e5")]).toEqual({ edge: "covered" });
-    expect(meta[id("e4/e5/Nf3")]).toEqual({ edge: "covered", trainingStart: true });
-    expect(meta[id("e4/e5/Nf3/Nc6")]).toEqual({ edge: "included" });
-    expect(meta[id("e4/e5/Nf3/Nc6/Bb5/a6")]).toEqual({ edge: "included" });
-    expect(meta[id("e4/e5/Nf3/d6")]).toEqual({ edge: "reference" });
+    expect(meta[id("e4")]).toStrictEqual({ edge: "covered" });
+    expect(meta[id("e4/e5")]).toStrictEqual({ edge: "covered" });
+    expect(meta[id("e4/e5/Nf3")]).toStrictEqual({ edge: "covered", trainingStart: true });
+    expect(meta[id("e4/e5/Nf3/Nc6")]).toStrictEqual({ edge: "included" });
+    expect(meta[id("e4/e5/Nf3/Nc6/Bb5/a6")]).toStrictEqual({ edge: "included" });
+    expect(meta[id("e4/e5/Nf3/d6")]).toStrictEqual({ edge: "reference" });
     expect(meta.root).toBeUndefined();
 
     // Only the selected position trains: the context's own moves never become decisions.
@@ -274,11 +284,11 @@ describe("proposePolicy / applyPolicy", () => {
         nodeMeta: meta
       }
     ]);
-    expect([...decisions.values()].map((decision) => [...decision.acceptedUcis])).toEqual([
+    expect([...decisions.values()].map((decision) => [...decision.acceptedUcis])).toStrictEqual([
       ["b8c6"],
       ["a7a6"]
     ]);
-    expect(listOwnMoves("black", extracted).map((move) => move.nodeId)).toEqual([
+    expect(listOwnMoves("black", extracted).map((move) => move.nodeId)).toStrictEqual([
       "e4/e5/Nf3/Nc6",
       "e4/e5/Nf3/Nc6/Bb5/a6",
       "e4/e5/Nf3/d6"
@@ -293,14 +303,14 @@ describe("proposePolicy / applyPolicy", () => {
       { includedNodeIds: ["e4"], coveredNodeIds: [] },
       { e4: "x1" }
     );
-    expect({ ...meta }).toEqual({ x1: { edge: "included" } });
+    expect({ ...meta }).toStrictEqual({ x1: { edge: "included" } });
   });
 });
 
 describe("listOwnMoves", () => {
   it("lists the player's moves in route order with numbered paths", () => {
     const extracted = extractScope(SOURCE, { kind: "whole-game" });
-    expect(listOwnMoves("white", extracted)).toEqual([
+    expect(listOwnMoves("white", extracted)).toStrictEqual([
       { nodeId: "e4", san: "e4", uci: "e2e4", ply: 1, path: "1. e4" },
       { nodeId: "e4/e5/Nf3", san: "Nf3", uci: "g1f3", ply: 3, path: "1. e4 e5 2. Nf3" },
       {
@@ -329,12 +339,12 @@ describe("listOpponentMoves / pathToPosition", () => {
       fromNodeId: "e4/e5/Nf3",
       root: "original"
     });
-    expect(listOpponentMoves("white", extracted).map((move) => move.nodeId)).toEqual([
+    expect(listOpponentMoves("white", extracted).map((move) => move.nodeId)).toStrictEqual([
       "e4/e5/Nf3/Nc6",
       "e4/e5/Nf3/Nc6/Bb5/a6",
       "e4/e5/Nf3/d6"
     ]);
-    expect(listOpponentMoves("black", extracted).map((move) => move.path)).toEqual([
+    expect(listOpponentMoves("black", extracted).map((move) => move.path)).toStrictEqual([
       "1. e4 e5 2. Nf3 Nc6 3. Bb5",
       "1. e4 e5 2. Nf3 d6 3. d4"
     ]);
@@ -378,7 +388,7 @@ describe("untrainedMoveWarnings", () => {
       chosen(extracted, policy.includedNodeIds)
     );
     expect(result.trained).toBe(0);
-    expect(result.warnings).toEqual([
+    expect(result.warnings).toStrictEqual([
       "2 chosen moves won't be trained: Nf3 at 1. e4 e5 2. Nf3, Bb5 at 1. e4 e5 2. Nf3 Nc6 3. Bb5 are below an unaccepted move"
     ]);
     const accepted = { ...policy, includedNodeIds: ["e4", ...policy.includedNodeIds] };
@@ -386,7 +396,7 @@ describe("untrainedMoveWarnings", () => {
       chapterOf(extracted, applyPolicy(extracted, accepted)),
       chosen(extracted, accepted.includedNodeIds)
     );
-    expect(all).toEqual({ trained: 3, warnings: [] });
+    expect(all).toStrictEqual({ trained: 3, warnings: [] });
   });
 
   it("reports moves before a training start and a move that starts a line", () => {
@@ -402,7 +412,7 @@ describe("untrainedMoveWarnings", () => {
       chosen(extracted, policy.includedNodeIds)
     );
     expect(result.trained).toBe(1);
-    expect(result.warnings).toEqual([
+    expect(result.warnings).toStrictEqual([
       "1 chosen move won't be trained: they come before the chapter's training start",
       "1 chosen move won't be trained: the chapter's training starts after them"
     ]);

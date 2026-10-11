@@ -38,6 +38,20 @@ function expectValidEntry(entry: ManifestPlatformEntry | undefined, label: strin
   }
 }
 
+/**
+ * How a platform gets Lc0: a download (checked as a valid entry), install instructions, or none.
+ */
+function lc0Provision(platform: PlatformKey): "download" | "instructions" | "none" {
+  const entry = resolveManifestEntry(ENGINE_MANIFEST, "lc0", platform);
+  if (entry) {
+    expectValidEntry(entry, `lc0 ${platform}`);
+    return "download";
+  }
+  return ENGINE_MANIFEST.lc0.installInstructions[platform].trim().length > 0
+    ? "instructions"
+    : "none";
+}
+
 const AVX2: ReadonlySet<CpuFeature> = new Set(["avx2", "bmi2", "sse41", "popcnt"]);
 const NO_AVX2: ReadonlySet<CpuFeature> = new Set(["sse41", "popcnt"]);
 
@@ -85,7 +99,7 @@ describe("Stockfish release asset selection", () => {
     expect(pick(sf171, "darwin-x64", AVX2)).toBe("stockfish-macos-x86-64-avx2.tar");
     // Never an avx512 / vnni build.
     for (const platform of SUPPORTED_PLATFORMS) {
-      expect(pick(sf171, platform, AVX2) ?? "").not.toMatch(/avx512|vnni/);
+      expect(String(pick(sf171, platform, AVX2))).not.toMatch(/avx512|vnni/);
     }
   });
 
@@ -141,7 +155,7 @@ describe("bundled fallback manifest", () => {
     expect(ENGINE_MANIFEST.stockfish.version).toBe("sf_19");
     expect(ENGINE_MANIFEST.lc0.version).toBe("v0.32.1");
     expect(ENGINE_MANIFEST.maiaWeights.version).toBe("v1.0");
-    expect(Object.keys(ENGINE_MANIFEST.maiaWeights.files)).toEqual([...MAIA_ASSET_IDS]);
+    expect(Object.keys(ENGINE_MANIFEST.maiaWeights.files)).toStrictEqual([...MAIA_ASSET_IDS]);
   });
 
   it("matches the recorded release: same asset URLs and sizes as the selection", () => {
@@ -171,15 +185,11 @@ describe("bundled fallback manifest", () => {
     for (const entry of entries) expect(entry.sha256).toBeUndefined();
   });
 
-  it("has a Lc0 download or install instruction for every supported platform", () => {
-    for (const platform of SUPPORTED_PLATFORMS) {
-      const entry = resolveManifestEntry(ENGINE_MANIFEST, "lc0", platform);
-      if (entry) expectValidEntry(entry, `lc0 ${platform}`);
-      else {
-        // oxlint-disable-next-line vitest/no-conditional-expect -- a platform has one or the other
-        expect(ENGINE_MANIFEST.lc0.installInstructions[platform], `lc0 ${platform}`).toBeTruthy();
-      }
-    }
+  it.each(SUPPORTED_PLATFORMS)("has a Lc0 download or install instruction for %s", (platform) => {
+    expect(lc0Provision(platform)).not.toBe("none");
+  });
+
+  it("has a Lc0 download for Windows and install instructions for macOS", () => {
     expect(resolveManifestEntry(ENGINE_MANIFEST, "lc0", "win32-x64")).not.toBeNull();
     expect(resolveManifestEntry(ENGINE_MANIFEST, "lc0", "darwin-arm64")).toBeNull();
   });
@@ -187,7 +197,8 @@ describe("bundled fallback manifest", () => {
   it("has a plain-file download with a realistic size for every Maia weight", () => {
     for (const id of MAIA_ASSET_IDS) {
       const entry = resolveManifestEntry(ENGINE_MANIFEST, id, "darwin-arm64");
-      expectValidEntry(entry ?? undefined, id);
+      expect(entry).not.toBeNull();
+      expectValidEntry(entry!, id);
       expect(entry?.url).toMatch(new RegExp(`/${id}\\.pb\\.gz$`));
       expect(entry?.extract).toBeUndefined();
       expect(entry!.sizeBytes).toBeGreaterThan(1_000_000);

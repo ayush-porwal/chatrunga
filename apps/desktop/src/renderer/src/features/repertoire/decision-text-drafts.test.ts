@@ -38,6 +38,14 @@ const store = () => useRepertoireWorkspaceStore.getState();
 const PROMPT = decisionDraftKey("r1", "k1", "prompt");
 const HINT = decisionDraftKey("r1", "k1", "hint");
 
+/** Reads repertoires by id, except `deletedId`: the main process says it is gone. */
+function readingAllBut(deletedId: string) {
+  return async (id: string) => {
+    if (id === deletedId) throw new Error("Invalid repertoireId: not found");
+    return detailOf({ id });
+  };
+}
+
 /** What the main process answers for a decision write that took. */
 function saved(input: UpdateDecisionInput, revision: number): DecisionSaveResult {
   const decision: RepertoireDecision = {
@@ -118,7 +126,7 @@ describe("decision text drafts", () => {
     chapterSaved = true;
     updateDecision.mockImplementationOnce(async (input) => saved(input, 5));
     expect(await flushDecisionTexts(queryClient, flushChapter)).toBe(true);
-    expect(updateDecision.mock.calls[0][0].patch).toEqual({ hint: "Knight to f3" });
+    expect(updateDecision.mock.calls[0][0].patch).toStrictEqual({ hint: "Knight to f3" });
   });
 
   it("keeps text typed while its write ran", async () => {
@@ -128,7 +136,7 @@ describe("decision text drafts", () => {
       (input) => new Promise((resolve) => (finish = () => resolve(saved(input, 5))))
     );
     const first = saveDecisionText(queryClient, PROMPT, { flushChapter });
-    await vi.waitFor(() => expect(updateDecision).toHaveBeenCalled());
+    await vi.waitFor(() => expect(updateDecision).toHaveBeenCalledTimes(1));
     store().setDecisionText("r1", "k1", "prompt", "Develop with tempo");
     finish();
     expect(await first).toBe(false);
@@ -168,7 +176,7 @@ describe("decision text drafts", () => {
       );
       updateDecision.mockImplementationOnce(async (input) => saved(input, 6));
       const first = saveDecisionText(queryClient, key, { flushChapter });
-      await vi.waitFor(() => expect(updateDecision).toHaveBeenCalled());
+      await vi.waitFor(() => expect(updateDecision).toHaveBeenCalledTimes(1));
       expect(store().decisionDrafts[key].status).toBe("saving");
 
       // Typed (or toggled) again and blurred while the first write runs: marked, not lost.
@@ -199,7 +207,7 @@ describe("decision text drafts", () => {
         )
     );
     const first = saveDecisionText(queryClient, PROMPT, { flushChapter });
-    await vi.waitFor(() => expect(updateDecision).toHaveBeenCalled());
+    await vi.waitFor(() => expect(updateDecision).toHaveBeenCalledTimes(1));
     store().setDecisionText("r1", "k1", "prompt", "Develop with tempo");
     store().requestDecisionTextSaveAgain(PROMPT);
     refuse();
@@ -226,7 +234,7 @@ describe("decision text drafts", () => {
       new Error("Invalid expectedRevision: repertoire changed (stored 6, expected 4)")
     );
     await saveDecisionText(queryClient, PROMPT, { flushChapter });
-    expect(store().decisionDrafts[PROMPT].error).toEqual({
+    expect(store().decisionDrafts[PROMPT].error).toStrictEqual({
       message: "Invalid expectedRevision: repertoire changed (stored 6, expected 4)",
       stale: true
     });
@@ -252,7 +260,7 @@ describe("decision text drafts", () => {
     updateDecision.mockImplementationOnce(async (input) => saved(input, 5));
     expect(await saveDecisionText(queryClient, key, { flushChapter })).toBe(true);
     expect(getDecision).toHaveBeenCalledWith({ repertoireId: "r1", positionKey: "k1" });
-    expect(updateDecision.mock.calls[0][0].patch).toEqual({
+    expect(updateDecision.mock.calls[0][0].patch).toStrictEqual({
       wrongMoveFeedback: { c2c4: "Not the English", d2d4: "We play 1.e4" }
     });
     expect(store().decisionDrafts[key]).toBeUndefined();
@@ -268,7 +276,7 @@ describe("decision text drafts", () => {
         flushChapter
       })
     ).toBe(true);
-    expect(updateDecision.mock.calls[1][0].patch).toEqual({
+    expect(updateDecision.mock.calls[1][0].patch).toStrictEqual({
       wrongMoveFeedback: { d2d4: "We play 1.e4" }
     });
   });
@@ -365,19 +373,16 @@ describe("decision text drafts", () => {
         flushChapter
       })
     ).toBe(true);
-    expect(store().decisionDrafts).toEqual({});
+    expect(store().decisionDrafts).toStrictEqual({});
 
     // The hub's list doesn't have it, and reading it says it's gone; an archived one (unlisted
     // but readable) and a listed one stay.
     store().setDecisionText("r1", "k1", "prompt", "Listed");
     store().setDecisionText("r3", "k1", "prompt", "Deleted");
     store().setDecisionText("r4", "k1", "prompt", "Archived");
-    getRepertoire.mockImplementation(async (id) => {
-      if (id === "r3") throw new Error("Invalid repertoireId: not found");
-      return detailOf({ id });
-    });
+    getRepertoire.mockImplementation(readingAllBut("r3"));
     await discardDeletedRepertoireTexts(queryClient, ["r1"]);
-    expect(Object.values(store().decisionDrafts).map((draft) => draft.repertoireId)).toEqual([
+    expect(Object.values(store().decisionDrafts).map((draft) => draft.repertoireId)).toStrictEqual([
       "r1",
       "r4"
     ]);
@@ -417,7 +422,7 @@ describe("decision text drafts", () => {
     updateDecision.mockReset();
     updateDecision.mockImplementationOnce(async (input) => saved(input, 5));
     expect(await flushChapterDraft(queryClient, ["r1"])).toBe(true);
-    expect(updateDecision.mock.calls[0][0].patch).toEqual({ paused: true });
+    expect(updateDecision.mock.calls[0][0].patch).toStrictEqual({ paused: true });
     expect(store().decisionDrafts[key]).toBeUndefined();
   });
 
@@ -466,12 +471,12 @@ describe("decision text drafts", () => {
       throw new Error("refused");
     });
     const third = queueRepertoireWrite(async () => order.push("third"));
-    await vi.waitFor(() => expect(order).toEqual(["first started"]));
+    await vi.waitFor(() => expect(order).toStrictEqual(["first started"]));
     release();
     await first;
     await expect(failing).rejects.toThrow("refused");
     await third;
-    expect(order).toEqual(["first started", "first done", "second", "third"]);
+    expect(order).toStrictEqual(["first started", "first done", "second", "third"]);
   });
 
   it("a chapter save waits for a running decision write and sends the revision it returned", async () => {

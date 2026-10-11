@@ -20,20 +20,20 @@ let now = 1_000_000_000_000;
 service.setRepertoireClock(() => now);
 const START_KEY = positionKey(START_FEN);
 
-beforeEach(() => {
-  getDb().exec("DELETE FROM repertoires");
-  service.resetImportJobs();
-  sent.length = 0;
-  now = 1_000_000_000_000;
-});
-
-afterAll(() => {
-  service.setRepertoireClock();
-  closeDb();
-  rmSync(userData, { recursive: true, force: true });
-});
-
 describe("repertoire service: practice", () => {
+  beforeEach(() => {
+    getDb().exec("DELETE FROM repertoires");
+    service.resetImportJobs();
+    sent.length = 0;
+    now = 1_000_000_000_000;
+  });
+
+  afterAll(() => {
+    service.setRepertoireClock();
+    closeDb();
+    rmSync(userData, { recursive: true, force: true });
+  });
+
   it("review-due with nothing due returns an empty finished session", () => {
     const { id } = create();
     save(id, [["e2e4"]]);
@@ -53,11 +53,11 @@ describe("repertoire service: practice", () => {
     attempt(first.session.sessionId, first.card.queueItemId, "e2e4");
     now += 2 * DAY;
     const review = service.startPractice({ repertoireId: id, mode: "review-due" });
-    expect(review.cards.map((card) => [card.positionKey === START_KEY, card.stage])).toEqual([
+    expect(review.cards.map((card) => [card.positionKey === START_KEY, card.stage])).toStrictEqual([
       [true, "review"],
       [false, "new"]
     ]);
-    expect(review.cards[1].leadUp.map((move) => move.uci)).toEqual(["e2e4", "e7e5"]);
+    expect(review.cards[1].leadUp.map((move) => move.uci)).toStrictEqual(["e2e4", "e7e5"]);
     const shallow = service.startPractice({
       repertoireId: id,
       mode: "learn-new",
@@ -73,7 +73,7 @@ describe("repertoire service: practice", () => {
     save(id, [["c2c4"]], { chapterId: "second", rootFen: later });
     const deep = nodeAt(first.chapter.tree, ["e2e4", "e7e5"]);
     const session = service.startPractice({ repertoireId: id, mode: "learn-new" });
-    expect(session.cards.map((card) => card.positionKey)).toEqual([
+    expect(session.cards.map((card) => card.positionKey)).toStrictEqual([
       START_KEY,
       positionKey(later),
       positionKey(deep.fenAfter)
@@ -155,8 +155,8 @@ describe("repertoire service: practice", () => {
         action: { kind: "hint" }
       })
     );
-    expect(hints.map((hint) => hint.card.hintStage)).toEqual([1, 2, 3, 3]);
-    expect(hints[0].revealed).toEqual({ ucis: [], preferredUci: null, explanation: null });
+    expect(hints.map((hint) => hint.card.hintStage)).toStrictEqual([1, 2, 3, 3]);
+    expect(hints[0].revealed).toStrictEqual({ ucis: [], preferredUci: null, explanation: null });
     expect(hints[1].revealed?.preferredUci).toBe("e2e4");
     const result = attempt(session.sessionId, card.queueItemId, "e2e4");
     expect(result.finalGrade).toBe(true);
@@ -198,7 +198,7 @@ describe("repertoire service: practice", () => {
     expect(service.resumePractice(session.sessionId).shown).toBeUndefined();
     const hint = { sessionId: session.sessionId, queueItemId: card.queueItemId };
     service.recordPracticeAction({ ...hint, action: { kind: "hint" } });
-    expect(service.resumePractice(session.sessionId).shown).toEqual({
+    expect(service.resumePractice(session.sessionId).shown).toStrictEqual({
       hint: null,
       hintUci: null,
       revealed: null
@@ -242,7 +242,7 @@ describe("repertoire service: practice", () => {
     expect(progressRepository.get(id, START_KEY)).toBeNull();
     expect(
       attemptRepository.list(session.sessionId).map((row) => [row.legal, row.isFinalGrade])
-    ).toEqual([[false, false]]);
+    ).toStrictEqual([[false, false]]);
     expect(attempt(session.sessionId, card.queueItemId, "e2e4").outcome).toBe("correct");
     expect(progressRepository.get(id, START_KEY)?.stage).toBe(1);
   });
@@ -254,7 +254,7 @@ describe("repertoire service: practice", () => {
     const first = attempt(session.sessionId, card.queueItemId, "e2e4", "same");
     now += 5000;
     const replay = attempt(session.sessionId, card.queueItemId, "e2e4", "same");
-    expect(replay).toEqual(first);
+    expect(replay).toStrictEqual(first);
     expect(attemptRepository.list(session.sessionId)).toHaveLength(1);
     expect(progressRepository.get(id, START_KEY)?.unaidedSuccesses).toBe(1);
     expect(() => attempt(session.sessionId, "q9", "e2e4", "same")).toThrow(/Invalid attemptId/);
@@ -301,7 +301,7 @@ describe("repertoire service: practice", () => {
     });
     expect(skipped.card.state).toBe("skipped");
     const resumed = service.resumePractice(session.sessionId);
-    expect(resumed.totals).toEqual({
+    expect(resumed.totals).toStrictEqual({
       total: 3,
       answered: 2,
       correct: 1,
@@ -319,7 +319,7 @@ describe("repertoire service: practice", () => {
       chapters: [a.chapterId],
       missedPositionKeys: [b.positionKey]
     });
-    expect(service.endPractice(session.sessionId)).toEqual(summary);
+    expect(service.endPractice(session.sessionId)).toStrictEqual(summary);
     expect(service.resumePractice(session.sessionId).status).toBe("finished");
     expect(() => attempt(session.sessionId, a.queueItemId, "e2e4")).toThrow(/has ended/);
   });
@@ -330,7 +330,7 @@ describe("repertoire service: practice", () => {
     const session = service.startPractice({ repertoireId: id, mode: "learn-new" });
     save(id, [["e2e4", "e7e5", "b1c3"]]);
     const resumed = service.resumePractice(session.sessionId);
-    expect(resumed.cards.map((card) => card.state)).toEqual(["unanswered", "skipped"]);
+    expect(resumed.cards.map((card) => card.state)).toStrictEqual(["unanswered", "skipped"]);
     expect(service.endPractice(session.sessionId).skipped).toBe(1);
     expect(() => service.resumePractice("missing")).toThrow("Invalid sessionId: not found");
   });
@@ -358,7 +358,7 @@ describe("repertoire service: practice", () => {
       action: { kind: "reveal" }
     });
     expect(result.card.state).toBe("skipped");
-    expect(result.revealed?.ucis).toEqual(["e2e4"]);
+    expect(result.revealed?.ucis).toStrictEqual(["e2e4"]);
     expect(progressRepository.get(id, START_KEY)).toBeNull();
   });
 
@@ -390,7 +390,7 @@ describe("repertoire service: practice", () => {
     expect(attempt(first.sessionId, first.cards[0].queueItemId, "e2e4").outcome).toBe("correct");
     const progress = progressRepository.get(id, START_KEY);
     expect(attempt(second.sessionId, second.cards[0].queueItemId, "e2e4").outcome).toBe("stale");
-    expect(progressRepository.get(id, START_KEY)).toEqual(progress);
+    expect(progressRepository.get(id, START_KEY)).toStrictEqual(progress);
   });
 
   it("archiving stops an open session from grading", () => {
@@ -441,9 +441,11 @@ describe("repertoire service: practice", () => {
     expect(targeted.status).toBe("active");
     expect(targeted.cards).toHaveLength(1);
     expect(targeted.cards[0]).toMatchObject({ positionKey: START_KEY, stage: "review" });
-    expect(targeted.scope.positionKeys).toEqual([START_KEY]);
-    expect(service.resumePractice(targeted.sessionId).scope.positionKeys).toEqual([START_KEY]);
-    expect(progressRepository.get(id, START_KEY)).toEqual(before);
+    expect(targeted.scope.positionKeys).toStrictEqual([START_KEY]);
+    expect(service.resumePractice(targeted.sessionId).scope.positionKeys).toStrictEqual([
+      START_KEY
+    ]);
+    expect(progressRepository.get(id, START_KEY)).toStrictEqual(before);
 
     const result = attempt(targeted.sessionId, targeted.cards[0].queueItemId, "e2e4");
     expect(result.outcome).toBe("correct");
@@ -468,7 +470,9 @@ describe("repertoire service: practice", () => {
     const { session, card } = learnFirst(id);
     const ids = { sessionId: session.sessionId, queueItemId: card.queueItemId };
     // A hint gives the hint only; a wrong answer only that move's feedback.
-    expect(service.recordPracticeAction({ ...ids, action: { kind: "hint" } }).revealed).toEqual({
+    expect(
+      service.recordPracticeAction({ ...ids, action: { kind: "hint" } }).revealed
+    ).toStrictEqual({
       ucis: [],
       preferredUci: null,
       explanation: "A king's pawn"
@@ -478,13 +482,15 @@ describe("repertoire service: practice", () => {
     expect(wrong).not.toHaveProperty("explanation");
     expect(wrong).not.toHaveProperty("moveComments");
     const revealed = service.recordPracticeAction({ ...ids, action: { kind: "reveal" } });
-    expect(revealed.revealed).toEqual({
+    expect(revealed.revealed).toStrictEqual({
       ucis: ["e2e4"],
       preferredUci: "e2e4",
       explanation: "Choose your centre pawn.",
       moveComments: { e2e4: "Open games." }
     });
-    expect(service.resumePractice(session.sessionId).shown?.revealed).toEqual(revealed.revealed);
+    expect(service.resumePractice(session.sessionId).shown?.revealed).toStrictEqual(
+      revealed.revealed
+    );
     expect(attempt(session.sessionId, card.queueItemId, "e2e4")).toMatchObject({
       outcome: "correct",
       acceptedUcis: ["e2e4"],
@@ -537,13 +543,13 @@ describe("repertoire service: practice", () => {
     const retry = retryMissed();
     expect(retry.scope.ungraded).toBe(true);
     expect(service.resumePractice(retry.sessionId).scope.ungraded).toBe(true);
-    expect(retry.cards.map((card) => card.positionKey)).toEqual([START_KEY]);
+    expect(retry.cards.map((card) => card.positionKey)).toStrictEqual([START_KEY]);
     // A correct retry seconds after the miss doesn't jump the relearn step to stage 1.
     expect(attempt(retry.sessionId, retry.cards[0].queueItemId, "e2e4")).toMatchObject({
       outcome: "correct",
       finalGrade: true
     });
-    expect(progressRepository.get(id, START_KEY)).toEqual(lapsed);
+    expect(progressRepository.get(id, START_KEY)).toStrictEqual(lapsed);
     // Its answers are recorded with the retry session: its summary counts them.
     expect(service.endPractice(retry.sessionId)).toMatchObject({ unaided: 1, missed: 0 });
 
@@ -563,15 +569,15 @@ describe("repertoire service: practice", () => {
       queueItemId: third.cards[0].queueItemId,
       action: { kind: "reveal" }
     });
-    expect(progressRepository.get(id, START_KEY)).toEqual(lapsed);
+    expect(progressRepository.get(id, START_KEY)).toStrictEqual(lapsed);
     expect(service.endPractice(again.sessionId)).toMatchObject({
       missed: 1,
       missedPositionKeys: [START_KEY]
     });
 
     // The first session's answers and summary are unchanged.
-    expect(attemptRepository.list(first.sessionId)).toEqual(firstRows);
-    expect(service.endPractice(first.sessionId)).toEqual(summary);
+    expect(attemptRepository.list(first.sessionId)).toStrictEqual(firstRows);
+    expect(service.endPractice(first.sessionId)).toStrictEqual(summary);
   });
 
   it("a paused decision leaves practice and due counts, and resuming keeps its progress", () => {
@@ -601,7 +607,7 @@ describe("repertoire service: practice", () => {
       const session = service.startPractice({ repertoireId: id, mode });
       expect(session.cards.map((card) => card.positionKey)).not.toContain(START_KEY);
     }
-    expect(progressRepository.get(id, START_KEY)).toEqual(learned);
+    expect(progressRepository.get(id, START_KEY)).toStrictEqual(learned);
 
     const resumed = service.updateDecision({
       repertoireId: id,
@@ -611,10 +617,10 @@ describe("repertoire service: practice", () => {
     });
     expect(resumed.decision.paused).toBe(false);
     // Its first scored attempt and schedule are as they were: still a due review, not a new card.
-    expect(progressRepository.get(id, START_KEY)).toEqual(learned);
+    expect(progressRepository.get(id, START_KEY)).toStrictEqual(learned);
     expect(resumed.repertoire).toMatchObject({ dueCount: 1, decisionCount: 2 });
     const review = service.startPractice({ repertoireId: id, mode: "review-due" });
-    expect(review.cards.map((card) => [card.positionKey === START_KEY, card.stage])).toEqual([
+    expect(review.cards.map((card) => [card.positionKey === START_KEY, card.stage])).toStrictEqual([
       [true, "review"],
       [false, "new"]
     ]);
@@ -633,13 +639,13 @@ describe("repertoire service: practice", () => {
     expect(() => write({ e2e5: "Not a move" })).toThrow(
       /Invalid wrongMoveFeedback: "e2e5" is not a legal move/
     );
-    expect(write({ d2d4: " We play 1.e4 ", c2c4: "Not the English" })).toEqual({
+    expect(write({ d2d4: " We play 1.e4 ", c2c4: "Not the English" })).toStrictEqual({
       d2d4: "We play 1.e4",
       c2c4: "Not the English"
     });
     // Left out or blank: removed.
-    expect(write({ d2d4: "We play 1.e4", c2c4: "   " })).toEqual({ d2d4: "We play 1.e4" });
-    expect(write({})).toEqual({});
+    expect(write({ d2d4: "We play 1.e4", c2c4: "   " })).toStrictEqual({ d2d4: "We play 1.e4" });
+    expect(write({})).toStrictEqual({});
   });
 
   it("wrong-move feedback never names an accepted move", () => {
@@ -659,7 +665,7 @@ describe("repertoire service: practice", () => {
     // Feedback written while 1.d4 was outside the repertoire, then 1.d4 accepted: sent back
     // unchanged with the rest of the map it is dropped; new text for it is refused.
     update({ wrongMoveFeedback: { d2d4: "We play 1.e4" } });
-    expect(update({ acceptedUcis: ["e2e4", "d2d4"] }).wrongMoveFeedback).toEqual({
+    expect(update({ acceptedUcis: ["e2e4", "d2d4"] }).wrongMoveFeedback).toStrictEqual({
       d2d4: "We play 1.e4"
     });
     expect(() => update({ wrongMoveFeedback: { d2d4: "Changed" } })).toThrow(
@@ -668,7 +674,7 @@ describe("repertoire service: practice", () => {
     expect(
       update({ wrongMoveFeedback: { d2d4: "We play 1.e4", c2c4: "Not the English" } })
         .wrongMoveFeedback
-    ).toEqual({ c2c4: "Not the English" });
+    ).toStrictEqual({ c2c4: "Not the English" });
   });
 
   it("a targeted queue keeps the given order and drops unknown or paused decisions", () => {
@@ -690,7 +696,7 @@ describe("repertoire service: practice", () => {
       mode: "review-due",
       positionKeys: [afterE5, "v1:unknown", afterNc6, START_KEY, afterE5]
     });
-    expect(session.cards.map((card) => [card.positionKey, card.stage])).toEqual([
+    expect(session.cards.map((card) => [card.positionKey, card.stage])).toStrictEqual([
       [afterE5, "new"],
       [START_KEY, "new"]
     ]);

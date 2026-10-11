@@ -24,16 +24,16 @@ describe("puzzle rating text", () => {
         after,
         delta: 12
       })
-    ).toEqual({
+    ).toStrictEqual({
       text: "Your rating 1523",
       delta: 12
     });
     const unrated = { attemptId: "a", rated: false, before: null, after: null, delta: null };
-    expect(ratingLine({ ...unrated, unratedReason: "unrated-puzzle" })).toEqual({
+    expect(ratingLine({ ...unrated, unratedReason: "unrated-puzzle" })).toStrictEqual({
       text: "Unrated puzzle",
       delta: null
     });
-    expect(ratingLine({ ...unrated, unratedReason: "already-played" })).toEqual({
+    expect(ratingLine({ ...unrated, unratedReason: "already-played" })).toStrictEqual({
       text: "Already played — not rated",
       delta: null
     });

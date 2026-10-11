@@ -41,7 +41,7 @@ describe("followFullScreen", () => {
     answer.resolve(true);
     await settled();
     change(false);
-    expect(reported).toEqual([true, false]);
+    expect(reported).toStrictEqual([true, false]);
   });
 
   it("lets a change that arrives before the answer win over it", async () => {
@@ -49,7 +49,7 @@ describe("followFullScreen", () => {
     change(true);
     answer.resolve(false);
     await settled();
-    expect(reported).toEqual([true]);
+    expect(reported).toStrictEqual([true]);
   });
 
   it("ignores an answer that arrives after it stopped, and stops listening", async () => {
@@ -60,7 +60,7 @@ describe("followFullScreen", () => {
     answer.resolve(true);
     await settled();
     change(true);
-    expect(reported).toEqual([]);
+    expect(reported).toStrictEqual([]);
   });
 
   it("ignores a failed answer and still follows changes", async () => {
@@ -68,6 +68,6 @@ describe("followFullScreen", () => {
     answer.reject(new Error("window closed"));
     await settled();
     change(true);
-    expect(reported).toEqual([true]);
+    expect(reported).toStrictEqual([true]);
   });
 });

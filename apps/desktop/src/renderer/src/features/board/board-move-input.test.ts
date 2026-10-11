@@ -7,7 +7,7 @@ const CASTLING = "r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1";
 
 describe("resolveBoardMove", () => {
   it("resolves a legal board move with SAN and the FEN after", () => {
-    expect(resolveBoardMove(START_FEN, "e2", "e4")).toEqual({
+    expect(resolveBoardMove(START_FEN, "e2", "e4")).toStrictEqual({
       uci: "e2e4",
       san: "e4",
       fenAfter: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"

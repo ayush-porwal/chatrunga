@@ -32,8 +32,8 @@ describe("IPC channels", () => {
   it("every request the preload makes has a handler in main, and every handler is used", () => {
     const requested = matches(preload, /ipcRenderer\.(?:invoke|sendSync|send)\(\s*"([\w:]+)"/g);
     const handled = matches(main, /ipcMain\.(?:handle|on|once)\(\s*"([\w:]+)"/g);
-    expect([...requested].filter((channel) => !handled.has(channel))).toEqual([]);
-    expect([...handled].filter((channel) => !requested.has(channel))).toEqual([]);
+    expect([...requested].filter((channel) => !handled.has(channel))).toStrictEqual([]);
+    expect([...handled].filter((channel) => !requested.has(channel))).toStrictEqual([]);
   });
 
   it("every event the preload listens to is sent by main", () => {
@@ -43,12 +43,14 @@ describe("IPC channels", () => {
       // The engine events are relayed from a table (ENGINE_EVENT_CHANNELS in register.ts).
       ...matches(main, /:\s*"((?:engine|review):\w+)"/g)
     ]);
-    expect([...listened].filter((channel) => !sent.has(channel))).toEqual([]);
+    expect([...listened].filter((channel) => !sent.has(channel))).toStrictEqual([]);
   });
 
   it("never gives the renderer a way to read a secret (API keys and tokens stay in main)", () => {
     const requested = matches(preload, /ipcRenderer\.(?:invoke|sendSync|send)\(\s*"([\w:]+)"/g);
-    expect([...requested].filter((channel) => channel.startsWith("commentary:")).sort()).toEqual([
+    expect(
+      [...requested].filter((channel) => channel.startsWith("commentary:")).sort()
+    ).toStrictEqual([
       "commentary:cancelPuzzleExplanation",
       "commentary:explainPuzzle",
       "commentary:generate",
@@ -57,7 +59,7 @@ describe("IPC channels", () => {
     ]);
     expect(
       [...requested].filter((channel) => /api.?key|secret|token|password/i.test(channel))
-    ).toEqual([]);
+    ).toStrictEqual([]);
   });
 
   it("exposes the repertoire namespace, including its lookups and the change event", () => {
@@ -71,7 +73,7 @@ describe("IPC channels", () => {
     ]) {
       expect(requested.has(`repertoires:${lookup}`)).toBe(true);
     }
-    expect(matches(preload, /subscribe(?:<[^>]*>)?\(\s*"(repertoires:\w+)"/g)).toEqual(
+    expect(matches(preload, /subscribe(?:<[^>]*>)?\(\s*"(repertoires:\w+)"/g)).toStrictEqual(
       new Set(["repertoires:changed", "repertoires:importProgress"])
     );
     // Every request the shared API declares has its channel (the subscriptions aside), so one
@@ -88,6 +90,8 @@ describe("IPC channels", () => {
       (name) => !name.startsWith("on")
     );
     expect(methods.length).toBeGreaterThan(30);
-    expect([...requested].sort()).toEqual(methods.map((name) => `repertoires:${name}`).sort());
+    expect([...requested].sort()).toStrictEqual(
+      methods.map((name) => `repertoires:${name}`).sort()
+    );
   });
 });

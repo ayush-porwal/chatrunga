@@ -34,14 +34,14 @@ describe("parseRepertoirePgn", () => {
     expect(first.headers).toMatchObject({ ECO: "B90", StudyName: "My Sicilian", Annotator: "me" });
     expect(first.rootFen).toBe(START_FEN);
     expect(first.tree[0].id).toBe("root");
-    expect(first.tree.slice(1).map((node) => node.id)).toEqual(
+    expect(first.tree.slice(1).map((node) => node.id)).toStrictEqual(
       first.tree.slice(1).map((_, index) => `n${index + 1}`)
     );
     expect(first.nodeCount).toBe(first.tree.length - 1);
     expect(second.proposedTitle).toBe("Alice – Bob");
     expect(second.index).toBe(1);
     // Parsing again yields the same ids.
-    expect(parseRepertoirePgn(TWO_GAMES).games[0].tree).toEqual(first.tree);
+    expect(parseRepertoirePgn(TWO_GAMES).games[0].tree).toStrictEqual(first.tree);
   });
 
   it("keeps nested variations, comments, NAGs, arrows and highlights", () => {
@@ -49,15 +49,21 @@ describe("parseRepertoirePgn", () => {
     const bySan = (san: string) => game.tree.filter((node) => node.san === san);
     const root = game.tree[0];
     expect(root.comment).toBe("Main ideas.");
-    expect(root.highlights).toEqual([{ color: "green", square: "d5" }]);
+    expect(root.highlights).toStrictEqual([{ color: "green", square: "d5" }]);
     const nf3 = bySan("Nf3")[0];
-    expect(nf3.nags).toEqual(["$1"]);
+    expect(nf3.nags).toStrictEqual(["$1"]);
     expect(nf3.comment).toBe("Open Sicilian");
-    expect(nf3.arrows).toEqual([{ color: "green", orig: "d2", dest: "d4" }]);
+    expect(nf3.arrows).toStrictEqual([{ color: "green", orig: "d2", dest: "d4" }]);
     const c5 = bySan("c5")[0];
-    expect(c5.children.map((id) => game.tree.find((n) => n.id === id)?.san)).toEqual(["Nf3", "c3"]);
+    expect(c5.children.map((id) => game.tree.find((n) => n.id === id)?.san)).toStrictEqual([
+      "Nf3",
+      "c3"
+    ]);
     const c3 = bySan("c3")[0];
-    expect(c3.children.map((id) => game.tree.find((n) => n.id === id)?.san)).toEqual(["d5", "Nf6"]);
+    expect(c3.children.map((id) => game.tree.find((n) => n.id === id)?.san)).toStrictEqual([
+      "d5",
+      "Nf6"
+    ]);
     expect(bySan("e5")[0].parentId).toBe(bySan("Nf6")[0].id);
   });
 
@@ -67,30 +73,37 @@ describe("parseRepertoirePgn", () => {
     );
     const [game] = games;
     // Depth-first, main line first.
-    expect(game.invalidBranches).toEqual([
+    expect(game.invalidBranches).toStrictEqual([
       { path: "1. e4 e5 2. Nf3 Nc6", san: "Qxf7", reason: expect.stringMatching(/Not a legal/) },
       { path: "1. e4 e5", san: "Ke3", reason: expect.any(String) }
     ]);
-    expect(game.tree.map((node) => node.san)).toEqual([null, "e4", "e5", "Nf3", "Nc6", "Bb5"]);
+    expect(game.tree.map((node) => node.san)).toStrictEqual([
+      null,
+      "e4",
+      "e5",
+      "Nf3",
+      "Nc6",
+      "Bb5"
+    ]);
   });
 
   it("merges a duplicated variation with a warning", () => {
     const [game] = parseRepertoirePgn("1. e4 (1. e4 c5) 1... e5 *").games;
-    expect(game.tree.map((node) => node.san)).toEqual([null, "e4", "e5", "c5"]);
-    expect(game.warnings).toEqual([expect.stringMatching(/Duplicate variation 1\. e4/)]);
+    expect(game.tree.map((node) => node.san)).toStrictEqual([null, "e4", "e5", "c5"]);
+    expect(game.warnings).toStrictEqual([expect.stringMatching(/Duplicate variation 1\. e4/)]);
   });
 
   it("rejects other variants and bad FEN tags without dropping the game silently", () => {
     const { games } = parseRepertoirePgn(
       `[Variant "Atomic"]\n\n1. e4 *\n\n[Variant "Standard"]\n\n1. d4 *\n\n[SetUp "1"]\n[FEN "bad"]\n\n*\n\n[Variant "From Position"]\n[FEN "8/8/8/8/8/8/4k3/4K3 w - - 0 1"]\n\n*`
     );
-    expect(games.map((game) => game.rejected)).toEqual([
+    expect(games.map((game) => game.rejected)).toStrictEqual([
       expect.stringMatching(/Unsupported variant "Atomic"/),
       null,
       expect.stringMatching(/Invalid starting position/),
       expect.stringMatching(/Invalid starting position/)
     ]);
-    expect(games[0].warnings).toEqual([games[0].rejected]);
+    expect(games[0].warnings).toStrictEqual([games[0].rejected]);
     expect(games[0].nodeCount).toBe(0);
     expect(games[1].nodeCount).toBe(1);
   });
@@ -110,12 +123,12 @@ describe("parseRepertoirePgn", () => {
     const long = "x".repeat(30);
     const pgn = `1. e4 e5 { ${long} } *\n\n{ ${long} } 1. e4 *\n\n1. d4 d5 *`;
     const { games } = parseRepertoirePgn(pgn, { maxCommentLength: 20, maxNodes: 3 });
-    expect(games.map((game) => game.rejected)).toEqual([
+    expect(games.map((game) => game.rejected)).toStrictEqual([
       "a comment is longer than 20 characters (at 1. e4 e5)",
       "a comment is longer than 20 characters (at the start)",
       null
     ]);
-    expect(games[0].warnings).toEqual([games[0].rejected]);
+    expect(games[0].warnings).toStrictEqual([games[0].rejected]);
     expect(games[0].nodeCount).toBe(0);
     // The rejected games' moves don't count toward the move limit (3 here).
     expect(games[2].nodeCount).toBe(2);
@@ -125,7 +138,7 @@ describe("parseRepertoirePgn", () => {
     const long = "x".repeat(30);
     const pgn = `1. e4 e5 *\n\n1. d4 d5 2. c4 { ${long} } *\n\n1. c4 *`;
     const { games } = parseRepertoirePgn(pgn, { maxCommentLength: 20, maxNodes: 3 });
-    expect(games.map((game) => game.rejected)).toEqual([
+    expect(games.map((game) => game.rejected)).toStrictEqual([
       null,
       "a comment is longer than 20 characters (at 1. d4 d5 2. c4)",
       null
@@ -151,7 +164,7 @@ describe("parseRepertoirePgn", () => {
     expect(reader.nodesSeen).toBe(
       parseRepertoirePgn(TWO_GAMES).games.reduce((n, g) => n + g.nodeCount, 0)
     );
-    expect(reader.finish()).toEqual(parseRepertoirePgn(TWO_GAMES));
+    expect(reader.finish()).toStrictEqual(parseRepertoirePgn(TWO_GAMES));
 
     // The game limit fails on the first game past it, before later games are parsed.
     const limited = createRepertoirePgnReader({ maxGames: 1 });
@@ -171,9 +184,10 @@ describe("parseRepertoirePgn", () => {
 describe("exportRepertoirePgn", () => {
   it("writes one game per chapter with retained tags, annotations and variations", () => {
     const parsed = parseRepertoirePgn(TWO_GAMES).games;
+    const titles = ["Najdorf", "QGD"];
     const pgn = exportRepertoirePgn(
       parsed.map((game, index) => ({
-        title: index === 0 ? "Najdorf" : "QGD",
+        title: titles[index],
         headers: game.headers,
         rootFen: game.rootFen,
         tree: game.tree
@@ -198,7 +212,7 @@ describe("exportRepertoirePgn", () => {
 1. d4 d5 2. c4 *
 `);
     const reparsed = parseRepertoirePgn(pgn).games;
-    expect(reparsed.map((game) => game.tree)).toEqual(parsed.map((game) => game.tree));
+    expect(reparsed.map((game) => game.tree)).toStrictEqual(parsed.map((game) => game.tree));
   });
 
   it("round-trips a custom Black-to-move root with SetUp/FEN and numbering", () => {
@@ -213,7 +227,7 @@ describe("exportRepertoirePgn", () => {
     expect(pgn).toContain(`[SetUp "1"]\n[FEN "${fen}"]`);
     expect(pgn).toContain("1... Nf6 2. c4 (2. Nf3 g6) 2... e6 *");
     expect(pgn.match(/\[FEN /g)).toHaveLength(1);
-    expect(parseRepertoirePgn(pgn).games[0].tree).toEqual(game.tree);
+    expect(parseRepertoirePgn(pgn).games[0].tree).toStrictEqual(game.tree);
   });
 
   it("defaults Result to * and escapes tag values", () => {

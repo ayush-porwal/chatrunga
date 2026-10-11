@@ -50,7 +50,7 @@ describe("the opening book's data", () => {
     const withSquare = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
     const withoutSquare = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
     expect(positionKey(withSquare)).toBe(positionKey(withoutSquare));
-    expect(openingAt(book(), withSquare)).toEqual({ eco: "B00", name: "King's Pawn Game" });
+    expect(openingAt(book(), withSquare)).toStrictEqual({ eco: "B00", name: "King's Pawn Game" });
     expect(positionKey("not a fen")).toBeNull();
     expect(inBook(book(), "not a fen")).toBe(false);
   });
@@ -58,7 +58,7 @@ describe("the opening book's data", () => {
 
 describe("classifyOpening", () => {
   it("names the deepest named position, and the game still in the book has no first non-book move", () => {
-    expect(classifyOpening(book(), line("e4 c5 Nf3 d6 d4 cxd4 Nxd4 Nf6 Nc3 a6"))).toEqual({
+    expect(classifyOpening(book(), line("e4 c5 Nf3 d6 d4 cxd4 Nxd4 Nf6 Nc3 a6"))).toStrictEqual({
       // 4. Nxd4 and 5. Nc3 reach unnamed positions on the way to named ones: still the book.
       book: Array(10).fill(true),
       opening: {
@@ -73,8 +73,8 @@ describe("classifyOpening", () => {
 
   it("ends the book at the last book move and names the move that left it", () => {
     const result = classifyOpening(book(), line("e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6 O-O Be7 h4 b5"));
-    expect(result.book).toEqual([...Array(10).fill(true), false, false]);
-    expect(result.opening).toEqual({
+    expect(result.book).toStrictEqual([...Array(10).fill(true), false, false]);
+    expect(result.opening).toStrictEqual({
       eco: "C84",
       name: "Ruy Lopez: Closed",
       ply: 10,
@@ -87,15 +87,15 @@ describe("classifyOpening", () => {
     const direct = classifyOpening(book(), line("d4 d5 c4 e6 Nc3 Nf6"));
     // The English move order steps out of the book at 2… d5 and back in with 3. d4.
     const english = classifyOpening(book(), line("c4 e6 Nc3 d5 d4 Nf6"));
-    expect(english.book).toEqual([true, true, true, false, true, true]);
-    expect(direct.opening).toEqual({
+    expect(english.book).toStrictEqual([true, true, true, false, true, true]);
+    expect(direct.opening).toStrictEqual({
       eco: "D35",
       name: "Queen's Gambit Declined: Normal Defense",
       ply: 6,
       bookEndPly: 6,
       firstNonBookMove: null
     });
-    expect(english.opening).toEqual(direct.opening);
+    expect(english.opening).toStrictEqual(direct.opening);
     expect(classifyOpening(book(), line("Nf3 d5 d4")).opening).toMatchObject({
       eco: "D02",
       name: "Queen's Pawn Game: Zukertort Variation"
@@ -107,9 +107,9 @@ describe("classifyOpening", () => {
   });
 
   it("classifies a game set up from a book position from there", () => {
-    const afterE4 = applySan(START_FEN, "e4")?.fen ?? "";
+    const afterE4 = line("e4")[0].fenAfter;
     const result = classifyOpening(book(), line("c5", afterE4));
-    expect(result).toEqual({
+    expect(result).toStrictEqual({
       book: [true],
       opening: {
         eco: "B20",
@@ -122,9 +122,9 @@ describe("classifyOpening", () => {
   });
 
   it("names nothing for a game that never reaches a named position", () => {
-    expect(classifyOpening(book(), [])).toEqual({ book: [], opening: null });
+    expect(classifyOpening(book(), [])).toStrictEqual({ book: [], opening: null });
     // A game from a set-up position far from any opening.
     const endgame = line("Kd2 Kd7", "4k3/8/8/8/8/8/8/4K3 w - - 0 1");
-    expect(classifyOpening(book(), endgame)).toEqual({ book: [false, false], opening: null });
+    expect(classifyOpening(book(), endgame)).toStrictEqual({ book: [false, false], opening: null });
   });
 });

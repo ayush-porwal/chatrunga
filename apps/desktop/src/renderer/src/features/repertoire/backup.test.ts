@@ -71,7 +71,7 @@ const preview = previewOf(
 
 describe("restore rows", () => {
   it("starts with everything included as a new copy, with progress when the backup has it", () => {
-    expect(initialRestoreRows(preview)).toEqual([
+    expect(initialRestoreRows(preview)).toStrictEqual([
       {
         sourceId: "rep-1",
         include: true,
@@ -103,7 +103,7 @@ describe("restore rows", () => {
     });
     rows = restoreRowsReducer(preview, rows, { type: "name", sourceId: "rep-1", newName: "Mine" });
     expect(rows[0]).toMatchObject({ include: false, includeProgress: false, newName: "Mine" });
-    expect(rows[1]).toEqual(initialRestoreRows(preview)[1]);
+    expect(rows[1]).toStrictEqual(initialRestoreRows(preview)[1]);
   });
 
   it("only replaces a repertoire that exists here", () => {
@@ -113,7 +113,7 @@ describe("restore rows", () => {
       sourceId: "rep-1",
       mode: "replace"
     });
-    expect(refused).toEqual(rows);
+    expect(refused).toStrictEqual(rows);
     const allowed = restoreRowsReducer(preview, rows, {
       type: "mode",
       sourceId: "rep-2",
@@ -129,7 +129,7 @@ describe("restore rows", () => {
     const rows = initialRestoreRows(other);
     expect(
       restoreRowsReducer(other, rows, { type: "mode", sourceId: "rep-1", mode: "replace" })
-    ).toEqual(rows);
+    ).toStrictEqual(rows);
   });
 
   it("can't replace a repertoire of the other color even when it has no diff (damaged)", () => {
@@ -137,7 +137,7 @@ describe("restore rows", () => {
     const rows = initialRestoreRows(damaged);
     expect(
       restoreRowsReducer(damaged, rows, { type: "mode", sourceId: "rep-1", mode: "replace" })
-    ).toEqual(rows);
+    ).toStrictEqual(rows);
     const sameColor = previewOf(
       entry({ existing: { ...existing, color: "white" }, diff: null, damaged: true })
     );
@@ -155,9 +155,9 @@ describe("restore rows", () => {
     rows = restoreRowsReducer(preview, rows, { type: "mode", sourceId: "rep-2", mode: "replace" });
     rows = restoreRowsReducer(preview, rows, { type: "name", sourceId: "rep-1", newName: "Mine" });
     const same = restoreRowsReducer(preview, rows, { type: "refresh", preview });
-    expect(same).toEqual(rows);
+    expect(same).toStrictEqual(rows);
     const gone = previewOf(entry({ hasProgress: false }), entry({ sourceId: "rep-2" }));
-    expect(restoreRowsReducer(preview, rows, { type: "refresh", preview: gone })).toEqual([
+    expect(restoreRowsReducer(preview, rows, { type: "refresh", preview: gone })).toStrictEqual([
       { ...rows[0], includeProgress: false },
       { ...rows[1], mode: "new-copy" }
     ]);
@@ -179,7 +179,7 @@ describe("restore rows", () => {
       restoreRowsReducer(preview, rows, { type: "include", sourceId: "nope", include: false })
     ).toBe(rows);
     const other = previewOf(entry({ sourceId: "x", name: "X" }));
-    expect(restoreRowsReducer(preview, rows, { type: "reset", preview: other })).toEqual(
+    expect(restoreRowsReducer(preview, rows, { type: "reset", preview: other })).toStrictEqual(
       initialRestoreRows(other)
     );
   });
@@ -190,7 +190,7 @@ describe("buildRestoreInput", () => {
     let rows = initialRestoreRows(preview);
     rows = restoreRowsReducer(preview, rows, { type: "name", sourceId: "rep-1", newName: "  A  " });
     rows = restoreRowsReducer(preview, rows, { type: "mode", sourceId: "rep-2", mode: "replace" });
-    expect(buildRestoreInput(preview, rows)).toEqual({
+    expect(buildRestoreInput(preview, rows)).toStrictEqual({
       jobId: "job-1",
       selections: [
         { sourceId: "rep-1", mode: "new-copy", includeProgress: true, newName: "A" },
@@ -210,14 +210,14 @@ describe("buildRestoreInput", () => {
     });
     rows = restoreRowsReducer(preview, rows, { type: "mode", sourceId: "rep-2", mode: "replace" });
     const input = buildRestoreInput(preview, rows, new Map([["rep-2", 9]]));
-    expect(input.selections).toEqual([
+    expect(input.selections).toStrictEqual([
       { sourceId: "rep-2", mode: "replace", includeProgress: false, expectedRevision: 9 }
     ]);
   });
 
   it("falls back to a new copy when the repertoire to replace isn't here", () => {
     const rows = initialRestoreRows(preview).map((row) => ({ ...row, mode: "replace" as const }));
-    expect(buildRestoreInput(preview, rows).selections[0]).toEqual({
+    expect(buildRestoreInput(preview, rows).selections[0]).toStrictEqual({
       sourceId: "rep-1",
       mode: "new-copy",
       includeProgress: true,
@@ -266,19 +266,19 @@ describe("formatting", () => {
   });
 
   it("says what a replace discards", () => {
-    expect(restoreLossLines(diff, false)).toEqual([
+    expect(restoreLossLines(diff, false)).toStrictEqual([
       "Current progress (12 progress entries) is discarded",
       "3 practice sessions and their history are discarded"
     ]);
-    expect(restoreLossLines({ ...diff, progressDiscarded: 1, sessionsDiscarded: 1 }, true)).toEqual(
-      [
-        "Current progress (1 progress entry) is replaced by the backup's",
-        "1 practice session and its history is discarded"
-      ]
-    );
+    expect(
+      restoreLossLines({ ...diff, progressDiscarded: 1, sessionsDiscarded: 1 }, true)
+    ).toStrictEqual([
+      "Current progress (1 progress entry) is replaced by the backup's",
+      "1 practice session and its history is discarded"
+    ]);
     expect(
       restoreLossLines({ ...diff, progressDiscarded: 0, sessionsDiscarded: 0 }, false)
-    ).toEqual([]);
+    ).toStrictEqual([]);
   });
 
   it("names changed repertoire fields", () => {
@@ -301,29 +301,29 @@ describe("formatting", () => {
     expect(replacedDirtyDraftName(preview, input, { repertoireId: "rep-2", dirty: true })).toBe(
       "Black vs e4"
     );
-    expect(replacedDirtyDraftName(preview, input, { repertoireId: "rep-2", dirty: false })).toBe(
-      null
-    );
-    expect(replacedDirtyDraftName(preview, input, { repertoireId: "rep-1", dirty: true })).toBe(
-      null
-    );
+    expect(
+      replacedDirtyDraftName(preview, input, { repertoireId: "rep-2", dirty: false })
+    ).toBeNull();
+    expect(
+      replacedDirtyDraftName(preview, input, { repertoireId: "rep-1", dirty: true })
+    ).toBeNull();
     const copy = {
       ...input,
       selections: [{ sourceId: "rep-2", mode: "new-copy" as const, includeProgress: false }]
     };
-    expect(replacedDirtyDraftName(preview, copy, { repertoireId: "rep-2", dirty: true })).toBe(
-      null
-    );
+    expect(
+      replacedDirtyDraftName(preview, copy, { repertoireId: "rep-2", dirty: true })
+    ).toBeNull();
   });
 
   it("maps warnings to a notice", () => {
     expect(backupWarningsNotice([])).toBeNull();
     expect(backupWarningsNotice(["  ", ""])).toBeNull();
-    expect(backupWarningsNotice(["Unknown game link dropped"])).toEqual({
+    expect(backupWarningsNotice(["Unknown game link dropped"])).toStrictEqual({
       title: "This backup has a warning",
       lines: ["Unknown game link dropped"]
     });
-    expect(backupWarningsNotice(["a", " a ", "b"])).toEqual({
+    expect(backupWarningsNotice(["a", " a ", "b"])).toStrictEqual({
       title: "This backup has 2 warnings",
       lines: ["a", "b"]
     });
@@ -348,7 +348,7 @@ describe("formatting", () => {
         }
       ]
     });
-    expect(notice).toEqual({
+    expect(notice).toStrictEqual({
       text: "Restored “A” and “Black vs e4”.",
       details: ["Previous “Black vs e4” saved to /b/rep-2.json"]
     });
@@ -375,7 +375,7 @@ describe("formatting", () => {
         ]
       }
     );
-    expect(notice).toEqual({
+    expect(notice).toStrictEqual({
       text: "Restored “Sicilian”.",
       details: ["Previous “Black vs e4” saved to /b/rep-2.json"]
     });

@@ -135,6 +135,33 @@ function collect(manager: InstanceType<typeof EngineManager>) {
   return { bestMoves, infos, errors };
 }
 
+/** Whether some line reached `depth`. */
+const reachedDepth = (infos: readonly EngineInfo[], depth: number) =>
+  infos.some((info) => (info.depth ?? 0) >= depth);
+
+/** A line with a score and moves. */
+const isScoredLine = (info: EngineInfo) => Boolean(info.score && info.pv?.length);
+
+type EngineScript = Parameters<typeof scriptedEngine>[0];
+
+/** Stockfish without its network file: it writes its ERROR lines and quits at `go`. */
+const quitsWithoutNetwork: EngineScript = (command, { say, exit, close }) => {
+  handshake(command, say);
+  if (command !== "go infinite") return;
+  exit(1);
+  say("info string ERROR: The network file nn-fake.nnue was not loaded successfully.");
+  say("info string ERROR: The engine will be terminated now.");
+  close();
+};
+
+/** At `go`, a line whose moves come without its score, then a progress report. */
+const linesWithoutScores: EngineScript = (command, { say }) => {
+  handshake(command, say);
+  if (command !== "go infinite") return;
+  say("info depth 5 seldepth 7 multipv 1 nodes 4096 pv e2e4 e7e5");
+  say("info depth 6 currmove d2d4 currmovenumber 1");
+};
+
 const expectEventually = (check: () => boolean) =>
   vi.waitFor(() => expect(check()).toBe(true), { timeout: 3_000, interval: 10 });
 
@@ -168,8 +195,8 @@ describe("EngineManager", () => {
     }
     expect(spawns()).toBe(1);
     expect(sent().filter((line) => line === "ucinewgame")).toHaveLength(1);
-    expect(events.bestMoves.map((move) => move.searchId)).toEqual(["m0", "m2"]);
-    expect(events.errors).toEqual([]);
+    expect(events.bestMoves.map((move) => move.searchId)).toStrictEqual(["m0", "m2"]);
+    expect(events.errors).toStrictEqual([]);
   });
 
   it("live analysis searches until stopped, or to the depth / for the time asked for", async () => {
@@ -214,7 +241,11 @@ describe("EngineManager", () => {
     await analyse("c", true);
     await expectEventually(() => sent().filter((line) => line === "go infinite").length === 3);
     const lastSearch = sent().slice(sent().lastIndexOf("ucinewgame"));
-    expect(lastSearch.slice(0, 3)).toEqual(["ucinewgame", "isready", `position fen ${START}`]);
+    expect(lastSearch.slice(0, 3)).toStrictEqual([
+      "ucinewgame",
+      "isready",
+      `position fen ${START}`
+    ]);
     expect(sent().filter((line) => line === "ucinewgame")).toHaveLength(1);
     expect(spawns()).toBe(1);
   });
@@ -301,7 +332,7 @@ describe("EngineManager", () => {
     await expectEventually(() => events.infos.some((info) => info.searchId === "c"));
     expect(spawns()).toBe(2);
     expect(events.infos.some((info) => info.searchId === "b")).toBe(false);
-    expect(events.errors).toEqual([]);
+    expect(events.errors).toStrictEqual([]);
   });
 
   it("a search requested during a draw probe starts only after the probe finished", async () => {
@@ -342,7 +373,7 @@ describe("EngineManager", () => {
     await expectEventually(() => events.infos.some((info) => info.searchId === "b"));
     expect(warmExitedFirst).toBe(true);
     expect(spawns()).toBe(2);
-    expect(events.errors).toEqual([]);
+    expect(events.errors).toStrictEqual([]);
   });
 
   it("starts a new game when the position doesn't continue the last one", async () => {
@@ -389,7 +420,7 @@ describe("EngineManager", () => {
     await expectEventually(() => events.infos.slice(seen).some((info) => info.searchId === "p2"));
     expect(spawns()).toBe(1);
     // The first search's bestmove (after stop) was consumed, not relayed.
-    expect(events.bestMoves).toEqual([]);
+    expect(events.bestMoves).toStrictEqual([]);
     expect(events.infos.slice(seen).every((info) => info.searchId === "p2")).toBe(true);
     expect(sent()).toContain("setoption name Threads value 2");
   });
@@ -413,7 +444,7 @@ describe("EngineManager", () => {
     await Promise.all([first, second]);
     await expectEventually(() => events.infos.some((info) => info.searchId === "new"));
     expect(events.infos.some((info) => info.searchId === "old")).toBe(false);
-    expect(events.errors).toEqual([]);
+    expect(events.errors).toStrictEqual([]);
     expect(sent().filter((line) => line === "go infinite")).toHaveLength(1);
   });
 
@@ -496,7 +527,7 @@ describe("EngineManager", () => {
     });
     await expectEventually(() => events.infos.some((info) => info.searchId === "fast"));
     expect(Date.now() - started).toBeLessThan(3_000);
-    expect(events.errors).toEqual([]);
+    expect(events.errors).toStrictEqual([]);
   });
 
   it("coalesces info lines per MultiPV slot", async () => {
@@ -509,7 +540,7 @@ describe("EngineManager", () => {
       multipv: 1
     });
     // Wait for 50 lines (one each depth): the fake prints one every 5 ms, so about 250 ms of them.
-    await expectEventually(() => events.infos.some((info) => (info.depth ?? 0) >= 50));
+    await expectEventually(() => reachedDepth(events.infos, 50));
     await manager.stop();
     // At most ~10 batches a second reach the renderer.
     expect(events.infos.length).toBeGreaterThan(0);
@@ -528,13 +559,13 @@ describe("EngineManager", () => {
     });
     // Each depth ends with a `currmove` report after its three lines: the last line of slot 1
     // in every batch, unless it's kept from taking that line's place.
-    await expectEventually(() => events.infos.some((info) => (info.depth ?? 0) >= 30));
+    await expectEventually(() => reachedDepth(events.infos, 30));
     await manager.stop();
 
-    expect(events.errors).toEqual([]);
+    expect(events.errors).toStrictEqual([]);
     expect(events.infos.some((info) => info.raw.startsWith("info string"))).toBe(false);
-    expect(events.infos.every((info) => info.score && info.pv?.length)).toBe(true);
-    expect(new Set(events.infos.map((info) => info.multipv))).toEqual(new Set([1, 2, 3]));
+    expect(events.infos.every(isScoredLine)).toBe(true);
+    expect(new Set(events.infos.map((info) => info.multipv))).toStrictEqual(new Set([1, 2, 3]));
     expect(events.infos.find((info) => info.multipv === 1)).toMatchObject({
       searchId: "castled",
       seldepth: expect.any(Number),
@@ -556,12 +587,12 @@ describe("EngineManager", () => {
       multipv: 1
     });
     await expectEventually(() => events.errors.length === 1);
-    expect(events.errors[0]).toEqual({
+    expect(events.errors[0]).toStrictEqual({
       engineId: "stockfish",
       searchId: "refused",
       message: "stockfish quit during the search (exit 1): Illegal move: e1h1"
     });
-    expect(events.infos).toEqual([]);
+    expect(events.infos).toStrictEqual([]);
 
     // The next search starts a new process.
     await manager.startAnalysis({
@@ -579,14 +610,7 @@ describe("EngineManager", () => {
   it("gives the engine's first reason when its error lines are read after its exit is reported", async () => {
     // Stockfish without its network file: it writes its ERROR lines and quits at `go`. Node can
     // report the exit before those lines are read.
-    scriptedEngine((command, { say, exit, close }) => {
-      handshake(command, say);
-      if (command !== "go infinite") return;
-      exit(1);
-      say("info string ERROR: The network file nn-fake.nnue was not loaded successfully.");
-      say("info string ERROR: The engine will be terminated now.");
-      close();
-    });
+    scriptedEngine(quitsWithoutNetwork);
     const events = collect(manager);
     await manager.startAnalysis({
       engineId: "sf",
@@ -596,7 +620,7 @@ describe("EngineManager", () => {
       multipv: 1
     });
     await expectEventually(() => events.errors.length === 1);
-    expect(events.errors[0]).toEqual({
+    expect(events.errors[0]).toStrictEqual({
       engineId: "sf",
       searchId: "no-network",
       message:
@@ -605,12 +629,7 @@ describe("EngineManager", () => {
   });
 
   it("a progress report doesn't hide a line whose moves came without its score", async () => {
-    scriptedEngine((command, { say }) => {
-      handshake(command, say);
-      if (command !== "go infinite") return;
-      say("info depth 5 seldepth 7 multipv 1 nodes 4096 pv e2e4 e7e5");
-      say("info depth 6 currmove d2d4 currmovenumber 1");
-    });
+    scriptedEngine(linesWithoutScores);
     const events = collect(manager);
     await manager.startAnalysis({
       engineId: "sf",

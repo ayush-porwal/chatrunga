@@ -72,12 +72,12 @@ describe("createStepScheduler", () => {
     steps.step(1);
     steps.step(1);
     steps.step(1);
-    expect(applied).toEqual([]);
+    expect(applied).toStrictEqual([]);
     flush();
-    expect(applied).toEqual([3]);
+    expect(applied).toStrictEqual([3]);
     steps.step(-1);
     flush();
-    expect(applied).toEqual([3, -1]);
+    expect(applied).toStrictEqual([3, -1]);
   });
 
   it("skips a frame whose steps cancel out, and drops pending steps on cancel", () => {
@@ -90,6 +90,6 @@ describe("createStepScheduler", () => {
     steps.step(1);
     steps.cancel();
     flush();
-    expect(applied).toEqual([]);
+    expect(applied).toStrictEqual([]);
   });
 });

@@ -108,13 +108,13 @@ describe("startLichessSync", () => {
 
   it("reads the account and imports new games at start", () => {
     expect(useLichessStore.getState().status.account?.username).toBe("Ayush");
-    expect(bridge.api.syncGames).toHaveBeenCalledOnce();
+    expect(bridge.api.syncGames).toHaveBeenCalledTimes(1);
   });
 
   it("puts a starting game on the board as an online match from your side", async () => {
     await startGame();
     const board = useGameStore.getState();
-    expect(openGame).toHaveBeenCalledOnce();
+    expect(openGame).toHaveBeenCalledTimes(1);
     expect(board.mode).toBe("online");
     expect(board.source).toBe("lichess");
     expect(board.orientation).toBe("white");
@@ -133,8 +133,8 @@ describe("startLichessSync", () => {
     expect(bridge.api.move).toHaveBeenCalledWith("game1", "e2e4");
     bridge.emit({ type: "gameState", gameId: "game1", state: state(["e2e4"]) });
     bridge.emit({ type: "gameState", gameId: "game1", state: state(["e2e4", "e7e5"]) });
-    expect(mainlineUcis(useGameStore.getState().moveTree)).toEqual(["e2e4", "e7e5"]);
-    expect(bridge.api.move).toHaveBeenCalledOnce();
+    expect(mainlineUcis(useGameStore.getState().moveTree)).toStrictEqual(["e2e4", "e7e5"]);
+    expect(bridge.api.move).toHaveBeenCalledTimes(1);
   });
 
   it("keeps your move on the board while it's on its way", async () => {
@@ -142,7 +142,7 @@ describe("startLichessSync", () => {
     useGameStore.getState().makeMove({ from: "e2", to: "e4" });
     // A state from before the move reached Lichess (e.g. a clock update) doesn't take it back.
     bridge.emit({ type: "gameState", gameId: "game1", state: state([]) });
-    expect(mainlineUcis(useGameStore.getState().moveTree)).toEqual(["e2e4"]);
+    expect(mainlineUcis(useGameStore.getState().moveTree)).toStrictEqual(["e2e4"]);
   });
 
   it("takes back a move Lichess refused and says why", async () => {
@@ -152,7 +152,7 @@ describe("startLichessSync", () => {
     await startGame();
     useGameStore.getState().makeMove({ from: "e2", to: "e4" });
     await flush();
-    expect(mainlineUcis(useGameStore.getState().moveTree)).toEqual([]);
+    expect(mainlineUcis(useGameStore.getState().moveTree)).toStrictEqual([]);
     expect(useGameStore.getState().matchFeedback).toBe("Not your turn");
   });
 
@@ -163,7 +163,7 @@ describe("startLichessSync", () => {
       gameId: "game1",
       state: state(["e2e4"], { status: "resign", winner: "white" })
     });
-    expect(useGameStore.getState().gameOutcome).toEqual({
+    expect(useGameStore.getState().gameOutcome).toStrictEqual({
       result: "1-0",
       termination: "Player resign"
     });
@@ -179,7 +179,7 @@ describe("startLichessSync", () => {
     expect(useLichessStore.getState().live?.connected).toBe(false);
     bridge.emit({ type: "gameFull", game: full(["e2e4", "e7e5"]) });
     expect(useGameStore.getState().gameId).toBe("saved-id");
-    expect(mainlineUcis(useGameStore.getState().moveTree)).toEqual(["e2e4", "e7e5"]);
+    expect(mainlineUcis(useGameStore.getState().moveTree)).toStrictEqual(["e2e4", "e7e5"]);
     expect(useLichessStore.getState().live?.connected).toBe(true);
   });
 
@@ -187,7 +187,7 @@ describe("startLichessSync", () => {
     await startGame();
     bridge.emit({ type: "gameStart", gameId: "game2" });
     expect(bridge.api.watchGame).toHaveBeenCalledTimes(1);
-    expect(useLichessStore.getState().ongoingGameIds).toEqual(["game2"]);
+    expect(useLichessStore.getState().ongoingGameIds).toStrictEqual(["game2"]);
   });
 
   it("lets go of the board when you're signed out mid-game", async () => {
@@ -204,7 +204,7 @@ describe("startLichessSync", () => {
     bridge.emit({ type: "gameStart", gameId: "game1" });
     bridge.emit({ type: "gameStart", gameId: "game2" });
     expect(bridge.api.watchGame).toHaveBeenCalledTimes(1);
-    expect(useLichessStore.getState().ongoingGameIds).toEqual(["game2"]);
+    expect(useLichessStore.getState().ongoingGameIds).toStrictEqual(["game2"]);
     bridge.emit({ type: "gameFull", game: full() });
     expect(useLichessStore.getState().live?.id).toBe("game1");
   });

@@ -13,14 +13,6 @@ vi.mock("electron", () => ({ app: { getPath: () => "/tmp" } }));
 const NOW = Date.UTC(2026, 9, 6);
 const temporaryDirectories: string[] = [];
 
-afterEach(async () => {
-  await Promise.all(
-    temporaryDirectories
-      .splice(0)
-      .map((directory) => rm(directory, { recursive: true, force: true }))
-  );
-});
-
 async function storePath(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "chaturanga-chesscom-"));
   temporaryDirectories.push(directory);
@@ -70,6 +62,11 @@ async function setup(routes: Parameters<typeof fakeChesscom>[0] = ROUTES) {
 }
 
 /** Resolves once the service reports an import finished. */
+/** The statuses the service announced, in order. */
+function statusesOf(events: readonly ChesscomEvent[]) {
+  return events.flatMap((event) => (event.type === "status" ? [event.status] : []));
+}
+
 function importDone(service: ChesscomService): Promise<ChesscomEvent> {
   return new Promise((resolve) => {
     const listener = (event: ChesscomEvent) => {
@@ -82,11 +79,19 @@ function importDone(service: ChesscomService): Promise<ChesscomEvent> {
 }
 
 describe("ChesscomService", () => {
+  afterEach(async () => {
+    await Promise.all(
+      temporaryDirectories
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true }))
+    );
+  });
+
   it("connects a username that exists, saves only public facts, then imports on its own", async () => {
     const { path, service, games } = await setup();
     const finished = importDone(service);
     const status = await service.connect({ username: "Ayush_P64", firstImport: "all" });
-    expect(status).toEqual({
+    expect(status).toStrictEqual({
       connecting: false,
       account: {
         id: "ayush_p64",
@@ -101,7 +106,7 @@ describe("ChesscomService", () => {
     expect(games.games).toHaveLength(3);
     expect((await service.status()).account?.lastSyncAt).toBe(NOW);
     // The file holds the username, ratings and import progress: nothing secret.
-    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
+    expect(JSON.parse(await readFile(path, "utf8"))).toStrictEqual({
       account: expect.objectContaining({ id: "ayush_p64" }),
       firstImport: "all",
       cursor: { month: "2026/10", floor: 0 }
@@ -113,22 +118,24 @@ describe("ChesscomService", () => {
     await expect(service.connect({ username: "nobody", firstImport: "year" })).rejects.toThrow(
       "Chess.com has no player called nobody."
     );
-    expect(await service.status()).toEqual({ account: null, connecting: false });
+    expect(await service.status()).toStrictEqual({ account: null, connecting: false });
     // Connecting showed, then ended.
-    const statuses = events.flatMap((event) => (event.type === "status" ? [event.status] : []));
-    await vi.waitFor(() => expect(statuses.at(-1)).toEqual({ account: null, connecting: false }));
+    const statuses = statusesOf(events);
+    await vi.waitFor(() =>
+      expect(statuses.at(-1)).toStrictEqual({ account: null, connecting: false })
+    );
   });
 
   it("imports only new games on the next run", async () => {
     const { service, fake } = await setup();
     await service.connect({ username: "ayush_p64", firstImport: "all" });
     // Joins the import the connect started.
-    expect(await service.syncGames()).toEqual({ imported: 3, skipped: 1 });
+    expect(await service.syncGames()).toStrictEqual({ imported: 3, skipped: 1 });
     fake.requests.length = 0;
     // The two months read again hold only games it has (and the Chess960 one).
-    expect(await service.syncGames()).toEqual({ imported: 0, skipped: 4 });
+    expect(await service.syncGames()).toStrictEqual({ imported: 0, skipped: 4 });
     // From the cursor's month and the one before it.
-    expect(fake.requests.map((request) => request.path)).toEqual([
+    expect(fake.requests.map((request) => request.path)).toStrictEqual([
       "/pub/player/ayush_p64/games/archives",
       "/pub/player/ayush_p64/games/2026/09",
       "/pub/player/ayush_p64/games/2026/10"
@@ -140,19 +147,19 @@ describe("ChesscomService", () => {
     let finished = importDone(first.service);
     await first.service.connect({ username: "ayush_p64", firstImport: "all" });
     await finished;
-    expect(await first.service.disconnect({ removeGames: false })).toEqual({
+    expect(await first.service.disconnect({ removeGames: false })).toStrictEqual({
       account: null,
       connecting: false
     });
-    expect(first.games.removed).toEqual([]);
+    expect(first.games.removed).toStrictEqual([]);
     expect(first.games.games).toHaveLength(3);
 
     finished = importDone(first.service);
     await first.service.connect({ username: "ayush_p64", firstImport: "all" });
     await finished;
     await first.service.disconnect({ removeGames: true });
-    expect(first.games.removed).toEqual(["chesscom"]);
-    expect(first.games.games).toEqual([]);
+    expect(first.games.removed).toStrictEqual(["chesscom"]);
+    expect(first.games.games).toStrictEqual([]);
   });
 
   it("refreshes the ratings of the connected account", async () => {
@@ -165,7 +172,7 @@ describe("ChesscomService", () => {
     await service.connect({ username: "ayush_p64", firstImport: "year" });
     await finished;
     stats.chess_blitz.last.rating = 1712;
-    expect((await service.refreshAccount())?.ratings).toEqual({ blitz: 1712 });
+    expect((await service.refreshAccount())?.ratings).toStrictEqual({ blitz: 1712 });
     await service.disconnect({ removeGames: false });
     expect(await service.refreshAccount()).toBeNull();
   });
@@ -179,12 +186,12 @@ describe("ChesscomService", () => {
         return fixture("stats");
       })
     });
-    expect(await service.connect({ username: "ayush_p64", firstImport: "year" })).toEqual({
+    expect(await service.connect({ username: "ayush_p64", firstImport: "year" })).toStrictEqual({
       account: null,
       connecting: false
     });
     await pending.disconnect;
-    expect(await service.status()).toEqual({ account: null, connecting: false });
+    expect(await service.status()).toStrictEqual({ account: null, connecting: false });
   });
 
   it("on quit, stops the import and waits for it; none starts after", async () => {

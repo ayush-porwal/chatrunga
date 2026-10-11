@@ -17,6 +17,11 @@ import {
   type ChartsLayout
 } from "./review-chart-layout";
 
+/** The views' heights added up (a view not drawn adds nothing). */
+function total(heights: ReturnType<typeof fitViewHeights>): number {
+  return (heights.win ?? 0) + (heights.difficulty ?? 0) + (heights.times ?? 0);
+}
+
 const ALL: ChartsLayout = { win: "open", difficulty: "open", times: "open" };
 const BOTH = { win: true, difficulty: true, times: true };
 
@@ -36,31 +41,31 @@ describe("review chart layout", () => {
   });
 
   it("shares the height equally among the views shown", () => {
-    expect(splitViewHeights(450, BOTH)).toEqual({ win: 150, difficulty: 150, times: 150 });
+    expect(splitViewHeights(450, BOTH)).toStrictEqual({ win: 150, difficulty: 150, times: 150 });
     // Without clocks (or with Move times folded) the two views share it in halves.
-    expect(splitViewHeights(300, { win: true, difficulty: true, times: false })).toEqual({
+    expect(splitViewHeights(300, { win: true, difficulty: true, times: false })).toStrictEqual({
       win: 150,
       difficulty: 150,
       times: null
     });
-    expect(splitViewHeights(250, { win: true, difficulty: false, times: false })).toEqual({
+    expect(splitViewHeights(250, { win: true, difficulty: false, times: false })).toStrictEqual({
       win: 250,
       difficulty: null,
       times: null
     });
     // Rounding leftovers go to winning chances, so the views fill the space.
     const odd = splitViewHeights(451, BOTH);
-    expect(odd).toEqual({ win: 151, difficulty: 150, times: 150 });
+    expect(odd).toStrictEqual({ win: 151, difficulty: 150, times: 150 });
   });
 
   it("gives a folded winning-chances view's share to the strips", () => {
-    expect(splitViewHeights(300, { win: false, difficulty: true, times: true })).toEqual({
+    expect(splitViewHeights(300, { win: false, difficulty: true, times: true })).toStrictEqual({
       win: null,
       difficulty: 150,
       times: 150
     });
     // Everything folded: nothing to share.
-    expect(splitViewHeights(300, { win: false, difficulty: false, times: false })).toEqual({
+    expect(splitViewHeights(300, { win: false, difficulty: false, times: false })).toStrictEqual({
       win: null,
       difficulty: null,
       times: null
@@ -72,11 +77,11 @@ describe("review chart layout", () => {
 
   it("keeps every view at its minimum, sharing what is left among the others", () => {
     // 240 px: thirds of 80 put winning chances under its 100; the strips share the 140 left.
-    expect(splitViewHeights(240, BOTH)).toEqual({ win: 100, difficulty: 70, times: 70 });
+    expect(splitViewHeights(240, BOTH)).toStrictEqual({ win: 100, difficulty: 70, times: 70 });
     // 300 px: thirds clear every minimum.
-    expect(splitViewHeights(300, BOTH)).toEqual({ win: 100, difficulty: 100, times: 100 });
+    expect(splitViewHeights(300, BOTH)).toStrictEqual({ win: 100, difficulty: 100, times: 100 });
     // Too little for every minimum: each at its minimum (the charts scroll).
-    expect(splitViewHeights(100, BOTH)).toEqual({
+    expect(splitViewHeights(100, BOTH)).toStrictEqual({
       win: WIN_MIN,
       difficulty: STRIP_MIN,
       times: STRIP_MIN
@@ -96,8 +101,8 @@ describe("review chart layout", () => {
     // view's label, the view at its usual 112, the axis, and the gaps between the last three.
     expect(winOnly).toBe(HEADER_HEIGHT + 20 + 112 + 13 + 2 * 4);
     // At the default winning chances keeps its minimum; taller, the views grow alike.
-    expect(viewHeights(all, ALL)).toEqual({ win: 100, difficulty: 70, times: 70 });
-    expect(viewHeights(all + 150, ALL)).toEqual({ win: 130, difficulty: 130, times: 130 });
+    expect(viewHeights(all, ALL)).toStrictEqual({ win: 100, difficulty: 70, times: 70 });
+    expect(viewHeights(all + 150, ALL)).toStrictEqual({ win: 130, difficulty: 130, times: 130 });
   });
 
   it("fills the panel when Review is folded, whatever the splitter was set to", () => {
@@ -118,20 +123,18 @@ describe("review chart layout", () => {
   });
 
   it("fits the open views and the measured rows into the views area exactly", () => {
-    const total = (heights: ReturnType<typeof fitViewHeights>) =>
-      (heights.win ?? 0) + (heights.difficulty ?? 0) + (heights.times ?? 0);
     // Three strips: three labels and the axis around them, 7 rows and 6 gaps of 4.
     const chrome3 = [20, 20, 20, 13];
     const three = fitViewHeights({ container: 600, chrome: chrome3, open: BOTH, gap: 4 });
     expect(total(three) + 73 + 6 * 4).toBe(600);
-    expect(three).toEqual({ win: 169, difficulty: 167, times: 167 });
+    expect(three).toStrictEqual({ win: 169, difficulty: 167, times: 167 });
     // Two (Move times folded: its label stays), and one with the Maia note in its place.
     const two = { win: true, difficulty: true, times: false };
     const twoFit = fitViewHeights({ container: 600, chrome: chrome3, open: two, gap: 4 });
     expect(total(twoFit) + 73 + 5 * 4).toBe(600);
     const one = { win: true, difficulty: false, times: false };
     const oneFit = fitViewHeights({ container: 500, chrome: [20, 16, 13], open: one, gap: 4 });
-    expect(oneFit).toEqual({ win: 500 - 49 - 3 * 4, difficulty: null, times: null });
+    expect(oneFit).toStrictEqual({ win: 500 - 49 - 3 * 4, difficulty: null, times: null });
     // Below the minimums the views keep them and overflow; the area scrolls.
     const tight = fitViewHeights({ container: 200, chrome: chrome3, open: BOTH, gap: 4 });
     expect(total(tight)).toBe(WIN_MIN + 2 * STRIP_MIN);
@@ -140,15 +143,15 @@ describe("review chart layout", () => {
   it("shows each view from the review's data and its fold, a Maia prompt where offered", () => {
     const none = { win: false, difficulty: false, times: false };
     const full = { hasEvals: true, hasDifficulty: true, hasTimes: true, maiaPrompt: true };
-    expect(chartsLayout({ ...full, folded: none })).toEqual(ALL);
-    expect(chartsLayout({ ...full, folded: BOTH })).toEqual({
+    expect(chartsLayout({ ...full, folded: none })).toStrictEqual(ALL);
+    expect(chartsLayout({ ...full, folded: BOTH })).toStrictEqual({
       win: "folded",
       difficulty: "folded",
       times: "folded"
     });
     // Unreviewed, without Maia data or clocks: a note, the prompt (or nothing), no times strip.
     const bare = { hasEvals: false, hasDifficulty: false, hasTimes: false, folded: none };
-    expect(chartsLayout({ ...bare, maiaPrompt: true })).toEqual({
+    expect(chartsLayout({ ...bare, maiaPrompt: true })).toStrictEqual({
       win: "empty",
       difficulty: "prompt",
       times: "none"

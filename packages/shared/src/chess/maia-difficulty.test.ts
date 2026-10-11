@@ -28,19 +28,19 @@ describe("Maia difficulty", () => {
     expect(maiaDifficulty({ bestMove: "d2d4", humanPredictions: [prediction(1500)] }, 1500)).toBe(
       0.7
     );
-    expect(maiaDifficulty({ bestMove: "g2g4", humanPredictions: [prediction(1500)] }, 1500)).toBe(
-      null
-    );
+    expect(
+      maiaDifficulty({ bestMove: "g2g4", humanPredictions: [prediction(1500)] }, 1500)
+    ).toBeNull();
   });
 
   it("has none without a best move or a prediction at the model", () => {
-    expect(maiaDifficulty({ bestMove: null, humanPredictions: [prediction(1500)] }, 1500)).toBe(
-      null
-    );
-    expect(maiaDifficulty({ bestMove: "e2e4", humanPredictions: [prediction(1100)] }, 1500)).toBe(
-      null
-    );
-    expect(maiaDifficulty({ bestMove: "e2e4" }, 1500)).toBe(null);
+    expect(
+      maiaDifficulty({ bestMove: null, humanPredictions: [prediction(1500)] }, 1500)
+    ).toBeNull();
+    expect(
+      maiaDifficulty({ bestMove: "e2e4", humanPredictions: [prediction(1100)] }, 1500)
+    ).toBeNull();
+    expect(maiaDifficulty({ bestMove: "e2e4" }, 1500)).toBeNull();
   });
 
   it("reads the review's own model, else the one nearest the rating that the moves carry", () => {
@@ -49,6 +49,6 @@ describe("Maia difficulty", () => {
     expect(difficultyModel(moves, 1900, 1800)).toBe(1500);
     expect(difficultyModel(moves, null, 1300)).toBe(1100);
     expect(difficultyModel(moves, null, 1000)).toBe(1100);
-    expect(difficultyModel([{}, { humanPredictions: [] }], 1500, 1500)).toBe(null);
+    expect(difficultyModel([{}, { humanPredictions: [] }], 1500, 1500)).toBeNull();
   });
 });

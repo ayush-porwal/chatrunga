@@ -29,7 +29,7 @@ describe("position helpers", () => {
 
   it("detects legal destinations and promotion candidates", () => {
     const dests = legalDestsForFen(START_FEN);
-    expect(dests.get("e2")).toEqual(expect.arrayContaining(["e3", "e4"]));
+    expect(dests.get("e2")).toStrictEqual(expect.arrayContaining(["e3", "e4"]));
     expect(isPromotionMove("8/P7/8/8/8/8/8/k6K w - - 0 1", "a7", "a8")).toBe(true);
     expect(isPromotionMove(START_FEN, "e2", "e4")).toBe(false);
   });

@@ -15,14 +15,6 @@ vi.mock("electron", () => ({
 
 const temporaryDirectories: string[] = [];
 
-afterEach(async () => {
-  await Promise.all(
-    temporaryDirectories
-      .splice(0)
-      .map((directory) => rm(directory, { recursive: true, force: true }))
-  );
-});
-
 async function storePath(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "chaturanga-openrouter-"));
   temporaryDirectories.push(directory);
@@ -30,6 +22,14 @@ async function storePath(): Promise<string> {
 }
 
 describe("OpenRouterConfigStore", () => {
+  afterEach(async () => {
+    await Promise.all(
+      temporaryDirectories
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true }))
+    );
+  });
+
   it("stores the key encrypted and only exposes a boolean to callers", async () => {
     const path = await storePath();
     const store = new OpenRouterConfigStore(path, {
@@ -39,8 +39,8 @@ describe("OpenRouterConfigStore", () => {
     });
 
     const summary = await store.set({ model: "openai/test-model", apiKey: "unit-test-secret" });
-    expect(summary).toEqual({ model: "openai/test-model", hasApiKey: true });
-    expect(await store.get()).toEqual(summary);
+    expect(summary).toStrictEqual({ model: "openai/test-model", hasApiKey: true });
+    expect(await store.get()).toStrictEqual(summary);
     expect(await store.getApiKey()).toBe("unit-test-secret");
 
     const raw = await readFile(path, "utf8");
@@ -77,7 +77,7 @@ describe("OpenRouterConfigStore", () => {
       store.set({ model: "anthropic/test-model" }),
       store.set({ apiKey: "overlapping-secret" })
     ]);
-    expect(await store.get()).toEqual({ model: "anthropic/test-model", hasApiKey: true });
+    expect(await store.get()).toStrictEqual({ model: "anthropic/test-model", hasApiKey: true });
     expect(await store.getApiKey()).toBe("overlapping-secret");
   });
 
@@ -92,7 +92,10 @@ describe("OpenRouterConfigStore", () => {
     await expect(store.set({ apiKey: "should-not-be-written" })).rejects.toThrow(
       "Secure key storage"
     );
-    expect(await store.get()).toEqual({ model: "anthropic/claude-sonnet-4.6", hasApiKey: false });
+    expect(await store.get()).toStrictEqual({
+      model: "anthropic/claude-sonnet-4.6",
+      hasApiKey: false
+    });
   });
 
   it("reports a saved key without touching secure storage (no macOS keychain prompt)", async () => {

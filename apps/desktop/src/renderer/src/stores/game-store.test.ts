@@ -20,8 +20,10 @@ describe("game store", () => {
 
     const state = useGameStore.getState();
     expect(state.currentNodeId).toBe("root");
-    expect(state.moveTree.some((node) => node.id === e4NodeId || node.id === e5NodeId)).toBe(false);
-    expect(state.moveTree.find((node) => node.id === "root")?.children).toEqual([]);
+    const ids = state.moveTree.map((node) => node.id);
+    expect(ids).not.toContain(e4NodeId);
+    expect(ids).not.toContain(e5NodeId);
+    expect(state.moveTree.find((node) => node.id === "root")?.children).toStrictEqual([]);
   });
 
   it("keeps the committed node and FEN invariant while creating variations", () => {
@@ -65,10 +67,9 @@ describe("game store", () => {
     expect(useGameStore.getState().promoteVariation(c5)).toBe(true);
     const state = useGameStore.getState();
     const e4 = state.moveTree.find((node) => node.san === "e4")!;
-    expect(e4.children.map((id) => state.moveTree.find((node) => node.id === id)?.san)).toEqual([
-      "c5",
-      "e5"
-    ]);
+    expect(
+      e4.children.map((id) => state.moveTree.find((node) => node.id === id)?.san)
+    ).toStrictEqual(["c5", "e5"]);
     expect(state.currentNodeId).toBe(c5);
     expect(state.currentFen).toBe(currentFen);
     // On the main line now: nothing more to promote.
@@ -156,7 +157,7 @@ describe("game store", () => {
     useGameStore.getState().setEngineSide("black");
 
     useGameStore.getState().agreeDraw();
-    expect(useGameStore.getState().gameOutcome).toEqual({
+    expect(useGameStore.getState().gameOutcome).toStrictEqual({
       result: "1/2-1/2",
       termination: "Draw by agreement"
     });
@@ -332,7 +333,7 @@ describe("game store", () => {
       const played = state.moveTree.find((node) => node.id === state.currentNodeId)!;
       const reply = state.moveTree.find((node) => node.id === played.parentId)!;
       const first = state.moveTree.find((node) => node.id === reply.parentId)!;
-      expect([first.san, reply.san, played.san]).toEqual(["Nxd4", "exd4", "d3"]);
+      expect([first.san, reply.san, played.san]).toStrictEqual(["Nxd4", "exd4", "d3"]);
       expect(first.parentId).toBe(error.parentId);
       expect(activeBestLine(state)).toBeNull();
     });
@@ -364,9 +365,9 @@ describe("game store", () => {
 
     it("appends the server's new moves and follows them when on the last move", () => {
       expect(useGameStore.getState().syncMainline(["e2e4", "e7e5"])).toBe(true);
-      expect(mainline()).toEqual(["e4", "e5"]);
+      expect(mainline()).toStrictEqual(["e4", "e5"]);
       expect(useGameStore.getState().syncMainline(["e2e4", "e7e5", "g1f3"])).toBe(true);
-      expect(mainline()).toEqual(["e4", "e5", "Nf3"]);
+      expect(mainline()).toStrictEqual(["e4", "e5", "Nf3"]);
       const state = useGameStore.getState();
       expect(state.moveTree.find((node) => node.id === state.currentNodeId)?.san).toBe("Nf3");
     });
@@ -383,7 +384,7 @@ describe("game store", () => {
       useGameStore.getState().syncMainline(["e2e4", "e7e5"]);
       expect(useGameStore.getState().makeMove({ from: "g1", to: "f3" })).toBe(true);
       expect(useGameStore.getState().syncMainline(["e2e4", "e7e5"])).toBe(true);
-      expect(mainline()).toEqual(["e4", "e5"]);
+      expect(mainline()).toStrictEqual(["e4", "e5"]);
       expect(useGameStore.getState().moveTree).toHaveLength(3);
     });
 
@@ -391,7 +392,7 @@ describe("game store", () => {
       useGameStore.getState().syncMainline(["e2e4", "e7e5"]);
       useGameStore.getState().undo();
       expect(useGameStore.getState().makeMove({ from: "d7", to: "d5" })).toBe(false);
-      expect(mainline()).toEqual(["e4", "e5"]);
+      expect(mainline()).toStrictEqual(["e4", "e5"]);
     });
 
     it("rejects an illegal server move", () => {
@@ -405,7 +406,7 @@ describe("game store", () => {
       useGameStore.getState().endMatch("0-1", "Resignation");
       useGameStore.getState().endMatch("1-0", "Time forfeit");
       const state = useGameStore.getState();
-      expect(state.gameOutcome).toEqual({ result: "0-1", termination: "Resignation" });
+      expect(state.gameOutcome).toStrictEqual({ result: "0-1", termination: "Resignation" });
       expect(state.engineClockLive?.stoppedAt).toBeTypeOf("number");
     });
   });
@@ -448,7 +449,7 @@ describe("game store", () => {
       });
       expect(useGameStore.getState()).toMatchObject({ mode: "engine", engineSide: "black" });
       // Recorded as over: stepping back to an earlier move must not let the engine play on.
-      expect(useGameStore.getState().gameOutcome).toEqual({
+      expect(useGameStore.getState().gameOutcome).toStrictEqual({
         result: "0-1",
         termination: "checkmate"
       });
@@ -470,7 +471,7 @@ describe("game store", () => {
       const beforeMate = useGameStore.getState().currentNodeId;
       expect(useGameStore.getState().gameOutcome).toBeNull();
       useGameStore.getState().makeMove({ from: "d8", to: "h4" });
-      expect(useGameStore.getState().gameOutcome).toEqual({
+      expect(useGameStore.getState().gameOutcome).toStrictEqual({
         result: "0-1",
         termination: "checkmate"
       });

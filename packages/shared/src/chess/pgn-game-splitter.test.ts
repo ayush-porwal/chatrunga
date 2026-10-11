@@ -29,13 +29,13 @@ function split(text: string, size: number): Game<PgnNodeData>[] {
 describe("createPgnGameSplitter", () => {
   it("gives the games parsePgn gives, whatever the chunk boundaries", () => {
     const whole = parsePgn(TRICKY, emptyHeaders);
-    expect(whole.map((game) => game.headers.get("Event"))).toEqual([
+    expect(whole.map((game) => game.headers.get("Event"))).toStrictEqual([
       'Quotes "inside" and a \\ backslash',
       "Second",
       "Third, CRLF and no final newline"
     ]);
     for (const size of [1, 2, 3, 7, 16, 61, TRICKY.length]) {
-      expect(split(TRICKY, size)).toEqual(whole);
+      expect(split(TRICKY, size)).toStrictEqual(whole);
     }
   });
 
@@ -44,28 +44,28 @@ describe("createPgnGameSplitter", () => {
       '[Event "CRLF"]\r\n\r\n{ A comment\r\nover\r\nthree lines } 1. e4 { and\r\nanother }' +
       " e5 *\r\n\r\n1. d4 *\r";
     const whole = parsePgn(crlf, emptyHeaders);
-    expect(whole[0].comments).toEqual(["A comment\nover\nthree lines"]);
+    expect(whole[0].comments).toStrictEqual(["A comment\nover\nthree lines"]);
     expect(JSON.stringify(whole)).not.toContain("\\r");
     for (let size = 1; size <= crlf.length; size++) {
-      expect(split(crlf, size)).toEqual(whole);
+      expect(split(crlf, size)).toStrictEqual(whole);
     }
   });
 
   it("keeps a tag line inside a comment as comment text", () => {
     const [first] = split(TRICKY, 5);
     expect(first.comments?.[0]).toContain('[Event "Not a game"]');
-    expect(first.moves.children[0].data.comments).toEqual(['[Event "still a comment"]']);
+    expect(first.moves.children[0].data.comments).toStrictEqual(['[Event "still a comment"]']);
   });
 
   it("hands games on as soon as they end, and the last one at the end", () => {
-    const seen: string[] = [];
-    const splitter = createPgnGameSplitter((game) => seen.push(game.headers.get("Event") ?? ""));
+    const seen: (string | undefined)[] = [];
+    const splitter = createPgnGameSplitter((game) => seen.push(game.headers.get("Event")));
     splitter.write('[Event "One"]\n\n1. e4 *\n\n[Event "Two"]\n\n1. d4');
-    expect(seen).toEqual(["One"]);
+    expect(seen).toStrictEqual(["One"]);
     splitter.write(" d5 *");
-    expect(seen).toEqual(["One"]);
+    expect(seen).toStrictEqual(["One"]);
     splitter.end();
-    expect(seen).toEqual(["One", "Two"]);
+    expect(seen).toStrictEqual(["One", "Two"]);
   });
 
   it("stops at the first error the callback throws", () => {

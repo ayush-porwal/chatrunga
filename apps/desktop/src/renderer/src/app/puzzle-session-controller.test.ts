@@ -16,6 +16,11 @@ import {
 
 const config = { databaseId: "lichess-puzzles" } as PuzzleSessionConfig;
 
+/** The set's config, or null once it ended. */
+function setConfigOf(state: PuzzleSessionState): PuzzleSessionConfig | null {
+  return state.set?.config ?? null;
+}
+
 describe("continuesPuzzleSet", () => {
   it("goes on with the game played from the set's puzzle while that board is loaded", () => {
     expect(continuesPuzzleSet(config, 7, 7)).toBe(true);
@@ -45,7 +50,7 @@ describe("nextPuzzleInput", () => {
       retryIds: ["x", "y"],
       lichess: { ratingMin: 0 }
     } as PuzzleSessionConfig;
-    expect(nextPuzzleInput(retry, ["x"])).toEqual({
+    expect(nextPuzzleInput(retry, ["x"])).toStrictEqual({
       databaseId: "lichess-puzzles",
       excludeIds: ["x"],
       ids: ["x", "y"]
@@ -65,9 +70,9 @@ describe("puzzle set state", () => {
 
   it("records the set's id, filters and the puzzles shown, and nothing without a set", () => {
     const state = joinPuzzleSet(startPuzzleSet(NO_PUZZLE_SET, "a", { id: "s", config }), "b");
-    expect(snapshotPuzzleSet(state)).toEqual({ id: "s", config, shownIds: ["a", "b"] });
+    expect(snapshotPuzzleSet(state)).toStrictEqual({ id: "s", config, shownIds: ["a", "b"] });
     expect(snapshotPuzzleSet(endPuzzleSet(state))).toBeNull();
-    expect(joinPuzzleSet(NO_PUZZLE_SET, "a")).toEqual(NO_PUZZLE_SET);
+    expect(joinPuzzleSet(NO_PUZZLE_SET, "a")).toStrictEqual(NO_PUZZLE_SET);
   });
 
   it("resumes the set with a game history brought back, so Next puzzle shows there again", () => {
@@ -75,10 +80,8 @@ describe("puzzle set state", () => {
     const game = snapshotPuzzleSet(continuePuzzleSet(state, 7))!;
     // Back to that game after the board was replaced (the set ended meanwhile).
     const resumed = resumePuzzleSet(endPuzzleSet(joinPuzzleSet(state, "b")), game, 9);
-    expect(continuesPuzzleSet(resumed.set?.config ?? null, resumed.continuationBoard, 9)).toBe(
-      true
-    );
-    expect(excluded(resumed)).toEqual(["a", "b"]);
+    expect(continuesPuzzleSet(setConfigOf(resumed), resumed.continuationBoard, 9)).toBe(true);
+    expect(excluded(resumed)).toStrictEqual(["a", "b"]);
   });
 
   it("never repeats a puzzle after Back: puzzle, engine game, next puzzle, Back twice, Next puzzle", () => {
@@ -89,19 +92,19 @@ describe("puzzle set state", () => {
     state = joinPuzzleSet(state, "b");
     state = resumePuzzleSet(state, gameEntry, 8); // Back to the game
     state = startPuzzleSet(state, "a", puzzleEntry); // Back to the first puzzle
-    expect(puzzleEntry.shownIds).toEqual(["a"]);
-    expect(excluded(state)).toEqual(["a", "b"]);
+    expect(puzzleEntry.shownIds).toStrictEqual(["a"]);
+    expect(excluded(state)).toStrictEqual(["a", "b"]);
     state = joinPuzzleSet(state, "c"); // Next puzzle
-    expect(excluded(state)).toEqual(["a", "b", "c"]);
+    expect(excluded(state)).toStrictEqual(["a", "b", "c"]);
   });
 
   it("starts a new set with its first puzzle alone, and keeps the old set's for history going back to it", () => {
     let state = joinPuzzleSet(startPuzzleSet(NO_PUZZLE_SET, "a", { id: "s", config }), "b");
     const first = snapshotPuzzleSet(state)!;
     state = startPuzzleSet(state, "a", { id: "t", config: other });
-    expect(snapshotPuzzleSet(state)).toEqual({ id: "t", config: other, shownIds: ["a"] });
+    expect(snapshotPuzzleSet(state)).toStrictEqual({ id: "t", config: other, shownIds: ["a"] });
     state = startPuzzleSet(state, "b", { ...first, shownIds: ["a"] });
-    expect(excluded(state)).toEqual(["a", "b"]);
+    expect(excluded(state)).toStrictEqual(["a", "b"]);
     expect(state.continuationBoard).toBeNull();
   });
 });

@@ -32,15 +32,15 @@ function bridge(account: ChesscomAccount | null) {
   return { api, events, emit: (event: ChesscomEvent) => emit(event) };
 }
 
-afterEach(() => {
-  useChesscomStore.setState({
-    status: { account: null, connecting: false },
-    loaded: false,
-    sync: { running: false, imported: 0, error: null }
-  });
-});
-
 describe("startChesscomSync", () => {
+  afterEach(() => {
+    useChesscomStore.setState({
+      status: { account: null, connecting: false },
+      loaded: false,
+      sync: { running: false, imported: 0, error: null }
+    });
+  });
+
   it("reads the account on open and imports new games when one is connected", async () => {
     const { api, events } = bridge(ACCOUNT);
     const stop = startChesscomSync({ api, events, refreshGames: vi.fn() });
@@ -65,12 +65,16 @@ describe("startChesscomSync", () => {
     const refreshGames = vi.fn();
     const stop = startChesscomSync({ api, events, refreshGames });
     emit({ type: "sync", running: true, imported: 12, error: null });
-    expect(useChesscomStore.getState().sync).toEqual({ running: true, imported: 12, error: null });
+    expect(useChesscomStore.getState().sync).toStrictEqual({
+      running: true,
+      imported: 12,
+      error: null
+    });
     expect(refreshGames).not.toHaveBeenCalled();
     emit({ type: "sync", running: false, imported: 30, error: null });
     expect(refreshGames).toHaveBeenCalledTimes(1);
     emit({ type: "status", status: { account: ACCOUNT, connecting: false } });
-    expect(useChesscomStore.getState().status.account).toEqual(ACCOUNT);
+    expect(useChesscomStore.getState().status.account).toStrictEqual(ACCOUNT);
     stop();
   });
 });

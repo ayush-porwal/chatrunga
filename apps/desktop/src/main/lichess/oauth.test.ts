@@ -31,7 +31,7 @@ describe("PKCE", () => {
       })
     );
     expect(url.origin + url.pathname).toBe("https://lichess.org/oauth");
-    expect(Object.fromEntries(url.searchParams)).toEqual({
+    expect(Object.fromEntries(url.searchParams)).toStrictEqual({
       response_type: "code",
       client_id: LICHESS_CLIENT_ID,
       redirect_uri: "http://localhost:5555/callback",

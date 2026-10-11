@@ -52,7 +52,7 @@ const CHALLENGE = {
 
 describe("normalizeGameFull", () => {
   it("maps players, clock, the start position and the state", () => {
-    expect(normalizeGameFull(GAME_FULL)).toEqual({
+    expect(normalizeGameFull(GAME_FULL)).toStrictEqual({
       id: "xcoxhDvh",
       variant: "standard",
       rated: false,
@@ -128,7 +128,7 @@ describe("normalizeGameState", () => {
 
 describe("normalizeChallenge", () => {
   it("sees an incoming challenge from the challenged side", () => {
-    expect(normalizeChallenge(CHALLENGE, "gabriela")).toEqual({
+    expect(normalizeChallenge(CHALLENGE, "gabriela")).toStrictEqual({
       id: "iOskobMC",
       direction: "in",
       opponent: { id: "adriana", name: "Adriana", rating: 1548, title: "WFM", aiLevel: null },
@@ -170,7 +170,7 @@ describe("eventFromStream", () => {
         { type: "gameStart", game: { gameId: "YfjTIV43", fullId: "YfjTIV43miXK" } },
         "me"
       )
-    ).toEqual({
+    ).toStrictEqual({
       type: "gameStart",
       gameId: "YfjTIV43"
     });
@@ -178,13 +178,13 @@ describe("eventFromStream", () => {
       type: "challenge",
       challenge: { id: "iOskobMC", direction: "in" }
     });
-    expect(eventFromStream({ type: "challengeDeclined", challenge: CHALLENGE }, "adriana")).toEqual(
-      {
-        type: "challengeGone",
-        challengeId: "iOskobMC",
-        reason: "declined"
-      }
-    );
+    expect(
+      eventFromStream({ type: "challengeDeclined", challenge: CHALLENGE }, "adriana")
+    ).toStrictEqual({
+      type: "challengeGone",
+      challengeId: "iOskobMC",
+      reason: "declined"
+    });
     expect(
       eventFromStream({ type: "challengeCanceled", challenge: CHALLENGE }, "gabriela")
     ).toMatchObject({
@@ -212,7 +212,7 @@ describe("normalizeAccount", () => {
         },
         1000
       )
-    ).toEqual({
+    ).toStrictEqual({
       id: "georges",
       username: "Georges",
       title: "FM",

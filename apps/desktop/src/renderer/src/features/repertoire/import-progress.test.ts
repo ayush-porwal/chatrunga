@@ -29,28 +29,33 @@ function event(patch: Partial<ImportProgressEvent> = {}): ImportProgressEvent {
 describe("import preview progress", () => {
   it("starts with the dialog's jobId and no progress, then follows only that job's events", () => {
     const run = startPreviewRun("job-1");
-    expect(run).toEqual({ jobId: "job-1", latest: null });
+    expect(run).toStrictEqual({ jobId: "job-1", latest: null });
     // Any phase of another job (an earlier preview, another window) is ignored.
     for (const phase of ["reading", "parsing", "cancelled", "failed"] as const) {
-      expect(stepPreviewRun(run, event({ jobId: "other", phase }))).toEqual({ kind: "ignore" });
+      expect(stepPreviewRun(run, event({ jobId: "other", phase }))).toStrictEqual({
+        kind: "ignore"
+      });
     }
     const reading = event({ phase: "reading" });
-    expect(stepPreviewRun(run, reading)).toEqual({
+    expect(stepPreviewRun(run, reading)).toStrictEqual({
       kind: "update",
       run: { jobId: "job-1", latest: reading }
     });
     const next = event({ bytesRead: 500, gamesSeen: 3, nodesSeen: 120 });
-    expect(stepPreviewRun(run, next)).toEqual({ kind: "update", run: { ...run, latest: next } });
+    expect(stepPreviewRun(run, next)).toStrictEqual({
+      kind: "update",
+      run: { ...run, latest: next }
+    });
     expect(stepPreviewRun(run, event({ phase: "ready" }))).toMatchObject({ kind: "update" });
   });
 
   it("turns cancelled and failed events into outcomes", () => {
     const run = startPreviewRun("job-1");
-    expect(stepPreviewRun(run, event({ phase: "cancelled" }))).toEqual({ kind: "cancelled" });
+    expect(stepPreviewRun(run, event({ phase: "cancelled" }))).toStrictEqual({ kind: "cancelled" });
     expect(
       stepPreviewRun(run, event({ phase: "failed", error: "This PGN has more than 1000 games" }))
-    ).toEqual({ kind: "failed", error: "This PGN has more than 1000 games" });
-    expect(stepPreviewRun(run, event({ phase: "failed", error: null }))).toEqual({
+    ).toStrictEqual({ kind: "failed", error: "This PGN has more than 1000 games" });
+    expect(stepPreviewRun(run, event({ phase: "failed", error: null }))).toStrictEqual({
       kind: "failed",
       error: "That PGN couldn't be read."
     });
@@ -93,7 +98,7 @@ describe("adoptCommittedRevision", () => {
     adoptCommittedRevision({ repertoireId: "r1", adoptRevision }, "r1", 7);
     adoptCommittedRevision({ repertoireId: "r2", adoptRevision }, "r1", 8);
     adoptCommittedRevision({ repertoireId: null, adoptRevision }, "r1", 9);
-    expect(adopted).toEqual([7]);
+    expect(adopted).toStrictEqual([7]);
   });
 });
 

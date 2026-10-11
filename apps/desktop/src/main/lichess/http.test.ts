@@ -100,7 +100,7 @@ describe("LichessClient", () => {
     stream.pushRaw("\n");
     stream.close();
     await done;
-    expect(lines).toEqual([{ type: "gameStart" }]);
+    expect(lines).toStrictEqual([{ type: "gameStart" }]);
     expect(requests[0].headers.accept).toBe("application/x-ndjson");
   });
 

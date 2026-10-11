@@ -74,6 +74,36 @@ function releaseServing(
   };
 }
 
+/** The manager's download progress events, collected as they come. */
+function downloadEvents(manager: AssetManager) {
+  const events: Extract<ProgressEvent, { type: "download" }>[] = [];
+  manager.on("progress", (event) => {
+    if (event.type === "download") events.push(event);
+  });
+  return events;
+}
+
+/** The messages of the manager's error progress events, collected as they come. */
+function errorMessages(manager: AssetManager) {
+  const messages: string[] = [];
+  manager.on("progress", (event) => {
+    if (event.type === "error") messages.push(event.message);
+  });
+  return messages;
+}
+
+/** A stored asset record of `file` (a custom one names it as its custom path too). */
+const storedRecord = (id: string, state: string, file: string) => ({
+  id,
+  state,
+  installedPath: file,
+  customPath: state === "custom" ? file : null,
+  sha256: null,
+  manifestVersion: "v1.0",
+  sizeBytes: 7,
+  installedAt: null
+});
+
 const json = (body: unknown, init: ResponseInit = {}) =>
   new Response(JSON.stringify(body), { status: 200, ...init });
 
@@ -113,7 +143,7 @@ describe("AssetManager", () => {
   it("makes no network request on init or when reading status", async () => {
     const manager = makeManager();
     await manager.init();
-    expect(Object.values(manager.getInstalled()).map((record) => record.state)).toEqual(
+    expect(Object.values(manager.getInstalled()).map((record) => record.state)).toStrictEqual(
       Array(7).fill("missing")
     );
     const status = await manager.getStatus();
@@ -151,7 +181,7 @@ describe("AssetManager", () => {
 
     await manager.downloadAsset("maia-1100");
 
-    expect(calledUrls().sort()).toEqual([LICENSE_URL, WEIGHT_URL].sort());
+    expect(calledUrls().sort()).toStrictEqual([LICENSE_URL, WEIGHT_URL].sort());
     const record = manager.getInstalled()["maia-1100"];
     expect(record).toMatchObject({
       state: "installed",
@@ -160,7 +190,7 @@ describe("AssetManager", () => {
       version: "v1.0",
       source: "fixed"
     });
-    expect(readFileSync(record.installedPath!)).toEqual(weightBytes);
+    expect(readFileSync(record.installedPath!)).toStrictEqual(weightBytes);
     expect(events).toContain("verify");
     expect(events.at(-1)).toBe("ready");
   });
@@ -175,8 +205,7 @@ describe("AssetManager", () => {
       });
     const manager = makeManager();
     await manager.init();
-    const downloads: ProgressEvent[] = [];
-    manager.on("progress", (event) => event.type === "download" && downloads.push(event));
+    const downloads = downloadEvents(manager);
 
     await manager.downloadAsset("stockfish");
 
@@ -197,9 +226,9 @@ describe("AssetManager", () => {
     // No staging dirs, archives or partials left behind.
     expect(
       readdirSync(path.join(userDataDir, "engines")).filter((n) => n !== ".downloads")
-    ).toEqual(["stockfish"]);
-    expect(readdirSync(path.join(userDataDir, "engines", ".downloads"))).toEqual([]);
-    expect(calledUrls()).toEqual([SF_API, SF_URL, SF_CDN]);
+    ).toStrictEqual(["stockfish"]);
+    expect(readdirSync(path.join(userDataDir, "engines", ".downloads"))).toStrictEqual([]);
+    expect(calledUrls()).toStrictEqual([SF_API, SF_URL, SF_CDN]);
   });
 
   it("rejects an archive whose digest does not match the release, after one retry", async () => {
@@ -208,18 +237,17 @@ describe("AssetManager", () => {
     routes[SF_URL] = () => new Response(new Uint8Array(archive));
     const manager = makeManager();
     await manager.init();
-    const errors: string[] = [];
-    manager.on("progress", (event) => event.type === "error" && errors.push(event.message));
+    const errors = errorMessages(manager);
 
     await expect(manager.downloadAsset("stockfish")).rejects.toThrow(
       "sha256 mismatch for stockfish"
     );
 
     expect(calledUrls().filter((url) => url === SF_URL)).toHaveLength(2);
-    expect(errors).toEqual(["sha256 mismatch for stockfish"]);
+    expect(errors).toStrictEqual(["sha256 mismatch for stockfish"]);
     expect(manager.getInstalled().stockfish.state).toBe("missing");
     expect(existsSync(path.join(userDataDir, "engines", "stockfish"))).toBe(false);
-    expect(readdirSync(path.join(userDataDir, "engines", ".downloads"))).toEqual([]);
+    expect(readdirSync(path.join(userDataDir, "engines", ".downloads"))).toStrictEqual([]);
   });
 
   it("rejects a Maia weight whose digest does not match", async () => {
@@ -355,7 +383,7 @@ describe("AssetManager", () => {
     await first.refreshReleasesInBackground();
     expect(changed).toHaveBeenCalledTimes(1);
     // Lc0 has no build for macOS: its repo is never queried there.
-    expect(calledUrls()).toEqual([SF_API]);
+    expect(calledUrls()).toStrictEqual([SF_API]);
 
     const second = makeManager();
     await second.init();
@@ -364,7 +392,7 @@ describe("AssetManager", () => {
       latestSource: "github",
       latestVersion: "sf_19"
     });
-    expect(calledUrls()).toEqual([SF_API]);
+    expect(calledUrls()).toStrictEqual([SF_API]);
     expect(calledUrls()).not.toContain(LC0_API);
   });
 
@@ -386,23 +414,13 @@ describe("AssetManager", () => {
   it("restores records whose files were deleted or moved as missing", async () => {
     const kept = path.join(workDir, "maia-1300.pb.gz");
     writeFileSync(kept, "weights");
-    const record = (id: string, state: string, file: string) => ({
-      id,
-      state,
-      installedPath: file,
-      customPath: state === "custom" ? file : null,
-      sha256: null,
-      manifestVersion: "v1.0",
-      sizeBytes: 7,
-      installedAt: null
-    });
     writeFileSync(
       path.join(userDataDir, "engine-assets.json"),
       JSON.stringify({
         records: [
-          record("maia-1100", "installed", path.join(workDir, "deleted.pb.gz")),
-          record("maia-1300", "installed", kept),
-          record("lc0", "custom", path.join(workDir, "moved-lc0"))
+          storedRecord("maia-1100", "installed", path.join(workDir, "deleted.pb.gz")),
+          storedRecord("maia-1300", "installed", kept),
+          storedRecord("lc0", "custom", path.join(workDir, "moved-lc0"))
         ]
       })
     );
@@ -437,7 +455,7 @@ describe("AssetManager", () => {
       state: "custom",
       customPath: own
     });
-    expect(readdirSync(userDataDir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+    expect(readdirSync(userDataDir).filter((name) => name.endsWith(".tmp"))).toStrictEqual([]);
   });
 
   it("explains the manual Lc0 install on macOS", async () => {

@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseRepertoirePgn } from "@chaturanga/shared/chess/repertoire-pgn";
+import {
+  parseRepertoirePgn,
+  type ParsedRepertoireGame
+} from "@chaturanga/shared/chess/repertoire-pgn";
 import { importedDecisionCount } from "@chaturanga/shared/chess/repertoire-training";
 import { validateTree } from "./chapter-validation";
 import { runImport } from "./import-job";
@@ -16,6 +19,26 @@ const fixtures = join(__dirname, "__fixtures__");
 const pgn = readFileSync(join(fixtures, "parse-regression.pgn"), "utf8");
 const snapshot = JSON.parse(readFileSync(join(fixtures, "parse-regression.json"), "utf8"));
 
+/** The decisions an import counts for a parsed game: none for a rejected one. */
+function expectedDecisions(game: ParsedRepertoireGame) {
+  return game.rejected
+    ? { white: 0, black: 0 }
+    : {
+        white: importedDecisionCount("white", game.tree),
+        black: importedDecisionCount("black", game.tree)
+      };
+}
+
+/** An import computes a position key per node, and none for a rejected game. */
+function expectedKeyCount(game: ParsedRepertoireGame): number {
+  return game.rejected ? 0 : game.tree.length;
+}
+
+/** A synchronously parsed game as an import holds it: its tree validated, unless it was rejected. */
+function validatedGame(game: ParsedRepertoireGame): ParsedRepertoireGame {
+  return { ...game, tree: game.rejected ? game.tree : validateTree(game.tree, game.rootFen) };
+}
+
 describe("import parse regression fixture", () => {
   it("covers CRLF, castling, promotion, custom roots and rejected games", () => {
     expect(pgn).toContain("\r\n");
@@ -26,26 +49,16 @@ describe("import parse regression fixture", () => {
     for (const chunkChars of [1, 7, 64, 32 * 1024]) {
       const { games } = await runImport({ kind: "text", text: pgn }, undefined, { chunkChars });
       const parsed = games.map(({ positionKeys, decisions, ...game }) => {
-        expect(decisions).toEqual(
-          game.rejected
-            ? { white: 0, black: 0 }
-            : {
-                white: importedDecisionCount("white", game.tree),
-                black: importedDecisionCount("black", game.tree)
-              }
-        );
-        expect(Object.keys(positionKeys)).toHaveLength(game.rejected ? 0 : game.tree.length);
+        expect(decisions).toStrictEqual(expectedDecisions(game));
+        expect(Object.keys(positionKeys)).toHaveLength(expectedKeyCount(game));
         return game;
       });
-      expect(parsed).toEqual(snapshot);
+      expect(parsed).toStrictEqual(snapshot);
     }
   });
 
   it("the synchronous parser gives the snapshot once its trees are validated", () => {
-    const games = parseRepertoirePgn(pgn).games.map((game) => ({
-      ...game,
-      tree: game.rejected ? game.tree : validateTree(game.tree, game.rootFen)
-    }));
-    expect(games).toEqual(snapshot);
+    const games = parseRepertoirePgn(pgn).games.map(validatedGame);
+    expect(games).toStrictEqual(snapshot);
   });
 });

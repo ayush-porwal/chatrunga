@@ -54,6 +54,11 @@ function payload(ply: number, extra: Record<string, unknown> = {}): ReviewInsigh
   });
 }
 
+/** A request's body as text (empty without one). */
+function bodyText(init?: RequestInit): string {
+  return typeof init?.body === "string" ? init.body : "";
+}
+
 function completion(text: string, usage?: Record<string, number>): Response {
   return new Response(
     JSON.stringify({ choices: [{ message: { content: text } }], ...(usage ? { usage } : {}) }),
@@ -125,7 +130,7 @@ describe("commentary analytics", () => {
         generation.$ai_trace_id,
         generation.$ai_is_error
       ])
-    ).toEqual([
+    ).toStrictEqual([
       [1, "initial", "validation_failed", requested.request_id, false],
       [2, "validation_retry", "accepted", requested.request_id, false]
     ]);
@@ -142,13 +147,13 @@ describe("commentary analytics", () => {
       $ai_output_choices: [{ role: "assistant", content: INVALID_ANSWER }]
     });
     // The retry's prompt carries the rejected answer and the correction.
-    expect((retry.$ai_input as { role: string }[]).map((message) => message.role)).toEqual([
+    expect((retry.$ai_input as { role: string }[]).map((message) => message.role)).toStrictEqual([
       "system",
       "user",
       "assistant",
       "user"
     ]);
-    expect(of("$ai_trace")).toEqual([
+    expect(of("$ai_trace")).toStrictEqual([
       expect.objectContaining({
         $ai_trace_id: requested.request_id,
         $ai_is_error: false,
@@ -156,7 +161,7 @@ describe("commentary analytics", () => {
         $ai_output_state: expect.stringContaining("grabs central space")
       })
     ]);
-    expect(of("commentary_completed")).toEqual([
+    expect(of("commentary_completed")).toStrictEqual([
       expect.objectContaining({
         request_id: requested.request_id,
         attempts: 2,
@@ -170,21 +175,20 @@ describe("commentary analytics", () => {
         cost_complete: true
       })
     ]);
-    expect(of("commentary_failed")).toEqual([]);
+    expect(of("commentary_failed")).toStrictEqual([]);
   });
 
   it("a batch with one success and one failure counts each move once", async () => {
     const payloads = [payload(1), payload(2)];
     // The first move's request succeeds; the second is refused (out of credits).
-    let call = 0;
-    const alternating = vi.fn(async () =>
-      call++ === 0 ? completion(GOOD_ANSWER) : new Response("", { status: 402 })
-    );
+    const alternating = vi
+      .fn(async () => new Response("", { status: 402 }))
+      .mockResolvedValueOnce(completion(GOOD_ANSWER));
     const { result, of } = await run(alternating, payloads);
     expect(result.commentary).toHaveLength(1);
     expect(of("commentary_requested")).toHaveLength(2);
     expect(of("commentary_completed")).toHaveLength(1);
-    expect(of("commentary_failed")).toEqual([
+    expect(of("commentary_failed")).toStrictEqual([
       expect.objectContaining({ error_code: "insufficient_credits", attempts: 1 })
     ]);
     // Each terminal event belongs to its own request.
@@ -212,7 +216,7 @@ describe("commentary analytics", () => {
     expect(of("$ai_generation")[0]).not.toHaveProperty("$ai_total_cost_usd");
 
     // Tokens reported but no cost: cost stays unknown.
-    expect(parseUsage({ prompt_tokens: 10, completion_tokens: 2 })).toEqual({
+    expect(parseUsage({ prompt_tokens: 10, completion_tokens: 2 })).toStrictEqual({
       promptTokens: 10,
       completionTokens: 2,
       costUsd: undefined
@@ -267,7 +271,7 @@ describe("commentary analytics", () => {
     named.engines.stockfish.engineName = "My Secret Engine";
     const sent: string[] = [];
     const fetchImpl = vi.fn(async (_url: string | URL, init?: RequestInit) => {
-      sent.push(typeof init?.body === "string" ? init.body : "");
+      sent.push(bodyText(init));
       return completion(GOOD_ANSWER);
     });
     const { events, of } = await run(fetchImpl, [named]);

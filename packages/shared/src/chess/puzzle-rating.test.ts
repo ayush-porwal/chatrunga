@@ -24,7 +24,7 @@ describe("rateAttempt", () => {
   it("is one Glicko-2 game against the puzzle, with Lichess's τ", () => {
     const settled = { rating: 1600, deviation: 80, volatility: 0.06 };
     const expected = glicko2Update(settled, [{ opponent: PUZZLE, score: 1 }], PUZZLE_RATING_TAU);
-    expect(rateAttempt(settled, PUZZLE, { solved: true, at: NOW })).toEqual(expected);
+    expect(rateAttempt(settled, PUZZLE, { solved: true, at: NOW })).toStrictEqual(expected);
   });
 
   it("moves a new solver a long way on the first puzzle, and a settled one a little", () => {
@@ -75,7 +75,7 @@ describe("rateAttempt", () => {
 
   it("falls back to the defaults for an unusable stored rating", () => {
     const broken = { rating: Number.NaN, deviation: Number.NaN, volatility: 0 };
-    expect(rateAttempt(broken, PUZZLE, { solved: true, at: NOW })).toEqual(
+    expect(rateAttempt(broken, PUZZLE, { solved: true, at: NOW })).toStrictEqual(
       rateAttempt(DEFAULT_PUZZLE_RATING, PUZZLE, { solved: true, at: NOW })
     );
   });
@@ -93,8 +93,8 @@ describe("ratingAfterIdle", () => {
   });
 
   it("is unchanged without a previous attempt or when the clock went backwards, and capped", () => {
-    expect(ratingAfterIdle(player, null, NOW)).toEqual(player);
-    expect(ratingAfterIdle(player, NOW + DAY, NOW)).toEqual(player);
+    expect(ratingAfterIdle(player, null, NOW)).toStrictEqual(player);
+    expect(ratingAfterIdle(player, NOW + DAY, NOW)).toStrictEqual(player);
     expect(ratingAfterIdle(player, NOW - 100 * 365 * DAY, NOW).deviation).toBe(MAX_DEVIATION);
   });
 });
@@ -118,7 +118,7 @@ describe("puzzlePerformance", () => {
 
 describe("ratingRangeFor", () => {
   it("centres a window on the rating plus Lichess's difficulty offsets", () => {
-    expect(ratingRangeFor(1500, "normal")).toEqual({
+    expect(ratingRangeFor(1500, "normal")).toStrictEqual({
       ratingMin: 1500 - AROUND_RATING_WINDOW,
       ratingMax: 1500 + AROUND_RATING_WINDOW
     });

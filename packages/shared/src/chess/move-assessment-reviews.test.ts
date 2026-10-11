@@ -18,6 +18,27 @@ import { START_FEN } from "./position";
 import { parseLine, trapReviewMoves } from "./__fixtures__/trap-game";
 import { GREEK_GIFT, ONE_LEGAL_MOVE, position, verified } from "./__fixtures__/assessable-moves";
 
+/** A copy of `items` with the one at `index` replaced. */
+function replacedAt<T>(items: readonly T[], index: number, replace: (item: T) => T): T[] {
+  const copy = [...items];
+  copy[index] = replace(copy[index]);
+  return copy;
+}
+
+/** The trap game's moves with a deeper search that confirms 4... Qg5 (its eighth ply). */
+function trapReviewMovesVerifyingQg5(): MoveReview[] {
+  return replacedAt(trapReviewMoves(), 7, (move) => ({
+    ...move,
+    verification: { deeperLines: move.topLines }
+  }));
+}
+
+/** The assessed move as if assessed under another policy. */
+function withPolicy(move: MoveReview, policy: number): MoveReview {
+  if (!move.assessment) throw new Error(`move ${move.san} isn't assessed`);
+  return { ...move, assessment: { ...move.assessment, policy } };
+}
+
 let bundledBook: OpeningBook | null = null;
 /** The bundled opening book (read once for the file). */
 function openingBook(): OpeningBook {
@@ -171,12 +192,10 @@ describe("book moves", () => {
   });
 
   it("marks the trap game's moves Book while it is in the book, then judges the rest", () => {
-    const moves = trapReviewMoves().map((move, index) =>
-      index === 7 ? { ...move, verification: { deeperLines: move.topLines } } : move
-    );
+    const moves = trapReviewMovesVerifyingQg5();
     const assessments = assessMoves(moves, { openingBook: openingBook() });
     // 3… Nd4 is the Blackburne–Kostić Gambit: theory, no longer an inaccuracy.
-    expect(assessments.map((item) => item.annotation)).toEqual([
+    expect(assessments.map((item) => item.annotation)).toStrictEqual([
       "book",
       "book",
       "book",
@@ -200,11 +219,9 @@ describe("book moves", () => {
 
 describe("the trap game (regression)", () => {
   it("marks only the moves that matter, as the live review does", () => {
-    const moves = trapReviewMoves().map((move, index) =>
-      index === 7 ? { ...move, verification: { deeperLines: move.topLines } } : move
-    );
+    const moves = trapReviewMovesVerifyingQg5();
     const assessments = assessMoves(moves);
-    expect(moves.map((move, index) => [move.san, assessments[index]?.annotation])).toEqual([
+    expect(moves.map((move, index) => [move.san, assessments[index]?.annotation])).toStrictEqual([
       ["e4", null],
       ["e5", null],
       ["Nf3", null],
@@ -254,7 +271,7 @@ describe("saved reviews", () => {
     expect(review.assessmentPolicy).toBe(MOVE_ASSESSMENT_POLICY);
     expect(review.assessmentsRecomputed).toBe(true);
     // Errors come back; Qg5 had no deeper search, so it is only Good (it punished Nxe5), not Great.
-    expect(review.moves.map((move) => annotationOf(move))).toEqual([
+    expect(review.moves.map((move) => annotationOf(move))).toStrictEqual([
       null,
       null,
       null,
@@ -270,7 +287,7 @@ describe("saved reviews", () => {
       "mistake",
       null
     ]);
-    expect(review.moves[7]?.assessment?.tags).toEqual(
+    expect(review.moves[7]?.assessment?.tags).toStrictEqual(
       expect.arrayContaining(["unverified", "punishes_error"])
     );
     expect(review.summary).toMatchObject({
@@ -289,11 +306,11 @@ describe("saved reviews", () => {
     const damaged = { ...stored.moves[6], motifs: undefined } as unknown as MoveReview;
     const review = withCurrentAssessments({
       ...stored,
-      moves: stored.moves.map((move, index) => (index === 6 ? damaged : move))
+      moves: replacedAt(stored.moves, 6, () => damaged)
     });
     expect(review.assessmentsRecomputed).toBe(true);
     expect(review.moves[6]?.assessment).toBeUndefined();
-    expect(review.moves.map((move) => annotationOf(move))).toEqual([
+    expect(review.moves.map((move) => annotationOf(move))).toStrictEqual([
       null,
       null,
       null,
@@ -314,7 +331,7 @@ describe("saved reviews", () => {
 
   it("classifies the book moves and the opening of a review it re-assesses", () => {
     const review = withCurrentAssessments(storedReview(), { openingBook: openingBook() });
-    expect(review.moves.map((move) => annotationOf(move))).toEqual([
+    expect(review.moves.map((move) => annotationOf(move))).toStrictEqual([
       "book",
       "book",
       "book",
@@ -330,7 +347,7 @@ describe("saved reviews", () => {
       "mistake",
       null
     ]);
-    expect(review.opening).toEqual({
+    expect(review.opening).toStrictEqual({
       eco: "C50",
       name: "Italian Game: Blackburne-Kostić Gambit",
       ply: 6,
@@ -352,11 +369,7 @@ describe("saved reviews", () => {
     const current = withCurrentAssessments(storedReview());
     const mixed = {
       ...current,
-      moves: current.moves.map((move, index) =>
-        index === 0 && move.assessment
-          ? { ...move, assessment: { ...move.assessment, policy: 0 } }
-          : move
-      )
+      moves: replacedAt(current.moves, 0, (move) => withPolicy(move, 0))
     };
     expect(withCurrentAssessments(mixed)).not.toBe(mixed);
   });
@@ -408,7 +421,7 @@ describe("summary and labels", () => {
         { ...trapReviewMoves()[0], nodeId: "extra", evalLoss: null }
       ]
     });
-    expect(review.summary).toEqual({
+    expect(review.summary).toStrictEqual({
       totalMoves: 15,
       book: 0,
       best: 10,

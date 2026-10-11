@@ -36,7 +36,7 @@ describe("withInitialSession", () => {
 
   it("remembers the colour and clock from before the first handoff", () => {
     const first = withInitialSession(draft, initial);
-    expect(first.beforeHandoff).toEqual({ humanColor: "white", clockPreset: "blitz5_3" });
+    expect(first.beforeHandoff).toStrictEqual({ humanColor: "white", clockPreset: "blitz5_3" });
     const second = withInitialSession(
       { ...first, clockPreset: "rapid10_0" },
       {
@@ -44,7 +44,7 @@ describe("withInitialSession", () => {
         playerColor: "white"
       }
     );
-    expect(second.beforeHandoff).toEqual({ humanColor: "white", clockPreset: "blitz5_3" });
+    expect(second.beforeHandoff).toStrictEqual({ humanColor: "white", clockPreset: "blitz5_3" });
   });
 });
 
@@ -54,7 +54,7 @@ describe("withoutInitialSession", () => {
     const next = withoutInitialSession({ ...handoff, clockPreset: "rapid10_0", customMinutes: 20 });
     expect("initialSession" in next).toBe(false);
     expect("beforeHandoff" in next).toBe(false);
-    expect(next).toEqual({ ...draft, customMinutes: 20 });
+    expect(next).toStrictEqual({ ...draft, customMinutes: 20 });
   });
 
   it("returns the same draft when there is nothing to clear", () => {
@@ -84,7 +84,7 @@ describe("usePlayDraftStore", () => {
     expect(usePlayDraftStore.getState().draft.initialSession).toBe(initial);
     usePlayDraftStore.getState().clearInitialSession();
     expect(usePlayDraftStore.getState().draft.initialSession).toBeUndefined();
-    expect(usePlayDraftStore.getState().draft).toEqual(draft);
+    expect(usePlayDraftStore.getState().draft).toStrictEqual(draft);
   });
 
   it("clearing without a handoff (Play opened another way) changes nothing", () => {

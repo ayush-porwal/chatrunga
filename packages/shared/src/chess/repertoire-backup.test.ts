@@ -189,11 +189,11 @@ describe("validateBackupDocument", () => {
   it("accepts a document it built, from text or a parsed value", () => {
     const document = documentOf([stripForExport(entry(), true)]);
     const fromText = validateBackupDocument(JSON.stringify(document));
-    expect(fromText.warnings).toEqual([]);
+    expect(fromText.warnings).toStrictEqual([]);
     expect(fromText.document.repertoires[0].decisions).toHaveLength(2);
     expect(fromText.document.repertoires[0].progress).toHaveLength(1);
     expect(fromText.document.repertoires[0].chapters[0].tree).toHaveLength(4);
-    expect(validateBackupDocument(roundTrip(document)).document).toEqual(fromText.document);
+    expect(validateBackupDocument(roundTrip(document)).document).toStrictEqual(fromText.document);
   });
 
   it("rejects text that isn't JSON or isn't a backup", () => {
@@ -264,16 +264,16 @@ describe("validateBackupDocument", () => {
     source.progress!.push({ ...source.progress![0], positionKey: unreachable });
     source.progress!.push({ ...source.progress![0], positionKey: "garbage" });
     const { document, warnings } = validateBackupDocument(roundTrip(documentOf([source])));
-    expect(document.repertoires[0].decisions.map((item) => item.positionKey)).toEqual([
+    expect(document.repertoires[0].decisions.map((item) => item.positionKey)).toStrictEqual([
       positionKey(START_FEN),
       positionKey(afterE4E5),
       unreachable
     ]);
-    expect(document.repertoires[0].progress!.map((row) => row.positionKey)).toEqual([
+    expect(document.repertoires[0].progress!.map((row) => row.positionKey)).toStrictEqual([
       positionKey(START_FEN),
       unreachable
     ]);
-    expect(warnings).toEqual([
+    expect(warnings).toStrictEqual([
       `repertoire "Open games": 2 decisions don't have a valid, unique position key and were left out`,
       `repertoire "Open games": 1 progress entry doesn't have a valid, unique position key and was left out`
     ]);
@@ -281,7 +281,7 @@ describe("validateBackupDocument", () => {
 
   it("ignores a leading byte order mark", () => {
     const text = JSON.stringify(documentOf([entry()]));
-    expect(validateBackupDocument(`\uFEFF${text}`).document).toEqual(
+    expect(validateBackupDocument(`\uFEFF${text}`).document).toStrictEqual(
       validateBackupDocument(text).document
     );
   });
@@ -294,8 +294,8 @@ describe("validateBackupDocument", () => {
       damaged: { treeJson: "{oops", nodeMetaJson: "{}", headersJson: "{}", reason: "unreadable" }
     });
     const { document, warnings } = validateBackupDocument(roundTrip(documentOf([source])));
-    expect(document.repertoires[0].chapters.map((item) => item.id)).toEqual(["c1"]);
-    expect(warnings).toEqual([
+    expect(document.repertoires[0].chapters.map((item) => item.id)).toStrictEqual(["c1"]);
+    expect(warnings).toStrictEqual([
       `repertoire "Open games": 1 chapter was damaged when backed up and will be left out`
     ]);
   });
@@ -310,7 +310,7 @@ describe("validateBackupDocument", () => {
     const { document: validated } = validateBackupDocument(document);
     expect(JSON.stringify(validated)).not.toContain("sk-secret");
     expect(JSON.stringify(validated)).not.toContain("stockfish");
-    expect(Object.keys(validated).sort()).toEqual([
+    expect(Object.keys(validated).sort()).toStrictEqual([
       "app",
       "exportedAt",
       "format",
@@ -381,7 +381,7 @@ describe("validateBackupDocument", () => {
 
 describe("diffBackupEntry", () => {
   it("is empty for the same content", () => {
-    expect(diffBackupEntry(entry(), entry())).toEqual({
+    expect(diffBackupEntry(entry(), entry())).toStrictEqual({
       chaptersAdded: 0,
       chaptersChanged: 0,
       chaptersRemoved: 0,
@@ -406,7 +406,7 @@ describe("diffBackupEntry", () => {
       progress: null
     });
     incoming.decisions[1] = { ...incoming.decisions[1], prompt: "Something else" };
-    expect(diffBackupEntry(existing, incoming)).toEqual({
+    expect(diffBackupEntry(existing, incoming)).toStrictEqual({
       chaptersAdded: 1,
       chaptersChanged: 1,
       chaptersRemoved: 1,
@@ -472,9 +472,14 @@ describe("remapBackupEntry", () => {
       linkIdFor: (linkId) => `${linkId}-copy`
     });
     expect(remapped.repertoire.id).toBe("copy");
-    expect(remapped.chapters.map((item) => item.id)).toEqual(["c1-copy"]);
-    expect(remapped.chapters[0].tree.map((node) => node.id)).toEqual(["root", "n1", "n2", "n3"]);
-    expect(remapped.chapters[0].nodeMeta).toEqual(entry().chapters[0].nodeMeta);
+    expect(remapped.chapters.map((item) => item.id)).toStrictEqual(["c1-copy"]);
+    expect(remapped.chapters[0].tree.map((node) => node.id)).toStrictEqual([
+      "root",
+      "n1",
+      "n2",
+      "n3"
+    ]);
+    expect(remapped.chapters[0].nodeMeta).toStrictEqual(entry().chapters[0].nodeMeta);
     expect(remapped.decisions.every((item) => item.repertoireId === "copy")).toBe(true);
     expect(remapped.progress?.every((item) => item.repertoireId === "copy")).toBe(true);
     expect(remapped.workspace).toMatchObject({ lastChapterId: "c1-copy", lastNodeId: "n2" });

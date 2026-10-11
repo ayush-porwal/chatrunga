@@ -85,7 +85,7 @@ describe("importLichessGames", () => {
     const { repository, saved } = memoryRepository();
     const result = await importLichessGames({ client, repository, username: "Kenneth", since: 50 });
     expect(saved).toHaveLength(1);
-    expect(result).toEqual({ imported: 1, skipped: 2, nextSince: 300 });
+    expect(result).toStrictEqual({ imported: 1, skipped: 2, nextSince: 300 });
   });
 
   it("imports new games as Lichess games dated by their last move, and skips ones already there", async () => {
@@ -129,7 +129,7 @@ describe("importLichessGames", () => {
       since: 1234
     });
 
-    expect(result).toEqual({ imported: 1, skipped: 4, nextSince: 5001 });
+    expect(result).toStrictEqual({ imported: 1, skipped: 4, nextSince: 5001 });
     expect(saved).toHaveLength(1);
     expect(saved[0].playedAt).toBe(5000);
     expect(saved[0].input).toMatchObject({
@@ -142,7 +142,7 @@ describe("importLichessGames", () => {
         result: "1-0"
       }
     });
-    expect(saved[0].input.moveTree.map((node) => node.san).filter(Boolean)).toEqual([
+    expect(saved[0].input.moveTree.map((node) => node.san).filter(Boolean)).toStrictEqual([
       "e4",
       "e5",
       "Nf3"
@@ -151,7 +151,7 @@ describe("importLichessGames", () => {
 
     const url = new URL(requests[0].url);
     expect(url.pathname).toBe("/api/games/user/Kenneth");
-    expect(Object.fromEntries(url.searchParams)).toEqual({
+    expect(Object.fromEntries(url.searchParams)).toStrictEqual({
       since: "1234",
       pgnInJson: "true",
       clocks: "true",
@@ -175,12 +175,12 @@ describe("importLichessGames", () => {
   it("has no cursor when there was nothing new", async () => {
     const { client } = gamesExport([]);
     const { repository } = memoryRepository();
-    expect(await importLichessGames({ client, repository, username: "Kenneth", since: 0 })).toEqual(
-      {
-        imported: 0,
-        skipped: 0,
-        nextSince: null
-      }
-    );
+    expect(
+      await importLichessGames({ client, repository, username: "Kenneth", since: 0 })
+    ).toStrictEqual({
+      imported: 0,
+      skipped: 0,
+      nextSince: null
+    });
   });
 });

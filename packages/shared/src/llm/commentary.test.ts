@@ -9,7 +9,9 @@ import {
   maxTokensForDetail,
   parseCoachResponse,
   validateCommentary,
-  validateProse
+  validateProse,
+  type CommentaryValidationFailure,
+  type CommentaryValidationResult
 } from "./commentary";
 
 /** Mid-game mistake (4.Nxe5? in the Blackburne Shilling trap) with full context. */
@@ -102,6 +104,12 @@ function payload(overrides: Partial<ReviewInsightPayload> = {}): ReviewInsightPa
     commentaryDetail: "balanced",
     ...overrides
   });
+}
+
+/** The failure a validation must be (throws when it passed). */
+function failureOf(result: CommentaryValidationResult): CommentaryValidationFailure {
+  if (result.ok) throw new Error(`expected a failure, got "${result.prose}"`);
+  return result;
 }
 
 function withDetail(detail: ReviewInsightPayload["commentaryDetail"]): ReviewInsightPayload {
@@ -209,14 +217,14 @@ describe("coach prompt", () => {
       `detailed = ${COMMENTARY_LIMITS.detailed.targetSentences} sentences`
     );
     // Three few-shot examples, each a valid JSON answer.
-    const examples = COACH_SYSTEM_PROMPT.split("\n").filter(
-      (line) => line.startsWith('{"headline"') && !line.includes('"..."')
-    );
+    const examples = COACH_SYSTEM_PROMPT.split("\n")
+      .filter((line) => line.startsWith('{"headline"'))
+      .filter((line) => !line.includes('"..."'));
     expect(examples).toHaveLength(3);
     for (const example of examples) {
       const parts = parseCoachResponse(example);
       expect(parts.headline).toBeTruthy();
-      expect(Object.keys(parts).sort()).toEqual(["body", "headline"]);
+      expect(Object.keys(parts).sort()).toStrictEqual(["body", "headline"]);
     }
   });
 
@@ -236,9 +244,7 @@ describe("coach prompt", () => {
   });
 
   it("builds a retry turn that names the exact problem", () => {
-    const failure = validateProse("Nxe5 lost to Bxf7+.", payload());
-    expect(failure.ok).toBe(false);
-    if (failure.ok) return;
+    const failure = failureOf(validateProse("Nxe5 lost to Bxf7+.", payload()));
     const retry = buildRetryMessage(failure, payload());
     expect(retry).toContain("You wrote the move Bxf7+");
     expect(retry).not.toContain("STRICTER");
@@ -250,7 +256,7 @@ describe("parseCoachResponse", () => {
   const json = '{"headline": "Knight grab walks into Qg5", "body": "Nxe5 looks like a free pawn."}';
 
   it("parses the JSON object, fenced or surrounded by stray text", () => {
-    expect(parseCoachResponse(json)).toEqual({
+    expect(parseCoachResponse(json)).toStrictEqual({
       headline: "Knight grab walks into Qg5",
       body: "Nxe5 looks like a free pawn."
     });
@@ -268,26 +274,28 @@ describe("parseCoachResponse", () => {
       body: "Nxe5 wins it.",
       takeaway: "Look first."
     });
-    expect(parseCoachResponse(withTakeaway)).toEqual({
+    expect(parseCoachResponse(withTakeaway)).toStrictEqual({
       headline: "A free pawn",
       body: "Nxe5 wins it."
     });
   });
 
   it("falls back to plain text as the body", () => {
-    expect(parseCoachResponse("Nxe5 walks into Qg5.")).toEqual({ body: "Nxe5 walks into Qg5." });
+    expect(parseCoachResponse("Nxe5 walks into Qg5.")).toStrictEqual({
+      body: "Nxe5 walks into Qg5."
+    });
     expect(parseCoachResponse('{"oops": 1}').body).toBe('{"oops": 1}');
   });
 });
 
 describe("validateProse with context", () => {
   it("grounds SAN from alternatives, the reply line, history, the actual reply and Maia", () => {
-    expect([...groundedSanTokens(payload())]).toEqual(
+    expect([...groundedSanTokens(payload())]).toStrictEqual(
       expect.arrayContaining(["Nxd4", "O-O", "dxc3", "Qg5", "Qxe4+", "Nf3#", "Bc4", "Nd4", "Nc3"])
     );
     const prose =
       "After 3...Nd4, 4. Nxe5 walks into Qg5, which hits g2; Nxf7 then runs into Qxg2 and Qxe4+. Nxd4 or O-O kept White slightly better.";
-    expect(validateProse(prose, payload())).toEqual({ ok: true, prose });
+    expect(validateProse(prose, payload())).toStrictEqual({ ok: true, prose });
   });
 
   it("returns the headline from a JSON answer", () => {
@@ -295,7 +303,7 @@ describe("validateProse with context", () => {
       headline: "The e5 pawn was poisoned",
       body: "Nxe5 grabs a pawn, but Qg5 hits your knight and g2 at the same time. Nxd4 first kept White slightly better."
     });
-    expect(validateProse(answer, payload())).toEqual({
+    expect(validateProse(answer, payload())).toStrictEqual({
       ok: true,
       headline: "The e5 pawn was poisoned",
       prose:

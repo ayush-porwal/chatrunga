@@ -28,7 +28,7 @@ describe("analyzeTacticsForPosition — hanging", () => {
     const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     const facts = analyzeTacticsForPosition(fen, "white");
     const hanging = facts.filter((f) => f.kind === "hanging");
-    expect(hanging.length).toBe(0);
+    expect(hanging).toHaveLength(0);
   });
 });
 
@@ -116,7 +116,7 @@ describe("analyzeTacticsForPosition — regressions", () => {
     // The e7 square is empty, so the d8 queen sits behind the f6 knight on the g5-d8 diagonal.
     const fen = "rnbqkb1r/ppp2ppp/4pn2/3p2B1/2PP4/2N5/PP2PPPP/R2QKBNR b KQkq - 1 4";
     const pins = analyzeTacticsForPosition(fen, "white").filter((f) => f.kind === "pin");
-    expect(pins).toEqual([
+    expect(pins).toStrictEqual([
       {
         kind: "pin",
         pinned: { role: "knight", square: "f6" },

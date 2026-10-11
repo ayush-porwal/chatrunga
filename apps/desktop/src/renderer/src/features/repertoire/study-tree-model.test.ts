@@ -46,10 +46,10 @@ describe("study tree collapsing", () => {
 
     // v0 and v1 are 1–2 plies into the side line; v2 and v3 hide behind v1, x1 behind x0.
     const kept = tree.filter((node) => !["v2", "v3", "x1"].includes(node.id));
-    expect(ids(result.nodes)).toEqual(
+    expect(ids(result.nodes)).toStrictEqual(
       [...kept.map((node) => node.id), placeholderId("v1"), placeholderId("x0")].sort()
     );
-    expect(result.placeholders).toEqual(
+    expect(result.placeholders).toStrictEqual(
       new Map([
         [placeholderId("v1"), 2],
         [placeholderId("x0"), 1]
@@ -57,7 +57,7 @@ describe("study tree collapsing", () => {
     );
     expect(result.hiddenMoves).toBe(3);
     const v1 = result.nodes.find((node) => node.id === "v1")!;
-    expect(v1.children).toEqual([placeholderId("v1")]);
+    expect(v1.children).toStrictEqual([placeholderId("v1")]);
     const placeholder = result.nodes.find((node) => node.id === placeholderId("v1"))!;
     expect(placeholder).toMatchObject({ parentId: "v1", ply: v1.ply + 1, san: null });
     expect(placeholder.fenBefore).toBe(v1.fenAfter);
@@ -81,9 +81,9 @@ describe("study tree collapsing", () => {
     });
     // The main line always shows; every side line of it hides behind one row after it.
     const m0 = result.nodes.find((node) => node.id === "m0")!;
-    expect(m0.children).toEqual(["m1", placeholderId("m0")]);
+    expect(m0.children).toStrictEqual(["m1", placeholderId("m0")]);
     expect(result.placeholders.get(placeholderId("m0"))).toBe(6);
-    expect(ids(result.nodes)).toEqual(
+    expect(ids(result.nodes)).toStrictEqual(
       ["root", "m0", "m1", "m2", "m3", "m4", placeholderId("m0")].sort()
     );
   });
@@ -95,7 +95,7 @@ describe("study tree collapsing", () => {
       depth: 2,
       minMoves: 0
     });
-    expect(result.placeholders).toEqual(new Map([[placeholderId("x0"), 1]]));
+    expect(result.placeholders).toStrictEqual(new Map([[placeholderId("x0"), 1]]));
     expect(result.nodes.some((node) => node.id === "v3")).toBe(true);
   });
 
@@ -107,7 +107,7 @@ describe("study tree collapsing", () => {
     expect(isHidden(before, lookup, "v3")).toBe(true);
 
     const expanded = expandPathTo(new Set(["x0"]), lookup, "v3");
-    expect([...expanded].sort()).toEqual(["m0", "root", "v0", "v1", "v2", "v3", "x0"]);
+    expect([...expanded].sort()).toStrictEqual(["m0", "root", "v0", "v1", "v2", "v3", "x0"]);
     const after = collapseStudyTree(lookup, { ...options, expanded });
     expect(isHidden(after, lookup, "v3")).toBe(false);
     // Nothing is left to hide: the whole tree shows.
@@ -119,7 +119,7 @@ describe("study tree collapsing", () => {
       expanded: expandPathTo(new Set(), lookup, "v2")
     });
     expect(partly.visible?.has("v3")).toBe(true);
-    expect(partly.placeholders).toEqual(new Map([[placeholderId("x0"), 1]]));
+    expect(partly.placeholders).toStrictEqual(new Map([[placeholderId("x0"), 1]]));
   });
 
   it("counts subtree sizes once per tree and round-trips placeholder ids", () => {
@@ -143,9 +143,9 @@ describe("study tree collapsing", () => {
     // The cut branches of 1. e4 were played instead of 1… e5: their row stands under it.
     const rows = model.variationsByMove.get("m1")!;
     expect(rows).toHaveLength(1);
-    expect(rows[0].moves.map((move) => [move.node.id, move.number])).toEqual([
+    expect(rows[0].moves.map((move) => [move.node.id, move.number])).toStrictEqual([
       [placeholderId("m0"), null]
     ]);
-    expect(model.mainline.map((row) => row.white?.id)).toEqual(["m0", "m2", "m4"]);
+    expect(model.mainline.map((row) => row.white?.id)).toStrictEqual(["m0", "m2", "m4"]);
   });
 });

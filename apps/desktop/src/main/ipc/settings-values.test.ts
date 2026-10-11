@@ -15,7 +15,7 @@ describe("parseSettingValue", () => {
     expect(parseSettingValue("boardSquareLight", "#F0D9B5")).toBe("#f0d9b5");
     expect(parseSettingValue("boardSquareDark", " FFFFFF ")).toBe("#ffffff");
     expect(parseSettingValue("engineThreads", 4)).toBe(4);
-    expect(parseSettingValue("reviewMaiaLevels", [1100, 1900])).toEqual([1100, 1900]);
+    expect(parseSettingValue("reviewMaiaLevels", [1100, 1900])).toStrictEqual([1100, 1900]);
     expect(parseSettingValue("onboardingCompletedAt", Date.now())).toBeTypeOf("number");
     expect(parseSettingValue("repertoireCompareWhite", "rep-1")).toBe("rep-1");
     expect(parseSettingValue("repertoireCompareBlack", null)).toBeNull();
@@ -28,7 +28,7 @@ describe("parseSettingValue", () => {
       blitz: { source: "lichess", rating: 1720, syncedAt: Date.now() },
       rapid: { source: "manual", rating: 1650 }
     };
-    expect(parseSettingValue("playerRatings", ratings)).toEqual(ratings);
+    expect(parseSettingValue("playerRatings", ratings)).toStrictEqual(ratings);
     expect(parseSettingValue("ratingsAccount", "chesscom")).toBe("chesscom");
     expect(parseSettingValue("playOpponent", "pool")).toBe("pool");
     expect(parseSettingValue("playOpponent", null)).toBeNull();
@@ -79,9 +79,11 @@ describe("piece set ids", () => {
   });
 
   it("writes a setting alone: an older combined set id as just its set", () => {
-    expect(parseSettingWrite("pieceStyle", "cburnettSoft")).toEqual({ pieceStyle: "cburnett" });
-    expect(parseSettingWrite("pieceSizes", "uniform")).toEqual({ pieceSizes: "uniform" });
+    expect(parseSettingWrite("pieceStyle", "cburnettSoft")).toStrictEqual({
+      pieceStyle: "cburnett"
+    });
+    expect(parseSettingWrite("pieceSizes", "uniform")).toStrictEqual({ pieceSizes: "uniform" });
     expect(() => parseSettingValue("pieceSizes", "tall")).toThrow(/setting pieceSizes/);
-    expect(parseSettingWrite("soundVolume", 0.5)).toEqual({ soundVolume: 0.5 });
+    expect(parseSettingWrite("soundVolume", 0.5)).toStrictEqual({ soundVolume: 0.5 });
   });
 });

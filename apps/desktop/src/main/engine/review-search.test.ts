@@ -11,23 +11,23 @@ describe("resolveReviewSearchParams", () => {
     const r = resolveReviewSearchParams({});
     expect(r.moveTimeMs).toBe(DEFAULT_REVIEW_MOVETIME_MS);
     expect(r.recordMoveTimeMs).toBe(DEFAULT_REVIEW_MOVETIME_MS);
-    expect(r.recordDepth).toBe(null);
+    expect(r.recordDepth).toBeNull();
     expect(r.moveTimeMs).not.toBeNull();
   });
 
   it("uses depth-only when depth is positive and moveTime unset", () => {
     const r = resolveReviewSearchParams({ depth: 12 });
-    expect(r.moveTimeMs).toBe(null);
+    expect(r.moveTimeMs).toBeNull();
     expect(r.depth).toBe(12);
     expect(r.recordDepth).toBe(12);
-    expect(r.recordMoveTimeMs).toBe(null);
+    expect(r.recordMoveTimeMs).toBeNull();
   });
 
   it("prefers movetime when both are set", () => {
     const r = resolveReviewSearchParams({ depth: 18, moveTimeMs: 3000 });
     expect(r.moveTimeMs).toBe(3000);
     expect(r.recordMoveTimeMs).toBe(3000);
-    expect(r.recordDepth).toBe(null);
+    expect(r.recordDepth).toBeNull();
   });
 });
 
@@ -46,9 +46,9 @@ describe("reviewAnalysisTimeoutMs", () => {
 describe("deeperReviewSearch", () => {
   it("searches longer than the review itself, whatever bounds it, and records the review's own budget", () => {
     const nodes = resolveReviewSearchParams({ nodes: 800 });
-    expect(deeperReviewSearch(nodes).nodes).toBeGreaterThan(nodes.nodes ?? 0);
+    expect(deeperReviewSearch(nodes).nodes).toBeGreaterThan(Number(nodes.nodes));
     const time = resolveReviewSearchParams({ moveTimeMs: 250 });
-    expect(deeperReviewSearch(time).moveTimeMs).toBeGreaterThan(time.moveTimeMs ?? 0);
+    expect(deeperReviewSearch(time).moveTimeMs).toBeGreaterThan(Number(time.moveTimeMs));
     expect(deeperReviewSearch(time)).toMatchObject({
       recordMoveTimeMs: time.recordMoveTimeMs,
       recordDepth: time.recordDepth

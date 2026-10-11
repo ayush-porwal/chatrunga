@@ -59,7 +59,7 @@ describe("useGameAutosave flushes", () => {
     useReviewStore.getState().reset();
     useGameStore.getState().reset();
     await vi.runAllTimersAsync();
-    expect(saveGame).toHaveBeenCalledOnce();
+    expect(saveGame).toHaveBeenCalledTimes(1);
     expect(saveGame.mock.calls[0][0]).toMatchObject({ id: "a", review: { moves: [] } });
   });
 
@@ -75,7 +75,7 @@ describe("useGameAutosave flushes", () => {
       .loadReview({ reviewId: "old", moves: [], createdAt: 1 } as unknown as GameReview);
     await vi.runAllTimersAsync();
     const saved = saveGame.mock.calls.map((call) => call[0].review?.reviewId);
-    expect(saved).toEqual(["new", "old"]);
+    expect(saved).toStrictEqual(["new", "old"]);
   });
 
   it("the board counts as saved for an import even while a game left earlier keeps its failure", async () => {
@@ -92,7 +92,7 @@ describe("useGameAutosave flushes", () => {
     edit();
     useGameStore.getState().reset();
     await vi.runAllTimersAsync();
-    expect(saveGame).toHaveBeenCalledOnce();
+    expect(saveGame).toHaveBeenCalledTimes(1);
     expect(saveGame.mock.calls[0][0]).not.toHaveProperty("review");
   });
 
@@ -116,7 +116,9 @@ describe("useGameAutosave flushes", () => {
     edit();
     loadSaved("b");
     await vi.runAllTimersAsync();
-    expect(useSaveStatusStore.getState().failures.map((failure) => failure.gameId)).toEqual(["a"]);
+    expect(useSaveStatusStore.getState().failures.map((failure) => failure.gameId)).toStrictEqual([
+      "a"
+    ]);
 
     edit();
     await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS);
@@ -138,7 +140,7 @@ describe("useGameAutosave flushes", () => {
     loadSaved("b");
     edit();
     await vi.runAllTimersAsync();
-    expect(useSaveStatusStore.getState().failures.map((failure) => failure.gameId)).toEqual([
+    expect(useSaveStatusStore.getState().failures.map((failure) => failure.gameId)).toStrictEqual([
       "a",
       "b"
     ]);
@@ -158,7 +160,7 @@ describe("useGameAutosave flushes", () => {
     expect(saveGame).not.toHaveBeenCalled();
     useGameStore.getState().patchHeaders({ white: "Carol" });
     await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS);
-    expect(saveGame).toHaveBeenCalledOnce();
+    expect(saveGame).toHaveBeenCalledTimes(1);
     expect(saveGame.mock.calls[0][0].headers).toMatchObject({ white: "Carol" });
   });
 
@@ -166,7 +168,7 @@ describe("useGameAutosave flushes", () => {
     loadSaved("a");
     useGameStore.getState().patchHeaders({ event: "Club final" });
     expect(await flushGameAutosave()).toBe(true);
-    expect(saveGame).toHaveBeenCalledOnce();
+    expect(saveGame).toHaveBeenCalledTimes(1);
     expect(saveGame.mock.calls[0][0]).toMatchObject({ id: "a", headers: { event: "Club final" } });
 
     useGameStore.getState().setGameSource("analysis");
@@ -180,7 +182,7 @@ describe("useGameAutosave flushes", () => {
     useGameStore.getState().patchHeaders({ white: "Carol" });
     loadSaved("b");
     await vi.runAllTimersAsync();
-    expect(saveGame).toHaveBeenCalledOnce();
+    expect(saveGame).toHaveBeenCalledTimes(1);
     expect(saveGame.mock.calls[0][0]).toMatchObject({ id: "a", headers: { white: "Carol" } });
   });
 

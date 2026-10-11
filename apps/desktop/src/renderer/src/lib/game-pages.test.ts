@@ -18,11 +18,11 @@ const game = (id: string): GameSummary => ({
 
 describe("gamesOfPages", () => {
   it("lists the fetched pages in order, each game once", () => {
-    expect(gamesOfPages(undefined)).toEqual([]);
+    expect(gamesOfPages(undefined)).toStrictEqual([]);
     const pages = [
       { items: [game("a"), game("b")], nextCursor: { updatedAt: 0, id: "b" } },
       { items: [game("c"), game("a")], nextCursor: null }
     ];
-    expect(gamesOfPages(pages).map((item) => item.id)).toEqual(["a", "b", "c"]);
+    expect(gamesOfPages(pages).map((item) => item.id)).toStrictEqual(["a", "b", "c"]);
   });
 });

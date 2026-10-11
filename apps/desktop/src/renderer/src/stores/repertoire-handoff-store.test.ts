@@ -52,14 +52,14 @@ describe("isHandoffSave", () => {
     const first = handoffForSave(store(), { gameId: "g1", board: 7 });
     expect(first).toMatchObject({ chapterId: "c1", board: 7 });
     store().bindGame("g1", 7);
-    expect(store().earlier).toEqual([]);
+    expect(store().earlier).toStrictEqual([]);
     expect(store().played).toMatchObject({ board: 9, gameId: null });
     expect(handoffForSave(store(), { gameId: "g1", board: 7 })).toBeNull();
     expect(handoffForSave(store(), { gameId: "g2", board: 9 })).toMatchObject({ chapterId: "c2" });
     // A bound handoff isn't kept when replaced.
     store().bindGame("g2", 9);
     store().begin({ ...handoff, board: 11 });
-    expect(store().earlier).toEqual([]);
+    expect(store().earlier).toStrictEqual([]);
   });
 
   it("matches nothing without a handoff", () => {

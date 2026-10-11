@@ -26,7 +26,7 @@ describe("analysis store", () => {
     const state = useAnalysisStore.getState();
     expect(state.status).toBe("thinking");
     expect(state.latestInfo?.score?.value).toBe(30);
-    expect(state.topLines.map((line) => [line.multipv, line.score?.value])).toEqual([
+    expect(state.topLines.map((line) => [line.multipv, line.score?.value])).toStrictEqual([
       [1, 10],
       [2, 30]
     ]);
@@ -40,7 +40,7 @@ describe("analysis store", () => {
     const state = useAnalysisStore.getState();
     expect(updates).toBe(1);
     expect(state.latestInfo?.multipv).toBe(3);
-    expect(state.topLines.map((line) => [line.multipv, line.score?.value])).toEqual([
+    expect(state.topLines.map((line) => [line.multipv, line.score?.value])).toStrictEqual([
       [1, 15],
       [2, 20],
       [3, 5]
@@ -67,7 +67,7 @@ describe("analysis store", () => {
       }
     ]);
     const { topLines } = useAnalysisStore.getState();
-    expect(topLines.map((line) => line.score?.value)).toEqual([40, 25]);
+    expect(topLines.map((line) => line.score?.value)).toStrictEqual([40, 25]);
   });
 
   it("merges a line's score and moves sent in separate infos", () => {
@@ -118,11 +118,11 @@ describe("analysis store", () => {
     });
     // Another position starts empty; Restart forgets what was found.
     useAnalysisStore.getState().startSearch("other|sf|1");
-    expect(useAnalysisStore.getState().topLines).toEqual([]);
+    expect(useAnalysisStore.getState().topLines).toStrictEqual([]);
     useAnalysisStore.getState().startSearch("fen|sf|1", "third");
     useAnalysisStore.getState().restartFresh();
     useAnalysisStore.getState().startSearch("fen|sf|1", "fourth");
-    expect(useAnalysisStore.getState().topLines).toEqual([]);
+    expect(useAnalysisStore.getState().topLines).toStrictEqual([]);
   });
 
   it("never remembers another search's lines under an analysis position (an engine game's)", () => {
@@ -140,7 +140,7 @@ describe("analysis store", () => {
     useAnalysisStore.getState().startSearch("pos|sf|1", "analysis");
     useAnalysisStore.getState().setInfos([info("engine-game-move")]);
     useAnalysisStore.getState().startSearch("pos|sf|1", "analysis-2");
-    expect(useAnalysisStore.getState().topLines).toEqual([]);
+    expect(useAnalysisStore.getState().topLines).toStrictEqual([]);
   });
 
   it("tracks best moves, errors, and active engines", () => {
@@ -212,7 +212,7 @@ describe("analysis store", () => {
       useAnalysisStore.getState().startSearch(KEY, "s2");
       const resumed = useAnalysisStore.getState();
       expect(resumed.paused).toBeNull();
-      expect(resumed.topLines.map((info) => info.depth)).toEqual([18, 18]);
+      expect(resumed.topLines.map((info) => info.depth)).toStrictEqual([18, 18]);
       useAnalysisStore.getState().setInfos([line("s2", 4)]);
       expect(useAnalysisStore.getState().topLines[0]?.depth).toBe(18);
       useAnalysisStore.getState().setInfos([line("s2", 19)]);

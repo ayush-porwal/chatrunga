@@ -64,7 +64,7 @@ describe("scanCsvLines", () => {
         ...frames.slice(1)
       ])
     );
-    expect(await readLines(path, true)).toEqual(CSV.split("\n"));
+    expect(await readLines(path, true)).toStrictEqual(CSV.split("\n"));
   });
 
   it("stops early without reading the rest", async () => {
@@ -136,13 +136,15 @@ const scanJob = (filePath: string, size: number, extra: Partial<ScanJob> = {}): 
 });
 
 const ids = (rows: string[][]) => rows.map((row) => row[0]);
+const countIn = (counts: Map<string, number>, id: string) =>
+  counts.set(id, (counts.get(id) ?? 0) + 1);
 
 describe("reservoirScan", () => {
   it("keeps every match in file order while there are no more than it holds, drawing nothing", async () => {
     const path = tempFile("few.csv", lichessCsv(3));
     const result = await reservoirScan(scanJob(path, 5), undefined, scripted([]));
-    expect(result).toEqual({ rows: expect.any(Array), matches: 3, complete: true });
-    expect(ids(result.rows)).toEqual(["p0", "p1", "p2"]);
+    expect(result).toStrictEqual({ rows: expect.any(Array), matches: 3, complete: true });
+    expect(ids(result.rows)).toStrictEqual(["p0", "p1", "p2"]);
   });
 
   it("puts each later match in the slot its draw picks, or drops it when the slot is past the sample", async () => {
@@ -150,7 +152,7 @@ describe("reservoirScan", () => {
     // Match 3: slot ⌊0.1·3⌋ = 0 takes p2. Match 4: ⌊0.9·4⌋ = 3, past the 2 kept: p3 is dropped.
     // Match 5: ⌊0.3·5⌋ = 1 takes p4.
     const result = await reservoirScan(scanJob(path, 2), undefined, scripted([0.1, 0.9, 0.3]));
-    expect(ids(result.rows)).toEqual(["p2", "p4"]);
+    expect(ids(result.rows)).toStrictEqual(["p2", "p4"]);
     expect(result).toMatchObject({ matches: 5, complete: true });
   });
 
@@ -170,7 +172,7 @@ describe("reservoirScan", () => {
       undefined,
       scripted([0.5])
     );
-    expect(ids(result.rows)).toEqual(["p0", "p2"]);
+    expect(ids(result.rows)).toStrictEqual(["p0", "p2"]);
     expect(result).toMatchObject({ matches: 3, complete: true });
   });
 
@@ -186,7 +188,7 @@ describe("reservoirScan", () => {
     const path = tempFile("uniform.csv", lichessCsv(20));
     const first = await reservoirScan(scanJob(path, 5), undefined, seeded(42));
     const again = await reservoirScan(scanJob(path, 5), undefined, seeded(42));
-    expect(ids(again.rows)).toEqual(ids(first.rows));
+    expect(ids(again.rows)).toStrictEqual(ids(first.rows));
 
     // 5 of 20 rows: each is kept a quarter of the time, whether early (in the first fill) or late.
     const random = seeded(2026);
@@ -194,7 +196,7 @@ describe("reservoirScan", () => {
     const trials = 800;
     for (let trial = 0; trial < trials; trial += 1) {
       const { rows } = await reservoirScan(scanJob(path, 5), undefined, random);
-      for (const id of ids(rows)) kept.set(id, (kept.get(id) ?? 0) + 1);
+      for (const id of ids(rows)) countIn(kept, id);
     }
     expect(kept.size).toBe(20);
     for (const count of kept.values()) expect(Math.abs(count / trials - 0.25)).toBeLessThan(0.06);
@@ -226,7 +228,7 @@ describe("reservoirScan", () => {
       size: 10
     });
     const found = await reservoirScan(job(["p1999", "p5", "missing"]));
-    expect(found.rows.map((row) => row[0]).sort()).toEqual(["p1999", "p5"]);
+    expect(found.rows.map((row) => row[0]).sort()).toStrictEqual(["p1999", "p5"]);
     expect(found).toMatchObject({ matches: 2, complete: true });
     // Both found near the start: the rest of the file isn't needed, and the scan is still complete.
     let cancelChecks = 0;
@@ -249,7 +251,7 @@ describe("reservoirScan", () => {
         excludeIds: [],
         size: 10
       })
-    ).resolves.toEqual({ rows: [], matches: 0, complete: true });
+    ).resolves.toStrictEqual({ rows: [], matches: 0, complete: true });
   });
 });
 
@@ -281,7 +283,7 @@ describe("workerScanner", () => {
       'import { parentPort, workerData } from "node:worker_threads";\n' +
         "parentPort.postMessage({ ok: true, result: { rows: [[workerData.filePath]], matches: 1, complete: true } });"
     );
-    await expect(workerScanner(path)(job).result).resolves.toEqual({
+    await expect(workerScanner(path)(job).result).resolves.toStrictEqual({
       rows: [["unused"]],
       matches: 1,
       complete: true

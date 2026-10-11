@@ -15,6 +15,11 @@ function info(multipv: number, searchId?: string): EngineInfo {
   };
 }
 
+/** The flushed infos' line numbers (a line without one is the first). */
+function multipvs(infos: readonly EngineInfo[]): number[] {
+  return infos.map((item) => item.multipv ?? 1);
+}
+
 function fakeTimers() {
   let now = 0;
   const pending: Array<{ at: number; callback: () => void; id: number }> = [];
@@ -46,12 +51,12 @@ describe("createEngineInfoBuffer", () => {
     const clock = fakeTimers();
     const flushed: number[][] = [];
     const buffer = createEngineInfoBuffer(
-      (infos) => flushed.push(infos.map((item) => item.multipv ?? 1)),
+      (infos) => flushed.push(multipvs(infos)),
       150,
       clock.timers
     );
     buffer.push(info(1));
-    expect(flushed).toEqual([[1]]);
+    expect(flushed).toStrictEqual([[1]]);
     clock.advance(20);
     buffer.push(info(2));
     buffer.push(info(3));
@@ -59,14 +64,14 @@ describe("createEngineInfoBuffer", () => {
     buffer.push(info(1));
     expect(flushed).toHaveLength(1);
     clock.advance(110);
-    expect(flushed).toEqual([[1], [2, 3, 1]]);
+    expect(flushed).toStrictEqual([[1], [2, 3, 1]]);
   });
 
   it("flushes on demand and drops pending infos on discard", () => {
     const clock = fakeTimers();
     const flushed: number[][] = [];
     const buffer = createEngineInfoBuffer(
-      (infos) => flushed.push(infos.map((item) => item.multipv ?? 1)),
+      (infos) => flushed.push(multipvs(infos)),
       150,
       clock.timers
     );
@@ -76,7 +81,7 @@ describe("createEngineInfoBuffer", () => {
     buffer.push(info(3));
     buffer.discard();
     clock.advance(500);
-    expect(flushed).toEqual([[1], [2]]);
+    expect(flushed).toStrictEqual([[1], [2]]);
   });
 });
 
@@ -97,9 +102,11 @@ describe("applyEngineInfos", () => {
     engineSearches.analysis = "new";
     useAnalysisStore.getState().startSearch();
     clock.advance(150);
-    expect(useAnalysisStore.getState().topLines).toEqual([]);
+    expect(useAnalysisStore.getState().topLines).toStrictEqual([]);
     buffer.push(info(1, "new"));
     clock.advance(150);
-    expect(useAnalysisStore.getState().topLines.map((line) => line.searchId)).toEqual(["new"]);
+    expect(useAnalysisStore.getState().topLines.map((line) => line.searchId)).toStrictEqual([
+      "new"
+    ]);
   });
 });

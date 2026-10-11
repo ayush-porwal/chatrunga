@@ -8,7 +8,8 @@ import {
   remainingClockMs,
   setTimeAsleepSource,
   timeForfeitOutcome,
-  useGameStore
+  useGameStore,
+  type EngineClockLive
 } from "./game-store";
 
 /** Moves both time sources together (the clock treats a wall-only jump as time asleep). */
@@ -20,6 +21,12 @@ function mockTime() {
     wall.mockReturnValue(1_700_000_000_000 + ms);
   };
   return at;
+}
+
+/** How long the turn had run when the clock stopped; throws when it still runs. */
+function stoppedAfterMs(live: EngineClockLive | null): number {
+  if (live?.stoppedAt === undefined) throw new Error("The clock is still running.");
+  return live.stoppedAt - live.turnStartedAt;
 }
 
 describe("game store clock", () => {
@@ -64,12 +71,9 @@ describe("game store clock", () => {
     const rejectedBefore = useGameStore.getState().rejectedMoves;
     expect(useGameStore.getState().makeMove({ from: "e2", to: "e4" })).toBe(false);
     const state = useGameStore.getState();
-    expect(state.gameOutcome).toEqual({ result: "0-1", termination: "Time forfeit" });
+    expect(state.gameOutcome).toStrictEqual({ result: "0-1", termination: "Time forfeit" });
     expect(state.moveTree).toHaveLength(1);
-    const live = state.engineClockLive;
-    expect(live && live.stoppedAt !== undefined ? live.stoppedAt - live.turnStartedAt : null).toBe(
-      1_100
-    );
+    expect(stoppedAfterMs(state.engineClockLive)).toBe(1_100);
     expect(state.rejectedMoves).toBe(rejectedBefore + 1);
   });
 
@@ -137,7 +141,7 @@ describe("game store clock", () => {
         { initialMs: 30, incrementMs: -5 },
         100
       )
-    ).toEqual({ wtime: 1, btime: 20, winc: 0, binc: 0 });
+    ).toStrictEqual({ wtime: 1, btime: 20, winc: 0, binc: 0 });
   });
 });
 
@@ -214,7 +218,7 @@ describe("engine clock pause", () => {
     const state = useGameStore.getState();
     // Counted as refused, so the board takes back the piece it moved.
     expect(state.rejectedMoves).toBe(rejected + 1);
-    expect(state.gameOutcome).toEqual({ result: "0-1", termination: "Time forfeit" });
+    expect(state.gameOutcome).toStrictEqual({ result: "0-1", termination: "Time forfeit" });
     expect(state.moveTree).toHaveLength(before);
     expect(remainingClockMs(state.engineClockLive!, "white", 1_700_000_020_000)).toBe(0);
     expect(remainingClockMs(state.engineClockLive!, "black", 1_700_000_020_000)).toBe(10_000);
@@ -272,7 +276,7 @@ describe("timed engine game record", () => {
     at(4_250);
     useGameStore.getState().makeMove({ from: "e7", to: "e5" }); // Black: 10 - 2.75 + 2 = 9.25 s
     const moves = useGameStore.getState().moveTree.filter((node) => node.san);
-    expect(moves.map(({ clockAfter, playedAt }) => ({ clockAfter, playedAt }))).toEqual([
+    expect(moves.map(({ clockAfter, playedAt }) => ({ clockAfter, playedAt }))).toStrictEqual([
       { clockAfter: "0:00:11", playedAt: 1_700_000_001_500 },
       { clockAfter: "0:00:09.2", playedAt: 1_700_000_004_250 }
     ]);
@@ -347,11 +351,11 @@ describe("timed engine game record", () => {
   it("a flag against a side that can't mate is a draw", () => {
     // White: king and queen; Black: a bare king.
     const fen = "8/8/4k3/8/8/8/3Q4/4K3 w - - 0 60";
-    expect(timeForfeitOutcome(fen, "white")).toEqual({
+    expect(timeForfeitOutcome(fen, "white")).toStrictEqual({
       result: "1/2-1/2",
       termination: "Time forfeit"
     });
-    expect(timeForfeitOutcome(fen, "black")).toEqual({
+    expect(timeForfeitOutcome(fen, "black")).toStrictEqual({
       result: "1-0",
       termination: "Time forfeit"
     });

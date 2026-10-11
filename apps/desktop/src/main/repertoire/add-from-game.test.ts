@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AddFromGameInput } from "@chaturanga/shared/types/repertoire";
 import { fenAfterUci, START_FEN } from "@chaturanga/shared/chess/position";
 import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
-import { nodeAt, treeOf, serviceHelpers } from "./__fixtures__/repertoire-builders";
+import { nodeAt, serviceHelpers, treeOf, withComment } from "./__fixtures__/repertoire-builders";
 
 const env = await vi.hoisted(async () => import("./__fixtures__/service-env"));
 vi.mock("electron", () => env.electronModule);
@@ -18,20 +18,20 @@ let now = 1_000_000_000_000;
 service.setRepertoireClock(() => now);
 const START_KEY = positionKey(START_FEN);
 
-beforeEach(() => {
-  getDb().exec("DELETE FROM repertoires");
-  service.resetImportJobs();
-  sent.length = 0;
-  now = 1_000_000_000_000;
-});
-
-afterAll(() => {
-  service.setRepertoireClock();
-  closeDb();
-  rmSync(userData, { recursive: true, force: true });
-});
-
 describe("repertoire service: add from a game", () => {
+  beforeEach(() => {
+    getDb().exec("DELETE FROM repertoires");
+    service.resetImportJobs();
+    sent.length = 0;
+    now = 1_000_000_000_000;
+  });
+
+  afterAll(() => {
+    service.setRepertoireClock();
+    closeDb();
+    rmSync(userData, { recursive: true, force: true });
+  });
+
   const GAME_LINES = [["e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6"]];
 
   function sourceOf(lines: string[][], gameId: string | null = null, rootFen = START_FEN) {
@@ -87,11 +87,11 @@ describe("repertoire service: add from a game", () => {
       conflicts: [],
       alreadyPresent: 0
     });
-    expect(preview.warnings).toEqual([
+    expect(preview.warnings).toStrictEqual([
       "No moves are accepted: nothing from this material will be trained"
     ]);
-    expect(preview.ownMoves.map((move) => move.path)).toEqual(["1. e4", "1. e4 e5 2. Nf3"]);
-    expect(preview.defaultPolicy.includedNodeIds).toEqual([
+    expect(preview.ownMoves.map((move) => move.path)).toStrictEqual(["1. e4", "1. e4 e5 2. Nf3"]);
+    expect(preview.defaultPolicy.includedNodeIds).toStrictEqual([
       nodeAt(source.tree, ["e2e4"]).id,
       nodeAt(source.tree, ["e2e4", "e7e5", "g1f3"]).id
     ]);
@@ -119,9 +119,9 @@ describe("repertoire service: add from a game", () => {
       kind: "source",
       capturedPath: "1. e4 e5 2. Nf3 Nc6"
     });
-    expect(service.listGameLinks({ repertoireId: id })).toEqual([result.link]);
-    expect(decisionRepository.get(id, START_KEY)?.acceptedUcis).toEqual(["e2e4"]);
-    expect(sent).toEqual([
+    expect(service.listGameLinks({ repertoireId: id })).toStrictEqual([result.link]);
+    expect(decisionRepository.get(id, START_KEY)?.acceptedUcis).toStrictEqual(["e2e4"]);
+    expect(sent).toStrictEqual([
       {
         channel: "repertoires:changed",
         payload: { repertoireId: id, revision: result.repertoire.revision, kind: "updated" }
@@ -140,7 +140,7 @@ describe("repertoire service: add from a game", () => {
       })
     );
     const preview = service.previewAddFromGame(confirmed);
-    expect(preview.conflicts).toEqual([
+    expect(preview.conflicts).toStrictEqual([
       {
         positionKey: afterE5,
         fen: expect.any(String),
@@ -153,7 +153,7 @@ describe("repertoire service: add from a game", () => {
     ]);
     expect(preview.decisionsAdded).toBe(0);
     expect(preview.transpositions).toBe(2);
-    expect(preview.warnings).toEqual([
+    expect(preview.warnings).toStrictEqual([
       "1 position already has another repertoire move: the new move is added as an alternative and your preferred move stays"
     ]);
 
@@ -169,9 +169,7 @@ describe("repertoire service: add from a game", () => {
     const saved = save(id, [["e2e4", "e7e5"]]);
     const chapter = {
       ...saved.chapter,
-      tree: saved.chapter.tree.map((node) =>
-        node.uci === "e2e4" ? { ...node, comment: "mine" } : node
-      )
+      tree: withComment(saved.chapter.tree, "e2e4", "mine")
     };
     const resaved = service.saveChapter({
       repertoireId: id,
@@ -179,9 +177,7 @@ describe("repertoire service: add from a game", () => {
       expectedRevision: saved.repertoire.revision
     });
     const source = sourceOf(GAME_LINES);
-    source.tree = source.tree.map((node) =>
-      node.uci === "e2e4" ? { ...node, comment: "theirs" } : node
-    );
+    source.tree = withComment(source.tree, "e2e4", "theirs");
     const confirmed = withDefaults(
       input(id, source, {
         destination: { kind: "existing-chapter", chapterId: resaved.chapter.id },
@@ -220,14 +216,16 @@ describe("repertoire service: add from a game", () => {
       policy: null
     });
     const preview = service.previewAddFromGame(base);
-    expect(preview).toEqual(service.previewAddFromGame({ ...base, policy: preview.defaultPolicy }));
+    expect(preview).toStrictEqual(
+      service.previewAddFromGame({ ...base, policy: preview.defaultPolicy })
+    );
     expect(preview.decisionsAdded).toBe(1);
     // Context moves (1. e4 e5 2. Nf3) are left out of both lists.
-    expect(preview.opponentMoves.map((move) => move.path)).toEqual([
+    expect(preview.opponentMoves.map((move) => move.path)).toStrictEqual([
       "1. e4 e5 2. Nf3 Nc6",
       "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6"
     ]);
-    expect(preview.ownMoves.map((move) => move.path)).toEqual(["1. e4 e5 2. Nf3 Nc6 3. Bb5"]);
+    expect(preview.ownMoves.map((move) => move.path)).toStrictEqual(["1. e4 e5 2. Nf3 Nc6 3. Bb5"]);
     expect(() => service.addFromGame(base)).toThrow(
       "Invalid policy: choose which moves to accept before adding"
     );
@@ -246,7 +244,7 @@ describe("repertoire service: add from a game", () => {
     expect(() => service.addFromGame(confirmed)).toThrow(/Invalid expectedRevision/);
     expect(service.getRepertoire(id).chapters).toHaveLength(2);
     expect(service.listGameLinks({ repertoireId: id })).toHaveLength(1);
-    expect(sent).toEqual([]);
+    expect(sent).toStrictEqual([]);
   });
 
   it("the whole game as a reference chapter adds no decisions", () => {
@@ -255,9 +253,9 @@ describe("repertoire service: add from a game", () => {
       destination: { kind: "new-chapter", title: "Model game", chapterKind: "reference" }
     });
     const preview = service.previewAddFromGame(base);
-    expect(preview.defaultPolicy).toEqual({ includedNodeIds: [], coveredNodeIds: [] });
+    expect(preview.defaultPolicy).toStrictEqual({ includedNodeIds: [], coveredNodeIds: [] });
     expect(preview.decisionsAdded).toBe(0);
-    expect(preview.warnings).toEqual([
+    expect(preview.warnings).toStrictEqual([
       "Whole game added as reference: nothing will be trained until you accept moves"
     ]);
     const result = service.addFromGame(base);
@@ -275,7 +273,7 @@ describe("repertoire service: add from a game", () => {
     );
     const result = service.addFromGame(confirmed);
     expect(result.chapter.rootFen).toBe(from.fenAfter);
-    expect(result.chapter.tree.map((node) => node.ply)).toEqual([3, 4, 5, 6]);
+    expect(result.chapter.tree.map((node) => node.ply)).toStrictEqual([3, 4, 5, 6]);
     expect(result.repertoire.decisionCount).toBe(2);
   });
 
@@ -331,14 +329,14 @@ describe("repertoire service: add from a game", () => {
     const preview = service.previewAddFromGame(confirmed);
     expect(preview.decisionsAdded).toBe(1);
     // 1. d4 starts the new line, so its own position isn't asked; 2. c4 is.
-    expect(preview.warnings).toEqual([
+    expect(preview.warnings).toStrictEqual([
       "1 chosen move won't be trained: the chapter's training starts after them"
     ]);
     const result = service.addFromGame(confirmed);
     const d4 = result.chapter.tree.find((node) => node.uci === "d2d4")!;
-    expect(result.chapter.nodeMeta[d4.id]).toEqual({ edge: "included", trainingStart: true });
+    expect(result.chapter.nodeMeta[d4.id]).toStrictEqual({ edge: "included", trainingStart: true });
     const afterD5 = positionKey(fenAfterUci(fenAfterUci(START_FEN, "d2d4")!, "d7d5")!);
-    expect(decisionRepository.get(id, afterD5)?.acceptedUcis).toEqual(["c2c4"]);
+    expect(decisionRepository.get(id, afterD5)?.acceptedUcis).toStrictEqual(["c2c4"]);
   });
 
   it("an opponent context move covers a matched reference edge so the branch trains", () => {
@@ -354,12 +352,14 @@ describe("repertoire service: add from a game", () => {
         scope: { kind: "subtree", fromNodeId: from.id, root: "original" }
       })
     );
-    expect(service.previewAddFromGame(confirmed).warnings).toEqual([]);
+    expect(service.previewAddFromGame(confirmed).warnings).toStrictEqual([]);
     const result = service.addFromGame(confirmed);
     const e5 = result.chapter.tree.find((node) => node.uci === "e7e5")!;
-    expect(result.chapter.nodeMeta[e5.id]).toEqual({ edge: "covered" });
+    expect(result.chapter.nodeMeta[e5.id]).toStrictEqual({ edge: "covered" });
     const bb5 = result.chapter.tree.find((node) => node.uci === "f1b5")!;
-    expect(decisionRepository.get(id, positionKey(bb5.fenBefore))?.acceptedUcis).toEqual(["f1b5"]);
+    expect(decisionRepository.get(id, positionKey(bb5.fenBefore))?.acceptedUcis).toStrictEqual([
+      "f1b5"
+    ]);
   });
 
   it("warns about chosen moves below an own reference move it can't accept", () => {
@@ -378,7 +378,7 @@ describe("repertoire service: add from a game", () => {
       )
     );
     expect(preview.decisionsAdded).toBe(0);
-    expect(preview.warnings).toEqual([
+    expect(preview.warnings).toStrictEqual([
       "None of the chosen moves will be trained: nothing from this material is asked",
       "1 chosen move won't be trained: Bb5 at 1. e4 e5 2. Nf3 Nc6 3. Bb5 is below an unaccepted move"
     ]);
@@ -395,7 +395,7 @@ describe("repertoire service: add from a game", () => {
       })
     );
     expect(preview.decisionsAdded).toBe(0);
-    expect(preview.warnings).toEqual([
+    expect(preview.warnings).toStrictEqual([
       "None of the chosen moves will be trained: nothing from this material is asked",
       "1 chosen move won't be trained: Nf3 at 1. e4 e5 2. Nf3 is below an unaccepted move"
     ]);
@@ -407,7 +407,7 @@ describe("repertoire service: add from a game", () => {
     // 1. e4 and the 2. Nf3 decision lose their support; the stored choices stay.
     save(id, [["d2d4"]], { chapterId: saved.chapter.id });
     const afterE5 = positionKey(fenAfterUci(fenAfterUci(START_FEN, "e2e4")!, "e7e5")!);
-    expect(decisionRepository.get(id, START_KEY)?.acceptedUcis).toEqual(["e2e4", "d2d4"]);
+    expect(decisionRepository.get(id, START_KEY)?.acceptedUcis).toStrictEqual(["e2e4", "d2d4"]);
     expect(decisionRepository.get(id, afterE5)).toBeTruthy();
     const source = sourceOf([["e2e4", "e7e5", "g1f3"]]);
     const preview = service.previewAddFromGame(
@@ -417,7 +417,7 @@ describe("repertoire service: add from a game", () => {
         })
       )
     );
-    expect(preview.conflicts).toEqual([]);
+    expect(preview.conflicts).toStrictEqual([]);
     expect(preview.decisionsAdded).toBe(0);
   });
 
@@ -446,7 +446,7 @@ describe("repertoire service: add from a game", () => {
     );
     const revision = service.getRepertoire(id).revision;
     service.removeGameLink({ repertoireId: id, linkId: link.id });
-    expect(service.listGameLinks({ repertoireId: id })).toEqual([]);
+    expect(service.listGameLinks({ repertoireId: id })).toStrictEqual([]);
     expect(service.getRepertoire(id).revision).toBe(revision);
   });
 
@@ -475,18 +475,18 @@ describe("repertoire service: add from a game", () => {
       ...base,
       headers: { White: "Tal", Black: "Botvinnik", ECO: "B10" }
     });
-    expect(sent).toEqual([
+    expect(sent).toStrictEqual([
       { channel: "repertoires:changed", payload: { repertoireId: id, revision, kind: "updated" } }
     ]);
 
-    expect(service.linkGame(base)).toEqual(link);
+    expect(service.linkGame(base)).toStrictEqual(link);
     const moved = service.linkGame({
       ...base,
       chapterId: null,
       gameNodeId: null,
       capturedPath: ""
     });
-    expect(moved).toEqual({ ...link, chapterId: null, gameNodeId: null, capturedPath: "" });
+    expect(moved).toStrictEqual({ ...link, chapterId: null, gameNodeId: null, capturedPath: "" });
     const model = service.linkGame({ ...base, kind: "model" });
     expect(model.id).not.toBe(link.id);
     expect(
@@ -494,7 +494,7 @@ describe("repertoire service: add from a game", () => {
         .listGameLinks({ repertoireId: id })
         .map((item) => item.id)
         .sort()
-    ).toEqual([link.id, model.id].sort());
+    ).toStrictEqual([link.id, model.id].sort());
     expect(service.listGameLinks({ repertoireId: id })).toContainEqual(moved);
     expect(service.getRepertoire(id).revision).toBe(revision);
 
@@ -525,17 +525,17 @@ describe("repertoire service: add from a game", () => {
       capturedPath: "1. e4 c6"
     };
     const link = service.linkGame(base);
-    expect(link.headers).toEqual({ White: "You", Black: "Stockfish", Result: "*" });
+    expect(link.headers).toStrictEqual({ White: "You", Black: "Stockfish", Result: "*" });
 
     getDb()
       .prepare("UPDATE games SET headers_json = ? WHERE id = 'game-3'")
       .run(JSON.stringify({ white: "You", black: "Stockfish", result: "1-0" }));
     const finished = service.linkGame(base);
-    expect(finished).toEqual({
+    expect(finished).toStrictEqual({
       ...link,
       headers: { White: "You", Black: "Stockfish", Result: "1-0" }
     });
-    expect(service.listGameLinks({ repertoireId: id })).toEqual([finished]);
+    expect(service.listGameLinks({ repertoireId: id })).toStrictEqual([finished]);
   });
 
   it("says a database from before played links needs a reset", () => {

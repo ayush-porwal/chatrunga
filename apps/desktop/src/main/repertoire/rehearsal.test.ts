@@ -18,20 +18,20 @@ let now = 1_000_000_000_000;
 service.setRepertoireClock(() => now);
 const START_KEY = positionKey(START_FEN);
 
-beforeEach(() => {
-  getDb().exec("DELETE FROM repertoires");
-  service.resetImportJobs();
-  sent.length = 0;
-  now = 1_000_000_000_000;
-});
-
-afterAll(() => {
-  service.setRepertoireClock();
-  closeDb();
-  rmSync(userData, { recursive: true, force: true });
-});
-
 describe("repertoire service: rehearse lines", () => {
+  beforeEach(() => {
+    getDb().exec("DELETE FROM repertoires");
+    service.resetImportJobs();
+    sent.length = 0;
+    now = 1_000_000_000_000;
+  });
+
+  afterAll(() => {
+    service.setRepertoireClock();
+    closeDb();
+    rmSync(userData, { recursive: true, force: true });
+  });
+
   // Line A: 1.e4 c5 2.Nf3 d6 3.d4 · B: 1.e4 c5 2.Nf3 Nc6 3.d4 · C: 1.e4 e5 2.Nf3 · D: 1.d4.
   const LINES = [
     ["e2e4", "c7c5", "g1f3", "d7d6", "d2d4"],
@@ -143,7 +143,7 @@ describe("repertoire service: rehearse lines", () => {
     const session = rehearse(id, chapter.id);
     const lineA = `line-${nodeAt(tree, LINES[0]).id}`;
     expect(session).toMatchObject({ status: "active", cursor: 0, mode: "rehearse-lines" });
-    expect(session.scope.rehearse).toEqual({ chapterId: chapter.id });
+    expect(session.scope.rehearse).toStrictEqual({ chapterId: chapter.id });
     expect(session.cards).toHaveLength(1);
     expect(session.cards[0]).toMatchObject({
       queueItemId: "q1",
@@ -169,7 +169,7 @@ describe("repertoire service: rehearse lines", () => {
         }
       }
     });
-    expect(first.rehearsal!.next!.leadUp.map((move) => move.uci)).toEqual(["e2e4", "c7c5"]);
+    expect(first.rehearsal!.next!.leadUp.map((move) => move.uci)).toStrictEqual(["e2e4", "c7c5"]);
     expect(attempt(session.sessionId, "q2", "g1f3").rehearsal).toMatchObject({
       reply: { uci: "d7d6" },
       next: { queueItemId: "q3" }
@@ -200,7 +200,7 @@ describe("repertoire service: rehearse lines", () => {
       next: { queueItemId: "q9", rehearsal: { lineId: `line-${nodeAt(tree, ["d2d4"]).id}` } }
     });
     const last = attempt(session.sessionId, "q9", "d2d4");
-    expect(last.rehearsal).toEqual({
+    expect(last.rehearsal).toStrictEqual({
       reply: null,
       next: null,
       lineComplete: true,
@@ -208,7 +208,7 @@ describe("repertoire service: rehearse lines", () => {
     });
     const finished = service.resumePractice(session.sessionId);
     expect(finished).toMatchObject({ status: "finished", totals: { total: 9, correct: 9 } });
-    expect(progressRepository.list(id)).toEqual([]);
+    expect(progressRepository.list(id)).toStrictEqual([]);
     expect(sent.some((event) => (event.payload as { kind?: string }).kind === "progress")).toBe(
       false
     );
@@ -267,7 +267,7 @@ describe("repertoire service: rehearse lines", () => {
       missed: 0,
       rehearsal: { linesStarted: 3, linesCompleted: 1, otherLineAnswers: 2 }
     });
-    expect(progressRepository.list(id)).toEqual([]);
+    expect(progressRepository.list(id)).toStrictEqual([]);
   });
 
   it("refuses to follow a line from another chapter", () => {
@@ -347,7 +347,7 @@ describe("repertoire service: rehearse lines", () => {
       outcome: "correct",
       finalGrade: true
     });
-    expect(progressRepository.list(id)).toEqual([]);
+    expect(progressRepository.list(id)).toStrictEqual([]);
     expect(service.endPractice(session.sessionId)).toMatchObject({
       unaided: 0,
       assisted: 1,
@@ -377,7 +377,7 @@ describe("repertoire service: rehearse lines", () => {
         queueItemId: "q1",
         action: { kind: "reveal" }
       })
-    ).toEqual({
+    ).toStrictEqual({
       card: expect.objectContaining({ queueItemId: "q1", state: "revealed" }),
       revealed: { ucis: ["e2e4"], preferredUci: "e2e4", explanation: null }
     });
@@ -387,9 +387,9 @@ describe("repertoire service: rehearse lines", () => {
         queueItemId: "q1",
         action: { kind: "skip" }
       })
-    ).toEqual({ card: expect.objectContaining({ queueItemId: "q1", state: "revealed" }) });
+    ).toStrictEqual({ card: expect.objectContaining({ queueItemId: "q1", state: "revealed" }) });
     expect(current(session.sessionId).queueItemId).toBe("q2");
-    expect(progressRepository.list(id)).toEqual([]);
+    expect(progressRepository.list(id)).toStrictEqual([]);
     expect(service.endPractice(session.sessionId)).toMatchObject({ missed: 1, unaided: 0 });
   });
 
@@ -429,8 +429,8 @@ describe("repertoire service: rehearse lines", () => {
       mode: "rehearse-lines",
       rehearse: { chapterId: chapter.id, fromNodeId: e4.id }
     });
-    expect(session.cards[0].leadUp.map((move) => move.uci)).toEqual(["e2e4", "c7c5"]);
-    expect(session.scope.rehearse).toEqual({ chapterId: chapter.id, fromNodeId: e4.id });
+    expect(session.cards[0].leadUp.map((move) => move.uci)).toStrictEqual(["e2e4", "c7c5"]);
+    expect(session.scope.rehearse).toStrictEqual({ chapterId: chapter.id, fromNodeId: e4.id });
 
     const shallow = rehearse(id, chapter.id, { maxDepthPlies: 1 });
     expect(attempt(shallow.sessionId, "q1", "e2e4").rehearsal).toMatchObject({
@@ -455,7 +455,7 @@ describe("repertoire service: rehearse lines", () => {
       nodeId: nodeAt(tree, ["e2e4", "c7c5"]).id,
       rehearsal: { stepIndex: 0, lineNumber: 1 }
     });
-    expect(session.cards[0].leadUp.map((move) => move.uci)).toEqual(["e2e4", "c7c5"]);
+    expect(session.cards[0].leadUp.map((move) => move.uci)).toStrictEqual(["e2e4", "c7c5"]);
     expect(attempt(session.sessionId, "q1", "g1f3").rehearsal).toMatchObject({
       reply: { uci: "d7d6" },
       next: { queueItemId: "q2" }
@@ -544,7 +544,7 @@ describe("repertoire service: rehearse lines", () => {
       })
     });
     const session = rehearse(id, chapter.id);
-    expect(attempt(session.sessionId, "q1", "e2e4").rehearsal).toEqual({
+    expect(attempt(session.sessionId, "q1", "e2e4").rehearsal).toStrictEqual({
       reply: expect.objectContaining({ uci: "c7c5" }),
       next: null,
       lineComplete: true,
@@ -557,7 +557,7 @@ describe("repertoire service: rehearse lines", () => {
     const { id, chapter } = setup();
     const session = rehearse(id, chapter.id);
     const first = attempt(session.sessionId, "q1", "e2e4", "same-id");
-    expect(attempt(session.sessionId, "q1", "e2e4", "same-id")).toEqual(first);
+    expect(attempt(session.sessionId, "q1", "e2e4", "same-id")).toStrictEqual(first);
     expect(service.resumePractice(session.sessionId).cards).toHaveLength(2);
 
     closeDb();
@@ -575,7 +575,7 @@ describe("repertoire service: rehearse lines", () => {
     save(id, [...LINES, ["c2c4"]]);
     const resumed = service.resumePractice(session.sessionId);
     expect(resumed.status).toBe("finished");
-    expect(resumed.cards.map((card) => card.state)).toEqual(["answered-correct", "skipped"]);
+    expect(resumed.cards.map((card) => card.state)).toStrictEqual(["answered-correct", "skipped"]);
     expect(() => attempt(session.sessionId, "q2", "g1f3")).toThrow(
       "Invalid sessionId: this practice session has ended"
     );
@@ -591,7 +591,7 @@ describe("repertoire service: rehearse lines", () => {
       queueItemId: "q2",
       action: { kind: "hint" }
     });
-    expect(result).toEqual({
+    expect(result).toStrictEqual({
       card: expect.objectContaining({ state: "skipped", hintStage: 0 }),
       sessionEnded: true
     });
@@ -609,7 +609,7 @@ describe("repertoire service: rehearse lines", () => {
       queueItemId: "q2",
       action: { kind: "hint" }
     });
-    expect(result).toEqual({
+    expect(result).toStrictEqual({
       card: expect.objectContaining({ state: "answered-wrong", hintStage: 0 }),
       sessionEnded: true
     });
@@ -643,7 +643,7 @@ describe("repertoire service: rehearse lines", () => {
       sessionEnded: true
     });
     // A replay of the same attempt id returns the same ended result.
-    expect(attempt(session.sessionId, "q2", "g1f3", "retry-id")).toEqual(result);
+    expect(attempt(session.sessionId, "q2", "g1f3", "retry-id")).toStrictEqual(result);
     expect(service.resumePractice(session.sessionId).status).toBe("finished");
   });
 });

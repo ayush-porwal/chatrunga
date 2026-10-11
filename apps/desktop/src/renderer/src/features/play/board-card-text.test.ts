@@ -70,11 +70,11 @@ describe("repertoireCardContent", () => {
         resume,
         continue: study("caro")
       })
-    ).toEqual({ kind: "review", next, dueCount: 9, alsoDue });
+    ).toStrictEqual({ kind: "review", next, dueCount: 9, alsoDue });
   });
 
   it("then an unfinished session, on its study position only when it is the same repertoire", () => {
-    expect(repertoireCardContent({ ...empty, resume, continue: study("caro") })).toEqual({
+    expect(repertoireCardContent({ ...empty, resume, continue: study("caro") })).toStrictEqual({
       kind: "resume",
       resume,
       fen: "study-fen"
@@ -86,7 +86,7 @@ describe("repertoireCardContent", () => {
   });
 
   it("then the last study place, else nothing", () => {
-    expect(repertoireCardContent({ ...empty, continue: study("caro") })).toEqual({
+    expect(repertoireCardContent({ ...empty, continue: study("caro") })).toStrictEqual({
       kind: "study",
       target: study("caro")
     });
@@ -114,15 +114,15 @@ describe("Puzzle of the day text", () => {
 
 describe("fillerCaption", () => {
   it("names what would show there, first run first", () => {
-    expect(fillerCaption({ firstRun: true, puzzleDatabase: false })).toEqual({
+    expect(fillerCaption({ firstRun: true, puzzleDatabase: false })).toStrictEqual({
       text: "Set up an opponent to start",
       downloadPuzzles: false
     });
-    expect(fillerCaption({ firstRun: false, puzzleDatabase: false })).toEqual({
+    expect(fillerCaption({ firstRun: false, puzzleDatabase: false })).toStrictEqual({
       text: "Puzzle of the day needs a puzzle database",
       downloadPuzzles: true
     });
-    expect(fillerCaption({ firstRun: false, puzzleDatabase: true })).toEqual({
+    expect(fillerCaption({ firstRun: false, puzzleDatabase: true })).toStrictEqual({
       text: "Nothing in progress",
       downloadPuzzles: false
     });

@@ -36,6 +36,11 @@ function input(moves: MoveReview[], overrides: Partial<ReviewChartInput> = {}): 
   };
 }
 
+/** The moves with Maia data on the one at `index`. */
+function withMaiaAt(moves: readonly MoveReview[], index: number, bestProb: number): MoveReview[] {
+  return moves.map((move, at) => (at === index ? withMaia(move, bestProb) : move));
+}
+
 function withMaia(move: MoveReview, bestProb: number): MoveReview {
   const prediction: RatingPrediction = { rating: 1500, topMoves: [], bestProb };
   return { ...move, humanPredictions: [prediction] };
@@ -59,8 +64,8 @@ describe("review chart data", () => {
 
   it("splits the phases at the book's end and rings the key moments", () => {
     const data = buildReviewChartData(input(trap, { keyMomentIds: new Set(["n7"]) }));
-    expect(data.phases).toEqual({ openingEnd: 5, endgameStart: null });
-    expect(data.points.filter((point) => point.key).map((point) => point.label)).toEqual([
+    expect(data.phases).toStrictEqual({ openingEnd: 5, endgameStart: null });
+    expect(data.points.filter((point) => point.key).map((point) => point.label)).toStrictEqual([
       "4. Nxe5"
     ]);
   });
@@ -68,7 +73,7 @@ describe("review chart data", () => {
   it("times each move from the clocks, increment included", () => {
     const data = buildReviewChartData(input(trap));
     expect(data.hasTimes).toBe(true);
-    expect(data.points.slice(1, 5).map((point) => point.spentMs)).toEqual([
+    expect(data.points.slice(1, 5).map((point) => point.spentMs)).toStrictEqual([
       10_000, 4000, 10_000, 4000
     ]);
     const noClocks = buildReviewChartData(
@@ -88,7 +93,7 @@ describe("review chart data", () => {
       mover: "white"
     });
     expect(unreviewed).toMatchObject({ hasEvals: false, hasDifficulty: false, hasTimes: true });
-    expect(chartTooltipLines(unreviewed.points[7], "white", null)).toEqual([
+    expect(chartTooltipLines(unreviewed.points[7], "white", null)).toStrictEqual([
       "4. Nxe5",
       "0:10 spent"
     ]);
@@ -100,7 +105,7 @@ describe("review chart data", () => {
   });
 
   it("reads difficulty at the review's Maia model, and none from untrusted or missing data", () => {
-    const moves = trap.map((move, index) => (index === 6 ? withMaia(move, 0.12) : move));
+    const moves = withMaiaAt(trap, 6, 0.12);
     const data = buildReviewChartData(input(moves));
     expect(data.model).toBe(1500);
     expect(data.hasDifficulty).toBe(true);
@@ -128,7 +133,7 @@ describe("chart helpers", () => {
   };
 
   it("writes the tooltip from the reviewed side, leaving out what is unknown", () => {
-    expect(chartTooltipLines(point, "white", 1500)).toEqual([
+    expect(chartTooltipLines(point, "white", 1500)).toStrictEqual([
       "52. Ne4 · Blunder",
       "You 3% · Opponent 97%",
       "12% at 1500 find the best move",
@@ -140,7 +145,7 @@ describe("chart helpers", () => {
         "black",
         null
       )
-    ).toEqual(["52. Ne4", "You 97% · Opponent 3%"]);
+    ).toStrictEqual(["52. Ne4", "You 97% · Opponent 3%"]);
   });
 
   it("colours every mark but Book", () => {

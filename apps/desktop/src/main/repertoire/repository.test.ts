@@ -1,5 +1,6 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
+import { rollbackIfOpen } from "../db/rows";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -64,11 +65,11 @@ describe("repertoire repository (SQLite)", () => {
   it("round-trips repertoires, chapters, decisions, progress, sessions and workspace", () => {
     repertoireRepository.insert(record);
     chapterRepository.upsert("r1", chapter, 5);
-    expect(repertoireRepository.get("r1")).toEqual(record);
-    expect(chapterRepository.get("c1")).toEqual(chapter);
-    expect(chapterRepository.ownerOf("c1")).toEqual({ repertoireId: "r1", revision: 1 });
+    expect(repertoireRepository.get("r1")).toStrictEqual(record);
+    expect(chapterRepository.get("c1")).toStrictEqual(chapter);
+    expect(chapterRepository.ownerOf("c1")).toStrictEqual({ repertoireId: "r1", revision: 1 });
     expect(chapterRepository.maxSortOrder("r1")).toBe(0);
-    expect(chapterRepository.summaries("r1", 10)).toEqual([
+    expect(chapterRepository.summaries("r1", 10)).toStrictEqual([
       expect.objectContaining({ id: "c1", nodeCount: 0, dueCount: 0 })
     ]);
 
@@ -96,7 +97,7 @@ describe("repertoire repository (SQLite)", () => {
       acceptanceFingerprint: "e7e5"
     };
     decisionRepository.upsert(decision, 1);
-    expect(decisionRepository.get("r1", "k")).toEqual(decision);
+    expect(decisionRepository.get("r1", "k")).toStrictEqual(decision);
     expect(decisionRepository.isSupported("r1", "k")).toBe(false);
 
     const progress = {
@@ -112,21 +113,21 @@ describe("repertoire repository (SQLite)", () => {
       suspended: false
     };
     progressRepository.upsert(progress);
-    expect(progressRepository.get("r1", "k")).toEqual(progress);
-    expect(progressRepository.list("r1")).toEqual([progress]);
+    expect(progressRepository.get("r1", "k")).toStrictEqual(progress);
+    expect(progressRepository.list("r1")).toStrictEqual([progress]);
 
     workspaceRepository.save(
       "r1",
       { lastChapterId: "c1", lastNodeId: null, orientation: "black", practiceDraft: null },
       9
     );
-    expect(workspaceRepository.get("r1")).toEqual({
+    expect(workspaceRepository.get("r1")).toStrictEqual({
       lastChapterId: "c1",
       lastNodeId: null,
       orientation: "black",
       practiceDraft: null
     });
-    expect(repertoireRepository.lastStudyPlace()).toEqual({
+    expect(repertoireRepository.lastStudyPlace()).toStrictEqual({
       repertoireId: "r1",
       repertoireName: "50% Sicilian",
       color: "black",
@@ -135,7 +136,7 @@ describe("repertoire repository (SQLite)", () => {
       rootFen: START_FEN,
       nodeId: null
     });
-    expect(chapterRepository.node("c1", "root")).toEqual({
+    expect(chapterRepository.node("c1", "root")).toStrictEqual({
       san: null,
       uci: null,
       fenBefore: START_FEN,
@@ -157,7 +158,7 @@ describe("repertoire repository (SQLite)", () => {
       updatedAt: 1
     };
     sessionRepository.save(session);
-    expect(sessionRepository.get("s1")).toEqual(session);
+    expect(sessionRepository.get("s1")).toStrictEqual(session);
     attemptRepository.insert({
       attemptId: "a1",
       sessionId: "s1",
@@ -208,7 +209,7 @@ describe("repertoire repository (SQLite)", () => {
       });
       expect(getDb().isTransaction).toBe(false);
     } finally {
-      if (other.isTransaction) other.exec("ROLLBACK");
+      rollbackIfOpen(other);
       other.close();
       getDb().exec("PRAGMA busy_timeout = 1000");
     }
@@ -239,7 +240,9 @@ describe("repertoire repository (SQLite)", () => {
     db.prepare("UPDATE repertoire_chapters SET tree_json = ? WHERE id = 'c1'").run('[{"id":"x"}]');
     expect(() => chapterRepository.get("c1")).toThrow(/malformed/);
     expect(chapterRepository.node("c1", "x")).toBeNull();
-    expect(db.prepare("SELECT tree_json FROM repertoire_chapters WHERE id = 'c1'").get()).toEqual({
+    expect({
+      ...db.prepare("SELECT tree_json FROM repertoire_chapters WHERE id = 'c1'").get()
+    }).toStrictEqual({
       tree_json: '[{"id":"x"}]'
     });
     // Summaries don't read trees, so the hub still lists the chapter.
@@ -257,7 +260,7 @@ describe("repertoire repository (SQLite)", () => {
       sortOrder: index % 2
     }));
     for (const item of chapters) chapterRepository.upsert("r1", item, 5);
-    expect(chapterRepository.list("r1").map((item) => item.id)).toEqual(
+    expect(chapterRepository.list("r1").map((item) => item.id)).toStrictEqual(
       [...chapters].sort(compareChaptersAsListed).map((item) => item.id)
     );
   });
@@ -273,15 +276,15 @@ describe("repertoire repository (SQLite)", () => {
           own = repertoireDb();
           separate = own !== main;
           seen = {
-            journal: own.prepare("PRAGMA journal_mode").get(),
-            foreignKeys: own.prepare("PRAGMA foreign_keys").get(),
-            busy: own.prepare("PRAGMA busy_timeout").get()
+            journal: { ...own.prepare("PRAGMA journal_mode").get() },
+            foreignKeys: { ...own.prepare("PRAGMA foreign_keys").get() },
+            busy: { ...own.prepare("PRAGMA busy_timeout").get() }
           };
           throw new Error("work failed");
         })
       ).toThrow("work failed");
       expect(separate).toBe(true);
-      expect(seen).toEqual({
+      expect(seen).toStrictEqual({
         journal: { journal_mode: "wal" },
         foreignKeys: { foreign_keys: 1 },
         busy: { timeout: 5000 }

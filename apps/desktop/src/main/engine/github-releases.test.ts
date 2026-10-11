@@ -97,7 +97,7 @@ describe("fetchLatestRelease", () => {
       tag_name: "x",
       assets: [{ name: "a" }, { name: "b", size: 1, browser_download_url: "u", state: "starter" }]
     });
-    expect(odd.assets).toEqual([]);
+    expect(odd.assets).toStrictEqual([]);
     expect(() => parseRelease({ assets: [] })).toThrow(/Malformed/);
   });
 });

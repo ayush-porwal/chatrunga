@@ -61,10 +61,10 @@ describe("boardResultPatch", () => {
   it("adds the result of a game that ended on the board", () => {
     expect(
       boardResultPatch({ gameOutcome: null, headers: { result: "*" }, endFen: BLACK_MATES })
-    ).toEqual({ result: "0-1" });
+    ).toStrictEqual({ result: "0-1" });
     expect(
       boardResultPatch({ gameOutcome: null, headers: { result: "*" }, endFen: STALEMATE })
-    ).toEqual({ result: "1/2-1/2" });
+    ).toStrictEqual({ result: "1/2-1/2" });
   });
 
   it("leaves a recorded result, a decided outcome and an unfinished game alone", () => {

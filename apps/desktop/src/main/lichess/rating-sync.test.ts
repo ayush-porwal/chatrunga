@@ -73,17 +73,18 @@ const gameState = (gameId: string, gameStatus: string): LichessEvent => ({
 const gameEnded = (gameId: string) => gameState(gameId, "resign");
 
 let running: LichessRatingSync | null = null;
-afterEach(() => {
-  running?.stop();
-  running = null;
-  vi.useRealTimers();
-});
 
 describe("LichessRatingSync", () => {
+  afterEach(() => {
+    running?.stop();
+    running = null;
+    vi.useRealTimers();
+  });
+
   it("fills the modes from a connected account on app open", async () => {
     const { sync, ratings } = setup();
     await sync.sync();
-    expect(ratings()).toEqual({
+    expect(ratings()).toStrictEqual({
       ...uniformRatings(1500),
       blitz: { source: "lichess", rating: 1720, syncedAt: NOW },
       rapid: { source: "lichess", rating: 1810, syncedAt: NOW }
@@ -93,8 +94,8 @@ describe("LichessRatingSync", () => {
   it("replaces a rating typed while disconnected, provisional on Lichess or not", async () => {
     const { sync, ratings } = setup(setManualRating(uniformRatings(1500), "rapid", 1650));
     await sync.sync();
-    expect(ratings().rapid).toEqual({ source: "lichess", rating: 1810, syncedAt: NOW });
-    expect(ratings().blitz).toEqual({ source: "lichess", rating: 1720, syncedAt: NOW });
+    expect(ratings().rapid).toStrictEqual({ source: "lichess", rating: 1810, syncedAt: NOW });
+    expect(ratings().blitz).toStrictEqual({ source: "lichess", rating: 1720, syncedAt: NOW });
   });
 
   it("only refreshes the account while Chess.com fills the ratings", async () => {
@@ -104,10 +105,10 @@ describe("LichessRatingSync", () => {
     });
     await sync.sync();
     expect(refreshAccount).toHaveBeenCalledTimes(1);
-    expect(writes).toEqual([]);
+    expect(writes).toStrictEqual([]);
     lichessInCharge = true;
     await sync.sync();
-    expect(ratings().blitz).toEqual({ source: "lichess", rating: 1720, syncedAt: NOW });
+    expect(ratings().blitz).toStrictEqual({ source: "lichess", rating: 1720, syncedAt: NOW });
   });
 
   it("keeps the last values offline, and only logs", async () => {
@@ -128,7 +129,7 @@ describe("LichessRatingSync", () => {
     const { sync, state, writes } = setup();
     state.lichess = { kind: "disconnected" };
     await sync.sync();
-    expect(writes).toEqual([]);
+    expect(writes).toStrictEqual([]);
   });
 
   it("keeps the synced values as typed-in ones on disconnect", async () => {
@@ -137,7 +138,7 @@ describe("LichessRatingSync", () => {
     state.lichess = { kind: "disconnected" };
     sync.handleEvent(status(null));
     await vi.waitFor(() =>
-      expect(ratings()).toEqual({
+      expect(ratings()).toStrictEqual({
         ...uniformRatings(1500),
         blitz: { source: "manual", rating: 1720 },
         rapid: { source: "manual", rating: 1810 }
@@ -156,7 +157,9 @@ describe("LichessRatingSync", () => {
     sync.handleEvent(status(null));
     answer({ ...ACCOUNT, perfs: { blitz: { rating: 1731, games: 301, provisional: false } } });
     await pending;
-    await vi.waitFor(() => expect(ratings().blitz).toEqual({ source: "manual", rating: 1720 }));
+    await vi.waitFor(() =>
+      expect(ratings().blitz).toStrictEqual({ source: "manual", rating: 1720 })
+    );
   });
 
   it("reads the ratings when an account connects, not again on its own status updates", async () => {

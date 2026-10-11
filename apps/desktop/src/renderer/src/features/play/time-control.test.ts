@@ -38,8 +38,11 @@ describe("clock text", () => {
   it("gives the engine game's clock in ms, Custom at least 30 seconds", () => {
     const custom = { minutes: 0.2, incrementSec: 2 };
     expect(engineClockMs("infinite", custom)).toBeNull();
-    expect(engineClockMs("blitz5_3", custom)).toEqual({ initialMs: 300_000, incrementMs: 3000 });
-    expect(engineClockMs("custom", custom)).toEqual({ initialMs: 30_000, incrementMs: 2000 });
+    expect(engineClockMs("blitz5_3", custom)).toStrictEqual({
+      initialMs: 300_000,
+      incrementMs: 3000
+    });
+    expect(engineClockMs("custom", custom)).toStrictEqual({ initialMs: 30_000, incrementMs: 2000 });
   });
 });
 

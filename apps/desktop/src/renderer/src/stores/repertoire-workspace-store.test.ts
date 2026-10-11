@@ -30,6 +30,16 @@ function load(nodeId?: string) {
   store().loadChapter(detailOf(), chapterOf(sampleTree()), { nodeId });
 }
 
+/** `tree` with the node `id` replaced by `change(node)`. */
+function withNodeChanged<T extends { id: string }>(tree: T[], id: string, change: (node: T) => T) {
+  return tree.map((node) => (node.id === id ? change(node) : node));
+}
+
+/** The open chapter's comment on `nodeId` ("" when it has none). */
+function storedComment(nodeId: string): string {
+  return store().chapter!.tree.find((node) => node.id === nodeId)!.comment ?? "";
+}
+
 function play(uci: string) {
   const fen = store().chapter!.tree.find((node) => node.id === store().selectedNodeId)!.fenAfter;
   return store().playMove(uci, uci, fenAfterUci(fen, uci)!);
@@ -51,7 +61,7 @@ describe("repertoire workspace store", () => {
   it("selects an existing child instead of adding a duplicate move", () => {
     load();
     const result = play("e2e4");
-    expect(result).toEqual({ nodeId: "w0", created: false });
+    expect(result).toStrictEqual({ nodeId: "w0", created: false });
     expect(store().dirty).toBe(false);
     expect(store().chapter!.tree).toHaveLength(5);
   });
@@ -60,9 +70,9 @@ describe("repertoire workspace store", () => {
     load("w2");
     const reply = play("b8c6");
     expect(reply.created).toBe(true);
-    expect(store().chapter!.nodeMeta[reply.nodeId]).toEqual({ edge: "covered" });
+    expect(store().chapter!.nodeMeta[reply.nodeId]).toStrictEqual({ edge: "covered" });
     const own = play("f1c4");
-    expect(store().chapter!.nodeMeta[own.nodeId]).toEqual({ edge: "reference" });
+    expect(store().chapter!.nodeMeta[own.nodeId]).toStrictEqual({ edge: "reference" });
     expect(store().selectedNodeId).toBe(own.nodeId);
     expect(store().dirty).toBe(true);
     expect(store().generation).toBe(2);
@@ -81,9 +91,9 @@ describe("repertoire workspace store", () => {
   it("flips node metadata and drops unset flags", () => {
     load();
     store().setNodeMeta("w0", { edge: "reference", disabled: true });
-    expect(store().chapter!.nodeMeta.w0).toEqual({ edge: "reference", disabled: true });
+    expect(store().chapter!.nodeMeta.w0).toStrictEqual({ edge: "reference", disabled: true });
     store().setNodeMeta("w0", { edge: "included", disabled: false });
-    expect(store().chapter!.nodeMeta.w0).toEqual({ edge: "included" });
+    expect(store().chapter!.nodeMeta.w0).toStrictEqual({ edge: "included" });
   });
 
   it("makes a chapter of reference moves practised in one undo step", () => {
@@ -96,19 +106,19 @@ describe("repertoire workspace store", () => {
     store().makeChapterTrainable();
     expect(store().chapter!.enabled).toBe(true);
     expect(store().chapter!.kind).toBe("opening");
-    expect(store().chapter!.nodeMeta.w0).toEqual({ edge: "included" });
-    expect(store().chapter!.nodeMeta.w1).toEqual({ edge: "covered" });
+    expect(store().chapter!.nodeMeta.w0).toStrictEqual({ edge: "included" });
+    expect(store().chapter!.nodeMeta.w1).toStrictEqual({ edge: "covered" });
     expect(store().dirty).toBe(true);
     // One Undo puts back everything it changed: the moves' marks, on for practice and the kind.
     expect(store().undo()).toBe(true);
-    expect(store().chapter!.nodeMeta).toEqual(reference);
+    expect(store().chapter!.nodeMeta).toStrictEqual(reference);
     expect(store().chapter!.enabled).toBe(false);
     expect(store().chapter!.kind).toBe("reference");
     expect(store().undoStack).toHaveLength(0);
     // Redo applies all of it again, and Undo takes it back again.
     expect(store().redo()).toBe(true);
     expect(store().chapter!).toMatchObject({ enabled: true, kind: "opening" });
-    expect(store().chapter!.nodeMeta.w0).toEqual({ edge: "included" });
+    expect(store().chapter!.nodeMeta.w0).toStrictEqual({ edge: "included" });
     expect(store().undo()).toBe(true);
     expect(store().chapter!).toMatchObject({ enabled: false, kind: "reference" });
   });
@@ -146,12 +156,12 @@ describe("repertoire workspace store", () => {
     load("w2");
     store().setNodeMeta("w1", { edge: "covered" });
     expect(store().deleteLine("w1")).toBe(true);
-    expect(store().chapter!.tree.map((node) => node.id)).toEqual(["root", "w0", "s0"]);
+    expect(store().chapter!.tree.map((node) => node.id)).toStrictEqual(["root", "w0", "s0"]);
     expect(store().chapter!.nodeMeta.w1).toBeUndefined();
     expect(store().selectedNodeId).toBe("w0");
     expect(store().undo()).toBe(true);
     expect(store().chapter!.tree).toHaveLength(5);
-    expect(store().chapter!.nodeMeta.w1).toEqual({ edge: "covered" });
+    expect(store().chapter!.nodeMeta.w1).toStrictEqual({ edge: "covered" });
     // The edge change before it is a step of its own.
     expect(store().undo()).toBe(true);
     expect(store().chapter!.nodeMeta.w1).toBeUndefined();
@@ -162,7 +172,7 @@ describe("repertoire workspace store", () => {
   it("keeps at most the undo limit", () => {
     load();
     for (let index = 0; index < UNDO_LIMIT + 5; index += 1) {
-      store().promoteVariation(index % 2 ? "w1" : "s0");
+      store().promoteVariation(["s0", "w1"][index % 2]);
     }
     expect(store().undoStack).toHaveLength(UNDO_LIMIT);
     while (store().undo());
@@ -172,7 +182,10 @@ describe("repertoire workspace store", () => {
   it("promotes a variation to the main line", () => {
     load();
     expect(store().promoteVariation("s0")).toBe(true);
-    expect(store().chapter!.tree.find((node) => node.id === "w0")!.children).toEqual(["s0", "w1"]);
+    expect(store().chapter!.tree.find((node) => node.id === "w0")!.children).toStrictEqual([
+      "s0",
+      "w1"
+    ]);
     // On the main line already: nothing to promote, and nothing to undo.
     expect(store().promoteVariation("s0")).toBe(false);
     expect(store().undoStack).toHaveLength(1);
@@ -186,7 +199,10 @@ describe("repertoire workspace store", () => {
     // 1... e5 2. Nf3 is now the side line: promoting from Nf3 moves 1... e5 back up.
     expect(promotionTarget(store().chapter!.tree, "w2")).toBe("w1");
     store().promoteVariation("w2");
-    expect(store().chapter!.tree.find((node) => node.id === "w0")!.children).toEqual(["w1", "s0"]);
+    expect(store().chapter!.tree.find((node) => node.id === "w0")!.children).toStrictEqual([
+      "w1",
+      "s0"
+    ]);
   });
 
   it("undoes and redoes structural edits, keeping comments typed since", () => {
@@ -198,7 +214,10 @@ describe("repertoire workspace store", () => {
     expect(store().undoStack).toHaveLength(3);
 
     expect(store().undo()).toBe(true);
-    expect(store().chapter!.tree.find((node) => node.id === "w0")!.children).toEqual(["w1", "s0"]);
+    expect(store().chapter!.tree.find((node) => node.id === "w0")!.children).toStrictEqual([
+      "w1",
+      "s0"
+    ]);
     expect(store().undo()).toBe(true);
     expect(store().chapter!.nodeMeta.w1).toBeUndefined();
     expect(store().undo()).toBe(true);
@@ -212,7 +231,7 @@ describe("repertoire workspace store", () => {
     expect(store().redo()).toBe(true);
     expect(store().chapter!.tree.some((node) => node.id === added.nodeId)).toBe(true);
     expect(store().redo()).toBe(true);
-    expect(store().chapter!.nodeMeta.w1).toEqual({ edge: "included", trainingStart: true });
+    expect(store().chapter!.nodeMeta.w1).toStrictEqual({ edge: "included", trainingStart: true });
     // A new edit drops what is left to redo.
     store().setNodeMeta("w0", { disabled: true });
     expect(store().redoStack).toHaveLength(0);
@@ -238,12 +257,12 @@ describe("repertoire workspace store", () => {
     expect(store().redoStack).toHaveLength(1);
     const generation = store().generation;
     store().setNodeMeta("w0", { edge: "included" });
-    store().setComment("w1", store().chapter!.tree.find((node) => node.id === "w1")!.comment ?? "");
+    store().setComment("w1", storedComment("w1"));
     expect(store().redoStack).toHaveLength(1);
     expect(store().undoStack).toHaveLength(0);
     expect(store().generation).toBe(generation);
     expect(store().redo()).toBe(true);
-    expect(store().chapter!.nodeMeta.w0).toEqual({ edge: "reference" });
+    expect(store().chapter!.nodeMeta.w0).toStrictEqual({ edge: "reference" });
   });
 
   it("starts each chapter load with no undo or redo", () => {
@@ -282,7 +301,7 @@ describe("repertoire workspace store", () => {
     store().saveSucceeded(result, generation);
     expect(store().dirty).toBe(false);
     expect(store().baseRevision).toBe(5);
-    expect(store().saveState).toEqual({ status: "idle" });
+    expect(store().saveState).toStrictEqual({ status: "idle" });
 
     play("c2c4");
     const before = store().generation;
@@ -312,9 +331,10 @@ describe("repertoire workspace store", () => {
     expect(store().chapter!.tree).toBe(local);
     expect(store().chapter!.revision).toBe(2);
 
-    const normalized = local.map((node) =>
-      node.id === "root" ? { ...node, comment: "normalized" } : node
-    );
+    const normalized = withNodeChanged(local, "root", (node) => ({
+      ...node,
+      comment: "normalized"
+    }));
     store().saveSucceeded(
       { ...result, chapter: { ...result.chapter, tree: normalized, revision: 3 } },
       store().generation
@@ -325,18 +345,15 @@ describe("repertoire workspace store", () => {
   it("reuses a tree only when every node matches", () => {
     const tree = sampleTree();
     expect(reuseUnchangedTree(tree, tree.slice(0, -1))).not.toBe(tree);
-    const moved = tree.map((node) =>
-      node.id === "w0" ? { ...node, children: [...node.children].reverse() } : node
-    );
+    const moved = withNodeChanged(tree, "w0", (node) => ({
+      ...node,
+      children: [...node.children].reverse()
+    }));
     expect(reuseUnchangedTree(tree, moved)).toBe(moved);
-    const arrows = tree.map((node) =>
-      node.id === "w1"
-        ? {
-            ...node,
-            arrows: [{ orig: "e2" as const, dest: "e4" as const, color: "green" as const }]
-          }
-        : node
-    );
+    const arrows = withNodeChanged(tree, "w1", (node) => ({
+      ...node,
+      arrows: [{ orig: "e2" as const, dest: "e4" as const, color: "green" as const }]
+    }));
     expect(reuseUnchangedTree(tree, arrows)).toBe(arrows);
     expect(reuseUnchangedTree(tree, structuredClone(tree))).toBe(tree);
   });
@@ -358,7 +375,7 @@ describe("repertoire workspace store", () => {
   it("records save errors and adopts newer revisions only", () => {
     load();
     store().saveFailed("stale", true);
-    expect(store().saveState).toEqual({ status: "error", message: "stale", stale: true });
+    expect(store().saveState).toStrictEqual({ status: "error", message: "stale", stale: true });
     store().clearSaveError();
     store().adoptRevision(2);
     expect(store().baseRevision).toBe(4);
@@ -383,24 +400,24 @@ describe("repertoire workspace store", () => {
     load();
     expect(store().decisions.k.preferredUci).toBe("e2e4");
     store().loadChapter(detailOf({ id: "r2" }), chapterOf(sampleTree()));
-    expect(store().decisions).toEqual({});
+    expect(store().decisions).toStrictEqual({});
   });
 });
 
 describe("tree edits", () => {
   it("removes a subtree and unlinks it from its parent", () => {
     const { tree, removed, parentId } = removeSubtree(sampleTree(), "w0");
-    expect(tree.map((node) => node.id)).toEqual(["root"]);
-    expect(tree[0].children).toEqual([]);
-    expect([...removed].sort()).toEqual(["s0", "w0", "w1", "w2"]);
+    expect(tree.map((node) => node.id)).toStrictEqual(["root"]);
+    expect(tree[0].children).toStrictEqual([]);
+    expect([...removed].sort()).toStrictEqual(["s0", "w0", "w1", "w2"]);
     expect(parentId).toBe("root");
     expect(removeSubtree(sampleTree(), "root").removed.size).toBe(0);
   });
 
   it("leaves the tree alone when promoting the root or a main-line move", () => {
     const tree = sampleTree();
-    expect(promoteChild(tree, "root")).toEqual(tree);
-    expect(promoteChild(tree, "w1")).toEqual(tree);
+    expect(promoteChild(tree, "root")).toStrictEqual(tree);
+    expect(promoteChild(tree, "w1")).toStrictEqual(tree);
   });
 });
 
@@ -415,7 +432,7 @@ describe("staging a move from a game comparison", () => {
     const node = store().chapter!.tree.find((item) => item.id === result!.nodeId)!;
     expect(node).toMatchObject({ parentId: "w2", uci: "b8c6", san: "Nc6" });
     expect(store().selectedNodeId).toBe(node.id);
-    expect(store().chapter!.nodeMeta[node.id]).toEqual({ edge: "covered" });
+    expect(store().chapter!.nodeMeta[node.id]).toStrictEqual({ edge: "covered" });
     expect(store().dirty).toBe(true);
   });
 
@@ -423,7 +440,7 @@ describe("staging a move from a game comparison", () => {
     load();
     // After 1.e4 e5 (w1), White's 2.Bc4 instead of 2.Nf3.
     const result = store().stageMove("w1", "f1c4", "reference");
-    expect(store().chapter!.nodeMeta[result!.nodeId]).toEqual({ edge: "reference" });
+    expect(store().chapter!.nodeMeta[result!.nodeId]).toStrictEqual({ edge: "reference" });
     // The decision stays selected, so Choices shows the new move with Accept.
     expect(store().selectedNodeId).toBe("w1");
     // Adding it and setting its edge are one undo step.
@@ -435,7 +452,10 @@ describe("staging a move from a game comparison", () => {
   it("only selects a move the chapter already has with that edge", () => {
     store().loadChapter(detailOf(), chapterOf(sampleTree(), { w1: { edge: "covered" } }));
     const generation = store().generation;
-    expect(store().stageMove("w0", "e7e5", "covered")).toEqual({ nodeId: "w1", created: false });
+    expect(store().stageMove("w0", "e7e5", "covered")).toStrictEqual({
+      nodeId: "w1",
+      created: false
+    });
     expect(store().selectedNodeId).toBe("w1");
     expect(store().generation).toBe(generation);
     expect(store().dirty).toBe(false);
@@ -449,17 +469,23 @@ describe("staging a move from a game comparison", () => {
         s0: { edge: "covered", disabled: true }
       })
     );
-    expect(store().stageMove("w0", "e7e5", "covered")).toEqual({ nodeId: "w1", created: false });
-    expect(store().chapter!.nodeMeta.w1).toEqual({ edge: "covered" });
+    expect(store().stageMove("w0", "e7e5", "covered")).toStrictEqual({
+      nodeId: "w1",
+      created: false
+    });
+    expect(store().chapter!.nodeMeta.w1).toStrictEqual({ edge: "covered" });
     expect(store().dirty).toBe(true);
     store().stageMove("w0", "c7c5", "covered");
-    expect(store().chapter!.nodeMeta.s0).toEqual({ edge: "covered" });
+    expect(store().chapter!.nodeMeta.s0).toStrictEqual({ edge: "covered" });
     expect(store().selectedNodeId).toBe("s0");
   });
 
   it("never demotes an existing move when staging it as reference", () => {
     load();
-    expect(store().stageMove("w1", "g1f3", "reference")).toEqual({ nodeId: "w2", created: false });
+    expect(store().stageMove("w1", "g1f3", "reference")).toStrictEqual({
+      nodeId: "w2",
+      created: false
+    });
     expect(store().chapter!.nodeMeta.w2).toBeUndefined();
     expect(store().selectedNodeId).toBe("w1");
     expect(store().dirty).toBe(false);
@@ -501,10 +527,10 @@ describe("playing an engine line into the chapter", () => {
     expect(result).toMatchObject({ created: true });
     const end = store().chapter!.tree.find((node) => node.id === result!.nodeId)!;
     const reply = store().chapter!.tree.find((node) => node.id === end.parentId)!;
-    expect([reply.san, end.san]).toEqual(["Nc6", "Bb5"]);
+    expect([reply.san, end.san]).toStrictEqual(["Nc6", "Bb5"]);
     expect(reply.parentId).toBe("w2");
-    expect(store().chapter!.nodeMeta[reply.id]).toEqual({ edge: "covered" });
-    expect(store().chapter!.nodeMeta[end.id]).toEqual({ edge: "reference" });
+    expect(store().chapter!.nodeMeta[reply.id]).toStrictEqual({ edge: "covered" });
+    expect(store().chapter!.nodeMeta[end.id]).toStrictEqual({ edge: "reference" });
     expect(store().selectedNodeId).toBe(end.id);
     expect(store().dirty).toBe(true);
     expect(store().undoStack).toHaveLength(1);
@@ -525,7 +551,10 @@ describe("playing an engine line into the chapter", () => {
 
   it("only selects a line the chapter already has: no undo step, nothing to save", () => {
     load();
-    expect(store().playLine("w0", ["e7e5", "g1f3"])).toEqual({ nodeId: "w2", created: false });
+    expect(store().playLine("w0", ["e7e5", "g1f3"])).toStrictEqual({
+      nodeId: "w2",
+      created: false
+    });
     expect(store().selectedNodeId).toBe("w2");
     expect(store().dirty).toBe(false);
     expect(store().undoStack).toHaveLength(0);
@@ -586,7 +615,7 @@ describe("repertoire workspace decision drafts", () => {
     store().setDecisionPaused("r1", "k1", true);
     const d4 = decisionDraftKey("r1", "k1", "feedback", "d2d4");
     const paused = decisionDraftKey("r1", "k1", "paused");
-    expect(store().decisionDrafts[d4]).toEqual({
+    expect(store().decisionDrafts[d4]).toStrictEqual({
       repertoireId: "r1",
       positionKey: "k1",
       field: "feedback",

@@ -97,8 +97,8 @@ describe("reviewWithRealPlies", () => {
       commentary: [{ ply: 2 }]
     } as unknown as GameReview;
     const shifted = reviewWithRealPlies(review, 83);
-    expect(shifted?.moves.map((move) => move.ply)).toEqual([84, 85]);
-    expect(shifted?.commentary?.map((item) => item.ply)).toEqual([85]);
+    expect(shifted?.moves.map((move) => move.ply)).toStrictEqual([84, 85]);
+    expect(shifted?.commentary?.map((item) => item.ply)).toStrictEqual([85]);
   });
 
   it("leaves current reviews alone", () => {
@@ -198,7 +198,7 @@ describe("showAfterAnalysesDeleted", () => {
   it("deleting another analysis only drops it from the list", async () => {
     const getReview = showing("a");
     await showAfterAnalysesDeleted("g1", ["b"]);
-    expect(listed()).toEqual(["a", "c"]);
+    expect(listed()).toStrictEqual(["a", "c"]);
     expect(useReviewStore.getState().review?.reviewId).toBe("a");
     expect(getReview).not.toHaveBeenCalled();
   });
@@ -206,7 +206,7 @@ describe("showAfterAnalysesDeleted", () => {
   it("deleting the one shown shows the newest left", async () => {
     showing("a");
     await showAfterAnalysesDeleted("g1", ["a"]);
-    expect(listed()).toEqual(["b", "c"]);
+    expect(listed()).toStrictEqual(["b", "c"]);
     expect(useReviewStore.getState()).toMatchObject({
       status: "ready",
       review: { reviewId: "b" }
@@ -228,7 +228,7 @@ describe("showAfterAnalysesDeleted", () => {
     showing("a");
     useGameStore.setState({ gameId: "g2" });
     await showAfterAnalysesDeleted("g1", "all");
-    expect(listed()).toEqual(["a", "b", "c"]);
+    expect(listed()).toStrictEqual(["a", "b", "c"]);
     expect(useReviewStore.getState().review?.reviewId).toBe("a");
   });
 });

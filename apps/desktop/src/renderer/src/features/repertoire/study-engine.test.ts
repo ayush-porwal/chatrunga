@@ -10,7 +10,7 @@ describe("studyAnalysisTarget", () => {
     ({ tree } = addLine(tree, "w0", ["c7c5"], "s"));
     const chapter = chapterOf(tree);
     const node = tree.find((item) => item.id === "s0")!;
-    expect(studyAnalysisTarget(chapter, node)).toEqual({
+    expect(studyAnalysisTarget(chapter, node)).toStrictEqual({
       owner: `study:${chapter.id}`,
       nodeId: "s0",
       rootFen: chapter.rootFen,
@@ -31,19 +31,13 @@ describe("studyAnalysisTarget", () => {
 
 describe("sanLineToUcis", () => {
   it("reads a line's SAN moves as UCI, castling as the king's move", () => {
-    expect(sanLineToUcis(START_FEN, ["e4", "e5", "Nf3", "Nc6", "Bc4", "Nf6", "O-O"])).toEqual([
-      "e2e4",
-      "e7e5",
-      "g1f3",
-      "b8c6",
-      "f1c4",
-      "g8f6",
-      "e1g1"
-    ]);
+    expect(sanLineToUcis(START_FEN, ["e4", "e5", "Nf3", "Nc6", "Bc4", "Nf6", "O-O"])).toStrictEqual(
+      ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "g8f6", "e1g1"]
+    );
   });
 
   it("is empty for an empty line and null once a move doesn't fit the position", () => {
-    expect(sanLineToUcis(START_FEN, [])).toEqual([]);
+    expect(sanLineToUcis(START_FEN, [])).toStrictEqual([]);
     expect(sanLineToUcis(START_FEN, ["e4", "e4"])).toBeNull();
     expect(sanLineToUcis(START_FEN, ["not a move"])).toBeNull();
   });

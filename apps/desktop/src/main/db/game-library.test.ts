@@ -86,7 +86,7 @@ describe("gameRepository library pages (SQLite)", () => {
     insertGames(rows);
     for (const limit of [1, 7, 50]) {
       const { ids } = readAll({}, limit);
-      expect(ids).toEqual(ordered(rows));
+      expect(ids).toStrictEqual(ordered(rows));
       expect(new Set(ids).size).toBe(rows.length);
     }
   });
@@ -99,13 +99,13 @@ describe("gameRepository library pages (SQLite)", () => {
     }));
     insertGames(rows);
     const { ids, pages } = readAll({}, 200);
-    expect(ids).toEqual(ordered(rows));
+    expect(ids).toStrictEqual(ordered(rows));
     expect(pages).toBe(10);
     const last = gameRepository.listPage({
       limit: 200,
       cursor: { updatedAt: 1_000_000 - 199, id: "g1999" }
     });
-    expect(last).toEqual({ items: [], nextCursor: null });
+    expect(last).toStrictEqual({ items: [], nextCursor: null });
   });
 
   it("keeps a page within the limit, clamped to 1..200", () => {
@@ -117,10 +117,10 @@ describe("gameRepository library pages (SQLite)", () => {
     expect(gameRepository.listPage({ limit: -5 }).items).toHaveLength(1);
     expect(gameRepository.listPage({ limit: 2.9 }).items).toHaveLength(2);
     const page = gameRepository.listPage({ limit: 3 });
-    expect(page.items.map((game) => game.id)).toEqual(["g449", "g448", "g447"]);
-    expect(page.nextCursor).toEqual({ updatedAt: 447, id: "g447" });
+    expect(page.items.map((game) => game.id)).toStrictEqual(["g449", "g448", "g447"]);
+    expect(page.nextCursor).toStrictEqual({ updatedAt: 447, id: "g447" });
     // A summary only: no PGN, move tree or review.
-    expect(Object.keys(page.items[0]).sort()).toEqual([
+    expect(Object.keys(page.items[0]).sort()).toStrictEqual([
       "black",
       "currentFen",
       "date",
@@ -154,25 +154,25 @@ describe("gameRepository library pages (SQLite)", () => {
       { id: "deep-puzzle", source: "puzzle", white: "Ånand", updatedAt: 2 }
     ]);
     // Case folded as JavaScript does (SQLite's lower() would miss "Å").
-    expect(gameRepository.listPage({ search: "  ÅNAND ", limit: 5 })).toEqual({
+    expect(gameRepository.listPage({ search: "  ÅNAND ", limit: 5 })).toStrictEqual({
       items: [expect.objectContaining({ id: "deep-lichess" })],
       nextCursor: null
     });
     expect(
       gameRepository.listPage({ search: "sofia", limit: 5 }).items.map((game) => game.id)
-    ).toEqual(["deep-lichess"]);
+    ).toStrictEqual(["deep-lichess"]);
     expect(
       gameRepository.listPage({ tab: "lichess", limit: 5 }).items.map((game) => game.id)
-    ).toEqual(["deep-lichess"]);
+    ).toStrictEqual(["deep-lichess"]);
     expect(
       gameRepository.listPage({ tab: "imported", limit: 5 }).items.map((game) => game.id)
     ).not.toContain("deep-lichess");
     // A search with wildcards is plain text.
-    expect(gameRepository.listPage({ search: "%", limit: 5 }).items).toEqual([]);
+    expect(gameRepository.listPage({ search: "%", limit: 5 }).items).toStrictEqual([]);
     // The game on the board is left out; puzzle sessions never list.
-    expect(gameRepository.listPage({ search: "ånand", excludeId: "deep-lichess" }).items).toEqual(
-      []
-    );
+    expect(
+      gameRepository.listPage({ search: "ånand", excludeId: "deep-lichess" }).items
+    ).toStrictEqual([]);
     expect(readAll({}, 200).ids).not.toContain("deep-puzzle");
 
     getDb()
@@ -180,7 +180,7 @@ describe("gameRepository library pages (SQLite)", () => {
         "INSERT INTO game_reviews (review_id, game_id, created_at, review_json) VALUES ('r', 'g3', 5, '{}')"
       )
       .run();
-    expect(gameRepository.listPage({ reviewed: true, limit: 5 }).items).toEqual([
+    expect(gameRepository.listPage({ reviewed: true, limit: 5 }).items).toStrictEqual([
       expect.objectContaining({ id: "g3", reviewCount: 1, lastReviewedAt: 5 })
     ]);
   });
@@ -198,21 +198,21 @@ describe("gameRepository library pages (SQLite)", () => {
     ]);
     const ids = (query: Parameters<typeof gameRepository.listPage>[0]) =>
       gameRepository.listPage(query).items.map((game) => game.id);
-    expect(ids({ tab: "chesscom" })).toEqual(["cc-new", "cc-old"]);
-    expect(ids({ tab: "imported" })).toEqual(["pgn"]);
-    expect(ids({ tab: "engine" })).toEqual(["engine"]);
+    expect(ids({ tab: "chesscom" })).toStrictEqual(["cc-new", "cc-old"]);
+    expect(ids({ tab: "imported" })).toStrictEqual(["pgn"]);
+    expect(ids({ tab: "engine" })).toStrictEqual(["engine"]);
     // Games made in the app; puzzle sessions never list.
-    expect(ids({ tab: "chaturanga" })).toEqual(["study", "free"]);
+    expect(ids({ tab: "chaturanga" })).toStrictEqual(["study", "free"]);
     expect(ids({ tab: null })).toHaveLength(7);
     getDb()
       .prepare(
         "INSERT INTO game_reviews (review_id, game_id, created_at, review_json) VALUES ('r', 'cc-old', 5, '{}')"
       )
       .run();
-    expect(ids({ tab: "chesscom", reviewed: true })).toEqual(["cc-old"]);
-    expect(ids({ tab: "lichess", reviewed: true })).toEqual([]);
-    expect(ids({ tab: "chesscom", reviewed: true, search: "nobody" })).toEqual([]);
-    expect(ids({ tab: "chesscom", excludeId: "cc-new" })).toEqual(["cc-old"]);
+    expect(ids({ tab: "chesscom", reviewed: true })).toStrictEqual(["cc-old"]);
+    expect(ids({ tab: "lichess", reviewed: true })).toStrictEqual([]);
+    expect(ids({ tab: "chesscom", reviewed: true, search: "nobody" })).toStrictEqual([]);
+    expect(ids({ tab: "chesscom", excludeId: "cc-new" })).toStrictEqual(["cc-old"]);
   });
 
   it("searches a filtered list across pages with the cursor", () => {
@@ -220,7 +220,7 @@ describe("gameRepository library pages (SQLite)", () => {
       Array.from({ length: 300 }, (_, index) => ({
         id: `g${String(index).padStart(3, "0")}`,
         updatedAt: Math.floor(index / 4),
-        white: index % 3 === 0 ? "Match" : "Other"
+        white: ["Match", "Other", "Other"][index % 3]
       }))
     );
     const expected = ordered(
@@ -229,12 +229,12 @@ describe("gameRepository library pages (SQLite)", () => {
         updatedAt: Math.floor(index / 4)
       }))
     ).filter((id) => Number(id.slice(1)) % 3 === 0);
-    expect(readAll({ search: "match" }, 7).ids).toEqual(expected);
+    expect(readAll({ search: "match" }, 7).ids).toStrictEqual(expected);
   });
 
   it("counts the games of each source tab, and the reviewed ones among them", () => {
     const counts = (games: number, reviewed: number) => ({ games, reviewed });
-    expect(gameRepository.facets(null)).toEqual({
+    expect(gameRepository.facets(null)).toStrictEqual({
       hasGames: false,
       tabs: {
         lichess: counts(0, 0),
@@ -258,7 +258,7 @@ describe("gameRepository library pages (SQLite)", () => {
           ('r1', 'board', 5, '{}'), ('r2', 'cc2', 5, '{}'), ('r3', 'cc2', 6, '{}')`
       )
       .run();
-    expect(gameRepository.facets(null)).toEqual({
+    expect(gameRepository.facets(null)).toStrictEqual({
       hasGames: true,
       tabs: {
         lichess: counts(1, 1),
@@ -271,7 +271,7 @@ describe("gameRepository library pages (SQLite)", () => {
       }
     });
     // The game on the board still counts in its tab (the picker pins it on top of any tab).
-    expect(gameRepository.facets("board").tabs.lichess).toEqual(counts(1, 1));
+    expect(gameRepository.facets("board").tabs.lichess).toStrictEqual(counts(1, 1));
     getDb().exec("DELETE FROM games WHERE id != 'board'");
     expect(gameRepository.facets("board").hasGames).toBe(false);
     expect(gameRepository.facets(null).hasGames).toBe(true);

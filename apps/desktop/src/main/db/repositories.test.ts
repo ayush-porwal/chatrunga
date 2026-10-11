@@ -6,6 +6,9 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
 import { MOVE_ASSESSMENT_POLICY } from "@chaturanga/shared/chess/move-assessment";
 import { trapReviewMoves } from "@chaturanga/shared/chess/__fixtures__/trap-game";
+import type { MoveNode } from "@chaturanga/shared/types/chess";
+import type { MoveReview } from "@chaturanga/shared/types/engine";
+import { rollbackIfOpen } from "./rows";
 
 const userData = mkdtempSync(join(tmpdir(), "chaturanga-repo-test-"));
 vi.mock("electron", () => ({ app: { getPath: () => userData } }));
@@ -26,6 +29,32 @@ const PGN = `[Event "Rapid"]
 1. e4 e5 2. Nf3 1-0`;
 
 /** Test-only: puts a review straight into game_reviews (replacing the game's ones), bypassing the save path. */
+/** The tree with `change` applied to every move node (the root has no move). */
+function onMoves<T extends object = MoveNode>(
+  tree: readonly MoveNode[],
+  change: (node: MoveNode) => T
+): (MoveNode | T)[] {
+  return tree.map((node) => (node.san ? change(node) : node));
+}
+
+/** The items with `change` applied to the one at `index`. */
+function withAt<T, U>(items: readonly T[], index: number, change: (item: T) => U): (T | U)[] {
+  return items.map((item, at) => (at === index ? change(item) : item));
+}
+
+/** Each move's annotation (null for a move left unassessed). */
+function annotations(moves: readonly Pick<MoveReview, "assessment">[]): (string | null)[] {
+  return moves.map((move) => move.assessment?.annotation ?? null);
+}
+
+const isMarkBeyondBook = (annotation: string | null) =>
+  annotation !== null && annotation !== "book";
+
+/** A suppression check: the error once `condition` holds, else none. */
+function errorOnceTrue(condition: () => boolean, message: string): () => Error | null {
+  return () => (condition() ? new Error(message) : null);
+}
+
 function storeReview(gameId: string, review: object) {
   getDb().prepare("DELETE FROM game_reviews WHERE game_id = ?").run(gameId);
   getDb()
@@ -84,14 +113,14 @@ describe("gameRepository (SQLite)", () => {
     const { game } = importPgnText(PGN);
     const saved = gameRepository.save({ ...game, id: "chosen-id" });
     expect(saved.id).toBe("chosen-id");
-    expect(gameRepository.listPage().items.map((item) => item.id)).toEqual(["chosen-id"]);
+    expect(gameRepository.listPage().items.map((item) => item.id)).toStrictEqual(["chosen-id"]);
   });
 
   it("rebuilds a damaged move tree from the stored PGN", () => {
     const saved = saveImported();
     getDb().prepare("UPDATE games SET move_tree_json = ? WHERE id = ?").run("{not json", saved.id);
     const reopened = gameRepository.get(saved.id);
-    expect(reopened?.moveTree.filter((node) => node.san).map((node) => node.san)).toEqual([
+    expect(reopened?.moveTree.filter((node) => node.san).map((node) => node.san)).toStrictEqual([
       "e4",
       "e5",
       "Nf3"
@@ -136,21 +165,23 @@ describe("gameRepository (SQLite)", () => {
 
   it("keeps a timed move's play time, and rebuilds a tree whose play time is damaged", () => {
     const { game } = importPgnText("1. e4 *");
-    const moveTree = game.moveTree.map((node) =>
-      node.san ? { ...node, clockAfter: "0:01:59", playedAt: 1_700_000_000_000 } : node
-    );
+    const moveTree = onMoves(game.moveTree, (node) => ({
+      ...node,
+      clockAfter: "0:01:59",
+      playedAt: 1_700_000_000_000
+    }));
     const saved = gameRepository.save({ ...game, id: "timed", moveTree });
     expect(gameRepository.get(saved.id)?.moveTree.find((node) => node.san)).toMatchObject({
       clockAfter: "0:01:59",
       playedAt: 1_700_000_000_000
     });
-    const damaged = moveTree.map((node) => (node.san ? { ...node, playedAt: "soon" } : node));
+    const damaged = onMoves<object>(moveTree, (node) => ({ ...node, playedAt: "soon" }));
     getDb()
       .prepare("UPDATE games SET move_tree_json = ? WHERE id = ?")
       .run(JSON.stringify(damaged), saved.id);
-    expect(gameRepository.get(saved.id)?.moveTree.find((node) => node.san)?.playedAt).toBe(
-      undefined
-    );
+    expect(
+      gameRepository.get(saved.id)?.moveTree.find((node) => node.san)?.playedAt
+    ).toBeUndefined();
   });
 
   it("moves a saved review onto the rebuilt tree, or drops one that doesn't fit", () => {
@@ -173,7 +204,7 @@ describe("gameRepository (SQLite)", () => {
     storeReview(saved.id, review);
     const reopened = gameRepository.get(saved.id)!;
     const rebuiltIds = new Set(reopened.moveTree.map((node) => node.id));
-    expect(reopened.review?.moves.map((move) => move.san)).toEqual(["e4", "e5", "Nf3"]);
+    expect(reopened.review?.moves.map((move) => move.san)).toStrictEqual(["e4", "e5", "Nf3"]);
     expect(reopened.review?.moves.every((move) => rebuiltIds.has(move.nodeId))).toBe(true);
 
     // A damaged move entry drops the review; the game still opens.
@@ -228,7 +259,7 @@ describe("gameRepository (SQLite)", () => {
       assessmentsRecomputed: true
     });
     // The first six moves are opening theory (3… Nd4 included), from the bundled opening book.
-    expect(opened.moves.map((move) => move.assessment?.annotation ?? null)).toEqual([
+    expect(annotations(opened.moves)).toStrictEqual([
       "book",
       "book",
       "book",
@@ -245,7 +276,7 @@ describe("gameRepository (SQLite)", () => {
       null
     ]);
     expect(opened.summary).toMatchObject({ book: 6, inaccuracies: 0, mistakes: 1, blunders: 2 });
-    expect(opened.opening).toEqual({
+    expect(opened.opening).toStrictEqual({
       eco: "C50",
       name: "Italian Game: Blackburne-Kostić Gambit",
       ply: 6,
@@ -264,17 +295,17 @@ describe("gameRepository (SQLite)", () => {
     // One damaged move stays unmarked; the rest keep their marks.
     const damaged = {
       ...stored,
-      moves: stored.moves.map((move, index) => (index === 8 ? { ...move, motifs: null } : move))
+      moves: withAt(stored.moves, 8, (move) => ({ ...move, motifs: null }))
     };
     storeReview(saved.id, damaged);
     const partly = gameRepository.get(saved.id)!.review!;
     expect(partly.assessmentsRecomputed).toBe(true);
     expect(partly.moves[8]?.assessment).toBeUndefined();
-    expect(
-      partly.moves
-        .map((move) => move.assessment?.annotation ?? null)
-        .filter((annotation) => annotation && annotation !== "book")
-    ).toEqual(["blunder", "good", "mistake"]);
+    expect(annotations(partly.moves).filter(isMarkBeyondBook)).toStrictEqual([
+      "blunder",
+      "good",
+      "mistake"
+    ]);
   });
 
   it("moves the review of a game from a set-up position too, and puts the cursor on the rebuilt tree", () => {
@@ -304,7 +335,7 @@ describe("gameRepository (SQLite)", () => {
       .run("{not json", cursor.id, cursor.fenAfter, saved.id);
     storeReview(saved.id, review);
     const reopened = gameRepository.get(saved.id)!;
-    expect(reopened.review?.moves.map((move) => move.san)).toEqual(["Bb5", "a6", "Ba4"]);
+    expect(reopened.review?.moves.map((move) => move.san)).toStrictEqual(["Bb5", "a6", "Ba4"]);
     const node = reopened.moveTree.find((item) => item.id === reopened.currentNodeId);
     expect(node?.fenAfter).toBe(cursor.fenAfter);
   });
@@ -348,12 +379,12 @@ describe("gameRepository (SQLite)", () => {
         .prepare("UPDATE games SET move_tree_json = ? WHERE id = ?")
         .run(JSON.stringify(tree), saved.id);
       const reopened = gameRepository.get(saved.id)!;
-      expect(reopened.moveTree.filter((node) => node.san).map((node) => node.san)).toEqual([
+      expect(reopened.moveTree.filter((node) => node.san).map((node) => node.san)).toStrictEqual([
         "e4",
         "e5",
         "Nf3"
       ]);
-      expect(reopened.moveTree.map((node) => node.id)).not.toEqual(
+      expect(reopened.moveTree.map((node) => node.id)).not.toStrictEqual(
         saved.moveTree.map((node) => node.id)
       );
     }
@@ -361,21 +392,17 @@ describe("gameRepository (SQLite)", () => {
 
   it("opens a stored tree as it is when it's well formed", () => {
     const saved = saveImported();
-    expect(gameRepository.get(saved.id)?.moveTree).toEqual(saved.moveTree);
+    expect(gameRepository.get(saved.id)?.moveTree).toStrictEqual(saved.moveTree);
     // Annotations are part of a well-formed tree.
-    const annotated = saved.moveTree.map((node, index) =>
-      index === 1
-        ? {
-            ...node,
-            arrows: [{ orig: "e2", dest: "e4", color: "green" }],
-            highlights: [{ square: "e4", color: "red" }]
-          }
-        : node
-    );
+    const annotated = withAt(saved.moveTree, 1, (node) => ({
+      ...node,
+      arrows: [{ orig: "e2", dest: "e4", color: "green" }],
+      highlights: [{ square: "e4", color: "red" }]
+    }));
     getDb()
       .prepare("UPDATE games SET move_tree_json = ? WHERE id = ?")
       .run(JSON.stringify(annotated), saved.id);
-    expect(gameRepository.get(saved.id)?.moveTree).toEqual(annotated);
+    expect(gameRepository.get(saved.id)?.moveTree).toStrictEqual(annotated);
   });
 
   it("drops stored headers with a value that isn't text, for the PGN's", () => {
@@ -387,7 +414,7 @@ describe("gameRepository (SQLite)", () => {
     getDb()
       .prepare("UPDATE games SET headers_json = ? WHERE id = ?")
       .run(JSON.stringify({ white: "Carlsen", eco: null, orientationHint: "black" }), saved.id);
-    expect(gameRepository.get(saved.id)?.headers).toEqual({
+    expect(gameRepository.get(saved.id)?.headers).toStrictEqual({
       white: "Carlsen",
       eco: null,
       orientationHint: "black"
@@ -470,11 +497,11 @@ describe("gameRepository (SQLite)", () => {
       expect(opened.review?.reviewId).toBe("second");
       expect(
         opened.reviews.map((info) => [info.reviewId, info.engineName, info.commentaryCount])
-      ).toEqual([
+      ).toStrictEqual([
         ["second", "Lc0", 0],
         ["first", "Stockfish 17", 1]
       ]);
-      expect(opened.reviews[1]?.maiaLevels).toEqual([]);
+      expect(opened.reviews[1]?.maiaLevels).toStrictEqual([]);
       expect(gameRepository.getReview(game.id, "first")?.commentary?.[0]?.prose).toBe(
         "Good start."
       );
@@ -490,7 +517,9 @@ describe("gameRepository (SQLite)", () => {
       saveWith(game, reviewOf(game, "kept", 10));
       saveWith(game, null);
       saveWith(game, undefined);
-      expect(gameRepository.get(game.id)?.reviews.map((info) => info.reviewId)).toEqual(["kept"]);
+      expect(gameRepository.get(game.id)?.reviews.map((info) => info.reviewId)).toStrictEqual([
+        "kept"
+      ]);
     });
 
     const reviewIdsOf = (gameId: string) =>
@@ -519,15 +548,15 @@ describe("gameRepository (SQLite)", () => {
 
       expect(gameRepository.removeReview(game.id, "one-c")).toBe(true);
 
-      expect(reviewIdsOf(game.id)).toEqual(["one-a", "one-b"]);
-      expect(reviewIdsOf(other.id)).toEqual(["one-other"]);
+      expect(reviewIdsOf(game.id)).toStrictEqual(["one-a", "one-b"]);
+      expect(reviewIdsOf(other.id)).toStrictEqual(["one-other"]);
       const after = gameRepository.get(game.id)!;
       expect(after).toMatchObject({ pgn: before.pgn, moveTree: before.moveTree, reviewCount: 2 });
       // The newest left now opens with the game.
       expect(after.review?.reviewId).toBe("one-b");
       // An analysis of another game isn't deleted through this one's id.
       expect(gameRepository.removeReview(game.id, "one-other")).toBe(false);
-      expect(reviewIdsOf(other.id)).toEqual(["one-other"]);
+      expect(reviewIdsOf(other.id)).toStrictEqual(["one-other"]);
     });
 
     it("deleting all of a game's analyses keeps the game and other games' analyses", () => {
@@ -535,8 +564,8 @@ describe("gameRepository (SQLite)", () => {
 
       expect(gameRepository.removeReviews(game.id)).toBe(3);
 
-      expect(reviewIdsOf(game.id)).toEqual([]);
-      expect(reviewIdsOf(other.id)).toEqual(["all-other"]);
+      expect(reviewIdsOf(game.id)).toStrictEqual([]);
+      expect(reviewIdsOf(other.id)).toStrictEqual(["all-other"]);
       expect(gameRepository.get(game.id)).toMatchObject({
         id: game.id,
         review: null,
@@ -553,17 +582,19 @@ describe("gameRepository (SQLite)", () => {
       // The debounced autosave writes the game with the analysis that was shown.
       saveWith(game, reviewOf(game, "late-b", 20));
       saveWith(game, reviewOf(game, "late-a", 10));
-      expect(reviewIdsOf(game.id)).toEqual([]);
+      expect(reviewIdsOf(game.id)).toStrictEqual([]);
       // A new analysis still saves.
       saveWith(game, reviewOf(game, "late-new", 50));
-      expect(reviewIdsOf(game.id)).toEqual(["late-new"]);
+      expect(reviewIdsOf(game.id)).toStrictEqual(["late-new"]);
     });
 
     it("deleting a game deletes its analyses", () => {
       const game = saveImported();
       saveWith(game, reviewOf(game, "gone", 10));
       gameRepository.remove(game.id);
-      expect(getDb().prepare("SELECT COUNT(*) AS n FROM game_reviews").get()).toEqual({ n: 0 });
+      expect({ ...getDb().prepare("SELECT COUNT(*) AS n FROM game_reviews").get() }).toStrictEqual({
+        n: 0
+      });
     });
 
     it("finds the same game by fingerprint", () => {
@@ -597,7 +628,7 @@ describe("retryOnceIfBusy (a game save while another connection holds the write 
       expect(getDb().isTransaction).toBe(false);
     } finally {
       getDb().exec("PRAGMA busy_timeout = 1000");
-      if (other.isTransaction) other.exec("ROLLBACK");
+      rollbackIfOpen(other);
       other.close();
     }
   });
@@ -614,7 +645,7 @@ describe("retryOnceIfBusy (a game save while another connection holds the write 
         const saved = await retryOnceIfBusy(() => saveImported(), 300);
         expect(gameRepository.get(saved.id)).not.toBeNull();
       } finally {
-        if (other.isTransaction) other.exec("ROLLBACK");
+        rollbackIfOpen(other);
         other.close();
       }
     },
@@ -632,7 +663,7 @@ describe("retryOnceIfBusy (a game save while another connection holds the write 
           errcode: 5
         });
       } finally {
-        if (other.isTransaction) other.exec("ROLLBACK");
+        rollbackIfOpen(other);
         other.close();
       }
       let calls = 0;
@@ -656,7 +687,7 @@ describe("saveGameRetrying (games:save)", () => {
       other.exec("BEGIN IMMEDIATE");
       await work(() => other.exec("ROLLBACK"));
     } finally {
-      if (other.isTransaction) other.exec("ROLLBACK");
+      rollbackIfOpen(other);
       other.close();
     }
   };
@@ -689,7 +720,7 @@ describe("saveGameRetrying (games:save)", () => {
           deleted = true;
           release();
         }, 10);
-        const suppressed = () => (deleted ? new Error("suppressed") : null);
+        const suppressed = errorOnceTrue(() => deleted, "suppressed");
         await expect(
           saveGameRetrying({ ...game, id: "g-deleted" }, suppressed, 300)
         ).rejects.toThrow("suppressed");

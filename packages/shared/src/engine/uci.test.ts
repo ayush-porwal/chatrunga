@@ -18,7 +18,7 @@ describe("shared UCI parser", () => {
   });
 
   it("parses best moves and ignores empty best moves", () => {
-    expect(parseBestMove("engine-1", "bestmove e2e4 ponder e7e5")).toEqual({
+    expect(parseBestMove("engine-1", "bestmove e2e4 ponder e7e5")).toStrictEqual({
       engineId: "engine-1",
       move: "e2e4",
       ponder: "e7e5"
@@ -46,12 +46,12 @@ describe("shared UCI parser", () => {
       parseLc0MoveStat(
         "info string f1c4  (139 ) N:       0 (+ 0) (P: 23.75%) (WL:  -.-----) (D: -.---) (M:  -.-) (Q:  0.03315) (U: 0.41444) (S:  0.44759) (V:  -.----) "
       )
-    ).toEqual({ move: "f1c4", n: 0, p: 0.2375, v: null, q: 0.03315, wl: null, d: null });
+    ).toStrictEqual({ move: "f1c4", n: 0, p: 0.2375, v: null, q: 0.03315, wl: null, d: null });
     expect(
       parseLc0MoveStat(
         "info string node  (  27) N:       1 (+ 0) (P:  0.00%) (WL:  0.03162) (D: 0.039) (M:  0.0) (Q:  0.03162) (V:  0.0331) "
       )
-    ).toEqual({ move: "node", n: 1, p: 0, v: 0.0331, q: 0.03162, wl: 0.03162, d: 0.039 });
+    ).toStrictEqual({ move: "node", n: 1, p: 0, v: 0.0331, q: 0.03162, wl: 0.03162, d: 0.039 });
     expect(parseLc0MoveStat("info string Using backend metal")).toBeNull();
     expect(parseLc0MoveStat("info depth 1 seldepth 1 score cp 80 pv f1c4")).toBeNull();
   });

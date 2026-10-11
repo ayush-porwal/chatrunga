@@ -44,27 +44,26 @@ const medium = (date: Date) => date.toLocaleDateString(undefined, { dateStyle: "
 describe("databaseFacts", () => {
   it("before a download: about how many records, the format and the update date", () => {
     const facts = databaseFacts(puzzles, undefined);
-    expect(facts.map((fact) => fact.label)).toEqual(["Puzzles", "Format", "Updated"]);
+    expect(facts.map((fact) => fact.label)).toStrictEqual(["Puzzles", "Format", "Updated"]);
     expect(facts[0]?.value).toMatch(/^About 5[.,]9/);
     expect(facts[1]?.value).toBe("CSV.ZST");
     expect(facts[2]?.value).toBe(medium(new Date(2026, 4, 2)));
   });
 
   it("leaves out what a source doesn't say instead of showing dashes", () => {
-    expect(databaseFacts(positions, undefined)).toEqual([{ label: "Format", value: "CSV" }]);
+    expect(databaseFacts(positions, undefined)).toStrictEqual([{ label: "Format", value: "CSV" }]);
   });
 
   it("once downloaded: the records, the size on disk and the download date", () => {
     const facts = databaseFacts(puzzles, installed(puzzles, 5_939_980));
-    expect(facts.map((fact) => fact.label)).toEqual(["Puzzles", "On disk", "Downloaded"]);
+    expect(facts.map((fact) => fact.label)).toStrictEqual(["Puzzles", "On disk", "Downloaded"]);
     expect(facts[0]?.value).toMatch(/^5[.,]9/);
     expect(facts[1]?.value).toBe("268 MB");
     expect(facts[2]?.value).toBe(medium(new Date(2026, 9, 9)));
     // No count from the file or the source: no records fact.
-    expect(databaseFacts(positions, installed(positions, null)).map((fact) => fact.label)).toEqual([
-      "On disk",
-      "Downloaded"
-    ]);
+    expect(
+      databaseFacts(positions, installed(positions, null)).map((fact) => fact.label)
+    ).toStrictEqual(["On disk", "Downloaded"]);
   });
 });
 
@@ -72,8 +71,8 @@ describe("databaseAction", () => {
   const base = { source: puzzles, installed: undefined, progress: undefined, starting: false };
 
   it("offers Download, which reads as starting until the first progress arrives", () => {
-    expect(databaseAction(base)).toEqual({ kind: "download", starting: false });
-    expect(databaseAction({ ...base, starting: true })).toEqual({
+    expect(databaseAction(base)).toStrictEqual({ kind: "download", starting: false });
+    expect(databaseAction({ ...base, starting: true })).toStrictEqual({
       kind: "download",
       starting: true
     });
@@ -81,7 +80,7 @@ describe("databaseAction", () => {
 
   it("shows a running download, even over an installed copy being replaced", () => {
     const running = progress("downloading", { downloadedBytes: 10 });
-    expect(databaseAction({ ...base, progress: running })).toEqual({
+    expect(databaseAction({ ...base, progress: running })).toStrictEqual({
       kind: "downloading",
       progress: running
     });
@@ -91,7 +90,9 @@ describe("databaseAction", () => {
   });
 
   it("a failed download offers Try again", () => {
-    expect(databaseAction({ ...base, progress: progress("failed") })).toEqual({ kind: "failed" });
+    expect(databaseAction({ ...base, progress: progress("failed") })).toStrictEqual({
+      kind: "failed"
+    });
   });
 
   it("a finished download keeps its full bar until the list shows it, then offers training", () => {
@@ -99,12 +100,14 @@ describe("databaseAction", () => {
     expect(databaseAction({ ...base, progress: done }).kind).toBe("downloading");
     expect(
       databaseAction({ ...base, installed: installed(puzzles, 1), progress: done, starting: true })
-    ).toEqual({ kind: "train" });
+    ).toStrictEqual({ kind: "train" });
   });
 
   it("only puzzle and position sets can be trained with", () => {
     const library: ExternalDatabaseSource = { ...puzzles, kind: "game-library" };
-    expect(databaseAction({ ...base, source: library, installed: installed(library, 1) })).toEqual({
+    expect(
+      databaseAction({ ...base, source: library, installed: installed(library, 1) })
+    ).toStrictEqual({
       kind: "none"
     });
   });

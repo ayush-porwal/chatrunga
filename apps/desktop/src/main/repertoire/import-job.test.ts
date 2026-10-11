@@ -12,237 +12,264 @@ import {
   RESULT_SLICE_NODES,
   resultMessages,
   runImport,
+  type ImportedGame,
   type ImportLimits,
-  type ImportProgress
+  type ImportProgress,
+  type ImportWorkerMessage
 } from "./import-job";
 import { benchmarkImport, generateRepertoirePgn } from "./import-bench";
 
 const dir = mkdtempSync(join(tmpdir(), "chaturanga-import-job-"));
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-const limits = (overrides: Partial<ImportLimits>): ImportLimits => ({
-  ...DEFAULT_IMPORT_LIMITS,
-  ...overrides
-});
+/** Why each game was rejected (null for a game that wasn't). */
+function rejections(games: readonly ImportedGame[]): (string | null)[] {
+  return games.map((game) => game.rejected);
+}
 
-/** The synchronous parse with the position keys the import adds to every node. */
-function expectedImport(pgn: string) {
+/** Progress options that cancel a parse once it has seen `games` games while parsing. */
+function cancelOnceParsed(games: number) {
+  let cancelled = false;
+  let gamesAtCancel = 0;
   return {
-    games: parseRepertoirePgn(pgn).games.map((game) => ({
-      ...game,
-      positionKeys: Object.fromEntries(
-        game.rejected ? [] : game.tree.map((node) => [node.id, positionKey(node.fenAfter)])
-      ),
-      decisions: game.rejected
-        ? { white: 0, black: 0 }
-        : {
-            white: importedDecisionCount("white", game.tree),
-            black: importedDecisionCount("black", game.tree)
-          }
-    }))
+    isCancelled: () => cancelled,
+    onProgress: (event: ImportProgress) => {
+      if (event.phase === "parsing" && event.gamesSeen >= games && !cancelled) {
+        cancelled = true;
+        gamesAtCancel = event.gamesSeen;
+      }
+    },
+    gamesAtCancel: () => gamesAtCancel
   };
 }
 
-const MANY = generateRepertoirePgn({ games: 400, movesPerGame: 12, variationsPerGame: 3 });
-/** A smaller fixture wherever the size itself isn't under test (parsing MANY costs ~0.7 s under coverage). */
-const FEW = generateRepertoirePgn({ games: 40, movesPerGame: 12, variationsPerGame: 3 });
-/** A chunk size far below IMPORT_CHUNK_CHARS (a generated game is ~140 characters), so games straddle chunk boundaries. */
-const SMALL_CHUNK = 256;
-
-describe("runImport", () => {
-  it("gives what parseRepertoirePgn gives plus position keys, from text and from a file", async () => {
-    // 40 games are enough: in 256-character chunks they span twenty-odd chunk boundaries, most
-    // of them inside a game, which is what the streaming path must get right. (400 games timed
-    // out under CI coverage.)
-    const expected = expectedImport(FEW);
-    expect(expected.games).toHaveLength(40);
-    expect(expected.games[0].nodeCount).toBe(18);
-    expect(FEW.length).toBeGreaterThan(10 * SMALL_CHUNK);
-    expect(await importPreviewFromText(FEW)).toEqual(expected);
-    expect(
-      await runImport({ kind: "text", text: FEW }, DEFAULT_IMPORT_LIMITS, {
-        chunkChars: SMALL_CHUNK
-      })
-    ).toEqual(expected);
-    const path = join(dir, "few.pgn");
-    writeFileSync(path, FEW);
-    expect(
-      await runImport({ kind: "file", path }, DEFAULT_IMPORT_LIMITS, { chunkChars: SMALL_CHUNK })
-    ).toEqual(expected);
-  });
-
-  it("counts what each game practises as an opening chapter for either colour", async () => {
-    const { games } = await importPreviewFromText(
-      '1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 *\n\n[Variant "Atomic"]\n\n1. e4 *'
-    );
-    expect(games.map((game) => game.decisions)).toEqual([
-      { white: 4, black: 3 },
-      { white: 0, black: 0 }
-    ]);
-  });
-
-  it("reports progress at most once per interval per phase, every phase once at least", async () => {
-    let clock = 0;
-    const events: ImportProgress[] = [];
-    // FEW in 100-character chunks gives as many chunks as MANY in 1000-character ones, without
-    // parsing 400 games (this test timed out under CI coverage with MANY).
-    await runImport({ kind: "text", text: FEW }, DEFAULT_IMPORT_LIMITS, {
-      onProgress: (event) => events.push(event),
-      chunkChars: 100,
-      // Each reading of the clock advances it 30 ms: one report in four passes the 100 ms gap.
-      now: () => (clock += 30)
-    });
-    const chunks = Math.ceil(FEW.length / 100);
-    const phases = events.map((event) => event.phase);
-    expect(phases[0]).toBe("reading");
-    expect(phases.at(-1)).toBe("validating");
-    const parsing = events.filter((event) => event.phase === "parsing");
-    expect(parsing.length).toBeGreaterThan(5);
-    expect(parsing.length).toBeLessThan(chunks / 2);
-    // Monotonic counts, and the final event has the totals.
-    for (let index = 1; index < events.length; index++) {
-      expect(events[index].bytesRead).toBeGreaterThanOrEqual(events[index - 1].bytesRead);
-      expect(events[index].gamesSeen).toBeGreaterThanOrEqual(events[index - 1].gamesSeen);
+/** The games the result messages carry, put back together, and the size of each node slice. */
+function reassembled(messages: readonly ImportWorkerMessage[]) {
+  const games: ImportedGame[] = [];
+  const sliceSizes: number[] = [];
+  for (const message of messages) {
+    if (message.type === "game") games.push({ ...message.game, tree: [], positionKeys: {} });
+    if (message.type === "nodes") {
+      sliceSizes.push(message.nodes.length);
+      games.at(-1)!.tree.push(...message.nodes);
+      for (const [id, key] of message.keys) games.at(-1)!.positionKeys[id] = key;
     }
-    expect(events.at(-1)).toEqual({
-      phase: "validating",
-      bytesRead: Buffer.byteLength(FEW),
-      totalBytes: Buffer.byteLength(FEW),
-      gamesSeen: 40,
-      nodesSeen: 40 * 18
-    });
+  }
+  return { games, sliceSizes };
+}
+describe("import job", () => {
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  const limits = (overrides: Partial<ImportLimits>): ImportLimits => ({
+    ...DEFAULT_IMPORT_LIMITS,
+    ...overrides
   });
 
-  it("stops at the next piece once cancelled", async () => {
-    let cancelled = false;
-    let gamesAtCancel = 0;
-    const run = runImport({ kind: "text", text: MANY }, DEFAULT_IMPORT_LIMITS, {
-      chunkChars: 1000,
-      progressIntervalMs: 0,
-      isCancelled: () => cancelled,
-      onProgress: (event) => {
-        if (event.phase === "parsing" && event.gamesSeen >= 20 && !cancelled) {
-          cancelled = true;
-          gamesAtCancel = event.gamesSeen;
-        }
+  /** The synchronous parse with the position keys the import adds to every node. */
+  function expectedImport(pgn: string) {
+    return {
+      games: parseRepertoirePgn(pgn).games.map((game) => ({
+        ...game,
+        positionKeys: Object.fromEntries(
+          game.rejected ? [] : game.tree.map((node) => [node.id, positionKey(node.fenAfter)])
+        ),
+        decisions: game.rejected
+          ? { white: 0, black: 0 }
+          : {
+              white: importedDecisionCount("white", game.tree),
+              black: importedDecisionCount("black", game.tree)
+            }
+      }))
+    };
+  }
+
+  const MANY = generateRepertoirePgn({ games: 400, movesPerGame: 12, variationsPerGame: 3 });
+  /** A smaller fixture wherever the size itself isn't under test (parsing MANY costs ~0.7 s under coverage). */
+  const FEW = generateRepertoirePgn({ games: 40, movesPerGame: 12, variationsPerGame: 3 });
+  /** A chunk size far below IMPORT_CHUNK_CHARS (a generated game is ~140 characters), so games straddle chunk boundaries. */
+  const SMALL_CHUNK = 256;
+
+  describe("runImport", () => {
+    it("gives what parseRepertoirePgn gives plus position keys, from text and from a file", async () => {
+      // 40 games are enough: in 256-character chunks they span twenty-odd chunk boundaries, most
+      // of them inside a game, which is what the streaming path must get right. (400 games timed
+      // out under CI coverage.)
+      const expected = expectedImport(FEW);
+      expect(expected.games).toHaveLength(40);
+      expect(expected.games[0].nodeCount).toBe(18);
+      expect(FEW.length).toBeGreaterThan(10 * SMALL_CHUNK);
+      expect(await importPreviewFromText(FEW)).toStrictEqual(expected);
+      expect(
+        await runImport({ kind: "text", text: FEW }, DEFAULT_IMPORT_LIMITS, {
+          chunkChars: SMALL_CHUNK
+        })
+      ).toStrictEqual(expected);
+      const path = join(dir, "few.pgn");
+      writeFileSync(path, FEW);
+      expect(
+        await runImport({ kind: "file", path }, DEFAULT_IMPORT_LIMITS, { chunkChars: SMALL_CHUNK })
+      ).toStrictEqual(expected);
+    });
+
+    it("counts what each game practises as an opening chapter for either colour", async () => {
+      const { games } = await importPreviewFromText(
+        '1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 *\n\n[Variant "Atomic"]\n\n1. e4 *'
+      );
+      expect(games.map((game) => game.decisions)).toStrictEqual([
+        { white: 4, black: 3 },
+        { white: 0, black: 0 }
+      ]);
+    });
+
+    it("reports progress at most once per interval per phase, every phase once at least", async () => {
+      let clock = 0;
+      const events: ImportProgress[] = [];
+      // FEW in 100-character chunks gives as many chunks as MANY in 1000-character ones, without
+      // parsing 400 games (this test timed out under CI coverage with MANY).
+      await runImport({ kind: "text", text: FEW }, DEFAULT_IMPORT_LIMITS, {
+        onProgress: (event) => events.push(event),
+        chunkChars: 100,
+        // Each reading of the clock advances it 30 ms: one report in four passes the 100 ms gap.
+        now: () => (clock += 30)
+      });
+      const chunks = Math.ceil(FEW.length / 100);
+      const phases = events.map((event) => event.phase);
+      expect(phases[0]).toBe("reading");
+      expect(phases.at(-1)).toBe("validating");
+      const parsing = events.filter((event) => event.phase === "parsing");
+      expect(parsing.length).toBeGreaterThan(5);
+      expect(parsing.length).toBeLessThan(chunks / 2);
+      // Monotonic counts, and the final event has the totals.
+      for (let index = 1; index < events.length; index++) {
+        expect(events[index].bytesRead).toBeGreaterThanOrEqual(events[index - 1].bytesRead);
+        expect(events[index].gamesSeen).toBeGreaterThanOrEqual(events[index - 1].gamesSeen);
       }
+      expect(events.at(-1)).toStrictEqual({
+        phase: "validating",
+        bytesRead: Buffer.byteLength(FEW),
+        totalBytes: Buffer.byteLength(FEW),
+        gamesSeen: 40,
+        nodesSeen: 40 * 18
+      });
     });
-    await expect(run).rejects.toBeInstanceOf(ImportCancelledError);
-    expect(gamesAtCancel).toBeGreaterThanOrEqual(20);
-    expect(gamesAtCancel).toBeLessThan(400);
-  });
 
-  describe("limits fail fast with actionable messages", () => {
-    /** The error, and how far the parse got (the last progress) when it failed. */
-    async function failure(text: string, overrides: Partial<ImportLimits>) {
-      let last: ImportProgress | null = null;
-      const error = await runImport({ kind: "text", text }, limits(overrides), {
+    it("stops at the next piece once cancelled", async () => {
+      const cancel = cancelOnceParsed(20);
+      const run = runImport({ kind: "text", text: MANY }, DEFAULT_IMPORT_LIMITS, {
         chunkChars: 1000,
         progressIntervalMs: 0,
-        onProgress: (event) => (last = event)
-      }).then(
-        () => null,
-        (thrown: unknown) => thrown as Error
-      );
-      return { message: error?.message, last: last as ImportProgress | null };
-    }
-
-    it("bytes, before parsing (text and file)", async () => {
-      const { message, last } = await failure(FEW, { maxBytes: 1024 });
-      expect(message).toBe("This PGN is larger than 1024 bytes; split it and import it in parts.");
-      expect(last).toBeNull();
-      const path = join(dir, "big.pgn");
-      writeFileSync(path, FEW);
-      await expect(
-        runImport({ kind: "file", path }, limits({ maxBytes: 2 * 1024 * 1024 }))
-      ).resolves.toBeTruthy();
-      await expect(runImport({ kind: "file", path }, limits({ maxBytes: 1024 }))).rejects.toThrow(
-        "This PGN is larger than 1024 bytes"
-      );
-      expect(DEFAULT_IMPORT_LIMITS.maxBytes).toBe(20 * 1024 * 1024);
+        isCancelled: cancel.isCancelled,
+        onProgress: cancel.onProgress
+      });
+      await expect(run).rejects.toBeInstanceOf(ImportCancelledError);
+      expect(cancel.gamesAtCancel()).toBeGreaterThanOrEqual(20);
+      expect(cancel.gamesAtCancel()).toBeLessThan(400);
     });
 
-    it("games, at the first game past the limit", async () => {
-      const { message, last } = await failure(MANY, { maxGames: 10 });
-      expect(message).toBe(
-        "This PGN has more than 10 games; one import can hold at most 10. Split the file and import it in parts."
-      );
-      expect(last!.bytesRead).toBeLessThan(Buffer.byteLength(MANY) / 10);
-    });
-
-    it("moves across games", async () => {
-      const { message, last } = await failure(MANY, { maxNodes: 100 });
-      expect(message).toBe("This PGN has more than 100 moves; split it and import it in parts.");
-      expect(last!.bytesRead).toBeLessThan(Buffer.byteLength(MANY) / 10);
-    });
-
-    it("nesting depth", async () => {
-      const deep = generateRepertoirePgn({ games: 3, movesPerGame: 40 });
-      expect((await failure(deep, { maxDepth: 30 })).message).toBe(
-        "A line is longer than 30 moves (at 1. Nf3 Nf6 2. Ng1 Ng8 3. Nf3 Nf6 4. Ng1 Ng8 5. Nf3 Nf6 6. Ng1 Ng8 7. Nf3 Nf6 8. Ng1 Ng8 9. Nf3 Nf6 10. Ng1 Ng8 11. Nf3 Nf6 12. Ng1 Ng8 13. Nf3 Nf6 14. Ng1 Ng8 15. Nf3 Nf6). " +
-          "Repertoire chapters hold opening lines; trim the game before importing it."
-      );
-    });
-
-    it("comment size rejects only the games with a longer comment", async () => {
-      const commented = generateRepertoirePgn({ games: 3, movesPerGame: 4, commentLength: 50 });
-      const pgn = `${commented}\n\n[Event "Plain"]\n\n1. e4 e5 *\n`;
-      expect((await failure(pgn, { maxCommentLength: 40 })).message).toBeUndefined();
-      const { games } = await runImport(
-        { kind: "text", text: pgn },
-        limits({ maxCommentLength: 40 })
-      );
-      expect(games.map((game) => game.rejected)).toEqual([
-        "a comment is longer than 40 characters (at 1. Nf3)",
-        "a comment is longer than 40 characters (at 1. Nf3)",
-        "a comment is longer than 40 characters (at 1. Nf3)",
-        null
-      ]);
-      expect(games[3].nodeCount).toBe(2);
-      expect(Object.keys(games[3].positionKeys)).toHaveLength(3);
-    });
-
-    it("no game at all", async () => {
-      expect((await failure("  \n\n", {})).message).toBe("No PGN game found.");
-    });
-  });
-});
-
-describe("resultMessages", () => {
-  it("sends each game, then its tree and keys in bounded slices, then done", async () => {
-    const result = await importPreviewFromText(
-      generateRepertoirePgn({ games: 2, movesPerGame: 120, variationsPerGame: 0 }),
-      limits({ maxDepth: 200 })
-    );
-    const messages = [...resultMessages(result)];
-    expect(messages.map((message) => message.type)).toEqual([
-      "game",
-      "nodes",
-      "game",
-      "nodes",
-      "done"
-    ]);
-    // Reassembled, the messages give the result back.
-    const games: typeof result.games = [];
-    const sliceSizes: number[] = [];
-    for (const message of messages) {
-      if (message.type === "game") games.push({ ...message.game, tree: [], positionKeys: {} });
-      if (message.type === "nodes") {
-        sliceSizes.push(message.nodes.length);
-        games.at(-1)!.tree.push(...message.nodes);
-        for (const [id, key] of message.keys) games.at(-1)!.positionKeys[id] = key;
+    describe("limits fail fast with actionable messages", () => {
+      /** The error, and how far the parse got (the last progress) when it failed. */
+      async function failure(text: string, overrides: Partial<ImportLimits>) {
+        let last: ImportProgress | null = null;
+        const error = await runImport({ kind: "text", text }, limits(overrides), {
+          chunkChars: 1000,
+          progressIntervalMs: 0,
+          onProgress: (event) => (last = event)
+        }).then(
+          () => null,
+          (thrown: unknown) => thrown as Error
+        );
+        return { message: error?.message, last: last as ImportProgress | null };
       }
-    }
-    expect(Math.max(...sliceSizes)).toBeLessThanOrEqual(RESULT_SLICE_NODES);
-    expect({ games }).toEqual(result);
-  });
-});
 
-describe("benchmarkImport", () => {
-  it("times a parse and reports its size", async () => {
-    const result = await benchmarkImport(FEW);
-    expect(result).toMatchObject({ games: 40, nodes: 40 * 18, bytes: Buffer.byteLength(FEW) });
-    expect(result.totalMs).toBeGreaterThan(0);
-    expect(result.progressEvents).toBeGreaterThanOrEqual(2);
+      it("bytes, before parsing (text and file)", async () => {
+        const { message, last } = await failure(FEW, { maxBytes: 1024 });
+        expect(message).toBe(
+          "This PGN is larger than 1024 bytes; split it and import it in parts."
+        );
+        expect(last).toBeNull();
+        const path = join(dir, "big.pgn");
+        writeFileSync(path, FEW);
+        await expect(
+          runImport({ kind: "file", path }, limits({ maxBytes: 2 * 1024 * 1024 }))
+        ).resolves.toBeTruthy();
+        await expect(runImport({ kind: "file", path }, limits({ maxBytes: 1024 }))).rejects.toThrow(
+          "This PGN is larger than 1024 bytes"
+        );
+        expect(DEFAULT_IMPORT_LIMITS.maxBytes).toBe(20 * 1024 * 1024);
+      });
+
+      it("games, at the first game past the limit", async () => {
+        const { message, last } = await failure(MANY, { maxGames: 10 });
+        expect(message).toBe(
+          "This PGN has more than 10 games; one import can hold at most 10. Split the file and import it in parts."
+        );
+        expect(last!.bytesRead).toBeLessThan(Buffer.byteLength(MANY) / 10);
+      });
+
+      it("moves across games", async () => {
+        const { message, last } = await failure(MANY, { maxNodes: 100 });
+        expect(message).toBe("This PGN has more than 100 moves; split it and import it in parts.");
+        expect(last!.bytesRead).toBeLessThan(Buffer.byteLength(MANY) / 10);
+      });
+
+      it("nesting depth", async () => {
+        const deep = generateRepertoirePgn({ games: 3, movesPerGame: 40 });
+        expect((await failure(deep, { maxDepth: 30 })).message).toBe(
+          "A line is longer than 30 moves (at 1. Nf3 Nf6 2. Ng1 Ng8 3. Nf3 Nf6 4. Ng1 Ng8 5. Nf3 Nf6 6. Ng1 Ng8 7. Nf3 Nf6 8. Ng1 Ng8 9. Nf3 Nf6 10. Ng1 Ng8 11. Nf3 Nf6 12. Ng1 Ng8 13. Nf3 Nf6 14. Ng1 Ng8 15. Nf3 Nf6). " +
+            "Repertoire chapters hold opening lines; trim the game before importing it."
+        );
+      });
+
+      it("comment size rejects only the games with a longer comment", async () => {
+        const commented = generateRepertoirePgn({ games: 3, movesPerGame: 4, commentLength: 50 });
+        const pgn = `${commented}\n\n[Event "Plain"]\n\n1. e4 e5 *\n`;
+        expect((await failure(pgn, { maxCommentLength: 40 })).message).toBeUndefined();
+        const { games } = await runImport(
+          { kind: "text", text: pgn },
+          limits({ maxCommentLength: 40 })
+        );
+        expect(rejections(games)).toStrictEqual([
+          "a comment is longer than 40 characters (at 1. Nf3)",
+          "a comment is longer than 40 characters (at 1. Nf3)",
+          "a comment is longer than 40 characters (at 1. Nf3)",
+          null
+        ]);
+        expect(games[3].nodeCount).toBe(2);
+        expect(Object.keys(games[3].positionKeys)).toHaveLength(3);
+      });
+
+      it("no game at all", async () => {
+        expect((await failure("  \n\n", {})).message).toBe("No PGN game found.");
+      });
+    });
+  });
+
+  describe("resultMessages", () => {
+    it("sends each game, then its tree and keys in bounded slices, then done", async () => {
+      const result = await importPreviewFromText(
+        generateRepertoirePgn({ games: 2, movesPerGame: 120, variationsPerGame: 0 }),
+        limits({ maxDepth: 200 })
+      );
+      const messages = [...resultMessages(result)];
+      expect(messages.map((message) => message.type)).toStrictEqual([
+        "game",
+        "nodes",
+        "game",
+        "nodes",
+        "done"
+      ]);
+      // Reassembled, the messages give the result back.
+      const { games, sliceSizes } = reassembled(messages);
+      expect(Math.max(...sliceSizes)).toBeLessThanOrEqual(RESULT_SLICE_NODES);
+      expect({ games }).toStrictEqual(result);
+    });
+  });
+
+  describe("benchmarkImport", () => {
+    it("times a parse and reports its size", async () => {
+      const result = await benchmarkImport(FEW);
+      expect(result).toMatchObject({ games: 40, nodes: 40 * 18, bytes: Buffer.byteLength(FEW) });
+      expect(result.totalMs).toBeGreaterThan(0);
+      expect(result.progressEvents).toBeGreaterThanOrEqual(2);
+    });
   });
 });

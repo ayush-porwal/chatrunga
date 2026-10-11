@@ -11,7 +11,7 @@ import {
 
 describe("topRowSlots", () => {
   it("keeps the Play card narrow beside a game in progress, then the cards in order", () => {
-    expect(topRowSlots({ inProgress: true, repertoire: true, puzzle: true })).toEqual([
+    expect(topRowSlots({ inProgress: true, repertoire: true, puzzle: true })).toStrictEqual([
       { kind: "play", span: 1 },
       { kind: "in-progress" },
       { kind: "repertoire" },
@@ -20,7 +20,7 @@ describe("topRowSlots", () => {
   });
 
   it("widens the Play card when nothing is in progress", () => {
-    expect(topRowSlots({ inProgress: false, repertoire: true, puzzle: true })).toEqual([
+    expect(topRowSlots({ inProgress: false, repertoire: true, puzzle: true })).toStrictEqual([
       { kind: "play", span: 2 },
       { kind: "repertoire" },
       { kind: "puzzle" }
@@ -28,13 +28,13 @@ describe("topRowSlots", () => {
   });
 
   it("fills the columns left over with the filler card", () => {
-    expect(topRowSlots({ inProgress: true, repertoire: false, puzzle: true })).toEqual([
+    expect(topRowSlots({ inProgress: true, repertoire: false, puzzle: true })).toStrictEqual([
       { kind: "play", span: 1 },
       { kind: "in-progress" },
       { kind: "puzzle" },
       { kind: "filler", span: 1 }
     ]);
-    expect(topRowSlots({ inProgress: false, repertoire: false, puzzle: true })).toEqual([
+    expect(topRowSlots({ inProgress: false, repertoire: false, puzzle: true })).toStrictEqual([
       { kind: "play", span: 2 },
       { kind: "puzzle" },
       { kind: "filler", span: 1 }
@@ -43,12 +43,12 @@ describe("topRowSlots", () => {
 
   it("gives the Play card one of the filler's columns when it would take two or more", () => {
     // First run, or nothing to show beside it: Play across three columns, the filler in one.
-    expect(topRowSlots({ inProgress: false, repertoire: false, puzzle: false })).toEqual([
+    expect(topRowSlots({ inProgress: false, repertoire: false, puzzle: false })).toStrictEqual([
       { kind: "play", span: 3 },
       { kind: "filler", span: 1 }
     ]);
     // A game in progress and no other card: the Play card widens (to its preview-board layout).
-    expect(topRowSlots({ inProgress: true, repertoire: false, puzzle: false })).toEqual([
+    expect(topRowSlots({ inProgress: true, repertoire: false, puzzle: false })).toStrictEqual([
       { kind: "play", span: 2 },
       { kind: "in-progress" },
       { kind: "filler", span: 1 }
@@ -110,7 +110,7 @@ describe("savePlaySettings", () => {
     const { state, writes, save } = setup("pool");
     save("engine", "sf");
     expect(state.playOpponent).toBe("engine");
-    expect(writes.map((write) => write.patch)).toEqual([
+    expect(writes.map((write) => write.patch)).toStrictEqual([
       { playOpponent: "engine", playEngineId: "sf" }
     ]);
   });
@@ -149,7 +149,9 @@ describe("playEngineOrder", () => {
       "Maia 1100 (managed)",
       "Berserk"
     ];
-    expect(playEngineOrder(names.map((name) => ({ name }))).map((engine) => engine.name)).toEqual([
+    expect(
+      playEngineOrder(names.map((name) => ({ name }))).map((engine) => engine.name)
+    ).toStrictEqual([
       "Berserk",
       "Stockfish (managed)",
       "Maia 1100 (managed)",

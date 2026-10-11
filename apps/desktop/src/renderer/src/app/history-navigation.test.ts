@@ -87,7 +87,7 @@ describe("history capture", () => {
     loadSaved(null);
     const board = captureBoard("library", null);
     expect(board.gameId).toBeNull();
-    expect(board.session?.moveTree).toEqual(useGameStore.getState().moveTree);
+    expect(board.session?.moveTree).toStrictEqual(useGameStore.getState().moveTree);
     expect(board.currentNodeId).toBe(useGameStore.getState().currentNodeId);
   });
 
@@ -130,8 +130,11 @@ describe("history capture", () => {
 
   it("captures each view with the shell state it needs", () => {
     loadSaved("g1");
-    expect(captureEntry("settings", context)).toEqual({ view: "settings", section: "engines" });
-    expect(captureEntry("play", context)).toEqual({ view: "play", opponent: "engine" });
+    expect(captureEntry("settings", context)).toStrictEqual({
+      view: "settings",
+      section: "engines"
+    });
+    expect(captureEntry("play", context)).toStrictEqual({ view: "play", opponent: "engine" });
     expect(captureEntry("game", context)).toMatchObject({
       view: "game",
       board: { gameId: "g1", tab: "library" }
@@ -143,38 +146,38 @@ describe("history capture", () => {
       board: { tab: "notation" }
     });
     // A repertoire screen that isn't the one shown falls back to the hub.
-    expect(captureEntry("repertoire-study", context)).toEqual({ view: "repertoire-hub" });
+    expect(captureEntry("repertoire-study", context)).toStrictEqual({ view: "repertoire-hub" });
     const practice = {
       view: "repertoire-practice",
       repertoireId: "r1",
       sessionId: "s1",
       preset: null
     } as const;
-    expect(captureEntry("repertoire-practice", { ...context, repertoireScreen: practice })).toEqual(
-      {
-        view: "repertoire-practice",
-        repertoireId: "r1",
-        sessionId: "s1"
-      }
-    );
+    expect(
+      captureEntry("repertoire-practice", { ...context, repertoireScreen: practice })
+    ).toStrictEqual({
+      view: "repertoire-practice",
+      repertoireId: "r1",
+      sessionId: "s1"
+    });
   });
 
   it("records the Play mode shown: the session's, else Play settings', else the account's", () => {
     const play = (savedPlayOpponent: HistoryContext["savedPlayOpponent"]) =>
       captureEntry("play", { ...context, savedPlayOpponent });
     // Nothing chosen and no Lichess account: the engine.
-    expect(play(null)).toEqual({ view: "play", opponent: "engine" });
-    expect(play("board")).toEqual({ view: "play", opponent: "board" });
+    expect(play(null)).toStrictEqual({ view: "play", opponent: "engine" });
+    expect(play("board")).toStrictEqual({ view: "play", opponent: "board" });
     // A saved Lichess mode needs an account; without one the engine shows.
-    expect(play("friend")).toEqual({ view: "play", opponent: "engine" });
+    expect(play("friend")).toStrictEqual({ view: "play", opponent: "engine" });
     useLichessStore.setState({
       status: { account: lichessAccount, connecting: false, tokenRejected: false }
     });
-    expect(play(null)).toEqual({ view: "play", opponent: "pool" });
-    expect(play("friend")).toEqual({ view: "play", opponent: "friend" });
+    expect(play(null)).toStrictEqual({ view: "play", opponent: "pool" });
+    expect(play("friend")).toStrictEqual({ view: "play", opponent: "friend" });
     // Chosen this session: kept whatever the settings say.
     useLichessStore.getState().setPlayOpponent("ai");
-    expect(play("board")).toEqual({ view: "play", opponent: "ai" });
+    expect(play("board")).toStrictEqual({ view: "play", opponent: "ai" });
   });
 
   it("pushes, replaces or records nothing", () => {
@@ -199,10 +202,10 @@ describe("history restore", () => {
   it("decides how each board comes back", () => {
     loadSaved("g1");
     const same = captureBoard("notation", null);
-    expect(planBoardRestore(same)).toEqual({ kind: "same" });
+    expect(planBoardRestore(same)).toStrictEqual({ kind: "same" });
 
     loadSaved("g2");
-    expect(planBoardRestore(same)).toEqual({ kind: "saved", gameId: "g1" });
+    expect(planBoardRestore(same)).toStrictEqual({ kind: "saved", gameId: "g1" });
 
     loadSaved(null);
     const unsaved = captureBoard("notation", null);
@@ -210,12 +213,14 @@ describe("history restore", () => {
     expect(planBoardRestore(unsaved)).toMatchObject({ kind: "session", session: unsaved.session });
 
     // A puzzle starts again rather than its position coming back mid-solution.
-    expect(planBoardRestore({ ...same, puzzle: { sample: puzzle }, puzzleSet: set })).toEqual({
-      kind: "puzzle",
-      sample: puzzle,
-      set
-    });
-    expect(planBoardRestore({ ...same, puzzle: { sample: puzzle } })).toEqual({
+    expect(planBoardRestore({ ...same, puzzle: { sample: puzzle }, puzzleSet: set })).toStrictEqual(
+      {
+        kind: "puzzle",
+        sample: puzzle,
+        set
+      }
+    );
+    expect(planBoardRestore({ ...same, puzzle: { sample: puzzle } })).toStrictEqual({
       kind: "puzzle",
       sample: puzzle,
       set: null
@@ -228,10 +233,10 @@ describe("history restore", () => {
     loadSaved(null);
     const unsaved = captureBoard("notation", set, true);
     loadSaved("g2");
-    expect(planBoardRestore(saved)).toEqual({ kind: "saved", gameId: "g1" });
-    expect(continuedPuzzleSet(saved)).toEqual(set);
+    expect(planBoardRestore(saved)).toStrictEqual({ kind: "saved", gameId: "g1" });
+    expect(continuedPuzzleSet(saved)).toStrictEqual(set);
     expect(planBoardRestore(unsaved)).toMatchObject({ kind: "session" });
-    expect(continuedPuzzleSet(unsaved)).toEqual(set);
+    expect(continuedPuzzleSet(unsaved)).toStrictEqual(set);
     // An unrelated game has no set to keep; a puzzle starts its set itself.
     expect(continuedPuzzleSet(captureBoard("notation", set))).toBeNull();
     expect(continuedPuzzleSet({ ...saved, puzzle: { sample: puzzle } })).toBeNull();
@@ -241,9 +246,9 @@ describe("history restore", () => {
     loadSaved("g1");
     const online = { ...captureBoard("notation", null), lichessGameId: "lx" };
     live("lx");
-    expect(planBoardRestore(online)).toEqual({ kind: "live" });
+    expect(planBoardRestore(online)).toStrictEqual({ kind: "live" });
     live("lx", true);
-    expect(planBoardRestore(online)).toEqual({ kind: "same" });
+    expect(planBoardRestore(online)).toStrictEqual({ kind: "same" });
   });
 
   it("says which entries would take the board from a live Lichess game", () => {
@@ -256,7 +261,7 @@ describe("history restore", () => {
       { view: "game", board: { ...board, lichessGameId: "lx" } },
       { view: "game-review", board, tab: "moves" }
     ];
-    expect(entries.map((entry) => replacesLiveBoard(entry, "lx"))).toEqual([
+    expect(entries.map((entry) => replacesLiveBoard(entry, "lx"))).toStrictEqual([
       false,
       true,
       true,
@@ -279,7 +284,7 @@ describe("puzzle session", () => {
   });
 
   it("asks for the set's next puzzle without those already shown, and nothing without a dataset", () => {
-    expect(nextPuzzleInput(config, ["p1", "p2"])).toEqual({
+    expect(nextPuzzleInput(config, ["p1", "p2"])).toStrictEqual({
       databaseId: "db",
       excludeIds: ["p1", "p2"],
       lichess: config.lichess,

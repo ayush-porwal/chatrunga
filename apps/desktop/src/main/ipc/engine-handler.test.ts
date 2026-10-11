@@ -47,26 +47,26 @@ const cases: Array<[channel: string, args: unknown[]]> = [
   ["engines:remove", ["engine-1"]]
 ];
 
-beforeEach(() => {
-  writes.calls.length = 0;
-  writes.failing = false;
-  writes.busyOnce = false;
-  sent.length = 0;
-  readiness.mockClear();
-  vi.useRealTimers();
-});
-
 describe("engine create/update/remove", () => {
+  beforeEach(() => {
+    writes.calls.length = 0;
+    writes.failing = false;
+    writes.busyOnce = false;
+    sent.length = 0;
+    readiness.mockClear();
+    vi.useRealTimers();
+  });
+
   it.each(cases)("%s announces engines:changed after the write", async (channel, args) => {
     await call(channel, ...args);
     expect(writes.calls).toHaveLength(1);
-    expect(sent).toEqual(["engines:changed"]);
+    expect(sent).toStrictEqual(["engines:changed"]);
   });
 
   it.each(cases)("%s announces nothing when the write fails", async (channel, args) => {
     writes.failing = true;
     await expect(call(channel, ...args)).rejects.toThrow(/disk I\/O error/);
-    expect(sent).toEqual([]);
+    expect(sent).toStrictEqual([]);
     expect(readiness).not.toHaveBeenCalled();
   });
 
@@ -75,17 +75,17 @@ describe("engine create/update/remove", () => {
     writes.busyOnce = true;
     const created = call("engines:create", engine);
     await vi.advanceTimersByTimeAsync(0);
-    expect(sent).toEqual([]);
+    expect(sent).toStrictEqual([]);
     await vi.advanceTimersByTimeAsync(1_000);
-    await expect(created).resolves.toEqual({ id: "engine-1" });
+    await expect(created).resolves.toStrictEqual({ id: "engine-1" });
     expect(writes.calls).toHaveLength(2);
-    expect(sent).toEqual(["engines:changed"]);
+    expect(sent).toStrictEqual(["engines:changed"]);
   });
 
   it("passes the checked input to the repository, with defaults filled in", async () => {
     await call("engines:create", engine);
     await call("engines:update", "engine-1", { name: "  " });
-    expect(writes.calls).toEqual([
+    expect(writes.calls).toStrictEqual([
       [
         "create",
         expect.objectContaining({
@@ -108,7 +108,7 @@ describe("engine create/update/remove", () => {
     ["engines:remove", [42], /engine id/]
   ])("%s rejects invalid input without writing", async (channel, args, message) => {
     await expect(call(channel, ...args)).rejects.toThrow(message);
-    expect(writes.calls).toEqual([]);
-    expect(sent).toEqual([]);
+    expect(writes.calls).toStrictEqual([]);
+    expect(sent).toStrictEqual([]);
   });
 });

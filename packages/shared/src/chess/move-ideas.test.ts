@@ -20,7 +20,7 @@ describe("buildIdeaFacts", () => {
     expect(ideas).not.toBeNull();
     expect(ideas!.board.white).toBe("K h1; Q d1; R f1; P g2 h2");
     expect(ideas!.played.san).toBe("Qd4");
-    expect(ideas!.played.facts).toEqual(
+    expect(ideas!.played.facts).toStrictEqual(
       expect.arrayContaining([
         expect.stringMatching(
           /^stops protecting the rook on f1 \(the queen used to guard it; attacked by the bishop on a6, undefended\)/
@@ -45,7 +45,7 @@ describe("buildIdeaFacts", () => {
       bestUci: "d5c7",
       bestLine: ["d5c7", "e8d7", "c7a8"]
     });
-    expect(ideas!.played.facts).toEqual(
+    expect(ideas!.played.facts).toStrictEqual(
       expect.arrayContaining([
         "gives check",
         "forks the rook on a8 and the king on e8",

@@ -47,6 +47,19 @@ function payload(): ReviewInsightPayload {
   });
 }
 
+/** A request's body as text (empty without one). */
+function bodyText(init?: RequestInit): string {
+  return typeof init?.body === "string" ? init.body : "";
+}
+
+/** A provider that is down (503) for the request about `ply`, and answers the others. */
+function failingForPly(ply: number) {
+  return async (_url: string | URL, init?: RequestInit) =>
+    bodyText(init).includes(`\\"ply\\": ${ply}`)
+      ? new Response("", { status: 503 })
+      : completion(GOOD_ANSWER);
+}
+
 function completion(text: string): Response {
   return new Response(JSON.stringify({ choices: [{ message: { content: text } }] }), {
     status: 200,
@@ -75,7 +88,7 @@ describe("generateOpenRouterCommentary", () => {
     expect(init?.headers).toMatchObject({ Authorization: "Bearer unit-test-key" });
     expect(init?.body).toContain("FACTS:");
     expect(init?.body).toContain("The facts are the only source of truth");
-    expect(result.commentary).toEqual([
+    expect(result.commentary).toStrictEqual([
       {
         ply: 1,
         prose: "e4 grabs central space right away and opens lines for your queen and bishop.",
@@ -101,10 +114,10 @@ describe("generateOpenRouterCommentary", () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     const retryInit = fetchImpl.mock.calls[1][1];
-    const retryBody = JSON.parse(typeof retryInit?.body === "string" ? retryInit.body : "") as {
+    const retryBody = JSON.parse(bodyText(retryInit)) as {
       messages: { role: string; content: string }[];
     };
-    expect(retryBody.messages.map((message) => message.role)).toEqual([
+    expect(retryBody.messages.map((message) => message.role)).toStrictEqual([
       "system",
       "user",
       "assistant",
@@ -127,7 +140,7 @@ describe("generateOpenRouterCommentary", () => {
     });
 
     expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(result.commentary).toEqual([]);
+    expect(result.commentary).toStrictEqual([]);
     expect(result.error).toBe(
       "The model's answer didn't match the engine facts, even after a retry."
     );
@@ -141,7 +154,7 @@ describe("generateOpenRouterCommentary", () => {
       fetchImpl
     });
 
-    expect(result.commentary).toEqual([]);
+    expect(result.commentary).toStrictEqual([]);
     expect(result.error).toBe(
       "OpenRouter couldn't be reached. Check your connection and try again."
     );
@@ -161,7 +174,7 @@ describe("generateOpenRouterCommentary", () => {
         apiKey: "unit-test-key",
         fetchImpl
       });
-      expect(result.commentary).toEqual([]);
+      expect(result.commentary).toStrictEqual([]);
       expect(result.error).toContain(message);
       expect(JSON.stringify(result)).not.toContain("secret body");
     }
@@ -169,17 +182,13 @@ describe("generateOpenRouterCommentary", () => {
 
   it("keeps the accepted plies of a batch when one fails", async () => {
     const second = { ...payload(), game: { ...payload().game, ply: 2 } };
-    const fetchImpl = vi.fn(async (_url: string | URL, init?: RequestInit) =>
-      (typeof init?.body === "string" ? init.body : "").includes('\\"ply\\": 2')
-        ? new Response("", { status: 503 })
-        : completion(GOOD_ANSWER)
-    );
+    const fetchImpl = vi.fn(failingForPly(2));
     const result = await generateOpenRouterCommentary([payload(), second], {
       apiKey: "unit-test-key",
       fetchImpl
     });
 
-    expect(result.commentary.map((item) => item.ply)).toEqual([1]);
+    expect(result.commentary.map((item) => item.ply)).toStrictEqual([1]);
     expect(result.error).toContain("error (503)");
   });
 
@@ -192,7 +201,7 @@ describe("generateOpenRouterCommentary", () => {
     });
 
     expect(fetchImpl).not.toHaveBeenCalled();
-    expect(result).toEqual({ commentary: [], error: NO_API_KEY_ERROR });
+    expect(result).toStrictEqual({ commentary: [], error: NO_API_KEY_ERROR });
   });
 
   it("validates the renderer batch before making a provider call", () => {
@@ -238,14 +247,14 @@ describe("explainPuzzleWithOpenRouter", () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const init = fetchImpl.mock.calls[0][1];
-    const body = JSON.parse(typeof init?.body === "string" ? init.body : "") as {
+    const body = JSON.parse(bodyText(init)) as {
       messages: { content: string }[];
       max_tokens: number;
     };
     expect(body.messages[0].content).toContain("tactics puzzle");
     expect(body.messages[1].content).toContain('"solutionSan"');
     expect(body.max_tokens).toBe(350);
-    expect(result).toEqual({
+    expect(result).toStrictEqual({
       explanation: {
         headline: "The f7 pawn had one defender",
         prose: expect.stringContaining("Qxf7#"),
@@ -275,7 +284,7 @@ describe("explainPuzzleWithOpenRouter", () => {
       apiKey: "unit-test-key",
       fetchImpl: always
     });
-    expect(failed).toEqual({
+    expect(failed).toStrictEqual({
       explanation: null,
       error: expect.stringContaining("didn't match the engine facts")
     });
@@ -297,12 +306,14 @@ describe("explainPuzzleWithOpenRouter", () => {
       fetchImpl,
       signal: controller.signal
     });
-    expect(result).toEqual({ explanation: null, error: null, cancelled: true });
+    expect(result).toStrictEqual({ explanation: null, error: null, cancelled: true });
   });
 
   it("needs a key and a valid payload before any provider call", async () => {
     const fetchImpl = vi.fn();
-    expect(await explainPuzzleWithOpenRouter(puzzlePayload(), { apiKey: " ", fetchImpl })).toEqual({
+    expect(
+      await explainPuzzleWithOpenRouter(puzzlePayload(), { apiKey: " ", fetchImpl })
+    ).toStrictEqual({
       explanation: null,
       error: NO_API_KEY_ERROR
     });

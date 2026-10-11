@@ -23,17 +23,17 @@ describe("game title helpers", () => {
     expect(gamePlayerNames({ headers: {}, mode: "freeplay", engineSide: null }, null)).toBeNull();
     expect(
       gamePlayerNames({ headers: { white: "Morphy" }, mode: "freeplay", engineSide: null }, null)
-    ).toEqual({ white: "Morphy", black: "Black" });
+    ).toStrictEqual({ white: "Morphy", black: "Black" });
     expect(
       gamePlayerNames({ headers: {}, mode: "engine", engineSide: "black" }, "Stockfish")
-    ).toEqual({ white: "You", black: "Stockfish" });
+    ).toStrictEqual({ white: "You", black: "Stockfish" });
   });
 
   it("shows engines by their plain name, never with the managed marker", () => {
     // The engine of a game being played.
     expect(
       gamePlayerNames({ headers: {}, mode: "engine", engineSide: "white" }, "Stockfish (managed)")
-    ).toEqual({ white: "Stockfish", black: "You" });
+    ).toStrictEqual({ white: "Stockfish", black: "You" });
     // A name saved by an older build.
     expect(
       gamePlayerNames(
@@ -44,7 +44,7 @@ describe("game title helpers", () => {
         },
         null
       )
-    ).toEqual({ white: "You", black: "Maia 1500" });
+    ).toStrictEqual({ white: "You", black: "Maia 1500" });
   });
 
   it("treats '*' as undecided", () => {

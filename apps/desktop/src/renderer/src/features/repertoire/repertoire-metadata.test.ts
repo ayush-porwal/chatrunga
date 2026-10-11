@@ -39,10 +39,10 @@ function stored(patch: Partial<RepertoireDetail> = {}): RepertoireDetail {
 
 describe("repertoire metadata form", () => {
   it("reads tags as a comma-separated line: trimmed, blanks dropped, each once", () => {
-    expect(parseTags(" sharp, main line,, sharp ,")).toEqual(["sharp", "main line"]);
-    expect(parseTags("")).toEqual([]);
+    expect(parseTags(" sharp, main line,, sharp ,")).toStrictEqual(["sharp", "main line"]);
+    expect(parseTags("")).toStrictEqual([]);
     expect(formatTags(["sharp", "main line"])).toBe("sharp, main line");
-    expect(metadataForm(opened)).toEqual({
+    expect(metadataForm(opened)).toStrictEqual({
       name: "Najdorf",
       description: "Main lines",
       tags: "sicilian, sharp"
@@ -55,34 +55,36 @@ describe("repertoire metadata form", () => {
     expect(nameError(` ${"n".repeat(LIMITS.name)} `)).toBeNull();
     expect(nameError("n".repeat(LIMITS.name + 1))).toMatch(/200 characters/);
     const ok = { name: "A", description: "d".repeat(LIMITS.description), tags: "a, b" };
-    expect(metadataErrors(ok)).toEqual({});
-    expect(metadataErrors({ ...ok, description: "d".repeat(LIMITS.description + 1) })).toEqual({
+    expect(metadataErrors(ok)).toStrictEqual({});
+    expect(
+      metadataErrors({ ...ok, description: "d".repeat(LIMITS.description + 1) })
+    ).toStrictEqual({
       description: "Keep the description to 5,000 characters."
     });
     const many = Array.from({ length: LIMITS.tags + 1 }, (_, index) => `t${index}`).join(",");
     expect(metadataErrors({ ...ok, tags: many }).tags).toBe("Use at most 32 tags.");
     // Repeats count once.
-    expect(metadataErrors({ ...ok, tags: `${many.split(",").slice(0, 32).join(",")},t0` })).toEqual(
-      {}
-    );
-    expect(metadataErrors({ ...ok, name: "", tags: "x".repeat(LIMITS.tag + 1) })).toEqual({
+    expect(
+      metadataErrors({ ...ok, tags: `${many.split(",").slice(0, 32).join(",")},t0` })
+    ).toStrictEqual({});
+    expect(metadataErrors({ ...ok, name: "", tags: "x".repeat(LIMITS.tag + 1) })).toStrictEqual({
       name: "Enter a name.",
       tags: `“${"x".repeat(20)}…” is longer than 50 characters.`
     });
   });
 
   it("patches only the fields the form changed, as the main process stores them", () => {
-    expect(metadataPatch(opened, metadataForm(opened))).toEqual({});
+    expect(metadataPatch(opened, metadataForm(opened))).toStrictEqual({});
     expect(
       metadataPatch(opened, {
         name: " Najdorf ",
         description: "Main lines ",
         tags: "sicilian,sharp"
       })
-    ).toEqual({});
+    ).toStrictEqual({});
     expect(
       metadataPatch(opened, { name: "Najdorf 6.Bg5", description: "", tags: "sharp, sicilian" })
-    ).toEqual({ name: "Najdorf 6.Bg5", description: "", tags: ["sharp", "sicilian"] });
+    ).toStrictEqual({ name: "Najdorf 6.Bg5", description: "", tags: ["sharp", "sicilian"] });
   });
 
   it("sees a conflict only in the metadata, not in other writes to the repertoire", () => {
@@ -131,17 +133,17 @@ describe("saveMetadata", () => {
   it("writes nothing when the draft can't be saved, the form changes nothing, or it conflicts", async () => {
     const unsaved = deps([stored()]);
     unsaved.flushDraft.mockResolvedValue(false);
-    expect(await saveMetadata(unsaved)).toEqual({ kind: "draft-unsaved" });
+    expect(await saveMetadata(unsaved)).toStrictEqual({ kind: "draft-unsaved" });
     expect(unsaved.load).not.toHaveBeenCalled();
 
     const same = deps([stored()]);
-    expect(await saveMetadata({ ...same, form: metadataForm(opened) })).toEqual({
+    expect(await saveMetadata({ ...same, form: metadataForm(opened) })).toStrictEqual({
       kind: "unchanged"
     });
 
     const renamed = stored({ name: "Renamed elsewhere", revision: 5 });
     const conflict = deps([renamed]);
-    expect(await saveMetadata(conflict)).toEqual({ kind: "conflict", stored: renamed });
+    expect(await saveMetadata(conflict)).toStrictEqual({ kind: "conflict", stored: renamed });
     expect(conflict.write).not.toHaveBeenCalled();
   });
 

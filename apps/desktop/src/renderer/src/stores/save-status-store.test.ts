@@ -11,9 +11,9 @@ describe("save status store", () => {
     const retry = vi.fn();
     store().setFailed("disk full", retry, "a", 1);
     expect(store().error).toBe("disk full");
-    expect(failedGames()).toEqual(["a"]);
+    expect(failedGames()).toStrictEqual(["a"]);
     store().retry();
-    expect(retry).toHaveBeenCalledOnce();
+    expect(retry).toHaveBeenCalledTimes(1);
     store().clear();
     expect(store()).toMatchObject({ error: null, failures: [] });
   });
@@ -21,7 +21,7 @@ describe("save status store", () => {
   it("clears a failure only when the game that failed is saved", () => {
     store().setFailed("disk full", vi.fn(), "left", 1);
     store().saved("loaded", 2);
-    expect(failedGames()).toEqual(["left"]);
+    expect(failedGames()).toStrictEqual(["left"]);
     store().saved("left", 3);
     expect(store()).toMatchObject({ error: null, failures: [] });
   });
@@ -29,7 +29,7 @@ describe("save status store", () => {
   it("keeps a newer failure when an older write of the same game saves after it", () => {
     store().setFailed("disk full", vi.fn(), "a", 2);
     store().saved("a", 1);
-    expect(failedGames()).toEqual(["a"]);
+    expect(failedGames()).toStrictEqual(["a"]);
     // And an older failure settling after a newer write saved is out of date.
     store().saved("a", 3);
     store().setFailed("disk full", vi.fn(), "a", 2);
@@ -41,11 +41,11 @@ describe("save status store", () => {
     const retryB = vi.fn();
     store().setFailed("disk full", retryA, "a", 1);
     store().setFailed("read-only", retryB, "b", 2);
-    expect(failedGames()).toEqual(["a", "b"]);
+    expect(failedGames()).toStrictEqual(["a", "b"]);
     expect(store().error).toBe("read-only");
     store().retry();
-    expect(retryA).toHaveBeenCalledOnce();
-    expect(retryB).toHaveBeenCalledOnce();
+    expect(retryA).toHaveBeenCalledTimes(1);
+    expect(retryB).toHaveBeenCalledTimes(1);
 
     store().saved("b", 3);
     expect(store().error).toBe("disk full");

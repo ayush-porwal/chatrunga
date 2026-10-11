@@ -70,6 +70,16 @@ export function nodeAt(tree: MoveNode[], line: string[]): MoveNode {
   return node;
 }
 
+/** The tree with node `id` renamed to `newId` (its links are left to the caller). */
+export function withNodeId(tree: readonly MoveNode[], id: string, newId: string): MoveNode[] {
+  return tree.map((node) => (node.id === id ? { ...node, id: newId } : node));
+}
+
+/** The tree with `comment` on the nodes playing `uci`. */
+export function withComment(tree: readonly MoveNode[], uci: string, comment: string): MoveNode[] {
+  return tree.map((node) => (node.uci === uci ? { ...node, comment } : node));
+}
+
 type SaveOptions = {
   chapterId?: string;
   kind?: "opening" | "reference";

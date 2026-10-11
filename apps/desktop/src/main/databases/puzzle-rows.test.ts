@@ -31,9 +31,13 @@ const lichessFilters = (
   }
 });
 
+/** The row with the field `from` replaced by `to`. */
+const withField = (row: readonly string[], from: string, to: string) =>
+  row.map((value) => (value === from ? to : value));
+
 describe("parseCsvLine", () => {
   it("splits quoted fields and unescapes doubled quotes", () => {
-    expect(parseCsvLine('a,"b,c","say ""hi""",')).toEqual(["a", "b,c", 'say "hi"', ""]);
+    expect(parseCsvLine('a,"b,c","say ""hi""",')).toStrictEqual(["a", "b,c", 'say "hi"', ""]);
   });
 });
 
@@ -115,11 +119,7 @@ describe("sampleFromPositionRow", () => {
 
   it("skips a row whose best move can't be played", () => {
     expect(
-      sampleFromPositionRow(
-        database,
-        row.map((value) => (value === "e2e4" ? "e2e5" : value)),
-        { databaseId: "db1" }
-      )
+      sampleFromPositionRow(database, withField(row, "e2e4", "e2e5"), { databaseId: "db1" })
     ).toBeNull();
   });
 

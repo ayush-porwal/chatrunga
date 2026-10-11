@@ -44,7 +44,12 @@ const onBest = (index: number): MovePosition => ({
 describe("alternativeGroup", () => {
   it("lists the game's move, its BEST line, then the variations played instead of it", () => {
     const group = alternativeGroup(trap.tree, node(nxe5), bestLineOf)!;
-    expect(group.alternatives.map((item) => item.kind)).toEqual(["line", "best", "line", "line"]);
+    expect(group.alternatives.map((item) => item.kind)).toStrictEqual([
+      "line",
+      "best",
+      "line",
+      "line"
+    ]);
     expect(group.current).toBe(0);
     expect(group.depth).toBe(0);
   });

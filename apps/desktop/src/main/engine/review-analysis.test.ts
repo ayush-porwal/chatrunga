@@ -72,7 +72,7 @@ describe("Maia policy from real lc0 VerboseMoveStats output", () => {
     const sum = low.stats.filter((s) => s.move !== "node").reduce((acc, s) => acc + s.p, 0);
     expect(sum).toBeGreaterThan(0.98);
     expect(sum).toBeLessThan(1.02);
-    expect(low.wdl).toEqual({ win: 496, draw: 39, loss: 465 });
+    expect(low.wdl).toStrictEqual({ win: 496, draw: 39, loss: 465 });
 
     const p1100 = buildRatingPrediction({
       rating: 1100,
@@ -88,16 +88,16 @@ describe("Maia policy from real lc0 VerboseMoveStats output", () => {
       playedUci: "f1b5",
       bestUci: "f1b5"
     })!;
-    expect(p1100.topMoves[0]).toEqual({ uci: "f1c4", prob: 0.2375 });
-    expect(p1900.topMoves[0]).toEqual({ uci: "f1c4", prob: 0.3123 });
-    expect(p1100.topMoves.length).toBe(10);
+    expect(p1100.topMoves[0]).toStrictEqual({ uci: "f1c4", prob: 0.2375 });
+    expect(p1900.topMoves[0]).toStrictEqual({ uci: "f1c4", prob: 0.3123 });
+    expect(p1100.topMoves).toHaveLength(10);
     // Not the old uniform 0.20 softmax artefact: the played move's probability differs by level.
     expect(p1100.playedProb).not.toBeCloseTo(p1900.playedProb!, 2);
     expect(p1900.playedProb).toBeCloseTo(0.2318, 4);
     expect(p1900.playedRank).toBe(2);
     expect(p1900.bestRank).toBe(2);
     expect(p1100.value).toBeCloseTo(0.0331, 4);
-    expect(p1100.wdl).toEqual({ win: 496, draw: 39, loss: 465 });
+    expect(p1100.wdl).toStrictEqual({ win: 496, draw: 39, loss: 465 });
   });
 
   it("reports a legal-but-unlisted played move as probability 0 with no rank", () => {
@@ -159,7 +159,7 @@ describe("linesFromInfoStream", () => {
     ];
     const [only] = linesFromInfoStream(blackToMove, infos);
     expect(only.pv[0]).toBe("e7e5");
-    expect(only.scoreWhite).toEqual({ type: "cp", value: -20 });
+    expect(only.scoreWhite).toStrictEqual({ type: "cp", value: -20 });
   });
 });
 
@@ -226,7 +226,7 @@ describe("tacticalMotifsForBestMove", () => {
   it("does not call a plain capture or check a tactic", () => {
     // 1.e4 d5: exd5 is a capture of a defended pawn — not a tactic.
     const fen = "rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2";
-    expect(tacticalMotifsForBestMove(fen, "e4d5", { type: "cp", value: 30 })).toEqual([]);
+    expect(tacticalMotifsForBestMove(fen, "e4d5", { type: "cp", value: 30 })).toStrictEqual([]);
   });
 
   it("does not call a recapture on the last move's square 'hanging'", () => {
@@ -272,7 +272,7 @@ describe("Maia engine selection", () => {
       ],
       [1100, 1500, 1900]
     );
-    expect(selected.map((e) => [e.id, e.maiaRating])).toEqual([
+    expect(selected.map((e) => [e.id, e.maiaRating])).toStrictEqual([
       ["m1100", 1100],
       ["m1500", 1500]
     ]);

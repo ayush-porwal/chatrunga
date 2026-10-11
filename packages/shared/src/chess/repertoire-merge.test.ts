@@ -72,6 +72,13 @@ function chapterOf(tree: MoveNode[], nodeMeta: Record<string, RepertoireNodeMeta
   return chapter;
 }
 
+/** The moves the decision at the start position accepts (it must exist). */
+function acceptedAtStart(decisions: ReturnType<typeof collectDecisions>): string[] {
+  const decision = [...decisions.values()].find((item) => item.fen === START_FEN);
+  if (!decision) throw new Error("no decision at the start position");
+  return [...decision.acceptedUcis];
+}
+
 const node = (tree: MoveNode[], id: string) => tree.find((item) => item.id === id)!;
 
 describe("mergeIntoChapter", () => {
@@ -95,7 +102,7 @@ describe("mergeIntoChapter", () => {
     });
     expect(result.added).toBe(2);
     expect(result.alreadyPresent).toBe(3);
-    expect({ ...result.idMap }).toEqual({
+    expect({ ...result.idMap }).toStrictEqual({
       root: "root",
       x1: "n1",
       x2: "n2",
@@ -107,13 +114,13 @@ describe("mergeIntoChapter", () => {
     expect(node(tree, "n2").comment).toBe("existing comment");
     expect(node(tree, "n3").comment).toBe("fills an empty one");
     expect(node(tree, "n4")).toMatchObject({ parentId: "n3", uci: "b8c6", ply: 4 });
-    expect(node(tree, "n4").arrows).toEqual([{ orig: "b8", dest: "c6", color: "green" }]);
-    expect(node(tree, "n1").children).toEqual(["n2", "n5"]);
-    expect(result.chapter.nodeMeta.n4).toEqual({ edge: "covered" });
+    expect(node(tree, "n4").arrows).toStrictEqual([{ orig: "b8", dest: "c6", color: "green" }]);
+    expect(node(tree, "n1").children).toStrictEqual(["n2", "n5"]);
+    expect(result.chapter.nodeMeta.n4).toStrictEqual({ edge: "covered" });
     expect(result.chapter.nodeCount).toBe(5);
     // The input chapter is left untouched.
     expect(existing).toHaveLength(4);
-    expect(node(existing, "n1").children).toEqual(["n2"]);
+    expect(node(existing, "n1").children).toStrictEqual(["n2"]);
   });
 
   it("is idempotent: merging the same material again adds nothing", () => {
@@ -128,7 +135,7 @@ describe("mergeIntoChapter", () => {
     const second = mergeIntoChapter(first.chapter, incoming);
     expect(second.added).toBe(0);
     expect(second.alreadyPresent).toBe(3);
-    expect(second.chapter.tree).toEqual(first.chapter.tree);
+    expect(second.chapter.tree).toStrictEqual(first.chapter.tree);
   });
 
   it("allocates n-ids beyond the largest and skips taken ones; new moves default to reference", () => {
@@ -141,7 +148,7 @@ describe("mergeIntoChapter", () => {
       nodeMeta: {}
     });
     expect(result.idMap.x1).toBe("n8");
-    expect(result.chapter.nodeMeta.n8).toEqual({ edge: "reference" });
+    expect(result.chapter.nodeMeta.n8).toStrictEqual({ edge: "reference" });
   });
 
   it("upgrades a matched reference edge only when allowed, and never downgrades", () => {
@@ -162,10 +169,10 @@ describe("mergeIntoChapter", () => {
       },
       upgradeNodeIds: ["x1", "x2"]
     });
-    expect(result.chapter.nodeMeta.n1).toEqual({ edge: "included" });
-    expect(result.chapter.nodeMeta.n2).toEqual({ edge: "covered", trainingStop: true });
+    expect(result.chapter.nodeMeta.n1).toStrictEqual({ edge: "included" });
+    expect(result.chapter.nodeMeta.n2).toStrictEqual({ edge: "covered", trainingStop: true });
     // Not in upgradeNodeIds: stays reference.
-    expect(result.chapter.nodeMeta.n3).toEqual({ edge: "reference" });
+    expect(result.chapter.nodeMeta.n3).toStrictEqual({ edge: "reference" });
   });
 
   it("applies an incoming training start only when the chapter already marks one", () => {
@@ -175,12 +182,12 @@ describe("mergeIntoChapter", () => {
       nodeMeta: { x1: { edge: "covered" as const, trainingStart: true } }
     };
     const plain = mergeIntoChapter(chapterOf(treeOf([["e2e4"]], "n")), incoming);
-    expect(plain.chapter.nodeMeta[plain.idMap.x1]).toEqual({ edge: "covered" });
+    expect(plain.chapter.nodeMeta[plain.idMap.x1]).toStrictEqual({ edge: "covered" });
     const marked = mergeIntoChapter(
       chapterOf(treeOf([["e2e4"]], "n"), { n1: { edge: "included", trainingStart: true } }),
       incoming
     );
-    expect(marked.chapter.nodeMeta[marked.idMap.x1]).toEqual({
+    expect(marked.chapter.nodeMeta[marked.idMap.x1]).toStrictEqual({
       edge: "covered",
       trainingStart: true
     });
@@ -220,13 +227,13 @@ describe("mergeIntoChapter", () => {
     });
     const metaOf = (id: string) => result.chapter.nodeMeta[result.idMap[id]];
     // The first new node of the d4 route is the start; the nodes below it are not.
-    expect(metaOf("x1")).toEqual({ edge: "included", trainingStart: true });
-    expect(metaOf("x2")).toEqual({ edge: "covered" });
-    expect(metaOf("x3")).toEqual({ edge: "included" });
+    expect(metaOf("x1")).toStrictEqual({ edge: "included", trainingStart: true });
+    expect(metaOf("x2")).toStrictEqual({ edge: "covered" });
+    expect(metaOf("x3")).toStrictEqual({ edge: "included" });
     // Below the existing start: no new start.
-    expect(metaOf("x7")).toEqual({ edge: "covered" });
+    expect(metaOf("x7")).toStrictEqual({ edge: "covered" });
     // No included move follows: left as is.
-    expect(metaOf("x9")).toEqual({ edge: "reference" });
+    expect(metaOf("x9")).toStrictEqual({ edge: "reference" });
     const decisions = collectDecisions("white", [result.chapter]);
     const d4Position = node(result.chapter.tree, result.idMap.x2).fenAfter;
     expect([...decisions.values()].some((decision) => decision.fen === d4Position)).toBe(true);
@@ -238,7 +245,7 @@ describe("mergeIntoChapter", () => {
       tree: treeOf([["d2d4", "d7d5", "c2c4"]], "x"),
       nodeMeta: { x1: { edge: "included" }, x2: { edge: "covered" }, x3: { edge: "included" } }
     });
-    expect(result.chapter.nodeMeta[result.idMap.x1]).toEqual({ edge: "included" });
+    expect(result.chapter.nodeMeta[result.idMap.x1]).toStrictEqual({ edge: "included" });
   });
 
   it("upgrades a covered own move to included when the incoming edge is included", () => {
@@ -255,10 +262,10 @@ describe("mergeIntoChapter", () => {
       nodeMeta: { x1: { edge: "included" }, x2: { edge: "covered" }, x3: { edge: "reference" } },
       upgradeNodeIds: ["x1", "x2"]
     });
-    expect(result.chapter.nodeMeta.n1).toEqual({ edge: "included" });
-    expect(result.chapter.nodeMeta.n2).toEqual({ edge: "covered" });
+    expect(result.chapter.nodeMeta.n1).toStrictEqual({ edge: "included" });
+    expect(result.chapter.nodeMeta.n2).toStrictEqual({ edge: "covered" });
     const after = collectDecisions("white", [result.chapter]);
-    expect([...after.values()].map((decision) => decision.fen)).toEqual([START_FEN]);
+    expect([...after.values()].map((decision) => decision.fen)).toStrictEqual([START_FEN]);
     // Not in upgradeNodeIds: stays covered.
     const kept = mergeIntoChapter(chapterOf(existing, meta), {
       rootFen: START_FEN,
@@ -266,7 +273,7 @@ describe("mergeIntoChapter", () => {
       nodeMeta: { x1: { edge: "included" } },
       upgradeNodeIds: []
     });
-    expect(kept.chapter.nodeMeta.n1).toEqual({ edge: "covered" });
+    expect(kept.chapter.nodeMeta.n1).toStrictEqual({ edge: "covered" });
   });
 
   it("a covered own move accepted before the chapter's training start trains from its position", () => {
@@ -283,11 +290,10 @@ describe("mergeIntoChapter", () => {
       nodeMeta: { x1: { edge: "included" }, x2: { edge: "covered" }, x3: { edge: "included" } },
       upgradeNodeIds: ["x1", "x2", "x3"]
     });
-    expect(result.chapter.nodeMeta.n1).toEqual({ edge: "included" });
-    expect(result.chapter.nodeMeta.root).toEqual({ edge: "included", trainingStart: true });
+    expect(result.chapter.nodeMeta.n1).toStrictEqual({ edge: "included" });
+    expect(result.chapter.nodeMeta.root).toStrictEqual({ edge: "included", trainingStart: true });
     const decisions = collectDecisions("white", [result.chapter]);
-    const root = [...decisions.values()].find((decision) => decision.fen === START_FEN);
-    expect(root && [...root.acceptedUcis]).toEqual(["d2d4"]);
+    expect(acceptedAtStart(decisions)).toStrictEqual(["d2d4"]);
     expect(decisions.size).toBe(2);
     // Already under the start: nothing moves.
     const below = mergeIntoChapter(
@@ -298,7 +304,7 @@ describe("mergeIntoChapter", () => {
         nodeMeta: { x1: { edge: "included" } }
       }
     );
-    expect(below.chapter.nodeMeta.n2).toEqual({ edge: "covered", trainingStart: true });
+    expect(below.chapter.nodeMeta.n2).toStrictEqual({ edge: "covered", trainingStart: true });
   });
 
   it("a new included first move trains from its position when no other move would start", () => {
@@ -313,11 +319,10 @@ describe("mergeIntoChapter", () => {
       tree: treeOf([["d2d4", "d7d5", "c2c4"]], "x"),
       nodeMeta: { x1: { edge: "included" }, x2: { edge: "covered" }, x3: { edge: "included" } }
     });
-    expect(result.chapter.nodeMeta.root).toEqual({ edge: "included", trainingStart: true });
-    expect(result.chapter.nodeMeta[result.idMap.x1]).toEqual({ edge: "included" });
+    expect(result.chapter.nodeMeta.root).toStrictEqual({ edge: "included", trainingStart: true });
+    expect(result.chapter.nodeMeta[result.idMap.x1]).toStrictEqual({ edge: "included" });
     const decisions = collectDecisions("white", [result.chapter]);
-    const root = [...decisions.values()].find((decision) => decision.fen === START_FEN);
-    expect(root && [...root.acceptedUcis]).toEqual(["d2d4"]);
+    expect(acceptedAtStart(decisions)).toStrictEqual(["d2d4"]);
   });
 
   it("accepting a covered move doesn't start training the chapter's other moves before its start", () => {
@@ -335,7 +340,7 @@ describe("mergeIntoChapter", () => {
       tree: treeOf([["d2d4"]], "x"),
       nodeMeta: { x1: { edge: "included" } }
     });
-    expect(result.chapter.nodeMeta.n5).toEqual({ edge: "included" });
+    expect(result.chapter.nodeMeta.n5).toStrictEqual({ edge: "included" });
     expect(nodeMetaOf(result.chapter.nodeMeta, "root").trainingStart).toBeUndefined();
     const decisions = collectDecisions("white", [result.chapter]);
     expect([...decisions.values()].some((decision) => decision.fen === START_FEN)).toBe(false);
@@ -357,7 +362,7 @@ describe("mergeIntoChapter", () => {
         nodeMeta: { x1: { edge: "included" } }
       }
     );
-    expect(upgraded.chapter.nodeMeta.n4).toEqual({ edge: "included" });
+    expect(upgraded.chapter.nodeMeta.n4).toStrictEqual({ edge: "included" });
     expect(nodeMetaOf(upgraded.chapter.nodeMeta, "root").trainingStart).toBeUndefined();
     const fresh = mergeIntoChapter(chapterOf(treeOf([["e2e4", "e7e5", "g1f3"]], "n"), meta), {
       rootFen: START_FEN,
@@ -365,7 +370,7 @@ describe("mergeIntoChapter", () => {
       nodeMeta: { x1: { edge: "included" }, x2: { edge: "covered" }, x3: { edge: "included" } }
     });
     expect(nodeMetaOf(fresh.chapter.nodeMeta, "root").trainingStart).toBeUndefined();
-    expect(fresh.chapter.nodeMeta[fresh.idMap.x1]).toEqual({
+    expect(fresh.chapter.nodeMeta[fresh.idMap.x1]).toStrictEqual({
       edge: "included",
       trainingStart: true
     });

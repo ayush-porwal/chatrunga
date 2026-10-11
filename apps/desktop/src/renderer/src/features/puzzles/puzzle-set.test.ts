@@ -106,7 +106,7 @@ describe("puzzle set", () => {
       { id: "pos", sourceId: "chess-positions", kind: "position" as const },
       { id: "lp", sourceId: "lichess-puzzles", kind: "puzzle" as const }
     ]);
-    expect(installed.map((item) => item.id)).toEqual(["pos", "lp"]);
+    expect(installed.map((item) => item.id)).toStrictEqual(["pos", "lp"]);
     expect(selectedPuzzleDatabase(installed, "pos")?.id).toBe("pos");
     // Not chosen, or chosen and removed since.
     expect(selectedPuzzleDatabase(installed, "")?.id).toBe("lp");
@@ -147,18 +147,18 @@ describe("the Puzzles page's set summary", () => {
 
   it("lists a Lichess set's filters, the range around the rating when asked", () => {
     const own = drawnRatingRange(draft, true, 1700);
-    expect(own).toEqual({ ratingMin: 600, ratingMax: 2800, aroundRating: false });
-    expect(activeFilterLabels(draft, true, own)).toEqual([
+    expect(own).toStrictEqual({ ratingMin: 600, ratingMax: 2800, aroundRating: false });
+    expect(activeFilterLabels(draft, true, own)).toStrictEqual([
       "Rated 600–2800",
       "Either side to move",
       "Any theme"
     ]);
     const harder = { ...draft, difficulty: "harder" as const, side: "black" as const };
     const around = drawnRatingRange(harder, true, 1700);
-    expect(around).toEqual({ ...ratingRangeFor(1700, "harder"), aroundRating: true });
+    expect(around).toStrictEqual({ ...ratingRangeFor(1700, "harder"), aroundRating: true });
     expect(
       activeFilterLabels({ ...harder, themes: ["fork"], popularityMin: 50 }, true, around)
-    ).toEqual([
+    ).toStrictEqual([
       `Rated ${around.ratingMin}–${around.ratingMax}`,
       "Harder, around your rating",
       "Black to move",
@@ -167,7 +167,7 @@ describe("the Puzzles page's set summary", () => {
     ]);
     // A position set has no rating to draw around.
     expect(drawnRatingRange(harder, false, 1700).aroundRating).toBe(false);
-    expect(activeFilterLabels({ ...draft, positionTags: [] }, false, own)).toEqual([
+    expect(activeFilterLabels({ ...draft, positionTags: [] }, false, own)).toStrictEqual([
       "Difficulty 1–4",
       "Any tag"
     ]);

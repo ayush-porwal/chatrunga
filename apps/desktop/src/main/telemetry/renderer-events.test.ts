@@ -30,7 +30,7 @@ function outboxTimes(db: ReturnType<typeof telemetryDatabase>): number[] {
 
 describe("renderer telemetry events: validation", () => {
   it("accepts the allowlisted shapes", () => {
-    expect(parseRendererEvent({ type: "activity", kind: "study" })).toEqual({
+    expect(parseRendererEvent({ type: "activity", kind: "study" })).toStrictEqual({
       type: "activity",
       kind: "study"
     });
@@ -85,7 +85,7 @@ describe("renderer telemetry events: validation", () => {
   it("drops a malformed commentary context instead of trusting it", () => {
     expect(
       parseCommentaryRequestContext({ reviewId: REVIEW, gameId: "g1", trigger: "user_retry" })
-    ).toEqual({
+    ).toStrictEqual({
       reviewId: REVIEW,
       gameId: "g1",
       trigger: "user_retry"
@@ -123,7 +123,7 @@ describe("renderer telemetry events: counting", () => {
       events
         .filter((event) => event.event === "commentary_viewed")
         .map((event) => [event.ply, event.served_from_cache])
-    ).toEqual([
+    ).toStrictEqual([
       [5, true],
       [6, true]
     ]);
@@ -136,7 +136,7 @@ describe("renderer telemetry events: counting", () => {
       events
         .filter((event) => event.event === "activation_milestone")
         .map((event) => event.milestone)
-    ).toEqual(["commentary_viewed"]);
+    ).toStrictEqual(["commentary_viewed"]);
     // Game ids are pseudonymised before anything is stored.
     expect(JSON.stringify(events)).not.toContain('"g1"');
   });
@@ -156,8 +156,10 @@ describe("renderer telemetry events: counting", () => {
     expect(events.filter((event) => event === "review_studied")).toHaveLength(1);
     expect(events).not.toContain("review_completed");
     expect(
-      recorded(db).find((event) => event.event === "review_opened" && event.legacy_review)
-    ).toBeTruthy();
+      recorded(db)
+        .filter((event) => event.event === "review_opened")
+        .map((event) => event.legacy_review)
+    ).toContain(true);
   });
 
   it("a new session (after inactivity) counts the same review and explanation again", () => {
@@ -209,9 +211,9 @@ describe("renderer telemetry events: counting", () => {
     now = lastEventAt + SESSION_IDLE_MS - 2;
     recordRendererEvent(service, { type: "review_opened", reviewId: REVIEW, gameId: "g1" });
     recordRendererEvent(service, { type: "review_opened", reviewId: REVIEW, gameId: "g1" });
-    const opened = recorded(db).filter(
-      (event) => event.event === "review_opened" && event.review_id === REVIEW
-    );
+    const opened = recorded(db)
+      .filter((event) => event.event === "review_opened")
+      .filter((event) => event.review_id === REVIEW);
     expect(opened).toHaveLength(1);
   });
 
@@ -221,6 +223,6 @@ describe("renderer telemetry events: counting", () => {
     service.start();
     recordRendererEvent(service, { type: "activity", kind: "play" });
     recordRendererEvent(service, { type: "review_opened", reviewId: REVIEW, gameId: "g1" });
-    expect(recorded(db)).toEqual([]);
+    expect(recorded(db)).toStrictEqual([]);
   });
 });

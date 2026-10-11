@@ -19,18 +19,18 @@ describe("telemetry properties", () => {
     );
     expect(engineFamily({ name: "Leela", executablePath: "C:\\\\x\\\\lc0.exe" })).toBe("lc0");
     expect(engineFamily({ name: "Dragon 3", executablePath: "/opt/dragon" })).toBe("other");
-    expect(modelProperties("openai/gpt-x")).toEqual({
+    expect(modelProperties("openai/gpt-x")).toStrictEqual({
       model: "openai/gpt-x",
       model_vendor: "openai",
       model_is_default: false
     });
-    expect(modelProperties(" my-own/fine-tune ")).toEqual({
+    expect(modelProperties(" my-own/fine-tune ")).toStrictEqual({
       model: "my-own/fine-tune",
       model_vendor: "custom",
       model_is_default: false
     });
     expect(modelProperties("").model_is_default).toBe(true);
-    expect([0, 10, 40, 41, 120, 300].map(plyBucket)).toEqual([
+    expect([0, 10, 40, 41, 120, 300].map(plyBucket)).toStrictEqual([
       "0",
       "1-20",
       "21-40",

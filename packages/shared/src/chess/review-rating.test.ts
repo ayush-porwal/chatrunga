@@ -111,7 +111,7 @@ describe("resolveReviewRating", () => {
         timeControl: "180+2",
         ratings
       })
-    ).toEqual({ rating: 1533, source: "game", mode: "blitz", maiaModel: 1500 });
+    ).toStrictEqual({ rating: 1533, source: "game", mode: "blitz", maiaModel: 1500 });
   });
 
   it("reads the Settings rating for the game's mode when the side has no rating", () => {
@@ -122,7 +122,7 @@ describe("resolveReviewRating", () => {
         timeControl: "180+2",
         ratings
       })
-    ).toEqual({ rating: 1200, source: "settings", mode: "blitz", maiaModel: 1200 });
+    ).toStrictEqual({ rating: 1200, source: "settings", mode: "blitz", maiaModel: 1200 });
     expect(resolveReviewRating({ side: "white", timeControl: "1800+30", ratings })).toMatchObject({
       rating: 1400,
       mode: "classical"
@@ -177,12 +177,12 @@ describe("lichessSpeedFromHeaders", () => {
   });
 
   it("ignores the Event tag of a game from anywhere else", () => {
-    expect(lichessSpeedFromHeaders({ event: "Blitz Open", site: "Berlin" }, "pgn-import")).toBe(
-      null
-    );
-    expect(lichessSpeedFromHeaders({ event: "Rated game", site: "https://lichess.org/x" })).toBe(
-      null
-    );
+    expect(
+      lichessSpeedFromHeaders({ event: "Blitz Open", site: "Berlin" }, "pgn-import")
+    ).toBeNull();
+    expect(
+      lichessSpeedFromHeaders({ event: "Rated game", site: "https://lichess.org/x" })
+    ).toBeNull();
   });
 });
 
@@ -202,7 +202,7 @@ describe("resolveGameReviewRating", () => {
         ratings,
         installedMaiaModels: [1100, 1300, 1500, 1700, 1900]
       })
-    ).toEqual({ rating: 1500, source: "settings", mode: "correspondence", maiaModel: 1500 });
+    ).toStrictEqual({ rating: 1500, source: "settings", mode: "correspondence", maiaModel: 1500 });
   });
 
   it("reads an engine game's clock from the TimeControl tag it was saved with", () => {

@@ -10,7 +10,7 @@ describe("move times from [%clk]", () => {
       { clockAfter: "0:09:48" } // black spent 2s, +5 inc
     ];
     const tc = parseTimeControl("600+5");
-    expect(tc).toEqual({ baseMs: 600_000, incrementMs: 5000 });
+    expect(tc).toStrictEqual({ baseMs: 600_000, incrementMs: 5000 });
     expect(timeSpentForMove(moves, 2, tc)).toBe(35_000);
     expect(timeSpentForMove(moves, 3, tc)).toBe(7000);
     expect(timeSpentForMove(moves, 1, tc)).toBe(15_000);
@@ -37,12 +37,12 @@ describe("move times from [%clk]", () => {
     ];
     // 3 + 2: each side's first move counts from 3:00, and every move gets the 2 s back. 2… has no
     // clock, and so 3…, whose clock has nothing of Black's to count from, has no time either.
-    expect(moveTimes(line, "180+2")).toEqual([4000, 7000, 19_000, null, 13_000, null]);
+    expect(moveTimes(line, "180+2")).toStrictEqual([4000, 7000, 19_000, null, 13_000, null]);
     // Without a time control the first moves have no start, the later ones still have a delta.
-    expect(moveTimes(line.slice(0, 3), "-")).toEqual([null, null, 17_000]);
+    expect(moveTimes(line.slice(0, 3), "-")).toStrictEqual([null, null, 17_000]);
   });
 
   it("is empty for a game without clocks", () => {
-    expect(moveTimes([{}, {}], "600")).toEqual([null, null]);
+    expect(moveTimes([{}, {}], "600")).toStrictEqual([null, null]);
   });
 });

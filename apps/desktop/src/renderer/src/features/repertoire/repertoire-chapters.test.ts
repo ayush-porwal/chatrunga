@@ -15,6 +15,18 @@ import {
 } from "./repertoire-chapters";
 import { missedPositions, nodeIdForPathLabel } from "./repertoire-model";
 
+/** The chapters' ids in order once `moves` (from chapterOrderAfterMove) are applied. */
+function orderAfter(
+  chapters: readonly { id: string; sortOrder: number }[],
+  moves: Array<[string, number]>
+): string[] {
+  const moved = new Map(moves);
+  return chapters
+    .map((chapter) => ({ ...chapter, sortOrder: moved.get(chapter.id) ?? chapter.sortOrder }))
+    .sort((left, right) => left.sortOrder - right.sortOrder)
+    .map((chapter) => chapter.id);
+}
+
 describe("chapter helpers", () => {
   it("builds a root node with the position's real ply", () => {
     expect(rootNodeFor(START_FEN)).toMatchObject({ id: "root", ply: 0, fenAfter: START_FEN });
@@ -27,7 +39,7 @@ describe("chapter helpers", () => {
       { id: "b", sortOrder: 2 },
       { id: "a", sortOrder: 0 }
     ];
-    expect(sortedChapters(chapters).map((chapter) => chapter.id)).toEqual(["a", "b"]);
+    expect(sortedChapters(chapters).map((chapter) => chapter.id)).toStrictEqual(["a", "b"]);
     expect(nextSortOrder(chapters)).toBe(3);
     expect(nextSortOrder([])).toBe(0);
   });
@@ -38,22 +50,17 @@ describe("chapter helpers", () => {
       { id: "b", sortOrder: 2 },
       { id: "c", sortOrder: 5 }
     ];
-    expect(chapterOrderAfterMove(distinct, "b", 1)).toEqual([
+    expect(chapterOrderAfterMove(distinct, "b", 1)).toStrictEqual([
       ["b", 5],
       ["c", 2]
     ]);
-    expect(chapterOrderAfterMove(distinct, "a", -1)).toEqual([]);
+    expect(chapterOrderAfterMove(distinct, "a", -1)).toStrictEqual([]);
     const tied = [
       { id: "a", sortOrder: 1 },
       { id: "b", sortOrder: 1 },
       { id: "c", sortOrder: 1 }
     ];
-    const moved = new Map(chapterOrderAfterMove(tied, "a", 1));
-    const order = tied
-      .map((chapter) => ({ ...chapter, sortOrder: moved.get(chapter.id) ?? chapter.sortOrder }))
-      .sort((left, right) => left.sortOrder - right.sortOrder)
-      .map((chapter) => chapter.id);
-    expect(order).toEqual(["b", "a", "c"]);
+    expect(orderAfter(tied, chapterOrderAfterMove(tied, "a", 1))).toStrictEqual(["b", "a", "c"]);
   });
 
   it("validates a custom starting FEN", () => {
@@ -108,11 +115,13 @@ describe("import and summary targets", () => {
         ]
       })
     ];
-    expect(missedPositions({ missedPositionKeys: ["key-b", "unknown", "key-a"] }, cards)).toEqual([
+    expect(
+      missedPositions({ missedPositionKeys: ["key-b", "unknown", "key-a"] }, cards)
+    ).toStrictEqual([
       { positionKey: "key-b", chapterId: "c2", nodeId: "n7", path: "1. e4 e5" },
       { positionKey: "key-a", chapterId: "c1", nodeId: "root", path: "Start" }
     ]);
-    expect(missedPositions({ missedPositionKeys: ["unknown"] }, cards)).toEqual([]);
+    expect(missedPositions({ missedPositionKeys: ["unknown"] }, cards)).toStrictEqual([]);
   });
 });
 
@@ -125,7 +134,7 @@ describe("resume practice", () => {
       repertoireName: "My 1.e4",
       color: "white" as const
     };
-    expect(resumePracticeTarget({ resume })).toEqual({
+    expect(resumePracticeTarget({ resume })).toStrictEqual({
       ...resume,
       label: "Resume practice",
       description: "Pick up your unfinished line rehearsal where you left it"

@@ -5,10 +5,15 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImportProgressEvent } from "@chaturanga/shared/types/repertoire";
 import { START_FEN } from "@chaturanga/shared/chess/position";
 import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
-import { parseRepertoirePgn } from "@chaturanga/shared/chess/repertoire-pgn";
+import type { MoveNode } from "@chaturanga/shared/types/chess";
+import {
+  parseRepertoirePgn,
+  type ParsedRepertoireGame
+} from "@chaturanga/shared/chess/repertoire-pgn";
 import { importedDecisionCount } from "@chaturanga/shared/chess/repertoire-training";
 import { generateRepertoirePgn } from "./import-bench";
 import { validateTree } from "./chapter-validation";
+import { rollbackIfOpen } from "../db/rows";
 import { treeOf, serviceHelpers } from "./__fixtures__/repertoire-builders";
 
 const env = await vi.hoisted(async () => import("./__fixtures__/service-env"));
@@ -31,20 +36,6 @@ let now = 1_000_000_000_000;
 service.setRepertoireClock(() => now);
 const START_KEY = positionKey(START_FEN);
 
-beforeEach(() => {
-  getDb().exec("DELETE FROM repertoires");
-  service.resetImportJobs();
-  sent.length = 0;
-  showSaveDialog.mockClear();
-  now = 1_000_000_000_000;
-});
-
-afterAll(() => {
-  service.setRepertoireClock();
-  closeDb();
-  rmSync(userData, { recursive: true, force: true });
-});
-
 const TWO_GAMES = `[Event "Italian"]
 [Result "*"]
 
@@ -56,11 +47,61 @@ const TWO_GAMES = `[Event "Italian"]
 1. e4 e5 2. Nf3 Nc6 3. d4 (3. Bb5 a6) *
 `;
 
+/** A parsed game as the preview shows it (only games with illegal branches carry their tree). */
+function previewedGame(game: ParsedRepertoireGame) {
+  return {
+    index: game.index,
+    proposedTitle: game.proposedTitle,
+    rootFen: game.rootFen,
+    headers: game.headers,
+    nodeCount: game.nodeCount,
+    tree: !game.invalidBranches.length
+      ? []
+      : game.rejected
+        ? game.tree
+        : validateTree(game.tree, game.rootFen),
+    decisions: game.rejected
+      ? { white: 0, black: 0 }
+      : {
+          white: importedDecisionCount("white", game.tree),
+          black: importedDecisionCount("black", game.tree)
+        },
+    warnings: game.warnings,
+    invalidBranches: game.invalidBranches
+  };
+}
+
+/** The nodes a selection leaves out: `nodeIds` for the game at `index`, none for the others. */
+function excludedIn(gameIndex: number, index: number, nodeIds: string[]): string[] {
+  return gameIndex === index ? nodeIds : [];
+}
+
+/** The tree with the root's moves in reverse order (what Promote variation saves at the root). */
+function withRootMovesReversed(tree: readonly MoveNode[]): MoveNode[] {
+  return tree.map((node) =>
+    node.id === "root" ? { ...node, children: [...node.children].reverse() } : node
+  );
+}
+
 describe("repertoire service: import and export", () => {
+  beforeEach(() => {
+    getDb().exec("DELETE FROM repertoires");
+    service.resetImportJobs();
+    sent.length = 0;
+    showSaveDialog.mockClear();
+    now = 1_000_000_000_000;
+  });
+
+  afterAll(() => {
+    service.setRepertoireClock();
+    closeDb();
+    rmSync(userData, { recursive: true, force: true });
+  });
+
   it("previews and commits a two-game PGN as two chapters", async () => {
     const { id, revision } = create();
     const preview = await service.previewImport({ pgn: TWO_GAMES });
-    expect(preview.games.map((game) => game.proposedTitle)).toEqual(["Italian", "Scotch"]);
+    expect(preview.games.map((game) => game.proposedTitle)).toStrictEqual(["Italian", "Scotch"]);
     const result = await service.commitImport({
       jobId: preview.jobId,
       repertoireId: id,
@@ -77,7 +118,7 @@ describe("repertoire service: import and export", () => {
       ]
     });
     expect(result.chaptersAdded).toBe(2);
-    expect(result.repertoire.chapters.map((chapter) => chapter.title)).toEqual([
+    expect(result.repertoire.chapters.map((chapter) => chapter.title)).toStrictEqual([
       "My white repertoire",
       "Italian",
       "Scotch Game"
@@ -87,7 +128,7 @@ describe("repertoire service: import and export", () => {
       chapterId: result.repertoire.chapters[2].id
     });
     expect(scotch.nodeCount).toBe(5);
-    expect(scotch.nodeMeta[scotch.tree[1].id]).toEqual({ edge: "included" });
+    expect(scotch.nodeMeta[scotch.tree[1].id]).toStrictEqual({ edge: "included" });
     // Root (1.e4), after 1...e5 (2.Nf3), after 2...Nc6 (Bc4 from one chapter, d4 from the other).
     expect(result.repertoire.decisionCount).toBe(3);
     await expect(
@@ -122,7 +163,9 @@ describe("repertoire service: import and export", () => {
       })
     ).rejects.toThrow("Invalid expectedRevision: repertoire changed (stored 1, expected 2)");
     expect(service.getRepertoire(id).chapters).toHaveLength(1);
-    expect(getDb().prepare("SELECT COUNT(*) AS n FROM repertoire_chapters").get()).toEqual({
+    expect({
+      ...getDb().prepare("SELECT COUNT(*) AS n FROM repertoire_chapters").get()
+    }).toStrictEqual({
       n: 1
     });
     await expect(
@@ -182,34 +225,13 @@ describe("repertoire service: import and export", () => {
       "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. O-O (4. c3 Nf6 5. O-O) (4. Ke3) 4... Nf6 $1 { [%clk 0:05:00] } *"
     ];
     const castled = (await service.previewImport({ pgn: fixtures.at(-1)! })).games[0].tree;
-    expect(castled.filter((node) => node.san === "O-O").map((node) => node.uci)).toEqual([
+    expect(castled.filter((node) => node.san === "O-O").map((node) => node.uci)).toStrictEqual([
       "e1g1",
       "e1g1"
     ]);
     for (const pgn of fixtures) {
       const preview = await service.previewImport({ pgn });
-      const expected = parseRepertoirePgn(pgn).games.map((game) => ({
-        index: game.index,
-        proposedTitle: game.proposedTitle,
-        rootFen: game.rootFen,
-        headers: game.headers,
-        nodeCount: game.nodeCount,
-        // Only games with illegal branches carry their tree in the preview.
-        tree: !game.invalidBranches.length
-          ? []
-          : game.rejected
-            ? game.tree
-            : validateTree(game.tree, game.rootFen),
-        decisions: game.rejected
-          ? { white: 0, black: 0 }
-          : {
-              white: importedDecisionCount("white", game.tree),
-              black: importedDecisionCount("black", game.tree)
-            },
-        warnings: game.warnings,
-        invalidBranches: game.invalidBranches
-      }));
-      expect(preview.games).toEqual(expected);
+      expect(preview.games).toStrictEqual(parseRepertoirePgn(pgn).games.map(previewedGame));
     }
   });
 
@@ -220,7 +242,7 @@ describe("repertoire service: import and export", () => {
     expect(events.every((event) => event.jobId === preview.jobId)).toBe(true);
     expect(events[0]).toMatchObject({ phase: "reading", bytesRead: 0, error: null });
     expect(events.map((event) => event.phase)).toContain("parsing");
-    expect(events.at(-1)).toEqual({
+    expect(events.at(-1)).toStrictEqual({
       jobId: preview.jobId,
       phase: "ready",
       bytesRead: Buffer.byteLength(pgn),
@@ -255,7 +277,9 @@ describe("repertoire service: import and export", () => {
         selections: [{ gameIndex: 0, title: "", kind: "opening", include: true }]
       })
     ).rejects.toThrow(/Invalid jobId/);
-    expect(getDb().prepare("SELECT COUNT(*) AS n FROM repertoire_chapters").get()).toEqual({
+    expect({
+      ...getDb().prepare("SELECT COUNT(*) AS n FROM repertoire_chapters").get()
+    }).toStrictEqual({
       n: 1
     });
   });
@@ -336,18 +360,18 @@ describe("repertoire service: import and export", () => {
         title: "",
         kind: "opening" as const,
         include: true,
-        excludeNodeIds: game.index === 1 ? ["n6"] : []
+        excludeNodeIds: excludedIn(game.index, 1, ["n6"])
       }))
     });
     const stored = {
       decisions: decisionRepository.list(id),
       rows: positionIndexRepository.list(id)
     };
-    expect(stored.rows.length).toBe(1 + 4 + 6 + 3 + 20 * 15 + 22);
+    expect(stored.rows).toHaveLength(1 + 4 + 6 + 3 + 20 * 15 + 22);
     const { transaction } = await import("./repository");
     transaction(() => core.reindex(core.requireRepertoire(id), now));
-    expect(decisionRepository.list(id)).toEqual(stored.decisions);
-    expect(positionIndexRepository.list(id)).toEqual(stored.rows);
+    expect(decisionRepository.list(id)).toStrictEqual(stored.decisions);
+    expect(positionIndexRepository.list(id)).toStrictEqual(stored.rows);
   });
 
   it("queues a chapter save behind a running import commit at the write gate, then runs it", async () => {
@@ -379,7 +403,7 @@ describe("repertoire service: import and export", () => {
     expect(saved.repertoire.revision).toBe(revision + 2);
     expect(saved.repertoire.chapters).toHaveLength(2);
     const changes = sent.filter((entry) => entry.channel === "repertoires:changed");
-    expect(changes.map((entry) => (entry.payload as { revision: number }).revision)).toEqual([
+    expect(changes.map((entry) => (entry.payload as { revision: number }).revision)).toStrictEqual([
       revision + 1,
       revision + 2
     ]);
@@ -403,13 +427,13 @@ describe("repertoire service: import and export", () => {
       throw Object.assign(new Error("database is locked"), { errcode: 5 });
     });
     const last = service.withRepertoireWriteGate(() => order.push("last"));
-    await vi.waitFor(() => expect(order).toEqual(["first:start"]));
+    await vi.waitFor(() => expect(order).toStrictEqual(["first:start"]));
     release();
     await first;
     await expect(failing).rejects.toThrow("nope");
     await expect(busy).rejects.toThrow("The repertoire database is busy; try again.");
     await last;
-    expect(order).toEqual(["first:start", "first:end", "failing", "last"]);
+    expect(order).toStrictEqual(["first:start", "first:end", "failing", "last"]);
   });
 
   // Bounded by SQLite's 1 s busy_timeout (a sleep, not CPU): a 15 s ceiling, not the 5 s
@@ -432,7 +456,7 @@ describe("repertoire service: import and export", () => {
         "My white repertoire"
       );
     } finally {
-      if (other.isTransaction) other.exec("ROLLBACK");
+      rollbackIfOpen(other);
       other.close();
     }
   }, 15_000);
@@ -506,12 +530,10 @@ describe("repertoire service: import and export", () => {
       expectedRevision: saved.repertoire.revision,
       chapter: {
         ...saved.chapter,
-        tree: saved.chapter.tree.map((node) =>
-          node.id === "root" ? { ...node, children: [...node.children].reverse() } : node
-        )
+        tree: withRootMovesReversed(saved.chapter.tree)
       }
     });
-    expect(promoted.chapter.tree.find((node) => node.id === "root")!.children).toEqual(
+    expect(promoted.chapter.tree.find((node) => node.id === "root")!.children).toStrictEqual(
       [...saved.chapter.tree.find((node) => node.id === "root")!.children].reverse()
     );
     expect((await service.exportRepertoire({ repertoireId: id })).pgn).toContain(

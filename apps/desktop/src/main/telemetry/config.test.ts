@@ -5,7 +5,7 @@ const project = { token: "phc_test", host: "https://eu.i.posthog.com" };
 
 describe("resolveTelemetryConfig", () => {
   it("delivers only from a packaged, configured build outside automation", () => {
-    expect(resolveTelemetryConfig({ env: {}, isPackaged: true, ...project })).toEqual({
+    expect(resolveTelemetryConfig({ env: {}, isPackaged: true, ...project })).toStrictEqual({
       available: true,
       reason: null,
       project: { token: "phc_test", host: "https://eu.i.posthog.com" }
@@ -85,7 +85,7 @@ describe("resolveTelemetryConfig", () => {
         token: " phc_test ",
         host: "https://us.i.posthog.com/some/path"
       }).project
-    ).toEqual({ token: "phc_test", host: "https://us.i.posthog.com" });
+    ).toStrictEqual({ token: "phc_test", host: "https://us.i.posthog.com" });
   });
 });
 

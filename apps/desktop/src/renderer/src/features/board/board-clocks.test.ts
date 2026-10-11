@@ -42,18 +42,18 @@ describe("boardClocksAt", () => {
 
   it("shows each side the time it had left after its own last move", () => {
     // 24... Nd4 left Black 1:45; 25. d6 left White 1:45 too: both clocks read 01:45 at ply 49.
-    expect(at(48)).toEqual({ white: "01:59", black: "01:45" });
-    expect(at(49)).toEqual({ white: "01:45", black: "01:45" });
-    expect(at(50)).toEqual({ white: "01:45", black: "01:43" });
-    expect(at(51)).toEqual({ white: "01:41", black: "01:43" });
+    expect(at(48)).toStrictEqual({ white: "01:59", black: "01:45" });
+    expect(at(49)).toStrictEqual({ white: "01:45", black: "01:45" });
+    expect(at(50)).toStrictEqual({ white: "01:45", black: "01:43" });
+    expect(at(51)).toStrictEqual({ white: "01:41", black: "01:43" });
   });
 
   it("starts both clocks at the time control's starting time", () => {
-    expect(boardClocksAt(game.moveTree, "root", "180+0")).toEqual({
+    expect(boardClocksAt(game.moveTree, "root", "180+0")).toStrictEqual({
       white: "03:00",
       black: "03:00"
     });
-    expect(boardClocksAt(game.moveTree, line[0].id, null)).toEqual({
+    expect(boardClocksAt(game.moveTree, line[0].id, null)).toStrictEqual({
       white: "03:00",
       black: "--:--"
     });
@@ -68,7 +68,7 @@ describe("boardClocksAt", () => {
       fenBefore: after.fenAfter,
       fenAfter: after.fenAfter
     });
-    expect(boardClocksAt(moveTree, node.id, "180+0")).toEqual({
+    expect(boardClocksAt(moveTree, node.id, "180+0")).toStrictEqual({
       white: "01:45",
       black: "01:45"
     });

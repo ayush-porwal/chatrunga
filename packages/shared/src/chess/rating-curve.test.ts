@@ -98,9 +98,9 @@ describe("buildRatingCurve", () => {
       playedIsBest: false,
       userBucket: 1500
     });
-    expect(curve.ratings).toEqual([1100, 1300, 1500, 1700, 1900]);
-    expect(curve.playedProb).toEqual(played);
-    expect(curve.bestProb).toEqual(best);
+    expect(curve.ratings).toStrictEqual([1100, 1300, 1500, 1700, 1900]);
+    expect(curve.playedProb).toStrictEqual(played);
+    expect(curve.bestProb).toStrictEqual(best);
     expect(curve.userRatingBucket).toBe(1500);
     expect(curve.interpretation.label).toBe("trap_at_low_rating");
   });

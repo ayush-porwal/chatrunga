@@ -29,13 +29,14 @@ function setup() {
 }
 
 let running: ChesscomRatingSync | null = null;
-afterEach(() => {
-  running?.stop();
-  running = null;
-  vi.useRealTimers();
-});
 
 describe("ChesscomRatingSync", () => {
+  afterEach(() => {
+    running?.stop();
+    running = null;
+    vi.useRealTimers();
+  });
+
   it("reads the ratings, then brings Settings → Ratings in step", async () => {
     const { sync, refreshAccount, applyRatings } = setup();
     await sync.sync();

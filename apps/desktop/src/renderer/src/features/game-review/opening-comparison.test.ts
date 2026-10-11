@@ -83,7 +83,7 @@ describe("mainlineMoves", () => {
   it("follows the first child from the root, skipping variations", () => {
     let { tree } = addLine([rootNode()], "root", ["e2e4", "e7e5", "g1f3"], "m");
     ({ tree } = addLine(tree, "m0", ["c7c5"], "v"));
-    expect(mainlineMoves(tree)).toEqual([
+    expect(mainlineMoves(tree)).toStrictEqual([
       { nodeId: "m0", ply: 1, uci: "e2e4" },
       { nodeId: "m1", ply: 2, uci: "e7e5" },
       { nodeId: "m2", ply: 3, uci: "g1f3" }
@@ -91,16 +91,16 @@ describe("mainlineMoves", () => {
   });
 
   it("is empty without moves or a root", () => {
-    expect(mainlineMoves([rootNode()])).toEqual([]);
-    expect(mainlineMoves([])).toEqual([]);
+    expect(mainlineMoves([rootNode()])).toStrictEqual([]);
+    expect(mainlineMoves([])).toStrictEqual([]);
   });
 });
 
 describe("move labels", () => {
   it("reads the number and side from the position", () => {
-    expect(moveNumberOf(START_FEN)).toEqual({ number: 1, white: true });
+    expect(moveNumberOf(START_FEN)).toStrictEqual({ number: 1, white: true });
     const blackToMove = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 7";
-    expect(moveNumberOf(blackToMove)).toEqual({ number: 7, white: false });
+    expect(moveNumberOf(blackToMove)).toStrictEqual({ number: 7, white: false });
     expect(moveLabel(blackToMove, "e5")).toBe("7… e5");
     expect(moveLabel(START_FEN, "e4")).toBe("1. e4");
   });
@@ -114,7 +114,7 @@ describe("describeComparison", () => {
       "player-choice",
       "covered-reply"
     ]);
-    expect(describeComparison(comparisonOf(moves, null))).toEqual({
+    expect(describeComparison(comparisonOf(moves, null))).toStrictEqual({
       tone: "accent",
       text: "In repertoire through move 2"
     });
@@ -134,7 +134,7 @@ describe("describeComparison", () => {
         preferredUci: "f1b5"
       })
     );
-    expect(summary).toEqual({
+    expect(summary).toStrictEqual({
       tone: "warn",
       text: "Left your repertoire at move 3: you played Bc4, your repertoire has Bb5 (preferred) / d4"
     });
@@ -173,7 +173,7 @@ describe("describeComparison", () => {
       describeComparison(
         comparisonOf(moves, { status: "preparation-ends", ply: 4, fenBefore: moves[3].fenBefore })
       )
-    ).toEqual({ tone: "info", text: "Preparation ends after move 2" });
+    ).toStrictEqual({ tone: "info", text: "Preparation ends after move 2" });
     expect(
       describeComparison(
         comparisonOf(moves, { status: "preparation-ends", ply: 1, fenBefore: START_FEN })
@@ -190,7 +190,7 @@ describe("describeComparison", () => {
           chaptersUsed: [{ chapterId: "c2", title: "Two knights" }]
         })
       )
-    ).toEqual({ tone: "info", text: "This game ends where Two knights begins" });
+    ).toStrictEqual({ tone: "info", text: "This game ends where Two knights begins" });
     expect(describeComparison(comparisonOf(moves, null, { chaptersUsed: [] })).text).toBe(
       "No chapter of this repertoire applies to this game"
     );
@@ -213,7 +213,7 @@ describe("describeComparison", () => {
           ]
         })
       )
-    ).toEqual(["Back in known preparation at move 3 (Two knights)"]);
+    ).toStrictEqual(["Back in known preparation at move 3 (Two knights)"]);
   });
 });
 
@@ -230,9 +230,9 @@ describe("move tokens", () => {
     ] as const) {
       expect(tokenStatus(status).label.length).toBeGreaterThan(0);
     }
-    expect(tokenStatus("deviation")).toEqual({ tone: "warn", label: "Left your repertoire" });
+    expect(tokenStatus("deviation")).toStrictEqual({ tone: "warn", label: "Left your repertoire" });
     // Also used for moves after a deviation, so it never claims the repertoire applies later.
-    expect(tokenStatus("outside-scope")).toEqual({
+    expect(tokenStatus("outside-scope")).toStrictEqual({
       tone: "subtle",
       label: "Outside your repertoire"
     });
@@ -278,7 +278,7 @@ describe("colour and repertoire defaults", () => {
     const headers = { white: "Alice", black: "bob" };
     expect(
       suggestedSide({ source: "lichess", headers, lichessUsername: "Bob", engineSide: null })
-    ).toEqual({ color: "black", hint: "You played Black in this Lichess game" });
+    ).toStrictEqual({ color: "black", hint: "You played Black in this Lichess game" });
     expect(
       suggestedSide({ source: "lichess", headers, lichessUsername: null, engineSide: null })
     ).toBeNull();
@@ -287,7 +287,7 @@ describe("colour and repertoire defaults", () => {
     ).toBeNull();
     expect(
       suggestedSide({ source: "engine-game", headers, lichessUsername: null, engineSide: "white" })
-    ).toEqual({ color: "black", hint: "You played Black against the engine" });
+    ).toStrictEqual({ color: "black", hint: "You played Black against the engine" });
   });
 
   it("suggests the side of a Chess.com game from the connected chess.com account", () => {
@@ -295,7 +295,7 @@ describe("colour and repertoire defaults", () => {
     const chesscom = { source: "chesscom" as const, headers, engineSide: null };
     expect(
       suggestedSide({ ...chesscom, lichessUsername: null, chesscomUsername: "ayush_p64" })
-    ).toEqual({ color: "white", hint: "You played White in this Chess.com game" });
+    ).toStrictEqual({ color: "white", hint: "You played White in this Chess.com game" });
     // The Lichess name doesn't speak for a chess.com game, nor the chess.com one for an import.
     expect(suggestedSide({ ...chesscom, lichessUsername: "ayush_p64" })).toBeNull();
     expect(
@@ -318,7 +318,7 @@ describe("colour and repertoire defaults", () => {
         lichessUsername: null,
         engineSide: null
       })
-    ).toEqual({ color: "black", hint: "You played Black against the engine" });
+    ).toStrictEqual({ color: "black", hint: "You played Black against the engine" });
     expect(
       suggestedSide({
         source: "engine-game",
@@ -348,7 +348,7 @@ describe("comparisonActions", () => {
         nodeId: "n4"
       }).issue
     );
-    expect(actions.map((action) => action.kind)).toEqual(["refresh", "stage", "study"]);
+    expect(actions.map((action) => action.kind)).toStrictEqual(["refresh", "stage", "study"]);
     expect(actions[0]).toMatchObject({ label: "Refresh this decision", positionKey: "k4" });
     expect(actions[1]).toMatchObject({
       label: "Adopt played alternative",
@@ -372,7 +372,7 @@ describe("comparisonActions", () => {
   it("studies the end of preparation, or offers another repertoire / the hub", () => {
     expect(
       comparisonActions(comparisonOf(moves, { status: "preparation-ends", nodeId: "n3" }).issue)
-    ).toEqual([
+    ).toStrictEqual([
       { kind: "study", label: "Study the resulting position", chapterId: "c1", nodeId: "n3" }
     ]);
     expect(
@@ -380,16 +380,16 @@ describe("comparisonActions", () => {
         comparisonOf(moves, { status: "no-applicable-chapter", chapterId: null, nodeId: null })
           .issue
       )
-    ).toEqual([
+    ).toStrictEqual([
       { kind: "choose-repertoire", label: "Choose another repertoire" },
       { kind: "hub", label: "Choose or create a repertoire" }
     ]);
-    expect(comparisonActions(null)).toEqual([]);
+    expect(comparisonActions(null)).toStrictEqual([]);
   });
 
   it("opens the last recognized chapter position when the game stayed in repertoire", () => {
     const stayed = movesOf(LINE.slice(0, 3), ["player-choice", "covered-reply", "outside-scope"]);
-    expect(inRepertoireTarget(comparisonOf(stayed, null))).toEqual({
+    expect(inRepertoireTarget(comparisonOf(stayed, null))).toStrictEqual({
       chapterId: "c1",
       nodeId: "n1"
     });

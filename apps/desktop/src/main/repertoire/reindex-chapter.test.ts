@@ -39,17 +39,6 @@ const { chapterRepository, decisionRepository, positionIndexRepository, progress
 let now = 1_000_000_000_000;
 service.setRepertoireClock(() => now);
 
-afterAll(() => {
-  service.setRepertoireClock();
-  closeDb();
-  rmSync(userData, { recursive: true, force: true });
-});
-
-beforeEach(() => {
-  getDb().exec("DELETE FROM repertoires");
-  now = 1_000_000_000_000;
-});
-
 /** Knight shuffles and a few central pawn moves: few positions, many transpositions. */
 const MOVES = new Set([
   "g1f3",
@@ -235,7 +224,7 @@ function expectSameAsFullReindex(repertoireId: string, edit: () => number | null
   try {
     restoreDerived(repertoireId, before);
     const full = core.reindex(core.requireRepertoire(repertoireId), now);
-    expect(incremental).toEqual(derived(repertoireId));
+    expect(incremental).toStrictEqual(derived(repertoireId));
     if (decisionsChanged !== null) expect(decisionsChanged).toBe(full.decisionsChanged);
   } finally {
     db.exec("ROLLBACK");
@@ -264,7 +253,7 @@ function expectSameAsFullUpdate(repertoireId: string, update: () => unknown): vo
   db.exec("BEGIN");
   try {
     update();
-    expect(derived(repertoireId)).toEqual(reference);
+    expect(derived(repertoireId)).toStrictEqual(reference);
   } finally {
     db.exec("ROLLBACK");
   }
@@ -283,8 +272,8 @@ function expectFixpoint(repertoireId: string): void {
   db.exec("BEGIN");
   try {
     const full = core.reindex(core.requireRepertoire(repertoireId), now);
-    expect(full).toEqual({ decisionsChanged: 0, progressChanged: false });
-    expect(derived(repertoireId)).toEqual(state);
+    expect(full).toStrictEqual({ decisionsChanged: 0, progressChanged: false });
+    expect(derived(repertoireId)).toStrictEqual(state);
   } finally {
     db.exec("ROLLBACK");
   }
@@ -422,6 +411,17 @@ function expectFixpointAcrossEdits(seed: number, color: RepertoireColor, steps: 
 }
 
 describe("reindexChapter", () => {
+  beforeEach(() => {
+    getDb().exec("DELETE FROM repertoires");
+    now = 1_000_000_000_000;
+  });
+
+  afterAll(() => {
+    service.setRepertoireClock();
+    closeDb();
+    rmSync(userData, { recursive: true, force: true });
+  });
+
   it.each([
     [1, "white"],
     [2, "black"],

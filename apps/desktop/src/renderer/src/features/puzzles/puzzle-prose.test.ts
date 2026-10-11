@@ -19,7 +19,7 @@ function links(text: string, line: PuzzleProseLine): Array<[string, number | nul
 
 describe("solutionIndexForToken", () => {
   it("links each mention to the ply it names, the mate to the mate, whatever the order", () => {
-    expect(links("Rxe1# ends it after Qxe1+ and Rxe1.", backRank)).toEqual([
+    expect(links("Rxe1# ends it after Qxe1+ and Rxe1.", backRank)).toStrictEqual([
       ["Rxe1#", 2],
       ["Qxe1+", 0],
       ["Rxe1", 1]
@@ -27,8 +27,8 @@ describe("solutionIndexForToken", () => {
   });
 
   it("links a move written without its check or mate only when that names one ply", () => {
-    expect(links("Qxe1 removes the guard.", backRank)).toEqual([["Qxe1", 0]]);
-    expect(links("Then Rxe1+ follows.", backRank)).toEqual([["Rxe1+", null]]);
+    expect(links("Qxe1 removes the guard.", backRank)).toStrictEqual([["Qxe1", 0]]);
+    expect(links("Then Rxe1+ follows.", backRank)).toStrictEqual([["Rxe1+", null]]);
   });
 
   it("uses a move number to tell a repeated move apart", () => {
@@ -37,13 +37,13 @@ describe("solutionIndexForToken", () => {
       solutionSan: ["Nf7+", "Kg8", "Nh6+", "Kh8", "Nf7+"],
       otherSan: []
     };
-    expect(links("Nf7+ keeps checking.", repeated)).toEqual([["Nf7+", null]]);
-    expect(links("10. Nf7+ and 12. Nf7+ again, but 11. Nf7+ never.", repeated)).toEqual([
+    expect(links("Nf7+ keeps checking.", repeated)).toStrictEqual([["Nf7+", null]]);
+    expect(links("10. Nf7+ and 12. Nf7+ again, but 11. Nf7+ never.", repeated)).toStrictEqual([
       ["10. Nf7+", 0],
       ["12. Nf7+", 4],
       ["11. Nf7+", null]
     ]);
-    expect(links("24...Rxe1 and 25...Rxe1#.", backRank)).toEqual([
+    expect(links("24...Rxe1 and 25...Rxe1#.", backRank)).toStrictEqual([
       ["24...Rxe1", null],
       ["25...Rxe1#", 2]
     ]);
@@ -51,16 +51,16 @@ describe("solutionIndexForToken", () => {
 
   it("doesn't link a move that may be the wrong move, its refutation or an alternative instead", () => {
     const line = { ...backRank, otherSan: ["Qxe1", "Rxe1"] };
-    expect(links("Rxe1 and Qxe1+ and Rxe1#.", line)).toEqual([
+    expect(links("Rxe1 and Qxe1+ and Rxe1#.", line)).toStrictEqual([
       ["Rxe1", null],
       ["Qxe1+", 0],
       ["Rxe1#", 2]
     ]);
-    expect(links("Qxe1 alone.", line)).toEqual([["Qxe1", null]]);
+    expect(links("Qxe1 alone.", line)).toStrictEqual([["Qxe1", null]]);
   });
 
   it("leaves moves that aren't in the solution as text", () => {
-    expect(links("Kf8 runs.", backRank)).toEqual([["Kf8", null]]);
+    expect(links("Kf8 runs.", backRank)).toStrictEqual([["Kf8", null]]);
   });
 });
 
@@ -93,7 +93,7 @@ describe("nonSolutionSan", () => {
         refutationSan: ["Rxe8+", "Qxe8"]
       }
     });
-    expect(nonSolutionSan(payload)).toEqual(["h6", "Rxe8+", "Qd8", "Qxe8"]);
+    expect(nonSolutionSan(payload)).toStrictEqual(["h6", "Rxe8+", "Qd8", "Qxe8"]);
     expect(
       nonSolutionSan({
         ...payload,
@@ -101,6 +101,6 @@ describe("nonSolutionSan", () => {
         mistake: undefined,
         engine: { ...payload.engine, alternatives: undefined }
       })
-    ).toEqual([]);
+    ).toStrictEqual([]);
   });
 });

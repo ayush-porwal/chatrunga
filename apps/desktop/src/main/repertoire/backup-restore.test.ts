@@ -31,25 +31,25 @@ const { userData, files, sent, showOpenDialog, showSaveDialog } = env;
 let now = 1_000_000_000_000;
 service.setRepertoireClock(() => now);
 
-beforeEach(() => {
-  getDb().exec("DELETE FROM repertoires");
-  getDb().exec("DELETE FROM games");
-  rmSync(files, { recursive: true, force: true });
-  rmSync(join(userData, "repertoire-backups"), { recursive: true, force: true });
-  service.resetImportJobs();
-  sent.length = 0;
-  showSaveDialog.mockClear();
-  showOpenDialog.mockClear();
-  now = 1_000_000_000_000;
-});
-
-afterAll(() => {
-  service.setRepertoireClock();
-  closeDb();
-  rmSync(userData, { recursive: true, force: true });
-});
-
 describe("native backup: restore", () => {
+  beforeEach(() => {
+    getDb().exec("DELETE FROM repertoires");
+    getDb().exec("DELETE FROM games");
+    rmSync(files, { recursive: true, force: true });
+    rmSync(join(userData, "repertoire-backups"), { recursive: true, force: true });
+    service.resetImportJobs();
+    sent.length = 0;
+    showSaveDialog.mockClear();
+    showOpenDialog.mockClear();
+    now = 1_000_000_000_000;
+  });
+
+  afterAll(() => {
+    service.setRepertoireClock();
+    closeDb();
+    rmSync(userData, { recursive: true, force: true });
+  });
+
   it("restores a new copy with fresh ids, the same decisions and a rebuilt index", async () => {
     const detail = seed();
     const original = decisionRepository.list(detail.id);
@@ -83,27 +83,27 @@ describe("native backup: restore", () => {
         acceptedUcis,
         acceptanceFingerprint
       }))
-    ).toEqual(
+    ).toStrictEqual(
       original.map(({ positionKey, acceptedUcis, acceptanceFingerprint }) => ({
         positionKey,
         acceptedUcis,
         acceptanceFingerprint
       }))
     );
-    expect(positionIndexRepository.list(copy.id).filter((row) => row.isDecision).length).toBe(
+    expect(positionIndexRepository.list(copy.id).filter((row) => row.isDecision)).toHaveLength(
       positionIndexRepository.list(detail.id).filter((row) => row.isDecision).length
     );
-    expect(progressRepository.list(copy.id)).toEqual([]);
+    expect(progressRepository.list(copy.id)).toStrictEqual([]);
     const second = copy.chapters.find((chapter) => chapter.title === "Chapter second")!;
     expect(copy.workspace).toMatchObject({ lastChapterId: second.id, lastNodeId: "n2" });
     const links = service
       .listGameLinks({ repertoireId: copy.id })
       .sort((a, b) => a.kind.localeCompare(b.kind));
-    expect(links.map((link) => [link.kind, link.gameId, link.chapterId])).toEqual([
+    expect(links.map((link) => [link.kind, link.gameId, link.chapterId])).toStrictEqual([
       ["model", "game-kept", copy.chapters.find((c) => c.title !== "Chapter second")!.id],
       ["played", null, second.id]
     ]);
-    expect(sent).toEqual([
+    expect(sent).toStrictEqual([
       {
         channel: "repertoires:changed",
         payload: { repertoireId: copy.id, revision: 1, kind: "created" }
@@ -133,13 +133,13 @@ describe("native backup: restore", () => {
       const decisions = decisionRepository.list(id);
       const progress = progressRepository.list(id);
       expect(index.length).toBeGreaterThan(0);
-      expect(reindex(repertoireRepository.get(id)!, now)).toEqual({
+      expect(reindex(repertoireRepository.get(id)!, now)).toStrictEqual({
         decisionsChanged: 0,
         progressChanged: false
       });
-      expect(positionIndexRepository.list(id)).toEqual(index);
-      expect(decisionRepository.list(id)).toEqual(decisions);
-      expect(progressRepository.list(id)).toEqual(progress);
+      expect(positionIndexRepository.list(id)).toStrictEqual(index);
+      expect(decisionRepository.list(id)).toStrictEqual(decisions);
+      expect(progressRepository.list(id)).toStrictEqual(progress);
     }
   });
 
@@ -157,7 +157,7 @@ describe("native backup: restore", () => {
     expect(service.getRepertoire(copyId).name).toBe("With progress");
     const strip = (rows: ReturnType<typeof progressRepository.list>) =>
       rows.map((row) => ({ ...row, repertoireId: "" }));
-    expect(strip(progressRepository.list(copyId))).toEqual(
+    expect(strip(progressRepository.list(copyId))).toStrictEqual(
       strip(progressRepository.list(detail.id))
     );
   });
@@ -220,14 +220,14 @@ describe("native backup: restore", () => {
     expect(after.chapters.map((chapter) => chapter.id)).toContain("second");
     expect(after.decisionCount).toBe(detail.decisionCount);
     expect(progressRepository.list(detail.id)).toHaveLength(1);
-    expect(sent).toEqual([
+    expect(sent).toStrictEqual([
       {
         channel: "repertoires:changed",
         payload: { repertoireId: detail.id, revision: edited.revision + 1, kind: "updated" }
       }
     ]);
     const again = (await service.previewBackupImport({ json: text }))!;
-    expect(again.repertoires[0].diff).toEqual({
+    expect(again.repertoires[0].diff).toStrictEqual({
       chaptersAdded: 0,
       chaptersChanged: 0,
       chaptersRemoved: 0,
@@ -251,7 +251,7 @@ describe("native backup: restore", () => {
     const stored = decisionRepository.list(detail.id);
     const { text } = await exportText(true);
     const preview = (await service.previewBackupImport({ json: text }))!;
-    expect(preview.warnings).toEqual([]);
+    expect(preview.warnings).toStrictEqual([]);
     expect(preview.repertoires[0].diff).toMatchObject({
       chaptersAdded: 0,
       chaptersChanged: 0,
@@ -298,7 +298,7 @@ describe("native backup: restore", () => {
     const document = JSON.parse(text) as RepertoireBackupDocument;
     document.repertoires[0].repertoire.color = "black";
     const black = (await service.previewBackupImport({ json: JSON.stringify(document) }))!;
-    expect(black.repertoires[0].diff?.metadataChanged).toEqual(["color"]);
+    expect(black.repertoires[0].diff?.metadataChanged).toStrictEqual(["color"]);
     await expect(
       service.restoreBackup({
         jobId: black.jobId,
@@ -356,13 +356,15 @@ describe("native backup: restore", () => {
     const names = readdirSync(directory);
     expect(names).toContain(other);
     // Each retained backup keeps its practice history beside it; pruning removes both.
-    expect(names.filter((name) => name.endsWith(".history.json"))).toEqual([
+    expect(names.filter((name) => name.endsWith(".history.json"))).toStrictEqual([
       path
         .split("/")
         .pop()!
         .replace(/\.json$/, ".history.json")
     ]);
-    const own = names.filter((name) => name !== other && !name.endsWith(".history.json"));
+    const own = names
+      .filter((name) => name !== other)
+      .filter((name) => !name.endsWith(".history.json"));
     expect(own).toHaveLength(10);
     expect(own).toContain(taken);
     expect(own.some((name) => path.endsWith(name))).toBe(true);
@@ -440,7 +442,7 @@ describe("native backup: restore", () => {
     );
     expect(existsSync(join(userData, "repertoire-backups"))).toBe(false);
     expect(service.getRepertoire(detail.id).revision).toBe(detail.revision);
-    expect(sent).toEqual([]);
+    expect(sent).toStrictEqual([]);
     expect((await replace(detail.revision)).restored[0].mode).toBe("replace");
   });
 

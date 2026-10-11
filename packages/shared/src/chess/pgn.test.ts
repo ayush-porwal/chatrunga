@@ -21,18 +21,16 @@ describe("PGN import/export", () => {
       '[Event "Demo"]\n[White "A"]\n[Black "B"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 *'
     );
     expect(imported.game.headers.event).toBe("Demo");
-    expect(imported.game.moveTree.filter((node) => node.uci).map((node) => node.uci)).toEqual([
-      "e2e4",
-      "e7e5",
-      "g1f3"
-    ]);
+    expect(imported.game.moveTree.filter((node) => node.uci).map((node) => node.uci)).toStrictEqual(
+      ["e2e4", "e7e5", "g1f3"]
+    );
   });
 
   it("round trips PGN arrows", () => {
     const imported = importPgnText("1. e4 { [%cal Gg1f3] [%csl Ye4] } *");
     const node = imported.game.moveTree.find((item) => item.uci === "e2e4");
-    expect(node?.arrows).toEqual([{ color: "green", orig: "g1", dest: "f3" }]);
-    expect(node?.highlights).toEqual([{ color: "yellow", square: "e4" }]);
+    expect(node?.arrows).toStrictEqual([{ color: "green", orig: "g1", dest: "f3" }]);
+    expect(node?.highlights).toStrictEqual([{ color: "yellow", square: "e4" }]);
     expect(exportGameToPgn(imported.game)).toContain("[%cal Gg1f3]");
   });
 
@@ -132,11 +130,11 @@ describe("PGN import/export", () => {
 
   it("reads clocks on the current path", () => {
     const imported = importPgnText("1. e4 {[%clk 0:10:00]} e5 {[%clk 0:09:30]} *");
-    expect(clocksOnPathToNode(imported.game.moveTree, imported.game.currentNodeId)).toEqual({
+    expect(clocksOnPathToNode(imported.game.moveTree, imported.game.currentNodeId)).toStrictEqual({
       white: "0:10:00",
       black: "0:09:30"
     });
-    expect(clocksOnPathToNode(imported.game.moveTree, "missing")).toEqual({
+    expect(clocksOnPathToNode(imported.game.moveTree, "missing")).toStrictEqual({
       white: null,
       black: null
     });
@@ -153,7 +151,7 @@ describe("PGN import/export", () => {
       importPgnText(pgn)
         .game.moveTree.map((node) => node.san)
         .filter(Boolean)
-    ).toEqual(["e4", "e5"]);
+    ).toStrictEqual(["e4", "e5"]);
     expect(() => importPgnText(pgn, { strict: true })).toThrow(/Illegal move/);
     expect(importPgnText("1. e4 (1. d4 d5) e5 *", { strict: true }).game.moveTree).toHaveLength(5);
   });
@@ -164,7 +162,7 @@ describe("PGN from a set-up position", () => {
 
   it("numbers moves from the FEN and exports SetUp/FEN so the game reimports", () => {
     const imported = importPgnText(`[SetUp "1"]\n[FEN "${fen}"]\n\n42... Kf7 43. Ke2 *`).game;
-    expect(imported.moveTree.map((node) => node.ply)).toEqual([83, 84, 85]);
+    expect(imported.moveTree.map((node) => node.ply)).toStrictEqual([83, 84, 85]);
 
     const pgn = exportGameToPgn(imported);
     expect(pgn).toContain('[SetUp "1"]');
@@ -173,7 +171,7 @@ describe("PGN from a set-up position", () => {
 
     const again = importPgnText(pgn).game;
     expect(again.rootFen).toBe(fen);
-    expect(again.moveTree.filter((node) => node.san).map((node) => node.san)).toEqual([
+    expect(again.moveTree.filter((node) => node.san).map((node) => node.san)).toStrictEqual([
       "Kf7",
       "Ke2"
     ]);
@@ -183,7 +181,7 @@ describe("PGN from a set-up position", () => {
     const imported = importPgnText(
       `[SetUp "1"]\n[FEN "${fen}"]\n\n42... Kf7 { [%clk 0:01:00] } 43. Ke2 { [%clk 0:02:00] } *`
     ).game;
-    expect(clocksOnPathToNode(imported.moveTree, imported.currentNodeId)).toEqual({
+    expect(clocksOnPathToNode(imported.moveTree, imported.currentNodeId)).toStrictEqual({
       white: "0:02:00",
       black: "0:01:00"
     });
@@ -205,7 +203,7 @@ describe("PGN from a set-up position", () => {
         ply: node.ply - 83
       })
     );
-    expect(withRealPlies(legacy).map((node) => node.ply)).toEqual([83, 84]);
+    expect(withRealPlies(legacy).map((node) => node.ply)).toStrictEqual([83, 84]);
     const standard = createEmptyGame().moveTree;
     expect(withRealPlies(standard)).toBe(standard);
   });
@@ -221,6 +219,17 @@ describe("PGN variations", () => {
     expect(exported).toBe(movetext);
   });
 });
+
+/** The tree with node `from` given the id `to`, its parent and children links following. */
+function withNodeRenamed(tree: readonly MoveNode[], from: string, to: string): MoveNode[] {
+  const rename = (id: string) => (id === from ? to : id);
+  return tree.map((node) => ({
+    ...node,
+    id: rename(node.id),
+    parentId: node.parentId === null ? null : rename(node.parentId),
+    children: node.children.map(rename)
+  }));
+}
 
 describe("PGN with the analysis", () => {
   const game = importPgnText(
@@ -292,13 +301,7 @@ describe("PGN with the analysis", () => {
     // 3. Bb5 (in the 2. Nf3 line) gets the id 3... Nf6's best line would take for Qe7.
     const taken = `${mainline[5].id}~best-0`;
     const bb5 = game.moveTree.find((node) => node.san === "Bb5")!;
-    const rename = (id: string) => (id === bb5.id ? taken : id);
-    const moveTree = game.moveTree.map((node) => ({
-      ...node,
-      id: rename(node.id),
-      parentId: node.parentId === null ? null : rename(node.parentId),
-      children: node.children.map(rename)
-    }));
+    const moveTree = withNodeRenamed(game.moveTree, bb5.id, taken);
     const pgn = exportGameToPgn({ ...game, moveTree, analysis });
     expect(pgn.split("\n").pop()).toBe(
       "1. e4 { [%eval 0.30] } e5 { [%eval 0.32] } 2. Qh5 $6 { [%eval 0.00] } " +
@@ -312,7 +315,7 @@ describe("PGN with the analysis", () => {
     const pgn = exportGameToPgn({ ...game, analysis });
     const again = importPgnText(pgn, { strict: true }).game;
     expect(again.headers).toMatchObject({ eco: "C23", opening: "Bishop's Opening", result: "1-0" });
-    expect(again.moveTree.find((node) => node.san === "Qh5")?.nags).toEqual(["$6"]);
+    expect(again.moveTree.find((node) => node.san === "Qh5")?.nags).toStrictEqual(["$6"]);
     expect(again.moveTree.find((node) => node.san === "Qe7")?.fenBefore).toBe(
       mainline[5].fenBefore
     );

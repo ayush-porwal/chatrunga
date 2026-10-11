@@ -49,11 +49,11 @@ describe("practice start", () => {
 
   it("an answer with cards ends idle; one without is empty with the start's input", () => {
     const starting = beginStart(1, REHEARSE, true);
-    expect(settleStart(starting, 1, { kind: "answered", snapshot: snapshot(2) })).toEqual(
+    expect(settleStart(starting, 1, { kind: "answered", snapshot: snapshot(2) })).toStrictEqual(
       IDLE_START
     );
     const empty = settleStart(starting, 1, { kind: "answered", snapshot: snapshot(0) });
-    expect(empty).toEqual({ status: "empty", input: REHEARSE });
+    expect(empty).toStrictEqual({ status: "empty", input: REHEARSE });
     // The spinner is gone once the answer is in, whatever it was.
     expect(startShowsSpinner(empty)).toBe(false);
   });
@@ -61,7 +61,7 @@ describe("practice start", () => {
   it("a failure keeps the message and the input", () => {
     expect(
       settleStart(beginStart(3, REVIEW, false), 3, { kind: "failed", message: "Nope" })
-    ).toEqual({ status: "failed", input: REVIEW, message: "Nope" });
+    ).toStrictEqual({ status: "failed", input: REVIEW, message: "Nope" });
   });
 
   it("only the newest start settles the state", () => {

@@ -90,7 +90,7 @@ describe("hydratePieceSettings", () => {
 
   it("is idempotent for new-shape settings", () => {
     const once = hydratePieceSettings({ ...defaultSettings, pieceStyle: "cardinal" });
-    expect(hydratePieceSettings(once)).toEqual(once);
+    expect(hydratePieceSettings(once)).toStrictEqual(once);
   });
 });
 
@@ -102,10 +102,10 @@ describe("normalizeBoardSquareHex", () => {
   });
 
   it("rejects invalid values", () => {
-    expect(normalizeBoardSquareHex("")).toBe(null);
-    expect(normalizeBoardSquareHex(null)).toBe(null);
-    expect(normalizeBoardSquareHex("#fff")).toBe(null);
-    expect(normalizeBoardSquareHex("#gggggg")).toBe(null);
+    expect(normalizeBoardSquareHex("")).toBeNull();
+    expect(normalizeBoardSquareHex(null)).toBeNull();
+    expect(normalizeBoardSquareHex("#fff")).toBeNull();
+    expect(normalizeBoardSquareHex("#gggggg")).toBeNull();
   });
 });
 
@@ -128,7 +128,7 @@ describe("review engine settings", () => {
     expect(normalized.reviewMultiPv).toBe(5);
     expect(normalized.engineHashMb).toBe(128);
     expect(normalized.engineThreads).toBe(1);
-    expect(normalized.reviewMaiaLevels).toEqual([1100, 1900]);
+    expect(normalized.reviewMaiaLevels).toStrictEqual([1100, 1900]);
   });
 
   it("drops a saved default engine id that points at a retired bundled engine", () => {
@@ -205,7 +205,7 @@ describe("normalizeUpdateSettings", () => {
 
   it("is idempotent and leaves other settings alone", () => {
     const once = normalizeUpdateSettings({ ...defaultSettings, soundVolume: 0.3 });
-    expect(normalizeUpdateSettings(once)).toEqual(once);
+    expect(normalizeUpdateSettings(once)).toStrictEqual(once);
     expect(once.soundVolume).toBe(0.3);
   });
 });
@@ -259,7 +259,7 @@ describe("normalizeOnboardingSettings", () => {
   it("defaults to a welcome that has not been completed and no tips seen", () => {
     const normalized = normalizeOnboardingSettings(defaultSettings);
     expect(normalized.onboardingCompletedAt).toBeNull();
-    expect(normalized.onboardingHintsSeen).toEqual([]);
+    expect(normalized.onboardingHintsSeen).toStrictEqual([]);
   });
 
   it("keeps a completion time, including 0 for installs that predate the welcome", () => {
@@ -294,12 +294,12 @@ describe("normalizeOnboardingSettings", () => {
       onboardingHintsSeen: ["maia-curve", "unknown", "maia-curve", 3, "commentary-links"]
     } as unknown as AppSettings;
     // "commentary-links" was a tip that's gone: a stored one is dropped like any unknown id.
-    expect(normalizeOnboardingSettings(stored).onboardingHintsSeen).toEqual(["maia-curve"]);
+    expect(normalizeOnboardingSettings(stored).onboardingHintsSeen).toStrictEqual(["maia-curve"]);
     const notAList = {
       ...defaultSettings,
       onboardingHintsSeen: "maia-curve"
     } as unknown as AppSettings;
-    expect(normalizeOnboardingSettings(notAList).onboardingHintsSeen).toEqual([]);
+    expect(normalizeOnboardingSettings(notAList).onboardingHintsSeen).toStrictEqual([]);
   });
 
   it("is idempotent", () => {
@@ -308,6 +308,6 @@ describe("normalizeOnboardingSettings", () => {
       onboardingCompletedAt: 5.7,
       onboardingHintsSeen: ["maia-curve"]
     });
-    expect(normalizeOnboardingSettings(once)).toEqual(once);
+    expect(normalizeOnboardingSettings(once)).toStrictEqual(once);
   });
 });

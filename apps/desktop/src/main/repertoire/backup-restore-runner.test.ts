@@ -7,7 +7,6 @@ import type { RestoreJob } from "./backup-restore";
 import { runBackupRestore } from "./backup-restore-runner";
 
 const dir = mkdtempSync(join(tmpdir(), "chaturanga-backup-restore-"));
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 /**
  * A stand-in restore worker; the job's text picks its behaviour. It waits for the service's
@@ -50,11 +49,13 @@ function job(text: string): RestoreJob {
 }
 
 describe("runBackupRestore (restore worker)", () => {
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
   it("hands the job to the worker, starts it and resolves with what it restored", async () => {
     const restored = await runBackupRestore(job("ok"), () => join(dir, "ok.sqlite"), {
       workerPath: FAKE_RESTORE
     });
-    expect(restored).toEqual([
+    expect(restored).toStrictEqual([
       {
         sourceId: "r1",
         repertoireId: "copy",
@@ -66,7 +67,9 @@ describe("runBackupRestore (restore worker)", () => {
           selections: [{ sourceId: "r1", mode: "new-copy", includeProgress: false }],
           now: 5,
           retainedDirectory: join(dir, "retained"),
-          app: { name: "Chaturanga", version: "1.2.3" }
+          app: { name: "Chaturanga", version: "1.2.3" },
+          // The stand-in worker blanks the text it echoes back.
+          text: undefined
         }
       }
     ]);
@@ -97,7 +100,7 @@ describe("runBackupRestore (restore worker)", () => {
     ).rejects.toThrow(
       "The backup couldn't be restored: the restore stopped unexpectedly (exit 3); nothing was restored. Try again."
     );
-    expect(db.prepare("SELECT COUNT(*) AS n FROM rows").get()).toEqual({ n: 0 });
+    expect({ ...db.prepare("SELECT COUNT(*) AS n FROM rows").get() }).toStrictEqual({ n: 0 });
     // The dead connection's lock is gone: this connection can write.
     db.exec("INSERT INTO rows (name) VALUES ('after')");
     db.close();

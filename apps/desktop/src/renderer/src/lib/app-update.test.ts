@@ -126,9 +126,18 @@ describe("actions and status text", () => {
   });
 
   it("labels the changelog card's button", () => {
-    expect(updateCardAction(ready)).toEqual({ label: "Restart to update", action: "install" });
-    expect(updateCardAction(downloading)).toEqual({ label: "Downloading… 42%", action: null });
-    expect(updateCardAction(manual)).toEqual({ label: "Download v0.2.0", action: "open-download" });
+    expect(updateCardAction(ready)).toStrictEqual({
+      label: "Restart to update",
+      action: "install"
+    });
+    expect(updateCardAction(downloading)).toStrictEqual({
+      label: "Downloading… 42%",
+      action: null
+    });
+    expect(updateCardAction(manual)).toStrictEqual({
+      label: "Download v0.2.0",
+      action: "open-download"
+    });
     expect(updateCardAction({ kind: "up-to-date" })).toBeNull();
   });
 
@@ -162,10 +171,14 @@ describe("dates", () => {
 
 describe("release notes", () => {
   it("keeps http(s) links as links and drops other targets", () => {
-    expect(inlineParts("see [the review](https://x.y/a) and [local](file:///etc) **now**")).toEqual(
-      [{ text: "see " }, { text: "the review", href: "https://x.y/a" }, { text: " and local now" }]
-    );
-    expect(inlineParts("[bad](javascript:alert(1))")).toEqual([{ text: "bad)" }]);
+    expect(
+      inlineParts("see [the review](https://x.y/a) and [local](file:///etc) **now**")
+    ).toStrictEqual([
+      { text: "see " },
+      { text: "the review", href: "https://x.y/a" },
+      { text: " and local now" }
+    ]);
+    expect(inlineParts("[bad](javascript:alert(1))")).toStrictEqual([{ text: "bad)" }]);
   });
 
   it("turns release-plan notes into headings, bullets and paragraphs", () => {
@@ -186,7 +199,7 @@ describe("release notes", () => {
       "",
       "- **macOS:** `.dmg`"
     ].join("\n");
-    expect(parseReleaseNotes(notes)).toEqual([
+    expect(parseReleaseNotes(notes)).toStrictEqual([
       { type: "heading", text: "Features" },
       { type: "bullet", parts: [{ text: "updates: in-app updates" }] },
       {
@@ -202,9 +215,9 @@ describe("release notes", () => {
   });
 
   it("keeps text that looks like markup as text", () => {
-    expect(parseReleaseNotes("<img src=x onerror=alert(1)>")).toEqual([
+    expect(parseReleaseNotes("<img src=x onerror=alert(1)>")).toStrictEqual([
       { type: "paragraph", parts: [{ text: "<img src=x onerror=alert(1)>" }] }
     ]);
-    expect(parseReleaseNotes("")).toEqual([]);
+    expect(parseReleaseNotes("")).toStrictEqual([]);
   });
 });

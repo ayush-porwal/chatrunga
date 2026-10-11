@@ -20,44 +20,48 @@ describe("resolveReviewSide", () => {
         source: "engine-game",
         headers: { white: "Stockfish", black: "You" }
       })
-    ).toEqual({ status: "known", side: "black" });
-    expect(resolveReviewSide({ ...imported, source: "engine-game", engineSide: "black" })).toEqual({
+    ).toStrictEqual({ status: "known", side: "black" });
+    expect(
+      resolveReviewSide({ ...imported, source: "engine-game", engineSide: "black" })
+    ).toStrictEqual({
       status: "known",
       side: "white"
     });
-    expect(resolveReviewSide({ ...imported, source: "lichess", lichessUsername: "beta" })).toEqual({
+    expect(
+      resolveReviewSide({ ...imported, source: "lichess", lichessUsername: "beta" })
+    ).toStrictEqual({
       status: "known",
       side: "black"
     });
   });
 
   it("asks before an imported game's first review, preselecting the Lichess account's side", () => {
-    expect(resolveReviewSide({ ...imported, lichessUsername: "BETA" })).toEqual({
+    expect(resolveReviewSide({ ...imported, lichessUsername: "BETA" })).toStrictEqual({
       status: "ask",
       preselect: "black"
     });
     // No name matches: the Settings side.
-    expect(resolveReviewSide({ ...imported, fallback: "black" })).toEqual({
+    expect(resolveReviewSide({ ...imported, fallback: "black" })).toStrictEqual({
       status: "ask",
       preselect: "black"
     });
   });
 
   it("remembers the side: the one picked, then the one saved with the review", () => {
-    expect(resolveReviewSide({ ...imported, chosen: "black" })).toEqual({
+    expect(resolveReviewSide({ ...imported, chosen: "black" })).toStrictEqual({
       status: "known",
       side: "black"
     });
-    expect(resolveReviewSide({ ...imported, reviewSide: "black", hasReview: true })).toEqual({
+    expect(resolveReviewSide({ ...imported, reviewSide: "black", hasReview: true })).toStrictEqual({
       status: "known",
       side: "black"
     });
     // Switching sides in the settings wins over the saved review's side.
     expect(
       resolveReviewSide({ ...imported, chosen: "white", reviewSide: "black", hasReview: true })
-    ).toEqual({ status: "known", side: "white" });
+    ).toStrictEqual({ status: "known", side: "white" });
     // A review from before Review as never asks again: the Settings side.
-    expect(resolveReviewSide({ ...imported, hasReview: true, fallback: "black" })).toEqual({
+    expect(resolveReviewSide({ ...imported, hasReview: true, fallback: "black" })).toStrictEqual({
       status: "known",
       side: "black"
     });

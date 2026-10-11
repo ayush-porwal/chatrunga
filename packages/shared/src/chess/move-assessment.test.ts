@@ -86,7 +86,7 @@ describe("severityFor", () => {
     ["being mated anyway", mate(false), mate(false), outcome(null)],
     ["being mated, then not", mate(false), cp(-500), outcome(null)]
   ] as const)("%s", (_name, before, after, expected) => {
-    expect(severityFor(before, after)).toEqual(expected);
+    expect(severityFor(before, after)).toStrictEqual(expected);
   });
 });
 
@@ -168,7 +168,7 @@ describe("assessMove: errors", () => {
       { rating: 1500, topMoves: [{ uci: "f2f3", prob: 0.4 }], playedProb: 0.4 }
     ];
     const move = { ...whiteBlunder, motifs: ["fork"], humanPredictions: predictions };
-    expect(assessMove(move, { playerRating: 1500 }).tags).toEqual(
+    expect(assessMove(move, { playerRating: 1500 }).tags).toStrictEqual(
       expect.arrayContaining(["missed_tactic", "natural_move"])
     );
     expect(assessMove(move, { trustMaia: false }).tags).not.toContain("natural_move");
@@ -194,33 +194,48 @@ describe("assessMove: errors", () => {
     expect(assessMove(mistake)).toMatchObject({ severity: "mistake", annotation: "mistake" });
   });
 
+  // 1... a6 after 1. e4, where 1... e5 keeps a clear edge (or only a small one).
+  const clearEdgeThrownAway = [
+    ["e7e5", "cp 150"],
+    ["a7a6", "cp 10"]
+  ] as const;
+  const smallEdgeThrownAway = [
+    ["e7e5", "cp 40"],
+    ["a7a6", "cp -90"]
+  ] as const;
   it.each([
     [
       "the opponent's blunder gave a clear edge",
       "miss",
       previousInto(AFTER_E4, "blunder"),
-      "cp 150"
+      clearEdgeThrownAway
     ],
     [
       "the opponent's mistake gave a clear edge",
       "miss",
       previousInto(AFTER_E4, "mistake"),
-      "cp 150"
+      clearEdgeThrownAway
     ],
     [
       "the opponent's error left only a small edge",
       "mistake",
       previousInto(AFTER_E4, "blunder"),
-      "cp 40"
+      smallEdgeThrownAway
     ],
-    ["the opponent's inaccuracy", "mistake", previousInto(AFTER_E4, "inaccuracy"), "cp 150"],
-    ["the opponent was already lost", "mistake", previousInto(AFTER_E4, "blunder", 5), "cp 150"]
-  ] as const)("a mistake after %s is a %s", (_name, annotation, previous, best) => {
-    const move = position(AFTER_E4, "a6", [
-      ["e7e5", best],
-      ["a7a6", best === "cp 150" ? "cp 10" : "cp -90"]
-    ]);
-    const result = assessMove(move, { previous });
+    [
+      "the opponent's inaccuracy",
+      "mistake",
+      previousInto(AFTER_E4, "inaccuracy"),
+      clearEdgeThrownAway
+    ],
+    [
+      "the opponent was already lost",
+      "mistake",
+      previousInto(AFTER_E4, "blunder", 5),
+      clearEdgeThrownAway
+    ]
+  ] as const)("a mistake after %s is a %s", (_name, annotation, previous, lines) => {
+    const result = assessMove(position(AFTER_E4, "a6", lines), { previous });
     expect(result.severity).toBe("mistake");
     expect(result.annotation).toBe(annotation);
     expect(result.tags.includes("missed_chance")).toBe(annotation === "miss");
@@ -252,7 +267,7 @@ describe("assessMove: errors", () => {
         topLines: [],
         replyLines: []
       }).tags
-    ).toEqual(["incomplete"]);
+    ).toStrictEqual(["incomplete"]);
   });
 });
 

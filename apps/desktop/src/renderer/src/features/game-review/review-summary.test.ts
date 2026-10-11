@@ -85,7 +85,7 @@ describe("scoreboardRows", () => {
       move(6, { annotation: "inaccuracy" }),
       move(7)
     ];
-    expect(scoreboardRows(moves)).toEqual([
+    expect(scoreboardRows(moves)).toStrictEqual([
       { annotation: "book", white: 1, black: 1 },
       { annotation: "great", white: 0, black: 1 },
       { annotation: "inaccuracy", white: 0, black: 1 },
@@ -95,7 +95,9 @@ describe("scoreboardRows", () => {
 
   it("counts by the side to move, so a game set up with Black to move counts right", () => {
     const blackFirst = move(1, { annotation: "mistake", fenBefore: BLACK_TO_MOVE });
-    expect(scoreboardRows([blackFirst])).toEqual([{ annotation: "mistake", white: 0, black: 1 }]);
+    expect(scoreboardRows([blackFirst])).toStrictEqual([
+      { annotation: "mistake", white: 0, black: 1 }
+    ]);
   });
 });
 
@@ -116,16 +118,16 @@ describe("accuracy", () => {
   it("by phase uses the shared split and leaves out a phase the game never reached", () => {
     const moves = [1, 2, 3, 4, 5, 6].map((ply) => move(ply, { evalLoss: ply * 16 }));
     // Opening to ply 2, endgame from ply 5.
-    expect(phaseAccuracy(moves, { openingEnd: 2, endgameStart: 5 })).toEqual([
+    expect(phaseAccuracy(moves, { openingEnd: 2, endgameStart: 5 })).toStrictEqual([
       { phase: "opening", white: 98, black: 96 },
       { phase: "middlegame", white: 94, black: 92 },
       { phase: "endgame", white: 90, black: 88 }
     ]);
-    expect(phaseAccuracy(moves, { openingEnd: 0, endgameStart: null })).toEqual([
+    expect(phaseAccuracy(moves, { openingEnd: 0, endgameStart: null })).toStrictEqual([
       { phase: "middlegame", white: 94, black: 92 }
     ]);
     // An endgame the split found is listed even when no reviewed move fell in it.
-    expect(phaseAccuracy(moves.slice(0, 4), { openingEnd: 2, endgameStart: 9 })).toEqual([
+    expect(phaseAccuracy(moves.slice(0, 4), { openingEnd: 2, endgameStart: 9 })).toStrictEqual([
       { phase: "opening", white: 98, black: 96 },
       { phase: "middlegame", white: 94, black: 92 },
       { phase: "endgame", white: null, black: null }
@@ -152,15 +154,17 @@ describe("the opening", () => {
   });
 
   it("maps its name to Lichess puzzle OpeningTags: the family and the variation", () => {
-    expect(lichessOpeningTags("Sicilian Defense: Najdorf Variation, English Attack")).toEqual({
-      family: "Sicilian_Defense",
-      variation: "Sicilian_Defense_Najdorf_Variation"
-    });
-    expect(lichessOpeningTags("King's Gambit Accepted: Fischer Defense")).toEqual({
+    expect(lichessOpeningTags("Sicilian Defense: Najdorf Variation, English Attack")).toStrictEqual(
+      {
+        family: "Sicilian_Defense",
+        variation: "Sicilian_Defense_Najdorf_Variation"
+      }
+    );
+    expect(lichessOpeningTags("King's Gambit Accepted: Fischer Defense")).toStrictEqual({
       family: "Kings_Gambit_Accepted",
       variation: "Kings_Gambit_Accepted_Fischer_Defense"
     });
-    expect(lichessOpeningTags("Grünfeld Defense")).toEqual({
+    expect(lichessOpeningTags("Grünfeld Defense")).toStrictEqual({
       family: "Grunfeld_Defense",
       variation: null
     });
@@ -208,10 +212,10 @@ describe("practice themes", () => {
       // A success, and the opponent's error: neither counts.
       { ...fork, assessment: { ...fork.assessment!, annotation: "great" as const } }
     ];
-    expect(practiceChips(moves, "white")).toEqual([
+    expect(practiceChips(moves, "white")).toStrictEqual([
       { theme: "hangingPiece", label: "Hanging piece", count: 2 },
       { theme: "fork", label: "Fork", count: 1 }
     ]);
-    expect(practiceChips(moves, "black")).toEqual([]);
+    expect(practiceChips(moves, "black")).toStrictEqual([]);
   });
 });
