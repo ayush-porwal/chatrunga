@@ -14,7 +14,9 @@ function advancePuzzle(feedback: string): void {
   if (!store.activePuzzle) return;
   if (store.solutionIndex + 1 >= store.activePuzzle.solutionMoves.length) {
     store.markComplete();
-    playSound("correct");
+    // A puzzle finished after a wrong move or a shown solution is complete, not solved.
+    const { feedbackKind, outcome } = usePuzzleStore.getState();
+    if (feedbackKind === "complete" && outcome !== "failed") playSound("correct");
   } else store.advanceSolution(1, feedback);
 }
 

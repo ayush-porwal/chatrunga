@@ -12,6 +12,7 @@ import {
   formatSize,
   initialAssetProgress,
   isAssetInstalled,
+  lc0NeedsManualInstall,
   maiaNeedsLc0,
   missingDownloads,
   progressPercent,
@@ -64,6 +65,15 @@ describe("engine assets", () => {
     ).toBe(false);
     expect(maiaNeedsLc0(statusMap({ stockfish: { state: "installed" } }))).toBe(false);
     expect(maiaNeedsLc0(null)).toBe(false);
+  });
+
+  it("says Lc0 needs installing by hand only when it's missing with no download here", () => {
+    expect(lc0NeedsManualInstall(statusMap({ lc0: { autoDownload: false } }))).toBe(true);
+    expect(lc0NeedsManualInstall(statusMap({ lc0: { autoDownload: true } }))).toBe(false);
+    expect(
+      lc0NeedsManualInstall(statusMap({ lc0: { state: "custom", autoDownload: false } }))
+    ).toBe(false);
+    expect(lc0NeedsManualInstall(null)).toBe(false);
   });
 
   it("lists only missing assets that can be downloaded on this platform", () => {

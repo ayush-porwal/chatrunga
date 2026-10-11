@@ -136,7 +136,17 @@ function EngineList({ setup, view }: { setup: EngineSetup; view: EnginesView }) 
         </StepBand>
       );
     case "list":
-      return <EngineRows setup={setup} />;
+      return (
+        <>
+          <EngineRows setup={setup} />
+          {setup.lc0Manual ? (
+            <StepBand tone="info" icon={<Info />}>
+              Maia runs in Lc0, which has no download for this computer. Install Lc0, then add it in
+              Settings → Engines.
+            </StepBand>
+          ) : null}
+        </>
+      );
   }
 }
 

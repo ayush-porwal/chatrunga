@@ -36,6 +36,15 @@ export function maiaNeedsLc0(status: EngineAssetStatusMap | null): boolean {
   );
 }
 
+/**
+ * Lc0 isn't set up and this computer has no Lc0 download (macOS, Linux): Maia can only run once
+ * the user installs Lc0 and adds it in Settings → Engines, so the setup doesn't offer it.
+ */
+export function lc0NeedsManualInstall(status: EngineAssetStatusMap | null): boolean {
+  if (!status) return false;
+  return !isAssetInstalled(status.lc0) && !status.lc0.autoDownload;
+}
+
 /** Installed state + latest known release per asset (no network call); null outside the desktop app. */
 export async function fetchAssetStatus(): Promise<EngineAssetStatusMap | null> {
   return (await window.chaturanga?.assets.status()) ?? null;

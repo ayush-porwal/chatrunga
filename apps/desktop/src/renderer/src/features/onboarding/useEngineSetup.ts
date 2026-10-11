@@ -5,6 +5,7 @@ import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import {
   fetchAssetStatus,
   isAssetInstalled,
+  lc0NeedsManualInstall,
   recommendedDownloads,
   setupRowPercent,
   setupRows,
@@ -32,6 +33,8 @@ export type EngineSetup = {
   engine: EngineConfig | null;
   /** Stockfish's download percentage while it is being fetched, else null. */
   stockfishPercent: number | null;
+  /** Maia needs Lc0, which has no download for this computer (lc0NeedsManualInstall). */
+  lc0Manual: boolean;
   start: () => void;
   retry: (row: SetupRow) => void;
   /** Reads the download status again (after a failed check). */
@@ -128,6 +131,7 @@ export function useEngineSetup(): EngineSetup {
     engineReady,
     engine,
     stockfishPercent: stockfishBusy ? setupRowPercent(stockfishRow) : null,
+    lc0Manual: lc0NeedsManualInstall(status),
     start: () => void startDownloads(recommended),
     retry: (row) => void retryDownloads(row.ids.filter((id) => progress[id]?.status === "error")),
     recheck: () => {

@@ -102,8 +102,9 @@ function RatingField({ settings, setSetting }: FieldProps) {
   const selected = nearestLevelPreset(yourRating);
   const exact = LEVEL_PRESETS.some((preset) => preset.rating === yourRating);
   const locked = isRatingLocked(headline);
-  const setRating = (rating: number) =>
-    setSetting("playerRatings", applyRatingToAllModes(settings.playerRatings, rating));
+  const setRating = (rating: number) => {
+    if (!locked) setSetting("playerRatings", applyRatingToAllModes(settings.playerRatings, rating));
+  };
   return (
     <Field
       label="Rating"
@@ -118,17 +119,19 @@ function RatingField({ settings, setSetting }: FieldProps) {
               type="button"
               role="radio"
               aria-checked={checked}
-              disabled={locked}
+              // Read-only, not disabled: the checked tile stays reachable and is announced.
+              aria-disabled={locked || undefined}
               tabIndex={checked ? 0 : -1}
               onClick={() => setRating(preset.rating)}
-              onKeyDown={(event) =>
+              onKeyDown={(event) => {
+                if (locked) return;
                 radioKeys(
                   event,
                   LEVEL_PRESETS.map((item) => item.rating),
                   preset.rating,
                   setRating
-                )
-              }
+                );
+              }}
               className={cn(
                 "grid min-w-0 gap-[2px] rounded-[10px] border px-[10px] py-[12px] text-left transition-colors duration-[180ms]",
                 focusRing,

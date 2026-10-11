@@ -4,6 +4,7 @@ import {
   AUDIO_IDLE_SUSPEND_MS,
   configureSounds,
   keepAudioAwake,
+  LATE_MS,
   playMoveSound,
   playSound,
   previewSoundSet,
@@ -103,6 +104,45 @@ describe("the sound player", () => {
     expect(log).toStrictEqual(["play sfx/Check.mp3"]);
     vi.advanceTimersByTime(AFTER_MOVE_MS);
     expect(log).toStrictEqual(["play sfx/Check.mp3", "play sfx/Defeat.mp3"]);
+  });
+
+  it("a move made while a new set loads plays from that set once it arrives, never the old one", async () => {
+    const loaded = configureSounds({ ...sfx, set: "piano" });
+    playMoveSound("Nf3");
+    expect(log).toStrictEqual([]);
+    await loaded;
+    expect(log).toStrictEqual(["play piano/Move.mp3"]);
+  });
+
+  it("a move older than LATE_MS when its set arrives stays silent", async () => {
+    const loaded = configureSounds({ ...sfx, set: "nes" });
+    playMoveSound("Nf3");
+    vi.advanceTimersByTime(LATE_MS + 1);
+    await loaded;
+    expect(log).toStrictEqual([]);
+  });
+
+  it("a result still waiting when the set changes doesn't play", async () => {
+    playMoveSound("Qh4#");
+    playSound("defeat");
+    await configureSounds({ ...sfx, set: "nes" });
+    vi.advanceTimersByTime(AFTER_MOVE_MS);
+    expect(log).toStrictEqual(["play sfx/Check.mp3", "stop sfx/Check.mp3"]);
+  });
+
+  it("switching sounds off stops a preview, playing or still loading", async () => {
+    await previewSoundSet("piano", 0.5, false);
+    vi.advanceTimersByTime(0);
+    await configureSounds({ ...sfx, enabled: false });
+    vi.advanceTimersByTime(5_000);
+    expect(log).toStrictEqual(["play piano/Move.mp3"]);
+
+    await configureSounds(sfx);
+    const loading = previewSoundSet("futuristic", 0.5, false);
+    await configureSounds({ ...sfx, enabled: false });
+    await loading;
+    vi.advanceTimersByTime(5_000);
+    expect(log).toStrictEqual(["play piano/Move.mp3"]);
   });
 
   it("each result has its own recording", () => {

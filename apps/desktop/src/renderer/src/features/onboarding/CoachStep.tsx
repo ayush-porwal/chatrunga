@@ -114,7 +114,8 @@ export function CoachStep({
 
       <p className="flex items-start gap-[8px] text-[12.5px] leading-[1.45] text-fg-subtle">
         <Shield className="mt-[2px] size-[14px] shrink-0" aria-hidden />
-        Only the position and the engine’s findings are sent. Your key stays encrypted here.
+        Only the game you’re reviewing is sent: its moves and details, your rating and the engine’s
+        findings. Your key stays encrypted here.
       </p>
 
       <StepFooter

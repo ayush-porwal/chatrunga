@@ -27,11 +27,15 @@ export const AFTER_MOVE_MS = 250;
 const PREVIEW_GAP_MS = 700;
 /** Elements per file: enough for the overlaps a fast game makes, reused after that. */
 const POOL_SIZE = 3;
+/** A sound asked for while its set loads plays once the set arrives, if it is no older than this. */
+export const LATE_MS = 500;
 
 /** Set by the app (useMoveSounds) from Settings; nothing plays until sounds are switched on. */
 let preferences: SoundPreferences = { enabled: false, volume: 0.7, set: "sfx", silentCheck: false };
-/** The chosen set's recordings, once loaded (until then nothing plays). */
+/** The last set loaded: it plays only while it is still the chosen one. */
 let current: { set: SoundSet; files: SoundFiles } | null = null;
+/** Sounds asked for while the chosen set loads (at launch, or just after a change). */
+let waiting: { play: (files: SoundFiles) => void; at: number }[] = [];
 const loading = new Map<SoundSet, Promise<SoundFiles>>();
 const pools = new Map<string, HTMLAudioElement[]>();
 /** The latest board sound, which a sound stacked on it replaces and an announcement waits for. */
@@ -52,39 +56,65 @@ function loadSet(set: SoundSet): Promise<SoundFiles> {
 
 /**
  * Applies the sound settings: loads the chosen set (and its files, so the first move doesn't wait
- * for one), and drops the elements of the set it replaces. Settles once the set is ready (a set
+ * for one), and drops the elements of the set it replaces. Switching sounds off or changing the
+ * set cancels what was still to play (a result, a preview). Settles once the set is ready (a set
  * that can't load is logged: the board stays silent).
  */
 export function configureSounds(next: SoundPreferences): Promise<void> {
+  const changed = !next.enabled || next.set !== preferences.set;
   preferences = next;
-  if (!next.enabled) {
+  if (changed) {
     clearTimers(queued);
-    return Promise.resolve();
+    cancelPreview();
+    waiting = [];
   }
+  if (!next.enabled) return Promise.resolve();
   if (current?.set === next.set) return Promise.resolve();
   return loadSet(next.set).then(
     (files) => {
-      if (preferences.set !== next.set || current?.set === next.set) return;
-      releaseElements();
-      current = { set: next.set, files };
-      preloadFiles(files);
+      if (preferences.set !== next.set) return;
+      if (current?.set !== next.set) {
+        releaseElements();
+        current = { set: next.set, files };
+        preloadFiles(files);
+      }
+      const late = waiting;
+      waiting = [];
+      const now = performance.now();
+      for (const sound of late) if (now - sound.at <= LATE_MS) sound.play(files);
     },
-    (error: unknown) => console.debug(`[sounds] the ${next.set} set didn't load:`, error)
+    (error: unknown) => {
+      if (preferences.set === next.set) waiting = [];
+      console.debug(`[sounds] the ${next.set} set didn't load:`, error);
+    }
   );
 }
 
 /** Plays `kind` from the chosen set, if sounds are on and the set has it. */
 export function playSound(kind: SoundKind): void {
-  if (!preferences.enabled || !current) return;
-  playFrom(current.files, kind);
+  withChosenSet((files) => playFrom(files, kind));
 }
 
 /** Plays a move's sound (from its SAN): a check, castling, a capture or a move, as the set has. */
 export function playMoveSound(san: string): void {
-  if (!preferences.enabled || !current) return;
-  const files = current.files;
-  const kind = moveSoundChain(san, preferences.silentCheck).find((each) => files[each]);
-  if (kind) playFrom(files, kind);
+  const silentCheck = preferences.silentCheck;
+  withChosenSet((files) => {
+    const kind = moveSoundChain(san, silentCheck).find((each) => files[each]);
+    if (kind) playFrom(files, kind);
+  });
+}
+
+/**
+ * Plays from the chosen set: now if it is loaded, else once it is (never from the set it
+ * replaced). Nothing while sounds are off.
+ */
+function withChosenSet(play: (files: SoundFiles) => void): void {
+  if (!preferences.enabled) return;
+  if (current?.set === preferences.set) play(current.files);
+  else {
+    const now = performance.now();
+    waiting = [...waiting.filter((sound) => now - sound.at <= LATE_MS), { play, at: now }];
+  }
 }
 
 /**
@@ -96,8 +126,7 @@ export function previewSoundSet(
   volume: number,
   silentCheck: boolean
 ): Promise<void> {
-  clearTimers(preview);
-  const run = ++previewRun;
+  const run = cancelPreview();
   const kinds: SoundKind[] = [
     "move",
     "capture",
@@ -112,7 +141,7 @@ export function previewSoundSet(
         const timer = setTimeout(() => {
           preview.delete(timer);
           const src = files[kind];
-          if (src) start(src, volume, kind);
+          if (src && preferences.enabled) start(src, volume, kind);
         }, index * PREVIEW_GAP_MS);
         preview.add(timer);
       });
@@ -193,6 +222,12 @@ function releaseElements(): void {
   for (const pool of pools.values()) for (const audio of pool) audio.pause();
   pools.clear();
   lastBoard = null;
+}
+
+/** Stops the preview still to play (its sounds, or its set still loading). Returns the next run. */
+function cancelPreview(): number {
+  clearTimers(preview);
+  return ++previewRun;
 }
 
 function clearTimers(timers: Set<ReturnType<typeof setTimeout>>): void {
