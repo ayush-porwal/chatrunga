@@ -1,8 +1,9 @@
 import { useEffect } from "react";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import { exportGameToPgn } from "@chaturanga/shared/chess/pgn";
-import type { MoveNode, SaveGameInput } from "@chaturanga/shared/types/chess";
+import type { SaveGameInput } from "@chaturanga/shared/types/chess";
 import { ipcErrorMessage } from "@/lib/ipc-error";
+import { mainlineEnd } from "../features/game/move-tree-model";
 import { isSaveSuppressed, useSaveGameMutation } from "../queries/api";
 import { useGameStore } from "../stores/game-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
@@ -364,14 +365,6 @@ function saveInput(
     moveTree: game.moveTree,
     ...(review === undefined ? {} : { review })
   };
-}
-
-/** Last node of the main line (first child at every step from the root). */
-export function mainlineEnd(moveTree: readonly MoveNode[]): MoveNode | null {
-  const byId = new Map(moveTree.map((node) => [node.id, node]));
-  let node = moveTree.find((item) => item.parentId === null) ?? null;
-  while (node?.children[0] && byId.has(node.children[0])) node = byId.get(node.children[0])!;
-  return node;
 }
 
 /**

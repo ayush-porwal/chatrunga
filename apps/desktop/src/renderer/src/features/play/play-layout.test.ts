@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { PlayOpponent } from "@chaturanga/shared/types/settings";
 import {
   isFirstRun,
   playEngineOrder,
   resolvePlayMode,
+  savePlaySettings,
   topRowSlots,
   widePreviewBoardSize
 } from "./play-layout";
@@ -84,6 +86,48 @@ describe("resolvePlayMode", () => {
     expect(
       resolvePlayMode({ session: null, saved: null, hasAccount: true, connected: false })
     ).toBe("engine");
+  });
+});
+
+describe("savePlaySettings", () => {
+  /** The session's opponent, and the settings writes (each fails when `fail` is called). */
+  function setup(initial: PlayOpponent | null) {
+    const state = {
+      playOpponent: initial,
+      setPlayOpponent: (opponent: PlayOpponent | null) => void (state.playOpponent = opponent)
+    };
+    const writes: { patch: unknown; fail: () => void }[] = [];
+    const save = (opponent: PlayOpponent, engineId: string | null = null) =>
+      savePlaySettings(
+        { opponent, engineId },
+        () => state,
+        (variables, options) => writes.push({ patch: variables.patch, fail: options.onError })
+      );
+    return { state, writes, save };
+  }
+
+  it("switches the session's opponent at once and writes the choice", () => {
+    const { state, writes, save } = setup("pool");
+    save("engine", "sf");
+    expect(state.playOpponent).toBe("engine");
+    expect(writes.map((write) => write.patch)).toEqual([
+      { playOpponent: "engine", playEngineId: "sf" }
+    ]);
+  });
+
+  it("puts the previous opponent back when the write fails", () => {
+    const { state, writes, save } = setup(null);
+    save("friend");
+    writes[0]!.fail();
+    expect(state.playOpponent).toBeNull();
+  });
+
+  it("keeps an opponent chosen while the failed write was in flight", () => {
+    const { state, writes, save } = setup("pool");
+    save("friend");
+    save("ai");
+    writes[0]!.fail();
+    expect(state.playOpponent).toBe("ai");
   });
 });
 

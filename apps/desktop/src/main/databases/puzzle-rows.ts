@@ -173,6 +173,23 @@ function playsThrough(fen: string, moves: string[]): boolean {
 }
 
 /**
+ * Whether a puzzle read back from storage can still be played, by the rules its scan applied: its
+ * position parses, the whole solution plays from it, and the side to move is the position's.
+ */
+export function isPlayablePuzzle(
+  sample: Pick<PuzzleSample, "initialFen" | "solutionMoves" | "sideToMove">
+): boolean {
+  try {
+    return (
+      playsThrough(sample.initialFen, sample.solutionMoves) &&
+      statusForFen(sample.initialFen).turn === sample.sideToMove
+    );
+  } catch {
+    return false; // An unreadable position.
+  }
+}
+
+/**
  * Lichess puzzle CSV: PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,
  * NbPlays,Themes,GameUrl,OpeningTags. The FEN is before the opponent's move;
  * the puzzle starts after `Moves[0]`.

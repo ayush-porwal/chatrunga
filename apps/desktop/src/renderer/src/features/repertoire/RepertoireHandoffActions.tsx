@@ -1,6 +1,6 @@
 import { BookOpen, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { mainlineEnd } from "../../app/useGameAutosave";
+import { mainlineEnd } from "../game/move-tree-model";
 import { useGameStore } from "../../stores/game-store";
 import { isHandoffGame, useRepertoireHandoffStore } from "../../stores/repertoire-handoff-store";
 import { gameHasEnded } from "./handoffs";

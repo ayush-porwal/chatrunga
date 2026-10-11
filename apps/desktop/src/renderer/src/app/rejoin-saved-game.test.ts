@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { importPgnText } from "@chaturanga/shared/chess/pgn";
 import type { MoveNode, SavedGame } from "@chaturanga/shared/types/chess";
 import {
+  planRejoin,
   rejoinNotice,
   savedEngineClock,
   savedEngineMatch,
@@ -129,6 +130,101 @@ describe("savedEngineClock", () => {
       blackMs: 110_000,
       sideToMove: "white"
     });
+  });
+});
+
+describe("planRejoin", () => {
+  const T = 1_700_000_000_000;
+  const vsStockfish = { white: "You", black: "Stockfish", timeControl: "120+1" };
+  /** 1. e4 e5 2. Nf3, played at T, T+3 s and T+10 s: Black to move since. */
+  const played = timedTree([
+    { clock: "0:02:00", playedAt: T },
+    { clock: "0:01:58.5", playedAt: T + 3_000 },
+    { clock: "0:01:55", playedAt: T + 10_000 }
+  ]);
+  const latest = played.at(-1)!.id;
+
+  it("plays a timed game on from its latest move, with the time away taken off the side to move", () => {
+    expect(
+      planRejoin({ headers: vsStockfish, moveTree: played }, [stockfish], T + 50_000)
+    ).toMatchObject({
+      kind: "resume",
+      engine: stockfish,
+      engineSide: "black",
+      humanSide: "white",
+      nodeId: latest,
+      clock: { whiteMs: 115_000, blackMs: 78_500, sideToMove: "black" }
+    });
+  });
+
+  it("ends a timed game on time when the side to move ran out while away", () => {
+    expect(
+      planRejoin({ headers: vsStockfish, moveTree: played }, [stockfish], T + 10_000 + 118_500)
+    ).toMatchObject({
+      kind: "timed-out",
+      engine: stockfish,
+      nodeId: latest,
+      clock: { blackMs: 0, sideToMove: "black" },
+      outcome: { result: "1-0", termination: "Time forfeit" }
+    });
+  });
+
+  it("draws a game lost on time when the side left can't mate", () => {
+    // Black's lone king against a rook; White, to move, ran out of time.
+    const { moveTree } = importPgnText(
+      '[SetUp "1"]\n[FEN "4k3/8/8/8/8/8/8/R3K3 b - - 0 1"]\n\n1... Kd7 *'
+    ).game;
+    const tree = moveTree.map((node) =>
+      node.san ? { ...node, clockAfter: "0:00:30", playedAt: T } : node
+    );
+    expect(
+      planRejoin({ headers: vsStockfish, moveTree: tree }, [stockfish], T + 120_000)
+    ).toMatchObject({
+      kind: "timed-out",
+      outcome: { result: "1/2-1/2", termination: "Time forfeit" }
+    });
+  });
+
+  it("plays an untimed game, or one saved without its clocks, on untimed from the main line's end", () => {
+    const { moveTree } = importPgnText("1. e4 e5 2. Nf3 *").game;
+    for (const timeControl of ["-", "120+1"]) {
+      expect(
+        planRejoin({ headers: { ...vsStockfish, timeControl }, moveTree }, [stockfish], T)
+      ).toEqual({
+        kind: "resume",
+        engine: stockfish,
+        engineSide: "black",
+        humanSide: "white",
+        nodeId: moveTree.at(-1)!.id,
+        clock: null
+      });
+    }
+  });
+
+  it("shows a game that is already over at its end instead of playing on", () => {
+    const { moveTree } = importPgnText("1. f3 e5 2. g4 Qh4# *").game;
+    expect(
+      planRejoin({ headers: { ...vsStockfish, timeControl: "-" }, moveTree }, [stockfish], T)
+    ).toEqual({ kind: "finished", nodeId: moveTree.at(-1)!.id });
+  });
+
+  it("only opens a game whose engine is missing or unavailable, saying why", () => {
+    const game = { headers: vsStockfish, moveTree: played };
+    expect(planRejoin(game, [maia], T)).toEqual({
+      kind: "open",
+      notice: "Stockfish isn't installed, so the game opened on the board."
+    });
+    expect(planRejoin(game, [{ ...stockfish, isAvailable: false }], T)).toEqual({
+      kind: "open",
+      notice: "Stockfish isn't available, so the game opened on the board."
+    });
+  });
+
+  it("plays against the engine the game saved by id, not another of the same name", () => {
+    const headers = { ...vsStockfish, engineId: "sf-custom" };
+    expect(
+      planRejoin({ headers, moveTree: played }, [stockfish, customStockfish], T + 50_000)
+    ).toMatchObject({ kind: "resume", engine: customStockfish });
   });
 });
 

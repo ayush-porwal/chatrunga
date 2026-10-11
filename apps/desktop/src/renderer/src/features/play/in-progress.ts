@@ -1,6 +1,7 @@
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import type { Color, MoveNode } from "@chaturanga/shared/types/chess";
 import type { LichessPlayingGame, LichessSpeed } from "@chaturanga/shared/types/lichess";
+import { mainlinePath } from "../game/move-tree-model";
 import { yourSide } from "../../app/rejoin-saved-game";
 import { speedLabel } from "../lichess/lichess-game";
 
@@ -181,18 +182,12 @@ function fullMoveNumber(fen: string): number {
 }
 
 /** The end of a game's main line: its position, last move and length (plies). */
-export function mainlineEnd(moveTree: readonly MoveNode[]): {
-  fen: string;
-  lastMove: string | null;
-  plies: number;
-} | null {
-  const byId = new Map(moveTree.map((node) => [node.id, node]));
-  let node = moveTree.find((item) => item.parentId === null);
-  if (!node) return null;
-  let plies = 0;
-  for (let next = byId.get(node.children[0] ?? ""); next; next = byId.get(next.children[0] ?? "")) {
-    node = next;
-    plies += 1;
-  }
-  return { fen: node.fenAfter, lastMove: plies ? node.uci : null, plies };
+export function mainlineSummary(
+  moveTree: readonly MoveNode[]
+): { fen: string; lastMove: string | null; plies: number } | null {
+  const path = mainlinePath(moveTree);
+  const end = path.at(-1);
+  if (!end) return null;
+  const plies = path.length - 1;
+  return { fen: end.fenAfter, lastMove: plies ? end.uci : null, plies };
 }

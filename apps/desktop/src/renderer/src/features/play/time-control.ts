@@ -29,6 +29,22 @@ export function engineClockPreset(id: string): EngineClockPresetId {
   return ENGINE_CLOCK_PRESETS.find((preset) => preset.id === id)?.id ?? "infinite";
 }
 
+/**
+ * The slider stop of a Lichess clock: the preset with its minutes and increment (a restored preset
+ * is a copy, not the list's own object), else the first.
+ */
+export function presetIndex(
+  presets: readonly LichessClockPreset[],
+  preset: LichessClockPreset
+): number {
+  return Math.max(
+    0,
+    presets.findIndex(
+      (item) => item.minutes === preset.minutes && item.incrementSec === preset.incrementSec
+    )
+  );
+}
+
 /** "Blitz · 5 min + 3 s": Lichess's speed band for the clock, then the clock itself. */
 export function clockText(clock: LichessClockPreset): string {
   const speed = speedLabel(speedForClock(clock.minutes, clock.incrementSec));

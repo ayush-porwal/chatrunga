@@ -72,6 +72,40 @@ export function resolvePlayMode({
   return connected ? "pool" : "engine";
 }
 
+/** Play settings' choice: the opponent, and the engine for engine games. */
+export type PlaySettingsChoice = { opponent: PlayOpponent; engineId: string | null };
+
+/**
+ * Saves Play settings' choice, optimistically: the session's opponent (`session`, the Lichess
+ * store's) switches now, and the settings write goes out. A failed write puts the session's
+ * previous opponent back, unless another one was chosen while it was being written (the settings
+ * write rolls its own value back).
+ */
+export function savePlaySettings(
+  choice: PlaySettingsChoice,
+  session: () => {
+    playOpponent: PlayOpponent | null;
+    setPlayOpponent: (opponent: PlayOpponent | null) => void;
+  },
+  write: (
+    variables: { patch: { playOpponent: PlayOpponent; playEngineId: string | null } },
+    options: { onError: () => void }
+  ) => void
+): void {
+  const { opponent, engineId } = choice;
+  const before = session().playOpponent;
+  session().setPlayOpponent(opponent);
+  write(
+    { patch: { playOpponent: opponent, playEngineId: engineId } },
+    {
+      onError: () => {
+        const current = session();
+        if (current.playOpponent === opponent) current.setPlayOpponent(before);
+      }
+    }
+  );
+}
+
 /** First run: no engine installed and no Lichess account, so there is no opponent yet. */
 export function isFirstRun({
   engineCount,

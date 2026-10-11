@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
-import { mainlineEnd, sameDocument, savedResult } from "./useGameAutosave";
+import { mainlineEnd } from "../features/game/move-tree-model";
+import { sameDocument, savedResult } from "./useGameAutosave";
 
 const node = (id: string, parentId: string | null, children: string[]): MoveNode => ({
   id,

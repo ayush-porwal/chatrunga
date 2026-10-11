@@ -59,10 +59,10 @@ import {
   playSegClass,
   wayButton
 } from "./play-card-parts";
-import { WIDE_GAP, resolvePlayMode } from "./play-layout";
+import { WIDE_GAP, resolvePlayMode, savePlaySettings } from "./play-layout";
 import { useWidePreviewSize } from "./use-wide-preview-size";
 import { PiecePair } from "./piece-art";
-import { ENGINE_CLOCK_PRESETS, clockText, engineClockText } from "./time-control";
+import { ENGINE_CLOCK_PRESETS, clockText, engineClockText, presetIndex } from "./time-control";
 import { useEngineGameSetup, type EngineGameSetup } from "./use-engine-game-setup";
 
 const cardShell = "min-w-0 rounded-xl border border-line bg-surface leading-[1.43]";
@@ -503,22 +503,9 @@ export const PlayCard = memo(function PlayCard({
           onConnectLichess={desktopApiAvailable ? connect.connect : null}
           onOpenEngineSettings={onOpenEngineSettings}
           onClose={() => setSettingsOpen(false)}
-          onSave={({ opponent, engineId }) => {
+          onSave={(choice) => {
             setSettingsOpen(false);
-            const lichess = useLichessStore.getState();
-            const before = lichess.playOpponent;
-            lichess.setPlayOpponent(opponent);
-            // Optimistic: the card switches now; a failed write puts the saved value back, and the
-            // session's choice too (unless another one was made while it was being written).
-            updateSettings.mutate(
-              { patch: { playOpponent: opponent, playEngineId: engineId } },
-              {
-                onError: () => {
-                  const store = useLichessStore.getState();
-                  if (store.playOpponent === opponent) store.setPlayOpponent(before);
-                }
-              }
-            );
+            savePlaySettings(choice, useLichessStore.getState, updateSettings.mutate);
           }}
         />
       ) : null}
@@ -714,15 +701,6 @@ function ClockEditIcon() {
 }
 
 /* ------------------------------------------------------------------ Lichess */
-
-function presetIndex(presets: readonly LichessClockPreset[], preset: LichessClockPreset): number {
-  return Math.max(
-    0,
-    presets.findIndex(
-      (item) => item.minutes === preset.minutes && item.incrementSec === preset.incrementSec
-    )
-  );
-}
 
 function lichessStops(presets: readonly LichessClockPreset[]): SliderStop[] {
   return presets.map((preset) => ({

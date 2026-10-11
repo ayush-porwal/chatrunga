@@ -1,6 +1,7 @@
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import { parseClock, parseTimeControl } from "@chaturanga/shared/chess/move-times";
 import { clocksOnPathToNode, exportGameToPgn } from "@chaturanga/shared/chess/pgn";
+import { statusForFen } from "@chaturanga/shared/chess/position";
 import type {
   Color,
   GameHeaders,
@@ -9,6 +10,7 @@ import type {
   SaveGameInput
 } from "@chaturanga/shared/types/chess";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
+import { mainlineEnd } from "../features/game/move-tree-model";
 import { sessionFromSavedGame } from "../features/game/saved-game";
 import { latestPlayedNode, timeForfeitOutcome, type GameOutcome } from "../stores/game-store";
 
@@ -95,7 +97,7 @@ export function savedEngineClock(
 ): SavedEngineClock | null {
   const config = parseTimeControl(timeControl);
   if (!config || config.baseMs <= 0) return null;
-  const node = latestPlayedNode(moveTree) ?? mainlineEndNode(moveTree);
+  const node = latestPlayedNode(moveTree) ?? mainlineEnd(moveTree);
   if (!node) return null;
   const recorded = clocksOnPathToNode([...moveTree], node.id);
   if (recorded.white === null && recorded.black === null && node.playedAt === undefined)
@@ -122,6 +124,52 @@ export function savedEngineClock(
   };
 }
 
+/** The match a saved engine game goes on as: who plays whom, from which move, on which clocks. */
+type RejoinMatch = {
+  engine: EngineChoice;
+  engineSide: Color;
+  humanSide: Color;
+  /** Its latest move: where the match goes on. */
+  nodeId: string;
+};
+
+/** What rejoining a saved engine game does once the game is open on the board. */
+export type RejoinPlan =
+  /** Only opened: there's no match to play on; `notice` says why (null: nothing to say). */
+  | { kind: "open"; notice: string | null }
+  /** Already over at its latest move: shown there, not played on. */
+  | { kind: "finished"; nodeId: string }
+  /** Played on; without a clock (untimed, or saved before games kept them) at ENGINE_MOVE_TIME_MS. */
+  | (RejoinMatch & { kind: "resume"; clock: SavedEngineClock | null })
+  /** The side to move ran out of time while away: the match is set up and ends on time at once. */
+  | (RejoinMatch & { kind: "timed-out"; clock: SavedEngineClock; outcome: GameOutcome });
+
+/**
+ * Rejoining a saved engine game (Play's In progress card) at `nowMs`: play on against its engine
+ * from its latest move, with the time each side has now; end it on time when the side to move ran
+ * out meanwhile; or only open it, with a notice when its engine is missing or unavailable.
+ */
+export function planRejoin(
+  game: {
+    headers: Pick<GameHeaders, "white" | "black" | "engineId" | "timeControl">;
+    moveTree: readonly MoveNode[];
+  },
+  engines: readonly EngineChoice[],
+  nowMs: number
+): RejoinPlan {
+  const match = savedEngineMatch(game.headers, engines);
+  if (!match) return { kind: "open", notice: rejoinNotice(game.headers, engines) };
+  const clock = savedEngineClock(game.moveTree, game.headers.timeControl, nowMs);
+  const end = clock
+    ? game.moveTree.find((node) => node.id === clock.nodeId)
+    : mainlineEnd(game.moveTree);
+  if (!end) return { kind: "open", notice: null };
+  if (statusForFen(end.fenAfter).isEnd) return { kind: "finished", nodeId: end.id };
+  const resumed = { ...match, nodeId: end.id };
+  if (clock?.flagged) return { ...resumed, kind: "timed-out", clock, outcome: clock.flagged };
+  return { ...resumed, kind: "resume", clock };
+}
+
 /**
  * The library write that ends a saved game on time (lost while away, before it was rejoined): its
  * moves and cursor as saved, with the result and termination; its stored analyses stay.
@@ -144,11 +192,4 @@ export function timeForfeitSave(saved: SavedGame, outcome: GameOutcome): SaveGam
     pgn: exportGameToPgn({ headers, moveTree: session.moveTree }),
     ...(session.analysisBoard === undefined ? {} : { analysisBoard: session.analysisBoard })
   };
-}
-
-function mainlineEndNode(moveTree: readonly MoveNode[]): MoveNode | null {
-  const byId = new Map(moveTree.map((node) => [node.id, node]));
-  let node = moveTree.find((item) => item.parentId === null) ?? null;
-  while (node?.children[0] && byId.has(node.children[0])) node = byId.get(node.children[0]) ?? null;
-  return node;
 }

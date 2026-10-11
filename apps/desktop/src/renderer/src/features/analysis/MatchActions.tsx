@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { BarChart3, FileSearch, Flag, Handshake, Loader2, Puzzle, Swords, X } from "lucide-react";
 import { engineAcceptsHumanDrawOffer } from "@chaturanga/shared/engine/draw-offer";
 import { statusForFen } from "@chaturanga/shared/chess/position";
-import { mainlineEnd } from "../../app/useGameAutosave";
+import { mainlineEnd } from "../game/move-tree-model";
 import { useAnalysisStore } from "../../stores/analysis-store";
 import { useGameStore } from "../../stores/game-store";
 import { isHandoffGame, useRepertoireHandoffStore } from "../../stores/repertoire-handoff-store";
