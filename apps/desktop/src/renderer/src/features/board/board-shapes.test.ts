@@ -124,10 +124,10 @@ describe("liveAnalysisShapes", () => {
     );
     expect([...opacities].sort((a, b) => b - a)).toEqual(opacities);
     expect(new Set(opacities).size).toBe(4);
-    // The best-move arrow switch doesn't hide them.
+    // Engine arrows off hides them too: the plan count only says which arrows show.
     expect(
       liveAnalysisShapes(START_FEN, RUY, { ...white, planArrows: 2, bestMoveArrow: false })
-    ).toHaveLength(2);
+    ).toEqual([]);
   });
 
   it("starts green with Black to move, and draws castling and at most four moves", () => {

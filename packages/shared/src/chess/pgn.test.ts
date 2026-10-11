@@ -267,6 +267,33 @@ describe("PGN with the analysis", () => {
     );
   });
 
+  it("drops an imported quality NAG the review marks without a glyph", () => {
+    // 3. Bc4 came with $1; reviewed as excellent (no standard glyph), it carries no NAG.
+    const pgn = exportGameToPgn({ ...game, analysis: { moves: [reviewed(4, "excellent", null)] } });
+    expect(pgn).toContain("3. Bc4 Nf6");
+    expect(pgn).not.toContain("$1");
+  });
+
+  it("keeps every node when a best line's new id is already taken", () => {
+    // 3. Bb5 (in the 2. Nf3 line) gets the id 3... Nf6's best line would take for Qe7.
+    const taken = `${mainline[5]!.id}~best-0`;
+    const bb5 = game.moveTree.find((node) => node.san === "Bb5")!;
+    const rename = (id: string) => (id === bb5.id ? taken : id);
+    const moveTree = game.moveTree.map((node) => ({
+      ...node,
+      id: rename(node.id),
+      parentId: node.parentId === null ? null : rename(node.parentId),
+      children: node.children.map(rename)
+    }));
+    const pgn = exportGameToPgn({ ...game, moveTree, analysis });
+    expect(pgn.split("\n").pop()).toBe(
+      "1. e4 { [%eval 0.30] } e5 { [%eval 0.32] } 2. Qh5 $6 { [%eval 0.00] } " +
+        "(2. Nf3 { [%eval 0.35] } Nc6 3. Bb5 (3. Bc4)) 2... Nc6 { [%eval 0.60] } " +
+        "3. Bc4 $2 { [%eval 0.20] } Nf6 $4 { [%eval #1] } (3... Qe7 { [%eval 0.40] } 4. Nf3) " +
+        "4. Qxf7# $1 1-0"
+    );
+  });
+
   it("re-imports with every move, NAG and header, and exports the same again", () => {
     const pgn = exportGameToPgn({ ...game, analysis });
     const again = importPgnText(pgn, { strict: true }).game;

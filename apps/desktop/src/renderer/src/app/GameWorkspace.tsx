@@ -17,6 +17,7 @@ import { mainBoardSurface } from "../features/board/move-mark";
 import { BoardWorkspace } from "../features/board/BoardWorkspace";
 import { MoveNavigation } from "../features/board/MoveNavigation";
 import { blackToMove, fullMoveCount } from "../features/board/move-counter";
+import { mainlineEnd } from "../features/play/in-progress";
 import { EngineStatusPanel } from "../features/analysis/EngineStatusPanel";
 import { MoveList } from "../features/game/MoveList";
 import {
@@ -37,18 +38,11 @@ import { ADD_NEEDS_SAVE, captureBoardSource } from "../features/repertoire/board
 import { useAddToRepertoireStore } from "../stores/add-to-repertoire-store";
 import { useAppNoticeStore } from "../stores/app-notice-store";
 import { useGameStore } from "../stores/game-store";
-import { usePuzzleStore } from "../stores/puzzle-store";
 import { useReviewStore } from "../stores/review-store";
 import { useDisplayedReviewMoves } from "../stores/review-validity";
 import { DESTINATION_ICONS } from "./destination-icons";
-import { availableSideTab, showsEngine, type PuzzleTabs, type SideTab } from "./side-tabs";
-
-function usePuzzleTabs(): PuzzleTabs {
-  const puzzleBoard = useGameStore((state) => state.source === "puzzle");
-  return usePuzzleStore((state) =>
-    !puzzleBoard || !state.activePuzzle ? "none" : state.outcome === "pending" ? "locked" : "open"
-  );
-}
+import { availableSideTab, showsEngine, type SideTab } from "./side-tabs";
+import { usePuzzleTabs } from "./use-puzzle-tabs";
 
 /**
  * The game view (free board, Analysis, engine and Lichess games, Puzzle) rendered through the shared board
@@ -250,12 +244,8 @@ function useMainlineMoveCount(): number {
 }
 
 function mainlineMoveCount(moveTree: readonly MoveNode[]): number {
-  const byId = new Map(moveTree.map((node) => [node.id, node]));
   const root = moveTree.find((node) => !node.parentId);
-  let plies = 0;
-  for (let cursor = root; cursor?.children[0] && plies < moveTree.length; plies += 1)
-    cursor = byId.get(cursor.children[0]);
-  return fullMoveCount(plies, blackToMove(root?.fenBefore));
+  return fullMoveCount(mainlineEnd(moveTree)?.plies ?? 0, blackToMove(root?.fenBefore));
 }
 
 /** Export PGN: the game on the board, with its analysis, as a .pgn file. */

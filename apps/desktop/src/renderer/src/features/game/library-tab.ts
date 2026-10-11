@@ -127,3 +127,17 @@ export function libraryFilterState(
     total: chosen.reviewed ? reviewed : games
   };
 }
+
+/**
+ * What the Library's list shows. The list waits for the counts (they settle the filter), so a
+ * first read of them that fails is the list's error, with a retry: never skeleton rows forever. A
+ * failed re-read keeps the counts it had.
+ */
+export function libraryListState(
+  counts: { read: boolean; failed: boolean },
+  games: { pending: boolean; failed: boolean }
+): "counts-error" | "loading" | "error" | "ready" {
+  if (!counts.read) return counts.failed ? "counts-error" : "loading";
+  if (games.pending) return "loading";
+  return games.failed ? "error" : "ready";
+}

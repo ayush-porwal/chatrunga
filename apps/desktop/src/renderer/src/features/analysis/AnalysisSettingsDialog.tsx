@@ -35,7 +35,7 @@ const limitOptions: readonly { value: AnalysisLimit; label: string }[] = [
 
 const planOptions = ANALYSIS_PLAN_ARROWS.map((count) => ({
   value: String(count),
-  label: count ? String(count) : "Off"
+  label: count ? String(count) : "Best move"
 }));
 
 const sideOptions: readonly { value: EvalBarSide; label: string }[] = [
@@ -181,9 +181,9 @@ export function AnalysisSettingsDialog({ onClose }: { onClose: () => void }) {
 
       <Group title="Board">
         <Row
-          label="Best move arrow"
+          label="Engine arrows"
           htmlFor={`${ids}-arrow`}
-          description="An arrow for the engine's top move while analysing."
+          description="Arrows for the engine's top line while analysing."
           control={
             <Switch
               id={`${ids}-arrow`}
@@ -191,23 +191,25 @@ export function AnalysisSettingsDialog({ onClose }: { onClose: () => void }) {
               onCheckedChange={(value) => setSetting("analysisBestMoveArrow", value)}
             />
           }
-        />
-        <Row
-          label="Plan arrows"
-          description="Numbered arrows for the next moves of the engine's idea."
-          control={
-            <SegmentedControl
-              ariaLabel="Plan arrows"
-              size="sm"
-              value={String(settings.analysisPlanArrows)}
-              onChange={(value) => {
-                const count = ANALYSIS_PLAN_ARROWS.find((option) => String(option) === value);
-                if (count !== undefined) setSetting("analysisPlanArrows", count);
-              }}
-              options={planOptions}
-            />
-          }
-        />
+        >
+          <NestedRow
+            label="Show"
+            description="Numbered arrows for the next moves of the engine's idea."
+            disabled={!settings.analysisBestMoveArrow}
+            control={
+              <SegmentedControl
+                ariaLabel="Engine arrows shown"
+                size="sm"
+                value={String(settings.analysisPlanArrows)}
+                onChange={(value) => {
+                  const count = ANALYSIS_PLAN_ARROWS.find((option) => String(option) === value);
+                  if (count !== undefined) setSetting("analysisPlanArrows", count);
+                }}
+                options={withDisabled(planOptions, !settings.analysisBestMoveArrow)}
+              />
+            }
+          />
+        </Row>
         <Row
           label="Evaluation bar"
           htmlFor={`${ids}-bar`}
@@ -219,20 +221,21 @@ export function AnalysisSettingsDialog({ onClose }: { onClose: () => void }) {
               onCheckedChange={(value) => setSetting("analysisEvalBar", value)}
             />
           }
-        />
-        <Row
-          label="Bar position"
-          className={settings.analysisEvalBar ? undefined : "opacity-60"}
-          control={
-            <SegmentedControl
-              ariaLabel="Evaluation bar position"
-              size="sm"
-              value={settings.analysisEvalBarSide}
-              onChange={(value) => setSetting("analysisEvalBarSide", value)}
-              options={sideOptions}
-            />
-          }
-        />
+        >
+          <NestedRow
+            label="Bar position"
+            disabled={!settings.analysisEvalBar}
+            control={
+              <SegmentedControl
+                ariaLabel="Evaluation bar position"
+                size="sm"
+                value={settings.analysisEvalBarSide}
+                onChange={(value) => setSetting("analysisEvalBarSide", value)}
+                options={withDisabled(sideOptions, !settings.analysisEvalBar)}
+              />
+            }
+          />
+        </Row>
       </Group>
 
       <Group title={`Performance · ${ENGINE_PERFORMANCE_DESCRIPTION}`}>
@@ -251,6 +254,46 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
         {children}
       </div>
     </section>
+  );
+}
+
+/** A segmented control's options, every one unavailable while its parent setting is off. */
+function withDisabled<T extends { value: string; label: string }>(
+  options: readonly T[],
+  disabled: boolean
+): (T & { disabled: boolean })[] {
+  return options.map((option) => ({ ...option, disabled }));
+}
+
+/**
+ * A setting that refines the one above it (the arrows to show, the bar's side): indented under
+ * it, and dimmed and unavailable while that one is off. It keeps its place so the dialog never
+ * jumps.
+ */
+function NestedRow({
+  label,
+  description,
+  control,
+  disabled
+}: {
+  label: string;
+  description?: string;
+  control: ReactNode;
+  disabled: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "ml-1 grid gap-px border-l border-line pl-3 transition-opacity duration-micro",
+        disabled && "opacity-60"
+      )}
+    >
+      <div className="flex min-h-8 items-center gap-3">
+        <span className="min-w-0 flex-1 text-[0.8125rem] text-fg-secondary">{label}</span>
+        <div className="flex shrink-0 items-center gap-2">{control}</div>
+      </div>
+      {description ? <p className="text-xs text-fg-subtle">{description}</p> : null}
+    </div>
   );
 }
 

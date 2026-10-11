@@ -390,11 +390,11 @@ export type AppSettings = {
   analysisDepth: number;
   /** Live analysis: seconds per position when `analysisLimit` is "time". */
   analysisTimeSec: number;
-  /** Live analysis: an arrow for the engine's best move on the board. */
+  /** Live analysis: engine arrows on the board at all (Analysis settings' "Engine arrows"). */
   analysisBestMoveArrow: boolean;
   /**
-   * Live analysis: how many moves of the engine's top line the board draws as numbered arrows
-   * (one of {@link ANALYSIS_PLAN_ARROWS}); 0 is off, leaving the single best-move arrow.
+   * Live analysis, with engine arrows on: how many moves of the engine's top line the board draws
+   * as numbered arrows (one of {@link ANALYSIS_PLAN_ARROWS}); 0 is the single best-move arrow.
    */
   analysisPlanArrows: AnalysisPlanArrows;
   /** The evaluation bar beside the board (every board: analysis, review). */

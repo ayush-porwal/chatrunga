@@ -125,21 +125,21 @@ function legalLineSquares(
 }
 
 /**
- * Live analysis arrows in `fen` from the engine's top line (UCI moves). With plan arrows on, that
- * many of its moves as numbered arrows (see {@link PLAN_ARROW_BRUSHES}); off, its first move as
- * the single best-move arrow when `bestMoveArrow` is on. Only moves legal in turn are drawn, so a
- * line left over from another position draws nothing.
+ * Live analysis arrows in `fen` from the engine's top line (UCI moves), none while engine arrows
+ * (`bestMoveArrow`) are off. With a plan count, that many of its moves as numbered arrows (see
+ * {@link PLAN_ARROW_BRUSHES}); without, its first move as the single best-move arrow. Only moves
+ * legal in turn are drawn, so a line left over from another position draws nothing.
  */
 export function liveAnalysisShapes(
   fen: string,
   line: readonly string[],
   options: { bestMoveArrow: boolean; planArrows: number }
 ): DrawShape[] {
+  // Engine arrows off: none at all, whatever the plan count says.
+  if (!options.bestMoveArrow) return [];
   const plan = Math.min(Math.max(0, Math.floor(options.planArrows)), PLAN_ARROWS_MAX);
-  if (!plan) {
-    if (!options.bestMoveArrow) return [];
+  if (!plan)
     return legalLineSquares(fen, line, 1).map(([orig, dest]) => ({ orig, dest, brush: "blue" }));
-  }
   // Each number is Chessground's own arrow label: a disc in the arrow's colour on its shaft, where
   // the arrowhead starts (it steps back when arrows meet on a square).
   return legalLineSquares(fen, line, plan).map(([orig, dest], index) => ({

@@ -171,7 +171,12 @@ function withAnalysis(
     if (!node) continue;
     const annotation = move.assessment?.annotation ?? null;
     const nag = annotation ? ANNOTATION_NAGS[annotation] : undefined;
-    if (nag) node.nags = [nag, ...node.nags.filter((item) => !MOVE_QUALITY_NAGS.has(item))];
+    // The review's mark replaces any quality NAG the move brought, also when the mark has no
+    // standard glyph (excellent, good, miss, book): the PGN never contradicts the review.
+    if (annotation) {
+      const kept = node.nags.filter((item) => !MOVE_QUALITY_NAGS.has(item));
+      node.nags = nag ? [nag, ...kept] : kept;
+    }
     const evaluation = pgnEval(move.evalAfter);
     if (evaluation) evals.set(node.id, evaluation);
 
@@ -216,8 +221,11 @@ function mergeLine(
     let next = at.children.map((id) => byId.get(id)).find((child) => child?.san === san);
     if (!first && next === played) return null;
     if (!next) {
+      // Unique in the tree even if a node already has the id (a game imported with such ids).
+      let id = `${played.id}~best-${index}`;
+      for (let suffix = 1; byId.has(id); suffix++) id = `${played.id}~best-${index}-${suffix}`;
       next = {
-        id: `${played.id}~best-${index}`,
+        id,
         parentId: at.id,
         san,
         uci: makeUci(move),
