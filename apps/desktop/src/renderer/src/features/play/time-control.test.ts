@@ -6,12 +6,14 @@ import {
   engineClockText,
   formatElapsed,
   nearestStop,
+  presetIndex,
   stepIncrement,
   stepMinutes,
   stopAtPointer,
   stopForKey,
   stopPercent
 } from "./time-control";
+import { SEEK_PRESETS } from "../lichess/lichess-game";
 
 describe("clock text", () => {
   it("names the Lichess speed band before the clock", () => {
@@ -59,6 +61,11 @@ describe("time control slider", () => {
     expect(nearestStop(stopAtPointer(215, 100, 300, 5), 5)).toBe(2);
     expect(nearestStop(9, 5)).toBe(4);
     expect(stopAtPointer(250, 100, 0, 5)).toBe(0);
+  });
+
+  it("puts a Lichess clock on its preset's stop, matched by value, else on the first", () => {
+    expect(presetIndex(SEEK_PRESETS, { ...SEEK_PRESETS[2]! })).toBe(2);
+    expect(presetIndex(SEEK_PRESETS, { minutes: 7, incrementSec: 7 })).toBe(0);
   });
 
   it("steps with the arrow keys and jumps with Home/End, ignoring other keys", () => {

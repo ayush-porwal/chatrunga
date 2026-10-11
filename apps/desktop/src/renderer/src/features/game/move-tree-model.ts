@@ -3,6 +3,20 @@ import type { MoveNode } from "@chaturanga/shared/types/chess";
 
 const DEFAULT_ROOT_ID = "root";
 
+/** A game's main line: the root, then each first child to the end (empty for an empty tree). */
+export function mainlinePath(moveTree: readonly MoveNode[]): MoveNode[] {
+  const byId = new Map(moveTree.map((node) => [node.id, node]));
+  const root = moveTree.find((item) => item.parentId === null);
+  const path: MoveNode[] = [];
+  for (let node = root; node; node = byId.get(node.children[0] ?? "")) path.push(node);
+  return path;
+}
+
+/** The last move of a game's main line; the root when it has none, null for an empty tree. */
+export function mainlineEnd(moveTree: readonly MoveNode[]): MoveNode | null {
+  return mainlinePath(moveTree).at(-1) ?? null;
+}
+
 /** One move of a variation's row, with the number written before it (`9.`, `9…` or none). */
 export type VariationMove = { node: MoveNode; number: string | null };
 

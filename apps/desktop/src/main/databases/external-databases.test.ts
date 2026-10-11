@@ -122,6 +122,7 @@ const isQuick = (scan: GatedScan) => scan.job.maxMatches !== undefined;
 const SOURCE = "lichess-puzzles";
 const dir = join(userData, "puzzle-databases");
 const finalPath = join(dir, "lichess-puzzles-lichess_db_puzzle.csv.zst");
+const dailyRecord = join(userData, "puzzle-of-the-day.json");
 
 /** A server for one file with ETag, Range and If-Range, like database.lichess.org. */
 function fakeServer(content: Buffer, etag: string, options: { failAfter?: number } = {}) {
@@ -208,6 +209,7 @@ beforeEach(async () => {
   fsHooks.beforeRename = null;
   setPuzzleScanner(inThreadScanner);
   await rm(dir, { recursive: true, force: true });
+  await rm(dailyRecord, { force: true });
 });
 
 afterEach(() => {
@@ -1138,10 +1140,60 @@ describe("puzzleOfTheDay", () => {
     expect(today).toMatchObject({ databaseId: "lichess-puzzles", sideToMove: "black" });
     expect((await puzzleOfTheDay({ date: "2026-10-10" }))?.id).toBe(today?.id);
     expect((await puzzleOfTheDay({ date: "2026-10-11" }))?.id).not.toBe(today?.id);
-    // Not just remembered: a fresh start picks the same one from the file.
+    // Not just remembered: a fresh start without the stored pick picks the same one from the file.
+    await rm(dailyRecord);
     const fresh = await freshModule();
     fresh.setPuzzleScanner(inThreadScanner);
     expect((await fresh.puzzleOfTheDay({ date: "2026-10-10" }))?.id).toBe(today?.id);
+  });
+
+  /** A fresh start (nothing in memory) whose scans are counted. */
+  async function restarted() {
+    const fresh = await freshModule();
+    const scans: ScanJob[] = [];
+    fresh.setPuzzleScanner((job) => {
+      scans.push(job);
+      return inThreadScanner(job);
+    });
+    return { puzzleOfTheDay: fresh.puzzleOfTheDay, scans };
+  }
+
+  it("answers a restart the same day from the stored pick, without scanning", async () => {
+    await installLichess(Array.from({ length: 50 }, (_, index) => lichessRow(`p${index}`, 1600)));
+    const today = await puzzleOfTheDay({ date: "2026-10-10" });
+    const fresh = await restarted();
+    expect(await fresh.puzzleOfTheDay({ date: "2026-10-10" })).toEqual(today);
+    expect(fresh.scans).toEqual([]);
+  });
+
+  it("scans again on a new date or after the file changed", async () => {
+    await installLichess(Array.from({ length: 50 }, (_, index) => lichessRow(`p${index}`, 1600)));
+    await puzzleOfTheDay({ date: "2026-10-10" });
+    const nextDay = await restarted();
+    const tomorrow = await nextDay.puzzleOfTheDay({ date: "2026-10-11" });
+    expect(nextDay.scans).toHaveLength(1);
+    // That pick is the stored one now: a new file the same day isn't answered from it.
+    await installLichess([lichessRow("replaced", 1600)]);
+    const changed = await restarted();
+    expect((await changed.puzzleOfTheDay({ date: "2026-10-11" }))?.id).not.toBe(tomorrow?.id);
+    expect(changed.scans).toHaveLength(1);
+  });
+
+  it("ignores a damaged or incomplete stored pick and replaces it", async () => {
+    await installLichess(Array.from({ length: 50 }, (_, index) => lichessRow(`p${index}`, 1600)));
+    const today = await puzzleOfTheDay({ date: "2026-10-10" });
+    const stored = JSON.parse(await readFile(dailyRecord, "utf8")) as Record<string, unknown>;
+    for (const damaged of [
+      "{ not json",
+      JSON.stringify({ ...stored, sample: { ...today, solutionMoves: [] } }),
+      JSON.stringify({ ...stored, sample: { ...today, sideToMove: undefined } })
+    ]) {
+      await writeFile(dailyRecord, damaged);
+      const fresh = await restarted();
+      expect(await fresh.puzzleOfTheDay({ date: "2026-10-10" })).toEqual(today);
+      expect(fresh.scans).toHaveLength(1);
+      expect(JSON.parse(await readFile(dailyRecord, "utf8"))).toEqual(stored);
+    }
   });
 
   it("picks a mid-rated, popular, often played Lichess puzzle when the file has one", async () => {

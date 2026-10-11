@@ -3,7 +3,7 @@ import { START_FEN } from "@chaturanga/shared/chess/position";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
 import type { LichessPlayingGame } from "@chaturanga/shared/types/lichess";
 import {
-  mainlineEnd,
+  mainlineSummary,
   pickInProgress,
   savedEngineGameSides,
   type BoardMatchInput,
@@ -144,7 +144,7 @@ describe("savedEngineGameSides", () => {
   });
 });
 
-describe("mainlineEnd", () => {
+describe("mainlineSummary", () => {
   const node = (id: string, parentId: string | null, uci: string | null, children: string[]) =>
     ({
       id,
@@ -168,15 +168,15 @@ describe("mainlineEnd", () => {
       node("side", "root", "d2d4", []),
       node("b", "a", "e7e5", [])
     ];
-    expect(mainlineEnd(tree)).toEqual({ fen: "b-fen", lastMove: "e7e5", plies: 2 });
+    expect(mainlineSummary(tree)).toEqual({ fen: "b-fen", lastMove: "e7e5", plies: 2 });
   });
 
   it("is the root position, without a last move, for a game with no moves", () => {
-    expect(mainlineEnd([node("root", null, null, [])])).toEqual({
+    expect(mainlineSummary([node("root", null, null, [])])).toEqual({
       fen: "root-fen",
       lastMove: null,
       plies: 0
     });
-    expect(mainlineEnd([])).toBeNull();
+    expect(mainlineSummary([])).toBeNull();
   });
 });

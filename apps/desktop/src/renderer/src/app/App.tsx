@@ -49,6 +49,7 @@ import { useReviewStore } from "../stores/review-store";
 import { selectLiveGameInProgress, useLichessStore } from "../stores/lichess-store";
 import { useHistoryStore, type HistoryEntry } from "../stores/history-store";
 import { captureEntry, recordHistory, type HistoryMode } from "./history-navigation";
+import { followFullScreen } from "./full-screen";
 import {
   restoreReviewRoute,
   reviewRouteToRestore,
@@ -82,18 +83,9 @@ import {
 import { PuzzleInfoPanel } from "./PuzzleInfoPanel";
 import { useBoardShortcuts } from "./useBoardShortcuts";
 import { useEngineDriver, type AnalysisOptions } from "./useEngineDriver";
-import {
-  flushGameAutosave,
-  IMPORT_NEEDS_SAVE,
-  mainlineEnd,
-  useGameAutosave
-} from "./useGameAutosave";
-import {
-  ENGINE_MOVE_TIME_MS,
-  rejoinNotice,
-  savedEngineClock,
-  savedEngineMatch
-} from "./rejoin-saved-game";
+import { flushGameAutosave, IMPORT_NEEDS_SAVE, useGameAutosave } from "./useGameAutosave";
+import { mainlineEnd } from "../features/game/move-tree-model";
+import { ENGINE_MOVE_TIME_MS, planRejoin } from "./rejoin-saved-game";
 import { boardResultPatch } from "../features/analysis/post-game";
 import { useUsageActivity } from "./useUsageTelemetry";
 import { useLichess } from "./useLichess";
@@ -295,23 +287,7 @@ export function App() {
   useEffect(() => {
     const appearance = window.chaturanga?.appearance;
     if (!appearance) return;
-    let current = true;
-    let changed = false;
-    const unsubscribe = appearance.onFullScreenChanged((value) => {
-      changed = true;
-      setFullScreen(value);
-    });
-    // A reload while full screen: the state now, unless a change has arrived since.
-    appearance
-      .isFullScreen()
-      .then((value) => {
-        if (current && !changed) setFullScreen(value);
-      })
-      .catch(() => undefined);
-    return () => {
-      current = false;
-      unsubscribe();
-    };
+    return followFullScreen(appearance, setFullScreen);
   }, []);
   const windowControlsVisible = isElectronMac() && !fullScreen;
   // Narrow subscriptions: the shell must not re-render on every move (it would cascade into the
@@ -775,39 +751,35 @@ export function App() {
   async function rejoinSavedGame(gameId: string) {
     if (!(await openSavedGameById(gameId))) return;
     const game = currentGame();
-    const installed = engines.data ?? [];
-    const match = savedEngineMatch(game.headers, installed);
-    if (!match) {
-      const notice = rejoinNotice(game.headers, installed);
-      if (notice) useAppNoticeStore.getState().show(notice, { tone: "info" });
+    const plan = planRejoin(game, engines.data ?? [], Date.now());
+    if (plan.kind === "open") {
+      if (plan.notice) useAppNoticeStore.getState().show(plan.notice, { tone: "info" });
       return;
     }
-    const clock = savedEngineClock(game.moveTree, game.headers.timeControl, Date.now());
-    const end = clock ? { id: clock.nodeId } : mainlineEnd(game.moveTree);
-    if (end) game.goToNode(end.id);
-    if (positionStatus(currentGame().currentFen).isEnd) return;
+    game.goToNode(plan.nodeId);
+    if (plan.kind === "finished") return;
     stopEngineWork();
-    game.setOrientation(match.humanSide);
+    game.setOrientation(plan.humanSide);
     game.setGameSource("engine-game");
     game.setMode("engine");
-    game.setEngineSide(match.engineSide);
+    game.setEngineSide(plan.engineSide);
     game.setEngineLimits(ENGINE_MOVE_TIME_MS, null);
     game.setEngineMatchClock(null);
     game.clearEngineMatchExtras();
     game.setMatchFeedback(null);
-    if (clock) {
-      game.setEngineMatchClock(clock.config);
+    if (plan.clock) {
+      game.setEngineMatchClock(plan.clock.config);
       game.setMatchClock({
-        whiteMs: clock.whiteMs,
-        blackMs: clock.blackMs,
-        sideToMove: clock.sideToMove,
+        whiteMs: plan.clock.whiteMs,
+        blackMs: plan.clock.blackMs,
+        sideToMove: plan.clock.sideToMove,
         running: true
       });
-      // Out of time while away: the game ends on time now (and is saved with its result).
-      if (clock.flagged) game.resolveTimeout(clock.sideToMove);
     }
+    // Out of time while away: the game ends on time now (and is saved with its result).
+    if (plan.kind === "timed-out") game.resolveTimeout(plan.clock.sideToMove);
     const analysis = useAnalysisStore.getState();
-    analysis.setActiveEngine(match.engine.id);
+    analysis.setActiveEngine(plan.engine.id);
     analysis.setError(null);
     analysis.setStatus("ready");
     // The entry pushed when the game opened now names the match.

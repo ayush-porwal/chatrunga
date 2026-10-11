@@ -12,7 +12,7 @@ import { clockLabel, playerLabel } from "../lichess/lichess-game";
 import { puzzleDatabasesKey, puzzleDatabasesOf } from "../puzzles/puzzle-set";
 import { localDateKey, msUntilNextDay } from "./board-card-text";
 import {
-  mainlineEnd,
+  mainlineSummary,
   pickInProgress,
   type BoardMatchInput,
   type InProgressCard,
@@ -42,7 +42,7 @@ export function useInProgressCard(): { card: InProgressCard | null; settled: boo
       currentFen: state.currentFen
     }))
   );
-  const end = useMemo(() => mainlineEnd(board.moveTree), [board.moveTree]);
+  const end = useMemo(() => mainlineSummary(board.moveTree), [board.moveTree]);
 
   // Lichess games of yours in progress elsewhere: only asked for when there are some.
   const playingEnabled = ongoingGameIds.length > 0 && Boolean(window.chaturanga);
@@ -103,7 +103,7 @@ export function useInProgressCard(): { card: InProgressCard | null; settled: boo
           lastMove: end?.lastMove ?? null
         }
       : null;
-  const savedEnd = latestGame ? mainlineEnd(latestGame.moveTree) : null;
+  const savedEnd = latestGame ? mainlineSummary(latestGame.moveTree) : null;
   const saved: SavedGameInput | null =
     latestGame && savedEnd && !flagged
       ? {

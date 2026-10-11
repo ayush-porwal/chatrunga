@@ -13,8 +13,11 @@ import {
   type PuzzleSample,
   type PuzzleSampleInput
 } from "@chaturanga/shared/types/database";
+import { isOneOf, isRecord } from "@chaturanga/shared/types/guards";
 import { externalDatabaseRepository } from "../db/repositories";
 import { errorMessage, logger } from "../logger";
+import { writePrivateJsonFile } from "../secure-json-file";
+import { parseStoredJson } from "../stored-json";
 import { datasetDir, relocatedDatasetPath } from "./dataset-location";
 import { InvalidDatasetError, isHtmlContentType, validateDataset } from "./dataset-validation";
 import {
@@ -845,7 +848,8 @@ export async function samplePuzzle(input: PuzzleSampleInput): Promise<PuzzleSamp
  * Puzzle of the day. The first DAILY_CANDIDATES rows of the file that make a good daily puzzle
  * (one scan in the scanner, stopping there; samplePuzzle's pools are left alone) are the
  * candidates, and the date picks one by a stable hash: the same date and file give the same
- * puzzle, another date (almost always) another one. No network.
+ * puzzle, another date (almost always) another one. No network. The latest pick is kept in
+ * userData (DAILY_RECORD_FILE), so starting the app again the same day doesn't scan.
  */
 
 /**
@@ -872,9 +876,76 @@ const DAILY_POSITION_FILTERS: NonNullable<PuzzleSampleInput["position"]> = {
   tags: []
 };
 const DAILY_CACHE_SIZE = 4;
+/** The latest pick, in userData: `{ date, databaseId, fileStamp, sample }` (see DailyRecord). */
+const DAILY_RECORD_FILE = "puzzle-of-the-day.json";
 
 /** Per date, database and file version: the day's puzzle (or the scan finding it). */
 const dailyPuzzles = new Map<string, Promise<PuzzleSample | null>>();
+
+/** The stored pick: for a date, from a database whose file had this `size:mtimeMs` stamp. */
+type DailyRecord = { date: string; databaseId: string; fileStamp: string; sample: PuzzleSample };
+
+function dailyRecordPath(): string {
+  return join(app.getPath("userData"), DAILY_RECORD_FILE);
+}
+
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === "string");
+
+/** The fields a puzzle needs to be played (an older build or a damaged file may lack them). */
+function isStoredSample(value: unknown): value is PuzzleSample {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.databaseId === "string" &&
+    typeof value.sourceId === "string" &&
+    typeof value.sourceName === "string" &&
+    typeof value.initialFen === "string" &&
+    isStringArray(value.solutionMoves) &&
+    value.solutionMoves.length > 0 &&
+    isStringArray(value.themes) &&
+    isStringArray(value.openingTags) &&
+    isOneOf(["white", "black"], value.sideToMove)
+  );
+}
+
+/** The stored pick when it is for this date, database and file; null otherwise (or unreadable). */
+async function storedDailyPuzzle(
+  date: string,
+  databaseId: string,
+  fileStamp: string
+): Promise<PuzzleSample | null> {
+  let record: unknown;
+  try {
+    record = parseStoredJson<unknown>(await readFile(dailyRecordPath(), "utf8"));
+  } catch {
+    return null; // None yet, or unreadable: the next pick overwrites it.
+  }
+  if (!isRecord(record)) return null;
+  if (record.date !== date || record.databaseId !== databaseId || record.fileStamp !== fileStamp)
+    return null;
+  const sample = record.sample;
+  return isStoredSample(sample) && sample.databaseId === databaseId ? sample : null;
+}
+
+/** The day's puzzle from the stored pick, else from a scan (then stored for the next start). */
+async function dailyPuzzle(
+  database: InstalledDatabase,
+  date: string,
+  fileStamp: string
+): Promise<PuzzleSample | null> {
+  const stored = await storedDailyPuzzle(date, database.id, fileStamp);
+  if (stored) return stored;
+  const sample = await pickDailyPuzzle(database, date);
+  if (sample) {
+    const record: DailyRecord = { date, databaseId: database.id, fileStamp, sample };
+    // Not kept, the next start scans again; the puzzle is still today's.
+    await writePrivateJsonFile(dailyRecordPath(), record).catch((error: unknown) =>
+      logger.warn("databases", "saving the puzzle of the day failed:", errorMessage(error))
+    );
+  }
+  return sample;
+}
 
 /** The installed puzzle databases to take the day's puzzle from: the Lichess set first. */
 function dailySources(): InstalledDatabase[] {
@@ -906,7 +977,8 @@ function stableHash(text: string): number {
 
 /**
  * The day's puzzle from the installed puzzle databases (the Lichess set first); null when none is
- * installed or none of them has a puzzle to give. Answered from memory after the first call.
+ * installed or none of them has a puzzle to give. Answered from memory after the first call, and
+ * from the stored pick after a restart the same day.
  */
 export async function puzzleOfTheDay(input: PuzzleOfTheDayInput): Promise<PuzzleSample | null> {
   // A database that can't be read is skipped, so a broken file doesn't hide a healthy one; the
@@ -918,10 +990,11 @@ export async function puzzleOfTheDay(input: PuzzleOfTheDayInput): Promise<Puzzle
       const database = await onDisk(registered);
       if (!database) continue;
       const file = await stat(database.filePath);
-      const key = JSON.stringify([input.date, database.id, `${file.size}:${file.mtimeMs}`]);
+      const fileStamp = `${file.size}:${file.mtimeMs}`;
+      const key = JSON.stringify([input.date, database.id, fileStamp]);
       let daily = dailyPuzzles.get(key);
       if (!daily) {
-        daily = pickDailyPuzzle(database, input.date);
+        daily = dailyPuzzle(database, input.date, fileStamp);
         dailyPuzzles.set(key, daily);
         // A failure isn't remembered: the next call scans again.
         daily.catch(() => dailyPuzzles.delete(key));
