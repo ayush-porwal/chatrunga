@@ -202,6 +202,23 @@ describe("EngineManager", () => {
     await expectEventually(() => sent().includes("go movetime 5000"));
   });
 
+  it("sends ucinewgame (then isready) before the position only for a fresh analysis (Restart)", async () => {
+    collect(manager);
+    const analyse = (searchId: string, fresh?: boolean) =>
+      manager.startAnalysis({ engineId: "sf", searchId, fen: START, moves: [], multipv: 1, fresh });
+    await analyse("a");
+    await expectEventually(() => sent().includes("go infinite"));
+    await analyse("b", false);
+    expect(sent()).not.toContain("ucinewgame");
+
+    await analyse("c", true);
+    await expectEventually(() => sent().filter((line) => line === "go infinite").length === 3);
+    const lastSearch = sent().slice(sent().lastIndexOf("ucinewgame"));
+    expect(lastSearch.slice(0, 3)).toEqual(["ucinewgame", "isready", `position fen ${START}`]);
+    expect(sent().filter((line) => line === "ucinewgame")).toHaveLength(1);
+    expect(spawns()).toBe(1);
+  });
+
   it("dispose resolves once the warm process has exited (a draw probe then runs alone)", async () => {
     const events = collect(manager);
     await manager.startAnalysis({

@@ -435,6 +435,8 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
         engineSearches.analysis = searchId;
         analysis.setActiveEngine(engineId);
         analysis.setError(null);
+        // Restart asked for a search from scratch: the engine clears its hash too.
+        const fresh = analysis.freshSearch;
         // Lines already found for this position (with this engine, line count and search limit)
         // show at once; only this search's own lines are remembered.
         analysis.startSearch(
@@ -449,7 +451,8 @@ export function useEngineDriver(analysis: AnalysisOptions): void {
             moves: subject.moves(),
             multipv: options.multipv,
             depth: options.depth,
-            moveTimeMs: options.moveTimeMs
+            moveTimeMs: options.moveTimeMs,
+            fresh
           })
           .catch((error: unknown) => {
             if (engineSearches.analysis === searchId) reportEngineError(error);

@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { MoveNode } from "@chaturanga/shared/types/chess";
 import {
+  boardShowsLiveAnalysis,
   engineHolder,
   liveAnalysisSubject,
+  onPausedPosition,
+  pausedAnalysisAt,
+  pausedStatusLabel,
   type AnalysisBoard,
   type AnalysisTarget
 } from "./live-analysis";
@@ -113,5 +117,58 @@ describe("liveAnalysisSubject with a target", () => {
     ).toBeNull();
     expect(liveAnalysisSubject(board(), { target, onlineGameLive: true })).toBeNull();
     expect(liveAnalysisSubject(board(), { target: { ...target, fen: MATED } })).toBeNull();
+  });
+});
+
+describe("paused live analysis", () => {
+  const AFTER_E4_E5 = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2";
+  const moveTree = [
+    ...board().moveTree.map((item) => (item.id === "a" ? { ...item, children: ["b"] } : item)),
+    node({
+      id: "b",
+      parentId: "a",
+      san: "e5",
+      uci: "e7e5",
+      ply: 2,
+      fenBefore: AFTER_E4,
+      fenAfter: AFTER_E4_E5
+    })
+  ];
+
+  it("names the move that reached the paused position, none at the start", () => {
+    expect(pausedAnalysisAt(moveTree, "b", AFTER_E4_E5)).toEqual({
+      nodeId: "b",
+      fen: AFTER_E4_E5,
+      move: "1… e5"
+    });
+    expect(pausedAnalysisAt(moveTree, "a", AFTER_E4).move).toBe("1. e4");
+    expect(pausedAnalysisAt(moveTree, "root", START).move).toBeNull();
+  });
+
+  it("says the depth reached on the paused position, else what it was paused after", () => {
+    const paused = pausedAnalysisAt(moveTree, "b", AFTER_E4_E5);
+    expect(pausedStatusLabel(paused, true, 23)).toBe("Paused at depth 23");
+    expect(pausedStatusLabel(paused, true, undefined)).toBe("Paused");
+    expect(pausedStatusLabel(paused, false, 23)).toBe("Paused · after 1… e5");
+    expect(pausedStatusLabel(pausedAnalysisAt(moveTree, "root", START), false, 23)).toBe(
+      "Paused · starting position"
+    );
+  });
+
+  it("shows its arrows and score on the board only on the paused position", () => {
+    const paused = pausedAnalysisAt(moveTree, "a", AFTER_E4);
+    const freeplay = board({ mode: "freeplay", moveTree });
+    expect(onPausedPosition(paused, freeplay)).toBe(true);
+    expect(boardShowsLiveAnalysis(freeplay, paused)).toBe(true);
+    const elsewhere = board({ mode: "freeplay", currentNodeId: "b", currentFen: AFTER_E4_E5 });
+    expect(onPausedPosition(paused, elsewhere)).toBe(false);
+    expect(boardShowsLiveAnalysis(elsewhere, paused)).toBe(false);
+    // The same node id with another position (another game's start) isn't it either.
+    expect(onPausedPosition(paused, board({ currentFen: START }))).toBe(false);
+    expect(boardShowsLiveAnalysis(board({ mode: "freeplay" }), null)).toBe(false);
+    // Running, the analysis is always the board's position's.
+    expect(
+      boardShowsLiveAnalysis(board({ currentNodeId: "b", currentFen: AFTER_E4_E5 }), paused)
+    ).toBe(true);
   });
 });

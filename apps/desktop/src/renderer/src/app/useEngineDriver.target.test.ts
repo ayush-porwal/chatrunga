@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EngineBestMove, EngineError, EngineInfo } from "@chaturanga/shared/types/engine";
-import type { AnalysisTarget } from "../features/analysis/live-analysis";
+import { pausedAnalysisAt, type AnalysisTarget } from "../features/analysis/live-analysis";
 
 // The hook's effects run once, outside React (as in useGameAutosave's tests); the engine calls
 // go to the fakes below.
@@ -15,7 +15,7 @@ vi.mock("react", async (importOriginal) => ({
 }));
 const engines = {
   startAnalysis: vi.fn<
-    (request: { searchId: string; fen: string; moves: string[] }) => Promise<void>
+    (request: { searchId: string; fen: string; moves: string[]; fresh?: boolean }) => Promise<void>
   >(async () => {}),
   startGame: vi.fn<(request: { searchId: string }) => Promise<void>>(async () => {}),
   stop: vi.fn(async () => {})
@@ -232,5 +232,87 @@ describe("useEngineDriver in a timed engine game", () => {
     expect(state.engineClockLive?.sideToMove).toBe("white");
     // Nothing is searched in the position looked at: the game goes on at its latest move.
     expect(engines.startGame).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useEngineDriver with live analysis paused (the switch off)", () => {
+  const line = (searchId: string, depth: number): EngineInfo => ({
+    engineId: "sf",
+    searchId,
+    multipv: 1,
+    depth,
+    score: { type: "cp", value: 20 },
+    pv: ["e2e4"],
+    raw: "",
+    receivedAt: 0
+  });
+
+  /** The board's analysis has found a depth-12 line; the switch then turns off (stopLiveAnalysis). */
+  async function pausedAtDepth12() {
+    await settle();
+    const searchId = engines.startAnalysis.mock.calls.at(-1)![0].searchId;
+    engineEvents.info(line(searchId, 12));
+    const game = useGameStore.getState();
+    useAnalysisStore
+      .getState()
+      .pause(pausedAnalysisAt(game.moveTree, game.currentNodeId, game.currentFen));
+    game.setMode("freeplay");
+    await settle();
+    return searchId;
+  }
+  /** The switch on again (analyzeCurrentPosition). */
+  async function switchOn() {
+    engines.startAnalysis.mockClear();
+    useGameStore.getState().setMode("analysis");
+    useAnalysisStore.getState().restartBoardSearch();
+    await settle();
+  }
+
+  it("stops the search and keeps its lines: the stopped search's late output changes nothing", async () => {
+    const searchId = await pausedAtDepth12();
+    expect(engines.stop).toHaveBeenCalled();
+    const frozen = useAnalysisStore.getState();
+    expect(frozen.paused).toMatchObject({ nodeId: "root", move: null });
+    expect(frozen.topLines.map((info) => info.depth)).toEqual([12]);
+
+    engineEvents.info(line(searchId, 13));
+    engineEvents.bestMove({ engineId: "sf", searchId, move: "d2d4" });
+    await settle();
+    expect(useAnalysisStore.getState()).toMatchObject({
+      topLines: frozen.topLines,
+      bestMove: null,
+      status: "idle",
+      paused: frozen.paused
+    });
+
+    // Moving on stays paused: nothing is searched.
+    engines.startAnalysis.mockClear();
+    expect(useGameStore.getState().makeMove({ from: "e2", to: "e4" })).toBe(true);
+    await settle();
+    expect(engines.startAnalysis).not.toHaveBeenCalled();
+    expect(useAnalysisStore.getState()).toMatchObject({
+      topLines: frozen.topLines,
+      paused: frozen.paused
+    });
+  });
+
+  it("resumes on the paused position with its lines shown at once", async () => {
+    await pausedAtDepth12();
+    await switchOn();
+    expect(engines.startAnalysis).toHaveBeenCalledTimes(1);
+    expect(engines.startAnalysis.mock.calls[0]![0]).toMatchObject({ moves: [], fresh: false });
+    const resumed = useAnalysisStore.getState();
+    expect(resumed.paused).toBeNull();
+    expect(resumed.status).toBe("thinking");
+    expect(resumed.topLines.map((info) => info.depth)).toEqual([12]);
+  });
+
+  it("Restart while paused searches the position again from scratch, the engine's hash cleared", async () => {
+    await pausedAtDepth12();
+    useAnalysisStore.getState().restartFresh();
+    await switchOn();
+    expect(engines.startAnalysis).toHaveBeenCalledTimes(1);
+    expect(engines.startAnalysis.mock.calls[0]![0]).toMatchObject({ moves: [], fresh: true });
+    expect(useAnalysisStore.getState()).toMatchObject({ paused: null, topLines: [] });
   });
 });

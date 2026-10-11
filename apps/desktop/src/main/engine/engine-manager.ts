@@ -288,7 +288,9 @@ export class EngineManager extends EventEmitter<EngineEvents> {
 
   /**
    * Starts a MultiPV search for the live analysis panel: until stopped, or to the depth / for the
-   * time asked for (its best move then ends it).
+   * time asked for (its best move then ends it). `fresh` (Restart) clears the engine's hash first
+   * (`ucinewgame`, then the `isready` every search waits for); otherwise what it found earlier in
+   * this process carries over.
    */
   startAnalysis(input: StartLiveAnalysisInput): Promise<void> {
     const multipv = Math.max(1, Math.min(Math.round(input.multipv ?? 3), 5));
@@ -297,6 +299,7 @@ export class EngineManager extends EventEmitter<EngineEvents> {
         this.write(`setoption name MultiPV value ${multipv}`);
         session.multipv = multipv;
       }
+      if (input.fresh) this.write("ucinewgame");
       return () => {
         this.write(positionCommand(input.fen, input.moves));
         if (input.depth) this.write(`go depth ${input.depth}`);

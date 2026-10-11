@@ -183,8 +183,12 @@ describe("engine session inputs", () => {
       parseStartAnalysisInput({ engineId: "sf", searchId: "s2", fen: START, moves: [], multipv: 3 })
     ).toMatchObject({
       multipv: 3,
-      searchId: "s2"
+      searchId: "s2",
+      fresh: false
     });
+    const analysis = { engineId: "sf", searchId: "s3", fen: START, moves: [] };
+    expect(parseStartAnalysisInput({ ...analysis, fresh: true }).fresh).toBe(true);
+    expect(() => parseStartAnalysisInput({ ...analysis, fresh: "yes" })).toThrow(/fresh/);
     expect(parseProbeEvalInput({ engineId: "sf", fen: START, moves: [] }).movetimeMs).toBe(400);
     expect(
       parseProbeEvalInput({ engineId: "sf", fen: START, moves: [], movetimeMs: 1e9 }).movetimeMs
