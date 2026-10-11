@@ -399,7 +399,7 @@ export async function expectPlayPage(page: Page): Promise<void> {
   await expect(playPage(page).recentGames).toBeVisible();
 }
 
-/** Leaves the first-run welcome through "Skip setup". */
+/** Leaves the first-run welcome through "Skip setup" (Welcome's footer), which lands on Play. */
 export async function skipWelcome(page: Page): Promise<void> {
   const welcome = page.getByRole("dialog", { name: "Welcome to Chaturanga" });
   await expect(welcome).toBeVisible({ timeout: 30_000 });

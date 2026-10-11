@@ -13,6 +13,7 @@ import {
   normalizeOnboardingSettings,
   normalizePlaySettings,
   normalizePracticeSettings,
+  normalizeSoundSettings,
   normalizeUpdateSettings,
   resolveEngineThreads
 } from "./settings";
@@ -258,6 +259,36 @@ describe("normalizePracticeSettings", () => {
       const stored = { ...defaultSettings, practiceAutoAdvanceMs: bad } as unknown as AppSettings;
       expect(normalizePracticeSettings(stored).practiceAutoAdvanceMs).toBe(600);
     }
+  });
+});
+
+describe("normalizeSoundSettings", () => {
+  it("defaults to Lichess's SFX set with an audible check", () => {
+    expect(normalizeSoundSettings(defaultSettings)).toMatchObject({
+      soundSet: "sfx",
+      soundSilentCheck: false
+    });
+  });
+
+  it("keeps an offered set and the check choice", () => {
+    const stored = { ...defaultSettings, soundSet: "pychess", soundSilentCheck: true } as const;
+    expect(normalizeSoundSettings(stored)).toMatchObject({
+      soundSet: "pychess",
+      soundSilentCheck: true
+    });
+  });
+
+  it.each([["standard"], ["robot"], [7], [null], [undefined]])(
+    "replaces a set it doesn't ship (%s) with the default",
+    (bad) => {
+      const stored = { ...defaultSettings, soundSet: bad } as unknown as AppSettings;
+      expect(normalizeSoundSettings(stored).soundSet).toBe("sfx");
+    }
+  );
+
+  it("replaces a check choice that isn't true or false", () => {
+    const stored = { ...defaultSettings, soundSilentCheck: "yes" } as unknown as AppSettings;
+    expect(normalizeSoundSettings(stored).soundSilentCheck).toBe(false);
   });
 });
 

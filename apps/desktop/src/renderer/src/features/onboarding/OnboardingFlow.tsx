@@ -1,37 +1,37 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { defaultSettings, type AppSettings } from "@chaturanga/shared/types/settings";
-import { Button } from "@/components/ui/button";
 import { useExitGhost } from "@/components/ui/use-presence";
 import { motion } from "@/lib/ui";
+import { cn } from "@/lib/utils";
 import { useSettingsQuery } from "../../queries/api";
 import { useSetSetting } from "../settings/use-set-setting";
 import { CoachStep } from "./CoachStep";
 import { DoneStep } from "./DoneStep";
 import { EnginesStep } from "./EnginesStep";
 import { LevelStep } from "./LevelStep";
-import { ONBOARDING_STEPS, type OnboardingStep } from "./onboarding-state";
+import type { OnboardingStep } from "./onboarding-state";
 import { Stage } from "./Stage";
 import { Stepper } from "./Stepper";
 import { useEngineSetup } from "./useEngineSetup";
 import { WelcomeStep } from "./WelcomeStep";
 
 /**
- * The first-run welcome: a full-window, five-step setup that ends in the app.
+ * The first-run welcome: a full-window, five-step setup that ends on Play.
  *
  *   Welcome → Engines → Your level → AI coach → All set
  *
- * Layout: one fixed design frame (`.onb-frame` in app.css, 960×592 at scale 1) zoomed to fit the
- * window, so the board, type and spacing grow together on big windows and every edge stays where
- * it is from step to step. Left column: a board following Morphy's Opera game (illustration only),
- * the game's caption, and a coach note on the move shown; the note card's bottom edge is the
- * frame's bottom edge. Right column: the stepper (its top is the board's top), the step's content
- * (scrolls inside when long) and the footer — Back on the left, the primary action in a
- * fixed-width slot on the right, a secondary action just left of it — at the same place on every
- * step. Everything is optional: "Skip setup" (or Escape) leaves at any point, and engine downloads
- * keep running in the background whatever the user does next.
+ * Layout: one fixed design frame (`.onb-frame` in app.css, 1440×900 at scale 1) zoomed to fit the
+ * window, so the board, type and spacing grow together and every edge stays where it is from step
+ * to step. There is no title bar row: the frame's empty top strip drags the window, and the macOS
+ * traffic lights float over it (Windows and Linux keep their native frame). Left: the board,
+ * 808×808, looping Morphy's finish from the Opera game; it never restarts per step. Right: the card,
+ * as tall as the board — the stepper, the step's content (it rises in, and scrolls inside when
+ * long) and the footer, three equal slots `[Back] [secondary] [primary]` at the same place on
+ * every step. Everything is optional: Skip setup (Welcome), Escape and Start playing all finish
+ * the welcome and land on Play, and engine downloads keep running in the background.
  *
  * Keyboard: focus moves to each step's heading (announced by screen readers), Tab stays inside the
- * welcome, Escape skips. Reduced motion: step, board and note changes are instant.
+ * welcome, Escape skips. Reduced motion: no rise, glow or loop (the board shows the final mate).
  */
 export function OnboardingFlow({
   onFinish,
@@ -39,13 +39,10 @@ export function OnboardingFlow({
 }: {
   /** Marks the welcome done (stored) and closes it. */
   onFinish: () => void;
-  /** Shows Play (the last step's "Start using Chaturanga"). */
+  /** Shows Play: every way out of the welcome lands there. */
   onGoPlay: () => void;
 }) {
   const [step, setStep] = useState<OnboardingStep>("welcome");
-  // +1 moving forward, -1 back: the step content slides in from that side.
-  const [direction, setDirection] = useState<1 | -1>(1);
-  const [ownEngine, setOwnEngine] = useState(false);
   const [footer, setFooter] = useState<HTMLDivElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
@@ -62,13 +59,9 @@ export function OnboardingFlow({
     headingRef.current?.focus({ preventScroll: true });
   }, [step]);
 
-  const go = (next: OnboardingStep) => {
-    setDirection(ONBOARDING_STEPS.indexOf(next) < ONBOARDING_STEPS.indexOf(step) ? -1 : 1);
-    setStep(next);
-  };
-  const finishWith = (action?: () => void) => {
+  const exit = () => {
     onFinish();
-    action?.();
+    onGoPlay();
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -76,7 +69,7 @@ export function OnboardingFlow({
     event.stopPropagation();
     if (event.key === "Escape") {
       event.preventDefault();
-      finishWith();
+      exit();
       return;
     }
     if (event.key === "Tab") trapTab(event, rootRef.current);
@@ -93,83 +86,69 @@ export function OnboardingFlow({
       aria-labelledby={headingId}
       data-state="open"
       onKeyDown={onKeyDown}
-      className="onb-root fixed inset-0 z-50 grid animate-fade-in grid-rows-[var(--titlebar-height)_minmax(0,1fr)_var(--titlebar-height)] bg-canvas text-fg [--titlebar-height:calc(54px/var(--window-zoom,1))] data-[state=closed]:animate-fade-out"
+      className="onb-root fixed inset-0 z-50 grid animate-fade-in place-items-center overflow-hidden bg-canvas text-fg [-webkit-app-region:drag] data-[state=closed]:animate-fade-out"
     >
-      {/* Titlebar row: drags the window (the traffic lights sit on the left on macOS). "Skip setup"
-          lines up with the frame's right edge, not the window corner. */}
-      <div className="flex justify-center [-webkit-app-region:drag]">
-        <div className="onb-bar flex items-center justify-end">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="-mr-2.5 [-webkit-app-region:no-drag]"
-            onClick={() => finishWith()}
+      <span aria-hidden className="onb-glow" />
+      <span aria-hidden className="onb-glow onb-glow-b" />
+      {/* The frame's padding is empty and drags the window (the top strip is where the traffic
+          lights float); the board and the card don't. */}
+      <div className="onb-frame relative grid grid-cols-[808px_minmax(0,1fr)] items-center gap-[40px] pb-[44px] pl-[48px] pr-[44px] pt-[48px]">
+        <div className="[-webkit-app-region:no-drag]">
+          <Stage />
+        </div>
+
+        <div className="flex h-[808px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-line bg-surface shadow-[0_30px_70px_-40px_#000] [-webkit-app-region:no-drag]">
+          <Stepper step={step} onSelect={setStep} />
+          {/* Remounts per step, so its direct children rise in again (`.onb-body` in app.css). */}
+          <div
+            key={step}
+            className={cn(
+              "onb-body scroll-area scroll-fade grid min-h-0 flex-1 gap-[26px] overflow-y-auto px-[34px] pt-[52px]",
+              step === "welcome" ? "content-center pb-[60px]" : "content-start pb-[18px]"
+            )}
           >
-            {step === "done" ? "Close" : "Skip setup"}
-          </Button>
-        </div>
-      </div>
-
-      {/* The frame, centred in the whole window (a titlebar-high row balances it underneath). The
-          empty space around it drags the window too. */}
-      <div className="grid min-h-0 place-items-center overflow-hidden [-webkit-app-region:drag]">
-        <div className="onb-frame grid grid-cols-[424px_464px] gap-x-[72px] [-webkit-app-region:no-drag]">
-          <Stage step={step} />
-
-          <div className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto]">
-            <Stepper step={step} onSelect={go} />
-            <div
-              key={step}
-              className="onb-step-in scroll-area scroll-fade -mx-1 mt-10 min-h-0 overflow-y-auto px-1 pb-1"
-              style={{ "--onb-dir": direction }}
-            >
-              <div className="grid content-start gap-6">
-                {step === "welcome" ? (
-                  <WelcomeStep {...heading} onNext={() => go("engines")} />
-                ) : step === "engines" ? (
-                  <EnginesStep
-                    {...heading}
-                    setup={setup}
-                    onBack={() => go("welcome")}
-                    onNext={() => go("level")}
-                    onOwnEngine={() => {
-                      setOwnEngine(true);
-                      go("level");
-                    }}
-                  />
-                ) : step === "level" ? (
-                  <LevelStep
-                    {...heading}
-                    settings={settings}
-                    setSetting={setSetting}
-                    onBack={() => go("engines")}
-                    onNext={() => go("coach")}
-                  />
-                ) : step === "coach" ? (
-                  <CoachStep {...heading} onBack={() => go("level")} onNext={() => go("done")} />
-                ) : (
-                  <DoneStep
-                    {...heading}
-                    setup={setup}
-                    ownEngine={ownEngine}
-                    settings={settings}
-                    onBack={() => go("coach")}
-                    onDone={() => finishWith(onGoPlay)}
-                  />
-                )}
-              </div>
-            </div>
-            {/* The footer row: every step renders its buttons into it (StepFooter), so it never
-                moves between steps and never animates with the content. */}
-            <div
-              ref={setFooter}
-              data-slot="onb-footer"
-              className="mt-5 border-t border-line-subtle pt-5"
-            />
+            {step === "welcome" ? (
+              <WelcomeStep {...heading} onNext={() => setStep("engines")} onSkip={exit} />
+            ) : step === "engines" ? (
+              <EnginesStep
+                {...heading}
+                setup={setup}
+                onBack={() => setStep("welcome")}
+                onNext={() => setStep("level")}
+              />
+            ) : step === "level" ? (
+              <LevelStep
+                {...heading}
+                settings={settings}
+                setSetting={setSetting}
+                onBack={() => setStep("engines")}
+                onNext={() => setStep("coach")}
+              />
+            ) : step === "coach" ? (
+              <CoachStep
+                {...heading}
+                onBack={() => setStep("level")}
+                onNext={() => setStep("done")}
+              />
+            ) : (
+              <DoneStep
+                {...heading}
+                setup={setup}
+                settings={settings}
+                onBack={() => setStep("coach")}
+                onDone={exit}
+              />
+            )}
           </div>
+          {/* The footer row: every step renders its buttons into it (StepFooter), so it never
+              moves between steps and never animates with the content. */}
+          <div
+            ref={setFooter}
+            data-slot="onb-footer"
+            className="border-t border-line-subtle px-[24px] pb-[24px] pt-[18px]"
+          />
         </div>
       </div>
-      <div aria-hidden className="[-webkit-app-region:drag]" />
     </div>
   );
 }

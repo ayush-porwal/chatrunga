@@ -550,13 +550,15 @@ html[data-view-transition="fade"]::view-transition-new(app-content) {
 
 /*
  * The first-run welcome (features/onboarding/OnboardingFlow.tsx) is drawn on ONE fixed design
- * frame, 960×592 CSS px at scale 1 (board column 424 + gap 72 + content column 464), and the frame
- * is zoomed to fit the window: ~0.9 on a 1024×700 window, ~1.15 at 1440×900, ~1.6 at 1920×1200,
- * capped at 1.75 on bigger windows. `zoom` re-lays text out at the larger size (crisp, unlike a
- * transform), and because everything scales together the board, the note card, the stepper and
- * the footer keep their exact alignment at every size. The scale is a registered <number> so it
- * is computed once on the root (viewport units unaffected by the zoom) and inherited as a number;
- * `.onb-bar` uses it to give the titlebar row the frame's zoomed width.
+ * frame, 1440×900 CSS px at scale 1 (the board 808 + gap 40 + the card, inside 48/44 padding), and
+ * the frame is zoomed to fit the window: ~0.68 on the 980×680 minimum, 1 at 1440×900, 1.2 at
+ * 1920×1080. `zoom` re-lays text out at the larger size (crisp, unlike a transform), and because
+ * everything scales together the board and the card keep their exact alignment at every size. A
+ * window wider than 16:10 widens the frame (the card takes the extra width, up to a 1600px frame).
+ * Both values are registered <number>s, so they are computed once on the root (viewport units
+ * unaffected by the zoom) and inherited as numbers. The frame's top padding is the empty, draggable
+ * strip the macOS traffic lights float over: 48 design px is ≥ 36px at the minimum window height,
+ * below their bottom edge (34px).
  */
 @property --onb-scale {
   syntax: "<number>";
@@ -564,52 +566,206 @@ html[data-view-transition="fade"]::view-transition-new(app-content) {
   initial-value: 1;
 }
 
+@property --onb-width {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1440;
+}
+
 @layer components {
   .onb-root {
-    --onb-scale: clamp(
-      0.9,
-      min(100vw * 0.8 / 960px, (100vh - 2 * var(--titlebar-height)) * 0.86 / 592px),
-      1.75
-    );
+    --onb-scale: min(100vw / 1440px, 100vh / 900px);
+    --onb-width: min(100vw / 1px / var(--onb-scale), 1600);
   }
 
   .onb-frame {
     zoom: var(--onb-scale);
-    width: 960px;
-    height: 592px;
+    width: calc(var(--onb-width) * 1px);
+    height: 900px;
   }
 
-  .onb-bar {
-    width: calc(960px * var(--onb-scale));
+  /* Two soft glows drift slowly behind the board and the card. */
+  .onb-glow {
+    position: absolute;
+    inset: -20% -10% auto auto;
+    width: 70%;
+    height: 90%;
+    background: radial-gradient(
+      closest-side,
+      color-mix(in srgb, var(--color-accent) 10%, transparent),
+      transparent 70%
+    );
+    pointer-events: none;
+    animation: onb-drift 14s ease-in-out infinite alternate;
   }
 
-  /* Step content arrives from the side it was navigated towards (`--onb-dir`: 1 forward, -1 back). */
-  .onb-step-in {
-    animation: onb-step-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  .onb-glow-b {
+    inset: auto auto -25% -15%;
+    width: 60%;
+    height: 80%;
+    background: radial-gradient(
+      closest-side,
+      color-mix(in srgb, var(--color-info) 6%, transparent),
+      transparent 70%
+    );
+    animation-duration: 18s;
   }
 
-  /* The next board position and coach note fade in over the previous ones. */
+  /* The step body's direct children rise in, one after another (the body remounts per step). */
+  .onb-body > * {
+    animation: onb-rise 500ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .onb-body > :nth-child(2) {
+    animation-delay: 60ms;
+  }
+
+  .onb-body > :nth-child(3) {
+    animation-delay: 120ms;
+  }
+
+  .onb-body > :nth-child(4) {
+    animation-delay: 180ms;
+  }
+
+  .onb-body > :nth-child(5) {
+    animation-delay: 240ms;
+  }
+
+  .onb-body > :nth-child(n + 6) {
+    animation-delay: 300ms;
+  }
+
+  /* The current step's bar fills from the left. */
+  .onb-fill {
+    transform-origin: left;
+    animation: onb-fill 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* A success check scales in with an overshoot, from its own centre (also on an SVG child). */
+  .onb-pop {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: onb-pop 450ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+
+  /* On a progress ring's value <circle>: draws in from empty (`--full` is the circumference). */
+  .onb-ring-in {
+    animation: onb-ring-in 1s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* The Welcome knight tile's gentle float. */
+  .onb-float {
+    animation: onb-float 4s ease-in-out infinite;
+  }
+
+  /* The looping board (Stage.tsx): it arrives once; pieces slide, captures fade, the replay fades in. */
   .onb-board-in {
-    animation: ui-fade-in 240ms cubic-bezier(0.2, 0, 0, 1) both;
+    animation: onb-board-in 800ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
-  .onb-note-in {
-    animation: ui-fade-in 180ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both;
+  .onb-piece {
+    transition:
+      transform 620ms cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 350ms ease;
   }
 
-  /* Reduced motion: step changes are instant. */
+  .onb-piece[data-captured] {
+    opacity: 0;
+  }
+
+  /* Before a replay the pieces, the last move and the glow fade out; the new run fades in. */
+  .onb-fade {
+    transition: opacity 500ms ease;
+  }
+
+  .onb-board[data-fading] .onb-fade {
+    opacity: 0;
+  }
+
+  .onb-replay-in {
+    animation: ui-fade-in 500ms ease backwards;
+  }
+
+  .onb-highlight {
+    background: rgb(155 199 0 / 0.38);
+    animation: ui-fade-in 400ms ease both;
+  }
+
+  /* The mated king's square glows red. */
+  .onb-mate {
+    background: radial-gradient(
+      circle,
+      rgb(240 96 77 / 0.75),
+      rgb(240 96 77 / 0.25) 60%,
+      transparent 72%
+    );
+    animation: onb-mate-in 500ms ease both;
+  }
+
   @media (prefers-reduced-motion: reduce) {
-    .onb-step-in,
+    .onb-glow,
+    .onb-body > *,
+    .onb-fill,
+    .onb-pop,
+    .onb-ring-in,
+    .onb-float,
     .onb-board-in,
-    .onb-note-in {
+    .onb-replay-in,
+    .onb-highlight,
+    .onb-mate {
       animation: none;
     }
   }
 }
 
-@keyframes onb-step-in {
+@keyframes onb-drift {
+  to {
+    transform: translate(-6%, 8%) scale(1.08);
+  }
+}
+
+@keyframes onb-rise {
   from {
     opacity: 0;
-    transform: translateX(calc(var(--onb-dir, 1) * 12px));
+    transform: translateY(10px);
+  }
+}
+
+@keyframes onb-fill {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes onb-pop {
+  from {
+    transform: scale(0);
+  }
+}
+
+@keyframes onb-ring-in {
+  from {
+    stroke-dashoffset: var(--full);
+  }
+}
+
+@keyframes onb-float {
+  50% {
+    transform: translateY(-5px) rotate(-3deg);
+  }
+}
+
+@keyframes onb-board-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+}
+
+@keyframes onb-mate-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
   }
 }

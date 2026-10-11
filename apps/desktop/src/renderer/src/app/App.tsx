@@ -213,7 +213,12 @@ export function App() {
   usePlayedGameLink();
   const { mutate: updateSetting } = useUpdateSettingMutation();
   useUsageActivity();
-  useMoveSounds({ enabled: settings.soundEnabled, volume: settings.soundVolume });
+  useMoveSounds({
+    enabled: settings.soundEnabled,
+    volume: settings.soundVolume,
+    set: settings.soundSet,
+    silentCheck: settings.soundSilentCheck
+  });
   usePuzzleAutoReply();
   usePuzzleAttemptRecording();
   // Review as: a game whose side isn't known yet asks on the Summary before its review starts.

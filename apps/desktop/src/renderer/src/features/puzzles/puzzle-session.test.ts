@@ -3,6 +3,9 @@ import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import { usePuzzleStore } from "../../stores/puzzle-store";
 import { submitPuzzleMove } from "./puzzle-session";
 
+const sounds = vi.hoisted(() => [] as string[]);
+vi.mock("../../sounds/sounds", () => ({ playSound: (kind: string) => sounds.push(kind) }));
+
 const puzzle: PuzzleSample = {
   id: "p1",
   databaseId: "db1",
@@ -19,6 +22,7 @@ describe("submitPuzzleMove", () => {
   beforeEach(() => {
     usePuzzleStore.getState().reset();
     usePuzzleStore.getState().setActivePuzzle(puzzle);
+    sounds.length = 0;
   });
 
   it("plays the expected move and advances the solution", () => {
@@ -49,18 +53,20 @@ describe("submitPuzzleMove", () => {
     expect(usePuzzleStore.getState().attempt?.wrongMoves).toMatchObject([
       { solutionIndex: 0, fen, uci: "a1a5", san: "Ra5", expectedUci: "a1a8" }
     ]);
-    // Finishing it afterwards doesn't make it solved.
+    // Finishing it afterwards doesn't make it solved, nor sound like it.
     expect(submitPuzzleMove("a1a8", () => true, fen)).toBe(true);
     expect(usePuzzleStore.getState()).toMatchObject({
       feedbackKind: "complete",
       outcome: "failed"
     });
+    expect(sounds).toStrictEqual(["error"]);
   });
 
   it("solves a puzzle finished without a wrong move", () => {
     usePuzzleStore.getState().setActivePuzzle({ ...puzzle, solutionMoves: ["e2e4"] });
     expect(submitPuzzleMove("e2e4", () => true)).toBe(true);
     expect(usePuzzleStore.getState().outcome).toBe("solved");
+    expect(sounds).toStrictEqual(["correct"]);
   });
 
   it("names the wrong move in SAN, and still accepts the right move afterwards", () => {

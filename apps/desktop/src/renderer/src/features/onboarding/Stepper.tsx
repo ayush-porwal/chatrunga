@@ -2,7 +2,10 @@ import { focusRing } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { ONBOARDING_STEPS, onboardingStepLabels, type OnboardingStep } from "./onboarding-state";
 
-/** Where the user is in the five steps; finished steps can be revisited. */
+/**
+ * Where the user is in the five steps: a bar and a label each. The current bar fills; finished
+ * bars are accent and can be clicked to go back.
+ */
 export function Stepper({
   step,
   onSelect
@@ -12,7 +15,7 @@ export function Stepper({
 }) {
   const current = ONBOARDING_STEPS.indexOf(step);
   return (
-    <nav aria-label="Setup steps" data-slot="onb-stepper">
+    <nav aria-label="Setup steps" data-slot="onb-stepper" className="px-[34px] pt-[30px]">
       <ol className="grid grid-cols-5 gap-2">
         {ONBOARDING_STEPS.map((item, index) => {
           const done = index < current;
@@ -25,26 +28,24 @@ export function Stepper({
                 aria-current={active ? "step" : undefined}
                 onClick={() => onSelect(item)}
                 className={cn(
-                  "group grid w-full min-w-0 gap-2 rounded-sm pb-0.5 text-left disabled:cursor-default",
+                  "group grid w-full min-w-0 gap-[9px] rounded-sm pb-0.5 text-left disabled:cursor-default",
                   focusRing
                 )}
               >
                 <span
                   aria-hidden
                   className={cn(
-                    "h-0.5 w-full rounded-full transition-colors duration-standard ease-standard",
-                    done
-                      ? "bg-accent/70 group-hover:bg-accent"
-                      : active
-                        ? "bg-fg"
-                        : "bg-line-strong"
+                    "relative h-1 w-full overflow-hidden rounded-[3px] transition-colors duration-standard ease-standard",
+                    done ? "bg-accent-strong group-hover:bg-accent" : "bg-line-strong"
                   )}
-                />
+                >
+                  {active ? <span className="onb-fill absolute inset-0 bg-fg" /> : null}
+                </span>
                 <span
                   className={cn(
-                    "truncate text-xs transition-colors duration-standard",
+                    "truncate text-[12px] transition-colors duration-standard",
                     active
-                      ? "text-fg"
+                      ? "font-semibold text-fg"
                       : done
                         ? "text-fg-muted group-hover:text-fg-secondary"
                         : "text-fg-subtle"

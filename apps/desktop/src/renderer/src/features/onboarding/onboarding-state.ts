@@ -1,3 +1,4 @@
+import { MANAGED_ENGINE_SUFFIX } from "@chaturanga/shared/engine/managed";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
 import type { SetupRow } from "@/lib/engine-assets";
 import { pickDefaultEngine } from "../game-review/review-engine-picker";
@@ -68,24 +69,163 @@ export function engineSetupPhase(input: {
   return "missing";
 }
 
-/** Rating presets on the "Your level" step (the exact number can still be typed). */
+/** Rating presets on the "Your level" step. */
 export const LEVEL_PRESETS = [
   { rating: 800, label: "Beginner" },
   { rating: 1200, label: "Casual" },
-  { rating: 1500, label: "Club player" },
-  { rating: 1800, label: "Strong club" },
+  { rating: 1500, label: "Club" },
+  { rating: 1800, label: "Strong" },
   { rating: 2100, label: "Expert" }
 ] as const;
 
-/** The preset a rating falls into (nearest), so a typed rating still highlights one. */
+/** The preset a rating falls into (nearest), so a rating set elsewhere still highlights one. */
 export function nearestLevelPreset(rating: number): (typeof LEVEL_PRESETS)[number] {
   return LEVEL_PRESETS.reduce((best, preset) =>
     Math.abs(preset.rating - rating) < Math.abs(best.rating - rating) ? preset : best
   );
 }
 
-/** Clamp for the rating field (the review settings use the same bounds). */
-export function clampRating(value: number): number {
-  if (!Number.isFinite(value)) return 1500;
-  return Math.round(Math.max(400, Math.min(3500, value)));
+/** The summary's level line: "1500 · Club · White" (the preset named only when it is exact). */
+export function levelSummary(rating: number, side: "white" | "black"): string {
+  const preset = nearestLevelPreset(rating);
+  const sideLabel = side === "black" ? "Black" : "White";
+  return preset.rating === rating
+    ? `${rating} · ${preset.label} · ${sideLabel}`
+    : `${rating} · ${sideLabel}`;
+}
+
+/* ------------------------------------------------------------------ engines */
+
+/** How the setup list names each row, and what the engine is for. */
+export const ENGINE_ROW_NAMES: Record<SetupRow["key"], { name: string; purpose: string }> = {
+  stockfish: { name: "Stockfish", purpose: "Best moves" },
+  maia: { name: "Maia", purpose: "Human moves" },
+  lc0: { name: "Lc0", purpose: "Neural network" }
+};
+
+/**
+ * A failed download's reason in a few words, from the main process's error message (network
+ * errors, GitHub's rate limit, a full disk, a damaged file); anything else is just "Didn't download".
+ */
+const FAILURE_REASONS: readonly (readonly [RegExp, string])[] = [
+  [
+    /fetch failed|unreachable|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENETUNREACH|timed? ?out|network/i,
+    "No connection"
+  ],
+  [/rate limit/i, "Busy, try later"],
+  [/ENOSPC/i, "Disk is full"],
+  [/sha256 mismatch|download incomplete|byte range/i, "Download damaged"],
+  [/EACCES|EPERM|EBUSY/i, "Couldn’t install"],
+  [/install it yourself/i, "No download here"]
+];
+
+export function downloadFailureReason(message: string | undefined): string {
+  return FAILURE_REASONS.find(([pattern]) => pattern.test(message ?? ""))?.[1] ?? "Didn’t download";
+}
+
+/** Whole-number percentage of everything the setup downloads (0 before sizes are known). */
+export function downloadPercent(rows: readonly SetupRow[]): number {
+  const total = rows.reduce((sum, row) => sum + row.bytesTotal, 0);
+  const received = rows.reduce((sum, row) => sum + row.bytesReceived, 0);
+  return total ? Math.min(100, Math.round((received / total) * 100)) : 0;
+}
+
+/**
+ * An engine that already runs Game review, as the setup list shows it: the app's own Stockfish
+ * by name and purpose, an engine the user added by name and path.
+ */
+export function readyEngineRow(engine: Pick<EngineConfig, "name" | "executablePath">): {
+  name: string;
+  detail: string;
+} {
+  const managed = ` ${MANAGED_ENGINE_SUFFIX}`;
+  return engine.name.endsWith(managed)
+    ? { name: engine.name.slice(0, -managed.length), detail: ENGINE_ROW_NAMES.stockfish.purpose }
+    : { name: engine.name, detail: engine.executablePath };
+}
+
+/**
+ * The evaluation engine to list above the setup rows: one that already works (the user's own,
+ * or an installed Stockfish) when the list has no Stockfish row of its own.
+ */
+export function listedReadyEngine<T extends EngineConfig>(
+  rows: readonly SetupRow[],
+  engine: T | null
+): T | null {
+  return engine && !rows.some((row) => row.key === "stockfish") ? engine : null;
+}
+
+/**
+ * What the Engines step shows: placeholders while checking, a band when the check failed and
+ * nothing works yet, a note when there is nothing to download here, or the list.
+ */
+export type EnginesView = "checking" | "check-failed" | "none" | "list";
+
+export function enginesView(input: {
+  statusLoaded: boolean;
+  statusFailed: boolean;
+  rows: readonly SetupRow[];
+  engine: EngineConfig | null;
+}): EnginesView {
+  if (!input.statusLoaded) return "checking";
+  if (input.rows.length || input.engine) return "list";
+  return input.statusFailed ? "check-failed" : "none";
+}
+
+/**
+ * A progress ring's value circle for `percent` (clamped to 0–100): one dash as long as the whole
+ * circumference, offset by the part still to go.
+ */
+export function progressRingDash(
+  percent: number,
+  radius: number
+): { circumference: number; offset: number } {
+  const circumference = 2 * Math.PI * radius;
+  const clamped = Math.max(0, Math.min(100, percent));
+  return { circumference, offset: circumference * (1 - clamped / 100) };
+}
+
+/** "Stockfish", "Stockfish and Maia", "A, B and C". */
+function joinNames(names: readonly string[]): string {
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names.join("");
+}
+
+/** The summary's Engines line, and the one thing it offers. */
+export type EngineSummary =
+  | { tone: "busy"; text: string; percent: number }
+  | { tone: "done"; text: string }
+  | { tone: "failed"; text: string; retry: SetupRow }
+  | { tone: "failed"; text: string; recheck: true }
+  | { tone: "skipped"; text: string; download: boolean };
+
+export function engineSummary(input: {
+  phase: EngineSetupPhase;
+  rows: readonly SetupRow[];
+  engine: EngineConfig | null;
+  statusFailed: boolean;
+  offer: boolean;
+}): EngineSummary {
+  const { phase, rows } = input;
+  if (phase === "downloading") {
+    return { tone: "busy", text: "Downloading", percent: downloadPercent(rows) };
+  }
+  const failed = rows.find((row) => row.status === "error");
+  if (failed) {
+    return {
+      tone: "failed",
+      text: `${ENGINE_ROW_NAMES[failed.key].name} didn’t download`,
+      retry: failed
+    };
+  }
+  if (phase === "ready") {
+    const listed = listedReadyEngine(rows, input.engine);
+    const names = [
+      ...(listed ? [readyEngineRow(listed).name] : []),
+      ...rows.filter((row) => row.status === "ready").map((row) => ENGINE_ROW_NAMES[row.key].name)
+    ];
+    return { tone: "done", text: joinNames(names) };
+  }
+  if (phase === "checking") return { tone: "skipped", text: "Checking…", download: false };
+  if (input.statusFailed) return { tone: "failed", text: "Couldn’t check", recheck: true };
+  return { tone: "skipped", text: "Skipped", download: input.offer };
 }

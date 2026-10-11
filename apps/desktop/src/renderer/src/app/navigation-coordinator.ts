@@ -27,6 +27,7 @@ import {
 import type { PuzzleSetSnapshot } from "./puzzle-session-controller";
 import { sideTabFrom, type SideTab } from "./side-tabs";
 import { holdUntilChanged } from "./useGameAutosave";
+import { withoutMoveSounds } from "./useMoveSounds";
 
 /**
  * Back / Forward: putting a history entry's screen back, which may wait for a saved game or a
@@ -239,7 +240,8 @@ async function restoreBoard(
     if (!continuedSet) shell.releasePuzzleSession();
   }
   if (continuedSet) shell.resumePuzzleSet(continuedSet);
-  useGameStore.getState().restoreView(snapshot);
+  // Put back as it was: not a move played, so without a move sound.
+  withoutMoveSounds(() => useGameStore.getState().restoreView(snapshot));
   if (snapshot.mode === "analysis") resumeBoardAnalysis(shell.defaultEngineId);
   shell.exitFocus();
   return "restored";

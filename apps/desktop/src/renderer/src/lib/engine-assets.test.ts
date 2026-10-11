@@ -12,6 +12,7 @@ import {
   formatSize,
   initialAssetProgress,
   isAssetInstalled,
+  lc0NeedsManualInstall,
   maiaNeedsLc0,
   missingDownloads,
   progressPercent,
@@ -64,6 +65,15 @@ describe("engine assets", () => {
     ).toBe(false);
     expect(maiaNeedsLc0(statusMap({ stockfish: { state: "installed" } }))).toBe(false);
     expect(maiaNeedsLc0(null)).toBe(false);
+  });
+
+  it("says Lc0 needs installing by hand only when it's missing with no download here", () => {
+    expect(lc0NeedsManualInstall(statusMap({ lc0: { autoDownload: false } }))).toBe(true);
+    expect(lc0NeedsManualInstall(statusMap({ lc0: { autoDownload: true } }))).toBe(false);
+    expect(
+      lc0NeedsManualInstall(statusMap({ lc0: { state: "custom", autoDownload: false } }))
+    ).toBe(false);
+    expect(lc0NeedsManualInstall(null)).toBe(false);
   });
 
   it("lists only missing assets that can be downloaded on this platform", () => {
@@ -273,6 +283,21 @@ describe("first-run setup", () => {
     // The installing network counts as downloaded; the other hasn't started.
     expect(rows[1].bytesReceived).toBe(1_000_000);
     expect(setupRowPercent(rows[1])).toBe(50);
+  });
+
+  it("keeps the failed member's error message on its row", () => {
+    const queued = [status("maia-1100"), status("maia-1300")];
+    expect(
+      setupRows(queued, {
+        "maia-1100": { bytesReceived: 5, bytesTotal: 5, status: "ready" },
+        "maia-1300": {
+          bytesReceived: 0,
+          bytesTotal: 5,
+          status: "error",
+          errorMessage: "fetch failed"
+        }
+      })[0].errorMessage
+    ).toBe("fetch failed");
   });
 
   it("shows a failure over progress, and ready only when every member is ready", () => {

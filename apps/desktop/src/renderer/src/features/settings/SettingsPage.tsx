@@ -3,13 +3,15 @@ import { Check, CircleAlert, Loader2, Sparkles, Volume2 } from "lucide-react";
 import {
   defaultSettings,
   hydratePieceSettings,
+  soundSetOptions,
   type AppSettings
 } from "@chaturanga/shared/types/settings";
 import { useSettingsQuery } from "../../queries/api";
-import { playSound } from "../../sounds/sounds";
+import { previewSoundSet } from "../../sounds/sounds";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { SettingRow } from "@/components/ui/field";
+import { Select } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { Page, PageHeader, SectionHeader } from "@/components/ui/page";
 import { Switch } from "@/components/ui/switch";
@@ -284,6 +286,8 @@ function SaveStatus({ className }: { className?: string }) {
 
 function SoundSection({ appearance }: { appearance: AppSettings }) {
   const setSetting = useSetSetting();
+  const off = !appearance.soundEnabled;
+  const dimmed = cn("transition-opacity duration-standard", off && "opacity-60");
   return (
     <section className={cn(cardPadded, "grid gap-2")}>
       <SectionHeader title="Sound" />
@@ -291,7 +295,7 @@ function SoundSection({ appearance }: { appearance: AppSettings }) {
         <SettingRow
           label="Move sounds"
           htmlFor="setting-sound"
-          description="Moves, captures and the end of a game."
+          description="Moves, captures and checks; a live game's start, low time and result; puzzles."
           control={
             <Switch
               id="setting-sound"
@@ -301,12 +305,60 @@ function SoundSection({ appearance }: { appearance: AppSettings }) {
           }
         />
         <SettingRow
+          label="Sound set"
+          htmlFor="setting-sound-set"
+          className={dimmed}
+          control={
+            <>
+              <Select
+                id="setting-sound-set"
+                className="w-44"
+                value={appearance.soundSet}
+                disabled={off}
+                onChange={(event) => {
+                  const set = soundSetOptions.find((option) => option.id === event.target.value);
+                  if (set) setSetting("soundSet", set.id);
+                }}
+              >
+                {soundSetOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+              <IconButton
+                label="Preview sound set"
+                icon={<Volume2 />}
+                disabled={off}
+                onClick={() =>
+                  void previewSoundSet(
+                    appearance.soundSet,
+                    appearance.soundVolume,
+                    appearance.soundSilentCheck
+                  )
+                }
+              />
+            </>
+          }
+        />
+        <SettingRow
+          label="Silent check"
+          htmlFor="setting-silent-check"
+          description="A check sounds like the move that gave it."
+          className={dimmed}
+          control={
+            <Switch
+              id="setting-silent-check"
+              checked={appearance.soundSilentCheck}
+              disabled={off}
+              onCheckedChange={(v) => setSetting("soundSilentCheck", v)}
+            />
+          }
+        />
+        <SettingRow
           label="Volume"
           htmlFor="setting-volume"
-          className={cn(
-            "transition-opacity duration-standard",
-            !appearance.soundEnabled && "opacity-60"
-          )}
+          className={dimmed}
           control={
             <>
               <input
@@ -317,7 +369,7 @@ function SoundSection({ appearance }: { appearance: AppSettings }) {
                 max={1}
                 step={0.05}
                 value={appearance.soundVolume}
-                disabled={!appearance.soundEnabled}
+                disabled={off}
                 onChange={(event) =>
                   setSetting("soundVolume", Number(event.target.value), { batch: true })
                 }
@@ -325,12 +377,6 @@ function SoundSection({ appearance }: { appearance: AppSettings }) {
               <span className="w-10 text-right text-xs tabular-nums text-fg-muted">
                 {Math.round(appearance.soundVolume * 100)}%
               </span>
-              <IconButton
-                label="Test move sound"
-                icon={<Volume2 />}
-                disabled={!appearance.soundEnabled}
-                onClick={() => playSound("move", appearance.soundVolume)}
-              />
             </>
           }
         />

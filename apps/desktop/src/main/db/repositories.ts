@@ -17,6 +17,7 @@ import {
   normalizeOnboardingSettings,
   normalizePlaySettings,
   normalizePracticeSettings,
+  normalizeSoundSettings,
   normalizeRatingSettings,
   normalizeReviewEngineSettings,
   normalizeUpdateSettings,
@@ -834,13 +835,15 @@ export const settingsRepository = {
       }
     }
     const merged = { ...defaultSettings, ...values } as AppSettings;
-    return normalizePlaySettings(
-      normalizeRatingSettings(
-        normalizePracticeSettings(
-          normalizeOnboardingSettings(
-            normalizeUpdateSettings(
-              normalizeAppearanceSettings(
-                normalizeReviewEngineSettings(hydratePieceSettings(merged))
+    return normalizeSoundSettings(
+      normalizePlaySettings(
+        normalizeRatingSettings(
+          normalizePracticeSettings(
+            normalizeOnboardingSettings(
+              normalizeUpdateSettings(
+                normalizeAppearanceSettings(
+                  normalizeReviewEngineSettings(hydratePieceSettings(merged))
+                )
               )
             )
           )

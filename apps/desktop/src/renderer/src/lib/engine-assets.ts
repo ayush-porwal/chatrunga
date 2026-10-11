@@ -36,6 +36,15 @@ export function maiaNeedsLc0(status: EngineAssetStatusMap | null): boolean {
   );
 }
 
+/**
+ * Lc0 isn't set up and this computer has no Lc0 download (macOS, Linux): Maia can only run once
+ * the user installs Lc0 and adds it in Settings → Engines, so the setup doesn't offer it.
+ */
+export function lc0NeedsManualInstall(status: EngineAssetStatusMap | null): boolean {
+  if (!status) return false;
+  return !isAssetInstalled(status.lc0) && !status.lc0.autoDownload;
+}
+
 /** Installed state + latest known release per asset (no network call); null outside the desktop app. */
 export async function fetchAssetStatus(): Promise<EngineAssetStatusMap | null> {
   return (await window.chaturanga?.assets.status()) ?? null;
@@ -198,6 +207,8 @@ export type SetupRow = {
   bytesReceived: number;
   bytesTotal: number;
   status: AssetStatus;
+  /** The first failed member's error message, as main reported it. */
+  errorMessage?: string;
 };
 
 const ROW_STATUS_ORDER: readonly AssetStatus[] = [
@@ -278,6 +289,9 @@ export function setupRows(
     row.bytesReceived += member.bytesReceived;
     if (ROW_STATUS_ORDER.indexOf(member.status) < ROW_STATUS_ORDER.indexOf(row.status))
       row.status = member.status;
+    const errorMessage = progress[asset.id]?.errorMessage;
+    if (member.status === "error" && errorMessage && !row.errorMessage)
+      row.errorMessage = errorMessage;
   }
   for (const row of rows) {
     if (row.key === "maia") row.label = maiaRowLabel(row.ids);
