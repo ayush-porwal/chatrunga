@@ -92,7 +92,10 @@ export function PredictionPlot({
         aria-valuenow={value}
         aria-valuetext={columnText(lines, value)}
         onPointerMove={onPointerMove}
-        onPointerLeave={() => setActive(null)}
+        // Focused, the slider keeps its column (the arrow keys go on from it); blur clears it.
+        onPointerLeave={(event) => {
+          if (document.activeElement !== event.currentTarget) setActive(null);
+        }}
         onFocus={() => setActive((current) => current ?? userIndex)}
         onBlur={() => setActive(null)}
         onKeyDown={onKeyDown}
