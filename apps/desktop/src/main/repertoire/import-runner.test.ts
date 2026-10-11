@@ -122,11 +122,12 @@ describe("import runner", () => {
       const { games } = await run.result;
       expect(games).toHaveLength(5);
       expect(Object.keys(games[0].positionKeys)).toHaveLength(7);
-      expect(events.map((event) => event.phase)).toStrictEqual([
-        "reading",
-        "parsing",
-        "validating"
-      ]);
+      // Every phase in order. How often each repeats depends on the machine's speed (progress
+      // is throttled by time; import-job.test.ts covers that), so repeats are collapsed.
+      const phases = events
+        .map((event) => event.phase)
+        .filter((phase, index, all) => phase !== all[index - 1]);
+      expect(phases).toStrictEqual(["reading", "parsing", "validating"]);
     });
 
     it("cancels at once", async () => {
