@@ -172,7 +172,7 @@ describe("analysis store", () => {
     });
     const searchedTo = (depth: number) => {
       clearAnalysisResults();
-      useAnalysisStore.getState().startSearch(KEY, "s1");
+      useAnalysisStore.getState().startSearch(KEY, "s1", FEN);
       useAnalysisStore.getState().setInfos([line("s1", depth), line("s1", depth, 2)]);
       useAnalysisStore.getState().setBestMove("e7e5");
     };
@@ -192,7 +192,7 @@ describe("analysis store", () => {
 
     it("pauses nothing without lines, after an error, or for lines of another position", () => {
       clearAnalysisResults();
-      useAnalysisStore.getState().startSearch(KEY, "s1");
+      useAnalysisStore.getState().startSearch(KEY, "s1", FEN);
       useAnalysisStore.getState().pause(position);
       expect(useAnalysisStore.getState()).toMatchObject({ paused: null, status: "idle" });
 
@@ -237,6 +237,18 @@ describe("analysis store", () => {
       useAnalysisStore.getState().setInfos([line("s2", 6)]);
       useAnalysisStore.getState().startSearch(KEY, "s3");
       expect(useAnalysisStore.getState().topLines[0]?.depth).toBe(6);
+    });
+
+    it("ends on its own with the lines left as they are, and drops a Restart nothing followed", () => {
+      searchedTo(18);
+      useAnalysisStore.getState().pause(position);
+      const { topLines } = useAnalysisStore.getState();
+      useAnalysisStore.getState().endPause();
+      expect(useAnalysisStore.getState()).toMatchObject({ paused: null, topLines });
+
+      useAnalysisStore.getState().restartFresh();
+      useAnalysisStore.getState().cancelFreshSearch();
+      expect(useAnalysisStore.getState().freshSearch).toBe(false);
     });
 
     it("ends with the board's engine work (reset) or an engine error", () => {
