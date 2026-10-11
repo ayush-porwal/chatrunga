@@ -17,9 +17,9 @@ import { mainBoardSurface } from "../features/board/move-mark";
 import { BoardWorkspace } from "../features/board/BoardWorkspace";
 import { MoveNavigation } from "../features/board/MoveNavigation";
 import { blackToMove, fullMoveCount } from "../features/board/move-counter";
-import { mainlineEnd } from "../features/play/in-progress";
 import { EngineStatusPanel } from "../features/analysis/EngineStatusPanel";
 import { MoveList } from "../features/game/MoveList";
+import { mainlinePath } from "../features/game/move-tree-model";
 import {
   LibraryActions,
   RecentGames,
@@ -244,8 +244,9 @@ function useMainlineMoveCount(): number {
 }
 
 function mainlineMoveCount(moveTree: readonly MoveNode[]): number {
-  const root = moveTree.find((node) => !node.parentId);
-  return fullMoveCount(mainlineEnd(moveTree)?.plies ?? 0, blackToMove(root?.fenBefore));
+  // The path starts at the root: its moves are the rest.
+  const [root, ...moves] = mainlinePath(moveTree);
+  return fullMoveCount(moves.length, blackToMove(root?.fenBefore));
 }
 
 /** Export PGN: the game on the board, with its analysis, as a .pgn file. */
