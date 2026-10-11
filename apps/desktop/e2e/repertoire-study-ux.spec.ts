@@ -290,7 +290,7 @@ test("Include in practice asks before accepting a move where another chapter pla
       const [repertoire] = await api.list({ query: name });
       const preview = await api.previewImport({ pgn: "1. e4 c5 2. c3 *" });
       await api.commitImport({
-        repertoireId: repertoire!.id,
+        repertoireId: repertoire.id,
         jobId: preview.jobId,
         expectedRevision: revision,
         selections: [{ gameIndex: 0, title: "Alapin", kind: "opening", include: true }]

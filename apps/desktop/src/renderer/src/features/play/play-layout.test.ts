@@ -118,7 +118,7 @@ describe("savePlaySettings", () => {
   it("puts the previous opponent back when the write fails", () => {
     const { state, writes, save } = setup(null);
     save("friend");
-    writes[0]!.fail();
+    writes[0].fail();
     expect(state.playOpponent).toBeNull();
   });
 
@@ -126,7 +126,7 @@ describe("savePlaySettings", () => {
     const { state, writes, save } = setup("pool");
     save("friend");
     save("ai");
-    writes[0]!.fail();
+    writes[0].fail();
     expect(state.playOpponent).toBe("ai");
   });
 });

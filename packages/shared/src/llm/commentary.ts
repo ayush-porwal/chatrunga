@@ -315,7 +315,7 @@ export function groundingFrom(input: {
   fens: readonly string[];
 }): CommentaryGrounding {
   const san = new Set(Array.from(input.san, normalizeSan));
-  const squares = new Set<string>(input.squares ?? []);
+  const squares = new Set<string>(input.squares);
   for (const token of san) for (const square of squaresIn(token)) squares.add(square);
   for (const text of input.texts ?? []) for (const square of squaresIn(text)) squares.add(square);
   const boards = input.fens.map(boardFromFen);

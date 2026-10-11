@@ -16,7 +16,11 @@ import { selectLiveGameInProgress, useLichessStore } from "../../stores/lichess-
 import { useEnginesQuery, useSettingsQuery } from "../../queries/api";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { defaultSettings } from "@chaturanga/shared/types/settings";
+import {
+  defaultSettings,
+  cgWrapPieceSetClass,
+  pieceSizesClass
+} from "@chaturanga/shared/types/settings";
 import { analysisEngineFor, analysisLimitLabel } from "./analysis-engine";
 import { onPausedPosition, pausedStatusLabel, type PausedAnalysis } from "./live-analysis";
 import { EngineAvatar } from "./EngineAvatar";
@@ -24,7 +28,6 @@ import { Notice } from "@/components/ui/notice";
 import { IconButton } from "@/components/ui/icon-button";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { cgWrapPieceSetClass, pieceSizesClass } from "@chaturanga/shared/types/settings";
 import type { PreviewPieceRole } from "../settings/piece-style-preview";
 import { Figurine } from "../board/Figurine";
 import { useBoardAppearance } from "../board/useBoardAppearance";
@@ -80,7 +83,7 @@ function FigurineSan({ san }: { san: string }) {
     <>
       {role ? <Figurine role={role} /> : null}
       {body.slice(0, promotion.index + 1)}
-      <Figurine role={FIGURINE_ROLES[promotion[1]!]!} />
+      <Figurine role={FIGURINE_ROLES[promotion[1]]} />
       {body.slice(promotion.index + 2)}
     </>
   );
@@ -493,7 +496,7 @@ function EngineLines({
         style={FIGURINE_BLOCK_STYLE}
         onPointerLeave={clearPreview}
         onBlur={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) clearPreview();
+          if (!event.currentTarget.contains(event.relatedTarget)) clearPreview();
         }}
       >
         {linesWithPlaceholders(lines, reserved).map((line, index) => (

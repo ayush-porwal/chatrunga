@@ -305,7 +305,7 @@ function sideFeatures(pos: Chess, color: Color, early: boolean): SideFeatures {
     if (!(own[f - 1] ?? 0) && !(own[f + 1] ?? 0)) isolated.push(makeSquare(sq));
     if (isPassed(pos, color, sq)) passed.push(makeSquare(sq));
   }
-  const doubled = own.flatMap((count, f) => (count > 1 ? [`${FILES[f]}`] : []));
+  const doubled = own.flatMap((count, f) => (count > 1 ? [FILES[f]] : []));
   if (isolated.length) pawns.push(`isolated ${isolated.join(" ")}`);
   if (doubled.length) pawns.push(`doubled ${doubled.join(", ")}-pawns`);
   if (passed.length) pawns.push(`passed ${passed.join(" ")}`);

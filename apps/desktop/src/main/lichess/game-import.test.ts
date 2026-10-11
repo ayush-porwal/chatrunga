@@ -131,8 +131,8 @@ describe("importLichessGames", () => {
 
     expect(result).toEqual({ imported: 1, skipped: 4, nextSince: 5001 });
     expect(saved).toHaveLength(1);
-    expect(saved[0]!.playedAt).toBe(5000);
-    expect(saved[0]!.input).toMatchObject({
+    expect(saved[0].playedAt).toBe(5000);
+    expect(saved[0].input).toMatchObject({
       id: null,
       source: "lichess",
       headers: {
@@ -142,14 +142,14 @@ describe("importLichessGames", () => {
         result: "1-0"
       }
     });
-    expect(saved[0]!.input.moveTree.map((node) => node.san).filter(Boolean)).toEqual([
+    expect(saved[0].input.moveTree.map((node) => node.san).filter(Boolean)).toEqual([
       "e4",
       "e5",
       "Nf3"
     ]);
-    expect(saved[0]!.input.pgn).toContain('[Site "https://lichess.org/newGame1"]');
+    expect(saved[0].input.pgn).toContain('[Site "https://lichess.org/newGame1"]');
 
-    const url = new URL(requests[0]!.url);
+    const url = new URL(requests[0].url);
     expect(url.pathname).toBe("/api/games/user/Kenneth");
     expect(Object.fromEntries(url.searchParams)).toEqual({
       since: "1234",
@@ -158,7 +158,7 @@ describe("importLichessGames", () => {
       opening: "true",
       finished: "true"
     });
-    expect(requests[0]!.headers.accept).toBe("application/x-ndjson");
+    expect(requests[0].headers.accept).toBe("application/x-ndjson");
   });
 
   it("adds the Site header when the PGN lacks it", async () => {
@@ -168,8 +168,8 @@ describe("importLichessGames", () => {
     ]);
     const { repository, saved } = memoryRepository();
     await importLichessGames({ client, repository, username: "Kenneth", since: 0 });
-    expect(saved[0]!.input.headers.site).toBe("https://lichess.org/noSite01");
-    expect(saved[0]!.input.pgn).toContain('[Site "https://lichess.org/noSite01"]');
+    expect(saved[0].input.headers.site).toBe("https://lichess.org/noSite01");
+    expect(saved[0].input.pgn).toContain('[Site "https://lichess.org/noSite01"]');
   });
 
   it("has no cursor when there was nothing new", async () => {

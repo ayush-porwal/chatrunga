@@ -69,8 +69,8 @@ export function pieceSetCss(style: PieceStyle, set: PieceSetDrawings): string {
   return PIECES.map(([role, color], p) => {
     const piece = `piece.${role}.${color}`;
     return (
-      `.cg-wrap.piece-set-${style} ${piece}{background-image:${toDataUrl(set.ladder[p]!)}}` +
-      `.cg-wrap.piece-set-${style}.piece-sizes-uniform ${piece}{background-image:${toDataUrl(set.uniform[p]!)}}`
+      `.cg-wrap.piece-set-${style} ${piece}{background-image:${toDataUrl(set.ladder[p])}}` +
+      `.cg-wrap.piece-set-${style}.piece-sizes-uniform ${piece}{background-image:${toDataUrl(set.uniform[p])}}`
     );
   }).join("");
 }

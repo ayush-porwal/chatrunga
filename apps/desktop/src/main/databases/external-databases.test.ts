@@ -191,7 +191,7 @@ function dataset(rowCount: number): Buffer<ArrayBuffer> {
     (_, index) =>
       `${randomBytes(8).toString("hex")},fen,e2e4 e7e5,${1000 + index},80,90,100,short,,`
   );
-  return zstdCompressSync(Buffer.from([LICHESS_HEADER, ...rows].join("\n"))) as Buffer<ArrayBuffer>;
+  return zstdCompressSync(Buffer.from([LICHESS_HEADER, ...rows].join("\n")));
 }
 const content = dataset(800);
 
@@ -991,7 +991,7 @@ describe("samplePuzzle", () => {
     // oxlint-disable-next-line chaturanga/no-test-sleep -- an absence check: the second request joining shows no event, only no second scan
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(gatedScans.filter(isQuick)).toHaveLength(1);
-    gatedScans[0]!.release();
+    gatedScans[0].release();
     const [a, b] = await Promise.all([first, second]);
     expect(a.id).not.toBe(b.id);
     expect(gatedScans.filter(isQuick)).toHaveLength(1);
@@ -1005,9 +1005,9 @@ describe("samplePuzzle", () => {
     await vi.waitFor(() => expect(gatedScans.length).toBe(1));
     const newer = samplePuzzle(input({ ratingMin: 1500 }));
     await expect(older).rejects.toThrow(/replaced by a newer one/);
-    expect(gatedScans[0]!.cancelled).toBe(true);
+    expect(gatedScans[0].cancelled).toBe(true);
     await vi.waitFor(() => expect(gatedScans.length).toBe(2));
-    gatedScans[1]!.release();
+    gatedScans[1].release();
     expect(Number((await newer).id.slice(1))).toBeGreaterThanOrEqual(500);
   });
 
@@ -1017,7 +1017,7 @@ describe("samplePuzzle", () => {
     for (const ratingMin of [100, 200, 300, 400]) await samplePuzzle(input({ ratingMin }));
     const full = () => gatedScans.filter((scan) => !isQuick(scan));
     expect(full()).toHaveLength(2);
-    full()[0]!.release();
+    full()[0].release();
     await vi.waitFor(() => expect(full()).toHaveLength(3));
     // Of the waiting ones, the newest filters are scanned first.
     expect(full().map((scan) => scan.job.input.lichess?.ratingMin)).toEqual([100, 200, 400]);

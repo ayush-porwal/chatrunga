@@ -57,7 +57,7 @@ describe("chess.com API answers", () => {
       ["https://www.chess.com/game/daily/150000002", "chess960", 1790000000],
       ["https://www.chess.com/game/live/150000003", "chess", 1790300000]
     ]);
-    expect(games[0]!.pgn).toContain('[Link "https://www.chess.com/game/live/150000001"]');
+    expect(games[0].pgn).toContain('[Link "https://www.chess.com/game/live/150000001"]');
     // No rules: it can't be told from a variant, so it isn't taken as standard chess.
     expect(
       parseArchiveGames({

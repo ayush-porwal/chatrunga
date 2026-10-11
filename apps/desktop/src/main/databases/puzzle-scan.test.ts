@@ -59,7 +59,7 @@ describe("scanCsvLines", () => {
       "multi.csv.zst",
       Buffer.concat([
         skippableFrame(Buffer.from("pzstd index")),
-        frames[0]!,
+        frames[0],
         skippableFrame(Buffer.alloc(4)),
         ...frames.slice(1)
       ])
@@ -194,7 +194,7 @@ describe("reservoirScan", () => {
     const trials = 800;
     for (let trial = 0; trial < trials; trial += 1) {
       const { rows } = await reservoirScan(scanJob(path, 5), undefined, random);
-      for (const id of ids(rows)) kept.set(id!, (kept.get(id!) ?? 0) + 1);
+      for (const id of ids(rows)) kept.set(id, (kept.get(id) ?? 0) + 1);
     }
     expect(kept.size).toBe(20);
     for (const count of kept.values()) expect(Math.abs(count / trials - 0.25)).toBeLessThan(0.06);

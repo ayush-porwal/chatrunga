@@ -34,7 +34,7 @@ export function resultBadgeLabel(
   if (!decided) return null;
   const how = terminationReason(termination?.trim() ?? "");
   if (!how || UNINFORMATIVE_TERMINATIONS.has(how.toLowerCase())) return decided;
-  const label = TERMINATION_LABELS[how.toLowerCase()] ?? how[0]!.toUpperCase() + how.slice(1);
+  const label = TERMINATION_LABELS[how.toLowerCase()] ?? how[0].toUpperCase() + how.slice(1);
   return `${decided} · ${label}`;
 }
 

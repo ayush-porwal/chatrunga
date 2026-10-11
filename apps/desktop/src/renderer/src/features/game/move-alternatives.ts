@@ -95,7 +95,7 @@ export function alternativeTarget(
   const group = alternativeGroup(tree, position, bestLineOf);
   if (!group || group.alternatives.length < 2) return null;
   const count = group.alternatives.length;
-  const target = group.alternatives[(group.current + delta + count) % count]!;
+  const target = group.alternatives[(group.current + delta + count) % count];
   if (target.kind === "best") {
     const cursor = openBestLine(
       target.markedNodeId,

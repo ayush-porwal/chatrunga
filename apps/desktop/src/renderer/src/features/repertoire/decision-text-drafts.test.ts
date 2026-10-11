@@ -48,11 +48,11 @@ function saved(input: UpdateDecisionInput, revision: number): DecisionSaveResult
     hint: input.patch.hint ?? null,
     wrongMoveFeedback: input.patch.wrongMoveFeedback ?? {},
     paused: input.patch.paused ?? false
-  } as RepertoireDecision;
+  };
   return {
     repertoire: detailOf({ id: input.repertoireId, revision }),
     decision
-  } as DecisionSaveResult;
+  };
 }
 
 let queryClient: QueryClient;

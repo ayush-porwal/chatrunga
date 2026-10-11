@@ -249,7 +249,7 @@ export function StudyChaptersPanel({
                 style={{ top: index * ROW_STRIDE, height: ROW_HEIGHT }}
                 onFocus={() => setFocusedId(chapter.id)}
                 onBlur={(event) => {
-                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                  if (!event.currentTarget.contains(event.relatedTarget)) {
                     setFocusedId((id) => (id === chapter.id ? null : id));
                   }
                 }}

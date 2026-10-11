@@ -133,16 +133,18 @@ export function BoardView() {
     const bElo = headers.blackElo?.trim() || null;
 
     const topIsBlack = orientation === "white";
+    const topColor: Color = topIsBlack ? "black" : "white";
+    const bottomColor: Color = topIsBlack ? "white" : "black";
     const liveClock = isMatchMode(mode) && hasLiveClock;
     return {
       topName: topIsBlack ? black : white,
       topElo: topIsBlack ? bElo : wElo,
       topClock: clocks ? clocks[topIsBlack ? "black" : "white"] : "",
-      topColor: (topIsBlack ? "black" : "white") as Color,
+      topColor,
       bottomName: topIsBlack ? white : black,
       bottomElo: topIsBlack ? wElo : bElo,
       bottomClock: clocks ? clocks[topIsBlack ? "white" : "black"] : "",
-      bottomColor: (topIsBlack ? "white" : "black") as Color,
+      bottomColor,
       // The live engine clock already shows the time control; only hint it for imported games.
       showTcHint: Boolean(tc && tc !== "-" && !clocks && !liveClock),
       // A timed engine game saved before its clocks were kept, played on: without a clock.

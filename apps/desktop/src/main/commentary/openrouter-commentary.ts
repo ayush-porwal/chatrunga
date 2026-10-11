@@ -266,7 +266,7 @@ export function analyticsRedactor(payload: ReviewInsightPayload): (text: string)
   return (text) =>
     text.normalize("NFC").replace(pattern, (match: string, ...groups: unknown[]) => {
       const index = groups.slice(0, replacements.length).findIndex((group) => group !== undefined);
-      return index >= 0 ? replacements[index]![1] : match;
+      return index >= 0 ? replacements[index][1] : match;
     });
 }
 

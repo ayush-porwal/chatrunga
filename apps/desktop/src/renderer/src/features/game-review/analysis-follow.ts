@@ -22,7 +22,7 @@ export function followTargetIndex(
   analysed: readonly { nodeId: string }[]
 ): number {
   const done = new Set(analysed.map((move) => move.nodeId));
-  for (let index = line.length - 1; index > 0; index -= 1) if (done.has(line[index]!)) return index;
+  for (let index = line.length - 1; index > 0; index -= 1) if (done.has(line[index])) return index;
   return 0;
 }
 
@@ -130,8 +130,8 @@ export function createAnalysisFollower({
     }
     const lag = to - from;
     // Off the line, ahead of the analysis or too far behind: one quiet jump. Else the next move.
-    if (from < 0 || lag < 0 || lag > maxLag) place(line[to]!, true);
-    else place(line[from + 1]!, false);
+    if (from < 0 || lag < 0 || lag > maxLag) place(line[to], true);
+    else place(line[from + 1], false);
     advance();
   };
 

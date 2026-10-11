@@ -267,7 +267,7 @@ function PuzzleProse({ text, line }: { text: string; line: PuzzleProseLine | nul
         return (
           <MoveLink
             key={position}
-            san={line.solutionSan[index]!}
+            san={line.solutionSan[index]}
             onActivate={() => useGameStore.getState().goToLine("root", [...moves])}
           >
             {segment.text}

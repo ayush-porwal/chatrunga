@@ -10,13 +10,13 @@ import {
   type RepertoireChapter,
   type RepertoireColor,
   type RepertoireNodeMeta,
-  type UpdateDecisionInput
+  type UpdateDecisionInput,
+  type ImportProgressEvent
 } from "@chaturanga/shared/types/repertoire";
 import { fenAfterUci, START_FEN } from "@chaturanga/shared/chess/position";
 import { positionKey } from "@chaturanga/shared/chess/repertoire-position";
 import { parseRepertoirePgn } from "@chaturanga/shared/chess/repertoire-pgn";
 import { importedDecisionCount } from "@chaturanga/shared/chess/repertoire-training";
-import type { ImportProgressEvent } from "@chaturanga/shared/types/repertoire";
 import { generateRepertoirePgn } from "./import-bench";
 import { validateTree } from "./chapter-validation";
 

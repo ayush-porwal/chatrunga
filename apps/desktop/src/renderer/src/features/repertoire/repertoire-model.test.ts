@@ -553,7 +553,7 @@ describe("wrongMoveOptions", () => {
     expect(options.map((option) => option.uci)).not.toContain("e2e4");
     expect(options).toContainEqual({ uci: "g1f3", san: "Nf3" });
     expect(options.map((option) => option.san)).toEqual(
-      [...options.map((option) => option.san)].sort((a, b) => a.localeCompare(b))
+      options.map((option) => option.san).sort((a, b) => a.localeCompare(b))
     );
     expect(wrongMoveOptions("not a fen", new Set())).toEqual([]);
   });

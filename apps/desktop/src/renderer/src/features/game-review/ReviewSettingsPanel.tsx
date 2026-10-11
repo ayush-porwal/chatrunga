@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import {
   REVIEW_MAIA_LEVELS,
   type AppSettings,
-  type ReviewMaiaLevel
+  type ReviewMaiaLevel,
+  COMMENTARY_DETAILS
 } from "@chaturanga/shared/types/settings";
 import {
   useEnginesQuery,
@@ -25,7 +26,6 @@ import { Switch } from "@/components/ui/switch";
 import { fetchAssetStatus, maiaNeedsLc0 } from "@/lib/engine-assets";
 import { divider, fieldHint, fieldLabel } from "@/lib/ui";
 import { isOneOf } from "@chaturanga/shared/types/guards";
-import { COMMENTARY_DETAILS } from "@chaturanga/shared/types/settings";
 
 const searchTimeOptions = [
   { value: 100, label: "Blitz · 0.1s" },

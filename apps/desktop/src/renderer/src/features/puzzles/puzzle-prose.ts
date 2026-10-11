@@ -44,7 +44,7 @@ export function solutionIndexForToken(
   ]) {
     const matches = plies.filter(({ san }) => same(san));
     const other = line.otherSan.some(same);
-    if (matches.length === 1 && !other) return matches[0]!.index;
+    if (matches.length === 1 && !other) return matches[0].index;
     if (matches.length || other) return null;
   }
   return null;

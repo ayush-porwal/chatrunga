@@ -312,7 +312,7 @@ export function sanitizeChapter(chapter: RepertoireChapter, revision: number): R
     title: chapterTitle(chapter.title),
     sortOrder: Number.isFinite(chapter.sortOrder) ? Math.trunc(chapter.sortOrder) : 0,
     kind: chapter.kind,
-    enabled: chapter.enabled !== false,
+    enabled: chapter.enabled,
     rootFen,
     revision,
     nodeCount: tree.length - 1,

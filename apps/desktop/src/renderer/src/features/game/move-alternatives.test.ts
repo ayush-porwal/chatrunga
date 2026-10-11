@@ -32,7 +32,7 @@ const bestLineOf = (nodeId: string) => (nodeId === nxe5.id ? best : []);
 function press(position: MovePosition, delta: 1 | -1, tree = trap.tree, lines = bestLineOf) {
   const target = alternativeTarget(tree, position, lines, delta);
   if (!target) return null;
-  if (target.kind === "best") return `best ${target.cursor.moves[target.cursor.index]!.san}`;
+  if (target.kind === "best") return `best ${target.cursor.moves[target.cursor.index].san}`;
   return tree.find((node) => node.id === target.nodeId)!.san;
 }
 const node = (moveNode: MoveNode): MovePosition => ({ kind: "node", nodeId: moveNode.id });

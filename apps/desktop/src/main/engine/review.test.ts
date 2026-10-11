@@ -454,7 +454,7 @@ describe("review reuse", () => {
 
 describe("analysePositionsWithEngine", () => {
   it("searches each position with its own line count and skips a finished one", async () => {
-    const mated = foolsMate()[3]!.fenAfter;
+    const mated = foolsMate()[3].fenAfter;
     const result = await analysePositionsWithEngine(
       fakeEngine("sf", "sf"),
       {
@@ -469,7 +469,7 @@ describe("analysePositionsWithEngine", () => {
     );
     expect(result.engineName).toBe("Fake sf");
     expect(result.lines.map((lines) => lines.length)).toEqual([3, 0, 1]);
-    expect(result.lines[0]![0]).toMatchObject({
+    expect(result.lines[0][0]).toMatchObject({
       multipv: 1,
       pv: ["d1h5"],
       scoreWhite: { type: "cp", value: 40 }

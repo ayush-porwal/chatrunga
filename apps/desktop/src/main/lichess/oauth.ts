@@ -4,7 +4,7 @@
  * server on the loopback interface with an OS-assigned port.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer, type ServerResponse } from "node:http";
 import { LICHESS_ORIGIN, LichessClient, type FetchLike } from "./http";
 
 export const LICHESS_CLIENT_ID = "chaturanga-desktop";
@@ -187,11 +187,7 @@ function escapeHtml(value: string): string {
 }
 
 /** A self-contained page (no scripts, no external resources). */
-function sendPage(
-  response: ServerResponse<IncomingMessage>,
-  status: number,
-  message: string
-): void {
+function sendPage(response: ServerResponse, status: number, message: string): void {
   const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Chaturanga</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#161512;color:#e8e6e3;font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}p{max-width:28rem;padding:0 1.5rem;text-align:center}</style>
 </head><body><p>${escapeHtml(message)}</p></body></html>`;

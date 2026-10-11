@@ -776,7 +776,7 @@ export async function samplePuzzle(input: PuzzleSampleInput): Promise<PuzzleSamp
   }
 
   const kind: PuzzleRowKind = rowKindForSource(database.sourceId);
-  const excluded = new Set(input.excludeIds ?? []);
+  const excluded = new Set(input.excludeIds);
   const file = await stat(database.filePath);
   const pool = poolFor(poolKey(input, `${file.size}:${file.mtimeMs}`));
   supersedeQuickScans(pool);

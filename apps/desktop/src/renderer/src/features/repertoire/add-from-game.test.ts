@@ -33,7 +33,7 @@ import {
 function gameTree(line: string[], rootVariation: string[] = []): MoveNode[] {
   let tree = createEmptyGame().moveTree;
   const play = (moves: string[]) => {
-    let parent = tree[0]!;
+    let parent = tree[0];
     for (const san of moves) {
       const moved = applySan(parent.fenAfter, san);
       if (!moved) throw new Error(`illegal ${san}`);
@@ -120,8 +120,8 @@ describe("source extraction", () => {
       result: "*",
       headers: { white: "W", black: "B", event: "Open" },
       initialFen: null,
-      currentFen: tree[1]!.fenAfter,
-      currentNodeId: tree[1]!.id,
+      currentFen: tree[1].fenAfter,
+      currentNodeId: tree[1].id,
       pgn: "1. d4 *",
       moveTree: tree,
       review: null,
@@ -328,7 +328,7 @@ describe("input hashing", () => {
     expect(
       hashAddInput({ ...input, policy: { includedNodeIds: ["b", "a"], coveredNodeIds: [] } })
     ).toBe(hashAddInput(input));
-    expect(hashAddInput({ ...input, source: { ...input.source, nodeId: tree[1]!.id } })).toBe(
+    expect(hashAddInput({ ...input, source: { ...input.source, nodeId: tree[1].id } })).toBe(
       hashAddInput(input)
     );
   });
@@ -345,7 +345,7 @@ describe("input hashing", () => {
       hashAddInput({ ...input, destination: { ...input.destination, title: "Other" } as never })
     ).not.toBe(base);
     expect(hashAddInput({ ...input, expectedRevision: 4 })).not.toBe(base);
-    expect(hashAddInput({ ...input, scope: { kind: "path", toNodeId: tree[1]!.id } })).not.toBe(
+    expect(hashAddInput({ ...input, scope: { kind: "path", toNodeId: tree[1].id } })).not.toBe(
       base
     );
     expect(

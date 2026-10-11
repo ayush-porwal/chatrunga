@@ -309,7 +309,7 @@ export function getOccurrences(input: {
       lookups.set(row.chapterId, lookup);
     }
     const ids = lookup.parentPath.get(row.nodeId) ?? [];
-    const moves = ids.slice(1).map((id) => lookup!.nodesById.get(id)!);
+    const moves = ids.slice(1).map((id) => lookup.nodesById.get(id)!);
     return { ...row, path: formatPath(moves) };
   });
 }
@@ -729,7 +729,7 @@ export function updateDecision(input: UpdateDecisionInput): DecisionSaveResult {
         next.wrongMoveFeedback[move] = feedback;
       }
     }
-    if (patch.paused !== undefined) next.paused = patch.paused === true;
+    if (patch.paused !== undefined) next.paused = patch.paused;
 
     const bumped = bump(record, now);
     for (const chapter of touchedChapters) {
@@ -1011,7 +1011,7 @@ export async function previewImport(input: PreviewImportInput): Promise<ImportPr
       last = progress;
       importProgress(jobId, progress.phase, progress);
     },
-    { requireWorker: app.isPackaged === true }
+    { requireWorker: app.isPackaged }
   );
   runningImports.set(jobId, run);
   let games: ImportedGame[];
@@ -1137,7 +1137,7 @@ async function storeImport(input: ImportCommitInput): Promise<ImportResult> {
       chapters
     },
     databasePath,
-    { requireWorker: app.isPackaged === true }
+    { requireWorker: app.isPackaged }
   );
   importJobs.delete(input.jobId);
   changed({
@@ -3260,7 +3260,7 @@ export async function restoreBackup(input: RestoreBackupInput): Promise<RestoreB
       app: backupApp()
     },
     databasePath,
-    { requireWorker: app.isPackaged === true }
+    { requireWorker: app.isPackaged }
   );
   backupJobs.delete(input.jobId);
   for (const item of restored) {

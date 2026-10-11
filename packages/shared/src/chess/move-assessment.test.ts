@@ -635,7 +635,7 @@ describe("assessMove: sacrifices (Brilliant)", () => {
     const assessment = assessMove(move);
     expect(assessment.annotation).not.toBe("brilliant");
     expect(assessment.tags).not.toContain("sacrifice");
-    const played = move.topLines[0]!;
+    const played = move.topLines[0];
     // Less than the exchange (the bishop for b6's pawn was the least loss on offer).
     expect(
       sacrificedMaterial(
@@ -1016,7 +1016,7 @@ describe("saved reviews", () => {
 
   it("keeps the marks of the other moves when one stored move is too damaged to assess", () => {
     const stored = storedReview();
-    const damaged = { ...stored.moves[6]!, motifs: undefined } as unknown as MoveReview;
+    const damaged = { ...stored.moves[6], motifs: undefined } as unknown as MoveReview;
     const review = withCurrentAssessments({
       ...stored,
       moves: stored.moves.map((move, index) => (index === 6 ? damaged : move))
@@ -1135,7 +1135,7 @@ describe("summary and labels", () => {
       },
       moves: [
         ...trapReviewMoves().map((move) => ({ ...move, evalLoss: 10 })),
-        { ...trapReviewMoves()[0]!, nodeId: "extra", evalLoss: null }
+        { ...trapReviewMoves()[0], nodeId: "extra", evalLoss: null }
       ]
     });
     expect(review.summary).toEqual({
@@ -1154,7 +1154,7 @@ describe("summary and labels", () => {
       humanErrors: 0,
       averageCentipawnLoss: 10
     });
-    expect(summarizeMoves([{ ...trapReviewMoves()[0]!, assessment: undefined }])).toMatchObject({
+    expect(summarizeMoves([{ ...trapReviewMoves()[0], assessment: undefined }])).toMatchObject({
       totalMoves: 1,
       best: 0,
       averageCentipawnLoss: null

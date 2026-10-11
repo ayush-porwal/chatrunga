@@ -432,7 +432,7 @@ describe("game store", () => {
     it("shows a line's position on the board without changing the game's moves", () => {
       const { error, size, steps } = browse(1);
       const state = useGameStore.getState();
-      expect(state.currentFen).toBe(steps[1]!.fenAfter);
+      expect(state.currentFen).toBe(steps[1].fenAfter);
       expect(state.currentNodeId).toBe(error.id);
       expect(state.moveTree).toHaveLength(size);
       expect(activeBestLine(state)?.index).toBe(1);

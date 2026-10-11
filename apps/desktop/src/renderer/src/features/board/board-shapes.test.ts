@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type { DrawShape } from "@lichess-org/chessground/draw";
-import type { Key } from "@lichess-org/chessground/types";
 import { START_FEN } from "@chaturanga/shared/chess/position";
 import {
   annotationsFromShapes,
@@ -30,8 +29,8 @@ describe("shapesFromAnnotations", () => {
 describe("annotationsFromShapes", () => {
   it("splits shapes into arrows and highlights", () => {
     const shapes: DrawShape[] = [
-      { orig: "g1" as Key, dest: "f3" as Key, brush: "blue" },
-      { orig: "e5" as Key, brush: "yellow" }
+      { orig: "g1", dest: "f3", brush: "blue" },
+      { orig: "e5", brush: "yellow" }
     ];
     expect(annotationsFromShapes(shapes)).toEqual({
       arrows: [{ orig: "g1", dest: "f3", color: "blue" }],
@@ -41,10 +40,10 @@ describe("annotationsFromShapes", () => {
 
   it("falls back to green for unknown brushes and drops off-board squares", () => {
     const shapes: DrawShape[] = [
-      { orig: "a1" as Key, dest: "a2" as Key, brush: "paleGreen" },
-      { orig: "a0" as Key, brush: "red" },
-      { orig: "b1" as Key, dest: "a0" as Key, brush: "red" },
-      { orig: "c3" as Key }
+      { orig: "a1", dest: "a2", brush: "paleGreen" },
+      { orig: "a0", brush: "red" },
+      { orig: "b1", dest: "a0", brush: "red" },
+      { orig: "c3" }
     ];
     expect(annotationsFromShapes(shapes)).toEqual({
       arrows: [{ orig: "a1", dest: "a2", color: "green" }],
@@ -65,9 +64,9 @@ describe("annotationsFromShapes", () => {
 describe("movableDests", () => {
   it("offers every legal move when the side to move may move", () => {
     const dests = movableDests(START_FEN, "white");
-    expect(dests.get("e2" as Key)).toEqual(["e3", "e4"]);
+    expect(dests.get("e2")).toEqual(["e3", "e4"]);
     expect(dests.size).toBe(10);
-    expect(movableDests(BLACK_TO_MOVE, "black").get("g8" as Key)).toEqual(["f6", "h6"]);
+    expect(movableDests(BLACK_TO_MOVE, "black").get("g8")).toEqual(["f6", "h6"]);
     expect(movableDests(START_FEN, "both").size).toBe(10);
   });
 

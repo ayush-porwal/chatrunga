@@ -110,7 +110,7 @@ function variationRows(
     }
     if (moves.length) rows.push({ id: start.id, depth: start.depth, moves });
     // Pre-order: this row's nested rows come next, in the order they branch along it.
-    for (let index = nested.length - 1; index >= 0; index -= 1) stack.push(nested[index]!);
+    for (let index = nested.length - 1; index >= 0; index -= 1) stack.push(nested[index]);
   }
   return rows;
 }

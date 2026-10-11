@@ -310,7 +310,7 @@ export function RepertoireStudyPage({
   );
   const decisionCount = training?.decisionKeys.length ?? 0;
   const pausedKeys = useRepertoirePausedKeysQuery(repertoireId).data;
-  const paused = useMemo(() => new Set(pausedKeys ?? []), [pausedKeys]);
+  const paused = useMemo(() => new Set(pausedKeys), [pausedKeys]);
   // "Rehearse from here" is offered in training scope within the default depth limit only, where
   // a line asks a decision that isn't paused (a paused one is played as context).
   const rehearsal = useMemo(

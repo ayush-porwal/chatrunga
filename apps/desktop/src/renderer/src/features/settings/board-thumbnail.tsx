@@ -49,7 +49,7 @@ function cellsForFen(
       if (!isSquare(name)) continue;
       const square = parseSquare(name);
       const piece = board && square !== undefined ? board.get(square) : undefined;
-      row.push(piece ? { color: piece.color, role: piece.role as PreviewPieceRole } : null);
+      row.push(piece ? { color: piece.color, role: piece.role } : null);
       names.push(name);
     }
     cells.push(row);

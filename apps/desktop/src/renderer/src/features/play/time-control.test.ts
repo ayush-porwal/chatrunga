@@ -64,7 +64,7 @@ describe("time control slider", () => {
   });
 
   it("puts a Lichess clock on its preset's stop, matched by value, else on the first", () => {
-    expect(presetIndex(SEEK_PRESETS, { ...SEEK_PRESETS[2]! })).toBe(2);
+    expect(presetIndex(SEEK_PRESETS, { ...SEEK_PRESETS[2] })).toBe(2);
     expect(presetIndex(SEEK_PRESETS, { minutes: 7, incrementSec: 7 })).toBe(0);
   });
 

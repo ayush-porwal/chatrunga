@@ -75,7 +75,7 @@ export function sideToMoveIsMovable(fen: string, movable: BoardMovable): boolean
 export function movableDests(fen: string, movable: BoardMovable): Map<Key, Key[]> {
   if (!sideToMoveIsMovable(fen, movable)) return new Map();
   try {
-    return legalDestsForFen(fen) as Map<Key, Key[]>;
+    return legalDestsForFen(fen);
   } catch {
     return new Map();
   }

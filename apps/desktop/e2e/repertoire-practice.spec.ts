@@ -53,10 +53,10 @@ async function storedProgress(app: ElectronApplication, page: Page, profile: str
   const file = join(profile, `progress-${Date.now()}.json`);
   await app.evaluate(({ dialog }, file) => {
     const previous = dialog.showSaveDialog.bind(dialog);
-    dialog.showSaveDialog = (async () => {
+    dialog.showSaveDialog = async () => {
       dialog.showSaveDialog = previous;
       return { canceled: false, filePath: file };
-    }) as typeof dialog.showSaveDialog;
+    };
   }, file);
   await page.evaluate(async () => {
     const api = (window as unknown as { chaturanga: ChaturangaApi }).chaturanga.repertoires;

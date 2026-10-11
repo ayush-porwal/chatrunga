@@ -132,9 +132,9 @@ describe("LichessService", () => {
     await flush();
     await service.status();
     await vi.waitFor(() => expect(events.opened).toHaveLength(1));
-    expect(requests[0]!.headers.authorization).toBe("Bearer lip_saved-token");
-    events.opened[0]!.push({ type: "gameStart", game: { gameId: "abcd1234" } });
-    events.opened[0]!.push({ type: "gameFinish", game: { gameId: "abcd1234" } });
+    expect(requests[0].headers.authorization).toBe("Bearer lip_saved-token");
+    events.opened[0].push({ type: "gameStart", game: { gameId: "abcd1234" } });
+    events.opened[0].push({ type: "gameFinish", game: { gameId: "abcd1234" } });
     await vi.waitFor(() => expect(emitted).toEqual([{ type: "gameStart", gameId: "abcd1234" }]));
   });
 
@@ -144,7 +144,7 @@ describe("LichessService", () => {
     await service.status();
     await vi.waitFor(() => expect(events.opened).toHaveLength(1));
     vi.useFakeTimers();
-    events.opened[0]!.fail();
+    events.opened[0].fail();
     await vi.advanceTimersByTimeAsync(500);
     expect(events.opened).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(600);
@@ -196,7 +196,7 @@ describe("LichessService", () => {
       color: "random"
     });
     // The event stream is opened first, so an instant pairing isn't missed.
-    expect(requests[0]!.url).toContain("/api/stream/event");
+    expect(requests[0].url).toContain("/api/stream/event");
     expect(events).toContainEqual({ type: "seek", searching: true, error: null });
 
     service.cancelSeek();
@@ -216,7 +216,7 @@ describe("LichessService", () => {
       "POST /api/board/seek": seeks.handler
     });
     await service.seek({ minutes: 15, incrementSec: 10, rated: true });
-    seeks.opened[0]!.close();
+    seeks.opened[0].close();
     await vi.waitFor(() =>
       expect(events.at(-1)).toEqual({ type: "seek", searching: false, error: null })
     );
@@ -231,8 +231,8 @@ describe("LichessService", () => {
     const watching = service.watchGame("abcd1234");
     await vi.advanceTimersByTimeAsync(0);
     await watching;
-    games.opened[0]!.push(GAME_FULL);
-    games.opened[0]!.push({
+    games.opened[0].push(GAME_FULL);
+    games.opened[0].push({
       type: "gameState",
       moves: "e2e4",
       wtime: 599000,
@@ -254,18 +254,18 @@ describe("LichessService", () => {
     expect(games.opened).toHaveLength(1);
     expect(events.at(-1)).toMatchObject({ type: "gameFull", game: { state: { moves: ["e2e4"] } } });
 
-    games.opened[0]!.fail();
+    games.opened[0].fail();
     await vi.advanceTimersByTimeAsync(0);
     expect(events.at(-1)).toEqual({ type: "gameConnection", gameId: "abcd1234", connected: false });
     await vi.advanceTimersByTimeAsync(1000);
     expect(games.opened).toHaveLength(2);
     expect(events.at(-1)).toEqual({ type: "gameConnection", gameId: "abcd1234", connected: true });
-    games.opened[1]!.push(GAME_FULL);
+    games.opened[1].push(GAME_FULL);
     await vi.advanceTimersByTimeAsync(0);
     expect(events.at(-1)).toMatchObject({ type: "gameFull" });
 
     // The game ends: Lichess closes the stream and nothing reconnects.
-    games.opened[1]!.push({
+    games.opened[1].push({
       type: "gameState",
       moves: "e2e4",
       wtime: 1,
@@ -275,7 +275,7 @@ describe("LichessService", () => {
       status: "resign",
       winner: "white"
     });
-    games.opened[1]!.close();
+    games.opened[1].close();
     await vi.advanceTimersByTimeAsync(60_000);
     expect(games.opened).toHaveLength(2);
     expect(events.at(-1)).toMatchObject({
@@ -436,7 +436,7 @@ describe("LichessService", () => {
       color: "white"
     });
     await vi.waitFor(() => expect(challenges.opened).toHaveLength(1));
-    challenges.opened[0]!.push({
+    challenges.opened[0].push({
       id: "chal1234",
       challenger: { id: "kenneth", name: "Kenneth" },
       destUser: { id: "salma", name: "Salma", rating: 1500 },
@@ -460,8 +460,8 @@ describe("LichessService", () => {
       variant: "standard",
       keepAliveStream: "true"
     });
-    challenges.opened[0]!.push({ done: "declined" });
-    challenges.opened[0]!.close();
+    challenges.opened[0].push({ done: "declined" });
+    challenges.opened[0].close();
     await vi.waitFor(() =>
       expect(events.filter((event) => event.type === "challengeGone")).toEqual([
         { type: "challengeGone", challengeId: "chal1234", reason: "declined" }
@@ -548,7 +548,7 @@ describe("LichessService", () => {
     });
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({ method: "DELETE", url: "https://lichess.org/api/token" });
-    expect(requests[0]!.headers.authorization).toBe("Bearer lip_saved-token");
+    expect(requests[0].headers.authorization).toBe("Bearer lip_saved-token");
     expect(await store.status()).toEqual({ account: null, tokenRejected: false });
     expect(games.removed).toEqual(["lichess"]);
   });
@@ -572,8 +572,8 @@ describe("LichessService", () => {
     expect(second).toBe(first);
     await vi.waitFor(() => expect(exports.opened).toHaveLength(1));
     expect(requests).toHaveLength(1);
-    exports.opened[0]!.push({ id: "g1", variant: "standard", lastMoveAt: 7000, pgn: "1. e4 e5 *" });
-    exports.opened[0]!.close();
+    exports.opened[0].push({ id: "g1", variant: "standard", lastMoveAt: 7000, pgn: "1. e4 e5 *" });
+    exports.opened[0].close();
     expect(await first).toEqual({ imported: 1, skipped: 0 });
     expect(await store.syncSince()).toBe(7001);
     expect((await store.status()).account!.lastSyncAt).toEqual(expect.any(Number));

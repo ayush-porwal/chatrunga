@@ -96,7 +96,7 @@ async function reviewNewestChesscomGame(page: Page): Promise<void> {
       id: saved.id,
       source: saved.source,
       headers: saved.headers ?? {},
-      rootFen: saved.initialFen ?? saved.moveTree[0]!.fenAfter,
+      rootFen: saved.initialFen ?? saved.moveTree[0].fenAfter,
       currentFen: saved.currentFen,
       currentNodeId: saved.currentNodeId ?? null,
       pgn: saved.pgn,

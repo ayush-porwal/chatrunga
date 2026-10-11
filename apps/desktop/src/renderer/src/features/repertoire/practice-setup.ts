@@ -130,7 +130,7 @@ export function targetedPracticeInput(
   repertoireId: string,
   preset: PracticePreset | null
 ): StartPracticeInput | null {
-  const positionKeys = [...new Set(preset?.positionKeys ?? [])];
+  const positionKeys = [...new Set(preset?.positionKeys)];
   if (!preset?.autoStart || !positionKeys.length) return null;
   const limit = clamp(positionKeys.length, 1, MAX_CARD_LIMIT);
   return {

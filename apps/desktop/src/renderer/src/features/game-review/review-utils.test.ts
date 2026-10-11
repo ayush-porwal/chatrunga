@@ -249,7 +249,7 @@ describe("game review utilities", () => {
 
   it("adds history, alternatives, the reply line and game context for a mid-game mistake", () => {
     const moves = trapGame();
-    const mistake = moves[6]!;
+    const mistake = moves[6];
     const payload = buildInsightPayload(mistake, 1500, "detailed", "white", {
       moves,
       headers: {
@@ -336,7 +336,7 @@ describe("game review utilities", () => {
   it("prefers the stored reply search when the review has one", () => {
     const moves = trapGame();
     const last = {
-      ...moves[6]!,
+      ...moves[6],
       replyLines: [
         { multipv: 1, depth: 18, score: cp(180), scoreWhite: cp(-180), pv: ["d8g5", "e5f7"] }
       ]
@@ -347,7 +347,7 @@ describe("game review utilities", () => {
 
   it("keeps the four-argument call working without game context", () => {
     const moves = trapGame();
-    const payload = buildInsightPayload(moves[6]!, 1500, "balanced", "white");
+    const payload = buildInsightPayload(moves[6], 1500, "balanced", "white");
     expect(payload?.context).toBeUndefined();
     expect(payload?.engines.stockfish.replyLineSan).toBeUndefined();
     expect(payload?.engines.stockfish.alternatives).toHaveLength(3);
@@ -361,14 +361,14 @@ describe("game review utilities", () => {
       ([1100, 1300, 1500, 1700, 1900] as const).map((rating) => ({
         rating,
         topMoves: [
-          { uci: "f3e5", prob: probs[0]! },
-          { uci: "e1g1", prob: probs[1]! },
-          { uci: "f3d4", prob: probs[2]! }
+          { uci: "f3e5", prob: probs[0] },
+          { uci: "e1g1", prob: probs[1] },
+          { uci: "f3d4", prob: probs[2] }
         ]
       }));
     const trusted = { moves, review: { schemaVersion: 2 } };
     const informative = buildInsightPayload(
-      { ...moves[6]!, humanPredictions: predictions([0.6, 0.3, 0.1]) },
+      { ...moves[6], humanPredictions: predictions([0.6, 0.3, 0.1]) },
       1500,
       "balanced",
       "white",
@@ -383,7 +383,7 @@ describe("game review utilities", () => {
       ]
     });
     const flat = buildInsightPayload(
-      { ...moves[6]!, humanPredictions: predictions([0.2, 0.2, 0.2]) },
+      { ...moves[6], humanPredictions: predictions([0.2, 0.2, 0.2]) },
       1500,
       "balanced",
       "white",
@@ -392,7 +392,7 @@ describe("game review utilities", () => {
     expect(flat?.engines.humanTopMoves).toBeUndefined();
     // Reviews older than schemaVersion 2 stored fake policies: no Maia data at all.
     const legacy = buildInsightPayload(
-      { ...moves[6]!, humanPredictions: predictions([0.6, 0.3, 0.1]) },
+      { ...moves[6], humanPredictions: predictions([0.6, 0.3, 0.1]) },
       1500,
       "balanced",
       "white",
@@ -405,7 +405,7 @@ describe("game review utilities", () => {
   it("sends real per-level Maia evidence, engine identity and win chances for schemaVersion 2 reviews", () => {
     const moves = trapGame();
     const mistake: MoveReview = {
-      ...moves[6]!,
+      ...moves[6],
       wdlBefore: { win: 450, draw: 400, loss: 150 },
       wdlAfter: { win: 700, draw: 200, loss: 100 },
       humanPredictions: [
@@ -484,7 +484,7 @@ describe("game review utilities", () => {
 
   it("adds board-derived idea facts and keeps the payload compact", () => {
     const moves = trapGame();
-    const payload = buildInsightPayload(moves[6]!, 1500, "detailed", "white", {
+    const payload = buildInsightPayload(moves[6], 1500, "detailed", "white", {
       moves,
       review: { schemaVersion: 2 }
     })!;
@@ -624,7 +624,7 @@ describe("engine line steps", () => {
   it("gives the position after each move, stopping at one that doesn't fit", () => {
     const steps = uciLineSteps(START, ["e2e4", "e7e5", "e1e5", "g1f3"]);
     expect(steps.map((step) => step.san)).toEqual(["e4", "e5"]);
-    expect(steps[1]!.fenAfter).toBe("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2");
+    expect(steps[1].fenAfter).toBe("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2");
   });
 
   it("numbers a line from either side to move", () => {

@@ -116,7 +116,7 @@ describe("requestPuzzleExplanation", () => {
       positions: [{ fen: START, multipv: 3 }]
     });
 
-    searches[0]!.resolve(analysis);
+    searches[0].resolve(analysis);
     await flush();
     expect(entry()?.phase).toBe("writing");
     const sent = deps.explainPuzzle.mock.calls[0] as unknown as [
@@ -127,7 +127,7 @@ describe("requestPuzzleExplanation", () => {
       payload: { outcome: "solved", commentaryDetail: "balanced" }
     });
 
-    answers[0]!.resolve({ explanation, error: null });
+    answers[0].resolve({ explanation, error: null });
     await running;
     expect(entry()).toMatchObject({ phase: "ready", requestId: null, explanation, otherSan: [] });
   });
@@ -137,9 +137,9 @@ describe("requestPuzzleExplanation", () => {
     const first = requestPuzzleExplanation(request, deps);
     void requestPuzzleExplanation(request, deps);
     expect(deps.analysePositions).toHaveBeenCalledTimes(1);
-    searches[0]!.resolve(analysis);
+    searches[0].resolve(analysis);
     await flush();
-    answers[0]!.resolve({ explanation, error: null });
+    answers[0].resolve({ explanation, error: null });
     await first;
 
     void requestPuzzleExplanation(request, deps);
@@ -156,7 +156,7 @@ describe("requestPuzzleExplanation", () => {
     expect(deps.cancelWriting).not.toHaveBeenCalled();
     expect(entry()).toBeUndefined();
 
-    searches[0]!.resolve(analysis);
+    searches[0].resolve(analysis);
     await running;
     expect(deps.explainPuzzle).not.toHaveBeenCalled();
     expect(entry()).toBeUndefined();
@@ -178,9 +178,9 @@ describe("requestPuzzleExplanation", () => {
       requestId: "r2",
       puzzle: puzzleIdentity(other)
     });
-    searches[1]!.resolve(analysis);
+    searches[1].resolve(analysis);
     await flush();
-    answers[0]!.resolve({ explanation, error: null });
+    answers[0].resolve({ explanation, error: null });
     await running;
     expect(entry(otherRequest.key)?.phase).toBe("ready");
     expect(entry()).toBeUndefined();
@@ -190,7 +190,7 @@ describe("requestPuzzleExplanation", () => {
     const { deps, searches } = fakeDeps();
     usePuzzleStore.getState().setActivePuzzle(puzzle);
     void requestPuzzleExplanation(request, deps);
-    searches[0]!.resolve(analysis);
+    searches[0].resolve(analysis);
     await flush();
     expect(entry()?.phase).toBe("writing");
     usePuzzleStore.getState().setActivePuzzle({ ...puzzle, id: "p2" });
@@ -225,7 +225,7 @@ describe("requestPuzzleExplanation", () => {
   it("reports an engine failure, a provider error and a missing engine, each with a way forward", async () => {
     const { deps, searches, answers } = fakeDeps();
     const failing = requestPuzzleExplanation(request, deps);
-    searches[0]!.reject(
+    searches[0].reject(
       new Error("Error invoking remote method 'engines:analysePositions': Error: Engine not found")
     );
     await failing;
@@ -236,9 +236,9 @@ describe("requestPuzzleExplanation", () => {
     });
 
     const refused = requestPuzzleExplanation(request, deps);
-    searches[1]!.resolve(analysis);
+    searches[1].resolve(analysis);
     await flush();
-    answers[0]!.resolve({ explanation: null, error: "OpenRouter rejected the API key." });
+    answers[0].resolve({ explanation: null, error: "OpenRouter rejected the API key." });
     await refused;
     expect(entry()).toMatchObject({ phase: "error", error: "OpenRouter rejected the API key." });
 
@@ -249,7 +249,7 @@ describe("requestPuzzleExplanation", () => {
   it("says so when the engine's lines can't ground an explanation", async () => {
     const { deps, searches } = fakeDeps();
     const running = requestPuzzleExplanation(request, deps);
-    searches[0]!.resolve({ engineName: "SF", lines: [[]] });
+    searches[0].resolve({ engineName: "SF", lines: [[]] });
     await running;
     expect(entry()?.error).toMatch(/didn't return enough/);
     expect(deps.explainPuzzle).not.toHaveBeenCalled();

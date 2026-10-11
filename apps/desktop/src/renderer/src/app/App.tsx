@@ -6,7 +6,11 @@ import { createGameFromFen, exportGameToPgn } from "@chaturanga/shared/chess/pgn
 import { DEFAULT_PUZZLE_RATING } from "@chaturanga/shared/chess/puzzle-rating";
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
-import { PUZZLE_CONTINUATION_EVENT, type ImportedGame } from "@chaturanga/shared/types/chess";
+import {
+  PUZZLE_CONTINUATION_EVENT,
+  type ImportedGame,
+  type Color
+} from "@chaturanga/shared/types/chess";
 import { defaultSettings } from "@chaturanga/shared/types/settings";
 import { Notice } from "@/components/ui/notice";
 import { hasDesktopApi, isElectronMac } from "@/lib/environment";
@@ -85,7 +89,8 @@ import {
   AppPages,
   GameReviewPicker,
   OnboardingFlow,
-  type AppView
+  type AppView,
+  type RepertoireScreen
 } from "./AppPages";
 import { PuzzleInfoPanel } from "./PuzzleInfoPanel";
 import { useBoardShortcuts } from "./useBoardShortcuts";
@@ -109,7 +114,6 @@ import { useDatabaseDownloads } from "./useDatabaseDownloads";
 import { draftFromSessionConfig, usePuzzleDraftStore } from "../stores/puzzle-draft-store";
 import { usePuzzleStore } from "../stores/puzzle-store";
 import { useQueryClient } from "@tanstack/react-query";
-import type { Color } from "@chaturanga/shared/types/chess";
 import type { StudyOpenTarget, StudyStage } from "../features/repertoire/repertoire-chapters";
 import type { OpeningSide } from "../features/game-review/opening-comparison";
 import { presetForSetup, type PracticePreset } from "../features/repertoire/practice-setup";
@@ -144,7 +148,6 @@ import {
 import { usePlayedGameLink } from "../features/repertoire/usePlayedGameLink";
 import { usePlayDraftStore } from "../stores/play-draft-store";
 import { useRepertoireHandoffStore } from "../stores/repertoire-handoff-store";
-import type { RepertoireScreen } from "./AppPages";
 
 /** What App keeps for the repertoire screens besides the ids in the URL. */
 type RepertoireExtras = {

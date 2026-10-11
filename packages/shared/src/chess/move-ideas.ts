@@ -273,7 +273,7 @@ function abandonedDutyFacts(m: MoveContext): string[] {
     if (attacked ? exchangeGain(after, sq) <= 0 : defendersAfter.nonEmpty()) continue;
     const who = lost.includes(move.from)
       ? `the ${role} used to guard it`
-      : `it blocks the ${pieceOn(before, lost[0] as Square)}`;
+      : `it blocks the ${pieceOn(before, lost[0])}`;
     const status = attacked ? looseNote(after, sq) : "now undefended";
     facts.push(`stops protecting the ${pieceOn(after, sq)} (${who}; ${status})`);
   }

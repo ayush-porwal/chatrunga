@@ -565,7 +565,7 @@ export function isBoardTheme(value: unknown): value is BoardTheme {
 /** Maps persisted settings from older builds onto current {@link PieceStyle} ids. */
 export function normalizePieceStyle(value: unknown): PieceStyle {
   if (typeof value !== "string") return defaultSettings.pieceStyle;
-  if (legacyPieceStyleMap[value]) return legacyPieceStyleMap[value]!;
+  if (legacyPieceStyleMap[value]) return legacyPieceStyleMap[value];
   return isOneOf(ALL_PIECE_STYLES, value) ? value : defaultSettings.pieceStyle;
 }
 

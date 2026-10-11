@@ -216,7 +216,7 @@ describe("gameRepository (SQLite)", () => {
       },
       moves: trapReviewMoves().map((move, index) => ({
         ...move,
-        nodeId: mainline[index]!.id,
+        nodeId: mainline[index].id,
         classification: "best"
       }))
     };
@@ -523,7 +523,7 @@ describe("gameRepository (SQLite)", () => {
       expect(page.items.map((game) => game.id)).toEqual(["g449", "g448", "g447"]);
       expect(page.nextCursor).toEqual({ updatedAt: 447, id: "g447" });
       // A summary only: no PGN, move tree or review.
-      expect(Object.keys(page.items[0]!).sort()).toEqual([
+      expect(Object.keys(page.items[0]).sort()).toEqual([
         "black",
         "currentFen",
         "date",

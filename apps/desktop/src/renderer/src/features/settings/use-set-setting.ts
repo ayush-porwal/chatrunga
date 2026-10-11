@@ -138,7 +138,7 @@ export function useSettingsWriter() {
   }
 
   function set<K extends keyof AppSettings>(key: K, value: AppSettings[K], options?: Options) {
-    setMany({ [key]: value } as Partial<AppSettings>, options);
+    setMany({ [key]: value }, options);
   }
 
   return { set, setMany };

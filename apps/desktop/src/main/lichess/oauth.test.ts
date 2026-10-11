@@ -79,16 +79,16 @@ describe("authorizeInBrowser", () => {
     expect(await token).toBe("test-access-token");
 
     const params = new URL(authorize).searchParams;
-    const exchange = Object.fromEntries(new URLSearchParams(requests[0]!.body));
-    expect(requests[0]!.url).toBe("https://lichess.org/api/token");
-    expect(requests[0]!.headers.authorization).toBeUndefined();
+    const exchange = Object.fromEntries(new URLSearchParams(requests[0].body));
+    expect(requests[0].url).toBe("https://lichess.org/api/token");
+    expect(requests[0].headers.authorization).toBeUndefined();
     expect(exchange).toMatchObject({
       grant_type: "authorization_code",
       code: "good-code",
       redirect_uri: params.get("redirect_uri"),
       client_id: LICHESS_CLIENT_ID
     });
-    expect(codeChallengeFor(exchange.code_verifier!)).toBe(params.get("code_challenge"));
+    expect(codeChallengeFor(exchange.code_verifier)).toBe(params.get("code_challenge"));
 
     // The one-shot server is gone.
     await expect(callback(authorize, { code: "again", state })).rejects.toThrow(/fetch failed/);

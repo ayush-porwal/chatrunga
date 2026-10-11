@@ -354,7 +354,7 @@ describe("a restore still loading", () => {
     loadSaved("g2");
     history([PLAY, g3, { view: "databases" }]);
     let call = 0;
-    const shell = fakeShell({ getSavedGame: vi.fn(() => loads[call++]!.promise) });
+    const shell = fakeShell({ getSavedGame: vi.fn(() => loads[call++].promise) });
     const pending: PendingRestore = { current: null };
 
     const first = goHistory(-1, shell, pending);
@@ -362,13 +362,13 @@ describe("a restore still loading", () => {
     const second = goHistory(-1, shell, pending); // the same target, now the latest restore
     expect(shell.commitCurrent).toHaveBeenCalledTimes(2);
 
-    loads[0]!.resolve(savedGame("g3"));
+    loads[0].resolve(savedGame("g3"));
     await first;
     // The dropped restore ended; the newer one is still loading and still holds Back / Forward.
     expect(useGameStore.getState().gameId).toBe("g2");
     expect(restoreLoading(pending, shell.navigation)).toBe(true);
 
-    loads[1]!.resolve(savedGame("g3"));
+    loads[1].resolve(savedGame("g3"));
     await second;
     expect(useGameStore.getState().gameId).toBe("g3");
     expect(shell.showGame).toHaveBeenCalledTimes(1);

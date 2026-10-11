@@ -208,6 +208,6 @@ test("Back from a chapter whose edits can't be saved stays on it", async ({ laun
 
   // The edits still can't be saved: closing asks, and the run answers "Close Anyway".
   await app.evaluate(({ dialog }) => {
-    dialog.showMessageBoxSync = (() => 0) as typeof dialog.showMessageBoxSync;
+    dialog.showMessageBoxSync = () => 0;
   });
 });

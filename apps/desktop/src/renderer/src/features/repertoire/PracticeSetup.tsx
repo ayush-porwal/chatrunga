@@ -375,7 +375,7 @@ function useRehearseStarts(
   const pausedLoading = Boolean(chapterId) && pausedKeys.isPending;
   const listed = useMemo(() => {
     if (!data || pausedLoading) return { starts: [], truncated: false, asks: null };
-    const paused = new Set(pausedKeys.data ?? []);
+    const paused = new Set(pausedKeys.data);
     const context = rehearsalContext(data, detail.color, maxDepthPlies, undefined, paused);
     const asks = lineEnds(context, REPERTOIRE_ROOT_NODE_ID).length > 0;
     const result = {

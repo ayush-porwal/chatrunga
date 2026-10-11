@@ -231,8 +231,8 @@ describe("PGN with the analysis", () => {
     bestLine: string[] = [],
     bestEvalAfter: EngineScore | null = null
   ): PgnAnalysisMove => ({
-    nodeId: mainline[index]!.id,
-    fenBefore: mainline[index]!.fenBefore,
+    nodeId: mainline[index].id,
+    fenBefore: mainline[index].fenBefore,
     evalAfter,
     bestEvalAfter,
     bestMove: bestLine[0] ?? null,
@@ -276,7 +276,7 @@ describe("PGN with the analysis", () => {
 
   it("keeps every node when a best line's new id is already taken", () => {
     // 3. Bb5 (in the 2. Nf3 line) gets the id 3... Nf6's best line would take for Qe7.
-    const taken = `${mainline[5]!.id}~best-0`;
+    const taken = `${mainline[5].id}~best-0`;
     const bb5 = game.moveTree.find((node) => node.san === "Bb5")!;
     const rename = (id: string) => (id === bb5.id ? taken : id);
     const moveTree = game.moveTree.map((node) => ({
@@ -300,7 +300,7 @@ describe("PGN with the analysis", () => {
     expect(again.headers).toMatchObject({ eco: "C23", opening: "Bishop's Opening", result: "1-0" });
     expect(again.moveTree.find((node) => node.san === "Qh5")?.nags).toEqual(["$6"]);
     expect(again.moveTree.find((node) => node.san === "Qe7")?.fenBefore).toBe(
-      mainline[5]!.fenBefore
+      mainline[5].fenBefore
     );
     expect(exportGameToPgn(again)).toBe(pgn);
   });

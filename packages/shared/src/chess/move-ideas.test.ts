@@ -113,10 +113,10 @@ describe("position features", () => {
   it("computes static exchanges both ways", () => {
     // Pawn d5 attacked by the c3 knight, defended by the e6 pawn: not winnable.
     const defended = positionFromFen("4k3/8/4p3/3p4/8/2N5/8/4K3 w - - 0 1");
-    expect(exchangeGain(defended, parseSquare("d5")!)).toBeLessThanOrEqual(0);
+    expect(exchangeGain(defended, parseSquare("d5"))).toBeLessThanOrEqual(0);
     // Knight d5 attacked by the e4 pawn, defended by a pawn: still wins material (3 for 1).
     const knight = positionFromFen("4k3/8/4p3/3n4/4P3/8/8/4K3 w - - 0 1");
-    expect(exchangeGain(knight, parseSquare("d5")!)).toBe(2);
+    expect(exchangeGain(knight, parseSquare("d5"))).toBe(2);
   });
 
   it("summarizes material over a line", () => {

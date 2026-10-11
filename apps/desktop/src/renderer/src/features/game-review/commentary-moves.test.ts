@@ -207,7 +207,7 @@ describe("reviewAnchorFor", () => {
     const { tree, moves, nodes } = setup();
     const reviews = new Map(moves.map((move) => [move.nodeId, move]));
     const variation: MoveNode = {
-      ...(nodes[6] as MoveNode),
+      ...nodes[6],
       id: "var1",
       parentId: nodes[5]?.id ?? null,
       children: []
@@ -232,7 +232,7 @@ describe("reviewAnchorFor", () => {
   it("keeps the move a link was clicked from as the anchor for lines from its parent", () => {
     const { tree, moves, nodes } = setup();
     const reviews = new Map(moves.map((move) => [move.nodeId, move]));
-    const played = nodes[6] as MoveNode;
+    const played = nodes[6];
     // A best-line variation replacing ply 7: it hangs off ply 6's node.
     const sibling: MoveNode = {
       ...played,

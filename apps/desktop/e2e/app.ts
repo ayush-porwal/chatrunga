@@ -218,30 +218,30 @@ async function installMainProcessGuards(app: ElectronApplication): Promise<void>
 
     // Native dialogs would block the run: open/save are cancelled unless a test stubs a file;
     // message boxes answer their default button and are recorded.
-    dialog.showOpenDialog = (async () => {
+    dialog.showOpenDialog = async () => {
       recordDialog("open");
       return { canceled: true, filePaths: [] };
-    }) as typeof dialog.showOpenDialog;
-    dialog.showSaveDialog = (async () => {
+    };
+    dialog.showSaveDialog = async () => {
       recordDialog("save");
       return { canceled: true, filePath: "" };
-    }) as typeof dialog.showSaveDialog;
-    dialog.showMessageBoxSync = ((...args: unknown[]) => {
+    };
+    dialog.showMessageBoxSync = (...args: unknown[]) => {
       const options = (args.length > 1 ? args[1] : args[0]) as {
         message?: string;
         defaultId?: number;
       };
       recordDialog(`message: ${options.message ?? ""}`);
       return options.defaultId ?? 0;
-    }) as typeof dialog.showMessageBoxSync;
-    dialog.showMessageBox = (async (...args: unknown[]) => {
+    };
+    dialog.showMessageBox = async (...args: unknown[]) => {
       const options = (args.length > 1 ? args[1] : args[0]) as {
         message?: string;
         defaultId?: number;
       };
       recordDialog(`message: ${options.message ?? ""}`);
       return { response: options.defaultId ?? 0, checkboxChecked: false };
-    }) as typeof dialog.showMessageBox;
+    };
     shell.openExternal = async (url: string) => {
       recordDialog(`openExternal: ${url}`);
     };
@@ -339,10 +339,10 @@ export function routeToFile(app: ElectronApplication, url: string, file: string)
 export function stubOpenFile(app: ElectronApplication, file: string) {
   return app.evaluate(({ dialog }, file) => {
     const previous = dialog.showOpenDialog.bind(dialog);
-    dialog.showOpenDialog = (async () => {
+    dialog.showOpenDialog = async () => {
       dialog.showOpenDialog = previous;
       return { canceled: false, filePaths: [file] };
-    }) as typeof dialog.showOpenDialog;
+    };
   }, file);
 }
 

@@ -62,7 +62,7 @@ describe("ensurePieceSet", () => {
 
     await ensurePieceSet("merida");
     expect(sheets).toHaveLength(0);
-    await vi.advanceTimersByTimeAsync(PIECE_SET_RETRY_MS[0]!);
+    await vi.advanceTimersByTimeAsync(PIECE_SET_RETRY_MS[0]);
     await vi.waitFor(() => expect(sheets).toHaveLength(1));
     expect(sheets[0]?.dataset.pieceSet).toBe("merida");
     expect(fetch).toHaveBeenCalledTimes(2);

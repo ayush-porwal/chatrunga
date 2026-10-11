@@ -344,14 +344,14 @@ export function useUpdateSettingMutation() {
     (
       { key, value }: { key: keyof AppSettings; value: unknown },
       options?: Parameters<typeof mutatePatch>[1]
-    ) => mutatePatch({ patch: { [key]: value } as SettingsPatch }, options),
+    ) => mutatePatch({ patch: { [key]: value } }, options),
     [mutatePatch]
   );
   const mutateAsync = useCallback(
     (
       { key, value }: { key: keyof AppSettings; value: unknown },
       options?: Parameters<typeof mutatePatchAsync>[1]
-    ) => mutatePatchAsync({ patch: { [key]: value } as SettingsPatch }, options),
+    ) => mutatePatchAsync({ patch: { [key]: value } }, options),
     [mutatePatchAsync]
   );
   return { ...update, mutate, mutateAsync };

@@ -490,7 +490,7 @@ function registerCommentaryIpc(): void {
       throw new Error("Invalid OpenRouter model");
     return getOpenRouterConfigStore().set({
       model: input.model,
-      apiKey: input.apiKey as string | null | undefined
+      apiKey: input.apiKey
     });
   });
   ipcMain.handle("commentary:generate", async (_event, input: unknown) => {

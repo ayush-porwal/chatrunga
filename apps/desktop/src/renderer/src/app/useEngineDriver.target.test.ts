@@ -188,7 +188,7 @@ describe("useEngineDriver when the engine quits during a search", () => {
     expect(engines.startGame).toHaveBeenCalledTimes(1);
     expect(useGameStore.getState().engineClockLive?.stoppedAt).toBeUndefined();
 
-    const searchId = engines.startGame.mock.calls[0]![0].searchId;
+    const searchId = engines.startGame.mock.calls[0][0].searchId;
     engineEvents.error({
       engineId: "sf",
       searchId,
@@ -215,7 +215,7 @@ describe("useEngineDriver in a timed engine game", () => {
     const e4 = useGameStore.getState().currentNodeId;
     await settle();
     expect(engines.startGame).toHaveBeenCalledTimes(1);
-    const searchId = engines.startGame.mock.calls[0]![0].searchId;
+    const searchId = engines.startGame.mock.calls[0][0].searchId;
 
     engines.stop.mockClear();
     useGameStore.getState().goToNode("root");
@@ -318,14 +318,14 @@ describe("useEngineDriver with live analysis paused (the switch off)", () => {
     await settle();
     expect(useAnalysisStore.getState().freshSearch).toBe(false);
     await switchOn();
-    expect(engines.startAnalysis.mock.calls[0]![0]).toMatchObject({ fresh: false });
+    expect(engines.startAnalysis.mock.calls[0][0]).toMatchObject({ fresh: false });
   });
 
   it("resumes on the paused position with its lines shown at once", async () => {
     await pausedAtDepth12();
     await switchOn();
     expect(engines.startAnalysis).toHaveBeenCalledTimes(1);
-    expect(engines.startAnalysis.mock.calls[0]![0]).toMatchObject({ moves: [], fresh: false });
+    expect(engines.startAnalysis.mock.calls[0][0]).toMatchObject({ moves: [], fresh: false });
     const resumed = useAnalysisStore.getState();
     expect(resumed.paused).toBeNull();
     expect(resumed.status).toBe("thinking");
@@ -337,7 +337,7 @@ describe("useEngineDriver with live analysis paused (the switch off)", () => {
     useAnalysisStore.getState().restartFresh();
     await switchOn();
     expect(engines.startAnalysis).toHaveBeenCalledTimes(1);
-    expect(engines.startAnalysis.mock.calls[0]![0]).toMatchObject({ moves: [], fresh: true });
+    expect(engines.startAnalysis.mock.calls[0][0]).toMatchObject({ moves: [], fresh: true });
     expect(useAnalysisStore.getState()).toMatchObject({ paused: null, topLines: [] });
   });
 });

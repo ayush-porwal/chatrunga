@@ -21,7 +21,7 @@ describe("studyAnalysisTarget", () => {
 
   it("searches the chapter's starting position with no moves at its root", () => {
     const chapter = chapterOf([rootNode()]);
-    expect(studyAnalysisTarget(chapter, chapter.tree[0]!)).toMatchObject({
+    expect(studyAnalysisTarget(chapter, chapter.tree[0])).toMatchObject({
       nodeId: "root",
       moves: [],
       fen: START_FEN

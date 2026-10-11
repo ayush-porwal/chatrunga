@@ -75,7 +75,7 @@ describe("importChesscomGames", () => {
       skipped: 1,
       nextCursor: { month: "2026/10", floor: 0 }
     });
-    const first = saved[0]!;
+    const first = saved[0];
     expect(first.playedAt).toBe(1790791330 * 1000);
     expect(first.input).toMatchObject({
       id: null,
@@ -91,7 +91,7 @@ describe("importChesscomGames", () => {
       }
     });
     // Clocks come through, and the stored PGN names the game's page as its site.
-    expect(first.input.moveTree[1]!.clockAfter).toBeTruthy();
+    expect(first.input.moveTree[1].clockAfter).toBeTruthy();
     expect(first.input.pgn).toContain('[Site "https://www.chess.com/game/live/150000001"]');
   });
 

@@ -574,7 +574,7 @@ function PracticeSession({
   const busy =
     recordAttempt.isPending || recordAction.isPending || endPractice.isPending || resume.isPending;
   const fen = replaying
-    ? card.leadUp[leadUpIndex]!.fen
+    ? card.leadUp[leadUpIndex].fen
     : (shownReply?.fen ?? pending?.fenAfter ?? card.fen);
   const lastMove = replaying
     ? lastMoveOf(card.leadUp[leadUpIndex]?.uci)

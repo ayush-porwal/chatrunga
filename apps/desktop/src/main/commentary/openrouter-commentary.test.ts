@@ -70,7 +70,7 @@ describe("generateOpenRouterCommentary", () => {
     });
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchImpl.mock.calls[0]!;
+    const [url, init] = fetchImpl.mock.calls[0];
     expect(url).toBe("https://openrouter.ai/api/v1/chat/completions");
     expect(init?.headers).toMatchObject({ Authorization: "Bearer unit-test-key" });
     expect(init?.body).toContain("FACTS:");
@@ -100,7 +100,7 @@ describe("generateOpenRouterCommentary", () => {
     });
 
     expect(fetchImpl).toHaveBeenCalledTimes(2);
-    const retryInit = fetchImpl.mock.calls[1]![1];
+    const retryInit = fetchImpl.mock.calls[1][1];
     const retryBody = JSON.parse(typeof retryInit?.body === "string" ? retryInit.body : "") as {
       messages: { role: string; content: string }[];
     };
@@ -237,13 +237,13 @@ describe("explainPuzzleWithOpenRouter", () => {
     });
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const init = fetchImpl.mock.calls[0]![1];
+    const init = fetchImpl.mock.calls[0][1];
     const body = JSON.parse(typeof init?.body === "string" ? init.body : "") as {
       messages: { content: string }[];
       max_tokens: number;
     };
-    expect(body.messages[0]!.content).toContain("tactics puzzle");
-    expect(body.messages[1]!.content).toContain('"solutionSan"');
+    expect(body.messages[0].content).toContain("tactics puzzle");
+    expect(body.messages[1].content).toContain('"solutionSan"');
     expect(body.max_tokens).toBe(350);
     expect(result).toEqual({
       explanation: {
@@ -267,7 +267,7 @@ describe("explainPuzzleWithOpenRouter", () => {
       fetchImpl
     });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(fetchImpl.mock.calls[1]![1]?.body).toContain("You wrote the move Bxf7+");
+    expect(fetchImpl.mock.calls[1][1]?.body).toContain("You wrote the move Bxf7+");
     expect(retried.explanation?.headline).toBe("The f7 pawn had one defender");
 
     const always = vi.fn().mockImplementation(async () => completion(bad));

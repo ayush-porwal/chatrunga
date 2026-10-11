@@ -742,7 +742,7 @@ export function revealArrows(ucis: readonly string[], preferredUci: string | nul
     const squares = uciSquares(uci);
     if (!squares) return [];
     const [orig, dest] = squares;
-    return [{ orig, dest, color: uci === preferredUci ? "green" : "blue" } as BoardArrow];
+    return [{ orig, dest, color: uci === preferredUci ? "green" : "blue" }];
   });
 }
 
