@@ -1186,7 +1186,16 @@ describe("puzzleOfTheDay", () => {
     for (const damaged of [
       "{ not json",
       JSON.stringify({ ...stored, sample: { ...today, solutionMoves: [] } }),
-      JSON.stringify({ ...stored, sample: { ...today, sideToMove: undefined } })
+      JSON.stringify({ ...stored, sample: { ...today, sideToMove: undefined } }),
+      // Every field there, but no position to play: an empty or malformed FEN, or a solution
+      // that no longer plays from it.
+      JSON.stringify({ ...stored, sample: { ...today, initialFen: "" } }),
+      JSON.stringify({ ...stored, sample: { ...today, initialFen: "not a fen" } }),
+      JSON.stringify({ ...stored, sample: { ...today, solutionMoves: ["a1a1"] } }),
+      JSON.stringify({
+        ...stored,
+        sample: { ...today, sideToMove: today?.sideToMove === "white" ? "black" : "white" }
+      })
     ]) {
       await writeFile(dailyRecord, damaged);
       const fresh = await restarted();

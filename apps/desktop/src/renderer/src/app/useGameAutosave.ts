@@ -367,8 +367,6 @@ function saveInput(
   };
 }
 
-/** Last node of the main line (first child at every step from the root). */
-
 /**
  * The result to save. It belongs to the game, not the cursor: a live outcome wins, then a
  * terminal position at the end of the main line. Otherwise the game's recorded result stands only

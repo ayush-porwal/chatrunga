@@ -21,6 +21,7 @@ import { parseStoredJson } from "../stored-json";
 import { datasetDir, relocatedDatasetPath } from "./dataset-location";
 import { InvalidDatasetError, isHtmlContentType, validateDataset } from "./dataset-validation";
 import {
+  isPlayablePuzzle,
   rowKindForSource,
   sampleFromLichessRow,
   sampleFromPositionRow,
@@ -892,7 +893,7 @@ function dailyRecordPath(): string {
 const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === "string");
 
-/** The fields a puzzle needs to be played (an older build or a damaged file may lack them). */
+/** A puzzle that can be played (an older build or a damaged file may lack fields or a position). */
 function isStoredSample(value: unknown): value is PuzzleSample {
   return (
     isRecord(value) &&
@@ -905,7 +906,12 @@ function isStoredSample(value: unknown): value is PuzzleSample {
     value.solutionMoves.length > 0 &&
     isStringArray(value.themes) &&
     isStringArray(value.openingTags) &&
-    isOneOf(["white", "black"], value.sideToMove)
+    isOneOf(["white", "black"], value.sideToMove) &&
+    isPlayablePuzzle({
+      initialFen: value.initialFen,
+      solutionMoves: value.solutionMoves,
+      sideToMove: value.sideToMove
+    })
   );
 }
 
