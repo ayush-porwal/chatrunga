@@ -71,9 +71,7 @@ export function importPgnText(
   const moveTree: MoveNode[] = [root];
 
   const byId = new Map<string, MoveNode>([[ROOT_ID, root]]);
-  for (const child of game.moves.children) {
-    appendPgnChild(moveTree, byId, ROOT_ID, rootFen, root.ply, child, strict);
-  }
+  for (const child of game.moves.children) appendPgnChild({ moveTree, byId, strict }, root, child);
 
   // Imported games open on the last mainline move.
   let current = root;
@@ -170,32 +168,54 @@ function withAnalysis(
     const node = byId.get(move.nodeId);
     if (!node) continue;
     const annotation = move.assessment?.annotation ?? null;
-    const nag = annotation ? ANNOTATION_NAGS[annotation] : undefined;
-    // The review's mark replaces any quality NAG the move brought, also when the mark has no
-    // standard glyph (excellent, good, miss, book): the PGN never contradicts the review.
-    if (annotation) {
-      const kept = node.nags.filter((item) => !MOVE_QUALITY_NAGS.has(item));
-      node.nags = nag ? [nag, ...kept] : kept;
-    }
+    if (annotation) node.nags = withReviewMark(node.nags, annotation);
     const evaluation = pgnEval(move.evalAfter);
     if (evaluation) evals.set(node.id, evaluation);
 
-    const parent = node.parentId ? byId.get(node.parentId) : undefined;
-    if (!annotation || !ERROR_MARKS.has(annotation) || parent?.fenAfter !== move.fenBefore)
-      continue;
-    const best = move.bestLine.length ? move.bestLine : move.bestMove ? [move.bestMove] : [];
-    const first = mergeLine(byId, parent, best, node);
+    if (!annotation || !ERROR_MARKS.has(annotation)) continue;
+    const first = mergeBestLine(byId, node, move);
     const bestEval = pgnEval(move.bestEvalAfter);
     if (first && bestEval && !evals.has(first.id)) evals.set(first.id, bestEval);
   }
   for (const [id, evaluation] of evals) {
     const node = byId.get(id);
-    if (!node) continue;
-    // The review's eval replaces one the move brought along (an imported Lichess analysis).
-    const text = node.comment?.replace(EVAL_TAG, "").replace(/\s+/g, " ").trim();
-    node.comment = text ? `${text} [%eval ${evaluation}]` : `[%eval ${evaluation}]`;
+    if (node) node.comment = withEvalTag(node.comment, evaluation);
   }
   return [...byId.values()];
+}
+
+/**
+ * The review's mark replaces any quality NAG the move brought, also when the mark has no standard
+ * glyph (excellent, good, miss, book): the PGN never contradicts the review.
+ */
+function withReviewMark(nags: readonly string[], annotation: MoveAnnotation): string[] {
+  const nag = ANNOTATION_NAGS[annotation];
+  const kept = nags.filter((item) => !MOVE_QUALITY_NAGS.has(item));
+  return nag ? [nag, ...kept] : kept;
+}
+
+/**
+ * Merges a marked error's best line in from the position before it (see `mergeLine`); null when
+ * the review's position isn't the move's parent or nothing was added.
+ */
+function mergeBestLine(
+  byId: Map<string, MoveNode>,
+  node: MoveNode,
+  move: PgnAnalysisMove
+): MoveNode | null {
+  const parent = node.parentId ? byId.get(node.parentId) : undefined;
+  if (parent?.fenAfter !== move.fenBefore) return null;
+  const best = move.bestLine.length ? move.bestLine : move.bestMove ? [move.bestMove] : [];
+  return mergeLine(byId, parent, best, node);
+}
+
+/**
+ * The comment with the review's eval, which replaces one the move brought along (an imported
+ * Lichess analysis).
+ */
+function withEvalTag(comment: string | null, evaluation: string): string {
+  const text = comment?.replace(EVAL_TAG, "").replace(/\s+/g, " ").trim();
+  return text ? `${text} [%eval ${evaluation}]` : `[%eval ${evaluation}]`;
 }
 
 /**
@@ -261,10 +281,12 @@ function pgnEval(score: EngineScore | null | undefined): string | null {
 export function addMoveNode(
   moveTree: MoveNode[],
   parentId: string,
-  san: string,
-  uci: string,
-  fenBefore: string,
-  fenAfter: string
+  {
+    san,
+    uci,
+    fenBefore,
+    fenAfter
+  }: { san: string; uci: string; fenBefore: string; fenAfter: string }
 ): { moveTree: MoveNode[]; node: MoveNode } {
   const existing = moveTree.find((node) => node.parentId === parentId && node.uci === uci);
   if (existing) return { moveTree, node: existing };
@@ -319,15 +341,16 @@ function formatSecondsAsClk(seconds: number): string {
   })}`;
 }
 
+/** The tree an import is writing, and whether an unplayable move fails it (see importPgnText). */
+type PgnTreeBuilder = { moveTree: MoveNode[]; byId: Map<string, MoveNode>; strict: boolean };
+
 function appendPgnChild(
-  moveTree: MoveNode[],
-  byId: Map<string, MoveNode>,
-  parentId: string,
-  fenBefore: string,
-  ply: number,
-  child: ChildNode<PgnNodeData>,
-  strict: boolean
+  builder: PgnTreeBuilder,
+  parent: MoveNode,
+  child: ChildNode<PgnNodeData>
 ): void {
+  const { moveTree, byId, strict } = builder;
+  const fenBefore = parent.fenAfter;
   const applied = applySan(fenBefore, child.data.san);
   if (!applied) {
     if (strict) throw new Error(`Illegal move in PGN: ${child.data.san}`);
@@ -338,12 +361,12 @@ function appendPgnChild(
   const annotation = parseAnnotationComment(commentBlob);
   const node: MoveNode = {
     id: nanoid(),
-    parentId,
+    parentId: parent.id,
     san: applied.san,
     uci: applied.uci,
     fenBefore,
     fenAfter: applied.fen,
-    ply: ply + 1,
+    ply: parent.ply + 1,
     nags: (child.data.nags ?? []).map((nag) => `$${nag}`),
     comment: annotation.text,
     clockAfter: clockAfterFromCommentBlob(commentBlob, annotation.clock),
@@ -352,13 +375,11 @@ function appendPgnChild(
     children: []
   };
 
-  byId.get(parentId)?.children.push(node.id);
+  parent.children.push(node.id);
   moveTree.push(node);
   byId.set(node.id, node);
 
-  for (const grandChild of child.children) {
-    appendPgnChild(moveTree, byId, node.id, applied.fen, node.ply, grandChild, strict);
-  }
+  for (const grandChild of child.children) appendPgnChild(builder, node, grandChild);
 }
 
 /**
@@ -454,25 +475,36 @@ function parseOrientationHint(raw: string | null): Color | null {
   return null;
 }
 
+/**
+ * The tags a game's PGN carries, in the order they're written: each with the header it comes from
+ * and the value written when that is empty (null: the tag is left out).
+ */
+type PgnTag = readonly [tag: string, header: keyof GameHeaders, fallback: string | null];
+const PGN_TAGS: readonly PgnTag[] = [
+  ["Event", "event", "?"],
+  ["Site", "site", "?"],
+  ["Date", "date", "????.??.??"],
+  ["Round", "round", "?"],
+  ["White", "white", "White"],
+  ["WhiteElo", "whiteElo", null],
+  ["Black", "black", "Black"],
+  ["BlackElo", "blackElo", null],
+  ["TimeControl", "timeControl", null],
+  ["ECO", "eco", null],
+  ["Opening", "opening", null],
+  ["UTCDate", "utcDate", null],
+  ["UTCTime", "utcTime", null],
+  ["Termination", "termination", null],
+  ["Orientation", "orientationHint", null],
+  ["Result", "result", "*"]
+];
+
 function headersToPgn(headers: GameHeaders, rootFen?: string): string[] {
   const lines: string[] = [];
-  lines.push(`[Event "${escapeHeader(headers.event || "?")}"]`);
-  lines.push(`[Site "${escapeHeader(headers.site || "?")}"]`);
-  lines.push(`[Date "${escapeHeader(headers.date || "????.??.??")}"]`);
-  lines.push(`[Round "${escapeHeader(headers.round || "?")}"]`);
-  lines.push(`[White "${escapeHeader(headers.white || "White")}"]`);
-  if (headers.whiteElo) lines.push(`[WhiteElo "${escapeHeader(headers.whiteElo)}"]`);
-  lines.push(`[Black "${escapeHeader(headers.black || "Black")}"]`);
-  if (headers.blackElo) lines.push(`[BlackElo "${escapeHeader(headers.blackElo)}"]`);
-  if (headers.timeControl) lines.push(`[TimeControl "${escapeHeader(headers.timeControl)}"]`);
-  if (headers.eco) lines.push(`[ECO "${escapeHeader(headers.eco)}"]`);
-  if (headers.opening) lines.push(`[Opening "${escapeHeader(headers.opening)}"]`);
-  if (headers.utcDate) lines.push(`[UTCDate "${escapeHeader(headers.utcDate)}"]`);
-  if (headers.utcTime) lines.push(`[UTCTime "${escapeHeader(headers.utcTime)}"]`);
-  if (headers.termination) lines.push(`[Termination "${escapeHeader(headers.termination)}"]`);
-  if (headers.orientationHint)
-    lines.push(`[Orientation "${escapeHeader(headers.orientationHint)}"]`);
-  lines.push(`[Result "${escapeHeader(headers.result || "*")}"]`);
+  for (const [tag, header, fallback] of PGN_TAGS) {
+    const value = headers[header] || fallback;
+    if (value) lines.push(`[${tag} "${escapeHeader(value)}"]`);
+  }
   if (rootFen && rootFen !== START_FEN) {
     lines.push('[SetUp "1"]');
     lines.push(`[FEN "${escapeHeader(rootFen)}"]`);

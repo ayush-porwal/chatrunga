@@ -75,7 +75,7 @@ export function glicko2Update(
   const v = 1 / vInverse;
   const delta = v * improvementSum;
 
-  const nextSigma = newVolatility(phi, sigma, v, delta, tau);
+  const nextSigma = newVolatility({ phi, sigma, v, delta, tau });
   // Steps 6–7: the pre-period deviation φ*, then the new φ' and μ'.
   const phiStar = Math.sqrt(phi * phi + nextSigma * nextSigma);
   const nextPhi = 1 / Math.sqrt(1 / (phiStar * phiStar) + 1 / v);
@@ -89,7 +89,19 @@ export function glicko2Update(
 }
 
 /** Step 5: the new volatility σ', the root of f(x) found by the Illinois algorithm. */
-function newVolatility(phi: number, sigma: number, v: number, delta: number, tau: number): number {
+function newVolatility({
+  phi,
+  sigma,
+  v,
+  delta,
+  tau
+}: {
+  phi: number;
+  sigma: number;
+  v: number;
+  delta: number;
+  tau: number;
+}): number {
   const a = Math.log(sigma * sigma);
   const deltaSquared = delta * delta;
   const phiSquared = phi * phi;

@@ -21,12 +21,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { normalizeCommentaryProvider } from "@chaturanga/shared/types/settings";
 import { closeDb, getDb } from "./db";
-import {
-  engineRepository,
-  externalDatabaseRepository,
-  gameRepository,
-  settingsRepository
-} from "./db/repositories";
+import { externalDatabaseRepository } from "./db/external-database-repository";
+import { engineRepository, gameRepository, settingsRepository } from "./db/repositories";
 import { EngineManager } from "./engine/engine-manager";
 import { killAllEngineProcesses } from "./engine/uci-process";
 import { registerIpc } from "./ipc/register";

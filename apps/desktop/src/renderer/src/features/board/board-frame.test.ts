@@ -85,38 +85,38 @@ describe("centringInsets", () => {
 
 describe("draggedBoardEdge", () => {
   it("shrinks the board straight left or up, and grows it straight right or down", () => {
-    expect(draggedBoardEdge(500, -80, 0, 900)).toBe(420);
-    expect(draggedBoardEdge(500, 40, 0, 900)).toBe(540);
+    expect(draggedBoardEdge(500, { dx: -80, dy: 0 }, 900)).toBe(420);
+    expect(draggedBoardEdge(500, { dx: 40, dy: 0 }, 900)).toBe(540);
     // The corner moves half the edge change down (the board is centred down): twice the move.
-    expect(draggedBoardEdge(500, 0, -50, 900)).toBe(400);
-    expect(draggedBoardEdge(500, 0, 30, 900)).toBe(560);
+    expect(draggedBoardEdge(500, { dx: 0, dy: -50 }, 900)).toBe(400);
+    expect(draggedBoardEdge(500, { dx: 0, dy: 30 }, 900)).toBe(560);
   });
 
   it("follows the axis the pointer moved most along on a diagonal", () => {
     // Across leads: 40 against twice 10 down.
-    expect(draggedBoardEdge(500, 40, 10, 900)).toBe(540);
+    expect(draggedBoardEdge(500, { dx: 40, dy: 10 }, 900)).toBe(540);
     // Down leads: twice 30 against 10 left; and twice 40 up against 60 left.
-    expect(draggedBoardEdge(500, -10, 30, 900)).toBe(560);
-    expect(draggedBoardEdge(500, -60, -40, 900)).toBe(420);
+    expect(draggedBoardEdge(500, { dx: -10, dy: 30 }, 900)).toBe(560);
+    expect(draggedBoardEdge(500, { dx: -60, dy: -40 }, 900)).toBe(420);
     // Along the corner's own path (d across, d/2 down) both agree, and the grip stays under it.
-    expect(draggedBoardEdge(500, -140, -70, 900)).toBe(360);
+    expect(draggedBoardEdge(500, { dx: -140, dy: -70 }, 900)).toBe(360);
   });
 
   it("stops at the edge that leaves the side panel its minimum width", () => {
-    expect(draggedBoardEdge(700, 300, 0, 820)).toBe(820);
+    expect(draggedBoardEdge(700, { dx: 300, dy: 0 }, 820)).toBe(820);
   });
 
   it("makes up the board's move to the left edge across, so the grip stays under the pointer", () => {
     // A filled board 10px from the left edge: 140 left shrinks it by 130 as it moves 10 left.
-    expect(draggedBoardEdge(500, -140, -70, 900, 10)).toBe(370);
+    expect(draggedBoardEdge(500, { dx: -140, dy: -70 }, 900, 10)).toBe(370);
     // The first pixel left keeps the grip where it was.
-    expect(draggedBoardEdge(500, -1, 0, 900, 10)).toBe(509);
+    expect(draggedBoardEdge(500, { dx: -1, dy: 0 }, 900, 10)).toBe(509);
     // Down, the board's left edge doesn't move the grip: no shift.
-    expect(draggedBoardEdge(500, -10, -50, 900, 10)).toBe(400);
+    expect(draggedBoardEdge(500, { dx: -10, dy: -50 }, 900, 10)).toBe(400);
   });
 
   it("never shrinks the board below the minimum edge", () => {
-    expect(draggedBoardEdge(300, -400, -400, 900)).toBe(MIN_BOARD_EDGE);
+    expect(draggedBoardEdge(300, { dx: -400, dy: -400 }, 900)).toBe(MIN_BOARD_EDGE);
   });
 });
 

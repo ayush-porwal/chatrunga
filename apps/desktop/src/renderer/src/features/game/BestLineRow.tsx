@@ -76,7 +76,6 @@ export const BestLineRow = memo(function BestLineRow({
 
   if (!moves.length) return null;
   const lineLabel = bestLineText(moves);
-  const previewed = previewIndex === null ? null : (moves[previewIndex] ?? null);
   const anchorNodeId = node.parentId;
   const browse =
     onBrowse && anchorNodeId
@@ -123,18 +122,27 @@ export const BestLineRow = memo(function BestLineRow({
         if (!(next instanceof Node) || !event.currentTarget.contains(next)) hide();
       }}
       // Its preview floats under it (over the rows below, which it never moves).
-      after={
-        previewed ? (
-          <LinePreview
-            move={previewed}
-            moveNumber={previewNumber(moves, previewIndex ?? 0)}
-            orientation={orientation}
-          />
-        ) : null
-      }
+      after={<BestLinePreview moves={moves} index={previewIndex} orientation={orientation} />}
     />
   );
 });
+
+/** The position after the line's move at `index` (none while no move is previewed). */
+function BestLinePreview({
+  moves,
+  index,
+  orientation
+}: {
+  moves: readonly BestLineMove[];
+  index: number | null;
+  orientation: Color;
+}) {
+  const move = index === null ? undefined : moves.at(index);
+  if (index === null || !move) return null;
+  return (
+    <LinePreview move={move} moveNumber={previewNumber(moves, index)} orientation={orientation} />
+  );
+}
 
 /** The number before a line's move in the preview's name: `13.`, or `13…` for Black's. */
 function previewNumber(moves: readonly BestLineMove[], index: number): string {

@@ -108,35 +108,40 @@ export function computeScopeStates(
   chapter: Pick<RepertoireChapter, "kind" | "enabled" | "tree" | "nodeMeta">,
   lookup: ChapterLookup = buildChapterLookup(chapter)
 ): Map<string, ScopeState> {
+  const chapterState = !chapter.enabled
+    ? "disabled"
+    : chapter.kind === "reference"
+      ? "reference"
+      : null;
+  if (chapterState) return new Map(lookup.order.map((id) => [id, chapterState]));
+
   const states = new Map<string, ScopeState>();
   const hasStart = Object.values(chapter.nodeMeta).some((meta) => meta.trainingStart);
-
+  // Pre-order: a node's parent has its state before the node.
   for (const id of lookup.order) {
     const node = lookup.nodesById.get(id)!;
-    if (!chapter.enabled) {
-      states.set(id, "disabled");
-      continue;
-    }
-    if (chapter.kind === "reference") {
-      states.set(id, "reference");
-      continue;
-    }
-    const meta = nodeMetaOf(chapter.nodeMeta, id);
-    const isRoot = id === REPERTOIRE_ROOT_NODE_ID;
-    const parentState = node.parentId ? states.get(node.parentId) : undefined;
-    const parentMeta = node.parentId ? nodeMetaOf(chapter.nodeMeta, node.parentId) : undefined;
-
-    let state: ScopeState;
-    if (meta.disabled || parentState === "disabled") state = "disabled";
-    else if ((!isRoot && meta.edge === "reference") || parentState === "reference") {
-      state = "reference";
-    } else if (parentState === "after-stop" || parentMeta?.trainingStop) state = "after-stop";
-    else if (meta.trainingStart) state = "active";
-    else if (isRoot) state = hasStart ? "before-start" : "active";
-    else state = parentState === "active" ? "active" : "before-start";
-    states.set(id, state);
+    states.set(id, nodeScopeState(node, chapter.nodeMeta, states, hasStart));
   }
   return states;
+}
+
+/** An opening chapter's node state, from its marks and its parent's (see computeScopeStates). */
+function nodeScopeState(
+  node: MoveNode,
+  nodeMeta: RepertoireChapter["nodeMeta"],
+  states: ReadonlyMap<string, ScopeState>,
+  hasStart: boolean
+): ScopeState {
+  const meta = nodeMetaOf(nodeMeta, node.id);
+  const isRoot = node.id === REPERTOIRE_ROOT_NODE_ID;
+  const parentState = node.parentId ? states.get(node.parentId) : undefined;
+  const parentMeta = node.parentId ? nodeMetaOf(nodeMeta, node.parentId) : undefined;
+  if (meta.disabled || parentState === "disabled") return "disabled";
+  if ((!isRoot && meta.edge === "reference") || parentState === "reference") return "reference";
+  if (parentState === "after-stop" || parentMeta?.trainingStop) return "after-stop";
+  if (meta.trainingStart) return "active";
+  if (isRoot) return hasStart ? "before-start" : "active";
+  return parentState === "active" ? "active" : "before-start";
 }
 
 export type DecisionOccurrence = {

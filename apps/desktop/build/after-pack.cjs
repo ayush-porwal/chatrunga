@@ -70,38 +70,39 @@ function isDeadPng(blob) {
   return DEAD_PNG_SHAPES.has(`${blob.readUInt32BE(16)}x${blob.readUInt32BE(20)}`);
 }
 
-function stripDeadPakResources(file) {
-  const data = readFileSync(file);
-  if (data.length < 12 || data.readUInt32LE(0) !== 5) return false;
+/**
+ * A v5 pak's resource table: `[id, offset]` per resource plus the end sentinel, and where the
+ * resource data starts; null when the file isn't a v5 pak or its table is damaged.
+ */
+function readPakTable(data) {
+  if (data.length < 12 || data.readUInt32LE(0) !== 5) return null;
   const resourceCount = data.readUInt16LE(8);
   const aliasCount = data.readUInt16LE(10);
   const dataStart = 12 + (resourceCount + 1) * 6 + aliasCount * 4;
-  if (dataStart > data.length) return false;
+  if (dataStart > data.length) return null;
   const entries = [];
   for (let i = 0; i <= resourceCount; i++) {
     const at = 12 + i * 6;
     entries.push([data.readUInt16LE(at), data.readUInt32LE(at + 2)]);
   }
-  if (entries[0][1] !== dataStart) return false;
-  const targets = new Set();
-  for (let i = 0; i < resourceCount; i++) {
-    const start = entries[i][1];
-    const end = entries[i + 1][1];
-    if (end <= start || end > data.length) continue;
-    const blob = data.subarray(start, end);
-    if (blob[0] === 0x1f && blob[1] === 0x8b) {
-      let text;
-      try {
-        text = gunzipSync(blob);
-      } catch {
-        continue;
-      }
-      if (DEAD_MARKERS.some((marker) => text.includes(marker))) targets.add(i);
-    } else if (isDeadPng(blob)) {
-      targets.add(i);
-    }
+  if (entries[0][1] !== dataStart) return null;
+  return { resourceCount, dataStart, entries };
+}
+
+/** A gzip resource carrying a dead marker, or a dead PNG. */
+function isDeadResource(blob) {
+  if (blob[0] !== 0x1f || blob[1] !== 0x8b) return isDeadPng(blob);
+  let text;
+  try {
+    text = gunzipSync(blob);
+  } catch {
+    return false;
   }
-  if (targets.size === 0) return false;
+  return DEAD_MARKERS.some((marker) => text.includes(marker));
+}
+
+/** The pak with the `targets` resources emptied (their ids stay, pointing at zero bytes). */
+function withoutResources(data, { resourceCount, dataStart, entries }, targets) {
   const blobs = [];
   let cursor = dataStart;
   const table = Buffer.from(data.subarray(0, dataStart));
@@ -112,7 +113,23 @@ function stripDeadPakResources(file) {
     cursor += blob.length;
   }
   table.writeUInt32LE(cursor, 14 + resourceCount * 6);
-  writeFileSync(file, Buffer.concat([table, ...blobs]));
+  return Buffer.concat([table, ...blobs]);
+}
+
+function stripDeadPakResources(file) {
+  const data = readFileSync(file);
+  const pak = readPakTable(data);
+  if (!pak) return false;
+  const { resourceCount, entries } = pak;
+  const targets = new Set();
+  for (let i = 0; i < resourceCount; i++) {
+    const start = entries[i][1];
+    const end = entries[i + 1][1];
+    if (end <= start || end > data.length) continue;
+    if (isDeadResource(data.subarray(start, end))) targets.add(i);
+  }
+  if (targets.size === 0) return false;
+  writeFileSync(file, withoutResources(data, pak, targets));
   return true;
 }
 

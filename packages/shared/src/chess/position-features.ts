@@ -210,93 +210,158 @@ function isPassed(pos: Chess, color: Color, square: Square): boolean {
   return true;
 }
 
+/** Lines of a side's description, with the comparable tags they add (in order). */
+type FeatureGroup = { lines: string[]; tags: string[] };
+
+const NO_FEATURES: FeatureGroup = { lines: [], tags: [] };
+
 function sideFeatures(pos: Chess, color: Color, early: boolean): SideFeatures {
-  const tags = new Set<string>();
-  const king: string[] = [];
-  const development: string[] = [];
-  const pawns: string[] = [];
   const own = pawnFiles(pos, color);
-  const theirs = pawnFiles(pos, opposite(color));
-
   const ksq = pos.board.kingOf(color);
-  if (ksq !== undefined) {
-    const file = squareFile(ksq);
-    const rank = squareRank(ksq);
-    const home = color === "white" ? 0 : 7;
-    const dir = color === "white" ? 1 : -1;
-    const kingName = `king ${makeSquare(ksq)}`;
-    // King-safety details only matter while the opponent has attacking pieces.
-    const attackingMaterial = (["queen", "rook", "bishop", "knight"] as const).reduce(
-      (sum, role) => sum + pos.board.pieces(opposite(color), role).size() * PIECE_POINTS[role],
-      0
-    );
-    const exposedMatters =
-      pos.board.pieces(opposite(color), "queen").nonEmpty() || attackingMaterial >= 13;
-    if (!exposedMatters) king.push(kingName);
-    else if (rank === home && file >= 6) king.push(`${kingName} (castled short side)`);
-    else if (rank === home && file <= 2) king.push(`${kingName} (castled long side)`);
-    else if (rank === home) king.push(`${kingName} (in the center)`);
-    else king.push(`${kingName} (off the back rank)`);
+  const king = ksq === undefined ? NO_FEATURES : kingFeatures(pos, color, ksq, own);
+  const development = early ? developmentFeatures(pos, color) : NO_FEATURES;
+  const pawns = pawnFeatures(pos, color, own);
+  return {
+    king: king.lines,
+    development: development.lines,
+    pawns: pawns.lines,
+    tags: new Set([...king.tags, ...development.tags, ...pawns.tags])
+  };
+}
 
-    const rights: string[] = [];
-    if (pos.castles.rook[color].h !== undefined) rights.push("short");
-    if (pos.castles.rook[color].a !== undefined) rights.push("long");
-    if (rank === home && file >= 3 && file <= 5) {
-      king.push(rights.length ? `can still castle ${rights.join(" or ")}` : "can no longer castle");
-    }
-    for (const right of rights) tags.add(`can castle ${right}`);
+/** Where a side's king stands, for the king-safety details. */
+type KingSituation = {
+  pos: Chess;
+  color: Color;
+  ksq: Square;
+  file: number;
+  rank: number;
+  /** The side's back rank, and the direction its pawns advance. */
+  home: number;
+  dir: number;
+  /** The side's pawn count per file. */
+  own: readonly number[];
+  /** King-safety details only matter while the opponent has attacking pieces. */
+  exposedMatters: boolean;
+};
 
-    const shield: string[] = [];
-    for (let f = file - 1; f <= file + 1; f++) {
-      for (const step of [1, 2]) {
-        const sq = squareFromCoords(f, rank + dir * step);
-        if (sq === undefined) continue;
-        if (pos.board.get(sq)?.role === "pawn" && pos.board.getColor(sq) === color)
-          shield.push(makeSquare(sq));
-      }
-    }
-    if (exposedMatters && (rank === home || rank === home + dir)) {
-      king.push(shield.length ? `pawn shield ${shield.join(" ")}` : "no pawn shield");
-      if (!shield.length) tags.add("no pawn shield");
-    }
-    for (let f = Math.max(0, file - 1); f <= Math.min(7, file + 1); f++) {
-      if (!exposedMatters || (own[f] ?? 0) > 0) continue;
-      const kind = (theirs[f] ?? 0) > 0 ? "half-open" : "open";
-      king.push(`${kind} ${FILES[f]}-file next to the king`);
-      tags.add(`${kind} ${FILES[f]}-file by the king`);
-    }
-    const zone = kingAttacks(ksq).with(ksq);
-    const eyeing = new Set<Square>();
-    for (const sq of zone)
-      for (const attacker of attackersOf(pos, sq, opposite(color))) eyeing.add(attacker);
-    const eyeingNames = Array.from(eyeing)
-      .filter((sq) => pos.board.getRole(sq) !== "king")
-      .map((sq) => pieceOn(pos, sq).replace(" on ", " "));
-    if (eyeingNames.length) {
-      king.push(`enemy pieces hitting the king's squares: ${eyeingNames.slice(0, 3).join(", ")}`);
-      tags.add(`king pressured by ${eyeingNames.length}`);
-    }
-    if (attackersOf(pos, ksq, opposite(color)).nonEmpty()) {
-      king.push("in check");
+function kingFeatures(pos: Chess, color: Color, ksq: Square, own: readonly number[]): FeatureGroup {
+  const attackingMaterial = (["queen", "rook", "bishop", "knight"] as const).reduce(
+    (sum, role) => sum + pos.board.pieces(opposite(color), role).size() * PIECE_POINTS[role],
+    0
+  );
+  const king: KingSituation = {
+    pos,
+    color,
+    ksq,
+    file: squareFile(ksq),
+    rank: squareRank(ksq),
+    home: color === "white" ? 0 : 7,
+    dir: color === "white" ? 1 : -1,
+    own,
+    exposedMatters: pos.board.pieces(opposite(color), "queen").nonEmpty() || attackingMaterial >= 13
+  };
+  const groups = [
+    { lines: [kingPlacement(king)], tags: [] },
+    castlingFeatures(king),
+    king.exposedMatters ? pawnShieldFeatures(king) : NO_FEATURES,
+    king.exposedMatters ? openFilesByKing(king) : NO_FEATURES,
+    kingPressure(king),
+    { lines: attackersOf(pos, ksq, opposite(color)).nonEmpty() ? ["in check"] : [], tags: [] }
+  ];
+  return {
+    lines: groups.flatMap((group) => group.lines),
+    tags: groups.flatMap((group) => group.tags)
+  };
+}
+
+function kingPlacement({ ksq, file, rank, home, exposedMatters }: KingSituation): string {
+  const kingName = `king ${makeSquare(ksq)}`;
+  if (!exposedMatters) return kingName;
+  if (rank !== home) return `${kingName} (off the back rank)`;
+  if (file >= 6) return `${kingName} (castled short side)`;
+  if (file <= 2) return `${kingName} (castled long side)`;
+  return `${kingName} (in the center)`;
+}
+
+function castlingFeatures({ pos, color, file, rank, home }: KingSituation): FeatureGroup {
+  const rights: string[] = [];
+  if (pos.castles.rook[color].h !== undefined) rights.push("short");
+  if (pos.castles.rook[color].a !== undefined) rights.push("long");
+  const lines =
+    rank === home && file >= 3 && file <= 5
+      ? [rights.length ? `can still castle ${rights.join(" or ")}` : "can no longer castle"]
+      : [];
+  return { lines, tags: rights.map((right) => `can castle ${right}`) };
+}
+
+/** The pawns in front of a king on (or just off) its back rank. */
+function pawnShieldFeatures({ pos, color, file, rank, home, dir }: KingSituation): FeatureGroup {
+  if (rank !== home && rank !== home + dir) return NO_FEATURES;
+  const shield: string[] = [];
+  for (let f = file - 1; f <= file + 1; f++) {
+    for (const step of [1, 2]) {
+      const sq = squareFromCoords(f, rank + dir * step);
+      if (
+        sq !== undefined &&
+        pos.board.get(sq)?.role === "pawn" &&
+        pos.board.getColor(sq) === color
+      )
+        shield.push(makeSquare(sq));
     }
   }
+  return shield.length
+    ? { lines: [`pawn shield ${shield.join(" ")}`], tags: [] }
+    : { lines: ["no pawn shield"], tags: ["no pawn shield"] };
+}
 
-  if (early) {
-    const home = color === "white" ? 0 : 7;
-    const undeveloped: string[] = [];
-    for (const role of ["knight", "bishop"] as const) {
-      for (const sq of pos.board.pieces(color, role)) {
-        const start = role === "knight" ? [1, 6] : [2, 5];
-        if (squareRank(sq) === home && start.includes(squareFile(sq)))
-          undeveloped.push(`${role} ${makeSquare(sq)}`);
-      }
+function openFilesByKing({ pos, color, file, own }: KingSituation): FeatureGroup {
+  const theirs = pawnFiles(pos, opposite(color));
+  const group: FeatureGroup = { lines: [], tags: [] };
+  for (let f = Math.max(0, file - 1); f <= Math.min(7, file + 1); f++) {
+    if ((own[f] ?? 0) > 0) continue;
+    const kind = (theirs[f] ?? 0) > 0 ? "half-open" : "open";
+    group.lines.push(`${kind} ${FILES[f]}-file next to the king`);
+    group.tags.push(`${kind} ${FILES[f]}-file by the king`);
+  }
+  return group;
+}
+
+/** The enemy pieces (not the king) attacking the king's square or the squares around it. */
+function kingPressure({ pos, color, ksq }: KingSituation): FeatureGroup {
+  const eyeing = new Set<Square>();
+  for (const sq of kingAttacks(ksq).with(ksq))
+    for (const attacker of attackersOf(pos, sq, opposite(color))) eyeing.add(attacker);
+  const eyeingNames = Array.from(eyeing)
+    .filter((sq) => pos.board.getRole(sq) !== "king")
+    .map((sq) => pieceOn(pos, sq).replace(" on ", " "));
+  if (!eyeingNames.length) return NO_FEATURES;
+  return {
+    lines: [`enemy pieces hitting the king's squares: ${eyeingNames.slice(0, 3).join(", ")}`],
+    tags: [`king pressured by ${eyeingNames.length}`]
+  };
+}
+
+/** The minor pieces still on their starting squares. */
+function developmentFeatures(pos: Chess, color: Color): FeatureGroup {
+  const home = color === "white" ? 0 : 7;
+  const undeveloped: string[] = [];
+  for (const role of ["knight", "bishop"] as const) {
+    for (const sq of pos.board.pieces(color, role)) {
+      const start = role === "knight" ? [1, 6] : [2, 5];
+      if (squareRank(sq) === home && start.includes(squareFile(sq)))
+        undeveloped.push(`${role} ${makeSquare(sq)}`);
     }
-    development.push(
+  }
+  return {
+    lines: [
       undeveloped.length ? `undeveloped: ${undeveloped.join(", ")}` : "minor pieces developed"
-    );
-    for (const item of undeveloped) tags.add(`undeveloped ${item}`);
-  }
+    ],
+    tags: undeveloped.map((item) => `undeveloped ${item}`)
+  };
+}
 
+function pawnFeatures(pos: Chess, color: Color, own: readonly number[]): FeatureGroup {
   const isolated: string[] = [];
   const passed: string[] = [];
   for (const sq of pos.board.pieces(color, "pawn")) {
@@ -305,14 +370,18 @@ function sideFeatures(pos: Chess, color: Color, early: boolean): SideFeatures {
     if (isPassed(pos, color, sq)) passed.push(makeSquare(sq));
   }
   const doubled = own.flatMap((count, f) => (count > 1 ? [FILES[f]] : []));
-  if (isolated.length) pawns.push(`isolated ${isolated.join(" ")}`);
-  if (doubled.length) pawns.push(`doubled ${doubled.join(", ")}-pawns`);
-  if (passed.length) pawns.push(`passed ${passed.join(" ")}`);
-  for (const sq of isolated) tags.add(`isolated pawn ${sq}`);
-  for (const f of doubled) tags.add(`doubled ${f}-pawns`);
-  for (const sq of passed) tags.add(`passed pawn ${sq}`);
-
-  return { king, development, pawns, tags };
+  const lines: string[] = [];
+  if (isolated.length) lines.push(`isolated ${isolated.join(" ")}`);
+  if (doubled.length) lines.push(`doubled ${doubled.join(", ")}-pawns`);
+  if (passed.length) lines.push(`passed ${passed.join(" ")}`);
+  return {
+    lines,
+    tags: [
+      ...isolated.map((sq) => `isolated pawn ${sq}`),
+      ...doubled.map((f) => `doubled ${f}-pawns`),
+      ...passed.map((sq) => `passed pawn ${sq}`)
+    ]
+  };
 }
 
 function filesText(pos: Chess): { text?: string; tags: Set<string> } {

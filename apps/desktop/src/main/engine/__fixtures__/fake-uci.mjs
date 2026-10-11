@@ -18,36 +18,44 @@ let multipv = 1;
 
 const waitForStop = process.argv[3] === "wait-for-stop";
 
+function answerUci() {
+  if (process.argv[3] === "slow-start") {
+    setTimeout(() => out("uciok"), 10_000);
+    return;
+  }
+  out(`id name Fake ${mode}`);
+  for (const name of ["Threads", "Hash", "MultiPV"])
+    out(`option name ${name} type spin default 1 min 1 max 512`);
+  out("option name UCI_ShowWDL type check default false");
+  if (mode === "maia") {
+    out("option name VerboseMoveStats type check default false");
+    out("option name PolicyTemperature type string default 1.359000");
+  }
+  out("uciok");
+}
+
+function answerGo() {
+  if (mode === "maia") {
+    for (const item of maiaLines) out(item);
+    return;
+  }
+  const moves = ["d1h5", "g2g4", "e2e4", "a2a3", "b2b3"];
+  for (let pv = 1; pv <= multipv; pv += 1) {
+    out(
+      `info depth 6 seldepth 8 multipv ${pv} score cp ${60 - pv * 20} wdl 300 500 200 nodes 1000 pv ${moves[pv - 1]}`
+    );
+  }
+  if (!waitForStop) out(`bestmove ${moves[0]}`);
+}
+
 createInterface({ input: process.stdin }).on("line", (raw) => {
   const line = raw.trim();
   if (waitForStop) appendFileSync(process.argv[4], `${line}\n`);
-  if (line === "uci" && process.argv[3] === "slow-start") {
-    setTimeout(() => out("uciok"), 10_000);
-  } else if (line === "uci") {
-    out(`id name Fake ${mode}`);
-    for (const name of ["Threads", "Hash", "MultiPV"])
-      out(`option name ${name} type spin default 1 min 1 max 512`);
-    out("option name UCI_ShowWDL type check default false");
-    if (mode === "maia") {
-      out("option name VerboseMoveStats type check default false");
-      out("option name PolicyTemperature type string default 1.359000");
-    }
-    out("uciok");
-  } else if (line === "isready") out("readyok");
+  if (line === "uci") answerUci();
+  else if (line === "isready") out("readyok");
   else if (line.startsWith("setoption name MultiPV value "))
     multipv = Number(line.split(" ").pop());
-  else if (line.startsWith("go")) {
-    if (mode === "maia") {
-      for (const item of maiaLines) out(item);
-    } else {
-      const moves = ["d1h5", "g2g4", "e2e4", "a2a3", "b2b3"];
-      for (let pv = 1; pv <= multipv; pv += 1) {
-        out(
-          `info depth 6 seldepth 8 multipv ${pv} score cp ${60 - pv * 20} wdl 300 500 200 nodes 1000 pv ${moves[pv - 1]}`
-        );
-      }
-      if (!waitForStop) out(`bestmove ${moves[0]}`);
-    }
-  } else if (line === "stop" && waitForStop) out("bestmove d1h5");
+  else if (line.startsWith("go")) answerGo();
+  else if (line === "stop" && waitForStop) out("bestmove d1h5");
   else if (line === "quit") process.exit(0);
 });

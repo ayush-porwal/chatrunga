@@ -1,7 +1,8 @@
 import { ipcMain } from "electron";
 import { puzzleAttemptRepository } from "../db/puzzle-attempts";
 import { retryOnceIfBusy } from "../db/repositories";
-import { asId, parseListLimit, parseRecordPuzzleAttemptInput } from "./validate";
+import { parseListLimit, parseRecordPuzzleAttemptInput } from "./validate";
+import { asId } from "./fields";
 
 let recording: Promise<unknown> = Promise.resolve();
 

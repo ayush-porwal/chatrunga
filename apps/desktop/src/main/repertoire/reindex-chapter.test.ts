@@ -15,8 +15,10 @@ import type { MoveNode } from "@chaturanga/shared/types/chess";
 import type {
   RepertoireChapter,
   RepertoireColor,
-  RepertoireEdgeKind
+  RepertoireEdgeKind,
+  UpdateDecisionInput
 } from "@chaturanga/shared/types/repertoire";
+import type { StoredDecision } from "./repository";
 import { START_FEN } from "@chaturanga/shared/chess/position";
 import { seededRandom } from "../../perf/large-repertoire";
 
@@ -309,6 +311,47 @@ function practise(random: Random, repertoireId: string): void {
   });
 }
 
+/**
+ * A random change to a decision: its accepted moves (some dropped), its preference, its texts, or
+ * its pause.
+ */
+function randomDecisionPatch(
+  random: () => number,
+  decision: StoredDecision,
+  step: number
+): UpdateDecisionInput["patch"] {
+  const accepted = decision.acceptedUcis.filter(() => random() < 0.7);
+  const kind = random();
+  if (kind < 0.3) return { acceptedUcis: accepted };
+  if (kind < 0.55) return { preferredUci: accepted[0] ?? null };
+  if (kind < 0.8) return { prompt: `Prompt ${step}`, hint: random() < 0.5 ? null : "A hint" };
+  return { paused: !decision.paused };
+}
+
+/** The chapter edits a step picks from (lines added or deleted, marks, settings, a comment). */
+function chapterEdits(
+  random: () => number,
+  step: number
+): ((value: RepertoireChapter) => RepertoireChapter)[] {
+  return [
+    (value) => addLine(random, value),
+    (value) => addLine(random, value),
+    (value) => deleteSubtree(random, value),
+    (value) => setMarks(random, value),
+    (value) => setMarks(random, value),
+    (value) => ({ ...value, enabled: !value.enabled }),
+    (value) => ({ ...value, kind: value.kind === "opening" ? "reference" : "opening" }),
+    (value) => ({ ...value, sortOrder: Math.floor(random() * 6) }),
+    (value) => ({
+      ...value,
+      title: `${value.title}!`,
+      tree: value.tree.map((node, index) =>
+        index === 0 ? { ...node, comment: `step ${step}` } : node
+      )
+    })
+  ];
+}
+
 function expectFixpointAcrossEdits(seed: number, color: RepertoireColor, steps: number): void {
   const random = seededRandom(seed);
   const created = service.createRepertoire({ name: `Seed ${seed}`, color });
@@ -321,6 +364,28 @@ function expectFixpointAcrossEdits(seed: number, color: RepertoireColor, steps: 
     return result.decisionsChanged;
   };
   const chapters = () => chapterRepository.list(id);
+  // A decision edit: drop or restore accepted moves (edges change: full reindex), or change only
+  // the decision (its position alone is reconciled).
+  const editDecision = (step: number) => {
+    const decisions = decisionRepository.list(id);
+    if (!decisions.length) return;
+    const decision = pick(random, decisions);
+    const patch = randomDecisionPatch(random, decision, step);
+    const update = () =>
+      service.updateDecision({
+        repertoireId: id,
+        expectedRevision: revision,
+        positionKey: decision.positionKey,
+        patch
+      });
+    try {
+      expectSameAsFullUpdate(id, update);
+      revision = update().repertoire.revision;
+    } catch (error) {
+      // Refused (e.g. a move with no occurrence left): nothing was written.
+      if (!(error instanceof Error) || !error.message.startsWith("Invalid ")) throw error;
+    }
+  };
 
   // A few chapters sharing the start position and many transpositions.
   saveChapter(addLine(random, addLine(random, chapters()[0])));
@@ -335,36 +400,7 @@ function expectFixpointAcrossEdits(seed: number, color: RepertoireColor, steps: 
     if (roll < 0.06) {
       practise(random, id);
     } else if (roll < 0.2) {
-      // A decision edit: drop or restore accepted moves (edges change: full reindex), or change
-      // only the decision (its position alone is reconciled).
-      const decisions = decisionRepository.list(id);
-      if (decisions.length) {
-        const decision = pick(random, decisions);
-        const accepted = decision.acceptedUcis.filter(() => random() < 0.7);
-        const kind = random();
-        const patch =
-          kind < 0.3
-            ? { acceptedUcis: accepted }
-            : kind < 0.55
-              ? { preferredUci: accepted[0] ?? null }
-              : kind < 0.8
-                ? { prompt: `Prompt ${step}`, hint: random() < 0.5 ? null : "A hint" }
-                : { paused: !decision.paused };
-        const update = () =>
-          service.updateDecision({
-            repertoireId: id,
-            expectedRevision: revision,
-            positionKey: decision.positionKey,
-            patch
-          });
-        try {
-          expectSameAsFullUpdate(id, update);
-          revision = update().repertoire.revision;
-        } catch (error) {
-          // Refused (e.g. a move with no occurrence left): nothing was written.
-          if (!(error instanceof Error) || !error.message.startsWith("Invalid ")) throw error;
-        }
-      }
+      editDecision(step);
     } else if (roll < 0.25 && chapters().length > 1) {
       expectSameAsFullReindex(id, () => {
         revision = service.removeChapter({
@@ -378,24 +414,7 @@ function expectFixpointAcrossEdits(seed: number, color: RepertoireColor, steps: 
       const added = newChapter(random, `c${seed}-${++chapterCount}`, Math.floor(random() * 6));
       expectSameAsFullReindex(id, () => saveChapter(added));
     } else {
-      const edits: ((value: RepertoireChapter) => RepertoireChapter)[] = [
-        (value) => addLine(random, value),
-        (value) => addLine(random, value),
-        (value) => deleteSubtree(random, value),
-        (value) => setMarks(random, value),
-        (value) => setMarks(random, value),
-        (value) => ({ ...value, enabled: !value.enabled }),
-        (value) => ({ ...value, kind: value.kind === "opening" ? "reference" : "opening" }),
-        (value) => ({ ...value, sortOrder: Math.floor(random() * 6) }),
-        (value) => ({
-          ...value,
-          title: `${value.title}!`,
-          tree: value.tree.map((node, index) =>
-            index === 0 ? { ...node, comment: `step ${step}` } : node
-          )
-        })
-      ];
-      const edited = pick(random, edits)(chapter);
+      const edited = pick(random, chapterEdits(random, step))(chapter);
       expectSameAsFullReindex(id, () => saveChapter(edited));
     }
     expectFixpoint(id);

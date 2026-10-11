@@ -110,14 +110,12 @@ export function gameFromInitialSession(
     const move = userMoveFromUci(uci);
     const applied = move ? applyUserMove(node.fenAfter, move) : null;
     if (!applied) return null;
-    const added = addMoveNode(
-      moveTree,
-      node.id,
-      applied.san,
-      applied.uci,
-      node.fenAfter,
-      applied.fen
-    );
+    const added = addMoveNode(moveTree, node.id, {
+      san: applied.san,
+      uci: applied.uci,
+      fenBefore: node.fenAfter,
+      fenAfter: applied.fen
+    });
     moveTree = added.moveTree;
     node = added.node;
   }

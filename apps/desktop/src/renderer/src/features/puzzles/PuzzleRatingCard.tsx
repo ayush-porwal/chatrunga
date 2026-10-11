@@ -26,10 +26,6 @@ export const PuzzleRatingCard = memo(function PuzzleRatingCard() {
   const themes = usePuzzleThemeStatsQuery();
   const data = summary.data;
   const points = history.data ?? [];
-  // The change across the line (from its first point to the latest).
-  const recent = points.length
-    ? Math.round(points[points.length - 1].rating) - Math.round(points[0].rating)
-    : null;
 
   return (
     <section className={cn(cardPadded, "grid gap-3")} aria-labelledby="puzzle-rating-title">
@@ -41,38 +37,7 @@ export const PuzzleRatingCard = memo(function PuzzleRatingCard() {
           <span className="text-2xs tabular-nums text-fg-subtle">{data.ratedCount} rated</span>
         ) : null}
       </div>
-      {!data ? (
-        <Skeleton className="h-9 w-24" />
-      ) : (
-        <div className="grid gap-1">
-          <p className="flex items-baseline gap-2">
-            <span
-              className="text-3xl font-semibold tabular-nums text-fg"
-              title={`Deviation ${Math.round(data.deviation)}`}
-            >
-              {formatPuzzleRating(data)}
-            </span>
-            {recent !== null && points.length > 1 ? (
-              <span
-                className={cn(
-                  "text-xs font-medium tabular-nums",
-                  recent > 0 ? "text-accent-fg" : recent < 0 ? "text-danger" : "text-fg-subtle"
-                )}
-                title={`Change over the last ${points.length - 1} rated ${points.length === 2 ? "puzzle" : "puzzles"}`}
-              >
-                {formatRatingDelta(recent)}
-              </span>
-            ) : null}
-          </p>
-          <p className="text-xs leading-5 text-fg-muted">
-            {data.ratedCount === 0
-              ? "Solve Lichess puzzles to set it. Only your first try at each puzzle counts."
-              : data.provisional
-                ? "Provisional: a few more rated puzzles settle it."
-                : `${data.attemptCount ? Math.round((100 * data.solvedCount) / data.attemptCount) : 0}% of ${data.attemptCount} puzzles solved.`}
-          </p>
-        </div>
-      )}
+      {data ? <CurrentRating summary={data} points={points} /> : <Skeleton className="h-9 w-24" />}
       {points.length > 1 ? <RatingSparkline points={points} /> : null}
       {themes.data?.length ? (
         <Disclosure
@@ -85,6 +50,59 @@ export const PuzzleRatingCard = memo(function PuzzleRatingCard() {
     </section>
   );
 });
+
+type RatingSummary = NonNullable<ReturnType<typeof usePuzzleRatingSummaryQuery>["data"]>;
+
+/**
+ * The rating itself (its deviation in the tooltip), its change across the recent rated puzzles
+ * (`points`, from the first to the latest), and a line on where it stands.
+ */
+function CurrentRating({
+  summary,
+  points
+}: {
+  summary: RatingSummary;
+  points: readonly PuzzleRatingPoint[];
+}) {
+  const first = points.at(0);
+  const latest = points.at(-1);
+  const recent = first && latest ? Math.round(latest.rating) - Math.round(first.rating) : null;
+  return (
+    <div className="grid gap-1">
+      <p className="flex items-baseline gap-2">
+        <span
+          className="text-3xl font-semibold tabular-nums text-fg"
+          title={`Deviation ${Math.round(summary.deviation)}`}
+        >
+          {formatPuzzleRating(summary)}
+        </span>
+        {recent !== null && points.length > 1 ? (
+          <span
+            className={cn(
+              "text-xs font-medium tabular-nums",
+              recent > 0 ? "text-accent-fg" : recent < 0 ? "text-danger" : "text-fg-subtle"
+            )}
+            title={`Change over the last ${points.length - 1} rated ${points.length === 2 ? "puzzle" : "puzzles"}`}
+          >
+            {formatRatingDelta(recent)}
+          </span>
+        ) : null}
+      </p>
+      <p className="text-xs leading-5 text-fg-muted">{ratingNote(summary)}</p>
+    </div>
+  );
+}
+
+/** Where the rating stands: not set yet, provisional, or the share of puzzles solved. */
+function ratingNote(summary: RatingSummary): string {
+  if (summary.ratedCount === 0)
+    return "Solve Lichess puzzles to set it. Only your first try at each puzzle counts.";
+  if (summary.provisional) return "Provisional: a few more rated puzzles settle it.";
+  const solved = summary.attemptCount
+    ? Math.round((100 * summary.solvedCount) / summary.attemptCount)
+    : 0;
+  return `${solved}% of ${summary.attemptCount} puzzles solved.`;
+}
 
 /** The rating after each recent rated puzzle: a bare line (hover for the value). */
 const RatingSparkline = memo(function RatingSparkline({ points }: { points: PuzzleRatingPoint[] }) {

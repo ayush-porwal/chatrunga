@@ -209,10 +209,46 @@ const ROW_STATUS_ORDER: readonly AssetStatus[] = [
   "ready"
 ];
 
+const SETUP_ROW_LABELS: Record<SetupRow["key"], string> = {
+  stockfish: "Stockfish",
+  lc0: "Lc0",
+  maia: "Maia"
+};
+
+/** The setup row an asset is listed in. */
+function setupRowKey(id: EngineAssetId, hasMaia: boolean): SetupRow["key"] {
+  if (id === "stockfish") return "stockfish";
+  // Lc0 runs the Maia weights, so it joins their row when they are part of the setup.
+  return id === "lc0" && !hasMaia ? "lc0" : "maia";
+}
+
+/**
+ * One asset's share of its row's progress. Verifying / installing / ready members count as fully
+ * downloaded; a failed one counts nothing.
+ */
+function memberProgress(
+  asset: EngineAssetStatus,
+  entry: AssetProgress | undefined
+): { bytesReceived: number; bytesTotal: number; status: AssetStatus } {
+  const bytesTotal = entry?.bytesTotal || asset.downloadSizeBytes || 0;
+  const status = entry?.status ?? "pending";
+  const done = status === "verifying" || status === "installing" || status === "ready";
+  const bytesReceived = done ? bytesTotal : status === "error" ? 0 : (entry?.bytesReceived ?? 0);
+  return { bytesReceived, bytesTotal, status };
+}
+
+/** "Maia 1100–1900", "Maia 1500 + Lc0": the Maia row's ratings, and the Lc0 it brings. */
+function maiaRowLabel(ids: readonly EngineAssetId[]): string {
+  const ratings = ids.filter((id) => id.startsWith("maia-")).map((id) => id.replace("maia-", ""));
+  const maia =
+    ratings.length > 1 ? `Maia ${ratings[0]}–${ratings[ratings.length - 1]}` : `Maia ${ratings[0]}`;
+  // Name Lc0 too, so a failed Lc0 download isn't reported as a Maia one.
+  return ids.includes("lc0") ? `${maia} + Lc0` : maia;
+}
+
 /**
  * Groups queued assets into setup rows with combined progress. A row's status is its most
  * pressing member's: any failure, then any work in progress, then waiting; ready only when all are.
- * Verifying / installing / ready members count as fully downloaded.
  */
 export function setupRows(
   assets: readonly EngineAssetStatus[],
@@ -222,14 +258,12 @@ export function setupRows(
   const byKey = new Map<SetupRow["key"], SetupRow>();
   const hasMaia = assets.some((asset) => asset.id.startsWith("maia-"));
   for (const asset of assets) {
-    // Lc0 runs the Maia weights, so it joins their row when they are part of the setup.
-    const key: SetupRow["key"] =
-      asset.id === "stockfish" ? "stockfish" : asset.id === "lc0" && !hasMaia ? "lc0" : "maia";
+    const key = setupRowKey(asset.id, hasMaia);
     let row = byKey.get(key);
     if (!row) {
       row = {
         key,
-        label: key === "maia" ? "Maia" : asset.id === "lc0" ? "Lc0" : "Stockfish",
+        label: SETUP_ROW_LABELS[key],
         ids: [],
         bytesReceived: 0,
         bytesTotal: 0,
@@ -238,27 +272,15 @@ export function setupRows(
       byKey.set(key, row);
       rows.push(row);
     }
-    const entry = progress[asset.id];
-    const total = entry?.bytesTotal || asset.downloadSizeBytes || 0;
-    const status = entry?.status ?? "pending";
-    const done = status === "verifying" || status === "installing" || status === "ready";
+    const member = memberProgress(asset, progress[asset.id]);
     row.ids.push(asset.id);
-    row.bytesTotal += total;
-    row.bytesReceived += done ? total : status === "error" ? 0 : (entry?.bytesReceived ?? 0);
-    if (ROW_STATUS_ORDER.indexOf(status) < ROW_STATUS_ORDER.indexOf(row.status))
-      row.status = status;
+    row.bytesTotal += member.bytesTotal;
+    row.bytesReceived += member.bytesReceived;
+    if (ROW_STATUS_ORDER.indexOf(member.status) < ROW_STATUS_ORDER.indexOf(row.status))
+      row.status = member.status;
   }
   for (const row of rows) {
-    if (row.key !== "maia") continue;
-    const ratings = row.ids
-      .filter((id) => id.startsWith("maia-"))
-      .map((id) => id.replace("maia-", ""));
-    const maia =
-      ratings.length > 1
-        ? `Maia ${ratings[0]}–${ratings[ratings.length - 1]}`
-        : `Maia ${ratings[0]}`;
-    // Name Lc0 too, so a failed Lc0 download isn't reported as a Maia one.
-    row.label = row.ids.includes("lc0") ? `${maia} + Lc0` : maia;
+    if (row.key === "maia") row.label = maiaRowLabel(row.ids);
   }
   return rows;
 }

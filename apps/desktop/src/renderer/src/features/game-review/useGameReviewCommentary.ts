@@ -97,7 +97,6 @@ export function useGameReviewCommentary({
 }: Options): SelectedMoveCommentary {
   const review = useReviewStore((state) => state.review);
   const reviewStatus = useReviewStore((state) => state.status);
-  const headers = useGameStore((state) => state.headers);
   const openRouterConfig = useOpenRouterConfigQuery();
   const model = openRouterConfig.data?.model ?? "";
   const settingsKey = commentarySettingsKey({ model, detail, userRating, playerColor });
@@ -111,65 +110,20 @@ export function useGameReviewCommentary({
 
   useEffect(() => () => scheduler.dispose(), [scheduler]);
 
-  // Only the analysed moves the game still has: a deleted or replaced move is neither explained
-  // nor sent as context for another.
-  const moveTree = useGameStore((state) => state.moveTree);
-  const reviewMoves = useMemo(
-    () => (review ? compatibleReviewMoves(review.moves, moveTree) : undefined),
-    [moveTree, review]
-  );
-  const reviewedMove =
-    reviewMoves && move && reviewMoves.some((item) => item.nodeId === move.nodeId) ? move : null;
+  const payloadContext = usePayloadContext(review);
+  const reviewedMove = stillReviewed(move, payloadContext?.moves);
   const active = visible && reviewStatus === "ready" && Boolean(reviewedMove);
-  const white = headers.white ?? undefined;
-  const black = headers.black ?? undefined;
-  const event = headers.event ?? undefined;
-  // The opening the opening book names for the game, else the PGN's own Opening tag.
-  const eco = review?.opening?.eco;
-  const opening = review?.opening?.name ?? headers.opening ?? undefined;
-  const schemaVersion = review?.schemaVersion;
-  const engineName = review?.engineName;
-  const engineSettings = review?.engineSettings;
-  const reviewDepth = review?.depth;
-  const reviewMoveTimeMs = review?.moveTimeMs;
-  const payloadContext = useMemo(
-    () =>
-      reviewMoves
-        ? {
-            moves: reviewMoves,
-            headers: { white, black, event, eco, opening },
-            review: {
-              schemaVersion,
-              engineName,
-              engineSettings,
-              depth: reviewDepth,
-              moveTimeMs: reviewMoveTimeMs
-            }
-          }
-        : undefined,
-    [
-      black,
-      eco,
-      engineName,
-      engineSettings,
-      event,
-      opening,
-      reviewDepth,
-      reviewMoveTimeMs,
-      reviewMoves,
-      schemaVersion,
-      white
-    ]
-  );
   const payload = useMemo(() => {
     if (!active || !reviewedMove || !payloadContext) return null;
-    return buildInsightPayload(reviewedMove, userRating, detail, playerColor, payloadContext);
+    return buildInsightPayload(reviewedMove, {
+      userRating,
+      commentaryDetail: detail,
+      playerColor,
+      context: payloadContext
+    });
   }, [active, detail, payloadContext, playerColor, reviewedMove, userRating]);
-  const cached = reviewedMove
-    ? review?.commentary?.find((item) => item.ply === reviewedMove.ply)
-    : undefined;
-  const jobKey =
-    review && reviewedMove ? `${review.createdAt}:${reviewedMove.ply}:${settingsKey}` : "";
+  const cached = cachedCommentary(review, reviewedMove);
+  const jobKey = commentaryJobKey(review, reviewedMove, settingsKey);
   const prerequisites = {
     enabled,
     configLoading: !settingsReady || openRouterConfig.isLoading,
@@ -287,7 +241,8 @@ export function useGameReviewCommentary({
   const status = statusFor(decision, isCurrentCommentary(cached, settingsKey));
   useCommentaryViewTracking({
     review,
-    ply: status === "ready" && cached ? (reviewedMove?.ply ?? null) : null,
+    // The explanation on screen: the move's, once it shows.
+    ply: status === "ready" && cached ? cached.ply : null,
     visible: active
   });
 
@@ -299,6 +254,86 @@ export function useGameReviewCommentary({
     retry,
     rewrite
   };
+}
+
+/**
+ * The game around the move, sent with it: the analysed moves the game still has (a deleted or
+ * replaced move is neither explained nor sent as context for another), the PGN's players and event,
+ * the opening (the one the opening book names for the game, else the PGN's own Opening tag), and
+ * the review's engine and search. Undefined without a review.
+ */
+function usePayloadContext(review: GameReview | null) {
+  const headers = useGameStore((state) => state.headers);
+  const moveTree = useGameStore((state) => state.moveTree);
+  const reviewMoves = useMemo(
+    () => (review ? compatibleReviewMoves(review.moves, moveTree) : undefined),
+    [moveTree, review]
+  );
+  const white = headers.white ?? undefined;
+  const black = headers.black ?? undefined;
+  const event = headers.event ?? undefined;
+  const eco = review?.opening?.eco;
+  const opening = review?.opening?.name ?? headers.opening ?? undefined;
+  const schemaVersion = review?.schemaVersion;
+  const engineName = review?.engineName;
+  const engineSettings = review?.engineSettings;
+  const reviewDepth = review?.depth;
+  const reviewMoveTimeMs = review?.moveTimeMs;
+  return useMemo(
+    () =>
+      reviewMoves
+        ? {
+            moves: reviewMoves,
+            headers: { white, black, event, eco, opening },
+            review: {
+              schemaVersion,
+              engineName,
+              engineSettings,
+              depth: reviewDepth,
+              moveTimeMs: reviewMoveTimeMs
+            }
+          }
+        : undefined,
+    [
+      black,
+      eco,
+      engineName,
+      engineSettings,
+      event,
+      opening,
+      reviewDepth,
+      reviewMoveTimeMs,
+      reviewMoves,
+      schemaVersion,
+      white
+    ]
+  );
+}
+
+/** `move`, while the game still has it among the analysed moves (null otherwise). */
+function stillReviewed(
+  move: MoveReview | null,
+  reviewMoves: readonly MoveReview[] | undefined
+): MoveReview | null {
+  if (!move || !reviewMoves) return null;
+  return reviewMoves.some((item) => item.nodeId === move.nodeId) ? move : null;
+}
+
+/** The explanation the review has cached for the move (saved with the game). */
+function cachedCommentary(
+  review: GameReview | null,
+  move: MoveReview | null
+): ReviewCommentary | undefined {
+  return move ? review?.commentary?.find((item) => item.ply === move.ply) : undefined;
+}
+
+/** One request per review, move and commentary settings ("" with no move to explain). */
+function commentaryJobKey(
+  review: GameReview | null,
+  move: MoveReview | null,
+  settingsKey: string
+): string {
+  return review && move ? `${review.createdAt}:${move.ply}:${settingsKey}` : "";
 }
 
 function statusFor(decision: CommentaryDecision, hasCurrent: boolean): CommentaryStatus {

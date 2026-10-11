@@ -102,12 +102,8 @@ export class LichessClient {
   async request(path: string, request: LichessRequest = {}): Promise<Response> {
     const headers: Record<string, string> = { Accept: request.accept ?? "application/json" };
     const usesSavedToken = request.auth !== false && request.token === undefined;
-    let sentToken: string | null = null;
-    if (request.auth !== false) {
-      sentToken = request.token ?? (await this.options.getToken());
-      if (!sentToken) throw new LichessHttpError(NOT_CONNECTED_ERROR, 401);
-      headers.Authorization = `Bearer ${sentToken}`;
-    }
+    const sentToken = await this.tokenFor(request);
+    if (sentToken) headers.Authorization = `Bearer ${sentToken}`;
     let body: URLSearchParams | undefined;
     if (request.form) {
       body = formBody(request.form);
@@ -130,6 +126,14 @@ export class LichessClient {
     if (response.status === 401 && usesSavedToken && sentToken)
       this.options.onTokenRejected?.(sentToken);
     throw new LichessHttpError(lichessErrorMessage(response.status, text), response.status);
+  }
+
+  /** The token a request sends (its own, else the saved one); null when it is unauthenticated. */
+  private async tokenFor(request: LichessRequest): Promise<string | null> {
+    if (request.auth === false) return null;
+    const token = request.token ?? (await this.options.getToken());
+    if (!token) throw new LichessHttpError(NOT_CONNECTED_ERROR, 401);
+    return token;
   }
 
   /** The answer's fields, unchecked (an answer that isn't an object has none). */

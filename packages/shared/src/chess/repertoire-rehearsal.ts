@@ -67,9 +67,11 @@ export type RehearsalLine = {
 export function rehearsalContext(
   chapter: Pick<RepertoireChapter, "kind" | "enabled" | "tree" | "nodeMeta">,
   color: RepertoireColor,
-  maxDepthPlies: number = DEFAULT_REHEARSAL_DEPTH_PLIES,
-  lookup: ChapterLookup = buildChapterLookup(chapter),
-  paused: ReadonlySet<string> = new Set()
+  {
+    maxDepthPlies = DEFAULT_REHEARSAL_DEPTH_PLIES,
+    lookup = buildChapterLookup(chapter),
+    paused = new Set()
+  }: { maxDepthPlies?: number; lookup?: ChapterLookup; paused?: ReadonlySet<string> } = {}
 ): RehearsalContext {
   const states = computeScopeStates(chapter, lookup);
   const reachesActive = new Set<string>();
@@ -280,9 +282,15 @@ function routeTest(
 export function planRoute(
   context: RehearsalContext,
   startNodeId: string,
-  pending: ReadonlySet<string>,
-  seen: Readonly<Record<string, number>>,
-  finished: ReadonlySet<string> = new Set()
+  {
+    pending,
+    seen,
+    finished = new Set()
+  }: {
+    pending: ReadonlySet<string>;
+    seen: Readonly<Record<string, number>>;
+    finished?: ReadonlySet<string>;
+  }
 ): RoutePlan {
   const leadsToPending = routeTest(context, (id) => pending.has(id));
   const leadsToUnfinished = routeTest(context, (id) => !finished.has(id));

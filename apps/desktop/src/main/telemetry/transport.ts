@@ -14,6 +14,13 @@ export type DeliveryResult = { outcome: "accepted" | "retry" | "rejected"; statu
 
 const DELIVERY_TIMEOUT_MS = 10_000;
 
+/** One install's events, for one PostHog project. */
+type Batch = {
+  project: TelemetryProject;
+  distinctId: string;
+  events: readonly OutboxEvent[];
+};
+
 /**
  * Sends events to PostHog's batch capture endpoint (`POST {host}/batch/`) directly rather than
  * through posthog-node: the SDK keeps its own in-memory queue and retries, and doesn't say which
@@ -21,9 +28,7 @@ const DELIVERY_TIMEOUT_MS = 10_000;
  * Each event keeps its `uuid` and original `timestamp` on every attempt.
  */
 export async function deliverBatch(
-  project: TelemetryProject,
-  distinctId: string,
-  events: readonly OutboxEvent[],
+  { project, distinctId, events }: Batch,
   fetchImpl: FetchLike,
   signal?: AbortSignal
 ): Promise<DeliveryResult> {

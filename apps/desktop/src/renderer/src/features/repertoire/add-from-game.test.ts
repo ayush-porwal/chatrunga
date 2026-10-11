@@ -37,7 +37,12 @@ function gameTree(line: string[], rootVariation: string[] = []): MoveNode[] {
     for (const san of moves) {
       const moved = applySan(parent.fenAfter, san);
       if (!moved) throw new Error(`illegal ${san}`);
-      const result = addMoveNode(tree, parent.id, moved.san, moved.uci, parent.fenAfter, moved.fen);
+      const result = addMoveNode(tree, parent.id, {
+        san: moved.san,
+        uci: moved.uci,
+        fenBefore: parent.fenAfter,
+        fenAfter: moved.fen
+      });
       tree = result.moveTree;
       parent = result.node;
     }

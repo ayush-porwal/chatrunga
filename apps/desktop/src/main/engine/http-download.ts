@@ -46,41 +46,79 @@ export async function downloadToFile(opts: DownloadOptions): Promise<DownloadRes
   const startByte = existing?.size ?? 0;
   const res = await fetchAllowed(opts, startByte > 0 ? { Range: `bytes=${startByte}-` } : {});
 
-  if (res.status === 416) {
-    // The partial reaches (or passes) the end of the resource.
-    await res.body?.cancel().catch(() => undefined);
-    const total = parseContentRange(res.headers.get("content-range"))?.total ?? null;
-    if (total !== null && total === startByte) {
-      opts.onProgress?.(startByte, total);
-      return { bytes: startByte, totalBytes: total, resumed: true };
-    }
-    await unlink(opts.destPath).catch(() => undefined);
-    return downloadToFile(opts);
-  }
+  if (res.status === 416) return afterUnsatisfiableRange(res, startByte, opts);
   if (!res.ok) {
     await res.body?.cancel().catch(() => undefined);
     throw new Error(`download failed: ${res.status} ${res.statusText}`);
   }
   if (!res.body) throw new Error("download failed: empty response body");
 
-  let resumed = false;
-  let totalBytes: number | null;
-  if (res.status === 206) {
-    const range = parseContentRange(res.headers.get("content-range"));
-    if (startByte === 0 || !range || range.start !== startByte) {
-      await res.body.cancel().catch(() => undefined);
-      await unlink(opts.destPath).catch(() => undefined);
-      throw new Error("download failed: server sent an unexpected byte range");
-    }
-    resumed = true;
-    totalBytes = range.total;
-  } else {
-    // 200: the whole resource (a server that ignores Range): start over.
+  const transfer = await transferOf(res, res.body, startByte, opts.destPath);
+  await writeTransfer(res.body, opts, transfer);
+
+  const bytes = statSync(opts.destPath).size;
+  const { totalBytes } = transfer;
+  if (totalBytes !== null && bytes !== totalBytes) {
+    if (bytes > totalBytes) await unlink(opts.destPath).catch(() => undefined);
+    throw new Error(`download incomplete: ${bytes} of ${totalBytes} bytes`);
+  }
+  return { bytes, totalBytes, resumed: transfer.resumed };
+}
+
+/**
+ * A 416: the partial reaches (or passes) the end of the resource. Exactly its length is a finished
+ * download; otherwise the partial goes and the download starts over.
+ */
+async function afterUnsatisfiableRange(
+  res: Response,
+  startByte: number,
+  opts: DownloadOptions
+): Promise<DownloadResult> {
+  await res.body?.cancel().catch(() => undefined);
+  const total = parseContentRange(res.headers.get("content-range"))?.total ?? null;
+  if (total !== null && total === startByte) {
+    opts.onProgress?.(startByte, total);
+    return { bytes: startByte, totalBytes: total, resumed: true };
+  }
+  await unlink(opts.destPath).catch(() => undefined);
+  return downloadToFile(opts);
+}
+
+/** What the response holds: the rest of the partial file (`resumed`), or the whole file. */
+type Transfer = { resumed: boolean; startByte: number; totalBytes: number | null };
+
+/**
+ * A 206 continues the partial file only when it starts exactly where the partial ends (else the
+ * partial is deleted and this throws); a 200 is the whole resource (a server that ignores Range):
+ * start over. The full size when the response gives it.
+ */
+async function transferOf(
+  res: Response,
+  body: ReadableStream<Uint8Array>,
+  startByte: number,
+  destPath: string
+): Promise<Transfer> {
+  if (res.status !== 206) {
     const length = Number(res.headers.get("content-length"));
     const encoded = (res.headers.get("content-encoding") ?? "identity") !== "identity";
-    totalBytes = !encoded && Number.isFinite(length) && length > 0 ? length : null;
+    const totalBytes = !encoded && Number.isFinite(length) && length > 0 ? length : null;
+    return { resumed: false, startByte, totalBytes };
   }
+  const range = parseContentRange(res.headers.get("content-range"));
+  if (startByte === 0 || !range || range.start !== startByte) {
+    await body.cancel().catch(() => undefined);
+    await unlink(destPath).catch(() => undefined);
+    throw new Error("download failed: server sent an unexpected byte range");
+  }
+  return { resumed: true, startByte, totalBytes: range.total };
+}
 
+/** Writes the body to the file (appended when resumed), reporting progress on the way. */
+async function writeTransfer(
+  body: ReadableStream<Uint8Array>,
+  opts: DownloadOptions,
+  { resumed, startByte, totalBytes }: Transfer
+): Promise<void> {
   let bytesReceived = resumed ? startByte : 0;
   const progressTotal = () => totalBytes ?? Math.max(opts.expectedBytes ?? 0, bytesReceived);
   const interval = opts.progressIntervalMs ?? 100;
@@ -98,18 +136,11 @@ export async function downloadToFile(opts: DownloadOptions): Promise<DownloadRes
     }
   });
   await pipeline(
-    readableFromBody(res.body),
+    readableFromBody(body),
     meter,
     createWriteStream(opts.destPath, { flags: resumed ? "a" : "w" })
   );
   emit();
-
-  const bytes = statSync(opts.destPath).size;
-  if (totalBytes !== null && bytes !== totalBytes) {
-    if (bytes > totalBytes) await unlink(opts.destPath).catch(() => undefined);
-    throw new Error(`download incomplete: ${bytes} of ${totalBytes} bytes`);
-  }
-  return { bytes, totalBytes, resumed };
 }
 
 /** Fetches `opts.url`, following redirects only within the allow-list. */

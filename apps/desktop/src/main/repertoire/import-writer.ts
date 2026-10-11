@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import type { ImportResult } from "@chaturanga/shared/types/repertoire";
 import { commitImportJob, type ImportCommitJob } from "./core";
+import { positionKeysOf } from "./import-job";
 import { missingWorkerError } from "./import-runner";
 import {
   WRITER_SLICE_NODES,
@@ -75,12 +76,7 @@ export async function runImportCommit(
       post({ type: "chapter", chapter });
       for (let start = 0; start < tree.length; start += WRITER_SLICE_NODES) {
         const nodes = tree.slice(start, start + WRITER_SLICE_NODES);
-        const keys: [string, string][] = [];
-        for (const node of nodes) {
-          const key = positionKeys[node.id];
-          if (key) keys.push([node.id, key]);
-        }
-        post({ type: "nodes", nodes, keys });
+        post({ type: "nodes", nodes, keys: positionKeysOf(nodes, positionKeys) });
         if (performance.now() - sliceStart >= POST_SLICE_MS) {
           await yieldToEventLoop();
           sliceStart = performance.now();

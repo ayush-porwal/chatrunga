@@ -311,9 +311,7 @@ export class TelemetryService {
       if (!events.length) return;
       this.inFlight = new AbortController();
       const result = await deliverBatch(
-        project,
-        distinctId,
-        events,
+        { project, distinctId, events },
         this.deps.fetchImpl,
         this.inFlight.signal
       );

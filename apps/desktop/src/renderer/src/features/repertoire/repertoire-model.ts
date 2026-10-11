@@ -3,8 +3,7 @@ import {
   computeScopeStates,
   effectivePreferredUci,
   nodeMetaOf,
-  type ChapterLookup,
-  type ScopeState
+  type ChapterLookup
 } from "@chaturanga/shared/chess/repertoire-index";
 import { makeSan } from "chessops/san";
 import { makeUci } from "chessops/util";
@@ -87,10 +86,16 @@ export const CHOICE_DESCRIPTIONS: Record<ChoiceState, string> = {
 export function deriveChoices(
   chapter: Pick<RepertoireChapter, "kind" | "enabled" | "tree" | "nodeMeta">,
   lookup: ChapterLookup,
-  nodeId: string,
-  color: RepertoireColor,
-  decision: Pick<RepertoireDecision, "acceptedUcis" | "preferredUci"> | null,
-  scopes: ReadonlyMap<string, ScopeState> = computeScopeStates(chapter, lookup)
+  {
+    nodeId,
+    color,
+    decision
+  }: {
+    nodeId: string;
+    color: RepertoireColor;
+    /** The decision stored for the position (null: none). */
+    decision: Pick<RepertoireDecision, "acceptedUcis" | "preferredUci"> | null;
+  }
 ): ChoicesView {
   const node = lookup.nodesById.get(nodeId);
   if (!node) return { side: "player", rows: [] };
@@ -101,6 +106,7 @@ export function deriveChoices(
   const metaOf = (id: string) => nodeMetaOf(chapter.nodeMeta, id);
   // Both the position and the move must be in scope (collectDecisions); a move whose own edge is
   // reference under an active position is still a plain reference choice (Accept makes it train).
+  const scopes = computeScopeStates(chapter, lookup);
   const parentActive = scopes.get(nodeId) === "active";
   const trained = (id: string) => {
     const state = scopes.get(id);
@@ -456,7 +462,7 @@ export function nextDecisionDraft(
         ? { draft: { ...draft, saveAgain: true }, writeAgain: false }
         : unchanged;
     case "saved": {
-      const writeAgain = draft.status === "saving" && draft.saveAgain === true;
+      const writeAgain = committedWhileSaving(draft);
       // Typed while it saved: the newer text stays, pending its own write.
       if (draft.generation !== event.generation) {
         return { draft: { ...content, status: "pending" }, writeAgain };
@@ -466,13 +472,18 @@ export function nextDecisionDraft(
     case "failed":
       return {
         draft: { ...content, status: "error", error: event.error },
-        writeAgain: draft.status === "saving" && draft.saveAgain === true && !event.error.stale
+        writeAgain: committedWhileSaving(draft) && !event.error.stale
       };
     case "retry":
       return draft.status === "error" && (event.stale || !draft.error.stale)
         ? { draft: { ...content, status: "pending" }, writeAgain: false }
         : unchanged;
   }
+}
+
+/** Whether the draft was committed again while its write ran (written again once it settles). */
+function committedWhileSaving(draft: DecisionTextDraft): boolean {
+  return draft.status === "saving" && draft.saveAgain === true;
 }
 
 /** A draft's change and generation, without its state (an unset `uci` or `paused` left out). */

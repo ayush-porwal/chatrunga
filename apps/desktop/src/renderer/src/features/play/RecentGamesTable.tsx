@@ -74,17 +74,8 @@ export const RecentGamesTable = memo(function RecentGamesTable({
   onOpenGame: (id: string) => void;
   onReviewGame: (id: string) => void;
 }): JSX.Element {
-  // Per source, every game; the In progress card's game comes off its source's count.
-  const facets = useGameFacetsQuery(null);
-  const excluded = useSavedGameDetail(excludeGameId);
-  const excludedTab = excluded.data ? libraryTabOf(excluded.data.source) : null;
-  const options = useMemo(
-    () => recentGamesFilterOptions(facets.data?.tabs ?? emptyTabCounts(), excludedTab),
-    [facets.data, excludedTab]
-  );
-  // Chosen for this visit to the page; every game again once its source has none left.
-  const [chosenTab, setChosenTab] = useState<LibraryTab | null>(null);
-  const tab = recentGamesFilterTab(options, chosenTab);
+  const { facets, options, tab, setChosenTab, shown, hasGames } =
+    useRecentGamesSources(excludeGameId);
   const [query, setQuery] = useState("");
   // Clearing the box applies at once; typing waits for a pause.
   const needle = query.trim().slice(0, GAME_SEARCH_MAX_LENGTH);
@@ -100,11 +91,7 @@ export const RecentGamesTable = memo(function RecentGamesTable({
   // Fade the rows in only when they replace the skeleton (the first read, another source).
   const [fadeIn, setFadeIn] = useState(games.isPending);
   if (games.isPending && !fadeIn) setFadeIn(true);
-  const lichessUsername = useLichessStore((state) => state.status.account?.username ?? null);
-  const chesscomUsername = useChesscomStore((state) => state.status.account?.username ?? null);
 
-  const shown = options.find((option) => option.tab === tab)?.count ?? 0;
-  const hasGames = facets.isSuccess && options[0].count > 0;
   const skeletonRows = facets.isSuccess && !needle ? Math.min(Math.max(shown, 1), 4) : 4;
 
   return (
@@ -122,12 +109,13 @@ export const RecentGamesTable = memo(function RecentGamesTable({
         count={facets.isSuccess && !needle ? shown : null}
         actions={
           hasGames || query ? (
-            <>
-              <RecentGamesSearch query={query} onQueryChange={setQuery} />
-              {options.length > 2 ? (
-                <RecentGamesFilter options={options} value={tab} onChange={setChosenTab} />
-              ) : null}
-            </>
+            <RecentGamesTools
+              query={query}
+              onQueryChange={setQuery}
+              options={options}
+              tab={tab}
+              onTabChange={setChosenTab}
+            />
           ) : null
         }
       />
@@ -157,79 +145,174 @@ export const RecentGamesTable = memo(function RecentGamesTable({
           ))}
         </div>
       ) : games.isError ? (
-        <div className="p-3">
-          <Notice
-            tone="danger"
-            title="Couldn't load your games"
-            action={
-              <Button
-                type="button"
-                variant="outline"
-                size="xs"
-                onClick={() => void games.refetch()}
-              >
-                <RotateCcw />
-                Try again
-              </Button>
-            }
-          >
-            {ipcErrorMessage(games.error) || "The library couldn't be read."}
-          </Notice>
-        </div>
+        <GamesLoadError error={games.error} onRetry={() => void games.refetch()} />
       ) : rows.length ? (
-        <ul aria-labelledby={TITLE_ID} className={cn(fadeIn && "animate-fade-in")}>
-          {rows.map((game) => (
-            <GameRow
-              key={game.id}
-              game={game}
-              orientation={userSide(game, [lichessUsername, chesscomUsername])}
-              repertoiresAvailable={actions.repertoiresAvailable}
-              deleting={actions.removing}
-              onOpen={onOpenGame}
-              onReview={onReviewGame}
-              onAddToRepertoire={(id) => void actions.addToRepertoire(id)}
-              onDelete={(id) => void actions.remove(id)}
-            />
-          ))}
-          {games.isFetchingNextPage ? (
-            <li aria-busy="true" aria-label="Loading more games">
-              <SkeletonRow />
-            </li>
-          ) : null}
-          {games.hasNextPage ? (
-            // The list's last row: reached by scrolling to the end of the table, never over the rows.
-            <li className="flex justify-center py-3">
-              <LoadMoreGamesButton
-                loading={games.isFetchingNextPage}
-                // Not while any read runs (a next page would cancel a refresh), nor over a
-                // previous search's rows.
-                disabled={games.isFetching || games.isPlaceholderData}
-                onClick={() => void games.fetchNextPage()}
-              />
-            </li>
-          ) : null}
-        </ul>
-      ) : needle ? (
-        <p className="px-4 py-6 text-center text-[0.8125rem] text-fg-muted">
-          No games match “{needle}”
-        </p>
-      ) : tab ? (
-        <p className="px-4 py-6 text-center text-[0.8125rem] text-fg-muted">
-          No {LIBRARY_TAB_LABELS[tab]} games
-        </p>
+        <GameRows
+          games={games}
+          rows={rows}
+          fadeIn={fadeIn}
+          actions={actions}
+          onOpenGame={onOpenGame}
+          onReviewGame={onReviewGame}
+        />
       ) : (
-        <div className="flex min-h-54 flex-1 items-center justify-center">
-          <div className="flex flex-col items-center gap-3.5">
-            <PiecePair piece="pawn" pieceClassName="size-28" gapClassName="gap-0.5" />
-            <span className="text-[0.9375rem] font-medium tracking-[-0.005em] text-fg-secondary">
-              No games yet
-            </span>
-          </div>
-        </div>
+        <NoGames needle={needle} tab={tab} />
       )}
     </section>
   );
 });
+
+/**
+ * The source filter's options (per source, every game; the In progress card's game comes off its
+ * source's count), the source listed, how many games it has (`shown`), and whether there are any.
+ */
+function useRecentGamesSources(excludeGameId: string | null) {
+  const facets = useGameFacetsQuery(null);
+  const excluded = useSavedGameDetail(excludeGameId);
+  const excludedTab = excluded.data ? libraryTabOf(excluded.data.source) : null;
+  const options = useMemo(
+    () => recentGamesFilterOptions(facets.data?.tabs ?? emptyTabCounts(), excludedTab),
+    [facets.data, excludedTab]
+  );
+  // Chosen for this visit to the page; every game again once its source has none left.
+  const [chosenTab, setChosenTab] = useState<LibraryTab | null>(null);
+  const tab = recentGamesFilterTab(options, chosenTab);
+  return {
+    facets,
+    options,
+    tab,
+    setChosenTab,
+    shown: options.find((option) => option.tab === tab)?.count ?? 0,
+    hasGames: facets.isSuccess && options[0].count > 0
+  };
+}
+
+/** The title bar's search, and the source filter once there is more than one source to pick. */
+function RecentGamesTools({
+  query,
+  onQueryChange,
+  options,
+  tab,
+  onTabChange
+}: {
+  query: string;
+  onQueryChange: (query: string) => void;
+  options: ReturnType<typeof recentGamesFilterOptions>;
+  tab: LibraryTab | null;
+  onTabChange: (tab: LibraryTab | null) => void;
+}) {
+  return (
+    <>
+      <RecentGamesSearch query={query} onQueryChange={onQueryChange} />
+      {options.length > 2 ? (
+        <RecentGamesFilter options={options} value={tab} onChange={onTabChange} />
+      ) : null}
+    </>
+  );
+}
+
+/** The library couldn't be read: why, and Try again. */
+function GamesLoadError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  return (
+    <div className="p-3">
+      <Notice
+        tone="danger"
+        title="Couldn't load your games"
+        action={
+          <Button type="button" variant="outline" size="xs" onClick={onRetry}>
+            <RotateCcw />
+            Try again
+          </Button>
+        }
+      >
+        {ipcErrorMessage(error) || "The library couldn't be read."}
+      </Notice>
+    </div>
+  );
+}
+
+/**
+ * The listed games, a row each (facing the user's side in it), then the next page's placeholder
+ * while it loads and "Load more games" while there are more.
+ */
+function GameRows({
+  games,
+  rows,
+  fadeIn,
+  actions,
+  onOpenGame,
+  onReviewGame
+}: {
+  games: ReturnType<typeof useRecentGamePagesQuery>;
+  rows: readonly GameSummary[];
+  fadeIn: boolean;
+  actions: ReturnType<typeof useSavedGameActions>;
+  onOpenGame: (id: string) => void;
+  onReviewGame: (id: string) => void;
+}) {
+  const lichessUsername = useLichessStore((state) => state.status.account?.username ?? null);
+  const chesscomUsername = useChesscomStore((state) => state.status.account?.username ?? null);
+  return (
+    <ul aria-labelledby={TITLE_ID} className={cn(fadeIn && "animate-fade-in")}>
+      {rows.map((game) => (
+        <GameRow
+          key={game.id}
+          game={game}
+          orientation={userSide(game, [lichessUsername, chesscomUsername])}
+          repertoiresAvailable={actions.repertoiresAvailable}
+          deleting={actions.removing}
+          onOpen={onOpenGame}
+          onReview={onReviewGame}
+          onAddToRepertoire={(id) => void actions.addToRepertoire(id)}
+          onDelete={(id) => void actions.remove(id)}
+        />
+      ))}
+      {games.isFetchingNextPage ? (
+        <li aria-busy="true" aria-label="Loading more games">
+          <SkeletonRow />
+        </li>
+      ) : null}
+      {games.hasNextPage ? (
+        // The list's last row: reached by scrolling to the end of the table, never over the rows.
+        <li className="flex justify-center py-3">
+          <LoadMoreGamesButton
+            loading={games.isFetchingNextPage}
+            // Not while any read runs (a next page would cancel a refresh), nor over a
+            // previous search's rows.
+            disabled={games.isFetching || games.isPlaceholderData}
+            onClick={() => void games.fetchNextPage()}
+          />
+        </li>
+      ) : null}
+    </ul>
+  );
+}
+
+/** Nothing listed: no match for the search, none from the source chosen, or no games at all. */
+function NoGames({ needle, tab }: { needle: string; tab: LibraryTab | null }) {
+  if (needle)
+    return (
+      <p className="px-4 py-6 text-center text-[0.8125rem] text-fg-muted">
+        No games match “{needle}”
+      </p>
+    );
+  if (tab)
+    return (
+      <p className="px-4 py-6 text-center text-[0.8125rem] text-fg-muted">
+        No {LIBRARY_TAB_LABELS[tab]} games
+      </p>
+    );
+  return (
+    <div className="flex min-h-54 flex-1 items-center justify-center">
+      <div className="flex flex-col items-center gap-3.5">
+        <PiecePair piece="pawn" pieceClassName="size-28" gapClassName="gap-0.5" />
+        <span className="text-[0.9375rem] font-medium tracking-[-0.005em] text-fg-secondary">
+          No games yet
+        </span>
+      </div>
+    </div>
+  );
+}
 
 /** A row's placeholder: the thumbnail and the two player lines. */
 function SkeletonRow() {

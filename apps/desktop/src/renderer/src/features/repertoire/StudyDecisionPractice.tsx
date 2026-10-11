@@ -51,11 +51,7 @@ export function StudyDecisionPractice({
   onCommitFeedback: (uci: string) => void;
   onSetPaused: (paused: boolean) => void;
 }) {
-  const pauseId = useId();
-  const moveId = useId();
   const textId = useId();
-  const [newMove, setNewMove] = useState("");
-  const [newText, setNewText] = useState("");
   // Subscribed here, not in the page: typing re-renders only this section.
   const drafts = useRepertoireWorkspaceStore(
     useShallow((state) =>
@@ -71,17 +67,7 @@ export function StudyDecisionPractice({
     drafts.filter((draft) => draft.field === "feedback").map((draft) => [draft.uci!, draft])
   );
   const pauseDraft = drafts.find((draft) => draft.field === "paused");
-  const stored = decision?.wrongMoveFeedback;
-
-  // Stored feedback and feedback typed since (a removal shows until it is saved).
-  const rows = [...new Set([...Object.keys(stored ?? {}), ...feedbackDrafts.keys()])].map(
-    (uci) => ({
-      uci,
-      san: playUci(fen, uci)?.san ?? uci,
-      text: feedbackDrafts.get(uci)?.text ?? stored?.[uci] ?? "",
-      draft: feedbackDrafts.get(uci)
-    })
-  );
+  const rows = feedbackRows(fen, decision?.wrongMoveFeedback, feedbackDrafts);
   const rowKeys = rows.map((row) => row.uci).join(",");
   const accepted = decision?.acceptedUcis.join(",") ?? "";
   const options = useMemo(
@@ -95,24 +81,6 @@ export function StudyDecisionPractice({
   const paused = pauseDraft?.paused ?? decision?.paused ?? false;
   const disabled = !canEditDecision || busy || !positionKey;
 
-  const statusOf = (draft: DecisionTextDraft | undefined, fallback?: string) =>
-    draft?.status === "error"
-      ? "Not saved — see the notice above"
-      : draft?.status === "saving"
-        ? "Saving…"
-        : fallback;
-
-  // Only a move offered here now (not accepted since, nor already given feedback) can be added.
-  const chosen = options.some((option) => option.uci === newMove) ? newMove : "";
-
-  const add = () => {
-    if (!chosen || !newText.trim()) return;
-    onFeedbackChange(chosen, newText);
-    onCommitFeedback(chosen);
-    setNewMove("");
-    setNewText("");
-  };
-
   return (
     <>
       <section className="grid gap-3" aria-label="Wrong-move feedback">
@@ -122,7 +90,7 @@ export function StudyDecisionPractice({
           description={
             canEditDecision
               ? `Shown in practice after one of these moves. ${DECISION_SCOPE_TEXT}`
-              : "Available where you are to move and have accepted at least one move."
+              : UNAVAILABLE_TEXT
           }
         />
         {rows.length ? (
@@ -133,7 +101,7 @@ export function StudyDecisionPractice({
                   className="flex-1"
                   label={`Feedback for ${row.san}`}
                   htmlFor={`${textId}-${row.uci}`}
-                  hint={statusOf(
+                  hint={draftStatus(
                     row.draft,
                     row.text.length >= MAX_DECISION_TEXT_LENGTH
                       ? `Limit reached: up to ${MAX_DECISION_TEXT_LENGTH.toLocaleString()} characters`
@@ -166,78 +134,161 @@ export function StudyDecisionPractice({
             ))}
           </ul>
         ) : null}
-        <div className="grid gap-2">
-          <Field label="Wrong move" htmlFor={moveId}>
-            <Select
-              id={moveId}
-              disabled={disabled || !options.length}
-              value={chosen}
-              onChange={(event) => setNewMove(event.target.value)}
-            >
-              <option value="">Choose a move outside the repertoire…</option>
-              {options.map((option) => (
-                <option key={option.uci} value={option.uci}>
-                  {option.san}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Feedback" htmlFor={textId}>
-            <Input
-              id={textId}
-              disabled={disabled}
-              maxLength={MAX_DECISION_TEXT_LENGTH}
-              placeholder="e.g. That drops the e-pawn"
-              value={newText}
-              onChange={(event) => setNewText(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") add();
-              }}
-            />
-          </Field>
-          <Button
-            type="button"
-            variant="outline"
-            size="xs"
-            className="justify-self-start"
-            disabled={disabled || !chosen || !newText.trim()}
-            onClick={add}
-          >
-            Add feedback
-          </Button>
-        </div>
+        <AddWrongMoveFeedback
+          options={options}
+          disabled={disabled}
+          onAdd={(uci, text) => {
+            onFeedbackChange(uci, text);
+            onCommitFeedback(uci);
+          }}
+        />
       </section>
 
       <section className="grid gap-1" aria-label="Pause practice">
         <SectionHeader
           as="h3"
           title="Pause practice"
-          description={
-            canEditDecision
-              ? DECISION_SCOPE_TEXT
-              : "Available where you are to move and have accepted at least one move."
-          }
+          description={canEditDecision ? DECISION_SCOPE_TEXT : UNAVAILABLE_TEXT}
         />
-        <SettingRow
-          htmlFor={pauseId}
-          label={paused ? "Paused" : "Practised"}
-          description={
-            statusOf(pauseDraft) ??
-            (paused
-              ? "Left out of practice and due counts. Its progress is kept for when you resume."
-              : "Pausing leaves it out of practice and due counts and keeps its progress.")
-          }
-          control={
-            <Switch
-              id={pauseId}
-              checked={paused}
-              disabled={disabled}
-              aria-label={paused ? "Resume this decision" : "Pause this decision"}
-              onCheckedChange={onSetPaused}
-            />
-          }
+        <DecisionPauseSwitch
+          paused={paused}
+          status={draftStatus(pauseDraft)}
+          disabled={disabled}
+          onSetPaused={onSetPaused}
         />
       </section>
     </>
+  );
+}
+
+const UNAVAILABLE_TEXT = "Available where you are to move and have accepted at least one move.";
+
+/** A draft's save state for a field's hint (`fallback` while it is saved or unchanged). */
+function draftStatus(draft: DecisionTextDraft | undefined, fallback?: string): string | undefined {
+  return draft?.status === "error"
+    ? "Not saved — see the notice above"
+    : draft?.status === "saving"
+      ? "Saving…"
+      : fallback;
+}
+
+type FeedbackRow = { uci: string; san: string; text: string; draft: DecisionTextDraft | undefined };
+
+/** Stored feedback and feedback typed since (a removal shows until it is saved). */
+function feedbackRows(
+  fen: string,
+  stored: DecisionPracticeFields["wrongMoveFeedback"] | undefined,
+  drafts: ReadonlyMap<string, DecisionTextDraft>
+): FeedbackRow[] {
+  return [...new Set([...Object.keys(stored ?? {}), ...drafts.keys()])].map((uci) => ({
+    uci,
+    san: playUci(fen, uci)?.san ?? uci,
+    text: drafts.get(uci)?.text ?? stored?.[uci] ?? "",
+    draft: drafts.get(uci)
+  }));
+}
+
+/** A new wrong move and its feedback: added (and saved) at once. */
+function AddWrongMoveFeedback({
+  options,
+  disabled,
+  onAdd
+}: {
+  /** The moves outside the repertoire that have no feedback yet. */
+  options: readonly { uci: string; san: string }[];
+  disabled: boolean;
+  onAdd: (uci: string, text: string) => void;
+}) {
+  const moveId = useId();
+  const textId = useId();
+  const [newMove, setNewMove] = useState("");
+  const [newText, setNewText] = useState("");
+  // Only a move offered here now (not accepted since, nor already given feedback) can be added.
+  const chosen = options.some((option) => option.uci === newMove) ? newMove : "";
+
+  const add = () => {
+    if (!chosen || !newText.trim()) return;
+    onAdd(chosen, newText);
+    setNewMove("");
+    setNewText("");
+  };
+
+  return (
+    <div className="grid gap-2">
+      <Field label="Wrong move" htmlFor={moveId}>
+        <Select
+          id={moveId}
+          disabled={disabled || !options.length}
+          value={chosen}
+          onChange={(event) => setNewMove(event.target.value)}
+        >
+          <option value="">Choose a move outside the repertoire…</option>
+          {options.map((option) => (
+            <option key={option.uci} value={option.uci}>
+              {option.san}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Field label="Feedback" htmlFor={textId}>
+        <Input
+          id={textId}
+          disabled={disabled}
+          maxLength={MAX_DECISION_TEXT_LENGTH}
+          placeholder="e.g. That drops the e-pawn"
+          value={newText}
+          onChange={(event) => setNewText(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") add();
+          }}
+        />
+      </Field>
+      <Button
+        type="button"
+        variant="outline"
+        size="xs"
+        className="justify-self-start"
+        disabled={disabled || !chosen || !newText.trim()}
+        onClick={add}
+      >
+        Add feedback
+      </Button>
+    </div>
+  );
+}
+
+/** Whether the decision is practised; `status` is its pause draft's save state. */
+function DecisionPauseSwitch({
+  paused,
+  status,
+  disabled,
+  onSetPaused
+}: {
+  paused: boolean;
+  status: string | undefined;
+  disabled: boolean;
+  onSetPaused: (paused: boolean) => void;
+}) {
+  const pauseId = useId();
+  return (
+    <SettingRow
+      htmlFor={pauseId}
+      label={paused ? "Paused" : "Practised"}
+      description={
+        status ??
+        (paused
+          ? "Left out of practice and due counts. Its progress is kept for when you resume."
+          : "Pausing leaves it out of practice and due counts and keeps its progress.")
+      }
+      control={
+        <Switch
+          id={pauseId}
+          checked={paused}
+          disabled={disabled}
+          aria-label={paused ? "Resume this decision" : "Pause this decision"}
+          onCheckedChange={onSetPaused}
+        />
+      }
+    />
   );
 }

@@ -200,21 +200,32 @@ export function LineRow({
             </div>
           ) : null}
           {overflows ? (
-            <button
-              type="button"
-              aria-expanded={expanded}
-              aria-label={expanded ? "Fold the line" : "Show the whole line"}
-              title={expanded ? "Fold the line" : "Show the whole line"}
-              className="flex h-[1.75em] shrink-0 cursor-pointer items-center rounded-sm px-0.5 text-fg-subtle outline-none transition-colors duration-micro ease-standard hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/50"
-              onMouseDown={keepFocusOnPress}
-              onClick={() => setExpanded((current) => !current)}
-            >
-              {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-            </button>
+            <LineFoldButton
+              expanded={expanded}
+              onToggle={() => setExpanded((current) => !current)}
+            />
           ) : null}
         </div>
         {after}
       </div>
     </div>
+  );
+}
+
+/** The chevron at a long line's end: shows it whole, or folds it back to its first row. */
+function LineFoldButton({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) {
+  const label = expanded ? "Fold the line" : "Show the whole line";
+  return (
+    <button
+      type="button"
+      aria-expanded={expanded}
+      aria-label={label}
+      title={label}
+      className="flex h-[1.75em] shrink-0 cursor-pointer items-center rounded-sm px-0.5 text-fg-subtle outline-none transition-colors duration-micro ease-standard hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/50"
+      onMouseDown={keepFocusOnPress}
+      onClick={onToggle}
+    >
+      {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+    </button>
   );
 }

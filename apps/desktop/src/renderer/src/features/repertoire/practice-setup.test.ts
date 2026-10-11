@@ -15,6 +15,7 @@ import {
   initialPracticeInput,
   MAX_CARD_LIMIT,
   MAX_DEPTH_PLIES,
+  practiceFormFields,
   practiceInputFromForm,
   practicableChapterIds,
   presetForSetup,
@@ -23,6 +24,7 @@ import {
   rehearseStarts,
   retryMissedPreset,
   savesPracticeDraft,
+  summaryPresets,
   targetedPracticeInput
 } from "./practice-setup";
 
@@ -219,6 +221,30 @@ describe("targeted practice presets", () => {
     ).not.toHaveProperty("ungraded");
   });
 
+  it("offers Retry missed after a session, and Rehearse again instead after a rehearsal", () => {
+    const missed = { missedPositionKeys: ["k1"] };
+    expect(
+      summaryPresets({ mode: "review-due", scope: { repertoireId: "r1" } }, missed)
+    ).toStrictEqual({
+      retryMissed: retryMissedPreset(missed),
+      rehearseAgain: null
+    });
+    const rehearsal = {
+      mode: "rehearse-lines" as const,
+      scope: {
+        repertoireId: "r1",
+        rehearse: { chapterId: "A", fromNodeId: "n4" },
+        maxDepthPlies: 6
+      }
+    };
+    expect(summaryPresets(rehearsal, missed)).toStrictEqual({
+      retryMissed: null,
+      rehearseAgain: rehearsePreset({ chapterId: "A", fromNodeId: "n4" }, 6)
+    });
+    // A summary whose session is no longer held can still retry its misses.
+    expect(summaryPresets(null, missed).retryMissed).toStrictEqual(retryMissedPreset(missed));
+  });
+
   it("calls a targeted session extra practice", () => {
     expect(isExtraPractice({ positionKeys: ["k1"] })).toBe(true);
     expect(isExtraPractice({ positionKeys: [] })).toBe(false);
@@ -263,6 +289,31 @@ describe("rehearse lines setup", () => {
     expect(
       practiceInputFromForm({ ...form, depth: "", rehearseChapterId: "A", rehearseFromNodeId: "" })
     ).toEqual({ repertoireId: "r1", mode: "rehearse-lines", rehearse: { chapterId: "A" } });
+  });
+
+  it("opens the form with what it would start", () => {
+    const input: StartPracticeInput = {
+      repertoireId: "r1",
+      mode: "rehearse-lines",
+      rehearse: { chapterId: "A", fromNodeId: "n4" },
+      maxDepthPlies: 12
+    };
+    const fields = practiceFormFields(input, chapters);
+    expect(fields).toStrictEqual({
+      mode: "rehearse-lines",
+      chapterIds: [],
+      depth: "12",
+      cards: String(DEFAULT_CARD_LIMIT),
+      fresh: "5",
+      rehearseChapterId: "A",
+      rehearseFromNodeId: "n4"
+    });
+    expect(practiceInputFromForm({ repertoireId: "r1", ...fields })).toStrictEqual(input);
+    // Without a rehearsal: its first chapter, else the first practicable one.
+    const review = { repertoireId: "r1", mode: "review-due" as const, chapterIds: ["R", "A"] };
+    expect(practiceFormFields(review, chapters).rehearseChapterId).toBe("R");
+    expect(practiceFormFields({ ...review, chapterIds: [] }, chapters).rehearseChapterId).toBe("A");
+    expect(practiceFormFields({ ...review, chapterIds: undefined }, []).rehearseChapterId).toBe("");
   });
 
   it("restores a saved rehearsal draft and drops a chapter that can't be rehearsed", () => {
@@ -327,13 +378,15 @@ describe("rehearse lines setup", () => {
     expect(starts.map((start) => start.nodeId)).toEqual(["w1"]);
     expect(starts[0].path).toContain("e5");
     expect(truncated).toBe(false);
-    expect(rehearseStarts(chapter, "white", pathLabel, 0)).toEqual({
+    expect(rehearseStarts(chapter, "white", pathLabel, { limit: 0 })).toEqual({
       starts: [],
       truncated: true
     });
     // The move after 1.e4 e5 is ply 3: a depth of 2 leaves nothing to start from.
-    expect(rehearseStarts(chapter, "white", pathLabel, undefined, 3).starts).toHaveLength(1);
-    expect(rehearseStarts(chapter, "white", pathLabel, undefined, 2).starts).toEqual([]);
+    expect(rehearseStarts(chapter, "white", pathLabel, { maxDepthPlies: 3 }).starts).toHaveLength(
+      1
+    );
+    expect(rehearseStarts(chapter, "white", pathLabel, { maxDepthPlies: 2 }).starts).toEqual([]);
   });
 
   it("lists no branch starts in the lead-up above a start marker or past a stop", () => {
@@ -362,9 +415,7 @@ describe("rehearse lines setup", () => {
     );
     const paused = new Set([keys.get("w1")!]);
     expect(
-      rehearseStarts(chapter, "white", pathLabel, undefined, undefined, paused).starts.map(
-        (start) => start.nodeId
-      )
+      rehearseStarts(chapter, "white", pathLabel, { paused }).starts.map((start) => start.nodeId)
     ).toEqual(["w3"]);
   });
 });

@@ -19,6 +19,22 @@ export function getRow<Row>(statement: StatementSync, ...params: SQLInputValue[]
   return statement.get(...params) as Row | undefined;
 }
 
+/** Queries on one connection (`db` is called for each, so it may open the database lazily). */
+export function queriesOn(db: () => DatabaseSync) {
+  return {
+    all: <Row>(sql: string, ...params: SQLInputValue[]): Row[] =>
+      allRows<Row>(db().prepare(sql), ...params),
+    // oxlint-disable-next-line typescript/no-unnecessary-type-parameters -- Row is the query's row shape, fixed by the schema (see above)
+    get: <Row>(sql: string, ...params: SQLInputValue[]): Row | null =>
+      getRow<Row>(db().prepare(sql), ...params) ?? null,
+    run: (sql: string, ...params: SQLInputValue[]): void => {
+      db()
+        .prepare(sql)
+        .run(...params);
+    }
+  };
+}
+
 /** SQLite's extended result code on a failed statement (5 in its low byte is BUSY). */
 export function sqliteErrcode(error: unknown): number | undefined {
   return error instanceof Error && "errcode" in error && typeof error.errcode === "number"

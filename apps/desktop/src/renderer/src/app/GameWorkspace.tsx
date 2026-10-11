@@ -279,31 +279,19 @@ function GameFooter() {
     (state) => mainBoardSurface(state.mode, state.analysisBoard) === "analysis"
   );
   const goToNode = useGameStore((state) => state.goToNode);
-  const reviewStatus = useReviewStore((state) => state.status);
-  const review = useReviewStore((state) => state.review);
-  const reviewMoves = useDisplayedReviewMoves();
+  const { hasReview, maia, moves, opening, running } = useLoadedGameReview(moveTree);
   const mainline = useMemo(() => mainlineReviewInput(moveTree), [moveTree]);
   const onMainline = useMemo(
     () => currentNodeId === "root" || mainline.some((move) => move.nodeId === currentNodeId),
     [currentNodeId, mainline]
   );
-  // Only use the review when it belongs to the loaded game.
-  const hasReview = useMemo(() => {
-    if (!reviewMoves.length) return false;
-    const nodeIds = new Set(moveTree.map((node) => node.id));
-    return reviewMoves.every((move) => nodeIds.has(move.nodeId));
-  }, [moveTree, reviewMoves]);
-  const moves = hasReview ? reviewMoves : EMPTY_REVIEW_MOVES;
-  const reviewRunning = reviewStatus === "running";
   const side = reviewSideColor(useReviewSide(orientation));
   // The reviewed side's key insights, once a finished review has them.
   const moments = useMemo(
-    () =>
-      hasReview && !reviewRunning ? keyMoments(moves.filter((move) => moverOf(move) === side)) : [],
-    [hasReview, moves, reviewRunning, side]
+    () => (hasReview && !running ? keyMoments(moves.filter((move) => moverOf(move) === side)) : []),
+    [hasReview, moves, running, side]
   );
   const momentIds = useMemo(() => new Set(moments.map((moment) => moment.nodeId)), [moments]);
-  const finished = hasReview && !reviewRunning ? review : null;
   const shown = hasReview || (analyzeBoard && mainline.length > 0);
 
   return (
@@ -317,17 +305,12 @@ function GameFooter() {
             selectedNodeId={currentNodeId}
             onSelectNode={goToNode}
             reviewedSide={side}
-            totalPlies={reviewRunning ? mainline.length : undefined}
+            totalPlies={running ? mainline.length : undefined}
             keyMomentIds={momentIds}
-            opening={finished ? finished.opening : undefined}
+            opening={opening}
             mainline={mainline}
             timeControl={timeControl}
-            maia={{
-              model: finished?.rating?.maiaModel ?? null,
-              rating: finished?.rating?.rating ?? 1500,
-              // Reviews before schema 2 stored made-up Maia probabilities; a running one is new.
-              trusted: reviewRunning || (finished?.schemaVersion ?? 0) >= 2
-            }}
+            maia={maia}
             // No Maia data here hides the strip: reviews (and Maia) live in Game review.
             maiaPrompt={false}
           />
@@ -336,6 +319,36 @@ function GameFooter() {
       <MoveNavigation />
     </>
   );
+}
+
+/**
+ * The review store's review, for the footer charts, when it belongs to the loaded game (none
+ * otherwise): its moves, whether it is still running, and once finished its opening and Maia data.
+ */
+function useLoadedGameReview(moveTree: readonly MoveNode[]) {
+  const reviewStatus = useReviewStore((state) => state.status);
+  const review = useReviewStore((state) => state.review);
+  const reviewMoves = useDisplayedReviewMoves();
+  // Only use the review when it belongs to the loaded game.
+  const hasReview = useMemo(() => {
+    if (!reviewMoves.length) return false;
+    const nodeIds = new Set(moveTree.map((node) => node.id));
+    return reviewMoves.every((move) => nodeIds.has(move.nodeId));
+  }, [moveTree, reviewMoves]);
+  const running = reviewStatus === "running";
+  const finished = hasReview && !running ? review : null;
+  return {
+    hasReview,
+    moves: hasReview ? reviewMoves : EMPTY_REVIEW_MOVES,
+    running,
+    opening: finished?.opening,
+    maia: {
+      model: finished?.rating?.maiaModel ?? null,
+      rating: finished?.rating?.rating ?? 1500,
+      // Reviews before schema 2 stored made-up Maia probabilities; a running one is new.
+      trusted: running || (finished?.schemaVersion ?? 0) >= 2
+    }
+  };
 }
 
 const EMPTY_REVIEW_MOVES: MoveReview[] = [];

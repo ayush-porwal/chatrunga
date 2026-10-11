@@ -56,8 +56,7 @@ describe("puzzleAttemptRepository (SQLite)", () => {
     const expected = rateAttempt(
       DEFAULT_PUZZLE_RATING,
       { rating: 1500, deviation: 75 },
-      true,
-      input.decidedAt
+      { solved: true, at: input.decidedAt }
     );
     expect(result).toEqual({
       attemptId: input.attemptId,
@@ -169,7 +168,7 @@ describe("puzzleAttemptRepository (SQLite)", () => {
     expect(before.deviation).toBeGreaterThan(first.after!.deviation);
     expect(second.before).toEqual(before);
     expect(second.after).toEqual(
-      rateAttempt(before, { rating: 1500, deviation: 75 }, true, input.decidedAt)
+      rateAttempt(before, { rating: 1500, deviation: 75 }, { solved: true, at: input.decidedAt })
     );
     const row = getDb()
       .prepare(
@@ -198,7 +197,11 @@ describe("puzzleAttemptRepository (SQLite)", () => {
     const late = repository.record(early, T0 + 10 * DAY);
     expect(late.before).toEqual(first.after);
     expect(late.after).toEqual(
-      rateAttempt(first.after!, { rating: 1500, deviation: 75 }, true, later.decidedAt)
+      rateAttempt(
+        first.after!,
+        { rating: 1500, deviation: 75 },
+        { solved: true, at: later.decidedAt }
+      )
     );
     expect(repository.summary(T0 + 10 * DAY)).toMatchObject({
       ...late.after,

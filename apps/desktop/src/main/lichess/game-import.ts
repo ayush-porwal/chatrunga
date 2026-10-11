@@ -58,26 +58,11 @@ export async function importLichessGames(input: {
     `/api/games/user/${encodeURIComponent(input.username)}?${params.toString()}`,
     { signal: input.signal },
     (line) => {
-      if (!isRecord(line)) return;
-      const game = line;
-      if (typeof game.id !== "string" || !game.id) return;
-      const playedAt =
-        typeof game.lastMoveAt === "number"
-          ? game.lastMoveAt
-          : typeof game.createdAt === "number"
-            ? game.createdAt
-            : null;
+      if (!isRecord(line) || typeof line.id !== "string" || !line.id) return;
+      const game: ExportedGame = { ...line, id: line.id };
+      const playedAt = playedAtOf(game);
       if (playedAt !== null) result.nextSince = Math.max(result.nextSince ?? 0, playedAt + 1);
-      // The export lists the moves too: a game with moves whose PGN yields none didn't parse.
-      const hasMoves = typeof game.moves === "string" && game.moves.trim().length > 0;
-      const outcome = importGame(
-        input.repository,
-        game.id,
-        game.pgn,
-        game.variant,
-        hasMoves,
-        playedAt ?? Date.now()
-      );
+      const outcome = importGame(input.repository, game, playedAt ?? Date.now());
       if (outcome === "imported") result.imported += 1;
       else result.skipped += 1;
       if (outcome === "failed") {
@@ -96,31 +81,40 @@ export async function importLichessGames(input: {
   return result;
 }
 
+/** A game of the export stream (NDJSON, `pgnInJson`): its id, PGN, variant, moves and times. */
+type ExportedGame = Record<string, unknown> & { id: string };
+
+/** When the game was played: its last move, else its start; null when the export says neither. */
+function playedAtOf(game: ExportedGame): number | null {
+  if (typeof game.lastMoveAt === "number") return game.lastMoveAt;
+  return typeof game.createdAt === "number" ? game.createdAt : null;
+}
+
 function importGame(
   repository: ImportRepository,
-  gameId: string,
-  pgn: unknown,
-  variant: unknown,
-  hasMoves: boolean,
+  game: ExportedGame,
   playedAt: number
 ): "imported" | "skipped" | "failed" {
+  const { id: gameId, pgn, variant } = game;
+  // The export lists the moves too: a game with moves whose PGN yields none didn't parse.
+  const hasMoves = typeof game.moves === "string" && game.moves.trim().length > 0;
   const site = lichessGameUrl(gameId);
   // Skipped for good: other variants, games already in the library, games without a move.
   if (typeof variant === "string" && !IMPORTABLE_VARIANTS.has(variant)) return "skipped";
   if (repository.findIdBySite(site)) return "skipped";
   if (typeof pgn !== "string") return "failed";
   try {
-    const { game } = importPgnText(pgn);
+    const imported = importPgnText(pgn).game;
     // Aborted before a move: nothing to review. Moves Lichess listed but the PGN lacks: unreadable.
-    if (game.moveTree.length < 2) return hasMoves ? "failed" : "skipped";
-    const headers = { ...game.headers, site };
+    if (imported.moveTree.length < 2) return hasMoves ? "failed" : "skipped";
+    const headers = { ...imported.headers, site };
     repository.saveImported(
       {
-        ...game,
+        ...imported,
         id: null,
         source: "lichess",
         headers,
-        pgn: exportGameToPgn({ headers, moveTree: game.moveTree })
+        pgn: exportGameToPgn({ headers, moveTree: imported.moveTree })
       },
       playedAt
     );

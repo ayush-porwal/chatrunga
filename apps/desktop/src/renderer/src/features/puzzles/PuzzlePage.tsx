@@ -1,110 +1,40 @@
-import { memo, useId, useMemo, useState, type ReactNode } from "react";
+import { memo, useId, useMemo, type ReactNode } from "react";
 import { Database, Loader2, Play, Puzzle, Repeat, RotateCcw } from "lucide-react";
 import {
   DEFAULT_PUZZLE_RATING,
-  isPuzzleDifficulty,
-  PUZZLE_DIFFICULTIES,
-  ratingRangeFor,
   type PuzzleDifficulty
 } from "@chaturanga/shared/chess/puzzle-rating";
 import {
   externalDatabaseSources,
   type ExternalDatabaseSource,
+  type InstalledDatabase,
   type PuzzleSample
 } from "@chaturanga/shared/types/database";
-import { Badge, ChipButton } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Disclosure } from "@/components/ui/disclosure";
 import { Field } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
-import { Input, Select } from "@/components/ui/input";
+import { Select } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { Page, PageHeader } from "@/components/ui/page";
-import { SegmentedControl } from "@/components/ui/segmented-control";
-import { SideDot } from "@/components/ui/side-dot";
 import { Skeleton } from "@/components/ui/skeleton";
-import { card, cardPadded, divider, fieldLabel, sectionTitle, well } from "@/lib/ui";
+import { card, cardPadded, divider, sectionTitle, well } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useDatabasesQuery, useSamplePuzzleMutation } from "../../queries/api";
 import { useFailedPuzzlesQuery, usePuzzleRatingSummaryQuery } from "../../queries/puzzles";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { usePuzzleDraftStore } from "../../stores/puzzle-draft-store";
 import {
-  formatPuzzleTag as formatTag,
+  activeFilterLabels,
+  drawnRatingRange,
   puzzleDatabasesOf,
+  puzzleFiltersChanged,
   puzzleSetConfig,
   selectedPuzzleDatabase
 } from "./puzzle-set";
+import { LichessPuzzleFilters, PositionTrainingFilters } from "./PuzzleFilters";
 import { PuzzleRatingCard } from "./PuzzleRatingCard";
-import { formatPuzzleRating, formatRatingDelta } from "./PuzzleRatingLine";
-
-const lichessThemes = [
-  "mate",
-  "mateIn1",
-  "mateIn2",
-  "fork",
-  "pin",
-  "skewer",
-  "sacrifice",
-  "attraction",
-  "deflection",
-  "discoveredAttack",
-  "advancedPawn",
-  "endgame",
-  "middlegame",
-  "opening",
-  "advantage",
-  "crushing"
-];
-
-const lichessOpeningTags = [
-  "Alekhine_Defense",
-  "Benko_Gambit",
-  "Benoni_Defense",
-  "Bird_Opening",
-  "Bishop_Opening",
-  "Caro-Kann_Defense",
-  "Catalan_Opening",
-  "Center_Game",
-  "Dutch_Defense",
-  "English_Opening",
-  "Four_Knights_Game",
-  "French_Defense",
-  "Grunfeld_Defense",
-  "Italian_Game",
-  "Kings_Gambit",
-  "Kings_Indian_Attack",
-  "Kings_Indian_Defense",
-  "London_System",
-  "Nimzo-Indian_Defense",
-  "Nimzowitsch_Defense",
-  "Pirc_Defense",
-  "Queens_Gambit",
-  "Queens_Indian_Defense",
-  "Reti_Opening",
-  "Ruy_Lopez",
-  "Scandinavian_Defense",
-  "Scotch_Game",
-  "Sicilian_Defense",
-  "Slav_Defense",
-  "Trompowsky_Attack",
-  "Vienna_Game"
-];
-
-const strategicTags = [
-  "initiative",
-  "development",
-  "endgame",
-  "space",
-  "trading",
-  "prophylaxis",
-  "coordination",
-  "exploitingWeakness",
-  "kingSafety",
-  "restriction",
-  "fixingStructure",
-  "centreControl"
-];
+import { formatPuzzleRating } from "./PuzzleRatingLine";
 
 export type PuzzleSessionConfig = {
   databaseId: string | null;
@@ -154,8 +84,6 @@ export const PuzzlePage = memo(function PuzzlePage({
     lengths,
     openings,
     side,
-    ratingMin,
-    ratingMax,
     difficulty,
     popularityMin,
     difficultyMin,
@@ -167,10 +95,7 @@ export const PuzzlePage = memo(function PuzzlePage({
   const ratingSummary = usePuzzleRatingSummaryQuery();
   const userRating = ratingSummary.data ?? { ...DEFAULT_PUZZLE_RATING };
   // "Around my rating": the range follows the solver's current rating (Lichess sets only).
-  const aroundRange =
-    isLichess && difficulty ? ratingRangeFor(userRating.rating, difficulty) : null;
-  const drawnRatingMin = aroundRange?.ratingMin ?? ratingMin;
-  const drawnRatingMax = aroundRange?.ratingMax ?? ratingMax;
+  const drawn = drawnRatingRange(draft, isLichess, userRating.rating);
   const failedPuzzles = useFailedPuzzlesQuery(selectedDatabase?.sourceId ?? null);
   const failedIds = useMemo(
     () => (failedPuzzles.data ?? []).map((puzzle) => puzzle.puzzleId),
@@ -188,7 +113,6 @@ export const PuzzlePage = memo(function PuzzlePage({
   const setDifficultyMin = (value: number) => updateDraft({ difficultyMin: value });
   const setDifficultyMax = (value: number) => updateDraft({ difficultyMax: value });
   const setPositionTags = (value: string[]) => updateDraft({ positionTags: value });
-  const databaseFieldId = useId();
 
   function sessionConfig(database: NonNullable<typeof selectedDatabase>): PuzzleSessionConfig {
     return puzzleSetConfig(draft, database, userRating.rating);
@@ -221,43 +145,98 @@ export const PuzzlePage = memo(function PuzzlePage({
       { onSuccess: (puzzle) => onStart(config, puzzle) }
     );
   }
-  const retrying = samplePuzzle.isPending && Boolean(samplePuzzle.variables.ids);
 
-  const filtersChanged = isLichess
-    ? themes.length ||
-      lengths.length ||
-      openings.length ||
-      side !== "any" ||
-      ratingMin !== 600 ||
-      ratingMax !== 2800 ||
-      difficulty !== null ||
-      popularityMin !== 0
-    : difficultyMin !== 1 ||
-      difficultyMax !== 4 ||
-      positionTags.join() !== "initiative,development";
+  if (databases.isPending && window.chaturanga)
+    return (
+      <PuzzlesPage>
+        <PuzzleSetupSkeleton />
+      </PuzzlesPage>
+    );
+  // A failed read isn't "no database": don't send the user off to download one again.
+  if (databases.isError)
+    return (
+      <PuzzlesPage>
+        <DatabasesError error={databases.error} onRetry={() => void databases.refetch()} />
+      </PuzzlesPage>
+    );
+  if (!selectedDatabase)
+    return (
+      <PuzzlesPage>
+        <NoPuzzleDatabase onDatabases={onDatabases} />
+      </PuzzlesPage>
+    );
+  return (
+    <PuzzlesPage>
+      <div className="@container">
+        <div className="grid items-start gap-6 @3xl:grid-cols-[minmax(0,1fr)_16rem]">
+          <section className={cn(cardPadded, "grid gap-5")} aria-label="Filters">
+            <DatabaseField
+              databases={puzzleDatabases}
+              selected={selectedDatabase}
+              onChange={setDatabaseId}
+              onManage={onDatabases}
+            />
+            <div className={divider} />
+            {isLichess ? (
+              <LichessPuzzleFilters
+                lengths={lengths}
+                openings={openings}
+                popularityMin={popularityMin}
+                ratingMax={drawn.ratingMax}
+                ratingMin={drawn.ratingMin}
+                difficulty={difficulty}
+                userRating={formatPuzzleRating(userRating)}
+                side={side}
+                themes={themes}
+                onLengthsChange={setLengths}
+                onOpeningsChange={setOpenings}
+                onPopularityMinChange={setPopularityMin}
+                onRatingMaxChange={onRatingMaxChange}
+                onRatingMinChange={onRatingMinChange}
+                onDifficultyChange={setDifficulty}
+                onSideChange={setSide}
+                onThemesChange={setThemes}
+              />
+            ) : (
+              <PositionTrainingFilters
+                difficultyMax={difficultyMax}
+                difficultyMin={difficultyMin}
+                tags={positionTags}
+                onDifficultyMaxChange={setDifficultyMax}
+                onDifficultyMinChange={setDifficultyMin}
+                onTagsChange={setPositionTags}
+              />
+            )}
+          </section>
 
-  const resetFilters = usePuzzleDraftStore((state) => state.resetFilters);
+          {/*
+            The set as it will be drawn, its actions, and the rating — first on narrow panels, sticky
+            beside the filters on wide ones.
+          */}
+          <div className="order-first grid gap-6 @3xl:sticky @3xl:top-0 @3xl:order-none">
+            <PuzzleSetCard
+              lichess={isLichess}
+              databaseName={selectedDatabase.name}
+              filters={activeFilterLabels(draft, isLichess, drawn)}
+            >
+              <PuzzleSetActions
+                sample={samplePuzzle}
+                failedCount={failedIds.length}
+                filtersChanged={puzzleFiltersChanged(draft, isLichess)}
+                onStart={start}
+                onRetryFailed={retryFailed}
+              />
+            </PuzzleSetCard>
+            <PuzzleRatingCard />
+          </div>
+        </div>
+      </div>
+    </PuzzlesPage>
+  );
+});
 
-  const summary = isLichess
-    ? [
-        `Rated ${drawnRatingMin}–${drawnRatingMax}`,
-        ...(aroundRange ? [`${difficultyLabel(difficulty)}, around your rating`] : []),
-        side === "any" ? "Either side to move" : `${side === "white" ? "White" : "Black"} to move`,
-        ...(popularityMin !== 0 ? [`Popularity ${popularityMin}+`] : []),
-        ...(themes.length ? themes.map(formatTag) : ["Any theme"]),
-        ...lengths.map(formatTag),
-        ...openings.map(formatTag)
-      ]
-    : [
-        `Difficulty ${difficultyMin}–${difficultyMax}`,
-        ...(positionTags.length ? positionTags.map(formatTag) : ["Any tag"])
-      ];
-
-  // The main process's message (no match, a scanner failure, a replaced search) without the IPC prefix.
-  const startError = samplePuzzle.error
-    ? ipcErrorMessage(samplePuzzle.error) || String(samplePuzzle.error)
-    : null;
-
+/** The page around whichever state the Puzzles page is in. */
+function PuzzlesPage({ children }: { children: ReactNode }) {
   return (
     <Page>
       <PageHeader
@@ -265,186 +244,194 @@ export const PuzzlePage = memo(function PuzzlePage({
         description="Train on puzzles and positions from your downloaded databases."
       />
 
-      {databases.isPending && window.chaturanga ? (
-        <PuzzleSetupSkeleton />
-      ) : databases.isError ? (
-        // A failed read isn't "no database": don't send the user off to download one again.
-        <Notice
-          tone="danger"
-          title="Couldn't read your databases"
-          action={
-            <Button
-              type="button"
-              variant="outline"
-              size="xs"
-              onClick={() => void databases.refetch()}
-            >
-              <RotateCcw />
-              Try again
-            </Button>
-          }
-        >
-          {ipcErrorMessage(databases.error) ||
-            "The list of installed databases couldn't be loaded."}
-        </Notice>
-      ) : selectedDatabase ? (
-        <div className="@container">
-          <div className="grid items-start gap-6 @3xl:grid-cols-[minmax(0,1fr)_16rem]">
-            <section className={cn(cardPadded, "grid gap-5")} aria-label="Filters">
-              <div className="flex items-end gap-2">
-                <Field
-                  label="Database"
-                  hint={
-                    selectedDatabase.recordCount
-                      ? `${selectedDatabase.recordCount.toLocaleString()} ${selectedDatabase.kind === "puzzle" ? "puzzles" : "positions"}`
-                      : `${selectedDatabase.provider}, ${selectedDatabase.format}`
-                  }
-                  htmlFor={databaseFieldId}
-                  className="flex-1"
-                >
-                  <Select
-                    id={databaseFieldId}
-                    value={selectedDatabase.id}
-                    onChange={(event) => setDatabaseId(event.target.value)}
-                  >
-                    {puzzleDatabases.map((database) => (
-                      <option key={database.id} value={database.id}>
-                        {database.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <IconButton
-                  label="Manage databases"
-                  icon={<Database />}
-                  variant="outline"
-                  size="icon"
-                  onClick={onDatabases}
-                />
-              </div>
-              <div className={divider} />
-              {isLichess ? (
-                <LichessPuzzleFilters
-                  lengths={lengths}
-                  openings={openings}
-                  popularityMin={popularityMin}
-                  ratingMax={drawnRatingMax}
-                  ratingMin={drawnRatingMin}
-                  difficulty={difficulty}
-                  userRating={formatPuzzleRating(userRating)}
-                  side={side}
-                  themes={themes}
-                  onLengthsChange={setLengths}
-                  onOpeningsChange={setOpenings}
-                  onPopularityMinChange={setPopularityMin}
-                  onRatingMaxChange={onRatingMaxChange}
-                  onRatingMinChange={onRatingMinChange}
-                  onDifficultyChange={setDifficulty}
-                  onSideChange={setSide}
-                  onThemesChange={setThemes}
-                />
-              ) : (
-                <PositionTrainingFilters
-                  difficultyMax={difficultyMax}
-                  difficultyMin={difficultyMin}
-                  tags={positionTags}
-                  onDifficultyMaxChange={setDifficultyMax}
-                  onDifficultyMinChange={setDifficultyMin}
-                  onTagsChange={setPositionTags}
-                />
-              )}
-            </section>
-
-            {/*
-              The set as it will be drawn, its actions, and the rating — first on narrow panels, sticky
-              beside the filters on wide ones.
-            */}
-            <div className="order-first grid gap-6 @3xl:sticky @3xl:top-0 @3xl:order-none">
-              <aside className={cn(cardPadded, "grid gap-4")} aria-labelledby="puzzle-set-title">
-                <div className="grid gap-1">
-                  <h2 id="puzzle-set-title" className={sectionTitle}>
-                    {isLichess ? "Puzzle set" : "Position set"}
-                  </h2>
-                  <p className="truncate text-xs text-fg-muted" title={selectedDatabase.name}>
-                    {selectedDatabase.name}
-                  </p>
-                </div>
-                <ul className="flex flex-wrap gap-1.5" aria-label="Active filters">
-                  {summary.map((item) => (
-                    <li key={item} className="max-w-full">
-                      <Badge size="md" className="max-w-full animate-fade-in">
-                        <span className="truncate">{item}</span>
-                      </Badge>
-                    </li>
-                  ))}
-                </ul>
-                {isLichess ? null : (
-                  // The position set grades difficulty 1–4, with no rating to play against.
-                  <p className="text-xs leading-5 text-fg-muted">
-                    Unrated: these positions don&apos;t change your puzzle rating.
-                  </p>
-                )}
-                {startError ? (
-                  <Notice tone="danger" className="animate-rise-in">
-                    {startError}
-                  </Notice>
-                ) : null}
-                <div className="grid gap-2">
-                  <Button
-                    type="button"
-                    variant="primary"
-                    className="h-10"
-                    disabled={samplePuzzle.isPending}
-                    onClick={start}
-                  >
-                    {samplePuzzle.isPending && !retrying ? (
-                      <Loader2 className="animate-spin" />
-                    ) : (
-                      <Play />
-                    )}
-                    {samplePuzzle.isPending && !retrying ? "Finding a puzzle…" : "Start puzzle set"}
-                  </Button>
-                  {failedIds.length ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={samplePuzzle.isPending}
-                      onClick={retryFailed}
-                      title="Puzzles whose last try failed, from this database (not rated again)"
-                    >
-                      {retrying ? <Loader2 className="animate-spin" /> : <Repeat />}
-                      {retrying
-                        ? "Finding them…"
-                        : `Retry ${failedIds.length} failed ${failedIds.length === 1 ? "puzzle" : "puzzles"}`}
-                    </Button>
-                  ) : null}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className={cn(
-                      "transition-opacity duration-standard",
-                      !filtersChanged && "pointer-events-none opacity-0"
-                    )}
-                    tabIndex={filtersChanged ? undefined : -1}
-                    aria-hidden={filtersChanged ? undefined : true}
-                    onClick={resetFilters}
-                  >
-                    <RotateCcw />
-                    Reset filters
-                  </Button>
-                </div>
-              </aside>
-              <PuzzleRatingCard />
-            </div>
-          </div>
-        </div>
-      ) : (
-        <NoPuzzleDatabase onDatabases={onDatabases} />
-      )}
+      {children}
     </Page>
   );
-});
+}
+
+/** The installed databases couldn't be read: the main process's message, and Try again. */
+function DatabasesError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  return (
+    <Notice
+      tone="danger"
+      title="Couldn't read your databases"
+      action={
+        <Button type="button" variant="outline" size="xs" onClick={onRetry}>
+          <RotateCcw />
+          Try again
+        </Button>
+      }
+    >
+      {ipcErrorMessage(error) || "The list of installed databases couldn't be loaded."}
+    </Notice>
+  );
+}
+
+/**
+ * The database the set is drawn from (its size, else where it comes from), and Manage databases.
+ */
+function DatabaseField({
+  databases,
+  selected,
+  onChange,
+  onManage
+}: {
+  databases: readonly InstalledDatabase[];
+  selected: InstalledDatabase;
+  onChange: (databaseId: string) => void;
+  onManage: () => void;
+}) {
+  const fieldId = useId();
+  return (
+    <div className="flex items-end gap-2">
+      <Field
+        label="Database"
+        hint={
+          selected.recordCount
+            ? `${selected.recordCount.toLocaleString()} ${selected.kind === "puzzle" ? "puzzles" : "positions"}`
+            : `${selected.provider}, ${selected.format}`
+        }
+        htmlFor={fieldId}
+        className="flex-1"
+      >
+        <Select id={fieldId} value={selected.id} onChange={(event) => onChange(event.target.value)}>
+          {databases.map((database) => (
+            <option key={database.id} value={database.id}>
+              {database.name}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <IconButton
+        label="Manage databases"
+        icon={<Database />}
+        variant="outline"
+        size="icon"
+        onClick={onManage}
+      />
+    </div>
+  );
+}
+
+/**
+ * The set as it will be drawn: its kind and database, the filters that apply, and its actions
+ * (PuzzleSetActions).
+ */
+function PuzzleSetCard({
+  lichess,
+  databaseName,
+  filters,
+  children
+}: {
+  lichess: boolean;
+  databaseName: string;
+  filters: readonly string[];
+  children: ReactNode;
+}) {
+  return (
+    <aside className={cn(cardPadded, "grid gap-4")} aria-labelledby="puzzle-set-title">
+      <div className="grid gap-1">
+        <h2 id="puzzle-set-title" className={sectionTitle}>
+          {lichess ? "Puzzle set" : "Position set"}
+        </h2>
+        <p className="truncate text-xs text-fg-muted" title={databaseName}>
+          {databaseName}
+        </p>
+      </div>
+      <ul className="flex flex-wrap gap-1.5" aria-label="Active filters">
+        {filters.map((item) => (
+          <li key={item} className="max-w-full">
+            <Badge size="md" className="max-w-full animate-fade-in">
+              <span className="truncate">{item}</span>
+            </Badge>
+          </li>
+        ))}
+      </ul>
+      {lichess ? null : (
+        // The position set grades difficulty 1–4, with no rating to play against.
+        <p className="text-xs leading-5 text-fg-muted">
+          Unrated: these positions don&apos;t change your puzzle rating.
+        </p>
+      )}
+      {children}
+    </aside>
+  );
+}
+
+/**
+ * The set's actions, under why the last start failed: Start, Retry the failed puzzles
+ * (`failedCount`), and Reset filters (while they differ from the defaults). `sample` draws the
+ * first puzzle.
+ */
+function PuzzleSetActions({
+  sample,
+  failedCount,
+  filtersChanged,
+  onStart,
+  onRetryFailed
+}: {
+  sample: ReturnType<typeof useSamplePuzzleMutation>;
+  failedCount: number;
+  filtersChanged: boolean;
+  onStart: () => void;
+  onRetryFailed: () => void;
+}) {
+  const resetFilters = usePuzzleDraftStore((state) => state.resetFilters);
+  const retrying = sample.isPending && Boolean(sample.variables.ids);
+  const starting = sample.isPending && !retrying;
+  // The main process's message (no match, a scanner failure, a replaced search) without the IPC prefix.
+  const startError = sample.error ? ipcErrorMessage(sample.error) || String(sample.error) : null;
+  return (
+    <>
+      {startError ? (
+        <Notice tone="danger" className="animate-rise-in">
+          {startError}
+        </Notice>
+      ) : null}
+      <div className="grid gap-2">
+        <Button
+          type="button"
+          variant="primary"
+          className="h-10"
+          disabled={sample.isPending}
+          onClick={onStart}
+        >
+          {starting ? <Loader2 className="animate-spin" /> : <Play />}
+          {starting ? "Finding a puzzle…" : "Start puzzle set"}
+        </Button>
+        {failedCount ? (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={sample.isPending}
+            onClick={onRetryFailed}
+            title="Puzzles whose last try failed, from this database (not rated again)"
+          >
+            {retrying ? <Loader2 className="animate-spin" /> : <Repeat />}
+            {retrying
+              ? "Finding them…"
+              : `Retry ${failedCount} failed ${failedCount === 1 ? "puzzle" : "puzzles"}`}
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className={cn(
+            "transition-opacity duration-standard",
+            !filtersChanged && "pointer-events-none opacity-0"
+          )}
+          tabIndex={filtersChanged ? undefined : -1}
+          aria-hidden={filtersChanged ? undefined : true}
+          onClick={resetFilters}
+        >
+          <RotateCcw />
+          Reset filters
+        </Button>
+      </div>
+    </>
+  );
+}
 
 /** Same footprint as the filters card + set summary, so the page doesn't jump when databases load. */
 function PuzzleSetupSkeleton() {
@@ -542,353 +529,5 @@ function NoPuzzleDatabase({ onDatabases }: { onDatabases: () => void }) {
 function compactCount(value: number): string {
   return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(
     value
-  );
-}
-
-const sideOptions = [
-  { value: "any", label: "Any" },
-  { value: "white", label: "White", icon: <SideDot color="white" /> },
-  { value: "black", label: "Black", icon: <SideDot color="black" /> }
-] as const;
-
-/** "Normal", or "Custom range" without a difficulty. */
-function difficultyLabel(difficulty: PuzzleDifficulty | null): string {
-  return PUZZLE_DIFFICULTIES.find((item) => item.id === difficulty)?.label ?? "Custom range";
-}
-
-function LichessPuzzleFilters({
-  difficulty,
-  lengths,
-  openings,
-  popularityMin,
-  ratingMax,
-  ratingMin,
-  side,
-  themes,
-  userRating,
-  onDifficultyChange,
-  onLengthsChange,
-  onOpeningsChange,
-  onPopularityMinChange,
-  onRatingMaxChange,
-  onRatingMinChange,
-  onSideChange,
-  onThemesChange
-}: {
-  difficulty: PuzzleDifficulty | null;
-  lengths: string[];
-  openings: string[];
-  popularityMin: number;
-  /** The range drawn from: the one typed in, or the one around the solver's rating. */
-  ratingMax: number;
-  ratingMin: number;
-  side: "any" | "white" | "black";
-  themes: string[];
-  /** The solver's rating as shown ("1523", "1500?"). */
-  userRating: string;
-  onDifficultyChange: (value: PuzzleDifficulty | null) => void;
-  onLengthsChange: (value: string[]) => void;
-  onOpeningsChange: (value: string[]) => void;
-  onPopularityMinChange: (value: number) => void;
-  onRatingMaxChange: (value: number) => void;
-  onRatingMinChange: (value: number) => void;
-  onSideChange: (value: "any" | "white" | "black") => void;
-  onThemesChange: (value: string[]) => void;
-}) {
-  const popularityId = useId();
-  const difficultyId = useId();
-  return (
-    <div className="grid gap-4">
-      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-        <Field label="Difficulty" hint={`Around your rating, ${userRating}`} htmlFor={difficultyId}>
-          <Select
-            id={difficultyId}
-            value={difficulty ?? ""}
-            onChange={(event) =>
-              onDifficultyChange(isPuzzleDifficulty(event.target.value) ? event.target.value : null)
-            }
-          >
-            <option value="">Custom range</option>
-            {PUZZLE_DIFFICULTIES.map((item) => (
-              <option key={item.id} value={item.id}>
-                {`${item.label} (${formatRatingDelta(item.offset)})`}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <RangeField
-          label="Rating"
-          hint={difficulty ? "From your rating" : undefined}
-          min={0}
-          max={3500}
-          valueMin={ratingMin}
-          valueMax={ratingMax}
-          disabled={difficulty !== null}
-          onMinChange={onRatingMinChange}
-          onMaxChange={onRatingMaxChange}
-        />
-      </div>
-      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
-        <Field label="Min popularity" hint="−100 to 100" htmlFor={popularityId}>
-          <Input
-            id={popularityId}
-            type="number"
-            min={-100}
-            max={100}
-            value={popularityMin}
-            onChange={(event) => onPopularityMinChange(Number(event.target.value))}
-          />
-        </Field>
-        <FilterGroup label="Side to move">
-          <SegmentedControl
-            ariaLabel="Side to move"
-            options={sideOptions}
-            value={side}
-            onChange={onSideChange}
-          />
-        </FilterGroup>
-      </div>
-      <FilterGroup label="Themes">
-        <ChipAutocomplete
-          items={lichessThemes}
-          placeholder="Search themes"
-          selected={themes}
-          onChange={onThemesChange}
-        />
-      </FilterGroup>
-      <FilterGroup label="Solution length">
-        <ChipToggleGroup
-          items={["oneMove", "short", "long", "veryLong"]}
-          selected={lengths}
-          onChange={onLengthsChange}
-        />
-      </FilterGroup>
-      <Disclosure title="Openings" summary={selectionSummary(openings)}>
-        <ChipAutocomplete
-          items={lichessOpeningTags}
-          placeholder="Search openings"
-          selected={openings}
-          onChange={onOpeningsChange}
-        />
-      </Disclosure>
-    </div>
-  );
-}
-
-function PositionTrainingFilters({
-  difficultyMax,
-  difficultyMin,
-  tags,
-  onDifficultyMaxChange,
-  onDifficultyMinChange,
-  onTagsChange
-}: {
-  difficultyMax: number;
-  difficultyMin: number;
-  tags: string[];
-  onDifficultyMaxChange: (value: number) => void;
-  onDifficultyMinChange: (value: number) => void;
-  onTagsChange: (value: string[]) => void;
-}) {
-  return (
-    <div className="grid gap-4">
-      <RangeField
-        label="Difficulty"
-        hint="1–4"
-        className="max-w-sm"
-        min={1}
-        max={4}
-        valueMin={difficultyMin}
-        valueMax={difficultyMax}
-        onMinChange={onDifficultyMinChange}
-        onMaxChange={onDifficultyMaxChange}
-      />
-      <FilterGroup label="Strategic tags">
-        <ChipToggleGroup items={strategicTags} selected={tags} onChange={onTagsChange} />
-      </FilterGroup>
-    </div>
-  );
-}
-
-/** "Any" / the single selected label / "3 selected" — Disclosure summary for a multi-select. */
-function selectionSummary(selected: string[]): string {
-  if (!selected.length) return "Any";
-  if (selected.length === 1) return formatTag(selected[0]);
-  return `${selected.length} selected`;
-}
-
-/**
- * Labelled group for controls that aren't a single input (chips, segmented picker).
- * Same label style as <Field>, exposed as role="group" for screen readers.
- */
-function FilterGroup({ label, children }: { label: string; children: ReactNode }) {
-  const labelId = useId();
-  return (
-    <div role="group" aria-labelledby={labelId} className="grid min-w-0 content-start gap-1.5">
-      <span id={labelId} className={fieldLabel}>
-        {label}
-      </span>
-      {children}
-    </div>
-  );
-}
-
-/** Min–max number pair under one label ("Rating 600 – 2800"). */
-function RangeField({
-  label,
-  hint,
-  min,
-  max,
-  valueMin,
-  valueMax,
-  onMinChange,
-  onMaxChange,
-  disabled = false,
-  className
-}: {
-  label: string;
-  hint?: string;
-  min: number;
-  max: number;
-  valueMin: number;
-  valueMax: number;
-  onMinChange: (value: number) => void;
-  onMaxChange: (value: number) => void;
-  /** Set elsewhere (e.g. from the solver's rating): shown, not editable. */
-  disabled?: boolean;
-  className?: string;
-}) {
-  const id = useId();
-  return (
-    <Field label={label} hint={hint} htmlFor={id} className={className}>
-      <div className="flex items-center gap-2">
-        <Input
-          id={id}
-          aria-label={`Minimum ${label.toLowerCase()}`}
-          type="number"
-          min={min}
-          max={max}
-          value={valueMin}
-          disabled={disabled}
-          onChange={(event) => onMinChange(Number(event.target.value))}
-        />
-        <span aria-hidden="true" className="text-fg-subtle">
-          –
-        </span>
-        <Input
-          aria-label={`Maximum ${label.toLowerCase()}`}
-          type="number"
-          min={min}
-          max={max}
-          value={valueMax}
-          disabled={disabled}
-          onChange={(event) => onMaxChange(Number(event.target.value))}
-        />
-      </div>
-    </Field>
-  );
-}
-
-function ChipAutocomplete({
-  items,
-  placeholder,
-  selected,
-  onChange
-}: {
-  items: string[];
-  placeholder: string;
-  selected: string[];
-  onChange: (value: string[]) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const available = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return items
-      .filter((item) => !selected.includes(item))
-      .filter((item) =>
-        q ? item.toLowerCase().includes(q) || formatTag(item).toLowerCase().includes(q) : true
-      )
-      .slice(0, 8);
-  }, [items, query, selected]);
-
-  function add(item: string) {
-    if (selected.includes(item)) return;
-    onChange([...selected, item]);
-    setQuery("");
-  }
-
-  function remove(item: string) {
-    onChange(selected.filter((value) => value !== item));
-  }
-
-  return (
-    <div className="grid gap-2">
-      <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-line bg-surface-sunken px-2 py-1 transition-[border-color,box-shadow] focus-within:border-accent/60 focus-within:ring-[3px] focus-within:ring-accent/15">
-        {selected.map((item) => (
-          <Badge
-            key={item}
-            tone="accent"
-            size="md"
-            onRemove={() => remove(item)}
-            removeLabel={`Remove ${formatTag(item)}`}
-          >
-            {formatTag(item)}
-          </Badge>
-        ))}
-        <input
-          className="h-7 min-w-40 flex-1 border-0 bg-transparent px-1 text-sm text-fg outline-none placeholder:text-fg-subtle"
-          value={query}
-          placeholder={placeholder}
-          aria-label={placeholder}
-          onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Backspace" && !query && selected.length) {
-              remove(selected[selected.length - 1]);
-            }
-            if (event.key === "Enter" && available[0]) {
-              event.preventDefault();
-              add(available[0]);
-            }
-          }}
-        />
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        {available.map((item) => (
-          <ChipButton key={item} onClick={() => add(item)}>
-            {formatTag(item)}
-          </ChipButton>
-        ))}
-        {!available.length ? <span className="text-xs text-fg-subtle">No matches</span> : null}
-      </div>
-    </div>
-  );
-}
-
-function ChipToggleGroup({
-  items,
-  selected,
-  onChange
-}: {
-  items: string[];
-  selected: string[];
-  onChange: (value: string[]) => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {items.map((item) => {
-        const active = selected.includes(item);
-        return (
-          <ChipButton
-            key={item}
-            selected={active}
-            onClick={() =>
-              onChange(active ? selected.filter((value) => value !== item) : [...selected, item])
-            }
-          >
-            {formatTag(item)}
-          </ChipButton>
-        );
-      })}
-    </div>
   );
 }

@@ -142,6 +142,76 @@ export type ExplainPayloadInput = {
 };
 
 /**
+ * The engine's read of the start position: its verdict, best line, and the other lines (null
+ * without one).
+ */
+function startPositionFacts(fen: string, analysis: ExplainAnalysis) {
+  const best = analysis.start.at(0);
+  const bestLineSan = best ? uciLineToSan(fen, best.pv).slice(0, 10) : [];
+  const assessment = assessScore(best?.scoreWhite);
+  if (!best || !bestLineSan.length || !assessment) return null;
+  const alternatives = analysis.start.slice(1, 5).flatMap((line) => {
+    const lineSan = uciLineToSan(fen, line.pv).slice(0, 8);
+    return lineSan.length
+      ? [{ rank: line.multipv, san: lineSan[0], lineSan, assessment: assessScore(line.scoreWhite) }]
+      : [];
+  });
+  return {
+    engineName: analysis.engineName.slice(0, 60) || undefined,
+    assessment,
+    bestMoveSan: bestLineSan[0],
+    bestLineSan,
+    alternatives: alternatives.length ? alternatives : undefined
+  };
+}
+
+/**
+ * The puzzle itself: its position, its rating when plausible, its themes and opening, the solution.
+ */
+function puzzleFacts(puzzle: PuzzleSample, solutionSan: string[]) {
+  const fen = puzzle.initialFen;
+  const opening = puzzle.openingTags.at(0);
+  return {
+    fen,
+    sideToMove: puzzle.sideToMove,
+    moveNumberSan: moveNumberSan(fen),
+    rating:
+      puzzle.rating && puzzle.rating >= 100 && puzzle.rating <= 4000
+        ? Math.round(puzzle.rating)
+        : undefined,
+    themes: puzzle.themes
+      .map(formatPuzzleTag)
+      .filter((theme) => theme.length <= 40)
+      .slice(0, 12),
+    opening: opening ? formatPuzzleTag(opening).slice(0, 100) : undefined,
+    solutionSan
+  };
+}
+
+/** The ideas behind the wrong move against the solution's (`mistake`), else behind the solution. */
+function puzzleIdeas(
+  puzzle: PuzzleSample,
+  wrong: PuzzleWrongMove | null,
+  mistake: ReturnType<typeof buildMistake>,
+  analysis: ExplainAnalysis
+) {
+  if (!mistake || !wrong)
+    return buildIdeaFacts({
+      fenBefore: puzzle.initialFen,
+      playedUci: puzzle.solutionMoves[0],
+      bestUci: puzzle.solutionMoves[0],
+      bestLine: puzzle.solutionMoves
+    });
+  return buildIdeaFacts({
+    fenBefore: wrong.fen,
+    playedUci: wrong.uci,
+    bestUci: wrong.expectedUci,
+    bestLine: puzzle.solutionMoves.slice(wrong.solutionIndex),
+    replyLine: mistake.ends ? undefined : analysis.afterMistake?.[0]?.pv
+  });
+}
+
+/**
  * The coach's facts for a finished puzzle, or null when they can't be grounded (the solution
  * doesn't replay, or the engine returned no line for the start position). Checked against the
  * schema main validates with, so what is returned is what main accepts.
@@ -153,72 +223,23 @@ export function buildPuzzleExplanationPayload({
   analysis,
   settings
 }: ExplainPayloadInput): PuzzleInsightPayload | null {
-  const fen = puzzle.initialFen;
-  const solver = puzzle.sideToMove;
-  const solutionSan = uciLineToSan(fen, puzzle.solutionMoves);
+  const solutionSan = uciLineToSan(puzzle.initialFen, puzzle.solutionMoves);
   if (solutionSan.length !== puzzle.solutionMoves.length || !solutionSan.length) return null;
-  const best = analysis.start.at(0);
-  const bestLineSan = best ? uciLineToSan(fen, best.pv).slice(0, 10) : [];
-  const assessment = assessScore(best?.scoreWhite);
-  if (!best || !bestLineSan.length || !assessment) return null;
-
-  const alternatives = analysis.start.slice(1, 5).flatMap((line) => {
-    const lineSan = uciLineToSan(fen, line.pv).slice(0, 8);
-    return lineSan.length
-      ? [{ rank: line.multipv, san: lineSan[0], lineSan, assessment: assessScore(line.scoreWhite) }]
-      : [];
-  });
-
+  const engine = startPositionFacts(puzzle.initialFen, analysis);
+  if (!engine) return null;
+  const failedOnMove = kind === "failed_wrong_move";
   const mistake =
-    kind === "failed_wrong_move" && wrong
-      ? buildMistake(puzzle, wrong, solutionSan, analysis)
-      : undefined;
-  if (kind === "failed_wrong_move" && !mistake) return null;
-  const ideas =
-    mistake && wrong
-      ? buildIdeaFacts({
-          fenBefore: wrong.fen,
-          playedUci: wrong.uci,
-          bestUci: wrong.expectedUci,
-          bestLine: puzzle.solutionMoves.slice(wrong.solutionIndex),
-          replyLine: mistake.ends ? undefined : analysis.afterMistake?.[0]?.pv
-        })
-      : buildIdeaFacts({
-          fenBefore: fen,
-          playedUci: puzzle.solutionMoves[0],
-          bestUci: puzzle.solutionMoves[0],
-          bestLine: puzzle.solutionMoves
-        });
+    failedOnMove && wrong ? buildMistake(puzzle, wrong, solutionSan, analysis) : undefined;
+  if (failedOnMove && !mistake) return null;
+  const ideas = puzzleIdeas(puzzle, wrong, mistake, analysis);
 
   const parsed = puzzleInsightPayloadSchema.safeParse({
     schemaVersion: 1,
     // A puzzle has no time control: the rapid rating, as a review of a game without one.
     player: { rating: settings.playerRatings.rapid.rating },
-    puzzle: {
-      fen,
-      sideToMove: solver,
-      moveNumberSan: moveNumberSan(fen),
-      rating:
-        puzzle.rating && puzzle.rating >= 100 && puzzle.rating <= 4000
-          ? Math.round(puzzle.rating)
-          : undefined,
-      themes: puzzle.themes
-        .map(formatPuzzleTag)
-        .filter((theme) => theme.length <= 40)
-        .slice(0, 12),
-      opening: puzzle.openingTags[0]
-        ? formatPuzzleTag(puzzle.openingTags[0]).slice(0, 100)
-        : undefined,
-      solutionSan
-    },
+    puzzle: puzzleFacts(puzzle, solutionSan),
     outcome: kind,
-    engine: {
-      engineName: analysis.engineName.slice(0, 60) || undefined,
-      assessment,
-      bestMoveSan: bestLineSan[0],
-      bestLineSan,
-      alternatives: alternatives.length ? alternatives : undefined
-    },
+    engine,
     mistake,
     ideas: ideas ?? undefined,
     commentaryDetail: settings.reviewCommentaryDetail
@@ -226,18 +247,19 @@ export function buildPuzzleExplanationPayload({
   return parsed.success ? parsed.data : null;
 }
 
+type Mistake = NonNullable<PuzzleInsightPayload["mistake"]>;
+
 function buildMistake(
   puzzle: PuzzleSample,
   wrong: PuzzleWrongMove,
   solutionSan: readonly string[],
   analysis: ExplainAnalysis
-): NonNullable<PuzzleInsightPayload["mistake"]> | undefined {
+): Mistake | undefined {
   const fenAfter = fenAfterUci(wrong.fen, wrong.uci);
   const san = uciToSan(wrong.fen, wrong.uci);
   const expected = uciToSan(wrong.fen, wrong.expectedUci);
   if (!fenAfter || !san || !expected) return undefined;
   const solver = puzzle.sideToMove;
-  const terminal = terminalStateForFen(fenAfter);
   const beforeScore = analysis.beforeMistake?.[0]?.scoreWhite ?? null;
   const before = beforeScore ? solverCp(beforeScore, solver) : null;
   const common = {
@@ -249,28 +271,47 @@ function buildMistake(
     fenAfter,
     assessmentBefore: assessScore(beforeScore)
   };
-  // A wrong move that ends the game has no reply to refute it: a mate wins all the same (the
-  // puzzle wanted its own line), a stalemate or draw throws the win away on the spot.
-  if (terminal === "checkmate")
-    return { ...common, ends: terminal, refutationSan: [], assessmentAfter: `${solver}_won` };
-  if (terminal) {
-    return {
-      ...common,
-      ends: terminal,
-      refutationSan: [],
-      assessmentAfter: "draw",
-      swing: before !== null ? swingFor(before, 0) : undefined,
-      stillWinning: false
-    };
-  }
-  const refutation = analysis.afterMistake?.[0];
+  const terminal = terminalStateForFen(fenAfter);
+  if (terminal) return endingMistake(common, terminal, solver, before);
+  return refutedMistake(common, analysis.afterMistake?.[0], solver, before);
+}
+
+/** A wrong move the engine refutes: its line, and how much the move gave away. */
+function refutedMistake(
+  common: Omit<Mistake, "refutationSan">,
+  refutation: AnalysisLine | undefined,
+  solver: "white" | "black",
+  before: number | null
+): Mistake {
   const afterScore = refutation?.scoreWhite ?? null;
   const after = afterScore ? solverCp(afterScore, solver) : null;
   return {
     ...common,
-    refutationSan: refutation ? uciLineToSan(fenAfter, refutation.pv).slice(0, 8) : [],
+    refutationSan: refutation ? uciLineToSan(common.fenAfter, refutation.pv).slice(0, 8) : [],
     assessmentAfter: assessScore(afterScore),
     swing: before !== null && after !== null ? swingFor(before, after) : undefined,
     stillWinning: after !== null ? after >= 200 : undefined
+  };
+}
+
+/**
+ * A wrong move that ends the game has no reply to refute it: a mate wins all the same (the
+ * puzzle wanted its own line), a stalemate or draw throws the win away on the spot.
+ */
+function endingMistake(
+  common: Omit<Mistake, "refutationSan">,
+  terminal: NonNullable<ReturnType<typeof terminalStateForFen>>,
+  solver: "white" | "black",
+  before: number | null
+): Mistake {
+  if (terminal === "checkmate")
+    return { ...common, ends: terminal, refutationSan: [], assessmentAfter: `${solver}_won` };
+  return {
+    ...common,
+    ends: terminal,
+    refutationSan: [],
+    assessmentAfter: "draw",
+    swing: before !== null ? swingFor(before, 0) : undefined,
+    stillWinning: false
   };
 }

@@ -31,7 +31,8 @@ import {
   type CpuFeature,
   type EngineManifest,
   type PlatformKey,
-  type ReleaseAssetId
+  type ReleaseAssetId,
+  type SelectedAsset
 } from "./engine-manifest";
 import {
   RAW_DOWNLOAD_HOSTS,
@@ -41,6 +42,7 @@ import {
   isAllowedDownloadUrl,
   isReleaseDownloadOf,
   parseSha256Digest,
+  type CachedRelease,
   type FetchLike
 } from "./github-releases";
 import { downloadToFile } from "./http-download";
@@ -216,6 +218,70 @@ export type ResolvedDownload = {
   checkError: string | null;
 };
 
+function installedVersionOf(record: AssetRecord): string | null {
+  return record.version ?? record.manifestVersion ?? null;
+}
+
+/** An asset a download can fetch: what is installed, and the version a download would bring. */
+function downloadableStatus(record: AssetRecord, resolved: ResolvedDownload): AssetStatus {
+  const installedVersion = installedVersionOf(record);
+  return {
+    ...record,
+    installedVersion,
+    latestVersion: resolved.version,
+    // Only a live (or cached) GitHub answer can say there is something newer: the
+    // fallback manifest may well be older than what is installed.
+    updateAvailable:
+      record.state === "installed" &&
+      resolved.source === "github" &&
+      isDifferentVersion(installedVersion, resolved.version),
+    downloadSizeBytes: resolved.sizeBytes,
+    latestSource: resolved.source,
+    autoDownload: true,
+    installInstructions: null,
+    checkedAt: resolved.checkedAt ? new Date(resolved.checkedAt).toISOString() : null,
+    checkError: resolved.checkError
+  };
+}
+
+/** An asset this platform must install by hand (Lc0 on macOS / Linux). */
+function manualInstallStatus(record: AssetRecord, installInstructions: string | null): AssetStatus {
+  return {
+    ...record,
+    installedVersion: installedVersionOf(record),
+    latestVersion: null,
+    updateAvailable: false,
+    downloadSizeBytes: null,
+    latestSource: null,
+    autoDownload: false,
+    installInstructions,
+    checkedAt: null,
+    checkError: null
+  };
+}
+
+/** The GitHub release asset picked for this platform. */
+function releaseDownload(
+  id: ReleaseAssetId,
+  cached: CachedRelease,
+  selected: SelectedAsset,
+  checkError: string | null
+): ResolvedDownload {
+  return {
+    id,
+    url: selected.asset.browser_download_url,
+    sizeBytes: selected.asset.size,
+    sha256: parseSha256Digest(selected.asset.digest),
+    extract: selected.extract,
+    executablePattern: selected.executablePattern,
+    version: cached.release.tag_name,
+    source: "github",
+    assetName: selected.asset.name,
+    checkedAt: cached.fetchedAt,
+    checkError
+  };
+}
+
 class DigestMismatchError extends Error {
   constructor(id: AssetId) {
     super(`sha256 mismatch for ${id}`);
@@ -288,27 +354,10 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     const lookup = opts.refresh ? { maxAgeMs: CHECK_MAX_AGE_MS } : ("cache-only" as const);
     const installed = this.getInstalled();
     return forEveryAssetAsync(async (id): Promise<AssetStatus> => {
-      const record = installed[id];
       const resolved = await this.resolveDownload(id, lookup).catch(() => null);
-      const installedVersion = record.version ?? record.manifestVersion ?? null;
-      const managed = record.state === "installed";
-      return {
-        ...record,
-        installedVersion,
-        latestVersion: resolved?.version ?? null,
-        // Only a live (or cached) GitHub answer can say there is something newer: the
-        // fallback manifest may well be older than what is installed.
-        updateAvailable:
-          managed &&
-          resolved?.source === "github" &&
-          isDifferentVersion(installedVersion, resolved.version),
-        downloadSizeBytes: resolved?.sizeBytes ?? null,
-        latestSource: resolved?.source ?? null,
-        autoDownload: resolved !== null,
-        installInstructions: resolved ? null : this.installInstructionsFor(id),
-        checkedAt: resolved?.checkedAt ? new Date(resolved.checkedAt).toISOString() : null,
-        checkError: resolved?.checkError ?? null
-      };
+      return resolved
+        ? downloadableStatus(installed[id], resolved)
+        : manualInstallStatus(installed[id], this.installInstructionsFor(id));
     });
   }
 
@@ -339,22 +388,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     id: AssetId,
     lookup: { maxAgeMs: number } | "cache-only" = { maxAgeMs: RELEASE_CACHE_TTL_MS }
   ): Promise<ResolvedDownload | null> {
-    if (!isReleaseAsset(id)) {
-      const entry = this.manifest.maiaWeights.files[id];
-      return {
-        id,
-        url: entry.url,
-        sizeBytes: entry.sizeBytes,
-        sha256: entry.sha256 ?? null,
-        extract: null,
-        executablePattern: null,
-        version: this.manifest.maiaWeights.version,
-        source: "fixed",
-        assetName: path.posix.basename(new URL(entry.url).pathname),
-        checkedAt: null,
-        checkError: null
-      };
-    }
+    if (!isReleaseAsset(id)) return this.weightDownload(id);
 
     const source = RELEASE_SOURCES[id];
     const matcher = this.platformKey ? source.platforms[this.platformKey] : undefined;
@@ -368,24 +402,38 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
     if (cached) {
       const selected = selectReleaseAsset(cached.release.assets, matcher, await this.cpuFeatures());
       if (selected && isReleaseDownloadOf(selected.asset.browser_download_url, source.repo)) {
-        return {
-          id,
-          url: selected.asset.browser_download_url,
-          sizeBytes: selected.asset.size,
-          sha256: parseSha256Digest(selected.asset.digest),
-          extract: selected.extract,
-          executablePattern: selected.executablePattern,
-          version: cached.release.tag_name,
-          source: "github",
-          assetName: selected.asset.name,
-          checkedAt: cached.fetchedAt,
-          checkError: cached.stale ? checkError : null
-        };
+        return releaseDownload(id, cached, selected, cached.stale ? checkError : null);
       }
       checkError = `No ${this.platformKey} build found in ${source.repo} ${cached.release.tag_name}`;
       logger.warn("asset-manager", `${checkError}; using the bundled fallback`);
     }
+    return this.fallbackDownload(id, cached?.fetchedAt ?? null, checkError);
+  }
 
+  /** A Maia weight: the manifest's fixed file (they aren't GitHub release assets). */
+  private weightDownload(id: Exclude<AssetId, ReleaseAssetId>): ResolvedDownload {
+    const entry = this.manifest.maiaWeights.files[id];
+    return {
+      id,
+      url: entry.url,
+      sizeBytes: entry.sizeBytes,
+      sha256: entry.sha256 ?? null,
+      extract: null,
+      executablePattern: null,
+      version: this.manifest.maiaWeights.version,
+      source: "fixed",
+      assetName: path.posix.basename(new URL(entry.url).pathname),
+      checkedAt: null,
+      checkError: null
+    };
+  }
+
+  /** The bundled manifest's build for this platform, when GitHub gave none; null: manual install. */
+  private fallbackDownload(
+    id: ReleaseAssetId,
+    checkedAt: number | null,
+    checkError: string | null
+  ): ResolvedDownload | null {
     const entry = resolveManifestEntry(this.manifest, id, this.platformKey);
     if (!entry) return null;
     return {
@@ -398,7 +446,7 @@ export class AssetManager extends EventEmitter<{ progress: [ProgressEvent]; stat
       version: manifestVersionFor(this.manifest, id),
       source: "fallback",
       assetName: path.posix.basename(new URL(entry.url).pathname),
-      checkedAt: cached?.fetchedAt ?? null,
+      checkedAt,
       checkError
     };
   }

@@ -109,35 +109,12 @@ export function RecentGamesFilter({
     .filter(Boolean)
     .join(" · ");
   const label = applied ? `Filter: ${applied}` : "Filter games";
-  const itemClass =
-    "flex h-8 items-center gap-2 whitespace-nowrap rounded-md px-2 text-left text-sm text-fg-secondary outline-none transition-colors hover:bg-control hover:text-fg focus-visible:bg-control";
-  const item = (
-    key: string,
-    checked: boolean,
-    text: string,
-    count: number,
-    onSelect: () => void,
-    role: "menuitemradio" | "menuitemcheckbox"
-  ) => (
-    <button
-      key={key}
-      type="button"
-      role={role}
-      aria-checked={checked}
-      tabIndex={state === "closed" ? -1 : undefined}
-      onClick={() => {
-        setOpen(false);
-        onSelect();
-      }}
-      className={itemClass}
-    >
-      <span className="grid size-4 shrink-0 place-items-center text-accent">
-        {checked ? <Check aria-hidden="true" className="size-4" /> : null}
-      </span>
-      <span className="flex-1">{text}</span>
-      <span className="pl-4 text-xs tabular-nums text-fg-subtle">{count}</span>
-    </button>
-  );
+  // A choice closes the menu, then applies.
+  const choose = (select: () => void) => () => {
+    setOpen(false);
+    select();
+  };
+  const closed = state === "closed";
 
   return (
     <div ref={rootRef} className="relative inline-flex">
@@ -176,33 +153,71 @@ export function RecentGamesFilter({
                 {heading}
               </span>
             ) : null}
-            {options.map((option) =>
-              item(
-                option.tab ?? "all",
-                option.tab === value,
-                option.label,
-                option.count,
-                () => onChange(option.tab),
-                "menuitemradio"
-              )
-            )}
+            {options.map((option) => (
+              <FilterMenuItem
+                key={option.tab ?? "all"}
+                itemRole="menuitemradio"
+                checked={option.tab === value}
+                text={option.label}
+                count={option.count}
+                closed={closed}
+                onSelect={choose(() => onChange(option.tab))}
+              />
+            ))}
             {toggle ? (
               <>
                 <span aria-hidden="true" className="mx-1.5 my-1 h-px bg-line-subtle" />
-                {item(
-                  "toggle",
-                  toggle.checked,
-                  toggle.label,
-                  toggle.count,
-                  () => toggle.onChange(!toggle.checked),
-                  "menuitemcheckbox"
-                )}
+                <FilterMenuItem
+                  key="toggle"
+                  itemRole="menuitemcheckbox"
+                  checked={toggle.checked}
+                  text={toggle.label}
+                  count={toggle.count}
+                  closed={closed}
+                  onSelect={choose(() => toggle.onChange(!toggle.checked))}
+                />
               </>
             ) : null}
           </div>
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** One of the filter menu's choices: a tick while it applies, its label and its game count. */
+function FilterMenuItem({
+  itemRole,
+  checked,
+  text,
+  count,
+  closed,
+  onSelect
+}: {
+  /** A source to show (one of them), or a filter on top (on or off). */
+  itemRole: "menuitemradio" | "menuitemcheckbox";
+  checked: boolean;
+  text: string;
+  count: number;
+  /** The menu is closing: its items leave the tab order. */
+  closed: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role={itemRole}
+      aria-checked={checked}
+      tabIndex={closed ? -1 : undefined}
+      onClick={onSelect}
+      className="flex h-8 items-center gap-2 whitespace-nowrap rounded-md px-2 text-left text-sm text-fg-secondary outline-none transition-colors hover:bg-control hover:text-fg focus-visible:bg-control"
+    >
+      <span className="grid size-4 shrink-0 place-items-center text-accent">
+        {checked ? <Check aria-hidden="true" className="size-4" /> : null}
+      </span>
+      <span className="flex-1">{text}</span>
+      <span className="pl-4 text-xs tabular-nums text-fg-subtle">{count}</span>
+    </button>
   );
 }
 

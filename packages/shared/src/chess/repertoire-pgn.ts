@@ -160,7 +160,7 @@ function parseGame(game: Game<PgnNodeData>, index: number, budget: Budget): Pars
     root.comment = rootAnnotation.text;
     root.arrows = rootAnnotation.arrows;
     root.highlights = rootAnnotation.highlights;
-    for (const child of game.moves.children) appendMove(builder, root, [], child, 1);
+    for (const child of game.moves.children) appendMove(builder, root, [], child);
   } catch (error) {
     // The move limit can be reached before this game's over-long comment is read: the comment
     // still rejects the game alone (its moves don't count), rather than failing the import.
@@ -255,11 +255,11 @@ function appendMove(
   builder: TreeBuilder,
   parent: MoveNode,
   path: MoveNode[],
-  child: ChildNode<PgnNodeData>,
-  depth: number
+  child: ChildNode<PgnNodeData>
 ): void {
   const { budget } = builder;
-  if (depth > budget.maxDepth) {
+  // The path holds the moves before this one.
+  if (path.length + 1 > budget.maxDepth) {
     throw new Error(
       `A line is longer than ${budget.maxDepth} moves (at ${formatPath(path) || "the start"}). ` +
         "Repertoire chapters hold opening lines; trim the game before importing it."
@@ -319,7 +319,7 @@ function appendMove(
 
   const nextPath = [...path, node];
   for (const grandChild of child.children) {
-    appendMove(builder, node, nextPath, grandChild, depth + 1);
+    appendMove(builder, node, nextPath, grandChild);
   }
 }
 

@@ -23,11 +23,10 @@ import {
   activeDownloads,
   cancelDownload,
   downloadDatabase,
-  listInstalledDatabases,
-  puzzleOfTheDay,
-  removeDatabase,
-  samplePuzzle
+  removeDatabase
 } from "../databases/external-databases";
+import { listInstalledDatabases } from "../databases/installed-databases";
+import { puzzleOfTheDay, samplePuzzle } from "../databases/puzzle-sampling";
 import { engineConfigForId, listAllEngines } from "../engine/engine-config";
 import type { EngineEvents, EngineManager } from "../engine/engine-manager";
 import { probeEvalScore } from "../engine/probe-eval";
@@ -58,12 +57,8 @@ import { usageAnalyticsConsent } from "../telemetry/config";
 import { noteEngineReadiness } from "../telemetry/engine-readiness";
 import { parseRendererEvent, recordRendererEvent } from "../telemetry/renderer-events";
 import {
-  asAbsolutePath,
-  asId,
   asLichessId,
   asLichessUci,
-  asObject,
-  asString,
   parseAnalysePositionsInput,
   parseDefaultFileName,
   parseDialogFilters,
@@ -85,6 +80,7 @@ import {
   parseStartAnalysisInput,
   parseStartGameInput
 } from "./validate";
+import { asAbsolutePath, asId, asObject, asString } from "./fields";
 import { broadcast } from "./broadcast";
 import { registerRepertoireIpc } from "./repertoire-handler";
 import { registerPuzzleIpc } from "./puzzle-handler";

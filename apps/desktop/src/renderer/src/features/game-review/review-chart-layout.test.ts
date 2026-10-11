@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   CHARTS_MIN_HEIGHT,
+  chartsLayout,
   chartsMaxHeight,
   clampChartsHeight,
   CONTENT_MIN_HEIGHT,
   defaultChartsHeight,
   fitViewHeights,
   HEADER_HEIGHT,
+  lastOpenView,
   resolveChartsHeight,
   splitViewHeights,
   STRIP_MIN,
@@ -133,5 +135,31 @@ describe("review chart layout", () => {
     // Below the minimums the views keep them and overflow; the area scrolls.
     const tight = fitViewHeights({ container: 200, chrome: chrome3, open: BOTH, gap: 4 });
     expect(total(tight)).toBe(WIN_MIN + 2 * STRIP_MIN);
+  });
+
+  it("shows each view from the review's data and its fold, a Maia prompt where offered", () => {
+    const none = { win: false, difficulty: false, times: false };
+    const full = { hasEvals: true, hasDifficulty: true, hasTimes: true, maiaPrompt: true };
+    expect(chartsLayout({ ...full, folded: none })).toEqual(ALL);
+    expect(chartsLayout({ ...full, folded: BOTH })).toEqual({
+      win: "folded",
+      difficulty: "folded",
+      times: "folded"
+    });
+    // Unreviewed, without Maia data or clocks: a note, the prompt (or nothing), no times strip.
+    const bare = { hasEvals: false, hasDifficulty: false, hasTimes: false, folded: none };
+    expect(chartsLayout({ ...bare, maiaPrompt: true })).toEqual({
+      win: "empty",
+      difficulty: "prompt",
+      times: "none"
+    });
+    expect(chartsLayout({ ...bare, maiaPrompt: false }).difficulty).toBe("none");
+  });
+
+  it("puts the move axis under the last view drawn", () => {
+    expect(lastOpenView({ win: 100, difficulty: 50, times: 50 })).toBe("times");
+    expect(lastOpenView({ win: 100, difficulty: 50, times: null })).toBe("difficulty");
+    expect(lastOpenView({ win: 100, difficulty: null, times: null })).toBe("win");
+    expect(lastOpenView({ win: null, difficulty: null, times: null })).toBeNull();
   });
 });

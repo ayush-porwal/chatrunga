@@ -2,19 +2,13 @@ import { describe, expect, it } from "vitest";
 import { GAME_SEARCH_MAX_LENGTH } from "@chaturanga/shared/types/chess";
 import { REPERTOIRE_METADATA_LIMITS } from "@chaturanga/shared/types/repertoire";
 import {
-  asAbsolutePath,
-  asFen,
-  asId,
   asLichessId,
   asLichessUci,
-  asUciMoves,
-  parseAddFromGameInput,
   parseAnalysePositionsInput,
   parseDefaultFileName,
   parseDialogFilters,
   parseEngineInput,
   parseEnginePatch,
-  parseGameLinkQuery,
   parseGameListQuery,
   parseLichessAiChallengeInput,
   parseLichessChallengeInput,
@@ -22,23 +16,28 @@ import {
   parseDisconnectInput,
   parseLichessSeekInput,
   parsePgnText,
-  parsePractisedElsewhereInput,
-  parsePreviewImportInput,
   parseProbeEvalInput,
   parseListLimit,
   parsePuzzleOfTheDayInput,
   parsePuzzleSampleInput,
   parseRecordPuzzleAttemptInput,
-  parseRemoveGameLink,
-  parseLinkGameInput,
   parseReviewGameInput,
   parseSaveGameInput,
   parseSettingKey,
   parseSettingsPatch,
-  parseUpdateRepertoireMetadataInput,
   parseStartAnalysisInput,
   parseStartGameInput
 } from "./validate";
+import { asAbsolutePath, asFen, asId, asUciMoves } from "./fields";
+import {
+  parseAddFromGameInput,
+  parseGameLinkQuery,
+  parsePractisedElsewhereInput,
+  parsePreviewImportInput,
+  parseRemoveGameLink,
+  parseLinkGameInput,
+  parseUpdateRepertoireMetadataInput
+} from "./validate-repertoire";
 
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const AFTER_E4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";

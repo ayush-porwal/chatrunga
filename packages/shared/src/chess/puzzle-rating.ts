@@ -54,8 +54,7 @@ export function ratingAfterIdle(
 export function rateAttempt(
   rating: Glicko2Rating,
   puzzle: { rating: number; deviation: number },
-  solved: boolean,
-  at: number,
+  { solved, at }: { solved: boolean; at: number },
   lastRatedAt: number | null = null
 ): Glicko2Rating {
   const before = ratingAfterIdle(sanitize(rating), lastRatedAt, at);

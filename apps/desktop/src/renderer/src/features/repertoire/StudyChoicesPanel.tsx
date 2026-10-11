@@ -105,7 +105,7 @@ export function StudyChoicesPanel({
   onRehearseFromHere?: () => void;
 }) {
   const choices = useMemo(
-    () => deriveChoices(chapter, lookup, selectedNodeId, color, decision),
+    () => deriveChoices(chapter, lookup, { nodeId: selectedNodeId, color, decision }),
     [chapter, lookup, selectedNodeId, color, decision]
   );
   const transpositions = useMemo(

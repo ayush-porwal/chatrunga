@@ -4,7 +4,8 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type KeyboardEvent
+  type KeyboardEvent,
+  type Ref
 } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, Trash2 } from "lucide-react";
@@ -152,43 +153,14 @@ export function AnalysisSwitcher() {
 
   return (
     <div ref={rootRef} className="relative inline-flex">
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            ref={triggerRef}
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-haspopup="dialog"
-            aria-expanded={open}
-            aria-label={shown ? `Analysis: ${triggerName(shown, shownIndex === 0)}` : "Analyses"}
-            disabled={locked}
-            onClick={() => (open ? close() : setOpen(true))}
-            // The list's width whatever the entry: it never jumps, and lines up with the list.
-            className={cn(PICKER_WIDTH, "justify-between tabular-nums")}
-          >
-            <span className="min-w-0 truncate">{shown ? reviewInfoWhen(shown) : "Analyses"}</span>
-            {/* Latest at the right end, beside the chevron. */}
-            <span className="flex shrink-0 items-center gap-2">
-              {shown && shownIndex === 0 ? <LatestTag /> : null}
-              <ChevronDown
-                aria-hidden="true"
-                className={cn(
-                  "text-fg-subtle transition-transform duration-standard ease-standard",
-                  open && "rotate-180"
-                )}
-              />
-            </span>
-          </Button>
-        </TooltipTrigger>
-        {open ? null : (
-          <TooltipContent side="bottom">
-            {shown
-              ? `${shownIndex === 0 ? "Latest · " : ""}${reviewInfoLabel(shown)}`
-              : "Saved analyses of this game"}
-          </TooltipContent>
-        )}
-      </Tooltip>
+      <SwitcherTrigger
+        ref={triggerRef}
+        shown={shown}
+        latest={shownIndex === 0}
+        open={open}
+        disabled={locked}
+        onClick={() => (open ? close() : setOpen(true))}
+      />
 
       {present && anchor
         ? createPortal(
@@ -248,47 +220,132 @@ export function AnalysisSwitcher() {
         : null}
 
       {pendingDelete ? (
-        <Dialog
-          size="sm"
-          title={
-            pendingDelete === "all"
-              ? `Delete all ${analyses.length} ${analyses.length === 1 ? "analysis" : "analyses"} of this game?`
-              : "Delete this analysis?"
-          }
-          description="This can't be undone."
-          onClose={deleteAnalyses.isPending ? undefined : () => setPendingDelete(null)}
-          footer={
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={deleteAnalyses.isPending}
-                onClick={() => setPendingDelete(null)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                variant="ghost-destructive"
-                size="sm"
-                disabled={deleteAnalyses.isPending}
-                onClick={() => void confirmDelete(pendingDelete)}
-              >
-                <Trash2 />
-                {pendingDelete === "all" ? "Delete all" : "Delete"}
-              </Button>
-            </>
-          }
-        >
-          {deleteAnalyses.error ? (
-            <p className="text-sm text-danger" role="alert">
-              {ipcErrorMessage(deleteAnalyses.error) || "The analysis couldn't be deleted."}
-            </p>
-          ) : null}
-        </Dialog>
+        <DeleteAnalysesDialog
+          target={pendingDelete}
+          count={analyses.length}
+          deleting={deleteAnalyses.isPending}
+          error={deleteAnalyses.error}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() => void confirmDelete(pendingDelete)}
+        />
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The titlebar's button: the analysis shown (its date, and Latest when it's the newest; the rest
+ * in its tooltip, hidden while the list is open).
+ */
+function SwitcherTrigger({
+  ref,
+  shown,
+  latest,
+  open,
+  disabled,
+  onClick
+}: {
+  ref: Ref<HTMLButtonElement>;
+  shown: SavedReviewInfo | null;
+  latest: boolean;
+  open: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          ref={ref}
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-label={shown ? `Analysis: ${triggerName(shown, latest)}` : "Analyses"}
+          disabled={disabled}
+          onClick={onClick}
+          // The list's width whatever the entry: it never jumps, and lines up with the list.
+          className={cn(PICKER_WIDTH, "justify-between tabular-nums")}
+        >
+          <span className="min-w-0 truncate">{shown ? reviewInfoWhen(shown) : "Analyses"}</span>
+          {/* Latest at the right end, beside the chevron. */}
+          <span className="flex shrink-0 items-center gap-2">
+            {shown && latest ? <LatestTag /> : null}
+            <ChevronDown
+              aria-hidden="true"
+              className={cn(
+                "text-fg-subtle transition-transform duration-standard ease-standard",
+                open && "rotate-180"
+              )}
+            />
+          </span>
+        </Button>
+      </TooltipTrigger>
+      {open ? null : (
+        <TooltipContent side="bottom">
+          {shown
+            ? `${latest ? "Latest · " : ""}${reviewInfoLabel(shown)}`
+            : "Saved analyses of this game"}
+        </TooltipContent>
+      )}
+    </Tooltip>
+  );
+}
+
+/**
+ * Confirms deleting one analysis, or all of the game's (`count`); it stays open while that runs,
+ * and says why when it failed.
+ */
+function DeleteAnalysesDialog({
+  target,
+  count,
+  deleting,
+  error,
+  onCancel,
+  onConfirm
+}: {
+  target: PendingDelete;
+  count: number;
+  deleting: boolean;
+  error: unknown;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog
+      size="sm"
+      title={
+        target === "all"
+          ? `Delete all ${count} ${count === 1 ? "analysis" : "analyses"} of this game?`
+          : "Delete this analysis?"
+      }
+      description="This can't be undone."
+      onClose={deleting ? undefined : onCancel}
+      footer={
+        <>
+          <Button type="button" variant="outline" size="sm" disabled={deleting} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="ghost-destructive"
+            size="sm"
+            disabled={deleting}
+            onClick={onConfirm}
+          >
+            <Trash2 />
+            {target === "all" ? "Delete all" : "Delete"}
+          </Button>
+        </>
+      }
+    >
+      {error ? (
+        <p className="text-sm text-danger" role="alert">
+          {ipcErrorMessage(error) || "The analysis couldn't be deleted."}
+        </p>
+      ) : null}
+    </Dialog>
   );
 }
 

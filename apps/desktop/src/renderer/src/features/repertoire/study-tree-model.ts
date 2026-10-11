@@ -96,11 +96,7 @@ export function collapseStudyTree(
   if (lookup.order.length - 1 < minMoves) return uncollapsed;
   const subtree = sizes ?? subtreeSizes(lookup);
 
-  const mainline = new Set<string>();
-  for (let id: string | undefined = REPERTOIRE_ROOT_NODE_ID; id; ) {
-    mainline.add(id);
-    id = lookup.childrenById.get(id)?.[0];
-  }
+  const mainline = mainlineOf(lookup);
 
   /** Plies below the nearest main-line or expanded node, for every visible node. */
   const distance = new Map<string, number>([[REPERTOIRE_ROOT_NODE_ID, 0]]);
@@ -113,35 +109,15 @@ export function collapseStudyTree(
     const own = distance.get(id);
     if (own === undefined) continue; // Inside a cut branch.
     const node = lookup.nodesById.get(id)!;
-    const resets = mainline.has(id) || expanded.has(id);
-    const shown: string[] = [];
-    let hidden = 0;
-    let cutAt = -1;
-    for (const child of lookup.childrenById.get(id) ?? []) {
-      const childDistance = mainline.has(child) ? 0 : resets ? 1 : own + 1;
-      if (childDistance <= depth) {
-        distance.set(child, childDistance);
-        shown.push(child);
-      } else {
-        if (cutAt < 0) cutAt = shown.length;
-        hidden += subtree.get(child) ?? 1;
-      }
-    }
+    const base = mainline.has(id) || expanded.has(id) ? 0 : own;
+    const childDistance = (child: string) => (mainline.has(child) ? 0 : base + 1);
+    const { shown, hidden, cutAt } = cutChildren(lookup.childrenById.get(id) ?? [], childDistance, {
+      depth,
+      subtree
+    });
+    for (const child of shown) distance.set(child, childDistance(child));
     if (!hidden) continue;
-    const placeholder: MoveNode = {
-      id: placeholderId(id),
-      parentId: id,
-      san: null,
-      uci: null,
-      fenBefore: node.fenAfter,
-      fenAfter: node.fenAfter,
-      ply: node.ply + 1,
-      nags: [],
-      comment: null,
-      arrows: [],
-      highlights: [],
-      children: []
-    };
+    const placeholder = placeholderFor(node);
     shown.splice(cutAt, 0, placeholder.id);
     replaced.set(id, { ...node, children: shown });
     placeholders.set(placeholder.id, hidden);
@@ -158,5 +134,56 @@ export function collapseStudyTree(
     placeholders,
     hiddenMoves,
     visible: new Set(distance.keys())
+  };
+}
+
+/** The main line's node ids: the root and its first children. */
+function mainlineOf(lookup: ChapterLookup): Set<string> {
+  const mainline = new Set<string>();
+  for (let id: string | undefined = REPERTOIRE_ROOT_NODE_ID; id; ) {
+    mainline.add(id);
+    id = lookup.childrenById.get(id)?.[0];
+  }
+  return mainline;
+}
+
+/**
+ * A node's children split at the depth limit: the shown ones, the moves hidden behind the rest,
+ * and where the first hidden child was (-1 when none is).
+ */
+function cutChildren(
+  children: readonly string[],
+  childDistance: (child: string) => number,
+  { depth, subtree }: { depth: number; subtree: ReadonlyMap<string, number> }
+): { shown: string[]; hidden: number; cutAt: number } {
+  const shown: string[] = [];
+  let hidden = 0;
+  let cutAt = -1;
+  for (const child of children) {
+    if (childDistance(child) <= depth) {
+      shown.push(child);
+    } else {
+      if (cutAt < 0) cutAt = shown.length;
+      hidden += subtree.get(child) ?? 1;
+    }
+  }
+  return { shown, hidden, cutAt };
+}
+
+/** The "… N more moves" row standing for the cut branches of `node`. */
+function placeholderFor(node: MoveNode): MoveNode {
+  return {
+    id: placeholderId(node.id),
+    parentId: node.id,
+    san: null,
+    uci: null,
+    fenBefore: node.fenAfter,
+    fenAfter: node.fenAfter,
+    ply: node.ply + 1,
+    nags: [],
+    comment: null,
+    arrows: [],
+    highlights: [],
+    children: []
   };
 }

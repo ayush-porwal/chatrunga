@@ -120,8 +120,7 @@ describe("reviewGameWithEngine (scripted UCI engines)", () => {
         moveTimeMs: 50
       },
       { onPhaseProgress: (p) => phases.push(`${p.moveIndex}:${p.phase}`) },
-      [maia1100, broken],
-      { threads: 2, hashMb: 64, playerRating: 1200 }
+      { maiaConfigs: [maia1100, broken], threads: 2, hashMb: 64, playerRating: 1200 }
     );
 
     expect(review.schemaVersion).toBe(3);
@@ -301,7 +300,6 @@ describe("review checks", () => {
         moveTimeMs: 40
       },
       {},
-      [],
       { checkTimeoutMs: 300 }
     );
     const qg5 = review.moves[7];
@@ -342,7 +340,6 @@ describe("review checks", () => {
           },
           shouldCancel: () => cancelled
         },
-        [],
         { checkTimeoutMs: 20_000 }
       )
     ).rejects.toThrow("Review cancelled");

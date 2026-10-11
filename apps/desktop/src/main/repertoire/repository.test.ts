@@ -12,16 +12,15 @@ vi.mock("electron", () => ({ app: { getPath: () => userData } }));
 const { closeDb, databasePath, getDb } = await import("../db");
 const {
   RepertoireCorruptChapterError,
-  attemptRepository,
   chapterRepository,
   compareChaptersAsListed,
   decisionRepository,
   progressRepository,
   repertoireRepository,
-  sessionRepository,
-  transaction,
-  workspaceRepository
+  transaction
 } = await import("./repository");
+const { workspaceRepository } = await import("./workspace-repository");
+const { attemptRepository, sessionRepository } = await import("./practice-repository");
 const { rootNode } = await import("./chapter-validation");
 const { repertoireDb, setRepertoireConnection, withOwnConnection } = await import("./connection");
 

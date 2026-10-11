@@ -24,6 +24,7 @@ import {
   standardCastlingUci
 } from "@chaturanga/shared/chess/review";
 import { analyzeTacticsForPosition } from "@chaturanga/shared/chess/tactics";
+import type { TacticalFact } from "@chaturanga/shared/schemas/tactical-fact";
 import { isOneOf } from "@chaturanga/shared/types/guards";
 
 export const MAIA_RATINGS: readonly MaiaRating[] = [1100, 1300, 1500, 1700, 1900];
@@ -232,18 +233,25 @@ export function tacticalMotifsForBestMove(
   else if (capture === "winning") motifs.add("winning capture");
   // Geometry created by the moved piece itself (pre-existing pins don't count).
   for (const fact of analyzeTacticsForPosition(afterFen, mover)) {
-    if (fact.kind === "fork" && fact.attacker.square === to) {
-      // A real fork hits two pieces that are each worth more than the forker (or the king).
-      const attackerValue = PIECE_VALUE[fact.attacker.role];
-      const valuable = fact.targets.filter(
-        (t) => t.role === "king" || PIECE_VALUE[t.role] > attackerValue
-      );
-      if (valuable.length >= 2) motifs.add("fork");
-    }
-    if (fact.kind === "pin" && fact.pinner.square === to) motifs.add("pin");
-    if (fact.kind === "skewer" && fact.attacker.square === to) motifs.add("skewer");
+    const motif = motifByMovedPiece(fact, to);
+    if (motif) motifs.add(motif);
   }
   return [...motifs];
+}
+
+/** The fork, pin or skewer `fact` describes when the piece that moved to `to` makes it. */
+function motifByMovedPiece(fact: TacticalFact, to: string): "fork" | "pin" | "skewer" | null {
+  if (fact.kind === "fork" && fact.attacker.square === to) {
+    // A real fork hits two pieces that are each worth more than the forker (or the king).
+    const attackerValue = PIECE_VALUE[fact.attacker.role];
+    const valuable = fact.targets.filter(
+      (t) => t.role === "king" || PIECE_VALUE[t.role] > attackerValue
+    );
+    return valuable.length >= 2 ? "fork" : null;
+  }
+  if (fact.kind === "pin" && fact.pinner.square === to) return "pin";
+  if (fact.kind === "skewer" && fact.attacker.square === to) return "skewer";
+  return null;
 }
 
 const PIECE_VALUE: Record<string, number> = {

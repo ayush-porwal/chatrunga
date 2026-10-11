@@ -42,6 +42,30 @@ function tabId(panelId: string, value: string): string {
   return `${panelId}-tab-${value}`;
 }
 
+/**
+ * A segment's ARIA state: in a tablist a tab, selected or not (and the tab of `panelId`, which it
+ * controls); in a radio group a radio, checked or not.
+ */
+function segmentAria({
+  role,
+  panelId,
+  value,
+  selected
+}: {
+  role: "tablist" | "radiogroup";
+  panelId: string | undefined;
+  value: string;
+  selected: boolean;
+}) {
+  const tab = role === "tablist";
+  return {
+    id: tab && panelId ? tabId(panelId, value) : undefined,
+    "aria-controls": tab && panelId ? panelId : undefined,
+    "aria-selected": tab ? selected : undefined,
+    "aria-checked": role === "radiogroup" ? selected : undefined
+  };
+}
+
 /** Props for the panel a tablist switches: its role, id, and the selected tab that labels it. */
 export function tabPanelProps(panelId: string, value: string) {
   return { id: panelId, role: "tabpanel" as const, "aria-labelledby": tabId(panelId, value) };
@@ -172,10 +196,7 @@ function SegmentedControl<T extends string>({
             type="button"
             data-segment=""
             role={itemRole}
-            id={role === "tablist" && panelId ? tabId(panelId, option.value) : undefined}
-            aria-controls={role === "tablist" && panelId ? panelId : undefined}
-            aria-selected={role === "tablist" ? selected : undefined}
-            aria-checked={role === "radiogroup" ? selected : undefined}
+            {...segmentAria({ role, panelId, value: option.value, selected })}
             aria-disabled={explained || undefined}
             tabIndex={selected || (!hasSelection && index === 0) ? 0 : -1}
             disabled={option.disabled && !explained}

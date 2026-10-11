@@ -228,19 +228,11 @@ function range(length: number): number[] {
   return Array.from({ length }, (_, index) => index);
 }
 
-/**
- * Candidate lines in priority order: the played move, nearby game history (nearest first), the
- * reply line, the best line, each alternative, other replies, Maia's human moves, then the rest
- * of the game.
- */
-function buildSearchPasses(ctx: CommentaryMoveContext): SearchPass[] {
-  const { move, moveTree } = ctx;
+/** The game's main line from the root, replayed for legality (null for an empty tree). */
+function gameMainline(moveTree: readonly MoveNode[]) {
   const byId = new Map(moveTree.map((node) => [node.id, node]));
   const root = moveTree.find((node) => node.parentId === null) ?? moveTree.at(0);
-  const passes: SearchPass[] = [];
-  if (!root) return passes;
-
-  // Main line from the root, replayed for legality.
+  if (!root) return null;
   const path: MoveNode[] = [];
   const seen = new Set<string>();
   for (
@@ -251,19 +243,26 @@ function buildSearchPasses(ctx: CommentaryMoveContext): SearchPass[] {
     seen.add(cursor.id);
     path.push(cursor);
   }
-  const mainline = lineFromSans(
+  const line = lineFromSans(
     root.id,
     root.ply,
     root.fenAfter,
     path.map((node) => node.san ?? "")
   );
-  const playedIndex = path.findIndex((node) => node.id === move.nodeId);
-  const node = byId.get(move.nodeId);
-  const parentId = node?.parentId ?? null;
-  const moveStartPly = move.ply - 1;
+  return { line, path };
+}
 
+/**
+ * The played move: in the main line when it is there (with the game history around it, nearest
+ * first), else on its own from its parent.
+ */
+function playedPasses(
+  move: MoveReview,
+  mainline: CandidateLine,
+  playedIndex: number,
+  parentId: string | null
+): SearchPass[] {
   if (playedIndex >= 0 && playedIndex < mainline.sans.length) {
-    passes.push({ kind: "played", line: mainline, indices: [playedIndex] });
     const near = range(mainline.sans.length)
       .filter(
         (index) =>
@@ -272,51 +271,102 @@ function buildSearchPasses(ctx: CommentaryMoveContext): SearchPass[] {
           index <= playedIndex + HISTORY_AFTER
       )
       .sort((a, b) => Math.abs(a - playedIndex) - Math.abs(b - playedIndex) || b - a);
-    passes.push({ kind: "history", line: mainline, indices: near });
-  } else if (parentId) {
-    const played = lineFromUcis(parentId, moveStartPly, move.fenBefore, [move.playedMove]);
-    passes.push({ kind: "played", line: played, indices: range(played.sans.length) });
+    return [
+      { kind: "played", line: mainline, indices: [playedIndex] },
+      { kind: "history", line: mainline, indices: near }
+    ];
   }
+  if (!parentId) return [];
+  const played = lineFromUcis(parentId, move.ply - 1, move.fenBefore, [move.playedMove]);
+  return [{ kind: "played", line: played, indices: range(played.sans.length) }];
+}
 
-  const pushLine = (kind: LineKind, line: CandidateLine) => {
-    if (line.sans.length) passes.push({ kind, line, indices: range(line.sans.length) });
-  };
+type Candidate = { kind: LineKind; line: CandidateLine };
+
+/** The engine's lines from before the move (its parent): the best line, then each other one. */
+function engineCandidates(move: MoveReview, parentId: string): Candidate[] {
+  const fromParent = (ucis: readonly string[]) =>
+    lineFromUcis(parentId, move.ply - 1, move.fenBefore, ucis);
+  const best = move.bestLine.length ? move.bestLine : move.bestMove ? [move.bestMove] : [];
+  const bestKey = best.join(" ");
+  const alternatives = [...move.topLines]
+    .sort((a, b) => a.multipv - b.multipv)
+    .filter((line) => line.pv.join(" ") !== bestKey);
+  return [
+    { kind: "best", line: fromParent(best) },
+    ...alternatives.map((line): Candidate => ({ kind: "alternative", line: fromParent(line.pv) }))
+  ];
+}
+
+/** The engine's other replies to the played move (its node), after the reply line itself. */
+function otherReplyCandidates(
+  move: MoveReview,
+  nodeId: string,
+  reply: readonly string[]
+): Candidate[] {
+  const replyKey = reply.join(" ");
+  return [...(move.replyLines ?? [])]
+    .sort((a, b) => a.multipv - b.multipv)
+    .filter((line) => line.pv.join(" ") !== replyKey)
+    .map((line) => ({
+      kind: "reply",
+      line: lineFromUcis(nodeId, move.ply, move.fenAfter, line.pv)
+    }));
+}
+
+/** Maia's human moves from before the move (its parent): the top five at each rating. */
+function humanCandidates(move: MoveReview, parentId: string): Candidate[] {
+  return (move.humanPredictions ?? []).flatMap((prediction) =>
+    prediction.topMoves.slice(0, 5).map((candidate) => ({
+      kind: "human",
+      line: lineFromUcis(parentId, move.ply - 1, move.fenBefore, [candidate.uci])
+    }))
+  );
+}
+
+/** The rest of the main line (what no pass covers yet), nearest the played move first. */
+function restOfGamePass(
+  mainline: CandidateLine,
+  playedIndex: number,
+  passes: readonly SearchPass[]
+): SearchPass {
+  const center = playedIndex >= 0 ? playedIndex : 0;
+  const covered = new Set(
+    passes.filter((pass) => pass.line === mainline).flatMap((pass) => pass.indices)
+  );
+  const rest = range(mainline.sans.length)
+    .filter((index) => !covered.has(index))
+    .sort((a, b) => Math.abs(a - center) - Math.abs(b - center) || a - b);
+  return { kind: "game", line: mainline, indices: rest };
+}
+
+/**
+ * Candidate lines in priority order: the played move, nearby game history (nearest first), the
+ * reply line, the best line, each alternative, other replies, Maia's human moves, then the rest
+ * of the game.
+ */
+function buildSearchPasses(ctx: CommentaryMoveContext): SearchPass[] {
+  const { move, moveTree } = ctx;
+  const game = gameMainline(moveTree);
+  if (!game) return [];
+  const mainline = game.line;
+  const playedIndex = game.path.findIndex((node) => node.id === move.nodeId);
+  const node = moveTree.find((item) => item.id === move.nodeId);
+  const parentId = node?.parentId ?? null;
+  const passes = playedPasses(move, mainline, playedIndex, parentId);
+
   const reply = replyLineUcis(move, ctx.moves);
-  if (node && reply.length)
-    pushLine("reply", lineFromUcis(node.id, move.ply, move.fenAfter, reply));
-  if (parentId) {
-    const best = move.bestLine.length ? move.bestLine : move.bestMove ? [move.bestMove] : [];
-    pushLine("best", lineFromUcis(parentId, moveStartPly, move.fenBefore, best));
-    const bestKey = best.join(" ");
-    for (const line of [...move.topLines].sort((a, b) => a.multipv - b.multipv)) {
-      if (line.pv.join(" ") === bestKey) continue;
-      pushLine("alternative", lineFromUcis(parentId, moveStartPly, move.fenBefore, line.pv));
-    }
-  }
-  if (node) {
-    const replyKey = reply.join(" ");
-    for (const line of [...(move.replyLines ?? [])].sort((a, b) => a.multipv - b.multipv)) {
-      if (line.pv.join(" ") === replyKey) continue;
-      pushLine("reply", lineFromUcis(node.id, move.ply, move.fenAfter, line.pv));
-    }
-  }
-  if (parentId) {
-    for (const prediction of move.humanPredictions ?? []) {
-      for (const candidate of prediction.topMoves.slice(0, 5)) {
-        pushLine("human", lineFromUcis(parentId, moveStartPly, move.fenBefore, [candidate.uci]));
-      }
-    }
-  }
-  if (mainline.sans.length) {
-    const center = playedIndex >= 0 ? playedIndex : 0;
-    const covered = new Set(
-      passes.filter((pass) => pass.line === mainline).flatMap((pass) => pass.indices)
-    );
-    const rest = range(mainline.sans.length)
-      .filter((index) => !covered.has(index))
-      .sort((a, b) => Math.abs(a - center) - Math.abs(b - center) || a - b);
-    passes.push({ kind: "game", line: mainline, indices: rest });
-  }
+  const candidates: Candidate[] = [
+    ...(node && reply.length
+      ? [{ kind: "reply" as const, line: lineFromUcis(node.id, move.ply, move.fenAfter, reply) }]
+      : []),
+    ...(parentId ? engineCandidates(move, parentId) : []),
+    ...(node ? otherReplyCandidates(move, node.id, reply) : []),
+    ...(parentId ? humanCandidates(move, parentId) : [])
+  ];
+  for (const { kind, line } of candidates)
+    if (line.sans.length) passes.push({ kind, line, indices: range(line.sans.length) });
+  if (mainline.sans.length) passes.push(restOfGamePass(mainline, playedIndex, passes));
   return passes;
 }
 
@@ -454,6 +504,23 @@ export function reviewAnchorFor(
   const own = reviewByNodeId.get(nodeId);
   if (own) return { move: own, variation: false };
   const byId = new Map(moveTree.map((node) => [node.id, node]));
+  if (mainlineIds(moveTree, byId).has(nodeId)) return null;
+  const ancestors = ancestorIds(byId, nodeId);
+  const preferred = preferredNodeId ? reviewByNodeId.get(preferredNodeId) : undefined;
+  if (preferred && preferredNodeId && hangsOff(ancestors, preferredNodeId, byId))
+    return { move: preferred, variation: true };
+  for (const ancestorId of ancestors) {
+    const review = reviewByNodeId.get(ancestorId);
+    if (review) return { move: review, variation: true };
+  }
+  return null;
+}
+
+/** The main line's node ids, from the root. */
+function mainlineIds(
+  moveTree: readonly MoveNode[],
+  byId: ReadonlyMap<string, MoveNode>
+): Set<string> {
   const root = moveTree.find((node) => node.parentId === null);
   const mainline = new Set<string>();
   for (
@@ -462,7 +529,11 @@ export function reviewAnchorFor(
     cursor = byId.get(cursor.children[0] ?? "")
   )
     mainline.add(cursor.id);
-  if (mainline.has(nodeId)) return null;
+  return mainline;
+}
+
+/** `nodeId`'s ancestors, its parent first. */
+function ancestorIds(byId: ReadonlyMap<string, MoveNode>, nodeId: string): string[] {
   const ancestors: string[] = [];
   const seen = new Set<string>();
   for (
@@ -473,19 +544,15 @@ export function reviewAnchorFor(
     seen.add(cursor.id);
     ancestors.push(cursor.parentId);
   }
-  const preferred = preferredNodeId ? reviewByNodeId.get(preferredNodeId) : undefined;
-  const preferredParent = preferredNodeId ? (byId.get(preferredNodeId)?.parentId ?? null) : null;
-  if (
-    preferred &&
-    preferredNodeId &&
-    (ancestors.includes(preferredNodeId) ||
-      (preferredParent !== null && ancestors.includes(preferredParent)))
-  ) {
-    return { move: preferred, variation: true };
-  }
-  for (const ancestorId of ancestors) {
-    const review = reviewByNodeId.get(ancestorId);
-    if (review) return { move: review, variation: true };
-  }
-  return null;
+  return ancestors;
+}
+
+/** Whether a node with these `ancestors` lies below `moveId`, or below its parent. */
+function hangsOff(
+  ancestors: readonly string[],
+  moveId: string,
+  byId: ReadonlyMap<string, MoveNode>
+): boolean {
+  const parentId = byId.get(moveId)?.parentId ?? null;
+  return ancestors.includes(moveId) || (parentId !== null && ancestors.includes(parentId));
 }

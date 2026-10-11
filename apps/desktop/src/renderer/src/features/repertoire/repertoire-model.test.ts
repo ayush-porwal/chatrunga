@@ -60,7 +60,7 @@ describe("deriveChoices", () => {
   it("names accepted, preferred and reference continuations at a player-to-move position", () => {
     const chapter = chapterOf(sampleChapter(), { d0: { edge: "reference" } });
     const lookup = buildChapterLookup(chapter);
-    const view = deriveChoices(chapter, lookup, "root", "white", null);
+    const view = deriveChoices(chapter, lookup, { nodeId: "root", color: "white", decision: null });
     expect(view.side).toBe("player");
     expect(view.rows.map((row) => [row.san, row.state])).toEqual([
       ["e4", "preferred"],
@@ -71,9 +71,13 @@ describe("deriveChoices", () => {
   it("follows a stored preference while it is supported", () => {
     const chapter = chapterOf(sampleChapter());
     const lookup = buildChapterLookup(chapter);
-    const view = deriveChoices(chapter, lookup, "root", "white", {
-      acceptedUcis: ["e2e4", "d2d4"],
-      preferredUci: "d2d4"
+    const view = deriveChoices(chapter, lookup, {
+      nodeId: "root",
+      color: "white",
+      decision: {
+        acceptedUcis: ["e2e4", "d2d4"],
+        preferredUci: "d2d4"
+      }
     });
     expect(view.rows.map((row) => row.state)).toEqual(["accepted", "preferred"]);
   });
@@ -81,9 +85,13 @@ describe("deriveChoices", () => {
   it("falls back to the first accepted move when the stored preference is a reference", () => {
     const chapter = chapterOf(sampleChapter(), { d0: { edge: "reference" } });
     const lookup = buildChapterLookup(chapter);
-    const view = deriveChoices(chapter, lookup, "root", "white", {
-      acceptedUcis: ["d2d4"],
-      preferredUci: "d2d4"
+    const view = deriveChoices(chapter, lookup, {
+      nodeId: "root",
+      color: "white",
+      decision: {
+        acceptedUcis: ["d2d4"],
+        preferredUci: "d2d4"
+      }
     });
     expect(view.rows.map((row) => row.state)).toEqual(["preferred", "reference"]);
   });
@@ -92,9 +100,13 @@ describe("deriveChoices", () => {
     // The position is shared with another chapter, where 1. c4 is accepted and preferred.
     const chapter = chapterOf(sampleChapter());
     const lookup = buildChapterLookup(chapter);
-    const view = deriveChoices(chapter, lookup, "root", "white", {
-      acceptedUcis: ["c2c4", "e2e4", "d2d4"],
-      preferredUci: "c2c4"
+    const view = deriveChoices(chapter, lookup, {
+      nodeId: "root",
+      color: "white",
+      decision: {
+        acceptedUcis: ["c2c4", "e2e4", "d2d4"],
+        preferredUci: "c2c4"
+      }
     });
     expect(view.rows.map((row) => row.state)).toEqual(["accepted", "accepted"]);
   });
@@ -105,7 +117,7 @@ describe("deriveChoices", () => {
       s0: { edge: "reference" }
     });
     const lookup = buildChapterLookup(chapter);
-    const view = deriveChoices(chapter, lookup, "w0", "white", null);
+    const view = deriveChoices(chapter, lookup, { nodeId: "w0", color: "white", decision: null });
     expect(view.side).toBe("opponent");
     expect(view.rows.map((row) => [row.san, row.state, row.disabled])).toEqual([
       ["e5", "covered", false],
@@ -116,9 +128,13 @@ describe("deriveChoices", () => {
   it("marks moves outside training scope as not trained here", () => {
     const tree = sampleChapter();
     const states = (chapter: ReturnType<typeof chapterOf>, nodeId: string) =>
-      deriveChoices(chapter, buildChapterLookup(chapter), nodeId, "white", {
-        acceptedUcis: ["e2e4"],
-        preferredUci: "e2e4"
+      deriveChoices(chapter, buildChapterLookup(chapter), {
+        nodeId,
+        color: "white",
+        decision: {
+          acceptedUcis: ["e2e4"],
+          preferredUci: "e2e4"
+        }
       }).rows.map((row) => [row.san, row.state, row.edge]);
 
     // A reference or disabled chapter trains nothing.
@@ -145,9 +161,13 @@ describe("deriveChoices", () => {
 
   it("returns nothing for an unknown node", () => {
     const chapter = chapterOf(sampleChapter());
-    expect(deriveChoices(chapter, buildChapterLookup(chapter), "nope", "white", null).rows).toEqual(
-      []
-    );
+    expect(
+      deriveChoices(chapter, buildChapterLookup(chapter), {
+        nodeId: "nope",
+        color: "white",
+        decision: null
+      }).rows
+    ).toEqual([]);
   });
 });
 

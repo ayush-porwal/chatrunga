@@ -112,8 +112,18 @@ describe("PGN import/export", () => {
     const game = createEmptyGame();
     const e4 = applyUserMove(START_FEN, { from: "e2", to: "e4" });
     expect(e4).not.toBeNull();
-    const first = addMoveNode(game.moveTree, "root", e4!.san, e4!.uci, START_FEN, e4!.fen);
-    const duplicate = addMoveNode(first.moveTree, "root", e4!.san, e4!.uci, START_FEN, e4!.fen);
+    const first = addMoveNode(game.moveTree, "root", {
+      san: e4!.san,
+      uci: e4!.uci,
+      fenBefore: START_FEN,
+      fenAfter: e4!.fen
+    });
+    const duplicate = addMoveNode(first.moveTree, "root", {
+      san: e4!.san,
+      uci: e4!.uci,
+      fenBefore: START_FEN,
+      fenAfter: e4!.fen
+    });
 
     expect(duplicate.node.id).toBe(first.node.id);
     expect(nodeIdForBoardFen(first.moveTree, e4!.fen, "root")).toBe(first.node.id);
@@ -228,15 +238,14 @@ describe("PGN with the analysis", () => {
     index: number,
     annotation: MoveAnnotation | null,
     evalAfter: EngineScore | null,
-    bestLine: string[] = [],
-    bestEvalAfter: EngineScore | null = null
+    best: { line: string[]; evalAfter: EngineScore } | null = null
   ): PgnAnalysisMove => ({
     nodeId: mainline[index].id,
     fenBefore: mainline[index].fenBefore,
     evalAfter,
-    bestEvalAfter,
-    bestMove: bestLine[0] ?? null,
-    bestLine,
+    bestEvalAfter: best?.evalAfter ?? null,
+    bestMove: best?.line[0] ?? null,
+    bestLine: best?.line ?? [],
     assessment: { annotation }
   });
   const analysis: PgnAnalysis = {
@@ -245,12 +254,17 @@ describe("PGN with the analysis", () => {
       reviewed(0, "book", cp(30)),
       reviewed(1, null, cp(32)),
       // A best line already explored by hand: only its new move is added.
-      reviewed(2, "inaccuracy", cp(0), ["g1f3", "b8c6", "f1c4"], cp(35)),
+      reviewed(2, "inaccuracy", cp(0), { line: ["g1f3", "b8c6", "f1c4"], evalAfter: cp(35) }),
       // Replaces the eval the imported game brought.
       reviewed(3, "excellent", cp(60)),
       // Replaces the imported $1; its best line starts with the move played, so it adds nothing.
-      reviewed(4, "mistake", cp(20), ["f1c4", "f8c5"], cp(25)),
-      reviewed(5, "blunder", { type: "mate", value: 1 }, ["d8e7", "g1f3"], cp(40)),
+      reviewed(4, "mistake", cp(20), { line: ["f1c4", "f8c5"], evalAfter: cp(25) }),
+      reviewed(
+        5,
+        "blunder",
+        { type: "mate", value: 1 },
+        { line: ["d8e7", "g1f3"], evalAfter: cp(40) }
+      ),
       // Checkmate (`mate 0`): no eval.
       reviewed(6, "great", { type: "mate", value: 0 })
     ]

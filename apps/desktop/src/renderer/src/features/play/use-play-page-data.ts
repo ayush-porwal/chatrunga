@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useShallow } from "zustand/react/shallow";
-import type { Color, SavedGame } from "@chaturanga/shared/types/chess";
+import type { Color, GameMode, SavedGame } from "@chaturanga/shared/types/chess";
 import { useDatabasesQuery, useSaveGameMutation } from "../../queries/api";
 import { usePuzzleOfTheDayQuery } from "../../queries/puzzles";
 import { useGameStore, type GameOutcome } from "../../stores/game-store";
-import { useLichessStore } from "../../stores/lichess-store";
+import { useLichessStore, type LiveLichessGame } from "../../stores/lichess-store";
 import { savedEngineClock, timeForfeitSave } from "../../app/rejoin-saved-game";
 import { sessionFromSavedGame } from "../game/saved-game";
 import { clockLabel, playerLabel } from "../lichess/lichess-game";
@@ -29,7 +29,6 @@ const MAX_FLAG_WAIT_MS = 24 * 60 * 60 * 1000;
  */
 export function useInProgressCard(): { card: InProgressCard | null; settled: boolean } {
   const live = useLichessStore((state) => (state.live && !state.live.over ? state.live : null));
-  const ongoingGameIds = useLichessStore((state) => state.ongoingGameIds);
   const board = useGameStore(
     useShallow((state) => ({
       gameId: state.gameId,
@@ -43,18 +42,88 @@ export function useInProgressCard(): { card: InProgressCard | null; settled: boo
     }))
   );
   const end = useMemo(() => mainlineSummary(board.moveTree), [board.moveTree]);
+  const playing = usePlayingElsewhere();
+  const saved = useLatestSavedEngineGame();
 
-  // Lichess games of yours in progress elsewhere: only asked for when there are some.
-  const playingEnabled = ongoingGameIds.length > 0 && Boolean(window.chaturanga);
+  const card = pickInProgress({
+    live: live ? liveGameInput(live, board, end) : null,
+    playing: playing.games,
+    boardMatch: boardMatchInput(board, end),
+    saved: saved.game
+  });
+  return { card, settled: saved.settled && playing.settled };
+}
+
+type BoardState = {
+  gameId: string | null;
+  mode: GameMode;
+  engineSide: Color | null;
+  over: boolean;
+  white: string | null | undefined;
+  black: string | null | undefined;
+  currentFen: string;
+};
+
+/**
+ * The Lichess game being played on the board, at its main line's end (the board's position until it
+ * has one).
+ */
+function liveGameInput(
+  live: LiveLichessGame,
+  board: BoardState,
+  end: ReturnType<typeof mainlineSummary>
+): LiveGameInput {
+  return {
+    savedId: board.gameId,
+    opponent: playerLabel(live.yourColor === "white" ? live.full.black : live.full.white),
+    clock: live.full.clock ? clockLabel(live.full.clock) : null,
+    speed: live.full.speed,
+    rated: live.full.rated,
+    yourColor: live.yourColor,
+    fen: end?.fen ?? board.currentFen,
+    lastMove: end?.lastMove ?? null
+  };
+}
+
+/** The engine game being played on the board (null: none, or it has ended). */
+function boardMatchInput(
+  board: BoardState,
+  end: ReturnType<typeof mainlineSummary>
+): BoardMatchInput | null {
+  const { engineSide } = board;
+  if (board.mode !== "engine" || !engineSide || board.over) return null;
+  return {
+    savedId: board.gameId,
+    engineName: (engineSide === "white" ? board.white : board.black) ?? "",
+    humanColor: (engineSide === "white" ? "black" : "white") satisfies Color,
+    fen: end?.fen ?? board.currentFen,
+    lastMove: end?.lastMove ?? null
+  };
+}
+
+/** Lichess games of yours in progress elsewhere: only asked for when there are some. */
+function usePlayingElsewhere() {
+  const ongoingGameIds = useLichessStore((state) => state.ongoingGameIds);
+  const enabled = ongoingGameIds.length > 0 && Boolean(window.chaturanga);
   const playing = useQuery({
     queryKey: ["lichess", "playing", ongoingGameIds],
     queryFn: async () => (await window.chaturanga?.lichess.playing()) ?? [],
-    enabled: playingEnabled,
+    enabled,
     staleTime: 15_000
   });
+  return {
+    games: (playing.data ?? []).filter((game) => ongoingGameIds.includes(game.id)),
+    settled: !enabled || !playing.isPending
+  };
+}
 
-  // The newest saved engine game still in progress (read on its own: it may be older than the
-  // games Recent games shows). A save of any game reads it again.
+/**
+ * The newest saved engine game still in progress (read on its own: it may be older than the
+ * games Recent games shows). A save of any game reads it again. One whose clock ran out while it
+ * was away is no longer in progress: it is saved lost on time (see useEndSavedGameOnTime) and the
+ * card skips it.
+ */
+function useLatestSavedEngineGame(): { game: SavedGameInput | null; settled: boolean } {
   const latest = useQuery({
     queryKey: ["games", "latest-unfinished-engine-game"],
     queryFn: async (): Promise<SavedGame | null> =>
@@ -63,8 +132,7 @@ export function useInProgressCard(): { card: InProgressCard | null; settled: boo
     staleTime: 5_000
   });
   const latestGame = latest.data ?? null;
-  // Its clocks now. One that ran out while it was away is no longer in progress: it is saved
-  // lost on time (see useEndSavedGameOnTime) and the card skips it.
+  // Its clocks now.
   const now = useNow(latestGame);
   const latestClock = useMemo(
     () =>
@@ -77,54 +145,26 @@ export function useInProgressCard(): { card: InProgressCard | null; settled: boo
         : null,
     [latestGame, now]
   );
-  const flagged = Boolean(latestClock?.flagged);
-  useEndSavedGameOnTime(latestGame, latestClock?.flagged ?? null);
+  const flagged = latestClock?.flagged ?? null;
+  useEndSavedGameOnTime(latestGame, flagged);
+  return {
+    game: flagged ? null : savedGameInput(latestGame),
+    settled: !window.chaturanga || !latest.isPending
+  };
+}
 
-  const liveInput: LiveGameInput | null = live
-    ? {
-        savedId: board.gameId,
-        opponent: playerLabel(live.yourColor === "white" ? live.full.black : live.full.white),
-        clock: live.full.clock ? clockLabel(live.full.clock) : null,
-        speed: live.full.speed,
-        rated: live.full.rated,
-        yourColor: live.yourColor,
-        fen: end?.fen ?? board.currentFen,
-        lastMove: end?.lastMove ?? null
-      }
-    : null;
-  const engineSide = board.engineSide;
-  const boardMatch: BoardMatchInput | null =
-    board.mode === "engine" && engineSide && !board.over
-      ? {
-          savedId: board.gameId,
-          engineName: (engineSide === "white" ? board.white : board.black) ?? "",
-          humanColor: (engineSide === "white" ? "black" : "white") satisfies Color,
-          fen: end?.fen ?? board.currentFen,
-          lastMove: end?.lastMove ?? null
-        }
-      : null;
-  const savedEnd = latestGame ? mainlineSummary(latestGame.moveTree) : null;
-  const saved: SavedGameInput | null =
-    latestGame && savedEnd && !flagged
-      ? {
-          id: latestGame.id,
-          white: latestGame.white,
-          black: latestGame.black,
-          fen: savedEnd.fen,
-          lastMove: savedEnd.lastMove,
-          plies: savedEnd.plies
-        }
-      : null;
-
-  const card = pickInProgress({
-    live: liveInput,
-    playing: (playing.data ?? []).filter((game) => ongoingGameIds.includes(game.id)),
-    boardMatch,
-    saved
-  });
-  const settled =
-    (!window.chaturanga || !latest.isPending) && (!playingEnabled || !playing.isPending);
-  return { card, settled };
+/** A saved game as the card shows it, at its main line's end (null without one or its moves). */
+function savedGameInput(game: SavedGame | null): SavedGameInput | null {
+  const savedEnd = game ? mainlineSummary(game.moveTree) : null;
+  if (!game || !savedEnd) return null;
+  return {
+    id: game.id,
+    white: game.white,
+    black: game.black,
+    fen: savedEnd.fen,
+    lastMove: savedEnd.lastMove,
+    plies: savedEnd.plies
+  };
 }
 
 /**

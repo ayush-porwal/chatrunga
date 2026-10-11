@@ -76,20 +76,26 @@ const SECTIONS = [
   ["chore", "Maintenance"]
 ];
 
+/** A commit's section (by its Conventional Commits type) and its bullet in the notes. */
+function noteEntry({ sha, subject }, repo) {
+  const match = /^(\w+)(?:\(([^)]+)\))?(!)?:\s*(.+)$/.exec(subject);
+  const type = match?.[1]?.toLowerCase();
+  const title = SECTIONS.find(([key]) => key === type)?.[1] ?? "Other changes";
+  const scope = match?.[2] ? `**${match[2]}:** ` : "";
+  const text = match ? match[4] : subject;
+  const breaking = match?.[3] ? " ⚠️ breaking" : "";
+  const link = repo
+    ? `[\`${sha.slice(0, 7)}\`](https://github.com/${repo}/commit/${sha})`
+    : `\`${sha.slice(0, 7)}\``;
+  return { title, line: `- ${scope}${text}${breaking} (${link})` };
+}
+
 export function releaseNotes({ commits, version, previousTag, repo }) {
   const groups = new Map();
-  for (const { sha, subject } of commits) {
-    const match = /^(\w+)(?:\(([^)]+)\))?(!)?:\s*(.+)$/.exec(subject);
-    const type = match?.[1]?.toLowerCase();
-    const title = SECTIONS.find(([key]) => key === type)?.[1] ?? "Other changes";
-    const scope = match?.[2] ? `**${match[2]}:** ` : "";
-    const text = match ? match[4] : subject;
-    const breaking = match?.[3] ? " ⚠️ breaking" : "";
-    const link = repo
-      ? `[\`${sha.slice(0, 7)}\`](https://github.com/${repo}/commit/${sha})`
-      : `\`${sha.slice(0, 7)}\``;
+  for (const commit of commits) {
+    const { title, line } = noteEntry(commit, repo);
     if (!groups.has(title)) groups.set(title, []);
-    groups.get(title).push(`- ${scope}${text}${breaking} (${link})`);
+    groups.get(title).push(line);
   }
   const order = [...new Set(SECTIONS.map(([, title]) => title)), "Other changes"];
   const body = order

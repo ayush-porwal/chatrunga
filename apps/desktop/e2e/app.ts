@@ -506,18 +506,7 @@ export async function closeApp(
   // Windows `app.process()` is the shell that started Electron): all of them are listed, then
   // killed.
   const processes = pid === undefined ? [] : processTree(pid);
-  if (process.platform === "win32" && pid !== undefined) {
-    for (const id of [pid, ...processes.map((entry) => entry.pid)])
-      spawnSync("taskkill", ["/pid", String(id), "/T", "/F"], { stdio: "ignore" });
-  } else {
-    for (const id of [pid, ...processes.map((entry) => entry.pid)]) {
-      try {
-        if (id !== undefined) process.kill(id, "SIGKILL");
-      } catch {
-        // Gone already.
-      }
-    }
-  }
+  if (pid !== undefined) killProcesses([pid, ...processes.map((entry) => entry.pid)]);
   await closed;
   const listed = processes
     .map((entry) => `${entry.pid} (parent ${entry.parent}) ${entry.command}`)
@@ -529,6 +518,22 @@ export async function closeApp(
     `${what}, so it was killed.\nIts processes then:\n${listed || "(none)"}` +
       (await quitDiagnostics(app))
   );
+}
+
+/** Kills a stuck app's processes; on Windows with their children (`taskkill /T`). */
+function killProcesses(ids: readonly number[]): void {
+  if (process.platform === "win32") {
+    for (const id of ids)
+      spawnSync("taskkill", ["/pid", String(id), "/T", "/F"], { stdio: "ignore" });
+    return;
+  }
+  for (const id of ids) {
+    try {
+      process.kill(id, "SIGKILL");
+    } catch {
+      // Gone already.
+    }
+  }
 }
 
 /** The profile's main.log ("" until the app writes it). */

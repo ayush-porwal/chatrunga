@@ -6,6 +6,8 @@
  * the default (open charts, the default height).
  */
 
+import { readLocalPref, writeLocalPref } from "@/lib/local-prefs";
+
 /** The whole charts section ("charts"), or one of its strips. */
 export type FoldableChart = "charts" | "win" | "difficulty" | "times";
 
@@ -16,29 +18,12 @@ const KEYS: Record<FoldableChart, string> = {
   times: "chaturanga.reviewCharts.timesCollapsed"
 };
 
-function storage(): Storage | null {
-  // Storage access throws where it is blocked (a sandboxed or opaque origin); Node has none.
-  try {
-    return "localStorage" in globalThis ? globalThis.localStorage : null;
-  } catch {
-    return null;
-  }
-}
-
 export function loadChartCollapsed(chart: FoldableChart): boolean {
-  try {
-    return storage()?.getItem(KEYS[chart]) === "1";
-  } catch {
-    return false;
-  }
+  return readLocalPref(KEYS[chart]) === "1";
 }
 
 export function saveChartCollapsed(chart: FoldableChart, collapsed: boolean): void {
-  try {
-    storage()?.setItem(KEYS[chart], collapsed ? "1" : "0");
-  } catch {
-    // Full or blocked storage: the choice still applies for this session.
-  }
+  writeLocalPref(KEYS[chart], collapsed ? "1" : "0");
 }
 
 const HEIGHT_KEY = "chaturanga.reviewCharts.height";
@@ -47,22 +32,12 @@ const MAX_STORED_HEIGHT = 10_000;
 
 /** The charts area's height the splitter was dragged to; null: the default for the views shown. */
 export function loadChartsHeight(): number | null {
-  try {
-    const raw = storage()?.getItem(HEIGHT_KEY) ?? null;
-    if (raw === null) return null;
-    const height = Number(raw);
-    return Number.isFinite(height) && height > 0 && height <= MAX_STORED_HEIGHT ? height : null;
-  } catch {
-    return null;
-  }
+  const raw = readLocalPref(HEIGHT_KEY);
+  if (raw === null) return null;
+  const height = Number(raw);
+  return Number.isFinite(height) && height > 0 && height <= MAX_STORED_HEIGHT ? height : null;
 }
 
 export function saveChartsHeight(height: number | null): void {
-  try {
-    const store = storage();
-    if (height === null) store?.removeItem(HEIGHT_KEY);
-    else store?.setItem(HEIGHT_KEY, String(Math.round(height)));
-  } catch {
-    // Full or blocked storage: the height still applies for this session.
-  }
+  writeLocalPref(HEIGHT_KEY, height === null ? null : String(Math.round(height)));
 }

@@ -97,27 +97,46 @@ function Disclosure({
         ) : null}
       </button>
       {present ? (
+        <DisclosureBody id={contentId} variant={variant} expanded={expanded}>
+          {children}
+        </DisclosureBody>
+      ) : null}
+    </div>
+  );
+}
+
+/** The body, growing open while `expanded` (grid rows 0fr → 1fr, content fades in). */
+function DisclosureBody({
+  id,
+  variant,
+  expanded,
+  children
+}: {
+  id: string;
+  variant: "inline" | "panel";
+  expanded: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      id={id}
+      className={cn(
+        "grid transition-[grid-template-rows] duration-standard ease-standard",
+        expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+      )}
+    >
+      {/* The 4px bleed keeps the children's focus rings clear of the clip. */}
+      <div className="-mx-1 -mb-1 min-h-0 overflow-hidden px-1 pb-1">
         <div
-          id={contentId}
           className={cn(
-            "grid transition-[grid-template-rows] duration-standard ease-standard",
-            expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+            "transition-opacity duration-standard ease-standard",
+            variant === "panel" ? "border-t border-line-subtle p-4" : "pl-5.5 pt-2",
+            expanded ? "opacity-100" : "opacity-0"
           )}
         >
-          {/* The 4px bleed keeps the children's focus rings clear of the clip. */}
-          <div className="-mx-1 -mb-1 min-h-0 overflow-hidden px-1 pb-1">
-            <div
-              className={cn(
-                "transition-opacity duration-standard ease-standard",
-                panel ? "border-t border-line-subtle p-4" : "pl-5.5 pt-2",
-                expanded ? "opacity-100" : "opacity-0"
-              )}
-            >
-              {children}
-            </div>
-          </div>
+          {children}
         </div>
-      ) : null}
+      </div>
     </div>
   );
 }

@@ -3,7 +3,10 @@ import type {
   ExplainPuzzleInput,
   ExplainPuzzleResult
 } from "@chaturanga/shared/ipc/chaturanga-api";
-import type { PuzzleOutcomeKind } from "@chaturanga/shared/schemas/puzzle-insight";
+import type {
+  PuzzleInsightPayload,
+  PuzzleOutcomeKind
+} from "@chaturanga/shared/schemas/puzzle-insight";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import type {
   AnalysePositionsInput,
@@ -17,7 +20,8 @@ import { usePuzzleStore, type PuzzleWrongMove } from "../../stores/puzzle-store"
 import {
   buildPuzzleExplanationPayload,
   explainSearchPlan,
-  puzzleIdentity
+  puzzleIdentity,
+  type ExplainAnalysis
 } from "./puzzle-explanation";
 import { nonSolutionSan } from "./puzzle-prose";
 
@@ -111,6 +115,20 @@ function desktopDeps(): ExplainDeps | null {
   };
 }
 
+/** The lines the search found for each position of its plan (none for a position not searched). */
+function searchedLines(
+  analysis: AnalysePositionsResult,
+  plan: ReturnType<typeof explainSearchPlan>
+): ExplainAnalysis {
+  const at = (index: number | null) => (index === null ? null : (analysis.lines[index] ?? []));
+  return {
+    engineName: analysis.engineName,
+    start: at(plan.start) ?? [],
+    beforeMistake: at(plan.beforeMistake),
+    afterMistake: at(plan.afterMistake)
+  };
+}
+
 /**
  * Explains a finished puzzle: the engine searches it with the Game review settings ("analysing"),
  * then the coach writes the explanation ("writing"). A request already running for the same key
@@ -140,7 +158,8 @@ export async function requestPuzzleExplanation(
     });
     return;
   }
-  if (!request.engine) {
+  const engine = request.engine;
+  if (!engine) {
     setEntry(key, {
       ...base,
       phase: "error",
@@ -167,7 +186,7 @@ export async function requestPuzzleExplanation(
   try {
     analysis = await deps.analysePositions({
       requestId,
-      engineId: request.engine.id,
+      engineId: engine.id,
       moveTimeMs: request.settings.reviewSearchTimeMs,
       positions: plan.positions
     });
@@ -177,17 +196,11 @@ export async function requestPuzzleExplanation(
     );
     return;
   }
-  const at = (index: number | null) => (index === null ? null : (analysis.lines[index] ?? []));
   const payload = buildPuzzleExplanationPayload({
     puzzle,
     kind: request.kind,
     wrong: request.wrong,
-    analysis: {
-      engineName: analysis.engineName,
-      start: at(plan.start) ?? [],
-      beforeMistake: at(plan.beforeMistake),
-      afterMistake: at(plan.afterMistake)
-    },
+    analysis: searchedLines(analysis, plan),
     settings: request.settings
   });
   if (!payload) {
@@ -195,9 +208,20 @@ export async function requestPuzzleExplanation(
     return;
   }
   if (!patchEntry(key, requestId, { phase: "writing", otherSan: nonSolutionSan(payload) })) return;
+  await writeExplanation(key, requestId, payload, deps.explainPuzzle);
+}
 
+/** The coach writes the explanation of `payload`: the entry ends ready, or failed with why. */
+async function writeExplanation(
+  key: string,
+  requestId: string,
+  payload: PuzzleInsightPayload,
+  explainPuzzle: ExplainDeps["explainPuzzle"]
+): Promise<void> {
+  const fail = (error: string) =>
+    patchEntry(key, requestId, { phase: "error", requestId: null, error, cancel: null });
   try {
-    const answer = await deps.explainPuzzle({ requestId, payload });
+    const answer = await explainPuzzle({ requestId, payload });
     if (answer.cancelled) return;
     if (!answer.explanation) {
       fail(answer.error ?? NO_ANSWER_ERROR);

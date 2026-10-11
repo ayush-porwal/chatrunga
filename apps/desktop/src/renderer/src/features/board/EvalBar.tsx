@@ -192,6 +192,27 @@ export const EvalBar = memo(function EvalBar({ orientation }: { orientation: Col
 });
 
 /**
+ * The evaluation to show: `current`, else the last one shown, held through the moment a new search
+ * has no score yet (`holding`).
+ */
+function useHeldEval(current: BoardEval | null, holding: boolean): BoardEval | null {
+  const [held, setHeld] = useState<BoardEval | null>(current);
+  if (current && !sameEval(current, held)) setHeld(current);
+  else if (!current && held && !holding) setHeld(null);
+  return current ?? held;
+}
+
+/** Whether two evaluations draw the same bar. */
+function sameEval(a: BoardEval, b: BoardEval | null): boolean {
+  return (
+    a.whiteShare === b?.whiteShare &&
+    a.label === b.label &&
+    a.barText === b.barText &&
+    a.barSide === b.barSide
+  );
+}
+
+/**
  * The vertical eval bar beside a board: White's share in the white side's colour grows from White's
  * side of the board over the black side's dark grey, and the evaluation is printed small and bold
  * at the better side's end (evalBarLabel), dark on the white fill and light on the grey.
@@ -209,18 +230,7 @@ export function EvalBarFill({
   live: boolean;
 }) {
   const searching = useAnalysisStore((state) => state.status === "thinking");
-  // The last evaluation shown, held through the moment a new search has no score yet.
-  const [held, setHeld] = useState<BoardEval | null>(current);
-  if (
-    current &&
-    (current.whiteShare !== held?.whiteShare ||
-      current.label !== held.label ||
-      current.barText !== held.barText ||
-      current.barSide !== held.barSide)
-  )
-    setHeld(current);
-  else if (!current && held && !(live && searching)) setHeld(null);
-  const shown = current ?? held;
+  const shown = useHeldEval(current, live && searching);
   if (!shown) return null;
   const whiteAtBottom = orientation === "white";
   const text = evalBarLabel(shown, orientation);

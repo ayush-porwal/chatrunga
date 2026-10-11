@@ -13,6 +13,7 @@ import {
   type ImportProgressEvent,
   type RepertoireColor
 } from "@chaturanga/shared/types/repertoire";
+import type { MoveNode } from "@chaturanga/shared/types/chess";
 import { createPgnGameSplitter } from "@chaturanga/shared/chess/pgn-game-splitter";
 import {
   createRepertoirePgnReader,
@@ -188,35 +189,7 @@ export async function runImport(
   let sliceStart = now();
   const games: ImportedGame[] = [];
   for (const game of parsed.games) {
-    if (game.rejected) {
-      games.push({ ...game, positionKeys: {}, decisions: NO_DECISIONS });
-    } else {
-      try {
-        const tree = validateTree(game.tree, game.rootFen);
-        const positionKeys: Record<string, string> = {};
-        const keysByFen = new Map<string, string>();
-        for (const node of tree) {
-          positionKeys[node.id] = positionKey(node.fenAfter);
-          keysByFen.set(node.fenAfter, positionKeys[node.id]);
-        }
-        const keyOf = (fen: string) => keysByFen.get(fen) ?? positionKey(fen);
-        const decisions = {
-          white: importedDecisionCount("white", tree, keyOf),
-          black: importedDecisionCount("black", tree, keyOf)
-        };
-        games.push({ ...game, tree, positionKeys, decisions });
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        games.push({
-          ...game,
-          nodeCount: 0,
-          warnings: [...game.warnings, reason],
-          rejected: reason,
-          positionKeys: {},
-          decisions: NO_DECISIONS
-        });
-      }
-    }
+    games.push(importedGame(game));
     if (now() - sliceStart >= VALIDATION_SLICE_MS) {
       report("validating");
       await yieldToEventLoop();
@@ -225,6 +198,39 @@ export async function runImport(
     }
   }
   return { games };
+}
+
+/**
+ * A parsed game as an import holds it: its tree validated (a tree that fails rejects the game),
+ * each node's position key, and what it would practise per repertoire colour.
+ */
+function importedGame(game: ParsedRepertoireGame): ImportedGame {
+  if (game.rejected) return { ...game, positionKeys: {}, decisions: NO_DECISIONS };
+  try {
+    const tree = validateTree(game.tree, game.rootFen);
+    const positionKeys: Record<string, string> = {};
+    const keysByFen = new Map<string, string>();
+    for (const node of tree) {
+      positionKeys[node.id] = positionKey(node.fenAfter);
+      keysByFen.set(node.fenAfter, positionKeys[node.id]);
+    }
+    const keyOf = (fen: string) => keysByFen.get(fen) ?? positionKey(fen);
+    const decisions = {
+      white: importedDecisionCount("white", tree, keyOf),
+      black: importedDecisionCount("black", tree, keyOf)
+    };
+    return { ...game, tree, positionKeys, decisions };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return {
+      ...game,
+      nodeCount: 0,
+      warnings: [...game.warnings, reason],
+      rejected: reason,
+      positionKeys: {},
+      decisions: NO_DECISIONS
+    };
+  }
 }
 
 /**
@@ -266,18 +272,26 @@ export type ImportWorkerMessage =
   | { type: "failed"; message: string }
   | { type: "cancelled" };
 
+/** The `[node id, position key]` pairs of `nodes` that have a key, for a slice message. */
+export function positionKeysOf(
+  nodes: readonly MoveNode[],
+  positionKeys: Partial<Record<string, string>>
+): [string, string][] {
+  const keys: [string, string][] = [];
+  for (const node of nodes) {
+    const key = positionKeys[node.id];
+    if (key !== undefined) keys.push([node.id, key]);
+  }
+  return keys;
+}
+
 /** The messages that carry `result` to the main thread, in order, ending with `done`. */
 export function* resultMessages(result: ImportedPgn): Generator<ImportWorkerMessage> {
   for (const { tree, positionKeys, ...game } of result.games) {
     yield { type: "game", game };
     for (let start = 0; start < tree.length; start += RESULT_SLICE_NODES) {
       const nodes = tree.slice(start, start + RESULT_SLICE_NODES);
-      const keys: [string, string][] = [];
-      for (const node of nodes) {
-        const key = positionKeys[node.id];
-        if (key !== undefined) keys.push([node.id, key]);
-      }
-      yield { type: "nodes", nodes, keys };
+      yield { type: "nodes", nodes, keys: positionKeysOf(nodes, positionKeys) };
     }
   }
   yield { type: "done" };

@@ -54,6 +54,36 @@ export type ViewHeights = { win: number | null; difficulty: number | null; times
 
 export type OpenViews = { win: boolean; difficulty: boolean; times: boolean };
 
+/**
+ * How each view shows, from what the review has (evaluations, Maia difficulty at a model, move
+ * times) and the views folded. Without difficulty data a prompt takes the strip's place where one
+ * is offered (`maiaPrompt`); otherwise the strip is gone, as the times strip is without clocks.
+ */
+export function chartsLayout(input: {
+  hasEvals: boolean;
+  hasDifficulty: boolean;
+  hasTimes: boolean;
+  folded: Record<keyof ViewHeights, boolean>;
+  maiaPrompt: boolean;
+}): ChartsLayout {
+  const { folded } = input;
+  const strip = (shown: boolean, isFolded: boolean) =>
+    shown ? (isFolded ? "folded" : "open") : null;
+  return {
+    win: folded.win ? "folded" : input.hasEvals ? "open" : "empty",
+    difficulty:
+      strip(input.hasDifficulty, folded.difficulty) ?? (input.maiaPrompt ? "prompt" : "none"),
+    times: strip(input.hasTimes, folded.times) ?? "none"
+  };
+}
+
+/** The last view drawn, which the shared move axis sits under (null: none is). */
+export function lastOpenView(views: ViewHeights): keyof ViewHeights | null {
+  if (views.times !== null) return "times";
+  if (views.difficulty !== null) return "difficulty";
+  return views.win === null ? null : "win";
+}
+
 export function openViews(layout: ChartsLayout): OpenViews {
   return {
     win: layout.win === "open",

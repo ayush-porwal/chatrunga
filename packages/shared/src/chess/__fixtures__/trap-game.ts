@@ -64,6 +64,16 @@ export function parseLine(text: string, multipv: number, fen: string): AnalysisL
   };
 }
 
+/** One position's lines, from their text (none past the end of the list). */
+function positionLines(texts: readonly string[] | undefined, fen: string): AnalysisLine[] {
+  return (texts ?? []).map((text, line) => parseLine(text, line + 1, fen));
+}
+
+/** A position's evaluation (White's view): its best line's score. */
+function positionEval(lines: readonly AnalysisLine[]): EngineScore | null {
+  return lines.at(0)?.scoreWhite ?? null;
+}
+
 /**
  * The trap game's moves as a schema-2 review stored them (no assessments yet): the lines of each
  * position, the next position's lines as the reply, the played move's rank when it was a line.
@@ -73,11 +83,10 @@ export function trapReviewMoves(lines: readonly (readonly string[])[] = TRAP_LIN
   return TRAP_SANS.map((san, index) => {
     const played = applySan(fen, san);
     if (!played) throw new Error(`illegal ${san}`);
-    const topLines = (lines[index] ?? []).map((text, line) => parseLine(text, line + 1, fen));
-    const replyLines = (lines[index + 1] ?? []).map((text, line) =>
-      parseLine(text, line + 1, played.fen)
-    );
+    const topLines = positionLines(lines.at(index), fen);
+    const replyLines = positionLines(lines.at(index + 1), played.fen);
     const playedLine = topLines.find((line) => line.pv[0] === played.uci) ?? null;
+    const isLast = index === TRAP_SANS.length - 1;
     const move: MoveReview = {
       nodeId: `n${index + 1}`,
       ply: index + 1,
@@ -85,15 +94,15 @@ export function trapReviewMoves(lines: readonly (readonly string[])[] = TRAP_LIN
       playedMove: played.uci,
       fenBefore: fen,
       fenAfter: played.fen,
-      evalBefore: topLines[0]?.scoreWhite ?? null,
-      evalAfter: replyLines[0]?.scoreWhite ?? null,
+      evalBefore: positionEval(topLines),
+      evalAfter: positionEval(replyLines),
       evalLoss: null,
       bestMove: topLines[0]?.pv[0] ?? null,
       bestLine: topLines[0]?.pv ?? [],
       topLines,
-      replyLines: index === TRAP_SANS.length - 1 ? [] : replyLines,
+      replyLines: isLast ? [] : replyLines,
       playedRank: playedLine?.multipv ?? null,
-      terminal: index === TRAP_SANS.length - 1 ? "checkmate" : null,
+      terminal: isLast ? "checkmate" : null,
       motifs: TRAP_MOTIFS[index + 1] ?? []
     };
     fen = played.fen;

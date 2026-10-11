@@ -191,7 +191,12 @@ export async function generateOpenRouterCommentary(
   }
 
   const model = options.model?.trim() || DEFAULT_COMMENTARY_MODEL;
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const connection: Connection = {
+    apiKey,
+    model,
+    fetchImpl: options.fetchImpl ?? fetch,
+    timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  };
   let error: string | null = null;
   const results = await mapWithConcurrency(payloads, 3, async (payload) => {
     const ply = payload.game.ply;
@@ -199,18 +204,11 @@ export async function generateOpenRouterCommentary(
     const trace: AttemptTrace = { attempts: 0, firstAttemptValid: false };
     report({ type: "request", ply });
     try {
-      const check = await generateOne(
-        reviewTask(payload),
-        apiKey,
-        model,
-        fetchImpl,
-        options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-        {
-          trace,
-          monotonic,
-          report
-        }
-      );
+      const check = await generateOne(reviewTask(payload), connection, {
+        trace,
+        monotonic,
+        report
+      });
       const result = accepted(payload, model, check);
       report({
         type: "outcome",
@@ -296,6 +294,16 @@ export type ChatMessage = { role: "system" | "user" | "assistant"; content: stri
 
 type AttemptTrace = { attempts: number; firstAttemptValid: boolean };
 
+/** Where and how one coach request goes: the account, the model, and its time limit. */
+type Connection = {
+  apiKey: string;
+  model: string;
+  fetchImpl: FetchLike;
+  timeoutMs: number;
+  /** Cancels the request (the caller moved on). */
+  signal?: AbortSignal;
+};
+
 type Instrumentation = {
   trace: AttemptTrace;
   monotonic: () => number;
@@ -344,12 +352,8 @@ function reviewTask(payload: ReviewInsightPayload): CoachTask {
 
 async function generateOne(
   task: CoachTask,
-  apiKey: string,
-  model: string,
-  fetchImpl: FetchLike,
-  timeoutMs: number,
-  instrumentation: Instrumentation,
-  signal?: AbortSignal
+  connection: Connection,
+  instrumentation: Instrumentation
 ): Promise<Extract<CommentaryValidationResult, { ok: true }>> {
   const { trace, monotonic, report } = instrumentation;
   const { ply, redact } = task;
@@ -377,7 +381,7 @@ async function generateOne(
       request: reported
     };
     try {
-      const answer = await requestCompletion(apiKey, model, request, fetchImpl, timeoutMs, signal);
+      const answer = await requestCompletion(connection, request);
       const check = task.validate(answer.content);
       report({
         ...base,
@@ -421,12 +425,8 @@ async function generateOne(
 }
 
 async function requestCompletion(
-  apiKey: string,
-  model: string,
-  request: { messages: readonly ChatMessage[]; temperature: number; maxTokens: number },
-  fetchImpl: FetchLike,
-  timeoutMs: number,
-  signal?: AbortSignal
+  { apiKey, model, fetchImpl, timeoutMs, signal }: Connection,
+  request: { messages: readonly ChatMessage[]; temperature: number; maxTokens: number }
 ): Promise<{ content: string; usage: CommentaryUsage | null }> {
   if (signal?.aborted) throw new CommentaryCancelled();
   const controller = new AbortController();
@@ -452,15 +452,11 @@ async function requestCompletion(
     });
     if (!response.ok) throw httpFailure(response.status);
     const body: unknown = await response.json();
-    const fields = isRecord(body) ? body : {};
-    const choices: unknown[] = Array.isArray(fields.choices) ? fields.choices : [];
-    const choice = choices[0];
-    const message = isRecord(choice) ? choice.message : undefined;
-    const content = isRecord(message) ? message.content : undefined;
-    if (typeof content !== "string" || !content.trim()) {
+    const content = completionText(body);
+    if (!content) {
       throw new CommentaryFailure(EMPTY_ANSWER_ERROR, "empty_response", response.status);
     }
-    return { content: content.trim(), usage: parseUsage(fields.usage) };
+    return { content, usage: parseUsage(isRecord(body) ? body.usage : undefined) };
   } catch (error) {
     if (signal?.aborted) throw new CommentaryCancelled();
     // Not the caller's cancel, so the controller's other abort: the timeout.
@@ -471,6 +467,15 @@ async function requestCompletion(
     clearTimeout(timeout);
     signal?.removeEventListener("abort", cancel);
   }
+}
+
+/** The first choice's answer, trimmed; null when the response has none or it is blank. */
+function completionText(body: unknown): string | null {
+  const choices: unknown = isRecord(body) ? body.choices : undefined;
+  const choice: unknown = Array.isArray(choices) ? choices[0] : undefined;
+  const message = isRecord(choice) ? choice.message : undefined;
+  const content = isRecord(message) ? message.content : undefined;
+  return typeof content === "string" ? content.trim() || null : null;
 }
 
 /**
@@ -552,17 +557,14 @@ export async function explainPuzzleWithOpenRouter(
     report: () => undefined
   };
   try {
-    const fetchImpl = options.fetchImpl ?? fetch;
-    const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    const check = await generateOne(
-      task,
+    const connection: Connection = {
       apiKey,
       model,
-      fetchImpl,
-      timeoutMs,
-      instrumentation,
-      options.signal
-    );
+      fetchImpl: options.fetchImpl ?? fetch,
+      timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      signal: options.signal
+    };
+    const check = await generateOne(task, connection, instrumentation);
     return {
       explanation: {
         prose: check.prose,

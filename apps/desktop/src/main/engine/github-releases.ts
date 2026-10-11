@@ -72,29 +72,46 @@ export async function fetchLatestRelease(
       null
     );
   }
-  if (res.status === 403 || res.status === 429) {
-    const remaining = res.headers.get("x-ratelimit-remaining");
-    const reset = Number(res.headers.get("x-ratelimit-reset"));
-    const retryAfter = Number(res.headers.get("retry-after"));
-    if (
-      remaining === "0" ||
-      res.status === 429 ||
-      (Number.isFinite(retryAfter) && retryAfter > 0)
-    ) {
-      const resetAt =
-        Number.isFinite(reset) && reset > 0
-          ? reset * 1000
-          : now() +
-            (Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 60 * 60 * 1000);
-      throw new GitHubApiError(
-        `GitHub API rate limit exceeded (resets ${new Date(resetAt).toISOString()})`,
-        res.status,
-        resetAt
-      );
-    }
-  }
+  const limited = rateLimitError(res, now);
+  if (limited) throw limited;
   if (!res.ok) throw new GitHubApiError(`GitHub API ${res.status} for ${repo}`, res.status);
   return parseRelease(await res.json());
+}
+
+/**
+ * A 403/429 that is GitHub's rate limit (none left, a 429, or a Retry-After), with when it
+ * resets: the reset header, else Retry-After, else an hour; null for any other response.
+ */
+function rateLimitError(res: Response, now: () => number): GitHubApiError | null {
+  if (res.status !== 403 && res.status !== 429) return null;
+  const remaining = res.headers.get("x-ratelimit-remaining");
+  const reset = Number(res.headers.get("x-ratelimit-reset"));
+  const retryAfter = Number(res.headers.get("retry-after"));
+  const retryAfterMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : null;
+  if (remaining !== "0" && res.status !== 429 && retryAfterMs === null) return null;
+  const resetAt =
+    Number.isFinite(reset) && reset > 0 ? reset * 1000 : now() + (retryAfterMs ?? 60 * 60 * 1000);
+  return new GitHubApiError(
+    `GitHub API rate limit exceeded (resets ${new Date(resetAt).toISOString()})`,
+    res.status,
+    resetAt
+  );
+}
+
+const stringOrNull = (value: unknown): string | null => (typeof value === "string" ? value : null);
+
+/** An uploaded asset with a name, download URL and size; null for anything else. */
+function parseReleaseAsset(a: unknown): ReleaseAssetInfo | null {
+  if (!isRecord(a) || typeof a.name !== "string" || typeof a.browser_download_url !== "string")
+    return null;
+  if (typeof a.size !== "number" || !Number.isFinite(a.size) || a.size <= 0) return null;
+  if (a.state !== undefined && a.state !== "uploaded") return null;
+  return {
+    name: a.name,
+    size: a.size,
+    browser_download_url: a.browser_download_url,
+    digest: stringOrNull(a.digest)
+  };
 }
 
 /** Validates and trims a release payload to the fields we use. Throws on an unusable payload. */
@@ -103,26 +120,15 @@ export function parseRelease(value: unknown): GitHubRelease {
   if (!obj || typeof obj.tag_name !== "string" || !obj.tag_name || !Array.isArray(obj.assets)) {
     throw new GitHubApiError("Malformed GitHub release payload", null);
   }
-  const assets: ReleaseAssetInfo[] = [];
   const rawAssets: unknown[] = obj.assets;
-  for (const a of rawAssets) {
-    if (!isRecord(a) || typeof a.name !== "string" || typeof a.browser_download_url !== "string")
-      continue;
-    if (typeof a.size !== "number" || !Number.isFinite(a.size) || a.size <= 0) continue;
-    if (a.state !== undefined && a.state !== "uploaded") continue;
-    assets.push({
-      name: a.name,
-      size: a.size,
-      browser_download_url: a.browser_download_url,
-      digest: typeof a.digest === "string" ? a.digest : null
-    });
-  }
   return {
     tag_name: obj.tag_name,
-    name: typeof obj.name === "string" ? obj.name : null,
-    html_url: typeof obj.html_url === "string" ? obj.html_url : null,
-    published_at: typeof obj.published_at === "string" ? obj.published_at : null,
-    assets
+    name: stringOrNull(obj.name),
+    html_url: stringOrNull(obj.html_url),
+    published_at: stringOrNull(obj.published_at),
+    assets: rawAssets
+      .map(parseReleaseAsset)
+      .filter((asset): asset is ReleaseAssetInfo => asset !== null)
   };
 }
 

@@ -13,6 +13,7 @@ import { Notice } from "@/components/ui/notice";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { fieldHint } from "@/lib/ui";
 import { ipcErrorMessage } from "@/lib/ipc-error";
+import { FieldError, fieldErrorAria } from "./FieldError";
 import { useCreateRepertoireMutation } from "../../queries/repertoire";
 import { useAddToRepertoireStore } from "../../stores/add-to-repertoire-store";
 import { useGameStore } from "../../stores/game-store";
@@ -51,7 +52,7 @@ export function CreateRepertoireDialog({
   onClose: () => void;
   onCreated: (detail: RepertoireDetail, next: CreateNext) => void;
 }) {
-  const ids = { name: useId(), fen: useId() };
+  const nameId = useId();
   const create = useCreateRepertoireMutation();
   const [name, setName] = useState("");
   const [color, setColor] = useState<RepertoireColor>("white");
@@ -63,6 +64,7 @@ export function CreateRepertoireDialog({
   const [capturing, setCapturing] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const invalidName = nameError(name);
+  const typedNameError = name.trim() ? invalidName : null;
   const canCreate =
     !invalidName &&
     !invalidFen &&
@@ -146,18 +148,16 @@ export function CreateRepertoireDialog({
           void submit("study");
         }}
       >
-        <Field label="Name" htmlFor={ids.name}>
+        <Field label="Name" htmlFor={nameId}>
           <Input
-            id={ids.name}
+            id={nameId}
             autoFocus
             placeholder="My 1.e4 repertoire"
-            aria-invalid={Boolean(name.trim() && invalidName) || undefined}
+            {...fieldErrorAria(typedNameError)}
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
-          {name.trim() && invalidName ? (
-            <p className="text-2xs text-danger">{invalidName}</p>
-          ) : null}
+          <FieldError error={typedNameError} />
         </Field>
         <div className="grid gap-1.5">
           <p className="text-xs font-medium text-fg-secondary">You play</p>
@@ -169,34 +169,14 @@ export function CreateRepertoireDialog({
           />
           <p className={fieldHint}>Flipping the board later never changes this.</p>
         </div>
-        <div className="grid gap-1.5">
-          <p className="text-xs font-medium text-fg-secondary">Start from</p>
-          <SegmentedControl
-            ariaLabel="Starting position"
-            value={startFrom}
-            onChange={setStartFrom}
-            options={boardHasGame ? startOptions : startOptions.slice(0, 2)}
-          />
-          {startFrom === "game" ? (
-            <p className={fieldHint}>
-              Starts from the board game's position; next, choose what of the game to add. Create
-              and import PGN starts from the initial position instead.
-            </p>
-          ) : null}
-        </div>
-        {startFrom === "fen" ? (
-          <Field label="FEN" htmlFor={ids.fen}>
-            <Input
-              id={ids.fen}
-              className="font-mono text-xs"
-              placeholder="rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2"
-              aria-invalid={Boolean(fen.trim() && invalidFen) || undefined}
-              value={fen}
-              onChange={(event) => setFen(event.target.value)}
-            />
-            {fen.trim() && invalidFen ? <p className="text-2xs text-danger">{invalidFen}</p> : null}
-          </Field>
-        ) : null}
+        <StartFromFields
+          value={startFrom}
+          onChange={setStartFrom}
+          boardHasGame={boardHasGame}
+          fen={fen}
+          onFenChange={setFen}
+          invalidFen={invalidFen}
+        />
         <button type="submit" hidden aria-label="Create repertoire" />
       </form>
       {saveError ? <Notice tone="danger">{saveError}</Notice> : null}
@@ -204,5 +184,57 @@ export function CreateRepertoireDialog({
         <Notice tone="danger">{ipcErrorMessage(create.error) || "Couldn't create it."}</Notice>
       ) : null}
     </Dialog>
+  );
+}
+
+/** Where the repertoire starts: the initial position, a typed FEN or the board's game. */
+function StartFromFields({
+  value,
+  onChange,
+  boardHasGame,
+  fen,
+  onFenChange,
+  invalidFen
+}: {
+  value: StartFrom;
+  onChange: (value: StartFrom) => void;
+  boardHasGame: boolean;
+  fen: string;
+  onFenChange: (fen: string) => void;
+  invalidFen: string | null;
+}) {
+  const fenId = useId();
+  const typedFenError = fen.trim() ? invalidFen : null;
+  return (
+    <>
+      <div className="grid gap-1.5">
+        <p className="text-xs font-medium text-fg-secondary">Start from</p>
+        <SegmentedControl
+          ariaLabel="Starting position"
+          value={value}
+          onChange={onChange}
+          options={boardHasGame ? startOptions : startOptions.slice(0, 2)}
+        />
+        {value === "game" ? (
+          <p className={fieldHint}>
+            Starts from the board game's position; next, choose what of the game to add. Create and
+            import PGN starts from the initial position instead.
+          </p>
+        ) : null}
+      </div>
+      {value === "fen" ? (
+        <Field label="FEN" htmlFor={fenId}>
+          <Input
+            id={fenId}
+            className="font-mono text-xs"
+            placeholder="rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2"
+            {...fieldErrorAria(typedFenError)}
+            value={fen}
+            onChange={(event) => onFenChange(event.target.value)}
+          />
+          <FieldError error={typedFenError} />
+        </Field>
+      ) : null}
+    </>
   );
 }

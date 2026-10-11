@@ -73,7 +73,7 @@ function contextOf(
   return rehearsalContext(
     { kind: "opening", enabled: true, tree: treeFromLines(lines), nodeMeta },
     color,
-    depth
+    { maxDepthPlies: depth }
   );
 }
 
@@ -105,13 +105,10 @@ describe("enumerateLines", () => {
     const chapter = { kind: "opening" as const, enabled: true, tree, nodeMeta: {} };
     const lookup = buildChapterLookup(chapter);
     const keyOf = (id: string) => lookup.positionKeys.get(id)!;
-    const context = rehearsalContext(
-      chapter,
-      "white",
-      undefined,
+    const context = rehearsalContext(chapter, "white", {
       lookup,
-      new Set([keyOf("e4/c5"), keyOf("e4/e5")])
-    );
+      paused: new Set([keyOf("e4/c5"), keyOf("e4/e5")])
+    });
     expect(isDecisionNode(context, "e4/c5")).toBe(false);
     expect(isDecisionNode(context, "e4/c5/Nf3/d6")).toBe(true);
     expect(enumerateLines(context, "root").map((line) => line.decisionNodeIds)).toEqual([
@@ -178,7 +175,7 @@ describe("enumerateLines", () => {
       "e4/c5/Nf3/d6",
       "e4/c5/Nf3/Nc6"
     ]);
-    expect(planRoute(context, "root", new Set(), {})).toMatchObject({
+    expect(planRoute(context, "root", { pending: new Set(), seen: {} })).toMatchObject({
       endNodeId: "e4/c5/Nf3/d6",
       nodeIds: ["root", "e4", "e4/c5", "e4/c5/Nf3", "e4/c5/Nf3/d6"]
     });
@@ -280,7 +277,7 @@ describe("planRoute", () => {
     const pending = new Set(enumerateLines(context, "root").map((line) => line.endNodeId));
     const seen: Record<string, number> = {};
     const play = () => {
-      const plan = planRoute(context, "root", pending, seen);
+      const plan = planRoute(context, "root", { pending, seen });
       for (const id of plan.nodeIds) {
         if (id.split("/").length % 2 === 0) seen[id] = (seen[id] ?? 0) + 1;
       }
@@ -290,29 +287,35 @@ describe("planRoute", () => {
     // Second run: 1...e5 has never been seen, so it comes before the other 1...c5 line.
     expect([play(), play(), play()]).toEqual(["e4/c5/Nf3/d6", "e4/e5/Nf3", "e4/c5/Nf3/Nc6"]);
     // Nothing pending: rotation alone (fewest times seen, then authored order).
-    expect(planRoute(context, "root", pending, seen).endNodeId).toBe("e4/e5/Nf3");
-    expect(planRoute(context, "root", new Set(), { "e4/c5": 2, "e4/e5": 2 })).toMatchObject({
+    expect(planRoute(context, "root", { pending, seen }).endNodeId).toBe("e4/e5/Nf3");
+    expect(
+      planRoute(context, "root", { pending: new Set(), seen: { "e4/c5": 2, "e4/e5": 2 } })
+    ).toMatchObject({
       endNodeId: "e4/c5/Nf3/d6",
       endReason: "leaf"
     });
     // Same inputs, same plan.
     const again = contextOf(lines);
-    expect(planRoute(again, "root", new Set(), { "e4/c5": 2, "e4/e5": 2 }).endNodeId).toBe(
-      "e4/c5/Nf3/d6"
-    );
+    expect(
+      planRoute(again, "root", { pending: new Set(), seen: { "e4/c5": 2, "e4/e5": 2 } }).endNodeId
+    ).toBe("e4/c5/Nf3/d6");
   });
 
   it("avoids lines already finished when nothing pending is below", () => {
     const context = contextOf(lines);
     const finished = new Set(["e4/c5/Nf3/d6"]);
     // Rotation alone would pick 1...c5 2.Nf3 d6 again; the unfinished sibling comes first.
-    expect(planRoute(context, "e4", new Set(), {}, finished).endNodeId).toBe("e4/c5/Nf3/Nc6");
-    expect(planRoute(context, "e4/c5/Nf3", new Set(), {}, finished).endNodeId).toBe(
+    expect(planRoute(context, "e4", { pending: new Set(), seen: {}, finished }).endNodeId).toBe(
       "e4/c5/Nf3/Nc6"
     );
+    expect(
+      planRoute(context, "e4/c5/Nf3", { pending: new Set(), seen: {}, finished }).endNodeId
+    ).toBe("e4/c5/Nf3/Nc6");
     // Everything below finished: the rotation still plans a line.
     const all = new Set(["e4/c5/Nf3/d6", "e4/c5/Nf3/Nc6"]);
-    expect(planRoute(context, "e4/c5", new Set(), {}, all).endNodeId).toBe("e4/c5/Nf3/d6");
+    expect(
+      planRoute(context, "e4/c5", { pending: new Set(), seen: {}, finished: all }).endNodeId
+    ).toBe("e4/c5/Nf3/d6");
   });
 
   it("finds the move on a route", () => {

@@ -70,23 +70,15 @@ export function useReviewRunner({
       onSideNeeded();
       return;
     }
-    const engine = defaultEngineId
-      ? engines?.find((item) => item.id === defaultEngineId)
-      : pickDefaultEngine(engines ?? []);
-    if (!engine?.isAvailable || engine.isHumanPrediction) {
+    const engine = reviewEngine(engines, defaultEngineId);
+    if (!engine) {
       review.setError("Choose an available evaluation engine in Review settings first.");
       onEngineMissing();
       return;
     }
     const reviewId = crypto.randomUUID();
-    // A game reviewed before its first save gets its library id now (autosave keeps it), so the
-    // review and the saved game it belongs to share one id. Never a puzzle: it isn't saved.
     const game = useGameStore.getState();
-    let gameId = game.gameId;
-    if (!gameId && game.mode !== "puzzle" && game.source !== "puzzle") {
-      gameId = crypto.randomUUID();
-      useGameStore.getState().setGameId(gameId);
-    }
+    const gameId = libraryIdForReview(game);
     // The line analysed: an edit that takes any of it off the main line stops this run.
     review.startReview(
       reviewId,
@@ -129,6 +121,31 @@ export function useReviewRunner({
   ]);
 
   return { startReview, hasMoves };
+}
+
+/** The evaluation engine a review runs on (the chosen one, else the default); null when unusable. */
+function reviewEngine(
+  engines: readonly EngineConfig[] | undefined,
+  defaultEngineId: string | null
+): EngineConfig | null {
+  const engine = defaultEngineId
+    ? engines?.find((item) => item.id === defaultEngineId)
+    : pickDefaultEngine(engines ?? []);
+  return engine?.isAvailable && !engine.isHumanPrediction ? engine : null;
+}
+
+/**
+ * The library id the review is stored under. A game reviewed before its first save gets its
+ * library id now (autosave keeps it), so the review and the saved game it belongs to share one id.
+ * Never a puzzle: it isn't saved.
+ */
+function libraryIdForReview(
+  game: Pick<ReturnType<typeof useGameStore.getState>, "gameId" | "mode" | "source">
+): string | null {
+  if (game.gameId || game.mode === "puzzle" || game.source === "puzzle") return game.gameId;
+  const gameId = crypto.randomUUID();
+  useGameStore.getState().setGameId(gameId);
+  return gameId;
 }
 
 /** Whether the game has at least one main-line move (the root has a child). */

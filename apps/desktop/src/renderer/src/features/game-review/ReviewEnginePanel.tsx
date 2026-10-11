@@ -31,32 +31,32 @@ import "./review.css";
 /** Engine evidence for the selected move: evals, best line, alternatives, Maia curve, derived facts. */
 export function ReviewEnginePanel({
   move,
-  hasReview = false,
-  running = false,
+  hasReview,
+  running,
   showTopLines,
   userRating,
   onAnalyze,
-  moves = NO_MOVES,
-  parentNodeId = null,
+  moves,
+  parentNodeId,
   onGoToLine,
-  variationAnchor = null
+  variationAnchor
 }: {
   move: MoveReview | null;
-  hasReview?: boolean;
+  hasReview: boolean;
   /** The engine pass is still running (the selected move may not be reviewed yet). */
-  running?: boolean;
+  running: boolean;
   showTopLines: boolean;
   userRating: number;
   /** Offered as the "No engine data yet" action. */
   onAnalyze?: () => void;
   /** All reviewed moves (older reviews derive the reply line from the next ply). */
-  moves?: readonly MoveReview[];
+  moves: readonly MoveReview[];
   /** Tree node the best line and alternatives start from (the move's parent). */
-  parentNodeId?: string | null;
+  parentNodeId: string | null;
   /** Jump to a position; each SAN in a line becomes a link when set. */
   onGoToLine?: GoToLine;
   /** Set while the board shows an unreviewed variation; `move` is then its nearest reviewed ancestor. */
-  variationAnchor?: { label: string; onBack: () => void } | null;
+  variationAnchor: { label: string; onBack: () => void } | null;
 }) {
   const facts = useMemo(() => (move ? buildTacticalFacts(move) : []), [move]);
   const signals = useMemo(() => (move ? buildEngineSignals(move) : []), [move]);
@@ -72,29 +72,7 @@ export function ReviewEnginePanel({
         : [],
     [move, moves]
   );
-  if (!move) {
-    return (
-      <div className="grid h-full place-items-center">
-        <EmptyState
-          icon={<Cpu />}
-          title={running ? "Analyzing…" : hasReview ? "Select a move" : "No engine data yet"}
-          description={
-            running || hasReview
-              ? "Engine evidence appears for reviewed moves."
-              : "Analyze the game to see engine evaluations."
-          }
-          action={
-            !running && !hasReview && onAnalyze ? (
-              <Button variant="primary" size="sm" onClick={onAnalyze}>
-                Analyze
-              </Button>
-            ) : undefined
-          }
-        />
-      </div>
-    );
-  }
-  const alternatives = showTopLines ? move.topLines.slice(0, 5) : [];
+  if (!move) return <NoEngineMove running={running} hasReview={hasReview} onAnalyze={onAnalyze} />;
 
   return (
     <div
@@ -148,38 +126,8 @@ export function ReviewEnginePanel({
         </section>
       ) : null}
 
-      {alternatives.length ? (
-        <>
-          <div className={divider} />
-          <section className="grid gap-1">
-            <SectionHeader as="h3" title="Alternatives" />
-            <ol className="divide-y divide-line-subtle">
-              {alternatives.map((line, index) => (
-                <li
-                  key={line.multipv}
-                  className="grid grid-cols-[1rem_3rem_minmax(0,1fr)_auto] items-center gap-2 py-1.5 font-mono text-xs"
-                >
-                  <span className="text-fg-subtle">{index + 1}</span>
-                  <span className="text-fg-secondary tabular-nums">
-                    {formatScore(line.scoreWhite)}
-                  </span>
-                  <span className="truncate text-fg-muted">
-                    <MoveLine
-                      startNodeId={parentNodeId}
-                      sans={uciLineToSan(move.fenBefore, line.pv.slice(0, 5))}
-                      onGoToLine={onGoToLine}
-                      empty=""
-                      linkClassName="text-current hover:text-accent"
-                    />
-                  </span>
-                  <span className="text-fg-subtle tabular-nums">
-                    {lineDelta(line, move.topLines[0])}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </section>
-        </>
+      {showTopLines ? (
+        <Alternatives move={move} parentNodeId={parentNodeId} onGoToLine={onGoToLine} />
       ) : null}
 
       {hasUsableMaiaData(move) ? (
@@ -195,32 +143,124 @@ export function ReviewEnginePanel({
         </>
       ) : null}
 
-      {facts.length || signals.length ? (
-        <>
-          <div className={divider} />
-          <section className="grid gap-2">
-            <SectionHeader as="h3" title="Evidence" />
-            <div className="flex flex-wrap gap-1.5">
-              {facts.map((fact, index) => (
-                <Badge key={`fact-${index}`} tone="accent">
-                  {fact.kind}
-                  <span className="font-mono">{factSquare(fact)}</span>
-                </Badge>
-              ))}
-              {signals.map((signal, index) => (
-                <Badge key={`signal-${index}`} tone="info">
-                  {signal.kind.replaceAll("_", " ")}
-                </Badge>
-              ))}
-            </div>
-          </section>
-        </>
-      ) : null}
+      <Evidence facts={facts} signals={signals} />
     </div>
   );
 }
 
-const NO_MOVES: readonly MoveReview[] = [];
+/**
+ * No reviewed move to show: the review is running, a move is still to pick, or there is no review.
+ */
+function NoEngineMove({
+  running,
+  hasReview,
+  onAnalyze
+}: {
+  running: boolean;
+  hasReview: boolean;
+  onAnalyze?: () => void;
+}) {
+  return (
+    <div className="grid h-full place-items-center">
+      <EmptyState
+        icon={<Cpu />}
+        title={running ? "Analyzing…" : hasReview ? "Select a move" : "No engine data yet"}
+        description={
+          running || hasReview
+            ? "Engine evidence appears for reviewed moves."
+            : "Analyze the game to see engine evaluations."
+        }
+        action={
+          !running && !hasReview && onAnalyze ? (
+            <Button variant="primary" size="sm" onClick={onAnalyze}>
+              Analyze
+            </Button>
+          ) : undefined
+        }
+      />
+    </div>
+  );
+}
+
+/**
+ * The engine's other candidates from before the move (up to five): score, line, and gap to the
+ * best.
+ */
+function Alternatives({
+  move,
+  parentNodeId,
+  onGoToLine
+}: {
+  move: MoveReview;
+  parentNodeId: string | null;
+  onGoToLine?: GoToLine;
+}) {
+  const alternatives = move.topLines.slice(0, 5);
+  if (!alternatives.length) return null;
+  return (
+    <>
+      <div className={divider} />
+      <section className="grid gap-1">
+        <SectionHeader as="h3" title="Alternatives" />
+        <ol className="divide-y divide-line-subtle">
+          {alternatives.map((line, index) => (
+            <li
+              key={line.multipv}
+              className="grid grid-cols-[1rem_3rem_minmax(0,1fr)_auto] items-center gap-2 py-1.5 font-mono text-xs"
+            >
+              <span className="text-fg-subtle">{index + 1}</span>
+              <span className="text-fg-secondary tabular-nums">{formatScore(line.scoreWhite)}</span>
+              <span className="truncate text-fg-muted">
+                <MoveLine
+                  startNodeId={parentNodeId}
+                  sans={uciLineToSan(move.fenBefore, line.pv.slice(0, 5))}
+                  onGoToLine={onGoToLine}
+                  empty=""
+                  linkClassName="text-current hover:text-accent"
+                />
+              </span>
+              <span className="text-fg-subtle tabular-nums">
+                {lineDelta(line, move.topLines[0])}
+              </span>
+            </li>
+          ))}
+        </ol>
+      </section>
+    </>
+  );
+}
+
+/** The tactical facts and engine signals the review found for the move, as chips. */
+function Evidence({
+  facts,
+  signals
+}: {
+  facts: readonly TacticalFact[];
+  signals: ReturnType<typeof buildEngineSignals>;
+}) {
+  if (!facts.length && !signals.length) return null;
+  return (
+    <>
+      <div className={divider} />
+      <section className="grid gap-2">
+        <SectionHeader as="h3" title="Evidence" />
+        <div className="flex flex-wrap gap-1.5">
+          {facts.map((fact, index) => (
+            <Badge key={`fact-${index}`} tone="accent">
+              {fact.kind}
+              <span className="font-mono">{factSquare(fact)}</span>
+            </Badge>
+          ))}
+          {signals.map((signal, index) => (
+            <Badge key={`signal-${index}`} tone="info">
+              {signal.kind.replaceAll("_", " ")}
+            </Badge>
+          ))}
+        </div>
+      </section>
+    </>
+  );
+}
 
 /** Where the played move ranked among the engine's candidates ("1 of 3"; "—" outside them). */
 function formatRank(move: MoveReview): string {

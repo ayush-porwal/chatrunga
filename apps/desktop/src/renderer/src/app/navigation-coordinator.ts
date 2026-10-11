@@ -240,16 +240,18 @@ async function restoreBoard(
   }
   if (continuedSet) shell.resumePuzzleSet(continuedSet);
   useGameStore.getState().restoreView(snapshot);
-  if (snapshot.mode === "analysis") {
-    const analysis = useAnalysisStore.getState();
-    if (shell.defaultEngineId && !analysis.activeEngineId)
-      analysis.setActiveEngine(shell.defaultEngineId);
-    // The search was stopped while away; the position may be the same, so ask for it again (the
-    // board's own search: a study's engine panel left on the way hands the engine back to it).
-    useAnalysisStore.getState().restartBoardSearch();
-  }
+  if (snapshot.mode === "analysis") resumeBoardAnalysis(shell.defaultEngineId);
   shell.exitFocus();
   return "restored";
+}
+
+/** Analysis on the restored board: the default engine when none is picked, searching again. */
+function resumeBoardAnalysis(defaultEngineId: string | null): void {
+  const analysis = useAnalysisStore.getState();
+  if (defaultEngineId && !analysis.activeEngineId) analysis.setActiveEngine(defaultEngineId);
+  // The search was stopped while away; the position may be the same, so ask for it again (the
+  // board's own search: a study's engine panel left on the way hands the engine back to it).
+  useAnalysisStore.getState().restartBoardSearch();
 }
 
 /** The shell's side of a Game Review URL the window opened at (see `restoreReviewRoute`). */

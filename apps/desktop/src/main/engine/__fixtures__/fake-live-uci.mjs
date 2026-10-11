@@ -197,6 +197,22 @@ function gatePly() {
 /** "review-gated": the search waiting for its gate (cleared by `stop`). */
 let gated = null;
 
+/** The first move of a scripted `score … pv …` line. */
+const firstMove = (line) => line.split(" pv ")[1]?.split(" ")[0];
+
+/**
+ * The scripted lines a bounded `go` gets: the deeper ones for a larger budget than the first, and
+ * with `searchmoves` only those moves' lines (or their `only` lines when none is scripted).
+ */
+function reviewLines(entry, deeper, go) {
+  const lines = (deeper && entry?.deeper) || entry?.lines || [];
+  const only = go.match(/ searchmoves (.+)$/)?.[1].split(" ") ?? null;
+  if (!only) return lines;
+  const kept = lines.filter((line) => only.includes(firstMove(line)));
+  if (kept.length || !entry?.only) return kept;
+  return only.flatMap((move) => (entry.only[move] ? [entry.only[move]] : []));
+}
+
 /** Answers a bounded `go` with the scripted lines of the current position. */
 function answerReview(go) {
   const entry = review[positionFen.split(" ").slice(0, 4).join(" ")];
@@ -206,18 +222,11 @@ function answerReview(go) {
     stuck = true;
     return;
   }
-  const only = go.match(/ searchmoves (.+)$/)?.[1].split(" ") ?? null;
-  let lines = (budget > baseBudget && entry?.deeper) || entry?.lines || [];
-  if (only) {
-    lines = lines.filter((line) => only.includes(line.split(" pv ")[1]?.split(" ")[0]));
-    if (!lines.length && entry?.only)
-      lines = only.flatMap((move) => (entry.only[move] ? [entry.only[move]] : []));
-  }
+  const lines = reviewLines(entry, budget > baseBudget, go);
   lines.forEach((line, index) =>
     out(`info depth 12 seldepth 14 multipv ${index + 1} nodes 1000 score ${line}`)
   );
-  const best = lines[0]?.split(" pv ")[1]?.split(" ")[0] ?? "0000";
-  out(`bestmove ${best}`);
+  out(`bestmove ${(lines[0] && firstMove(lines[0])) ?? "0000"}`);
 }
 log("spawn");
 log(`pid ${process.pid}`);
@@ -229,78 +238,108 @@ const quit = () => {
 };
 process.on("SIGTERM", quit);
 
-createInterface({ input: process.stdin }).on("line", (raw) => {
-  const line = raw.trim();
-  log(line);
+/** Keeps what later commands need: the position (its moves and FEN) and the MultiPV count. */
+function trackState(line) {
   if (line.startsWith("position ")) positionMoves = line.split(" moves ")[1] ?? "";
   if (line.startsWith("position ") && chess) stockfishPosition = stockfishPositionFor(line);
   if (line.startsWith("setoption name MultiPV value "))
     stockfishMultipv = Number(line.slice("setoption name MultiPV value ".length));
   if (line.startsWith("position fen "))
     positionFen = line.slice("position fen ".length).split(" moves ")[0];
-  if (line === "uci") {
-    out("id name Fake live");
-    for (const name of ["Threads", "Hash", "MultiPV"])
-      out(`option name ${name} type spin default 1 min 1 max 512`);
-    if (mode === "slow-start") setTimeout(() => out("uciok"), 10_000);
-    else out("uciok");
-  } else if (line === "isready") out("readyok");
-  else if (line === "go infinite" && chess) {
-    depth = 0;
-    out("info string Available processors: 0-7");
-    out("info string Using 1 thread");
-    out("info string NNUE evaluation using nn-fake.nnue (1MiB, (1, 1, 1, 1, 1))");
-    const moves = stockfishPosition ? legalUcis(stockfishPosition) : [];
-    timer = setInterval(() => {
-      depth += 1;
-      if (mode === "stockfish-crash" && depth === 5) crash();
-      stockfishDepth(moves);
-    }, 5);
-  } else if (line.startsWith("go") && mode === "stockfish-crash") crash();
-  else if (line === "go infinite") {
-    depth = 0;
-    const lines = mode === "lines" ? (LINES[positionMoves] ?? []) : null;
-    timer = setInterval(() => {
-      depth += 1;
-      if (!lines)
-        out(`info depth ${depth} multipv 1 score cp 20 nodes ${depth * 100} pv e2e4 e7e5`);
-      else if (!lines.length) out(`info depth ${depth} multipv 1 score cp 0 nodes ${depth * 100}`);
-      lines?.forEach((pv, index) =>
-        out(
-          `info depth ${depth} multipv ${index + 1} score cp ${30 - index * 25} nodes ${depth * 100} pv ${pv}`
-        )
-      );
-    }, 5);
-  } else if (line.startsWith("go") && mode === "review-gated") {
-    const [, side, , , , fullmove] = positionFen.split(" ");
-    const ply = (Number(fullmove) - 1) * 2 + (side === "b" ? 1 : 0);
-    gated = setInterval(() => {
-      if (gatePly() < ply) return;
-      clearInterval(gated);
-      gated = null;
-      answerReview(line);
-    }, 20);
-  } else if (line.startsWith("go") && review) {
-    answerReview(line);
-  } else if (line.startsWith("go")) {
-    timer = setTimeout(() => {
-      timer = null;
-      out("info depth 5 multipv 1 score cp 30 pv g1f3");
-      out("bestmove g1f3");
-    }, 30);
-  } else if (line === "stop" && gated) {
+}
+
+function answerUci() {
+  out("id name Fake live");
+  for (const name of ["Threads", "Hash", "MultiPV"])
+    out(`option name ${name} type spin default 1 min 1 max 512`);
+  if (mode === "slow-start") setTimeout(() => out("uciok"), 10_000);
+  else out("uciok");
+}
+
+/** "stockfish": `go infinite` streams Stockfish-shaped depths of the position's legal moves. */
+function stockfishSearch() {
+  depth = 0;
+  out("info string Available processors: 0-7");
+  out("info string Using 1 thread");
+  out("info string NNUE evaluation using nn-fake.nnue (1MiB, (1, 1, 1, 1, 1))");
+  const moves = stockfishPosition ? legalUcis(stockfishPosition) : [];
+  timer = setInterval(() => {
+    depth += 1;
+    if (mode === "stockfish-crash" && depth === 5) crash();
+    stockfishDepth(moves);
+  }, 5);
+}
+
+/** `go infinite`: one line per depth ("lines": the position's scripted lines) until `stop`. */
+function infiniteSearch() {
+  depth = 0;
+  const lines = mode === "lines" ? (LINES[positionMoves] ?? []) : null;
+  timer = setInterval(() => {
+    depth += 1;
+    if (!lines) out(`info depth ${depth} multipv 1 score cp 20 nodes ${depth * 100} pv e2e4 e7e5`);
+    else if (!lines.length) out(`info depth ${depth} multipv 1 score cp 0 nodes ${depth * 100}`);
+    lines?.forEach((pv, index) =>
+      out(
+        `info depth ${depth} multipv ${index + 1} score cp ${30 - index * 25} nodes ${depth * 100} pv ${pv}`
+      )
+    );
+  }, 5);
+}
+
+/** "review-gated": answers once the gate file lets searches reach this position's ply. */
+function gatedReview(go) {
+  const [, side, , , , fullmove] = positionFen.split(" ");
+  const ply = (Number(fullmove) - 1) * 2 + (side === "b" ? 1 : 0);
+  gated = setInterval(() => {
+    if (gatePly() < ply) return;
+    clearInterval(gated);
+    gated = null;
+    answerReview(go);
+  }, 20);
+}
+
+/** Any other bounded `go`: one line and its bestmove after 30 ms. */
+function boundedSearch() {
+  timer = setTimeout(() => {
+    timer = null;
+    out("info depth 5 multipv 1 score cp 30 pv g1f3");
+    out("bestmove g1f3");
+  }, 30);
+}
+
+function answerGo(go) {
+  if (go === "go infinite" && chess) stockfishSearch();
+  else if (mode === "stockfish-crash") crash();
+  else if (go === "go infinite") infiniteSearch();
+  else if (mode === "review-gated") gatedReview(go);
+  else if (review) answerReview(go);
+  else boundedSearch();
+}
+
+/** `stop` ends a waiting gated search, a hanging check, or a running search, with a bestmove. */
+function answerStop() {
+  if (gated) {
     clearInterval(gated);
     gated = null;
     out("bestmove 0000");
-  } else if (line === "stop" && stuck) {
+  } else if (stuck) {
     stuck = false;
     out("bestmove 0000");
-  } else if (line === "stop") {
-    if (timer) {
-      clearInterval(timer);
-      clearTimeout(timer);
-      timer = null;
-      out("bestmove e2e4");
-    }
-  } else if (line === "quit") quit();
+  } else if (timer) {
+    clearInterval(timer);
+    clearTimeout(timer);
+    timer = null;
+    out("bestmove e2e4");
+  }
+}
+
+createInterface({ input: process.stdin }).on("line", (raw) => {
+  const line = raw.trim();
+  log(line);
+  trackState(line);
+  if (line === "uci") answerUci();
+  else if (line === "isready") out("readyok");
+  else if (line.startsWith("go")) answerGo(line);
+  else if (line === "stop") answerStop();
+  else if (line === "quit") quit();
 });

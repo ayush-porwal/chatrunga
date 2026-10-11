@@ -2,23 +2,19 @@ import {
   memo,
   useCallback,
   useId,
-  useLayoutEffect,
   useMemo,
   useState,
   type KeyboardEvent,
   type MouseEvent,
-  type PointerEvent,
   type ReactNode
 } from "react";
 import type { Color } from "@chaturanga/shared/types/chess";
 import type { GameOpening, MoveReview } from "@chaturanga/shared/types/engine";
-import { MoveMarkGlyph } from "../board/MoveMarkGlyph";
 import { useEnginesQuery } from "../../queries/api";
 import { useOpenSettings } from "../settings/settings-link";
 import { pickMaiaEngines } from "./review-engine-picker";
 import {
   buildReviewChartData,
-  chartMark,
   chartTooltipLines,
   nearestPointIndex,
   type ChartMainlineMove,
@@ -26,238 +22,39 @@ import {
   type ReviewChartData
 } from "./review-charts";
 import {
-  loadChartCollapsed,
-  loadChartsHeight,
-  saveChartCollapsed,
-  saveChartsHeight,
-  type FoldableChart
-} from "./review-chart-prefs";
-import {
   AXIS_HEIGHT,
   CHARTS_MIN_HEIGHT,
-  chartsMaxHeight,
-  clampChartsHeight,
-  SPLITTER_STEP,
-  fitViewHeights,
-  openViews,
-  resolveChartsHeight,
+  chartsLayout,
+  lastOpenView,
   STRIP_INSET,
   stripPlotHeight,
-  viewHeights,
   WIN_TOP,
   winPlotHeight,
-  type ChartsLayout
+  type ChartsLayout,
+  type ViewHeights
 } from "./review-chart-layout";
+import {
+  useChartsHeight,
+  useFold,
+  useViewHeights,
+  useWidth,
+  type Fold
+} from "./use-review-chart-sizing";
+import {
+  AxisLayer,
+  ChartTooltip,
+  Cursor,
+  DifficultyLayer,
+  GUTTER,
+  makeScale,
+  plyAt,
+  TimesLayer,
+  WinningChancesLayer,
+  type Scale
+} from "./ReviewChartLayers";
 import { Badge } from "@/components/ui/badge";
-import { annotationTone } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { CollapsibleHeader, CollapsibleToggle } from "@/components/ui/collapsible-section";
-
-/*
- * Geometry shared by the three views, so one x (a ply) lines up in all of them: each plot spans
- * [GUTTER, width - RIGHT] horizontally; the gutter holds the axis labels.
- */
-const GUTTER = 34;
-const RIGHT = 6;
-/** Space between two x-axis labels. */
-const TICK_SPACING = 44;
-const LABEL = { fontSize: 9 } as const;
-
-const PHASE_LABELS = { opening: "Opening", middlegame: "Middlegame", endgame: "Endgame" } as const;
-
-type Scale = { width: number; xMax: number; x: (ply: number) => number };
-
-function makeScale(width: number, xMax: number): Scale {
-  const span = Math.max(1, width - GUTTER - RIGHT);
-  const max = Math.max(1, xMax);
-  return { width, xMax: max, x: (ply) => GUTTER + (ply / max) * span };
-}
-
-/** The width of a bar (one per ply): the ply's slot less a small gap. */
-function barWidth(scale: Scale): number {
-  const slot = (scale.width - GUTTER - RIGHT) / scale.xMax;
-  return Math.max(0.6, slot - Math.min(1, slot * 0.25));
-}
-
-function markFill(point: ChartPoint): string | null {
-  const mark = chartMark(point.annotation);
-  return mark ? annotationTone[mark].fill : null;
-}
-
-/** The element's laid-out width in CSS pixels (0 until measured), kept up to date. */
-function useWidth(): [(element: HTMLDivElement | null) => void, number, HTMLDivElement | null] {
-  const [element, setElement] = useState<HTMLDivElement | null>(null);
-  const [width, setWidth] = useState(0);
-  useLayoutEffect(() => {
-    if (!element) return;
-    setWidth(Math.round(element.getBoundingClientRect().width));
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) setWidth(Math.round(entry.contentRect.width));
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [element]);
-  return [setElement, width, element];
-}
-
-type ViewsBox = { container: number; chrome: number[]; gap: number };
-
-/**
- * The views area's height and its rows that aren't views (strip labels, notes, the move axis),
- * measured as laid out, so the views share exactly what is left (fitViewHeights). `layoutKey`
- * changes whenever those rows do; the area's own resizes are observed.
- */
-function useViewsBox(element: HTMLElement | null, layoutKey: string): ViewsBox | null {
-  const [box, setBox] = useState<ViewsBox | null>(null);
-  useLayoutEffect(() => {
-    if (!element) {
-      setBox(null);
-      return;
-    }
-    const update = () => {
-      const style = getComputedStyle(element);
-      const chrome: number[] = [];
-      for (const child of element.children) {
-        const childStyle = getComputedStyle(child);
-        // Out of the grid's rows: hidden placeholders, the tooltip and screen-reader text.
-        if (childStyle.display === "none" || childStyle.position === "absolute") continue;
-        if (child.hasAttribute("data-chart")) continue;
-        chrome.push(child.getBoundingClientRect().height);
-      }
-      const next = {
-        container: element.clientHeight,
-        chrome,
-        gap: Number.parseFloat(style.rowGap) || 0
-      };
-      setBox((current) =>
-        current &&
-        current.container === next.container &&
-        current.gap === next.gap &&
-        current.chrome.join() === next.chrome.join()
-          ? current
-          : next
-      );
-    };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [element, layoutKey]);
-  return box;
-}
-
-/** A chart's fold state, remembered (review-chart-prefs.ts). */
-function useFolded(chart: FoldableChart): [boolean, () => void] {
-  const [collapsed, setCollapsed] = useState(() => loadChartCollapsed(chart));
-  const toggle = useCallback(() => {
-    setCollapsed((value) => {
-      saveChartCollapsed(chart, !value);
-      return !value;
-    });
-  }, [chart]);
-  return [collapsed, toggle];
-}
-
-/** The panel content above the charts: the block before the panel footer holding them. */
-function contentAbove(element: HTMLElement | null): HTMLElement | null {
-  let footer = element;
-  while (footer?.parentElement && footer.parentElement.tagName !== "ASIDE")
-    footer = footer.parentElement;
-  const above = footer?.parentElement ? footer.previousElementSibling : null;
-  return above instanceof HTMLElement ? above : null;
-}
-
-type SplitterDrag = { pointerId: number; y: number; start: number };
-
-/**
- * The charts area's height and its splitter: the height the user dragged it to (remembered), else
- * the default for the views shown, clamped so the charts keep their minimum and the content above
- * keeps its own (review-chart-layout.ts).
- */
-function useChartsHeight(layout: ChartsLayout, fill: boolean) {
-  const [section, setSection] = useState<HTMLElement | null>(null);
-  const [stored, setStored] = useState<number | null>(() => loadChartsHeight());
-  const [max, setMax] = useState<number | null>(null);
-  const [measured, setMeasured] = useState<number | null>(null);
-  // The drag in progress (its pointer, where it started, and the height then).
-  const [drag, setDrag] = useState<SplitterDrag | null>(null);
-  const height = resolveChartsHeight({ fill, measured, stored, max, layout });
-
-  // Filling, the charts take the height the panel gives them (flex), measured here.
-  useLayoutEffect(() => {
-    if (!section || !fill) return;
-    const update = () => setMeasured(section.getBoundingClientRect().height);
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(section);
-    return () => observer.disconnect();
-  }, [fill, section]);
-
-  // The content and the charts trade height, so their sum (the room both share) sets the limit.
-  useLayoutEffect(() => {
-    const above = contentAbove(section);
-    if (!section || !above || fill) return;
-    const update = () =>
-      setMax(
-        chartsMaxHeight(
-          above.getBoundingClientRect().height,
-          section.getBoundingClientRect().height
-        )
-      );
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(above);
-    observer.observe(section);
-    return () => observer.disconnect();
-  }, [fill, section]);
-
-  const set = (next: number | null, save: boolean) => {
-    const value = next === null ? null : clampChartsHeight(next, max);
-    setStored(value);
-    if (save) saveChartsHeight(value);
-  };
-  const separator = {
-    onPointerDown: (event: PointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0) return;
-      event.preventDefault();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      setDrag({ pointerId: event.pointerId, y: event.clientY, start: height });
-    },
-    onPointerMove: (event: PointerEvent<HTMLDivElement>) => {
-      if (drag?.pointerId !== event.pointerId) return;
-      // Up makes the charts taller.
-      set(drag.start + drag.y - event.clientY, false);
-    },
-    onPointerUp: (event: PointerEvent<HTMLDivElement>) => {
-      if (drag?.pointerId !== event.pointerId) return;
-      setDrag(null);
-      set(height, true);
-    },
-    onLostPointerCapture: () => {
-      if (!drag) return;
-      setDrag(null);
-      set(height, true);
-    },
-    onDoubleClick: () => set(null, true),
-    onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
-      const next =
-        event.key === "ArrowUp"
-          ? height + SPLITTER_STEP
-          : event.key === "ArrowDown"
-            ? height - SPLITTER_STEP
-            : event.key === "Home"
-              ? CHARTS_MIN_HEIGHT
-              : event.key === "End"
-                ? (max ?? height)
-                : null;
-      if (next === null) return;
-      // The page's own Home / End move through the game; here they size the charts.
-      event.preventDefault();
-      set(next, true);
-    }
-  };
-  return { height, max, dragging: drag !== null, measure: setSection, separator };
-}
 
 /**
  * The review's charts, stacked and linked at the bottom of the side panel: winning chances (the
@@ -335,37 +132,288 @@ export const ReviewCharts = memo(function ReviewCharts({
       }),
     [moves, keyMomentIds, opening, mainline, timeControl, maiaModel, rating, trusted]
   );
-  const { points } = data;
-  const lastPly = points[points.length - 1]?.ply ?? 0;
-  const [measure, width, viewsElement] = useWidth();
-  const scale = useMemo(
-    () => makeScale(width, totalPlies ? Math.max(totalPlies, lastPly) : lastPly),
-    [lastPly, totalPlies, width]
+  const charts = useFold("charts");
+  const win = useFold("win");
+  const difficulty = useFold("difficulty");
+  const times = useFold("times");
+  const maiaInstalled = useMaiaInstalled();
+  const layout = chartsLayout({
+    hasEvals: data.hasEvals,
+    hasDifficulty: data.hasDifficulty && data.model !== null,
+    hasTimes: data.hasTimes,
+    folded: { win: win.collapsed, difficulty: difficulty.collapsed, times: times.collapsed },
+    maiaPrompt: maiaPrompt && maiaInstalled !== null
+  });
+  const {
+    height: chartsHeight,
+    max: chartsMax,
+    dragging,
+    measure: measureSection,
+    separator
+  } = useChartsHeight(layout, fill);
+  const sectionId = useId();
+  // The splitter sizes the open charts, unless they fill the panel.
+  const resizable = !charts.collapsed && !fill;
+
+  return (
+    <section
+      ref={measureSection}
+      id={sectionId}
+      className={cn(
+        "relative flex min-w-0 flex-col",
+        fill && !charts.collapsed && "min-h-0 flex-1"
+      )}
+      style={resizable ? { height: chartsHeight } : undefined}
+      aria-label="Game charts"
+    >
+      {resizable ? (
+        <ChartsSplitter
+          controls={sectionId}
+          height={chartsHeight}
+          max={chartsMax}
+          dragging={dragging}
+          separator={separator}
+        />
+      ) : null}
+      <CollapsibleHeader
+        open={!charts.collapsed}
+        onToggle={charts.toggle}
+        controls={charts.id}
+        actions={
+          variationSelected ? (
+            <Badge tone="warn" className="animate-fade-in">
+              Variation
+            </Badge>
+          ) : null
+        }
+      >
+        Charts
+      </CollapsibleHeader>
+      {charts.collapsed ? (
+        <div id={charts.id} hidden />
+      ) : (
+        <ChartViews
+          id={charts.id}
+          data={data}
+          layout={layout}
+          folds={{ win, difficulty, times }}
+          height={chartsHeight}
+          totalPlies={totalPlies}
+          selectedNodeId={variationSelected ? null : selectedNodeId}
+          onSelectNode={onSelectNode}
+          reviewedSide={reviewedSide}
+        />
+      )}
+    </section>
   );
+});
+
+/** The splitter over the divider line just above the charts: dragged or stepped, it sizes them. */
+function ChartsSplitter({
+  controls,
+  height,
+  max,
+  dragging,
+  separator
+}: {
+  controls: string;
+  height: number;
+  max: number | null;
+  dragging: boolean;
+  separator: ReturnType<typeof useChartsHeight>["separator"];
+}) {
+  return (
+    <div
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label="Resize the charts"
+      aria-controls={controls}
+      aria-valuenow={height}
+      aria-valuemin={CHARTS_MIN_HEIGHT}
+      aria-valuemax={Math.max(CHARTS_MIN_HEIGHT, max ?? height)}
+      tabIndex={0}
+      title="Drag to resize the charts · double-click to reset"
+      data-dragging={dragging || undefined}
+      // Over the divider line just above the section (the footer's top border), centred on it.
+      className="group/splitter absolute -inset-x-3 -top-1 z-10 h-2 cursor-row-resize touch-none outline-none"
+      {...separator}
+    >
+      {/* A neutral highlight over the boundary line while hovered, focused or dragged. */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0.5 h-[3px] transition-colors duration-micro ease-standard group-hover/splitter:bg-fg/15 group-focus-visible/splitter:bg-fg/25 group-data-[dragging]/splitter:bg-fg/20"
+      />
+    </div>
+  );
+}
+
+/** The plies the move axis spans: the moves charted, or a running review's whole game. */
+function axisPlies(points: readonly ChartPoint[], totalPlies: number | undefined): number {
+  const lastPly = points.at(-1)?.ply ?? 0;
+  return totalPlies ? Math.max(totalPlies, lastPly) : lastPly;
+}
+
+/** What every view shares: its width and move scale, the pointer and the current/hover lines. */
+type ChartFrame = {
+  width: number;
+  scale: Scale;
+  pointer: ReturnType<typeof useChartPointer>["pointer"];
+  cursor: { selectedX: number | null; hoverX: number | null };
+};
+
+/**
+ * The open charts: the views (folding one by one) over one move axis, focusable to step through
+ * the moves with the arrow keys, with the hovered move's tooltip. `selectedNodeId` is null while a
+ * variation is selected: no move is current then.
+ */
+function ChartViews({
+  id,
+  data,
+  layout,
+  folds,
+  height,
+  totalPlies,
+  selectedNodeId,
+  onSelectNode,
+  reviewedSide
+}: {
+  id: string;
+  data: ReviewChartData;
+  layout: ChartsLayout;
+  folds: Record<keyof ViewHeights, Fold>;
+  /** The charts area's height. */
+  height: number;
+  totalPlies: number | undefined;
+  selectedNodeId: string | null;
+  onSelectNode: (nodeId: string) => void;
+  reviewedSide: Color;
+}) {
+  const { points } = data;
+  const [measure, width, viewsElement] = useWidth();
+  const xMax = axisPlies(points, totalPlies);
+  const scale = useMemo(() => makeScale(width, xMax), [xMax, width]);
+  const { hovered, selected, pointer, onKeyDown } = useChartPointer({
+    points,
+    scale,
+    selectedNodeId,
+    onSelectNode
+  });
+  const [focused, setFocused] = useState(false);
+  const descriptionId = useId();
+  const views = useViewHeights(viewsElement, layout, height, width > 0);
+  const frame: ChartFrame = {
+    width,
+    scale,
+    pointer,
+    cursor: {
+      selectedX: selected ? scale.x(selected.ply) : null,
+      hoverX: hovered ? scale.x(hovered.ply) : null
+    }
+  };
+  // The shared move axis sits under the last open view.
+  const lastOpen = lastOpenView(views);
+  const axisAfter = (view: keyof ViewHeights) =>
+    lastOpen === view ? (
+      <svg width={width} height={AXIS_HEIGHT} className="block font-mono" aria-hidden>
+        <AxisLayer scale={scale} />
+      </svg>
+    ) : null;
+
+  return (
+    <>
+      {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- the focused charts step through the moves with the arrow keys, like a slider, but hold the fold buttons a slider would hide */}
+      <div
+        ref={measure}
+        id={id}
+        role="group"
+        aria-roledescription="charts"
+        aria-label="Winning chances, difficulty and time per move"
+        aria-describedby={descriptionId}
+        // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the charts take focus so the arrow keys can step through the moves they plot
+        tabIndex={0}
+        onKeyDown={onKeyDown}
+        onFocus={(event) => setFocused(event.target === event.currentTarget)}
+        onBlur={() => setFocused(false)}
+        className="relative grid min-h-0 min-w-0 flex-1 content-start gap-1 overflow-x-hidden overflow-y-auto rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+      >
+        <p id={descriptionId} className="sr-only">
+          {chartsDescription(data)}
+        </p>
+        {focused && selected ? (
+          <p aria-live="polite" className="sr-only">
+            {chartTooltipLines(selected, reviewedSide, data.model).join(", ")}
+          </p>
+        ) : null}
+        {width > 0 ? (
+          <>
+            <WinningChancesView
+              fold={folds.win}
+              frame={frame}
+              height={views.win}
+              data={data}
+              reviewedSide={reviewedSide}
+            />
+            {axisAfter("win")}
+            {layout.difficulty === "prompt" ? (
+              <MaiaPrompt />
+            ) : layout.difficulty === "none" ? null : (
+              <DifficultyView
+                fold={folds.difficulty}
+                frame={frame}
+                height={views.difficulty}
+                points={points}
+                model={data.model}
+              />
+            )}
+            {axisAfter("difficulty")}
+            {layout.times === "none" ? null : (
+              <TimesView fold={folds.times} frame={frame} height={views.times} points={points} />
+            )}
+            {axisAfter("times")}
+          </>
+        ) : (
+          // Reserves the winning-chances view's height until the width is known.
+          <div style={{ height: views.win ?? 0 }} aria-hidden />
+        )}
+        {hovered && width > 0 ? (
+          <ChartTooltip
+            point={hovered}
+            lines={chartTooltipLines(hovered, reviewedSide, data.model)}
+            x={scale.x(hovered.ply)}
+            width={width}
+          />
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+/**
+ * The views' pointer and keys: the hovered move (the nearest to the pointer) and the current one,
+ * a click jumping the board to a move, and the arrow keys, Home and End stepping through them.
+ */
+function useChartPointer({
+  points,
+  scale,
+  selectedNodeId,
+  onSelectNode
+}: {
+  points: readonly ChartPoint[];
+  scale: Scale;
+  selectedNodeId: string | null;
+  onSelectNode: (nodeId: string) => void;
+}) {
   const indexByNode = useMemo(
     () => new Map(points.map((point, index) => [point.nodeId, index])),
     [points]
   );
-  const selectedIndex = variationSelected ? -1 : (indexByNode.get(selectedNodeId ?? "") ?? -1);
+  const selectedIndex = selectedNodeId === null ? -1 : (indexByNode.get(selectedNodeId) ?? -1);
   const [hoverIndex, setHoverIndex] = useState(-1);
-  const [focused, setFocused] = useState(false);
-  const [difficultyCollapsed, toggleDifficulty] = useFolded("difficulty");
-  const [timesCollapsed, toggleTimes] = useFolded("times");
-  const [chartsCollapsed, toggleCharts] = useFolded("charts");
-  const [winCollapsed, toggleWin] = useFolded("win");
-  const maiaInstalled = useMaiaInstalled();
-  const descriptionId = useId();
-  const difficultyId = useId();
-  const timesId = useId();
-  const viewsId = useId();
-  const winId = useId();
 
   const indexAt = useCallback(
     (event: MouseEvent<SVGSVGElement>) => {
       const left = event.currentTarget.getBoundingClientRect().left;
-      const span = Math.max(1, scale.width - GUTTER - RIGHT);
-      const ply = ((event.clientX - left - GUTTER) / span) * scale.xMax;
-      return nearestPointIndex(points, ply);
+      return nearestPointIndex(points, plyAt(scale, event.clientX - left));
     },
     [points, scale]
   );
@@ -403,249 +451,150 @@ export const ReviewCharts = memo(function ReviewCharts({
     if (next !== selectedIndex) onSelectNode(points[next].nodeId);
   };
 
-  const showDifficulty = data.hasDifficulty && data.model !== null;
-  const layout: ChartsLayout = {
-    win: winCollapsed ? "folded" : data.hasEvals ? "open" : "empty",
-    difficulty: showDifficulty
-      ? difficultyCollapsed
-        ? "folded"
-        : "open"
-      : !maiaPrompt || maiaInstalled === null
-        ? "none"
-        : "prompt",
-    times: data.hasTimes ? (timesCollapsed ? "folded" : "open") : "none"
+  return {
+    // The hovered index can outlive a shorter set of points; the selected one is looked up in them.
+    hovered: hoverIndex >= 0 ? (points.at(hoverIndex) ?? null) : null,
+    selected: selectedIndex >= 0 ? points[selectedIndex] : null,
+    pointer,
+    onKeyDown
   };
-  const {
-    height: chartsHeight,
-    max: chartsMax,
-    dragging,
-    measure: measureSection,
-    separator
-  } = useChartsHeight(layout, fill);
-  // The open views share the height beyond the fixed rows equally, each above its minimum.
-  const viewsBox = useViewsBox(
-    viewsElement,
-    `${layout.win}|${layout.difficulty}|${layout.times}|${width > 0}`
-  );
-  const views = viewsBox
-    ? fitViewHeights({ ...viewsBox, open: openViews(layout) })
-    : viewHeights(chartsHeight, layout);
-  const winPlot = winPlotHeight(views.win ?? 0);
-  // The shared move axis sits under the last open view.
-  const lastOpen =
-    views.times !== null
-      ? "times"
-      : views.difficulty !== null
-        ? "difficulty"
-        : views.win !== null
-          ? "win"
-          : null;
-  const axis =
-    width > 0 ? (
-      <svg width={width} height={AXIS_HEIGHT} className="block font-mono" aria-hidden>
-        <AxisLayer scale={scale} />
-      </svg>
-    ) : null;
-  const difficultyPlot = stripPlotHeight(views.difficulty ?? 0);
-  const timesPlot = stripPlotHeight(views.times ?? 0);
-  const sectionId = useId();
-  // The hovered index can outlive a shorter set of points; the selected one is looked up in them.
-  const hovered = hoverIndex >= 0 ? (points.at(hoverIndex) ?? null) : null;
-  const selected = selectedIndex >= 0 ? points[selectedIndex] : null;
-  const cursor = {
-    selectedX: selected ? scale.x(selected.ply) : null,
-    hoverX: hovered ? scale.x(hovered.ply) : null
-  };
+}
 
+/** One view's drawing: an SVG the width of the charts, hovered and clicked through the moves. */
+function ChartSvg({
+  id,
+  chart,
+  height,
+  frame,
+  children
+}: {
+  id: string;
+  /** Its `data-chart` name (the views area's measurement skips these rows). */
+  chart: string;
+  height: number | null;
+  frame: ChartFrame;
+  children: ReactNode;
+}) {
   return (
-    <section
-      ref={measureSection}
-      id={sectionId}
-      className={cn("relative flex min-w-0 flex-col", fill && !chartsCollapsed && "min-h-0 flex-1")}
-      style={chartsCollapsed || fill ? undefined : { height: chartsHeight }}
-      aria-label="Game charts"
+    <svg
+      id={id}
+      width={frame.width}
+      height={height ?? 0}
+      className="block cursor-pointer font-mono"
+      data-chart={chart}
+      aria-hidden
+      {...frame.pointer}
     >
-      {chartsCollapsed || fill ? null : (
-        <div
-          role="separator"
-          aria-orientation="horizontal"
-          aria-label="Resize the charts"
-          aria-controls={sectionId}
-          aria-valuenow={chartsHeight}
-          aria-valuemin={CHARTS_MIN_HEIGHT}
-          aria-valuemax={Math.max(CHARTS_MIN_HEIGHT, chartsMax ?? chartsHeight)}
-          tabIndex={0}
-          title="Drag to resize the charts · double-click to reset"
-          data-dragging={dragging || undefined}
-          // Over the divider line just above the section (the footer's top border), centred on it.
-          className="group/splitter absolute -inset-x-3 -top-1 z-10 h-2 cursor-row-resize touch-none outline-none"
-          {...separator}
-        >
-          {/* A neutral highlight over the boundary line while hovered, focused or dragged. */}
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 top-0.5 h-[3px] transition-colors duration-micro ease-standard group-hover/splitter:bg-fg/15 group-focus-visible/splitter:bg-fg/25 group-data-[dragging]/splitter:bg-fg/20"
-          />
-        </div>
-      )}
-      <CollapsibleHeader
-        open={!chartsCollapsed}
-        onToggle={toggleCharts}
-        controls={viewsId}
-        actions={
-          variationSelected ? (
-            <Badge tone="warn" className="animate-fade-in">
-              Variation
-            </Badge>
-          ) : null
-        }
-      >
-        Charts
-      </CollapsibleHeader>
-      {chartsCollapsed ? (
-        <div id={viewsId} hidden />
-      ) : (
-        <>
-          {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- the focused charts step through the moves with the arrow keys, like a slider, but hold the fold buttons a slider would hide */}
-          <div
-            ref={measure}
-            id={viewsId}
-            role="group"
-            aria-roledescription="charts"
-            aria-label="Winning chances, difficulty and time per move"
-            aria-describedby={descriptionId}
-            // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the charts take focus so the arrow keys can step through the moves they plot
-            tabIndex={0}
-            onKeyDown={onKeyDown}
-            onFocus={(event) => setFocused(event.target === event.currentTarget)}
-            onBlur={() => setFocused(false)}
-            className="relative grid min-h-0 min-w-0 flex-1 content-start gap-1 overflow-x-hidden overflow-y-auto rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
-          >
-            <p id={descriptionId} className="sr-only">
-              {chartsDescription(data)}
-            </p>
-            {focused && selected ? (
-              <p aria-live="polite" className="sr-only">
-                {chartTooltipLines(selected, reviewedSide, data.model).join(", ")}
-              </p>
-            ) : null}
-            {width > 0 ? (
-              <>
-                <FoldToggle collapsed={winCollapsed} onToggle={toggleWin} controls={winId}>
-                  Winning chances
-                </FoldToggle>
-                {winCollapsed ? (
-                  <div id={winId} hidden />
-                ) : !data.hasEvals ? (
-                  <p
-                    id={winId}
-                    className="text-2xs text-fg-subtle"
-                    style={{ paddingLeft: GUTTER }}
-                    data-no-evals
-                  >
-                    No evaluations yet: review the game to see its winning chances.
-                  </p>
-                ) : (
-                  <svg
-                    id={winId}
-                    width={width}
-                    height={views.win ?? 0}
-                    className="block cursor-pointer font-mono"
-                    data-chart="winning-chances"
-                    aria-hidden
-                    {...pointer}
-                  >
-                    <WinningChancesLayer
-                      data={data}
-                      scale={scale}
-                      plot={winPlot}
-                      reviewedSide={reviewedSide}
-                    />
-                    <Cursor {...cursor} top={WIN_TOP} bottom={WIN_TOP + winPlot} />
-                  </svg>
-                )}
-                {lastOpen === "win" ? axis : null}
-                {showDifficulty ? (
-                  <>
-                    <FoldToggle
-                      collapsed={difficultyCollapsed}
-                      onToggle={toggleDifficulty}
-                      controls={difficultyId}
-                    >
-                      Difficulty at {data.model} · Maia
-                    </FoldToggle>
-                    {difficultyCollapsed ? (
-                      <div id={difficultyId} hidden />
-                    ) : (
-                      <svg
-                        id={difficultyId}
-                        width={width}
-                        height={views.difficulty ?? 0}
-                        className="block cursor-pointer font-mono"
-                        data-chart="difficulty"
-                        aria-hidden
-                        {...pointer}
-                      >
-                        <DifficultyLayer points={points} scale={scale} plot={difficultyPlot} />
-                        <Cursor
-                          {...cursor}
-                          top={STRIP_INSET}
-                          bottom={STRIP_INSET + difficultyPlot}
-                        />
-                      </svg>
-                    )}
-                  </>
-                ) : !maiaPrompt || maiaInstalled === null ? null : (
-                  <MaiaPrompt installed={maiaInstalled} />
-                )}
-                {lastOpen === "difficulty" ? axis : null}
-                {data.hasTimes ? (
-                  <>
-                    <FoldToggle
-                      collapsed={timesCollapsed}
-                      onToggle={toggleTimes}
-                      controls={timesId}
-                    >
-                      Time per move
-                    </FoldToggle>
-                    {timesCollapsed ? (
-                      <div id={timesId} hidden />
-                    ) : (
-                      <svg
-                        id={timesId}
-                        width={width}
-                        height={views.times ?? 0}
-                        className="block cursor-pointer font-mono"
-                        data-chart="times"
-                        aria-hidden
-                        {...pointer}
-                      >
-                        <TimesLayer points={points} scale={scale} plot={timesPlot} />
-                        <Cursor {...cursor} top={STRIP_INSET} bottom={STRIP_INSET + timesPlot} />
-                      </svg>
-                    )}
-                  </>
-                ) : null}
-                {lastOpen === "times" ? axis : null}
-              </>
-            ) : (
-              // Reserves the winning-chances view's height until the width is known.
-              <div style={{ height: views.win ?? 0 }} aria-hidden />
-            )}
-            {hovered && width > 0 ? (
-              <ChartTooltip
-                point={hovered}
-                lines={chartTooltipLines(hovered, reviewedSide, data.model)}
-                x={scale.x(hovered.ply)}
-                width={width}
-              />
-            ) : null}
-          </div>
-        </>
-      )}
-    </section>
+      {children}
+    </svg>
   );
-});
+}
+
+/** A view under its fold toggle: `children` while it is open, an empty placeholder folded. */
+function FoldingView({
+  fold,
+  label,
+  children
+}: {
+  fold: Fold;
+  label: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <>
+      <FoldToggle collapsed={fold.collapsed} onToggle={fold.toggle} controls={fold.id}>
+        {label}
+      </FoldToggle>
+      {fold.collapsed ? <div id={fold.id} hidden /> : children}
+    </>
+  );
+}
+
+function WinningChancesView({
+  fold,
+  frame,
+  height,
+  data,
+  reviewedSide
+}: {
+  fold: Fold;
+  frame: ChartFrame;
+  height: number | null;
+  data: ReviewChartData;
+  reviewedSide: Color;
+}) {
+  const plot = winPlotHeight(height ?? 0);
+  return (
+    <FoldingView fold={fold} label="Winning chances">
+      {data.hasEvals ? (
+        <ChartSvg id={fold.id} chart="winning-chances" height={height} frame={frame}>
+          <WinningChancesLayer
+            data={data}
+            scale={frame.scale}
+            plot={plot}
+            reviewedSide={reviewedSide}
+          />
+          <Cursor {...frame.cursor} top={WIN_TOP} bottom={WIN_TOP + plot} />
+        </ChartSvg>
+      ) : (
+        <p
+          id={fold.id}
+          className="text-2xs text-fg-subtle"
+          style={{ paddingLeft: GUTTER }}
+          data-no-evals
+        >
+          No evaluations yet: review the game to see its winning chances.
+        </p>
+      )}
+    </FoldingView>
+  );
+}
+
+function DifficultyView({
+  fold,
+  frame,
+  height,
+  points,
+  model
+}: {
+  fold: Fold;
+  frame: ChartFrame;
+  height: number | null;
+  points: readonly ChartPoint[];
+  model: number | null;
+}) {
+  const plot = stripPlotHeight(height ?? 0);
+  return (
+    <FoldingView fold={fold} label={<>Difficulty at {model} · Maia</>}>
+      <ChartSvg id={fold.id} chart="difficulty" height={height} frame={frame}>
+        <DifficultyLayer points={points} scale={frame.scale} plot={plot} />
+        <Cursor {...frame.cursor} top={STRIP_INSET} bottom={STRIP_INSET + plot} />
+      </ChartSvg>
+    </FoldingView>
+  );
+}
+
+function TimesView({
+  fold,
+  frame,
+  height,
+  points
+}: {
+  fold: Fold;
+  frame: ChartFrame;
+  height: number | null;
+  points: readonly ChartPoint[];
+}) {
+  const plot = stripPlotHeight(height ?? 0);
+  return (
+    <FoldingView fold={fold} label="Time per move">
+      <ChartSvg id={fold.id} chart="times" height={height} frame={frame}>
+        <TimesLayer points={points} scale={frame.scale} plot={plot} />
+        <Cursor {...frame.cursor} top={STRIP_INSET} bottom={STRIP_INSET + plot} />
+      </ChartSvg>
+    </FoldingView>
+  );
+}
 
 /** What the charts show, for screen readers (the views themselves are drawn, not read). */
 function chartsDescription(data: ReviewChartData): string {
@@ -667,7 +616,8 @@ function useMaiaInstalled(): boolean | null {
  * The difficulty view's place when the review has no Maia data: one line pointing to where Maia is
  * installed, or (with Maia installed) to analysing again with it.
  */
-function MaiaPrompt({ installed }: { installed: boolean }) {
+function MaiaPrompt() {
+  const installed = useMaiaInstalled();
   const openSettings = useOpenSettings();
   if (installed)
     return (
@@ -719,386 +669,6 @@ function FoldToggle({
       >
         {children}
       </CollapsibleToggle>
-    </div>
-  );
-}
-
-/** The current move's line (accent) and the hovered move's (subtle), through one view. */
-function Cursor({
-  selectedX,
-  hoverX,
-  top,
-  bottom
-}: {
-  selectedX: number | null;
-  hoverX: number | null;
-  top: number;
-  bottom: number;
-}) {
-  return (
-    <g pointerEvents="none">
-      {hoverX !== null && hoverX !== selectedX ? (
-        <line
-          x1={hoverX}
-          x2={hoverX}
-          y1={top}
-          y2={bottom}
-          stroke="var(--color-fg-muted)"
-          strokeWidth={1}
-          strokeDasharray="2 2"
-        />
-      ) : null}
-      {selectedX !== null ? (
-        <line
-          data-current-move
-          x1={0}
-          x2={0}
-          y1={top}
-          y2={bottom}
-          stroke="var(--color-accent)"
-          strokeWidth={1.4}
-          style={{ transform: `translateX(${selectedX}px)` }}
-          className="transition-transform duration-standard ease-enter"
-        />
-      ) : null}
-    </g>
-  );
-}
-
-/** The phases inside the axis: where each starts (as an x in plies) and its label. */
-function phaseBands(data: ReviewChartData, xMax: number) {
-  const { openingEnd, endgameStart } = data.phases;
-  const middleEnd = Math.min(xMax, (endgameStart ?? xMax + 1) - 1);
-  const bands: { from: number; to: number; label: string }[] = [];
-  if (openingEnd >= 1)
-    bands.push({ from: 0, to: Math.min(openingEnd, xMax), label: PHASE_LABELS.opening });
-  if (openingEnd < middleEnd)
-    bands.push({ from: openingEnd, to: middleEnd, label: PHASE_LABELS.middlegame });
-  if (endgameStart !== null && endgameStart <= xMax)
-    bands.push({ from: endgameStart - 1, to: xMax, label: PHASE_LABELS.endgame });
-  return bands;
-}
-
-/** A label's width at the charts' 9px mono, with a little room. */
-function labelRoom(label: string): number {
-  return label.length * 5.6 + 6;
-}
-
-/**
- * An opening too short for its label (a game that left the book in a move or two) merges into the
- * axis start: no divider hugging the left edge, and the middlegame's label starts there.
- */
-function tidyBands(bands: ReturnType<typeof phaseBands>, x: (ply: number) => number) {
-  const first = bands.at(0);
-  const second = bands.at(1);
-  if (first?.label !== PHASE_LABELS.opening || !second) return bands;
-  if (x(first.to) - x(first.from) >= labelRoom(first.label)) return bands;
-  return [{ ...second, from: 0 }, ...bands.slice(2)];
-}
-
-const WinningChancesLayer = memo(function WinningChancesLayer({
-  data,
-  scale,
-  plot,
-  reviewedSide
-}: {
-  data: ReviewChartData;
-  scale: Scale;
-  /** The plot's height (the view takes the charts area's spare height). */
-  plot: number;
-  reviewedSide: Color;
-}) {
-  // The moves the review has evaluated (every move but those a running review hasn't reached).
-  const points = data.points.flatMap((point) =>
-    point.whiteWin === null ? [] : [{ ...point, whiteWin: point.whiteWin }]
-  );
-  const { x } = scale;
-  const bottom = WIN_TOP + plot;
-  // The reviewed side's winning chances, drawn up from the bottom.
-  const y = (point: { whiteWin: number }) => {
-    const own = reviewedSide === "white" ? point.whiteWin : 100 - point.whiteWin;
-    return WIN_TOP + (1 - own / 100) * plot;
-  };
-  const last = points.at(-1);
-  const area = last
-    ? `${points.map((point, index) => `${index ? "L" : "M"}${x(point.ply).toFixed(1)} ${y(point).toFixed(1)}`).join("")}L${x(last.ply).toFixed(1)} ${bottom}L${x(0)} ${bottom}Z`
-    : "";
-  const ownFill = reviewedSide === "white" ? "var(--color-eval-white)" : "var(--color-eval-black)";
-  const otherFill =
-    reviewedSide === "white" ? "var(--color-eval-black)" : "var(--color-eval-white)";
-  const half = WIN_TOP + plot / 2;
-  const bands = tidyBands(phaseBands(data, scale.xMax), x);
-  return (
-    <g>
-      {last ? (
-        <>
-          <rect
-            x={x(0)}
-            y={WIN_TOP}
-            width={Math.max(0, x(last.ply) - x(0))}
-            height={plot}
-            fill={otherFill}
-          />
-          <path d={area} fill={ownFill} />
-        </>
-      ) : null}
-      <line
-        x1={GUTTER}
-        x2={scale.width - RIGHT}
-        y1={half}
-        y2={half}
-        stroke="var(--color-fg-subtle)"
-        strokeWidth={0.8}
-        strokeDasharray="3 4"
-      />
-      {bands.map((band, index) => {
-        const room = x(band.to) - x(band.from);
-        return (
-          <g key={band.label} data-phase={band.label}>
-            {index > 0 ? (
-              <line
-                x1={x(band.from)}
-                x2={x(band.from)}
-                y1={1}
-                y2={bottom}
-                stroke="var(--color-fg-subtle)"
-                strokeWidth={0.8}
-              />
-            ) : null}
-            {room >= labelRoom(band.label) ? (
-              <text x={x(band.from) + 3} y={9} {...LABEL} fill="var(--color-fg-muted)">
-                {band.label}
-              </text>
-            ) : null}
-          </g>
-        );
-      })}
-      {[100, 50, 0].map((value) => (
-        <text
-          key={value}
-          x={GUTTER - 4}
-          y={WIN_TOP + (1 - value / 100) * plot + 3}
-          {...LABEL}
-          fontSize={8.5}
-          fill="var(--color-fg-subtle)"
-          textAnchor="end"
-        >
-          {value}%
-        </text>
-      ))}
-      {points.map((point) => {
-        const fill = markFill(point);
-        if (!fill) return null;
-        const cx = x(point.ply);
-        const cy = y(point);
-        return (
-          <g key={point.nodeId}>
-            {point.key ? (
-              <circle
-                cx={cx}
-                cy={cy}
-                r={5.5}
-                fill="none"
-                stroke="var(--color-fg)"
-                strokeWidth={1}
-                opacity={0.85}
-              />
-            ) : null}
-            <circle
-              cx={cx}
-              cy={cy}
-              r={3.2}
-              fill={fill}
-              stroke="var(--color-canvas)"
-              strokeWidth={0.9}
-              data-ply={point.ply}
-              data-annotation={chartMark(point.annotation) ?? undefined}
-              data-key-moment={point.key ? "true" : undefined}
-            />
-          </g>
-        );
-      })}
-    </g>
-  );
-});
-
-const DifficultyLayer = memo(function DifficultyLayer({
-  points,
-  scale,
-  plot
-}: {
-  points: readonly ChartPoint[];
-  scale: Scale;
-  /** The plot's height (the strip's share of the charts area). */
-  plot: number;
-}) {
-  const base = STRIP_INSET + plot;
-  const width = barWidth(scale);
-  return (
-    <g>
-      <text
-        x={GUTTER - 4}
-        y={STRIP_INSET + 7}
-        {...LABEL}
-        fill="var(--color-fg-subtle)"
-        textAnchor="end"
-      >
-        hard
-      </text>
-      <text x={GUTTER - 4} y={base} {...LABEL} fill="var(--color-fg-subtle)" textAnchor="end">
-        easy
-      </text>
-      <line x1={GUTTER} x2={scale.width - RIGHT} y1={base} y2={base} stroke="var(--color-line)" />
-      {points.map((point) => {
-        if (point.bestChance === null) return null;
-        const height = Math.max(1, (1 - point.bestChance) * plot);
-        return (
-          <rect
-            key={point.nodeId}
-            x={scale.x(point.ply) - width / 2}
-            y={base - height}
-            width={width}
-            height={height}
-            rx={0.8}
-            fill={markFill(point) ?? "var(--color-line-strong)"}
-            data-ply={point.ply}
-          />
-        );
-      })}
-    </g>
-  );
-});
-
-const TimesLayer = memo(function TimesLayer({
-  points,
-  scale,
-  plot
-}: {
-  points: readonly ChartPoint[];
-  scale: Scale;
-  /** The plot's height (the strip's share of the charts area). */
-  plot: number;
-}) {
-  const middle = STRIP_INSET + plot / 2;
-  const width = barWidth(scale);
-  let longest = 0;
-  for (const point of points) longest = Math.max(longest, point.spentMs ?? 0);
-  return (
-    <g>
-      <text
-        x={GUTTER - 4}
-        y={STRIP_INSET + 7}
-        {...LABEL}
-        fill="var(--color-fg-subtle)"
-        textAnchor="end"
-      >
-        White
-      </text>
-      <text
-        x={GUTTER - 4}
-        y={STRIP_INSET + plot}
-        {...LABEL}
-        fill="var(--color-fg-subtle)"
-        textAnchor="end"
-      >
-        Black
-      </text>
-      <line
-        x1={GUTTER}
-        x2={scale.width - RIGHT}
-        y1={middle}
-        y2={middle}
-        stroke="var(--color-line)"
-      />
-      {longest > 0
-        ? points.map((point) => {
-            if (point.spentMs === null || point.mover === null) return null;
-            const height = Math.max(0.5, (point.spentMs / longest) * (plot / 2 - 1));
-            const white = point.mover === "white";
-            return (
-              <rect
-                key={point.nodeId}
-                x={scale.x(point.ply) - width / 2}
-                y={white ? middle - height : middle}
-                width={width}
-                height={height}
-                fill={
-                  markFill(point) ?? (white ? "var(--color-side-white)" : "var(--color-fg-subtle)")
-                }
-                data-ply={point.ply}
-              />
-            );
-          })
-        : null}
-    </g>
-  );
-});
-
-/** Ply numbers under the views, as many as fit. */
-const AxisLayer = memo(function AxisLayer({ scale }: { scale: Scale }) {
-  const span = scale.width - GUTTER - RIGHT;
-  const fit = Math.max(1, Math.floor(span / TICK_SPACING));
-  const step = [1, 2, 5, 10, 20, 50, 100, 200].find((value) => scale.xMax / value <= fit) ?? 500;
-  const ticks: number[] = [];
-  for (let ply = 0; ply <= scale.xMax; ply += step) ticks.push(ply);
-  return (
-    <g>
-      {ticks.map((ply) => (
-        <text
-          key={ply}
-          x={scale.x(ply)}
-          y={10}
-          {...LABEL}
-          fill="var(--color-fg-subtle)"
-          textAnchor="middle"
-        >
-          {ply}
-        </text>
-      ))}
-    </g>
-  );
-});
-
-/** The hovered move's tooltip, beside its line (to the left in the charts' right half). */
-function ChartTooltip({
-  point,
-  lines,
-  x,
-  width
-}: {
-  point: ChartPoint;
-  lines: string[];
-  x: number;
-  width: number;
-}) {
-  const left = x > width / 2;
-  const [title, ...rest] = lines;
-  return (
-    <div
-      aria-hidden
-      className="pointer-events-none absolute top-4 z-10 grid max-w-56 gap-0.5 rounded-lg border border-line bg-surface-raised px-2 py-1.5 text-2xs text-fg-muted shadow-popover"
-      style={{
-        left: x,
-        transform: left ? "translateX(calc(-100% - 10px))" : "translateX(10px)"
-      }}
-      data-chart-tooltip
-    >
-      <p className="flex items-center gap-1.5 whitespace-nowrap font-mono text-xs text-fg-secondary">
-        {point.annotation ? (
-          <svg viewBox="0 0 100 100" className="size-4 shrink-0" aria-hidden>
-            <circle cx={50} cy={50} r={50} fill={annotationTone[point.annotation].fill} />
-            <g fill="var(--color-mark-fg)" className="text-mark-fg">
-              <MoveMarkGlyph annotation={point.annotation} />
-            </g>
-          </svg>
-        ) : null}
-        {title}
-      </p>
-      {rest.map((line) => (
-        <p key={line} className="whitespace-nowrap">
-          {line}
-        </p>
-      ))}
     </div>
   );
 }

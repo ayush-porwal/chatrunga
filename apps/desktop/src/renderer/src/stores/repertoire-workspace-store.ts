@@ -465,7 +465,12 @@ export const useRepertoireWorkspaceStore = create<RepertoireWorkspaceState & Act
           set({ selectedNodeId: existing.id });
           return { nodeId: existing.id, created: false };
         }
-        const added = addMoveNode(chapter.tree, parent.id, san, uci, parent.fenAfter, fenAfter);
+        const added = addMoveNode(chapter.tree, parent.id, {
+          san,
+          uci,
+          fenBefore: parent.fenAfter,
+          fenAfter
+        });
         edit(
           (current) => ({
             ...current,

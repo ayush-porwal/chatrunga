@@ -62,14 +62,12 @@ describe("boardClocksAt", () => {
   it("keeps the clocks of the move a variation leaves", () => {
     // A move of the user's own after 25. d6 records no clock (the FEN after it doesn't matter here).
     const after = line[48];
-    const { moveTree, node } = addMoveNode(
-      game.moveTree,
-      after.id,
-      "Ne6",
-      "d4e6",
-      after.fenAfter,
-      after.fenAfter
-    );
+    const { moveTree, node } = addMoveNode(game.moveTree, after.id, {
+      san: "Ne6",
+      uci: "d4e6",
+      fenBefore: after.fenAfter,
+      fenAfter: after.fenAfter
+    });
     expect(boardClocksAt(moveTree, node.id, "180+0")).toEqual({
       white: "01:45",
       black: "01:45"

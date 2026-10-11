@@ -83,18 +83,7 @@ export function UpdatesSection({ appearance }: { appearance: AppSettings }) {
               What’s new
             </Button>
           ) : null}
-          {action ? (
-            <Button variant="primary" size="sm" onClick={() => void runUpdateAction(action)}>
-              {action === "install" ? (
-                <RotateCw />
-              ) : action === "open-download" ? (
-                <ExternalLink />
-              ) : (
-                <Download />
-              )}
-              {updateActionLabel[action]}
-            </Button>
-          ) : null}
+          {action ? <UpdateActionButton action={action} /> : null}
           {!disabled && status.kind !== "ready" && status.kind !== "downloading" ? (
             <Button
               variant="outline"
@@ -118,28 +107,66 @@ export function UpdatesSection({ appearance }: { appearance: AppSettings }) {
           {status.kind === "disabled" ? status.message : state.modeReason}
         </Notice>
       ) : (
-        <div className="grid divide-y divide-line-subtle border-t border-line-subtle">
-          {state.mode === "auto" ? (
-            <SettingRow
-              label="Download updates automatically"
-              htmlFor="setting-updates-auto-download"
-              description="New versions download in the background; restart when it suits you."
-              control={
-                <Switch
-                  id="setting-updates-auto-download"
-                  checked={appearance.updatesAutoDownload}
-                  onCheckedChange={(v) => setSetting("updatesAutoDownload", v)}
-                />
-              }
-            />
-          ) : null}
-          {state.mode === "manual" && state.modeReason ? (
-            <p className="pt-2.5 text-xs leading-5 text-fg-subtle">{state.modeReason}</p>
-          ) : null}
-        </div>
+        <UpdateModeSettings
+          state={state}
+          autoDownload={appearance.updatesAutoDownload}
+          onAutoDownloadChange={(v) => setSetting("updatesAutoDownload", v)}
+        />
       )}
       {notesOpen ? <UpdateDialog state={state} onClose={() => setNotesOpen(false)} /> : null}
     </section>
+  );
+}
+
+/** The update's one action: restart to install it, open its download, or download it. */
+function UpdateActionButton({ action }: { action: NonNullable<ReturnType<typeof updateAction>> }) {
+  return (
+    <Button variant="primary" size="sm" onClick={() => void runUpdateAction(action)}>
+      {action === "install" ? (
+        <RotateCw />
+      ) : action === "open-download" ? (
+        <ExternalLink />
+      ) : (
+        <Download />
+      )}
+      {updateActionLabel[action]}
+    </Button>
+  );
+}
+
+/**
+ * How updates arrive: downloading them automatically (when the build can), or why they are
+ * installed by hand.
+ */
+function UpdateModeSettings({
+  state,
+  autoDownload,
+  onAutoDownloadChange
+}: {
+  state: UpdateState;
+  autoDownload: boolean;
+  onAutoDownloadChange: (value: boolean) => void;
+}) {
+  return (
+    <div className="grid divide-y divide-line-subtle border-t border-line-subtle">
+      {state.mode === "auto" ? (
+        <SettingRow
+          label="Download updates automatically"
+          htmlFor="setting-updates-auto-download"
+          description="New versions download in the background; restart when it suits you."
+          control={
+            <Switch
+              id="setting-updates-auto-download"
+              checked={autoDownload}
+              onCheckedChange={onAutoDownloadChange}
+            />
+          }
+        />
+      ) : null}
+      {state.mode === "manual" && state.modeReason ? (
+        <p className="pt-2.5 text-xs leading-5 text-fg-subtle">{state.modeReason}</p>
+      ) : null}
+    </div>
   );
 }
 

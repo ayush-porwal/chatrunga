@@ -17,6 +17,7 @@ import {
   useUpdateRepertoireMetadataMutation
 } from "../../queries/repertoire";
 import { useRepertoireWorkspaceStore } from "../../stores/repertoire-workspace-store";
+import { FieldError, fieldErrorAria } from "./FieldError";
 import { mustFlushDraftBeforeImport } from "./import-progress";
 import {
   adoptMetadataRevision,
@@ -149,45 +150,30 @@ export function EditRepertoireDialog({
             id={ids.name}
             autoFocus
             value={form.name}
-            aria-invalid={Boolean(errors.name) || undefined}
-            aria-describedby={errors.name ? `${ids.name}-error` : undefined}
+            {...fieldErrorAria(errors.name, `${ids.name}-error`)}
             onChange={(event) => set({ name: event.target.value })}
           />
-          {errors.name ? (
-            <p id={`${ids.name}-error`} className="text-2xs text-danger">
-              {errors.name}
-            </p>
-          ) : null}
+          <FieldError id={`${ids.name}-error`} error={errors.name} />
         </Field>
         <Field label="Description" hint="Optional" htmlFor={ids.description}>
           <Textarea
             id={ids.description}
             className="min-h-20"
             value={form.description}
-            aria-invalid={Boolean(errors.description) || undefined}
-            aria-describedby={errors.description ? `${ids.description}-error` : undefined}
+            {...fieldErrorAria(errors.description, `${ids.description}-error`)}
             onChange={(event) => set({ description: event.target.value })}
           />
-          {errors.description ? (
-            <p id={`${ids.description}-error`} className="text-2xs text-danger">
-              {errors.description}
-            </p>
-          ) : null}
+          <FieldError id={`${ids.description}-error`} error={errors.description} />
         </Field>
         <Field label="Tags" hint={`Comma-separated, up to ${LIMITS.tags}`} htmlFor={ids.tags}>
           <Input
             id={ids.tags}
             placeholder="sicilian, sharp, main lines"
             value={form.tags}
-            aria-invalid={Boolean(errors.tags) || undefined}
-            aria-describedby={errors.tags ? `${ids.tags}-error` : undefined}
+            {...fieldErrorAria(errors.tags, `${ids.tags}-error`)}
             onChange={(event) => set({ tags: event.target.value })}
           />
-          {errors.tags ? (
-            <p id={`${ids.tags}-error`} className="text-2xs text-danger">
-              {errors.tags}
-            </p>
-          ) : null}
+          <FieldError id={`${ids.tags}-error`} error={errors.tags} />
         </Field>
         <button type="submit" hidden aria-label="Save repertoire" />
       </form>

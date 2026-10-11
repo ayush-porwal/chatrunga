@@ -171,7 +171,7 @@ describe("the rating a review is made for", () => {
       timeControl: "180+2",
       rating: { side: "black", whiteElo: 2010, blackElo: 1533, speed: null }
     });
-    expect(reviewGameWithEngine.mock.lastCall?.[4]).toMatchObject({ playerRating: 1533 });
+    expect(reviewGameWithEngine.mock.lastCall?.[3]).toMatchObject({ playerRating: 1533 });
     // This profile runs no Maia (reviewUseMaia off), so no model is named.
     expect(review.rating).toEqual({ rating: 1533, source: "game", mode: "blitz", maiaModel: null });
     // The side it was made for is saved with it (Review as).

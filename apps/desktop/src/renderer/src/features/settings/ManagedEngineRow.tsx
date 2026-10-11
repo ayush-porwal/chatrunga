@@ -4,7 +4,7 @@ import type { EngineAssetStatus } from "@chaturanga/shared/ipc/chaturanga-api";
 import { useUpdateEngineMutation } from "../../queries/api";
 import { Badge } from "@/components/ui/badge";
 import { IconButton } from "@/components/ui/icon-button";
-import { OverflowMenu } from "@/components/ui/menu";
+import { OverflowMenu, type MenuItem } from "@/components/ui/menu";
 import { formatSize, isAssetInstalled, type EngineListRow } from "@/lib/engine-assets";
 import { ipcErrorMessage } from "@/lib/ipc-error";
 import { listRow, well } from "@/lib/ui";
@@ -16,6 +16,8 @@ import {
   testSavedEngine,
   type TestResult
 } from "./engine-row";
+
+type AssetRow = Extract<EngineListRow, { kind: "asset" }>;
 
 /**
  * A managed download in Settings → Engines (Stockfish, a Maia network, Lc0) together with the
@@ -37,7 +39,7 @@ export function ManagedEngineRow({
   onPickFile,
   onResult
 }: {
-  row: Extract<EngineListRow, { kind: "asset" }>;
+  row: AssetRow;
   busy: boolean;
   percent: number;
   onDownload: () => void;
@@ -96,29 +98,14 @@ export function ManagedEngineRow({
           busy && "overflow-hidden border-line-strong"
         )}
       >
-        <EngineImagePreview imagePath={engine?.imagePath ?? null} name={label} />
-        <EngineRowText
-          name={label}
-          detail={installed ? status.installedVersion : null}
-          badges={
-            <>
-              {engine?.isDefault ? <Badge tone="accent">Default</Badge> : null}
-              {row.id === "lc0" ? <Badge>Runs Maia</Badge> : null}
-            </>
-          }
-        />
+        <ManagedEngineName row={row} />
         {size ? <span className="shrink-0 text-xs tabular-nums text-fg-subtle">{size}</span> : null}
-        {busy ? (
-          <Badge tone="warn" className="tabular-nums">
-            {downloading ? `Downloading ${percent}%` : "Working…"}
-          </Badge>
-        ) : status.updateAvailable ? (
-          <Badge tone="warn" title={`Latest release ${status.latestVersion ?? ""}`}>
-            Update · {status.latestVersion}
-          </Badge>
-        ) : (
-          <StatusBadge state={installed || !manual ? status.state : "manual"} />
-        )}
+        <ManagedEngineBadge
+          status={status}
+          busy={busy}
+          downloading={downloading}
+          percent={percent}
+        />
         {busy ? (
           <span
             className="grid size-8 shrink-0 place-items-center text-fg-subtle"
@@ -140,68 +127,166 @@ export function ManagedEngineRow({
                     onTest: () => void test()
                   })
                 : []),
-              status.updateAvailable && {
-                label: "Update",
-                icon: <RefreshCw />,
-                onSelect: onUpdate
-              },
-              !manual &&
-                installed && {
-                  label: "Remove download",
-                  icon: <Trash2 />,
-                  onSelect: onRemove,
-                  destructive: true
-                },
-              manual && {
-                label: installed ? "Change binary…" : `Choose ${label} binary…`,
-                icon: <FolderOpen />,
-                onSelect: onPickFile
-              },
-              manual && {
-                label: "Copy install command",
-                icon: <Copy />,
-                onSelect: () => void copy()
-              },
-              manual &&
-                installed && {
-                  label: "Forget path",
-                  icon: <Trash2 />,
-                  onSelect: onRemove,
-                  destructive: true
-                }
+              ...assetMenuItems({
+                status,
+                label,
+                onUpdate,
+                onRemove,
+                onPickFile,
+                onCopy: () => void copy()
+              })
             ]}
           />
         )}
-        {busy ? (
-          /* Row-wide progress along the bottom edge; scaleX so only a transform animates. */
-          <span
-            aria-hidden="true"
-            className="absolute inset-x-0 bottom-0 h-0.5 animate-fade-in overflow-hidden bg-accent/10"
-          >
-            {downloading ? (
-              <span
-                className="block h-full origin-left bg-accent transition-transform duration-standard ease-standard"
-                style={{ transform: `scaleX(${percent / 100})` }}
-              />
-            ) : (
-              <span className="block h-full w-1/3 animate-indeterminate bg-accent/70" />
-            )}
-          </span>
-        ) : null}
+        {busy ? <BusyProgress downloading={downloading} percent={percent} /> : null}
       </div>
       {manual && !installed ? (
-        <div className={cn(well, "flex items-center gap-2 py-1 pl-3 pr-1")}>
-          <code className="min-w-0 flex-1 truncate font-mono text-xs text-fg-secondary">
-            {instruction}
-          </code>
-          <IconButton
-            label={copied ? "Copied" : "Copy install command"}
-            icon={copied ? <Check /> : <Copy />}
-            size="icon-xs"
-            onClick={() => void copy()}
-          />
-        </div>
+        <InstallCommand instruction={instruction} copied={copied} onCopy={() => void copy()} />
       ) : null}
+    </div>
+  );
+}
+
+/** The download's picture, name, installed version and badges. */
+function ManagedEngineName({ row }: { row: AssetRow }) {
+  const { status, engine, label } = row;
+  return (
+    <>
+      <EngineImagePreview imagePath={engine?.imagePath ?? null} name={label} />
+      <EngineRowText
+        name={label}
+        detail={isAssetInstalled(status) ? status.installedVersion : null}
+        badges={
+          <>
+            {engine?.isDefault ? <Badge tone="accent">Default</Badge> : null}
+            {row.id === "lc0" ? <Badge>Runs Maia</Badge> : null}
+          </>
+        }
+      />
+    </>
+  );
+}
+
+/** Work in progress (with the download's percentage), an available update, or the install state. */
+function ManagedEngineBadge({
+  status,
+  busy,
+  downloading,
+  percent
+}: {
+  status: EngineAssetStatus;
+  busy: boolean;
+  downloading: boolean;
+  percent: number;
+}) {
+  if (busy) {
+    return (
+      <Badge tone="warn" className="tabular-nums">
+        {downloading ? `Downloading ${percent}%` : "Working…"}
+      </Badge>
+    );
+  }
+  if (status.updateAvailable) {
+    return (
+      <Badge tone="warn" title={`Latest release ${status.latestVersion ?? ""}`}>
+        Update · {status.latestVersion}
+      </Badge>
+    );
+  }
+  // Not installed and no download: the user installs it.
+  const state = isAssetInstalled(status) || status.autoDownload ? status.state : "manual";
+  return <StatusBadge state={state} />;
+}
+
+/**
+ * The ⋯ menu's entries for the download itself: Update when a release is out, then Remove download
+ * for a downloaded one, or, for a manual install, choosing the binary, copying the install command
+ * and (once set) forgetting the path.
+ */
+function assetMenuItems({
+  status,
+  label,
+  onUpdate,
+  onRemove,
+  onPickFile,
+  onCopy
+}: {
+  status: EngineAssetStatus;
+  label: string;
+  onUpdate: () => void;
+  onRemove: () => void;
+  onPickFile: () => void;
+  onCopy: () => void;
+}): (MenuItem | false)[] {
+  const installed = isAssetInstalled(status);
+  const update = status.updateAvailable && {
+    label: "Update",
+    icon: <RefreshCw />,
+    onSelect: onUpdate
+  };
+  if (status.autoDownload) {
+    return [
+      update,
+      installed && {
+        label: "Remove download",
+        icon: <Trash2 />,
+        onSelect: onRemove,
+        destructive: true
+      }
+    ];
+  }
+  return [
+    update,
+    {
+      label: installed ? "Change binary…" : `Choose ${label} binary…`,
+      icon: <FolderOpen />,
+      onSelect: onPickFile
+    },
+    { label: "Copy install command", icon: <Copy />, onSelect: onCopy },
+    installed && { label: "Forget path", icon: <Trash2 />, onSelect: onRemove, destructive: true }
+  ];
+}
+
+/** Row-wide progress along the bottom edge; scaleX so only a transform animates. */
+function BusyProgress({ downloading, percent }: { downloading: boolean; percent: number }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="absolute inset-x-0 bottom-0 h-0.5 animate-fade-in overflow-hidden bg-accent/10"
+    >
+      {downloading ? (
+        <span
+          className="block h-full origin-left bg-accent transition-transform duration-standard ease-standard"
+          style={{ transform: `scaleX(${percent / 100})` }}
+        />
+      ) : (
+        <span className="block h-full w-1/3 animate-indeterminate bg-accent/70" />
+      )}
+    </span>
+  );
+}
+
+/** A manual install's command, under the row, with a copy button. */
+function InstallCommand({
+  instruction,
+  copied,
+  onCopy
+}: {
+  instruction: string;
+  copied: boolean;
+  onCopy: () => void;
+}) {
+  return (
+    <div className={cn(well, "flex items-center gap-2 py-1 pl-3 pr-1")}>
+      <code className="min-w-0 flex-1 truncate font-mono text-xs text-fg-secondary">
+        {instruction}
+      </code>
+      <IconButton
+        label={copied ? "Copied" : "Copy install command"}
+        icon={copied ? <Check /> : <Copy />}
+        size="icon-xs"
+        onClick={onCopy}
+      />
     </div>
   );
 }

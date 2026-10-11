@@ -26,7 +26,8 @@ import { explainEngine, explanationKey } from "./puzzle-explanation";
 import {
   explainView,
   requestPuzzleExplanation,
-  usePuzzleExplanationStore
+  usePuzzleExplanationStore,
+  type ExplainView
 } from "./puzzle-explanation-store";
 import { solutionIndexForToken, type PuzzleProseLine } from "./puzzle-prose";
 
@@ -91,135 +92,62 @@ export function PuzzleExplanation({
     />
   );
 
-  return (
-    <div className="grid gap-2" aria-label="AI explanation" role="group">
-      {view.kind === "idle" ? (
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            className="flex-1"
-            disabled={view.disabled}
-            onClick={explain}
-          >
-            <Sparkles />
-            Explain with AI
-          </Button>
-          {gear}
-        </div>
-      ) : view.kind === "analysing" || view.kind === "writing" ? (
-        <div
-          role="status"
-          className="flex min-w-0 animate-fade-in items-center gap-2.5 rounded-lg border border-line bg-surface-sunken px-3 py-2"
-        >
-          <Loader2 className="size-4 shrink-0 animate-spin text-accent" aria-hidden />
-          <span key={view.kind} className="animate-fade-in text-sm text-fg-secondary">
-            {view.kind === "analysing" ? "Analysing…" : "Writing…"}
-          </span>
-          <span
-            className="ml-auto min-w-0 truncate text-2xs text-fg-subtle"
-            title={view.kind === "writing" ? `${model} via OpenRouter` : undefined}
-          >
-            {view.kind === "analysing" ? engine?.name : shortModelName(model)}
-          </span>
-        </div>
-      ) : view.kind === "ready" ? (
-        <article className="grid animate-rise-in gap-1.5 rounded-lg border border-line bg-surface-sunken px-3 py-2.5">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <Sparkles className="size-3.5 shrink-0 text-accent" aria-hidden />
-            <span
-              className="min-w-0 flex-1 truncate text-2xs text-fg-subtle"
-              title={`Written by ${view.explanation.providerModel}`}
-            >
-              {shortModelName(view.explanation.providerModel)}
-            </span>
-            <IconButton label="Regenerate" icon={<RefreshCw />} size="icon-xs" onClick={explain} />
-            <IconButton
-              label="Explanation settings"
-              icon={settingsIcon}
-              size="icon-xs"
-              onClick={openSettings}
-            />
-          </div>
-          {view.explanation.headline ? (
-            <h3 className="font-serif text-base font-semibold leading-6 text-fg">
-              <PuzzleProse text={view.explanation.headline} line={proseLine} />
-            </h3>
-          ) : null}
-          <p className="font-serif text-sm leading-6 text-fg-secondary">
-            <PuzzleProse text={view.explanation.prose} line={proseLine} />
-          </p>
-        </article>
-      ) : view.kind === "error" ? (
-        <Notice
-          tone="warn"
-          title="Couldn't explain this puzzle."
-          action={
-            view.needsSettings ? (
-              <Button type="button" variant="outline" size="xs" onClick={openSettings}>
-                <Settings />
-                Settings
-              </Button>
-            ) : (
-              <div className="flex items-center gap-1">
-                <Button type="button" variant="outline" size="xs" onClick={explain}>
-                  <RefreshCw />
-                  Retry
-                </Button>
-                <IconButton
-                  label="Explanation settings"
-                  icon={settingsIcon}
-                  size="icon-xs"
-                  onClick={openSettings}
-                />
-              </div>
-            )
-          }
-        >
-          {view.message}
-        </Notice>
-      ) : (
-        <div className="flex items-center gap-2.5 rounded-lg border border-line bg-surface-sunken px-3 py-2">
-          {view.kind === "no-key" ? (
-            <KeyRound className="size-4 shrink-0 text-fg-subtle" aria-hidden />
-          ) : (
-            <MessageSquareOff className="size-4 shrink-0 text-fg-subtle" aria-hidden />
-          )}
-          <p className="min-w-0 flex-1 text-xs leading-5 text-fg-muted">
-            {view.kind === "no-key"
-              ? "Explain with AI needs your OpenRouter API key."
-              : "AI commentary is off."}
-          </p>
-          {view.kind === "no-key" ? (
+  const viewContent = () => {
+    switch (view.kind) {
+      case "idle":
+        return (
+          <div className="flex items-center gap-2">
             <Button
               type="button"
               variant="outline"
-              size="xs"
-              // The key lives in app Settings → AI (every AI feature shares it).
-              onClick={openAppSettings ? () => openAppSettings("ai") : openSettings}
+              className="flex-1"
+              disabled={view.disabled}
+              onClick={explain}
             >
-              Add API key
+              <Sparkles />
+              Explain with AI
             </Button>
-          ) : (
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                size="xs"
-                onClick={() => update.mutate({ key: "reviewCommentaryEnabled", value: true })}
-              >
-                Turn on
-              </Button>
-              <IconButton
-                label="Explanation settings"
-                icon={settingsIcon}
-                size="icon-xs"
-                onClick={openSettings}
-              />
-            </>
-          )}
-        </div>
-      )}
+            {gear}
+          </div>
+        );
+      case "analysing":
+      case "writing":
+        return <ExplainProgress phase={view.kind} engineName={engine?.name} model={model} />;
+      case "ready":
+        return (
+          <ExplanationCard
+            explanation={view.explanation}
+            line={proseLine}
+            onRegenerate={explain}
+            onOpenSettings={openSettings}
+          />
+        );
+      case "error":
+        return (
+          <ExplainError
+            message={view.message}
+            needsSettings={view.needsSettings}
+            onRetry={explain}
+            onOpenSettings={openSettings}
+          />
+        );
+      case "no-key":
+      case "off":
+        return (
+          <ExplainUnavailable
+            reason={view.kind}
+            // The key lives in app Settings → AI (every AI feature shares it).
+            onAddKey={openAppSettings ? () => openAppSettings("ai") : openSettings}
+            onTurnOn={() => update.mutate({ key: "reviewCommentaryEnabled", value: true })}
+            onOpenSettings={openSettings}
+          />
+        );
+    }
+  };
+
+  return (
+    <div className="grid gap-2" aria-label="AI explanation" role="group">
+      {viewContent()}
       {settingsOpen
         ? createPortal(
             <Dialog
@@ -246,6 +174,167 @@ export function PuzzleExplanation({
             document.body
           )
         : null}
+    </div>
+  );
+}
+
+/**
+ * The search running for the explanation ("Analysing…", with its engine), then the writing (its
+ * model).
+ */
+function ExplainProgress({
+  phase,
+  engineName,
+  model
+}: {
+  phase: "analysing" | "writing";
+  engineName: string | undefined;
+  model: string;
+}) {
+  return (
+    <div
+      role="status"
+      className="flex min-w-0 animate-fade-in items-center gap-2.5 rounded-lg border border-line bg-surface-sunken px-3 py-2"
+    >
+      <Loader2 className="size-4 shrink-0 animate-spin text-accent" aria-hidden />
+      <span key={phase} className="animate-fade-in text-sm text-fg-secondary">
+        {phase === "analysing" ? "Analysing…" : "Writing…"}
+      </span>
+      <span
+        className="ml-auto min-w-0 truncate text-2xs text-fg-subtle"
+        title={phase === "writing" ? `${model} via OpenRouter` : undefined}
+      >
+        {phase === "analysing" ? engineName : shortModelName(model)}
+      </span>
+    </div>
+  );
+}
+
+/** The coach's explanation: its model, Regenerate and the settings, then the headline and text. */
+function ExplanationCard({
+  explanation,
+  line,
+  onRegenerate,
+  onOpenSettings
+}: {
+  explanation: Extract<ExplainView, { kind: "ready" }>["explanation"];
+  line: PuzzleProseLine | null;
+  onRegenerate: () => void;
+  onOpenSettings: () => void;
+}) {
+  return (
+    <article className="grid animate-rise-in gap-1.5 rounded-lg border border-line bg-surface-sunken px-3 py-2.5">
+      <div className="flex min-w-0 items-center gap-1.5">
+        <Sparkles className="size-3.5 shrink-0 text-accent" aria-hidden />
+        <span
+          className="min-w-0 flex-1 truncate text-2xs text-fg-subtle"
+          title={`Written by ${explanation.providerModel}`}
+        >
+          {shortModelName(explanation.providerModel)}
+        </span>
+        <IconButton label="Regenerate" icon={<RefreshCw />} size="icon-xs" onClick={onRegenerate} />
+        <IconButton
+          label="Explanation settings"
+          icon={settingsIcon}
+          size="icon-xs"
+          onClick={onOpenSettings}
+        />
+      </div>
+      {explanation.headline ? (
+        <h3 className="font-serif text-base font-semibold leading-6 text-fg">
+          <PuzzleProse text={explanation.headline} line={line} />
+        </h3>
+      ) : null}
+      <p className="font-serif text-sm leading-6 text-fg-secondary">
+        <PuzzleProse text={explanation.prose} line={line} />
+      </p>
+    </article>
+  );
+}
+
+/** Why the puzzle couldn't be explained: Settings when they are the fix, else Retry. */
+function ExplainError({
+  message,
+  needsSettings,
+  onRetry,
+  onOpenSettings
+}: {
+  message: string;
+  needsSettings: boolean;
+  onRetry: () => void;
+  onOpenSettings: () => void;
+}) {
+  return (
+    <Notice
+      tone="warn"
+      title="Couldn't explain this puzzle."
+      action={
+        needsSettings ? (
+          <Button type="button" variant="outline" size="xs" onClick={onOpenSettings}>
+            <Settings />
+            Settings
+          </Button>
+        ) : (
+          <div className="flex items-center gap-1">
+            <Button type="button" variant="outline" size="xs" onClick={onRetry}>
+              <RefreshCw />
+              Retry
+            </Button>
+            <IconButton
+              label="Explanation settings"
+              icon={settingsIcon}
+              size="icon-xs"
+              onClick={onOpenSettings}
+            />
+          </div>
+        )
+      }
+    >
+      {message}
+    </Notice>
+  );
+}
+
+/** Nothing can be asked yet: no OpenRouter key (Add API key), or AI commentary is off (Turn on). */
+function ExplainUnavailable({
+  reason,
+  onAddKey,
+  onTurnOn,
+  onOpenSettings
+}: {
+  reason: "no-key" | "off";
+  onAddKey: () => void;
+  onTurnOn: () => void;
+  onOpenSettings: () => void;
+}) {
+  const noKey = reason === "no-key";
+  return (
+    <div className="flex items-center gap-2.5 rounded-lg border border-line bg-surface-sunken px-3 py-2">
+      {noKey ? (
+        <KeyRound className="size-4 shrink-0 text-fg-subtle" aria-hidden />
+      ) : (
+        <MessageSquareOff className="size-4 shrink-0 text-fg-subtle" aria-hidden />
+      )}
+      <p className="min-w-0 flex-1 text-xs leading-5 text-fg-muted">
+        {noKey ? "Explain with AI needs your OpenRouter API key." : "AI commentary is off."}
+      </p>
+      {noKey ? (
+        <Button type="button" variant="outline" size="xs" onClick={onAddKey}>
+          Add API key
+        </Button>
+      ) : (
+        <>
+          <Button type="button" variant="outline" size="xs" onClick={onTurnOn}>
+            Turn on
+          </Button>
+          <IconButton
+            label="Explanation settings"
+            icon={settingsIcon}
+            size="icon-xs"
+            onClick={onOpenSettings}
+          />
+        </>
+      )}
     </div>
   );
 }
