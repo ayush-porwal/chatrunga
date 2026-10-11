@@ -34,6 +34,10 @@ type BoardCommandDeps = {
 /**
  * The commands that put a game on the board or change what it does there: files in and out,
  * saved games, live analysis and Game review.
+ *
+ * Not a React hook (it calls none): it rebuilds its commands every render like the nested functions
+ * it replaced, and takes the use- name only because the React Compiler's lint (react/refs) lets a
+ * hook, not a plain function, receive the shell's refs during render.
  */
 export function useBoardCommands(nav: AppNavigation, deps: BoardCommandDeps) {
   const {

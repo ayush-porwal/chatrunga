@@ -196,13 +196,21 @@ export async function requestPuzzleExplanation(
     );
     return;
   }
-  const payload = await buildPuzzleExplanationPayload({
-    puzzle,
-    kind: request.kind,
-    wrong: request.wrong,
-    analysis: searchedLines(analysis, plan),
-    settings: request.settings
-  });
+  let payload: PuzzleInsightPayload | null;
+  try {
+    payload = await buildPuzzleExplanationPayload({
+      puzzle,
+      kind: request.kind,
+      wrong: request.wrong,
+      analysis: searchedLines(analysis, plan),
+      settings: request.settings
+    });
+  } catch {
+    // The schema loads with the first explanation; a chunk that can't load (a stale or partial
+    // update) ends on the error with Retry, like a failed request.
+    fail(REQUEST_ERROR);
+    return;
+  }
   if (!payload) {
     fail(THIN_FACTS_ERROR);
     return;

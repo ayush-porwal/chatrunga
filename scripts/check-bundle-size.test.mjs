@@ -28,6 +28,11 @@ test("static imports count; dynamic import() chunks are lazy", () => {
   assert.deepEqual(staticImports(code), ["react-b2.js", "side-c3.js"]);
 });
 
+test("a re-export loads its target too", () => {
+  const code = 'export{a as b}from"./shared-e5.js";export*from"./more-f6.js";';
+  assert.deepEqual(staticImports(code), ["shared-e5.js", "more-f6.js"]);
+});
+
 test("startup is the static import closure, each chunk once", () => {
   const chunks = {
     "index.js": 'import"./a.js";import"./b.js";const lazy=()=>import("./page.js");',

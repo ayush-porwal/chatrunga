@@ -58,6 +58,10 @@ type RepertoireCommandDeps = {
  * The repertoire screens (hub, study, practice) and the handoffs between them and the board.
  * The repertoire screens never load anything into the game store: the game (and an engine game
  * still being played) stays as it is behind them.
+ *
+ * Not a React hook (it calls none): it rebuilds its commands every render like the nested functions
+ * it replaced, and takes the use- name only because the React Compiler's lint (react/refs) lets a
+ * hook, not a plain function, receive the shell's refs during render.
  */
 export function useRepertoireCommands(nav: AppNavigation, deps: RepertoireCommandDeps) {
   const { latestNavigation, commitCurrent, record } = nav;

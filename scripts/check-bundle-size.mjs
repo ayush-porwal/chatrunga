@@ -19,10 +19,15 @@ export function entryChunks(html) {
   );
 }
 
-/** The chunks a chunk imports statically (`import … from "./x.js"`), not `import("./x.js")`. */
+/**
+ * The chunks a chunk loads statically: `import … from "./x.js"` and re-exports
+ * (`export … from "./x.js"`), which run their target too; not `import("./x.js")`.
+ */
 export function staticImports(code) {
   return [
-    ...code.matchAll(/(?:^|[;}\n])\s*import\s*(?:[\w$*{}\s,]+from\s*)?["']\.\/([^"']+\.js)["']/g)
+    ...code.matchAll(
+      /(?:^|[;}\n])\s*(?:import|export)\s*(?:[\w$*{}\s,]+from\s*)?["']\.\/([^"']+\.js)["']/g
+    )
   ].map((match) => match[1]);
 }
 

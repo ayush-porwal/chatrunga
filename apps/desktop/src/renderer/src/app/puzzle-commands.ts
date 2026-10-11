@@ -32,7 +32,13 @@ type PuzzleCommandDeps = {
   puzzleSetContinues: boolean;
 };
 
-/** The commands that put a puzzle on the board, go on to the next one or play on from one. */
+/**
+ * The commands that put a puzzle on the board, go on to the next one or play on from one.
+ *
+ * Not a React hook (it calls none): it rebuilds its commands every render like the nested functions
+ * it replaced, and takes the use- name only because the React Compiler's lint (react/refs) lets a
+ * hook, not a plain function, receive the shell's refs during render.
+ */
 export function usePuzzleCommands(nav: AppNavigation, deps: PuzzleCommandDeps) {
   const { latestNavigation, commitCurrent, stopEngineWork, puzzleSession, showGame, showView } =
     nav;

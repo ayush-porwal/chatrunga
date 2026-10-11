@@ -131,6 +131,12 @@ describe("review engine settings", () => {
     expect(normalized.reviewMaiaLevels).toStrictEqual([1100, 1900]);
   });
 
+  it("reads a thread count missing from unmerged settings as auto, like resolveEngineThreads", () => {
+    const unmerged = { ...defaultSettings, engineThreads: undefined } as unknown as AppSettings;
+    expect(normalizeReviewEngineSettings(unmerged).engineThreads).toBeNull();
+    expect(resolveEngineThreads(undefined, 8)).toBe(resolveEngineThreads(null, 8));
+  });
+
   it("drops a saved default engine id that points at a retired bundled engine", () => {
     expect(normalizeDefaultEngineId("bundled-stockfish")).toBeNull();
     expect(normalizeDefaultEngineId("bundled-maia")).toBeNull();

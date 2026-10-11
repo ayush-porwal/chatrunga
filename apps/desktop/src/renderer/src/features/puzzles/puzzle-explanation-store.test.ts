@@ -4,7 +4,11 @@ import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import { uniformRatings } from "@chaturanga/shared/types/ratings";
 import type { AnalysePositionsResult, EngineConfig } from "@chaturanga/shared/types/engine";
 import { usePuzzleStore } from "../../stores/puzzle-store";
-import { explanationKey, puzzleIdentity } from "./puzzle-explanation";
+import {
+  buildPuzzleExplanationPayload,
+  explanationKey,
+  puzzleIdentity
+} from "./puzzle-explanation";
 import {
   NO_ENGINE_ERROR,
   cancelPuzzleExplanations,
@@ -15,6 +19,12 @@ import {
   type ExplainEntry,
   type ExplainRequest
 } from "./puzzle-explanation-store";
+
+// The real builder, spied on: one test makes its lazily loaded schema fail.
+vi.mock("./puzzle-explanation", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./puzzle-explanation")>();
+  return { ...actual, buildPuzzleExplanationPayload: vi.fn(actual.buildPuzzleExplanationPayload) };
+});
 
 const START = "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4";
 const puzzle: PuzzleSample = {
@@ -129,6 +139,20 @@ describe("requestPuzzleExplanation", () => {
     answers[0].resolve({ explanation, error: null });
     await running;
     expect(entry()).toMatchObject({ phase: "ready", requestId: null, explanation, otherSan: [] });
+  });
+
+  it("a schema that can't load ends on the error with Retry, not a spinner", async () => {
+    vi.mocked(buildPuzzleExplanationPayload).mockRejectedValueOnce(new Error("chunk missing"));
+    const { deps, searches } = fakeDeps();
+    const running = requestPuzzleExplanation(request, deps);
+    searches[0].resolve(analysis);
+    await running;
+    expect(entry()).toMatchObject({
+      phase: "error",
+      requestId: null,
+      error: "The explanation couldn't be requested. Try again in a moment."
+    });
+    expect(deps.explainPuzzle).not.toHaveBeenCalled();
   });
 
   it("doesn't ask twice while one is running; Regenerate replaces a finished one", async () => {
