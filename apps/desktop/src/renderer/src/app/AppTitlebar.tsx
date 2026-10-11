@@ -1,5 +1,5 @@
 import { memo, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import { useShallow } from "zustand/react/shallow";
 import type { EngineConfig } from "@chaturanga/shared/types/engine";
@@ -23,8 +23,7 @@ import { useReviewStore } from "../stores/review-store";
 import { useSaveStatusStore } from "../stores/save-status-store";
 import { SidebarToggle } from "./AppSidebar";
 import { historyShortcutLabels } from "./useHistoryShortcuts";
-import { DESTINATION_ICONS } from "./destination-icons";
-import { decidedResult, gameModeLabel, gamePlayerNames, resultBadgeLabel } from "./game-title";
+import { gameModeLabel, gamePlayerNames, resultBadgeLabel } from "./game-title";
 
 /**
  * The one titlebar row across the full window width (window drag region, chrome colour):
@@ -185,20 +184,6 @@ const HistoryButtons = memo(function HistoryButtons({
   );
 });
 
-/** Game review's Export PGN: the game on the board as a .pgn file (an icon at the end of the actions). */
-const ExportPgnButton = memo(function ExportPgnButton({ onClick }: { onClick: () => void }) {
-  const Icon = DESTINATION_ICONS.exportPgn;
-  return (
-    <IconButton
-      label="Export PGN"
-      icon={<Icon />}
-      className={titlebarIconButton}
-      disabled={!window.chaturanga}
-      onClick={onClick}
-    />
-  );
-});
-
 /** Titlebar title for page views (Play, Settings, …). */
 export function PageTitle({ children }: { children: ReactNode }) {
   return <span className="truncate font-medium text-fg">{children}</span>;
@@ -321,20 +306,21 @@ export const GameTitlebar = memo(function GameTitlebar({
   );
 });
 
-/** Titlebar for Game review: players · result … Analyze / Stop / Analyze again. */
+/**
+ * Titlebar for Game review: players · result (with how the game ended, as on Analyze) … the saved
+ * analyses, Analyze / Stop / Analyze again. Export PGN is on the review panel's tab bar.
+ */
 export const ReviewTitlebar = memo(function ReviewTitlebar({
   gameLoading,
   hasMoves,
   onAnalyze,
-  onStop,
-  onExportPgn
+  onStop
 }: {
   gameLoading: boolean;
   /** The game has main-line moves to review. */
   hasMoves: boolean;
   onAnalyze: () => void;
   onStop: () => void;
-  onExportPgn: () => void;
 }) {
   const headers = useGameStore((state) => state.headers);
   const running = useReviewStore((state) => state.status === "running");
@@ -348,7 +334,7 @@ export const ReviewTitlebar = memo(function ReviewTitlebar({
           black={engineDisplayName(headers.black ?? "") || "Black"}
         />
       }
-      result={decidedResult(headers.result)}
+      result={resultBadgeLabel(headers.result, headers.termination)}
       actions={
         <>
           <AnalysisSwitcher />
@@ -360,6 +346,7 @@ export const ReviewTitlebar = memo(function ReviewTitlebar({
               disabled={!running && gameLoading}
               onClick={running ? onStop : onAnalyze}
             >
+              {running || hasReview ? null : <Sparkles />}
               {running ? "Stop" : hasReview ? "Analyze again" : "Analyze"}
             </Button>
           ) : (
@@ -372,6 +359,7 @@ export const ReviewTitlebar = memo(function ReviewTitlebar({
                   className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
                 >
                   <Button type="button" variant="primary" size="sm" disabled>
+                    <Sparkles />
                     Analyze
                   </Button>
                 </span>
@@ -379,7 +367,6 @@ export const ReviewTitlebar = memo(function ReviewTitlebar({
               <TooltipContent side="bottom">Add or import moves to review</TooltipContent>
             </Tooltip>
           )}
-          <ExportPgnButton onClick={onExportPgn} />
         </>
       }
     />

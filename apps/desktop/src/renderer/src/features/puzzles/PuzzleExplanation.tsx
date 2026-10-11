@@ -165,11 +165,7 @@ export function PuzzleExplanation({
                 </Button>
               }
             >
-              <ReviewSettingsPanel
-                embedded
-                settings={settings}
-                onClose={() => setSettingsOpen(false)}
-              />
+              <ReviewSettingsPanel settings={settings} />
             </Dialog>,
             document.body
           )

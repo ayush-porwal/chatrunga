@@ -122,17 +122,12 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
   await expect(markRow("Mistake").getByRole("cell", { name: "White 1" })).toBeVisible();
   await expect(markRow("Great").getByRole("cell", { name: "Black 1" })).toBeVisible();
 
-  // Before a move is picked, the commentary tab leads with White's key moments (Black's Great is
-  // the opponent's).
-  await reviewTabs(page).getByRole("tab", { name: "Commentary", exact: true }).click();
-  await page
-    .getByRole("navigation", { name: "Move navigation" })
-    .getByRole("button", { name: "First move", exact: true })
-    .click();
-  await expect(counter(page)).toHaveText("0 / 7");
-  const leading = page.getByRole("list", { name: "Key moments of the game" });
+  // White's key moments are the Summary's cards (Black's Great is the opponent's).
+  const leading = page
+    .getByRole("region", { name: "Review summary" })
+    .getByRole("list", { name: "Key moments" });
   await expect(leading.getByRole("listitem")).toHaveCount(3);
-  // Each card is the move (with the board's piece) and its mark, and no text beyond them.
+  // Each card is the move (with the board's piece) and its mark, and no static text beyond them.
   await expect(leading.getByRole("button").nth(0)).toHaveAccessibleName("4. Nxe5, Blunder");
   await expect(leading.getByRole("button").nth(1)).toHaveAccessibleName("5. Nxf7, Blunder");
   await expect(leading.getByRole("button").nth(2)).toHaveAccessibleName("7. Be2, Mistake");
@@ -141,13 +136,24 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
   await expect(leading).not.toContainText("Allows a forced mate.");
   await screenshot(page, "key-moments");
 
-  // A card goes to its move: 5. Nxf7. The key insights live there and in the Moves tab, not in
-  // the charts' header.
+  // Before a move is picked, the commentary tab asks for one.
+  await reviewTabs(page).getByRole("tab", { name: "Commentary", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "Move navigation" })
+    .getByRole("button", { name: "First move", exact: true })
+    .click();
+  await expect(counter(page)).toHaveText("0 / 7");
+  await expect(page.getByText("Select a move", { exact: true })).toBeVisible();
+
+  // A card goes to its move: 5. Nxf7. The key insights live in the Summary, not in the charts'
+  // header.
+  await reviewTabs(page).getByRole("tab", { name: "Summary", exact: true }).click();
   await leading.getByRole("button", { name: "5. Nxf7, Blunder" }).click();
   await expect(counter(page)).toHaveText("5 / 7");
   await expect(
     page.getByRole("region", { name: "Game charts" }).getByRole("button", { name: /key insight/i })
   ).toHaveCount(0);
+  await reviewTabs(page).getByRole("tab", { name: "Commentary", exact: true }).click();
 
   // The selected move's header names its mark (no static explanation): 4… Qg5, the critical find.
   await page
@@ -191,20 +197,8 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
   ).toBeVisible();
   await screenshot(page, "move-tree");
 
-  // The Moves tab's other view, the key insights (the reviewed side's key moments), is remembered.
-  const views = page.getByRole("radiogroup", { name: "Moves shown" });
-  await expect(views.getByRole("radio", { name: "Moves", exact: true })).toBeChecked();
-  await views.getByRole("radio", { name: "Key insights" }).click();
-  const insights = page.getByRole("list", { name: "Key insights" });
-  await expect(insights.getByRole("listitem")).toHaveCount(3);
-  await screenshot(page, "key-insights");
-  await insights.getByRole("button", { name: /Nxf7/ }).click();
-  await expect(counter(page)).toHaveText("5 / 7");
-  await reviewTabs(page).getByRole("tab", { name: "Commentary", exact: true }).click();
-  await reviewTabs(page).getByRole("tab", { name: "Moves", exact: true }).click();
-  await expect(insights).toBeVisible();
-  await views.getByRole("radio", { name: "Moves", exact: true }).click();
-  await expect(moveTree(page)).toBeVisible();
+  // The Moves tab is the tree only: the key insights are in the Summary.
+  await expect(page.getByRole("radiogroup", { name: "Moves shown" })).toHaveCount(0);
 
   // The winning-chances chart dots the same moves (book moves stay neutral) and rings the key
   // insights: 4. Nxe5's blunder among them.
@@ -248,9 +242,7 @@ test("a reviewed game marks only the moves that matter, leads with its key momen
     .click();
   await reviewTabs(again.page).getByRole("tab", { name: "Moves", exact: true }).click();
   expect(await treeMarks(again.page)).toEqual(MARKS);
-  await expect(again.page.getByText(/This analysis predates the current move marks/)).toHaveCount(
-    0
-  );
+  await expect(again.page.getByText(/^Marked again with today's rules/)).toHaveCount(0);
 });
 
 test("an analysis saved before the current marks opens re-assessed from its evaluations, and says so", async ({
@@ -313,7 +305,14 @@ test("an analysis saved before the current marks opens re-assessed from its eval
     .getByRole("region", { name: "Recent games" })
     .getByRole("button", { name: "Open review · 3 errors found", exact: true })
     .click();
-  await expect(page.getByText(/This analysis predates the current move marks/)).toBeVisible();
+  // Said in the panel's notices, on every tab, with the way to a full analysis.
+  const recomputed = page
+    .getByRole("status")
+    .filter({ hasText: /^Marked again with today's rules/ });
+  await expect(recomputed).toContainText(
+    "Marked again with today's rules. Great and Brilliant need a new analysis."
+  );
+  await expect(recomputed.getByRole("button", { name: "Analyze again" })).toBeVisible();
   await reviewTabs(page).getByRole("tab", { name: "Moves", exact: true }).click();
   // The errors come back; Qg5 had no deeper search, so it is only Good (it punished Nxe5).
   expect(await treeMarks(page)).toEqual(

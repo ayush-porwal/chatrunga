@@ -9,6 +9,7 @@ import { fenAfterUci } from "@chaturanga/shared/chess/position";
 import {
   errorTheme,
   lichessOpeningTags,
+  momentCommentaryPrompt,
   movesAccuracy,
   openingBookLine,
   phaseAccuracy,
@@ -217,5 +218,35 @@ describe("practice themes", () => {
       { theme: "fork", label: "Fork", count: 1 }
     ]);
     expect(practiceChips(moves, "black")).toStrictEqual([]);
+  });
+});
+
+describe("momentCommentaryPrompt", () => {
+  it("asks for nothing while the cards can explain each moment", () => {
+    expect(momentCommentaryPrompt({ cardsOn: true, enabled: true, hasApiKey: true })).toBeNull();
+  });
+
+  it("asks to turn AI commentary on while it is off, whatever the key", () => {
+    expect(momentCommentaryPrompt({ cardsOn: false, enabled: false, hasApiKey: false })).toBe(
+      "off"
+    );
+  });
+
+  it("asks for an OpenRouter key while commentary is on without one", () => {
+    expect(momentCommentaryPrompt({ cardsOn: false, enabled: true, hasApiKey: false })).toBe(
+      "no-key"
+    );
+  });
+
+  it("asks for nothing until the setting has loaded", () => {
+    expect(
+      momentCommentaryPrompt({ cardsOn: false, enabled: undefined, hasApiKey: false })
+    ).toBeNull();
+  });
+
+  it("asks for nothing until the key's state has loaded", () => {
+    expect(
+      momentCommentaryPrompt({ cardsOn: false, enabled: true, hasApiKey: undefined })
+    ).toBeNull();
   });
 });

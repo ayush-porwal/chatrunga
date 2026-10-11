@@ -1,30 +1,35 @@
-import { engineDisplayName } from "@chaturanga/shared/engine/managed";
 import { useMemo, useState } from "react";
 import { ChevronRight, Search, Upload } from "lucide-react";
-import {
-  GAME_SEARCH_MAX_LENGTH,
-  type GameSource,
-  type GameSummary
-} from "@chaturanga/shared/types/chess";
-import { LIBRARY_TAB_LABELS } from "@chaturanga/shared/types/library";
-import { Badge, ChipButton } from "@/components/ui/badge";
+import { GAME_SEARCH_MAX_LENGTH, type Color } from "@chaturanga/shared/types/chess";
+import { emptyTabCounts } from "@chaturanga/shared/types/library";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useGamePagesQuery } from "../../queries/api";
-import { sourceLabel, useLibraryTabs } from "../game/library-tab";
-import { useGameStore } from "../../stores/game-store";
-import { cn } from "@/lib/utils";
-import { listRowInteractive, listRowSelected } from "@/lib/ui";
 import { Dialog } from "@/components/ui/dialog";
-import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
-import { Notice } from "@/components/ui/notice";
 import { Eyebrow } from "@/components/ui/page";
-import { SegmentedControl } from "@/components/ui/segmented-control";
 import { gamesOfPages } from "@/lib/game-pages";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
-
-/** How long typing pauses before the library is searched. */
-const SEARCH_DEBOUNCE_MS = 150;
+import { useGameFacetsQuery, useGamePagesQuery } from "../../queries/api";
+import { useChesscomStore } from "../../stores/chesscom-store";
+import { useGameStore } from "../../stores/game-store";
+import { useLichessStore } from "../../stores/lichess-store";
+import {
+  LibraryGameRow,
+  LibraryLoadError,
+  LibrarySkeletonRow,
+  NoLibraryGames,
+  type LibraryRowGame
+} from "../game/library-rows";
+import {
+  libraryFilterApplies,
+  libraryFilterState,
+  libraryListState,
+  useLibraryTabStore,
+  type LibraryFilter
+} from "../game/library-tab";
+import { LoadMoreGamesButton, RecentGamesFilter } from "../play/recent-games-controls";
+import { GAME_SEARCH_DEBOUNCE_MS, savedGameFacts, userSide } from "../play/recent-games";
+import { rememberedSource, savedGamesHidden } from "./game-review-picker";
 
 type GameReviewPickerProps = {
   onClose: () => void;
@@ -32,82 +37,13 @@ type GameReviewPickerProps = {
   onImport: () => void;
 };
 
-type CurrentGame = {
-  id: string | null;
-  source: GameSource;
-  white: string | null;
-  black: string | null;
-  result: string | null;
-  event: string | null;
-  moveCount: number;
-};
-
-function titleFor(game: Pick<GameSummary, "white" | "black">): string {
-  return `${engineDisplayName(game.white ?? "") || "White"} vs ${engineDisplayName(game.black ?? "") || "Black"}`;
-}
-
-/** The row's second line: where the game came from, then its event, result and date. */
-function subtitleFor(game: Pick<GameSummary, "source" | "event" | "result" | "date">): string {
-  return [sourceLabel(game.source), game.event, game.result || "*", game.date]
-    .filter(Boolean)
-    .join(" · ");
-}
-
-/** The game on the board as the picker's pinned row: reviewable once it has moves. */
-function useCurrentGameRow() {
-  const currentGame: CurrentGame = {
-    id: useGameStore((state) => state.gameId),
-    source: useGameStore((state) => state.source),
-    white: useGameStore((state) => state.headers.white) ?? null,
-    black: useGameStore((state) => state.headers.black) ?? null,
-    result: useGameStore((state) => state.headers.result) ?? null,
-    event: useGameStore((state) => state.headers.event) ?? null,
-    moveCount: useGameStore((state) => Math.max(0, state.moveTree.length - 1))
-  };
-  const canReview = currentGame.moveCount > 0;
-  return {
-    canReview,
-    label: currentGame.white || currentGame.black ? titleFor(currentGame) : "Current game",
-    subtitle: canReview
-      ? [
-          sourceLabel(currentGame.source),
-          currentGame.event,
-          currentGame.result,
-          `${currentGame.moveCount} plies`
-        ]
-          .filter(Boolean)
-          .join(" · ")
-      : ""
-  };
-}
-
+/**
+ * Game review's Choose a game: the game on the board pinned on top, then the saved games as the
+ * Library lists them (search, the source filter with Reviewed, a page at a time), and Import PGN.
+ */
 export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPickerProps) {
-  const currentGameId = useGameStore((state) => state.gameId);
-  const currentSource = useGameStore((state) => state.source);
-  const current = useCurrentGameRow();
-  const [query, setQuery] = useState("");
-  const [reviewedOnly, setReviewedOnly] = useState(false);
-  // One source at a time (its tab), and Reviewed on top of it; the current game stays pinned.
-  const library = useLibraryTabs(currentSource, currentGameId);
-  const { facets, tab } = library;
-  // Searched and filtered in the database, a page at a time. Clearing the box applies at once;
-  // typing waits for a pause. The box stops at the longest search the library takes (main
-  // refuses longer).
-  const needle = query.trim().slice(0, GAME_SEARCH_MAX_LENGTH);
-  const debouncedNeedle = useDebouncedValue(needle, SEARCH_DEBOUNCE_MS);
-  const games = useGamePagesQuery(
-    {
-      search: needle ? debouncedNeedle : "",
-      tab,
-      reviewed: reviewedOnly,
-      excludeId: currentGameId
-    },
-    // The tab is known once the counts are.
-    { enabled: !facets.isPending }
-  );
-
-  const hasSavedGames = facets.data?.hasGames ?? false;
-
+  const current = useCurrentGame();
+  const list = usePickerList(useGameStore((state) => state.gameId));
   return (
     <Dialog
       title="Choose a game"
@@ -129,162 +65,185 @@ export function GameReviewPicker({ onClose, onSelect, onImport }: GameReviewPick
         </Button>
       }
     >
-      <PickerFilters
-        library={library}
-        reviewedOnly={reviewedOnly}
-        onReviewedOnly={setReviewedOnly}
-      />
-      {hasSavedGames || query ? (
-        <div className="relative shrink-0">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-subtle" />
-          <Input
-            autoFocus
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            maxLength={GAME_SEARCH_MAX_LENGTH}
-            aria-label="Search saved games"
-            placeholder="Search players, event, date or result"
-            className="pl-9"
-          />
-        </div>
-      ) : null}
-
+      {list.toolsShown ? <PickerTools list={list} /> : null}
       <div className="scroll-area -mr-1 grid min-h-0 flex-1 content-start gap-4 overflow-y-auto pr-1">
-        {current.canReview ? (
-          <section className="grid gap-2">
+        {current ? (
+          <section className="grid gap-1.5">
             <Eyebrow>Current game</Eyebrow>
-            <GameRow
-              title={current.label}
-              meta={current.subtitle}
-              selected
-              onClick={() => onSelect("current")}
-            />
+            <ul aria-label="Current game">
+              <LibraryGameRow
+                game={current.game}
+                orientation={current.orientation}
+                onRaised
+                onOpen={() => onSelect("current")}
+                marker={
+                  <span className="shrink-0 text-xs tabular-nums text-fg-muted">
+                    {current.moves === 1 ? "1 move" : `${current.moves} moves`}
+                  </span>
+                }
+              >
+                <RowChevron />
+              </LibraryGameRow>
+            </ul>
           </section>
         ) : null}
-
-        <SavedGames
-          games={games}
-          filtered={Boolean(query) || reviewedOnly}
-          hasCurrent={current.canReview}
-          onSelect={onSelect}
-        />
+        <SavedGames list={list} hasCurrent={current !== null} onSelect={onSelect} />
       </div>
     </Dialog>
   );
 }
 
+/** The game on the board as the pinned row, once its main line has a move (else null). */
+function useCurrentGame(): { game: LibraryRowGame; orientation: Color; moves: number } | null {
+  const source = useGameStore((state) => state.source);
+  const white = useGameStore((state) => state.headers.white ?? null);
+  const black = useGameStore((state) => state.headers.black ?? null);
+  const result = useGameStore((state) => state.headers.result ?? null);
+  const currentFen = useGameStore((state) => state.currentFen);
+  const orientation = useGameStore((state) => state.orientation);
+  const moves = useGameStore((state) => savedGameFacts(state).moves);
+  if (moves === 0) return null;
+  return { game: { source, white, black, result, currentFen }, orientation, moves };
+}
+
 /**
- * The library's source tabs (when there is more than one) and the Reviewed filter (while there are
- * reviewed games, or it is on); nothing until the tab is known.
+ * The saved games other than the current one (`excludeId`), filtered and searched in the database
+ * a page at a time, as the Library's list. The filter opens on the source chosen last (while the
+ * library has games from it), else every game; choosing a source remembers it, All games forgets it.
+ * Clearing the search applies at once; typing waits for a pause.
  */
-function PickerFilters({
-  library,
-  reviewedOnly,
-  onReviewedOnly
-}: {
-  library: ReturnType<typeof useLibraryTabs>;
-  reviewedOnly: boolean;
-  onReviewedOnly: (update: (on: boolean) => boolean) => void;
-}) {
-  const { counts, tabs, tab, choose } = library;
-  if (!tab) return null;
-  const reviewedCount = counts[tab].reviewed;
-  const reviewedShown = reviewedCount > 0 || reviewedOnly;
-  if (tabs.length <= 1 && !reviewedShown) return null;
+function usePickerList(excludeId: string | null) {
+  const facets = useGameFacetsQuery(excludeId);
+  const [chosen, setChosen] = useState<LibraryFilter>(() => ({
+    tab: useLibraryTabStore.getState().remembered,
+    reviewed: false
+  }));
+  const [query, setQuery] = useState("");
+  const counts = facets.data?.tabs;
+  const applied = useMemo(
+    () => libraryFilterState(counts ?? emptyTabCounts(), chosen),
+    [counts, chosen]
+  );
+  // Read once (a failed re-read keeps the last counts); the filter is known from then on.
+  const ready = counts !== undefined;
+  const needle = query.trim().slice(0, GAME_SEARCH_MAX_LENGTH);
+  const debouncedNeedle = useDebouncedValue(needle, GAME_SEARCH_DEBOUNCE_MS);
+  const games = useGamePagesQuery(
+    {
+      search: needle ? debouncedNeedle : "",
+      tab: applied.filter.tab,
+      reviewed: applied.filter.reviewed,
+      excludeId
+    },
+    { enabled: ready }
+  );
+  // Any saved game besides the current one (the source counts include it).
+  const hasGames = facets.data?.hasGames ?? false;
+  return {
+    facets,
+    games,
+    applied,
+    ready,
+    hasGames,
+    query,
+    setQuery,
+    needle,
+    toolsShown: hasGames || needle !== "" || libraryFilterApplies(applied.filter),
+    choose: (filter: LibraryFilter) => {
+      const remember = rememberedSource(applied.filter, filter);
+      if (remember !== undefined) useLibraryTabStore.getState().choose(remember);
+      setChosen(filter);
+    }
+  };
+}
+
+type PickerList = ReturnType<typeof usePickerList>;
+
+/** The search box and, beside it, the Library's filter (its sources, then Reviewed). */
+function PickerTools({ list }: { list: PickerList }) {
+  const { applied } = list;
   return (
-    <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
-      {tabs.length > 1 ? (
-        <SegmentedControl
-          ariaLabel="Game source"
-          size="sm"
-          value={tab}
-          onChange={choose}
-          options={tabs.map((value) => ({
-            value,
-            label: LIBRARY_TAB_LABELS[value],
-            count: counts[value].games
-          }))}
-          className="w-fit max-w-full shrink-0"
+    <div className="flex shrink-0 items-center gap-2">
+      <div className="relative min-w-0 flex-1">
+        <Search
+          aria-hidden="true"
+          className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-subtle"
         />
-      ) : (
-        <span />
-      )}
-      {reviewedShown ? (
-        <ChipButton
-          selected={reviewedOnly}
-          onClick={() => onReviewedOnly((on) => !on)}
-          className="ml-auto"
-        >
-          Reviewed
-          <span className={cn("tabular-nums", !reviewedOnly && "text-fg-subtle")}>
-            {reviewedCount}
-          </span>
-        </ChipButton>
-      ) : null}
+        <Input
+          autoFocus
+          value={list.query}
+          onChange={(event) => list.setQuery(event.target.value)}
+          maxLength={GAME_SEARCH_MAX_LENGTH}
+          aria-label="Search saved games"
+          placeholder="Search players, event, date or result"
+          className="pl-9"
+        />
+      </div>
+      <RecentGamesFilter
+        heading="Show games from"
+        options={applied.options}
+        value={applied.filter.tab}
+        onChange={(tab) => list.choose({ ...applied.filter, tab })}
+        toggle={
+          applied.reviewed > 0 || applied.filter.reviewed
+            ? {
+                label: "Reviewed",
+                count: applied.reviewed,
+                checked: applied.filter.reviewed,
+                onChange: (reviewed) => list.choose({ ...applied.filter, reviewed })
+              }
+            : undefined
+        }
+        // The active dot's ring takes the dialog's raised surface.
+        className="size-9 border border-line [&>span]:ring-surface-raised"
+      />
     </div>
   );
 }
 
 /**
- * The saved games matching the search and filters, a page at a time (Show more), or why there are
- * none: `filtered` (a search or Reviewed is on), or only the current game (`hasCurrent`).
+ * The saved games the filter and search let through, newest first ("Load more games" for the next
+ * page), or why there are none. Left out when the current game is the library's only game.
  */
 function SavedGames({
-  games,
-  filtered,
+  list,
   hasCurrent,
   onSelect
 }: {
-  games: ReturnType<typeof useGamePagesQuery>;
-  filtered: boolean;
+  list: PickerList;
   hasCurrent: boolean;
   onSelect: (gameId: string) => void;
 }) {
-  const savedGames = useMemo(() => gamesOfPages(games.data?.pages), [games.data]);
+  const { applied, games } = list;
+  const listState = libraryListState(
+    { read: list.ready, failed: !list.ready && list.facets.isError },
+    { pending: games.isPending, failed: games.isError }
+  );
+  const filter = applied.filter;
+  // As many as the filter lists, up to a dialog's first screen; a few until that is known.
+  const skeletonRows = list.ready ? Math.min(Math.max(applied.total, 1), 5) : 3;
+  if (
+    listState === "ready" &&
+    savedGamesHidden({ hasGames: list.hasGames, needle: list.needle, filter, hasCurrent })
+  )
+    return null;
   return (
-    <section className="grid gap-2">
-      <div className="flex items-center justify-between gap-2">
-        <Eyebrow>Saved games</Eyebrow>
-        {games.isLoading || games.isPlaceholderData ? (
-          <span className="text-2xs text-fg-subtle">Loading…</span>
-        ) : null}
-      </div>
-      {games.isError ? (
-        <Notice tone="warn">Saved games could not be loaded. Try opening Game review again.</Notice>
-      ) : null}
-      {savedGames.length ? (
-        <div className="grid gap-1.5">
-          {savedGames.map((game) => (
-            <GameRow
-              key={game.id}
-              title={titleFor(game)}
-              meta={subtitleFor(game)}
-              analyses={game.reviewCount}
-              onClick={() => onSelect(game.id)}
-            />
+    <section className="grid gap-1.5">
+      <Eyebrow>Saved games</Eyebrow>
+      {listState === "loading" ? (
+        <div aria-busy="true" aria-label="Loading games">
+          {Array.from({ length: skeletonRows }, (_, index) => (
+            <LibrarySkeletonRow key={index} onRaised />
           ))}
-          {games.hasNextPage ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="justify-self-center"
-              disabled={games.isFetchingNextPage}
-              onClick={() => void games.fetchNextPage()}
-            >
-              {games.isFetchingNextPage ? "Loading…" : "Show more"}
-            </Button>
-          ) : null}
         </div>
-      ) : games.isPending ? null : (
-        <EmptyState
-          compact
-          title={
-            filtered
-              ? "No saved games match this search."
-              : hasCurrent
-                ? "No other saved games."
-                : "No saved games yet — import a PGN or play a game first."
+      ) : listState === "ready" ? (
+        <SavedGameRows list={list} onSelect={onSelect} />
+      ) : (
+        // A failed read is not an empty library.
+        <LibraryLoadError
+          error={listState === "counts-error" ? list.facets.error : games.error}
+          onRetry={() =>
+            listState === "counts-error" ? void list.facets.refetch() : void games.refetch()
           }
         />
       )}
@@ -292,36 +251,68 @@ function SavedGames({
   );
 }
 
-function GameRow({
-  title,
-  meta,
-  analyses = 0,
-  selected = false,
-  onClick
+/** The rows read so far (each with its Reviewed / N analyses badge), or the empty list's line. */
+function SavedGameRows({
+  list,
+  onSelect
 }: {
-  title: string;
-  meta: string;
-  /** Saved analyses of the game (a badge says it's been reviewed). */
-  analyses?: number;
-  selected?: boolean;
-  onClick: () => void;
+  list: PickerList;
+  onSelect: (gameId: string) => void;
 }) {
+  const { games } = list;
+  const rows = useMemo(() => gamesOfPages(games.data?.pages), [games.data]);
+  const lichessUsername = useLichessStore((state) => state.status.account?.username ?? null);
+  const chesscomUsername = useChesscomStore((state) => state.status.account?.username ?? null);
+  if (!rows.length)
+    return (
+      <NoLibraryGames needle={list.needle} hasGames={list.hasGames} filter={list.applied.filter} />
+    );
   return (
-    <button
-      type="button"
-      className={cn(listRowInteractive, "group", selected && listRowSelected)}
-      onClick={onClick}
-    >
-      <span className="grid min-w-0 flex-1 gap-0.5">
-        <span className="truncate font-medium text-fg">{title}</span>
-        <span className="truncate text-xs text-fg-muted">{meta}</span>
-      </span>
-      {analyses > 0 ? (
-        <Badge tone="accent" className="shrink-0">
-          {analyses > 1 ? `${analyses} analyses` : "Reviewed"}
-        </Badge>
+    <ul aria-label="Saved games">
+      {rows.map((game) => (
+        <LibraryGameRow
+          key={game.id}
+          game={game}
+          orientation={userSide(game, [lichessUsername, chesscomUsername])}
+          onRaised
+          onOpen={() => onSelect(game.id)}
+          marker={
+            game.reviewCount > 0 ? (
+              <Badge tone="accent">
+                {game.reviewCount > 1 ? `${game.reviewCount} analyses` : "Reviewed"}
+              </Badge>
+            ) : null
+          }
+        >
+          <RowChevron />
+        </LibraryGameRow>
+      ))}
+      {games.isFetchingNextPage ? (
+        <li aria-busy="true" aria-label="Loading more games">
+          <LibrarySkeletonRow onRaised />
+        </li>
       ) : null}
-      <ChevronRight className="size-4 shrink-0 text-fg-subtle transition-transform group-hover:translate-x-0.5 group-hover:text-fg" />
-    </button>
+      {games.hasNextPage ? (
+        <li className="flex justify-center pb-1 pt-2.5">
+          <LoadMoreGamesButton
+            loading={games.isFetchingNextPage}
+            // Not while any read runs (a next page would cancel a refresh), nor over a previous
+            // search's rows.
+            disabled={games.isFetching || games.isPlaceholderData}
+            onClick={() => void games.fetchNextPage()}
+          />
+        </li>
+      ) : null}
+    </ul>
+  );
+}
+
+/** A row's end: the row opens its game for review. */
+function RowChevron() {
+  return (
+    <ChevronRight
+      aria-hidden="true"
+      className="size-4 shrink-0 text-fg-subtle transition-[translate,color] duration-micro group-hover/row:translate-x-0.5 group-hover/row:text-fg"
+    />
   );
 }

@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -64,6 +65,7 @@ export function AnalysisSwitcher() {
   const [dismissRoots] = useState(() => [rootRef, menuRef] as const);
   const [anchor, setAnchor] = useState<MenuAnchor | null>(null);
   const { present, state } = usePresence(open);
+  const headingId = useId();
 
   const close = useCallback(() => {
     // Escape (or a click outside) from inside the list hands focus back to the button.
@@ -167,7 +169,7 @@ export function AnalysisSwitcher() {
             <div
               ref={menuRef}
               role="dialog"
-              aria-label="Saved analyses"
+              aria-labelledby={headingId}
               data-state={state}
               // z-50 like every popover; a confirmation opened from it is portalled after it, so on top.
               className={cn(
@@ -191,6 +193,9 @@ export function AnalysisSwitcher() {
                 className={cn(popover, "relative grid origin-top-right gap-0.5 overflow-y-auto")}
                 style={{ maxHeight: anchor.maxHeight }}
               >
+                <p id={headingId} className="px-2 pt-1 pb-0.5 text-xs text-fg-subtle">
+                  Saved analyses
+                </p>
                 {analyses.map((info, index) => (
                   <AnalysisRow
                     key={info.reviewId}
@@ -265,8 +270,13 @@ function SwitcherTrigger({
           aria-label={shown ? `Analysis: ${triggerName(shown, latest)}` : "Analyses"}
           disabled={disabled}
           onClick={onClick}
-          // The list's width whatever the entry: it never jumps, and lines up with the list.
-          className={cn(PICKER_WIDTH, "justify-between tabular-nums")}
+          // The list's width whatever the entry: it never jumps, and lines up with the list. Pressed
+          // while the list is open.
+          className={cn(
+            PICKER_WIDTH,
+            "justify-between tabular-nums",
+            open && "border-line-strong bg-control text-fg"
+          )}
         >
           <span className="min-w-0 truncate">{shown ? reviewInfoWhen(shown) : "Analyses"}</span>
           {/* Latest at the right end, beside the chevron. */}
@@ -374,7 +384,7 @@ function AnalysisRow({
   const when = reviewInfoWhen(info);
   const label = reviewInfoLabel(info);
   return (
-    <div className="group/row flex items-center gap-1 rounded-md transition-colors hover:bg-control focus-within:bg-control">
+    <div className="flex items-center gap-1 rounded-md transition-colors hover:bg-control focus-within:bg-control">
       <button
         type="button"
         data-analysis-option
@@ -405,7 +415,7 @@ function AnalysisRow({
         tabIndex={hidden ? -1 : undefined}
         tooltipSide="right"
         onClick={onDelete}
-        className="mr-1 shrink-0 text-fg-muted opacity-0 hover:text-danger focus-visible:opacity-100 group-hover/row:opacity-100 group-focus-within/row:opacity-100"
+        className="mr-1 shrink-0 text-fg-subtle hover:text-danger"
       />
     </div>
   );

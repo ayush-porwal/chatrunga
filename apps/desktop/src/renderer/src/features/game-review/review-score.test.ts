@@ -65,6 +65,13 @@ describe("formatScore", () => {
     expect(formatScore({ type: "mate", value: -2 })).toBe("M-2");
     expect(formatScore(null)).toBe("—");
   });
+
+  it("writes a score that rounds to zero without a sign", () => {
+    expect([2, -4].map((value) => formatScore({ type: "cp", value }))).toStrictEqual([
+      "0.0",
+      "0.0"
+    ]);
+  });
 });
 
 describe("formatMoveEval", () => {

@@ -46,7 +46,6 @@ export function ViewTitlebar({
     AppCommands,
     | "startReview"
     | "stopReview"
-    | "exportPgn"
     | "repertoireHub"
     | "analyzePosition"
     | "reviewCurrentGame"
@@ -67,7 +66,6 @@ export function ViewTitlebar({
         hasMoves={hasMoves}
         onAnalyze={on.startReview}
         onStop={on.stopReview}
-        onExportPgn={on.exportPgn}
       />
     );
   }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { BarChart3, FileSearch, Flag, Handshake, Loader2, Puzzle, Swords, X } from "lucide-react";
+import { Flag, Handshake, Loader2, Puzzle, Swords, X } from "lucide-react";
+import { DESTINATION_ICONS } from "../../app/destination-icons";
 import { engineAcceptsHumanDrawOffer } from "@chaturanga/shared/engine/draw-offer";
 import { statusForFen } from "@chaturanga/shared/chess/position";
 import { mainlineEnd } from "../game/move-tree-model";
@@ -176,11 +177,11 @@ function EnginePostGameActions({
         </Button>
       ) : null}
       <Button type="button" variant="ghost" size="sm" onClick={onAnalyze}>
-        <FileSearch />
+        <DESTINATION_ICONS.analyze />
         Analyze
       </Button>
       <Button type="button" variant="primary" size="sm" onClick={onReviewGame}>
-        <BarChart3 />
+        <DESTINATION_ICONS.review />
         Review game
       </Button>
     </div>
@@ -214,7 +215,7 @@ function LichessMatchActions({
           Play again
         </Button>
         <Button type="button" variant="primary" size="sm" onClick={onReview}>
-          <BarChart3 />
+          <DESTINATION_ICONS.review />
           Review game
         </Button>
       </div>

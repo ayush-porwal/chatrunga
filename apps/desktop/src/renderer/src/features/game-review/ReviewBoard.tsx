@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
 import type { DrawShape } from "@lichess-org/chessground/draw";
@@ -17,26 +17,21 @@ import {
 import "../board/board.css";
 import { isSquare } from "@chaturanga/shared/chess/square";
 
-export type ReviewArrow = {
-  orig: string;
-  dest: string;
-  brush: "green" | "red" | "blue" | "yellow";
-};
-
 type ReviewBoardProps = {
   fen: string;
   orientation: Color;
-  arrows?: ReviewArrow[];
+  /** Arrows (and their numbers) drawn on the board. */
+  shapes?: DrawShape[];
   lastMove?: [string, string];
   className?: string;
 };
 
-const NO_ARROWS: ReviewArrow[] = [];
+const NO_SHAPES: DrawShape[] = [];
 
 export function ReviewBoard({
   fen,
   orientation,
-  arrows = NO_ARROWS,
+  shapes = NO_SHAPES,
   lastMove,
   className
 }: ReviewBoardProps) {
@@ -46,13 +41,6 @@ export function ReviewBoard({
   const { appearance, squareBackground, squareColors, pieceClassName } = useBoardAppearance();
   const reducedMotion = usePrefersReducedMotion();
   const animationEnabled = appearance.boardAnimation && !reducedMotion;
-  const shapes = useMemo<DrawShape[]>(
-    () =>
-      arrows.flatMap(({ orig, dest, brush }) =>
-        isSquare(orig) && isSquare(dest) ? [{ orig, dest, brush }] : []
-      ),
-    [arrows]
-  );
 
   useEffect(() => {
     if (!elementRef.current) return;

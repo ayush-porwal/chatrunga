@@ -136,7 +136,7 @@ test("the summary scores both sides, names the opening and phases, and its secti
   await expect(practice.getByRole("button", { name: /^Mate in 1/ })).toBeVisible();
 
   // Each section folds behind its header (⌄ Phases), and stays folded when the summary is shown
-  // again. Folding Accuracy hides its whole body: the boxes (its first row) and the mark rows.
+  // again. Folding Accuracy hides its mark rows; the two boxes stay on its header row.
   const phasesToggle = summary(page).getByRole("button", { name: "Phases" });
   await expect(phasesToggle).toHaveAttribute("aria-expanded", "true");
   await phasesToggle.click();
@@ -146,7 +146,7 @@ test("the summary scores both sides, names the opening and phases, and its secti
   await accuracyToggle.click();
   await expect(accuracyToggle).toHaveAttribute("aria-expanded", "false");
   await expect(summary(page).getByRole("table", { name: "Marks" })).toHaveCount(0);
-  await expect(summary(page).getByLabel(/^White accuracy/)).toBeHidden();
+  await expect(summary(page).getByLabel(/^White accuracy/)).toBeVisible();
   await reviewTabs(page).getByRole("tab", { name: "Commentary", exact: true }).click();
   await reviewTabs(page).getByRole("tab", { name: "Summary", exact: true }).click();
   await expect(summary(page).getByRole("button", { name: "Phases" })).toHaveAttribute(
@@ -260,30 +260,28 @@ test("review settings are a dialog that switches sides; with AI off, cards don't
   await skipWelcome(page);
   await reviewTrapGameAs(page, app, profile, "White (Alpha)");
 
-  // No Settings tab: the gear in the panel's header opens the settings as a dialog.
+  // No Settings tab: the gear at the end of the panel's tab bar opens the settings as a dialog,
+  // after Export PGN (as on Analyze). Game Review runs no live engine, and the panel has no header
+  // of its own.
   await expect(reviewTabs(page).getByRole("tab", { name: "Settings", exact: true })).toHaveCount(0);
-  // The panel's header: "⌄ Game Review" and the gear, last. Game Review runs no live engine.
   const panel = page.getByRole("complementary", { name: "Review" });
-  await expect(panel.getByRole("button", { name: "Game Review", exact: true })).toHaveAttribute(
-    "aria-expanded",
-    "true"
-  );
+  await expect(panel.getByRole("button", { name: "Game Review", exact: true })).toHaveCount(0);
   await expect(panel.getByRole("switch", { name: "Analysis" })).toHaveCount(0);
   expect(
     await panel.evaluate((aside) => {
       const gear = aside.querySelector('[aria-label="Review settings"]');
-      return gear?.parentElement?.lastElementChild === gear;
+      const exportPgn = aside.querySelector('[aria-label="Export PGN with analysis"]');
+      return (
+        gear?.parentElement?.lastElementChild === gear && gear?.previousElementSibling === exportPgn
+      );
     })
   ).toBe(true);
+  // The titlebar has no Export PGN of its own.
+  await expect(titlebar(page).getByRole("button", { name: /^Export PGN/ })).toHaveCount(0);
 
-  // The tab labels never truncate: each tab is as wide as its label.
+  // The tab labels never truncate: each tab is as wide as its content.
   for (const tab of await reviewTabs(page).getByRole("tab").all())
-    expect(
-      await tab.evaluate((element) => {
-        const label = element.querySelector("span");
-        return label ? label.scrollWidth <= label.clientWidth : true;
-      })
-    ).toBe(true);
+    expect(await tab.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await page
     .getByRole("complementary", { name: "Review" })
     .getByRole("button", { name: "Review settings", exact: true })
@@ -297,11 +295,6 @@ test("review settings are a dialog that switches sides; with AI off, cards don't
     dialog.getByRole("radiogroup", { name: "Review as" }).getByRole("radio", { name: /^White/ })
   ).toBeChecked();
   await expect(dialog.getByText(/^Rating Rapid 1500 · from Settings/)).toBeVisible();
-  // Its groups fold too.
-  await expect(dialog.getByRole("button", { name: "Engine" })).toHaveAttribute(
-    "aria-expanded",
-    "true"
-  );
 
   // Review as Black: the board turns, and the key moments are Black's (Qg5 and Qxg2).
   await dialog
@@ -318,12 +311,8 @@ test("review settings are a dialog that switches sides; with AI off, cards don't
     dialog.getByRole("radiogroup", { name: "Review as" }).getByRole("radio", { name: /^Black/ })
   ).toBeChecked();
   await dialog.getByRole("button", { name: "Done", exact: true }).click();
-  await reviewTabs(page).getByRole("tab", { name: "Commentary", exact: true }).click();
-  await page
-    .getByRole("navigation", { name: "Move navigation" })
-    .getByRole("button", { name: "First move", exact: true })
-    .click();
-  const cards = page.getByRole("list", { name: "Key moments of the game" });
+  await reviewTabs(page).getByRole("tab", { name: "Summary", exact: true }).click();
+  const cards = summary(page).getByRole("list", { name: "Key moments" });
   await expect(cards.getByRole("listitem")).toHaveCount(2);
   await expect(cards.getByRole("button").nth(0)).toHaveAccessibleName("4… Qg5, Great");
   await expect(cards.getByRole("button").nth(1)).toHaveAccessibleName("5… Qxg2, Good");
@@ -338,18 +327,15 @@ test("review settings are a dialog that switches sides; with AI off, cards don't
 
   await expect(cards).not.toContainText("Punishes");
   await card.click();
+  await expect(card).not.toHaveAttribute("aria-expanded", /.*/);
+  // The card went to its move: the Commentary tab is on it, with no explanation either.
+  await reviewTabs(page).getByRole("tab", { name: "Commentary", exact: true }).click();
   await expect(page.getByRole("heading", { name: "4… Qg5", level: 2 })).toBeVisible();
   await expect(
     page.getByRole("region", { name: "Commentary" }).getByText(/A critical find/)
   ).toHaveCount(0);
 
-  // "⌄ Game Review" folds the tabs and their content away; the charts stay.
-  const reviewToggle = panel.getByRole("button", { name: "Game Review", exact: true });
-  await reviewToggle.click();
-  await expect(reviewToggle).toHaveAttribute("aria-expanded", "false");
-  await expect(reviewTabs(page)).toBeHidden();
-  // With the charts folded too, the two headers stack at the top and the move navigation stays at
-  // the panel's bottom.
+  // With the charts folded, the move navigation stays at the panel's bottom.
   const chartsToggle = panel.getByRole("button", { name: "Winning chances" });
   await chartsToggle.click();
   await expect(chartsToggle).toHaveAttribute("aria-expanded", "false");
@@ -364,6 +350,4 @@ test("review settings are a dialog that switches sides; with AI off, cards don't
   if (!startBox) throw new Error("Start review not visible");
   expect(navBox.y - (startBox.y + startBox.height)).toBeLessThan(12);
   await chartsToggle.click();
-  await reviewToggle.click();
-  await expect(reviewTabs(page)).toBeVisible();
 });

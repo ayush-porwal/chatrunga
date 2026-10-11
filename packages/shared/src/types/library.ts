@@ -58,24 +58,3 @@ export function emptyTabCounts(): LibraryTabCounts {
     chaturanga: { games: 0, reviewed: 0 }
   };
 }
-
-/** The tabs to show: those with games, in tab order. */
-export function visibleLibraryTabs(counts: LibraryTabCounts): LibraryTab[] {
-  return LIBRARY_TABS.filter((tab) => counts[tab].games > 0);
-}
-
-/**
- * The tab a list opens on: the one last chosen, while it has games; else the current game's tab,
- * while it has games; else the first tab with games. Null when the library is empty.
- */
-export function defaultLibraryTab(input: {
-  remembered: LibraryTab | null;
-  currentSource: GameSource | null;
-  counts: LibraryTabCounts;
-}): LibraryTab | null {
-  const visible = visibleLibraryTabs(input.counts);
-  if (input.remembered && visible.includes(input.remembered)) return input.remembered;
-  const current = input.currentSource ? libraryTabOf(input.currentSource) : null;
-  if (current && visible.includes(current)) return current;
-  return visible[0] ?? null;
-}

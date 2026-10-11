@@ -125,7 +125,7 @@ test("the AI section holds the one model and key; Review settings link to it and
     .getByRole("dialog", { name: "Choose a game" })
     .getByRole("button", { name: /^Alpha vs Beta/ })
     .click();
-  // Review settings are a dialog behind the gear in the panel's Review header, not a tab.
+  // Review settings are a dialog behind the gear at the end of the panel's tab bar, not a tab.
   await expect(reviewTabs(page).getByRole("tab", { name: "Settings", exact: true })).toHaveCount(0);
   await page
     .getByRole("complementary", { name: "Review" })

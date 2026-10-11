@@ -1,28 +1,23 @@
-import {
-  memo,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type ReactNode
-} from "react";
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { BookOpen, Crown, Library, Loader2, Puzzle, Swords } from "lucide-react";
 import type { Color } from "@chaturanga/shared/types/chess";
 import type { GameOpening, MoveReview } from "@chaturanga/shared/types/engine";
+import type { KeyMoment } from "@chaturanga/shared/chess/key-moments";
 import { annotationLabel } from "@chaturanga/shared/chess/move-assessment";
 import { Button } from "@/components/ui/button";
 import {
   CollapsibleBody,
   CollapsibleHeader,
-  useCollapsible
+  CollapsibleToggle,
+  useCollapsible,
+  type Collapsible
 } from "@/components/ui/collapsible-section";
-import { SideDot } from "@/components/ui/side-dot";
 import { annotationTone } from "@/lib/ui";
 import { cn } from "@/lib/utils";
 import { useDatabasesQuery } from "../../queries/api";
+import { useGameStore } from "../../stores/game-store";
 import { MoveMarkDisc } from "../board/MoveMarkDisc";
+import { MomentCommentaryPrompt, MomentList } from "./KeyMoments";
 import {
   lichessOpeningProbe,
   findOpeningPuzzles,
@@ -53,6 +48,9 @@ const CELL = {
   black: "col-start-4 justify-self-center text-center tabular-nums"
 } as const;
 
+/** A section's header row: a hairline above every section but the first, one height for all. */
+const SECTION_HEAD = "col-span-full min-h-11 border-t border-line-subtle first:border-t-0";
+
 const PHASE_LABELS: Record<GamePhase, string> = {
   opening: "Opening",
   middlegame: "Middlegame",
@@ -66,19 +64,23 @@ const PHASE_ICONS: Record<GamePhase, ReactNode> = {
 };
 
 /**
- * The review summary, the side panel's first screen after a review: each side's accuracy and
- * marks on one scoreboard (label | White | glyph | Black), then the opening with its puzzles and
- * the repertoire comparison, accuracy by phase, and puzzle themes behind the reviewed side's
- * errors (Start review, the key moments one by one, is in the panel's footer). No centipawn loss
- * and no player names (the board shows them).
+ * The review summary, the Summary tab after a review, in folding sections: Accuracy (each side's
+ * accuracy on the header row, so it shows folded too, then the marks on one scoreboard: label |
+ * White | glyph | Black), the reviewed side's key moments (cards that open on the move's AI
+ * commentary), the opening with its puzzles and the repertoire comparison, accuracy by phase, and
+ * puzzle themes behind the reviewed side's errors. No centipawn loss and no player names (the board
+ * shows them).
  */
 export const ReviewSummary = memo(function ReviewSummary({
   moves,
   mainline,
   opening,
   side,
+  moments,
+  onSelectNode,
   repertoire,
-  onOpenPuzzles
+  onOpenPuzzles,
+  onAddCommentaryKey
 }: {
   moves: readonly MoveReview[];
   /** The game's main line, as the charts split it into phases (the two always agree). */
@@ -87,13 +89,19 @@ export const ReviewSummary = memo(function ReviewSummary({
   opening: GameOpening | null | undefined;
   /** The side reviewed: its errors make the practice chips. */
   side: Color;
+  /** The reviewed side's key moments (the stepper's insights), as cards. */
+  moments: readonly KeyMoment[];
+  /** Goes to a key moment's move. */
+  onSelectNode: (nodeId: string) => void;
   /**
    * The game against the user's repertoire: a one-line headline (nothing without a repertoire
-   * for the side), and the comparison "My repertoire" unfolds in the OPENING section.
+   * for the side), and the comparison "My repertoire" unfolds in the Opening section.
    */
   repertoire: { headline: ReactNode; panel: ReactNode };
   /** Shows the Puzzles page (its filters are set first); absent: no puzzle shortcuts. */
   onOpenPuzzles?: () => void;
+  /** Opens Settings → AI, offered under the key moments when no OpenRouter key is saved. */
+  onAddCommentaryKey?: () => void;
 }) {
   const rows = useMemo(() => scoreboardRows(moves), [moves]);
   const white = useMemo(() => sideAccuracy(moves, "white"), [moves]);
@@ -106,6 +114,7 @@ export const ReviewSummary = memo(function ReviewSummary({
   const databases = useDatabasesQuery();
   const lichessDatabaseId =
     databases.data?.find((item) => item.sourceId === "lichess-puzzles")?.id ?? null;
+  const accuracy = useCollapsible("review-summary:accuracy");
 
   const openThemePuzzles = (chip: PracticeChip) => {
     if (!onOpenPuzzles) return;
@@ -119,27 +128,27 @@ export const ReviewSummary = memo(function ReviewSummary({
       aria-label="Review summary"
       role="region"
     >
-      <div className={cn(TRACKS, "text-sm text-fg-secondary")}>
-        {/* › Accuracy: its body is the accuracy boxes, then each side's marks. */}
-        <SummarySection id="accuracy" title="Accuracy">
-          <div role="table" aria-label="Accuracy" className="col-span-full grid grid-cols-subgrid">
-            <div role="row" className="col-span-full grid min-h-9 grid-cols-subgrid items-center">
-              <span role="rowheader" className="sr-only">
-                Accuracy
-              </span>
-              <AccuracyBox side="white" value={white} />
-              <span role="cell" className={CELL.glyph}>
-                <Dartboard />
-              </span>
-              <AccuracyBox side="black" value={black} />
-            </div>
-          </div>
+      <div className={cn(TRACKS, "pb-2 text-sm text-fg-secondary")}>
+        {/* ⌄ Accuracy  [White] (dartboard) [Black]: the boxes sit on the header row, on the
+            scoreboard's tracks, so they stay in view with the marks folded. */}
+        <div className={cn(SECTION_HEAD, "grid grid-cols-subgrid items-center")}>
+          <CollapsibleToggle
+            open={accuracy.open}
+            onToggle={accuracy.toggle}
+            controls={accuracy.contentId}
+            className={CELL.label}
+          >
+            Accuracy
+          </CollapsibleToggle>
+          <AccuracyBox side="white" value={white} />
+          <span className={CELL.glyph}>
+            <Dartboard />
+          </span>
+          <AccuracyBox side="black" value={black} />
+        </div>
+        <SectionBody section={accuracy}>
           {rows.length ? (
-            <div
-              role="table"
-              aria-label="Marks"
-              className="col-span-full grid grid-cols-subgrid pt-1"
-            >
+            <div role="table" aria-label="Marks" className="col-span-full grid grid-cols-subgrid">
               {rows.map((row) => (
                 <div
                   key={row.annotation}
@@ -166,7 +175,26 @@ export const ReviewSummary = memo(function ReviewSummary({
               ))}
             </div>
           ) : null}
-        </SummarySection>
+        </SectionBody>
+
+        {moments.length ? (
+          <SummarySection
+            id="key-moments"
+            title="Key moments"
+            actions={
+              <span className="text-xs font-medium tabular-nums text-fg-subtle">
+                {moments.length}
+              </span>
+            }
+          >
+            <KeyMomentCards
+              moments={moments}
+              moves={moves}
+              onSelectNode={onSelectNode}
+              onAddCommentaryKey={onAddCommentaryKey}
+            />
+          </SummarySection>
+        ) : null}
 
         <SummarySection id="opening" title="Opening">
           <OpeningBlock
@@ -209,18 +237,18 @@ export const ReviewSummary = memo(function ReviewSummary({
             <div
               role="group"
               aria-label="Practise your mistakes"
-              className="col-span-full flex flex-wrap gap-1.5 py-1"
+              className="col-span-full flex flex-wrap gap-1.5"
             >
               {chips.map((chip) => (
                 <button
                   key={chip.theme}
                   type="button"
                   title={`${chip.label} puzzles`}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-raised px-2.5 py-1.5 text-[12.5px] text-fg-secondary transition-colors duration-micro hover:border-accent/40 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+                  className="inline-flex h-[30px] items-center gap-1.5 rounded-full border border-line bg-surface pr-1.5 pl-3 text-[12.5px] text-fg-secondary transition-colors duration-micro hover:border-line-strong hover:bg-control hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
                   onClick={() => openThemePuzzles(chip)}
                 >
                   {chip.label}
-                  <span className="font-mono text-2xs font-semibold text-fg-subtle">
+                  <span className="grid h-[18px] min-w-5 place-items-center rounded-full bg-control px-1.5 text-2xs font-semibold tabular-nums text-fg-muted">
                     {chip.count}
                   </span>
                 </button>
@@ -240,10 +268,13 @@ export const ReviewSummary = memo(function ReviewSummary({
 function SummarySection({
   id,
   title,
+  actions,
   children
 }: {
   id: string;
   title: string;
+  /** At the header row's right (a count). */
+  actions?: ReactNode;
   children: ReactNode;
 }) {
   const section = useCollapsible(`review-summary:${id}`);
@@ -254,17 +285,54 @@ function SummarySection({
         onToggle={section.toggle}
         controls={section.contentId}
         size="sub"
-        className="col-span-full mt-2"
+        actions={actions}
+        className={SECTION_HEAD}
       >
         {title}
       </CollapsibleHeader>
-      <CollapsibleBody
-        section={section}
-        className="col-span-full grid grid-cols-subgrid pt-1 pl-[18px]"
-      >
-        {children}
-      </CollapsibleBody>
+      <SectionBody section={section}>{children}</SectionBody>
     </>
+  );
+}
+
+/** A section's body, on the four tracks, indented under its title. */
+function SectionBody({ section, children }: { section: Collapsible; children: ReactNode }) {
+  return (
+    <CollapsibleBody section={section} className="col-span-full grid grid-cols-subgrid pb-3 pl-5">
+      {children}
+    </CollapsibleBody>
+  );
+}
+
+/**
+ * The key moments as cards, the one being shown highlighted, then (while the cards can't explain
+ * a move) the way to have them do so. Reads the shown move itself, so moving through the game
+ * re-renders only this list.
+ */
+function KeyMomentCards({
+  moments,
+  moves,
+  onSelectNode,
+  onAddCommentaryKey
+}: {
+  moments: readonly KeyMoment[];
+  moves: readonly MoveReview[];
+  onSelectNode: (nodeId: string) => void;
+  onAddCommentaryKey?: () => void;
+}) {
+  const selectedNodeId = useGameStore((state) => state.currentNodeId);
+  return (
+    <div className="col-span-full grid gap-2">
+      <MomentList
+        moments={moments}
+        moves={moves}
+        selectedNodeId={selectedNodeId}
+        onSelectNode={onSelectNode}
+        label="Key moments"
+        emptyTitle="No key moments."
+      />
+      <MomentCommentaryPrompt onAddKey={onAddCommentaryKey} />
+    </div>
   );
 }
 
@@ -272,11 +340,11 @@ function SummarySection({
 function AccuracyBox({ side, value }: { side: Color; value: number | null }) {
   const name = side === "white" ? "White" : "Black";
   return (
-    <span role="cell" className={side === "white" ? CELL.white : CELL.black}>
+    <span className={side === "white" ? CELL.white : CELL.black}>
       <span
         aria-label={`${name} accuracy ${value === null ? "unknown" : value.toFixed(1)}`}
         className={cn(
-          "flex h-8 w-16 items-center justify-center rounded-md font-mono text-lg font-semibold tabular-nums",
+          "flex h-8 w-16 items-center justify-center rounded-md font-mono text-[15px] font-bold tabular-nums",
           side === "white"
             ? "bg-side-white text-side-white-fg"
             : "bg-side-black text-fg ring-1 ring-line ring-inset"
@@ -288,7 +356,7 @@ function AccuracyBox({ side, value }: { side: Color; value: number | null }) {
   );
 }
 
-/** A mark's count for one side, in the mark's colour. */
+/** A mark's count for one side, in the mark's colour (a zero muted). */
 function Count({ value, tone, label }: { value: number; tone: string; label: "White" | "Black" }) {
   return (
     <span
@@ -296,8 +364,8 @@ function Count({ value, tone, label }: { value: number; tone: string; label: "Wh
       aria-label={`${label} ${value}`}
       className={cn(
         label === "White" ? CELL.white : CELL.black,
-        "font-mono text-base font-semibold",
-        tone
+        "font-mono text-sm font-bold",
+        value ? tone : "text-fg-subtle"
       )}
     >
       {value}
@@ -389,155 +457,62 @@ function OpeningBlock({
   };
 
   return (
-    <div className="col-span-full flex items-start gap-2.5">
-      {opening ? <MoveMarkDisc annotation="book" decorative className="mt-px" /> : null}
-      <div className="grid min-w-0 flex-1 gap-0.5">
-        {opening ? (
-          <>
-            <p className="font-medium text-fg">
-              <span className="mr-1 font-mono text-xs font-semibold text-mark-book-text">
-                {opening.eco}
-              </span>
+    <div className="col-span-full grid min-w-0 gap-0.5">
+      {opening ? (
+        <>
+          <p className="flex min-w-0 items-center gap-2 font-medium text-fg">
+            <MoveMarkDisc annotation="book" decorative />
+            <span className="font-mono text-xs font-bold text-mark-book-text">{opening.eco}</span>
+            <span className="min-w-0 truncate" title={opening.name}>
               {opening.name}
-            </p>
-            <p className="text-[12.5px] text-fg-muted">{openingBookLine(opening)}</p>
-          </>
-        ) : null}
-        {/* The game against the user's repertoire, in one muted line (none without one). */}
-        {repertoire.headline}
-        <div className="mt-2 grid grid-cols-2 gap-1.5">
-          {onOpenPuzzles && opening ? (
-            <Button
-              type="button"
-              variant="default"
-              size="sm"
-              className="bg-surface-raised"
-              disabled={search === "finding"}
-              aria-busy={search === "finding" || undefined}
-              onClick={() => void openPuzzles()}
-            >
-              {search === "finding" ? <Loader2 className="animate-spin" /> : <Puzzle />}
-              {search === "finding" ? "Finding puzzles…" : "Opening puzzles"}
-            </Button>
-          ) : null}
+            </span>
+          </p>
+          <p className="mt-1 text-[12.5px] text-fg-muted">{openingBookLine(opening)}</p>
+        </>
+      ) : null}
+      {/* The game against the user's repertoire, in one muted line (none without one). */}
+      {repertoire.headline}
+      <div className="mt-2.5 grid grid-cols-2 gap-1.5">
+        {onOpenPuzzles && opening ? (
           <Button
             type="button"
             variant="default"
             size="sm"
-            className={cn(
-              "bg-surface-raised",
-              (!onOpenPuzzles || !opening) && "col-span-2",
-              comparison.open && "border-accent/40 text-fg"
-            )}
-            aria-expanded={comparison.open}
-            aria-controls={comparison.contentId}
-            onClick={comparison.toggle}
+            disabled={search === "finding"}
+            aria-busy={search === "finding" || undefined}
+            onClick={() => void openPuzzles()}
           >
-            <Library />
-            My repertoire
+            {search === "finding" ? <Loader2 className="animate-spin" /> : <Puzzle />}
+            {search === "finding" ? "Finding puzzles…" : "Opening puzzles"}
           </Button>
-        </div>
-        {search === "none" ? (
-          <p role="status" className="mt-1 text-xs text-fg-muted">
-            No puzzles for this opening yet.
-          </p>
         ) : null}
-        <CollapsibleBody
-          section={comparison}
-          role="region"
-          aria-label="Your repertoire"
-          className="mt-2.5 rounded-lg border border-line-subtle p-2.5"
+        {/* Pressed (the primary tint) while its comparison is unfolded below. */}
+        <Button
+          type="button"
+          variant={comparison.open ? "primary" : "default"}
+          size="sm"
+          className={cn((!onOpenPuzzles || !opening) && "col-span-2")}
+          aria-expanded={comparison.open}
+          aria-controls={comparison.contentId}
+          onClick={comparison.toggle}
         >
-          {repertoire.panel}
-        </CollapsibleBody>
+          <Library />
+          My repertoire
+        </Button>
       </div>
-    </div>
-  );
-}
-
-/**
- * Before an imported game's first review: which side to review it as, the side whose name is the
- * user's Lichess account (else the Settings side) preselected, then Start review.
- */
-export function ReviewSidePrompt({
-  preselect,
-  whiteName,
-  blackName,
-  onStart
-}: {
-  preselect: Color;
-  whiteName: string;
-  blackName: string;
-  /** Reviews the game as the side picked; absent while it can't start (the game is loading). */
-  onStart?: (side: Color) => void;
-}) {
-  const headingId = useId();
-  const [picked, setPicked] = useState<Color>(preselect);
-  // A preselection that changes (the Lichess account connects) moves the pick until one is made.
-  const [touched, setTouched] = useState(false);
-  const side = touched ? picked : preselect;
-  const options: { color: Color; name: string }[] = [
-    { color: "white", name: whiteName },
-    { color: "black", name: blackName }
-  ];
-  const pick = (color: Color) => {
-    setTouched(true);
-    setPicked(color);
-  };
-  // A radio group: Tab reaches the picked side only, and the arrow keys move the pick (and focus).
-  const onRadioKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
-    event.preventDefault();
-    const next: Color = side === "white" ? "black" : "white";
-    pick(next);
-    event.currentTarget.parentElement
-      ?.querySelector<HTMLButtonElement>(`[data-side="${next}"]`)
-      ?.focus();
-  };
-  return (
-    <div className="grid h-full content-center gap-4 px-1">
-      <h2 id={headingId} className="text-center text-base font-semibold text-fg">
-        Review this game as
-      </h2>
-      <div role="radiogroup" aria-labelledby={headingId} className="grid grid-cols-2 gap-2">
-        {options.map((option) => {
-          const checked = option.color === side;
-          const label = option.color === "white" ? "White" : "Black";
-          return (
-            <button
-              key={option.color}
-              type="button"
-              role="radio"
-              aria-checked={checked}
-              aria-label={`${label} (${option.name})`}
-              data-side={option.color}
-              tabIndex={checked ? 0 : -1}
-              onKeyDown={onRadioKeyDown}
-              className={cn(
-                "grid min-w-0 justify-items-center gap-1 rounded-lg border px-3 py-3 text-sm transition-colors duration-micro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70",
-                checked
-                  ? "border-accent/60 bg-accent-soft text-fg"
-                  : "border-line bg-surface-raised text-fg-secondary hover:border-line-strong"
-              )}
-              onClick={() => pick(option.color)}
-            >
-              <span className="inline-flex items-center gap-1.5 font-medium">
-                <SideDot color={option.color} />
-                {label}
-              </span>
-              <span className="max-w-full truncate text-xs text-fg-muted">{option.name}</span>
-            </button>
-          );
-        })}
-      </div>
-      <Button
-        type="button"
-        className="h-[42px] border-transparent bg-accent-strong text-sm font-semibold text-fg hover:bg-accent-strong/85"
-        disabled={!onStart}
-        onClick={() => onStart?.(side)}
+      {search === "none" ? (
+        <p role="status" className="mt-1 text-xs text-fg-muted">
+          No puzzles for this opening yet.
+        </p>
+      ) : null}
+      <CollapsibleBody
+        section={comparison}
+        role="region"
+        aria-label="Your repertoire"
+        className="mt-2.5 rounded-lg border border-line-subtle bg-surface-sunken p-3"
       >
-        Start review
-      </Button>
+        {repertoire.panel}
+      </CollapsibleBody>
     </div>
   );
 }

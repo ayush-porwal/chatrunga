@@ -1,0 +1,48 @@
+import { describe, expect, it } from "vitest";
+import { rememberedSource, savedGamesHidden } from "./game-review-picker";
+
+describe("Choose a game's filter", () => {
+  it("remembers a source when one is chosen", () => {
+    expect(
+      rememberedSource({ tab: null, reviewed: false }, { tab: "chesscom", reviewed: false })
+    ).toBe("chesscom");
+  });
+
+  it("forgets the source when All games is chosen", () => {
+    expect(
+      rememberedSource({ tab: "lichess", reviewed: true }, { tab: null, reviewed: true })
+    ).toBeNull();
+  });
+
+  it("leaves the source remembered when only Reviewed changes", () => {
+    expect(
+      rememberedSource({ tab: "lichess", reviewed: false }, { tab: "lichess", reviewed: true })
+    ).toBeUndefined();
+  });
+});
+
+describe("Choose a game's Saved games section", () => {
+  const empty = { hasGames: false, needle: "", filter: { tab: null, reviewed: false } };
+
+  it("is left out when the current game is the library's only game", () => {
+    expect(savedGamesHidden({ ...empty, hasCurrent: true })).toBe(true);
+  });
+
+  it("says the library is empty when there is no current game either", () => {
+    expect(savedGamesHidden({ ...empty, hasCurrent: false })).toBe(false);
+  });
+
+  it("stays while a search finds nothing", () => {
+    expect(savedGamesHidden({ ...empty, needle: "alpha", hasCurrent: true })).toBe(false);
+  });
+
+  it("stays while Reviewed is on", () => {
+    expect(
+      savedGamesHidden({ ...empty, filter: { tab: null, reviewed: true }, hasCurrent: true })
+    ).toBe(false);
+  });
+
+  it("lists the other saved games", () => {
+    expect(savedGamesHidden({ ...empty, hasGames: true, hasCurrent: true })).toBe(false);
+  });
+});

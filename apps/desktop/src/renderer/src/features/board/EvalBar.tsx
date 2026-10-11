@@ -213,9 +213,9 @@ function sameEval(a: BoardEval, b: BoardEval | null): boolean {
 }
 
 /**
- * The vertical eval bar beside a board: White's share in the white side's colour grows from White's
- * side of the board over the black side's dark grey, and the evaluation is printed small and bold
- * at the better side's end (evalBarLabel), dark on the white fill and light on the grey.
+ * The vertical eval bar beside a board, drawn as chess.com draws it: White's share in white grows
+ * from White's side of the board over Black's warm dark grey, and the evaluation is printed small
+ * and bold at the better side's end (evalBarLabel), dark on the white fill and light on the grey.
  * With `live` analysis it keeps its last value while a new search starts, so it glides instead of
  * blinking.
  */
@@ -239,11 +239,11 @@ export function EvalBarFill({
       role="img"
       aria-label={`Evaluation ${shown.label}`}
       title={shown.label}
-      className="relative h-full w-full overflow-hidden rounded-md bg-piece-black shadow-[inset_0_0_0_1px_#000] animate-fade-in"
+      className="relative h-full w-full overflow-hidden rounded-[3px] bg-eval-black animate-fade-in"
     >
       <div
         className={cn(
-          "absolute inset-x-0 bg-piece-white transition-[height] duration-emphasis ease-standard motion-reduce:transition-none",
+          "absolute inset-x-0 bg-eval-white transition-[height] duration-emphasis ease-standard motion-reduce:transition-none",
           whiteAtBottom ? "bottom-0" : "top-0"
         )}
         style={{ height: `${shown.whiteShare}%` }}
@@ -253,9 +253,9 @@ export function EvalBarFill({
         aria-hidden="true"
         data-eval-side={text.side}
         className={cn(
-          "absolute inset-x-0 overflow-hidden text-center font-mono text-[9px] font-bold leading-none tracking-[-0.04em] tabular-nums whitespace-nowrap select-none",
+          "absolute inset-x-0 overflow-hidden text-center text-[10px] font-bold leading-none tracking-tighter tabular-nums whitespace-nowrap select-none",
           text.atTop ? "top-1.5" : "bottom-1.5",
-          text.side === "white" ? "text-side-white-fg" : "text-fg"
+          text.side === "white" ? "text-eval-black" : "text-eval-white"
         )}
       >
         {text.text}

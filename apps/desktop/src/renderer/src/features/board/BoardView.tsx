@@ -36,7 +36,12 @@ import { useBoardPolish } from "./useBoardPolish";
 import { restoreBoardConfig } from "./board-config";
 import { celebratesEnding, liveEnding, type BoardEndState } from "./game-end";
 import { useBoardConfetti } from "./useBoardConfetti";
-import { annotationsFromShapes, liveAnalysisShapes, shapesFromAnnotations } from "./board-shapes";
+import {
+  annotationsFromShapes,
+  liveAnalysisShapes,
+  reviewMoveShapes,
+  shapesFromAnnotations
+} from "./board-shapes";
 import {
   PIECE_MOVE_MS,
   RAPID_STEP_MS,
@@ -149,23 +154,10 @@ export function BoardView() {
     const reviewMove = currentNode
       ? reviewMoves.find((item) => item.nodeId === currentNode.id)
       : undefined;
-    const best = reviewMove?.bestMove ? uciSquares(reviewMove.bestMove) : null;
-    if (!reviewMove || !best) return NO_SHAPES;
-    const arrows: DrawShape[] = [{ orig: best[0], dest: best[1], brush: "paleGreen" }];
-    const played =
-      reviewMove.playedMove && reviewMove.playedMove !== reviewMove.bestMove
-        ? uciSquares(reviewMove.playedMove)
-        : null;
-    if (played) {
-      arrows.push({
-        orig: played[0],
-        dest: played[1],
-        // Red for a move that cost something (any error, marked or not).
-        brush: reviewMove.assessment?.severity ? "paleRed" : "paleBlue"
-      });
-    }
-    return arrows;
-  }, [liveShapes, reviewMoves, currentNode]);
+    if (!reviewMove) return NO_SHAPES;
+    // The review's arrows, pale, under the same engine arrows settings as Game review's board.
+    return reviewMoveShapes(reviewMove, { bestMoveArrow: showBestArrow, planArrows, pale: true });
+  }, [liveShapes, reviewMoves, currentNode, showBestArrow, planArrows]);
 
   // Chessground owns its DOM and keeps it sized itself (its own ResizeObserver repositions pieces
   // on resize) — rebuilding the board on every resize frame is what used to flicker.

@@ -1,5 +1,7 @@
 import { Fragment, useMemo, type ReactNode } from "react";
 import { CornerUpLeft, GitBranch } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 import { cn } from "@/lib/utils";
 import {
   resolveCommentaryMoves,
@@ -112,57 +114,24 @@ export function CommentaryProse({
   );
 }
 
-/** A SAN line ("Qb3 Bc5 Bxf7+") where each move is a link to the position after it. */
-export function MoveLine({
-  startNodeId,
-  sans,
-  onGoToLine,
-  empty = "No line returned",
-  linkClassName
-}: {
-  startNodeId: string | null;
-  sans: readonly string[];
-  onGoToLine?: GoToLine;
-  empty?: string;
-  linkClassName?: string;
-}) {
-  if (!sans.length) return <>{empty}</>;
-  if (!startNodeId || !onGoToLine) return <>{sans.join(" ")}</>;
-  return (
-    <>
-      {sans.map((san, index) => (
-        <Fragment key={`${index}-${san}`}>
-          {index ? " " : null}
-          <MoveLink
-            san={san}
-            className={linkClassName}
-            onActivate={() => onGoToLine({ startNodeId, moves: sans.slice(0, index + 1) })}
-          />
-        </Fragment>
-      ))}
-    </>
-  );
-}
-
-/** "Exploring a variation from 6…Nf6 · Back to game" — shown while the board is off the reviewed line. */
+/**
+ * "Exploring a variation from 6… ♘f6" with Back to game, as an info band: shown while the board is
+ * off the reviewed line (the panel then shows the move the variation leaves the game from).
+ */
 export function VariationAnchorNote({ label, onBack }: { label: string; onBack: () => void }) {
   return (
-    <p className="flex flex-wrap items-center gap-1.5 text-xs text-fg-muted" role="status">
-      <GitBranch className="size-3.5 shrink-0 text-fg-subtle" aria-hidden />
-      <span>
-        Exploring a variation from <span className="font-mono text-fg-secondary">{label}</span>
-      </span>
-      <span aria-hidden className="text-fg-subtle">
-        ·
-      </span>
-      <button
-        type="button"
-        onClick={onBack}
-        className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-accent underline decoration-transparent underline-offset-[3px] outline-none transition-[text-decoration-color] duration-micro ease-standard hover:decoration-current focus-visible:decoration-current focus-visible:ring-2 focus-visible:ring-accent/50"
-      >
-        <CornerUpLeft className="size-3" aria-hidden />
-        Back to game
-      </button>
-    </p>
+    <Notice
+      tone="info"
+      icon={<GitBranch />}
+      className="items-center"
+      action={
+        <Button variant="ghost" size="xs" onClick={onBack}>
+          <CornerUpLeft />
+          Back to game
+        </Button>
+      }
+    >
+      Exploring a variation from <span className="font-mono text-fg">{label}</span>
+    </Notice>
   );
 }
