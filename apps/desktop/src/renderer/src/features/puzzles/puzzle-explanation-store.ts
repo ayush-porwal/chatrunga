@@ -196,7 +196,7 @@ export async function requestPuzzleExplanation(
     );
     return;
   }
-  const payload = buildPuzzleExplanationPayload({
+  const payload = await buildPuzzleExplanationPayload({
     puzzle,
     kind: request.kind,
     wrong: request.wrong,

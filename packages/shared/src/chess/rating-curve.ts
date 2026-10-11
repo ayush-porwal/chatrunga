@@ -1,4 +1,5 @@
-import { MAIA_BUCKETS, type MaiaRatingBucket, type RatingCurve } from "../schemas/rating-curve";
+import { MAIA_BUCKETS, type MaiaRatingBucket } from "../schemas/constants";
+import type { RatingCurve } from "../schemas/rating-curve";
 
 /**
  * Maia rating curve interpretation: classifies the shape of (playedProb, bestProb)

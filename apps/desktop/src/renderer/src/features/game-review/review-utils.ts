@@ -6,7 +6,11 @@ import { analyzeTacticsForPosition } from "@chaturanga/shared/chess/tactics";
 import { buildIdeaFacts } from "@chaturanga/shared/chess/move-ideas";
 import { buildRatingCurve, quantizeToBucket } from "@chaturanga/shared/chess/rating-curve";
 import { formatEngineScore, scoreToCentipawns } from "@chaturanga/shared/chess/review";
-import { REVIEW_INSIGHT_PAYLOAD_VERSION } from "@chaturanga/shared/schemas/review-insight";
+import {
+  MAIA_BUCKETS,
+  REVIEW_INSIGHT_PAYLOAD_VERSION,
+  type MaiaRatingBucket
+} from "@chaturanga/shared/schemas/constants";
 import type {
   CuratorReason,
   EngineSignal,
@@ -26,7 +30,6 @@ import type {
   Wdl
 } from "@chaturanga/shared/types/engine";
 import type { GameHeaders, MoveNode } from "@chaturanga/shared/types/chess";
-import { MAIA_BUCKETS, type MaiaRatingBucket } from "@chaturanga/shared/schemas/rating-curve";
 
 type ReviewMoveInput = ReviewGameInput["moves"][number];
 export type ReviewTab = "summary" | "commentary" | "moves" | "engine";

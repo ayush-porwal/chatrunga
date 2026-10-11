@@ -117,8 +117,7 @@ describe("requestPuzzleExplanation", () => {
     });
 
     searches[0].resolve(analysis);
-    await flush();
-    expect(entry()?.phase).toBe("writing");
+    await vi.waitFor(() => expect(entry()?.phase).toBe("writing"));
     const sent = deps.explainPuzzle.mock.calls[0] as unknown as [
       { requestId: string; payload: { outcome: string; commentaryDetail: string } }
     ];
@@ -138,7 +137,7 @@ describe("requestPuzzleExplanation", () => {
     void requestPuzzleExplanation(request, deps);
     expect(deps.analysePositions).toHaveBeenCalledTimes(1);
     searches[0].resolve(analysis);
-    await flush();
+    await vi.waitFor(() => expect(entry()?.phase).toBe("writing"));
     answers[0].resolve({ explanation, error: null });
     await first;
 
@@ -179,7 +178,7 @@ describe("requestPuzzleExplanation", () => {
       puzzle: puzzleIdentity(other)
     });
     searches[1].resolve(analysis);
-    await flush();
+    await vi.waitFor(() => expect(entry(otherRequest.key)?.phase).toBe("writing"));
     answers[0].resolve({ explanation, error: null });
     await running;
     expect(entry(otherRequest.key)?.phase).toBe("ready");
@@ -191,8 +190,7 @@ describe("requestPuzzleExplanation", () => {
     usePuzzleStore.getState().setActivePuzzle(puzzle);
     void requestPuzzleExplanation(request, deps);
     searches[0].resolve(analysis);
-    await flush();
-    expect(entry()?.phase).toBe("writing");
+    await vi.waitFor(() => expect(entry()?.phase).toBe("writing"));
     usePuzzleStore.getState().setActivePuzzle({ ...puzzle, id: "p2" });
     expect(deps.cancelWriting).toHaveBeenCalledWith("r1");
     expect(deps.cancelSearch).not.toHaveBeenCalled();
@@ -270,13 +268,16 @@ describe("explainView", () => {
   const base = { entry: undefined, configReady: true, commentaryEnabled: true, hasApiKey: true };
 
   it("offers the button once the configuration is known", () => {
-    expect(explainView({ ...base, configReady: false })).toEqual({ kind: "idle", disabled: true });
-    expect(explainView(base)).toEqual({ kind: "idle", disabled: false });
+    expect(explainView({ ...base, configReady: false })).toStrictEqual({
+      kind: "idle",
+      disabled: true
+    });
+    expect(explainView(base)).toStrictEqual({ kind: "idle", disabled: false });
   });
 
   it("says when commentary is off or the key is missing, like Game review", () => {
-    expect(explainView({ ...base, commentaryEnabled: false })).toEqual({ kind: "off" });
-    expect(explainView({ ...base, hasApiKey: false })).toEqual({ kind: "no-key" });
+    expect(explainView({ ...base, commentaryEnabled: false })).toStrictEqual({ kind: "off" });
+    expect(explainView({ ...base, hasApiKey: false })).toStrictEqual({ kind: "no-key" });
   });
 
   it("keeps showing progress and a finished explanation whatever the settings", () => {
@@ -286,8 +287,8 @@ describe("explainView", () => {
         hasApiKey: false,
         entry: { ...ready, phase: "writing", explanation: null }
       })
-    ).toEqual({ kind: "writing" });
-    expect(explainView({ ...base, commentaryEnabled: false, entry: ready })).toEqual({
+    ).toStrictEqual({ kind: "writing" });
+    expect(explainView({ ...base, commentaryEnabled: false, entry: ready })).toStrictEqual({
       kind: "ready",
       explanation
     });
@@ -301,7 +302,7 @@ describe("explainView", () => {
       error: NO_ENGINE_ERROR,
       needsSettings: true
     };
-    expect(explainView({ ...base, entry: error })).toEqual({
+    expect(explainView({ ...base, entry: error })).toStrictEqual({
       kind: "error",
       message: NO_ENGINE_ERROR,
       needsSettings: true

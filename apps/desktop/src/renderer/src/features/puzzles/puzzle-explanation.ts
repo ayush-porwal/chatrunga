@@ -1,11 +1,10 @@
 import { buildIdeaFacts } from "@chaturanga/shared/chess/move-ideas";
 import { fenAfterUci } from "@chaturanga/shared/chess/position";
 import { scoreToCentipawns, terminalStateForFen } from "@chaturanga/shared/chess/review";
-import {
-  puzzleInsightPayloadSchema,
-  type PuzzleInsightPayload,
-  type PuzzleOutcomeKind,
-  type PuzzleSwing
+import type {
+  PuzzleInsightPayload,
+  PuzzleOutcomeKind,
+  PuzzleSwing
 } from "@chaturanga/shared/schemas/puzzle-insight";
 import type { PuzzleSample } from "@chaturanga/shared/types/database";
 import type {
@@ -216,13 +215,13 @@ function puzzleIdeas(
  * doesn't replay, or the engine returned no line for the start position). Checked against the
  * schema main validates with, so what is returned is what main accepts.
  */
-export function buildPuzzleExplanationPayload({
+export async function buildPuzzleExplanationPayload({
   puzzle,
   kind,
   wrong,
   analysis,
   settings
-}: ExplainPayloadInput): PuzzleInsightPayload | null {
+}: ExplainPayloadInput): Promise<PuzzleInsightPayload | null> {
   const solutionSan = uciLineToSan(puzzle.initialFen, puzzle.solutionMoves);
   if (solutionSan.length !== puzzle.solutionMoves.length || !solutionSan.length) return null;
   const engine = startPositionFacts(puzzle.initialFen, analysis);
@@ -233,6 +232,8 @@ export function buildPuzzleExplanationPayload({
   if (failedOnMove && !mistake) return null;
   const ideas = puzzleIdeas(puzzle, wrong, mistake, analysis);
 
+  // The schema (and zod with it) loads with the first explanation asked for, not at startup.
+  const { puzzleInsightPayloadSchema } = await import("@chaturanga/shared/schemas/puzzle-insight");
   const parsed = puzzleInsightPayloadSchema.safeParse({
     schemaVersion: 1,
     // A puzzle has no time control: the rapid rating, as a review of a game without one.
